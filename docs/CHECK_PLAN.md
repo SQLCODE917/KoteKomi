@@ -19,18 +19,21 @@
 - run migrations on fixture database with `packages/adapters/tests/test_sqlite_ledger_migrations.py`
 - run repository tests with `packages/adapters/tests/test_sqlite_ledger_repository.py`
 
-## 4. Pipeline checks
+## 4. Archive checks
+- run `uv run pytest packages/adapters/tests/test_local_archive_store.py`
+
+## 5. Pipeline checks
 - run URL ingest fixture
 - run local file ingest fixture
 - run Assertion proposal fixture
 - run Briefing generation fixture
 
-## 5. Documentation checks
+## 6. Documentation checks
 - verify glossary terms match Domain Core names
 - verify command examples run
 - verify cross-references resolve
 
-## 6. Forbidden patterns
+## 7. Forbidden patterns
 - Adapter imports inside Domain Core
 - accepted Assertion without ProvenanceActivity
 - Source-backed accepted Assertion without EvidenceSpan
