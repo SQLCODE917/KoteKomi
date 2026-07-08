@@ -23,6 +23,7 @@ from kotekomi_domain import (
     Relationship,
     Source,
 )
+from kotekomi_domain.models import JsonValue
 
 
 @dataclass(frozen=True)
@@ -47,6 +48,30 @@ class ArchiveStore(Protocol):
     def read_raw_source(self, source_id: str) -> bytes: ...
     def write_document_text(self, document_id: str, text: str) -> ArchiveObject: ...
     def read_document_text(self, document_id: str) -> str: ...
+
+
+@dataclass(frozen=True)
+class ModelProposal:
+    record_type: str
+    stable_label: str
+    record: dict[str, JsonValue]
+    evidence: dict[str, JsonValue]
+
+
+class ModelRuntime(Protocol):
+    @property
+    def model_name(self) -> str: ...
+
+    @property
+    def prompt_id(self) -> str: ...
+
+    def propose_assertions(
+        self,
+        *,
+        document_id: str,
+        source_id: str,
+        document_text: str,
+    ) -> tuple[ModelProposal, ...]: ...
 
 
 class LedgerRepository(Protocol):

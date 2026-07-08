@@ -25,7 +25,9 @@
 ## 5. Pipeline checks
 - run URL ingest fixture
 - run local file ingest fixture with `uv run pytest packages/pipelines/tests/test_source_add_file.py`
-- run Assertion proposal fixture
+- run Assertion proposal Application test with `uv run pytest packages/application/tests/test_propose_assertions_for_document.py`
+- run Assertion proposal Adapter fixture with `uv run pytest packages/adapters/tests/test_fixture_model_runtime.py`
+- run Assertion proposal Pipeline fixture with `uv run pytest packages/pipelines/tests/test_source_propose_assertions.py`
 - run Briefing generation fixture
 
 ## 6. Documentation checks

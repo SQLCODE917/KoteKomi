@@ -7,8 +7,19 @@ import sys
 from datetime import UTC, datetime
 from pathlib import Path
 
-from kotekomi_adapters import LocalArchiveStore, SQLiteLedgerInitializer, sqlite_ledger_transaction
-from kotekomi_application import SourceFileIngestInput, add_source_from_file, initialize_ledger
+from kotekomi_adapters import (
+    FixtureModelRuntime,
+    LocalArchiveStore,
+    SQLiteLedgerInitializer,
+    sqlite_ledger_transaction,
+)
+from kotekomi_application import (
+    AssertionProposalInput,
+    SourceFileIngestInput,
+    add_source_from_file,
+    initialize_ledger,
+    propose_assertions_for_document,
+)
 
 from kotekomi_pipelines.config import PipelineConfig, load_config
 
@@ -32,6 +43,18 @@ def main(argv: list[str] | None = None) -> int:
             archive_path_override=args.archive_path,
         )
         return add_source_file(config, args.path)
+
+    if args.command == "source" and args.source_command == "propose-assertions":
+        config = load_config(
+            config_path=args.config,
+            ledger_path_override=args.ledger_path,
+            archive_path_override=args.archive_path,
+        )
+        return propose_source_assertions(
+            config=config,
+            document_id=args.document_id,
+            model_output_fixture_path=args.model_output_fixture,
+        )
 
     parser.print_help()
     return 2
@@ -66,6 +89,15 @@ def build_parser() -> argparse.ArgumentParser:
     add_file_parser.add_argument("path", type=Path)
     add_file_parser.add_argument("--ledger-path", type=Path, default=None)
     add_file_parser.add_argument("--archive-path", type=Path, default=None)
+
+    propose_assertions_parser = source_subparsers.add_parser(
+        "propose-assertions",
+        help="Create ProposedChange records for a Document through a model runtime.",
+    )
+    propose_assertions_parser.add_argument("--document-id", required=True)
+    propose_assertions_parser.add_argument("--model-output-fixture", type=Path, required=True)
+    propose_assertions_parser.add_argument("--ledger-path", type=Path, default=None)
+    propose_assertions_parser.add_argument("--archive-path", type=Path, default=None)
 
     return parser
 
@@ -104,6 +136,34 @@ def add_source_file(config: PipelineConfig, source_file_path: Path) -> int:
     print(f"ProvenanceActivity: {result.provenance_activity_id}")
     print(f"Raw path: {result.raw_path}")
     print(f"Extracted text path: {result.extracted_text_path}")
+    return 0
+
+
+def propose_source_assertions(
+    *,
+    config: PipelineConfig,
+    document_id: str,
+    model_output_fixture_path: Path,
+) -> int:
+    archive_store = LocalArchiveStore(config.archive_path)
+    model_runtime = FixtureModelRuntime(model_output_fixture_path)
+    with sqlite_ledger_transaction(config.ledger_path) as ledger_repository:
+        result = propose_assertions_for_document(
+            AssertionProposalInput(
+                document_id=document_id,
+                proposed_at=datetime.now(UTC),
+            ),
+            archive_store,
+            ledger_repository,
+            model_runtime,
+        )
+
+    print(f"Document: {result.document_id}")
+    print(f"Source: {result.source_id}")
+    print(f"ProvenanceActivity: {result.provenance_activity_id}")
+    print(f"ProposedChanges: {len(result.proposed_change_ids)}")
+    for proposed_change_id in result.proposed_change_ids:
+        print(f"ProposedChange: {proposed_change_id}")
     return 0
 
 

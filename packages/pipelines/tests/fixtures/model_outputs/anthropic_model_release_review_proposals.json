@@ -1,0 +1,212 @@
+{
+  "proposals": [
+    {
+      "record_type": "Organization",
+      "stable_label": "anthropic_ai_lab",
+      "record": {
+        "id": "org_anthropic",
+        "name": "Anthropic",
+        "organization_type": "ai_lab"
+      },
+      "evidence": {
+        "selector_type": "exact_text",
+        "exact_text": "Anthropic postponed a broader rollout of its Claude Fable 5 model in late June after U.S. officials raised concerns that the system could accelerate cyber operations against critical software, according to people involved in the review and documents described to this synthetic news fixture.",
+        "source_id": "src_aa67767133655af72fbcf0a8",
+        "document_id": "doc_aa67767133655af72fbcf0a8"
+      }
+    },
+    {
+      "record_type": "Organization",
+      "stable_label": "commerce_department",
+      "record": {
+        "id": "org_commerce_department",
+        "name": "Commerce Department",
+        "organization_type": "government_agency"
+      },
+      "evidence": {
+        "selector_type": "exact_text",
+        "exact_text": "The delay followed an emergency call on June 21 among Anthropic executives, Commerce Department technical advisers, Treasury Department sanctions staff, and White House officials.",
+        "source_id": "src_aa67767133655af72fbcf0a8",
+        "document_id": "doc_aa67767133655af72fbcf0a8"
+      }
+    },
+    {
+      "record_type": "Actor",
+      "stable_label": "dario_amodei",
+      "record": {
+        "id": "act_dario_amodei",
+        "name": "Dario Amodei",
+        "role_names": ["Anthropic executive"],
+        "organization_ids": ["org_anthropic"]
+      },
+      "evidence": {
+        "selector_type": "exact_text",
+        "exact_text": "Dario Amodei told officials that Anthropic had already narrowed the model's release plan and added a higher-risk cyber-use review queue, two people familiar with the discussion said.",
+        "source_id": "src_aa67767133655af72fbcf0a8",
+        "document_id": "doc_aa67767133655af72fbcf0a8"
+      }
+    },
+    {
+      "record_type": "Actor",
+      "stable_label": "lina_rahman",
+      "record": {
+        "id": "act_lina_rahman",
+        "name": "Lina Rahman",
+        "role_names": ["security lead for model deployment"],
+        "organization_ids": ["org_anthropic"]
+      },
+      "evidence": {
+        "selector_type": "exact_text",
+        "exact_text": "Lina Rahman, Anthropic's security lead for model deployment, said in an internal note that the company had confirmed \"prompt chains capable of vulnerability discovery,\" but disputed a government claim that the model could autonomously execute a full intrusion campaign.",
+        "source_id": "src_aa67767133655af72fbcf0a8",
+        "document_id": "doc_aa67767133655af72fbcf0a8"
+      }
+    },
+    {
+      "record_type": "Event",
+      "stable_label": "june_21_emergency_release_review_call",
+      "record": {
+        "id": "evt_june_21_emergency_release_review_call",
+        "name": "June 21 emergency Claude Fable 5 release review call",
+        "start_at": "2026-06-21T00:00:00Z",
+        "participant_actor_ids": ["act_dario_amodei"],
+        "participant_organization_ids": [
+          "org_anthropic",
+          "org_commerce_department",
+          "org_treasury_department",
+          "org_white_house"
+        ]
+      },
+      "evidence": {
+        "selector_type": "exact_text",
+        "exact_text": "The delay followed an emergency call on June 21 among Anthropic executives, Commerce Department technical advisers, Treasury Department sanctions staff, and White House officials.",
+        "source_id": "src_aa67767133655af72fbcf0a8",
+        "document_id": "doc_aa67767133655af72fbcf0a8"
+      }
+    },
+    {
+      "record_type": "EvidenceSpan",
+      "stable_label": "delay_after_us_cyber_concerns",
+      "record": {
+        "id": "evs_delay_after_us_cyber_concerns",
+        "source_id": "src_aa67767133655af72fbcf0a8",
+        "document_id": "doc_aa67767133655af72fbcf0a8",
+        "assertion_id": "ast_anthropic_postponed_fable5_after_us_review",
+        "selector_type": "exact_text",
+        "exact_text": "Anthropic postponed a broader rollout of its Claude Fable 5 model in late June after U.S. officials raised concerns that the system could accelerate cyber operations against critical software, according to people involved in the review and documents described to this synthetic news fixture.",
+        "prefix_text": "",
+        "suffix_text": "The delay followed an emergency call on June 21 among Anthropic executives, Commerce Department technical advisers, Treasury Department sanctions staff, and White House officials.",
+        "location": {
+          "section": "lead"
+        }
+      },
+      "evidence": {
+        "selector_type": "exact_text",
+        "exact_text": "Anthropic postponed a broader rollout of its Claude Fable 5 model in late June after U.S. officials raised concerns that the system could accelerate cyber operations against critical software, according to people involved in the review and documents described to this synthetic news fixture.",
+        "source_id": "src_aa67767133655af72fbcf0a8",
+        "document_id": "doc_aa67767133655af72fbcf0a8"
+      }
+    },
+    {
+      "record_type": "Assertion",
+      "stable_label": "anthropic_postponed_fable5_after_us_review",
+      "record": {
+        "id": "ast_anthropic_postponed_fable5_after_us_review",
+        "assertion_type": "source_claim",
+        "subject_entity_id": "org_anthropic",
+        "predicate": "postponed_broader_rollout_after_review",
+        "object_value": {
+          "model": "Claude Fable 5",
+          "timing": "late June 2026",
+          "review_concern": "cyber operations against critical software"
+        },
+        "status": "proposed",
+        "source_report_confidence": 0.92,
+        "extraction_confidence": 0.88,
+        "world_truth_confidence": 0.63,
+        "qualifiers": {
+          "reported_by": "people involved in the review and described documents"
+        },
+        "current_assessment": "The Source reports that U.S. cyber-safety concerns delayed Anthropic's broader Claude Fable 5 rollout.",
+        "source_ids": ["src_aa67767133655af72fbcf0a8"],
+        "evidence_span_ids": ["evs_delay_after_us_cyber_concerns"],
+        "provenance_activity_ids": []
+      },
+      "evidence": {
+        "selector_type": "exact_text",
+        "exact_text": "Anthropic postponed a broader rollout of its Claude Fable 5 model in late June after U.S. officials raised concerns that the system could accelerate cyber operations against critical software, according to people involved in the review and documents described to this synthetic news fixture.",
+        "source_id": "src_aa67767133655af72fbcf0a8",
+        "document_id": "doc_aa67767133655af72fbcf0a8"
+      }
+    },
+    {
+      "record_type": "Assertion",
+      "stable_label": "enterprise_pilots_suspended_on_june_23",
+      "record": {
+        "id": "ast_enterprise_pilots_suspended_on_june_23",
+        "assertion_type": "source_claim",
+        "subject_entity_id": "org_anthropic",
+        "predicate": "temporarily_suspended_enterprise_pilot_access",
+        "object_value": {
+          "date": "2026-06-23",
+          "affected_customer_segments": ["finance", "defense contracting", "pharmaceutical research"],
+          "exception": "smaller evaluation program for approved U.S. government and safety researchers"
+        },
+        "status": "proposed",
+        "source_report_confidence": 0.9,
+        "extraction_confidence": 0.86,
+        "world_truth_confidence": 0.61,
+        "qualifiers": {
+          "cloud_provider": "Amazon Web Services"
+        },
+        "current_assessment": "The Source reports that Anthropic suspended several enterprise pilots while preserving a smaller approved evaluation program.",
+        "source_ids": ["src_aa67767133655af72fbcf0a8"],
+        "evidence_span_ids": ["evs_enterprise_pilots_suspended"],
+        "provenance_activity_ids": []
+      },
+      "evidence": {
+        "selector_type": "exact_text",
+        "exact_text": "Anthropic temporarily suspended access for several enterprise pilots on June 23, including some accounts hosted through Amazon Web Services, while keeping a smaller evaluation program open for approved U.S. government and safety researchers.",
+        "source_id": "src_aa67767133655af72fbcf0a8",
+        "document_id": "doc_aa67767133655af72fbcf0a8"
+      }
+    },
+    {
+      "record_type": "Relationship",
+      "stable_label": "commerce_review_influenced_anthropic_rollout",
+      "record": {
+        "id": "rel_commerce_review_influenced_anthropic_rollout",
+        "subject_id": "org_commerce_department",
+        "predicate": "influenced_release_timing_for",
+        "object_id": "org_anthropic",
+        "assertion_ids": ["ast_anthropic_postponed_fable5_after_us_review"]
+      },
+      "evidence": {
+        "selector_type": "exact_text",
+        "exact_text": "Commerce Secretary Howard Lutnick pressed for a pause until the department could understand how Anthropic planned to separate U.S. enterprise customers from foreign nationals working inside those same companies.",
+        "source_id": "src_aa67767133655af72fbcf0a8",
+        "document_id": "doc_aa67767133655af72fbcf0a8"
+      }
+    },
+    {
+      "record_type": "Outcome",
+      "stable_label": "monitoring_update_and_notice_commitment",
+      "record": {
+        "id": "out_monitoring_update_and_notice_commitment",
+        "description": "Anthropic resumed most access while agreeing to incident summaries and extra notice before major capability increases.",
+        "organization_ids": ["org_anthropic", "org_commerce_department"],
+        "event_ids": ["evt_june_21_emergency_release_review_call"],
+        "assertion_ids": [
+          "ast_anthropic_postponed_fable5_after_us_review",
+          "ast_enterprise_pilots_suspended_on_june_23"
+        ]
+      },
+      "evidence": {
+        "selector_type": "exact_text",
+        "exact_text": "By July 1, the company had resumed most access while agreeing to provide government officials with incident summaries and additional notice before major capability increases.",
+        "source_id": "src_aa67767133655af72fbcf0a8",
+        "document_id": "doc_aa67767133655af72fbcf0a8"
+      }
+    }
+  ]
+}
