@@ -26,6 +26,7 @@ from kotekomi_domain.models import JsonValue
 HASH_ID_LENGTH = 24
 APPROVED_ACTIVITY_TYPE = "proposed_change_approved"
 REJECTED_ACTIVITY_TYPE = "proposed_change_rejected"
+EDITED_ACTIVITY_TYPE = "proposed_change_edited"
 type AcceptedReviewRecord = (
     Actor | Organization | Event | EvidenceSpan | Assertion | Relationship | Outcome
 )
@@ -64,6 +65,7 @@ class ReviewProposedChangeInput:
     reviewer: str
     reviewed_at: datetime
     reason: str | None = None
+    accepted_record_json: dict[str, JsonValue] | None = None
 
 
 @dataclass(frozen=True)
@@ -154,6 +156,54 @@ def reject_proposed_change(
     )
 
 
+def edit_proposed_change(
+    review_input: ReviewProposedChangeInput,
+    ledger_repository: ProposedChangeReviewLedger,
+) -> ReviewProposedChangeResult:
+    proposed_change = _get_pending_proposed_change(review_input, ledger_repository)
+    record_type = _proposal_record_type(proposed_change)
+    if review_input.accepted_record_json is None:
+        raise ValueError("Edited ProposedChange requires accepted_record_json.")
+    provenance_activity_id = deterministic_review_provenance_activity_id(
+        proposed_change_id=proposed_change.id,
+        activity_type=EDITED_ACTIVITY_TYPE,
+        reviewer=review_input.reviewer,
+    )
+    accepted_record = _accepted_record_from_json(
+        record_type=record_type,
+        record_json=review_input.accepted_record_json,
+        provenance_activity_id=provenance_activity_id,
+    )
+    accepted_record_id = _record_id(accepted_record)
+    provenance_activity = ProvenanceActivity(
+        id=provenance_activity_id,
+        activity_type=EDITED_ACTIVITY_TYPE,
+        agent=review_input.reviewer,
+        input_ids=(proposed_change.id,),
+        output_ids=(accepted_record_id,),
+        occurred_at=review_input.reviewed_at,
+    )
+    reviewed_change = _reviewed_proposed_change(
+        proposed_change=proposed_change,
+        review_status=ReviewStatus.EDITED,
+        reviewed_at=review_input.reviewed_at,
+        accepted_record=accepted_record,
+        original_proposed_json=proposed_change.proposed_json,
+    )
+
+    ledger_repository.save_provenance_activity(provenance_activity)
+    _save_accepted_record(accepted_record, ledger_repository)
+    ledger_repository.save_proposed_change(reviewed_change)
+
+    return ReviewProposedChangeResult(
+        proposed_change_id=proposed_change.id,
+        review_status=ReviewStatus.EDITED,
+        provenance_activity_id=provenance_activity.id,
+        accepted_record_id=accepted_record_id,
+        accepted_record_type=record_type,
+    )
+
+
 def deterministic_review_provenance_activity_id(
     *,
     proposed_change_id: str,
@@ -197,6 +247,19 @@ def _accepted_record_from_proposed_change(
 ) -> AcceptedReviewRecord:
     record_type = _proposal_record_type(proposed_change)
     record_json = _proposal_record_json(proposed_change)
+    return _accepted_record_from_json(
+        record_type=record_type,
+        record_json=record_json,
+        provenance_activity_id=provenance_activity_id,
+    )
+
+
+def _accepted_record_from_json(
+    *,
+    record_type: str,
+    record_json: dict[str, JsonValue],
+    provenance_activity_id: str,
+) -> AcceptedReviewRecord:
     if record_type == "Actor":
         return Actor.model_validate_json(json.dumps(record_json))
     if record_type == "Organization":
@@ -260,6 +323,7 @@ def _reviewed_proposed_change(
     review_status: ReviewStatus,
     reviewed_at: datetime,
     accepted_record: AcceptedReviewRecord | None,
+    original_proposed_json: dict[str, JsonValue] | None = None,
 ) -> ProposedChange:
     accepted_json: dict[str, JsonValue] | None = None
     if accepted_record is not None:
@@ -268,7 +332,9 @@ def _reviewed_proposed_change(
         id=proposed_change.id,
         review_status=review_status,
         proposed_json=proposed_change.proposed_json,
-        original_proposed_json=proposed_change.original_proposed_json,
+        original_proposed_json=original_proposed_json
+        if original_proposed_json is not None
+        else proposed_change.original_proposed_json,
         accepted_json=accepted_json,
         source_id=proposed_change.source_id,
         document_id=proposed_change.document_id,

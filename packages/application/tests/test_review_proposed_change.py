@@ -5,6 +5,7 @@ import pytest
 from kotekomi_application import (
     ReviewProposedChangeInput,
     approve_proposed_change,
+    edit_proposed_change,
     reject_proposed_change,
 )
 from kotekomi_domain import (
@@ -305,6 +306,152 @@ def test_reject_proposed_change_updates_status_without_accepted_record() -> None
     assert provenance_activity.activity_type == "proposed_change_rejected"
     assert provenance_activity.input_ids == (record_id,)
     assert provenance_activity.output_ids == (record_id,)
+
+
+def test_edit_proposed_change_creates_accepted_record_from_corrected_json() -> None:
+    record_id = "pcg_actor"
+    proposed_record: dict[str, JsonValue] = {
+        "id": "act_dario_amodei",
+        "name": "D. Amodei",
+        "role_names": ["executive"],
+        "organization_ids": ["org_anthropic"],
+    }
+    edited_record: dict[str, JsonValue] = {
+        "id": "act_dario_amodei",
+        "name": "Dario Amodei",
+        "role_names": ["Anthropic chief executive"],
+        "organization_ids": ["org_anthropic"],
+    }
+    ledger = FakeReviewLedger((proposed_change(record_id, "Actor", proposed_record),))
+
+    result = edit_proposed_change(
+        ReviewProposedChangeInput(
+            proposed_change_id=record_id,
+            reviewer="analyst",
+            reviewed_at=NOW,
+            accepted_record_json=edited_record,
+        ),
+        ledger,
+    )
+
+    reviewed_change = ledger.proposed_changes[record_id]
+    actor = ledger.actors["act_dario_amodei"]
+    provenance_activity = ledger.provenance_activities[result.provenance_activity_id]
+    assert result.review_status is ReviewStatus.EDITED
+    assert result.accepted_record_id == "act_dario_amodei"
+    assert result.accepted_record_type == "Actor"
+    assert actor.name == "Dario Amodei"
+    assert actor.role_names == ("Anthropic chief executive",)
+    assert reviewed_change.review_status is ReviewStatus.EDITED
+    assert (
+        reviewed_change.original_proposed_json
+        == proposed_change(record_id, "Actor", proposed_record).proposed_json
+    )
+    assert reviewed_change.accepted_json is not None
+    assert reviewed_change.accepted_json["name"] == "Dario Amodei"
+    assert provenance_activity.activity_type == "proposed_change_edited"
+    assert provenance_activity.input_ids == (record_id,)
+    assert provenance_activity.output_ids == ("act_dario_amodei",)
+
+
+def test_edit_proposed_assertion_marks_it_reported_and_adds_review_provenance() -> None:
+    record_id = "pcg_assertion"
+    edited_record: dict[str, JsonValue] = {
+        "id": "ast_delay",
+        "assertion_type": "source_claim",
+        "subject_entity_id": "org_anthropic",
+        "predicate": "postponed_rollout",
+        "object_value": {"model": "Claude Fable 5", "timing": "late June"},
+        "status": "proposed",
+        "source_report_confidence": 0.91,
+        "extraction_confidence": 0.84,
+        "world_truth_confidence": 0.62,
+        "current_assessment": "The Source reports a delayed rollout after review.",
+        "source_ids": ["src_article_a"],
+        "evidence_span_ids": ["evs_delay"],
+        "provenance_activity_ids": [],
+    }
+    ledger = FakeReviewLedger(
+        (
+            proposed_change(
+                record_id,
+                "Assertion",
+                {
+                    "id": "ast_delay",
+                    "assertion_type": "source_claim",
+                    "subject_entity_id": "org_anthropic",
+                    "predicate": "postponed_rollout",
+                    "object_value": {"model": "Claude Fable 5"},
+                    "status": "proposed",
+                    "source_ids": ["src_article_a"],
+                    "evidence_span_ids": ["evs_delay"],
+                    "provenance_activity_ids": [],
+                },
+            ),
+        )
+    )
+
+    result = edit_proposed_change(
+        ReviewProposedChangeInput(
+            proposed_change_id=record_id,
+            reviewer="analyst",
+            reviewed_at=NOW,
+            accepted_record_json=edited_record,
+        ),
+        ledger,
+    )
+
+    assertion = ledger.assertions["ast_delay"]
+    reviewed_change = ledger.proposed_changes[record_id]
+    assert assertion.status is AssertionStatus.REPORTED
+    assert assertion.provenance_activity_ids == (result.provenance_activity_id,)
+    assert assertion.current_assessment == "The Source reports a delayed rollout after review."
+    assert reviewed_change.review_status is ReviewStatus.EDITED
+    assert reviewed_change.accepted_json is not None
+    assert reviewed_change.accepted_json["status"] == "reported"
+    assert reviewed_change.accepted_json["provenance_activity_ids"] == [
+        result.provenance_activity_id
+    ]
+
+
+def test_edit_rejects_missing_accepted_record_json() -> None:
+    record_id = "pcg_actor"
+    ledger = FakeReviewLedger(
+        (
+            proposed_change(
+                record_id,
+                "Actor",
+                {"id": "act_dario_amodei", "name": "Dario Amodei"},
+            ),
+        )
+    )
+
+    with pytest.raises(ValueError, match="requires accepted_record_json"):
+        edit_proposed_change(review_input(record_id), ledger)
+
+
+def test_edit_rejects_invalid_accepted_record_json() -> None:
+    record_id = "pcg_actor"
+    ledger = FakeReviewLedger(
+        (
+            proposed_change(
+                record_id,
+                "Actor",
+                {"id": "act_dario_amodei", "name": "Dario Amodei"},
+            ),
+        )
+    )
+
+    with pytest.raises(ValueError):
+        edit_proposed_change(
+            ReviewProposedChangeInput(
+                proposed_change_id=record_id,
+                reviewer="analyst",
+                reviewed_at=NOW,
+                accepted_record_json={"id": "plc_washington", "name": "Washington"},
+            ),
+            ledger,
+        )
 
 
 def test_review_rejects_missing_proposed_change() -> None:

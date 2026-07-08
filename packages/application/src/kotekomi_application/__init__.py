@@ -1,5 +1,7 @@
 """KoteKomi Application Layer."""
 
+from kotekomi_domain.models import JsonValue
+
 from kotekomi_application.assertion_proposal import (
     AssertionProposalInput,
     AssertionProposalResult,
@@ -22,6 +24,7 @@ from kotekomi_application.proposed_change_review import (
     ReviewProposedChangeResult,
     approve_proposed_change,
     deterministic_review_provenance_activity_id,
+    edit_proposed_change,
     reject_proposed_change,
 )
 from kotekomi_application.source_file_ingest import (
@@ -35,6 +38,7 @@ __all__ = [
     "ArchiveStore",
     "AssertionProposalInput",
     "AssertionProposalResult",
+    "JsonValue",
     "LedgerInitializer",
     "LedgerInitResult",
     "LedgerRepository",
@@ -49,6 +53,7 @@ __all__ = [
     "deterministic_proposed_change_id",
     "deterministic_provenance_activity_id",
     "deterministic_review_provenance_activity_id",
+    "edit_proposed_change",
     "initialize_ledger",
     "propose_assertions_for_document",
     "reject_proposed_change",

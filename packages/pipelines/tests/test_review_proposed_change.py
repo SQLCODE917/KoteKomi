@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 import pytest
@@ -89,6 +90,25 @@ def review_reject_args(ledger_path: Path, proposed_change_id: str) -> list[str]:
     ]
 
 
+def review_edit_args(
+    ledger_path: Path,
+    proposed_change_id: str,
+    accepted_record_json_path: Path,
+) -> list[str]:
+    return [
+        "review",
+        "edit",
+        "--proposed-change-id",
+        proposed_change_id,
+        "--reviewer",
+        "analyst",
+        "--accepted-record-json",
+        str(accepted_record_json_path),
+        "--ledger-path",
+        str(ledger_path),
+    ]
+
+
 def proposed_change_by_stable_label(
     proposed_changes: tuple[ProposedChange, ...],
     stable_label: str,
@@ -129,7 +149,57 @@ def test_review_commands_approve_and_reject_proposed_changes(
         proposed_changes,
         "anthropic_postponed_fable5_after_us_review",
     )
+    edited_actor_change = proposed_change_by_stable_label(proposed_changes, "lina_rahman")
+    edited_assertion_change = proposed_change_by_stable_label(
+        proposed_changes,
+        "enterprise_pilots_suspended_on_june_23",
+    )
     actor_change = proposed_change_by_stable_label(proposed_changes, "dario_amodei")
+    edited_actor_path = tmp_path / "edited_actor.json"
+    edited_actor_path.write_text(
+        json.dumps(
+            {
+                "id": "act_lina_rahman",
+                "name": "Lina Rahman",
+                "role_names": ["security lead for model deployment", "deployment reviewer"],
+                "organization_ids": ["org_anthropic"],
+            }
+        )
+    )
+    edited_assertion_path = tmp_path / "edited_assertion.json"
+    edited_assertion_path.write_text(
+        json.dumps(
+            {
+                "id": "ast_enterprise_pilots_suspended_on_june_23",
+                "assertion_type": "source_claim",
+                "subject_entity_id": "org_anthropic",
+                "predicate": "temporarily_suspended_enterprise_pilot_access",
+                "object_value": {
+                    "date": "2026-06-23",
+                    "affected_customer_segments": [
+                        "finance",
+                        "defense contracting",
+                        "pharmaceutical research",
+                    ],
+                    "exception": (
+                        "smaller evaluation program for approved U.S. government and "
+                        "safety researchers"
+                    ),
+                },
+                "status": "proposed",
+                "source_report_confidence": 0.93,
+                "extraction_confidence": 0.9,
+                "world_truth_confidence": 0.66,
+                "current_assessment": (
+                    "The Source reports that Anthropic suspended several enterprise pilots "
+                    "while keeping an approved evaluation program open."
+                ),
+                "source_ids": ["src_aa67767133655af72fbcf0a8"],
+                "evidence_span_ids": ["evs_enterprise_pilots_suspended"],
+                "provenance_activity_ids": [],
+            }
+        )
+    )
 
     assert main(review_approve_args(ledger_path, organization_change.id)) == 0
     organization_output = capsys.readouterr().out
@@ -143,22 +213,43 @@ def test_review_commands_approve_and_reject_proposed_changes(
     assert main(review_reject_args(ledger_path, actor_change.id)) == 0
     rejection_output = capsys.readouterr().out
     assert "Review status: rejected" in rejection_output
+    assert main(review_edit_args(ledger_path, edited_actor_change.id, edited_actor_path)) == 0
+    edited_actor_output = capsys.readouterr().out
+    assert "Review status: edited" in edited_actor_output
+    assert "Accepted record type: Actor" in edited_actor_output
+    assert (
+        main(review_edit_args(ledger_path, edited_assertion_change.id, edited_assertion_path)) == 0
+    )
+    edited_assertion_output = capsys.readouterr().out
+    assert "Review status: edited" in edited_assertion_output
+    assert "Accepted record type: Assertion" in edited_assertion_output
 
     with sqlite_ledger_transaction(ledger_path) as repository:
         organization = repository.get_organization("org_anthropic")
         evidence_span = repository.get_evidence_span("evs_delay_after_us_cyber_concerns")
         assertion = repository.get_assertion("ast_anthropic_postponed_fable5_after_us_review")
+        edited_actor = repository.get_actor("act_lina_rahman")
+        edited_assertion = repository.get_assertion("ast_enterprise_pilots_suspended_on_june_23")
         rejected_actor = repository.get_actor("act_dario_amodei")
         approved_changes = {
             organization_change.id: repository.get_proposed_change(organization_change.id),
             evidence_change.id: repository.get_proposed_change(evidence_change.id),
             assertion_change.id: repository.get_proposed_change(assertion_change.id),
         }
+        edited_changes = {
+            edited_actor_change.id: repository.get_proposed_change(edited_actor_change.id),
+            edited_assertion_change.id: repository.get_proposed_change(edited_assertion_change.id),
+        }
         rejected_change = repository.get_proposed_change(actor_change.id)
         review_activities = tuple(
             activity
             for activity in repository.list_provenance_activities()
-            if activity.activity_type in {"proposed_change_approved", "proposed_change_rejected"}
+            if activity.activity_type
+            in {
+                "proposed_change_approved",
+                "proposed_change_rejected",
+                "proposed_change_edited",
+            }
         )
 
     assert organization is not None
@@ -166,6 +257,14 @@ def test_review_commands_approve_and_reject_proposed_changes(
     assert assertion is not None
     assert assertion.status is AssertionStatus.REPORTED
     assert assertion.provenance_activity_ids
+    assert edited_actor is not None
+    assert edited_actor.role_names == ("security lead for model deployment", "deployment reviewer")
+    assert edited_assertion is not None
+    assert edited_assertion.status is AssertionStatus.REPORTED
+    assert edited_assertion.current_assessment == (
+        "The Source reports that Anthropic suspended several enterprise pilots while keeping "
+        "an approved evaluation program open."
+    )
     assert rejected_actor is None
     assert all(
         proposed_change is not None
@@ -173,7 +272,14 @@ def test_review_commands_approve_and_reject_proposed_changes(
         and proposed_change.accepted_json is not None
         for proposed_change in approved_changes.values()
     )
+    assert all(
+        proposed_change is not None
+        and proposed_change.review_status is ReviewStatus.EDITED
+        and proposed_change.original_proposed_json is not None
+        and proposed_change.accepted_json is not None
+        for proposed_change in edited_changes.values()
+    )
     assert rejected_change is not None
     assert rejected_change.review_status is ReviewStatus.REJECTED
     assert rejected_change.accepted_json is None
-    assert len(review_activities) == 4
+    assert len(review_activities) == 6

@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import cast
 
 from kotekomi_adapters import (
     FixtureModelRuntime,
@@ -15,10 +17,12 @@ from kotekomi_adapters import (
 )
 from kotekomi_application import (
     AssertionProposalInput,
+    JsonValue,
     ReviewProposedChangeInput,
     SourceFileIngestInput,
     add_source_from_file,
     approve_proposed_change,
+    edit_proposed_change,
     initialize_ledger,
     propose_assertions_for_document,
     reject_proposed_change,
@@ -84,6 +88,19 @@ def main(argv: list[str] | None = None) -> int:
             reason=args.reason,
         )
 
+    if args.command == "review" and args.review_command == "edit":
+        config = load_config(
+            config_path=args.config,
+            ledger_path_override=args.ledger_path,
+            archive_path_override=None,
+        )
+        return edit_reviewed_proposed_change(
+            config=config,
+            proposed_change_id=args.proposed_change_id,
+            reviewer=args.reviewer,
+            accepted_record_json_path=args.accepted_record_json,
+        )
+
     parser.print_help()
     return 2
 
@@ -144,6 +161,14 @@ def build_parser() -> argparse.ArgumentParser:
     reject_parser.add_argument("--reviewer", required=True)
     reject_parser.add_argument("--reason", required=True)
     reject_parser.add_argument("--ledger-path", type=Path, default=None)
+    edit_parser = review_subparsers.add_parser(
+        "edit",
+        help="Approve one pending ProposedChange with corrected accepted record JSON.",
+    )
+    edit_parser.add_argument("--proposed-change-id", required=True)
+    edit_parser.add_argument("--reviewer", required=True)
+    edit_parser.add_argument("--accepted-record-json", type=Path, required=True)
+    edit_parser.add_argument("--ledger-path", type=Path, default=None)
 
     return parser
 
@@ -259,6 +284,56 @@ def reject_reviewed_proposed_change(
     print(f"Review status: {result.review_status}")
     print(f"ProvenanceActivity: {result.provenance_activity_id}")
     return 0
+
+
+def edit_reviewed_proposed_change(
+    *,
+    config: PipelineConfig,
+    proposed_change_id: str,
+    reviewer: str,
+    accepted_record_json_path: Path,
+) -> int:
+    accepted_record_json = read_json_object(accepted_record_json_path)
+    with sqlite_ledger_transaction(config.ledger_path) as ledger_repository:
+        result = edit_proposed_change(
+            ReviewProposedChangeInput(
+                proposed_change_id=proposed_change_id,
+                reviewer=reviewer,
+                reviewed_at=datetime.now(UTC),
+                accepted_record_json=accepted_record_json,
+            ),
+            ledger_repository,
+        )
+
+    print(f"ProposedChange: {result.proposed_change_id}")
+    print(f"Review status: {result.review_status}")
+    print(f"ProvenanceActivity: {result.provenance_activity_id}")
+    print(f"Accepted record type: {result.accepted_record_type}")
+    print(f"Accepted record: {result.accepted_record_id}")
+    return 0
+
+
+def read_json_object(path: Path) -> dict[str, JsonValue]:
+    payload: object = json.loads(path.read_text(encoding="utf-8"))
+    converted = _json_value(payload, "accepted record JSON")
+    if not isinstance(converted, dict):
+        raise ValueError(f"JSON file must contain an object: {path}")
+    return cast(dict[str, JsonValue], converted)
+
+
+def _json_value(value: object, context: str) -> JsonValue:
+    if value is None or isinstance(value, str | int | float | bool):
+        return value
+    if isinstance(value, list):
+        return [_json_value(item, f"{context}[]") for item in cast(list[object], value)]
+    if isinstance(value, dict):
+        result: dict[str, JsonValue] = {}
+        for key, item in cast(dict[object, object], value).items():
+            if not isinstance(key, str):
+                raise ValueError(f"{context} contains a non-string key.")
+            result[key] = _json_value(item, f"{context}.{key}")
+        return result
+    raise ValueError(f"{context} contains a non-JSON value.")
 
 
 if __name__ == "__main__":
