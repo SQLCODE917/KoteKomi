@@ -390,11 +390,14 @@ def _validate_accepted_record_references(
             _require_event(ledger_repository, event_id, accepted_record.id)
         for assertion_id in accepted_record.assertion_ids:
             _require_assertion(ledger_repository, assertion_id, accepted_record.id)
+    elif type(accepted_record) is ArgumentEdge:
+        argument_edge = accepted_record
+        _require_assertion(ledger_repository, argument_edge.from_assertion_id, argument_edge.id)
+        _require_assertion(ledger_repository, argument_edge.to_assertion_id, argument_edge.id)
+        for evidence_span_id in argument_edge.evidence_span_ids:
+            _require_evidence_span(ledger_repository, evidence_span_id, argument_edge.id)
     else:
-        _require_assertion(ledger_repository, accepted_record.from_assertion_id, accepted_record.id)
-        _require_assertion(ledger_repository, accepted_record.to_assertion_id, accepted_record.id)
-        for evidence_span_id in accepted_record.evidence_span_ids:
-            _require_evidence_span(ledger_repository, evidence_span_id, accepted_record.id)
+        raise TypeError(f"Unsupported accepted record type: {type(accepted_record).__name__}")
 
 
 def _require_entity_reference(
@@ -542,8 +545,11 @@ def _save_accepted_record(
         ledger_repository.save_relationship(accepted_record)
     elif isinstance(accepted_record, Outcome):
         ledger_repository.save_outcome(accepted_record)
+    elif type(accepted_record) is ArgumentEdge:
+        argument_edge = accepted_record
+        ledger_repository.save_argument_edge(argument_edge)
     else:
-        ledger_repository.save_argument_edge(accepted_record)
+        raise TypeError(f"Unsupported accepted record type: {type(accepted_record).__name__}")
 
 
 def _reviewed_proposed_change(

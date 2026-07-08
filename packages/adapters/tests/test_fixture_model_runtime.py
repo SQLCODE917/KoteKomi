@@ -59,3 +59,53 @@ def test_fixture_model_runtime_rejects_malformed_fixture(tmp_path: Path) -> None
 
     with pytest.raises(ValueError, match=r"proposals\[0\]\.stable_label"):
         FixtureModelRuntime(fixture_path)
+
+
+def test_fixture_model_runtime_rejects_invalid_domain_record(tmp_path: Path) -> None:
+    fixture_path = tmp_path / "bad_record.json"
+    fixture_path.write_text(
+        """
+        {
+          "proposals": [
+            {
+              "record_type": "Assertion",
+              "stable_label": "missing_required_fields",
+              "record": {"id": "ast_missing_required_fields"},
+              "evidence": {
+                "source_id": "src_article_a",
+                "document_id": "doc_article_a",
+                "exact_text": "text"
+              }
+            }
+          ]
+        }
+        """
+    )
+
+    with pytest.raises(ValueError):
+        FixtureModelRuntime(fixture_path)
+
+
+def test_fixture_model_runtime_rejects_unsupported_record_type(tmp_path: Path) -> None:
+    fixture_path = tmp_path / "unsupported_record_type.json"
+    fixture_path.write_text(
+        """
+        {
+          "proposals": [
+            {
+              "record_type": "Place",
+              "stable_label": "washington",
+              "record": {"id": "plc_washington", "name": "Washington"},
+              "evidence": {
+                "source_id": "src_article_a",
+                "document_id": "doc_article_a",
+                "exact_text": "text"
+              }
+            }
+          ]
+        }
+        """
+    )
+
+    with pytest.raises(ValueError, match="Unsupported ModelProposal record_type: Place"):
+        FixtureModelRuntime(fixture_path)

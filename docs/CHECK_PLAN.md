@@ -42,10 +42,16 @@
 - verify glossary terms match Domain Core names
 - verify command examples run
 - verify cross-references resolve
+- verify new Port contracts have Application Layer fake-Port tests and Adapter tests
+- verify happy-path fixtures contain no dangling cross-record references
 
 ## 7. Forbidden patterns
 - Adapter imports inside Domain Core
+- Adapter code deciding Domain meaning, status transitions, review outcomes, or repair policy
 - accepted Assertion without ProvenanceActivity
 - Source-backed accepted Assertion without EvidenceSpan
+- accepted Ledger state change without ProvenanceActivity
+- canonical state stored outside the Ledger or Archive
 - model output written directly as accepted state
+- derived graph, vector, Briefing, or export state treated as canonical state
 - uncited Source-backed Briefing statement

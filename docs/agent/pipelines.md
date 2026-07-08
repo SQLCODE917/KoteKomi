@@ -20,6 +20,10 @@ A Pipeline writes generated files into the Archive.
 
 A Pipeline command has a fixture-backed test when it changes domain state.
 
+A Pipeline command opens the Ledger transaction around each Application Layer use case.
+
+A Pipeline command preserves the use case's atomic read, validate, write, and provenance unit.
+
 ## MVP Pipeline Shape
 
 ```text
@@ -54,3 +58,7 @@ Pipelines do not write accepted Assertions from model output.
 Pipelines write ProposedChange records before review.
 
 Pipelines record ProvenanceActivity records for state changes.
+
+Pipelines do not store canonical state outside the Ledger and Archive.
+
+Pipelines treat graph projections, vector indexes, Briefings, and exports as derived state.

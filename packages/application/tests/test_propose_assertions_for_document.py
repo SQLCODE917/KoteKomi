@@ -5,10 +5,12 @@ from kotekomi_application import (
     ArchiveObject,
     AssertionProposalInput,
     ModelProposal,
+    StagedArchiveObject,
     deterministic_proposed_change_id,
     propose_assertions_for_document,
 )
 from kotekomi_domain import Document, ProposedChange, ProvenanceActivity, ReviewStatus
+from kotekomi_domain.models import JsonValue
 
 NOW = datetime(2026, 7, 8, 12, 0, tzinfo=UTC)
 HASH = "a" * 64
@@ -32,6 +34,18 @@ class FakeArchiveStore:
 
     def read_document_text(self, document_id: str) -> str:
         return self.document_texts[document_id]
+
+    def stage_raw_source(self, source_id: str, content: bytes) -> StagedArchiveObject:
+        raise NotImplementedError
+
+    def stage_document_text(self, document_id: str, text: str) -> StagedArchiveObject:
+        raise NotImplementedError
+
+    def promote_staged_object(self, staged_object: StagedArchiveObject) -> ArchiveObject:
+        raise NotImplementedError
+
+    def delete_object(self, relative_path: str) -> None:
+        raise NotImplementedError
 
 
 class FakeLedgerRepository:
@@ -70,13 +84,7 @@ class FakeModelRuntime:
 
 
 def test_propose_assertions_for_document_creates_pending_proposed_changes() -> None:
-    document = Document(
-        id="doc_article_a",
-        source_id="src_article_a",
-        raw_path="sources/raw/src_article_a.bin",
-        extracted_text_path="documents/extracted/doc_article_a.txt",
-        content_sha256=HASH,
-    )
+    document = document_fixture()
     ledger = FakeLedgerRepository(documents={document.id: document})
     archive = FakeArchiveStore({document.id: "document text"})
     model_runtime = FakeModelRuntime(
@@ -84,24 +92,14 @@ def test_propose_assertions_for_document_creates_pending_proposed_changes() -> N
             ModelProposal(
                 record_type="Assertion",
                 stable_label="release_was_delayed",
-                record={"id": "ast_release_was_delayed"},
-                evidence={
-                    "selector_type": "exact_text",
-                    "exact_text": "document text",
-                    "source_id": document.source_id,
-                    "document_id": document.id,
-                },
+                record=assertion_record(document),
+                evidence=evidence_record(document),
             ),
             ModelProposal(
                 record_type="EvidenceSpan",
                 stable_label="delay_evidence",
-                record={"id": "evs_delay_evidence"},
-                evidence={
-                    "selector_type": "exact_text",
-                    "exact_text": "document text",
-                    "source_id": document.source_id,
-                    "document_id": document.id,
-                },
+                record=evidence_span_record(document),
+                evidence=evidence_record(document),
             ),
         )
     )
@@ -138,7 +136,11 @@ def test_propose_assertions_for_document_creates_pending_proposed_changes() -> N
     assert proposed_change.provenance_activity_id == provenance_activity.id
     assert proposed_change.proposed_json["record_type"] == "Assertion"
     assert proposed_change.proposed_json["stable_label"] == "release_was_delayed"
-    assert proposed_change.proposed_json["record"] == {"id": "ast_release_was_delayed"}
+    proposed_record = proposed_change.proposed_json["record"]
+    assert isinstance(proposed_record, dict)
+    assert proposed_record["id"] == "ast_release_was_delayed"
+    assert proposed_record["assertion_type"] == "source_claim"
+    assert proposed_record["status"] == "proposed"
 
 
 def test_propose_assertions_for_document_rejects_missing_document() -> None:
@@ -160,13 +162,7 @@ def test_propose_assertions_for_document_rejects_missing_document() -> None:
 
 
 def test_propose_assertions_for_document_rejects_mismatched_evidence_reference() -> None:
-    document = Document(
-        id="doc_article_a",
-        source_id="src_article_a",
-        raw_path="sources/raw/src_article_a.bin",
-        extracted_text_path="documents/extracted/doc_article_a.txt",
-        content_sha256=HASH,
-    )
+    document = document_fixture()
     ledger = FakeLedgerRepository(documents={document.id: document})
     archive = FakeArchiveStore({document.id: "document text"})
     model_runtime = FakeModelRuntime(
@@ -174,7 +170,7 @@ def test_propose_assertions_for_document_rejects_mismatched_evidence_reference()
             ModelProposal(
                 record_type="Assertion",
                 stable_label="release_was_delayed",
-                record={"id": "ast_release_was_delayed"},
+                record=assertion_record(document),
                 evidence={
                     "selector_type": "exact_text",
                     "exact_text": "document text",
@@ -195,3 +191,73 @@ def test_propose_assertions_for_document_rejects_mismatched_evidence_reference()
 
     assert ledger.provenance_activities == {}
     assert ledger.proposed_changes == {}
+
+
+def test_propose_assertions_for_document_rejects_invalid_model_record() -> None:
+    document = document_fixture()
+    ledger = FakeLedgerRepository(documents={document.id: document})
+    archive = FakeArchiveStore({document.id: "document text"})
+    model_runtime = FakeModelRuntime(
+        (
+            ModelProposal(
+                record_type="Assertion",
+                stable_label="release_was_delayed",
+                record={"id": "ast_release_was_delayed"},
+                evidence=evidence_record(document),
+            ),
+        )
+    )
+
+    with pytest.raises(ValueError):
+        propose_assertions_for_document(
+            AssertionProposalInput(document_id=document.id, proposed_at=NOW),
+            archive,
+            ledger,
+            model_runtime,
+        )
+
+    assert ledger.provenance_activities == {}
+    assert ledger.proposed_changes == {}
+
+
+def document_fixture() -> Document:
+    return Document(
+        id="doc_article_a",
+        source_id="src_article_a",
+        raw_path="sources/raw/src_article_a.bin",
+        extracted_text_path="documents/extracted/doc_article_a.txt",
+        content_sha256=HASH,
+    )
+
+
+def assertion_record(document: Document) -> dict[str, JsonValue]:
+    return {
+        "id": "ast_release_was_delayed",
+        "assertion_type": "source_claim",
+        "subject_entity_id": "org_anthropic",
+        "predicate": "postponed_rollout",
+        "object_value": {"model": "Claude Fable 5"},
+        "status": "proposed",
+        "source_ids": [document.source_id],
+        "evidence_span_ids": ["evs_delay_evidence"],
+        "provenance_activity_ids": [],
+    }
+
+
+def evidence_span_record(document: Document) -> dict[str, JsonValue]:
+    return {
+        "id": "evs_delay_evidence",
+        "source_id": document.source_id,
+        "document_id": document.id,
+        "selector_type": "exact_text",
+        "exact_text": "document text",
+    }
+
+
+def evidence_record(document: Document) -> dict[str, JsonValue]:
+    return {
+        "selector_type": "exact_text",
+        "exact_text": "document text",
+        "source_id": document.source_id,
+        "document_id": document.id,
+    }

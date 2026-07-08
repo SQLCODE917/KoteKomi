@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 from dataclasses import dataclass
 from datetime import datetime
+from itertools import combinations
 from typing import Protocol, cast
 
 from kotekomi_domain import (
@@ -24,11 +25,16 @@ from kotekomi_application.ledger_graph_projection import (
     LedgerGraphRepository,
     project_ledger_graph,
 )
-from kotekomi_application.ports import GraphAnalyzer, GraphConnectionCandidate
+from kotekomi_application.ports import (
+    GraphAnalyzer,
+    GraphConnectionCandidate,
+    GraphEdge,
+    GraphProjection,
+)
 
 HASH_ID_LENGTH = 24
 GRAPH_CONNECTION_MINING_ACTIVITY = "graph_connection_mining"
-GRAPH_CONNECTION_MINING_AGENT = "networkx_graph_miner"
+GRAPH_CONNECTION_MINING_AGENT = "kotekomi_graph_miner"
 GRAPH_CONNECTION_PREDICATE = "shared_governance_outcome_with"
 GRAPH_CONNECTION_MINING_RULE = "outcome_organization_assertion_cooccurrence"
 
@@ -59,7 +65,7 @@ def mine_graph_connections(
 ) -> GraphConnectionMiningResult:
     projection = project_ledger_graph(ledger_repository, graph_analyzer)
     candidates = _eligible_candidates(
-        graph_analyzer.mine_connections(projection),
+        _mine_connection_candidates(projection),
         ledger_repository.list_relationships(),
     )
     assertion_by_id = {assertion.id: assertion for assertion in ledger_repository.list_assertions()}
@@ -176,6 +182,54 @@ def _eligible_candidates(
             candidate.object_organization_id,
         )
         not in existing_relationship_keys
+    )
+
+
+def _mine_connection_candidates(
+    projection: GraphProjection,
+) -> tuple[GraphConnectionCandidate, ...]:
+    node_type_by_id = {node.id: node.node_type for node in projection.nodes}
+    edges_by_source_id: dict[str, list[GraphEdge]] = {}
+    for edge in projection.edges:
+        edges_by_source_id.setdefault(edge.source_id, []).append(edge)
+
+    candidates: list[GraphConnectionCandidate] = []
+    outcome_ids = sorted(node.id for node in projection.nodes if node.node_type == "Outcome")
+    for outcome_id in outcome_ids:
+        outcome_edges = edges_by_source_id.get(outcome_id, [])
+        organization_ids = sorted(
+            edge.target_id
+            for edge in outcome_edges
+            if edge.edge_type == "outcome_organization"
+            and node_type_by_id.get(edge.target_id) == "Organization"
+        )
+        assertion_ids = sorted(
+            edge.target_id
+            for edge in outcome_edges
+            if edge.edge_type == "outcome_assertion"
+            and node_type_by_id.get(edge.target_id) == "Assertion"
+        )
+        if len(organization_ids) < 2 or len(assertion_ids) < 2:
+            continue
+        candidates.extend(
+            GraphConnectionCandidate(
+                subject_organization_id=subject_organization_id,
+                object_organization_id=object_organization_id,
+                outcome_id=outcome_id,
+                supporting_assertion_ids=tuple(assertion_ids),
+            )
+            for subject_organization_id, object_organization_id in combinations(organization_ids, 2)
+        )
+    return tuple(
+        sorted(
+            candidates,
+            key=lambda candidate: (
+                candidate.subject_organization_id,
+                candidate.object_organization_id,
+                candidate.outcome_id,
+                candidate.supporting_assertion_ids,
+            ),
+        )
     )
 
 

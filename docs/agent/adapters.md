@@ -18,6 +18,10 @@ Every Adapter maps external data into Application Layer DTOs or Domain Core obje
 
 Do not pass tool-native shapes across the Application Layer boundary.
 
+Adapters translate, validate, persist, and load records.
+
+Adapters do not decide Domain meaning, status transitions, review outcomes, or repair policy.
+
 Adapters parse inbound structured values through the declared Domain Core record or Application Layer DTO.
 
 Adapters serialize outbound structured values from the declared Domain Core record or Application Layer DTO.
@@ -27,6 +31,10 @@ Deterministic Adapter boundaries fail fast when external input violates the decl
 Adapters do not silently drop, repair, coerce, skip, or clean up invalid deterministic input.
 
 Adapters can recover from invalid model output only through explicit rejection, quarantine, validation errors, or reviewable ProposedChange records.
+
+Nontrivial Adapter mappings use named mapping functions.
+
+Adapter outbound structured values come from Domain Core records or Application Layer DTOs.
 
 ## MVP Adapters
 
@@ -49,6 +57,10 @@ Adapter tests verify external shape mapping.
 Adapter tests verify failure behavior at the tool boundary.
 
 Adapter tests must not weaken Domain Core rules.
+
+Adapter tests prove the Adapter satisfies the same Port contract as Application Layer fake Ports.
+
+Adapter tests prove deterministic invalid input fails fast.
 
 ## Add an Adapter
 

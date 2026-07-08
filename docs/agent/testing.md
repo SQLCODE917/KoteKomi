@@ -12,6 +12,14 @@ Fixtures must be internally coherent unless the fixture name identifies it as a 
 
 Treat repeated mocking as a coupling smell.
 
+Happy-path fixtures must be internally coherent.
+
+Negative fixtures must name the failure class.
+
+Negative fixture tests must assert the exact failure.
+
+Port contract tests use Application Layer fake Ports and Adapter tests for the same contract.
+
 ## Domain Core Tests
 
 Domain Core tests use data-in/data-out assertions.
@@ -32,6 +40,8 @@ Adapter tests do not weaken Domain Core rules.
 
 Adapter tests prove deterministic invalid input fails fast.
 
+Adapter tests prove the Adapter satisfies its Application Layer Port contract.
+
 ## Pipeline Tests
 
 Pipeline tests run against disposable Ledger and Archive fixtures.
@@ -43,6 +53,10 @@ Pipeline tests verify generated files when the Pipeline writes files.
 Pipeline tests verify ProvenanceActivity records.
 
 Pipeline tests that create accepted Ledger records verify cross-record references.
+
+Pipeline tests verify derived state can rebuild from the Ledger and Archive.
+
+Pipeline tests verify record-type dispatch fails on unsupported record types.
 
 ## Briefing Tests
 

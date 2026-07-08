@@ -10,6 +10,7 @@ from typing import Protocol
 from kotekomi_domain import Document, ProposedChange, ProvenanceActivity, ReviewStatus
 from kotekomi_domain.models import JsonValue
 
+from kotekomi_application.model_proposal_validation import validate_model_proposal
 from kotekomi_application.ports import ArchiveStore, ModelProposal, ModelRuntime
 
 HASH_ID_LENGTH = 24
@@ -57,6 +58,7 @@ def propose_assertions_for_document(
         model_name=model_runtime.model_name,
         prompt_id=model_runtime.prompt_id,
     )
+    proposals = tuple(validate_model_proposal(proposal) for proposal in proposals)
     for proposal in proposals:
         _validate_proposal_references(proposal, document)
     proposed_changes = tuple(

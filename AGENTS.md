@@ -107,6 +107,34 @@ Recovery must be visible as rejection, quarantine, a validation error, or a revi
 
 Do not convert invalid model output into accepted state.
 
+## Code Quality Rules
+
+Application Layer use cases own domain decisions, status transitions, and transaction intent.
+
+Adapters translate, validate, persist, and load records.
+
+Adapters do not decide Domain meaning, review outcomes, or repair policy.
+
+Public Application Layer use cases use explicit input and result DTOs.
+
+Each accepted Ledger state change creates or references a ProvenanceActivity.
+
+Required accepted-state invariants live in Domain Core validation or Application Layer reference validation.
+
+Record-type dispatch must cover every supported Domain Core record type explicitly or fail.
+
+Nontrivial boundary mappings use named mapping functions.
+
+The Ledger and Archive store canonical state.
+
+Graph projections, vector indexes, Briefings, and exports are derived state.
+
+Derived state must be rebuildable from the Ledger and Archive.
+
+Happy-path fixtures must be internally coherent.
+
+Malformed fixtures must be named as negative fixtures and assert the exact failure.
+
 ## Canonical Terms
 
 Use the canonical terms in `docs/agent/domain.md`.

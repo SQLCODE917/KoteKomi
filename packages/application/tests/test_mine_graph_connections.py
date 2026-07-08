@@ -124,21 +124,12 @@ class FakeMiningLedger:
 
 
 class FakeGraphAnalyzer(GraphAnalyzer):
-    def __init__(self, candidates: tuple[GraphConnectionCandidate, ...]) -> None:
-        self.candidates = candidates
-
     def project(
         self,
         nodes: tuple[GraphNode, ...],
         edges: tuple[GraphEdge, ...],
     ) -> GraphProjection:
         return GraphProjection(nodes=nodes, edges=edges)
-
-    def mine_connections(
-        self,
-        projection: GraphProjection,
-    ) -> tuple[GraphConnectionCandidate, ...]:
-        return self.candidates
 
 
 def test_mine_graph_connections_creates_pending_proposal_bundle() -> None:
@@ -148,7 +139,7 @@ def test_mine_graph_connections_creates_pending_proposal_bundle() -> None:
     result = mine_graph_connections(
         GraphConnectionMiningInput(mined_at=NOW),
         ledger,
-        FakeGraphAnalyzer((candidate,)),
+        FakeGraphAnalyzer(),
     )
 
     assert result.candidate_count == 1
@@ -182,7 +173,6 @@ def test_mine_graph_connections_creates_pending_proposal_bundle() -> None:
 
 
 def test_mine_graph_connections_skips_existing_accepted_relationship() -> None:
-    candidate = graph_candidate()
     ledger = FakeMiningLedger(
         relationships=(
             Relationship(
@@ -198,7 +188,7 @@ def test_mine_graph_connections_skips_existing_accepted_relationship() -> None:
     result = mine_graph_connections(
         GraphConnectionMiningInput(mined_at=NOW),
         ledger,
-        FakeGraphAnalyzer((candidate,)),
+        FakeGraphAnalyzer(),
     )
 
     assert result.candidate_count == 0
@@ -209,12 +199,11 @@ def test_mine_graph_connections_skips_existing_accepted_relationship() -> None:
 
 
 def test_mine_graph_connections_rerun_does_not_overwrite_existing_proposed_changes() -> None:
-    candidate = graph_candidate()
     ledger = FakeMiningLedger()
     first_result = mine_graph_connections(
         GraphConnectionMiningInput(mined_at=NOW),
         ledger,
-        FakeGraphAnalyzer((candidate,)),
+        FakeGraphAnalyzer(),
     )
     reviewed_record_id = first_result.proposed_change_ids[0]
     existing_change = ledger.proposed_changes[reviewed_record_id]
@@ -230,7 +219,7 @@ def test_mine_graph_connections_rerun_does_not_overwrite_existing_proposed_chang
     second_result = mine_graph_connections(
         GraphConnectionMiningInput(mined_at=NOW),
         ledger,
-        FakeGraphAnalyzer((candidate,)),
+        FakeGraphAnalyzer(),
     )
 
     assert second_result.candidate_count == 1
@@ -241,21 +230,20 @@ def test_mine_graph_connections_rerun_does_not_overwrite_existing_proposed_chang
 
 def test_mine_graph_connections_rejects_missing_supporting_assertion() -> None:
     ledger = FakeMiningLedger()
+    ledger.outcomes = (
+        Outcome(
+            id="out_monitoring_update",
+            description="Anthropic resumed access with additional notice commitments.",
+            organization_ids=("org_anthropic", "org_commerce_department"),
+            assertion_ids=("ast_delay", "ast_missing"),
+        ),
+    )
 
-    with pytest.raises(ValueError, match="references missing Assertion: ast_missing"):
+    with pytest.raises(ValueError, match="target_id=ast_missing"):
         mine_graph_connections(
             GraphConnectionMiningInput(mined_at=NOW),
             ledger,
-            FakeGraphAnalyzer(
-                (
-                    GraphConnectionCandidate(
-                        subject_organization_id="org_anthropic",
-                        object_organization_id="org_commerce_department",
-                        outcome_id="out_monitoring_update",
-                        supporting_assertion_ids=("ast_delay", "ast_missing"),
-                    ),
-                )
-            ),
+            FakeGraphAnalyzer(),
         )
 
     assert ledger.provenance_activities == {}

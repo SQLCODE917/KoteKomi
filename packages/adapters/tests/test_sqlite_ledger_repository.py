@@ -61,7 +61,7 @@ def test_repository_round_trips_all_domain_records(tmp_path: Path) -> None:
         assert repository.get_briefing(briefing.id) == briefing
 
 
-def test_repository_lists_and_deletes_records(tmp_path: Path) -> None:
+def test_repository_lists_records(tmp_path: Path) -> None:
     ledger_path = tmp_path / "kotekomi.db"
     SQLiteLedgerInitializer(ledger_path).initialize()
     actor = sample_domain_records()[1]
@@ -69,7 +69,3 @@ def test_repository_lists_and_deletes_records(tmp_path: Path) -> None:
     with sqlite_ledger_transaction(ledger_path) as repository:
         repository.save_actor(actor)
         assert repository.list_actors() == (actor,)
-        repository.delete_actor(actor.id)
-        repository.delete_actor(actor.id)
-        assert repository.get_actor(actor.id) is None
-        assert repository.list_actors() == ()

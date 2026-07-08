@@ -17,6 +17,10 @@ Pipelines compose Application Layer use cases.
 
 Pipelines write canonical state through the Application Layer.
 
+Pipelines open Ledger transactions around Application Layer use cases.
+
+Pipelines keep canonical state in the Ledger and Archive.
+
 ## Checks
 
 Run Pipeline fixture tests after each change.

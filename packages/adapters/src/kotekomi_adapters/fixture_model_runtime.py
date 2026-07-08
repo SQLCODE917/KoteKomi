@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import cast
 
 from kotekomi_application import ModelProposal
+from kotekomi_application.model_proposal_validation import validate_model_proposal
 from kotekomi_domain.models import JsonValue
 
 FIXTURE_MODEL_NAME = "fixture-extraction-runtime"
@@ -58,11 +59,13 @@ def _load_proposals(fixture_path: Path) -> tuple[ModelProposal, ...]:
         record = _json_object(proposal.get("record"), f"{context}.record")
         evidence = _json_object(proposal.get("evidence"), f"{context}.evidence")
         proposals.append(
-            ModelProposal(
-                record_type=record_type,
-                stable_label=stable_label,
-                record=record,
-                evidence=evidence,
+            validate_model_proposal(
+                ModelProposal(
+                    record_type=record_type,
+                    stable_label=stable_label,
+                    record=record,
+                    evidence=evidence,
+                )
             )
         )
     return tuple(proposals)

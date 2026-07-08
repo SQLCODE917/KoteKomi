@@ -73,6 +73,14 @@ The Application Layer depends on the Domain Core.
 
 The Application Layer does not depend on specific tools.
 
+The Application Layer owns domain decisions.
+
+The Application Layer owns status transitions.
+
+The Application Layer defines the atomic read, validate, write, and provenance unit for each use case.
+
+Public Application Layer use cases use explicit input and result DTOs.
+
 The Application Layer validates cross-record references before accepted Ledger writes.
 
 The Application Layer rejects accepted records that reference missing Ledger records.
@@ -86,6 +94,14 @@ Adapters validate external input.
 Adapters map tool-native shapes into Application Layer DTOs or Domain Core objects.
 
 Adapters do not pass tool-native shapes across the Application Layer boundary.
+
+Adapters do not decide Domain meaning.
+
+Adapters do not decide status transitions.
+
+Adapters do not decide review outcomes.
+
+Adapters do not repair invalid deterministic records.
 
 ## Boundary Validation
 
@@ -103,11 +119,21 @@ Deterministic project-owned boundaries do not drop, repair, coerce, skip, or cle
 
 Accepted Ledger writes validate both Domain Core record shape and cross-record references before commit.
 
+Required accepted-state invariants live in Domain Core validation or Application Layer reference validation.
+
 Model output is the only boundary that can use explicit recovery for invalid structured values.
 
 Model recovery must produce rejection, quarantine, a validation error, or a reviewable ProposedChange.
 
 Model recovery must not produce accepted state.
+
+## Mapping and Dispatch
+
+Nontrivial boundary mappings use named mapping functions.
+
+Outbound structured values come from Domain Core records or Application Layer DTOs.
+
+Record-type dispatch covers every supported Domain Core record type explicitly or fails.
 
 ## Pipeline Boundary
 
@@ -118,6 +144,16 @@ Pipelines expose user-visible commands.
 Pipelines write canonical state through the Application Layer.
 
 Pipelines write generated files into the Archive.
+
+Pipeline commands open Ledger transactions around Application Layer use cases.
+
+Pipeline commands do not split one use case's atomic write unit across multiple transactions.
+
+## Provenance
+
+Every accepted Ledger state change creates or references a ProvenanceActivity.
+
+Use cases record ProvenanceActivity IDs on accepted records that require provenance.
 
 ## Source of Truth
 

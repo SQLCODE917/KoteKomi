@@ -39,6 +39,7 @@ from kotekomi_application.ports import (
     LedgerRepository,
     ModelProposal,
     ModelRuntime,
+    StagedArchiveObject,
 )
 from kotekomi_application.proposed_change_review import (
     ReviewProposedChangeInput,
@@ -52,6 +53,7 @@ from kotekomi_application.source_file_ingest import (
     SourceFileIngestInput,
     SourceFileIngestResult,
     add_source_from_file,
+    cleanup_created_source_archive_objects,
 )
 
 __all__ = [
@@ -78,8 +80,10 @@ __all__ = [
     "ReviewProposedChangeResult",
     "SourceFileIngestInput",
     "SourceFileIngestResult",
+    "StagedArchiveObject",
     "add_source_from_file",
     "approve_proposed_change",
+    "cleanup_created_source_archive_objects",
     "deterministic_graph_edge_id",
     "deterministic_graph_mining_provenance_activity_id",
     "deterministic_mined_argument_edge_id",

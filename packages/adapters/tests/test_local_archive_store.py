@@ -39,6 +39,63 @@ def test_write_and_read_document_text(tmp_path: Path) -> None:
     assert store.read_document_text("doc_article_a") == text
 
 
+def test_stage_and_promote_raw_source(tmp_path: Path) -> None:
+    store = LocalArchiveStore(tmp_path)
+
+    staged = store.stage_raw_source("src_article_a", b"raw source bytes")
+
+    assert staged.final_object.relative_path == "sources/raw/src_article_a.bin"
+    assert staged.final_object.size_bytes == len(b"raw source bytes")
+    assert staged.staged_relative_path.startswith(".staging/sources/raw/")
+    assert (tmp_path / staged.staged_relative_path).is_file()
+    assert not (tmp_path / staged.final_object.relative_path).exists()
+
+    archive_object = store.promote_staged_object(staged)
+
+    assert archive_object == staged.final_object
+    assert not (tmp_path / staged.staged_relative_path).exists()
+    assert store.read_raw_source("src_article_a") == b"raw source bytes"
+
+
+def test_stage_and_promote_document_text(tmp_path: Path) -> None:
+    store = LocalArchiveStore(tmp_path)
+
+    staged = store.stage_document_text("doc_article_a", "extracted text")
+
+    assert staged.final_object.relative_path == "documents/extracted/doc_article_a.txt"
+    assert (tmp_path / staged.staged_relative_path).is_file()
+    assert not (tmp_path / staged.final_object.relative_path).exists()
+
+    archive_object = store.promote_staged_object(staged)
+
+    assert archive_object == staged.final_object
+    assert not (tmp_path / staged.staged_relative_path).exists()
+    assert store.read_document_text("doc_article_a") == "extracted text"
+
+
+def test_promote_staged_object_rejects_existing_final_object(tmp_path: Path) -> None:
+    store = LocalArchiveStore(tmp_path)
+    staged = store.stage_raw_source("src_article_a", b"raw source bytes")
+    store.write_raw_source("src_article_a", b"existing")
+
+    with pytest.raises(FileExistsError, match="sources/raw/src_article_a.bin"):
+        store.promote_staged_object(staged)
+
+    assert (tmp_path / staged.staged_relative_path).is_file()
+    assert store.read_raw_source("src_article_a") == b"existing"
+
+
+def test_delete_object_removes_archive_object_and_ignores_missing(tmp_path: Path) -> None:
+    store = LocalArchiveStore(tmp_path)
+    archive_object = store.write_raw_source("src_article_a", b"raw source bytes")
+
+    store.delete_object(archive_object.relative_path)
+    store.delete_object(archive_object.relative_path)
+
+    with pytest.raises(FileNotFoundError):
+        store.read_raw_source("src_article_a")
+
+
 def test_duplicate_raw_source_write_raises(tmp_path: Path) -> None:
     store = LocalArchiveStore(tmp_path)
     store.write_raw_source("src_article_a", b"raw source bytes")
@@ -71,3 +128,7 @@ def test_archive_ids_reject_path_characters(tmp_path: Path) -> None:
         store.write_raw_source("../src_escape", b"escape")
     with pytest.raises(ValueError, match="unsupported path characters"):
         store.write_document_text("doc/escape", "escape")
+    with pytest.raises(ValueError, match="unsupported path characters"):
+        store.stage_raw_source("../src_escape", b"escape")
+    with pytest.raises(ValueError, match="unsupported path characters"):
+        store.stage_document_text("doc/escape", "escape")

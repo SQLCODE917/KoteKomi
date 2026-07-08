@@ -24,6 +24,7 @@ from kotekomi_application import (
     SourceFileIngestInput,
     add_source_from_file,
     approve_proposed_change,
+    cleanup_created_source_archive_objects,
     edit_proposed_change,
     initialize_ledger,
     mine_graph_connections,
@@ -223,17 +224,27 @@ def add_source_file(config: PipelineConfig, source_file_path: Path) -> int:
     raw_bytes = source_file_path.read_bytes()
     archive_store = LocalArchiveStore(config.archive_path)
     archive_store.initialize()
-    with sqlite_ledger_transaction(config.ledger_path) as ledger_repository:
-        result = add_source_from_file(
-            SourceFileIngestInput(
-                local_file_path=str(source_file_path),
-                filename=source_file_path.name,
-                raw_bytes=raw_bytes,
-                ingested_at=datetime.now(UTC),
-            ),
-            archive_store,
-            ledger_repository,
-        )
+    result = None
+    try:
+        with sqlite_ledger_transaction(config.ledger_path) as ledger_repository:
+            result = add_source_from_file(
+                SourceFileIngestInput(
+                    local_file_path=str(source_file_path),
+                    filename=source_file_path.name,
+                    raw_bytes=raw_bytes,
+                    ingested_at=datetime.now(UTC),
+                ),
+                archive_store,
+                ledger_repository,
+            )
+    except Exception:
+        if result is not None and result.created:
+            cleanup_created_source_archive_objects(
+                archive_store=archive_store,
+                raw_path=result.raw_path,
+                extracted_text_path=result.extracted_text_path,
+            )
+        raise
     status = "created" if result.created else "already_exists"
     print(f"Source {status}: {result.source_id}")
     print(f"Document: {result.document_id}")

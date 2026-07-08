@@ -3,14 +3,16 @@
 from __future__ import annotations
 
 import re
+import uuid
 from pathlib import Path
 
-from kotekomi_application import ArchiveObject
+from kotekomi_application import ArchiveObject, StagedArchiveObject
 
 ARCHIVE_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
 RAW_SOURCE_DIR = Path("sources/raw")
 EXTRACTED_DOCUMENT_DIR = Path("documents/extracted")
 ATTACHMENTS_DIR = Path("attachments")
+STAGING_DIR = Path(".staging")
 
 
 class LocalArchiveStore:
@@ -39,6 +41,47 @@ class LocalArchiveStore:
     def read_document_text(self, document_id: str) -> str:
         relative_path = EXTRACTED_DOCUMENT_DIR / f"{_validate_archive_id(document_id)}.txt"
         return self._absolute_path(relative_path).read_text(encoding="utf-8")
+
+    def stage_raw_source(self, source_id: str, content: bytes) -> StagedArchiveObject:
+        final_relative_path = RAW_SOURCE_DIR / f"{_validate_archive_id(source_id)}.bin"
+        staged_relative_path = _staged_relative_path(final_relative_path)
+        self._write_bytes(staged_relative_path, self._absolute_path(staged_relative_path), content)
+        return StagedArchiveObject(
+            staged_relative_path=staged_relative_path.as_posix(),
+            final_object=ArchiveObject(
+                relative_path=final_relative_path.as_posix(),
+                size_bytes=len(content),
+            ),
+        )
+
+    def stage_document_text(self, document_id: str, text: str) -> StagedArchiveObject:
+        final_relative_path = EXTRACTED_DOCUMENT_DIR / f"{_validate_archive_id(document_id)}.txt"
+        staged_relative_path = _staged_relative_path(final_relative_path)
+        content = text.encode("utf-8")
+        self._write_bytes(staged_relative_path, self._absolute_path(staged_relative_path), content)
+        return StagedArchiveObject(
+            staged_relative_path=staged_relative_path.as_posix(),
+            final_object=ArchiveObject(
+                relative_path=final_relative_path.as_posix(),
+                size_bytes=len(content),
+            ),
+        )
+
+    def promote_staged_object(self, staged_object: StagedArchiveObject) -> ArchiveObject:
+        staged_path = self._absolute_path(Path(staged_object.staged_relative_path))
+        final_path = self._absolute_path(Path(staged_object.final_object.relative_path))
+        final_path.parent.mkdir(parents=True, exist_ok=True)
+        if final_path.exists():
+            raise FileExistsError(
+                f"Archive object already exists: {staged_object.final_object.relative_path}"
+            )
+        staged_path.rename(final_path)
+        return staged_object.final_object
+
+    def delete_object(self, relative_path: str) -> None:
+        absolute_path = self._absolute_path(Path(relative_path))
+        if absolute_path.exists():
+            absolute_path.unlink()
 
     def _write_bytes(
         self,
@@ -70,3 +113,9 @@ def _validate_archive_id(record_id: str) -> str:
     if not ARCHIVE_ID_PATTERN.fullmatch(record_id):
         raise ValueError(f"Archive id contains unsupported path characters: {record_id}")
     return record_id
+
+
+def _staged_relative_path(final_relative_path: Path) -> Path:
+    return (
+        STAGING_DIR / final_relative_path.parent / f"{final_relative_path.name}.{uuid.uuid4()}.tmp"
+    )

@@ -10,7 +10,7 @@ from typing import Protocol
 
 from kotekomi_domain import Document, ProvenanceActivity, Source, SourceType
 
-from kotekomi_application.ports import ArchiveStore
+from kotekomi_application.ports import ArchiveObject, ArchiveStore, StagedArchiveObject
 
 SUPPORTED_TEXT_SUFFIXES = frozenset({".md", ".txt"})
 HASH_ID_LENGTH = 24
@@ -89,39 +89,54 @@ def add_source_from_file(
         )
 
     extracted_text = ingest_input.raw_bytes.decode("utf-8")
-    raw_object = archive_store.write_raw_source(source_id, ingest_input.raw_bytes)
-    text_object = archive_store.write_document_text(document_id, extracted_text)
-
+    source_type = infer_source_type(extracted_text)
+    source_title = extract_source_title(ingest_input.filename, extracted_text)
+    published_at = parse_dateline_date(extracted_text)
     source = Source(
         id=source_id,
-        source_type=infer_source_type(extracted_text),
-        title=extract_source_title(ingest_input.filename, extracted_text),
+        source_type=source_type,
+        title=source_title,
         uri=ingest_input.local_file_path,
-        published_at=parse_dateline_date(extracted_text),
+        published_at=published_at,
         created_at=ingest_input.ingested_at,
         updated_at=ingest_input.ingested_at,
-    )
-    document = Document(
-        id=document_id,
-        source_id=source_id,
-        raw_path=raw_object.relative_path,
-        extracted_text_path=text_object.relative_path,
-        content_sha256=content_sha256,
-        created_at=ingest_input.ingested_at,
-        updated_at=ingest_input.ingested_at,
-    )
-    provenance_activity = ProvenanceActivity(
-        id=provenance_activity_id,
-        activity_type="source_file_ingest",
-        agent="kotekomi",
-        input_ids=(ingest_input.local_file_path,),
-        output_ids=(source_id, document_id),
-        occurred_at=ingest_input.ingested_at,
     )
 
-    ledger_repository.save_source(source)
-    ledger_repository.save_document(document)
-    ledger_repository.save_provenance_activity(provenance_activity)
+    staged_objects: list[StagedArchiveObject] = []
+    promoted_objects: list[ArchiveObject] = []
+    try:
+        staged_raw = archive_store.stage_raw_source(source_id, ingest_input.raw_bytes)
+        staged_objects.append(staged_raw)
+        staged_text = archive_store.stage_document_text(document_id, extracted_text)
+        staged_objects.append(staged_text)
+        document = Document(
+            id=document_id,
+            source_id=source_id,
+            raw_path=staged_raw.final_object.relative_path,
+            extracted_text_path=staged_text.final_object.relative_path,
+            content_sha256=content_sha256,
+            created_at=ingest_input.ingested_at,
+            updated_at=ingest_input.ingested_at,
+        )
+        raw_object = archive_store.promote_staged_object(staged_raw)
+        promoted_objects.append(raw_object)
+        text_object = archive_store.promote_staged_object(staged_text)
+        promoted_objects.append(text_object)
+        provenance_activity = ProvenanceActivity(
+            id=provenance_activity_id,
+            activity_type="source_file_ingest",
+            agent="kotekomi",
+            input_ids=(ingest_input.local_file_path,),
+            output_ids=(source_id, document_id),
+            occurred_at=ingest_input.ingested_at,
+        )
+
+        ledger_repository.save_source(source)
+        ledger_repository.save_document(document)
+        ledger_repository.save_provenance_activity(provenance_activity)
+    except Exception:
+        _cleanup_archive_objects(archive_store, promoted_objects, staged_objects)
+        raise
 
     return SourceFileIngestResult(
         source_id=source_id,
@@ -131,6 +146,27 @@ def add_source_from_file(
         extracted_text_path=text_object.relative_path,
         created=True,
     )
+
+
+def cleanup_created_source_archive_objects(
+    *,
+    archive_store: ArchiveStore,
+    raw_path: str,
+    extracted_text_path: str,
+) -> None:
+    archive_store.delete_object(raw_path)
+    archive_store.delete_object(extracted_text_path)
+
+
+def _cleanup_archive_objects(
+    archive_store: ArchiveStore,
+    promoted_objects: list[ArchiveObject],
+    staged_objects: list[StagedArchiveObject],
+) -> None:
+    for archive_object in reversed(promoted_objects):
+        archive_store.delete_object(archive_object.relative_path)
+    for staged_object in reversed(staged_objects):
+        archive_store.delete_object(staged_object.staged_relative_path)
 
 
 def extract_source_title(filename: str, extracted_text: str) -> str:
@@ -156,18 +192,18 @@ def parse_dateline_date(extracted_text: str) -> datetime | None:
         _, _, dateline = line.partition(": ")
         _, separator, date_text = dateline.partition(", ")
         if not separator:
-            return None
+            raise ValueError("Dateline must include a location followed by a comma.")
         parts = date_text.split()
         if len(parts) != 3:
-            return None
+            raise ValueError("Dateline date must use 'Month D, YYYY' format.")
         month_name, day_text, year_text = parts
         month = MONTHS.get(month_name)
         if month is None:
-            return None
+            raise ValueError(f"Dateline month is not recognized: {month_name}")
         try:
             day = int(day_text.rstrip(","))
             year = int(year_text)
-        except ValueError:
-            return None
+        except ValueError as exc:
+            raise ValueError("Dateline day and year must be numeric.") from exc
         return datetime(year, month, day, tzinfo=UTC)
     return None

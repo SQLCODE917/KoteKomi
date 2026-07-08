@@ -18,6 +18,12 @@ The Application Layer depends on the Domain Core.
 
 The Application Layer does not depend on specific tools.
 
+Use cases own domain decisions, status transitions, and transaction intent.
+
+Public use cases use explicit input and result DTOs.
+
+Accepted Ledger writes validate Domain Core shape and cross-record references.
+
 ## Checks
 
 Run Application Layer tests after each change.

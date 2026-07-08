@@ -211,12 +211,6 @@ class SQLiteLedgerRepository:
         ).fetchall()
         return tuple(spec.model_type.model_validate_json(str(row[0])) for row in rows)
 
-    def _delete(self, spec: RecordSpec[DomainRecord], record_id: str) -> None:
-        self._connection.execute(
-            f"DELETE FROM {spec.table_name} WHERE id = ?",
-            (record_id,),
-        )
-
     def save_entity(self, record: Entity) -> None:
         self._save(ENTITY_SPEC, record)
 
@@ -225,9 +219,6 @@ class SQLiteLedgerRepository:
 
     def list_entities(self) -> tuple[Entity, ...]:
         return self._list(ENTITY_SPEC)
-
-    def delete_entity(self, record_id: str) -> None:
-        self._delete(ENTITY_SPEC, record_id)
 
     def save_actor(self, record: Actor) -> None:
         self._save(ACTOR_SPEC, record)
@@ -238,9 +229,6 @@ class SQLiteLedgerRepository:
     def list_actors(self) -> tuple[Actor, ...]:
         return self._list(ACTOR_SPEC)
 
-    def delete_actor(self, record_id: str) -> None:
-        self._delete(ACTOR_SPEC, record_id)
-
     def save_organization(self, record: Organization) -> None:
         self._save(ORGANIZATION_SPEC, record)
 
@@ -249,9 +237,6 @@ class SQLiteLedgerRepository:
 
     def list_organizations(self) -> tuple[Organization, ...]:
         return self._list(ORGANIZATION_SPEC)
-
-    def delete_organization(self, record_id: str) -> None:
-        self._delete(ORGANIZATION_SPEC, record_id)
 
     def save_place(self, record: Place) -> None:
         self._save(PLACE_SPEC, record)
@@ -262,9 +247,6 @@ class SQLiteLedgerRepository:
     def list_places(self) -> tuple[Place, ...]:
         return self._list(PLACE_SPEC)
 
-    def delete_place(self, record_id: str) -> None:
-        self._delete(PLACE_SPEC, record_id)
-
     def save_event(self, record: Event) -> None:
         self._save(EVENT_SPEC, record)
 
@@ -273,9 +255,6 @@ class SQLiteLedgerRepository:
 
     def list_events(self) -> tuple[Event, ...]:
         return self._list(EVENT_SPEC)
-
-    def delete_event(self, record_id: str) -> None:
-        self._delete(EVENT_SPEC, record_id)
 
     def save_source(self, record: Source) -> None:
         self._save(SOURCE_SPEC, record)
@@ -286,9 +265,6 @@ class SQLiteLedgerRepository:
     def list_sources(self) -> tuple[Source, ...]:
         return self._list(SOURCE_SPEC)
 
-    def delete_source(self, record_id: str) -> None:
-        self._delete(SOURCE_SPEC, record_id)
-
     def save_document(self, record: Document) -> None:
         self._save(DOCUMENT_SPEC, record)
 
@@ -297,9 +273,6 @@ class SQLiteLedgerRepository:
 
     def list_documents(self) -> tuple[Document, ...]:
         return self._list(DOCUMENT_SPEC)
-
-    def delete_document(self, record_id: str) -> None:
-        self._delete(DOCUMENT_SPEC, record_id)
 
     def save_evidence_span(self, record: EvidenceSpan) -> None:
         self._save(EVIDENCE_SPAN_SPEC, record)
@@ -310,9 +283,6 @@ class SQLiteLedgerRepository:
     def list_evidence_spans(self) -> tuple[EvidenceSpan, ...]:
         return self._list(EVIDENCE_SPAN_SPEC)
 
-    def delete_evidence_span(self, record_id: str) -> None:
-        self._delete(EVIDENCE_SPAN_SPEC, record_id)
-
     def save_assertion(self, record: Assertion) -> None:
         self._save(ASSERTION_SPEC, record)
 
@@ -321,9 +291,6 @@ class SQLiteLedgerRepository:
 
     def list_assertions(self) -> tuple[Assertion, ...]:
         return self._list(ASSERTION_SPEC)
-
-    def delete_assertion(self, record_id: str) -> None:
-        self._delete(ASSERTION_SPEC, record_id)
 
     def save_relationship(self, record: Relationship) -> None:
         self._save(RELATIONSHIP_SPEC, record)
@@ -334,9 +301,6 @@ class SQLiteLedgerRepository:
     def list_relationships(self) -> tuple[Relationship, ...]:
         return self._list(RELATIONSHIP_SPEC)
 
-    def delete_relationship(self, record_id: str) -> None:
-        self._delete(RELATIONSHIP_SPEC, record_id)
-
     def save_outcome(self, record: Outcome) -> None:
         self._save(OUTCOME_SPEC, record)
 
@@ -345,9 +309,6 @@ class SQLiteLedgerRepository:
 
     def list_outcomes(self) -> tuple[Outcome, ...]:
         return self._list(OUTCOME_SPEC)
-
-    def delete_outcome(self, record_id: str) -> None:
-        self._delete(OUTCOME_SPEC, record_id)
 
     def save_argument_edge(self, record: ArgumentEdge) -> None:
         self._save(ARGUMENT_EDGE_SPEC, record)
@@ -358,9 +319,6 @@ class SQLiteLedgerRepository:
     def list_argument_edges(self) -> tuple[ArgumentEdge, ...]:
         return self._list(ARGUMENT_EDGE_SPEC)
 
-    def delete_argument_edge(self, record_id: str) -> None:
-        self._delete(ARGUMENT_EDGE_SPEC, record_id)
-
     def save_provenance_activity(self, record: ProvenanceActivity) -> None:
         self._save(PROVENANCE_ACTIVITY_SPEC, record)
 
@@ -369,9 +327,6 @@ class SQLiteLedgerRepository:
 
     def list_provenance_activities(self) -> tuple[ProvenanceActivity, ...]:
         return self._list(PROVENANCE_ACTIVITY_SPEC)
-
-    def delete_provenance_activity(self, record_id: str) -> None:
-        self._delete(PROVENANCE_ACTIVITY_SPEC, record_id)
 
     def save_proposed_change(self, record: ProposedChange) -> None:
         self._save(PROPOSED_CHANGE_SPEC, record)
@@ -382,9 +337,6 @@ class SQLiteLedgerRepository:
     def list_proposed_changes(self) -> tuple[ProposedChange, ...]:
         return self._list(PROPOSED_CHANGE_SPEC)
 
-    def delete_proposed_change(self, record_id: str) -> None:
-        self._delete(PROPOSED_CHANGE_SPEC, record_id)
-
     def save_briefing(self, record: Briefing) -> None:
         self._save(BRIEFING_SPEC, record)
 
@@ -393,9 +345,6 @@ class SQLiteLedgerRepository:
 
     def list_briefings(self) -> tuple[Briefing, ...]:
         return self._list(BRIEFING_SPEC)
-
-    def delete_briefing(self, record_id: str) -> None:
-        self._delete(BRIEFING_SPEC, record_id)
 
 
 def _optional_text(value: object) -> str | None:

@@ -16,6 +16,10 @@ Adapters map tool-native shapes into Application Layer DTOs or Domain Core objec
 
 Adapters validate external input before passing it inward.
 
+Adapters translate, persist, and load records.
+
+Adapters do not decide Domain meaning, status transitions, review outcomes, or repair policy.
+
 ## Checks
 
 Run Adapter tests with fixtures.
