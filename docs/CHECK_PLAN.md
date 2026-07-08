@@ -28,6 +28,8 @@
 - run Assertion proposal Application test with `uv run pytest packages/application/tests/test_propose_assertions_for_document.py`
 - run Assertion proposal Adapter fixture with `uv run pytest packages/adapters/tests/test_fixture_model_runtime.py`
 - run Assertion proposal Pipeline fixture with `uv run pytest packages/pipelines/tests/test_source_propose_assertions.py`
+- run ProposedChange review Application test with `uv run pytest packages/application/tests/test_review_proposed_change.py`
+- run ProposedChange review Pipeline fixture with `uv run pytest packages/pipelines/tests/test_review_proposed_change.py`
 - run Briefing generation fixture
 
 ## 6. Documentation checks

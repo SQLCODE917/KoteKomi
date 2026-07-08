@@ -15,10 +15,13 @@ from kotekomi_adapters import (
 )
 from kotekomi_application import (
     AssertionProposalInput,
+    ReviewProposedChangeInput,
     SourceFileIngestInput,
     add_source_from_file,
+    approve_proposed_change,
     initialize_ledger,
     propose_assertions_for_document,
+    reject_proposed_change,
 )
 
 from kotekomi_pipelines.config import PipelineConfig, load_config
@@ -54,6 +57,31 @@ def main(argv: list[str] | None = None) -> int:
             config=config,
             document_id=args.document_id,
             model_output_fixture_path=args.model_output_fixture,
+        )
+
+    if args.command == "review" and args.review_command == "approve":
+        config = load_config(
+            config_path=args.config,
+            ledger_path_override=args.ledger_path,
+            archive_path_override=None,
+        )
+        return approve_reviewed_proposed_change(
+            config=config,
+            proposed_change_id=args.proposed_change_id,
+            reviewer=args.reviewer,
+        )
+
+    if args.command == "review" and args.review_command == "reject":
+        config = load_config(
+            config_path=args.config,
+            ledger_path_override=args.ledger_path,
+            archive_path_override=None,
+        )
+        return reject_reviewed_proposed_change(
+            config=config,
+            proposed_change_id=args.proposed_change_id,
+            reviewer=args.reviewer,
+            reason=args.reason,
         )
 
     parser.print_help()
@@ -98,6 +126,24 @@ def build_parser() -> argparse.ArgumentParser:
     propose_assertions_parser.add_argument("--model-output-fixture", type=Path, required=True)
     propose_assertions_parser.add_argument("--ledger-path", type=Path, default=None)
     propose_assertions_parser.add_argument("--archive-path", type=Path, default=None)
+
+    review_parser = subparsers.add_parser("review", help="ProposedChange review commands.")
+    review_subparsers = review_parser.add_subparsers(dest="review_command")
+    approve_parser = review_subparsers.add_parser(
+        "approve",
+        help="Approve one pending ProposedChange.",
+    )
+    approve_parser.add_argument("--proposed-change-id", required=True)
+    approve_parser.add_argument("--reviewer", required=True)
+    approve_parser.add_argument("--ledger-path", type=Path, default=None)
+    reject_parser = review_subparsers.add_parser(
+        "reject",
+        help="Reject one pending ProposedChange.",
+    )
+    reject_parser.add_argument("--proposed-change-id", required=True)
+    reject_parser.add_argument("--reviewer", required=True)
+    reject_parser.add_argument("--reason", required=True)
+    reject_parser.add_argument("--ledger-path", type=Path, default=None)
 
     return parser
 
@@ -164,6 +210,54 @@ def propose_source_assertions(
     print(f"ProposedChanges: {len(result.proposed_change_ids)}")
     for proposed_change_id in result.proposed_change_ids:
         print(f"ProposedChange: {proposed_change_id}")
+    return 0
+
+
+def approve_reviewed_proposed_change(
+    *,
+    config: PipelineConfig,
+    proposed_change_id: str,
+    reviewer: str,
+) -> int:
+    with sqlite_ledger_transaction(config.ledger_path) as ledger_repository:
+        result = approve_proposed_change(
+            ReviewProposedChangeInput(
+                proposed_change_id=proposed_change_id,
+                reviewer=reviewer,
+                reviewed_at=datetime.now(UTC),
+            ),
+            ledger_repository,
+        )
+
+    print(f"ProposedChange: {result.proposed_change_id}")
+    print(f"Review status: {result.review_status}")
+    print(f"ProvenanceActivity: {result.provenance_activity_id}")
+    print(f"Accepted record type: {result.accepted_record_type}")
+    print(f"Accepted record: {result.accepted_record_id}")
+    return 0
+
+
+def reject_reviewed_proposed_change(
+    *,
+    config: PipelineConfig,
+    proposed_change_id: str,
+    reviewer: str,
+    reason: str,
+) -> int:
+    with sqlite_ledger_transaction(config.ledger_path) as ledger_repository:
+        result = reject_proposed_change(
+            ReviewProposedChangeInput(
+                proposed_change_id=proposed_change_id,
+                reviewer=reviewer,
+                reviewed_at=datetime.now(UTC),
+                reason=reason,
+            ),
+            ledger_repository,
+        )
+
+    print(f"ProposedChange: {result.proposed_change_id}")
+    print(f"Review status: {result.review_status}")
+    print(f"ProvenanceActivity: {result.provenance_activity_id}")
     return 0
 
 
