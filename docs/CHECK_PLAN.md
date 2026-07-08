@@ -24,7 +24,7 @@
 
 ## 5. Pipeline checks
 - run URL ingest fixture
-- run local file ingest fixture
+- run local file ingest fixture with `uv run pytest packages/pipelines/tests/test_source_add_file.py`
 - run Assertion proposal fixture
 - run Briefing generation fixture
 

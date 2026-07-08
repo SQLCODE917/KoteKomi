@@ -8,6 +8,11 @@ from kotekomi_application.ports import (
     LedgerInitResult,
     LedgerRepository,
 )
+from kotekomi_application.source_file_ingest import (
+    SourceFileIngestInput,
+    SourceFileIngestResult,
+    add_source_from_file,
+)
 
 __all__ = [
     "ArchiveObject",
@@ -15,5 +20,8 @@ __all__ = [
     "LedgerInitializer",
     "LedgerInitResult",
     "LedgerRepository",
+    "SourceFileIngestInput",
+    "SourceFileIngestResult",
+    "add_source_from_file",
     "initialize_ledger",
 ]
