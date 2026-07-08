@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "Local-first intelligence ledger and Briefing generator."
 requires-python = ">=3.12,<3.13"
 dependencies = [
-  "kotekomi-domain",
+  "kotekomi-pipelines",
 ]
 
 [dependency-groups]
@@ -19,15 +19,33 @@ dev = [
 package = false
 
 [tool.uv.sources]
+kotekomi-application = { workspace = true }
+kotekomi-adapters = { workspace = true }
 kotekomi-domain = { workspace = true }
+kotekomi-pipelines = { workspace = true }
 
 [tool.uv.workspace]
-members = ["packages/domain"]
+members = [
+  "packages/adapters",
+  "packages/application",
+  "packages/domain",
+  "packages/pipelines",
+]
 
 [tool.pytest.ini_options]
-addopts = "-q"
-testpaths = ["packages/domain/tests"]
-pythonpath = ["packages/domain/src"]
+addopts = "-q --import-mode=importlib"
+testpaths = [
+  "packages/adapters/tests",
+  "packages/application/tests",
+  "packages/domain/tests",
+  "packages/pipelines/tests",
+]
+pythonpath = [
+  "packages/adapters/src",
+  "packages/application/src",
+  "packages/domain/src",
+  "packages/pipelines/src",
+]
 
 [tool.ruff]
 line-length = 100
@@ -39,7 +57,22 @@ select = ["E", "F", "I", "UP", "B"]
 [tool.pyright]
 pythonVersion = "3.12"
 typeCheckingMode = "strict"
-include = ["packages/domain/src", "packages/domain/tests", "scripts"]
+include = [
+  "packages/adapters/src",
+  "packages/adapters/tests",
+  "packages/application/src",
+  "packages/application/tests",
+  "packages/domain/src",
+  "packages/domain/tests",
+  "packages/pipelines/src",
+  "packages/pipelines/tests",
+  "scripts",
+]
 executionEnvironments = [
-  { root = ".", extraPaths = ["packages/domain/src"] },
+  { root = ".", extraPaths = [
+    "packages/adapters/src",
+    "packages/application/src",
+    "packages/domain/src",
+    "packages/pipelines/src",
+  ] },
 ]

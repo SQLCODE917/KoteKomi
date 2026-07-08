@@ -1,0 +1,23 @@
+[project]
+name = "kotekomi-pipelines"
+version = "0.1.0"
+description = "KoteKomi Pipelines."
+requires-python = ">=3.12,<3.13"
+dependencies = [
+  "kotekomi-adapters",
+  "kotekomi-application",
+]
+
+[project.scripts]
+kotekomi = "kotekomi_pipelines.cli:entrypoint"
+
+[tool.uv.sources]
+kotekomi-adapters = { workspace = true }
+kotekomi-application = { workspace = true }
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/kotekomi_pipelines"]

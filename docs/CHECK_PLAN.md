@@ -12,9 +12,12 @@
 - validate sample ProposedChanges against JSON schema with `packages/domain/tests/test_schema_generation.py`
 
 ## 3. Ledger checks
-- run migrations on empty SQLite database
-- run migrations on fixture database
-- run repository tests
+- run `uv run pytest packages/application/tests`
+- run `uv run pytest packages/adapters/tests`
+- run `uv run pytest packages/pipelines/tests`
+- run migrations on empty SQLite database with `packages/adapters/tests/test_sqlite_ledger_migrations.py`
+- run migrations on fixture database with `packages/adapters/tests/test_sqlite_ledger_migrations.py`
+- run repository tests with `packages/adapters/tests/test_sqlite_ledger_repository.py`
 
 ## 4. Pipeline checks
 - run URL ingest fixture
