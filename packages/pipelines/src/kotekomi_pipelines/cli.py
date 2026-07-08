@@ -12,6 +12,7 @@ from typing import cast
 from kotekomi_adapters import (
     FixtureModelRuntime,
     LocalArchiveStore,
+    NetworkXGraphAnalyzer,
     SQLiteLedgerInitializer,
     sqlite_ledger_transaction,
 )
@@ -24,6 +25,7 @@ from kotekomi_application import (
     approve_proposed_change,
     edit_proposed_change,
     initialize_ledger,
+    project_ledger_graph,
     propose_assertions_for_document,
     reject_proposed_change,
 )
@@ -101,6 +103,14 @@ def main(argv: list[str] | None = None) -> int:
             accepted_record_json_path=args.accepted_record_json,
         )
 
+    if args.command == "graph" and args.graph_command == "project":
+        config = load_config(
+            config_path=args.config,
+            ledger_path_override=args.ledger_path,
+            archive_path_override=None,
+        )
+        return project_graph(config=config)
+
     parser.print_help()
     return 2
 
@@ -169,6 +179,14 @@ def build_parser() -> argparse.ArgumentParser:
     edit_parser.add_argument("--reviewer", required=True)
     edit_parser.add_argument("--accepted-record-json", type=Path, required=True)
     edit_parser.add_argument("--ledger-path", type=Path, default=None)
+
+    graph_parser = subparsers.add_parser("graph", help="Graph projection commands.")
+    graph_subparsers = graph_parser.add_subparsers(dest="graph_command")
+    project_parser = graph_subparsers.add_parser(
+        "project",
+        help="Project accepted Ledger records into a graph.",
+    )
+    project_parser.add_argument("--ledger-path", type=Path, default=None)
 
     return parser
 
@@ -334,6 +352,16 @@ def _json_value(value: object, context: str) -> JsonValue:
             result[key] = _json_value(item, f"{context}.{key}")
         return result
     raise ValueError(f"{context} contains a non-JSON value.")
+
+
+def project_graph(*, config: PipelineConfig) -> int:
+    graph_analyzer = NetworkXGraphAnalyzer()
+    with sqlite_ledger_transaction(config.ledger_path) as ledger_repository:
+        projection = project_ledger_graph(ledger_repository, graph_analyzer)
+
+    print(f"Graph nodes: {len(projection.nodes)}")
+    print(f"Graph edges: {len(projection.edges)}")
+    return 0
 
 
 if __name__ == "__main__":

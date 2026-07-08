@@ -74,6 +74,37 @@ class ModelRuntime(Protocol):
     ) -> tuple[ModelProposal, ...]: ...
 
 
+@dataclass(frozen=True)
+class GraphNode:
+    id: str
+    node_type: str
+    label: str
+
+
+@dataclass(frozen=True)
+class GraphEdge:
+    id: str
+    source_id: str
+    target_id: str
+    edge_type: str
+    label: str
+    source_record_id: str
+
+
+@dataclass(frozen=True)
+class GraphProjection:
+    nodes: tuple[GraphNode, ...]
+    edges: tuple[GraphEdge, ...]
+
+
+class GraphAnalyzer(Protocol):
+    def project(
+        self,
+        nodes: tuple[GraphNode, ...],
+        edges: tuple[GraphEdge, ...],
+    ) -> GraphProjection: ...
+
+
 class LedgerRepository(Protocol):
     def save_entity(self, record: Entity) -> None: ...
     def get_entity(self, record_id: str) -> Entity | None: ...

@@ -30,6 +30,9 @@
 - run Assertion proposal Pipeline fixture with `uv run pytest packages/pipelines/tests/test_source_propose_assertions.py`
 - run ProposedChange review Application test with `uv run pytest packages/application/tests/test_review_proposed_change.py`
 - run ProposedChange review Pipeline fixture with `uv run pytest packages/pipelines/tests/test_review_proposed_change.py`
+- run graph projection Application test with `uv run pytest packages/application/tests/test_project_ledger_graph.py`
+- run graph projection Adapter test with `uv run pytest packages/adapters/tests/test_networkx_graph_analyzer.py`
+- run graph projection Pipeline fixture with `uv run pytest packages/pipelines/tests/test_graph_project.py`
 - run Briefing generation fixture
 
 ## 6. Documentation checks

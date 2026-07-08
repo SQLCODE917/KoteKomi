@@ -6,6 +6,7 @@ requires-python = ">=3.12,<3.13"
 dependencies = [
   "kotekomi-application",
   "kotekomi-domain",
+  "networkx>=3.4,<4",
 ]
 
 [tool.uv.sources]
