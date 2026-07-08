@@ -33,6 +33,8 @@
 - run graph projection Application test with `uv run pytest packages/application/tests/test_project_ledger_graph.py`
 - run graph projection Adapter test with `uv run pytest packages/adapters/tests/test_networkx_graph_analyzer.py`
 - run graph projection Pipeline fixture with `uv run pytest packages/pipelines/tests/test_graph_project.py`
+- run graph mining Application test with `uv run pytest packages/application/tests/test_mine_graph_connections.py`
+- run graph mining Pipeline fixture with `uv run pytest packages/pipelines/tests/test_graph_mine.py`
 - run Briefing generation fixture
 
 ## 6. Documentation checks

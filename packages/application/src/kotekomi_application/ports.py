@@ -97,12 +97,25 @@ class GraphProjection:
     edges: tuple[GraphEdge, ...]
 
 
+@dataclass(frozen=True)
+class GraphConnectionCandidate:
+    subject_organization_id: str
+    object_organization_id: str
+    outcome_id: str
+    supporting_assertion_ids: tuple[str, ...]
+
+
 class GraphAnalyzer(Protocol):
     def project(
         self,
         nodes: tuple[GraphNode, ...],
         edges: tuple[GraphEdge, ...],
     ) -> GraphProjection: ...
+
+    def mine_connections(
+        self,
+        projection: GraphProjection,
+    ) -> tuple[GraphConnectionCandidate, ...]: ...
 
 
 class LedgerRepository(Protocol):

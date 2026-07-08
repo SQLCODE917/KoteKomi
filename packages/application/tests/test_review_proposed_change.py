@@ -10,6 +10,7 @@ from kotekomi_application import (
 )
 from kotekomi_domain import (
     Actor,
+    ArgumentEdge,
     Assertion,
     AssertionStatus,
     Event,
@@ -37,6 +38,7 @@ class FakeReviewLedger:
         self.assertions: dict[str, Assertion] = {}
         self.relationships: dict[str, Relationship] = {}
         self.outcomes: dict[str, Outcome] = {}
+        self.argument_edges: dict[str, ArgumentEdge] = {}
 
     def get_proposed_change(self, record_id: str) -> ProposedChange | None:
         return self.proposed_changes.get(record_id)
@@ -88,6 +90,12 @@ class FakeReviewLedger:
 
     def save_outcome(self, record: Outcome) -> None:
         self.outcomes[record.id] = record
+
+    def get_argument_edge(self, record_id: str) -> ArgumentEdge | None:
+        return self.argument_edges.get(record_id)
+
+    def save_argument_edge(self, record: ArgumentEdge) -> None:
+        self.argument_edges[record.id] = record
 
 
 def proposed_change(
@@ -206,6 +214,21 @@ def review_input(proposed_change_id: str) -> ReviewProposedChangeInput:
             },
             "outcomes",
             "out_access_restored",
+        ),
+        (
+            "pcg_argument_edge",
+            "ArgumentEdge",
+            {
+                "id": "arg_delay_infers_shared_outcome",
+                "from_assertion_id": "ast_delay",
+                "to_assertion_id": "ast_shared_outcome",
+                "relation": "infers",
+                "rationale": "The accepted Assertion supports the analytic inference.",
+                "evidence_span_ids": ["evs_delay"],
+                "confidence": 0.7,
+            },
+            "argument_edges",
+            "arg_delay_infers_shared_outcome",
         ),
     ),
 )

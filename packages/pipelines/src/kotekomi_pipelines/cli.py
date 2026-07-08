@@ -18,6 +18,7 @@ from kotekomi_adapters import (
 )
 from kotekomi_application import (
     AssertionProposalInput,
+    GraphConnectionMiningInput,
     JsonValue,
     ReviewProposedChangeInput,
     SourceFileIngestInput,
@@ -25,6 +26,7 @@ from kotekomi_application import (
     approve_proposed_change,
     edit_proposed_change,
     initialize_ledger,
+    mine_graph_connections,
     project_ledger_graph,
     propose_assertions_for_document,
     reject_proposed_change,
@@ -111,6 +113,14 @@ def main(argv: list[str] | None = None) -> int:
         )
         return project_graph(config=config)
 
+    if args.command == "graph" and args.graph_command == "mine":
+        config = load_config(
+            config_path=args.config,
+            ledger_path_override=args.ledger_path,
+            archive_path_override=None,
+        )
+        return mine_graph(config=config)
+
     parser.print_help()
     return 2
 
@@ -187,6 +197,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Project accepted Ledger records into a graph.",
     )
     project_parser.add_argument("--ledger-path", type=Path, default=None)
+    mine_parser = graph_subparsers.add_parser(
+        "mine",
+        help="Mine graph connections into pending ProposedChange records.",
+    )
+    mine_parser.add_argument("--ledger-path", type=Path, default=None)
 
     return parser
 
@@ -361,6 +376,26 @@ def project_graph(*, config: PipelineConfig) -> int:
 
     print(f"Graph nodes: {len(projection.nodes)}")
     print(f"Graph edges: {len(projection.edges)}")
+    return 0
+
+
+def mine_graph(*, config: PipelineConfig) -> int:
+    graph_analyzer = NetworkXGraphAnalyzer()
+    with sqlite_ledger_transaction(config.ledger_path) as ledger_repository:
+        result = mine_graph_connections(
+            GraphConnectionMiningInput(mined_at=datetime.now(UTC)),
+            ledger_repository,
+            graph_analyzer,
+        )
+
+    print(f"Candidates: {result.candidate_count}")
+    print(f"ProposedChanges: {len(result.proposed_change_ids)}")
+    if result.provenance_activity_id is None:
+        print("ProvenanceActivity: none")
+    else:
+        print(f"ProvenanceActivity: {result.provenance_activity_id}")
+    for proposed_change_id in result.proposed_change_ids:
+        print(f"ProposedChange: {proposed_change_id}")
     return 0
 
 

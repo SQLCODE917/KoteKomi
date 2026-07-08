@@ -2,6 +2,7 @@ from datetime import UTC, datetime
 
 from kotekomi_application import (
     GraphAnalyzer,
+    GraphConnectionCandidate,
     GraphEdge,
     GraphNode,
     GraphProjection,
@@ -186,6 +187,13 @@ class FakeGraphAnalyzer(GraphAnalyzer):
     ) -> GraphProjection:
         self.calls.append((nodes, edges))
         return GraphProjection(nodes=nodes, edges=edges)
+
+    def mine_connections(
+        self,
+        projection: GraphProjection,
+    ) -> tuple[GraphConnectionCandidate, ...]:
+        del projection
+        return ()
 
 
 def test_project_ledger_graph_builds_nodes_and_edges_from_accepted_records() -> None:

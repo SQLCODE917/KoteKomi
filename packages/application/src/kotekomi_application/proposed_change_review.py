@@ -10,6 +10,7 @@ from typing import Protocol, cast
 
 from kotekomi_domain import (
     Actor,
+    ArgumentEdge,
     Assertion,
     AssertionStatus,
     Event,
@@ -28,7 +29,7 @@ APPROVED_ACTIVITY_TYPE = "proposed_change_approved"
 REJECTED_ACTIVITY_TYPE = "proposed_change_rejected"
 EDITED_ACTIVITY_TYPE = "proposed_change_edited"
 type AcceptedReviewRecord = (
-    Actor | Organization | Event | EvidenceSpan | Assertion | Relationship | Outcome
+    Actor | Organization | Event | EvidenceSpan | Assertion | Relationship | Outcome | ArgumentEdge
 )
 
 
@@ -57,6 +58,9 @@ class ProposedChangeReviewLedger(Protocol):
 
     def get_outcome(self, record_id: str) -> Outcome | None: ...
     def save_outcome(self, record: Outcome) -> None: ...
+
+    def get_argument_edge(self, record_id: str) -> ArgumentEdge | None: ...
+    def save_argument_edge(self, record: ArgumentEdge) -> None: ...
 
 
 @dataclass(frozen=True)
@@ -274,6 +278,8 @@ def _accepted_record_from_json(
         return Relationship.model_validate_json(json.dumps(record_json))
     if record_type == "Outcome":
         return Outcome.model_validate_json(json.dumps(record_json))
+    if record_type == "ArgumentEdge":
+        return ArgumentEdge.model_validate_json(json.dumps(record_json))
     raise ValueError(f"Unsupported ProposedChange record_type: {record_type}")
 
 
@@ -313,8 +319,10 @@ def _save_accepted_record(
         ledger_repository.save_assertion(accepted_record)
     elif isinstance(accepted_record, Relationship):
         ledger_repository.save_relationship(accepted_record)
-    else:
+    elif isinstance(accepted_record, Outcome):
         ledger_repository.save_outcome(accepted_record)
+    else:
+        ledger_repository.save_argument_edge(accepted_record)
 
 
 def _reviewed_proposed_change(
