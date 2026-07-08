@@ -1,0 +1,305 @@
+"""Domain Core models and validation rules."""
+
+from __future__ import annotations
+
+from datetime import UTC, datetime
+from enum import StrEnum
+from typing import Annotated, Self
+
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
+
+NonEmptyStr = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
+Confidence = Annotated[float, Field(ge=0.0, le=1.0)]
+type JsonValue = str | int | float | bool | None | list[JsonValue] | dict[str, JsonValue]
+
+EntityId = Annotated[str, Field(pattern=r"^ent_[A-Za-z0-9][A-Za-z0-9_-]*$")]
+ActorId = Annotated[str, Field(pattern=r"^act_[A-Za-z0-9][A-Za-z0-9_-]*$")]
+OrganizationId = Annotated[str, Field(pattern=r"^org_[A-Za-z0-9][A-Za-z0-9_-]*$")]
+EventId = Annotated[str, Field(pattern=r"^evt_[A-Za-z0-9][A-Za-z0-9_-]*$")]
+PlaceId = Annotated[str, Field(pattern=r"^plc_[A-Za-z0-9][A-Za-z0-9_-]*$")]
+SourceId = Annotated[str, Field(pattern=r"^src_[A-Za-z0-9][A-Za-z0-9_-]*$")]
+DocumentId = Annotated[str, Field(pattern=r"^doc_[A-Za-z0-9][A-Za-z0-9_-]*$")]
+EvidenceSpanId = Annotated[str, Field(pattern=r"^evs_[A-Za-z0-9][A-Za-z0-9_-]*$")]
+AssertionId = Annotated[str, Field(pattern=r"^ast_[A-Za-z0-9][A-Za-z0-9_-]*$")]
+RelationshipId = Annotated[str, Field(pattern=r"^rel_[A-Za-z0-9][A-Za-z0-9_-]*$")]
+OutcomeId = Annotated[str, Field(pattern=r"^out_[A-Za-z0-9][A-Za-z0-9_-]*$")]
+ArgumentEdgeId = Annotated[str, Field(pattern=r"^arg_[A-Za-z0-9][A-Za-z0-9_-]*$")]
+ProvenanceActivityId = Annotated[str, Field(pattern=r"^prv_[A-Za-z0-9][A-Za-z0-9_-]*$")]
+ProposedChangeId = Annotated[str, Field(pattern=r"^pcg_[A-Za-z0-9][A-Za-z0-9_-]*$")]
+BriefingId = Annotated[str, Field(pattern=r"^brf_[A-Za-z0-9][A-Za-z0-9_-]*$")]
+
+
+def utc_now() -> datetime:
+    return datetime.now(UTC)
+
+
+class DomainModel(BaseModel):
+    """Base model for immutable Domain Core records."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+
+class EntityKind(StrEnum):
+    ACTOR = "actor"
+    ORGANIZATION = "organization"
+    EVENT = "event"
+    PLACE = "place"
+
+
+class SourceType(StrEnum):
+    ARTICLE = "article"
+    TRANSCRIPT = "transcript"
+    PDF = "pdf"
+    BLOG_POST = "blog_post"
+    SOCIAL_POST = "social_post"
+    FILING = "filing"
+    PRESS_RELEASE = "press_release"
+    MANUAL_FILE = "manual_file"
+
+
+class SelectorType(StrEnum):
+    EXACT_TEXT = "exact_text"
+    TEXT_POSITION = "text_position"
+    PAGE = "page"
+
+
+class AssertionType(StrEnum):
+    REPORTED_OBSERVATION = "reported_observation"
+    SOURCE_CLAIM = "source_claim"
+    DIRECT_QUOTE = "direct_quote"
+    ANALYTIC_INFERENCE = "analytic_inference"
+    CORROBORATION = "corroboration"
+    CONTRADICTION = "contradiction"
+    OUTCOME_OBSERVATION = "outcome_observation"
+    STATUS_UPDATE = "status_update"
+
+
+class AssertionStatus(StrEnum):
+    PROPOSED = "proposed"
+    REPORTED = "reported"
+    CORROBORATED = "corroborated"
+    CONFIRMED = "confirmed"
+    CONTRADICTED = "contradicted"
+    SUPERSEDED = "superseded"
+    RETRACTED = "retracted"
+    DEPRECATED = "deprecated"
+
+
+class ArgumentEdgeRelation(StrEnum):
+    SUPPORTS = "supports"
+    CONTRADICTS = "contradicts"
+    WEAKENS = "weakens"
+    CONTEXTUALIZES = "contextualizes"
+    INFERS = "infers"
+    CORROBORATES = "corroborates"
+
+
+class ReviewStatus(StrEnum):
+    PENDING = "pending"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+    EDITED = "edited"
+
+
+def is_accepted_status(status: AssertionStatus) -> bool:
+    return status is not AssertionStatus.PROPOSED
+
+
+class Entity(DomainModel):
+    id: EntityId
+    entity_kind: EntityKind
+    canonical_name: NonEmptyStr
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
+
+
+class Actor(DomainModel):
+    id: ActorId
+    name: NonEmptyStr
+    role_names: tuple[NonEmptyStr, ...] = Field(default_factory=tuple)
+    organization_ids: tuple[OrganizationId, ...] = Field(default_factory=tuple)
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
+
+
+class Organization(DomainModel):
+    id: OrganizationId
+    name: NonEmptyStr
+    organization_type: NonEmptyStr | None = None
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
+
+
+class Place(DomainModel):
+    id: PlaceId
+    name: NonEmptyStr
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
+
+
+class Event(DomainModel):
+    id: EventId
+    name: NonEmptyStr
+    start_at: datetime | None = None
+    end_at: datetime | None = None
+    place_id: PlaceId | None = None
+    participant_actor_ids: tuple[ActorId, ...] = Field(default_factory=tuple)
+    participant_organization_ids: tuple[OrganizationId, ...] = Field(default_factory=tuple)
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
+
+
+class Source(DomainModel):
+    id: SourceId
+    source_type: SourceType
+    title: NonEmptyStr
+    uri: NonEmptyStr | None = None
+    published_at: datetime | None = None
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
+
+
+class Document(DomainModel):
+    id: DocumentId
+    source_id: SourceId
+    raw_path: NonEmptyStr
+    extracted_text_path: NonEmptyStr | None = None
+    content_sha256: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
+
+
+class EvidenceSpan(DomainModel):
+    id: EvidenceSpanId
+    source_id: SourceId
+    document_id: DocumentId
+    assertion_id: AssertionId | None = None
+    selector_type: SelectorType
+    exact_text: NonEmptyStr
+    prefix_text: str = ""
+    suffix_text: str = ""
+    location: dict[str, JsonValue] = Field(default_factory=dict)
+    created_at: datetime = Field(default_factory=utc_now)
+
+
+class Assertion(DomainModel):
+    id: AssertionId
+    assertion_type: AssertionType
+    subject_entity_id: EntityId | ActorId | OrganizationId | EventId | PlaceId
+    predicate: NonEmptyStr
+    object_entity_id: EntityId | ActorId | OrganizationId | EventId | PlaceId | None = None
+    object_value: JsonValue = None
+    status: AssertionStatus
+    source_report_confidence: Confidence | None = None
+    extraction_confidence: Confidence | None = None
+    world_truth_confidence: Confidence | None = None
+    causal_confidence: Confidence | None = None
+    qualifiers: dict[str, JsonValue] = Field(default_factory=dict)
+    current_assessment: str = ""
+    source_ids: tuple[SourceId, ...] = Field(default_factory=tuple)
+    evidence_span_ids: tuple[EvidenceSpanId, ...] = Field(default_factory=tuple)
+    provenance_activity_ids: tuple[ProvenanceActivityId, ...] = Field(default_factory=tuple)
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
+
+    @model_validator(mode="after")
+    def validate_assertion_rules(self) -> Self:
+        has_object_entity = self.object_entity_id is not None
+        has_object_value = self.object_value is not None
+        if has_object_entity == has_object_value:
+            raise ValueError("Assertion must have exactly one object entity or object value.")
+
+        if is_accepted_status(self.status) and not self.provenance_activity_ids:
+            raise ValueError("Accepted Assertion must reference a ProvenanceActivity.")
+
+        if is_accepted_status(self.status) and self.source_ids and not self.evidence_span_ids:
+            raise ValueError("Accepted Source-backed Assertion must reference an EvidenceSpan.")
+
+        if self.qualifiers.get("causal") is True and self.causal_confidence is None:
+            raise ValueError("Causal analytic inference must include causal_confidence.")
+
+        if self.qualifiers.get("causal") is True and (
+            self.assertion_type is not AssertionType.ANALYTIC_INFERENCE
+        ):
+            raise ValueError("Causal inference must use assertion_type analytic_inference.")
+
+        return self
+
+
+class Relationship(DomainModel):
+    id: RelationshipId
+    subject_id: EntityId | ActorId | OrganizationId | EventId | PlaceId
+    predicate: NonEmptyStr
+    object_id: EntityId | ActorId | OrganizationId | EventId | PlaceId
+    assertion_ids: tuple[AssertionId, ...] = Field(default_factory=tuple)
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
+
+
+class Outcome(DomainModel):
+    id: OutcomeId
+    description: NonEmptyStr
+    actor_ids: tuple[ActorId, ...] = Field(default_factory=tuple)
+    organization_ids: tuple[OrganizationId, ...] = Field(default_factory=tuple)
+    event_ids: tuple[EventId, ...] = Field(default_factory=tuple)
+    assertion_ids: tuple[AssertionId, ...] = Field(default_factory=tuple)
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
+
+
+class ArgumentEdge(DomainModel):
+    id: ArgumentEdgeId
+    from_assertion_id: AssertionId
+    to_assertion_id: AssertionId
+    relation: ArgumentEdgeRelation
+    rationale: NonEmptyStr
+    evidence_span_ids: tuple[EvidenceSpanId, ...] = Field(default_factory=tuple)
+    confidence: Confidence
+    created_at: datetime = Field(default_factory=utc_now)
+
+
+class ProvenanceActivity(DomainModel):
+    id: ProvenanceActivityId
+    activity_type: NonEmptyStr
+    agent: NonEmptyStr
+    input_ids: tuple[NonEmptyStr, ...] = Field(default_factory=tuple)
+    output_ids: tuple[NonEmptyStr, ...] = Field(default_factory=tuple)
+    occurred_at: datetime = Field(default_factory=utc_now)
+
+
+class ProposedChange(DomainModel):
+    id: ProposedChangeId
+    review_status: ReviewStatus = ReviewStatus.PENDING
+    proposed_json: dict[str, JsonValue]
+    original_proposed_json: dict[str, JsonValue] | None = None
+    accepted_json: dict[str, JsonValue] | None = None
+    source_id: SourceId | None = None
+    document_id: DocumentId | None = None
+    model_name: NonEmptyStr | None = None
+    prompt_id: NonEmptyStr | None = None
+    provenance_activity_id: ProvenanceActivityId | None = None
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
+
+    @model_validator(mode="after")
+    def validate_review_rules(self) -> Self:
+        if self.review_status is ReviewStatus.EDITED and self.original_proposed_json is None:
+            raise ValueError("Edited ProposedChange must store original proposed JSON.")
+        if self.review_status is ReviewStatus.EDITED and self.accepted_json is None:
+            raise ValueError("Edited ProposedChange must store accepted JSON.")
+        return self
+
+
+class Briefing(DomainModel):
+    id: BriefingId
+    title: NonEmptyStr
+    previous_briefing_id: BriefingId | None = None
+    assertion_ids: tuple[AssertionId, ...] = Field(default_factory=tuple)
+    relationship_ids: tuple[RelationshipId, ...] = Field(default_factory=tuple)
+    argument_edge_ids: tuple[ArgumentEdgeId, ...] = Field(default_factory=tuple)
+    source_ids: tuple[SourceId, ...] = Field(default_factory=tuple)
+    evidence_span_ids: tuple[EvidenceSpanId, ...] = Field(default_factory=tuple)
+    analytic_inference_assertion_ids: tuple[AssertionId, ...] = Field(default_factory=tuple)
+    provenance_activity_id: ProvenanceActivityId
+    markdown_path: NonEmptyStr | None = None
+    generated_at: datetime = Field(default_factory=utc_now)

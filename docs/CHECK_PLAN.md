@@ -1,12 +1,15 @@
 # KoteKomi Check Plan
 
 ## 1. Domain checks
-- run Domain Core tests
-- verify Domain Core imports no Adapter package
+- run `uv run pytest packages/domain/tests`
+- run `uv run pyright`
+- run `uv run ruff check`
+- verify Domain Core imports no Adapter package with `packages/domain/tests/test_import_boundary.py`
 
 ## 2. Schema checks
-- validate sample Assertions against JSON schema
-- validate sample ProposedChanges against JSON schema
+- run `uv run python scripts/generate_schemas.py`
+- validate sample Assertions against JSON schema with `packages/domain/tests/test_schema_generation.py`
+- validate sample ProposedChanges against JSON schema with `packages/domain/tests/test_schema_generation.py`
 
 ## 3. Ledger checks
 - run migrations on empty SQLite database

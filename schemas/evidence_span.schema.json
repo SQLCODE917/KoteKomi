@@ -1,0 +1,115 @@
+{
+  "$defs": {
+    "JsonValue": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "integer"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "SelectorType": {
+      "enum": [
+        "exact_text",
+        "text_position",
+        "page"
+      ],
+      "title": "SelectorType",
+      "type": "string"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "assertion_id": {
+      "anyOf": [
+        {
+          "pattern": "^ast_[A-Za-z0-9][A-Za-z0-9_-]*$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Assertion Id"
+    },
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    },
+    "document_id": {
+      "pattern": "^doc_[A-Za-z0-9][A-Za-z0-9_-]*$",
+      "title": "Document Id",
+      "type": "string"
+    },
+    "exact_text": {
+      "minLength": 1,
+      "title": "Exact Text",
+      "type": "string"
+    },
+    "id": {
+      "pattern": "^evs_[A-Za-z0-9][A-Za-z0-9_-]*$",
+      "title": "Id",
+      "type": "string"
+    },
+    "location": {
+      "additionalProperties": {
+        "$ref": "#/$defs/JsonValue"
+      },
+      "title": "Location",
+      "type": "object"
+    },
+    "prefix_text": {
+      "default": "",
+      "title": "Prefix Text",
+      "type": "string"
+    },
+    "selector_type": {
+      "$ref": "#/$defs/SelectorType"
+    },
+    "source_id": {
+      "pattern": "^src_[A-Za-z0-9][A-Za-z0-9_-]*$",
+      "title": "Source Id",
+      "type": "string"
+    },
+    "suffix_text": {
+      "default": "",
+      "title": "Suffix Text",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "source_id",
+    "document_id",
+    "selector_type",
+    "exact_text"
+  ],
+  "title": "EvidenceSpan",
+  "type": "object"
+}

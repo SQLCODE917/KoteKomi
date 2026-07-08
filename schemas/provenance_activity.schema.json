@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "activity_type": {
+      "minLength": 1,
+      "title": "Activity Type",
+      "type": "string"
+    },
+    "agent": {
+      "minLength": 1,
+      "title": "Agent",
+      "type": "string"
+    },
+    "id": {
+      "pattern": "^prv_[A-Za-z0-9][A-Za-z0-9_-]*$",
+      "title": "Id",
+      "type": "string"
+    },
+    "input_ids": {
+      "items": {
+        "minLength": 1,
+        "type": "string"
+      },
+      "title": "Input Ids",
+      "type": "array"
+    },
+    "occurred_at": {
+      "format": "date-time",
+      "title": "Occurred At",
+      "type": "string"
+    },
+    "output_ids": {
+      "items": {
+        "minLength": 1,
+        "type": "string"
+      },
+      "title": "Output Ids",
+      "type": "array"
+    }
+  },
+  "required": [
+    "id",
+    "activity_type",
+    "agent"
+  ],
+  "title": "ProvenanceActivity",
+  "type": "object"
+}

@@ -1,0 +1,92 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "assertion_ids": {
+      "items": {
+        "pattern": "^ast_[A-Za-z0-9][A-Za-z0-9_-]*$",
+        "type": "string"
+      },
+      "title": "Assertion Ids",
+      "type": "array"
+    },
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    },
+    "id": {
+      "pattern": "^rel_[A-Za-z0-9][A-Za-z0-9_-]*$",
+      "title": "Id",
+      "type": "string"
+    },
+    "object_id": {
+      "anyOf": [
+        {
+          "pattern": "^ent_[A-Za-z0-9][A-Za-z0-9_-]*$",
+          "type": "string"
+        },
+        {
+          "pattern": "^act_[A-Za-z0-9][A-Za-z0-9_-]*$",
+          "type": "string"
+        },
+        {
+          "pattern": "^org_[A-Za-z0-9][A-Za-z0-9_-]*$",
+          "type": "string"
+        },
+        {
+          "pattern": "^evt_[A-Za-z0-9][A-Za-z0-9_-]*$",
+          "type": "string"
+        },
+        {
+          "pattern": "^plc_[A-Za-z0-9][A-Za-z0-9_-]*$",
+          "type": "string"
+        }
+      ],
+      "title": "Object Id"
+    },
+    "predicate": {
+      "minLength": 1,
+      "title": "Predicate",
+      "type": "string"
+    },
+    "subject_id": {
+      "anyOf": [
+        {
+          "pattern": "^ent_[A-Za-z0-9][A-Za-z0-9_-]*$",
+          "type": "string"
+        },
+        {
+          "pattern": "^act_[A-Za-z0-9][A-Za-z0-9_-]*$",
+          "type": "string"
+        },
+        {
+          "pattern": "^org_[A-Za-z0-9][A-Za-z0-9_-]*$",
+          "type": "string"
+        },
+        {
+          "pattern": "^evt_[A-Za-z0-9][A-Za-z0-9_-]*$",
+          "type": "string"
+        },
+        {
+          "pattern": "^plc_[A-Za-z0-9][A-Za-z0-9_-]*$",
+          "type": "string"
+        }
+      ],
+      "title": "Subject Id"
+    },
+    "updated_at": {
+      "format": "date-time",
+      "title": "Updated At",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "subject_id",
+    "predicate",
+    "object_id"
+  ],
+  "title": "Relationship",
+  "type": "object"
+}

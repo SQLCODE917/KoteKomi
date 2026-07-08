@@ -1,0 +1,252 @@
+{
+  "$defs": {
+    "AssertionStatus": {
+      "enum": [
+        "proposed",
+        "reported",
+        "corroborated",
+        "confirmed",
+        "contradicted",
+        "superseded",
+        "retracted",
+        "deprecated"
+      ],
+      "title": "AssertionStatus",
+      "type": "string"
+    },
+    "AssertionType": {
+      "enum": [
+        "reported_observation",
+        "source_claim",
+        "direct_quote",
+        "analytic_inference",
+        "corroboration",
+        "contradiction",
+        "outcome_observation",
+        "status_update"
+      ],
+      "title": "AssertionType",
+      "type": "string"
+    },
+    "JsonValue": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "integer"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "assertion_type": {
+      "$ref": "#/$defs/AssertionType"
+    },
+    "causal_confidence": {
+      "anyOf": [
+        {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Causal Confidence"
+    },
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    },
+    "current_assessment": {
+      "default": "",
+      "title": "Current Assessment",
+      "type": "string"
+    },
+    "evidence_span_ids": {
+      "items": {
+        "pattern": "^evs_[A-Za-z0-9][A-Za-z0-9_-]*$",
+        "type": "string"
+      },
+      "title": "Evidence Span Ids",
+      "type": "array"
+    },
+    "extraction_confidence": {
+      "anyOf": [
+        {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Extraction Confidence"
+    },
+    "id": {
+      "pattern": "^ast_[A-Za-z0-9][A-Za-z0-9_-]*$",
+      "title": "Id",
+      "type": "string"
+    },
+    "object_entity_id": {
+      "anyOf": [
+        {
+          "pattern": "^ent_[A-Za-z0-9][A-Za-z0-9_-]*$",
+          "type": "string"
+        },
+        {
+          "pattern": "^act_[A-Za-z0-9][A-Za-z0-9_-]*$",
+          "type": "string"
+        },
+        {
+          "pattern": "^org_[A-Za-z0-9][A-Za-z0-9_-]*$",
+          "type": "string"
+        },
+        {
+          "pattern": "^evt_[A-Za-z0-9][A-Za-z0-9_-]*$",
+          "type": "string"
+        },
+        {
+          "pattern": "^plc_[A-Za-z0-9][A-Za-z0-9_-]*$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Object Entity Id"
+    },
+    "object_value": {
+      "$ref": "#/$defs/JsonValue",
+      "default": null
+    },
+    "predicate": {
+      "minLength": 1,
+      "title": "Predicate",
+      "type": "string"
+    },
+    "provenance_activity_ids": {
+      "items": {
+        "pattern": "^prv_[A-Za-z0-9][A-Za-z0-9_-]*$",
+        "type": "string"
+      },
+      "title": "Provenance Activity Ids",
+      "type": "array"
+    },
+    "qualifiers": {
+      "additionalProperties": {
+        "$ref": "#/$defs/JsonValue"
+      },
+      "title": "Qualifiers",
+      "type": "object"
+    },
+    "source_ids": {
+      "items": {
+        "pattern": "^src_[A-Za-z0-9][A-Za-z0-9_-]*$",
+        "type": "string"
+      },
+      "title": "Source Ids",
+      "type": "array"
+    },
+    "source_report_confidence": {
+      "anyOf": [
+        {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Source Report Confidence"
+    },
+    "status": {
+      "$ref": "#/$defs/AssertionStatus"
+    },
+    "subject_entity_id": {
+      "anyOf": [
+        {
+          "pattern": "^ent_[A-Za-z0-9][A-Za-z0-9_-]*$",
+          "type": "string"
+        },
+        {
+          "pattern": "^act_[A-Za-z0-9][A-Za-z0-9_-]*$",
+          "type": "string"
+        },
+        {
+          "pattern": "^org_[A-Za-z0-9][A-Za-z0-9_-]*$",
+          "type": "string"
+        },
+        {
+          "pattern": "^evt_[A-Za-z0-9][A-Za-z0-9_-]*$",
+          "type": "string"
+        },
+        {
+          "pattern": "^plc_[A-Za-z0-9][A-Za-z0-9_-]*$",
+          "type": "string"
+        }
+      ],
+      "title": "Subject Entity Id"
+    },
+    "updated_at": {
+      "format": "date-time",
+      "title": "Updated At",
+      "type": "string"
+    },
+    "world_truth_confidence": {
+      "anyOf": [
+        {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "World Truth Confidence"
+    }
+  },
+  "required": [
+    "id",
+    "assertion_type",
+    "subject_entity_id",
+    "predicate",
+    "status"
+  ],
+  "title": "Assertion",
+  "type": "object"
+}

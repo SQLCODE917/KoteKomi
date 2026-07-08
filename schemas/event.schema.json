@@ -1,0 +1,87 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    },
+    "end_at": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "End At"
+    },
+    "id": {
+      "pattern": "^evt_[A-Za-z0-9][A-Za-z0-9_-]*$",
+      "title": "Id",
+      "type": "string"
+    },
+    "name": {
+      "minLength": 1,
+      "title": "Name",
+      "type": "string"
+    },
+    "participant_actor_ids": {
+      "items": {
+        "pattern": "^act_[A-Za-z0-9][A-Za-z0-9_-]*$",
+        "type": "string"
+      },
+      "title": "Participant Actor Ids",
+      "type": "array"
+    },
+    "participant_organization_ids": {
+      "items": {
+        "pattern": "^org_[A-Za-z0-9][A-Za-z0-9_-]*$",
+        "type": "string"
+      },
+      "title": "Participant Organization Ids",
+      "type": "array"
+    },
+    "place_id": {
+      "anyOf": [
+        {
+          "pattern": "^plc_[A-Za-z0-9][A-Za-z0-9_-]*$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Place Id"
+    },
+    "start_at": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Start At"
+    },
+    "updated_at": {
+      "format": "date-time",
+      "title": "Updated At",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "name"
+  ],
+  "title": "Event",
+  "type": "object"
+}

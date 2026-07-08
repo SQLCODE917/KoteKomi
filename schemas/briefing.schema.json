@@ -1,0 +1,107 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "analytic_inference_assertion_ids": {
+      "items": {
+        "pattern": "^ast_[A-Za-z0-9][A-Za-z0-9_-]*$",
+        "type": "string"
+      },
+      "title": "Analytic Inference Assertion Ids",
+      "type": "array"
+    },
+    "argument_edge_ids": {
+      "items": {
+        "pattern": "^arg_[A-Za-z0-9][A-Za-z0-9_-]*$",
+        "type": "string"
+      },
+      "title": "Argument Edge Ids",
+      "type": "array"
+    },
+    "assertion_ids": {
+      "items": {
+        "pattern": "^ast_[A-Za-z0-9][A-Za-z0-9_-]*$",
+        "type": "string"
+      },
+      "title": "Assertion Ids",
+      "type": "array"
+    },
+    "evidence_span_ids": {
+      "items": {
+        "pattern": "^evs_[A-Za-z0-9][A-Za-z0-9_-]*$",
+        "type": "string"
+      },
+      "title": "Evidence Span Ids",
+      "type": "array"
+    },
+    "generated_at": {
+      "format": "date-time",
+      "title": "Generated At",
+      "type": "string"
+    },
+    "id": {
+      "pattern": "^brf_[A-Za-z0-9][A-Za-z0-9_-]*$",
+      "title": "Id",
+      "type": "string"
+    },
+    "markdown_path": {
+      "anyOf": [
+        {
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Markdown Path"
+    },
+    "previous_briefing_id": {
+      "anyOf": [
+        {
+          "pattern": "^brf_[A-Za-z0-9][A-Za-z0-9_-]*$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Previous Briefing Id"
+    },
+    "provenance_activity_id": {
+      "pattern": "^prv_[A-Za-z0-9][A-Za-z0-9_-]*$",
+      "title": "Provenance Activity Id",
+      "type": "string"
+    },
+    "relationship_ids": {
+      "items": {
+        "pattern": "^rel_[A-Za-z0-9][A-Za-z0-9_-]*$",
+        "type": "string"
+      },
+      "title": "Relationship Ids",
+      "type": "array"
+    },
+    "source_ids": {
+      "items": {
+        "pattern": "^src_[A-Za-z0-9][A-Za-z0-9_-]*$",
+        "type": "string"
+      },
+      "title": "Source Ids",
+      "type": "array"
+    },
+    "title": {
+      "minLength": 1,
+      "title": "Title",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "title",
+    "provenance_activity_id"
+  ],
+  "title": "Briefing",
+  "type": "object"
+}

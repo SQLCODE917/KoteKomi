@@ -1,0 +1,48 @@
+{
+  "$defs": {
+    "EntityKind": {
+      "enum": [
+        "actor",
+        "organization",
+        "event",
+        "place"
+      ],
+      "title": "EntityKind",
+      "type": "string"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "canonical_name": {
+      "minLength": 1,
+      "title": "Canonical Name",
+      "type": "string"
+    },
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    },
+    "entity_kind": {
+      "$ref": "#/$defs/EntityKind"
+    },
+    "id": {
+      "pattern": "^ent_[A-Za-z0-9][A-Za-z0-9_-]*$",
+      "title": "Id",
+      "type": "string"
+    },
+    "updated_at": {
+      "format": "date-time",
+      "title": "Updated At",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "entity_kind",
+    "canonical_name"
+  ],
+  "title": "Entity",
+  "type": "object"
+}

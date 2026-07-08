@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "content_sha256": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Content Sha256",
+      "type": "string"
+    },
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    },
+    "extracted_text_path": {
+      "anyOf": [
+        {
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Extracted Text Path"
+    },
+    "id": {
+      "pattern": "^doc_[A-Za-z0-9][A-Za-z0-9_-]*$",
+      "title": "Id",
+      "type": "string"
+    },
+    "raw_path": {
+      "minLength": 1,
+      "title": "Raw Path",
+      "type": "string"
+    },
+    "source_id": {
+      "pattern": "^src_[A-Za-z0-9][A-Za-z0-9_-]*$",
+      "title": "Source Id",
+      "type": "string"
+    },
+    "updated_at": {
+      "format": "date-time",
+      "title": "Updated At",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "source_id",
+    "raw_path",
+    "content_sha256"
+  ],
+  "title": "Document",
+  "type": "object"
+}

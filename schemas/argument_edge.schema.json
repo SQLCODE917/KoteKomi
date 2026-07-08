@@ -1,0 +1,72 @@
+{
+  "$defs": {
+    "ArgumentEdgeRelation": {
+      "enum": [
+        "supports",
+        "contradicts",
+        "weakens",
+        "contextualizes",
+        "infers",
+        "corroborates"
+      ],
+      "title": "ArgumentEdgeRelation",
+      "type": "string"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "confidence": {
+      "maximum": 1.0,
+      "minimum": 0.0,
+      "title": "Confidence",
+      "type": "number"
+    },
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    },
+    "evidence_span_ids": {
+      "items": {
+        "pattern": "^evs_[A-Za-z0-9][A-Za-z0-9_-]*$",
+        "type": "string"
+      },
+      "title": "Evidence Span Ids",
+      "type": "array"
+    },
+    "from_assertion_id": {
+      "pattern": "^ast_[A-Za-z0-9][A-Za-z0-9_-]*$",
+      "title": "From Assertion Id",
+      "type": "string"
+    },
+    "id": {
+      "pattern": "^arg_[A-Za-z0-9][A-Za-z0-9_-]*$",
+      "title": "Id",
+      "type": "string"
+    },
+    "rationale": {
+      "minLength": 1,
+      "title": "Rationale",
+      "type": "string"
+    },
+    "relation": {
+      "$ref": "#/$defs/ArgumentEdgeRelation"
+    },
+    "to_assertion_id": {
+      "pattern": "^ast_[A-Za-z0-9][A-Za-z0-9_-]*$",
+      "title": "To Assertion Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "from_assertion_id",
+    "to_assertion_id",
+    "relation",
+    "rationale",
+    "confidence"
+  ],
+  "title": "ArgumentEdge",
+  "type": "object"
+}
