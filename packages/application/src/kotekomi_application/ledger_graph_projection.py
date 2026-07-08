@@ -275,7 +275,11 @@ def _append_edge(
     source_record_id: str,
 ) -> None:
     if source_id not in node_ids or target_id not in node_ids:
-        return
+        raise ValueError(
+            "Graph projection references missing node: "
+            f"edge_type={edge_type} source_id={source_id} target_id={target_id} "
+            f"source_record_id={source_record_id}"
+        )
     edges.append(
         GraphEdge(
             id=deterministic_graph_edge_id(

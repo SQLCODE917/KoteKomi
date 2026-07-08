@@ -4,6 +4,8 @@ import pytest
 from kotekomi_adapters import sqlite_ledger_transaction
 from kotekomi_pipelines.cli import main
 
+from packages.pipelines.tests.review_helpers import approve_proposed_changes_in_review_order
+
 SOURCE_FIXTURE_PATH = (
     Path(__file__).resolve().parent
     / "fixtures"
@@ -117,18 +119,20 @@ def test_graph_project_reports_projection_without_writing_ledger(
     assert main(propose_assertions_args(ledger_path, archive_path, document.id)) == 0
     capsys.readouterr()
     with sqlite_ledger_transaction(ledger_path) as repository:
-        proposed_change_ids = tuple(
-            proposed_change.id for proposed_change in repository.list_proposed_changes()
-        )
-    for proposed_change_id in proposed_change_ids:
-        assert main(review_approve_args(ledger_path, proposed_change_id)) == 0
-        capsys.readouterr()
+        proposed_changes = repository.list_proposed_changes()
+    approve_proposed_changes_in_review_order(
+        ledger_path=ledger_path,
+        proposed_changes=proposed_changes,
+        main=main,
+        review_approve_args=review_approve_args,
+        clear_output=capsys.readouterr,
+    )
     counts_before = ledger_counts(ledger_path)
 
     exit_code = main(graph_project_args(ledger_path))
 
     output = capsys.readouterr().out
     assert exit_code == 0
-    assert "Graph nodes: 12" in output
-    assert "Graph edges: 22" in output
+    assert "Graph nodes: 15" in output
+    assert "Graph edges: 26" in output
     assert ledger_counts(ledger_path) == counts_before

@@ -79,7 +79,7 @@ def test_source_propose_assertions_creates_pending_proposed_changes(
     output = capsys.readouterr().out
     assert exit_code == 0
     assert f"Document: {document.id}" in output
-    assert "ProposedChanges: 10" in output
+    assert "ProposedChanges: 13" in output
     with sqlite_ledger_transaction(ledger_path) as repository:
         proposed_changes = repository.list_proposed_changes()
         proposal_activities = tuple(
@@ -95,7 +95,7 @@ def test_source_propose_assertions_creates_pending_proposed_changes(
         assert repository.list_relationships() == ()
         assert repository.list_outcomes() == ()
 
-    assert len(proposed_changes) == 10
+    assert len(proposed_changes) == 13
     assert len(proposal_activities) == 1
     proposal_activity = proposal_activities[0]
     assert proposal_activity.agent == "fixture-extraction-runtime"
@@ -158,5 +158,5 @@ def test_source_propose_assertions_is_idempotent(
             for activity in repository.list_provenance_activities()
             if activity.activity_type == "model_assertion_proposal"
         )
-        assert len(repository.list_proposed_changes()) == 10
+        assert len(repository.list_proposed_changes()) == 13
         assert len(proposal_activities) == 1

@@ -1,5 +1,6 @@
 from datetime import UTC, datetime
 
+import pytest
 from kotekomi_application import (
     GraphAnalyzer,
     GraphConnectionCandidate,
@@ -244,3 +245,23 @@ def test_project_ledger_graph_uses_deterministic_edge_ids() -> None:
         source_record_id="doc_article_a",
     )
     assert projection.edges == tuple(sorted(projection.edges, key=lambda edge: edge.id))
+
+
+def test_project_ledger_graph_rejects_dangling_references() -> None:
+    ledger = FakeGraphLedger()
+    ledger.assertions = (
+        Assertion(
+            id="ast_dangling_evidence",
+            assertion_type=AssertionType.SOURCE_CLAIM,
+            subject_entity_id="act_person_a",
+            predicate="negotiated_release",
+            object_entity_id="org_lab_a",
+            status=AssertionStatus.REPORTED,
+            source_ids=("src_article_a",),
+            evidence_span_ids=("evs_missing",),
+            provenance_activity_ids=("prv_human_review",),
+        ),
+    )
+
+    with pytest.raises(ValueError, match="references missing node"):
+        project_ledger_graph(ledger, FakeGraphAnalyzer())

@@ -13,14 +13,21 @@ from kotekomi_domain import (
     ArgumentEdge,
     Assertion,
     AssertionStatus,
+    AssertionType,
+    Document,
+    Entity,
     Event,
     EvidenceSpan,
     Organization,
     Outcome,
+    Place,
     ProposedChange,
     ProvenanceActivity,
     Relationship,
     ReviewStatus,
+    SelectorType,
+    Source,
+    SourceType,
 )
 from kotekomi_domain.models import JsonValue
 
@@ -31,9 +38,13 @@ class FakeReviewLedger:
     def __init__(self, proposed_changes: tuple[ProposedChange, ...]) -> None:
         self.proposed_changes = {record.id: record for record in proposed_changes}
         self.provenance_activities: dict[str, ProvenanceActivity] = {}
+        self.sources: dict[str, Source] = {}
+        self.documents: dict[str, Document] = {}
         self.actors: dict[str, Actor] = {}
         self.organizations: dict[str, Organization] = {}
         self.events: dict[str, Event] = {}
+        self.entities: dict[str, Entity] = {}
+        self.places: dict[str, Place] = {}
         self.evidence_spans: dict[str, EvidenceSpan] = {}
         self.assertions: dict[str, Assertion] = {}
         self.relationships: dict[str, Relationship] = {}
@@ -48,6 +59,12 @@ class FakeReviewLedger:
 
     def save_provenance_activity(self, record: ProvenanceActivity) -> None:
         self.provenance_activities[record.id] = record
+
+    def get_provenance_activity(self, record_id: str) -> ProvenanceActivity | None:
+        return self.provenance_activities.get(record_id)
+
+    def get_entity(self, record_id: str) -> Entity | None:
+        return self.entities.get(record_id)
 
     def get_actor(self, record_id: str) -> Actor | None:
         return self.actors.get(record_id)
@@ -66,6 +83,15 @@ class FakeReviewLedger:
 
     def save_event(self, record: Event) -> None:
         self.events[record.id] = record
+
+    def get_place(self, record_id: str) -> Place | None:
+        return self.places.get(record_id)
+
+    def get_source(self, record_id: str) -> Source | None:
+        return self.sources.get(record_id)
+
+    def get_document(self, record_id: str) -> Document | None:
+        return self.documents.get(record_id)
 
     def get_evidence_span(self, record_id: str) -> EvidenceSpan | None:
         return self.evidence_spans.get(record_id)
@@ -96,6 +122,70 @@ class FakeReviewLedger:
 
     def save_argument_edge(self, record: ArgumentEdge) -> None:
         self.argument_edges[record.id] = record
+
+
+def seed_reference_records(ledger: FakeReviewLedger) -> None:
+    ledger.sources["src_article_a"] = Source(
+        id="src_article_a",
+        source_type=SourceType.ARTICLE,
+        title="Article A",
+    )
+    ledger.documents["doc_article_a"] = Document(
+        id="doc_article_a",
+        source_id="src_article_a",
+        raw_path="sources/raw/src_article_a.bin",
+        extracted_text_path="documents/extracted/doc_article_a.txt",
+        content_sha256="a" * 64,
+    )
+    ledger.organizations["org_anthropic"] = Organization(id="org_anthropic", name="Anthropic")
+    ledger.organizations["org_commerce_department"] = Organization(
+        id="org_commerce_department",
+        name="Commerce Department",
+    )
+    ledger.actors["act_dario_amodei"] = Actor(
+        id="act_dario_amodei",
+        name="Dario Amodei",
+        organization_ids=("org_anthropic",),
+    )
+    ledger.events["evt_release_review"] = Event(
+        id="evt_release_review",
+        name="Release review",
+        participant_actor_ids=("act_dario_amodei",),
+        participant_organization_ids=("org_anthropic",),
+    )
+    ledger.evidence_spans["evs_delay"] = EvidenceSpan(
+        id="evs_delay",
+        source_id="src_article_a",
+        document_id="doc_article_a",
+        selector_type=SelectorType.EXACT_TEXT,
+        exact_text="Anthropic postponed the rollout.",
+    )
+    ledger.assertions["ast_delay"] = Assertion(
+        id="ast_delay",
+        assertion_type=AssertionType.SOURCE_CLAIM,
+        subject_entity_id="org_anthropic",
+        predicate="postponed_rollout",
+        object_value={"model": "Claude Fable 5"},
+        status=AssertionStatus.REPORTED,
+        source_ids=("src_article_a",),
+        evidence_span_ids=("evs_delay",),
+        provenance_activity_ids=("prv_model_run",),
+    )
+    ledger.assertions["ast_shared_outcome"] = Assertion(
+        id="ast_shared_outcome",
+        assertion_type=AssertionType.ANALYTIC_INFERENCE,
+        subject_entity_id="org_anthropic",
+        predicate="shared_governance_outcome_with",
+        object_entity_id="org_commerce_department",
+        status=AssertionStatus.CORROBORATED,
+        provenance_activity_ids=("prv_model_run",),
+    )
+    ledger.provenance_activities["prv_model_run"] = ProvenanceActivity(
+        id="prv_model_run",
+        activity_type="model_assertion_proposal",
+        agent="fixture-extraction-runtime",
+        occurred_at=NOW,
+    )
 
 
 def proposed_change(
@@ -182,7 +272,7 @@ def review_input(proposed_change_id: str) -> ReviewProposedChangeInput:
                 "id": "evs_delay",
                 "source_id": "src_article_a",
                 "document_id": "doc_article_a",
-                "assertion_id": "ast_delay",
+                "assertion_id": None,
                 "selector_type": "exact_text",
                 "exact_text": "Anthropic postponed the rollout.",
             },
@@ -240,6 +330,7 @@ def test_approve_proposed_change_creates_accepted_record(
     accepted_id: str,
 ) -> None:
     ledger = FakeReviewLedger((proposed_change(record_id, record_type, record),))
+    seed_reference_records(ledger)
 
     result = approve_proposed_change(review_input(record_id), ledger)
 
@@ -280,6 +371,7 @@ def test_approve_proposed_assertion_marks_it_reported_and_adds_review_provenance
             ),
         )
     )
+    seed_reference_records(ledger)
 
     result = approve_proposed_change(review_input(record_id), ledger)
 
@@ -346,6 +438,7 @@ def test_edit_proposed_change_creates_accepted_record_from_corrected_json() -> N
         "organization_ids": ["org_anthropic"],
     }
     ledger = FakeReviewLedger((proposed_change(record_id, "Actor", proposed_record),))
+    seed_reference_records(ledger)
 
     result = edit_proposed_change(
         ReviewProposedChangeInput(
@@ -413,6 +506,7 @@ def test_edit_proposed_assertion_marks_it_reported_and_adds_review_provenance() 
             ),
         )
     )
+    seed_reference_records(ledger)
 
     result = edit_proposed_change(
         ReviewProposedChangeInput(
@@ -475,6 +569,117 @@ def test_edit_rejects_invalid_accepted_record_json() -> None:
             ),
             ledger,
         )
+
+
+def test_approve_rejects_assertion_with_missing_evidence_span_reference() -> None:
+    record_id = "pcg_assertion"
+    ledger = FakeReviewLedger(
+        (
+            proposed_change(
+                record_id,
+                "Assertion",
+                {
+                    "id": "ast_missing_evidence",
+                    "assertion_type": "source_claim",
+                    "subject_entity_id": "org_anthropic",
+                    "predicate": "postponed_rollout",
+                    "object_value": {"model": "Claude Fable 5"},
+                    "status": "proposed",
+                    "source_ids": ["src_article_a"],
+                    "evidence_span_ids": ["evs_missing"],
+                    "provenance_activity_ids": [],
+                },
+            ),
+        )
+    )
+    seed_reference_records(ledger)
+
+    with pytest.raises(ValueError, match="references missing EvidenceSpan: evs_missing"):
+        approve_proposed_change(review_input(record_id), ledger)
+
+    assert "ast_missing_evidence" not in ledger.assertions
+    assert ledger.provenance_activities.keys() == {"prv_model_run"}
+
+
+def test_approve_rejects_relationship_with_missing_assertion_reference() -> None:
+    record_id = "pcg_relationship"
+    ledger = FakeReviewLedger(
+        (
+            proposed_change(
+                record_id,
+                "Relationship",
+                {
+                    "id": "rel_missing_assertion",
+                    "subject_id": "org_commerce_department",
+                    "predicate": "influenced_release_timing_for",
+                    "object_id": "org_anthropic",
+                    "assertion_ids": ["ast_missing"],
+                },
+            ),
+        )
+    )
+    seed_reference_records(ledger)
+
+    with pytest.raises(ValueError, match="references missing Assertion: ast_missing"):
+        approve_proposed_change(review_input(record_id), ledger)
+
+    assert "rel_missing_assertion" not in ledger.relationships
+
+
+def test_approve_rejects_argument_edge_with_missing_reference() -> None:
+    record_id = "pcg_argument_edge"
+    ledger = FakeReviewLedger(
+        (
+            proposed_change(
+                record_id,
+                "ArgumentEdge",
+                {
+                    "id": "arg_missing_to_assertion",
+                    "from_assertion_id": "ast_delay",
+                    "to_assertion_id": "ast_missing",
+                    "relation": "infers",
+                    "rationale": "The accepted Assertion supports the analytic inference.",
+                    "evidence_span_ids": ["evs_delay"],
+                    "confidence": 0.7,
+                },
+            ),
+        )
+    )
+    seed_reference_records(ledger)
+
+    with pytest.raises(ValueError, match="references missing Assertion: ast_missing"):
+        approve_proposed_change(review_input(record_id), ledger)
+
+    assert "arg_missing_to_assertion" not in ledger.argument_edges
+
+
+def test_approve_proposed_analytic_assertion_marks_it_corroborated() -> None:
+    record_id = "pcg_analytic_assertion"
+    ledger = FakeReviewLedger(
+        (
+            proposed_change(
+                record_id,
+                "Assertion",
+                {
+                    "id": "ast_mined_shared_outcome",
+                    "assertion_type": "analytic_inference",
+                    "subject_entity_id": "org_anthropic",
+                    "predicate": "shared_governance_outcome_with",
+                    "object_entity_id": "org_commerce_department",
+                    "status": "proposed",
+                    "world_truth_confidence": 0.5,
+                    "provenance_activity_ids": [],
+                },
+            ),
+        )
+    )
+    seed_reference_records(ledger)
+
+    result = approve_proposed_change(review_input(record_id), ledger)
+
+    assertion = ledger.assertions["ast_mined_shared_outcome"]
+    assert assertion.status is AssertionStatus.CORROBORATED
+    assert assertion.provenance_activity_ids == (result.provenance_activity_id,)
 
 
 def test_review_rejects_missing_proposed_change() -> None:

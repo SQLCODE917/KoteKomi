@@ -31,6 +31,36 @@
       }
     },
     {
+      "record_type": "Organization",
+      "stable_label": "treasury_department",
+      "record": {
+        "id": "org_treasury_department",
+        "name": "Treasury Department",
+        "organization_type": "government_agency"
+      },
+      "evidence": {
+        "selector_type": "exact_text",
+        "exact_text": "The delay followed an emergency call on June 21 among Anthropic executives, Commerce Department technical advisers, Treasury Department sanctions staff, and White House officials.",
+        "source_id": "src_aa67767133655af72fbcf0a8",
+        "document_id": "doc_aa67767133655af72fbcf0a8"
+      }
+    },
+    {
+      "record_type": "Organization",
+      "stable_label": "white_house",
+      "record": {
+        "id": "org_white_house",
+        "name": "White House",
+        "organization_type": "government_office"
+      },
+      "evidence": {
+        "selector_type": "exact_text",
+        "exact_text": "The delay followed an emergency call on June 21 among Anthropic executives, Commerce Department technical advisers, Treasury Department sanctions staff, and White House officials.",
+        "source_id": "src_aa67767133655af72fbcf0a8",
+        "document_id": "doc_aa67767133655af72fbcf0a8"
+      }
+    },
+    {
       "record_type": "Actor",
       "stable_label": "dario_amodei",
       "record": {
@@ -91,7 +121,7 @@
         "id": "evs_delay_after_us_cyber_concerns",
         "source_id": "src_aa67767133655af72fbcf0a8",
         "document_id": "doc_aa67767133655af72fbcf0a8",
-        "assertion_id": "ast_anthropic_postponed_fable5_after_us_review",
+        "assertion_id": null,
         "selector_type": "exact_text",
         "exact_text": "Anthropic postponed a broader rollout of its Claude Fable 5 model in late June after U.S. officials raised concerns that the system could accelerate cyber operations against critical software, according to people involved in the review and documents described to this synthetic news fixture.",
         "prefix_text": "",
@@ -103,6 +133,29 @@
       "evidence": {
         "selector_type": "exact_text",
         "exact_text": "Anthropic postponed a broader rollout of its Claude Fable 5 model in late June after U.S. officials raised concerns that the system could accelerate cyber operations against critical software, according to people involved in the review and documents described to this synthetic news fixture.",
+        "source_id": "src_aa67767133655af72fbcf0a8",
+        "document_id": "doc_aa67767133655af72fbcf0a8"
+      }
+    },
+    {
+      "record_type": "EvidenceSpan",
+      "stable_label": "enterprise_pilots_suspended",
+      "record": {
+        "id": "evs_enterprise_pilots_suspended",
+        "source_id": "src_aa67767133655af72fbcf0a8",
+        "document_id": "doc_aa67767133655af72fbcf0a8",
+        "assertion_id": null,
+        "selector_type": "exact_text",
+        "exact_text": "Anthropic temporarily suspended access for several enterprise pilots on June 23, including some accounts hosted through Amazon Web Services, while keeping a smaller evaluation program open for approved U.S. government and safety researchers.",
+        "prefix_text": "The article reported that the review quickly changed customer access plans.",
+        "suffix_text": "Access was partially restored on June 28 for approved U.S. organizations, while allied-country access remained under review for another several days.",
+        "location": {
+          "section": "enterprise access"
+        }
+      },
+      "evidence": {
+        "selector_type": "exact_text",
+        "exact_text": "Anthropic temporarily suspended access for several enterprise pilots on June 23, including some accounts hosted through Amazon Web Services, while keeping a smaller evaluation program open for approved U.S. government and safety researchers.",
         "source_id": "src_aa67767133655af72fbcf0a8",
         "document_id": "doc_aa67767133655af72fbcf0a8"
       }

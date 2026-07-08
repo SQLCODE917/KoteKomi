@@ -5,6 +5,8 @@ from kotekomi_adapters import sqlite_ledger_transaction
 from kotekomi_domain import ProposedChange, ReviewStatus
 from kotekomi_pipelines.cli import main
 
+from packages.pipelines.tests.review_helpers import approve_proposed_changes_in_review_order
+
 SOURCE_FIXTURE_PATH = (
     Path(__file__).resolve().parent
     / "fixtures"
@@ -98,12 +100,14 @@ def test_graph_mine_creates_pending_connection_proposals_and_is_idempotent(
     assert main(propose_assertions_args(ledger_path, archive_path, document.id)) == 0
     capsys.readouterr()
     with sqlite_ledger_transaction(ledger_path) as repository:
-        initial_proposed_change_ids = tuple(
-            proposed_change.id for proposed_change in repository.list_proposed_changes()
-        )
-    for proposed_change_id in initial_proposed_change_ids:
-        assert main(review_approve_args(ledger_path, proposed_change_id)) == 0
-        capsys.readouterr()
+        initial_proposed_changes = repository.list_proposed_changes()
+    approve_proposed_changes_in_review_order(
+        ledger_path=ledger_path,
+        proposed_changes=initial_proposed_changes,
+        main=main,
+        review_approve_args=review_approve_args,
+        clear_output=capsys.readouterr,
+    )
 
     exit_code = main(graph_mine_args(ledger_path))
 
@@ -145,7 +149,7 @@ def test_graph_mine_creates_pending_connection_proposals_and_is_idempotent(
     assert "ProposedChanges: 0" in rerun_output
     assert "ProvenanceActivity: none" in rerun_output
     with sqlite_ledger_transaction(ledger_path) as repository:
-        assert len(repository.list_proposed_changes()) == 14
+        assert len(repository.list_proposed_changes()) == 17
 
 
 def record_type(proposed_change: ProposedChange) -> str:

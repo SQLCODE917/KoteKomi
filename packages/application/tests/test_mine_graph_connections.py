@@ -1,5 +1,7 @@
+import json
 from datetime import UTC, datetime
 
+import pytest
 from kotekomi_application import (
     GRAPH_CONNECTION_MINING_ACTIVITY,
     GRAPH_CONNECTION_PREDICATE,
@@ -172,8 +174,9 @@ def test_mine_graph_connections_creates_pending_proposal_bundle() -> None:
     assert isinstance(relationship_record, dict)
     assert assertion_record["id"] == deterministic_mined_assertion_id(candidate)
     assert assertion_record["assertion_type"] == "analytic_inference"
-    assert assertion_record["status"] == "corroborated"
+    assert assertion_record["status"] == "proposed"
     assert assertion_record["predicate"] == GRAPH_CONNECTION_PREDICATE
+    Assertion.model_validate_json(json.dumps(assertion_record))
     assert relationship_record["id"] == deterministic_mined_relationship_id(candidate)
     assert relationship_record["assertion_ids"] == [assertion_record["id"]]
 
@@ -187,7 +190,7 @@ def test_mine_graph_connections_skips_existing_accepted_relationship() -> None:
                 subject_id="org_anthropic",
                 predicate=GRAPH_CONNECTION_PREDICATE,
                 object_id="org_commerce_department",
-                assertion_ids=("ast_existing",),
+                assertion_ids=("ast_delay",),
             ),
         )
     )
@@ -234,6 +237,28 @@ def test_mine_graph_connections_rerun_does_not_overwrite_existing_proposed_chang
     assert second_result.provenance_activity_id is None
     assert second_result.proposed_change_ids == ()
     assert ledger.proposed_changes[reviewed_record_id].review_status is ReviewStatus.REJECTED
+
+
+def test_mine_graph_connections_rejects_missing_supporting_assertion() -> None:
+    ledger = FakeMiningLedger()
+
+    with pytest.raises(ValueError, match="references missing Assertion: ast_missing"):
+        mine_graph_connections(
+            GraphConnectionMiningInput(mined_at=NOW),
+            ledger,
+            FakeGraphAnalyzer(
+                (
+                    GraphConnectionCandidate(
+                        subject_organization_id="org_anthropic",
+                        object_organization_id="org_commerce_department",
+                        outcome_id="out_monitoring_update",
+                        supporting_assertion_ids=("ast_delay", "ast_missing"),
+                    ),
+                )
+            ),
+        )
+
+    assert ledger.provenance_activities == {}
 
 
 def graph_candidate() -> GraphConnectionCandidate:

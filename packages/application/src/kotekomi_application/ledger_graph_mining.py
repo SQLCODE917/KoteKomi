@@ -187,27 +187,26 @@ def _candidate_proposed_changes(
 ) -> tuple[ProposedChange, ...]:
     analytic_assertion_id = deterministic_mined_assertion_id(candidate)
     relationship_id = deterministic_mined_relationship_id(candidate)
-    assertion_json: dict[str, JsonValue] = {
-        "id": analytic_assertion_id,
-        "assertion_type": AssertionType.ANALYTIC_INFERENCE.value,
-        "subject_entity_id": candidate.subject_organization_id,
-        "predicate": GRAPH_CONNECTION_PREDICATE,
-        "object_entity_id": candidate.object_organization_id,
-        "status": AssertionStatus.CORROBORATED.value,
-        "world_truth_confidence": 0.5,
-        "qualifiers": {
+    assertion = Assertion(
+        id=analytic_assertion_id,
+        assertion_type=AssertionType.ANALYTIC_INFERENCE,
+        subject_entity_id=candidate.subject_organization_id,
+        predicate=GRAPH_CONNECTION_PREDICATE,
+        object_entity_id=candidate.object_organization_id,
+        status=AssertionStatus.PROPOSED,
+        world_truth_confidence=0.5,
+        qualifiers={
             "mining_rule": GRAPH_CONNECTION_MINING_RULE,
             "outcome_id": candidate.outcome_id,
             "supporting_assertion_ids": list(candidate.supporting_assertion_ids),
         },
-        "current_assessment": (
+        current_assessment=(
             "Graph mining inferred a shared governance outcome between "
             f"{candidate.subject_organization_id} and {candidate.object_organization_id}."
         ),
-        "provenance_activity_ids": [],
-        "created_at": mined_at.isoformat(),
-        "updated_at": mined_at.isoformat(),
-    }
+        created_at=mined_at,
+        updated_at=mined_at,
+    )
     relationship = Relationship(
         id=relationship_id,
         subject_id=candidate.subject_organization_id,
@@ -231,15 +230,16 @@ def _candidate_proposed_changes(
                 "as the mined analytic inference."
             ),
             evidence_span_ids=_supporting_evidence_span_ids(
-                assertion_by_id.get(supporting_assertion_id)
+                assertion_by_id=assertion_by_id,
+                supporting_assertion_id=supporting_assertion_id,
             ),
             confidence=0.7,
             created_at=mined_at,
         )
         for supporting_assertion_id in candidate.supporting_assertion_ids
     )
-    records: tuple[tuple[str, str, dict[str, JsonValue] | Relationship | ArgumentEdge], ...] = (
-        ("Assertion", _stable_label("assertion", candidate), assertion_json),
+    records: tuple[tuple[str, str, Assertion | Relationship | ArgumentEdge], ...] = (
+        ("Assertion", _stable_label("assertion", candidate), assertion),
         ("Relationship", _stable_label("relationship", candidate), relationship),
         *(
             (
@@ -266,14 +266,11 @@ def _proposed_change(
     *,
     record_type: str,
     stable_label: str,
-    record: dict[str, JsonValue] | Relationship | ArgumentEdge,
+    record: Assertion | Relationship | ArgumentEdge,
     candidate: GraphConnectionCandidate,
     mined_at: datetime,
 ) -> ProposedChange:
-    if isinstance(record, dict):
-        record_json = record
-    else:
-        record_json = cast(dict[str, JsonValue], record.model_dump(mode="json"))
+    record_json = cast(dict[str, JsonValue], record.model_dump(mode="json"))
     proposed_json: dict[str, JsonValue] = {
         "record_type": record_type,
         "stable_label": stable_label,
@@ -322,7 +319,14 @@ def _stable_label(
     return "_".join(part for part in parts if part)
 
 
-def _supporting_evidence_span_ids(assertion: Assertion | None) -> tuple[str, ...]:
+def _supporting_evidence_span_ids(
+    *,
+    assertion_by_id: dict[str, Assertion],
+    supporting_assertion_id: str,
+) -> tuple[str, ...]:
+    assertion = assertion_by_id.get(supporting_assertion_id)
     if assertion is None:
-        return ()
+        raise ValueError(
+            f"Graph connection candidate references missing Assertion: {supporting_assertion_id}"
+        )
     return assertion.evidence_span_ids

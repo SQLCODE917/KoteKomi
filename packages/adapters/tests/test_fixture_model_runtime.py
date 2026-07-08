@@ -24,7 +24,7 @@ def test_fixture_model_runtime_loads_proposals() -> None:
 
     assert runtime.model_name == "fixture-extraction-runtime"
     assert runtime.prompt_id == "propose_assertions"
-    assert len(proposals) == 10
+    assert len(proposals) == 13
     assert proposals[0].record_type == "Organization"
     assert proposals[0].stable_label == "anthropic_ai_lab"
     assert proposals[0].record["id"] == "org_anthropic"

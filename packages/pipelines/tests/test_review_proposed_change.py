@@ -145,6 +145,10 @@ def test_review_commands_approve_and_reject_proposed_changes(
         proposed_changes,
         "delay_after_us_cyber_concerns",
     )
+    enterprise_evidence_change = proposed_change_by_stable_label(
+        proposed_changes,
+        "enterprise_pilots_suspended",
+    )
     assertion_change = proposed_change_by_stable_label(
         proposed_changes,
         "anthropic_postponed_fable5_after_us_review",
@@ -207,6 +211,8 @@ def test_review_commands_approve_and_reject_proposed_changes(
     assert "Accepted record type: Organization" in organization_output
     assert main(review_approve_args(ledger_path, evidence_change.id)) == 0
     capsys.readouterr()
+    assert main(review_approve_args(ledger_path, enterprise_evidence_change.id)) == 0
+    capsys.readouterr()
     assert main(review_approve_args(ledger_path, assertion_change.id)) == 0
     assertion_output = capsys.readouterr().out
     assert "Accepted record type: Assertion" in assertion_output
@@ -227,6 +233,7 @@ def test_review_commands_approve_and_reject_proposed_changes(
     with sqlite_ledger_transaction(ledger_path) as repository:
         organization = repository.get_organization("org_anthropic")
         evidence_span = repository.get_evidence_span("evs_delay_after_us_cyber_concerns")
+        enterprise_evidence_span = repository.get_evidence_span("evs_enterprise_pilots_suspended")
         assertion = repository.get_assertion("ast_anthropic_postponed_fable5_after_us_review")
         edited_actor = repository.get_actor("act_lina_rahman")
         edited_assertion = repository.get_assertion("ast_enterprise_pilots_suspended_on_june_23")
@@ -234,6 +241,9 @@ def test_review_commands_approve_and_reject_proposed_changes(
         approved_changes = {
             organization_change.id: repository.get_proposed_change(organization_change.id),
             evidence_change.id: repository.get_proposed_change(evidence_change.id),
+            enterprise_evidence_change.id: repository.get_proposed_change(
+                enterprise_evidence_change.id
+            ),
             assertion_change.id: repository.get_proposed_change(assertion_change.id),
         }
         edited_changes = {
@@ -254,6 +264,7 @@ def test_review_commands_approve_and_reject_proposed_changes(
 
     assert organization is not None
     assert evidence_span is not None
+    assert enterprise_evidence_span is not None
     assert assertion is not None
     assert assertion.status is AssertionStatus.REPORTED
     assert assertion.provenance_activity_ids
@@ -282,4 +293,4 @@ def test_review_commands_approve_and_reject_proposed_changes(
     assert rejected_change is not None
     assert rejected_change.review_status is ReviewStatus.REJECTED
     assert rejected_change.accepted_json is None
-    assert len(review_activities) == 6
+    assert len(review_activities) == 7

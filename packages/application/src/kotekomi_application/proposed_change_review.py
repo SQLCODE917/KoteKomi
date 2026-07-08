@@ -13,14 +13,19 @@ from kotekomi_domain import (
     ArgumentEdge,
     Assertion,
     AssertionStatus,
+    AssertionType,
+    Document,
+    Entity,
     Event,
     EvidenceSpan,
     Organization,
     Outcome,
+    Place,
     ProposedChange,
     ProvenanceActivity,
     Relationship,
     ReviewStatus,
+    Source,
 )
 from kotekomi_domain.models import JsonValue
 
@@ -36,7 +41,10 @@ type AcceptedReviewRecord = (
 class ProposedChangeReviewLedger(Protocol):
     def get_proposed_change(self, record_id: str) -> ProposedChange | None: ...
     def save_proposed_change(self, record: ProposedChange) -> None: ...
+    def get_provenance_activity(self, record_id: str) -> ProvenanceActivity | None: ...
     def save_provenance_activity(self, record: ProvenanceActivity) -> None: ...
+
+    def get_entity(self, record_id: str) -> Entity | None: ...
 
     def get_actor(self, record_id: str) -> Actor | None: ...
     def save_actor(self, record: Actor) -> None: ...
@@ -46,6 +54,12 @@ class ProposedChangeReviewLedger(Protocol):
 
     def get_event(self, record_id: str) -> Event | None: ...
     def save_event(self, record: Event) -> None: ...
+
+    def get_place(self, record_id: str) -> Place | None: ...
+
+    def get_source(self, record_id: str) -> Source | None: ...
+
+    def get_document(self, record_id: str) -> Document | None: ...
 
     def get_evidence_span(self, record_id: str) -> EvidenceSpan | None: ...
     def save_evidence_span(self, record: EvidenceSpan) -> None: ...
@@ -110,6 +124,11 @@ def approve_proposed_change(
         review_status=ReviewStatus.APPROVED,
         reviewed_at=review_input.reviewed_at,
         accepted_record=accepted_record,
+    )
+    _validate_accepted_record_references(
+        accepted_record=accepted_record,
+        pending_provenance_activity=provenance_activity,
+        ledger_repository=ledger_repository,
     )
 
     ledger_repository.save_provenance_activity(provenance_activity)
@@ -193,6 +212,11 @@ def edit_proposed_change(
         reviewed_at=review_input.reviewed_at,
         accepted_record=accepted_record,
         original_proposed_json=proposed_change.proposed_json,
+    )
+    _validate_accepted_record_references(
+        accepted_record=accepted_record,
+        pending_provenance_activity=provenance_activity,
+        ledger_repository=ledger_repository,
     )
 
     ledger_repository.save_provenance_activity(provenance_activity)
@@ -289,7 +313,10 @@ def _accepted_assertion(
 ) -> Assertion:
     assertion_json = dict(record_json)
     if assertion_json.get("status") == AssertionStatus.PROPOSED.value:
-        assertion_json["status"] = AssertionStatus.REPORTED.value
+        if assertion_json.get("assertion_type") == AssertionType.ANALYTIC_INFERENCE.value:
+            assertion_json["status"] = AssertionStatus.CORROBORATED.value
+        else:
+            assertion_json["status"] = AssertionStatus.REPORTED.value
     existing_provenance_ids = assertion_json.get("provenance_activity_ids")
     if existing_provenance_ids is None:
         provenance_ids: list[JsonValue] = []
@@ -301,6 +328,200 @@ def _accepted_assertion(
         provenance_ids.append(provenance_activity_id)
     assertion_json["provenance_activity_ids"] = provenance_ids
     return Assertion.model_validate_json(json.dumps(assertion_json))
+
+
+def _validate_accepted_record_references(
+    *,
+    accepted_record: AcceptedReviewRecord,
+    pending_provenance_activity: ProvenanceActivity,
+    ledger_repository: ProposedChangeReviewLedger,
+) -> None:
+    if isinstance(accepted_record, Actor):
+        for organization_id in accepted_record.organization_ids:
+            _require_organization(ledger_repository, organization_id, accepted_record.id)
+    elif isinstance(accepted_record, Organization):
+        return
+    elif isinstance(accepted_record, Event):
+        if accepted_record.place_id is not None:
+            _require_place(ledger_repository, accepted_record.place_id, accepted_record.id)
+        for actor_id in accepted_record.participant_actor_ids:
+            _require_actor(ledger_repository, actor_id, accepted_record.id)
+        for organization_id in accepted_record.participant_organization_ids:
+            _require_organization(ledger_repository, organization_id, accepted_record.id)
+    elif isinstance(accepted_record, EvidenceSpan):
+        _require_source(ledger_repository, accepted_record.source_id, accepted_record.id)
+        _require_document(ledger_repository, accepted_record.document_id, accepted_record.id)
+        if accepted_record.assertion_id is not None:
+            _require_assertion(ledger_repository, accepted_record.assertion_id, accepted_record.id)
+    elif isinstance(accepted_record, Assertion):
+        _require_entity_reference(
+            ledger_repository,
+            accepted_record.subject_entity_id,
+            accepted_record.id,
+        )
+        if accepted_record.object_entity_id is not None:
+            _require_entity_reference(
+                ledger_repository,
+                accepted_record.object_entity_id,
+                accepted_record.id,
+            )
+        for source_id in accepted_record.source_ids:
+            _require_source(ledger_repository, source_id, accepted_record.id)
+        for evidence_span_id in accepted_record.evidence_span_ids:
+            _require_evidence_span(ledger_repository, evidence_span_id, accepted_record.id)
+        for provenance_activity_id in accepted_record.provenance_activity_ids:
+            _require_provenance_activity(
+                ledger_repository,
+                provenance_activity_id,
+                accepted_record.id,
+                pending_provenance_activity.id,
+            )
+    elif isinstance(accepted_record, Relationship):
+        _require_entity_reference(ledger_repository, accepted_record.subject_id, accepted_record.id)
+        _require_entity_reference(ledger_repository, accepted_record.object_id, accepted_record.id)
+        for assertion_id in accepted_record.assertion_ids:
+            _require_assertion(ledger_repository, assertion_id, accepted_record.id)
+    elif isinstance(accepted_record, Outcome):
+        for actor_id in accepted_record.actor_ids:
+            _require_actor(ledger_repository, actor_id, accepted_record.id)
+        for organization_id in accepted_record.organization_ids:
+            _require_organization(ledger_repository, organization_id, accepted_record.id)
+        for event_id in accepted_record.event_ids:
+            _require_event(ledger_repository, event_id, accepted_record.id)
+        for assertion_id in accepted_record.assertion_ids:
+            _require_assertion(ledger_repository, assertion_id, accepted_record.id)
+    else:
+        _require_assertion(ledger_repository, accepted_record.from_assertion_id, accepted_record.id)
+        _require_assertion(ledger_repository, accepted_record.to_assertion_id, accepted_record.id)
+        for evidence_span_id in accepted_record.evidence_span_ids:
+            _require_evidence_span(ledger_repository, evidence_span_id, accepted_record.id)
+
+
+def _require_entity_reference(
+    ledger_repository: ProposedChangeReviewLedger,
+    record_id: str,
+    referring_record_id: str,
+) -> None:
+    if record_id.startswith("ent_"):
+        if ledger_repository.get_entity(record_id) is not None:
+            return
+    elif record_id.startswith("act_"):
+        if ledger_repository.get_actor(record_id) is not None:
+            return
+    elif record_id.startswith("org_"):
+        if ledger_repository.get_organization(record_id) is not None:
+            return
+    elif record_id.startswith("evt_"):
+        if ledger_repository.get_event(record_id) is not None:
+            return
+    elif record_id.startswith("plc_") and ledger_repository.get_place(record_id) is not None:
+        return
+    raise ValueError(
+        f"Accepted record {referring_record_id} references missing entity record: {record_id}"
+    )
+
+
+def _require_actor(
+    ledger_repository: ProposedChangeReviewLedger,
+    record_id: str,
+    referring_record_id: str,
+) -> None:
+    if ledger_repository.get_actor(record_id) is None:
+        raise ValueError(
+            f"Accepted record {referring_record_id} references missing Actor: {record_id}"
+        )
+
+
+def _require_organization(
+    ledger_repository: ProposedChangeReviewLedger,
+    record_id: str,
+    referring_record_id: str,
+) -> None:
+    if ledger_repository.get_organization(record_id) is None:
+        raise ValueError(
+            f"Accepted record {referring_record_id} references missing Organization: {record_id}"
+        )
+
+
+def _require_event(
+    ledger_repository: ProposedChangeReviewLedger,
+    record_id: str,
+    referring_record_id: str,
+) -> None:
+    if ledger_repository.get_event(record_id) is None:
+        raise ValueError(
+            f"Accepted record {referring_record_id} references missing Event: {record_id}"
+        )
+
+
+def _require_place(
+    ledger_repository: ProposedChangeReviewLedger,
+    record_id: str,
+    referring_record_id: str,
+) -> None:
+    if ledger_repository.get_place(record_id) is None:
+        raise ValueError(
+            f"Accepted record {referring_record_id} references missing Place: {record_id}"
+        )
+
+
+def _require_source(
+    ledger_repository: ProposedChangeReviewLedger,
+    record_id: str,
+    referring_record_id: str,
+) -> None:
+    if ledger_repository.get_source(record_id) is None:
+        raise ValueError(
+            f"Accepted record {referring_record_id} references missing Source: {record_id}"
+        )
+
+
+def _require_document(
+    ledger_repository: ProposedChangeReviewLedger,
+    record_id: str,
+    referring_record_id: str,
+) -> None:
+    if ledger_repository.get_document(record_id) is None:
+        raise ValueError(
+            f"Accepted record {referring_record_id} references missing Document: {record_id}"
+        )
+
+
+def _require_evidence_span(
+    ledger_repository: ProposedChangeReviewLedger,
+    record_id: str,
+    referring_record_id: str,
+) -> None:
+    if ledger_repository.get_evidence_span(record_id) is None:
+        raise ValueError(
+            f"Accepted record {referring_record_id} references missing EvidenceSpan: {record_id}"
+        )
+
+
+def _require_assertion(
+    ledger_repository: ProposedChangeReviewLedger,
+    record_id: str,
+    referring_record_id: str,
+) -> None:
+    if ledger_repository.get_assertion(record_id) is None:
+        raise ValueError(
+            f"Accepted record {referring_record_id} references missing Assertion: {record_id}"
+        )
+
+
+def _require_provenance_activity(
+    ledger_repository: ProposedChangeReviewLedger,
+    record_id: str,
+    referring_record_id: str,
+    pending_provenance_activity_id: str,
+) -> None:
+    if record_id == pending_provenance_activity_id:
+        return
+    if ledger_repository.get_provenance_activity(record_id) is None:
+        raise ValueError(
+            f"Accepted record {referring_record_id} references missing ProvenanceActivity: "
+            f"{record_id}"
+        )
 
 
 def _save_accepted_record(
