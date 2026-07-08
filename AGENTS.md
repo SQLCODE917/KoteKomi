@@ -87,6 +87,26 @@ Adapters implement Ports.
 
 Pipelines compose Application Layer use cases.
 
+## Boundary Validation Rule
+
+Domain Core records and Application Layer DTOs are the source of truth for boundary shape.
+
+At every Port, Adapter, and Pipeline boundary, parse inbound structured values through the declared Domain Core record or Application Layer DTO.
+
+Serialize outbound structured values from the declared Domain Core record or Application Layer DTO.
+
+Deterministic project-owned boundaries must fail fast on invalid shape, missing required references, or impossible state.
+
+Do not silently drop, repair, coerce, skip, or clean up invalid deterministic values.
+
+Accepted Ledger writes must validate both Domain Core record shape and cross-record references before commit.
+
+Only non-deterministic outputs, such as local model output, can enter explicit recovery paths.
+
+Recovery must be visible as rejection, quarantine, a validation error, or a reviewable ProposedChange.
+
+Do not convert invalid model output into accepted state.
+
 ## Canonical Terms
 
 Use the canonical terms in `docs/agent/domain.md`.

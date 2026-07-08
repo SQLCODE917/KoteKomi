@@ -49,6 +49,20 @@ Model output must preserve Source and Document references.
 
 Model output must preserve EvidenceSpan text when it proposes Source-backed Assertions.
 
+Model output is non-deterministic.
+
+ModelRuntime Adapters parse model output through Application Layer DTOs before returning it.
+
+Invalid model output must fail validation before it becomes a ProposedChange.
+
+Recovery from invalid model output must be explicit.
+
+Allowed recovery paths are rejection, quarantine, validation errors, or reviewable ProposedChange records.
+
+ModelRuntime Adapters must not silently repair, drop, coerce, skip, or clean up invalid model output.
+
+ModelRuntime Adapters must not write accepted state.
+
 ## Prompt Rules
 
 Prompts live in `prompts/`.

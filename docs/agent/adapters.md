@@ -18,6 +18,16 @@ Every Adapter maps external data into Application Layer DTOs or Domain Core obje
 
 Do not pass tool-native shapes across the Application Layer boundary.
 
+Adapters parse inbound structured values through the declared Domain Core record or Application Layer DTO.
+
+Adapters serialize outbound structured values from the declared Domain Core record or Application Layer DTO.
+
+Deterministic Adapter boundaries fail fast when external input violates the declared contract.
+
+Adapters do not silently drop, repair, coerce, skip, or clean up invalid deterministic input.
+
+Adapters can recover from invalid model output only through explicit rejection, quarantine, validation errors, or reviewable ProposedChange records.
+
 ## MVP Adapters
 
 | Port | MVP Adapter | Later Adapter |

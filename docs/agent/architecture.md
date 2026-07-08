@@ -73,6 +73,10 @@ The Application Layer depends on the Domain Core.
 
 The Application Layer does not depend on specific tools.
 
+The Application Layer validates cross-record references before accepted Ledger writes.
+
+The Application Layer rejects accepted records that reference missing Ledger records.
+
 ## Adapter Boundary
 
 Adapters implement Ports.
@@ -82,6 +86,28 @@ Adapters validate external input.
 Adapters map tool-native shapes into Application Layer DTOs or Domain Core objects.
 
 Adapters do not pass tool-native shapes across the Application Layer boundary.
+
+## Boundary Validation
+
+Domain Core records validate record shape and intrinsic rules.
+
+Application Layer DTOs validate Port message shape.
+
+Every Port, Adapter, and Pipeline boundary parses inbound structured values through the declared Domain Core record or Application Layer DTO.
+
+Every Port, Adapter, and Pipeline boundary serializes outbound structured values from the declared Domain Core record or Application Layer DTO.
+
+Deterministic project-owned boundaries fail fast when parsing or validation fails.
+
+Deterministic project-owned boundaries do not drop, repair, coerce, skip, or clean up invalid values.
+
+Accepted Ledger writes validate both Domain Core record shape and cross-record references before commit.
+
+Model output is the only boundary that can use explicit recovery for invalid structured values.
+
+Model recovery must produce rejection, quarantine, a validation error, or a reviewable ProposedChange.
+
+Model recovery must not produce accepted state.
 
 ## Pipeline Boundary
 
