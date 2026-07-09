@@ -7,6 +7,7 @@ members = [
     "kotekomi",
     "kotekomi-adapters",
     "kotekomi-application",
+    "kotekomi-briefing",
     "kotekomi-domain",
     "kotekomi-pipelines",
 ]
@@ -130,6 +131,21 @@ dependencies = [
 requires-dist = [{ name = "kotekomi-domain", editable = "packages/domain" }]
 
 [[package]]
+name = "kotekomi-briefing"
+version = "0.1.0"
+source = { editable = "packages/briefing" }
+dependencies = [
+    { name = "kotekomi-application" },
+    { name = "kotekomi-domain" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "kotekomi-application", editable = "packages/application" },
+    { name = "kotekomi-domain", editable = "packages/domain" },
+]
+
+[[package]]
 name = "kotekomi-domain"
 version = "0.1.0"
 source = { editable = "packages/domain" }
@@ -147,12 +163,14 @@ source = { editable = "packages/pipelines" }
 dependencies = [
     { name = "kotekomi-adapters" },
     { name = "kotekomi-application" },
+    { name = "kotekomi-briefing" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "kotekomi-adapters", editable = "packages/adapters" },
     { name = "kotekomi-application", editable = "packages/application" },
+    { name = "kotekomi-briefing", editable = "packages/briefing" },
 ]
 
 [[package]]

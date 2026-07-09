@@ -35,10 +35,20 @@ class FakeArchiveStore:
     def read_document_text(self, document_id: str) -> str:
         return self.document_texts[document_id]
 
+    def read_briefing_markdown(self, briefing_id: str) -> str:
+        raise NotImplementedError
+
     def stage_raw_source(self, source_id: str, content: bytes) -> StagedArchiveObject:
         raise NotImplementedError
 
     def stage_document_text(self, document_id: str, text: str) -> StagedArchiveObject:
+        raise NotImplementedError
+
+    def stage_briefing_markdown(
+        self,
+        briefing_id: str,
+        markdown: str,
+    ) -> StagedArchiveObject:
         raise NotImplementedError
 
     def promote_staged_object(self, staged_object: StagedArchiveObject) -> ArchiveObject:

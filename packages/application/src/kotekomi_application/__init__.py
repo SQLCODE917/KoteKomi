@@ -9,6 +9,15 @@ from kotekomi_application.assertion_proposal import (
     deterministic_provenance_activity_id,
     propose_assertions_for_document,
 )
+from kotekomi_application.briefing_generation import (
+    BRIEFING_GENERATION_ACTIVITY,
+    BriefingGenerationInput,
+    BriefingGenerationResult,
+    cleanup_created_briefing_archive_object,
+    deterministic_briefing_id,
+    deterministic_briefing_provenance_activity_id,
+    generate_briefing,
+)
 from kotekomi_application.ledger import initialize_ledger
 from kotekomi_application.ledger_graph_mining import (
     GRAPH_CONNECTION_MINING_ACTIVITY,
@@ -29,6 +38,9 @@ from kotekomi_application.ledger_graph_projection import (
 from kotekomi_application.ports import (
     ArchiveObject,
     ArchiveStore,
+    BriefingMarkdown,
+    BriefingRenderer,
+    BriefingRenderInput,
     GraphAnalyzer,
     GraphConnectionCandidate,
     GraphEdge,
@@ -61,6 +73,12 @@ __all__ = [
     "ArchiveStore",
     "AssertionProposalInput",
     "AssertionProposalResult",
+    "BRIEFING_GENERATION_ACTIVITY",
+    "BriefingGenerationInput",
+    "BriefingGenerationResult",
+    "BriefingMarkdown",
+    "BriefingRenderInput",
+    "BriefingRenderer",
     "GRAPH_CONNECTION_MINING_ACTIVITY",
     "GRAPH_CONNECTION_PREDICATE",
     "GraphAnalyzer",
@@ -83,7 +101,10 @@ __all__ = [
     "StagedArchiveObject",
     "add_source_from_file",
     "approve_proposed_change",
+    "cleanup_created_briefing_archive_object",
     "cleanup_created_source_archive_objects",
+    "deterministic_briefing_id",
+    "deterministic_briefing_provenance_activity_id",
     "deterministic_graph_edge_id",
     "deterministic_graph_mining_provenance_activity_id",
     "deterministic_mined_argument_edge_id",
@@ -94,6 +115,7 @@ __all__ = [
     "deterministic_provenance_activity_id",
     "deterministic_review_provenance_activity_id",
     "edit_proposed_change",
+    "generate_briefing",
     "initialize_ledger",
     "mine_graph_connections",
     "project_ledger_graph",

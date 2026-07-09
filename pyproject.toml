@@ -21,6 +21,7 @@ package = false
 [tool.uv.sources]
 kotekomi-application = { workspace = true }
 kotekomi-adapters = { workspace = true }
+kotekomi-briefing = { workspace = true }
 kotekomi-domain = { workspace = true }
 kotekomi-pipelines = { workspace = true }
 
@@ -28,6 +29,7 @@ kotekomi-pipelines = { workspace = true }
 members = [
   "packages/adapters",
   "packages/application",
+  "packages/briefing",
   "packages/domain",
   "packages/pipelines",
 ]
@@ -37,12 +39,14 @@ addopts = "-q --import-mode=importlib"
 testpaths = [
   "packages/adapters/tests",
   "packages/application/tests",
+  "packages/briefing/tests",
   "packages/domain/tests",
   "packages/pipelines/tests",
 ]
 pythonpath = [
   "packages/adapters/src",
   "packages/application/src",
+  "packages/briefing/src",
   "packages/domain/src",
   "packages/pipelines/src",
 ]
@@ -62,6 +66,8 @@ include = [
   "packages/adapters/tests",
   "packages/application/src",
   "packages/application/tests",
+  "packages/briefing/src",
+  "packages/briefing/tests",
   "packages/domain/src",
   "packages/domain/tests",
   "packages/pipelines/src",
@@ -72,6 +78,7 @@ executionEnvironments = [
   { root = ".", extraPaths = [
     "packages/adapters/src",
     "packages/application/src",
+    "packages/briefing/src",
     "packages/domain/src",
     "packages/pipelines/src",
   ] },

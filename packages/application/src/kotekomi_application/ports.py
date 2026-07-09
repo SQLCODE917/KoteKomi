@@ -54,10 +54,39 @@ class ArchiveStore(Protocol):
     def read_raw_source(self, source_id: str) -> bytes: ...
     def write_document_text(self, document_id: str, text: str) -> ArchiveObject: ...
     def read_document_text(self, document_id: str) -> str: ...
+    def read_briefing_markdown(self, briefing_id: str) -> str: ...
     def stage_raw_source(self, source_id: str, content: bytes) -> StagedArchiveObject: ...
     def stage_document_text(self, document_id: str, text: str) -> StagedArchiveObject: ...
+    def stage_briefing_markdown(
+        self,
+        briefing_id: str,
+        markdown: str,
+    ) -> StagedArchiveObject: ...
     def promote_staged_object(self, staged_object: StagedArchiveObject) -> ArchiveObject: ...
     def delete_object(self, relative_path: str) -> None: ...
+
+
+@dataclass(frozen=True)
+class BriefingRenderInput:
+    briefing_id: str
+    title: str
+    generated_at: str
+    previous_briefing_id: str | None
+    sources: tuple[Source, ...]
+    assertions: tuple[Assertion, ...]
+    relationships: tuple[Relationship, ...]
+    argument_edges: tuple[ArgumentEdge, ...]
+    evidence_spans: tuple[EvidenceSpan, ...]
+    analytic_inference_assertion_ids: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class BriefingMarkdown:
+    markdown: str
+
+
+class BriefingRenderer(Protocol):
+    def render(self, render_input: BriefingRenderInput) -> BriefingMarkdown: ...
 
 
 @dataclass(frozen=True)

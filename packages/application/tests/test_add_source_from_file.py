@@ -57,6 +57,9 @@ class FakeArchiveStore:
     def read_document_text(self, document_id: str) -> str:
         return self.text_writes[document_id]
 
+    def read_briefing_markdown(self, briefing_id: str) -> str:
+        raise NotImplementedError
+
     def stage_raw_source(self, source_id: str, content: bytes) -> StagedArchiveObject:
         staged_path = f".staging/sources/raw/{source_id}.bin.tmp"
         self.staged_writes[staged_path] = content
@@ -79,6 +82,13 @@ class FakeArchiveStore:
                 size_bytes=len(content),
             ),
         )
+
+    def stage_briefing_markdown(
+        self,
+        briefing_id: str,
+        markdown: str,
+    ) -> StagedArchiveObject:
+        raise NotImplementedError
 
     def promote_staged_object(self, staged_object: StagedArchiveObject) -> ArchiveObject:
         content = self.staged_writes.pop(staged_object.staged_relative_path)

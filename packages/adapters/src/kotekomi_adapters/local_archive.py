@@ -12,6 +12,7 @@ ARCHIVE_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
 RAW_SOURCE_DIR = Path("sources/raw")
 EXTRACTED_DOCUMENT_DIR = Path("documents/extracted")
 ATTACHMENTS_DIR = Path("attachments")
+BRIEFING_DAILY_DIR = Path("briefings/daily")
 STAGING_DIR = Path(".staging")
 
 
@@ -20,7 +21,12 @@ class LocalArchiveStore:
         self.archive_root = archive_root
 
     def initialize(self) -> None:
-        for relative_dir in (RAW_SOURCE_DIR, EXTRACTED_DOCUMENT_DIR, ATTACHMENTS_DIR):
+        for relative_dir in (
+            RAW_SOURCE_DIR,
+            EXTRACTED_DOCUMENT_DIR,
+            ATTACHMENTS_DIR,
+            BRIEFING_DAILY_DIR,
+        ):
             self._absolute_path(relative_dir).mkdir(parents=True, exist_ok=True)
 
     def write_raw_source(self, source_id: str, content: bytes) -> ArchiveObject:
@@ -42,6 +48,10 @@ class LocalArchiveStore:
         relative_path = EXTRACTED_DOCUMENT_DIR / f"{_validate_archive_id(document_id)}.txt"
         return self._absolute_path(relative_path).read_text(encoding="utf-8")
 
+    def read_briefing_markdown(self, briefing_id: str) -> str:
+        relative_path = BRIEFING_DAILY_DIR / f"{_validate_archive_id(briefing_id)}.md"
+        return self._absolute_path(relative_path).read_text(encoding="utf-8")
+
     def stage_raw_source(self, source_id: str, content: bytes) -> StagedArchiveObject:
         final_relative_path = RAW_SOURCE_DIR / f"{_validate_archive_id(source_id)}.bin"
         staged_relative_path = _staged_relative_path(final_relative_path)
@@ -58,6 +68,23 @@ class LocalArchiveStore:
         final_relative_path = EXTRACTED_DOCUMENT_DIR / f"{_validate_archive_id(document_id)}.txt"
         staged_relative_path = _staged_relative_path(final_relative_path)
         content = text.encode("utf-8")
+        self._write_bytes(staged_relative_path, self._absolute_path(staged_relative_path), content)
+        return StagedArchiveObject(
+            staged_relative_path=staged_relative_path.as_posix(),
+            final_object=ArchiveObject(
+                relative_path=final_relative_path.as_posix(),
+                size_bytes=len(content),
+            ),
+        )
+
+    def stage_briefing_markdown(
+        self,
+        briefing_id: str,
+        markdown: str,
+    ) -> StagedArchiveObject:
+        final_relative_path = BRIEFING_DAILY_DIR / f"{_validate_archive_id(briefing_id)}.md"
+        staged_relative_path = _staged_relative_path(final_relative_path)
+        content = markdown.encode("utf-8")
         self._write_bytes(staged_relative_path, self._absolute_path(staged_relative_path), content)
         return StagedArchiveObject(
             staged_relative_path=staged_relative_path.as_posix(),

@@ -18,20 +18,24 @@ from kotekomi_adapters import (
 )
 from kotekomi_application import (
     AssertionProposalInput,
+    BriefingGenerationInput,
     GraphConnectionMiningInput,
     JsonValue,
     ReviewProposedChangeInput,
     SourceFileIngestInput,
     add_source_from_file,
     approve_proposed_change,
+    cleanup_created_briefing_archive_object,
     cleanup_created_source_archive_objects,
     edit_proposed_change,
+    generate_briefing,
     initialize_ledger,
     mine_graph_connections,
     project_ledger_graph,
     propose_assertions_for_document,
     reject_proposed_change,
 )
+from kotekomi_briefing import MarkdownBriefingRenderer
 
 from kotekomi_pipelines.config import PipelineConfig, load_config
 
@@ -122,6 +126,18 @@ def main(argv: list[str] | None = None) -> int:
         )
         return mine_graph(config=config)
 
+    if args.command == "briefing" and args.briefing_command == "generate":
+        config = load_config(
+            config_path=args.config,
+            ledger_path_override=args.ledger_path,
+            archive_path_override=args.archive_path,
+        )
+        return generate_markdown_briefing(
+            config=config,
+            title=args.title,
+            previous_briefing_id=args.previous_briefing_id,
+        )
+
     parser.print_help()
     return 2
 
@@ -203,6 +219,17 @@ def build_parser() -> argparse.ArgumentParser:
         help="Mine graph connections into pending ProposedChange records.",
     )
     mine_parser.add_argument("--ledger-path", type=Path, default=None)
+
+    briefing_parser = subparsers.add_parser("briefing", help="Briefing commands.")
+    briefing_subparsers = briefing_parser.add_subparsers(dest="briefing_command")
+    generate_parser = briefing_subparsers.add_parser(
+        "generate",
+        help="Generate a Markdown Briefing from accepted Ledger state.",
+    )
+    generate_parser.add_argument("--title", required=True)
+    generate_parser.add_argument("--previous-briefing-id", default=None)
+    generate_parser.add_argument("--ledger-path", type=Path, default=None)
+    generate_parser.add_argument("--archive-path", type=Path, default=None)
 
     return parser
 
@@ -407,6 +434,48 @@ def mine_graph(*, config: PipelineConfig) -> int:
         print(f"ProvenanceActivity: {result.provenance_activity_id}")
     for proposed_change_id in result.proposed_change_ids:
         print(f"ProposedChange: {proposed_change_id}")
+    return 0
+
+
+def generate_markdown_briefing(
+    *,
+    config: PipelineConfig,
+    title: str,
+    previous_briefing_id: str | None,
+) -> int:
+    archive_store = LocalArchiveStore(config.archive_path)
+    archive_store.initialize()
+    renderer = MarkdownBriefingRenderer()
+    result = None
+    try:
+        with sqlite_ledger_transaction(config.ledger_path) as ledger_repository:
+            result = generate_briefing(
+                BriefingGenerationInput(
+                    title=title,
+                    previous_briefing_id=previous_briefing_id,
+                    generated_at=datetime.now(UTC),
+                ),
+                ledger_repository,
+                archive_store,
+                renderer,
+            )
+    except Exception:
+        if result is not None:
+            cleanup_created_briefing_archive_object(
+                archive_store=archive_store,
+                markdown_path=result.markdown_path,
+            )
+        raise
+
+    print(f"Briefing: {result.briefing_id}")
+    print(f"ProvenanceActivity: {result.provenance_activity_id}")
+    print(f"Markdown path: {result.markdown_path}")
+    print(f"Sources: {result.source_count}")
+    print(f"Assertions: {result.assertion_count}")
+    print(f"Relationships: {result.relationship_count}")
+    print(f"ArgumentEdges: {result.argument_edge_count}")
+    print(f"EvidenceSpans: {result.evidence_span_count}")
+    print(f"Analytic inferences: {result.analytic_inference_count}")
     return 0
 
 
