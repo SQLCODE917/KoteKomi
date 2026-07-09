@@ -164,6 +164,36 @@ class ReviewEditableRecordExport:
     record_json: dict[str, JsonValue]
 
 
+@dataclass(frozen=True)
+class ReviewReadinessInput:
+    record_type: str | None = None
+    source_id: str | None = None
+    document_id: str | None = None
+
+
+@dataclass(frozen=True)
+class ReviewReadinessBlocker:
+    proposed_change_id: str
+    record_type: str
+    stable_label: str
+    referenced_type: str
+    referenced_id: str
+    resolution_status: ReviewReferenceResolution
+
+
+@dataclass(frozen=True)
+class ReviewReadinessStatus:
+    review_required: bool
+    pending_count: int
+    pending_record_type_counts: dict[str, int]
+    pending_reference_count: int
+    missing_reference_count: int
+    can_project_graph: bool
+    can_generate_briefing: bool
+    next_recommended_command: str
+    blockers: tuple[ReviewReadinessBlocker, ...]
+
+
 def list_review_queue(
     review_input: ReviewQueueInput,
     ledger_repository: ReviewQueuePacketLedger,
@@ -227,6 +257,174 @@ def export_review_editable_record(
         stable_label=stable_label,
         record_json=record_json,
     )
+
+
+def get_review_readiness(
+    review_input: ReviewReadinessInput,
+    ledger_repository: ReviewQueuePacketLedger,
+) -> ReviewReadinessStatus:
+    queue = list_review_queue(
+        ReviewQueueInput(
+            review_status=ReviewStatus.PENDING,
+            record_type=review_input.record_type,
+            source_id=review_input.source_id,
+            document_id=review_input.document_id,
+        ),
+        ledger_repository,
+    )
+    pending_record_type_counts: dict[str, int] = {}
+    blockers: list[ReviewReadinessBlocker] = []
+    for item in queue.items:
+        pending_record_type_counts[item.record_type] = (
+            pending_record_type_counts.get(item.record_type, 0) + 1
+        )
+        packet = get_review_packet(
+            ReviewPacketInput(proposed_change_id=item.proposed_change_id),
+            ledger_repository,
+        )
+        blockers.extend(_readiness_blockers(packet))
+    pending_count = len(queue.items)
+    review_required = pending_count > 0
+    return ReviewReadinessStatus(
+        review_required=review_required,
+        pending_count=pending_count,
+        pending_record_type_counts=dict(sorted(pending_record_type_counts.items())),
+        pending_reference_count=sum(
+            1
+            for blocker in blockers
+            if blocker.resolution_status is ReviewReferenceResolution.PENDING
+        ),
+        missing_reference_count=sum(
+            1
+            for blocker in blockers
+            if blocker.resolution_status is ReviewReferenceResolution.MISSING
+        ),
+        can_project_graph=not review_required,
+        can_generate_briefing=not review_required,
+        next_recommended_command="kotekomi review list"
+        if review_required
+        else "kotekomi graph project",
+        blockers=tuple(blockers),
+    )
+
+
+def review_queue_result_to_json(result: ReviewQueueResult) -> dict[str, JsonValue]:
+    return {
+        "items": [
+            {
+                "proposed_change_id": item.proposed_change_id,
+                "review_status": item.review_status.value,
+                "record_type": item.record_type,
+                "stable_label": item.stable_label,
+                "source_id": item.source_id,
+                "document_id": item.document_id,
+                "model_name": item.model_name,
+                "prompt_id": item.prompt_id,
+                "created_at": item.created_at.isoformat(),
+            }
+            for item in result.items
+        ]
+    }
+
+
+def review_packet_to_json(packet: ReviewPacket) -> dict[str, JsonValue]:
+    return {
+        "proposed_change_id": packet.proposed_change_id,
+        "review_status": packet.review_status.value,
+        "record_type": packet.record_type,
+        "stable_label": packet.stable_label,
+        "proposed_record_json": packet.proposed_record_json,
+        "metadata": {
+            "source_id": packet.metadata.source_id,
+            "document_id": packet.metadata.document_id,
+            "model_name": packet.metadata.model_name,
+            "prompt_id": packet.metadata.prompt_id,
+            "provenance_activity_id": packet.metadata.provenance_activity_id,
+            "created_at": packet.metadata.created_at.isoformat(),
+            "updated_at": packet.metadata.updated_at.isoformat(),
+        },
+        "evidence_contexts": [
+            {
+                "source_id": context.source_id,
+                "source_title": context.source_title,
+                "document_id": context.document_id,
+                "selector_type": context.selector_type,
+                "exact_text": context.exact_text,
+                "prefix_text": context.prefix_text,
+                "suffix_text": context.suffix_text,
+                "location": context.location,
+            }
+            for context in packet.evidence_contexts
+        ],
+        "reference_contexts": [
+            {
+                "referenced_id": context.referenced_id,
+                "referenced_type": context.referenced_type,
+                "resolution_status": context.resolution_status.value,
+            }
+            for context in packet.reference_contexts
+        ],
+        "assertion_context": _assertion_context_to_json(packet.assertion_context),
+    }
+
+
+def review_readiness_to_json(status: ReviewReadinessStatus) -> dict[str, JsonValue]:
+    pending_record_type_counts: dict[str, JsonValue] = {
+        record_type: count for record_type, count in status.pending_record_type_counts.items()
+    }
+    return {
+        "review_required": status.review_required,
+        "pending_count": status.pending_count,
+        "pending_record_type_counts": pending_record_type_counts,
+        "pending_reference_count": status.pending_reference_count,
+        "missing_reference_count": status.missing_reference_count,
+        "can_project_graph": status.can_project_graph,
+        "can_generate_briefing": status.can_generate_briefing,
+        "next_recommended_command": status.next_recommended_command,
+        "blockers": [
+            {
+                "proposed_change_id": blocker.proposed_change_id,
+                "record_type": blocker.record_type,
+                "stable_label": blocker.stable_label,
+                "referenced_type": blocker.referenced_type,
+                "referenced_id": blocker.referenced_id,
+                "resolution_status": blocker.resolution_status.value,
+            }
+            for blocker in status.blockers
+        ],
+    }
+
+
+def _readiness_blockers(packet: ReviewPacket) -> tuple[ReviewReadinessBlocker, ...]:
+    return tuple(
+        ReviewReadinessBlocker(
+            proposed_change_id=packet.proposed_change_id,
+            record_type=packet.record_type,
+            stable_label=packet.stable_label,
+            referenced_type=reference.referenced_type,
+            referenced_id=reference.referenced_id,
+            resolution_status=reference.resolution_status,
+        )
+        for reference in packet.reference_contexts
+        if reference.resolution_status
+        in {ReviewReferenceResolution.PENDING, ReviewReferenceResolution.MISSING}
+    )
+
+
+def _assertion_context_to_json(
+    context: ReviewAssertionContext | None,
+) -> dict[str, JsonValue] | None:
+    if context is None:
+        return None
+    return {
+        "epistemic_scope": context.epistemic_scope,
+        "source_authority": context.source_authority,
+        "attribution_basis": context.attribution_basis,
+        "source_report_confidence": context.source_report_confidence,
+        "extraction_confidence": context.extraction_confidence,
+        "world_truth_confidence": context.world_truth_confidence,
+        "causal_confidence": context.causal_confidence,
+    }
 
 
 def _matches_optional_filter(value: str | None, expected: str | None) -> bool:

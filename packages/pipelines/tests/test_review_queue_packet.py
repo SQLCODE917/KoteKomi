@@ -1,9 +1,12 @@
+import json
 from pathlib import Path
 
 import pytest
 from kotekomi_adapters import sqlite_ledger_transaction
 from kotekomi_domain import ProposedChange, ReviewStatus
 from kotekomi_pipelines.cli import main
+
+from packages.pipelines.tests.review_helpers import approve_proposed_changes_in_review_order
 
 SOURCE_FIXTURE_PATH = (
     Path(__file__).resolve().parent
@@ -70,12 +73,56 @@ def review_list_args(ledger_path: Path) -> list[str]:
     ]
 
 
+def review_list_json_args(ledger_path: Path) -> list[str]:
+    return [
+        "review",
+        "list",
+        "--format",
+        "json",
+        "--ledger-path",
+        str(ledger_path),
+    ]
+
+
 def review_show_args(ledger_path: Path, proposed_change_id: str) -> list[str]:
     return [
         "review",
         "show",
         "--proposed-change-id",
         proposed_change_id,
+        "--ledger-path",
+        str(ledger_path),
+    ]
+
+
+def review_show_json_args(ledger_path: Path, proposed_change_id: str) -> list[str]:
+    return [
+        "review",
+        "show",
+        "--proposed-change-id",
+        proposed_change_id,
+        "--format",
+        "json",
+        "--ledger-path",
+        str(ledger_path),
+    ]
+
+
+def review_status_args(ledger_path: Path) -> list[str]:
+    return [
+        "review",
+        "status",
+        "--ledger-path",
+        str(ledger_path),
+    ]
+
+
+def review_status_json_args(ledger_path: Path) -> list[str]:
+    return [
+        "review",
+        "status",
+        "--format",
+        "json",
         "--ledger-path",
         str(ledger_path),
     ]
@@ -93,6 +140,19 @@ def review_export_args(
         proposed_change_id,
         "--output",
         str(output_path),
+        "--ledger-path",
+        str(ledger_path),
+    ]
+
+
+def review_approve_args(ledger_path: Path, proposed_change_id: str) -> list[str]:
+    return [
+        "review",
+        "approve",
+        "--proposed-change-id",
+        proposed_change_id,
+        "--reviewer",
+        "analyst",
         "--ledger-path",
         str(ledger_path),
     ]
@@ -180,6 +240,80 @@ def test_review_export_writes_json_that_can_feed_review_edit(
     assert organization is not None
     assert reviewed_change is not None
     assert reviewed_change.review_status is ReviewStatus.EDITED
+
+
+def test_review_status_and_json_outputs_are_agent_readable(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    ledger_path, _ = prepare_fixture_proposals(tmp_path, capsys)
+    with sqlite_ledger_transaction(ledger_path) as repository:
+        proposed_changes = repository.list_proposed_changes()
+    assertion_change = proposed_change_by_stable_label(
+        proposed_changes,
+        "anthropic_postponed_fable5_after_us_review",
+    )
+
+    assert main(review_status_args(ledger_path)) == 0
+    status_text = capsys.readouterr().out
+    assert "Review required: yes" in status_text
+    assert "Pending ProposedChanges: 16" in status_text
+    assert "Can project graph: no" in status_text
+    assert "Next recommended command: kotekomi review list" in status_text
+
+    assert main(review_status_json_args(ledger_path)) == 0
+    status_json = json.loads(capsys.readouterr().out)
+    assert status_json["review_required"] is True
+    assert status_json["pending_count"] == 16
+    assert status_json["can_project_graph"] is False
+    assert status_json["can_generate_briefing"] is False
+    assert status_json["pending_record_type_counts"]["Assertion"] == 3
+    assert status_json["next_recommended_command"] == "kotekomi review list"
+
+    assert main(review_list_json_args(ledger_path)) == 0
+    list_json = json.loads(capsys.readouterr().out)
+    assert len(list_json["items"]) == 16
+    assert list_json["items"][0]["record_type"] == "Organization"
+
+    assert main(review_show_json_args(ledger_path, assertion_change.id)) == 0
+    packet_json = json.loads(capsys.readouterr().out)
+    assert packet_json["record_type"] == "Assertion"
+    assert packet_json["assertion_context"]["epistemic_scope"] == "source_report"
+    assert packet_json["reference_contexts"][0]["resolution_status"] in {
+        "accepted",
+        "pending",
+        "missing",
+    }
+
+
+def test_review_status_reports_ready_after_fixture_review_queue_resolves(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    ledger_path, _ = prepare_fixture_proposals(tmp_path, capsys)
+    with sqlite_ledger_transaction(ledger_path) as repository:
+        proposed_changes = repository.list_proposed_changes()
+    approve_proposed_changes_in_review_order(
+        ledger_path=ledger_path,
+        proposed_changes=proposed_changes,
+        main=main,
+        review_approve_args=review_approve_args,
+        clear_output=capsys.readouterr,
+    )
+
+    assert main(review_status_json_args(ledger_path)) == 0
+    status_json = json.loads(capsys.readouterr().out)
+    assert status_json == {
+        "blockers": [],
+        "can_generate_briefing": True,
+        "can_project_graph": True,
+        "missing_reference_count": 0,
+        "next_recommended_command": "kotekomi graph project",
+        "pending_count": 0,
+        "pending_record_type_counts": {},
+        "pending_reference_count": 0,
+        "review_required": False,
+    }
 
 
 def prepare_fixture_proposals(

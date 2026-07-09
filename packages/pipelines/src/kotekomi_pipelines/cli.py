@@ -26,6 +26,8 @@ from kotekomi_application import (
     ReviewPacketInput,
     ReviewProposedChangeInput,
     ReviewQueueInput,
+    ReviewReadinessInput,
+    ReviewReadinessStatus,
     SourceFileIngestInput,
     add_source_from_file,
     approve_proposed_change,
@@ -35,12 +37,16 @@ from kotekomi_application import (
     export_review_editable_record,
     generate_briefing,
     get_review_packet,
+    get_review_readiness,
     initialize_ledger,
     list_review_queue,
     mine_graph_connections,
     project_ledger_graph,
     propose_assertions_for_document,
     reject_proposed_change,
+    review_packet_to_json,
+    review_queue_result_to_json,
+    review_readiness_to_json,
 )
 from kotekomi_briefing import MarkdownBriefingRenderer
 from kotekomi_domain import ReviewStatus
@@ -104,6 +110,7 @@ def main(argv: list[str] | None = None) -> int:
             record_type=args.record_type,
             source_id=args.source_id,
             document_id=args.document_id,
+            output_format=args.output_format,
         )
 
     if args.command == "review" and args.review_command == "show":
@@ -115,6 +122,21 @@ def main(argv: list[str] | None = None) -> int:
         return show_reviewed_proposed_change(
             config=config,
             proposed_change_id=args.proposed_change_id,
+            output_format=args.output_format,
+        )
+
+    if args.command == "review" and args.review_command == "status":
+        config = load_config(
+            config_path=args.config,
+            ledger_path_override=args.ledger_path,
+            archive_path_override=None,
+        )
+        return show_review_readiness(
+            config=config,
+            record_type=args.record_type,
+            source_id=args.source_id,
+            document_id=args.document_id,
+            output_format=args.output_format,
         )
 
     if args.command == "review" and args.review_command == "export":
@@ -236,13 +258,39 @@ def build_parser() -> argparse.ArgumentParser:
     list_parser.add_argument("--record-type", default=None)
     list_parser.add_argument("--source-id", default=None)
     list_parser.add_argument("--document-id", default=None)
+    list_parser.add_argument(
+        "--format",
+        dest="output_format",
+        choices=("text", "json"),
+        default="text",
+    )
     list_parser.add_argument("--ledger-path", type=Path, default=None)
     show_parser = review_subparsers.add_parser(
         "show",
         help="Show one ProposedChange review packet.",
     )
     show_parser.add_argument("--proposed-change-id", required=True)
+    show_parser.add_argument(
+        "--format",
+        dest="output_format",
+        choices=("text", "json"),
+        default="text",
+    )
     show_parser.add_argument("--ledger-path", type=Path, default=None)
+    status_parser = review_subparsers.add_parser(
+        "status",
+        help="Show review readiness for agents and humans.",
+    )
+    status_parser.add_argument("--record-type", default=None)
+    status_parser.add_argument("--source-id", default=None)
+    status_parser.add_argument("--document-id", default=None)
+    status_parser.add_argument(
+        "--format",
+        dest="output_format",
+        choices=("text", "json"),
+        default="text",
+    )
+    status_parser.add_argument("--ledger-path", type=Path, default=None)
     export_parser = review_subparsers.add_parser(
         "export",
         help="Export editable ProposedChange record JSON.",
@@ -383,6 +431,7 @@ def list_reviewed_proposed_changes(
     record_type: str | None,
     source_id: str | None,
     document_id: str | None,
+    output_format: str,
 ) -> int:
     with sqlite_ledger_transaction(config.ledger_path) as ledger_repository:
         result = list_review_queue(
@@ -394,6 +443,10 @@ def list_reviewed_proposed_changes(
             ),
             ledger_repository,
         )
+
+    if output_format == "json":
+        print(json.dumps(review_queue_result_to_json(result), indent=2, sort_keys=True))
+        return 0
 
     print(f"Review Queue: {len(result.items)}")
     print(
@@ -413,13 +466,41 @@ def show_reviewed_proposed_change(
     *,
     config: PipelineConfig,
     proposed_change_id: str,
+    output_format: str,
 ) -> int:
     with sqlite_ledger_transaction(config.ledger_path) as ledger_repository:
         packet = get_review_packet(
             ReviewPacketInput(proposed_change_id=proposed_change_id),
             ledger_repository,
         )
+    if output_format == "json":
+        print(json.dumps(review_packet_to_json(packet), indent=2, sort_keys=True))
+        return 0
     print(_review_packet_text(packet))
+    return 0
+
+
+def show_review_readiness(
+    *,
+    config: PipelineConfig,
+    record_type: str | None,
+    source_id: str | None,
+    document_id: str | None,
+    output_format: str,
+) -> int:
+    with sqlite_ledger_transaction(config.ledger_path) as ledger_repository:
+        status = get_review_readiness(
+            ReviewReadinessInput(
+                record_type=record_type,
+                source_id=source_id,
+                document_id=document_id,
+            ),
+            ledger_repository,
+        )
+    if output_format == "json":
+        print(json.dumps(review_readiness_to_json(status), indent=2, sort_keys=True))
+        return 0
+    print(_review_readiness_text(status))
     return 0
 
 
@@ -510,6 +591,39 @@ def _review_packet_text(packet: ReviewPacket) -> str:
     lines.append("Proposed record JSON:")
     lines.append(json.dumps(packet.proposed_record_json, indent=2, sort_keys=True))
     return "\n".join(lines)
+
+
+def _review_readiness_text(status: ReviewReadinessStatus) -> str:
+    lines = [
+        f"Review required: {_bool_text(status.review_required)}",
+        f"Pending ProposedChanges: {status.pending_count}",
+        f"Pending references: {status.pending_reference_count}",
+        f"Missing references: {status.missing_reference_count}",
+        f"Can project graph: {_bool_text(status.can_project_graph)}",
+        f"Can generate Briefing: {_bool_text(status.can_generate_briefing)}",
+        f"Next recommended command: {status.next_recommended_command}",
+        "Pending record types:",
+    ]
+    if status.pending_record_type_counts:
+        for record_type, count in status.pending_record_type_counts.items():
+            lines.append(f"  {record_type}: {count}")
+    else:
+        lines.append("  none")
+    lines.append("Blockers:")
+    if status.blockers:
+        for blocker in status.blockers:
+            lines.append(
+                f"  {blocker.proposed_change_id} | {blocker.record_type} | "
+                f"{blocker.stable_label} | {blocker.referenced_type}: "
+                f"{blocker.referenced_id} ({blocker.resolution_status.value})"
+            )
+    else:
+        lines.append("  none")
+    return "\n".join(lines)
+
+
+def _bool_text(value: bool) -> str:
+    return "yes" if value else "no"
 
 
 def _optional_float(value: float | None) -> str:

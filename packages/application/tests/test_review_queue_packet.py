@@ -1,14 +1,20 @@
 from datetime import UTC, datetime
+from typing import cast
 
 import pytest
 from kotekomi_application import (
     ReviewEditableRecordExportInput,
     ReviewPacketInput,
     ReviewQueueInput,
+    ReviewReadinessInput,
     ReviewReferenceResolution,
     export_review_editable_record,
     get_review_packet,
+    get_review_readiness,
     list_review_queue,
+    review_packet_to_json,
+    review_queue_result_to_json,
+    review_readiness_to_json,
 )
 from kotekomi_domain import (
     Actor,
@@ -244,6 +250,120 @@ def test_export_review_editable_record_returns_only_proposed_record_json() -> No
     assert "record_type" not in result.record_json
     assert "stable_label" not in result.record_json
     assert "record" not in result.record_json
+
+
+def test_review_readiness_reports_pending_and_missing_references() -> None:
+    pending_evidence_change = proposed_change(
+        "pcg_evidence",
+        "EvidenceSpan",
+        evidence_span_json("evs_pending"),
+        stable_label="pending_evidence",
+    )
+    assertion_change = proposed_change(
+        "pcg_assertion",
+        "Assertion",
+        assertion_json(evidence_span_ids=["evs_pending", "evs_missing"]),
+    )
+    ledger = seeded_ledger((pending_evidence_change, assertion_change))
+
+    status = get_review_readiness(ReviewReadinessInput(), ledger)
+
+    assert status.review_required is True
+    assert status.pending_count == 2
+    assert status.pending_record_type_counts == {"Assertion": 1, "EvidenceSpan": 1}
+    assert status.pending_reference_count == 1
+    assert status.missing_reference_count == 1
+    assert status.can_project_graph is False
+    assert status.can_generate_briefing is False
+    assert status.next_recommended_command == "kotekomi review list"
+    blocker_keys = {
+        (blocker.proposed_change_id, blocker.referenced_type, blocker.referenced_id)
+        for blocker in status.blockers
+    }
+    assert ("pcg_assertion", "EvidenceSpan", "evs_pending") in blocker_keys
+    assert ("pcg_assertion", "EvidenceSpan", "evs_missing") in blocker_keys
+
+
+def test_review_readiness_reports_downstream_ready_when_no_pending_records() -> None:
+    ledger = seeded_ledger(())
+
+    status = get_review_readiness(ReviewReadinessInput(), ledger)
+
+    assert status.review_required is False
+    assert status.pending_count == 0
+    assert status.pending_record_type_counts == {}
+    assert status.pending_reference_count == 0
+    assert status.missing_reference_count == 0
+    assert status.can_project_graph is True
+    assert status.can_generate_briefing is True
+    assert status.next_recommended_command == "kotekomi graph project"
+    assert status.blockers == ()
+
+
+def test_review_readiness_filters_by_type_source_and_document() -> None:
+    ledger = seeded_ledger(
+        (
+            proposed_change("pcg_actor", "Actor", actor_json()),
+            proposed_change(
+                "pcg_assertion",
+                "Assertion",
+                assertion_json(),
+            ),
+            proposed_change(
+                "pcg_other_source_assertion",
+                "Assertion",
+                assertion_json("ast_other_source"),
+                source_id="src_other",
+                document_id="doc_other",
+            ),
+        )
+    )
+
+    status = get_review_readiness(
+        ReviewReadinessInput(
+            record_type="Assertion",
+            source_id="src_article_a",
+            document_id="doc_article_a",
+        ),
+        ledger,
+    )
+
+    assert status.pending_count == 1
+    assert status.pending_record_type_counts == {"Assertion": 1}
+
+
+def test_review_state_json_serializers_return_structured_objects() -> None:
+    assertion_change = proposed_change(
+        "pcg_assertion",
+        "Assertion",
+        assertion_json(evidence_span_ids=["evs_missing"]),
+    )
+    ledger = seeded_ledger((assertion_change,))
+    queue = list_review_queue(ReviewQueueInput(), ledger)
+    packet = get_review_packet(ReviewPacketInput("pcg_assertion"), ledger)
+    readiness = get_review_readiness(ReviewReadinessInput(), ledger)
+
+    queue_json = review_queue_result_to_json(queue)
+    packet_json = review_packet_to_json(packet)
+    readiness_json = review_readiness_to_json(readiness)
+
+    queue_items = cast(list[dict[str, JsonValue]], queue_json["items"])
+    assert isinstance(queue_items, list)
+    assert queue_items[0]["review_status"] == "pending"
+    assert packet_json["review_status"] == "pending"
+    assert isinstance(packet_json["reference_contexts"], list)
+    assert packet_json["assertion_context"] == {
+        "attribution_basis": "reported_by_source",
+        "causal_confidence": None,
+        "epistemic_scope": "source_report",
+        "extraction_confidence": 0.89,
+        "source_authority": "secondary",
+        "source_report_confidence": 0.91,
+        "world_truth_confidence": 0.62,
+    }
+    assert readiness_json["review_required"] is True
+    assert readiness_json["pending_count"] == 1
+    assert isinstance(readiness_json["blockers"], list)
 
 
 def seeded_ledger(proposed_changes: tuple[ProposedChange, ...]) -> FakeReviewQueueLedger:
