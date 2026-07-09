@@ -331,7 +331,7 @@ def _proposed_change(
         "record_type": record_type,
         "stable_label": stable_label,
         "record": record_json,
-        "evidence": {
+        "mining_context": {
             "mining_rule": GRAPH_CONNECTION_MINING_RULE,
             "outcome_id": candidate.outcome_id,
             "supporting_assertion_ids": list(candidate.supporting_assertion_ids),

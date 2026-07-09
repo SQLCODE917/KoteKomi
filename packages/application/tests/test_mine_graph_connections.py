@@ -170,8 +170,14 @@ def test_mine_graph_connections_creates_pending_proposal_bundle() -> None:
 
     assertion_record = proposed_changes[0].proposed_json["record"]
     relationship_record = proposed_changes[1].proposed_json["record"]
+    mining_context = proposed_changes[0].proposed_json["mining_context"]
     assert isinstance(assertion_record, dict)
     assert isinstance(relationship_record, dict)
+    assert isinstance(mining_context, dict)
+    assert proposed_changes[0].proposed_json.get("evidence") is None
+    assert mining_context["mining_rule"] == "outcome_organization_assertion_cooccurrence"
+    assert mining_context["outcome_id"] == "out_monitoring_update"
+    assert mining_context["supporting_assertion_ids"] == ["ast_delay", "ast_suspension"]
     assert assertion_record["id"] == deterministic_mined_assertion_id(candidate)
     assert assertion_record["assertion_type"] == "analytic_inference"
     assert assertion_record["epistemic_scope"] == "analytic_inference"

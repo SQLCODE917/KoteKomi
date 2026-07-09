@@ -21,6 +21,9 @@ from kotekomi_application import (
     BriefingGenerationInput,
     GraphConnectionMiningInput,
     JsonValue,
+    PipelineNextStep,
+    PipelineStatus,
+    PipelineStatusInput,
     ReviewEditableRecordExportInput,
     ReviewPacket,
     ReviewPacketInput,
@@ -36,11 +39,15 @@ from kotekomi_application import (
     edit_proposed_change,
     export_review_editable_record,
     generate_briefing,
+    get_pipeline_next,
+    get_pipeline_status,
     get_review_packet,
     get_review_readiness,
     initialize_ledger,
     list_review_queue,
     mine_graph_connections,
+    pipeline_next_to_json,
+    pipeline_status_to_json,
     project_ledger_graph,
     propose_assertions_for_document,
     reject_proposed_change,
@@ -175,6 +182,28 @@ def main(argv: list[str] | None = None) -> int:
             proposed_change_id=args.proposed_change_id,
             reviewer=args.reviewer,
             accepted_record_json_path=args.accepted_record_json,
+        )
+
+    if args.command == "pipeline" and args.pipeline_command == "status":
+        config = load_config(
+            config_path=args.config,
+            ledger_path_override=args.ledger_path,
+            archive_path_override=None,
+        )
+        return show_pipeline_status(
+            config=config,
+            output_format=args.output_format,
+        )
+
+    if args.command == "pipeline" and args.pipeline_command == "next":
+        config = load_config(
+            config_path=args.config,
+            ledger_path_override=args.ledger_path,
+            archive_path_override=None,
+        )
+        return show_pipeline_next(
+            config=config,
+            output_format=args.output_format,
         )
 
     if args.command == "graph" and args.graph_command == "project":
@@ -321,6 +350,34 @@ def build_parser() -> argparse.ArgumentParser:
     edit_parser.add_argument("--reviewer", required=True)
     edit_parser.add_argument("--accepted-record-json", type=Path, required=True)
     edit_parser.add_argument("--ledger-path", type=Path, default=None)
+
+    pipeline_parser = subparsers.add_parser(
+        "pipeline",
+        help="Pipeline readiness and next-step commands.",
+    )
+    pipeline_subparsers = pipeline_parser.add_subparsers(dest="pipeline_command")
+    pipeline_status_parser = pipeline_subparsers.add_parser(
+        "status",
+        help="Show current Pipeline readiness.",
+    )
+    pipeline_status_parser.add_argument(
+        "--format",
+        dest="output_format",
+        choices=("text", "json"),
+        default="text",
+    )
+    pipeline_status_parser.add_argument("--ledger-path", type=Path, default=None)
+    pipeline_next_parser = pipeline_subparsers.add_parser(
+        "next",
+        help="Show the next recommended Pipeline command.",
+    )
+    pipeline_next_parser.add_argument(
+        "--format",
+        dest="output_format",
+        choices=("text", "json"),
+        default="text",
+    )
+    pipeline_next_parser.add_argument("--ledger-path", type=Path, default=None)
 
     graph_parser = subparsers.add_parser("graph", help="Graph projection commands.")
     graph_subparsers = graph_parser.add_subparsers(dest="graph_command")
@@ -504,6 +561,34 @@ def show_review_readiness(
     return 0
 
 
+def show_pipeline_status(
+    *,
+    config: PipelineConfig,
+    output_format: str,
+) -> int:
+    with sqlite_ledger_transaction(config.ledger_path) as ledger_repository:
+        status = get_pipeline_status(PipelineStatusInput(), ledger_repository)
+    if output_format == "json":
+        print(json.dumps(pipeline_status_to_json(status), indent=2, sort_keys=True))
+        return 0
+    print(_pipeline_status_text(status))
+    return 0
+
+
+def show_pipeline_next(
+    *,
+    config: PipelineConfig,
+    output_format: str,
+) -> int:
+    with sqlite_ledger_transaction(config.ledger_path) as ledger_repository:
+        next_step = get_pipeline_next(PipelineStatusInput(), ledger_repository)
+    if output_format == "json":
+        print(json.dumps(pipeline_next_to_json(next_step), indent=2, sort_keys=True))
+        return 0
+    print(_pipeline_next_text(next_step))
+    return 0
+
+
 def export_reviewed_proposed_change(
     *,
     config: PipelineConfig,
@@ -617,6 +702,69 @@ def _review_readiness_text(status: ReviewReadinessStatus) -> str:
                 f"{blocker.stable_label} | {blocker.referenced_type}: "
                 f"{blocker.referenced_id} ({blocker.resolution_status.value})"
             )
+    else:
+        lines.append("  none")
+    return "\n".join(lines)
+
+
+def _pipeline_status_text(status: PipelineStatus) -> str:
+    lines = [
+        f"Pipeline stage: {status.stage.value}",
+        f"Next command: {status.next_command or 'none'}",
+        f"Review required: {_bool_text(status.review_required)}",
+        f"Pending ProposedChanges: {status.pending_count}",
+        f"Missing references: {status.missing_reference_count}",
+        "Counts:",
+        f"  Sources: {status.source_count}",
+        f"  Documents: {status.document_count}",
+        f"  Accepted Assertions: {status.accepted_assertion_count}",
+        f"  Relationships: {status.relationship_count}",
+        f"  Outcomes: {status.outcome_count}",
+        f"  ArgumentEdges: {status.argument_edge_count}",
+        f"  Briefings: {status.briefing_count}",
+        "Safe commands:",
+    ]
+    if status.safe_commands:
+        lines.extend(f"  {command}" for command in status.safe_commands)
+    else:
+        lines.append("  none")
+    lines.append("Blocked commands:")
+    if status.blocked_commands:
+        lines.extend(f"  {command}" for command in status.blocked_commands)
+    else:
+        lines.append("  none")
+    lines.append("Candidate Documents:")
+    if status.candidate_document_ids:
+        lines.extend(f"  {document_id}" for document_id in status.candidate_document_ids)
+    else:
+        lines.append("  none")
+    lines.append("Blockers:")
+    if status.blockers:
+        lines.extend(
+            f"  {blocker.command} | {blocker.blocker_type}: {blocker.blocker_id} | "
+            f"{blocker.reason}"
+            for blocker in status.blockers
+        )
+    else:
+        lines.append("  none")
+    return "\n".join(lines)
+
+
+def _pipeline_next_text(next_step: PipelineNextStep) -> str:
+    lines = [
+        f"Pipeline stage: {next_step.stage.value}",
+        f"Next command: {next_step.command or 'none'}",
+        f"Reason: {next_step.reason}",
+        f"Requires human review: {_bool_text(next_step.requires_human_review)}",
+        f"Blocked: {_bool_text(next_step.blocked)}",
+        "Blockers:",
+    ]
+    if next_step.blockers:
+        lines.extend(
+            f"  {blocker.command} | {blocker.blocker_type}: {blocker.blocker_id} | "
+            f"{blocker.reason}"
+            for blocker in next_step.blockers
+        )
     else:
         lines.append("  none")
     return "\n".join(lines)
