@@ -464,12 +464,14 @@ def generate_markdown_briefing(
             cleanup_created_briefing_archive_object(
                 archive_store=archive_store,
                 markdown_path=result.markdown_path,
+                citation_registry_path=result.citation_registry_path,
             )
         raise
 
     print(f"Briefing: {result.briefing_id}")
     print(f"ProvenanceActivity: {result.provenance_activity_id}")
     print(f"Markdown path: {result.markdown_path}")
+    print(f"Citations path: {result.citation_registry_path}")
     print(f"Entities: {result.entity_count}")
     print(f"Actors: {result.actor_count}")
     print(f"Organizations: {result.organization_count}")

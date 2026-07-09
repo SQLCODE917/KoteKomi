@@ -14,10 +14,13 @@ from kotekomi_domain import (
     Assertion,
     AssertionStatus,
     AssertionType,
+    AttributionBasis,
+    EpistemicScope,
     ProposedChange,
     ProvenanceActivity,
     Relationship,
     ReviewStatus,
+    SourceAuthority,
 )
 from kotekomi_domain.models import JsonValue
 
@@ -244,20 +247,19 @@ def _candidate_proposed_changes(
     assertion = Assertion(
         id=analytic_assertion_id,
         assertion_type=AssertionType.ANALYTIC_INFERENCE,
+        epistemic_scope=EpistemicScope.ANALYTIC_INFERENCE,
         subject_entity_id=candidate.subject_organization_id,
         predicate=GRAPH_CONNECTION_PREDICATE,
         object_entity_id=candidate.object_organization_id,
         status=AssertionStatus.PROPOSED,
+        source_authority=SourceAuthority.NOT_APPLICABLE,
+        attribution_basis=AttributionBasis.NOT_APPLICABLE,
         world_truth_confidence=0.5,
         qualifiers={
             "mining_rule": GRAPH_CONNECTION_MINING_RULE,
             "outcome_id": candidate.outcome_id,
             "supporting_assertion_ids": list(candidate.supporting_assertion_ids),
         },
-        current_assessment=(
-            "Graph mining inferred a shared governance outcome between "
-            f"{candidate.subject_organization_id} and {candidate.object_organization_id}."
-        ),
         created_at=mined_at,
         updated_at=mined_at,
     )

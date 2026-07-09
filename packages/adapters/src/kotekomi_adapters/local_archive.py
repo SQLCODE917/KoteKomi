@@ -52,6 +52,10 @@ class LocalArchiveStore:
         relative_path = BRIEFING_DAILY_DIR / f"{_validate_archive_id(briefing_id)}.md"
         return self._absolute_path(relative_path).read_text(encoding="utf-8")
 
+    def read_briefing_citations_json(self, briefing_id: str) -> str:
+        relative_path = BRIEFING_DAILY_DIR / f"{_validate_archive_id(briefing_id)}.citations.json"
+        return self._absolute_path(relative_path).read_text(encoding="utf-8")
+
     def stage_raw_source(self, source_id: str, content: bytes) -> StagedArchiveObject:
         final_relative_path = RAW_SOURCE_DIR / f"{_validate_archive_id(source_id)}.bin"
         staged_relative_path = _staged_relative_path(final_relative_path)
@@ -85,6 +89,25 @@ class LocalArchiveStore:
         final_relative_path = BRIEFING_DAILY_DIR / f"{_validate_archive_id(briefing_id)}.md"
         staged_relative_path = _staged_relative_path(final_relative_path)
         content = markdown.encode("utf-8")
+        self._write_bytes(staged_relative_path, self._absolute_path(staged_relative_path), content)
+        return StagedArchiveObject(
+            staged_relative_path=staged_relative_path.as_posix(),
+            final_object=ArchiveObject(
+                relative_path=final_relative_path.as_posix(),
+                size_bytes=len(content),
+            ),
+        )
+
+    def stage_briefing_citations_json(
+        self,
+        briefing_id: str,
+        citations_json: str,
+    ) -> StagedArchiveObject:
+        final_relative_path = (
+            BRIEFING_DAILY_DIR / f"{_validate_archive_id(briefing_id)}.citations.json"
+        )
+        staged_relative_path = _staged_relative_path(final_relative_path)
+        content = citations_json.encode("utf-8")
         self._write_bytes(staged_relative_path, self._absolute_path(staged_relative_path), content)
         return StagedArchiveObject(
             staged_relative_path=staged_relative_path.as_posix(),

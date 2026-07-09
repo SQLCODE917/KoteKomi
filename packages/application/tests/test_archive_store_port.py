@@ -33,6 +33,9 @@ class FakeArchiveStore:
     def read_briefing_markdown(self, briefing_id: str) -> str:
         return self.staged[f"briefings/daily/{briefing_id}.md"].decode("utf-8")
 
+    def read_briefing_citations_json(self, briefing_id: str) -> str:
+        return self.staged[f"briefings/daily/{briefing_id}.citations.json"].decode("utf-8")
+
     def stage_raw_source(self, source_id: str, content: bytes) -> StagedArchiveObject:
         staged_path = f".staging/sources/raw/{source_id}.bin.tmp"
         self.staged[staged_path] = content
@@ -57,6 +60,22 @@ class FakeArchiveStore:
         return StagedArchiveObject(
             staged_relative_path=staged_path,
             final_object=ArchiveObject(f"briefings/daily/{briefing_id}.md", len(content)),
+        )
+
+    def stage_briefing_citations_json(
+        self,
+        briefing_id: str,
+        citations_json: str,
+    ) -> StagedArchiveObject:
+        content = citations_json.encode("utf-8")
+        staged_path = f".staging/briefings/daily/{briefing_id}.citations.json.tmp"
+        self.staged[staged_path] = content
+        return StagedArchiveObject(
+            staged_relative_path=staged_path,
+            final_object=ArchiveObject(
+                f"briefings/daily/{briefing_id}.citations.json",
+                len(content),
+            ),
         )
 
     def promote_staged_object(self, staged_object: StagedArchiveObject) -> ArchiveObject:
@@ -100,3 +119,10 @@ def test_fake_archive_store_satisfies_port_shape() -> None:
         "briefings/daily/brf_daily.md", 8
     )
     assert store.read_briefing_markdown("brf_daily") == "# Daily\n"
+    citations_json = '{"briefing_id":"brf_daily","citations":[]}\n'
+    staged_citations = store.stage_briefing_citations_json("brf_daily", citations_json)
+    assert store.promote_staged_object(staged_citations) == ArchiveObject(
+        "briefings/daily/brf_daily.citations.json",
+        len(citations_json.encode("utf-8")),
+    )
+    assert store.read_briefing_citations_json("brf_daily") == citations_json

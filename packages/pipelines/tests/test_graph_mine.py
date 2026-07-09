@@ -114,7 +114,7 @@ def test_graph_mine_creates_pending_connection_proposals_and_is_idempotent(
     output = capsys.readouterr().out
     assert exit_code == 0
     assert "Candidates: 1" in output
-    assert "ProposedChanges: 4" in output
+    assert "ProposedChanges: 5" in output
     assert "ProvenanceActivity: prv_" in output
     with sqlite_ledger_transaction(ledger_path) as repository:
         mined_changes = tuple(
@@ -128,9 +128,10 @@ def test_graph_mine_creates_pending_connection_proposals_and_is_idempotent(
             if activity.activity_type == "graph_connection_mining"
         )
 
-    assert len(mined_changes) == 4
+    assert len(mined_changes) == 5
     assert len(mining_activities) == 1
     assert sorted(record_type(change) for change in mined_changes) == [
+        "ArgumentEdge",
         "ArgumentEdge",
         "ArgumentEdge",
         "Assertion",
@@ -149,7 +150,7 @@ def test_graph_mine_creates_pending_connection_proposals_and_is_idempotent(
     assert "ProposedChanges: 0" in rerun_output
     assert "ProvenanceActivity: none" in rerun_output
     with sqlite_ledger_transaction(ledger_path) as repository:
-        assert len(repository.list_proposed_changes()) == 17
+        assert len(repository.list_proposed_changes()) == 21
 
     approve_proposed_changes_in_review_order(
         ledger_path=ledger_path,
@@ -159,9 +160,9 @@ def test_graph_mine_creates_pending_connection_proposals_and_is_idempotent(
         clear_output=capsys.readouterr,
     )
     with sqlite_ledger_transaction(ledger_path) as repository:
-        assert len(repository.list_assertions()) == 3
+        assert len(repository.list_assertions()) == 4
         assert len(repository.list_relationships()) == 2
-        assert len(repository.list_argument_edges()) == 2
+        assert len(repository.list_argument_edges()) == 3
         assert all(
             proposed_change.review_status is ReviewStatus.APPROVED
             for proposed_change in repository.list_proposed_changes()

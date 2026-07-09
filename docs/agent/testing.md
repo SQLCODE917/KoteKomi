@@ -62,13 +62,21 @@ Pipeline tests verify record-type dispatch fails on unsupported record types.
 
 Briefing tests verify visible text.
 
-Briefing tests verify Source IDs.
+Briefing tests verify Source IDs through structured citation registry data.
 
-Briefing tests verify EvidenceSpan IDs.
+Briefing tests verify EvidenceSpan IDs through structured citation registry data.
 
 Briefing tests verify analytic inference labels.
 
 Briefing tests verify changed state against the previous Briefing.
+
+Briefing tests verify narrative Bottom Line and Key Judgments use numbered citations when source-backed.
+
+Briefing tests verify citation numbers resolve through structured registry data.
+
+Briefing tests must not require agents to parse Markdown to resolve citations.
+
+Briefing tests verify default human-facing Markdown does not expose raw canonical Domain IDs.
 
 ## Bug Fix Rule
 

@@ -28,6 +28,29 @@
       "title": "AssertionType",
       "type": "string"
     },
+    "AttributionBasis": {
+      "enum": [
+        "direct_document",
+        "quoted_statement",
+        "reported_by_source",
+        "anonymous_source",
+        "unclear",
+        "not_applicable"
+      ],
+      "title": "AttributionBasis",
+      "type": "string"
+    },
+    "EpistemicScope": {
+      "enum": [
+        "source_report",
+        "attributed_statement",
+        "world_state",
+        "causal_explanation",
+        "analytic_inference"
+      ],
+      "title": "EpistemicScope",
+      "type": "string"
+    },
     "JsonValue": {
       "anyOf": [
         {
@@ -58,6 +81,17 @@
           "type": "null"
         }
       ]
+    },
+    "SourceAuthority": {
+      "enum": [
+        "primary",
+        "secondary",
+        "tertiary",
+        "unknown",
+        "not_applicable"
+      ],
+      "title": "SourceAuthority",
+      "type": "string"
     }
   },
   "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -65,6 +99,42 @@
   "properties": {
     "assertion_type": {
       "$ref": "#/$defs/AssertionType"
+    },
+    "attributed_to_id": {
+      "anyOf": [
+        {
+          "pattern": "^act_[A-Za-z0-9][A-Za-z0-9_-]*$",
+          "type": "string"
+        },
+        {
+          "pattern": "^org_[A-Za-z0-9][A-Za-z0-9_-]*$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Attributed To Id"
+    },
+    "attribution_basis": {
+      "$ref": "#/$defs/AttributionBasis"
+    },
+    "authority_evidence_span_ids": {
+      "items": {
+        "pattern": "^evs_[A-Za-z0-9][A-Za-z0-9_-]*$",
+        "type": "string"
+      },
+      "title": "Authority Evidence Span Ids",
+      "type": "array"
+    },
+    "authority_source_ids": {
+      "items": {
+        "pattern": "^src_[A-Za-z0-9][A-Za-z0-9_-]*$",
+        "type": "string"
+      },
+      "title": "Authority Source Ids",
+      "type": "array"
     },
     "causal_confidence": {
       "anyOf": [
@@ -89,6 +159,9 @@
       "default": "",
       "title": "Current Assessment",
       "type": "string"
+    },
+    "epistemic_scope": {
+      "$ref": "#/$defs/EpistemicScope"
     },
     "evidence_span_ids": {
       "items": {
@@ -170,6 +243,9 @@
       "title": "Qualifiers",
       "type": "object"
     },
+    "source_authority": {
+      "$ref": "#/$defs/SourceAuthority"
+    },
     "source_ids": {
       "items": {
         "pattern": "^src_[A-Za-z0-9][A-Za-z0-9_-]*$",
@@ -243,9 +319,12 @@
   "required": [
     "id",
     "assertion_type",
+    "epistemic_scope",
     "subject_entity_id",
     "predicate",
-    "status"
+    "status",
+    "source_authority",
+    "attribution_basis"
   ],
   "title": "Assertion",
   "type": "object"

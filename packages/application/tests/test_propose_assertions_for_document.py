@@ -38,6 +38,9 @@ class FakeArchiveStore:
     def read_briefing_markdown(self, briefing_id: str) -> str:
         raise NotImplementedError
 
+    def read_briefing_citations_json(self, briefing_id: str) -> str:
+        raise NotImplementedError
+
     def stage_raw_source(self, source_id: str, content: bytes) -> StagedArchiveObject:
         raise NotImplementedError
 
@@ -48,6 +51,13 @@ class FakeArchiveStore:
         self,
         briefing_id: str,
         markdown: str,
+    ) -> StagedArchiveObject:
+        raise NotImplementedError
+
+    def stage_briefing_citations_json(
+        self,
+        briefing_id: str,
+        citations_json: str,
     ) -> StagedArchiveObject:
         raise NotImplementedError
 
@@ -150,6 +160,9 @@ def test_propose_assertions_for_document_creates_pending_proposed_changes() -> N
     assert isinstance(proposed_record, dict)
     assert proposed_record["id"] == "ast_release_was_delayed"
     assert proposed_record["assertion_type"] == "source_claim"
+    assert proposed_record["epistemic_scope"] == "source_report"
+    assert proposed_record["source_authority"] == "secondary"
+    assert proposed_record["attribution_basis"] == "reported_by_source"
     assert proposed_record["status"] == "proposed"
 
 
@@ -230,6 +243,35 @@ def test_propose_assertions_for_document_rejects_invalid_model_record() -> None:
     assert ledger.proposed_changes == {}
 
 
+def test_propose_assertions_for_document_rejects_assertion_missing_epistemic_scope() -> None:
+    document = document_fixture()
+    invalid_record = assertion_record(document)
+    invalid_record.pop("epistemic_scope")
+    ledger = FakeLedgerRepository(documents={document.id: document})
+    archive = FakeArchiveStore({document.id: "document text"})
+    model_runtime = FakeModelRuntime(
+        (
+            ModelProposal(
+                record_type="Assertion",
+                stable_label="release_was_delayed",
+                record=invalid_record,
+                evidence=evidence_record(document),
+            ),
+        )
+    )
+
+    with pytest.raises(ValueError, match="epistemic_scope"):
+        propose_assertions_for_document(
+            AssertionProposalInput(document_id=document.id, proposed_at=NOW),
+            archive,
+            ledger,
+            model_runtime,
+        )
+
+    assert ledger.provenance_activities == {}
+    assert ledger.proposed_changes == {}
+
+
 def document_fixture() -> Document:
     return Document(
         id="doc_article_a",
@@ -244,10 +286,13 @@ def assertion_record(document: Document) -> dict[str, JsonValue]:
     return {
         "id": "ast_release_was_delayed",
         "assertion_type": "source_claim",
+        "epistemic_scope": "source_report",
         "subject_entity_id": "org_anthropic",
         "predicate": "postponed_rollout",
         "object_value": {"model": "Claude Fable 5"},
         "status": "proposed",
+        "source_authority": "secondary",
+        "attribution_basis": "reported_by_source",
         "source_ids": [document.source_id],
         "evidence_span_ids": ["evs_delay_evidence"],
         "provenance_activity_ids": [],

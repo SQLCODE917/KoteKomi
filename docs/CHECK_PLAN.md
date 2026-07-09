@@ -11,6 +11,7 @@
 - validate sample Assertions against JSON schema with `packages/domain/tests/test_schema_generation.py`
 - validate sample ProposedChanges against JSON schema with `packages/domain/tests/test_schema_generation.py`
 - validate sample Briefings against JSON schema with `packages/domain/tests/test_schema_generation.py`
+- verify Assertion epistemic scope and Source authority validation with `packages/domain/tests/test_assertion_rules.py`
 
 ## 3. Ledger checks
 - run `uv run pytest packages/application/tests`
@@ -27,6 +28,7 @@
 - run URL ingest fixture
 - run local file ingest fixture with `uv run pytest packages/pipelines/tests/test_source_add_file.py`
 - run Assertion proposal Application test with `uv run pytest packages/application/tests/test_propose_assertions_for_document.py`
+- verify model output missing Assertion epistemic fields fails before ProposedChange with `uv run pytest packages/application/tests/test_propose_assertions_for_document.py`
 - run Assertion proposal Adapter fixture with `uv run pytest packages/adapters/tests/test_fixture_model_runtime.py`
 - run Assertion proposal Pipeline fixture with `uv run pytest packages/pipelines/tests/test_source_propose_assertions.py`
 - run ProposedChange review Application test with `uv run pytest packages/application/tests/test_review_proposed_change.py`
@@ -38,6 +40,8 @@
 - run graph mining Application test with `uv run pytest packages/application/tests/test_mine_graph_connections.py`
 - run graph mining Pipeline fixture with `uv run pytest packages/pipelines/tests/test_graph_mine.py`
 - run Briefing generation fixture with `uv run pytest packages/pipelines/tests/test_briefing_generate.py`
+- verify Briefing narrative sections use numbered citations without raw canonical Domain IDs with `uv run pytest packages/briefing/tests/test_markdown_briefing_renderer.py packages/pipelines/tests/test_briefing_generate.py`
+- verify Briefing citation numbers resolve through structured registry data with `uv run pytest packages/application/tests/test_generate_briefing.py packages/pipelines/tests/test_briefing_generate.py`
 
 ## 6. Documentation checks
 - verify glossary terms match Domain Core names
@@ -56,3 +60,6 @@
 - model output written directly as accepted state
 - derived graph, vector, Briefing, or export state treated as canonical state
 - uncited Source-backed Briefing statement
+- agent citation resolution by parsing Markdown instead of structured registry data
+- unsupported claim introduced by Briefing narrative text
+- raw canonical Domain IDs in default human-facing Briefing Markdown

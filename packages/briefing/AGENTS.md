@@ -15,7 +15,11 @@ The Briefing package defines Briefing structure and rendering.
 
 Briefings explain changed Ledger state since a previous Briefing.
 
-Briefings cite Source IDs and EvidenceSpan IDs.
+Briefings use numbered citations in human-facing Markdown.
+
+Briefing citation registries store Source IDs and EvidenceSpan IDs.
+
+Default human-facing Briefing Markdown does not expose raw canonical Domain IDs.
 
 Briefings label analytic inference.
 
@@ -25,8 +29,10 @@ Run Briefing tests after each change.
 
 Verify visible text.
 
-Verify Source IDs.
+Verify Source IDs through structured citation registry data.
 
-Verify EvidenceSpan IDs.
+Verify EvidenceSpan IDs through structured citation registry data.
+
+Verify human-facing Markdown does not expose raw canonical Domain IDs.
 
 Verify analytic inference labels.

@@ -91,6 +91,24 @@ def test_stage_and_promote_briefing_markdown(tmp_path: Path) -> None:
     assert store.read_briefing_markdown("brf_daily") == "# Daily Briefing\n"
 
 
+def test_stage_and_promote_briefing_citations_json(tmp_path: Path) -> None:
+    store = LocalArchiveStore(tmp_path)
+    citations_json = '{"briefing_id":"brf_daily","citations":[]}\n'
+
+    staged = store.stage_briefing_citations_json("brf_daily", citations_json)
+
+    assert staged.final_object.relative_path == "briefings/daily/brf_daily.citations.json"
+    assert staged.final_object.size_bytes == len(citations_json.encode("utf-8"))
+    assert (tmp_path / staged.staged_relative_path).is_file()
+    assert not (tmp_path / staged.final_object.relative_path).exists()
+
+    archive_object = store.promote_staged_object(staged)
+
+    assert archive_object == staged.final_object
+    assert not (tmp_path / staged.staged_relative_path).exists()
+    assert store.read_briefing_citations_json("brf_daily") == citations_json
+
+
 def test_promote_staged_object_rejects_existing_final_object(tmp_path: Path) -> None:
     store = LocalArchiveStore(tmp_path)
     staged = store.stage_raw_source("src_article_a", b"raw source bytes")
@@ -139,6 +157,8 @@ def test_missing_reads_raise(tmp_path: Path) -> None:
         store.read_document_text("doc_missing")
     with pytest.raises(FileNotFoundError):
         store.read_briefing_markdown("brf_missing")
+    with pytest.raises(FileNotFoundError):
+        store.read_briefing_citations_json("brf_missing")
 
 
 def test_archive_ids_reject_path_characters(tmp_path: Path) -> None:
@@ -154,3 +174,5 @@ def test_archive_ids_reject_path_characters(tmp_path: Path) -> None:
         store.stage_document_text("doc/escape", "escape")
     with pytest.raises(ValueError, match="unsupported path characters"):
         store.stage_briefing_markdown("brf/escape", "escape")
+    with pytest.raises(ValueError, match="unsupported path characters"):
+        store.stage_briefing_citations_json("brf/escape", "escape")

@@ -1,7 +1,10 @@
 from pathlib import Path
 
 import pytest
-from kotekomi_adapters import sqlite_ledger_transaction
+from kotekomi_adapters import LocalArchiveStore, sqlite_ledger_transaction
+from kotekomi_application import (
+    read_briefing_citation_registry,
+)
 from kotekomi_domain import Briefing, ReviewStatus
 from kotekomi_pipelines.cli import main
 
@@ -176,18 +179,19 @@ def test_briefing_generate_writes_markdown_and_briefing_record(
     assert "Briefing: brf_" in output
     assert "ProvenanceActivity: prv_" in output
     assert "Markdown path: briefings/daily/brf_" in output
+    assert "Citations path: briefings/daily/brf_" in output
     assert "Entities: 0" in output
-    assert "Actors: 2" in output
+    assert "Actors: 3" in output
     assert "Organizations: 4" in output
     assert "Places: 0" in output
     assert "Events: 1" in output
     assert "Sources: 1" in output
     assert "Documents: 1" in output
-    assert "Assertions: 3" in output
+    assert "Assertions: 4" in output
     assert "Relationships: 2" in output
     assert "Outcomes: 1" in output
-    assert "ArgumentEdges: 2" in output
-    assert "EvidenceSpans: 2" in output
+    assert "ArgumentEdges: 3" in output
+    assert "EvidenceSpans: 3" in output
     assert "Analytic inferences: 1" in output
     with sqlite_ledger_transaction(ledger_path) as repository:
         briefings = repository.list_briefings()
@@ -203,7 +207,7 @@ def test_briefing_generate_writes_markdown_and_briefing_record(
     assert briefing.markdown_path is not None
     assert briefing.provenance_activity_id == activities[0].id
     assert briefing.entity_ids == ()
-    assert briefing.actor_ids == ("act_dario_amodei", "act_lina_rahman")
+    assert briefing.actor_ids == ("act_dario_amodei", "act_howard_lutnick", "act_lina_rahman")
     assert briefing.organization_ids == (
         "org_anthropic",
         "org_commerce_department",
@@ -214,31 +218,135 @@ def test_briefing_generate_writes_markdown_and_briefing_record(
     assert briefing.event_ids == ("evt_june_21_emergency_release_review_call",)
     assert briefing.source_ids == ("src_aa67767133655af72fbcf0a8",)
     assert briefing.document_ids == ("doc_aa67767133655af72fbcf0a8",)
-    assert len(briefing.assertion_ids) == 3
+    assert len(briefing.assertion_ids) == 4
     assert len(briefing.relationship_ids) == 2
     assert briefing.outcome_ids == ("out_monitoring_update_and_notice_commitment",)
-    assert len(briefing.argument_edge_ids) == 2
-    assert len(briefing.evidence_span_ids) == 2
+    assert len(briefing.argument_edge_ids) == 3
+    assert len(briefing.evidence_span_ids) == 3
     assert len(briefing.analytic_inference_assertion_ids) == 1
 
     markdown = (archive_path / briefing.markdown_path).read_text(encoding="utf-8")
+    citation_registry_path = archive_path / "briefings" / "daily" / f"{briefing.id}.citations.json"
+    assert citation_registry_path.is_file()
+    registry = read_briefing_citation_registry(
+        briefing_id=briefing.id,
+        archive_store=LocalArchiveStore(archive_path),
+    )
+    delay_citation = next(
+        citation
+        for citation in registry.citations
+        if citation.assertion_ids == ("ast_anthropic_postponed_fable5_after_us_review",)
+    )
+    suspension_citation = next(
+        citation
+        for citation in registry.citations
+        if citation.assertion_ids == ("ast_enterprise_pilots_suspended_on_june_23",)
+    )
+    lutnick_citation = next(
+        citation
+        for citation in registry.citations
+        if citation.assertion_ids == ("ast_lutnick_pressed_pause_for_customer_separation_review",)
+    )
+    analytic_citations = tuple(
+        citation for citation in registry.citations if citation.is_analytic_inference
+    )
+    assert delay_citation.assertion_ids == ("ast_anthropic_postponed_fable5_after_us_review",)
+    assert delay_citation.source_ids == ("src_aa67767133655af72fbcf0a8",)
+    assert delay_citation.document_ids == ("doc_aa67767133655af72fbcf0a8",)
+    assert delay_citation.evidence_span_ids == ("evs_delay_after_us_cyber_concerns",)
+    assert suspension_citation.assertion_ids == ("ast_enterprise_pilots_suspended_on_june_23",)
+    assert suspension_citation.evidence_span_ids == ("evs_enterprise_pilots_suspended",)
+    assert lutnick_citation.evidence_span_ids == (
+        "evs_lutnick_pressed_pause_for_customer_separation_review",
+    )
+    assert len(analytic_citations) == 1
+    assert "ast_anthropic_postponed_fable5_after_us_review" in analytic_citations[0].assertion_ids
+    assert "ast_enterprise_pilots_suspended_on_june_23" in analytic_citations[0].assertion_ids
+    assert (
+        "ast_lutnick_pressed_pause_for_customer_separation_review"
+        in analytic_citations[0].assertion_ids
+    )
+    assert analytic_citations[0].argument_edge_ids == briefing.argument_edge_ids
     assert "# Daily Briefing" in markdown
+    assert "## Bottom Line" in markdown
+    assert (
+        "Source report: U.S. cyber-safety concerns delayed Anthropic's broader "
+        "Claude Fable 5 rollout." in markdown
+    )
+    assert (
+        "Source report: Anthropic suspended several enterprise pilots while preserving a smaller "
+        "approved evaluation program." in markdown
+    )
+    assert "## Judgment" in markdown
+    assert (
+        "Commerce review pressure became a release-governance constraint on Anthropic's "
+        "Claude Fable 5 rollout." in markdown
+    )
+    assert (
+        "The article states that Commerce Secretary Howard Lutnick pressed for a pause until "
+        "Commerce could assess customer-separation controls." in markdown
+    )
+    assert (
+        "The article attributes the broader delay account to people involved in the review "
+        "and described documents, so KoteKomi treats it as secondary reporting rather than "
+        "primary-source confirmation." in markdown
+    )
+    assert (
+        "KoteKomi infers a release-governance constraint because Commerce's pause request, "
+        "the rollout delay, and the enterprise pilot suspension connect government review to "
+        "Anthropic release timing." in markdown
+    )
+    assert "## Key Judgments" in markdown
+    assert (
+        "Inference: Anthropic and Commerce Department share a release-governance outcome."
+        in markdown
+    )
+    assert "Confidence: Moderate" in markdown
+    assert "Type: Analytic inference" in markdown
+    assert "## Evidence Basis" in markdown
+    assert "## Uncertainties and Gaps" in markdown
+    assert "Treasury Department" in markdown
+    assert "White House" in markdown
+    assert "not directly stated by a Source" in markdown
+    assert "## Analytic Trace" in markdown
+    assert "## Citations" in markdown
+    assert "Source report: U.S. cyber-safety concerns delayed" in markdown
+    assert "Source report: Anthropic suspended several enterprise pilots" in markdown
     assert "Anthropic" in markdown
     assert "Commerce Department" in markdown
     assert "Treasury Department" in markdown
     assert "White House" in markdown
     assert "Dario Amodei" in markdown
+    assert "Howard Lutnick" in markdown
     assert "Lina Rahman" in markdown
     assert "June 21 emergency Claude Fable 5 release review call" in markdown
     assert (
         "Anthropic resumed most access while agreeing to incident summaries and extra notice "
         "before major capability increases." in markdown
     )
-    assert "`src_aa67767133655af72fbcf0a8`" in markdown
-    assert "`doc_aa67767133655af72fbcf0a8`" in markdown
-    assert "`evs_delay_after_us_cyber_concerns`" in markdown
-    assert "`evs_enterprise_pilots_suspended`" in markdown
+    assert (
+        "Inference: Anthropic and Commerce Department share a release-governance outcome"
+        in markdown
+    )
     assert "Analytic inference" in markdown
+    assert "appears to" not in markdown
+    assert "Graph mining" not in markdown
+    assert "Accepted Relationship" not in markdown
+    assert "ArgumentEdges" not in markdown
+    assert "source-backed claim that The Source reports" not in markdown
+    for raw_prefix in (
+        "act_",
+        "arg_",
+        "ast_",
+        "ctn_",
+        "doc_",
+        "evs_",
+        "evt_",
+        "org_",
+        "rel_",
+        "src_",
+    ):
+        assert raw_prefix not in markdown
 
 
 def test_fixture_article_briefing_records_every_accepted_canonical_record(

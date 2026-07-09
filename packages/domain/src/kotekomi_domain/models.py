@@ -85,6 +85,31 @@ class AssertionStatus(StrEnum):
     DEPRECATED = "deprecated"
 
 
+class EpistemicScope(StrEnum):
+    SOURCE_REPORT = "source_report"
+    ATTRIBUTED_STATEMENT = "attributed_statement"
+    WORLD_STATE = "world_state"
+    CAUSAL_EXPLANATION = "causal_explanation"
+    ANALYTIC_INFERENCE = "analytic_inference"
+
+
+class SourceAuthority(StrEnum):
+    PRIMARY = "primary"
+    SECONDARY = "secondary"
+    TERTIARY = "tertiary"
+    UNKNOWN = "unknown"
+    NOT_APPLICABLE = "not_applicable"
+
+
+class AttributionBasis(StrEnum):
+    DIRECT_DOCUMENT = "direct_document"
+    QUOTED_STATEMENT = "quoted_statement"
+    REPORTED_BY_SOURCE = "reported_by_source"
+    ANONYMOUS_SOURCE = "anonymous_source"
+    UNCLEAR = "unclear"
+    NOT_APPLICABLE = "not_applicable"
+
+
 class ArgumentEdgeRelation(StrEnum):
     SUPPORTS = "supports"
     CONTRADICTS = "contradicts"
@@ -185,11 +210,15 @@ class EvidenceSpan(DomainModel):
 class Assertion(DomainModel):
     id: AssertionId
     assertion_type: AssertionType
+    epistemic_scope: EpistemicScope
     subject_entity_id: EntityId | ActorId | OrganizationId | EventId | PlaceId
     predicate: NonEmptyStr
     object_entity_id: EntityId | ActorId | OrganizationId | EventId | PlaceId | None = None
     object_value: JsonValue = None
     status: AssertionStatus
+    source_authority: SourceAuthority
+    attribution_basis: AttributionBasis
+    attributed_to_id: ActorId | OrganizationId | None = None
     source_report_confidence: Confidence | None = None
     extraction_confidence: Confidence | None = None
     world_truth_confidence: Confidence | None = None
@@ -198,6 +227,8 @@ class Assertion(DomainModel):
     current_assessment: str = ""
     source_ids: tuple[SourceId, ...] = Field(default_factory=tuple)
     evidence_span_ids: tuple[EvidenceSpanId, ...] = Field(default_factory=tuple)
+    authority_source_ids: tuple[SourceId, ...] = Field(default_factory=tuple)
+    authority_evidence_span_ids: tuple[EvidenceSpanId, ...] = Field(default_factory=tuple)
     provenance_activity_ids: tuple[ProvenanceActivityId, ...] = Field(default_factory=tuple)
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
@@ -214,6 +245,54 @@ class Assertion(DomainModel):
 
         if is_accepted_status(self.status) and self.source_ids and not self.evidence_span_ids:
             raise ValueError("Accepted Source-backed Assertion must reference an EvidenceSpan.")
+
+        if (
+            self.assertion_type is AssertionType.ANALYTIC_INFERENCE
+            and self.epistemic_scope is not EpistemicScope.ANALYTIC_INFERENCE
+        ):
+            raise ValueError("Analytic inference must use epistemic_scope analytic_inference.")
+
+        if (
+            self.epistemic_scope is EpistemicScope.ANALYTIC_INFERENCE
+            and self.assertion_type is not AssertionType.ANALYTIC_INFERENCE
+        ):
+            raise ValueError("epistemic_scope analytic_inference must use analytic_inference.")
+
+        if self.source_ids and self.source_authority is SourceAuthority.NOT_APPLICABLE:
+            raise ValueError("Source-backed Assertion must declare source_authority.")
+
+        if not self.source_ids and self.source_authority is not SourceAuthority.NOT_APPLICABLE:
+            raise ValueError(
+                "Non-source-backed Assertion must use source_authority not_applicable."
+            )
+
+        if (
+            self.epistemic_scope is EpistemicScope.ATTRIBUTED_STATEMENT
+            and self.attributed_to_id is None
+        ):
+            raise ValueError("Attributed statement Assertion must include attributed_to_id.")
+
+        if self.source_authority is SourceAuthority.PRIMARY and (
+            not self.authority_source_ids or not self.authority_evidence_span_ids
+        ):
+            raise ValueError("Primary source_authority must reference authority evidence.")
+
+        if not set(self.authority_source_ids).issubset(self.source_ids):
+            raise ValueError("authority_source_ids must be a subset of source_ids.")
+
+        if not set(self.authority_evidence_span_ids).issubset(self.evidence_span_ids):
+            raise ValueError(
+                "authority_evidence_span_ids must be a subset of evidence_span_ids."
+            )
+
+        if (
+            self.epistemic_scope is EpistemicScope.ANALYTIC_INFERENCE
+            and not self.source_ids
+            and self.attribution_basis is not AttributionBasis.NOT_APPLICABLE
+        ):
+            raise ValueError(
+                "Non-source-backed analytic inference must use attribution_basis not_applicable."
+            )
 
         if self.qualifiers.get("causal") is True and self.causal_confidence is None:
             raise ValueError("Causal analytic inference must include causal_confidence.")

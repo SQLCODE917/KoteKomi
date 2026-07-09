@@ -21,7 +21,9 @@ from kotekomi_domain import (
     Assertion,
     AssertionStatus,
     AssertionType,
+    AttributionBasis,
     Document,
+    EpistemicScope,
     Event,
     EvidenceSpan,
     Organization,
@@ -32,6 +34,7 @@ from kotekomi_domain import (
     Relationship,
     ReviewStatus,
     Source,
+    SourceAuthority,
 )
 
 NOW = datetime(2026, 7, 8, 12, 0, tzinfo=UTC)
@@ -52,19 +55,25 @@ class FakeMiningLedger:
             Assertion(
                 id="ast_delay",
                 assertion_type=AssertionType.SOURCE_CLAIM,
+                epistemic_scope=EpistemicScope.WORLD_STATE,
                 subject_entity_id="org_anthropic",
                 predicate="postponed_rollout",
                 object_value={"model": "Claude Fable 5"},
                 status=AssertionStatus.REPORTED,
+                source_authority=SourceAuthority.NOT_APPLICABLE,
+                attribution_basis=AttributionBasis.NOT_APPLICABLE,
                 provenance_activity_ids=("prv_review_delay",),
             ),
             Assertion(
                 id="ast_suspension",
                 assertion_type=AssertionType.SOURCE_CLAIM,
+                epistemic_scope=EpistemicScope.WORLD_STATE,
                 subject_entity_id="org_anthropic",
                 predicate="suspended_enterprise_access",
                 object_value={"date": "2026-06-23"},
                 status=AssertionStatus.REPORTED,
+                source_authority=SourceAuthority.NOT_APPLICABLE,
+                attribution_basis=AttributionBasis.NOT_APPLICABLE,
                 provenance_activity_ids=("prv_review_suspension",),
             ),
         )
@@ -165,8 +174,12 @@ def test_mine_graph_connections_creates_pending_proposal_bundle() -> None:
     assert isinstance(relationship_record, dict)
     assert assertion_record["id"] == deterministic_mined_assertion_id(candidate)
     assert assertion_record["assertion_type"] == "analytic_inference"
+    assert assertion_record["epistemic_scope"] == "analytic_inference"
+    assert assertion_record["source_authority"] == "not_applicable"
+    assert assertion_record["attribution_basis"] == "not_applicable"
     assert assertion_record["status"] == "proposed"
     assert assertion_record["predicate"] == GRAPH_CONNECTION_PREDICATE
+    assert assertion_record["current_assessment"] == ""
     Assertion.model_validate_json(json.dumps(assertion_record))
     assert relationship_record["id"] == deterministic_mined_relationship_id(candidate)
     assert relationship_record["assertion_ids"] == [assertion_record["id"]]

@@ -63,6 +63,98 @@ class StagedArchiveObject:
     final_object: ArchiveObject
 
 
+@dataclass(frozen=True)
+class BriefingCitation:
+    number: int
+    citation_key: str
+    label: str
+    summary: str
+    confidence_label: str
+    is_analytic_inference: bool
+    entity_ids: tuple[str, ...] = ()
+    actor_ids: tuple[str, ...] = ()
+    organization_ids: tuple[str, ...] = ()
+    place_ids: tuple[str, ...] = ()
+    event_ids: tuple[str, ...] = ()
+    source_ids: tuple[str, ...] = ()
+    document_ids: tuple[str, ...] = ()
+    evidence_span_ids: tuple[str, ...] = ()
+    assertion_ids: tuple[str, ...] = ()
+    relationship_ids: tuple[str, ...] = ()
+    outcome_ids: tuple[str, ...] = ()
+    argument_edge_ids: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class BriefingCitationRegistry:
+    briefing_id: str
+    citations: tuple[BriefingCitation, ...]
+
+
+@dataclass(frozen=True)
+class BriefingNarrativeSentence:
+    text: str
+    citation_numbers: tuple[int, ...] = ()
+
+
+@dataclass(frozen=True)
+class BriefingEvidenceReference:
+    assertion_id: str
+    source_ids: tuple[str, ...]
+    evidence_span_ids: tuple[str, ...]
+    summary: str
+    citation_numbers: tuple[int, ...] = ()
+
+
+@dataclass(frozen=True)
+class BriefingKeyJudgment:
+    text: str
+    confidence_label: str
+    assertion_ids: tuple[str, ...]
+    relationship_ids: tuple[str, ...] = ()
+    argument_edge_ids: tuple[str, ...] = ()
+    source_ids: tuple[str, ...] = ()
+    evidence_span_ids: tuple[str, ...] = ()
+    citation_numbers: tuple[int, ...] = ()
+    is_analytic_inference: bool = False
+
+
+@dataclass(frozen=True)
+class BriefingUncertainty:
+    text: str
+    record_ids: tuple[str, ...]
+    source_ids: tuple[str, ...] = ()
+    evidence_span_ids: tuple[str, ...] = ()
+    citation_numbers: tuple[int, ...] = ()
+
+
+@dataclass(frozen=True)
+class BriefingOpenQuestion:
+    question: str
+    record_ids: tuple[str, ...]
+    citation_numbers: tuple[int, ...] = ()
+
+
+@dataclass(frozen=True)
+class BriefingSharpJudgment:
+    judgment: BriefingNarrativeSentence
+    source_basis: tuple[BriefingNarrativeSentence, ...]
+    observed_effects: tuple[BriefingNarrativeSentence, ...]
+    assessment: BriefingNarrativeSentence
+    confidence: BriefingNarrativeSentence
+
+
+@dataclass(frozen=True)
+class BriefingNarrative:
+    sharp_judgments: tuple[BriefingSharpJudgment, ...]
+    bottom_line: tuple[BriefingNarrativeSentence, ...]
+    key_judgments: tuple[BriefingKeyJudgment, ...]
+    evidence_references: tuple[BriefingEvidenceReference, ...]
+    uncertainties: tuple[BriefingUncertainty, ...]
+    open_questions: tuple[BriefingOpenQuestion, ...]
+    analytic_trace: tuple[BriefingNarrativeSentence, ...]
+
+
 class ArchiveStore(Protocol):
     def initialize(self) -> None: ...
     def write_raw_source(self, source_id: str, content: bytes) -> ArchiveObject: ...
@@ -70,12 +162,18 @@ class ArchiveStore(Protocol):
     def write_document_text(self, document_id: str, text: str) -> ArchiveObject: ...
     def read_document_text(self, document_id: str) -> str: ...
     def read_briefing_markdown(self, briefing_id: str) -> str: ...
+    def read_briefing_citations_json(self, briefing_id: str) -> str: ...
     def stage_raw_source(self, source_id: str, content: bytes) -> StagedArchiveObject: ...
     def stage_document_text(self, document_id: str, text: str) -> StagedArchiveObject: ...
     def stage_briefing_markdown(
         self,
         briefing_id: str,
         markdown: str,
+    ) -> StagedArchiveObject: ...
+    def stage_briefing_citations_json(
+        self,
+        briefing_id: str,
+        citations_json: str,
     ) -> StagedArchiveObject: ...
     def promote_staged_object(self, staged_object: StagedArchiveObject) -> ArchiveObject: ...
     def delete_object(self, relative_path: str) -> None: ...
@@ -87,6 +185,8 @@ class BriefingRenderInput:
     title: str
     generated_at: str
     previous_briefing_id: str | None
+    narrative: BriefingNarrative
+    citation_registry: BriefingCitationRegistry
     entities: tuple[Entity, ...]
     actors: tuple[Actor, ...]
     organizations: tuple[Organization, ...]

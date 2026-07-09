@@ -93,6 +93,22 @@
       }
     },
     {
+      "record_type": "Actor",
+      "stable_label": "howard_lutnick",
+      "record": {
+        "id": "act_howard_lutnick",
+        "name": "Howard Lutnick",
+        "role_names": ["Commerce Secretary"],
+        "organization_ids": ["org_commerce_department"]
+      },
+      "evidence": {
+        "selector_type": "exact_text",
+        "exact_text": "Commerce Secretary Howard Lutnick pressed for a pause until the department could understand how Anthropic planned to separate U.S. enterprise customers from foreign nationals working inside those same companies.",
+        "source_id": "src_aa67767133655af72fbcf0a8",
+        "document_id": "doc_aa67767133655af72fbcf0a8"
+      }
+    },
+    {
       "record_type": "Event",
       "stable_label": "june_21_emergency_release_review_call",
       "record": {
@@ -161,11 +177,35 @@
       }
     },
     {
+      "record_type": "EvidenceSpan",
+      "stable_label": "lutnick_pressed_pause_for_customer_separation_review",
+      "record": {
+        "id": "evs_lutnick_pressed_pause_for_customer_separation_review",
+        "source_id": "src_aa67767133655af72fbcf0a8",
+        "document_id": "doc_aa67767133655af72fbcf0a8",
+        "assertion_id": null,
+        "selector_type": "exact_text",
+        "exact_text": "Commerce Secretary Howard Lutnick pressed for a pause until the department could understand how Anthropic planned to separate U.S. enterprise customers from foreign nationals working inside those same companies.",
+        "prefix_text": "Dario Amodei told officials that Anthropic had already narrowed the model's release plan and added a higher-risk cyber-use review queue, two people familiar with the discussion said.",
+        "suffix_text": "Treasury Secretary Scott Bessent also asked whether access controls could prevent sanctioned organizations from reaching the model through contractors, cloud tenants, or shared research accounts.",
+        "location": {
+          "section": "government review"
+        }
+      },
+      "evidence": {
+        "selector_type": "exact_text",
+        "exact_text": "Commerce Secretary Howard Lutnick pressed for a pause until the department could understand how Anthropic planned to separate U.S. enterprise customers from foreign nationals working inside those same companies.",
+        "source_id": "src_aa67767133655af72fbcf0a8",
+        "document_id": "doc_aa67767133655af72fbcf0a8"
+      }
+    },
+    {
       "record_type": "Assertion",
       "stable_label": "anthropic_postponed_fable5_after_us_review",
       "record": {
         "id": "ast_anthropic_postponed_fable5_after_us_review",
         "assertion_type": "source_claim",
+        "epistemic_scope": "source_report",
         "subject_entity_id": "org_anthropic",
         "predicate": "postponed_broader_rollout_after_review",
         "object_value": {
@@ -174,6 +214,8 @@
           "review_concern": "cyber operations against critical software"
         },
         "status": "proposed",
+        "source_authority": "secondary",
+        "attribution_basis": "anonymous_source",
         "source_report_confidence": 0.92,
         "extraction_confidence": 0.88,
         "world_truth_confidence": 0.63,
@@ -194,10 +236,45 @@
     },
     {
       "record_type": "Assertion",
+      "stable_label": "lutnick_pressed_pause_for_customer_separation_review",
+      "record": {
+        "id": "ast_lutnick_pressed_pause_for_customer_separation_review",
+        "assertion_type": "source_claim",
+        "epistemic_scope": "source_report",
+        "subject_entity_id": "act_howard_lutnick",
+        "predicate": "pressed_for_pause_pending_customer_separation_review",
+        "object_value": {
+          "target": "Anthropic Claude Fable 5 rollout",
+          "review_question": "separating U.S. enterprise customers from foreign nationals inside the same companies"
+        },
+        "status": "proposed",
+        "source_authority": "secondary",
+        "attribution_basis": "reported_by_source",
+        "source_report_confidence": 0.91,
+        "extraction_confidence": 0.89,
+        "world_truth_confidence": 0.62,
+        "qualifiers": {
+          "role": "Commerce Secretary"
+        },
+        "current_assessment": "The article states that Commerce Secretary Howard Lutnick pressed for a pause until Commerce could assess customer-separation controls.",
+        "source_ids": ["src_aa67767133655af72fbcf0a8"],
+        "evidence_span_ids": ["evs_lutnick_pressed_pause_for_customer_separation_review"],
+        "provenance_activity_ids": []
+      },
+      "evidence": {
+        "selector_type": "exact_text",
+        "exact_text": "Commerce Secretary Howard Lutnick pressed for a pause until the department could understand how Anthropic planned to separate U.S. enterprise customers from foreign nationals working inside those same companies.",
+        "source_id": "src_aa67767133655af72fbcf0a8",
+        "document_id": "doc_aa67767133655af72fbcf0a8"
+      }
+    },
+    {
+      "record_type": "Assertion",
       "stable_label": "enterprise_pilots_suspended_on_june_23",
       "record": {
         "id": "ast_enterprise_pilots_suspended_on_june_23",
         "assertion_type": "source_claim",
+        "epistemic_scope": "source_report",
         "subject_entity_id": "org_anthropic",
         "predicate": "temporarily_suspended_enterprise_pilot_access",
         "object_value": {
@@ -206,6 +283,8 @@
           "exception": "smaller evaluation program for approved U.S. government and safety researchers"
         },
         "status": "proposed",
+        "source_authority": "secondary",
+        "attribution_basis": "reported_by_source",
         "source_report_confidence": 0.9,
         "extraction_confidence": 0.86,
         "world_truth_confidence": 0.61,
@@ -232,7 +311,10 @@
         "subject_id": "org_commerce_department",
         "predicate": "influenced_release_timing_for",
         "object_id": "org_anthropic",
-        "assertion_ids": ["ast_anthropic_postponed_fable5_after_us_review"]
+        "assertion_ids": [
+          "ast_anthropic_postponed_fable5_after_us_review",
+          "ast_lutnick_pressed_pause_for_customer_separation_review"
+        ]
       },
       "evidence": {
         "selector_type": "exact_text",
@@ -251,7 +333,8 @@
         "event_ids": ["evt_june_21_emergency_release_review_call"],
         "assertion_ids": [
           "ast_anthropic_postponed_fable5_after_us_review",
-          "ast_enterprise_pilots_suspended_on_june_23"
+          "ast_enterprise_pilots_suspended_on_june_23",
+          "ast_lutnick_pressed_pause_for_customer_separation_review"
         ]
       },
       "evidence": {

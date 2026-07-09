@@ -29,6 +29,9 @@ Use these exact terms.
 | ProposedChange | A model-generated or script-generated change that awaits human review. |
 | Briefing | A generated report that explains changed state since a previous Briefing. |
 | Ontology Profile | The internal ontology used by the Domain Core. |
+| EpistemicScope | The kind of claim an Assertion makes. |
+| SourceAuthority | The authority level of Source evidence for an Assertion. |
+| AttributionBasis | The way an Assertion attributes a claim to an Actor, Organization, or Source. |
 
 Do not introduce synonyms for these terms.
 
@@ -61,6 +64,12 @@ An Assertion has one predicate.
 
 An Assertion has either one object entity or one object value.
 
+An Assertion has an EpistemicScope.
+
+An Assertion has a SourceAuthority.
+
+An Assertion has an AttributionBasis.
+
 An accepted Assertion has at least one ProvenanceActivity.
 
 A Source-backed Assertion has at least one Source.
@@ -68,6 +77,16 @@ A Source-backed Assertion has at least one Source.
 A Source-backed accepted Assertion has at least one EvidenceSpan.
 
 An analytic inference has `assertion_type = analytic_inference`.
+
+An analytic inference has `epistemic_scope = analytic_inference`.
+
+A non-source analytic inference has `source_authority = not_applicable`.
+
+A non-source analytic inference has `attribution_basis = not_applicable`.
+
+An attributed statement has `attributed_to_id`.
+
+A primary-source-backed Assertion has authority Source IDs and authority EvidenceSpan IDs.
 
 A causal analytic inference has `causal_confidence`.
 
@@ -106,10 +125,22 @@ Use separate confidence dimensions.
 
 A Briefing compares current Ledger state with the previous Briefing.
 
-A Briefing cites Source IDs for Source-backed Assertions.
+A Briefing Markdown uses numbered citations for Source-backed Assertions.
 
-A Briefing cites EvidenceSpan IDs for accepted Source-backed Assertions.
+A Briefing citation registry stores Source IDs and EvidenceSpan IDs for accepted Source-backed Assertions.
+
+A Briefing stores numbered citations as structured derived data alongside the Markdown file.
+
+Agents resolve Briefing citations through the structured citation registry, not by parsing Markdown.
+
+Default human-facing Briefing Markdown does not expose raw canonical Domain IDs.
 
 A Briefing labels analytic inferences.
 
 A Briefing records the ProvenanceActivity that generated it.
+
+A Briefing narrative is derived from accepted Ledger records.
+
+A Briefing narrative does not introduce unsupported claims.
+
+A Briefing narrative preserves Source, EvidenceSpan, Assertion, Relationship, ArgumentEdge, and Outcome boundaries.

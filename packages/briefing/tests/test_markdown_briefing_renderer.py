@@ -1,4 +1,15 @@
-from kotekomi_application import BriefingRenderInput
+from kotekomi_application import (
+    BriefingCitation,
+    BriefingCitationRegistry,
+    BriefingEvidenceReference,
+    BriefingKeyJudgment,
+    BriefingNarrative,
+    BriefingNarrativeSentence,
+    BriefingOpenQuestion,
+    BriefingRenderInput,
+    BriefingSharpJudgment,
+    BriefingUncertainty,
+)
 from kotekomi_briefing import MarkdownBriefingRenderer
 from kotekomi_domain import (
     ArgumentEdge,
@@ -6,7 +17,9 @@ from kotekomi_domain import (
     Assertion,
     AssertionStatus,
     AssertionType,
+    AttributionBasis,
     Document,
+    EpistemicScope,
     Event,
     EvidenceSpan,
     Organization,
@@ -14,6 +27,7 @@ from kotekomi_domain import (
     Relationship,
     SelectorType,
     Source,
+    SourceAuthority,
     SourceType,
 )
 
@@ -27,6 +41,162 @@ def test_markdown_renderer_includes_citations_and_analytic_inference_label() -> 
             title="Daily Briefing",
             generated_at="2026-07-09T12:00:00+00:00",
             previous_briefing_id="brf_previous",
+            narrative=BriefingNarrative(
+                sharp_judgments=(
+                    BriefingSharpJudgment(
+                        judgment=BriefingNarrativeSentence(
+                            text=(
+                                "Commerce review pressure became a release-governance "
+                                "constraint on Anthropic's Claude Fable 5 rollout."
+                            ),
+                            citation_numbers=(2,),
+                        ),
+                        source_basis=(
+                            BriefingNarrativeSentence(
+                                text="The article states that Anthropic delayed rollout.",
+                                citation_numbers=(1,),
+                            ),
+                        ),
+                        observed_effects=(
+                            BriefingNarrativeSentence(
+                                text="The article states that Anthropic delayed rollout.",
+                                citation_numbers=(1,),
+                            ),
+                        ),
+                        assessment=BriefingNarrativeSentence(
+                            text=(
+                                "KoteKomi infers a release-governance constraint because "
+                                "Commerce review and the rollout delay connect government "
+                                "review to Anthropic release timing."
+                            ),
+                            citation_numbers=(2,),
+                        ),
+                        confidence=BriefingNarrativeSentence(
+                            text=(
+                                "Moderate. The inference is supported by one source-backed "
+                                "Assertion from one Source; the Source authority is secondary."
+                            ),
+                            citation_numbers=(2,),
+                        ),
+                    ),
+                ),
+                bottom_line=(
+                    BriefingNarrativeSentence(
+                        text="Source report: Anthropic delayed rollout.",
+                        citation_numbers=(1,),
+                    ),
+                ),
+                key_judgments=(
+                    BriefingKeyJudgment(
+                        text=(
+                            "Inference: Anthropic and Commerce Department share "
+                            "a release-governance outcome."
+                        ),
+                        confidence_label="Moderate",
+                        assertion_ids=("ast_inference", "ast_source_claim"),
+                        argument_edge_ids=("arg_claim_infers_governance",),
+                        source_ids=("src_article_a",),
+                        evidence_span_ids=("evs_article_a_claim",),
+                        citation_numbers=(2,),
+                        is_analytic_inference=True,
+                    ),
+                ),
+                evidence_references=(
+                    BriefingEvidenceReference(
+                        assertion_id="ast_source_claim",
+                        source_ids=("src_article_a",),
+                        evidence_span_ids=("evs_article_a_claim",),
+                        summary="Source report: Anthropic delayed rollout.",
+                        citation_numbers=(1,),
+                    ),
+                ),
+                uncertainties=(
+                    BriefingUncertainty(
+                        text="The analytic inference is not directly stated by a Source.",
+                        record_ids=("ast_inference",),
+                        source_ids=("src_article_a",),
+                        evidence_span_ids=("evs_article_a_claim",),
+                        citation_numbers=(2,),
+                    ),
+                ),
+                open_questions=(
+                    BriefingOpenQuestion(
+                        question="What role did Commerce play beyond recorded participation?",
+                        record_ids=("org_commerce_department",),
+                        citation_numbers=(3,),
+                    ),
+                ),
+                analytic_trace=(
+                    BriefingNarrativeSentence(
+                        text=(
+                            "Source report support: Anthropic delayed rollout supports the "
+                            "inference that Anthropic and Commerce Department share "
+                            "a release-governance outcome."
+                        ),
+                        citation_numbers=(4,),
+                    ),
+                ),
+            ),
+            citation_registry=BriefingCitationRegistry(
+                briefing_id="brf_daily",
+                citations=(
+                    BriefingCitation(
+                        number=1,
+                        citation_key="ctn_source_claim",
+                        label="Source-backed Assertion",
+                        summary="Source report: Anthropic delayed rollout.",
+                        confidence_label="Moderate",
+                        is_analytic_inference=False,
+                        source_ids=("src_article_a",),
+                        document_ids=("doc_article_a",),
+                        evidence_span_ids=("evs_article_a_claim",),
+                        assertion_ids=("ast_source_claim",),
+                    ),
+                    BriefingCitation(
+                        number=2,
+                        citation_key="ctn_inference",
+                        label="Analytic inference",
+                        summary=(
+                            "Inference: Anthropic and Commerce Department share "
+                            "a release-governance outcome."
+                        ),
+                        confidence_label="Moderate",
+                        is_analytic_inference=True,
+                        source_ids=("src_article_a",),
+                        document_ids=("doc_article_a",),
+                        evidence_span_ids=("evs_article_a_claim",),
+                        assertion_ids=("ast_inference", "ast_source_claim"),
+                        argument_edge_ids=("arg_claim_infers_governance",),
+                    ),
+                    BriefingCitation(
+                        number=3,
+                        citation_key="ctn_open_question",
+                        label="Event",
+                        summary="What role did Commerce play beyond recorded participation?",
+                        confidence_label="Not assessed",
+                        is_analytic_inference=False,
+                        organization_ids=("org_commerce_department",),
+                        event_ids=("evt_review_call",),
+                    ),
+                    BriefingCitation(
+                        number=4,
+                        citation_key="ctn_argument_edge",
+                        label="ArgumentEdge",
+                        summary=(
+                            "Source report support: Anthropic delayed rollout supports the "
+                            "inference that Anthropic and Commerce Department share "
+                            "a release-governance outcome."
+                        ),
+                        confidence_label="Moderate",
+                        is_analytic_inference=False,
+                        source_ids=("src_article_a",),
+                        document_ids=("doc_article_a",),
+                        evidence_span_ids=("evs_article_a_claim",),
+                        assertion_ids=("ast_inference", "ast_source_claim"),
+                        argument_edge_ids=("arg_claim_infers_governance",),
+                    ),
+                ),
+            ),
             entities=(),
             actors=(),
             organizations=(
@@ -61,20 +231,26 @@ def test_markdown_renderer_includes_citations_and_analytic_inference_label() -> 
                 Assertion(
                     id="ast_inference",
                     assertion_type=AssertionType.ANALYTIC_INFERENCE,
+                    epistemic_scope=EpistemicScope.ANALYTIC_INFERENCE,
                     subject_entity_id="org_anthropic",
                     predicate="shared_governance_outcome_with",
                     object_entity_id="org_commerce_department",
                     status=AssertionStatus.CORROBORATED,
+                    source_authority=SourceAuthority.NOT_APPLICABLE,
+                    attribution_basis=AttributionBasis.NOT_APPLICABLE,
                     provenance_activity_ids=("prv_review",),
                     current_assessment="Anthropic and Commerce shared a governance outcome.",
                 ),
                 Assertion(
                     id="ast_source_claim",
                     assertion_type=AssertionType.SOURCE_CLAIM,
+                    epistemic_scope=EpistemicScope.SOURCE_REPORT,
                     subject_entity_id="org_anthropic",
                     predicate="delayed_rollout",
                     object_value={"model": "Claude Fable 5"},
                     status=AssertionStatus.REPORTED,
+                    source_authority=SourceAuthority.SECONDARY,
+                    attribution_basis=AttributionBasis.REPORTED_BY_SOURCE,
                     source_ids=("src_article_a",),
                     evidence_span_ids=("evs_article_a_claim",),
                     provenance_activity_ids=("prv_review",),
@@ -124,14 +300,43 @@ def test_markdown_renderer_includes_citations_and_analytic_inference_label() -> 
 
     assert "# Daily Briefing" in markdown
     assert "Previous Briefing: `brf_previous`" in markdown
+    assert "## Bottom Line" in markdown
+    assert "Source report: Anthropic delayed rollout.[1]" in markdown
+    assert "## Judgment" in markdown
+    assert (
+        "Commerce review pressure became a release-governance constraint on Anthropic's "
+        "Claude Fable 5 rollout.[2]" in markdown
+    )
+    assert "Source basis:" in markdown
+    assert "Observed effects:" in markdown
+    assert "## Key Judgments" in markdown
+    assert "Inference: Anthropic and Commerce Department share" in markdown
+    assert "Confidence: Moderate" in markdown
+    assert "## Evidence Basis" in markdown
+    assert "## Uncertainties and Gaps" in markdown
+    assert (
+        "Open question: What role did Commerce play beyond recorded participation?[3]" in markdown
+    )
+    assert "## Analytic Trace" in markdown
+    assert "supports the inference that Anthropic and Commerce Department" in markdown
+    assert "## Citations" in markdown
+    assert "- [1] Source report: Anthropic delayed rollout." in markdown
+    assert "- [2] Inference: Anthropic and Commerce Department share" in markdown
+    assert "Type: Analytic inference" in markdown
     assert "Anthropic" in markdown
     assert "Commerce Department" in markdown
     assert "Emergency release review call" in markdown
     assert "Anthropic resumed access with notice commitments." in markdown
-    assert "`doc_article_a`" in markdown
-    assert "`src_article_a`" in markdown
-    assert "`evs_article_a_claim`" in markdown
-    assert "`ast_inference` (Analytic inference)" in markdown
-    assert "Analytic inference `ast_inference`" in markdown
-    assert "`rel_shared_governance`" in markdown
-    assert "`arg_claim_infers_governance`" in markdown
+    for raw_prefix in (
+        "act_",
+        "arg_",
+        "ast_",
+        "ctn_",
+        "doc_",
+        "evs_",
+        "evt_",
+        "org_",
+        "rel_",
+        "src_",
+    ):
+        assert raw_prefix not in markdown

@@ -19,10 +19,13 @@ def test_assertion_sample_validates_against_json_schema() -> None:
     sample = {
         "id": "ast_release_review",
         "assertion_type": "source_claim",
+        "epistemic_scope": "source_report",
         "subject_entity_id": "act_person_a",
         "predicate": "negotiated_release",
         "object_entity_id": "org_lab_a",
         "status": "reported",
+        "source_authority": "secondary",
+        "attribution_basis": "reported_by_source",
         "source_report_confidence": 0.9,
         "extraction_confidence": 0.8,
         "world_truth_confidence": 0.6,

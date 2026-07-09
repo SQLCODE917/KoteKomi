@@ -9,6 +9,8 @@ from kotekomi_application import (
     BriefingRenderInput,
     StagedArchiveObject,
     generate_briefing,
+    read_briefing_citation_registry,
+    resolve_briefing_citation,
 )
 from kotekomi_domain import (
     ArgumentEdge,
@@ -16,14 +18,19 @@ from kotekomi_domain import (
     Assertion,
     AssertionStatus,
     AssertionType,
+    AttributionBasis,
     Briefing,
     Document,
+    EpistemicScope,
+    Event,
     EvidenceSpan,
     Organization,
+    Outcome,
     ProvenanceActivity,
     Relationship,
     SelectorType,
     Source,
+    SourceAuthority,
     SourceType,
 )
 
@@ -36,6 +43,7 @@ class FakeArchiveStore:
     def __init__(self) -> None:
         self.staged: dict[str, bytes] = {}
         self.markdown: dict[str, str] = {}
+        self.citations_json: dict[str, str] = {}
         self.deleted_paths: list[str] = []
 
     def initialize(self) -> None:
@@ -55,6 +63,9 @@ class FakeArchiveStore:
 
     def read_briefing_markdown(self, briefing_id: str) -> str:
         return self.markdown[briefing_id]
+
+    def read_briefing_citations_json(self, briefing_id: str) -> str:
+        return self.citations_json[briefing_id]
 
     def stage_raw_source(self, source_id: str, content: bytes) -> StagedArchiveObject:
         raise NotImplementedError
@@ -77,20 +88,46 @@ class FakeArchiveStore:
             ),
         )
 
+    def stage_briefing_citations_json(
+        self,
+        briefing_id: str,
+        citations_json: str,
+    ) -> StagedArchiveObject:
+        staged_path = f".staging/briefings/daily/{briefing_id}.citations.json.tmp"
+        self.staged[staged_path] = citations_json.encode("utf-8")
+        return StagedArchiveObject(
+            staged_relative_path=staged_path,
+            final_object=ArchiveObject(
+                relative_path=f"briefings/daily/{briefing_id}.citations.json",
+                size_bytes=len(citations_json.encode("utf-8")),
+            ),
+        )
+
     def promote_staged_object(self, staged_object: StagedArchiveObject) -> ArchiveObject:
         content = self.staged.pop(staged_object.staged_relative_path)
-        briefing_id = staged_object.final_object.relative_path.removeprefix(
-            "briefings/daily/"
-        ).removesuffix(".md")
-        self.markdown[briefing_id] = content.decode("utf-8")
+        relative_path = staged_object.final_object.relative_path
+        if relative_path.endswith(".citations.json"):
+            briefing_id = relative_path.removeprefix("briefings/daily/").removesuffix(
+                ".citations.json"
+            )
+            self.citations_json[briefing_id] = content.decode("utf-8")
+        else:
+            briefing_id = relative_path.removeprefix("briefings/daily/").removesuffix(".md")
+            self.markdown[briefing_id] = content.decode("utf-8")
         return staged_object.final_object
 
     def delete_object(self, relative_path: str) -> None:
         self.deleted_paths.append(relative_path)
         self.staged.pop(relative_path, None)
         if relative_path.startswith("briefings/daily/"):
-            briefing_id = relative_path.removeprefix("briefings/daily/").removesuffix(".md")
-            self.markdown.pop(briefing_id, None)
+            if relative_path.endswith(".citations.json"):
+                briefing_id = relative_path.removeprefix("briefings/daily/").removesuffix(
+                    ".citations.json"
+                )
+                self.citations_json.pop(briefing_id, None)
+            else:
+                briefing_id = relative_path.removeprefix("briefings/daily/").removesuffix(".md")
+                self.markdown.pop(briefing_id, None)
 
 
 class FakeBriefingRenderer:
@@ -180,12 +217,276 @@ def test_generate_briefing_creates_markdown_briefing_and_provenance() -> None:
     assert briefing.analytic_inference_assertion_ids == (analytic_assertion.id,)
     assert briefing.provenance_activity_id == result.provenance_activity_id
     assert archive.markdown[result.briefing_id] == "# Daily Briefing\n"
+    assert result.citation_registry_path == f"briefings/daily/{result.briefing_id}.citations.json"
     assert archive.staged == {}
     assert renderer.calls[0].previous_briefing_id is None
     assert renderer.calls[0].analytic_inference_assertion_ids == (analytic_assertion.id,)
+    registry = read_briefing_citation_registry(
+        briefing_id=result.briefing_id,
+        archive_store=archive,
+    )
+    assert renderer.calls[0].citation_registry == registry
+    narrative = renderer.calls[0].narrative
+    assert len(narrative.bottom_line) == 1
+    assert narrative.bottom_line[0].text == "Source report: The rollout was delayed."
+    assert narrative.bottom_line[0].citation_numbers == (1,)
+    bottom_line_citation = resolve_briefing_citation(
+        registry,
+        narrative.bottom_line[0].citation_numbers[0],
+    )
+    assert bottom_line_citation.assertion_ids == (assertion.id,)
+    assert bottom_line_citation.source_ids == (source.id,)
+    assert bottom_line_citation.document_ids == (document.id,)
+    assert bottom_line_citation.evidence_span_ids == (evidence_span.id,)
+    assert narrative.sharp_judgments == ()
+    assert narrative.key_judgments[0].text == (
+        "Inference: Anthropic and Commerce Department share a release-governance outcome."
+    )
+    assert narrative.key_judgments[0].confidence_label == "Not assessed"
+    assert narrative.key_judgments[0].is_analytic_inference is True
+    assert narrative.key_judgments[0].argument_edge_ids == (argument_edge.id,)
+    analytic_citation = resolve_briefing_citation(
+        registry,
+        narrative.key_judgments[0].citation_numbers[0],
+    )
+    assert analytic_citation.is_analytic_inference is True
+    assert analytic_citation.assertion_ids == (assertion.id, analytic_assertion.id)
+    assert analytic_citation.argument_edge_ids == (argument_edge.id,)
+    assert analytic_citation.source_ids == (source.id,)
+    assert analytic_citation.evidence_span_ids == (evidence_span.id,)
+    assert narrative.evidence_references[0].source_ids == (source.id,)
+    assert narrative.evidence_references[0].evidence_span_ids == (evidence_span.id,)
+    assert (
+        "The inference that Anthropic and Commerce Department share a release-governance "
+        "outcome is derived from source-backed Assertions" in narrative.uncertainties[0].text
+    )
     activity = ledger.provenance_activities[result.provenance_activity_id]
     assert activity.activity_type == "briefing_generation"
     assert activity.output_ids == (result.briefing_id,)
+
+
+def test_generate_briefing_builds_outcome_narrative_with_uncertainties() -> None:
+    source = source_fixture(updated_at=BEFORE)
+    document = document_fixture(updated_at=BEFORE)
+    evidence_span = evidence_span_fixture(created_at=BEFORE)
+    assertion = source_assertion_fixture(updated_at=BEFORE)
+    outcome = Outcome(
+        id="out_monitoring_commitment",
+        description="Anthropic resumed access with notice commitments.",
+        organization_ids=("org_anthropic", "org_commerce_department"),
+        event_ids=("evt_review_call",),
+        assertion_ids=(assertion.id,),
+        created_at=BEFORE,
+        updated_at=BEFORE,
+    )
+    event = Event(
+        id="evt_review_call",
+        name="Emergency release review call",
+        participant_organization_ids=(
+            "org_anthropic",
+            "org_commerce_department",
+            "org_treasury_department",
+        ),
+        created_at=BEFORE,
+        updated_at=BEFORE,
+    )
+    ledger = FakeBriefingLedger(
+        records=(
+            organization_fixture(),
+            organization_fixture("org_commerce_department", "Commerce Department"),
+            organization_fixture("org_treasury_department", "Treasury Department"),
+            event,
+            source,
+            document,
+            evidence_span,
+            assertion,
+            outcome,
+        ),
+    )
+    renderer = FakeBriefingRenderer()
+
+    result = generate_briefing(
+        BriefingGenerationInput(title="Daily Briefing", generated_at=NOW),
+        ledger,
+        FakeArchiveStore(),
+        renderer,
+    )
+
+    narrative = renderer.calls[0].narrative
+    registry = renderer.calls[0].citation_registry
+    assert registry.briefing_id == result.briefing_id
+    assert tuple(sentence.text for sentence in narrative.bottom_line) == (
+        "Source report: The rollout was delayed.",
+        "Anthropic resumed access with notice commitments.",
+        "The result connects Anthropic, Commerce Department, and Emergency release review call.",
+    )
+    assert narrative.bottom_line[0].citation_numbers == (1,)
+    assert narrative.bottom_line[1].citation_numbers == (2,)
+    assert narrative.bottom_line[2].citation_numbers == (2,)
+    source_citation = resolve_briefing_citation(registry, 1)
+    outcome_citation = resolve_briefing_citation(registry, 2)
+    assert source_citation.assertion_ids == (assertion.id,)
+    assert source_citation.source_ids == (source.id,)
+    assert source_citation.evidence_span_ids == (evidence_span.id,)
+    assert outcome_citation.outcome_ids == (outcome.id,)
+    assert outcome_citation.assertion_ids == (assertion.id,)
+    assert outcome_citation.organization_ids == (
+        "org_anthropic",
+        "org_commerce_department",
+    )
+    assert outcome_citation.event_ids == (event.id,)
+    assert narrative.key_judgments[0].text == "Source report: The rollout was delayed."
+    assert narrative.key_judgments[0].confidence_label == "Moderate"
+    assert narrative.key_judgments[0].source_ids == (source.id,)
+    assert narrative.key_judgments[0].evidence_span_ids == (evidence_span.id,)
+    assert any("no Place recorded" in uncertainty.text for uncertainty in narrative.uncertainties)
+    assert any("Treasury Department" in uncertainty.text for uncertainty in narrative.uncertainties)
+    assert any(
+        "Where did Emergency release review call occur?" == question.question
+        for question in narrative.open_questions
+    )
+
+
+def test_generate_briefing_builds_sharp_judgment_from_canonical_support() -> None:
+    source = source_fixture(updated_at=BEFORE)
+    document = document_fixture(updated_at=BEFORE)
+    pause_evidence = EvidenceSpan(
+        id="evs_pause",
+        source_id=source.id,
+        document_id=document.id,
+        selector_type=SelectorType.EXACT_TEXT,
+        exact_text="Commerce Secretary Howard Lutnick pressed for a pause.",
+        created_at=BEFORE,
+    )
+    delay_evidence = EvidenceSpan(
+        id="evs_delay",
+        source_id=source.id,
+        document_id=document.id,
+        selector_type=SelectorType.EXACT_TEXT,
+        exact_text="Anthropic postponed broader Fable 5 rollout.",
+        created_at=BEFORE,
+    )
+    suspension_evidence = EvidenceSpan(
+        id="evs_suspension",
+        source_id=source.id,
+        document_id=document.id,
+        selector_type=SelectorType.EXACT_TEXT,
+        exact_text="Anthropic suspended enterprise pilots on June 23.",
+        created_at=BEFORE,
+    )
+    pause_assertion = Assertion(
+        id="ast_pause",
+        assertion_type=AssertionType.SOURCE_CLAIM,
+        epistemic_scope=EpistemicScope.SOURCE_REPORT,
+        subject_entity_id="org_commerce_department",
+        predicate="pressed_for_pause_pending_customer_separation_review",
+        object_value={"target": "Anthropic Claude Fable 5 rollout"},
+        status=AssertionStatus.REPORTED,
+        source_authority=SourceAuthority.SECONDARY,
+        attribution_basis=AttributionBasis.REPORTED_BY_SOURCE,
+        source_ids=(source.id,),
+        evidence_span_ids=(pause_evidence.id,),
+        provenance_activity_ids=("prv_review_pause",),
+        current_assessment=(
+            "The article states that Commerce Secretary Howard Lutnick pressed for a pause "
+            "until Commerce could assess customer-separation controls."
+        ),
+        created_at=BEFORE,
+        updated_at=BEFORE,
+    )
+    delay_assertion = Assertion(
+        id="ast_delay",
+        assertion_type=AssertionType.SOURCE_CLAIM,
+        epistemic_scope=EpistemicScope.SOURCE_REPORT,
+        subject_entity_id="org_anthropic",
+        predicate="postponed_broader_rollout_after_review",
+        object_value={"model": "Claude Fable 5"},
+        status=AssertionStatus.REPORTED,
+        source_authority=SourceAuthority.SECONDARY,
+        attribution_basis=AttributionBasis.ANONYMOUS_SOURCE,
+        source_ids=(source.id,),
+        evidence_span_ids=(delay_evidence.id,),
+        provenance_activity_ids=("prv_review_delay",),
+        qualifiers={"reported_by": "people involved in the review and described documents"},
+        current_assessment="The Source reports that Anthropic postponed broader Fable 5 rollout.",
+        created_at=BEFORE,
+        updated_at=BEFORE,
+    )
+    suspension_assertion = Assertion(
+        id="ast_suspension",
+        assertion_type=AssertionType.SOURCE_CLAIM,
+        epistemic_scope=EpistemicScope.SOURCE_REPORT,
+        subject_entity_id="org_anthropic",
+        predicate="temporarily_suspended_enterprise_pilot_access",
+        object_value={"date": "2026-06-23"},
+        status=AssertionStatus.REPORTED,
+        source_authority=SourceAuthority.SECONDARY,
+        attribution_basis=AttributionBasis.REPORTED_BY_SOURCE,
+        source_ids=(source.id,),
+        evidence_span_ids=(suspension_evidence.id,),
+        provenance_activity_ids=("prv_review_suspension",),
+        current_assessment="The Source reports that Anthropic suspended enterprise pilots.",
+        created_at=BEFORE,
+        updated_at=BEFORE,
+    )
+    analytic_assertion = analytic_assertion_fixture(updated_at=BEFORE)
+    edges = tuple(
+        ArgumentEdge(
+            id=edge_id,
+            from_assertion_id=from_assertion_id,
+            to_assertion_id=analytic_assertion.id,
+            relation=ArgumentEdgeRelation.INFERS,
+            rationale="The source-backed Assertion supports the governance inference.",
+            confidence=0.7,
+            evidence_span_ids=(evidence_span_id,),
+            created_at=BEFORE,
+        )
+        for edge_id, from_assertion_id, evidence_span_id in (
+            ("arg_pause", pause_assertion.id, pause_evidence.id),
+            ("arg_delay", delay_assertion.id, delay_evidence.id),
+            ("arg_suspension", suspension_assertion.id, suspension_evidence.id),
+        )
+    )
+    ledger = FakeBriefingLedger(
+        records=(
+            organization_fixture(),
+            organization_fixture("org_commerce_department", "Commerce Department"),
+            source,
+            document,
+            pause_evidence,
+            delay_evidence,
+            suspension_evidence,
+            pause_assertion,
+            delay_assertion,
+            suspension_assertion,
+            analytic_assertion,
+            *edges,
+        ),
+    )
+    renderer = FakeBriefingRenderer()
+
+    generate_briefing(
+        BriefingGenerationInput(title="Daily Briefing", generated_at=NOW),
+        ledger,
+        FakeArchiveStore(),
+        renderer,
+    )
+
+    sharp_judgment = renderer.calls[0].narrative.sharp_judgments[0]
+    assert sharp_judgment.judgment.text == (
+        "Commerce review pressure became a release-governance constraint on Anthropic's "
+        "Claude Fable 5 rollout."
+    )
+    assert sharp_judgment.source_basis[0].text == (
+        "The article states that Commerce Secretary Howard Lutnick pressed for a pause until "
+        "Commerce could assess customer-separation controls."
+    )
+    assert "secondary reporting rather than primary-source confirmation" in (
+        sharp_judgment.source_basis[1].text
+    )
+    assert len(sharp_judgment.observed_effects) == 2
+    assert "appears" not in sharp_judgment.judgment.text
+    assert "one Source" in sharp_judgment.confidence.text
 
 
 def test_generate_briefing_uses_latest_previous_briefing_as_change_boundary() -> None:
@@ -308,10 +609,14 @@ def source_assertion_fixture(updated_at: datetime = BEFORE) -> Assertion:
     return Assertion(
         id="ast_article_a_claim",
         assertion_type=AssertionType.SOURCE_CLAIM,
+        epistemic_scope=EpistemicScope.SOURCE_REPORT,
         subject_entity_id="org_anthropic",
         predicate="delayed_rollout",
         object_value={"model": "Claude Fable 5"},
         status=AssertionStatus.REPORTED,
+        source_authority=SourceAuthority.SECONDARY,
+        attribution_basis=AttributionBasis.REPORTED_BY_SOURCE,
+        world_truth_confidence=0.6,
         source_ids=("src_article_a",),
         evidence_span_ids=("evs_article_a_claim",),
         provenance_activity_ids=("prv_review_claim",),
@@ -325,10 +630,13 @@ def analytic_assertion_fixture(updated_at: datetime = BEFORE) -> Assertion:
     return Assertion(
         id="ast_shared_governance",
         assertion_type=AssertionType.ANALYTIC_INFERENCE,
+        epistemic_scope=EpistemicScope.ANALYTIC_INFERENCE,
         subject_entity_id="org_anthropic",
         predicate="shared_governance_outcome_with",
         object_entity_id="org_commerce_department",
         status=AssertionStatus.CORROBORATED,
+        source_authority=SourceAuthority.NOT_APPLICABLE,
+        attribution_basis=AttributionBasis.NOT_APPLICABLE,
         provenance_activity_ids=("prv_review_inference",),
         current_assessment="Anthropic and Commerce shared a governance outcome.",
         created_at=updated_at,

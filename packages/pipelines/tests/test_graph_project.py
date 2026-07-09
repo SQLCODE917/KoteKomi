@@ -133,6 +133,6 @@ def test_graph_project_reports_projection_without_writing_ledger(
 
     output = capsys.readouterr().out
     assert exit_code == 0
-    assert "Graph nodes: 15" in output
-    assert "Graph edges: 26" in output
+    assert "Graph nodes: 18" in output
+    assert "Graph edges: 34" in output
     assert ledger_counts(ledger_path) == counts_before

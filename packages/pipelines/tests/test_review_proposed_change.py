@@ -176,6 +176,7 @@ def test_review_commands_approve_and_reject_proposed_changes(
             {
                 "id": "ast_enterprise_pilots_suspended_on_june_23",
                 "assertion_type": "source_claim",
+                "epistemic_scope": "source_report",
                 "subject_entity_id": "org_anthropic",
                 "predicate": "temporarily_suspended_enterprise_pilot_access",
                 "object_value": {
@@ -191,6 +192,8 @@ def test_review_commands_approve_and_reject_proposed_changes(
                     ),
                 },
                 "status": "proposed",
+                "source_authority": "secondary",
+                "attribution_basis": "reported_by_source",
                 "source_report_confidence": 0.93,
                 "extraction_confidence": 0.9,
                 "world_truth_confidence": 0.66,
