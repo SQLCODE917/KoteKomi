@@ -70,7 +70,7 @@ Briefing tests verify analytic inference labels.
 
 Briefing tests verify changed state against the previous Briefing.
 
-Briefing tests verify narrative Bottom Line and Key Judgments use numbered citations when source-backed.
+Briefing tests verify the orthogonal Briefing sections use numbered citations when source-backed.
 
 Briefing tests verify citation numbers resolve through structured registry data.
 

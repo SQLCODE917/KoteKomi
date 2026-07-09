@@ -41,6 +41,7 @@
 - run graph mining Pipeline fixture with `uv run pytest packages/pipelines/tests/test_graph_mine.py`
 - run Briefing generation fixture with `uv run pytest packages/pipelines/tests/test_briefing_generate.py`
 - verify Briefing narrative sections use numbered citations without raw canonical Domain IDs with `uv run pytest packages/briefing/tests/test_markdown_briefing_renderer.py packages/pipelines/tests/test_briefing_generate.py`
+- verify Briefing Markdown renders the orthogonal eight-section outline with `uv run pytest packages/briefing/tests/test_markdown_briefing_renderer.py packages/pipelines/tests/test_briefing_generate.py`
 - verify Briefing citation numbers resolve through structured registry data with `uv run pytest packages/application/tests/test_generate_briefing.py packages/pipelines/tests/test_briefing_generate.py`
 
 ## 6. Documentation checks

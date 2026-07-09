@@ -35,15 +35,13 @@ from kotekomi_application.ports import (
     ArchiveStore,
     BriefingCitation,
     BriefingCitationRegistry,
-    BriefingEvidenceReference,
-    BriefingKeyJudgment,
+    BriefingEvidenceQuality,
+    BriefingJudgmentBasis,
     BriefingNarrative,
     BriefingNarrativeSentence,
-    BriefingOpenQuestion,
+    BriefingReferenceAppendix,
     BriefingRenderer,
     BriefingRenderInput,
-    BriefingSharpJudgment,
-    BriefingUncertainty,
     StagedArchiveObject,
 )
 
@@ -786,7 +784,6 @@ def _build_briefing_narrative(
     selected_records: _SelectedRecords,
 ) -> tuple[BriefingNarrative, BriefingCitationRegistry]:
     assertions_by_id = {record.id: record for record in selected_records.assertions}
-    relationships_by_id = {record.id: record for record in selected_records.relationships}
     argument_edges_by_id = {record.id: record for record in selected_records.argument_edges}
     evidence_spans_by_id = {record.id: record for record in selected_records.evidence_spans}
     name_lookup = _NameLookup(
@@ -802,47 +799,51 @@ def _build_briefing_narrative(
         evidence_spans_by_id=evidence_spans_by_id,
     )
     outcome = _top_outcome(selected_records.outcomes)
+    executive_judgment, judgment_basis = _executive_judgment_and_basis(
+        selected_records,
+        assertions_by_id,
+        argument_edges_by_id,
+        name_lookup,
+        citation_builder,
+    )
     narrative = BriefingNarrative(
-        sharp_judgments=_sharp_judgments(
-            selected_records,
-            assertions_by_id,
-            argument_edges_by_id,
-            name_lookup,
-            citation_builder,
-        ),
-        bottom_line=_bottom_line(outcome, assertions_by_id, name_lookup, citation_builder),
-        key_judgments=_key_judgments(
-            selected_records,
-            assertions_by_id,
-            relationships_by_id,
-            argument_edges_by_id,
-            name_lookup,
-            citation_builder,
-        ),
-        evidence_references=_evidence_references(
+        executive_judgment=executive_judgment,
+        what_changed=_what_changed(outcome, assertions_by_id, name_lookup, citation_builder),
+        judgment_basis=judgment_basis,
+        evidence_quality=_evidence_quality(
             selected_records.assertions,
             name_lookup,
             citation_builder,
         ),
-        uncertainties=_uncertainties(
+        collection_gaps=_collection_gaps(
             selected_records,
             assertions_by_id,
-            relationships_by_id,
             argument_edges_by_id,
             name_lookup,
             citation_builder,
         ),
-        open_questions=_open_questions(
+        indicators_to_watch=_indicators_to_watch(
             selected_records,
             assertions_by_id,
-            relationships_by_id,
-            citation_builder,
-        ),
-        analytic_trace=_analytic_trace(
-            selected_records,
-            assertions_by_id,
+            argument_edges_by_id,
             name_lookup,
             citation_builder,
+        ),
+        implications=_implications(
+            selected_records,
+            assertions_by_id,
+            argument_edges_by_id,
+            name_lookup,
+            citation_builder,
+        ),
+        reference_appendix=_reference_appendix(
+            selected_records,
+            analytic_trace=_analytic_trace(
+                selected_records,
+                assertions_by_id,
+                name_lookup,
+                citation_builder,
+            ),
         ),
     )
     return narrative, citation_builder.registry()
@@ -1116,14 +1117,15 @@ def _top_outcome(outcomes: tuple[Outcome, ...]) -> Outcome | None:
     )[0]
 
 
-def _sharp_judgments(
+def _executive_judgment_and_basis(
     selected_records: _SelectedRecords,
     assertions_by_id: dict[str, Assertion],
     argument_edges_by_id: dict[str, ArgumentEdge],
     name_lookup: _NameLookup,
     citation_builder: _CitationBuilder,
-) -> tuple[BriefingSharpJudgment, ...]:
-    judgments: list[BriefingSharpJudgment] = []
+) -> tuple[BriefingNarrativeSentence | None, tuple[BriefingJudgmentBasis, ...]]:
+    executive_judgment: BriefingNarrativeSentence | None = None
+    judgment_basis: list[BriefingJudgmentBasis] = []
     analytic_assertions = tuple(
         sorted(
             (
@@ -1161,12 +1163,14 @@ def _sharp_judgments(
             supporting_edges,
             inference_text,
         )
-        judgments.append(
-            BriefingSharpJudgment(
-                judgment=BriefingNarrativeSentence(
-                    text=_sharp_judgment_text(analytic_assertion, source_assertions, name_lookup),
-                    citation_numbers=(inference_citation,),
-                ),
+        judgment = BriefingNarrativeSentence(
+            text=_sharp_judgment_text(analytic_assertion, source_assertions, name_lookup),
+            citation_numbers=(inference_citation,),
+        )
+        if executive_judgment is None:
+            executive_judgment = judgment
+        judgment_basis.append(
+            BriefingJudgmentBasis(
                 source_basis=source_basis,
                 observed_effects=observed_effects,
                 assessment=BriefingNarrativeSentence(
@@ -1179,7 +1183,7 @@ def _sharp_judgments(
                 ),
             )
         )
-    return tuple(judgments)
+    return executive_judgment, tuple(judgment_basis)
 
 
 def _sharp_source_basis(
@@ -1309,9 +1313,9 @@ def _sharp_confidence_text(
     )
     source_phrase = "one Source" if len(source_ids) == 1 else f"{len(source_ids)} Sources"
     assertion_phrase = (
-        "one source-backed Assertion"
+        "one source-backed claim"
         if len(source_assertions) == 1
-        else f"{len(source_assertions)} source-backed Assertions"
+        else f"{len(source_assertions)} source-backed claims"
     )
     return (
         f"{_confidence_label(analytic_assertion.world_truth_confidence)}. "
@@ -1370,7 +1374,7 @@ def _governance_actor_label(name: str) -> str:
     return name
 
 
-def _bottom_line(
+def _what_changed(
     outcome: Outcome | None,
     assertions_by_id: dict[str, Assertion],
     name_lookup: _NameLookup,
@@ -1435,131 +1439,26 @@ def _bottom_line(
     return tuple(sentences)
 
 
-def _key_judgments(
-    selected_records: _SelectedRecords,
-    assertions_by_id: dict[str, Assertion],
-    relationships_by_id: dict[str, Relationship],
-    argument_edges_by_id: dict[str, ArgumentEdge],
-    name_lookup: _NameLookup,
-    citation_builder: _CitationBuilder,
-) -> tuple[BriefingKeyJudgment, ...]:
-    judgments: list[BriefingKeyJudgment] = []
-    seen_assertion_ids: set[str] = set()
-
-    for assertion in sorted(
-        (
-            record
-            for record in selected_records.assertions
-            if record.assertion_type is AssertionType.ANALYTIC_INFERENCE
-        ),
-        key=lambda record: record.id,
-    ):
-        supporting_edges = _argument_edges_to_assertion(argument_edges_by_id, assertion.id)
-        supporting_assertion_ids = tuple(
-            sorted({assertion.id, *(record.from_assertion_id for record in supporting_edges)})
-        )
-        text = _inference_text(assertion, name_lookup)
-        citation_number = citation_builder.analytic_inference(
-            assertion,
-            supporting_edges,
-            text,
-        )
-        citation = resolve_briefing_citation(citation_builder.registry(), citation_number)
-        judgments.append(
-            BriefingKeyJudgment(
-                text=text,
-                confidence_label=_confidence_label(assertion.world_truth_confidence),
-                assertion_ids=supporting_assertion_ids,
-                argument_edge_ids=tuple(record.id for record in supporting_edges),
-                source_ids=citation.source_ids,
-                evidence_span_ids=citation.evidence_span_ids,
-                citation_numbers=(citation_number,),
-                is_analytic_inference=True,
-            )
-        )
-        seen_assertion_ids.add(assertion.id)
-
-    outcome_assertion_ids = tuple(
-        assertion_id
-        for outcome in sorted(selected_records.outcomes, key=lambda record: record.id)
-        for assertion_id in outcome.assertion_ids
-    )
-    source_backed_assertions = tuple(
-        assertions_by_id[assertion_id]
-        for assertion_id in outcome_assertion_ids
-        if assertion_id in assertions_by_id and assertions_by_id[assertion_id].source_ids
-    )
-    for assertion in sorted(source_backed_assertions, key=lambda record: record.id):
-        if assertion.id in seen_assertion_ids:
-            continue
-        judgments.append(_source_assertion_judgment(assertion, name_lookup, citation_builder))
-        seen_assertion_ids.add(assertion.id)
-
-    for assertion in sorted(selected_records.assertions, key=lambda record: record.id):
-        if assertion.id in seen_assertion_ids or not assertion.source_ids:
-            continue
-        judgments.append(_source_assertion_judgment(assertion, name_lookup, citation_builder))
-        seen_assertion_ids.add(assertion.id)
-
-    if _has_sharp_judgment(selected_records.assertions, argument_edges_by_id):
-        return tuple(judgments)
-
-    for relationship in sorted(relationships_by_id.values(), key=lambda record: record.id):
-        text = _relationship_text(relationship, name_lookup)
-        judgments.append(
-            BriefingKeyJudgment(
-                text=text,
-                confidence_label="Not assessed",
-                assertion_ids=relationship.assertion_ids,
-                relationship_ids=(relationship.id,),
-                citation_numbers=(citation_builder.relationship(relationship, text),),
-            )
-        )
-    return tuple(judgments)
-
-
-def _has_sharp_judgment(
-    assertions: tuple[Assertion, ...],
-    argument_edges_by_id: dict[str, ArgumentEdge],
-) -> bool:
-    assertion_ids = {assertion.id for assertion in assertions}
-    return any(
-        assertion.epistemic_scope is EpistemicScope.ANALYTIC_INFERENCE
-        and any(
-            edge.to_assertion_id == assertion.id and edge.from_assertion_id in assertion_ids
-            for edge in argument_edges_by_id.values()
-        )
-        for assertion in assertions
-    )
-
-
-def _source_assertion_judgment(
-    assertion: Assertion,
-    name_lookup: _NameLookup,
-    citation_builder: _CitationBuilder,
-) -> BriefingKeyJudgment:
-    text = _briefing_assertion_text(assertion, name_lookup)
-    return BriefingKeyJudgment(
-        text=text,
-        confidence_label=_confidence_label(assertion.world_truth_confidence),
-        assertion_ids=(assertion.id,),
-        source_ids=assertion.source_ids,
-        evidence_span_ids=assertion.evidence_span_ids,
-        citation_numbers=(citation_builder.source_assertion(assertion, text),),
-    )
-
-
-def _evidence_references(
+def _evidence_quality(
     assertions: tuple[Assertion, ...],
     name_lookup: _NameLookup,
     citation_builder: _CitationBuilder,
-) -> tuple[BriefingEvidenceReference, ...]:
+) -> tuple[BriefingEvidenceQuality, ...]:
     return tuple(
-        BriefingEvidenceReference(
-            assertion_id=assertion.id,
-            source_ids=assertion.source_ids,
-            evidence_span_ids=assertion.evidence_span_ids,
-            summary=_briefing_assertion_text(assertion, name_lookup),
+        BriefingEvidenceQuality(
+            claim=BriefingNarrativeSentence(
+                text=_briefing_assertion_text(assertion, name_lookup),
+                citation_numbers=(
+                    citation_builder.source_assertion(
+                        assertion,
+                        _briefing_assertion_text(assertion, name_lookup),
+                    ),
+                ),
+            ),
+            source_authority=assertion.source_authority,
+            attribution_basis=assertion.attribution_basis,
+            source_count=len(assertion.source_ids),
+            evidence_span_count=len(assertion.evidence_span_ids),
             citation_numbers=(
                 citation_builder.source_assertion(
                     assertion,
@@ -1572,70 +1471,92 @@ def _evidence_references(
     )
 
 
-def _uncertainties(
+def _collection_gaps(
     selected_records: _SelectedRecords,
     assertions_by_id: dict[str, Assertion],
-    relationships_by_id: dict[str, Relationship],
     argument_edges_by_id: dict[str, ArgumentEdge],
     name_lookup: _NameLookup,
     citation_builder: _CitationBuilder,
-) -> tuple[BriefingUncertainty, ...]:
-    uncertainties: list[BriefingUncertainty] = []
+) -> tuple[BriefingNarrativeSentence, ...]:
+    gaps: list[BriefingNarrativeSentence] = []
+    source_ids = tuple(
+        sorted(
+            {
+                source_id
+                for assertion in selected_records.assertions
+                for source_id in assertion.source_ids
+            }
+        )
+    )
+    source_backed_assertions = tuple(
+        assertion for assertion in selected_records.assertions if assertion.source_ids
+    )
+    if len(source_ids) == 1 and source_backed_assertions:
+        sorted_source_backed_assertions = tuple(
+            sorted(source_backed_assertions, key=lambda record: record.id)
+        )
+        claim_text = _join_claims(
+            tuple(
+                _source_report_body(assertion, name_lookup)
+                for assertion in sorted_source_backed_assertions
+            )
+        )
+        text = f"No independent Source corroborates these claims: {claim_text}."
+        gaps.append(
+            BriefingNarrativeSentence(
+                text=text,
+                citation_numbers=(
+                    *(
+                        citation_builder.source_assertion(
+                            assertion,
+                            _briefing_assertion_text(assertion, name_lookup),
+                        )
+                        for assertion in sorted_source_backed_assertions
+                    ),
+                ),
+            )
+        )
+
+    if source_backed_assertions and not any(
+        assertion.source_authority is SourceAuthority.PRIMARY
+        for assertion in source_backed_assertions
+    ):
+        assertion = sorted(source_backed_assertions, key=lambda record: record.id)[0]
+        text = (
+            "No primary-source record confirms the release-governance account in the "
+            "selected Ledger records."
+        )
+        gaps.append(
+            BriefingNarrativeSentence(
+                text=text,
+                citation_numbers=(
+                    citation_builder.source_assertion(
+                        assertion,
+                        _briefing_assertion_text(assertion, name_lookup),
+                    ),
+                ),
+            )
+        )
+
     for assertion in sorted(selected_records.assertions, key=lambda record: record.id):
         if assertion.source_ids and (
             assertion.world_truth_confidence is None or assertion.world_truth_confidence < 0.5
         ):
             assertion_text = _source_report_body(assertion, name_lookup)
-            uncertainties.append(
-                BriefingUncertainty(
+            gaps.append(
+                BriefingNarrativeSentence(
                     text=(
                         f"World-truth confidence for the Source-backed Assertion "
                         f"that {assertion_text} is "
                         f"{_confidence_label(assertion.world_truth_confidence)}; treat the "
                         "Source report separately from the world assessment."
                     ),
-                    record_ids=(assertion.id,),
-                    source_ids=assertion.source_ids,
-                    evidence_span_ids=assertion.evidence_span_ids,
                     citation_numbers=(
                         citation_builder.source_assertion(
                             assertion,
                             _source_report_text(assertion, name_lookup),
                         ),
                     ),
-                )
-            )
-
-    for event in sorted(selected_records.events, key=lambda record: record.id):
-        if event.place_id is None:
-            text = f"{event.name} has participants but no Place recorded."
-            uncertainties.append(
-                BriefingUncertainty(
-                    text=text,
-                    record_ids=(event.id,),
-                    citation_numbers=(citation_builder.event(event, text),),
-                )
-            )
-        unexplained_participants = _unexplained_event_participants(
-            event,
-            assertions_by_id,
-            relationships_by_id,
-            name_lookup,
-        )
-        if unexplained_participants:
-            unexplained_participant_names = tuple(
-                _record_name(record_id, name_lookup) for record_id in unexplained_participants
-            )
-            text = (
-                "Event participation is recorded for "
-                f"{_join_names(unexplained_participant_names)}, but no accepted Assertion "
-                "or Relationship explains those roles beyond participation."
-            )
-            uncertainties.append(
-                BriefingUncertainty(
-                    text=text,
-                    record_ids=(event.id, *tuple(sorted(unexplained_participants))),
-                    citation_numbers=(citation_builder.event(event, text),),
                 )
             )
 
@@ -1651,15 +1572,12 @@ def _uncertainties(
         if supporting_edges:
             assertion_text = _inference_body(assertion, name_lookup)
             text = (
-                f"The inference that {assertion_text} is derived from source-backed "
-                "Assertions; it is not directly stated by a Source."
+                f"The inference that {assertion_text} is derived from source-backed claims; "
+                "it is not directly stated by a Source."
             )
-            uncertainties.append(
-                BriefingUncertainty(
+            gaps.append(
+                BriefingNarrativeSentence(
                     text=text,
-                    record_ids=(assertion.id, *tuple(record.id for record in supporting_edges)),
-                    source_ids=assertion.source_ids,
-                    evidence_span_ids=assertion.evidence_span_ids,
                     citation_numbers=(
                         citation_builder.analytic_inference(
                             assertion,
@@ -1669,51 +1587,180 @@ def _uncertainties(
                     ),
                 )
             )
-    return tuple(uncertainties)
+    return tuple(gaps)
 
 
-def _open_questions(
+def _indicators_to_watch(
     selected_records: _SelectedRecords,
     assertions_by_id: dict[str, Assertion],
-    relationships_by_id: dict[str, Relationship],
+    argument_edges_by_id: dict[str, ArgumentEdge],
+    name_lookup: _NameLookup,
     citation_builder: _CitationBuilder,
-) -> tuple[BriefingOpenQuestion, ...]:
-    questions: list[BriefingOpenQuestion] = []
-    name_lookup = _NameLookup(
-        entities={record.id: record.canonical_name for record in selected_records.entities},
-        actors={record.id: record.name for record in selected_records.actors},
-        organizations={record.id: record.name for record in selected_records.organizations},
-        places={record.id: record.name for record in selected_records.places},
-        events={record.id: record.name for record in selected_records.events},
+) -> tuple[BriefingNarrativeSentence, ...]:
+    indicators: list[BriefingNarrativeSentence] = []
+    for assertion in sorted(
+        (
+            record
+            for record in selected_records.assertions
+            if record.assertion_type is AssertionType.ANALYTIC_INFERENCE
+        ),
+        key=lambda record: record.id,
+    ):
+        supporting_edges = _argument_edges_to_assertion(argument_edges_by_id, assertion.id)
+        citation_number = citation_builder.analytic_inference(
+            assertion,
+            supporting_edges,
+            _inference_text(assertion, name_lookup),
+        )
+        if assertion.predicate == "shared_governance_outcome_with":
+            indicators.append(
+                BriefingNarrativeSentence(
+                    text=(
+                        "Watch for primary-source statements that confirm, narrow, or deny "
+                        "Commerce review criteria for frontier model releases."
+                    ),
+                    citation_numbers=(citation_number,),
+                )
+            )
+            indicators.append(
+                BriefingNarrativeSentence(
+                    text=(
+                        "Watch for renewed enterprise pilot suspensions, restored access, "
+                        "or notice commitments tied to model capability increases."
+                    ),
+                    citation_numbers=(citation_number,),
+                )
+            )
+            continue
+        indicators.append(
+            BriefingNarrativeSentence(
+                text=(
+                    "Watch for new records that confirm or weaken "
+                    f"{_inference_body(assertion, name_lookup)}."
+                ),
+                citation_numbers=(citation_number,),
+            )
+        )
+    if indicators:
+        return tuple(indicators)
+    source_assertions = tuple(
+        sorted(
+            (record for record in assertions_by_id.values() if record.source_ids),
+            key=lambda record: record.id,
+        )
     )
-    for event in sorted(selected_records.events, key=lambda record: record.id):
-        if event.place_id is None:
-            question = f"Where did {event.name} occur?"
-            questions.append(
-                BriefingOpenQuestion(
-                    question=question,
-                    record_ids=(event.id,),
-                    citation_numbers=(citation_builder.event(event, question),),
+    if not source_assertions:
+        return ()
+    assertion = source_assertions[0]
+    text = "Watch for independent Sources that corroborate the selected source reports."
+    return (
+        BriefingNarrativeSentence(
+            text=text,
+            citation_numbers=(
+                citation_builder.source_assertion(
+                    assertion,
+                    _briefing_assertion_text(assertion, name_lookup),
+                ),
+            ),
+        ),
+    )
+
+
+def _implications(
+    selected_records: _SelectedRecords,
+    assertions_by_id: dict[str, Assertion],
+    argument_edges_by_id: dict[str, ArgumentEdge],
+    name_lookup: _NameLookup,
+    citation_builder: _CitationBuilder,
+) -> tuple[BriefingNarrativeSentence, ...]:
+    implications: list[BriefingNarrativeSentence] = []
+    for assertion in sorted(
+        (
+            record
+            for record in selected_records.assertions
+            if record.assertion_type is AssertionType.ANALYTIC_INFERENCE
+        ),
+        key=lambda record: record.id,
+    ):
+        supporting_edges = _argument_edges_to_assertion(argument_edges_by_id, assertion.id)
+        citation_number = citation_builder.analytic_inference(
+            assertion,
+            supporting_edges,
+            _inference_text(assertion, name_lookup),
+        )
+        if assertion.predicate == "shared_governance_outcome_with":
+            implications.append(
+                BriefingNarrativeSentence(
+                    text=(
+                        "KoteKomi analysis treats government review as an operational "
+                        "release constraint, not only a public communications issue."
+                    ),
+                    citation_numbers=(citation_number,),
                 )
             )
-        for participant_id in _unexplained_event_participants(
-            event,
-            assertions_by_id,
-            relationships_by_id,
-            name_lookup,
-        ):
-            question = (
-                f"What role did {_record_name(participant_id, name_lookup)} play beyond "
-                f"recorded participation in {event.name}?"
-            )
-            questions.append(
-                BriefingOpenQuestion(
-                    question=question,
-                    record_ids=(event.id, participant_id),
-                    citation_numbers=(citation_builder.event(event, question),),
+            implications.append(
+                BriefingNarrativeSentence(
+                    text=(
+                        "The selected records show enterprise access changing before a "
+                        "primary-source public policy record confirms the review basis."
+                    ),
+                    citation_numbers=(citation_number,),
                 )
             )
-    return tuple(questions)
+            continue
+        implications.append(
+            BriefingNarrativeSentence(
+                text=(
+                    f"KoteKomi analysis treats {_inference_body(assertion, name_lookup)} "
+                    "as a current assessment."
+                ),
+                citation_numbers=(citation_number,),
+            )
+        )
+    if implications:
+        return tuple(implications)
+    source_assertions = tuple(
+        sorted(
+            (record for record in assertions_by_id.values() if record.source_ids),
+            key=lambda record: record.id,
+        )
+    )
+    if not source_assertions:
+        return ()
+    assertion = source_assertions[0]
+    text = "The selected records support source-report monitoring but not an analytic inference."
+    return (
+        BriefingNarrativeSentence(
+            text=text,
+            citation_numbers=(
+                citation_builder.source_assertion(
+                    assertion,
+                    _briefing_assertion_text(assertion, name_lookup),
+                ),
+            ),
+        ),
+    )
+
+
+def _reference_appendix(
+    selected_records: _SelectedRecords,
+    analytic_trace: tuple[BriefingNarrativeSentence, ...],
+) -> BriefingReferenceAppendix:
+    return BriefingReferenceAppendix(
+        analytic_trace=analytic_trace,
+        entity_ids=tuple(record.id for record in selected_records.entities),
+        actor_ids=tuple(record.id for record in selected_records.actors),
+        organization_ids=tuple(record.id for record in selected_records.organizations),
+        place_ids=tuple(record.id for record in selected_records.places),
+        event_ids=tuple(record.id for record in selected_records.events),
+        source_ids=tuple(record.id for record in selected_records.sources),
+        document_ids=tuple(record.id for record in selected_records.documents),
+        evidence_span_ids=tuple(record.id for record in selected_records.evidence_spans),
+        assertion_ids=tuple(record.id for record in selected_records.assertions),
+        relationship_ids=tuple(record.id for record in selected_records.relationships),
+        outcome_ids=tuple(record.id for record in selected_records.outcomes),
+        argument_edge_ids=tuple(record.id for record in selected_records.argument_edges),
+    )
 
 
 def _analytic_trace(
@@ -1782,31 +1829,6 @@ def _edge_evidence_span_ids(argument_edges: tuple[ArgumentEdge, ...]) -> tuple[s
                 for argument_edge in argument_edges
                 for evidence_span_id in argument_edge.evidence_span_ids
             }
-        )
-    )
-
-
-def _unexplained_event_participants(
-    event: Event,
-    assertions_by_id: dict[str, Assertion],
-    relationships_by_id: dict[str, Relationship],
-    name_lookup: _NameLookup,
-) -> tuple[str, ...]:
-    explained_ids = {
-        *(record.subject_entity_id for record in assertions_by_id.values()),
-        *(
-            record.object_entity_id
-            for record in assertions_by_id.values()
-            if record.object_entity_id is not None
-        ),
-        *(record.subject_id for record in relationships_by_id.values()),
-        *(record.object_id for record in relationships_by_id.values()),
-    }
-    participant_ids = (*event.participant_actor_ids, *event.participant_organization_ids)
-    return tuple(
-        sorted(
-            (record_id for record_id in participant_ids if record_id not in explained_ids),
-            key=lambda record_id: _record_name(record_id, name_lookup),
         )
     )
 
@@ -2001,6 +2023,14 @@ def _join_names(names: tuple[str, ...]) -> str:
     if len(names) == 2:
         return f"{names[0]} and {names[1]}"
     return f"{', '.join(names[:-1])}, and {names[-1]}"
+
+
+def _join_claims(claims: tuple[str, ...]) -> str:
+    if not claims:
+        return ""
+    if len(claims) == 1:
+        return claims[0]
+    return "; ".join(claims)
 
 
 def _is_changed(record_time: datetime, boundary: datetime | None) -> bool:

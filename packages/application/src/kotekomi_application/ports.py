@@ -10,6 +10,7 @@ from kotekomi_domain import (
     Actor,
     ArgumentEdge,
     Assertion,
+    AttributionBasis,
     Briefing,
     Document,
     Entity,
@@ -22,6 +23,7 @@ from kotekomi_domain import (
     ProvenanceActivity,
     Relationship,
     Source,
+    SourceAuthority,
 )
 from kotekomi_domain.models import JsonValue
 
@@ -98,46 +100,7 @@ class BriefingNarrativeSentence:
 
 
 @dataclass(frozen=True)
-class BriefingEvidenceReference:
-    assertion_id: str
-    source_ids: tuple[str, ...]
-    evidence_span_ids: tuple[str, ...]
-    summary: str
-    citation_numbers: tuple[int, ...] = ()
-
-
-@dataclass(frozen=True)
-class BriefingKeyJudgment:
-    text: str
-    confidence_label: str
-    assertion_ids: tuple[str, ...]
-    relationship_ids: tuple[str, ...] = ()
-    argument_edge_ids: tuple[str, ...] = ()
-    source_ids: tuple[str, ...] = ()
-    evidence_span_ids: tuple[str, ...] = ()
-    citation_numbers: tuple[int, ...] = ()
-    is_analytic_inference: bool = False
-
-
-@dataclass(frozen=True)
-class BriefingUncertainty:
-    text: str
-    record_ids: tuple[str, ...]
-    source_ids: tuple[str, ...] = ()
-    evidence_span_ids: tuple[str, ...] = ()
-    citation_numbers: tuple[int, ...] = ()
-
-
-@dataclass(frozen=True)
-class BriefingOpenQuestion:
-    question: str
-    record_ids: tuple[str, ...]
-    citation_numbers: tuple[int, ...] = ()
-
-
-@dataclass(frozen=True)
-class BriefingSharpJudgment:
-    judgment: BriefingNarrativeSentence
+class BriefingJudgmentBasis:
     source_basis: tuple[BriefingNarrativeSentence, ...]
     observed_effects: tuple[BriefingNarrativeSentence, ...]
     assessment: BriefingNarrativeSentence
@@ -145,14 +108,42 @@ class BriefingSharpJudgment:
 
 
 @dataclass(frozen=True)
-class BriefingNarrative:
-    sharp_judgments: tuple[BriefingSharpJudgment, ...]
-    bottom_line: tuple[BriefingNarrativeSentence, ...]
-    key_judgments: tuple[BriefingKeyJudgment, ...]
-    evidence_references: tuple[BriefingEvidenceReference, ...]
-    uncertainties: tuple[BriefingUncertainty, ...]
-    open_questions: tuple[BriefingOpenQuestion, ...]
+class BriefingEvidenceQuality:
+    claim: BriefingNarrativeSentence
+    source_authority: SourceAuthority
+    attribution_basis: AttributionBasis
+    source_count: int
+    evidence_span_count: int
+    citation_numbers: tuple[int, ...] = ()
+
+
+@dataclass(frozen=True)
+class BriefingReferenceAppendix:
     analytic_trace: tuple[BriefingNarrativeSentence, ...]
+    entity_ids: tuple[str, ...] = ()
+    actor_ids: tuple[str, ...] = ()
+    organization_ids: tuple[str, ...] = ()
+    place_ids: tuple[str, ...] = ()
+    event_ids: tuple[str, ...] = ()
+    source_ids: tuple[str, ...] = ()
+    document_ids: tuple[str, ...] = ()
+    evidence_span_ids: tuple[str, ...] = ()
+    assertion_ids: tuple[str, ...] = ()
+    relationship_ids: tuple[str, ...] = ()
+    outcome_ids: tuple[str, ...] = ()
+    argument_edge_ids: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class BriefingNarrative:
+    executive_judgment: BriefingNarrativeSentence | None
+    what_changed: tuple[BriefingNarrativeSentence, ...]
+    judgment_basis: tuple[BriefingJudgmentBasis, ...]
+    evidence_quality: tuple[BriefingEvidenceQuality, ...]
+    collection_gaps: tuple[BriefingNarrativeSentence, ...]
+    indicators_to_watch: tuple[BriefingNarrativeSentence, ...]
+    implications: tuple[BriefingNarrativeSentence, ...]
+    reference_appendix: BriefingReferenceAppendix
 
 
 class ArchiveStore(Protocol):

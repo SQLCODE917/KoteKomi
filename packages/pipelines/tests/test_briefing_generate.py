@@ -268,7 +268,27 @@ def test_briefing_generate_writes_markdown_and_briefing_record(
     )
     assert analytic_citations[0].argument_edge_ids == briefing.argument_edge_ids
     assert "# Daily Briefing" in markdown
-    assert "## Bottom Line" in markdown
+    expected_sections = (
+        "## Executive Judgment",
+        "## What Changed",
+        "## Judgment Basis",
+        "## Evidence and Source Quality",
+        "## Open Questions and Collection Gaps",
+        "## Indicators to Watch",
+        "## Implications",
+        "## Reference Appendix",
+    )
+    rendered_sections = tuple(line for line in markdown.splitlines() if line.startswith("## "))
+    assert rendered_sections == expected_sections
+    for removed_heading in (
+        "## Bottom Line",
+        "## Judgment",
+        "## Key Judgments",
+        "## Evidence Basis",
+        "## Analytic Trace",
+        "## Citations",
+    ):
+        assert removed_heading not in rendered_sections
     assert (
         "Source report: U.S. cyber-safety concerns delayed Anthropic's broader "
         "Claude Fable 5 rollout." in markdown
@@ -277,7 +297,6 @@ def test_briefing_generate_writes_markdown_and_briefing_record(
         "Source report: Anthropic suspended several enterprise pilots while preserving a smaller "
         "approved evaluation program." in markdown
     )
-    assert "## Judgment" in markdown
     assert (
         "Commerce review pressure became a release-governance constraint on Anthropic's "
         "Claude Fable 5 rollout." in markdown
@@ -296,20 +315,27 @@ def test_briefing_generate_writes_markdown_and_briefing_record(
         "the rollout delay, and the enterprise pilot suspension connect government review to "
         "Anthropic release timing." in markdown
     )
-    assert "## Key Judgments" in markdown
-    assert (
-        "Inference: Anthropic and Commerce Department share a release-governance outcome."
-        in markdown
-    )
     assert "Confidence: Moderate" in markdown
     assert "Type: Analytic inference" in markdown
-    assert "## Evidence Basis" in markdown
-    assert "## Uncertainties and Gaps" in markdown
+    assert "Secondary" in markdown
+    assert "Anonymous Source" in markdown
+    assert "Reported By Source" in markdown
     assert "Treasury Department" in markdown
     assert "White House" in markdown
     assert "not directly stated by a Source" in markdown
-    assert "## Analytic Trace" in markdown
-    assert "## Citations" in markdown
+    assert "No primary-source record confirms" in markdown
+    assert "No independent Source corroborates" in markdown
+    assert (
+        "U.S. cyber-safety concerns delayed Anthropic's broader Claude Fable 5 rollout"
+        in markdown
+    )
+    assert "Commerce Secretary Howard Lutnick pressed for a pause" in markdown
+    assert "source-backed Assertions" not in markdown
+    assert "Watch for primary-source statements" in markdown
+    assert "Watch for renewed enterprise pilot suspensions" in markdown
+    assert "government review as an operational release constraint" in markdown
+    assert "### Analytic Trace" in markdown
+    assert "### Citations" in markdown
     assert "Source report: U.S. cyber-safety concerns delayed" in markdown
     assert "Source report: Anthropic suspended several enterprise pilots" in markdown
     assert "Anthropic" in markdown

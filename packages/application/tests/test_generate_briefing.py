@@ -227,38 +227,36 @@ def test_generate_briefing_creates_markdown_briefing_and_provenance() -> None:
     )
     assert renderer.calls[0].citation_registry == registry
     narrative = renderer.calls[0].narrative
-    assert len(narrative.bottom_line) == 1
-    assert narrative.bottom_line[0].text == "Source report: The rollout was delayed."
-    assert narrative.bottom_line[0].citation_numbers == (1,)
-    bottom_line_citation = resolve_briefing_citation(
+    assert len(narrative.what_changed) == 1
+    assert narrative.what_changed[0].text == "Source report: The rollout was delayed."
+    assert narrative.what_changed[0].citation_numbers == (1,)
+    what_changed_citation = resolve_briefing_citation(
         registry,
-        narrative.bottom_line[0].citation_numbers[0],
+        narrative.what_changed[0].citation_numbers[0],
     )
-    assert bottom_line_citation.assertion_ids == (assertion.id,)
-    assert bottom_line_citation.source_ids == (source.id,)
-    assert bottom_line_citation.document_ids == (document.id,)
-    assert bottom_line_citation.evidence_span_ids == (evidence_span.id,)
-    assert narrative.sharp_judgments == ()
-    assert narrative.key_judgments[0].text == (
-        "Inference: Anthropic and Commerce Department share a release-governance outcome."
-    )
-    assert narrative.key_judgments[0].confidence_label == "Not assessed"
-    assert narrative.key_judgments[0].is_analytic_inference is True
-    assert narrative.key_judgments[0].argument_edge_ids == (argument_edge.id,)
+    assert what_changed_citation.assertion_ids == (assertion.id,)
+    assert what_changed_citation.source_ids == (source.id,)
+    assert what_changed_citation.document_ids == (document.id,)
+    assert what_changed_citation.evidence_span_ids == (evidence_span.id,)
+    assert narrative.executive_judgment is None
+    assert narrative.judgment_basis == ()
     analytic_citation = resolve_briefing_citation(
         registry,
-        narrative.key_judgments[0].citation_numbers[0],
+        narrative.reference_appendix.analytic_trace[0].citation_numbers[0],
     )
     assert analytic_citation.is_analytic_inference is True
     assert analytic_citation.assertion_ids == (assertion.id, analytic_assertion.id)
     assert analytic_citation.argument_edge_ids == (argument_edge.id,)
     assert analytic_citation.source_ids == (source.id,)
     assert analytic_citation.evidence_span_ids == (evidence_span.id,)
-    assert narrative.evidence_references[0].source_ids == (source.id,)
-    assert narrative.evidence_references[0].evidence_span_ids == (evidence_span.id,)
+    assert narrative.evidence_quality[0].source_count == 1
+    assert narrative.evidence_quality[0].evidence_span_count == 1
+    assert narrative.evidence_quality[0].source_authority is SourceAuthority.SECONDARY
+    assert narrative.evidence_quality[0].attribution_basis is AttributionBasis.REPORTED_BY_SOURCE
+    collection_gap_text = "\n".join(gap.text for gap in narrative.collection_gaps)
     assert (
         "The inference that Anthropic and Commerce Department share a release-governance "
-        "outcome is derived from source-backed Assertions" in narrative.uncertainties[0].text
+        "outcome is derived from source-backed claims" in collection_gap_text
     )
     activity = ledger.provenance_activities[result.provenance_activity_id]
     assert activity.activity_type == "briefing_generation"
@@ -315,14 +313,14 @@ def test_generate_briefing_builds_outcome_narrative_with_uncertainties() -> None
     narrative = renderer.calls[0].narrative
     registry = renderer.calls[0].citation_registry
     assert registry.briefing_id == result.briefing_id
-    assert tuple(sentence.text for sentence in narrative.bottom_line) == (
+    assert tuple(sentence.text for sentence in narrative.what_changed) == (
         "Source report: The rollout was delayed.",
         "Anthropic resumed access with notice commitments.",
         "The result connects Anthropic, Commerce Department, and Emergency release review call.",
     )
-    assert narrative.bottom_line[0].citation_numbers == (1,)
-    assert narrative.bottom_line[1].citation_numbers == (2,)
-    assert narrative.bottom_line[2].citation_numbers == (2,)
+    assert narrative.what_changed[0].citation_numbers == (1,)
+    assert narrative.what_changed[1].citation_numbers == (2,)
+    assert narrative.what_changed[2].citation_numbers == (2,)
     source_citation = resolve_briefing_citation(registry, 1)
     outcome_citation = resolve_briefing_citation(registry, 2)
     assert source_citation.assertion_ids == (assertion.id,)
@@ -335,16 +333,16 @@ def test_generate_briefing_builds_outcome_narrative_with_uncertainties() -> None
         "org_commerce_department",
     )
     assert outcome_citation.event_ids == (event.id,)
-    assert narrative.key_judgments[0].text == "Source report: The rollout was delayed."
-    assert narrative.key_judgments[0].confidence_label == "Moderate"
-    assert narrative.key_judgments[0].source_ids == (source.id,)
-    assert narrative.key_judgments[0].evidence_span_ids == (evidence_span.id,)
-    assert any("no Place recorded" in uncertainty.text for uncertainty in narrative.uncertainties)
-    assert any("Treasury Department" in uncertainty.text for uncertainty in narrative.uncertainties)
-    assert any(
-        "Where did Emergency release review call occur?" == question.question
-        for question in narrative.open_questions
-    )
+    assert narrative.evidence_quality[0].claim.text == "Source report: The rollout was delayed."
+    assert narrative.evidence_quality[0].source_authority is SourceAuthority.SECONDARY
+    assert narrative.evidence_quality[0].attribution_basis is AttributionBasis.REPORTED_BY_SOURCE
+    collection_gap_text = "\n".join(gap.text for gap in narrative.collection_gaps)
+    assert "no Place recorded" not in collection_gap_text
+    assert "Treasury Department" not in collection_gap_text
+    assert "No independent Source corroborates" in collection_gap_text
+    assert "The rollout was delayed" in collection_gap_text
+    assert "source-backed Assertions" not in collection_gap_text
+    assert "No primary-source record confirms" in collection_gap_text
 
 
 def test_generate_briefing_builds_sharp_judgment_from_canonical_support() -> None:
@@ -472,21 +470,23 @@ def test_generate_briefing_builds_sharp_judgment_from_canonical_support() -> Non
         renderer,
     )
 
-    sharp_judgment = renderer.calls[0].narrative.sharp_judgments[0]
-    assert sharp_judgment.judgment.text == (
+    narrative = renderer.calls[0].narrative
+    assert narrative.executive_judgment is not None
+    judgment_basis = narrative.judgment_basis[0]
+    assert narrative.executive_judgment.text == (
         "Commerce review pressure became a release-governance constraint on Anthropic's "
         "Claude Fable 5 rollout."
     )
-    assert sharp_judgment.source_basis[0].text == (
+    assert judgment_basis.source_basis[0].text == (
         "The article states that Commerce Secretary Howard Lutnick pressed for a pause until "
         "Commerce could assess customer-separation controls."
     )
     assert "secondary reporting rather than primary-source confirmation" in (
-        sharp_judgment.source_basis[1].text
+        judgment_basis.source_basis[1].text
     )
-    assert len(sharp_judgment.observed_effects) == 2
-    assert "appears" not in sharp_judgment.judgment.text
-    assert "one Source" in sharp_judgment.confidence.text
+    assert len(judgment_basis.observed_effects) == 2
+    assert "appears" not in narrative.executive_judgment.text
+    assert "one Source" in judgment_basis.confidence.text
 
 
 def test_generate_briefing_uses_latest_previous_briefing_as_change_boundary() -> None:
