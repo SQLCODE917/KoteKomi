@@ -61,7 +61,12 @@ class PipelineReadinessLedger(ReviewQueuePacketLedger, Protocol):
 
 @dataclass(frozen=True)
 class PipelineStatusInput:
-    pass
+    ledger_path: str | None = None
+    archive_path: str | None = None
+    source_file_path: str | None = None
+    model_output_fixture_path: str | None = None
+    document_id: str | None = None
+    briefing_title: str | None = None
 
 
 @dataclass(frozen=True)
@@ -73,9 +78,29 @@ class PipelineBlocker:
 
 
 @dataclass(frozen=True)
+class PipelinePlanInputRequirement:
+    name: str
+    kind: str
+    required: bool
+    description: str
+    allowed_values: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class PipelineCommandPlan:
+    stage: PipelineStage
+    command: str | None
+    argv: tuple[str, ...]
+    ready_to_execute: bool
+    missing_inputs: tuple[PipelinePlanInputRequirement, ...]
+    blockers: tuple[PipelineBlocker, ...]
+
+
+@dataclass(frozen=True)
 class PipelineStatus:
     stage: PipelineStage
     next_command: str | None
+    next_command_plan: PipelineCommandPlan
     safe_commands: tuple[str, ...]
     blocked_commands: tuple[str, ...]
     blockers: tuple[PipelineBlocker, ...]
@@ -95,6 +120,7 @@ class PipelineStatus:
 @dataclass(frozen=True)
 class PipelineNextStep:
     command: str | None
+    command_plan: PipelineCommandPlan
     reason: str
     stage: PipelineStage
     requires_human_review: bool
@@ -106,7 +132,6 @@ def get_pipeline_status(
     pipeline_input: PipelineStatusInput,
     ledger_repository: PipelineReadinessLedger,
 ) -> PipelineStatus:
-    del pipeline_input
     review_readiness = get_review_readiness(ReviewReadinessInput(), ledger_repository)
     records = ledger_repository.list_accepted_canonical_records()
     indexes = _record_indexes(records)
@@ -114,16 +139,24 @@ def get_pipeline_status(
     candidate_document_ids = tuple(sorted(document.id for document in indexes.documents))
 
     if review_readiness.review_required:
+        blockers = _review_blockers(review_readiness.blockers)
+        next_command_plan = _command_plan(
+            stage=PipelineStage.REVIEW_REQUIRED,
+            pipeline_input=pipeline_input,
+            candidate_document_ids=candidate_document_ids,
+            blockers=blockers,
+        )
         return PipelineStatus(
             stage=PipelineStage.REVIEW_REQUIRED,
             next_command=REVIEW_LIST_COMMAND,
+            next_command_plan=next_command_plan,
             safe_commands=(REVIEW_LIST_COMMAND,),
             blocked_commands=(
                 GRAPH_PROJECT_COMMAND,
                 GRAPH_MINE_COMMAND,
                 BRIEFING_GENERATE_COMMAND,
             ),
-            blockers=_review_blockers(review_readiness.blockers),
+            blockers=blockers,
             review_required=True,
             pending_count=review_readiness.pending_count,
             missing_reference_count=review_readiness.missing_reference_count,
@@ -167,9 +200,16 @@ def get_pipeline_status(
         next_command = SOURCE_INGEST_COMMAND
         safe_commands = (SOURCE_INGEST_COMMAND,)
 
+    next_command_plan = _command_plan(
+        stage=stage,
+        pipeline_input=pipeline_input,
+        candidate_document_ids=candidate_document_ids,
+        blockers=(),
+    )
     return PipelineStatus(
         stage=stage,
         next_command=next_command,
+        next_command_plan=next_command_plan,
         safe_commands=safe_commands,
         blocked_commands=(),
         blockers=(),
@@ -194,6 +234,7 @@ def get_pipeline_next(
     status = get_pipeline_status(pipeline_input, ledger_repository)
     return PipelineNextStep(
         command=status.next_command,
+        command_plan=status.next_command_plan,
         reason=_next_step_reason(status),
         stage=status.stage,
         requires_human_review=status.review_required,
@@ -206,6 +247,7 @@ def pipeline_status_to_json(status: PipelineStatus) -> dict[str, JsonValue]:
     return {
         "stage": status.stage.value,
         "next_command": status.next_command,
+        "next_command_plan": _command_plan_to_json(status.next_command_plan),
         "safe_commands": list(status.safe_commands),
         "blocked_commands": list(status.blocked_commands),
         "blockers": [_blocker_to_json(blocker) for blocker in status.blockers],
@@ -226,11 +268,322 @@ def pipeline_status_to_json(status: PipelineStatus) -> dict[str, JsonValue]:
 def pipeline_next_to_json(next_step: PipelineNextStep) -> dict[str, JsonValue]:
     return {
         "command": next_step.command,
+        "command_plan": _command_plan_to_json(next_step.command_plan),
         "reason": next_step.reason,
         "stage": next_step.stage.value,
         "requires_human_review": next_step.requires_human_review,
         "blocked": next_step.blocked,
         "blockers": [_blocker_to_json(blocker) for blocker in next_step.blockers],
+    }
+
+
+def _command_plan(
+    *,
+    stage: PipelineStage,
+    pipeline_input: PipelineStatusInput,
+    candidate_document_ids: tuple[str, ...],
+    blockers: tuple[PipelineBlocker, ...],
+) -> PipelineCommandPlan:
+    if stage is PipelineStage.READY_FOR_SOURCE_INGEST:
+        return _source_ingest_plan(stage, pipeline_input)
+    if stage is PipelineStage.READY_FOR_ASSERTION_PROPOSAL:
+        return _assertion_proposal_plan(stage, pipeline_input, candidate_document_ids)
+    if stage is PipelineStage.REVIEW_REQUIRED:
+        return _review_list_plan(stage, pipeline_input, blockers)
+    if stage is PipelineStage.READY_FOR_GRAPH_PROJECTION:
+        return _ledger_only_plan(
+            stage=stage,
+            pipeline_input=pipeline_input,
+            command=GRAPH_PROJECT_COMMAND,
+            argv_prefix=("graph", "project"),
+            blockers=blockers,
+        )
+    if stage is PipelineStage.READY_FOR_GRAPH_MINING:
+        return _ledger_only_plan(
+            stage=stage,
+            pipeline_input=pipeline_input,
+            command=GRAPH_MINE_COMMAND,
+            argv_prefix=("graph", "mine"),
+            blockers=blockers,
+        )
+    if stage is PipelineStage.READY_FOR_BRIEFING:
+        return _briefing_generate_plan(stage, pipeline_input)
+    if stage is PipelineStage.BRIEFING_CURRENT:
+        return PipelineCommandPlan(
+            stage=stage,
+            command=None,
+            argv=(),
+            ready_to_execute=False,
+            missing_inputs=(),
+            blockers=blockers,
+        )
+    raise ValueError(f"Unsupported Pipeline stage: {stage}")
+
+
+def _source_ingest_plan(
+    stage: PipelineStage,
+    pipeline_input: PipelineStatusInput,
+) -> PipelineCommandPlan:
+    missing_inputs = (
+        *_missing_path(
+            pipeline_input.source_file_path,
+            "source_file_path",
+            "Path to a local Source file.",
+        ),
+        *_missing_path(
+            pipeline_input.ledger_path,
+            "ledger_path",
+            "Path to the Ledger SQLite file.",
+        ),
+        *_missing_path(pipeline_input.archive_path, "archive_path", "Path to the Archive root."),
+    )
+    argv: tuple[str, ...] = ()
+    if not missing_inputs:
+        argv = (
+            "source",
+            "add-file",
+            _required_value(pipeline_input.source_file_path, "source_file_path"),
+            "--ledger-path",
+            _required_value(pipeline_input.ledger_path, "ledger_path"),
+            "--archive-path",
+            _required_value(pipeline_input.archive_path, "archive_path"),
+        )
+    return PipelineCommandPlan(
+        stage=stage,
+        command="kotekomi source add-file",
+        argv=argv,
+        ready_to_execute=not missing_inputs,
+        missing_inputs=missing_inputs,
+        blockers=(),
+    )
+
+
+def _assertion_proposal_plan(
+    stage: PipelineStage,
+    pipeline_input: PipelineStatusInput,
+    candidate_document_ids: tuple[str, ...],
+) -> PipelineCommandPlan:
+    selected_document_id = _selected_document_id(pipeline_input, candidate_document_ids)
+    missing_inputs = (
+        *_document_id_missing_inputs(pipeline_input, candidate_document_ids, selected_document_id),
+        *_missing_path(
+            pipeline_input.model_output_fixture_path,
+            "model_output_fixture_path",
+            "Path to a model output fixture JSON file.",
+        ),
+        *_missing_path(
+            pipeline_input.ledger_path,
+            "ledger_path",
+            "Path to the Ledger SQLite file.",
+        ),
+        *_missing_path(pipeline_input.archive_path, "archive_path", "Path to the Archive root."),
+    )
+    argv: tuple[str, ...] = ()
+    if not missing_inputs:
+        argv = (
+            "source",
+            "propose-assertions",
+            "--document-id",
+            _required_value(selected_document_id, "document_id"),
+            "--model-output-fixture",
+            _required_value(pipeline_input.model_output_fixture_path, "model_output_fixture_path"),
+            "--ledger-path",
+            _required_value(pipeline_input.ledger_path, "ledger_path"),
+            "--archive-path",
+            _required_value(pipeline_input.archive_path, "archive_path"),
+        )
+    return PipelineCommandPlan(
+        stage=stage,
+        command="kotekomi source propose-assertions",
+        argv=argv,
+        ready_to_execute=not missing_inputs,
+        missing_inputs=missing_inputs,
+        blockers=(),
+    )
+
+
+def _review_list_plan(
+    stage: PipelineStage,
+    pipeline_input: PipelineStatusInput,
+    blockers: tuple[PipelineBlocker, ...],
+) -> PipelineCommandPlan:
+    return _ledger_only_plan(
+        stage=stage,
+        pipeline_input=pipeline_input,
+        command=REVIEW_LIST_COMMAND,
+        argv_prefix=("review", "list"),
+        blockers=blockers,
+    )
+
+
+def _ledger_only_plan(
+    *,
+    stage: PipelineStage,
+    pipeline_input: PipelineStatusInput,
+    command: str,
+    argv_prefix: tuple[str, ...],
+    blockers: tuple[PipelineBlocker, ...],
+) -> PipelineCommandPlan:
+    missing_inputs = _missing_path(
+        pipeline_input.ledger_path,
+        "ledger_path",
+        "Path to the Ledger SQLite file.",
+    )
+    argv: tuple[str, ...] = ()
+    if not missing_inputs:
+        argv = (
+            *argv_prefix,
+            "--ledger-path",
+            _required_value(pipeline_input.ledger_path, "ledger_path"),
+        )
+    return PipelineCommandPlan(
+        stage=stage,
+        command=command,
+        argv=argv,
+        ready_to_execute=not missing_inputs,
+        missing_inputs=missing_inputs,
+        blockers=blockers,
+    )
+
+
+def _briefing_generate_plan(
+    stage: PipelineStage,
+    pipeline_input: PipelineStatusInput,
+) -> PipelineCommandPlan:
+    missing_inputs = (
+        *_missing_string(
+            pipeline_input.briefing_title,
+            "briefing_title",
+            "Title for the generated Briefing.",
+        ),
+        *_missing_path(
+            pipeline_input.ledger_path,
+            "ledger_path",
+            "Path to the Ledger SQLite file.",
+        ),
+        *_missing_path(pipeline_input.archive_path, "archive_path", "Path to the Archive root."),
+    )
+    argv: tuple[str, ...] = ()
+    if not missing_inputs:
+        argv = (
+            "briefing",
+            "generate",
+            "--title",
+            _required_value(pipeline_input.briefing_title, "briefing_title"),
+            "--ledger-path",
+            _required_value(pipeline_input.ledger_path, "ledger_path"),
+            "--archive-path",
+            _required_value(pipeline_input.archive_path, "archive_path"),
+        )
+    return PipelineCommandPlan(
+        stage=stage,
+        command="kotekomi briefing generate",
+        argv=argv,
+        ready_to_execute=not missing_inputs,
+        missing_inputs=missing_inputs,
+        blockers=(),
+    )
+
+
+def _missing_path(
+    value: str | None,
+    name: str,
+    description: str,
+    *,
+    allowed_values: tuple[str, ...] = (),
+) -> tuple[PipelinePlanInputRequirement, ...]:
+    if value is not None and value.strip():
+        return ()
+    return (
+        PipelinePlanInputRequirement(
+            name=name,
+            kind="path",
+            required=True,
+            description=description,
+            allowed_values=allowed_values,
+        ),
+    )
+
+
+def _missing_string(
+    value: str | None,
+    name: str,
+    description: str,
+    *,
+    allowed_values: tuple[str, ...] = (),
+) -> tuple[PipelinePlanInputRequirement, ...]:
+    if value is not None and value.strip():
+        return ()
+    return (
+        PipelinePlanInputRequirement(
+            name=name,
+            kind="string",
+            required=True,
+            description=description,
+            allowed_values=allowed_values,
+        ),
+    )
+
+
+def _selected_document_id(
+    pipeline_input: PipelineStatusInput,
+    candidate_document_ids: tuple[str, ...],
+) -> str | None:
+    if pipeline_input.document_id is not None and pipeline_input.document_id.strip():
+        if pipeline_input.document_id not in candidate_document_ids:
+            allowed = ", ".join(candidate_document_ids) or "none"
+            raise ValueError(
+                f"document_id {pipeline_input.document_id} is not a candidate Document. "
+                f"Allowed values: {allowed}."
+            )
+        return pipeline_input.document_id
+    if len(candidate_document_ids) == 1:
+        return candidate_document_ids[0]
+    return None
+
+
+def _document_id_missing_inputs(
+    pipeline_input: PipelineStatusInput,
+    candidate_document_ids: tuple[str, ...],
+    selected_document_id: str | None,
+) -> tuple[PipelinePlanInputRequirement, ...]:
+    del pipeline_input
+    if selected_document_id is not None:
+        return ()
+    return (
+        PipelinePlanInputRequirement(
+            name="document_id",
+            kind="string",
+            required=True,
+            description="Document ID to propose Assertions for.",
+            allowed_values=candidate_document_ids,
+        ),
+    )
+
+
+def _required_value(value: str | None, name: str) -> str:
+    if value is None or not value.strip():
+        raise ValueError(f"Missing required Pipeline command plan input: {name}.")
+    return value
+
+
+def _command_plan_to_json(plan: PipelineCommandPlan) -> dict[str, JsonValue]:
+    return {
+        "stage": plan.stage.value,
+        "command": plan.command,
+        "argv": list(plan.argv),
+        "ready_to_execute": plan.ready_to_execute,
+        "missing_inputs": [
+            {
+                "name": item.name,
+                "kind": item.kind,
+                "required": item.required,
+                "description": item.description,
+                "allowed_values": list(item.allowed_values),
+            }
+            for item in plan.missing_inputs
+        ],
+        "blockers": [_blocker_to_json(blocker) for blocker in plan.blockers],
     }
 
 

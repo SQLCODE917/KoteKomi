@@ -21,6 +21,7 @@ from kotekomi_application import (
     BriefingGenerationInput,
     GraphConnectionMiningInput,
     JsonValue,
+    PipelineCommandPlan,
     PipelineNextStep,
     PipelineStatus,
     PipelineStatusInput,
@@ -188,22 +189,30 @@ def main(argv: list[str] | None = None) -> int:
         config = load_config(
             config_path=args.config,
             ledger_path_override=args.ledger_path,
-            archive_path_override=None,
+            archive_path_override=args.archive_path,
         )
         return show_pipeline_status(
             config=config,
             output_format=args.output_format,
+            source_file_path=args.source_file_path,
+            model_output_fixture_path=args.model_output_fixture,
+            document_id=args.document_id,
+            briefing_title=args.briefing_title,
         )
 
     if args.command == "pipeline" and args.pipeline_command == "next":
         config = load_config(
             config_path=args.config,
             ledger_path_override=args.ledger_path,
-            archive_path_override=None,
+            archive_path_override=args.archive_path,
         )
         return show_pipeline_next(
             config=config,
             output_format=args.output_format,
+            source_file_path=args.source_file_path,
+            model_output_fixture_path=args.model_output_fixture,
+            document_id=args.document_id,
+            briefing_title=args.briefing_title,
         )
 
     if args.command == "graph" and args.graph_command == "project":
@@ -367,6 +376,11 @@ def build_parser() -> argparse.ArgumentParser:
         default="text",
     )
     pipeline_status_parser.add_argument("--ledger-path", type=Path, default=None)
+    pipeline_status_parser.add_argument("--archive-path", type=Path, default=None)
+    pipeline_status_parser.add_argument("--source-file-path", type=Path, default=None)
+    pipeline_status_parser.add_argument("--model-output-fixture", type=Path, default=None)
+    pipeline_status_parser.add_argument("--document-id", default=None)
+    pipeline_status_parser.add_argument("--briefing-title", default=None)
     pipeline_next_parser = pipeline_subparsers.add_parser(
         "next",
         help="Show the next recommended Pipeline command.",
@@ -378,6 +392,11 @@ def build_parser() -> argparse.ArgumentParser:
         default="text",
     )
     pipeline_next_parser.add_argument("--ledger-path", type=Path, default=None)
+    pipeline_next_parser.add_argument("--archive-path", type=Path, default=None)
+    pipeline_next_parser.add_argument("--source-file-path", type=Path, default=None)
+    pipeline_next_parser.add_argument("--model-output-fixture", type=Path, default=None)
+    pipeline_next_parser.add_argument("--document-id", default=None)
+    pipeline_next_parser.add_argument("--briefing-title", default=None)
 
     graph_parser = subparsers.add_parser("graph", help="Graph projection commands.")
     graph_subparsers = graph_parser.add_subparsers(dest="graph_command")
@@ -565,9 +584,22 @@ def show_pipeline_status(
     *,
     config: PipelineConfig,
     output_format: str,
+    source_file_path: Path | None,
+    model_output_fixture_path: Path | None,
+    document_id: str | None,
+    briefing_title: str | None,
 ) -> int:
     with sqlite_ledger_transaction(config.ledger_path) as ledger_repository:
-        status = get_pipeline_status(PipelineStatusInput(), ledger_repository)
+        status = get_pipeline_status(
+            _pipeline_status_input(
+                config=config,
+                source_file_path=source_file_path,
+                model_output_fixture_path=model_output_fixture_path,
+                document_id=document_id,
+                briefing_title=briefing_title,
+            ),
+            ledger_repository,
+        )
     if output_format == "json":
         print(json.dumps(pipeline_status_to_json(status), indent=2, sort_keys=True))
         return 0
@@ -579,14 +611,51 @@ def show_pipeline_next(
     *,
     config: PipelineConfig,
     output_format: str,
+    source_file_path: Path | None,
+    model_output_fixture_path: Path | None,
+    document_id: str | None,
+    briefing_title: str | None,
 ) -> int:
     with sqlite_ledger_transaction(config.ledger_path) as ledger_repository:
-        next_step = get_pipeline_next(PipelineStatusInput(), ledger_repository)
+        next_step = get_pipeline_next(
+            _pipeline_status_input(
+                config=config,
+                source_file_path=source_file_path,
+                model_output_fixture_path=model_output_fixture_path,
+                document_id=document_id,
+                briefing_title=briefing_title,
+            ),
+            ledger_repository,
+        )
     if output_format == "json":
         print(json.dumps(pipeline_next_to_json(next_step), indent=2, sort_keys=True))
         return 0
     print(_pipeline_next_text(next_step))
     return 0
+
+
+def _pipeline_status_input(
+    *,
+    config: PipelineConfig,
+    source_file_path: Path | None,
+    model_output_fixture_path: Path | None,
+    document_id: str | None,
+    briefing_title: str | None,
+) -> PipelineStatusInput:
+    return PipelineStatusInput(
+        ledger_path=str(config.ledger_path),
+        archive_path=str(config.archive_path),
+        source_file_path=_optional_resolved_path(source_file_path),
+        model_output_fixture_path=_optional_resolved_path(model_output_fixture_path),
+        document_id=document_id,
+        briefing_title=briefing_title,
+    )
+
+
+def _optional_resolved_path(path: Path | None) -> str | None:
+    if path is None:
+        return None
+    return str(path.resolve())
 
 
 def export_reviewed_proposed_change(
@@ -708,9 +777,11 @@ def _review_readiness_text(status: ReviewReadinessStatus) -> str:
 
 
 def _pipeline_status_text(status: PipelineStatus) -> str:
+    command_plan = status.next_command_plan
     lines = [
         f"Pipeline stage: {status.stage.value}",
         f"Next command: {status.next_command or 'none'}",
+        f"Command plan ready: {_bool_text(command_plan.ready_to_execute)}",
         f"Review required: {_bool_text(status.review_required)}",
         f"Pending ProposedChanges: {status.pending_count}",
         f"Missing references: {status.missing_reference_count}",
@@ -738,6 +809,12 @@ def _pipeline_status_text(status: PipelineStatus) -> str:
         lines.extend(f"  {document_id}" for document_id in status.candidate_document_ids)
     else:
         lines.append("  none")
+    lines.append("Command plan argv:")
+    if command_plan.argv:
+        lines.append(f"  {' '.join(command_plan.argv)}")
+    else:
+        lines.append("  none")
+    lines.extend(_missing_inputs_text(command_plan))
     lines.append("Blockers:")
     if status.blockers:
         lines.extend(
@@ -751,14 +828,24 @@ def _pipeline_status_text(status: PipelineStatus) -> str:
 
 
 def _pipeline_next_text(next_step: PipelineNextStep) -> str:
+    command_plan = next_step.command_plan
     lines = [
         f"Pipeline stage: {next_step.stage.value}",
         f"Next command: {next_step.command or 'none'}",
+        f"Command plan ready: {_bool_text(command_plan.ready_to_execute)}",
         f"Reason: {next_step.reason}",
         f"Requires human review: {_bool_text(next_step.requires_human_review)}",
         f"Blocked: {_bool_text(next_step.blocked)}",
-        "Blockers:",
+        "Command plan argv:",
     ]
+    if command_plan.argv:
+        lines.append(f"  {' '.join(command_plan.argv)}")
+    else:
+        lines.append("  none")
+    lines.extend(_missing_inputs_text(command_plan))
+    lines.append(
+        "Blockers:",
+    )
     if next_step.blockers:
         lines.extend(
             f"  {blocker.command} | {blocker.blocker_type}: {blocker.blocker_id} | "
@@ -768,6 +855,26 @@ def _pipeline_next_text(next_step: PipelineNextStep) -> str:
     else:
         lines.append("  none")
     return "\n".join(lines)
+
+
+def _missing_inputs_text(command_plan: PipelineCommandPlan) -> list[str]:
+    lines = ["Missing inputs:"]
+    if not command_plan.missing_inputs:
+        lines.append("  none")
+        return lines
+    for missing_input in command_plan.missing_inputs:
+        if missing_input.allowed_values:
+            allowed_values = ", ".join(missing_input.allowed_values)
+            lines.append(
+                f"  {missing_input.name} ({missing_input.kind}): "
+                f"{missing_input.description} Allowed: {allowed_values}"
+            )
+        else:
+            lines.append(
+                f"  {missing_input.name} ({missing_input.kind}): "
+                f"{missing_input.description}"
+            )
+    return lines
 
 
 def _bool_text(value: bool) -> str:

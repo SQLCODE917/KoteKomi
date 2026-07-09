@@ -1,5 +1,6 @@
 from datetime import UTC, datetime, timedelta
 
+import pytest
 from kotekomi_application import (
     AcceptedCanonicalRecord,
     PipelineStage,
@@ -37,6 +38,10 @@ from kotekomi_domain import (
 
 NOW = datetime(2026, 7, 9, 12, 0, tzinfo=UTC)
 LATER = NOW + timedelta(hours=1)
+PLAN_INPUT = PipelineStatusInput(
+    ledger_path="/tmp/kotekomi.db",
+    archive_path="/tmp/archive",
+)
 
 
 class FakePipelineLedger:
@@ -233,6 +238,183 @@ def test_pipeline_json_serializers_emit_agent_readable_values() -> None:
     assert next_json["blocked"] is False
 
 
+def test_command_plan_requires_source_path_for_source_ingest() -> None:
+    status = get_pipeline_status(PLAN_INPUT, FakePipelineLedger())
+
+    assert status.next_command_plan.ready_to_execute is False
+    assert status.next_command_plan.argv == ()
+    assert [item.name for item in status.next_command_plan.missing_inputs] == [
+        "source_file_path"
+    ]
+
+
+def test_command_plan_builds_source_ingest_argv_with_supplied_source_path() -> None:
+    status = get_pipeline_status(
+        PipelineStatusInput(
+            ledger_path="/tmp/kotekomi.db",
+            archive_path="/tmp/archive",
+            source_file_path="/tmp/article.md",
+        ),
+        FakePipelineLedger(),
+    )
+
+    assert status.next_command_plan.ready_to_execute is True
+    assert status.next_command_plan.argv == (
+        "source",
+        "add-file",
+        "/tmp/article.md",
+        "--ledger-path",
+        "/tmp/kotekomi.db",
+        "--archive-path",
+        "/tmp/archive",
+    )
+
+
+def test_command_plan_auto_selects_single_candidate_document_for_assertion_proposal() -> None:
+    status = get_pipeline_status(
+        PipelineStatusInput(
+            ledger_path="/tmp/kotekomi.db",
+            archive_path="/tmp/archive",
+            model_output_fixture_path="/tmp/proposals.json",
+        ),
+        FakePipelineLedger(records=(source_fixture(), document_fixture())),
+    )
+
+    assert status.next_command_plan.ready_to_execute is True
+    assert status.next_command_plan.argv == (
+        "source",
+        "propose-assertions",
+        "--document-id",
+        "doc_article_a",
+        "--model-output-fixture",
+        "/tmp/proposals.json",
+        "--ledger-path",
+        "/tmp/kotekomi.db",
+        "--archive-path",
+        "/tmp/archive",
+    )
+
+
+def test_command_plan_requires_document_id_when_multiple_candidates_exist() -> None:
+    status = get_pipeline_status(
+        PipelineStatusInput(
+            ledger_path="/tmp/kotekomi.db",
+            archive_path="/tmp/archive",
+            model_output_fixture_path="/tmp/proposals.json",
+        ),
+        FakePipelineLedger(
+            records=(
+                source_fixture(),
+                document_fixture(),
+                document_fixture("doc_article_b", content_sha256="b" * 64),
+            )
+        ),
+    )
+
+    assert status.next_command_plan.ready_to_execute is False
+    assert status.next_command_plan.missing_inputs[0].name == "document_id"
+    assert status.next_command_plan.missing_inputs[0].allowed_values == (
+        "doc_article_a",
+        "doc_article_b",
+    )
+
+
+def test_command_plan_rejects_non_candidate_document_id() -> None:
+    with pytest.raises(ValueError, match="is not a candidate Document"):
+        get_pipeline_status(
+            PipelineStatusInput(
+                ledger_path="/tmp/kotekomi.db",
+                archive_path="/tmp/archive",
+                model_output_fixture_path="/tmp/proposals.json",
+                document_id="doc_missing",
+            ),
+            FakePipelineLedger(records=(source_fixture(), document_fixture())),
+        )
+
+
+def test_command_plan_returns_review_list_argv_with_review_blockers() -> None:
+    ledger = FakePipelineLedger(
+        records=(source_fixture(), document_fixture(), organization_fixture()),
+        proposed_changes=(pending_assertion_change(evidence_span_ids=("evs_missing",)),),
+    )
+
+    next_step = get_pipeline_next(PLAN_INPUT, ledger)
+
+    assert next_step.command_plan.ready_to_execute is True
+    assert next_step.command_plan.argv == (
+        "review",
+        "list",
+        "--ledger-path",
+        "/tmp/kotekomi.db",
+    )
+    assert next_step.command_plan.blockers[0].blocker_id == "evs_missing"
+
+
+def test_command_plan_returns_graph_mining_argv() -> None:
+    next_step = get_pipeline_next(
+        PLAN_INPUT,
+        FakePipelineLedger(records=graph_ready_records()),
+    )
+
+    assert next_step.command_plan.ready_to_execute is True
+    assert next_step.command_plan.argv == (
+        "graph",
+        "mine",
+        "--ledger-path",
+        "/tmp/kotekomi.db",
+    )
+
+
+def test_command_plan_requires_briefing_title_for_briefing_generation() -> None:
+    status = get_pipeline_status(
+        PLAN_INPUT,
+        FakePipelineLedger(records=(*graph_ready_records(), analytic_assertion_fixture())),
+    )
+
+    assert status.next_command_plan.ready_to_execute is False
+    assert [item.name for item in status.next_command_plan.missing_inputs] == [
+        "briefing_title"
+    ]
+
+
+def test_command_plan_returns_briefing_generation_argv_with_title() -> None:
+    status = get_pipeline_status(
+        PipelineStatusInput(
+            ledger_path="/tmp/kotekomi.db",
+            archive_path="/tmp/archive",
+            briefing_title="Daily Briefing",
+        ),
+        FakePipelineLedger(records=(*graph_ready_records(), analytic_assertion_fixture())),
+    )
+
+    assert status.next_command_plan.ready_to_execute is True
+    assert status.next_command_plan.argv == (
+        "briefing",
+        "generate",
+        "--title",
+        "Daily Briefing",
+        "--ledger-path",
+        "/tmp/kotekomi.db",
+        "--archive-path",
+        "/tmp/archive",
+    )
+
+
+def test_command_plan_has_no_argv_when_briefing_is_current() -> None:
+    status = get_pipeline_status(
+        PLAN_INPUT,
+        FakePipelineLedger(
+            records=(*graph_ready_records(), analytic_assertion_fixture()),
+            briefings=(briefing_fixture(generated_at=LATER),),
+        ),
+    )
+
+    assert status.next_command_plan.ready_to_execute is False
+    assert status.next_command_plan.command is None
+    assert status.next_command_plan.argv == ()
+    assert status.next_command_plan.missing_inputs == ()
+
+
 def source_fixture() -> Source:
     return Source(
         id="src_article_a",
@@ -243,13 +425,17 @@ def source_fixture() -> Source:
     )
 
 
-def document_fixture() -> Document:
+def document_fixture(
+    document_id: str = "doc_article_a",
+    *,
+    content_sha256: str = "a" * 64,
+) -> Document:
     return Document(
-        id="doc_article_a",
+        id=document_id,
         source_id="src_article_a",
-        raw_path="sources/raw/src_article_a.bin",
-        extracted_text_path="documents/extracted/doc_article_a.txt",
-        content_sha256="a" * 64,
+        raw_path=f"sources/raw/{document_id}.bin",
+        extracted_text_path=f"documents/extracted/{document_id}.txt",
+        content_sha256=content_sha256,
         created_at=NOW,
         updated_at=NOW,
     )

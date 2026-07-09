@@ -41,7 +41,9 @@ from kotekomi_application.ledger_graph_projection import (
 )
 from kotekomi_application.pipeline_readiness import (
     PipelineBlocker,
+    PipelineCommandPlan,
     PipelineNextStep,
+    PipelinePlanInputRequirement,
     PipelineStage,
     PipelineStatus,
     PipelineStatusInput,
@@ -156,7 +158,9 @@ __all__ = [
     "ModelProposal",
     "ModelRuntime",
     "PipelineBlocker",
+    "PipelineCommandPlan",
     "PipelineNextStep",
+    "PipelinePlanInputRequirement",
     "PipelineStage",
     "PipelineStatus",
     "PipelineStatusInput",

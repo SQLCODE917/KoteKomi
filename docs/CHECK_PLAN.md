@@ -37,6 +37,7 @@
 - run Review Queue and Review Packet Pipeline fixture with `uv run pytest packages/pipelines/tests/test_review_queue_packet.py`
 - verify Review Readiness and agent JSON state with `uv run pytest packages/application/tests/test_review_queue_packet.py packages/pipelines/tests/test_review_queue_packet.py`
 - verify Pipeline Readiness and agent next-step orchestration with `uv run pytest packages/application/tests/test_pipeline_readiness.py packages/pipelines/tests/test_pipeline_readiness.py`
+- verify Pipeline executable agent next-step plans with `uv run pytest packages/application/tests/test_pipeline_readiness.py packages/pipelines/tests/test_pipeline_readiness.py`
 - verify accepted Ledger writes reject missing cross-record references with `uv run pytest packages/application/tests/test_review_proposed_change.py`
 - run graph projection Application test with `uv run pytest packages/application/tests/test_project_ledger_graph.py`
 - run graph projection Adapter test with `uv run pytest packages/adapters/tests/test_networkx_graph_analyzer.py`
