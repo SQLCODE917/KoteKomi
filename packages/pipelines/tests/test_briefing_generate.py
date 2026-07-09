@@ -251,6 +251,10 @@ def test_briefing_generate_writes_markdown_and_briefing_record(
         citation for citation in registry.citations if citation.is_analytic_inference
     )
     assert delay_citation.assertion_ids == ("ast_anthropic_postponed_fable5_after_us_review",)
+    assert delay_citation.summary == (
+        "Source report: U.S. cyber-safety concerns delayed Anthropic's broader "
+        "Claude Fable 5 rollout."
+    )
     assert delay_citation.source_ids == ("src_aa67767133655af72fbcf0a8",)
     assert delay_citation.document_ids == ("doc_aa67767133655af72fbcf0a8",)
     assert delay_citation.evidence_span_ids == ("evs_delay_after_us_cyber_concerns",)
@@ -298,8 +302,8 @@ def test_briefing_generate_writes_markdown_and_briefing_record(
         "approved evaluation program." in markdown
     )
     assert (
-        "Commerce review pressure became a release-governance constraint on Anthropic's "
-        "Claude Fable 5 rollout." in markdown
+        "KoteKomi assesses that Commerce review pressure became a release-governance "
+        "constraint on Anthropic's Claude Fable 5 rollout." in markdown
     )
     assert (
         "The article states that Commerce Secretary Howard Lutnick pressed for a pause until "
@@ -316,7 +320,7 @@ def test_briefing_generate_writes_markdown_and_briefing_record(
         "Anthropic release timing." in markdown
     )
     assert "Confidence: Moderate" in markdown
-    assert "Type: Analytic inference" in markdown
+    assert "Analytic inference" in markdown
     assert "Secondary" in markdown
     assert "Anonymous Source" in markdown
     assert "Reported By Source" in markdown
@@ -334,8 +338,49 @@ def test_briefing_generate_writes_markdown_and_briefing_record(
     assert "Watch for primary-source statements" in markdown
     assert "Watch for renewed enterprise pilot suspensions" in markdown
     assert "government review as an operational release constraint" in markdown
+    expected_appendix_sections = (
+        "### Citation Register",
+        "### Source Quality Register",
+        "### Analytic Trace",
+        "### Collection Requirements",
+        "### Entity and Event Index",
+    )
+    rendered_appendix_sections = tuple(
+        line for line in markdown.splitlines() if line.startswith("### ")
+    )
+    assert rendered_appendix_sections == expected_appendix_sections
+    for removed_appendix_heading in (
+        "### Citations",
+        "### Key Entities",
+        "### Key Organizations",
+        "### Key Actors",
+        "### Key Places",
+        "### Key Events",
+        "### Outcomes",
+        "### Sources",
+    ):
+        assert removed_appendix_heading not in markdown
+    assert (
+        "| [2] | Source-backed Assertion | Source report: U.S. cyber-safety concerns delayed"
+        in markdown
+    )
+    assert (
+        "| [4] | Analytic inference | Inference: Anthropic and Commerce Department share"
+        in markdown
+    )
+    assert "Source-backed Assertion: Source report" not in markdown
+    assert "Source-backed Assertion: The article" not in markdown
+    assert "ArgumentEdge:" not in markdown
+    assert "Support link" in markdown
+    assert "ArgumentEdge |" not in markdown
+    assert "Relationship:" not in markdown
+    assert "Outcome:" not in markdown
     assert "### Analytic Trace" in markdown
-    assert "### Citations" in markdown
+    assert "| Finding | Support | Relation | Confidence |" in markdown
+    assert "Relationship derived from selected claims" not in markdown
+    assert "### Collection Requirements" in markdown
+    assert "A primary government or Anthropic record confirming the review basis." in markdown
+    assert "### Entity and Event Index" in markdown
     assert "Source report: U.S. cyber-safety concerns delayed" in markdown
     assert "Source report: Anthropic suspended several enterprise pilots" in markdown
     assert "Anthropic" in markdown

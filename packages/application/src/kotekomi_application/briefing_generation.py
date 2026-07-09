@@ -33,8 +33,11 @@ from kotekomi_application.ports import (
     AcceptedCanonicalRecord,
     ArchiveObject,
     ArchiveStore,
+    BriefingAnalyticTraceRow,
     BriefingCitation,
     BriefingCitationRegistry,
+    BriefingCollectionRequirement,
+    BriefingEntityEventIndexRow,
     BriefingEvidenceQuality,
     BriefingJudgmentBasis,
     BriefingNarrative,
@@ -806,44 +809,47 @@ def _build_briefing_narrative(
         name_lookup,
         citation_builder,
     )
+    what_changed = _what_changed(outcome, assertions_by_id, name_lookup, citation_builder)
+    evidence_quality = _evidence_quality(
+        selected_records.assertions,
+        name_lookup,
+        citation_builder,
+    )
+    collection_gaps = _collection_gaps(
+        selected_records,
+        assertions_by_id,
+        argument_edges_by_id,
+        name_lookup,
+        citation_builder,
+    )
+    indicators_to_watch = _indicators_to_watch(
+        selected_records,
+        assertions_by_id,
+        argument_edges_by_id,
+        name_lookup,
+        citation_builder,
+    )
+    implications = _implications(
+        selected_records,
+        assertions_by_id,
+        argument_edges_by_id,
+        name_lookup,
+        citation_builder,
+    )
     narrative = BriefingNarrative(
         executive_judgment=executive_judgment,
-        what_changed=_what_changed(outcome, assertions_by_id, name_lookup, citation_builder),
+        what_changed=what_changed,
         judgment_basis=judgment_basis,
-        evidence_quality=_evidence_quality(
-            selected_records.assertions,
-            name_lookup,
-            citation_builder,
-        ),
-        collection_gaps=_collection_gaps(
-            selected_records,
-            assertions_by_id,
-            argument_edges_by_id,
-            name_lookup,
-            citation_builder,
-        ),
-        indicators_to_watch=_indicators_to_watch(
-            selected_records,
-            assertions_by_id,
-            argument_edges_by_id,
-            name_lookup,
-            citation_builder,
-        ),
-        implications=_implications(
-            selected_records,
-            assertions_by_id,
-            argument_edges_by_id,
-            name_lookup,
-            citation_builder,
-        ),
+        evidence_quality=evidence_quality,
+        collection_gaps=collection_gaps,
+        indicators_to_watch=indicators_to_watch,
+        implications=implications,
         reference_appendix=_reference_appendix(
             selected_records,
-            analytic_trace=_analytic_trace(
-                selected_records,
-                assertions_by_id,
-                name_lookup,
-                citation_builder,
-            ),
+            collection_gaps,
+            assertions_by_id,
+            name_lookup,
+            citation_builder,
         ),
     )
     return narrative, citation_builder.registry()
@@ -1164,7 +1170,9 @@ def _executive_judgment_and_basis(
             inference_text,
         )
         judgment = BriefingNarrativeSentence(
-            text=_sharp_judgment_text(analytic_assertion, source_assertions, name_lookup),
+            text=_kotekomi_assessment_text(
+                _sharp_judgment_text(analytic_assertion, source_assertions, name_lookup)
+            ),
             citation_numbers=(inference_citation,),
         )
         if executive_judgment is None:
@@ -1214,7 +1222,12 @@ def _sharp_source_basis(
         sentences.append(
             BriefingNarrativeSentence(
                 text=text,
-                citation_numbers=(citation_builder.source_assertion(assertion, text),),
+                citation_numbers=(
+                    citation_builder.source_assertion(
+                        assertion,
+                        _briefing_assertion_text(assertion, name_lookup),
+                    ),
+                ),
             )
         )
     if not sentences:
@@ -1271,6 +1284,10 @@ def _sharp_judgment_text(
             f"{model_name} rollout."
         )
     return _inference_text(analytic_assertion, name_lookup)
+
+
+def _kotekomi_assessment_text(text: str) -> str:
+    return f"KoteKomi assesses that {text}"
 
 
 def _sharp_assessment_text(
@@ -1744,22 +1761,20 @@ def _implications(
 
 def _reference_appendix(
     selected_records: _SelectedRecords,
-    analytic_trace: tuple[BriefingNarrativeSentence, ...],
+    collection_gaps: tuple[BriefingNarrativeSentence, ...],
+    assertions_by_id: dict[str, Assertion],
+    name_lookup: _NameLookup,
+    citation_builder: _CitationBuilder,
 ) -> BriefingReferenceAppendix:
     return BriefingReferenceAppendix(
-        analytic_trace=analytic_trace,
-        entity_ids=tuple(record.id for record in selected_records.entities),
-        actor_ids=tuple(record.id for record in selected_records.actors),
-        organization_ids=tuple(record.id for record in selected_records.organizations),
-        place_ids=tuple(record.id for record in selected_records.places),
-        event_ids=tuple(record.id for record in selected_records.events),
-        source_ids=tuple(record.id for record in selected_records.sources),
-        document_ids=tuple(record.id for record in selected_records.documents),
-        evidence_span_ids=tuple(record.id for record in selected_records.evidence_spans),
-        assertion_ids=tuple(record.id for record in selected_records.assertions),
-        relationship_ids=tuple(record.id for record in selected_records.relationships),
-        outcome_ids=tuple(record.id for record in selected_records.outcomes),
-        argument_edge_ids=tuple(record.id for record in selected_records.argument_edges),
+        analytic_trace=_analytic_trace(
+            selected_records,
+            assertions_by_id,
+            name_lookup,
+            citation_builder,
+        ),
+        collection_requirements=_collection_requirements(collection_gaps),
+        entity_event_index=_entity_event_index(selected_records, name_lookup),
     )
 
 
@@ -1768,8 +1783,8 @@ def _analytic_trace(
     assertions_by_id: dict[str, Assertion],
     name_lookup: _NameLookup,
     citation_builder: _CitationBuilder,
-) -> tuple[BriefingNarrativeSentence, ...]:
-    trace: list[BriefingNarrativeSentence] = []
+) -> tuple[BriefingAnalyticTraceRow, ...]:
+    trace: list[BriefingAnalyticTraceRow] = []
     for argument_edge in sorted(selected_records.argument_edges, key=lambda record: record.id):
         from_assertion = _require(
             assertions_by_id,
@@ -1783,26 +1798,105 @@ def _analytic_trace(
             "Assertion",
             argument_edge.id,
         )
-        text = (
-            f"Source report support: {_source_report_body(from_assertion, name_lookup)} "
-            f"{_argument_edge_phrase(argument_edge.relation.value)} the inference that "
-            f"{_inference_body(to_assertion, name_lookup)}."
-        )
+        finding = _sentence(_inference_body(to_assertion, name_lookup))
+        support = _sentence(_source_report_body(from_assertion, name_lookup))
         trace.append(
-            BriefingNarrativeSentence(
-                text=text,
-                citation_numbers=(citation_builder.argument_edge(argument_edge, text),),
-            )
-        )
-    for relationship in sorted(selected_records.relationships, key=lambda record: record.id):
-        text = _relationship_text(relationship, name_lookup)
-        trace.append(
-            BriefingNarrativeSentence(
-                text=text,
-                citation_numbers=(citation_builder.relationship(relationship, text),),
+            BriefingAnalyticTraceRow(
+                finding=finding,
+                support=support,
+                relation=_argument_edge_phrase(argument_edge.relation.value),
+                confidence_label=_confidence_label(argument_edge.confidence),
+                citation_numbers=(
+                    citation_builder.argument_edge(
+                        argument_edge,
+                        (
+                            f"Source report support: {support.removesuffix('.')} "
+                            f"{_argument_edge_phrase(argument_edge.relation.value)} "
+                            f"the inference that {finding.removesuffix('.')}."
+                        ),
+                    ),
+                ),
             )
         )
     return tuple(trace)
+
+
+def _collection_requirements(
+    collection_gaps: tuple[BriefingNarrativeSentence, ...],
+) -> tuple[BriefingCollectionRequirement, ...]:
+    return tuple(
+        BriefingCollectionRequirement(
+            gap=gap.text,
+            closes_with=_collection_requirement_closure(gap.text),
+            citation_numbers=gap.citation_numbers,
+        )
+        for gap in collection_gaps
+    )
+
+
+def _collection_requirement_closure(gap: str) -> str:
+    if gap.startswith("No independent Source corroborates"):
+        return "A second independent Source reporting the same claims."
+    if gap.startswith("No primary-source record confirms"):
+        return "A primary government or Anthropic record confirming the review basis."
+    if "not directly stated by a Source" in gap:
+        return "A Source that directly states the inferred governance relationship."
+    if "World-truth confidence" in gap:
+        return "Additional evidence that separates source-report confidence from world truth."
+    return "Additional accepted Source-backed Assertions that answer this gap."
+
+
+def _entity_event_index(
+    selected_records: _SelectedRecords,
+    name_lookup: _NameLookup,
+) -> tuple[BriefingEntityEventIndexRow, ...]:
+    rows: list[BriefingEntityEventIndexRow] = []
+    rows.extend(
+        BriefingEntityEventIndexRow(
+            record_type="Actor",
+            name=actor.name,
+            context=_entity_context(
+                "Roles",
+                actor.role_names,
+                "Organizations",
+                tuple(_record_name(record_id, name_lookup) for record_id in actor.organization_ids),
+            ),
+        )
+        for actor in sorted(selected_records.actors, key=lambda record: record.id)
+    )
+    rows.extend(
+        BriefingEntityEventIndexRow(
+            record_type="Organization",
+            name=organization.name,
+            context="Selected Organization.",
+        )
+        for organization in sorted(selected_records.organizations, key=lambda record: record.id)
+    )
+    rows.extend(
+        BriefingEntityEventIndexRow(
+            record_type="Event",
+            name=event.name,
+            context=_event_context(event, name_lookup),
+        )
+        for event in sorted(selected_records.events, key=lambda record: record.id)
+    )
+    rows.extend(
+        BriefingEntityEventIndexRow(
+            record_type="Outcome",
+            name=outcome.description,
+            context=_outcome_context(outcome, name_lookup),
+        )
+        for outcome in sorted(selected_records.outcomes, key=lambda record: record.id)
+    )
+    rows.extend(
+        BriefingEntityEventIndexRow(
+            record_type="Source",
+            name=source.title,
+            context="Selected Source.",
+        )
+        for source in sorted(selected_records.sources, key=lambda record: record.id)
+    )
+    return tuple(rows)
 
 
 def _argument_edges_to_assertion(
@@ -1831,6 +1925,42 @@ def _edge_evidence_span_ids(argument_edges: tuple[ArgumentEdge, ...]) -> tuple[s
             }
         )
     )
+
+
+def _entity_context(
+    first_label: str,
+    first_values: tuple[str, ...],
+    second_label: str,
+    second_values: tuple[str, ...],
+) -> str:
+    parts: list[str] = []
+    if first_values:
+        parts.append(f"{first_label}: {_join_names(first_values)}")
+    if second_values:
+        parts.append(f"{second_label}: {_join_names(second_values)}")
+    return "; ".join(parts) if parts else "Selected record."
+
+
+def _event_context(event: Event, name_lookup: _NameLookup) -> str:
+    parts: list[str] = []
+    if event.start_at is not None:
+        parts.append(f"Start: {event.start_at.isoformat()}")
+    participants = tuple(
+        _record_name(record_id, name_lookup)
+        for record_id in (*event.participant_actor_ids, *event.participant_organization_ids)
+    )
+    if participants:
+        parts.append(f"Participants: {_join_names(participants)}")
+    if event.place_id is not None:
+        parts.append(f"Place: {_record_name(event.place_id, name_lookup)}")
+    return "; ".join(parts) if parts else "Selected Event."
+
+
+def _outcome_context(outcome: Outcome, name_lookup: _NameLookup) -> str:
+    linked_names = _linked_outcome_names(outcome, name_lookup)
+    if linked_names:
+        return f"Links {linked_names}."
+    return "Selected Outcome."
 
 
 def _linked_outcome_names(outcome: Outcome, name_lookup: _NameLookup) -> str:
@@ -1939,15 +2069,6 @@ def _strip_inference_prefix(text: str) -> str:
             stripped = stripped.removeprefix(prefix)
             break
     return _capitalize_first(stripped)
-
-
-def _relationship_text(relationship: Relationship, name_lookup: _NameLookup) -> str:
-    return (
-        "Relationship: "
-        f"{_record_name(relationship.subject_id, name_lookup)} "
-        f"{_phrase_predicate(relationship.predicate)} "
-        f"{_record_name(relationship.object_id, name_lookup)}."
-    )
 
 
 def _confidence_label(confidence: float | None) -> str:

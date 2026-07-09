@@ -118,20 +118,33 @@ class BriefingEvidenceQuality:
 
 
 @dataclass(frozen=True)
+class BriefingAnalyticTraceRow:
+    finding: str
+    support: str
+    relation: str
+    confidence_label: str
+    citation_numbers: tuple[int, ...] = ()
+
+
+@dataclass(frozen=True)
+class BriefingCollectionRequirement:
+    gap: str
+    closes_with: str
+    citation_numbers: tuple[int, ...] = ()
+
+
+@dataclass(frozen=True)
+class BriefingEntityEventIndexRow:
+    record_type: str
+    name: str
+    context: str
+
+
+@dataclass(frozen=True)
 class BriefingReferenceAppendix:
-    analytic_trace: tuple[BriefingNarrativeSentence, ...]
-    entity_ids: tuple[str, ...] = ()
-    actor_ids: tuple[str, ...] = ()
-    organization_ids: tuple[str, ...] = ()
-    place_ids: tuple[str, ...] = ()
-    event_ids: tuple[str, ...] = ()
-    source_ids: tuple[str, ...] = ()
-    document_ids: tuple[str, ...] = ()
-    evidence_span_ids: tuple[str, ...] = ()
-    assertion_ids: tuple[str, ...] = ()
-    relationship_ids: tuple[str, ...] = ()
-    outcome_ids: tuple[str, ...] = ()
-    argument_edge_ids: tuple[str, ...] = ()
+    analytic_trace: tuple[BriefingAnalyticTraceRow, ...]
+    collection_requirements: tuple[BriefingCollectionRequirement, ...]
+    entity_event_index: tuple[BriefingEntityEventIndexRow, ...]
 
 
 @dataclass(frozen=True)

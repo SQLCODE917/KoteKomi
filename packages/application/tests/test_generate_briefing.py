@@ -253,10 +253,20 @@ def test_generate_briefing_creates_markdown_briefing_and_provenance() -> None:
     assert narrative.evidence_quality[0].evidence_span_count == 1
     assert narrative.evidence_quality[0].source_authority is SourceAuthority.SECONDARY
     assert narrative.evidence_quality[0].attribution_basis is AttributionBasis.REPORTED_BY_SOURCE
+    assert len(narrative.reference_appendix.analytic_trace) == 1
+    assert narrative.reference_appendix.analytic_trace[0].finding == (
+        "Anthropic and Commerce Department share a release-governance outcome."
+    )
+    assert narrative.reference_appendix.analytic_trace[0].support == "The rollout was delayed."
+    assert narrative.reference_appendix.analytic_trace[0].relation == "supports"
     collection_gap_text = "\n".join(gap.text for gap in narrative.collection_gaps)
     assert (
         "The inference that Anthropic and Commerce Department share a release-governance "
         "outcome is derived from source-backed claims" in collection_gap_text
+    )
+    assert (
+        narrative.reference_appendix.collection_requirements[-1].closes_with
+        == "A Source that directly states the inferred governance relationship."
     )
     activity = ledger.provenance_activities[result.provenance_activity_id]
     assert activity.activity_type == "briefing_generation"
@@ -474,8 +484,8 @@ def test_generate_briefing_builds_sharp_judgment_from_canonical_support() -> Non
     assert narrative.executive_judgment is not None
     judgment_basis = narrative.judgment_basis[0]
     assert narrative.executive_judgment.text == (
-        "Commerce review pressure became a release-governance constraint on Anthropic's "
-        "Claude Fable 5 rollout."
+        "KoteKomi assesses that Commerce review pressure became a release-governance "
+        "constraint on Anthropic's Claude Fable 5 rollout."
     )
     assert judgment_basis.source_basis[0].text == (
         "The article states that Commerce Secretary Howard Lutnick pressed for a pause until "

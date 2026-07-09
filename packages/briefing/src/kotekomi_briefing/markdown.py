@@ -3,15 +3,6 @@
 from __future__ import annotations
 
 from kotekomi_application import BriefingMarkdown, BriefingRenderInput
-from kotekomi_domain import (
-    Actor,
-    Entity,
-    Event,
-    Organization,
-    Outcome,
-    Place,
-    Source,
-)
 
 
 class MarkdownBriefingRenderer:
@@ -142,29 +133,11 @@ def _implications_section(render_input: BriefingRenderInput) -> list[str]:
 
 def _reference_appendix_section(render_input: BriefingRenderInput) -> list[str]:
     lines = ["## Reference Appendix", ""]
+    lines.extend(_citation_register_section(render_input))
+    lines.extend(_source_quality_register_section(render_input))
     lines.extend(_appendix_trace_section(render_input))
-    lines.extend(_entity_section(render_input.entities))
-    lines.extend(_organization_section(render_input.organizations))
-    lines.extend(_actor_section(render_input.actors, render_input.organizations))
-    lines.extend(_place_section(render_input.places))
-    lines.extend(
-        _event_section(
-            render_input.events,
-            render_input.actors,
-            render_input.organizations,
-            render_input.places,
-        )
-    )
-    lines.extend(
-        _outcome_section(
-            render_input.outcomes,
-            render_input.actors,
-            render_input.organizations,
-            render_input.events,
-        )
-    )
-    lines.extend(_source_section(render_input.sources))
-    lines.extend(_citation_section(render_input))
+    lines.extend(_collection_requirement_section(render_input))
+    lines.extend(_entity_event_index_section(render_input))
     return lines
 
 
@@ -173,154 +146,79 @@ def _appendix_trace_section(render_input: BriefingRenderInput) -> list[str]:
     analytic_trace = render_input.narrative.reference_appendix.analytic_trace
     if not analytic_trace:
         return [*lines, "- None", ""]
-    return [
-        *lines,
-        *(
-            f"- {_sentence_text(trace.text, trace.citation_numbers)}"
-            for trace in analytic_trace
-        ),
-        "",
-    ]
+    lines.append("| Finding | Support | Relation | Confidence |")
+    lines.append("|---|---|---|---:|")
+    for trace in analytic_trace:
+        finding = _sentence_text(trace.finding, trace.citation_numbers)
+        lines.append(
+            f"| {finding} | {trace.support} | {trace.relation} | {trace.confidence_label} |"
+        )
+    return [*lines, ""]
 
 
-def _citation_section(render_input: BriefingRenderInput) -> list[str]:
-    lines = ["### Citations", ""]
+def _citation_register_section(render_input: BriefingRenderInput) -> list[str]:
+    lines = ["### Citation Register", ""]
     if not render_input.citation_registry.citations:
         return [*lines, "- None", ""]
+    lines.append("| Number | Type | Summary | Confidence |")
+    lines.append("|---:|---|---|---:|")
     for citation in render_input.citation_registry.citations:
-        lines.append(f"- [{citation.number}] {_citation_heading(citation.label, citation.summary)}")
-        lines.append(f"  - Confidence: {citation.confidence_label}")
-        if citation.is_analytic_inference:
-            lines.append("  - Type: Analytic inference")
+        citation_type = _citation_type_label(citation.label, citation.is_analytic_inference)
+        lines.append(
+            f"| [{citation.number}] | {citation_type} | "
+            f"{_citation_summary(citation.summary)} | "
+            f"{citation.confidence_label} |"
+        )
     return [*lines, ""]
 
 
-def _entity_section(entities: tuple[Entity, ...]) -> list[str]:
-    lines = ["### Key Entities", ""]
-    if not entities:
+def _citation_type_label(label: str, is_analytic_inference: bool) -> str:
+    if is_analytic_inference:
+        return "Analytic inference"
+    if label == "ArgumentEdge":
+        return "Support link"
+    return label
+
+
+def _source_quality_register_section(render_input: BriefingRenderInput) -> list[str]:
+    lines = ["### Source Quality Register", ""]
+    if not render_input.narrative.evidence_quality:
         return [*lines, "- None", ""]
-    return [
-        *lines,
-        *(
-            f"- {entity.canonical_name} ({entity.entity_kind.value})"
-            for entity in sorted(entities, key=lambda record: record.id)
-        ),
-        "",
-    ]
-
-
-def _organization_section(organizations: tuple[Organization, ...]) -> list[str]:
-    lines = ["### Key Organizations", ""]
-    if not organizations:
-        return [*lines, "- None", ""]
-    return [
-        *lines,
-        *(
-            f"- {organization.name}"
-            for organization in sorted(organizations, key=lambda record: record.id)
-        ),
-        "",
-    ]
-
-
-def _actor_section(actors: tuple[Actor, ...], organizations: tuple[Organization, ...]) -> list[str]:
-    lines = ["### Key Actors", ""]
-    if not actors:
-        return [*lines, "- None", ""]
-    organization_names = {record.id: record.name for record in organizations}
-    return [
-        *lines,
-        *(
-            f"- {actor.name}"
-            f"{_optional_parenthetical('Roles', actor.role_names)}"
-            f"{
-                _optional_parenthetical(
-                    'Organizations',
-                    _names(actor.organization_ids, organization_names),
-                )
-            }"
-            for actor in sorted(actors, key=lambda record: record.id)
-        ),
-        "",
-    ]
-
-
-def _place_section(places: tuple[Place, ...]) -> list[str]:
-    lines = ["### Key Places", ""]
-    if not places:
-        return [*lines, "- None", ""]
-    return [
-        *lines,
-        *(f"- {place.name}" for place in sorted(places, key=lambda record: record.id)),
-        "",
-    ]
-
-
-def _event_section(
-    events: tuple[Event, ...],
-    actors: tuple[Actor, ...],
-    organizations: tuple[Organization, ...],
-    places: tuple[Place, ...],
-) -> list[str]:
-    lines = ["### Key Events", ""]
-    if not events:
-        return [*lines, "- None", ""]
-    actor_names = {record.id: record.name for record in actors}
-    organization_names = {record.id: record.name for record in organizations}
-    place_names = {record.id: record.name for record in places}
-    for event in sorted(events, key=lambda record: record.id):
-        lines.append(f"- {event.name}")
-        if event.start_at is not None:
-            lines.append(f"  - Start: `{event.start_at.isoformat()}`")
-        if event.participant_actor_ids:
-            lines.append(
-                f"  - Actors: {_text_list(_names(event.participant_actor_ids, actor_names))}"
-            )
-        if event.participant_organization_ids:
-            lines.append(
-                f"  - Organizations: "
-                f"{_text_list(_names(event.participant_organization_ids, organization_names))}"
-            )
-        if event.place_id is not None:
-            lines.append(f"  - Place: {place_names.get(event.place_id, 'Unresolved record')}")
+    lines.append("| Claim | SourceAuthority | AttributionBasis | Sources | EvidenceSpans |")
+    lines.append("|---|---:|---:|---:|---:|")
+    for quality in render_input.narrative.evidence_quality:
+        claim = _sentence_text(quality.claim.text, quality.claim.citation_numbers)
+        lines.append(
+            f"| {claim} | {_enum_label(quality.source_authority.value)} | "
+            f"{_enum_label(quality.attribution_basis.value)} | {quality.source_count} | "
+            f"{quality.evidence_span_count} |"
+        )
     return [*lines, ""]
 
 
-def _outcome_section(
-    outcomes: tuple[Outcome, ...],
-    actors: tuple[Actor, ...],
-    organizations: tuple[Organization, ...],
-    events: tuple[Event, ...],
-) -> list[str]:
-    lines = ["### Outcomes", ""]
-    if not outcomes:
+def _collection_requirement_section(render_input: BriefingRenderInput) -> list[str]:
+    lines = ["### Collection Requirements", ""]
+    requirements = render_input.narrative.reference_appendix.collection_requirements
+    if not requirements:
         return [*lines, "- None", ""]
-    actor_names = {record.id: record.name for record in actors}
-    organization_names = {record.id: record.name for record in organizations}
-    event_names = {record.id: record.name for record in events}
-    for outcome in sorted(outcomes, key=lambda record: record.id):
-        lines.append(f"- {outcome.description}")
-        if outcome.actor_ids:
-            lines.append(f"  - Actors: {_text_list(_names(outcome.actor_ids, actor_names))}")
-        if outcome.organization_ids:
-            lines.append(
-                "  - Organizations: "
-                f"{_text_list(_names(outcome.organization_ids, organization_names))}"
-            )
-        if outcome.event_ids:
-            lines.append(f"  - Events: {_text_list(_names(outcome.event_ids, event_names))}")
+    lines.append("| Gap | Evidence That Would Close It |")
+    lines.append("|---|---|")
+    for requirement in requirements:
+        gap = _sentence_text(requirement.gap, requirement.citation_numbers)
+        lines.append(f"| {gap} | {requirement.closes_with} |")
     return [*lines, ""]
 
 
-def _source_section(sources: tuple[Source, ...]) -> list[str]:
-    lines = ["### Sources", ""]
-    if not sources:
+def _entity_event_index_section(render_input: BriefingRenderInput) -> list[str]:
+    lines = ["### Entity and Event Index", ""]
+    index_rows = render_input.narrative.reference_appendix.entity_event_index
+    if not index_rows:
         return [*lines, "- None", ""]
-    return [
-        *lines,
-        *(f"- {source.title}" for source in sorted(sources, key=lambda record: record.id)),
-        "",
-    ]
+    lines.append("| Type | Name | Context |")
+    lines.append("|---|---|---|")
+    for row in index_rows:
+        lines.append(f"| {row.record_type} | {row.name} | {row.context} |")
+    return [*lines, ""]
 
 
 def _sentence_text(text: str, citation_numbers: tuple[int, ...]) -> str:
@@ -333,28 +231,18 @@ def _citation_markers(citation_numbers: tuple[int, ...]) -> str:
     return "".join(f"[{citation_number}]" for citation_number in citation_numbers)
 
 
-def _citation_heading(label: str, summary: str) -> str:
-    for prefix in ("Source report:", "Inference:", "Relationship:", "Outcome:"):
-        if summary.startswith(prefix):
-            return summary
-    return f"{label}: {summary}"
+def _citation_summary(summary: str) -> str:
+    cleaned = summary
+    for prefix in (
+        "Source-backed Assertion: ",
+        "ArgumentEdge: ",
+        "Relationship: ",
+        "Outcome: ",
+    ):
+        if cleaned.startswith(prefix):
+            return cleaned.removeprefix(prefix)
+    return cleaned
 
 
 def _enum_label(value: str) -> str:
     return value.replace("_", " ").title()
-
-
-def _optional_parenthetical(label: str, values: tuple[str, ...]) -> str:
-    if not values:
-        return ""
-    return f" ({label}: {_text_list(values)})"
-
-
-def _names(record_ids: tuple[str, ...], names_by_id: dict[str, str]) -> tuple[str, ...]:
-    return tuple(names_by_id.get(record_id, "Unresolved record") for record_id in record_ids)
-
-
-def _text_list(values: tuple[str, ...] | list[str]) -> str:
-    if not values:
-        return "none"
-    return ", ".join(values)
