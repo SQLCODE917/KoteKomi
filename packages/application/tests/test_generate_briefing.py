@@ -2,6 +2,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 from kotekomi_application import (
+    AcceptedCanonicalRecord,
     ArchiveObject,
     BriefingGenerationInput,
     BriefingMarkdown,
@@ -16,7 +17,9 @@ from kotekomi_domain import (
     AssertionStatus,
     AssertionType,
     Briefing,
+    Document,
     EvidenceSpan,
+    Organization,
     ProvenanceActivity,
     Relationship,
     SelectorType,
@@ -103,35 +106,15 @@ class FakeBriefingLedger:
     def __init__(
         self,
         *,
-        sources: tuple[Source, ...] = (),
-        assertions: tuple[Assertion, ...] = (),
-        relationships: tuple[Relationship, ...] = (),
-        argument_edges: tuple[ArgumentEdge, ...] = (),
-        evidence_spans: tuple[EvidenceSpan, ...] = (),
+        records: tuple[AcceptedCanonicalRecord, ...] = (),
         briefings: tuple[Briefing, ...] = (),
     ) -> None:
-        self.sources = sources
-        self.assertions = assertions
-        self.relationships = relationships
-        self.argument_edges = argument_edges
-        self.evidence_spans = evidence_spans
+        self.records = records
         self.briefings = {record.id: record for record in briefings}
         self.provenance_activities: dict[str, ProvenanceActivity] = {}
 
-    def list_sources(self) -> tuple[Source, ...]:
-        return self.sources
-
-    def list_assertions(self) -> tuple[Assertion, ...]:
-        return self.assertions
-
-    def list_relationships(self) -> tuple[Relationship, ...]:
-        return self.relationships
-
-    def list_argument_edges(self) -> tuple[ArgumentEdge, ...]:
-        return self.argument_edges
-
-    def list_evidence_spans(self) -> tuple[EvidenceSpan, ...]:
-        return self.evidence_spans
+    def list_accepted_canonical_records(self) -> tuple[AcceptedCanonicalRecord, ...]:
+        return self.records
 
     def list_briefings(self) -> tuple[Briefing, ...]:
         return tuple(self.briefings.values())
@@ -148,17 +131,24 @@ class FakeBriefingLedger:
 
 def test_generate_briefing_creates_markdown_briefing_and_provenance() -> None:
     source = source_fixture(updated_at=BEFORE)
+    document = document_fixture(updated_at=BEFORE)
     evidence_span = evidence_span_fixture(created_at=BEFORE)
     assertion = source_assertion_fixture(updated_at=BEFORE)
     analytic_assertion = analytic_assertion_fixture(updated_at=BEFORE)
     relationship = relationship_fixture(updated_at=BEFORE)
     argument_edge = argument_edge_fixture(created_at=BEFORE)
     ledger = FakeBriefingLedger(
-        sources=(source,),
-        assertions=(analytic_assertion, assertion),
-        relationships=(relationship,),
-        argument_edges=(argument_edge,),
-        evidence_spans=(evidence_span,),
+        records=(
+            organization_fixture(),
+            organization_fixture("org_commerce_department", "Commerce Department"),
+            source,
+            document,
+            evidence_span,
+            analytic_assertion,
+            assertion,
+            relationship,
+            argument_edge,
+        ),
     )
     archive = FakeArchiveStore()
     renderer = FakeBriefingRenderer()
@@ -173,12 +163,16 @@ def test_generate_briefing_creates_markdown_briefing_and_provenance() -> None:
     briefing = ledger.briefings[result.briefing_id]
     assert result.markdown_path == f"briefings/daily/{result.briefing_id}.md"
     assert result.source_count == 1
+    assert result.document_count == 1
+    assert result.organization_count == 2
     assert result.assertion_count == 2
     assert result.relationship_count == 1
     assert result.argument_edge_count == 1
     assert result.evidence_span_count == 1
     assert result.analytic_inference_count == 1
     assert briefing.source_ids == (source.id,)
+    assert briefing.document_ids == (document.id,)
+    assert briefing.organization_ids == ("org_anthropic", "org_commerce_department")
     assert briefing.assertion_ids == (assertion.id, analytic_assertion.id)
     assert briefing.relationship_ids == (relationship.id,)
     assert briefing.argument_edge_ids == (argument_edge.id,)
@@ -202,6 +196,7 @@ def test_generate_briefing_uses_latest_previous_briefing_as_change_boundary() ->
         generated_at=NOW,
     )
     older_source = source_fixture(updated_at=BEFORE)
+    document = document_fixture(updated_at=BEFORE)
     newer_source = Source(
         id="src_newer",
         source_type=SourceType.ARTICLE,
@@ -212,9 +207,14 @@ def test_generate_briefing_uses_latest_previous_briefing_as_change_boundary() ->
     newer_assertion = source_assertion_fixture(updated_at=AFTER)
     newer_evidence_span = evidence_span_fixture(created_at=AFTER)
     ledger = FakeBriefingLedger(
-        sources=(older_source, newer_source),
-        assertions=(newer_assertion,),
-        evidence_spans=(newer_evidence_span,),
+        records=(
+            organization_fixture(),
+            older_source,
+            newer_source,
+            document,
+            newer_assertion,
+            newer_evidence_span,
+        ),
         briefings=(previous,),
     )
 
@@ -228,15 +228,20 @@ def test_generate_briefing_uses_latest_previous_briefing_as_change_boundary() ->
     briefing = ledger.briefings[result.briefing_id]
     assert briefing.previous_briefing_id == previous.id
     assert briefing.source_ids == (source_fixture().id, newer_source.id)
+    assert briefing.organization_ids == ("org_anthropic",)
+    assert briefing.document_ids == (document.id,)
     assert briefing.assertion_ids == (newer_assertion.id,)
     assert briefing.evidence_span_ids == (newer_evidence_span.id,)
 
 
 def test_generate_briefing_rejects_source_backed_assertion_missing_evidence_span() -> None:
     ledger = FakeBriefingLedger(
-        sources=(source_fixture(),),
-        assertions=(source_assertion_fixture(),),
-        evidence_spans=(),
+        records=(
+            organization_fixture(),
+            source_fixture(),
+            document_fixture(),
+            source_assertion_fixture(),
+        ),
     )
     archive = FakeArchiveStore()
 
@@ -258,6 +263,31 @@ def source_fixture(updated_at: datetime = BEFORE) -> Source:
         id="src_article_a",
         source_type=SourceType.ARTICLE,
         title="Article A",
+        created_at=updated_at,
+        updated_at=updated_at,
+    )
+
+
+def document_fixture(updated_at: datetime = BEFORE) -> Document:
+    return Document(
+        id="doc_article_a",
+        source_id="src_article_a",
+        raw_path="sources/raw/src_article_a.bin",
+        extracted_text_path="documents/extracted/doc_article_a.txt",
+        content_sha256="a" * 64,
+        created_at=updated_at,
+        updated_at=updated_at,
+    )
+
+
+def organization_fixture(
+    organization_id: str = "org_anthropic",
+    name: str = "Anthropic",
+    updated_at: datetime = BEFORE,
+) -> Organization:
+    return Organization(
+        id=organization_id,
+        name=name,
         created_at=updated_at,
         updated_at=updated_at,
     )

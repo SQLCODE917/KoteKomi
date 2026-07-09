@@ -25,6 +25,21 @@ from kotekomi_domain import (
 )
 from kotekomi_domain.models import JsonValue
 
+type AcceptedCanonicalRecord = (
+    Entity
+    | Actor
+    | Organization
+    | Place
+    | Event
+    | Source
+    | Document
+    | EvidenceSpan
+    | Assertion
+    | Relationship
+    | Outcome
+    | ArgumentEdge
+)
+
 
 @dataclass(frozen=True)
 class LedgerInitResult:
@@ -72,9 +87,16 @@ class BriefingRenderInput:
     title: str
     generated_at: str
     previous_briefing_id: str | None
+    entities: tuple[Entity, ...]
+    actors: tuple[Actor, ...]
+    organizations: tuple[Organization, ...]
+    places: tuple[Place, ...]
+    events: tuple[Event, ...]
     sources: tuple[Source, ...]
+    documents: tuple[Document, ...]
     assertions: tuple[Assertion, ...]
     relationships: tuple[Relationship, ...]
+    outcomes: tuple[Outcome, ...]
     argument_edges: tuple[ArgumentEdge, ...]
     evidence_spans: tuple[EvidenceSpan, ...]
     analytic_inference_assertion_ids: tuple[str, ...]
@@ -153,6 +175,8 @@ class GraphAnalyzer(Protocol):
 
 
 class LedgerRepository(Protocol):
+    def list_accepted_canonical_records(self) -> tuple[AcceptedCanonicalRecord, ...]: ...
+
     def save_entity(self, record: Entity) -> None: ...
     def get_entity(self, record_id: str) -> Entity | None: ...
     def list_entities(self) -> tuple[Entity, ...]: ...

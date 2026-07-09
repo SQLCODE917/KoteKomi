@@ -10,7 +10,7 @@ from importlib.resources import files
 from pathlib import Path
 from typing import TypeVar
 
-from kotekomi_application import LedgerInitResult
+from kotekomi_application import AcceptedCanonicalRecord, LedgerInitResult
 from kotekomi_domain import (
     Actor,
     ArgumentEdge,
@@ -54,6 +54,21 @@ ARGUMENT_EDGE_SPEC = RecordSpec("argument_edges", ArgumentEdge)
 PROVENANCE_ACTIVITY_SPEC = RecordSpec("provenance_activities", ProvenanceActivity)
 PROPOSED_CHANGE_SPEC = RecordSpec("proposed_changes", ProposedChange)
 BRIEFING_SPEC = RecordSpec("briefings", Briefing)
+
+ACCEPTED_CANONICAL_RECORD_SPECS = (
+    ENTITY_SPEC,
+    ACTOR_SPEC,
+    ORGANIZATION_SPEC,
+    PLACE_SPEC,
+    EVENT_SPEC,
+    SOURCE_SPEC,
+    DOCUMENT_SPEC,
+    EVIDENCE_SPAN_SPEC,
+    ASSERTION_SPEC,
+    RELATIONSHIP_SPEC,
+    OUTCOME_SPEC,
+    ARGUMENT_EDGE_SPEC,
+)
 
 REQUIRED_LEDGER_TABLES = (
     "ledger_migrations",
@@ -210,6 +225,12 @@ class SQLiteLedgerRepository:
             f"SELECT payload_json FROM {spec.table_name} ORDER BY id"
         ).fetchall()
         return tuple(spec.model_type.model_validate_json(str(row[0])) for row in rows)
+
+    def list_accepted_canonical_records(self) -> tuple[AcceptedCanonicalRecord, ...]:
+        records: list[AcceptedCanonicalRecord] = []
+        for spec in ACCEPTED_CANONICAL_RECORD_SPECS:
+            records.extend(self._list(spec))
+        return tuple(sorted(records, key=lambda record: record.id))
 
     def save_entity(self, record: Entity) -> None:
         self._save(ENTITY_SPEC, record)

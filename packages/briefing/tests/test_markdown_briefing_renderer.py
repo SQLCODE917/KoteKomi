@@ -6,7 +6,11 @@ from kotekomi_domain import (
     Assertion,
     AssertionStatus,
     AssertionType,
+    Document,
+    Event,
     EvidenceSpan,
+    Organization,
+    Outcome,
     Relationship,
     SelectorType,
     Source,
@@ -23,11 +27,34 @@ def test_markdown_renderer_includes_citations_and_analytic_inference_label() -> 
             title="Daily Briefing",
             generated_at="2026-07-09T12:00:00+00:00",
             previous_briefing_id="brf_previous",
+            entities=(),
+            actors=(),
+            organizations=(
+                Organization(id="org_anthropic", name="Anthropic"),
+                Organization(id="org_commerce_department", name="Commerce Department"),
+            ),
+            places=(),
+            events=(
+                Event(
+                    id="evt_review_call",
+                    name="Emergency release review call",
+                    participant_organization_ids=("org_anthropic", "org_commerce_department"),
+                ),
+            ),
             sources=(
                 Source(
                     id="src_article_a",
                     source_type=SourceType.ARTICLE,
                     title="Article A",
+                ),
+            ),
+            documents=(
+                Document(
+                    id="doc_article_a",
+                    source_id="src_article_a",
+                    raw_path="sources/raw/src_article_a.bin",
+                    extracted_text_path="documents/extracted/doc_article_a.txt",
+                    content_sha256="a" * 64,
                 ),
             ),
             assertions=(
@@ -62,6 +89,15 @@ def test_markdown_renderer_includes_citations_and_analytic_inference_label() -> 
                     assertion_ids=("ast_inference",),
                 ),
             ),
+            outcomes=(
+                Outcome(
+                    id="out_monitoring_commitment",
+                    description="Anthropic resumed access with notice commitments.",
+                    organization_ids=("org_anthropic", "org_commerce_department"),
+                    event_ids=("evt_review_call",),
+                    assertion_ids=("ast_inference", "ast_source_claim"),
+                ),
+            ),
             argument_edges=(
                 ArgumentEdge(
                     id="arg_claim_infers_governance",
@@ -88,6 +124,11 @@ def test_markdown_renderer_includes_citations_and_analytic_inference_label() -> 
 
     assert "# Daily Briefing" in markdown
     assert "Previous Briefing: `brf_previous`" in markdown
+    assert "Anthropic" in markdown
+    assert "Commerce Department" in markdown
+    assert "Emergency release review call" in markdown
+    assert "Anthropic resumed access with notice commitments." in markdown
+    assert "`doc_article_a`" in markdown
     assert "`src_article_a`" in markdown
     assert "`evs_article_a_claim`" in markdown
     assert "`ast_inference` (Analytic inference)" in markdown

@@ -2,6 +2,14 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
   "properties": {
+    "actor_ids": {
+      "items": {
+        "pattern": "^act_[A-Za-z0-9][A-Za-z0-9_-]*$",
+        "type": "string"
+      },
+      "title": "Actor Ids",
+      "type": "array"
+    },
     "analytic_inference_assertion_ids": {
       "items": {
         "pattern": "^ast_[A-Za-z0-9][A-Za-z0-9_-]*$",
@@ -24,6 +32,30 @@
         "type": "string"
       },
       "title": "Assertion Ids",
+      "type": "array"
+    },
+    "document_ids": {
+      "items": {
+        "pattern": "^doc_[A-Za-z0-9][A-Za-z0-9_-]*$",
+        "type": "string"
+      },
+      "title": "Document Ids",
+      "type": "array"
+    },
+    "entity_ids": {
+      "items": {
+        "pattern": "^ent_[A-Za-z0-9][A-Za-z0-9_-]*$",
+        "type": "string"
+      },
+      "title": "Entity Ids",
+      "type": "array"
+    },
+    "event_ids": {
+      "items": {
+        "pattern": "^evt_[A-Za-z0-9][A-Za-z0-9_-]*$",
+        "type": "string"
+      },
+      "title": "Event Ids",
       "type": "array"
     },
     "evidence_span_ids": {
@@ -56,6 +88,30 @@
       ],
       "default": null,
       "title": "Markdown Path"
+    },
+    "organization_ids": {
+      "items": {
+        "pattern": "^org_[A-Za-z0-9][A-Za-z0-9_-]*$",
+        "type": "string"
+      },
+      "title": "Organization Ids",
+      "type": "array"
+    },
+    "outcome_ids": {
+      "items": {
+        "pattern": "^out_[A-Za-z0-9][A-Za-z0-9_-]*$",
+        "type": "string"
+      },
+      "title": "Outcome Ids",
+      "type": "array"
+    },
+    "place_ids": {
+      "items": {
+        "pattern": "^plc_[A-Za-z0-9][A-Za-z0-9_-]*$",
+        "type": "string"
+      },
+      "title": "Place Ids",
+      "type": "array"
     },
     "previous_briefing_id": {
       "anyOf": [

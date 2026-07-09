@@ -36,6 +36,7 @@ from kotekomi_application.ledger_graph_projection import (
     project_ledger_graph,
 )
 from kotekomi_application.ports import (
+    AcceptedCanonicalRecord,
     ArchiveObject,
     ArchiveStore,
     BriefingMarkdown,
@@ -70,6 +71,7 @@ from kotekomi_application.source_file_ingest import (
 
 __all__ = [
     "ArchiveObject",
+    "AcceptedCanonicalRecord",
     "ArchiveStore",
     "AssertionProposalInput",
     "AssertionProposalResult",

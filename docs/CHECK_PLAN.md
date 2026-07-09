@@ -10,6 +10,7 @@
 - run `uv run python scripts/generate_schemas.py`
 - validate sample Assertions against JSON schema with `packages/domain/tests/test_schema_generation.py`
 - validate sample ProposedChanges against JSON schema with `packages/domain/tests/test_schema_generation.py`
+- validate sample Briefings against JSON schema with `packages/domain/tests/test_schema_generation.py`
 
 ## 3. Ledger checks
 - run `uv run pytest packages/application/tests`
@@ -36,7 +37,7 @@
 - run graph projection Pipeline fixture with `uv run pytest packages/pipelines/tests/test_graph_project.py`
 - run graph mining Application test with `uv run pytest packages/application/tests/test_mine_graph_connections.py`
 - run graph mining Pipeline fixture with `uv run pytest packages/pipelines/tests/test_graph_mine.py`
-- run Briefing generation fixture
+- run Briefing generation fixture with `uv run pytest packages/pipelines/tests/test_briefing_generate.py`
 
 ## 6. Documentation checks
 - verify glossary terms match Domain Core names

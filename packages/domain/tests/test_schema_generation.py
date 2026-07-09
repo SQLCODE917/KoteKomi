@@ -11,6 +11,7 @@ def test_all_domain_models_have_json_schema() -> None:
     assert "assertion.schema.json" in schema_names
     assert "proposed_change.schema.json" in schema_names
     assert "evidence_span.schema.json" in schema_names
+    assert "briefing.schema.json" in schema_names
 
 
 def test_assertion_sample_validates_against_json_schema() -> None:
@@ -47,6 +48,34 @@ def test_proposed_change_sample_validates_against_json_schema() -> None:
         "prompt_id": "propose_assertions",
         "created_at": datetime(2026, 7, 8, tzinfo=UTC).isoformat(),
         "updated_at": datetime(2026, 7, 8, tzinfo=UTC).isoformat(),
+    }
+
+    validator: Any = Draft202012Validator(schema)
+    validator.validate(sample)
+
+
+def test_briefing_sample_validates_against_json_schema() -> None:
+    schema = schema_for(DOMAIN_SCHEMA_MODELS["briefing.schema.json"])
+    sample = {
+        "id": "brf_daily",
+        "title": "Daily Briefing",
+        "previous_briefing_id": None,
+        "entity_ids": ["ent_actor_a"],
+        "actor_ids": ["act_person_a"],
+        "organization_ids": ["org_lab_a"],
+        "place_ids": ["plc_event_hall"],
+        "event_ids": ["evt_model_forum"],
+        "document_ids": ["doc_article_a"],
+        "assertion_ids": ["ast_release_review"],
+        "relationship_ids": ["rel_person_a_lab_a"],
+        "argument_edge_ids": ["arg_release_support"],
+        "outcome_ids": ["out_release_review"],
+        "source_ids": ["src_article_a"],
+        "evidence_span_ids": ["evs_article_a_release"],
+        "analytic_inference_assertion_ids": ["ast_release_review"],
+        "provenance_activity_id": "prv_human_review",
+        "markdown_path": "briefings/daily/brf_daily.md",
+        "generated_at": datetime(2026, 7, 8, tzinfo=UTC).isoformat(),
     }
 
     validator: Any = Draft202012Validator(schema)

@@ -294,9 +294,16 @@ class Briefing(DomainModel):
     id: BriefingId
     title: NonEmptyStr
     previous_briefing_id: BriefingId | None = None
+    entity_ids: tuple[EntityId, ...] = Field(default_factory=tuple)
+    actor_ids: tuple[ActorId, ...] = Field(default_factory=tuple)
+    organization_ids: tuple[OrganizationId, ...] = Field(default_factory=tuple)
+    place_ids: tuple[PlaceId, ...] = Field(default_factory=tuple)
+    event_ids: tuple[EventId, ...] = Field(default_factory=tuple)
+    document_ids: tuple[DocumentId, ...] = Field(default_factory=tuple)
     assertion_ids: tuple[AssertionId, ...] = Field(default_factory=tuple)
     relationship_ids: tuple[RelationshipId, ...] = Field(default_factory=tuple)
     argument_edge_ids: tuple[ArgumentEdgeId, ...] = Field(default_factory=tuple)
+    outcome_ids: tuple[OutcomeId, ...] = Field(default_factory=tuple)
     source_ids: tuple[SourceId, ...] = Field(default_factory=tuple)
     evidence_span_ids: tuple[EvidenceSpanId, ...] = Field(default_factory=tuple)
     analytic_inference_assertion_ids: tuple[AssertionId, ...] = Field(default_factory=tuple)

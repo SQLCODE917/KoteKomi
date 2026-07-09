@@ -69,3 +69,63 @@ def test_repository_lists_records(tmp_path: Path) -> None:
     with sqlite_ledger_transaction(ledger_path) as repository:
         repository.save_actor(actor)
         assert repository.list_actors() == (actor,)
+
+
+def test_repository_lists_all_accepted_canonical_records(tmp_path: Path) -> None:
+    ledger_path = tmp_path / "kotekomi.db"
+    SQLiteLedgerInitializer(ledger_path).initialize()
+    (
+        entity,
+        actor,
+        organization,
+        place,
+        event,
+        source,
+        document,
+        evidence_span,
+        assertion,
+        relationship,
+        outcome,
+        argument_edge,
+        provenance_activity,
+        proposed_change,
+        briefing,
+    ) = sample_domain_records()
+
+    with sqlite_ledger_transaction(ledger_path) as repository:
+        repository.save_entity(entity)
+        repository.save_actor(actor)
+        repository.save_organization(organization)
+        repository.save_place(place)
+        repository.save_event(event)
+        repository.save_source(source)
+        repository.save_document(document)
+        repository.save_evidence_span(evidence_span)
+        repository.save_assertion(assertion)
+        repository.save_relationship(relationship)
+        repository.save_outcome(outcome)
+        repository.save_argument_edge(argument_edge)
+        repository.save_provenance_activity(provenance_activity)
+        repository.save_proposed_change(proposed_change)
+        repository.save_briefing(briefing)
+
+    with sqlite_ledger_transaction(ledger_path) as repository:
+        record_ids = tuple(record.id for record in repository.list_accepted_canonical_records())
+
+    assert record_ids == (
+        "act_person_a",
+        "arg_release_support",
+        "ast_release_review",
+        "doc_article_a",
+        "ent_actor_a",
+        "evs_article_a_release",
+        "evt_model_forum",
+        "org_lab_a",
+        "out_release_review",
+        "plc_event_hall",
+        "rel_person_a_lab_a",
+        "src_article_a",
+    )
+    assert provenance_activity.id not in record_ids
+    assert proposed_change.id not in record_ids
+    assert briefing.id not in record_ids
