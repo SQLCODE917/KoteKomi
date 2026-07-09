@@ -151,6 +151,28 @@ def test_graph_mine_creates_pending_connection_proposals_and_is_idempotent(
     with sqlite_ledger_transaction(ledger_path) as repository:
         assert len(repository.list_proposed_changes()) == 17
 
+    approve_proposed_changes_in_review_order(
+        ledger_path=ledger_path,
+        proposed_changes=mined_changes,
+        main=main,
+        review_approve_args=review_approve_args,
+        clear_output=capsys.readouterr,
+    )
+    with sqlite_ledger_transaction(ledger_path) as repository:
+        assert len(repository.list_assertions()) == 3
+        assert len(repository.list_relationships()) == 2
+        assert len(repository.list_argument_edges()) == 2
+        assert all(
+            proposed_change.review_status is ReviewStatus.APPROVED
+            for proposed_change in repository.list_proposed_changes()
+        )
+
+    assert main(graph_mine_args(ledger_path)) == 0
+    accepted_rerun_output = capsys.readouterr().out
+    assert "Candidates: 0" in accepted_rerun_output
+    assert "ProposedChanges: 0" in accepted_rerun_output
+    assert "ProvenanceActivity: none" in accepted_rerun_output
+
 
 def record_type(proposed_change: ProposedChange) -> str:
     value = proposed_change.proposed_json["record_type"]
