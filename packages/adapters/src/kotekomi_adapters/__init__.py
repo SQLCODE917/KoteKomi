@@ -2,6 +2,12 @@
 
 from kotekomi_adapters.fixture_model_runtime import FixtureModelRuntime
 from kotekomi_adapters.local_archive import LocalArchiveStore
+from kotekomi_adapters.local_model_runtime import (
+    LlamaCppModelRuntime,
+    LocalModelRuntimeConfig,
+    LocalModelRuntimeError,
+    OllamaModelRuntime,
+)
 from kotekomi_adapters.networkx_graph_analyzer import NetworkXGraphAnalyzer
 from kotekomi_adapters.sqlite_ledger import (
     REQUIRED_LEDGER_TABLES,
@@ -12,8 +18,12 @@ from kotekomi_adapters.sqlite_ledger import (
 
 __all__ = [
     "FixtureModelRuntime",
+    "LlamaCppModelRuntime",
     "LocalArchiveStore",
+    "LocalModelRuntimeConfig",
+    "LocalModelRuntimeError",
     "NetworkXGraphAnalyzer",
+    "OllamaModelRuntime",
     "REQUIRED_LEDGER_TABLES",
     "SQLiteLedgerInitializer",
     "SQLiteLedgerRepository",

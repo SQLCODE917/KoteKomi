@@ -154,10 +154,7 @@ def test_pipeline_status_document_without_assertions_recommends_assertion_propos
     )
 
     assert status.stage is PipelineStage.READY_FOR_ASSERTION_PROPOSAL
-    assert status.next_command == (
-        "kotekomi source propose-assertions --document-id <document_id> "
-        "--model-output-fixture <path>"
-    )
+    assert status.next_command == "kotekomi source propose-assertions --document-id <document_id>"
     assert status.candidate_document_ids == ("doc_article_a",)
 
 

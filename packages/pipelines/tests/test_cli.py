@@ -79,3 +79,31 @@ def test_load_config_allows_flag_overrides(tmp_path: Path) -> None:
 
     assert config.ledger_path == Path("override.db").resolve()
     assert config.archive_path == Path("override_archive").resolve()
+
+
+def test_load_config_uses_macbook_runtime_by_default(tmp_path: Path) -> None:
+    config_path = tmp_path / "kotekomi.toml"
+    config_path.write_text("")
+    config = load_config(
+        config_path=config_path,
+        ledger_path_override=None,
+        archive_path_override=None,
+    )
+
+    assert config.runtime_profile.name == "macbook"
+    assert config.runtime_profile.provider == "llama_cpp"
+    assert config.runtime_profile.context_window == 16384
+
+
+def test_load_config_selects_wsl_runtime_profile(tmp_path: Path) -> None:
+    config_path = tmp_path / "kotekomi.toml"
+    config_path.write_text("")
+    config = load_config(
+        config_path=config_path,
+        ledger_path_override=None,
+        archive_path_override=None,
+        runtime_profile_override="wsl-4090",
+    )
+
+    assert config.runtime_profile.provider == "ollama"
+    assert config.runtime_profile.model_name == "qwen3:30b"

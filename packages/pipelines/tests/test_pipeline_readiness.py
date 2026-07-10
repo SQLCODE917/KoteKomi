@@ -66,10 +66,7 @@ def test_pipeline_status_and_next_walk_fixture_article_pipeline(
     assert status["stage"] == "ready_for_assertion_proposal"
     assert status["document_count"] == 1
     assert status["candidate_document_ids"] == ["doc_aa67767133655af72fbcf0a8"]
-    assert status["next_command_plan"]["ready_to_execute"] is False
-    assert status["next_command_plan"]["missing_inputs"][0]["name"] == (
-        "model_output_fixture_path"
-    )
+    assert status["next_command_plan"]["ready_to_execute"] is True
     next_step = pipeline_next_json(
         ledger_path,
         capsys,
@@ -78,6 +75,8 @@ def test_pipeline_status_and_next_walk_fixture_article_pipeline(
     )
     assert next_step["command_plan"]["ready_to_execute"] is True
     assert next_step["command_plan"]["argv"] == [
+        "--runtime-profile",
+        "macbook",
         "source",
         "propose-assertions",
         "--document-id",
@@ -243,13 +242,6 @@ def test_pipeline_run_next_executes_exactly_one_planned_fixture_step(
     assert result["stdout_lines"][0].startswith("Source created: src_")
     with sqlite_ledger_transaction(ledger_path) as repository:
         document = repository.list_documents()[0]
-
-    exit_code, result = pipeline_run_next_json(ledger_path, archive_path, capsys)
-    assert exit_code == 2
-    assert result["executed"] is False
-    assert result["command_plan"]["missing_inputs"][0]["name"] == (
-        "model_output_fixture_path"
-    )
 
     exit_code, result = pipeline_run_next_json(
         ledger_path,

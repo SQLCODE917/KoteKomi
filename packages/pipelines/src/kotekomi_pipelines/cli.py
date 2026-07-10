@@ -13,8 +13,11 @@ from typing import cast
 
 from kotekomi_adapters import (
     FixtureModelRuntime,
+    LlamaCppModelRuntime,
     LocalArchiveStore,
+    LocalModelRuntimeConfig,
     NetworkXGraphAnalyzer,
+    OllamaModelRuntime,
     SQLiteLedgerInitializer,
     sqlite_ledger_transaction,
 )
@@ -89,6 +92,7 @@ def main(argv: list[str] | None = None) -> int:
             config_path=args.config,
             ledger_path_override=args.ledger_path,
             archive_path_override=args.archive_path,
+            runtime_profile_override=args.runtime_profile,
         )
         return init_ledger(config)
 
@@ -105,6 +109,7 @@ def main(argv: list[str] | None = None) -> int:
             config_path=args.config,
             ledger_path_override=args.ledger_path,
             archive_path_override=args.archive_path,
+            runtime_profile_override=args.runtime_profile,
         )
         return propose_source_assertions(
             config=config,
@@ -261,6 +266,7 @@ def main(argv: list[str] | None = None) -> int:
             config_path=args.config,
             ledger_path_override=args.ledger_path,
             archive_path_override=args.archive_path,
+            runtime_profile_override=args.runtime_profile,
         )
         return show_pipeline_status(
             config=config,
@@ -276,6 +282,7 @@ def main(argv: list[str] | None = None) -> int:
             config_path=args.config,
             ledger_path_override=args.ledger_path,
             archive_path_override=args.archive_path,
+            runtime_profile_override=args.runtime_profile,
         )
         return show_pipeline_next(
             config=config,
@@ -291,6 +298,7 @@ def main(argv: list[str] | None = None) -> int:
             config_path=args.config,
             ledger_path_override=args.ledger_path,
             archive_path_override=args.archive_path,
+            runtime_profile_override=args.runtime_profile,
         )
         return run_pipeline_next(
             config=config,
@@ -346,6 +354,11 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Path to kotekomi.toml.",
     )
+    parser.add_argument(
+        "--runtime-profile",
+        default=None,
+        help="Named local model runtime profile; defaults to macbook.",
+    )
     subparsers = parser.add_subparsers(dest="command")
 
     ledger_parser = subparsers.add_parser("ledger", help="Ledger commands.")
@@ -369,7 +382,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Create ProposedChange records for a Document through a model runtime.",
     )
     propose_assertions_parser.add_argument("--document-id", required=True)
-    propose_assertions_parser.add_argument("--model-output-fixture", type=Path, required=True)
+    propose_assertions_parser.add_argument("--model-output-fixture", type=Path, default=None)
     propose_assertions_parser.add_argument("--ledger-path", type=Path, default=None)
     propose_assertions_parser.add_argument("--archive-path", type=Path, default=None)
 
@@ -641,10 +654,10 @@ def propose_source_assertions(
     *,
     config: PipelineConfig,
     document_id: str,
-    model_output_fixture_path: Path,
+    model_output_fixture_path: Path | None,
 ) -> int:
     archive_store = LocalArchiveStore(config.archive_path)
-    model_runtime = FixtureModelRuntime(model_output_fixture_path)
+    model_runtime = _model_runtime(config, model_output_fixture_path)
     with sqlite_ledger_transaction(config.ledger_path) as ledger_repository:
         result = propose_assertions_for_document(
             AssertionProposalInput(
@@ -663,6 +676,26 @@ def propose_source_assertions(
     for proposed_change_id in result.proposed_change_ids:
         print(f"ProposedChange: {proposed_change_id}")
     return 0
+
+
+def _model_runtime(
+    config: PipelineConfig,
+    model_output_fixture_path: Path | None,
+) -> FixtureModelRuntime | LlamaCppModelRuntime | OllamaModelRuntime:
+    if model_output_fixture_path is not None:
+        return FixtureModelRuntime(model_output_fixture_path)
+    prompt_text = config.prompt_path.read_text(encoding="utf-8")
+    runtime_config = LocalModelRuntimeConfig(
+        base_url=config.runtime_profile.base_url,
+        model_name=config.runtime_profile.model_name,
+        context_window=config.runtime_profile.context_window,
+        timeout_seconds=config.runtime_profile.timeout_seconds,
+    )
+    if config.runtime_profile.provider == "llama_cpp":
+        return LlamaCppModelRuntime(runtime_config, prompt_text)
+    if config.runtime_profile.provider == "ollama":
+        return OllamaModelRuntime(runtime_config, prompt_text)
+    raise ValueError(f"Unsupported runtime provider: {config.runtime_profile.provider}")
 
 
 def list_reviewed_proposed_changes(
@@ -1074,6 +1107,7 @@ def _pipeline_status_input(
         archive_path=str(config.archive_path),
         source_file_path=_optional_resolved_path(source_file_path),
         model_output_fixture_path=_optional_resolved_path(model_output_fixture_path),
+        runtime_profile_name=config.runtime_profile.name,
         document_id=document_id,
         briefing_title=briefing_title,
     )

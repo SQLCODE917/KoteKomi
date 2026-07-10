@@ -30,6 +30,8 @@
 - run Assertion proposal Application test with `uv run pytest packages/application/tests/test_propose_assertions_for_document.py`
 - verify model output missing Assertion epistemic fields fails before ProposedChange with `uv run pytest packages/application/tests/test_propose_assertions_for_document.py`
 - run Assertion proposal Adapter fixture with `uv run pytest packages/adapters/tests/test_fixture_model_runtime.py`
+- run local ModelRuntime Adapter contract tests with `uv run pytest packages/adapters/tests/test_local_model_runtime.py`
+- verify MacBook default and WSL profile selection with `uv run pytest packages/pipelines/tests/test_cli.py`
 - run Assertion proposal Pipeline fixture with `uv run pytest packages/pipelines/tests/test_source_propose_assertions.py`
 - run ProposedChange review Application test with `uv run pytest packages/application/tests/test_review_proposed_change.py`
 - run ProposedChange review Pipeline fixture with `uv run pytest packages/pipelines/tests/test_review_proposed_change.py`

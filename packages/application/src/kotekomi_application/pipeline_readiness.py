@@ -35,8 +35,7 @@ from kotekomi_application.review_queue_packet import (
 
 SOURCE_INGEST_COMMAND = "kotekomi source add-file <path>"
 ASSERTION_PROPOSAL_COMMAND = (
-    "kotekomi source propose-assertions --document-id <document_id> "
-    "--model-output-fixture <path>"
+    "kotekomi source propose-assertions --document-id <document_id>"
 )
 REVIEW_NEXT_COMMAND = "kotekomi review next"
 GRAPH_PROJECT_COMMAND = "kotekomi graph project"
@@ -65,6 +64,7 @@ class PipelineStatusInput:
     archive_path: str | None = None
     source_file_path: str | None = None
     model_output_fixture_path: str | None = None
+    runtime_profile_name: str | None = None
     document_id: str | None = None
     briefing_title: str | None = None
 
@@ -396,11 +396,6 @@ def _assertion_proposal_plan(
     missing_inputs = (
         *_document_id_missing_inputs(pipeline_input, candidate_document_ids, selected_document_id),
         *_missing_path(
-            pipeline_input.model_output_fixture_path,
-            "model_output_fixture_path",
-            "Path to a model output fixture JSON file.",
-        ),
-        *_missing_path(
             pipeline_input.ledger_path,
             "ledger_path",
             "Path to the Ledger SQLite file.",
@@ -409,13 +404,22 @@ def _assertion_proposal_plan(
     )
     argv: tuple[str, ...] = ()
     if not missing_inputs:
+        argv_prefix: tuple[str, ...] = ()
+        if pipeline_input.runtime_profile_name is not None:
+            argv_prefix = ("--runtime-profile", pipeline_input.runtime_profile_name)
+        fixture_argv: tuple[str, ...] = ()
+        if pipeline_input.model_output_fixture_path is not None:
+            fixture_argv = (
+                "--model-output-fixture",
+                pipeline_input.model_output_fixture_path,
+            )
         argv = (
+            *argv_prefix,
             "source",
             "propose-assertions",
             "--document-id",
             _required_value(selected_document_id, "document_id"),
-            "--model-output-fixture",
-            _required_value(pipeline_input.model_output_fixture_path, "model_output_fixture_path"),
+            *fixture_argv,
             "--ledger-path",
             _required_value(pipeline_input.ledger_path, "ledger_path"),
             "--archive-path",
