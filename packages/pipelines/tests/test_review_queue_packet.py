@@ -241,7 +241,7 @@ def test_review_next_renders_fixture_packet_and_advances_after_approval(
     assert "Record type: Organization" in next_output
     assert "Stable label: anthropic_ai_lab" in next_output
     assert "Review action plans:" in next_output
-    assert "approve: kotekomi review approve (ready: no)" in next_output
+    assert "approve: kotekomi review run-next --decision approve (ready: no)" in next_output
 
     assert main(review_next_json_args(ledger_path)) == 0
     next_json = json.loads(capsys.readouterr().out)

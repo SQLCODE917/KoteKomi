@@ -29,6 +29,9 @@ from kotekomi_application import (
     PipelineStatus,
     PipelineStatusInput,
     ReviewEditableRecordExportInput,
+    ReviewNextDecision,
+    ReviewNextDecisionInput,
+    ReviewNextDecisionResult,
     ReviewNextInput,
     ReviewNextResult,
     ReviewPacket,
@@ -58,11 +61,13 @@ from kotekomi_application import (
     project_ledger_graph,
     propose_assertions_for_document,
     reject_proposed_change,
+    review_next_decision_result_to_json,
     review_next_result_to_json,
     review_packet_to_json,
     review_queue_result_to_json,
     review_readiness_to_json,
     run_next_result_to_json,
+    run_review_next_decision,
 )
 from kotekomi_briefing import MarkdownBriefingRenderer
 from kotekomi_domain import ReviewStatus
@@ -140,6 +145,25 @@ def main(argv: list[str] | None = None) -> int:
             record_type=args.record_type,
             source_id=args.source_id,
             document_id=args.document_id,
+            output_format=args.output_format,
+        )
+
+    if args.command == "review" and args.review_command == "run-next":
+        config = load_config(
+            config_path=args.config,
+            ledger_path_override=args.ledger_path,
+            archive_path_override=None,
+        )
+        return run_next_review_decision(
+            config=config,
+            decision=args.decision,
+            reviewer=args.reviewer,
+            record_type=args.record_type,
+            source_id=args.source_id,
+            document_id=args.document_id,
+            reason=args.reason,
+            accepted_record_json_path=args.accepted_record_json,
+            dry_run=args.dry_run,
             output_format=args.output_format,
         )
 
@@ -355,6 +379,29 @@ def build_parser() -> argparse.ArgumentParser:
         default="text",
     )
     next_parser.add_argument("--ledger-path", type=Path, default=None)
+    run_next_review_parser = review_subparsers.add_parser(
+        "run-next",
+        help="Apply one explicit decision to the next ProposedChange.",
+    )
+    run_next_review_parser.add_argument(
+        "--decision",
+        choices=tuple(decision.value for decision in ReviewNextDecision),
+        required=True,
+    )
+    run_next_review_parser.add_argument("--reviewer", required=True)
+    run_next_review_parser.add_argument("--record-type", default=None)
+    run_next_review_parser.add_argument("--source-id", default=None)
+    run_next_review_parser.add_argument("--document-id", default=None)
+    run_next_review_parser.add_argument("--reason", default=None)
+    run_next_review_parser.add_argument("--accepted-record-json", type=Path, default=None)
+    run_next_review_parser.add_argument("--dry-run", action="store_true")
+    run_next_review_parser.add_argument(
+        "--format",
+        dest="output_format",
+        choices=("text", "json"),
+        default="text",
+    )
+    run_next_review_parser.add_argument("--ledger-path", type=Path, default=None)
     show_parser = review_subparsers.add_parser(
         "show",
         help="Show one ProposedChange review packet.",
@@ -630,6 +677,46 @@ def show_next_reviewed_proposed_change(
         return 0
 
     print(_review_next_text(result))
+    return 0
+
+
+def run_next_review_decision(
+    *,
+    config: PipelineConfig,
+    decision: str,
+    reviewer: str,
+    record_type: str | None,
+    source_id: str | None,
+    document_id: str | None,
+    reason: str | None,
+    accepted_record_json_path: Path | None,
+    dry_run: bool,
+    output_format: str,
+) -> int:
+    accepted_record_json: dict[str, JsonValue] | None = None
+    if accepted_record_json_path is not None:
+        accepted_record_json = read_json_object(accepted_record_json_path)
+    with sqlite_ledger_transaction(config.ledger_path) as ledger_repository:
+        result = run_review_next_decision(
+            ReviewNextDecisionInput(
+                decision=ReviewNextDecision(decision),
+                reviewer=reviewer,
+                reviewed_at=datetime.now(UTC),
+                record_type=record_type,
+                source_id=source_id,
+                document_id=document_id,
+                reason=reason,
+                accepted_record_json=accepted_record_json,
+                dry_run=dry_run,
+            ),
+            ledger_repository,
+        )
+
+    if output_format == "json":
+        print(json.dumps(review_next_decision_result_to_json(result), indent=2, sort_keys=True))
+        return 0
+
+    print(_review_next_decision_text(result))
     return 0
 
 
@@ -970,6 +1057,35 @@ def _review_next_text(result: ReviewNextResult) -> str:
                 )
         else:
             lines.append("    missing inputs: none")
+    return "\n".join(lines)
+
+
+def _review_next_decision_text(result: ReviewNextDecisionResult) -> str:
+    lines = [
+        f"Decision: {result.decision.value}",
+        f"Has next: {_bool_text(result.has_next)}",
+        f"Executed: {_bool_text(result.executed)}",
+        f"Dry run: {_bool_text(result.dry_run)}",
+    ]
+    if result.packet is not None:
+        lines.extend(
+            [
+                f"ProposedChange: {result.packet.proposed_change_id}",
+                f"Record type: {result.packet.record_type}",
+                f"Stable label: {result.packet.stable_label}",
+            ]
+        )
+    else:
+        lines.append("ProposedChange: none")
+    if result.review_result is not None:
+        lines.extend(
+            [
+                f"Review status: {result.review_result.review_status.value}",
+                f"ProvenanceActivity: {result.review_result.provenance_activity_id}",
+                f"Accepted record type: {result.review_result.accepted_record_type or '-'}",
+                f"Accepted record: {result.review_result.accepted_record_id or '-'}",
+            ]
+        )
     return "\n".join(lines)
 
 

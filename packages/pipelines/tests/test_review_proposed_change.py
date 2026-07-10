@@ -109,6 +109,36 @@ def review_edit_args(
     ]
 
 
+def review_run_next_args(
+    ledger_path: Path,
+    decision: str,
+    *,
+    reason: str | None = None,
+    accepted_record_json_path: Path | None = None,
+    dry_run: bool = False,
+    output_format: str = "text",
+) -> list[str]:
+    args = [
+        "review",
+        "run-next",
+        "--decision",
+        decision,
+        "--reviewer",
+        "analyst",
+        "--ledger-path",
+        str(ledger_path),
+    ]
+    if reason is not None:
+        args.extend(("--reason", reason))
+    if accepted_record_json_path is not None:
+        args.extend(("--accepted-record-json", str(accepted_record_json_path)))
+    if dry_run:
+        args.append("--dry-run")
+    if output_format != "text":
+        args.extend(("--format", output_format))
+    return args
+
+
 def proposed_change_by_stable_label(
     proposed_changes: tuple[ProposedChange, ...],
     stable_label: str,
@@ -119,6 +149,156 @@ def proposed_change_by_stable_label(
         if label == stable_label:
             return proposed_change
     raise AssertionError(f"Missing ProposedChange stable_label: {stable_label}")
+
+
+def prepare_fixture_proposals(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> tuple[Path, Path]:
+    ledger_path = tmp_path / "ledger" / "kotekomi.db"
+    archive_path = tmp_path / "archive"
+    assert main(ledger_init_args(ledger_path, archive_path)) == 0
+    capsys.readouterr()
+    assert main(source_add_file_args(ledger_path, archive_path)) == 0
+    capsys.readouterr()
+    with sqlite_ledger_transaction(ledger_path) as repository:
+        document = repository.list_documents()[0]
+    assert main(propose_assertions_args(ledger_path, archive_path, document.id)) == 0
+    capsys.readouterr()
+    return ledger_path, archive_path
+
+
+def test_review_run_next_approves_next_fixture_proposed_change(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    ledger_path, _ = prepare_fixture_proposals(tmp_path, capsys)
+
+    assert (
+        main(review_run_next_args(ledger_path, "approve", output_format="json"))
+        == 0
+    )
+    payload = json.loads(capsys.readouterr().out)
+
+    assert payload["has_next"] is True
+    assert payload["decision"] == "approve"
+    assert payload["executed"] is True
+    assert payload["item"]["stable_label"] == "anthropic_ai_lab"
+    assert payload["review_result"]["review_status"] == "approved"
+    with sqlite_ledger_transaction(ledger_path) as repository:
+        organization = repository.get_organization("org_anthropic")
+        proposed_change = repository.get_proposed_change(payload["item"]["proposed_change_id"])
+    assert organization is not None
+    assert proposed_change is not None
+    assert proposed_change.review_status is ReviewStatus.APPROVED
+
+
+def test_review_run_next_rejects_next_fixture_proposed_change(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    ledger_path, _ = prepare_fixture_proposals(tmp_path, capsys)
+
+    assert (
+        main(
+            review_run_next_args(
+                ledger_path,
+                "reject",
+                reason="duplicate Organization",
+                output_format="json",
+            )
+        )
+        == 0
+    )
+    payload = json.loads(capsys.readouterr().out)
+
+    assert payload["decision"] == "reject"
+    assert payload["executed"] is True
+    assert payload["item"]["stable_label"] == "anthropic_ai_lab"
+    assert payload["review_result"]["review_status"] == "rejected"
+    with sqlite_ledger_transaction(ledger_path) as repository:
+        proposed_change = repository.get_proposed_change(payload["item"]["proposed_change_id"])
+        organization = repository.get_organization("org_anthropic")
+    assert proposed_change is not None
+    assert proposed_change.review_status is ReviewStatus.REJECTED
+    assert organization is None
+
+
+def test_review_run_next_edits_next_fixture_proposed_change(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    ledger_path, _ = prepare_fixture_proposals(tmp_path, capsys)
+    accepted_record_json_path = tmp_path / "edited_organization.json"
+    accepted_record_json_path.write_text(
+        json.dumps(
+            {
+                "id": "org_anthropic",
+                "name": "Anthropic",
+                "organization_type": "ai_lab",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    assert (
+        main(
+            review_run_next_args(
+                ledger_path,
+                "edit",
+                accepted_record_json_path=accepted_record_json_path,
+                output_format="json",
+            )
+        )
+        == 0
+    )
+    payload = json.loads(capsys.readouterr().out)
+
+    assert payload["decision"] == "edit"
+    assert payload["executed"] is True
+    assert payload["item"]["stable_label"] == "anthropic_ai_lab"
+    assert payload["review_result"]["review_status"] == "edited"
+    with sqlite_ledger_transaction(ledger_path) as repository:
+        proposed_change = repository.get_proposed_change(payload["item"]["proposed_change_id"])
+        organization = repository.get_organization("org_anthropic")
+    assert proposed_change is not None
+    assert proposed_change.review_status is ReviewStatus.EDITED
+    assert organization is not None
+
+
+def test_review_run_next_dry_run_leaves_fixture_pending(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    ledger_path, _ = prepare_fixture_proposals(tmp_path, capsys)
+
+    assert (
+        main(
+            review_run_next_args(
+                ledger_path,
+                "approve",
+                dry_run=True,
+                output_format="json",
+            )
+        )
+        == 0
+    )
+    payload = json.loads(capsys.readouterr().out)
+
+    assert payload["has_next"] is True
+    assert payload["executed"] is False
+    assert payload["dry_run"] is True
+    assert payload["item"]["stable_label"] == "anthropic_ai_lab"
+    with sqlite_ledger_transaction(ledger_path) as repository:
+        proposed_change = repository.get_proposed_change(payload["item"]["proposed_change_id"])
+        pending_changes = tuple(
+            change
+            for change in repository.list_proposed_changes()
+            if change.review_status is ReviewStatus.PENDING
+        )
+    assert proposed_change is not None
+    assert proposed_change.review_status is ReviewStatus.PENDING
+    assert len(pending_changes) == 16
 
 
 def test_review_commands_approve_and_reject_proposed_changes(

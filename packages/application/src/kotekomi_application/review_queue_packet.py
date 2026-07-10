@@ -512,7 +512,7 @@ def _review_action_plans(proposed_change_id: str) -> tuple[ReviewActionPlan, ...
     return (
         _review_action_plan(
             action="approve",
-            command="kotekomi review approve",
+            command="kotekomi review run-next --decision approve",
             proposed_change_id=proposed_change_id,
             missing_inputs=(
                 ReviewActionPlanInputRequirement(
@@ -525,7 +525,7 @@ def _review_action_plans(proposed_change_id: str) -> tuple[ReviewActionPlan, ...
         ),
         _review_action_plan(
             action="reject",
-            command="kotekomi review reject",
+            command="kotekomi review run-next --decision reject",
             proposed_change_id=proposed_change_id,
             missing_inputs=(
                 ReviewActionPlanInputRequirement(
@@ -544,7 +544,7 @@ def _review_action_plans(proposed_change_id: str) -> tuple[ReviewActionPlan, ...
         ),
         _review_action_plan(
             action="edit",
-            command="kotekomi review edit",
+            command="kotekomi review run-next --decision edit",
             proposed_change_id=proposed_change_id,
             missing_inputs=(
                 ReviewActionPlanInputRequirement(

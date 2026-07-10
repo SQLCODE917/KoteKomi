@@ -193,6 +193,7 @@ def test_review_next_selects_first_pending_packet_and_action_plans() -> None:
         "reject",
         "edit",
     ]
+    assert result.action_plans[0].command == "kotekomi review run-next --decision approve"
     assert all(action_plan.ready_to_execute is False for action_plan in result.action_plans)
     assert result.action_plans[0].missing_inputs[0].name == "reviewer"
 
@@ -455,6 +456,7 @@ def test_review_state_json_serializers_return_structured_objects() -> None:
         "reject",
         "edit",
     ]
+    assert action_plans[0]["command"] == "kotekomi review run-next --decision approve"
     assert action_plans[0]["ready_to_execute"] is False
 
 

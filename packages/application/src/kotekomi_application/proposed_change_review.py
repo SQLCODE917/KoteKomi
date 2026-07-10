@@ -6,6 +6,7 @@ import hashlib
 import json
 from dataclasses import dataclass
 from datetime import datetime
+from enum import StrEnum
 from typing import Protocol, cast
 
 from kotekomi_domain import (
@@ -28,6 +29,15 @@ from kotekomi_domain import (
     Source,
 )
 from kotekomi_domain.models import JsonValue
+
+from kotekomi_application.review_queue_packet import (
+    ReviewNextInput,
+    ReviewPacket,
+    ReviewQueueItem,
+    ReviewQueuePacketLedger,
+    get_review_next,
+    review_packet_to_json,
+)
 
 HASH_ID_LENGTH = 24
 APPROVED_ACTIVITY_TYPE = "proposed_change_approved"
@@ -77,6 +87,16 @@ class ProposedChangeReviewLedger(Protocol):
     def save_argument_edge(self, record: ArgumentEdge) -> None: ...
 
 
+class ReviewNextDecision(StrEnum):
+    APPROVE = "approve"
+    REJECT = "reject"
+    EDIT = "edit"
+
+
+class ReviewNextDecisionLedger(ProposedChangeReviewLedger, ReviewQueuePacketLedger, Protocol):
+    pass
+
+
 @dataclass(frozen=True)
 class ReviewProposedChangeInput:
     proposed_change_id: str
@@ -93,6 +113,161 @@ class ReviewProposedChangeResult:
     provenance_activity_id: str
     accepted_record_id: str | None = None
     accepted_record_type: str | None = None
+
+
+@dataclass(frozen=True)
+class ReviewNextDecisionInput:
+    decision: ReviewNextDecision
+    reviewer: str
+    reviewed_at: datetime
+    record_type: str | None = None
+    source_id: str | None = None
+    document_id: str | None = None
+    reason: str | None = None
+    accepted_record_json: dict[str, JsonValue] | None = None
+    dry_run: bool = False
+
+
+@dataclass(frozen=True)
+class ReviewNextDecisionResult:
+    has_next: bool
+    item: ReviewQueueItem | None
+    packet: ReviewPacket | None
+    decision: ReviewNextDecision
+    executed: bool
+    dry_run: bool
+    review_result: ReviewProposedChangeResult | None = None
+
+
+def run_review_next_decision(
+    review_input: ReviewNextDecisionInput,
+    ledger_repository: ReviewNextDecisionLedger,
+) -> ReviewNextDecisionResult:
+    next_result = get_review_next(
+        ReviewNextInput(
+            record_type=review_input.record_type,
+            source_id=review_input.source_id,
+            document_id=review_input.document_id,
+        ),
+        ledger_repository,
+    )
+    if not next_result.has_next:
+        return ReviewNextDecisionResult(
+            has_next=False,
+            item=None,
+            packet=None,
+            decision=review_input.decision,
+            executed=False,
+            dry_run=review_input.dry_run,
+            review_result=None,
+        )
+    if next_result.item is None or next_result.packet is None:
+        raise ValueError("ReviewNextResult has_next=true without item and packet.")
+    _validate_review_next_decision_input(review_input)
+    if review_input.dry_run:
+        return ReviewNextDecisionResult(
+            has_next=True,
+            item=next_result.item,
+            packet=next_result.packet,
+            decision=review_input.decision,
+            executed=False,
+            dry_run=True,
+            review_result=None,
+        )
+    result = _run_review_decision(
+        review_input=review_input,
+        proposed_change_id=next_result.item.proposed_change_id,
+        ledger_repository=ledger_repository,
+    )
+    return ReviewNextDecisionResult(
+        has_next=True,
+        item=next_result.item,
+        packet=next_result.packet,
+        decision=review_input.decision,
+        executed=True,
+        dry_run=False,
+        review_result=result,
+    )
+
+
+def review_next_decision_result_to_json(
+    result: ReviewNextDecisionResult,
+) -> dict[str, JsonValue]:
+    return {
+        "has_next": result.has_next,
+        "item": _review_queue_item_to_json(result.item),
+        "packet": review_packet_to_json(result.packet) if result.packet is not None else None,
+        "decision": result.decision.value,
+        "executed": result.executed,
+        "dry_run": result.dry_run,
+        "review_result": _review_proposed_change_result_to_json(result.review_result),
+    }
+
+
+def _validate_review_next_decision_input(review_input: ReviewNextDecisionInput) -> None:
+    if not review_input.reviewer.strip():
+        raise ValueError("Review-Next decision requires reviewer.")
+    if review_input.decision is ReviewNextDecision.REJECT and not (
+        review_input.reason and review_input.reason.strip()
+    ):
+        raise ValueError("Review-Next reject decision requires reason.")
+    if (
+        review_input.decision is ReviewNextDecision.EDIT
+        and review_input.accepted_record_json is None
+    ):
+        raise ValueError("Review-Next edit decision requires accepted_record_json.")
+
+
+def _run_review_decision(
+    *,
+    review_input: ReviewNextDecisionInput,
+    proposed_change_id: str,
+    ledger_repository: ReviewNextDecisionLedger,
+) -> ReviewProposedChangeResult:
+    proposed_review_input = ReviewProposedChangeInput(
+        proposed_change_id=proposed_change_id,
+        reviewer=review_input.reviewer,
+        reviewed_at=review_input.reviewed_at,
+        reason=review_input.reason,
+        accepted_record_json=review_input.accepted_record_json,
+    )
+    if review_input.decision is ReviewNextDecision.APPROVE:
+        return approve_proposed_change(proposed_review_input, ledger_repository)
+    if review_input.decision is ReviewNextDecision.REJECT:
+        return reject_proposed_change(proposed_review_input, ledger_repository)
+    if review_input.decision is ReviewNextDecision.EDIT:
+        return edit_proposed_change(proposed_review_input, ledger_repository)
+    raise ValueError(f"Unsupported Review-Next decision: {review_input.decision}")
+
+
+def _review_queue_item_to_json(item: ReviewQueueItem | None) -> dict[str, JsonValue] | None:
+    if item is None:
+        return None
+    return {
+        "proposed_change_id": item.proposed_change_id,
+        "review_status": item.review_status.value,
+        "record_type": item.record_type,
+        "stable_label": item.stable_label,
+        "source_id": item.source_id,
+        "document_id": item.document_id,
+        "model_name": item.model_name,
+        "prompt_id": item.prompt_id,
+        "created_at": item.created_at.isoformat(),
+    }
+
+
+def _review_proposed_change_result_to_json(
+    result: ReviewProposedChangeResult | None,
+) -> dict[str, JsonValue] | None:
+    if result is None:
+        return None
+    return {
+        "proposed_change_id": result.proposed_change_id,
+        "review_status": result.review_status.value,
+        "provenance_activity_id": result.provenance_activity_id,
+        "accepted_record_id": result.accepted_record_id,
+        "accepted_record_type": result.accepted_record_type,
+    }
 
 
 def approve_proposed_change(

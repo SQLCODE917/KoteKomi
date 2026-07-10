@@ -3,10 +3,14 @@ from typing import cast
 
 import pytest
 from kotekomi_application import (
+    ReviewNextDecision,
+    ReviewNextDecisionInput,
     ReviewProposedChangeInput,
     approve_proposed_change,
     edit_proposed_change,
     reject_proposed_change,
+    review_next_decision_result_to_json,
+    run_review_next_decision,
 )
 from kotekomi_domain import (
     Actor,
@@ -56,6 +60,9 @@ class FakeReviewLedger:
 
     def get_proposed_change(self, record_id: str) -> ProposedChange | None:
         return self.proposed_changes.get(record_id)
+
+    def list_proposed_changes(self) -> tuple[ProposedChange, ...]:
+        return tuple(self.proposed_changes.values())
 
     def save_proposed_change(self, record: ProposedChange) -> None:
         self.proposed_changes[record.id] = record
@@ -233,6 +240,300 @@ def review_input(proposed_change_id: str) -> ReviewProposedChangeInput:
         reviewer="analyst",
         reviewed_at=NOW,
     )
+
+
+def test_review_next_decision_approves_first_pending_queue_item() -> None:
+    ledger = FakeReviewLedger(
+        (
+            proposed_change(
+                "pcg_actor",
+                "Actor",
+                {
+                    "id": "act_lina_rahman",
+                    "name": "Lina Rahman",
+                    "organization_ids": ["org_anthropic"],
+                },
+            ),
+            proposed_change(
+                "pcg_organization",
+                "Organization",
+                {
+                    "id": "org_anthropic",
+                    "name": "Anthropic",
+                    "organization_type": "ai_lab",
+                },
+            ),
+        )
+    )
+    seed_reference_records(ledger)
+
+    result = run_review_next_decision(
+        ReviewNextDecisionInput(
+            decision=ReviewNextDecision.APPROVE,
+            reviewer="analyst",
+            reviewed_at=NOW,
+        ),
+        ledger,
+    )
+
+    assert result.has_next is True
+    assert result.executed is True
+    assert result.item is not None
+    assert result.item.proposed_change_id == "pcg_organization"
+    assert result.review_result is not None
+    assert result.review_result.review_status is ReviewStatus.APPROVED
+    assert ledger.proposed_changes["pcg_organization"].review_status is ReviewStatus.APPROVED
+    assert result.review_result.provenance_activity_id in ledger.provenance_activities
+
+
+def test_review_next_decision_rejects_first_pending_queue_item() -> None:
+    ledger = FakeReviewLedger(
+        (
+            proposed_change(
+                "pcg_organization",
+                "Organization",
+                {
+                    "id": "org_anthropic",
+                    "name": "Anthropic",
+                    "organization_type": "ai_lab",
+                },
+            ),
+        )
+    )
+    seed_reference_records(ledger)
+
+    result = run_review_next_decision(
+        ReviewNextDecisionInput(
+            decision=ReviewNextDecision.REJECT,
+            reviewer="analyst",
+            reviewed_at=NOW,
+            reason="duplicate Organization",
+        ),
+        ledger,
+    )
+
+    assert result.executed is True
+    assert result.review_result is not None
+    assert result.review_result.review_status is ReviewStatus.REJECTED
+    assert result.review_result.accepted_record_id is None
+    assert ledger.proposed_changes["pcg_organization"].review_status is ReviewStatus.REJECTED
+
+
+def test_review_next_decision_edits_first_pending_queue_item() -> None:
+    ledger = FakeReviewLedger(
+        (
+            proposed_change(
+                "pcg_actor",
+                "Actor",
+                {
+                    "id": "act_lina_rahman",
+                    "name": "Lina Rahman",
+                    "organization_ids": ["org_anthropic"],
+                },
+            ),
+        )
+    )
+    seed_reference_records(ledger)
+
+    result = run_review_next_decision(
+        ReviewNextDecisionInput(
+            decision=ReviewNextDecision.EDIT,
+            reviewer="analyst",
+            reviewed_at=NOW,
+            accepted_record_json={
+                "id": "act_lina_rahman",
+                "name": "Lina Rahman",
+                "role_names": ["deployment reviewer"],
+                "organization_ids": ["org_anthropic"],
+            },
+        ),
+        ledger,
+    )
+
+    assert result.executed is True
+    assert result.review_result is not None
+    assert result.review_result.review_status is ReviewStatus.EDITED
+    assert ledger.actors["act_lina_rahman"].role_names == ("deployment reviewer",)
+    assert ledger.proposed_changes["pcg_actor"].accepted_json is not None
+
+
+def test_review_next_decision_filters_and_empty_queue() -> None:
+    ledger = FakeReviewLedger(
+        (
+            proposed_change(
+                "pcg_actor",
+                "Actor",
+                {
+                    "id": "act_lina_rahman",
+                    "name": "Lina Rahman",
+                    "organization_ids": ["org_anthropic"],
+                },
+            ),
+            proposed_change(
+                "pcg_organization",
+                "Organization",
+                {
+                    "id": "org_anthropic",
+                    "name": "Anthropic",
+                    "organization_type": "ai_lab",
+                },
+            ),
+        )
+    )
+    seed_reference_records(ledger)
+
+    actor_result = run_review_next_decision(
+        ReviewNextDecisionInput(
+            decision=ReviewNextDecision.APPROVE,
+            reviewer="analyst",
+            reviewed_at=NOW,
+            record_type="Actor",
+        ),
+        ledger,
+    )
+    empty_result = run_review_next_decision(
+        ReviewNextDecisionInput(
+            decision=ReviewNextDecision.APPROVE,
+            reviewer="analyst",
+            reviewed_at=NOW,
+            record_type="Relationship",
+        ),
+        ledger,
+    )
+
+    assert actor_result.item is not None
+    assert actor_result.item.proposed_change_id == "pcg_actor"
+    assert empty_result.has_next is False
+    assert empty_result.executed is False
+    assert empty_result.review_result is None
+
+
+def test_review_next_decision_dry_run_does_not_mutate() -> None:
+    ledger = FakeReviewLedger(
+        (
+            proposed_change(
+                "pcg_organization",
+                "Organization",
+                {
+                    "id": "org_anthropic",
+                    "name": "Anthropic",
+                    "organization_type": "ai_lab",
+                },
+            ),
+        )
+    )
+    seed_reference_records(ledger)
+
+    result = run_review_next_decision(
+        ReviewNextDecisionInput(
+            decision=ReviewNextDecision.APPROVE,
+            reviewer="analyst",
+            reviewed_at=NOW,
+            dry_run=True,
+        ),
+        ledger,
+    )
+
+    assert result.has_next is True
+    assert result.executed is False
+    assert result.dry_run is True
+    assert ledger.proposed_changes["pcg_organization"].review_status is ReviewStatus.PENDING
+    assert set(ledger.provenance_activities) == {"prv_model_run"}
+
+
+def test_review_next_decision_fails_fast_on_missing_decision_inputs() -> None:
+    ledger = FakeReviewLedger(
+        (
+            proposed_change(
+                "pcg_organization",
+                "Organization",
+                {
+                    "id": "org_anthropic",
+                    "name": "Anthropic",
+                    "organization_type": "ai_lab",
+                },
+            ),
+        )
+    )
+    seed_reference_records(ledger)
+
+    with pytest.raises(ValueError, match="requires reason"):
+        run_review_next_decision(
+            ReviewNextDecisionInput(
+                decision=ReviewNextDecision.REJECT,
+                reviewer="analyst",
+                reviewed_at=NOW,
+            ),
+            ledger,
+        )
+    with pytest.raises(ValueError, match="requires accepted_record_json"):
+        run_review_next_decision(
+            ReviewNextDecisionInput(
+                decision=ReviewNextDecision.EDIT,
+                reviewer="analyst",
+                reviewed_at=NOW,
+            ),
+            ledger,
+        )
+    assert ledger.proposed_changes["pcg_organization"].review_status is ReviewStatus.PENDING
+
+
+def test_review_next_decision_fails_fast_on_malformed_selected_proposed_change() -> None:
+    ledger = FakeReviewLedger(
+        (
+            ProposedChange(
+                id="pcg_malformed",
+                proposed_json={"record_type": "Organization", "stable_label": "malformed"},
+                created_at=NOW,
+                updated_at=NOW,
+            ),
+        )
+    )
+
+    with pytest.raises(ValueError, match="missing record object"):
+        run_review_next_decision(
+            ReviewNextDecisionInput(
+                decision=ReviewNextDecision.APPROVE,
+                reviewer="analyst",
+                reviewed_at=NOW,
+            ),
+            ledger,
+        )
+
+
+def test_review_next_decision_json_is_agent_readable() -> None:
+    ledger = FakeReviewLedger(
+        (
+            proposed_change(
+                "pcg_organization",
+                "Organization",
+                {
+                    "id": "org_anthropic",
+                    "name": "Anthropic",
+                    "organization_type": "ai_lab",
+                },
+            ),
+        )
+    )
+    seed_reference_records(ledger)
+
+    result = run_review_next_decision(
+        ReviewNextDecisionInput(
+            decision=ReviewNextDecision.APPROVE,
+            reviewer="analyst",
+            reviewed_at=NOW,
+        ),
+        ledger,
+    )
+    payload = review_next_decision_result_to_json(result)
+
+    assert payload["has_next"] is True
+    assert payload["decision"] == "approve"
+    assert payload["executed"] is True
+    assert isinstance(payload["item"], dict)
+    assert isinstance(payload["packet"], dict)
+    review_result = cast(dict[str, JsonValue], payload["review_result"])
+    assert review_result["review_status"] == "approved"
 
 
 @pytest.mark.parametrize(
