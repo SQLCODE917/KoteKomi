@@ -128,6 +128,20 @@ class PipelineNextStep:
     blockers: tuple[PipelineBlocker, ...]
 
 
+@dataclass(frozen=True)
+class PipelineRunNextResult:
+    stage: PipelineStage
+    command: str | None
+    command_plan: PipelineCommandPlan
+    ready_to_execute: bool
+    executed: bool
+    dry_run: bool
+    exit_code: int
+    stdout_lines: tuple[str, ...]
+    stderr_lines: tuple[str, ...]
+    reason: str
+
+
 def get_pipeline_status(
     pipeline_input: PipelineStatusInput,
     ledger_repository: PipelineReadinessLedger,
@@ -274,6 +288,21 @@ def pipeline_next_to_json(next_step: PipelineNextStep) -> dict[str, JsonValue]:
         "requires_human_review": next_step.requires_human_review,
         "blocked": next_step.blocked,
         "blockers": [_blocker_to_json(blocker) for blocker in next_step.blockers],
+    }
+
+
+def run_next_result_to_json(result: PipelineRunNextResult) -> dict[str, JsonValue]:
+    return {
+        "stage": result.stage.value,
+        "command": result.command,
+        "command_plan": pipeline_command_plan_to_json(result.command_plan),
+        "ready_to_execute": result.ready_to_execute,
+        "executed": result.executed,
+        "dry_run": result.dry_run,
+        "exit_code": result.exit_code,
+        "stdout_lines": list(result.stdout_lines),
+        "stderr_lines": list(result.stderr_lines),
+        "reason": result.reason,
     }
 
 
@@ -567,7 +596,7 @@ def _required_value(value: str | None, name: str) -> str:
     return value
 
 
-def _command_plan_to_json(plan: PipelineCommandPlan) -> dict[str, JsonValue]:
+def pipeline_command_plan_to_json(plan: PipelineCommandPlan) -> dict[str, JsonValue]:
     return {
         "stage": plan.stage.value,
         "command": plan.command,
@@ -585,6 +614,10 @@ def _command_plan_to_json(plan: PipelineCommandPlan) -> dict[str, JsonValue]:
         ],
         "blockers": [_blocker_to_json(blocker) for blocker in plan.blockers],
     }
+
+
+def _command_plan_to_json(plan: PipelineCommandPlan) -> dict[str, JsonValue]:
+    return pipeline_command_plan_to_json(plan)
 
 
 @dataclass(frozen=True)

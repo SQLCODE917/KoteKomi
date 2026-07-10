@@ -3,12 +3,15 @@ from datetime import UTC, datetime, timedelta
 import pytest
 from kotekomi_application import (
     AcceptedCanonicalRecord,
+    PipelineNextStep,
+    PipelineRunNextResult,
     PipelineStage,
     PipelineStatusInput,
     get_pipeline_next,
     get_pipeline_status,
     pipeline_next_to_json,
     pipeline_status_to_json,
+    run_next_result_to_json,
 )
 from kotekomi_domain import (
     Actor,
@@ -236,6 +239,88 @@ def test_pipeline_json_serializers_emit_agent_readable_values() -> None:
     ]
     assert next_json["command"] == "kotekomi graph mine"
     assert next_json["blocked"] is False
+
+
+def test_run_next_result_json_serializes_execution_state_and_output() -> None:
+    next_step = get_pipeline_next(
+        PLAN_INPUT,
+        FakePipelineLedger(records=graph_ready_records()),
+    )
+    result = PipelineRunNextResult(
+        stage=next_step.stage,
+        command=next_step.command,
+        command_plan=next_step.command_plan,
+        ready_to_execute=True,
+        executed=True,
+        dry_run=False,
+        exit_code=0,
+        stdout_lines=("Candidates: 1",),
+        stderr_lines=(),
+        reason=next_step.reason,
+    )
+
+    payload = run_next_result_to_json(result)
+
+    assert payload["stage"] == "ready_for_graph_mining"
+    assert payload["command"] == "kotekomi graph mine"
+    assert payload["ready_to_execute"] is True
+    assert payload["executed"] is True
+    assert payload["dry_run"] is False
+    assert payload["exit_code"] == 0
+    assert payload["stdout_lines"] == ["Candidates: 1"]
+    assert payload["command_plan"] == next_json_command_plan(next_step)
+
+
+def test_run_next_result_json_serializes_missing_inputs_and_blockers() -> None:
+    next_step = get_pipeline_next(PipelineStatusInput(), FakePipelineLedger())
+    result = PipelineRunNextResult(
+        stage=next_step.stage,
+        command=next_step.command,
+        command_plan=next_step.command_plan,
+        ready_to_execute=False,
+        executed=False,
+        dry_run=False,
+        exit_code=2,
+        stdout_lines=(),
+        stderr_lines=(),
+        reason=next_step.reason,
+    )
+
+    payload = run_next_result_to_json(result)
+    command_plan = payload["command_plan"]
+
+    assert payload["ready_to_execute"] is False
+    assert payload["executed"] is False
+    assert payload["exit_code"] == 2
+    assert isinstance(command_plan, dict)
+    assert command_plan["missing_inputs"] == [
+        {
+            "allowed_values": [],
+            "description": "Path to a local Source file.",
+            "kind": "path",
+            "name": "source_file_path",
+            "required": True,
+        },
+        {
+            "allowed_values": [],
+            "description": "Path to the Ledger SQLite file.",
+            "kind": "path",
+            "name": "ledger_path",
+            "required": True,
+        },
+        {
+            "allowed_values": [],
+            "description": "Path to the Archive root.",
+            "kind": "path",
+            "name": "archive_path",
+            "required": True,
+        },
+    ]
+
+
+def next_json_command_plan(next_step: PipelineNextStep) -> object:
+    payload = pipeline_next_to_json(next_step)
+    return payload["command_plan"]
 
 
 def test_command_plan_requires_source_path_for_source_ingest() -> None:

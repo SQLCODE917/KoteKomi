@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
+import io
 import json
 import sys
 from datetime import UTC, datetime
@@ -23,6 +25,7 @@ from kotekomi_application import (
     JsonValue,
     PipelineCommandPlan,
     PipelineNextStep,
+    PipelineRunNextResult,
     PipelineStatus,
     PipelineStatusInput,
     ReviewEditableRecordExportInput,
@@ -55,6 +58,7 @@ from kotekomi_application import (
     review_packet_to_json,
     review_queue_result_to_json,
     review_readiness_to_json,
+    run_next_result_to_json,
 )
 from kotekomi_briefing import MarkdownBriefingRenderer
 from kotekomi_domain import ReviewStatus
@@ -209,6 +213,22 @@ def main(argv: list[str] | None = None) -> int:
         return show_pipeline_next(
             config=config,
             output_format=args.output_format,
+            source_file_path=args.source_file_path,
+            model_output_fixture_path=args.model_output_fixture,
+            document_id=args.document_id,
+            briefing_title=args.briefing_title,
+        )
+
+    if args.command == "pipeline" and args.pipeline_command == "run-next":
+        config = load_config(
+            config_path=args.config,
+            ledger_path_override=args.ledger_path,
+            archive_path_override=args.archive_path,
+        )
+        return run_pipeline_next(
+            config=config,
+            output_format=args.output_format,
+            dry_run=args.dry_run,
             source_file_path=args.source_file_path,
             model_output_fixture_path=args.model_output_fixture,
             document_id=args.document_id,
@@ -397,6 +417,23 @@ def build_parser() -> argparse.ArgumentParser:
     pipeline_next_parser.add_argument("--model-output-fixture", type=Path, default=None)
     pipeline_next_parser.add_argument("--document-id", default=None)
     pipeline_next_parser.add_argument("--briefing-title", default=None)
+    pipeline_run_next_parser = pipeline_subparsers.add_parser(
+        "run-next",
+        help="Execute the next ready Pipeline command.",
+    )
+    pipeline_run_next_parser.add_argument(
+        "--format",
+        dest="output_format",
+        choices=("text", "json"),
+        default="text",
+    )
+    pipeline_run_next_parser.add_argument("--dry-run", action="store_true")
+    pipeline_run_next_parser.add_argument("--ledger-path", type=Path, default=None)
+    pipeline_run_next_parser.add_argument("--archive-path", type=Path, default=None)
+    pipeline_run_next_parser.add_argument("--source-file-path", type=Path, default=None)
+    pipeline_run_next_parser.add_argument("--model-output-fixture", type=Path, default=None)
+    pipeline_run_next_parser.add_argument("--document-id", default=None)
+    pipeline_run_next_parser.add_argument("--briefing-title", default=None)
 
     graph_parser = subparsers.add_parser("graph", help="Graph projection commands.")
     graph_subparsers = graph_parser.add_subparsers(dest="graph_command")
@@ -634,6 +671,107 @@ def show_pipeline_next(
     return 0
 
 
+def run_pipeline_next(
+    *,
+    config: PipelineConfig,
+    output_format: str,
+    dry_run: bool,
+    source_file_path: Path | None,
+    model_output_fixture_path: Path | None,
+    document_id: str | None,
+    briefing_title: str | None,
+) -> int:
+    pipeline_input = _pipeline_status_input(
+        config=config,
+        source_file_path=source_file_path,
+        model_output_fixture_path=model_output_fixture_path,
+        document_id=document_id,
+        briefing_title=briefing_title,
+    )
+    with sqlite_ledger_transaction(config.ledger_path) as ledger_repository:
+        next_step = get_pipeline_next(pipeline_input, ledger_repository)
+
+    result = _run_next_step(next_step, dry_run=dry_run)
+    if output_format == "json":
+        print(json.dumps(run_next_result_to_json(result), indent=2, sort_keys=True))
+    else:
+        print(_pipeline_run_next_text(result))
+    return result.exit_code
+
+
+def _run_next_step(
+    next_step: PipelineNextStep,
+    *,
+    dry_run: bool,
+) -> PipelineRunNextResult:
+    command_plan = next_step.command_plan
+    if command_plan.command is None:
+        return PipelineRunNextResult(
+            stage=next_step.stage,
+            command=next_step.command,
+            command_plan=command_plan,
+            ready_to_execute=command_plan.ready_to_execute,
+            executed=False,
+            dry_run=dry_run,
+            exit_code=0,
+            stdout_lines=(),
+            stderr_lines=(),
+            reason=next_step.reason,
+        )
+    if not command_plan.ready_to_execute:
+        return PipelineRunNextResult(
+            stage=next_step.stage,
+            command=next_step.command,
+            command_plan=command_plan,
+            ready_to_execute=False,
+            executed=False,
+            dry_run=dry_run,
+            exit_code=2,
+            stdout_lines=(),
+            stderr_lines=(),
+            reason=next_step.reason,
+        )
+    if dry_run:
+        return PipelineRunNextResult(
+            stage=next_step.stage,
+            command=next_step.command,
+            command_plan=command_plan,
+            ready_to_execute=True,
+            executed=False,
+            dry_run=True,
+            exit_code=0,
+            stdout_lines=(),
+            stderr_lines=(),
+            reason=next_step.reason,
+        )
+
+    exit_code, stdout_lines, stderr_lines = _dispatch_planned_argv(command_plan.argv)
+    return PipelineRunNextResult(
+        stage=next_step.stage,
+        command=next_step.command,
+        command_plan=command_plan,
+        ready_to_execute=True,
+        executed=True,
+        dry_run=False,
+        exit_code=exit_code,
+        stdout_lines=stdout_lines,
+        stderr_lines=stderr_lines,
+        reason=next_step.reason,
+    )
+
+
+def _dispatch_planned_argv(argv: tuple[str, ...]) -> tuple[int, tuple[str, ...], tuple[str, ...]]:
+    stdout_buffer = io.StringIO()
+    stderr_buffer = io.StringIO()
+    with contextlib.redirect_stdout(stdout_buffer), contextlib.redirect_stderr(stderr_buffer):
+        exit_code = main(list(argv))
+    return (
+        exit_code,
+        tuple(stdout_buffer.getvalue().splitlines()),
+        tuple(stderr_buffer.getvalue().splitlines()),
+    )
+
+
 def _pipeline_status_input(
     *,
     config: PipelineConfig,
@@ -851,6 +989,44 @@ def _pipeline_next_text(next_step: PipelineNextStep) -> str:
             f"  {blocker.command} | {blocker.blocker_type}: {blocker.blocker_id} | "
             f"{blocker.reason}"
             for blocker in next_step.blockers
+        )
+    else:
+        lines.append("  none")
+    return "\n".join(lines)
+
+
+def _pipeline_run_next_text(result: PipelineRunNextResult) -> str:
+    lines = [
+        f"Pipeline stage: {result.stage.value}",
+        f"Command: {result.command or 'none'}",
+        f"Ready to execute: {_bool_text(result.ready_to_execute)}",
+        f"Executed: {_bool_text(result.executed)}",
+        f"Dry run: {_bool_text(result.dry_run)}",
+        f"Exit code: {result.exit_code}",
+        f"Reason: {result.reason}",
+        "Command plan argv:",
+    ]
+    if result.command_plan.argv:
+        lines.append(f"  {' '.join(result.command_plan.argv)}")
+    else:
+        lines.append("  none")
+    lines.extend(_missing_inputs_text(result.command_plan))
+    lines.append("Captured stdout:")
+    if result.stdout_lines:
+        lines.extend(f"  {line}" for line in result.stdout_lines)
+    else:
+        lines.append("  none")
+    lines.append("Captured stderr:")
+    if result.stderr_lines:
+        lines.extend(f"  {line}" for line in result.stderr_lines)
+    else:
+        lines.append("  none")
+    lines.append("Blockers:")
+    if result.command_plan.blockers:
+        lines.extend(
+            f"  {blocker.command} | {blocker.blocker_type}: {blocker.blocker_id} | "
+            f"{blocker.reason}"
+            for blocker in result.command_plan.blockers
         )
     else:
         lines.append("  none")

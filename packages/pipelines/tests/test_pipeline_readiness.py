@@ -203,6 +203,142 @@ def test_pipeline_status_text_is_human_readable(
     assert "Reason: No Source records exist in the Ledger." in next_text
 
 
+def test_pipeline_run_next_executes_exactly_one_planned_fixture_step(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    ledger_path = tmp_path / "ledger" / "kotekomi.db"
+    archive_path = tmp_path / "archive"
+
+    assert main(ledger_init_args(ledger_path, archive_path)) == 0
+    capsys.readouterr()
+
+    exit_code, result = pipeline_run_next_json(ledger_path, archive_path, capsys)
+    assert exit_code == 2
+    assert result["executed"] is False
+    assert result["command_plan"]["missing_inputs"][0]["name"] == "source_file_path"
+
+    exit_code, result = pipeline_run_next_json(
+        ledger_path,
+        archive_path,
+        capsys,
+        source_file_path=SOURCE_FIXTURE_PATH,
+        dry_run=True,
+    )
+    assert exit_code == 0
+    assert result["dry_run"] is True
+    assert result["executed"] is False
+    assert result["command_plan"]["ready_to_execute"] is True
+    with sqlite_ledger_transaction(ledger_path) as repository:
+        assert repository.list_sources() == ()
+
+    exit_code, result = pipeline_run_next_json(
+        ledger_path,
+        archive_path,
+        capsys,
+        source_file_path=SOURCE_FIXTURE_PATH,
+    )
+    assert exit_code == 0
+    assert result["executed"] is True
+    assert result["stdout_lines"][0].startswith("Source created: src_")
+    with sqlite_ledger_transaction(ledger_path) as repository:
+        document = repository.list_documents()[0]
+
+    exit_code, result = pipeline_run_next_json(ledger_path, archive_path, capsys)
+    assert exit_code == 2
+    assert result["executed"] is False
+    assert result["command_plan"]["missing_inputs"][0]["name"] == (
+        "model_output_fixture_path"
+    )
+
+    exit_code, result = pipeline_run_next_json(
+        ledger_path,
+        archive_path,
+        capsys,
+        model_output_fixture_path=MODEL_OUTPUT_FIXTURE_PATH,
+    )
+    assert exit_code == 0
+    assert result["executed"] is True
+    assert "ProposedChanges: 16" in result["stdout_lines"]
+    with sqlite_ledger_transaction(ledger_path) as repository:
+        assert len(repository.list_proposed_changes()) == 16
+
+    exit_code, result = pipeline_run_next_json(ledger_path, archive_path, capsys)
+    assert exit_code == 0
+    assert result["executed"] is True
+    assert result["stage"] == "review_required"
+    assert result["command_plan"]["argv"] == [
+        "review",
+        "list",
+        "--ledger-path",
+        str(ledger_path.resolve()),
+    ]
+    assert result["stdout_lines"][0] == "Review Queue: 16"
+    with sqlite_ledger_transaction(ledger_path) as repository:
+        initial_changes = repository.list_proposed_changes()
+        pending_initial_changes = tuple(
+            change
+            for change in initial_changes
+            if change.review_status is ReviewStatus.PENDING
+        )
+        assert len(pending_initial_changes) == 16
+    approve_pending(ledger_path, initial_changes, capsys)
+
+    exit_code, result = pipeline_run_next_json(ledger_path, archive_path, capsys)
+    assert exit_code == 0
+    assert result["executed"] is True
+    assert result["stage"] == "ready_for_graph_mining"
+    assert "ProposedChanges: 5" in result["stdout_lines"]
+    with sqlite_ledger_transaction(ledger_path) as repository:
+        mined_changes = tuple(
+            change
+            for change in repository.list_proposed_changes()
+            if change.review_status is ReviewStatus.PENDING
+        )
+    assert len(mined_changes) == 5
+
+    exit_code, result = pipeline_run_next_json(ledger_path, archive_path, capsys)
+    assert exit_code == 0
+    assert result["executed"] is True
+    assert result["stage"] == "review_required"
+    assert result["stdout_lines"][0] == "Review Queue: 5"
+    with sqlite_ledger_transaction(ledger_path) as repository:
+        assert len(
+            tuple(
+                change
+                for change in repository.list_proposed_changes()
+                if change.review_status is ReviewStatus.PENDING
+            )
+        ) == 5
+    approve_pending(ledger_path, mined_changes, capsys)
+
+    exit_code, result = pipeline_run_next_json(ledger_path, archive_path, capsys)
+    assert exit_code == 2
+    assert result["executed"] is False
+    assert result["command_plan"]["missing_inputs"][0]["name"] == "briefing_title"
+
+    exit_code, result = pipeline_run_next_json(
+        ledger_path,
+        archive_path,
+        capsys,
+        briefing_title="Daily Briefing",
+    )
+    assert exit_code == 0
+    assert result["executed"] is True
+    assert result["stage"] == "ready_for_briefing"
+    assert result["stdout_lines"][0].startswith("Briefing: brf_")
+    with sqlite_ledger_transaction(ledger_path) as repository:
+        assert len(repository.list_briefings()) == 1
+
+    exit_code, result = pipeline_run_next_json(ledger_path, archive_path, capsys)
+    assert exit_code == 0
+    assert result["executed"] is False
+    assert result["stage"] == "briefing_current"
+    assert result["command"] is None
+    assert result["command_plan"]["argv"] == []
+    assert document.id == "doc_aa67767133655af72fbcf0a8"
+
+
 def approve_pending(
     ledger_path: Path,
     proposed_changes: tuple[ProposedChange, ...],
@@ -271,6 +407,33 @@ def pipeline_next_json(
     payload = json.loads(capsys.readouterr().out)
     assert isinstance(payload, dict)
     return cast(dict[str, Any], payload)
+
+
+def pipeline_run_next_json(
+    ledger_path: Path,
+    archive_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    *,
+    source_file_path: Path | None = None,
+    model_output_fixture_path: Path | None = None,
+    document_id: str | None = None,
+    briefing_title: str | None = None,
+    dry_run: bool = False,
+) -> tuple[int, dict[str, Any]]:
+    exit_code = main(
+        pipeline_run_next_json_args(
+            ledger_path,
+            archive_path,
+            source_file_path=source_file_path,
+            model_output_fixture_path=model_output_fixture_path,
+            document_id=document_id,
+            briefing_title=briefing_title,
+            dry_run=dry_run,
+        )
+    )
+    payload = json.loads(capsys.readouterr().out)
+    assert isinstance(payload, dict)
+    return exit_code, cast(dict[str, Any], payload)
 
 
 def ledger_init_args(ledger_path: Path, archive_path: Path) -> list[str]:
@@ -415,6 +578,38 @@ def pipeline_next_json_args(
     return _with_planning_args(
         args,
         archive_path=archive_path,
+        source_file_path=source_file_path,
+        model_output_fixture_path=model_output_fixture_path,
+        document_id=document_id,
+        briefing_title=briefing_title,
+    )
+
+
+def pipeline_run_next_json_args(
+    ledger_path: Path,
+    archive_path: Path,
+    *,
+    source_file_path: Path | None = None,
+    model_output_fixture_path: Path | None = None,
+    document_id: str | None = None,
+    briefing_title: str | None = None,
+    dry_run: bool = False,
+) -> list[str]:
+    args = [
+        "pipeline",
+        "run-next",
+        "--format",
+        "json",
+        "--ledger-path",
+        str(ledger_path),
+        "--archive-path",
+        str(archive_path),
+    ]
+    if dry_run:
+        args.append("--dry-run")
+    return _with_planning_args(
+        args,
+        archive_path=None,
         source_file_path=source_file_path,
         model_output_fixture_path=model_output_fixture_path,
         document_id=document_id,
