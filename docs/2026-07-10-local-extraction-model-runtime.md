@@ -183,7 +183,11 @@ The proposal and Pipeline planning commands accept:
 --model-output-fixture <path>
 ```
 
-The TOML configuration adds a `[model_runtime]` table.
+The TOML configuration adds `runtime_profile` and `[runtime_profiles.<name>]` tables.
+
+The Pipeline resolves the selected profile into the shared `ModelRuntimeConfig`.
+
+The existing `[model_runtime]` table can override resolved profile fields.
 
 ## 10. Behavior & Domain Rules
 
@@ -214,6 +218,12 @@ max_output_tokens = 8192
 ```
 
 Configuration and CLI flags select the runtime explicitly.
+
+`macbook` is the default profile.
+
+`wsl-4090` selects the Ollama Adapter on the configured WSL endpoint.
+
+`--runtime-profile` selects a named profile.
 CLI flags override TOML values.
 The fixture runtime requires `--model-output-fixture`.
 Non-fixture runtimes reject `--model-output-fixture`.

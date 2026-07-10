@@ -33,6 +33,7 @@
 - verify model proposal batch schema and exact evidence validation with `uv run pytest packages/application/tests/test_model_proposal_validation.py packages/application/tests/test_propose_assertions_for_document.py`
 - verify llama-server and Ollama Adapter contracts with `uv run pytest packages/adapters/tests/test_local_model_runtimes.py`
 - verify local model runtime config and agent status JSON with `uv run pytest packages/pipelines/tests/test_cli.py`
+- verify named `macbook` and `wsl-4090` profiles resolve into the shared ModelRuntime configuration with `uv run pytest packages/pipelines/tests/test_cli.py`
 - optionally probe llama-server with `KOTEKOMI_LIVE_LLAMA_SERVER_MODEL=<alias> uv run pytest packages/adapters/tests/test_local_model_runtimes_live.py`
 - optionally probe Ollama with `KOTEKOMI_LIVE_OLLAMA_MODEL=<tag> uv run pytest packages/adapters/tests/test_local_model_runtimes_live.py`
 - run Assertion proposal Pipeline fixture with `uv run pytest packages/pipelines/tests/test_source_propose_assertions.py`

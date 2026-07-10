@@ -114,6 +114,7 @@ def main(argv: list[str] | None = None) -> int:
             config_path=args.config,
             ledger_path_override=args.ledger_path,
             archive_path_override=args.archive_path,
+            runtime_profile=args.runtime_profile,
             model_runtime_adapter=args.model_runtime,
             model_endpoint=args.model_endpoint,
             model_name=args.model_name,
@@ -133,6 +134,7 @@ def main(argv: list[str] | None = None) -> int:
             config_path=args.config,
             ledger_path_override=None,
             archive_path_override=None,
+            runtime_profile=args.runtime_profile,
             model_runtime_adapter=args.model_runtime,
             model_endpoint=args.model_endpoint,
             model_name=args.model_name,
@@ -299,6 +301,7 @@ def main(argv: list[str] | None = None) -> int:
             config_path=args.config,
             ledger_path_override=args.ledger_path,
             archive_path_override=args.archive_path,
+            runtime_profile=args.runtime_profile,
             model_runtime_adapter=args.model_runtime,
             model_endpoint=args.model_endpoint,
             model_name=args.model_name,
@@ -321,6 +324,7 @@ def main(argv: list[str] | None = None) -> int:
             config_path=args.config,
             ledger_path_override=args.ledger_path,
             archive_path_override=args.archive_path,
+            runtime_profile=args.runtime_profile,
             model_runtime_adapter=args.model_runtime,
             model_endpoint=args.model_endpoint,
             model_name=args.model_name,
@@ -343,6 +347,7 @@ def main(argv: list[str] | None = None) -> int:
             config_path=args.config,
             ledger_path_override=args.ledger_path,
             archive_path_override=args.archive_path,
+            runtime_profile=args.runtime_profile,
             model_runtime_adapter=args.model_runtime,
             model_endpoint=args.model_endpoint,
             model_name=args.model_name,
@@ -402,6 +407,7 @@ def _load_model_config(
     config_path: Path | None,
     ledger_path_override: Path | None,
     archive_path_override: Path | None,
+    runtime_profile: str | None,
     model_runtime_adapter: str | None,
     model_endpoint: str | None,
     model_name: str | None,
@@ -414,6 +420,7 @@ def _load_model_config(
         config_path=config_path,
         ledger_path_override=ledger_path_override,
         archive_path_override=archive_path_override,
+        runtime_profile_override=runtime_profile,
         model_runtime_adapter_override=model_runtime_adapter,
         model_endpoint_override=model_endpoint,
         model_name_override=model_name,
@@ -728,6 +735,7 @@ def _add_model_runtime_arguments(
     include_fixture: bool,
 ) -> None:
     choices = MODEL_RUNTIME_ADAPTERS if include_fixture else ("llama_server", "ollama")
+    parser.add_argument("--runtime-profile", default=None)
     parser.add_argument("--model-runtime", choices=choices, default=None)
     parser.add_argument("--model-endpoint", default=None)
     parser.add_argument("--model-name", default=None)

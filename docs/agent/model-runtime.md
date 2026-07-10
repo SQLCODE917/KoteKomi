@@ -14,8 +14,23 @@ Support WSL/Ubuntu with NVIDIA GPU.
 
 Initial runtime Adapters:
 
-- Ollama
-- llama.cpp
+- llama-server on macOS Apple Silicon through `LlamaServerModelRuntime`
+- Ollama on WSL/Ubuntu NVIDIA through `OllamaModelRuntime`
+
+## Runtime Profiles
+
+Pipelines select an explicit named runtime profile from configuration. They do
+not infer the operating system, GPU, server, or installed model.
+
+| Profile | Adapter | Default model | Context window |
+|---|---|---|---|
+| `macbook` | llama-server | `Qwen/Qwen3-14B-GGUF:Q4_K_M` | 16,384 |
+| `wsl-4090` | Ollama | `qwen3:30b-a3b-instruct-2507-q4_K_M` | 16,384 |
+
+`macbook` is the default. Select the workstation profile with
+`kotekomi source propose-assertions --runtime-profile wsl-4090 ...`.
+The Pipeline resolves a profile into `ModelRuntimeConfig` before it constructs an Adapter.
+A fixture-backed runtime is only an explicit test override; it is not a runtime fallback.
 
 Later runtime Adapters:
 

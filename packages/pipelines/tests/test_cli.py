@@ -94,6 +94,7 @@ def test_load_config_defaults_to_mac_llama_server_profile() -> None:
     assert config.model_runtime.model == "Qwen/Qwen3-14B-GGUF:Q4_K_M"
     assert config.model_runtime.context_tokens == 16384
     assert config.model_runtime.max_output_tokens == 8192
+    assert config.model_runtime.profile_name == "macbook"
     assert config.model_runtime.prompt_path.name == "propose_assertions.md"
 
 
@@ -125,6 +126,37 @@ max_output_tokens = 8192
     assert config.model_runtime.prompt_path == prompt_path
     assert config.model_runtime.timeout_seconds == 240
     assert config.model_runtime.context_tokens == 16384
+
+
+def test_load_config_selects_wsl_profile_without_redefining_model_runtime(tmp_path: Path) -> None:
+    config_path = tmp_path / "kotekomi.toml"
+    config_path.write_text('runtime_profile = "wsl-4090"\n', encoding="utf-8")
+
+    config = load_config(
+        config_path=config_path,
+        ledger_path_override=None,
+        archive_path_override=None,
+    )
+
+    assert config.model_runtime.profile_name == "wsl-4090"
+    assert config.model_runtime.adapter == "ollama"
+    assert config.model_runtime.endpoint == "http://127.0.0.1:11434"
+
+
+def test_runtime_profile_override_precedes_model_runtime_field_overrides(tmp_path: Path) -> None:
+    config_path = tmp_path / "kotekomi.toml"
+    config_path.write_text('runtime_profile = "macbook"\n', encoding="utf-8")
+
+    config = load_config(
+        config_path=config_path,
+        ledger_path_override=None,
+        archive_path_override=None,
+        runtime_profile_override="wsl-4090",
+        model_name_override="qwen3:custom",
+    )
+
+    assert config.model_runtime.profile_name == "wsl-4090"
+    assert config.model_runtime.model == "qwen3:custom"
 
 
 def test_load_config_rejects_unknown_model_runtime_key(tmp_path: Path) -> None:
