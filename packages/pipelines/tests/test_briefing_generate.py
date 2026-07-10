@@ -57,6 +57,8 @@ def propose_assertions_args(
         "propose-assertions",
         "--document-id",
         document_id,
+        "--model-runtime",
+        "fixture",
         "--model-output-fixture",
         str(MODEL_OUTPUT_FIXTURE_PATH),
         "--ledger-path",

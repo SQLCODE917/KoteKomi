@@ -30,6 +30,11 @@
 - run Assertion proposal Application test with `uv run pytest packages/application/tests/test_propose_assertions_for_document.py`
 - verify model output missing Assertion epistemic fields fails before ProposedChange with `uv run pytest packages/application/tests/test_propose_assertions_for_document.py`
 - run Assertion proposal Adapter fixture with `uv run pytest packages/adapters/tests/test_fixture_model_runtime.py`
+- verify model proposal batch schema and exact evidence validation with `uv run pytest packages/application/tests/test_model_proposal_validation.py packages/application/tests/test_propose_assertions_for_document.py`
+- verify llama-server and Ollama Adapter contracts with `uv run pytest packages/adapters/tests/test_local_model_runtimes.py`
+- verify local model runtime config and agent status JSON with `uv run pytest packages/pipelines/tests/test_cli.py`
+- optionally probe llama-server with `KOTEKOMI_LIVE_LLAMA_SERVER_MODEL=<alias> uv run pytest packages/adapters/tests/test_local_model_runtimes_live.py`
+- optionally probe Ollama with `KOTEKOMI_LIVE_OLLAMA_MODEL=<tag> uv run pytest packages/adapters/tests/test_local_model_runtimes_live.py`
 - run Assertion proposal Pipeline fixture with `uv run pytest packages/pipelines/tests/test_source_propose_assertions.py`
 - run ProposedChange review Application test with `uv run pytest packages/application/tests/test_review_proposed_change.py`
 - run ProposedChange review Pipeline fixture with `uv run pytest packages/pipelines/tests/test_review_proposed_change.py`
@@ -58,6 +63,7 @@
 - verify command examples run
 - verify cross-references resolve
 - verify new Port contracts have Application Layer fake-Port tests and Adapter tests
+- verify managed llama-server LaunchAgent rendering and user-domain lifecycle with `uv run pytest packages/pipelines/tests/test_managed_llama_server.py`
 - verify happy-path fixtures contain no dangling cross-record references
 
 ## 7. Forbidden patterns
@@ -68,6 +74,9 @@
 - accepted Ledger state change without ProvenanceActivity
 - canonical state stored outside the Ledger or Archive
 - model output written directly as accepted state
+- tool-native model response passed across the ModelRuntime Port
+- model evidence text absent from the referenced Document
+- implicit fixture runtime selection in production Pipeline commands
 - derived graph, vector, Briefing, or export state treated as canonical state
 - uncited Source-backed Briefing statement
 - agent citation resolution by parsing Markdown instead of structured registry data

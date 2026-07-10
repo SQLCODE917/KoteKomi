@@ -243,6 +243,36 @@ def test_propose_assertions_for_document_rejects_invalid_model_record() -> None:
     assert ledger.proposed_changes == {}
 
 
+def test_propose_assertions_for_document_rejects_evidence_absent_from_document() -> None:
+    document = document_fixture()
+    ledger = FakeLedgerRepository(documents={document.id: document})
+    archive = FakeArchiveStore({document.id: "document text"})
+    model_runtime = FakeModelRuntime(
+        (
+            ModelProposal(
+                record_type="Assertion",
+                stable_label="release_was_delayed",
+                record=assertion_record(document),
+                evidence={
+                    **evidence_record(document),
+                    "exact_text": "invented evidence",
+                },
+            ),
+        )
+    )
+
+    with pytest.raises(ValueError, match="exact_text does not occur"):
+        propose_assertions_for_document(
+            AssertionProposalInput(document_id=document.id, proposed_at=NOW),
+            archive,
+            ledger,
+            model_runtime,
+        )
+
+    assert ledger.provenance_activities == {}
+    assert ledger.proposed_changes == {}
+
+
 def test_propose_assertions_for_document_rejects_assertion_missing_epistemic_scope() -> None:
     document = document_fixture()
     invalid_record = assertion_record(document)

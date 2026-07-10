@@ -1,9 +1,9 @@
-"""Model proposal validation helpers."""
+"""Model proposal boundary DTOs and validation."""
 
 from __future__ import annotations
 
 import json
-from typing import cast
+from typing import Annotated, Literal, cast
 
 from kotekomi_domain import (
     Actor,
@@ -15,9 +15,121 @@ from kotekomi_domain import (
     Outcome,
     Relationship,
 )
-from kotekomi_domain.models import JsonValue
+from kotekomi_domain.models import DocumentId, JsonValue, SourceId
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, ValidationError
 
 from kotekomi_application.ports import ModelProposal
+
+StableLabel = Annotated[
+    str,
+    StringConstraints(strip_whitespace=True, min_length=1, pattern=r"^[a-z0-9]+(?:_[a-z0-9]+)*$"),
+]
+ExactText = Annotated[str, StringConstraints(min_length=1)]
+
+
+class _ModelBoundary(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+
+class ModelProposalEvidence(_ModelBoundary):
+    selector_type: Literal["exact_text"]
+    exact_text: ExactText
+    source_id: SourceId
+    document_id: DocumentId
+
+
+class _ActorProposal(_ModelBoundary):
+    record_type: Literal["Actor"]
+    stable_label: StableLabel
+    record: Actor
+    evidence: ModelProposalEvidence
+
+
+class _OrganizationProposal(_ModelBoundary):
+    record_type: Literal["Organization"]
+    stable_label: StableLabel
+    record: Organization
+    evidence: ModelProposalEvidence
+
+
+class _EventProposal(_ModelBoundary):
+    record_type: Literal["Event"]
+    stable_label: StableLabel
+    record: Event
+    evidence: ModelProposalEvidence
+
+
+class _EvidenceSpanProposal(_ModelBoundary):
+    record_type: Literal["EvidenceSpan"]
+    stable_label: StableLabel
+    record: EvidenceSpan
+    evidence: ModelProposalEvidence
+
+
+class _AssertionProposal(_ModelBoundary):
+    record_type: Literal["Assertion"]
+    stable_label: StableLabel
+    record: Assertion
+    evidence: ModelProposalEvidence
+
+
+class _RelationshipProposal(_ModelBoundary):
+    record_type: Literal["Relationship"]
+    stable_label: StableLabel
+    record: Relationship
+    evidence: ModelProposalEvidence
+
+
+class _OutcomeProposal(_ModelBoundary):
+    record_type: Literal["Outcome"]
+    stable_label: StableLabel
+    record: Outcome
+    evidence: ModelProposalEvidence
+
+
+class _ArgumentEdgeProposal(_ModelBoundary):
+    record_type: Literal["ArgumentEdge"]
+    stable_label: StableLabel
+    record: ArgumentEdge
+    evidence: ModelProposalEvidence
+
+
+type ModelProposalWire = Annotated[
+    _ActorProposal
+    | _OrganizationProposal
+    | _EventProposal
+    | _EvidenceSpanProposal
+    | _AssertionProposal
+    | _RelationshipProposal
+    | _OutcomeProposal
+    | _ArgumentEdgeProposal,
+    Field(discriminator="record_type"),
+]
+
+
+class ModelProposalBatch(_ModelBoundary):
+    proposals: tuple[ModelProposalWire, ...]
+
+
+def model_proposal_batch_json_schema() -> dict[str, JsonValue]:
+    return cast(dict[str, JsonValue], ModelProposalBatch.model_json_schema())
+
+
+def parse_model_proposal_batch_json(payload: str) -> tuple[ModelProposal, ...]:
+    try:
+        batch = ModelProposalBatch.model_validate_json(payload)
+    except ValidationError as exc:
+        raise ValueError(f"Invalid model proposal batch: {exc}") from exc
+    return tuple(_model_proposal_from_wire(proposal) for proposal in batch.proposals)
+
+
+def _model_proposal_from_wire(proposal: ModelProposalWire) -> ModelProposal:
+    return ModelProposal(
+        record_type=proposal.record_type,
+        stable_label=proposal.stable_label,
+        record=cast(dict[str, JsonValue], proposal.record.model_dump(mode="json")),
+        evidence=cast(dict[str, JsonValue], proposal.evidence.model_dump(mode="json")),
+    )
 
 
 def validate_model_proposal(proposal: ModelProposal) -> ModelProposal:

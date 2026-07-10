@@ -66,10 +66,15 @@ def test_pipeline_status_and_next_walk_fixture_article_pipeline(
     assert status["stage"] == "ready_for_assertion_proposal"
     assert status["document_count"] == 1
     assert status["candidate_document_ids"] == ["doc_aa67767133655af72fbcf0a8"]
-    assert status["next_command_plan"]["ready_to_execute"] is False
-    assert status["next_command_plan"]["missing_inputs"][0]["name"] == (
-        "model_output_fixture_path"
-    )
+    assert status["next_command_plan"]["ready_to_execute"] is True
+    assert status["next_command_plan"]["argv"][4:10] == [
+        "--model-runtime",
+        "llama_server",
+        "--model-endpoint",
+        "http://127.0.0.1:8080/v1",
+        "--model-name",
+        "Qwen/Qwen3-14B-GGUF:Q4_K_M",
+    ]
     next_step = pipeline_next_json(
         ledger_path,
         capsys,
@@ -82,6 +87,8 @@ def test_pipeline_status_and_next_walk_fixture_article_pipeline(
         "propose-assertions",
         "--document-id",
         "doc_aa67767133655af72fbcf0a8",
+        "--model-runtime",
+        "fixture",
         "--model-output-fixture",
         str(MODEL_OUTPUT_FIXTURE_PATH.resolve()),
         "--ledger-path",
@@ -244,12 +251,16 @@ def test_pipeline_run_next_executes_exactly_one_planned_fixture_step(
     with sqlite_ledger_transaction(ledger_path) as repository:
         document = repository.list_documents()[0]
 
-    exit_code, result = pipeline_run_next_json(ledger_path, archive_path, capsys)
-    assert exit_code == 2
-    assert result["executed"] is False
-    assert result["command_plan"]["missing_inputs"][0]["name"] == (
-        "model_output_fixture_path"
+    exit_code, result = pipeline_run_next_json(
+        ledger_path,
+        archive_path,
+        capsys,
+        dry_run=True,
     )
+    assert exit_code == 0
+    assert result["executed"] is False
+    assert result["command_plan"]["ready_to_execute"] is True
+    assert result["command_plan"]["argv"][5] == "llama_server"
 
     exit_code, result = pipeline_run_next_json(
         ledger_path,
@@ -469,6 +480,8 @@ def propose_assertions_args(
         "propose-assertions",
         "--document-id",
         document_id,
+        "--model-runtime",
+        "fixture",
         "--model-output-fixture",
         str(MODEL_OUTPUT_FIXTURE_PATH),
         "--ledger-path",
@@ -631,7 +644,14 @@ def _with_planning_args(
     if source_file_path is not None:
         args.extend(("--source-file-path", str(source_file_path)))
     if model_output_fixture_path is not None:
-        args.extend(("--model-output-fixture", str(model_output_fixture_path)))
+        args.extend(
+            (
+                "--model-runtime",
+                "fixture",
+                "--model-output-fixture",
+                str(model_output_fixture_path),
+            )
+        )
     if document_id is not None:
         args.extend(("--document-id", document_id))
     if briefing_title is not None:

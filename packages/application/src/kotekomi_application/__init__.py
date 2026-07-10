@@ -39,6 +39,23 @@ from kotekomi_application.ledger_graph_projection import (
     deterministic_graph_edge_id,
     project_ledger_graph,
 )
+from kotekomi_application.model_proposal_validation import (
+    ModelProposalBatch,
+    ModelProposalEvidence,
+    model_proposal_batch_json_schema,
+    parse_model_proposal_batch_json,
+    validate_model_proposal,
+)
+from kotekomi_application.model_runtime import (
+    ModelNotAvailableError,
+    ModelOutputValidationError,
+    ModelRuntimeBusyError,
+    ModelRuntimeError,
+    ModelRuntimeResponseError,
+    ModelRuntimeUnavailableError,
+    model_runtime_status_to_json,
+    prompt_id_for_text,
+)
 from kotekomi_application.pipeline_readiness import (
     PipelineBlocker,
     PipelineCommandPlan,
@@ -82,6 +99,8 @@ from kotekomi_application.ports import (
     LedgerRepository,
     ModelProposal,
     ModelRuntime,
+    ModelRuntimeReadiness,
+    ModelRuntimeStatus,
     StagedArchiveObject,
 )
 from kotekomi_application.proposed_change_review import (
@@ -175,8 +194,18 @@ __all__ = [
     "LedgerInitializer",
     "LedgerInitResult",
     "LedgerRepository",
+    "ModelNotAvailableError",
+    "ModelRuntimeBusyError",
+    "ModelOutputValidationError",
     "ModelProposal",
+    "ModelProposalBatch",
+    "ModelProposalEvidence",
     "ModelRuntime",
+    "ModelRuntimeError",
+    "ModelRuntimeReadiness",
+    "ModelRuntimeResponseError",
+    "ModelRuntimeStatus",
+    "ModelRuntimeUnavailableError",
     "PipelineBlocker",
     "PipelineCommandPlan",
     "PipelineNextStep",
@@ -244,6 +273,8 @@ __all__ = [
     "initialize_ledger",
     "list_review_queue",
     "mine_graph_connections",
+    "model_proposal_batch_json_schema",
+    "model_runtime_status_to_json",
     "pipeline_command_plan_to_json",
     "pipeline_next_to_json",
     "pipeline_status_to_json",
@@ -252,6 +283,7 @@ __all__ = [
     "review_next_decision_result_to_json",
     "project_ledger_graph",
     "propose_assertions_for_document",
+    "prompt_id_for_text",
     "read_briefing_citation_registry",
     "reject_proposed_change",
     "review_packet_to_json",
@@ -261,4 +293,6 @@ __all__ = [
     "run_review_drain",
     "run_review_next_decision",
     "resolve_briefing_citation",
+    "parse_model_proposal_batch_json",
+    "validate_model_proposal",
 ]

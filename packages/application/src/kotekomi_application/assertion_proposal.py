@@ -11,6 +11,7 @@ from kotekomi_domain import Document, ProposedChange, ProvenanceActivity, Review
 from kotekomi_domain.models import JsonValue
 
 from kotekomi_application.model_proposal_validation import validate_model_proposal
+from kotekomi_application.model_runtime import ModelOutputValidationError
 from kotekomi_application.ports import ArchiveStore, ModelProposal, ModelRuntime
 
 HASH_ID_LENGTH = 24
@@ -58,9 +59,12 @@ def propose_assertions_for_document(
         model_name=model_runtime.model_name,
         prompt_id=model_runtime.prompt_id,
     )
-    proposals = tuple(validate_model_proposal(proposal) for proposal in proposals)
+    try:
+        proposals = tuple(validate_model_proposal(proposal) for proposal in proposals)
+    except ValueError as exc:
+        raise ModelOutputValidationError(f"Invalid ModelRuntime proposal: {exc}") from exc
     for proposal in proposals:
-        _validate_proposal_references(proposal, document)
+        _validate_proposal_references(proposal, document, document_text)
     proposed_changes = tuple(
         _build_proposed_change(
             proposal=proposal,
@@ -152,14 +156,23 @@ def _build_proposed_change(
     )
 
 
-def _validate_proposal_references(proposal: ModelProposal, document: Document) -> None:
+def _validate_proposal_references(
+    proposal: ModelProposal,
+    document: Document,
+    document_text: str,
+) -> None:
     evidence_source_id = proposal.evidence.get("source_id")
     evidence_document_id = proposal.evidence.get("document_id")
     if evidence_source_id != document.source_id:
-        raise ValueError(
+        raise ModelOutputValidationError(
             "ModelRuntime proposal evidence source_id does not match the Document source_id."
         )
     if evidence_document_id != document.id:
-        raise ValueError(
+        raise ModelOutputValidationError(
             "ModelRuntime proposal evidence document_id does not match the Document id."
+        )
+    exact_text = proposal.evidence.get("exact_text")
+    if not isinstance(exact_text, str) or exact_text not in document_text:
+        raise ModelOutputValidationError(
+            "ModelRuntime proposal evidence exact_text does not occur in the Document."
         )

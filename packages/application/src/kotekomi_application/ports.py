@@ -240,6 +240,25 @@ class ModelRuntime(Protocol):
 
 
 @dataclass(frozen=True)
+class ModelRuntimeStatus:
+    adapter: str
+    endpoint: str
+    model: str
+    reachable: bool
+    model_available: bool
+    model_state: str | None
+    idle_slots: int | None
+    total_slots: int | None
+    ready: bool
+    error_code: str | None = None
+    error_message: str | None = None
+
+
+class ModelRuntimeReadiness(Protocol):
+    def check_readiness(self) -> ModelRuntimeStatus: ...
+
+
+@dataclass(frozen=True)
 class GraphNode:
     id: str
     node_type: str

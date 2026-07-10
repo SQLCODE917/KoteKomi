@@ -57,7 +57,7 @@ def test_fixture_model_runtime_rejects_malformed_fixture(tmp_path: Path) -> None
     fixture_path = tmp_path / "bad_output.json"
     fixture_path.write_text('{"proposals": [{"record_type": "Assertion"}]}')
 
-    with pytest.raises(ValueError, match=r"proposals\[0\]\.stable_label"):
+    with pytest.raises(ValueError, match=r"proposals\.0\.Assertion\.stable_label"):
         FixtureModelRuntime(fixture_path)
 
 
@@ -107,5 +107,5 @@ def test_fixture_model_runtime_rejects_unsupported_record_type(tmp_path: Path) -
         """
     )
 
-    with pytest.raises(ValueError, match="Unsupported ModelProposal record_type: Place"):
+    with pytest.raises(ValueError, match="Input tag 'Place'"):
         FixtureModelRuntime(fixture_path)

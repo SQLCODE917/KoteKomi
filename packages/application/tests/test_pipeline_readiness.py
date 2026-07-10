@@ -154,10 +154,7 @@ def test_pipeline_status_document_without_assertions_recommends_assertion_propos
     )
 
     assert status.stage is PipelineStage.READY_FOR_ASSERTION_PROPOSAL
-    assert status.next_command == (
-        "kotekomi source propose-assertions --document-id <document_id> "
-        "--model-output-fixture <path>"
-    )
+    assert status.next_command == "kotekomi source propose-assertions --document-id <document_id>"
     assert status.candidate_document_ids == ("doc_article_a",)
 
 
@@ -360,6 +357,7 @@ def test_command_plan_auto_selects_single_candidate_document_for_assertion_propo
         PipelineStatusInput(
             ledger_path="/tmp/kotekomi.db",
             archive_path="/tmp/archive",
+            model_runtime_adapter="fixture",
             model_output_fixture_path="/tmp/proposals.json",
         ),
         FakePipelineLedger(records=(source_fixture(), document_fixture())),
@@ -371,6 +369,8 @@ def test_command_plan_auto_selects_single_candidate_document_for_assertion_propo
         "propose-assertions",
         "--document-id",
         "doc_article_a",
+        "--model-runtime",
+        "fixture",
         "--model-output-fixture",
         "/tmp/proposals.json",
         "--ledger-path",
@@ -385,6 +385,7 @@ def test_command_plan_requires_document_id_when_multiple_candidates_exist() -> N
         PipelineStatusInput(
             ledger_path="/tmp/kotekomi.db",
             archive_path="/tmp/archive",
+            model_runtime_adapter="fixture",
             model_output_fixture_path="/tmp/proposals.json",
         ),
         FakePipelineLedger(
@@ -404,12 +405,41 @@ def test_command_plan_requires_document_id_when_multiple_candidates_exist() -> N
     )
 
 
+def test_command_plan_preserves_resolved_ollama_profile() -> None:
+    status = get_pipeline_status(
+        PipelineStatusInput(
+            ledger_path="/tmp/kotekomi.db",
+            archive_path="/tmp/archive",
+            model_runtime_adapter="ollama",
+            model_endpoint="http://127.0.0.1:11434",
+            model_name="qwen3:30b-a3b-instruct-2507-q4_K_M",
+            model_prompt_path="/tmp/propose_assertions.md",
+            model_timeout_seconds=240,
+            model_context_tokens=16384,
+            model_max_output_tokens=8192,
+        ),
+        FakePipelineLedger(records=(source_fixture(), document_fixture())),
+    )
+
+    assert status.next_command_plan.ready_to_execute is True
+    assert status.next_command_plan.argv[4:10] == (
+        "--model-runtime",
+        "ollama",
+        "--model-endpoint",
+        "http://127.0.0.1:11434",
+        "--model-name",
+        "qwen3:30b-a3b-instruct-2507-q4_K_M",
+    )
+    assert "16384" in status.next_command_plan.argv
+
+
 def test_command_plan_rejects_non_candidate_document_id() -> None:
     with pytest.raises(ValueError, match="is not a candidate Document"):
         get_pipeline_status(
             PipelineStatusInput(
                 ledger_path="/tmp/kotekomi.db",
                 archive_path="/tmp/archive",
+                model_runtime_adapter="fixture",
                 model_output_fixture_path="/tmp/proposals.json",
                 document_id="doc_missing",
             ),

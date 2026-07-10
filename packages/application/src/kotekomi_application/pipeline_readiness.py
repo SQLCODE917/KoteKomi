@@ -34,10 +34,7 @@ from kotekomi_application.review_queue_packet import (
 )
 
 SOURCE_INGEST_COMMAND = "kotekomi source add-file <path>"
-ASSERTION_PROPOSAL_COMMAND = (
-    "kotekomi source propose-assertions --document-id <document_id> "
-    "--model-output-fixture <path>"
-)
+ASSERTION_PROPOSAL_COMMAND = "kotekomi source propose-assertions --document-id <document_id>"
 REVIEW_NEXT_COMMAND = "kotekomi review next"
 GRAPH_PROJECT_COMMAND = "kotekomi graph project"
 GRAPH_MINE_COMMAND = "kotekomi graph mine"
@@ -64,6 +61,13 @@ class PipelineStatusInput:
     ledger_path: str | None = None
     archive_path: str | None = None
     source_file_path: str | None = None
+    model_runtime_adapter: str | None = None
+    model_endpoint: str | None = None
+    model_name: str | None = None
+    model_prompt_path: str | None = None
+    model_timeout_seconds: float | None = None
+    model_context_tokens: int | None = None
+    model_max_output_tokens: int | None = None
     model_output_fixture_path: str | None = None
     document_id: str | None = None
     briefing_title: str | None = None
@@ -393,13 +397,16 @@ def _assertion_proposal_plan(
     candidate_document_ids: tuple[str, ...],
 ) -> PipelineCommandPlan:
     selected_document_id = _selected_document_id(pipeline_input, candidate_document_ids)
+    runtime_adapter = pipeline_input.model_runtime_adapter
     missing_inputs = (
         *_document_id_missing_inputs(pipeline_input, candidate_document_ids, selected_document_id),
-        *_missing_path(
-            pipeline_input.model_output_fixture_path,
-            "model_output_fixture_path",
-            "Path to a model output fixture JSON file.",
+        *_missing_string(
+            runtime_adapter,
+            "model_runtime_adapter",
+            "Configured ModelRuntime Adapter.",
+            allowed_values=("llama_server", "ollama", "fixture"),
         ),
+        *_runtime_missing_inputs(pipeline_input, runtime_adapter),
         *_missing_path(
             pipeline_input.ledger_path,
             "ledger_path",
@@ -409,13 +416,13 @@ def _assertion_proposal_plan(
     )
     argv: tuple[str, ...] = ()
     if not missing_inputs:
+        runtime_argv = _runtime_argv(pipeline_input)
         argv = (
             "source",
             "propose-assertions",
             "--document-id",
             _required_value(selected_document_id, "document_id"),
-            "--model-output-fixture",
-            _required_value(pipeline_input.model_output_fixture_path, "model_output_fixture_path"),
+            *runtime_argv,
             "--ledger-path",
             _required_value(pipeline_input.ledger_path, "ledger_path"),
             "--archive-path",
@@ -429,6 +436,85 @@ def _assertion_proposal_plan(
         missing_inputs=missing_inputs,
         blockers=(),
     )
+
+
+def _runtime_missing_inputs(
+    pipeline_input: PipelineStatusInput,
+    runtime_adapter: str | None,
+) -> tuple[PipelinePlanInputRequirement, ...]:
+    if runtime_adapter == "fixture":
+        return _missing_path(
+            pipeline_input.model_output_fixture_path,
+            "model_output_fixture_path",
+            "Path to a model output fixture JSON file.",
+        )
+    if runtime_adapter in ("llama_server", "ollama"):
+        return (
+            *_missing_string(
+                pipeline_input.model_endpoint,
+                "model_endpoint",
+                "Model runtime HTTP endpoint.",
+            ),
+            *_missing_string(pipeline_input.model_name, "model_name", "Model identifier."),
+            *_missing_path(
+                pipeline_input.model_prompt_path,
+                "model_prompt_path",
+                "Path to the extraction prompt.",
+            ),
+            *_missing_number(
+                pipeline_input.model_timeout_seconds,
+                "model_timeout_seconds",
+                "Model runtime timeout in seconds.",
+            ),
+            *_missing_number(
+                pipeline_input.model_context_tokens,
+                "model_context_tokens",
+                "Model context token budget.",
+            ),
+            *_missing_number(
+                pipeline_input.model_max_output_tokens,
+                "model_max_output_tokens",
+                "Model output token budget.",
+            ),
+        )
+    return ()
+
+
+def _runtime_argv(pipeline_input: PipelineStatusInput) -> tuple[str, ...]:
+    adapter = _required_value(pipeline_input.model_runtime_adapter, "model_runtime_adapter")
+    if adapter == "fixture":
+        return (
+            "--model-runtime",
+            adapter,
+            "--model-output-fixture",
+            _required_value(
+                pipeline_input.model_output_fixture_path,
+                "model_output_fixture_path",
+            ),
+        )
+    if adapter in ("llama_server", "ollama"):
+        return (
+            "--model-runtime",
+            adapter,
+            "--model-endpoint",
+            _required_value(pipeline_input.model_endpoint, "model_endpoint"),
+            "--model-name",
+            _required_value(pipeline_input.model_name, "model_name"),
+            "--model-prompt-path",
+            _required_value(pipeline_input.model_prompt_path, "model_prompt_path"),
+            "--model-timeout-seconds",
+            str(_required_number(pipeline_input.model_timeout_seconds, "model_timeout_seconds")),
+            "--model-context-tokens",
+            str(_required_number(pipeline_input.model_context_tokens, "model_context_tokens")),
+            "--model-max-output-tokens",
+            str(
+                _required_number(
+                    pipeline_input.model_max_output_tokens,
+                    "model_max_output_tokens",
+                )
+            ),
+        )
+    raise ValueError(f"Unsupported model_runtime_adapter: {adapter}")
 
 
 def _review_next_plan(
@@ -554,6 +640,23 @@ def _missing_string(
     )
 
 
+def _missing_number(
+    value: float | int | None,
+    name: str,
+    description: str,
+) -> tuple[PipelinePlanInputRequirement, ...]:
+    if value is not None and value > 0:
+        return ()
+    return (
+        PipelinePlanInputRequirement(
+            name=name,
+            kind="number",
+            required=True,
+            description=description,
+        ),
+    )
+
+
 def _selected_document_id(
     pipeline_input: PipelineStatusInput,
     candidate_document_ids: tuple[str, ...],
@@ -592,6 +695,12 @@ def _document_id_missing_inputs(
 
 def _required_value(value: str | None, name: str) -> str:
     if value is None or not value.strip():
+        raise ValueError(f"Missing required Pipeline command plan input: {name}.")
+    return value
+
+
+def _required_number(value: float | int | None, name: str) -> float | int:
+    if value is None or value <= 0:
         raise ValueError(f"Missing required Pipeline command plan input: {name}.")
     return value
 

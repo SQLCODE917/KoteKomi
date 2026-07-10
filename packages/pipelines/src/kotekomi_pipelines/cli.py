@@ -12,7 +12,6 @@ from pathlib import Path
 from typing import cast
 
 from kotekomi_adapters import (
-    FixtureModelRuntime,
     LocalArchiveStore,
     NetworkXGraphAnalyzer,
     SQLiteLedgerInitializer,
@@ -23,6 +22,8 @@ from kotekomi_application import (
     BriefingGenerationInput,
     GraphConnectionMiningInput,
     JsonValue,
+    ModelRuntimeError,
+    ModelRuntimeStatus,
     PipelineCommandPlan,
     PipelineNextStep,
     PipelineRunNextResult,
@@ -59,6 +60,7 @@ from kotekomi_application import (
     initialize_ledger,
     list_review_queue,
     mine_graph_connections,
+    model_runtime_status_to_json,
     pipeline_next_to_json,
     pipeline_status_to_json,
     project_ledger_graph,
@@ -77,7 +79,14 @@ from kotekomi_application import (
 from kotekomi_briefing import MarkdownBriefingRenderer
 from kotekomi_domain import ReviewStatus
 
-from kotekomi_pipelines.config import PipelineConfig, load_config
+from kotekomi_pipelines.config import MODEL_RUNTIME_ADAPTERS, PipelineConfig, load_config
+from kotekomi_pipelines.managed_llama_server import (
+    ManagedLlamaServerConfig,
+    get_managed_llama_server_status,
+    install_managed_llama_server,
+    uninstall_managed_llama_server,
+)
+from kotekomi_pipelines.model_runtime import build_model_runtime, build_model_runtime_readiness
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -101,16 +110,45 @@ def main(argv: list[str] | None = None) -> int:
         return add_source_file(config, args.path)
 
     if args.command == "source" and args.source_command == "propose-assertions":
-        config = load_config(
+        config = _load_model_config(
             config_path=args.config,
             ledger_path_override=args.ledger_path,
             archive_path_override=args.archive_path,
+            model_runtime_adapter=args.model_runtime,
+            model_endpoint=args.model_endpoint,
+            model_name=args.model_name,
+            model_prompt_path=args.model_prompt_path,
+            model_timeout_seconds=args.model_timeout_seconds,
+            model_context_tokens=args.model_context_tokens,
+            model_max_output_tokens=args.model_max_output_tokens,
         )
         return propose_source_assertions(
             config=config,
             document_id=args.document_id,
             model_output_fixture_path=args.model_output_fixture,
         )
+
+    if args.command == "model" and args.model_command == "status":
+        config = _load_model_config(
+            config_path=args.config,
+            ledger_path_override=None,
+            archive_path_override=None,
+            model_runtime_adapter=args.model_runtime,
+            model_endpoint=args.model_endpoint,
+            model_name=args.model_name,
+            model_prompt_path=args.model_prompt_path,
+            model_timeout_seconds=args.model_timeout_seconds,
+            model_context_tokens=args.model_context_tokens,
+            model_max_output_tokens=args.model_max_output_tokens,
+        )
+        return show_model_runtime_status(config=config, output_format=args.output_format)
+
+    if args.command == "model" and args.model_command == "server":
+            return manage_model_server(
+                server_command=args.server_command,
+                llama_server_path=getattr(args, "llama_server_path", None),
+                output_format=args.output_format,
+            )
 
     if args.command == "review" and args.review_command == "approve":
         config = load_config(
@@ -257,10 +295,17 @@ def main(argv: list[str] | None = None) -> int:
         )
 
     if args.command == "pipeline" and args.pipeline_command == "status":
-        config = load_config(
+        config = _load_model_config(
             config_path=args.config,
             ledger_path_override=args.ledger_path,
             archive_path_override=args.archive_path,
+            model_runtime_adapter=args.model_runtime,
+            model_endpoint=args.model_endpoint,
+            model_name=args.model_name,
+            model_prompt_path=args.model_prompt_path,
+            model_timeout_seconds=args.model_timeout_seconds,
+            model_context_tokens=args.model_context_tokens,
+            model_max_output_tokens=args.model_max_output_tokens,
         )
         return show_pipeline_status(
             config=config,
@@ -272,10 +317,17 @@ def main(argv: list[str] | None = None) -> int:
         )
 
     if args.command == "pipeline" and args.pipeline_command == "next":
-        config = load_config(
+        config = _load_model_config(
             config_path=args.config,
             ledger_path_override=args.ledger_path,
             archive_path_override=args.archive_path,
+            model_runtime_adapter=args.model_runtime,
+            model_endpoint=args.model_endpoint,
+            model_name=args.model_name,
+            model_prompt_path=args.model_prompt_path,
+            model_timeout_seconds=args.model_timeout_seconds,
+            model_context_tokens=args.model_context_tokens,
+            model_max_output_tokens=args.model_max_output_tokens,
         )
         return show_pipeline_next(
             config=config,
@@ -287,10 +339,17 @@ def main(argv: list[str] | None = None) -> int:
         )
 
     if args.command == "pipeline" and args.pipeline_command == "run-next":
-        config = load_config(
+        config = _load_model_config(
             config_path=args.config,
             ledger_path_override=args.ledger_path,
             archive_path_override=args.archive_path,
+            model_runtime_adapter=args.model_runtime,
+            model_endpoint=args.model_endpoint,
+            model_name=args.model_name,
+            model_prompt_path=args.model_prompt_path,
+            model_timeout_seconds=args.model_timeout_seconds,
+            model_context_tokens=args.model_context_tokens,
+            model_max_output_tokens=args.model_max_output_tokens,
         )
         return run_pipeline_next(
             config=config,
@@ -338,6 +397,33 @@ def entrypoint() -> None:
     raise SystemExit(main())
 
 
+def _load_model_config(
+    *,
+    config_path: Path | None,
+    ledger_path_override: Path | None,
+    archive_path_override: Path | None,
+    model_runtime_adapter: str | None,
+    model_endpoint: str | None,
+    model_name: str | None,
+    model_prompt_path: Path | None,
+    model_timeout_seconds: float | None,
+    model_context_tokens: int | None,
+    model_max_output_tokens: int | None,
+) -> PipelineConfig:
+    return load_config(
+        config_path=config_path,
+        ledger_path_override=ledger_path_override,
+        archive_path_override=archive_path_override,
+        model_runtime_adapter_override=model_runtime_adapter,
+        model_endpoint_override=model_endpoint,
+        model_name_override=model_name,
+        model_prompt_path_override=model_prompt_path,
+        model_timeout_seconds_override=model_timeout_seconds,
+        model_context_tokens_override=model_context_tokens,
+        model_max_output_tokens_override=model_max_output_tokens,
+    )
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="kotekomi")
     parser.add_argument(
@@ -369,9 +455,55 @@ def build_parser() -> argparse.ArgumentParser:
         help="Create ProposedChange records for a Document through a model runtime.",
     )
     propose_assertions_parser.add_argument("--document-id", required=True)
-    propose_assertions_parser.add_argument("--model-output-fixture", type=Path, required=True)
+    _add_model_runtime_arguments(propose_assertions_parser, include_fixture=True)
     propose_assertions_parser.add_argument("--ledger-path", type=Path, default=None)
     propose_assertions_parser.add_argument("--archive-path", type=Path, default=None)
+
+    model_parser = subparsers.add_parser("model", help="Local model runtime commands.")
+    model_subparsers = model_parser.add_subparsers(dest="model_command")
+    model_status_parser = model_subparsers.add_parser(
+        "status",
+        help="Check configured model runtime readiness.",
+    )
+    model_status_parser.add_argument(
+        "--format",
+        dest="output_format",
+        choices=("text", "json"),
+        default="text",
+    )
+    _add_model_runtime_arguments(model_status_parser, include_fixture=False)
+
+    model_server_parser = model_subparsers.add_parser(
+        "server",
+        help="Manage the current user's shared llama-server LaunchAgent.",
+    )
+    model_server_subparsers = model_server_parser.add_subparsers(
+        dest="server_command", required=True
+    )
+    model_server_install_parser = model_server_subparsers.add_parser(
+        "install",
+        help="Install and start the shared local llama-server router.",
+    )
+    model_server_install_parser.add_argument("--llama-server-path", type=Path, required=True)
+    model_server_status_parser = model_server_subparsers.add_parser(
+        "status",
+        help="Show shared llama-server LaunchAgent state.",
+    )
+    model_server_uninstall_parser = model_server_subparsers.add_parser(
+        "uninstall",
+        help="Stop and remove the shared local llama-server router.",
+    )
+    for server_parser in (
+        model_server_install_parser,
+        model_server_status_parser,
+        model_server_uninstall_parser,
+    ):
+        server_parser.add_argument(
+            "--format",
+            dest="output_format",
+            choices=("text", "json"),
+            default="text",
+        )
 
     review_parser = subparsers.add_parser("review", help="ProposedChange review commands.")
     review_subparsers = review_parser.add_subparsers(dest="review_command")
@@ -526,7 +658,7 @@ def build_parser() -> argparse.ArgumentParser:
     pipeline_status_parser.add_argument("--ledger-path", type=Path, default=None)
     pipeline_status_parser.add_argument("--archive-path", type=Path, default=None)
     pipeline_status_parser.add_argument("--source-file-path", type=Path, default=None)
-    pipeline_status_parser.add_argument("--model-output-fixture", type=Path, default=None)
+    _add_model_runtime_arguments(pipeline_status_parser, include_fixture=True)
     pipeline_status_parser.add_argument("--document-id", default=None)
     pipeline_status_parser.add_argument("--briefing-title", default=None)
     pipeline_next_parser = pipeline_subparsers.add_parser(
@@ -542,7 +674,7 @@ def build_parser() -> argparse.ArgumentParser:
     pipeline_next_parser.add_argument("--ledger-path", type=Path, default=None)
     pipeline_next_parser.add_argument("--archive-path", type=Path, default=None)
     pipeline_next_parser.add_argument("--source-file-path", type=Path, default=None)
-    pipeline_next_parser.add_argument("--model-output-fixture", type=Path, default=None)
+    _add_model_runtime_arguments(pipeline_next_parser, include_fixture=True)
     pipeline_next_parser.add_argument("--document-id", default=None)
     pipeline_next_parser.add_argument("--briefing-title", default=None)
     pipeline_run_next_parser = pipeline_subparsers.add_parser(
@@ -559,7 +691,7 @@ def build_parser() -> argparse.ArgumentParser:
     pipeline_run_next_parser.add_argument("--ledger-path", type=Path, default=None)
     pipeline_run_next_parser.add_argument("--archive-path", type=Path, default=None)
     pipeline_run_next_parser.add_argument("--source-file-path", type=Path, default=None)
-    pipeline_run_next_parser.add_argument("--model-output-fixture", type=Path, default=None)
+    _add_model_runtime_arguments(pipeline_run_next_parser, include_fixture=True)
     pipeline_run_next_parser.add_argument("--document-id", default=None)
     pipeline_run_next_parser.add_argument("--briefing-title", default=None)
 
@@ -588,6 +720,23 @@ def build_parser() -> argparse.ArgumentParser:
     generate_parser.add_argument("--archive-path", type=Path, default=None)
 
     return parser
+
+
+def _add_model_runtime_arguments(
+    parser: argparse.ArgumentParser,
+    *,
+    include_fixture: bool,
+) -> None:
+    choices = MODEL_RUNTIME_ADAPTERS if include_fixture else ("llama_server", "ollama")
+    parser.add_argument("--model-runtime", choices=choices, default=None)
+    parser.add_argument("--model-endpoint", default=None)
+    parser.add_argument("--model-name", default=None)
+    parser.add_argument("--model-prompt-path", type=Path, default=None)
+    parser.add_argument("--model-timeout-seconds", type=float, default=None)
+    parser.add_argument("--model-context-tokens", type=int, default=None)
+    parser.add_argument("--model-max-output-tokens", type=int, default=None)
+    if include_fixture:
+        parser.add_argument("--model-output-fixture", type=Path, default=None)
 
 
 def init_ledger(config: PipelineConfig) -> int:
@@ -637,24 +786,41 @@ def add_source_file(config: PipelineConfig, source_file_path: Path) -> int:
     return 0
 
 
+def show_model_runtime_status(*, config: PipelineConfig, output_format: str) -> int:
+    runtime = build_model_runtime_readiness(config.model_runtime)
+    status = runtime.check_readiness()
+    if output_format == "json":
+        print(json.dumps(model_runtime_status_to_json(status), indent=2, sort_keys=True))
+    else:
+        print(_model_runtime_status_text(status))
+    return 0 if status.ready else 2
+
+
 def propose_source_assertions(
     *,
     config: PipelineConfig,
     document_id: str,
-    model_output_fixture_path: Path,
+    model_output_fixture_path: Path | None,
 ) -> int:
     archive_store = LocalArchiveStore(config.archive_path)
-    model_runtime = FixtureModelRuntime(model_output_fixture_path)
-    with sqlite_ledger_transaction(config.ledger_path) as ledger_repository:
-        result = propose_assertions_for_document(
-            AssertionProposalInput(
-                document_id=document_id,
-                proposed_at=datetime.now(UTC),
-            ),
-            archive_store,
-            ledger_repository,
-            model_runtime,
-        )
+    model_runtime = build_model_runtime(
+        config.model_runtime,
+        model_output_fixture_path=model_output_fixture_path,
+    )
+    try:
+        with sqlite_ledger_transaction(config.ledger_path) as ledger_repository:
+            result = propose_assertions_for_document(
+                AssertionProposalInput(
+                    document_id=document_id,
+                    proposed_at=datetime.now(UTC),
+                ),
+                archive_store,
+                ledger_repository,
+                model_runtime,
+            )
+    except ModelRuntimeError as exc:
+        print(f"Model runtime error: {exc}", file=sys.stderr)
+        return 2
 
     print(f"Document: {result.document_id}")
     print(f"Source: {result.source_id}")
@@ -1073,6 +1239,13 @@ def _pipeline_status_input(
         ledger_path=str(config.ledger_path),
         archive_path=str(config.archive_path),
         source_file_path=_optional_resolved_path(source_file_path),
+        model_runtime_adapter=config.model_runtime.adapter,
+        model_endpoint=config.model_runtime.endpoint,
+        model_name=config.model_runtime.model,
+        model_prompt_path=str(config.model_runtime.prompt_path),
+        model_timeout_seconds=config.model_runtime.timeout_seconds,
+        model_context_tokens=config.model_runtime.context_tokens,
+        model_max_output_tokens=config.model_runtime.max_output_tokens,
         model_output_fixture_path=_optional_resolved_path(model_output_fixture_path),
         document_id=document_id,
         briefing_title=briefing_title,
@@ -1289,6 +1462,79 @@ def _review_readiness_text(status: ReviewReadinessStatus) -> str:
     else:
         lines.append("  none")
     return "\n".join(lines)
+
+
+def _model_runtime_status_text(status: ModelRuntimeStatus) -> str:
+    lines = [
+        f"Model runtime: {status.adapter}",
+        f"Endpoint: {status.endpoint}",
+        f"Model: {status.model}",
+        f"Reachable: {_bool_text(status.reachable)}",
+        f"Model available: {_bool_text(status.model_available)}",
+        f"Model state: {status.model_state or 'unknown'}",
+        f"Idle slots: {_slot_count_text(status.idle_slots, status.total_slots)}",
+        f"Ready: {_bool_text(status.ready)}",
+    ]
+    if status.error_code is not None:
+        lines.append(f"Error code: {status.error_code}")
+    if status.error_message is not None:
+        lines.append(f"Error: {status.error_message}")
+    return "\n".join(lines)
+
+
+def manage_model_server(
+    *,
+    server_command: str,
+    llama_server_path: Path | None,
+    output_format: str,
+) -> int:
+    home_path = Path.home()
+    if server_command == "install":
+        if llama_server_path is None:
+            raise ValueError("model server install requires --llama-server-path.")
+        agent_path = install_managed_llama_server(
+            ManagedLlamaServerConfig(
+                executable_path=llama_server_path.resolve(),
+                home_path=home_path,
+            )
+        )
+        _write_model_server_result(
+            {"action": "installed", "agent_path": str(agent_path)}, output_format
+        )
+        return 0
+    if server_command == "status":
+        status = get_managed_llama_server_status(home_path=home_path)
+        _write_model_server_result(
+            {
+                "installed": status.installed,
+                "loaded": status.loaded,
+                "path_guarded": status.path_guarded,
+                "agent_path": str(status.agent_path),
+            },
+            output_format,
+        )
+        return 0
+    if server_command == "uninstall":
+        agent_path = uninstall_managed_llama_server(home_path=home_path)
+        _write_model_server_result(
+            {"action": "uninstalled", "agent_path": str(agent_path)}, output_format
+        )
+        return 0
+    raise ValueError(f"Unsupported model server command: {server_command}")
+
+
+def _write_model_server_result(result: dict[str, object], output_format: str) -> None:
+    if output_format == "json":
+        print(json.dumps(result, indent=2, sort_keys=True))
+        return
+    for key, value in result.items():
+        print(f"{key}: {value}")
+
+
+def _slot_count_text(idle_slots: int | None, total_slots: int | None) -> str:
+    if idle_slots is None or total_slots is None:
+        return "not reported"
+    return f"{idle_slots}/{total_slots}"
 
 
 def _pipeline_status_text(status: PipelineStatus) -> str:

@@ -125,10 +125,14 @@ version = "0.1.0"
 source = { editable = "packages/application" }
 dependencies = [
     { name = "kotekomi-domain" },
+    { name = "pydantic" },
 ]
 
 [package.metadata]
-requires-dist = [{ name = "kotekomi-domain", editable = "packages/domain" }]
+requires-dist = [
+    { name = "kotekomi-domain", editable = "packages/domain" },
+    { name = "pydantic", specifier = ">=2.11,<3" },
+]
 
 [[package]]
 name = "kotekomi-briefing"
