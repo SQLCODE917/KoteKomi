@@ -38,7 +38,7 @@ ASSERTION_PROPOSAL_COMMAND = (
     "kotekomi source propose-assertions --document-id <document_id> "
     "--model-output-fixture <path>"
 )
-REVIEW_LIST_COMMAND = "kotekomi review list"
+REVIEW_NEXT_COMMAND = "kotekomi review next"
 GRAPH_PROJECT_COMMAND = "kotekomi graph project"
 GRAPH_MINE_COMMAND = "kotekomi graph mine"
 BRIEFING_GENERATE_COMMAND = "kotekomi briefing generate --title <title>"
@@ -162,9 +162,9 @@ def get_pipeline_status(
         )
         return PipelineStatus(
             stage=PipelineStage.REVIEW_REQUIRED,
-            next_command=REVIEW_LIST_COMMAND,
+            next_command=REVIEW_NEXT_COMMAND,
             next_command_plan=next_command_plan,
-            safe_commands=(REVIEW_LIST_COMMAND,),
+            safe_commands=(REVIEW_NEXT_COMMAND,),
             blocked_commands=(
                 GRAPH_PROJECT_COMMAND,
                 GRAPH_MINE_COMMAND,
@@ -318,7 +318,7 @@ def _command_plan(
     if stage is PipelineStage.READY_FOR_ASSERTION_PROPOSAL:
         return _assertion_proposal_plan(stage, pipeline_input, candidate_document_ids)
     if stage is PipelineStage.REVIEW_REQUIRED:
-        return _review_list_plan(stage, pipeline_input, blockers)
+        return _review_next_plan(stage, pipeline_input, blockers)
     if stage is PipelineStage.READY_FOR_GRAPH_PROJECTION:
         return _ledger_only_plan(
             stage=stage,
@@ -431,7 +431,7 @@ def _assertion_proposal_plan(
     )
 
 
-def _review_list_plan(
+def _review_next_plan(
     stage: PipelineStage,
     pipeline_input: PipelineStatusInput,
     blockers: tuple[PipelineBlocker, ...],
@@ -439,8 +439,8 @@ def _review_list_plan(
     return _ledger_only_plan(
         stage=stage,
         pipeline_input=pipeline_input,
-        command=REVIEW_LIST_COMMAND,
-        argv_prefix=("review", "list"),
+        command=REVIEW_NEXT_COMMAND,
+        argv_prefix=("review", "next"),
         blockers=blockers,
     )
 
@@ -658,7 +658,7 @@ def _review_blockers(
 ) -> tuple[PipelineBlocker, ...]:
     return tuple(
         PipelineBlocker(
-            command=REVIEW_LIST_COMMAND,
+            command=REVIEW_NEXT_COMMAND,
             reason=(
                 f"{blocker.record_type} {blocker.stable_label} references "
                 f"{blocker.referenced_type} {blocker.referenced_id} "

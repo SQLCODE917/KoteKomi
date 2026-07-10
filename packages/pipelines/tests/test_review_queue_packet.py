@@ -84,6 +84,26 @@ def review_list_json_args(ledger_path: Path) -> list[str]:
     ]
 
 
+def review_next_args(ledger_path: Path) -> list[str]:
+    return [
+        "review",
+        "next",
+        "--ledger-path",
+        str(ledger_path),
+    ]
+
+
+def review_next_json_args(ledger_path: Path) -> list[str]:
+    return [
+        "review",
+        "next",
+        "--format",
+        "json",
+        "--ledger-path",
+        str(ledger_path),
+    ]
+
+
 def review_show_args(ledger_path: Path, proposed_change_id: str) -> list[str]:
     return [
         "review",
@@ -209,6 +229,43 @@ def test_review_list_and_show_render_fixture_review_context(
     assert "EvidenceSpan: evs_delay_after_us_cyber_concerns (pending)" in show_output
 
 
+def test_review_next_renders_fixture_packet_and_advances_after_approval(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    ledger_path, _ = prepare_fixture_proposals(tmp_path, capsys)
+
+    assert main(review_next_args(ledger_path)) == 0
+    next_output = capsys.readouterr().out
+    assert "Next ProposedChange:" in next_output
+    assert "Record type: Organization" in next_output
+    assert "Stable label: anthropic_ai_lab" in next_output
+    assert "Review action plans:" in next_output
+    assert "approve: kotekomi review approve (ready: no)" in next_output
+
+    assert main(review_next_json_args(ledger_path)) == 0
+    next_json = json.loads(capsys.readouterr().out)
+    assert next_json["has_next"] is True
+    assert next_json["item"]["record_type"] == "Organization"
+    assert next_json["item"]["stable_label"] == "anthropic_ai_lab"
+    assert next_json["packet"]["record_type"] == "Organization"
+    assert [action_plan["action"] for action_plan in next_json["action_plans"]] == [
+        "approve",
+        "reject",
+        "edit",
+    ]
+
+    first_change_id = next_json["item"]["proposed_change_id"]
+    assert main(review_approve_args(ledger_path, first_change_id)) == 0
+    capsys.readouterr()
+
+    assert main(review_next_json_args(ledger_path)) == 0
+    advanced_json = json.loads(capsys.readouterr().out)
+    assert advanced_json["has_next"] is True
+    assert advanced_json["item"]["proposed_change_id"] != first_change_id
+    assert advanced_json["item"]["record_type"] == "Organization"
+
+
 def test_review_export_writes_json_that_can_feed_review_edit(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
@@ -259,7 +316,7 @@ def test_review_status_and_json_outputs_are_agent_readable(
     assert "Review required: yes" in status_text
     assert "Pending ProposedChanges: 16" in status_text
     assert "Can project graph: no" in status_text
-    assert "Next recommended command: kotekomi review list" in status_text
+    assert "Next recommended command: kotekomi review next" in status_text
 
     assert main(review_status_json_args(ledger_path)) == 0
     status_json = json.loads(capsys.readouterr().out)
@@ -268,7 +325,7 @@ def test_review_status_and_json_outputs_are_agent_readable(
     assert status_json["can_project_graph"] is False
     assert status_json["can_generate_briefing"] is False
     assert status_json["pending_record_type_counts"]["Assertion"] == 3
-    assert status_json["next_recommended_command"] == "kotekomi review list"
+    assert status_json["next_recommended_command"] == "kotekomi review next"
 
     assert main(review_list_json_args(ledger_path)) == 0
     list_json = json.loads(capsys.readouterr().out)

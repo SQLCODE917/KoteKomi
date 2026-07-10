@@ -179,7 +179,7 @@ kotekomi review show --format json
 `review_required` is `true` when at least one matching ProposedChange is pending.
 `can_project_graph` is `false` when `review_required` is `true`.
 `can_generate_briefing` is `false` when `review_required` is `true`.
-`next_recommended_command` is `kotekomi review list` when review is required.
+`next_recommended_command` is `kotekomi review next` when review is required.
 `next_recommended_command` is `kotekomi graph project` when no review is required.
 
 Readiness counts `pending` references separately from `missing` references.
@@ -193,7 +193,7 @@ Example:
 The Ledger has 16 pending ProposedChange records.
 review_required = true
 can_project_graph = false
-next_recommended_command = kotekomi review list
+next_recommended_command = kotekomi review next
 ```
 
 Example:

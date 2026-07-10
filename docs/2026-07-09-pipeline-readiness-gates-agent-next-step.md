@@ -212,7 +212,7 @@ Example:
 ```text
 The Ledger has pending ProposedChange records.
 stage = review_required
-next_command = kotekomi review list
+next_command = kotekomi review next
 ```
 
 Example:

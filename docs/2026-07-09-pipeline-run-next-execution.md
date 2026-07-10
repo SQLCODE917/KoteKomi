@@ -41,7 +41,7 @@ Forbidden approaches:
 - `pipeline run-next --format json` must emit structured JSON.
 - Missing inputs must return exit code `2`.
 - `briefing_current` must return exit code `0` without execution.
-- `review_required` must execute only the safe planned `review list`.
+- `review_required` must execute only the safe planned `review next`.
 - The result must include captured stdout and stderr lines.
 
 ## 5. Invariants
@@ -152,7 +152,7 @@ The result exit code is `0` when the plan is ready.
 If the plan is ready, `run-next` calls the existing CLI dispatcher with `command_plan.argv`.
 The result exit code is the dispatched command exit code.
 
-In `review_required`, the planned command is `review list`.
+In `review_required`, the planned command is `review next`.
 `run-next` must not approve, reject, or edit ProposedChange records.
 
 ## 11. Acceptance Criteria
@@ -163,7 +163,7 @@ In `review_required`, the planned command is `review list`.
 - Pipeline tests prove dry run does not mutate the Ledger.
 - Pipeline tests prove source ingest runs through `run-next`.
 - Pipeline tests prove assertion proposal runs through `run-next`.
-- Pipeline tests prove review-required runs `review list` only.
+- Pipeline tests prove review-required runs `review next` only.
 - Pipeline tests prove graph mining runs through `run-next`.
 - Pipeline tests prove missing Briefing title returns exit code `2`.
 - Pipeline tests prove Briefing generation runs through `run-next`.
@@ -187,7 +187,7 @@ Captured command output is structured as lines.
 - Spawn a subprocess.
   The chosen design uses internal dispatch for testability.
 - Block review-required execution.
-  The chosen design allows safe `review list` only.
+  The chosen design allows safe `review next` only.
 - Return pass-through output only.
   The chosen design returns structured JSON for agents.
 

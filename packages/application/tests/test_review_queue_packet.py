@@ -4,14 +4,17 @@ from typing import cast
 import pytest
 from kotekomi_application import (
     ReviewEditableRecordExportInput,
+    ReviewNextInput,
     ReviewPacketInput,
     ReviewQueueInput,
     ReviewReadinessInput,
     ReviewReferenceResolution,
     export_review_editable_record,
+    get_review_next,
     get_review_packet,
     get_review_readiness,
     list_review_queue,
+    review_next_result_to_json,
     review_packet_to_json,
     review_queue_result_to_json,
     review_readiness_to_json,
@@ -168,6 +171,83 @@ def test_review_queue_filters_by_status_type_source_and_document() -> None:
     assert [item.proposed_change_id for item in result.items] == ["pcg_rejected_assertion"]
 
 
+def test_review_next_selects_first_pending_packet_and_action_plans() -> None:
+    ledger = seeded_ledger(
+        (
+            proposed_change("pcg_assertion", "Assertion", assertion_json()),
+            proposed_change("pcg_actor", "Actor", actor_json("act_a", "Actor A")),
+            proposed_change("pcg_organization", "Organization", organization_json()),
+        )
+    )
+
+    result = get_review_next(ReviewNextInput(), ledger)
+
+    assert result.has_next is True
+    assert result.item is not None
+    assert result.item.proposed_change_id == "pcg_organization"
+    assert result.packet is not None
+    assert result.packet.proposed_change_id == "pcg_organization"
+    assert result.packet.record_type == "Organization"
+    assert [action_plan.action for action_plan in result.action_plans] == [
+        "approve",
+        "reject",
+        "edit",
+    ]
+    assert all(action_plan.ready_to_execute is False for action_plan in result.action_plans)
+    assert result.action_plans[0].missing_inputs[0].name == "reviewer"
+
+
+def test_review_next_filters_and_returns_empty_result() -> None:
+    ledger = seeded_ledger(
+        (
+            proposed_change("pcg_actor", "Actor", actor_json("act_a", "Actor A")),
+            proposed_change(
+                "pcg_assertion",
+                "Assertion",
+                assertion_json(),
+            ),
+            proposed_change(
+                "pcg_other_source_assertion",
+                "Assertion",
+                assertion_json("ast_other_source"),
+                source_id="src_other",
+                document_id="doc_other",
+            ),
+        )
+    )
+
+    result = get_review_next(
+        ReviewNextInput(
+            record_type="Assertion",
+            source_id="src_article_a",
+            document_id="doc_article_a",
+        ),
+        ledger,
+    )
+    empty_result = get_review_next(ReviewNextInput(record_type="Relationship"), ledger)
+
+    assert result.has_next is True
+    assert result.item is not None
+    assert result.item.proposed_change_id == "pcg_assertion"
+    assert empty_result.has_next is False
+    assert empty_result.item is None
+    assert empty_result.packet is None
+    assert empty_result.action_plans == ()
+
+
+def test_review_next_fails_fast_on_malformed_selected_proposed_change() -> None:
+    malformed = ProposedChange(
+        id="pcg_malformed",
+        proposed_json={"record_type": "Assertion", "stable_label": "malformed"},
+        created_at=NOW,
+        updated_at=NOW,
+    )
+    ledger = FakeReviewQueueLedger((malformed,))
+
+    with pytest.raises(ValueError, match="missing record object"):
+        get_review_next(ReviewNextInput(), ledger)
+
+
 def test_review_packet_includes_evidence_assertion_context_and_reference_resolution() -> None:
     pending_evidence_change = proposed_change(
         "pcg_evidence",
@@ -275,7 +355,7 @@ def test_review_readiness_reports_pending_and_missing_references() -> None:
     assert status.missing_reference_count == 1
     assert status.can_project_graph is False
     assert status.can_generate_briefing is False
-    assert status.next_recommended_command == "kotekomi review list"
+    assert status.next_recommended_command == "kotekomi review next"
     blocker_keys = {
         (blocker.proposed_change_id, blocker.referenced_type, blocker.referenced_id)
         for blocker in status.blockers
@@ -342,10 +422,12 @@ def test_review_state_json_serializers_return_structured_objects() -> None:
     queue = list_review_queue(ReviewQueueInput(), ledger)
     packet = get_review_packet(ReviewPacketInput("pcg_assertion"), ledger)
     readiness = get_review_readiness(ReviewReadinessInput(), ledger)
+    next_result = get_review_next(ReviewNextInput(), ledger)
 
     queue_json = review_queue_result_to_json(queue)
     packet_json = review_packet_to_json(packet)
     readiness_json = review_readiness_to_json(readiness)
+    next_json = review_next_result_to_json(next_result)
 
     queue_items = cast(list[dict[str, JsonValue]], queue_json["items"])
     assert isinstance(queue_items, list)
@@ -364,6 +446,16 @@ def test_review_state_json_serializers_return_structured_objects() -> None:
     assert readiness_json["review_required"] is True
     assert readiness_json["pending_count"] == 1
     assert isinstance(readiness_json["blockers"], list)
+    assert next_json["has_next"] is True
+    assert isinstance(next_json["item"], dict)
+    assert isinstance(next_json["packet"], dict)
+    action_plans = cast(list[dict[str, JsonValue]], next_json["action_plans"])
+    assert [action_plan["action"] for action_plan in action_plans] == [
+        "approve",
+        "reject",
+        "edit",
+    ]
+    assert action_plans[0]["ready_to_execute"] is False
 
 
 def seeded_ledger(proposed_changes: tuple[ProposedChange, ...]) -> FakeReviewQueueLedger:

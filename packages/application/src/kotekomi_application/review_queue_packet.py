@@ -194,6 +194,46 @@ class ReviewReadinessStatus:
     blockers: tuple[ReviewReadinessBlocker, ...]
 
 
+@dataclass(frozen=True)
+class ReviewNextInput:
+    record_type: str | None = None
+    source_id: str | None = None
+    document_id: str | None = None
+
+
+@dataclass(frozen=True)
+class ReviewActionPlanInputRequirement:
+    name: str
+    kind: str
+    required: bool
+    description: str
+
+
+@dataclass(frozen=True)
+class ReviewActionPlanBlocker:
+    blocker_type: str
+    blocker_id: str
+    reason: str
+
+
+@dataclass(frozen=True)
+class ReviewActionPlan:
+    action: str
+    command: str
+    argv: tuple[str, ...]
+    ready_to_execute: bool
+    missing_inputs: tuple[ReviewActionPlanInputRequirement, ...]
+    blockers: tuple[ReviewActionPlanBlocker, ...]
+
+
+@dataclass(frozen=True)
+class ReviewNextResult:
+    has_next: bool
+    item: ReviewQueueItem | None
+    packet: ReviewPacket | None
+    action_plans: tuple[ReviewActionPlan, ...]
+
+
 def list_review_queue(
     review_input: ReviewQueueInput,
     ledger_repository: ReviewQueuePacketLedger,
@@ -210,6 +250,39 @@ def list_review_queue(
         and _matches_optional_filter(proposed_change.document_id, review_input.document_id)
     )
     return ReviewQueueResult(items=tuple(sorted(items, key=_queue_sort_key)))
+
+
+def get_review_next(
+    review_input: ReviewNextInput,
+    ledger_repository: ReviewQueuePacketLedger,
+) -> ReviewNextResult:
+    queue = list_review_queue(
+        ReviewQueueInput(
+            review_status=ReviewStatus.PENDING,
+            record_type=review_input.record_type,
+            source_id=review_input.source_id,
+            document_id=review_input.document_id,
+        ),
+        ledger_repository,
+    )
+    if not queue.items:
+        return ReviewNextResult(
+            has_next=False,
+            item=None,
+            packet=None,
+            action_plans=(),
+        )
+    item = queue.items[0]
+    packet = get_review_packet(
+        ReviewPacketInput(proposed_change_id=item.proposed_change_id),
+        ledger_repository,
+    )
+    return ReviewNextResult(
+        has_next=True,
+        item=item,
+        packet=packet,
+        action_plans=_review_action_plans(item.proposed_change_id),
+    )
 
 
 def get_review_packet(
@@ -301,7 +374,7 @@ def get_review_readiness(
         ),
         can_project_graph=not review_required,
         can_generate_briefing=not review_required,
-        next_recommended_command="kotekomi review list"
+        next_recommended_command="kotekomi review next"
         if review_required
         else "kotekomi graph project",
         blockers=tuple(blockers),
@@ -310,20 +383,7 @@ def get_review_readiness(
 
 def review_queue_result_to_json(result: ReviewQueueResult) -> dict[str, JsonValue]:
     return {
-        "items": [
-            {
-                "proposed_change_id": item.proposed_change_id,
-                "review_status": item.review_status.value,
-                "record_type": item.record_type,
-                "stable_label": item.stable_label,
-                "source_id": item.source_id,
-                "document_id": item.document_id,
-                "model_name": item.model_name,
-                "prompt_id": item.prompt_id,
-                "created_at": item.created_at.isoformat(),
-            }
-            for item in result.items
-        ]
+        "items": [_review_queue_item_to_json(item) for item in result.items]
     }
 
 
@@ -393,6 +453,142 @@ def review_readiness_to_json(status: ReviewReadinessStatus) -> dict[str, JsonVal
             for blocker in status.blockers
         ],
     }
+
+
+def review_next_result_to_json(result: ReviewNextResult) -> dict[str, JsonValue]:
+    return {
+        "has_next": result.has_next,
+        "item": _review_queue_item_to_json(result.item),
+        "packet": review_packet_to_json(result.packet) if result.packet is not None else None,
+        "action_plans": [
+            _review_action_plan_to_json(action_plan) for action_plan in result.action_plans
+        ],
+    }
+
+
+def _review_queue_item_to_json(item: ReviewQueueItem | None) -> dict[str, JsonValue] | None:
+    if item is None:
+        return None
+    return {
+        "proposed_change_id": item.proposed_change_id,
+        "review_status": item.review_status.value,
+        "record_type": item.record_type,
+        "stable_label": item.stable_label,
+        "source_id": item.source_id,
+        "document_id": item.document_id,
+        "model_name": item.model_name,
+        "prompt_id": item.prompt_id,
+        "created_at": item.created_at.isoformat(),
+    }
+
+
+def _review_action_plan_to_json(action_plan: ReviewActionPlan) -> dict[str, JsonValue]:
+    return {
+        "action": action_plan.action,
+        "command": action_plan.command,
+        "argv": list(action_plan.argv),
+        "ready_to_execute": action_plan.ready_to_execute,
+        "missing_inputs": [
+            {
+                "name": missing_input.name,
+                "kind": missing_input.kind,
+                "required": missing_input.required,
+                "description": missing_input.description,
+            }
+            for missing_input in action_plan.missing_inputs
+        ],
+        "blockers": [
+            {
+                "blocker_type": blocker.blocker_type,
+                "blocker_id": blocker.blocker_id,
+                "reason": blocker.reason,
+            }
+            for blocker in action_plan.blockers
+        ],
+    }
+
+
+def _review_action_plans(proposed_change_id: str) -> tuple[ReviewActionPlan, ...]:
+    return (
+        _review_action_plan(
+            action="approve",
+            command="kotekomi review approve",
+            proposed_change_id=proposed_change_id,
+            missing_inputs=(
+                ReviewActionPlanInputRequirement(
+                    name="reviewer",
+                    kind="string",
+                    required=True,
+                    description="Reviewer name for the review ProvenanceActivity.",
+                ),
+            ),
+        ),
+        _review_action_plan(
+            action="reject",
+            command="kotekomi review reject",
+            proposed_change_id=proposed_change_id,
+            missing_inputs=(
+                ReviewActionPlanInputRequirement(
+                    name="reviewer",
+                    kind="string",
+                    required=True,
+                    description="Reviewer name for the review ProvenanceActivity.",
+                ),
+                ReviewActionPlanInputRequirement(
+                    name="reason",
+                    kind="string",
+                    required=True,
+                    description="Reason for rejecting the ProposedChange.",
+                ),
+            ),
+        ),
+        _review_action_plan(
+            action="edit",
+            command="kotekomi review edit",
+            proposed_change_id=proposed_change_id,
+            missing_inputs=(
+                ReviewActionPlanInputRequirement(
+                    name="reviewer",
+                    kind="string",
+                    required=True,
+                    description="Reviewer name for the review ProvenanceActivity.",
+                ),
+                ReviewActionPlanInputRequirement(
+                    name="accepted_record_json",
+                    kind="path",
+                    required=True,
+                    description="Path to accepted record JSON.",
+                ),
+            ),
+        ),
+    )
+
+
+def _review_action_plan(
+    *,
+    action: str,
+    command: str,
+    proposed_change_id: str,
+    missing_inputs: tuple[ReviewActionPlanInputRequirement, ...],
+) -> ReviewActionPlan:
+    return ReviewActionPlan(
+        action=action,
+        command=command,
+        argv=(),
+        ready_to_execute=False,
+        missing_inputs=missing_inputs,
+        blockers=tuple(
+            ReviewActionPlanBlocker(
+                blocker_type="missing_review_input",
+                blocker_id=missing_input.name,
+                reason=(
+                    f"{command} for ProposedChange {proposed_change_id} requires "
+                    f"{missing_input.name}."
+                ),
+            )
+            for missing_input in missing_inputs
+        ),
+    )
 
 
 def _readiness_blockers(packet: ReviewPacket) -> tuple[ReviewReadinessBlocker, ...]:

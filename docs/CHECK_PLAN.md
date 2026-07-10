@@ -36,6 +36,7 @@
 - run Review Queue and Review Packet Application tests with `uv run pytest packages/application/tests/test_review_queue_packet.py`
 - run Review Queue and Review Packet Pipeline fixture with `uv run pytest packages/pipelines/tests/test_review_queue_packet.py`
 - verify Review Readiness and agent JSON state with `uv run pytest packages/application/tests/test_review_queue_packet.py packages/pipelines/tests/test_review_queue_packet.py`
+- verify Review-Next execution with `uv run pytest packages/application/tests/test_review_queue_packet.py packages/pipelines/tests/test_review_queue_packet.py`
 - verify Pipeline Readiness and agent next-step orchestration with `uv run pytest packages/application/tests/test_pipeline_readiness.py packages/pipelines/tests/test_pipeline_readiness.py`
 - verify Pipeline executable agent next-step plans with `uv run pytest packages/application/tests/test_pipeline_readiness.py packages/pipelines/tests/test_pipeline_readiness.py`
 - verify Pipeline run-next execution with `uv run pytest packages/application/tests/test_pipeline_readiness.py packages/pipelines/tests/test_pipeline_readiness.py`

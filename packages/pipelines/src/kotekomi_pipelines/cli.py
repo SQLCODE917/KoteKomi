@@ -29,6 +29,8 @@ from kotekomi_application import (
     PipelineStatus,
     PipelineStatusInput,
     ReviewEditableRecordExportInput,
+    ReviewNextInput,
+    ReviewNextResult,
     ReviewPacket,
     ReviewPacketInput,
     ReviewProposedChangeInput,
@@ -45,6 +47,7 @@ from kotekomi_application import (
     generate_briefing,
     get_pipeline_next,
     get_pipeline_status,
+    get_review_next,
     get_review_packet,
     get_review_readiness,
     initialize_ledger,
@@ -55,6 +58,7 @@ from kotekomi_application import (
     project_ledger_graph,
     propose_assertions_for_document,
     reject_proposed_change,
+    review_next_result_to_json,
     review_packet_to_json,
     review_queue_result_to_json,
     review_readiness_to_json,
@@ -119,6 +123,20 @@ def main(argv: list[str] | None = None) -> int:
         return list_reviewed_proposed_changes(
             config=config,
             review_status=args.review_status,
+            record_type=args.record_type,
+            source_id=args.source_id,
+            document_id=args.document_id,
+            output_format=args.output_format,
+        )
+
+    if args.command == "review" and args.review_command == "next":
+        config = load_config(
+            config_path=args.config,
+            ledger_path_override=args.ledger_path,
+            archive_path_override=None,
+        )
+        return show_next_reviewed_proposed_change(
+            config=config,
             record_type=args.record_type,
             source_id=args.source_id,
             document_id=args.document_id,
@@ -323,6 +341,20 @@ def build_parser() -> argparse.ArgumentParser:
         default="text",
     )
     list_parser.add_argument("--ledger-path", type=Path, default=None)
+    next_parser = review_subparsers.add_parser(
+        "next",
+        help="Show the next ProposedChange review packet.",
+    )
+    next_parser.add_argument("--record-type", default=None)
+    next_parser.add_argument("--source-id", default=None)
+    next_parser.add_argument("--document-id", default=None)
+    next_parser.add_argument(
+        "--format",
+        dest="output_format",
+        choices=("text", "json"),
+        default="text",
+    )
+    next_parser.add_argument("--ledger-path", type=Path, default=None)
     show_parser = review_subparsers.add_parser(
         "show",
         help="Show one ProposedChange review packet.",
@@ -572,6 +604,32 @@ def list_reviewed_proposed_changes(
             f"{item.stable_label} | {item.source_id or '-'} | {item.document_id or '-'} | "
             f"{item.model_name or '-'} | {item.created_at.isoformat()}"
         )
+    return 0
+
+
+def show_next_reviewed_proposed_change(
+    *,
+    config: PipelineConfig,
+    record_type: str | None,
+    source_id: str | None,
+    document_id: str | None,
+    output_format: str,
+) -> int:
+    with sqlite_ledger_transaction(config.ledger_path) as ledger_repository:
+        result = get_review_next(
+            ReviewNextInput(
+                record_type=record_type,
+                source_id=source_id,
+                document_id=document_id,
+            ),
+            ledger_repository,
+        )
+
+    if output_format == "json":
+        print(json.dumps(review_next_result_to_json(result), indent=2, sort_keys=True))
+        return 0
+
+    print(_review_next_text(result))
     return 0
 
 
@@ -882,6 +940,36 @@ def _review_packet_text(packet: ReviewPacket) -> str:
     lines.append("")
     lines.append("Proposed record JSON:")
     lines.append(json.dumps(packet.proposed_record_json, indent=2, sort_keys=True))
+    return "\n".join(lines)
+
+
+def _review_next_text(result: ReviewNextResult) -> str:
+    if not result.has_next:
+        return "Next review packet: none"
+    if result.packet is None:
+        raise ValueError("ReviewNextResult has_next=true without packet")
+    lines = [
+        f"Next ProposedChange: {result.packet.proposed_change_id}",
+        f"Record type: {result.packet.record_type}",
+        f"Stable label: {result.packet.stable_label}",
+        "",
+        _review_packet_text(result.packet),
+        "",
+        "Review action plans:",
+    ]
+    for action_plan in result.action_plans:
+        lines.append(
+            f"  {action_plan.action}: {action_plan.command} "
+            f"(ready: {_bool_text(action_plan.ready_to_execute)})"
+        )
+        if action_plan.missing_inputs:
+            for missing_input in action_plan.missing_inputs:
+                lines.append(
+                    f"    missing {missing_input.name} ({missing_input.kind}): "
+                    f"{missing_input.description}"
+                )
+        else:
+            lines.append("    missing inputs: none")
     return "\n".join(lines)
 
 

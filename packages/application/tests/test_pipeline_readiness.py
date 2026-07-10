@@ -182,7 +182,7 @@ def test_pipeline_status_pending_review_blocks_downstream_commands() -> None:
     assert [(blocker.blocker_type, blocker.blocker_id) for blocker in status.blockers] == [
         ("EvidenceSpan", "evs_missing")
     ]
-    assert next_step.command == "kotekomi review list"
+    assert next_step.command == "kotekomi review next"
     assert next_step.requires_human_review is True
 
 
@@ -417,7 +417,7 @@ def test_command_plan_rejects_non_candidate_document_id() -> None:
         )
 
 
-def test_command_plan_returns_review_list_argv_with_review_blockers() -> None:
+def test_command_plan_returns_review_next_argv_with_review_blockers() -> None:
     ledger = FakePipelineLedger(
         records=(source_fixture(), document_fixture(), organization_fixture()),
         proposed_changes=(pending_assertion_change(evidence_span_ids=("evs_missing",)),),
@@ -428,7 +428,7 @@ def test_command_plan_returns_review_list_argv_with_review_blockers() -> None:
     assert next_step.command_plan.ready_to_execute is True
     assert next_step.command_plan.argv == (
         "review",
-        "list",
+        "next",
         "--ledger-path",
         "/tmp/kotekomi.db",
     )

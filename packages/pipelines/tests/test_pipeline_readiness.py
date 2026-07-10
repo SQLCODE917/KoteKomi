@@ -106,12 +106,12 @@ def test_pipeline_status_and_next_walk_fixture_article_pipeline(
     assert status["next_command_plan"]["ready_to_execute"] is True
     assert status["next_command_plan"]["argv"] == [
         "review",
-        "list",
+        "next",
         "--ledger-path",
         str(ledger_path.resolve()),
     ]
     next_step = pipeline_next_json(ledger_path, capsys)
-    assert next_step["command"] == "kotekomi review list"
+    assert next_step["command"] == "kotekomi review next"
     assert next_step["requires_human_review"] is True
 
     with sqlite_ledger_transaction(ledger_path) as repository:
@@ -269,11 +269,11 @@ def test_pipeline_run_next_executes_exactly_one_planned_fixture_step(
     assert result["stage"] == "review_required"
     assert result["command_plan"]["argv"] == [
         "review",
-        "list",
+        "next",
         "--ledger-path",
         str(ledger_path.resolve()),
     ]
-    assert result["stdout_lines"][0] == "Review Queue: 16"
+    assert result["stdout_lines"][0].startswith("Next ProposedChange:")
     with sqlite_ledger_transaction(ledger_path) as repository:
         initial_changes = repository.list_proposed_changes()
         pending_initial_changes = tuple(
@@ -301,7 +301,7 @@ def test_pipeline_run_next_executes_exactly_one_planned_fixture_step(
     assert exit_code == 0
     assert result["executed"] is True
     assert result["stage"] == "review_required"
-    assert result["stdout_lines"][0] == "Review Queue: 5"
+    assert result["stdout_lines"][0].startswith("Next ProposedChange:")
     with sqlite_ledger_transaction(ledger_path) as repository:
         assert len(
             tuple(

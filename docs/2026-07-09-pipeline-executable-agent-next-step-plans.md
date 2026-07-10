@@ -107,7 +107,7 @@ Pipeline -> Agent: JSON object
 Agent -> Pipeline: pipeline next --format json
 Pipeline -> Application Layer: get Pipeline Next Step
 Application Layer -> Review Readiness: get pending review blockers
-Application Layer -> Pipeline: executable review list plan
+Application Layer -> Pipeline: executable review next plan
 Pipeline -> Agent: JSON object
 ```
 
@@ -183,7 +183,7 @@ A Document without accepted Assertions requires `model_output_fixture_path`.
 If exactly one candidate Document exists, the plan uses that Document.
 If multiple candidate Documents exist, the plan requires `document_id`.
 
-Pending review returns executable argv for `review list`.
+Pending review returns executable argv for `review next`.
 The plan includes Review Readiness blockers.
 
 Graph projection and graph mining return executable argv with `--ledger-path`.
@@ -234,7 +234,7 @@ Example:
 - Application tests prove supplied source path creates complete source ingest argv.
 - Application tests prove a single candidate Document is selected automatically.
 - Application tests prove multiple candidate Documents require `document_id`.
-- Application tests prove pending review returns executable `review list` argv.
+- Application tests prove pending review returns executable `review next` argv.
 - Application tests prove graph mining returns executable argv.
 - Application tests prove missing Briefing title blocks Briefing execution.
 - Application tests prove supplied Briefing title creates complete Briefing argv.
