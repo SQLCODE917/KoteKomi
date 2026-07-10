@@ -28,6 +28,9 @@ from kotekomi_application import (
     PipelineRunNextResult,
     PipelineStatus,
     PipelineStatusInput,
+    ReviewDrainInput,
+    ReviewDrainResult,
+    ReviewDrainStoppedReason,
     ReviewEditableRecordExportInput,
     ReviewNextDecision,
     ReviewNextDecisionInput,
@@ -61,12 +64,14 @@ from kotekomi_application import (
     project_ledger_graph,
     propose_assertions_for_document,
     reject_proposed_change,
+    review_drain_result_to_json,
     review_next_decision_result_to_json,
     review_next_result_to_json,
     review_packet_to_json,
     review_queue_result_to_json,
     review_readiness_to_json,
     run_next_result_to_json,
+    run_review_drain,
     run_review_next_decision,
 )
 from kotekomi_briefing import MarkdownBriefingRenderer
@@ -163,6 +168,26 @@ def main(argv: list[str] | None = None) -> int:
             document_id=args.document_id,
             reason=args.reason,
             accepted_record_json_path=args.accepted_record_json,
+            dry_run=args.dry_run,
+            output_format=args.output_format,
+        )
+
+    if args.command == "review" and args.review_command == "drain":
+        config = load_config(
+            config_path=args.config,
+            ledger_path_override=args.ledger_path,
+            archive_path_override=None,
+        )
+        return drain_review_queue(
+            config=config,
+            decision=args.decision,
+            reviewer=args.reviewer,
+            record_type=args.record_type,
+            source_id=args.source_id,
+            document_id=args.document_id,
+            reason=args.reason,
+            accepted_record_json_path=args.accepted_record_json,
+            limit=args.limit,
             dry_run=args.dry_run,
             output_format=args.output_format,
         )
@@ -402,6 +427,30 @@ def build_parser() -> argparse.ArgumentParser:
         default="text",
     )
     run_next_review_parser.add_argument("--ledger-path", type=Path, default=None)
+    drain_review_parser = review_subparsers.add_parser(
+        "drain",
+        help="Apply one explicit decision repeatedly to the Review Queue.",
+    )
+    drain_review_parser.add_argument(
+        "--decision",
+        choices=tuple(decision.value for decision in ReviewNextDecision),
+        required=True,
+    )
+    drain_review_parser.add_argument("--reviewer", required=True)
+    drain_review_parser.add_argument("--record-type", default=None)
+    drain_review_parser.add_argument("--source-id", default=None)
+    drain_review_parser.add_argument("--document-id", default=None)
+    drain_review_parser.add_argument("--reason", default=None)
+    drain_review_parser.add_argument("--accepted-record-json", type=Path, default=None)
+    drain_review_parser.add_argument("--limit", type=int, default=None)
+    drain_review_parser.add_argument("--dry-run", action="store_true")
+    drain_review_parser.add_argument(
+        "--format",
+        dest="output_format",
+        choices=("text", "json"),
+        default="text",
+    )
+    drain_review_parser.add_argument("--ledger-path", type=Path, default=None)
     show_parser = review_subparsers.add_parser(
         "show",
         help="Show one ProposedChange review packet.",
@@ -718,6 +767,101 @@ def run_next_review_decision(
 
     print(_review_next_decision_text(result))
     return 0
+
+
+def drain_review_queue(
+    *,
+    config: PipelineConfig,
+    decision: str,
+    reviewer: str,
+    record_type: str | None,
+    source_id: str | None,
+    document_id: str | None,
+    reason: str | None,
+    accepted_record_json_path: Path | None,
+    limit: int | None,
+    dry_run: bool,
+    output_format: str,
+) -> int:
+    accepted_record_json: dict[str, JsonValue] | None = None
+    if accepted_record_json_path is not None:
+        accepted_record_json = read_json_object(accepted_record_json_path)
+    drain_input = ReviewDrainInput(
+        decision=ReviewNextDecision(decision),
+        reviewer=reviewer,
+        reviewed_at=datetime.now(UTC),
+        record_type=record_type,
+        source_id=source_id,
+        document_id=document_id,
+        reason=reason,
+        accepted_record_json=accepted_record_json,
+        limit=limit,
+        dry_run=dry_run,
+    )
+    if dry_run:
+        with sqlite_ledger_transaction(config.ledger_path) as ledger_repository:
+            result = run_review_drain(drain_input, ledger_repository)
+    else:
+        result = _drain_review_queue_with_item_transactions(config, drain_input)
+
+    if output_format == "json":
+        print(json.dumps(review_drain_result_to_json(result), indent=2, sort_keys=True))
+        return 0
+
+    print(_review_drain_text(result))
+    return 0
+
+
+def _drain_review_queue_with_item_transactions(
+    config: PipelineConfig,
+    drain_input: ReviewDrainInput,
+) -> ReviewDrainResult:
+    item_results: list[ReviewNextDecisionResult] = []
+    while drain_input.limit is None or len(item_results) < drain_input.limit:
+        try:
+            with sqlite_ledger_transaction(config.ledger_path) as ledger_repository:
+                item_result = run_review_next_decision(
+                    ReviewNextDecisionInput(
+                        decision=drain_input.decision,
+                        reviewer=drain_input.reviewer,
+                        reviewed_at=drain_input.reviewed_at,
+                        record_type=drain_input.record_type,
+                        source_id=drain_input.source_id,
+                        document_id=drain_input.document_id,
+                        reason=drain_input.reason,
+                        accepted_record_json=drain_input.accepted_record_json,
+                    ),
+                    ledger_repository,
+                )
+        except ValueError as error:
+            return ReviewDrainResult(
+                decision=drain_input.decision,
+                attempted_count=len(item_results) + 1,
+                executed_count=sum(1 for result in item_results if result.executed),
+                dry_run=False,
+                stopped_reason=ReviewDrainStoppedReason.VALIDATION_FAILED,
+                item_results=tuple(item_results),
+                error_message=str(error),
+            )
+        if not item_result.has_next:
+            return ReviewDrainResult(
+                decision=drain_input.decision,
+                attempted_count=len(item_results),
+                executed_count=sum(1 for result in item_results if result.executed),
+                dry_run=False,
+                stopped_reason=ReviewDrainStoppedReason.QUEUE_EMPTY,
+                item_results=tuple(item_results),
+            )
+        item_results.append(item_result)
+
+    return ReviewDrainResult(
+        decision=drain_input.decision,
+        attempted_count=len(item_results),
+        executed_count=sum(1 for result in item_results if result.executed),
+        dry_run=False,
+        stopped_reason=ReviewDrainStoppedReason.LIMIT_REACHED,
+        item_results=tuple(item_results),
+    )
 
 
 def show_reviewed_proposed_change(
@@ -1086,6 +1230,35 @@ def _review_next_decision_text(result: ReviewNextDecisionResult) -> str:
                 f"Accepted record: {result.review_result.accepted_record_id or '-'}",
             ]
         )
+    return "\n".join(lines)
+
+
+def _review_drain_text(result: ReviewDrainResult) -> str:
+    lines = [
+        f"Decision: {result.decision.value}",
+        f"Attempted: {result.attempted_count}",
+        f"Executed: {result.executed_count}",
+        f"Dry run: {_bool_text(result.dry_run)}",
+        f"Stopped reason: {result.stopped_reason.value}",
+    ]
+    if result.error_message is not None:
+        lines.append(f"Error: {result.error_message}")
+    lines.append("Items:")
+    if result.item_results:
+        for item_result in result.item_results:
+            if item_result.item is None:
+                continue
+            status = (
+                item_result.review_result.review_status.value
+                if item_result.review_result is not None
+                else "not_executed"
+            )
+            lines.append(
+                f"  {item_result.item.proposed_change_id} | "
+                f"{item_result.item.record_type} | {item_result.item.stable_label} | {status}"
+            )
+    else:
+        lines.append("  none")
     return "\n".join(lines)
 
 

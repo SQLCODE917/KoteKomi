@@ -85,6 +85,9 @@ from kotekomi_application.ports import (
     StagedArchiveObject,
 )
 from kotekomi_application.proposed_change_review import (
+    ReviewDrainInput,
+    ReviewDrainResult,
+    ReviewDrainStoppedReason,
     ReviewNextDecision,
     ReviewNextDecisionInput,
     ReviewNextDecisionResult,
@@ -94,7 +97,9 @@ from kotekomi_application.proposed_change_review import (
     deterministic_review_provenance_activity_id,
     edit_proposed_change,
     reject_proposed_change,
+    review_drain_result_to_json,
     review_next_decision_result_to_json,
+    run_review_drain,
     run_review_next_decision,
 )
 from kotekomi_application.review_queue_packet import (
@@ -182,6 +187,9 @@ __all__ = [
     "PipelineStatusInput",
     "ReviewProposedChangeInput",
     "ReviewProposedChangeResult",
+    "ReviewDrainInput",
+    "ReviewDrainResult",
+    "ReviewDrainStoppedReason",
     "ReviewActionPlan",
     "ReviewActionPlanBlocker",
     "ReviewActionPlanInputRequirement",
@@ -240,6 +248,7 @@ __all__ = [
     "pipeline_next_to_json",
     "pipeline_status_to_json",
     "review_next_result_to_json",
+    "review_drain_result_to_json",
     "review_next_decision_result_to_json",
     "project_ledger_graph",
     "propose_assertions_for_document",
@@ -249,6 +258,7 @@ __all__ = [
     "review_queue_result_to_json",
     "review_readiness_to_json",
     "run_next_result_to_json",
+    "run_review_drain",
     "run_review_next_decision",
     "resolve_briefing_citation",
 ]

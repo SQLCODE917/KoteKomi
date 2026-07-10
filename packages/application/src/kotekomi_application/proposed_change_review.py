@@ -33,9 +33,13 @@ from kotekomi_domain.models import JsonValue
 from kotekomi_application.review_queue_packet import (
     ReviewNextInput,
     ReviewPacket,
+    ReviewPacketInput,
+    ReviewQueueInput,
     ReviewQueueItem,
     ReviewQueuePacketLedger,
     get_review_next,
+    get_review_packet,
+    list_review_queue,
     review_packet_to_json,
 )
 
@@ -93,6 +97,13 @@ class ReviewNextDecision(StrEnum):
     EDIT = "edit"
 
 
+class ReviewDrainStoppedReason(StrEnum):
+    QUEUE_EMPTY = "queue_empty"
+    LIMIT_REACHED = "limit_reached"
+    VALIDATION_FAILED = "validation_failed"
+    DRY_RUN_COMPLETE = "dry_run_complete"
+
+
 class ReviewNextDecisionLedger(ProposedChangeReviewLedger, ReviewQueuePacketLedger, Protocol):
     pass
 
@@ -137,6 +148,31 @@ class ReviewNextDecisionResult:
     executed: bool
     dry_run: bool
     review_result: ReviewProposedChangeResult | None = None
+
+
+@dataclass(frozen=True)
+class ReviewDrainInput:
+    decision: ReviewNextDecision
+    reviewer: str
+    reviewed_at: datetime
+    record_type: str | None = None
+    source_id: str | None = None
+    document_id: str | None = None
+    reason: str | None = None
+    accepted_record_json: dict[str, JsonValue] | None = None
+    limit: int | None = None
+    dry_run: bool = False
+
+
+@dataclass(frozen=True)
+class ReviewDrainResult:
+    decision: ReviewNextDecision
+    attempted_count: int
+    executed_count: int
+    dry_run: bool
+    stopped_reason: ReviewDrainStoppedReason
+    item_results: tuple[ReviewNextDecisionResult, ...]
+    error_message: str | None = None
 
 
 def run_review_next_decision(
@@ -204,6 +240,119 @@ def review_next_decision_result_to_json(
     }
 
 
+def run_review_drain(
+    review_input: ReviewDrainInput,
+    ledger_repository: ReviewNextDecisionLedger,
+) -> ReviewDrainResult:
+    _validate_review_drain_input(review_input)
+    if review_input.dry_run:
+        return _run_review_drain_dry_run(review_input, ledger_repository)
+
+    item_results: list[ReviewNextDecisionResult] = []
+    while _can_continue_drain(review_input, item_results):
+        try:
+            item_result = run_review_next_decision(
+                _drain_item_input(review_input, dry_run=False),
+                ledger_repository,
+            )
+        except ValueError as error:
+            return ReviewDrainResult(
+                decision=review_input.decision,
+                attempted_count=len(item_results) + 1,
+                executed_count=_executed_count(item_results),
+                dry_run=False,
+                stopped_reason=ReviewDrainStoppedReason.VALIDATION_FAILED,
+                item_results=tuple(item_results),
+                error_message=str(error),
+            )
+        if not item_result.has_next:
+            return ReviewDrainResult(
+                decision=review_input.decision,
+                attempted_count=len(item_results),
+                executed_count=_executed_count(item_results),
+                dry_run=False,
+                stopped_reason=ReviewDrainStoppedReason.QUEUE_EMPTY,
+                item_results=tuple(item_results),
+            )
+        item_results.append(item_result)
+
+    return ReviewDrainResult(
+        decision=review_input.decision,
+        attempted_count=len(item_results),
+        executed_count=_executed_count(item_results),
+        dry_run=False,
+        stopped_reason=ReviewDrainStoppedReason.LIMIT_REACHED,
+        item_results=tuple(item_results),
+    )
+
+
+def review_drain_result_to_json(result: ReviewDrainResult) -> dict[str, JsonValue]:
+    return {
+        "decision": result.decision.value,
+        "attempted_count": result.attempted_count,
+        "executed_count": result.executed_count,
+        "dry_run": result.dry_run,
+        "stopped_reason": result.stopped_reason.value,
+        "item_results": [
+            review_next_decision_result_to_json(item_result)
+            for item_result in result.item_results
+        ],
+        "error_message": result.error_message,
+    }
+
+
+def _run_review_drain_dry_run(
+    review_input: ReviewDrainInput,
+    ledger_repository: ReviewNextDecisionLedger,
+) -> ReviewDrainResult:
+    queue = list_review_queue(
+        ReviewQueueInput(
+            record_type=review_input.record_type,
+            source_id=review_input.source_id,
+            document_id=review_input.document_id,
+        ),
+        ledger_repository,
+    )
+    selected_items = queue.items
+    if review_input.limit is not None:
+        selected_items = selected_items[: review_input.limit]
+    item_results = tuple(
+        ReviewNextDecisionResult(
+            has_next=True,
+            item=item,
+            packet=get_review_packet(
+                ReviewPacketInput(proposed_change_id=item.proposed_change_id),
+                ledger_repository,
+            ),
+            decision=review_input.decision,
+            executed=False,
+            dry_run=True,
+            review_result=None,
+        )
+        for item in selected_items
+    )
+    if (
+        not item_results
+        and review_input.limit == 0
+        and queue.items
+    ):
+        stopped_reason = ReviewDrainStoppedReason.LIMIT_REACHED
+    elif not item_results:
+        stopped_reason = ReviewDrainStoppedReason.QUEUE_EMPTY
+    elif review_input.limit is not None and len(queue.items) > review_input.limit:
+        stopped_reason = ReviewDrainStoppedReason.LIMIT_REACHED
+    else:
+        stopped_reason = ReviewDrainStoppedReason.DRY_RUN_COMPLETE
+    return ReviewDrainResult(
+        decision=review_input.decision,
+        attempted_count=len(item_results),
+        executed_count=0,
+        dry_run=True,
+        stopped_reason=stopped_reason,
+        item_results=item_results,
+    )
+
+
 def _validate_review_next_decision_input(review_input: ReviewNextDecisionInput) -> None:
     if not review_input.reviewer.strip():
         raise ValueError("Review-Next decision requires reviewer.")
@@ -216,6 +365,41 @@ def _validate_review_next_decision_input(review_input: ReviewNextDecisionInput) 
         and review_input.accepted_record_json is None
     ):
         raise ValueError("Review-Next edit decision requires accepted_record_json.")
+
+
+def _validate_review_drain_input(review_input: ReviewDrainInput) -> None:
+    _validate_review_next_decision_input(_drain_item_input(review_input, dry_run=False))
+    if review_input.limit is not None and review_input.limit < 0:
+        raise ValueError("Review Drain limit must be zero or greater.")
+
+
+def _drain_item_input(
+    review_input: ReviewDrainInput,
+    *,
+    dry_run: bool,
+) -> ReviewNextDecisionInput:
+    return ReviewNextDecisionInput(
+        decision=review_input.decision,
+        reviewer=review_input.reviewer,
+        reviewed_at=review_input.reviewed_at,
+        record_type=review_input.record_type,
+        source_id=review_input.source_id,
+        document_id=review_input.document_id,
+        reason=review_input.reason,
+        accepted_record_json=review_input.accepted_record_json,
+        dry_run=dry_run,
+    )
+
+
+def _can_continue_drain(
+    review_input: ReviewDrainInput,
+    item_results: list[ReviewNextDecisionResult],
+) -> bool:
+    return review_input.limit is None or len(item_results) < review_input.limit
+
+
+def _executed_count(item_results: list[ReviewNextDecisionResult]) -> int:
+    return sum(1 for item_result in item_results if item_result.executed)
 
 
 def _run_review_decision(

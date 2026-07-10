@@ -139,6 +139,39 @@ def review_run_next_args(
     return args
 
 
+def review_drain_args(
+    ledger_path: Path,
+    decision: str,
+    *,
+    reason: str | None = None,
+    accepted_record_json_path: Path | None = None,
+    limit: int | None = None,
+    dry_run: bool = False,
+    output_format: str = "text",
+) -> list[str]:
+    args = [
+        "review",
+        "drain",
+        "--decision",
+        decision,
+        "--reviewer",
+        "analyst",
+        "--ledger-path",
+        str(ledger_path),
+    ]
+    if reason is not None:
+        args.extend(("--reason", reason))
+    if accepted_record_json_path is not None:
+        args.extend(("--accepted-record-json", str(accepted_record_json_path)))
+    if limit is not None:
+        args.extend(("--limit", str(limit)))
+    if dry_run:
+        args.append("--dry-run")
+    if output_format != "text":
+        args.extend(("--format", output_format))
+    return args
+
+
 def proposed_change_by_stable_label(
     proposed_changes: tuple[ProposedChange, ...],
     stable_label: str,
@@ -299,6 +332,157 @@ def test_review_run_next_dry_run_leaves_fixture_pending(
     assert proposed_change is not None
     assert proposed_change.review_status is ReviewStatus.PENDING
     assert len(pending_changes) == 16
+
+
+def test_review_drain_approves_fixture_queue(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    ledger_path, _ = prepare_fixture_proposals(tmp_path, capsys)
+
+    assert (
+        main(review_drain_args(ledger_path, "approve", output_format="json"))
+        == 0
+    )
+    payload = json.loads(capsys.readouterr().out)
+
+    assert payload["decision"] == "approve"
+    assert payload["stopped_reason"] == "queue_empty"
+    assert payload["executed_count"] == 16
+    assert len(payload["item_results"]) == 16
+    with sqlite_ledger_transaction(ledger_path) as repository:
+        pending_changes = tuple(
+            change
+            for change in repository.list_proposed_changes()
+            if change.review_status is ReviewStatus.PENDING
+        )
+        organization = repository.get_organization("org_anthropic")
+    assert pending_changes == ()
+    assert organization is not None
+
+
+def test_review_drain_limit_approves_bounded_fixture_items(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    ledger_path, _ = prepare_fixture_proposals(tmp_path, capsys)
+
+    assert (
+        main(
+            review_drain_args(
+                ledger_path,
+                "approve",
+                limit=2,
+                output_format="json",
+            )
+        )
+        == 0
+    )
+    payload = json.loads(capsys.readouterr().out)
+
+    assert payload["stopped_reason"] == "limit_reached"
+    assert payload["executed_count"] == 2
+    with sqlite_ledger_transaction(ledger_path) as repository:
+        pending_changes = tuple(
+            change
+            for change in repository.list_proposed_changes()
+            if change.review_status is ReviewStatus.PENDING
+        )
+    assert len(pending_changes) == 14
+
+
+def test_review_drain_dry_run_leaves_fixture_pending(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    ledger_path, _ = prepare_fixture_proposals(tmp_path, capsys)
+
+    assert (
+        main(
+            review_drain_args(
+                ledger_path,
+                "approve",
+                dry_run=True,
+                output_format="json",
+            )
+        )
+        == 0
+    )
+    payload = json.loads(capsys.readouterr().out)
+
+    assert payload["stopped_reason"] == "dry_run_complete"
+    assert payload["attempted_count"] == 16
+    assert payload["executed_count"] == 0
+    with sqlite_ledger_transaction(ledger_path) as repository:
+        pending_changes = tuple(
+            change
+            for change in repository.list_proposed_changes()
+            if change.review_status is ReviewStatus.PENDING
+        )
+    assert len(pending_changes) == 16
+
+
+def test_review_drain_rejects_one_fixture_item(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    ledger_path, _ = prepare_fixture_proposals(tmp_path, capsys)
+
+    assert (
+        main(
+            review_drain_args(
+                ledger_path,
+                "reject",
+                reason="duplicate Organization",
+                limit=1,
+                output_format="json",
+            )
+        )
+        == 0
+    )
+    payload = json.loads(capsys.readouterr().out)
+
+    assert payload["decision"] == "reject"
+    assert payload["stopped_reason"] == "limit_reached"
+    assert payload["executed_count"] == 1
+    assert payload["item_results"][0]["review_result"]["review_status"] == "rejected"
+
+
+def test_review_drain_edits_one_fixture_item(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    ledger_path, _ = prepare_fixture_proposals(tmp_path, capsys)
+    accepted_record_json_path = tmp_path / "edited_organization.json"
+    accepted_record_json_path.write_text(
+        json.dumps(
+            {
+                "id": "org_anthropic",
+                "name": "Anthropic",
+                "organization_type": "ai_lab",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    assert (
+        main(
+            review_drain_args(
+                ledger_path,
+                "edit",
+                accepted_record_json_path=accepted_record_json_path,
+                limit=1,
+                output_format="json",
+            )
+        )
+        == 0
+    )
+    payload = json.loads(capsys.readouterr().out)
+
+    assert payload["decision"] == "edit"
+    assert payload["stopped_reason"] == "limit_reached"
+    assert payload["executed_count"] == 1
+    assert payload["item_results"][0]["review_result"]["review_status"] == "edited"
 
 
 def test_review_commands_approve_and_reject_proposed_changes(

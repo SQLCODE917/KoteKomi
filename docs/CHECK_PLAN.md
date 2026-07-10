@@ -38,6 +38,7 @@
 - verify Review Readiness and agent JSON state with `uv run pytest packages/application/tests/test_review_queue_packet.py packages/pipelines/tests/test_review_queue_packet.py`
 - verify Review-Next execution with `uv run pytest packages/application/tests/test_review_queue_packet.py packages/pipelines/tests/test_review_queue_packet.py`
 - verify Explicit Review-Next Decision Execution with `uv run pytest packages/application/tests/test_review_proposed_change.py packages/pipelines/tests/test_review_proposed_change.py`
+- verify Review Drain Queue with `uv run pytest packages/application/tests/test_review_proposed_change.py packages/pipelines/tests/test_review_proposed_change.py`
 - verify Pipeline Readiness and agent next-step orchestration with `uv run pytest packages/application/tests/test_pipeline_readiness.py packages/pipelines/tests/test_pipeline_readiness.py`
 - verify Pipeline executable agent next-step plans with `uv run pytest packages/application/tests/test_pipeline_readiness.py packages/pipelines/tests/test_pipeline_readiness.py`
 - verify Pipeline run-next execution with `uv run pytest packages/application/tests/test_pipeline_readiness.py packages/pipelines/tests/test_pipeline_readiness.py`

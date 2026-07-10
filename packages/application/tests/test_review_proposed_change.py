@@ -3,13 +3,17 @@ from typing import cast
 
 import pytest
 from kotekomi_application import (
+    ReviewDrainInput,
+    ReviewDrainStoppedReason,
     ReviewNextDecision,
     ReviewNextDecisionInput,
     ReviewProposedChangeInput,
     approve_proposed_change,
     edit_proposed_change,
     reject_proposed_change,
+    review_drain_result_to_json,
     review_next_decision_result_to_json,
+    run_review_drain,
     run_review_next_decision,
 )
 from kotekomi_domain import (
@@ -534,6 +538,351 @@ def test_review_next_decision_json_is_agent_readable() -> None:
     assert isinstance(payload["packet"], dict)
     review_result = cast(dict[str, JsonValue], payload["review_result"])
     assert review_result["review_status"] == "approved"
+
+
+def test_review_drain_approves_all_matching_pending_changes() -> None:
+    ledger = FakeReviewLedger(
+        (
+            proposed_change(
+                "pcg_actor",
+                "Actor",
+                {
+                    "id": "act_lina_rahman",
+                    "name": "Lina Rahman",
+                    "organization_ids": ["org_anthropic"],
+                },
+            ),
+            proposed_change(
+                "pcg_organization",
+                "Organization",
+                {
+                    "id": "org_anthropic",
+                    "name": "Anthropic",
+                    "organization_type": "ai_lab",
+                },
+            ),
+        )
+    )
+    seed_reference_records(ledger)
+
+    result = run_review_drain(
+        ReviewDrainInput(
+            decision=ReviewNextDecision.APPROVE,
+            reviewer="analyst",
+            reviewed_at=NOW,
+        ),
+        ledger,
+    )
+
+    assert result.stopped_reason is ReviewDrainStoppedReason.QUEUE_EMPTY
+    assert result.attempted_count == 2
+    assert result.executed_count == 2
+    assert [item.item.proposed_change_id for item in result.item_results if item.item] == [
+        "pcg_organization",
+        "pcg_actor",
+    ]
+    assert ledger.proposed_changes["pcg_organization"].review_status is ReviewStatus.APPROVED
+    assert ledger.proposed_changes["pcg_actor"].review_status is ReviewStatus.APPROVED
+
+
+def test_review_drain_limit_executes_bounded_count() -> None:
+    ledger = FakeReviewLedger(
+        (
+            proposed_change(
+                "pcg_actor",
+                "Actor",
+                {
+                    "id": "act_lina_rahman",
+                    "name": "Lina Rahman",
+                    "organization_ids": ["org_anthropic"],
+                },
+            ),
+            proposed_change(
+                "pcg_organization",
+                "Organization",
+                {
+                    "id": "org_anthropic",
+                    "name": "Anthropic",
+                    "organization_type": "ai_lab",
+                },
+            ),
+        )
+    )
+    seed_reference_records(ledger)
+
+    result = run_review_drain(
+        ReviewDrainInput(
+            decision=ReviewNextDecision.APPROVE,
+            reviewer="analyst",
+            reviewed_at=NOW,
+            limit=1,
+        ),
+        ledger,
+    )
+
+    assert result.stopped_reason is ReviewDrainStoppedReason.LIMIT_REACHED
+    assert result.attempted_count == 1
+    assert result.executed_count == 1
+    assert ledger.proposed_changes["pcg_organization"].review_status is ReviewStatus.APPROVED
+    assert ledger.proposed_changes["pcg_actor"].review_status is ReviewStatus.PENDING
+
+
+def test_review_drain_rejects_matching_pending_changes() -> None:
+    ledger = FakeReviewLedger(
+        (
+            proposed_change(
+                "pcg_actor",
+                "Actor",
+                {
+                    "id": "act_lina_rahman",
+                    "name": "Lina Rahman",
+                    "organization_ids": ["org_anthropic"],
+                },
+            ),
+            proposed_change(
+                "pcg_organization",
+                "Organization",
+                {
+                    "id": "org_anthropic",
+                    "name": "Anthropic",
+                    "organization_type": "ai_lab",
+                },
+            ),
+        )
+    )
+    seed_reference_records(ledger)
+
+    result = run_review_drain(
+        ReviewDrainInput(
+            decision=ReviewNextDecision.REJECT,
+            reviewer="analyst",
+            reviewed_at=NOW,
+            reason="duplicate records",
+        ),
+        ledger,
+    )
+
+    assert result.stopped_reason is ReviewDrainStoppedReason.QUEUE_EMPTY
+    assert result.executed_count == 2
+    assert all(
+        change.review_status is ReviewStatus.REJECTED
+        for change in ledger.proposed_changes.values()
+    )
+
+
+def test_review_drain_edits_matching_pending_change() -> None:
+    ledger = FakeReviewLedger(
+        (
+            proposed_change(
+                "pcg_organization",
+                "Organization",
+                {
+                    "id": "org_anthropic",
+                    "name": "Anthropic",
+                    "organization_type": "ai_lab",
+                },
+            ),
+        )
+    )
+    seed_reference_records(ledger)
+
+    result = run_review_drain(
+        ReviewDrainInput(
+            decision=ReviewNextDecision.EDIT,
+            reviewer="analyst",
+            reviewed_at=NOW,
+            accepted_record_json={
+                "id": "org_anthropic",
+                "name": "Anthropic",
+                "organization_type": "ai_lab",
+            },
+        ),
+        ledger,
+    )
+
+    assert result.executed_count == 1
+    assert result.item_results[0].review_result is not None
+    assert result.item_results[0].review_result.review_status is ReviewStatus.EDITED
+    assert ledger.proposed_changes["pcg_organization"].accepted_json is not None
+
+
+def test_review_drain_filters_and_empty_queue() -> None:
+    ledger = FakeReviewLedger(
+        (
+            proposed_change(
+                "pcg_actor",
+                "Actor",
+                {
+                    "id": "act_lina_rahman",
+                    "name": "Lina Rahman",
+                    "organization_ids": ["org_anthropic"],
+                },
+            ),
+            proposed_change(
+                "pcg_organization",
+                "Organization",
+                {
+                    "id": "org_anthropic",
+                    "name": "Anthropic",
+                    "organization_type": "ai_lab",
+                },
+            ),
+        )
+    )
+    seed_reference_records(ledger)
+
+    actor_result = run_review_drain(
+        ReviewDrainInput(
+            decision=ReviewNextDecision.APPROVE,
+            reviewer="analyst",
+            reviewed_at=NOW,
+            record_type="Actor",
+        ),
+        ledger,
+    )
+    empty_result = run_review_drain(
+        ReviewDrainInput(
+            decision=ReviewNextDecision.APPROVE,
+            reviewer="analyst",
+            reviewed_at=NOW,
+            record_type="Relationship",
+        ),
+        ledger,
+    )
+
+    assert actor_result.executed_count == 1
+    assert actor_result.item_results[0].item is not None
+    assert actor_result.item_results[0].item.proposed_change_id == "pcg_actor"
+    assert empty_result.stopped_reason is ReviewDrainStoppedReason.QUEUE_EMPTY
+    assert empty_result.attempted_count == 0
+    assert empty_result.executed_count == 0
+
+
+def test_review_drain_dry_run_reports_sequence_without_mutation() -> None:
+    ledger = FakeReviewLedger(
+        (
+            proposed_change(
+                "pcg_actor",
+                "Actor",
+                {
+                    "id": "act_lina_rahman",
+                    "name": "Lina Rahman",
+                    "organization_ids": ["org_anthropic"],
+                },
+            ),
+            proposed_change(
+                "pcg_organization",
+                "Organization",
+                {
+                    "id": "org_anthropic",
+                    "name": "Anthropic",
+                    "organization_type": "ai_lab",
+                },
+            ),
+        )
+    )
+    seed_reference_records(ledger)
+
+    result = run_review_drain(
+        ReviewDrainInput(
+            decision=ReviewNextDecision.APPROVE,
+            reviewer="analyst",
+            reviewed_at=NOW,
+            dry_run=True,
+        ),
+        ledger,
+    )
+
+    assert result.stopped_reason is ReviewDrainStoppedReason.DRY_RUN_COMPLETE
+    assert result.attempted_count == 2
+    assert result.executed_count == 0
+    assert all(not item.executed for item in result.item_results)
+    assert all(
+        change.review_status is ReviewStatus.PENDING
+        for change in ledger.proposed_changes.values()
+    )
+
+
+def test_review_drain_stops_on_validation_failure_preserving_prior_success() -> None:
+    invalid_assertion: dict[str, JsonValue] = {
+        "id": "ast_missing_evidence",
+        "assertion_type": "source_claim",
+        "epistemic_scope": "source_report",
+        "subject_entity_id": "org_anthropic",
+        "predicate": "postponed_rollout",
+        "object_value": {"model": "Claude Fable 5"},
+        "status": "proposed",
+        "source_authority": "secondary",
+        "attribution_basis": "reported_by_source",
+        "source_ids": ["src_article_a"],
+        "evidence_span_ids": ["evs_missing"],
+        "provenance_activity_ids": [],
+    }
+    ledger = FakeReviewLedger(
+        (
+            proposed_change(
+                "pcg_organization",
+                "Organization",
+                {
+                    "id": "org_anthropic",
+                    "name": "Anthropic",
+                    "organization_type": "ai_lab",
+                },
+            ),
+            proposed_change("pcg_invalid_assertion", "Assertion", invalid_assertion),
+        )
+    )
+    seed_reference_records(ledger)
+
+    result = run_review_drain(
+        ReviewDrainInput(
+            decision=ReviewNextDecision.APPROVE,
+            reviewer="analyst",
+            reviewed_at=NOW,
+        ),
+        ledger,
+    )
+
+    assert result.stopped_reason is ReviewDrainStoppedReason.VALIDATION_FAILED
+    assert result.attempted_count == 2
+    assert result.executed_count == 1
+    assert result.error_message is not None
+    assert "references missing EvidenceSpan" in result.error_message
+    assert ledger.proposed_changes["pcg_organization"].review_status is ReviewStatus.APPROVED
+    assert ledger.proposed_changes["pcg_invalid_assertion"].review_status is ReviewStatus.PENDING
+
+
+def test_review_drain_json_is_agent_readable() -> None:
+    ledger = FakeReviewLedger(
+        (
+            proposed_change(
+                "pcg_organization",
+                "Organization",
+                {
+                    "id": "org_anthropic",
+                    "name": "Anthropic",
+                    "organization_type": "ai_lab",
+                },
+            ),
+        )
+    )
+    seed_reference_records(ledger)
+
+    result = run_review_drain(
+        ReviewDrainInput(
+            decision=ReviewNextDecision.APPROVE,
+            reviewer="analyst",
+            reviewed_at=NOW,
+        ),
+        ledger,
+    )
+    payload = review_drain_result_to_json(result)
+
+    assert payload["decision"] == "approve"
+    assert payload["executed_count"] == 1
+    assert payload["stopped_reason"] == "queue_empty"
+    item_results = cast(list[dict[str, JsonValue]], payload["item_results"])
+    assert item_results[0]["executed"] is True
 
 
 @pytest.mark.parametrize(
