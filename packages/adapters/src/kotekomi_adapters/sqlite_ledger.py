@@ -19,6 +19,7 @@ from kotekomi_application import (
     BundleCommitOutcome,
     LedgerInitResult,
 )
+from kotekomi_application.record_serialization import canonical_record_json
 from kotekomi_domain import (
     Actor,
     ArgumentEdge,
@@ -760,12 +761,6 @@ def _optional_text(value: object) -> str | None:
     if value is None:
         return None
     return str(value)
-
-
-def canonical_record_json(record: BaseModel) -> str:
-    return json.dumps(
-        record.model_dump(mode="json"), ensure_ascii=False, sort_keys=True, separators=(",", ":")
-    )
 
 
 def _same_representation_bundle(

@@ -8,8 +8,7 @@
         "confirmed",
         "contradicted",
         "superseded",
-        "retracted",
-        "deprecated"
+        "retracted"
       ],
       "title": "AssertionStatus",
       "type": "string"

@@ -250,7 +250,7 @@ def _validate_evidence_target(
     ledger_repository: EvidenceTargetLedger,
 ) -> None:
     if evidence_span.representation_id is None:
-        raise ValueError("EvidenceSpan is legacy-unpinned and cannot be validated.")
+        raise ValueError("EvidenceSpan is unpinned and cannot be validated.")
     bundle = ledger_repository.get_document_representation_bundle(evidence_span.representation_id)
     if bundle is None:
         raise ValueError("EvidenceSpan references a missing DocumentRepresentation.")

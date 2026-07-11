@@ -113,7 +113,7 @@ Before saving `corrects` or `supersedes`, traverse the existing relations and re
 
 Do this in application code before the insert and repeat it inside the same transaction that commits the relation.
 
-## Local-file compatibility
+## Local-file ingestion
 
 Extend `SourceFileIngestInput` with a stable source key:
 
@@ -122,7 +122,7 @@ source_identity_key: str | None = None
 idempotency_key: str | None = None
 ```
 
-For the compatibility adapter:
+For the local-file adapter:
 
 ```text
 source_identity_key defaults to normalized local file identity
@@ -175,4 +175,3 @@ That directly satisfies the source-versioning completion gate. ([GitHub][5])
 [6]: https://raw.githubusercontent.com/SQLCODE917/KoteKomi/main/packages/adapters/src/kotekomi_adapters/docling_pdf_parser.py "raw.githubusercontent.com"
 [7]: https://raw.githubusercontent.com/SQLCODE917/KoteKomi/main/packages/domain/src/kotekomi_domain/models.py "raw.githubusercontent.com"
 [8]: https://raw.githubusercontent.com/SQLCODE917/KoteKomi/main/docs/2026-07-11-authoritative-document-ingestion-program.md "raw.githubusercontent.com"
-

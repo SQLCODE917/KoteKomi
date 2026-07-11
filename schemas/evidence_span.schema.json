@@ -2,7 +2,7 @@
   "$defs": {
     "EvidenceValidationStatus": {
       "enum": [
-        "legacy_unvalidated",
+        "unvalidated",
         "validated",
         "failed"
       ],
@@ -263,7 +263,7 @@
     },
     "validation_status": {
       "$ref": "#/$defs/EvidenceValidationStatus",
-      "default": "legacy_unvalidated"
+      "default": "unvalidated"
     },
     "validator_version": {
       "anyOf": [

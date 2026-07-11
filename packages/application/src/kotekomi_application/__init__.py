@@ -150,6 +150,7 @@ from kotekomi_application.proposed_change_review import (
     run_review_drain,
     run_review_next_decision,
 )
+from kotekomi_application.record_serialization import canonical_record_json
 from kotekomi_application.representation_identity import (
     BundleCommitDisposition,
     BundleCommitOutcome,
@@ -319,6 +320,7 @@ __all__ = [
     "add_source_from_file",
     "capture_source",
     "capture_identity",
+    "canonical_record_json",
     "approve_proposed_change",
     "briefing_citation_registry_from_json",
     "briefing_citation_registry_to_json",

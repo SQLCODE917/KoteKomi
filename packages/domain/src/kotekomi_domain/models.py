@@ -112,7 +112,7 @@ class SelectorType(StrEnum):
 
 
 class EvidenceValidationStatus(StrEnum):
-    LEGACY_UNVALIDATED = "legacy_unvalidated"
+    UNVALIDATED = "unvalidated"
     VALIDATED = "validated"
     FAILED = "failed"
 
@@ -158,7 +158,6 @@ class AssertionStatus(StrEnum):
     CONTRADICTED = "contradicted"
     SUPERSEDED = "superseded"
     RETRACTED = "retracted"
-    DEPRECATED = "deprecated"
 
 
 class EpistemicScope(StrEnum):
@@ -555,7 +554,7 @@ class EvidenceSpan(DomainModel):
     dom_selector: dict[str, JsonValue] | None = None
     table_selector: dict[str, JsonValue] | None = None
     selector_normalization_policy: NonEmptyStr | None = None
-    validation_status: EvidenceValidationStatus = EvidenceValidationStatus.LEGACY_UNVALIDATED
+    validation_status: EvidenceValidationStatus = EvidenceValidationStatus.UNVALIDATED
     validator_version: NonEmptyStr | None = None
     validated_at: datetime | None = None
     target_digest: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")] | None = None

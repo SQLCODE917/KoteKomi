@@ -128,7 +128,8 @@ A stage may stop downstream work, but it SHALL emit a typed terminal or blocked 
 | 11 | [Evidence-weighted graph projections](2026-07-11-evidence-weighted-graph-projections.md) | 3, 8–10 | every projected score is reproducible and contribution-explainable |
 | 12 | [Ingestion evaluation and release gates](2026-07-11-ingestion-evaluation-and-release-gates.md) | all | the integrated corpus, fault matrix, and hard gates pass |
 
-A child TDD may ship independently only when its own compatibility path keeps the current fixture workflow functional.
+A child TDD may ship independently only when its fixture workflow satisfies its current
+contract without compatibility paths.
 
 ## 8. Key integration interactions
 
@@ -148,14 +149,20 @@ The attempt, input fingerprint, logs or error code, and affected analysis units 
 
 Deleting the lexical index, embeddings, summaries, graph communities, or weighted projections does not remove source, evidence, proposal, review, or accepted ledger records. A rebuild recreates semantically equivalent derived output from pinned inputs and policies.
 
-## 9. Compatibility and migration
+## 9. Greenfield contract alignment
 
-- Existing `.md` and `.txt` fixtures become a trivial one-representation ingestion path.
-- Existing `Document` remains the immutable content-version record; this program does not introduce a competing `DocumentVersion` synonym.
-- Legacy content-hash identifiers may be retained as aliases, but stable source identity moves away from downloaded bytes.
-- Existing evidence records may be migrated automatically only when their text resolves uniquely in a pinned legacy representation. Ambiguous records remain legacy and cannot satisfy the new acceptance gate without review.
-- The current whole-document model call may remain behind an explicit legacy adapter during migration. It cannot be used to certify completion of this program.
-- Schema changes are additive before old fields or ports are removed. Rollback never deletes archived inputs or accepted history.
+- `.md` and `.txt` ingestion uses the same authoritative one-representation path as every
+  other source type.
+- `Document` remains the immutable content-version record; this program does not introduce a
+  competing `DocumentVersion` synonym.
+- Stable Source identity is independent of downloaded bytes; no content-hash aliases are
+  retained.
+- Every EvidenceSpan is created pinned and unvalidated, then must pass replay before it can
+  support acceptance.
+- Source-backed Assertion proposals use explicit evidence-link specifications; no
+  whole-document or unlinked proposal adapter remains.
+- Schema changes replace superseded fields and Ports in the same change. Rollback never deletes
+  archived inputs or accepted history.
 
 ## 10. Integrated completion gates
 

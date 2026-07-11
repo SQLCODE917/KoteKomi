@@ -322,7 +322,7 @@ def test_evidence_gate_failures_leave_no_partial_acceptance_writes(
     elif failure == "unvalidated":
         evidence = _evidence_span(
             evidence.id,
-            validation_status=EvidenceValidationStatus.LEGACY_UNVALIDATED,
+            validation_status=EvidenceValidationStatus.UNVALIDATED,
         )
     elif failure == "stale_text_view":
         evidence = _evidence_span(evidence.id, text_view_digest="0" * 64)
