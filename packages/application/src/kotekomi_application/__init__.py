@@ -193,9 +193,9 @@ from kotekomi_application.source_capture import (
     capture_source,
 )
 from kotekomi_application.source_file_ingest import (
-    SourceFileIngestInput,
-    SourceFileIngestResult,
-    add_source_from_file,
+    AuthoritativeCaptureOutcome,
+    AuthoritativeCaptureRequest,
+    commit_authoritative_capture,
 )
 
 __all__ = [
@@ -308,10 +308,10 @@ __all__ = [
     "ReviewReferenceResolution",
     "ReanchorEvidenceInput",
     "ReanchoringOutcome",
-    "SourceFileIngestInput",
-    "SourceFileIngestResult",
+    "AuthoritativeCaptureRequest",
+    "AuthoritativeCaptureOutcome",
     "StagedArchiveObject",
-    "add_source_from_file",
+    "commit_authoritative_capture",
     "capture_source",
     "capture_identity",
     "canonical_record_json",

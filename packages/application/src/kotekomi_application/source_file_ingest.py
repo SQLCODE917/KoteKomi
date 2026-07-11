@@ -80,7 +80,7 @@ class SourceFileLedger(
 
 
 @dataclass(frozen=True)
-class SourceFileIngestInput:
+class AuthoritativeCaptureRequest:
     local_file_path: str
     filename: str
     raw_bytes: bytes
@@ -91,7 +91,7 @@ class SourceFileIngestInput:
 
 
 @dataclass(frozen=True)
-class SourceFileIngestResult:
+class AuthoritativeCaptureOutcome:
     source_id: str
     document_id: str
     representation_id: str
@@ -101,12 +101,12 @@ class SourceFileIngestResult:
     created: bool
 
 
-def add_source_from_file(
-    ingest_input: SourceFileIngestInput,
+def commit_authoritative_capture(
+    ingest_input: AuthoritativeCaptureRequest,
     archive_store: ArchiveStore,
     ledger_repository: SourceFileLedger,
     attempt_id_factory: ProcessingAttemptIdFactory | None = None,
-) -> SourceFileIngestResult:
+) -> AuthoritativeCaptureOutcome:
     suffix = Path(ingest_input.filename).suffix.lower()
     if suffix not in SUPPORTED_TEXT_SUFFIXES:
         supported = ", ".join(sorted(SUPPORTED_TEXT_SUFFIXES))
@@ -240,7 +240,7 @@ def add_source_from_file(
                 ),
             )
         )
-        return SourceFileIngestResult(
+        return AuthoritativeCaptureOutcome(
             source_id=outcome.source.id,
             document_id=outcome.document.id,
             representation_id=representation_id,
@@ -421,7 +421,7 @@ def add_source_from_file(
         _cleanup_archive_objects(archive_store, promoted_objects, staged_objects)
         raise
 
-    return SourceFileIngestResult(
+    return AuthoritativeCaptureOutcome(
         source_id=outcome.source.id,
         document_id=document.id,
         representation_id=representation_id,

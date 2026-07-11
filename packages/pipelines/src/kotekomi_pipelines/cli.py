@@ -18,6 +18,7 @@ from kotekomi_adapters import (
     sqlite_ledger_transaction,
 )
 from kotekomi_application import (
+    AuthoritativeCaptureRequest,
     BriefingGenerationInput,
     GraphConnectionMiningInput,
     JsonValue,
@@ -42,11 +43,10 @@ from kotekomi_application import (
     ReviewQueueInput,
     ReviewReadinessInput,
     ReviewReadinessStatus,
-    SourceFileIngestInput,
     Uuid4ProcessingAttemptIdFactory,
-    add_source_from_file,
     approve_proposed_change,
     cleanup_created_briefing_archive_object,
+    commit_authoritative_capture,
     edit_proposed_change,
     export_review_editable_record,
     generate_briefing,
@@ -732,8 +732,8 @@ def add_source_file(config: ProcessingConfig, source_file_path: Path) -> int:
     archive_store = LocalArchiveStore(config.storage.archive_path)
     archive_store.initialize()
     with sqlite_ledger_transaction(config.storage.ledger_path) as ledger_repository:
-        result = add_source_from_file(
-            SourceFileIngestInput(
+        result = commit_authoritative_capture(
+            AuthoritativeCaptureRequest(
                 local_file_path=str(source_file_path),
                 filename=source_file_path.name,
                 raw_bytes=raw_bytes,

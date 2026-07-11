@@ -7,13 +7,13 @@ from kotekomi_application import (
     ArchiveObject,
     ArchivePutDisposition,
     ArchivePutOutcome,
+    AuthoritativeCaptureRequest,
     BuildIdentity,
     BundleCommitDisposition,
     BundleCommitOutcome,
     ProcessingTaskDisposition,
-    SourceFileIngestInput,
     StagedArchiveObject,
-    add_source_from_file,
+    commit_authoritative_capture,
 )
 from kotekomi_domain import (
     CaptureDocumentResolution,
@@ -404,13 +404,13 @@ class FakeLedgerRepository:
         self.provenance_activities[record.id] = record
 
 
-def test_add_source_from_file_creates_source_document_and_provenance() -> None:
+def test_commit_authoritative_capture_creates_source_document_and_provenance() -> None:
     raw_bytes = FIXTURE_PATH.read_bytes()
     archive = FakeArchiveStore()
     ledger = FakeLedgerRepository()
 
-    result = add_source_from_file(
-        SourceFileIngestInput(
+    result = commit_authoritative_capture(
+        AuthoritativeCaptureRequest(
             local_file_path=str(FIXTURE_PATH),
             filename=FIXTURE_PATH.name,
             raw_bytes=raw_bytes,
@@ -457,11 +457,11 @@ def test_add_source_from_file_creates_source_document_and_provenance() -> None:
     assert archive.staged_writes == {}
 
 
-def test_add_source_from_file_is_idempotent_after_records_exist() -> None:
+def test_commit_authoritative_capture_is_idempotent_after_records_exist() -> None:
     raw_bytes = FIXTURE_PATH.read_bytes()
     archive = FakeArchiveStore()
     ledger = FakeLedgerRepository()
-    ingest_input = SourceFileIngestInput(
+    ingest_input = AuthoritativeCaptureRequest(
         local_file_path=str(FIXTURE_PATH),
         filename=FIXTURE_PATH.name,
         raw_bytes=raw_bytes,
@@ -469,8 +469,8 @@ def test_add_source_from_file_is_idempotent_after_records_exist() -> None:
         build_identity=BUILD_IDENTITY,
     )
 
-    first = add_source_from_file(ingest_input, archive, ledger)
-    second = add_source_from_file(ingest_input, archive, ledger)
+    first = commit_authoritative_capture(ingest_input, archive, ledger)
+    second = commit_authoritative_capture(ingest_input, archive, ledger)
 
     assert first.created is True
     assert second.created is False
@@ -487,11 +487,11 @@ def test_add_source_from_file_is_idempotent_after_records_exist() -> None:
     assert len(ledger.provenance_activities) == 1
 
 
-def test_add_source_from_file_records_failed_attempt_for_incomplete_reuse_closure() -> None:
+def test_commit_authoritative_capture_records_failed_attempt_for_incomplete_reuse_closure() -> None:
     raw_bytes = FIXTURE_PATH.read_bytes()
     archive = FakeArchiveStore()
     ledger = FakeLedgerRepository()
-    ingest_input = SourceFileIngestInput(
+    ingest_input = AuthoritativeCaptureRequest(
         local_file_path=str(FIXTURE_PATH),
         filename=FIXTURE_PATH.name,
         raw_bytes=raw_bytes,
@@ -499,11 +499,11 @@ def test_add_source_from_file_records_failed_attempt_for_incomplete_reuse_closur
         build_identity=BUILD_IDENTITY,
     )
 
-    result = add_source_from_file(ingest_input, archive, ledger)
+    result = commit_authoritative_capture(ingest_input, archive, ledger)
     archive.text_writes.pop(result.document_id)
 
     with pytest.raises(ValueError, match="INCOMPLETE_CLOSURE"):
-        add_source_from_file(ingest_input, archive, ledger)
+        commit_authoritative_capture(ingest_input, archive, ledger)
 
     assert len(ledger.processing_attempts) == 2
     assert len(ledger.processing_outcomes) == 2
@@ -513,10 +513,10 @@ def test_add_source_from_file_records_failed_attempt_for_incomplete_reuse_closur
     assert latest_outcome.failure.code == "incomplete_closure"
 
 
-def test_add_source_from_file_rejects_unsupported_suffix() -> None:
+def test_commit_authoritative_capture_rejects_unsupported_suffix() -> None:
     with pytest.raises(ValueError, match="Unsupported Source file suffix"):
-        add_source_from_file(
-            SourceFileIngestInput(
+        commit_authoritative_capture(
+            AuthoritativeCaptureRequest(
                 local_file_path="fixture.pdf",
                 filename="fixture.pdf",
                 raw_bytes=b"%PDF",
@@ -528,13 +528,13 @@ def test_add_source_from_file_rejects_unsupported_suffix() -> None:
         )
 
 
-def test_add_source_from_file_rejects_invalid_build_identity_before_mutation() -> None:
+def test_commit_authoritative_capture_rejects_invalid_build_identity_before_mutation() -> None:
     archive = FakeArchiveStore()
     ledger = FakeLedgerRepository()
 
     with pytest.raises(ValueError, match="artifact_digest"):
-        add_source_from_file(
-            SourceFileIngestInput(
+        commit_authoritative_capture(
+            AuthoritativeCaptureRequest(
                 local_file_path="notes.txt",
                 filename="notes.txt",
                 raw_bytes=b"note",
@@ -551,12 +551,12 @@ def test_add_source_from_file_rejects_invalid_build_identity_before_mutation() -
     assert ledger.documents == {}
 
 
-def test_add_source_from_file_defaults_text_file_metadata() -> None:
+def test_commit_authoritative_capture_defaults_text_file_metadata() -> None:
     archive = FakeArchiveStore()
     ledger = FakeLedgerRepository()
 
-    result = add_source_from_file(
-        SourceFileIngestInput(
+    result = commit_authoritative_capture(
+        AuthoritativeCaptureRequest(
             local_file_path="notes.txt",
             filename="notes.txt",
             raw_bytes=b"plain text note",
@@ -572,13 +572,13 @@ def test_add_source_from_file_defaults_text_file_metadata() -> None:
     assert source.source_type is SourceType.MANUAL_FILE
 
 
-def test_add_source_from_file_rejects_malformed_dateline() -> None:
+def test_commit_authoritative_capture_rejects_malformed_dateline() -> None:
     archive = FakeArchiveStore()
     ledger = FakeLedgerRepository()
 
     with pytest.raises(ValueError, match="Dateline must include a location"):
-        add_source_from_file(
-            SourceFileIngestInput(
+        commit_authoritative_capture(
+            AuthoritativeCaptureRequest(
                 local_file_path="bad-dateline.md",
                 filename="bad-dateline.md",
                 raw_bytes=b"# Bad Dateline\n\nDateline: July 2 2026\n\nBody.",
@@ -597,11 +597,11 @@ def test_add_source_from_file_rejects_malformed_dateline() -> None:
     assert ledger.provenance_activities == {}
 
 
-def test_add_source_from_file_rejects_changed_bytes_without_revision_decision() -> None:
+def test_commit_authoritative_capture_rejects_changed_bytes_without_revision_decision() -> None:
     archive = FakeArchiveStore()
     ledger = FakeLedgerRepository()
-    add_source_from_file(
-        SourceFileIngestInput(
+    commit_authoritative_capture(
+        AuthoritativeCaptureRequest(
             local_file_path="notes.txt",
             filename="notes.txt",
             raw_bytes=b"original note",
@@ -612,8 +612,8 @@ def test_add_source_from_file_rejects_changed_bytes_without_revision_decision() 
         ledger,
     )
     with pytest.raises(ValueError, match="UNCLASSIFIED_REVISION"):
-        add_source_from_file(
-            SourceFileIngestInput(
+        commit_authoritative_capture(
+            AuthoritativeCaptureRequest(
                 local_file_path="notes.txt",
                 filename="notes.txt",
                 raw_bytes=b"updated note",
@@ -630,14 +630,16 @@ def test_add_source_from_file_rejects_changed_bytes_without_revision_decision() 
     assert archive.read_raw_source(next(iter(ledger.raw_blobs))) == b"original note"
 
 
-def test_add_source_from_file_preserves_promoted_archive_objects_after_ledger_failure() -> None:
+def test_commit_authoritative_capture_preserves_promoted_archive_objects_after_ledger_failure() -> (
+    None
+):
     raw_bytes = FIXTURE_PATH.read_bytes()
     archive = FakeArchiveStore()
     ledger = FakeLedgerRepository(fail_on_save_document=True)
 
     with pytest.raises(RuntimeError, match="simulated Ledger failure"):
-        add_source_from_file(
-            SourceFileIngestInput(
+        commit_authoritative_capture(
+            AuthoritativeCaptureRequest(
                 local_file_path=str(FIXTURE_PATH),
                 filename=FIXTURE_PATH.name,
                 raw_bytes=raw_bytes,
