@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "bottom": {
+      "minimum": 0,
+      "title": "Bottom",
+      "type": "number"
+    },
+    "coordinate_system": {
+      "minLength": 1,
+      "title": "Coordinate System",
+      "type": "string"
+    },
+    "id": {
+      "pattern": "^srg_[A-Za-z0-9][A-Za-z0-9_-]*$",
+      "title": "Id",
+      "type": "string"
+    },
+    "left": {
+      "minimum": 0,
+      "title": "Left",
+      "type": "number"
+    },
+    "page_height": {
+      "exclusiveMinimum": 0,
+      "title": "Page Height",
+      "type": "number"
+    },
+    "page_number": {
+      "minimum": 1,
+      "title": "Page Number",
+      "type": "integer"
+    },
+    "page_width": {
+      "exclusiveMinimum": 0,
+      "title": "Page Width",
+      "type": "number"
+    },
+    "representation_id": {
+      "pattern": "^rep_[A-Za-z0-9][A-Za-z0-9_-]*$",
+      "title": "Representation Id",
+      "type": "string"
+    },
+    "right": {
+      "minimum": 0,
+      "title": "Right",
+      "type": "number"
+    },
+    "top": {
+      "minimum": 0,
+      "title": "Top",
+      "type": "number"
+    }
+  },
+  "required": [
+    "id",
+    "representation_id",
+    "coordinate_system",
+    "page_number",
+    "page_width",
+    "page_height",
+    "left",
+    "top",
+    "right",
+    "bottom"
+  ],
+  "title": "SourceRegion",
+  "type": "object"
+}

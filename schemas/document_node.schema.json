@@ -1,0 +1,108 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "end_char": {
+      "minimum": 0,
+      "title": "End Char",
+      "type": "integer"
+    },
+    "id": {
+      "pattern": "^nod_[A-Za-z0-9][A-Za-z0-9_-]*$",
+      "title": "Id",
+      "type": "string"
+    },
+    "node_type": {
+      "minLength": 1,
+      "title": "Node Type",
+      "type": "string"
+    },
+    "order_index": {
+      "minimum": 0,
+      "title": "Order Index",
+      "type": "integer"
+    },
+    "parent_node_id": {
+      "anyOf": [
+        {
+          "pattern": "^nod_[A-Za-z0-9][A-Za-z0-9_-]*$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Parent Node Id"
+    },
+    "parser_confidence": {
+      "anyOf": [
+        {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Parser Confidence"
+    },
+    "representation_id": {
+      "pattern": "^rep_[A-Za-z0-9][A-Za-z0-9_-]*$",
+      "title": "Representation Id",
+      "type": "string"
+    },
+    "section_path": {
+      "items": {
+        "minLength": 1,
+        "type": "string"
+      },
+      "title": "Section Path",
+      "type": "array"
+    },
+    "source_region_ids": {
+      "items": {
+        "minLength": 1,
+        "type": "string"
+      },
+      "title": "Source Region Ids",
+      "type": "array"
+    },
+    "start_char": {
+      "minimum": 0,
+      "title": "Start Char",
+      "type": "integer"
+    },
+    "structural_path": {
+      "items": {
+        "minLength": 1,
+        "type": "string"
+      },
+      "title": "Structural Path",
+      "type": "array"
+    },
+    "text": {
+      "title": "Text",
+      "type": "string"
+    },
+    "text_view_id": {
+      "pattern": "^tvw_[A-Za-z0-9][A-Za-z0-9_-]*$",
+      "title": "Text View Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "representation_id",
+    "node_type",
+    "order_index",
+    "text_view_id",
+    "start_char",
+    "end_char",
+    "text"
+  ],
+  "title": "DocumentNode",
+  "type": "object"
+}

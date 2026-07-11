@@ -17,12 +17,17 @@ from kotekomi_domain import (
     Assertion,
     Briefing,
     Document,
+    DocumentEdge,
+    DocumentNode,
+    DocumentRepresentation,
+    DocumentRepresentationBundle,
     DocumentRevisionRelation,
     Entity,
     Event,
     EvidenceSpan,
     Organization,
     Outcome,
+    ParseQualityReport,
     Place,
     ProposedChange,
     ProvenanceActivity,
@@ -30,6 +35,8 @@ from kotekomi_domain import (
     Relationship,
     Source,
     SourceCapture,
+    SourceRegion,
+    TextView,
 )
 from pydantic import BaseModel
 
@@ -49,6 +56,12 @@ PLACE_SPEC = RecordSpec("places", Place)
 EVENT_SPEC = RecordSpec("events", Event)
 SOURCE_SPEC = RecordSpec("sources", Source)
 DOCUMENT_SPEC = RecordSpec("documents", Document)
+DOCUMENT_REPRESENTATION_SPEC = RecordSpec("document_representations", DocumentRepresentation)
+TEXT_VIEW_SPEC = RecordSpec("text_views", TextView)
+DOCUMENT_NODE_SPEC = RecordSpec("document_nodes", DocumentNode)
+DOCUMENT_EDGE_SPEC = RecordSpec("document_edges", DocumentEdge)
+SOURCE_REGION_SPEC = RecordSpec("source_regions", SourceRegion)
+PARSE_QUALITY_REPORT_SPEC = RecordSpec("parse_quality_reports", ParseQualityReport)
 DOCUMENT_REVISION_RELATION_SPEC = RecordSpec(
     "document_revision_relations",
     DocumentRevisionRelation,
@@ -88,6 +101,12 @@ REQUIRED_LEDGER_TABLES = (
     "events",
     "sources",
     "documents",
+    "document_representations",
+    "text_views",
+    "document_nodes",
+    "document_edges",
+    "source_regions",
+    "parse_quality_reports",
     "document_revision_relations",
     "evidence_spans",
     "assertions",
@@ -307,6 +326,100 @@ class SQLiteLedgerRepository:
     def list_documents(self) -> tuple[Document, ...]:
         return self._list(DOCUMENT_SPEC)
 
+    def save_document_representation(self, record: DocumentRepresentation) -> None:
+        self._save(DOCUMENT_REPRESENTATION_SPEC, record)
+
+    def get_document_representation(self, record_id: str) -> DocumentRepresentation | None:
+        return self._get(DOCUMENT_REPRESENTATION_SPEC, record_id)
+
+    def list_document_representations(self) -> tuple[DocumentRepresentation, ...]:
+        return self._list(DOCUMENT_REPRESENTATION_SPEC)
+
+    def get_document_representation_bundle(
+        self, record_id: str
+    ) -> DocumentRepresentationBundle | None:
+        representation = self.get_document_representation(record_id)
+        if representation is None:
+            return None
+        text_views = tuple(
+            view for view in self.list_text_views() if view.representation_id == representation.id
+        )
+        nodes = tuple(
+            node
+            for node in self.list_document_nodes()
+            if node.representation_id == representation.id
+        )
+        edges = tuple(
+            edge
+            for edge in self.list_document_edges()
+            if edge.representation_id == representation.id
+        )
+        source_regions = tuple(
+            source_region
+            for source_region in self.list_source_regions()
+            if source_region.representation_id == representation.id
+        )
+        quality_reports = tuple(
+            report
+            for report in self.list_parse_quality_reports()
+            if report.representation_id == representation.id
+        )
+        if len(quality_reports) != 1:
+            raise RuntimeError("Document representation must have exactly one ParseQualityReport.")
+        return DocumentRepresentationBundle(
+            representation=representation,
+            text_views=text_views,
+            nodes=nodes,
+            edges=edges,
+            source_regions=source_regions,
+            quality_report=quality_reports[0],
+        )
+
+    def save_text_view(self, record: TextView) -> None:
+        self._save(TEXT_VIEW_SPEC, record)
+
+    def get_text_view(self, record_id: str) -> TextView | None:
+        return self._get(TEXT_VIEW_SPEC, record_id)
+
+    def list_text_views(self) -> tuple[TextView, ...]:
+        return self._list(TEXT_VIEW_SPEC)
+
+    def save_document_node(self, record: DocumentNode) -> None:
+        self._save(DOCUMENT_NODE_SPEC, record)
+
+    def get_document_node(self, record_id: str) -> DocumentNode | None:
+        return self._get(DOCUMENT_NODE_SPEC, record_id)
+
+    def list_document_nodes(self) -> tuple[DocumentNode, ...]:
+        return self._list(DOCUMENT_NODE_SPEC)
+
+    def save_document_edge(self, record: DocumentEdge) -> None:
+        self._save(DOCUMENT_EDGE_SPEC, record)
+
+    def get_document_edge(self, record_id: str) -> DocumentEdge | None:
+        return self._get(DOCUMENT_EDGE_SPEC, record_id)
+
+    def list_document_edges(self) -> tuple[DocumentEdge, ...]:
+        return self._list(DOCUMENT_EDGE_SPEC)
+
+    def save_source_region(self, record: SourceRegion) -> None:
+        self._save(SOURCE_REGION_SPEC, record)
+
+    def get_source_region(self, record_id: str) -> SourceRegion | None:
+        return self._get(SOURCE_REGION_SPEC, record_id)
+
+    def list_source_regions(self) -> tuple[SourceRegion, ...]:
+        return self._list(SOURCE_REGION_SPEC)
+
+    def save_parse_quality_report(self, record: ParseQualityReport) -> None:
+        self._save(PARSE_QUALITY_REPORT_SPEC, record)
+
+    def get_parse_quality_report(self, record_id: str) -> ParseQualityReport | None:
+        return self._get(PARSE_QUALITY_REPORT_SPEC, record_id)
+
+    def list_parse_quality_reports(self) -> tuple[ParseQualityReport, ...]:
+        return self._list(PARSE_QUALITY_REPORT_SPEC)
+
     def save_raw_blob(self, record: RawBlob) -> None:
         self._save(RAW_BLOB_SPEC, record)
 
@@ -328,9 +441,7 @@ class SQLiteLedgerRepository:
     def save_document_revision_relation(self, record: DocumentRevisionRelation) -> None:
         self._save(DOCUMENT_REVISION_RELATION_SPEC, record)
 
-    def get_document_revision_relation(
-        self, record_id: str
-    ) -> DocumentRevisionRelation | None:
+    def get_document_revision_relation(self, record_id: str) -> DocumentRevisionRelation | None:
         return self._get(DOCUMENT_REVISION_RELATION_SPEC, record_id)
 
     def list_document_revision_relations(self) -> tuple[DocumentRevisionRelation, ...]:

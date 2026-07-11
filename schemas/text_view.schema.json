@@ -1,0 +1,55 @@
+{
+  "$defs": {
+    "TextViewKind": {
+      "enum": [
+        "logical",
+        "display",
+        "verbatim",
+        "provider_body"
+      ],
+      "title": "TextViewKind",
+      "type": "string"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "content_digest": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Content Digest",
+      "type": "string"
+    },
+    "id": {
+      "pattern": "^tvw_[A-Za-z0-9][A-Za-z0-9_-]*$",
+      "title": "Id",
+      "type": "string"
+    },
+    "kind": {
+      "$ref": "#/$defs/TextViewKind"
+    },
+    "normalization_policy": {
+      "minLength": 1,
+      "title": "Normalization Policy",
+      "type": "string"
+    },
+    "representation_id": {
+      "pattern": "^rep_[A-Za-z0-9][A-Za-z0-9_-]*$",
+      "title": "Representation Id",
+      "type": "string"
+    },
+    "text": {
+      "title": "Text",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "representation_id",
+    "kind",
+    "content_digest",
+    "text",
+    "normalization_policy"
+  ],
+  "title": "TextView",
+  "type": "object"
+}

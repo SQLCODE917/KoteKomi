@@ -51,10 +51,18 @@ def test_source_add_file_ingests_fixture_into_ledger_and_archive(
     with sqlite_ledger_transaction(ledger_path) as repository:
         sources = repository.list_sources()
         documents = repository.list_documents()
+        document_representations = repository.list_document_representations()
+        text_views = repository.list_text_views()
+        document_nodes = repository.list_document_nodes()
+        parse_quality_reports = repository.list_parse_quality_reports()
         provenance_activities = repository.list_provenance_activities()
 
     assert len(sources) == 1
     assert len(documents) == 1
+    assert len(document_representations) == 1
+    assert len(text_views) == 1
+    assert len(document_nodes) == 1
+    assert len(parse_quality_reports) == 1
     assert len(provenance_activities) == 1
     source = sources[0]
     document = documents[0]
@@ -71,7 +79,15 @@ def test_source_add_file_ingests_fixture_into_ledger_and_archive(
         f"blb_{document.content_sha256[:24]}",
         f"cap_{document.content_sha256[:24]}",
         document.id,
+        f"rep_{document.content_sha256[:24]}",
+        f"tvw_{document.content_sha256[:24]}",
+        f"nod_{document.content_sha256[:24]}",
+        f"pqr_{document.content_sha256[:24]}",
     )
+    with sqlite_ledger_transaction(ledger_path) as repository:
+        bundle = repository.get_document_representation_bundle(document_representations[0].id)
+    assert bundle is not None
+    assert bundle.nodes[0].text == text_views[0].text
 
 
 def test_source_add_file_is_idempotent(
@@ -101,4 +117,8 @@ def test_source_add_file_is_idempotent(
     with sqlite_ledger_transaction(ledger_path) as repository:
         assert len(repository.list_sources()) == 1
         assert len(repository.list_documents()) == 1
+        assert len(repository.list_document_representations()) == 1
+        assert len(repository.list_text_views()) == 1
+        assert len(repository.list_document_nodes()) == 1
+        assert len(repository.list_parse_quality_reports()) == 1
         assert len(repository.list_provenance_activities()) == 1

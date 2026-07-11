@@ -10,12 +10,20 @@ from typing import Protocol
 
 from kotekomi_domain import (
     Document,
+    DocumentNode,
+    DocumentRepresentation,
+    DocumentRepresentationBundle,
     DocumentVersionKind,
+    ParseQualityReport,
     ProvenanceActivity,
     RawBlob,
+    RepresentationAnalyzability,
     Source,
     SourceCapture,
     SourceType,
+    TextView,
+    TextViewKind,
+    canonical_representation_digest,
 )
 
 from kotekomi_application.ports import ArchiveObject, ArchiveStore, StagedArchiveObject
@@ -46,6 +54,10 @@ class SourceFileLedger(Protocol):
     def save_raw_blob(self, record: RawBlob) -> None: ...
     def save_source_capture(self, record: SourceCapture) -> None: ...
     def save_document(self, record: Document) -> None: ...
+    def save_document_representation(self, record: DocumentRepresentation) -> None: ...
+    def save_text_view(self, record: TextView) -> None: ...
+    def save_document_node(self, record: DocumentNode) -> None: ...
+    def save_parse_quality_report(self, record: ParseQualityReport) -> None: ...
     def save_provenance_activity(self, record: ProvenanceActivity) -> None: ...
 
 
@@ -61,6 +73,7 @@ class SourceFileIngestInput:
 class SourceFileIngestResult:
     source_id: str
     document_id: str
+    representation_id: str
     provenance_activity_id: str
     raw_path: str
     extracted_text_path: str
@@ -86,6 +99,10 @@ def add_source_from_file(
     provenance_activity_id = f"prv_{short_hash}"
     raw_blob_id = f"blb_{short_hash}"
     source_capture_id = f"cap_{short_hash}"
+    representation_id = f"rep_{short_hash}"
+    text_view_id = f"tvw_{short_hash}"
+    document_node_id = f"nod_{short_hash}"
+    quality_report_id = f"pqr_{short_hash}"
 
     existing_source = ledger_repository.get_source(source_id)
     existing_document = ledger_repository.get_document(document_id)
@@ -94,6 +111,7 @@ def add_source_from_file(
         return SourceFileIngestResult(
             source_id=source_id,
             document_id=document_id,
+            representation_id=representation_id,
             provenance_activity_id=provenance_activity_id,
             raw_path=existing_document.raw_path,
             extracted_text_path=existing_document.extracted_text_path or "",
@@ -133,6 +151,65 @@ def add_source_from_file(
             created_at=ingest_input.ingested_at,
             updated_at=ingest_input.ingested_at,
         )
+        text_digest = hashlib.sha256(extracted_text.encode("utf-8")).hexdigest()
+        text_view = TextView(
+            id=text_view_id,
+            representation_id=representation_id,
+            kind=TextViewKind.LOGICAL,
+            content_digest=text_digest,
+            text=extracted_text,
+            normalization_policy="utf8_identity_v1",
+        )
+        document_node = DocumentNode(
+            id=document_node_id,
+            representation_id=representation_id,
+            node_type="document",
+            order_index=0,
+            text_view_id=text_view_id,
+            start_char=0,
+            end_char=len(extracted_text),
+            text=extracted_text,
+        )
+        quality_report = ParseQualityReport(
+            id=quality_report_id,
+            representation_id=representation_id,
+            metric_values={"text_char_count": len(extracted_text)},
+            issues=("empty_text",) if not extracted_text else (),
+            analyzability=(
+                RepresentationAnalyzability.BLOCKED
+                if not extracted_text
+                else RepresentationAnalyzability.ACCEPTABLE
+            ),
+        )
+        representation_template = DocumentRepresentation(
+            id=representation_id,
+            document_id=document_id,
+            parser_name="local_file",
+            parser_version="1",
+            parser_config_digest=hashlib.sha256(b"utf8_identity_v1").hexdigest(),
+            code_revision="unknown",
+            input_blob_digest=content_sha256,
+            canonical_output_digest="0" * 64,
+            created_at=ingest_input.ingested_at,
+        )
+        representation = representation_template.model_copy(
+            update={
+                "canonical_output_digest": canonical_representation_digest(
+                    representation_template,
+                    text_views=(text_view,),
+                    nodes=(document_node,),
+                    edges=(),
+                    source_regions=(),
+                    quality_report=quality_report,
+                )
+            }
+        )
+        DocumentRepresentationBundle(
+            representation=representation,
+            text_views=(text_view,),
+            nodes=(document_node,),
+            quality_report=quality_report,
+        )
         raw_object = archive_store.promote_staged_object(staged_raw)
         promoted_objects.append(raw_object)
         text_object = archive_store.promote_staged_object(staged_text)
@@ -142,7 +219,16 @@ def add_source_from_file(
             activity_type="source_file_ingest",
             agent="kotekomi",
             input_ids=(ingest_input.local_file_path,),
-            output_ids=(source_id, raw_blob_id, source_capture_id, document_id),
+            output_ids=(
+                source_id,
+                raw_blob_id,
+                source_capture_id,
+                document_id,
+                representation_id,
+                text_view_id,
+                document_node_id,
+                quality_report_id,
+            ),
             occurred_at=ingest_input.ingested_at,
         )
 
@@ -170,6 +256,10 @@ def add_source_from_file(
         ledger_repository.save_raw_blob(raw_blob)
         ledger_repository.save_source_capture(source_capture)
         ledger_repository.save_document(document)
+        ledger_repository.save_document_representation(representation)
+        ledger_repository.save_text_view(text_view)
+        ledger_repository.save_document_node(document_node)
+        ledger_repository.save_parse_quality_report(quality_report)
         ledger_repository.save_provenance_activity(provenance_activity)
     except Exception:
         _cleanup_archive_objects(archive_store, promoted_objects, staged_objects)
@@ -178,6 +268,7 @@ def add_source_from_file(
     return SourceFileIngestResult(
         source_id=source_id,
         document_id=document_id,
+        representation_id=representation_id,
         provenance_activity_id=provenance_activity_id,
         raw_path=raw_object.relative_path,
         extracted_text_path=text_object.relative_path,

@@ -11,11 +11,15 @@ from kotekomi_application import (
 )
 from kotekomi_domain import (
     Document,
+    DocumentNode,
+    DocumentRepresentation,
+    ParseQualityReport,
     ProvenanceActivity,
     RawBlob,
     Source,
     SourceCapture,
     SourceType,
+    TextView,
 )
 
 FIXTURE_PATH = (
@@ -139,6 +143,10 @@ class FakeLedgerRepository:
         self.provenance_activities: dict[str, ProvenanceActivity] = {}
         self.raw_blobs: dict[str, RawBlob] = {}
         self.source_captures: dict[str, SourceCapture] = {}
+        self.document_representations: dict[str, DocumentRepresentation] = {}
+        self.text_views: dict[str, TextView] = {}
+        self.document_nodes: dict[str, DocumentNode] = {}
+        self.parse_quality_reports: dict[str, ParseQualityReport] = {}
         self.fail_on_save_document = fail_on_save_document
 
     def get_source(self, record_id: str) -> Source | None:
@@ -163,6 +171,18 @@ class FakeLedgerRepository:
         if self.fail_on_save_document:
             raise RuntimeError("simulated Ledger failure")
         self.documents[record.id] = record
+
+    def save_document_representation(self, record: DocumentRepresentation) -> None:
+        self.document_representations[record.id] = record
+
+    def save_text_view(self, record: TextView) -> None:
+        self.text_views[record.id] = record
+
+    def save_document_node(self, record: DocumentNode) -> None:
+        self.document_nodes[record.id] = record
+
+    def save_parse_quality_report(self, record: ParseQualityReport) -> None:
+        self.parse_quality_reports[record.id] = record
 
     def save_provenance_activity(self, record: ProvenanceActivity) -> None:
         self.provenance_activities[record.id] = record
@@ -203,7 +223,19 @@ def test_add_source_from_file_creates_source_document_and_provenance() -> None:
         f"blb_{short_hash}",
         f"cap_{short_hash}",
         result.document_id,
+        result.representation_id,
+        f"tvw_{short_hash}",
+        f"nod_{short_hash}",
+        f"pqr_{short_hash}",
     )
+    representation = ledger.document_representations[result.representation_id]
+    text_view = ledger.text_views[f"tvw_{short_hash}"]
+    root_node = ledger.document_nodes[f"nod_{short_hash}"]
+    quality_report = ledger.parse_quality_reports[f"pqr_{short_hash}"]
+    assert representation.document_id == result.document_id
+    assert text_view.text == raw_bytes.decode("utf-8")
+    assert root_node.text == text_view.text
+    assert quality_report.analyzability.value == "acceptable"
     assert archive.staged_writes == {}
 
 
@@ -229,6 +261,10 @@ def test_add_source_from_file_is_idempotent_after_records_exist() -> None:
     assert len(archive.text_writes) == 1
     assert len(ledger.sources) == 1
     assert len(ledger.documents) == 1
+    assert len(ledger.document_representations) == 1
+    assert len(ledger.text_views) == 1
+    assert len(ledger.document_nodes) == 1
+    assert len(ledger.parse_quality_reports) == 1
     assert len(ledger.provenance_activities) == 1
 
 

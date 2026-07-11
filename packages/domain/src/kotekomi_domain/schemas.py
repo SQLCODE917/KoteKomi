@@ -13,12 +13,16 @@ from kotekomi_domain.models import (
     Assertion,
     Briefing,
     Document,
+    DocumentEdge,
+    DocumentNode,
+    DocumentRepresentation,
     DocumentRevisionRelation,
     Entity,
     Event,
     EvidenceSpan,
     Organization,
     Outcome,
+    ParseQualityReport,
     Place,
     ProposedChange,
     ProvenanceActivity,
@@ -26,6 +30,8 @@ from kotekomi_domain.models import (
     Relationship,
     Source,
     SourceCapture,
+    SourceRegion,
+    TextView,
 )
 
 type DomainModelType = type[BaseModel]
@@ -36,6 +42,9 @@ DOMAIN_SCHEMA_MODELS: dict[str, DomainModelType] = {
     "assertion.schema.json": Assertion,
     "briefing.schema.json": Briefing,
     "document.schema.json": Document,
+    "document_edge.schema.json": DocumentEdge,
+    "document_node.schema.json": DocumentNode,
+    "document_representation.schema.json": DocumentRepresentation,
     "document_revision_relation.schema.json": DocumentRevisionRelation,
     "entity.schema.json": Entity,
     "event.schema.json": Event,
@@ -43,12 +52,15 @@ DOMAIN_SCHEMA_MODELS: dict[str, DomainModelType] = {
     "organization.schema.json": Organization,
     "outcome.schema.json": Outcome,
     "place.schema.json": Place,
+    "parse_quality_report.schema.json": ParseQualityReport,
     "provenance_activity.schema.json": ProvenanceActivity,
     "raw_blob.schema.json": RawBlob,
     "proposed_change.schema.json": ProposedChange,
     "relationship.schema.json": Relationship,
     "source.schema.json": Source,
     "source_capture.schema.json": SourceCapture,
+    "source_region.schema.json": SourceRegion,
+    "text_view.schema.json": TextView,
 }
 
 

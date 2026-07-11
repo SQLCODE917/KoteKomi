@@ -1,0 +1,62 @@
+{
+  "$defs": {
+    "DocumentEdgeProvenanceKind": {
+      "enum": [
+        "deterministic",
+        "parser",
+        "proposed",
+        "reviewed"
+      ],
+      "title": "DocumentEdgeProvenanceKind",
+      "type": "string"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "edge_type": {
+      "minLength": 1,
+      "title": "Edge Type",
+      "type": "string"
+    },
+    "from_node_id": {
+      "pattern": "^nod_[A-Za-z0-9][A-Za-z0-9_-]*$",
+      "title": "From Node Id",
+      "type": "string"
+    },
+    "id": {
+      "pattern": "^deg_[A-Za-z0-9][A-Za-z0-9_-]*$",
+      "title": "Id",
+      "type": "string"
+    },
+    "provenance_id": {
+      "minLength": 1,
+      "title": "Provenance Id",
+      "type": "string"
+    },
+    "provenance_kind": {
+      "$ref": "#/$defs/DocumentEdgeProvenanceKind"
+    },
+    "representation_id": {
+      "pattern": "^rep_[A-Za-z0-9][A-Za-z0-9_-]*$",
+      "title": "Representation Id",
+      "type": "string"
+    },
+    "to_node_id": {
+      "pattern": "^nod_[A-Za-z0-9][A-Za-z0-9_-]*$",
+      "title": "To Node Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "representation_id",
+    "from_node_id",
+    "to_node_id",
+    "edge_type",
+    "provenance_kind",
+    "provenance_id"
+  ],
+  "title": "DocumentEdge",
+  "type": "object"
+}

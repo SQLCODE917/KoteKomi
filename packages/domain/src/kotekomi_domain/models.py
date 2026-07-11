@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Annotated, Self
@@ -29,9 +31,13 @@ ProposedChangeId = Annotated[str, Field(pattern=r"^pcg_[A-Za-z0-9][A-Za-z0-9_-]*
 BriefingId = Annotated[str, Field(pattern=r"^brf_[A-Za-z0-9][A-Za-z0-9_-]*$")]
 RawBlobId = Annotated[str, Field(pattern=r"^blb_[A-Za-z0-9][A-Za-z0-9_-]*$")]
 SourceCaptureId = Annotated[str, Field(pattern=r"^cap_[A-Za-z0-9][A-Za-z0-9_-]*$")]
-DocumentRevisionRelationId = Annotated[
-    str, Field(pattern=r"^drv_[A-Za-z0-9][A-Za-z0-9_-]*$")
-]
+DocumentRevisionRelationId = Annotated[str, Field(pattern=r"^drv_[A-Za-z0-9][A-Za-z0-9_-]*$")]
+DocumentRepresentationId = Annotated[str, Field(pattern=r"^rep_[A-Za-z0-9][A-Za-z0-9_-]*$")]
+TextViewId = Annotated[str, Field(pattern=r"^tvw_[A-Za-z0-9][A-Za-z0-9_-]*$")]
+DocumentNodeId = Annotated[str, Field(pattern=r"^nod_[A-Za-z0-9][A-Za-z0-9_-]*$")]
+DocumentEdgeId = Annotated[str, Field(pattern=r"^deg_[A-Za-z0-9][A-Za-z0-9_-]*$")]
+ParseQualityReportId = Annotated[str, Field(pattern=r"^pqr_[A-Za-z0-9][A-Za-z0-9_-]*$")]
+SourceRegionId = Annotated[str, Field(pattern=r"^srg_[A-Za-z0-9][A-Za-z0-9_-]*$")]
 
 
 def utc_now() -> datetime:
@@ -75,6 +81,26 @@ class DocumentRevisionType(StrEnum):
     CORRECTS = "corrects"
     SUPERSEDES = "supersedes"
     WITHDRAWS = "withdraws"
+
+
+class TextViewKind(StrEnum):
+    LOGICAL = "logical"
+    DISPLAY = "display"
+    VERBATIM = "verbatim"
+    PROVIDER_BODY = "provider_body"
+
+
+class RepresentationAnalyzability(StrEnum):
+    ACCEPTABLE = "acceptable"
+    DEGRADED = "degraded"
+    BLOCKED = "blocked"
+
+
+class DocumentEdgeProvenanceKind(StrEnum):
+    DETERMINISTIC = "deterministic"
+    PARSER = "parser"
+    PROPOSED = "proposed"
+    REVIEWED = "reviewed"
 
 
 class SelectorType(StrEnum):
@@ -262,6 +288,217 @@ class DocumentRevisionRelation(DomainModel):
         return self
 
 
+class DocumentRepresentation(DomainModel):
+    id: DocumentRepresentationId
+    document_id: DocumentId
+    parser_name: NonEmptyStr
+    parser_version: NonEmptyStr
+    parser_config_digest: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
+    code_revision: NonEmptyStr
+    input_blob_digest: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
+    canonical_output_digest: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
+    created_at: datetime = Field(default_factory=utc_now)
+
+
+class TextView(DomainModel):
+    id: TextViewId
+    representation_id: DocumentRepresentationId
+    kind: TextViewKind
+    content_digest: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
+    text: str
+    normalization_policy: NonEmptyStr
+
+    @model_validator(mode="after")
+    def validate_content_digest(self) -> Self:
+        actual_digest = hashlib.sha256(self.text.encode("utf-8")).hexdigest()
+        if self.content_digest != actual_digest:
+            raise ValueError("Text view content_digest must match its UTF-8 text.")
+        return self
+
+
+class SourceRegion(DomainModel):
+    id: SourceRegionId
+    representation_id: DocumentRepresentationId
+    coordinate_system: NonEmptyStr
+    page_number: Annotated[int, Field(ge=1)]
+    page_width: Annotated[float, Field(gt=0)]
+    page_height: Annotated[float, Field(gt=0)]
+    left: Annotated[float, Field(ge=0)]
+    top: Annotated[float, Field(ge=0)]
+    right: Annotated[float, Field(ge=0)]
+    bottom: Annotated[float, Field(ge=0)]
+
+    @model_validator(mode="after")
+    def validate_bounds(self) -> Self:
+        if self.right <= self.left or self.bottom <= self.top:
+            raise ValueError("Source region must have positive width and height.")
+        if self.right > self.page_width or self.bottom > self.page_height:
+            raise ValueError("Source region must lie within its page bounds.")
+        return self
+
+
+class DocumentNode(DomainModel):
+    id: DocumentNodeId
+    representation_id: DocumentRepresentationId
+    parent_node_id: DocumentNodeId | None = None
+    node_type: NonEmptyStr
+    order_index: Annotated[int, Field(ge=0)]
+    structural_path: tuple[NonEmptyStr, ...] = Field(default_factory=tuple)
+    section_path: tuple[NonEmptyStr, ...] = Field(default_factory=tuple)
+    text_view_id: TextViewId
+    start_char: Annotated[int, Field(ge=0)]
+    end_char: Annotated[int, Field(ge=0)]
+    text: str
+    source_region_ids: tuple[NonEmptyStr, ...] = Field(default_factory=tuple)
+    parser_confidence: Confidence | None = None
+
+    @model_validator(mode="after")
+    def validate_range(self) -> Self:
+        if self.end_char < self.start_char:
+            raise ValueError("Document node end_char must not precede start_char.")
+        if self.end_char == self.start_char and self.node_type != "document":
+            raise ValueError("Only an empty document root may have an empty text range.")
+        return self
+
+
+class DocumentEdge(DomainModel):
+    id: DocumentEdgeId
+    representation_id: DocumentRepresentationId
+    from_node_id: DocumentNodeId
+    to_node_id: DocumentNodeId
+    edge_type: NonEmptyStr
+    provenance_kind: DocumentEdgeProvenanceKind
+    provenance_id: NonEmptyStr
+
+
+class ParseQualityReport(DomainModel):
+    id: ParseQualityReportId
+    representation_id: DocumentRepresentationId
+    metric_values: dict[str, JsonValue] = Field(default_factory=dict)
+    issues: tuple[NonEmptyStr, ...] = Field(default_factory=tuple)
+    analyzability: RepresentationAnalyzability
+
+
+class DocumentRepresentationBundle(DomainModel):
+    """A complete parser output that can be validated without the parser runtime."""
+
+    representation: DocumentRepresentation
+    text_views: tuple[TextView, ...]
+    nodes: tuple[DocumentNode, ...]
+    edges: tuple[DocumentEdge, ...] = Field(default_factory=tuple)
+    source_regions: tuple[SourceRegion, ...] = Field(default_factory=tuple)
+    quality_report: ParseQualityReport
+
+    @model_validator(mode="after")
+    def validate_bundle(self) -> Self:
+        representation_id = self.representation.id
+        text_views = {view.id: view for view in self.text_views}
+        nodes = {node.id: node for node in self.nodes}
+        source_regions = {region.id: region for region in self.source_regions}
+        _require_unique_ids(self.text_views, "TextView")
+        _require_unique_ids(self.nodes, "DocumentNode")
+        _require_unique_ids(self.edges, "DocumentEdge")
+        _require_unique_ids(self.source_regions, "SourceRegion")
+        if not text_views:
+            raise ValueError("Document representation must contain at least one TextView.")
+        if self.quality_report.representation_id != representation_id:
+            raise ValueError("Parse quality report must belong to the representation.")
+        for view in self.text_views:
+            if view.representation_id != representation_id:
+                raise ValueError("TextView must belong to the representation.")
+        for region in self.source_regions:
+            if region.representation_id != representation_id:
+                raise ValueError("SourceRegion must belong to the representation.")
+        for node in self.nodes:
+            if node.representation_id != representation_id:
+                raise ValueError("DocumentNode must belong to the representation.")
+            text_view = text_views.get(node.text_view_id)
+            if text_view is None:
+                raise ValueError("DocumentNode must reference a TextView in its representation.")
+            if node.end_char > len(text_view.text):
+                raise ValueError("DocumentNode range must lie within its TextView.")
+            if text_view.text[node.start_char : node.end_char] != node.text:
+                raise ValueError("DocumentNode text must match its TextView range.")
+            if node.parent_node_id is not None and node.parent_node_id not in nodes:
+                raise ValueError("DocumentNode parent must exist in its representation.")
+            if any(region_id not in source_regions for region_id in node.source_region_ids):
+                raise ValueError("DocumentNode must reference SourceRegions in its representation.")
+        _validate_document_node_tree(tuple(nodes.values()))
+        for edge in self.edges:
+            if edge.representation_id != representation_id:
+                raise ValueError("DocumentEdge must belong to the representation.")
+            if edge.from_node_id not in nodes or edge.to_node_id not in nodes:
+                raise ValueError("DocumentEdge endpoints must exist in its representation.")
+        actual_digest = canonical_representation_digest(
+            self.representation,
+            text_views=self.text_views,
+            nodes=self.nodes,
+            edges=self.edges,
+            source_regions=self.source_regions,
+            quality_report=self.quality_report,
+        )
+        if self.representation.canonical_output_digest != actual_digest:
+            raise ValueError(
+                "Document representation canonical_output_digest does not match output."
+            )
+        return self
+
+
+def _require_unique_ids(
+    records: tuple[TextView | DocumentNode | DocumentEdge | SourceRegion, ...],
+    record_name: str,
+) -> None:
+    if len({record.id for record in records}) != len(records):
+        raise ValueError(f"{record_name} IDs must be unique within a representation.")
+
+
+def _validate_document_node_tree(nodes: tuple[DocumentNode, ...]) -> None:
+    roots = [node for node in nodes if node.parent_node_id is None]
+    if len(roots) != 1:
+        raise ValueError("Document representation must contain exactly one root DocumentNode.")
+    if roots[0].node_type != "document":
+        raise ValueError("Document representation root DocumentNode must have type 'document'.")
+    sibling_orders: set[tuple[str | None, int]] = set()
+    for node in nodes:
+        sibling_order = (node.parent_node_id, node.order_index)
+        if sibling_order in sibling_orders:
+            raise ValueError("DocumentNode sibling order_index values must be unique.")
+        sibling_orders.add(sibling_order)
+        ancestor_ids: set[str] = {node.id}
+        parent_id = node.parent_node_id
+        while parent_id is not None:
+            if parent_id in ancestor_ids:
+                raise ValueError("DocumentNode parentage must not contain a cycle.")
+            ancestor_ids.add(parent_id)
+            parent = next(candidate for candidate in nodes if candidate.id == parent_id)
+            parent_id = parent.parent_node_id
+
+
+def canonical_representation_digest(
+    representation: DocumentRepresentation,
+    *,
+    text_views: tuple[TextView, ...],
+    nodes: tuple[DocumentNode, ...],
+    edges: tuple[DocumentEdge, ...],
+    source_regions: tuple[SourceRegion, ...],
+    quality_report: ParseQualityReport,
+) -> str:
+    """Return the SHA-256 digest of a stable representation serialization."""
+
+    representation_payload = representation.model_dump(mode="json")
+    representation_payload.pop("canonical_output_digest")
+    payload = {
+        "representation": representation_payload,
+        "text_views": [view.model_dump(mode="json") for view in text_views],
+        "nodes": [node.model_dump(mode="json") for node in nodes],
+        "edges": [edge.model_dump(mode="json") for edge in edges],
+        "source_regions": [region.model_dump(mode="json") for region in source_regions],
+        "quality_report": quality_report.model_dump(mode="json"),
+    }
+    canonical_json = json.dumps(payload, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
+    return hashlib.sha256(canonical_json.encode("utf-8")).hexdigest()
+
+
 class EvidenceSpan(DomainModel):
     id: EvidenceSpanId
     source_id: SourceId
@@ -349,9 +586,7 @@ class Assertion(DomainModel):
             raise ValueError("authority_source_ids must be a subset of source_ids.")
 
         if not set(self.authority_evidence_span_ids).issubset(self.evidence_span_ids):
-            raise ValueError(
-                "authority_evidence_span_ids must be a subset of evidence_span_ids."
-            )
+            raise ValueError("authority_evidence_span_ids must be a subset of evidence_span_ids.")
 
         if (
             self.epistemic_scope is EpistemicScope.ANALYTIC_INFERENCE
