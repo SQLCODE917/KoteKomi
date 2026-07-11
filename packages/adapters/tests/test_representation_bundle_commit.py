@@ -15,11 +15,14 @@ from kotekomi_application import (
     deterministic_representation_id,
 )
 from kotekomi_domain import (
+    DocumentEdge,
+    DocumentEdgeProvenanceKind,
     DocumentNode,
     DocumentRepresentation,
     DocumentRepresentationBundle,
     ParseQualityReport,
     RepresentationAnalyzability,
+    SourceRegion,
     TextView,
     TextViewKind,
     canonical_representation_digest,
@@ -30,6 +33,16 @@ from .domain_fixtures import sample_domain_records
 NOW = datetime(2026, 7, 11, tzinfo=UTC)
 INPUT_DIGEST = "a" * 64
 CONFIG_DIGEST = "b" * 64
+LARGE_PARAGRAPH_COUNT = 4096
+UNRELATED_REPRESENTATION_COUNT = 6
+UNRELATED_PARAGRAPH_COUNT = 256
+REPRESENTATION_CHILD_INDEXES = {
+    "text_views": "idx_text_views_representation_id",
+    "document_nodes": "idx_document_nodes_representation_id",
+    "document_edges": "idx_document_edges_representation_id",
+    "source_regions": "idx_source_regions_representation_id",
+    "parse_quality_reports": "idx_parse_quality_reports_representation_id",
+}
 
 
 def initialize_ledger_with_representation_parent(ledger_path: Path) -> None:
@@ -108,6 +121,105 @@ def bundle(
     )
 
 
+def synthetic_bundle(
+    *, task_fingerprint_id: str, paragraph_count: int
+) -> DocumentRepresentationBundle:
+    representation_id = deterministic_representation_id(task_fingerprint_id)
+    representation_key = representation_id.removeprefix("rep_")
+    text = "x" * paragraph_count
+    text_view = TextView(
+        id=f"tvw_{representation_key}_logical",
+        representation_id=representation_id,
+        kind=TextViewKind.LOGICAL,
+        content_digest=hashlib.sha256(text.encode()).hexdigest(),
+        text=text,
+        normalization_policy="synthetic_v1",
+    )
+    source_region = SourceRegion(
+        id=f"srg_{representation_key}_page_1",
+        representation_id=representation_id,
+        coordinate_system="pdf_points",
+        page_number=1,
+        page_width=612,
+        page_height=792,
+        left=0,
+        top=0,
+        right=612,
+        bottom=792,
+    )
+    root = DocumentNode(
+        id=f"nod_{representation_key}_document",
+        representation_id=representation_id,
+        node_type="document",
+        order_index=0,
+        text_view_id=text_view.id,
+        start_char=0,
+        end_char=len(text),
+        text=text,
+    )
+    paragraphs = tuple(
+        DocumentNode(
+            id=f"nod_{representation_key}_paragraph_{index}",
+            representation_id=representation_id,
+            parent_node_id=root.id,
+            node_type="paragraph",
+            order_index=index,
+            text_view_id=text_view.id,
+            start_char=index,
+            end_char=index + 1,
+            text="x",
+            source_region_ids=(source_region.id,),
+        )
+        for index in range(paragraph_count)
+    )
+    edge = DocumentEdge(
+        id=f"deg_{representation_key}_root_to_first_paragraph",
+        representation_id=representation_id,
+        from_node_id=root.id,
+        to_node_id=paragraphs[0].id,
+        edge_type="contains",
+        provenance_kind=DocumentEdgeProvenanceKind.DETERMINISTIC,
+        provenance_id="synthetic_v1",
+    )
+    quality_report = ParseQualityReport(
+        id=f"pqr_{representation_key}_quality_v1",
+        representation_id=representation_id,
+        metric_values={"text_char_count": len(text)},
+        analyzability=RepresentationAnalyzability.ACCEPTABLE,
+    )
+    template = DocumentRepresentation(
+        id=representation_id,
+        document_id="doc_representation_fixture",
+        parser_name="synthetic_parser",
+        parser_version="1",
+        parser_config_digest=CONFIG_DIGEST,
+        processing_task_fingerprint_id=task_fingerprint_id,
+        input_blob_digest=INPUT_DIGEST,
+        canonical_output_digest="0" * 64,
+        created_at=NOW,
+    )
+    representation = template.model_copy(
+        update={
+            "canonical_output_digest": canonical_representation_digest(
+                template,
+                text_views=(text_view,),
+                nodes=(root, *paragraphs),
+                edges=(edge,),
+                source_regions=(source_region,),
+                quality_report=quality_report,
+            )
+        }
+    )
+    return DocumentRepresentationBundle(
+        representation=representation,
+        text_views=(text_view,),
+        nodes=(root, *paragraphs),
+        edges=(edge,),
+        source_regions=(source_region,),
+        quality_report=quality_report,
+    )
+
+
 def test_representation_bundle_reuses_a_semantic_replay_after_restart(tmp_path: Path) -> None:
     ledger_path = tmp_path / "ledger.db"
     initialize_ledger_with_representation_parent(ledger_path)
@@ -144,6 +256,46 @@ def test_representation_bundle_load_uses_representation_ownership_indexes(tmp_pa
             (first.representation.id,),
         ).fetchall()
     assert any("idx_text_views_representation_id" in row[-1] for row in query_plan)
+
+
+def test_large_representation_bundle_load_uses_only_owned_rows(tmp_path: Path) -> None:
+    ledger_path = tmp_path / "ledger.db"
+    initialize_ledger_with_representation_parent(ledger_path)
+    target = synthetic_bundle(
+        task_fingerprint_id="ptf_large_target",
+        paragraph_count=LARGE_PARAGRAPH_COUNT,
+    )
+    unrelated_bundles = tuple(
+        synthetic_bundle(
+            task_fingerprint_id=f"ptf_unrelated_{index}",
+            paragraph_count=UNRELATED_PARAGRAPH_COUNT,
+        )
+        for index in range(UNRELATED_REPRESENTATION_COUNT)
+    )
+
+    with sqlite_ledger_transaction(ledger_path) as repository:
+        repository.commit_document_representation_bundle(target)
+        for unrelated_bundle in unrelated_bundles:
+            repository.commit_document_representation_bundle(unrelated_bundle)
+
+    with sqlite_ledger_transaction(ledger_path) as repository:
+        loaded = repository.get_document_representation_bundle(target.representation.id)
+
+    assert loaded is not None
+    assert loaded.representation == target.representation
+    assert loaded.text_views == target.text_views
+    assert loaded.nodes == tuple(sorted(target.nodes, key=lambda node: node.id))
+    assert loaded.edges == target.edges
+    assert loaded.source_regions == target.source_regions
+    assert loaded.quality_report == target.quality_report
+    with sqlite3.connect(ledger_path) as connection:
+        for table_name, index_name in REPRESENTATION_CHILD_INDEXES.items():
+            query_plan = connection.execute(
+                f"EXPLAIN QUERY PLAN SELECT payload_json FROM {table_name} "
+                "WHERE representation_id = ? ORDER BY id",
+                (target.representation.id,),
+            ).fetchall()
+            assert any(index_name in row[-1] for row in query_plan)
 
 
 def test_representation_bundle_rejects_nondeterministic_output_without_mutation(
