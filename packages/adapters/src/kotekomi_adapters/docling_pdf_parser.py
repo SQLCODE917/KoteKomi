@@ -16,8 +16,10 @@ from io import BytesIO
 from docling.datamodel.base_models import DocumentStream, InputFormat
 from docling.datamodel.pipeline_options import PdfPipelineOptions
 from docling.document_converter import DocumentConverter, PdfFormatOption
+from docling_core.types.doc.document import DoclingDocument
 from kotekomi_application.pdf_ingest import (
     PdfDocumentParser,
+    PdfPagePreflight,
     PdfParseInput,
     PdfParseResult,
     PdfPreflight,
@@ -81,7 +83,7 @@ class DoclingPdfParser(PdfDocumentParser):
                 representation_bundle=None,
                 blocking_reasons=(f"Docling PDF conversion failed: {type(exc).__name__}",),
             )
-        preflight = _preflight_from_conversion(conversion, parser_version)
+        preflight = _preflight_from_document(conversion.document, parser_version)
         bundle = _blocked_markdown_bundle(
             parse_input=parse_input,
             logical_text=logical_text,
@@ -97,15 +99,25 @@ class DoclingPdfParser(PdfDocumentParser):
         )
 
 
-def _preflight_from_conversion(conversion: object, parser_version: str) -> PdfPreflight:
-    del conversion
+def _preflight_from_document(document: DoclingDocument, parser_version: str) -> PdfPreflight:
+    pages = tuple(
+        PdfPagePreflight(
+            page_index=page_number,
+            width=page.size.width,
+            height=page.size.height,
+            rotation=0,
+            embedded_text_character_count=0,
+            warnings=("embedded_text_metrics_pending",),
+        )
+        for page_number, page in sorted(document.pages.items())
+    )
     return PdfPreflight(
         parser_name="docling",
         parser_version=parser_version,
         encrypted=False,
-        page_count=0,
-        pages=(),
-        warnings=("rich_preflight_mapping_pending",),
+        page_count=len(pages),
+        pages=pages,
+        warnings=("embedded_text_metrics_pending",),
     )
 
 
