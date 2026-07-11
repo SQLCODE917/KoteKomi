@@ -160,6 +160,41 @@ def capture_source(
                 source, raw_blob, existing_capture, resolution, document, relation, False
             )
         if (
+            source is not None
+            and raw_blob is not None
+            and existing_document is not None
+            and _is_idempotent_retry(
+                request=request,
+                source=source,
+                raw_blob=raw_blob,
+                capture=existing_capture,
+                document=existing_document,
+                relation=_requested_relation(request, identity),
+                ledger_repository=ledger_repository,
+                identity_policy=identity_policy,
+            )
+            and ledger_repository.get_capture_document_resolution(identity.document_resolution_id)
+            is None
+        ):
+            resolution = CaptureDocumentResolution(
+                id=identity.document_resolution_id,
+                capture_id=existing_capture.id,
+                document_id=existing_document.id,
+                resolution_policy="capture_source_v1",
+                resolution_basis="source_identity_and_content_digest",
+                created_at=request.transaction_time,
+            )
+            relation = _requested_relation(request, identity)
+            ledger_repository.save_capture_document_resolution(resolution)
+            if (
+                relation is not None
+                and ledger_repository.get_document_revision_relation(relation.id) is None
+            ):
+                ledger_repository.save_document_revision_relation(relation)
+            return CaptureOutcome(
+                source, raw_blob, existing_capture, resolution, existing_document, relation, False
+            )
+        if (
             source is None
             or raw_blob is None
             or existing_document is None

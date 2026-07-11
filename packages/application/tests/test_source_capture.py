@@ -221,6 +221,20 @@ def test_capture_repairs_missing_document_closure_on_retry() -> None:
     assert tuple(ledger.captures.values()) == (first.source_capture,)
 
 
+def test_capture_repairs_missing_resolution_on_retry() -> None:
+    ledger = FakeCaptureLedger()
+    policy = StableSourceIdentityPolicy()
+    capture_request = request(b"fixture bytes", "repair-resolution")
+    first = capture_source(capture_request, ledger, policy)
+    ledger.resolutions.pop(first.document_resolution.id)
+
+    repaired = capture_source(capture_request, ledger, policy)
+
+    assert repaired.document == first.document
+    assert repaired.document_resolution == first.document_resolution
+    assert repaired.created is False
+
+
 @pytest.mark.parametrize(
     ("version_kind", "revision_type"),
     [
