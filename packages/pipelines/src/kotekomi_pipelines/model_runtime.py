@@ -5,27 +5,17 @@ from __future__ import annotations
 from pathlib import Path
 
 from kotekomi_adapters import (
-    FixtureModelRuntime,
     LlamaServerModelRuntime,
     OllamaModelRuntime,
 )
-from kotekomi_application import ModelRuntime, ModelRuntimeReadiness
+from kotekomi_application import ModelRuntimeReadiness
 
 from kotekomi_pipelines.config import ModelRuntimeConfig
 
 
-def build_model_runtime(
-    config: ModelRuntimeConfig,
-    *,
-    model_output_fixture_path: Path | None,
-) -> ModelRuntime:
+def build_model_runtime_readiness(config: ModelRuntimeConfig) -> ModelRuntimeReadiness:
     if config.adapter == "fixture":
-        if model_output_fixture_path is None:
-            raise ValueError("Fixture model runtime requires --model-output-fixture.")
-        return FixtureModelRuntime(model_output_fixture_path)
-    if model_output_fixture_path is not None:
-        raise ValueError("--model-output-fixture is valid only with --model-runtime fixture.")
-
+        raise ValueError("model status requires llama_server or ollama runtime.")
     prompt_text = _read_prompt(config.prompt_path)
     if config.adapter == "llama_server":
         return LlamaServerModelRuntime(
@@ -46,15 +36,6 @@ def build_model_runtime(
             max_output_tokens=config.max_output_tokens,
         )
     raise ValueError(f"Unsupported model runtime: {config.adapter}")
-
-
-def build_model_runtime_readiness(config: ModelRuntimeConfig) -> ModelRuntimeReadiness:
-    if config.adapter == "fixture":
-        raise ValueError("model status requires llama_server or ollama runtime.")
-    runtime = build_model_runtime(config, model_output_fixture_path=None)
-    if not isinstance(runtime, LlamaServerModelRuntime | OllamaModelRuntime):
-        raise TypeError("Configured runtime does not implement ModelRuntimeReadiness.")
-    return runtime
 
 
 def _read_prompt(prompt_path: Path) -> str:

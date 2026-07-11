@@ -8,13 +8,7 @@ from typing import Protocol, cast
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
-from kotekomi_application import (
-    ModelOutputValidationError,
-    ModelProposal,
-    ModelRuntimeResponseError,
-    ModelRuntimeUnavailableError,
-    parse_model_proposal_batch_json,
-)
+from kotekomi_application import ModelRuntimeResponseError, ModelRuntimeUnavailableError
 from kotekomi_domain.models import JsonValue
 
 READINESS_SCHEMA: dict[str, JsonValue] = {
@@ -68,36 +62,6 @@ class UrllibJsonHttpClient:
             return HttpResponse(status_code=exc.code, body=exc.read().decode("utf-8"))
         except (URLError, TimeoutError, OSError) as exc:
             raise ModelRuntimeUnavailableError(f"Model runtime request failed: {url}") from exc
-
-
-def proposal_messages(
-    *,
-    prompt_text: str,
-    source_id: str,
-    document_id: str,
-    document_text: str,
-    schema: dict[str, JsonValue],
-) -> list[JsonValue]:
-    input_payload = json.dumps(
-        {
-            "source_id": source_id,
-            "document_id": document_id,
-            "document_text": document_text,
-        },
-        ensure_ascii=True,
-    )
-    grounded_prompt = f"{prompt_text}\n\nJSON schema:\n{json.dumps(schema, ensure_ascii=True)}"
-    return [
-        {"role": "system", "content": grounded_prompt},
-        {"role": "user", "content": input_payload},
-    ]
-
-
-def parse_proposal_content(content: str) -> tuple[ModelProposal, ...]:
-    try:
-        return parse_model_proposal_batch_json(content)
-    except ValueError as exc:
-        raise ModelOutputValidationError(str(exc)) from exc
 
 
 def parse_json_object(body: str, context: str) -> dict[str, object]:

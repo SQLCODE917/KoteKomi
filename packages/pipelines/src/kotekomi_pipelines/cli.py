@@ -18,11 +18,9 @@ from kotekomi_adapters import (
     sqlite_ledger_transaction,
 )
 from kotekomi_application import (
-    AssertionProposalInput,
     BriefingGenerationInput,
     GraphConnectionMiningInput,
     JsonValue,
-    ModelRuntimeError,
     ModelRuntimeStatus,
     PipelineCommandPlan,
     PipelineNextStep,
@@ -48,7 +46,6 @@ from kotekomi_application import (
     add_source_from_file,
     approve_proposed_change,
     cleanup_created_briefing_archive_object,
-    cleanup_created_source_archive_objects,
     edit_proposed_change,
     export_review_editable_record,
     generate_briefing,
@@ -64,7 +61,6 @@ from kotekomi_application import (
     pipeline_next_to_json,
     pipeline_status_to_json,
     project_ledger_graph,
-    propose_assertions_for_document,
     reject_proposed_change,
     review_drain_result_to_json,
     review_next_decision_result_to_json,
@@ -86,7 +82,7 @@ from kotekomi_pipelines.managed_llama_server import (
     install_managed_llama_server,
     uninstall_managed_llama_server,
 )
-from kotekomi_pipelines.model_runtime import build_model_runtime, build_model_runtime_readiness
+from kotekomi_pipelines.model_runtime import build_model_runtime_readiness
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -108,26 +104,6 @@ def main(argv: list[str] | None = None) -> int:
             archive_path_override=args.archive_path,
         )
         return add_source_file(config, args.path)
-
-    if args.command == "source" and args.source_command == "propose-assertions":
-        config = _load_model_config(
-            config_path=args.config,
-            ledger_path_override=args.ledger_path,
-            archive_path_override=args.archive_path,
-            runtime_profile=args.runtime_profile,
-            model_runtime_adapter=args.model_runtime,
-            model_endpoint=args.model_endpoint,
-            model_name=args.model_name,
-            model_prompt_path=args.model_prompt_path,
-            model_timeout_seconds=args.model_timeout_seconds,
-            model_context_tokens=args.model_context_tokens,
-            model_max_output_tokens=args.model_max_output_tokens,
-        )
-        return propose_source_assertions(
-            config=config,
-            document_id=args.document_id,
-            model_output_fixture_path=args.model_output_fixture,
-        )
 
     if args.command == "model" and args.model_command == "status":
         config = _load_model_config(
@@ -457,15 +433,6 @@ def build_parser() -> argparse.ArgumentParser:
     add_file_parser.add_argument("--ledger-path", type=Path, default=None)
     add_file_parser.add_argument("--archive-path", type=Path, default=None)
 
-    propose_assertions_parser = source_subparsers.add_parser(
-        "propose-assertions",
-        help="Create ProposedChange records for a Document through a model runtime.",
-    )
-    propose_assertions_parser.add_argument("--document-id", required=True)
-    _add_model_runtime_arguments(propose_assertions_parser, include_fixture=True)
-    propose_assertions_parser.add_argument("--ledger-path", type=Path, default=None)
-    propose_assertions_parser.add_argument("--archive-path", type=Path, default=None)
-
     model_parser = subparsers.add_parser("model", help="Local model runtime commands.")
     model_subparsers = model_parser.add_subparsers(dest="model_command")
     model_status_parser = model_subparsers.add_parser(
@@ -764,27 +731,17 @@ def add_source_file(config: PipelineConfig, source_file_path: Path) -> int:
     raw_bytes = source_file_path.read_bytes()
     archive_store = LocalArchiveStore(config.archive_path)
     archive_store.initialize()
-    result = None
-    try:
-        with sqlite_ledger_transaction(config.ledger_path) as ledger_repository:
-            result = add_source_from_file(
-                SourceFileIngestInput(
-                    local_file_path=str(source_file_path),
-                    filename=source_file_path.name,
-                    raw_bytes=raw_bytes,
-                    ingested_at=datetime.now(UTC),
-                ),
-                archive_store,
-                ledger_repository,
-            )
-    except Exception:
-        if result is not None and result.created:
-            cleanup_created_source_archive_objects(
-                archive_store=archive_store,
-                raw_path=result.raw_path,
-                extracted_text_path=result.extracted_text_path,
-            )
-        raise
+    with sqlite_ledger_transaction(config.ledger_path) as ledger_repository:
+        result = add_source_from_file(
+            SourceFileIngestInput(
+                local_file_path=str(source_file_path),
+                filename=source_file_path.name,
+                raw_bytes=raw_bytes,
+                ingested_at=datetime.now(UTC),
+            ),
+            archive_store,
+            ledger_repository,
+        )
     status = "created" if result.created else "already_exists"
     print(f"Source {status}: {result.source_id}")
     print(f"Document: {result.document_id}")
@@ -802,41 +759,6 @@ def show_model_runtime_status(*, config: PipelineConfig, output_format: str) -> 
     else:
         print(_model_runtime_status_text(status))
     return 0 if status.ready else 2
-
-
-def propose_source_assertions(
-    *,
-    config: PipelineConfig,
-    document_id: str,
-    model_output_fixture_path: Path | None,
-) -> int:
-    archive_store = LocalArchiveStore(config.archive_path)
-    model_runtime = build_model_runtime(
-        config.model_runtime,
-        model_output_fixture_path=model_output_fixture_path,
-    )
-    try:
-        with sqlite_ledger_transaction(config.ledger_path) as ledger_repository:
-            result = propose_assertions_for_document(
-                AssertionProposalInput(
-                    document_id=document_id,
-                    proposed_at=datetime.now(UTC),
-                ),
-                archive_store,
-                ledger_repository,
-                model_runtime,
-            )
-    except ModelRuntimeError as exc:
-        print(f"Model runtime error: {exc}", file=sys.stderr)
-        return 2
-
-    print(f"Document: {result.document_id}")
-    print(f"Source: {result.source_id}")
-    print(f"ProvenanceActivity: {result.provenance_activity_id}")
-    print(f"ProposedChanges: {len(result.proposed_change_ids)}")
-    for proposed_change_id in result.proposed_change_ids:
-        print(f"ProposedChange: {proposed_change_id}")
-    return 0
 
 
 def list_reviewed_proposed_changes(

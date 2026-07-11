@@ -1,0 +1,25 @@
+from pathlib import Path
+
+SOURCE_ROOT = Path(__file__).resolve().parents[2]
+
+
+def test_r01_removed_superseded_authority_bypasses_do_not_reappear() -> None:
+    source_files = tuple(
+        path
+        for package in ("application", "adapters", "pipelines")
+        for path in (SOURCE_ROOT / package / "src").rglob("*.py")
+    )
+    source_text = "\n".join(path.read_text(encoding="utf-8") for path in source_files)
+
+    for forbidden in (
+        "propose_assertions_for_document",
+        "def propose_assertions(",
+        "ModelProposal",
+        "document_text=document_text",
+        '"propose-assertions"',
+        "cleanup_created_source_archive_objects",
+        "def link_assertion_evidence(",
+        'code_revision="unknown"',
+        'code_revision: str = "unknown"',
+    ):
+        assert forbidden not in source_text

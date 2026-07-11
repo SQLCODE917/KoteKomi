@@ -2,13 +2,6 @@
 
 from kotekomi_domain.models import JsonValue
 
-from kotekomi_application.assertion_proposal import (
-    AssertionProposalInput,
-    AssertionProposalResult,
-    deterministic_proposed_change_id,
-    deterministic_provenance_activity_id,
-    propose_assertions_for_document,
-)
 from kotekomi_application.briefing_generation import (
     BRIEFING_GENERATION_ACTIVITY,
     BriefingGenerationInput,
@@ -23,18 +16,15 @@ from kotekomi_application.briefing_generation import (
     resolve_briefing_citation,
 )
 from kotekomi_application.evidence_targets import (
-    AssertionEvidenceLinkLedger,
     EvidenceReanchoringLedger,
     EvidenceReplayResult,
     EvidenceTargetLedger,
     EvidenceValidationInput,
     EvidenceValidationResult,
-    LinkAssertionEvidenceInput,
     ReanchorEvidenceInput,
     ReanchoringOutcome,
     deterministic_assertion_evidence_link_id,
     deterministic_evidence_reanchoring_relation_id,
-    link_assertion_evidence,
     reanchor_evidence,
     validate_evidence_target,
     verify_evidence_target,
@@ -56,16 +46,8 @@ from kotekomi_application.ledger_graph_projection import (
     deterministic_graph_edge_id,
     project_ledger_graph,
 )
-from kotekomi_application.model_proposal_validation import (
-    ModelProposalBatch,
-    ModelProposalEvidence,
-    model_proposal_batch_json_schema,
-    parse_model_proposal_batch_json,
-    validate_model_proposal,
-)
 from kotekomi_application.model_runtime import (
     ModelNotAvailableError,
-    ModelOutputValidationError,
     ModelRuntimeBusyError,
     ModelRuntimeError,
     ModelRuntimeResponseError,
@@ -126,8 +108,6 @@ from kotekomi_application.ports import (
     LedgerInitializer,
     LedgerInitResult,
     LedgerRepository,
-    ModelProposal,
-    ModelRuntime,
     ModelRuntimeReadiness,
     ModelRuntimeStatus,
     StagedArchiveObject,
@@ -203,16 +183,12 @@ from kotekomi_application.source_file_ingest import (
     SourceFileIngestInput,
     SourceFileIngestResult,
     add_source_from_file,
-    cleanup_created_source_archive_objects,
 )
 
 __all__ = [
     "ArchiveObject",
     "AcceptedCanonicalRecord",
     "ArchiveStore",
-    "AssertionProposalInput",
-    "AssertionProposalResult",
-    "AssertionEvidenceLinkLedger",
     "BRIEFING_GENERATION_ACTIVITY",
     "BriefingAnalyticTraceRow",
     "BriefingGenerationInput",
@@ -253,14 +229,8 @@ __all__ = [
     "LedgerInitializer",
     "LedgerInitResult",
     "LedgerRepository",
-    "LinkAssertionEvidenceInput",
     "ModelNotAvailableError",
     "ModelRuntimeBusyError",
-    "ModelOutputValidationError",
-    "ModelProposal",
-    "ModelProposalBatch",
-    "ModelProposalEvidence",
-    "ModelRuntime",
     "ModelRuntimeError",
     "ModelRuntimeReadiness",
     "ModelRuntimeResponseError",
@@ -325,7 +295,6 @@ __all__ = [
     "briefing_citation_registry_from_json",
     "briefing_citation_registry_to_json",
     "cleanup_created_briefing_archive_object",
-    "cleanup_created_source_archive_objects",
     "deterministic_briefing_id",
     "deterministic_briefing_provenance_activity_id",
     "deterministic_graph_edge_id",
@@ -337,8 +306,6 @@ __all__ = [
     "deterministic_mined_proposed_change_id",
     "deterministic_mined_relationship_id",
     "deterministic_representation_id",
-    "deterministic_proposed_change_id",
-    "deterministic_provenance_activity_id",
     "deterministic_review_provenance_activity_id",
     "edit_proposed_change",
     "export_review_editable_record",
@@ -351,9 +318,7 @@ __all__ = [
     "initialize_ledger",
     "ingest_pdf",
     "list_review_queue",
-    "link_assertion_evidence",
     "mine_graph_connections",
-    "model_proposal_batch_json_schema",
     "model_runtime_status_to_json",
     "pipeline_command_plan_to_json",
     "pipeline_next_to_json",
@@ -362,7 +327,6 @@ __all__ = [
     "review_drain_result_to_json",
     "review_next_decision_result_to_json",
     "project_ledger_graph",
-    "propose_assertions_for_document",
     "prompt_id_for_text",
     "read_briefing_citation_registry",
     "reject_proposed_change",
@@ -377,8 +341,6 @@ __all__ = [
     "SourceIdentityPolicy",
     "StableSourceIdentityPolicy",
     "reanchor_evidence",
-    "parse_model_proposal_batch_json",
-    "validate_model_proposal",
     "validate_evidence_target",
     "verify_evidence_target",
 ]

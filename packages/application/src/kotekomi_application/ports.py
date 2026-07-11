@@ -27,7 +27,6 @@ from kotekomi_domain import (
     Source,
     SourceAuthority,
 )
-from kotekomi_domain.models import JsonValue
 
 type AcceptedCanonicalRecord = (
     Entity
@@ -215,31 +214,6 @@ class BriefingMarkdown:
 
 class BriefingRenderer(Protocol):
     def render(self, render_input: BriefingRenderInput) -> BriefingMarkdown: ...
-
-
-@dataclass(frozen=True)
-class ModelProposal:
-    record_type: str
-    stable_label: str
-    record: dict[str, JsonValue]
-    evidence: dict[str, JsonValue]
-    evidence_links: tuple[dict[str, JsonValue], ...] = ()
-
-
-class ModelRuntime(Protocol):
-    @property
-    def model_name(self) -> str: ...
-
-    @property
-    def prompt_id(self) -> str: ...
-
-    def propose_assertions(
-        self,
-        *,
-        document_id: str,
-        source_id: str,
-        document_text: str,
-    ) -> tuple[ModelProposal, ...]: ...
 
 
 @dataclass(frozen=True)

@@ -405,7 +405,7 @@ def test_add_source_from_file_versions_an_edited_file_under_one_stable_source() 
     assert archive.read_raw_source(next(iter(ledger.raw_blobs))) == b"original note"
 
 
-def test_add_source_from_file_cleans_archive_objects_after_ledger_failure() -> None:
+def test_add_source_from_file_preserves_promoted_archive_objects_after_ledger_failure() -> None:
     raw_bytes = FIXTURE_PATH.read_bytes()
     archive = FakeArchiveStore()
     ledger = FakeLedgerRepository(fail_on_save_document=True)
@@ -422,8 +422,9 @@ def test_add_source_from_file_cleans_archive_objects_after_ledger_failure() -> N
             ledger,
         )
 
-    assert archive.raw_writes == {}
-    assert archive.text_writes == {}
+    assert len(archive.raw_writes) == 1
+    assert len(archive.text_writes) == 1
     assert archive.staged_writes == {}
+    assert all(path.startswith(".staging/") for path in archive.deleted_paths)
     assert ledger.documents == {}
     assert ledger.provenance_activities == {}

@@ -35,7 +35,9 @@ def test_docling_parser_returns_a_typed_block_when_docling_load_fails(
     )
     monkeypatch.setattr(docling_pdf_parser, "_load_docling_components", fail_to_load)
 
-    result = DoclingPdfParser().parse(PdfParseInput(document, raw_pdf, "pdf_policy_v1", NOW))
+    result = DoclingPdfParser(DoclingPdfParserConfig(code_revision="test")).parse(
+        PdfParseInput(document, raw_pdf, "pdf_policy_v1", NOW)
+    )
 
     assert result.representation_bundle is None
     assert result.preflight.warnings == ("docling_error:RuntimeError",)

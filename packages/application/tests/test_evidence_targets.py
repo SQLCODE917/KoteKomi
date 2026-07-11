@@ -3,15 +3,12 @@ from datetime import UTC, datetime
 import pytest
 from kotekomi_application import (
     EvidenceValidationInput,
-    LinkAssertionEvidenceInput,
-    link_assertion_evidence,
     validate_evidence_target,
     verify_evidence_target,
 )
 from kotekomi_domain import (
     Assertion,
     AssertionEvidenceLink,
-    AssertionEvidenceRole,
     AssertionStatus,
     AssertionType,
     AttributionBasis,
@@ -20,8 +17,6 @@ from kotekomi_domain import (
     DocumentRepresentation,
     DocumentRepresentationBundle,
     EpistemicScope,
-    EvidenceNecessity,
-    EvidencePolarity,
     EvidenceSpan,
     EvidenceValidationStatus,
     ParseQualityReport,
@@ -213,30 +208,6 @@ def test_validate_evidence_target_fails_closed_when_context_disagrees() -> None:
     assert result.valid is False
     assert result.error_message == "EvidenceSpan prefix selector does not match its TextView."
     assert result.evidence_span.validation_status is EvidenceValidationStatus.FAILED
-
-
-def test_link_assertion_evidence_requires_and_records_validated_direct_support() -> None:
-    ledger = FakeEvidenceLedger(_bundle(), _evidence_span())
-    validate_evidence_target(
-        EvidenceValidationInput("evs_alpha", "1", NOW),
-        ledger,
-    )
-
-    link = link_assertion_evidence(
-        LinkAssertionEvidenceInput(
-            assertion_id="ast_alpha",
-            evidence_span_id="evs_alpha",
-            role=AssertionEvidenceRole.DIRECT_SUPPORT,
-            polarity=EvidencePolarity.SUPPORTS,
-            necessity=EvidenceNecessity.REQUIRED,
-            provenance_id="prv_review",
-            linked_at=NOW,
-        ),
-        ledger,
-    )
-
-    assert link.assertion_id == "ast_alpha"
-    assert link.role is AssertionEvidenceRole.DIRECT_SUPPORT
 
 
 def test_validate_evidence_target_detects_corrupted_validated_target_without_rewriting_it() -> None:

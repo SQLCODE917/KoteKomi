@@ -34,7 +34,6 @@ from kotekomi_application.review_queue_packet import (
 )
 
 SOURCE_INGEST_COMMAND = "kotekomi source add-file <path>"
-ASSERTION_PROPOSAL_COMMAND = "kotekomi source propose-assertions --document-id <document_id>"
 REVIEW_NEXT_COMMAND = "kotekomi review next"
 GRAPH_PROJECT_COMMAND = "kotekomi graph project"
 GRAPH_MINE_COMMAND = "kotekomi graph mine"
@@ -43,7 +42,7 @@ BRIEFING_GENERATE_COMMAND = "kotekomi briefing generate --title <title>"
 
 class PipelineStage(StrEnum):
     READY_FOR_SOURCE_INGEST = "ready_for_source_ingest"
-    READY_FOR_ASSERTION_PROPOSAL = "ready_for_assertion_proposal"
+    AWAITING_BOUNDED_EXTRACTION = "awaiting_bounded_extraction"
     REVIEW_REQUIRED = "review_required"
     READY_FOR_GRAPH_PROJECTION = "ready_for_graph_projection"
     READY_FOR_GRAPH_MINING = "ready_for_graph_mining"
@@ -194,9 +193,9 @@ def get_pipeline_status(
         next_command = SOURCE_INGEST_COMMAND
         safe_commands = (SOURCE_INGEST_COMMAND,)
     elif indexes.documents and not indexes.assertions:
-        stage = PipelineStage.READY_FOR_ASSERTION_PROPOSAL
-        next_command = ASSERTION_PROPOSAL_COMMAND
-        safe_commands = (ASSERTION_PROPOSAL_COMMAND,)
+        stage = PipelineStage.AWAITING_BOUNDED_EXTRACTION
+        next_command = None
+        safe_commands = ()
     elif latest_briefing_at is not None and not _records_after(records, latest_briefing_at):
         stage = PipelineStage.BRIEFING_CURRENT
         next_command = None
@@ -319,8 +318,15 @@ def _command_plan(
 ) -> PipelineCommandPlan:
     if stage is PipelineStage.READY_FOR_SOURCE_INGEST:
         return _source_ingest_plan(stage, pipeline_input)
-    if stage is PipelineStage.READY_FOR_ASSERTION_PROPOSAL:
-        return _assertion_proposal_plan(stage, pipeline_input, candidate_document_ids)
+    if stage is PipelineStage.AWAITING_BOUNDED_EXTRACTION:
+        return PipelineCommandPlan(
+            stage=stage,
+            command=None,
+            argv=(),
+            ready_to_execute=False,
+            missing_inputs=(),
+            blockers=(),
+        )
     if stage is PipelineStage.REVIEW_REQUIRED:
         return _review_next_plan(stage, pipeline_input, blockers)
     if stage is PipelineStage.READY_FOR_GRAPH_PROJECTION:
@@ -389,132 +395,6 @@ def _source_ingest_plan(
         missing_inputs=missing_inputs,
         blockers=(),
     )
-
-
-def _assertion_proposal_plan(
-    stage: PipelineStage,
-    pipeline_input: PipelineStatusInput,
-    candidate_document_ids: tuple[str, ...],
-) -> PipelineCommandPlan:
-    selected_document_id = _selected_document_id(pipeline_input, candidate_document_ids)
-    runtime_adapter = pipeline_input.model_runtime_adapter
-    missing_inputs = (
-        *_document_id_missing_inputs(pipeline_input, candidate_document_ids, selected_document_id),
-        *_missing_string(
-            runtime_adapter,
-            "model_runtime_adapter",
-            "Configured ModelRuntime Adapter.",
-            allowed_values=("llama_server", "ollama", "fixture"),
-        ),
-        *_runtime_missing_inputs(pipeline_input, runtime_adapter),
-        *_missing_path(
-            pipeline_input.ledger_path,
-            "ledger_path",
-            "Path to the Ledger SQLite file.",
-        ),
-        *_missing_path(pipeline_input.archive_path, "archive_path", "Path to the Archive root."),
-    )
-    argv: tuple[str, ...] = ()
-    if not missing_inputs:
-        runtime_argv = _runtime_argv(pipeline_input)
-        argv = (
-            "source",
-            "propose-assertions",
-            "--document-id",
-            _required_value(selected_document_id, "document_id"),
-            *runtime_argv,
-            "--ledger-path",
-            _required_value(pipeline_input.ledger_path, "ledger_path"),
-            "--archive-path",
-            _required_value(pipeline_input.archive_path, "archive_path"),
-        )
-    return PipelineCommandPlan(
-        stage=stage,
-        command="kotekomi source propose-assertions",
-        argv=argv,
-        ready_to_execute=not missing_inputs,
-        missing_inputs=missing_inputs,
-        blockers=(),
-    )
-
-
-def _runtime_missing_inputs(
-    pipeline_input: PipelineStatusInput,
-    runtime_adapter: str | None,
-) -> tuple[PipelinePlanInputRequirement, ...]:
-    if runtime_adapter == "fixture":
-        return _missing_path(
-            pipeline_input.model_output_fixture_path,
-            "model_output_fixture_path",
-            "Path to a model output fixture JSON file.",
-        )
-    if runtime_adapter in ("llama_server", "ollama"):
-        return (
-            *_missing_string(
-                pipeline_input.model_endpoint,
-                "model_endpoint",
-                "Model runtime HTTP endpoint.",
-            ),
-            *_missing_string(pipeline_input.model_name, "model_name", "Model identifier."),
-            *_missing_path(
-                pipeline_input.model_prompt_path,
-                "model_prompt_path",
-                "Path to the extraction prompt.",
-            ),
-            *_missing_number(
-                pipeline_input.model_timeout_seconds,
-                "model_timeout_seconds",
-                "Model runtime timeout in seconds.",
-            ),
-            *_missing_number(
-                pipeline_input.model_context_tokens,
-                "model_context_tokens",
-                "Model context token budget.",
-            ),
-            *_missing_number(
-                pipeline_input.model_max_output_tokens,
-                "model_max_output_tokens",
-                "Model output token budget.",
-            ),
-        )
-    return ()
-
-
-def _runtime_argv(pipeline_input: PipelineStatusInput) -> tuple[str, ...]:
-    adapter = _required_value(pipeline_input.model_runtime_adapter, "model_runtime_adapter")
-    if adapter == "fixture":
-        return (
-            "--model-runtime",
-            adapter,
-            "--model-output-fixture",
-            _required_value(
-                pipeline_input.model_output_fixture_path,
-                "model_output_fixture_path",
-            ),
-        )
-    if adapter in ("llama_server", "ollama"):
-        return (
-            "--model-runtime",
-            adapter,
-            "--model-endpoint",
-            _required_value(pipeline_input.model_endpoint, "model_endpoint"),
-            "--model-name",
-            _required_value(pipeline_input.model_name, "model_name"),
-            "--model-prompt-path",
-            _required_value(pipeline_input.model_prompt_path, "model_prompt_path"),
-            "--model-timeout-seconds",
-            str(_required_number(pipeline_input.model_timeout_seconds, "model_timeout_seconds")),
-            "--model-context-tokens",
-            str(_required_number(pipeline_input.model_context_tokens, "model_context_tokens")),
-            "--model-max-output-tokens",
-            str(
-                _required_number(
-                    pipeline_input.model_max_output_tokens,
-                    "model_max_output_tokens",
-                )
-            ),
-        )
-    raise ValueError(f"Unsupported model_runtime_adapter: {adapter}")
 
 
 def _review_next_plan(
@@ -640,67 +520,8 @@ def _missing_string(
     )
 
 
-def _missing_number(
-    value: float | int | None,
-    name: str,
-    description: str,
-) -> tuple[PipelinePlanInputRequirement, ...]:
-    if value is not None and value > 0:
-        return ()
-    return (
-        PipelinePlanInputRequirement(
-            name=name,
-            kind="number",
-            required=True,
-            description=description,
-        ),
-    )
-
-
-def _selected_document_id(
-    pipeline_input: PipelineStatusInput,
-    candidate_document_ids: tuple[str, ...],
-) -> str | None:
-    if pipeline_input.document_id is not None and pipeline_input.document_id.strip():
-        if pipeline_input.document_id not in candidate_document_ids:
-            allowed = ", ".join(candidate_document_ids) or "none"
-            raise ValueError(
-                f"document_id {pipeline_input.document_id} is not a candidate Document. "
-                f"Allowed values: {allowed}."
-            )
-        return pipeline_input.document_id
-    if len(candidate_document_ids) == 1:
-        return candidate_document_ids[0]
-    return None
-
-
-def _document_id_missing_inputs(
-    pipeline_input: PipelineStatusInput,
-    candidate_document_ids: tuple[str, ...],
-    selected_document_id: str | None,
-) -> tuple[PipelinePlanInputRequirement, ...]:
-    del pipeline_input
-    if selected_document_id is not None:
-        return ()
-    return (
-        PipelinePlanInputRequirement(
-            name="document_id",
-            kind="string",
-            required=True,
-            description="Document ID to propose Assertions for.",
-            allowed_values=candidate_document_ids,
-        ),
-    )
-
-
 def _required_value(value: str | None, name: str) -> str:
     if value is None or not value.strip():
-        raise ValueError(f"Missing required Pipeline command plan input: {name}.")
-    return value
-
-
-def _required_number(value: float | int | None, name: str) -> float | int:
-    if value is None or value <= 0:
         raise ValueError(f"Missing required Pipeline command plan input: {name}.")
     return value
 
@@ -820,8 +641,8 @@ def _next_step_reason(status: PipelineStatus) -> str:
         return "Pending ProposedChange records require review before downstream commands."
     if status.stage is PipelineStage.READY_FOR_SOURCE_INGEST:
         return "No Source records exist in the Ledger."
-    if status.stage is PipelineStage.READY_FOR_ASSERTION_PROPOSAL:
-        return "Documents exist but no accepted Assertions exist."
+    if status.stage is PipelineStage.AWAITING_BOUNDED_EXTRACTION:
+        return "Documents await a bounded extraction task; no extraction command is available."
     if status.stage is PipelineStage.READY_FOR_GRAPH_PROJECTION:
         return "Accepted Assertions exist and graph projection is the next safe derived step."
     if status.stage is PipelineStage.READY_FOR_GRAPH_MINING:

@@ -40,6 +40,7 @@ from kotekomi_application.source_capture import (
 
 SUPPORTED_TEXT_SUFFIXES = frozenset({".md", ".txt"})
 HASH_ID_LENGTH = 24
+LOCAL_FILE_CODE_REVISION = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
 MONTHS = {
     "January": 1,
     "February": 2,
@@ -162,7 +163,7 @@ def add_source_from_file(
             "local_file",
             "1",
             hashlib.sha256(b"utf8_identity_v1").hexdigest(),
-            "unknown",
+            LOCAL_FILE_CODE_REVISION,
             "1",
         )
     )
@@ -242,7 +243,7 @@ def add_source_from_file(
                 parser_name="local_file",
                 parser_version="1",
                 parser_config_digest=hashlib.sha256(b"utf8_identity_v1").hexdigest(),
-                code_revision="unknown",
+                code_revision=LOCAL_FILE_CODE_REVISION,
                 input_blob_digest=content_sha256,
                 canonical_output_digest="0" * 64,
                 created_at=ingest_input.ingested_at,
@@ -305,23 +306,11 @@ def _local_file_request_fingerprint(source_key: str, content_sha256: str) -> str
     return hashlib.sha256(f"local_file_v1:{source_key}:{content_sha256}".encode()).hexdigest()
 
 
-def cleanup_created_source_archive_objects(
-    *,
-    archive_store: ArchiveStore,
-    raw_path: str,
-    extracted_text_path: str,
-) -> None:
-    archive_store.delete_object(raw_path)
-    archive_store.delete_object(extracted_text_path)
-
-
 def _cleanup_archive_objects(
     archive_store: ArchiveStore,
     promoted_objects: list[ArchiveObject],
     staged_objects: list[StagedArchiveObject],
 ) -> None:
-    for archive_object in reversed(promoted_objects):
-        archive_store.delete_object(archive_object.relative_path)
     for staged_object in reversed(staged_objects):
         archive_store.delete_object(staged_object.staged_relative_path)
 

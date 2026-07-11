@@ -8,8 +8,6 @@ from datetime import datetime
 from typing import Protocol
 
 from kotekomi_domain import (
-    Assertion,
-    AssertionEvidenceLink,
     AssertionEvidenceRole,
     Document,
     DocumentNode,
@@ -36,13 +34,6 @@ class EvidenceTargetLedger(Protocol):
     def get_document(self, record_id: str) -> Document | None: ...
 
 
-class AssertionEvidenceLinkLedger(EvidenceTargetLedger, Protocol):
-    def get_assertion(self, record_id: str) -> Assertion | None: ...
-    def get_provenance_activity(self, record_id: str) -> ProvenanceActivity | None: ...
-    def get_assertion_evidence_link(self, record_id: str) -> AssertionEvidenceLink | None: ...
-    def save_assertion_evidence_link(self, record: AssertionEvidenceLink) -> None: ...
-
-
 class EvidenceReanchoringLedger(EvidenceTargetLedger, Protocol):
     def get_provenance_activity(self, record_id: str) -> ProvenanceActivity | None: ...
     def save_evidence_reanchoring_relation(self, record: EvidenceReanchoringRelation) -> None: ...
@@ -67,17 +58,6 @@ class EvidenceReplayResult:
     evidence_span: EvidenceSpan
     valid: bool
     error_message: str | None = None
-
-
-@dataclass(frozen=True)
-class LinkAssertionEvidenceInput:
-    assertion_id: str
-    evidence_span_id: str
-    role: AssertionEvidenceRole
-    polarity: EvidencePolarity
-    necessity: EvidenceNecessity
-    provenance_id: str
-    linked_at: datetime
 
 
 @dataclass(frozen=True)
@@ -149,49 +129,6 @@ def verify_evidence_target(
     except ValueError as exc:
         return EvidenceReplayResult(evidence_span, False, str(exc))
     return EvidenceReplayResult(evidence_span, True)
-
-
-def link_assertion_evidence(
-    link_input: LinkAssertionEvidenceInput,
-    ledger_repository: AssertionEvidenceLinkLedger,
-) -> AssertionEvidenceLink:
-    assertion = ledger_repository.get_assertion(link_input.assertion_id)
-    if assertion is None:
-        raise ValueError(f"Assertion not found: {link_input.assertion_id}")
-    evidence_span = ledger_repository.get_evidence_span(link_input.evidence_span_id)
-    if evidence_span is None:
-        raise ValueError(f"EvidenceSpan not found: {link_input.evidence_span_id}")
-    if evidence_span.validation_status is not EvidenceValidationStatus.VALIDATED:
-        raise ValueError("AssertionEvidenceLink requires a validated EvidenceSpan.")
-    if evidence_span.source_id not in assertion.source_ids:
-        raise ValueError("AssertionEvidenceLink EvidenceSpan source must belong to the Assertion.")
-    if ledger_repository.get_provenance_activity(link_input.provenance_id) is None:
-        raise ValueError(
-            "AssertionEvidenceLink references missing ProvenanceActivity: "
-            f"{link_input.provenance_id}"
-        )
-    link_id = deterministic_assertion_evidence_link_id(
-        assertion_id=assertion.id,
-        evidence_span_id=evidence_span.id,
-        role=link_input.role,
-        polarity=link_input.polarity,
-        necessity=link_input.necessity,
-    )
-    existing = ledger_repository.get_assertion_evidence_link(link_id)
-    if existing is not None:
-        return existing
-    link = AssertionEvidenceLink(
-        id=link_id,
-        assertion_id=assertion.id,
-        evidence_span_id=evidence_span.id,
-        role=link_input.role,
-        polarity=link_input.polarity,
-        necessity=link_input.necessity,
-        provenance_id=link_input.provenance_id,
-        created_at=link_input.linked_at,
-    )
-    ledger_repository.save_assertion_evidence_link(link)
-    return link
 
 
 def reanchor_evidence(

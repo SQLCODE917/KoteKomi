@@ -44,7 +44,7 @@ HASH_ID_LENGTH = 24
 
 @dataclass(frozen=True)
 class DoclingPdfParserConfig:
-    code_revision: str = "unknown"
+    code_revision: str
     enable_ocr: bool = False
     enable_table_structure: bool = True
 
@@ -52,8 +52,8 @@ class DoclingPdfParserConfig:
 class DoclingPdfParser(PdfDocumentParser):
     """Convert PDF bytes with pinned Docling settings and fail closed on structure."""
 
-    def __init__(self, config: DoclingPdfParserConfig | None = None) -> None:
-        self._config = config or DoclingPdfParserConfig()
+    def __init__(self, config: DoclingPdfParserConfig) -> None:
+        self._config = config
 
     def parse(self, parse_input: PdfParseInput) -> PdfParseResult:
         parser_version = _docling_version()
