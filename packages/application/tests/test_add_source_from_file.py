@@ -269,6 +269,28 @@ class FakeLedgerRepository:
     def record_failed_processing_attempt_outcome(self, record: ProcessingAttemptOutcome) -> None:
         self.append_processing_attempt_outcome(record)
 
+    def get_processing_attempt_outcome(self, attempt_id: str) -> ProcessingAttemptOutcome | None:
+        return next(
+            (
+                outcome
+                for outcome in self.processing_outcomes.values()
+                if outcome.attempt_id == attempt_id
+            ),
+            None,
+        )
+
+    def list_processing_attempts(
+        self, fingerprint_id: str, *, after: str | None = None, limit: int = 100
+    ) -> tuple[ProcessingAttempt, ...]:
+        attempts = tuple(
+            attempt
+            for attempt in self.processing_attempts.values()
+            if attempt.task_fingerprint_id == fingerprint_id
+        )
+        if after is not None:
+            attempts = tuple(attempt for attempt in attempts if attempt.id > after)
+        return attempts[:limit]
+
     def save_document_representation(self, record: DocumentRepresentation) -> None:
         self.document_representations[record.id] = record
 

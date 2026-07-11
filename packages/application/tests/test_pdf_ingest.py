@@ -105,6 +105,24 @@ class FakePdfLedger:
     def record_failed_processing_attempt_outcome(self, record: ProcessingAttemptOutcome) -> None:
         self.append_processing_attempt_outcome(record)
 
+    def get_processing_attempt_outcome(self, attempt_id: str) -> ProcessingAttemptOutcome | None:
+        return next(
+            (outcome for outcome in self.outcomes.values() if outcome.attempt_id == attempt_id),
+            None,
+        )
+
+    def list_processing_attempts(
+        self, fingerprint_id: str, *, after: str | None = None, limit: int = 100
+    ) -> tuple[ProcessingAttempt, ...]:
+        attempts = tuple(
+            attempt
+            for attempt in self.attempts.values()
+            if attempt.task_fingerprint_id == fingerprint_id
+        )
+        if after is not None:
+            attempts = tuple(attempt for attempt in attempts if attempt.id > after)
+        return attempts[:limit]
+
 
 def test_ingest_pdf_returns_typed_blocked_outcome_without_publishing_representation() -> None:
     outcome = ingest_pdf(

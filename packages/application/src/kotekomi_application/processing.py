@@ -58,6 +58,12 @@ class ProcessingLedger(Protocol):
     def record_failed_processing_attempt_outcome(
         self, record: ProcessingAttemptOutcome
     ) -> None: ...
+    def get_processing_attempt_outcome(
+        self, attempt_id: str
+    ) -> ProcessingAttemptOutcome | None: ...
+    def list_processing_attempts(
+        self, fingerprint_id: str, *, after: str | None = None, limit: int = 100
+    ) -> tuple[ProcessingAttempt, ...]: ...
 
 
 def processing_task_fingerprint(
@@ -146,6 +152,30 @@ def processing_attempt_outcome(
         interruption_basis=interruption_basis,
         provenance_activity_id=provenance_activity_id,
     )
+
+
+def reconcile_interrupted_processing_attempts(
+    *,
+    task_fingerprint_id: str,
+    ledger: ProcessingLedger,
+    reconciled_at: datetime,
+    interruption_basis: str,
+    limit: int = 100,
+) -> tuple[ProcessingAttemptOutcome, ...]:
+    """Append interruption outcomes for starts left open by an unclean stop."""
+    reconciled: list[ProcessingAttemptOutcome] = []
+    for attempt in ledger.list_processing_attempts(task_fingerprint_id, limit=limit):
+        if ledger.get_processing_attempt_outcome(attempt.id) is not None:
+            continue
+        outcome = processing_attempt_outcome(
+            attempt=attempt,
+            status=ProcessingAttemptStatus.INTERRUPTED,
+            finished_at=reconciled_at,
+            interruption_basis=interruption_basis,
+        )
+        ledger.append_processing_attempt_outcome(outcome)
+        reconciled.append(outcome)
+    return tuple(reconciled)
 
 
 def _digest(value: object) -> str:

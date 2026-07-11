@@ -123,6 +123,7 @@ from kotekomi_application.processing import (
     Uuid4ProcessingAttemptIdFactory,
     processing_attempt_outcome,
     processing_task_fingerprint,
+    reconcile_interrupted_processing_attempts,
     start_processing_attempt,
 )
 from kotekomi_application.proposed_change_review import (
@@ -275,6 +276,7 @@ __all__ = [
     "Uuid4ProcessingAttemptIdFactory",
     "processing_attempt_outcome",
     "processing_task_fingerprint",
+    "reconcile_interrupted_processing_attempts",
     "start_processing_attempt",
     "ReviewProposedChangeInput",
     "ReviewProposedChangeResult",

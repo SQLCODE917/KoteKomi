@@ -11,6 +11,10 @@
     "ProcessingArtifactKind": {
       "enum": [
         "document_representation",
+        "text_view",
+        "document_node",
+        "document_edge",
+        "source_region",
         "quality_report",
         "provenance_activity"
       ],

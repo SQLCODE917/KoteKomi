@@ -8,6 +8,7 @@ from kotekomi_application import (
     BuildIdentity,
     processing_attempt_outcome,
     processing_task_fingerprint,
+    reconcile_interrupted_processing_attempts,
     start_processing_attempt,
 )
 from kotekomi_domain import (
@@ -89,6 +90,26 @@ def test_attempt_start_survives_an_interrupted_output_transaction(tmp_path: Path
         assert repository.get_processing_attempt(attempt.id) == attempt
         assert repository.get_processing_attempt_outcome(attempt.id) is None
 
+    with sqlite_ledger_transaction(ledger_path) as repository:
+        reconciled = reconcile_interrupted_processing_attempts(
+            task_fingerprint_id=task.id,
+            ledger=repository,
+            reconciled_at=NOW,
+            interruption_basis="process restart observed an unclosed attempt",
+        )
+        assert (
+            reconcile_interrupted_processing_attempts(
+                task_fingerprint_id=task.id,
+                ledger=repository,
+                reconciled_at=NOW,
+                interruption_basis="process restart observed an unclosed attempt",
+            )
+            == ()
+        )
+
+    assert len(reconciled) == 1
+    assert reconciled[0].status is ProcessingAttemptStatus.INTERRUPTED
+
 
 def test_failed_outcome_is_durable_after_output_rollback(tmp_path: Path) -> None:
     ledger_path = tmp_path / "kotekomi.db"
@@ -148,6 +169,14 @@ def test_attempt_lookup_uses_indexed_keyset_pagination(tmp_path: Path) -> None:
         repository.ensure_processing_task_fingerprint(task)
         for attempt in attempts:
             repository.append_processing_attempt(attempt)
+        repository.append_processing_attempt_outcome(
+            processing_attempt_outcome(
+                attempt=attempts[0],
+                status=ProcessingAttemptStatus.INTERRUPTED,
+                finished_at=NOW,
+                interruption_basis="fixture reconciliation",
+            )
+        )
         assert repository.list_processing_attempts(task.id, limit=2) == attempts[:2]
         assert (
             repository.list_processing_attempts(task.id, after=attempts[1].id, limit=2)
@@ -165,3 +194,20 @@ def test_attempt_lookup_uses_indexed_keyset_pagination(tmp_path: Path) -> None:
             (task.id, 2),
         ).fetchall()
     assert any("processing_attempts_by_fingerprint" in row[-1] for row in query_plan)
+
+    with sqlite3.connect(ledger_path) as connection:
+        with pytest.raises(
+            sqlite3.DatabaseError, match="processing_task_fingerprints are immutable"
+        ):
+            connection.execute(
+                "UPDATE processing_task_fingerprints SET payload_json = '{}' WHERE id = ?",
+                (task.id,),
+            )
+        with pytest.raises(sqlite3.DatabaseError, match="processing_attempts are immutable"):
+            connection.execute("DELETE FROM processing_attempts WHERE id = ?", (attempts[0].id,))
+        with pytest.raises(
+            sqlite3.DatabaseError, match="processing_attempt_outcomes are immutable"
+        ):
+            connection.execute(
+                "DELETE FROM processing_attempt_outcomes WHERE attempt_id = ?", (attempts[0].id,)
+            )

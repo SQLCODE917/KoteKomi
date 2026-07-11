@@ -92,6 +92,21 @@ def test_immutable_document_reuses_identical_payload_and_rejects_conflict(tmp_pa
         assert repository.get_document(document.id) == document
 
 
+def test_provenance_activity_is_immutable(tmp_path: Path) -> None:
+    ledger_path = tmp_path / "kotekomi.db"
+    SQLiteLedgerInitializer(ledger_path).initialize()
+    provenance_activity = sample_domain_records()[12]
+    with sqlite_ledger_transaction(ledger_path) as repository:
+        repository.save_provenance_activity(provenance_activity)
+        repository.save_provenance_activity(provenance_activity)
+
+    with pytest.raises(ImmutableRecordConflict):
+        with sqlite_ledger_transaction(ledger_path) as repository:
+            repository.save_provenance_activity(
+                provenance_activity.model_copy(update={"agent": "different-agent"})
+            )
+
+
 def test_immutable_document_conflict_rolls_back_preceding_transaction_writes(
     tmp_path: Path,
 ) -> None:

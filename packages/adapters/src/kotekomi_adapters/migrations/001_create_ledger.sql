@@ -241,6 +241,7 @@ CREATE TRIGGER IF NOT EXISTS immutable_document_nodes_no_update BEFORE UPDATE ON
 CREATE TRIGGER IF NOT EXISTS immutable_document_edges_no_update BEFORE UPDATE ON document_edges BEGIN SELECT RAISE(ABORT, 'document_edges are immutable'); END;
 CREATE TRIGGER IF NOT EXISTS immutable_source_regions_no_update BEFORE UPDATE ON source_regions BEGIN SELECT RAISE(ABORT, 'source_regions are immutable'); END;
 CREATE TRIGGER IF NOT EXISTS immutable_parse_quality_reports_no_update BEFORE UPDATE ON parse_quality_reports BEGIN SELECT RAISE(ABORT, 'parse_quality_reports are immutable'); END;
+CREATE TRIGGER IF NOT EXISTS immutable_provenance_activities_no_update BEFORE UPDATE ON provenance_activities BEGIN SELECT RAISE(ABORT, 'provenance_activities are immutable'); END;
 CREATE TRIGGER IF NOT EXISTS immutable_evidence_targets_no_update BEFORE UPDATE ON evidence_targets BEGIN SELECT RAISE(ABORT, 'evidence_targets are immutable'); END;
 CREATE TRIGGER IF NOT EXISTS immutable_evidence_validation_attempts_no_update BEFORE UPDATE ON evidence_validation_attempts BEGIN SELECT RAISE(ABORT, 'evidence_validation_attempts are immutable'); END;
 CREATE TRIGGER IF NOT EXISTS immutable_processing_task_fingerprints_no_update BEFORE UPDATE ON processing_task_fingerprints BEGIN SELECT RAISE(ABORT, 'processing_task_fingerprints are immutable'); END;
@@ -260,6 +261,7 @@ CREATE TRIGGER IF NOT EXISTS immutable_document_nodes_no_delete BEFORE DELETE ON
 CREATE TRIGGER IF NOT EXISTS immutable_document_edges_no_delete BEFORE DELETE ON document_edges BEGIN SELECT RAISE(ABORT, 'document_edges are immutable'); END;
 CREATE TRIGGER IF NOT EXISTS immutable_source_regions_no_delete BEFORE DELETE ON source_regions BEGIN SELECT RAISE(ABORT, 'source_regions are immutable'); END;
 CREATE TRIGGER IF NOT EXISTS immutable_parse_quality_reports_no_delete BEFORE DELETE ON parse_quality_reports BEGIN SELECT RAISE(ABORT, 'parse_quality_reports are immutable'); END;
+CREATE TRIGGER IF NOT EXISTS immutable_provenance_activities_no_delete BEFORE DELETE ON provenance_activities BEGIN SELECT RAISE(ABORT, 'provenance_activities are immutable'); END;
 CREATE TRIGGER IF NOT EXISTS immutable_evidence_targets_no_delete BEFORE DELETE ON evidence_targets BEGIN SELECT RAISE(ABORT, 'evidence_targets are immutable'); END;
 CREATE TRIGGER IF NOT EXISTS immutable_evidence_validation_attempts_no_delete BEFORE DELETE ON evidence_validation_attempts BEGIN SELECT RAISE(ABORT, 'evidence_validation_attempts are immutable'); END;
 CREATE TRIGGER IF NOT EXISTS immutable_processing_task_fingerprints_no_delete BEFORE DELETE ON processing_task_fingerprints BEGIN SELECT RAISE(ABORT, 'processing_task_fingerprints are immutable'); END;

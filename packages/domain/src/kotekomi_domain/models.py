@@ -125,6 +125,10 @@ class ProcessingAttemptStatus(StrEnum):
 
 class ProcessingArtifactKind(StrEnum):
     DOCUMENT_REPRESENTATION = "document_representation"
+    TEXT_VIEW = "text_view"
+    DOCUMENT_NODE = "document_node"
+    DOCUMENT_EDGE = "document_edge"
+    SOURCE_REGION = "source_region"
     QUALITY_REPORT = "quality_report"
     PROVENANCE_ACTIVITY = "provenance_activity"
 

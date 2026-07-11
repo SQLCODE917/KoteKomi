@@ -93,6 +93,7 @@ IMMUTABLE_TABLES = frozenset(
         "document_edges",
         "source_regions",
         "parse_quality_reports",
+        "provenance_activities",
         "evidence_targets",
         "evidence_validation_attempts",
         "processing_task_fingerprints",
@@ -796,6 +797,10 @@ class SQLiteLedgerRepository:
     def _validate_processing_output_references(self, record: ProcessingAttemptOutcome) -> None:
         table_by_kind = {
             "document_representation": "document_representations",
+            "text_view": "text_views",
+            "document_node": "document_nodes",
+            "document_edge": "document_edges",
+            "source_region": "source_regions",
             "quality_report": "parse_quality_reports",
             "provenance_activity": "provenance_activities",
         }
