@@ -83,7 +83,7 @@ def _accepted_nodes(ledger_repository: LedgerGraphRepository) -> tuple[GraphNode
         for record in ledger_repository.list_events()
     )
     nodes.extend(
-        GraphNode(id=record.id, node_type="Source", label=record.title)
+        GraphNode(id=record.id, node_type="Source", label=record.canonical_identity_key)
         for record in ledger_repository.list_sources()
     )
     nodes.extend(

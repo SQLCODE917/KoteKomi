@@ -42,7 +42,6 @@ class FakeEvidenceLedger:
             "doc_example": Document(
                 id="doc_example",
                 source_id="src_example",
-                raw_path="sources/raw/blb_example.bin",
                 content_sha256="a" * 64,
             )
         }

@@ -135,6 +135,7 @@ def capture_source(
                 document=existing_document,
                 relation=_requested_relation(request, identity),
                 ledger_repository=ledger_repository,
+                identity_policy=identity_policy,
             )
         ):
             raise ValueError("Capture idempotency conflict.")
@@ -168,9 +169,9 @@ def capture_source(
         source = Source(
             id=identity.source_id,
             source_type=request.identity_hint.source_type,
-            title=request.identity_hint.title,
-            uri=request.identity_hint.uri,
-            published_at=request.publication_time,
+            identity_policy_id=identity_policy.policy_id,
+            canonical_identity_key=identity_policy.canonical_key(request.identity_hint),
+            provider_item_id=request.provider_item_id,
             created_at=request.transaction_time,
             updated_at=request.transaction_time,
         )
@@ -215,10 +216,7 @@ def capture_source(
     document = existing_document or Document(
         id=identity.document_id,
         source_id=identity.source_id,
-        raw_path=request.storage_locator,
-        extracted_text_path=request.extracted_text_locator,
         content_sha256=identity.content_digest,
-        created_from_capture_id=identity.source_capture_id,
         provider_version=request.provider_version,
         publication_time=request.publication_time,
         provider_update_time=request.provider_update_time,
@@ -362,13 +360,14 @@ def _is_idempotent_retry(
     document: Document,
     relation: DocumentRevisionRelation | None,
     ledger_repository: CaptureLedger,
+    identity_policy: SourceIdentityPolicy,
 ) -> bool:
     expected_relation = _find_requested_relation_from_relation(relation, ledger_repository)
     return (
         source.source_type == request.identity_hint.source_type
-        and source.title == request.identity_hint.title
-        and source.uri == request.identity_hint.uri
-        and source.published_at == request.publication_time
+        and source.identity_policy_id == identity_policy.policy_id
+        and source.canonical_identity_key == identity_policy.canonical_key(request.identity_hint)
+        and source.provider_item_id == request.provider_item_id
         and raw_blob.hash_algorithm == "sha256"
         and raw_blob.digest == hashlib.sha256(request.payload).hexdigest()
         and raw_blob.byte_length == len(request.payload)
@@ -390,7 +389,6 @@ def _is_idempotent_retry(
         and document.publication_time == request.publication_time
         and document.provider_update_time == request.provider_update_time
         and document.version_kind == request.version_kind
-        and document.extracted_text_path == request.extracted_text_locator
         and _same_revision_relation(expected_relation, relation)
     )
 

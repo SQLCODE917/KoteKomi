@@ -30,7 +30,6 @@ def test_docling_parser_returns_a_typed_block_when_docling_load_fails(
     document = Document(
         id="doc_pdf_fixture",
         source_id="src_pdf_fixture",
-        raw_path="sources/raw/blb_pdf_fixture.bin",
         content_sha256=hashlib.sha256(raw_pdf).hexdigest(),
     )
     monkeypatch.setattr(docling_pdf_parser, "_load_docling_components", fail_to_load)
@@ -52,7 +51,6 @@ def test_docling_bundle_identity_changes_with_its_parser_fingerprint() -> None:
         Document(
             id="doc_pdf_fixture",
             source_id="src_pdf_fixture",
-            raw_path="sources/raw/blb_pdf_fixture.bin",
             content_sha256=hashlib.sha256(raw_pdf).hexdigest(),
         ),
         raw_pdf,

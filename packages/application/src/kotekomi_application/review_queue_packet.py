@@ -749,7 +749,7 @@ def _evidence_context_from_json(
     source = ledger_repository.get_source(source_id)
     return ReviewEvidenceContext(
         source_id=source_id,
-        source_title=source.title if source is not None else None,
+        source_title=source.canonical_identity_key if source is not None else None,
         document_id=document_id,
         selector_type=selector_type,
         exact_text=exact_text,
@@ -766,7 +766,7 @@ def _evidence_context_from_span(
     source = ledger_repository.get_source(evidence_target.source_id)
     return ReviewEvidenceContext(
         source_id=evidence_target.source_id,
-        source_title=source.title if source is not None else None,
+        source_title=source.canonical_identity_key if source is not None else None,
         document_id=evidence_target.document_id,
         selector_type="pinned_text",
         exact_text=evidence_target.exact_text,

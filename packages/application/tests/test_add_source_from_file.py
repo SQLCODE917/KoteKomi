@@ -313,12 +313,12 @@ def test_add_source_from_file_creates_source_document_and_provenance() -> None:
     document = ledger.documents[result.document_id]
     provenance = ledger.provenance_activities[result.provenance_activity_id]
     assert result.created is True
-    assert source.title == FIXTURE_TITLE
+    assert source.canonical_identity_key == str(FIXTURE_PATH.resolve())
     assert source.source_type is SourceType.ARTICLE
-    assert source.published_at == datetime(2026, 7, 2, tzinfo=UTC)
     raw_blob = ledger.raw_blobs[next(iter(ledger.raw_blobs))]
-    assert document.raw_path == f"sources/raw/{raw_blob.id}.bin"
-    assert document.extracted_text_path == f"documents/extracted/{result.document_id}.txt"
+    assert raw_blob.storage_locator == f"sources/raw/{raw_blob.id}.bin"
+    assert result.raw_path == raw_blob.storage_locator
+    assert result.extracted_text_path == f"documents/extracted/{result.document_id}.txt"
     assert document.content_sha256 == hashlib.sha256(raw_bytes).hexdigest()
     assert provenance.activity_type == "source_file_ingest"
     assert provenance.agent == "kotekomi"
@@ -404,9 +404,8 @@ def test_add_source_from_file_defaults_text_file_metadata() -> None:
     )
 
     source = ledger.sources[result.source_id]
-    assert source.title == "notes"
+    assert source.canonical_identity_key == str(Path("notes.txt").resolve())
     assert source.source_type is SourceType.MANUAL_FILE
-    assert source.published_at is None
 
 
 def test_add_source_from_file_rejects_malformed_dateline() -> None:

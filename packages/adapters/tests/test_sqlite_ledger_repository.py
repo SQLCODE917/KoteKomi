@@ -84,7 +84,7 @@ def test_immutable_document_reuses_identical_payload_and_rejects_conflict(tmp_pa
     with sqlite_ledger_transaction(ledger_path) as repository:
         repository.save_document(document)
         repository.save_document(document)
-    conflicting_document = document.model_copy(update={"raw_path": "different/raw.bin"})
+    conflicting_document = document.model_copy(update={"content_sha256": "b" * 64})
     with pytest.raises(ImmutableRecordConflict):
         with sqlite_ledger_transaction(ledger_path) as repository:
             repository.save_document(conflicting_document)
@@ -103,7 +103,7 @@ def test_immutable_document_conflict_rolls_back_preceding_transaction_writes(
     with pytest.raises(ImmutableRecordConflict):
         with sqlite_ledger_transaction(ledger_path) as repository:
             repository.save_source(source)
-            repository.save_document(document.model_copy(update={"raw_path": "conflict.bin"}))
+            repository.save_document(document.model_copy(update={"content_sha256": "b" * 64}))
     with sqlite_ledger_transaction(ledger_path) as repository:
         assert repository.get_source(source.id) is None
 

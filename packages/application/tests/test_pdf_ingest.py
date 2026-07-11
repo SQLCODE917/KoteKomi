@@ -39,7 +39,6 @@ class FakePdfLedger:
         self.document = Document(
             id="doc_pdf_fixture",
             source_id="src_pdf_fixture",
-            raw_path="sources/raw/src_pdf_fixture.bin",
             content_sha256=hashlib.sha256(RAW_PDF).hexdigest(),
         )
 

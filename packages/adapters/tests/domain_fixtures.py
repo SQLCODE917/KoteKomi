@@ -63,15 +63,12 @@ def sample_domain_records() -> tuple[
         Source(
             id="src_article_a",
             source_type=SourceType.ARTICLE,
-            title="Release review article",
-            uri="https://example.test/release-review",
-            published_at=NOW,
+            identity_policy_id="fixture_v1",
+            canonical_identity_key="article_a",
         ),
         Document(
             id="doc_article_a",
             source_id="src_article_a",
-            raw_path="archive/raw/src_article_a.html",
-            extracted_text_path="archive/extracted/doc_article_a.txt",
             content_sha256=HASH,
         ),
         EvidenceTarget(

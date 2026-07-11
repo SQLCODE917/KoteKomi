@@ -62,15 +62,14 @@ class FakeGraphLedger:
             Source(
                 id="src_article_a",
                 source_type=SourceType.ARTICLE,
-                title="Release review article",
+                identity_policy_id="fixture_v1",
+                canonical_identity_key="article_a",
             ),
         )
         self.documents = (
             Document(
                 id="doc_article_a",
                 source_id="src_article_a",
-                raw_path="sources/raw/src_article_a.bin",
-                extracted_text_path="documents/extracted/doc_article_a.txt",
                 content_sha256=HASH,
             ),
         )

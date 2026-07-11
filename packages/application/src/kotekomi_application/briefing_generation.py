@@ -1883,7 +1883,7 @@ def _entity_event_index(
     rows.extend(
         BriefingEntityEventIndexRow(
             record_type="Source",
-            name=source.title,
+            name=source.canonical_identity_key,
             context="Selected Source.",
         )
         for source in sorted(selected_records.sources, key=lambda record: record.id)

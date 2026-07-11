@@ -71,12 +71,10 @@ def test_source_add_file_ingests_fixture_into_ledger_and_archive(
     source = sources[0]
     document = documents[0]
     provenance_activity = provenance_activities[0]
-    assert source.title == FIXTURE_TITLE
-    assert document.raw_path.startswith("sources/raw/blb_")
-    assert document.extracted_text_path is not None
-    assert document.extracted_text_path.startswith("documents/extracted/doc_")
-    assert (archive_path / document.raw_path).is_file()
-    assert (archive_path / document.extracted_text_path).is_file()
+    assert source.canonical_identity_key == str(FIXTURE_PATH.resolve())
+    assert raw_blobs[0].storage_locator.startswith("sources/raw/blb_")
+    assert (archive_path / raw_blobs[0].storage_locator).is_file()
+    assert (archive_path / f"documents/extracted/{document.id}.txt").is_file()
     assert provenance_activity.activity_type == "source_file_ingest"
     assert provenance_activity.output_ids == (
         source.id,

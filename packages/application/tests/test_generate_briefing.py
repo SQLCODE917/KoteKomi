@@ -538,7 +538,8 @@ def test_generate_briefing_uses_latest_previous_briefing_as_change_boundary() ->
     newer_source = Source(
         id="src_newer",
         source_type=SourceType.ARTICLE,
-        title="Newer Source",
+        identity_policy_id="fixture_v1",
+        canonical_identity_key="newer",
         created_at=AFTER,
         updated_at=AFTER,
     )
@@ -600,7 +601,8 @@ def source_fixture(updated_at: datetime = BEFORE) -> Source:
     return Source(
         id="src_article_a",
         source_type=SourceType.ARTICLE,
-        title="Article A",
+        identity_policy_id="fixture_v1",
+        canonical_identity_key="article_a",
         created_at=updated_at,
         updated_at=updated_at,
     )
@@ -610,8 +612,6 @@ def document_fixture(updated_at: datetime = BEFORE) -> Document:
     return Document(
         id="doc_article_a",
         source_id="src_article_a",
-        raw_path="sources/raw/src_article_a.bin",
-        extracted_text_path="documents/extracted/doc_article_a.txt",
         content_sha256="a" * 64,
         created_at=updated_at,
         updated_at=updated_at,

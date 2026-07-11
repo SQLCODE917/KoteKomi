@@ -247,9 +247,10 @@ class Event(DomainModel):
 class Source(DomainModel):
     id: SourceId
     source_type: SourceType
-    title: NonEmptyStr
-    uri: NonEmptyStr | None = None
-    published_at: datetime | None = None
+    identity_policy_id: NonEmptyStr
+    canonical_identity_key: NonEmptyStr
+    provider_namespace: NonEmptyStr | None = None
+    provider_item_id: NonEmptyStr | None = None
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
 
@@ -294,10 +295,7 @@ class CaptureDocumentResolution(DomainModel):
 class Document(DomainModel):
     id: DocumentId
     source_id: SourceId
-    raw_path: NonEmptyStr
-    extracted_text_path: NonEmptyStr | None = None
     content_sha256: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
-    created_from_capture_id: SourceCaptureId | None = None
     provider_version: NonEmptyStr | None = None
     publication_time: datetime | None = None
     provider_update_time: datetime | None = None

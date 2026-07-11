@@ -203,13 +203,17 @@ def _seed(
     SQLiteLedgerInitializer(ledger_path).initialize()
     with sqlite_ledger_transaction(ledger_path) as repository:
         repository.save_source(
-            Source(id="src_atomic", source_type=SourceType.ARTICLE, title="Atomic source")
+            Source(
+                id="src_atomic",
+                source_type=SourceType.ARTICLE,
+                identity_policy_id="fixture_v1",
+                canonical_identity_key="atomic",
+            )
         )
         repository.save_document(
             Document(
                 id="doc_atomic",
                 source_id="src_atomic",
-                raw_path="sources/raw/blb_atomic.bin",
                 content_sha256="b" * 64,
             )
         )

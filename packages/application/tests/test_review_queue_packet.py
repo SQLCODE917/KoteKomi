@@ -469,13 +469,12 @@ def seeded_ledger(proposed_changes: tuple[ProposedChange, ...]) -> FakeReviewQue
     ledger.sources["src_article_a"] = Source(
         id="src_article_a",
         source_type=SourceType.ARTICLE,
-        title="Article A",
+        identity_policy_id="fixture_v1",
+        canonical_identity_key="article_a",
     )
     ledger.documents["doc_article_a"] = Document(
         id="doc_article_a",
         source_id="src_article_a",
-        raw_path="sources/raw/src_article_a.bin",
-        extracted_text_path="documents/extracted/doc_article_a.txt",
         content_sha256="a" * 64,
     )
     ledger.organizations["org_anthropic"] = Organization(id="org_anthropic", name="Anthropic")

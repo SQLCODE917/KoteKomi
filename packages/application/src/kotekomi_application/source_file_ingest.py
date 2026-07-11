@@ -196,8 +196,8 @@ def add_source_from_file(
             document_id=outcome.document.id,
             representation_id=representation_id,
             provenance_activity_id=provenance_activity_id,
-            raw_path=outcome.document.raw_path,
-            extracted_text_path=outcome.document.extracted_text_path or "",
+            raw_path=f"sources/raw/{outcome.raw_blob.id}.bin",
+            extracted_text_path=f"documents/extracted/{outcome.document.id}.txt",
             created=False,
         )
 
@@ -307,8 +307,8 @@ def add_source_from_file(
         document_id=document.id,
         representation_id=representation_id,
         provenance_activity_id=provenance_activity_id,
-        raw_path=document.raw_path,
-        extracted_text_path=document.extracted_text_path or "",
+        raw_path=f"sources/raw/{outcome.raw_blob.id}.bin",
+        extracted_text_path=f"documents/extracted/{document.id}.txt",
         created=outcome.created,
     )
 

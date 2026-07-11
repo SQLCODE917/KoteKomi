@@ -318,7 +318,16 @@ def test_final_proof_reopens_and_replays_the_complete_authoritative_chain(tmp_pa
         assert bundle is not None
         document = repository.get_document(bundle.representation.document_id)
         assert document is not None
-        capture = repository.get_source_capture(document.created_from_capture_id or "")
+        resolution = next(
+            (
+                candidate
+                for candidate in repository.list_capture_document_resolutions()
+                if candidate.document_id == document.id
+            ),
+            None,
+        )
+        assert resolution is not None
+        capture = repository.get_source_capture(resolution.capture_id)
         assert capture is not None
         raw_blob = repository.get_raw_blob(capture.blob_id)
         assert raw_blob is not None
