@@ -25,9 +25,19 @@ from kotekomi_domain import (
     canonical_representation_digest,
 )
 
+from .domain_fixtures import sample_domain_records
+
 NOW = datetime(2026, 7, 11, tzinfo=UTC)
 INPUT_DIGEST = "a" * 64
 CONFIG_DIGEST = "b" * 64
+
+
+def initialize_ledger_with_representation_parent(ledger_path: Path) -> None:
+    SQLiteLedgerInitializer(ledger_path).initialize()
+    source, document = sample_domain_records()[5:7]
+    with sqlite_ledger_transaction(ledger_path) as repository:
+        repository.save_source(source)
+        repository.save_document(document.model_copy(update={"id": "doc_representation_fixture"}))
 
 
 def bundle(
@@ -100,7 +110,7 @@ def bundle(
 
 def test_representation_bundle_reuses_a_semantic_replay_after_restart(tmp_path: Path) -> None:
     ledger_path = tmp_path / "ledger.db"
-    SQLiteLedgerInitializer(ledger_path).initialize()
+    initialize_ledger_with_representation_parent(ledger_path)
     original = bundle()
     replay = bundle(created_at=NOW + timedelta(minutes=1))
 
@@ -119,7 +129,7 @@ def test_representation_bundle_reuses_a_semantic_replay_after_restart(tmp_path: 
 
 def test_representation_bundle_load_uses_representation_ownership_indexes(tmp_path: Path) -> None:
     ledger_path = tmp_path / "ledger.db"
-    SQLiteLedgerInitializer(ledger_path).initialize()
+    initialize_ledger_with_representation_parent(ledger_path)
     first = bundle(parser_version="1")
     second = bundle(parser_version="2")
 
@@ -140,7 +150,7 @@ def test_representation_bundle_rejects_nondeterministic_output_without_mutation(
     tmp_path: Path,
 ) -> None:
     ledger_path = tmp_path / "ledger.db"
-    SQLiteLedgerInitializer(ledger_path).initialize()
+    initialize_ledger_with_representation_parent(ledger_path)
     original = bundle()
     different_output = bundle(text="different")
 
@@ -159,7 +169,7 @@ def test_representation_bundle_rejects_partial_child_conflict_without_siblings(
     tmp_path: Path,
 ) -> None:
     ledger_path = tmp_path / "ledger.db"
-    SQLiteLedgerInitializer(ledger_path).initialize()
+    initialize_ledger_with_representation_parent(ledger_path)
     candidate = bundle()
     conflicting_view = candidate.text_views[0].model_copy(
         update={"representation_id": "rep_other", "text": "other"}
@@ -169,6 +179,9 @@ def test_representation_bundle_rejects_partial_child_conflict_without_siblings(
     )
 
     with sqlite_ledger_transaction(ledger_path) as repository:
+        repository.save_document_representation(
+            candidate.representation.model_copy(update={"id": "rep_other"})
+        )
         repository.save_text_view(conflicting_view)
     with pytest.raises(ImmutableRecordConflict) as exc_info:
         with sqlite_ledger_transaction(ledger_path) as repository:
@@ -182,7 +195,7 @@ def test_representation_bundle_rejects_partial_child_conflict_without_siblings(
 
 def test_representation_bundle_rejects_a_partial_preexisting_representation(tmp_path: Path) -> None:
     ledger_path = tmp_path / "ledger.db"
-    SQLiteLedgerInitializer(ledger_path).initialize()
+    initialize_ledger_with_representation_parent(ledger_path)
     candidate = bundle()
 
     with sqlite_ledger_transaction(ledger_path) as repository:

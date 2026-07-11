@@ -172,27 +172,34 @@ CREATE INDEX IF NOT EXISTS idx_document_revision_relations_earlier
   ON document_revision_relations(earlier_document_id);
 CREATE TABLE IF NOT EXISTS document_representations (
   id TEXT PRIMARY KEY, created_at TEXT, updated_at TEXT, status TEXT, review_status TEXT,
-  document_id TEXT NOT NULL, payload_json TEXT NOT NULL
+  document_id TEXT NOT NULL, payload_json TEXT NOT NULL,
+  FOREIGN KEY (document_id) REFERENCES documents(id)
 );
 CREATE TABLE IF NOT EXISTS text_views (
   id TEXT PRIMARY KEY, created_at TEXT, updated_at TEXT, status TEXT, review_status TEXT,
-  representation_id TEXT NOT NULL, payload_json TEXT NOT NULL
+  representation_id TEXT NOT NULL, payload_json TEXT NOT NULL,
+  FOREIGN KEY (representation_id) REFERENCES document_representations(id)
 );
 CREATE TABLE IF NOT EXISTS document_nodes (
   id TEXT PRIMARY KEY, created_at TEXT, updated_at TEXT, status TEXT, review_status TEXT,
-  representation_id TEXT NOT NULL, parent_node_id TEXT, payload_json TEXT NOT NULL
+  representation_id TEXT NOT NULL, parent_node_id TEXT, payload_json TEXT NOT NULL,
+  FOREIGN KEY (representation_id) REFERENCES document_representations(id),
+  FOREIGN KEY (parent_node_id) REFERENCES document_nodes(id)
 );
 CREATE TABLE IF NOT EXISTS document_edges (
   id TEXT PRIMARY KEY, created_at TEXT, updated_at TEXT, status TEXT, review_status TEXT,
-  representation_id TEXT NOT NULL, payload_json TEXT NOT NULL
+  representation_id TEXT NOT NULL, payload_json TEXT NOT NULL,
+  FOREIGN KEY (representation_id) REFERENCES document_representations(id)
 );
 CREATE TABLE IF NOT EXISTS source_regions (
   id TEXT PRIMARY KEY, created_at TEXT, updated_at TEXT, status TEXT, review_status TEXT,
-  representation_id TEXT NOT NULL, payload_json TEXT NOT NULL
+  representation_id TEXT NOT NULL, payload_json TEXT NOT NULL,
+  FOREIGN KEY (representation_id) REFERENCES document_representations(id)
 );
 CREATE TABLE IF NOT EXISTS parse_quality_reports (
   id TEXT PRIMARY KEY, created_at TEXT, updated_at TEXT, status TEXT, review_status TEXT,
-  representation_id TEXT NOT NULL, payload_json TEXT NOT NULL
+  representation_id TEXT NOT NULL, payload_json TEXT NOT NULL,
+  FOREIGN KEY (representation_id) REFERENCES document_representations(id)
 );
 CREATE INDEX IF NOT EXISTS idx_document_representations_document_id ON document_representations(document_id);
 CREATE INDEX IF NOT EXISTS idx_text_views_representation_id ON text_views(representation_id);
