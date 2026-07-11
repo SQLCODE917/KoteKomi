@@ -24,13 +24,19 @@ NOW = datetime(2026, 7, 11, tzinfo=UTC)
 
 
 class FakeCaptureLedger:
-    def __init__(self) -> None:
+    def __init__(self, fail_once_at: str | None = None) -> None:
         self.sources: dict[str, Source] = {}
         self.blobs: dict[str, RawBlob] = {}
         self.captures: dict[str, SourceCapture] = {}
         self.resolutions: dict[str, CaptureDocumentResolution] = {}
         self.documents: dict[str, Document] = {}
         self.relations: dict[str, DocumentRevisionRelation] = {}
+        self.fail_once_at = fail_once_at
+
+    def _fail_once(self, boundary: str) -> None:
+        if self.fail_once_at == boundary:
+            self.fail_once_at = None
+            raise RuntimeError(f"injected failure after {boundary}")
 
     def get_source(self, record_id: str) -> Source | None:
         return self.sources.get(record_id)
@@ -84,21 +90,27 @@ class FakeCaptureLedger:
 
     def save_source(self, record: Source) -> None:
         self.sources[record.id] = record
+        self._fail_once("source")
 
     def save_raw_blob(self, record: RawBlob) -> None:
         self.blobs[record.id] = record
+        self._fail_once("raw_blob")
 
     def save_source_capture(self, record: SourceCapture) -> None:
         self.captures[record.id] = record
+        self._fail_once("source_capture")
 
     def save_capture_document_resolution(self, record: CaptureDocumentResolution) -> None:
         self.resolutions[record.id] = record
+        self._fail_once("document_resolution")
 
     def save_document(self, record: Document) -> None:
         self.documents[record.id] = record
+        self._fail_once("document")
 
     def save_document_revision_relation(self, record: DocumentRevisionRelation) -> None:
         self.relations[record.id] = record
+        self._fail_once("revision_relation")
 
 
 def request(payload: bytes, key: str, **changes: object) -> CaptureRequest:
@@ -233,6 +245,25 @@ def test_capture_repairs_missing_resolution_on_retry() -> None:
     assert repaired.document == first.document
     assert repaired.document_resolution == first.document_resolution
     assert repaired.created is False
+
+
+@pytest.mark.parametrize(
+    "boundary",
+    ("source", "raw_blob", "source_capture", "document", "document_resolution"),
+)
+def test_capture_retry_converges_after_each_record_boundary_failure(boundary: str) -> None:
+    ledger = FakeCaptureLedger(fail_once_at=boundary)
+    policy = StableSourceIdentityPolicy()
+    capture_request = request(b"fault-injection bytes", f"fault-{boundary}")
+
+    with pytest.raises(RuntimeError, match=boundary):
+        capture_source(capture_request, ledger, policy)
+
+    repaired = capture_source(capture_request, ledger, policy)
+
+    assert len(ledger.sources) == len(ledger.blobs) == len(ledger.captures) == 1
+    assert len(ledger.documents) == len(ledger.resolutions) == 1
+    assert repaired.document.id in ledger.documents
 
 
 @pytest.mark.parametrize(
