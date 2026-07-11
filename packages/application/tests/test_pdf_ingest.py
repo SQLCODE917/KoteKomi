@@ -60,6 +60,11 @@ class FakePdfParser:
         )
 
 
+class FailingPdfParser(FakePdfParser):
+    def parse(self, _parse_input: PdfParseInput) -> PdfParseResult:
+        raise RuntimeError("fixture parser crash")
+
+
 class FakePdfLedger:
     def __init__(self) -> None:
         self.document = Document(
@@ -169,3 +174,23 @@ def test_ingest_pdf_rejects_invalid_build_identity_before_parser_work() -> None:
         )
 
     assert parser.identity_calls == 0
+
+
+def test_ingest_pdf_records_failure_and_reraises_processor_exception() -> None:
+    ledger = FakePdfLedger()
+    with pytest.raises(RuntimeError, match="fixture parser crash"):
+        ingest_pdf(
+            PdfIngestInput(
+                "doc_pdf_fixture", RAW_PDF, "pdf_policy_v1", NOW, "blb_pdf_fixture", BUILD_IDENTITY
+            ),
+            cast(PdfIngestLedger, ledger),
+            cast(PdfDocumentParser, FailingPdfParser()),
+            SequenceAttemptIdFactory(),
+        )
+
+    assert len(ledger.attempts) == 1
+    assert len(ledger.outcomes) == 1
+    outcome = next(iter(ledger.outcomes.values()))
+    assert outcome.status.value == "failed"
+    assert outcome.failure is not None
+    assert outcome.failure.code == "pdf_processor_failure"
