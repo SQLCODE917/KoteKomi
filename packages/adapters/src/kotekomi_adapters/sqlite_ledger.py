@@ -15,6 +15,7 @@ from kotekomi_domain import (
     Actor,
     ArgumentEdge,
     Assertion,
+    AssertionEvidenceLink,
     Briefing,
     Document,
     DocumentEdge,
@@ -24,6 +25,7 @@ from kotekomi_domain import (
     DocumentRevisionRelation,
     Entity,
     Event,
+    EvidenceReanchoringRelation,
     EvidenceSpan,
     Organization,
     Outcome,
@@ -69,6 +71,11 @@ DOCUMENT_REVISION_RELATION_SPEC = RecordSpec(
 RAW_BLOB_SPEC = RecordSpec("raw_blobs", RawBlob)
 SOURCE_CAPTURE_SPEC = RecordSpec("source_captures", SourceCapture)
 EVIDENCE_SPAN_SPEC = RecordSpec("evidence_spans", EvidenceSpan)
+ASSERTION_EVIDENCE_LINK_SPEC = RecordSpec("assertion_evidence_links", AssertionEvidenceLink)
+EVIDENCE_REANCHORING_RELATION_SPEC = RecordSpec(
+    "evidence_reanchoring_relations",
+    EvidenceReanchoringRelation,
+)
 ASSERTION_SPEC = RecordSpec("assertions", Assertion)
 RELATIONSHIP_SPEC = RecordSpec("relationships", Relationship)
 OUTCOME_SPEC = RecordSpec("outcomes", Outcome)
@@ -109,6 +116,8 @@ REQUIRED_LEDGER_TABLES = (
     "parse_quality_reports",
     "document_revision_relations",
     "evidence_spans",
+    "assertion_evidence_links",
+    "evidence_reanchoring_relations",
     "assertions",
     "relationships",
     "outcomes",
@@ -455,6 +464,28 @@ class SQLiteLedgerRepository:
 
     def list_evidence_spans(self) -> tuple[EvidenceSpan, ...]:
         return self._list(EVIDENCE_SPAN_SPEC)
+
+    def save_assertion_evidence_link(self, record: AssertionEvidenceLink) -> None:
+        self._save(ASSERTION_EVIDENCE_LINK_SPEC, record)
+
+    def get_assertion_evidence_link(self, record_id: str) -> AssertionEvidenceLink | None:
+        return self._get(ASSERTION_EVIDENCE_LINK_SPEC, record_id)
+
+    def list_assertion_evidence_links(self) -> tuple[AssertionEvidenceLink, ...]:
+        return self._list(ASSERTION_EVIDENCE_LINK_SPEC)
+
+    def save_evidence_reanchoring_relation(self, record: EvidenceReanchoringRelation) -> None:
+        self._save(EVIDENCE_REANCHORING_RELATION_SPEC, record)
+
+    def get_evidence_reanchoring_relation(
+        self, record_id: str
+    ) -> EvidenceReanchoringRelation | None:
+        return self._get(EVIDENCE_REANCHORING_RELATION_SPEC, record_id)
+
+    def list_evidence_reanchoring_relations(
+        self,
+    ) -> tuple[EvidenceReanchoringRelation, ...]:
+        return self._list(EVIDENCE_REANCHORING_RELATION_SPEC)
 
     def save_assertion(self, record: Assertion) -> None:
         self._save(ASSERTION_SPEC, record)

@@ -1,0 +1,84 @@
+{
+  "$defs": {
+    "AssertionEvidenceRole": {
+      "enum": [
+        "direct_support",
+        "attribution",
+        "definition",
+        "scope",
+        "temporal_anchor",
+        "identity_resolution",
+        "contradiction",
+        "background"
+      ],
+      "title": "AssertionEvidenceRole",
+      "type": "string"
+    },
+    "EvidenceNecessity": {
+      "enum": [
+        "required",
+        "supplementary"
+      ],
+      "title": "EvidenceNecessity",
+      "type": "string"
+    },
+    "EvidencePolarity": {
+      "enum": [
+        "supports",
+        "contradicts",
+        "contextualizes"
+      ],
+      "title": "EvidencePolarity",
+      "type": "string"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "assertion_id": {
+      "pattern": "^ast_[A-Za-z0-9][A-Za-z0-9_-]*$",
+      "title": "Assertion Id",
+      "type": "string"
+    },
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    },
+    "evidence_span_id": {
+      "pattern": "^evs_[A-Za-z0-9][A-Za-z0-9_-]*$",
+      "title": "Evidence Span Id",
+      "type": "string"
+    },
+    "id": {
+      "pattern": "^ael_[A-Za-z0-9][A-Za-z0-9_-]*$",
+      "title": "Id",
+      "type": "string"
+    },
+    "necessity": {
+      "$ref": "#/$defs/EvidenceNecessity"
+    },
+    "polarity": {
+      "$ref": "#/$defs/EvidencePolarity"
+    },
+    "provenance_id": {
+      "pattern": "^prv_[A-Za-z0-9][A-Za-z0-9_-]*$",
+      "title": "Provenance Id",
+      "type": "string"
+    },
+    "role": {
+      "$ref": "#/$defs/AssertionEvidenceRole"
+    }
+  },
+  "required": [
+    "id",
+    "assertion_id",
+    "evidence_span_id",
+    "role",
+    "polarity",
+    "necessity",
+    "provenance_id"
+  ],
+  "title": "AssertionEvidenceLink",
+  "type": "object"
+}

@@ -22,6 +22,8 @@ PlaceId = Annotated[str, Field(pattern=r"^plc_[A-Za-z0-9][A-Za-z0-9_-]*$")]
 SourceId = Annotated[str, Field(pattern=r"^src_[A-Za-z0-9][A-Za-z0-9_-]*$")]
 DocumentId = Annotated[str, Field(pattern=r"^doc_[A-Za-z0-9][A-Za-z0-9_-]*$")]
 EvidenceSpanId = Annotated[str, Field(pattern=r"^evs_[A-Za-z0-9][A-Za-z0-9_-]*$")]
+AssertionEvidenceLinkId = Annotated[str, Field(pattern=r"^ael_[A-Za-z0-9][A-Za-z0-9_-]*$")]
+EvidenceReanchoringRelationId = Annotated[str, Field(pattern=r"^erl_[A-Za-z0-9][A-Za-z0-9_-]*$")]
 AssertionId = Annotated[str, Field(pattern=r"^ast_[A-Za-z0-9][A-Za-z0-9_-]*$")]
 RelationshipId = Annotated[str, Field(pattern=r"^rel_[A-Za-z0-9][A-Za-z0-9_-]*$")]
 OutcomeId = Annotated[str, Field(pattern=r"^out_[A-Za-z0-9][A-Za-z0-9_-]*$")]
@@ -107,6 +109,34 @@ class SelectorType(StrEnum):
     EXACT_TEXT = "exact_text"
     TEXT_POSITION = "text_position"
     PAGE = "page"
+
+
+class EvidenceValidationStatus(StrEnum):
+    LEGACY_UNVALIDATED = "legacy_unvalidated"
+    VALIDATED = "validated"
+    FAILED = "failed"
+
+
+class AssertionEvidenceRole(StrEnum):
+    DIRECT_SUPPORT = "direct_support"
+    ATTRIBUTION = "attribution"
+    DEFINITION = "definition"
+    SCOPE = "scope"
+    TEMPORAL_ANCHOR = "temporal_anchor"
+    IDENTITY_RESOLUTION = "identity_resolution"
+    CONTRADICTION = "contradiction"
+    BACKGROUND = "background"
+
+
+class EvidencePolarity(StrEnum):
+    SUPPORTS = "supports"
+    CONTRADICTS = "contradicts"
+    CONTEXTUALIZES = "contextualizes"
+
+
+class EvidenceNecessity(StrEnum):
+    REQUIRED = "required"
+    SUPPLEMENTARY = "supplementary"
 
 
 class AssertionType(StrEnum):
@@ -509,7 +539,100 @@ class EvidenceSpan(DomainModel):
     prefix_text: str = ""
     suffix_text: str = ""
     location: dict[str, JsonValue] = Field(default_factory=dict)
+    representation_id: DocumentRepresentationId | None = None
+    text_view_id: TextViewId | None = None
+    text_view_digest: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")] | None = None
+    start_char: Annotated[int, Field(ge=0)] | None = None
+    end_char: Annotated[int, Field(ge=0)] | None = None
+    node_ids: tuple[DocumentNodeId, ...] = Field(default_factory=tuple)
+    pdf_region_ids: tuple[SourceRegionId, ...] = Field(default_factory=tuple)
+    dom_selector: dict[str, JsonValue] | None = None
+    table_selector: dict[str, JsonValue] | None = None
+    selector_normalization_policy: NonEmptyStr | None = None
+    validation_status: EvidenceValidationStatus = EvidenceValidationStatus.LEGACY_UNVALIDATED
+    validator_version: NonEmptyStr | None = None
+    validated_at: datetime | None = None
+    target_digest: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")] | None = None
     created_at: datetime = Field(default_factory=utc_now)
+
+    @model_validator(mode="after")
+    def validate_target_shape(self) -> Self:
+        pinning_values = (
+            self.representation_id,
+            self.text_view_id,
+            self.text_view_digest,
+            self.start_char,
+            self.end_char,
+            self.selector_normalization_policy,
+        )
+        if any(value is not None for value in pinning_values):
+            if any(value is None for value in pinning_values):
+                raise ValueError("Pinned EvidenceSpan requires representation and text selectors.")
+            start_char = self.start_char
+            end_char = self.end_char
+            if start_char is None or end_char is None:
+                raise ValueError("Pinned EvidenceSpan requires position selectors.")
+            if end_char <= start_char:
+                raise ValueError("Pinned EvidenceSpan end_char must follow start_char.")
+            if self.assertion_id is not None:
+                raise ValueError("Pinned EvidenceSpan must not directly reference an Assertion.")
+        if self.validation_status is EvidenceValidationStatus.VALIDATED:
+            if (
+                self.validator_version is None
+                or self.validated_at is None
+                or self.target_digest is None
+            ):
+                raise ValueError(
+                    "Validated EvidenceSpan requires validation metadata and target_digest."
+                )
+            if self.representation_id is None:
+                raise ValueError("Validated EvidenceSpan must be pinned to a representation.")
+        return self
+
+
+class AssertionEvidenceLink(DomainModel):
+    id: AssertionEvidenceLinkId
+    assertion_id: AssertionId
+    evidence_span_id: EvidenceSpanId
+    role: AssertionEvidenceRole
+    polarity: EvidencePolarity
+    necessity: EvidenceNecessity
+    provenance_id: ProvenanceActivityId
+    created_at: datetime = Field(default_factory=utc_now)
+
+
+class EvidenceReanchoringRelation(DomainModel):
+    id: EvidenceReanchoringRelationId
+    earlier_evidence_span_id: EvidenceSpanId
+    later_evidence_span_id: EvidenceSpanId
+    provenance_id: ProvenanceActivityId
+    basis: NonEmptyStr
+    recorded_at: datetime = Field(default_factory=utc_now)
+
+    @model_validator(mode="after")
+    def validate_evidence_spans(self) -> Self:
+        if self.earlier_evidence_span_id == self.later_evidence_span_id:
+            raise ValueError(
+                "Evidence reanchoring relation cannot reference one EvidenceSpan twice."
+            )
+        return self
+
+
+def canonical_evidence_target_digest(evidence_span: EvidenceSpan) -> str:
+    """Return the SHA-256 digest of immutable, replayable evidence selectors."""
+
+    payload = evidence_span.model_dump(mode="json")
+    for field_name in (
+        "assertion_id",
+        "validation_status",
+        "validator_version",
+        "validated_at",
+        "target_digest",
+        "created_at",
+    ):
+        payload.pop(field_name)
+    canonical_json = json.dumps(payload, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
+    return hashlib.sha256(canonical_json.encode("utf-8")).hexdigest()
 
 
 class Assertion(DomainModel):

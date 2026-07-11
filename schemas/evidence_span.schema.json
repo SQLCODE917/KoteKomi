@@ -1,5 +1,14 @@
 {
   "$defs": {
+    "EvidenceValidationStatus": {
+      "enum": [
+        "legacy_unvalidated",
+        "validated",
+        "failed"
+      ],
+      "title": "EvidenceValidationStatus",
+      "type": "string"
+    },
     "JsonValue": {
       "anyOf": [
         {
@@ -67,6 +76,34 @@
       "title": "Document Id",
       "type": "string"
     },
+    "dom_selector": {
+      "anyOf": [
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Dom Selector"
+    },
+    "end_char": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "End Char"
+    },
     "exact_text": {
       "minLength": 1,
       "title": "Exact Text",
@@ -84,10 +121,52 @@
       "title": "Location",
       "type": "object"
     },
+    "node_ids": {
+      "items": {
+        "pattern": "^nod_[A-Za-z0-9][A-Za-z0-9_-]*$",
+        "type": "string"
+      },
+      "title": "Node Ids",
+      "type": "array"
+    },
+    "pdf_region_ids": {
+      "items": {
+        "pattern": "^srg_[A-Za-z0-9][A-Za-z0-9_-]*$",
+        "type": "string"
+      },
+      "title": "Pdf Region Ids",
+      "type": "array"
+    },
     "prefix_text": {
       "default": "",
       "title": "Prefix Text",
       "type": "string"
+    },
+    "representation_id": {
+      "anyOf": [
+        {
+          "pattern": "^rep_[A-Za-z0-9][A-Za-z0-9_-]*$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Representation Id"
+    },
+    "selector_normalization_policy": {
+      "anyOf": [
+        {
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Selector Normalization Policy"
     },
     "selector_type": {
       "$ref": "#/$defs/SelectorType"
@@ -97,10 +176,107 @@
       "title": "Source Id",
       "type": "string"
     },
+    "start_char": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Start Char"
+    },
     "suffix_text": {
       "default": "",
       "title": "Suffix Text",
       "type": "string"
+    },
+    "table_selector": {
+      "anyOf": [
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Table Selector"
+    },
+    "target_digest": {
+      "anyOf": [
+        {
+          "pattern": "^[a-f0-9]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Target Digest"
+    },
+    "text_view_digest": {
+      "anyOf": [
+        {
+          "pattern": "^[a-f0-9]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Text View Digest"
+    },
+    "text_view_id": {
+      "anyOf": [
+        {
+          "pattern": "^tvw_[A-Za-z0-9][A-Za-z0-9_-]*$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Text View Id"
+    },
+    "validated_at": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Validated At"
+    },
+    "validation_status": {
+      "$ref": "#/$defs/EvidenceValidationStatus",
+      "default": "legacy_unvalidated"
+    },
+    "validator_version": {
+      "anyOf": [
+        {
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Validator Version"
     }
   },
   "required": [

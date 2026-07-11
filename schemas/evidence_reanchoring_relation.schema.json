@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "basis": {
+      "minLength": 1,
+      "title": "Basis",
+      "type": "string"
+    },
+    "earlier_evidence_span_id": {
+      "pattern": "^evs_[A-Za-z0-9][A-Za-z0-9_-]*$",
+      "title": "Earlier Evidence Span Id",
+      "type": "string"
+    },
+    "id": {
+      "pattern": "^erl_[A-Za-z0-9][A-Za-z0-9_-]*$",
+      "title": "Id",
+      "type": "string"
+    },
+    "later_evidence_span_id": {
+      "pattern": "^evs_[A-Za-z0-9][A-Za-z0-9_-]*$",
+      "title": "Later Evidence Span Id",
+      "type": "string"
+    },
+    "provenance_id": {
+      "pattern": "^prv_[A-Za-z0-9][A-Za-z0-9_-]*$",
+      "title": "Provenance Id",
+      "type": "string"
+    },
+    "recorded_at": {
+      "format": "date-time",
+      "title": "Recorded At",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "earlier_evidence_span_id",
+    "later_evidence_span_id",
+    "provenance_id",
+    "basis"
+  ],
+  "title": "EvidenceReanchoringRelation",
+  "type": "object"
+}
