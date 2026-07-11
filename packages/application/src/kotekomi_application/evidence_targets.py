@@ -59,6 +59,13 @@ class EvidenceValidationResult:
 
 
 @dataclass(frozen=True)
+class EvidenceReplayResult:
+    evidence_span: EvidenceSpan
+    valid: bool
+    error_message: str | None = None
+
+
+@dataclass(frozen=True)
 class LinkAssertionEvidenceInput:
     assertion_id: str
     evidence_span_id: str
@@ -123,6 +130,21 @@ def validate_evidence_target(
     )
     ledger_repository.save_evidence_span(validated)
     return EvidenceValidationResult(evidence_span=validated, valid=True)
+
+
+def verify_evidence_target(
+    evidence_span: EvidenceSpan, ledger_repository: EvidenceTargetLedger
+) -> EvidenceReplayResult:
+    """Replay every selector against the pinned representation without mutating state."""
+    if evidence_span.validation_status is not EvidenceValidationStatus.VALIDATED:
+        return EvidenceReplayResult(evidence_span, False, "EvidenceSpan is not validated.")
+    if evidence_span.target_digest != canonical_evidence_target_digest(evidence_span):
+        return EvidenceReplayResult(evidence_span, False, "EvidenceSpan target_digest is stale.")
+    try:
+        _validate_evidence_target(evidence_span, ledger_repository)
+    except ValueError as exc:
+        return EvidenceReplayResult(evidence_span, False, str(exc))
+    return EvidenceReplayResult(evidence_span, True)
 
 
 def link_assertion_evidence(

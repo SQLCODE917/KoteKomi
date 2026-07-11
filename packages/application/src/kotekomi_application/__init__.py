@@ -25,6 +25,7 @@ from kotekomi_application.briefing_generation import (
 from kotekomi_application.evidence_targets import (
     AssertionEvidenceLinkLedger,
     EvidenceReanchoringLedger,
+    EvidenceReplayResult,
     EvidenceTargetLedger,
     EvidenceValidationInput,
     EvidenceValidationResult,
@@ -36,6 +37,7 @@ from kotekomi_application.evidence_targets import (
     link_assertion_evidence,
     reanchor_evidence,
     validate_evidence_target,
+    verify_evidence_target,
 )
 from kotekomi_application.ledger import initialize_ledger
 from kotekomi_application.ledger_graph_mining import (
@@ -233,6 +235,7 @@ __all__ = [
     "GraphNode",
     "GraphProjection",
     "EvidenceReanchoringLedger",
+    "EvidenceReplayResult",
     "EvidenceTargetLedger",
     "EvidenceValidationInput",
     "EvidenceValidationResult",
@@ -365,4 +368,5 @@ __all__ = [
     "parse_model_proposal_batch_json",
     "validate_model_proposal",
     "validate_evidence_target",
+    "verify_evidence_target",
 ]

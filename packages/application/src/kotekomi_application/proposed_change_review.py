@@ -13,11 +13,15 @@ from kotekomi_domain import (
     Actor,
     ArgumentEdge,
     Assertion,
+    AssertionEvidenceLink,
+    AssertionEvidenceRole,
     AssertionStatus,
     AssertionType,
     Document,
     Entity,
     Event,
+    EvidenceNecessity,
+    EvidencePolarity,
     EvidenceSpan,
     Organization,
     Outcome,
@@ -30,6 +34,11 @@ from kotekomi_domain import (
 )
 from kotekomi_domain.models import JsonValue
 
+from kotekomi_application.evidence_targets import (
+    EvidenceTargetLedger,
+    deterministic_assertion_evidence_link_id,
+    verify_evidence_target,
+)
 from kotekomi_application.review_queue_packet import (
     ReviewNextInput,
     ReviewPacket,
@@ -50,6 +59,10 @@ EDITED_ACTIVITY_TYPE = "proposed_change_edited"
 type AcceptedReviewRecord = (
     Actor | Organization | Event | EvidenceSpan | Assertion | Relationship | Outcome | ArgumentEdge
 )
+
+
+class AssertionEvidenceLinkWriter(Protocol):
+    def save_assertion_evidence_link(self, record: AssertionEvidenceLink) -> None: ...
 
 
 class ProposedChangeReviewLedger(Protocol):
@@ -124,6 +137,7 @@ class ReviewProposedChangeResult:
     provenance_activity_id: str
     accepted_record_id: str | None = None
     accepted_record_type: str | None = None
+    assertion_evidence_link_ids: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -294,8 +308,7 @@ def review_drain_result_to_json(result: ReviewDrainResult) -> dict[str, JsonValu
         "dry_run": result.dry_run,
         "stopped_reason": result.stopped_reason.value,
         "item_results": [
-            review_next_decision_result_to_json(item_result)
-            for item_result in result.item_results
+            review_next_decision_result_to_json(item_result) for item_result in result.item_results
         ],
         "error_message": result.error_message,
     }
@@ -331,11 +344,7 @@ def _run_review_drain_dry_run(
         )
         for item in selected_items
     )
-    if (
-        not item_results
-        and review_input.limit == 0
-        and queue.items
-    ):
+    if not item_results and review_input.limit == 0 and queue.items:
         stopped_reason = ReviewDrainStoppedReason.LIMIT_REACHED
     elif not item_results:
         stopped_reason = ReviewDrainStoppedReason.QUEUE_EMPTY
@@ -489,9 +498,20 @@ def approve_proposed_change(
         pending_provenance_activity=provenance_activity,
         ledger_repository=ledger_repository,
     )
+    evidence_links = _prepared_assertion_evidence_links(
+        proposed_change,
+        accepted_record,
+        provenance_activity_id,
+        review_input.reviewed_at,
+        ledger_repository,
+    )
 
     ledger_repository.save_provenance_activity(provenance_activity)
     _save_accepted_record(accepted_record, ledger_repository)
+    for evidence_link in evidence_links:
+        cast("AssertionEvidenceLinkWriter", ledger_repository).save_assertion_evidence_link(
+            evidence_link
+        )
     ledger_repository.save_proposed_change(reviewed_change)
 
     return ReviewProposedChangeResult(
@@ -500,6 +520,7 @@ def approve_proposed_change(
         provenance_activity_id=provenance_activity.id,
         accepted_record_id=accepted_record_id,
         accepted_record_type=record_type,
+        assertion_evidence_link_ids=tuple(link.id for link in evidence_links),
     )
 
 
@@ -687,6 +708,68 @@ def _accepted_assertion(
         provenance_ids.append(provenance_activity_id)
     assertion_json["provenance_activity_ids"] = provenance_ids
     return Assertion.model_validate_json(json.dumps(assertion_json))
+
+
+def _prepared_assertion_evidence_links(
+    proposed_change: ProposedChange,
+    accepted_record: AcceptedReviewRecord,
+    provenance_id: str,
+    reviewed_at: datetime,
+    ledger_repository: ProposedChangeReviewLedger,
+) -> tuple[AssertionEvidenceLink, ...]:
+    if not isinstance(accepted_record, Assertion):
+        return ()
+    specifications = proposed_change.proposed_json.get("evidence_links")
+    if specifications is None:
+        return ()  # Explicit legacy compatibility: not an authoritative evidence proposal.
+    if not isinstance(specifications, list):
+        raise ValueError("Assertion evidence_links must be an array.")
+    links: list[AssertionEvidenceLink] = []
+    for specification in specifications:
+        if not isinstance(specification, dict):
+            raise ValueError("Assertion evidence link must be an object.")
+        evidence_id = specification.get("evidence_span_id")
+        if not isinstance(evidence_id, str):
+            raise ValueError("Assertion evidence link requires evidence_span_id.")
+        evidence = ledger_repository.get_evidence_span(evidence_id)
+        evidence_ledger = cast("EvidenceTargetLedger", ledger_repository)
+        if evidence is None or not verify_evidence_target(evidence, evidence_ledger).valid:
+            raise ValueError(
+                "Assertion evidence link requires a replayable validated EvidenceSpan."
+            )
+        if (
+            evidence.source_id not in accepted_record.source_ids
+            or evidence.id not in accepted_record.evidence_span_ids
+        ):
+            raise ValueError("Assertion evidence link must belong to the accepted Assertion.")
+        role = AssertionEvidenceRole(specification.get("role"))
+        polarity = EvidencePolarity(specification.get("polarity"))
+        necessity = EvidenceNecessity(specification.get("necessity"))
+        links.append(
+            AssertionEvidenceLink(
+                id=deterministic_assertion_evidence_link_id(
+                    assertion_id=accepted_record.id,
+                    evidence_span_id=evidence.id,
+                    role=role,
+                    polarity=polarity,
+                    necessity=necessity,
+                ),
+                assertion_id=accepted_record.id,
+                evidence_span_id=evidence.id,
+                role=role,
+                polarity=polarity,
+                necessity=necessity,
+                provenance_id=provenance_id,
+                created_at=reviewed_at,
+            )
+        )
+    if accepted_record.source_ids and not any(
+        link.role is AssertionEvidenceRole.DIRECT_SUPPORT
+        and link.polarity is EvidencePolarity.SUPPORTS
+        for link in links
+    ):
+        raise ValueError("Source-backed Assertion requires validated direct_support evidence.")
+    return tuple(links)
 
 
 def _validate_accepted_record_references(
