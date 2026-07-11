@@ -42,6 +42,7 @@ from kotekomi_domain import (
     SourceCapture,
     SourceRegion,
     TextView,
+    canonical_evidence_target_digest,
 )
 from pydantic import BaseModel
 
@@ -565,7 +566,17 @@ class SQLiteLedgerRepository:
         return self._list(DOCUMENT_REVISION_RELATION_SPEC)
 
     def save_evidence_span(self, record: EvidenceSpan) -> None:
-        self._save(EVIDENCE_SPAN_SPEC, record)
+        existing = self.get_evidence_span(record.id)
+        if existing is not None and canonical_evidence_target_digest(
+            existing
+        ) != canonical_evidence_target_digest(record):
+            raise ImmutableRecordConflict(
+                "EvidenceSpan",
+                record.id,
+                hashlib.sha256(canonical_evidence_target_digest(existing).encode()).hexdigest(),
+                hashlib.sha256(canonical_evidence_target_digest(record).encode()).hexdigest(),
+            )
+        self._upsert_mutable(EVIDENCE_SPAN_SPEC, record)
 
     def get_evidence_span(self, record_id: str) -> EvidenceSpan | None:
         return self._get(EVIDENCE_SPAN_SPEC, record_id)

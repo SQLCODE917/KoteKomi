@@ -1,3 +1,4 @@
+import sqlite3
 from pathlib import Path
 
 import pytest
@@ -89,6 +90,37 @@ def test_immutable_document_reuses_identical_payload_and_rejects_conflict(tmp_pa
             repository.save_document(conflicting_document)
     with sqlite_ledger_transaction(ledger_path) as repository:
         assert repository.get_document(document.id) == document
+
+
+def test_immutable_document_conflict_rolls_back_preceding_transaction_writes(
+    tmp_path: Path,
+) -> None:
+    ledger_path = tmp_path / "kotekomi.db"
+    SQLiteLedgerInitializer(ledger_path).initialize()
+    source, document = sample_domain_records()[5:7]
+    with sqlite_ledger_transaction(ledger_path) as repository:
+        repository.save_document(document)
+    with pytest.raises(ImmutableRecordConflict):
+        with sqlite_ledger_transaction(ledger_path) as repository:
+            repository.save_source(source)
+            repository.save_document(document.model_copy(update={"raw_path": "conflict.bin"}))
+    with sqlite_ledger_transaction(ledger_path) as repository:
+        assert repository.get_source(source.id) is None
+
+
+def test_sqlite_rejects_direct_immutable_update_and_delete(tmp_path: Path) -> None:
+    ledger_path = tmp_path / "kotekomi.db"
+    SQLiteLedgerInitializer(ledger_path).initialize()
+    document = sample_domain_records()[6]
+    with sqlite_ledger_transaction(ledger_path) as repository:
+        repository.save_document(document)
+    with sqlite3.connect(ledger_path) as connection:
+        with pytest.raises(sqlite3.DatabaseError, match="documents are immutable"):
+            connection.execute(
+                "UPDATE documents SET payload_json = '{}' WHERE id = ?", (document.id,)
+            )
+        with pytest.raises(sqlite3.DatabaseError, match="documents are immutable"):
+            connection.execute("DELETE FROM documents WHERE id = ?", (document.id,))
 
 
 def test_repository_lists_all_accepted_canonical_records(tmp_path: Path) -> None:
