@@ -26,3 +26,14 @@ def test_r01_removed_superseded_authority_bypasses_do_not_reappear() -> None:
         "model_prompt_path",
     ):
         assert forbidden not in source_text
+
+
+def test_authoritative_capture_uses_targeted_repository_queries() -> None:
+    capture_modules = (
+        SOURCE_ROOT / "application" / "src" / "kotekomi_application" / "source_capture.py",
+        SOURCE_ROOT / "application" / "src" / "kotekomi_application" / "source_file_ingest.py",
+    )
+    source_text = "\n".join(path.read_text(encoding="utf-8") for path in capture_modules)
+
+    for forbidden in (".list_documents()", ".list_document_revision_relations()"):
+        assert forbidden not in source_text
