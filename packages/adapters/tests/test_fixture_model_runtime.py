@@ -17,8 +17,8 @@ def test_fixture_model_runtime_loads_proposals() -> None:
     runtime = FixtureModelRuntime(FIXTURE_PATH)
 
     proposals = runtime.propose_assertions(
-        document_id="doc_aa67767133655af72fbcf0a8",
-        source_id="src_aa67767133655af72fbcf0a8",
+        document_id="doc_0b9578915ef679fb12b26d53",
+        source_id="src_9d1d34127a12003b0548d311",
         document_text="fixture text",
     )
 
@@ -36,8 +36,8 @@ def test_fixture_model_output_covers_required_record_types() -> None:
     record_types = {
         proposal.record_type
         for proposal in runtime.propose_assertions(
-            document_id="doc_aa67767133655af72fbcf0a8",
-            source_id="src_aa67767133655af72fbcf0a8",
+            document_id="doc_0b9578915ef679fb12b26d53",
+            source_id="src_9d1d34127a12003b0548d311",
             document_text="fixture text",
         )
     }

@@ -10,13 +10,10 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import dataclass
-from importlib.metadata import version
+from importlib.metadata import PackageNotFoundError, version
 from io import BytesIO
+from typing import TYPE_CHECKING, Any
 
-from docling.datamodel.base_models import DocumentStream, InputFormat
-from docling.datamodel.pipeline_options import PdfPipelineOptions
-from docling.document_converter import DocumentConverter, PdfFormatOption
-from docling_core.types.doc.document import DoclingDocument
 from kotekomi_application.pdf_ingest import (
     PdfDocumentParser,
     PdfPagePreflight,
@@ -24,6 +21,9 @@ from kotekomi_application.pdf_ingest import (
     PdfParseResult,
     PdfPreflight,
 )
+
+if TYPE_CHECKING:
+    from docling_core.types.doc.document import DoclingDocument
 from kotekomi_application.representation_identity import (
     RepresentationFingerprintInput,
     deterministic_representation_id,
@@ -56,19 +56,26 @@ class DoclingPdfParser(PdfDocumentParser):
         self._config = config or DoclingPdfParserConfig()
 
     def parse(self, parse_input: PdfParseInput) -> PdfParseResult:
-        parser_version = version("docling")
-        pipeline_options = PdfPipelineOptions()
-        pipeline_options.do_ocr = self._config.enable_ocr
-        pipeline_options.do_table_structure = self._config.enable_table_structure
-        converter = DocumentConverter(
-            allowed_formats=[InputFormat.PDF],
-            format_options={
-                InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options),
-            },
-        )
+        parser_version = _docling_version()
         try:
+            (
+                document_stream_type,
+                input_format,
+                pdf_pipeline_options_type,
+                document_converter_type,
+                pdf_format_option_type,
+            ) = _load_docling_components()
+            pipeline_options = pdf_pipeline_options_type()
+            pipeline_options.do_ocr = self._config.enable_ocr
+            pipeline_options.do_table_structure = self._config.enable_table_structure
+            converter = document_converter_type(
+                allowed_formats=[input_format.PDF],
+                format_options={
+                    input_format.PDF: pdf_format_option_type(pipeline_options=pipeline_options),
+                },
+            )
             conversion = converter.convert(
-                DocumentStream(
+                document_stream_type(
                     name=f"{parse_input.document.id}.pdf",
                     stream=BytesIO(parse_input.raw_bytes),
                 )
@@ -101,6 +108,25 @@ class DoclingPdfParser(PdfDocumentParser):
                 "Docling layout graph mapping to canonical nodes and regions is not complete.",
             ),
         )
+
+
+def _load_docling_components() -> tuple[
+    type[Any], type[Any], type[Any], type[Any], type[Any]
+]:
+    """Load Docling only for an explicit PDF parse request."""
+
+    from docling.datamodel.base_models import DocumentStream, InputFormat
+    from docling.datamodel.pipeline_options import PdfPipelineOptions
+    from docling.document_converter import DocumentConverter, PdfFormatOption
+
+    return DocumentStream, InputFormat, PdfPipelineOptions, DocumentConverter, PdfFormatOption
+
+
+def _docling_version() -> str:
+    try:
+        return version("docling")
+    except PackageNotFoundError:
+        return "unavailable"
 
 
 def _preflight_from_document(document: DoclingDocument, parser_version: str) -> PdfPreflight:

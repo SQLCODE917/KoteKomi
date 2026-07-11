@@ -51,6 +51,8 @@ def test_source_add_file_ingests_fixture_into_ledger_and_archive(
     with sqlite_ledger_transaction(ledger_path) as repository:
         sources = repository.list_sources()
         documents = repository.list_documents()
+        raw_blobs = repository.list_raw_blobs()
+        source_captures = repository.list_source_captures()
         document_representations = repository.list_document_representations()
         text_views = repository.list_text_views()
         document_nodes = repository.list_document_nodes()
@@ -59,6 +61,8 @@ def test_source_add_file_ingests_fixture_into_ledger_and_archive(
 
     assert len(sources) == 1
     assert len(documents) == 1
+    assert len(raw_blobs) == 1
+    assert len(source_captures) == 1
     assert len(document_representations) == 1
     assert len(text_views) == 1
     assert len(document_nodes) == 1
@@ -68,7 +72,7 @@ def test_source_add_file_ingests_fixture_into_ledger_and_archive(
     document = documents[0]
     provenance_activity = provenance_activities[0]
     assert source.title == FIXTURE_TITLE
-    assert document.raw_path.startswith("sources/raw/src_")
+    assert document.raw_path.startswith("sources/raw/blb_")
     assert document.extracted_text_path is not None
     assert document.extracted_text_path.startswith("documents/extracted/doc_")
     assert (archive_path / document.raw_path).is_file()
@@ -76,8 +80,8 @@ def test_source_add_file_ingests_fixture_into_ledger_and_archive(
     assert provenance_activity.activity_type == "source_file_ingest"
     assert provenance_activity.output_ids == (
         source.id,
-        f"blb_{document.content_sha256[:24]}",
-        f"cap_{document.content_sha256[:24]}",
+        raw_blobs[0].id,
+        source_captures[0].id,
         document.id,
         document_representations[0].id,
         f"tvw_{document_representations[0].id.removeprefix('rep_')}_logical",

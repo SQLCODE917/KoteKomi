@@ -13,6 +13,7 @@ from kotekomi_domain import (
     Document,
     DocumentNode,
     DocumentRepresentation,
+    DocumentRevisionRelation,
     ParseQualityReport,
     ProvenanceActivity,
     RawBlob,
@@ -143,6 +144,7 @@ class FakeLedgerRepository:
         self.provenance_activities: dict[str, ProvenanceActivity] = {}
         self.raw_blobs: dict[str, RawBlob] = {}
         self.source_captures: dict[str, SourceCapture] = {}
+        self.document_revision_relations: dict[str, DocumentRevisionRelation] = {}
         self.document_representations: dict[str, DocumentRepresentation] = {}
         self.text_views: dict[str, TextView] = {}
         self.document_nodes: dict[str, DocumentNode] = {}
@@ -154,6 +156,18 @@ class FakeLedgerRepository:
 
     def get_document(self, record_id: str) -> Document | None:
         return self.documents.get(record_id)
+
+    def get_raw_blob(self, record_id: str) -> RawBlob | None:
+        return self.raw_blobs.get(record_id)
+
+    def get_source_capture(self, record_id: str) -> SourceCapture | None:
+        return self.source_captures.get(record_id)
+
+    def list_documents(self) -> tuple[Document, ...]:
+        return tuple(self.documents.values())
+
+    def list_document_revision_relations(self) -> tuple[DocumentRevisionRelation, ...]:
+        return tuple(self.document_revision_relations.values())
 
     def get_provenance_activity(self, record_id: str) -> ProvenanceActivity | None:
         return self.provenance_activities.get(record_id)
@@ -171,6 +185,9 @@ class FakeLedgerRepository:
         if self.fail_on_save_document:
             raise RuntimeError("simulated Ledger failure")
         self.documents[record.id] = record
+
+    def save_document_revision_relation(self, record: DocumentRevisionRelation) -> None:
+        self.document_revision_relations[record.id] = record
 
     def save_document_representation(self, record: DocumentRepresentation) -> None:
         self.document_representations[record.id] = record
@@ -211,17 +228,17 @@ def test_add_source_from_file_creates_source_document_and_provenance() -> None:
     assert source.title == FIXTURE_TITLE
     assert source.source_type is SourceType.ARTICLE
     assert source.published_at == datetime(2026, 7, 2, tzinfo=UTC)
-    assert document.raw_path == f"sources/raw/{result.source_id}.bin"
+    raw_blob = ledger.raw_blobs[next(iter(ledger.raw_blobs))]
+    assert document.raw_path == f"sources/raw/{raw_blob.id}.bin"
     assert document.extracted_text_path == f"documents/extracted/{result.document_id}.txt"
     assert document.content_sha256 == hashlib.sha256(raw_bytes).hexdigest()
     assert provenance.activity_type == "source_file_ingest"
     assert provenance.agent == "kotekomi"
     assert provenance.input_ids == (str(FIXTURE_PATH),)
-    short_hash = document.content_sha256[:24]
     assert provenance.output_ids == (
         result.source_id,
-        f"blb_{short_hash}",
-        f"cap_{short_hash}",
+        next(iter(ledger.raw_blobs)),
+        next(iter(ledger.source_captures)),
         result.document_id,
         result.representation_id,
         f"tvw_{result.representation_id.removeprefix('rep_')}_logical",
@@ -326,6 +343,42 @@ def test_add_source_from_file_rejects_malformed_dateline() -> None:
     assert ledger.sources == {}
     assert ledger.documents == {}
     assert ledger.provenance_activities == {}
+
+
+def test_add_source_from_file_versions_an_edited_file_under_one_stable_source() -> None:
+    archive = FakeArchiveStore()
+    ledger = FakeLedgerRepository()
+    original = add_source_from_file(
+        SourceFileIngestInput(
+            local_file_path="notes.txt",
+            filename="notes.txt",
+            raw_bytes=b"original note",
+            ingested_at=NOW,
+        ),
+        archive,
+        ledger,
+    )
+    updated = add_source_from_file(
+        SourceFileIngestInput(
+            local_file_path="notes.txt",
+            filename="notes.txt",
+            raw_bytes=b"updated note",
+            ingested_at=NOW.replace(hour=13),
+        ),
+        archive,
+        ledger,
+    )
+
+    assert original.source_id == updated.source_id
+    assert original.document_id != updated.document_id
+    assert len(ledger.sources) == 1
+    assert len(ledger.raw_blobs) == len(ledger.source_captures) == len(ledger.documents) == 2
+    assert len(ledger.document_revision_relations) == 1
+    relation = next(iter(ledger.document_revision_relations.values()))
+    assert relation.earlier_document_id == original.document_id
+    assert relation.later_document_id == updated.document_id
+    assert relation.relation_type.value == "updates"
+    assert archive.read_raw_source(next(iter(ledger.raw_blobs))) == b"original note"
 
 
 def test_add_source_from_file_cleans_archive_objects_after_ledger_failure() -> None:

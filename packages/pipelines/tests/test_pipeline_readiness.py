@@ -65,7 +65,7 @@ def test_pipeline_status_and_next_walk_fixture_article_pipeline(
     status = pipeline_status_json(ledger_path, capsys)
     assert status["stage"] == "ready_for_assertion_proposal"
     assert status["document_count"] == 1
-    assert status["candidate_document_ids"] == ["doc_aa67767133655af72fbcf0a8"]
+    assert status["candidate_document_ids"] == ["doc_0b9578915ef679fb12b26d53"]
     assert status["next_command_plan"]["ready_to_execute"] is True
     assert status["next_command_plan"]["argv"][4:10] == [
         "--model-runtime",
@@ -86,7 +86,7 @@ def test_pipeline_status_and_next_walk_fixture_article_pipeline(
         "source",
         "propose-assertions",
         "--document-id",
-        "doc_aa67767133655af72fbcf0a8",
+        "doc_0b9578915ef679fb12b26d53",
         "--model-runtime",
         "fixture",
         "--model-output-fixture",
@@ -347,7 +347,7 @@ def test_pipeline_run_next_executes_exactly_one_planned_fixture_step(
     assert result["stage"] == "briefing_current"
     assert result["command"] is None
     assert result["command_plan"]["argv"] == []
-    assert document.id == "doc_aa67767133655af72fbcf0a8"
+    assert document.id == "doc_0b9578915ef679fb12b26d53"
 
 
 def approve_pending(

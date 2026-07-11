@@ -567,7 +567,7 @@ def test_review_commands_approve_and_reject_proposed_changes(
                     "The Source reports that Anthropic suspended several enterprise pilots "
                     "while keeping an approved evaluation program open."
                 ),
-                "source_ids": ["src_aa67767133655af72fbcf0a8"],
+                "source_ids": ["src_9d1d34127a12003b0548d311"],
                 "evidence_span_ids": ["evs_enterprise_pilots_suspended"],
                 "provenance_activity_ids": [],
             }

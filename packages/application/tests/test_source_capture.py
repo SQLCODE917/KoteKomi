@@ -5,6 +5,7 @@ from kotekomi_application import (
     CaptureRequest,
     SourceIdentityHint,
     StableSourceIdentityPolicy,
+    capture_identity,
     capture_source,
 )
 from kotekomi_domain import (
@@ -32,11 +33,17 @@ class FakeCaptureLedger:
     def get_source(self, record_id: str) -> Source | None:
         return self.sources.get(record_id)
 
+    def get_raw_blob(self, record_id: str) -> RawBlob | None:
+        return self.blobs.get(record_id)
+
     def get_document(self, record_id: str) -> Document | None:
         return self.documents.get(record_id)
 
     def get_source_capture(self, record_id: str) -> SourceCapture | None:
         return self.captures.get(record_id)
+
+    def list_documents(self) -> tuple[Document, ...]:
+        return tuple(self.documents.values())
 
     def list_document_revision_relations(self) -> tuple[DocumentRevisionRelation, ...]:
         return tuple(self.relations.values())
@@ -125,6 +132,14 @@ def test_capture_preserves_source_identity_and_versions() -> None:
     assert len(ledger.sources) == 1 and len(ledger.documents) == 4 and len(ledger.captures) == 4
     assert len(ledger.relations) == 3
     assert withdrawal.source.id == original.source.id
+    assert retry.revision_relation is None
+    assert correction.revision_relation is not None
+    assert correction.revision_relation.relation_type is DocumentRevisionType.CORRECTS
+    assert withdrawal.document.version_kind is DocumentVersionKind.WITHDRAWAL
+    assert original.raw_blob.digest != withdrawal.raw_blob.digest
+    assert original.source_capture.rights_profile_id == "rights-1"
+    assert original.document.publication_time == NOW
+    assert original.document.provider_update_time == NOW
 
 
 def test_capture_rejects_conflicting_retry() -> None:
@@ -133,3 +148,46 @@ def test_capture_rejects_conflicting_retry() -> None:
     capture_source(request(b"original", "v1"), ledger, policy)
     with pytest.raises(ValueError, match="idempotency conflict"):
         capture_source(request(b"different", "v1"), ledger, policy)
+    assert len(ledger.sources) == 1
+    assert len(ledger.blobs) == len(ledger.captures) == len(ledger.documents) == 1
+
+
+def test_capture_rejects_same_provider_version_with_different_bytes_without_mutation() -> None:
+    ledger = FakeCaptureLedger()
+    policy = StableSourceIdentityPolicy()
+    original = capture_source(request(b"original", "v1"), ledger, policy)
+
+    with pytest.raises(ValueError, match="Provider item/version conflicts"):
+        capture_source(
+            request(b"different", "another-request", provider_version="v1"), ledger, policy
+        )
+
+    assert tuple(ledger.documents.values()) == (original.document,)
+    assert tuple(ledger.captures.values()) == (original.source_capture,)
+
+
+def test_capture_rejects_revision_cycle_before_saving_any_new_artifact() -> None:
+    ledger = FakeCaptureLedger()
+    policy = StableSourceIdentityPolicy()
+    original = capture_source(request(b"original", "v1"), ledger, policy)
+    cycle_request = request(
+        b"updated",
+        "v2",
+        version_kind=DocumentVersionKind.UPDATE,
+        revision_of_document_id=original.document.id,
+        revision_type=DocumentRevisionType.UPDATES,
+    )
+    future = capture_identity(cycle_request, policy)
+    ledger.relations["drv_preexisting"] = DocumentRevisionRelation(
+        id="drv_preexisting",
+        earlier_document_id=future.document_id,
+        later_document_id=original.document.id,
+        relation_type=DocumentRevisionType.SUPERSEDES,
+        basis="negative_fixture",
+        recorded_at=NOW,
+    )
+
+    with pytest.raises(ValueError, match="would create a cycle"):
+        capture_source(cycle_request, ledger, policy)
+
+    assert len(ledger.blobs) == len(ledger.captures) == len(ledger.documents) == 1

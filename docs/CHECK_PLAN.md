@@ -20,6 +20,8 @@
 - run migrations on empty SQLite database with `packages/adapters/tests/test_sqlite_ledger_migrations.py`
 - run migrations on fixture database with `packages/adapters/tests/test_sqlite_ledger_migrations.py`
 - run repository tests with `packages/adapters/tests/test_sqlite_ledger_repository.py`
+- verify stable Source identity, retry idempotency, immutable revisions, and capture conflicts with `uv run pytest packages/application/tests/test_source_capture.py packages/application/tests/test_add_source_from_file.py packages/adapters/tests/test_sqlite_source_capture.py packages/pipelines/tests/test_source_add_file.py`
+- verify the Docling adapter loads lazily and returns a typed blocked result with `uv run pytest packages/adapters/tests/test_docling_pdf_parser.py`
 
 ## 4. Archive checks
 - run `uv run pytest packages/adapters/tests/test_local_archive_store.py`

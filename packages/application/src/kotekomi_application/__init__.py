@@ -186,11 +186,13 @@ from kotekomi_application.review_queue_packet import (
     review_readiness_to_json,
 )
 from kotekomi_application.source_capture import (
+    CaptureIdentity,
     CaptureOutcome,
     CaptureRequest,
     SourceIdentityHint,
     SourceIdentityPolicy,
     StableSourceIdentityPolicy,
+    capture_identity,
     capture_source,
 )
 from kotekomi_application.source_file_ingest import (
@@ -224,6 +226,7 @@ __all__ = [
     "BriefingRenderInput",
     "BriefingRenderer",
     "CaptureOutcome",
+    "CaptureIdentity",
     "CaptureRequest",
     "GRAPH_CONNECTION_MINING_ACTIVITY",
     "GRAPH_CONNECTION_PREDICATE",
@@ -309,6 +312,7 @@ __all__ = [
     "StagedArchiveObject",
     "add_source_from_file",
     "capture_source",
+    "capture_identity",
     "approve_proposed_change",
     "briefing_citation_registry_from_json",
     "briefing_citation_registry_to_json",

@@ -218,8 +218,8 @@ def test_briefing_generate_writes_markdown_and_briefing_record(
     )
     assert briefing.place_ids == ()
     assert briefing.event_ids == ("evt_june_21_emergency_release_review_call",)
-    assert briefing.source_ids == ("src_aa67767133655af72fbcf0a8",)
-    assert briefing.document_ids == ("doc_aa67767133655af72fbcf0a8",)
+    assert briefing.source_ids == ("src_9d1d34127a12003b0548d311",)
+    assert briefing.document_ids == ("doc_0b9578915ef679fb12b26d53",)
     assert len(briefing.assertion_ids) == 4
     assert len(briefing.relationship_ids) == 2
     assert briefing.outcome_ids == ("out_monitoring_update_and_notice_commitment",)
@@ -257,8 +257,8 @@ def test_briefing_generate_writes_markdown_and_briefing_record(
         "Source report: U.S. cyber-safety concerns delayed Anthropic's broader "
         "Claude Fable 5 rollout."
     )
-    assert delay_citation.source_ids == ("src_aa67767133655af72fbcf0a8",)
-    assert delay_citation.document_ids == ("doc_aa67767133655af72fbcf0a8",)
+    assert delay_citation.source_ids == ("src_9d1d34127a12003b0548d311",)
+    assert delay_citation.document_ids == ("doc_0b9578915ef679fb12b26d53",)
     assert delay_citation.evidence_span_ids == ("evs_delay_after_us_cyber_concerns",)
     assert suspension_citation.assertion_ids == ("ast_enterprise_pilots_suspended_on_june_23",)
     assert suspension_citation.evidence_span_ids == ("evs_enterprise_pilots_suspended",)
