@@ -67,6 +67,8 @@ class SourceFileIngestInput:
     filename: str
     raw_bytes: bytes
     ingested_at: datetime
+    source_identity_key: str | None = None
+    idempotency_key: str | None = None
 
 
 @dataclass(frozen=True)
@@ -245,7 +247,7 @@ def add_source_from_file(
             id=source_capture_id,
             source_id=source_id,
             blob_id=raw_blob_id,
-            idempotency_key=content_sha256,
+            idempotency_key=ingest_input.idempotency_key or content_sha256,
             retrieval_method="local_file",
             requested_uri=ingest_input.local_file_path,
             canonical_uri=ingest_input.local_file_path,
