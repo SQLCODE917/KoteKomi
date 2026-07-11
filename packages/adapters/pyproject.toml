@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "KoteKomi Adapters."
 requires-python = ">=3.12,<3.13"
 dependencies = [
+  "docling>=2,<3",
   "kotekomi-application",
   "kotekomi-domain",
   "networkx>=3.4,<4",
