@@ -95,7 +95,7 @@ class DoclingPdfParser(PdfDocumentParser):
                 blocking_reasons=(f"Docling PDF conversion failed: {type(exc).__name__}",),
             )
         preflight = _preflight_from_document(conversion.document, parser_version)
-        bundle = _blocked_markdown_bundle(
+        bundle = build_docling_blocked_bundle(
             parse_input=parse_input,
             logical_text=logical_text,
             parser_version=parser_version,
@@ -151,7 +151,7 @@ def _preflight_from_document(document: DoclingDocument, parser_version: str) -> 
     )
 
 
-def _blocked_markdown_bundle(
+def build_docling_blocked_bundle(
     *,
     parse_input: PdfParseInput,
     logical_text: str,

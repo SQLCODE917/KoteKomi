@@ -5,6 +5,10 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import asdict, dataclass
+from enum import StrEnum
+from typing import Protocol
+
+from kotekomi_domain import DocumentRepresentationBundle
 
 
 @dataclass(frozen=True)
@@ -16,6 +20,23 @@ class RepresentationFingerprintInput:
     parser_config_digest: str
     code_revision: str
     representation_schema_version: str
+
+
+class BundleCommitDisposition(StrEnum):
+    CREATED = "created"
+    REUSED = "reused"
+
+
+@dataclass(frozen=True)
+class BundleCommitOutcome:
+    disposition: BundleCommitDisposition
+    representation_id: str
+
+
+class DocumentRepresentationBundleLedger(Protocol):
+    def commit_document_representation_bundle(
+        self, bundle: DocumentRepresentationBundle
+    ) -> BundleCommitOutcome: ...
 
 
 def deterministic_representation_id(fingerprint: RepresentationFingerprintInput) -> str:

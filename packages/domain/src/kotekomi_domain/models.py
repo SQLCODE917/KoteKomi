@@ -517,12 +517,18 @@ def canonical_representation_digest(
 
     representation_payload = representation.model_dump(mode="json")
     representation_payload.pop("canonical_output_digest")
+    representation_payload.pop("created_at")
     payload = {
         "representation": representation_payload,
-        "text_views": [view.model_dump(mode="json") for view in text_views],
-        "nodes": [node.model_dump(mode="json") for node in nodes],
-        "edges": [edge.model_dump(mode="json") for edge in edges],
-        "source_regions": [region.model_dump(mode="json") for region in source_regions],
+        "text_views": [
+            view.model_dump(mode="json") for view in sorted(text_views, key=lambda view: view.id)
+        ],
+        "nodes": [node.model_dump(mode="json") for node in sorted(nodes, key=lambda node: node.id)],
+        "edges": [edge.model_dump(mode="json") for edge in sorted(edges, key=lambda edge: edge.id)],
+        "source_regions": [
+            region.model_dump(mode="json")
+            for region in sorted(source_regions, key=lambda region: region.id)
+        ],
         "quality_report": quality_report.model_dump(mode="json"),
     }
     canonical_json = json.dumps(payload, ensure_ascii=False, separators=(",", ":"), sort_keys=True)

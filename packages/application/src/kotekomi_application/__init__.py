@@ -151,6 +151,9 @@ from kotekomi_application.proposed_change_review import (
     run_review_next_decision,
 )
 from kotekomi_application.representation_identity import (
+    BundleCommitDisposition,
+    BundleCommitOutcome,
+    DocumentRepresentationBundleLedger,
     RepresentationFingerprintInput,
     deterministic_representation_id,
 )
@@ -225,6 +228,8 @@ __all__ = [
     "BriefingReferenceAppendix",
     "BriefingRenderInput",
     "BriefingRenderer",
+    "BundleCommitDisposition",
+    "BundleCommitOutcome",
     "CaptureOutcome",
     "CaptureIdentity",
     "CaptureRequest",
@@ -242,6 +247,7 @@ __all__ = [
     "EvidenceTargetLedger",
     "EvidenceValidationInput",
     "EvidenceValidationResult",
+    "DocumentRepresentationBundleLedger",
     "JsonValue",
     "LedgerInitializer",
     "LedgerInitResult",

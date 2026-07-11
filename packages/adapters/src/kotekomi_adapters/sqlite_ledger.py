@@ -13,7 +13,12 @@ from importlib.resources import files
 from pathlib import Path
 from typing import TypeVar
 
-from kotekomi_application import AcceptedCanonicalRecord, LedgerInitResult
+from kotekomi_application import (
+    AcceptedCanonicalRecord,
+    BundleCommitDisposition,
+    BundleCommitOutcome,
+    LedgerInitResult,
+)
 from kotekomi_domain import (
     Actor,
     ArgumentEdge,
@@ -54,18 +59,19 @@ class ImmutableCommitDisposition(StrEnum):
     REUSED = "reused"
 
 
-@dataclass(frozen=True)
-class BundleCommitOutcome:
-    disposition: ImmutableCommitDisposition
-    representation_id: str
-
-
 @dataclass
 class ImmutableRecordConflict(Exception):
     record_type: str
     record_id: str
     existing_digest: str
     incoming_digest: str
+
+
+@dataclass
+class NonDeterministicParserOutputConflict(Exception):
+    representation_id: str
+    existing_output_digest: str
+    incoming_output_digest: str
 
 
 IMMUTABLE_TABLES = frozenset(
@@ -472,14 +478,60 @@ class SQLiteLedgerRepository:
     def commit_document_representation_bundle(
         self, bundle: DocumentRepresentationBundle
     ) -> BundleCommitOutcome:
-        existing = self.get_document_representation_bundle(bundle.representation.id)
-        if existing is not None:
-            if existing == bundle:
+        validated_bundle = DocumentRepresentationBundle.model_validate(bundle.model_dump())
+        self._connection.execute("SAVEPOINT document_representation_bundle_commit")
+        try:
+            outcome = self._commit_validated_document_representation_bundle(validated_bundle)
+        except Exception:
+            self._connection.execute("ROLLBACK TO SAVEPOINT document_representation_bundle_commit")
+            self._connection.execute("RELEASE SAVEPOINT document_representation_bundle_commit")
+            raise
+        self._connection.execute("RELEASE SAVEPOINT document_representation_bundle_commit")
+        return outcome
+
+    def _commit_validated_document_representation_bundle(
+        self, bundle: DocumentRepresentationBundle
+    ) -> BundleCommitOutcome:
+        existing_representation = self.get_document_representation(bundle.representation.id)
+        if existing_representation is not None:
+            try:
+                existing_bundle = self.get_document_representation_bundle(bundle.representation.id)
+            except RuntimeError as exc:
+                raise ImmutableRecordConflict(
+                    "DocumentRepresentationBundle",
+                    bundle.representation.id,
+                    "partial",
+                    _bundle_digest(bundle),
+                ) from exc
+            if existing_bundle is None:
+                raise RuntimeError(
+                    "Existing DocumentRepresentation disappeared during bundle commit."
+                )
+            if _same_representation_bundle(existing_bundle, bundle):
                 return BundleCommitOutcome(
-                    ImmutableCommitDisposition.REUSED, bundle.representation.id
+                    BundleCommitDisposition.REUSED, bundle.representation.id
+                )
+            if (
+                existing_bundle.representation.canonical_output_digest
+                != bundle.representation.canonical_output_digest
+            ):
+                raise NonDeterministicParserOutputConflict(
+                    bundle.representation.id,
+                    existing_bundle.representation.canonical_output_digest,
+                    bundle.representation.canonical_output_digest,
                 )
             raise ImmutableRecordConflict(
-                "DocumentRepresentationBundle", bundle.representation.id, "existing", "incoming"
+                "DocumentRepresentationBundle",
+                bundle.representation.id,
+                _bundle_digest(existing_bundle),
+                _bundle_digest(bundle),
+            )
+        if self._representation_children_exist(bundle.representation.id):
+            raise ImmutableRecordConflict(
+                "DocumentRepresentationBundle",
+                bundle.representation.id,
+                "partial",
+                _bundle_digest(bundle),
             )
         self.save_document_representation(bundle.representation)
         for view in bundle.text_views:
@@ -491,7 +543,20 @@ class SQLiteLedgerRepository:
         for edge in bundle.edges:
             self.save_document_edge(edge)
         self.save_parse_quality_report(bundle.quality_report)
-        return BundleCommitOutcome(ImmutableCommitDisposition.CREATED, bundle.representation.id)
+        return BundleCommitOutcome(BundleCommitDisposition.CREATED, bundle.representation.id)
+
+    def _representation_children_exist(self, representation_id: str) -> bool:
+        return any(
+            record.representation_id == representation_id
+            for records in (
+                self.list_text_views(),
+                self.list_document_nodes(),
+                self.list_document_edges(),
+                self.list_source_regions(),
+                self.list_parse_quality_reports(),
+            )
+            for record in records
+        )
 
     def save_text_view(self, record: TextView) -> None:
         self._save(TEXT_VIEW_SPEC, record)
@@ -680,6 +745,20 @@ def canonical_record_json(record: BaseModel) -> str:
     return json.dumps(
         record.model_dump(mode="json"), ensure_ascii=False, sort_keys=True, separators=(",", ":")
     )
+
+
+def _same_representation_bundle(
+    existing: DocumentRepresentationBundle,
+    incoming: DocumentRepresentationBundle,
+) -> bool:
+    return (
+        existing.representation.canonical_output_digest
+        == incoming.representation.canonical_output_digest
+    )
+
+
+def _bundle_digest(bundle: DocumentRepresentationBundle) -> str:
+    return hashlib.sha256(canonical_record_json(bundle).encode()).hexdigest()
 
 
 def canonical_json_text(payload_json: str) -> str:

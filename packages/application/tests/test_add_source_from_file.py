@@ -5,20 +5,25 @@ from pathlib import Path
 import pytest
 from kotekomi_application import (
     ArchiveObject,
+    BundleCommitDisposition,
+    BundleCommitOutcome,
     SourceFileIngestInput,
     StagedArchiveObject,
     add_source_from_file,
 )
 from kotekomi_domain import (
     Document,
+    DocumentEdge,
     DocumentNode,
     DocumentRepresentation,
+    DocumentRepresentationBundle,
     DocumentRevisionRelation,
     ParseQualityReport,
     ProvenanceActivity,
     RawBlob,
     Source,
     SourceCapture,
+    SourceRegion,
     SourceType,
     TextView,
 )
@@ -148,6 +153,8 @@ class FakeLedgerRepository:
         self.document_representations: dict[str, DocumentRepresentation] = {}
         self.text_views: dict[str, TextView] = {}
         self.document_nodes: dict[str, DocumentNode] = {}
+        self.document_edges: dict[str, DocumentEdge] = {}
+        self.source_regions: dict[str, SourceRegion] = {}
         self.parse_quality_reports: dict[str, ParseQualityReport] = {}
         self.fail_on_save_document = fail_on_save_document
 
@@ -191,6 +198,23 @@ class FakeLedgerRepository:
 
     def save_document_representation(self, record: DocumentRepresentation) -> None:
         self.document_representations[record.id] = record
+
+    def commit_document_representation_bundle(
+        self,
+        bundle: DocumentRepresentationBundle,
+    ) -> BundleCommitOutcome:
+        if bundle.representation.id in self.document_representations:
+            return BundleCommitOutcome(
+                BundleCommitDisposition.REUSED,
+                bundle.representation.id,
+            )
+        self.document_representations[bundle.representation.id] = bundle.representation
+        self.text_views.update({view.id: view for view in bundle.text_views})
+        self.document_nodes.update({node.id: node for node in bundle.nodes})
+        self.document_edges.update({edge.id: edge for edge in bundle.edges})
+        self.source_regions.update({region.id: region for region in bundle.source_regions})
+        self.parse_quality_reports[bundle.quality_report.id] = bundle.quality_report
+        return BundleCommitOutcome(BundleCommitDisposition.CREATED, bundle.representation.id)
 
     def save_text_view(self, record: TextView) -> None:
         self.text_views[record.id] = record

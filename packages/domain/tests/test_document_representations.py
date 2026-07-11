@@ -1,4 +1,4 @@
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from kotekomi_domain import (
@@ -111,3 +111,24 @@ def test_document_representation_bundle_rejects_digest_mismatch() -> None:
             nodes=bundle.nodes,
             quality_report=bundle.quality_report,
         )
+
+
+def test_representation_digest_ignores_execution_time() -> None:
+    bundle = _valid_bundle()
+    replay = bundle.representation.model_copy(update={"created_at": NOW + timedelta(minutes=1)})
+
+    assert canonical_representation_digest(
+        bundle.representation,
+        text_views=bundle.text_views,
+        nodes=bundle.nodes,
+        edges=bundle.edges,
+        source_regions=bundle.source_regions,
+        quality_report=bundle.quality_report,
+    ) == canonical_representation_digest(
+        replay,
+        text_views=bundle.text_views,
+        nodes=bundle.nodes,
+        edges=bundle.edges,
+        source_regions=bundle.source_regions,
+        quality_report=bundle.quality_report,
+    )

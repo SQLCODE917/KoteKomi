@@ -25,6 +25,7 @@ from kotekomi_domain import (
 
 from kotekomi_application.ports import ArchiveObject, ArchiveStore, StagedArchiveObject
 from kotekomi_application.representation_identity import (
+    DocumentRepresentationBundleLedger,
     RepresentationFingerprintInput,
     deterministic_representation_id,
 )
@@ -55,12 +56,8 @@ MONTHS = {
 }
 
 
-class SourceFileLedger(CaptureLedger, Protocol):
+class SourceFileLedger(CaptureLedger, DocumentRepresentationBundleLedger, Protocol):
     def get_provenance_activity(self, record_id: str) -> ProvenanceActivity | None: ...
-    def save_document_representation(self, record: DocumentRepresentation) -> None: ...
-    def save_text_view(self, record: TextView) -> None: ...
-    def save_document_node(self, record: DocumentNode) -> None: ...
-    def save_parse_quality_report(self, record: ParseQualityReport) -> None: ...
     def save_provenance_activity(self, record: ProvenanceActivity) -> None: ...
 
 
@@ -262,16 +259,13 @@ def add_source_from_file(
                     )
                 }
             )
-            DocumentRepresentationBundle(
+            representation_bundle = DocumentRepresentationBundle(
                 representation=representation,
                 text_views=(text_view,),
                 nodes=(document_node,),
                 quality_report=quality_report,
             )
-            ledger_repository.save_document_representation(representation)
-            ledger_repository.save_text_view(text_view)
-            ledger_repository.save_document_node(document_node)
-            ledger_repository.save_parse_quality_report(quality_report)
+            ledger_repository.commit_document_representation_bundle(representation_bundle)
         provenance_activity = ProvenanceActivity(
             id=provenance_activity_id,
             activity_type="source_file_ingest",

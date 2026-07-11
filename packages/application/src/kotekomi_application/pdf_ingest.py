@@ -9,15 +9,11 @@ from typing import Protocol
 
 from kotekomi_domain import (
     Document,
-    DocumentEdge,
-    DocumentNode,
-    DocumentRepresentation,
     DocumentRepresentationBundle,
-    ParseQualityReport,
     ProvenanceActivity,
-    SourceRegion,
-    TextView,
 )
+
+from kotekomi_application.representation_identity import DocumentRepresentationBundleLedger
 
 HASH_ID_LENGTH = 24
 PDF_INGEST_ACTIVITY = "pdf_document_ingest"
@@ -62,14 +58,8 @@ class PdfDocumentParser(Protocol):
     def parse(self, parse_input: PdfParseInput) -> PdfParseResult: ...
 
 
-class PdfIngestLedger(Protocol):
+class PdfIngestLedger(DocumentRepresentationBundleLedger, Protocol):
     def get_document(self, record_id: str) -> Document | None: ...
-    def save_document_representation(self, record: DocumentRepresentation) -> None: ...
-    def save_text_view(self, record: TextView) -> None: ...
-    def save_document_node(self, record: DocumentNode) -> None: ...
-    def save_document_edge(self, record: DocumentEdge) -> None: ...
-    def save_source_region(self, record: SourceRegion) -> None: ...
-    def save_parse_quality_report(self, record: ParseQualityReport) -> None: ...
     def save_provenance_activity(self, record: ProvenanceActivity) -> None: ...
 
 
@@ -138,16 +128,7 @@ def ingest_pdf(
         ),
         occurred_at=ingest_input.ingested_at,
     )
-    ledger_repository.save_document_representation(bundle.representation)
-    for text_view in bundle.text_views:
-        ledger_repository.save_text_view(text_view)
-    for node in bundle.nodes:
-        ledger_repository.save_document_node(node)
-    for source_region in bundle.source_regions:
-        ledger_repository.save_source_region(source_region)
-    for edge in bundle.edges:
-        ledger_repository.save_document_edge(edge)
-    ledger_repository.save_parse_quality_report(bundle.quality_report)
+    ledger_repository.commit_document_representation_bundle(bundle)
     ledger_repository.save_provenance_activity(provenance)
     return PdfIngestOutcome(
         document_id=document.id,
