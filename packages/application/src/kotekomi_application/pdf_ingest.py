@@ -26,9 +26,9 @@ from kotekomi_application.processing import (
     BuildIdentity,
     ProcessingAttemptIdFactory,
     ProcessingLedger,
+    execute_processing_task,
     processing_attempt_outcome,
     processing_task_fingerprint,
-    start_processing_attempt,
 )
 from kotekomi_application.representation_identity import (
     BundleCommitDisposition,
@@ -144,15 +144,13 @@ def ingest_pdf(
         policy_id=ingest_input.policy_id,
         output_contract_version=processor.output_contract_version,
     )
-    attempt = start_processing_attempt(
+    attempt, parse_result = execute_processing_task(
         task=task,
         ledger=ledger_repository,
         attempt_id_factory=attempt_id_factory,
         started_at=ingest_input.ingested_at,
         invocation_id=f"pdf:{document.id}:{ingest_input.ingested_at.isoformat()}",
-    )
-    try:
-        parse_result = parser.parse(
+        operation=lambda _attempt: parser.parse(
             PdfParseInput(
                 document=document,
                 raw_bytes=ingest_input.raw_bytes,
@@ -160,23 +158,15 @@ def ingest_pdf(
                 processing_task_fingerprint_id=task.id,
                 parsed_at=ingest_input.ingested_at,
             )
-        )
-    except Exception as exc:
-        ledger_repository.record_failed_processing_attempt_outcome(
-            processing_attempt_outcome(
-                attempt=attempt,
-                status=ProcessingAttemptStatus.FAILED,
-                finished_at=ingest_input.ingested_at,
-                failure=ProcessingFailure(
-                    code="pdf_processor_failure",
-                    failure_type=type(exc).__name__,
-                    stage=ProcessingStage.PARSER,
-                    safe_message="PDF processor failed before producing a result.",
-                    retryable=False,
-                ),
-            )
-        )
-        raise
+        ),
+        failure_for_exception=lambda exc: ProcessingFailure(
+            code="pdf_processor_failure",
+            failure_type=type(exc).__name__,
+            stage=ProcessingStage.PARSER,
+            safe_message="PDF processor failed before producing a result.",
+            retryable=False,
+        ),
+    )
     bundle = parse_result.representation_bundle
     if bundle is None:
         blocking_reasons = parse_result.blocking_reasons or (

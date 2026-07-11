@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import uuid
+from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from datetime import datetime
 from enum import StrEnum
@@ -124,6 +125,38 @@ def start_processing_attempt(
     # a crash or parser failure that occurs before the output transaction.
     ledger.commit_processing_attempt_start()
     return attempt
+
+
+def execute_processing_task[ProcessingResult](
+    *,
+    task: ProcessingTaskFingerprint,
+    ledger: ProcessingLedger,
+    attempt_id_factory: ProcessingAttemptIdFactory,
+    started_at: datetime,
+    invocation_id: str,
+    operation: Callable[[ProcessingAttempt], ProcessingResult],
+    failure_for_exception: Callable[[Exception], ProcessingFailure],
+) -> tuple[ProcessingAttempt, ProcessingResult]:
+    """Run processor work after a durable start and close exceptions immutably."""
+    attempt = start_processing_attempt(
+        task=task,
+        ledger=ledger,
+        attempt_id_factory=attempt_id_factory,
+        started_at=started_at,
+        invocation_id=invocation_id,
+    )
+    try:
+        return attempt, operation(attempt)
+    except Exception as exc:
+        ledger.record_failed_processing_attempt_outcome(
+            processing_attempt_outcome(
+                attempt=attempt,
+                status=ProcessingAttemptStatus.FAILED,
+                finished_at=started_at,
+                failure=failure_for_exception(exc),
+            )
+        )
+        raise
 
 
 def processing_attempt_outcome(

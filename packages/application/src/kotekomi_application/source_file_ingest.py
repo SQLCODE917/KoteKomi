@@ -34,6 +34,7 @@ from kotekomi_application.processing import (
     ProcessingAttemptIdFactory,
     ProcessingLedger,
     Uuid4ProcessingAttemptIdFactory,
+    execute_processing_task,
     processing_attempt_outcome,
     processing_task_fingerprint,
     start_processing_attempt,
@@ -193,38 +194,28 @@ def commit_authoritative_capture(
         and existing_provenance is not None
     ):
         outcome = capture_source(request, ledger_repository, identity_policy)
-        attempt = start_processing_attempt(
+        attempt, _ = execute_processing_task(
             task=task,
             ledger=ledger_repository,
             attempt_id_factory=resolved_attempt_id_factory,
             started_at=ingest_input.ingested_at,
             invocation_id=f"source_file:{identity.document_id}:{idempotency_key}",
-        )
-        try:
-            _require_complete_existing_closure(
+            operation=lambda _attempt: _require_complete_existing_closure(
                 archive_store=archive_store,
                 ledger_repository=ledger_repository,
                 raw_blob_id=identity.raw_blob_id,
                 raw_bytes=ingest_input.raw_bytes,
                 document_id=existing_document.id,
                 representation_id=representation_id,
-            )
-        except Exception as exc:
-            ledger_repository.record_failed_processing_attempt_outcome(
-                processing_attempt_outcome(
-                    attempt=attempt,
-                    status=ProcessingAttemptStatus.FAILED,
-                    finished_at=ingest_input.ingested_at,
-                    failure=ProcessingFailure(
-                        code="incomplete_closure",
-                        failure_type=type(exc).__name__,
-                        stage=ProcessingStage.RECONCILIATION,
-                        safe_message="Existing processing closure is incomplete.",
-                        retryable=False,
-                    ),
-                )
-            )
-            raise
+            ),
+            failure_for_exception=lambda exc: ProcessingFailure(
+                code="incomplete_closure",
+                failure_type=type(exc).__name__,
+                stage=ProcessingStage.RECONCILIATION,
+                safe_message="Existing processing closure is incomplete.",
+                retryable=False,
+            ),
+        )
         ledger_repository.append_processing_attempt_outcome(
             processing_attempt_outcome(
                 attempt=attempt,
