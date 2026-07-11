@@ -27,6 +27,10 @@ from kotekomi_domain import (
 )
 
 from kotekomi_application.ports import ArchiveObject, ArchiveStore, StagedArchiveObject
+from kotekomi_application.representation_identity import (
+    RepresentationFingerprintInput,
+    deterministic_representation_id,
+)
 
 SUPPORTED_TEXT_SUFFIXES = frozenset({".md", ".txt"})
 HASH_ID_LENGTH = 24
@@ -101,10 +105,21 @@ def add_source_from_file(
     provenance_activity_id = f"prv_{short_hash}"
     raw_blob_id = f"blb_{short_hash}"
     source_capture_id = f"cap_{short_hash}"
-    representation_id = f"rep_{short_hash}"
-    text_view_id = f"tvw_{short_hash}"
-    document_node_id = f"nod_{short_hash}"
-    quality_report_id = f"pqr_{short_hash}"
+    representation_id = deterministic_representation_id(
+        RepresentationFingerprintInput(
+            document_id,
+            content_sha256,
+            "local_file",
+            "1",
+            hashlib.sha256(b"utf8_identity_v1").hexdigest(),
+            "unknown",
+            "1",
+        )
+    )
+    representation_key = representation_id.removeprefix("rep_")
+    text_view_id = f"tvw_{representation_key}_logical"
+    document_node_id = f"nod_{representation_key}_document"
+    quality_report_id = f"pqr_{representation_key}_quality_v1"
 
     existing_source = ledger_repository.get_source(source_id)
     existing_document = ledger_repository.get_document(document_id)

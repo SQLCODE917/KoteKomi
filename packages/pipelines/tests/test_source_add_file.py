@@ -79,10 +79,10 @@ def test_source_add_file_ingests_fixture_into_ledger_and_archive(
         f"blb_{document.content_sha256[:24]}",
         f"cap_{document.content_sha256[:24]}",
         document.id,
-        f"rep_{document.content_sha256[:24]}",
-        f"tvw_{document.content_sha256[:24]}",
-        f"nod_{document.content_sha256[:24]}",
-        f"pqr_{document.content_sha256[:24]}",
+        document_representations[0].id,
+        f"tvw_{document_representations[0].id.removeprefix('rep_')}_logical",
+        f"nod_{document_representations[0].id.removeprefix('rep_')}_document",
+        f"pqr_{document_representations[0].id.removeprefix('rep_')}_quality_v1",
     )
     with sqlite_ledger_transaction(ledger_path) as repository:
         bundle = repository.get_document_representation_bundle(document_representations[0].id)

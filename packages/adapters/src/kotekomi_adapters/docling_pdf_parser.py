@@ -24,6 +24,10 @@ from kotekomi_application.pdf_ingest import (
     PdfParseResult,
     PdfPreflight,
 )
+from kotekomi_application.representation_identity import (
+    RepresentationFingerprintInput,
+    deterministic_representation_id,
+)
 from kotekomi_domain import (
     DocumentNode,
     DocumentRepresentation,
@@ -137,10 +141,21 @@ def _blocked_markdown_bundle(
     config_digest = hashlib.sha256(
         json.dumps(configuration, sort_keys=True, separators=(",", ":")).encode()
     ).hexdigest()
-    representation_id = f"rep_{input_digest[:HASH_ID_LENGTH]}_docling"
-    text_view_id = f"tvw_{input_digest[:HASH_ID_LENGTH]}_docling"
-    node_id = f"nod_{input_digest[:HASH_ID_LENGTH]}_docling"
-    quality_id = f"pqr_{input_digest[:HASH_ID_LENGTH]}_docling"
+    representation_id = deterministic_representation_id(
+        RepresentationFingerprintInput(
+            parse_input.document.id,
+            input_digest,
+            "docling",
+            parser_version,
+            config_digest,
+            config.code_revision,
+            "1",
+        )
+    )
+    representation_key = representation_id.removeprefix("rep_")
+    text_view_id = f"tvw_{representation_key}_logical"
+    node_id = f"nod_{representation_key}_document"
+    quality_id = f"pqr_{representation_key}_quality_v1"
     text_digest = hashlib.sha256(logical_text.encode()).hexdigest()
     text_view = TextView(
         id=text_view_id,

@@ -148,6 +148,10 @@ from kotekomi_application.proposed_change_review import (
     run_review_drain,
     run_review_next_decision,
 )
+from kotekomi_application.representation_identity import (
+    RepresentationFingerprintInput,
+    deterministic_representation_id,
+)
 from kotekomi_application.review_queue_packet import (
     ReviewActionPlan,
     ReviewActionPlanBlocker,
@@ -294,6 +298,7 @@ __all__ = [
     "ReviewReadinessStatus",
     "ReviewReferenceContext",
     "ReviewReferenceResolution",
+    "RepresentationFingerprintInput",
     "ReanchorEvidenceInput",
     "ReanchoringOutcome",
     "SourceFileIngestInput",
@@ -316,6 +321,7 @@ __all__ = [
     "deterministic_mined_assertion_id",
     "deterministic_mined_proposed_change_id",
     "deterministic_mined_relationship_id",
+    "deterministic_representation_id",
     "deterministic_proposed_change_id",
     "deterministic_provenance_activity_id",
     "deterministic_review_provenance_activity_id",

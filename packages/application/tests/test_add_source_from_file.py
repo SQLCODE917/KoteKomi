@@ -224,14 +224,15 @@ def test_add_source_from_file_creates_source_document_and_provenance() -> None:
         f"cap_{short_hash}",
         result.document_id,
         result.representation_id,
-        f"tvw_{short_hash}",
-        f"nod_{short_hash}",
-        f"pqr_{short_hash}",
+        f"tvw_{result.representation_id.removeprefix('rep_')}_logical",
+        f"nod_{result.representation_id.removeprefix('rep_')}_document",
+        f"pqr_{result.representation_id.removeprefix('rep_')}_quality_v1",
     )
     representation = ledger.document_representations[result.representation_id]
-    text_view = ledger.text_views[f"tvw_{short_hash}"]
-    root_node = ledger.document_nodes[f"nod_{short_hash}"]
-    quality_report = ledger.parse_quality_reports[f"pqr_{short_hash}"]
+    representation_key = result.representation_id.removeprefix("rep_")
+    text_view = ledger.text_views[f"tvw_{representation_key}_logical"]
+    root_node = ledger.document_nodes[f"nod_{representation_key}_document"]
+    quality_report = ledger.parse_quality_reports[f"pqr_{representation_key}_quality_v1"]
     assert representation.document_id == result.document_id
     assert text_view.text == raw_bytes.decode("utf-8")
     assert root_node.text == text_view.text

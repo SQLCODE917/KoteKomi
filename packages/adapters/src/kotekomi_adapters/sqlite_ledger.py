@@ -53,6 +53,12 @@ class ImmutableCommitDisposition(StrEnum):
     REUSED = "reused"
 
 
+@dataclass(frozen=True)
+class BundleCommitOutcome:
+    disposition: ImmutableCommitDisposition
+    representation_id: str
+
+
 @dataclass
 class ImmutableRecordConflict(Exception):
     record_type: str
@@ -461,6 +467,30 @@ class SQLiteLedgerRepository:
             source_regions=source_regions,
             quality_report=quality_reports[0],
         )
+
+    def commit_document_representation_bundle(
+        self, bundle: DocumentRepresentationBundle
+    ) -> BundleCommitOutcome:
+        existing = self.get_document_representation_bundle(bundle.representation.id)
+        if existing is not None:
+            if existing == bundle:
+                return BundleCommitOutcome(
+                    ImmutableCommitDisposition.REUSED, bundle.representation.id
+                )
+            raise ImmutableRecordConflict(
+                "DocumentRepresentationBundle", bundle.representation.id, "existing", "incoming"
+            )
+        self.save_document_representation(bundle.representation)
+        for view in bundle.text_views:
+            self.save_text_view(view)
+        for node in bundle.nodes:
+            self.save_document_node(node)
+        for region in bundle.source_regions:
+            self.save_source_region(region)
+        for edge in bundle.edges:
+            self.save_document_edge(edge)
+        self.save_parse_quality_report(bundle.quality_report)
+        return BundleCommitOutcome(ImmutableCommitDisposition.CREATED, bundle.representation.id)
 
     def save_text_view(self, record: TextView) -> None:
         self._save(TEXT_VIEW_SPEC, record)
