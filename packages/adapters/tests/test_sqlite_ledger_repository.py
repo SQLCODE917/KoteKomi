@@ -80,8 +80,9 @@ def test_repository_lists_records(tmp_path: Path) -> None:
 def test_immutable_document_reuses_identical_payload_and_rejects_conflict(tmp_path: Path) -> None:
     ledger_path = tmp_path / "kotekomi.db"
     SQLiteLedgerInitializer(ledger_path).initialize()
-    document = sample_domain_records()[6]
+    source, document = sample_domain_records()[5:7]
     with sqlite_ledger_transaction(ledger_path) as repository:
+        repository.save_source(source)
         repository.save_document(document)
         repository.save_document(document)
     conflicting_document = document.model_copy(update={"content_sha256": "b" * 64})
@@ -113,21 +114,24 @@ def test_immutable_document_conflict_rolls_back_preceding_transaction_writes(
     ledger_path = tmp_path / "kotekomi.db"
     SQLiteLedgerInitializer(ledger_path).initialize()
     source, document = sample_domain_records()[5:7]
+    other_source = source.model_copy(update={"id": "src_transaction_rollback"})
     with sqlite_ledger_transaction(ledger_path) as repository:
+        repository.save_source(source)
         repository.save_document(document)
     with pytest.raises(ImmutableRecordConflict):
         with sqlite_ledger_transaction(ledger_path) as repository:
-            repository.save_source(source)
+            repository.save_source(other_source)
             repository.save_document(document.model_copy(update={"content_sha256": "b" * 64}))
     with sqlite_ledger_transaction(ledger_path) as repository:
-        assert repository.get_source(source.id) is None
+        assert repository.get_source(other_source.id) is None
 
 
 def test_sqlite_rejects_direct_immutable_update_and_delete(tmp_path: Path) -> None:
     ledger_path = tmp_path / "kotekomi.db"
     SQLiteLedgerInitializer(ledger_path).initialize()
-    document = sample_domain_records()[6]
+    source, document = sample_domain_records()[5:7]
     with sqlite_ledger_transaction(ledger_path) as repository:
+        repository.save_source(source)
         repository.save_document(document)
     with sqlite3.connect(ledger_path) as connection:
         with pytest.raises(sqlite3.DatabaseError, match="documents are immutable"):

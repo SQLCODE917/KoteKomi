@@ -104,6 +104,24 @@ IMMUTABLE_TABLES = frozenset(
     }
 )
 
+RELATIONAL_OWNERSHIP_COLUMNS: dict[str, tuple[tuple[str, str], ...]] = {
+    "source_captures": (("source_id", "source_id"), ("blob_id", "blob_id")),
+    "capture_document_resolutions": (
+        ("capture_id", "capture_id"),
+        ("document_id", "document_id"),
+    ),
+    "documents": (("source_id", "source_id"),),
+    "document_representations": (("document_id", "document_id"),),
+    "text_views": (("representation_id", "representation_id"),),
+    "document_nodes": (
+        ("representation_id", "representation_id"),
+        ("parent_node_id", "parent_node_id"),
+    ),
+    "document_edges": (("representation_id", "representation_id"),),
+    "source_regions": (("representation_id", "representation_id"),),
+    "parse_quality_reports": (("representation_id", "representation_id"),),
+}
+
 
 @dataclass(frozen=True)
 class RecordSpec[DomainRecord]:
@@ -340,22 +358,31 @@ class SQLiteLedgerRepository:
     ) -> ImmutableCommitDisposition:
         payload = record.model_dump(mode="json")
         incoming_json = canonical_record_json(record)
+        ownership_columns = RELATIONAL_OWNERSHIP_COLUMNS.get(spec.table_name, ())
+        column_names = (
+            "id",
+            "created_at",
+            "updated_at",
+            "status",
+            "review_status",
+            *(column_name for column_name, _ in ownership_columns),
+            "payload_json",
+        )
+        values = (
+            str(payload["id"]),
+            _optional_text(payload.get("created_at") or payload.get("occurred_at")),
+            _optional_text(payload.get("updated_at") or payload.get("generated_at")),
+            _optional_text(payload.get("status")),
+            _optional_text(payload.get("review_status")),
+            *(_optional_text(payload.get(field_name)) for _, field_name in ownership_columns),
+            incoming_json,
+        )
+        columns_sql = ", ".join(column_names)
+        placeholders = ", ".join("?" for _ in column_names)
         cursor = self._connection.execute(
-            f"""
-            INSERT INTO {spec.table_name} (
-              id, created_at, updated_at, status, review_status, payload_json
-            )
-            VALUES (?, ?, ?, ?, ?, ?)
-            ON CONFLICT(id) DO NOTHING
-            """,
-            (
-                str(payload["id"]),
-                _optional_text(payload.get("created_at") or payload.get("occurred_at")),
-                _optional_text(payload.get("updated_at") or payload.get("generated_at")),
-                _optional_text(payload.get("status")),
-                _optional_text(payload.get("review_status")),
-                incoming_json,
-            ),
+            f"INSERT INTO {spec.table_name} ({columns_sql}) VALUES ({placeholders}) "
+            "ON CONFLICT(id) DO NOTHING",
+            values,
         )
         if cursor.rowcount == 1:
             return ImmutableCommitDisposition.CREATED
@@ -385,6 +412,15 @@ class SQLiteLedgerRepository:
     def _list(self, spec: RecordSpec[DomainRecord]) -> tuple[DomainRecord, ...]:
         rows = self._connection.execute(
             f"SELECT payload_json FROM {spec.table_name} ORDER BY id"
+        ).fetchall()
+        return tuple(spec.model_type.model_validate_json(str(row[0])) for row in rows)
+
+    def _list_for_owner(
+        self, spec: RecordSpec[DomainRecord], owner_column: str, owner_id: str
+    ) -> tuple[DomainRecord, ...]:
+        rows = self._connection.execute(
+            f"SELECT payload_json FROM {spec.table_name} WHERE {owner_column} = ? ORDER BY id",
+            (owner_id,),
         ).fetchall()
         return tuple(spec.model_type.model_validate_json(str(row[0])) for row in rows)
 
@@ -472,29 +508,11 @@ class SQLiteLedgerRepository:
         representation = self.get_document_representation(record_id)
         if representation is None:
             return None
-        text_views = tuple(
-            view for view in self.list_text_views() if view.representation_id == representation.id
-        )
-        nodes = tuple(
-            node
-            for node in self.list_document_nodes()
-            if node.representation_id == representation.id
-        )
-        edges = tuple(
-            edge
-            for edge in self.list_document_edges()
-            if edge.representation_id == representation.id
-        )
-        source_regions = tuple(
-            source_region
-            for source_region in self.list_source_regions()
-            if source_region.representation_id == representation.id
-        )
-        quality_reports = tuple(
-            report
-            for report in self.list_parse_quality_reports()
-            if report.representation_id == representation.id
-        )
+        text_views = self.list_text_views_for_representation(representation.id)
+        nodes = self.list_document_nodes_for_representation(representation.id)
+        edges = self.list_document_edges_for_representation(representation.id)
+        source_regions = self.list_source_regions_for_representation(representation.id)
+        quality_reports = self.list_parse_quality_reports_for_representation(representation.id)
         if len(quality_reports) != 1:
             raise RuntimeError("Document representation must have exactly one ParseQualityReport.")
         return DocumentRepresentationBundle(
@@ -600,15 +618,13 @@ class SQLiteLedgerRepository:
 
     def _representation_children_exist(self, representation_id: str) -> bool:
         return any(
-            record.representation_id == representation_id
-            for records in (
-                self.list_text_views(),
-                self.list_document_nodes(),
-                self.list_document_edges(),
-                self.list_source_regions(),
-                self.list_parse_quality_reports(),
+            (
+                self.list_text_views_for_representation(representation_id),
+                self.list_document_nodes_for_representation(representation_id),
+                self.list_document_edges_for_representation(representation_id),
+                self.list_source_regions_for_representation(representation_id),
+                self.list_parse_quality_reports_for_representation(representation_id),
             )
-            for record in records
         )
 
     def save_text_view(self, record: TextView) -> None:
@@ -620,6 +636,9 @@ class SQLiteLedgerRepository:
     def list_text_views(self) -> tuple[TextView, ...]:
         return self._list(TEXT_VIEW_SPEC)
 
+    def list_text_views_for_representation(self, representation_id: str) -> tuple[TextView, ...]:
+        return self._list_for_owner(TEXT_VIEW_SPEC, "representation_id", representation_id)
+
     def save_document_node(self, record: DocumentNode) -> None:
         self._save(DOCUMENT_NODE_SPEC, record)
 
@@ -628,6 +647,11 @@ class SQLiteLedgerRepository:
 
     def list_document_nodes(self) -> tuple[DocumentNode, ...]:
         return self._list(DOCUMENT_NODE_SPEC)
+
+    def list_document_nodes_for_representation(
+        self, representation_id: str
+    ) -> tuple[DocumentNode, ...]:
+        return self._list_for_owner(DOCUMENT_NODE_SPEC, "representation_id", representation_id)
 
     def save_document_edge(self, record: DocumentEdge) -> None:
         self._save(DOCUMENT_EDGE_SPEC, record)
@@ -638,6 +662,11 @@ class SQLiteLedgerRepository:
     def list_document_edges(self) -> tuple[DocumentEdge, ...]:
         return self._list(DOCUMENT_EDGE_SPEC)
 
+    def list_document_edges_for_representation(
+        self, representation_id: str
+    ) -> tuple[DocumentEdge, ...]:
+        return self._list_for_owner(DOCUMENT_EDGE_SPEC, "representation_id", representation_id)
+
     def save_source_region(self, record: SourceRegion) -> None:
         self._save(SOURCE_REGION_SPEC, record)
 
@@ -647,6 +676,11 @@ class SQLiteLedgerRepository:
     def list_source_regions(self) -> tuple[SourceRegion, ...]:
         return self._list(SOURCE_REGION_SPEC)
 
+    def list_source_regions_for_representation(
+        self, representation_id: str
+    ) -> tuple[SourceRegion, ...]:
+        return self._list_for_owner(SOURCE_REGION_SPEC, "representation_id", representation_id)
+
     def save_parse_quality_report(self, record: ParseQualityReport) -> None:
         self._save(PARSE_QUALITY_REPORT_SPEC, record)
 
@@ -655,6 +689,13 @@ class SQLiteLedgerRepository:
 
     def list_parse_quality_reports(self) -> tuple[ParseQualityReport, ...]:
         return self._list(PARSE_QUALITY_REPORT_SPEC)
+
+    def list_parse_quality_reports_for_representation(
+        self, representation_id: str
+    ) -> tuple[ParseQualityReport, ...]:
+        return self._list_for_owner(
+            PARSE_QUALITY_REPORT_SPEC, "representation_id", representation_id
+        )
 
     def save_raw_blob(self, record: RawBlob) -> None:
         self._save(RAW_BLOB_SPEC, record)

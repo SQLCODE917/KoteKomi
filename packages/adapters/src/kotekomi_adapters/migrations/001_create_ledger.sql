@@ -64,7 +64,9 @@ CREATE TABLE IF NOT EXISTS documents (
   updated_at TEXT,
   status TEXT,
   review_status TEXT,
-  payload_json TEXT NOT NULL
+  source_id TEXT NOT NULL,
+  payload_json TEXT NOT NULL,
+  FOREIGN KEY (source_id) REFERENCES sources(id)
 );
 
 CREATE TABLE IF NOT EXISTS evidence_targets (
@@ -150,12 +152,14 @@ CREATE TABLE IF NOT EXISTS raw_blobs (
 );
 CREATE TABLE IF NOT EXISTS source_captures (
   id TEXT PRIMARY KEY, created_at TEXT, updated_at TEXT, status TEXT, review_status TEXT,
-  payload_json TEXT NOT NULL
+  source_id TEXT NOT NULL, blob_id TEXT NOT NULL, payload_json TEXT NOT NULL,
+  FOREIGN KEY (source_id) REFERENCES sources(id), FOREIGN KEY (blob_id) REFERENCES raw_blobs(id)
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_source_captures_idempotency ON source_captures(id);
 CREATE TABLE IF NOT EXISTS capture_document_resolutions (
   id TEXT PRIMARY KEY, created_at TEXT, updated_at TEXT, status TEXT, review_status TEXT,
-  payload_json TEXT NOT NULL
+  capture_id TEXT NOT NULL, document_id TEXT NOT NULL, payload_json TEXT NOT NULL,
+  FOREIGN KEY (capture_id) REFERENCES source_captures(id), FOREIGN KEY (document_id) REFERENCES documents(id)
 );
 CREATE TABLE IF NOT EXISTS document_revision_relations (
   id TEXT PRIMARY KEY, created_at TEXT, updated_at TEXT, status TEXT, review_status TEXT,
@@ -163,28 +167,34 @@ CREATE TABLE IF NOT EXISTS document_revision_relations (
 );
 CREATE TABLE IF NOT EXISTS document_representations (
   id TEXT PRIMARY KEY, created_at TEXT, updated_at TEXT, status TEXT, review_status TEXT,
-  payload_json TEXT NOT NULL
+  document_id TEXT NOT NULL, payload_json TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS text_views (
   id TEXT PRIMARY KEY, created_at TEXT, updated_at TEXT, status TEXT, review_status TEXT,
-  payload_json TEXT NOT NULL
+  representation_id TEXT NOT NULL, payload_json TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS document_nodes (
   id TEXT PRIMARY KEY, created_at TEXT, updated_at TEXT, status TEXT, review_status TEXT,
-  payload_json TEXT NOT NULL
+  representation_id TEXT NOT NULL, parent_node_id TEXT, payload_json TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS document_edges (
   id TEXT PRIMARY KEY, created_at TEXT, updated_at TEXT, status TEXT, review_status TEXT,
-  payload_json TEXT NOT NULL
+  representation_id TEXT NOT NULL, payload_json TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS source_regions (
   id TEXT PRIMARY KEY, created_at TEXT, updated_at TEXT, status TEXT, review_status TEXT,
-  payload_json TEXT NOT NULL
+  representation_id TEXT NOT NULL, payload_json TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS parse_quality_reports (
   id TEXT PRIMARY KEY, created_at TEXT, updated_at TEXT, status TEXT, review_status TEXT,
-  payload_json TEXT NOT NULL
+  representation_id TEXT NOT NULL, payload_json TEXT NOT NULL
 );
+CREATE INDEX IF NOT EXISTS idx_document_representations_document_id ON document_representations(document_id);
+CREATE INDEX IF NOT EXISTS idx_text_views_representation_id ON text_views(representation_id);
+CREATE INDEX IF NOT EXISTS idx_document_nodes_representation_id ON document_nodes(representation_id);
+CREATE INDEX IF NOT EXISTS idx_document_edges_representation_id ON document_edges(representation_id);
+CREATE INDEX IF NOT EXISTS idx_source_regions_representation_id ON source_regions(representation_id);
+CREATE INDEX IF NOT EXISTS idx_parse_quality_reports_representation_id ON parse_quality_reports(representation_id);
 CREATE TABLE IF NOT EXISTS assertion_evidence_links (
   id TEXT PRIMARY KEY, created_at TEXT, updated_at TEXT, status TEXT, review_status TEXT,
   payload_json TEXT NOT NULL

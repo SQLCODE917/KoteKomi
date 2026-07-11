@@ -1,4 +1,5 @@
 import hashlib
+import sqlite3
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -114,6 +115,25 @@ def test_representation_bundle_reuses_a_semantic_replay_after_restart(tmp_path: 
     assert original.representation.id == replay.representation.id
     assert stored is not None
     assert stored.representation.created_at == NOW
+
+
+def test_representation_bundle_load_uses_representation_ownership_indexes(tmp_path: Path) -> None:
+    ledger_path = tmp_path / "ledger.db"
+    SQLiteLedgerInitializer(ledger_path).initialize()
+    first = bundle(parser_version="1")
+    second = bundle(parser_version="2")
+
+    with sqlite_ledger_transaction(ledger_path) as repository:
+        repository.commit_document_representation_bundle(first)
+        repository.commit_document_representation_bundle(second)
+        assert repository.get_document_representation_bundle(first.representation.id) == first
+
+    with sqlite3.connect(ledger_path) as connection:
+        query_plan = connection.execute(
+            "EXPLAIN QUERY PLAN SELECT payload_json FROM text_views WHERE representation_id = ?",
+            (first.representation.id,),
+        ).fetchall()
+    assert any("idx_text_views_representation_id" in row[-1] for row in query_plan)
 
 
 def test_representation_bundle_rejects_nondeterministic_output_without_mutation(
