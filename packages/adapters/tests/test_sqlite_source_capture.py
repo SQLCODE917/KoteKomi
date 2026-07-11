@@ -113,6 +113,11 @@ def test_sqlite_capture_sequence_preserves_versions_and_retries(
         assert len(repository.list_sources()) == 1
         assert len(repository.list_raw_blobs()) == 4
         assert len(repository.list_source_captures()) == 4
+        assert len(repository.list_capture_document_resolutions()) == 4
+        assert (
+            repository.get_capture_document_resolution(original.document_resolution.id)
+            == original.document_resolution
+        )
         assert len(repository.list_documents()) == 4
         assert repository.get_document(original.document.id) == original.document
         assert {

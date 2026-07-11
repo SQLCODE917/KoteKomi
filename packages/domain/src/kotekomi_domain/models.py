@@ -33,6 +33,7 @@ ProposedChangeId = Annotated[str, Field(pattern=r"^pcg_[A-Za-z0-9][A-Za-z0-9_-]*
 BriefingId = Annotated[str, Field(pattern=r"^brf_[A-Za-z0-9][A-Za-z0-9_-]*$")]
 RawBlobId = Annotated[str, Field(pattern=r"^blb_[A-Za-z0-9][A-Za-z0-9_-]*$")]
 SourceCaptureId = Annotated[str, Field(pattern=r"^cap_[A-Za-z0-9][A-Za-z0-9_-]*$")]
+CaptureDocumentResolutionId = Annotated[str, Field(pattern=r"^cdr_[A-Za-z0-9][A-Za-z0-9_-]*$")]
 DocumentRevisionRelationId = Annotated[str, Field(pattern=r"^drv_[A-Za-z0-9][A-Za-z0-9_-]*$")]
 DocumentRepresentationId = Annotated[str, Field(pattern=r"^rep_[A-Za-z0-9][A-Za-z0-9_-]*$")]
 TextViewId = Annotated[str, Field(pattern=r"^tvw_[A-Za-z0-9][A-Za-z0-9_-]*$")]
@@ -285,6 +286,15 @@ class SourceCapture(DomainModel):
     embargo_until: datetime | None = None
     captured_at: datetime = Field(default_factory=utc_now)
     transaction_time: datetime = Field(default_factory=utc_now)
+
+
+class CaptureDocumentResolution(DomainModel):
+    id: CaptureDocumentResolutionId
+    capture_id: SourceCaptureId
+    document_id: DocumentId
+    resolution_policy: NonEmptyStr
+    resolution_basis: NonEmptyStr
+    created_at: datetime = Field(default_factory=utc_now)
 
 
 class Document(DomainModel):

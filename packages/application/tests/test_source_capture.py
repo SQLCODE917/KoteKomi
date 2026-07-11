@@ -9,6 +9,7 @@ from kotekomi_application import (
     capture_source,
 )
 from kotekomi_domain import (
+    CaptureDocumentResolution,
     Document,
     DocumentRevisionRelation,
     DocumentRevisionType,
@@ -27,6 +28,7 @@ class FakeCaptureLedger:
         self.sources: dict[str, Source] = {}
         self.blobs: dict[str, RawBlob] = {}
         self.captures: dict[str, SourceCapture] = {}
+        self.resolutions: dict[str, CaptureDocumentResolution] = {}
         self.documents: dict[str, Document] = {}
         self.relations: dict[str, DocumentRevisionRelation] = {}
 
@@ -42,6 +44,11 @@ class FakeCaptureLedger:
     def get_source_capture(self, record_id: str) -> SourceCapture | None:
         return self.captures.get(record_id)
 
+    def get_capture_document_resolution(
+        self, record_id: str
+    ) -> CaptureDocumentResolution | None:
+        return self.resolutions.get(record_id)
+
     def list_documents(self) -> tuple[Document, ...]:
         return tuple(self.documents.values())
 
@@ -56,6 +63,9 @@ class FakeCaptureLedger:
 
     def save_source_capture(self, record: SourceCapture) -> None:
         self.captures[record.id] = record
+
+    def save_capture_document_resolution(self, record: CaptureDocumentResolution) -> None:
+        self.resolutions[record.id] = record
 
     def save_document(self, record: Document) -> None:
         self.documents[record.id] = record
@@ -95,6 +105,9 @@ def test_capture_preserves_source_identity_and_versions() -> None:
     policy = StableSourceIdentityPolicy()
     original = capture_source(request(b"original", "v1"), ledger, policy)
     retry = capture_source(request(b"original", "v1"), ledger, policy)
+    assert original.document_resolution.capture_id == original.source_capture.id
+    assert original.document_resolution.document_id == original.document.id
+    assert retry.document_resolution == original.document_resolution
     update = capture_source(
         request(
             b"updated",
@@ -164,6 +177,47 @@ def test_capture_rejects_same_provider_version_with_different_bytes_without_muta
 
     assert tuple(ledger.documents.values()) == (original.document,)
     assert tuple(ledger.captures.values()) == (original.source_capture,)
+
+
+@pytest.mark.parametrize(
+    ("version_kind", "revision_type"),
+    [
+        (DocumentVersionKind.UPDATE, DocumentRevisionType.CORRECTS),
+        (DocumentVersionKind.CORRECTION, DocumentRevisionType.UPDATES),
+        (DocumentVersionKind.WITHDRAWAL, DocumentRevisionType.CORRECTS),
+    ],
+)
+def test_capture_rejects_revision_relation_that_conflicts_with_version_kind(
+    version_kind: DocumentVersionKind,
+    revision_type: DocumentRevisionType,
+) -> None:
+    ledger = FakeCaptureLedger()
+    policy = StableSourceIdentityPolicy()
+    original = capture_source(request(b"original", "v1"), ledger, policy)
+
+    with pytest.raises(ValueError, match="version_kind does not match"):
+        capture_source(
+            request(
+                b"changed",
+                "v2",
+                version_kind=version_kind,
+                revision_of_document_id=original.document.id,
+                revision_type=revision_type,
+            ),
+            ledger,
+            policy,
+        )
+
+
+def test_capture_requires_explicit_revision_classification() -> None:
+    ledger = FakeCaptureLedger()
+
+    with pytest.raises(ValueError, match="UNCLASSIFIED_REVISION"):
+        capture_source(
+            request(b"unclassified", "v1", version_kind=DocumentVersionKind.UNKNOWN),
+            ledger,
+            StableSourceIdentityPolicy(),
+        )
 
 
 def test_capture_rejects_revision_cycle_before_saving_any_new_artifact() -> None:

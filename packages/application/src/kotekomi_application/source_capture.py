@@ -8,6 +8,7 @@ from datetime import datetime
 from typing import Protocol
 
 from kotekomi_domain import (
+    CaptureDocumentResolution,
     Document,
     DocumentRevisionRelation,
     DocumentRevisionType,
@@ -68,6 +69,7 @@ class CaptureOutcome:
     source: Source
     raw_blob: RawBlob
     source_capture: SourceCapture
+    document_resolution: CaptureDocumentResolution
     document: Document
     revision_relation: DocumentRevisionRelation | None
     created: bool
@@ -80,6 +82,7 @@ class CaptureIdentity:
     source_id: str
     raw_blob_id: str
     source_capture_id: str
+    document_resolution_id: str
     document_id: str
     content_digest: str
 
@@ -89,11 +92,15 @@ class CaptureLedger(Protocol):
     def get_raw_blob(self, record_id: str) -> RawBlob | None: ...
     def get_document(self, record_id: str) -> Document | None: ...
     def get_source_capture(self, record_id: str) -> SourceCapture | None: ...
+    def get_capture_document_resolution(
+        self, record_id: str
+    ) -> CaptureDocumentResolution | None: ...
     def list_documents(self) -> tuple[Document, ...]: ...
     def list_document_revision_relations(self) -> tuple[DocumentRevisionRelation, ...]: ...
     def save_source(self, record: Source) -> None: ...
     def save_raw_blob(self, record: RawBlob) -> None: ...
     def save_source_capture(self, record: SourceCapture) -> None: ...
+    def save_capture_document_resolution(self, record: CaptureDocumentResolution) -> None: ...
     def save_document(self, record: Document) -> None: ...
     def save_document_revision_relation(self, record: DocumentRevisionRelation) -> None: ...
 
@@ -135,6 +142,7 @@ def capture_source(
             source,
             raw_blob,
             existing_capture,
+            _require_document_resolution(identity, ledger_repository),
             existing_document,
             _find_requested_relation(request, identity, ledger_repository),
             False,
@@ -195,6 +203,14 @@ def capture_source(
         captured_at=request.captured_at,
         transaction_time=request.transaction_time,
     )
+    resolution = CaptureDocumentResolution(
+        id=identity.document_resolution_id,
+        capture_id=capture.id,
+        document_id=identity.document_id,
+        resolution_policy="capture_source_v1",
+        resolution_basis="source_identity_and_content_digest",
+        created_at=request.transaction_time,
+    )
     document_is_new = existing_document is None
     document = existing_document or Document(
         id=identity.document_id,
@@ -219,6 +235,7 @@ def capture_source(
     ledger_repository.save_source_capture(capture)
     if document_is_new:
         ledger_repository.save_document(document)
+    ledger_repository.save_capture_document_resolution(resolution)
     if relation is not None:
         # The caller supplies one transaction for the complete capture use case.
         # Rechecking immediately before the insert closes the relation-check/write gap.
@@ -227,7 +244,7 @@ def capture_source(
         ):
             raise ValueError("Document revision relation would create a cycle.")
         ledger_repository.save_document_revision_relation(relation)
-    return CaptureOutcome(source, raw_blob, capture, document, relation, True)
+    return CaptureOutcome(source, raw_blob, capture, resolution, document, relation, True)
 
 
 def capture_identity(
@@ -245,6 +262,7 @@ def capture_identity(
         source_id=source_id,
         raw_blob_id=f"blb_{content_digest}",
         source_capture_id=_id("cap", source_id, request.idempotency_key),
+        document_resolution_id=_id("cdr", source_id, request.idempotency_key, content_digest),
         document_id=_id("doc", source_id, request.provider_version or "", content_digest),
         content_digest=content_digest,
     )
@@ -255,6 +273,20 @@ def _validate_revision_request(request: CaptureRequest, identity: CaptureIdentit
         raise ValueError("Document revision requires both a prior Document and a revision type.")
     if request.revision_of_document_id == identity.document_id:
         raise ValueError("Document revision cannot relate a Document to itself.")
+    allowed_relations = {
+        DocumentVersionKind.ORIGINAL: (),
+        DocumentVersionKind.UPDATE: (DocumentRevisionType.UPDATES, DocumentRevisionType.SUPERSEDES),
+        DocumentVersionKind.CORRECTION: (DocumentRevisionType.CORRECTS,),
+        DocumentVersionKind.WITHDRAWAL: (DocumentRevisionType.WITHDRAWS,),
+    }
+    allowed = allowed_relations.get(request.version_kind)
+    if allowed is None:
+        raise ValueError("UNCLASSIFIED_REVISION: version_kind must be explicit.")
+    if request.version_kind is DocumentVersionKind.ORIGINAL:
+        if request.revision_of_document_id is not None:
+            raise ValueError("Original Document cannot have a revision predecessor.")
+    elif request.revision_type not in allowed:
+        raise ValueError("Document version_kind does not match its revision relation.")
 
 
 def _validate_provider_version_conflict(
@@ -304,6 +336,21 @@ def _find_requested_relation(
         ),
         None,
     )
+
+
+def _require_document_resolution(
+    identity: CaptureIdentity,
+    ledger_repository: CaptureLedger,
+) -> CaptureDocumentResolution:
+    resolution = ledger_repository.get_capture_document_resolution(identity.document_resolution_id)
+    if resolution is None:
+        raise ValueError("Capture idempotency conflict.")
+    if (
+        resolution.capture_id != identity.source_capture_id
+        or resolution.document_id != identity.document_id
+    ):
+        raise ValueError("Capture idempotency conflict.")
+    return resolution
 
 
 def _is_idempotent_retry(

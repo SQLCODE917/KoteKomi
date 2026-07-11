@@ -14,6 +14,7 @@ from kotekomi_application import (
     add_source_from_file,
 )
 from kotekomi_domain import (
+    CaptureDocumentResolution,
     Document,
     DocumentEdge,
     DocumentNode,
@@ -170,6 +171,7 @@ class FakeLedgerRepository:
         self.provenance_activities: dict[str, ProvenanceActivity] = {}
         self.raw_blobs: dict[str, RawBlob] = {}
         self.source_captures: dict[str, SourceCapture] = {}
+        self.capture_document_resolutions: dict[str, CaptureDocumentResolution] = {}
         self.document_revision_relations: dict[str, DocumentRevisionRelation] = {}
         self.document_representations: dict[str, DocumentRepresentation] = {}
         self.text_views: dict[str, TextView] = {}
@@ -191,6 +193,9 @@ class FakeLedgerRepository:
     def get_source_capture(self, record_id: str) -> SourceCapture | None:
         return self.source_captures.get(record_id)
 
+    def get_capture_document_resolution(self, record_id: str) -> CaptureDocumentResolution | None:
+        return self.capture_document_resolutions.get(record_id)
+
     def list_documents(self) -> tuple[Document, ...]:
         return tuple(self.documents.values())
 
@@ -208,6 +213,9 @@ class FakeLedgerRepository:
 
     def save_source_capture(self, record: SourceCapture) -> None:
         self.source_captures[record.id] = record
+
+    def save_capture_document_resolution(self, record: CaptureDocumentResolution) -> None:
+        self.capture_document_resolutions[record.id] = record
 
     def save_document(self, record: Document) -> None:
         if self.fail_on_save_document:

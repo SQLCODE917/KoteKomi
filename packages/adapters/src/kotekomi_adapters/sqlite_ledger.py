@@ -26,6 +26,7 @@ from kotekomi_domain import (
     Assertion,
     AssertionEvidenceLink,
     Briefing,
+    CaptureDocumentResolution,
     Document,
     DocumentEdge,
     DocumentNode,
@@ -79,6 +80,7 @@ IMMUTABLE_TABLES = frozenset(
     {
         "raw_blobs",
         "source_captures",
+        "capture_document_resolutions",
         "documents",
         "document_revision_relations",
         "document_representations",
@@ -118,6 +120,9 @@ DOCUMENT_REVISION_RELATION_SPEC = RecordSpec(
 )
 RAW_BLOB_SPEC = RecordSpec("raw_blobs", RawBlob)
 SOURCE_CAPTURE_SPEC = RecordSpec("source_captures", SourceCapture)
+CAPTURE_DOCUMENT_RESOLUTION_SPEC = RecordSpec(
+    "capture_document_resolutions", CaptureDocumentResolution
+)
 EVIDENCE_SPAN_SPEC = RecordSpec("evidence_spans", EvidenceSpan)
 ASSERTION_EVIDENCE_LINK_SPEC = RecordSpec("assertion_evidence_links", AssertionEvidenceLink)
 EVIDENCE_REANCHORING_RELATION_SPEC = RecordSpec(
@@ -174,6 +179,7 @@ REQUIRED_LEDGER_TABLES = (
     "proposed_changes",
     "raw_blobs",
     "source_captures",
+    "capture_document_resolutions",
     "briefings",
 )
 
@@ -621,6 +627,17 @@ class SQLiteLedgerRepository:
 
     def list_source_captures(self) -> tuple[SourceCapture, ...]:
         return self._list(SOURCE_CAPTURE_SPEC)
+
+    def save_capture_document_resolution(self, record: CaptureDocumentResolution) -> None:
+        self._save(CAPTURE_DOCUMENT_RESOLUTION_SPEC, record)
+
+    def get_capture_document_resolution(
+        self, record_id: str
+    ) -> CaptureDocumentResolution | None:
+        return self._get(CAPTURE_DOCUMENT_RESOLUTION_SPEC, record_id)
+
+    def list_capture_document_resolutions(self) -> tuple[CaptureDocumentResolution, ...]:
+        return self._list(CAPTURE_DOCUMENT_RESOLUTION_SPEC)
 
     def save_document_revision_relation(self, record: DocumentRevisionRelation) -> None:
         self._save(DOCUMENT_REVISION_RELATION_SPEC, record)
