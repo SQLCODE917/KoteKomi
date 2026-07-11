@@ -25,7 +25,7 @@
 - verify durable processing task/attempt/outcome records, immutable SQLite storage, and indexed retry lookup with `uv run pytest packages/domain/tests/test_processing_records.py packages/adapters/tests/test_processing_records.py packages/application/tests/test_add_source_from_file.py packages/application/tests/test_pdf_ingest.py`
 - verify local-file capture recovery after archive, Ledger, attempt, and transaction failures with `uv run pytest packages/adapters/tests/test_authoritative_capture_fault_matrix.py`
 - verify replayable EvidenceTarget validation and atomic evidence-gated Assertion acceptance with `uv run pytest packages/application/tests/test_evidence_targets.py packages/adapters/tests/test_atomic_assertion_acceptance.py`
-- run the restart-safe authoritative commit-boundary Final Proof with `uv run pytest packages/adapters/tests/test_authoritative_commit_boundary.py`
+- run the public-path restart-safe authoritative commit-boundary Final Proof with `uv run pytest packages/adapters/tests/test_authoritative_commit_boundary.py`
 - verify the Docling adapter loads lazily and returns a typed blocked result with `uv run pytest packages/adapters/tests/test_docling_pdf_parser.py`
 
 ## 4. Archive checks
