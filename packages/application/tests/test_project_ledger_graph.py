@@ -20,14 +20,13 @@ from kotekomi_domain import (
     Document,
     EpistemicScope,
     Event,
-    EvidenceSpan,
+    EvidenceTarget,
     Organization,
     Outcome,
     Place,
     ProposedChange,
     ProvenanceActivity,
     Relationship,
-    SelectorType,
     Source,
     SourceAuthority,
     SourceType,
@@ -75,14 +74,19 @@ class FakeGraphLedger:
                 content_sha256=HASH,
             ),
         )
-        self.evidence_spans = (
-            EvidenceSpan(
-                id="evs_article_a_release",
+        self.evidence_targets = (
+            EvidenceTarget(
+                id="evt_article_a_release",
                 source_id="src_article_a",
                 document_id="doc_article_a",
-                assertion_id="ast_release_review",
-                selector_type=SelectorType.EXACT_TEXT,
+                representation_id="rep_article_a",
+                text_view_id="tvw_article_a",
+                text_view_digest=HASH,
+                start_char=0,
+                end_char=32,
                 exact_text="Person A negotiated the release.",
+                normalization_policy="fixture_v1",
+                node_ids=("nod_article_a",),
             ),
         )
         self.assertions = (
@@ -97,7 +101,7 @@ class FakeGraphLedger:
                 source_authority=SourceAuthority.SECONDARY,
                 attribution_basis=AttributionBasis.REPORTED_BY_SOURCE,
                 source_ids=("src_article_a",),
-                evidence_span_ids=("evs_article_a_release",),
+                evidence_target_ids=("evt_article_a_release",),
                 provenance_activity_ids=("prv_human_review",),
             ),
         )
@@ -127,7 +131,7 @@ class FakeGraphLedger:
                 to_assertion_id="ast_release_review",
                 relation=ArgumentEdgeRelation.SUPPORTS,
                 rationale="The source claim supports itself as reported evidence.",
-                evidence_span_ids=("evs_article_a_release",),
+                evidence_target_ids=("evt_article_a_release",),
                 confidence=0.8,
             ),
         )
@@ -166,8 +170,8 @@ class FakeGraphLedger:
     def list_documents(self) -> tuple[Document, ...]:
         return self.documents
 
-    def list_evidence_spans(self) -> tuple[EvidenceSpan, ...]:
-        return self.evidence_spans
+    def list_evidence_targets(self) -> tuple[EvidenceTarget, ...]:
+        return self.evidence_targets
 
     def list_assertions(self) -> tuple[Assertion, ...]:
         return self.assertions
@@ -206,7 +210,7 @@ def test_project_ledger_graph_builds_nodes_and_edges_from_accepted_records() -> 
         "arg_release_support",
         "ast_release_review",
         "doc_article_a",
-        "evs_article_a_release",
+        "evt_article_a_release",
         "evt_model_forum",
         "org_lab_a",
         "out_release_review",
@@ -221,12 +225,12 @@ def test_project_ledger_graph_builds_nodes_and_edges_from_accepted_records() -> 
     assert ("evt_model_forum", "org_lab_a", "event_organization") in edge_keys
     assert ("evt_model_forum", "plc_event_hall", "event_place") in edge_keys
     assert ("doc_article_a", "src_article_a", "document_source") in edge_keys
-    assert ("evs_article_a_release", "ast_release_review", "evidence_assertion") in edge_keys
+    assert ("ast_release_review", "evt_article_a_release", "assertion_evidence") in edge_keys
     assert ("ast_release_review", "act_person_a", "assertion_subject") in edge_keys
     assert ("ast_release_review", "org_lab_a", "assertion_object") in edge_keys
     assert ("rel_person_a_lab_a", "ast_release_review", "relationship_assertion") in edge_keys
     assert ("out_release_review", "evt_model_forum", "outcome_event") in edge_keys
-    assert ("arg_release_support", "evs_article_a_release", "argument_evidence") in edge_keys
+    assert ("arg_release_support", "evt_article_a_release", "argument_evidence") in edge_keys
 
 
 def test_project_ledger_graph_uses_deterministic_edge_ids() -> None:
@@ -259,7 +263,7 @@ def test_project_ledger_graph_rejects_dangling_references() -> None:
             source_authority=SourceAuthority.SECONDARY,
             attribution_basis=AttributionBasis.REPORTED_BY_SOURCE,
             source_ids=("src_article_a",),
-            evidence_span_ids=("evs_missing",),
+            evidence_target_ids=("evt_missing",),
             provenance_activity_ids=("prv_human_review",),
         ),
     )

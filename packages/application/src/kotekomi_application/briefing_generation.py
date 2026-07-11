@@ -19,7 +19,7 @@ from kotekomi_domain import (
     Entity,
     EpistemicScope,
     Event,
-    EvidenceSpan,
+    EvidenceTarget,
     Organization,
     Outcome,
     Place,
@@ -81,7 +81,7 @@ class BriefingGenerationResult:
     event_count: int
     source_count: int
     document_count: int
-    evidence_span_count: int
+    evidence_target_count: int
     assertion_count: int
     relationship_count: int
     outcome_count: int
@@ -136,7 +136,7 @@ def generate_briefing(
         relationships=selected_records.relationships,
         outcomes=selected_records.outcomes,
         argument_edges=selected_records.argument_edges,
-        evidence_spans=selected_records.evidence_spans,
+        evidence_targets=selected_records.evidence_targets,
         analytic_inference_assertion_ids=selected_records.analytic_inference_assertion_ids,
     )
     rendered = briefing_renderer.render(render_input)
@@ -177,7 +177,7 @@ def generate_briefing(
             argument_edge_ids=tuple(record.id for record in selected_records.argument_edges),
             outcome_ids=tuple(record.id for record in selected_records.outcomes),
             source_ids=tuple(record.id for record in selected_records.sources),
-            evidence_span_ids=tuple(record.id for record in selected_records.evidence_spans),
+            evidence_target_ids=tuple(record.id for record in selected_records.evidence_targets),
             analytic_inference_assertion_ids=selected_records.analytic_inference_assertion_ids,
             provenance_activity_id=provenance_activity_id,
             markdown_path=promoted_object.relative_path,
@@ -208,7 +208,7 @@ def generate_briefing(
         event_count=len(selected_records.events),
         source_count=len(selected_records.sources),
         document_count=len(selected_records.documents),
-        evidence_span_count=len(selected_records.evidence_spans),
+        evidence_target_count=len(selected_records.evidence_targets),
         assertion_count=len(selected_records.assertions),
         relationship_count=len(selected_records.relationships),
         outcome_count=len(selected_records.outcomes),
@@ -322,7 +322,7 @@ def _briefing_citation_from_json(data: object) -> BriefingCitation:
         event_ids=_string_tuple(citation_data, "event_ids"),
         source_ids=_string_tuple(citation_data, "source_ids"),
         document_ids=_string_tuple(citation_data, "document_ids"),
-        evidence_span_ids=_string_tuple(citation_data, "evidence_span_ids"),
+        evidence_target_ids=_string_tuple(citation_data, "evidence_target_ids"),
         assertion_ids=_string_tuple(citation_data, "assertion_ids"),
         relationship_ids=_string_tuple(citation_data, "relationship_ids"),
         outcome_ids=_string_tuple(citation_data, "outcome_ids"),
@@ -370,7 +370,7 @@ class _RecordIndexes:
     events: dict[str, Event]
     sources: dict[str, Source]
     documents: dict[str, Document]
-    evidence_spans: dict[str, EvidenceSpan]
+    evidence_targets: dict[str, EvidenceTarget]
     assertions: dict[str, Assertion]
     relationships: dict[str, Relationship]
     outcomes: dict[str, Outcome]
@@ -390,7 +390,7 @@ class _SelectedIds:
     event_ids: set[str] = field(default_factory=_empty_id_set)
     source_ids: set[str] = field(default_factory=_empty_id_set)
     document_ids: set[str] = field(default_factory=_empty_id_set)
-    evidence_span_ids: set[str] = field(default_factory=_empty_id_set)
+    evidence_target_ids: set[str] = field(default_factory=_empty_id_set)
     assertion_ids: set[str] = field(default_factory=_empty_id_set)
     relationship_ids: set[str] = field(default_factory=_empty_id_set)
     outcome_ids: set[str] = field(default_factory=_empty_id_set)
@@ -406,7 +406,7 @@ class _SelectedRecords:
     events: tuple[Event, ...]
     sources: tuple[Source, ...]
     documents: tuple[Document, ...]
-    evidence_spans: tuple[EvidenceSpan, ...]
+    evidence_targets: tuple[EvidenceTarget, ...]
     assertions: tuple[Assertion, ...]
     relationships: tuple[Relationship, ...]
     outcomes: tuple[Outcome, ...]
@@ -439,7 +439,7 @@ def _record_indexes(records: tuple[AcceptedCanonicalRecord, ...]) -> _RecordInde
         events={},
         sources={},
         documents={},
-        evidence_spans={},
+        evidence_targets={},
         assertions={},
         relationships={},
         outcomes={},
@@ -460,8 +460,8 @@ def _record_indexes(records: tuple[AcceptedCanonicalRecord, ...]) -> _RecordInde
             indexes.sources[record.id] = record
         elif isinstance(record, Document):
             indexes.documents[record.id] = record
-        elif isinstance(record, EvidenceSpan):
-            indexes.evidence_spans[record.id] = record
+        elif isinstance(record, EvidenceTarget):
+            indexes.evidence_targets[record.id] = record
         elif isinstance(record, Assertion):
             indexes.assertions[record.id] = record
         elif isinstance(record, Relationship):
@@ -504,9 +504,9 @@ def _changed_record_ids(indexes: _RecordIndexes, boundary: datetime | None) -> _
         for record in indexes.documents.values()
         if _is_changed(record.updated_at, boundary)
     )
-    selected_ids.evidence_span_ids.update(
+    selected_ids.evidence_target_ids.update(
         record.id
-        for record in indexes.evidence_spans.values()
+        for record in indexes.evidence_targets.values()
         if _is_changed(record.created_at, boundary)
     )
     selected_ids.assertion_ids.update(
@@ -581,35 +581,27 @@ def _close_context(selected_ids: _SelectedIds, indexes: _RecordIndexes) -> None:
                 "Source",
                 document.id,
             )
-        for evidence_span_id in tuple(selected_ids.evidence_span_ids):
-            evidence_span = _require(
-                indexes.evidence_spans,
-                evidence_span_id,
-                "EvidenceSpan",
-                evidence_span_id,
+        for evidence_target_id in tuple(selected_ids.evidence_target_ids):
+            evidence_target = _require(
+                indexes.evidence_targets,
+                evidence_target_id,
+                "EvidenceTarget",
+                evidence_target_id,
             )
             changed |= _add_required(
                 selected_ids.source_ids,
                 indexes.sources,
-                evidence_span.source_id,
+                evidence_target.source_id,
                 "Source",
-                evidence_span.id,
+                evidence_target.id,
             )
             changed |= _add_required(
                 selected_ids.document_ids,
                 indexes.documents,
-                evidence_span.document_id,
+                evidence_target.document_id,
                 "Document",
-                evidence_span.id,
+                evidence_target.id,
             )
-            if evidence_span.assertion_id is not None:
-                changed |= _add_required(
-                    selected_ids.assertion_ids,
-                    indexes.assertions,
-                    evidence_span.assertion_id,
-                    "Assertion",
-                    evidence_span.id,
-                )
         for assertion_id in tuple(selected_ids.assertion_ids):
             assertion = _require(indexes.assertions, assertion_id, "Assertion", assertion_id)
             changed |= _add_entity_reference(
@@ -633,12 +625,12 @@ def _close_context(selected_ids: _SelectedIds, indexes: _RecordIndexes) -> None:
                     "Source",
                     assertion.id,
                 )
-            for evidence_span_id in assertion.evidence_span_ids:
+            for evidence_target_id in assertion.evidence_target_ids:
                 changed |= _add_required(
-                    selected_ids.evidence_span_ids,
-                    indexes.evidence_spans,
-                    evidence_span_id,
-                    "EvidenceSpan",
+                    selected_ids.evidence_target_ids,
+                    indexes.evidence_targets,
+                    evidence_target_id,
+                    "EvidenceTarget",
                     assertion.id,
                 )
         for relationship_id in tuple(selected_ids.relationship_ids):
@@ -717,12 +709,12 @@ def _close_context(selected_ids: _SelectedIds, indexes: _RecordIndexes) -> None:
                     "Assertion",
                     argument_edge.id,
                 )
-            for evidence_span_id in argument_edge.evidence_span_ids:
+            for evidence_target_id in argument_edge.evidence_target_ids:
                 changed |= _add_required(
-                    selected_ids.evidence_span_ids,
-                    indexes.evidence_spans,
-                    evidence_span_id,
-                    "EvidenceSpan",
+                    selected_ids.evidence_target_ids,
+                    indexes.evidence_targets,
+                    evidence_target_id,
+                    "EvidenceTarget",
                     argument_edge.id,
                 )
 
@@ -735,7 +727,7 @@ def _selected_records(indexes: _RecordIndexes, selected_ids: _SelectedIds) -> _S
     events = _records_for_ids(indexes.events, selected_ids.event_ids)
     sources = _records_for_ids(indexes.sources, selected_ids.source_ids)
     documents = _records_for_ids(indexes.documents, selected_ids.document_ids)
-    evidence_spans = _records_for_ids(indexes.evidence_spans, selected_ids.evidence_span_ids)
+    evidence_targets = _records_for_ids(indexes.evidence_targets, selected_ids.evidence_target_ids)
     assertions = _records_for_ids(indexes.assertions, selected_ids.assertion_ids)
     relationships = _records_for_ids(indexes.relationships, selected_ids.relationship_ids)
     outcomes = _records_for_ids(indexes.outcomes, selected_ids.outcome_ids)
@@ -755,7 +747,7 @@ def _selected_records(indexes: _RecordIndexes, selected_ids: _SelectedIds) -> _S
                 *(record.id for record in events),
                 *(record.id for record in sources),
                 *(record.id for record in documents),
-                *(record.id for record in evidence_spans),
+                *(record.id for record in evidence_targets),
                 *(record.id for record in assertions),
                 *(record.id for record in relationships),
                 *(record.id for record in outcomes),
@@ -771,7 +763,7 @@ def _selected_records(indexes: _RecordIndexes, selected_ids: _SelectedIds) -> _S
         events=events,
         sources=sources,
         documents=documents,
-        evidence_spans=evidence_spans,
+        evidence_targets=evidence_targets,
         assertions=assertions,
         relationships=relationships,
         outcomes=outcomes,
@@ -788,7 +780,7 @@ def _build_briefing_narrative(
 ) -> tuple[BriefingNarrative, BriefingCitationRegistry]:
     assertions_by_id = {record.id: record for record in selected_records.assertions}
     argument_edges_by_id = {record.id: record for record in selected_records.argument_edges}
-    evidence_spans_by_id = {record.id: record for record in selected_records.evidence_spans}
+    evidence_targets_by_id = {record.id: record for record in selected_records.evidence_targets}
     name_lookup = _NameLookup(
         entities={record.id: record.canonical_name for record in selected_records.entities},
         actors={record.id: record.name for record in selected_records.actors},
@@ -799,7 +791,7 @@ def _build_briefing_narrative(
     citation_builder = _CitationBuilder(
         briefing_id=briefing_id,
         assertions_by_id=assertions_by_id,
-        evidence_spans_by_id=evidence_spans_by_id,
+        evidence_targets_by_id=evidence_targets_by_id,
     )
     outcome = _top_outcome(selected_records.outcomes)
     executive_judgment, judgment_basis = _executive_judgment_and_basis(
@@ -861,11 +853,11 @@ class _CitationBuilder:
         *,
         briefing_id: str,
         assertions_by_id: dict[str, Assertion],
-        evidence_spans_by_id: dict[str, EvidenceSpan],
+        evidence_targets_by_id: dict[str, EvidenceTarget],
     ) -> None:
         self._briefing_id = briefing_id
         self._assertions_by_id = assertions_by_id
-        self._evidence_spans_by_id = evidence_spans_by_id
+        self._evidence_targets_by_id = evidence_targets_by_id
         self._citations: list[BriefingCitation] = []
         self._numbers_by_identity: dict[str, int] = {}
 
@@ -882,7 +874,7 @@ class _CitationBuilder:
             confidence_label=_confidence_label(assertion.world_truth_confidence),
             assertion_ids=(assertion.id,),
             source_ids=assertion.source_ids,
-            evidence_span_ids=assertion.evidence_span_ids,
+            evidence_target_ids=assertion.evidence_target_ids,
         )
 
     def analytic_inference(
@@ -891,17 +883,17 @@ class _CitationBuilder:
         supporting_edges: tuple[ArgumentEdge, ...],
         summary: str,
     ) -> int:
-        evidence_span_ids = tuple(
-            sorted({*assertion.evidence_span_ids, *_edge_evidence_span_ids(supporting_edges)})
+        evidence_target_ids = tuple(
+            sorted({*assertion.evidence_target_ids, *_edge_evidence_target_ids(supporting_edges)})
         )
         source_ids = tuple(
             sorted(
                 {
                     *assertion.source_ids,
                     *(
-                        self._evidence_spans_by_id[evidence_span_id].source_id
-                        for evidence_span_id in evidence_span_ids
-                        if evidence_span_id in self._evidence_spans_by_id
+                        self._evidence_targets_by_id[evidence_target_id].source_id
+                        for evidence_target_id in evidence_target_ids
+                        if evidence_target_id in self._evidence_targets_by_id
                     ),
                 }
             )
@@ -917,7 +909,7 @@ class _CitationBuilder:
             assertion_ids=assertion_ids,
             argument_edge_ids=tuple(record.id for record in supporting_edges),
             source_ids=source_ids,
-            evidence_span_ids=evidence_span_ids,
+            evidence_target_ids=evidence_target_ids,
         )
 
     def outcome(
@@ -944,12 +936,12 @@ class _CitationBuilder:
                     }
                 )
             ),
-            evidence_span_ids=tuple(
+            evidence_target_ids=tuple(
                 sorted(
                     {
-                        evidence_span_id
+                        evidence_target_id
                         for assertion in supporting_assertions
-                        for evidence_span_id in assertion.evidence_span_ids
+                        for evidence_target_id in assertion.evidence_target_ids
                     }
                 )
             ),
@@ -976,12 +968,12 @@ class _CitationBuilder:
                     }
                 )
             ),
-            evidence_span_ids=tuple(
+            evidence_target_ids=tuple(
                 sorted(
                     {
-                        evidence_span_id
+                        evidence_target_id
                         for assertion in supporting_assertions
-                        for evidence_span_id in assertion.evidence_span_ids
+                        for evidence_target_id in assertion.evidence_target_ids
                     }
                 )
             ),
@@ -1005,7 +997,7 @@ class _CitationBuilder:
             confidence_label=_confidence_label(argument_edge.confidence),
             assertion_ids=(argument_edge.from_assertion_id, argument_edge.to_assertion_id),
             argument_edge_ids=(argument_edge.id,),
-            evidence_span_ids=argument_edge.evidence_span_ids,
+            evidence_target_ids=argument_edge.evidence_target_ids,
         )
 
     def _add(
@@ -1022,21 +1014,21 @@ class _CitationBuilder:
         event_ids: tuple[str, ...] = (),
         source_ids: tuple[str, ...] = (),
         document_ids: tuple[str, ...] = (),
-        evidence_span_ids: tuple[str, ...] = (),
+        evidence_target_ids: tuple[str, ...] = (),
         assertion_ids: tuple[str, ...] = (),
         relationship_ids: tuple[str, ...] = (),
         outcome_ids: tuple[str, ...] = (),
         argument_edge_ids: tuple[str, ...] = (),
     ) -> int:
-        normalized_evidence_span_ids = tuple(sorted(evidence_span_ids))
+        normalized_evidence_target_ids = tuple(sorted(evidence_target_ids))
         normalized_source_ids = tuple(
             sorted(
                 {
                     *source_ids,
                     *(
-                        self._evidence_spans_by_id[evidence_span_id].source_id
-                        for evidence_span_id in normalized_evidence_span_ids
-                        if evidence_span_id in self._evidence_spans_by_id
+                        self._evidence_targets_by_id[evidence_target_id].source_id
+                        for evidence_target_id in normalized_evidence_target_ids
+                        if evidence_target_id in self._evidence_targets_by_id
                     ),
                 }
             )
@@ -1046,9 +1038,9 @@ class _CitationBuilder:
                 {
                     *document_ids,
                     *(
-                        self._evidence_spans_by_id[evidence_span_id].document_id
-                        for evidence_span_id in normalized_evidence_span_ids
-                        if evidence_span_id in self._evidence_spans_by_id
+                        self._evidence_targets_by_id[evidence_target_id].document_id
+                        for evidence_target_id in normalized_evidence_target_ids
+                        if evidence_target_id in self._evidence_targets_by_id
                     ),
                 }
             )
@@ -1061,7 +1053,7 @@ class _CitationBuilder:
             "event_ids": sorted(event_ids),
             "source_ids": list(normalized_source_ids),
             "document_ids": list(normalized_document_ids),
-            "evidence_span_ids": list(normalized_evidence_span_ids),
+            "evidence_target_ids": list(normalized_evidence_target_ids),
             "assertion_ids": sorted(assertion_ids),
             "relationship_ids": sorted(relationship_ids),
             "outcome_ids": sorted(outcome_ids),
@@ -1090,7 +1082,7 @@ class _CitationBuilder:
                 event_ids=tuple(sorted(event_ids)),
                 source_ids=normalized_source_ids,
                 document_ids=normalized_document_ids,
-                evidence_span_ids=normalized_evidence_span_ids,
+                evidence_target_ids=normalized_evidence_target_ids,
                 assertion_ids=tuple(sorted(assertion_ids)),
                 relationship_ids=tuple(sorted(relationship_ids)),
                 outcome_ids=tuple(sorted(outcome_ids)),
@@ -1475,7 +1467,7 @@ def _evidence_quality(
             source_authority=assertion.source_authority,
             attribution_basis=assertion.attribution_basis,
             source_count=len(assertion.source_ids),
-            evidence_span_count=len(assertion.evidence_span_ids),
+            evidence_target_count=len(assertion.evidence_target_ids),
             citation_numbers=(
                 citation_builder.source_assertion(
                     assertion,
@@ -1484,7 +1476,7 @@ def _evidence_quality(
             ),
         )
         for assertion in sorted(assertions, key=lambda record: record.id)
-        if assertion.source_ids or assertion.evidence_span_ids
+        if assertion.source_ids or assertion.evidence_target_ids
     )
 
 
@@ -1915,13 +1907,13 @@ def _argument_edges_to_assertion(
     )
 
 
-def _edge_evidence_span_ids(argument_edges: tuple[ArgumentEdge, ...]) -> tuple[str, ...]:
+def _edge_evidence_target_ids(argument_edges: tuple[ArgumentEdge, ...]) -> tuple[str, ...]:
     return tuple(
         sorted(
             {
-                evidence_span_id
+                evidence_target_id
                 for argument_edge in argument_edges
-                for evidence_span_id in argument_edge.evidence_span_ids
+                for evidence_target_id in argument_edge.evidence_target_ids
             }
         )
     )

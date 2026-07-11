@@ -32,8 +32,9 @@ from kotekomi_domain import (
     Entity,
     EpistemicScope,
     Event,
-    EvidenceSpan,
-    EvidenceValidationStatus,
+    EvidenceTarget,
+    EvidenceValidationAttempt,
+    EvidenceValidationAttemptStatus,
     Organization,
     Outcome,
     ParseQualityReport,
@@ -43,7 +44,6 @@ from kotekomi_domain import (
     Relationship,
     RepresentationAnalyzability,
     ReviewStatus,
-    SelectorType,
     Source,
     SourceAuthority,
     SourceType,
@@ -68,7 +68,8 @@ class FakeReviewLedger:
         self.events: dict[str, Event] = {}
         self.entities: dict[str, Entity] = {}
         self.places: dict[str, Place] = {}
-        self.evidence_spans: dict[str, EvidenceSpan] = {}
+        self.evidence_targets: dict[str, EvidenceTarget] = {}
+        self.evidence_validation_attempts: dict[str, EvidenceValidationAttempt] = {}
         self.document_representation_bundles: dict[str, DocumentRepresentationBundle] = {}
         self.assertion_evidence_links: dict[str, AssertionEvidenceLink] = {}
         self.assertions: dict[str, Assertion] = {}
@@ -126,11 +127,19 @@ class FakeReviewLedger:
     ) -> DocumentRepresentationBundle | None:
         return self.document_representation_bundles.get(record_id)
 
-    def get_evidence_span(self, record_id: str) -> EvidenceSpan | None:
-        return self.evidence_spans.get(record_id)
+    def get_evidence_target(self, record_id: str) -> EvidenceTarget | None:
+        return self.evidence_targets.get(record_id)
 
-    def save_evidence_span(self, record: EvidenceSpan) -> None:
-        self.evidence_spans[record.id] = record
+    def save_evidence_target(self, record: EvidenceTarget) -> None:
+        self.evidence_targets[record.id] = record
+
+    def get_evidence_validation_attempt(
+        self, record_id: str
+    ) -> EvidenceValidationAttempt | None:
+        return self.evidence_validation_attempts.get(record_id)
+
+    def save_evidence_validation_attempt(self, record: EvidenceValidationAttempt) -> None:
+        self.evidence_validation_attempts[record.id] = record
 
     def get_assertion(self, record_id: str) -> Assertion | None:
         return self.assertions.get(record_id)
@@ -254,11 +263,10 @@ def seed_reference_records(ledger: FakeReviewLedger) -> None:
         nodes=(node,),
         quality_report=quality_report,
     )
-    evidence = EvidenceSpan(
-        id="evs_delay",
+    evidence = EvidenceTarget(
+        id="evt_delay",
         source_id="src_article_a",
         document_id="doc_article_a",
-        selector_type=SelectorType.EXACT_TEXT,
         exact_text=evidence_text,
         representation_id=representation.id,
         text_view_id=text_view.id,
@@ -266,15 +274,16 @@ def seed_reference_records(ledger: FakeReviewLedger) -> None:
         start_char=0,
         end_char=len(evidence_text),
         node_ids=(node.id,),
-        selector_normalization_policy="utf8_identity_v1",
+        normalization_policy="utf8_identity_v1",
     )
-    ledger.evidence_spans[evidence.id] = evidence.model_copy(
-        update={
-            "validation_status": EvidenceValidationStatus.VALIDATED,
-            "validator_version": "fixture",
-            "validated_at": NOW,
-            "target_digest": canonical_evidence_target_digest(evidence),
-        }
+    ledger.evidence_targets[evidence.id] = evidence
+    ledger.evidence_validation_attempts["eva_delay"] = EvidenceValidationAttempt(
+        id="eva_delay",
+        evidence_target_id=evidence.id,
+        target_digest=canonical_evidence_target_digest(evidence),
+        validator_version="fixture",
+        status=EvidenceValidationAttemptStatus.SUCCEEDED,
+        attempted_at=NOW,
     )
     ledger.assertions["ast_delay"] = Assertion(
         id="ast_delay",
@@ -287,7 +296,7 @@ def seed_reference_records(ledger: FakeReviewLedger) -> None:
         source_authority=SourceAuthority.SECONDARY,
         attribution_basis=AttributionBasis.REPORTED_BY_SOURCE,
         source_ids=("src_article_a",),
-        evidence_span_ids=("evs_delay",),
+        evidence_target_ids=("evt_delay",),
         provenance_activity_ids=("prv_model_run",),
     )
     ledger.assertions["ast_shared_outcome"] = Assertion(
@@ -328,25 +337,31 @@ def proposed_change(
         },
     }
     if record_type == "Assertion":
-        evidence_span_ids = record.get("evidence_span_ids")
-        if evidence_span_ids is None:
+        evidence_target_ids = record.get("evidence_target_ids")
+        if evidence_target_ids is None:
             if record.get("source_ids"):
                 raise ValueError(
-                    "Source-backed Assertion test proposal requires evidence_span_ids."
+                    "Source-backed Assertion test proposal requires evidence_target_ids."
                 )
         else:
-            if not isinstance(evidence_span_ids, list) or not all(
-                isinstance(evidence_span_id, str) for evidence_span_id in evidence_span_ids
+            if not isinstance(evidence_target_ids, list) or not all(
+                isinstance(evidence_target_id, str) for evidence_target_id in evidence_target_ids
             ):
-                raise ValueError("Assertion test proposal requires string evidence_span_ids.")
+                raise ValueError("Assertion test proposal requires string evidence_target_ids.")
+            target_ids = tuple(
+                cast(str, evidence_target_id) for evidence_target_id in evidence_target_ids
+            )
             proposed_json["evidence_links"] = [
                 {
-                    "evidence_span_id": evidence_span_id,
+                    "evidence_target_id": evidence_target_id,
+                    "validation_attempt_id": (
+                        f"eva_{evidence_target_id.removeprefix('evt_')}"
+                    ),
                     "role": "direct_support",
                     "polarity": "supports",
                     "necessity": "required",
                 }
-                for evidence_span_id in evidence_span_ids
+                for evidence_target_id in target_ids
             ]
     return ProposedChange(
         id=record_id,
@@ -939,7 +954,7 @@ def test_review_drain_stops_on_validation_failure_preserving_prior_success() -> 
         "source_authority": "secondary",
         "attribution_basis": "reported_by_source",
         "source_ids": ["src_article_a"],
-        "evidence_span_ids": ["evs_missing"],
+        "evidence_target_ids": ["evt_missing"],
         "provenance_activity_ids": [],
     }
     ledger = FakeReviewLedger(
@@ -971,7 +986,7 @@ def test_review_drain_stops_on_validation_failure_preserving_prior_success() -> 
     assert result.attempted_count == 2
     assert result.executed_count == 1
     assert result.error_message is not None
-    assert "references missing EvidenceSpan" in result.error_message
+    assert "references missing EvidenceTarget" in result.error_message
     assert ledger.proposed_changes["pcg_organization"].review_status is ReviewStatus.APPROVED
     assert ledger.proposed_changes["pcg_invalid_assertion"].review_status is ReviewStatus.PENDING
 
@@ -1050,17 +1065,22 @@ def test_review_drain_json_is_agent_readable() -> None:
         ),
         (
             "pcg_evidence",
-            "EvidenceSpan",
+            "EvidenceTarget",
             {
-                "id": "evs_delay",
-                "source_id": "src_article_a",
-                "document_id": "doc_article_a",
-                "assertion_id": None,
-                "selector_type": "exact_text",
-                "exact_text": "Anthropic postponed the rollout.",
+                    "id": "evt_delay",
+                    "source_id": "src_article_a",
+                    "document_id": "doc_article_a",
+                    "representation_id": "rep_delay",
+                    "text_view_id": "tvw_delay",
+                    "text_view_digest": "0" * 64,
+                    "start_char": 0,
+                    "end_char": 32,
+                    "exact_text": "Anthropic postponed the rollout.",
+                    "normalization_policy": "fixture_v1",
+                    "node_ids": ["nod_delay"],
             },
-            "evidence_spans",
-            "evs_delay",
+            "evidence_targets",
+            "evt_delay",
         ),
         (
             "pcg_relationship",
@@ -1097,7 +1117,7 @@ def test_review_drain_json_is_agent_readable() -> None:
                 "to_assertion_id": "ast_shared_outcome",
                 "relation": "infers",
                 "rationale": "The accepted Assertion supports the analytic inference.",
-                "evidence_span_ids": ["evs_delay"],
+                "evidence_target_ids": ["evt_delay"],
                 "confidence": 0.7,
             },
             "argument_edges",
@@ -1151,7 +1171,7 @@ def test_approve_proposed_assertion_marks_it_reported_and_adds_review_provenance
                     "source_authority": "secondary",
                     "attribution_basis": "reported_by_source",
                     "source_ids": ["src_article_a"],
-                    "evidence_span_ids": ["evs_delay"],
+                    "evidence_target_ids": ["evt_delay"],
                     "provenance_activity_ids": [],
                 },
             ),
@@ -1273,7 +1293,7 @@ def test_edit_proposed_assertion_marks_it_reported_and_adds_review_provenance() 
         "world_truth_confidence": 0.62,
         "current_assessment": "The Source reports a delayed rollout after review.",
         "source_ids": ["src_article_a"],
-        "evidence_span_ids": ["evs_delay"],
+        "evidence_target_ids": ["evt_delay"],
         "provenance_activity_ids": [],
     }
     ledger = FakeReviewLedger(
@@ -1292,7 +1312,7 @@ def test_edit_proposed_assertion_marks_it_reported_and_adds_review_provenance() 
                     "source_authority": "secondary",
                     "attribution_basis": "reported_by_source",
                     "source_ids": ["src_article_a"],
-                    "evidence_span_ids": ["evs_delay"],
+                    "evidence_target_ids": ["evt_delay"],
                     "provenance_activity_ids": [],
                 },
             ),
@@ -1363,7 +1383,7 @@ def test_edit_rejects_invalid_accepted_record_json() -> None:
         )
 
 
-def test_approve_rejects_assertion_with_missing_evidence_span_reference() -> None:
+def test_approve_rejects_assertion_with_missing_evidence_target_reference() -> None:
     record_id = "pcg_assertion"
     ledger = FakeReviewLedger(
         (
@@ -1381,7 +1401,7 @@ def test_approve_rejects_assertion_with_missing_evidence_span_reference() -> Non
                     "source_authority": "secondary",
                     "attribution_basis": "reported_by_source",
                     "source_ids": ["src_article_a"],
-                    "evidence_span_ids": ["evs_missing"],
+                    "evidence_target_ids": ["evt_missing"],
                     "provenance_activity_ids": [],
                 },
             ),
@@ -1389,7 +1409,7 @@ def test_approve_rejects_assertion_with_missing_evidence_span_reference() -> Non
     )
     seed_reference_records(ledger)
 
-    with pytest.raises(ValueError, match="references missing EvidenceSpan: evs_missing"):
+    with pytest.raises(ValueError, match="references missing EvidenceTarget: evt_missing"):
         approve_proposed_change(review_input(record_id), ledger)
 
     assert "ast_missing_evidence" not in ledger.assertions
@@ -1434,7 +1454,7 @@ def test_approve_rejects_argument_edge_with_missing_reference() -> None:
                     "to_assertion_id": "ast_missing",
                     "relation": "infers",
                     "rationale": "The accepted Assertion supports the analytic inference.",
-                    "evidence_span_ids": ["evs_delay"],
+                    "evidence_target_ids": ["evt_delay"],
                     "confidence": 0.7,
                 },
             ),

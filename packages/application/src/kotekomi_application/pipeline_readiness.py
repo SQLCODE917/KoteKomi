@@ -16,7 +16,7 @@ from kotekomi_domain import (
     Document,
     Entity,
     Event,
-    EvidenceSpan,
+    EvidenceTarget,
     Organization,
     Outcome,
     Place,
@@ -559,7 +559,7 @@ class _RecordIndexes:
     events: tuple[Event, ...]
     sources: tuple[Source, ...]
     documents: tuple[Document, ...]
-    evidence_spans: tuple[EvidenceSpan, ...]
+    evidence_targets: tuple[EvidenceTarget, ...]
     assertions: tuple[Assertion, ...]
     relationships: tuple[Relationship, ...]
     outcomes: tuple[Outcome, ...]
@@ -575,7 +575,7 @@ def _record_indexes(records: tuple[AcceptedCanonicalRecord, ...]) -> _RecordInde
         events=tuple(record for record in records if isinstance(record, Event)),
         sources=tuple(record for record in records if isinstance(record, Source)),
         documents=tuple(record for record in records if isinstance(record, Document)),
-        evidence_spans=tuple(record for record in records if isinstance(record, EvidenceSpan)),
+        evidence_targets=tuple(record for record in records if isinstance(record, EvidenceTarget)),
         assertions=tuple(record for record in records if isinstance(record, Assertion)),
         relationships=tuple(record for record in records if isinstance(record, Relationship)),
         outcomes=tuple(record for record in records if isinstance(record, Outcome)),
@@ -612,7 +612,7 @@ def _records_after(records: tuple[AcceptedCanonicalRecord, ...], boundary: datet
 
 
 def _record_timestamp(record: AcceptedCanonicalRecord) -> datetime:
-    if isinstance(record, (ArgumentEdge, EvidenceSpan)):
+    if isinstance(record, (ArgumentEdge, EvidenceTarget)):
         return record.created_at
     return record.updated_at
 

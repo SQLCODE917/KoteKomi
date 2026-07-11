@@ -4,6 +4,8 @@ import pytest
 from kotekomi_application import (
     AcceptedCanonicalRecord,
     ArchiveObject,
+    ArchivePutDisposition,
+    ArchivePutOutcome,
     BriefingGenerationInput,
     BriefingMarkdown,
     BriefingRenderInput,
@@ -23,12 +25,11 @@ from kotekomi_domain import (
     Document,
     EpistemicScope,
     Event,
-    EvidenceSpan,
+    EvidenceTarget,
     Organization,
     Outcome,
     ProvenanceActivity,
     Relationship,
-    SelectorType,
     Source,
     SourceAuthority,
     SourceType,
@@ -48,6 +49,14 @@ class FakeArchiveStore:
 
     def initialize(self) -> None:
         return None
+
+    def put_if_absent_or_identical(
+        self, object_id: str, payload: bytes, expected_digest: str
+    ) -> ArchivePutOutcome:
+        return ArchivePutOutcome(
+            ArchivePutDisposition.CREATED,
+            ArchiveObject(f"sources/raw/{object_id}.bin", len(payload)),
+        )
 
     def write_raw_source(self, source_id: str, content: bytes) -> ArchiveObject:
         raise NotImplementedError
@@ -169,7 +178,7 @@ class FakeBriefingLedger:
 def test_generate_briefing_creates_markdown_briefing_and_provenance() -> None:
     source = source_fixture(updated_at=BEFORE)
     document = document_fixture(updated_at=BEFORE)
-    evidence_span = evidence_span_fixture(created_at=BEFORE)
+    evidence_target = evidence_target_fixture(created_at=BEFORE)
     assertion = source_assertion_fixture(updated_at=BEFORE)
     analytic_assertion = analytic_assertion_fixture(updated_at=BEFORE)
     relationship = relationship_fixture(updated_at=BEFORE)
@@ -180,7 +189,7 @@ def test_generate_briefing_creates_markdown_briefing_and_provenance() -> None:
             organization_fixture("org_commerce_department", "Commerce Department"),
             source,
             document,
-            evidence_span,
+            evidence_target,
             analytic_assertion,
             assertion,
             relationship,
@@ -205,7 +214,7 @@ def test_generate_briefing_creates_markdown_briefing_and_provenance() -> None:
     assert result.assertion_count == 2
     assert result.relationship_count == 1
     assert result.argument_edge_count == 1
-    assert result.evidence_span_count == 1
+    assert result.evidence_target_count == 1
     assert result.analytic_inference_count == 1
     assert briefing.source_ids == (source.id,)
     assert briefing.document_ids == (document.id,)
@@ -213,7 +222,7 @@ def test_generate_briefing_creates_markdown_briefing_and_provenance() -> None:
     assert briefing.assertion_ids == (assertion.id, analytic_assertion.id)
     assert briefing.relationship_ids == (relationship.id,)
     assert briefing.argument_edge_ids == (argument_edge.id,)
-    assert briefing.evidence_span_ids == (evidence_span.id,)
+    assert briefing.evidence_target_ids == (evidence_target.id,)
     assert briefing.analytic_inference_assertion_ids == (analytic_assertion.id,)
     assert briefing.provenance_activity_id == result.provenance_activity_id
     assert archive.markdown[result.briefing_id] == "# Daily Briefing\n"
@@ -237,7 +246,7 @@ def test_generate_briefing_creates_markdown_briefing_and_provenance() -> None:
     assert what_changed_citation.assertion_ids == (assertion.id,)
     assert what_changed_citation.source_ids == (source.id,)
     assert what_changed_citation.document_ids == (document.id,)
-    assert what_changed_citation.evidence_span_ids == (evidence_span.id,)
+    assert what_changed_citation.evidence_target_ids == (evidence_target.id,)
     assert narrative.executive_judgment is None
     assert narrative.judgment_basis == ()
     analytic_citation = resolve_briefing_citation(
@@ -248,9 +257,9 @@ def test_generate_briefing_creates_markdown_briefing_and_provenance() -> None:
     assert analytic_citation.assertion_ids == (assertion.id, analytic_assertion.id)
     assert analytic_citation.argument_edge_ids == (argument_edge.id,)
     assert analytic_citation.source_ids == (source.id,)
-    assert analytic_citation.evidence_span_ids == (evidence_span.id,)
+    assert analytic_citation.evidence_target_ids == (evidence_target.id,)
     assert narrative.evidence_quality[0].source_count == 1
-    assert narrative.evidence_quality[0].evidence_span_count == 1
+    assert narrative.evidence_quality[0].evidence_target_count == 1
     assert narrative.evidence_quality[0].source_authority is SourceAuthority.SECONDARY
     assert narrative.evidence_quality[0].attribution_basis is AttributionBasis.REPORTED_BY_SOURCE
     assert len(narrative.reference_appendix.analytic_trace) == 1
@@ -276,7 +285,7 @@ def test_generate_briefing_creates_markdown_briefing_and_provenance() -> None:
 def test_generate_briefing_builds_outcome_narrative_with_uncertainties() -> None:
     source = source_fixture(updated_at=BEFORE)
     document = document_fixture(updated_at=BEFORE)
-    evidence_span = evidence_span_fixture(created_at=BEFORE)
+    evidence_target = evidence_target_fixture(created_at=BEFORE)
     assertion = source_assertion_fixture(updated_at=BEFORE)
     outcome = Outcome(
         id="out_monitoring_commitment",
@@ -306,7 +315,7 @@ def test_generate_briefing_builds_outcome_narrative_with_uncertainties() -> None
             event,
             source,
             document,
-            evidence_span,
+            evidence_target,
             assertion,
             outcome,
         ),
@@ -335,7 +344,7 @@ def test_generate_briefing_builds_outcome_narrative_with_uncertainties() -> None
     outcome_citation = resolve_briefing_citation(registry, 2)
     assert source_citation.assertion_ids == (assertion.id,)
     assert source_citation.source_ids == (source.id,)
-    assert source_citation.evidence_span_ids == (evidence_span.id,)
+    assert source_citation.evidence_target_ids == (evidence_target.id,)
     assert outcome_citation.outcome_ids == (outcome.id,)
     assert outcome_citation.assertion_ids == (assertion.id,)
     assert outcome_citation.organization_ids == (
@@ -358,28 +367,46 @@ def test_generate_briefing_builds_outcome_narrative_with_uncertainties() -> None
 def test_generate_briefing_builds_sharp_judgment_from_canonical_support() -> None:
     source = source_fixture(updated_at=BEFORE)
     document = document_fixture(updated_at=BEFORE)
-    pause_evidence = EvidenceSpan(
-        id="evs_pause",
+    pause_evidence = EvidenceTarget(
+        id="evt_pause",
         source_id=source.id,
         document_id=document.id,
-        selector_type=SelectorType.EXACT_TEXT,
         exact_text="Commerce Secretary Howard Lutnick pressed for a pause.",
+        representation_id="rep_article_a",
+        text_view_id="tvw_article_a",
+        text_view_digest="0" * 64,
+        start_char=0,
+        end_char=56,
+        normalization_policy="fixture_v1",
+        node_ids=("nod_article_a",),
         created_at=BEFORE,
     )
-    delay_evidence = EvidenceSpan(
-        id="evs_delay",
+    delay_evidence = EvidenceTarget(
+        id="evt_delay",
         source_id=source.id,
         document_id=document.id,
-        selector_type=SelectorType.EXACT_TEXT,
         exact_text="Anthropic postponed broader Fable 5 rollout.",
+        representation_id="rep_article_a",
+        text_view_id="tvw_article_a",
+        text_view_digest="0" * 64,
+        start_char=0,
+        end_char=44,
+        normalization_policy="fixture_v1",
+        node_ids=("nod_article_a",),
         created_at=BEFORE,
     )
-    suspension_evidence = EvidenceSpan(
-        id="evs_suspension",
+    suspension_evidence = EvidenceTarget(
+        id="evt_suspension",
         source_id=source.id,
         document_id=document.id,
-        selector_type=SelectorType.EXACT_TEXT,
         exact_text="Anthropic suspended enterprise pilots on June 23.",
+        representation_id="rep_article_a",
+        text_view_id="tvw_article_a",
+        text_view_digest="0" * 64,
+        start_char=0,
+        end_char=49,
+        normalization_policy="fixture_v1",
+        node_ids=("nod_article_a",),
         created_at=BEFORE,
     )
     pause_assertion = Assertion(
@@ -393,7 +420,7 @@ def test_generate_briefing_builds_sharp_judgment_from_canonical_support() -> Non
         source_authority=SourceAuthority.SECONDARY,
         attribution_basis=AttributionBasis.REPORTED_BY_SOURCE,
         source_ids=(source.id,),
-        evidence_span_ids=(pause_evidence.id,),
+        evidence_target_ids=(pause_evidence.id,),
         provenance_activity_ids=("prv_review_pause",),
         current_assessment=(
             "The article states that Commerce Secretary Howard Lutnick pressed for a pause "
@@ -413,7 +440,7 @@ def test_generate_briefing_builds_sharp_judgment_from_canonical_support() -> Non
         source_authority=SourceAuthority.SECONDARY,
         attribution_basis=AttributionBasis.ANONYMOUS_SOURCE,
         source_ids=(source.id,),
-        evidence_span_ids=(delay_evidence.id,),
+        evidence_target_ids=(delay_evidence.id,),
         provenance_activity_ids=("prv_review_delay",),
         qualifiers={"reported_by": "people involved in the review and described documents"},
         current_assessment="The Source reports that Anthropic postponed broader Fable 5 rollout.",
@@ -431,7 +458,7 @@ def test_generate_briefing_builds_sharp_judgment_from_canonical_support() -> Non
         source_authority=SourceAuthority.SECONDARY,
         attribution_basis=AttributionBasis.REPORTED_BY_SOURCE,
         source_ids=(source.id,),
-        evidence_span_ids=(suspension_evidence.id,),
+        evidence_target_ids=(suspension_evidence.id,),
         provenance_activity_ids=("prv_review_suspension",),
         current_assessment="The Source reports that Anthropic suspended enterprise pilots.",
         created_at=BEFORE,
@@ -446,10 +473,10 @@ def test_generate_briefing_builds_sharp_judgment_from_canonical_support() -> Non
             relation=ArgumentEdgeRelation.INFERS,
             rationale="The source-backed Assertion supports the governance inference.",
             confidence=0.7,
-            evidence_span_ids=(evidence_span_id,),
+            evidence_target_ids=(evidence_target_id,),
             created_at=BEFORE,
         )
-        for edge_id, from_assertion_id, evidence_span_id in (
+        for edge_id, from_assertion_id, evidence_target_id in (
             ("arg_pause", pause_assertion.id, pause_evidence.id),
             ("arg_delay", delay_assertion.id, delay_evidence.id),
             ("arg_suspension", suspension_assertion.id, suspension_evidence.id),
@@ -516,7 +543,7 @@ def test_generate_briefing_uses_latest_previous_briefing_as_change_boundary() ->
         updated_at=AFTER,
     )
     newer_assertion = source_assertion_fixture(updated_at=AFTER)
-    newer_evidence_span = evidence_span_fixture(created_at=AFTER)
+    newer_evidence_target = evidence_target_fixture(created_at=AFTER)
     ledger = FakeBriefingLedger(
         records=(
             organization_fixture(),
@@ -524,7 +551,7 @@ def test_generate_briefing_uses_latest_previous_briefing_as_change_boundary() ->
             newer_source,
             document,
             newer_assertion,
-            newer_evidence_span,
+            newer_evidence_target,
         ),
         briefings=(previous,),
     )
@@ -542,10 +569,10 @@ def test_generate_briefing_uses_latest_previous_briefing_as_change_boundary() ->
     assert briefing.organization_ids == ("org_anthropic",)
     assert briefing.document_ids == (document.id,)
     assert briefing.assertion_ids == (newer_assertion.id,)
-    assert briefing.evidence_span_ids == (newer_evidence_span.id,)
+    assert briefing.evidence_target_ids == (newer_evidence_target.id,)
 
 
-def test_generate_briefing_rejects_source_backed_assertion_missing_evidence_span() -> None:
+def test_generate_briefing_rejects_source_backed_assertion_missing_evidence_target() -> None:
     ledger = FakeBriefingLedger(
         records=(
             organization_fixture(),
@@ -556,7 +583,7 @@ def test_generate_briefing_rejects_source_backed_assertion_missing_evidence_span
     )
     archive = FakeArchiveStore()
 
-    with pytest.raises(ValueError, match="references missing EvidenceSpan"):
+    with pytest.raises(ValueError, match="references missing EvidenceTarget"):
         generate_briefing(
             BriefingGenerationInput(title="Daily Briefing", generated_at=NOW),
             ledger,
@@ -604,13 +631,19 @@ def organization_fixture(
     )
 
 
-def evidence_span_fixture(created_at: datetime = BEFORE) -> EvidenceSpan:
-    return EvidenceSpan(
-        id="evs_article_a_claim",
+def evidence_target_fixture(created_at: datetime = BEFORE) -> EvidenceTarget:
+    return EvidenceTarget(
+        id="evt_article_a_claim",
         source_id="src_article_a",
         document_id="doc_article_a",
-        selector_type=SelectorType.EXACT_TEXT,
         exact_text="Article A says the rollout was delayed.",
+        representation_id="rep_article_a",
+        text_view_id="tvw_article_a",
+        text_view_digest="0" * 64,
+        start_char=0,
+        end_char=37,
+        normalization_policy="fixture_v1",
+        node_ids=("nod_article_a",),
         created_at=created_at,
     )
 
@@ -628,7 +661,7 @@ def source_assertion_fixture(updated_at: datetime = BEFORE) -> Assertion:
         attribution_basis=AttributionBasis.REPORTED_BY_SOURCE,
         world_truth_confidence=0.6,
         source_ids=("src_article_a",),
-        evidence_span_ids=("evs_article_a_claim",),
+        evidence_target_ids=("evt_article_a_claim",),
         provenance_activity_ids=("prv_review_claim",),
         current_assessment="The Source reports the rollout was delayed.",
         created_at=updated_at,
@@ -673,7 +706,7 @@ def argument_edge_fixture(created_at: datetime = BEFORE) -> ArgumentEdge:
         to_assertion_id="ast_shared_governance",
         relation=ArgumentEdgeRelation.INFERS,
         rationale="The Source claim participates in the governance outcome pattern.",
-        evidence_span_ids=("evs_article_a_claim",),
+        evidence_target_ids=("evt_article_a_claim",),
         confidence=0.7,
         created_at=created_at,
     )

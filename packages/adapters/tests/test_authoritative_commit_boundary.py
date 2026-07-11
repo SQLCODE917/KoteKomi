@@ -33,13 +33,12 @@ from kotekomi_domain import (
     DocumentRepresentationBundle,
     DocumentRevisionType,
     DocumentVersionKind,
-    EvidenceSpan,
+    EvidenceTarget,
     Organization,
     ParseQualityReport,
     ProposedChange,
     RepresentationAnalyzability,
     ReviewStatus,
-    SelectorType,
     SourceType,
     TextView,
     TextViewKind,
@@ -60,7 +59,7 @@ class AuthoritativeFixture:
     archive: LocalArchiveStore
     request: CaptureRequest
     representation: DocumentRepresentationBundle
-    evidence: EvidenceSpan
+    evidence: EvidenceTarget
     assertion_id: str
     evidence_link_id: str
 
@@ -188,14 +187,13 @@ def _validated_evidence(
     source_id: str,
     document_id: str,
     bundle: DocumentRepresentationBundle,
-) -> EvidenceSpan:
+) -> EvidenceTarget:
     text_view = bundle.text_views[0]
     node = bundle.nodes[0]
-    return EvidenceSpan(
-        id="evs_final_proof",
+    return EvidenceTarget(
+        id="evt_final_proof",
         source_id=source_id,
         document_id=document_id,
-        selector_type=SelectorType.EXACT_TEXT,
         exact_text=TEXT,
         representation_id=bundle.representation.id,
         text_view_id=text_view.id,
@@ -203,7 +201,7 @@ def _validated_evidence(
         start_char=0,
         end_char=len(TEXT),
         node_ids=(node.id,),
-        selector_normalization_policy="utf8_identity_v1",
+        normalization_policy="utf8_identity_v1",
     )
 
 
@@ -225,7 +223,7 @@ def _assertion_proposed_change(source_id: str, document_id: str) -> ProposedChan
                 "source_authority": "secondary",
                 "attribution_basis": "reported_by_source",
                 "source_ids": [source_id],
-                "evidence_span_ids": ["evs_final_proof"],
+                "evidence_target_ids": ["evt_final_proof"],
                 "provenance_activity_ids": [],
             },
             "evidence": {
@@ -236,7 +234,8 @@ def _assertion_proposed_change(source_id: str, document_id: str) -> ProposedChan
             },
             "evidence_links": [
                 {
-                    "evidence_span_id": "evs_final_proof",
+                    "evidence_target_id": "evt_final_proof",
+                    "validation_attempt_id": "eva_final_proof",
                     "role": "direct_support",
                     "polarity": "supports",
                     "necessity": "required",
@@ -274,10 +273,11 @@ def _seed_authoritative_fixture(tmp_path: Path) -> AuthoritativeFixture:
             document_id=capture.document.id,
             bundle=representation,
         )
-        repository.save_evidence_span(evidence)
-        validated = validate_evidence_target(
-            EvidenceValidationInput(evidence.id, "final-proof-v1", NOW), repository
-        ).evidence_span
+        repository.save_evidence_target(evidence)
+        validation = validate_evidence_target(
+            EvidenceValidationInput(evidence.id, "eva_final_proof", "final-proof-v1", NOW),
+            repository,
+        )
         proposed_change = _assertion_proposed_change(capture.source.id, capture.document.id)
         repository.save_proposed_change(proposed_change)
         review = approve_proposed_change(
@@ -288,17 +288,14 @@ def _seed_authoritative_fixture(tmp_path: Path) -> AuthoritativeFixture:
         archive=archive,
         request=request,
         representation=representation,
-        evidence=validated,
+        evidence=validation.evidence_target,
         assertion_id="ast_final_proof",
         evidence_link_id=review.assertion_evidence_link_ids[0],
     )
 
 
-def _alter_evidence(evidence: EvidenceSpan, **changes: object) -> EvidenceSpan:
-    candidate = evidence.model_copy(update=changes)
-    return candidate.model_copy(
-        update={"target_digest": canonical_evidence_target_digest(candidate)}
-    )
+def _alter_evidence(evidence: EvidenceTarget, **changes: object) -> EvidenceTarget:
+    return evidence.model_copy(update=changes)
 
 
 def test_final_proof_reopens_and_replays_the_complete_authoritative_chain(tmp_path: Path) -> None:
@@ -307,15 +304,17 @@ def test_final_proof_reopens_and_replays_the_complete_authoritative_chain(tmp_pa
     with sqlite_ledger_transaction(fixture.ledger_path) as repository:
         assertion = repository.get_assertion(fixture.assertion_id)
         link = repository.get_assertion_evidence_link(fixture.evidence_link_id)
-        evidence = repository.get_evidence_span(fixture.evidence.id)
+        evidence = repository.get_evidence_target(fixture.evidence.id)
         assert assertion is not None
         assert link is not None
         assert evidence is not None
         assert link.assertion_id == assertion.id
-        assert link.evidence_span_id == evidence.id
+        assert link.evidence_target_id == evidence.id
         assert link.role is AssertionEvidenceRole.DIRECT_SUPPORT
-        assert verify_evidence_target(evidence, repository).valid
-        bundle = repository.get_document_representation_bundle(evidence.representation_id or "")
+        validation_attempt = repository.get_evidence_validation_attempt(link.validation_attempt_id)
+        assert validation_attempt is not None
+        assert verify_evidence_target(evidence, validation_attempt, repository).valid
+        bundle = repository.get_document_representation_bundle(evidence.representation_id)
         assert bundle is not None
         document = repository.get_document(bundle.representation.document_id)
         assert document is not None
@@ -346,7 +345,7 @@ def test_final_proof_reopens_and_replays_the_complete_authoritative_chain(tmp_pa
             quality_report=bundle.quality_report,
         )
         assert evidence.text_view_digest == hashlib.sha256(TEXT.encode("utf-8")).hexdigest()
-        assert evidence.target_digest == canonical_evidence_target_digest(evidence)
+        assert validation_attempt.target_digest == canonical_evidence_target_digest(evidence)
         stored_assertion = repository.get_assertion(assertion.id)
         assert stored_assertion is not None
         assert canonical_record_json(assertion) == canonical_record_json(stored_assertion)
@@ -413,9 +412,9 @@ def test_final_proof_representation_node_text_mutation_fails_without_history_cha
 @pytest.mark.parametrize(
     ("changes", "expected_error"),
     [
-        ({"text_view_digest": "0" * 64}, "TextView digest is stale"),
-        ({"start_char": 1}, "exact_text does not match its position selector"),
-        ({"prefix_text": "wrong"}, "prefix selector does not match its TextView"),
+        ({"text_view_digest": "0" * 64}, "EvidenceValidationAttempt target_digest is stale"),
+        ({"start_char": 1}, "EvidenceValidationAttempt target_digest is stale"),
+        ({"prefix_text": "wrong"}, "EvidenceValidationAttempt target_digest is stale"),
     ],
 )
 def test_final_proof_evidence_selector_mutations_fail_replay(
@@ -426,11 +425,13 @@ def test_final_proof_evidence_selector_mutations_fail_replay(
     fixture = _seed_authoritative_fixture(tmp_path)
     mutated = _alter_evidence(fixture.evidence, **changes)
     with sqlite_ledger_transaction(fixture.ledger_path) as repository:
-        replay = verify_evidence_target(mutated, repository)
+        validation_attempt = repository.get_evidence_validation_attempt("eva_final_proof")
+        assert validation_attempt is not None
+        replay = verify_evidence_target(mutated, validation_attempt, repository)
         assert replay.valid is False
         assert replay.error_message is not None
         assert expected_error in replay.error_message
-        assert repository.get_evidence_span(fixture.evidence.id) == fixture.evidence
+        assert repository.get_evidence_target(fixture.evidence.id) == fixture.evidence
 
 
 def test_final_proof_evidence_role_mutation_is_an_immutable_conflict(tmp_path: Path) -> None:

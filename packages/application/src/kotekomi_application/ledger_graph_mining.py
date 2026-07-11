@@ -285,7 +285,7 @@ def _candidate_proposed_changes(
                 "The accepted Assertion participates in the same Outcome-backed graph pattern "
                 "as the mined analytic inference."
             ),
-            evidence_span_ids=_supporting_evidence_span_ids(
+            evidence_target_ids=_supporting_evidence_target_ids(
                 assertion_by_id=assertion_by_id,
                 supporting_assertion_id=supporting_assertion_id,
             ),
@@ -375,7 +375,7 @@ def _stable_label(
     return "_".join(part for part in parts if part)
 
 
-def _supporting_evidence_span_ids(
+def _supporting_evidence_target_ids(
     *,
     assertion_by_id: dict[str, Assertion],
     supporting_assertion_id: str,
@@ -385,4 +385,4 @@ def _supporting_evidence_span_ids(
         raise ValueError(
             f"Graph connection candidate references missing Assertion: {supporting_assertion_id}"
         )
-    return assertion.evidence_span_ids
+    return assertion.evidence_target_ids

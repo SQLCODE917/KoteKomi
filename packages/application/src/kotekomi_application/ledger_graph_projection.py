@@ -11,7 +11,7 @@ from kotekomi_domain import (
     Assertion,
     Document,
     Event,
-    EvidenceSpan,
+    EvidenceTarget,
     Organization,
     Outcome,
     Place,
@@ -31,7 +31,7 @@ class LedgerGraphRepository(Protocol):
     def list_events(self) -> tuple[Event, ...]: ...
     def list_sources(self) -> tuple[Source, ...]: ...
     def list_documents(self) -> tuple[Document, ...]: ...
-    def list_evidence_spans(self) -> tuple[EvidenceSpan, ...]: ...
+    def list_evidence_targets(self) -> tuple[EvidenceTarget, ...]: ...
     def list_assertions(self) -> tuple[Assertion, ...]: ...
     def list_relationships(self) -> tuple[Relationship, ...]: ...
     def list_outcomes(self) -> tuple[Outcome, ...]: ...
@@ -91,8 +91,8 @@ def _accepted_nodes(ledger_repository: LedgerGraphRepository) -> tuple[GraphNode
         for record in ledger_repository.list_documents()
     )
     nodes.extend(
-        GraphNode(id=record.id, node_type="EvidenceSpan", label=record.exact_text)
-        for record in ledger_repository.list_evidence_spans()
+        GraphNode(id=record.id, node_type="EvidenceTarget", label=record.exact_text)
+        for record in ledger_repository.list_evidence_targets()
     )
     nodes.extend(
         GraphNode(id=record.id, node_type="Assertion", label=record.predicate)
@@ -140,33 +140,23 @@ def _accepted_edges(
             document.id,
         )
 
-    for evidence_span in ledger_repository.list_evidence_spans():
+    for evidence_target in ledger_repository.list_evidence_targets():
         _append_edge(
             edges,
             node_ids,
-            evidence_span.id,
-            evidence_span.source_id,
+            evidence_target.id,
+            evidence_target.source_id,
             "evidence_source",
-            evidence_span.id,
+            evidence_target.id,
         )
         _append_edge(
             edges,
             node_ids,
-            evidence_span.id,
-            evidence_span.document_id,
+            evidence_target.id,
+            evidence_target.document_id,
             "evidence_document",
-            evidence_span.id,
+            evidence_target.id,
         )
-        if evidence_span.assertion_id is not None:
-            _append_edge(
-                edges,
-                node_ids,
-                evidence_span.id,
-                evidence_span.assertion_id,
-                "evidence_assertion",
-                evidence_span.id,
-            )
-
     for assertion in ledger_repository.list_assertions():
         _append_edge(
             edges,
@@ -187,12 +177,12 @@ def _accepted_edges(
             )
         for source_id in assertion.source_ids:
             _append_edge(edges, node_ids, assertion.id, source_id, "assertion_source", assertion.id)
-        for evidence_span_id in assertion.evidence_span_ids:
+        for evidence_target_id in assertion.evidence_target_ids:
             _append_edge(
                 edges,
                 node_ids,
                 assertion.id,
-                evidence_span_id,
+                evidence_target_id,
                 "assertion_evidence",
                 assertion.id,
             )
@@ -253,12 +243,12 @@ def _accepted_edges(
             "argument_to_assertion",
             argument_edge.id,
         )
-        for evidence_span_id in argument_edge.evidence_span_ids:
+        for evidence_target_id in argument_edge.evidence_target_ids:
             _append_edge(
                 edges,
                 node_ids,
                 argument_edge.id,
-                evidence_span_id,
+                evidence_target_id,
                 "argument_evidence",
                 argument_edge.id,
             )

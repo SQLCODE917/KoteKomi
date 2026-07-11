@@ -21,7 +21,8 @@ EventId = Annotated[str, Field(pattern=r"^evt_[A-Za-z0-9][A-Za-z0-9_-]*$")]
 PlaceId = Annotated[str, Field(pattern=r"^plc_[A-Za-z0-9][A-Za-z0-9_-]*$")]
 SourceId = Annotated[str, Field(pattern=r"^src_[A-Za-z0-9][A-Za-z0-9_-]*$")]
 DocumentId = Annotated[str, Field(pattern=r"^doc_[A-Za-z0-9][A-Za-z0-9_-]*$")]
-EvidenceSpanId = Annotated[str, Field(pattern=r"^evs_[A-Za-z0-9][A-Za-z0-9_-]*$")]
+EvidenceTargetId = Annotated[str, Field(pattern=r"^evt_[A-Za-z0-9][A-Za-z0-9_-]*$")]
+EvidenceValidationAttemptId = Annotated[str, Field(pattern=r"^eva_[A-Za-z0-9][A-Za-z0-9_-]*$")]
 AssertionEvidenceLinkId = Annotated[str, Field(pattern=r"^ael_[A-Za-z0-9][A-Za-z0-9_-]*$")]
 EvidenceReanchoringRelationId = Annotated[str, Field(pattern=r"^erl_[A-Za-z0-9][A-Za-z0-9_-]*$")]
 AssertionId = Annotated[str, Field(pattern=r"^ast_[A-Za-z0-9][A-Za-z0-9_-]*$")]
@@ -106,15 +107,8 @@ class DocumentEdgeProvenanceKind(StrEnum):
     REVIEWED = "reviewed"
 
 
-class SelectorType(StrEnum):
-    EXACT_TEXT = "exact_text"
-    TEXT_POSITION = "text_position"
-    PAGE = "page"
-
-
-class EvidenceValidationStatus(StrEnum):
-    UNVALIDATED = "unvalidated"
-    VALIDATED = "validated"
+class EvidenceValidationAttemptStatus(StrEnum):
+    SUCCEEDED = "succeeded"
     FAILED = "failed"
 
 
@@ -544,71 +538,65 @@ def canonical_representation_digest(
     return hashlib.sha256(canonical_json.encode("utf-8")).hexdigest()
 
 
-class EvidenceSpan(DomainModel):
-    id: EvidenceSpanId
+class EvidenceTarget(DomainModel):
+    id: EvidenceTargetId
     source_id: SourceId
     document_id: DocumentId
-    assertion_id: AssertionId | None = None
-    selector_type: SelectorType
+    representation_id: DocumentRepresentationId
+    text_view_id: TextViewId
+    text_view_digest: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
+    start_char: Annotated[int, Field(ge=0)]
+    end_char: Annotated[int, Field(gt=0)]
     exact_text: NonEmptyStr
+    normalization_policy: NonEmptyStr
     prefix_text: str = ""
     suffix_text: str = ""
-    location: dict[str, JsonValue] = Field(default_factory=dict)
-    representation_id: DocumentRepresentationId | None = None
-    text_view_id: TextViewId | None = None
-    text_view_digest: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")] | None = None
-    start_char: Annotated[int, Field(ge=0)] | None = None
-    end_char: Annotated[int, Field(ge=0)] | None = None
     node_ids: tuple[DocumentNodeId, ...] = Field(default_factory=tuple)
     pdf_region_ids: tuple[SourceRegionId, ...] = Field(default_factory=tuple)
     dom_selector: dict[str, JsonValue] | None = None
     table_selector: dict[str, JsonValue] | None = None
-    selector_normalization_policy: NonEmptyStr | None = None
-    validation_status: EvidenceValidationStatus = EvidenceValidationStatus.UNVALIDATED
-    validator_version: NonEmptyStr | None = None
-    validated_at: datetime | None = None
-    target_digest: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")] | None = None
     created_at: datetime = Field(default_factory=utc_now)
 
     @model_validator(mode="after")
     def validate_target_shape(self) -> Self:
-        pinning_values = (
-            self.representation_id,
-            self.text_view_id,
-            self.text_view_digest,
-            self.start_char,
-            self.end_char,
-            self.selector_normalization_policy,
-        )
-        if any(value is not None for value in pinning_values):
-            if any(value is None for value in pinning_values):
-                raise ValueError("Pinned EvidenceSpan requires representation and text selectors.")
-            start_char = self.start_char
-            end_char = self.end_char
-            if start_char is None or end_char is None:
-                raise ValueError("Pinned EvidenceSpan requires position selectors.")
-            if end_char <= start_char:
-                raise ValueError("Pinned EvidenceSpan end_char must follow start_char.")
-            if self.assertion_id is not None:
-                raise ValueError("Pinned EvidenceSpan must not directly reference an Assertion.")
-        if self.validation_status is EvidenceValidationStatus.VALIDATED:
-            if (
-                self.validator_version is None
-                or self.validated_at is None
-                or self.target_digest is None
-            ):
-                raise ValueError(
-                    "Validated EvidenceSpan requires validation metadata and target_digest."
-                )
-            if self.representation_id is None:
-                raise ValueError("Validated EvidenceSpan must be pinned to a representation.")
+        if self.end_char <= self.start_char:
+            raise ValueError("EvidenceTarget end_char must follow start_char.")
+        if not (
+            self.node_ids
+            or self.pdf_region_ids
+            or self.dom_selector is not None
+            or self.table_selector is not None
+        ):
+            raise ValueError("EvidenceTarget requires a structural or occurrence selector.")
+        return self
+
+
+class EvidenceValidationAttempt(DomainModel):
+    id: EvidenceValidationAttemptId
+    evidence_target_id: EvidenceTargetId
+    target_digest: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
+    validator_version: NonEmptyStr
+    status: EvidenceValidationAttemptStatus
+    error_message: str | None = None
+    attempted_at: datetime = Field(default_factory=utc_now)
+
+    @model_validator(mode="after")
+    def validate_result_shape(self) -> Self:
+        if (
+            self.status is EvidenceValidationAttemptStatus.SUCCEEDED
+            and self.error_message is not None
+        ):
+            raise ValueError("Successful EvidenceValidationAttempt cannot have an error_message.")
+        if self.status is EvidenceValidationAttemptStatus.FAILED and not self.error_message:
+            raise ValueError("Failed EvidenceValidationAttempt requires an error_message.")
         return self
 
 
 class AssertionEvidenceLink(DomainModel):
     id: AssertionEvidenceLinkId
     assertion_id: AssertionId
-    evidence_span_id: EvidenceSpanId
+    evidence_target_id: EvidenceTargetId
+    validation_attempt_id: EvidenceValidationAttemptId
     role: AssertionEvidenceRole
     polarity: EvidencePolarity
     necessity: EvidenceNecessity
@@ -618,31 +606,26 @@ class AssertionEvidenceLink(DomainModel):
 
 class EvidenceReanchoringRelation(DomainModel):
     id: EvidenceReanchoringRelationId
-    earlier_evidence_span_id: EvidenceSpanId
-    later_evidence_span_id: EvidenceSpanId
+    earlier_evidence_target_id: EvidenceTargetId
+    later_evidence_target_id: EvidenceTargetId
     provenance_id: ProvenanceActivityId
     basis: NonEmptyStr
     recorded_at: datetime = Field(default_factory=utc_now)
 
     @model_validator(mode="after")
-    def validate_evidence_spans(self) -> Self:
-        if self.earlier_evidence_span_id == self.later_evidence_span_id:
+    def validate_evidence_targets(self) -> Self:
+        if self.earlier_evidence_target_id == self.later_evidence_target_id:
             raise ValueError(
-                "Evidence reanchoring relation cannot reference one EvidenceSpan twice."
+                "Evidence reanchoring relation cannot reference one EvidenceTarget twice."
             )
         return self
 
 
-def canonical_evidence_target_digest(evidence_span: EvidenceSpan) -> str:
+def canonical_evidence_target_digest(evidence_target: EvidenceTarget) -> str:
     """Return the SHA-256 digest of immutable, replayable evidence selectors."""
 
-    payload = evidence_span.model_dump(mode="json")
+    payload = evidence_target.model_dump(mode="json")
     for field_name in (
-        "assertion_id",
-        "validation_status",
-        "validator_version",
-        "validated_at",
-        "target_digest",
         "created_at",
     ):
         payload.pop(field_name)
@@ -669,9 +652,9 @@ class Assertion(DomainModel):
     qualifiers: dict[str, JsonValue] = Field(default_factory=dict)
     current_assessment: str = ""
     source_ids: tuple[SourceId, ...] = Field(default_factory=tuple)
-    evidence_span_ids: tuple[EvidenceSpanId, ...] = Field(default_factory=tuple)
+    evidence_target_ids: tuple[EvidenceTargetId, ...] = Field(default_factory=tuple)
     authority_source_ids: tuple[SourceId, ...] = Field(default_factory=tuple)
-    authority_evidence_span_ids: tuple[EvidenceSpanId, ...] = Field(default_factory=tuple)
+    authority_evidence_target_ids: tuple[EvidenceTargetId, ...] = Field(default_factory=tuple)
     provenance_activity_ids: tuple[ProvenanceActivityId, ...] = Field(default_factory=tuple)
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
@@ -686,8 +669,8 @@ class Assertion(DomainModel):
         if is_accepted_status(self.status) and not self.provenance_activity_ids:
             raise ValueError("Accepted Assertion must reference a ProvenanceActivity.")
 
-        if is_accepted_status(self.status) and self.source_ids and not self.evidence_span_ids:
-            raise ValueError("Accepted Source-backed Assertion must reference an EvidenceSpan.")
+        if is_accepted_status(self.status) and self.source_ids and not self.evidence_target_ids:
+            raise ValueError("Accepted Source-backed Assertion must reference an EvidenceTarget.")
 
         if (
             self.assertion_type is AssertionType.ANALYTIC_INFERENCE
@@ -716,15 +699,17 @@ class Assertion(DomainModel):
             raise ValueError("Attributed statement Assertion must include attributed_to_id.")
 
         if self.source_authority is SourceAuthority.PRIMARY and (
-            not self.authority_source_ids or not self.authority_evidence_span_ids
+            not self.authority_source_ids or not self.authority_evidence_target_ids
         ):
             raise ValueError("Primary source_authority must reference authority evidence.")
 
         if not set(self.authority_source_ids).issubset(self.source_ids):
             raise ValueError("authority_source_ids must be a subset of source_ids.")
 
-        if not set(self.authority_evidence_span_ids).issubset(self.evidence_span_ids):
-            raise ValueError("authority_evidence_span_ids must be a subset of evidence_span_ids.")
+        if not set(self.authority_evidence_target_ids).issubset(self.evidence_target_ids):
+            raise ValueError(
+                "authority_evidence_target_ids must be a subset of evidence_target_ids."
+            )
 
         if (
             self.epistemic_scope is EpistemicScope.ANALYTIC_INFERENCE
@@ -773,7 +758,7 @@ class ArgumentEdge(DomainModel):
     to_assertion_id: AssertionId
     relation: ArgumentEdgeRelation
     rationale: NonEmptyStr
-    evidence_span_ids: tuple[EvidenceSpanId, ...] = Field(default_factory=tuple)
+    evidence_target_ids: tuple[EvidenceTargetId, ...] = Field(default_factory=tuple)
     confidence: Confidence
     created_at: datetime = Field(default_factory=utc_now)
 
@@ -825,7 +810,7 @@ class Briefing(DomainModel):
     argument_edge_ids: tuple[ArgumentEdgeId, ...] = Field(default_factory=tuple)
     outcome_ids: tuple[OutcomeId, ...] = Field(default_factory=tuple)
     source_ids: tuple[SourceId, ...] = Field(default_factory=tuple)
-    evidence_span_ids: tuple[EvidenceSpanId, ...] = Field(default_factory=tuple)
+    evidence_target_ids: tuple[EvidenceTargetId, ...] = Field(default_factory=tuple)
     analytic_inference_assertion_ids: tuple[AssertionId, ...] = Field(default_factory=tuple)
     provenance_activity_id: ProvenanceActivityId
     markdown_path: NonEmptyStr | None = None

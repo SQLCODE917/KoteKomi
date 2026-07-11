@@ -1790,7 +1790,7 @@ def generate_markdown_briefing(
     print(f"Relationships: {result.relationship_count}")
     print(f"Outcomes: {result.outcome_count}")
     print(f"ArgumentEdges: {result.argument_edge_count}")
-    print(f"EvidenceSpans: {result.evidence_span_count}")
+    print(f"EvidenceTargets: {result.evidence_target_count}")
     print(f"Analytic inferences: {result.analytic_inference_count}")
     return 0
 

@@ -18,7 +18,7 @@ from kotekomi_domain import (
     Entity,
     Event,
     EvidenceReanchoringRelation,
-    EvidenceSpan,
+    EvidenceTarget,
     Organization,
     Outcome,
     Place,
@@ -37,7 +37,7 @@ type AcceptedCanonicalRecord = (
     | Event
     | Source
     | Document
-    | EvidenceSpan
+    | EvidenceTarget
     | Assertion
     | Relationship
     | Outcome
@@ -93,7 +93,7 @@ class BriefingCitation:
     event_ids: tuple[str, ...] = ()
     source_ids: tuple[str, ...] = ()
     document_ids: tuple[str, ...] = ()
-    evidence_span_ids: tuple[str, ...] = ()
+    evidence_target_ids: tuple[str, ...] = ()
     assertion_ids: tuple[str, ...] = ()
     relationship_ids: tuple[str, ...] = ()
     outcome_ids: tuple[str, ...] = ()
@@ -126,7 +126,7 @@ class BriefingEvidenceQuality:
     source_authority: SourceAuthority
     attribution_basis: AttributionBasis
     source_count: int
-    evidence_span_count: int
+    evidence_target_count: int
     citation_numbers: tuple[int, ...] = ()
 
 
@@ -221,7 +221,7 @@ class BriefingRenderInput:
     relationships: tuple[Relationship, ...]
     outcomes: tuple[Outcome, ...]
     argument_edges: tuple[ArgumentEdge, ...]
-    evidence_spans: tuple[EvidenceSpan, ...]
+    evidence_targets: tuple[EvidenceTarget, ...]
     analytic_inference_assertion_ids: tuple[str, ...]
 
 
@@ -323,9 +323,9 @@ class LedgerRepository(Protocol):
     def get_document(self, record_id: str) -> Document | None: ...
     def list_documents(self) -> tuple[Document, ...]: ...
 
-    def save_evidence_span(self, record: EvidenceSpan) -> None: ...
-    def get_evidence_span(self, record_id: str) -> EvidenceSpan | None: ...
-    def list_evidence_spans(self) -> tuple[EvidenceSpan, ...]: ...
+    def save_evidence_target(self, record: EvidenceTarget) -> None: ...
+    def get_evidence_target(self, record_id: str) -> EvidenceTarget | None: ...
+    def list_evidence_targets(self) -> tuple[EvidenceTarget, ...]: ...
 
     def save_assertion_evidence_link(self, record: AssertionEvidenceLink) -> None: ...
     def get_assertion_evidence_link(self, record_id: str) -> AssertionEvidenceLink | None: ...

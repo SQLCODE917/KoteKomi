@@ -15,7 +15,7 @@ from kotekomi_domain import (
     Document,
     Entity,
     Event,
-    EvidenceSpan,
+    EvidenceTarget,
     Organization,
     Outcome,
     Place,
@@ -30,7 +30,7 @@ REVIEW_RECORD_TYPE_ORDER = {
     "Organization": 0,
     "Actor": 1,
     "Event": 2,
-    "EvidenceSpan": 3,
+    "EvidenceTarget": 3,
     "Assertion": 4,
     "Relationship": 5,
     "Outcome": 6,
@@ -39,7 +39,14 @@ REVIEW_RECORD_TYPE_ORDER = {
 
 
 type ReviewPacketRecord = (
-    Actor | Organization | Event | EvidenceSpan | Assertion | Relationship | Outcome | ArgumentEdge
+    Actor
+    | Organization
+    | Event
+    | EvidenceTarget
+    | Assertion
+    | Relationship
+    | Outcome
+    | ArgumentEdge
 )
 
 
@@ -59,7 +66,7 @@ class ReviewQueuePacketLedger(Protocol):
     def get_organization(self, record_id: str) -> Organization | None: ...
     def get_event(self, record_id: str) -> Event | None: ...
     def get_place(self, record_id: str) -> Place | None: ...
-    def get_evidence_span(self, record_id: str) -> EvidenceSpan | None: ...
+    def get_evidence_target(self, record_id: str) -> EvidenceTarget | None: ...
     def get_assertion(self, record_id: str) -> Assertion | None: ...
     def get_relationship(self, record_id: str) -> Relationship | None: ...
     def get_outcome(self, record_id: str) -> Outcome | None: ...
@@ -689,8 +696,8 @@ def _proposed_record_from_json(
         return Organization.model_validate_json(json.dumps(record_json))
     if record_type == "Event":
         return Event.model_validate_json(json.dumps(record_json))
-    if record_type == "EvidenceSpan":
-        return EvidenceSpan.model_validate_json(json.dumps(record_json))
+    if record_type == "EvidenceTarget":
+        return EvidenceTarget.model_validate_json(json.dumps(record_json))
     if record_type == "Assertion":
         return Assertion.model_validate_json(json.dumps(record_json))
     if record_type == "Relationship":
@@ -713,7 +720,7 @@ def _evidence_contexts(
         contexts.append(
             _evidence_context_from_json(cast(dict[str, JsonValue], evidence), ledger_repository)
         )
-    if isinstance(record, EvidenceSpan):
+    if isinstance(record, EvidenceTarget):
         contexts.append(
             _evidence_context_from_span(
                 record,
@@ -721,10 +728,10 @@ def _evidence_contexts(
             )
         )
     if isinstance(record, Assertion):
-        for evidence_span_id in record.evidence_span_ids:
-            evidence_span = _find_evidence_span(evidence_span_id, ledger_repository)
-            if evidence_span is not None:
-                contexts.append(_evidence_context_from_span(evidence_span, ledger_repository))
+        for evidence_target_id in record.evidence_target_ids:
+            evidence_target = _find_evidence_target(evidence_target_id, ledger_repository)
+            if evidence_target is not None:
+                contexts.append(_evidence_context_from_span(evidence_target, ledger_repository))
     return _deduplicate_evidence_contexts(contexts)
 
 
@@ -753,19 +760,25 @@ def _evidence_context_from_json(
 
 
 def _evidence_context_from_span(
-    evidence_span: EvidenceSpan,
+    evidence_target: EvidenceTarget,
     ledger_repository: ReviewQueuePacketLedger,
 ) -> ReviewEvidenceContext:
-    source = ledger_repository.get_source(evidence_span.source_id)
+    source = ledger_repository.get_source(evidence_target.source_id)
     return ReviewEvidenceContext(
-        source_id=evidence_span.source_id,
+        source_id=evidence_target.source_id,
         source_title=source.title if source is not None else None,
-        document_id=evidence_span.document_id,
-        selector_type=evidence_span.selector_type.value,
-        exact_text=evidence_span.exact_text,
-        prefix_text=evidence_span.prefix_text,
-        suffix_text=evidence_span.suffix_text,
-        location=evidence_span.location,
+        document_id=evidence_target.document_id,
+        selector_type="pinned_text",
+        exact_text=evidence_target.exact_text,
+        prefix_text=evidence_target.prefix_text,
+        suffix_text=evidence_target.suffix_text,
+        location={
+            "representation_id": evidence_target.representation_id,
+            "text_view_id": evidence_target.text_view_id,
+            "start_char": evidence_target.start_char,
+            "end_char": evidence_target.end_char,
+            "node_ids": list(evidence_target.node_ids),
+        },
     )
 
 
@@ -783,21 +796,23 @@ def _deduplicate_evidence_contexts(
     return tuple(deduplicated)
 
 
-def _find_evidence_span(
-    evidence_span_id: str,
+def _find_evidence_target(
+    evidence_target_id: str,
     ledger_repository: ReviewQueuePacketLedger,
-) -> EvidenceSpan | None:
-    accepted = ledger_repository.get_evidence_span(evidence_span_id)
+) -> EvidenceTarget | None:
+    accepted = ledger_repository.get_evidence_target(evidence_target_id)
     if accepted is not None:
         return accepted
     for proposed_change in ledger_repository.list_proposed_changes():
         if proposed_change.review_status is not ReviewStatus.PENDING:
             continue
-        if _pending_record_id(proposed_change) != evidence_span_id:
+        if _pending_record_id(proposed_change) != evidence_target_id:
             continue
-        if _proposal_record_type(proposed_change) != "EvidenceSpan":
+        if _proposal_record_type(proposed_change) != "EvidenceTarget":
             return None
-        return EvidenceSpan.model_validate_json(json.dumps(_proposal_record_json(proposed_change)))
+        return EvidenceTarget.model_validate_json(
+            json.dumps(_proposal_record_json(proposed_change))
+        )
     return None
 
 
@@ -829,11 +844,9 @@ def _record_references(record: ReviewPacketRecord) -> tuple[tuple[str, str], ...
         references.extend(
             ("Organization", record_id) for record_id in record.participant_organization_ids
         )
-    elif isinstance(record, EvidenceSpan):
+    elif isinstance(record, EvidenceTarget):
         references.append(("Source", record.source_id))
         references.append(("Document", record.document_id))
-        if record.assertion_id is not None:
-            references.append(("Assertion", record.assertion_id))
     elif isinstance(record, Assertion):
         references.append(
             (_entity_reference_type(record.subject_entity_id), record.subject_entity_id)
@@ -843,10 +856,10 @@ def _record_references(record: ReviewPacketRecord) -> tuple[tuple[str, str], ...
                 (_entity_reference_type(record.object_entity_id), record.object_entity_id)
             )
         references.extend(("Source", record_id) for record_id in record.source_ids)
-        references.extend(("EvidenceSpan", record_id) for record_id in record.evidence_span_ids)
+        references.extend(("EvidenceTarget", record_id) for record_id in record.evidence_target_ids)
         references.extend(("Source", record_id) for record_id in record.authority_source_ids)
         references.extend(
-            ("EvidenceSpan", record_id) for record_id in record.authority_evidence_span_ids
+            ("EvidenceTarget", record_id) for record_id in record.authority_evidence_target_ids
         )
     elif isinstance(record, Relationship):
         references.append((_entity_reference_type(record.subject_id), record.subject_id))
@@ -860,7 +873,7 @@ def _record_references(record: ReviewPacketRecord) -> tuple[tuple[str, str], ...
     elif type(record) is ArgumentEdge:
         references.append(("Assertion", record.from_assertion_id))
         references.append(("Assertion", record.to_assertion_id))
-        references.extend(("EvidenceSpan", record_id) for record_id in record.evidence_span_ids)
+        references.extend(("EvidenceTarget", record_id) for record_id in record.evidence_target_ids)
     else:
         raise TypeError(f"Unsupported review packet record type: {type(record).__name__}")
     return _deduplicate_references(references)
@@ -914,8 +927,8 @@ def _accepted_reference_exists(
         return ledger_repository.get_organization(referenced_id) is not None
     if referenced_type == "Event":
         return ledger_repository.get_event(referenced_id) is not None
-    if referenced_type == "EvidenceSpan":
-        return ledger_repository.get_evidence_span(referenced_id) is not None
+    if referenced_type == "EvidenceTarget":
+        return ledger_repository.get_evidence_target(referenced_id) is not None
     if referenced_type == "Assertion":
         return ledger_repository.get_assertion(referenced_id) is not None
     if referenced_type == "Relationship":

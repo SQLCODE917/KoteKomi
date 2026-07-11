@@ -17,16 +17,14 @@ from kotekomi_domain import (
     DocumentRepresentation,
     DocumentRepresentationBundle,
     EpistemicScope,
-    EvidenceSpan,
-    EvidenceValidationStatus,
+    EvidenceTarget,
+    EvidenceValidationAttempt,
     ParseQualityReport,
     ProvenanceActivity,
     RepresentationAnalyzability,
-    SelectorType,
     SourceAuthority,
     TextView,
     TextViewKind,
-    canonical_evidence_target_digest,
     canonical_representation_digest,
 )
 
@@ -36,7 +34,9 @@ TEXT_DIGEST = "77d913272bb8bdba48d318de4a6a4b033dace9770d8cd967b09285d1876449a4"
 
 
 class FakeEvidenceLedger:
-    def __init__(self, bundle: DocumentRepresentationBundle, evidence_span: EvidenceSpan) -> None:
+    def __init__(
+        self, bundle: DocumentRepresentationBundle, evidence_target: EvidenceTarget
+    ) -> None:
         self.bundle = bundle
         self.documents = {
             "doc_example": Document(
@@ -46,7 +46,8 @@ class FakeEvidenceLedger:
                 content_sha256="a" * 64,
             )
         }
-        self.evidence_spans = {evidence_span.id: evidence_span}
+        self.evidence_targets = {evidence_target.id: evidence_target}
+        self.validation_attempts: dict[str, EvidenceValidationAttempt] = {}
         self.assertions = {
             "ast_alpha": Assertion(
                 id="ast_alpha",
@@ -59,7 +60,7 @@ class FakeEvidenceLedger:
                 source_authority=SourceAuthority.SECONDARY,
                 attribution_basis=AttributionBasis.REPORTED_BY_SOURCE,
                 source_ids=("src_example",),
-                evidence_span_ids=(evidence_span.id,),
+                evidence_target_ids=(evidence_target.id,),
                 provenance_activity_ids=("prv_review",),
             )
         }
@@ -73,11 +74,19 @@ class FakeEvidenceLedger:
         }
         self.links: dict[str, AssertionEvidenceLink] = {}
 
-    def get_evidence_span(self, record_id: str) -> EvidenceSpan | None:
-        return self.evidence_spans.get(record_id)
+    def get_evidence_target(self, record_id: str) -> EvidenceTarget | None:
+        return self.evidence_targets.get(record_id)
 
-    def save_evidence_span(self, record: EvidenceSpan) -> None:
-        self.evidence_spans[record.id] = record
+    def save_evidence_target(self, record: EvidenceTarget) -> None:
+        self.evidence_targets[record.id] = record
+
+    def get_evidence_validation_attempt(
+        self, record_id: str
+    ) -> EvidenceValidationAttempt | None:
+        return self.validation_attempts.get(record_id)
+
+    def save_evidence_validation_attempt(self, record: EvidenceValidationAttempt) -> None:
+        self.validation_attempts[record.id] = record
 
     def get_document_representation_bundle(
         self, record_id: str
@@ -156,12 +165,11 @@ def _bundle() -> DocumentRepresentationBundle:
     )
 
 
-def _evidence_span(*, prefix_text: str = "") -> EvidenceSpan:
-    return EvidenceSpan(
-        id="evs_alpha",
+def _evidence_target(*, prefix_text: str = "") -> EvidenceTarget:
+    return EvidenceTarget(
+        id="evt_alpha",
         source_id="src_example",
         document_id="doc_example",
-        selector_type=SelectorType.EXACT_TEXT,
         exact_text="Alpha",
         prefix_text=prefix_text,
         suffix_text=". Alpha.",
@@ -171,17 +179,18 @@ def _evidence_span(*, prefix_text: str = "") -> EvidenceSpan:
         start_char=0,
         end_char=5,
         node_ids=("nod_example",),
-        selector_normalization_policy="utf8_identity_v1",
+        normalization_policy="utf8_identity_v1",
         created_at=NOW,
     )
 
 
 def test_validate_evidence_target_pins_one_repeated_text_occurrence() -> None:
-    ledger = FakeEvidenceLedger(_bundle(), _evidence_span())
+    ledger = FakeEvidenceLedger(_bundle(), _evidence_target())
 
     result = validate_evidence_target(
         EvidenceValidationInput(
-            evidence_span_id="evs_alpha",
+            evidence_target_id="evt_alpha",
+            attempt_id="eva_success",
             validator_version="1",
             validated_at=NOW,
         ),
@@ -189,16 +198,17 @@ def test_validate_evidence_target_pins_one_repeated_text_occurrence() -> None:
     )
 
     assert result.valid is True
-    assert result.evidence_span.validation_status is EvidenceValidationStatus.VALIDATED
-    assert result.evidence_span.target_digest is not None
+    assert result.attempt.status.value == "succeeded"
+    assert ledger.get_evidence_target("evt_alpha") == result.evidence_target
 
 
 def test_validate_evidence_target_fails_closed_when_context_disagrees() -> None:
-    ledger = FakeEvidenceLedger(_bundle(), _evidence_span(prefix_text="not present"))
+    ledger = FakeEvidenceLedger(_bundle(), _evidence_target(prefix_text="not present"))
 
     result = validate_evidence_target(
         EvidenceValidationInput(
-            evidence_span_id="evs_alpha",
+            evidence_target_id="evt_alpha",
+            attempt_id="eva_failed",
             validator_version="1",
             validated_at=NOW,
         ),
@@ -206,47 +216,46 @@ def test_validate_evidence_target_fails_closed_when_context_disagrees() -> None:
     )
 
     assert result.valid is False
-    assert result.error_message == "EvidenceSpan prefix selector does not match its TextView."
-    assert result.evidence_span.validation_status is EvidenceValidationStatus.FAILED
+    assert result.error_message == "EvidenceTarget prefix selector does not match its TextView."
+    assert result.attempt.status.value == "failed"
 
 
-def test_validate_evidence_target_detects_corrupted_validated_target_without_rewriting_it() -> None:
-    ledger = FakeEvidenceLedger(_bundle(), _evidence_span())
-    validated = validate_evidence_target(
-        EvidenceValidationInput("evs_alpha", "1", NOW),
+def test_validate_evidence_target_appends_a_new_attempt_for_each_replay() -> None:
+    ledger = FakeEvidenceLedger(_bundle(), _evidence_target())
+    first = validate_evidence_target(
+        EvidenceValidationInput("evt_alpha", "eva_first", "1", NOW),
         ledger,
-    ).evidence_span
-    corrupted = validated.model_copy(update={"exact_text": "wrong"})
-    ledger.save_evidence_span(corrupted)
-
-    result = validate_evidence_target(
-        EvidenceValidationInput("evs_alpha", "2", NOW),
+    )
+    second = validate_evidence_target(
+        EvidenceValidationInput("evt_alpha", "eva_second", "2", NOW),
         ledger,
     )
 
-    assert result.valid is False
-    assert result.evidence_span == corrupted
+    assert first.valid and second.valid
+    assert first.attempt.id != second.attempt.id
+    assert tuple(ledger.validation_attempts) == ("eva_first", "eva_second")
 
 
 def test_verify_evidence_target_replays_a_validated_target_without_mutating_it() -> None:
-    ledger = FakeEvidenceLedger(_bundle(), _evidence_span())
-    validated = validate_evidence_target(
-        EvidenceValidationInput("evs_alpha", "1", NOW),
+    ledger = FakeEvidenceLedger(_bundle(), _evidence_target())
+    validation = validate_evidence_target(
+        EvidenceValidationInput("evt_alpha", "eva_success", "1", NOW),
         ledger,
-    ).evidence_span
+    )
+    validated = validation.evidence_target
 
-    replay = verify_evidence_target(validated, ledger)
+    replay = verify_evidence_target(validated, validation.attempt, ledger)
 
     assert replay.valid is True
-    assert ledger.get_evidence_span(validated.id) == validated
+    assert ledger.get_evidence_target(validated.id) == validated
 
 
 @pytest.mark.parametrize(
     ("mutation", "expected_error"),
     [
-        ("stale_text_view", "EvidenceSpan TextView digest is stale."),
-        ("selector_disagreement", "EvidenceSpan exact_text does not match its position selector."),
-        ("missing_representation", "EvidenceSpan references a missing DocumentRepresentation."),
+        ("stale_text_view", "EvidenceValidationAttempt target_digest is stale."),
+        ("selector_disagreement", "EvidenceValidationAttempt target_digest is stale."),
+        ("missing_representation", "EvidenceValidationAttempt target_digest is stale."),
         ("corrupt_representation", "DocumentRepresentation canonical_output_digest is corrupted."),
     ],
 )
@@ -254,27 +263,19 @@ def test_verify_evidence_target_rejects_corruption_without_mutating_it(
     mutation: str,
     expected_error: str,
 ) -> None:
-    ledger = FakeEvidenceLedger(_bundle(), _evidence_span())
-    validated = validate_evidence_target(
-        EvidenceValidationInput("evs_alpha", "1", NOW),
+    ledger = FakeEvidenceLedger(_bundle(), _evidence_target())
+    validation = validate_evidence_target(
+        EvidenceValidationInput("evt_alpha", "eva_success", "1", NOW),
         ledger,
-    ).evidence_span
+    )
+    validated = validation.evidence_target
     candidate = validated
     if mutation == "stale_text_view":
         candidate = candidate.model_copy(update={"text_view_digest": "0" * 64})
-        candidate = candidate.model_copy(
-            update={"target_digest": canonical_evidence_target_digest(candidate)}
-        )
     elif mutation == "selector_disagreement":
         candidate = candidate.model_copy(update={"exact_text": "wrong"})
-        candidate = candidate.model_copy(
-            update={"target_digest": canonical_evidence_target_digest(candidate)}
-        )
     elif mutation == "missing_representation":
         candidate = candidate.model_copy(update={"representation_id": "rep_missing"})
-        candidate = candidate.model_copy(
-            update={"target_digest": canonical_evidence_target_digest(candidate)}
-        )
     elif mutation == "corrupt_representation":
         corrupted_representation = ledger.bundle.representation.model_copy(
             update={"canonical_output_digest": "0" * 64}
@@ -284,10 +285,8 @@ def test_verify_evidence_target_rejects_corruption_without_mutating_it(
         )
     else:
         raise AssertionError(f"Unexpected mutation: {mutation}")
-    ledger.save_evidence_span(candidate)
-
-    replay = verify_evidence_target(candidate, ledger)
+    replay = verify_evidence_target(candidate, validation.attempt, ledger)
 
     assert replay.valid is False
     assert replay.error_message == expected_error
-    assert ledger.get_evidence_span(candidate.id) == candidate
+    assert ledger.get_evidence_target(candidate.id) == validated

@@ -22,7 +22,7 @@ def test_repository_round_trips_all_domain_records(tmp_path: Path) -> None:
         event,
         source,
         document,
-        evidence_span,
+        evidence_target,
         assertion,
         relationship,
         outcome,
@@ -40,7 +40,7 @@ def test_repository_round_trips_all_domain_records(tmp_path: Path) -> None:
         repository.save_event(event)
         repository.save_source(source)
         repository.save_document(document)
-        repository.save_evidence_span(evidence_span)
+        repository.save_evidence_target(evidence_target)
         repository.save_assertion(assertion)
         repository.save_relationship(relationship)
         repository.save_outcome(outcome)
@@ -57,7 +57,7 @@ def test_repository_round_trips_all_domain_records(tmp_path: Path) -> None:
         assert repository.get_event(event.id) == event
         assert repository.get_source(source.id) == source
         assert repository.get_document(document.id) == document
-        assert repository.get_evidence_span(evidence_span.id) == evidence_span
+        assert repository.get_evidence_target(evidence_target.id) == evidence_target
         assert repository.get_assertion(assertion.id) == assertion
         assert repository.get_relationship(relationship.id) == relationship
         assert repository.get_outcome(outcome.id) == outcome
@@ -134,7 +134,7 @@ def test_repository_lists_all_accepted_canonical_records(tmp_path: Path) -> None
         event,
         source,
         document,
-        evidence_span,
+        evidence_target,
         assertion,
         relationship,
         outcome,
@@ -152,7 +152,7 @@ def test_repository_lists_all_accepted_canonical_records(tmp_path: Path) -> None
         repository.save_event(event)
         repository.save_source(source)
         repository.save_document(document)
-        repository.save_evidence_span(evidence_span)
+        repository.save_evidence_target(evidence_target)
         repository.save_assertion(assertion)
         repository.save_relationship(relationship)
         repository.save_outcome(outcome)
@@ -170,7 +170,7 @@ def test_repository_lists_all_accepted_canonical_records(tmp_path: Path) -> None
         "ast_release_review",
         "doc_article_a",
         "ent_actor_a",
-        "evs_article_a_release",
+        "evt_article_a_release",
         "evt_model_forum",
         "org_lab_a",
         "out_release_review",

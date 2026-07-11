@@ -1,4 +1,10 @@
-from kotekomi_application import ArchiveObject, ArchiveStore, StagedArchiveObject
+from kotekomi_application import (
+    ArchiveObject,
+    ArchivePutDisposition,
+    ArchivePutOutcome,
+    ArchiveStore,
+    StagedArchiveObject,
+)
 
 
 class FakeArchiveStore:
@@ -9,6 +15,18 @@ class FakeArchiveStore:
 
     def initialize(self) -> None:
         return None
+
+    def put_if_absent_or_identical(
+        self, object_id: str, payload: bytes, expected_digest: str
+    ) -> ArchivePutOutcome:
+        existing = self.raw_sources.get(object_id)
+        if existing is not None and existing != payload:
+            raise ValueError("archive object conflict")
+        self.raw_sources[object_id] = payload
+        return ArchivePutOutcome(
+            ArchivePutDisposition.REUSED if existing is not None else ArchivePutDisposition.CREATED,
+            ArchiveObject(f"sources/raw/{object_id}.bin", len(payload)),
+        )
 
     def write_raw_source(self, source_id: str, content: bytes) -> ArchiveObject:
         self.raw_sources[source_id] = content

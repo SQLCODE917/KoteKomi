@@ -81,7 +81,7 @@ def _evidence_quality_section(render_input: BriefingRenderInput) -> list[str]:
     if not render_input.narrative.evidence_quality:
         return [*lines, "- None", ""]
     lines.append(
-        "| Claim | SourceAuthority | AttributionBasis | Sources | EvidenceSpans |"
+        "| Claim | SourceAuthority | AttributionBasis | Sources | EvidenceTargets |"
     )
     lines.append("|---|---:|---:|---:|---:|")
     for quality in render_input.narrative.evidence_quality:
@@ -89,7 +89,7 @@ def _evidence_quality_section(render_input: BriefingRenderInput) -> list[str]:
         lines.append(
             f"| {claim} | {_enum_label(quality.source_authority.value)} | "
             f"{_enum_label(quality.attribution_basis.value)} | {quality.source_count} | "
-            f"{quality.evidence_span_count} |"
+            f"{quality.evidence_target_count} |"
         )
     return [*lines, ""]
 
@@ -184,14 +184,14 @@ def _source_quality_register_section(render_input: BriefingRenderInput) -> list[
     lines = ["### Source Quality Register", ""]
     if not render_input.narrative.evidence_quality:
         return [*lines, "- None", ""]
-    lines.append("| Claim | SourceAuthority | AttributionBasis | Sources | EvidenceSpans |")
+    lines.append("| Claim | SourceAuthority | AttributionBasis | Sources | EvidenceTargets |")
     lines.append("|---|---:|---:|---:|---:|")
     for quality in render_input.narrative.evidence_quality:
         claim = _sentence_text(quality.claim.text, quality.claim.citation_numbers)
         lines.append(
             f"| {claim} | {_enum_label(quality.source_authority.value)} | "
             f"{_enum_label(quality.attribution_basis.value)} | {quality.source_count} | "
-            f"{quality.evidence_span_count} |"
+            f"{quality.evidence_target_count} |"
         )
     return [*lines, ""]
 

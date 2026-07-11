@@ -10,7 +10,7 @@ def test_all_domain_models_have_json_schema() -> None:
 
     assert "assertion.schema.json" in schema_names
     assert "proposed_change.schema.json" in schema_names
-    assert "evidence_span.schema.json" in schema_names
+    assert "evidence_target.schema.json" in schema_names
     assert "briefing.schema.json" in schema_names
 
 
@@ -30,7 +30,7 @@ def test_assertion_sample_validates_against_json_schema() -> None:
         "extraction_confidence": 0.8,
         "world_truth_confidence": 0.6,
         "source_ids": ["src_article_a"],
-        "evidence_span_ids": ["evs_article_a_release"],
+        "evidence_target_ids": ["evt_article_a_release"],
         "provenance_activity_ids": ["prv_human_review"],
         "created_at": datetime(2026, 7, 8, tzinfo=UTC).isoformat(),
         "updated_at": datetime(2026, 7, 8, tzinfo=UTC).isoformat(),
@@ -74,7 +74,7 @@ def test_briefing_sample_validates_against_json_schema() -> None:
         "argument_edge_ids": ["arg_release_support"],
         "outcome_ids": ["out_release_review"],
         "source_ids": ["src_article_a"],
-        "evidence_span_ids": ["evs_article_a_release"],
+        "evidence_target_ids": ["evt_article_a_release"],
         "analytic_inference_assertion_ids": ["ast_release_review"],
         "provenance_activity_id": "prv_human_review",
         "markdown_path": "briefings/daily/brf_daily.md",

@@ -58,12 +58,12 @@
       "title": "Event Ids",
       "type": "array"
     },
-    "evidence_span_ids": {
+    "evidence_target_ids": {
       "items": {
-        "pattern": "^evs_[A-Za-z0-9][A-Za-z0-9_-]*$",
+        "pattern": "^evt_[A-Za-z0-9][A-Za-z0-9_-]*$",
         "type": "string"
       },
-      "title": "Evidence Span Ids",
+      "title": "Evidence Target Ids",
       "type": "array"
     },
     "generated_at": {

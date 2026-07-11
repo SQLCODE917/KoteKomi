@@ -36,7 +36,8 @@ from kotekomi_domain import (
     Entity,
     Event,
     EvidenceReanchoringRelation,
-    EvidenceSpan,
+    EvidenceTarget,
+    EvidenceValidationAttempt,
     Organization,
     Outcome,
     ParseQualityReport,
@@ -49,7 +50,6 @@ from kotekomi_domain import (
     SourceCapture,
     SourceRegion,
     TextView,
-    canonical_evidence_target_digest,
 )
 from pydantic import BaseModel
 
@@ -89,6 +89,8 @@ IMMUTABLE_TABLES = frozenset(
         "document_edges",
         "source_regions",
         "parse_quality_reports",
+        "evidence_targets",
+        "evidence_validation_attempts",
         "assertion_evidence_links",
         "evidence_reanchoring_relations",
     }
@@ -123,7 +125,10 @@ SOURCE_CAPTURE_SPEC = RecordSpec("source_captures", SourceCapture)
 CAPTURE_DOCUMENT_RESOLUTION_SPEC = RecordSpec(
     "capture_document_resolutions", CaptureDocumentResolution
 )
-EVIDENCE_SPAN_SPEC = RecordSpec("evidence_spans", EvidenceSpan)
+EVIDENCE_TARGET_SPEC = RecordSpec("evidence_targets", EvidenceTarget)
+EVIDENCE_VALIDATION_ATTEMPT_SPEC = RecordSpec(
+    "evidence_validation_attempts", EvidenceValidationAttempt
+)
 ASSERTION_EVIDENCE_LINK_SPEC = RecordSpec("assertion_evidence_links", AssertionEvidenceLink)
 EVIDENCE_REANCHORING_RELATION_SPEC = RecordSpec(
     "evidence_reanchoring_relations",
@@ -145,7 +150,7 @@ ACCEPTED_CANONICAL_RECORD_SPECS = (
     EVENT_SPEC,
     SOURCE_SPEC,
     DOCUMENT_SPEC,
-    EVIDENCE_SPAN_SPEC,
+    EVIDENCE_TARGET_SPEC,
     ASSERTION_SPEC,
     RELATIONSHIP_SPEC,
     OUTCOME_SPEC,
@@ -168,7 +173,8 @@ REQUIRED_LEDGER_TABLES = (
     "source_regions",
     "parse_quality_reports",
     "document_revision_relations",
-    "evidence_spans",
+    "evidence_targets",
+    "evidence_validation_attempts",
     "assertion_evidence_links",
     "evidence_reanchoring_relations",
     "assertions",
@@ -648,24 +654,25 @@ class SQLiteLedgerRepository:
     def list_document_revision_relations(self) -> tuple[DocumentRevisionRelation, ...]:
         return self._list(DOCUMENT_REVISION_RELATION_SPEC)
 
-    def save_evidence_span(self, record: EvidenceSpan) -> None:
-        existing = self.get_evidence_span(record.id)
-        if existing is not None and canonical_evidence_target_digest(
-            existing
-        ) != canonical_evidence_target_digest(record):
-            raise ImmutableRecordConflict(
-                "EvidenceSpan",
-                record.id,
-                hashlib.sha256(canonical_evidence_target_digest(existing).encode()).hexdigest(),
-                hashlib.sha256(canonical_evidence_target_digest(record).encode()).hexdigest(),
-            )
-        self._upsert_mutable(EVIDENCE_SPAN_SPEC, record)
+    def save_evidence_target(self, record: EvidenceTarget) -> None:
+        self._save(EVIDENCE_TARGET_SPEC, record)
 
-    def get_evidence_span(self, record_id: str) -> EvidenceSpan | None:
-        return self._get(EVIDENCE_SPAN_SPEC, record_id)
+    def get_evidence_target(self, record_id: str) -> EvidenceTarget | None:
+        return self._get(EVIDENCE_TARGET_SPEC, record_id)
 
-    def list_evidence_spans(self) -> tuple[EvidenceSpan, ...]:
-        return self._list(EVIDENCE_SPAN_SPEC)
+    def list_evidence_targets(self) -> tuple[EvidenceTarget, ...]:
+        return self._list(EVIDENCE_TARGET_SPEC)
+
+    def save_evidence_validation_attempt(self, record: EvidenceValidationAttempt) -> None:
+        self._save(EVIDENCE_VALIDATION_ATTEMPT_SPEC, record)
+
+    def get_evidence_validation_attempt(
+        self, record_id: str
+    ) -> EvidenceValidationAttempt | None:
+        return self._get(EVIDENCE_VALIDATION_ATTEMPT_SPEC, record_id)
+
+    def list_evidence_validation_attempts(self) -> tuple[EvidenceValidationAttempt, ...]:
+        return self._list(EVIDENCE_VALIDATION_ATTEMPT_SPEC)
 
     def save_assertion_evidence_link(self, record: AssertionEvidenceLink) -> None:
         self._save(ASSERTION_EVIDENCE_LINK_SPEC, record)

@@ -20,7 +20,7 @@ Use these exact terms.
 | Place | A physical or virtual location. |
 | Source | An external artifact that contains information. |
 | Document | A local archived copy of a Source or extracted content from a Source. |
-| EvidenceSpan | A precise pointer to evidence inside a Document. |
+| EvidenceTarget | A precise pointer to evidence inside a Document. |
 | Assertion | An atomic statement about the world, a Source, another Assertion, or an inference. |
 | Relationship | A typed edge between two domain objects. |
 | ArgumentEdge | A typed edge between two Assertions. |
@@ -50,7 +50,7 @@ The Ontology Profile maps to these external patterns:
 | Wikidata statement model | Assertion subject-predicate-object pattern with qualifiers and references |
 | W3C PROV-O | ProvenanceActivity model |
 | Nanopublication pattern | Assertion plus provenance plus publication metadata |
-| W3C Web Annotation | EvidenceSpan targeting |
+| W3C Web Annotation | EvidenceTarget targeting |
 | Simple Event Model | Event, Actor, Place, Time pattern |
 | CIDOC CRM | future reference for deeper Event modeling |
 | AIF | ArgumentEdge semantics |
@@ -74,7 +74,7 @@ An accepted Assertion has at least one ProvenanceActivity.
 
 A Source-backed Assertion has at least one Source.
 
-A Source-backed accepted Assertion has at least one EvidenceSpan.
+A Source-backed accepted Assertion has at least one EvidenceTarget.
 
 An analytic inference has `assertion_type = analytic_inference`.
 
@@ -86,7 +86,7 @@ A non-source analytic inference has `attribution_basis = not_applicable`.
 
 An attributed statement has `attributed_to_id`.
 
-A primary-source-backed Assertion has authority Source IDs and authority EvidenceSpan IDs.
+A primary-source-backed Assertion has authority Source IDs and authority EvidenceTarget IDs.
 
 A causal analytic inference has `causal_confidence`.
 
@@ -127,7 +127,7 @@ A Briefing compares current Ledger state with the previous Briefing.
 
 A Briefing Markdown uses numbered citations for Source-backed Assertions.
 
-A Briefing citation registry stores Source IDs and EvidenceSpan IDs for accepted Source-backed Assertions.
+A Briefing citation registry stores Source IDs and EvidenceTarget IDs for accepted Source-backed Assertions.
 
 A Briefing stores numbered citations as structured derived data alongside the Markdown file.
 
@@ -143,4 +143,4 @@ A Briefing narrative is derived from accepted Ledger records.
 
 A Briefing narrative does not introduce unsupported claims.
 
-A Briefing narrative preserves Source, EvidenceSpan, Assertion, Relationship, ArgumentEdge, and Outcome boundaries.
+A Briefing narrative preserves Source, EvidenceTarget, Assertion, Relationship, ArgumentEdge, and Outcome boundaries.

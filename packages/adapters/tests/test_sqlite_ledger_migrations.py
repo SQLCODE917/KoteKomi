@@ -11,7 +11,16 @@ def test_initialize_empty_ledger_creates_required_tables(tmp_path: Path) -> None
     result = SQLiteLedgerInitializer(ledger_path).initialize()
 
     assert result.ledger_path == ledger_path
-    assert result.applied_migrations == ("001", "002", "003", "004", "005", "006", "007")
+    assert result.applied_migrations == (
+        "001",
+        "002",
+        "003",
+        "004",
+        "005",
+        "006",
+        "007",
+        "008",
+    )
     with sqlite3.connect(ledger_path) as connection:
         tables = {
             row[0]
@@ -27,13 +36,22 @@ def test_initialize_existing_ledger_is_idempotent(tmp_path: Path) -> None:
     first = initializer.initialize()
     second = initializer.initialize()
 
-    assert first.applied_migrations == ("001", "002", "003", "004", "005", "006", "007")
+    assert first.applied_migrations == (
+        "001",
+        "002",
+        "003",
+        "004",
+        "005",
+        "006",
+        "007",
+        "008",
+    )
     assert second.applied_migrations == ()
     with sqlite3.connect(ledger_path) as connection:
         row = connection.execute("SELECT count(*) FROM ledger_migrations").fetchone()
     assert row is not None
     migration_count = row[0]
-    assert migration_count == 7
+    assert migration_count == 8
 
 
 def test_initialize_001_ledger_upgrades_without_losing_existing_rows(tmp_path: Path) -> None:
@@ -49,6 +67,6 @@ def test_initialize_001_ledger_upgrades_without_losing_existing_rows(tmp_path: P
             ("src_legacy", "{}"),
         )
     result = SQLiteLedgerInitializer(ledger_path).initialize()
-    assert result.applied_migrations == ("002", "003", "004", "005", "006", "007")
+    assert result.applied_migrations == ("002", "003", "004", "005", "006", "007", "008")
     with sqlite3.connect(ledger_path) as connection:
         assert connection.execute("SELECT id FROM sources WHERE id = 'src_legacy'").fetchone()

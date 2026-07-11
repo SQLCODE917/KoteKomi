@@ -21,7 +21,7 @@ from kotekomi_domain import (
     Event,
     EvidenceNecessity,
     EvidencePolarity,
-    EvidenceSpan,
+    EvidenceTarget,
     Organization,
     Outcome,
     Place,
@@ -56,7 +56,14 @@ APPROVED_ACTIVITY_TYPE = "proposed_change_approved"
 REJECTED_ACTIVITY_TYPE = "proposed_change_rejected"
 EDITED_ACTIVITY_TYPE = "proposed_change_edited"
 type AcceptedReviewRecord = (
-    Actor | Organization | Event | EvidenceSpan | Assertion | Relationship | Outcome | ArgumentEdge
+    Actor
+    | Organization
+    | Event
+    | EvidenceTarget
+    | Assertion
+    | Relationship
+    | Outcome
+    | ArgumentEdge
 )
 
 
@@ -81,8 +88,8 @@ class ProposedChangeReviewLedger(EvidenceTargetLedger, Protocol):
 
     def get_source(self, record_id: str) -> Source | None: ...
 
-    def get_evidence_span(self, record_id: str) -> EvidenceSpan | None: ...
-    def save_evidence_span(self, record: EvidenceSpan) -> None: ...
+    def get_evidence_target(self, record_id: str) -> EvidenceTarget | None: ...
+    def save_evidence_target(self, record: EvidenceTarget) -> None: ...
 
     def get_assertion(self, record_id: str) -> Assertion | None: ...
     def save_assertion(self, record: Assertion) -> None: ...
@@ -695,8 +702,8 @@ def _accepted_record_from_json(
         return Organization.model_validate_json(json.dumps(record_json))
     if record_type == "Event":
         return Event.model_validate_json(json.dumps(record_json))
-    if record_type == "EvidenceSpan":
-        return EvidenceSpan.model_validate_json(json.dumps(record_json))
+    if record_type == "EvidenceTarget":
+        return EvidenceTarget.model_validate_json(json.dumps(record_json))
     if record_type == "Assertion":
         return _accepted_assertion(record_json, provenance_activity_id)
     if record_type == "Relationship":
@@ -751,22 +758,34 @@ def _prepared_assertion_evidence_links(
     for specification in specifications:
         if not isinstance(specification, dict):
             raise ValueError("Assertion evidence link must be an object.")
-        evidence_id = specification.get("evidence_span_id")
+        evidence_id = specification.get("evidence_target_id")
         if not isinstance(evidence_id, str):
-            raise ValueError("Assertion evidence link requires evidence_span_id.")
-        evidence = ledger_repository.get_evidence_span(evidence_id)
+            raise ValueError("Assertion evidence link requires evidence_target_id.")
+        validation_attempt_id = specification.get("validation_attempt_id")
+        if not isinstance(validation_attempt_id, str):
+            raise ValueError("Assertion evidence link requires validation_attempt_id.")
+        evidence = ledger_repository.get_evidence_target(evidence_id)
         evidence_ledger = cast("EvidenceTargetLedger", ledger_repository)
         if evidence is None:
             raise ValueError(
-                f"Assertion {accepted_record.id} references missing EvidenceSpan: {evidence_id}"
+                f"Assertion {accepted_record.id} references missing EvidenceTarget: {evidence_id}"
             )
-        if not verify_evidence_target(evidence, evidence_ledger).valid:
+        validation_attempt = ledger_repository.get_evidence_validation_attempt(
+            validation_attempt_id
+        )
+        if validation_attempt is None:
             raise ValueError(
-                "Assertion evidence link requires a replayable validated EvidenceSpan."
+                "Assertion evidence link references missing EvidenceValidationAttempt: "
+                f"{validation_attempt_id}"
+            )
+        if not verify_evidence_target(evidence, validation_attempt, evidence_ledger).valid:
+            raise ValueError(
+                "Assertion evidence link requires a replayable successful "
+                "EvidenceValidationAttempt."
             )
         if (
             evidence.source_id not in accepted_record.source_ids
-            or evidence.id not in accepted_record.evidence_span_ids
+            or evidence.id not in accepted_record.evidence_target_ids
         ):
             raise ValueError("Assertion evidence link must belong to the accepted Assertion.")
         role = AssertionEvidenceRole(specification.get("role"))
@@ -776,13 +795,15 @@ def _prepared_assertion_evidence_links(
             AssertionEvidenceLink(
                 id=deterministic_assertion_evidence_link_id(
                     assertion_id=accepted_record.id,
-                    evidence_span_id=evidence.id,
+                    evidence_target_id=evidence.id,
+                    validation_attempt_id=validation_attempt.id,
                     role=role,
                     polarity=polarity,
                     necessity=necessity,
                 ),
                 assertion_id=accepted_record.id,
-                evidence_span_id=evidence.id,
+                evidence_target_id=evidence.id,
+                validation_attempt_id=validation_attempt.id,
                 role=role,
                 polarity=polarity,
                 necessity=necessity,
@@ -817,11 +838,9 @@ def _validate_accepted_record_references(
             _require_actor(ledger_repository, actor_id, accepted_record.id)
         for organization_id in accepted_record.participant_organization_ids:
             _require_organization(ledger_repository, organization_id, accepted_record.id)
-    elif isinstance(accepted_record, EvidenceSpan):
+    elif isinstance(accepted_record, EvidenceTarget):
         _require_source(ledger_repository, accepted_record.source_id, accepted_record.id)
         _require_document(ledger_repository, accepted_record.document_id, accepted_record.id)
-        if accepted_record.assertion_id is not None:
-            _require_assertion(ledger_repository, accepted_record.assertion_id, accepted_record.id)
     elif isinstance(accepted_record, Assertion):
         _require_entity_reference(
             ledger_repository,
@@ -836,8 +855,8 @@ def _validate_accepted_record_references(
             )
         for source_id in accepted_record.source_ids:
             _require_source(ledger_repository, source_id, accepted_record.id)
-        for evidence_span_id in accepted_record.evidence_span_ids:
-            _require_evidence_span(ledger_repository, evidence_span_id, accepted_record.id)
+        for evidence_target_id in accepted_record.evidence_target_ids:
+            _require_evidence_target(ledger_repository, evidence_target_id, accepted_record.id)
         for provenance_activity_id in accepted_record.provenance_activity_ids:
             _require_provenance_activity(
                 ledger_repository,
@@ -863,8 +882,8 @@ def _validate_accepted_record_references(
         argument_edge = accepted_record
         _require_assertion(ledger_repository, argument_edge.from_assertion_id, argument_edge.id)
         _require_assertion(ledger_repository, argument_edge.to_assertion_id, argument_edge.id)
-        for evidence_span_id in argument_edge.evidence_span_ids:
-            _require_evidence_span(ledger_repository, evidence_span_id, argument_edge.id)
+        for evidence_target_id in argument_edge.evidence_target_ids:
+            _require_evidence_target(ledger_repository, evidence_target_id, argument_edge.id)
     else:
         raise TypeError(f"Unsupported accepted record type: {type(accepted_record).__name__}")
 
@@ -959,14 +978,14 @@ def _require_document(
         )
 
 
-def _require_evidence_span(
+def _require_evidence_target(
     ledger_repository: ProposedChangeReviewLedger,
     record_id: str,
     referring_record_id: str,
 ) -> None:
-    if ledger_repository.get_evidence_span(record_id) is None:
+    if ledger_repository.get_evidence_target(record_id) is None:
         raise ValueError(
-            f"Accepted record {referring_record_id} references missing EvidenceSpan: {record_id}"
+            f"Accepted record {referring_record_id} references missing EvidenceTarget: {record_id}"
         )
 
 
@@ -1006,8 +1025,8 @@ def _save_accepted_record(
         ledger_repository.save_organization(accepted_record)
     elif isinstance(accepted_record, Event):
         ledger_repository.save_event(accepted_record)
-    elif isinstance(accepted_record, EvidenceSpan):
-        ledger_repository.save_evidence_span(accepted_record)
+    elif isinstance(accepted_record, EvidenceTarget):
+        ledger_repository.save_evidence_target(accepted_record)
     elif isinstance(accepted_record, Assertion):
         ledger_repository.save_assertion(accepted_record)
     elif isinstance(accepted_record, Relationship):

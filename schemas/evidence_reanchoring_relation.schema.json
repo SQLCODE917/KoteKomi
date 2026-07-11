@@ -7,9 +7,9 @@
       "title": "Basis",
       "type": "string"
     },
-    "earlier_evidence_span_id": {
-      "pattern": "^evs_[A-Za-z0-9][A-Za-z0-9_-]*$",
-      "title": "Earlier Evidence Span Id",
+    "earlier_evidence_target_id": {
+      "pattern": "^evt_[A-Za-z0-9][A-Za-z0-9_-]*$",
+      "title": "Earlier Evidence Target Id",
       "type": "string"
     },
     "id": {
@@ -17,9 +17,9 @@
       "title": "Id",
       "type": "string"
     },
-    "later_evidence_span_id": {
-      "pattern": "^evs_[A-Za-z0-9][A-Za-z0-9_-]*$",
-      "title": "Later Evidence Span Id",
+    "later_evidence_target_id": {
+      "pattern": "^evt_[A-Za-z0-9][A-Za-z0-9_-]*$",
+      "title": "Later Evidence Target Id",
       "type": "string"
     },
     "provenance_id": {
@@ -35,8 +35,8 @@
   },
   "required": [
     "id",
-    "earlier_evidence_span_id",
-    "later_evidence_span_id",
+    "earlier_evidence_target_id",
+    "later_evidence_target_id",
     "provenance_id",
     "basis"
   ],

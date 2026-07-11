@@ -25,7 +25,7 @@ from kotekomi_domain import (
     Document,
     EpistemicScope,
     Event,
-    EvidenceSpan,
+    EvidenceTarget,
     Organization,
     Outcome,
     Place,
@@ -107,7 +107,7 @@ class FakeMiningLedger:
     def list_documents(self) -> tuple[Document, ...]:
         return ()
 
-    def list_evidence_spans(self) -> tuple[EvidenceSpan, ...]:
+    def list_evidence_targets(self) -> tuple[EvidenceTarget, ...]:
         return ()
 
     def list_assertions(self) -> tuple[Assertion, ...]:

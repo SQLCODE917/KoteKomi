@@ -27,14 +27,14 @@ from kotekomi_domain import (
     DocumentRepresentationBundle,
     EvidenceNecessity,
     EvidencePolarity,
-    EvidenceSpan,
-    EvidenceValidationStatus,
+    EvidenceTarget,
+    EvidenceValidationAttempt,
+    EvidenceValidationAttemptStatus,
     Organization,
     ParseQualityReport,
     ProposedChange,
     RepresentationAnalyzability,
     ReviewStatus,
-    SelectorType,
     Source,
     SourceType,
     TextView,
@@ -105,19 +105,17 @@ def _bundle() -> DocumentRepresentationBundle:
     )
 
 
-def _evidence_span(
+def _evidence_target(
     record_id: str,
     *,
-    validation_status: EvidenceValidationStatus = EvidenceValidationStatus.VALIDATED,
     text_view_digest: str = TEXT_DIGEST,
     exact_text: str = TEXT,
     representation_id: str = "rep_atomic",
-) -> EvidenceSpan:
-    evidence = EvidenceSpan(
+) -> EvidenceTarget:
+    evidence = EvidenceTarget(
         id=record_id,
         source_id="src_atomic",
         document_id="doc_atomic",
-        selector_type=SelectorType.EXACT_TEXT,
         exact_text=exact_text,
         representation_id=representation_id,
         text_view_id="tvw_atomic_logical",
@@ -125,21 +123,12 @@ def _evidence_span(
         start_char=0,
         end_char=len(TEXT),
         node_ids=("nod_atomic_document",),
-        selector_normalization_policy="utf8_identity_v1",
+        normalization_policy="utf8_identity_v1",
     )
-    if validation_status is not EvidenceValidationStatus.VALIDATED:
-        return evidence
-    return evidence.model_copy(
-        update={
-            "validation_status": EvidenceValidationStatus.VALIDATED,
-            "validator_version": "fixture_v1",
-            "validated_at": NOW,
-            "target_digest": canonical_evidence_target_digest(evidence),
-        }
-    )
+    return evidence
 
 
-def _assertion_record(*, evidence_span_ids: list[str] | None = None) -> dict[str, JsonValue]:
+def _assertion_record(*, evidence_target_ids: list[str] | None = None) -> dict[str, JsonValue]:
     return {
         "id": "ast_atomic",
         "assertion_type": "source_claim",
@@ -151,21 +140,22 @@ def _assertion_record(*, evidence_span_ids: list[str] | None = None) -> dict[str
         "source_authority": "secondary",
         "attribution_basis": "reported_by_source",
         "source_ids": ["src_atomic"],
-        "evidence_span_ids": cast(
-            list[JsonValue], evidence_span_ids or ["evs_atomic"]
+        "evidence_target_ids": cast(
+            list[JsonValue], evidence_target_ids or ["evt_atomic"]
         ),
         "provenance_activity_ids": [],
     }
 
 
 def _link_spec(
-    evidence_span_id: str,
+    evidence_target_id: str,
     *,
     role: str = "direct_support",
     polarity: str = "supports",
 ) -> dict[str, JsonValue]:
     return {
-        "evidence_span_id": evidence_span_id,
+        "evidence_target_id": evidence_target_id,
+        "validation_attempt_id": _validation_attempt_id(evidence_target_id),
         "role": role,
         "polarity": polarity,
         "necessity": "required",
@@ -175,12 +165,12 @@ def _link_spec(
 def _proposed_change(
     *,
     evidence_links: list[dict[str, JsonValue]],
-    evidence_span_ids: list[str] | None = None,
+    evidence_target_ids: list[str] | None = None,
 ) -> ProposedChange:
     proposed_json: dict[str, JsonValue] = {
         "record_type": "Assertion",
         "stable_label": "atomic_assertion",
-        "record": _assertion_record(evidence_span_ids=evidence_span_ids),
+        "record": _assertion_record(evidence_target_ids=evidence_target_ids),
         "evidence": {
             "selector_type": "exact_text",
             "exact_text": TEXT,
@@ -206,8 +196,9 @@ def _proposed_change(
 def _seed(
     ledger_path: Path,
     *,
-    evidence: tuple[EvidenceSpan, ...],
+    evidence: tuple[EvidenceTarget, ...],
     proposed_change: ProposedChange,
+    validated_evidence_ids: tuple[str, ...] | None = None,
 ) -> None:
     SQLiteLedgerInitializer(ledger_path).initialize()
     with sqlite_ledger_transaction(ledger_path) as repository:
@@ -225,8 +216,28 @@ def _seed(
         repository.save_organization(Organization(id="org_atomic", name="Atomic Org"))
         repository.commit_document_representation_bundle(_bundle())
         for span in evidence:
-            repository.save_evidence_span(span)
+            repository.save_evidence_target(span)
+        for evidence_target_id in (
+            tuple(span.id for span in evidence)
+            if validated_evidence_ids is None
+            else validated_evidence_ids
+        ):
+            span = next(item for item in evidence if item.id == evidence_target_id)
+            repository.save_evidence_validation_attempt(
+                EvidenceValidationAttempt(
+                    id=_validation_attempt_id(span.id),
+                    evidence_target_id=span.id,
+                    target_digest=canonical_evidence_target_digest(span),
+                    validator_version="fixture_v1",
+                    status=EvidenceValidationAttemptStatus.SUCCEEDED,
+                    attempted_at=NOW,
+                )
+            )
         repository.save_proposed_change(proposed_change)
+
+
+def _validation_attempt_id(evidence_target_id: str) -> str:
+    return f"eva_{evidence_target_id.removeprefix('evt_')}"
 
 
 def _review_input() -> ReviewProposedChangeInput:
@@ -251,8 +262,8 @@ def test_acceptance_commits_assertion_links_and_review_provenance_after_restart(
     tmp_path: Path,
 ) -> None:
     ledger_path = tmp_path / "ledger.db"
-    first = _evidence_span("evs_atomic")
-    second = _evidence_span("evs_atomic_context")
+    first = _evidence_target("evt_atomic")
+    second = _evidence_target("evt_atomic_context")
     change = _proposed_change(
         evidence_links=[
             _link_spec(first.id),
@@ -262,7 +273,7 @@ def test_acceptance_commits_assertion_links_and_review_provenance_after_restart(
                 polarity="contextualizes",
             ),
         ],
-        evidence_span_ids=[first.id, second.id],
+        evidence_target_ids=[first.id, second.id],
     )
     _seed(ledger_path, evidence=(first, second), proposed_change=change)
 
@@ -280,9 +291,13 @@ def test_acceptance_commits_assertion_links_and_review_provenance_after_restart(
         proposed_change = repository.get_proposed_change("pcg_atomic")
         assert proposed_change is not None
         assert proposed_change.review_status is ReviewStatus.APPROVED
-        stored_evidence = repository.get_evidence_span(first.id)
+        stored_evidence = repository.get_evidence_target(first.id)
+        validation_attempt = repository.get_evidence_validation_attempt(
+            _validation_attempt_id(first.id)
+        )
         assert stored_evidence is not None
-        assert verify_evidence_target(stored_evidence, repository).valid
+        assert validation_attempt is not None
+        assert verify_evidence_target(stored_evidence, validation_attempt, repository).valid
 
 
 @pytest.mark.parametrize(
@@ -290,10 +305,10 @@ def test_acceptance_commits_assertion_links_and_review_provenance_after_restart(
     [
         ("no_links", "requires validated direct_support evidence"),
         ("definition_only", "requires validated direct_support evidence"),
-        ("unvalidated", "replayable validated EvidenceSpan"),
-        ("stale_text_view", "replayable validated EvidenceSpan"),
-        ("selector_disagreement", "replayable validated EvidenceSpan"),
-        ("missing_representation", "replayable validated EvidenceSpan"),
+        ("unvalidated", "missing EvidenceValidationAttempt"),
+        ("stale_text_view", "successful EvidenceValidationAttempt"),
+        ("selector_disagreement", "successful EvidenceValidationAttempt"),
+        ("missing_representation", "successful EvidenceValidationAttempt"),
         ("source_absent", "must belong to the accepted Assertion"),
         ("evidence_absent", "must belong to the accepted Assertion"),
     ],
@@ -312,24 +327,19 @@ def test_evidence_gate_failures_leave_no_partial_acceptance_writes(
     ],
     expected_message: str,
 ) -> None:
-    evidence = _evidence_span("evs_atomic")
+    evidence = _evidence_target("evt_atomic")
     links = [_link_spec(evidence.id)]
     evidence_ids: list[str] | None = None
     if failure == "no_links":
         links = []
     elif failure == "definition_only":
         links = [_link_spec(evidence.id, role="definition", polarity="contextualizes")]
-    elif failure == "unvalidated":
-        evidence = _evidence_span(
-            evidence.id,
-            validation_status=EvidenceValidationStatus.UNVALIDATED,
-        )
     elif failure == "stale_text_view":
-        evidence = _evidence_span(evidence.id, text_view_digest="0" * 64)
+        evidence = _evidence_target(evidence.id, text_view_digest="0" * 64)
     elif failure == "selector_disagreement":
-        evidence = _evidence_span(evidence.id, exact_text="Wrong evidence")
+        evidence = _evidence_target(evidence.id, exact_text="Wrong evidence")
     elif failure == "missing_representation":
-        evidence = _evidence_span(evidence.id, representation_id="rep_missing")
+        evidence = _evidence_target(evidence.id, representation_id="rep_missing")
     elif failure == "source_absent":
         change = _proposed_change(evidence_links=links)
         record = dict(cast(dict[str, JsonValue], change.proposed_json["record"]))
@@ -344,13 +354,14 @@ def test_evidence_gate_failures_leave_no_partial_acceptance_writes(
         _assert_no_acceptance_writes(ledger_path)
         return
     elif failure == "evidence_absent":
-        evidence_ids = ["evs_other"]
+        evidence_ids = ["evt_other"]
 
     ledger_path = tmp_path / "ledger.db"
     _seed(
         ledger_path,
         evidence=(evidence,),
-        proposed_change=_proposed_change(evidence_links=links, evidence_span_ids=evidence_ids),
+        proposed_change=_proposed_change(evidence_links=links, evidence_target_ids=evidence_ids),
+        validated_evidence_ids=() if failure == "unvalidated" else None,
     )
     with pytest.raises(ValueError, match=expected_message):
         with sqlite_ledger_transaction(ledger_path) as repository:
@@ -360,16 +371,17 @@ def test_evidence_gate_failures_leave_no_partial_acceptance_writes(
 
 def test_second_link_conflict_rolls_back_the_entire_acceptance_bundle(tmp_path: Path) -> None:
     ledger_path = tmp_path / "ledger.db"
-    first = _evidence_span("evs_atomic")
-    second = _evidence_span("evs_atomic_context")
+    first = _evidence_target("evt_atomic")
+    second = _evidence_target("evt_atomic_context")
     change = _proposed_change(
         evidence_links=[_link_spec(first.id), _link_spec(second.id)],
-        evidence_span_ids=[first.id, second.id],
+        evidence_target_ids=[first.id, second.id],
     )
     _seed(ledger_path, evidence=(first, second), proposed_change=change)
     conflicting_id = deterministic_assertion_evidence_link_id(
         assertion_id="ast_atomic",
-        evidence_span_id=second.id,
+        evidence_target_id=second.id,
+        validation_attempt_id=_validation_attempt_id(second.id),
         role=AssertionEvidenceRole.DIRECT_SUPPORT,
         polarity=EvidencePolarity.SUPPORTS,
         necessity=EvidenceNecessity.REQUIRED,
@@ -379,7 +391,8 @@ def test_second_link_conflict_rolls_back_the_entire_acceptance_bundle(tmp_path: 
             AssertionEvidenceLink(
                 id=conflicting_id,
                 assertion_id="ast_atomic",
-                evidence_span_id=second.id,
+                evidence_target_id=second.id,
+                validation_attempt_id=_validation_attempt_id(second.id),
                 role=AssertionEvidenceRole.DIRECT_SUPPORT,
                 polarity=EvidencePolarity.SUPPORTS,
                 necessity=EvidenceNecessity.REQUIRED,
@@ -422,14 +435,14 @@ def test_corrupt_representation_digest_rejects_acceptance_without_partial_writes
     tmp_path: Path,
 ) -> None:
     ledger_path = tmp_path / "ledger.db"
-    evidence = _evidence_span("evs_atomic")
+    evidence = _evidence_target("evt_atomic")
     _seed(
         ledger_path,
         evidence=(evidence,),
         proposed_change=_proposed_change(evidence_links=[_link_spec(evidence.id)]),
     )
 
-    with pytest.raises(ValueError, match="replayable validated EvidenceSpan"):
+    with pytest.raises(ValueError, match="replayable successful EvidenceValidationAttempt"):
         with sqlite_ledger_transaction(ledger_path) as repository:
             approve_proposed_change(
                 _review_input(),

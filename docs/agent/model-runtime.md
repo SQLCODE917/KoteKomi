@@ -45,7 +45,7 @@ Use separate model roles.
 | Role | Responsibility |
 |---|---|
 | embedding model | create vectors for Document chunks |
-| extraction model | propose Assertions and EvidenceSpans |
+| extraction model | propose Assertions and EvidenceTargets |
 | reconciliation model | propose entity matches |
 | synthesis model | draft Briefings and analytic summaries |
 | reranker model | rank retrieved evidence |
@@ -62,7 +62,7 @@ Prompt changes that affect output shape require fixture updates.
 
 Model output must preserve Source and Document references.
 
-Model output must preserve EvidenceSpan text when it proposes Source-backed Assertions.
+Model output must preserve EvidenceTarget text when it proposes Source-backed Assertions.
 
 Model output is non-deterministic.
 

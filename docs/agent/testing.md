@@ -64,7 +64,7 @@ Briefing tests verify visible text.
 
 Briefing tests verify Source IDs through structured citation registry data.
 
-Briefing tests verify EvidenceSpan IDs through structured citation registry data.
+Briefing tests verify EvidenceTarget IDs through structured citation registry data.
 
 Briefing tests verify analytic inference labels.
 

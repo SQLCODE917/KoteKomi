@@ -119,12 +119,12 @@
     "attribution_basis": {
       "$ref": "#/$defs/AttributionBasis"
     },
-    "authority_evidence_span_ids": {
+    "authority_evidence_target_ids": {
       "items": {
-        "pattern": "^evs_[A-Za-z0-9][A-Za-z0-9_-]*$",
+        "pattern": "^evt_[A-Za-z0-9][A-Za-z0-9_-]*$",
         "type": "string"
       },
-      "title": "Authority Evidence Span Ids",
+      "title": "Authority Evidence Target Ids",
       "type": "array"
     },
     "authority_source_ids": {
@@ -162,12 +162,12 @@
     "epistemic_scope": {
       "$ref": "#/$defs/EpistemicScope"
     },
-    "evidence_span_ids": {
+    "evidence_target_ids": {
       "items": {
-        "pattern": "^evs_[A-Za-z0-9][A-Za-z0-9_-]*$",
+        "pattern": "^evt_[A-Za-z0-9][A-Za-z0-9_-]*$",
         "type": "string"
       },
-      "title": "Evidence Span Ids",
+      "title": "Evidence Target Ids",
       "type": "array"
     },
     "extraction_confidence": {

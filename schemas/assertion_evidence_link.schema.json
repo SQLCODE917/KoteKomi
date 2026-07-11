@@ -45,9 +45,9 @@
       "title": "Created At",
       "type": "string"
     },
-    "evidence_span_id": {
-      "pattern": "^evs_[A-Za-z0-9][A-Za-z0-9_-]*$",
-      "title": "Evidence Span Id",
+    "evidence_target_id": {
+      "pattern": "^evt_[A-Za-z0-9][A-Za-z0-9_-]*$",
+      "title": "Evidence Target Id",
       "type": "string"
     },
     "id": {
@@ -68,12 +68,18 @@
     },
     "role": {
       "$ref": "#/$defs/AssertionEvidenceRole"
+    },
+    "validation_attempt_id": {
+      "pattern": "^eva_[A-Za-z0-9][A-Za-z0-9_-]*$",
+      "title": "Validation Attempt Id",
+      "type": "string"
     }
   },
   "required": [
     "id",
     "assertion_id",
-    "evidence_span_id",
+    "evidence_target_id",
+    "validation_attempt_id",
     "role",
     "polarity",
     "necessity",

@@ -7,7 +7,7 @@ REVIEW_RECORD_TYPE_ORDER = {
     "Organization": 0,
     "Actor": 1,
     "Event": 2,
-    "EvidenceSpan": 3,
+    "EvidenceTarget": 3,
     "Assertion": 4,
     "Relationship": 5,
     "Outcome": 6,

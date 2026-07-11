@@ -26,14 +26,13 @@ from kotekomi_domain import (
     Document,
     Entity,
     Event,
-    EvidenceSpan,
+    EvidenceTarget,
     Organization,
     Outcome,
     Place,
     ProposedChange,
     Relationship,
     ReviewStatus,
-    SelectorType,
     Source,
     SourceType,
 )
@@ -52,7 +51,7 @@ class FakeReviewQueueLedger:
         self.organizations: dict[str, Organization] = {}
         self.places: dict[str, Place] = {}
         self.events: dict[str, Event] = {}
-        self.evidence_spans: dict[str, EvidenceSpan] = {}
+        self.evidence_targets: dict[str, EvidenceTarget] = {}
         self.assertions: dict[str, Assertion] = {}
         self.relationships: dict[str, Relationship] = {}
         self.outcomes: dict[str, Outcome] = {}
@@ -85,8 +84,8 @@ class FakeReviewQueueLedger:
     def get_place(self, record_id: str) -> Place | None:
         return self.places.get(record_id)
 
-    def get_evidence_span(self, record_id: str) -> EvidenceSpan | None:
-        return self.evidence_spans.get(record_id)
+    def get_evidence_target(self, record_id: str) -> EvidenceTarget | None:
+        return self.evidence_targets.get(record_id)
 
     def get_assertion(self, record_id: str) -> Assertion | None:
         return self.assertions.get(record_id)
@@ -252,25 +251,30 @@ def test_review_next_fails_fast_on_malformed_selected_proposed_change() -> None:
 def test_review_packet_includes_evidence_assertion_context_and_reference_resolution() -> None:
     pending_evidence_change = proposed_change(
         "pcg_evidence",
-        "EvidenceSpan",
-        evidence_span_json("evs_pending"),
+        "EvidenceTarget",
+        evidence_target_json("evt_pending"),
         stable_label="pending_evidence",
     )
     assertion_change = proposed_change(
         "pcg_assertion",
         "Assertion",
-        assertion_json(evidence_span_ids=["evs_accepted", "evs_pending", "evs_missing"]),
+        assertion_json(evidence_target_ids=["evt_accepted", "evt_pending", "evt_missing"]),
     )
     ledger = seeded_ledger((pending_evidence_change, assertion_change))
-    ledger.evidence_spans["evs_accepted"] = EvidenceSpan(
-        id="evs_accepted",
+    ledger.evidence_targets["evt_accepted"] = EvidenceTarget(
+        id="evt_accepted",
         source_id="src_article_a",
         document_id="doc_article_a",
-        selector_type=SelectorType.EXACT_TEXT,
+        representation_id="rep_article_a",
+        text_view_id="tvw_article_a",
+        text_view_digest="0" * 64,
+        start_char=0,
+        end_char=23,
         exact_text="Accepted evidence text.",
+        normalization_policy="fixture_v1",
+        node_ids=("nod_article_a",),
         prefix_text="Accepted prefix.",
         suffix_text="Accepted suffix.",
-        location={"section": "accepted"},
     )
 
     packet = get_review_packet(ReviewPacketInput("pcg_assertion"), ledger)
@@ -292,9 +296,9 @@ def test_review_packet_includes_evidence_assertion_context_and_reference_resolut
     }
     assert resolutions[("Organization", "org_anthropic")] is ReviewReferenceResolution.ACCEPTED
     assert resolutions[("Source", "src_article_a")] is ReviewReferenceResolution.ACCEPTED
-    assert resolutions[("EvidenceSpan", "evs_accepted")] is ReviewReferenceResolution.ACCEPTED
-    assert resolutions[("EvidenceSpan", "evs_pending")] is ReviewReferenceResolution.PENDING
-    assert resolutions[("EvidenceSpan", "evs_missing")] is ReviewReferenceResolution.MISSING
+    assert resolutions[("EvidenceTarget", "evt_accepted")] is ReviewReferenceResolution.ACCEPTED
+    assert resolutions[("EvidenceTarget", "evt_pending")] is ReviewReferenceResolution.PENDING
+    assert resolutions[("EvidenceTarget", "evt_missing")] is ReviewReferenceResolution.MISSING
 
 
 def test_review_packet_fails_fast_on_malformed_or_unsupported_proposed_change() -> None:
@@ -336,14 +340,14 @@ def test_export_review_editable_record_returns_only_proposed_record_json() -> No
 def test_review_readiness_reports_pending_and_missing_references() -> None:
     pending_evidence_change = proposed_change(
         "pcg_evidence",
-        "EvidenceSpan",
-        evidence_span_json("evs_pending"),
+        "EvidenceTarget",
+        evidence_target_json("evt_pending"),
         stable_label="pending_evidence",
     )
     assertion_change = proposed_change(
         "pcg_assertion",
         "Assertion",
-        assertion_json(evidence_span_ids=["evs_pending", "evs_missing"]),
+        assertion_json(evidence_target_ids=["evt_pending", "evt_missing"]),
     )
     ledger = seeded_ledger((pending_evidence_change, assertion_change))
 
@@ -351,7 +355,7 @@ def test_review_readiness_reports_pending_and_missing_references() -> None:
 
     assert status.review_required is True
     assert status.pending_count == 2
-    assert status.pending_record_type_counts == {"Assertion": 1, "EvidenceSpan": 1}
+    assert status.pending_record_type_counts == {"Assertion": 1, "EvidenceTarget": 1}
     assert status.pending_reference_count == 1
     assert status.missing_reference_count == 1
     assert status.can_project_graph is False
@@ -361,8 +365,8 @@ def test_review_readiness_reports_pending_and_missing_references() -> None:
         (blocker.proposed_change_id, blocker.referenced_type, blocker.referenced_id)
         for blocker in status.blockers
     }
-    assert ("pcg_assertion", "EvidenceSpan", "evs_pending") in blocker_keys
-    assert ("pcg_assertion", "EvidenceSpan", "evs_missing") in blocker_keys
+    assert ("pcg_assertion", "EvidenceTarget", "evt_pending") in blocker_keys
+    assert ("pcg_assertion", "EvidenceTarget", "evt_missing") in blocker_keys
 
 
 def test_review_readiness_reports_downstream_ready_when_no_pending_records() -> None:
@@ -417,7 +421,7 @@ def test_review_state_json_serializers_return_structured_objects() -> None:
     assertion_change = proposed_change(
         "pcg_assertion",
         "Assertion",
-        assertion_json(evidence_span_ids=["evs_missing"]),
+        assertion_json(evidence_target_ids=["evt_missing"]),
     )
     ledger = seeded_ledger((assertion_change,))
     queue = list_review_queue(ReviewQueueInput(), ledger)
@@ -535,26 +539,30 @@ def organization_json() -> dict[str, JsonValue]:
     }
 
 
-def evidence_span_json(evidence_span_id: str) -> dict[str, JsonValue]:
+def evidence_target_json(evidence_target_id: str) -> dict[str, JsonValue]:
     return {
-        "id": evidence_span_id,
+        "id": evidence_target_id,
         "source_id": "src_article_a",
         "document_id": "doc_article_a",
-        "assertion_id": None,
-        "selector_type": "exact_text",
+        "representation_id": "rep_article_a",
+        "text_view_id": "tvw_article_a",
+        "text_view_digest": "0" * 64,
+        "start_char": 0,
+        "end_char": 22,
         "exact_text": "Pending evidence text.",
+        "normalization_policy": "fixture_v1",
+        "node_ids": ["nod_article_a"],
         "prefix_text": "Pending prefix.",
         "suffix_text": "Pending suffix.",
-        "location": {"section": "pending"},
     }
 
 
 def assertion_json(
     assertion_id: str = "ast_delay",
     *,
-    evidence_span_ids: list[str] | None = None,
+    evidence_target_ids: list[str] | None = None,
 ) -> dict[str, JsonValue]:
-    evidence_ids: list[JsonValue] = list(evidence_span_ids or ["evs_accepted"])
+    evidence_ids: list[JsonValue] = list(evidence_target_ids or ["evt_accepted"])
     return {
         "id": assertion_id,
         "assertion_type": "source_claim",
@@ -569,6 +577,6 @@ def assertion_json(
         "extraction_confidence": 0.89,
         "world_truth_confidence": 0.62,
         "source_ids": ["src_article_a"],
-        "evidence_span_ids": evidence_ids,
+        "evidence_target_ids": evidence_ids,
         "provenance_activity_ids": [],
     }

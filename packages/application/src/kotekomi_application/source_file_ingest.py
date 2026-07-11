@@ -332,7 +332,9 @@ def _require_complete_existing_closure(
     bundle = ledger_repository.get_document_representation_bundle(representation_id)
     if bundle is None:
         raise ValueError("INCOMPLETE_CLOSURE: DocumentRepresentationBundle is missing.")
-    text_view = next((view for view in bundle.text_views if view.kind is TextViewKind.LOGICAL), None)
+    text_view = next(
+        (view for view in bundle.text_views if view.kind is TextViewKind.LOGICAL), None
+    )
     if text_view is None or text_view.text != archived_text:
         raise ValueError("INCOMPLETE_CLOSURE: logical TextView disagrees with extracted text.")
 

@@ -1,0 +1,164 @@
+{
+  "$defs": {
+    "JsonValue": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "integer"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    },
+    "document_id": {
+      "pattern": "^doc_[A-Za-z0-9][A-Za-z0-9_-]*$",
+      "title": "Document Id",
+      "type": "string"
+    },
+    "dom_selector": {
+      "anyOf": [
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Dom Selector"
+    },
+    "end_char": {
+      "exclusiveMinimum": 0,
+      "title": "End Char",
+      "type": "integer"
+    },
+    "exact_text": {
+      "minLength": 1,
+      "title": "Exact Text",
+      "type": "string"
+    },
+    "id": {
+      "pattern": "^evt_[A-Za-z0-9][A-Za-z0-9_-]*$",
+      "title": "Id",
+      "type": "string"
+    },
+    "node_ids": {
+      "items": {
+        "pattern": "^nod_[A-Za-z0-9][A-Za-z0-9_-]*$",
+        "type": "string"
+      },
+      "title": "Node Ids",
+      "type": "array"
+    },
+    "normalization_policy": {
+      "minLength": 1,
+      "title": "Normalization Policy",
+      "type": "string"
+    },
+    "pdf_region_ids": {
+      "items": {
+        "pattern": "^srg_[A-Za-z0-9][A-Za-z0-9_-]*$",
+        "type": "string"
+      },
+      "title": "Pdf Region Ids",
+      "type": "array"
+    },
+    "prefix_text": {
+      "default": "",
+      "title": "Prefix Text",
+      "type": "string"
+    },
+    "representation_id": {
+      "pattern": "^rep_[A-Za-z0-9][A-Za-z0-9_-]*$",
+      "title": "Representation Id",
+      "type": "string"
+    },
+    "source_id": {
+      "pattern": "^src_[A-Za-z0-9][A-Za-z0-9_-]*$",
+      "title": "Source Id",
+      "type": "string"
+    },
+    "start_char": {
+      "minimum": 0,
+      "title": "Start Char",
+      "type": "integer"
+    },
+    "suffix_text": {
+      "default": "",
+      "title": "Suffix Text",
+      "type": "string"
+    },
+    "table_selector": {
+      "anyOf": [
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Table Selector"
+    },
+    "text_view_digest": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Text View Digest",
+      "type": "string"
+    },
+    "text_view_id": {
+      "pattern": "^tvw_[A-Za-z0-9][A-Za-z0-9_-]*$",
+      "title": "Text View Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "source_id",
+    "document_id",
+    "representation_id",
+    "text_view_id",
+    "text_view_digest",
+    "start_char",
+    "end_char",
+    "exact_text",
+    "normalization_policy"
+  ],
+  "title": "EvidenceTarget",
+  "type": "object"
+}

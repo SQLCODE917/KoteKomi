@@ -17,7 +17,7 @@ Briefings explain changed Ledger state since a previous Briefing.
 
 Briefings use numbered citations in human-facing Markdown.
 
-Briefing citation registries store Source IDs and EvidenceSpan IDs.
+Briefing citation registries store Source IDs and EvidenceTarget IDs.
 
 Default human-facing Briefing Markdown does not expose raw canonical Domain IDs.
 
@@ -31,7 +31,7 @@ Verify visible text.
 
 Verify Source IDs through structured citation registry data.
 
-Verify EvidenceSpan IDs through structured citation registry data.
+Verify EvidenceTarget IDs through structured citation registry data.
 
 Verify human-facing Markdown does not expose raw canonical Domain IDs.
 

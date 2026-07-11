@@ -131,10 +131,10 @@
       }
     },
     {
-      "record_type": "EvidenceSpan",
+      "record_type": "EvidenceTarget",
       "stable_label": "delay_after_us_cyber_concerns",
       "record": {
-        "id": "evs_delay_after_us_cyber_concerns",
+        "id": "evt_delay_after_us_cyber_concerns",
         "source_id": "src_9d1d34127a12003b0548d311",
         "document_id": "doc_0b9578915ef679fb12b26d53",
         "assertion_id": null,
@@ -151,7 +151,7 @@
         "start_char": 238,
         "end_char": 529,
         "node_ids": ["nod_08f688858e7f7202438e1da2_document"],
-        "selector_normalization_policy": "utf8_identity_v1",
+        "normalization_policy": "utf8_identity_v1",
         "validation_status": "validated",
         "validator_version": "fixture_v1",
         "validated_at": "2026-07-11T00:00:00Z",
@@ -165,10 +165,10 @@
       }
     },
     {
-      "record_type": "EvidenceSpan",
+      "record_type": "EvidenceTarget",
       "stable_label": "enterprise_pilots_suspended",
       "record": {
-        "id": "evs_enterprise_pilots_suspended",
+        "id": "evt_enterprise_pilots_suspended",
         "source_id": "src_9d1d34127a12003b0548d311",
         "document_id": "doc_0b9578915ef679fb12b26d53",
         "assertion_id": null,
@@ -185,7 +185,7 @@
         "start_char": 1657,
         "end_char": 1898,
         "node_ids": ["nod_08f688858e7f7202438e1da2_document"],
-        "selector_normalization_policy": "utf8_identity_v1",
+        "normalization_policy": "utf8_identity_v1",
         "validation_status": "validated",
         "validator_version": "fixture_v1",
         "validated_at": "2026-07-11T00:00:00Z",
@@ -199,10 +199,10 @@
       }
     },
     {
-      "record_type": "EvidenceSpan",
+      "record_type": "EvidenceTarget",
       "stable_label": "lutnick_pressed_pause_for_customer_separation_review",
       "record": {
-        "id": "evs_lutnick_pressed_pause_for_customer_separation_review",
+        "id": "evt_lutnick_pressed_pause_for_customer_separation_review",
         "source_id": "src_9d1d34127a12003b0548d311",
         "document_id": "doc_0b9578915ef679fb12b26d53",
         "assertion_id": null,
@@ -219,7 +219,7 @@
         "start_char": 1248,
         "end_char": 1459,
         "node_ids": ["nod_08f688858e7f7202438e1da2_document"],
-        "selector_normalization_policy": "utf8_identity_v1",
+        "normalization_policy": "utf8_identity_v1",
         "validation_status": "validated",
         "validator_version": "fixture_v1",
         "validated_at": "2026-07-11T00:00:00Z",
@@ -257,7 +257,7 @@
         },
         "current_assessment": "The Source reports that U.S. cyber-safety concerns delayed Anthropic's broader Claude Fable 5 rollout.",
         "source_ids": ["src_9d1d34127a12003b0548d311"],
-        "evidence_span_ids": ["evs_delay_after_us_cyber_concerns"],
+        "evidence_target_ids": ["evt_delay_after_us_cyber_concerns"],
         "provenance_activity_ids": []
       },
       "evidence": {
@@ -268,7 +268,7 @@
       },
       "evidence_links": [
         {
-          "evidence_span_id": "evs_delay_after_us_cyber_concerns",
+          "evidence_target_id": "evt_delay_after_us_cyber_concerns",
           "role": "direct_support",
           "polarity": "supports",
           "necessity": "required"
@@ -299,7 +299,7 @@
         },
         "current_assessment": "The article states that Commerce Secretary Howard Lutnick pressed for a pause until Commerce could assess customer-separation controls.",
         "source_ids": ["src_9d1d34127a12003b0548d311"],
-        "evidence_span_ids": ["evs_lutnick_pressed_pause_for_customer_separation_review"],
+        "evidence_target_ids": ["evt_lutnick_pressed_pause_for_customer_separation_review"],
         "provenance_activity_ids": []
       },
       "evidence": {
@@ -310,7 +310,7 @@
       },
       "evidence_links": [
         {
-          "evidence_span_id": "evs_lutnick_pressed_pause_for_customer_separation_review",
+          "evidence_target_id": "evt_lutnick_pressed_pause_for_customer_separation_review",
           "role": "direct_support",
           "polarity": "supports",
           "necessity": "required"
@@ -342,7 +342,7 @@
         },
         "current_assessment": "The Source reports that Anthropic suspended several enterprise pilots while preserving a smaller approved evaluation program.",
         "source_ids": ["src_9d1d34127a12003b0548d311"],
-        "evidence_span_ids": ["evs_enterprise_pilots_suspended"],
+        "evidence_target_ids": ["evt_enterprise_pilots_suspended"],
         "provenance_activity_ids": []
       },
       "evidence": {
@@ -353,7 +353,7 @@
       },
       "evidence_links": [
         {
-          "evidence_span_id": "evs_enterprise_pilots_suspended",
+          "evidence_target_id": "evt_enterprise_pilots_suspended",
           "role": "direct_support",
           "polarity": "supports",
           "necessity": "required"

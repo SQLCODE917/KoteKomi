@@ -1,0 +1,65 @@
+{
+  "$defs": {
+    "EvidenceValidationAttemptStatus": {
+      "enum": [
+        "succeeded",
+        "failed"
+      ],
+      "title": "EvidenceValidationAttemptStatus",
+      "type": "string"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "attempted_at": {
+      "format": "date-time",
+      "title": "Attempted At",
+      "type": "string"
+    },
+    "error_message": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Error Message"
+    },
+    "evidence_target_id": {
+      "pattern": "^evt_[A-Za-z0-9][A-Za-z0-9_-]*$",
+      "title": "Evidence Target Id",
+      "type": "string"
+    },
+    "id": {
+      "pattern": "^eva_[A-Za-z0-9][A-Za-z0-9_-]*$",
+      "title": "Id",
+      "type": "string"
+    },
+    "status": {
+      "$ref": "#/$defs/EvidenceValidationAttemptStatus"
+    },
+    "target_digest": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Target Digest",
+      "type": "string"
+    },
+    "validator_version": {
+      "minLength": 1,
+      "title": "Validator Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "evidence_target_id",
+    "target_digest",
+    "validator_version",
+    "status"
+  ],
+  "title": "EvidenceValidationAttempt",
+  "type": "object"
+}
