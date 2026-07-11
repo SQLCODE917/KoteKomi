@@ -28,7 +28,7 @@ from kotekomi_domain import (
     canonical_representation_digest,
 )
 
-from kotekomi_application.ports import ArchiveObject, ArchiveStore, StagedArchiveObject
+from kotekomi_application.ports import ArchiveStore, StagedArchiveObject
 from kotekomi_application.processing import (
     BuildIdentity,
     ProcessingAttemptIdFactory,
@@ -37,6 +37,7 @@ from kotekomi_application.processing import (
     execute_processing_task,
     processing_attempt_outcome,
     processing_task_fingerprint,
+    reconcile_interrupted_processing_attempts,
     start_processing_attempt,
 )
 from kotekomi_application.representation_identity import (
@@ -185,6 +186,12 @@ def commit_authoritative_capture(
     text_view_id = f"tvw_{representation_key}_logical"
     document_node_id = f"nod_{representation_key}_document"
     quality_report_id = f"pqr_{representation_key}_quality_v1"
+    reconcile_interrupted_processing_attempts(
+        task_fingerprint_id=task.id,
+        ledger=ledger_repository,
+        reconciled_at=ingest_input.ingested_at,
+        interruption_basis="authoritative capture retry found an unclosed attempt",
+    )
 
     existing_capture = ledger_repository.get_source_capture(identity.source_capture_id)
     existing_provenance = ledger_repository.get_provenance_activity(provenance_activity_id)
@@ -242,7 +249,6 @@ def commit_authoritative_capture(
         )
 
     staged_objects: list[StagedArchiveObject] = []
-    promoted_objects: list[ArchiveObject] = []
     attempt = None
     try:
         archive_store.put_if_absent_or_identical(
@@ -251,10 +257,22 @@ def commit_authoritative_capture(
             content_sha256,
         )
         if existing_document is None:
-            staged_text = archive_store.stage_document_text(identity.document_id, extracted_text)
-            staged_objects.append(staged_text)
+            try:
+                archived_text = archive_store.read_document_text(identity.document_id)
+            except FileNotFoundError:
+                staged_text = archive_store.stage_document_text(
+                    identity.document_id,
+                    extracted_text,
+                )
+                staged_objects.append(staged_text)
+            else:
+                if archived_text != extracted_text:
+                    raise ValueError(
+                        "Existing archived document text conflicts with the deterministic "
+                        "local-file extraction."
+                    )
         for staged_object in staged_objects:
-            promoted_objects.append(archive_store.promote_staged_object(staged_object))
+            archive_store.promote_staged_object(staged_object)
 
         outcome = capture_source(request, ledger_repository, identity_policy)
         document = outcome.document
@@ -414,7 +432,7 @@ def commit_authoritative_capture(
                     ),
                 )
             )
-        _cleanup_archive_objects(archive_store, promoted_objects, staged_objects)
+        _cleanup_archive_objects(archive_store, staged_objects)
         raise
 
     return AuthoritativeCaptureOutcome(
@@ -482,7 +500,6 @@ def _local_file_request_fingerprint(source_key: str, content_sha256: str) -> str
 
 def _cleanup_archive_objects(
     archive_store: ArchiveStore,
-    promoted_objects: list[ArchiveObject],
     staged_objects: list[StagedArchiveObject],
 ) -> None:
     for staged_object in reversed(staged_objects):
