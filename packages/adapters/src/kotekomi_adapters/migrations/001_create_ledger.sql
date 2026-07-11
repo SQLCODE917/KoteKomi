@@ -64,7 +64,7 @@ CREATE TABLE IF NOT EXISTS documents (
   updated_at TEXT,
   status TEXT,
   review_status TEXT,
-  source_id TEXT NOT NULL,
+  source_id TEXT NOT NULL, provider_version TEXT,
   payload_json TEXT NOT NULL,
   FOREIGN KEY (source_id) REFERENCES sources(id)
 );
@@ -163,8 +163,13 @@ CREATE TABLE IF NOT EXISTS capture_document_resolutions (
 );
 CREATE TABLE IF NOT EXISTS document_revision_relations (
   id TEXT PRIMARY KEY, created_at TEXT, updated_at TEXT, status TEXT, review_status TEXT,
-  payload_json TEXT NOT NULL
+  earlier_document_id TEXT NOT NULL, later_document_id TEXT NOT NULL, payload_json TEXT NOT NULL
 );
+CREATE INDEX IF NOT EXISTS idx_documents_source_id ON documents(source_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_documents_source_provider_version
+  ON documents(source_id, provider_version) WHERE provider_version IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_document_revision_relations_earlier
+  ON document_revision_relations(earlier_document_id);
 CREATE TABLE IF NOT EXISTS document_representations (
   id TEXT PRIMARY KEY, created_at TEXT, updated_at TEXT, status TEXT, review_status TEXT,
   document_id TEXT NOT NULL, payload_json TEXT NOT NULL

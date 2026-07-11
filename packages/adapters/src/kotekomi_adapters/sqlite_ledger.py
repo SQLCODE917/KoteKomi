@@ -110,7 +110,11 @@ RELATIONAL_OWNERSHIP_COLUMNS: dict[str, tuple[tuple[str, str], ...]] = {
         ("capture_id", "capture_id"),
         ("document_id", "document_id"),
     ),
-    "documents": (("source_id", "source_id"),),
+    "documents": (("source_id", "source_id"), ("provider_version", "provider_version")),
+    "document_revision_relations": (
+        ("earlier_document_id", "earlier_document_id"),
+        ("later_document_id", "later_document_id"),
+    ),
     "document_representations": (("document_id", "document_id"),),
     "text_views": (("representation_id", "representation_id"),),
     "document_nodes": (
@@ -493,6 +497,18 @@ class SQLiteLedgerRepository:
     def list_documents(self) -> tuple[Document, ...]:
         return self._list(DOCUMENT_SPEC)
 
+    def list_documents_for_source(self, source_id: str) -> tuple[Document, ...]:
+        return self._list_for_owner(DOCUMENT_SPEC, "source_id", source_id)
+
+    def find_document_by_provider_version(
+        self, source_id: str, provider_version: str
+    ) -> Document | None:
+        row = self._connection.execute(
+            "SELECT payload_json FROM documents WHERE source_id = ? AND provider_version = ?",
+            (source_id, provider_version),
+        ).fetchone()
+        return Document.model_validate_json(str(row[0])) if row is not None else None
+
     def save_document_representation(self, record: DocumentRepresentation) -> None:
         self._save(DOCUMENT_REPRESENTATION_SPEC, record)
 
@@ -732,6 +748,13 @@ class SQLiteLedgerRepository:
 
     def list_document_revision_relations(self) -> tuple[DocumentRevisionRelation, ...]:
         return self._list(DOCUMENT_REVISION_RELATION_SPEC)
+
+    def list_document_revision_relations_from(
+        self, document_id: str
+    ) -> tuple[DocumentRevisionRelation, ...]:
+        return self._list_for_owner(
+            DOCUMENT_REVISION_RELATION_SPEC, "earlier_document_id", document_id
+        )
 
     def save_evidence_target(self, record: EvidenceTarget) -> None:
         self._save(EVIDENCE_TARGET_SPEC, record)

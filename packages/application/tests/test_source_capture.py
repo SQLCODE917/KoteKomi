@@ -50,8 +50,37 @@ class FakeCaptureLedger:
     def list_documents(self) -> tuple[Document, ...]:
         return tuple(self.documents.values())
 
+    def list_documents_for_source(self, source_id: str) -> tuple[Document, ...]:
+        return tuple(
+            document for document in self.documents.values() if document.source_id == source_id
+        )
+
+    def find_document_by_provider_version(
+        self, source_id: str, provider_version: str
+    ) -> Document | None:
+        return next(
+            (
+                document
+                for document in self.documents.values()
+                if document.source_id == source_id and document.provider_version == provider_version
+            ),
+            None,
+        )
+
     def list_document_revision_relations(self) -> tuple[DocumentRevisionRelation, ...]:
         return tuple(self.relations.values())
+
+    def get_document_revision_relation(self, record_id: str) -> DocumentRevisionRelation | None:
+        return self.relations.get(record_id)
+
+    def list_document_revision_relations_from(
+        self, document_id: str
+    ) -> tuple[DocumentRevisionRelation, ...]:
+        return tuple(
+            relation
+            for relation in self.relations.values()
+            if relation.earlier_document_id == document_id
+        )
 
     def save_source(self, record: Source) -> None:
         self.sources[record.id] = record

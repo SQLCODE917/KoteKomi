@@ -155,11 +155,7 @@ def add_source_from_file(
     )
     identity_policy = StableSourceIdentityPolicy()
     identity = capture_identity(request, identity_policy)
-    prior_documents = tuple(
-        document
-        for document in ledger_repository.list_documents()
-        if document.source_id == identity.source_id
-    )
+    prior_documents = ledger_repository.list_documents_for_source(identity.source_id)
     existing_document = ledger_repository.get_document(identity.document_id)
     if existing_document is None and prior_documents:
         raise ValueError(

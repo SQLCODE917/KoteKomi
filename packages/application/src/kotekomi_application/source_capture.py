@@ -95,8 +95,14 @@ class CaptureLedger(Protocol):
     def get_capture_document_resolution(
         self, record_id: str
     ) -> CaptureDocumentResolution | None: ...
-    def list_documents(self) -> tuple[Document, ...]: ...
-    def list_document_revision_relations(self) -> tuple[DocumentRevisionRelation, ...]: ...
+    def list_documents_for_source(self, source_id: str) -> tuple[Document, ...]: ...
+    def find_document_by_provider_version(
+        self, source_id: str, provider_version: str
+    ) -> Document | None: ...
+    def get_document_revision_relation(self, record_id: str) -> DocumentRevisionRelation | None: ...
+    def list_document_revision_relations_from(
+        self, document_id: str
+    ) -> tuple[DocumentRevisionRelation, ...]: ...
     def save_source(self, record: Source) -> None: ...
     def save_raw_blob(self, record: RawBlob) -> None: ...
     def save_source_capture(self, record: SourceCapture) -> None: ...
@@ -294,13 +300,11 @@ def _validate_provider_version_conflict(
 ) -> None:
     if request.provider_item_id is None or request.provider_version is None:
         return
-    for document in ledger_repository.list_documents():
-        if (
-            document.source_id == identity.source_id
-            and document.provider_version == request.provider_version
-            and document.content_sha256 != identity.content_digest
-        ):
-            raise ValueError("Provider item/version conflicts with previously captured bytes.")
+    document = ledger_repository.find_document_by_provider_version(
+        identity.source_id, request.provider_version
+    )
+    if document is not None and document.content_sha256 != identity.content_digest:
+        raise ValueError("Provider item/version conflicts with previously captured bytes.")
 
 
 def _requested_relation(
@@ -326,14 +330,7 @@ def _find_requested_relation(
     relation = _requested_relation(request, identity)
     if relation is None:
         return None
-    return next(
-        (
-            existing
-            for existing in ledger_repository.list_document_revision_relations()
-            if existing.id == relation.id
-        ),
-        None,
-    )
+    return ledger_repository.get_document_revision_relation(relation.id)
 
 
 def _require_document_resolution(
@@ -399,14 +396,7 @@ def _find_requested_relation_from_relation(
 ) -> DocumentRevisionRelation | None:
     if relation is None:
         return None
-    return next(
-        (
-            existing
-            for existing in ledger_repository.list_document_revision_relations()
-            if existing.id == relation.id
-        ),
-        None,
-    )
+    return ledger_repository.get_document_revision_relation(relation.id)
 
 
 def _same_revision_relation(
@@ -436,8 +426,7 @@ def _would_create_revision_cycle(ledger: CaptureLedger, earlier_id: str, later_i
         visited.add(current)
         frontier.extend(
             relation.later_document_id
-            for relation in ledger.list_document_revision_relations()
-            if relation.earlier_document_id == current
+            for relation in ledger.list_document_revision_relations_from(current)
         )
     return False
 
