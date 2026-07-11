@@ -11,6 +11,8 @@ from kotekomi_domain import (
     Assertion,
     AssertionEvidenceLink,
     AssertionEvidenceRole,
+    Document,
+    DocumentNode,
     DocumentRepresentationBundle,
     EvidenceNecessity,
     EvidencePolarity,
@@ -19,6 +21,7 @@ from kotekomi_domain import (
     EvidenceValidationStatus,
     ProvenanceActivity,
     canonical_evidence_target_digest,
+    canonical_representation_digest,
 )
 
 HASH_ID_LENGTH = 24
@@ -30,6 +33,7 @@ class EvidenceTargetLedger(Protocol):
     def get_document_representation_bundle(
         self, record_id: str
     ) -> DocumentRepresentationBundle | None: ...
+    def get_document(self, record_id: str) -> Document | None: ...
 
 
 class AssertionEvidenceLinkLedger(EvidenceTargetLedger, Protocol):
@@ -250,8 +254,23 @@ def _validate_evidence_target(
     bundle = ledger_repository.get_document_representation_bundle(evidence_span.representation_id)
     if bundle is None:
         raise ValueError("EvidenceSpan references a missing DocumentRepresentation.")
+    actual_output_digest = canonical_representation_digest(
+        bundle.representation,
+        text_views=bundle.text_views,
+        nodes=bundle.nodes,
+        edges=bundle.edges,
+        source_regions=bundle.source_regions,
+        quality_report=bundle.quality_report,
+    )
+    if bundle.representation.canonical_output_digest != actual_output_digest:
+        raise ValueError("DocumentRepresentation canonical_output_digest is corrupted.")
     if bundle.representation.document_id != evidence_span.document_id:
         raise ValueError("EvidenceSpan Document does not match its DocumentRepresentation.")
+    document = ledger_repository.get_document(evidence_span.document_id)
+    if document is None:
+        raise ValueError("EvidenceSpan references a missing Document.")
+    if document.source_id != evidence_span.source_id:
+        raise ValueError("EvidenceSpan Source does not match its Document.")
     if evidence_span.text_view_id is None or evidence_span.text_view_digest is None:
         raise ValueError("EvidenceSpan is missing its TextView selector.")
     text_view = next(
@@ -282,15 +301,24 @@ def _validate_evidence_target(
     if not evidence_span.node_ids:
         raise ValueError("EvidenceSpan requires at least one structural node selector.")
     nodes = {node.id: node for node in bundle.nodes}
+    selected_nodes: list[DocumentNode] = []
     for node_id in evidence_span.node_ids:
         node = nodes.get(node_id)
         if node is None or node.text_view_id != evidence_span.text_view_id:
             raise ValueError("EvidenceSpan node selector does not match its TextView.")
         if node.start_char > evidence_span.start_char or node.end_char < evidence_span.end_char:
             raise ValueError("EvidenceSpan node selector does not contain the selected occurrence.")
+        selected_nodes.append(node)
     source_region_ids = {region.id for region in bundle.source_regions}
     if not set(evidence_span.pdf_region_ids).issubset(source_region_ids):
         raise ValueError("EvidenceSpan PDF region selector is missing from its representation.")
+    selected_node_region_ids = {
+        region_id for node in selected_nodes for region_id in node.source_region_ids
+    }
+    if evidence_span.pdf_region_ids and not set(evidence_span.pdf_region_ids).issubset(
+        selected_node_region_ids
+    ):
+        raise ValueError("EvidenceSpan region selectors do not match its node selectors.")
     if evidence_span.dom_selector is not None or evidence_span.table_selector is not None:
         raise ValueError(
             "DOM and table evidence selectors are not yet represented by this parser output."

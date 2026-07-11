@@ -26,15 +26,9 @@ evidence_links:
     necessity: required
 ```
 
-For the legacy proposal adapter, translate existing `Assertion.evidence_span_ids` to:
-
-```text
-role: direct_support
-polarity: supports
-necessity: required
-```
-
-Make this an explicit compatibility policy, not an invisible permanent assumption.
+Source-backed Assertion proposals must provide these specifications explicitly. Do not
+translate `Assertion.evidence_span_ids`; the project has no compatibility path for
+unlinked Assertion proposals.
 
 ## Add a pure replay operation
 
@@ -137,4 +131,3 @@ This closes the third agreed release gate.
 [6]: https://raw.githubusercontent.com/SQLCODE917/KoteKomi/main/packages/adapters/src/kotekomi_adapters/docling_pdf_parser.py "raw.githubusercontent.com"
 [7]: https://raw.githubusercontent.com/SQLCODE917/KoteKomi/main/packages/domain/src/kotekomi_domain/models.py "raw.githubusercontent.com"
 [8]: https://raw.githubusercontent.com/SQLCODE917/KoteKomi/main/docs/2026-07-11-authoritative-document-ingestion-program.md "raw.githubusercontent.com"
-

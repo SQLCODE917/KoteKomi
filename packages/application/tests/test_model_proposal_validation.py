@@ -63,3 +63,30 @@ def test_parse_model_proposal_batch_rejects_unsupported_record_type() -> None:
 
     with pytest.raises(ValueError, match="Input tag 'Place'"):
         parse_model_proposal_batch_json(payload)
+
+
+def test_parse_model_proposal_batch_preserves_assertion_evidence_link_specifications() -> None:
+    proposals = parse_model_proposal_batch_json(FIXTURE_PATH.read_text(encoding="utf-8"))
+    parsed = next(proposal for proposal in proposals if proposal.record_type == "Assertion")
+
+    assert parsed.evidence_links == (
+        {
+            "evidence_span_id": "evs_delay_after_us_cyber_concerns",
+            "role": "direct_support",
+            "polarity": "supports",
+            "necessity": "required",
+        },
+    )
+
+
+def test_parse_model_proposal_batch_rejects_source_backed_assertion_without_links() -> None:
+    payload = json.loads(FIXTURE_PATH.read_text(encoding="utf-8"))
+    assertion = next(
+        proposal for proposal in payload["proposals"] if proposal["record_type"] == "Assertion"
+    )
+    assertion.pop("evidence_links")
+
+    with pytest.raises(
+        ValueError, match="Source-backed Assertion proposals require evidence_links"
+    ):
+        parse_model_proposal_batch_json(json.dumps(payload))

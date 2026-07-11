@@ -223,6 +223,7 @@ class ModelProposal:
     stable_label: str
     record: dict[str, JsonValue]
     evidence: dict[str, JsonValue]
+    evidence_links: tuple[dict[str, JsonValue], ...] = ()
 
 
 class ModelRuntime(Protocol):

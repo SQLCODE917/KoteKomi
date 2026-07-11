@@ -674,6 +674,27 @@ class SQLiteLedgerRepository:
     def save_assertion(self, record: Assertion) -> None:
         self._save(ASSERTION_SPEC, record)
 
+    def commit_accepted_assertion_with_evidence(
+        self,
+        *,
+        assertion: Assertion,
+        evidence_links: tuple[AssertionEvidenceLink, ...],
+        provenance_activity: ProvenanceActivity,
+        reviewed_change: ProposedChange,
+    ) -> None:
+        self._connection.execute("SAVEPOINT accepted_assertion_with_evidence")
+        try:
+            self.save_provenance_activity(provenance_activity)
+            self.save_assertion(assertion)
+            for evidence_link in evidence_links:
+                self.save_assertion_evidence_link(evidence_link)
+            self.save_proposed_change(reviewed_change)
+        except Exception:
+            self._connection.execute("ROLLBACK TO SAVEPOINT accepted_assertion_with_evidence")
+            self._connection.execute("RELEASE SAVEPOINT accepted_assertion_with_evidence")
+            raise
+        self._connection.execute("RELEASE SAVEPOINT accepted_assertion_with_evidence")
+
     def get_assertion(self, record_id: str) -> Assertion | None:
         return self._get(ASSERTION_SPEC, record_id)
 

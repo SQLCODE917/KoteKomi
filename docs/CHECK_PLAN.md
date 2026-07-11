@@ -22,6 +22,7 @@
 - run repository tests with `packages/adapters/tests/test_sqlite_ledger_repository.py`
 - verify stable Source identity, retry idempotency, immutable revisions, and capture conflicts with `uv run pytest packages/application/tests/test_source_capture.py packages/application/tests/test_add_source_from_file.py packages/adapters/tests/test_sqlite_source_capture.py packages/pipelines/tests/test_source_add_file.py`
 - verify deterministic representation identity and atomic bundle commits with `uv run pytest packages/domain/tests/test_document_representations.py packages/application/tests/test_representation_identity.py packages/adapters/tests/test_representation_bundle_commit.py packages/adapters/tests/test_docling_pdf_parser.py`
+- verify replayable EvidenceSpan validation and atomic evidence-gated Assertion acceptance with `uv run pytest packages/application/tests/test_evidence_targets.py packages/adapters/tests/test_atomic_assertion_acceptance.py`
 - verify the Docling adapter loads lazily and returns a typed blocked result with `uv run pytest packages/adapters/tests/test_docling_pdf_parser.py`
 
 ## 4. Archive checks

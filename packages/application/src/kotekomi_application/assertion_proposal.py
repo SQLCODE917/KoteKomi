@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Protocol
+from typing import Protocol, cast
 
 from kotekomi_domain import Document, ProposedChange, ProvenanceActivity, ReviewStatus
 from kotekomi_domain.models import JsonValue
@@ -138,6 +138,8 @@ def _build_proposed_change(
         "record": proposal.record,
         "evidence": proposal.evidence,
     }
+    if proposal.record_type == "Assertion":
+        proposed_json["evidence_links"] = cast(JsonValue, list(proposal.evidence_links))
     return ProposedChange(
         id=deterministic_proposed_change_id(
             document_id=document.id,

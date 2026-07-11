@@ -9,14 +9,24 @@ from kotekomi_domain import (
     Actor,
     ArgumentEdge,
     Assertion,
+    AssertionEvidenceRole,
     Event,
+    EvidenceNecessity,
+    EvidencePolarity,
     EvidenceSpan,
     Organization,
     Outcome,
     Relationship,
 )
 from kotekomi_domain.models import DocumentId, JsonValue, SourceId
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints, ValidationError
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    StringConstraints,
+    ValidationError,
+    model_validator,
+)
 
 from kotekomi_application.ports import ModelProposal
 
@@ -36,6 +46,13 @@ class ModelProposalEvidence(_ModelBoundary):
     exact_text: ExactText
     source_id: SourceId
     document_id: DocumentId
+
+
+class ModelProposalEvidenceLink(_ModelBoundary):
+    evidence_span_id: str
+    role: AssertionEvidenceRole
+    polarity: EvidencePolarity
+    necessity: EvidenceNecessity
 
 
 class _ActorProposal(_ModelBoundary):
@@ -71,6 +88,13 @@ class _AssertionProposal(_ModelBoundary):
     stable_label: StableLabel
     record: Assertion
     evidence: ModelProposalEvidence
+    evidence_links: tuple[ModelProposalEvidenceLink, ...] = ()
+
+    @model_validator(mode="after")
+    def require_evidence_links_for_source_backed_assertion(self) -> _AssertionProposal:
+        if self.record.source_ids and not self.evidence_links:
+            raise ValueError("Source-backed Assertion proposals require evidence_links.")
+        return self
 
 
 class _RelationshipProposal(_ModelBoundary):
@@ -124,22 +148,47 @@ def parse_model_proposal_batch_json(payload: str) -> tuple[ModelProposal, ...]:
 
 
 def _model_proposal_from_wire(proposal: ModelProposalWire) -> ModelProposal:
+    evidence_links: tuple[dict[str, JsonValue], ...] = ()
+    if isinstance(proposal, _AssertionProposal):
+        evidence_links = tuple(
+            cast(dict[str, JsonValue], evidence_link.model_dump(mode="json"))
+            for evidence_link in proposal.evidence_links
+        )
     return ModelProposal(
         record_type=proposal.record_type,
         stable_label=proposal.stable_label,
         record=cast(dict[str, JsonValue], proposal.record.model_dump(mode="json")),
         evidence=cast(dict[str, JsonValue], proposal.evidence.model_dump(mode="json")),
+        evidence_links=evidence_links,
     )
 
 
 def validate_model_proposal(proposal: ModelProposal) -> ModelProposal:
     record_json = _validated_record_json(proposal.record_type, proposal.record)
     _validate_evidence(proposal.evidence)
+    if proposal.record_type != "Assertion" and proposal.evidence_links:
+        raise ValueError("Only Assertion proposals may contain evidence_links.")
+    if (
+        proposal.record_type == "Assertion"
+        and record_json.get("source_ids")
+        and not proposal.evidence_links
+    ):
+        raise ValueError("Source-backed Assertion proposals require evidence_links.")
+    evidence_links = tuple(
+        cast(
+            dict[str, JsonValue],
+            ModelProposalEvidenceLink.model_validate_json(json.dumps(evidence_link)).model_dump(
+                mode="json"
+            ),
+        )
+        for evidence_link in proposal.evidence_links
+    )
     return ModelProposal(
         record_type=proposal.record_type,
         stable_label=proposal.stable_label,
         record=record_json,
         evidence=proposal.evidence,
+        evidence_links=evidence_links,
     )
 
 

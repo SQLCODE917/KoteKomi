@@ -1,3 +1,4 @@
+import hashlib
 from datetime import UTC, datetime
 from typing import cast
 
@@ -20,25 +21,36 @@ from kotekomi_domain import (
     Actor,
     ArgumentEdge,
     Assertion,
+    AssertionEvidenceLink,
     AssertionStatus,
     AssertionType,
     AttributionBasis,
     Document,
+    DocumentNode,
+    DocumentRepresentation,
+    DocumentRepresentationBundle,
     Entity,
     EpistemicScope,
     Event,
     EvidenceSpan,
+    EvidenceValidationStatus,
     Organization,
     Outcome,
+    ParseQualityReport,
     Place,
     ProposedChange,
     ProvenanceActivity,
     Relationship,
+    RepresentationAnalyzability,
     ReviewStatus,
     SelectorType,
     Source,
     SourceAuthority,
     SourceType,
+    TextView,
+    TextViewKind,
+    canonical_evidence_target_digest,
+    canonical_representation_digest,
 )
 from kotekomi_domain.models import JsonValue
 
@@ -57,6 +69,8 @@ class FakeReviewLedger:
         self.entities: dict[str, Entity] = {}
         self.places: dict[str, Place] = {}
         self.evidence_spans: dict[str, EvidenceSpan] = {}
+        self.document_representation_bundles: dict[str, DocumentRepresentationBundle] = {}
+        self.assertion_evidence_links: dict[str, AssertionEvidenceLink] = {}
         self.assertions: dict[str, Assertion] = {}
         self.relationships: dict[str, Relationship] = {}
         self.outcomes: dict[str, Outcome] = {}
@@ -107,6 +121,11 @@ class FakeReviewLedger:
     def get_document(self, record_id: str) -> Document | None:
         return self.documents.get(record_id)
 
+    def get_document_representation_bundle(
+        self, record_id: str
+    ) -> DocumentRepresentationBundle | None:
+        return self.document_representation_bundles.get(record_id)
+
     def get_evidence_span(self, record_id: str) -> EvidenceSpan | None:
         return self.evidence_spans.get(record_id)
 
@@ -118,6 +137,19 @@ class FakeReviewLedger:
 
     def save_assertion(self, record: Assertion) -> None:
         self.assertions[record.id] = record
+
+    def commit_accepted_assertion_with_evidence(
+        self,
+        *,
+        assertion: Assertion,
+        evidence_links: tuple[AssertionEvidenceLink, ...],
+        provenance_activity: ProvenanceActivity,
+        reviewed_change: ProposedChange,
+    ) -> None:
+        self.provenance_activities[provenance_activity.id] = provenance_activity
+        self.assertions[assertion.id] = assertion
+        self.assertion_evidence_links.update({link.id: link for link in evidence_links})
+        self.proposed_changes[reviewed_change.id] = reviewed_change
 
     def get_relationship(self, record_id: str) -> Relationship | None:
         return self.relationships.get(record_id)
@@ -167,12 +199,82 @@ def seed_reference_records(ledger: FakeReviewLedger) -> None:
         participant_actor_ids=("act_dario_amodei",),
         participant_organization_ids=("org_anthropic",),
     )
-    ledger.evidence_spans["evs_delay"] = EvidenceSpan(
+    evidence_text = "Anthropic postponed the rollout."
+    text_digest = hashlib.sha256(evidence_text.encode("utf-8")).hexdigest()
+    text_view = TextView(
+        id="tvw_article_a",
+        representation_id="rep_article_a",
+        kind=TextViewKind.LOGICAL,
+        content_digest=text_digest,
+        text=evidence_text,
+        normalization_policy="utf8_identity_v1",
+    )
+    node = DocumentNode(
+        id="nod_article_a_document",
+        representation_id="rep_article_a",
+        node_type="document",
+        order_index=0,
+        text_view_id=text_view.id,
+        start_char=0,
+        end_char=len(evidence_text),
+        text=evidence_text,
+    )
+    quality_report = ParseQualityReport(
+        id="pqr_article_a",
+        representation_id="rep_article_a",
+        metric_values={"text_char_count": len(evidence_text)},
+        analyzability=RepresentationAnalyzability.ACCEPTABLE,
+    )
+    representation_template = DocumentRepresentation(
+        id="rep_article_a",
+        document_id="doc_article_a",
+        parser_name="fixture",
+        parser_version="1",
+        parser_config_digest="b" * 64,
+        code_revision="fixture",
+        input_blob_digest="a" * 64,
+        canonical_output_digest="0" * 64,
+        created_at=NOW,
+    )
+    representation = representation_template.model_copy(
+        update={
+            "canonical_output_digest": canonical_representation_digest(
+                representation_template,
+                text_views=(text_view,),
+                nodes=(node,),
+                edges=(),
+                source_regions=(),
+                quality_report=quality_report,
+            )
+        }
+    )
+    ledger.document_representation_bundles[representation.id] = DocumentRepresentationBundle(
+        representation=representation,
+        text_views=(text_view,),
+        nodes=(node,),
+        quality_report=quality_report,
+    )
+    evidence = EvidenceSpan(
         id="evs_delay",
         source_id="src_article_a",
         document_id="doc_article_a",
         selector_type=SelectorType.EXACT_TEXT,
-        exact_text="Anthropic postponed the rollout.",
+        exact_text=evidence_text,
+        representation_id=representation.id,
+        text_view_id=text_view.id,
+        text_view_digest=text_digest,
+        start_char=0,
+        end_char=len(evidence_text),
+        node_ids=(node.id,),
+        selector_normalization_policy="utf8_identity_v1",
+    )
+    ledger.evidence_spans[evidence.id] = evidence.model_copy(
+        update={
+            "validation_status": EvidenceValidationStatus.VALIDATED,
+            "validator_version": "fixture",
+            "validated_at": NOW,
+            "target_digest": canonical_evidence_target_digest(evidence),
+        }
     )
     ledger.assertions["ast_delay"] = Assertion(
         id="ast_delay",
@@ -214,20 +316,42 @@ def proposed_change(
     record: dict[str, JsonValue],
     review_status: ReviewStatus = ReviewStatus.PENDING,
 ) -> ProposedChange:
+    proposed_json: dict[str, JsonValue] = {
+        "record_type": record_type,
+        "stable_label": record_id.removeprefix("pcg_"),
+        "record": record,
+        "evidence": {
+            "selector_type": "exact_text",
+            "exact_text": "evidence text",
+            "source_id": "src_article_a",
+            "document_id": "doc_article_a",
+        },
+    }
+    if record_type == "Assertion":
+        evidence_span_ids = record.get("evidence_span_ids")
+        if evidence_span_ids is None:
+            if record.get("source_ids"):
+                raise ValueError(
+                    "Source-backed Assertion test proposal requires evidence_span_ids."
+                )
+        else:
+            if not isinstance(evidence_span_ids, list) or not all(
+                isinstance(evidence_span_id, str) for evidence_span_id in evidence_span_ids
+            ):
+                raise ValueError("Assertion test proposal requires string evidence_span_ids.")
+            proposed_json["evidence_links"] = [
+                {
+                    "evidence_span_id": evidence_span_id,
+                    "role": "direct_support",
+                    "polarity": "supports",
+                    "necessity": "required",
+                }
+                for evidence_span_id in evidence_span_ids
+            ]
     return ProposedChange(
         id=record_id,
         review_status=review_status,
-        proposed_json={
-            "record_type": record_type,
-            "stable_label": record_id.removeprefix("pcg_"),
-            "record": record,
-            "evidence": {
-                "selector_type": "exact_text",
-                "exact_text": "evidence text",
-                "source_id": "src_article_a",
-                "document_id": "doc_article_a",
-            },
-        },
+        proposed_json=proposed_json,
         source_id="src_article_a",
         document_id="doc_article_a",
         model_name="fixture-extraction-runtime",

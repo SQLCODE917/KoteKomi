@@ -1,10 +1,12 @@
 from datetime import UTC, datetime
 
+import pytest
 from kotekomi_application import (
     EvidenceValidationInput,
     LinkAssertionEvidenceInput,
     link_assertion_evidence,
     validate_evidence_target,
+    verify_evidence_target,
 )
 from kotekomi_domain import (
     Assertion,
@@ -13,6 +15,7 @@ from kotekomi_domain import (
     AssertionStatus,
     AssertionType,
     AttributionBasis,
+    Document,
     DocumentNode,
     DocumentRepresentation,
     DocumentRepresentationBundle,
@@ -28,6 +31,7 @@ from kotekomi_domain import (
     SourceAuthority,
     TextView,
     TextViewKind,
+    canonical_evidence_target_digest,
     canonical_representation_digest,
 )
 
@@ -39,6 +43,14 @@ TEXT_DIGEST = "77d913272bb8bdba48d318de4a6a4b033dace9770d8cd967b09285d1876449a4"
 class FakeEvidenceLedger:
     def __init__(self, bundle: DocumentRepresentationBundle, evidence_span: EvidenceSpan) -> None:
         self.bundle = bundle
+        self.documents = {
+            "doc_example": Document(
+                id="doc_example",
+                source_id="src_example",
+                raw_path="sources/raw/blb_example.bin",
+                content_sha256="a" * 64,
+            )
+        }
         self.evidence_spans = {evidence_span.id: evidence_span}
         self.assertions = {
             "ast_alpha": Assertion(
@@ -76,6 +88,9 @@ class FakeEvidenceLedger:
         self, record_id: str
     ) -> DocumentRepresentationBundle | None:
         return self.bundle if record_id == self.bundle.representation.id else None
+
+    def get_document(self, record_id: str) -> Document | None:
+        return self.documents.get(record_id)
 
     def get_assertion(self, record_id: str) -> Assertion | None:
         return self.assertions.get(record_id)
@@ -240,3 +255,68 @@ def test_validate_evidence_target_detects_corrupted_validated_target_without_rew
 
     assert result.valid is False
     assert result.evidence_span == corrupted
+
+
+def test_verify_evidence_target_replays_a_validated_target_without_mutating_it() -> None:
+    ledger = FakeEvidenceLedger(_bundle(), _evidence_span())
+    validated = validate_evidence_target(
+        EvidenceValidationInput("evs_alpha", "1", NOW),
+        ledger,
+    ).evidence_span
+
+    replay = verify_evidence_target(validated, ledger)
+
+    assert replay.valid is True
+    assert ledger.get_evidence_span(validated.id) == validated
+
+
+@pytest.mark.parametrize(
+    ("mutation", "expected_error"),
+    [
+        ("stale_text_view", "EvidenceSpan TextView digest is stale."),
+        ("selector_disagreement", "EvidenceSpan exact_text does not match its position selector."),
+        ("missing_representation", "EvidenceSpan references a missing DocumentRepresentation."),
+        ("corrupt_representation", "DocumentRepresentation canonical_output_digest is corrupted."),
+    ],
+)
+def test_verify_evidence_target_rejects_corruption_without_mutating_it(
+    mutation: str,
+    expected_error: str,
+) -> None:
+    ledger = FakeEvidenceLedger(_bundle(), _evidence_span())
+    validated = validate_evidence_target(
+        EvidenceValidationInput("evs_alpha", "1", NOW),
+        ledger,
+    ).evidence_span
+    candidate = validated
+    if mutation == "stale_text_view":
+        candidate = candidate.model_copy(update={"text_view_digest": "0" * 64})
+        candidate = candidate.model_copy(
+            update={"target_digest": canonical_evidence_target_digest(candidate)}
+        )
+    elif mutation == "selector_disagreement":
+        candidate = candidate.model_copy(update={"exact_text": "wrong"})
+        candidate = candidate.model_copy(
+            update={"target_digest": canonical_evidence_target_digest(candidate)}
+        )
+    elif mutation == "missing_representation":
+        candidate = candidate.model_copy(update={"representation_id": "rep_missing"})
+        candidate = candidate.model_copy(
+            update={"target_digest": canonical_evidence_target_digest(candidate)}
+        )
+    elif mutation == "corrupt_representation":
+        corrupted_representation = ledger.bundle.representation.model_copy(
+            update={"canonical_output_digest": "0" * 64}
+        )
+        ledger.bundle = ledger.bundle.model_copy(
+            update={"representation": corrupted_representation}
+        )
+    else:
+        raise AssertionError(f"Unexpected mutation: {mutation}")
+    ledger.save_evidence_span(candidate)
+
+    replay = verify_evidence_target(candidate, ledger)
+
+    assert replay.valid is False
+    assert replay.error_message == expected_error
+    assert ledger.get_evidence_span(candidate.id) == candidate

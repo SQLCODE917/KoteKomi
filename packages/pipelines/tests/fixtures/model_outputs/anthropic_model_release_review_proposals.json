@@ -141,10 +141,21 @@
         "selector_type": "exact_text",
         "exact_text": "Anthropic postponed a broader rollout of its Claude Fable 5 model in late June after U.S. officials raised concerns that the system could accelerate cyber operations against critical software, according to people involved in the review and documents described to this synthetic news fixture.",
         "prefix_text": "",
-        "suffix_text": "The delay followed an emergency call on June 21 among Anthropic executives, Commerce Department technical advisers, Treasury Department sanctions staff, and White House officials.",
+        "suffix_text": "",
         "location": {
           "section": "lead"
-        }
+        },
+        "representation_id": "rep_08f688858e7f7202438e1da2",
+        "text_view_id": "tvw_08f688858e7f7202438e1da2_logical",
+        "text_view_digest": "aa67767133655af72fbcf0a838775ef8760e40cbe6a659ed3cec521ccbb8e173",
+        "start_char": 238,
+        "end_char": 529,
+        "node_ids": ["nod_08f688858e7f7202438e1da2_document"],
+        "selector_normalization_policy": "utf8_identity_v1",
+        "validation_status": "validated",
+        "validator_version": "fixture_v1",
+        "validated_at": "2026-07-11T00:00:00Z",
+        "target_digest": "7cf587735890414fe41a7b3efda0adaae437083187c45be4af85dd1028abec46"
       },
       "evidence": {
         "selector_type": "exact_text",
@@ -163,11 +174,22 @@
         "assertion_id": null,
         "selector_type": "exact_text",
         "exact_text": "Anthropic temporarily suspended access for several enterprise pilots on June 23, including some accounts hosted through Amazon Web Services, while keeping a smaller evaluation program open for approved U.S. government and safety researchers.",
-        "prefix_text": "The article reported that the review quickly changed customer access plans.",
-        "suffix_text": "Access was partially restored on June 28 for approved U.S. organizations, while allied-country access remained under review for another several days.",
+        "prefix_text": "",
+        "suffix_text": "",
         "location": {
           "section": "enterprise access"
-        }
+        },
+        "representation_id": "rep_08f688858e7f7202438e1da2",
+        "text_view_id": "tvw_08f688858e7f7202438e1da2_logical",
+        "text_view_digest": "aa67767133655af72fbcf0a838775ef8760e40cbe6a659ed3cec521ccbb8e173",
+        "start_char": 1657,
+        "end_char": 1898,
+        "node_ids": ["nod_08f688858e7f7202438e1da2_document"],
+        "selector_normalization_policy": "utf8_identity_v1",
+        "validation_status": "validated",
+        "validator_version": "fixture_v1",
+        "validated_at": "2026-07-11T00:00:00Z",
+        "target_digest": "f670a309ee33956f74b645ed7cd3756083de278ba942627289d3ba3640c33881"
       },
       "evidence": {
         "selector_type": "exact_text",
@@ -186,11 +208,22 @@
         "assertion_id": null,
         "selector_type": "exact_text",
         "exact_text": "Commerce Secretary Howard Lutnick pressed for a pause until the department could understand how Anthropic planned to separate U.S. enterprise customers from foreign nationals working inside those same companies.",
-        "prefix_text": "Dario Amodei told officials that Anthropic had already narrowed the model's release plan and added a higher-risk cyber-use review queue, two people familiar with the discussion said.",
-        "suffix_text": "Treasury Secretary Scott Bessent also asked whether access controls could prevent sanctioned organizations from reaching the model through contractors, cloud tenants, or shared research accounts.",
+        "prefix_text": "",
+        "suffix_text": "",
         "location": {
           "section": "government review"
-        }
+        },
+        "representation_id": "rep_08f688858e7f7202438e1da2",
+        "text_view_id": "tvw_08f688858e7f7202438e1da2_logical",
+        "text_view_digest": "aa67767133655af72fbcf0a838775ef8760e40cbe6a659ed3cec521ccbb8e173",
+        "start_char": 1248,
+        "end_char": 1459,
+        "node_ids": ["nod_08f688858e7f7202438e1da2_document"],
+        "selector_normalization_policy": "utf8_identity_v1",
+        "validation_status": "validated",
+        "validator_version": "fixture_v1",
+        "validated_at": "2026-07-11T00:00:00Z",
+        "target_digest": "3b021ffcd53173ca2b3687529c53076d6dcb1828ead4b007a6dab17259d6a063"
       },
       "evidence": {
         "selector_type": "exact_text",
@@ -232,7 +265,15 @@
         "exact_text": "Anthropic postponed a broader rollout of its Claude Fable 5 model in late June after U.S. officials raised concerns that the system could accelerate cyber operations against critical software, according to people involved in the review and documents described to this synthetic news fixture.",
         "source_id": "src_9d1d34127a12003b0548d311",
         "document_id": "doc_0b9578915ef679fb12b26d53"
-      }
+      },
+      "evidence_links": [
+        {
+          "evidence_span_id": "evs_delay_after_us_cyber_concerns",
+          "role": "direct_support",
+          "polarity": "supports",
+          "necessity": "required"
+        }
+      ]
     },
     {
       "record_type": "Assertion",
@@ -266,7 +307,15 @@
         "exact_text": "Commerce Secretary Howard Lutnick pressed for a pause until the department could understand how Anthropic planned to separate U.S. enterprise customers from foreign nationals working inside those same companies.",
         "source_id": "src_9d1d34127a12003b0548d311",
         "document_id": "doc_0b9578915ef679fb12b26d53"
-      }
+      },
+      "evidence_links": [
+        {
+          "evidence_span_id": "evs_lutnick_pressed_pause_for_customer_separation_review",
+          "role": "direct_support",
+          "polarity": "supports",
+          "necessity": "required"
+        }
+      ]
     },
     {
       "record_type": "Assertion",
@@ -301,7 +350,15 @@
         "exact_text": "Anthropic temporarily suspended access for several enterprise pilots on June 23, including some accounts hosted through Amazon Web Services, while keeping a smaller evaluation program open for approved U.S. government and safety researchers.",
         "source_id": "src_9d1d34127a12003b0548d311",
         "document_id": "doc_0b9578915ef679fb12b26d53"
-      }
+      },
+      "evidence_links": [
+        {
+          "evidence_span_id": "evs_enterprise_pilots_suspended",
+          "role": "direct_support",
+          "polarity": "supports",
+          "necessity": "required"
+        }
+      ]
     },
     {
       "record_type": "Relationship",

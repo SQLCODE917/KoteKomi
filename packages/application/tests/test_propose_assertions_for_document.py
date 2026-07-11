@@ -114,6 +114,7 @@ def test_propose_assertions_for_document_creates_pending_proposed_changes() -> N
                 stable_label="release_was_delayed",
                 record=assertion_record(document),
                 evidence=evidence_record(document),
+                evidence_links=assertion_evidence_links(),
             ),
             ModelProposal(
                 record_type="EvidenceSpan",
@@ -164,6 +165,14 @@ def test_propose_assertions_for_document_creates_pending_proposed_changes() -> N
     assert proposed_record["source_authority"] == "secondary"
     assert proposed_record["attribution_basis"] == "reported_by_source"
     assert proposed_record["status"] == "proposed"
+    assert proposed_change.proposed_json["evidence_links"] == [
+        {
+            "evidence_span_id": "evs_delay_evidence",
+            "role": "direct_support",
+            "polarity": "supports",
+            "necessity": "required",
+        }
+    ]
 
 
 def test_propose_assertions_for_document_rejects_missing_document() -> None:
@@ -200,6 +209,7 @@ def test_propose_assertions_for_document_rejects_mismatched_evidence_reference()
                     "source_id": "src_other",
                     "document_id": document.id,
                 },
+                evidence_links=assertion_evidence_links(),
             ),
         )
     )
@@ -243,6 +253,35 @@ def test_propose_assertions_for_document_rejects_invalid_model_record() -> None:
     assert ledger.proposed_changes == {}
 
 
+def test_propose_assertions_for_document_rejects_source_backed_assertion_without_links() -> None:
+    document = document_fixture()
+    ledger = FakeLedgerRepository(documents={document.id: document})
+    archive = FakeArchiveStore({document.id: "document text"})
+    model_runtime = FakeModelRuntime(
+        (
+            ModelProposal(
+                record_type="Assertion",
+                stable_label="release_was_delayed",
+                record=assertion_record(document),
+                evidence=evidence_record(document),
+            ),
+        )
+    )
+
+    with pytest.raises(
+        ValueError, match="Source-backed Assertion proposals require evidence_links"
+    ):
+        propose_assertions_for_document(
+            AssertionProposalInput(document_id=document.id, proposed_at=NOW),
+            archive,
+            ledger,
+            model_runtime,
+        )
+
+    assert ledger.provenance_activities == {}
+    assert ledger.proposed_changes == {}
+
+
 def test_propose_assertions_for_document_rejects_evidence_absent_from_document() -> None:
     document = document_fixture()
     ledger = FakeLedgerRepository(documents={document.id: document})
@@ -257,6 +296,7 @@ def test_propose_assertions_for_document_rejects_evidence_absent_from_document()
                     **evidence_record(document),
                     "exact_text": "invented evidence",
                 },
+                evidence_links=assertion_evidence_links(),
             ),
         )
     )
@@ -286,6 +326,7 @@ def test_propose_assertions_for_document_rejects_assertion_missing_epistemic_sco
                 stable_label="release_was_delayed",
                 record=invalid_record,
                 evidence=evidence_record(document),
+                evidence_links=assertion_evidence_links(),
             ),
         )
     )
@@ -346,3 +387,14 @@ def evidence_record(document: Document) -> dict[str, JsonValue]:
         "source_id": document.source_id,
         "document_id": document.id,
     }
+
+
+def assertion_evidence_links() -> tuple[dict[str, JsonValue], ...]:
+    return (
+        {
+            "evidence_span_id": "evs_delay_evidence",
+            "role": "direct_support",
+            "polarity": "supports",
+            "necessity": "required",
+        },
+    )

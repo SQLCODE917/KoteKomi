@@ -17,7 +17,6 @@ from kotekomi_domain import (
     AssertionEvidenceRole,
     AssertionStatus,
     AssertionType,
-    Document,
     Entity,
     Event,
     EvidenceNecessity,
@@ -61,11 +60,7 @@ type AcceptedReviewRecord = (
 )
 
 
-class AssertionEvidenceLinkWriter(Protocol):
-    def save_assertion_evidence_link(self, record: AssertionEvidenceLink) -> None: ...
-
-
-class ProposedChangeReviewLedger(Protocol):
+class ProposedChangeReviewLedger(EvidenceTargetLedger, Protocol):
     def get_proposed_change(self, record_id: str) -> ProposedChange | None: ...
     def save_proposed_change(self, record: ProposedChange) -> None: ...
     def get_provenance_activity(self, record_id: str) -> ProvenanceActivity | None: ...
@@ -86,13 +81,19 @@ class ProposedChangeReviewLedger(Protocol):
 
     def get_source(self, record_id: str) -> Source | None: ...
 
-    def get_document(self, record_id: str) -> Document | None: ...
-
     def get_evidence_span(self, record_id: str) -> EvidenceSpan | None: ...
     def save_evidence_span(self, record: EvidenceSpan) -> None: ...
 
     def get_assertion(self, record_id: str) -> Assertion | None: ...
     def save_assertion(self, record: Assertion) -> None: ...
+    def commit_accepted_assertion_with_evidence(
+        self,
+        *,
+        assertion: Assertion,
+        evidence_links: tuple[AssertionEvidenceLink, ...],
+        provenance_activity: ProvenanceActivity,
+        reviewed_change: ProposedChange,
+    ) -> None: ...
 
     def get_relationship(self, record_id: str) -> Relationship | None: ...
     def save_relationship(self, record: Relationship) -> None: ...
@@ -479,12 +480,19 @@ def approve_proposed_change(
         provenance_activity_id=provenance_activity_id,
     )
     accepted_record_id = _record_id(accepted_record)
+    evidence_links = _prepared_assertion_evidence_links(
+        proposed_change,
+        accepted_record,
+        provenance_activity_id,
+        review_input.reviewed_at,
+        ledger_repository,
+    )
     provenance_activity = ProvenanceActivity(
         id=provenance_activity_id,
         activity_type=APPROVED_ACTIVITY_TYPE,
         agent=review_input.reviewer,
         input_ids=(proposed_change.id,),
-        output_ids=(accepted_record_id,),
+        output_ids=(accepted_record_id, *(link.id for link in evidence_links)),
         occurred_at=review_input.reviewed_at,
     )
     reviewed_change = _reviewed_proposed_change(
@@ -498,21 +506,18 @@ def approve_proposed_change(
         pending_provenance_activity=provenance_activity,
         ledger_repository=ledger_repository,
     )
-    evidence_links = _prepared_assertion_evidence_links(
-        proposed_change,
-        accepted_record,
-        provenance_activity_id,
-        review_input.reviewed_at,
-        ledger_repository,
-    )
 
-    ledger_repository.save_provenance_activity(provenance_activity)
-    _save_accepted_record(accepted_record, ledger_repository)
-    for evidence_link in evidence_links:
-        cast("AssertionEvidenceLinkWriter", ledger_repository).save_assertion_evidence_link(
-            evidence_link
+    if isinstance(accepted_record, Assertion):
+        ledger_repository.commit_accepted_assertion_with_evidence(
+            assertion=accepted_record,
+            evidence_links=evidence_links,
+            provenance_activity=provenance_activity,
+            reviewed_change=reviewed_change,
         )
-    ledger_repository.save_proposed_change(reviewed_change)
+    else:
+        ledger_repository.save_provenance_activity(provenance_activity)
+        _save_accepted_record(accepted_record, ledger_repository)
+        ledger_repository.save_proposed_change(reviewed_change)
 
     return ReviewProposedChangeResult(
         proposed_change_id=proposed_change.id,
@@ -578,12 +583,19 @@ def edit_proposed_change(
         provenance_activity_id=provenance_activity_id,
     )
     accepted_record_id = _record_id(accepted_record)
+    evidence_links = _prepared_assertion_evidence_links(
+        proposed_change,
+        accepted_record,
+        provenance_activity_id,
+        review_input.reviewed_at,
+        ledger_repository,
+    )
     provenance_activity = ProvenanceActivity(
         id=provenance_activity_id,
         activity_type=EDITED_ACTIVITY_TYPE,
         agent=review_input.reviewer,
         input_ids=(proposed_change.id,),
-        output_ids=(accepted_record_id,),
+        output_ids=(accepted_record_id, *(link.id for link in evidence_links)),
         occurred_at=review_input.reviewed_at,
     )
     reviewed_change = _reviewed_proposed_change(
@@ -599,9 +611,17 @@ def edit_proposed_change(
         ledger_repository=ledger_repository,
     )
 
-    ledger_repository.save_provenance_activity(provenance_activity)
-    _save_accepted_record(accepted_record, ledger_repository)
-    ledger_repository.save_proposed_change(reviewed_change)
+    if isinstance(accepted_record, Assertion):
+        ledger_repository.commit_accepted_assertion_with_evidence(
+            assertion=accepted_record,
+            evidence_links=evidence_links,
+            provenance_activity=provenance_activity,
+            reviewed_change=reviewed_change,
+        )
+    else:
+        ledger_repository.save_provenance_activity(provenance_activity)
+        _save_accepted_record(accepted_record, ledger_repository)
+        ledger_repository.save_proposed_change(reviewed_change)
 
     return ReviewProposedChangeResult(
         proposed_change_id=proposed_change.id,
@@ -609,6 +629,7 @@ def edit_proposed_change(
         provenance_activity_id=provenance_activity.id,
         accepted_record_id=accepted_record_id,
         accepted_record_type=record_type,
+        assertion_evidence_link_ids=tuple(link.id for link in evidence_links),
     )
 
 
@@ -721,7 +742,9 @@ def _prepared_assertion_evidence_links(
         return ()
     specifications = proposed_change.proposed_json.get("evidence_links")
     if specifications is None:
-        return ()  # Explicit legacy compatibility: not an authoritative evidence proposal.
+        if not accepted_record.source_ids:
+            return ()
+        raise ValueError("Assertion proposal requires explicit evidence_links.")
     if not isinstance(specifications, list):
         raise ValueError("Assertion evidence_links must be an array.")
     links: list[AssertionEvidenceLink] = []
@@ -733,7 +756,11 @@ def _prepared_assertion_evidence_links(
             raise ValueError("Assertion evidence link requires evidence_span_id.")
         evidence = ledger_repository.get_evidence_span(evidence_id)
         evidence_ledger = cast("EvidenceTargetLedger", ledger_repository)
-        if evidence is None or not verify_evidence_target(evidence, evidence_ledger).valid:
+        if evidence is None:
+            raise ValueError(
+                f"Assertion {accepted_record.id} references missing EvidenceSpan: {evidence_id}"
+            )
+        if not verify_evidence_target(evidence, evidence_ledger).valid:
             raise ValueError(
                 "Assertion evidence link requires a replayable validated EvidenceSpan."
             )
