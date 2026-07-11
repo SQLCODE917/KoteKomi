@@ -1,3 +1,4 @@
+import sqlite3
 from pathlib import Path
 
 import pytest
@@ -75,6 +76,16 @@ def test_source_add_file_ingests_fixture_into_ledger_and_archive(
         document_nodes = repository.list_document_nodes()
         parse_quality_reports = repository.list_parse_quality_reports()
         provenance_activities = repository.list_provenance_activities()
+    with sqlite3.connect(ledger_path) as connection:
+        task_count = connection.execute(
+            "SELECT COUNT(*) FROM processing_task_fingerprints"
+        ).fetchone()[0]
+        attempt_rows = connection.execute(
+            "SELECT id FROM processing_attempts ORDER BY started_at, id"
+        ).fetchall()
+        outcome_rows = connection.execute(
+            "SELECT attempt_id, status FROM processing_attempt_outcomes"
+        ).fetchall()
 
     assert len(sources) == 1
     assert len(documents) == 1
@@ -85,6 +96,9 @@ def test_source_add_file_ingests_fixture_into_ledger_and_archive(
     assert len(document_nodes) == 1
     assert len(parse_quality_reports) == 1
     assert len(provenance_activities) == 1
+    assert task_count == 1
+    assert len(attempt_rows) == 1
+    assert outcome_rows == [(attempt_rows[0][0], "succeeded")]
     source = sources[0]
     document = documents[0]
     provenance_activity = provenance_activities[0]
@@ -144,3 +158,15 @@ def test_source_add_file_is_idempotent(
         assert len(repository.list_document_nodes()) == 1
         assert len(repository.list_parse_quality_reports()) == 1
         assert len(repository.list_provenance_activities()) == 1
+    with sqlite3.connect(ledger_path) as connection:
+        assert (
+            connection.execute("SELECT COUNT(*) FROM processing_task_fingerprints").fetchone()[0]
+            == 1
+        )
+        attempts = connection.execute("SELECT id FROM processing_attempts").fetchall()
+        outcomes = connection.execute(
+            "SELECT attempt_id, status FROM processing_attempt_outcomes"
+        ).fetchall()
+    assert len(attempts) == 2
+    assert {row[0] for row in outcomes} == {row[0] for row in attempts}
+    assert {row[1] for row in outcomes} == {"succeeded"}
