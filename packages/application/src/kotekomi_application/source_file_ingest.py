@@ -275,8 +275,13 @@ def commit_authoritative_capture(
             invocation_id=f"source_file:{identity.document_id}:{idempotency_key}",
         )
         if existing_document is not None:
-            raise ValueError(
-                "INCOMPLETE_CLOSURE: an existing Document lacks its complete processing closure."
+            _require_repairable_capture_closure(
+                archive_store=archive_store,
+                ledger_repository=ledger_repository,
+                raw_blob_id=identity.raw_blob_id,
+                raw_bytes=ingest_input.raw_bytes,
+                document_id=existing_document.id,
+                representation_id=representation_id,
             )
         text_digest = hashlib.sha256(extracted_text.encode("utf-8")).hexdigest()
         text_view = TextView(
@@ -456,6 +461,28 @@ def _require_complete_existing_closure(
     )
     if text_view is None or text_view.text != archived_text:
         raise ValueError("INCOMPLETE_CLOSURE: logical TextView disagrees with extracted text.")
+
+
+def _require_repairable_capture_closure(
+    *,
+    archive_store: ArchiveStore,
+    ledger_repository: SourceFileLedger,
+    raw_blob_id: str,
+    raw_bytes: bytes,
+    document_id: str,
+    representation_id: str,
+) -> None:
+    try:
+        archived_raw = archive_store.read_raw_source(raw_blob_id)
+        archive_store.read_document_text(document_id)
+    except FileNotFoundError as exc:
+        raise ValueError("INCOMPLETE_CLOSURE: required archive object is missing.") from exc
+    if archived_raw != raw_bytes:
+        raise ValueError("INCOMPLETE_CLOSURE: archived raw bytes disagree with capture input.")
+    if ledger_repository.get_document_representation_bundle(representation_id) is not None:
+        raise ValueError(
+            "INCOMPLETE_CLOSURE: representation exists without its production provenance."
+        )
 
 
 def _local_file_request_fingerprint(source_key: str, content_sha256: str) -> str:

@@ -656,3 +656,27 @@ def test_commit_authoritative_capture_preserves_promoted_archive_objects_after_l
     assert all(path.startswith(".staging/") for path in archive.deleted_paths)
     assert ledger.documents == {}
     assert ledger.provenance_activities == {}
+
+
+def test_commit_authoritative_capture_repairs_capture_then_completes_representation() -> None:
+    raw_bytes = FIXTURE_PATH.read_bytes()
+    archive = FakeArchiveStore()
+    ledger = FakeLedgerRepository(fail_on_save_document=True)
+    request = AuthoritativeCaptureRequest(
+        local_file_path=str(FIXTURE_PATH),
+        filename=FIXTURE_PATH.name,
+        raw_bytes=raw_bytes,
+        ingested_at=NOW,
+        build_identity=BUILD_IDENTITY,
+    )
+
+    with pytest.raises(RuntimeError, match="simulated Ledger failure"):
+        commit_authoritative_capture(request, archive, ledger)
+
+    ledger.fail_on_save_document = False
+    repaired = commit_authoritative_capture(request, archive, ledger)
+
+    assert repaired.created is False
+    assert len(ledger.documents) == 1
+    assert len(ledger.document_representations) == 1
+    assert len(ledger.provenance_activities) == 1
