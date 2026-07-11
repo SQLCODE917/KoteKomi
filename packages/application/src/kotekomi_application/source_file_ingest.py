@@ -17,6 +17,7 @@ from kotekomi_domain import (
     ParseQualityReport,
     ProcessingArtifactKind,
     ProcessingArtifactRef,
+    ProcessingAttempt,
     ProcessingAttemptStatus,
     ProcessingFailure,
     ProcessingStage,
@@ -38,7 +39,6 @@ from kotekomi_application.processing import (
     processing_attempt_outcome,
     processing_task_fingerprint,
     reconcile_interrupted_processing_attempts,
-    start_processing_attempt,
 )
 from kotekomi_application.representation_identity import (
     DocumentRepresentationBundleLedger,
@@ -249,7 +249,6 @@ def commit_authoritative_capture(
         )
 
     staged_objects: list[StagedArchiveObject] = []
-    attempt = None
     try:
         archive_store.put_if_absent_or_identical(
             identity.raw_blob_id,
@@ -276,162 +275,158 @@ def commit_authoritative_capture(
 
         outcome = capture_source(request, ledger_repository, identity_policy)
         document = outcome.document
-        attempt = start_processing_attempt(
+
+        def commit_representation(attempt: ProcessingAttempt) -> None:
+            if existing_document is not None:
+                _require_repairable_capture_closure(
+                    archive_store=archive_store,
+                    ledger_repository=ledger_repository,
+                    raw_blob_id=identity.raw_blob_id,
+                    raw_bytes=ingest_input.raw_bytes,
+                    document_id=existing_document.id,
+                    representation_id=representation_id,
+                )
+            text_digest = hashlib.sha256(extracted_text.encode("utf-8")).hexdigest()
+            text_view = TextView(
+                id=text_view_id,
+                representation_id=representation_id,
+                kind=TextViewKind.LOGICAL,
+                content_digest=text_digest,
+                text=extracted_text,
+                normalization_policy="utf8_identity_v1",
+            )
+            document_node = DocumentNode(
+                id=document_node_id,
+                representation_id=representation_id,
+                node_type="document",
+                order_index=0,
+                text_view_id=text_view_id,
+                start_char=0,
+                end_char=len(extracted_text),
+                text=extracted_text,
+            )
+            quality_report = ParseQualityReport(
+                id=quality_report_id,
+                representation_id=representation_id,
+                metric_values={"text_char_count": len(extracted_text)},
+                issues=("empty_text",) if not extracted_text else (),
+                analyzability=(
+                    RepresentationAnalyzability.BLOCKED
+                    if not extracted_text
+                    else RepresentationAnalyzability.ACCEPTABLE
+                ),
+            )
+            representation_template = DocumentRepresentation(
+                id=representation_id,
+                document_id=document.id,
+                parser_name="local_file",
+                parser_version="1",
+                parser_config_digest=hashlib.sha256(b"utf8_identity_v1").hexdigest(),
+                processing_task_fingerprint_id=task.id,
+                input_blob_digest=content_sha256,
+                canonical_output_digest="0" * 64,
+                created_at=ingest_input.ingested_at,
+            )
+            representation = representation_template.model_copy(
+                update={
+                    "canonical_output_digest": canonical_representation_digest(
+                        representation_template,
+                        text_views=(text_view,),
+                        nodes=(document_node,),
+                        edges=(),
+                        source_regions=(),
+                        quality_report=quality_report,
+                    )
+                }
+            )
+            representation_bundle = DocumentRepresentationBundle(
+                representation=representation,
+                text_views=(text_view,),
+                nodes=(document_node,),
+                quality_report=quality_report,
+            )
+            provenance_activity = ProvenanceActivity(
+                id=provenance_activity_id,
+                activity_type="source_file_ingest",
+                agent="kotekomi",
+                input_ids=(ingest_input.local_file_path,),
+                output_ids=(
+                    outcome.source.id,
+                    outcome.raw_blob.id,
+                    outcome.source_capture.id,
+                    document.id,
+                    representation_id,
+                    text_view_id,
+                    document_node_id,
+                    quality_report_id,
+                ),
+                occurred_at=ingest_input.ingested_at,
+            )
+            ledger_repository.commit_document_representation_processing(
+                bundle=representation_bundle,
+                created_provenance_activity=provenance_activity,
+                created_outcome=processing_attempt_outcome(
+                    attempt=attempt,
+                    status=ProcessingAttemptStatus.SUCCEEDED,
+                    finished_at=ingest_input.ingested_at,
+                    output_disposition=OutputDisposition.CREATED,
+                    output_artifacts=(
+                        ProcessingArtifactRef(
+                            kind=ProcessingArtifactKind.DOCUMENT_REPRESENTATION,
+                            artifact_id=representation_id,
+                            role="canonical_document_representation",
+                        ),
+                        ProcessingArtifactRef(
+                            kind=ProcessingArtifactKind.QUALITY_REPORT,
+                            artifact_id=quality_report_id,
+                            role="quality_report",
+                        ),
+                        ProcessingArtifactRef(
+                            kind=ProcessingArtifactKind.PROVENANCE_ACTIVITY,
+                            artifact_id=provenance_activity.id,
+                            role="production_provenance",
+                        ),
+                    ),
+                    provenance_activity_id=provenance_activity.id,
+                ),
+                reused_outcome=processing_attempt_outcome(
+                    attempt=attempt,
+                    status=ProcessingAttemptStatus.SUCCEEDED,
+                    finished_at=ingest_input.ingested_at,
+                    output_disposition=OutputDisposition.REUSED,
+                    output_artifacts=(
+                        ProcessingArtifactRef(
+                            kind=ProcessingArtifactKind.DOCUMENT_REPRESENTATION,
+                            artifact_id=representation_id,
+                            role="canonical_document_representation",
+                        ),
+                        ProcessingArtifactRef(
+                            kind=ProcessingArtifactKind.QUALITY_REPORT,
+                            artifact_id=quality_report_id,
+                            role="quality_report",
+                        ),
+                    ),
+                ),
+            )
+
+        execute_processing_task(
             task=task,
             ledger=ledger_repository,
             attempt_id_factory=resolved_attempt_id_factory,
             started_at=ingest_input.ingested_at,
             invocation_id=f"source_file:{identity.document_id}:{idempotency_key}",
-        )
-        if existing_document is not None:
-            _require_repairable_capture_closure(
-                archive_store=archive_store,
-                ledger_repository=ledger_repository,
-                raw_blob_id=identity.raw_blob_id,
-                raw_bytes=ingest_input.raw_bytes,
-                document_id=existing_document.id,
-                representation_id=representation_id,
-            )
-        text_digest = hashlib.sha256(extracted_text.encode("utf-8")).hexdigest()
-        text_view = TextView(
-            id=text_view_id,
-            representation_id=representation_id,
-            kind=TextViewKind.LOGICAL,
-            content_digest=text_digest,
-            text=extracted_text,
-            normalization_policy="utf8_identity_v1",
-        )
-        document_node = DocumentNode(
-            id=document_node_id,
-            representation_id=representation_id,
-            node_type="document",
-            order_index=0,
-            text_view_id=text_view_id,
-            start_char=0,
-            end_char=len(extracted_text),
-            text=extracted_text,
-        )
-        quality_report = ParseQualityReport(
-            id=quality_report_id,
-            representation_id=representation_id,
-            metric_values={"text_char_count": len(extracted_text)},
-            issues=("empty_text",) if not extracted_text else (),
-            analyzability=(
-                RepresentationAnalyzability.BLOCKED
-                if not extracted_text
-                else RepresentationAnalyzability.ACCEPTABLE
-            ),
-        )
-        representation_template = DocumentRepresentation(
-            id=representation_id,
-            document_id=document.id,
-            parser_name="local_file",
-            parser_version="1",
-            parser_config_digest=hashlib.sha256(b"utf8_identity_v1").hexdigest(),
-            processing_task_fingerprint_id=task.id,
-            input_blob_digest=content_sha256,
-            canonical_output_digest="0" * 64,
-            created_at=ingest_input.ingested_at,
-        )
-        representation = representation_template.model_copy(
-            update={
-                "canonical_output_digest": canonical_representation_digest(
-                    representation_template,
-                    text_views=(text_view,),
-                    nodes=(document_node,),
-                    edges=(),
-                    source_regions=(),
-                    quality_report=quality_report,
-                )
-            }
-        )
-        representation_bundle = DocumentRepresentationBundle(
-            representation=representation,
-            text_views=(text_view,),
-            nodes=(document_node,),
-            quality_report=quality_report,
-        )
-        provenance_activity = ProvenanceActivity(
-            id=provenance_activity_id,
-            activity_type="source_file_ingest",
-            agent="kotekomi",
-            input_ids=(ingest_input.local_file_path,),
-            output_ids=(
-                outcome.source.id,
-                outcome.raw_blob.id,
-                outcome.source_capture.id,
-                document.id,
-                representation_id,
-                text_view_id,
-                document_node_id,
-                quality_report_id,
-            ),
-            occurred_at=ingest_input.ingested_at,
-        )
-        ledger_repository.commit_document_representation_processing(
-            bundle=representation_bundle,
-            created_provenance_activity=provenance_activity,
-            created_outcome=processing_attempt_outcome(
-                attempt=attempt,
-                status=ProcessingAttemptStatus.SUCCEEDED,
-                finished_at=ingest_input.ingested_at,
-                output_disposition=OutputDisposition.CREATED,
-                output_artifacts=(
-                    ProcessingArtifactRef(
-                        kind=ProcessingArtifactKind.DOCUMENT_REPRESENTATION,
-                        artifact_id=representation_id,
-                        role="canonical_document_representation",
-                    ),
-                    ProcessingArtifactRef(
-                        kind=ProcessingArtifactKind.QUALITY_REPORT,
-                        artifact_id=quality_report_id,
-                        role="quality_report",
-                    ),
-                    ProcessingArtifactRef(
-                        kind=ProcessingArtifactKind.PROVENANCE_ACTIVITY,
-                        artifact_id=provenance_activity.id,
-                        role="production_provenance",
-                    ),
+            operation=commit_representation,
+            failure_for_exception=lambda exc: ProcessingFailure(
+                code="local_file_processing_failure",
+                failure_type=type(exc).__name__,
+                stage=ProcessingStage.PERSISTENCE,
+                safe_message=(
+                    "Local-file processing failed before a complete closure was committed."
                 ),
-                provenance_activity_id=provenance_activity.id,
-            ),
-            reused_outcome=processing_attempt_outcome(
-                attempt=attempt,
-                status=ProcessingAttemptStatus.SUCCEEDED,
-                finished_at=ingest_input.ingested_at,
-                output_disposition=OutputDisposition.REUSED,
-                output_artifacts=(
-                    ProcessingArtifactRef(
-                        kind=ProcessingArtifactKind.DOCUMENT_REPRESENTATION,
-                        artifact_id=representation_id,
-                        role="canonical_document_representation",
-                    ),
-                    ProcessingArtifactRef(
-                        kind=ProcessingArtifactKind.QUALITY_REPORT,
-                        artifact_id=quality_report_id,
-                        role="quality_report",
-                    ),
-                ),
+                retryable=False,
             ),
         )
-    except Exception as exc:
-        if attempt is not None:
-            ledger_repository.record_failed_processing_attempt_outcome(
-                processing_attempt_outcome(
-                    attempt=attempt,
-                    status=ProcessingAttemptStatus.FAILED,
-                    finished_at=ingest_input.ingested_at,
-                    failure=ProcessingFailure(
-                        code="local_file_processing_failure",
-                        failure_type=type(exc).__name__,
-                        stage=ProcessingStage.PERSISTENCE,
-                        safe_message=(
-                            "Local-file processing failed before a complete closure was committed."
-                        ),
-                        retryable=False,
-                    ),
-                )
-            )
+    except Exception:
         _cleanup_archive_objects(archive_store, staged_objects)
         raise
 
