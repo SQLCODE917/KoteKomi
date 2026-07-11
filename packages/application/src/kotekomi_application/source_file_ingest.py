@@ -60,6 +60,9 @@ MONTHS = {
 class SourceFileLedger(CaptureLedger, DocumentRepresentationBundleLedger, Protocol):
     def get_provenance_activity(self, record_id: str) -> ProvenanceActivity | None: ...
     def save_provenance_activity(self, record: ProvenanceActivity) -> None: ...
+    def get_document_representation_bundle(
+        self, record_id: str
+    ) -> DocumentRepresentationBundle | None: ...
 
 
 @dataclass(frozen=True)
@@ -179,6 +182,14 @@ def add_source_from_file(
         and existing_document is not None
         and existing_provenance is not None
     ):
+        _require_complete_existing_closure(
+            archive_store=archive_store,
+            ledger_repository=ledger_repository,
+            raw_blob_id=identity.raw_blob_id,
+            raw_bytes=ingest_input.raw_bytes,
+            document_id=existing_document.id,
+            representation_id=representation_id,
+        )
         outcome = capture_source(request, ledger_repository, identity_policy)
         return SourceFileIngestResult(
             source_id=outcome.source.id,
@@ -193,11 +204,11 @@ def add_source_from_file(
     staged_objects: list[StagedArchiveObject] = []
     promoted_objects: list[ArchiveObject] = []
     try:
-        if ledger_repository.get_raw_blob(identity.raw_blob_id) is None:
-            staged_raw = archive_store.stage_raw_source(
-                identity.raw_blob_id, ingest_input.raw_bytes
-            )
-            staged_objects.append(staged_raw)
+        archive_store.put_if_absent_or_identical(
+            identity.raw_blob_id,
+            ingest_input.raw_bytes,
+            content_sha256,
+        )
         if existing_document is None:
             staged_text = archive_store.stage_document_text(identity.document_id, extracted_text)
             staged_objects.append(staged_text)
@@ -300,6 +311,30 @@ def add_source_from_file(
         extracted_text_path=document.extracted_text_path or "",
         created=outcome.created,
     )
+
+
+def _require_complete_existing_closure(
+    *,
+    archive_store: ArchiveStore,
+    ledger_repository: SourceFileLedger,
+    raw_blob_id: str,
+    raw_bytes: bytes,
+    document_id: str,
+    representation_id: str,
+) -> None:
+    try:
+        archived_raw = archive_store.read_raw_source(raw_blob_id)
+        archived_text = archive_store.read_document_text(document_id)
+    except FileNotFoundError as exc:
+        raise ValueError("INCOMPLETE_CLOSURE: required archive object is missing.") from exc
+    if archived_raw != raw_bytes:
+        raise ValueError("INCOMPLETE_CLOSURE: archived raw bytes disagree with capture input.")
+    bundle = ledger_repository.get_document_representation_bundle(representation_id)
+    if bundle is None:
+        raise ValueError("INCOMPLETE_CLOSURE: DocumentRepresentationBundle is missing.")
+    text_view = next((view for view in bundle.text_views if view.kind is TextViewKind.LOGICAL), None)
+    if text_view is None or text_view.text != archived_text:
+        raise ValueError("INCOMPLETE_CLOSURE: logical TextView disagrees with extracted text.")
 
 
 def _local_file_request_fingerprint(source_key: str, content_sha256: str) -> str:

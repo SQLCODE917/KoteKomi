@@ -86,6 +86,8 @@ from kotekomi_application.pipeline_readiness import (
 from kotekomi_application.ports import (
     AcceptedCanonicalRecord,
     ArchiveObject,
+    ArchivePutDisposition,
+    ArchivePutOutcome,
     ArchiveStore,
     BriefingAnalyticTraceRow,
     BriefingCitation,
@@ -187,6 +189,8 @@ from kotekomi_application.source_file_ingest import (
 
 __all__ = [
     "ArchiveObject",
+    "ArchivePutDisposition",
+    "ArchivePutOutcome",
     "AcceptedCanonicalRecord",
     "ArchiveStore",
     "BRIEFING_GENERATION_ACTIVITY",

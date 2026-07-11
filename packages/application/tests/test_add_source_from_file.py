@@ -5,6 +5,8 @@ from pathlib import Path
 import pytest
 from kotekomi_application import (
     ArchiveObject,
+    ArchivePutDisposition,
+    ArchivePutOutcome,
     BundleCommitDisposition,
     BundleCommitOutcome,
     SourceFileIngestInput,
@@ -49,6 +51,25 @@ class FakeArchiveStore:
 
     def initialize(self) -> None:
         return None
+
+    def put_if_absent_or_identical(
+        self, object_id: str, payload: bytes, expected_digest: str
+    ) -> ArchivePutOutcome:
+        if hashlib.sha256(payload).hexdigest() != expected_digest:
+            raise ValueError("Archive payload does not match expected digest.")
+        existing = self.raw_writes.get(object_id)
+        if existing is not None:
+            if existing != payload:
+                raise ValueError("Archive object conflicts with its expected digest.")
+            return ArchivePutOutcome(
+                ArchivePutDisposition.REUSED,
+                ArchiveObject(f"sources/raw/{object_id}.bin", len(existing)),
+            )
+        self.raw_writes[object_id] = payload
+        return ArchivePutOutcome(
+            ArchivePutDisposition.CREATED,
+            ArchiveObject(f"sources/raw/{object_id}.bin", len(payload)),
+        )
 
     def write_raw_source(self, source_id: str, content: bytes) -> ArchiveObject:
         if source_id in self.raw_writes:
@@ -198,6 +219,41 @@ class FakeLedgerRepository:
 
     def save_document_representation(self, record: DocumentRepresentation) -> None:
         self.document_representations[record.id] = record
+
+    def get_document_representation_bundle(
+        self, record_id: str
+    ) -> DocumentRepresentationBundle | None:
+        representation = self.document_representations.get(record_id)
+        if representation is None:
+            return None
+        quality_report = next(
+            (
+                report
+                for report in self.parse_quality_reports.values()
+                if report.representation_id == record_id
+            ),
+            None,
+        )
+        if quality_report is None:
+            return None
+        return DocumentRepresentationBundle(
+            representation=representation,
+            text_views=tuple(
+                view for view in self.text_views.values() if view.representation_id == record_id
+            ),
+            nodes=tuple(
+                node for node in self.document_nodes.values() if node.representation_id == record_id
+            ),
+            edges=tuple(
+                edge for edge in self.document_edges.values() if edge.representation_id == record_id
+            ),
+            source_regions=tuple(
+                region
+                for region in self.source_regions.values()
+                if region.representation_id == record_id
+            ),
+            quality_report=quality_report,
+        )
 
     def commit_document_representation_bundle(
         self,

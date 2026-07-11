@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from enum import StrEnum
 from pathlib import Path
 from typing import Protocol
 
@@ -58,6 +59,17 @@ class LedgerInitializer(Protocol):
 class ArchiveObject:
     relative_path: str
     size_bytes: int
+
+
+class ArchivePutDisposition(StrEnum):
+    CREATED = "created"
+    REUSED = "reused"
+
+
+@dataclass(frozen=True)
+class ArchivePutOutcome:
+    disposition: ArchivePutDisposition
+    object: ArchiveObject
 
 
 @dataclass(frozen=True)
@@ -162,6 +174,12 @@ class BriefingNarrative:
 
 class ArchiveStore(Protocol):
     def initialize(self) -> None: ...
+    def put_if_absent_or_identical(
+        self,
+        object_id: str,
+        payload: bytes,
+        expected_digest: str,
+    ) -> ArchivePutOutcome: ...
     def write_raw_source(self, source_id: str, content: bytes) -> ArchiveObject: ...
     def read_raw_source(self, source_id: str) -> bytes: ...
     def write_document_text(self, document_id: str, text: str) -> ArchiveObject: ...

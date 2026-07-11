@@ -2,11 +2,17 @@
 
 from __future__ import annotations
 
+import hashlib
 import re
 import uuid
 from pathlib import Path
 
-from kotekomi_application import ArchiveObject, StagedArchiveObject
+from kotekomi_application import (
+    ArchiveObject,
+    ArchivePutDisposition,
+    ArchivePutOutcome,
+    StagedArchiveObject,
+)
 
 ARCHIVE_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
 RAW_SOURCE_DIR = Path("sources/raw")
@@ -33,6 +39,30 @@ class LocalArchiveStore:
         relative_path = RAW_SOURCE_DIR / f"{_validate_archive_id(source_id)}.bin"
         absolute_path = self._absolute_path(relative_path)
         return self._write_bytes(relative_path, absolute_path, content)
+
+    def put_if_absent_or_identical(
+        self,
+        object_id: str,
+        payload: bytes,
+        expected_digest: str,
+    ) -> ArchivePutOutcome:
+        actual_digest = hashlib.sha256(payload).hexdigest()
+        if actual_digest != expected_digest:
+            raise ValueError("Archive payload does not match expected digest.")
+        relative_path = RAW_SOURCE_DIR / f"{_validate_archive_id(object_id)}.bin"
+        absolute_path = self._absolute_path(relative_path)
+        if absolute_path.exists():
+            existing = absolute_path.read_bytes()
+            if hashlib.sha256(existing).hexdigest() != expected_digest:
+                raise ValueError("Archive object conflicts with its expected digest.")
+            return ArchivePutOutcome(
+                ArchivePutDisposition.REUSED,
+                ArchiveObject(relative_path.as_posix(), len(existing)),
+            )
+        return ArchivePutOutcome(
+            ArchivePutDisposition.CREATED,
+            self._write_bytes(relative_path, absolute_path, payload),
+        )
 
     def read_raw_source(self, source_id: str) -> bytes:
         relative_path = RAW_SOURCE_DIR / f"{_validate_archive_id(source_id)}.bin"
