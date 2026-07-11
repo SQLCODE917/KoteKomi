@@ -13,6 +13,7 @@ from kotekomi_domain.models import (
     Assertion,
     Briefing,
     Document,
+    DocumentRevisionRelation,
     Entity,
     Event,
     EvidenceSpan,
@@ -21,8 +22,10 @@ from kotekomi_domain.models import (
     Place,
     ProposedChange,
     ProvenanceActivity,
+    RawBlob,
     Relationship,
     Source,
+    SourceCapture,
 )
 
 type DomainModelType = type[BaseModel]
@@ -33,6 +36,7 @@ DOMAIN_SCHEMA_MODELS: dict[str, DomainModelType] = {
     "assertion.schema.json": Assertion,
     "briefing.schema.json": Briefing,
     "document.schema.json": Document,
+    "document_revision_relation.schema.json": DocumentRevisionRelation,
     "entity.schema.json": Entity,
     "event.schema.json": Event,
     "evidence_span.schema.json": EvidenceSpan,
@@ -40,9 +44,11 @@ DOMAIN_SCHEMA_MODELS: dict[str, DomainModelType] = {
     "outcome.schema.json": Outcome,
     "place.schema.json": Place,
     "provenance_activity.schema.json": ProvenanceActivity,
+    "raw_blob.schema.json": RawBlob,
     "proposed_change.schema.json": ProposedChange,
     "relationship.schema.json": Relationship,
     "source.schema.json": Source,
+    "source_capture.schema.json": SourceCapture,
 }
 
 

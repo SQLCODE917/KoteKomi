@@ -27,6 +27,11 @@ ArgumentEdgeId = Annotated[str, Field(pattern=r"^arg_[A-Za-z0-9][A-Za-z0-9_-]*$"
 ProvenanceActivityId = Annotated[str, Field(pattern=r"^prv_[A-Za-z0-9][A-Za-z0-9_-]*$")]
 ProposedChangeId = Annotated[str, Field(pattern=r"^pcg_[A-Za-z0-9][A-Za-z0-9_-]*$")]
 BriefingId = Annotated[str, Field(pattern=r"^brf_[A-Za-z0-9][A-Za-z0-9_-]*$")]
+RawBlobId = Annotated[str, Field(pattern=r"^blb_[A-Za-z0-9][A-Za-z0-9_-]*$")]
+SourceCaptureId = Annotated[str, Field(pattern=r"^cap_[A-Za-z0-9][A-Za-z0-9_-]*$")]
+DocumentRevisionRelationId = Annotated[
+    str, Field(pattern=r"^drv_[A-Za-z0-9][A-Za-z0-9_-]*$")
+]
 
 
 def utc_now() -> datetime:
@@ -55,6 +60,21 @@ class SourceType(StrEnum):
     FILING = "filing"
     PRESS_RELEASE = "press_release"
     MANUAL_FILE = "manual_file"
+
+
+class DocumentVersionKind(StrEnum):
+    ORIGINAL = "original"
+    UPDATE = "update"
+    CORRECTION = "correction"
+    WITHDRAWAL = "withdrawal"
+    UNKNOWN = "unknown"
+
+
+class DocumentRevisionType(StrEnum):
+    UPDATES = "updates"
+    CORRECTS = "corrects"
+    SUPERSEDES = "supersedes"
+    WITHDRAWS = "withdraws"
 
 
 class SelectorType(StrEnum):
@@ -184,14 +204,62 @@ class Source(DomainModel):
     updated_at: datetime = Field(default_factory=utc_now)
 
 
+class RawBlob(DomainModel):
+    id: RawBlobId
+    hash_algorithm: NonEmptyStr
+    digest: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
+    byte_length: Annotated[int, Field(ge=0)]
+    media_type: NonEmptyStr
+    storage_locator: NonEmptyStr
+    created_at: datetime = Field(default_factory=utc_now)
+
+
+class SourceCapture(DomainModel):
+    id: SourceCaptureId
+    source_id: SourceId
+    blob_id: RawBlobId
+    idempotency_key: NonEmptyStr
+    retrieval_method: NonEmptyStr
+    requested_uri: NonEmptyStr | None = None
+    canonical_uri: NonEmptyStr | None = None
+    request_metadata: dict[str, JsonValue] = Field(default_factory=dict)
+    response_metadata: dict[str, JsonValue] = Field(default_factory=dict)
+    provider_item_id: NonEmptyStr | None = None
+    provider_version: NonEmptyStr | None = None
+    rights_profile_id: NonEmptyStr | None = None
+    embargo_until: datetime | None = None
+    captured_at: datetime = Field(default_factory=utc_now)
+    transaction_time: datetime = Field(default_factory=utc_now)
+
+
 class Document(DomainModel):
     id: DocumentId
     source_id: SourceId
     raw_path: NonEmptyStr
     extracted_text_path: NonEmptyStr | None = None
     content_sha256: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
+    created_from_capture_id: SourceCaptureId | None = None
+    provider_version: NonEmptyStr | None = None
+    publication_time: datetime | None = None
+    provider_update_time: datetime | None = None
+    version_kind: DocumentVersionKind = DocumentVersionKind.UNKNOWN
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
+
+
+class DocumentRevisionRelation(DomainModel):
+    id: DocumentRevisionRelationId
+    earlier_document_id: DocumentId
+    later_document_id: DocumentId
+    relation_type: DocumentRevisionType
+    basis: NonEmptyStr
+    recorded_at: datetime = Field(default_factory=utc_now)
+
+    @model_validator(mode="after")
+    def validate_documents(self) -> Self:
+        if self.earlier_document_id == self.later_document_id:
+            raise ValueError("Document revision relation cannot reference one Document twice.")
+        return self
 
 
 class EvidenceSpan(DomainModel):

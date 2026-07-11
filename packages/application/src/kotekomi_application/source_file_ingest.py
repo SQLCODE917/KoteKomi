@@ -8,7 +8,15 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Protocol
 
-from kotekomi_domain import Document, ProvenanceActivity, Source, SourceType
+from kotekomi_domain import (
+    Document,
+    DocumentVersionKind,
+    ProvenanceActivity,
+    RawBlob,
+    Source,
+    SourceCapture,
+    SourceType,
+)
 
 from kotekomi_application.ports import ArchiveObject, ArchiveStore, StagedArchiveObject
 
@@ -35,6 +43,8 @@ class SourceFileLedger(Protocol):
     def get_document(self, record_id: str) -> Document | None: ...
     def get_provenance_activity(self, record_id: str) -> ProvenanceActivity | None: ...
     def save_source(self, record: Source) -> None: ...
+    def save_raw_blob(self, record: RawBlob) -> None: ...
+    def save_source_capture(self, record: SourceCapture) -> None: ...
     def save_document(self, record: Document) -> None: ...
     def save_provenance_activity(self, record: ProvenanceActivity) -> None: ...
 
@@ -74,6 +84,8 @@ def add_source_from_file(
     source_id = f"src_{short_hash}"
     document_id = f"doc_{short_hash}"
     provenance_activity_id = f"prv_{short_hash}"
+    raw_blob_id = f"blb_{short_hash}"
+    source_capture_id = f"cap_{short_hash}"
 
     existing_source = ledger_repository.get_source(source_id)
     existing_document = ledger_repository.get_document(document_id)
@@ -115,6 +127,9 @@ def add_source_from_file(
             raw_path=staged_raw.final_object.relative_path,
             extracted_text_path=staged_text.final_object.relative_path,
             content_sha256=content_sha256,
+            created_from_capture_id=source_capture_id,
+            publication_time=published_at,
+            version_kind=DocumentVersionKind.ORIGINAL,
             created_at=ingest_input.ingested_at,
             updated_at=ingest_input.ingested_at,
         )
@@ -127,11 +142,33 @@ def add_source_from_file(
             activity_type="source_file_ingest",
             agent="kotekomi",
             input_ids=(ingest_input.local_file_path,),
-            output_ids=(source_id, document_id),
+            output_ids=(source_id, raw_blob_id, source_capture_id, document_id),
             occurred_at=ingest_input.ingested_at,
         )
 
+        raw_blob = RawBlob(
+            id=raw_blob_id,
+            hash_algorithm="sha256",
+            digest=content_sha256,
+            byte_length=len(ingest_input.raw_bytes),
+            media_type="text/markdown" if suffix == ".md" else "text/plain",
+            storage_locator=raw_object.relative_path,
+            created_at=ingest_input.ingested_at,
+        )
+        source_capture = SourceCapture(
+            id=source_capture_id,
+            source_id=source_id,
+            blob_id=raw_blob_id,
+            idempotency_key=content_sha256,
+            retrieval_method="local_file",
+            requested_uri=ingest_input.local_file_path,
+            canonical_uri=ingest_input.local_file_path,
+            captured_at=ingest_input.ingested_at,
+            transaction_time=ingest_input.ingested_at,
+        )
         ledger_repository.save_source(source)
+        ledger_repository.save_raw_blob(raw_blob)
+        ledger_repository.save_source_capture(source_capture)
         ledger_repository.save_document(document)
         ledger_repository.save_provenance_activity(provenance_activity)
     except Exception:

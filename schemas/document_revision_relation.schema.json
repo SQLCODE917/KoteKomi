@@ -1,0 +1,55 @@
+{
+  "$defs": {
+    "DocumentRevisionType": {
+      "enum": [
+        "updates",
+        "corrects",
+        "supersedes",
+        "withdraws"
+      ],
+      "title": "DocumentRevisionType",
+      "type": "string"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "basis": {
+      "minLength": 1,
+      "title": "Basis",
+      "type": "string"
+    },
+    "earlier_document_id": {
+      "pattern": "^doc_[A-Za-z0-9][A-Za-z0-9_-]*$",
+      "title": "Earlier Document Id",
+      "type": "string"
+    },
+    "id": {
+      "pattern": "^drv_[A-Za-z0-9][A-Za-z0-9_-]*$",
+      "title": "Id",
+      "type": "string"
+    },
+    "later_document_id": {
+      "pattern": "^doc_[A-Za-z0-9][A-Za-z0-9_-]*$",
+      "title": "Later Document Id",
+      "type": "string"
+    },
+    "recorded_at": {
+      "format": "date-time",
+      "title": "Recorded At",
+      "type": "string"
+    },
+    "relation_type": {
+      "$ref": "#/$defs/DocumentRevisionType"
+    }
+  },
+  "required": [
+    "id",
+    "earlier_document_id",
+    "later_document_id",
+    "relation_type",
+    "basis"
+  ],
+  "title": "DocumentRevisionRelation",
+  "type": "object"
+}

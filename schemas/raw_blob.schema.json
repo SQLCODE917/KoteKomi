@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "byte_length": {
+      "minimum": 0,
+      "title": "Byte Length",
+      "type": "integer"
+    },
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    },
+    "digest": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Digest",
+      "type": "string"
+    },
+    "hash_algorithm": {
+      "minLength": 1,
+      "title": "Hash Algorithm",
+      "type": "string"
+    },
+    "id": {
+      "pattern": "^blb_[A-Za-z0-9][A-Za-z0-9_-]*$",
+      "title": "Id",
+      "type": "string"
+    },
+    "media_type": {
+      "minLength": 1,
+      "title": "Media Type",
+      "type": "string"
+    },
+    "storage_locator": {
+      "minLength": 1,
+      "title": "Storage Locator",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "hash_algorithm",
+    "digest",
+    "byte_length",
+    "media_type",
+    "storage_locator"
+  ],
+  "title": "RawBlob",
+  "type": "object"
+}

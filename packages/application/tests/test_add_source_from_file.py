@@ -9,7 +9,14 @@ from kotekomi_application import (
     StagedArchiveObject,
     add_source_from_file,
 )
-from kotekomi_domain import Document, ProvenanceActivity, Source, SourceType
+from kotekomi_domain import (
+    Document,
+    ProvenanceActivity,
+    RawBlob,
+    Source,
+    SourceCapture,
+    SourceType,
+)
 
 FIXTURE_PATH = (
     Path(__file__).resolve().parents[2]
@@ -130,6 +137,8 @@ class FakeLedgerRepository:
         self.sources: dict[str, Source] = {}
         self.documents: dict[str, Document] = {}
         self.provenance_activities: dict[str, ProvenanceActivity] = {}
+        self.raw_blobs: dict[str, RawBlob] = {}
+        self.source_captures: dict[str, SourceCapture] = {}
         self.fail_on_save_document = fail_on_save_document
 
     def get_source(self, record_id: str) -> Source | None:
@@ -143,6 +152,12 @@ class FakeLedgerRepository:
 
     def save_source(self, record: Source) -> None:
         self.sources[record.id] = record
+
+    def save_raw_blob(self, record: RawBlob) -> None:
+        self.raw_blobs[record.id] = record
+
+    def save_source_capture(self, record: SourceCapture) -> None:
+        self.source_captures[record.id] = record
 
     def save_document(self, record: Document) -> None:
         if self.fail_on_save_document:
@@ -182,7 +197,13 @@ def test_add_source_from_file_creates_source_document_and_provenance() -> None:
     assert provenance.activity_type == "source_file_ingest"
     assert provenance.agent == "kotekomi"
     assert provenance.input_ids == (str(FIXTURE_PATH),)
-    assert provenance.output_ids == (result.source_id, result.document_id)
+    short_hash = document.content_sha256[:24]
+    assert provenance.output_ids == (
+        result.source_id,
+        f"blb_{short_hash}",
+        f"cap_{short_hash}",
+        result.document_id,
+    )
     assert archive.staged_writes == {}
 
 

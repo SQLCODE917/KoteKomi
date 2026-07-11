@@ -1,4 +1,17 @@
 {
+  "$defs": {
+    "DocumentVersionKind": {
+      "enum": [
+        "original",
+        "update",
+        "correction",
+        "withdrawal",
+        "unknown"
+      ],
+      "title": "DocumentVersionKind",
+      "type": "string"
+    }
+  },
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
   "properties": {
@@ -11,6 +24,19 @@
       "format": "date-time",
       "title": "Created At",
       "type": "string"
+    },
+    "created_from_capture_id": {
+      "anyOf": [
+        {
+          "pattern": "^cap_[A-Za-z0-9][A-Za-z0-9_-]*$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Created From Capture Id"
     },
     "extracted_text_path": {
       "anyOf": [
@@ -30,6 +56,45 @@
       "title": "Id",
       "type": "string"
     },
+    "provider_update_time": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Provider Update Time"
+    },
+    "provider_version": {
+      "anyOf": [
+        {
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Provider Version"
+    },
+    "publication_time": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Publication Time"
+    },
     "raw_path": {
       "minLength": 1,
       "title": "Raw Path",
@@ -44,6 +109,10 @@
       "format": "date-time",
       "title": "Updated At",
       "type": "string"
+    },
+    "version_kind": {
+      "$ref": "#/$defs/DocumentVersionKind",
+      "default": "unknown"
     }
   },
   "required": [

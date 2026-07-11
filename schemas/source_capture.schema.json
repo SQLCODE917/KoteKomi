@@ -1,0 +1,175 @@
+{
+  "$defs": {
+    "JsonValue": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "integer"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "blob_id": {
+      "pattern": "^blb_[A-Za-z0-9][A-Za-z0-9_-]*$",
+      "title": "Blob Id",
+      "type": "string"
+    },
+    "canonical_uri": {
+      "anyOf": [
+        {
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Canonical Uri"
+    },
+    "captured_at": {
+      "format": "date-time",
+      "title": "Captured At",
+      "type": "string"
+    },
+    "embargo_until": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Embargo Until"
+    },
+    "id": {
+      "pattern": "^cap_[A-Za-z0-9][A-Za-z0-9_-]*$",
+      "title": "Id",
+      "type": "string"
+    },
+    "idempotency_key": {
+      "minLength": 1,
+      "title": "Idempotency Key",
+      "type": "string"
+    },
+    "provider_item_id": {
+      "anyOf": [
+        {
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Provider Item Id"
+    },
+    "provider_version": {
+      "anyOf": [
+        {
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Provider Version"
+    },
+    "request_metadata": {
+      "additionalProperties": {
+        "$ref": "#/$defs/JsonValue"
+      },
+      "title": "Request Metadata",
+      "type": "object"
+    },
+    "requested_uri": {
+      "anyOf": [
+        {
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Requested Uri"
+    },
+    "response_metadata": {
+      "additionalProperties": {
+        "$ref": "#/$defs/JsonValue"
+      },
+      "title": "Response Metadata",
+      "type": "object"
+    },
+    "retrieval_method": {
+      "minLength": 1,
+      "title": "Retrieval Method",
+      "type": "string"
+    },
+    "rights_profile_id": {
+      "anyOf": [
+        {
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Rights Profile Id"
+    },
+    "source_id": {
+      "pattern": "^src_[A-Za-z0-9][A-Za-z0-9_-]*$",
+      "title": "Source Id",
+      "type": "string"
+    },
+    "transaction_time": {
+      "format": "date-time",
+      "title": "Transaction Time",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "source_id",
+    "blob_id",
+    "idempotency_key",
+    "retrieval_method"
+  ],
+  "title": "SourceCapture",
+  "type": "object"
+}

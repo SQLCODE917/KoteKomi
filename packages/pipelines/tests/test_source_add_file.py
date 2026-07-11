@@ -66,7 +66,12 @@ def test_source_add_file_ingests_fixture_into_ledger_and_archive(
     assert (archive_path / document.raw_path).is_file()
     assert (archive_path / document.extracted_text_path).is_file()
     assert provenance_activity.activity_type == "source_file_ingest"
-    assert provenance_activity.output_ids == (source.id, document.id)
+    assert provenance_activity.output_ids == (
+        source.id,
+        f"blb_{document.content_sha256[:24]}",
+        f"cap_{document.content_sha256[:24]}",
+        document.id,
+    )
 
 
 def test_source_add_file_is_idempotent(

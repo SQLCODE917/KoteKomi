@@ -17,6 +17,7 @@ from kotekomi_domain import (
     Assertion,
     Briefing,
     Document,
+    DocumentRevisionRelation,
     Entity,
     Event,
     EvidenceSpan,
@@ -25,8 +26,10 @@ from kotekomi_domain import (
     Place,
     ProposedChange,
     ProvenanceActivity,
+    RawBlob,
     Relationship,
     Source,
+    SourceCapture,
 )
 from pydantic import BaseModel
 
@@ -46,6 +49,12 @@ PLACE_SPEC = RecordSpec("places", Place)
 EVENT_SPEC = RecordSpec("events", Event)
 SOURCE_SPEC = RecordSpec("sources", Source)
 DOCUMENT_SPEC = RecordSpec("documents", Document)
+DOCUMENT_REVISION_RELATION_SPEC = RecordSpec(
+    "document_revision_relations",
+    DocumentRevisionRelation,
+)
+RAW_BLOB_SPEC = RecordSpec("raw_blobs", RawBlob)
+SOURCE_CAPTURE_SPEC = RecordSpec("source_captures", SourceCapture)
 EVIDENCE_SPAN_SPEC = RecordSpec("evidence_spans", EvidenceSpan)
 ASSERTION_SPEC = RecordSpec("assertions", Assertion)
 RELATIONSHIP_SPEC = RecordSpec("relationships", Relationship)
@@ -79,6 +88,7 @@ REQUIRED_LEDGER_TABLES = (
     "events",
     "sources",
     "documents",
+    "document_revision_relations",
     "evidence_spans",
     "assertions",
     "relationships",
@@ -86,6 +96,8 @@ REQUIRED_LEDGER_TABLES = (
     "argument_edges",
     "provenance_activities",
     "proposed_changes",
+    "raw_blobs",
+    "source_captures",
     "briefings",
 )
 
@@ -294,6 +306,35 @@ class SQLiteLedgerRepository:
 
     def list_documents(self) -> tuple[Document, ...]:
         return self._list(DOCUMENT_SPEC)
+
+    def save_raw_blob(self, record: RawBlob) -> None:
+        self._save(RAW_BLOB_SPEC, record)
+
+    def get_raw_blob(self, record_id: str) -> RawBlob | None:
+        return self._get(RAW_BLOB_SPEC, record_id)
+
+    def list_raw_blobs(self) -> tuple[RawBlob, ...]:
+        return self._list(RAW_BLOB_SPEC)
+
+    def save_source_capture(self, record: SourceCapture) -> None:
+        self._save(SOURCE_CAPTURE_SPEC, record)
+
+    def get_source_capture(self, record_id: str) -> SourceCapture | None:
+        return self._get(SOURCE_CAPTURE_SPEC, record_id)
+
+    def list_source_captures(self) -> tuple[SourceCapture, ...]:
+        return self._list(SOURCE_CAPTURE_SPEC)
+
+    def save_document_revision_relation(self, record: DocumentRevisionRelation) -> None:
+        self._save(DOCUMENT_REVISION_RELATION_SPEC, record)
+
+    def get_document_revision_relation(
+        self, record_id: str
+    ) -> DocumentRevisionRelation | None:
+        return self._get(DOCUMENT_REVISION_RELATION_SPEC, record_id)
+
+    def list_document_revision_relations(self) -> tuple[DocumentRevisionRelation, ...]:
+        return self._list(DOCUMENT_REVISION_RELATION_SPEC)
 
     def save_evidence_span(self, record: EvidenceSpan) -> None:
         self._save(EVIDENCE_SPAN_SPEC, record)
