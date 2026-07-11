@@ -9,6 +9,8 @@ from kotekomi_adapters.networkx_graph_analyzer import NetworkXGraphAnalyzer
 from kotekomi_adapters.ollama_model_runtime import OllamaModelRuntime
 from kotekomi_adapters.sqlite_ledger import (
     REQUIRED_LEDGER_TABLES,
+    ImmutableCommitDisposition,
+    ImmutableRecordConflict,
     SQLiteLedgerInitializer,
     SQLiteLedgerRepository,
     sqlite_ledger_transaction,
@@ -20,6 +22,8 @@ __all__ = [
     "DoclingPdfParserConfig",
     "HttpResponse",
     "JsonHttpClient",
+    "ImmutableCommitDisposition",
+    "ImmutableRecordConflict",
     "LlamaServerModelRuntime",
     "LocalArchiveStore",
     "NetworkXGraphAnalyzer",

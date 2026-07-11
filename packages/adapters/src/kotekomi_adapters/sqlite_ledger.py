@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import sqlite3
 from collections.abc import Generator
 from contextlib import contextmanager
 from dataclasses import dataclass
+from enum import StrEnum
 from importlib.resources import files
 from pathlib import Path
 from typing import TypeVar
@@ -43,6 +46,37 @@ from kotekomi_domain import (
 from pydantic import BaseModel
 
 DomainRecord = TypeVar("DomainRecord", bound=BaseModel)
+
+
+class ImmutableCommitDisposition(StrEnum):
+    CREATED = "created"
+    REUSED = "reused"
+
+
+@dataclass
+class ImmutableRecordConflict(Exception):
+    record_type: str
+    record_id: str
+    existing_digest: str
+    incoming_digest: str
+
+
+IMMUTABLE_TABLES = frozenset(
+    {
+        "raw_blobs",
+        "source_captures",
+        "documents",
+        "document_revision_relations",
+        "document_representations",
+        "text_views",
+        "document_nodes",
+        "document_edges",
+        "source_regions",
+        "parse_quality_reports",
+        "assertion_evidence_links",
+        "evidence_reanchoring_relations",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -222,6 +256,12 @@ class SQLiteLedgerRepository:
         self._connection = connection
 
     def _save(self, spec: RecordSpec[DomainRecord], record: DomainRecord) -> None:
+        if spec.table_name in IMMUTABLE_TABLES:
+            self._insert_immutable(spec, record)
+            return
+        self._upsert_mutable(spec, record)
+
+    def _upsert_mutable(self, spec: RecordSpec[DomainRecord], record: DomainRecord) -> None:
         payload = record.model_dump(mode="json")
         self._connection.execute(
             f"""
@@ -247,8 +287,46 @@ class SQLiteLedgerRepository:
                 _optional_text(payload.get("updated_at") or payload.get("generated_at")),
                 _optional_text(payload.get("status")),
                 _optional_text(payload.get("review_status")),
-                record.model_dump_json(),
+                canonical_record_json(record),
             ),
+        )
+
+    def _insert_immutable(
+        self, spec: RecordSpec[DomainRecord], record: DomainRecord
+    ) -> ImmutableCommitDisposition:
+        payload = record.model_dump(mode="json")
+        incoming_json = canonical_record_json(record)
+        cursor = self._connection.execute(
+            f"""
+            INSERT INTO {spec.table_name} (
+              id, created_at, updated_at, status, review_status, payload_json
+            )
+            VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT(id) DO NOTHING
+            """,
+            (
+                str(payload["id"]),
+                _optional_text(payload.get("created_at") or payload.get("occurred_at")),
+                _optional_text(payload.get("updated_at") or payload.get("generated_at")),
+                _optional_text(payload.get("status")),
+                _optional_text(payload.get("review_status")),
+                incoming_json,
+            ),
+        )
+        if cursor.rowcount == 1:
+            return ImmutableCommitDisposition.CREATED
+        row = self._connection.execute(
+            f"SELECT payload_json FROM {spec.table_name} WHERE id = ?", (str(payload["id"]),)
+        ).fetchone()
+        if row is not None and canonical_json_text(str(row[0])) == incoming_json:
+            return ImmutableCommitDisposition.REUSED
+        existing_digest = hashlib.sha256(str(row[0]).encode()).hexdigest() if row else "missing"
+        incoming_digest = hashlib.sha256(incoming_json.encode()).hexdigest()
+        raise ImmutableRecordConflict(
+            record_type=spec.model_type.__name__,
+            record_id=str(payload["id"]),
+            existing_digest=existing_digest,
+            incoming_digest=incoming_digest,
         )
 
     def _get(self, spec: RecordSpec[DomainRecord], record_id: str) -> DomainRecord | None:
@@ -555,3 +633,15 @@ def _optional_text(value: object) -> str | None:
     if value is None:
         return None
     return str(value)
+
+
+def canonical_record_json(record: BaseModel) -> str:
+    return json.dumps(
+        record.model_dump(mode="json"), ensure_ascii=False, sort_keys=True, separators=(",", ":")
+    )
+
+
+def canonical_json_text(payload_json: str) -> str:
+    return json.dumps(
+        json.loads(payload_json), ensure_ascii=False, sort_keys=True, separators=(",", ":")
+    )

@@ -1,6 +1,11 @@
 from pathlib import Path
 
-from kotekomi_adapters import SQLiteLedgerInitializer, sqlite_ledger_transaction
+import pytest
+from kotekomi_adapters import (
+    ImmutableRecordConflict,
+    SQLiteLedgerInitializer,
+    sqlite_ledger_transaction,
+)
 
 from .domain_fixtures import sample_domain_records
 
@@ -69,6 +74,21 @@ def test_repository_lists_records(tmp_path: Path) -> None:
     with sqlite_ledger_transaction(ledger_path) as repository:
         repository.save_actor(actor)
         assert repository.list_actors() == (actor,)
+
+
+def test_immutable_document_reuses_identical_payload_and_rejects_conflict(tmp_path: Path) -> None:
+    ledger_path = tmp_path / "kotekomi.db"
+    SQLiteLedgerInitializer(ledger_path).initialize()
+    document = sample_domain_records()[6]
+    with sqlite_ledger_transaction(ledger_path) as repository:
+        repository.save_document(document)
+        repository.save_document(document)
+    conflicting_document = document.model_copy(update={"raw_path": "different/raw.bin"})
+    with pytest.raises(ImmutableRecordConflict):
+        with sqlite_ledger_transaction(ledger_path) as repository:
+            repository.save_document(conflicting_document)
+    with sqlite_ledger_transaction(ledger_path) as repository:
+        assert repository.get_document(document.id) == document
 
 
 def test_repository_lists_all_accepted_canonical_records(tmp_path: Path) -> None:
