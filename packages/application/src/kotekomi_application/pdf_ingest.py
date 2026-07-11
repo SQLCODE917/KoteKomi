@@ -13,6 +13,7 @@ from kotekomi_domain import (
     OutputDisposition,
     ProcessingArtifactKind,
     ProcessingArtifactRef,
+    ProcessingAttempt,
     ProcessingAttemptStatus,
     ProcessingBlocker,
     ProcessingFailure,
@@ -195,7 +196,17 @@ def ingest_pdf(
             blocking_reasons=blocking_reasons,
         )
     if bundle.representation.document_id != document.id:
-        raise ValueError("PDF parser returned a representation for a different Document.")
+        error = ValueError("PDF parser returned a representation for a different Document.")
+        _record_pdf_failure(
+            ledger_repository=ledger_repository,
+            attempt=attempt,
+            finished_at=ingest_input.ingested_at,
+            exception=error,
+            code="pdf_representation_validation_failure",
+            stage=ProcessingStage.REPRESENTATION_VALIDATION,
+            safe_message="PDF parser returned an invalid representation.",
+        )
+        raise error
     provenance_activity_id = _provenance_id(
         document.id, bundle.representation.id, ingest_input.policy_id
     )
@@ -266,12 +277,24 @@ def ingest_pdf(
         output_artifacts=artifact_refs,
         blocking_reasons=blockers if is_blocked else (),
     )
-    commit_outcome = ledger_repository.commit_document_representation_processing(
-        bundle=bundle,
-        created_provenance_activity=provenance,
-        created_outcome=created_outcome,
-        reused_outcome=reused_outcome,
-    )
+    try:
+        commit_outcome = ledger_repository.commit_document_representation_processing(
+            bundle=bundle,
+            created_provenance_activity=provenance,
+            created_outcome=created_outcome,
+            reused_outcome=reused_outcome,
+        )
+    except Exception as exc:
+        _record_pdf_failure(
+            ledger_repository=ledger_repository,
+            attempt=attempt,
+            finished_at=ingest_input.ingested_at,
+            exception=exc,
+            code="pdf_persistence_failure",
+            stage=ProcessingStage.PERSISTENCE,
+            safe_message="PDF representation could not be committed.",
+        )
+        raise
     return PdfIngestOutcome(
         document_id=document.id,
         preflight=parse_result.preflight,
@@ -288,3 +311,29 @@ def ingest_pdf(
 def _provenance_id(document_id: str, representation_id: str, policy_id: str) -> str:
     value = f"{document_id}:{representation_id}:{policy_id}:{PDF_INGEST_ACTIVITY}"
     return f"prv_{hashlib.sha256(value.encode()).hexdigest()[:HASH_ID_LENGTH]}"
+
+
+def _record_pdf_failure(
+    *,
+    ledger_repository: PdfIngestLedger,
+    attempt: ProcessingAttempt,
+    finished_at: datetime,
+    exception: Exception,
+    code: str,
+    stage: ProcessingStage,
+    safe_message: str,
+) -> None:
+    ledger_repository.record_failed_processing_attempt_outcome(
+        processing_attempt_outcome(
+            attempt=attempt,
+            status=ProcessingAttemptStatus.FAILED,
+            finished_at=finished_at,
+            failure=ProcessingFailure(
+                code=code,
+                failure_type=type(exception).__name__,
+                stage=stage,
+                safe_message=safe_message,
+                retryable=False,
+            ),
+        )
+    )
