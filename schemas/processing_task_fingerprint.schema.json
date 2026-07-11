@@ -1,0 +1,121 @@
+{
+  "$defs": {
+    "BuildIdentitySnapshot": {
+      "additionalProperties": false,
+      "properties": {
+        "artifact_digest": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Artifact Digest",
+          "type": "string"
+        },
+        "package_version": {
+          "minLength": 1,
+          "title": "Package Version",
+          "type": "string"
+        },
+        "representation_policy_version": {
+          "minLength": 1,
+          "title": "Representation Policy Version",
+          "type": "string"
+        },
+        "source_revision": {
+          "minLength": 1,
+          "title": "Source Revision",
+          "type": "string"
+        }
+      },
+      "required": [
+        "package_version",
+        "source_revision",
+        "artifact_digest",
+        "representation_policy_version"
+      ],
+      "title": "BuildIdentitySnapshot",
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "build_identity": {
+      "$ref": "#/$defs/BuildIdentitySnapshot"
+    },
+    "build_identity_digest": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Build Identity Digest",
+      "type": "string"
+    },
+    "fingerprint_digest": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Fingerprint Digest",
+      "type": "string"
+    },
+    "id": {
+      "pattern": "^ptf_[A-Za-z0-9][A-Za-z0-9_-]*$",
+      "title": "Id",
+      "type": "string"
+    },
+    "input_blob_id": {
+      "pattern": "^blb_[A-Za-z0-9][A-Za-z0-9_-]*$",
+      "title": "Input Blob Id",
+      "type": "string"
+    },
+    "input_digest": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Input Digest",
+      "type": "string"
+    },
+    "input_document_id": {
+      "pattern": "^doc_[A-Za-z0-9][A-Za-z0-9_-]*$",
+      "title": "Input Document Id",
+      "type": "string"
+    },
+    "output_contract_version": {
+      "minLength": 1,
+      "title": "Output Contract Version",
+      "type": "string"
+    },
+    "policy_id": {
+      "minLength": 1,
+      "title": "Policy Id",
+      "type": "string"
+    },
+    "processor_config_digest": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Processor Config Digest",
+      "type": "string"
+    },
+    "processor_name": {
+      "minLength": 1,
+      "title": "Processor Name",
+      "type": "string"
+    },
+    "processor_version": {
+      "minLength": 1,
+      "title": "Processor Version",
+      "type": "string"
+    },
+    "task_kind": {
+      "minLength": 1,
+      "title": "Task Kind",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "task_kind",
+    "input_document_id",
+    "input_blob_id",
+    "input_digest",
+    "processor_name",
+    "processor_version",
+    "processor_config_digest",
+    "build_identity",
+    "build_identity_digest",
+    "policy_id",
+    "output_contract_version",
+    "fingerprint_digest"
+  ],
+  "title": "ProcessingTaskFingerprint",
+  "type": "object"
+}

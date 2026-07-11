@@ -389,9 +389,7 @@ def get_review_readiness(
 
 
 def review_queue_result_to_json(result: ReviewQueueResult) -> dict[str, JsonValue]:
-    return {
-        "items": [_review_queue_item_to_json(item) for item in result.items]
-    }
+    return {"items": [_review_queue_item_to_json(item) for item in result.items]}
 
 
 def review_packet_to_json(packet: ReviewPacket) -> dict[str, JsonValue]:

@@ -193,6 +193,38 @@ CREATE TABLE IF NOT EXISTS evidence_validation_attempts (
   id TEXT PRIMARY KEY, created_at TEXT, updated_at TEXT, status TEXT, review_status TEXT,
   payload_json TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS processing_task_fingerprints (
+  id TEXT PRIMARY KEY,
+  task_kind TEXT NOT NULL,
+  document_id TEXT NOT NULL,
+  blob_id TEXT NOT NULL,
+  fingerprint_digest TEXT NOT NULL UNIQUE,
+  build_identity_digest TEXT NOT NULL,
+  processor_name TEXT NOT NULL,
+  processor_version TEXT NOT NULL,
+  processor_config_digest TEXT NOT NULL,
+  policy_id TEXT NOT NULL,
+  payload_json TEXT NOT NULL,
+  FOREIGN KEY (document_id) REFERENCES documents(id),
+  FOREIGN KEY (blob_id) REFERENCES raw_blobs(id)
+);
+CREATE TABLE IF NOT EXISTS processing_attempts (
+  id TEXT PRIMARY KEY,
+  task_fingerprint_id TEXT NOT NULL,
+  started_at TEXT NOT NULL,
+  payload_json TEXT NOT NULL,
+  FOREIGN KEY (task_fingerprint_id) REFERENCES processing_task_fingerprints(id)
+);
+CREATE TABLE IF NOT EXISTS processing_attempt_outcomes (
+  id TEXT PRIMARY KEY,
+  attempt_id TEXT NOT NULL UNIQUE,
+  status TEXT NOT NULL,
+  finished_at TEXT NOT NULL,
+  payload_json TEXT NOT NULL,
+  FOREIGN KEY (attempt_id) REFERENCES processing_attempts(id)
+);
+CREATE INDEX IF NOT EXISTS processing_attempts_by_fingerprint
+ON processing_attempts(task_fingerprint_id, started_at, id);
 CREATE TABLE IF NOT EXISTS evidence_reanchoring_relations (
   id TEXT PRIMARY KEY, created_at TEXT, updated_at TEXT, status TEXT, review_status TEXT,
   payload_json TEXT NOT NULL
@@ -211,6 +243,9 @@ CREATE TRIGGER IF NOT EXISTS immutable_source_regions_no_update BEFORE UPDATE ON
 CREATE TRIGGER IF NOT EXISTS immutable_parse_quality_reports_no_update BEFORE UPDATE ON parse_quality_reports BEGIN SELECT RAISE(ABORT, 'parse_quality_reports are immutable'); END;
 CREATE TRIGGER IF NOT EXISTS immutable_evidence_targets_no_update BEFORE UPDATE ON evidence_targets BEGIN SELECT RAISE(ABORT, 'evidence_targets are immutable'); END;
 CREATE TRIGGER IF NOT EXISTS immutable_evidence_validation_attempts_no_update BEFORE UPDATE ON evidence_validation_attempts BEGIN SELECT RAISE(ABORT, 'evidence_validation_attempts are immutable'); END;
+CREATE TRIGGER IF NOT EXISTS immutable_processing_task_fingerprints_no_update BEFORE UPDATE ON processing_task_fingerprints BEGIN SELECT RAISE(ABORT, 'processing_task_fingerprints are immutable'); END;
+CREATE TRIGGER IF NOT EXISTS immutable_processing_attempts_no_update BEFORE UPDATE ON processing_attempts BEGIN SELECT RAISE(ABORT, 'processing_attempts are immutable'); END;
+CREATE TRIGGER IF NOT EXISTS immutable_processing_attempt_outcomes_no_update BEFORE UPDATE ON processing_attempt_outcomes BEGIN SELECT RAISE(ABORT, 'processing_attempt_outcomes are immutable'); END;
 CREATE TRIGGER IF NOT EXISTS immutable_assertion_evidence_links_no_update BEFORE UPDATE ON assertion_evidence_links BEGIN SELECT RAISE(ABORT, 'assertion_evidence_links are immutable'); END;
 CREATE TRIGGER IF NOT EXISTS immutable_evidence_reanchoring_relations_no_update BEFORE UPDATE ON evidence_reanchoring_relations BEGIN SELECT RAISE(ABORT, 'evidence_reanchoring_relations are immutable'); END;
 
@@ -227,5 +262,8 @@ CREATE TRIGGER IF NOT EXISTS immutable_source_regions_no_delete BEFORE DELETE ON
 CREATE TRIGGER IF NOT EXISTS immutable_parse_quality_reports_no_delete BEFORE DELETE ON parse_quality_reports BEGIN SELECT RAISE(ABORT, 'parse_quality_reports are immutable'); END;
 CREATE TRIGGER IF NOT EXISTS immutable_evidence_targets_no_delete BEFORE DELETE ON evidence_targets BEGIN SELECT RAISE(ABORT, 'evidence_targets are immutable'); END;
 CREATE TRIGGER IF NOT EXISTS immutable_evidence_validation_attempts_no_delete BEFORE DELETE ON evidence_validation_attempts BEGIN SELECT RAISE(ABORT, 'evidence_validation_attempts are immutable'); END;
+CREATE TRIGGER IF NOT EXISTS immutable_processing_task_fingerprints_no_delete BEFORE DELETE ON processing_task_fingerprints BEGIN SELECT RAISE(ABORT, 'processing_task_fingerprints are immutable'); END;
+CREATE TRIGGER IF NOT EXISTS immutable_processing_attempts_no_delete BEFORE DELETE ON processing_attempts BEGIN SELECT RAISE(ABORT, 'processing_attempts are immutable'); END;
+CREATE TRIGGER IF NOT EXISTS immutable_processing_attempt_outcomes_no_delete BEFORE DELETE ON processing_attempt_outcomes BEGIN SELECT RAISE(ABORT, 'processing_attempt_outcomes are immutable'); END;
 CREATE TRIGGER IF NOT EXISTS immutable_assertion_evidence_links_no_delete BEFORE DELETE ON assertion_evidence_links BEGIN SELECT RAISE(ABORT, 'assertion_evidence_links are immutable'); END;
 CREATE TRIGGER IF NOT EXISTS immutable_evidence_reanchoring_relations_no_delete BEFORE DELETE ON evidence_reanchoring_relations BEGIN SELECT RAISE(ABORT, 'evidence_reanchoring_relations are immutable'); END;

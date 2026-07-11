@@ -19,7 +19,10 @@ def test_r01_removed_superseded_authority_bypasses_do_not_reappear() -> None:
         '"propose-assertions"',
         "cleanup_created_source_archive_objects",
         "def link_assertion_evidence(",
-        'code_revision="unknown"',
+        'processing_task_fingerprint_id="ptf_fixture"',
         'code_revision: str = "unknown"',
+        "DEFAULT_PROMPT_PATH",
+        "propose_assertions.md",
+        "model_prompt_path",
     ):
         assert forbidden not in source_text

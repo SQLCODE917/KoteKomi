@@ -75,7 +75,7 @@ class FakeGraphLedger:
         )
         self.evidence_targets = (
             EvidenceTarget(
-                id="evt_article_a_release",
+                id="etg_article_a_release",
                 source_id="src_article_a",
                 document_id="doc_article_a",
                 representation_id="rep_article_a",
@@ -100,7 +100,7 @@ class FakeGraphLedger:
                 source_authority=SourceAuthority.SECONDARY,
                 attribution_basis=AttributionBasis.REPORTED_BY_SOURCE,
                 source_ids=("src_article_a",),
-                evidence_target_ids=("evt_article_a_release",),
+                evidence_target_ids=("etg_article_a_release",),
                 provenance_activity_ids=("prv_human_review",),
             ),
         )
@@ -130,7 +130,7 @@ class FakeGraphLedger:
                 to_assertion_id="ast_release_review",
                 relation=ArgumentEdgeRelation.SUPPORTS,
                 rationale="The source claim supports itself as reported evidence.",
-                evidence_target_ids=("evt_article_a_release",),
+                evidence_target_ids=("etg_article_a_release",),
                 confidence=0.8,
             ),
         )
@@ -209,7 +209,7 @@ def test_project_ledger_graph_builds_nodes_and_edges_from_accepted_records() -> 
         "arg_release_support",
         "ast_release_review",
         "doc_article_a",
-        "evt_article_a_release",
+        "etg_article_a_release",
         "evt_model_forum",
         "org_lab_a",
         "out_release_review",
@@ -224,12 +224,12 @@ def test_project_ledger_graph_builds_nodes_and_edges_from_accepted_records() -> 
     assert ("evt_model_forum", "org_lab_a", "event_organization") in edge_keys
     assert ("evt_model_forum", "plc_event_hall", "event_place") in edge_keys
     assert ("doc_article_a", "src_article_a", "document_source") in edge_keys
-    assert ("ast_release_review", "evt_article_a_release", "assertion_evidence") in edge_keys
+    assert ("ast_release_review", "etg_article_a_release", "assertion_evidence") in edge_keys
     assert ("ast_release_review", "act_person_a", "assertion_subject") in edge_keys
     assert ("ast_release_review", "org_lab_a", "assertion_object") in edge_keys
     assert ("rel_person_a_lab_a", "ast_release_review", "relationship_assertion") in edge_keys
     assert ("out_release_review", "evt_model_forum", "outcome_event") in edge_keys
-    assert ("arg_release_support", "evt_article_a_release", "argument_evidence") in edge_keys
+    assert ("arg_release_support", "etg_article_a_release", "argument_evidence") in edge_keys
 
 
 def test_project_ledger_graph_uses_deterministic_edge_ids() -> None:
@@ -262,7 +262,7 @@ def test_project_ledger_graph_rejects_dangling_references() -> None:
             source_authority=SourceAuthority.SECONDARY,
             attribution_basis=AttributionBasis.REPORTED_BY_SOURCE,
             source_ids=("src_article_a",),
-            evidence_target_ids=("evt_missing",),
+            evidence_target_ids=("etg_missing",),
             provenance_activity_ids=("prv_human_review",),
         ),
     )

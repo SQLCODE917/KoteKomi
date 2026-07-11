@@ -8,7 +8,6 @@ import sqlite3
 from collections.abc import Generator
 from contextlib import contextmanager
 from dataclasses import dataclass
-from enum import StrEnum
 from importlib.resources import files
 from pathlib import Path
 from typing import TypeVar
@@ -18,6 +17,7 @@ from kotekomi_application import (
     BundleCommitDisposition,
     BundleCommitOutcome,
     LedgerInitResult,
+    ProcessingTaskDisposition,
 )
 from kotekomi_application.record_serialization import canonical_record_json
 from kotekomi_domain import (
@@ -42,6 +42,9 @@ from kotekomi_domain import (
     Outcome,
     ParseQualityReport,
     Place,
+    ProcessingAttempt,
+    ProcessingAttemptOutcome,
+    ProcessingTaskFingerprint,
     ProposedChange,
     ProvenanceActivity,
     RawBlob,
@@ -56,9 +59,10 @@ from pydantic import BaseModel
 DomainRecord = TypeVar("DomainRecord", bound=BaseModel)
 
 
-class ImmutableCommitDisposition(StrEnum):
-    CREATED = "created"
-    REUSED = "reused"
+# Immutable generic records and processing-task fingerprints share the same
+# application-level created/reused contract.  Keeping the alias preserves the
+# repository's explicit name without giving SQLite a competing identity API.
+ImmutableCommitDisposition = ProcessingTaskDisposition
 
 
 @dataclass
@@ -91,6 +95,9 @@ IMMUTABLE_TABLES = frozenset(
         "parse_quality_reports",
         "evidence_targets",
         "evidence_validation_attempts",
+        "processing_task_fingerprints",
+        "processing_attempts",
+        "processing_attempt_outcomes",
         "assertion_evidence_links",
         "evidence_reanchoring_relations",
     }
@@ -128,6 +135,13 @@ CAPTURE_DOCUMENT_RESOLUTION_SPEC = RecordSpec(
 EVIDENCE_TARGET_SPEC = RecordSpec("evidence_targets", EvidenceTarget)
 EVIDENCE_VALIDATION_ATTEMPT_SPEC = RecordSpec(
     "evidence_validation_attempts", EvidenceValidationAttempt
+)
+PROCESSING_TASK_FINGERPRINT_SPEC = RecordSpec(
+    "processing_task_fingerprints", ProcessingTaskFingerprint
+)
+PROCESSING_ATTEMPT_SPEC = RecordSpec("processing_attempts", ProcessingAttempt)
+PROCESSING_ATTEMPT_OUTCOME_SPEC = RecordSpec(
+    "processing_attempt_outcomes", ProcessingAttemptOutcome
 )
 ASSERTION_EVIDENCE_LINK_SPEC = RecordSpec("assertion_evidence_links", AssertionEvidenceLink)
 EVIDENCE_REANCHORING_RELATION_SPEC = RecordSpec(
@@ -175,6 +189,9 @@ REQUIRED_LEDGER_TABLES = (
     "document_revision_relations",
     "evidence_targets",
     "evidence_validation_attempts",
+    "processing_task_fingerprints",
+    "processing_attempts",
+    "processing_attempt_outcomes",
     "assertion_evidence_links",
     "evidence_reanchoring_relations",
     "assertions",
@@ -502,6 +519,30 @@ class SQLiteLedgerRepository:
         self._connection.execute("RELEASE SAVEPOINT document_representation_bundle_commit")
         return outcome
 
+    def commit_document_representation_processing(
+        self,
+        *,
+        bundle: DocumentRepresentationBundle,
+        created_provenance_activity: ProvenanceActivity,
+        created_outcome: ProcessingAttemptOutcome,
+        reused_outcome: ProcessingAttemptOutcome,
+    ) -> BundleCommitOutcome:
+        """Commit output, production provenance, and exactly one outcome together."""
+        self._connection.execute("SAVEPOINT document_representation_processing")
+        try:
+            outcome = self.commit_document_representation_bundle(bundle)
+            if outcome.disposition is BundleCommitDisposition.CREATED:
+                self.save_provenance_activity(created_provenance_activity)
+                self.append_processing_attempt_outcome(created_outcome)
+            else:
+                self.append_processing_attempt_outcome(reused_outcome)
+        except Exception:
+            self._connection.execute("ROLLBACK TO SAVEPOINT document_representation_processing")
+            self._connection.execute("RELEASE SAVEPOINT document_representation_processing")
+            raise
+        self._connection.execute("RELEASE SAVEPOINT document_representation_processing")
+        return outcome
+
     def _commit_validated_document_representation_bundle(
         self, bundle: DocumentRepresentationBundle
     ) -> BundleCommitOutcome:
@@ -521,9 +562,7 @@ class SQLiteLedgerRepository:
                     "Existing DocumentRepresentation disappeared during bundle commit."
                 )
             if _same_representation_bundle(existing_bundle, bundle):
-                return BundleCommitOutcome(
-                    BundleCommitDisposition.REUSED, bundle.representation.id
-                )
+                return BundleCommitOutcome(BundleCommitDisposition.REUSED, bundle.representation.id)
             if (
                 existing_bundle.representation.canonical_output_digest
                 != bundle.representation.canonical_output_digest
@@ -637,9 +676,7 @@ class SQLiteLedgerRepository:
     def save_capture_document_resolution(self, record: CaptureDocumentResolution) -> None:
         self._save(CAPTURE_DOCUMENT_RESOLUTION_SPEC, record)
 
-    def get_capture_document_resolution(
-        self, record_id: str
-    ) -> CaptureDocumentResolution | None:
+    def get_capture_document_resolution(self, record_id: str) -> CaptureDocumentResolution | None:
         return self._get(CAPTURE_DOCUMENT_RESOLUTION_SPEC, record_id)
 
     def list_capture_document_resolutions(self) -> tuple[CaptureDocumentResolution, ...]:
@@ -666,13 +703,174 @@ class SQLiteLedgerRepository:
     def save_evidence_validation_attempt(self, record: EvidenceValidationAttempt) -> None:
         self._save(EVIDENCE_VALIDATION_ATTEMPT_SPEC, record)
 
-    def get_evidence_validation_attempt(
-        self, record_id: str
-    ) -> EvidenceValidationAttempt | None:
+    def get_evidence_validation_attempt(self, record_id: str) -> EvidenceValidationAttempt | None:
         return self._get(EVIDENCE_VALIDATION_ATTEMPT_SPEC, record_id)
 
     def list_evidence_validation_attempts(self) -> tuple[EvidenceValidationAttempt, ...]:
         return self._list(EVIDENCE_VALIDATION_ATTEMPT_SPEC)
+
+    def ensure_processing_task_fingerprint(
+        self, record: ProcessingTaskFingerprint
+    ) -> ImmutableCommitDisposition:
+        incoming_json = canonical_record_json(record)
+        cursor = self._connection.execute(
+            """
+            INSERT INTO processing_task_fingerprints (
+              id, task_kind, document_id, blob_id, fingerprint_digest,
+              build_identity_digest, processor_name, processor_version,
+              processor_config_digest, policy_id, payload_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(id) DO NOTHING
+            """,
+            (
+                record.id,
+                record.task_kind,
+                record.input_document_id,
+                record.input_blob_id,
+                record.fingerprint_digest,
+                record.build_identity_digest,
+                record.processor_name,
+                record.processor_version,
+                record.processor_config_digest,
+                record.policy_id,
+                incoming_json,
+            ),
+        )
+        if cursor.rowcount == 1:
+            return ImmutableCommitDisposition.CREATED
+        existing = self.get_processing_task_fingerprint(record.id)
+        if existing == record:
+            return ImmutableCommitDisposition.REUSED
+        raise ImmutableRecordConflict(
+            "ProcessingTaskFingerprint",
+            record.id,
+            hashlib.sha256(canonical_record_json(existing).encode()).hexdigest()
+            if existing is not None
+            else "missing",
+            hashlib.sha256(incoming_json.encode()).hexdigest(),
+        )
+
+    def get_processing_task_fingerprint(self, record_id: str) -> ProcessingTaskFingerprint | None:
+        return self._get(PROCESSING_TASK_FINGERPRINT_SPEC, record_id)
+
+    def append_processing_attempt(self, record: ProcessingAttempt) -> None:
+        self._connection.execute(
+            """
+            INSERT INTO processing_attempts (id, task_fingerprint_id, started_at, payload_json)
+            VALUES (?, ?, ?, ?)
+            """,
+            (
+                record.id,
+                record.task_fingerprint_id,
+                record.started_at.isoformat(),
+                canonical_record_json(record),
+            ),
+        )
+
+    def get_processing_attempt(self, record_id: str) -> ProcessingAttempt | None:
+        return self._get(PROCESSING_ATTEMPT_SPEC, record_id)
+
+    def append_processing_attempt_outcome(self, record: ProcessingAttemptOutcome) -> None:
+        attempt = self.get_processing_attempt(record.attempt_id)
+        if attempt is None:
+            raise ValueError(f"ProcessingAttempt not found: {record.attempt_id}")
+        if record.finished_at < attempt.started_at:
+            raise ValueError("ProcessingAttemptOutcome cannot finish before its attempt starts.")
+        self._validate_processing_output_references(record)
+        self._connection.execute(
+            """
+            INSERT INTO processing_attempt_outcomes (
+              id, attempt_id, status, finished_at, payload_json
+            )
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (
+                record.id,
+                record.attempt_id,
+                record.status.value,
+                record.finished_at.isoformat(),
+                canonical_record_json(record),
+            ),
+        )
+
+    def _validate_processing_output_references(self, record: ProcessingAttemptOutcome) -> None:
+        table_by_kind = {
+            "document_representation": "document_representations",
+            "quality_report": "parse_quality_reports",
+            "provenance_activity": "provenance_activities",
+        }
+        for artifact in record.output_artifacts:
+            table_name = table_by_kind[artifact.kind.value]
+            row = self._connection.execute(
+                f"SELECT 1 FROM {table_name} WHERE id = ?", (artifact.artifact_id,)
+            ).fetchone()
+            if row is None:
+                raise ValueError(
+                    "ProcessingAttemptOutcome references missing output artifact: "
+                    f"{artifact.kind.value}:{artifact.artifact_id}"
+                )
+        if record.provenance_activity_id is not None:
+            provenance = self.get_provenance_activity(record.provenance_activity_id)
+            if provenance is None:
+                raise ValueError(
+                    "ProcessingAttemptOutcome references missing ProvenanceActivity: "
+                    f"{record.provenance_activity_id}"
+                )
+
+    def commit_processing_attempt_start(self) -> None:
+        """Durably expose an attempt before any processor work begins."""
+        self._connection.commit()
+
+    def record_failed_processing_attempt_outcome(self, record: ProcessingAttemptOutcome) -> None:
+        """Discard uncommitted output work, then durably close the attempt."""
+        self._connection.rollback()
+        self.append_processing_attempt_outcome(record)
+        self._connection.commit()
+
+    def get_processing_attempt_outcome(self, attempt_id: str) -> ProcessingAttemptOutcome | None:
+        row = self._connection.execute(
+            "SELECT payload_json FROM processing_attempt_outcomes WHERE attempt_id = ?",
+            (attempt_id,),
+        ).fetchone()
+        return (
+            ProcessingAttemptOutcome.model_validate_json(str(row[0])) if row is not None else None
+        )
+
+    def list_processing_attempts(
+        self,
+        fingerprint_id: str,
+        *,
+        after: str | None = None,
+        limit: int = 100,
+    ) -> tuple[ProcessingAttempt, ...]:
+        if limit <= 0:
+            raise ValueError("Processing attempt page limit must be positive.")
+        after_attempt = self.get_processing_attempt(after) if after is not None else None
+        if after is not None and after_attempt is None:
+            raise ValueError(f"Processing attempt cursor not found: {after}")
+        if after_attempt is not None and after_attempt.task_fingerprint_id != fingerprint_id:
+            raise ValueError("Processing attempt cursor belongs to a different task fingerprint.")
+        rows = self._connection.execute(
+            """
+            SELECT payload_json FROM processing_attempts
+            WHERE task_fingerprint_id = ?
+              AND (
+                ? IS NULL
+                OR started_at > ?
+                OR (started_at = ? AND id > ?)
+              )
+            ORDER BY started_at, id LIMIT ?
+            """,
+            (
+                fingerprint_id,
+                after,
+                after_attempt.started_at.isoformat() if after_attempt is not None else None,
+                after_attempt.started_at.isoformat() if after_attempt is not None else None,
+                after,
+                limit,
+            ),
+        ).fetchall()
+        return tuple(ProcessingAttempt.model_validate_json(str(row[0])) for row in rows)
 
     def save_assertion_evidence_link(self, record: AssertionEvidenceLink) -> None:
         self._save(ASSERTION_EVIDENCE_LINK_SPEC, record)

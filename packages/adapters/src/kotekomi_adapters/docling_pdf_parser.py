@@ -20,14 +20,12 @@ from kotekomi_application.pdf_ingest import (
     PdfParseInput,
     PdfParseResult,
     PdfPreflight,
+    PdfProcessorIdentity,
 )
 
 if TYPE_CHECKING:
     from docling_core.types.doc.document import DoclingDocument
-from kotekomi_application.representation_identity import (
-    RepresentationFingerprintInput,
-    deterministic_representation_id,
-)
+from kotekomi_application.representation_identity import deterministic_representation_id
 from kotekomi_domain import (
     DocumentNode,
     DocumentRepresentation,
@@ -44,7 +42,6 @@ HASH_ID_LENGTH = 24
 
 @dataclass(frozen=True)
 class DoclingPdfParserConfig:
-    code_revision: str
     enable_ocr: bool = False
     enable_table_structure: bool = True
 
@@ -54,6 +51,18 @@ class DoclingPdfParser(PdfDocumentParser):
 
     def __init__(self, config: DoclingPdfParserConfig) -> None:
         self._config = config
+
+    def processing_identity(self, policy_id: str) -> PdfProcessorIdentity:
+        parser_version = _docling_version()
+        configuration = {
+            "enable_ocr": self._config.enable_ocr,
+            "enable_table_structure": self._config.enable_table_structure,
+            "policy_id": policy_id,
+        }
+        config_digest = hashlib.sha256(
+            json.dumps(configuration, sort_keys=True, separators=(",", ":")).encode()
+        ).hexdigest()
+        return PdfProcessorIdentity("docling", parser_version, config_digest, "1")
 
     def parse(self, parse_input: PdfParseInput) -> PdfParseResult:
         parser_version = _docling_version()
@@ -82,18 +91,7 @@ class DoclingPdfParser(PdfDocumentParser):
             )
             logical_text = conversion.document.export_to_markdown()
         except Exception as exc:
-            return PdfParseResult(
-                preflight=PdfPreflight(
-                    parser_name="docling",
-                    parser_version=parser_version,
-                    encrypted=False,
-                    page_count=0,
-                    pages=(),
-                    warnings=(f"docling_error:{type(exc).__name__}",),
-                ),
-                representation_bundle=None,
-                blocking_reasons=(f"Docling PDF conversion failed: {type(exc).__name__}",),
-            )
+            raise RuntimeError(f"Docling conversion failed: {type(exc).__name__}") from exc
         preflight = _preflight_from_document(conversion.document, parser_version)
         bundle = build_docling_blocked_bundle(
             parse_input=parse_input,
@@ -110,9 +108,7 @@ class DoclingPdfParser(PdfDocumentParser):
         )
 
 
-def _load_docling_components() -> tuple[
-    type[Any], type[Any], type[Any], type[Any], type[Any]
-]:
+def _load_docling_components() -> tuple[type[Any], type[Any], type[Any], type[Any], type[Any]]:
     """Load Docling only for an explicit PDF parse request."""
 
     from docling.datamodel.base_models import DocumentStream, InputFormat
@@ -125,8 +121,10 @@ def _load_docling_components() -> tuple[
 def _docling_version() -> str:
     try:
         return version("docling")
-    except PackageNotFoundError:
-        return "unavailable"
+    except PackageNotFoundError as exc:
+        raise RuntimeError(
+            "Docling package version is unavailable for authoritative processing."
+        ) from exc
 
 
 def _preflight_from_document(document: DoclingDocument, parser_version: str) -> PdfPreflight:
@@ -167,17 +165,7 @@ def build_docling_blocked_bundle(
     config_digest = hashlib.sha256(
         json.dumps(configuration, sort_keys=True, separators=(",", ":")).encode()
     ).hexdigest()
-    representation_id = deterministic_representation_id(
-        RepresentationFingerprintInput(
-            parse_input.document.id,
-            input_digest,
-            "docling",
-            parser_version,
-            config_digest,
-            config.code_revision,
-            "1",
-        )
-    )
+    representation_id = deterministic_representation_id(parse_input.processing_task_fingerprint_id)
     representation_key = representation_id.removeprefix("rep_")
     text_view_id = f"tvw_{representation_key}_logical"
     node_id = f"nod_{representation_key}_document"
@@ -214,7 +202,7 @@ def build_docling_blocked_bundle(
         parser_name="docling",
         parser_version=parser_version,
         parser_config_digest=config_digest,
-        code_revision=config.code_revision,
+        processing_task_fingerprint_id=parse_input.processing_task_fingerprint_id,
         input_blob_digest=input_digest,
         canonical_output_digest="0" * 64,
         created_at=parse_input.parsed_at,

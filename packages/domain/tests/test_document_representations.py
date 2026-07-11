@@ -47,7 +47,7 @@ def _valid_bundle() -> DocumentRepresentationBundle:
         parser_name="plain_text",
         parser_version="1",
         parser_config_digest=INPUT_DIGEST,
-        code_revision="test",
+        processing_task_fingerprint_id="ptf_plain_text_fixture",
         input_blob_digest=INPUT_DIGEST,
         canonical_output_digest="0" * 64,
         created_at=NOW,

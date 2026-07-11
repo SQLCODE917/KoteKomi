@@ -183,8 +183,7 @@ def _install_path_guard(config: ManagedLlamaServerConfig) -> None:
             or launcher_path.resolve() != config.executable_path.resolve()
         ):
             raise ValueError(
-                "Refusing to replace an unmanaged llama-server PATH launcher: "
-                f"{launcher_path}"
+                f"Refusing to replace an unmanaged llama-server PATH launcher: {launcher_path}"
             )
         launcher_path.unlink()
     launcher_path.write_text(_path_guard_contents(config.executable_path), encoding="utf-8")

@@ -60,7 +60,7 @@
     },
     "evidence_target_ids": {
       "items": {
-        "pattern": "^evt_[A-Za-z0-9][A-Za-z0-9_-]*$",
+        "pattern": "^etg_[A-Za-z0-9][A-Za-z0-9_-]*$",
         "type": "string"
       },
       "title": "Evidence Target Ids",

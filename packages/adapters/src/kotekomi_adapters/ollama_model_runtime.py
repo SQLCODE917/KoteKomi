@@ -28,7 +28,6 @@ class OllamaModelRuntime:
         *,
         endpoint: str,
         model: str,
-        prompt_text: str,
         timeout_seconds: float,
         context_tokens: int,
         max_output_tokens: int,
@@ -36,7 +35,6 @@ class OllamaModelRuntime:
     ) -> None:
         self.endpoint = endpoint.rstrip("/")
         self.model = model
-        self.prompt_text = prompt_text
         self.timeout_seconds = timeout_seconds
         self.context_tokens = context_tokens
         self.max_output_tokens = max_output_tokens

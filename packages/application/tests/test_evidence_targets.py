@@ -79,9 +79,7 @@ class FakeEvidenceLedger:
     def save_evidence_target(self, record: EvidenceTarget) -> None:
         self.evidence_targets[record.id] = record
 
-    def get_evidence_validation_attempt(
-        self, record_id: str
-    ) -> EvidenceValidationAttempt | None:
+    def get_evidence_validation_attempt(self, record_id: str) -> EvidenceValidationAttempt | None:
         return self.validation_attempts.get(record_id)
 
     def save_evidence_validation_attempt(self, record: EvidenceValidationAttempt) -> None:
@@ -139,7 +137,7 @@ def _bundle() -> DocumentRepresentationBundle:
         parser_name="test",
         parser_version="1",
         parser_config_digest="a" * 64,
-        code_revision="test",
+        processing_task_fingerprint_id="ptf_fixture",
         input_blob_digest="b" * 64,
         canonical_output_digest="0" * 64,
         created_at=NOW,
@@ -166,7 +164,7 @@ def _bundle() -> DocumentRepresentationBundle:
 
 def _evidence_target(*, prefix_text: str = "") -> EvidenceTarget:
     return EvidenceTarget(
-        id="evt_alpha",
+        id="etg_alpha",
         source_id="src_example",
         document_id="doc_example",
         exact_text="Alpha",
@@ -188,7 +186,7 @@ def test_validate_evidence_target_pins_one_repeated_text_occurrence() -> None:
 
     result = validate_evidence_target(
         EvidenceValidationInput(
-            evidence_target_id="evt_alpha",
+            evidence_target_id="etg_alpha",
             attempt_id="eva_success",
             validator_version="1",
             validated_at=NOW,
@@ -198,7 +196,7 @@ def test_validate_evidence_target_pins_one_repeated_text_occurrence() -> None:
 
     assert result.valid is True
     assert result.attempt.status.value == "succeeded"
-    assert ledger.get_evidence_target("evt_alpha") == result.evidence_target
+    assert ledger.get_evidence_target("etg_alpha") == result.evidence_target
 
 
 def test_validate_evidence_target_fails_closed_when_context_disagrees() -> None:
@@ -206,7 +204,7 @@ def test_validate_evidence_target_fails_closed_when_context_disagrees() -> None:
 
     result = validate_evidence_target(
         EvidenceValidationInput(
-            evidence_target_id="evt_alpha",
+            evidence_target_id="etg_alpha",
             attempt_id="eva_failed",
             validator_version="1",
             validated_at=NOW,
@@ -222,11 +220,11 @@ def test_validate_evidence_target_fails_closed_when_context_disagrees() -> None:
 def test_validate_evidence_target_appends_a_new_attempt_for_each_replay() -> None:
     ledger = FakeEvidenceLedger(_bundle(), _evidence_target())
     first = validate_evidence_target(
-        EvidenceValidationInput("evt_alpha", "eva_first", "1", NOW),
+        EvidenceValidationInput("etg_alpha", "eva_first", "1", NOW),
         ledger,
     )
     second = validate_evidence_target(
-        EvidenceValidationInput("evt_alpha", "eva_second", "2", NOW),
+        EvidenceValidationInput("etg_alpha", "eva_second", "2", NOW),
         ledger,
     )
 
@@ -238,7 +236,7 @@ def test_validate_evidence_target_appends_a_new_attempt_for_each_replay() -> Non
 def test_verify_evidence_target_replays_a_validated_target_without_mutating_it() -> None:
     ledger = FakeEvidenceLedger(_bundle(), _evidence_target())
     validation = validate_evidence_target(
-        EvidenceValidationInput("evt_alpha", "eva_success", "1", NOW),
+        EvidenceValidationInput("etg_alpha", "eva_success", "1", NOW),
         ledger,
     )
     validated = validation.evidence_target
@@ -264,7 +262,7 @@ def test_verify_evidence_target_rejects_corruption_without_mutating_it(
 ) -> None:
     ledger = FakeEvidenceLedger(_bundle(), _evidence_target())
     validation = validate_evidence_target(
-        EvidenceValidationInput("evt_alpha", "eva_success", "1", NOW),
+        EvidenceValidationInput("etg_alpha", "eva_success", "1", NOW),
         ledger,
     )
     validated = validation.evidence_target

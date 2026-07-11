@@ -7,10 +7,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
 
+from kotekomi_application import BuildIdentity
+
 DEFAULT_CONFIG_PATH = Path("kotekomi.toml")
 DEFAULT_LEDGER_PATH = Path("data/kotekomi.db")
 DEFAULT_ARCHIVE_PATH = Path("data/archive")
-DEFAULT_PROMPT_PATH = Path(__file__).resolve().parents[4] / "prompts/propose_assertions.md"
 DEFAULT_RUNTIME_PROFILE = "macbook"
 MODEL_RUNTIME_ADAPTERS = ("llama_server", "ollama", "fixture")
 MODEL_RUNTIME_CONFIG_KEYS = frozenset(
@@ -18,7 +19,6 @@ MODEL_RUNTIME_CONFIG_KEYS = frozenset(
         "adapter",
         "endpoint",
         "model",
-        "prompt_path",
         "timeout_seconds",
         "context_tokens",
         "max_output_tokens",
@@ -27,11 +27,10 @@ MODEL_RUNTIME_CONFIG_KEYS = frozenset(
 
 
 @dataclass(frozen=True)
-class ModelRuntimeConfig:
+class ModelExecutionConfig:
     adapter: str
     endpoint: str
     model: str
-    prompt_path: Path
     timeout_seconds: float
     context_tokens: int
     max_output_tokens: int
@@ -42,7 +41,64 @@ class ModelRuntimeConfig:
 class PipelineConfig:
     ledger_path: Path
     archive_path: Path
-    model_runtime: ModelRuntimeConfig
+    model_execution: ModelExecutionConfig
+
+
+@dataclass(frozen=True)
+class StorageConfig:
+    ledger_path: Path
+    archive_path: Path
+
+
+@dataclass(frozen=True)
+class ProcessingConfig:
+    storage: StorageConfig
+    build_identity: BuildIdentity
+
+
+def load_processing_config(
+    *,
+    config_path: Path | None,
+    ledger_path_override: Path | None,
+    archive_path_override: Path | None,
+) -> ProcessingConfig:
+    selected_config_path = config_path or DEFAULT_CONFIG_PATH
+    if not selected_config_path.exists():
+        raise FileNotFoundError(
+            "Authoritative processing requires an explicit config with processing.build_identity."
+        )
+    with selected_config_path.open("rb") as config_file:
+        raw_config = tomllib.load(config_file)
+    config_base = selected_config_path.parent
+    ledger_path = _path_from_config(raw_config, "ledger_path", DEFAULT_LEDGER_PATH, config_base)
+    archive_path = _path_from_config(raw_config, "archive_path", DEFAULT_ARCHIVE_PATH, config_base)
+    if ledger_path_override is not None:
+        ledger_path = ledger_path_override
+    if archive_path_override is not None:
+        archive_path = archive_path_override
+    processing_value = raw_config.get("processing")
+    if not isinstance(processing_value, dict):
+        raise TypeError("Config processing must be a table.")
+    processing = cast(dict[str, object], processing_value)
+    build = processing.get("build_identity")
+    if not isinstance(build, dict):
+        raise TypeError("Config processing.build_identity must be a table.")
+    build_values = {
+        key: value
+        for key, value in cast(dict[object, object], build).items()
+        if isinstance(key, str)
+    }
+    identity = BuildIdentity(
+        package_version=_string_value(build_values, "package_version"),
+        source_revision=_string_value(build_values, "source_revision"),
+        artifact_digest=_string_value(build_values, "artifact_digest"),
+        representation_policy_version=_string_value(build_values, "representation_policy_version"),
+    )
+    identity.snapshot()
+    return ProcessingConfig(
+        storage=StorageConfig(ledger_path.resolve(), archive_path.resolve()),
+        build_identity=identity,
+    )
 
 
 def load_config(
@@ -54,7 +110,6 @@ def load_config(
     model_runtime_adapter_override: str | None = None,
     model_endpoint_override: str | None = None,
     model_name_override: str | None = None,
-    model_prompt_path_override: Path | None = None,
     model_timeout_seconds_override: float | None = None,
     model_context_tokens_override: int | None = None,
     model_max_output_tokens_override: int | None = None,
@@ -82,7 +137,6 @@ def load_config(
         adapter=model_runtime_adapter_override,
         endpoint=model_endpoint_override,
         model=model_name_override,
-        prompt_path=model_prompt_path_override,
         timeout_seconds=model_timeout_seconds_override,
         context_tokens=model_context_tokens_override,
         max_output_tokens=model_max_output_tokens_override,
@@ -91,7 +145,7 @@ def load_config(
     return PipelineConfig(
         ledger_path=ledger_path.resolve(),
         archive_path=archive_path.resolve(),
-        model_runtime=model_runtime,
+        model_execution=model_runtime,
     )
 
 
@@ -99,7 +153,7 @@ def _model_runtime_from_config(
     raw_config: dict[str, object],
     config_base: Path,
     profile_name: str,
-) -> ModelRuntimeConfig:
+) -> ModelExecutionConfig:
     profile = _runtime_profiles(raw_config).get(profile_name)
     if profile is None:
         available = ", ".join(sorted(_runtime_profiles(raw_config)))
@@ -116,7 +170,6 @@ def _runtime_profiles(raw_config: dict[str, object]) -> dict[str, dict[str, obje
             "adapter": "llama_server",
             "endpoint": "http://127.0.0.1:8080/v1",
             "model": "Qwen/Qwen3-14B-GGUF:Q4_K_M",
-            "prompt_path": str(DEFAULT_PROMPT_PATH),
             "timeout_seconds": 300.0,
             "context_tokens": 16384,
             "max_output_tokens": 8192,
@@ -125,7 +178,6 @@ def _runtime_profiles(raw_config: dict[str, object]) -> dict[str, dict[str, obje
             "adapter": "ollama",
             "endpoint": "http://127.0.0.1:11434",
             "model": "qwen3:30b-a3b-instruct-2507-q4_K_M",
-            "prompt_path": str(DEFAULT_PROMPT_PATH),
             "timeout_seconds": 300.0,
             "context_tokens": 16384,
             "max_output_tokens": 8192,
@@ -181,17 +233,16 @@ def _validated_runtime_table(values: dict[object, object], name: str) -> dict[st
 
 def _validated_model_runtime(
     runtime: dict[str, object], config_base: Path, profile_name: str
-) -> ModelRuntimeConfig:
+) -> ModelExecutionConfig:
     adapter = _string_value(runtime, "adapter")
     if adapter not in MODEL_RUNTIME_ADAPTERS:
         allowed = ", ".join(MODEL_RUNTIME_ADAPTERS)
         raise ValueError(f"Model runtime adapter must be one of: {allowed}.")
-    return ModelRuntimeConfig(
+    return ModelExecutionConfig(
         profile_name=profile_name,
         adapter=adapter,
         endpoint=_string_value(runtime, "endpoint"),
         model=_string_value(runtime, "model"),
-        prompt_path=_runtime_prompt_path(runtime, config_base),
         timeout_seconds=_positive_float(runtime, "timeout_seconds"),
         context_tokens=_positive_int(runtime, "context_tokens"),
         max_output_tokens=_positive_int(runtime, "max_output_tokens"),
@@ -199,16 +250,15 @@ def _validated_model_runtime(
 
 
 def _apply_model_runtime_overrides(
-    config: ModelRuntimeConfig,
+    config: ModelExecutionConfig,
     *,
     adapter: str | None,
     endpoint: str | None,
     model: str | None,
-    prompt_path: Path | None,
     timeout_seconds: float | None,
     context_tokens: int | None,
     max_output_tokens: int | None,
-) -> ModelRuntimeConfig:
+) -> ModelExecutionConfig:
     selected_adapter = adapter or config.adapter
     if selected_adapter not in MODEL_RUNTIME_ADAPTERS:
         allowed = ", ".join(MODEL_RUNTIME_ADAPTERS)
@@ -220,21 +270,15 @@ def _apply_model_runtime_overrides(
     )
     if selected_timeout <= 0 or selected_context <= 0 or selected_output <= 0:
         raise ValueError("Model runtime numeric settings must be positive.")
-    return ModelRuntimeConfig(
+    return ModelExecutionConfig(
         profile_name=config.profile_name,
         adapter=selected_adapter,
         endpoint=_override_string(endpoint, config.endpoint, "model_endpoint"),
         model=_override_string(model, config.model, "model_name"),
-        prompt_path=prompt_path.resolve() if prompt_path is not None else config.prompt_path,
         timeout_seconds=selected_timeout,
         context_tokens=selected_context,
         max_output_tokens=selected_output,
     )
-
-
-def _runtime_prompt_path(runtime: dict[str, object], config_base: Path) -> Path:
-    path = Path(_string_value(runtime, "prompt_path"))
-    return path if path.is_absolute() else (config_base / path).resolve()
 
 
 def _string_value(values: dict[str, object], key: str) -> str:

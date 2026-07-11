@@ -18,7 +18,7 @@ def test_adapter_package_does_not_eagerly_import_docling() -> None:
     assert "docling.document_converter" not in sys.modules
 
 
-def test_docling_parser_returns_a_typed_block_when_docling_load_fails(
+def test_docling_parser_raises_when_docling_load_fails(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from kotekomi_adapters import docling_pdf_parser
@@ -34,16 +34,13 @@ def test_docling_parser_returns_a_typed_block_when_docling_load_fails(
     )
     monkeypatch.setattr(docling_pdf_parser, "_load_docling_components", fail_to_load)
 
-    result = DoclingPdfParser(DoclingPdfParserConfig(code_revision="test")).parse(
-        PdfParseInput(document, raw_pdf, "pdf_policy_v1", NOW)
-    )
-
-    assert result.representation_bundle is None
-    assert result.preflight.warnings == ("docling_error:RuntimeError",)
-    assert result.blocking_reasons == ("Docling PDF conversion failed: RuntimeError",)
+    with pytest.raises(RuntimeError, match="Docling conversion failed"):
+        DoclingPdfParser(DoclingPdfParserConfig()).parse(
+            PdfParseInput(document, raw_pdf, "pdf_policy_v1", "ptf_fixture", NOW)
+        )
 
 
-def test_docling_bundle_identity_changes_with_its_parser_fingerprint() -> None:
+def test_docling_bundle_identity_derives_from_processing_task() -> None:
     from kotekomi_adapters import docling_pdf_parser
 
     raw_pdf = b"%PDF-1.7\nfixture"
@@ -55,38 +52,45 @@ def test_docling_bundle_identity_changes_with_its_parser_fingerprint() -> None:
         ),
         raw_pdf,
         "pdf_policy_v1",
+        "ptf_base",
         NOW,
     )
     base = docling_pdf_parser.build_docling_blocked_bundle(
         parse_input=parse_input,
         logical_text="fixture",
         parser_version="1",
-        config=DoclingPdfParserConfig(code_revision="base"),
+        config=DoclingPdfParserConfig(),
     )
     changed_version = docling_pdf_parser.build_docling_blocked_bundle(
         parse_input=parse_input,
         logical_text="fixture",
         parser_version="2",
-        config=DoclingPdfParserConfig(code_revision="base"),
+        config=DoclingPdfParserConfig(),
     )
     changed_config = docling_pdf_parser.build_docling_blocked_bundle(
         parse_input=parse_input,
         logical_text="fixture",
         parser_version="1",
-        config=DoclingPdfParserConfig(code_revision="base", enable_ocr=True),
+        config=DoclingPdfParserConfig(enable_ocr=True),
     )
-    changed_code = docling_pdf_parser.build_docling_blocked_bundle(
-        parse_input=parse_input,
+    changed_task = docling_pdf_parser.build_docling_blocked_bundle(
+        parse_input=parse_input.__class__(
+            parse_input.document,
+            parse_input.raw_bytes,
+            parse_input.policy_id,
+            "ptf_changed",
+            parse_input.parsed_at,
+        ),
         logical_text="fixture",
         parser_version="1",
-        config=DoclingPdfParserConfig(code_revision="changed"),
+        config=DoclingPdfParserConfig(),
     )
 
     ids = {
         base.representation.id,
         changed_version.representation.id,
         changed_config.representation.id,
-        changed_code.representation.id,
+        changed_task.representation.id,
     }
-    assert len(ids) == 4
+    assert len(ids) == 2
     assert base.text_views[0].id.startswith(f"tvw_{base.representation.id.removeprefix('rep_')}")

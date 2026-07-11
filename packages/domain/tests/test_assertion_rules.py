@@ -28,7 +28,7 @@ def valid_assertion_kwargs() -> dict[str, Any]:
         "extraction_confidence": 0.8,
         "world_truth_confidence": 0.6,
         "source_ids": ("src_article_a",),
-        "evidence_target_ids": ("evt_article_a_release",),
+        "evidence_target_ids": ("etg_article_a_release",),
         "provenance_activity_ids": ("prv_human_review",),
         "created_at": datetime(2026, 7, 8, tzinfo=UTC),
         "updated_at": datetime(2026, 7, 8, tzinfo=UTC),
@@ -43,7 +43,7 @@ def test_accepts_source_backed_assertion_with_evidence_and_provenance() -> None:
     assert assertion.source_authority is SourceAuthority.SECONDARY
     assert assertion.attribution_basis is AttributionBasis.REPORTED_BY_SOURCE
     assert assertion.source_ids == ("src_article_a",)
-    assert assertion.evidence_target_ids == ("evt_article_a_release",)
+    assert assertion.evidence_target_ids == ("etg_article_a_release",)
 
 
 def test_rejects_assertion_without_object_entity_or_object_value() -> None:
@@ -110,7 +110,7 @@ def test_accepts_primary_source_attributed_statement_with_authority_evidence() -
             "attribution_basis": AttributionBasis.DIRECT_DOCUMENT,
             "attributed_to_id": "org_lab_a",
             "authority_source_ids": ("src_article_a",),
-            "authority_evidence_target_ids": ("evt_article_a_release",),
+            "authority_evidence_target_ids": ("etg_article_a_release",),
         }
     )
 
@@ -142,7 +142,7 @@ def test_rejects_authority_evidence_outside_assertion_evidence() -> None:
         {
             "source_authority": SourceAuthority.PRIMARY,
             "authority_source_ids": ("src_other",),
-            "authority_evidence_target_ids": ("evt_article_a_release",),
+            "authority_evidence_target_ids": ("etg_article_a_release",),
         }
     )
 

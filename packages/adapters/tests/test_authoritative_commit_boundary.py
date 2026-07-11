@@ -14,7 +14,6 @@ from kotekomi_adapters import (
 from kotekomi_application import (
     CaptureRequest,
     EvidenceValidationInput,
-    RepresentationFingerprintInput,
     ReviewProposedChangeInput,
     SourceIdentityHint,
     StableSourceIdentityPolicy,
@@ -115,17 +114,8 @@ def _bundle(
     parser_config_digest: str = PARSER_CONFIG_DIGEST,
     text: str = TEXT,
 ) -> DocumentRepresentationBundle:
-    representation_id = deterministic_representation_id(
-        RepresentationFingerprintInput(
-            document_id=document_id,
-            input_blob_digest=input_blob_digest,
-            parser_name="final_proof_parser",
-            parser_version="1",
-            parser_config_digest=parser_config_digest,
-            code_revision="final-proof",
-            representation_schema_version="1",
-        )
-    )
+    task_fingerprint_id = f"ptf_{hashlib.sha256(parser_config_digest.encode()).hexdigest()[:24]}"
+    representation_id = deterministic_representation_id(task_fingerprint_id)
     representation_key = representation_id.removeprefix("rep_")
     text_view = TextView(
         id=f"tvw_{representation_key}_logical",
@@ -157,7 +147,7 @@ def _bundle(
         parser_name="final_proof_parser",
         parser_version="1",
         parser_config_digest=parser_config_digest,
-        code_revision="final-proof",
+        processing_task_fingerprint_id=task_fingerprint_id,
         input_blob_digest=input_blob_digest,
         canonical_output_digest="0" * 64,
         created_at=NOW,
@@ -191,7 +181,7 @@ def _validated_evidence(
     text_view = bundle.text_views[0]
     node = bundle.nodes[0]
     return EvidenceTarget(
-        id="evt_final_proof",
+        id="etg_final_proof",
         source_id=source_id,
         document_id=document_id,
         exact_text=TEXT,
@@ -223,7 +213,7 @@ def _assertion_proposed_change(source_id: str, document_id: str) -> ProposedChan
                 "source_authority": "secondary",
                 "attribution_basis": "reported_by_source",
                 "source_ids": [source_id],
-                "evidence_target_ids": ["evt_final_proof"],
+                "evidence_target_ids": ["etg_final_proof"],
                 "provenance_activity_ids": [],
             },
             "evidence": {
@@ -234,7 +224,7 @@ def _assertion_proposed_change(source_id: str, document_id: str) -> ProposedChan
             },
             "evidence_links": [
                 {
-                    "evidence_target_id": "evt_final_proof",
+                    "evidence_target_id": "etg_final_proof",
                     "validation_attempt_id": "eva_final_proof",
                     "role": "direct_support",
                     "polarity": "supports",
@@ -335,15 +325,7 @@ def test_final_proof_reopens_and_replays_the_complete_authoritative_chain(tmp_pa
         assert raw_blob.digest == hashlib.sha256(fixture.request.payload).hexdigest()
         assert document.content_sha256 == raw_blob.digest
         assert bundle.representation.id == deterministic_representation_id(
-            RepresentationFingerprintInput(
-                document_id=document.id,
-                input_blob_digest=raw_blob.digest,
-                parser_name="final_proof_parser",
-                parser_version="1",
-                parser_config_digest=PARSER_CONFIG_DIGEST,
-                code_revision="final-proof",
-                representation_schema_version="1",
-            )
+            bundle.representation.processing_task_fingerprint_id
         )
         assert bundle.representation.canonical_output_digest == canonical_representation_digest(
             bundle.representation,
@@ -395,9 +377,10 @@ def test_final_proof_parser_configuration_mutation_creates_a_new_representation(
         )
         outcome = repository.commit_document_representation_bundle(changed)
         assert outcome.representation_id != fixture.representation.representation.id
-        assert repository.get_document_representation_bundle(
-            fixture.representation.representation.id
-        ) == fixture.representation
+        assert (
+            repository.get_document_representation_bundle(fixture.representation.representation.id)
+            == fixture.representation
+        )
 
 
 def test_final_proof_representation_node_text_mutation_fails_without_history_change(
@@ -413,9 +396,10 @@ def test_final_proof_representation_node_text_mutation_fails_without_history_cha
         with sqlite_ledger_transaction(fixture.ledger_path) as repository:
             repository.commit_document_representation_bundle(changed_output)
     with sqlite_ledger_transaction(fixture.ledger_path) as repository:
-        assert repository.get_document_representation_bundle(
-            fixture.representation.representation.id
-        ) == fixture.representation
+        assert (
+            repository.get_document_representation_bundle(fixture.representation.representation.id)
+            == fixture.representation
+        )
 
 
 @pytest.mark.parametrize(

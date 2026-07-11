@@ -43,6 +43,7 @@ from kotekomi_application import (
     ReviewReadinessInput,
     ReviewReadinessStatus,
     SourceFileIngestInput,
+    Uuid4ProcessingAttemptIdFactory,
     add_source_from_file,
     approve_proposed_change,
     cleanup_created_briefing_archive_object,
@@ -75,7 +76,13 @@ from kotekomi_application import (
 from kotekomi_briefing import MarkdownBriefingRenderer
 from kotekomi_domain import ReviewStatus
 
-from kotekomi_pipelines.config import MODEL_RUNTIME_ADAPTERS, PipelineConfig, load_config
+from kotekomi_pipelines.config import (
+    MODEL_RUNTIME_ADAPTERS,
+    PipelineConfig,
+    ProcessingConfig,
+    load_config,
+    load_processing_config,
+)
 from kotekomi_pipelines.managed_llama_server import (
     ManagedLlamaServerConfig,
     get_managed_llama_server_status,
@@ -98,7 +105,7 @@ def main(argv: list[str] | None = None) -> int:
         return init_ledger(config)
 
     if args.command == "source" and args.source_command == "add-file":
-        config = load_config(
+        config = load_processing_config(
             config_path=args.config,
             ledger_path_override=args.ledger_path,
             archive_path_override=args.archive_path,
@@ -114,7 +121,6 @@ def main(argv: list[str] | None = None) -> int:
             model_runtime_adapter=args.model_runtime,
             model_endpoint=args.model_endpoint,
             model_name=args.model_name,
-            model_prompt_path=args.model_prompt_path,
             model_timeout_seconds=args.model_timeout_seconds,
             model_context_tokens=args.model_context_tokens,
             model_max_output_tokens=args.model_max_output_tokens,
@@ -122,11 +128,11 @@ def main(argv: list[str] | None = None) -> int:
         return show_model_runtime_status(config=config, output_format=args.output_format)
 
     if args.command == "model" and args.model_command == "server":
-            return manage_model_server(
-                server_command=args.server_command,
-                llama_server_path=getattr(args, "llama_server_path", None),
-                output_format=args.output_format,
-            )
+        return manage_model_server(
+            server_command=args.server_command,
+            llama_server_path=getattr(args, "llama_server_path", None),
+            output_format=args.output_format,
+        )
 
     if args.command == "review" and args.review_command == "approve":
         config = load_config(
@@ -281,7 +287,6 @@ def main(argv: list[str] | None = None) -> int:
             model_runtime_adapter=args.model_runtime,
             model_endpoint=args.model_endpoint,
             model_name=args.model_name,
-            model_prompt_path=args.model_prompt_path,
             model_timeout_seconds=args.model_timeout_seconds,
             model_context_tokens=args.model_context_tokens,
             model_max_output_tokens=args.model_max_output_tokens,
@@ -304,7 +309,6 @@ def main(argv: list[str] | None = None) -> int:
             model_runtime_adapter=args.model_runtime,
             model_endpoint=args.model_endpoint,
             model_name=args.model_name,
-            model_prompt_path=args.model_prompt_path,
             model_timeout_seconds=args.model_timeout_seconds,
             model_context_tokens=args.model_context_tokens,
             model_max_output_tokens=args.model_max_output_tokens,
@@ -327,7 +331,6 @@ def main(argv: list[str] | None = None) -> int:
             model_runtime_adapter=args.model_runtime,
             model_endpoint=args.model_endpoint,
             model_name=args.model_name,
-            model_prompt_path=args.model_prompt_path,
             model_timeout_seconds=args.model_timeout_seconds,
             model_context_tokens=args.model_context_tokens,
             model_max_output_tokens=args.model_max_output_tokens,
@@ -387,7 +390,6 @@ def _load_model_config(
     model_runtime_adapter: str | None,
     model_endpoint: str | None,
     model_name: str | None,
-    model_prompt_path: Path | None,
     model_timeout_seconds: float | None,
     model_context_tokens: int | None,
     model_max_output_tokens: int | None,
@@ -400,7 +402,6 @@ def _load_model_config(
         model_runtime_adapter_override=model_runtime_adapter,
         model_endpoint_override=model_endpoint,
         model_name_override=model_name,
-        model_prompt_path_override=model_prompt_path,
         model_timeout_seconds_override=model_timeout_seconds,
         model_context_tokens_override=model_context_tokens,
         model_max_output_tokens_override=model_max_output_tokens,
@@ -706,7 +707,6 @@ def _add_model_runtime_arguments(
     parser.add_argument("--model-runtime", choices=choices, default=None)
     parser.add_argument("--model-endpoint", default=None)
     parser.add_argument("--model-name", default=None)
-    parser.add_argument("--model-prompt-path", type=Path, default=None)
     parser.add_argument("--model-timeout-seconds", type=float, default=None)
     parser.add_argument("--model-context-tokens", type=int, default=None)
     parser.add_argument("--model-max-output-tokens", type=int, default=None)
@@ -727,20 +727,22 @@ def init_ledger(config: PipelineConfig) -> int:
     return 0
 
 
-def add_source_file(config: PipelineConfig, source_file_path: Path) -> int:
+def add_source_file(config: ProcessingConfig, source_file_path: Path) -> int:
     raw_bytes = source_file_path.read_bytes()
-    archive_store = LocalArchiveStore(config.archive_path)
+    archive_store = LocalArchiveStore(config.storage.archive_path)
     archive_store.initialize()
-    with sqlite_ledger_transaction(config.ledger_path) as ledger_repository:
+    with sqlite_ledger_transaction(config.storage.ledger_path) as ledger_repository:
         result = add_source_from_file(
             SourceFileIngestInput(
                 local_file_path=str(source_file_path),
                 filename=source_file_path.name,
                 raw_bytes=raw_bytes,
                 ingested_at=datetime.now(UTC),
+                build_identity=config.build_identity,
             ),
             archive_store,
             ledger_repository,
+            Uuid4ProcessingAttemptIdFactory(),
         )
     status = "created" if result.created else "already_exists"
     print(f"Source {status}: {result.source_id}")
@@ -752,7 +754,7 @@ def add_source_file(config: PipelineConfig, source_file_path: Path) -> int:
 
 
 def show_model_runtime_status(*, config: PipelineConfig, output_format: str) -> int:
-    runtime = build_model_runtime_readiness(config.model_runtime)
+    runtime = build_model_runtime_readiness(config.model_execution)
     status = runtime.check_readiness()
     if output_format == "json":
         print(json.dumps(model_runtime_status_to_json(status), indent=2, sort_keys=True))
@@ -787,8 +789,7 @@ def list_reviewed_proposed_changes(
 
     print(f"Review Queue: {len(result.items)}")
     print(
-        "ProposedChange | Status | RecordType | StableLabel | Source | Document | "
-        "Model | Created"
+        "ProposedChange | Status | RecordType | StableLabel | Source | Document | Model | Created"
     )
     for item in result.items:
         print(
@@ -1169,13 +1170,12 @@ def _pipeline_status_input(
         ledger_path=str(config.ledger_path),
         archive_path=str(config.archive_path),
         source_file_path=_optional_resolved_path(source_file_path),
-        model_runtime_adapter=config.model_runtime.adapter,
-        model_endpoint=config.model_runtime.endpoint,
-        model_name=config.model_runtime.model,
-        model_prompt_path=str(config.model_runtime.prompt_path),
-        model_timeout_seconds=config.model_runtime.timeout_seconds,
-        model_context_tokens=config.model_runtime.context_tokens,
-        model_max_output_tokens=config.model_runtime.max_output_tokens,
+        model_runtime_adapter=config.model_execution.adapter,
+        model_endpoint=config.model_execution.endpoint,
+        model_name=config.model_execution.model,
+        model_timeout_seconds=config.model_execution.timeout_seconds,
+        model_context_tokens=config.model_execution.context_tokens,
+        model_max_output_tokens=config.model_execution.max_output_tokens,
         model_output_fixture_path=_optional_resolved_path(model_output_fixture_path),
         document_id=document_id,
         briefing_title=briefing_title,
@@ -1509,8 +1509,7 @@ def _pipeline_status_text(status: PipelineStatus) -> str:
     lines.append("Blockers:")
     if status.blockers:
         lines.extend(
-            f"  {blocker.command} | {blocker.blocker_type}: {blocker.blocker_id} | "
-            f"{blocker.reason}"
+            f"  {blocker.command} | {blocker.blocker_type}: {blocker.blocker_id} | {blocker.reason}"
             for blocker in status.blockers
         )
     else:
@@ -1539,8 +1538,7 @@ def _pipeline_next_text(next_step: PipelineNextStep) -> str:
     )
     if next_step.blockers:
         lines.extend(
-            f"  {blocker.command} | {blocker.blocker_type}: {blocker.blocker_id} | "
-            f"{blocker.reason}"
+            f"  {blocker.command} | {blocker.blocker_type}: {blocker.blocker_id} | {blocker.reason}"
             for blocker in next_step.blockers
         )
     else:
@@ -1577,8 +1575,7 @@ def _pipeline_run_next_text(result: PipelineRunNextResult) -> str:
     lines.append("Blockers:")
     if result.command_plan.blockers:
         lines.extend(
-            f"  {blocker.command} | {blocker.blocker_type}: {blocker.blocker_id} | "
-            f"{blocker.reason}"
+            f"  {blocker.command} | {blocker.blocker_type}: {blocker.blocker_id} | {blocker.reason}"
             for blocker in result.command_plan.blockers
         )
     else:
@@ -1600,8 +1597,7 @@ def _missing_inputs_text(command_plan: PipelineCommandPlan) -> list[str]:
             )
         else:
             lines.append(
-                f"  {missing_input.name} ({missing_input.kind}): "
-                f"{missing_input.description}"
+                f"  {missing_input.name} ({missing_input.kind}): {missing_input.description}"
             )
     return lines
 

@@ -29,7 +29,7 @@ not infer the operating system, GPU, server, or installed model.
 
 `macbook` is the default. Select the workstation profile with
 `kotekomi source propose-assertions --runtime-profile wsl-4090 ...`.
-The Pipeline resolves a profile into `ModelRuntimeConfig` before it constructs an Adapter.
+The Pipeline resolves a profile into `ModelExecutionConfig` before it constructs an Adapter.
 A fixture-backed runtime is only an explicit test override; it is not a runtime fallback.
 
 Later runtime Adapters:

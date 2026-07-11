@@ -65,6 +65,7 @@ from kotekomi_application.pdf_ingest import (
     PdfParseInput,
     PdfParseResult,
     PdfPreflight,
+    PdfProcessorIdentity,
     ingest_pdf,
 )
 from kotekomi_application.pipeline_readiness import (
@@ -114,6 +115,16 @@ from kotekomi_application.ports import (
     ModelRuntimeStatus,
     StagedArchiveObject,
 )
+from kotekomi_application.processing import (
+    BuildIdentity,
+    ProcessingAttemptIdFactory,
+    ProcessingLedger,
+    ProcessingTaskDisposition,
+    Uuid4ProcessingAttemptIdFactory,
+    processing_attempt_outcome,
+    processing_task_fingerprint,
+    start_processing_attempt,
+)
 from kotekomi_application.proposed_change_review import (
     ReviewDrainInput,
     ReviewDrainResult,
@@ -137,7 +148,6 @@ from kotekomi_application.representation_identity import (
     BundleCommitDisposition,
     BundleCommitOutcome,
     DocumentRepresentationBundleLedger,
-    RepresentationFingerprintInput,
     deterministic_representation_id,
 )
 from kotekomi_application.review_queue_packet import (
@@ -256,7 +266,16 @@ __all__ = [
     "PdfPagePreflight",
     "PdfParseInput",
     "PdfParseResult",
+    "PdfProcessorIdentity",
     "PdfPreflight",
+    "BuildIdentity",
+    "ProcessingAttemptIdFactory",
+    "ProcessingLedger",
+    "ProcessingTaskDisposition",
+    "Uuid4ProcessingAttemptIdFactory",
+    "processing_attempt_outcome",
+    "processing_task_fingerprint",
+    "start_processing_attempt",
     "ReviewProposedChangeInput",
     "ReviewProposedChangeResult",
     "ReviewDrainInput",
@@ -285,7 +304,6 @@ __all__ = [
     "ReviewReadinessStatus",
     "ReviewReferenceContext",
     "ReviewReferenceResolution",
-    "RepresentationFingerprintInput",
     "ReanchorEvidenceInput",
     "ReanchoringOutcome",
     "SourceFileIngestInput",

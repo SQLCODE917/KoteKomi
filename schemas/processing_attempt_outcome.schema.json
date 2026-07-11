@@ -1,0 +1,261 @@
+{
+  "$defs": {
+    "OutputDisposition": {
+      "enum": [
+        "created",
+        "reused"
+      ],
+      "title": "OutputDisposition",
+      "type": "string"
+    },
+    "ProcessingArtifactKind": {
+      "enum": [
+        "document_representation",
+        "quality_report",
+        "provenance_activity"
+      ],
+      "title": "ProcessingArtifactKind",
+      "type": "string"
+    },
+    "ProcessingArtifactRef": {
+      "additionalProperties": false,
+      "properties": {
+        "artifact_id": {
+          "minLength": 1,
+          "title": "Artifact Id",
+          "type": "string"
+        },
+        "digest": {
+          "anyOf": [
+            {
+              "pattern": "^[a-f0-9]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Digest"
+        },
+        "kind": {
+          "$ref": "#/$defs/ProcessingArtifactKind"
+        },
+        "role": {
+          "minLength": 1,
+          "title": "Role",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "artifact_id",
+        "role"
+      ],
+      "title": "ProcessingArtifactRef",
+      "type": "object"
+    },
+    "ProcessingAttemptStatus": {
+      "enum": [
+        "succeeded",
+        "blocked",
+        "failed",
+        "cancelled",
+        "interrupted"
+      ],
+      "title": "ProcessingAttemptStatus",
+      "type": "string"
+    },
+    "ProcessingBlocker": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "minLength": 1,
+          "title": "Code",
+          "type": "string"
+        },
+        "safe_message": {
+          "minLength": 1,
+          "title": "Safe Message",
+          "type": "string"
+        },
+        "stage": {
+          "$ref": "#/$defs/ProcessingStage"
+        }
+      },
+      "required": [
+        "code",
+        "stage",
+        "safe_message"
+      ],
+      "title": "ProcessingBlocker",
+      "type": "object"
+    },
+    "ProcessingFailure": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "minLength": 1,
+          "title": "Code",
+          "type": "string"
+        },
+        "diagnostic_digest": {
+          "anyOf": [
+            {
+              "pattern": "^[a-f0-9]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Diagnostic Digest"
+        },
+        "failure_type": {
+          "minLength": 1,
+          "title": "Failure Type",
+          "type": "string"
+        },
+        "retryable": {
+          "title": "Retryable",
+          "type": "boolean"
+        },
+        "safe_message": {
+          "minLength": 1,
+          "title": "Safe Message",
+          "type": "string"
+        },
+        "stage": {
+          "$ref": "#/$defs/ProcessingStage"
+        }
+      },
+      "required": [
+        "code",
+        "failure_type",
+        "stage",
+        "safe_message",
+        "retryable"
+      ],
+      "title": "ProcessingFailure",
+      "type": "object"
+    },
+    "ProcessingStage": {
+      "enum": [
+        "build_identity",
+        "attempt_start",
+        "parser",
+        "representation_validation",
+        "persistence",
+        "reconciliation"
+      ],
+      "title": "ProcessingStage",
+      "type": "string"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "attempt_id": {
+      "pattern": "^pat_[A-Za-z0-9][A-Za-z0-9_-]*$",
+      "title": "Attempt Id",
+      "type": "string"
+    },
+    "blocking_reasons": {
+      "items": {
+        "$ref": "#/$defs/ProcessingBlocker"
+      },
+      "title": "Blocking Reasons",
+      "type": "array"
+    },
+    "cancellation_reason": {
+      "anyOf": [
+        {
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Cancellation Reason"
+    },
+    "failure": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ProcessingFailure"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "finished_at": {
+      "format": "date-time",
+      "title": "Finished At",
+      "type": "string"
+    },
+    "id": {
+      "pattern": "^pao_[A-Za-z0-9][A-Za-z0-9_-]*$",
+      "title": "Id",
+      "type": "string"
+    },
+    "interruption_basis": {
+      "anyOf": [
+        {
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Interruption Basis"
+    },
+    "output_artifacts": {
+      "items": {
+        "$ref": "#/$defs/ProcessingArtifactRef"
+      },
+      "title": "Output Artifacts",
+      "type": "array"
+    },
+    "output_disposition": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/OutputDisposition"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "provenance_activity_id": {
+      "anyOf": [
+        {
+          "pattern": "^prv_[A-Za-z0-9][A-Za-z0-9_-]*$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Provenance Activity Id"
+    },
+    "status": {
+      "$ref": "#/$defs/ProcessingAttemptStatus"
+    }
+  },
+  "required": [
+    "id",
+    "attempt_id",
+    "status",
+    "finished_at"
+  ],
+  "title": "ProcessingAttemptOutcome",
+  "type": "object"
+}

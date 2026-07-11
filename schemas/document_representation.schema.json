@@ -7,11 +7,6 @@
       "title": "Canonical Output Digest",
       "type": "string"
     },
-    "code_revision": {
-      "minLength": 1,
-      "title": "Code Revision",
-      "type": "string"
-    },
     "created_at": {
       "format": "date-time",
       "title": "Created At",
@@ -46,6 +41,11 @@
       "minLength": 1,
       "title": "Parser Version",
       "type": "string"
+    },
+    "processing_task_fingerprint_id": {
+      "pattern": "^ptf_[A-Za-z0-9][A-Za-z0-9_-]*$",
+      "title": "Processing Task Fingerprint Id",
+      "type": "string"
     }
   },
   "required": [
@@ -54,7 +54,7 @@
     "parser_name",
     "parser_version",
     "parser_config_digest",
-    "code_revision",
+    "processing_task_fingerprint_id",
     "input_blob_digest",
     "canonical_output_digest"
   ],

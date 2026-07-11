@@ -18,6 +18,11 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
   "properties": {
+    "canonical_identity_key": {
+      "minLength": 1,
+      "title": "Canonical Identity Key",
+      "type": "string"
+    },
     "created_at": {
       "format": "date-time",
       "title": "Created At",
@@ -28,33 +33,12 @@
       "title": "Id",
       "type": "string"
     },
-    "published_at": {
-      "anyOf": [
-        {
-          "format": "date-time",
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "default": null,
-      "title": "Published At"
-    },
-    "source_type": {
-      "$ref": "#/$defs/SourceType"
-    },
-    "title": {
+    "identity_policy_id": {
       "minLength": 1,
-      "title": "Title",
+      "title": "Identity Policy Id",
       "type": "string"
     },
-    "updated_at": {
-      "format": "date-time",
-      "title": "Updated At",
-      "type": "string"
-    },
-    "uri": {
+    "provider_item_id": {
       "anyOf": [
         {
           "minLength": 1,
@@ -65,13 +49,35 @@
         }
       ],
       "default": null,
-      "title": "Uri"
+      "title": "Provider Item Id"
+    },
+    "provider_namespace": {
+      "anyOf": [
+        {
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Provider Namespace"
+    },
+    "source_type": {
+      "$ref": "#/$defs/SourceType"
+    },
+    "updated_at": {
+      "format": "date-time",
+      "title": "Updated At",
+      "type": "string"
     }
   },
   "required": [
     "id",
     "source_type",
-    "title"
+    "identity_policy_id",
+    "canonical_identity_key"
   ],
   "title": "Source",
   "type": "object"

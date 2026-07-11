@@ -170,7 +170,7 @@ def test_repository_lists_all_accepted_canonical_records(tmp_path: Path) -> None
         "ast_release_review",
         "doc_article_a",
         "ent_actor_a",
-        "evt_article_a_release",
+        "etg_article_a_release",
         "evt_model_forum",
         "org_lab_a",
         "out_release_review",

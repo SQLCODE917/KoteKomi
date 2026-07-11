@@ -7,8 +7,10 @@ from kotekomi_application import (
     ArchiveObject,
     ArchivePutDisposition,
     ArchivePutOutcome,
+    BuildIdentity,
     BundleCommitDisposition,
     BundleCommitOutcome,
+    ProcessingTaskDisposition,
     SourceFileIngestInput,
     StagedArchiveObject,
     add_source_from_file,
@@ -22,6 +24,10 @@ from kotekomi_domain import (
     DocumentRepresentationBundle,
     DocumentRevisionRelation,
     ParseQualityReport,
+    ProcessingAttempt,
+    ProcessingAttemptOutcome,
+    ProcessingAttemptStatus,
+    ProcessingTaskFingerprint,
     ProvenanceActivity,
     RawBlob,
     Source,
@@ -40,6 +46,7 @@ FIXTURE_PATH = (
     / "anthropic_model_release_review.md"
 )
 NOW = datetime(2026, 7, 8, 12, 0, tzinfo=UTC)
+BUILD_IDENTITY = BuildIdentity("fixture", "fixture", "a" * 64, "1")
 FIXTURE_TITLE = "Anthropic delayed model rollout after U.S. review raised cyber-safety concerns"
 
 
@@ -82,7 +89,10 @@ class FakeArchiveStore:
         )
 
     def read_raw_source(self, source_id: str) -> bytes:
-        return self.raw_writes[source_id]
+        try:
+            return self.raw_writes[source_id]
+        except KeyError as exc:
+            raise FileNotFoundError(source_id) from exc
 
     def write_document_text(self, document_id: str, text: str) -> ArchiveObject:
         if document_id in self.text_writes:
@@ -94,7 +104,10 @@ class FakeArchiveStore:
         )
 
     def read_document_text(self, document_id: str) -> str:
-        return self.text_writes[document_id]
+        try:
+            return self.text_writes[document_id]
+        except KeyError as exc:
+            raise FileNotFoundError(document_id) from exc
 
     def read_briefing_markdown(self, briefing_id: str) -> str:
         raise NotImplementedError
@@ -179,6 +192,9 @@ class FakeLedgerRepository:
         self.document_edges: dict[str, DocumentEdge] = {}
         self.source_regions: dict[str, SourceRegion] = {}
         self.parse_quality_reports: dict[str, ParseQualityReport] = {}
+        self.processing_tasks: dict[str, ProcessingTaskFingerprint] = {}
+        self.processing_attempts: dict[str, ProcessingAttempt] = {}
+        self.processing_outcomes: dict[str, ProcessingAttemptOutcome] = {}
         self.fail_on_save_document = fail_on_save_document
 
     def get_source(self, record_id: str) -> Source | None:
@@ -224,6 +240,34 @@ class FakeLedgerRepository:
 
     def save_document_revision_relation(self, record: DocumentRevisionRelation) -> None:
         self.document_revision_relations[record.id] = record
+
+    def ensure_processing_task_fingerprint(
+        self, record: ProcessingTaskFingerprint
+    ) -> ProcessingTaskDisposition:
+        existing = self.processing_tasks.get(record.id)
+        if existing is None:
+            self.processing_tasks[record.id] = record
+            return ProcessingTaskDisposition.CREATED
+        if existing != record:
+            raise ValueError("processing task conflict")
+        return ProcessingTaskDisposition.REUSED
+
+    def append_processing_attempt(self, record: ProcessingAttempt) -> None:
+        if record.id in self.processing_attempts:
+            raise ValueError("processing attempt conflict")
+        self.processing_attempts[record.id] = record
+
+    def append_processing_attempt_outcome(self, record: ProcessingAttemptOutcome) -> None:
+        outcome_attempt_ids = {outcome.attempt_id for outcome in self.processing_outcomes.values()}
+        if record.attempt_id in outcome_attempt_ids:
+            raise ValueError("processing outcome conflict")
+        self.processing_outcomes[record.id] = record
+
+    def commit_processing_attempt_start(self) -> None:
+        return None
+
+    def record_failed_processing_attempt_outcome(self, record: ProcessingAttemptOutcome) -> None:
+        self.append_processing_attempt_outcome(record)
 
     def save_document_representation(self, record: DocumentRepresentation) -> None:
         self.document_representations[record.id] = record
@@ -280,6 +324,22 @@ class FakeLedgerRepository:
         self.parse_quality_reports[bundle.quality_report.id] = bundle.quality_report
         return BundleCommitOutcome(BundleCommitDisposition.CREATED, bundle.representation.id)
 
+    def commit_document_representation_processing(
+        self,
+        *,
+        bundle: DocumentRepresentationBundle,
+        created_provenance_activity: ProvenanceActivity,
+        created_outcome: ProcessingAttemptOutcome,
+        reused_outcome: ProcessingAttemptOutcome,
+    ) -> BundleCommitOutcome:
+        outcome = self.commit_document_representation_bundle(bundle)
+        if outcome.disposition is BundleCommitDisposition.CREATED:
+            self.save_provenance_activity(created_provenance_activity)
+            self.append_processing_attempt_outcome(created_outcome)
+        else:
+            self.append_processing_attempt_outcome(reused_outcome)
+        return outcome
+
     def save_text_view(self, record: TextView) -> None:
         self.text_views[record.id] = record
 
@@ -304,6 +364,7 @@ def test_add_source_from_file_creates_source_document_and_provenance() -> None:
             filename=FIXTURE_PATH.name,
             raw_bytes=raw_bytes,
             ingested_at=NOW,
+            build_identity=BUILD_IDENTITY,
         ),
         archive,
         ledger,
@@ -354,6 +415,7 @@ def test_add_source_from_file_is_idempotent_after_records_exist() -> None:
         filename=FIXTURE_PATH.name,
         raw_bytes=raw_bytes,
         ingested_at=NOW,
+        build_identity=BUILD_IDENTITY,
     )
 
     first = add_source_from_file(ingest_input, archive, ledger)
@@ -374,6 +436,32 @@ def test_add_source_from_file_is_idempotent_after_records_exist() -> None:
     assert len(ledger.provenance_activities) == 1
 
 
+def test_add_source_from_file_records_failed_attempt_for_incomplete_reuse_closure() -> None:
+    raw_bytes = FIXTURE_PATH.read_bytes()
+    archive = FakeArchiveStore()
+    ledger = FakeLedgerRepository()
+    ingest_input = SourceFileIngestInput(
+        local_file_path=str(FIXTURE_PATH),
+        filename=FIXTURE_PATH.name,
+        raw_bytes=raw_bytes,
+        ingested_at=NOW,
+        build_identity=BUILD_IDENTITY,
+    )
+
+    result = add_source_from_file(ingest_input, archive, ledger)
+    archive.text_writes.pop(result.document_id)
+
+    with pytest.raises(ValueError, match="INCOMPLETE_CLOSURE"):
+        add_source_from_file(ingest_input, archive, ledger)
+
+    assert len(ledger.processing_attempts) == 2
+    assert len(ledger.processing_outcomes) == 2
+    latest_outcome = tuple(ledger.processing_outcomes.values())[-1]
+    assert latest_outcome.status is ProcessingAttemptStatus.FAILED
+    assert latest_outcome.failure is not None
+    assert latest_outcome.failure.code == "incomplete_closure"
+
+
 def test_add_source_from_file_rejects_unsupported_suffix() -> None:
     with pytest.raises(ValueError, match="Unsupported Source file suffix"):
         add_source_from_file(
@@ -382,10 +470,34 @@ def test_add_source_from_file_rejects_unsupported_suffix() -> None:
                 filename="fixture.pdf",
                 raw_bytes=b"%PDF",
                 ingested_at=NOW,
+                build_identity=BUILD_IDENTITY,
             ),
             FakeArchiveStore(),
             FakeLedgerRepository(),
         )
+
+
+def test_add_source_from_file_rejects_invalid_build_identity_before_mutation() -> None:
+    archive = FakeArchiveStore()
+    ledger = FakeLedgerRepository()
+
+    with pytest.raises(ValueError, match="artifact_digest"):
+        add_source_from_file(
+            SourceFileIngestInput(
+                local_file_path="notes.txt",
+                filename="notes.txt",
+                raw_bytes=b"note",
+                ingested_at=NOW,
+                build_identity=BuildIdentity("fixture", "fixture", "not-a-digest", "1"),
+            ),
+            archive,
+            ledger,
+        )
+
+    assert archive.raw_writes == {}
+    assert archive.text_writes == {}
+    assert ledger.sources == {}
+    assert ledger.documents == {}
 
 
 def test_add_source_from_file_defaults_text_file_metadata() -> None:
@@ -398,6 +510,7 @@ def test_add_source_from_file_defaults_text_file_metadata() -> None:
             filename="notes.txt",
             raw_bytes=b"plain text note",
             ingested_at=NOW,
+            build_identity=BUILD_IDENTITY,
         ),
         archive,
         ledger,
@@ -419,6 +532,7 @@ def test_add_source_from_file_rejects_malformed_dateline() -> None:
                 filename="bad-dateline.md",
                 raw_bytes=b"# Bad Dateline\n\nDateline: July 2 2026\n\nBody.",
                 ingested_at=NOW,
+                build_identity=BUILD_IDENTITY,
             ),
             archive,
             ledger,
@@ -432,39 +546,36 @@ def test_add_source_from_file_rejects_malformed_dateline() -> None:
     assert ledger.provenance_activities == {}
 
 
-def test_add_source_from_file_versions_an_edited_file_under_one_stable_source() -> None:
+def test_add_source_from_file_rejects_changed_bytes_without_revision_decision() -> None:
     archive = FakeArchiveStore()
     ledger = FakeLedgerRepository()
-    original = add_source_from_file(
+    add_source_from_file(
         SourceFileIngestInput(
             local_file_path="notes.txt",
             filename="notes.txt",
             raw_bytes=b"original note",
             ingested_at=NOW,
+            build_identity=BUILD_IDENTITY,
         ),
         archive,
         ledger,
     )
-    updated = add_source_from_file(
-        SourceFileIngestInput(
-            local_file_path="notes.txt",
-            filename="notes.txt",
-            raw_bytes=b"updated note",
-            ingested_at=NOW.replace(hour=13),
-        ),
-        archive,
-        ledger,
-    )
+    with pytest.raises(ValueError, match="UNCLASSIFIED_REVISION"):
+        add_source_from_file(
+            SourceFileIngestInput(
+                local_file_path="notes.txt",
+                filename="notes.txt",
+                raw_bytes=b"updated note",
+                ingested_at=NOW.replace(hour=13),
+                build_identity=BUILD_IDENTITY,
+            ),
+            archive,
+            ledger,
+        )
 
-    assert original.source_id == updated.source_id
-    assert original.document_id != updated.document_id
     assert len(ledger.sources) == 1
-    assert len(ledger.raw_blobs) == len(ledger.source_captures) == len(ledger.documents) == 2
-    assert len(ledger.document_revision_relations) == 1
-    relation = next(iter(ledger.document_revision_relations.values()))
-    assert relation.earlier_document_id == original.document_id
-    assert relation.later_document_id == updated.document_id
-    assert relation.relation_type.value == "updates"
+    assert len(ledger.raw_blobs) == len(ledger.source_captures) == len(ledger.documents) == 1
+    assert len(ledger.document_revision_relations) == 0
     assert archive.read_raw_source(next(iter(ledger.raw_blobs))) == b"original note"
 
 
@@ -480,6 +591,7 @@ def test_add_source_from_file_preserves_promoted_archive_objects_after_ledger_fa
                 filename=FIXTURE_PATH.name,
                 raw_bytes=raw_bytes,
                 ingested_at=NOW,
+                build_identity=BUILD_IDENTITY,
             ),
             archive,
             ledger,

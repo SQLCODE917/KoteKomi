@@ -25,32 +25,6 @@
       "title": "Created At",
       "type": "string"
     },
-    "created_from_capture_id": {
-      "anyOf": [
-        {
-          "pattern": "^cap_[A-Za-z0-9][A-Za-z0-9_-]*$",
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "default": null,
-      "title": "Created From Capture Id"
-    },
-    "extracted_text_path": {
-      "anyOf": [
-        {
-          "minLength": 1,
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "default": null,
-      "title": "Extracted Text Path"
-    },
     "id": {
       "pattern": "^doc_[A-Za-z0-9][A-Za-z0-9_-]*$",
       "title": "Id",
@@ -95,11 +69,6 @@
       "default": null,
       "title": "Publication Time"
     },
-    "raw_path": {
-      "minLength": 1,
-      "title": "Raw Path",
-      "type": "string"
-    },
     "source_id": {
       "pattern": "^src_[A-Za-z0-9][A-Za-z0-9_-]*$",
       "title": "Source Id",
@@ -118,7 +87,6 @@
   "required": [
     "id",
     "source_id",
-    "raw_path",
     "content_sha256"
   ],
   "title": "Document",

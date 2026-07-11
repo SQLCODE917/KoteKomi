@@ -24,17 +24,34 @@ def ledger_init_args(ledger_path: Path, archive_path: Path) -> list[str]:
     ]
 
 
+def processing_config(tmp_path: Path) -> Path:
+    config_path = tmp_path / "kotekomi.toml"
+    config_path.write_text(
+        """
+[processing.build_identity]
+package_version = "test"
+source_revision = "test"
+artifact_digest = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+representation_policy_version = "1"
+""".lstrip()
+    )
+    return config_path
+
+
 def test_source_add_file_ingests_fixture_into_ledger_and_archive(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     ledger_path = tmp_path / "ledger" / "kotekomi.db"
     archive_path = tmp_path / "archive"
+    config_path = processing_config(tmp_path)
     assert main(ledger_init_args(ledger_path, archive_path)) == 0
     capsys.readouterr()
 
     exit_code = main(
         [
+            "--config",
+            str(config_path),
             "source",
             "add-file",
             str(FIXTURE_PATH),
@@ -98,9 +115,12 @@ def test_source_add_file_is_idempotent(
 ) -> None:
     ledger_path = tmp_path / "ledger" / "kotekomi.db"
     archive_path = tmp_path / "archive"
+    config_path = processing_config(tmp_path)
     assert main(ledger_init_args(ledger_path, archive_path)) == 0
     capsys.readouterr()
     args = [
+        "--config",
+        str(config_path),
         "source",
         "add-file",
         str(FIXTURE_PATH),

@@ -72,7 +72,7 @@ def sample_domain_records() -> tuple[
             content_sha256=HASH,
         ),
         EvidenceTarget(
-            id="evt_article_a_release",
+            id="etg_article_a_release",
             source_id="src_article_a",
             document_id="doc_article_a",
             representation_id="rep_article_a_fixture",
@@ -98,7 +98,7 @@ def sample_domain_records() -> tuple[
             extraction_confidence=0.8,
             world_truth_confidence=0.6,
             source_ids=("src_article_a",),
-            evidence_target_ids=("evt_article_a_release",),
+            evidence_target_ids=("etg_article_a_release",),
             provenance_activity_ids=("prv_human_review",),
         ),
         Relationship(
@@ -122,7 +122,7 @@ def sample_domain_records() -> tuple[
             to_assertion_id="ast_release_review",
             relation=ArgumentEdgeRelation.SUPPORTS,
             rationale="The source claim supports itself as reported evidence.",
-            evidence_target_ids=("evt_article_a_release",),
+            evidence_target_ids=("etg_article_a_release",),
             confidence=0.8,
         ),
         ProvenanceActivity(
@@ -149,7 +149,7 @@ def sample_domain_records() -> tuple[
             relationship_ids=("rel_person_a_lab_a",),
             argument_edge_ids=("arg_release_support",),
             source_ids=("src_article_a",),
-            evidence_target_ids=("evt_article_a_release",),
+            evidence_target_ids=("etg_article_a_release",),
             provenance_activity_id="prv_human_review",
             markdown_path="briefings/daily/brf_daily.md",
             generated_at=NOW,

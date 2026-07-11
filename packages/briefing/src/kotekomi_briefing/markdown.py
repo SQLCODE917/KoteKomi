@@ -80,9 +80,7 @@ def _evidence_quality_section(render_input: BriefingRenderInput) -> list[str]:
     lines = ["## Evidence and Source Quality", ""]
     if not render_input.narrative.evidence_quality:
         return [*lines, "- None", ""]
-    lines.append(
-        "| Claim | SourceAuthority | AttributionBasis | Sources | EvidenceTargets |"
-    )
+    lines.append("| Claim | SourceAuthority | AttributionBasis | Sources | EvidenceTargets |")
     lines.append("|---|---:|---:|---:|---:|")
     for quality in render_input.narrative.evidence_quality:
         claim = _sentence_text(quality.claim.text, quality.claim.citation_numbers)

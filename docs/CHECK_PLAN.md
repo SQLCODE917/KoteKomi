@@ -22,6 +22,7 @@
 - run repository tests with `packages/adapters/tests/test_sqlite_ledger_repository.py`
 - verify stable Source identity, retry idempotency, immutable revisions, and capture conflicts with `uv run pytest packages/application/tests/test_source_capture.py packages/application/tests/test_add_source_from_file.py packages/adapters/tests/test_sqlite_source_capture.py packages/pipelines/tests/test_source_add_file.py`
 - verify deterministic representation identity and atomic bundle commits with `uv run pytest packages/domain/tests/test_document_representations.py packages/application/tests/test_representation_identity.py packages/adapters/tests/test_representation_bundle_commit.py packages/adapters/tests/test_docling_pdf_parser.py`
+- verify durable processing task/attempt/outcome records, immutable SQLite storage, and indexed retry lookup with `uv run pytest packages/domain/tests/test_processing_records.py packages/adapters/tests/test_processing_records.py packages/application/tests/test_add_source_from_file.py packages/application/tests/test_pdf_ingest.py`
 - verify replayable EvidenceTarget validation and atomic evidence-gated Assertion acceptance with `uv run pytest packages/application/tests/test_evidence_targets.py packages/adapters/tests/test_atomic_assertion_acceptance.py`
 - run the restart-safe authoritative commit-boundary Final Proof with `uv run pytest packages/adapters/tests/test_authoritative_commit_boundary.py`
 - verify the Docling adapter loads lazily and returns a typed blocked result with `uv run pytest packages/adapters/tests/test_docling_pdf_parser.py`
@@ -32,16 +33,11 @@
 ## 5. Pipeline checks
 - run URL ingest fixture
 - run local file ingest fixture with `uv run pytest packages/pipelines/tests/test_source_add_file.py`
-- run Assertion proposal Application test with `uv run pytest packages/application/tests/test_propose_assertions_for_document.py`
-- verify model output missing Assertion epistemic fields fails before ProposedChange with `uv run pytest packages/application/tests/test_propose_assertions_for_document.py`
-- run Assertion proposal Adapter fixture with `uv run pytest packages/adapters/tests/test_fixture_model_runtime.py`
-- verify model proposal batch schema and exact evidence validation with `uv run pytest packages/application/tests/test_model_proposal_validation.py packages/application/tests/test_propose_assertions_for_document.py`
 - verify llama-server and Ollama Adapter contracts with `uv run pytest packages/adapters/tests/test_local_model_runtimes.py`
 - verify local model runtime config and agent status JSON with `uv run pytest packages/pipelines/tests/test_cli.py`
-- verify named `macbook` and `wsl-4090` profiles resolve into the shared ModelRuntime configuration with `uv run pytest packages/pipelines/tests/test_cli.py`
+- verify named `macbook` and `wsl-4090` profiles resolve into the shared ModelExecution configuration with `uv run pytest packages/pipelines/tests/test_cli.py`
 - optionally probe llama-server with `KOTEKOMI_LIVE_LLAMA_SERVER_MODEL=<alias> uv run pytest packages/adapters/tests/test_local_model_runtimes_live.py`
 - optionally probe Ollama with `KOTEKOMI_LIVE_OLLAMA_MODEL=<tag> uv run pytest packages/adapters/tests/test_local_model_runtimes_live.py`
-- run Assertion proposal Pipeline fixture with `uv run pytest packages/pipelines/tests/test_source_propose_assertions.py`
 - run ProposedChange review Application test with `uv run pytest packages/application/tests/test_review_proposed_change.py`
 - run ProposedChange review Pipeline fixture with `uv run pytest packages/pipelines/tests/test_review_proposed_change.py`
 - run Review Queue and Review Packet Application tests with `uv run pytest packages/application/tests/test_review_queue_packet.py`

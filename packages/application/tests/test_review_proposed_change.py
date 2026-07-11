@@ -133,9 +133,7 @@ class FakeReviewLedger:
     def save_evidence_target(self, record: EvidenceTarget) -> None:
         self.evidence_targets[record.id] = record
 
-    def get_evidence_validation_attempt(
-        self, record_id: str
-    ) -> EvidenceValidationAttempt | None:
+    def get_evidence_validation_attempt(self, record_id: str) -> EvidenceValidationAttempt | None:
         return self.evidence_validation_attempts.get(record_id)
 
     def save_evidence_validation_attempt(self, record: EvidenceValidationAttempt) -> None:
@@ -239,7 +237,7 @@ def seed_reference_records(ledger: FakeReviewLedger) -> None:
         parser_name="fixture",
         parser_version="1",
         parser_config_digest="b" * 64,
-        code_revision="fixture",
+        processing_task_fingerprint_id="ptf_fixture",
         input_blob_digest="a" * 64,
         canonical_output_digest="0" * 64,
         created_at=NOW,
@@ -263,7 +261,7 @@ def seed_reference_records(ledger: FakeReviewLedger) -> None:
         quality_report=quality_report,
     )
     evidence = EvidenceTarget(
-        id="evt_delay",
+        id="etg_delay",
         source_id="src_article_a",
         document_id="doc_article_a",
         exact_text=evidence_text,
@@ -295,7 +293,7 @@ def seed_reference_records(ledger: FakeReviewLedger) -> None:
         source_authority=SourceAuthority.SECONDARY,
         attribution_basis=AttributionBasis.REPORTED_BY_SOURCE,
         source_ids=("src_article_a",),
-        evidence_target_ids=("evt_delay",),
+        evidence_target_ids=("etg_delay",),
         provenance_activity_ids=("prv_model_run",),
     )
     ledger.assertions["ast_shared_outcome"] = Assertion(
@@ -353,9 +351,7 @@ def proposed_change(
             proposed_json["evidence_links"] = [
                 {
                     "evidence_target_id": evidence_target_id,
-                    "validation_attempt_id": (
-                        f"eva_{evidence_target_id.removeprefix('evt_')}"
-                    ),
+                    "validation_attempt_id": (f"eva_{evidence_target_id.removeprefix('etg_')}"),
                     "role": "direct_support",
                     "polarity": "supports",
                     "necessity": "required",
@@ -803,8 +799,7 @@ def test_review_drain_rejects_matching_pending_changes() -> None:
     assert result.stopped_reason is ReviewDrainStoppedReason.QUEUE_EMPTY
     assert result.executed_count == 2
     assert all(
-        change.review_status is ReviewStatus.REJECTED
-        for change in ledger.proposed_changes.values()
+        change.review_status is ReviewStatus.REJECTED for change in ledger.proposed_changes.values()
     )
 
 
@@ -936,8 +931,7 @@ def test_review_drain_dry_run_reports_sequence_without_mutation() -> None:
     assert result.executed_count == 0
     assert all(not item.executed for item in result.item_results)
     assert all(
-        change.review_status is ReviewStatus.PENDING
-        for change in ledger.proposed_changes.values()
+        change.review_status is ReviewStatus.PENDING for change in ledger.proposed_changes.values()
     )
 
 
@@ -953,7 +947,7 @@ def test_review_drain_stops_on_validation_failure_preserving_prior_success() -> 
         "source_authority": "secondary",
         "attribution_basis": "reported_by_source",
         "source_ids": ["src_article_a"],
-        "evidence_target_ids": ["evt_missing"],
+        "evidence_target_ids": ["etg_missing"],
         "provenance_activity_ids": [],
     }
     ledger = FakeReviewLedger(
@@ -1066,20 +1060,20 @@ def test_review_drain_json_is_agent_readable() -> None:
             "pcg_evidence",
             "EvidenceTarget",
             {
-                    "id": "evt_delay",
-                    "source_id": "src_article_a",
-                    "document_id": "doc_article_a",
-                    "representation_id": "rep_delay",
-                    "text_view_id": "tvw_delay",
-                    "text_view_digest": "0" * 64,
-                    "start_char": 0,
-                    "end_char": 32,
-                    "exact_text": "Anthropic postponed the rollout.",
-                    "normalization_policy": "fixture_v1",
-                    "node_ids": ["nod_delay"],
+                "id": "etg_delay",
+                "source_id": "src_article_a",
+                "document_id": "doc_article_a",
+                "representation_id": "rep_delay",
+                "text_view_id": "tvw_delay",
+                "text_view_digest": "0" * 64,
+                "start_char": 0,
+                "end_char": 32,
+                "exact_text": "Anthropic postponed the rollout.",
+                "normalization_policy": "fixture_v1",
+                "node_ids": ["nod_delay"],
             },
             "evidence_targets",
-            "evt_delay",
+            "etg_delay",
         ),
         (
             "pcg_relationship",
@@ -1116,7 +1110,7 @@ def test_review_drain_json_is_agent_readable() -> None:
                 "to_assertion_id": "ast_shared_outcome",
                 "relation": "infers",
                 "rationale": "The accepted Assertion supports the analytic inference.",
-                "evidence_target_ids": ["evt_delay"],
+                "evidence_target_ids": ["etg_delay"],
                 "confidence": 0.7,
             },
             "argument_edges",
@@ -1170,7 +1164,7 @@ def test_approve_proposed_assertion_marks_it_reported_and_adds_review_provenance
                     "source_authority": "secondary",
                     "attribution_basis": "reported_by_source",
                     "source_ids": ["src_article_a"],
-                    "evidence_target_ids": ["evt_delay"],
+                    "evidence_target_ids": ["etg_delay"],
                     "provenance_activity_ids": [],
                 },
             ),
@@ -1292,7 +1286,7 @@ def test_edit_proposed_assertion_marks_it_reported_and_adds_review_provenance() 
         "world_truth_confidence": 0.62,
         "current_assessment": "The Source reports a delayed rollout after review.",
         "source_ids": ["src_article_a"],
-        "evidence_target_ids": ["evt_delay"],
+        "evidence_target_ids": ["etg_delay"],
         "provenance_activity_ids": [],
     }
     ledger = FakeReviewLedger(
@@ -1311,7 +1305,7 @@ def test_edit_proposed_assertion_marks_it_reported_and_adds_review_provenance() 
                     "source_authority": "secondary",
                     "attribution_basis": "reported_by_source",
                     "source_ids": ["src_article_a"],
-                    "evidence_target_ids": ["evt_delay"],
+                    "evidence_target_ids": ["etg_delay"],
                     "provenance_activity_ids": [],
                 },
             ),
@@ -1400,7 +1394,7 @@ def test_approve_rejects_assertion_with_missing_evidence_target_reference() -> N
                     "source_authority": "secondary",
                     "attribution_basis": "reported_by_source",
                     "source_ids": ["src_article_a"],
-                    "evidence_target_ids": ["evt_missing"],
+                    "evidence_target_ids": ["etg_missing"],
                     "provenance_activity_ids": [],
                 },
             ),
@@ -1408,7 +1402,7 @@ def test_approve_rejects_assertion_with_missing_evidence_target_reference() -> N
     )
     seed_reference_records(ledger)
 
-    with pytest.raises(ValueError, match="references missing EvidenceTarget: evt_missing"):
+    with pytest.raises(ValueError, match="references missing EvidenceTarget: etg_missing"):
         approve_proposed_change(review_input(record_id), ledger)
 
     assert "ast_missing_evidence" not in ledger.assertions
@@ -1453,7 +1447,7 @@ def test_approve_rejects_argument_edge_with_missing_reference() -> None:
                     "to_assertion_id": "ast_missing",
                     "relation": "infers",
                     "rationale": "The accepted Assertion supports the analytic inference.",
-                    "evidence_target_ids": ["evt_delay"],
+                    "evidence_target_ids": ["etg_delay"],
                     "confidence": 0.7,
                 },
             ),

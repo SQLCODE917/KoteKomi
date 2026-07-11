@@ -143,21 +143,18 @@ Pipeline -> Agent: structured JSON
 - error_message
 ```
 
-`ModelRuntimeConfig` contains:
+`ModelExecutionConfig` contains runtime-only settings:
 
 ```text
 - adapter
 - endpoint
 - model
-- prompt_path
 - timeout_seconds
 - context_tokens
 - max_output_tokens
 ```
 
 ## 9. APIs / Interfaces
-
-The existing `ModelRuntime.propose_assertions` Port method remains unchanged.
 
 The Application Layer adds a `ModelRuntimeReadiness` Port.
 
@@ -176,7 +173,6 @@ The proposal and Pipeline planning commands accept:
 --model-runtime llama_server|ollama|fixture
 --model-endpoint <url>
 --model-name <name>
---model-prompt-path <path>
 --model-timeout-seconds <seconds>
 --model-context-tokens <count>
 --model-max-output-tokens <count>
@@ -185,7 +181,7 @@ The proposal and Pipeline planning commands accept:
 
 The TOML configuration adds `runtime_profile` and `[runtime_profiles.<name>]` tables.
 
-The Pipeline resolves the selected profile into the shared `ModelRuntimeConfig`.
+The Pipeline resolves the selected profile into the shared `ModelExecutionConfig`.
 
 The existing `[model_runtime]` table can override resolved profile fields.
 
@@ -198,7 +194,6 @@ The default profile uses:
 adapter = "llama_server"
 endpoint = "http://127.0.0.1:8080/v1"
 model = "qwen3-14b-q4_k_m"
-prompt_path = "prompts/propose_assertions.md"
 timeout_seconds = 300
 context_tokens = 32768
 max_output_tokens = 8192
@@ -211,7 +206,6 @@ The optional WSL profile uses:
 adapter = "ollama"
 endpoint = "http://127.0.0.1:11434"
 model = "qwen3:30b-a3b-instruct-2507-q4_K_M"
-prompt_path = "prompts/propose_assertions.md"
 timeout_seconds = 300
 context_tokens = 16384
 max_output_tokens = 8192

@@ -195,8 +195,7 @@ def deterministic_assertion_evidence_link_id(
     necessity: EvidenceNecessity,
 ) -> str:
     value = (
-        f"{assertion_id}:{evidence_target_id}:{validation_attempt_id}:"
-        f"{role}:{polarity}:{necessity}"
+        f"{assertion_id}:{evidence_target_id}:{validation_attempt_id}:{role}:{polarity}:{necessity}"
     )
     return f"ael_{hashlib.sha256(value.encode()).hexdigest()[:HASH_ID_LENGTH]}"
 

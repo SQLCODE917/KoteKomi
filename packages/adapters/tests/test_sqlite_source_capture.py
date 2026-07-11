@@ -121,8 +121,7 @@ def test_sqlite_capture_sequence_preserves_versions_and_retries(
         assert len(repository.list_documents()) == 4
         assert repository.get_document(original.document.id) == original.document
         assert {
-            relation.relation_type
-            for relation in repository.list_document_revision_relations()
+            relation.relation_type for relation in repository.list_document_revision_relations()
         } == {
             DocumentRevisionType.CORRECTS,
             DocumentRevisionType.UPDATES,

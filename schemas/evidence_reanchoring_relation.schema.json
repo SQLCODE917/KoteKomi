@@ -8,7 +8,7 @@
       "type": "string"
     },
     "earlier_evidence_target_id": {
-      "pattern": "^evt_[A-Za-z0-9][A-Za-z0-9_-]*$",
+      "pattern": "^etg_[A-Za-z0-9][A-Za-z0-9_-]*$",
       "title": "Earlier Evidence Target Id",
       "type": "string"
     },
@@ -18,7 +18,7 @@
       "type": "string"
     },
     "later_evidence_target_id": {
-      "pattern": "^evt_[A-Za-z0-9][A-Za-z0-9_-]*$",
+      "pattern": "^etg_[A-Za-z0-9][A-Za-z0-9_-]*$",
       "title": "Later Evidence Target Id",
       "type": "string"
     },

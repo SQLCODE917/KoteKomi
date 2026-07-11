@@ -21,8 +21,11 @@ EventId = Annotated[str, Field(pattern=r"^evt_[A-Za-z0-9][A-Za-z0-9_-]*$")]
 PlaceId = Annotated[str, Field(pattern=r"^plc_[A-Za-z0-9][A-Za-z0-9_-]*$")]
 SourceId = Annotated[str, Field(pattern=r"^src_[A-Za-z0-9][A-Za-z0-9_-]*$")]
 DocumentId = Annotated[str, Field(pattern=r"^doc_[A-Za-z0-9][A-Za-z0-9_-]*$")]
-EvidenceTargetId = Annotated[str, Field(pattern=r"^evt_[A-Za-z0-9][A-Za-z0-9_-]*$")]
+EvidenceTargetId = Annotated[str, Field(pattern=r"^etg_[A-Za-z0-9][A-Za-z0-9_-]*$")]
 EvidenceValidationAttemptId = Annotated[str, Field(pattern=r"^eva_[A-Za-z0-9][A-Za-z0-9_-]*$")]
+ProcessingTaskFingerprintId = Annotated[str, Field(pattern=r"^ptf_[A-Za-z0-9][A-Za-z0-9_-]*$")]
+ProcessingAttemptId = Annotated[str, Field(pattern=r"^pat_[A-Za-z0-9][A-Za-z0-9_-]*$")]
+ProcessingAttemptOutcomeId = Annotated[str, Field(pattern=r"^pao_[A-Za-z0-9][A-Za-z0-9_-]*$")]
 AssertionEvidenceLinkId = Annotated[str, Field(pattern=r"^ael_[A-Za-z0-9][A-Za-z0-9_-]*$")]
 EvidenceReanchoringRelationId = Annotated[str, Field(pattern=r"^erl_[A-Za-z0-9][A-Za-z0-9_-]*$")]
 AssertionId = Annotated[str, Field(pattern=r"^ast_[A-Za-z0-9][A-Za-z0-9_-]*$")]
@@ -110,6 +113,34 @@ class DocumentEdgeProvenanceKind(StrEnum):
 class EvidenceValidationAttemptStatus(StrEnum):
     SUCCEEDED = "succeeded"
     FAILED = "failed"
+
+
+class ProcessingAttemptStatus(StrEnum):
+    SUCCEEDED = "succeeded"
+    BLOCKED = "blocked"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+    INTERRUPTED = "interrupted"
+
+
+class ProcessingArtifactKind(StrEnum):
+    DOCUMENT_REPRESENTATION = "document_representation"
+    QUALITY_REPORT = "quality_report"
+    PROVENANCE_ACTIVITY = "provenance_activity"
+
+
+class OutputDisposition(StrEnum):
+    CREATED = "created"
+    REUSED = "reused"
+
+
+class ProcessingStage(StrEnum):
+    BUILD_IDENTITY = "build_identity"
+    ATTEMPT_START = "attempt_start"
+    PARSER = "parser"
+    REPRESENTATION_VALIDATION = "representation_validation"
+    PERSISTENCE = "persistence"
+    RECONCILIATION = "reconciliation"
 
 
 class AssertionEvidenceRole(StrEnum):
@@ -325,7 +356,7 @@ class DocumentRepresentation(DomainModel):
     parser_name: NonEmptyStr
     parser_version: NonEmptyStr
     parser_config_digest: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
-    code_revision: NonEmptyStr
+    processing_task_fingerprint_id: ProcessingTaskFingerprintId
     input_blob_digest: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
     canonical_output_digest: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
     created_at: datetime = Field(default_factory=utc_now)
@@ -590,6 +621,143 @@ class EvidenceValidationAttempt(DomainModel):
         return self
 
 
+class ProcessingTaskFingerprint(DomainModel):
+    id: ProcessingTaskFingerprintId
+    task_kind: NonEmptyStr
+    input_document_id: DocumentId
+    input_blob_id: RawBlobId
+    input_digest: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
+    processor_name: NonEmptyStr
+    processor_version: NonEmptyStr
+    processor_config_digest: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
+    build_identity: BuildIdentitySnapshot
+    build_identity_digest: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
+    policy_id: NonEmptyStr
+    output_contract_version: NonEmptyStr
+    fingerprint_digest: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
+
+
+class ProcessingAttempt(DomainModel):
+    id: ProcessingAttemptId
+    task_fingerprint_id: ProcessingTaskFingerprintId
+    started_at: datetime
+    invocation_id: NonEmptyStr
+    initiator: NonEmptyStr | None = None
+
+
+class BuildIdentitySnapshot(DomainModel):
+    package_version: NonEmptyStr
+    source_revision: NonEmptyStr
+    artifact_digest: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
+    representation_policy_version: NonEmptyStr
+
+
+class ProcessingArtifactRef(DomainModel):
+    kind: ProcessingArtifactKind
+    artifact_id: NonEmptyStr
+    role: NonEmptyStr
+    digest: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")] | None = None
+
+
+class ProcessingBlocker(DomainModel):
+    code: NonEmptyStr
+    stage: ProcessingStage
+    safe_message: NonEmptyStr
+
+
+class ProcessingFailure(DomainModel):
+    code: NonEmptyStr
+    failure_type: NonEmptyStr
+    stage: ProcessingStage
+    safe_message: NonEmptyStr
+    retryable: bool
+    diagnostic_digest: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")] | None = None
+
+
+class ProcessingAttemptOutcome(DomainModel):
+    id: ProcessingAttemptOutcomeId
+    attempt_id: ProcessingAttemptId
+    status: ProcessingAttemptStatus
+    finished_at: datetime
+    output_artifacts: tuple[ProcessingArtifactRef, ...] = Field(default_factory=tuple)
+    output_disposition: OutputDisposition | None = None
+    blocking_reasons: tuple[ProcessingBlocker, ...] = Field(default_factory=tuple)
+    failure: ProcessingFailure | None = None
+    cancellation_reason: NonEmptyStr | None = None
+    interruption_basis: NonEmptyStr | None = None
+    provenance_activity_id: ProvenanceActivityId | None = None
+
+    @model_validator(mode="after")
+    def validate_result_shape(self) -> Self:
+        if self.status is ProcessingAttemptStatus.SUCCEEDED:
+            if not self.output_artifacts or self.output_disposition is None:
+                raise ValueError(
+                    "Successful ProcessingAttemptOutcome requires outputs and disposition."
+                )
+            if (
+                self.blocking_reasons
+                or self.failure is not None
+                or self.cancellation_reason is not None
+                or self.interruption_basis is not None
+            ):
+                raise ValueError(
+                    "Successful ProcessingAttemptOutcome cannot include terminal errors."
+                )
+        elif self.status is ProcessingAttemptStatus.BLOCKED:
+            if not self.blocking_reasons:
+                raise ValueError("Blocked ProcessingAttemptOutcome requires blockers.")
+            if (
+                self.output_disposition is not None
+                or self.failure is not None
+                or self.cancellation_reason is not None
+                or self.interruption_basis is not None
+            ):
+                raise ValueError(
+                    "Blocked ProcessingAttemptOutcome cannot include another terminal state."
+                )
+        elif self.status is ProcessingAttemptStatus.FAILED:
+            if self.failure is None:
+                raise ValueError("Failed ProcessingAttemptOutcome requires failure details.")
+            if (
+                self.output_disposition is not None
+                or self.blocking_reasons
+                or self.cancellation_reason is not None
+                or self.interruption_basis is not None
+            ):
+                raise ValueError(
+                    "Failed ProcessingAttemptOutcome cannot include another terminal state."
+                )
+        elif self.status is ProcessingAttemptStatus.CANCELLED:
+            if self.cancellation_reason is None:
+                raise ValueError("Cancelled ProcessingAttemptOutcome requires cancellation reason.")
+            if (
+                self.output_artifacts
+                or self.output_disposition is not None
+                or self.blocking_reasons
+                or self.failure is not None
+                or self.interruption_basis is not None
+            ):
+                raise ValueError(
+                    "Cancelled ProcessingAttemptOutcome cannot include another terminal state."
+                )
+        elif self.status is ProcessingAttemptStatus.INTERRUPTED:
+            if self.interruption_basis is None:
+                raise ValueError(
+                    "Interrupted ProcessingAttemptOutcome requires reconciliation basis."
+                )
+            if (
+                self.output_artifacts
+                or self.output_disposition is not None
+                or self.blocking_reasons
+                or self.failure is not None
+                or self.cancellation_reason is not None
+            ):
+                raise ValueError(
+                    "Interrupted ProcessingAttemptOutcome cannot include another terminal state."
+                )
+        return self
+
+
 class AssertionEvidenceLink(DomainModel):
     id: AssertionEvidenceLinkId
     assertion_id: AssertionId
@@ -623,9 +791,7 @@ def canonical_evidence_target_digest(evidence_target: EvidenceTarget) -> str:
     """Return the SHA-256 digest of immutable, replayable evidence selectors."""
 
     payload = evidence_target.model_dump(mode="json")
-    for field_name in (
-        "created_at",
-    ):
+    for field_name in ("created_at",):
         payload.pop(field_name)
     canonical_json = json.dumps(payload, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
     return hashlib.sha256(canonical_json.encode("utf-8")).hexdigest()

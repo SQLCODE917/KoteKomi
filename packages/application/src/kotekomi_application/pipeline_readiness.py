@@ -63,7 +63,6 @@ class PipelineStatusInput:
     model_runtime_adapter: str | None = None
     model_endpoint: str | None = None
     model_name: str | None = None
-    model_prompt_path: str | None = None
     model_timeout_seconds: float | None = None
     model_context_tokens: int | None = None
     model_max_output_tokens: int | None = None
@@ -631,8 +630,7 @@ def _has_analytic_records_after(
     return any(
         assertion.updated_at > latest_briefing_at for assertion in analytic_assertions
     ) or any(
-        argument_edge.created_at > latest_briefing_at
-        for argument_edge in indexes.argument_edges
+        argument_edge.created_at > latest_briefing_at for argument_edge in indexes.argument_edges
     )
 
 

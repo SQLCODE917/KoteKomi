@@ -32,7 +32,6 @@ class LlamaServerModelRuntime:
         *,
         endpoint: str,
         model: str,
-        prompt_text: str,
         timeout_seconds: float,
         context_tokens: int,
         max_output_tokens: int,
@@ -40,7 +39,6 @@ class LlamaServerModelRuntime:
     ) -> None:
         self.endpoint = endpoint.rstrip("/")
         self.model = model
-        self.prompt_text = prompt_text
         self.timeout_seconds = timeout_seconds
         self.context_tokens = context_tokens
         self.max_output_tokens = max_output_tokens
@@ -171,9 +169,7 @@ def _model_states(body: str) -> dict[str, str]:
     result: dict[str, str] = {}
     for index, model_value in enumerate(model_values):
         if not isinstance(model_value, dict):
-            raise ModelRuntimeResponseError(
-                f"llama-server models.data[{index}] must be an object."
-            )
+            raise ModelRuntimeResponseError(f"llama-server models.data[{index}] must be an object.")
         model = cast(dict[str, object], model_value)
         model_id = required_string(model, "id", f"llama-server models.data[{index}]")
         status = required_object(model, "status", f"llama-server models.data[{index}]")

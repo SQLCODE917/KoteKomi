@@ -44,9 +44,7 @@ class FakeCaptureLedger:
     def get_source_capture(self, record_id: str) -> SourceCapture | None:
         return self.captures.get(record_id)
 
-    def get_capture_document_resolution(
-        self, record_id: str
-    ) -> CaptureDocumentResolution | None:
+    def get_capture_document_resolution(self, record_id: str) -> CaptureDocumentResolution | None:
         return self.resolutions.get(record_id)
 
     def list_documents(self) -> tuple[Document, ...]:

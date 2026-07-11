@@ -80,7 +80,7 @@ def _bundle() -> DocumentRepresentationBundle:
         parser_name="fixture",
         parser_version="1",
         parser_config_digest="a" * 64,
-        code_revision="fixture",
+        processing_task_fingerprint_id="ptf_fixture",
         input_blob_digest="b" * 64,
         canonical_output_digest="0" * 64,
         created_at=NOW,
@@ -140,9 +140,7 @@ def _assertion_record(*, evidence_target_ids: list[str] | None = None) -> dict[s
         "source_authority": "secondary",
         "attribution_basis": "reported_by_source",
         "source_ids": ["src_atomic"],
-        "evidence_target_ids": cast(
-            list[JsonValue], evidence_target_ids or ["evt_atomic"]
-        ),
+        "evidence_target_ids": cast(list[JsonValue], evidence_target_ids or ["etg_atomic"]),
         "provenance_activity_ids": [],
     }
 
@@ -266,8 +264,8 @@ def test_acceptance_commits_assertion_links_and_review_provenance_after_restart(
     tmp_path: Path,
 ) -> None:
     ledger_path = tmp_path / "ledger.db"
-    first = _evidence_target("evt_atomic")
-    second = _evidence_target("evt_atomic_context")
+    first = _evidence_target("etg_atomic")
+    second = _evidence_target("etg_atomic_context")
     change = _proposed_change(
         evidence_links=[
             _link_spec(first.id),
@@ -331,7 +329,7 @@ def test_evidence_gate_failures_leave_no_partial_acceptance_writes(
     ],
     expected_message: str,
 ) -> None:
-    evidence = _evidence_target("evt_atomic")
+    evidence = _evidence_target("etg_atomic")
     links = [_link_spec(evidence.id)]
     evidence_ids: list[str] | None = None
     if failure == "no_links":
@@ -358,7 +356,7 @@ def test_evidence_gate_failures_leave_no_partial_acceptance_writes(
         _assert_no_acceptance_writes(ledger_path)
         return
     elif failure == "evidence_absent":
-        evidence_ids = ["evt_other"]
+        evidence_ids = ["etg_other"]
 
     ledger_path = tmp_path / "ledger.db"
     _seed(
@@ -375,8 +373,8 @@ def test_evidence_gate_failures_leave_no_partial_acceptance_writes(
 
 def test_second_link_conflict_rolls_back_the_entire_acceptance_bundle(tmp_path: Path) -> None:
     ledger_path = tmp_path / "ledger.db"
-    first = _evidence_target("evt_atomic")
-    second = _evidence_target("evt_atomic_context")
+    first = _evidence_target("etg_atomic")
+    second = _evidence_target("etg_atomic_context")
     change = _proposed_change(
         evidence_links=[_link_spec(first.id), _link_spec(second.id)],
         evidence_target_ids=[first.id, second.id],
@@ -439,7 +437,7 @@ def test_corrupt_representation_digest_rejects_acceptance_without_partial_writes
     tmp_path: Path,
 ) -> None:
     ledger_path = tmp_path / "ledger.db"
-    evidence = _evidence_target("evt_atomic")
+    evidence = _evidence_target("etg_atomic")
     _seed(
         ledger_path,
         evidence=(evidence,),

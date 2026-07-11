@@ -46,7 +46,7 @@
       "type": "string"
     },
     "evidence_target_id": {
-      "pattern": "^evt_[A-Za-z0-9][A-Za-z0-9_-]*$",
+      "pattern": "^etg_[A-Za-z0-9][A-Za-z0-9_-]*$",
       "title": "Evidence Target Id",
       "type": "string"
     },

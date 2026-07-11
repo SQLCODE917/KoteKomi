@@ -11,7 +11,6 @@ from kotekomi_adapters import (
 )
 from kotekomi_application import (
     BundleCommitDisposition,
-    RepresentationFingerprintInput,
     deterministic_representation_id,
 )
 from kotekomi_domain import (
@@ -34,21 +33,14 @@ def bundle(
     *,
     parser_version: str = "1",
     parser_config_digest: str = CONFIG_DIGEST,
-    code_revision: str = "test",
+    task_fingerprint_id: str | None = None,
     created_at: datetime = NOW,
     text: str = "hello",
 ) -> DocumentRepresentationBundle:
-    representation_id = deterministic_representation_id(
-        RepresentationFingerprintInput(
-            document_id="doc_representation_fixture",
-            input_blob_digest=INPUT_DIGEST,
-            parser_name="fixture_parser",
-            parser_version=parser_version,
-            parser_config_digest=parser_config_digest,
-            code_revision=code_revision,
-            representation_schema_version="1",
-        )
+    resolved_task_id = task_fingerprint_id or (
+        f"ptf_{hashlib.sha256(f'{parser_version}:{parser_config_digest}'.encode()).hexdigest()[:24]}"
     )
+    representation_id = deterministic_representation_id(resolved_task_id)
     representation_key = representation_id.removeprefix("rep_")
     text_view = TextView(
         id=f"tvw_{representation_key}_logical",
@@ -80,7 +72,7 @@ def bundle(
         parser_name="fixture_parser",
         parser_version=parser_version,
         parser_config_digest=parser_config_digest,
-        code_revision=code_revision,
+        processing_task_fingerprint_id=resolved_task_id,
         input_blob_digest=INPUT_DIGEST,
         canonical_output_digest="0" * 64,
         created_at=created_at,

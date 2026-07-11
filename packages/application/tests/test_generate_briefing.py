@@ -368,7 +368,7 @@ def test_generate_briefing_builds_sharp_judgment_from_canonical_support() -> Non
     source = source_fixture(updated_at=BEFORE)
     document = document_fixture(updated_at=BEFORE)
     pause_evidence = EvidenceTarget(
-        id="evt_pause",
+        id="etg_pause",
         source_id=source.id,
         document_id=document.id,
         exact_text="Commerce Secretary Howard Lutnick pressed for a pause.",
@@ -382,7 +382,7 @@ def test_generate_briefing_builds_sharp_judgment_from_canonical_support() -> Non
         created_at=BEFORE,
     )
     delay_evidence = EvidenceTarget(
-        id="evt_delay",
+        id="etg_delay",
         source_id=source.id,
         document_id=document.id,
         exact_text="Anthropic postponed broader Fable 5 rollout.",
@@ -396,7 +396,7 @@ def test_generate_briefing_builds_sharp_judgment_from_canonical_support() -> Non
         created_at=BEFORE,
     )
     suspension_evidence = EvidenceTarget(
-        id="evt_suspension",
+        id="etg_suspension",
         source_id=source.id,
         document_id=document.id,
         exact_text="Anthropic suspended enterprise pilots on June 23.",
@@ -633,7 +633,7 @@ def organization_fixture(
 
 def evidence_target_fixture(created_at: datetime = BEFORE) -> EvidenceTarget:
     return EvidenceTarget(
-        id="evt_article_a_claim",
+        id="etg_article_a_claim",
         source_id="src_article_a",
         document_id="doc_article_a",
         exact_text="Article A says the rollout was delayed.",
@@ -661,7 +661,7 @@ def source_assertion_fixture(updated_at: datetime = BEFORE) -> Assertion:
         attribution_basis=AttributionBasis.REPORTED_BY_SOURCE,
         world_truth_confidence=0.6,
         source_ids=("src_article_a",),
-        evidence_target_ids=("evt_article_a_claim",),
+        evidence_target_ids=("etg_article_a_claim",),
         provenance_activity_ids=("prv_review_claim",),
         current_assessment="The Source reports the rollout was delayed.",
         created_at=updated_at,
@@ -706,7 +706,7 @@ def argument_edge_fixture(created_at: datetime = BEFORE) -> ArgumentEdge:
         to_assertion_id="ast_shared_governance",
         relation=ArgumentEdgeRelation.INFERS,
         rationale="The Source claim participates in the governance outcome pattern.",
-        evidence_target_ids=("evt_article_a_claim",),
+        evidence_target_ids=("etg_article_a_claim",),
         confidence=0.7,
         created_at=created_at,
     )
