@@ -129,6 +129,36 @@ def capture_source(
         source = ledger_repository.get_source(identity.source_id)
         raw_blob = ledger_repository.get_raw_blob(identity.raw_blob_id)
         existing_document = ledger_repository.get_document(identity.document_id)
+        if source is not None and raw_blob is not None and existing_document is None:
+            _validate_revision_request(request, identity)
+            _validate_provider_version_conflict(request, identity, ledger_repository)
+            document = Document(
+                id=identity.document_id,
+                source_id=identity.source_id,
+                content_sha256=identity.content_digest,
+                provider_version=request.provider_version,
+                publication_time=request.publication_time,
+                provider_update_time=request.provider_update_time,
+                version_kind=request.version_kind,
+                created_at=request.transaction_time,
+                updated_at=request.transaction_time,
+            )
+            resolution = CaptureDocumentResolution(
+                id=identity.document_resolution_id,
+                capture_id=existing_capture.id,
+                document_id=document.id,
+                resolution_policy="capture_source_v1",
+                resolution_basis="source_identity_and_content_digest",
+                created_at=request.transaction_time,
+            )
+            relation = _requested_relation(request, identity)
+            ledger_repository.save_document(document)
+            ledger_repository.save_capture_document_resolution(resolution)
+            if relation is not None:
+                ledger_repository.save_document_revision_relation(relation)
+            return CaptureOutcome(
+                source, raw_blob, existing_capture, resolution, document, relation, False
+            )
         if (
             source is None
             or raw_blob is None

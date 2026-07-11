@@ -203,7 +203,22 @@ def test_capture_rejects_same_provider_version_with_different_bytes_without_muta
         )
 
     assert tuple(ledger.documents.values()) == (original.document,)
-    assert tuple(ledger.captures.values()) == (original.source_capture,)
+
+
+def test_capture_repairs_missing_document_closure_on_retry() -> None:
+    ledger = FakeCaptureLedger()
+    policy = StableSourceIdentityPolicy()
+    capture_request = request(b"fixture bytes", "repair")
+    first = capture_source(capture_request, ledger, policy)
+    ledger.documents.pop(first.document.id)
+    ledger.resolutions.pop(first.document_resolution.id)
+
+    repaired = capture_source(capture_request, ledger, policy)
+
+    assert repaired.document == first.document
+    assert repaired.document_resolution == first.document_resolution
+    assert repaired.created is False
+    assert tuple(ledger.captures.values()) == (first.source_capture,)
 
 
 @pytest.mark.parametrize(
