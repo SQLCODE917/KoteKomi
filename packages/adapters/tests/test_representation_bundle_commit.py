@@ -209,3 +209,18 @@ def test_representation_bundle_rejects_a_partial_preexisting_representation(tmp_
             == candidate.representation
         )
         assert repository.get_text_view(candidate.text_views[0].id) is None
+
+
+def test_representation_ownership_foreign_keys_reject_orphan_records(tmp_path: Path) -> None:
+    ledger_path = tmp_path / "ledger.db"
+    SQLiteLedgerInitializer(ledger_path).initialize()
+    candidate = bundle()
+
+    with pytest.raises(sqlite3.IntegrityError):
+        with sqlite_ledger_transaction(ledger_path) as repository:
+            repository.save_document_representation(candidate.representation)
+
+    initialize_ledger_with_representation_parent(ledger_path)
+    with pytest.raises(sqlite3.IntegrityError):
+        with sqlite_ledger_transaction(ledger_path) as repository:
+            repository.save_text_view(candidate.text_views[0])
