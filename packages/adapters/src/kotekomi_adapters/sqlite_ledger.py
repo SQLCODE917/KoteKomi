@@ -865,6 +865,24 @@ class SQLiteLedgerRepository:
     def get_analysis_unit_artifact(self, record_id: str) -> AnalysisUnitArtifact | None:
         return self._get(ANALYSIS_UNIT_ARTIFACT_SPEC, record_id)
 
+    def commit_context_planning_outcome(
+        self,
+        *,
+        manifest: ContextManifestArtifact,
+        child_analysis_units: tuple[AnalysisUnitArtifact, ...],
+    ) -> None:
+        """Atomically publish a planning outcome and every split child it names."""
+        self._connection.execute("SAVEPOINT context_planning_outcome")
+        try:
+            for child in child_analysis_units:
+                self.save_analysis_unit_artifact(child)
+            self.save_context_manifest_artifact(manifest)
+        except Exception:
+            self._connection.execute("ROLLBACK TO SAVEPOINT context_planning_outcome")
+            self._connection.execute("RELEASE SAVEPOINT context_planning_outcome")
+            raise
+        self._connection.execute("RELEASE SAVEPOINT context_planning_outcome")
+
     def save_extraction_task(self, record: ExtractionTask) -> None:
         self._save(EXTRACTION_TASK_SPEC, record)
 

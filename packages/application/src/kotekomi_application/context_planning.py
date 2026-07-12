@@ -22,6 +22,7 @@ from kotekomi_domain import (
 from kotekomi_domain.models import JsonValue
 
 HASH_ID_LENGTH = 24
+PARAGRAPH_FOCUS_SPLIT_V1 = "paragraph_focus_split_v1"
 
 
 class ContextCandidateRole(StrEnum):
@@ -45,6 +46,12 @@ class ContextPlanningLedger(Protocol):
     def get_context_manifest_artifact(self, record_id: str) -> ContextManifestArtifact | None: ...
     def save_analysis_unit_artifact(self, record: AnalysisUnitArtifact) -> None: ...
     def get_analysis_unit_artifact(self, record_id: str) -> AnalysisUnitArtifact | None: ...
+    def commit_context_planning_outcome(
+        self,
+        *,
+        manifest: ContextManifestArtifact,
+        child_analysis_units: tuple[AnalysisUnitArtifact, ...],
+    ) -> None: ...
 
 
 class ContextTokenizer(Protocol):
@@ -151,6 +158,9 @@ class ContextManifest:
     input_token_count: int
     manifest_digest: str
     status: ContextManifestStatus
+    split_strategy_id: str | None = None
+    child_analysis_unit_ids: tuple[str, ...] = ()
+    blocked_reason: str | None = None
 
 
 @dataclass(frozen=True)
@@ -204,7 +214,7 @@ def plan_analysis_units(
     )
     plan = AnalysisPlan(bundle.representation.id, planning_input.policy_id, units)
     for unit in plan.units:
-        persist_analysis_unit(unit, ledger_repository)
+        _persist_analysis_unit(unit, ledger_repository)
     return plan
 
 
@@ -278,6 +288,8 @@ def build_context_manifest(
                     rendered_input=b"",
                     segments=(),
                     status=ContextManifestStatus.SPLIT,
+                    split_strategy_id=PARAGRAPH_FOCUS_SPLIT_V1,
+                    child_analysis_unit_ids=tuple(child.id for child in split_units),
                 ),
                 split_units=split_units,
             ),
@@ -320,20 +332,19 @@ def _analysis_unit(
     policy_id: str,
 ) -> AnalysisUnit:
     dependency_ids = tuple(node.id for node in dependency_nodes)
-    fingerprint = _digest(
-        {
-            "representation_id": representation_id,
-            "task_type": task_type,
-            "focus_node_ids": tuple(node.id for node in focus_nodes),
-            "dependency_node_ids": dependency_ids,
-            "planner_policy_id": policy_id,
-        }
-    )
-    return AnalysisUnit(
-        id=f"anu_{fingerprint[:HASH_ID_LENGTH]}",
+    focus_node_ids = tuple(node.id for node in focus_nodes)
+    fingerprint = analysis_unit_fingerprint(
         representation_id=representation_id,
         task_type=task_type,
-        focus_node_ids=tuple(node.id for node in focus_nodes),
+        focus_node_ids=focus_node_ids,
+        dependency_node_ids=dependency_ids,
+        planner_policy_id=policy_id,
+    )
+    return AnalysisUnit(
+        id=deterministic_analysis_unit_id(fingerprint),
+        representation_id=representation_id,
+        task_type=task_type,
+        focus_node_ids=focus_node_ids,
         dependency_node_ids=dependency_ids,
         planner_policy_id=policy_id,
         fingerprint=fingerprint,
@@ -508,6 +519,7 @@ def _require_unit_matches_representation(
     unit: AnalysisUnit,
     bundle: DocumentRepresentationBundle,
 ) -> None:
+    validate_analysis_unit_identity(unit)
     if unit.representation_id != bundle.representation.id:
         raise ValueError("AnalysisUnit does not belong to the pinned DocumentRepresentation.")
     if not unit.focus_node_ids:
@@ -526,7 +538,46 @@ def _analysis_unit_payload(unit: AnalysisUnit) -> dict[str, object]:
     }
 
 
-def persist_analysis_unit(unit: AnalysisUnit, ledger_repository: ContextPlanningLedger) -> None:
+def analysis_unit_fingerprint(
+    *,
+    representation_id: str,
+    task_type: str,
+    focus_node_ids: tuple[str, ...],
+    dependency_node_ids: tuple[str, ...],
+    planner_policy_id: str,
+) -> str:
+    """Return the canonical identity digest for one policy-created AnalysisUnit."""
+    return _digest(
+        {
+            "representation_id": representation_id,
+            "task_type": task_type,
+            "focus_node_ids": focus_node_ids,
+            "dependency_node_ids": dependency_node_ids,
+            "planner_policy_id": planner_policy_id,
+        }
+    )
+
+
+def deterministic_analysis_unit_id(fingerprint: str) -> str:
+    return f"anu_{fingerprint[:HASH_ID_LENGTH]}"
+
+
+def validate_analysis_unit_identity(unit: AnalysisUnit) -> None:
+    expected_fingerprint = analysis_unit_fingerprint(
+        representation_id=unit.representation_id,
+        task_type=unit.task_type,
+        focus_node_ids=unit.focus_node_ids,
+        dependency_node_ids=unit.dependency_node_ids,
+        planner_policy_id=unit.planner_policy_id,
+    )
+    if unit.fingerprint != expected_fingerprint:
+        raise ValueError("AnalysisUnit fingerprint is not derived from its canonical fields.")
+    if unit.id != deterministic_analysis_unit_id(expected_fingerprint):
+        raise ValueError("AnalysisUnit ID is not derived from its canonical fingerprint.")
+
+
+def _persist_analysis_unit(unit: AnalysisUnit, ledger_repository: ContextPlanningLedger) -> None:
+    validate_analysis_unit_identity(unit)
     ledger_repository.save_analysis_unit_artifact(
         AnalysisUnitArtifact(
             id=unit.id,
@@ -543,9 +594,21 @@ def load_analysis_unit(
     artifact = ledger_repository.get_analysis_unit_artifact(analysis_unit_id)
     if artifact is None:
         raise ValueError(f"AnalysisUnit is not persisted: {analysis_unit_id}")
-    payload = artifact.payload
+    unit = _analysis_unit_from_payload(artifact.payload)
+    if (
+        unit.id != artifact.id
+        or unit.representation_id != artifact.representation_id
+        or unit.fingerprint != artifact.unit_fingerprint
+        or _analysis_unit_payload(unit) != artifact.payload
+    ):
+        raise ValueError("AnalysisUnit persisted artifact is corrupted.")
+    validate_analysis_unit_identity(unit)
+    return unit
+
+
+def _analysis_unit_from_payload(payload: dict[str, JsonValue]) -> AnalysisUnit:
     try:
-        unit = AnalysisUnit(
+        return AnalysisUnit(
             id=_required_str(payload, "id"),
             representation_id=_required_str(payload, "representation_id"),
             task_type=_required_str(payload, "task_type"),
@@ -556,19 +619,12 @@ def load_analysis_unit(
         )
     except (KeyError, TypeError, ValueError) as exc:
         raise ValueError("AnalysisUnit persisted artifact is malformed.") from exc
-    if (
-        unit.id != artifact.id
-        or unit.representation_id != artifact.representation_id
-        or unit.fingerprint != artifact.unit_fingerprint
-        or _analysis_unit_payload(unit) != artifact.payload
-    ):
-        raise ValueError("AnalysisUnit persisted artifact is corrupted.")
-    return unit
 
 
 def _require_persisted_analysis_unit(
     unit: AnalysisUnit, ledger_repository: ContextPlanningLedger
 ) -> None:
+    validate_analysis_unit_identity(unit)
     if load_analysis_unit(unit.id, ledger_repository) != unit:
         raise ValueError("AnalysisUnit does not match its persisted authoritative artifact.")
 
@@ -606,6 +662,7 @@ def _blocked_outcome(
             rendered_input=b"",
             segments=(),
             status=ContextManifestStatus.CONTEXT_BUDGET_BLOCKED,
+            blocked_reason=reason,
         ),
         blocked_reason=reason,
     )
@@ -620,6 +677,9 @@ def _manifest(
     rendered_input: bytes,
     segments: tuple[RenderedContextSegment, ...],
     status: ContextManifestStatus,
+    split_strategy_id: str | None = None,
+    child_analysis_unit_ids: tuple[str, ...] = (),
+    blocked_reason: str | None = None,
 ) -> ContextManifest:
     input_token_count = tokenizer.count_tokens(rendered_input)
     rendered_input_digest = hashlib.sha256(rendered_input).hexdigest()
@@ -646,6 +706,9 @@ def _manifest(
         "rendered_input_digest": rendered_input_digest,
         "input_token_count": input_token_count,
         "status": status.value,
+        "split_strategy_id": split_strategy_id,
+        "child_analysis_unit_ids": child_analysis_unit_ids,
+        "blocked_reason": blocked_reason,
     }
     manifest_digest = _digest(payload)
     return ContextManifest(
@@ -676,6 +739,9 @@ def _manifest(
         input_token_count=input_token_count,
         manifest_digest=manifest_digest,
         status=status,
+        split_strategy_id=split_strategy_id,
+        child_analysis_unit_ids=child_analysis_unit_ids,
+        blocked_reason=blocked_reason,
     )
 
 
@@ -684,29 +750,61 @@ def _persist_outcome(
     ledger_repository: ContextPlanningLedger,
 ) -> ContextPlanningOutcome:
     manifest = outcome.manifest
-    ledger_repository.save_context_manifest_artifact(
-        ContextManifestArtifact(
-            id=manifest.id,
-            analysis_unit_id=manifest.analysis_unit_id,
-            representation_id=manifest.representation_id,
-            manifest_digest=manifest.manifest_digest,
-            payload=cast(dict[str, JsonValue], _artifact_payload(manifest)),
+    validate_context_manifest_identity(manifest)
+    split_unit_ids = tuple(unit.id for unit in outcome.split_units)
+    manifest_unit = _analysis_unit_from_payload(manifest.analysis_unit_payload)
+    if (
+        manifest_unit.id != manifest.analysis_unit_id
+        or manifest_unit.representation_id != manifest.representation_id
+    ):
+        raise ValueError("ContextManifest analysis-unit payload is corrupted.")
+    validate_analysis_unit_identity(manifest_unit)
+    for split_unit in outcome.split_units:
+        validate_analysis_unit_identity(split_unit)
+    if manifest.status is ContextManifestStatus.SPLIT:
+        if (
+            manifest.split_strategy_id is None
+            or not split_unit_ids
+            or manifest.child_analysis_unit_ids != split_unit_ids
+        ):
+            raise ValueError("Split ContextManifest does not match its child AnalysisUnits.")
+    elif split_unit_ids:
+        raise ValueError("Only split ContextManifest records can persist child AnalysisUnits.")
+    manifest_artifact = ContextManifestArtifact(
+        id=manifest.id,
+        analysis_unit_id=manifest.analysis_unit_id,
+        representation_id=manifest.representation_id,
+        manifest_digest=manifest.manifest_digest,
+        payload=cast(dict[str, JsonValue], _artifact_payload(manifest)),
+    )
+    child_artifacts = tuple(
+        AnalysisUnitArtifact(
+            id=unit.id,
+            representation_id=unit.representation_id,
+            unit_fingerprint=unit.fingerprint,
+            payload=cast(dict[str, JsonValue], _analysis_unit_payload(unit)),
         )
+        for unit in outcome.split_units
+    )
+    ledger_repository.commit_context_planning_outcome(
+        manifest=manifest_artifact,
+        child_analysis_units=child_artifacts,
     )
     return outcome
-
-
-def persist_context_manifest(
-    manifest: ContextManifest,
-    ledger_repository: ContextPlanningLedger,
-) -> None:
-    _persist_outcome(ContextPlanningOutcome(manifest), ledger_repository)
 
 
 def context_manifest_digest(manifest: ContextManifest) -> str:
     payload = _artifact_payload(manifest)["integrity"]
     assert isinstance(payload, dict)
     return _digest(cast(dict[str, object], payload))
+
+
+def validate_context_manifest_identity(manifest: ContextManifest) -> None:
+    expected_digest = context_manifest_digest(manifest)
+    if manifest.manifest_digest != expected_digest:
+        raise ValueError("ContextManifest digest is not derived from its canonical payload.")
+    if manifest.id != f"ctx_{expected_digest[:HASH_ID_LENGTH]}":
+        raise ValueError("ContextManifest ID is not derived from its canonical digest.")
 
 
 def load_context_manifest(
@@ -759,11 +857,29 @@ def load_context_manifest(
             input_token_count=_required_int(integrity, "input_token_count"),
             manifest_digest=artifact.manifest_digest,
             status=ContextManifestStatus(_required_str(integrity, "status")),
+            split_strategy_id=_optional_str(integrity, "split_strategy_id"),
+            child_analysis_unit_ids=_string_tuple_or_empty(
+                integrity, "child_analysis_unit_ids"
+            ),
+            blocked_reason=_optional_str(integrity, "blocked_reason"),
         )
     except (KeyError, TypeError, ValueError) as exc:
         raise ValueError("ContextManifest persisted artifact is malformed.") from exc
     validate_context_manifest(manifest, ledger_repository)
     return manifest
+
+
+def load_split_analysis_units(
+    manifest_id: str, ledger_repository: ContextPlanningLedger
+) -> tuple[AnalysisUnit, ...]:
+    """Resolve the persisted ordered child units of one split planning outcome."""
+    manifest = load_context_manifest(manifest_id, ledger_repository)
+    if manifest.status is not ContextManifestStatus.SPLIT:
+        raise ValueError("ContextManifest is not a split planning outcome.")
+    return tuple(
+        load_analysis_unit(child_id, ledger_repository)
+        for child_id in manifest.child_analysis_unit_ids
+    )
 
 
 def verify_context_manifest(
@@ -803,6 +919,20 @@ def verify_context_manifest(
         raise ValueError("Ready ContextManifest exceeds its exact token budget.")
     if manifest.status is not ContextManifestStatus.READY and manifest.rendered_input:
         raise ValueError("Non-ready ContextManifest must not contain a model input.")
+    if manifest.status is ContextManifestStatus.SPLIT:
+        if manifest.split_strategy_id is None or not manifest.child_analysis_unit_ids:
+            raise ValueError("Split ContextManifest requires strategy and ordered child units.")
+        for child_id in manifest.child_analysis_unit_ids:
+            child = load_analysis_unit(child_id, ledger_repository)
+            if child.representation_id != manifest.representation_id:
+                raise ValueError("Split ContextManifest child belongs to another representation.")
+    elif manifest.split_strategy_id is not None or manifest.child_analysis_unit_ids:
+        raise ValueError("Only split ContextManifest records can reference child units.")
+    if manifest.status is ContextManifestStatus.CONTEXT_BUDGET_BLOCKED:
+        if manifest.blocked_reason is None:
+            raise ValueError("Blocked ContextManifest requires a blocked reason.")
+    elif manifest.blocked_reason is not None:
+        raise ValueError("Only blocked ContextManifest records can have a blocked reason.")
     return VerifiedContextManifest(manifest)
 
 
@@ -811,6 +941,7 @@ def validate_context_manifest(
     ledger_repository: ContextPlanningLedger,
 ) -> None:
     """Verify the persisted manifest and every rendered source segment before use."""
+    validate_context_manifest_identity(manifest)
     artifact = ledger_repository.get_context_manifest_artifact(manifest.id)
     if artifact is None:
         raise ValueError(f"ContextManifest is not persisted: {manifest.id}")
@@ -876,6 +1007,9 @@ def _artifact_payload(manifest: ContextManifest) -> dict[str, object]:
         "rendered_input_digest": manifest.rendered_input_digest,
         "input_token_count": manifest.input_token_count,
         "status": manifest.status.value,
+        "split_strategy_id": manifest.split_strategy_id,
+        "child_analysis_unit_ids": manifest.child_analysis_unit_ids,
+        "blocked_reason": manifest.blocked_reason,
     }
     payload = {
         "integrity": integrity,
@@ -937,11 +1071,24 @@ def _required_bool(value: dict[str, JsonValue], key: str) -> bool:
     return candidate
 
 
+def _optional_str(value: dict[str, JsonValue], key: str) -> str | None:
+    candidate = value.get(key)
+    if candidate is not None and not isinstance(candidate, str):
+        raise TypeError(key)
+    return candidate
+
+
 def _string_tuple(value: dict[str, JsonValue], key: str) -> tuple[str, ...]:
     candidate = value[key]
     if not isinstance(candidate, list) or not all(isinstance(item, str) for item in candidate):
         raise TypeError(key)
     return tuple(cast(str, item) for item in candidate)
+
+
+def _string_tuple_or_empty(value: dict[str, JsonValue], key: str) -> tuple[str, ...]:
+    if key not in value:
+        return ()
+    return _string_tuple(value, key)
 
 
 def _candidate_from_payload(value: dict[str, JsonValue]) -> ContextCandidate:

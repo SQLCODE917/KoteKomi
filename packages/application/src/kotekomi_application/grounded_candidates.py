@@ -43,6 +43,7 @@ GROUNDED_CANDIDATE_BATCH_ACTIVITY = "grounded_candidate_batch_submitted"
 
 class GroundedCandidateLedger(EvidenceTargetLedger, Protocol):
     def get_source(self, record_id: str) -> Source | None: ...
+    def get_proposed_change(self, record_id: str) -> ProposedChange | None: ...
     def commit_grounded_candidate_batch(
         self,
         *,
@@ -277,20 +278,21 @@ def prepare_grounded_candidate_batch(
             raise ValueError(
                 f"Grounded evidence candidate {candidate.local_id} references a missing TextView."
             )
-        evidence = EvidenceTarget(
-            id=_deterministic_id(
-                "etg",
-                batch_input.task_fingerprint,
-                "evidence",
-                candidate.text_view_id,
-                str(candidate.start_char),
-                str(candidate.end_char),
-                candidate.exact_text,
-                candidate.prefix_text,
-                candidate.suffix_text,
-                *candidate.node_ids,
-                *candidate.pdf_region_ids,
-            ),
+        evidence_id = _deterministic_id(
+            "etg",
+            batch_input.task_fingerprint,
+            "evidence",
+            candidate.text_view_id,
+            str(candidate.start_char),
+            str(candidate.end_char),
+            candidate.exact_text,
+            candidate.prefix_text,
+            candidate.suffix_text,
+            *candidate.node_ids,
+            *candidate.pdf_region_ids,
+        )
+        candidate_evidence = EvidenceTarget(
+            id=evidence_id,
             source_id=source.id,
             document_id=document.id,
             representation_id=bundle.representation.id,
@@ -306,6 +308,17 @@ def prepare_grounded_candidate_batch(
             pdf_region_ids=candidate.pdf_region_ids,
             created_at=batch_input.submitted_at,
         )
+        existing_evidence = ledger_repository.get_evidence_target(evidence_id)
+        if existing_evidence is not None:
+            if existing_evidence.model_dump(mode="json", exclude={"created_at"}) != (
+                candidate_evidence.model_dump(mode="json", exclude={"created_at"})
+            ):
+                raise ValueError(
+                    "Grounded candidate batch conflicts with an existing EvidenceTarget."
+                )
+            evidence = existing_evidence
+        else:
+            evidence = candidate_evidence
         validate_evidence_target_record(evidence, ledger_repository)
         evidence_by_local_id[candidate.local_id] = evidence
     if len({evidence.id for evidence in evidence_by_local_id.values()}) != len(
@@ -316,7 +329,11 @@ def prepare_grounded_candidate_batch(
     validation_attempts = tuple(
         EvidenceValidationAttempt(
             id=_deterministic_id(
-                "eva", batch_input.task_fingerprint, "validation", evidence.id
+                "eva",
+                batch_input.task_fingerprint,
+                "validation",
+                evidence.id,
+                _candidate_derivation_identity(batch_input),
             ),
             evidence_target_id=evidence.id,
             target_digest=canonical_evidence_target_digest(evidence),
@@ -332,7 +349,10 @@ def prepare_grounded_candidate_batch(
 
     provenance_activity = ProvenanceActivity(
         id=_deterministic_id(
-            "prv", batch_input.task_fingerprint, GROUNDED_CANDIDATE_BATCH_ACTIVITY
+            "prv",
+            batch_input.task_fingerprint,
+            GROUNDED_CANDIDATE_BATCH_ACTIVITY,
+            _candidate_derivation_identity(batch_input),
         ),
         activity_type=GROUNDED_CANDIDATE_BATCH_ACTIVITY,
         agent=batch_input.model_name,
@@ -407,9 +427,20 @@ def prepare_grounded_candidate_batch(
         evidence_targets=tuple(evidence_by_local_id.values()),
         validation_attempts=validation_attempts,
         provenance_activity=provenance_activity,
-        proposed_changes=proposed_changes,
+        proposed_changes=tuple(
+            change
+            for change in proposed_changes
+            if ledger_repository.get_proposed_change(change.id) is None
+        ),
         outcome=outcome,
     )
+
+
+def _candidate_derivation_identity(batch_input: GroundedCandidateBatchInput) -> str:
+    """Separate run-specific publication lineage from stable candidate identities."""
+    if batch_input.originating_model_run_id is not None:
+        return batch_input.originating_model_run_id
+    return batch_input.submitted_at.isoformat()
 
 
 def submit_grounded_candidate_batch(

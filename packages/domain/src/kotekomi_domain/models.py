@@ -131,6 +131,7 @@ class ModelRunStatus(StrEnum):
     SUCCEEDED = "succeeded"
     ABSTAINED = "abstained"
     INVALID_OUTPUT = "invalid_output"
+    COMMIT_FAILED = "commit_failed"
     RUNTIME_FAILED = "runtime_failed"
     CANCELLED = "cancelled"
 
@@ -962,7 +963,7 @@ class ExtractionTask(DomainModel):
     schema_id: NonEmptyStr
     model_profile_id: NonEmptyStr
     task_fingerprint: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
-    created_at: datetime = Field(default_factory=utc_now)
+    created_at: datetime | None = None
 
 
 class ContextManifestArtifact(DomainModel):

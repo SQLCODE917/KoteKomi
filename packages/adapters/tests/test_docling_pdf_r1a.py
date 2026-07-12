@@ -1,12 +1,11 @@
 import hashlib
 import json
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from kotekomi_adapters import LocalArchiveStore, SQLiteLedgerInitializer, sqlite_ledger_transaction
 from kotekomi_adapters.docling_pdf_parser import DoclingPdfParser, DoclingPdfParserConfig
 from kotekomi_application import (
-    AnalysisUnit,
     AnalysisUnitPlanningInput,
     BoundedExtractionInput,
     BuildIdentity,
@@ -40,7 +39,8 @@ from kotekomi_application import (
     capture_identity,
     capture_source,
     ingest_pdf,
-    persist_analysis_unit,
+    load_context_manifest,
+    load_split_analysis_units,
     plan_analysis_units,
     render_context,
     run_bounded_extraction,
@@ -54,6 +54,7 @@ from kotekomi_domain import (
     DocumentVersionKind,
     ModelRunStatus,
     RepresentationAnalyzability,
+    ReviewStatus,
     SourceType,
 )
 
@@ -384,18 +385,19 @@ def test_docling_r1c_includes_chip_definition_and_excludes_furniture_determinist
             repository,
             tokenizer,
         )
-        definition_id = first.manifest.selected_candidates[2].node_id
-        definition_node = next(node for node in bundle.nodes if node.id == definition_id)
-        split_unit = AnalysisUnit(
-            id="anu_r1c_real_fixture_split",
-            representation_id=bundle.representation.id,
-            task_type="extract",
-            focus_node_ids=(definition_node.id, priority_node.id),
-            dependency_node_ids=(),
-            planner_policy_id="r1c_pdf_v1",
-            fingerprint="a" * 64,
+        grouped_plan = plan_analysis_units(
+            AnalysisUnitPlanningInput(
+                bundle.representation.id,
+                "r1c_paragraph_group_v1",
+                "extract",
+                max_focus_nodes_per_unit=100,
+            ),
+            repository,
         )
-        persist_analysis_unit(split_unit, repository)
+        split_unit = next(
+            unit for unit in grouped_plan.units if priority_node.id in unit.focus_node_ids
+        )
+        assert len(split_unit.focus_node_ids) > 1
         split = build_context_manifest(
             ContextManifestInput(
                 analysis_unit=split_unit,
@@ -434,9 +436,42 @@ def test_docling_r1c_includes_chip_definition_and_excludes_furniture_determinist
     assert blocked.manifest.status is ContextManifestStatus.CONTEXT_BUDGET_BLOCKED
     assert blocked.blocked_reason == "required_context_exceeds_budget"
     assert split.manifest.status is ContextManifestStatus.SPLIT
-    assert tuple(unit.focus_node_ids for unit in split.split_units) == (
-        (definition_node.id,),
-        (priority_node.id,),
+    assert split.manifest.split_strategy_id == "paragraph_focus_split_v1"
+    assert split.manifest.child_analysis_unit_ids == tuple(
+        unit.id for unit in split.split_units
+    )
+
+    with sqlite_ledger_transaction(ledger_path) as repository:
+        persisted_split = load_context_manifest(split.manifest.id, repository)
+        restarted_children = load_split_analysis_units(persisted_split.id, repository)
+        assert persisted_split == split.manifest
+        assert tuple(child.id for child in restarted_children) == (
+            persisted_split.child_analysis_unit_ids
+        )
+        assert tuple(child.focus_node_ids for child in restarted_children) == tuple(
+            (node_id,) for node_id in split_unit.focus_node_ids
+        )
+        child_outcomes = tuple(
+            build_context_manifest(
+                ContextManifestInput(
+                    analysis_unit=child,
+                    model_profile=ContextModelProfile("r1c_fixture_model", 512, 64, 16),
+                    prompt_id=manifest_input.prompt_id,
+                    prompt_bytes=manifest_input.prompt_bytes,
+                    schema_id=manifest_input.schema_id,
+                    schema_bytes=manifest_input.schema_bytes,
+                    renderer_version=manifest_input.renderer_version,
+                ),
+                repository,
+                tokenizer,
+            )
+            for child in restarted_children
+        )
+
+    assert all(
+        outcome.manifest.status
+        in {ContextManifestStatus.READY, ContextManifestStatus.CONTEXT_BUDGET_BLOCKED}
+        for outcome in child_outcomes
     )
 
 
@@ -539,7 +574,7 @@ def test_docling_r1d_staged_extraction_publishes_one_task_local_candidate(
                 context_manifest_id=manifest.id,
                 prompt_bytes=b"Extract one grounded source claim.",
                 model_identity=ModelIdentity(
-                    "r1d-fixture-model",
+                    "r1d_fixture_model",
                     "b" * 64,
                     "fixture-runtime-v1",
                     FixtureExactTokenizer.tokenizer_id,
@@ -567,6 +602,52 @@ def test_docling_r1d_staged_extraction_publishes_one_task_local_candidate(
         assert outcome.model_run.extraction_task_id == outcome.extraction_task.id
         assert repository.get_extraction_task(outcome.extraction_task.id) == outcome.extraction_task
         assert repository.get_model_run(outcome.model_run.id) == outcome.model_run
+        reviewed_change = assertion_change.model_copy(
+            update={
+                "review_status": ReviewStatus.REJECTED,
+                "updated_at": NOW + timedelta(minutes=1),
+            }
+        )
+        repository.save_proposed_change(reviewed_change)
+        retry_outcome = run_bounded_extraction(
+            BoundedExtractionInput(
+                source_id=capture.source.id,
+                document_id=capture.document.id,
+                representation_id=bundle.representation.id,
+                context_manifest_id=manifest.id,
+                prompt_bytes=b"Extract one grounded source claim.",
+                model_identity=ModelIdentity(
+                    "r1d_fixture_model",
+                    "b" * 64,
+                    "fixture-runtime-v1",
+                    FixtureExactTokenizer.tokenizer_id,
+                    {"temperature": 0, "seed": 7},
+                ),
+                generation_parameters={"temperature": 0, "seed": 7},
+                validator_version="r1d-evidence-validator-v1",
+                started_at=NOW + timedelta(minutes=2),
+                completed_at=NOW + timedelta(minutes=3),
+            ),
+            repository,
+            archive,
+            runtime,
+            Uuid4ModelRunIdFactory(),
+            FixtureExactTokenizer(),
+            StagedClaimTaskSchemaRegistry(),
+        )
+        assert retry_outcome.model_run.status is ModelRunStatus.SUCCEEDED
+        assert retry_outcome.model_run.id != outcome.model_run.id
+        assert retry_outcome.extraction_task == outcome.extraction_task
+        assert retry_outcome.proposed_change_batch is not None
+        assert (
+            retry_outcome.proposed_change_batch.evidence_target_ids_by_local_id
+            == outcome.proposed_change_batch.evidence_target_ids_by_local_id
+        )
+        assert (
+            retry_outcome.proposed_change_batch.validation_attempt_ids_by_evidence_local_id
+            != outcome.proposed_change_batch.validation_attempt_ids_by_evidence_local_id
+        )
+        assert repository.get_proposed_change(assertion_change.id) == reviewed_change
         assertion_change_id = assertion_change.id
 
     reopened_archive = LocalArchiveStore(archive_path)
@@ -598,9 +679,12 @@ def test_docling_r1d_staged_extraction_publishes_one_task_local_candidate(
         assert evidence is not None
         assert evidence.node_ids == (priority_node.id,)
 
-    assert len(runtime.requests) == 1
+    assert len(runtime.requests) == 2
     assert runtime.requests[0].context_manifest_id == manifest.id
+    assert runtime.requests[0].model_profile_id == manifest.model_profile_id
+    assert runtime.requests[0].tokenizer_id == manifest.tokenizer_id
     assert reopened_archive.read_model_run_output(outcome.model_run.id) == fixture_output
+    assert reopened_archive.read_model_run_output(retry_outcome.model_run.id) == fixture_output
 
 
 def _priority_sentence_batch(

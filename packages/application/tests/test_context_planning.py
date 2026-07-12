@@ -1,5 +1,6 @@
 import hashlib
 from copy import deepcopy
+from dataclasses import replace
 from datetime import UTC, datetime
 
 import pytest
@@ -10,7 +11,6 @@ from kotekomi_application import (
     ContextManifestStatus,
     ContextModelProfile,
     build_context_manifest,
-    persist_analysis_unit,
     plan_analysis_units,
     render_context,
     verify_context_manifest,
@@ -66,6 +66,15 @@ class FakeContextPlanningLedger:
 
     def get_analysis_unit_artifact(self, record_id: str) -> AnalysisUnitArtifact | None:
         return self.analysis_units.get(record_id)
+
+    def commit_context_planning_outcome(
+        self,
+        *,
+        manifest: ContextManifestArtifact,
+        child_analysis_units: tuple[AnalysisUnitArtifact, ...],
+    ) -> None:
+        self.analysis_units.update({record.id: record for record in child_analysis_units})
+        self.manifests[manifest.id] = manifest
 
 
 def _bundle() -> DocumentRepresentationBundle:
@@ -222,27 +231,26 @@ def test_context_planner_includes_required_definition_and_excludes_furniture() -
 def test_context_planner_splits_multiple_focus_nodes_and_blocks_one_oversized_unit() -> None:
     ledger = FakeContextPlanningLedger()
     tokenizer = ExactWhitespaceTokenizer()
-    split_unit = AnalysisUnit(
-        id="anu_split_fixture",
-        representation_id=ledger.bundle.representation.id,
-        task_type="extract",
-        focus_node_ids=("nod_context_definition", "nod_context_focus"),
-        dependency_node_ids=(),
-        planner_policy_id="fixture-policy",
-        fingerprint="a" * 64,
-    )
-    persist_analysis_unit(split_unit, ledger)
+    split_unit = plan_analysis_units(
+        AnalysisUnitPlanningInput(
+            ledger.bundle.representation.id,
+            "fixture-paragraph-group-v1",
+            "extract",
+            max_focus_nodes_per_unit=2,
+        ),
+        ledger,
+    ).units[0]
     split = build_context_manifest(_manifest_input(split_unit, limit=8), ledger, tokenizer)
-    blocked_unit = AnalysisUnit(
-        id="anu_blocked_fixture",
-        representation_id=ledger.bundle.representation.id,
-        task_type="extract",
-        focus_node_ids=("nod_context_focus",),
-        dependency_node_ids=("nod_context_definition",),
-        planner_policy_id="fixture-policy",
-        fingerprint="b" * 64,
+    blocked_unit = next(
+        unit
+        for unit in plan_analysis_units(
+            AnalysisUnitPlanningInput(
+                ledger.bundle.representation.id, "fixture-policy", "extract"
+            ),
+            ledger,
+        ).units
+        if unit.focus_node_ids == ("nod_context_focus",)
     )
-    persist_analysis_unit(blocked_unit, ledger)
     blocked = build_context_manifest(_manifest_input(blocked_unit, limit=8), ledger, tokenizer)
 
     assert split.manifest.status is ContextManifestStatus.SPLIT
@@ -272,7 +280,7 @@ def test_context_manifest_rejects_tampered_candidates_segments_and_token_count()
     selected[0] = {**selected[0], "node_id": "nod_context_furniture"}
     ledger.manifests[manifest.id] = artifact.model_copy(update={"payload": payload})
 
-    with pytest.raises(ValueError, match="manifest_digest|persisted artifact"):
+    with pytest.raises(ValueError, match="digest|persisted artifact"):
         verify_context_manifest(
             manifest.id,
             ledger,
@@ -287,7 +295,7 @@ def test_context_manifest_rejects_tampered_candidates_segments_and_token_count()
     assert isinstance(integrity, dict)
     integrity["input_token_count"] = manifest.input_token_count + 1
     ledger.manifests[manifest.id] = artifact.model_copy(update={"payload": payload})
-    with pytest.raises(ValueError, match="manifest_digest|token count"):
+    with pytest.raises(ValueError, match="digest|token count"):
         verify_context_manifest(
             manifest.id,
             ledger,
@@ -305,11 +313,25 @@ def test_context_manifest_rejects_tampered_candidates_segments_and_token_count()
     assert isinstance(segments[0], dict)
     segments[0] = {**segments[0], "start_byte": 0}
     ledger.manifests[manifest.id] = artifact.model_copy(update={"payload": payload})
-    with pytest.raises(ValueError, match="manifest_digest|segment"):
+    with pytest.raises(ValueError, match="digest|segment"):
         verify_context_manifest(
             manifest.id,
             ledger,
             tokenizer,
             b"Extract a source-backed claim.",
             b'{"type":"object"}',
+        )
+
+
+def test_context_planning_rejects_caller_invented_analysis_unit_identity() -> None:
+    ledger = FakeContextPlanningLedger()
+    unit = plan_analysis_units(
+        AnalysisUnitPlanningInput(ledger.bundle.representation.id, "fixture-policy", "extract"),
+        ledger,
+    ).units[0]
+    invented = replace(unit, id="anu_invented")
+
+    with pytest.raises(ValueError, match="AnalysisUnit ID"):
+        build_context_manifest(
+            _manifest_input(invented, limit=256), ledger, ExactWhitespaceTokenizer()
         )

@@ -36,6 +36,7 @@
         "succeeded",
         "abstained",
         "invalid_output",
+        "commit_failed",
         "runtime_failed",
         "cancelled"
       ],

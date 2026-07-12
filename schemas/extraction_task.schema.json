@@ -54,9 +54,17 @@
       "type": "object"
     },
     "created_at": {
-      "format": "date-time",
-      "title": "Created At",
-      "type": "string"
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Created At"
     },
     "id": {
       "pattern": "^ext_[A-Za-z0-9][A-Za-z0-9_-]*$",

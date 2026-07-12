@@ -72,6 +72,8 @@ class ModelTaskRequest:
     task_fingerprint: str
     task_type: str
     context_manifest_id: str
+    model_profile_id: str
+    tokenizer_id: str
     rendered_input: bytes
     schema_id: str
 
@@ -216,6 +218,14 @@ def run_bounded_extraction(
         raise ValueError("Bounded extraction requires a ready ContextManifest.")
     if manifest.representation_id != extraction_input.representation_id:
         raise ValueError("Bounded extraction ContextManifest does not match its representation.")
+    if extraction_input.model_identity.name != manifest.model_profile_id:
+        raise ValueError(
+            "Bounded extraction runtime model does not match the manifest model profile."
+        )
+    if extraction_input.model_identity.tokenizer_id != manifest.tokenizer_id:
+        raise ValueError(
+            "Bounded extraction runtime tokenizer does not match the manifest tokenizer."
+        )
     task = _extraction_task(extraction_input, manifest)
     ledger_repository.save_extraction_task(task)
     model_run_id = model_run_id_factory.new_model_run_id()
@@ -224,6 +234,8 @@ def run_bounded_extraction(
         task_fingerprint=task.task_fingerprint,
         task_type="claim_extraction",
         context_manifest_id=manifest.id,
+        model_profile_id=manifest.model_profile_id,
+        tokenizer_id=manifest.tokenizer_id,
         rendered_input=render_context(
             manifest.id,
             ledger_repository,
@@ -306,7 +318,7 @@ def run_bounded_extraction(
             extraction_input, manifest,
             task,
             model_run_id,
-            ModelRunStatus.INVALID_OUTPUT,
+            ModelRunStatus.COMMIT_FAILED,
             output_digest=output_digest,
             error=exc,
         )
@@ -327,7 +339,7 @@ def _extraction_task(
             "context_manifest_digest": manifest.manifest_digest,
             "prompt_id": manifest.prompt_id,
             "schema_id": manifest.schema_id,
-            "model_profile_id": extraction_input.model_identity.name,
+            "model_profile_id": manifest.model_profile_id,
             "model_identity": _model_identity_payload(extraction_input.model_identity),
             "generation_parameters": extraction_input.generation_parameters,
             "validator_version": extraction_input.validator_version,
@@ -341,9 +353,9 @@ def _extraction_task(
         context_manifest_payload=cast(dict[str, JsonValue], _manifest_payload(manifest)),
         prompt_id=manifest.prompt_id,
         schema_id=manifest.schema_id,
-        model_profile_id=extraction_input.model_identity.name,
+        model_profile_id=manifest.model_profile_id,
         task_fingerprint=fingerprint,
-        created_at=extraction_input.started_at,
+        created_at=None,
     )
 
 
