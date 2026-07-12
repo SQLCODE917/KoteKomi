@@ -10,16 +10,20 @@ from kotekomi_application import (
     BoundedExtractionInput,
     BuildIdentity,
     CaptureRequest,
+    ContextManifest,
     ContextManifestInput,
     ContextManifestStatus,
     ContextModelProfile,
+    ExecutionSetting,
     GroundedAssertionCandidate,
     GroundedCandidateBatchInput,
     GroundedCandidateContext,
     GroundedCandidateContextInput,
     GroundedEvidenceCandidate,
     GroundedOrganizationCandidate,
-    ModelIdentity,
+    ModelExecutionReceipt,
+    ModelExecutionSpec,
+    ModelIdentitySnapshot,
     ModelTaskRequest,
     ModelTaskResponse,
     PdfIngestInput,
@@ -38,9 +42,11 @@ from kotekomi_application import (
     build_grounded_candidate_context,
     capture_identity,
     capture_source,
+    generation_parameters_digest,
     ingest_pdf,
     load_context_manifest,
     load_split_analysis_units,
+    model_identity_snapshot_digest,
     plan_analysis_units,
     render_context,
     run_bounded_extraction,
@@ -103,14 +109,57 @@ class FixtureExactTokenizer:
         return len(rendered_input.decode("utf-8").split())
 
 
+def _fixture_model_identity() -> ModelIdentitySnapshot:
+    return ModelIdentitySnapshot(
+        "r1d_fixture_model",
+        "b" * 64,
+        "fixture-runtime-v1",
+        FixtureExactTokenizer.tokenizer_id,
+        (ExecutionSetting("seed", 7), ExecutionSetting("temperature", 0)),
+    )
+
+
+def _fixture_execution_spec(manifest: ContextManifest) -> ModelExecutionSpec:
+    return ModelExecutionSpec(
+        model_profile_id=manifest.model_profile_id,
+        model_identity=_fixture_model_identity(),
+        generation_parameters=(ExecutionSetting("seed", 7), ExecutionSetting("temperature", 0)),
+        prompt_id=manifest.prompt_id,
+        prompt_digest=manifest.prompt_digest,
+        schema_id=manifest.schema_id,
+        schema_digest=manifest.schema_digest,
+        context_manifest_id=manifest.id,
+        context_manifest_digest=manifest.manifest_digest,
+        rendered_input_digest=manifest.rendered_input_digest,
+        output_contract_version="staged_claim_output_v1",
+    )
+
+
 class FixtureModelTaskRuntime:
     def __init__(self, raw_output: bytes) -> None:
         self.raw_output = raw_output
         self.requests: list[ModelTaskRequest] = []
 
+    @property
+    def configured_identity(self) -> ModelIdentitySnapshot:
+        return _fixture_model_identity()
+
     def run_model_task(self, task: ModelTaskRequest) -> ModelTaskResponse:
         self.requests.append(task)
-        return ModelTaskResponse(self.raw_output)
+        return ModelTaskResponse(
+            self.raw_output,
+            ModelExecutionReceipt(
+                model_identity_digest=model_identity_snapshot_digest(
+                    task.execution_spec.model_identity
+                ),
+                generation_parameters_digest=generation_parameters_digest(
+                    task.execution_spec.generation_parameters
+                ),
+                rendered_input_digest=task.rendered_input_digest,
+                input_token_count=None,
+                output_token_count=None,
+            ),
+        )
 
 
 def _capture_request() -> CaptureRequest:
@@ -437,9 +486,7 @@ def test_docling_r1c_includes_chip_definition_and_excludes_furniture_determinist
     assert blocked.blocked_reason == "required_context_exceeds_budget"
     assert split.manifest.status is ContextManifestStatus.SPLIT
     assert split.manifest.split_strategy_id == "paragraph_focus_split_v1"
-    assert split.manifest.child_analysis_unit_ids == tuple(
-        unit.id for unit in split.split_units
-    )
+    assert split.manifest.child_analysis_unit_ids == tuple(unit.id for unit in split.split_units)
 
     with sqlite_ledger_transaction(ledger_path) as repository:
         persisted_split = load_context_manifest(split.manifest.id, repository)
@@ -573,14 +620,7 @@ def test_docling_r1d_staged_extraction_publishes_one_task_local_candidate(
                 representation_id=bundle.representation.id,
                 context_manifest_id=manifest.id,
                 prompt_bytes=b"Extract one grounded source claim.",
-                model_identity=ModelIdentity(
-                    "r1d_fixture_model",
-                    "b" * 64,
-                    "fixture-runtime-v1",
-                    FixtureExactTokenizer.tokenizer_id,
-                    {"temperature": 0, "seed": 7},
-                ),
-                generation_parameters={"temperature": 0, "seed": 7},
+                execution_spec=_fixture_execution_spec(manifest),
                 validator_version="r1d-evidence-validator-v1",
                 started_at=NOW,
                 completed_at=NOW,
@@ -616,14 +656,7 @@ def test_docling_r1d_staged_extraction_publishes_one_task_local_candidate(
                 representation_id=bundle.representation.id,
                 context_manifest_id=manifest.id,
                 prompt_bytes=b"Extract one grounded source claim.",
-                model_identity=ModelIdentity(
-                    "r1d_fixture_model",
-                    "b" * 64,
-                    "fixture-runtime-v1",
-                    FixtureExactTokenizer.tokenizer_id,
-                    {"temperature": 0, "seed": 7},
-                ),
-                generation_parameters={"temperature": 0, "seed": 7},
+                execution_spec=_fixture_execution_spec(manifest),
                 validator_version="r1d-evidence-validator-v1",
                 started_at=NOW + timedelta(minutes=2),
                 completed_at=NOW + timedelta(minutes=3),
@@ -681,8 +714,10 @@ def test_docling_r1d_staged_extraction_publishes_one_task_local_candidate(
 
     assert len(runtime.requests) == 2
     assert runtime.requests[0].context_manifest_id == manifest.id
-    assert runtime.requests[0].model_profile_id == manifest.model_profile_id
-    assert runtime.requests[0].tokenizer_id == manifest.tokenizer_id
+    assert runtime.requests[0].execution_spec.model_profile_id == manifest.model_profile_id
+    assert runtime.requests[0].execution_spec.model_identity.tokenizer_id == manifest.tokenizer_id
+    assert runtime.requests[0].execution_spec.context_manifest_digest == manifest.manifest_digest
+    assert outcome.extraction_task.execution_spec_digest == outcome.model_run.execution_spec_digest
     assert reopened_archive.read_model_run_output(outcome.model_run.id) == fixture_output
     assert reopened_archive.read_model_run_output(retry_outcome.model_run.id) == fixture_output
 

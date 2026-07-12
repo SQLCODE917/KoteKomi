@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import math
 import uuid
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
@@ -57,13 +58,125 @@ class ModelOutputArchive(Protocol):
     ) -> object: ...
 
 
+type ExecutionScalar = str | int | float | bool | None
+
+
 @dataclass(frozen=True)
-class ModelIdentity:
+class ExecutionSetting:
+    key: str
+    value: ExecutionScalar
+
+    def __post_init__(self) -> None:
+        if not self.key or self.key != self.key.strip():
+            raise ValueError("Model execution setting keys must be non-empty and trimmed.")
+
+
+def _validate_settings(
+    settings: tuple[object, ...],
+    label: str,
+    *,
+    forbidden_keys: frozenset[str] = frozenset(),
+) -> None:
+    if any(not isinstance(setting, ExecutionSetting) for setting in settings):
+        raise ValueError(f"{label} must contain only ExecutionSetting records.")
+    validated_settings = cast(tuple[ExecutionSetting, ...], settings)
+    if tuple(sorted(validated_settings, key=lambda setting: setting.key)) != validated_settings:
+        raise ValueError(f"{label} must be in canonical key order.")
+    if len({setting.key for setting in validated_settings}) != len(validated_settings):
+        raise ValueError(f"{label} keys must be unique.")
+    if any(setting.key in forbidden_keys for setting in validated_settings):
+        raise ValueError(f"{label} may not use a reserved model identity field.")
+    if any(
+        isinstance(setting.value, float) and not math.isfinite(setting.value)
+        for setting in validated_settings
+    ):
+        raise ValueError(f"{label} values must be finite JSON scalars.")
+    if any(
+        type(setting.value) not in {str, int, float, bool, type(None)}
+        for setting in validated_settings
+    ):
+        raise ValueError(f"{label} values must be JSON scalars.")
+
+
+@dataclass(frozen=True)
+class ModelIdentitySnapshot:
     name: str
     weights_digest: str | None
     runtime: str
     tokenizer_id: str
-    determinism_settings: dict[str, str | int | float | bool | None]
+    determinism_settings: tuple[ExecutionSetting, ...] = ()
+
+    def __post_init__(self) -> None:
+        if not self.name or not self.runtime or not self.tokenizer_id:
+            raise ValueError("Model identity fields must be non-empty.")
+        _validate_settings(
+            self.determinism_settings,
+            "Model determinism settings",
+            forbidden_keys=frozenset({"name", "weights_digest", "runtime", "tokenizer_id"}),
+        )
+
+
+@dataclass(frozen=True)
+class ModelExecutionSpec:
+    model_profile_id: str
+    model_identity: ModelIdentitySnapshot
+    generation_parameters: tuple[ExecutionSetting, ...]
+    prompt_id: str
+    prompt_digest: str
+    schema_id: str
+    schema_digest: str
+    context_manifest_id: str
+    context_manifest_digest: str
+    rendered_input_digest: str
+    output_contract_version: str
+
+    def __post_init__(self) -> None:
+        if not all(
+            (
+                self.model_profile_id,
+                self.prompt_id,
+                self.schema_id,
+                self.context_manifest_id,
+                self.output_contract_version,
+            )
+        ):
+            raise ValueError("Model execution specification identity fields must be non-empty.")
+        for digest in (
+            self.prompt_digest,
+            self.schema_digest,
+            self.context_manifest_digest,
+            self.rendered_input_digest,
+        ):
+            if len(digest) != 64 or any(
+                character not in "0123456789abcdef" for character in digest
+            ):
+                raise ValueError("Model execution specification digests must be SHA-256 hex.")
+        _validate_settings(self.generation_parameters, "Model generation parameters")
+
+
+@dataclass(frozen=True)
+class ModelExecutionReceipt:
+    model_identity_digest: str
+    generation_parameters_digest: str
+    rendered_input_digest: str
+    input_token_count: int | None
+    output_token_count: int | None
+
+    def __post_init__(self) -> None:
+        for digest in (
+            self.model_identity_digest,
+            self.generation_parameters_digest,
+            self.rendered_input_digest,
+        ):
+            if len(digest) != 64 or any(
+                character not in "0123456789abcdef" for character in digest
+            ):
+                raise ValueError("Model execution receipt digests must be SHA-256 hex.")
+        if any(
+            count is not None and count < 0
+            for count in (self.input_token_count, self.output_token_count)
+        ):
+            raise ValueError("Model execution receipt token counts cannot be negative.")
 
 
 @dataclass(frozen=True)
@@ -72,18 +185,22 @@ class ModelTaskRequest:
     task_fingerprint: str
     task_type: str
     context_manifest_id: str
-    model_profile_id: str
-    tokenizer_id: str
+    context_manifest_digest: str
     rendered_input: bytes
-    schema_id: str
+    rendered_input_digest: str
+    execution_spec: ModelExecutionSpec
 
 
 @dataclass(frozen=True)
 class ModelTaskResponse:
     raw_output: bytes
+    execution_receipt: ModelExecutionReceipt
 
 
 class ModelTaskRuntime(Protocol):
+    @property
+    def configured_identity(self) -> ModelIdentitySnapshot: ...
+
     def run_model_task(self, task: ModelTaskRequest) -> ModelTaskResponse: ...
 
 
@@ -135,8 +252,7 @@ class BoundedExtractionInput:
     representation_id: str
     context_manifest_id: str
     prompt_bytes: bytes
-    model_identity: ModelIdentity
-    generation_parameters: dict[str, str | int | float | bool | None]
+    execution_spec: ModelExecutionSpec
     validator_version: str
     started_at: datetime
     completed_at: datetime
@@ -205,7 +321,8 @@ def run_bounded_extraction(
     schema_registry: TaskSchemaRegistry,
 ) -> BoundedExtractionOutcome:
     """Archive one raw response, validate its task-local candidates, then publish atomically."""
-    schema = schema_registry.resolve(_manifest_schema_id(extraction_input, ledger_repository))
+    execution_spec = extraction_input.execution_spec
+    schema = schema_registry.resolve(execution_spec.schema_id)
     verified = verify_context_manifest(
         extraction_input.context_manifest_id,
         ledger_repository,
@@ -218,14 +335,16 @@ def run_bounded_extraction(
         raise ValueError("Bounded extraction requires a ready ContextManifest.")
     if manifest.representation_id != extraction_input.representation_id:
         raise ValueError("Bounded extraction ContextManifest does not match its representation.")
-    if extraction_input.model_identity.name != manifest.model_profile_id:
-        raise ValueError(
-            "Bounded extraction runtime model does not match the manifest model profile."
-        )
-    if extraction_input.model_identity.tokenizer_id != manifest.tokenizer_id:
-        raise ValueError(
-            "Bounded extraction runtime tokenizer does not match the manifest tokenizer."
-        )
+    rendered_input = render_context(
+        manifest.id,
+        ledger_repository,
+        tokenizer,
+        extraction_input.prompt_bytes,
+        schema.canonical_schema_bytes,
+    )
+    _validate_execution_spec(execution_spec, manifest, rendered_input, schema)
+    if model_runtime.configured_identity != execution_spec.model_identity:
+        raise ValueError("Model runtime configured identity does not match the execution spec.")
     task = _extraction_task(extraction_input, manifest)
     ledger_repository.save_extraction_task(task)
     model_run_id = model_run_id_factory.new_model_run_id()
@@ -234,16 +353,10 @@ def run_bounded_extraction(
         task_fingerprint=task.task_fingerprint,
         task_type="claim_extraction",
         context_manifest_id=manifest.id,
-        model_profile_id=manifest.model_profile_id,
-        tokenizer_id=manifest.tokenizer_id,
-        rendered_input=render_context(
-            manifest.id,
-            ledger_repository,
-            tokenizer,
-            extraction_input.prompt_bytes,
-            schema.canonical_schema_bytes,
-        ),
-        schema_id=manifest.schema_id,
+        context_manifest_digest=manifest.manifest_digest,
+        rendered_input=rendered_input,
+        rendered_input_digest=hashlib.sha256(rendered_input).hexdigest(),
+        execution_spec=execution_spec,
     )
     try:
         response = model_runtime.run_model_task(request)
@@ -273,10 +386,12 @@ def run_bounded_extraction(
         ledger_repository.save_model_run(run)
         return BoundedExtractionOutcome(task, run, None)
     try:
+        _validate_execution_receipt(response.execution_receipt, execution_spec)
         parsed = _parse_output(response.raw_output, manifest, schema)
         if isinstance(parsed, _AbstentionOutput):
             run = _model_run(
-                extraction_input, manifest,
+                extraction_input,
+                manifest,
                 task,
                 model_run_id,
                 ModelRunStatus.ABSTAINED,
@@ -291,7 +406,8 @@ def run_bounded_extraction(
         batch_commit = prepare_grounded_candidate_batch(batch_input, ledger_repository)
     except (ValidationError, ValueError) as exc:
         run = _model_run(
-            extraction_input, manifest,
+            extraction_input,
+            manifest,
             task,
             model_run_id,
             ModelRunStatus.INVALID_OUTPUT,
@@ -302,7 +418,8 @@ def run_bounded_extraction(
         return BoundedExtractionOutcome(task, run, None)
 
     run = _model_run(
-        extraction_input, manifest,
+        extraction_input,
+        manifest,
         task,
         model_run_id,
         ModelRunStatus.SUCCEEDED,
@@ -315,7 +432,8 @@ def run_bounded_extraction(
         )
     except Exception as exc:
         failed_run = _model_run(
-            extraction_input, manifest,
+            extraction_input,
+            manifest,
             task,
             model_run_id,
             ModelRunStatus.COMMIT_FAILED,
@@ -339,9 +457,7 @@ def _extraction_task(
             "context_manifest_digest": manifest.manifest_digest,
             "prompt_id": manifest.prompt_id,
             "schema_id": manifest.schema_id,
-            "model_profile_id": manifest.model_profile_id,
-            "model_identity": _model_identity_payload(extraction_input.model_identity),
-            "generation_parameters": extraction_input.generation_parameters,
+            "execution_spec_digest": model_execution_spec_digest(extraction_input.execution_spec),
             "validator_version": extraction_input.validator_version,
         }
     )
@@ -353,7 +469,8 @@ def _extraction_task(
         context_manifest_payload=cast(dict[str, JsonValue], _manifest_payload(manifest)),
         prompt_id=manifest.prompt_id,
         schema_id=manifest.schema_id,
-        model_profile_id=manifest.model_profile_id,
+        model_profile_id=extraction_input.execution_spec.model_profile_id,
+        execution_spec_digest=model_execution_spec_digest(extraction_input.execution_spec),
         task_fingerprint=fingerprint,
         created_at=None,
     )
@@ -373,14 +490,16 @@ def _model_run(
         id=model_run_id,
         extraction_task_id=task.id,
         task_fingerprint=task.task_fingerprint,
-        model_identity=cast(
-            dict[str, JsonValue], _model_identity_payload(extraction_input.model_identity)
+        model_identity=_model_identity_payload(extraction_input.execution_spec.model_identity),
+        runtime_identity=extraction_input.execution_spec.model_identity.runtime,
+        tokenizer_id=extraction_input.execution_spec.model_identity.tokenizer_id,
+        prompt_digest=extraction_input.execution_spec.prompt_digest,
+        schema_digest=extraction_input.execution_spec.schema_digest,
+        execution_spec_digest=model_execution_spec_digest(extraction_input.execution_spec),
+        generation_parameters=cast(
+            dict[str, JsonValue],
+            _settings_payload(extraction_input.execution_spec.generation_parameters),
         ),
-        runtime_identity=extraction_input.model_identity.runtime,
-        tokenizer_id=extraction_input.model_identity.tokenizer_id,
-        prompt_digest=manifest.prompt_digest,
-        schema_digest=manifest.schema_digest,
-        generation_parameters=cast(dict[str, JsonValue], extraction_input.generation_parameters),
         raw_output_artifact_id=(model_run_id if output_digest is not None else None),
         output_digest=output_digest,
         status=status,
@@ -472,7 +591,7 @@ def _grounded_batch(
         source_id=extraction_input.source_id,
         document_id=extraction_input.document_id,
         representation_id=extraction_input.representation_id,
-        model_name=extraction_input.model_identity.name,
+        model_name=extraction_input.execution_spec.model_identity.name,
         prompt_id=manifest.prompt_id,
         validator_version=extraction_input.validator_version,
         submitted_at=extraction_input.completed_at,
@@ -531,20 +650,6 @@ def staged_claim_output_schema_bytes() -> bytes:
     return json.dumps(schema, ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode()
 
 
-def _manifest_schema_id(
-    extraction_input: BoundedExtractionInput, ledger_repository: ContextPlanningLedger
-) -> str:
-    artifact = ledger_repository.get_context_manifest_artifact(extraction_input.context_manifest_id)
-    if artifact is None:
-        raise ValueError(
-            f"ContextManifest is not persisted: {extraction_input.context_manifest_id}"
-        )
-    integrity = artifact.payload.get("integrity")
-    if not isinstance(integrity, dict) or not isinstance(integrity.get("schema_id"), str):
-        raise ValueError("ContextManifest persisted artifact is malformed.")
-    return cast(str, integrity["schema_id"])
-
-
 def _manifest_payload(manifest: ContextManifest) -> dict[str, object]:
     return {
         "id": manifest.id,
@@ -559,14 +664,101 @@ def _manifest_payload(manifest: ContextManifest) -> dict[str, object]:
     }
 
 
-def _model_identity_payload(identity: ModelIdentity) -> dict[str, str | int | float | bool | None]:
+def _settings_payload(settings: tuple[ExecutionSetting, ...]) -> dict[str, ExecutionScalar]:
+    return {setting.key: setting.value for setting in settings}
+
+
+def _model_identity_payload(identity: ModelIdentitySnapshot) -> dict[str, JsonValue]:
     return {
         "name": identity.name,
         "weights_digest": identity.weights_digest,
         "runtime": identity.runtime,
         "tokenizer_id": identity.tokenizer_id,
-        **identity.determinism_settings,
+        "determinism_settings": cast(
+            dict[str, JsonValue], _settings_payload(identity.determinism_settings)
+        ),
     }
+
+
+def model_identity_snapshot_digest(identity: ModelIdentitySnapshot) -> str:
+    return _digest(_model_identity_payload(identity))
+
+
+def generation_parameters_digest(settings: tuple[ExecutionSetting, ...]) -> str:
+    return _digest(_settings_payload(settings))
+
+
+def model_execution_spec_payload(spec: ModelExecutionSpec) -> dict[str, JsonValue]:
+    return {
+        "model_profile_id": spec.model_profile_id,
+        "model_identity": _model_identity_payload(spec.model_identity),
+        "generation_parameters": cast(
+            dict[str, JsonValue], _settings_payload(spec.generation_parameters)
+        ),
+        "prompt_id": spec.prompt_id,
+        "prompt_digest": spec.prompt_digest,
+        "schema_id": spec.schema_id,
+        "schema_digest": spec.schema_digest,
+        "context_manifest_id": spec.context_manifest_id,
+        "context_manifest_digest": spec.context_manifest_digest,
+        "rendered_input_digest": spec.rendered_input_digest,
+        "output_contract_version": spec.output_contract_version,
+    }
+
+
+def model_execution_spec_digest(spec: ModelExecutionSpec) -> str:
+    return _digest(model_execution_spec_payload(spec))
+
+
+def _validate_execution_spec(
+    execution_spec: ModelExecutionSpec,
+    manifest: ContextManifest,
+    rendered_input: bytes,
+    schema: PinnedTaskSchema,
+) -> None:
+    if execution_spec.model_profile_id != manifest.model_profile_id:
+        raise ValueError("Model execution specification does not match ContextManifest profile.")
+    if execution_spec.model_identity.tokenizer_id != manifest.tokenizer_id:
+        raise ValueError("Model execution specification tokenizer does not match ContextManifest.")
+    if (
+        execution_spec.prompt_id != manifest.prompt_id
+        or execution_spec.prompt_digest != manifest.prompt_digest
+    ):
+        raise ValueError("Model execution specification prompt does not match ContextManifest.")
+    if (
+        execution_spec.schema_id != manifest.schema_id
+        or execution_spec.schema_digest != manifest.schema_digest
+    ):
+        raise ValueError("Model execution specification schema does not match ContextManifest.")
+    if (
+        execution_spec.context_manifest_id != manifest.id
+        or execution_spec.context_manifest_digest != manifest.manifest_digest
+    ):
+        raise ValueError("Model execution specification does not match ContextManifest identity.")
+    if execution_spec.rendered_input_digest != hashlib.sha256(rendered_input).hexdigest():
+        raise ValueError("Model execution specification rendered input digest is incorrect.")
+    if execution_spec.output_contract_version != schema.output_contract_version:
+        raise ValueError(
+            "Model execution specification output contract is not pinned by its schema."
+        )
+
+
+def _validate_execution_receipt(
+    receipt: ModelExecutionReceipt,
+    execution_spec: ModelExecutionSpec,
+) -> None:
+    if receipt.model_identity_digest != model_identity_snapshot_digest(
+        execution_spec.model_identity
+    ):
+        raise ValueError("Model execution receipt identity does not match the execution spec.")
+    if receipt.generation_parameters_digest != generation_parameters_digest(
+        execution_spec.generation_parameters
+    ):
+        raise ValueError(
+            "Model execution receipt generation parameters do not match the execution spec."
+        )
+    if receipt.rendered_input_digest != execution_spec.rendered_input_digest:
+        raise ValueError("Model execution receipt input does not match the execution spec.")
 
 
 def _digest(value: object) -> str:

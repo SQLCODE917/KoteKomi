@@ -66,6 +66,11 @@
       "default": null,
       "title": "Created At"
     },
+    "execution_spec_digest": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Execution Spec Digest",
+      "type": "string"
+    },
     "id": {
       "pattern": "^ext_[A-Za-z0-9][A-Za-z0-9_-]*$",
       "title": "Id",
@@ -114,6 +119,7 @@
     "prompt_id",
     "schema_id",
     "model_profile_id",
+    "execution_spec_digest",
     "task_fingerprint"
   ],
   "title": "ExtractionTask",

@@ -77,6 +77,11 @@
       "default": null,
       "title": "Error Message"
     },
+    "execution_spec_digest": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Execution Spec Digest",
+      "type": "string"
+    },
     "extraction_task_id": {
       "pattern": "^ext_[A-Za-z0-9][A-Za-z0-9_-]*$",
       "title": "Extraction Task Id",
@@ -170,6 +175,7 @@
     "tokenizer_id",
     "prompt_digest",
     "schema_digest",
+    "execution_spec_digest",
     "generation_parameters",
     "status",
     "started_at",

@@ -1,6 +1,7 @@
 import hashlib
 from dataclasses import replace
 from datetime import UTC, datetime
+from typing import cast
 
 import pytest
 from kotekomi_application import (
@@ -9,12 +10,15 @@ from kotekomi_application import (
     ContextManifest,
     ContextManifestInput,
     ContextModelProfile,
+    ExecutionSetting,
     GroundedAssertionCandidate,
     GroundedCandidateBatchInput,
     GroundedCandidateContextInput,
     GroundedEvidenceCandidate,
     GroundedOrganizationCandidate,
-    ModelIdentity,
+    ModelExecutionReceipt,
+    ModelExecutionSpec,
+    ModelIdentitySnapshot,
     ModelTaskRequest,
     ModelTaskResponse,
     PinnedTaskSchema,
@@ -22,6 +26,9 @@ from kotekomi_application import (
     Uuid4ModelRunIdFactory,
     build_context_manifest,
     build_grounded_candidate_context,
+    generation_parameters_digest,
+    model_execution_spec_digest,
+    model_identity_snapshot_digest,
     plan_analysis_units,
     run_bounded_extraction,
     staged_claim_output_schema_bytes,
@@ -174,13 +181,39 @@ class FakeModelOutputArchive:
 
 
 class FakeModelTaskRuntime:
-    def __init__(self, raw_output: bytes) -> None:
+    def __init__(
+        self,
+        raw_output: bytes,
+        *,
+        configured_identity: ModelIdentitySnapshot | None = None,
+        receipt: ModelExecutionReceipt | None = None,
+    ) -> None:
         self.raw_output = raw_output
         self.requests: list[ModelTaskRequest] = []
+        self._configured_identity = configured_identity or _fixture_model_identity()
+        self._receipt = receipt
+
+    @property
+    def configured_identity(self) -> ModelIdentitySnapshot:
+        return self._configured_identity
 
     def run_model_task(self, task: ModelTaskRequest) -> ModelTaskResponse:
         self.requests.append(task)
-        return ModelTaskResponse(self.raw_output)
+        return ModelTaskResponse(
+            self.raw_output,
+            self._receipt
+            or ModelExecutionReceipt(
+                model_identity_digest=model_identity_snapshot_digest(
+                    task.execution_spec.model_identity
+                ),
+                generation_parameters_digest=generation_parameters_digest(
+                    task.execution_spec.generation_parameters
+                ),
+                rendered_input_digest=task.rendered_input_digest,
+                input_token_count=None,
+                output_token_count=None,
+            ),
+        )
 
 
 class FixtureTokenizer:
@@ -277,6 +310,32 @@ def _ready_manifest_for_staged_test(ledger: FakeGroundedCandidateLedger) -> Cont
         ledger,
         FixtureTokenizer(),
     ).manifest
+
+
+def _fixture_model_identity() -> ModelIdentitySnapshot:
+    return ModelIdentitySnapshot(
+        "fixture-model",
+        "d" * 64,
+        "fixture-runtime",
+        FixtureTokenizer.tokenizer_id,
+        (ExecutionSetting("temperature", 0),),
+    )
+
+
+def _fixture_execution_spec(manifest: ContextManifest) -> ModelExecutionSpec:
+    return ModelExecutionSpec(
+        model_profile_id=manifest.model_profile_id,
+        model_identity=_fixture_model_identity(),
+        generation_parameters=(ExecutionSetting("temperature", 0),),
+        prompt_id=manifest.prompt_id,
+        prompt_digest=manifest.prompt_digest,
+        schema_id=manifest.schema_id,
+        schema_digest=manifest.schema_digest,
+        context_manifest_id=manifest.id,
+        context_manifest_digest=manifest.manifest_digest,
+        rendered_input_digest=manifest.rendered_input_digest,
+        output_contract_version="staged_claim_output_v1",
+    )
 
 
 def _valid_staged_output() -> bytes:
@@ -481,14 +540,7 @@ def test_staged_extraction_archives_invalid_task_local_output_without_proposals(
             representation_id=ledger.bundle.representation.id,
             context_manifest_id=manifest.id,
             prompt_bytes=prompt_bytes,
-            model_identity=ModelIdentity(
-                "fixture-model",
-                "d" * 64,
-                "fixture-runtime",
-                FixtureTokenizer.tokenizer_id,
-                {"temperature": 0},
-            ),
-            generation_parameters={"temperature": 0},
+            execution_spec=_fixture_execution_spec(manifest),
             validator_version="fixture-validator-v1",
             started_at=NOW,
             completed_at=NOW,
@@ -509,6 +561,74 @@ def test_staged_extraction_archives_invalid_task_local_output_without_proposals(
     assert archive.outputs[outcome.model_run.id] == raw_output
 
 
+def test_staged_extraction_rejects_a_mismatched_execution_receipt_after_archiving_output() -> None:
+    ledger = FakeGroundedCandidateLedger()
+    archive = FakeModelOutputArchive()
+    manifest = _ready_manifest_for_staged_test(ledger)
+    runtime = FakeModelTaskRuntime(
+        _valid_staged_output(),
+        receipt=ModelExecutionReceipt(
+            model_identity_digest="0" * 64,
+            generation_parameters_digest="0" * 64,
+            rendered_input_digest="0" * 64,
+            input_token_count=1,
+            output_token_count=1,
+        ),
+    )
+    extraction_input = BoundedExtractionInput(
+        source_id=ledger.source.id,
+        document_id=ledger.document.id,
+        representation_id=ledger.bundle.representation.id,
+        context_manifest_id=manifest.id,
+        prompt_bytes=manifest.prompt_bytes,
+        execution_spec=_fixture_execution_spec(manifest),
+        validator_version="fixture-validator-v1",
+        started_at=NOW,
+        completed_at=NOW,
+    )
+
+    outcome = run_bounded_extraction(
+        extraction_input,
+        ledger,
+        archive,
+        runtime,
+        Uuid4ModelRunIdFactory(),
+        FixtureTokenizer(),
+        StagedClaimTaskSchemaRegistry(),
+    )
+
+    assert outcome.model_run.status is ModelRunStatus.INVALID_OUTPUT
+    assert outcome.model_run.error_message is not None
+    assert "receipt identity" in outcome.model_run.error_message
+    assert archive.outputs[outcome.model_run.id] == _valid_staged_output()
+    assert ledger.proposed_changes == {}
+
+
+def test_model_execution_spec_has_no_loose_or_colliding_settings() -> None:
+    with pytest.raises(ValueError, match="reserved model identity field"):
+        ModelIdentitySnapshot(
+            "fixture-model",
+            "d" * 64,
+            "fixture-runtime",
+            FixtureTokenizer.tokenizer_id,
+            (ExecutionSetting("runtime", "shadowed"),),
+        )
+    with pytest.raises(ValueError, match="ExecutionSetting records"):
+        ModelExecutionSpec(
+            "fixture-model",
+            _fixture_model_identity(),
+            cast(tuple[ExecutionSetting, ...], ({"temperature": 0},)),
+            "fixture_prompt_v1",
+            "a" * 64,
+            "staged_claim_output_v1",
+            "b" * 64,
+            "ctx_fixture",
+            "c" * 64,
+            "d" * 64,
+            "staged_claim_output_v1",
+        )
+
+
 def test_staged_extraction_rejects_unpinned_prompt_before_model_invocation() -> None:
     ledger = FakeGroundedCandidateLedger()
     archive = FakeModelOutputArchive()
@@ -523,14 +643,7 @@ def test_staged_extraction_rejects_unpinned_prompt_before_model_invocation() -> 
                 representation_id=ledger.bundle.representation.id,
                 context_manifest_id=manifest.id,
                 prompt_bytes=b"tampered prompt",
-                model_identity=ModelIdentity(
-                    "fixture-model",
-                    "d" * 64,
-                    "fixture-runtime",
-                    FixtureTokenizer.tokenizer_id,
-                    {"temperature": 0},
-                ),
-                generation_parameters={"temperature": 0},
+                execution_spec=_fixture_execution_spec(manifest),
                 validator_version="fixture-validator-v1",
                 started_at=NOW,
                 completed_at=NOW,
@@ -559,14 +672,7 @@ def test_staged_extraction_rejects_runtime_identity_mismatch_before_invocation()
         representation_id=ledger.bundle.representation.id,
         context_manifest_id=manifest.id,
         prompt_bytes=manifest.prompt_bytes,
-        model_identity=ModelIdentity(
-            manifest.model_profile_id,
-            "d" * 64,
-            "fixture-runtime",
-            manifest.tokenizer_id,
-            {"temperature": 0},
-        ),
-        generation_parameters={"temperature": 0},
+        execution_spec=_fixture_execution_spec(manifest),
         validator_version="fixture-validator-v1",
         started_at=NOW,
         completed_at=NOW,
@@ -575,15 +681,21 @@ def test_staged_extraction_rejects_runtime_identity_mismatch_before_invocation()
         (
             replace(
                 extraction_input,
-                model_identity=replace(extraction_input.model_identity, name="wrong-model"),
+                execution_spec=replace(
+                    extraction_input.execution_spec, model_profile_id="wrong-model"
+                ),
             ),
-            "model profile",
+            "ContextManifest profile",
         ),
         (
             replace(
                 extraction_input,
-                model_identity=replace(
-                    extraction_input.model_identity, tokenizer_id="wrong-tokenizer"
+                execution_spec=replace(
+                    extraction_input.execution_spec,
+                    model_identity=replace(
+                        extraction_input.execution_spec.model_identity,
+                        tokenizer_id="wrong-tokenizer",
+                    ),
                 ),
             ),
             "tokenizer",
@@ -601,6 +713,20 @@ def test_staged_extraction_rejects_runtime_identity_mismatch_before_invocation()
                 FixtureTokenizer(),
                 StagedClaimTaskSchemaRegistry(),
             )
+
+    with pytest.raises(ValueError, match="runtime configured identity"):
+        run_bounded_extraction(
+            extraction_input,
+            ledger,
+            archive,
+            FakeModelTaskRuntime(
+                b"{}",
+                configured_identity=replace(_fixture_model_identity(), runtime="wrong-runtime"),
+            ),
+            Uuid4ModelRunIdFactory(),
+            FixtureTokenizer(),
+            StagedClaimTaskSchemaRegistry(),
+        )
 
     assert runtime.requests == []
     assert ledger.extraction_tasks == {}
@@ -626,14 +752,7 @@ def test_staged_extraction_rejects_schema_bytes_that_differ_from_the_validator()
                 representation_id=ledger.bundle.representation.id,
                 context_manifest_id=manifest.id,
                 prompt_bytes=b"fixture prompt",
-                model_identity=ModelIdentity(
-                    "fixture-model",
-                    "d" * 64,
-                    "fixture-runtime",
-                    FixtureTokenizer.tokenizer_id,
-                    {"temperature": 0},
-                ),
-                generation_parameters={"temperature": 0},
+                execution_spec=_fixture_execution_spec(manifest),
                 validator_version="fixture-validator-v1",
                 started_at=NOW,
                 completed_at=NOW,
@@ -670,14 +789,7 @@ def test_staged_extraction_schema_forbids_hidden_global_evidence_coordinates() -
             representation_id=ledger.bundle.representation.id,
             context_manifest_id=manifest.id,
             prompt_bytes=b"fixture prompt",
-            model_identity=ModelIdentity(
-                "fixture-model",
-                "d" * 64,
-                "fixture-runtime",
-                FixtureTokenizer.tokenizer_id,
-                {"temperature": 0},
-            ),
-            generation_parameters={"temperature": 0},
+            execution_spec=_fixture_execution_spec(manifest),
             validator_version="fixture-validator-v1",
             started_at=NOW,
             completed_at=NOW,
@@ -709,14 +821,7 @@ def test_successful_model_run_and_candidate_batch_share_one_atomic_boundary() ->
             representation_id=ledger.bundle.representation.id,
             context_manifest_id=manifest.id,
             prompt_bytes=b"fixture prompt",
-            model_identity=ModelIdentity(
-                "fixture-model",
-                "d" * 64,
-                "fixture-runtime",
-                FixtureTokenizer.tokenizer_id,
-                {"temperature": 0},
-            ),
-            generation_parameters={"temperature": 0},
+            execution_spec=_fixture_execution_spec(manifest),
             validator_version="fixture-validator-v1",
             started_at=NOW,
             completed_at=NOW,
@@ -749,14 +854,7 @@ def test_retries_preserve_distinct_model_runs_for_one_task() -> None:
         representation_id=ledger.bundle.representation.id,
         context_manifest_id=manifest.id,
         prompt_bytes=b"fixture prompt",
-        model_identity=ModelIdentity(
-            "fixture-model",
-            "d" * 64,
-            "fixture-runtime",
-            FixtureTokenizer.tokenizer_id,
-            {"temperature": 0},
-        ),
-        generation_parameters={"temperature": 0},
+        execution_spec=_fixture_execution_spec(manifest),
         validator_version="fixture-validator-v1",
         started_at=NOW,
         completed_at=NOW,
@@ -788,3 +886,11 @@ def test_retries_preserve_distinct_model_runs_for_one_task() -> None:
     }
     assert archive.outputs[first.model_run.id] == _valid_staged_output()
     assert archive.outputs[second.model_run.id] == _valid_staged_output()
+    execution_spec_digest = model_execution_spec_digest(extraction_input.execution_spec)
+    assert runtime.requests[0].execution_spec == extraction_input.execution_spec
+    assert (
+        runtime.requests[0].rendered_input_digest
+        == extraction_input.execution_spec.rendered_input_digest
+    )
+    assert first.extraction_task.execution_spec_digest == execution_spec_digest
+    assert first.model_run.execution_spec_digest == execution_spec_digest

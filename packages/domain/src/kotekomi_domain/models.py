@@ -962,6 +962,7 @@ class ExtractionTask(DomainModel):
     prompt_id: NonEmptyStr
     schema_id: NonEmptyStr
     model_profile_id: NonEmptyStr
+    execution_spec_digest: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
     task_fingerprint: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
     created_at: datetime | None = None
 
@@ -998,6 +999,7 @@ class ModelRun(DomainModel):
     tokenizer_id: NonEmptyStr
     prompt_digest: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
     schema_digest: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
+    execution_spec_digest: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
     generation_parameters: dict[str, JsonValue]
     raw_output_artifact_id: NonEmptyStr | None = None
     output_digest: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")] | None = None
