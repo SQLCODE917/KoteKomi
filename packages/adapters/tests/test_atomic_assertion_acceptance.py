@@ -12,11 +12,13 @@ from kotekomi_adapters import (
 )
 from kotekomi_adapters.sqlite_ledger import SQLiteLedgerRepository
 from kotekomi_application import (
+    BuildIdentity,
     ReviewProposedChangeInput,
     approve_proposed_change,
     canonical_record_json,
     deterministic_assertion_evidence_link_id,
     deterministic_review_provenance_activity_id,
+    processing_task_fingerprint,
     verify_evidence_target,
 )
 from kotekomi_application.proposed_change_review import ProposedChangeReviewLedger
@@ -35,6 +37,7 @@ from kotekomi_domain import (
     Organization,
     ParseQualityReport,
     ProposedChange,
+    RawBlob,
     RepresentationAnalyzability,
     ReviewStatus,
     Source,
@@ -60,6 +63,7 @@ def _bundle() -> DocumentRepresentationBundle:
         text=TEXT,
         normalization_policy="utf8_identity_v1",
     )
+
     node = DocumentNode(
         id="nod_atomic_document",
         representation_id="rep_atomic",
@@ -104,6 +108,21 @@ def _bundle() -> DocumentRepresentationBundle:
         nodes=(node,),
         quality_report=quality_report,
     )
+
+
+def _representation_task():
+    return processing_task_fingerprint(
+        task_kind="atomic_acceptance_fixture",
+        document_id="doc_atomic",
+        blob_id="blb_atomic",
+        input_digest="b" * 64,
+        processor_name="fixture",
+        processor_version="1",
+        processor_config_digest="a" * 64,
+        build_identity=BuildIdentity("fixture", "fixture", "c" * 64, "1"),
+        policy_id="fixture_policy",
+        output_contract_version="1",
+    ).model_copy(update={"id": "ptf_fixture"})
 
 
 def _evidence_target(
@@ -216,6 +235,17 @@ def _seed(
                 content_sha256="b" * 64,
             )
         )
+        repository.save_raw_blob(
+            RawBlob(
+                id="blb_atomic",
+                hash_algorithm="sha256",
+                digest="b" * 64,
+                byte_length=1,
+                media_type="application/octet-stream",
+                storage_locator="sources/raw/blb_atomic.bin",
+            )
+        )
+        repository.ensure_processing_task_fingerprint(_representation_task())
         repository.save_organization(Organization(id="org_atomic", name="Atomic Org"))
         repository.commit_document_representation_bundle(_bundle())
         for span in evidence:

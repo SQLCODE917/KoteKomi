@@ -77,6 +77,7 @@ from kotekomi_application.pdf_ingest import (
     PdfPreflight,
     PdfProcessorIdentity,
     ingest_pdf,
+    validate_representation_for_processing_task,
 )
 from kotekomi_application.pipeline_readiness import (
     PipelineBlocker,
@@ -289,6 +290,7 @@ __all__ = [
     "PdfParseInput",
     "PdfParseResult",
     "PdfProcessorIdentity",
+    "validate_representation_for_processing_task",
     "PdfPreflight",
     "BuildIdentity",
     "ProcessingAttemptIdFactory",

@@ -33,11 +33,6 @@ class LocalArchiveStore:
         ):
             self._absolute_path(relative_dir).mkdir(parents=True, exist_ok=True)
 
-    def write_raw_source(self, source_id: str, content: bytes) -> ArchiveObject:
-        relative_path = RAW_SOURCE_DIR / f"{_validate_archive_id(source_id)}.bin"
-        absolute_path = self._absolute_path(relative_path)
-        return self._write_bytes(relative_path, absolute_path, content)
-
     def put_if_absent_or_identical(
         self,
         object_id: str,
@@ -73,18 +68,6 @@ class LocalArchiveStore:
     def read_briefing_citations_json(self, briefing_id: str) -> str:
         relative_path = BRIEFING_DAILY_DIR / f"{_validate_archive_id(briefing_id)}.citations.json"
         return self._absolute_path(relative_path).read_text(encoding="utf-8")
-
-    def stage_raw_source(self, source_id: str, content: bytes) -> StagedArchiveObject:
-        final_relative_path = RAW_SOURCE_DIR / f"{_validate_archive_id(source_id)}.bin"
-        staged_relative_path = _staged_relative_path(final_relative_path)
-        self._write_bytes(staged_relative_path, self._absolute_path(staged_relative_path), content)
-        return StagedArchiveObject(
-            staged_relative_path=staged_relative_path.as_posix(),
-            final_object=ArchiveObject(
-                relative_path=final_relative_path.as_posix(),
-                size_bytes=len(content),
-            ),
-        )
 
     def stage_briefing_markdown(
         self,

@@ -27,6 +27,7 @@ from kotekomi_application import (
     capture_source,
     deterministic_representation_id,
     ingest_pdf,
+    processing_task_fingerprint,
 )
 from kotekomi_domain import (
     DocumentNode,
@@ -98,16 +99,78 @@ class InterruptedFixturePdfParser(FixturePdfParser):
         raise KeyboardInterrupt("simulated PDF process interruption")
 
 
+class MismatchedFixturePdfParser(FixturePdfParser):
+    def __init__(self, mismatch: str, returned_bundle: DocumentRepresentationBundle | None = None):
+        super().__init__()
+        self._mismatch = mismatch
+        self._returned_bundle = returned_bundle
+
+    def parse(self, parse_input: PdfParseInput) -> PdfParseResult:
+        result = super().parse(parse_input)
+        bundle = self._returned_bundle or result.representation_bundle
+        assert bundle is not None
+        representation = bundle.representation
+        preflight = result.preflight
+        if self._mismatch == "unchanged":
+            pass
+        elif self._mismatch == "representation_id":
+            representation = representation.model_copy(update={"id": "rep_wrong_task"})
+        elif self._mismatch == "task":
+            representation = representation.model_copy(
+                update={"processing_task_fingerprint_id": "ptf_wrong_task"}
+            )
+        elif self._mismatch == "input_digest":
+            representation = representation.model_copy(update={"input_blob_digest": "f" * 64})
+        elif self._mismatch == "parser_name":
+            representation = representation.model_copy(update={"parser_name": "wrong_parser"})
+        elif self._mismatch == "parser_version":
+            representation = representation.model_copy(update={"parser_version": "wrong"})
+        elif self._mismatch == "parser_config":
+            representation = representation.model_copy(update={"parser_config_digest": "f" * 64})
+        elif self._mismatch == "preflight_name":
+            preflight = PdfPreflight(
+                parser_name="wrong_parser",
+                parser_version=preflight.parser_version,
+                encrypted=preflight.encrypted,
+                page_count=preflight.page_count,
+                pages=preflight.pages,
+                warnings=preflight.warnings,
+            )
+        elif self._mismatch == "preflight_version":
+            preflight = PdfPreflight(
+                parser_name=preflight.parser_name,
+                parser_version="wrong",
+                encrypted=preflight.encrypted,
+                page_count=preflight.page_count,
+                pages=preflight.pages,
+                warnings=preflight.warnings,
+            )
+        else:
+            raise AssertionError(f"Unexpected mismatch: {self._mismatch}")
+        return PdfParseResult(
+            preflight=preflight,
+            representation_bundle=bundle.model_copy(update={"representation": representation}),
+            blocking_reasons=result.blocking_reasons,
+        )
+
+
 class PersistenceFailingRepository(SQLiteLedgerRepository):
     def commit_document_representation_processing(
         self,
         *,
+        expected_task_fingerprint_id: str,
         bundle: DocumentRepresentationBundle,
         created_provenance_activity: ProvenanceActivity,
         created_outcome: ProcessingAttemptOutcome,
         reused_outcome: ProcessingAttemptOutcome,
     ) -> BundleCommitOutcome:
-        del bundle, created_provenance_activity, created_outcome, reused_outcome
+        del (
+            expected_task_fingerprint_id,
+            bundle,
+            created_provenance_activity,
+            created_outcome,
+            reused_outcome,
+        )
         raise RuntimeError("simulated PDF persistence failure")
 
 
@@ -165,14 +228,18 @@ def _initialize_captured_pdf(ledger_path: Path) -> tuple[str, str]:
     return capture.document.id, capture.raw_blob.id
 
 
-def _ingest_input(document_id: str, raw_blob_id: str) -> PdfIngestInput:
+def _ingest_input(
+    document_id: str,
+    raw_blob_id: str,
+    build_identity: BuildIdentity = BUILD_IDENTITY,
+) -> PdfIngestInput:
     return PdfIngestInput(
         document_id=document_id,
         raw_bytes=RAW_PDF,
         policy_id=POLICY_ID,
         ingested_at=NOW,
         raw_blob_id=raw_blob_id,
-        build_identity=BUILD_IDENTITY,
+        build_identity=build_identity,
     )
 
 
@@ -400,7 +467,7 @@ def test_pdf_production_path_records_validation_failure_without_representation(
     ledger_path = tmp_path / "ledger.db"
     document_id, raw_blob_id = _initialize_captured_pdf(ledger_path)
 
-    with pytest.raises(ValueError, match="different Document"):
+    with pytest.raises(ValueError, match="mismatched document ID"):
         with sqlite_ledger_transaction(ledger_path) as repository:
             ingest_pdf(
                 _ingest_input(document_id, raw_blob_id),
@@ -420,6 +487,133 @@ def test_pdf_production_path_records_validation_failure_without_representation(
     assert outcome.status is ProcessingAttemptStatus.FAILED
     assert outcome.failure is not None
     assert outcome.failure.stage is ProcessingStage.REPRESENTATION_VALIDATION
+
+
+@pytest.mark.parametrize(
+    "mismatch",
+    (
+        "representation_id",
+        "task",
+        "input_digest",
+        "parser_name",
+        "parser_version",
+        "parser_config",
+        "preflight_name",
+        "preflight_version",
+    ),
+)
+def test_pdf_processing_rejects_every_parser_task_binding_disagreement(
+    tmp_path: Path,
+    mismatch: str,
+) -> None:
+    ledger_path = tmp_path / "ledger.db"
+    document_id, raw_blob_id = _initialize_captured_pdf(ledger_path)
+
+    with pytest.raises(ValueError, match="mismatched"):
+        with sqlite_ledger_transaction(ledger_path) as repository:
+            ingest_pdf(
+                _ingest_input(document_id, raw_blob_id),
+                repository,
+                MismatchedFixturePdfParser(mismatch),
+                Uuid4ProcessingAttemptIdFactory(),
+            )
+
+    task_id = _only_processing_task_id(ledger_path)
+    with sqlite_ledger_transaction(ledger_path) as repository:
+        attempts = repository.list_processing_attempts(task_id)
+        attempt_outcome = repository.get_processing_attempt_outcome(attempts[0].id)
+        assert repository.list_document_representations() == ()
+        assert repository.list_provenance_activities() == ()
+
+    assert attempt_outcome is not None
+    assert attempt_outcome.status is ProcessingAttemptStatus.FAILED
+    assert attempt_outcome.failure is not None
+    assert attempt_outcome.failure.stage is ProcessingStage.REPRESENTATION_VALIDATION
+
+
+def test_pdf_processing_rejects_task_a_output_for_changed_build_identity_task_b(
+    tmp_path: Path,
+) -> None:
+    ledger_path = tmp_path / "ledger.db"
+    document_id, raw_blob_id = _initialize_captured_pdf(ledger_path)
+
+    with sqlite_ledger_transaction(ledger_path) as repository:
+        first = ingest_pdf(
+            _ingest_input(document_id, raw_blob_id),
+            repository,
+            FixturePdfParser(),
+            Uuid4ProcessingAttemptIdFactory(),
+        )
+        assert first.representation_id is not None
+        first_bundle = repository.get_document_representation_bundle(first.representation_id)
+        assert first.provenance_activity_id is not None
+        first_provenance = repository.get_provenance_activity(first.provenance_activity_id)
+        assert first_bundle is not None
+        assert first_provenance is not None
+
+    changed_build_identity = BuildIdentity(
+        "pdf-proof",
+        "changed-revision",
+        "a" * 64,
+        "1",
+    )
+    changed_task = processing_task_fingerprint(
+        task_kind="pdf_document_representation",
+        document_id=document_id,
+        blob_id=raw_blob_id,
+        input_digest=hashlib.sha256(RAW_PDF).hexdigest(),
+        processor_name="fixture_pdf",
+        processor_version="1",
+        processor_config_digest="b" * 64,
+        build_identity=changed_build_identity,
+        policy_id=POLICY_ID,
+        output_contract_version="1",
+    )
+    with pytest.raises(ValueError, match="mismatched representation ID"):
+        with sqlite_ledger_transaction(ledger_path) as repository:
+            ingest_pdf(
+                _ingest_input(document_id, raw_blob_id, changed_build_identity),
+                repository,
+                MismatchedFixturePdfParser("unchanged", first_bundle),
+                Uuid4ProcessingAttemptIdFactory(),
+            )
+
+    with sqlite_ledger_transaction(ledger_path) as repository:
+        assert first.representation_id is not None
+        assert (
+            repository.get_document_representation_bundle(first.representation_id) == first_bundle
+        )
+        assert repository.get_provenance_activity(first.provenance_activity_id) == first_provenance
+        assert len(repository.list_document_representations()) == 1
+        task_ids = {
+            first_bundle.representation.processing_task_fingerprint_id,
+            changed_task.id,
+        }
+        attempts = tuple(
+            attempt
+            for task_id in task_ids
+            for attempt in repository.list_processing_attempts(task_id)
+        )
+        outcomes = tuple(
+            repository.get_processing_attempt_outcome(attempt.id) for attempt in attempts
+        )
+        assert all(
+            repository.get_processing_task_fingerprint(task_id) is not None for task_id in task_ids
+        )
+
+    assert len(task_ids) == 2
+    assert len(attempts) == 2
+    assert {outcome.status for outcome in outcomes if outcome is not None} == {
+        ProcessingAttemptStatus.SUCCEEDED,
+        ProcessingAttemptStatus.FAILED,
+    }
+    failed_outcome = next(
+        outcome
+        for outcome in outcomes
+        if outcome is not None and outcome.status is ProcessingAttemptStatus.FAILED
+    )
+    assert failed_outcome.failure is not None
+    assert failed_outcome.failure.stage is ProcessingStage.REPRESENTATION_VALIDATION
 
 
 def test_pdf_production_path_records_persistence_failure_without_representation(

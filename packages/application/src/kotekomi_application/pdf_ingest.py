@@ -18,6 +18,7 @@ from kotekomi_domain import (
     ProcessingBlocker,
     ProcessingFailure,
     ProcessingStage,
+    ProcessingTaskFingerprint,
     ProvenanceActivity,
     RawBlob,
     RepresentationAnalyzability,
@@ -36,6 +37,7 @@ from kotekomi_application.processing import (
 from kotekomi_application.representation_identity import (
     BundleCommitDisposition,
     DocumentRepresentationBundleLedger,
+    deterministic_representation_id,
 )
 
 HASH_ID_LENGTH = 24
@@ -199,8 +201,15 @@ def ingest_pdf(
             provenance_activity_id=None,
             blocking_reasons=blocking_reasons,
         )
-    if bundle.representation.document_id != document.id:
-        error = ValueError("PDF parser returned a representation for a different Document.")
+    try:
+        validate_representation_for_processing_task(
+            task=task,
+            processor=processor,
+            document=document,
+            input_digest=actual_digest,
+            parse_result=parse_result,
+        )
+    except ValueError as error:
         _record_pdf_failure(
             ledger_repository=ledger_repository,
             attempt=attempt,
@@ -283,6 +292,7 @@ def ingest_pdf(
     )
     try:
         commit_outcome = ledger_repository.commit_document_representation_processing(
+            expected_task_fingerprint_id=task.id,
             bundle=bundle,
             created_provenance_activity=provenance,
             created_outcome=created_outcome,
@@ -310,6 +320,50 @@ def ingest_pdf(
         ),
         blocking_reasons=parse_result.blocking_reasons,
     )
+
+
+def validate_representation_for_processing_task(
+    *,
+    task: ProcessingTaskFingerprint,
+    processor: PdfProcessorIdentity,
+    document: Document,
+    input_digest: str,
+    parse_result: PdfParseResult,
+) -> None:
+    """Fail closed when parser output is not bound to this exact processing task."""
+    bundle = parse_result.representation_bundle
+    if bundle is None:
+        return
+    representation = bundle.representation
+    expected_representation_id = deterministic_representation_id(task.id)
+    _require_equal(representation.id, expected_representation_id, "representation ID")
+    _require_equal(
+        representation.processing_task_fingerprint_id,
+        task.id,
+        "processing task fingerprint",
+    )
+    _require_equal(representation.document_id, document.id, "document ID")
+    _require_equal(representation.input_blob_digest, input_digest, "input blob digest")
+    _require_equal(representation.parser_name, processor.processor_name, "processor name")
+    _require_equal(representation.parser_version, processor.processor_version, "processor version")
+    _require_equal(
+        representation.parser_config_digest,
+        processor.processor_config_digest,
+        "processor configuration",
+    )
+    _require_equal(
+        parse_result.preflight.parser_name, processor.processor_name, "preflight processor name"
+    )
+    _require_equal(
+        parse_result.preflight.parser_version,
+        processor.processor_version,
+        "preflight processor version",
+    )
+
+
+def _require_equal(actual: str, expected: str, field: str) -> None:
+    if actual != expected:
+        raise ValueError(f"PDF parser returned a mismatched {field}.")
 
 
 def _provenance_id(document_id: str, representation_id: str, policy_id: str) -> str:

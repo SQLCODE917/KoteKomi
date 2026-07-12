@@ -77,15 +77,6 @@ class FakeArchiveStore:
             ArchiveObject(f"sources/raw/{object_id}.bin", len(payload)),
         )
 
-    def write_raw_source(self, source_id: str, content: bytes) -> ArchiveObject:
-        if source_id in self.raw_writes:
-            raise FileExistsError(source_id)
-        self.raw_writes[source_id] = content
-        return ArchiveObject(
-            relative_path=f"sources/raw/{source_id}.bin",
-            size_bytes=len(content),
-        )
-
     def read_raw_source(self, source_id: str) -> bytes:
         try:
             return self.raw_writes[source_id]
@@ -97,17 +88,6 @@ class FakeArchiveStore:
 
     def read_briefing_citations_json(self, briefing_id: str) -> str:
         raise NotImplementedError
-
-    def stage_raw_source(self, source_id: str, content: bytes) -> StagedArchiveObject:
-        staged_path = f".staging/sources/raw/{source_id}.bin.tmp"
-        self.staged_writes[staged_path] = content
-        return StagedArchiveObject(
-            staged_relative_path=staged_path,
-            final_object=ArchiveObject(
-                relative_path=f"sources/raw/{source_id}.bin",
-                size_bytes=len(content),
-            ),
-        )
 
     def stage_briefing_markdown(
         self,
@@ -352,11 +332,14 @@ class FakeLedgerRepository:
     def commit_document_representation_processing(
         self,
         *,
+        expected_task_fingerprint_id: str,
         bundle: DocumentRepresentationBundle,
         created_provenance_activity: ProvenanceActivity,
         created_outcome: ProcessingAttemptOutcome,
         reused_outcome: ProcessingAttemptOutcome,
     ) -> BundleCommitOutcome:
+        if bundle.representation.processing_task_fingerprint_id != expected_task_fingerprint_id:
+            raise ValueError("processing task mismatch")
         outcome = self.commit_document_representation_bundle(bundle)
         if outcome.disposition is BundleCommitDisposition.CREATED:
             self.save_provenance_activity(created_provenance_activity)

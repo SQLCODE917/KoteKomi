@@ -57,9 +57,6 @@ class FakeArchiveStore:
             ArchiveObject(f"sources/raw/{object_id}.bin", len(payload)),
         )
 
-    def write_raw_source(self, source_id: str, content: bytes) -> ArchiveObject:
-        raise NotImplementedError
-
     def read_raw_source(self, source_id: str) -> bytes:
         raise NotImplementedError
 
@@ -68,9 +65,6 @@ class FakeArchiveStore:
 
     def read_briefing_citations_json(self, briefing_id: str) -> str:
         return self.citations_json[briefing_id]
-
-    def stage_raw_source(self, source_id: str, content: bytes) -> StagedArchiveObject:
-        raise NotImplementedError
 
     def stage_briefing_markdown(
         self,

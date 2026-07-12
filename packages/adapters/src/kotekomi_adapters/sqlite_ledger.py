@@ -20,6 +20,7 @@ from kotekomi_application import (
     ProcessingTaskDisposition,
 )
 from kotekomi_application.record_serialization import canonical_record_json
+from kotekomi_application.representation_identity import deterministic_representation_id
 from kotekomi_domain import (
     Actor,
     ArgumentEdge,
@@ -115,7 +116,10 @@ RELATIONAL_OWNERSHIP_COLUMNS: dict[str, tuple[tuple[str, str], ...]] = {
         ("earlier_document_id", "earlier_document_id"),
         ("later_document_id", "later_document_id"),
     ),
-    "document_representations": (("document_id", "document_id"),),
+    "document_representations": (
+        ("document_id", "document_id"),
+        ("processing_task_fingerprint_id", "processing_task_fingerprint_id"),
+    ),
     "text_views": (("representation_id", "representation_id"),),
     "document_nodes": (
         ("representation_id", "representation_id"),
@@ -557,6 +561,7 @@ class SQLiteLedgerRepository:
     def commit_document_representation_processing(
         self,
         *,
+        expected_task_fingerprint_id: str,
         bundle: DocumentRepresentationBundle,
         created_provenance_activity: ProvenanceActivity,
         created_outcome: ProcessingAttemptOutcome,
@@ -565,6 +570,12 @@ class SQLiteLedgerRepository:
         """Commit output, production provenance, and exactly one outcome together."""
         self._connection.execute("SAVEPOINT document_representation_processing")
         try:
+            self._validate_processing_task_binding(
+                expected_task_fingerprint_id=expected_task_fingerprint_id,
+                bundle=bundle,
+                created_outcome=created_outcome,
+                reused_outcome=reused_outcome,
+            )
             outcome = self.commit_document_representation_bundle(bundle)
             if outcome.disposition is BundleCommitDisposition.CREATED:
                 self.save_provenance_activity(created_provenance_activity)
@@ -577,6 +588,37 @@ class SQLiteLedgerRepository:
             raise
         self._connection.execute("RELEASE SAVEPOINT document_representation_processing")
         return outcome
+
+    def _validate_processing_task_binding(
+        self,
+        *,
+        expected_task_fingerprint_id: str,
+        bundle: DocumentRepresentationBundle,
+        created_outcome: ProcessingAttemptOutcome,
+        reused_outcome: ProcessingAttemptOutcome,
+    ) -> None:
+        representation = bundle.representation
+        if representation.processing_task_fingerprint_id != expected_task_fingerprint_id:
+            raise ValueError("Representation does not belong to the expected processing task.")
+        if representation.id != deterministic_representation_id(expected_task_fingerprint_id):
+            raise ValueError(
+                "Representation ID is not deterministic for the expected processing task."
+            )
+        for outcome in (created_outcome, reused_outcome):
+            attempt = self.get_processing_attempt(outcome.attempt_id)
+            if attempt is None or attempt.task_fingerprint_id != expected_task_fingerprint_id:
+                raise ValueError("Processing outcome attempt does not belong to the expected task.")
+            representation_artifacts = tuple(
+                artifact
+                for artifact in outcome.output_artifacts
+                if artifact.kind.value == "document_representation"
+            )
+            if len(representation_artifacts) != 1 or (
+                representation_artifacts[0].artifact_id != representation.id
+            ):
+                raise ValueError(
+                    "Processing outcome representation artifact does not match the bundle."
+                )
 
     def _commit_validated_document_representation_bundle(
         self, bundle: DocumentRepresentationBundle

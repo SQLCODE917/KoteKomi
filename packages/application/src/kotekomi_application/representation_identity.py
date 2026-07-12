@@ -33,6 +33,7 @@ class DocumentRepresentationBundleLedger(Protocol):
     def commit_document_representation_processing(
         self,
         *,
+        expected_task_fingerprint_id: str,
         bundle: DocumentRepresentationBundle,
         created_provenance_activity: ProvenanceActivity,
         created_outcome: ProcessingAttemptOutcome,
@@ -40,6 +41,7 @@ class DocumentRepresentationBundleLedger(Protocol):
     ) -> BundleCommitOutcome:
         """Atomically close a processing attempt for a representation bundle.
 
+        The bundle and both terminal outcomes must bind to the expected task.
         A newly produced bundle records its production provenance.  A reused
         bundle records only the new attempt outcome and must not fabricate a
         second production activity for immutable output.

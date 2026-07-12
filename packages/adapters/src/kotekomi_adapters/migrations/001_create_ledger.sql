@@ -172,8 +172,9 @@ CREATE INDEX IF NOT EXISTS idx_document_revision_relations_earlier
   ON document_revision_relations(earlier_document_id);
 CREATE TABLE IF NOT EXISTS document_representations (
   id TEXT PRIMARY KEY, created_at TEXT, updated_at TEXT, status TEXT, review_status TEXT,
-  document_id TEXT NOT NULL, payload_json TEXT NOT NULL,
-  FOREIGN KEY (document_id) REFERENCES documents(id)
+  document_id TEXT NOT NULL, processing_task_fingerprint_id TEXT NOT NULL, payload_json TEXT NOT NULL,
+  FOREIGN KEY (document_id) REFERENCES documents(id),
+  FOREIGN KEY (processing_task_fingerprint_id) REFERENCES processing_task_fingerprints(id)
 );
 CREATE TABLE IF NOT EXISTS text_views (
   id TEXT PRIMARY KEY, created_at TEXT, updated_at TEXT, status TEXT, review_status TEXT,

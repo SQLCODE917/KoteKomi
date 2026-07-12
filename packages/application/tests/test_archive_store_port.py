@@ -27,13 +27,6 @@ class FakeArchiveStore:
             ArchiveObject(f"sources/raw/{object_id}.bin", len(payload)),
         )
 
-    def write_raw_source(self, source_id: str, content: bytes) -> ArchiveObject:
-        self.raw_sources[source_id] = content
-        return ArchiveObject(
-            relative_path=f"sources/raw/{source_id}.bin",
-            size_bytes=len(content),
-        )
-
     def read_raw_source(self, source_id: str) -> bytes:
         return self.raw_sources[source_id]
 
@@ -42,14 +35,6 @@ class FakeArchiveStore:
 
     def read_briefing_citations_json(self, briefing_id: str) -> str:
         return self.staged[f"briefings/daily/{briefing_id}.citations.json"].decode("utf-8")
-
-    def stage_raw_source(self, source_id: str, content: bytes) -> StagedArchiveObject:
-        staged_path = f".staging/sources/raw/{source_id}.bin.tmp"
-        self.staged[staged_path] = content
-        return StagedArchiveObject(
-            staged_relative_path=staged_path,
-            final_object=ArchiveObject(f"sources/raw/{source_id}.bin", len(content)),
-        )
 
     def stage_briefing_markdown(self, briefing_id: str, markdown: str) -> StagedArchiveObject:
         content = markdown.encode("utf-8")
@@ -95,14 +80,10 @@ def test_fake_archive_store_satisfies_port_shape() -> None:
     store: ArchiveStore = FakeArchiveStore()
 
     store.initialize()
-    raw = store.write_raw_source("src_article_a", b"raw bytes")
+    raw = store.put_if_absent_or_identical("src_article_a", b"raw bytes", "ignored")
 
-    assert raw == ArchiveObject("sources/raw/src_article_a.bin", 9)
+    assert raw.object == ArchiveObject("sources/raw/src_article_a.bin", 9)
     assert store.read_raw_source("src_article_a") == b"raw bytes"
-
-    staged = store.stage_raw_source("src_article_b", b"staged")
-    assert store.promote_staged_object(staged) == ArchiveObject("sources/raw/src_article_b.bin", 6)
-    assert store.read_raw_source("src_article_b") == b"staged"
 
     staged_briefing = store.stage_briefing_markdown("brf_daily", "# Daily\n")
     assert store.promote_staged_object(staged_briefing) == ArchiveObject(

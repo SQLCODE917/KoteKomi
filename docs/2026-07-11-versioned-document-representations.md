@@ -76,7 +76,7 @@ DocumentRepresentation:
   parser_name:
   parser_version:
   parser_config_digest:
-  code_revision:
+  processing_task_fingerprint_id:
   input_blob_digest:
   canonical_output_digest:
   created_at:
@@ -164,7 +164,7 @@ A policy may select one acceptable representation or block analysis. The selecti
 - Plain text, structured-news, born-digital PDF, and OCR-backed PDF can be represented through the same domain interface.
 - Review tooling can render a node in logical context and locate its original page/region where available.
 - A quality policy can select, degrade, or block a representation with a machine-readable reason.
-- Existing fixture proposal tests continue through the compatibility representation.
+- Existing fixture proposal tests continue through the canonical representation.
 
 ### Failure criteria
 

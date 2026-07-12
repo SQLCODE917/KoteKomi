@@ -55,7 +55,11 @@ def capture(
     identity = capture_identity(capture_request, StableSourceIdentityPolicy())
     raw_path = archive.archive_root / capture_request.storage_locator
     if not raw_path.exists():
-        archive.write_raw_source(identity.raw_blob_id, capture_request.payload)
+        archive.put_if_absent_or_identical(
+            identity.raw_blob_id,
+            capture_request.payload,
+            identity.content_digest,
+        )
     with sqlite_ledger_transaction(ledger_path) as repository:
         return capture_source(capture_request, repository, StableSourceIdentityPolicy())
 

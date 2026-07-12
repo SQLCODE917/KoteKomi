@@ -6,7 +6,7 @@ The present Docling ID uses only the input digest plus the word `docling`:
 representation_id = f"rep_{input_digest[:HASH_ID_LENGTH]}_docling"
 ```
 
-Although parser version, configuration, and code revision are stored in the representation, they do not affect its ID. A parser upgrade can consequently target the same row. ([GitHub][6])
+Although parser version and configuration are stored in the representation, the previous ID did not bind the complete processing task. A parser or build upgrade could consequently target the same row. ([GitHub][6])
 
 ## Add one shared representation fingerprint
 
@@ -18,7 +18,7 @@ class RepresentationFingerprintInput:
     parser_name: str
     parser_version: str
     parser_config_digest: str
-    code_revision: str
+    build_identity_digest: str
     representation_schema_version: str
 ```
 
@@ -149,4 +149,3 @@ These tests close the first two agreed release gates.
 [6]: https://raw.githubusercontent.com/SQLCODE917/KoteKomi/main/packages/adapters/src/kotekomi_adapters/docling_pdf_parser.py "raw.githubusercontent.com"
 [7]: https://raw.githubusercontent.com/SQLCODE917/KoteKomi/main/packages/domain/src/kotekomi_domain/models.py "raw.githubusercontent.com"
 [8]: https://raw.githubusercontent.com/SQLCODE917/KoteKomi/main/docs/2026-07-11-authoritative-document-ingestion-program.md "raw.githubusercontent.com"
-

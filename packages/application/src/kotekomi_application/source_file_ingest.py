@@ -29,7 +29,7 @@ from kotekomi_domain import (
     canonical_representation_digest,
 )
 
-from kotekomi_application.ports import ArchiveStore, StagedArchiveObject
+from kotekomi_application.ports import ArchiveStore
 from kotekomi_application.processing import (
     BuildIdentity,
     ProcessingAttemptIdFactory,
@@ -253,16 +253,12 @@ def commit_authoritative_capture(
             created=False,
         )
 
-    staged_objects: list[StagedArchiveObject] = []
     try:
         archive_store.put_if_absent_or_identical(
             identity.raw_blob_id,
             ingest_input.raw_bytes,
             content_sha256,
         )
-        for staged_object in staged_objects:
-            archive_store.promote_staged_object(staged_object)
-
         outcome = capture_source(request, ledger_repository, identity_policy)
         ledger_repository.save_provenance_activity(
             _capture_provenance_activity(
@@ -353,6 +349,7 @@ def commit_authoritative_capture(
                 occurred_at=ingest_input.ingested_at,
             )
             ledger_repository.commit_document_representation_processing(
+                expected_task_fingerprint_id=task.id,
                 bundle=representation_bundle,
                 created_provenance_activity=provenance_activity,
                 created_outcome=processing_attempt_outcome(
@@ -417,7 +414,6 @@ def commit_authoritative_capture(
             ),
         )
     except Exception:
-        _cleanup_archive_objects(archive_store, staged_objects)
         raise
 
     return AuthoritativeCaptureOutcome(
@@ -521,14 +517,6 @@ def _capture_provenance_activity(
         output_ids=(source.id, raw_blob.id, source_capture.id, document.id),
         occurred_at=source_capture.transaction_time,
     )
-
-
-def _cleanup_archive_objects(
-    archive_store: ArchiveStore,
-    staged_objects: list[StagedArchiveObject],
-) -> None:
-    for staged_object in reversed(staged_objects):
-        archive_store.discard_staged_object(staged_object)
 
 
 def extract_source_title(filename: str, extracted_text: str) -> str:

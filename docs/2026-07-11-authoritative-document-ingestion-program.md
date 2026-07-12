@@ -157,7 +157,8 @@ Deleting the lexical index, embeddings, summaries, graph communities, or weighte
   competing `DocumentVersion` synonym.
 - Stable Source identity is independent of downloaded bytes; no content-hash aliases are
   retained.
-- Every EvidenceSpan is created pinned and unvalidated, then must pass replay before it can
+- Every EvidenceTarget is created pinned and must pass replay through an immutable validation
+  attempt before it can
   support acceptance.
 - Source-backed Assertion proposals use explicit evidence-link specifications; no
   whole-document or unlinked proposal adapter remains.
