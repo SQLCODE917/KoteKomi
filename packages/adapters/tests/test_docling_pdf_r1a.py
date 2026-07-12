@@ -7,19 +7,31 @@ from kotekomi_adapters.docling_pdf_parser import DoclingPdfParser, DoclingPdfPar
 from kotekomi_application import (
     BuildIdentity,
     CaptureRequest,
+    ContextManifest,
+    ContextManifestInput,
+    GroundedAssertionCandidate,
+    GroundedCandidateBatchInput,
+    GroundedEvidenceCandidate,
+    GroundedOrganizationCandidate,
     PdfIngestInput,
     PdfPagePreflight,
     PdfParseInput,
     PdfParseResult,
     PdfProcessorIdentity,
+    ReviewProposedChangeInput,
     SourceIdentityHint,
     StableSourceIdentityPolicy,
     Uuid4ProcessingAttemptIdFactory,
+    approve_proposed_change,
+    build_context_manifest,
     capture_identity,
     capture_source,
     ingest_pdf,
+    submit_grounded_candidate_batch,
+    verify_evidence_target,
 )
 from kotekomi_domain import (
+    AssertionEvidenceRole,
     DocumentRepresentationBundle,
     DocumentVersionKind,
     RepresentationAnalyzability,
@@ -37,6 +49,12 @@ RAW_PDF_DIGEST = "510e8700c0afde7206599f9d0ebd8374b1034204f02e36066aec57d8054b43
 NOW = datetime(2026, 7, 12, 12, 0, tzinfo=UTC)
 BUILD_IDENTITY = BuildIdentity("r1a-pdf", "r1a-pdf", "a" * 64, "1")
 POLICY_ID = "r1a_born_digital_pdf_v1"
+PRIORITY_SENTENCE = (
+    "The CHIP highlights four key health prioritieshealthcare access, mental health, housing, "
+    "and food security -identified through community input and data collection in the "
+    "community health assessment."
+)
+PRIORITY_SUFFIX = " These priorities reflect HealthyJoCo's shared vision"
 
 
 class RecordingDoclingParser:
@@ -148,6 +166,161 @@ def test_docling_r1a_ingests_the_press_release_as_an_analyzeable_representation(
     _assert_persisted_bundle(first_result.representation_bundle, replayed_bundle)
 
     _assert_r1a_representation(first_result.representation_bundle, first_result)
+
+
+def test_docling_r1b_replays_the_priority_sentence_after_review_and_restart(
+    tmp_path: Path,
+) -> None:
+    ledger_path = tmp_path / "ledger.db"
+    archive_path = tmp_path / "archive"
+    archive = LocalArchiveStore(archive_path)
+    archive.initialize()
+    SQLiteLedgerInitializer(ledger_path).initialize()
+    request = _capture_request()
+    identity_policy = StableSourceIdentityPolicy()
+    capture_identity_result = capture_identity(request, identity_policy)
+    archive.put_if_absent_or_identical(
+        capture_identity_result.raw_blob_id,
+        RAW_PDF,
+        RAW_PDF_DIGEST,
+    )
+    with sqlite_ledger_transaction(ledger_path) as repository:
+        capture = capture_source(request, repository, identity_policy)
+        ingest_outcome = ingest_pdf(
+            _ingest_input(capture.document.id, capture.raw_blob.id),
+            repository,
+            DoclingPdfParser(DoclingPdfParserConfig()),
+            Uuid4ProcessingAttemptIdFactory(),
+        )
+        assert ingest_outcome.representation_id is not None
+        bundle = repository.get_document_representation_bundle(ingest_outcome.representation_id)
+        assert bundle is not None
+        priority_node = next(
+            node
+            for node in bundle.nodes
+            if PRIORITY_SENTENCE in bundle.text_views[0].text[node.start_char : node.end_char]
+        )
+        manifest = build_context_manifest(
+            ContextManifestInput(
+                source_id=capture.source.id,
+                document_id=capture.document.id,
+                representation_id=bundle.representation.id,
+                node_ids=(priority_node.id,),
+            ),
+            repository,
+        )
+        batch = submit_grounded_candidate_batch(
+            _priority_sentence_batch(capture.source.id, capture.document.id, manifest),
+            repository,
+        )
+        approve_proposed_change(
+            ReviewProposedChangeInput(
+                batch.proposed_change_ids_by_local_id["healthy_joco"], "reviewer", NOW
+            ),
+            repository,
+        )
+        review = approve_proposed_change(
+            ReviewProposedChangeInput(
+                batch.proposed_change_ids_by_local_id["priority_claim"], "reviewer", NOW
+            ),
+            repository,
+        )
+        assert review.accepted_record_id is not None
+
+    reopened_archive = LocalArchiveStore(archive_path)
+    with sqlite_ledger_transaction(ledger_path) as repository:
+        evidence_target_id = batch.evidence_target_ids_by_local_id["priority_sentence"]
+        evidence = repository.get_evidence_target(evidence_target_id)
+        assertion = repository.get_assertion(review.accepted_record_id)
+        link = repository.get_assertion_evidence_link(review.assertion_evidence_link_ids[0])
+        assert evidence is not None
+        assert assertion is not None
+        assert link is not None
+        assert link.role is AssertionEvidenceRole.DIRECT_SUPPORT
+        validation_attempt = repository.get_evidence_validation_attempt(link.validation_attempt_id)
+        assert validation_attempt is not None
+        assert verify_evidence_target(evidence, validation_attempt, repository).valid
+        replayed_manifest = build_context_manifest(
+            ContextManifestInput(
+                evidence.source_id,
+                evidence.document_id,
+                evidence.representation_id,
+                evidence.node_ids,
+            ),
+            repository,
+        )
+        assert replayed_manifest == manifest
+        bundle = repository.get_document_representation_bundle(evidence.representation_id)
+        assert bundle is not None
+        text_view = next(view for view in bundle.text_views if view.id == evidence.text_view_id)
+        priority_node = next(node for node in bundle.nodes if node.id == evidence.node_ids[0])
+        priority_region = next(
+            region for region in bundle.source_regions if region.id == evidence.pdf_region_ids[0]
+    )
+
+    assert reopened_archive.read_raw_source(capture.raw_blob.id) == RAW_PDF
+    assert assertion.id == review.accepted_record_id
+    assert evidence.exact_text == PRIORITY_SENTENCE
+    assert text_view.text.count(PRIORITY_SENTENCE) == 1
+    assert text_view.text[evidence.start_char : evidence.end_char] == PRIORITY_SENTENCE
+    assert (
+        priority_node.start_char
+        <= evidence.start_char
+        < evidence.end_char
+        <= priority_node.end_char
+    )
+    assert evidence.pdf_region_ids == priority_node.source_region_ids
+    assert priority_region.page_number == 1
+    assert (priority_region.page_width, priority_region.page_height) == (612.0, 792.0)
+    assert abs(priority_region.left - 72.024) < 0.000001
+    assert abs(priority_region.top - 344.09288) < 0.000001
+    assert abs(priority_region.right - 539.12056) < 0.000001
+    assert abs(priority_region.bottom - 404.6349670718232) < 0.000001
+
+
+def _priority_sentence_batch(
+    source_id: str,
+    document_id: str,
+    manifest: ContextManifest,
+) -> GroundedCandidateBatchInput:
+    assert len(manifest.text_views) == 1
+    assert len(manifest.nodes) == 1
+    text_view = manifest.text_views[0]
+    priority_node = manifest.nodes[0]
+    start_char = text_view.text.index(PRIORITY_SENTENCE)
+    end_char = start_char + len(PRIORITY_SENTENCE)
+    return GroundedCandidateBatchInput(
+        task_key="r1b-priority-sentence-fixture-v1",
+        source_id=source_id,
+        document_id=document_id,
+        representation_id=manifest.representation_id,
+        model_name="r1b-bounded-fixture-producer",
+        prompt_id="r1b-priority-sentence",
+        validator_version="r1b-v1",
+        submitted_at=NOW,
+        organizations=(GroundedOrganizationCandidate("healthy_joco", "HealthyJoCo"),),
+        evidence=(
+            GroundedEvidenceCandidate(
+                local_id="priority_sentence",
+                text_view_id=text_view.id,
+                start_char=start_char,
+                end_char=end_char,
+                exact_text=PRIORITY_SENTENCE,
+                node_ids=(priority_node.id,),
+                pdf_region_ids=priority_node.source_region_ids,
+                suffix_text=PRIORITY_SUFFIX,
+            ),
+        ),
+        assertions=(
+            GroundedAssertionCandidate(
+                local_id="priority_claim",
+                subject_organization_local_id="healthy_joco",
+                evidence_local_id="priority_sentence",
+                predicate="identified_community_health_priorities",
+                object_value="healthcare access, mental health, housing, and food security",
+            ),
+        ),
+    )
 
 
 def _assert_persisted_bundle(

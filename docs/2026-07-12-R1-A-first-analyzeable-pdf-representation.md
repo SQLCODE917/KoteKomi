@@ -44,6 +44,10 @@ accepted PDF representation
 
 That will prove the first complete vertical path from real PDF bytes to an accepted, reviewable intelligence claim without weakening the architecture established by R0.1.
 
+The R1-B exit gate uses the fixture sentence beginning `The CHIP highlights four key health priorities`.
+
+The proof must replay that single occurrence after restart through its quote, text offsets, paragraph node, and page region.
+
 After that proof, expand PDF support in this order:
 
 ```text

@@ -3,10 +3,12 @@ from datetime import UTC, datetime
 
 import pytest
 from kotekomi_application import (
+    ContextManifestInput,
     GroundedAssertionCandidate,
     GroundedCandidateBatchInput,
     GroundedEvidenceCandidate,
     GroundedOrganizationCandidate,
+    build_context_manifest,
     submit_grounded_candidate_batch,
 )
 from kotekomi_domain import (
@@ -206,6 +208,53 @@ def test_submit_grounded_candidate_batch_derives_records_and_pending_changes() -
             "necessity": "required",
         }
     ]
+
+
+def test_context_manifest_is_deterministic_and_scoped_to_selected_nodes() -> None:
+    ledger = FakeGroundedCandidateLedger()
+    manifest_input = ContextManifestInput(
+        source_id=ledger.source.id,
+        document_id=ledger.document.id,
+        representation_id=ledger.bundle.representation.id,
+        node_ids=(ledger.bundle.nodes[0].id,),
+    )
+
+    first = build_context_manifest(manifest_input, ledger)
+    second = build_context_manifest(manifest_input, ledger)
+
+    assert first == second
+    assert first.source_id == ledger.source.id
+    assert first.document_id == ledger.document.id
+    assert first.representation_id == ledger.bundle.representation.id
+    assert first.text_views == ledger.bundle.text_views
+    assert first.nodes == ledger.bundle.nodes
+    assert first.source_regions == ()
+
+
+def test_context_manifest_rejects_missing_or_duplicate_node_selectors() -> None:
+    ledger = FakeGroundedCandidateLedger()
+    node_id = ledger.bundle.nodes[0].id
+
+    with pytest.raises(ValueError, match="selectors must be unique"):
+        build_context_manifest(
+            ContextManifestInput(
+                ledger.source.id,
+                ledger.document.id,
+                ledger.bundle.representation.id,
+                (node_id, node_id),
+            ),
+            ledger,
+        )
+    with pytest.raises(ValueError, match="missing DocumentNode"):
+        build_context_manifest(
+            ContextManifestInput(
+                ledger.source.id,
+                ledger.document.id,
+                ledger.bundle.representation.id,
+                ("nod_missing",),
+            ),
+            ledger,
+        )
 
 
 def test_submit_grounded_candidate_batch_rejects_selector_disagreement_atomically() -> None:

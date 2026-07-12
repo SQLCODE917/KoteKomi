@@ -31,12 +31,16 @@ from kotekomi_application.evidence_targets import (
 )
 from kotekomi_application.grounded_candidates import (
     GROUNDED_CANDIDATE_BATCH_ACTIVITY,
+    ContextManifest,
+    ContextManifestInput,
+    ContextManifestLedger,
     GroundedAssertionCandidate,
     GroundedCandidateBatchInput,
     GroundedCandidateLedger,
     GroundedEvidenceCandidate,
     GroundedOrganizationCandidate,
     ProposedChangeBatchOutcome,
+    build_context_manifest,
     submit_grounded_candidate_batch,
 )
 from kotekomi_application.ledger import initialize_ledger
@@ -254,6 +258,9 @@ __all__ = [
     "EvidenceTargetLedger",
     "GroundedCandidateLedger",
     "GroundedCandidateBatchInput",
+    "ContextManifestLedger",
+    "ContextManifestInput",
+    "ContextManifest",
     "GroundedOrganizationCandidate",
     "GroundedEvidenceCandidate",
     "GroundedAssertionCandidate",
@@ -394,5 +401,6 @@ __all__ = [
     "validate_evidence_target",
     "validate_evidence_target_record",
     "submit_grounded_candidate_batch",
+    "build_context_manifest",
     "verify_evidence_target",
 ]

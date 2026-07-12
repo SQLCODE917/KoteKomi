@@ -12,6 +12,7 @@ from kotekomi_domain import (
     AssertionStatus,
     AssertionType,
     AttributionBasis,
+    DocumentNode,
     EvidenceNecessity,
     EvidencePolarity,
     EvidenceTarget,
@@ -20,10 +21,14 @@ from kotekomi_domain import (
     Organization,
     ProposedChange,
     ProvenanceActivity,
+    RepresentationAnalyzability,
     ReviewStatus,
     Source,
     SourceAuthority,
+    SourceRegion,
+    TextView,
     canonical_evidence_target_digest,
+    canonical_representation_digest,
 )
 
 from kotekomi_application.evidence_targets import (
@@ -47,6 +52,30 @@ class GroundedCandidateLedger(EvidenceTargetLedger, Protocol):
     ) -> None: ...
 
 
+class ContextManifestLedger(EvidenceTargetLedger, Protocol):
+    def get_source(self, record_id: str) -> Source | None: ...
+
+
+@dataclass(frozen=True)
+class ContextManifestInput:
+    source_id: str
+    document_id: str
+    representation_id: str
+    node_ids: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class ContextManifest:
+    id: str
+    source_id: str
+    document_id: str
+    representation_id: str
+    representation_digest: str
+    text_views: tuple[TextView, ...]
+    nodes: tuple[DocumentNode, ...]
+    source_regions: tuple[SourceRegion, ...]
+
+
 @dataclass(frozen=True)
 class GroundedOrganizationCandidate:
     local_id: str
@@ -62,6 +91,7 @@ class GroundedEvidenceCandidate:
     end_char: int
     exact_text: str
     node_ids: tuple[str, ...]
+    pdf_region_ids: tuple[str, ...] = ()
     prefix_text: str = ""
     suffix_text: str = ""
 
@@ -99,6 +129,79 @@ class ProposedChangeBatchOutcome:
     evidence_target_ids_by_local_id: dict[str, str]
     validation_attempt_ids_by_evidence_local_id: dict[str, str]
     proposed_change_ids_by_local_id: dict[str, str]
+
+
+def build_context_manifest(
+    manifest_input: ContextManifestInput,
+    ledger_repository: ContextManifestLedger,
+) -> ContextManifest:
+    """Build a deterministic, representation-scoped context for one bounded extraction task."""
+    if not manifest_input.node_ids:
+        raise ValueError("ContextManifest requires at least one DocumentNode.")
+    if len(set(manifest_input.node_ids)) != len(manifest_input.node_ids):
+        raise ValueError("ContextManifest DocumentNode selectors must be unique.")
+    source = ledger_repository.get_source(manifest_input.source_id)
+    if source is None:
+        raise ValueError(f"ContextManifest references missing Source: {manifest_input.source_id}")
+    document = ledger_repository.get_document(manifest_input.document_id)
+    if document is None or document.source_id != source.id:
+        raise ValueError("ContextManifest Document does not belong to its Source.")
+    bundle = ledger_repository.get_document_representation_bundle(manifest_input.representation_id)
+    if bundle is None or bundle.representation.document_id != document.id:
+        raise ValueError("ContextManifest references a mismatched DocumentRepresentation.")
+    if bundle.quality_report.analyzability is not RepresentationAnalyzability.ACCEPTABLE:
+        raise ValueError("ContextManifest requires an acceptable DocumentRepresentation.")
+    actual_digest = canonical_representation_digest(
+        bundle.representation,
+        text_views=bundle.text_views,
+        nodes=bundle.nodes,
+        edges=bundle.edges,
+        source_regions=bundle.source_regions,
+        quality_report=bundle.quality_report,
+    )
+    if actual_digest != bundle.representation.canonical_output_digest:
+        raise ValueError("ContextManifest DocumentRepresentation digest is corrupted.")
+    nodes_by_id = {node.id: node for node in bundle.nodes}
+    selected_nodes: list[DocumentNode] = []
+    for node_id in manifest_input.node_ids:
+        node = nodes_by_id.get(node_id)
+        if node is None:
+            raise ValueError(f"ContextManifest references missing DocumentNode: {node_id}")
+        selected_nodes.append(node)
+    selected_nodes.sort(key=lambda node: node.id)
+    text_view_ids = {node.text_view_id for node in selected_nodes}
+    text_views = tuple(
+        sorted(
+            (view for view in bundle.text_views if view.id in text_view_ids),
+            key=lambda view: view.id,
+        )
+    )
+    selected_region_ids = {
+        region_id for node in selected_nodes for region_id in node.source_region_ids
+    }
+    source_regions = tuple(
+        sorted(
+            (region for region in bundle.source_regions if region.id in selected_region_ids),
+            key=lambda region: region.id,
+        )
+    )
+    return ContextManifest(
+        id=_deterministic_id(
+            "ctx",
+            source.id,
+            document.id,
+            bundle.representation.id,
+            actual_digest,
+            *(node.id for node in selected_nodes),
+        ),
+        source_id=source.id,
+        document_id=document.id,
+        representation_id=bundle.representation.id,
+        representation_digest=actual_digest,
+        text_views=text_views,
+        nodes=tuple(selected_nodes),
+        source_regions=source_regions,
+    )
 
 
 def submit_grounded_candidate_batch(
@@ -159,6 +262,10 @@ def submit_grounded_candidate_batch(
                 str(candidate.start_char),
                 str(candidate.end_char),
                 candidate.exact_text,
+                candidate.prefix_text,
+                candidate.suffix_text,
+                *candidate.node_ids,
+                *candidate.pdf_region_ids,
             ),
             source_id=source.id,
             document_id=document.id,
@@ -172,6 +279,7 @@ def submit_grounded_candidate_batch(
             prefix_text=candidate.prefix_text,
             suffix_text=candidate.suffix_text,
             node_ids=candidate.node_ids,
+            pdf_region_ids=candidate.pdf_region_ids,
             created_at=batch_input.submitted_at,
         )
         validate_evidence_target_record(evidence, ledger_repository)

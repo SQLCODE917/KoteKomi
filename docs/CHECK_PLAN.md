@@ -28,6 +28,7 @@
 - verify atomic grounded-candidate submission and run the public-path restart-safe authoritative commit-boundary Final Proof with `uv run pytest packages/application/tests/test_grounded_candidates.py packages/adapters/tests/test_authoritative_commit_boundary.py`
 - verify the Docling adapter loads lazily and classifies source-access conditions as typed blocked results with `uv run pytest packages/adapters/tests/test_docling_pdf_parser.py`
 - verify the born-digital press-release PDF enters Archive, Ledger, deterministic page geometry, text, nodes, regions, reading order, and an acceptable quality report with `uv run pytest packages/adapters/tests/test_docling_pdf_r1a.py`
+- verify the press-release priority sentence enters a deterministic ContextManifest, immutable EvidenceTarget, successful validation attempt, reviewed direct-support Assertion link, and restart replay with `uv run pytest packages/adapters/tests/test_docling_pdf_r1a.py`
 
 ## 4. Archive checks
 - verify archive cleanup accepts only `StagedArchiveObject` capabilities and run `uv run pytest packages/adapters/tests/test_local_archive_store.py`
