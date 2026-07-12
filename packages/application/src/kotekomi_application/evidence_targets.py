@@ -123,6 +123,14 @@ def validate_evidence_target(
     return EvidenceValidationResult(evidence_target=evidence_target, attempt=attempt, valid=True)
 
 
+def validate_evidence_target_record(
+    evidence_target: EvidenceTarget,
+    ledger_repository: EvidenceTargetLedger,
+) -> None:
+    """Fail fast when an unsaved immutable EvidenceTarget cannot be replayed."""
+    _validate_evidence_target(evidence_target, ledger_repository)
+
+
 def verify_evidence_target(
     evidence_target: EvidenceTarget,
     validation_attempt: EvidenceValidationAttempt,

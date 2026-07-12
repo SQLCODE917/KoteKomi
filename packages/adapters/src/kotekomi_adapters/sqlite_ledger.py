@@ -774,6 +774,30 @@ class SQLiteLedgerRepository:
     def list_evidence_validation_attempts(self) -> tuple[EvidenceValidationAttempt, ...]:
         return self._list(EVIDENCE_VALIDATION_ATTEMPT_SPEC)
 
+    def commit_grounded_candidate_batch(
+        self,
+        *,
+        evidence_targets: tuple[EvidenceTarget, ...],
+        validation_attempts: tuple[EvidenceValidationAttempt, ...],
+        provenance_activity: ProvenanceActivity,
+        proposed_changes: tuple[ProposedChange, ...],
+    ) -> None:
+        """Commit a fully replayed candidate batch without partial publication."""
+        self._connection.execute("SAVEPOINT grounded_candidate_batch")
+        try:
+            self.save_provenance_activity(provenance_activity)
+            for evidence_target in evidence_targets:
+                self.save_evidence_target(evidence_target)
+            for validation_attempt in validation_attempts:
+                self.save_evidence_validation_attempt(validation_attempt)
+            for proposed_change in proposed_changes:
+                self.save_proposed_change(proposed_change)
+        except Exception:
+            self._connection.execute("ROLLBACK TO SAVEPOINT grounded_candidate_batch")
+            self._connection.execute("RELEASE SAVEPOINT grounded_candidate_batch")
+            raise
+        self._connection.execute("RELEASE SAVEPOINT grounded_candidate_batch")
+
     def ensure_processing_task_fingerprint(
         self, record: ProcessingTaskFingerprint
     ) -> ImmutableCommitDisposition:

@@ -27,7 +27,18 @@ from kotekomi_application.evidence_targets import (
     deterministic_evidence_reanchoring_relation_id,
     reanchor_evidence,
     validate_evidence_target,
+    validate_evidence_target_record,
     verify_evidence_target,
+)
+from kotekomi_application.grounded_candidates import (
+    GROUNDED_CANDIDATE_BATCH_ACTIVITY,
+    GroundedAssertionCandidate,
+    GroundedCandidateBatchInput,
+    GroundedCandidateLedger,
+    GroundedEvidenceCandidate,
+    GroundedOrganizationCandidate,
+    ProposedChangeBatchOutcome,
+    submit_grounded_candidate_batch,
 )
 from kotekomi_application.ledger import initialize_ledger
 from kotekomi_application.ledger_graph_mining import (
@@ -241,6 +252,13 @@ __all__ = [
     "EvidenceReanchoringLedger",
     "EvidenceReplayResult",
     "EvidenceTargetLedger",
+    "GroundedCandidateLedger",
+    "GroundedCandidateBatchInput",
+    "GroundedOrganizationCandidate",
+    "GroundedEvidenceCandidate",
+    "GroundedAssertionCandidate",
+    "ProposedChangeBatchOutcome",
+    "GROUNDED_CANDIDATE_BATCH_ACTIVITY",
     "EvidenceValidationInput",
     "EvidenceValidationResult",
     "DocumentRepresentationBundleLedger",
@@ -374,5 +392,7 @@ __all__ = [
     "StableSourceIdentityPolicy",
     "reanchor_evidence",
     "validate_evidence_target",
+    "validate_evidence_target_record",
+    "submit_grounded_candidate_batch",
     "verify_evidence_target",
 ]

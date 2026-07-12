@@ -1,26 +1,27 @@
 import hashlib
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
 
+import pytest
 from kotekomi_adapters import LocalArchiveStore, SQLiteLedgerInitializer, sqlite_ledger_transaction
 from kotekomi_application import (
     AuthoritativeCaptureRequest,
     BuildIdentity,
-    EvidenceValidationInput,
+    GroundedAssertionCandidate,
+    GroundedCandidateBatchInput,
+    GroundedEvidenceCandidate,
+    GroundedOrganizationCandidate,
     ReviewProposedChangeInput,
     approve_proposed_change,
     canonical_record_json,
     commit_authoritative_capture,
     deterministic_representation_id,
-    validate_evidence_target,
+    submit_grounded_candidate_batch,
     verify_evidence_target,
 )
 from kotekomi_domain import (
     AssertionEvidenceRole,
-    EvidenceTarget,
-    Organization,
-    ProposedChange,
     ReviewStatus,
     canonical_evidence_target_digest,
     canonical_representation_digest,
@@ -40,7 +41,8 @@ class AuthoritativeFixture:
     ledger_path: Path
     archive_path: Path
     ingest_request: AuthoritativeCaptureRequest
-    evidence: EvidenceTarget
+    evidence_target_id: str
+    assertion_proposed_change_id: str
     assertion_id: str
     evidence_link_id: str
 
@@ -57,62 +59,43 @@ def _ingest_request() -> AuthoritativeCaptureRequest:
     )
 
 
-def _evidence_target(
+def _grounded_batch(
     *, source_id: str, document_id: str, representation_id: str, text_view_id: str
-) -> EvidenceTarget:
-    return EvidenceTarget(
-        id="etg_final_proof",
+) -> GroundedCandidateBatchInput:
+    return GroundedCandidateBatchInput(
+        task_key="final-proof-grounded-task",
         source_id=source_id,
         document_id=document_id,
-        exact_text=EVIDENCE_TEXT,
         representation_id=representation_id,
-        text_view_id=text_view_id,
-        text_view_digest=hashlib.sha256(TEXT.encode("utf-8")).hexdigest(),
-        start_char=EVIDENCE_START,
-        end_char=EVIDENCE_START + len(EVIDENCE_TEXT),
-        node_ids=(f"nod_{representation_id.removeprefix('rep_')}_document",),
-        normalization_policy="utf8_identity_v1",
-    )
-
-
-def _assertion_proposed_change(source_id: str, document_id: str) -> ProposedChange:
-    return ProposedChange(
-        id="pcg_final_proof",
-        review_status=ReviewStatus.PENDING,
-        proposed_json={
-            "record_type": "Assertion",
-            "stable_label": "final_proof_assertion",
-            "record": {
-                "id": "ast_final_proof",
-                "assertion_type": "source_claim",
-                "epistemic_scope": "source_report",
-                "subject_entity_id": "org_final_proof",
-                "predicate": "reported_alpha",
-                "object_value": "Alpha",
-                "status": "proposed",
-                "source_authority": "secondary",
-                "attribution_basis": "reported_by_source",
-                "source_ids": [source_id],
-                "evidence_target_ids": ["etg_final_proof"],
-                "provenance_activity_ids": [],
-            },
-            "evidence_links": [
-                {
-                    "evidence_target_id": "etg_final_proof",
-                    "validation_attempt_id": "eva_final_proof",
-                    "role": "direct_support",
-                    "polarity": "supports",
-                    "necessity": "required",
-                }
-            ],
-        },
-        source_id=source_id,
-        document_id=document_id,
         model_name="bounded-final-proof-fixture",
         prompt_id="bounded-final-proof-task",
-        provenance_activity_id="prv_final_proof_model",
-        created_at=NOW,
-        updated_at=NOW,
+        validator_version="final-proof-v1",
+        submitted_at=NOW,
+        organizations=(
+            GroundedOrganizationCandidate(
+                local_id="subject_organization",
+                name="Final Proof Org",
+            ),
+        ),
+        evidence=(
+            GroundedEvidenceCandidate(
+                local_id="supporting_span",
+                text_view_id=text_view_id,
+                start_char=EVIDENCE_START,
+                end_char=EVIDENCE_START + len(EVIDENCE_TEXT),
+                exact_text=EVIDENCE_TEXT,
+                node_ids=(f"nod_{representation_id.removeprefix('rep_')}_document",),
+            ),
+        ),
+        assertions=(
+            GroundedAssertionCandidate(
+                local_id="reported_alpha",
+                subject_organization_local_id="subject_organization",
+                evidence_local_id="supporting_span",
+                predicate="reported_alpha",
+                object_value="Alpha",
+            ),
+        ),
     )
 
 
@@ -129,34 +112,77 @@ def _create_public_path_fixture(tmp_path: Path) -> AuthoritativeFixture:
         bundle = repository.get_document_representation_bundle(capture.representation_id)
         assert bundle is not None
         assert bundle.text_views[0].text == TEXT
-        repository.save_organization(Organization(id="org_final_proof", name="Final Proof Org"))
-        evidence = _evidence_target(
-            source_id=capture.source_id,
-            document_id=capture.document_id,
-            representation_id=bundle.representation.id,
-            text_view_id=bundle.text_views[0].id,
-        )
-        repository.save_evidence_target(evidence)
-        validation = validate_evidence_target(
-            EvidenceValidationInput(evidence.id, "eva_final_proof", "final-proof-v1", NOW),
+        batch = submit_grounded_candidate_batch(
+            _grounded_batch(
+                source_id=capture.source_id,
+                document_id=capture.document_id,
+                representation_id=bundle.representation.id,
+                text_view_id=bundle.text_views[0].id,
+            ),
             repository,
         )
-        assert validation.valid
-        repository.save_proposed_change(
-            _assertion_proposed_change(capture.source_id, capture.document_id)
+        approve_proposed_change(
+            ReviewProposedChangeInput(
+                batch.proposed_change_ids_by_local_id["subject_organization"],
+                "reviewer",
+                NOW,
+            ),
+            repository,
         )
         review = approve_proposed_change(
-            ReviewProposedChangeInput("pcg_final_proof", "reviewer", NOW), repository
+            ReviewProposedChangeInput(
+                batch.proposed_change_ids_by_local_id["reported_alpha"],
+                "reviewer",
+                NOW,
+            ),
+            repository,
         )
+        assert review.accepted_record_id is not None
 
     return AuthoritativeFixture(
         ledger_path=ledger_path,
         archive_path=archive_path,
         ingest_request=ingest_request,
-        evidence=evidence,
-        assertion_id="ast_final_proof",
+        evidence_target_id=batch.evidence_target_ids_by_local_id["supporting_span"],
+        assertion_proposed_change_id=batch.proposed_change_ids_by_local_id["reported_alpha"],
+        assertion_id=review.accepted_record_id,
         evidence_link_id=review.assertion_evidence_link_ids[0],
     )
+
+
+def test_grounded_candidate_batch_rejects_evidence_disagreement_without_partial_records(
+    tmp_path: Path,
+) -> None:
+    ledger_path = tmp_path / "ledger.db"
+    archive = LocalArchiveStore(tmp_path / "archive")
+    archive.initialize()
+    SQLiteLedgerInitializer(ledger_path).initialize()
+
+    with sqlite_ledger_transaction(ledger_path) as repository:
+        capture = commit_authoritative_capture(_ingest_request(), archive, repository)
+        bundle = repository.get_document_representation_bundle(capture.representation_id)
+        assert bundle is not None
+        batch = _grounded_batch(
+            source_id=capture.source_id,
+            document_id=capture.document_id,
+            representation_id=bundle.representation.id,
+            text_view_id=bundle.text_views[0].id,
+        )
+        invalid_batch = replace(
+            batch,
+            evidence=(replace(batch.evidence[0], exact_text="not present"),),
+        )
+
+        with pytest.raises(ValueError, match="exact_text does not match"):
+            submit_grounded_candidate_batch(invalid_batch, repository)
+
+        assert repository.list_evidence_targets() == ()
+        assert repository.list_evidence_validation_attempts() == ()
+        assert repository.list_proposed_changes() == ()
+        assert all(
+            activity.activity_type != "grounded_candidate_batch_submitted"
+            for activity in repository.list_provenance_activities()
+        )
 
 
 def test_final_proof_public_path_restarts_and_replays_archived_bytes(tmp_path: Path) -> None:
@@ -166,8 +192,8 @@ def test_final_proof_public_path_restarts_and_replays_archived_bytes(tmp_path: P
     with sqlite_ledger_transaction(fixture.ledger_path) as repository:
         assertion = repository.get_assertion(fixture.assertion_id)
         link = repository.get_assertion_evidence_link(fixture.evidence_link_id)
-        evidence = repository.get_evidence_target(fixture.evidence.id)
-        proposed_change = repository.get_proposed_change("pcg_final_proof")
+        evidence = repository.get_evidence_target(fixture.evidence_target_id)
+        proposed_change = repository.get_proposed_change(fixture.assertion_proposed_change_id)
         assert assertion is not None
         assert link is not None
         assert evidence is not None
