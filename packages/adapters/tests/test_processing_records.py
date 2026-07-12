@@ -196,6 +196,21 @@ def test_attempt_lookup_uses_indexed_keyset_pagination(tmp_path: Path) -> None:
     assert any("processing_attempts_by_fingerprint" in row[-1] for row in query_plan)
 
     with sqlite3.connect(ledger_path) as connection:
+        open_query_plan = connection.execute(
+            """
+            EXPLAIN QUERY PLAN
+            SELECT attempts.payload_json FROM processing_attempts AS attempts
+            LEFT JOIN processing_attempt_outcomes AS outcomes
+              ON outcomes.attempt_id = attempts.id
+            WHERE attempts.task_fingerprint_id = ?
+              AND outcomes.attempt_id IS NULL
+            ORDER BY attempts.started_at, attempts.id LIMIT ?
+            """,
+            (task.id, 2),
+        ).fetchall()
+    assert any("processing_attempts_by_fingerprint" in row[-1] for row in open_query_plan)
+
+    with sqlite3.connect(ledger_path) as connection:
         with pytest.raises(
             sqlite3.DatabaseError, match="processing_task_fingerprints are immutable"
         ):
@@ -211,3 +226,36 @@ def test_attempt_lookup_uses_indexed_keyset_pagination(tmp_path: Path) -> None:
             connection.execute(
                 "DELETE FROM processing_attempt_outcomes WHERE attempt_id = ?", (attempts[0].id,)
             )
+
+
+def test_reconciliation_pages_every_open_attempt_with_targeted_lookup(tmp_path: Path) -> None:
+    ledger_path = tmp_path / "kotekomi.db"
+    SQLiteLedgerInitializer(ledger_path).initialize()
+    _initialize_task_inputs(ledger_path)
+    task = _task()
+    attempts = tuple(
+        ProcessingAttempt(
+            id=f"pat_{index:024d}",
+            task_fingerprint_id=task.id,
+            started_at=NOW,
+            invocation_id=f"test:unclosed:{index}",
+        )
+        for index in range(1, 202)
+    )
+
+    with sqlite_ledger_transaction(ledger_path) as repository:
+        repository.ensure_processing_task_fingerprint(task)
+        for attempt in attempts:
+            repository.append_processing_attempt(attempt)
+        assert repository.list_open_processing_attempts(task.id, limit=100) == attempts[:100]
+        reconciled = reconcile_interrupted_processing_attempts(
+            task_fingerprint_id=task.id,
+            ledger=repository,
+            reconciled_at=NOW,
+            interruption_basis="fixture restart reconciled every open attempt",
+            limit=100,
+        )
+        assert repository.list_open_processing_attempts(task.id) == ()
+
+    assert len(reconciled) == len(attempts)
+    assert {outcome.status for outcome in reconciled} == {ProcessingAttemptStatus.INTERRUPTED}

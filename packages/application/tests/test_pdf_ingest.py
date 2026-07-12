@@ -1,5 +1,5 @@
 import hashlib
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import cast
 
 import pytest
@@ -14,11 +14,13 @@ from kotekomi_application import (
     PdfProcessorIdentity,
     ProcessingTaskDisposition,
     ingest_pdf,
+    processing_task_fingerprint,
 )
 from kotekomi_domain import (
     Document,
     ProcessingAttempt,
     ProcessingAttemptOutcome,
+    ProcessingAttemptStatus,
     ProcessingTaskFingerprint,
     RawBlob,
 )
@@ -36,6 +38,14 @@ class SequenceAttemptIdFactory:
         attempt_id = f"pat_{self.next_id:024d}"
         self.next_id += 1
         return attempt_id
+
+
+class FixedProcessingClock:
+    def __init__(self, value: datetime) -> None:
+        self._value = value
+
+    def now(self) -> datetime:
+        return self._value
 
 
 class FakePdfParser:
@@ -128,6 +138,21 @@ class FakePdfLedger:
             attempts = tuple(attempt for attempt in attempts if attempt.id > after)
         return attempts[:limit]
 
+    def list_open_processing_attempts(
+        self, fingerprint_id: str, *, after: str | None = None, limit: int = 100
+    ) -> tuple[ProcessingAttempt, ...]:
+        attempts = tuple(
+            attempt
+            for attempt in self.attempts.values()
+            if attempt.task_fingerprint_id == fingerprint_id
+        )
+        if after is not None:
+            attempts = tuple(attempt for attempt in attempts if attempt.id > after)
+        closed_attempt_ids = {outcome.attempt_id for outcome in self.outcomes.values()}
+        return tuple(attempt for attempt in attempts if attempt.id not in closed_attempt_ids)[
+            :limit
+        ]
+
 
 def test_ingest_pdf_returns_typed_blocked_outcome_without_publishing_representation() -> None:
     outcome = ingest_pdf(
@@ -194,3 +219,49 @@ def test_ingest_pdf_records_failure_and_reraises_processor_exception() -> None:
     assert outcome.status.value == "failed"
     assert outcome.failure is not None
     assert outcome.failure.code == "pdf_processor_failure"
+
+
+def test_ingest_pdf_reconciles_unclosed_attempt_before_a_retry() -> None:
+    ledger = FakePdfLedger()
+    parser = FakePdfParser()
+    task = processing_task_fingerprint(
+        task_kind="pdf_document_representation",
+        document_id=ledger.document.id,
+        blob_id=ledger.raw_blob.id,
+        input_digest=ledger.document.content_sha256,
+        processor_name="fake_pdf",
+        processor_version="1",
+        processor_config_digest="b" * 64,
+        build_identity=BUILD_IDENTITY,
+        policy_id="pdf_policy_v1",
+        output_contract_version="1",
+    )
+    prior_attempt = ProcessingAttempt(
+        id="pat_interrupted_pdf_attempt",
+        task_fingerprint_id=task.id,
+        started_at=NOW,
+        invocation_id="pdf:interrupted",
+    )
+    ledger.ensure_processing_task_fingerprint(task)
+    ledger.append_processing_attempt(prior_attempt)
+    clock = FixedProcessingClock(NOW + timedelta(minutes=5))
+
+    ingest_pdf(
+        PdfIngestInput(
+            "doc_pdf_fixture", RAW_PDF, "pdf_policy_v1", NOW, "blb_pdf_fixture", BUILD_IDENTITY
+        ),
+        cast(PdfIngestLedger, ledger),
+        cast(PdfDocumentParser, parser),
+        SequenceAttemptIdFactory(),
+        clock,
+    )
+
+    prior_outcome = ledger.get_processing_attempt_outcome(prior_attempt.id)
+    retry_outcome = next(
+        outcome for outcome in ledger.outcomes.values() if outcome.attempt_id != prior_attempt.id
+    )
+    assert prior_outcome is not None
+    assert prior_outcome.status is ProcessingAttemptStatus.INTERRUPTED
+    assert prior_outcome.finished_at == clock.now()
+    assert retry_outcome.status is ProcessingAttemptStatus.BLOCKED
+    assert retry_outcome.finished_at == clock.now()

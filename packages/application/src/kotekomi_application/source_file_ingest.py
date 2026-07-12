@@ -33,12 +33,13 @@ from kotekomi_application.ports import ArchiveStore, StagedArchiveObject
 from kotekomi_application.processing import (
     BuildIdentity,
     ProcessingAttemptIdFactory,
+    ProcessingClock,
     ProcessingLedger,
+    UtcProcessingClock,
     Uuid4ProcessingAttemptIdFactory,
     execute_processing_task,
     processing_attempt_outcome,
     processing_task_fingerprint,
-    reconcile_interrupted_processing_attempts,
 )
 from kotekomi_application.representation_identity import (
     DocumentRepresentationBundleLedger,
@@ -109,6 +110,7 @@ def commit_authoritative_capture(
     archive_store: ArchiveStore,
     ledger_repository: SourceFileLedger,
     attempt_id_factory: ProcessingAttemptIdFactory | None = None,
+    clock: ProcessingClock | None = None,
 ) -> AuthoritativeCaptureOutcome:
     suffix = Path(ingest_input.filename).suffix.lower()
     if suffix not in SUPPORTED_TEXT_SUFFIXES:
@@ -119,6 +121,7 @@ def commit_authoritative_capture(
 
     ingest_input.build_identity.snapshot()
     resolved_attempt_id_factory = attempt_id_factory or Uuid4ProcessingAttemptIdFactory()
+    processing_clock = clock or UtcProcessingClock()
     extracted_text = ingest_input.raw_bytes.decode("utf-8")
     source_type = infer_source_type(extracted_text)
     source_title = extract_source_title(ingest_input.filename, extracted_text)
@@ -190,13 +193,6 @@ def commit_authoritative_capture(
     text_view_id = f"tvw_{representation_key}_logical"
     document_node_id = f"nod_{representation_key}_document"
     quality_report_id = f"pqr_{representation_key}_quality_v1"
-    reconcile_interrupted_processing_attempts(
-        task_fingerprint_id=task.id,
-        ledger=ledger_repository,
-        reconciled_at=ingest_input.ingested_at,
-        interruption_basis="authoritative capture retry found an unclosed attempt",
-    )
-
     existing_capture = ledger_repository.get_source_capture(identity.source_capture_id)
     existing_representation = ledger_repository.get_document_representation_bundle(
         representation_id
@@ -217,7 +213,7 @@ def commit_authoritative_capture(
             task=task,
             ledger=ledger_repository,
             attempt_id_factory=resolved_attempt_id_factory,
-            started_at=ingest_input.ingested_at,
+            clock=processing_clock,
             invocation_id=f"source_file:{identity.document_id}:{idempotency_key}",
             operation=lambda _attempt: _require_complete_existing_closure(
                 archive_store=archive_store,
@@ -240,7 +236,7 @@ def commit_authoritative_capture(
             processing_attempt_outcome(
                 attempt=attempt,
                 status=ProcessingAttemptStatus.SUCCEEDED,
-                finished_at=ingest_input.ingested_at,
+                finished_at=processing_clock.now(),
                 output_disposition=OutputDisposition.REUSED,
                 output_artifacts=(
                     ProcessingArtifactRef(
@@ -383,7 +379,7 @@ def commit_authoritative_capture(
                 created_outcome=processing_attempt_outcome(
                     attempt=attempt,
                     status=ProcessingAttemptStatus.SUCCEEDED,
-                    finished_at=ingest_input.ingested_at,
+                    finished_at=processing_clock.now(),
                     output_disposition=OutputDisposition.CREATED,
                     output_artifacts=(
                         ProcessingArtifactRef(
@@ -407,7 +403,7 @@ def commit_authoritative_capture(
                 reused_outcome=processing_attempt_outcome(
                     attempt=attempt,
                     status=ProcessingAttemptStatus.SUCCEEDED,
-                    finished_at=ingest_input.ingested_at,
+                    finished_at=processing_clock.now(),
                     output_disposition=OutputDisposition.REUSED,
                     output_artifacts=(
                         ProcessingArtifactRef(
@@ -428,7 +424,7 @@ def commit_authoritative_capture(
             task=task,
             ledger=ledger_repository,
             attempt_id_factory=resolved_attempt_id_factory,
-            started_at=ingest_input.ingested_at,
+            clock=processing_clock,
             invocation_id=f"source_file:{identity.document_id}:{idempotency_key}",
             operation=commit_representation,
             failure_for_exception=lambda exc: ProcessingFailure(

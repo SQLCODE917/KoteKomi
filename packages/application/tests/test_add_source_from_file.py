@@ -320,6 +320,21 @@ class FakeLedgerRepository:
             attempts = tuple(attempt for attempt in attempts if attempt.id > after)
         return attempts[:limit]
 
+    def list_open_processing_attempts(
+        self, fingerprint_id: str, *, after: str | None = None, limit: int = 100
+    ) -> tuple[ProcessingAttempt, ...]:
+        attempts = tuple(
+            attempt
+            for attempt in self.processing_attempts.values()
+            if attempt.task_fingerprint_id == fingerprint_id
+        )
+        if after is not None:
+            attempts = tuple(attempt for attempt in attempts if attempt.id > after)
+        closed_attempt_ids = {outcome.attempt_id for outcome in self.processing_outcomes.values()}
+        return tuple(attempt for attempt in attempts if attempt.id not in closed_attempt_ids)[
+            :limit
+        ]
+
     def save_document_representation(self, record: DocumentRepresentation) -> None:
         self.document_representations[record.id] = record
 

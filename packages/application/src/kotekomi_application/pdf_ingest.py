@@ -26,7 +26,9 @@ from kotekomi_domain import (
 from kotekomi_application.processing import (
     BuildIdentity,
     ProcessingAttemptIdFactory,
+    ProcessingClock,
     ProcessingLedger,
+    UtcProcessingClock,
     execute_processing_task,
     processing_attempt_outcome,
     processing_task_fingerprint,
@@ -120,9 +122,11 @@ def ingest_pdf(
     ledger_repository: PdfIngestLedger,
     parser: PdfDocumentParser,
     attempt_id_factory: ProcessingAttemptIdFactory,
+    clock: ProcessingClock | None = None,
 ) -> PdfIngestOutcome:
     # Validate the build before consulting the parser or writing any task/attempt.
     ingest_input.build_identity.snapshot()
+    processing_clock = clock or UtcProcessingClock()
     document = ledger_repository.get_document(ingest_input.document_id)
     if document is None:
         raise ValueError(f"Document not found: {ingest_input.document_id}")
@@ -149,7 +153,7 @@ def ingest_pdf(
         task=task,
         ledger=ledger_repository,
         attempt_id_factory=attempt_id_factory,
-        started_at=ingest_input.ingested_at,
+        clock=processing_clock,
         invocation_id=f"pdf:{document.id}:{ingest_input.ingested_at.isoformat()}",
         operation=lambda _attempt: parser.parse(
             PdfParseInput(
@@ -177,7 +181,7 @@ def ingest_pdf(
             processing_attempt_outcome(
                 attempt=attempt,
                 status=ProcessingAttemptStatus.BLOCKED,
-                finished_at=ingest_input.ingested_at,
+                finished_at=processing_clock.now(),
                 blocking_reasons=tuple(
                     ProcessingBlocker(
                         code="pdf_blocked",
@@ -200,7 +204,7 @@ def ingest_pdf(
         _record_pdf_failure(
             ledger_repository=ledger_repository,
             attempt=attempt,
-            finished_at=ingest_input.ingested_at,
+            finished_at=processing_clock.now(),
             exception=error,
             code="pdf_representation_validation_failure",
             stage=ProcessingStage.REPRESENTATION_VALIDATION,
@@ -256,7 +260,7 @@ def ingest_pdf(
     created_outcome = processing_attempt_outcome(
         attempt=attempt,
         status=terminal_status,
-        finished_at=ingest_input.ingested_at,
+        finished_at=processing_clock.now(),
         output_disposition=None if is_blocked else OutputDisposition.CREATED,
         output_artifacts=artifact_refs
         + (
@@ -272,7 +276,7 @@ def ingest_pdf(
     reused_outcome = processing_attempt_outcome(
         attempt=attempt,
         status=terminal_status,
-        finished_at=ingest_input.ingested_at,
+        finished_at=processing_clock.now(),
         output_disposition=None if is_blocked else OutputDisposition.REUSED,
         output_artifacts=artifact_refs,
         blocking_reasons=blockers if is_blocked else (),
@@ -288,7 +292,7 @@ def ingest_pdf(
         _record_pdf_failure(
             ledger_repository=ledger_repository,
             attempt=attempt,
-            finished_at=ingest_input.ingested_at,
+            finished_at=processing_clock.now(),
             exception=exc,
             code="pdf_persistence_failure",
             stage=ProcessingStage.PERSISTENCE,

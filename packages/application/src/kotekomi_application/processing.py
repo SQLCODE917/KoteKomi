@@ -7,7 +7,7 @@ import json
 import uuid
 from collections.abc import Callable
 from dataclasses import asdict, dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Protocol
 
@@ -44,6 +44,15 @@ class ProcessingAttemptIdFactory(Protocol):
     def new_attempt_id(self) -> str: ...
 
 
+class ProcessingClock(Protocol):
+    def now(self) -> datetime: ...
+
+
+class UtcProcessingClock:
+    def now(self) -> datetime:
+        return datetime.now(UTC)
+
+
 class Uuid4ProcessingAttemptIdFactory:
     def new_attempt_id(self) -> str:
         return f"pat_{uuid.uuid4().hex}"
@@ -63,6 +72,9 @@ class ProcessingLedger(Protocol):
         self, attempt_id: str
     ) -> ProcessingAttemptOutcome | None: ...
     def list_processing_attempts(
+        self, fingerprint_id: str, *, after: str | None = None, limit: int = 100
+    ) -> tuple[ProcessingAttempt, ...]: ...
+    def list_open_processing_attempts(
         self, fingerprint_id: str, *, after: str | None = None, limit: int = 100
     ) -> tuple[ProcessingAttempt, ...]: ...
 
@@ -127,23 +139,51 @@ def start_processing_attempt(
     return attempt
 
 
+def begin_processing_task(
+    *,
+    task: ProcessingTaskFingerprint,
+    ledger: ProcessingLedger,
+    attempt_id_factory: ProcessingAttemptIdFactory,
+    clock: ProcessingClock,
+    invocation_id: str,
+    interruption_basis: str,
+    initiator: str | None = None,
+) -> ProcessingAttempt:
+    """Close every interrupted predecessor and durably start the next attempt."""
+    reconcile_interrupted_processing_attempts(
+        task_fingerprint_id=task.id,
+        ledger=ledger,
+        reconciled_at=clock.now(),
+        interruption_basis=interruption_basis,
+    )
+    return start_processing_attempt(
+        task=task,
+        ledger=ledger,
+        attempt_id_factory=attempt_id_factory,
+        started_at=clock.now(),
+        invocation_id=invocation_id,
+        initiator=initiator,
+    )
+
+
 def execute_processing_task[ProcessingResult](
     *,
     task: ProcessingTaskFingerprint,
     ledger: ProcessingLedger,
     attempt_id_factory: ProcessingAttemptIdFactory,
-    started_at: datetime,
+    clock: ProcessingClock,
     invocation_id: str,
     operation: Callable[[ProcessingAttempt], ProcessingResult],
     failure_for_exception: Callable[[Exception], ProcessingFailure],
 ) -> tuple[ProcessingAttempt, ProcessingResult]:
     """Run processor work after a durable start and close exceptions immutably."""
-    attempt = start_processing_attempt(
+    attempt = begin_processing_task(
         task=task,
         ledger=ledger,
         attempt_id_factory=attempt_id_factory,
-        started_at=started_at,
+        clock=clock,
         invocation_id=invocation_id,
+        interruption_basis="processing retry found an unclosed attempt",
     )
     try:
         return attempt, operation(attempt)
@@ -152,7 +192,7 @@ def execute_processing_task[ProcessingResult](
             processing_attempt_outcome(
                 attempt=attempt,
                 status=ProcessingAttemptStatus.FAILED,
-                finished_at=started_at,
+                finished_at=clock.now(),
                 failure=failure_for_exception(exc),
             )
         )
@@ -197,18 +237,27 @@ def reconcile_interrupted_processing_attempts(
 ) -> tuple[ProcessingAttemptOutcome, ...]:
     """Append interruption outcomes for starts left open by an unclean stop."""
     reconciled: list[ProcessingAttemptOutcome] = []
-    for attempt in ledger.list_processing_attempts(task_fingerprint_id, limit=limit):
-        if ledger.get_processing_attempt_outcome(attempt.id) is not None:
-            continue
-        outcome = processing_attempt_outcome(
-            attempt=attempt,
-            status=ProcessingAttemptStatus.INTERRUPTED,
-            finished_at=reconciled_at,
-            interruption_basis=interruption_basis,
+    after: str | None = None
+    while True:
+        attempts = ledger.list_open_processing_attempts(
+            task_fingerprint_id,
+            after=after,
+            limit=limit,
         )
-        ledger.append_processing_attempt_outcome(outcome)
-        reconciled.append(outcome)
-    return tuple(reconciled)
+        if not attempts:
+            return tuple(reconciled)
+        for attempt in attempts:
+            outcome = processing_attempt_outcome(
+                attempt=attempt,
+                status=ProcessingAttemptStatus.INTERRUPTED,
+                finished_at=reconciled_at,
+                interruption_basis=interruption_basis,
+            )
+            ledger.append_processing_attempt_outcome(outcome)
+            reconciled.append(outcome)
+        if len(attempts) < limit:
+            return tuple(reconciled)
+        after = attempts[-1].id
 
 
 def _digest(value: object) -> str:

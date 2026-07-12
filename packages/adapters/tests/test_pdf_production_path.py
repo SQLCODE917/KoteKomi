@@ -91,6 +91,13 @@ class FixturePdfParser:
         )
 
 
+class InterruptedFixturePdfParser(FixturePdfParser):
+    def parse(self, parse_input: PdfParseInput) -> PdfParseResult:
+        del parse_input
+        self.parse_calls += 1
+        raise KeyboardInterrupt("simulated PDF process interruption")
+
+
 class PersistenceFailingRepository(SQLiteLedgerRepository):
     def commit_document_representation_processing(
         self,
@@ -283,6 +290,40 @@ def test_pdf_production_path_creates_then_reuses_after_restart(tmp_path: Path) -
         "created",
         "reused",
     }
+
+
+def test_pdf_retry_reconciles_a_process_interrupted_attempt(tmp_path: Path) -> None:
+    ledger_path = tmp_path / "ledger.db"
+    document_id, raw_blob_id = _initialize_captured_pdf(ledger_path)
+
+    with pytest.raises(KeyboardInterrupt, match="process interruption"):
+        with sqlite_ledger_transaction(ledger_path) as repository:
+            ingest_pdf(
+                _ingest_input(document_id, raw_blob_id),
+                repository,
+                InterruptedFixturePdfParser(),
+                Uuid4ProcessingAttemptIdFactory(),
+            )
+
+    task_id = _only_processing_task_id(ledger_path)
+    with sqlite_ledger_transaction(ledger_path) as repository:
+        recovered = ingest_pdf(
+            _ingest_input(document_id, raw_blob_id),
+            repository,
+            FixturePdfParser(),
+            Uuid4ProcessingAttemptIdFactory(),
+        )
+        attempts = repository.list_processing_attempts(task_id)
+        outcomes = tuple(
+            repository.get_processing_attempt_outcome(attempt.id) for attempt in attempts
+        )
+
+    assert recovered.representation_id is not None
+    assert len(attempts) == 2
+    assert [outcome.status for outcome in outcomes if outcome is not None] == [
+        ProcessingAttemptStatus.INTERRUPTED,
+        ProcessingAttemptStatus.SUCCEEDED,
+    ]
 
 
 def test_pdf_production_path_persists_blocked_diagnostic_bundle(tmp_path: Path) -> None:

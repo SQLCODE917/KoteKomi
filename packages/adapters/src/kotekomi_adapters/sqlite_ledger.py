@@ -941,6 +941,45 @@ class SQLiteLedgerRepository:
         ).fetchall()
         return tuple(ProcessingAttempt.model_validate_json(str(row[0])) for row in rows)
 
+    def list_open_processing_attempts(
+        self,
+        fingerprint_id: str,
+        *,
+        after: str | None = None,
+        limit: int = 100,
+    ) -> tuple[ProcessingAttempt, ...]:
+        if limit <= 0:
+            raise ValueError("Processing attempt page limit must be positive.")
+        after_attempt = self.get_processing_attempt(after) if after is not None else None
+        if after is not None and after_attempt is None:
+            raise ValueError(f"Processing attempt cursor not found: {after}")
+        if after_attempt is not None and after_attempt.task_fingerprint_id != fingerprint_id:
+            raise ValueError("Processing attempt cursor belongs to a different task fingerprint.")
+        rows = self._connection.execute(
+            """
+            SELECT attempts.payload_json FROM processing_attempts AS attempts
+            LEFT JOIN processing_attempt_outcomes AS outcomes
+              ON outcomes.attempt_id = attempts.id
+            WHERE attempts.task_fingerprint_id = ?
+              AND outcomes.attempt_id IS NULL
+              AND (
+                ? IS NULL
+                OR attempts.started_at > ?
+                OR (attempts.started_at = ? AND attempts.id > ?)
+              )
+            ORDER BY attempts.started_at, attempts.id LIMIT ?
+            """,
+            (
+                fingerprint_id,
+                after,
+                after_attempt.started_at.isoformat() if after_attempt is not None else None,
+                after_attempt.started_at.isoformat() if after_attempt is not None else None,
+                after,
+                limit,
+            ),
+        ).fetchall()
+        return tuple(ProcessingAttempt.model_validate_json(str(row[0])) for row in rows)
+
     def save_assertion_evidence_link(self, record: AssertionEvidenceLink) -> None:
         self._save(ASSERTION_EVIDENCE_LINK_SPEC, record)
 
