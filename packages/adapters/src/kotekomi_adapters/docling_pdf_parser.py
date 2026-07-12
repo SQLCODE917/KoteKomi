@@ -1,9 +1,4 @@
-"""Docling implementation of the PDF parser Port.
-
-This adapter deliberately publishes a blocked representation until its rich Docling
-layout graph is mapped into canonical nodes, tables, and source regions. It never
-relabels Docling's Markdown export as evidence-safe structure.
-"""
+"""Docling implementation of the PDF parser Port for born-digital PDF layout."""
 
 from __future__ import annotations
 
@@ -12,7 +7,7 @@ import json
 from dataclasses import dataclass
 from importlib.metadata import PackageNotFoundError, version
 from io import BytesIO
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from kotekomi_application.pdf_ingest import (
     PdfDocumentParser,
@@ -27,11 +22,14 @@ if TYPE_CHECKING:
     from docling_core.types.doc.document import DoclingDocument
 from kotekomi_application.representation_identity import deterministic_representation_id
 from kotekomi_domain import (
+    DocumentEdge,
+    DocumentEdgeProvenanceKind,
     DocumentNode,
     DocumentRepresentation,
     DocumentRepresentationBundle,
     ParseQualityReport,
     RepresentationAnalyzability,
+    SourceRegion,
     TextView,
     TextViewKind,
     canonical_representation_digest,
@@ -43,7 +41,32 @@ HASH_ID_LENGTH = 24
 @dataclass(frozen=True)
 class DoclingPdfParserConfig:
     enable_ocr: bool = False
-    enable_table_structure: bool = True
+    enable_table_structure: bool = False
+
+
+@dataclass(frozen=True)
+class _PageGeometry:
+    page_number: int
+    width: float
+    height: float
+
+
+@dataclass(frozen=True)
+class _LayoutRegion:
+    page_number: int
+    page_width: float
+    page_height: float
+    left: float
+    top: float
+    right: float
+    bottom: float
+
+
+@dataclass(frozen=True)
+class _LayoutItem:
+    text: str
+    node_type: str
+    regions: tuple[_LayoutRegion, ...]
 
 
 class DoclingPdfParser(PdfDocumentParser):
@@ -62,7 +85,7 @@ class DoclingPdfParser(PdfDocumentParser):
         config_digest = hashlib.sha256(
             json.dumps(configuration, sort_keys=True, separators=(",", ":")).encode()
         ).hexdigest()
-        return PdfProcessorIdentity("docling", parser_version, config_digest, "1")
+        return PdfProcessorIdentity("docling", parser_version, config_digest, "2")
 
     def parse(self, parse_input: PdfParseInput) -> PdfParseResult:
         parser_version = _docling_version()
@@ -99,16 +122,18 @@ class DoclingPdfParser(PdfDocumentParser):
                 )
             if _conversion_failed(conversion):
                 raise RuntimeError("Docling conversion returned a processor failure status.")
-            logical_text = conversion.document.export_to_markdown()
+            page_geometry = _page_geometry_from_document(conversion.document)
+            layout_items = _layout_items_from_document(conversion.document, page_geometry)
         except Exception as exc:
             blocked_result = _source_blocked_result(exc, parser_version)
             if blocked_result is not None:
                 return blocked_result
             raise RuntimeError(f"Docling conversion failed: {type(exc).__name__}") from exc
-        preflight = _preflight_from_document(conversion.document, parser_version)
-        bundle = build_docling_blocked_bundle(
+        preflight = _preflight_from_layout(page_geometry, layout_items, parser_version)
+        bundle = build_docling_representation_bundle(
             parse_input=parse_input,
-            logical_text=logical_text,
+            page_geometry=page_geometry,
+            layout_items=layout_items,
             parser_version=parser_version,
             config=self._config,
         )
@@ -116,9 +141,6 @@ class DoclingPdfParser(PdfDocumentParser):
         return PdfParseResult(
             preflight=preflight,
             representation_bundle=bundle,
-            blocking_reasons=(
-                "Docling layout graph mapping to canonical nodes and regions is not complete.",
-            ),
         )
 
 
@@ -141,17 +163,90 @@ def _docling_version() -> str:
         ) from exc
 
 
-def _preflight_from_document(document: DoclingDocument, parser_version: str) -> PdfPreflight:
+def _page_geometry_from_document(document: DoclingDocument) -> tuple[_PageGeometry, ...]:
     pages = tuple(
-        PdfPagePreflight(
-            page_index=page_number,
-            width=page.size.width,
-            height=page.size.height,
-            rotation=0,
-            embedded_text_character_count=0,
-            warnings=("embedded_text_metrics_pending",),
+        _PageGeometry(
+            page_number=int(page_number),
+            width=float(page.size.width),
+            height=float(page.size.height),
         )
         for page_number, page in sorted(document.pages.items())
+    )
+    if not pages:
+        raise ValueError("Docling conversion produced no PDF pages.")
+    return pages
+
+
+def _layout_items_from_document(
+    document: DoclingDocument,
+    page_geometry: tuple[_PageGeometry, ...],
+) -> tuple[_LayoutItem, ...]:
+    geometry_by_page = {page.page_number: page for page in page_geometry}
+    layout_items: list[_LayoutItem] = []
+    for item, _depth in document.iterate_items():
+        text = getattr(item, "text", None)
+        if text is None:
+            continue
+        if not isinstance(text, str) or not text.strip():
+            raise ValueError("Docling text item has no usable text.")
+        provenance = tuple(cast(Any, getattr(item, "prov", ())))
+        if not provenance:
+            raise ValueError("Docling text item has no PDF provenance.")
+        regions = tuple(
+            _layout_region_from_provenance(provenance_item, geometry_by_page)
+            for provenance_item in provenance
+        )
+        label = getattr(getattr(item, "label", None), "value", None)
+        layout_items.append(
+            _LayoutItem(
+                text=text,
+                node_type="heading" if label == "section_header" else "paragraph",
+                regions=regions,
+            )
+        )
+    if not layout_items:
+        raise ValueError("Docling conversion produced no body text items.")
+    return tuple(layout_items)
+
+
+def _layout_region_from_provenance(
+    provenance: Any,
+    geometry_by_page: dict[int, _PageGeometry],
+) -> _LayoutRegion:
+    page_number = int(provenance.page_no)
+    page = geometry_by_page.get(page_number)
+    if page is None:
+        raise ValueError("Docling text provenance references an unknown PDF page.")
+    bounding_box = provenance.bbox
+    left = float(bounding_box.l)
+    right = float(bounding_box.r)
+    top = page.height - float(bounding_box.t)
+    bottom = page.height - float(bounding_box.b)
+    if left < 0 or top < 0 or right <= left or bottom <= top:
+        raise ValueError("Docling text provenance has invalid PDF bounds.")
+    if right > page.width or bottom > page.height:
+        raise ValueError("Docling text provenance exceeds its PDF page bounds.")
+    return _LayoutRegion(page_number, page.width, page.height, left, top, right, bottom)
+
+
+def _preflight_from_layout(
+    page_geometry: tuple[_PageGeometry, ...],
+    layout_items: tuple[_LayoutItem, ...],
+    parser_version: str,
+) -> PdfPreflight:
+    text_character_counts = {page.page_number: 0 for page in page_geometry}
+    for item in layout_items:
+        for page_number in {region.page_number for region in item.regions}:
+            text_character_counts[page_number] += len(item.text)
+    pages = tuple(
+        PdfPagePreflight(
+            page_index=page.page_number,
+            width=page.width,
+            height=page.height,
+            rotation=0,
+            embedded_text_character_count=text_character_counts[page.page_number],
+        )
+        for page in page_geometry
     )
     return PdfPreflight(
         parser_name="docling",
@@ -159,7 +254,6 @@ def _preflight_from_document(document: DoclingDocument, parser_version: str) -> 
         encrypted=False,
         page_count=len(pages),
         pages=pages,
-        warnings=("embedded_text_metrics_pending",),
     )
 
 
@@ -215,10 +309,11 @@ def _blocked_preflight(parser_version: str, reasons: tuple[str, ...]) -> PdfPref
     )
 
 
-def build_docling_blocked_bundle(
+def build_docling_representation_bundle(
     *,
     parse_input: PdfParseInput,
-    logical_text: str,
+    page_geometry: tuple[_PageGeometry, ...],
+    layout_items: tuple[_LayoutItem, ...],
     parser_version: str,
     config: DoclingPdfParserConfig,
 ) -> DocumentRepresentationBundle:
@@ -234,32 +329,53 @@ def build_docling_blocked_bundle(
     representation_id = deterministic_representation_id(parse_input.processing_task_fingerprint_id)
     representation_key = representation_id.removeprefix("rep_")
     text_view_id = f"tvw_{representation_key}_logical"
-    node_id = f"nod_{representation_key}_document"
+    root_node_id = f"nod_{representation_key}_document"
     quality_id = f"pqr_{representation_key}_quality_v1"
-    text_digest = hashlib.sha256(logical_text.encode()).hexdigest()
+    logical_text, nodes, source_regions = _canonical_layout_records(
+        representation_id=representation_id,
+        representation_key=representation_key,
+        text_view_id=text_view_id,
+        layout_items=layout_items,
+    )
+    text_digest = hashlib.sha256(logical_text.encode("utf-8")).hexdigest()
     text_view = TextView(
         id=text_view_id,
         representation_id=representation_id,
         kind=TextViewKind.LOGICAL,
         content_digest=text_digest,
         text=logical_text,
-        normalization_policy="docling_markdown_v1",
+        normalization_policy="docling_layout_text_v1",
     )
     root = DocumentNode(
-        id=node_id,
+        id=root_node_id,
         representation_id=representation_id,
         node_type="document",
         order_index=0,
+        structural_path=("document",),
         text_view_id=text_view_id,
         start_char=0,
         end_char=len(logical_text),
     )
-    quality_report = ParseQualityReport(
-        id=quality_id,
+    nodes = (root, *nodes)
+    edges = tuple(
+        DocumentEdge(
+            id=f"deg_{representation_key}_document_to_{node.order_index:04d}",
+            representation_id=representation_id,
+            from_node_id=root.id,
+            to_node_id=node.id,
+            edge_type="contains",
+            provenance_kind=DocumentEdgeProvenanceKind.PARSER,
+            provenance_id="docling_layout_v1",
+        )
+        for node in nodes[1:]
+    )
+    quality_report = _quality_report(
+        quality_id=quality_id,
         representation_id=representation_id,
-        metric_values={"logical_text_char_count": len(logical_text)},
-        issues=("canonical_layout_mapping_pending",),
-        analyzability=RepresentationAnalyzability.BLOCKED,
+        page_geometry=page_geometry,
+        nodes=nodes,
+        source_regions=source_regions,
+        logical_text=logical_text,
     )
     template = DocumentRepresentation(
         id=representation_id,
@@ -277,9 +393,9 @@ def build_docling_blocked_bundle(
             "canonical_output_digest": canonical_representation_digest(
                 template,
                 text_views=(text_view,),
-                nodes=(root,),
-                edges=(),
-                source_regions=(),
+                nodes=nodes,
+                edges=edges,
+                source_regions=source_regions,
                 quality_report=quality_report,
             )
         }
@@ -287,6 +403,108 @@ def build_docling_blocked_bundle(
     return DocumentRepresentationBundle(
         representation=representation,
         text_views=(text_view,),
-        nodes=(root,),
+        nodes=nodes,
+        edges=edges,
+        source_regions=source_regions,
         quality_report=quality_report,
+    )
+
+
+def _canonical_layout_records(
+    *,
+    representation_id: str,
+    representation_key: str,
+    text_view_id: str,
+    layout_items: tuple[_LayoutItem, ...],
+) -> tuple[str, tuple[DocumentNode, ...], tuple[SourceRegion, ...]]:
+    text_parts: list[str] = []
+    nodes: list[DocumentNode] = []
+    source_regions: list[SourceRegion] = []
+    current_section_path: tuple[str, ...] = ()
+    cursor = 0
+    for order_index, item in enumerate(layout_items, start=1):
+        if text_parts:
+            text_parts.append("\n")
+            cursor += 1
+        start_char = cursor
+        text_parts.append(item.text)
+        cursor += len(item.text)
+        end_char = cursor
+        if item.node_type == "heading":
+            current_section_path = (item.text,)
+        region_ids: list[str] = []
+        for region_index, region in enumerate(item.regions, start=1):
+            region_id = f"srg_{representation_key}_{order_index:04d}_{region_index:02d}"
+            region_ids.append(region_id)
+            source_regions.append(
+                SourceRegion(
+                    id=region_id,
+                    representation_id=representation_id,
+                    coordinate_system="pdf_points_top_left_v1",
+                    page_number=region.page_number,
+                    page_width=region.page_width,
+                    page_height=region.page_height,
+                    left=region.left,
+                    top=region.top,
+                    right=region.right,
+                    bottom=region.bottom,
+                )
+            )
+        nodes.append(
+            DocumentNode(
+                id=f"nod_{representation_key}_{order_index:04d}",
+                representation_id=representation_id,
+                parent_node_id=f"nod_{representation_key}_document",
+                node_type=item.node_type,
+                order_index=order_index,
+                structural_path=("document", item.node_type, f"{order_index:04d}"),
+                section_path=current_section_path,
+                text_view_id=text_view_id,
+                start_char=start_char,
+                end_char=end_char,
+                source_region_ids=tuple(region_ids),
+            )
+        )
+    return "".join(text_parts), tuple(nodes), tuple(source_regions)
+
+
+def _quality_report(
+    *,
+    quality_id: str,
+    representation_id: str,
+    page_geometry: tuple[_PageGeometry, ...],
+    nodes: tuple[DocumentNode, ...],
+    source_regions: tuple[SourceRegion, ...],
+    logical_text: str,
+) -> ParseQualityReport:
+    expected_pages = {page.page_number for page in page_geometry}
+    covered_pages = {region.page_number for region in source_regions}
+    content_nodes = nodes[1:]
+    issues: list[str] = []
+    if not logical_text:
+        issues.append("empty_logical_text")
+    if not content_nodes:
+        issues.append("missing_content_nodes")
+    if any(not node.source_region_ids for node in content_nodes):
+        issues.append("content_node_missing_source_region")
+    if covered_pages != expected_pages:
+        issues.append("missing_page_region_coverage")
+    return ParseQualityReport(
+        id=quality_id,
+        representation_id=representation_id,
+        metric_values={
+            "page_count": len(page_geometry),
+            "covered_page_count": len(covered_pages),
+            "logical_text_char_count": len(logical_text),
+            "reading_order_node_count": len(content_nodes),
+            "heading_node_count": sum(node.node_type == "heading" for node in content_nodes),
+            "paragraph_node_count": sum(node.node_type == "paragraph" for node in content_nodes),
+            "source_region_count": len(source_regions),
+        },
+        issues=tuple(issues),
+        analyzability=(
+            RepresentationAnalyzability.ACCEPTABLE
+            if not issues
+            else RepresentationAnalyzability.BLOCKED
+        ),
     )
