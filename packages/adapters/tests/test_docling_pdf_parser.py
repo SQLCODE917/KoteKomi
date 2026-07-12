@@ -40,6 +40,51 @@ def test_docling_parser_raises_when_docling_load_fails(
         )
 
 
+@pytest.mark.parametrize(
+    ("exception_name", "expected_reason"),
+    (
+        (
+            "SecurityError",
+            "PDF source is inaccessible under the configured security policy.",
+        ),
+        (
+            "OperationNotAllowed",
+            "PDF source access is not permitted by the configured policy.",
+        ),
+        (
+            "DocumentLoadError",
+            "PDF source cannot be loaded by the configured parser.",
+        ),
+    ),
+)
+def test_docling_parser_returns_a_typed_blocked_result_for_source_conditions(
+    monkeypatch: pytest.MonkeyPatch,
+    exception_name: str,
+    expected_reason: str,
+) -> None:
+    from docling import exceptions
+    from kotekomi_adapters import docling_pdf_parser
+
+    def raise_source_condition() -> tuple[object, object, object, object, object]:
+        raise getattr(exceptions, exception_name)("fixture source condition")
+
+    raw_pdf = b"%PDF-1.7\nfixture"
+    document = Document(
+        id="doc_pdf_fixture",
+        source_id="src_pdf_fixture",
+        content_sha256=hashlib.sha256(raw_pdf).hexdigest(),
+    )
+    monkeypatch.setattr(docling_pdf_parser, "_load_docling_components", raise_source_condition)
+
+    result = DoclingPdfParser(DoclingPdfParserConfig()).parse(
+        PdfParseInput(document, raw_pdf, "pdf_policy_v1", "ptf_fixture", NOW)
+    )
+
+    assert result.representation_bundle is None
+    assert result.blocking_reasons == (expected_reason,)
+    assert result.preflight.warnings == ("source_access_blocked", expected_reason)
+
+
 def test_docling_bundle_identity_derives_from_processing_task() -> None:
     from kotekomi_adapters import docling_pdf_parser
 

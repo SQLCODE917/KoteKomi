@@ -11,6 +11,7 @@ from kotekomi_adapters import (
     SQLiteLedgerRepository,
     sqlite_ledger_transaction,
 )
+from kotekomi_adapters.docling_pdf_parser import DoclingPdfParser, DoclingPdfParserConfig
 from kotekomi_application import (
     BuildIdentity,
     BundleCommitOutcome,
@@ -314,6 +315,43 @@ def test_pdf_production_path_persists_blocked_diagnostic_bundle(tmp_path: Path) 
     assert attempt_outcome is not None
     assert attempt_outcome.status is ProcessingAttemptStatus.BLOCKED
     assert attempt_outcome.output_artifacts
+
+
+def test_pdf_production_path_records_docling_source_access_as_blocked(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from docling import exceptions
+    from kotekomi_adapters import docling_pdf_parser
+
+    def raise_security_error() -> tuple[object, object, object, object, object]:
+        raise exceptions.SecurityError("fixture source access blocked")
+
+    ledger_path = tmp_path / "ledger.db"
+    document_id, raw_blob_id = _initialize_captured_pdf(ledger_path)
+    monkeypatch.setattr(docling_pdf_parser, "_load_docling_components", raise_security_error)
+
+    with sqlite_ledger_transaction(ledger_path) as repository:
+        result = ingest_pdf(
+            _ingest_input(document_id, raw_blob_id),
+            repository,
+            DoclingPdfParser(DoclingPdfParserConfig()),
+            Uuid4ProcessingAttemptIdFactory(),
+        )
+
+    assert result.representation_id is None
+    assert result.blocking_reasons == (
+        "PDF source is inaccessible under the configured security policy.",
+    )
+    task_id = _only_processing_task_id(ledger_path)
+    with sqlite_ledger_transaction(ledger_path) as repository:
+        attempts = repository.list_processing_attempts(task_id)
+        outcome = repository.get_processing_attempt_outcome(attempts[0].id)
+        assert repository.list_document_representations() == ()
+
+    assert outcome is not None
+    assert outcome.status is ProcessingAttemptStatus.BLOCKED
+    assert outcome.failure is None
 
 
 def test_pdf_production_path_records_validation_failure_without_representation(

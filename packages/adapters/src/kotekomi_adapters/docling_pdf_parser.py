@@ -87,10 +87,23 @@ class DoclingPdfParser(PdfDocumentParser):
                 document_stream_type(
                     name=f"{parse_input.document.id}.pdf",
                     stream=BytesIO(parse_input.raw_bytes),
-                )
+                ),
+                raises_on_error=False,
             )
+            blocking_reasons = _conversion_blocking_reasons(conversion)
+            if blocking_reasons:
+                return PdfParseResult(
+                    preflight=_blocked_preflight(parser_version, blocking_reasons),
+                    representation_bundle=None,
+                    blocking_reasons=blocking_reasons,
+                )
+            if _conversion_failed(conversion):
+                raise RuntimeError("Docling conversion returned a processor failure status.")
             logical_text = conversion.document.export_to_markdown()
         except Exception as exc:
+            blocked_result = _source_blocked_result(exc, parser_version)
+            if blocked_result is not None:
+                return blocked_result
             raise RuntimeError(f"Docling conversion failed: {type(exc).__name__}") from exc
         preflight = _preflight_from_document(conversion.document, parser_version)
         bundle = build_docling_blocked_bundle(
@@ -99,6 +112,7 @@ class DoclingPdfParser(PdfDocumentParser):
             parser_version=parser_version,
             config=self._config,
         )
+
         return PdfParseResult(
             preflight=preflight,
             representation_bundle=bundle,
@@ -146,6 +160,58 @@ def _preflight_from_document(document: DoclingDocument, parser_version: str) -> 
         page_count=len(pages),
         pages=pages,
         warnings=("embedded_text_metrics_pending",),
+    )
+
+
+def _conversion_blocking_reasons(conversion: Any) -> tuple[str, ...]:
+    categories = {
+        str(getattr(getattr(error, "category", None), "value", ""))
+        for error in getattr(conversion, "errors", ())
+    }
+    reasons: list[str] = []
+    if "policy" in categories:
+        reasons.append("PDF source is blocked by the configured extraction policy.")
+    if "source_unavailable" in categories:
+        reasons.append("PDF source is inaccessible to the configured parser.")
+    return tuple(reasons)
+
+
+def _conversion_failed(conversion: Any) -> bool:
+    status = str(getattr(getattr(conversion, "status", None), "value", ""))
+    return status not in {"success", "partial_success"}
+
+
+def _source_blocked_result(
+    error: Exception,
+    parser_version: str,
+) -> PdfParseResult | None:
+    try:
+        from docling.exceptions import DocumentLoadError, OperationNotAllowed, SecurityError
+    except ImportError:
+        return None
+    if isinstance(error, SecurityError):
+        reasons = ("PDF source is inaccessible under the configured security policy.",)
+    elif isinstance(error, OperationNotAllowed):
+        reasons = ("PDF source access is not permitted by the configured policy.",)
+    elif isinstance(error, DocumentLoadError):
+        reasons = ("PDF source cannot be loaded by the configured parser.",)
+    else:
+        return None
+    return PdfParseResult(
+        preflight=_blocked_preflight(parser_version, reasons),
+        representation_bundle=None,
+        blocking_reasons=reasons,
+    )
+
+
+def _blocked_preflight(parser_version: str, reasons: tuple[str, ...]) -> PdfPreflight:
+    return PdfPreflight(
+        parser_name="docling",
+        parser_version=parser_version,
+        encrypted=False,
+        page_count=0,
+        pages=(),
+        warnings=("source_access_blocked", *reasons),
     )
 
 
