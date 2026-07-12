@@ -432,18 +432,29 @@ def test_commit_authoritative_capture_creates_source_document_and_provenance() -
     assert result.raw_path == raw_blob.storage_locator
     assert result.extracted_text_path == f"documents/extracted/{result.document_id}.txt"
     assert document.content_sha256 == hashlib.sha256(raw_bytes).hexdigest()
-    assert provenance.activity_type == "source_file_ingest"
+    assert provenance.activity_type == "source_file_representation"
     assert provenance.agent == "kotekomi"
-    assert provenance.input_ids == (str(FIXTURE_PATH),)
-    assert provenance.output_ids == (
-        result.source_id,
-        next(iter(ledger.raw_blobs)),
-        next(iter(ledger.source_captures)),
+    assert provenance.input_ids == (
         result.document_id,
+        ledger.document_representations[result.representation_id].processing_task_fingerprint_id,
+    )
+    assert provenance.output_ids == (
         result.representation_id,
         f"tvw_{result.representation_id.removeprefix('rep_')}_logical",
         f"nod_{result.representation_id.removeprefix('rep_')}_document",
         f"pqr_{result.representation_id.removeprefix('rep_')}_quality_v1",
+    )
+    capture_provenance = next(
+        activity
+        for activity in ledger.provenance_activities.values()
+        if activity.activity_type == "source_file_capture"
+    )
+    assert capture_provenance.input_ids == (str(FIXTURE_PATH),)
+    assert capture_provenance.output_ids == (
+        result.source_id,
+        raw_blob.id,
+        next(iter(ledger.source_captures)),
+        result.document_id,
     )
     representation = ledger.document_representations[result.representation_id]
     representation_key = result.representation_id.removeprefix("rep_")
@@ -484,7 +495,61 @@ def test_commit_authoritative_capture_is_idempotent_after_records_exist() -> Non
     assert len(ledger.text_views) == 1
     assert len(ledger.document_nodes) == 1
     assert len(ledger.parse_quality_reports) == 1
-    assert len(ledger.provenance_activities) == 1
+    assert len(ledger.provenance_activities) == 2
+
+
+def test_commit_authoritative_capture_creates_new_representation_for_changed_build_identity() -> (
+    None
+):
+    raw_bytes = FIXTURE_PATH.read_bytes()
+    archive = FakeArchiveStore()
+    ledger = FakeLedgerRepository()
+    first_request = AuthoritativeCaptureRequest(
+        local_file_path=str(FIXTURE_PATH),
+        filename=FIXTURE_PATH.name,
+        raw_bytes=raw_bytes,
+        ingested_at=NOW,
+        build_identity=BUILD_IDENTITY,
+    )
+    second_request = AuthoritativeCaptureRequest(
+        local_file_path=str(FIXTURE_PATH),
+        filename=FIXTURE_PATH.name,
+        raw_bytes=raw_bytes,
+        ingested_at=NOW,
+        build_identity=BuildIdentity("fixture", "changed-revision", "a" * 64, "1"),
+    )
+
+    first = commit_authoritative_capture(first_request, archive, ledger)
+    first_bundle = ledger.get_document_representation_bundle(first.representation_id)
+    first_provenance = ledger.provenance_activities[first.provenance_activity_id]
+    second = commit_authoritative_capture(second_request, archive, ledger)
+
+    assert first.source_id == second.source_id
+    assert first.document_id == second.document_id
+    assert first.representation_id != second.representation_id
+    assert first_bundle == ledger.get_document_representation_bundle(first.representation_id)
+    assert first_provenance == ledger.provenance_activities[first.provenance_activity_id]
+    assert len(ledger.raw_blobs) == 1
+    assert len(ledger.source_captures) == 1
+    assert len(ledger.processing_tasks) == 2
+    assert len(ledger.document_representations) == 2
+    assert len(ledger.processing_attempts) == 2
+    assert len(ledger.processing_outcomes) == 2
+    assert len(ledger.provenance_activities) == 3
+    assert {activity.activity_type for activity in ledger.provenance_activities.values()} == {
+        "source_file_capture",
+        "source_file_representation",
+    }
+    assert (
+        sum(
+            activity.activity_type == "source_file_representation"
+            for activity in ledger.provenance_activities.values()
+        )
+        == 2
+    )
+    assert {outcome.status for outcome in ledger.processing_outcomes.values()} == {
+        ProcessingAttemptStatus.SUCCEEDED
+    }
 
 
 def test_commit_authoritative_capture_records_failed_attempt_for_incomplete_reuse_closure() -> None:
@@ -679,4 +744,4 @@ def test_commit_authoritative_capture_repairs_capture_then_completes_representat
     assert repaired.created is False
     assert len(ledger.documents) == 1
     assert len(ledger.document_representations) == 1
-    assert len(ledger.provenance_activities) == 1
+    assert len(ledger.provenance_activities) == 2

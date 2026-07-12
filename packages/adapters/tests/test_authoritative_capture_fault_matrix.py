@@ -145,13 +145,15 @@ def faulting_transaction(ledger_path: Path, checkpoint: str) -> Generator[Faulti
         connection.close()
 
 
-def _request() -> AuthoritativeCaptureRequest:
+def _request(
+    build_identity: BuildIdentity = BUILD_IDENTITY,
+) -> AuthoritativeCaptureRequest:
     return AuthoritativeCaptureRequest(
         local_file_path="fault-matrix.md",
         filename="fault-matrix.md",
         raw_bytes=RAW_BYTES,
         ingested_at=NOW,
-        build_identity=BUILD_IDENTITY,
+        build_identity=build_identity,
     )
 
 
@@ -232,10 +234,116 @@ def test_authoritative_capture_fault_matrix_converges_after_restart(
         outcomes = connection.execute(
             "SELECT attempt_id, status FROM processing_attempt_outcomes"
         ).fetchall()
-    assert set(counts.values()) == {1}
+    assert counts == {
+        "sources": 1,
+        "raw_blobs": 1,
+        "source_captures": 1,
+        "capture_document_resolutions": 1,
+        "documents": 1,
+        "document_representations": 1,
+        "text_views": 1,
+        "document_nodes": 1,
+        "parse_quality_reports": 1,
+        "provenance_activities": 2,
+        "processing_task_fingerprints": 1,
+    }
     assert {attempt_id for attempt_id, _status in outcomes} == attempt_ids
     assert {status for _attempt_id, status in outcomes} <= {
         ProcessingAttemptStatus.SUCCEEDED.value,
         ProcessingAttemptStatus.FAILED.value,
         ProcessingAttemptStatus.INTERRUPTED.value,
     }
+
+
+def test_authoritative_capture_creates_new_representation_for_changed_build_identity(
+    tmp_path: Path,
+) -> None:
+    ledger_path = tmp_path / "ledger.db"
+    archive_path = tmp_path / "archive"
+    SQLiteLedgerInitializer(ledger_path).initialize()
+    archive = LocalArchiveStore(archive_path)
+    archive.initialize()
+
+    with sqlite3.connect(ledger_path) as connection:
+        connection.execute("PRAGMA foreign_keys = ON")
+        connection.execute("BEGIN")
+        repository = SQLiteLedgerRepository(connection)
+        first = commit_authoritative_capture(
+            _request(), archive, repository, Uuid4ProcessingAttemptIdFactory()
+        )
+        first_bundle = repository.get_document_representation_bundle(first.representation_id)
+        first_provenance = repository.get_provenance_activity(first.provenance_activity_id)
+        connection.commit()
+
+    changed_build_identity = BuildIdentity(
+        "fault-matrix",
+        "changed-revision",
+        "a" * 64,
+        "1",
+    )
+    with sqlite3.connect(ledger_path) as connection:
+        connection.execute("PRAGMA foreign_keys = ON")
+        connection.execute("BEGIN")
+        repository = SQLiteLedgerRepository(connection)
+        second = commit_authoritative_capture(
+            _request(changed_build_identity),
+            archive,
+            repository,
+            Uuid4ProcessingAttemptIdFactory(),
+        )
+        connection.commit()
+
+    with sqlite3.connect(ledger_path) as connection:
+        connection.execute("PRAGMA foreign_keys = ON")
+        repository = SQLiteLedgerRepository(connection)
+        preserved_first_bundle = repository.get_document_representation_bundle(
+            first.representation_id
+        )
+        preserved_first_provenance = repository.get_provenance_activity(
+            first.provenance_activity_id
+        )
+        provenance_activity_types = tuple(
+            activity.activity_type for activity in repository.list_provenance_activities()
+        )
+        counts = {
+            table: connection.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+            for table in (
+                "sources",
+                "raw_blobs",
+                "source_captures",
+                "capture_document_resolutions",
+                "documents",
+                "document_representations",
+                "processing_task_fingerprints",
+                "processing_attempts",
+                "processing_attempt_outcomes",
+                "provenance_activities",
+            )
+        }
+        outcome_statuses = connection.execute(
+            "SELECT status FROM processing_attempt_outcomes ORDER BY id"
+        ).fetchall()
+
+    assert first.source_id == second.source_id
+    assert first.document_id == second.document_id
+    assert first.representation_id != second.representation_id
+    assert first_bundle == preserved_first_bundle
+    assert first_provenance == preserved_first_provenance
+    assert counts == {
+        "sources": 1,
+        "raw_blobs": 1,
+        "source_captures": 1,
+        "capture_document_resolutions": 1,
+        "documents": 1,
+        "document_representations": 2,
+        "processing_task_fingerprints": 2,
+        "processing_attempts": 2,
+        "processing_attempt_outcomes": 2,
+        "provenance_activities": 3,
+    }
+    assert provenance_activity_types.count("source_file_capture") == 1
+    assert provenance_activity_types.count("source_file_representation") == 2
+    assert outcome_statuses == [
+        (ProcessingAttemptStatus.SUCCEEDED.value,),
+        (ProcessingAttemptStatus.SUCCEEDED.value,),
+    ]

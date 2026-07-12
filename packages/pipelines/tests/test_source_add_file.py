@@ -95,23 +95,38 @@ def test_source_add_file_ingests_fixture_into_ledger_and_archive(
     assert len(text_views) == 1
     assert len(document_nodes) == 1
     assert len(parse_quality_reports) == 1
-    assert len(provenance_activities) == 1
+    assert len(provenance_activities) == 2
     assert task_count == 1
     assert len(attempt_rows) == 1
     assert outcome_rows == [(attempt_rows[0][0], "succeeded")]
     source = sources[0]
     document = documents[0]
-    provenance_activity = provenance_activities[0]
+    capture_provenance = next(
+        activity
+        for activity in provenance_activities
+        if activity.activity_type == "source_file_capture"
+    )
+    representation_provenance = next(
+        activity
+        for activity in provenance_activities
+        if activity.activity_type == "source_file_representation"
+    )
     assert source.canonical_identity_key == str(FIXTURE_PATH.resolve())
     assert raw_blobs[0].storage_locator.startswith("sources/raw/blb_")
     assert (archive_path / raw_blobs[0].storage_locator).is_file()
     assert (archive_path / f"documents/extracted/{document.id}.txt").is_file()
-    assert provenance_activity.activity_type == "source_file_ingest"
-    assert provenance_activity.output_ids == (
+    assert capture_provenance.input_ids == (str(FIXTURE_PATH),)
+    assert capture_provenance.output_ids == (
         source.id,
         raw_blobs[0].id,
         source_captures[0].id,
         document.id,
+    )
+    assert representation_provenance.input_ids == (
+        document.id,
+        document_representations[0].processing_task_fingerprint_id,
+    )
+    assert representation_provenance.output_ids == (
         document_representations[0].id,
         f"tvw_{document_representations[0].id.removeprefix('rep_')}_logical",
         f"nod_{document_representations[0].id.removeprefix('rep_')}_document",
@@ -157,7 +172,7 @@ def test_source_add_file_is_idempotent(
         assert len(repository.list_text_views()) == 1
         assert len(repository.list_document_nodes()) == 1
         assert len(repository.list_parse_quality_reports()) == 1
-        assert len(repository.list_provenance_activities()) == 1
+        assert len(repository.list_provenance_activities()) == 2
     with sqlite3.connect(ledger_path) as connection:
         assert (
             connection.execute("SELECT COUNT(*) FROM processing_task_fingerprints").fetchone()[0]

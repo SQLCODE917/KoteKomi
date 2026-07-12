@@ -46,6 +46,7 @@ from kotekomi_application.representation_identity import (
 )
 from kotekomi_application.source_capture import (
     CaptureLedger,
+    CaptureOutcome,
     CaptureRequest,
     SourceIdentityHint,
     StableSourceIdentityPolicy,
@@ -168,7 +169,6 @@ def commit_authoritative_capture(
         storage_locator=f"sources/raw/{identity.raw_blob_id}.bin",
         extracted_text_locator=f"documents/extracted/{identity.document_id}.txt",
     )
-    provenance_activity_id = f"prv_{identity.source_capture_id.removeprefix('cap_')}"
     task = processing_task_fingerprint(
         task_kind="local_file_document_representation",
         document_id=identity.document_id,
@@ -182,6 +182,10 @@ def commit_authoritative_capture(
         output_contract_version="1",
     )
     representation_id = deterministic_representation_id(task.id)
+    representation_provenance_activity_id = _representation_provenance_activity_id(
+        task.id,
+        representation_id,
+    )
     representation_key = representation_id.removeprefix("rep_")
     text_view_id = f"tvw_{representation_key}_logical"
     document_node_id = f"nod_{representation_key}_document"
@@ -194,13 +198,21 @@ def commit_authoritative_capture(
     )
 
     existing_capture = ledger_repository.get_source_capture(identity.source_capture_id)
-    existing_provenance = ledger_repository.get_provenance_activity(provenance_activity_id)
+    existing_representation = ledger_repository.get_document_representation_bundle(
+        representation_id
+    )
     if (
         existing_capture is not None
         and existing_document is not None
-        and existing_provenance is not None
+        and existing_representation is not None
     ):
         outcome = capture_source(request, ledger_repository, identity_policy)
+        ledger_repository.save_provenance_activity(
+            _capture_provenance_activity(
+                capture=outcome,
+                local_file_path=ingest_input.local_file_path,
+            )
+        )
         attempt, _ = execute_processing_task(
             task=task,
             ledger=ledger_repository,
@@ -214,6 +226,7 @@ def commit_authoritative_capture(
                 raw_bytes=ingest_input.raw_bytes,
                 document_id=existing_document.id,
                 representation_id=representation_id,
+                representation_provenance_activity_id=representation_provenance_activity_id,
             ),
             failure_for_exception=lambda exc: ProcessingFailure(
                 code="incomplete_closure",
@@ -242,7 +255,7 @@ def commit_authoritative_capture(
             source_id=outcome.source.id,
             document_id=outcome.document.id,
             representation_id=representation_id,
-            provenance_activity_id=provenance_activity_id,
+            provenance_activity_id=representation_provenance_activity_id,
             raw_path=f"sources/raw/{outcome.raw_blob.id}.bin",
             extracted_text_path=f"documents/extracted/{outcome.document.id}.txt",
             created=False,
@@ -274,6 +287,12 @@ def commit_authoritative_capture(
             archive_store.promote_staged_object(staged_object)
 
         outcome = capture_source(request, ledger_repository, identity_policy)
+        ledger_repository.save_provenance_activity(
+            _capture_provenance_activity(
+                capture=outcome,
+                local_file_path=ingest_input.local_file_path,
+            )
+        )
         document = outcome.document
 
         def commit_representation(attempt: ProcessingAttempt) -> None:
@@ -346,15 +365,11 @@ def commit_authoritative_capture(
                 quality_report=quality_report,
             )
             provenance_activity = ProvenanceActivity(
-                id=provenance_activity_id,
-                activity_type="source_file_ingest",
+                id=representation_provenance_activity_id,
+                activity_type="source_file_representation",
                 agent="kotekomi",
-                input_ids=(ingest_input.local_file_path,),
+                input_ids=(document.id, task.id),
                 output_ids=(
-                    outcome.source.id,
-                    outcome.raw_blob.id,
-                    outcome.source_capture.id,
-                    document.id,
                     representation_id,
                     text_view_id,
                     document_node_id,
@@ -434,7 +449,7 @@ def commit_authoritative_capture(
         source_id=outcome.source.id,
         document_id=document.id,
         representation_id=representation_id,
-        provenance_activity_id=provenance_activity_id,
+        provenance_activity_id=representation_provenance_activity_id,
         raw_path=f"sources/raw/{outcome.raw_blob.id}.bin",
         extracted_text_path=f"documents/extracted/{document.id}.txt",
         created=outcome.created,
@@ -449,6 +464,7 @@ def _require_complete_existing_closure(
     raw_bytes: bytes,
     document_id: str,
     representation_id: str,
+    representation_provenance_activity_id: str,
 ) -> None:
     try:
         archived_raw = archive_store.read_raw_source(raw_blob_id)
@@ -460,6 +476,17 @@ def _require_complete_existing_closure(
     bundle = ledger_repository.get_document_representation_bundle(representation_id)
     if bundle is None:
         raise ValueError("INCOMPLETE_CLOSURE: DocumentRepresentationBundle is missing.")
+    provenance_activity = ledger_repository.get_provenance_activity(
+        representation_provenance_activity_id
+    )
+    if (
+        provenance_activity is None
+        or provenance_activity.activity_type != "source_file_representation"
+        or representation_id not in provenance_activity.output_ids
+    ):
+        raise ValueError(
+            "INCOMPLETE_CLOSURE: representation production ProvenanceActivity is missing."
+        )
     text_view = next(
         (view for view in bundle.text_views if view.kind is TextViewKind.LOGICAL), None
     )
@@ -491,6 +518,39 @@ def _require_repairable_capture_closure(
 
 def _local_file_request_fingerprint(source_key: str, content_sha256: str) -> str:
     return hashlib.sha256(f"local_file_v1:{source_key}:{content_sha256}".encode()).hexdigest()
+
+
+def _capture_provenance_activity_id(source_capture_id: str) -> str:
+    return f"prv_{source_capture_id.removeprefix('cap_')}"
+
+
+def _representation_provenance_activity_id(
+    processing_task_fingerprint_id: str,
+    representation_id: str,
+) -> str:
+    value = (
+        f"{processing_task_fingerprint_id}:{representation_id}:canonical_document_representation"
+    )
+    return f"prv_{hashlib.sha256(value.encode()).hexdigest()[:HASH_ID_LENGTH]}"
+
+
+def _capture_provenance_activity(
+    *,
+    capture: CaptureOutcome,
+    local_file_path: str,
+) -> ProvenanceActivity:
+    source = capture.source
+    raw_blob = capture.raw_blob
+    source_capture = capture.source_capture
+    document = capture.document
+    return ProvenanceActivity(
+        id=_capture_provenance_activity_id(source_capture.id),
+        activity_type="source_file_capture",
+        agent="kotekomi",
+        input_ids=(local_file_path,),
+        output_ids=(source.id, raw_blob.id, source_capture.id, document.id),
+        occurred_at=source_capture.transaction_time,
+    )
 
 
 def _cleanup_archive_objects(
