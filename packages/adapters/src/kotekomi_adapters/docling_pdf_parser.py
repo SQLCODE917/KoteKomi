@@ -197,7 +197,7 @@ def _parse_with_large_stack_worker(
     }
     environment = {**os.environ, "KOTEKOMI_DOCLING_WORKER": "1"}
     completed: subprocess.CompletedProcess[bytes] | None = None
-    for _ in range(3):
+    for _ in range(5):
         completed = subprocess.run(
             [sys.executable, "-m", "kotekomi_adapters.docling_pdf_worker"],
             input=json.dumps(request, separators=(",", ":")).encode(),

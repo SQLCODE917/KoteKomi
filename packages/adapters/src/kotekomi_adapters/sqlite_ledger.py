@@ -28,6 +28,7 @@ from kotekomi_domain import (
     AssertionEvidenceLink,
     Briefing,
     CaptureDocumentResolution,
+    ContextManifestArtifact,
     Document,
     DocumentEdge,
     DocumentNode,
@@ -104,6 +105,7 @@ IMMUTABLE_TABLES = frozenset(
         "processing_attempt_outcomes",
         "assertion_evidence_links",
         "evidence_reanchoring_relations",
+        "context_manifest_artifacts",
         "extraction_tasks",
         "model_runs",
     }
@@ -132,6 +134,10 @@ RELATIONAL_OWNERSHIP_COLUMNS: dict[str, tuple[tuple[str, str], ...]] = {
     "document_edges": (("representation_id", "representation_id"),),
     "source_regions": (("representation_id", "representation_id"),),
     "parse_quality_reports": (("representation_id", "representation_id"),),
+    "context_manifest_artifacts": (
+        ("representation_id", "representation_id"),
+        ("manifest_digest", "manifest_digest"),
+    ),
     "extraction_tasks": (
         ("context_manifest_id", "context_manifest_id"),
         ("task_fingerprint", "task_fingerprint"),
@@ -189,6 +195,7 @@ EVIDENCE_REANCHORING_RELATION_SPEC = RecordSpec(
     "evidence_reanchoring_relations",
     EvidenceReanchoringRelation,
 )
+CONTEXT_MANIFEST_ARTIFACT_SPEC = RecordSpec("context_manifest_artifacts", ContextManifestArtifact)
 EXTRACTION_TASK_SPEC = RecordSpec("extraction_tasks", ExtractionTask)
 MODEL_RUN_SPEC = RecordSpec("model_runs", ModelRun)
 ASSERTION_SPEC = RecordSpec("assertions", Assertion)
@@ -237,6 +244,7 @@ REQUIRED_LEDGER_TABLES = (
     "processing_attempt_outcomes",
     "assertion_evidence_links",
     "evidence_reanchoring_relations",
+    "context_manifest_artifacts",
     "extraction_tasks",
     "model_runs",
     "assertions",
@@ -835,6 +843,12 @@ class SQLiteLedgerRepository:
 
     def list_evidence_validation_attempts(self) -> tuple[EvidenceValidationAttempt, ...]:
         return self._list(EVIDENCE_VALIDATION_ATTEMPT_SPEC)
+
+    def save_context_manifest_artifact(self, record: ContextManifestArtifact) -> None:
+        self._save(CONTEXT_MANIFEST_ARTIFACT_SPEC, record)
+
+    def get_context_manifest_artifact(self, record_id: str) -> ContextManifestArtifact | None:
+        return self._get(CONTEXT_MANIFEST_ARTIFACT_SPEC, record_id)
 
     def save_extraction_task(self, record: ExtractionTask) -> None:
         self._save(EXTRACTION_TASK_SPEC, record)

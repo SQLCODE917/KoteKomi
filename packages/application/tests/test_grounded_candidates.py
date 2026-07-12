@@ -5,8 +5,6 @@ from datetime import UTC, datetime
 import pytest
 from kotekomi_application import (
     BoundedExtractionInput,
-    ContextCandidate,
-    ContextCandidateRole,
     ContextManifest,
     ContextManifestStatus,
     GroundedAssertionCandidate,
@@ -18,10 +16,13 @@ from kotekomi_application import (
     ModelTaskRequest,
     ModelTaskResponse,
     build_grounded_candidate_context,
+    context_manifest_digest,
+    persist_context_manifest,
     run_bounded_extraction,
     submit_grounded_candidate_batch,
 )
 from kotekomi_domain import (
+    ContextManifestArtifact,
     Document,
     DocumentNode,
     DocumentRepresentation,
@@ -66,6 +67,7 @@ class FakeGroundedCandidateLedger:
         self.proposed_changes: dict[str, ProposedChange] = {}
         self.extraction_tasks: dict[str, ExtractionTask] = {}
         self.model_runs: dict[str, ModelRun] = {}
+        self.manifests: dict[str, ContextManifestArtifact] = {}
 
     def get_source(self, record_id: str) -> Source | None:
         return self.source if record_id == self.source.id else None
@@ -108,6 +110,12 @@ class FakeGroundedCandidateLedger:
 
     def save_model_run(self, record: ModelRun) -> None:
         self.model_runs[record.id] = record
+
+    def save_context_manifest_artifact(self, record: ContextManifestArtifact) -> None:
+        self.manifests[record.id] = record
+
+    def get_context_manifest_artifact(self, record_id: str) -> ContextManifestArtifact | None:
+        return self.manifests.get(record_id)
 
 
 class FakeModelOutputArchive:
@@ -379,21 +387,11 @@ def test_staged_extraction_archives_invalid_task_local_output_without_proposals(
         renderer_version="fixture_renderer_v1",
         planner_policy_id="fixture_policy_v1",
         tokenizer_id="fixture_tokenizer_v1",
+        model_profile_id="fixture-model",
         model_context_limit=64,
         reserved_output_tokens=8,
         safety_margin_tokens=4,
-        selected_candidates=(
-            ContextCandidate(
-                node_id=ledger.bundle.nodes[0].id,
-                role=ContextCandidateRole.FOCUS,
-                reason_code="focus_node",
-                required=True,
-                priority=1,
-                dependency_path=(),
-                source_node_ids=(ledger.bundle.nodes[0].id,),
-                estimated_tokens=3,
-            ),
-        ),
+        selected_candidates=(),
         excluded_candidates=(),
         rendered_segments=(),
         rendered_input=rendered_input,
@@ -402,6 +400,8 @@ def test_staged_extraction_archives_invalid_task_local_output_without_proposals(
         manifest_digest="c" * 64,
         status=ContextManifestStatus.READY,
     )
+    manifest = replace(manifest, manifest_digest=context_manifest_digest(manifest))
+    persist_context_manifest(manifest, ledger)
 
     outcome = run_bounded_extraction(
         BoundedExtractionInput(

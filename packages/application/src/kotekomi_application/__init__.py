@@ -30,6 +30,8 @@ from kotekomi_application.context_planning import (
     ExcludedContextCandidate,
     RenderedContextSegment,
     build_context_manifest,
+    context_manifest_digest,
+    persist_context_manifest,
     plan_analysis_units,
     render_context,
 )
@@ -456,7 +458,9 @@ __all__ = [
     "submit_grounded_candidate_batch",
     "build_grounded_candidate_context",
     "build_context_manifest",
+    "context_manifest_digest",
     "plan_analysis_units",
+    "persist_context_manifest",
     "render_context",
     "verify_evidence_target",
 ]

@@ -16,6 +16,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from kotekomi_application.context_planning import (
     ContextManifest,
     ContextManifestStatus,
+    ContextPlanningLedger,
     render_context,
 )
 from kotekomi_application.grounded_candidates import (
@@ -31,7 +32,7 @@ from kotekomi_application.grounded_candidates import (
 HASH_ID_LENGTH = 24
 
 
-class StagedExtractionLedger(GroundedCandidateLedger, Protocol):
+class StagedExtractionLedger(GroundedCandidateLedger, ContextPlanningLedger, Protocol):
     def save_extraction_task(self, record: ExtractionTask) -> None: ...
     def save_model_run(self, record: ModelRun) -> None: ...
 
@@ -163,7 +164,7 @@ def run_bounded_extraction(
         task_fingerprint=task.task_fingerprint,
         task_type="claim_extraction",
         context_manifest_id=manifest.id,
-        rendered_input=render_context(manifest),
+        rendered_input=render_context(manifest, ledger_repository),
         schema_id=manifest.schema_id,
     )
     try:

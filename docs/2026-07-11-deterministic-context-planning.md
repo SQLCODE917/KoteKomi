@@ -204,6 +204,10 @@ The focus paragraph beginning `The CHIP highlights four key health priorities` m
 
 The manifest must exclude preserved page furniture with an inspectable `furniture_excluded` reason.
 
+The Ledger must persist the complete immutable manifest artifact before it can be rendered for a model task.
+
+Use-time validation must verify the persisted artifact, manifest digest, rendered digest, selected-node segments, and representation ownership.
+
 The same fixture must produce deterministic ready, split, and `context_budget_blocked` outcomes under pinned tokenizer and budget inputs.
 
 ## 13. References

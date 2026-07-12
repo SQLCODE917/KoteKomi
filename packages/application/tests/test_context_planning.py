@@ -12,6 +12,7 @@ from kotekomi_application import (
     render_context,
 )
 from kotekomi_domain import (
+    ContextManifestArtifact,
     DocumentNode,
     DocumentRepresentation,
     DocumentRepresentationBundle,
@@ -41,11 +42,18 @@ class ExactWhitespaceTokenizer:
 class FakeContextPlanningLedger:
     def __init__(self) -> None:
         self.bundle = _bundle()
+        self.manifests: dict[str, ContextManifestArtifact] = {}
 
     def get_document_representation_bundle(
         self, record_id: str
     ) -> DocumentRepresentationBundle | None:
         return self.bundle if record_id == self.bundle.representation.id else None
+
+    def save_context_manifest_artifact(self, record: ContextManifestArtifact) -> None:
+        self.manifests[record.id] = record
+
+    def get_context_manifest_artifact(self, record_id: str) -> ContextManifestArtifact | None:
+        return self.manifests.get(record_id)
 
 
 def _bundle() -> DocumentRepresentationBundle:
@@ -187,7 +195,7 @@ def test_context_planner_includes_required_definition_and_excludes_furniture() -
     assert b"Community Health Improvement Plan (CHIP)" in first.manifest.rendered_input
     assert b"Furniture header" not in first.manifest.rendered_input
     assert first.manifest.input_token_count <= 250
-    assert render_context(first.manifest) == first.manifest.rendered_input
+    assert render_context(first.manifest, ledger) == first.manifest.rendered_input
 
 
 def test_context_planner_splits_multiple_focus_nodes_and_blocks_one_oversized_unit() -> None:
