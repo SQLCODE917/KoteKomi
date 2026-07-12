@@ -130,6 +130,7 @@ class ContextManifest:
     prompt_digest: str
     schema_id: str
     schema_digest: str
+    schema_bytes: bytes
     renderer_version: str
     planner_policy_id: str
     tokenizer_id: str
@@ -176,11 +177,11 @@ def plan_analysis_units(
             focus_nodes=group,
             dependency_nodes=tuple(
                 node
-                    for node in {
+                for node in {
                     dependency.id: dependency
                     for focus in group
                     for dependency in _definition_nodes_for_focus(focus, bundle)
-                    }.values()
+                }.values()
             ),
             policy_id=planning_input.policy_id,
         )
@@ -563,6 +564,7 @@ def _manifest(
         prompt_digest=hashlib.sha256(manifest_input.prompt_bytes).hexdigest(),
         schema_id=manifest_input.schema_id,
         schema_digest=hashlib.sha256(manifest_input.schema_bytes).hexdigest(),
+        schema_bytes=manifest_input.schema_bytes,
         renderer_version=manifest_input.renderer_version,
         planner_policy_id=manifest_input.analysis_unit.planner_policy_id,
         tokenizer_id=tokenizer.tokenizer_id,

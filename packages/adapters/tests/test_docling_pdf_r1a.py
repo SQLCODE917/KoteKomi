@@ -30,6 +30,7 @@ from kotekomi_application import (
     ReviewProposedChangeInput,
     SourceIdentityHint,
     StableSourceIdentityPolicy,
+    Uuid4ModelRunIdFactory,
     Uuid4ProcessingAttemptIdFactory,
     approve_proposed_change,
     build_context_manifest,
@@ -39,6 +40,7 @@ from kotekomi_application import (
     ingest_pdf,
     plan_analysis_units,
     run_bounded_extraction,
+    staged_claim_output_schema_bytes,
     submit_grounded_candidate_batch,
     verify_evidence_target,
 )
@@ -454,7 +456,7 @@ def test_docling_r1d_staged_extraction_publishes_one_task_local_candidate(
                 prompt_id="r1d_claim_extraction",
                 prompt_bytes=b"Extract one grounded source claim.",
                 schema_id="r1d_candidate_schema_v1",
-                schema_bytes=b'{"type":"object","additionalProperties":false}',
+                schema_bytes=staged_claim_output_schema_bytes(),
                 renderer_version="r1d_renderer_v1",
             ),
             repository,
@@ -472,13 +474,10 @@ def test_docling_r1d_staged_extraction_publishes_one_task_local_candidate(
                 "evidence": [
                     {
                         "local_id": "model_evidence",
-                        "text_view_id": text_view.id,
-                        "start_char": start_char,
-                        "end_char": start_char + len(PRIORITY_SENTENCE),
-                        "exact_text": PRIORITY_SENTENCE,
-                        "node_ids": [priority_node.id],
-                        "pdf_region_ids": list(priority_node.source_region_ids),
-                        "suffix_text": PRIORITY_SUFFIX,
+                        "node_id": priority_node.id,
+                        "exact_quote": PRIORITY_SENTENCE,
+                        "node_local_start": start_char - priority_node.start_char,
+                        "node_local_end": start_char + len(PRIORITY_SENTENCE) - priority_node.start_char,
                     }
                 ],
                 "assertions": [
@@ -502,7 +501,6 @@ def test_docling_r1d_staged_extraction_publishes_one_task_local_candidate(
                 document_id=capture.document.id,
                 representation_id=bundle.representation.id,
                 context_manifest=manifest,
-                model_run_id="mrn_r1d_priority_candidate_v1",
                 model_identity=ModelIdentity(
                     "r1d-fixture-model",
                     "b" * 64,
@@ -518,6 +516,7 @@ def test_docling_r1d_staged_extraction_publishes_one_task_local_candidate(
             repository,
             archive,
             runtime,
+            Uuid4ModelRunIdFactory(),
         )
         assert outcome.model_run.status is ModelRunStatus.SUCCEEDED, outcome.model_run.error_message
         assert outcome.proposed_change_batch is not None

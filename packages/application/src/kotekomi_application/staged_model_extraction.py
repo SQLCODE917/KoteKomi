@@ -5,13 +5,14 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import uuid
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Literal, Protocol, cast
 
 from kotekomi_domain import ExtractionTask, ModelRun, ModelRunStatus
 from kotekomi_domain.models import JsonValue
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, TypeAdapter, ValidationError
 
 from kotekomi_application.context_planning import (
     ContextManifest,
@@ -74,13 +75,21 @@ class ModelTaskRuntime(Protocol):
     def run_model_task(self, task: ModelTaskRequest) -> ModelTaskResponse: ...
 
 
+class ModelRunIdFactory(Protocol):
+    def new_model_run_id(self) -> str: ...
+
+
+class Uuid4ModelRunIdFactory:
+    def new_model_run_id(self) -> str:
+        return f"mrn_{uuid.uuid4().hex}"
+
+
 @dataclass(frozen=True)
 class BoundedExtractionInput:
     source_id: str
     document_id: str
     representation_id: str
     context_manifest: ContextManifest
-    model_run_id: str
     model_identity: ModelIdentity
     generation_parameters: dict[str, str | int | float | bool | None]
     validator_version: str
@@ -107,14 +116,10 @@ class _EvidenceOutput(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
     local_id: str
-    text_view_id: str
-    start_char: int
-    end_char: int
-    exact_text: str
-    node_ids: list[str]
-    pdf_region_ids: list[str] = Field(default_factory=list)
-    prefix_text: str = ""
-    suffix_text: str = ""
+    node_id: str
+    exact_quote: str
+    node_local_start: int
+    node_local_end: int
 
 
 class _AssertionOutput(BaseModel):
@@ -150,6 +155,7 @@ def run_bounded_extraction(
     ledger_repository: StagedExtractionLedger,
     archive_store: ModelOutputArchive,
     model_runtime: ModelTaskRuntime,
+    model_run_id_factory: ModelRunIdFactory,
 ) -> BoundedExtractionOutcome:
     """Archive one raw response, validate its task-local candidates, then publish atomically."""
     manifest = extraction_input.context_manifest
@@ -159,6 +165,7 @@ def run_bounded_extraction(
         raise ValueError("Bounded extraction ContextManifest does not match its representation.")
     task = _extraction_task(extraction_input)
     ledger_repository.save_extraction_task(task)
+    model_run_id = model_run_id_factory.new_model_run_id()
     request = ModelTaskRequest(
         extraction_task_id=task.id,
         task_fingerprint=task.task_fingerprint,
@@ -170,34 +177,40 @@ def run_bounded_extraction(
     try:
         response = model_runtime.run_model_task(request)
     except Exception as exc:
-        run = _model_run(extraction_input, task, ModelRunStatus.RUNTIME_FAILED, error=exc)
+        run = _model_run(
+            extraction_input, task, model_run_id, ModelRunStatus.RUNTIME_FAILED, error=exc
+        )
         ledger_repository.save_model_run(run)
         return BoundedExtractionOutcome(task, run, None)
 
     output_digest = hashlib.sha256(response.raw_output).hexdigest()
     archive_store.put_model_run_output(
-        extraction_input.model_run_id,
+        model_run_id,
         response.raw_output,
         output_digest,
     )
     try:
-        parsed = _parse_output(response.raw_output, manifest.schema_id)
+        parsed = _parse_output(response.raw_output, manifest)
         if isinstance(parsed, _AbstentionOutput):
             run = _model_run(
                 extraction_input,
                 task,
+                model_run_id,
                 ModelRunStatus.ABSTAINED,
                 output_digest=output_digest,
             )
             ledger_repository.save_model_run(run)
             return BoundedExtractionOutcome(task, run, None)
         _validate_task_local_references(parsed, manifest)
-        batch_input = _grounded_batch(extraction_input, task, parsed)
+        batch_input = _grounded_batch(
+            extraction_input, task, model_run_id, parsed, ledger_repository
+        )
         batch = submit_grounded_candidate_batch(batch_input, ledger_repository)
     except (ValidationError, ValueError) as exc:
         run = _model_run(
             extraction_input,
             task,
+            model_run_id,
             ModelRunStatus.INVALID_OUTPUT,
             output_digest=output_digest,
             error=exc,
@@ -208,6 +221,7 @@ def run_bounded_extraction(
     run = _model_run(
         extraction_input,
         task,
+        model_run_id,
         ModelRunStatus.SUCCEEDED,
         output_digest=output_digest,
     )
@@ -249,13 +263,14 @@ def _extraction_task(extraction_input: BoundedExtractionInput) -> ExtractionTask
 def _model_run(
     extraction_input: BoundedExtractionInput,
     task: ExtractionTask,
+    model_run_id: str,
     status: ModelRunStatus,
     *,
     output_digest: str | None = None,
     error: Exception | None = None,
 ) -> ModelRun:
     return ModelRun(
-        id=extraction_input.model_run_id,
+        id=model_run_id,
         extraction_task_id=task.id,
         task_fingerprint=task.task_fingerprint,
         model_identity=cast(
@@ -266,9 +281,7 @@ def _model_run(
         prompt_digest=extraction_input.context_manifest.prompt_digest,
         schema_digest=extraction_input.context_manifest.schema_digest,
         generation_parameters=cast(dict[str, JsonValue], extraction_input.generation_parameters),
-        raw_output_artifact_id=(
-            extraction_input.model_run_id if output_digest is not None else None
-        ),
+        raw_output_artifact_id=(model_run_id if output_digest is not None else None),
         output_digest=output_digest,
         status=status,
         error_code=(type(error).__name__ if error is not None else None),
@@ -278,7 +291,13 @@ def _model_run(
     )
 
 
-def _parse_output(raw_output: bytes, schema_id: str) -> _CandidateOutput | _AbstentionOutput:
+def _parse_output(
+    raw_output: bytes, manifest: ContextManifest
+) -> _CandidateOutput | _AbstentionOutput:
+    if hashlib.sha256(manifest.schema_bytes).hexdigest() != manifest.schema_digest:
+        raise ValueError("ContextManifest schema_digest is corrupted.")
+    if manifest.schema_bytes != staged_claim_output_schema_bytes():
+        raise ValueError("ContextManifest schema bytes do not match the staged claim schema.")
     decoded = json.loads(raw_output)
     if not isinstance(decoded, dict):
         raise ValueError("Model task output must be a JSON object.")
@@ -290,7 +309,7 @@ def _parse_output(raw_output: bytes, schema_id: str) -> _CandidateOutput | _Abst
         parsed = _AbstentionOutput.model_validate(payload)
     else:
         raise ValueError("Model task output kind must be candidates or abstain.")
-    if parsed.schema_id != schema_id:
+    if parsed.schema_id != manifest.schema_id:
         raise ValueError("Model task output schema_id does not match the pinned task schema.")
     return parsed
 
@@ -330,8 +349,20 @@ def _validate_task_local_references(
 def _grounded_batch(
     extraction_input: BoundedExtractionInput,
     task: ExtractionTask,
+    model_run_id: str,
     output: _CandidateOutput,
+    ledger_repository: StagedExtractionLedger,
 ) -> GroundedCandidateBatchInput:
+    bundle = ledger_repository.get_document_representation_bundle(
+        extraction_input.representation_id
+    )
+    if bundle is None:
+        raise ValueError("Bounded extraction references a missing DocumentRepresentation.")
+    nodes = {node.id: node for node in bundle.nodes}
+    text_views = {text_view.id: text_view for text_view in bundle.text_views}
+    evidence = tuple(
+        _resolved_evidence_candidate(item, nodes, text_views) for item in output.evidence
+    )
     return GroundedCandidateBatchInput(
         task_fingerprint=task.task_fingerprint,
         source_id=extraction_input.source_id,
@@ -345,20 +376,7 @@ def _grounded_batch(
             GroundedOrganizationCandidate(item.local_id, item.name, item.organization_type)
             for item in output.organizations
         ),
-        evidence=tuple(
-            GroundedEvidenceCandidate(
-                item.local_id,
-                item.text_view_id,
-                item.start_char,
-                item.end_char,
-                item.exact_text,
-                tuple(item.node_ids),
-                tuple(item.pdf_region_ids),
-                item.prefix_text,
-                item.suffix_text,
-            )
-            for item in output.evidence
-        ),
+        evidence=evidence,
         assertions=tuple(
             GroundedAssertionCandidate(
                 item.local_id,
@@ -369,8 +387,46 @@ def _grounded_batch(
             )
             for item in output.assertions
         ),
-        originating_model_run_id=extraction_input.model_run_id,
+        originating_model_run_id=model_run_id,
     )
+
+
+def _resolved_evidence_candidate(
+    output: _EvidenceOutput,
+    nodes: dict[str, object],
+    text_views: dict[str, object],
+) -> GroundedEvidenceCandidate:
+    from kotekomi_domain import DocumentNode, TextView
+
+    node = nodes.get(output.node_id)
+    if not isinstance(node, DocumentNode):
+        raise ValueError("Candidate evidence references an unknown task-local DocumentNode.")
+    text_view = text_views.get(node.text_view_id)
+    if not isinstance(text_view, TextView):
+        raise ValueError("Candidate evidence DocumentNode references a missing TextView.")
+    if output.node_local_start < 0 or output.node_local_end > node.end_char - node.start_char:
+        raise ValueError("Candidate evidence node-local offsets lie outside its visible node.")
+    start_char = node.start_char + output.node_local_start
+    end_char = node.start_char + output.node_local_end
+    exact_text = text_view.text[start_char:end_char]
+    if exact_text != output.exact_quote:
+        raise ValueError("Candidate evidence exact_quote does not match its visible node offsets.")
+    return GroundedEvidenceCandidate(
+        local_id=output.local_id,
+        text_view_id=text_view.id,
+        start_char=start_char,
+        end_char=end_char,
+        exact_text=exact_text,
+        node_ids=(node.id,),
+        pdf_region_ids=node.source_region_ids,
+        prefix_text=text_view.text[max(node.start_char, start_char - 32) : start_char],
+        suffix_text=text_view.text[end_char : min(node.end_char, end_char + 32)],
+    )
+
+
+def staged_claim_output_schema_bytes() -> bytes:
+    schema = TypeAdapter(_CandidateOutput | _AbstentionOutput).json_schema()
+    return json.dumps(schema, ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode()
 
 
 def _manifest_payload(manifest: ContextManifest) -> dict[str, object]:

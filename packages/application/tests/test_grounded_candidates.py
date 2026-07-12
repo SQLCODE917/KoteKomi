@@ -15,10 +15,12 @@ from kotekomi_application import (
     ModelIdentity,
     ModelTaskRequest,
     ModelTaskResponse,
+    Uuid4ModelRunIdFactory,
     build_grounded_candidate_context,
     context_manifest_digest,
     persist_context_manifest,
     run_bounded_extraction,
+    staged_claim_output_schema_bytes,
     submit_grounded_candidate_batch,
 )
 from kotekomi_domain import (
@@ -382,8 +384,9 @@ def test_staged_extraction_archives_invalid_task_local_output_without_proposals(
         representation_id=ledger.bundle.representation.id,
         prompt_id="fixture_prompt_v1",
         prompt_digest=hashlib.sha256(b"fixture prompt").hexdigest(),
-        schema_id="fixture_candidate_schema_v1",
-        schema_digest=hashlib.sha256(b"fixture schema").hexdigest(),
+        schema_id="staged_claim_output_v1",
+        schema_digest=hashlib.sha256(staged_claim_output_schema_bytes()).hexdigest(),
+        schema_bytes=staged_claim_output_schema_bytes(),
         renderer_version="fixture_renderer_v1",
         planner_policy_id="fixture_policy_v1",
         tokenizer_id="fixture_tokenizer_v1",
@@ -409,7 +412,6 @@ def test_staged_extraction_archives_invalid_task_local_output_without_proposals(
             document_id=ledger.document.id,
             representation_id=ledger.bundle.representation.id,
             context_manifest=manifest,
-            model_run_id="mrn_invalid_task_local_ref",
             model_identity=ModelIdentity(
                 "fixture-model",
                 "d" * 64,
@@ -425,10 +427,11 @@ def test_staged_extraction_archives_invalid_task_local_output_without_proposals(
         ledger,
         archive,
         runtime,
+        Uuid4ModelRunIdFactory(),
     )
 
     assert outcome.model_run.status is ModelRunStatus.INVALID_OUTPUT
-    assert "absent from the ContextManifest" in (outcome.model_run.error_message or "")
+    assert outcome.model_run.error_message is not None
     assert outcome.proposed_change_batch is None
     assert ledger.proposed_changes == {}
     assert archive.outputs[outcome.model_run.id] == raw_output

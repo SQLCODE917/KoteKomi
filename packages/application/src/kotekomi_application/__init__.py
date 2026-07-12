@@ -242,11 +242,14 @@ from kotekomi_application.staged_model_extraction import (
     BoundedExtractionOutcome,
     ModelIdentity,
     ModelOutputArchive,
+    ModelRunIdFactory,
     ModelTaskRequest,
     ModelTaskResponse,
     ModelTaskRuntime,
     StagedExtractionLedger,
+    Uuid4ModelRunIdFactory,
     run_bounded_extraction,
+    staged_claim_output_schema_bytes,
 )
 
 __all__ = [
@@ -324,6 +327,7 @@ __all__ = [
     "ModelNotAvailableError",
     "ModelIdentity",
     "ModelOutputArchive",
+    "ModelRunIdFactory",
     "ModelRuntimeBusyError",
     "ModelRuntimeError",
     "ModelRuntimeReadiness",
@@ -398,6 +402,7 @@ __all__ = [
     "AuthoritativeCaptureOutcome",
     "StagedArchiveObject",
     "StagedExtractionLedger",
+    "Uuid4ModelRunIdFactory",
     "commit_authoritative_capture",
     "capture_source",
     "capture_identity",
@@ -448,6 +453,7 @@ __all__ = [
     "run_review_drain",
     "run_review_next_decision",
     "run_bounded_extraction",
+    "staged_claim_output_schema_bytes",
     "resolve_briefing_citation",
     "SourceIdentityHint",
     "SourceIdentityPolicy",
