@@ -45,7 +45,6 @@ class FakeArchiveStore:
         self.staged: dict[str, bytes] = {}
         self.markdown: dict[str, str] = {}
         self.citations_json: dict[str, str] = {}
-        self.deleted_paths: list[str] = []
 
     def initialize(self) -> None:
         return None
@@ -116,18 +115,8 @@ class FakeArchiveStore:
             self.markdown[briefing_id] = content.decode("utf-8")
         return staged_object.final_object
 
-    def delete_object(self, relative_path: str) -> None:
-        self.deleted_paths.append(relative_path)
-        self.staged.pop(relative_path, None)
-        if relative_path.startswith("briefings/daily/"):
-            if relative_path.endswith(".citations.json"):
-                briefing_id = relative_path.removeprefix("briefings/daily/").removesuffix(
-                    ".citations.json"
-                )
-                self.citations_json.pop(briefing_id, None)
-            else:
-                briefing_id = relative_path.removeprefix("briefings/daily/").removesuffix(".md")
-                self.markdown.pop(briefing_id, None)
+    def discard_staged_object(self, staged_object: StagedArchiveObject) -> None:
+        self.staged.pop(staged_object.staged_relative_path, None)
 
 
 class FakeBriefingRenderer:

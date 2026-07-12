@@ -54,7 +54,6 @@ class FakeArchiveStore:
     def __init__(self) -> None:
         self.raw_writes: dict[str, bytes] = {}
         self.staged_writes: dict[str, bytes] = {}
-        self.deleted_paths: list[str] = []
 
     def initialize(self) -> None:
         return None
@@ -133,12 +132,8 @@ class FakeArchiveStore:
             self.raw_writes[source_id] = content
         return staged_object.final_object
 
-    def delete_object(self, relative_path: str) -> None:
-        self.deleted_paths.append(relative_path)
-        self.staged_writes.pop(relative_path, None)
-        if relative_path.startswith("sources/raw/"):
-            source_id = relative_path.removeprefix("sources/raw/").removesuffix(".bin")
-            self.raw_writes.pop(source_id, None)
+    def discard_staged_object(self, staged_object: StagedArchiveObject) -> None:
+        self.staged_writes.pop(staged_object.staged_relative_path, None)
 
 
 class FakeLedgerRepository:
@@ -692,7 +687,6 @@ def test_commit_authoritative_capture_preserves_promoted_archive_objects_after_l
 
     assert len(archive.raw_writes) == 1
     assert archive.staged_writes == {}
-    assert all(path.startswith(".staging/") for path in archive.deleted_paths)
     assert ledger.documents == {}
     assert ledger.provenance_activities == {}
 

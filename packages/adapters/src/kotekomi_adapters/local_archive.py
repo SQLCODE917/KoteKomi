@@ -133,8 +133,11 @@ class LocalArchiveStore:
         staged_path.rename(final_path)
         return staged_object.final_object
 
-    def delete_object(self, relative_path: str) -> None:
-        absolute_path = self._absolute_path(Path(relative_path))
+    def discard_staged_object(self, staged_object: StagedArchiveObject) -> None:
+        staged_relative_path = Path(staged_object.staged_relative_path)
+        if not staged_relative_path.is_relative_to(STAGING_DIR):
+            raise ValueError("Only an ArchiveStore staging object may be discarded.")
+        absolute_path = self._absolute_path(staged_relative_path)
         if absolute_path.exists():
             absolute_path.unlink()
 

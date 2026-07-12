@@ -2,6 +2,7 @@ from pathlib import Path
 
 import pytest
 from kotekomi_adapters import LocalArchiveStore
+from kotekomi_application import StagedArchiveObject
 
 
 def test_initialize_creates_archive_directories(tmp_path: Path) -> None:
@@ -92,15 +93,26 @@ def test_promote_staged_object_rejects_existing_final_object(tmp_path: Path) -> 
     assert store.read_raw_source("src_article_a") == b"existing"
 
 
-def test_delete_object_removes_archive_object_and_ignores_missing(tmp_path: Path) -> None:
+def test_discard_staged_object_preserves_authoritative_archive_objects(tmp_path: Path) -> None:
     store = LocalArchiveStore(tmp_path)
-    archive_object = store.write_raw_source("src_article_a", b"raw source bytes")
+    assert not hasattr(store, "delete_object")
+    store.write_raw_source("src_article_a", b"raw source bytes")
+    staged = store.stage_raw_source("src_article_b", b"staged source bytes")
 
-    store.delete_object(archive_object.relative_path)
-    store.delete_object(archive_object.relative_path)
+    store.discard_staged_object(staged)
+    store.discard_staged_object(staged)
 
+    assert store.read_raw_source("src_article_a") == b"raw source bytes"
     with pytest.raises(FileNotFoundError):
-        store.read_raw_source("src_article_a")
+        store.read_raw_source("src_article_b")
+
+    with pytest.raises(ValueError, match="Only an ArchiveStore staging object"):
+        store.discard_staged_object(
+            StagedArchiveObject(
+                staged_relative_path="sources/raw/src_article_a.bin",
+                final_object=staged.final_object,
+            )
+        )
 
 
 def test_duplicate_raw_source_write_raises(tmp_path: Path) -> None:

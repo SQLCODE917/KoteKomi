@@ -45,7 +45,6 @@ from kotekomi_application import (
     ReviewReadinessStatus,
     Uuid4ProcessingAttemptIdFactory,
     approve_proposed_change,
-    cleanup_created_briefing_archive_object,
     commit_authoritative_capture,
     edit_proposed_change,
     export_review_editable_record,
@@ -1748,27 +1747,17 @@ def generate_markdown_briefing(
     archive_store = LocalArchiveStore(config.archive_path)
     archive_store.initialize()
     renderer = MarkdownBriefingRenderer()
-    result = None
-    try:
-        with sqlite_ledger_transaction(config.ledger_path) as ledger_repository:
-            result = generate_briefing(
-                BriefingGenerationInput(
-                    title=title,
-                    previous_briefing_id=previous_briefing_id,
-                    generated_at=datetime.now(UTC),
-                ),
-                ledger_repository,
-                archive_store,
-                renderer,
-            )
-    except Exception:
-        if result is not None:
-            cleanup_created_briefing_archive_object(
-                archive_store=archive_store,
-                markdown_path=result.markdown_path,
-                citation_registry_path=result.citation_registry_path,
-            )
-        raise
+    with sqlite_ledger_transaction(config.ledger_path) as ledger_repository:
+        result = generate_briefing(
+            BriefingGenerationInput(
+                title=title,
+                previous_briefing_id=previous_briefing_id,
+                generated_at=datetime.now(UTC),
+            ),
+            ledger_repository,
+            archive_store,
+            renderer,
+        )
 
     print(f"Briefing: {result.briefing_id}")
     print(f"ProvenanceActivity: {result.provenance_activity_id}")

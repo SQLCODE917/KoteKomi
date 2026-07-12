@@ -87,8 +87,8 @@ class FakeArchiveStore:
             self.staged[staged_object.final_object.relative_path] = content
         return staged_object.final_object
 
-    def delete_object(self, relative_path: str) -> None:
-        self.staged.pop(relative_path, None)
+    def discard_staged_object(self, staged_object: StagedArchiveObject) -> None:
+        self.staged.pop(staged_object.staged_relative_path, None)
 
 
 def test_fake_archive_store_satisfies_port_shape() -> None:

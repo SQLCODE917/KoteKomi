@@ -528,7 +528,7 @@ def _cleanup_archive_objects(
     staged_objects: list[StagedArchiveObject],
 ) -> None:
     for staged_object in reversed(staged_objects):
-        archive_store.delete_object(staged_object.staged_relative_path)
+        archive_store.discard_staged_object(staged_object)
 
 
 def extract_source_title(filename: str, extracted_text: str) -> str:

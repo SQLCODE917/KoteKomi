@@ -186,14 +186,10 @@ def generate_briefing(
         ledger_repository.save_provenance_activity(provenance_activity)
         ledger_repository.save_briefing(briefing)
     except Exception:
-        if promoted_object is not None:
-            archive_store.delete_object(promoted_object.relative_path)
-        if promoted_citations_object is not None:
-            archive_store.delete_object(promoted_citations_object.relative_path)
         if staged_object is not None:
-            archive_store.delete_object(staged_object.staged_relative_path)
+            archive_store.discard_staged_object(staged_object)
         if staged_citations_object is not None:
-            archive_store.delete_object(staged_citations_object.staged_relative_path)
+            archive_store.discard_staged_object(staged_citations_object)
         raise
 
     return BriefingGenerationResult(
@@ -215,17 +211,6 @@ def generate_briefing(
         argument_edge_count=len(selected_records.argument_edges),
         analytic_inference_count=len(selected_records.analytic_inference_assertion_ids),
     )
-
-
-def cleanup_created_briefing_archive_object(
-    *,
-    archive_store: ArchiveStore,
-    markdown_path: str,
-    citation_registry_path: str | None = None,
-) -> None:
-    archive_store.delete_object(markdown_path)
-    if citation_registry_path is not None:
-        archive_store.delete_object(citation_registry_path)
 
 
 def deterministic_briefing_id(

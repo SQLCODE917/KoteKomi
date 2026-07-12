@@ -9,6 +9,7 @@ from kotekomi_adapters import LocalArchiveStore, SQLiteLedgerInitializer, SQLite
 from kotekomi_application import (
     AuthoritativeCaptureRequest,
     BuildIdentity,
+    StagedArchiveObject,
     Uuid4ProcessingAttemptIdFactory,
     commit_authoritative_capture,
 )
@@ -39,16 +40,16 @@ class FaultingArchiveStore(LocalArchiveStore):
     def __init__(self, archive_root: Path, checkpoint: str) -> None:
         super().__init__(archive_root)
         self._checkpoint = checkpoint
-        self.deleted_paths: list[str] = []
+        self.discarded_staged_paths: list[str] = []
 
     def put_if_absent_or_identical(self, object_id: str, payload: bytes, expected_digest: str):
         outcome = super().put_if_absent_or_identical(object_id, payload, expected_digest)
         self._crash("archive_raw")
         return outcome
 
-    def delete_object(self, relative_path: str) -> None:
-        self.deleted_paths.append(relative_path)
-        super().delete_object(relative_path)
+    def discard_staged_object(self, staged_object: StagedArchiveObject) -> None:
+        self.discarded_staged_paths.append(staged_object.staged_relative_path)
+        super().discard_staged_object(staged_object)
 
     def _crash(self, checkpoint: str) -> None:
         if self._checkpoint == checkpoint:
@@ -178,7 +179,7 @@ def test_authoritative_capture_fault_matrix_converges_after_restart(
             commit_authoritative_capture(
                 _request(), archive, repository, Uuid4ProcessingAttemptIdFactory()
             )
-    assert all(path.startswith(".staging/") for path in archive.deleted_paths)
+    assert all(path.startswith(".staging/") for path in archive.discarded_staged_paths)
 
     stable_archive = LocalArchiveStore(archive_path)
     with sqlite3.connect(ledger_path) as connection:

@@ -29,7 +29,7 @@
 - verify the Docling adapter loads lazily and classifies source-access conditions as typed blocked results with `uv run pytest packages/adapters/tests/test_docling_pdf_parser.py`
 
 ## 4. Archive checks
-- run `uv run pytest packages/adapters/tests/test_local_archive_store.py`
+- verify archive cleanup accepts only `StagedArchiveObject` capabilities and run `uv run pytest packages/adapters/tests/test_local_archive_store.py`
 
 ## 5. Pipeline checks
 - run URL ingest fixture
