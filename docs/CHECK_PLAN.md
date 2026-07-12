@@ -29,6 +29,7 @@
 - verify the Docling adapter loads lazily and classifies source-access conditions as typed blocked results with `uv run pytest packages/adapters/tests/test_docling_pdf_parser.py`
 - verify the born-digital press-release PDF enters Archive, Ledger, deterministic page geometry, text, nodes, regions, reading order, and an acceptable quality report with `uv run pytest packages/adapters/tests/test_docling_pdf_r1a.py`
 - verify the press-release priority sentence enters a deterministic ContextManifest, immutable EvidenceTarget, successful validation attempt, reviewed direct-support Assertion link, and restart replay with `uv run pytest packages/adapters/tests/test_docling_pdf_r1a.py`
+- verify deterministic analysis units, required CHIP definition closure, exact token budgeting, furniture exclusions, split, and `context_budget_blocked` outcomes with `uv run pytest packages/application/tests/test_context_planning.py packages/adapters/tests/test_docling_pdf_r1a.py`
 
 ## 4. Archive checks
 - verify archive cleanup accepts only `StagedArchiveObject` capabilities and run `uv run pytest packages/adapters/tests/test_local_archive_store.py`

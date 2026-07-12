@@ -52,12 +52,12 @@ class GroundedCandidateLedger(EvidenceTargetLedger, Protocol):
     ) -> None: ...
 
 
-class ContextManifestLedger(EvidenceTargetLedger, Protocol):
+class GroundedCandidateContextLedger(EvidenceTargetLedger, Protocol):
     def get_source(self, record_id: str) -> Source | None: ...
 
 
 @dataclass(frozen=True)
-class ContextManifestInput:
+class GroundedCandidateContextInput:
     source_id: str
     document_id: str
     representation_id: str
@@ -65,7 +65,7 @@ class ContextManifestInput:
 
 
 @dataclass(frozen=True)
-class ContextManifest:
+class GroundedCandidateContext:
     id: str
     source_id: str
     document_id: str
@@ -131,26 +131,32 @@ class ProposedChangeBatchOutcome:
     proposed_change_ids_by_local_id: dict[str, str]
 
 
-def build_context_manifest(
-    manifest_input: ContextManifestInput,
-    ledger_repository: ContextManifestLedger,
-) -> ContextManifest:
+def build_grounded_candidate_context(
+    context_input: GroundedCandidateContextInput,
+    ledger_repository: GroundedCandidateContextLedger,
+) -> GroundedCandidateContext:
     """Build a deterministic, representation-scoped context for one bounded extraction task."""
-    if not manifest_input.node_ids:
-        raise ValueError("ContextManifest requires at least one DocumentNode.")
-    if len(set(manifest_input.node_ids)) != len(manifest_input.node_ids):
-        raise ValueError("ContextManifest DocumentNode selectors must be unique.")
-    source = ledger_repository.get_source(manifest_input.source_id)
+    if not context_input.node_ids:
+        raise ValueError("Grounded candidate context requires at least one DocumentNode.")
+    if len(set(context_input.node_ids)) != len(context_input.node_ids):
+        raise ValueError("Grounded candidate context DocumentNode selectors must be unique.")
+    source = ledger_repository.get_source(context_input.source_id)
     if source is None:
-        raise ValueError(f"ContextManifest references missing Source: {manifest_input.source_id}")
-    document = ledger_repository.get_document(manifest_input.document_id)
+        raise ValueError(
+            f"Grounded candidate context references missing Source: {context_input.source_id}"
+        )
+    document = ledger_repository.get_document(context_input.document_id)
     if document is None or document.source_id != source.id:
-        raise ValueError("ContextManifest Document does not belong to its Source.")
-    bundle = ledger_repository.get_document_representation_bundle(manifest_input.representation_id)
+        raise ValueError("Grounded candidate context Document does not belong to its Source.")
+    bundle = ledger_repository.get_document_representation_bundle(context_input.representation_id)
     if bundle is None or bundle.representation.document_id != document.id:
-        raise ValueError("ContextManifest references a mismatched DocumentRepresentation.")
+        raise ValueError(
+            "Grounded candidate context references a mismatched DocumentRepresentation."
+        )
     if bundle.quality_report.analyzability is not RepresentationAnalyzability.ACCEPTABLE:
-        raise ValueError("ContextManifest requires an acceptable DocumentRepresentation.")
+        raise ValueError(
+            "Grounded candidate context requires an acceptable DocumentRepresentation."
+        )
     actual_digest = canonical_representation_digest(
         bundle.representation,
         text_views=bundle.text_views,
@@ -160,13 +166,15 @@ def build_context_manifest(
         quality_report=bundle.quality_report,
     )
     if actual_digest != bundle.representation.canonical_output_digest:
-        raise ValueError("ContextManifest DocumentRepresentation digest is corrupted.")
+        raise ValueError("Grounded candidate context DocumentRepresentation digest is corrupted.")
     nodes_by_id = {node.id: node for node in bundle.nodes}
     selected_nodes: list[DocumentNode] = []
-    for node_id in manifest_input.node_ids:
+    for node_id in context_input.node_ids:
         node = nodes_by_id.get(node_id)
         if node is None:
-            raise ValueError(f"ContextManifest references missing DocumentNode: {node_id}")
+            raise ValueError(
+                f"Grounded candidate context references missing DocumentNode: {node_id}"
+            )
         selected_nodes.append(node)
     selected_nodes.sort(key=lambda node: node.id)
     text_view_ids = {node.text_view_id for node in selected_nodes}
@@ -185,7 +193,7 @@ def build_context_manifest(
             key=lambda region: region.id,
         )
     )
-    return ContextManifest(
+    return GroundedCandidateContext(
         id=_deterministic_id(
             "ctx",
             source.id,

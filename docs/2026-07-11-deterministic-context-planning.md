@@ -197,12 +197,22 @@ This deliverable is incomplete if:
 - only selected context is stored while excluded candidates and reasons are lost;
 - model calls can occur without finalized manifests.
 
-## 12. References
+## 12. R1-C fixture proof
+
+Use the R1 press-release PDF fixture for the first context-planning proof.
+
+The focus paragraph beginning `The CHIP highlights four key health priorities` must include the preceding `Community Health Improvement Plan (CHIP)` definition as required context.
+
+The manifest must exclude preserved page furniture with an inspectable `furniture_excluded` reason.
+
+The same fixture must produce deterministic ready, split, and `context_budget_blocked` outcomes under pinned tokenizer and budget inputs.
+
+## 13. References
 
 - KoteKomi pipeline and testing guidance
 - Anthropic contextual retrieval: https://www.anthropic.com/engineering/contextual-retrieval
 - Lost in the Middle: https://aclanthology.org/2024.tacl-1.9/
 
-## 13. Halt conditions
+## 14. Halt conditions
 
 Stop and revise when a required semantic dependency cannot be represented or tested, when the runtime cannot expose exact tokenization/truncation behavior, or when a mandatory source unit cannot be split without changing its meaning.

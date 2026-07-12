@@ -5,12 +5,16 @@ from pathlib import Path
 from kotekomi_adapters import LocalArchiveStore, SQLiteLedgerInitializer, sqlite_ledger_transaction
 from kotekomi_adapters.docling_pdf_parser import DoclingPdfParser, DoclingPdfParserConfig
 from kotekomi_application import (
+    AnalysisUnitPlanningInput,
     BuildIdentity,
     CaptureRequest,
-    ContextManifest,
     ContextManifestInput,
+    ContextManifestStatus,
+    ContextModelProfile,
     GroundedAssertionCandidate,
     GroundedCandidateBatchInput,
+    GroundedCandidateContext,
+    GroundedCandidateContextInput,
     GroundedEvidenceCandidate,
     GroundedOrganizationCandidate,
     PdfIngestInput,
@@ -24,9 +28,11 @@ from kotekomi_application import (
     Uuid4ProcessingAttemptIdFactory,
     approve_proposed_change,
     build_context_manifest,
+    build_grounded_candidate_context,
     capture_identity,
     capture_source,
     ingest_pdf,
+    plan_analysis_units,
     submit_grounded_candidate_batch,
     verify_evidence_target,
 )
@@ -69,6 +75,18 @@ class RecordingDoclingParser:
         result = self._parser.parse(parse_input)
         self.results.append(result)
         return result
+
+
+class FixtureProcessingClock:
+    def now(self) -> datetime:
+        return NOW
+
+
+class FixtureExactTokenizer:
+    tokenizer_id = "r1c_fixture_whitespace_v1"
+
+    def count_tokens(self, rendered_input: bytes) -> int:
+        return len(rendered_input.decode("utf-8").split())
 
 
 def _capture_request() -> CaptureRequest:
@@ -137,6 +155,7 @@ def test_docling_r1a_ingests_the_press_release_as_an_analyzeable_representation(
             repository,
             parser,
             Uuid4ProcessingAttemptIdFactory(),
+            FixtureProcessingClock(),
         )
         assert first.representation_id is not None
         stored_bundle = repository.get_document_representation_bundle(first.representation_id)
@@ -147,6 +166,7 @@ def test_docling_r1a_ingests_the_press_release_as_an_analyzeable_representation(
             repository,
             parser,
             Uuid4ProcessingAttemptIdFactory(),
+            FixtureProcessingClock(),
         )
         assert second.representation_id is not None
         replayed_bundle = repository.get_document_representation_bundle(second.representation_id)
@@ -191,6 +211,7 @@ def test_docling_r1b_replays_the_priority_sentence_after_review_and_restart(
             repository,
             DoclingPdfParser(DoclingPdfParserConfig()),
             Uuid4ProcessingAttemptIdFactory(),
+            FixtureProcessingClock(),
         )
         assert ingest_outcome.representation_id is not None
         bundle = repository.get_document_representation_bundle(ingest_outcome.representation_id)
@@ -200,8 +221,8 @@ def test_docling_r1b_replays_the_priority_sentence_after_review_and_restart(
             for node in bundle.nodes
             if PRIORITY_SENTENCE in bundle.text_views[0].text[node.start_char : node.end_char]
         )
-        manifest = build_context_manifest(
-            ContextManifestInput(
+        manifest = build_grounded_candidate_context(
+            GroundedCandidateContextInput(
                 source_id=capture.source.id,
                 document_id=capture.document.id,
                 representation_id=bundle.representation.id,
@@ -240,8 +261,8 @@ def test_docling_r1b_replays_the_priority_sentence_after_review_and_restart(
         validation_attempt = repository.get_evidence_validation_attempt(link.validation_attempt_id)
         assert validation_attempt is not None
         assert verify_evidence_target(evidence, validation_attempt, repository).valid
-        replayed_manifest = build_context_manifest(
-            ContextManifestInput(
+        replayed_manifest = build_grounded_candidate_context(
+            GroundedCandidateContextInput(
                 evidence.source_id,
                 evidence.document_id,
                 evidence.representation_id,
@@ -256,7 +277,7 @@ def test_docling_r1b_replays_the_priority_sentence_after_review_and_restart(
         priority_node = next(node for node in bundle.nodes if node.id == evidence.node_ids[0])
         priority_region = next(
             region for region in bundle.source_regions if region.id == evidence.pdf_region_ids[0]
-    )
+        )
 
     assert reopened_archive.read_raw_source(capture.raw_blob.id) == RAW_PDF
     assert assertion.id == review.accepted_record_id
@@ -278,10 +299,98 @@ def test_docling_r1b_replays_the_priority_sentence_after_review_and_restart(
     assert abs(priority_region.bottom - 404.6349670718232) < 0.000001
 
 
+def test_docling_r1c_includes_chip_definition_and_excludes_furniture_deterministically(
+    tmp_path: Path,
+) -> None:
+    ledger_path = tmp_path / "ledger.db"
+    archive = LocalArchiveStore(tmp_path / "archive")
+    archive.initialize()
+    SQLiteLedgerInitializer(ledger_path).initialize()
+    request = _capture_request()
+    identity_policy = StableSourceIdentityPolicy()
+    capture_identity_result = capture_identity(request, identity_policy)
+    archive.put_if_absent_or_identical(
+        capture_identity_result.raw_blob_id,
+        RAW_PDF,
+        RAW_PDF_DIGEST,
+    )
+    with sqlite_ledger_transaction(ledger_path) as repository:
+        capture = capture_source(request, repository, identity_policy)
+        ingest_outcome = ingest_pdf(
+            _ingest_input(capture.document.id, capture.raw_blob.id),
+            repository,
+            DoclingPdfParser(DoclingPdfParserConfig()),
+            Uuid4ProcessingAttemptIdFactory(),
+            FixtureProcessingClock(),
+        )
+        assert ingest_outcome.representation_id is not None
+        bundle = repository.get_document_representation_bundle(ingest_outcome.representation_id)
+        assert bundle is not None
+        plan = plan_analysis_units(
+            AnalysisUnitPlanningInput(bundle.representation.id, "r1c_pdf_v1", "extract"),
+            repository,
+        )
+        priority_node = next(
+            node
+            for node in bundle.nodes
+            if PRIORITY_SENTENCE in bundle.text_views[0].text[node.start_char : node.end_char]
+        )
+        focus_unit = next(unit for unit in plan.units if unit.focus_node_ids == (priority_node.id,))
+        manifest_input = ContextManifestInput(
+            analysis_unit=focus_unit,
+            model_profile=ContextModelProfile("r1c_fixture_model", 512, 64, 16),
+            prompt_id="r1c_fixture_prompt",
+            prompt_bytes=b"Extract a grounded source claim.",
+            schema_id="r1c_fixture_schema",
+            schema_bytes=b'{"type":"object"}',
+            renderer_version="r1c_renderer_v1",
+        )
+        tokenizer = FixtureExactTokenizer()
+        first = build_context_manifest(manifest_input, repository, tokenizer)
+        second = build_context_manifest(manifest_input, repository, tokenizer)
+        blocked = build_context_manifest(
+            ContextManifestInput(
+                analysis_unit=focus_unit,
+                model_profile=ContextModelProfile("r1c_fixture_model", 8, 4, 2),
+                prompt_id=manifest_input.prompt_id,
+                prompt_bytes=manifest_input.prompt_bytes,
+                schema_id=manifest_input.schema_id,
+                schema_bytes=manifest_input.schema_bytes,
+                renderer_version=manifest_input.renderer_version,
+            ),
+            repository,
+            tokenizer,
+        )
+
+    assert first == second
+    assert first.manifest.status is ContextManifestStatus.READY
+    selected = first.manifest.selected_candidates
+    assert tuple(candidate.role.value for candidate in selected) == (
+        "focus",
+        "heading",
+        "definition",
+    )
+    definition_node = next(node for node in bundle.nodes if node.id == selected[2].node_id)
+    assert (
+        "Community Health Improvement Plan (CHIP)"
+        in bundle.text_views[0].text[definition_node.start_char : definition_node.end_char]
+    )
+    assert all(candidate.required for candidate in selected)
+    assert all(
+        item.reason_code == "furniture_excluded" for item in first.manifest.excluded_candidates
+    )
+    assert len(first.manifest.excluded_candidates) == 2
+    assert b"A community where all can achieve optimal health." not in first.manifest.rendered_input
+    assert b"855 S. DUBUQUE STREET" not in first.manifest.rendered_input
+    assert tokenizer.count_tokens(first.manifest.rendered_input) == first.manifest.input_token_count
+    assert blocked.manifest.status is ContextManifestStatus.CONTEXT_BUDGET_BLOCKED
+    assert blocked.blocked_reason == "required_context_exceeds_budget"
+
+
 def _priority_sentence_batch(
     source_id: str,
     document_id: str,
-    manifest: ContextManifest,
+    manifest: GroundedCandidateContext,
 ) -> GroundedCandidateBatchInput:
     assert len(manifest.text_views) == 1
     assert len(manifest.nodes) == 1
@@ -350,7 +459,7 @@ def _assert_r1a_representation(
             width=612.0,
             height=792.0,
             rotation=0,
-            embedded_text_character_count=2312,
+            embedded_text_character_count=2463,
         ),
     )
     assert parse_result.blocking_reasons == ()
@@ -360,11 +469,12 @@ def _assert_r1a_representation(
     assert bundle.quality_report.metric_values == {
         "page_count": 1,
         "covered_page_count": 1,
-        "logical_text_char_count": 2328,
-        "reading_order_node_count": 17,
+        "logical_text_char_count": 2481,
+        "reading_order_node_count": 19,
         "heading_node_count": 2,
         "paragraph_node_count": 15,
-        "source_region_count": 17,
+        "furniture_node_count": 2,
+        "source_region_count": 19,
     }
     assert len(bundle.text_views) == 1
     text_view = bundle.text_views[0]
@@ -374,7 +484,7 @@ def _assert_r1a_representation(
     assert root.node_type == "document"
     assert (root.start_char, root.end_char) == (0, len(text_view.text))
     assert tuple(node.order_index for node in bundle.nodes) == tuple(range(len(bundle.nodes)))
-    assert {node.node_type for node in content_nodes} == {"heading", "paragraph"}
+    assert {node.node_type for node in content_nodes} == {"furniture", "heading", "paragraph"}
     assert all(text_view.text[node.start_char : node.end_char] for node in content_nodes)
     assert all(node.source_region_ids for node in content_nodes)
     assert tuple(edge.from_node_id for edge in bundle.edges) == (root.id,) * len(content_nodes)

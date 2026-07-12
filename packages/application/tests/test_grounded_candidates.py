@@ -3,12 +3,12 @@ from datetime import UTC, datetime
 
 import pytest
 from kotekomi_application import (
-    ContextManifestInput,
     GroundedAssertionCandidate,
     GroundedCandidateBatchInput,
+    GroundedCandidateContextInput,
     GroundedEvidenceCandidate,
     GroundedOrganizationCandidate,
-    build_context_manifest,
+    build_grounded_candidate_context,
     submit_grounded_candidate_batch,
 )
 from kotekomi_domain import (
@@ -210,17 +210,17 @@ def test_submit_grounded_candidate_batch_derives_records_and_pending_changes() -
     ]
 
 
-def test_context_manifest_is_deterministic_and_scoped_to_selected_nodes() -> None:
+def test_grounded_candidate_context_is_deterministic_and_scoped_to_selected_nodes() -> None:
     ledger = FakeGroundedCandidateLedger()
-    manifest_input = ContextManifestInput(
+    context_input = GroundedCandidateContextInput(
         source_id=ledger.source.id,
         document_id=ledger.document.id,
         representation_id=ledger.bundle.representation.id,
         node_ids=(ledger.bundle.nodes[0].id,),
     )
 
-    first = build_context_manifest(manifest_input, ledger)
-    second = build_context_manifest(manifest_input, ledger)
+    first = build_grounded_candidate_context(context_input, ledger)
+    second = build_grounded_candidate_context(context_input, ledger)
 
     assert first == second
     assert first.source_id == ledger.source.id
@@ -231,13 +231,13 @@ def test_context_manifest_is_deterministic_and_scoped_to_selected_nodes() -> Non
     assert first.source_regions == ()
 
 
-def test_context_manifest_rejects_missing_or_duplicate_node_selectors() -> None:
+def test_grounded_candidate_context_rejects_missing_or_duplicate_node_selectors() -> None:
     ledger = FakeGroundedCandidateLedger()
     node_id = ledger.bundle.nodes[0].id
 
     with pytest.raises(ValueError, match="selectors must be unique"):
-        build_context_manifest(
-            ContextManifestInput(
+        build_grounded_candidate_context(
+            GroundedCandidateContextInput(
                 ledger.source.id,
                 ledger.document.id,
                 ledger.bundle.representation.id,
@@ -246,8 +246,8 @@ def test_context_manifest_rejects_missing_or_duplicate_node_selectors() -> None:
             ledger,
         )
     with pytest.raises(ValueError, match="missing DocumentNode"):
-        build_context_manifest(
-            ContextManifestInput(
+        build_grounded_candidate_context(
+            GroundedCandidateContextInput(
                 ledger.source.id,
                 ledger.document.id,
                 ledger.bundle.representation.id,

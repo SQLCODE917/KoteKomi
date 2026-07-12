@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import resource
 from dataclasses import dataclass
 from importlib.metadata import PackageNotFoundError, version
 from io import BytesIO
@@ -147,11 +148,24 @@ class DoclingPdfParser(PdfDocumentParser):
 def _load_docling_components() -> tuple[type[Any], type[Any], type[Any], type[Any], type[Any]]:
     """Load Docling only for an explicit PDF parse request."""
 
+    _raise_stack_limit_for_docling_import()
+
     from docling.datamodel.base_models import DocumentStream, InputFormat
     from docling.datamodel.pipeline_options import PdfPipelineOptions
     from docling.document_converter import DocumentConverter, PdfFormatOption
 
     return DocumentStream, InputFormat, PdfPipelineOptions, DocumentConverter, PdfFormatOption
+
+
+def _raise_stack_limit_for_docling_import() -> None:
+    """Avoid Pydantic schema-import stack exhaustion in Docling's recursive models."""
+    soft_limit, hard_limit = resource.getrlimit(resource.RLIMIT_STACK)
+    target_limit = 64 * 1024 * 1024
+    if soft_limit == resource.RLIM_INFINITY or soft_limit >= target_limit:
+        return
+    if hard_limit != resource.RLIM_INFINITY and hard_limit < target_limit:
+        target_limit = hard_limit
+    resource.setrlimit(resource.RLIMIT_STACK, (target_limit, hard_limit))
 
 
 def _docling_version() -> str:
@@ -184,29 +198,45 @@ def _layout_items_from_document(
     geometry_by_page = {page.page_number: page for page in page_geometry}
     layout_items: list[_LayoutItem] = []
     for item, _depth in document.iterate_items():
-        text = getattr(item, "text", None)
-        if text is None:
+        layout_item = _layout_item_from_docling_item(item, geometry_by_page)
+        if layout_item is not None:
+            layout_items.append(layout_item)
+    for item in cast(Any, document.texts):
+        content_layer = getattr(getattr(item, "content_layer", None), "value", None)
+        if content_layer != "furniture":
             continue
-        if not isinstance(text, str) or not text.strip():
-            raise ValueError("Docling text item has no usable text.")
-        provenance = tuple(cast(Any, getattr(item, "prov", ())))
-        if not provenance:
-            raise ValueError("Docling text item has no PDF provenance.")
-        regions = tuple(
-            _layout_region_from_provenance(provenance_item, geometry_by_page)
-            for provenance_item in provenance
-        )
-        label = getattr(getattr(item, "label", None), "value", None)
-        layout_items.append(
-            _LayoutItem(
-                text=text,
-                node_type="heading" if label == "section_header" else "paragraph",
-                regions=regions,
-            )
-        )
+        layout_item = _layout_item_from_docling_item(item, geometry_by_page, node_type="furniture")
+        if layout_item is not None:
+            layout_items.append(layout_item)
     if not layout_items:
         raise ValueError("Docling conversion produced no body text items.")
     return tuple(layout_items)
+
+
+def _layout_item_from_docling_item(
+    item: Any,
+    geometry_by_page: dict[int, _PageGeometry],
+    *,
+    node_type: str | None = None,
+) -> _LayoutItem | None:
+    text = getattr(item, "text", None)
+    if text is None:
+        return None
+    if not isinstance(text, str) or not text.strip():
+        raise ValueError("Docling text item has no usable text.")
+    provenance = tuple(cast(Any, getattr(item, "prov", ())))
+    if not provenance:
+        raise ValueError("Docling text item has no PDF provenance.")
+    regions = tuple(
+        _layout_region_from_provenance(provenance_item, geometry_by_page)
+        for provenance_item in provenance
+    )
+    label = getattr(getattr(item, "label", None), "value", None)
+    return _LayoutItem(
+        text=text,
+        node_type=node_type or ("heading" if label == "section_header" else "paragraph"),
+        regions=regions,
+    )
 
 
 def _layout_region_from_provenance(
@@ -499,6 +529,7 @@ def _quality_report(
             "reading_order_node_count": len(content_nodes),
             "heading_node_count": sum(node.node_type == "heading" for node in content_nodes),
             "paragraph_node_count": sum(node.node_type == "paragraph" for node in content_nodes),
+            "furniture_node_count": sum(node.node_type == "furniture" for node in content_nodes),
             "source_region_count": len(source_regions),
         },
         issues=tuple(issues),
