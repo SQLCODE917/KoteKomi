@@ -145,18 +145,18 @@ class FakeReviewLedger:
     def save_assertion(self, record: Assertion) -> None:
         self.assertions[record.id] = record
 
-    def commit_accepted_assertion_with_evidence(
+    def commit_reviewed_assertion_acceptance(
         self,
         *,
         assertion: Assertion,
         evidence_links: tuple[AssertionEvidenceLink, ...],
-        provenance_activity: ProvenanceActivity,
-        reviewed_change: ProposedChange,
+        review_provenance: ProvenanceActivity,
+        proposed_change_transition: ProposedChange,
     ) -> None:
-        self.provenance_activities[provenance_activity.id] = provenance_activity
+        self.provenance_activities[review_provenance.id] = review_provenance
         self.assertions[assertion.id] = assertion
         self.assertion_evidence_links.update({link.id: link for link in evidence_links})
-        self.proposed_changes[reviewed_change.id] = reviewed_change
+        self.proposed_changes[proposed_change_transition.id] = proposed_change_transition
 
     def get_relationship(self, record_id: str) -> Relationship | None:
         return self.relationships.get(record_id)

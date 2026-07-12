@@ -1,4 +1,5 @@
 import hashlib
+import sqlite3
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal, cast
@@ -13,6 +14,7 @@ from kotekomi_adapters.sqlite_ledger import SQLiteLedgerRepository
 from kotekomi_application import (
     ReviewProposedChangeInput,
     approve_proposed_change,
+    canonical_record_json,
     deterministic_assertion_evidence_link_id,
     deterministic_review_provenance_activity_id,
     verify_evidence_target,
@@ -387,19 +389,28 @@ def test_second_link_conflict_rolls_back_the_entire_acceptance_bundle(tmp_path: 
         polarity=EvidencePolarity.SUPPORTS,
         necessity=EvidenceNecessity.REQUIRED,
     )
-    with sqlite_ledger_transaction(ledger_path) as repository:
-        repository.save_assertion_evidence_link(
-            AssertionEvidenceLink(
-                id=conflicting_id,
-                assertion_id="ast_atomic",
-                evidence_target_id=second.id,
-                validation_attempt_id=_validation_attempt_id(second.id),
-                role=AssertionEvidenceRole.DIRECT_SUPPORT,
-                polarity=EvidencePolarity.SUPPORTS,
-                necessity=EvidenceNecessity.REQUIRED,
-                provenance_id="prv_preexisting",
-                created_at=NOW,
-            )
+    conflicting_link = AssertionEvidenceLink(
+        id=conflicting_id,
+        assertion_id="ast_atomic",
+        evidence_target_id=second.id,
+        validation_attempt_id=_validation_attempt_id(second.id),
+        role=AssertionEvidenceRole.DIRECT_SUPPORT,
+        polarity=EvidencePolarity.SUPPORTS,
+        necessity=EvidenceNecessity.REQUIRED,
+        provenance_id="prv_preexisting",
+        created_at=NOW,
+    )
+    with sqlite3.connect(ledger_path) as connection:
+        connection.execute(
+            """
+            INSERT INTO assertion_evidence_links (id, created_at, payload_json)
+            VALUES (?, ?, ?)
+            """,
+            (
+                conflicting_link.id,
+                conflicting_link.created_at.isoformat(),
+                canonical_record_json(conflicting_link),
+            ),
         )
 
     with pytest.raises(ImmutableRecordConflict):
@@ -411,6 +422,16 @@ def test_second_link_conflict_rolls_back_the_entire_acceptance_bundle(tmp_path: 
         assert tuple(link.id for link in repository.list_assertion_evidence_links()) == (
             conflicting_id,
         )
+
+
+def test_repository_does_not_expose_a_generic_assertion_evidence_link_write(
+    tmp_path: Path,
+) -> None:
+    ledger_path = tmp_path / "ledger.db"
+    SQLiteLedgerInitializer(ledger_path).initialize()
+
+    with sqlite_ledger_transaction(ledger_path) as repository:
+        assert not hasattr(repository, "save_assertion_evidence_link")
 
 
 class _CorruptBundleRepository:

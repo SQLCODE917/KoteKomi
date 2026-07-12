@@ -93,13 +93,13 @@ class ProposedChangeReviewLedger(EvidenceTargetLedger, Protocol):
 
     def get_assertion(self, record_id: str) -> Assertion | None: ...
     def save_assertion(self, record: Assertion) -> None: ...
-    def commit_accepted_assertion_with_evidence(
+    def commit_reviewed_assertion_acceptance(
         self,
         *,
         assertion: Assertion,
         evidence_links: tuple[AssertionEvidenceLink, ...],
-        provenance_activity: ProvenanceActivity,
-        reviewed_change: ProposedChange,
+        review_provenance: ProvenanceActivity,
+        proposed_change_transition: ProposedChange,
     ) -> None: ...
 
     def get_relationship(self, record_id: str) -> Relationship | None: ...
@@ -515,11 +515,11 @@ def approve_proposed_change(
     )
 
     if isinstance(accepted_record, Assertion):
-        ledger_repository.commit_accepted_assertion_with_evidence(
+        ledger_repository.commit_reviewed_assertion_acceptance(
             assertion=accepted_record,
             evidence_links=evidence_links,
-            provenance_activity=provenance_activity,
-            reviewed_change=reviewed_change,
+            review_provenance=provenance_activity,
+            proposed_change_transition=reviewed_change,
         )
     else:
         ledger_repository.save_provenance_activity(provenance_activity)
@@ -619,11 +619,11 @@ def edit_proposed_change(
     )
 
     if isinstance(accepted_record, Assertion):
-        ledger_repository.commit_accepted_assertion_with_evidence(
+        ledger_repository.commit_reviewed_assertion_acceptance(
             assertion=accepted_record,
             evidence_links=evidence_links,
-            provenance_activity=provenance_activity,
-            reviewed_change=reviewed_change,
+            review_provenance=provenance_activity,
+            proposed_change_transition=reviewed_change,
         )
     else:
         ledger_repository.save_provenance_activity(provenance_activity)

@@ -1004,7 +1004,7 @@ class SQLiteLedgerRepository:
         ).fetchall()
         return tuple(ProcessingAttempt.model_validate_json(str(row[0])) for row in rows)
 
-    def save_assertion_evidence_link(self, record: AssertionEvidenceLink) -> None:
+    def _save_assertion_evidence_link(self, record: AssertionEvidenceLink) -> None:
         self._save(ASSERTION_EVIDENCE_LINK_SPEC, record)
 
     def get_assertion_evidence_link(self, record_id: str) -> AssertionEvidenceLink | None:
@@ -1029,21 +1029,21 @@ class SQLiteLedgerRepository:
     def save_assertion(self, record: Assertion) -> None:
         self._save(ASSERTION_SPEC, record)
 
-    def commit_accepted_assertion_with_evidence(
+    def commit_reviewed_assertion_acceptance(
         self,
         *,
         assertion: Assertion,
         evidence_links: tuple[AssertionEvidenceLink, ...],
-        provenance_activity: ProvenanceActivity,
-        reviewed_change: ProposedChange,
+        review_provenance: ProvenanceActivity,
+        proposed_change_transition: ProposedChange,
     ) -> None:
         self._connection.execute("SAVEPOINT accepted_assertion_with_evidence")
         try:
-            self.save_provenance_activity(provenance_activity)
+            self.save_provenance_activity(review_provenance)
             self.save_assertion(assertion)
             for evidence_link in evidence_links:
-                self.save_assertion_evidence_link(evidence_link)
-            self.save_proposed_change(reviewed_change)
+                self._save_assertion_evidence_link(evidence_link)
+            self.save_proposed_change(proposed_change_transition)
         except Exception:
             self._connection.execute("ROLLBACK TO SAVEPOINT accepted_assertion_with_evidence")
             self._connection.execute("RELEASE SAVEPOINT accepted_assertion_with_evidence")

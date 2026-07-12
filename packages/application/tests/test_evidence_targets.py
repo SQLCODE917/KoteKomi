@@ -8,7 +8,6 @@ from kotekomi_application import (
 )
 from kotekomi_domain import (
     Assertion,
-    AssertionEvidenceLink,
     AssertionStatus,
     AssertionType,
     AttributionBasis,
@@ -71,7 +70,6 @@ class FakeEvidenceLedger:
                 occurred_at=NOW,
             )
         }
-        self.links: dict[str, AssertionEvidenceLink] = {}
 
     def get_evidence_target(self, record_id: str) -> EvidenceTarget | None:
         return self.evidence_targets.get(record_id)
@@ -98,12 +96,6 @@ class FakeEvidenceLedger:
 
     def get_provenance_activity(self, record_id: str) -> ProvenanceActivity | None:
         return self.provenance_activities.get(record_id)
-
-    def get_assertion_evidence_link(self, record_id: str) -> AssertionEvidenceLink | None:
-        return self.links.get(record_id)
-
-    def save_assertion_evidence_link(self, record: AssertionEvidenceLink) -> None:
-        self.links[record.id] = record
 
 
 def _bundle() -> DocumentRepresentationBundle:
