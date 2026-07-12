@@ -28,7 +28,14 @@ class BundleCommitOutcome:
 class DocumentRepresentationBundleLedger(Protocol):
     def commit_document_representation_bundle(
         self, bundle: DocumentRepresentationBundle
-    ) -> BundleCommitOutcome: ...
+    ) -> BundleCommitOutcome:
+        """Low-level atomic bundle primitive for adapters and repository fixtures.
+
+        Public processing use cases must use
+        ``commit_document_representation_processing`` so the bundle is bound
+        to the attempt it closes.
+        """
+        ...
 
     def commit_document_representation_processing(
         self,
@@ -41,7 +48,8 @@ class DocumentRepresentationBundleLedger(Protocol):
     ) -> BundleCommitOutcome:
         """Atomically close a processing attempt for a representation bundle.
 
-        The bundle and both terminal outcomes must bind to the expected task.
+        The bundle and both terminal outcomes must bind to the expected task
+        and the same singular attempt.
         A newly produced bundle records its production provenance.  A reused
         bundle records only the new attempt outcome and must not fabricate a
         second production activity for immutable output.

@@ -430,7 +430,7 @@ def test_representation_bundle_rejects_a_partial_preexisting_representation(tmp_
         assert repository.get_text_view(candidate.text_views[0].id) is None
 
 
-@pytest.mark.parametrize("mismatch", ("outcome_artifact", "attempt_task"))
+@pytest.mark.parametrize("mismatch", ("outcome_artifact", "attempt_task", "outcome_attempt"))
 def test_processing_bundle_commit_rejects_output_not_bound_to_its_task(
     tmp_path: Path,
     mismatch: str,
@@ -471,9 +471,19 @@ def test_processing_bundle_commit_rejects_output_not_bound_to_its_task(
             attempt=attempt,
             representation_id=outcome_representation_id,
         )
-        reused_outcome = created_outcome.model_copy(
-            update={"output_disposition": OutputDisposition.REUSED}
-        )
+        reused_attempt = attempt
+        if mismatch == "outcome_attempt":
+            reused_attempt = ProcessingAttempt(
+                id="pat_000000000000000000000002",
+                task_fingerprint_id=attempt_task_id,
+                started_at=NOW,
+                invocation_id="fixture:representation:reused",
+            )
+            repository.append_processing_attempt(reused_attempt)
+        reused_outcome = _successful_representation_outcome(
+            attempt=reused_attempt,
+            representation_id=outcome_representation_id,
+        ).model_copy(update={"output_disposition": OutputDisposition.REUSED})
         provenance = ProvenanceActivity(
             id="prv_000000000000000000000001",
             activity_type="fixture_representation",
@@ -483,7 +493,7 @@ def test_processing_bundle_commit_rejects_output_not_bound_to_its_task(
             occurred_at=NOW,
         )
 
-        with pytest.raises(ValueError, match="expected.*task|representation artifact"):
+        with pytest.raises(ValueError, match="same attempt|expected.*task|representation artifact"):
             repository.commit_document_representation_processing(
                 expected_task_fingerprint_id=candidate.representation.processing_task_fingerprint_id,
                 bundle=candidate,
@@ -495,6 +505,7 @@ def test_processing_bundle_commit_rejects_output_not_bound_to_its_task(
         assert repository.get_document_representation(candidate.representation.id) is None
         assert repository.get_provenance_activity(provenance.id) is None
         assert repository.get_processing_attempt_outcome(attempt.id) is None
+        assert repository.get_processing_attempt_outcome(reused_attempt.id) is None
 
 
 def test_representation_ownership_foreign_keys_reject_orphan_records(tmp_path: Path) -> None:

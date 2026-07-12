@@ -567,7 +567,7 @@ class SQLiteLedgerRepository:
         created_outcome: ProcessingAttemptOutcome,
         reused_outcome: ProcessingAttemptOutcome,
     ) -> BundleCommitOutcome:
-        """Commit output, production provenance, and exactly one outcome together."""
+        """Commit task-bound output, provenance, and one attempt outcome together."""
         self._connection.execute("SAVEPOINT document_representation_processing")
         try:
             self._validate_processing_task_binding(
@@ -598,6 +598,8 @@ class SQLiteLedgerRepository:
         reused_outcome: ProcessingAttemptOutcome,
     ) -> None:
         representation = bundle.representation
+        if created_outcome.attempt_id != reused_outcome.attempt_id:
+            raise ValueError("Created and reused outcomes must belong to the same attempt.")
         if representation.processing_task_fingerprint_id != expected_task_fingerprint_id:
             raise ValueError("Representation does not belong to the expected processing task.")
         if representation.id != deterministic_representation_id(expected_task_fingerprint_id):

@@ -40,7 +40,7 @@ A changed value in any of these fields must yield a different ID:
 parser name
 parser version
 parser configuration
-code revision
+build identity
 representation schema/policy
 input document or blob
 ```
