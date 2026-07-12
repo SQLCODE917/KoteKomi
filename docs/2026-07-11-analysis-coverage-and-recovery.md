@@ -35,20 +35,20 @@ Forbidden:
 
 1. An `AnalysisRun` references a pinned document representation, plan/policy versions, and a frozen set of units/tasks.
 2. Every planned item has a stable identity and expected task sequence.
-3. Every attempt has start/end time, input fingerprint, status, error code, and produced artifact IDs.
+3. Every execution references one append-only `ProcessingAttempt` and its immutable `ProcessingAttemptOutcome`, or one immutable `ModelRun`.
 4. Terminal statuses are typed and mutually exclusive.
 5. Run completeness is calculated from planned scope and terminal outcomes.
 6. Required blocks/failures prevent a `complete` status even when all items are terminal.
 7. Valid `processed_no_proposals` and `abstained` outcomes count as analyzed but remain separately reportable.
 8. Recovery identifies reusable artifacts by fingerprint and reruns only missing, invalid, or policy-selected work.
-9. A retry creates a new attempt and preserves the prior attempt.
+9. A retry creates a new underlying attempt or model run and preserves every prior record.
 10. Cancellation reaches a consistent boundary and records unstarted/planned items appropriately.
 11. Coverage reports expose counts and identities by page, node/unit, task type, status, and reason.
 12. CLI/API operations return machine-readable state and non-zero exit codes for incomplete/failed required work.
 
 ## 5. Status model
 
-Task terminal statuses:
+Coverage terminal statuses:
 
 ```text
 processed_with_proposals
@@ -76,16 +76,21 @@ planned → running → complete
 ## 6. Invariants
 
 - The frozen planned-item set never shrinks after work begins.
-- Every terminal item references at least one attempt or an explicit planning-time `not_applicable` decision.
-- One attempt uses one immutable input fingerprint.
-- No two committed attempts share the same attempt ID.
-- A successful retry does not alter the earlier failed attempt.
+- Every terminal item references at least one underlying execution or an explicit planning-time `not_applicable` decision.
+- An `AnalysisItemAttempt` is orchestration metadata only and has no independent status transition.
+- `ProcessingAttempt` and `ModelRun` own execution identity, input fingerprints, timing, errors, and terminal state.
+- Every `ProcessingAttempt` has exactly one immutable `ProcessingAttemptOutcome` after normal completion.
+- A successful retry does not alter an earlier ProcessingAttempt, ProcessingAttemptOutcome, or ModelRun.
 - Completion calculation is deterministic under a versioned policy.
 - Proposal count is never used as a proxy for analyzed-unit count.
 - A report's totals reconcile exactly to its listed unit statuses.
 - Recovery never reuses an artifact whose fingerprint or validation state is stale.
 
 ## 7. Data model and interfaces
+
+`AnalysisItemAttempt` points to exactly one `ProcessingAttempt` or `ModelRun`.
+
+It indexes orchestration work and does not define execution state, timestamps, errors, or outcomes.
 
 ```yaml
 AnalysisRun:
@@ -108,23 +113,19 @@ PlannedAnalysisItem:
   dependencies:
   input_fingerprint:
 
-TaskAttempt:
-  attempt_id:
+AnalysisItemAttempt:
+  analysis_item_attempt_id:
   planned_item_id:
-  ordinal:
-  input_fingerprint:
-  status:
-  error_code:
-  diagnostic_artifact_ids:
-  output_artifact_ids:
-  started_at:
-  completed_at:
+  processing_attempt_id:
+  model_run_id:
+  execution_role:
 
 CoverageRecord:
   coverage_record_id:
   planned_item_id:
   terminal_status:
-  selected_attempt_id:
+  selected_processing_attempt_id:
+  selected_model_run_id:
   proposal_ids:
   abstention_reason:
   blocking_reason:
@@ -135,7 +136,7 @@ Required operations:
 
 ```python
 start_analysis_run(command) -> AnalysisRun
-record_attempt_result(command) -> CoverageRecord | PendingState
+record_coverage_outcome(command) -> CoverageRecord | PendingState
 resume_analysis_run(run_id, recovery_policy_id) -> RecoveryPlan
 build_coverage_report(run_id) -> CoverageReport
 ```
@@ -152,7 +153,7 @@ A schema-valid abstention becomes `abstained` with a reason code and model run. 
 
 ### Crash between model output and proposal commit
 
-The raw model run remains archived. Recovery checks the transactional boundary and either deterministically completes validation/proposal construction or creates a new attempt. It never duplicates proposal batches.
+The raw ModelRun remains archived. Recovery checks the transactional boundary and either deterministically completes validation/proposal construction or creates a new ModelRun. It never duplicates proposal batches.
 
 ### Changed policy or representation
 
@@ -170,7 +171,7 @@ A report SHALL include at minimum:
 - total structural/analysis units planned and terminal;
 - counts by task type and terminal status;
 - blocked page/node/unit identities and reason codes;
-- attempts, retries, and selected successful attempts;
+- ProcessingAttempts, ProcessingAttemptOutcomes, ModelRuns, retries, and selected executions;
 - proposal and abstention counts;
 - evidence-validation pass/fail counts;
 - run state, completeness policy, and report digest.
@@ -192,9 +193,9 @@ Human summaries are generated from these reconciled fields, not separately maint
 - Completion is impossible with a missing, blocked, failed, invalid, or cancelled required item.
 - `processed_no_proposals`, `abstained`, and `model_failed` remain distinguishable in storage, API, report, and CLI exit behavior.
 - Failure injection before and after every artifact/proposal commit boundary produces no duplicate or orphaned current outcome.
-- Resume reruns only stale/missing work and preserves every previous attempt.
+- Resume reruns only stale/missing work and preserves every prior ProcessingAttempt, ProcessingAttemptOutcome, and ModelRun.
 - Report totals equal the enumerated records and the report digest is stable.
-- A changed input fingerprint cannot be attached to an existing attempt.
+- A changed input fingerprint cannot be attached to an existing ProcessingAttempt or ModelRun.
 
 ### Success criteria
 
