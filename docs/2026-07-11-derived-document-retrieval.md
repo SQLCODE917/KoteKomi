@@ -167,7 +167,6 @@ RAPTOR/GraphRAG-style summaries and communities may answer “where should analy
 
 - Initial delivery requires exact lookup plus SQLite FTS5-style lexical retrieval.
 - Embeddings, rerankers, and hierarchical navigation are optional enhancements but must obey the same manifest/query-record contract.
-- Existing search callers may receive a compatibility result while new callers use explicit channels and provenance.
 - Context planning stores the query record or selected-hit details inside its context manifest.
 
 ## 11. Completion gates
