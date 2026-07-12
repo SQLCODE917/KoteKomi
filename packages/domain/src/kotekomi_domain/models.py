@@ -131,8 +131,9 @@ class ModelRunStatus(StrEnum):
     SUCCEEDED = "succeeded"
     ABSTAINED = "abstained"
     INVALID_OUTPUT = "invalid_output"
-    COMMIT_FAILED = "commit_failed"
     RUNTIME_FAILED = "runtime_failed"
+    OUTPUT_ARCHIVE_FAILED = "output_archive_failed"
+    PUBLISH_FAILED = "publish_failed"
     CANCELLED = "cancelled"
 
 

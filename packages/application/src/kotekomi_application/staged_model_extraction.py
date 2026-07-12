@@ -380,7 +380,7 @@ def run_bounded_extraction(
             manifest,
             task,
             model_run_id,
-            ModelRunStatus.RUNTIME_FAILED,
+            ModelRunStatus.OUTPUT_ARCHIVE_FAILED,
             error=exc,
         )
         ledger_repository.save_model_run(run)
@@ -436,7 +436,7 @@ def run_bounded_extraction(
             manifest,
             task,
             model_run_id,
-            ModelRunStatus.COMMIT_FAILED,
+            ModelRunStatus.PUBLISH_FAILED,
             output_digest=output_digest,
             error=exc,
         )

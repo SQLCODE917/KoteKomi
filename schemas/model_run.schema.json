@@ -36,8 +36,9 @@
         "succeeded",
         "abstained",
         "invalid_output",
-        "commit_failed",
         "runtime_failed",
+        "output_archive_failed",
+        "publish_failed",
         "cancelled"
       ],
       "title": "ModelRunStatus",

@@ -613,6 +613,61 @@ def test_model_execution_spec_has_no_loose_or_colliding_settings() -> None:
             FixtureTokenizer.tokenizer_id,
             (ExecutionSetting("runtime", "shadowed"),),
         )
+
+
+@pytest.mark.parametrize(
+    ("failure_boundary", "expected_status"),
+    (
+        ("runtime", ModelRunStatus.RUNTIME_FAILED),
+        ("archive", ModelRunStatus.OUTPUT_ARCHIVE_FAILED),
+    ),
+)
+def test_staged_extraction_classifies_runtime_and_archive_failures_truthfully(
+    failure_boundary: str,
+    expected_status: ModelRunStatus,
+) -> None:
+    ledger = FakeGroundedCandidateLedger()
+    manifest = _ready_manifest_for_staged_test(ledger)
+
+    class FailingArchive(FakeModelOutputArchive):
+        def put_model_run_output(
+            self, model_run_id: str, payload: bytes, expected_digest: str
+        ) -> object:
+            raise OSError("archive unavailable")
+
+    class FailingRuntime(FakeModelTaskRuntime):
+        def run_model_task(self, task: ModelTaskRequest) -> ModelTaskResponse:
+            raise RuntimeError("runtime unavailable")
+
+    runtime = (
+        FailingRuntime(_valid_staged_output())
+        if failure_boundary == "runtime"
+        else FakeModelTaskRuntime(_valid_staged_output())
+    )
+    archive = FailingArchive() if failure_boundary == "archive" else FakeModelOutputArchive()
+    outcome = run_bounded_extraction(
+        BoundedExtractionInput(
+            source_id=ledger.source.id,
+            document_id=ledger.document.id,
+            representation_id=ledger.bundle.representation.id,
+            context_manifest_id=manifest.id,
+            prompt_bytes=manifest.prompt_bytes,
+            execution_spec=_fixture_execution_spec(manifest),
+            validator_version="fixture-validator-v1",
+            started_at=NOW,
+            completed_at=NOW,
+        ),
+        ledger,
+        archive,
+        runtime,
+        Uuid4ModelRunIdFactory(),
+        FixtureTokenizer(),
+        StagedClaimTaskSchemaRegistry(),
+    )
+
+    assert outcome.model_run.status is expected_status
+    assert outcome.model_run.raw_output_artifact_id is None
+    assert outcome.proposed_change_batch is None
     with pytest.raises(ValueError, match="ExecutionSetting records"):
         ModelExecutionSpec(
             "fixture-model",
@@ -834,7 +889,7 @@ def test_successful_model_run_and_candidate_batch_share_one_atomic_boundary() ->
         StagedClaimTaskSchemaRegistry(),
     )
 
-    assert outcome.model_run.status is ModelRunStatus.COMMIT_FAILED
+    assert outcome.model_run.status is ModelRunStatus.PUBLISH_FAILED
     assert outcome.proposed_change_batch is None
     assert ledger.evidence_targets == {}
     assert ledger.validation_attempts == {}

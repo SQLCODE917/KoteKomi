@@ -92,6 +92,7 @@ ExtractionTask:
   prompt_id:
   schema_id:
   model_profile_id:
+  execution_spec_digest:
   task_fingerprint:
 
 ModelRun:
@@ -103,10 +104,11 @@ ModelRun:
   tokenizer_id:
   prompt_digest:
   schema_digest:
+  execution_spec_digest:
   generation_parameters:
   raw_output_artifact_id:
   output_digest:
-  status: succeeded | abstained | invalid_output | runtime_failed | cancelled
+  status: succeeded | abstained | invalid_output | runtime_failed | output_archive_failed | publish_failed | cancelled
   error_code:
   started_at:
   completed_at:
@@ -140,6 +142,11 @@ run_model_task(task: ModelTaskRequest) -> ModelTaskResponse
 ```
 
 The response contains model-local data only. Application use cases own archive, validation, candidate IDs, and proposal construction.
+
+Failure statuses are assigned by the boundary at which the failure occurs: a runtime exception is
+`runtime_failed`; a raw-output archive failure after a response is `output_archive_failed`; invalid
+schema, references, or grounding are `invalid_output`; and a validated candidate batch that cannot
+be atomically published is `publish_failed`.
 
 ## 8. Task-specific behavior
 
