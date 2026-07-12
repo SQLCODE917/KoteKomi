@@ -164,7 +164,7 @@ class ModelExecutionReceipt:
     model_identity_digest: str
     generation_parameters_digest: str
     rendered_input_digest: str
-    input_token_count: int | None
+    input_token_count: int
     output_token_count: int | None
 
     def __post_init__(self) -> None:
@@ -177,9 +177,13 @@ class ModelExecutionReceipt:
                 character not in "0123456789abcdef" for character in digest
             ):
                 raise ValueError("Model execution receipt digests must be SHA-256 hex.")
-        if any(
-            count is not None and count < 0
-            for count in (self.input_token_count, self.output_token_count)
+        if (
+            type(self.input_token_count) is not int
+            or self.input_token_count < 0
+            or (
+                self.output_token_count is not None
+                and (type(self.output_token_count) is not int or self.output_token_count < 0)
+            )
         ):
             raise ValueError("Model execution receipt token counts cannot be negative.")
 
@@ -386,12 +390,13 @@ def run_bounded_extraction(
             task,
             model_run_id,
             ModelRunStatus.OUTPUT_ARCHIVE_FAILED,
+            execution_receipt=response.execution_receipt,
             error=exc,
         )
         ledger_repository.save_model_run(run)
         return BoundedExtractionOutcome(task, run, None)
     try:
-        _validate_execution_receipt(response.execution_receipt, execution_spec)
+        _validate_execution_receipt(response.execution_receipt, execution_spec, manifest)
         parsed = _parse_output(response.raw_output, manifest, schema)
         if isinstance(parsed, _AbstentionOutput):
             run = _model_run(
@@ -401,6 +406,7 @@ def run_bounded_extraction(
                 model_run_id,
                 ModelRunStatus.ABSTAINED,
                 output_digest=output_digest,
+                execution_receipt=response.execution_receipt,
             )
             ledger_repository.save_model_run(run)
             return BoundedExtractionOutcome(task, run, None)
@@ -417,6 +423,7 @@ def run_bounded_extraction(
             model_run_id,
             ModelRunStatus.INVALID_OUTPUT,
             output_digest=output_digest,
+            execution_receipt=response.execution_receipt,
             error=exc,
         )
         ledger_repository.save_model_run(run)
@@ -429,6 +436,7 @@ def run_bounded_extraction(
         model_run_id,
         ModelRunStatus.SUCCEEDED,
         output_digest=output_digest,
+        execution_receipt=response.execution_receipt,
     )
     try:
         ledger_repository.commit_successful_model_run_and_candidate_batch(
@@ -443,6 +451,7 @@ def run_bounded_extraction(
             model_run_id,
             ModelRunStatus.PUBLISH_FAILED,
             output_digest=output_digest,
+            execution_receipt=response.execution_receipt,
             error=exc,
         )
         ledger_repository.save_model_run(failed_run)
@@ -489,6 +498,7 @@ def _model_run(
     status: ModelRunStatus,
     *,
     output_digest: str | None = None,
+    execution_receipt: ModelExecutionReceipt | None = None,
     error: Exception | None = None,
 ) -> ModelRun:
     return ModelRun(
@@ -512,6 +522,9 @@ def _model_run(
         error_message=(str(error) if error is not None else None),
         started_at=extraction_input.started_at,
         completed_at=extraction_input.completed_at,
+        execution_receipt=(
+            _execution_receipt_payload(execution_receipt) if execution_receipt is not None else None
+        ),
     )
 
 
@@ -751,6 +764,7 @@ def _validate_execution_spec(
 def _validate_execution_receipt(
     receipt: ModelExecutionReceipt,
     execution_spec: ModelExecutionSpec,
+    manifest: ContextManifest,
 ) -> None:
     if receipt.model_identity_digest != model_identity_snapshot_digest(
         execution_spec.model_identity
@@ -764,6 +778,20 @@ def _validate_execution_receipt(
         )
     if receipt.rendered_input_digest != execution_spec.rendered_input_digest:
         raise ValueError("Model execution receipt input does not match the execution spec.")
+    if receipt.input_token_count != manifest.input_token_count:
+        raise ValueError(
+            "Model execution receipt input token count does not match ContextManifest."
+        )
+
+
+def _execution_receipt_payload(receipt: ModelExecutionReceipt) -> dict[str, JsonValue]:
+    return {
+        "model_identity_digest": receipt.model_identity_digest,
+        "generation_parameters_digest": receipt.generation_parameters_digest,
+        "rendered_input_digest": receipt.rendered_input_digest,
+        "input_token_count": receipt.input_token_count,
+        "output_token_count": receipt.output_token_count,
+    }
 
 
 def _digest(value: object) -> str:

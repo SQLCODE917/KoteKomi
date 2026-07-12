@@ -78,6 +78,21 @@
       "default": null,
       "title": "Error Message"
     },
+    "execution_receipt": {
+      "anyOf": [
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Execution Receipt"
+    },
     "execution_spec_digest": {
       "pattern": "^[a-f0-9]{64}$",
       "title": "Execution Spec Digest",

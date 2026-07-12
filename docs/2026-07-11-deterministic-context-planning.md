@@ -45,6 +45,8 @@ Forbidden:
 10. If required context does not fit, the planner applies a versioned split strategy or emits `context_budget_blocked` before model invocation.
 11. Retrieval results record index version, query, method, raw score, rank, and selection decision.
 12. Model runtime rejects input whose manifest token count exceeds the declared limit.
+13. Model runtime returns an execution receipt with the exact input token count.
+14. The Application Layer compares the receipt count with the verified manifest before accepting output.
 
 ## 5. Invariants
 
@@ -53,6 +55,7 @@ Forbidden:
 - Required context is never displaced by optional context.
 - The same pinned inputs and available deterministic indexes produce the same manifest digest.
 - A model run references exactly one finalized manifest.
+- A successful model run records a receipt whose input token count equals its manifest token count.
 - Excluded candidates remain inspectable with a reason.
 - Generated navigation summaries may nominate original nodes but are never rendered as authoritative evidence unless explicitly labeled non-source context and prohibited from citation.
 - No model citation outside the manifest can pass validation.

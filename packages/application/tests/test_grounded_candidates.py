@@ -210,7 +210,7 @@ class FakeModelTaskRuntime:
                     task.execution_spec.generation_parameters
                 ),
                 rendered_input_digest=task.rendered_input_digest,
-                input_token_count=None,
+                input_token_count=len(task.rendered_input.decode().split()),
                 output_token_count=None,
             ),
         )
@@ -604,6 +604,55 @@ def test_staged_extraction_rejects_a_mismatched_execution_receipt_after_archivin
     assert ledger.proposed_changes == {}
 
 
+def test_staged_extraction_rejects_and_persists_a_truncated_input_receipt() -> None:
+    ledger = FakeGroundedCandidateLedger()
+    archive = FakeModelOutputArchive()
+    manifest = _ready_manifest_for_staged_test(ledger)
+    execution_spec = _fixture_execution_spec(manifest)
+    receipt = ModelExecutionReceipt(
+        model_identity_digest=model_identity_snapshot_digest(execution_spec.model_identity),
+        generation_parameters_digest=generation_parameters_digest(
+            execution_spec.generation_parameters
+        ),
+        rendered_input_digest=execution_spec.rendered_input_digest,
+        input_token_count=manifest.input_token_count - 1,
+        output_token_count=9,
+    )
+
+    outcome = run_bounded_extraction(
+        BoundedExtractionInput(
+            source_id=ledger.source.id,
+            document_id=ledger.document.id,
+            representation_id=ledger.bundle.representation.id,
+            context_manifest_id=manifest.id,
+            prompt_bytes=manifest.prompt_bytes,
+            execution_spec=execution_spec,
+            validator_version="fixture-validator-v1",
+            started_at=NOW,
+            completed_at=NOW,
+        ),
+        ledger,
+        archive,
+        FakeModelTaskRuntime(_valid_staged_output(), receipt=receipt),
+        Uuid4ModelRunIdFactory(),
+        FixtureTokenizer(),
+        StagedClaimTaskSchemaRegistry(),
+    )
+
+    assert outcome.model_run.status is ModelRunStatus.INVALID_OUTPUT
+    assert outcome.model_run.error_message is not None
+    assert "input token count" in outcome.model_run.error_message
+    assert outcome.model_run.execution_receipt == {
+        "model_identity_digest": receipt.model_identity_digest,
+        "generation_parameters_digest": receipt.generation_parameters_digest,
+        "rendered_input_digest": receipt.rendered_input_digest,
+        "input_token_count": manifest.input_token_count - 1,
+        "output_token_count": 9,
+    }
+    assert archive.outputs[outcome.model_run.id] == _valid_staged_output()
+    assert ledger.proposed_changes == {}
+
+
 def test_model_execution_spec_has_no_loose_or_colliding_settings() -> None:
     caller_settings = {"temperature": 0}
     immutable_identity = ModelIdentitySnapshot(
@@ -963,3 +1012,5 @@ def test_retries_preserve_distinct_model_runs_for_one_task() -> None:
     )
     assert first.extraction_task.execution_spec_digest == execution_spec_digest
     assert first.model_run.execution_spec_digest == execution_spec_digest
+    assert first.model_run.execution_receipt is not None
+    assert first.model_run.execution_receipt["input_token_count"] == manifest.input_token_count

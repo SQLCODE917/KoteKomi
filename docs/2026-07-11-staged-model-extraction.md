@@ -106,6 +106,7 @@ ModelRun:
   schema_digest:
   execution_spec_digest:
   generation_parameters:
+  execution_receipt:
   raw_output_artifact_id:
   output_digest:
   status: succeeded | abstained | invalid_output | runtime_failed | output_archive_failed | publish_failed | cancelled
@@ -142,6 +143,10 @@ run_model_task(task: ModelTaskRequest) -> ModelTaskResponse
 ```
 
 The response contains model-local data only. Application use cases own archive, validation, candidate IDs, and proposal construction.
+
+The runtime receipt records the executed identity, generation parameters, rendered-input digest, mandatory input token count, and optional output token count.
+
+The Application Layer compares the receipt input token count with the verified `ContextManifest` before parsing output.
 
 Failure statuses are assigned by the boundary at which the failure occurs: a runtime exception is
 `runtime_failed`; a raw-output archive failure after a response is `output_archive_failed`; invalid

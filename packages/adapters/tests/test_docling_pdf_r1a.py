@@ -163,7 +163,7 @@ class FixtureModelTaskRuntime:
                     task.execution_spec.generation_parameters
                 ),
                 rendered_input_digest=task.rendered_input_digest,
-                input_token_count=None,
+                input_token_count=len(task.rendered_input.decode("utf-8").split()),
                 output_token_count=None,
             ),
         )
@@ -734,6 +734,8 @@ def test_docling_r1d_staged_extraction_publishes_one_task_local_candidate(
         assert replayed_alternate_change is not None
         assert replayed_task.context_manifest_id == manifest.id
         assert replayed_run.extraction_task_id == replayed_task.id
+        assert replayed_run.execution_receipt is not None
+        assert replayed_run.execution_receipt["input_token_count"] == manifest.input_token_count
         assert (
             render_context(
                 manifest.id,

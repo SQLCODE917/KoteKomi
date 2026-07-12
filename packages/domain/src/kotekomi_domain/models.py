@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Annotated, Self
@@ -1009,6 +1010,7 @@ class ModelRun(DomainModel):
     error_message: str | None = None
     started_at: datetime
     completed_at: datetime
+    execution_receipt: dict[str, JsonValue] | None = None
 
     @model_validator(mode="after")
     def validate_output_state(self) -> Self:
@@ -1018,6 +1020,47 @@ class ModelRun(DomainModel):
             raise ValueError("ModelRun raw output artifact and digest must be recorded together.")
         if self.status in {ModelRunStatus.SUCCEEDED, ModelRunStatus.ABSTAINED} and not has_artifact:
             raise ValueError("Successful or abstained ModelRun requires archived raw output.")
+        response_statuses = {
+            ModelRunStatus.SUCCEEDED,
+            ModelRunStatus.ABSTAINED,
+            ModelRunStatus.INVALID_OUTPUT,
+            ModelRunStatus.OUTPUT_ARCHIVE_FAILED,
+            ModelRunStatus.PUBLISH_FAILED,
+        }
+        if self.status in response_statuses and self.execution_receipt is None:
+            raise ValueError("ModelRun with a runtime response requires its execution receipt.")
+        if self.execution_receipt is not None:
+            expected_keys = {
+                "model_identity_digest",
+                "generation_parameters_digest",
+                "rendered_input_digest",
+                "input_token_count",
+                "output_token_count",
+            }
+            if set(self.execution_receipt) != expected_keys:
+                raise ValueError("ModelRun execution receipt has an invalid shape.")
+            for key in (
+                "model_identity_digest",
+                "generation_parameters_digest",
+                "rendered_input_digest",
+            ):
+                value = self.execution_receipt[key]
+                if not isinstance(value, str) or not re.fullmatch(r"[a-f0-9]{64}", value):
+                    raise ValueError("ModelRun execution receipt has an invalid digest.")
+            input_token_count = self.execution_receipt["input_token_count"]
+            output_token_count = self.execution_receipt["output_token_count"]
+            if (
+                not isinstance(input_token_count, int)
+                or isinstance(input_token_count, bool)
+                or input_token_count < 0
+            ):
+                raise ValueError("ModelRun execution receipt input token count is invalid.")
+            if output_token_count is not None and (
+                not isinstance(output_token_count, int)
+                or isinstance(output_token_count, bool)
+                or output_token_count < 0
+            ):
+                raise ValueError("ModelRun execution receipt output token count is invalid.")
         if self.completed_at < self.started_at:
             raise ValueError("ModelRun completed_at must not precede started_at.")
         return self
