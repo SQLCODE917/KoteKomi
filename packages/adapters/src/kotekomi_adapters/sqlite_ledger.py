@@ -962,23 +962,23 @@ class SQLiteLedgerRepository:
         checkpoint: Callable[[str], None] | None = None,
     ) -> None:
         self.save_provenance_activity(provenance_activity)
-        self._checkpoint(checkpoint, "AFTER_PROVENANCE")
+        self._invoke_publication_checkpoint(checkpoint, "AFTER_PROVENANCE")
         for evidence_target in evidence_targets:
             self.save_evidence_target(evidence_target)
-        self._checkpoint(checkpoint, "AFTER_EVIDENCE_TARGET")
+        self._invoke_publication_checkpoint(checkpoint, "AFTER_EVIDENCE_TARGET")
         for validation_attempt in validation_attempts:
             self.save_evidence_validation_attempt(validation_attempt)
-        self._checkpoint(checkpoint, "AFTER_VALIDATION_ATTEMPT")
+        self._invoke_publication_checkpoint(checkpoint, "AFTER_VALIDATION_ATTEMPT")
         for proposed_change in proposed_changes:
             self.save_proposed_change(proposed_change)
             record_type = proposed_change.proposed_json.get("record_type")
             if record_type == "Organization":
-                self._checkpoint(checkpoint, "AFTER_ORGANIZATION_PROPOSAL")
+                self._invoke_publication_checkpoint(checkpoint, "AFTER_ORGANIZATION_PROPOSAL")
             elif record_type == "Assertion":
-                self._checkpoint(checkpoint, "AFTER_ASSERTION_PROPOSAL")
+                self._invoke_publication_checkpoint(checkpoint, "AFTER_ASSERTION_PROPOSAL")
 
     @staticmethod
-    def _checkpoint(checkpoint: Callable[[str], None] | None, name: str) -> None:
+    def _invoke_publication_checkpoint(checkpoint: Callable[[str], None] | None, name: str) -> None:
         if checkpoint is not None:
             checkpoint(name)
 

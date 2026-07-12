@@ -605,6 +605,16 @@ def test_staged_extraction_rejects_a_mismatched_execution_receipt_after_archivin
 
 
 def test_model_execution_spec_has_no_loose_or_colliding_settings() -> None:
+    caller_settings = {"temperature": 0}
+    immutable_identity = ModelIdentitySnapshot(
+        "fixture-model",
+        "d" * 64,
+        "fixture-runtime",
+        FixtureTokenizer.tokenizer_id,
+        tuple(ExecutionSetting(key, value) for key, value in sorted(caller_settings.items())),
+    )
+    caller_settings["temperature"] = 1
+    assert immutable_identity.determinism_settings == (ExecutionSetting("temperature", 0),)
     with pytest.raises(ValueError, match="reserved model identity field"):
         ModelIdentitySnapshot(
             "fixture-model",
@@ -612,6 +622,10 @@ def test_model_execution_spec_has_no_loose_or_colliding_settings() -> None:
             "fixture-runtime",
             FixtureTokenizer.tokenizer_id,
             (ExecutionSetting("runtime", "shadowed"),),
+        )
+    with pytest.raises(ValueError, match="weights digest"):
+        ModelIdentitySnapshot(
+            "fixture-model", "not-a-digest", "fixture-runtime", FixtureTokenizer.tokenizer_id
         )
 
 

@@ -244,9 +244,7 @@ def test_context_planner_splits_multiple_focus_nodes_and_blocks_one_oversized_un
     blocked_unit = next(
         unit
         for unit in plan_analysis_units(
-            AnalysisUnitPlanningInput(
-                ledger.bundle.representation.id, "fixture-policy", "extract"
-            ),
+            AnalysisUnitPlanningInput(ledger.bundle.representation.id, "fixture-policy", "extract"),
             ledger,
         ).units
         if unit.focus_node_ids == ("nod_context_focus",)

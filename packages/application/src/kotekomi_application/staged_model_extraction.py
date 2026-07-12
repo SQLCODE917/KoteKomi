@@ -109,6 +109,11 @@ class ModelIdentitySnapshot:
     def __post_init__(self) -> None:
         if not self.name or not self.runtime or not self.tokenizer_id:
             raise ValueError("Model identity fields must be non-empty.")
+        if self.weights_digest is not None and (
+            len(self.weights_digest) != 64
+            or any(character not in "0123456789abcdef" for character in self.weights_digest)
+        ):
+            raise ValueError("Model weights digest must be SHA-256 hex when recorded.")
         _validate_settings(
             self.determinism_settings,
             "Model determinism settings",

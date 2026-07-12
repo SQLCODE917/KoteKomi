@@ -858,9 +858,7 @@ def load_context_manifest(
             manifest_digest=artifact.manifest_digest,
             status=ContextManifestStatus(_required_str(integrity, "status")),
             split_strategy_id=_optional_str(integrity, "split_strategy_id"),
-            child_analysis_unit_ids=_string_tuple_or_empty(
-                integrity, "child_analysis_unit_ids"
-            ),
+            child_analysis_unit_ids=_string_tuple_or_empty(integrity, "child_analysis_unit_ids"),
             blocked_reason=_optional_str(integrity, "blocked_reason"),
         )
     except (KeyError, TypeError, ValueError) as exc:
