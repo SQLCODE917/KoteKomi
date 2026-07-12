@@ -1,4 +1,5 @@
 import hashlib
+import json
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -6,6 +7,7 @@ from kotekomi_adapters import LocalArchiveStore, SQLiteLedgerInitializer, sqlite
 from kotekomi_adapters.docling_pdf_parser import DoclingPdfParser, DoclingPdfParserConfig
 from kotekomi_application import (
     AnalysisUnitPlanningInput,
+    BoundedExtractionInput,
     BuildIdentity,
     CaptureRequest,
     ContextManifestInput,
@@ -17,6 +19,9 @@ from kotekomi_application import (
     GroundedCandidateContextInput,
     GroundedEvidenceCandidate,
     GroundedOrganizationCandidate,
+    ModelIdentity,
+    ModelTaskRequest,
+    ModelTaskResponse,
     PdfIngestInput,
     PdfPagePreflight,
     PdfParseInput,
@@ -33,6 +38,7 @@ from kotekomi_application import (
     capture_source,
     ingest_pdf,
     plan_analysis_units,
+    run_bounded_extraction,
     submit_grounded_candidate_batch,
     verify_evidence_target,
 )
@@ -40,6 +46,7 @@ from kotekomi_domain import (
     AssertionEvidenceRole,
     DocumentRepresentationBundle,
     DocumentVersionKind,
+    ModelRunStatus,
     RepresentationAnalyzability,
     SourceType,
 )
@@ -87,6 +94,16 @@ class FixtureExactTokenizer:
 
     def count_tokens(self, rendered_input: bytes) -> int:
         return len(rendered_input.decode("utf-8").split())
+
+
+class FixtureModelTaskRuntime:
+    def __init__(self, raw_output: bytes) -> None:
+        self.raw_output = raw_output
+        self.requests: list[ModelTaskRequest] = []
+
+    def run_model_task(self, task: ModelTaskRequest) -> ModelTaskResponse:
+        self.requests.append(task)
+        return ModelTaskResponse(self.raw_output)
 
 
 def _capture_request() -> CaptureRequest:
@@ -387,6 +404,137 @@ def test_docling_r1c_includes_chip_definition_and_excludes_furniture_determinist
     assert blocked.blocked_reason == "required_context_exceeds_budget"
 
 
+def test_docling_r1d_staged_extraction_publishes_one_task_local_candidate(
+    tmp_path: Path,
+) -> None:
+    ledger_path = tmp_path / "ledger.db"
+    archive_path = tmp_path / "archive"
+    archive = LocalArchiveStore(archive_path)
+    archive.initialize()
+    SQLiteLedgerInitializer(ledger_path).initialize()
+    request = _capture_request()
+    identity_policy = StableSourceIdentityPolicy()
+    capture_identity_result = capture_identity(request, identity_policy)
+    archive.put_if_absent_or_identical(
+        capture_identity_result.raw_blob_id,
+        RAW_PDF,
+        RAW_PDF_DIGEST,
+    )
+    with sqlite_ledger_transaction(ledger_path) as repository:
+        capture = capture_source(request, repository, identity_policy)
+        ingest_outcome = ingest_pdf(
+            _ingest_input(capture.document.id, capture.raw_blob.id),
+            repository,
+            DoclingPdfParser(DoclingPdfParserConfig()),
+            Uuid4ProcessingAttemptIdFactory(),
+            FixtureProcessingClock(),
+        )
+        assert ingest_outcome.representation_id is not None
+        bundle = repository.get_document_representation_bundle(ingest_outcome.representation_id)
+        assert bundle is not None
+        priority_node = next(
+            node
+            for node in bundle.nodes
+            if PRIORITY_SENTENCE in bundle.text_views[0].text[node.start_char : node.end_char]
+        )
+        focus_unit = next(
+            unit
+            for unit in plan_analysis_units(
+                AnalysisUnitPlanningInput(
+                    bundle.representation.id, "r1d_pdf_v1", "claim_extraction"
+                ),
+                repository,
+            ).units
+            if unit.focus_node_ids == (priority_node.id,)
+        )
+        manifest = build_context_manifest(
+            ContextManifestInput(
+                analysis_unit=focus_unit,
+                model_profile=ContextModelProfile("r1d_fixture_model", 512, 64, 16),
+                prompt_id="r1d_claim_extraction",
+                prompt_bytes=b"Extract one grounded source claim.",
+                schema_id="r1d_candidate_schema_v1",
+                schema_bytes=b'{"type":"object","additionalProperties":false}',
+                renderer_version="r1d_renderer_v1",
+            ),
+            repository,
+            FixtureExactTokenizer(),
+        ).manifest
+        text_view = bundle.text_views[0]
+        start_char = text_view.text.index(PRIORITY_SENTENCE)
+        fixture_output = json.dumps(
+            {
+                "kind": "candidates",
+                "schema_id": "r1d_candidate_schema_v1",
+                "organizations": [
+                    {"local_id": "model_subject", "name": "HealthyJoCo"},
+                ],
+                "evidence": [
+                    {
+                        "local_id": "model_evidence",
+                        "text_view_id": text_view.id,
+                        "start_char": start_char,
+                        "end_char": start_char + len(PRIORITY_SENTENCE),
+                        "exact_text": PRIORITY_SENTENCE,
+                        "node_ids": [priority_node.id],
+                        "pdf_region_ids": list(priority_node.source_region_ids),
+                        "suffix_text": PRIORITY_SUFFIX,
+                    }
+                ],
+                "assertions": [
+                    {
+                        "local_id": "model_claim",
+                        "subject_organization_local_id": "model_subject",
+                        "evidence_local_id": "model_evidence",
+                        "predicate": "identified_community_health_priorities",
+                        "object_value": (
+                            "healthcare access, mental health, housing, and food security"
+                        ),
+                    }
+                ],
+            },
+            separators=(",", ":"),
+        ).encode()
+        runtime = FixtureModelTaskRuntime(fixture_output)
+        outcome = run_bounded_extraction(
+            BoundedExtractionInput(
+                source_id=capture.source.id,
+                document_id=capture.document.id,
+                representation_id=bundle.representation.id,
+                context_manifest=manifest,
+                model_run_id="mrn_r1d_priority_candidate_v1",
+                model_identity=ModelIdentity(
+                    "r1d-fixture-model",
+                    "b" * 64,
+                    "fixture-runtime-v1",
+                    FixtureExactTokenizer.tokenizer_id,
+                    {"temperature": 0, "seed": 7},
+                ),
+                generation_parameters={"temperature": 0, "seed": 7},
+                validator_version="r1d-evidence-validator-v1",
+                started_at=NOW,
+                completed_at=NOW,
+            ),
+            repository,
+            archive,
+            runtime,
+        )
+        assert outcome.model_run.status is ModelRunStatus.SUCCEEDED, outcome.model_run.error_message
+        assert outcome.proposed_change_batch is not None
+        assertion_change = repository.get_proposed_change(
+            outcome.proposed_change_batch.proposed_change_ids_by_local_id["model_claim"]
+        )
+        assert assertion_change is not None
+        assert assertion_change.proposed_json["stable_label"] != "model_claim"
+        assert outcome.model_run.extraction_task_id == outcome.extraction_task.id
+        assert repository.get_extraction_task(outcome.extraction_task.id) == outcome.extraction_task
+        assert repository.get_model_run(outcome.model_run.id) == outcome.model_run
+
+    assert len(runtime.requests) == 1
+    assert runtime.requests[0].context_manifest_id == manifest.id
+    assert archive.read_model_run_output(outcome.model_run.id) == fixture_output
+
+
 def _priority_sentence_batch(
     source_id: str,
     document_id: str,
@@ -399,7 +547,7 @@ def _priority_sentence_batch(
     start_char = text_view.text.index(PRIORITY_SENTENCE)
     end_char = start_char + len(PRIORITY_SENTENCE)
     return GroundedCandidateBatchInput(
-        task_key="r1b-priority-sentence-fixture-v1",
+        task_fingerprint="d" * 64,
         source_id=source_id,
         document_id=document_id,
         representation_id=manifest.representation_id,

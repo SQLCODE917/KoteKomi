@@ -39,6 +39,8 @@ from kotekomi_domain import (
     EvidenceReanchoringRelation,
     EvidenceTarget,
     EvidenceValidationAttempt,
+    ExtractionTask,
+    ModelRun,
     Organization,
     Outcome,
     ParseQualityReport,
@@ -102,6 +104,8 @@ IMMUTABLE_TABLES = frozenset(
         "processing_attempt_outcomes",
         "assertion_evidence_links",
         "evidence_reanchoring_relations",
+        "extraction_tasks",
+        "model_runs",
     }
 )
 
@@ -128,6 +132,16 @@ RELATIONAL_OWNERSHIP_COLUMNS: dict[str, tuple[tuple[str, str], ...]] = {
     "document_edges": (("representation_id", "representation_id"),),
     "source_regions": (("representation_id", "representation_id"),),
     "parse_quality_reports": (("representation_id", "representation_id"),),
+    "extraction_tasks": (
+        ("context_manifest_id", "context_manifest_id"),
+        ("task_fingerprint", "task_fingerprint"),
+    ),
+    "model_runs": (
+        ("extraction_task_id", "extraction_task_id"),
+        ("task_fingerprint", "task_fingerprint"),
+        ("started_at", "started_at"),
+        ("completed_at", "completed_at"),
+    ),
 }
 
 
@@ -175,6 +189,8 @@ EVIDENCE_REANCHORING_RELATION_SPEC = RecordSpec(
     "evidence_reanchoring_relations",
     EvidenceReanchoringRelation,
 )
+EXTRACTION_TASK_SPEC = RecordSpec("extraction_tasks", ExtractionTask)
+MODEL_RUN_SPEC = RecordSpec("model_runs", ModelRun)
 ASSERTION_SPEC = RecordSpec("assertions", Assertion)
 RELATIONSHIP_SPEC = RecordSpec("relationships", Relationship)
 OUTCOME_SPEC = RecordSpec("outcomes", Outcome)
@@ -221,6 +237,8 @@ REQUIRED_LEDGER_TABLES = (
     "processing_attempt_outcomes",
     "assertion_evidence_links",
     "evidence_reanchoring_relations",
+    "extraction_tasks",
+    "model_runs",
     "assertions",
     "relationships",
     "outcomes",
@@ -817,6 +835,24 @@ class SQLiteLedgerRepository:
 
     def list_evidence_validation_attempts(self) -> tuple[EvidenceValidationAttempt, ...]:
         return self._list(EVIDENCE_VALIDATION_ATTEMPT_SPEC)
+
+    def save_extraction_task(self, record: ExtractionTask) -> None:
+        self._save(EXTRACTION_TASK_SPEC, record)
+
+    def get_extraction_task(self, record_id: str) -> ExtractionTask | None:
+        return self._get(EXTRACTION_TASK_SPEC, record_id)
+
+    def list_extraction_tasks(self) -> tuple[ExtractionTask, ...]:
+        return self._list(EXTRACTION_TASK_SPEC)
+
+    def save_model_run(self, record: ModelRun) -> None:
+        self._save(MODEL_RUN_SPEC, record)
+
+    def get_model_run(self, record_id: str) -> ModelRun | None:
+        return self._get(MODEL_RUN_SPEC, record_id)
+
+    def list_model_runs_for_task(self, extraction_task_id: str) -> tuple[ModelRun, ...]:
+        return self._list_for_owner(MODEL_RUN_SPEC, "extraction_task_id", extraction_task_id)
 
     def commit_grounded_candidate_batch(
         self,

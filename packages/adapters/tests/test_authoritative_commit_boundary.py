@@ -63,7 +63,7 @@ def _grounded_batch(
     *, source_id: str, document_id: str, representation_id: str, text_view_id: str
 ) -> GroundedCandidateBatchInput:
     return GroundedCandidateBatchInput(
-        task_key="final-proof-grounded-task",
+        task_fingerprint="e" * 64,
         source_id=source_id,
         document_id=document_id,
         representation_id=representation_id,

@@ -121,7 +121,9 @@ class ContextManifest:
     analysis_unit_id: str
     representation_id: str
     prompt_id: str
+    prompt_digest: str
     schema_id: str
+    schema_digest: str
     renderer_version: str
     planner_policy_id: str
     tokenizer_id: str
@@ -501,7 +503,9 @@ def _manifest(
         "analysis_unit_id": manifest_input.analysis_unit.id,
         "representation_id": manifest_input.analysis_unit.representation_id,
         "prompt_id": manifest_input.prompt_id,
+        "prompt_digest": hashlib.sha256(manifest_input.prompt_bytes).hexdigest(),
         "schema_id": manifest_input.schema_id,
+        "schema_digest": hashlib.sha256(manifest_input.schema_bytes).hexdigest(),
         "renderer_version": manifest_input.renderer_version,
         "planner_policy_id": manifest_input.analysis_unit.planner_policy_id,
         "tokenizer_id": tokenizer.tokenizer_id,
@@ -522,7 +526,9 @@ def _manifest(
         analysis_unit_id=manifest_input.analysis_unit.id,
         representation_id=manifest_input.analysis_unit.representation_id,
         prompt_id=manifest_input.prompt_id,
+        prompt_digest=hashlib.sha256(manifest_input.prompt_bytes).hexdigest(),
         schema_id=manifest_input.schema_id,
+        schema_digest=hashlib.sha256(manifest_input.schema_bytes).hexdigest(),
         renderer_version=manifest_input.renderer_version,
         planner_policy_id=manifest_input.analysis_unit.planner_policy_id,
         tokenizer_id=tokenizer.tokenizer_id,

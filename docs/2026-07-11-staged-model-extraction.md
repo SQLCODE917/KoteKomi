@@ -6,7 +6,11 @@
 
 ## 1. Context and problem
 
-The current whole-document proposal call asks one model invocation to discover ontology records, assign identifiers, extract claims, select evidence, and emit a proposal batch. Long documents do not fit, and combining semantic judgment with canonical bookkeeping makes failures difficult to isolate, replay, or validate.
+The superseded whole-document proposal path asked one model invocation to discover ontology records, assign identifiers, extract claims, select evidence, and emit a proposal batch.
+
+Long documents do not fit that path.
+
+Combining semantic judgment with canonical bookkeeping made failures difficult to isolate, replay, or validate.
 
 ## 2. Goals
 
@@ -171,8 +175,9 @@ Operates on a bounded candidate set, such as one section or one source document.
 
 ## 10. Compatibility and delivery
 
-- The current `ModelRuntime.propose_assertions(...)` becomes a legacy adapter or is replaced by `run_model_task(...)`.
-- Existing fixture behavior may be recreated through staged tasks, but the legacy whole-document path cannot pass this TDD's completion gates.
+- The staged task port replaces the superseded whole-document proposal contract.
+- No whole-document proposal adapter remains in the production path.
+- Fixtures recreate extraction behavior through staged tasks.
 - Deterministic fake runtimes implement each task schema for tests.
 - Local production runtimes use the same port and may vary model size without changing domain contracts.
 
@@ -208,11 +213,29 @@ This deliverable is incomplete if:
 - abstention is reported as success with no coverage detail;
 - source references not visible to the model can pass validation.
 
-## 12. References
+## 12. R1-D bounded PDF proof
+
+The R1-D fixture uses the press-release priority paragraph as one `claim_extraction` task.
+
+The fixture passes a ready `ContextManifest` to a deterministic task runtime.
+
+The runtime returns model-local Organization, EvidenceTarget, and Assertion labels.
+
+Application code archives the raw JSON before parsing it.
+
+Application code records an immutable `ExtractionTask` and `ModelRun`.
+
+Application code rejects candidates that cite nodes outside the manifest.
+
+Application code maps valid local labels to canonical IDs and pending `ProposedChange` records.
+
+The proof verifies that renamed local labels produce identical canonical IDs.
+
+## 13. References
 
 - Claimify staged claim extraction: https://aclanthology.org/2025.acl-long.348/
 - KoteKomi application ports, proposal use case, and testing guidance
 
-## 13. Halt conditions
+## 14. Halt conditions
 
 Stop and revise when a task cannot be independently validated, when the runtime cannot preserve exact raw output and model identity, or when a required claim type cannot be represented without conflating source report and world-state assertion.

@@ -1,14 +1,24 @@
 import hashlib
+from dataclasses import replace
 from datetime import UTC, datetime
 
 import pytest
 from kotekomi_application import (
+    BoundedExtractionInput,
+    ContextCandidate,
+    ContextCandidateRole,
+    ContextManifest,
+    ContextManifestStatus,
     GroundedAssertionCandidate,
     GroundedCandidateBatchInput,
     GroundedCandidateContextInput,
     GroundedEvidenceCandidate,
     GroundedOrganizationCandidate,
+    ModelIdentity,
+    ModelTaskRequest,
+    ModelTaskResponse,
     build_grounded_candidate_context,
+    run_bounded_extraction,
     submit_grounded_candidate_batch,
 )
 from kotekomi_domain import (
@@ -18,6 +28,9 @@ from kotekomi_domain import (
     DocumentRepresentationBundle,
     EvidenceTarget,
     EvidenceValidationAttempt,
+    ExtractionTask,
+    ModelRun,
+    ModelRunStatus,
     ParseQualityReport,
     ProposedChange,
     ProvenanceActivity,
@@ -51,6 +64,8 @@ class FakeGroundedCandidateLedger:
         self.validation_attempts: dict[str, EvidenceValidationAttempt] = {}
         self.provenance_activities: dict[str, ProvenanceActivity] = {}
         self.proposed_changes: dict[str, ProposedChange] = {}
+        self.extraction_tasks: dict[str, ExtractionTask] = {}
+        self.model_runs: dict[str, ModelRun] = {}
 
     def get_source(self, record_id: str) -> Source | None:
         return self.source if record_id == self.source.id else None
@@ -87,6 +102,34 @@ class FakeGroundedCandidateLedger:
         self.validation_attempts.update({record.id: record for record in validation_attempts})
         self.provenance_activities[provenance_activity.id] = provenance_activity
         self.proposed_changes.update({record.id: record for record in proposed_changes})
+
+    def save_extraction_task(self, record: ExtractionTask) -> None:
+        self.extraction_tasks[record.id] = record
+
+    def save_model_run(self, record: ModelRun) -> None:
+        self.model_runs[record.id] = record
+
+
+class FakeModelOutputArchive:
+    def __init__(self) -> None:
+        self.outputs: dict[str, bytes] = {}
+
+    def put_model_run_output(
+        self, model_run_id: str, payload: bytes, expected_digest: str
+    ) -> object:
+        assert hashlib.sha256(payload).hexdigest() == expected_digest
+        self.outputs[model_run_id] = payload
+        return object()
+
+
+class FakeModelTaskRuntime:
+    def __init__(self, raw_output: bytes) -> None:
+        self.raw_output = raw_output
+        self.requests: list[ModelTaskRequest] = []
+
+    def run_model_task(self, task: ModelTaskRequest) -> ModelTaskResponse:
+        self.requests.append(task)
+        return ModelTaskResponse(self.raw_output)
 
 
 def _bundle(document_id: str) -> DocumentRepresentationBundle:
@@ -148,7 +191,7 @@ def _batch(
     ledger: FakeGroundedCandidateLedger, *, evidence_text: str = TEXT
 ) -> GroundedCandidateBatchInput:
     return GroundedCandidateBatchInput(
-        task_key="grounded-fixture-task",
+        task_fingerprint="f" * 64,
         source_id=ledger.source.id,
         document_id=ledger.document.id,
         representation_id=ledger.bundle.representation.id,
@@ -210,6 +253,37 @@ def test_submit_grounded_candidate_batch_derives_records_and_pending_changes() -
     ]
 
 
+def test_grounded_candidate_identities_do_not_depend_on_model_local_labels() -> None:
+    first_ledger = FakeGroundedCandidateLedger()
+    second_ledger = FakeGroundedCandidateLedger()
+    first = submit_grounded_candidate_batch(_batch(first_ledger), first_ledger)
+    original = _batch(second_ledger)
+    renamed = replace(
+        original,
+        organizations=(GroundedOrganizationCandidate("renamed_subject", "Fixture Organization"),),
+        evidence=(replace(original.evidence[0], local_id="renamed_support"),),
+        assertions=(
+            replace(
+                original.assertions[0],
+                local_id="renamed_claim",
+                subject_organization_local_id="renamed_subject",
+                evidence_local_id="renamed_support",
+            ),
+        ),
+    )
+    second = submit_grounded_candidate_batch(renamed, second_ledger)
+
+    assert set(first.organization_ids_by_local_id.values()) == set(
+        second.organization_ids_by_local_id.values()
+    )
+    assert set(first.evidence_target_ids_by_local_id.values()) == set(
+        second.evidence_target_ids_by_local_id.values()
+    )
+    assert set(first.proposed_change_ids_by_local_id.values()) == set(
+        second.proposed_change_ids_by_local_id.values()
+    )
+
+
 def test_grounded_candidate_context_is_deterministic_and_scoped_to_selected_nodes() -> None:
     ledger = FakeGroundedCandidateLedger()
     context_input = GroundedCandidateContextInput(
@@ -267,3 +341,94 @@ def test_submit_grounded_candidate_batch_rejects_selector_disagreement_atomicall
     assert ledger.validation_attempts == {}
     assert ledger.provenance_activities == {}
     assert ledger.proposed_changes == {}
+
+
+def test_staged_extraction_archives_invalid_task_local_output_without_proposals() -> None:
+    ledger = FakeGroundedCandidateLedger()
+    archive = FakeModelOutputArchive()
+    raw_output = b"""{
+      "kind":"candidates",
+      "schema_id":"fixture_candidate_schema_v1",
+      "organizations":[{"local_id":"subject","name":"Fixture Organization"}],
+      "evidence":[{
+        "local_id":"support",
+        "text_view_id":"tvw_grounded_fixture",
+        "start_char":0,
+        "end_char":35,
+        "exact_text":"Alpha supports the accepted assertion.",
+        "node_ids":["nod_not_visible"]
+      }],
+      "assertions":[{
+        "local_id":"claim",
+        "subject_organization_local_id":"subject",
+        "evidence_local_id":"support",
+        "predicate":"reported_alpha",
+        "object_value":"Alpha"
+      }]
+    }"""
+    runtime = FakeModelTaskRuntime(raw_output)
+    rendered_input = b"fixture prompt\nfixture schema\nfixture node"
+    manifest = ContextManifest(
+        id="ctx_fixture_candidate_v1",
+        analysis_unit_id="anu_fixture_candidate_v1",
+        representation_id=ledger.bundle.representation.id,
+        prompt_id="fixture_prompt_v1",
+        prompt_digest=hashlib.sha256(b"fixture prompt").hexdigest(),
+        schema_id="fixture_candidate_schema_v1",
+        schema_digest=hashlib.sha256(b"fixture schema").hexdigest(),
+        renderer_version="fixture_renderer_v1",
+        planner_policy_id="fixture_policy_v1",
+        tokenizer_id="fixture_tokenizer_v1",
+        model_context_limit=64,
+        reserved_output_tokens=8,
+        safety_margin_tokens=4,
+        selected_candidates=(
+            ContextCandidate(
+                node_id=ledger.bundle.nodes[0].id,
+                role=ContextCandidateRole.FOCUS,
+                reason_code="focus_node",
+                required=True,
+                priority=1,
+                dependency_path=(),
+                source_node_ids=(ledger.bundle.nodes[0].id,),
+                estimated_tokens=3,
+            ),
+        ),
+        excluded_candidates=(),
+        rendered_segments=(),
+        rendered_input=rendered_input,
+        rendered_input_digest=hashlib.sha256(rendered_input).hexdigest(),
+        input_token_count=3,
+        manifest_digest="c" * 64,
+        status=ContextManifestStatus.READY,
+    )
+
+    outcome = run_bounded_extraction(
+        BoundedExtractionInput(
+            source_id=ledger.source.id,
+            document_id=ledger.document.id,
+            representation_id=ledger.bundle.representation.id,
+            context_manifest=manifest,
+            model_run_id="mrn_invalid_task_local_ref",
+            model_identity=ModelIdentity(
+                "fixture-model",
+                "d" * 64,
+                "fixture-runtime",
+                "fixture-tokenizer-v1",
+                {"temperature": 0},
+            ),
+            generation_parameters={"temperature": 0},
+            validator_version="fixture-validator-v1",
+            started_at=NOW,
+            completed_at=NOW,
+        ),
+        ledger,
+        archive,
+        runtime,
+    )
+
+    assert outcome.model_run.status is ModelRunStatus.INVALID_OUTPUT
+    assert "absent from the ContextManifest" in (outcome.model_run.error_message or "")
+    assert outcome.proposed_change_batch is None
+    assert ledger.proposed_changes == {}
+    assert archive.outputs[outcome.model_run.id] == raw_output

@@ -18,6 +18,7 @@ ARCHIVE_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
 RAW_SOURCE_DIR = Path("sources/raw")
 ATTACHMENTS_DIR = Path("attachments")
 BRIEFING_DAILY_DIR = Path("briefings/daily")
+MODEL_RUNS_DIR = Path("model-runs")
 STAGING_DIR = Path(".staging")
 
 
@@ -30,6 +31,7 @@ class LocalArchiveStore:
             RAW_SOURCE_DIR,
             ATTACHMENTS_DIR,
             BRIEFING_DAILY_DIR,
+            MODEL_RUNS_DIR,
         ):
             self._absolute_path(relative_dir).mkdir(parents=True, exist_ok=True)
 
@@ -59,6 +61,34 @@ class LocalArchiveStore:
 
     def read_raw_source(self, source_id: str) -> bytes:
         relative_path = RAW_SOURCE_DIR / f"{_validate_archive_id(source_id)}.bin"
+        return self._absolute_path(relative_path).read_bytes()
+
+    def put_model_run_output(
+        self,
+        model_run_id: str,
+        payload: bytes,
+        expected_digest: str,
+    ) -> ArchivePutOutcome:
+        actual_digest = hashlib.sha256(payload).hexdigest()
+        if actual_digest != expected_digest:
+            raise ValueError("ModelRun output does not match expected digest.")
+        relative_path = MODEL_RUNS_DIR / f"{_validate_archive_id(model_run_id)}.json"
+        absolute_path = self._absolute_path(relative_path)
+        if absolute_path.exists():
+            existing = absolute_path.read_bytes()
+            if hashlib.sha256(existing).hexdigest() != expected_digest:
+                raise ValueError("ModelRun output conflicts with its expected digest.")
+            return ArchivePutOutcome(
+                ArchivePutDisposition.REUSED,
+                ArchiveObject(relative_path.as_posix(), len(existing)),
+            )
+        return ArchivePutOutcome(
+            ArchivePutDisposition.CREATED,
+            self._write_bytes(relative_path, absolute_path, payload),
+        )
+
+    def read_model_run_output(self, model_run_id: str) -> bytes:
+        relative_path = MODEL_RUNS_DIR / f"{_validate_archive_id(model_run_id)}.json"
         return self._absolute_path(relative_path).read_bytes()
 
     def read_briefing_markdown(self, briefing_id: str) -> str:

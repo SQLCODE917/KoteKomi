@@ -1,0 +1,179 @@
+{
+  "$defs": {
+    "JsonValue": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "integer"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "ModelRunStatus": {
+      "enum": [
+        "succeeded",
+        "abstained",
+        "invalid_output",
+        "runtime_failed",
+        "cancelled"
+      ],
+      "title": "ModelRunStatus",
+      "type": "string"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "An immutable invocation attempt, including terminal failures and abstentions.",
+  "properties": {
+    "completed_at": {
+      "format": "date-time",
+      "title": "Completed At",
+      "type": "string"
+    },
+    "error_code": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Error Code"
+    },
+    "error_message": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Error Message"
+    },
+    "extraction_task_id": {
+      "pattern": "^ext_[A-Za-z0-9][A-Za-z0-9_-]*$",
+      "title": "Extraction Task Id",
+      "type": "string"
+    },
+    "generation_parameters": {
+      "additionalProperties": {
+        "$ref": "#/$defs/JsonValue"
+      },
+      "title": "Generation Parameters",
+      "type": "object"
+    },
+    "id": {
+      "pattern": "^mrn_[A-Za-z0-9][A-Za-z0-9_-]*$",
+      "title": "Id",
+      "type": "string"
+    },
+    "model_identity": {
+      "additionalProperties": {
+        "$ref": "#/$defs/JsonValue"
+      },
+      "title": "Model Identity",
+      "type": "object"
+    },
+    "output_digest": {
+      "anyOf": [
+        {
+          "pattern": "^[a-f0-9]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Output Digest"
+    },
+    "prompt_digest": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Prompt Digest",
+      "type": "string"
+    },
+    "raw_output_artifact_id": {
+      "anyOf": [
+        {
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Raw Output Artifact Id"
+    },
+    "runtime_identity": {
+      "minLength": 1,
+      "title": "Runtime Identity",
+      "type": "string"
+    },
+    "schema_digest": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Schema Digest",
+      "type": "string"
+    },
+    "started_at": {
+      "format": "date-time",
+      "title": "Started At",
+      "type": "string"
+    },
+    "status": {
+      "$ref": "#/$defs/ModelRunStatus"
+    },
+    "task_fingerprint": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Task Fingerprint",
+      "type": "string"
+    },
+    "tokenizer_id": {
+      "minLength": 1,
+      "title": "Tokenizer Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "extraction_task_id",
+    "task_fingerprint",
+    "model_identity",
+    "runtime_identity",
+    "tokenizer_id",
+    "prompt_digest",
+    "schema_digest",
+    "generation_parameters",
+    "status",
+    "started_at",
+    "completed_at"
+  ],
+  "title": "ModelRun",
+  "type": "object"
+}

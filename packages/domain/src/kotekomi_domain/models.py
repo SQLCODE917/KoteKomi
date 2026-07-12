@@ -45,6 +45,8 @@ DocumentNodeId = Annotated[str, Field(pattern=r"^nod_[A-Za-z0-9][A-Za-z0-9_-]*$"
 DocumentEdgeId = Annotated[str, Field(pattern=r"^deg_[A-Za-z0-9][A-Za-z0-9_-]*$")]
 ParseQualityReportId = Annotated[str, Field(pattern=r"^pqr_[A-Za-z0-9][A-Za-z0-9_-]*$")]
 SourceRegionId = Annotated[str, Field(pattern=r"^srg_[A-Za-z0-9][A-Za-z0-9_-]*$")]
+ExtractionTaskId = Annotated[str, Field(pattern=r"^ext_[A-Za-z0-9][A-Za-z0-9_-]*$")]
+ModelRunId = Annotated[str, Field(pattern=r"^mrn_[A-Za-z0-9][A-Za-z0-9_-]*$")]
 
 
 def utc_now() -> datetime:
@@ -121,6 +123,14 @@ class ProcessingAttemptStatus(StrEnum):
     FAILED = "failed"
     CANCELLED = "cancelled"
     INTERRUPTED = "interrupted"
+
+
+class ModelRunStatus(StrEnum):
+    SUCCEEDED = "succeeded"
+    ABSTAINED = "abstained"
+    INVALID_OUTPUT = "invalid_output"
+    RUNTIME_FAILED = "runtime_failed"
+    CANCELLED = "cancelled"
 
 
 class ProcessingArtifactKind(StrEnum):
@@ -935,6 +945,55 @@ class ProvenanceActivity(DomainModel):
     input_ids: tuple[NonEmptyStr, ...] = Field(default_factory=tuple)
     output_ids: tuple[NonEmptyStr, ...] = Field(default_factory=tuple)
     occurred_at: datetime = Field(default_factory=utc_now)
+
+
+class ExtractionTask(DomainModel):
+    """The immutable, fully pinned semantic task presented to one model run."""
+
+    id: ExtractionTaskId
+    task_type: NonEmptyStr
+    context_manifest_id: NonEmptyStr
+    context_manifest_digest: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
+    context_manifest_payload: dict[str, JsonValue]
+    input_candidate_ids: tuple[NonEmptyStr, ...] = Field(default_factory=tuple)
+    prompt_id: NonEmptyStr
+    schema_id: NonEmptyStr
+    model_profile_id: NonEmptyStr
+    task_fingerprint: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
+    created_at: datetime = Field(default_factory=utc_now)
+
+
+class ModelRun(DomainModel):
+    """An immutable invocation attempt, including terminal failures and abstentions."""
+
+    id: ModelRunId
+    extraction_task_id: ExtractionTaskId
+    task_fingerprint: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
+    model_identity: dict[str, JsonValue]
+    runtime_identity: NonEmptyStr
+    tokenizer_id: NonEmptyStr
+    prompt_digest: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
+    schema_digest: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
+    generation_parameters: dict[str, JsonValue]
+    raw_output_artifact_id: NonEmptyStr | None = None
+    output_digest: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")] | None = None
+    status: ModelRunStatus
+    error_code: str | None = None
+    error_message: str | None = None
+    started_at: datetime
+    completed_at: datetime
+
+    @model_validator(mode="after")
+    def validate_output_state(self) -> Self:
+        has_artifact = self.raw_output_artifact_id is not None
+        has_digest = self.output_digest is not None
+        if has_artifact != has_digest:
+            raise ValueError("ModelRun raw output artifact and digest must be recorded together.")
+        if self.status in {ModelRunStatus.SUCCEEDED, ModelRunStatus.ABSTAINED} and not has_artifact:
+            raise ValueError("Successful or abstained ModelRun requires archived raw output.")
+        if self.completed_at < self.started_at:
+            raise ValueError("ModelRun completed_at must not precede started_at.")
+        return self
 
 
 class ProposedChange(DomainModel):

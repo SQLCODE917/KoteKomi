@@ -437,6 +437,7 @@ def test_pdf_production_path_records_docling_source_access_as_blocked(
     ledger_path = tmp_path / "ledger.db"
     document_id, raw_blob_id = _initialize_captured_pdf(ledger_path)
     monkeypatch.setattr(docling_pdf_parser, "_load_docling_components", raise_security_error)
+    monkeypatch.setenv("KOTEKOMI_DOCLING_WORKER", "1")
 
     with sqlite_ledger_transaction(ledger_path) as repository:
         result = ingest_pdf(

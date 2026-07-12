@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import re
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime
@@ -109,7 +110,7 @@ class GroundedAssertionCandidate:
 
 @dataclass(frozen=True)
 class GroundedCandidateBatchInput:
-    task_key: str
+    task_fingerprint: str
     source_id: str
     document_id: str
     representation_id: str
@@ -120,6 +121,7 @@ class GroundedCandidateBatchInput:
     organizations: tuple[GroundedOrganizationCandidate, ...]
     evidence: tuple[GroundedEvidenceCandidate, ...]
     assertions: tuple[GroundedAssertionCandidate, ...]
+    originating_model_run_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -217,7 +219,7 @@ def submit_grounded_candidate_batch(
     ledger_repository: GroundedCandidateLedger,
 ) -> ProposedChangeBatchOutcome:
     """Validate and atomically persist a bounded batch of reviewable candidates."""
-    _require_nonempty(batch_input.task_key, "Grounded candidate batch task_key")
+    _require_fingerprint(batch_input.task_fingerprint)
     _require_nonempty(batch_input.model_name, "Grounded candidate batch model_name")
     _require_nonempty(batch_input.prompt_id, "Grounded candidate batch prompt_id")
     _require_nonempty(batch_input.validator_version, "Grounded candidate batch validator_version")
@@ -247,7 +249,11 @@ def submit_grounded_candidate_batch(
 
     organization_ids = {
         candidate.local_id: _deterministic_id(
-            "org", batch_input.task_key, "organization", candidate.local_id
+            "org",
+            batch_input.task_fingerprint,
+            "organization",
+            candidate.name,
+            candidate.organization_type or "",
         )
         for candidate in batch_input.organizations
     }
@@ -263,9 +269,8 @@ def submit_grounded_candidate_batch(
         evidence = EvidenceTarget(
             id=_deterministic_id(
                 "etg",
-                batch_input.task_key,
+                batch_input.task_fingerprint,
                 "evidence",
-                candidate.local_id,
                 candidate.text_view_id,
                 str(candidate.start_char),
                 str(candidate.end_char),
@@ -299,7 +304,9 @@ def submit_grounded_candidate_batch(
 
     validation_attempts = tuple(
         EvidenceValidationAttempt(
-            id=_deterministic_id("eva", batch_input.task_key, "validation", evidence.id),
+            id=_deterministic_id(
+                "eva", batch_input.task_fingerprint, "validation", evidence.id
+            ),
             evidence_target_id=evidence.id,
             target_digest=canonical_evidence_target_digest(evidence),
             validator_version=batch_input.validator_version,
@@ -313,10 +320,22 @@ def submit_grounded_candidate_batch(
     }
 
     provenance_activity = ProvenanceActivity(
-        id=_deterministic_id("prv", batch_input.task_key, GROUNDED_CANDIDATE_BATCH_ACTIVITY),
+        id=_deterministic_id(
+            "prv", batch_input.task_fingerprint, GROUNDED_CANDIDATE_BATCH_ACTIVITY
+        ),
         activity_type=GROUNDED_CANDIDATE_BATCH_ACTIVITY,
         agent=batch_input.model_name,
-        input_ids=(source.id, document.id, bundle.representation.id, batch_input.task_key),
+        input_ids=(
+            source.id,
+            document.id,
+            bundle.representation.id,
+            batch_input.task_fingerprint,
+            *(
+                (batch_input.originating_model_run_id,)
+                if batch_input.originating_model_run_id is not None
+                else ()
+            ),
+        ),
         output_ids=(),
         occurred_at=batch_input.submitted_at,
     )
@@ -396,11 +415,11 @@ def _organization_proposed_change(
         updated_at=batch_input.submitted_at,
     )
     return ProposedChange(
-        id=_deterministic_id("pcg", batch_input.task_key, "organization", candidate.local_id),
+        id=_deterministic_id("pcg", batch_input.task_fingerprint, "organization", organization_id),
         review_status=ReviewStatus.PENDING,
         proposed_json={
             "record_type": "Organization",
-            "stable_label": candidate.local_id,
+            "stable_label": organization_id,
             "record": organization.model_dump(mode="json"),
         },
         source_id=batch_input.source_id,
@@ -434,13 +453,21 @@ def _assertion_proposed_change(
             "Grounded Assertion candidate references an unknown task-local EvidenceTarget: "
             f"{candidate.evidence_local_id}"
         )
-    assertion_id = _deterministic_id("ast", batch_input.task_key, "assertion", candidate.local_id)
+    assertion_id = _deterministic_id(
+        "ast",
+        batch_input.task_fingerprint,
+        "assertion",
+        subject_organization_id,
+        candidate.predicate,
+        candidate.object_value,
+        evidence.id,
+    )
     return ProposedChange(
-        id=_deterministic_id("pcg", batch_input.task_key, "assertion", candidate.local_id),
+        id=_deterministic_id("pcg", batch_input.task_fingerprint, "assertion", assertion_id),
         review_status=ReviewStatus.PENDING,
         proposed_json={
             "record_type": "Assertion",
-            "stable_label": candidate.local_id,
+            "stable_label": assertion_id,
             "record": {
                 "id": assertion_id,
                 "assertion_type": AssertionType.SOURCE_CLAIM.value,
@@ -486,6 +513,11 @@ def _require_unique_local_ids(values: Iterable[str], kind: str) -> None:
 def _require_nonempty(value: str, label: str) -> None:
     if not value.strip():
         raise ValueError(f"{label} must be non-empty.")
+
+
+def _require_fingerprint(value: str) -> None:
+    if not re.fullmatch(r"[a-f0-9]{64}", value):
+        raise ValueError("Grounded candidate batch task_fingerprint must be a SHA-256 digest.")
 
 
 def _deterministic_id(prefix: str, *parts: str) -> str:

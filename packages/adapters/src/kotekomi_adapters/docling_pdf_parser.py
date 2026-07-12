@@ -1,11 +1,17 @@
 """Docling implementation of the PDF parser Port for born-digital PDF layout."""
+# pyright: reportUnknownVariableType=false, reportUnknownMemberType=false, reportUnknownArgumentType=false, reportUnusedFunction=false
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import json
+import os
 import resource
+import subprocess
+import sys
 from dataclasses import dataclass
+from functools import cache
 from importlib.metadata import PackageNotFoundError, version
 from io import BytesIO
 from typing import TYPE_CHECKING, Any, cast
@@ -89,6 +95,11 @@ class DoclingPdfParser(PdfDocumentParser):
         return PdfProcessorIdentity("docling", parser_version, config_digest, "2")
 
     def parse(self, parse_input: PdfParseInput) -> PdfParseResult:
+        if os.environ.get("KOTEKOMI_DOCLING_WORKER") != "1":
+            return _parse_with_large_stack_worker(parse_input, self._config)
+        return self._parse_in_process(parse_input)
+
+    def _parse_in_process(self, parse_input: PdfParseInput) -> PdfParseResult:
         parser_version = _docling_version()
         try:
             (
@@ -145,6 +156,7 @@ class DoclingPdfParser(PdfDocumentParser):
         )
 
 
+@cache
 def _load_docling_components() -> tuple[type[Any], type[Any], type[Any], type[Any], type[Any]]:
     """Load Docling only for an explicit PDF parse request."""
 
@@ -166,6 +178,118 @@ def _raise_stack_limit_for_docling_import() -> None:
     if hard_limit != resource.RLIM_INFINITY and hard_limit < target_limit:
         target_limit = hard_limit
     resource.setrlimit(resource.RLIMIT_STACK, (target_limit, hard_limit))
+
+
+def _parse_with_large_stack_worker(
+    parse_input: PdfParseInput,
+    config: DoclingPdfParserConfig,
+) -> PdfParseResult:
+    request = {
+        "document": parse_input.document.model_dump(mode="json"),
+        "raw_bytes_base64": base64.b64encode(parse_input.raw_bytes).decode("ascii"),
+        "policy_id": parse_input.policy_id,
+        "processing_task_fingerprint_id": parse_input.processing_task_fingerprint_id,
+        "parsed_at": parse_input.parsed_at.isoformat(),
+        "config": {
+            "enable_ocr": config.enable_ocr,
+            "enable_table_structure": config.enable_table_structure,
+        },
+    }
+    environment = {**os.environ, "KOTEKOMI_DOCLING_WORKER": "1"}
+    completed: subprocess.CompletedProcess[bytes] | None = None
+    for _ in range(3):
+        completed = subprocess.run(
+            [sys.executable, "-m", "kotekomi_adapters.docling_pdf_worker"],
+            input=json.dumps(request, separators=(",", ":")).encode(),
+            capture_output=True,
+            check=False,
+            env=environment,
+            preexec_fn=_raise_stack_limit_for_docling_import if os.name == "posix" else None,
+        )
+        if completed.returncode == 0:
+            break
+    if completed is None:
+        raise RuntimeError("Docling worker did not start.")
+    if completed.returncode != 0:
+        error_text = completed.stderr.decode("utf-8", errors="replace").strip()
+        raise RuntimeError(f"Docling worker failed: {error_text or completed.returncode}")
+    try:
+        payload = json.loads(completed.stdout)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError("Docling worker returned malformed JSON.") from exc
+    if not isinstance(payload, dict):
+        raise RuntimeError("Docling worker returned a non-object result.")
+    return _pdf_parse_result_from_payload(payload)
+
+
+def _pdf_parse_result_to_payload(result: PdfParseResult) -> dict[str, object]:
+    return {
+        "preflight": {
+            "parser_name": result.preflight.parser_name,
+            "parser_version": result.preflight.parser_version,
+            "encrypted": result.preflight.encrypted,
+            "page_count": result.preflight.page_count,
+            "pages": [page.__dict__ for page in result.preflight.pages],
+            "warnings": list(result.preflight.warnings),
+        },
+        "representation_bundle": (
+            result.representation_bundle.model_dump(mode="json")
+            if result.representation_bundle is not None
+            else None
+        ),
+        "blocking_reasons": list(result.blocking_reasons),
+    }
+
+
+def _pdf_parse_result_from_payload(payload: dict[str, object]) -> PdfParseResult:
+    preflight_payload = payload.get("preflight")
+    if not isinstance(preflight_payload, dict):
+        raise RuntimeError("Docling worker result is missing preflight.")
+    pages_payload = preflight_payload.get("pages")
+    if not isinstance(pages_payload, list):
+        raise RuntimeError("Docling worker preflight pages are malformed.")
+    try:
+        pages = tuple(
+            PdfPagePreflight(
+                page_index=int(page["page_index"]),
+                width=float(page["width"]),
+                height=float(page["height"]),
+                rotation=int(page["rotation"]),
+                embedded_text_character_count=int(page["embedded_text_character_count"]),
+                warnings=tuple(page.get("warnings", [])),
+            )
+            for page in pages_payload
+            if isinstance(page, dict)
+        )
+        if len(pages) != len(pages_payload):
+            raise ValueError("page must be an object")
+        preflight = PdfPreflight(
+            parser_name=str(preflight_payload["parser_name"]),
+            parser_version=str(preflight_payload["parser_version"]),
+            encrypted=bool(preflight_payload["encrypted"]),
+            page_count=int(preflight_payload["page_count"]),
+            pages=pages,
+            warnings=tuple(preflight_payload.get("warnings", [])),
+        )
+    except (KeyError, TypeError, ValueError) as exc:
+        raise RuntimeError("Docling worker preflight is malformed.") from exc
+    bundle_payload = payload.get("representation_bundle")
+    if bundle_payload is not None and not isinstance(bundle_payload, dict):
+        raise RuntimeError("Docling worker representation bundle is malformed.")
+    blocking_reasons = payload.get("blocking_reasons", [])
+    if not isinstance(blocking_reasons, list) or not all(
+        isinstance(reason, str) for reason in blocking_reasons
+    ):
+        raise RuntimeError("Docling worker blocking reasons are malformed.")
+    return PdfParseResult(
+        preflight=preflight,
+        representation_bundle=(
+            DocumentRepresentationBundle.model_validate_json(json.dumps(bundle_payload))
+            if bundle_payload is not None
+            else None
+        ),
+        blocking_reasons=tuple(blocking_reasons),
+    )
 
 
 def _docling_version() -> str:

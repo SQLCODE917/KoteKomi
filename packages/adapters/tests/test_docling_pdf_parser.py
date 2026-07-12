@@ -33,6 +33,7 @@ def test_docling_parser_raises_when_docling_load_fails(
         content_sha256=hashlib.sha256(raw_pdf).hexdigest(),
     )
     monkeypatch.setattr(docling_pdf_parser, "_load_docling_components", fail_to_load)
+    monkeypatch.setenv("KOTEKOMI_DOCLING_WORKER", "1")
 
     with pytest.raises(RuntimeError, match="Docling conversion failed"):
         DoclingPdfParser(DoclingPdfParserConfig()).parse(
@@ -75,6 +76,7 @@ def test_docling_parser_returns_a_typed_blocked_result_for_source_conditions(
         content_sha256=hashlib.sha256(raw_pdf).hexdigest(),
     )
     monkeypatch.setattr(docling_pdf_parser, "_load_docling_components", raise_source_condition)
+    monkeypatch.setenv("KOTEKOMI_DOCLING_WORKER", "1")
 
     result = DoclingPdfParser(DoclingPdfParserConfig()).parse(
         PdfParseInput(document, raw_pdf, "pdf_policy_v1", "ptf_fixture", NOW)

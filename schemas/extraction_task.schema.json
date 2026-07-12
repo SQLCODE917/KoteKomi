@@ -1,0 +1,113 @@
+{
+  "$defs": {
+    "JsonValue": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "integer"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The immutable, fully pinned semantic task presented to one model run.",
+  "properties": {
+    "context_manifest_digest": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Context Manifest Digest",
+      "type": "string"
+    },
+    "context_manifest_id": {
+      "minLength": 1,
+      "title": "Context Manifest Id",
+      "type": "string"
+    },
+    "context_manifest_payload": {
+      "additionalProperties": {
+        "$ref": "#/$defs/JsonValue"
+      },
+      "title": "Context Manifest Payload",
+      "type": "object"
+    },
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    },
+    "id": {
+      "pattern": "^ext_[A-Za-z0-9][A-Za-z0-9_-]*$",
+      "title": "Id",
+      "type": "string"
+    },
+    "input_candidate_ids": {
+      "items": {
+        "minLength": 1,
+        "type": "string"
+      },
+      "title": "Input Candidate Ids",
+      "type": "array"
+    },
+    "model_profile_id": {
+      "minLength": 1,
+      "title": "Model Profile Id",
+      "type": "string"
+    },
+    "prompt_id": {
+      "minLength": 1,
+      "title": "Prompt Id",
+      "type": "string"
+    },
+    "schema_id": {
+      "minLength": 1,
+      "title": "Schema Id",
+      "type": "string"
+    },
+    "task_fingerprint": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Task Fingerprint",
+      "type": "string"
+    },
+    "task_type": {
+      "minLength": 1,
+      "title": "Task Type",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "task_type",
+    "context_manifest_id",
+    "context_manifest_digest",
+    "context_manifest_payload",
+    "prompt_id",
+    "schema_id",
+    "model_profile_id",
+    "task_fingerprint"
+  ],
+  "title": "ExtractionTask",
+  "type": "object"
+}

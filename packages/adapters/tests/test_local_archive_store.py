@@ -33,6 +33,20 @@ def test_put_and_read_raw_source(tmp_path: Path) -> None:
     assert store.read_raw_source("src_article_a") == b"raw source bytes"
 
 
+def test_put_and_read_model_run_output(tmp_path: Path) -> None:
+    store = LocalArchiveStore(tmp_path)
+    content = b'{"kind":"abstain","schema_id":"fixture","reason":"ambiguous"}'
+
+    outcome = store.put_model_run_output(
+        "mrn_fixture_output",
+        content,
+        hashlib.sha256(content).hexdigest(),
+    )
+
+    assert outcome.object.relative_path == "model-runs/mrn_fixture_output.json"
+    assert store.read_model_run_output("mrn_fixture_output") == content
+
+
 def test_stage_and_promote_briefing_markdown(tmp_path: Path) -> None:
     store = LocalArchiveStore(tmp_path)
 
