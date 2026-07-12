@@ -162,7 +162,6 @@ A different tokenizer/context/output reserve creates a different planning finger
 
 - Initial units may be paragraph groups, subsections, and tables; the policy remains replaceable.
 - Lexical retrieval is the mandatory first retrieval source. Semantic retrieval is optional and version-pinned.
-- The legacy whole-document path is allowed only for fixtures that provably fit and is still represented by a manifest.
 - Context manifests belong in the immutable analysis artifact store, not only logs.
 
 ## 11. Completion gates
