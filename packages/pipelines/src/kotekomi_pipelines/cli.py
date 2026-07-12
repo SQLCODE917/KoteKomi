@@ -749,7 +749,6 @@ def add_source_file(config: ProcessingConfig, source_file_path: Path) -> int:
     print(f"Document: {result.document_id}")
     print(f"ProvenanceActivity: {result.provenance_activity_id}")
     print(f"Raw path: {result.raw_path}")
-    print(f"Extracted text path: {result.extracted_text_path}")
     return 0
 
 

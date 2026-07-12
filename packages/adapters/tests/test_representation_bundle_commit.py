@@ -82,7 +82,6 @@ def bundle(
         text_view_id=text_view.id,
         start_char=0,
         end_char=len(text),
-        text=text,
     )
     quality_report = ParseQualityReport(
         id=f"pqr_{representation_key}_quality_v1",
@@ -155,7 +154,6 @@ def synthetic_bundle(
         text_view_id=text_view.id,
         start_char=0,
         end_char=len(text),
-        text=text,
     )
     paragraphs = tuple(
         DocumentNode(
@@ -167,7 +165,6 @@ def synthetic_bundle(
             text_view_id=text_view.id,
             start_char=index,
             end_char=index + 1,
-            text="x",
             source_region_ids=(source_region.id,),
         )
         for index in range(paragraph_count)

@@ -229,9 +229,8 @@ def test_final_proof_public_path_restarts_and_replays_archived_bytes(tmp_path: P
         assert repository.get_processing_attempt_outcome(attempts[0].id) is not None
 
         archived_raw = reopened_archive.read_raw_source(raw_blob.id)
-        archived_text = reopened_archive.read_document_text(document.id)
         assert archived_raw == fixture.ingest_request.raw_bytes
-        assert archived_raw.decode("utf-8") == archived_text == bundle.text_views[0].text
+        assert archived_raw.decode("utf-8") == bundle.text_views[0].text
         assert raw_blob.digest == hashlib.sha256(archived_raw).hexdigest()
         assert document.content_sha256 == raw_blob.digest
         assert source.id == evidence.source_id
@@ -247,7 +246,8 @@ def test_final_proof_public_path_restarts_and_replays_archived_bytes(tmp_path: P
             quality_report=bundle.quality_report,
         )
         assert (
-            evidence.text_view_digest == hashlib.sha256(archived_text.encode("utf-8")).hexdigest()
+            evidence.text_view_digest
+            == hashlib.sha256(bundle.text_views[0].text.encode("utf-8")).hexdigest()
         )
         assert validation_attempt.target_digest == canonical_evidence_target_digest(evidence)
         stored_assertion = repository.get_assertion(assertion.id)

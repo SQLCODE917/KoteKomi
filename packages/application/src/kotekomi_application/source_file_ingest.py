@@ -101,7 +101,6 @@ class AuthoritativeCaptureOutcome:
     representation_id: str
     provenance_activity_id: str
     raw_path: str
-    extracted_text_path: str
     created: bool
 
 
@@ -170,7 +169,6 @@ def commit_authoritative_capture(
     request = replace(
         request,
         storage_locator=f"sources/raw/{identity.raw_blob_id}.bin",
-        extracted_text_locator=f"documents/extracted/{identity.document_id}.txt",
     )
     task = processing_task_fingerprint(
         task_kind="local_file_document_representation",
@@ -220,7 +218,6 @@ def commit_authoritative_capture(
                 ledger_repository=ledger_repository,
                 raw_blob_id=identity.raw_blob_id,
                 raw_bytes=ingest_input.raw_bytes,
-                document_id=existing_document.id,
                 representation_id=representation_id,
                 representation_provenance_activity_id=representation_provenance_activity_id,
             ),
@@ -253,7 +250,6 @@ def commit_authoritative_capture(
             representation_id=representation_id,
             provenance_activity_id=representation_provenance_activity_id,
             raw_path=f"sources/raw/{outcome.raw_blob.id}.bin",
-            extracted_text_path=f"documents/extracted/{outcome.document.id}.txt",
             created=False,
         )
 
@@ -264,21 +260,6 @@ def commit_authoritative_capture(
             ingest_input.raw_bytes,
             content_sha256,
         )
-        if existing_document is None:
-            try:
-                archived_text = archive_store.read_document_text(identity.document_id)
-            except FileNotFoundError:
-                staged_text = archive_store.stage_document_text(
-                    identity.document_id,
-                    extracted_text,
-                )
-                staged_objects.append(staged_text)
-            else:
-                if archived_text != extracted_text:
-                    raise ValueError(
-                        "Existing archived document text conflicts with the deterministic "
-                        "local-file extraction."
-                    )
         for staged_object in staged_objects:
             archive_store.promote_staged_object(staged_object)
 
@@ -298,7 +279,6 @@ def commit_authoritative_capture(
                     ledger_repository=ledger_repository,
                     raw_blob_id=identity.raw_blob_id,
                     raw_bytes=ingest_input.raw_bytes,
-                    document_id=existing_document.id,
                     representation_id=representation_id,
                 )
             text_digest = hashlib.sha256(extracted_text.encode("utf-8")).hexdigest()
@@ -318,7 +298,6 @@ def commit_authoritative_capture(
                 text_view_id=text_view_id,
                 start_char=0,
                 end_char=len(extracted_text),
-                text=extracted_text,
             )
             quality_report = ParseQualityReport(
                 id=quality_report_id,
@@ -447,7 +426,6 @@ def commit_authoritative_capture(
         representation_id=representation_id,
         provenance_activity_id=representation_provenance_activity_id,
         raw_path=f"sources/raw/{outcome.raw_blob.id}.bin",
-        extracted_text_path=f"documents/extracted/{document.id}.txt",
         created=outcome.created,
     )
 
@@ -458,13 +436,11 @@ def _require_complete_existing_closure(
     ledger_repository: SourceFileLedger,
     raw_blob_id: str,
     raw_bytes: bytes,
-    document_id: str,
     representation_id: str,
     representation_provenance_activity_id: str,
 ) -> None:
     try:
         archived_raw = archive_store.read_raw_source(raw_blob_id)
-        archived_text = archive_store.read_document_text(document_id)
     except FileNotFoundError as exc:
         raise ValueError("INCOMPLETE_CLOSURE: required archive object is missing.") from exc
     if archived_raw != raw_bytes:
@@ -486,8 +462,8 @@ def _require_complete_existing_closure(
     text_view = next(
         (view for view in bundle.text_views if view.kind is TextViewKind.LOGICAL), None
     )
-    if text_view is None or text_view.text != archived_text:
-        raise ValueError("INCOMPLETE_CLOSURE: logical TextView disagrees with extracted text.")
+    if text_view is None or text_view.text != raw_bytes.decode("utf-8"):
+        raise ValueError("INCOMPLETE_CLOSURE: logical TextView disagrees with source bytes.")
 
 
 def _require_repairable_capture_closure(
@@ -496,12 +472,10 @@ def _require_repairable_capture_closure(
     ledger_repository: SourceFileLedger,
     raw_blob_id: str,
     raw_bytes: bytes,
-    document_id: str,
     representation_id: str,
 ) -> None:
     try:
         archived_raw = archive_store.read_raw_source(raw_blob_id)
-        archive_store.read_document_text(document_id)
     except FileNotFoundError as exc:
         raise ValueError("INCOMPLETE_CLOSURE: required archive object is missing.") from exc
     if archived_raw != raw_bytes:

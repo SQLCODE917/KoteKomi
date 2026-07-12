@@ -223,7 +223,6 @@ def seed_reference_records(ledger: FakeReviewLedger) -> None:
         text_view_id=text_view.id,
         start_char=0,
         end_char=len(evidence_text),
-        text=evidence_text,
     )
     quality_report = ParseQualityReport(
         id="pqr_article_a",

@@ -208,7 +208,6 @@ def _representation_bundle(
         text_view_id=text_view.id,
         start_char=0,
         end_char=len(text),
-        text=text,
     )
     quality_report = ParseQualityReport(
         id=f"pqr_{representation_key}_quality_v1",

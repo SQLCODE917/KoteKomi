@@ -53,7 +53,6 @@ FIXTURE_TITLE = "Anthropic delayed model rollout after U.S. review raised cyber-
 class FakeArchiveStore:
     def __init__(self) -> None:
         self.raw_writes: dict[str, bytes] = {}
-        self.text_writes: dict[str, str] = {}
         self.staged_writes: dict[str, bytes] = {}
         self.deleted_paths: list[str] = []
 
@@ -94,21 +93,6 @@ class FakeArchiveStore:
         except KeyError as exc:
             raise FileNotFoundError(source_id) from exc
 
-    def write_document_text(self, document_id: str, text: str) -> ArchiveObject:
-        if document_id in self.text_writes:
-            raise FileExistsError(document_id)
-        self.text_writes[document_id] = text
-        return ArchiveObject(
-            relative_path=f"documents/extracted/{document_id}.txt",
-            size_bytes=len(text.encode("utf-8")),
-        )
-
-    def read_document_text(self, document_id: str) -> str:
-        try:
-            return self.text_writes[document_id]
-        except KeyError as exc:
-            raise FileNotFoundError(document_id) from exc
-
     def read_briefing_markdown(self, briefing_id: str) -> str:
         raise NotImplementedError
 
@@ -122,18 +106,6 @@ class FakeArchiveStore:
             staged_relative_path=staged_path,
             final_object=ArchiveObject(
                 relative_path=f"sources/raw/{source_id}.bin",
-                size_bytes=len(content),
-            ),
-        )
-
-    def stage_document_text(self, document_id: str, text: str) -> StagedArchiveObject:
-        content = text.encode("utf-8")
-        staged_path = f".staging/documents/extracted/{document_id}.txt.tmp"
-        self.staged_writes[staged_path] = content
-        return StagedArchiveObject(
-            staged_relative_path=staged_path,
-            final_object=ArchiveObject(
-                relative_path=f"documents/extracted/{document_id}.txt",
                 size_bytes=len(content),
             ),
         )
@@ -159,11 +131,6 @@ class FakeArchiveStore:
                 "sources/raw/"
             ).removesuffix(".bin")
             self.raw_writes[source_id] = content
-        else:
-            document_id = staged_object.final_object.relative_path.removeprefix(
-                "documents/extracted/"
-            ).removesuffix(".txt")
-            self.text_writes[document_id] = content.decode("utf-8")
         return staged_object.final_object
 
     def delete_object(self, relative_path: str) -> None:
@@ -172,9 +139,6 @@ class FakeArchiveStore:
         if relative_path.startswith("sources/raw/"):
             source_id = relative_path.removeprefix("sources/raw/").removesuffix(".bin")
             self.raw_writes.pop(source_id, None)
-        if relative_path.startswith("documents/extracted/"):
-            document_id = relative_path.removeprefix("documents/extracted/").removesuffix(".txt")
-            self.text_writes.pop(document_id, None)
 
 
 class FakeLedgerRepository:
@@ -445,7 +409,6 @@ def test_commit_authoritative_capture_creates_source_document_and_provenance() -
     raw_blob = ledger.raw_blobs[next(iter(ledger.raw_blobs))]
     assert raw_blob.storage_locator == f"sources/raw/{raw_blob.id}.bin"
     assert result.raw_path == raw_blob.storage_locator
-    assert result.extracted_text_path == f"documents/extracted/{result.document_id}.txt"
     assert document.content_sha256 == hashlib.sha256(raw_bytes).hexdigest()
     assert provenance.activity_type == "source_file_representation"
     assert provenance.agent == "kotekomi"
@@ -478,7 +441,7 @@ def test_commit_authoritative_capture_creates_source_document_and_provenance() -
     quality_report = ledger.parse_quality_reports[f"pqr_{representation_key}_quality_v1"]
     assert representation.document_id == result.document_id
     assert text_view.text == raw_bytes.decode("utf-8")
-    assert root_node.text == text_view.text
+    assert (root_node.start_char, root_node.end_char) == (0, len(text_view.text))
     assert quality_report.analyzability.value == "acceptable"
     assert archive.staged_writes == {}
 
@@ -503,7 +466,6 @@ def test_commit_authoritative_capture_is_idempotent_after_records_exist() -> Non
     assert first.source_id == second.source_id
     assert first.document_id == second.document_id
     assert len(archive.raw_writes) == 1
-    assert len(archive.text_writes) == 1
     assert len(ledger.sources) == 1
     assert len(ledger.documents) == 1
     assert len(ledger.document_representations) == 1
@@ -579,8 +541,8 @@ def test_commit_authoritative_capture_records_failed_attempt_for_incomplete_reus
         build_identity=BUILD_IDENTITY,
     )
 
-    result = commit_authoritative_capture(ingest_input, archive, ledger)
-    archive.text_writes.pop(result.document_id)
+    commit_authoritative_capture(ingest_input, archive, ledger)
+    archive.raw_writes.pop(next(iter(ledger.raw_blobs)))
 
     with pytest.raises(ValueError, match="INCOMPLETE_CLOSURE"):
         commit_authoritative_capture(ingest_input, archive, ledger)
@@ -626,7 +588,6 @@ def test_commit_authoritative_capture_rejects_invalid_build_identity_before_muta
         )
 
     assert archive.raw_writes == {}
-    assert archive.text_writes == {}
     assert ledger.sources == {}
     assert ledger.documents == {}
 
@@ -670,7 +631,6 @@ def test_commit_authoritative_capture_rejects_malformed_dateline() -> None:
         )
 
     assert archive.raw_writes == {}
-    assert archive.text_writes == {}
     assert archive.staged_writes == {}
     assert ledger.sources == {}
     assert ledger.documents == {}
@@ -731,7 +691,6 @@ def test_commit_authoritative_capture_preserves_promoted_archive_objects_after_l
         )
 
     assert len(archive.raw_writes) == 1
-    assert len(archive.text_writes) == 1
     assert archive.staged_writes == {}
     assert all(path.startswith(".staging/") for path in archive.deleted_paths)
     assert ledger.documents == {}

@@ -7,10 +7,8 @@ from pathlib import Path
 import pytest
 from kotekomi_adapters import LocalArchiveStore, SQLiteLedgerInitializer, SQLiteLedgerRepository
 from kotekomi_application import (
-    ArchiveObject,
     AuthoritativeCaptureRequest,
     BuildIdentity,
-    StagedArchiveObject,
     Uuid4ProcessingAttemptIdFactory,
     commit_authoritative_capture,
 )
@@ -47,16 +45,6 @@ class FaultingArchiveStore(LocalArchiveStore):
         outcome = super().put_if_absent_or_identical(object_id, payload, expected_digest)
         self._crash("archive_raw")
         return outcome
-
-    def stage_document_text(self, document_id: str, text: str):
-        staged = super().stage_document_text(document_id, text)
-        self._crash("archive_text_staged")
-        return staged
-
-    def promote_staged_object(self, staged_object: StagedArchiveObject) -> ArchiveObject:
-        promoted = super().promote_staged_object(staged_object)
-        self._crash("archive_text_promoted")
-        return promoted
 
     def delete_object(self, relative_path: str) -> None:
         self.deleted_paths.append(relative_path)
@@ -161,8 +149,6 @@ def _request(
     "checkpoint",
     (
         "archive_raw",
-        "archive_text_staged",
-        "archive_text_promoted",
         "source",
         "raw_blob",
         "source_capture",
@@ -210,7 +196,9 @@ def test_authoritative_capture_fault_matrix_converges_after_restart(
         )
         == RAW_BYTES
     )
-    assert stable_archive.read_document_text(result.document_id) == RAW_BYTES.decode()
+    with sqlite3.connect(ledger_path) as connection:
+        text_view_payload = connection.execute("SELECT payload_json FROM text_views").fetchone()[0]
+    assert TextView.model_validate_json(str(text_view_payload)).text == RAW_BYTES.decode()
     with sqlite3.connect(ledger_path) as connection:
         counts = {
             table: connection.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]

@@ -114,7 +114,6 @@ def test_source_add_file_ingests_fixture_into_ledger_and_archive(
     assert source.canonical_identity_key == str(FIXTURE_PATH.resolve())
     assert raw_blobs[0].storage_locator.startswith("sources/raw/blb_")
     assert (archive_path / raw_blobs[0].storage_locator).is_file()
-    assert (archive_path / f"documents/extracted/{document.id}.txt").is_file()
     assert capture_provenance.input_ids == (str(FIXTURE_PATH),)
     assert capture_provenance.output_ids == (
         source.id,
@@ -135,7 +134,7 @@ def test_source_add_file_ingests_fixture_into_ledger_and_archive(
     with sqlite_ledger_transaction(ledger_path) as repository:
         bundle = repository.get_document_representation_bundle(document_representations[0].id)
     assert bundle is not None
-    assert bundle.nodes[0].text == text_views[0].text
+    assert (bundle.nodes[0].start_char, bundle.nodes[0].end_char) == (0, len(text_views[0].text))
 
 
 def test_source_add_file_is_idempotent(

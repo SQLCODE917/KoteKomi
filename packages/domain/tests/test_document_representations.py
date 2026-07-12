@@ -33,7 +33,6 @@ def _valid_bundle() -> DocumentRepresentationBundle:
         text_view_id=text_view.id,
         start_char=0,
         end_char=11,
-        text="hello world",
     )
     quality_report = ParseQualityReport(
         id="pqr_plain_text",
@@ -85,11 +84,11 @@ def test_document_representation_bundle_validates_stable_output_digest() -> None
     )
 
 
-def test_document_representation_bundle_rejects_node_text_outside_its_view() -> None:
+def test_document_representation_bundle_rejects_node_range_outside_its_view() -> None:
     bundle = _valid_bundle()
-    invalid_node = bundle.nodes[0].model_copy(update={"text": "different"})
+    invalid_node = bundle.nodes[0].model_copy(update={"end_char": 12})
 
-    with pytest.raises(ValueError, match="DocumentNode text must match"):
+    with pytest.raises(ValueError, match="DocumentNode range must lie"):
         DocumentRepresentationBundle(
             representation=bundle.representation,
             text_views=bundle.text_views,

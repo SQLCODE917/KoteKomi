@@ -83,10 +83,6 @@
       "title": "Structural Path",
       "type": "array"
     },
-    "text": {
-      "title": "Text",
-      "type": "string"
-    },
     "text_view_id": {
       "pattern": "^tvw_[A-Za-z0-9][A-Za-z0-9_-]*$",
       "title": "Text View Id",
@@ -100,8 +96,7 @@
     "order_index",
     "text_view_id",
     "start_char",
-    "end_char",
-    "text"
+    "end_char"
   ],
   "title": "DocumentNode",
   "type": "object"

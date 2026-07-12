@@ -142,8 +142,8 @@ A policy may select one acceptable representation or block analysis. The selecti
 
 ## 9. Compatibility and delivery
 
-- Existing extracted fixture text becomes one logical `TextView` under a trivial text representation.
-- Existing `Document.extracted_text_path` may remain a compatibility view until callers migrate.
+- Extracted fixture text becomes one logical `TextView` under a trivial text representation.
+- `TextView.text` is the sole stored representation body; Documents and archive paths do not duplicate it.
 - New code uses `representation_id` plus `text_view_id`, never a mutable “latest text” path.
 - Storage format is implementation-defined, provided canonical serialization and validation are stable.
 
@@ -151,7 +151,7 @@ A policy may select one acceptable representation or block analysis. The selecti
 
 ### Correctness criteria
 
-- Every fixture node range reproduces its exact node text and stays within view bounds.
+- Every fixture node range stays within its TextView bounds; consumers resolve text from that view.
 - Invalid ranges, parent cycles, duplicate sibling order, unknown parent IDs, and invalid regions are rejected.
 - A parser/config change creates a distinct representation and does not alter prior node IDs or text.
 - Table fixtures preserve value cells and all necessary row/column header links.

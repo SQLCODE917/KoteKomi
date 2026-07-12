@@ -414,7 +414,6 @@ class DocumentNode(DomainModel):
     text_view_id: TextViewId
     start_char: Annotated[int, Field(ge=0)]
     end_char: Annotated[int, Field(ge=0)]
-    text: str
     source_region_ids: tuple[NonEmptyStr, ...] = Field(default_factory=tuple)
     parser_confidence: Confidence | None = None
 
@@ -483,8 +482,6 @@ class DocumentRepresentationBundle(DomainModel):
                 raise ValueError("DocumentNode must reference a TextView in its representation.")
             if node.end_char > len(text_view.text):
                 raise ValueError("DocumentNode range must lie within its TextView.")
-            if text_view.text[node.start_char : node.end_char] != node.text:
-                raise ValueError("DocumentNode text must match its TextView range.")
             if node.parent_node_id is not None and node.parent_node_id not in nodes:
                 raise ValueError("DocumentNode parent must exist in its representation.")
             if any(region_id not in source_regions for region_id in node.source_region_ids):

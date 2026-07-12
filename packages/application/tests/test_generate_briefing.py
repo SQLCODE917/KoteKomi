@@ -64,12 +64,6 @@ class FakeArchiveStore:
     def read_raw_source(self, source_id: str) -> bytes:
         raise NotImplementedError
 
-    def write_document_text(self, document_id: str, text: str) -> ArchiveObject:
-        raise NotImplementedError
-
-    def read_document_text(self, document_id: str) -> str:
-        raise NotImplementedError
-
     def read_briefing_markdown(self, briefing_id: str) -> str:
         return self.markdown[briefing_id]
 
@@ -77,9 +71,6 @@ class FakeArchiveStore:
         return self.citations_json[briefing_id]
 
     def stage_raw_source(self, source_id: str, content: bytes) -> StagedArchiveObject:
-        raise NotImplementedError
-
-    def stage_document_text(self, document_id: str, text: str) -> StagedArchiveObject:
         raise NotImplementedError
 
     def stage_briefing_markdown(

@@ -59,7 +59,6 @@ class CaptureRequest:
     embargo_until: datetime | None
     request_metadata: dict[str, JsonValue]
     response_metadata: dict[str, JsonValue]
-    extracted_text_locator: str | None = None
     revision_of_document_id: str | None = None
     revision_type: DocumentRevisionType | None = None
 

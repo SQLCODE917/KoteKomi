@@ -253,7 +253,6 @@ def build_docling_blocked_bundle(
         text_view_id=text_view_id,
         start_char=0,
         end_char=len(logical_text),
-        text=logical_text,
     )
     quality_report = ParseQualityReport(
         id=quality_id,

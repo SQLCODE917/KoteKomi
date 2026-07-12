@@ -123,7 +123,6 @@ def _bundle() -> DocumentRepresentationBundle:
         text_view_id=text_view.id,
         start_char=0,
         end_char=len(TEXT),
-        text=TEXT,
     )
     quality_report = ParseQualityReport(
         id="pqr_example",

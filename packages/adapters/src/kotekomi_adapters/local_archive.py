@@ -16,7 +16,6 @@ from kotekomi_application import (
 
 ARCHIVE_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
 RAW_SOURCE_DIR = Path("sources/raw")
-EXTRACTED_DOCUMENT_DIR = Path("documents/extracted")
 ATTACHMENTS_DIR = Path("attachments")
 BRIEFING_DAILY_DIR = Path("briefings/daily")
 STAGING_DIR = Path(".staging")
@@ -29,7 +28,6 @@ class LocalArchiveStore:
     def initialize(self) -> None:
         for relative_dir in (
             RAW_SOURCE_DIR,
-            EXTRACTED_DOCUMENT_DIR,
             ATTACHMENTS_DIR,
             BRIEFING_DAILY_DIR,
         ):
@@ -68,16 +66,6 @@ class LocalArchiveStore:
         relative_path = RAW_SOURCE_DIR / f"{_validate_archive_id(source_id)}.bin"
         return self._absolute_path(relative_path).read_bytes()
 
-    def write_document_text(self, document_id: str, text: str) -> ArchiveObject:
-        relative_path = EXTRACTED_DOCUMENT_DIR / f"{_validate_archive_id(document_id)}.txt"
-        absolute_path = self._absolute_path(relative_path)
-        content = text.encode("utf-8")
-        return self._write_bytes(relative_path, absolute_path, content)
-
-    def read_document_text(self, document_id: str) -> str:
-        relative_path = EXTRACTED_DOCUMENT_DIR / f"{_validate_archive_id(document_id)}.txt"
-        return self._absolute_path(relative_path).read_text(encoding="utf-8")
-
     def read_briefing_markdown(self, briefing_id: str) -> str:
         relative_path = BRIEFING_DAILY_DIR / f"{_validate_archive_id(briefing_id)}.md"
         return self._absolute_path(relative_path).read_text(encoding="utf-8")
@@ -89,19 +77,6 @@ class LocalArchiveStore:
     def stage_raw_source(self, source_id: str, content: bytes) -> StagedArchiveObject:
         final_relative_path = RAW_SOURCE_DIR / f"{_validate_archive_id(source_id)}.bin"
         staged_relative_path = _staged_relative_path(final_relative_path)
-        self._write_bytes(staged_relative_path, self._absolute_path(staged_relative_path), content)
-        return StagedArchiveObject(
-            staged_relative_path=staged_relative_path.as_posix(),
-            final_object=ArchiveObject(
-                relative_path=final_relative_path.as_posix(),
-                size_bytes=len(content),
-            ),
-        )
-
-    def stage_document_text(self, document_id: str, text: str) -> StagedArchiveObject:
-        final_relative_path = EXTRACTED_DOCUMENT_DIR / f"{_validate_archive_id(document_id)}.txt"
-        staged_relative_path = _staged_relative_path(final_relative_path)
-        content = text.encode("utf-8")
         self._write_bytes(staged_relative_path, self._absolute_path(staged_relative_path), content)
         return StagedArchiveObject(
             staged_relative_path=staged_relative_path.as_posix(),
