@@ -46,6 +46,7 @@ DocumentEdgeId = Annotated[str, Field(pattern=r"^deg_[A-Za-z0-9][A-Za-z0-9_-]*$"
 ParseQualityReportId = Annotated[str, Field(pattern=r"^pqr_[A-Za-z0-9][A-Za-z0-9_-]*$")]
 SourceRegionId = Annotated[str, Field(pattern=r"^srg_[A-Za-z0-9][A-Za-z0-9_-]*$")]
 ContextManifestId = Annotated[str, Field(pattern=r"^ctx_[A-Za-z0-9][A-Za-z0-9_-]*$")]
+AnalysisUnitId = Annotated[str, Field(pattern=r"^anu_[A-Za-z0-9][A-Za-z0-9_-]*$")]
 ExtractionTaskId = Annotated[str, Field(pattern=r"^ext_[A-Za-z0-9][A-Za-z0-9_-]*$")]
 ModelRunId = Annotated[str, Field(pattern=r"^mrn_[A-Za-z0-9][A-Za-z0-9_-]*$")]
 
@@ -971,6 +972,16 @@ class ContextManifestArtifact(DomainModel):
     analysis_unit_id: NonEmptyStr
     representation_id: DocumentRepresentationId
     manifest_digest: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
+    payload: dict[str, JsonValue]
+    created_at: datetime | None = None
+
+
+class AnalysisUnitArtifact(DomainModel):
+    """The immutable authoritative record of one planned analysis unit."""
+
+    id: AnalysisUnitId
+    representation_id: DocumentRepresentationId
+    unit_fingerprint: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
     payload: dict[str, JsonValue]
     created_at: datetime | None = None
 

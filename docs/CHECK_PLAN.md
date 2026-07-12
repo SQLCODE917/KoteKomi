@@ -30,7 +30,8 @@
 - verify the born-digital press-release PDF enters Archive, Ledger, deterministic page geometry, text, nodes, regions, reading order, and an acceptable quality report with `uv run pytest packages/adapters/tests/test_docling_pdf_r1a.py`
 - verify the press-release priority sentence enters a deterministic ContextManifest, immutable EvidenceTarget, successful validation attempt, reviewed direct-support Assertion link, and restart replay with `uv run pytest packages/adapters/tests/test_docling_pdf_r1a.py`
 - verify deterministic analysis units, required CHIP definition closure, exact token budgeting, furniture exclusions, split, and `context_budget_blocked` outcomes with `uv run pytest packages/application/tests/test_context_planning.py packages/adapters/tests/test_docling_pdf_r1a.py`
-- verify bounded staged extraction archives every model response, rejects out-of-manifest local references, and maps valid PDF candidates to canonical pending proposals with `uv run pytest packages/application/tests/test_grounded_candidates.py packages/adapters/tests/test_docling_pdf_r1a.py`
+- verify immutable AnalysisUnit and ContextManifest records, exact manifest verification, and the real-PDF `ready`, `split`, and `context_budget_blocked` matrix with `uv run pytest packages/application/tests/test_context_planning.py packages/adapters/tests/test_docling_pdf_r1a.py`
+- verify bounded staged extraction archives every model response, rejects out-of-manifest local references before invocation, preserves retry runs, atomically commits successful runs with candidate batches, and maps valid PDF candidates to canonical pending proposals with `uv run pytest packages/application/tests/test_grounded_candidates.py packages/adapters/tests/test_docling_pdf_r1a.py`
 
 ## 4. Archive checks
 - verify archive cleanup accepts only `StagedArchiveObject` capabilities and run `uv run pytest packages/adapters/tests/test_local_archive_store.py`

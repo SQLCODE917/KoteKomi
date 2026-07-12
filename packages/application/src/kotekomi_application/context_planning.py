@@ -5,12 +5,13 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from base64 import b64encode
+from base64 import b64decode, b64encode
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import Protocol, cast
 
 from kotekomi_domain import (
+    AnalysisUnitArtifact,
     ContextManifestArtifact,
     DocumentNode,
     DocumentRepresentationBundle,
@@ -42,6 +43,8 @@ class ContextPlanningLedger(Protocol):
     ) -> DocumentRepresentationBundle | None: ...
     def save_context_manifest_artifact(self, record: ContextManifestArtifact) -> None: ...
     def get_context_manifest_artifact(self, record_id: str) -> ContextManifestArtifact | None: ...
+    def save_analysis_unit_artifact(self, record: AnalysisUnitArtifact) -> None: ...
+    def get_analysis_unit_artifact(self, record_id: str) -> AnalysisUnitArtifact | None: ...
 
 
 class ContextTokenizer(Protocol):
@@ -125,8 +128,10 @@ class ContextManifestInput:
 class ContextManifest:
     id: str
     analysis_unit_id: str
+    analysis_unit_payload: dict[str, JsonValue]
     representation_id: str
     prompt_id: str
+    prompt_bytes: bytes
     prompt_digest: str
     schema_id: str
     schema_digest: str
@@ -153,6 +158,13 @@ class ContextPlanningOutcome:
     manifest: ContextManifest
     split_units: tuple[AnalysisUnit, ...] = ()
     blocked_reason: str | None = None
+
+
+@dataclass(frozen=True)
+class VerifiedContextManifest:
+    """A persisted manifest whose exact task inputs have been independently checked."""
+
+    manifest: ContextManifest
 
 
 def plan_analysis_units(
@@ -190,7 +202,10 @@ def plan_analysis_units(
             for index in range(0, len(paragraphs), planning_input.max_focus_nodes_per_unit)
         )
     )
-    return AnalysisPlan(bundle.representation.id, planning_input.policy_id, units)
+    plan = AnalysisPlan(bundle.representation.id, planning_input.policy_id, units)
+    for unit in plan.units:
+        persist_analysis_unit(unit, ledger_repository)
+    return plan
 
 
 def build_context_manifest(
@@ -202,6 +217,7 @@ def build_context_manifest(
     unit = manifest_input.analysis_unit
     bundle = _load_acceptable_bundle(unit.representation_id, ledger_repository)
     _require_unit_matches_representation(unit, bundle)
+    _require_persisted_analysis_unit(unit, ledger_repository)
     candidates = _context_candidates(unit, bundle, tokenizer)
     token_budget = (
         manifest_input.model_profile.model_context_limit
@@ -244,7 +260,10 @@ def build_context_manifest(
                 dependency_nodes=_definition_nodes_for_focus(_node_by_id(bundle, node_id), bundle),
                 policy_id=unit.planner_policy_id,
             )
-            for node_id in sorted(unit.focus_node_ids)
+            for node_id in sorted(
+                unit.focus_node_ids,
+                key=lambda node_id: (_node_by_id(bundle, node_id).order_index, node_id),
+            )
         )
         return _persist_outcome(
             ContextPlanningOutcome(
@@ -275,10 +294,21 @@ def build_context_manifest(
     )
 
 
-def render_context(manifest: ContextManifest, ledger_repository: ContextPlanningLedger) -> bytes:
-    """Return the byte-exact finalized model input committed by a ContextManifest."""
-    validate_context_manifest(manifest, ledger_repository)
-    return manifest.rendered_input
+def render_context(
+    manifest_id: str,
+    ledger_repository: ContextPlanningLedger,
+    tokenizer: ContextTokenizer,
+    prompt_bytes: bytes,
+    schema_bytes: bytes,
+) -> bytes:
+    """Load and return the byte-exact finalized model input after full verification."""
+    return verify_context_manifest(
+        manifest_id,
+        ledger_repository,
+        tokenizer,
+        prompt_bytes,
+        schema_bytes,
+    ).manifest.rendered_input
 
 
 def _analysis_unit(
@@ -484,6 +514,65 @@ def _require_unit_matches_representation(
         raise ValueError("AnalysisUnit requires at least one focus node.")
 
 
+def _analysis_unit_payload(unit: AnalysisUnit) -> dict[str, object]:
+    return {
+        "id": unit.id,
+        "representation_id": unit.representation_id,
+        "task_type": unit.task_type,
+        "focus_node_ids": list(unit.focus_node_ids),
+        "dependency_node_ids": list(unit.dependency_node_ids),
+        "planner_policy_id": unit.planner_policy_id,
+        "fingerprint": unit.fingerprint,
+    }
+
+
+def persist_analysis_unit(unit: AnalysisUnit, ledger_repository: ContextPlanningLedger) -> None:
+    ledger_repository.save_analysis_unit_artifact(
+        AnalysisUnitArtifact(
+            id=unit.id,
+            representation_id=unit.representation_id,
+            unit_fingerprint=unit.fingerprint,
+            payload=cast(dict[str, JsonValue], _analysis_unit_payload(unit)),
+        )
+    )
+
+
+def load_analysis_unit(
+    analysis_unit_id: str, ledger_repository: ContextPlanningLedger
+) -> AnalysisUnit:
+    artifact = ledger_repository.get_analysis_unit_artifact(analysis_unit_id)
+    if artifact is None:
+        raise ValueError(f"AnalysisUnit is not persisted: {analysis_unit_id}")
+    payload = artifact.payload
+    try:
+        unit = AnalysisUnit(
+            id=_required_str(payload, "id"),
+            representation_id=_required_str(payload, "representation_id"),
+            task_type=_required_str(payload, "task_type"),
+            focus_node_ids=_string_tuple(payload, "focus_node_ids"),
+            dependency_node_ids=_string_tuple(payload, "dependency_node_ids"),
+            planner_policy_id=_required_str(payload, "planner_policy_id"),
+            fingerprint=_required_str(payload, "fingerprint"),
+        )
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ValueError("AnalysisUnit persisted artifact is malformed.") from exc
+    if (
+        unit.id != artifact.id
+        or unit.representation_id != artifact.representation_id
+        or unit.fingerprint != artifact.unit_fingerprint
+        or _analysis_unit_payload(unit) != artifact.payload
+    ):
+        raise ValueError("AnalysisUnit persisted artifact is corrupted.")
+    return unit
+
+
+def _require_persisted_analysis_unit(
+    unit: AnalysisUnit, ledger_repository: ContextPlanningLedger
+) -> None:
+    if load_analysis_unit(unit.id, ledger_repository) != unit:
+        raise ValueError("AnalysisUnit does not match its persisted authoritative artifact.")
+
+
 def _node_by_id(bundle: DocumentRepresentationBundle, node_id: str) -> DocumentNode:
     node = next((candidate for candidate in bundle.nodes if candidate.id == node_id), None)
     if node is None:
@@ -536,10 +625,13 @@ def _manifest(
     rendered_input_digest = hashlib.sha256(rendered_input).hexdigest()
     payload = {
         "analysis_unit_id": manifest_input.analysis_unit.id,
+        "analysis_unit": _analysis_unit_payload(manifest_input.analysis_unit),
         "representation_id": manifest_input.analysis_unit.representation_id,
         "prompt_id": manifest_input.prompt_id,
+        "prompt_bytes_base64": b64encode(manifest_input.prompt_bytes).decode("ascii"),
         "prompt_digest": hashlib.sha256(manifest_input.prompt_bytes).hexdigest(),
         "schema_id": manifest_input.schema_id,
+        "schema_bytes_base64": b64encode(manifest_input.schema_bytes).decode("ascii"),
         "schema_digest": hashlib.sha256(manifest_input.schema_bytes).hexdigest(),
         "renderer_version": manifest_input.renderer_version,
         "planner_policy_id": manifest_input.analysis_unit.planner_policy_id,
@@ -559,8 +651,12 @@ def _manifest(
     return ContextManifest(
         id=f"ctx_{manifest_digest[:HASH_ID_LENGTH]}",
         analysis_unit_id=manifest_input.analysis_unit.id,
+        analysis_unit_payload=cast(
+            dict[str, JsonValue], _analysis_unit_payload(manifest_input.analysis_unit)
+        ),
         representation_id=manifest_input.analysis_unit.representation_id,
         prompt_id=manifest_input.prompt_id,
+        prompt_bytes=manifest_input.prompt_bytes,
         prompt_digest=hashlib.sha256(manifest_input.prompt_bytes).hexdigest(),
         schema_id=manifest_input.schema_id,
         schema_digest=hashlib.sha256(manifest_input.schema_bytes).hexdigest(),
@@ -613,6 +709,103 @@ def context_manifest_digest(manifest: ContextManifest) -> str:
     return _digest(cast(dict[str, object], payload))
 
 
+def load_context_manifest(
+    manifest_id: str, ledger_repository: ContextPlanningLedger
+) -> ContextManifest:
+    """Load the sole canonical manifest representation from the immutable Ledger."""
+    artifact = ledger_repository.get_context_manifest_artifact(manifest_id)
+    if artifact is None:
+        raise ValueError(f"ContextManifest is not persisted: {manifest_id}")
+    integrity = artifact.payload.get("integrity")
+    rendered = artifact.payload.get("rendered_input_base64")
+    if not isinstance(integrity, dict) or not isinstance(rendered, str):
+        raise ValueError("ContextManifest persisted artifact is malformed.")
+    try:
+        manifest = ContextManifest(
+            id=artifact.id,
+            analysis_unit_id=_required_str(integrity, "analysis_unit_id"),
+            analysis_unit_payload=_mapping(integrity, "analysis_unit"),
+            representation_id=_required_str(integrity, "representation_id"),
+            prompt_id=_required_str(integrity, "prompt_id"),
+            prompt_bytes=b64decode(_required_str(integrity, "prompt_bytes_base64"), validate=True),
+            prompt_digest=_required_str(integrity, "prompt_digest"),
+            schema_id=_required_str(integrity, "schema_id"),
+            schema_digest=_required_str(integrity, "schema_digest"),
+            schema_bytes=b64decode(_required_str(integrity, "schema_bytes_base64"), validate=True),
+            renderer_version=_required_str(integrity, "renderer_version"),
+            planner_policy_id=_required_str(integrity, "planner_policy_id"),
+            tokenizer_id=_required_str(integrity, "tokenizer_id"),
+            model_profile_id=_required_str(_mapping(integrity, "model_profile"), "id"),
+            model_context_limit=_required_int(
+                _mapping(integrity, "model_profile"), "model_context_limit"
+            ),
+            reserved_output_tokens=_required_int(
+                _mapping(integrity, "model_profile"), "reserved_output_tokens"
+            ),
+            safety_margin_tokens=_required_int(
+                _mapping(integrity, "model_profile"), "safety_margin_tokens"
+            ),
+            selected_candidates=tuple(
+                _candidate_from_payload(item) for item in _mapping_list(integrity, "selected")
+            ),
+            excluded_candidates=tuple(
+                _excluded_from_payload(item) for item in _mapping_list(integrity, "excluded")
+            ),
+            rendered_segments=tuple(
+                _segment_from_payload(item) for item in _mapping_list(integrity, "segments")
+            ),
+            rendered_input=b64decode(rendered, validate=True),
+            rendered_input_digest=_required_str(integrity, "rendered_input_digest"),
+            input_token_count=_required_int(integrity, "input_token_count"),
+            manifest_digest=artifact.manifest_digest,
+            status=ContextManifestStatus(_required_str(integrity, "status")),
+        )
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ValueError("ContextManifest persisted artifact is malformed.") from exc
+    validate_context_manifest(manifest, ledger_repository)
+    return manifest
+
+
+def verify_context_manifest(
+    manifest_id: str,
+    ledger_repository: ContextPlanningLedger,
+    tokenizer: ContextTokenizer,
+    prompt_bytes: bytes,
+    schema_bytes: bytes,
+) -> VerifiedContextManifest:
+    """Independently recompute the task-local context contract before model use."""
+    manifest = load_context_manifest(manifest_id, ledger_repository)
+    unit = load_analysis_unit(manifest.analysis_unit_id, ledger_repository)
+    if _analysis_unit_payload(unit) != manifest.analysis_unit_payload:
+        raise ValueError("ContextManifest analysis unit does not match its persisted artifact.")
+    if tokenizer.tokenizer_id != manifest.tokenizer_id:
+        raise ValueError("ContextManifest tokenizer identity does not match the runtime tokenizer.")
+    if hashlib.sha256(prompt_bytes).hexdigest() != manifest.prompt_digest:
+        raise ValueError("ContextManifest prompt bytes do not match the pinned prompt digest.")
+    if hashlib.sha256(schema_bytes).hexdigest() != manifest.schema_digest:
+        raise ValueError("ContextManifest schema bytes do not match the pinned schema digest.")
+    if schema_bytes != manifest.schema_bytes:
+        raise ValueError("ContextManifest schema bytes do not match the persisted schema bytes.")
+    if prompt_bytes != manifest.prompt_bytes:
+        raise ValueError("ContextManifest prompt bytes do not match the persisted prompt bytes.")
+    bundle = _load_acceptable_bundle(manifest.representation_id, ledger_repository)
+    rendered, segments = _render_verified_input(manifest, bundle, prompt_bytes, schema_bytes)
+    if rendered != manifest.rendered_input or segments != manifest.rendered_segments:
+        raise ValueError("ContextManifest rendered input or segment boundaries are corrupted.")
+    if tokenizer.count_tokens(rendered) != manifest.input_token_count:
+        raise ValueError("ContextManifest exact token count is corrupted.")
+    budget = (
+        manifest.model_context_limit
+        - manifest.reserved_output_tokens
+        - manifest.safety_margin_tokens
+    )
+    if manifest.status is ContextManifestStatus.READY and manifest.input_token_count > budget:
+        raise ValueError("Ready ContextManifest exceeds its exact token budget.")
+    if manifest.status is not ContextManifestStatus.READY and manifest.rendered_input:
+        raise ValueError("Non-ready ContextManifest must not contain a model input.")
+    return VerifiedContextManifest(manifest)
+
+
 def validate_context_manifest(
     manifest: ContextManifest,
     ledger_repository: ContextPlanningLedger,
@@ -657,11 +850,14 @@ def validate_context_manifest(
 def _artifact_payload(manifest: ContextManifest) -> dict[str, object]:
     integrity = {
         "analysis_unit_id": manifest.analysis_unit_id,
+        "analysis_unit": manifest.analysis_unit_payload,
         "representation_id": manifest.representation_id,
         "prompt_id": manifest.prompt_id,
+        "prompt_bytes_base64": b64encode(manifest.prompt_bytes).decode("ascii"),
         "prompt_digest": manifest.prompt_digest,
         "schema_id": manifest.schema_id,
         "schema_digest": manifest.schema_digest,
+        "schema_bytes_base64": b64encode(manifest.schema_bytes).decode("ascii"),
         "renderer_version": manifest.renderer_version,
         "planner_policy_id": manifest.planner_policy_id,
         "tokenizer_id": manifest.tokenizer_id,
@@ -686,6 +882,93 @@ def _artifact_payload(manifest: ContextManifest) -> dict[str, object]:
         "rendered_input_base64": b64encode(manifest.rendered_input).decode("ascii"),
     }
     return json.loads(json.dumps(payload, ensure_ascii=False))
+
+
+def _render_verified_input(
+    manifest: ContextManifest,
+    bundle: DocumentRepresentationBundle,
+    prompt_bytes: bytes,
+    schema_bytes: bytes,
+) -> tuple[bytes, tuple[RenderedContextSegment, ...]]:
+    rendered = bytearray(prompt_bytes + b"\n\n" + schema_bytes)
+    segments: list[RenderedContextSegment] = []
+    for candidate in manifest.selected_candidates:
+        node = _node_by_id(bundle, candidate.node_id)
+        segment = _render_node(node, _text_view_by_id(bundle, node.text_view_id))
+        rendered.extend(b"\n\n")
+        start_byte = len(rendered)
+        rendered.extend(segment)
+        segments.append(RenderedContextSegment(node.id, start_byte, len(rendered)))
+    return bytes(rendered), tuple(segments)
+
+
+def _mapping(value: dict[str, JsonValue], key: str) -> dict[str, JsonValue]:
+    candidate = value[key]
+    if not isinstance(candidate, dict):
+        raise TypeError(key)
+    return candidate
+
+
+def _mapping_list(value: dict[str, JsonValue], key: str) -> list[dict[str, JsonValue]]:
+    candidate = value[key]
+    if not isinstance(candidate, list) or not all(isinstance(item, dict) for item in candidate):
+        raise TypeError(key)
+    return [cast(dict[str, JsonValue], item) for item in candidate]
+
+
+def _required_str(value: dict[str, JsonValue], key: str) -> str:
+    candidate = value[key]
+    if not isinstance(candidate, str):
+        raise TypeError(key)
+    return candidate
+
+
+def _required_int(value: dict[str, JsonValue], key: str) -> int:
+    candidate = value[key]
+    if not isinstance(candidate, int):
+        raise TypeError(key)
+    return candidate
+
+
+def _required_bool(value: dict[str, JsonValue], key: str) -> bool:
+    candidate = value[key]
+    if not isinstance(candidate, bool):
+        raise TypeError(key)
+    return candidate
+
+
+def _string_tuple(value: dict[str, JsonValue], key: str) -> tuple[str, ...]:
+    candidate = value[key]
+    if not isinstance(candidate, list) or not all(isinstance(item, str) for item in candidate):
+        raise TypeError(key)
+    return tuple(cast(str, item) for item in candidate)
+
+
+def _candidate_from_payload(value: dict[str, JsonValue]) -> ContextCandidate:
+    return ContextCandidate(
+        node_id=_required_str(value, "node_id"),
+        role=ContextCandidateRole(_required_str(value, "role")),
+        reason_code=_required_str(value, "reason_code"),
+        required=_required_bool(value, "required"),
+        priority=_required_int(value, "priority"),
+        dependency_path=_string_tuple(value, "dependency_path"),
+        source_node_ids=_string_tuple(value, "source_node_ids"),
+        estimated_tokens=_required_int(value, "estimated_tokens"),
+    )
+
+
+def _excluded_from_payload(value: dict[str, JsonValue]) -> ExcludedContextCandidate:
+    return ExcludedContextCandidate(
+        _candidate_from_payload(_mapping(value, "candidate")), _required_str(value, "reason_code")
+    )
+
+
+def _segment_from_payload(value: dict[str, JsonValue]) -> RenderedContextSegment:
+    return RenderedContextSegment(
+        _required_str(value, "node_id"),
+        _required_int(value, "start_byte"),
+        _required_int(value, "end_byte"),
+    )
 
 
 def _candidate_payload(candidate: ContextCandidate) -> dict[str, object]:

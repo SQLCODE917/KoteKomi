@@ -9,6 +9,7 @@ from pydantic import BaseModel
 
 from kotekomi_domain.models import (
     Actor,
+    AnalysisUnitArtifact,
     ArgumentEdge,
     Assertion,
     AssertionEvidenceLink,
@@ -48,6 +49,7 @@ type DomainModelType = type[BaseModel]
 
 DOMAIN_SCHEMA_MODELS: dict[str, DomainModelType] = {
     "actor.schema.json": Actor,
+    "analysis_unit_artifact.schema.json": AnalysisUnitArtifact,
     "argument_edge.schema.json": ArgumentEdge,
     "assertion.schema.json": Assertion,
     "assertion_evidence_link.schema.json": AssertionEvidenceLink,

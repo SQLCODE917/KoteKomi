@@ -6,11 +6,12 @@ import base64
 import hashlib
 import json
 import uuid
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Literal, Protocol, cast
 
-from kotekomi_domain import ExtractionTask, ModelRun, ModelRunStatus
+from kotekomi_domain import DocumentNode, ExtractionTask, ModelRun, ModelRunStatus, TextView
 from kotekomi_domain.models import JsonValue
 from pydantic import BaseModel, ConfigDict, TypeAdapter, ValidationError
 
@@ -18,16 +19,19 @@ from kotekomi_application.context_planning import (
     ContextManifest,
     ContextManifestStatus,
     ContextPlanningLedger,
+    ContextTokenizer,
     render_context,
+    verify_context_manifest,
 )
 from kotekomi_application.grounded_candidates import (
     GroundedAssertionCandidate,
+    GroundedCandidateBatchCommit,
     GroundedCandidateBatchInput,
     GroundedCandidateLedger,
     GroundedEvidenceCandidate,
     GroundedOrganizationCandidate,
     ProposedChangeBatchOutcome,
-    submit_grounded_candidate_batch,
+    prepare_grounded_candidate_batch,
 )
 
 HASH_ID_LENGTH = 24
@@ -36,6 +40,12 @@ HASH_ID_LENGTH = 24
 class StagedExtractionLedger(GroundedCandidateLedger, ContextPlanningLedger, Protocol):
     def save_extraction_task(self, record: ExtractionTask) -> None: ...
     def save_model_run(self, record: ModelRun) -> None: ...
+    def commit_successful_model_run_and_candidate_batch(
+        self,
+        *,
+        model_run: ModelRun,
+        batch: GroundedCandidateBatchCommit,
+    ) -> None: ...
 
 
 class ModelOutputArchive(Protocol):
@@ -85,11 +95,44 @@ class Uuid4ModelRunIdFactory:
 
 
 @dataclass(frozen=True)
+class PinnedTaskSchema:
+    schema_id: str
+    canonical_schema_bytes: bytes
+    output_contract_version: str
+    parse: Callable[[bytes], _CandidateOutput | _AbstentionOutput]
+
+    @property
+    def digest(self) -> str:
+        return hashlib.sha256(self.canonical_schema_bytes).hexdigest()
+
+
+class TaskSchemaRegistry(Protocol):
+    def resolve(self, schema_id: str) -> PinnedTaskSchema: ...
+
+
+class StagedClaimTaskSchemaRegistry:
+    """The versioned pinned schema registry for the initial claim task."""
+
+    schema_id = "staged_claim_output_v1"
+
+    def resolve(self, schema_id: str) -> PinnedTaskSchema:
+        if schema_id != self.schema_id:
+            raise ValueError(f"Unsupported staged task schema: {schema_id}")
+        return PinnedTaskSchema(
+            schema_id=self.schema_id,
+            canonical_schema_bytes=staged_claim_output_schema_bytes(),
+            output_contract_version="staged_claim_output_v1",
+            parse=_parse_staged_claim_output,
+        )
+
+
+@dataclass(frozen=True)
 class BoundedExtractionInput:
     source_id: str
     document_id: str
     representation_id: str
-    context_manifest: ContextManifest
+    context_manifest_id: str
+    prompt_bytes: bytes
     model_identity: ModelIdentity
     generation_parameters: dict[str, str | int | float | bool | None]
     validator_version: str
@@ -156,14 +199,24 @@ def run_bounded_extraction(
     archive_store: ModelOutputArchive,
     model_runtime: ModelTaskRuntime,
     model_run_id_factory: ModelRunIdFactory,
+    tokenizer: ContextTokenizer,
+    schema_registry: TaskSchemaRegistry,
 ) -> BoundedExtractionOutcome:
     """Archive one raw response, validate its task-local candidates, then publish atomically."""
-    manifest = extraction_input.context_manifest
+    schema = schema_registry.resolve(_manifest_schema_id(extraction_input, ledger_repository))
+    verified = verify_context_manifest(
+        extraction_input.context_manifest_id,
+        ledger_repository,
+        tokenizer,
+        extraction_input.prompt_bytes,
+        schema.canonical_schema_bytes,
+    )
+    manifest = verified.manifest
     if manifest.status is not ContextManifestStatus.READY:
         raise ValueError("Bounded extraction requires a ready ContextManifest.")
     if manifest.representation_id != extraction_input.representation_id:
         raise ValueError("Bounded extraction ContextManifest does not match its representation.")
-    task = _extraction_task(extraction_input)
+    task = _extraction_task(extraction_input, manifest)
     ledger_repository.save_extraction_task(task)
     model_run_id = model_run_id_factory.new_model_run_id()
     request = ModelTaskRequest(
@@ -171,29 +224,47 @@ def run_bounded_extraction(
         task_fingerprint=task.task_fingerprint,
         task_type="claim_extraction",
         context_manifest_id=manifest.id,
-        rendered_input=render_context(manifest, ledger_repository),
+        rendered_input=render_context(
+            manifest.id,
+            ledger_repository,
+            tokenizer,
+            extraction_input.prompt_bytes,
+            schema.canonical_schema_bytes,
+        ),
         schema_id=manifest.schema_id,
     )
     try:
         response = model_runtime.run_model_task(request)
     except Exception as exc:
         run = _model_run(
-            extraction_input, task, model_run_id, ModelRunStatus.RUNTIME_FAILED, error=exc
+            extraction_input, manifest, task, model_run_id, ModelRunStatus.RUNTIME_FAILED, error=exc
         )
         ledger_repository.save_model_run(run)
         return BoundedExtractionOutcome(task, run, None)
 
     output_digest = hashlib.sha256(response.raw_output).hexdigest()
-    archive_store.put_model_run_output(
-        model_run_id,
-        response.raw_output,
-        output_digest,
-    )
     try:
-        parsed = _parse_output(response.raw_output, manifest)
+        archive_store.put_model_run_output(
+            model_run_id,
+            response.raw_output,
+            output_digest,
+        )
+    except Exception as exc:
+        run = _model_run(
+            extraction_input,
+            manifest,
+            task,
+            model_run_id,
+            ModelRunStatus.RUNTIME_FAILED,
+            error=exc,
+        )
+        ledger_repository.save_model_run(run)
+        return BoundedExtractionOutcome(task, run, None)
+    try:
+        parsed = _parse_output(response.raw_output, manifest, schema)
         if isinstance(parsed, _AbstentionOutput):
             run = _model_run(
-                extraction_input,
+                extraction_input, manifest,
                 task,
                 model_run_id,
                 ModelRunStatus.ABSTAINED,
@@ -203,12 +274,12 @@ def run_bounded_extraction(
             return BoundedExtractionOutcome(task, run, None)
         _validate_task_local_references(parsed, manifest)
         batch_input = _grounded_batch(
-            extraction_input, task, model_run_id, parsed, ledger_repository
+            extraction_input, manifest, task, model_run_id, parsed, ledger_repository
         )
-        batch = submit_grounded_candidate_batch(batch_input, ledger_repository)
+        batch_commit = prepare_grounded_candidate_batch(batch_input, ledger_repository)
     except (ValidationError, ValueError) as exc:
         run = _model_run(
-            extraction_input,
+            extraction_input, manifest,
             task,
             model_run_id,
             ModelRunStatus.INVALID_OUTPUT,
@@ -219,18 +290,34 @@ def run_bounded_extraction(
         return BoundedExtractionOutcome(task, run, None)
 
     run = _model_run(
-        extraction_input,
+        extraction_input, manifest,
         task,
         model_run_id,
         ModelRunStatus.SUCCEEDED,
         output_digest=output_digest,
     )
-    ledger_repository.save_model_run(run)
-    return BoundedExtractionOutcome(task, run, batch)
+    try:
+        ledger_repository.commit_successful_model_run_and_candidate_batch(
+            model_run=run,
+            batch=batch_commit,
+        )
+    except Exception as exc:
+        failed_run = _model_run(
+            extraction_input, manifest,
+            task,
+            model_run_id,
+            ModelRunStatus.INVALID_OUTPUT,
+            output_digest=output_digest,
+            error=exc,
+        )
+        ledger_repository.save_model_run(failed_run)
+        return BoundedExtractionOutcome(task, failed_run, None)
+    return BoundedExtractionOutcome(task, run, batch_commit.outcome)
 
 
-def _extraction_task(extraction_input: BoundedExtractionInput) -> ExtractionTask:
-    manifest = extraction_input.context_manifest
+def _extraction_task(
+    extraction_input: BoundedExtractionInput, manifest: ContextManifest
+) -> ExtractionTask:
     fingerprint = _digest(
         {
             "task_type": "claim_extraction",
@@ -262,6 +349,7 @@ def _extraction_task(extraction_input: BoundedExtractionInput) -> ExtractionTask
 
 def _model_run(
     extraction_input: BoundedExtractionInput,
+    manifest: ContextManifest,
     task: ExtractionTask,
     model_run_id: str,
     status: ModelRunStatus,
@@ -278,8 +366,8 @@ def _model_run(
         ),
         runtime_identity=extraction_input.model_identity.runtime,
         tokenizer_id=extraction_input.model_identity.tokenizer_id,
-        prompt_digest=extraction_input.context_manifest.prompt_digest,
-        schema_digest=extraction_input.context_manifest.schema_digest,
+        prompt_digest=manifest.prompt_digest,
+        schema_digest=manifest.schema_digest,
         generation_parameters=cast(dict[str, JsonValue], extraction_input.generation_parameters),
         raw_output_artifact_id=(model_run_id if output_digest is not None else None),
         output_digest=output_digest,
@@ -292,12 +380,17 @@ def _model_run(
 
 
 def _parse_output(
-    raw_output: bytes, manifest: ContextManifest
+    raw_output: bytes, manifest: ContextManifest, schema: PinnedTaskSchema
 ) -> _CandidateOutput | _AbstentionOutput:
-    if hashlib.sha256(manifest.schema_bytes).hexdigest() != manifest.schema_digest:
-        raise ValueError("ContextManifest schema_digest is corrupted.")
-    if manifest.schema_bytes != staged_claim_output_schema_bytes():
-        raise ValueError("ContextManifest schema bytes do not match the staged claim schema.")
+    if manifest.schema_id != schema.schema_id or manifest.schema_digest != schema.digest:
+        raise ValueError("ContextManifest schema does not match the pinned task schema.")
+    parsed = schema.parse(raw_output)
+    if parsed.schema_id != schema.schema_id:
+        raise ValueError("Model task output schema_id does not match the pinned task schema.")
+    return parsed
+
+
+def _parse_staged_claim_output(raw_output: bytes) -> _CandidateOutput | _AbstentionOutput:
     decoded = json.loads(raw_output)
     if not isinstance(decoded, dict):
         raise ValueError("Model task output must be a JSON object.")
@@ -309,8 +402,6 @@ def _parse_output(
         parsed = _AbstentionOutput.model_validate(payload)
     else:
         raise ValueError("Model task output kind must be candidates or abstain.")
-    if parsed.schema_id != manifest.schema_id:
-        raise ValueError("Model task output schema_id does not match the pinned task schema.")
     return parsed
 
 
@@ -326,9 +417,9 @@ def _validate_task_local_references(
     if not output.assertions:
         raise ValueError("Candidate output requires at least one assertion or an abstention.")
     for candidate in output.evidence:
-        if not candidate.node_ids:
+        if not candidate.node_id:
             raise ValueError("Candidate evidence requires at least one node reference.")
-        unknown = set(candidate.node_ids) - visible_node_ids
+        unknown = {candidate.node_id} - visible_node_ids
         if unknown:
             raise ValueError("Candidate evidence references nodes absent from the ContextManifest.")
     organization_ids = {candidate.local_id for candidate in output.organizations}
@@ -348,6 +439,7 @@ def _validate_task_local_references(
 
 def _grounded_batch(
     extraction_input: BoundedExtractionInput,
+    manifest: ContextManifest,
     task: ExtractionTask,
     model_run_id: str,
     output: _CandidateOutput,
@@ -369,7 +461,7 @@ def _grounded_batch(
         document_id=extraction_input.document_id,
         representation_id=extraction_input.representation_id,
         model_name=extraction_input.model_identity.name,
-        prompt_id=extraction_input.context_manifest.prompt_id,
+        prompt_id=manifest.prompt_id,
         validator_version=extraction_input.validator_version,
         submitted_at=extraction_input.completed_at,
         organizations=tuple(
@@ -393,11 +485,9 @@ def _grounded_batch(
 
 def _resolved_evidence_candidate(
     output: _EvidenceOutput,
-    nodes: dict[str, object],
-    text_views: dict[str, object],
+    nodes: Mapping[str, DocumentNode],
+    text_views: Mapping[str, TextView],
 ) -> GroundedEvidenceCandidate:
-    from kotekomi_domain import DocumentNode, TextView
-
     node = nodes.get(output.node_id)
     if not isinstance(node, DocumentNode):
         raise ValueError("Candidate evidence references an unknown task-local DocumentNode.")
@@ -427,6 +517,20 @@ def _resolved_evidence_candidate(
 def staged_claim_output_schema_bytes() -> bytes:
     schema = TypeAdapter(_CandidateOutput | _AbstentionOutput).json_schema()
     return json.dumps(schema, ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode()
+
+
+def _manifest_schema_id(
+    extraction_input: BoundedExtractionInput, ledger_repository: ContextPlanningLedger
+) -> str:
+    artifact = ledger_repository.get_context_manifest_artifact(extraction_input.context_manifest_id)
+    if artifact is None:
+        raise ValueError(
+            f"ContextManifest is not persisted: {extraction_input.context_manifest_id}"
+        )
+    integrity = artifact.payload.get("integrity")
+    if not isinstance(integrity, dict) or not isinstance(integrity.get("schema_id"), str):
+        raise ValueError("ContextManifest persisted artifact is malformed.")
+    return cast(str, integrity["schema_id"])
 
 
 def _manifest_payload(manifest: ContextManifest) -> dict[str, object]:

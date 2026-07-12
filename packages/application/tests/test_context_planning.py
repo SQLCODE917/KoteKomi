@@ -1,6 +1,8 @@
 import hashlib
+from copy import deepcopy
 from datetime import UTC, datetime
 
+import pytest
 from kotekomi_application import (
     AnalysisUnit,
     AnalysisUnitPlanningInput,
@@ -8,10 +10,13 @@ from kotekomi_application import (
     ContextManifestStatus,
     ContextModelProfile,
     build_context_manifest,
+    persist_analysis_unit,
     plan_analysis_units,
     render_context,
+    verify_context_manifest,
 )
 from kotekomi_domain import (
+    AnalysisUnitArtifact,
     ContextManifestArtifact,
     DocumentNode,
     DocumentRepresentation,
@@ -43,6 +48,7 @@ class FakeContextPlanningLedger:
     def __init__(self) -> None:
         self.bundle = _bundle()
         self.manifests: dict[str, ContextManifestArtifact] = {}
+        self.analysis_units: dict[str, AnalysisUnitArtifact] = {}
 
     def get_document_representation_bundle(
         self, record_id: str
@@ -54,6 +60,12 @@ class FakeContextPlanningLedger:
 
     def get_context_manifest_artifact(self, record_id: str) -> ContextManifestArtifact | None:
         return self.manifests.get(record_id)
+
+    def save_analysis_unit_artifact(self, record: AnalysisUnitArtifact) -> None:
+        self.analysis_units[record.id] = record
+
+    def get_analysis_unit_artifact(self, record_id: str) -> AnalysisUnitArtifact | None:
+        return self.analysis_units.get(record_id)
 
 
 def _bundle() -> DocumentRepresentationBundle:
@@ -195,7 +207,16 @@ def test_context_planner_includes_required_definition_and_excludes_furniture() -
     assert b"Community Health Improvement Plan (CHIP)" in first.manifest.rendered_input
     assert b"Furniture header" not in first.manifest.rendered_input
     assert first.manifest.input_token_count <= 250
-    assert render_context(first.manifest, ledger) == first.manifest.rendered_input
+    assert (
+        render_context(
+            first.manifest.id,
+            ledger,
+            tokenizer,
+            b"Extract a source-backed claim.",
+            b'{"type":"object"}',
+        )
+        == first.manifest.rendered_input
+    )
 
 
 def test_context_planner_splits_multiple_focus_nodes_and_blocks_one_oversized_unit() -> None:
@@ -210,6 +231,7 @@ def test_context_planner_splits_multiple_focus_nodes_and_blocks_one_oversized_un
         planner_policy_id="fixture-policy",
         fingerprint="a" * 64,
     )
+    persist_analysis_unit(split_unit, ledger)
     split = build_context_manifest(_manifest_input(split_unit, limit=8), ledger, tokenizer)
     blocked_unit = AnalysisUnit(
         id="anu_blocked_fixture",
@@ -220,6 +242,7 @@ def test_context_planner_splits_multiple_focus_nodes_and_blocks_one_oversized_un
         planner_policy_id="fixture-policy",
         fingerprint="b" * 64,
     )
+    persist_analysis_unit(blocked_unit, ledger)
     blocked = build_context_manifest(_manifest_input(blocked_unit, limit=8), ledger, tokenizer)
 
     assert split.manifest.status is ContextManifestStatus.SPLIT
@@ -229,3 +252,64 @@ def test_context_planner_splits_multiple_focus_nodes_and_blocks_one_oversized_un
     )
     assert blocked.manifest.status is ContextManifestStatus.CONTEXT_BUDGET_BLOCKED
     assert blocked.blocked_reason == "required_context_exceeds_budget"
+
+
+def test_context_manifest_rejects_tampered_candidates_segments_and_token_count() -> None:
+    ledger = FakeContextPlanningLedger()
+    tokenizer = ExactWhitespaceTokenizer()
+    unit = plan_analysis_units(
+        AnalysisUnitPlanningInput(ledger.bundle.representation.id, "fixture-policy", "extract"),
+        ledger,
+    ).units[0]
+    manifest = build_context_manifest(_manifest_input(unit, limit=256), ledger, tokenizer).manifest
+    artifact = ledger.manifests[manifest.id]
+    payload = deepcopy(artifact.payload)
+    integrity = payload["integrity"]
+    assert isinstance(integrity, dict)
+    selected = integrity["selected"]
+    assert isinstance(selected, list)
+    assert isinstance(selected[0], dict)
+    selected[0] = {**selected[0], "node_id": "nod_context_furniture"}
+    ledger.manifests[manifest.id] = artifact.model_copy(update={"payload": payload})
+
+    with pytest.raises(ValueError, match="manifest_digest|persisted artifact"):
+        verify_context_manifest(
+            manifest.id,
+            ledger,
+            tokenizer,
+            b"Extract a source-backed claim.",
+            b'{"type":"object"}',
+        )
+
+    ledger.manifests[manifest.id] = artifact
+    payload = deepcopy(artifact.payload)
+    integrity = payload["integrity"]
+    assert isinstance(integrity, dict)
+    integrity["input_token_count"] = manifest.input_token_count + 1
+    ledger.manifests[manifest.id] = artifact.model_copy(update={"payload": payload})
+    with pytest.raises(ValueError, match="manifest_digest|token count"):
+        verify_context_manifest(
+            manifest.id,
+            ledger,
+            tokenizer,
+            b"Extract a source-backed claim.",
+            b'{"type":"object"}',
+        )
+
+    ledger.manifests[manifest.id] = artifact
+    payload = deepcopy(artifact.payload)
+    integrity = payload["integrity"]
+    assert isinstance(integrity, dict)
+    segments = integrity["segments"]
+    assert isinstance(segments, list)
+    assert isinstance(segments[0], dict)
+    segments[0] = {**segments[0], "start_byte": 0}
+    ledger.manifests[manifest.id] = artifact.model_copy(update={"payload": payload})
+    with pytest.raises(ValueError, match="manifest_digest|segment"):
+        verify_context_manifest(
+            manifest.id,
+            ledger,
+            tokenizer,
+            b"Extract a source-backed claim.",
+            b'{"type":"object"}',
+        )

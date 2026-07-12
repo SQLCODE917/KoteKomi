@@ -133,6 +133,17 @@ class ProposedChangeBatchOutcome:
     proposed_change_ids_by_local_id: dict[str, str]
 
 
+@dataclass(frozen=True)
+class GroundedCandidateBatchCommit:
+    """Validated records awaiting one Application-owned atomic commit."""
+
+    evidence_targets: tuple[EvidenceTarget, ...]
+    validation_attempts: tuple[EvidenceValidationAttempt, ...]
+    provenance_activity: ProvenanceActivity
+    proposed_changes: tuple[ProposedChange, ...]
+    outcome: ProposedChangeBatchOutcome
+
+
 def build_grounded_candidate_context(
     context_input: GroundedCandidateContextInput,
     ledger_repository: GroundedCandidateContextLedger,
@@ -214,11 +225,11 @@ def build_grounded_candidate_context(
     )
 
 
-def submit_grounded_candidate_batch(
+def prepare_grounded_candidate_batch(
     batch_input: GroundedCandidateBatchInput,
     ledger_repository: GroundedCandidateLedger,
-) -> ProposedChangeBatchOutcome:
-    """Validate and atomically persist a bounded batch of reviewable candidates."""
+) -> GroundedCandidateBatchCommit:
+    """Validate a bounded candidate batch without publishing any downstream records."""
     _require_fingerprint(batch_input.task_fingerprint)
     _require_nonempty(batch_input.model_name, "Grounded candidate batch model_name")
     _require_nonempty(batch_input.prompt_id, "Grounded candidate batch prompt_id")
@@ -369,13 +380,7 @@ def submit_grounded_candidate_batch(
             )
         }
     )
-    ledger_repository.commit_grounded_candidate_batch(
-        evidence_targets=tuple(evidence_by_local_id.values()),
-        validation_attempts=validation_attempts,
-        provenance_activity=provenance_activity,
-        proposed_changes=proposed_changes,
-    )
-    return ProposedChangeBatchOutcome(
+    outcome = ProposedChangeBatchOutcome(
         provenance_activity_id=provenance_activity.id,
         organization_ids_by_local_id=organization_ids,
         evidence_target_ids_by_local_id={
@@ -398,6 +403,28 @@ def submit_grounded_candidate_batch(
             },
         },
     )
+    return GroundedCandidateBatchCommit(
+        evidence_targets=tuple(evidence_by_local_id.values()),
+        validation_attempts=validation_attempts,
+        provenance_activity=provenance_activity,
+        proposed_changes=proposed_changes,
+        outcome=outcome,
+    )
+
+
+def submit_grounded_candidate_batch(
+    batch_input: GroundedCandidateBatchInput,
+    ledger_repository: GroundedCandidateLedger,
+) -> ProposedChangeBatchOutcome:
+    """Validate and atomically persist a bounded batch of reviewable candidates."""
+    commit = prepare_grounded_candidate_batch(batch_input, ledger_repository)
+    ledger_repository.commit_grounded_candidate_batch(
+        evidence_targets=commit.evidence_targets,
+        validation_attempts=commit.validation_attempts,
+        provenance_activity=commit.provenance_activity,
+        proposed_changes=commit.proposed_changes,
+    )
+    return commit.outcome
 
 
 def _organization_proposed_change(

@@ -1,0 +1,83 @@
+{
+  "$defs": {
+    "JsonValue": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "integer"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The immutable authoritative record of one planned analysis unit.",
+  "properties": {
+    "created_at": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Created At"
+    },
+    "id": {
+      "pattern": "^anu_[A-Za-z0-9][A-Za-z0-9_-]*$",
+      "title": "Id",
+      "type": "string"
+    },
+    "payload": {
+      "additionalProperties": {
+        "$ref": "#/$defs/JsonValue"
+      },
+      "title": "Payload",
+      "type": "object"
+    },
+    "representation_id": {
+      "pattern": "^rep_[A-Za-z0-9][A-Za-z0-9_-]*$",
+      "title": "Representation Id",
+      "type": "string"
+    },
+    "unit_fingerprint": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Unit Fingerprint",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "representation_id",
+    "unit_fingerprint",
+    "payload"
+  ],
+  "title": "AnalysisUnitArtifact",
+  "type": "object"
+}

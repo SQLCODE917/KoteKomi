@@ -6,6 +6,7 @@ from pathlib import Path
 from kotekomi_adapters import LocalArchiveStore, SQLiteLedgerInitializer, sqlite_ledger_transaction
 from kotekomi_adapters.docling_pdf_parser import DoclingPdfParser, DoclingPdfParserConfig
 from kotekomi_application import (
+    AnalysisUnit,
     AnalysisUnitPlanningInput,
     BoundedExtractionInput,
     BuildIdentity,
@@ -30,6 +31,7 @@ from kotekomi_application import (
     ReviewProposedChangeInput,
     SourceIdentityHint,
     StableSourceIdentityPolicy,
+    StagedClaimTaskSchemaRegistry,
     Uuid4ModelRunIdFactory,
     Uuid4ProcessingAttemptIdFactory,
     approve_proposed_change,
@@ -38,7 +40,9 @@ from kotekomi_application import (
     capture_identity,
     capture_source,
     ingest_pdf,
+    persist_analysis_unit,
     plan_analysis_units,
+    render_context,
     run_bounded_extraction,
     staged_claim_output_schema_bytes,
     submit_grounded_candidate_batch,
@@ -380,6 +384,31 @@ def test_docling_r1c_includes_chip_definition_and_excludes_furniture_determinist
             repository,
             tokenizer,
         )
+        definition_id = first.manifest.selected_candidates[2].node_id
+        definition_node = next(node for node in bundle.nodes if node.id == definition_id)
+        split_unit = AnalysisUnit(
+            id="anu_r1c_real_fixture_split",
+            representation_id=bundle.representation.id,
+            task_type="extract",
+            focus_node_ids=(definition_node.id, priority_node.id),
+            dependency_node_ids=(),
+            planner_policy_id="r1c_pdf_v1",
+            fingerprint="a" * 64,
+        )
+        persist_analysis_unit(split_unit, repository)
+        split = build_context_manifest(
+            ContextManifestInput(
+                analysis_unit=split_unit,
+                model_profile=ContextModelProfile("r1c_fixture_model", 8, 4, 2),
+                prompt_id=manifest_input.prompt_id,
+                prompt_bytes=manifest_input.prompt_bytes,
+                schema_id=manifest_input.schema_id,
+                schema_bytes=manifest_input.schema_bytes,
+                renderer_version=manifest_input.renderer_version,
+            ),
+            repository,
+            tokenizer,
+        )
 
     assert first == second
     assert first.manifest.status is ContextManifestStatus.READY
@@ -404,6 +433,11 @@ def test_docling_r1c_includes_chip_definition_and_excludes_furniture_determinist
     assert tokenizer.count_tokens(first.manifest.rendered_input) == first.manifest.input_token_count
     assert blocked.manifest.status is ContextManifestStatus.CONTEXT_BUDGET_BLOCKED
     assert blocked.blocked_reason == "required_context_exceeds_budget"
+    assert split.manifest.status is ContextManifestStatus.SPLIT
+    assert tuple(unit.focus_node_ids for unit in split.split_units) == (
+        (definition_node.id,),
+        (priority_node.id,),
+    )
 
 
 def test_docling_r1d_staged_extraction_publishes_one_task_local_candidate(
@@ -455,7 +489,7 @@ def test_docling_r1d_staged_extraction_publishes_one_task_local_candidate(
                 model_profile=ContextModelProfile("r1d_fixture_model", 512, 64, 16),
                 prompt_id="r1d_claim_extraction",
                 prompt_bytes=b"Extract one grounded source claim.",
-                schema_id="r1d_candidate_schema_v1",
+                schema_id="staged_claim_output_v1",
                 schema_bytes=staged_claim_output_schema_bytes(),
                 renderer_version="r1d_renderer_v1",
             ),
@@ -467,7 +501,7 @@ def test_docling_r1d_staged_extraction_publishes_one_task_local_candidate(
         fixture_output = json.dumps(
             {
                 "kind": "candidates",
-                "schema_id": "r1d_candidate_schema_v1",
+                "schema_id": "staged_claim_output_v1",
                 "organizations": [
                     {"local_id": "model_subject", "name": "HealthyJoCo"},
                 ],
@@ -477,7 +511,9 @@ def test_docling_r1d_staged_extraction_publishes_one_task_local_candidate(
                         "node_id": priority_node.id,
                         "exact_quote": PRIORITY_SENTENCE,
                         "node_local_start": start_char - priority_node.start_char,
-                        "node_local_end": start_char + len(PRIORITY_SENTENCE) - priority_node.start_char,
+                        "node_local_end": (
+                            start_char + len(PRIORITY_SENTENCE) - priority_node.start_char
+                        ),
                     }
                 ],
                 "assertions": [
@@ -500,7 +536,8 @@ def test_docling_r1d_staged_extraction_publishes_one_task_local_candidate(
                 source_id=capture.source.id,
                 document_id=capture.document.id,
                 representation_id=bundle.representation.id,
-                context_manifest=manifest,
+                context_manifest_id=manifest.id,
+                prompt_bytes=b"Extract one grounded source claim.",
                 model_identity=ModelIdentity(
                     "r1d-fixture-model",
                     "b" * 64,
@@ -517,6 +554,8 @@ def test_docling_r1d_staged_extraction_publishes_one_task_local_candidate(
             archive,
             runtime,
             Uuid4ModelRunIdFactory(),
+            FixtureExactTokenizer(),
+            StagedClaimTaskSchemaRegistry(),
         )
         assert outcome.model_run.status is ModelRunStatus.SUCCEEDED, outcome.model_run.error_message
         assert outcome.proposed_change_batch is not None
@@ -528,10 +567,40 @@ def test_docling_r1d_staged_extraction_publishes_one_task_local_candidate(
         assert outcome.model_run.extraction_task_id == outcome.extraction_task.id
         assert repository.get_extraction_task(outcome.extraction_task.id) == outcome.extraction_task
         assert repository.get_model_run(outcome.model_run.id) == outcome.model_run
+        assertion_change_id = assertion_change.id
+
+    reopened_archive = LocalArchiveStore(archive_path)
+    with sqlite_ledger_transaction(ledger_path) as repository:
+        replayed_task = repository.get_extraction_task(outcome.extraction_task.id)
+        replayed_run = repository.get_model_run(outcome.model_run.id)
+        replayed_change = repository.get_proposed_change(assertion_change_id)
+        assert replayed_task is not None
+        assert replayed_run is not None
+        assert replayed_change is not None
+        assert replayed_task.context_manifest_id == manifest.id
+        assert replayed_run.extraction_task_id == replayed_task.id
+        assert (
+            render_context(
+                manifest.id,
+                repository,
+                FixtureExactTokenizer(),
+                b"Extract one grounded source claim.",
+                staged_claim_output_schema_bytes(),
+            )
+            == runtime.requests[0].rendered_input
+        )
+        evidence_links = replayed_change.proposed_json["evidence_links"]
+        assert isinstance(evidence_links, list)
+        assert isinstance(evidence_links[0], dict)
+        evidence_target_id = evidence_links[0]["evidence_target_id"]
+        assert isinstance(evidence_target_id, str)
+        evidence = repository.get_evidence_target(evidence_target_id)
+        assert evidence is not None
+        assert evidence.node_ids == (priority_node.id,)
 
     assert len(runtime.requests) == 1
     assert runtime.requests[0].context_manifest_id == manifest.id
-    assert archive.read_model_run_output(outcome.model_run.id) == fixture_output
+    assert reopened_archive.read_model_run_output(outcome.model_run.id) == fixture_output
 
 
 def _priority_sentence_batch(
