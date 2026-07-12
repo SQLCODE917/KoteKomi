@@ -1,13 +1,20 @@
 import hashlib
 import json
+import sqlite3
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from kotekomi_adapters import LocalArchiveStore, SQLiteLedgerInitializer, sqlite_ledger_transaction
+from kotekomi_adapters import (
+    LocalArchiveStore,
+    SQLiteLedgerInitializer,
+    SQLiteLedgerRepository,
+    sqlite_ledger_transaction,
+)
 from kotekomi_adapters.docling_pdf_parser import DoclingPdfParser, DoclingPdfParserConfig
 from kotekomi_application import (
     AnalysisUnitPlanningInput,
     BoundedExtractionInput,
+    BoundedExtractionOutcome,
     BuildIdentity,
     CaptureRequest,
     ContextManifest,
@@ -682,15 +689,49 @@ def test_docling_r1d_staged_extraction_publishes_one_task_local_candidate(
         )
         assert repository.get_proposed_change(assertion_change.id) == reviewed_change
         assertion_change_id = assertion_change.id
+        alternate_output = fixture_output.replace(
+            b'"predicate":"identified_community_health_priorities"',
+            b'"predicate":"reported_community_health_priorities"',
+        )
+        alternate_runtime = FixtureModelTaskRuntime(alternate_output)
+        alternate_outcome = run_bounded_extraction(
+            BoundedExtractionInput(
+                source_id=capture.source.id,
+                document_id=capture.document.id,
+                representation_id=bundle.representation.id,
+                context_manifest_id=manifest.id,
+                prompt_bytes=b"Extract one grounded source claim.",
+                execution_spec=_fixture_execution_spec(manifest),
+                validator_version="r1d-evidence-validator-v1",
+                started_at=NOW + timedelta(minutes=4),
+                completed_at=NOW + timedelta(minutes=5),
+            ),
+            repository,
+            archive,
+            alternate_runtime,
+            Uuid4ModelRunIdFactory(),
+            FixtureExactTokenizer(),
+            StagedClaimTaskSchemaRegistry(),
+        )
+        assert alternate_outcome.model_run.status is ModelRunStatus.SUCCEEDED
+        assert alternate_outcome.model_run.output_digest != outcome.model_run.output_digest
+        assert alternate_outcome.proposed_change_batch is not None
+        alternate_assertion_change_id = (
+            alternate_outcome.proposed_change_batch.proposed_change_ids_by_local_id["model_claim"]
+        )
+        assert alternate_assertion_change_id != assertion_change.id
+        assert repository.get_proposed_change(assertion_change.id) == reviewed_change
 
     reopened_archive = LocalArchiveStore(archive_path)
     with sqlite_ledger_transaction(ledger_path) as repository:
         replayed_task = repository.get_extraction_task(outcome.extraction_task.id)
         replayed_run = repository.get_model_run(outcome.model_run.id)
         replayed_change = repository.get_proposed_change(assertion_change_id)
+        replayed_alternate_change = repository.get_proposed_change(alternate_assertion_change_id)
         assert replayed_task is not None
         assert replayed_run is not None
         assert replayed_change is not None
+        assert replayed_alternate_change is not None
         assert replayed_task.context_manifest_id == manifest.id
         assert replayed_run.extraction_task_id == replayed_task.id
         assert (
@@ -711,6 +752,21 @@ def test_docling_r1d_staged_extraction_publishes_one_task_local_candidate(
         evidence = repository.get_evidence_target(evidence_target_id)
         assert evidence is not None
         assert evidence.node_ids == (priority_node.id,)
+        runs = repository.list_model_runs_for_task(replayed_task.id)
+        assert len(runs) == 3
+        assert {run.output_digest for run in runs} == {
+            outcome.model_run.output_digest,
+            alternate_outcome.model_run.output_digest,
+        }
+        first_provenance = repository.get_provenance_activity(
+            outcome.proposed_change_batch.provenance_activity_id
+        )
+        alternate_provenance = repository.get_provenance_activity(
+            alternate_outcome.proposed_change_batch.provenance_activity_id
+        )
+        assert first_provenance is not None
+        assert alternate_provenance is not None
+        assert first_provenance != alternate_provenance
 
     assert len(runtime.requests) == 2
     assert runtime.requests[0].context_manifest_id == manifest.id
@@ -720,6 +776,246 @@ def test_docling_r1d_staged_extraction_publishes_one_task_local_candidate(
     assert outcome.extraction_task.execution_spec_digest == outcome.model_run.execution_spec_digest
     assert reopened_archive.read_model_run_output(outcome.model_run.id) == fixture_output
     assert reopened_archive.read_model_run_output(retry_outcome.model_run.id) == fixture_output
+    assert (
+        reopened_archive.read_model_run_output(alternate_outcome.model_run.id) == alternate_output
+    )
+
+
+def _r1d_output(
+    *,
+    node_id: str,
+    node_local_start: int,
+    node_local_end: int,
+    organization_name: str,
+    predicate: str,
+) -> bytes:
+    return json.dumps(
+        {
+            "kind": "candidates",
+            "schema_id": "staged_claim_output_v1",
+            "organizations": [{"local_id": "model_subject", "name": organization_name}],
+            "evidence": [
+                {
+                    "local_id": "model_evidence",
+                    "node_id": node_id,
+                    "exact_quote": PRIORITY_SENTENCE,
+                    "node_local_start": node_local_start,
+                    "node_local_end": node_local_end,
+                }
+            ],
+            "assertions": [
+                {
+                    "local_id": "model_claim",
+                    "subject_organization_local_id": "model_subject",
+                    "evidence_local_id": "model_evidence",
+                    "predicate": predicate,
+                    "object_value": "healthcare access, mental health, housing, and food security",
+                }
+            ],
+        },
+        separators=(",", ":"),
+    ).encode()
+
+
+def test_sqlite_model_run_publication_fault_matrix_is_atomic_and_retryable(tmp_path: Path) -> None:
+    ledger_path = tmp_path / "ledger.db"
+    archive = LocalArchiveStore(tmp_path / "archive")
+    archive.initialize()
+    SQLiteLedgerInitializer(ledger_path).initialize()
+    request = _capture_request()
+    identity_policy = StableSourceIdentityPolicy()
+    capture_identity_result = capture_identity(request, identity_policy)
+    archive.put_if_absent_or_identical(
+        capture_identity_result.raw_blob_id,
+        RAW_PDF,
+        RAW_PDF_DIGEST,
+    )
+    with sqlite_ledger_transaction(ledger_path) as repository:
+        capture = capture_source(request, repository, identity_policy)
+        ingest_outcome = ingest_pdf(
+            _ingest_input(capture.document.id, capture.raw_blob.id),
+            repository,
+            DoclingPdfParser(DoclingPdfParserConfig()),
+            Uuid4ProcessingAttemptIdFactory(),
+            FixtureProcessingClock(),
+        )
+        assert ingest_outcome.representation_id is not None
+        bundle = repository.get_document_representation_bundle(ingest_outcome.representation_id)
+        assert bundle is not None
+        priority_node = next(
+            node
+            for node in bundle.nodes
+            if PRIORITY_SENTENCE in bundle.text_views[0].text[node.start_char : node.end_char]
+        )
+        focus_unit = next(
+            unit
+            for unit in plan_analysis_units(
+                AnalysisUnitPlanningInput(
+                    bundle.representation.id, "r1d_fault_matrix_v1", "claim_extraction"
+                ),
+                repository,
+            ).units
+            if unit.focus_node_ids == (priority_node.id,)
+        )
+        manifest = build_context_manifest(
+            ContextManifestInput(
+                analysis_unit=focus_unit,
+                model_profile=ContextModelProfile("r1d_fixture_model", 512, 64, 16),
+                prompt_id="r1d_claim_extraction",
+                prompt_bytes=b"Extract one grounded source claim.",
+                schema_id="staged_claim_output_v1",
+                schema_bytes=staged_claim_output_schema_bytes(),
+                renderer_version="r1d_renderer_v1",
+            ),
+            repository,
+            FixtureExactTokenizer(),
+        ).manifest
+        text_view = bundle.text_views[0]
+        local_start = text_view.text.index(PRIORITY_SENTENCE) - priority_node.start_char
+        local_end = local_start + len(PRIORITY_SENTENCE)
+        baseline_output = _r1d_output(
+            node_id=priority_node.id,
+            node_local_start=local_start,
+            node_local_end=local_end,
+            organization_name="HealthyJoCo",
+            predicate="identified_community_health_priorities",
+        )
+        baseline_outcome = run_bounded_extraction(
+            BoundedExtractionInput(
+                source_id=capture.source.id,
+                document_id=capture.document.id,
+                representation_id=bundle.representation.id,
+                context_manifest_id=manifest.id,
+                prompt_bytes=b"Extract one grounded source claim.",
+                execution_spec=_fixture_execution_spec(manifest),
+                validator_version="r1d-fault-validator-v1",
+                started_at=NOW,
+                completed_at=NOW,
+            ),
+            repository,
+            archive,
+            FixtureModelTaskRuntime(baseline_output),
+            Uuid4ModelRunIdFactory(),
+            FixtureExactTokenizer(),
+            StagedClaimTaskSchemaRegistry(),
+        )
+        assert baseline_outcome.proposed_change_batch is not None
+        baseline_assertion_id = (
+            baseline_outcome.proposed_change_batch.proposed_change_ids_by_local_id["model_claim"]
+        )
+        baseline_assertion = repository.get_proposed_change(baseline_assertion_id)
+        assert baseline_assertion is not None
+        reviewed_assertion = baseline_assertion.model_copy(
+            update={
+                "review_status": ReviewStatus.REJECTED,
+                "updated_at": NOW + timedelta(seconds=1),
+            }
+        )
+        repository.save_proposed_change(reviewed_assertion)
+
+    def publication_state(repository: SQLiteLedgerRepository) -> tuple[object, ...]:
+        return (
+            repository.list_provenance_activities(),
+            repository.list_evidence_targets(),
+            repository.list_evidence_validation_attempts(),
+            repository.list_proposed_changes(),
+        )
+
+    fault_points = (
+        "AFTER_PROVENANCE",
+        "AFTER_EVIDENCE_TARGET",
+        "AFTER_VALIDATION_ATTEMPT",
+        "AFTER_ORGANIZATION_PROPOSAL",
+        "AFTER_ASSERTION_PROPOSAL",
+        "BEFORE_SUCCESSFUL_MODEL_RUN",
+        "AFTER_SUCCESSFUL_MODEL_RUN",
+        "BEFORE_SAVEPOINT_RELEASE",
+    )
+
+    class FaultingRepository(SQLiteLedgerRepository):
+        def __init__(self, connection: sqlite3.Connection, fault_point: str) -> None:
+            super().__init__(connection)
+            self._fault_point = fault_point
+
+        def _successful_model_run_publication_checkpoint(self, name: str) -> None:
+            if name == self._fault_point:
+                raise OSError(f"injected {self._fault_point}")
+
+    failed_outcomes: list[BoundedExtractionOutcome] = []
+    retry_outcomes: list[BoundedExtractionOutcome] = []
+    for index, fault_point in enumerate(fault_points, start=1):
+        output = _r1d_output(
+            node_id=priority_node.id,
+            node_local_start=local_start,
+            node_local_end=local_end,
+            organization_name=f"HealthyJoCo fault {index}",
+            predicate=f"reported_community_health_priorities_{index}",
+        )
+        with sqlite3.connect(ledger_path) as connection:
+            connection.execute("PRAGMA foreign_keys = ON")
+            connection.execute("BEGIN")
+
+            repository = FaultingRepository(connection, fault_point)
+            before = publication_state(repository)
+            failed = run_bounded_extraction(
+                BoundedExtractionInput(
+                    source_id=capture.source.id,
+                    document_id=capture.document.id,
+                    representation_id=bundle.representation.id,
+                    context_manifest_id=manifest.id,
+                    prompt_bytes=b"Extract one grounded source claim.",
+                    execution_spec=_fixture_execution_spec(manifest),
+                    validator_version="r1d-fault-validator-v1",
+                    started_at=NOW + timedelta(minutes=index * 2),
+                    completed_at=NOW + timedelta(minutes=index * 2, seconds=1),
+                ),
+                repository,
+                archive,
+                FixtureModelTaskRuntime(output),
+                Uuid4ModelRunIdFactory(),
+                FixtureExactTokenizer(),
+                StagedClaimTaskSchemaRegistry(),
+            )
+            assert failed.model_run.status is ModelRunStatus.PUBLISH_FAILED
+            assert publication_state(repository) == before
+            assert repository.get_proposed_change(baseline_assertion_id) == reviewed_assertion
+            connection.commit()
+        assert archive.read_model_run_output(failed.model_run.id) == output
+        failed_outcomes.append(failed)
+
+        with sqlite_ledger_transaction(ledger_path) as repository:
+            retried = run_bounded_extraction(
+                BoundedExtractionInput(
+                    source_id=capture.source.id,
+                    document_id=capture.document.id,
+                    representation_id=bundle.representation.id,
+                    context_manifest_id=manifest.id,
+                    prompt_bytes=b"Extract one grounded source claim.",
+                    execution_spec=_fixture_execution_spec(manifest),
+                    validator_version="r1d-fault-validator-v1",
+                    started_at=NOW + timedelta(minutes=index * 2, seconds=2),
+                    completed_at=NOW + timedelta(minutes=index * 2, seconds=3),
+                ),
+                repository,
+                archive,
+                FixtureModelTaskRuntime(output),
+                Uuid4ModelRunIdFactory(),
+                FixtureExactTokenizer(),
+                StagedClaimTaskSchemaRegistry(),
+            )
+            assert retried.model_run.status is ModelRunStatus.SUCCEEDED
+            assert repository.get_proposed_change(baseline_assertion_id) == reviewed_assertion
+            retry_outcomes.append(retried)
+
+    reopened_archive = LocalArchiveStore(archive.archive_root)
+    with sqlite_ledger_transaction(ledger_path) as repository:
+        runs = repository.list_model_runs_for_task(baseline_outcome.extraction_task.id)
+        assert len(runs) == 1 + 2 * len(fault_points)
+        assert sum(run.status is ModelRunStatus.PUBLISH_FAILED for run in runs) == len(fault_points)
+        assert sum(run.status is ModelRunStatus.SUCCEEDED for run in runs) == 1 + len(fault_points)
+        assert repository.get_proposed_change(baseline_assertion_id) == reviewed_assertion
+    for outcome in (*failed_outcomes, *retry_outcomes):
+        assert reopened_archive.read_model_run_output(outcome.model_run.id)
 
 
 def _priority_sentence_batch(

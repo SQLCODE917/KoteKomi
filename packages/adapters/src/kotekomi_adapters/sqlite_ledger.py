@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import sqlite3
-from collections.abc import Generator
+from collections.abc import Callable, Generator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from importlib.resources import files
@@ -912,13 +912,12 @@ class SQLiteLedgerRepository:
         """Commit a fully replayed candidate batch without partial publication."""
         self._connection.execute("SAVEPOINT grounded_candidate_batch")
         try:
-            self.save_provenance_activity(provenance_activity)
-            for evidence_target in evidence_targets:
-                self.save_evidence_target(evidence_target)
-            for validation_attempt in validation_attempts:
-                self.save_evidence_validation_attempt(validation_attempt)
-            for proposed_change in proposed_changes:
-                self.save_proposed_change(proposed_change)
+            self._save_grounded_candidate_batch_records(
+                evidence_targets=evidence_targets,
+                validation_attempts=validation_attempts,
+                provenance_activity=provenance_activity,
+                proposed_changes=proposed_changes,
+            )
         except Exception:
             self._connection.execute("ROLLBACK TO SAVEPOINT grounded_candidate_batch")
             self._connection.execute("RELEASE SAVEPOINT grounded_candidate_batch")
@@ -934,22 +933,57 @@ class SQLiteLedgerRepository:
         """Publish a successful run and all of its reviewable descendants as one unit."""
         self._connection.execute("SAVEPOINT successful_model_run_and_candidate_batch")
         try:
-            self.commit_grounded_candidate_batch(
+            self._save_grounded_candidate_batch_records(
                 evidence_targets=batch.evidence_targets,
                 validation_attempts=batch.validation_attempts,
                 provenance_activity=batch.provenance_activity,
                 proposed_changes=batch.proposed_changes,
+                checkpoint=self._successful_model_run_publication_checkpoint,
             )
+            self._successful_model_run_publication_checkpoint("BEFORE_SUCCESSFUL_MODEL_RUN")
             self.save_model_run(model_run)
+            self._successful_model_run_publication_checkpoint("AFTER_SUCCESSFUL_MODEL_RUN")
+            self._successful_model_run_publication_checkpoint("BEFORE_SAVEPOINT_RELEASE")
         except Exception:
             self._connection.execute(
                 "ROLLBACK TO SAVEPOINT successful_model_run_and_candidate_batch"
             )
-            self._connection.execute(
-                "RELEASE SAVEPOINT successful_model_run_and_candidate_batch"
-            )
+            self._connection.execute("RELEASE SAVEPOINT successful_model_run_and_candidate_batch")
             raise
         self._connection.execute("RELEASE SAVEPOINT successful_model_run_and_candidate_batch")
+
+    def _save_grounded_candidate_batch_records(
+        self,
+        *,
+        evidence_targets: tuple[EvidenceTarget, ...],
+        validation_attempts: tuple[EvidenceValidationAttempt, ...],
+        provenance_activity: ProvenanceActivity,
+        proposed_changes: tuple[ProposedChange, ...],
+        checkpoint: Callable[[str], None] | None = None,
+    ) -> None:
+        self.save_provenance_activity(provenance_activity)
+        self._checkpoint(checkpoint, "AFTER_PROVENANCE")
+        for evidence_target in evidence_targets:
+            self.save_evidence_target(evidence_target)
+        self._checkpoint(checkpoint, "AFTER_EVIDENCE_TARGET")
+        for validation_attempt in validation_attempts:
+            self.save_evidence_validation_attempt(validation_attempt)
+        self._checkpoint(checkpoint, "AFTER_VALIDATION_ATTEMPT")
+        for proposed_change in proposed_changes:
+            self.save_proposed_change(proposed_change)
+            record_type = proposed_change.proposed_json.get("record_type")
+            if record_type == "Organization":
+                self._checkpoint(checkpoint, "AFTER_ORGANIZATION_PROPOSAL")
+            elif record_type == "Assertion":
+                self._checkpoint(checkpoint, "AFTER_ASSERTION_PROPOSAL")
+
+    @staticmethod
+    def _checkpoint(checkpoint: Callable[[str], None] | None, name: str) -> None:
+        if checkpoint is not None:
+            checkpoint(name)
+
+    def _successful_model_run_publication_checkpoint(self, name: str) -> None:
+        """Adapter-private seam for SQLite publication-fault proofs."""
 
     def ensure_processing_task_fingerprint(
         self, record: ProcessingTaskFingerprint
