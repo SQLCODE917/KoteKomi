@@ -1,4 +1,14 @@
 {
+  "$defs": {
+    "SourceCoordinateSystem": {
+      "enum": [
+        "pdf_points_top_left_v1",
+        "pdf_points_bottom_left_raw_v1"
+      ],
+      "title": "SourceCoordinateSystem",
+      "type": "string"
+    }
+  },
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
   "properties": {
@@ -8,9 +18,7 @@
       "type": "number"
     },
     "coordinate_system": {
-      "minLength": 1,
-      "title": "Coordinate System",
-      "type": "string"
+      "$ref": "#/$defs/SourceCoordinateSystem"
     },
     "id": {
       "pattern": "^srg_[A-Za-z0-9][A-Za-z0-9_-]*$",
@@ -47,6 +55,13 @@
       "title": "Right",
       "type": "number"
     },
+    "rotation_applied": {
+      "maximum": 270,
+      "minimum": 0,
+      "multipleOf": 90,
+      "title": "Rotation Applied",
+      "type": "integer"
+    },
     "top": {
       "minimum": 0,
       "title": "Top",
@@ -63,7 +78,8 @@
     "left",
     "top",
     "right",
-    "bottom"
+    "bottom",
+    "rotation_applied"
   ],
   "title": "SourceRegion",
   "type": "object"

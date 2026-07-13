@@ -63,7 +63,7 @@ def utc_now() -> datetime:
 class DomainModel(BaseModel):
     """Base model for immutable Domain Core records."""
 
-    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True, allow_inf_nan=False)
 
 
 class EntityKind(StrEnum):
@@ -117,6 +117,11 @@ class DocumentEdgeProvenanceKind(StrEnum):
     PARSER = "parser"
     PROPOSED = "proposed"
     REVIEWED = "reviewed"
+
+
+class SourceCoordinateSystem(StrEnum):
+    PDF_POINTS_TOP_LEFT_V1 = "pdf_points_top_left_v1"
+    PDF_POINTS_BOTTOM_LEFT_RAW_V1 = "pdf_points_bottom_left_raw_v1"
 
 
 class EvidenceValidationAttemptStatus(StrEnum):
@@ -404,7 +409,7 @@ class TextView(DomainModel):
 class SourceRegion(DomainModel):
     id: SourceRegionId
     representation_id: DocumentRepresentationId
-    coordinate_system: NonEmptyStr
+    coordinate_system: SourceCoordinateSystem
     page_number: Annotated[int, Field(ge=1)]
     page_width: Annotated[float, Field(gt=0)]
     page_height: Annotated[float, Field(gt=0)]
@@ -412,6 +417,7 @@ class SourceRegion(DomainModel):
     top: Annotated[float, Field(ge=0)]
     right: Annotated[float, Field(ge=0)]
     bottom: Annotated[float, Field(ge=0)]
+    rotation_applied: Annotated[int, Field(ge=0, le=270, multiple_of=90)]
 
     @model_validator(mode="after")
     def validate_bounds(self) -> Self:
@@ -434,6 +440,8 @@ class DocumentNode(DomainModel):
     start_char: Annotated[int, Field(ge=0)]
     end_char: Annotated[int, Field(ge=0)]
     source_region_ids: tuple[NonEmptyStr, ...] = Field(default_factory=tuple)
+    source_page_numbers: tuple[Annotated[int, Field(ge=1)], ...] = Field(default_factory=tuple)
+    source_text_digest: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")] | None = None
     parser_confidence: Confidence | None = None
 
     @model_validator(mode="after")
@@ -505,12 +513,46 @@ class DocumentRepresentationBundle(DomainModel):
                 raise ValueError("DocumentNode parent must exist in its representation.")
             if any(region_id not in source_regions for region_id in node.source_region_ids):
                 raise ValueError("DocumentNode must reference SourceRegions in its representation.")
+            referenced_regions = tuple(
+                source_regions[region_id] for region_id in node.source_region_ids
+            )
+            expected_page_numbers = tuple(
+                sorted({region.page_number for region in referenced_regions})
+            )
+            if node.source_page_numbers != expected_page_numbers:
+                raise ValueError("DocumentNode source_page_numbers must match its SourceRegions.")
+            expected_text_digest = hashlib.sha256(
+                text_view.text[node.start_char : node.end_char].encode("utf-8")
+            ).hexdigest()
+            if referenced_regions and node.source_text_digest != expected_text_digest:
+                raise ValueError("DocumentNode text range must agree with its SourceRegions.")
+            if not referenced_regions and node.source_text_digest is not None:
+                raise ValueError(
+                    "DocumentNode without SourceRegions must not declare a source_text_digest."
+                )
+            region_geometries = {
+                (
+                    region.page_number,
+                    region.left,
+                    region.top,
+                    region.right,
+                    region.bottom,
+                )
+                for region in referenced_regions
+            }
+            if len(region_geometries) != len(referenced_regions):
+                raise ValueError(
+                    "DocumentNode must not reference duplicate contradictory SourceRegions."
+                )
         _validate_document_node_tree(tuple(nodes.values()))
         for edge in self.edges:
             if edge.representation_id != representation_id:
                 raise ValueError("DocumentEdge must belong to the representation.")
             if edge.from_node_id not in nodes or edge.to_node_id not in nodes:
                 raise ValueError("DocumentEdge endpoints must exist in its representation.")
+            if edge.from_node_id == edge.to_node_id:
+                raise ValueError("DocumentEdge must not be a self-edge.")
+        _validate_reading_order_edges(self.edges)
         actual_digest = canonical_representation_digest(
             self.representation,
             text_views=self.text_views,
@@ -554,6 +596,32 @@ def _validate_document_node_tree(nodes: tuple[DocumentNode, ...]) -> None:
             ancestor_ids.add(parent_id)
             parent = next(candidate for candidate in nodes if candidate.id == parent_id)
             parent_id = parent.parent_node_id
+
+
+def _validate_reading_order_edges(edges: tuple[DocumentEdge, ...]) -> None:
+    reading_order_edges = tuple(edge for edge in edges if edge.edge_type == "reading_order")
+    successors: dict[str, tuple[str, ...]] = {}
+    for edge in reading_order_edges:
+        successors[edge.from_node_id] = (
+            *successors.get(edge.from_node_id, ()),
+            edge.to_node_id,
+        )
+    visiting: set[str] = set()
+    visited: set[str] = set()
+
+    def visit(node_id: str) -> None:
+        if node_id in visiting:
+            raise ValueError("DocumentEdge reading order must not contain a cycle.")
+        if node_id in visited:
+            return
+        visiting.add(node_id)
+        for successor in successors.get(node_id, ()):
+            visit(successor)
+        visiting.remove(node_id)
+        visited.add(node_id)
+
+    for node_id in successors:
+        visit(node_id)
 
 
 def canonical_representation_digest(

@@ -63,6 +63,7 @@ from kotekomi_domain import (
     RawBlob,
     RepresentationAnalyzability,
     Source,
+    SourceCoordinateSystem,
     SourceRegion,
     SourceType,
     TextView,
@@ -196,7 +197,7 @@ def _install_document(repository: SQLiteLedgerRepository, key: str) -> DocumentF
     region = SourceRegion(
         id=f"srg_coverage_{key}",
         representation_id=representation_id,
-        coordinate_system="fixture_points_v1",
+        coordinate_system=SourceCoordinateSystem.PDF_POINTS_TOP_LEFT_V1,
         page_number=1,
         page_width=612,
         page_height=792,
@@ -204,6 +205,7 @@ def _install_document(repository: SQLiteLedgerRepository, key: str) -> DocumentF
         top=36,
         right=576,
         bottom=72,
+        rotation_applied=0,
     )
     root = DocumentNode(
         id=f"nod_coverage_{key}_root",
@@ -214,6 +216,8 @@ def _install_document(repository: SQLiteLedgerRepository, key: str) -> DocumentF
         start_char=0,
         end_char=len(paragraph_text),
         source_region_ids=(region.id,),
+        source_page_numbers=(1,),
+        source_text_digest=hashlib.sha256(paragraph_text.encode()).hexdigest(),
     )
     paragraph = DocumentNode(
         id=f"nod_coverage_{key}_paragraph",
@@ -225,6 +229,8 @@ def _install_document(repository: SQLiteLedgerRepository, key: str) -> DocumentF
         start_char=0,
         end_char=len(paragraph_text),
         source_region_ids=(region.id,),
+        source_page_numbers=(1,),
+        source_text_digest=hashlib.sha256(paragraph_text.encode()).hexdigest(),
     )
     quality = ParseQualityReport(
         id=f"pqr_coverage_{key}",

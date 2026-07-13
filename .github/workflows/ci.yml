@@ -12,6 +12,8 @@ jobs:
       - uses: astral-sh/setup-uv@v5
         with:
           python-version: "3.12"
+      - run: sudo apt-get update
+      - run: sudo apt-get install --yes poppler-utils qpdf
       - run: uv run python scripts/generate_schemas.py
       - run: git diff --exit-code -- schemas
       - run: uv run ruff check

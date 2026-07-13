@@ -1,12 +1,17 @@
+import hashlib
 from datetime import UTC, datetime, timedelta
 
 import pytest
 from kotekomi_domain import (
+    DocumentEdge,
+    DocumentEdgeProvenanceKind,
     DocumentNode,
     DocumentRepresentation,
     DocumentRepresentationBundle,
     ParseQualityReport,
     RepresentationAnalyzability,
+    SourceCoordinateSystem,
+    SourceRegion,
     TextView,
     TextViewKind,
     canonical_representation_digest,
@@ -71,6 +76,56 @@ def _valid_bundle() -> DocumentRepresentationBundle:
     )
 
 
+def _valid_spatial_bundle() -> DocumentRepresentationBundle:
+    base = _valid_bundle()
+    root = base.nodes[0]
+    region = SourceRegion(
+        id="srg_plain_text_page_1",
+        representation_id=base.representation.id,
+        coordinate_system=SourceCoordinateSystem.PDF_POINTS_TOP_LEFT_V1,
+        page_number=1,
+        page_width=612,
+        page_height=792,
+        left=36,
+        top=36,
+        right=576,
+        bottom=72,
+        rotation_applied=0,
+    )
+    paragraph = DocumentNode(
+        id="nod_plain_text_paragraph",
+        representation_id=base.representation.id,
+        parent_node_id=root.id,
+        node_type="paragraph",
+        order_index=1,
+        text_view_id=base.text_views[0].id,
+        start_char=0,
+        end_char=11,
+        source_region_ids=(region.id,),
+        source_page_numbers=(1,),
+        source_text_digest=hashlib.sha256(b"hello world").hexdigest(),
+    )
+    representation = base.representation.model_copy(
+        update={
+            "canonical_output_digest": canonical_representation_digest(
+                base.representation,
+                text_views=base.text_views,
+                nodes=(root, paragraph),
+                edges=(),
+                source_regions=(region,),
+                quality_report=base.quality_report,
+            )
+        }
+    )
+    return DocumentRepresentationBundle(
+        representation=representation,
+        text_views=base.text_views,
+        nodes=(root, paragraph),
+        source_regions=(region,),
+        quality_report=base.quality_report,
+    )
+
+
 def test_document_representation_bundle_validates_stable_output_digest() -> None:
     bundle = _valid_bundle()
 
@@ -131,3 +186,81 @@ def test_representation_digest_ignores_execution_time() -> None:
         source_regions=bundle.source_regions,
         quality_report=bundle.quality_report,
     )
+
+
+def test_bundle_rejects_node_region_page_disagreement() -> None:
+    bundle = _valid_spatial_bundle()
+    root, paragraph = bundle.nodes
+    paragraph = paragraph.model_copy(update={"source_page_numbers": (2,)})
+
+    with pytest.raises(ValueError, match="source_page_numbers"):
+        DocumentRepresentationBundle(
+            representation=bundle.representation,
+            text_views=bundle.text_views,
+            nodes=(root, paragraph),
+            source_regions=bundle.source_regions,
+            quality_report=bundle.quality_report,
+        )
+
+
+def test_bundle_rejects_node_region_text_disagreement() -> None:
+    bundle = _valid_spatial_bundle()
+    root, paragraph = bundle.nodes
+    paragraph = paragraph.model_copy(update={"source_text_digest": "f" * 64})
+
+    with pytest.raises(ValueError, match="text range must agree"):
+        DocumentRepresentationBundle(
+            representation=bundle.representation,
+            text_views=bundle.text_views,
+            nodes=(root, paragraph),
+            source_regions=bundle.source_regions,
+            quality_report=bundle.quality_report,
+        )
+
+
+def test_bundle_rejects_duplicate_region_geometry_for_one_node() -> None:
+    bundle = _valid_spatial_bundle()
+    root, paragraph = bundle.nodes
+    region = bundle.source_regions[0]
+    duplicate = region.model_copy(update={"id": "srg_plain_text_page_1_duplicate"})
+    paragraph = paragraph.model_copy(update={"source_region_ids": (region.id, duplicate.id)})
+
+    with pytest.raises(ValueError, match="duplicate contradictory"):
+        DocumentRepresentationBundle(
+            representation=bundle.representation,
+            text_views=bundle.text_views,
+            nodes=(root, paragraph),
+            source_regions=(region, duplicate),
+            quality_report=bundle.quality_report,
+        )
+
+
+def test_bundle_rejects_reading_order_cycles() -> None:
+    bundle = _valid_spatial_bundle()
+    root, paragraph = bundle.nodes
+    forward = DocumentEdge(
+        id="deg_plain_text_forward",
+        representation_id=bundle.representation.id,
+        from_node_id=root.id,
+        to_node_id=paragraph.id,
+        edge_type="reading_order",
+        provenance_kind=DocumentEdgeProvenanceKind.DETERMINISTIC,
+        provenance_id="fixture_v1",
+    )
+    backward = forward.model_copy(
+        update={
+            "id": "deg_plain_text_backward",
+            "from_node_id": paragraph.id,
+            "to_node_id": root.id,
+        }
+    )
+
+    with pytest.raises(ValueError, match="reading order must not contain a cycle"):
+        DocumentRepresentationBundle(
+            representation=bundle.representation,
+            text_views=bundle.text_views,
+            nodes=bundle.nodes,
+            edges=(forward, backward),
+            source_regions=bundle.source_regions,
+            quality_report=bundle.quality_report,
+        )

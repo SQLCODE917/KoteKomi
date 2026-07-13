@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import math
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Protocol
@@ -22,6 +23,7 @@ from kotekomi_domain import (
     ProvenanceActivity,
     RawBlob,
     RepresentationAnalyzability,
+    SourceCoordinateSystem,
 )
 
 from kotekomi_application.processing import (
@@ -52,6 +54,40 @@ class PdfPagePreflight:
     rotation: int
     embedded_text_character_count: int
     warnings: tuple[str, ...] = ()
+    crop_left: float = 0.0
+    crop_top: float = 0.0
+    crop_right: float | None = None
+    crop_bottom: float | None = None
+
+    def __post_init__(self) -> None:
+        values = (self.width, self.height, self.crop_left, self.crop_top)
+        if not all(math.isfinite(value) for value in values):
+            raise ValueError("PDF page geometry must contain only finite coordinates.")
+        crop_right = self.width if self.crop_right is None else self.crop_right
+        crop_bottom = self.height if self.crop_bottom is None else self.crop_bottom
+        if not math.isfinite(crop_right) or not math.isfinite(crop_bottom):
+            raise ValueError("PDF crop geometry must contain only finite coordinates.")
+        if self.page_index < 1 or self.width <= 0 or self.height <= 0:
+            raise ValueError("PDF page geometry must identify a positive page and bounds.")
+        if self.rotation not in {0, 90, 180, 270}:
+            raise ValueError("PDF page rotation must be a cardinal rotation.")
+        if (
+            self.crop_left < 0
+            or self.crop_top < 0
+            or crop_right <= self.crop_left
+            or crop_bottom <= self.crop_top
+            or crop_right > self.width
+            or crop_bottom > self.height
+        ):
+            raise ValueError("PDF CropBox must lie within the MediaBox.")
+
+    @property
+    def resolved_crop_right(self) -> float:
+        return self.width if self.crop_right is None else self.crop_right
+
+    @property
+    def resolved_crop_bottom(self) -> float:
+        return self.height if self.crop_bottom is None else self.crop_bottom
 
 
 @dataclass(frozen=True)
@@ -62,6 +98,14 @@ class PdfPreflight:
     page_count: int
     pages: tuple[PdfPagePreflight, ...]
     warnings: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        if self.page_count != len(self.pages):
+            raise ValueError("PDF preflight page_count must match its page inventory.")
+        expected_page_indices = tuple(range(1, self.page_count + 1))
+        actual_page_indices = tuple(page.page_index for page in self.pages)
+        if actual_page_indices != expected_page_indices:
+            raise ValueError("PDF preflight pages must be ordered and contiguous from page 1.")
 
 
 @dataclass(frozen=True)
@@ -359,11 +403,37 @@ def validate_representation_for_processing_task(
         processor.processor_version,
         "preflight processor version",
     )
+    validated_bundle = DocumentRepresentationBundle.model_validate(bundle.model_dump())
+    _validate_pdf_region_geometry(parse_result.preflight, validated_bundle)
 
 
 def _require_equal(actual: str, expected: str, field: str) -> None:
     if actual != expected:
         raise ValueError(f"PDF parser returned a mismatched {field}.")
+
+
+def _validate_pdf_region_geometry(
+    preflight: PdfPreflight,
+    bundle: DocumentRepresentationBundle,
+) -> None:
+    pages_by_number = {page.page_index: page for page in preflight.pages}
+    for region in bundle.source_regions:
+        if region.coordinate_system is not SourceCoordinateSystem.PDF_POINTS_TOP_LEFT_V1:
+            raise ValueError("PDF SourceRegion uses a non-canonical coordinate system.")
+        page = pages_by_number.get(region.page_number)
+        if page is None:
+            raise ValueError("PDF SourceRegion references a page outside the preflight inventory.")
+        if region.page_width != page.width or region.page_height != page.height:
+            raise ValueError("PDF SourceRegion MediaBox disagrees with preflight geometry.")
+        if (
+            region.left < page.crop_left
+            or region.top < page.crop_top
+            or region.right > page.resolved_crop_right
+            or region.bottom > page.resolved_crop_bottom
+        ):
+            raise ValueError("PDF SourceRegion must lie within the page CropBox.")
+        if region.rotation_applied != page.rotation:
+            raise ValueError("PDF SourceRegion rotation transform disagrees with preflight.")
 
 
 def _provenance_id(document_id: str, representation_id: str, policy_id: str) -> str:

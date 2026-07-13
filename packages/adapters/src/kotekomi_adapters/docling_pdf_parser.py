@@ -36,6 +36,7 @@ from kotekomi_domain import (
     DocumentRepresentationBundle,
     ParseQualityReport,
     RepresentationAnalyzability,
+    SourceCoordinateSystem,
     SourceRegion,
     TextView,
     TextViewKind,
@@ -257,6 +258,14 @@ def _pdf_parse_result_from_payload(payload: dict[str, object]) -> PdfParseResult
                 rotation=int(page["rotation"]),
                 embedded_text_character_count=int(page["embedded_text_character_count"]),
                 warnings=tuple(page.get("warnings", [])),
+                crop_left=float(page.get("crop_left", 0.0)),
+                crop_top=float(page.get("crop_top", 0.0)),
+                crop_right=(
+                    float(page["crop_right"]) if page.get("crop_right") is not None else None
+                ),
+                crop_bottom=(
+                    float(page["crop_bottom"]) if page.get("crop_bottom") is not None else None
+                ),
             )
             for page in pages_payload
             if isinstance(page, dict)
@@ -594,7 +603,7 @@ def _canonical_layout_records(
                 SourceRegion(
                     id=region_id,
                     representation_id=representation_id,
-                    coordinate_system="pdf_points_top_left_v1",
+                    coordinate_system=SourceCoordinateSystem.PDF_POINTS_TOP_LEFT_V1,
                     page_number=region.page_number,
                     page_width=region.page_width,
                     page_height=region.page_height,
@@ -602,6 +611,7 @@ def _canonical_layout_records(
                     top=region.top,
                     right=region.right,
                     bottom=region.bottom,
+                    rotation_applied=0,
                 )
             )
         nodes.append(
@@ -617,6 +627,8 @@ def _canonical_layout_records(
                 start_char=start_char,
                 end_char=end_char,
                 source_region_ids=tuple(region_ids),
+                source_page_numbers=tuple(sorted({region.page_number for region in item.regions})),
+                source_text_digest=hashlib.sha256(item.text.encode("utf-8")).hexdigest(),
             )
         )
     return "".join(text_parts), tuple(nodes), tuple(source_regions)

@@ -1,0 +1,45 @@
+{
+  "fixture_id": "mixed_born_digital_scan_v1",
+  "page_count": 3,
+  "page_processing": [
+    {
+      "page": 1,
+      "ocr_decision": "not_required",
+      "extraction_path": "embedded_text",
+      "exact_text": [
+        "KoteKomi Mixed PDF Fixture",
+        "This page is born-digital and must use embedded text.",
+        "Page 2 is an image-only scan and must use OCR.",
+        "Fixture ID: mixed_born_digital_scan_v1"
+      ],
+      "ocr_provenance_required": false
+    },
+    {
+      "page": 2,
+      "ocr_decision": "required",
+      "extraction_path": "ocr",
+      "expected_text_path": "ocr/ocrmypdf-linn.txt",
+      "expected_text_sha256": "18fbd25ca0fc7783f3b7f0e93e91e9408d2d517739f646fecbdf6209628204b1",
+      "ocr_confidence_required": true,
+      "ocr_provenance_required": true
+    },
+    {
+      "page": 3,
+      "ocr_decision": "not_required",
+      "extraction_path": "embedded_text",
+      "exact_text": [
+        "KoteKomi Mixed PDF Fixture - Page 3",
+        "This born-digital text must remain embedded text.",
+        "The small blue square is decorative and must not trigger OCR."
+      ],
+      "decorative_image_count": 1,
+      "ocr_provenance_required": false
+    }
+  ],
+  "must": [
+    "record_exactly_three_page_processing_outcomes",
+    "record_ocr_provenance_for_page_2_only",
+    "preserve_page_order",
+    "reuse_canonical_artifacts_on_retry"
+  ]
+}

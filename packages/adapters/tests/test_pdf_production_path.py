@@ -17,6 +17,7 @@ from kotekomi_application import (
     BundleCommitOutcome,
     CaptureRequest,
     PdfIngestInput,
+    PdfPagePreflight,
     PdfParseInput,
     PdfParseResult,
     PdfPreflight,
@@ -30,6 +31,8 @@ from kotekomi_application import (
     processing_task_fingerprint,
 )
 from kotekomi_domain import (
+    DocumentEdge,
+    DocumentEdgeProvenanceKind,
     DocumentNode,
     DocumentRepresentation,
     DocumentRepresentationBundle,
@@ -40,6 +43,8 @@ from kotekomi_domain import (
     ProcessingStage,
     ProvenanceActivity,
     RepresentationAnalyzability,
+    SourceCoordinateSystem,
+    SourceRegion,
     SourceType,
     TextView,
     TextViewKind,
@@ -85,7 +90,15 @@ class FixturePdfParser:
                 parser_version="1",
                 encrypted=False,
                 page_count=1,
-                pages=(),
+                pages=(
+                    PdfPagePreflight(
+                        page_index=1,
+                        width=612,
+                        height=792,
+                        rotation=0,
+                        embedded_text_character_count=len("PDF production-path text"),
+                    ),
+                ),
             ),
             representation_bundle=bundle,
             blocking_reasons=blocking_reasons,
@@ -150,6 +163,121 @@ class MismatchedFixturePdfParser(FixturePdfParser):
         return PdfParseResult(
             preflight=preflight,
             representation_bundle=bundle.model_copy(update={"representation": representation}),
+            blocking_reasons=result.blocking_reasons,
+        )
+
+
+class MutatingFixturePdfParser(FixturePdfParser):
+    """Inject one impossible parser result without validating it in the fixture."""
+
+    def __init__(self, mutation: str) -> None:
+        super().__init__()
+        self._mutation = mutation
+
+    def parse(self, parse_input: PdfParseInput) -> PdfParseResult:
+        result = super().parse(parse_input)
+        bundle = result.representation_bundle
+        assert bundle is not None
+        root, paragraph = bundle.nodes
+        (region,) = bundle.source_regions
+        preflight = result.preflight
+
+        if self._mutation == "negative_x0_or_y0":
+            region = region.model_copy(update={"left": -1})
+        elif self._mutation == "x1_before_x0":
+            region = region.model_copy(update={"right": region.left})
+        elif self._mutation == "y1_before_y0":
+            region = region.model_copy(update={"bottom": region.top})
+        elif self._mutation == "beyond_media_box":
+            region = region.model_copy(update={"right": region.page_width + 1})
+        elif self._mutation == "inside_media_box_outside_crop_box":
+            original_page = preflight.pages[0]
+            page = PdfPagePreflight(
+                page_index=original_page.page_index,
+                width=original_page.width,
+                height=original_page.height,
+                rotation=original_page.rotation,
+                embedded_text_character_count=original_page.embedded_text_character_count,
+                crop_left=original_page.crop_left,
+                crop_top=original_page.crop_top,
+                crop_right=500,
+                crop_bottom=original_page.crop_bottom,
+            )
+            preflight = PdfPreflight(
+                parser_name=preflight.parser_name,
+                parser_version=preflight.parser_version,
+                encrypted=preflight.encrypted,
+                page_count=preflight.page_count,
+                pages=(page,),
+                warnings=preflight.warnings,
+            )
+        elif self._mutation == "non_finite_coordinate":
+            region = region.model_copy(update={"left": float("nan")})
+        elif self._mutation == "page_outside_inventory":
+            region = region.model_copy(update={"page_number": 2})
+        elif self._mutation == "wrong_representation":
+            region = region.model_copy(update={"representation_id": "rep_wrong_fixture"})
+        elif self._mutation == "node_region_page_disagreement":
+            paragraph = paragraph.model_copy(update={"source_page_numbers": (2,)})
+        elif self._mutation == "wrong_coordinate_system":
+            region = region.model_copy(
+                update={"coordinate_system": SourceCoordinateSystem.PDF_POINTS_BOTTOM_LEFT_RAW_V1}
+            )
+        elif self._mutation == "rotation_applied_twice":
+            region = region.model_copy(update={"rotation_applied": 180})
+        elif self._mutation == "region_text_range_disagreement":
+            paragraph = paragraph.model_copy(update={"source_text_digest": "f" * 64})
+        elif self._mutation == "duplicate_contradictory_regions":
+            duplicate = region.model_copy(update={"id": f"{region.id}_duplicate"})
+            paragraph = paragraph.model_copy(
+                update={"source_region_ids": (region.id, duplicate.id)}
+            )
+            bundle = bundle.model_copy(update={"source_regions": (region, duplicate)})
+        elif self._mutation == "reading_order_self_edge":
+            self_edge = DocumentEdge(
+                id=f"{bundle.edges[0].id}_self",
+                representation_id=bundle.representation.id,
+                from_node_id=paragraph.id,
+                to_node_id=paragraph.id,
+                edge_type="reading_order",
+                provenance_kind=DocumentEdgeProvenanceKind.DETERMINISTIC,
+                provenance_id="fixture_pdf_mutation_v1",
+            )
+            bundle = bundle.model_copy(update={"edges": (*bundle.edges, self_edge)})
+        elif self._mutation == "reading_order_cycle":
+            forward = DocumentEdge(
+                id=f"{bundle.edges[0].id}_reading_forward",
+                representation_id=bundle.representation.id,
+                from_node_id=root.id,
+                to_node_id=paragraph.id,
+                edge_type="reading_order",
+                provenance_kind=DocumentEdgeProvenanceKind.DETERMINISTIC,
+                provenance_id="fixture_pdf_mutation_v1",
+            )
+            backward = forward.model_copy(
+                update={
+                    "id": f"{bundle.edges[0].id}_reading_backward",
+                    "from_node_id": paragraph.id,
+                    "to_node_id": root.id,
+                }
+            )
+            bundle = bundle.model_copy(update={"edges": (*bundle.edges, forward, backward)})
+        elif self._mutation == "parent_from_different_representation":
+            paragraph = paragraph.model_copy(update={"parent_node_id": "nod_other_document"})
+        else:
+            raise AssertionError(f"Unexpected parser-output mutation: {self._mutation}")
+
+        if self._mutation not in {
+            "duplicate_contradictory_regions",
+            "reading_order_self_edge",
+            "reading_order_cycle",
+        }:
+            bundle = bundle.model_copy(
+                update={"nodes": (root, paragraph), "source_regions": (region,)}
+            )
+        return PdfParseResult(
+            preflight=preflight,
+            representation_bundle=bundle,
             blocking_reasons=result.blocking_reasons,
         )
 
@@ -276,6 +404,41 @@ def _representation_bundle(
         start_char=0,
         end_char=len(text),
     )
+    region = SourceRegion(
+        id=f"srg_{representation_key}_page_1",
+        representation_id=representation_id,
+        coordinate_system=SourceCoordinateSystem.PDF_POINTS_TOP_LEFT_V1,
+        page_number=1,
+        page_width=612,
+        page_height=792,
+        left=36,
+        top=36,
+        right=576,
+        bottom=72,
+        rotation_applied=0,
+    )
+    paragraph = DocumentNode(
+        id=f"nod_{representation_key}_paragraph_1",
+        representation_id=representation_id,
+        parent_node_id=root.id,
+        node_type="paragraph",
+        order_index=1,
+        text_view_id=text_view.id,
+        start_char=0,
+        end_char=len(text),
+        source_region_ids=(region.id,),
+        source_page_numbers=(1,),
+        source_text_digest=hashlib.sha256(text.encode("utf-8")).hexdigest(),
+    )
+    edge = DocumentEdge(
+        id=f"deg_{representation_key}_contains_1",
+        representation_id=representation_id,
+        from_node_id=root.id,
+        to_node_id=paragraph.id,
+        edge_type="contains",
+        provenance_kind=DocumentEdgeProvenanceKind.DETERMINISTIC,
+        provenance_id="fixture_pdf_v1",
+    )
     quality_report = ParseQualityReport(
         id=f"pqr_{representation_key}_quality_v1",
         representation_id=representation_id,
@@ -299,9 +462,9 @@ def _representation_bundle(
             "canonical_output_digest": canonical_representation_digest(
                 template,
                 text_views=(text_view,),
-                nodes=(root,),
-                edges=(),
-                source_regions=(),
+                nodes=(root, paragraph),
+                edges=(edge,),
+                source_regions=(region,),
                 quality_report=quality_report,
             )
         }
@@ -309,7 +472,9 @@ def _representation_bundle(
     return DocumentRepresentationBundle(
         representation=representation,
         text_views=(text_view,),
-        nodes=(root,),
+        nodes=(root, paragraph),
+        edges=(edge,),
+        source_regions=(region,),
         quality_report=quality_report,
     )
 
@@ -530,6 +695,87 @@ def test_pdf_processing_rejects_every_parser_task_binding_disagreement(
     assert attempt_outcome.status is ProcessingAttemptStatus.FAILED
     assert attempt_outcome.failure is not None
     assert attempt_outcome.failure.stage is ProcessingStage.REPRESENTATION_VALIDATION
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    (
+        "negative_x0_or_y0",
+        "x1_before_x0",
+        "y1_before_y0",
+        "beyond_media_box",
+        "inside_media_box_outside_crop_box",
+        "non_finite_coordinate",
+        "page_outside_inventory",
+        "wrong_representation",
+        "node_region_page_disagreement",
+        "wrong_coordinate_system",
+        "rotation_applied_twice",
+        "region_text_range_disagreement",
+        "duplicate_contradictory_regions",
+        "reading_order_self_edge",
+        "reading_order_cycle",
+        "parent_from_different_representation",
+    ),
+)
+def test_pdf_parser_output_mutations_fail_closed_and_retry_cleanly(
+    tmp_path: Path,
+    mutation: str,
+) -> None:
+    ledger_path = tmp_path / "ledger.db"
+    document_id, raw_blob_id = _initialize_captured_pdf(ledger_path)
+
+    with pytest.raises(ValueError):
+        with sqlite_ledger_transaction(ledger_path) as repository:
+            ingest_pdf(
+                _ingest_input(document_id, raw_blob_id),
+                repository,
+                MutatingFixturePdfParser(mutation),
+                Uuid4ProcessingAttemptIdFactory(),
+            )
+
+    task_id = _only_processing_task_id(ledger_path)
+    with sqlite_ledger_transaction(ledger_path) as repository:
+        attempts_after_failure = repository.list_processing_attempts(task_id)
+        failed_outcome = repository.get_processing_attempt_outcome(attempts_after_failure[0].id)
+        assert repository.get_document(document_id) is not None
+        assert repository.get_raw_blob(raw_blob_id) is not None
+        assert repository.list_document_representations() == ()
+        assert repository.list_text_views() == ()
+        assert repository.list_document_nodes() == ()
+        assert repository.list_document_edges() == ()
+        assert repository.list_source_regions() == ()
+        assert repository.list_parse_quality_reports() == ()
+        assert repository.list_provenance_activities() == ()
+
+    assert len(attempts_after_failure) == 1
+    assert failed_outcome is not None
+    assert failed_outcome.status is ProcessingAttemptStatus.FAILED
+    assert failed_outcome.failure is not None
+    assert failed_outcome.failure.stage is ProcessingStage.REPRESENTATION_VALIDATION
+
+    with sqlite_ledger_transaction(ledger_path) as repository:
+        retry = ingest_pdf(
+            _ingest_input(document_id, raw_blob_id),
+            repository,
+            FixturePdfParser(),
+            Uuid4ProcessingAttemptIdFactory(),
+        )
+
+    with sqlite_ledger_transaction(ledger_path) as repository:
+        attempts_after_retry = repository.list_processing_attempts(task_id)
+        outcomes_after_retry = tuple(
+            repository.get_processing_attempt_outcome(attempt.id)
+            for attempt in attempts_after_retry
+        )
+        assert retry.representation_id is not None
+        assert repository.get_document_representation_bundle(retry.representation_id) is not None
+
+    assert len(attempts_after_retry) == 2
+    assert [outcome.status for outcome in outcomes_after_retry if outcome is not None] == [
+        ProcessingAttemptStatus.FAILED,
+        ProcessingAttemptStatus.SUCCEEDED,
+    ]
 
 
 def test_pdf_processing_rejects_task_a_output_for_changed_build_identity_task_b(

@@ -34,6 +34,7 @@ from kotekomi_domain import (
     ProvenanceActivity,
     RawBlob,
     RepresentationAnalyzability,
+    SourceCoordinateSystem,
     SourceRegion,
     TextView,
     TextViewKind,
@@ -197,7 +198,7 @@ def synthetic_bundle(
     source_region = SourceRegion(
         id=f"srg_{representation_key}_page_1",
         representation_id=representation_id,
-        coordinate_system="pdf_points",
+        coordinate_system=SourceCoordinateSystem.PDF_POINTS_TOP_LEFT_V1,
         page_number=1,
         page_width=612,
         page_height=792,
@@ -205,6 +206,7 @@ def synthetic_bundle(
         top=0,
         right=612,
         bottom=792,
+        rotation_applied=0,
     )
     root = DocumentNode(
         id=f"nod_{representation_key}_document",
@@ -226,6 +228,8 @@ def synthetic_bundle(
             start_char=index,
             end_char=index + 1,
             source_region_ids=(source_region.id,),
+            source_page_numbers=(1,),
+            source_text_digest=hashlib.sha256(text[index : index + 1].encode()).hexdigest(),
         )
         for index in range(paragraph_count)
     )

@@ -1,0 +1,241 @@
+{
+  "fixture_id": "complex_table_v1",
+  "page_count": 1,
+  "coordinate_system": "pdf_points_top_left_v1",
+  "caption": "Table 1. Regional measurements",
+  "nearby_body_text": "Nearby body paragraph establishes table context.",
+  "footnote": "Note: blank 2025 cells for Region A are intentionally empty.",
+  "cells": [
+    {
+      "id": "measurements",
+      "row": 0,
+      "column": 1,
+      "row_span": 1,
+      "column_span": 4,
+      "text": "Measurements",
+      "row_header_ancestry": [],
+      "column_header_ancestry": [],
+      "source_region": [1, 172, 172, 492, 202]
+    },
+    {
+      "id": "year_2024",
+      "row": 1,
+      "column": 1,
+      "row_span": 1,
+      "column_span": 2,
+      "text": "2024",
+      "row_header_ancestry": [],
+      "column_header_ancestry": ["measurements"],
+      "source_region": [1, 172, 202, 332, 232]
+    },
+    {
+      "id": "year_2025",
+      "row": 1,
+      "column": 3,
+      "row_span": 1,
+      "column_span": 2,
+      "text": "2025",
+      "row_header_ancestry": [],
+      "column_header_ancestry": ["measurements"],
+      "source_region": [1, 332, 202, 492, 232]
+    },
+    {
+      "id": "q1_2024",
+      "row": 2,
+      "column": 1,
+      "row_span": 1,
+      "column_span": 1,
+      "text": "Q1",
+      "row_header_ancestry": [],
+      "column_header_ancestry": ["measurements", "year_2024"],
+      "source_region": [1, 172, 232, 252, 262]
+    },
+    {
+      "id": "q2_2024",
+      "row": 2,
+      "column": 2,
+      "row_span": 1,
+      "column_span": 1,
+      "text": "Q2",
+      "row_header_ancestry": [],
+      "column_header_ancestry": ["measurements", "year_2024"],
+      "source_region": [1, 252, 232, 332, 262]
+    },
+    {
+      "id": "q1_2025",
+      "row": 2,
+      "column": 3,
+      "row_span": 1,
+      "column_span": 1,
+      "text": "Q1",
+      "row_header_ancestry": [],
+      "column_header_ancestry": ["measurements", "year_2025"],
+      "source_region": [1, 332, 232, 412, 262]
+    },
+    {
+      "id": "q2_2025",
+      "row": 2,
+      "column": 4,
+      "row_span": 1,
+      "column_span": 1,
+      "text": "Q2",
+      "row_header_ancestry": [],
+      "column_header_ancestry": ["measurements", "year_2025"],
+      "source_region": [1, 412, 232, 492, 262]
+    },
+    {
+      "id": "region_a",
+      "row": 3,
+      "column": 0,
+      "row_span": 2,
+      "column_span": 1,
+      "text": "Region A",
+      "row_header_ancestry": [],
+      "column_header_ancestry": [],
+      "source_region": [1, 72, 262, 172, 342]
+    },
+    {
+      "id": "a_row1_q1_2024",
+      "row": 3,
+      "column": 1,
+      "row_span": 1,
+      "column_span": 1,
+      "text": "10",
+      "row_header_ancestry": ["region_a"],
+      "column_header_ancestry": ["measurements", "year_2024", "q1_2024"],
+      "source_region": [1, 172, 262, 252, 302]
+    },
+    {
+      "id": "a_row1_q2_2024",
+      "row": 3,
+      "column": 2,
+      "row_span": 1,
+      "column_span": 1,
+      "text": "11",
+      "row_header_ancestry": ["region_a"],
+      "column_header_ancestry": ["measurements", "year_2024", "q2_2024"],
+      "source_region": [1, 252, 262, 332, 302]
+    },
+    {
+      "id": "a_row1_q1_2025",
+      "row": 3,
+      "column": 3,
+      "row_span": 1,
+      "column_span": 1,
+      "text": "",
+      "row_header_ancestry": ["region_a"],
+      "column_header_ancestry": ["measurements", "year_2025", "q1_2025"],
+      "source_region": [1, 332, 262, 412, 302]
+    },
+    {
+      "id": "a_row1_q2_2025",
+      "row": 3,
+      "column": 4,
+      "row_span": 1,
+      "column_span": 1,
+      "text": "",
+      "row_header_ancestry": ["region_a"],
+      "column_header_ancestry": ["measurements", "year_2025", "q2_2025"],
+      "source_region": [1, 412, 262, 492, 302]
+    },
+    {
+      "id": "a_row2_q1_2024",
+      "row": 4,
+      "column": 1,
+      "row_span": 1,
+      "column_span": 1,
+      "text": "12",
+      "row_header_ancestry": ["region_a"],
+      "column_header_ancestry": ["measurements", "year_2024", "q1_2024"],
+      "source_region": [1, 172, 302, 252, 342]
+    },
+    {
+      "id": "a_row2_q2_2024",
+      "row": 4,
+      "column": 2,
+      "row_span": 1,
+      "column_span": 1,
+      "text": "13",
+      "row_header_ancestry": ["region_a"],
+      "column_header_ancestry": ["measurements", "year_2024", "q2_2024"],
+      "source_region": [1, 252, 302, 332, 342]
+    },
+    {
+      "id": "a_row2_q1_2025",
+      "row": 4,
+      "column": 3,
+      "row_span": 1,
+      "column_span": 1,
+      "text": "",
+      "row_header_ancestry": ["region_a"],
+      "column_header_ancestry": ["measurements", "year_2025", "q1_2025"],
+      "source_region": [1, 332, 302, 412, 342]
+    },
+    {
+      "id": "a_row2_q2_2025",
+      "row": 4,
+      "column": 4,
+      "row_span": 1,
+      "column_span": 1,
+      "text": "",
+      "row_header_ancestry": ["region_a"],
+      "column_header_ancestry": ["measurements", "year_2025", "q2_2025"],
+      "source_region": [1, 412, 302, 492, 342]
+    },
+    {
+      "id": "region_b",
+      "row": 5,
+      "column": 0,
+      "row_span": 1,
+      "column_span": 1,
+      "text": "Region B",
+      "row_header_ancestry": [],
+      "column_header_ancestry": [],
+      "source_region": [1, 72, 342, 172, 392]
+    },
+    {
+      "id": "b_q1_2024",
+      "row": 5,
+      "column": 1,
+      "row_span": 1,
+      "column_span": 1,
+      "text": "20\nadjusted",
+      "row_header_ancestry": ["region_b"],
+      "column_header_ancestry": ["measurements", "year_2024", "q1_2024"],
+      "source_region": [1, 172, 342, 252, 392]
+    },
+    {
+      "id": "b_q2_2024",
+      "row": 5,
+      "column": 2,
+      "row_span": 1,
+      "column_span": 1,
+      "text": "21",
+      "row_header_ancestry": ["region_b"],
+      "column_header_ancestry": ["measurements", "year_2024", "q2_2024"],
+      "source_region": [1, 252, 342, 332, 392]
+    },
+    {
+      "id": "b_q1_2025",
+      "row": 5,
+      "column": 3,
+      "row_span": 1,
+      "column_span": 1,
+      "text": "22",
+      "row_header_ancestry": ["region_b"],
+      "column_header_ancestry": ["measurements", "year_2025", "q1_2025"],
+      "source_region": [1, 332, 342, 412, 392]
+    },
+    {
+      "id": "b_q2_2025",
+      "row": 5,
+      "column": 4,
+      "row_span": 1,
+      "column_span": 1,
+      "text": "23",
+      "row_header_ancestry": ["region_b"],
+      "column_header_ancestry": ["measurements", "year_2025", "q2_2025"],
+      "source_region": [1, 412, 342, 492, 392]
+    }
+  ]
+}

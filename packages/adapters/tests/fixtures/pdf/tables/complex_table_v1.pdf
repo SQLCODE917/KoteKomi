@@ -1,0 +1,89 @@
+%PDF-1.7
+%‚„œ”
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R] /Count 1 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /CropBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>
+endobj
+4 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding /ToUnicode 6 0 R >>
+endobj
+5 0 obj
+<< /Length 1175 >>
+stream
+BT /F1 16 Tf 72 690 Td (Table 1. Regional measurements) Tj ET
+BT /F1 10 Tf 72 668 Td (Nearby body paragraph establishes table context.) Tj ET
+0.8 w
+72 620 m 72 400 l S
+172 620 m 172 400 l S
+252 620 m 252 400 l S
+332 620 m 332 400 l S
+412 620 m 412 400 l S
+492 620 m 492 400 l S
+72 620 m 492 620 l S
+72 590 m 492 590 l S
+72 560 m 492 560 l S
+72 530 m 492 530 l S
+72 490 m 492 490 l S
+72 450 m 492 450 l S
+72 400 m 492 400 l S
+BT /F1 12 Tf 258 600 Td (Measurements) Tj ET
+BT /F1 11 Tf 210 570 Td (2024) Tj ET
+BT /F1 11 Tf 370 570 Td (2025) Tj ET
+BT /F1 10 Tf 198 540 Td (Q1) Tj ET
+BT /F1 10 Tf 278 540 Td (Q2) Tj ET
+BT /F1 10 Tf 358 540 Td (Q1) Tj ET
+BT /F1 10 Tf 438 540 Td (Q2) Tj ET
+BT /F1 10 Tf 92 500 Td (Region A) Tj ET
+BT /F1 10 Tf 198 505 Td (10) Tj ET
+BT /F1 10 Tf 278 505 Td (11) Tj ET
+BT /F1 10 Tf 198 465 Td (12) Tj ET
+BT /F1 10 Tf 278 465 Td (13) Tj ET
+BT /F1 10 Tf 92 420 Td (Region B) Tj ET
+BT /F1 10 Tf 190 425 Td (20) Tj ET
+BT /F1 7 Tf 185 412 Td (adjusted) Tj ET
+BT /F1 10 Tf 278 425 Td (21) Tj ET
+BT /F1 10 Tf 358 425 Td (22) Tj ET
+BT /F1 10 Tf 438 425 Td (23) Tj ET
+BT /F1 9 Tf 72 375 Td (Note: blank 2025 cells for Region A are intentionally empty.) Tj ET
+endstream
+endobj
+6 0 obj
+<< /Length 334 >>
+stream
+/CIDInit /ProcSet findresource begin
+12 dict begin
+begincmap
+/CIDSystemInfo << /Registry (Adobe) /Ordering (UCS) /Supplement 0 >> def
+/CMapName /KoteKomiASCII def
+/CMapType 2 def
+1 begincodespacerange
+<00> <7F>
+endcodespacerange
+1 beginbfrange
+<00> <7F> <0000>
+endbfrange
+endcmap
+CMapName currentdict /CMap defineresource pop
+end
+end
+endstream
+endobj
+xref
+0 7
+0000000000 65535 f 
+0000000015 00000 n 
+0000000064 00000 n 
+0000000121 00000 n 
+0000000270 00000 n 
+0000000384 00000 n 
+0000001610 00000 n 
+trailer
+<< /Size 7 /Root 1 0 R >>
+startxref
+1994
+%%EOF

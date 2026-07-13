@@ -62,6 +62,14 @@
       "title": "Section Path",
       "type": "array"
     },
+    "source_page_numbers": {
+      "items": {
+        "minimum": 1,
+        "type": "integer"
+      },
+      "title": "Source Page Numbers",
+      "type": "array"
+    },
     "source_region_ids": {
       "items": {
         "minLength": 1,
@@ -69,6 +77,19 @@
       },
       "title": "Source Region Ids",
       "type": "array"
+    },
+    "source_text_digest": {
+      "anyOf": [
+        {
+          "pattern": "^[a-f0-9]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Source Text Digest"
     },
     "start_char": {
       "minimum": 0,

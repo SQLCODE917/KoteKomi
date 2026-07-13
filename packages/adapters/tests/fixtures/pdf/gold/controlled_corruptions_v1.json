@@ -1,0 +1,36 @@
+{
+  "generator_version": "kotekomi_pdf_fixture_generator_v2",
+  "source": "in-memory valid_corruption_source_v1.pdf",
+  "variants": [
+    {
+      "path": "corrupt/generated/corrupt_truncated_v1.pdf",
+      "mutation": "remove the xref table, trailer, startxref, and EOF marker",
+      "sha256": "9674d32d2f32623e7ca38ec09a5307d18d3dad609b9daae740be35c8aa6eabaf"
+    },
+    {
+      "path": "corrupt/generated/corrupt_bad_xref_v1.pdf",
+      "mutation": "replace the first object xref offset with byte offset 1",
+      "sha256": "328ec72662bd7ce3e95c35fa6e491a4fb76662ae2d93291ee39f5c9cddbb1311"
+    },
+    {
+      "path": "corrupt/generated/corrupt_bad_stream_length_v1.pdf",
+      "mutation": "increase the declared content-stream length by seven bytes",
+      "sha256": "fda9a318bf1bc125c9b10e88ba8ba2a15441aac9a26d02b193cfbe63c64195e1"
+    },
+    {
+      "path": "corrupt/generated/corrupt_missing_page_tree_v1.pdf",
+      "mutation": "replace the catalog page-tree reference with missing object 9",
+      "sha256": "9c5c58405b9efdc28cbd243bdaffea99318c74795db49914fb6ac8474936c7da"
+    }
+  ],
+  "allowed_dispositions": [
+    "degraded_with_versioned_repair",
+    "typed_processing_failure"
+  ],
+  "forbidden_dispositions": [
+    "uncaught_crash",
+    "process_hang",
+    "silent_page_omission",
+    "partial_representation_reported_complete"
+  ]
+}
