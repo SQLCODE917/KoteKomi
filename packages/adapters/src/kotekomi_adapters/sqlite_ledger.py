@@ -984,36 +984,38 @@ class SQLiteLedgerRepository:
     def save_planned_analysis_item(self, record: PlannedAnalysisItem) -> None:
         self._save(PLANNED_ANALYSIS_ITEM_SPEC, record)
 
-    def list_planned_analysis_items(self, analysis_run_id: str) -> tuple[PlannedAnalysisItem, ...]:
+    def list_planned_items_for_analysis_run(
+        self, analysis_run_id: str
+    ) -> tuple[PlannedAnalysisItem, ...]:
         return self._list_for_owner(PLANNED_ANALYSIS_ITEM_SPEC, "analysis_run_id", analysis_run_id)
 
     def save_analysis_item_attempt(self, record: AnalysisItemAttempt) -> None:
         self._save(ANALYSIS_ITEM_ATTEMPT_SPEC, record)
 
-    def list_analysis_item_attempts(
+    def list_analysis_item_attempts_for_items(
         self, item_ids: tuple[str, ...]
     ) -> tuple[AnalysisItemAttempt, ...]:
         return self._list_by_ids(ANALYSIS_ITEM_ATTEMPT_SPEC, "planned_item_id", item_ids)
 
-    def get_context_manifests_by_ids(
+    def list_context_manifests_by_ids(
         self, record_ids: tuple[str, ...]
     ) -> tuple[ContextManifestArtifact, ...]:
         return self._get_by_ids(CONTEXT_MANIFEST_ARTIFACT_SPEC, record_ids)
 
-    def get_extraction_tasks_by_ids(
+    def list_extraction_tasks_by_ids(
         self, record_ids: tuple[str, ...]
     ) -> tuple[ExtractionTask, ...]:
         return self._get_by_ids(EXTRACTION_TASK_SPEC, record_ids)
 
-    def get_extraction_tasks_by_fingerprints(
-        self, fingerprints: tuple[str, ...]
+    def list_extraction_tasks_for_manifest_ids(
+        self, manifest_ids: tuple[str, ...]
     ) -> tuple[ExtractionTask, ...]:
-        return self._list_by_ids(EXTRACTION_TASK_SPEC, "task_fingerprint", fingerprints)
+        return self._list_by_ids(EXTRACTION_TASK_SPEC, "context_manifest_id", manifest_ids)
 
-    def get_model_runs_by_ids(self, record_ids: tuple[str, ...]) -> tuple[ModelRun, ...]:
+    def list_model_runs_by_ids(self, record_ids: tuple[str, ...]) -> tuple[ModelRun, ...]:
         return self._get_by_ids(MODEL_RUN_SPEC, record_ids)
 
-    def get_processing_attempts_by_ids(
+    def list_processing_attempts_by_ids(
         self, record_ids: tuple[str, ...]
     ) -> tuple[ProcessingAttempt, ...]:
         return self._get_by_ids(PROCESSING_ATTEMPT_SPEC, record_ids)

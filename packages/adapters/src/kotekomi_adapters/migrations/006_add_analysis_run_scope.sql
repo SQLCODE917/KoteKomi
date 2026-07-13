@@ -64,6 +64,8 @@ CREATE INDEX analysis_runs_by_document ON analysis_runs(document_id, id);
 CREATE INDEX planned_analysis_items_by_run ON planned_analysis_items(analysis_run_id, id);
 CREATE INDEX planned_analysis_items_by_fingerprint
   ON planned_analysis_items(input_fingerprint, id);
+CREATE INDEX extraction_tasks_by_manifest
+  ON extraction_tasks(context_manifest_id, task_fingerprint, id);
 CREATE INDEX analysis_item_attempts_by_item
   ON analysis_item_attempts(planned_item_id, model_run_id, processing_attempt_id);
 CREATE INDEX model_run_proposed_changes_by_model_run

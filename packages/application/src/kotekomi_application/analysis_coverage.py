@@ -77,24 +77,24 @@ class AnalysisCoverageLedger(ContextPlanningLedger, Protocol):
         planned_items: tuple[PlannedAnalysisItem, ...],
     ) -> None: ...
     def get_analysis_run(self, record_id: str) -> AnalysisRun | None: ...
-    def list_planned_analysis_items(
+    def list_planned_items_for_analysis_run(
         self, analysis_run_id: str
     ) -> tuple[PlannedAnalysisItem, ...]: ...
-    def list_analysis_item_attempts(
+    def list_analysis_item_attempts_for_items(
         self, item_ids: tuple[str, ...]
     ) -> tuple[AnalysisItemAttempt, ...]: ...
     def save_analysis_item_attempt(self, record: AnalysisItemAttempt) -> None: ...
-    def get_context_manifests_by_ids(
+    def list_context_manifests_by_ids(
         self, record_ids: tuple[str, ...]
     ) -> tuple[ContextManifestArtifact, ...]: ...
-    def get_extraction_tasks_by_ids(
+    def list_extraction_tasks_by_ids(
         self, record_ids: tuple[str, ...]
     ) -> tuple[ExtractionTask, ...]: ...
-    def get_extraction_tasks_by_fingerprints(
-        self, fingerprints: tuple[str, ...]
+    def list_extraction_tasks_for_manifest_ids(
+        self, manifest_ids: tuple[str, ...]
     ) -> tuple[ExtractionTask, ...]: ...
-    def get_model_runs_by_ids(self, record_ids: tuple[str, ...]) -> tuple[ModelRun, ...]: ...
-    def get_processing_attempts_by_ids(
+    def list_model_runs_by_ids(self, record_ids: tuple[str, ...]) -> tuple[ModelRun, ...]: ...
+    def list_processing_attempts_by_ids(
         self, record_ids: tuple[str, ...]
     ) -> tuple[ProcessingAttempt, ...]: ...
     def list_proposed_changes_for_model_run(
@@ -254,7 +254,7 @@ def start_analysis_run(
     )
     manifests = {
         artifact.id: artifact
-        for artifact in ledger_repository.get_context_manifests_by_ids(manifest_ids)
+        for artifact in ledger_repository.list_context_manifests_by_ids(manifest_ids)
     }
     split_child_ids: set[str] = set()
     for item in run_input.items:
@@ -330,16 +330,16 @@ def record_analysis_item_attempt(
     ledger_repository: AnalysisCoverageLedger,
 ) -> AnalysisItemAttempt:
     """Append a run-specific execution membership link after model work."""
-    items = ledger_repository.list_planned_analysis_items(analysis_run_id)
+    items = ledger_repository.list_planned_items_for_analysis_run(analysis_run_id)
     item = next(
         (candidate for candidate in items if candidate.analysis_unit_id == analysis_unit_id), None
     )
     if item is None:
         raise ValueError("AnalysisUnit is not in the AnalysisRun scope.")
-    model_runs = ledger_repository.get_model_runs_by_ids((model_run_id,))
+    model_runs = ledger_repository.list_model_runs_by_ids((model_run_id,))
     if len(model_runs) != 1 or model_runs[0].task_fingerprint != item.input_fingerprint:
         raise ValueError("ModelRun does not match the planned item input fingerprint.")
-    tasks = ledger_repository.get_extraction_tasks_by_ids((model_runs[0].extraction_task_id,))
+    tasks = ledger_repository.list_extraction_tasks_by_ids((model_runs[0].extraction_task_id,))
     if len(tasks) != 1 or tasks[0].task_type != item.task_type:
         raise ValueError("ModelRun does not match the planned item task type.")
     if item.expected_manifest_id is not None and (
@@ -375,7 +375,7 @@ def build_coverage_report(
     bundle = ledger_repository.get_document_representation_bundle(run.representation_id)
     if bundle is None or bundle.representation.document_id != run.document_id:
         raise ValueError("AnalysisRun representation binding is corrupted.")
-    items = ledger_repository.list_planned_analysis_items(run.id)
+    items = ledger_repository.list_planned_items_for_analysis_run(run.id)
     if not items:
         raise ValueError("AnalysisRun has no persisted planned items.")
     if len({item.id for item in items}) != len(items) or any(
@@ -383,17 +383,18 @@ def build_coverage_report(
     ):
         raise ValueError("AnalysisRun planned-item scope is corrupted.")
     item_ids = tuple(item.id for item in items)
-    attempts_by_item = _attempts_by_item(ledger_repository.list_analysis_item_attempts(item_ids))
+    attempts_by_item = _attempts_by_item(
+        ledger_repository.list_analysis_item_attempts_for_items(item_ids)
+    )
     manifest_ids = tuple(
         sorted({item.expected_manifest_id for item in items if item.expected_manifest_id})
     )
     manifests = {
         artifact.id: artifact
-        for artifact in ledger_repository.get_context_manifests_by_ids(manifest_ids)
+        for artifact in ledger_repository.list_context_manifests_by_ids(manifest_ids)
     }
-    task_fingerprints = tuple(sorted({item.input_fingerprint for item in items}))
     tasks_by_fingerprint: dict[str, tuple[ExtractionTask, ...]] = {}
-    for task in ledger_repository.get_extraction_tasks_by_fingerprints(task_fingerprints):
+    for task in ledger_repository.list_extraction_tasks_for_manifest_ids(manifest_ids):
         tasks_by_fingerprint[task.task_fingerprint] = (
             *tasks_by_fingerprint.get(task.task_fingerprint, ()),
             task,
@@ -408,7 +409,7 @@ def build_coverage_report(
             }
         )
     )
-    model_runs = {record.id: record for record in ledger_repository.get_model_runs_by_ids(run_ids)}
+    model_runs = {record.id: record for record in ledger_repository.list_model_runs_by_ids(run_ids)}
     coverages: dict[str, AnalysisUnitCoverage] = {}
     failed = False
     orphan_model_run_ids: set[str] = set()

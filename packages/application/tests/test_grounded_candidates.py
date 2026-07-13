@@ -199,7 +199,9 @@ class FakeGroundedCandidateLedger:
     def get_analysis_run(self, record_id: str) -> AnalysisRun | None:
         return self.analysis_runs.get(record_id)
 
-    def list_planned_analysis_items(self, analysis_run_id: str) -> tuple[PlannedAnalysisItem, ...]:
+    def list_planned_items_for_analysis_run(
+        self, analysis_run_id: str
+    ) -> tuple[PlannedAnalysisItem, ...]:
         return tuple(
             record
             for record in self.planned_analysis_items.values()
@@ -209,7 +211,7 @@ class FakeGroundedCandidateLedger:
     def save_analysis_item_attempt(self, record: AnalysisItemAttempt) -> None:
         self.analysis_item_attempts[record.id] = record
 
-    def list_analysis_item_attempts(
+    def list_analysis_item_attempts_for_items(
         self, item_ids: tuple[str, ...]
     ) -> tuple[AnalysisItemAttempt, ...]:
         return tuple(
@@ -218,14 +220,14 @@ class FakeGroundedCandidateLedger:
             if record.planned_item_id in item_ids
         )
 
-    def get_context_manifests_by_ids(
+    def list_context_manifests_by_ids(
         self, record_ids: tuple[str, ...]
     ) -> tuple[ContextManifestArtifact, ...]:
         return tuple(
             self.manifests[record_id] for record_id in record_ids if record_id in self.manifests
         )
 
-    def get_extraction_tasks_by_ids(
+    def list_extraction_tasks_by_ids(
         self, record_ids: tuple[str, ...]
     ) -> tuple[ExtractionTask, ...]:
         return tuple(
@@ -234,21 +236,21 @@ class FakeGroundedCandidateLedger:
             if record_id in self.extraction_tasks
         )
 
-    def get_extraction_tasks_by_fingerprints(
-        self, fingerprints: tuple[str, ...]
+    def list_extraction_tasks_for_manifest_ids(
+        self, manifest_ids: tuple[str, ...]
     ) -> tuple[ExtractionTask, ...]:
         return tuple(
             record
             for record in self.extraction_tasks.values()
-            if record.task_fingerprint in fingerprints
+            if record.context_manifest_id in manifest_ids
         )
 
-    def get_model_runs_by_ids(self, record_ids: tuple[str, ...]) -> tuple[ModelRun, ...]:
+    def list_model_runs_by_ids(self, record_ids: tuple[str, ...]) -> tuple[ModelRun, ...]:
         return tuple(
             self.model_runs[record_id] for record_id in record_ids if record_id in self.model_runs
         )
 
-    def get_processing_attempts_by_ids(
+    def list_processing_attempts_by_ids(
         self, record_ids: tuple[str, ...]
     ) -> tuple[ProcessingAttempt, ...]:
         return ()
@@ -1150,7 +1152,10 @@ def test_frozen_analysis_plan_requires_every_unit_to_reconcile_before_completion
     incomplete = build_coverage_report(incomplete_run.id, ledger)
     assert incomplete_run.state is AnalysisRunState.RUNNING
     assert incomplete_run.completed_at is None
-    assert ledger.list_planned_analysis_items(incomplete_run.id)[0].expected_manifest_id is None
+    assert (
+        ledger.list_planned_items_for_analysis_run(incomplete_run.id)[0].expected_manifest_id
+        is None
+    )
     assert incomplete.state is AnalysisCoverageState.INCOMPLETE
     assert incomplete.unit_coverages[0].status is AnalysisUnitCoverageStatus.UNREPORTED
     assert incomplete.unit_coverages[0].reason == "missing_manifest"
@@ -1213,7 +1218,8 @@ def test_frozen_analysis_plan_requires_every_unit_to_reconcile_before_completion
         ledger_repository=ledger,
     )
     assert (
-        ledger.list_planned_analysis_items(complete_run.id)[0].expected_manifest_id == manifest.id
+        ledger.list_planned_items_for_analysis_run(complete_run.id)[0].expected_manifest_id
+        == manifest.id
     )
     complete = build_coverage_report(complete_run.id, ledger)
     assert complete.state is AnalysisCoverageState.COMPLETE
