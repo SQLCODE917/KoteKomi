@@ -25,7 +25,6 @@ from kotekomi_application import (
     ContextManifestInput,
     ContextManifestStatus,
     ContextModelProfile,
-    CoverageIntegrityFailureReason,
     CoveragePolicyDecision,
     ExecutionSetting,
     GroundedAssertionCandidate,
@@ -758,10 +757,8 @@ def test_docling_r1d_staged_extraction_publishes_one_task_local_candidate(
             ledger_repository=repository,
         )
         incomplete_coverage = build_coverage_report(analysis_run.id, repository)
-        assert incomplete_coverage.state is AnalysisCoverageState.FAILED
-        assert incomplete_coverage.integrity_failure_reasons == (
-            CoverageIntegrityFailureReason.MISSING_MANIFEST,
-        )
+        assert incomplete_coverage.state is AnalysisCoverageState.INCOMPLETE
+        assert incomplete_coverage.integrity_failure_reasons == ()
         assert incomplete_coverage.total_pages == 1
         assert incomplete_coverage.represented_page_numbers == (1,)
         focus_coverage = next(

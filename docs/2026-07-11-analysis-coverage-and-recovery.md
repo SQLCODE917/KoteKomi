@@ -171,6 +171,11 @@ proposal_run_mismatch
 split_cycle
 ```
 
+An item whose frozen scope intentionally has no `expected_manifest_id` is
+pending work, not corrupt state. It reports `incomplete` with item-local
+`blocking_reason = missing_manifest`. A non-null selected manifest identity
+that cannot be loaded is the `failed / missing_manifest` integrity case.
+
 Item-local failures use the same exact reason in `blocking_reason`. A
 proposal/run mismatch exposes no selected proposals. Report construction may
 still fail fast when the requested AnalysisRun itself, its frozen plan, or its
@@ -240,6 +245,9 @@ Human summaries are generated from these reconciled fields, not separately maint
 - Resume reruns only stale/missing work and preserves every prior ProcessingAttempt, ProcessingAttemptOutcome, and ModelRun.
 - Report totals equal the enumerated records and the report digest is stable.
 - A changed input fingerprint cannot be attached to an existing ProcessingAttempt or ModelRun.
+- SQLite proves that unrelated documents and alternate plans over one representation cannot contaminate a run-scoped report.
+- SQLite proves that the selected run alone determines current proposal status across succeeded-no-proposal, abstained, invalid-output, and publish-failed retries.
+- Every SQLite coverage case closes and reopens the Ledger and reproduces the identical report digest and policy decision.
 
 ### Success criteria
 

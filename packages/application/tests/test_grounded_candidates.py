@@ -1234,10 +1234,8 @@ def test_frozen_analysis_plan_requires_every_unit_to_reconcile_before_completion
         ledger.list_planned_items_for_analysis_run(incomplete_run.id)[0].expected_manifest_id
         is None
     )
-    assert incomplete.state is AnalysisCoverageState.FAILED
-    assert incomplete.integrity_failure_reasons == (
-        CoverageIntegrityFailureReason.MISSING_MANIFEST,
-    )
+    assert incomplete.state is AnalysisCoverageState.INCOMPLETE
+    assert incomplete.integrity_failure_reasons == ()
     assert incomplete.coverage_records[0].terminal_status is CoverageTerminalStatus.UNREPORTED
     assert incomplete.coverage_records[0].blocking_reason == "missing_manifest"
     assert incomplete.coverage_records[0].policy_decision is (

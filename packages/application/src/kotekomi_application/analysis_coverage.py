@@ -554,7 +554,6 @@ def build_coverage_report(
                 CoverageIntegrityFailureReason.MULTIPLE_MANIFESTS.value,
             )
         if item.expected_manifest_id is None:
-            integrity_failures.add(CoverageIntegrityFailureReason.MISSING_MANIFEST)
             return _store(
                 item,
                 CoverageTerminalStatus.UNREPORTED,
