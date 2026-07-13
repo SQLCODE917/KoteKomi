@@ -35,6 +35,7 @@ TEXT = (
     "The CHIP identifies health priorities.\n"
     "Furniture header"
 )
+LOGICAL_TEXT = TEXT.removesuffix("\nFurniture header")
 
 
 class ExactWhitespaceTokenizer:
@@ -83,9 +84,17 @@ def _bundle() -> DocumentRepresentationBundle:
         id="tvw_context_fixture",
         representation_id=representation_id,
         kind=TextViewKind.LOGICAL,
+        content_digest=hashlib.sha256(LOGICAL_TEXT.encode()).hexdigest(),
+        text=LOGICAL_TEXT,
+        normalization_policy="fixture_v1",
+    )
+    display_view = TextView(
+        id="tvw_context_fixture_display",
+        representation_id=representation_id,
+        kind=TextViewKind.DISPLAY,
         content_digest=hashlib.sha256(TEXT.encode()).hexdigest(),
         text=TEXT,
-        normalization_policy="fixture_v1",
+        normalization_policy="fixture_display_v1",
     )
     heading_end = TEXT.index("\n")
     definition_start = heading_end + 1
@@ -102,7 +111,7 @@ def _bundle() -> DocumentRepresentationBundle:
         order_index=0,
         text_view_id=text_view.id,
         start_char=0,
-        end_char=len(TEXT),
+        end_char=len(LOGICAL_TEXT),
     )
     heading = DocumentNode(
         id="nod_context_heading",
@@ -140,7 +149,7 @@ def _bundle() -> DocumentRepresentationBundle:
         parent_node_id=root.id,
         node_type="furniture",
         order_index=4,
-        text_view_id=text_view.id,
+        text_view_id=display_view.id,
         start_char=furniture_start,
         end_char=len(TEXT),
     )
@@ -164,7 +173,7 @@ def _bundle() -> DocumentRepresentationBundle:
         update={
             "canonical_output_digest": canonical_representation_digest(
                 template,
-                text_views=(text_view,),
+                text_views=(text_view, display_view),
                 nodes=(root, heading, definition, focus, furniture),
                 edges=(),
                 source_regions=(),
@@ -174,7 +183,7 @@ def _bundle() -> DocumentRepresentationBundle:
     )
     return DocumentRepresentationBundle(
         representation=representation,
-        text_views=(text_view,),
+        text_views=(text_view, display_view),
         nodes=(root, heading, definition, focus, furniture),
         quality_report=quality_report,
     )

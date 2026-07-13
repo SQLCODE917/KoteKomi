@@ -1,5 +1,6 @@
 import hashlib
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -136,6 +137,9 @@ def test_manifest_resolves_license_and_gold_expectation_profiles() -> None:
         "gold/mixed_born_digital_scan_v1.json"
     )
     assert entries["pdf_complex_table_v1"].get("gold_path") == "gold/complex_table_v1.json"
+    assert entries["pdf_adversarial_columns_hierarchy_v1"].get("gold_path") == (
+        "gold/adversarial_columns_hierarchy_v1.json"
+    )
 
 
 def test_project_fixture_generator_is_byte_reproducible(tmp_path: Path) -> None:
@@ -151,6 +155,7 @@ def test_project_fixture_generator_is_byte_reproducible(tmp_path: Path) -> None:
     generated_paths = (
         "mixed/mixed_born_digital_scan_v1.pdf",
         "tables/complex_table_v1.pdf",
+        "layout/adversarial_columns_hierarchy_v1.pdf",
         "encrypted/encrypted_aes256_v1.pdf",
         "corrupt/generated/corrupt_truncated_v1.pdf",
         "corrupt/generated/corrupt_bad_xref_v1.pdf",
@@ -211,6 +216,33 @@ def test_complex_table_gold_graph_has_exact_spans_ancestry_and_regions() -> None
         "q2_2025",
     ]
     assert all(len(cast(list[object], cell["source_region"])) == 5 for cell in cells)
+
+
+def test_adversarial_layout_fixture_pins_columns_furniture_hierarchy_and_rotation() -> None:
+    fixture = FIXTURE_ROOT / "layout" / "adversarial_columns_hierarchy_v1.pdf"
+    gold = cast(
+        dict[str, object],
+        _load_json(FIXTURE_ROOT / "gold" / "adversarial_columns_hierarchy_v1.json"),
+    )
+    pdfinfo = subprocess.run(
+        ("pdfinfo", "-f", "1", "-l", "999999", "-box", fixture),
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+
+    assert _pdf_page_count(fixture) == gold["page_count"] == 3
+    assert [int(rotation) for rotation in re.findall(r"Page\s+\d+ rot:\s+(\d+)", pdfinfo)] == gold[
+        "page_rotations"
+    ]
+    logical_lines = cast(list[str], gold["logical_analysis_lines"])
+    assert logical_lines.index("LEFT THREE follows left two.") < logical_lines.index(
+        "RIGHT ONE begins the right narrative."
+    )
+    assert logical_lines.index("TWO C2 follows two C1.") < logical_lines.index(
+        "THREE C1 begins column three."
+    )
+    assert len(cast(list[list[str]], gold["hierarchy"])) == 5
 
 
 def test_aes256_fixture_requires_the_right_password_without_leaking_it() -> None:

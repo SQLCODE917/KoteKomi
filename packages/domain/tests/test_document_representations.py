@@ -167,6 +167,34 @@ def test_document_representation_bundle_rejects_digest_mismatch() -> None:
         )
 
 
+def test_bundle_requires_one_unique_logical_text_view() -> None:
+    bundle = _valid_bundle()
+    duplicate_logical = bundle.text_views[0].model_copy(update={"id": "tvw_duplicate_logical"})
+
+    with pytest.raises(ValueError, match="TextView kinds must be unique"):
+        DocumentRepresentationBundle(
+            representation=bundle.representation,
+            text_views=(*bundle.text_views, duplicate_logical),
+            nodes=bundle.nodes,
+            quality_report=bundle.quality_report,
+        )
+
+
+def test_bundle_rejects_furniture_in_the_logical_text_view() -> None:
+    bundle = _valid_spatial_bundle()
+    root, paragraph = bundle.nodes
+    furniture = paragraph.model_copy(update={"node_type": "furniture"})
+
+    with pytest.raises(ValueError, match="Furniture DocumentNodes"):
+        DocumentRepresentationBundle(
+            representation=bundle.representation,
+            text_views=bundle.text_views,
+            nodes=(root, furniture),
+            source_regions=bundle.source_regions,
+            quality_report=bundle.quality_report,
+        )
+
+
 def test_representation_digest_ignores_execution_time() -> None:
     bundle = _valid_bundle()
     replay = bundle.representation.model_copy(update={"created_at": NOW + timedelta(minutes=1)})

@@ -16,7 +16,7 @@ from pathlib import Path
 
 FIXTURE_ROOT = Path(__file__).resolve().parent
 QPDF_VERSION = "qpdf version 11.9.0"
-GENERATOR_VERSION = "kotekomi_pdf_fixture_generator_v2"
+GENERATOR_VERSION = "kotekomi_pdf_fixture_generator_v3"
 
 
 def _pdf_string(value: str) -> bytes:
@@ -165,6 +165,7 @@ def _complex_table_pdf() -> bytes:
         (358, 425, "22", 10),
         (438, 425, "23", 10),
     )
+
     for x, y, label, size in labels:
         commands.append(
             b"BT /F1 "
@@ -193,6 +194,95 @@ def _complex_table_pdf() -> bytes:
                 b"/Encoding /WinAnsiEncoding /ToUnicode 6 0 R >>"
             ),
             _stream(content),
+            _unicode_cmap(),
+        )
+    )
+
+
+def _adversarial_layout_pdf() -> bytes:
+    """Three-page owned fixture whose stream order contradicts visual order."""
+
+    def text(x: int, y: int, value: str, size: int = 11) -> bytes:
+        return f"BT /F1 {size} Tf {x} {y} Td ".encode("ascii") + _pdf_string(value) + b" Tj ET"
+
+    page_specs = (
+        (
+            (72, 28, "KoteKomi Layout Corpus - Page 1", 9),
+            (330, 570, "RIGHT THREE follows right two.", 10),
+            (54, 735, "Adversarial Two Column Page", 18),
+            (54, 650, "LEFT ONE begins the left narrative.", 10),
+            (330, 650, "RIGHT ONE begins the right narrative.", 10),
+            (54, 570, "LEFT THREE follows left two.", 10),
+            (54, 760, "KoteKomi Repeated Layout Header", 9),
+            (330, 610, "RIGHT TWO follows right one.", 10),
+            (54, 610, "LEFT TWO follows left one.", 10),
+            (54, 700, "Two Column Reading Order", 14),
+        ),
+        (
+            (54, 28, "KoteKomi Layout Corpus - Page 2", 9),
+            (398, 630, "THREE C2 follows three C1.", 9),
+            (54, 735, "Adversarial Three Column Page", 18),
+            (226, 670, "TWO C1 begins column two.", 9),
+            (54, 670, "ONE C1 begins column one.", 9),
+            (398, 670, "THREE C1 begins column three.", 9),
+            (54, 760, "KoteKomi Repeated Layout Header", 9),
+            (226, 630, "TWO C2 follows two C1.", 9),
+            (54, 630, "ONE C2 follows one C1.", 9),
+            (54, 700, "Three Column Reading Order", 14),
+            (78, 455, "a. Nested item Alpha One", 11),
+            (54, 500, "1. Primary item Alpha", 11),
+            (102, 420, "i. Deep item Alpha One A", 11),
+            (78, 385, "b. Nested item Alpha Two", 11),
+            (54, 350, "2. Primary item Beta", 11),
+            (54, 540, "Nested List Hierarchy", 14),
+        ),
+    )
+    page_one, page_two = (b"\n".join(text(*spec) for spec in page) + b"\n" for page in page_specs)
+
+    def rotated_text(display_x: int, display_y: int, value: str, size: int) -> bytes:
+        return (
+            f"BT /F1 {size} Tf 0 1 -1 0 {display_y} {display_x} Tm ".encode("ascii")
+            + _pdf_string(value)
+            + b" Tj ET"
+        )
+
+    page_three = (
+        b"\n".join(
+            (
+                rotated_text(54, 764, "KoteKomi Layout Corpus - Page 3", 9),
+                rotated_text(54, 150, "ROTATED BODY remains inside canonical coordinates.", 11),
+                rotated_text(54, 72, "Rotated Page Geometry", 18),
+                rotated_text(54, 32, "KoteKomi Repeated Layout Header", 9),
+            )
+        )
+        + b"\n"
+    )
+    return _serialize_pdf(
+        (
+            b"<< /Type /Catalog /Pages 2 0 R >>",
+            b"<< /Type /Pages /Kids [3 0 R 4 0 R 5 0 R] /Count 3 >>",
+            (
+                b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] "
+                b"/CropBox [0 0 612 792] /Resources << /Font << /F1 6 0 R >> >> "
+                b"/Contents 7 0 R >>"
+            ),
+            (
+                b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] "
+                b"/CropBox [0 0 612 792] /Resources << /Font << /F1 6 0 R >> >> "
+                b"/Contents 8 0 R >>"
+            ),
+            (
+                b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 792 612] "
+                b"/CropBox [0 0 792 612] /Rotate 90 "
+                b"/Resources << /Font << /F1 6 0 R >> >> /Contents 9 0 R >>"
+            ),
+            (
+                b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica "
+                b"/Encoding /WinAnsiEncoding /ToUnicode 10 0 R >>"
+            ),
+            _stream(page_one),
+            _stream(page_two),
+            _stream(page_three),
             _unicode_cmap(),
         )
     )
@@ -363,11 +453,13 @@ def generate(output_root: Path) -> None:
         raise RuntimeError(f"missing pinned source fixture: {linn_pdf}")
 
     mixed_directory = output_root / "mixed"
+    layout_directory = output_root / "layout"
     table_directory = output_root / "tables"
     encrypted_directory = output_root / "encrypted"
     corruption_directory = output_root / "corrupt" / "generated"
     for directory in (
         mixed_directory,
+        layout_directory,
         table_directory,
         encrypted_directory,
         corruption_directory,
@@ -376,6 +468,7 @@ def generate(output_root: Path) -> None:
 
     authored_pages = _authored_mixed_pages_pdf()
     complex_table = _complex_table_pdf()
+    adversarial_layout = _adversarial_layout_pdf()
     encrypted_pdf = _deterministic_aes256_pdf()
     valid_corruption_source = _valid_corruption_source_pdf()
 
@@ -401,6 +494,7 @@ def generate(output_root: Path) -> None:
         (mixed_directory / mixed_output.name).write_bytes(mixed_output.read_bytes())
 
     (table_directory / "complex_table_v1.pdf").write_bytes(complex_table)
+    (layout_directory / "adversarial_columns_hierarchy_v1.pdf").write_bytes(adversarial_layout)
     (encrypted_directory / "encrypted_aes256_v1.pdf").write_bytes(encrypted_pdf)
     for filename, contents in _controlled_corruptions(valid_corruption_source).items():
         (corruption_directory / filename).write_bytes(contents)

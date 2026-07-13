@@ -72,12 +72,14 @@ from kotekomi_application import (
 )
 from kotekomi_domain import (
     AssertionEvidenceRole,
+    DocumentNode,
     DocumentRepresentationBundle,
     DocumentVersionKind,
     ModelRunStatus,
     RepresentationAnalyzability,
     ReviewStatus,
     SourceType,
+    TextViewKind,
 )
 
 FIXTURE_PATH = (
@@ -116,6 +118,17 @@ class RecordingDoclingParser:
 class FixtureProcessingClock:
     def now(self) -> datetime:
         return NOW
+
+
+def _priority_paragraph(bundle: DocumentRepresentationBundle) -> DocumentNode:
+    views_by_id = {view.id: view for view in bundle.text_views}
+    return next(
+        node
+        for node in bundle.nodes
+        if node.node_type == "paragraph"
+        and PRIORITY_SENTENCE
+        in views_by_id[node.text_view_id].text[node.start_char : node.end_char]
+    )
 
 
 class FixtureExactTokenizer:
@@ -317,11 +330,7 @@ def test_docling_r1b_replays_the_priority_sentence_after_review_and_restart(
         assert ingest_outcome.representation_id is not None
         bundle = repository.get_document_representation_bundle(ingest_outcome.representation_id)
         assert bundle is not None
-        priority_node = next(
-            node
-            for node in bundle.nodes
-            if PRIORITY_SENTENCE in bundle.text_views[0].text[node.start_char : node.end_char]
-        )
+        priority_node = _priority_paragraph(bundle)
         manifest = build_grounded_candidate_context(
             GroundedCandidateContextInput(
                 source_id=capture.source.id,
@@ -431,11 +440,7 @@ def test_docling_r1c_includes_chip_definition_and_excludes_furniture_determinist
             AnalysisUnitPlanningInput(bundle.representation.id, "r1c_pdf_v1", "extract"),
             repository,
         )
-        priority_node = next(
-            node
-            for node in bundle.nodes
-            if PRIORITY_SENTENCE in bundle.text_views[0].text[node.start_char : node.end_char]
-        )
+        priority_node = _priority_paragraph(bundle)
         focus_unit = next(unit for unit in plan.units if unit.focus_node_ids == (priority_node.id,))
         manifest_input = ContextManifestInput(
             analysis_unit=focus_unit,
@@ -498,9 +503,12 @@ def test_docling_r1c_includes_chip_definition_and_excludes_furniture_determinist
         "definition",
     )
     definition_node = next(node for node in bundle.nodes if node.id == selected[2].node_id)
+    definition_view = next(
+        view for view in bundle.text_views if view.id == definition_node.text_view_id
+    )
     assert (
         "Community Health Improvement Plan (CHIP)"
-        in bundle.text_views[0].text[definition_node.start_char : definition_node.end_char]
+        in definition_view.text[definition_node.start_char : definition_node.end_char]
     )
     assert all(candidate.required for candidate in selected)
     assert all(
@@ -578,11 +586,7 @@ def test_docling_r1d_staged_extraction_publishes_one_task_local_candidate(
         assert ingest_outcome.representation_id is not None
         bundle = repository.get_document_representation_bundle(ingest_outcome.representation_id)
         assert bundle is not None
-        priority_node = next(
-            node
-            for node in bundle.nodes
-            if PRIORITY_SENTENCE in bundle.text_views[0].text[node.start_char : node.end_char]
-        )
+        priority_node = _priority_paragraph(bundle)
         analysis_plan = plan_analysis_units(
             AnalysisUnitPlanningInput(bundle.representation.id, "r1d_pdf_v1", "claim_extraction"),
             repository,
@@ -604,7 +608,7 @@ def test_docling_r1d_staged_extraction_publishes_one_task_local_candidate(
             repository,
             FixtureExactTokenizer(),
         ).manifest
-        text_view = bundle.text_views[0]
+        text_view = next(view for view in bundle.text_views if view.kind is TextViewKind.LOGICAL)
         start_char = text_view.text.index(PRIORITY_SENTENCE)
         fixture_output = json.dumps(
             {
@@ -949,11 +953,7 @@ def test_sqlite_model_run_publication_fault_matrix_is_atomic_and_retryable(tmp_p
         assert ingest_outcome.representation_id is not None
         bundle = repository.get_document_representation_bundle(ingest_outcome.representation_id)
         assert bundle is not None
-        priority_node = next(
-            node
-            for node in bundle.nodes
-            if PRIORITY_SENTENCE in bundle.text_views[0].text[node.start_char : node.end_char]
-        )
+        priority_node = _priority_paragraph(bundle)
         focus_unit = next(
             unit
             for unit in plan_analysis_units(
@@ -977,7 +977,7 @@ def test_sqlite_model_run_publication_fault_matrix_is_atomic_and_retryable(tmp_p
             repository,
             FixtureExactTokenizer(),
         ).manifest
-        text_view = bundle.text_views[0]
+        text_view = next(view for view in bundle.text_views if view.kind is TextViewKind.LOGICAL)
         local_start = text_view.text.index(PRIORITY_SENTENCE) - priority_node.start_char
         local_end = local_start + len(PRIORITY_SENTENCE)
         baseline_output = _r1d_output(
@@ -1175,7 +1175,7 @@ def _assert_persisted_bundle(
     actual: DocumentRepresentationBundle,
 ) -> None:
     assert actual.representation == expected.representation
-    assert actual.text_views == expected.text_views
+    assert actual.text_views == tuple(sorted(expected.text_views, key=lambda view: view.id))
     assert actual.nodes == tuple(sorted(expected.nodes, key=lambda node: node.id))
     assert actual.edges == tuple(sorted(expected.edges, key=lambda edge: edge.id))
     assert actual.source_regions == tuple(
@@ -1212,28 +1212,43 @@ def _assert_r1a_representation(
     assert bundle.quality_report.metric_values == {
         "page_count": 1,
         "covered_page_count": 1,
-        "logical_text_char_count": 2481,
-        "reading_order_node_count": 19,
+        "logical_text_char_count": 2328,
+        "display_text_char_count": 2481,
+        "reading_order_node_count": 17,
         "heading_node_count": 2,
         "paragraph_node_count": 15,
+        "list_item_node_count": 0,
         "furniture_node_count": 2,
         "source_region_count": 19,
     }
-    assert len(bundle.text_views) == 1
-    text_view = bundle.text_views[0]
-    assert text_view.text.startswith("For Immediate Release March 18, 2025\nContact\n")
+    assert len(bundle.text_views) == 2
+    views_by_kind = {view.kind: view for view in bundle.text_views}
+    assert set(views_by_kind) == {TextViewKind.LOGICAL, TextViewKind.DISPLAY}
+    text_view = views_by_kind[TextViewKind.LOGICAL]
+    display_view = views_by_kind[TextViewKind.DISPLAY]
+    assert text_view.text.startswith("Danielle Pettit-Majewski, Director\nPRESS RELEASE\n")
+    assert "A community where all can achieve optimal health." not in text_view.text
+    assert "A community where all can achieve optimal health." in display_view.text
+    assert "PRESS RELEASE" in display_view.text
 
     root, *content_nodes = bundle.nodes
     assert root.node_type == "document"
     assert (root.start_char, root.end_char) == (0, len(text_view.text))
     assert tuple(node.order_index for node in bundle.nodes) == tuple(range(len(bundle.nodes)))
     assert {node.node_type for node in content_nodes} == {"furniture", "heading", "paragraph"}
-    assert all(text_view.text[node.start_char : node.end_char] for node in content_nodes)
+    views_by_id = {view.id: view for view in bundle.text_views}
+    assert all(
+        views_by_id[node.text_view_id].text[node.start_char : node.end_char]
+        for node in content_nodes
+    )
     assert all(node.source_region_ids for node in content_nodes)
-    assert tuple(edge.from_node_id for edge in bundle.edges) == (root.id,) * len(content_nodes)
-    assert tuple(edge.to_node_id for edge in bundle.edges) == tuple(
+    contains_edges = tuple(edge for edge in bundle.edges if edge.edge_type == "contains")
+    assert tuple(edge.to_node_id for edge in contains_edges) == tuple(
         node.id for node in content_nodes
     )
+    reading_edges = tuple(edge for edge in bundle.edges if edge.edge_type == "reading_order")
+    logical_nodes = tuple(node for node in content_nodes if node.node_type != "furniture")
+    assert len(reading_edges) == len(logical_nodes) - 1
 
     preflight_pages = {page.page_index: page for page in preflight.pages}
     assert {region.page_number for region in bundle.source_regions} == set(preflight_pages)

@@ -3,13 +3,15 @@
   "downloaded_at": "2026-07-13T07:56:34-04:00",
   "generator": {
     "path": "generate_project_fixtures.py",
-    "version": "kotekomi_pdf_fixture_generator_v2",
+    "version": "kotekomi_pdf_fixture_generator_v3",
     "qpdf_version": "11.9.0",
     "openssl_compatibility": "3.x AES output"
   },
   "requirement_classes": [
     "multi_column_reading_order",
+    "three_column_adversarial_reading_order",
     "repeated_headers_and_footers",
+    "nested_lists_and_section_hierarchy",
     "rotated_pages",
     "scanned_pdf_and_ocr",
     "mixed_born_digital_and_scanned",
@@ -80,6 +82,12 @@
       "expected_page_count": 4,
       "extraction_mode": "embedded_text",
       "must_not": ["interleave_columns", "include_furniture_in_body_text", "omit_footnotes"]
+    },
+    "canonical_adversarial_layout": {
+      "expected_parser_disposition": "acceptable",
+      "expected_page_count": 3,
+      "extraction_mode": "embedded_text_layout",
+      "must_not": ["use_object_order", "interleave_columns", "include_furniture_in_body_text", "apply_rotation_twice", "flatten_nested_lists"]
     },
     "rotated_ocr": {
       "expected_parser_disposition": "acceptable_or_explicitly_degraded",
@@ -180,6 +188,20 @@
       "requirements": ["multi_column_reading_order", "repeated_headers_and_footers", "footnotes_and_cross_references"]
     },
     {
+      "fixture_id": "pdf_adversarial_columns_hierarchy_v1",
+      "path": "layout/adversarial_columns_hierarchy_v1.pdf",
+      "media_type": "application/pdf",
+      "origin": "generated",
+      "generator_version": "kotekomi_pdf_fixture_generator_v3",
+      "local_sha256": "b28397d8a1951927300a18c6350ec17cc2d7a7784ff2ee525a4d41d80ab13dd8",
+      "size_bytes": 3345,
+      "license_profile": "project_owned",
+      "license_disposition": "project_owned",
+      "expectation_profile": "canonical_adversarial_layout",
+      "gold_path": "gold/adversarial_columns_hierarchy_v1.json",
+      "requirements": ["multi_column_reading_order", "three_column_adversarial_reading_order", "repeated_headers_and_footers", "rotated_pages", "nested_lists_and_section_hierarchy"]
+    },
+    {
       "fixture_id": "pdf_rotation_cardinal_ocrmypdf",
       "path": "orientation/ocrmypdf-cardinal.pdf",
       "media_type": "application/pdf",
@@ -268,7 +290,7 @@
       "path": "mixed/mixed_born_digital_scan_v1.pdf",
       "media_type": "application/pdf",
       "origin": "generated",
-      "generator_version": "kotekomi_pdf_fixture_generator_v2",
+      "generator_version": "kotekomi_pdf_fixture_generator_v3",
       "generated_from": ["ocr/ocrmypdf-linn.pdf"],
       "local_sha256": "236492169fa4dcdd0ca95e59f1ceaba26ad948f74cea3d74556c34bdd1d8a2e9",
       "size_bytes": 73499,
@@ -283,7 +305,7 @@
       "path": "tables/complex_table_v1.pdf",
       "media_type": "application/pdf",
       "origin": "generated",
-      "generator_version": "kotekomi_pdf_fixture_generator_v2",
+      "generator_version": "kotekomi_pdf_fixture_generator_v3",
       "local_sha256": "5d12562e249e8e51f963c3f1578471d8ced92edc4c2079ffabca42f62f8e30a8",
       "size_bytes": 2198,
       "license_profile": "project_owned",
@@ -383,7 +405,7 @@
       "path": "encrypted/encrypted_aes256_v1.pdf",
       "media_type": "application/pdf",
       "origin": "generated",
-      "generator_version": "kotekomi_pdf_fixture_generator_v2",
+      "generator_version": "kotekomi_pdf_fixture_generator_v3",
       "local_sha256": "9fa7fb4ef3074a9ce9600265f9646b5ff34fda1b438873a5fa9b345c038ad58e",
       "size_bytes": 1309,
       "license_profile": "project_owned",
@@ -412,7 +434,7 @@
       "path": "corrupt/generated/corrupt_truncated_v1.pdf",
       "media_type": "application/pdf",
       "origin": "generated",
-      "generator_version": "kotekomi_pdf_fixture_generator_v2",
+      "generator_version": "kotekomi_pdf_fixture_generator_v3",
       "local_sha256": "9674d32d2f32623e7ca38ec09a5307d18d3dad609b9daae740be35c8aa6eabaf",
       "size_bytes": 438,
       "license_profile": "project_owned",
@@ -426,7 +448,7 @@
       "path": "corrupt/generated/corrupt_bad_xref_v1.pdf",
       "media_type": "application/pdf",
       "origin": "generated",
-      "generator_version": "kotekomi_pdf_fixture_generator_v2",
+      "generator_version": "kotekomi_pdf_fixture_generator_v3",
       "local_sha256": "328ec72662bd7ce3e95c35fa6e491a4fb76662ae2d93291ee39f5c9cddbb1311",
       "size_bytes": 621,
       "license_profile": "project_owned",
@@ -440,7 +462,7 @@
       "path": "corrupt/generated/corrupt_bad_stream_length_v1.pdf",
       "media_type": "application/pdf",
       "origin": "generated",
-      "generator_version": "kotekomi_pdf_fixture_generator_v2",
+      "generator_version": "kotekomi_pdf_fixture_generator_v3",
       "local_sha256": "fda9a318bf1bc125c9b10e88ba8ba2a15441aac9a26d02b193cfbe63c64195e1",
       "size_bytes": 621,
       "license_profile": "project_owned",
@@ -454,7 +476,7 @@
       "path": "corrupt/generated/corrupt_missing_page_tree_v1.pdf",
       "media_type": "application/pdf",
       "origin": "generated",
-      "generator_version": "kotekomi_pdf_fixture_generator_v2",
+      "generator_version": "kotekomi_pdf_fixture_generator_v3",
       "local_sha256": "9c5c58405b9efdc28cbd243bdaffea99318c74795db49914fb6ac8474936c7da",
       "size_bytes": 621,
       "license_profile": "project_owned",
@@ -544,8 +566,12 @@
       "sha256": "0480d4faf3225e8b3f6b6cba6e8a237fdb4982e7a7b6f58d0cd47120caa8f981"
     },
     {
+      "path": "gold/adversarial_columns_hierarchy_v1.json",
+      "sha256": "6c582688551b7020bef3be3d199705ca8d186a9f81171bb47de18a74c804f0d1"
+    },
+    {
       "path": "gold/controlled_corruptions_v1.json",
-      "sha256": "7d5b2d7ce8521e0d044b6dc2ac3b6a6e12e53c36a1f5fdd198ea0c61926d92d9"
+      "sha256": "8524b974dfef4bbb5ab32c6d769c48cf3c067044b5d97d8c4844c6c5b76f57e8"
     }
   ],
   "parser_output_mutations": [

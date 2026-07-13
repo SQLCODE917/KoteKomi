@@ -710,6 +710,11 @@ class DocumentRepresentationBundle(DomainModel):
         _require_unique_ids(self.source_regions, "SourceRegion")
         if not text_views:
             raise ValueError("Document representation must contain at least one TextView.")
+        if len({view.kind for view in self.text_views}) != len(self.text_views):
+            raise ValueError("Document representation TextView kinds must be unique.")
+        logical_views = tuple(view for view in self.text_views if view.kind is TextViewKind.LOGICAL)
+        if len(logical_views) != 1:
+            raise ValueError("Document representation must contain exactly one logical TextView.")
         if self.quality_report.representation_id != representation_id:
             raise ValueError("Parse quality report must belong to the representation.")
         for view in self.text_views:
@@ -747,6 +752,8 @@ class DocumentRepresentationBundle(DomainModel):
                 raise ValueError(
                     "DocumentNode without SourceRegions must not declare a source_text_digest."
                 )
+            if node.node_type == "furniture" and text_view.kind is TextViewKind.LOGICAL:
+                raise ValueError("Furniture DocumentNodes must not enter the logical TextView.")
             region_geometries = {
                 (
                     region.page_number,

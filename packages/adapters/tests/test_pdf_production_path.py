@@ -451,6 +451,14 @@ def _representation_bundle(
         text=text,
         normalization_policy="fixture_pdf_v1",
     )
+    display_view = TextView(
+        id=f"tvw_{representation_key}_display",
+        representation_id=representation_id,
+        kind=TextViewKind.DISPLAY,
+        content_digest=hashlib.sha256(text.encode("utf-8")).hexdigest(),
+        text=text,
+        normalization_policy="fixture_pdf_display_v1",
+    )
     root = DocumentNode(
         id=f"nod_{representation_key}_document",
         representation_id=representation_id,
@@ -517,7 +525,7 @@ def _representation_bundle(
         update={
             "canonical_output_digest": canonical_representation_digest(
                 template,
-                text_views=(text_view,),
+                text_views=(text_view, display_view),
                 nodes=(root, paragraph),
                 edges=(edge,),
                 source_regions=(region,),
@@ -527,7 +535,7 @@ def _representation_bundle(
     )
     return DocumentRepresentationBundle(
         representation=representation,
-        text_views=(text_view,),
+        text_views=(text_view, display_view),
         nodes=(root, paragraph),
         edges=(edge,),
         source_regions=(region,),

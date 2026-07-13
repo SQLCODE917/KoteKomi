@@ -1,0 +1,52 @@
+{
+  "fixture_version": "adversarial_columns_hierarchy_v1",
+  "page_count": 3,
+  "page_rotations": [0, 0, 90],
+  "logical_analysis_lines": [
+    "Adversarial Two Column Page",
+    "Two Column Reading Order",
+    "LEFT ONE begins the left narrative.",
+    "LEFT TWO follows left one.",
+    "LEFT THREE follows left two.",
+    "RIGHT ONE begins the right narrative.",
+    "RIGHT TWO follows right one.",
+    "RIGHT THREE follows right two.",
+    "Adversarial Three Column Page",
+    "Three Column Reading Order",
+    "ONE C1 begins column one.",
+    "ONE C2 follows one C1.",
+    "TWO C1 begins column two.",
+    "TWO C2 follows two C1.",
+    "THREE C1 begins column three.",
+    "THREE C2 follows three C1.",
+    "Nested List Hierarchy",
+    "1. Primary item Alpha",
+    "a. Nested item Alpha One",
+    "i. Deep item Alpha One A",
+    "b. Nested item Alpha Two",
+    "2. Primary item Beta",
+    "Rotated Page Geometry",
+    "ROTATED BODY remains inside canonical coordinates."
+  ],
+  "furniture_lines": [
+    "KoteKomi Repeated Layout Header",
+    "KoteKomi Layout Corpus - Page 1",
+    "KoteKomi Repeated Layout Header",
+    "KoteKomi Layout Corpus - Page 2",
+    "KoteKomi Repeated Layout Header",
+    "KoteKomi Layout Corpus - Page 3"
+  ],
+  "hierarchy": [
+    ["Nested List Hierarchy", "1. Primary item Alpha"],
+    ["1. Primary item Alpha", "a. Nested item Alpha One"],
+    ["a. Nested item Alpha One", "i. Deep item Alpha One A"],
+    ["1. Primary item Alpha", "b. Nested item Alpha Two"],
+    ["Nested List Hierarchy", "2. Primary item Beta"]
+  ],
+  "forbidden_logical_lines": [
+    "KoteKomi Repeated Layout Header",
+    "KoteKomi Layout Corpus - Page 1",
+    "KoteKomi Layout Corpus - Page 2",
+    "KoteKomi Layout Corpus - Page 3"
+  ]
+}

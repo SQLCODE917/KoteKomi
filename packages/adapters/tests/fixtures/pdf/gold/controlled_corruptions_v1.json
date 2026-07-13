@@ -1,5 +1,5 @@
 {
-  "generator_version": "kotekomi_pdf_fixture_generator_v2",
+  "generator_version": "kotekomi_pdf_fixture_generator_v3",
   "source": "in-memory valid_corruption_source_v1.pdf",
   "variants": [
     {

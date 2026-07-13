@@ -31,6 +31,7 @@ from kotekomi_domain import (
     RawBlob,
     RepresentationAnalyzability,
     SourceCoordinateSystem,
+    TextViewKind,
 )
 
 from kotekomi_application.processing import (
@@ -558,6 +559,7 @@ def validate_representation_for_processing_task(
     )
     validated_bundle = DocumentRepresentationBundle.model_validate(bundle.model_dump())
     _validate_pdf_region_geometry(parse_result.preflight, validated_bundle)
+    _validate_pdf_text_views_and_reading_order(validated_bundle)
 
 
 def _build_pdf_page_accounting(
@@ -787,6 +789,34 @@ def _validate_pdf_region_geometry(
             raise ValueError("PDF SourceRegion must lie within the page CropBox.")
         if region.rotation_applied != page.rotation:
             raise ValueError("PDF SourceRegion rotation transform disagrees with preflight.")
+
+
+def _validate_pdf_text_views_and_reading_order(
+    bundle: DocumentRepresentationBundle,
+) -> None:
+    views_by_kind = {view.kind: view for view in bundle.text_views}
+    if set(views_by_kind) != {TextViewKind.LOGICAL, TextViewKind.DISPLAY}:
+        raise ValueError("PDF representation requires one logical and one display TextView.")
+    content_nodes = tuple(
+        sorted(
+            (node for node in bundle.nodes if node.parent_node_id is not None),
+            key=lambda node: node.order_index,
+        )
+    )
+    logical_nodes = tuple(node for node in content_nodes if node.node_type != "furniture")
+    if any(node.text_view_id != views_by_kind[TextViewKind.LOGICAL].id for node in logical_nodes):
+        raise ValueError("PDF analysis nodes must reference the logical TextView.")
+    furniture_nodes = tuple(node for node in content_nodes if node.node_type == "furniture")
+    if any(node.text_view_id != views_by_kind[TextViewKind.DISPLAY].id for node in furniture_nodes):
+        raise ValueError("PDF furniture nodes must reference the display TextView.")
+    reading_edges = tuple(edge for edge in bundle.edges if edge.edge_type == "reading_order")
+    expected_pairs = tuple(
+        (earlier.id, later.id)
+        for earlier, later in zip(logical_nodes, logical_nodes[1:], strict=False)
+    )
+    actual_pairs = tuple((edge.from_node_id, edge.to_node_id) for edge in reading_edges)
+    if actual_pairs != expected_pairs:
+        raise ValueError("PDF reading-order edges must form one exact logical-node chain.")
 
 
 def _provenance_id(document_id: str, representation_id: str, policy_id: str) -> str:

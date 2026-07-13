@@ -60,6 +60,7 @@ class _PageGeometry:
     page_number: int
     width: float
     height: float
+    rotation: int
 
 
 @dataclass(frozen=True)
@@ -71,6 +72,7 @@ class _LayoutRegion:
     top: float
     right: float
     bottom: float
+    rotation_applied: int
 
 
 @dataclass(frozen=True)
@@ -78,6 +80,8 @@ class _LayoutItem:
     text: str
     node_type: str
     regions: tuple[_LayoutRegion, ...]
+    heading_level: int | None = None
+    marker: str | None = None
 
 
 class PdfSourcePreflightError(RuntimeError):
@@ -92,18 +96,11 @@ class DoclingPdfParser(PdfDocumentParser):
 
     def processing_identity(self, policy_id: str) -> PdfProcessorIdentity:
         parser_version = _docling_version()
-        configuration = {
-            "enable_ocr": self._config.enable_ocr,
-            "enable_table_structure": self._config.enable_table_structure,
-            "policy_id": policy_id,
-            "pdfimages_version": _pdfimages_version(),
-            "pdfinfo_version": _pdfinfo_version(),
-            "pdftotext_version": _pdftotext_version(),
-        }
+        configuration = _parser_configuration(self._config, policy_id)
         config_digest = hashlib.sha256(
             json.dumps(configuration, sort_keys=True, separators=(",", ":")).encode()
         ).hexdigest()
-        return PdfProcessorIdentity("docling", parser_version, config_digest, "2")
+        return PdfProcessorIdentity("docling", parser_version, config_digest, "3")
 
     def parse(self, parse_input: PdfParseInput) -> PdfParseResult:
         if os.environ.get("KOTEKOMI_DOCLING_WORKER") != "1":
@@ -170,7 +167,9 @@ class DoclingPdfParser(PdfDocumentParser):
                 )
             if _conversion_failed(conversion):
                 raise RuntimeError("Docling conversion returned a processor failure status.")
-            page_geometry = _page_geometry_from_document(conversion.document)
+            docling_page_geometry = _page_geometry_from_document(conversion.document)
+            page_geometry = _page_geometry_from_preflight(source_preflight)
+            _validate_docling_page_geometry(docling_page_geometry, page_geometry)
             layout_items = _layout_items_from_document(conversion.document, page_geometry)
         except Exception as exc:
             blocked_result = _source_blocked_result(
@@ -362,12 +361,28 @@ def _docling_version() -> str:
         ) from exc
 
 
+def _parser_configuration(
+    config: DoclingPdfParserConfig,
+    policy_id: str,
+) -> dict[str, object]:
+    return {
+        "enable_ocr": config.enable_ocr,
+        "enable_table_structure": config.enable_table_structure,
+        "policy_id": policy_id,
+        "layout_contract_version": "canonical_pdf_layout_v2",
+        "pdfimages_version": _pdfimages_version(),
+        "pdfinfo_version": _pdfinfo_version(),
+        "pdftotext_version": _pdftotext_version(),
+    }
+
+
 def _page_geometry_from_document(document: DoclingDocument) -> tuple[_PageGeometry, ...]:
     pages = tuple(
         _PageGeometry(
             page_number=int(page_number),
             width=float(page.size.width),
             height=float(page.size.height),
+            rotation=0,
         )
         for page_number, page in sorted(document.pages.items())
     )
@@ -376,26 +391,56 @@ def _page_geometry_from_document(document: DoclingDocument) -> tuple[_PageGeomet
     return pages
 
 
+def _page_geometry_from_preflight(
+    preflight: PdfPreflight,
+) -> tuple[_PageGeometry, ...]:
+    return tuple(
+        _PageGeometry(page.page_index, page.width, page.height, page.rotation)
+        for page in preflight.pages
+    )
+
+
+def _validate_docling_page_geometry(
+    docling_pages: tuple[_PageGeometry, ...],
+    source_pages: tuple[_PageGeometry, ...],
+) -> None:
+    source_by_number = {page.page_number: page for page in source_pages}
+    for docling_page in docling_pages:
+        source_page = source_by_number.get(docling_page.page_number)
+        if source_page is None:
+            raise ValueError("Docling returned a page outside the source inventory.")
+        if (docling_page.width, docling_page.height) != (
+            source_page.width,
+            source_page.height,
+        ):
+            raise ValueError("Docling page geometry disagrees with canonical source geometry.")
+
+
 def _layout_items_from_document(
     document: DoclingDocument,
     page_geometry: tuple[_PageGeometry, ...],
 ) -> tuple[_LayoutItem, ...]:
     geometry_by_page = {page.page_number: page for page in page_geometry}
     layout_items: list[_LayoutItem] = []
+    seen_item_refs: set[str] = set()
     for item, _depth in document.iterate_items():
         layout_item = _layout_item_from_docling_item(item, geometry_by_page)
         if layout_item is not None:
             layout_items.append(layout_item)
+            seen_item_refs.add(str(getattr(item, "self_ref", "")))
     for item in cast(Any, document.texts):
         content_layer = getattr(getattr(item, "content_layer", None), "value", None)
-        if content_layer != "furniture":
+        item_ref = str(getattr(item, "self_ref", ""))
+        if content_layer != "furniture" or item_ref in seen_item_refs:
             continue
         layout_item = _layout_item_from_docling_item(item, geometry_by_page, node_type="furniture")
         if layout_item is not None:
             layout_items.append(layout_item)
     if not layout_items:
         raise ValueError("Docling conversion produced no body text items.")
-    return tuple(layout_items)
+    classified_items = _classify_repeated_furniture(tuple(layout_items))
+    leveled_items = _assign_heading_levels(classified_items)
+    return _order_layout_items(leveled_items, page_geometry)
 
 
 def _layout_item_from_docling_item(
@@ -417,11 +462,158 @@ def _layout_item_from_docling_item(
         for provenance_item in provenance
     )
     label = getattr(getattr(item, "label", None), "value", None)
+    content_layer = getattr(getattr(item, "content_layer", None), "value", None)
+    resolved_node_type = node_type
+    if resolved_node_type is None:
+        resolved_node_type = {
+            "section_header": "heading",
+            "title": "heading",
+            "list_item": "list_item",
+            "caption": "caption",
+            "footnote": "footnote",
+            "page_header": "furniture",
+            "page_footer": "furniture",
+        }.get(str(label), "paragraph")
+    if content_layer == "furniture":
+        resolved_node_type = "furniture"
+    heading_level = getattr(item, "level", None) if resolved_node_type == "heading" else None
+    marker = getattr(item, "marker", None) if resolved_node_type == "list_item" else None
     return _LayoutItem(
         text=text,
-        node_type=node_type or ("heading" if label == "section_header" else "paragraph"),
+        node_type=resolved_node_type,
         regions=regions,
+        heading_level=int(heading_level) if heading_level is not None else None,
+        marker=str(marker) if marker else None,
     )
+
+
+def _classify_repeated_furniture(
+    layout_items: tuple[_LayoutItem, ...],
+) -> tuple[_LayoutItem, ...]:
+    occurrences: dict[str, set[int]] = {}
+    for item in layout_items:
+        region = item.regions[0]
+        near_page_edge = region.top <= region.page_height * 0.1 or (
+            region.bottom >= region.page_height * 0.9
+        )
+        if not near_page_edge:
+            continue
+        key = re.sub(r"\d+", "#", " ".join(item.text.casefold().split()))
+        occurrences.setdefault(key, set()).add(region.page_number)
+    repeated_keys = {key for key, pages in occurrences.items() if len(pages) >= 2}
+    return tuple(
+        replace(item, node_type="furniture")
+        if re.sub(r"\d+", "#", " ".join(item.text.casefold().split())) in repeated_keys
+        else item
+        for item in layout_items
+    )
+
+
+def _assign_heading_levels(
+    layout_items: tuple[_LayoutItem, ...],
+) -> tuple[_LayoutItem, ...]:
+    headings = tuple(item for item in layout_items if item.node_type == "heading")
+    if not headings:
+        return layout_items
+    declared_levels = {item.heading_level for item in headings if item.heading_level is not None}
+    if len(declared_levels) > 1:
+        return layout_items
+    heights = sorted(
+        {round(max(region.bottom - region.top for region in item.regions), 1) for item in headings},
+        reverse=True,
+    )
+    level_by_height = {height: index + 1 for index, height in enumerate(heights)}
+    return tuple(
+        replace(
+            item,
+            heading_level=level_by_height[
+                round(max(region.bottom - region.top for region in item.regions), 1)
+            ],
+        )
+        if item.node_type == "heading"
+        else item
+        for item in layout_items
+    )
+
+
+def _order_layout_items(
+    layout_items: tuple[_LayoutItem, ...],
+    page_geometry: tuple[_PageGeometry, ...],
+) -> tuple[_LayoutItem, ...]:
+    ordered: list[_LayoutItem] = []
+    for page in page_geometry:
+        page_items = tuple(
+            item for item in layout_items if item.regions[0].page_number == page.page_number
+        )
+        furniture = tuple(item for item in page_items if item.node_type == "furniture")
+        top_furniture = sorted(
+            (item for item in furniture if item.regions[0].top < page.height / 2),
+            key=_layout_item_visual_key,
+        )
+        bottom_furniture = sorted(
+            (item for item in furniture if item.regions[0].top >= page.height / 2),
+            key=_layout_item_visual_key,
+        )
+        body_items = tuple(item for item in page_items if item.node_type != "furniture")
+        headings = sorted(
+            (item for item in body_items if item.node_type == "heading"),
+            key=_layout_item_visual_key,
+        )
+        remaining = set(range(len(body_items)))
+        body_by_index = dict(enumerate(body_items))
+        body_order: list[_LayoutItem] = []
+        previous_top = float("-inf")
+        for heading in headings:
+            heading_top = heading.regions[0].top
+            segment_indices = tuple(
+                index
+                for index in sorted(remaining)
+                if body_by_index[index].node_type != "heading"
+                and previous_top <= body_by_index[index].regions[0].top < heading_top
+            )
+            body_order.extend(
+                _order_column_segment(
+                    tuple(body_by_index[index] for index in segment_indices),
+                    page.width,
+                )
+            )
+            remaining.difference_update(segment_indices)
+            heading_index = next(
+                index for index in sorted(remaining) if body_by_index[index] is heading
+            )
+            remaining.remove(heading_index)
+            body_order.append(heading)
+            previous_top = heading_top
+        body_order.extend(
+            _order_column_segment(
+                tuple(body_by_index[index] for index in sorted(remaining)),
+                page.width,
+            )
+        )
+        ordered.extend((*top_furniture, *body_order, *bottom_furniture))
+    return tuple(ordered)
+
+
+def _order_column_segment(
+    items: tuple[_LayoutItem, ...],
+    page_width: float,
+) -> tuple[_LayoutItem, ...]:
+    if len(items) < 2:
+        return items
+    by_left = sorted(items, key=lambda item: item.regions[0].left)
+    columns: list[list[_LayoutItem]] = []
+    threshold = page_width * 0.15
+    for item in by_left:
+        if not columns or item.regions[0].left - columns[-1][-1].regions[0].left > threshold:
+            columns.append([item])
+        else:
+            columns[-1].append(item)
+    return tuple(item for column in columns for item in sorted(column, key=_layout_item_visual_key))
+
+
+def _layout_item_visual_key(item: _LayoutItem) -> tuple[float, float, str]:
+    region = item.regions[0]
+    return region.top, region.left, item.text
 
 
 def _layout_region_from_provenance(
@@ -435,13 +627,29 @@ def _layout_region_from_provenance(
     bounding_box = provenance.bbox
     left = float(bounding_box.l)
     right = float(bounding_box.r)
-    top = page.height - float(bounding_box.t)
-    bottom = page.height - float(bounding_box.b)
+    coordinate_origin = str(getattr(getattr(bounding_box, "coord_origin", None), "value", ""))
+    if coordinate_origin == "BOTTOMLEFT":
+        top = page.height - float(bounding_box.t)
+        bottom = page.height - float(bounding_box.b)
+    elif coordinate_origin == "TOPLEFT":
+        top = float(bounding_box.t)
+        bottom = float(bounding_box.b)
+    else:
+        raise ValueError("Docling provenance uses an unknown coordinate origin.")
     if left < 0 or top < 0 or right <= left or bottom <= top:
         raise ValueError("Docling text provenance has invalid PDF bounds.")
     if right > page.width or bottom > page.height:
         raise ValueError("Docling text provenance exceeds its PDF page bounds.")
-    return _LayoutRegion(page_number, page.width, page.height, left, top, right, bottom)
+    return _LayoutRegion(
+        page_number,
+        page.width,
+        page.height,
+        left,
+        top,
+        right,
+        bottom,
+        page.rotation,
+    )
 
 
 def _preflight_from_layout(
@@ -555,12 +763,14 @@ def preflight_pdf_source(raw_bytes: bytes, parser_version: str) -> PdfPreflight:
         )
         if rotation_match is None:
             raise PdfSourcePreflightError("PDF source preflight omitted page rotation metadata.")
-        media_left, media_bottom, media_right, media_top = media_box
-        crop_left, crop_bottom, crop_right, crop_top = crop_box
-        width = media_right - media_left
-        height = media_top - media_bottom
         rotation = int(rotation_match.group(1)) % 360
-        geometries.append(_PageGeometry(page_index, width, height))
+        width, height, canonical_crop = _canonical_page_bounds(
+            media_box,
+            crop_box,
+            rotation,
+        )
+        canonical_left, canonical_top, canonical_right, canonical_bottom = canonical_crop
+        geometries.append(_PageGeometry(page_index, width, height, rotation))
         page_preflights.append(
             PdfPagePreflight(
                 page_index=page_index,
@@ -568,10 +778,10 @@ def preflight_pdf_source(raw_bytes: bytes, parser_version: str) -> PdfPreflight:
                 height=height,
                 rotation=rotation,
                 embedded_text_character_count=0,
-                crop_left=crop_left - media_left,
-                crop_top=media_top - crop_top,
-                crop_right=crop_right - media_left,
-                crop_bottom=media_top - crop_bottom,
+                crop_left=canonical_left,
+                crop_top=canonical_top,
+                crop_right=canonical_right,
+                crop_bottom=canonical_bottom,
             )
         )
     image_coverage = _image_coverage_by_page(raw_bytes, tuple(geometries))
@@ -620,6 +830,33 @@ def _pdfinfo_page_box(
     if match is None:
         raise PdfSourcePreflightError(f"PDF source preflight omitted page {box_name} metadata.")
     return cast(tuple[float, float, float, float], tuple(map(float, match.groups())))
+
+
+def _canonical_page_bounds(
+    media_box: tuple[float, float, float, float],
+    crop_box: tuple[float, float, float, float],
+    rotation: int,
+) -> tuple[float, float, tuple[float, float, float, float]]:
+    media_left, media_bottom, media_right, media_top = media_box
+    raw_width = media_right - media_left
+    raw_height = media_top - media_bottom
+    left = crop_box[0] - media_left
+    bottom = crop_box[1] - media_bottom
+    right = crop_box[2] - media_left
+    top = crop_box[3] - media_bottom
+    if rotation == 0:
+        return raw_width, raw_height, (left, raw_height - top, right, raw_height - bottom)
+    if rotation == 90:
+        return raw_height, raw_width, (bottom, left, top, right)
+    if rotation == 180:
+        return raw_width, raw_height, (raw_width - right, bottom, raw_width - left, top)
+    if rotation == 270:
+        return (
+            raw_height,
+            raw_width,
+            (raw_height - top, raw_width - right, raw_height - bottom, raw_width - left),
+        )
+    raise PdfSourcePreflightError("PDF source preflight returned a non-cardinal rotation.")
 
 
 def _embedded_text_metrics_by_page(
@@ -762,36 +999,38 @@ def build_docling_representation_bundle(
     config: DoclingPdfParserConfig,
 ) -> DocumentRepresentationBundle:
     input_digest = hashlib.sha256(parse_input.raw_bytes).hexdigest()
-    configuration = {
-        "enable_ocr": config.enable_ocr,
-        "enable_table_structure": config.enable_table_structure,
-        "policy_id": parse_input.policy_id,
-        "pdfimages_version": _pdfimages_version(),
-        "pdfinfo_version": _pdfinfo_version(),
-        "pdftotext_version": _pdftotext_version(),
-    }
+    configuration = _parser_configuration(config, parse_input.policy_id)
     config_digest = hashlib.sha256(
         json.dumps(configuration, sort_keys=True, separators=(",", ":")).encode()
     ).hexdigest()
     representation_id = deterministic_representation_id(parse_input.processing_task_fingerprint_id)
     representation_key = representation_id.removeprefix("rep_")
-    text_view_id = f"tvw_{representation_key}_logical"
+    logical_view_id = f"tvw_{representation_key}_logical"
+    display_view_id = f"tvw_{representation_key}_display"
     root_node_id = f"nod_{representation_key}_document"
     quality_id = f"pqr_{representation_key}_quality_v1"
-    logical_text, nodes, source_regions = _canonical_layout_records(
+    logical_text, display_text, nodes, source_regions = _canonical_layout_records(
         representation_id=representation_id,
         representation_key=representation_key,
-        text_view_id=text_view_id,
+        logical_view_id=logical_view_id,
+        display_view_id=display_view_id,
         layout_items=layout_items,
     )
-    text_digest = hashlib.sha256(logical_text.encode("utf-8")).hexdigest()
-    text_view = TextView(
-        id=text_view_id,
+    logical_view = TextView(
+        id=logical_view_id,
         representation_id=representation_id,
         kind=TextViewKind.LOGICAL,
-        content_digest=text_digest,
+        content_digest=hashlib.sha256(logical_text.encode("utf-8")).hexdigest(),
         text=logical_text,
-        normalization_policy="docling_layout_text_v1",
+        normalization_policy="docling_analysis_text_v2",
+    )
+    display_view = TextView(
+        id=display_view_id,
+        representation_id=representation_id,
+        kind=TextViewKind.DISPLAY,
+        content_digest=hashlib.sha256(display_text.encode("utf-8")).hexdigest(),
+        text=display_text,
+        normalization_policy="docling_display_text_v2",
     )
     root = DocumentNode(
         id=root_node_id,
@@ -799,23 +1038,40 @@ def build_docling_representation_bundle(
         node_type="document",
         order_index=0,
         structural_path=("document",),
-        text_view_id=text_view_id,
+        text_view_id=logical_view_id,
         start_char=0,
         end_char=len(logical_text),
     )
     nodes = (root, *nodes)
-    edges = tuple(
+    contains_edges = tuple(
         DocumentEdge(
-            id=f"deg_{representation_key}_document_to_{node.order_index:04d}",
+            id=f"deg_{representation_key}_contains_{node.order_index:04d}",
             representation_id=representation_id,
-            from_node_id=root.id,
+            from_node_id=cast(str, node.parent_node_id),
             to_node_id=node.id,
             edge_type="contains",
             provenance_kind=DocumentEdgeProvenanceKind.PARSER,
-            provenance_id="docling_layout_v1",
+            provenance_id="docling_layout_v2",
         )
         for node in nodes[1:]
     )
+    logical_nodes = tuple(node for node in nodes[1:] if node.node_type != "furniture")
+    reading_order_edges = tuple(
+        DocumentEdge(
+            id=f"deg_{representation_key}_reading_{index:04d}",
+            representation_id=representation_id,
+            from_node_id=earlier.id,
+            to_node_id=later.id,
+            edge_type="reading_order",
+            provenance_kind=DocumentEdgeProvenanceKind.DETERMINISTIC,
+            provenance_id="canonical_xy_cut_reading_order_v1",
+        )
+        for index, (earlier, later) in enumerate(
+            zip(logical_nodes, logical_nodes[1:], strict=False),
+            start=1,
+        )
+    )
+    edges = (*contains_edges, *reading_order_edges)
     quality_report = _quality_report(
         quality_id=quality_id,
         representation_id=representation_id,
@@ -823,6 +1079,7 @@ def build_docling_representation_bundle(
         nodes=nodes,
         source_regions=source_regions,
         logical_text=logical_text,
+        display_text=display_text,
     )
     template = DocumentRepresentation(
         id=representation_id,
@@ -839,7 +1096,7 @@ def build_docling_representation_bundle(
         update={
             "canonical_output_digest": canonical_representation_digest(
                 template,
-                text_views=(text_view,),
+                text_views=(logical_view, display_view),
                 nodes=nodes,
                 edges=edges,
                 source_regions=source_regions,
@@ -849,7 +1106,7 @@ def build_docling_representation_bundle(
     )
     return DocumentRepresentationBundle(
         representation=representation,
-        text_views=(text_view,),
+        text_views=(logical_view, display_view),
         nodes=nodes,
         edges=edges,
         source_regions=source_regions,
@@ -861,24 +1118,67 @@ def _canonical_layout_records(
     *,
     representation_id: str,
     representation_key: str,
-    text_view_id: str,
+    logical_view_id: str,
+    display_view_id: str,
     layout_items: tuple[_LayoutItem, ...],
-) -> tuple[str, tuple[DocumentNode, ...], tuple[SourceRegion, ...]]:
-    text_parts: list[str] = []
+) -> tuple[str, str, tuple[DocumentNode, ...], tuple[SourceRegion, ...]]:
+    display_text, display_ranges = _render_layout_text(layout_items)
+    logical_items = tuple(item for item in layout_items if item.node_type != "furniture")
+    logical_text, compact_logical_ranges = _render_layout_text(logical_items)
+    logical_ranges: dict[int, tuple[int, int]] = {}
+    logical_index = 0
+    for item_index, item in enumerate(layout_items):
+        if item.node_type != "furniture":
+            logical_ranges[item_index] = compact_logical_ranges[logical_index]
+            logical_index += 1
     nodes: list[DocumentNode] = []
     source_regions: list[SourceRegion] = []
-    current_section_path: tuple[str, ...] = ()
-    cursor = 0
-    for order_index, item in enumerate(layout_items, start=1):
-        if text_parts:
-            text_parts.append("\n")
-            cursor += 1
-        start_char = cursor
-        text_parts.append(item.text)
-        cursor += len(item.text)
-        end_char = cursor
-        if item.node_type == "heading":
-            current_section_path = (item.text,)
+    root_node_id = f"nod_{representation_key}_document"
+    parent_paths: dict[str, tuple[str, ...]] = {root_node_id: ("document",)}
+    section_stack: list[tuple[int, str, str]] = []
+    list_stack: list[tuple[float, str]] = []
+    current_page: int | None = None
+    for item_index, item in enumerate(layout_items):
+        order_index = item_index + 1
+        node_id = f"nod_{representation_key}_{order_index:04d}"
+        page_number = item.regions[0].page_number
+        if page_number != current_page:
+            section_stack.clear()
+            list_stack.clear()
+            current_page = page_number
+        rendered_text = _rendered_layout_item_text(item)
+        if item.node_type == "furniture":
+            parent_id = root_node_id
+            section_path: tuple[str, ...] = ()
+            text_view_id = display_view_id
+            start_char, end_char = display_ranges[item_index]
+        elif item.node_type == "heading":
+            level = item.heading_level or 1
+            while section_stack and section_stack[-1][0] >= level:
+                section_stack.pop()
+            parent_id = section_stack[-1][1] if section_stack else root_node_id
+            section_path = (*tuple(entry[2] for entry in section_stack), item.text)
+            text_view_id = logical_view_id
+            start_char, end_char = logical_ranges[item_index]
+            list_stack.clear()
+        elif item.node_type == "list_item":
+            item_left = min(region.left for region in item.regions)
+            while list_stack and item_left <= list_stack[-1][0] + 1.0:
+                list_stack.pop()
+            parent_id = (
+                list_stack[-1][1]
+                if list_stack
+                else (section_stack[-1][1] if section_stack else root_node_id)
+            )
+            section_path = tuple(entry[2] for entry in section_stack)
+            text_view_id = logical_view_id
+            start_char, end_char = logical_ranges[item_index]
+        else:
+            parent_id = section_stack[-1][1] if section_stack else root_node_id
+            section_path = tuple(entry[2] for entry in section_stack)
+            text_view_id = logical_view_id
+            start_char, end_char = logical_ranges[item_index]
+            list_stack.clear()
         region_ids: list[str] = []
         for region_index, region in enumerate(item.regions, start=1):
             region_id = f"srg_{representation_key}_{order_index:04d}_{region_index:02d}"
@@ -895,27 +1195,57 @@ def _canonical_layout_records(
                     top=region.top,
                     right=region.right,
                     bottom=region.bottom,
-                    rotation_applied=0,
+                    rotation_applied=region.rotation_applied,
                 )
             )
-        nodes.append(
-            DocumentNode(
-                id=f"nod_{representation_key}_{order_index:04d}",
-                representation_id=representation_id,
-                parent_node_id=f"nod_{representation_key}_document",
-                node_type=item.node_type,
-                order_index=order_index,
-                structural_path=("document", item.node_type, f"{order_index:04d}"),
-                section_path=current_section_path,
-                text_view_id=text_view_id,
-                start_char=start_char,
-                end_char=end_char,
-                source_region_ids=tuple(region_ids),
-                source_page_numbers=tuple(sorted({region.page_number for region in item.regions})),
-                source_text_digest=hashlib.sha256(item.text.encode("utf-8")).hexdigest(),
-            )
+        structural_path = (
+            *parent_paths[parent_id],
+            f"{item.node_type}:{order_index:04d}",
         )
-    return "".join(text_parts), tuple(nodes), tuple(source_regions)
+        node = DocumentNode(
+            id=node_id,
+            representation_id=representation_id,
+            parent_node_id=parent_id,
+            node_type=item.node_type,
+            order_index=order_index,
+            structural_path=structural_path,
+            section_path=section_path,
+            text_view_id=text_view_id,
+            start_char=start_char,
+            end_char=end_char,
+            source_region_ids=tuple(region_ids),
+            source_page_numbers=tuple(sorted({region.page_number for region in item.regions})),
+            source_text_digest=hashlib.sha256(rendered_text.encode("utf-8")).hexdigest(),
+        )
+        nodes.append(node)
+        parent_paths[node.id] = structural_path
+        if item.node_type == "heading":
+            section_stack.append((item.heading_level or 1, node.id, item.text))
+        elif item.node_type == "list_item":
+            list_stack.append((min(region.left for region in item.regions), node.id))
+    return logical_text, display_text, tuple(nodes), tuple(source_regions)
+
+
+def _render_layout_text(
+    layout_items: tuple[_LayoutItem, ...],
+) -> tuple[str, tuple[tuple[int, int], ...]]:
+    parts: list[str] = []
+    ranges: list[tuple[int, int]] = []
+    cursor = 0
+    for item in layout_items:
+        if parts:
+            parts.append("\n")
+            cursor += 1
+        rendered_text = _rendered_layout_item_text(item)
+        start = cursor
+        parts.append(rendered_text)
+        cursor += len(rendered_text)
+        ranges.append((start, cursor))
+    return "".join(parts), tuple(ranges)
+
+
+def _rendered_layout_item_text(item: _LayoutItem) -> str:
+    return f"{item.marker} {item.text}" if item.marker else item.text
 
 
 def _quality_report(
@@ -926,10 +1256,12 @@ def _quality_report(
     nodes: tuple[DocumentNode, ...],
     source_regions: tuple[SourceRegion, ...],
     logical_text: str,
+    display_text: str,
 ) -> ParseQualityReport:
     expected_pages = {page.page_number for page in page_geometry}
     covered_pages = {region.page_number for region in source_regions}
     content_nodes = nodes[1:]
+    logical_nodes = tuple(node for node in content_nodes if node.node_type != "furniture")
     issues: list[str] = []
     if not logical_text:
         issues.append("empty_logical_text")
@@ -946,9 +1278,11 @@ def _quality_report(
             "page_count": len(page_geometry),
             "covered_page_count": len(covered_pages),
             "logical_text_char_count": len(logical_text),
-            "reading_order_node_count": len(content_nodes),
+            "display_text_char_count": len(display_text),
+            "reading_order_node_count": len(logical_nodes),
             "heading_node_count": sum(node.node_type == "heading" for node in content_nodes),
             "paragraph_node_count": sum(node.node_type == "paragraph" for node in content_nodes),
+            "list_item_node_count": sum(node.node_type == "list_item" for node in content_nodes),
             "furniture_node_count": sum(node.node_type == "furniture" for node in content_nodes),
             "source_region_count": len(source_regions),
         },

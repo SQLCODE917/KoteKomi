@@ -25,6 +25,13 @@ The canonical table fixture is `tables/complex_table_v1.pdf`; its exact cell,
 span, ancestry, empty-cell, multiline-cell, footnote, and region graph is in
 `gold/complex_table_v1.json`.
 
+The canonical layout fixture is
+`layout/adversarial_columns_hierarchy_v1.pdf`. Its PDF content streams are
+deliberately scrambled relative to visual order. It contains two- and
+three-column pages, repeated headers and footers, nested lists, section
+hierarchy, and a `/Rotate 90` page. Exact logical/display order and hierarchy
+are pinned in `gold/adversarial_columns_hierarchy_v1.json`.
+
 The canonical encryption fixture is `encrypted/encrypted_aes256_v1.pdf`,
 password `test`. It is deterministic AES-256 and uses fixed fixture-only entropy;
 those settings are forbidden in production. The PDF.js
