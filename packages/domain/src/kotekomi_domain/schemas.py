@@ -9,7 +9,11 @@ from pydantic import BaseModel
 
 from kotekomi_domain.models import (
     Actor,
+    AnalysisItemAttempt,
+    AnalysisItemManifestSelection,
+    AnalysisItemTaskSelection,
     AnalysisPlanArtifact,
+    AnalysisRunArtifact,
     AnalysisUnitArtifact,
     ArgumentEdge,
     Assertion,
@@ -33,6 +37,7 @@ from kotekomi_domain.models import (
     Outcome,
     ParseQualityReport,
     Place,
+    PlannedAnalysisItem,
     ProcessingAttempt,
     ProcessingAttemptOutcome,
     ProcessingTaskFingerprint,
@@ -51,6 +56,11 @@ type DomainModelType = type[BaseModel]
 DOMAIN_SCHEMA_MODELS: dict[str, DomainModelType] = {
     "actor.schema.json": Actor,
     "analysis_plan_artifact.schema.json": AnalysisPlanArtifact,
+    "analysis_run_artifact.schema.json": AnalysisRunArtifact,
+    "analysis_item_attempt.schema.json": AnalysisItemAttempt,
+    "analysis_item_manifest_selection.schema.json": AnalysisItemManifestSelection,
+    "analysis_item_task_selection.schema.json": AnalysisItemTaskSelection,
+    "planned_analysis_item.schema.json": PlannedAnalysisItem,
     "analysis_unit_artifact.schema.json": AnalysisUnitArtifact,
     "argument_edge.schema.json": ArgumentEdge,
     "assertion.schema.json": Assertion,

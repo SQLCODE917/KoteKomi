@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "analysis_run_id": {
+      "pattern": "^arn_[A-Za-z0-9][A-Za-z0-9_-]*$",
+      "title": "Analysis Run Id",
+      "type": "string"
+    },
+    "analysis_unit_id": {
+      "pattern": "^anu_[A-Za-z0-9][A-Za-z0-9_-]*$",
+      "title": "Analysis Unit Id",
+      "type": "string"
+    },
+    "dependencies": {
+      "items": {
+        "pattern": "^pai_[A-Za-z0-9][A-Za-z0-9_-]*$",
+        "type": "string"
+      },
+      "title": "Dependencies",
+      "type": "array"
+    },
+    "id": {
+      "pattern": "^pai_[A-Za-z0-9][A-Za-z0-9_-]*$",
+      "title": "Id",
+      "type": "string"
+    },
+    "input_fingerprint": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Input Fingerprint",
+      "type": "string"
+    },
+    "ordinal": {
+      "minimum": 0,
+      "title": "Ordinal",
+      "type": "integer"
+    },
+    "required": {
+      "title": "Required",
+      "type": "boolean"
+    },
+    "task_type": {
+      "minLength": 1,
+      "title": "Task Type",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "analysis_run_id",
+    "analysis_unit_id",
+    "task_type",
+    "required",
+    "ordinal",
+    "input_fingerprint"
+  ],
+  "title": "PlannedAnalysisItem",
+  "type": "object"
+}

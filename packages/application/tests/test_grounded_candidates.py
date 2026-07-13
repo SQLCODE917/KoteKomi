@@ -6,6 +6,8 @@ from typing import cast
 import pytest
 from kotekomi_application import (
     AnalysisCoverageState,
+    AnalysisRunInput,
+    AnalysisRunItemInput,
     AnalysisUnitCoverageStatus,
     AnalysisUnitPlanningInput,
     BoundedExtractionInput,
@@ -27,7 +29,7 @@ from kotekomi_application import (
     StagedClaimTaskSchemaRegistry,
     Uuid4ModelRunIdFactory,
     build_context_manifest,
-    build_document_coverage_report,
+    build_coverage_report,
     build_grounded_candidate_context,
     freeze_analysis_plan,
     generation_parameters_digest,
@@ -35,12 +37,18 @@ from kotekomi_application import (
     model_execution_spec_digest,
     model_identity_snapshot_digest,
     plan_analysis_units,
+    record_analysis_item_attempt,
     run_bounded_extraction,
     staged_claim_output_schema_bytes,
+    start_analysis_run,
     submit_grounded_candidate_batch,
 )
 from kotekomi_domain import (
+    AnalysisItemAttempt,
+    AnalysisItemManifestSelection,
+    AnalysisItemTaskSelection,
     AnalysisPlanArtifact,
+    AnalysisRunArtifact,
     AnalysisUnitArtifact,
     ContextManifestArtifact,
     Document,
@@ -53,6 +61,8 @@ from kotekomi_domain import (
     ModelRun,
     ModelRunStatus,
     ParseQualityReport,
+    PlannedAnalysisItem,
+    ProcessingAttempt,
     ProposedChange,
     ProvenanceActivity,
     RepresentationAnalyzability,
@@ -87,9 +97,15 @@ class FakeGroundedCandidateLedger:
         self.proposed_changes: dict[str, ProposedChange] = {}
         self.extraction_tasks: dict[str, ExtractionTask] = {}
         self.model_runs: dict[str, ModelRun] = {}
+        self.model_run_proposed_changes: dict[str, tuple[str, ...]] = {}
         self.manifests: dict[str, ContextManifestArtifact] = {}
         self.analysis_units: dict[str, AnalysisUnitArtifact] = {}
         self.analysis_plans: dict[str, AnalysisPlanArtifact] = {}
+        self.analysis_runs: dict[str, AnalysisRunArtifact] = {}
+        self.planned_analysis_items: dict[str, PlannedAnalysisItem] = {}
+        self.manifest_selections: dict[str, AnalysisItemManifestSelection] = {}
+        self.task_selections: dict[str, AnalysisItemTaskSelection] = {}
+        self.analysis_item_attempts: dict[str, AnalysisItemAttempt] = {}
         self.fail_successful_commit = False
 
     def get_source(self, record_id: str) -> Source | None:
@@ -152,6 +168,9 @@ class FakeGroundedCandidateLedger:
             proposed_changes=batch.proposed_changes,
         )
         self.save_model_run(model_run)
+        self.model_run_proposed_changes[model_run.id] = tuple(
+            record.id for record in batch.proposed_changes
+        )
 
     def save_context_manifest_artifact(self, record: ContextManifestArtifact) -> None:
         self.manifests[record.id] = record
@@ -171,26 +190,88 @@ class FakeGroundedCandidateLedger:
     def get_analysis_plan_artifact(self, record_id: str) -> AnalysisPlanArtifact | None:
         return self.analysis_plans.get(record_id)
 
-    def list_context_manifest_artifacts_for_representation(
-        self, representation_id: str
-    ) -> tuple[ContextManifestArtifact, ...]:
+    def commit_analysis_run_scope(
+        self,
+        *,
+        analysis_run: AnalysisRunArtifact,
+        planned_items: tuple[PlannedAnalysisItem, ...],
+        manifest_selections: tuple[AnalysisItemManifestSelection, ...],
+        task_selections: tuple[AnalysisItemTaskSelection, ...],
+    ) -> None:
+        self.analysis_runs[analysis_run.id] = analysis_run
+        self.planned_analysis_items.update({record.id: record for record in planned_items})
+        self.manifest_selections.update({record.id: record for record in manifest_selections})
+        self.task_selections.update({record.id: record for record in task_selections})
+
+    def get_analysis_run(self, record_id: str) -> AnalysisRunArtifact | None:
+        return self.analysis_runs.get(record_id)
+
+    def list_planned_analysis_items(self, analysis_run_id: str) -> tuple[PlannedAnalysisItem, ...]:
         return tuple(
-            artifact
-            for artifact in self.manifests.values()
-            if artifact.representation_id == representation_id
+            record
+            for record in self.planned_analysis_items.values()
+            if record.analysis_run_id == analysis_run_id
         )
 
-    def list_extraction_tasks(self) -> tuple[ExtractionTask, ...]:
-        return tuple(self.extraction_tasks.values())
+    def list_analysis_item_manifest_selections(
+        self, item_ids: tuple[str, ...]
+    ) -> tuple[AnalysisItemManifestSelection, ...]:
+        return tuple(
+            record
+            for record in self.manifest_selections.values()
+            if record.planned_item_id in item_ids
+        )
 
-    def list_model_runs(self) -> tuple[ModelRun, ...]:
-        return tuple(self.model_runs.values())
+    def list_analysis_item_task_selections(
+        self, item_ids: tuple[str, ...]
+    ) -> tuple[AnalysisItemTaskSelection, ...]:
+        return tuple(
+            record for record in self.task_selections.values() if record.planned_item_id in item_ids
+        )
 
-    def list_provenance_activities(self) -> tuple[ProvenanceActivity, ...]:
-        return tuple(self.provenance_activities.values())
+    def save_analysis_item_attempt(self, record: AnalysisItemAttempt) -> None:
+        self.analysis_item_attempts[record.id] = record
 
-    def list_proposed_changes(self) -> tuple[ProposedChange, ...]:
-        return tuple(self.proposed_changes.values())
+    def list_analysis_item_attempts(
+        self, item_ids: tuple[str, ...]
+    ) -> tuple[AnalysisItemAttempt, ...]:
+        return tuple(
+            record
+            for record in self.analysis_item_attempts.values()
+            if record.planned_item_id in item_ids
+        )
+
+    def get_context_manifests_by_ids(
+        self, record_ids: tuple[str, ...]
+    ) -> tuple[ContextManifestArtifact, ...]:
+        return tuple(
+            self.manifests[record_id] for record_id in record_ids if record_id in self.manifests
+        )
+
+    def get_extraction_tasks_by_ids(
+        self, record_ids: tuple[str, ...]
+    ) -> tuple[ExtractionTask, ...]:
+        return tuple(
+            self.extraction_tasks[record_id]
+            for record_id in record_ids
+            if record_id in self.extraction_tasks
+        )
+
+    def get_model_runs_by_ids(self, record_ids: tuple[str, ...]) -> tuple[ModelRun, ...]:
+        return tuple(
+            self.model_runs[record_id] for record_id in record_ids if record_id in self.model_runs
+        )
+
+    def get_processing_attempts_by_ids(
+        self, record_ids: tuple[str, ...]
+    ) -> tuple[ProcessingAttempt, ...]:
+        return ()
+
+    def list_proposed_changes_for_model_run(self, model_run_id: str) -> tuple[ProposedChange, ...]:
+        return tuple(
+            self.proposed_changes[proposal_id]
+            for proposal_id in self.model_run_proposed_changes.get(model_run_id, ())
+        )
 
     def commit_context_planning_outcome(
         self,
@@ -1063,18 +1144,29 @@ def test_frozen_analysis_plan_requires_every_unit_to_reconcile_before_completion
     frozen = freeze_analysis_plan(plan, ledger)
     assert load_frozen_analysis_plan(frozen.id, ledger) == frozen
 
-    incomplete = build_document_coverage_report(frozen.id, ledger)
-    assert incomplete.state is AnalysisCoverageState.INCOMPLETE
-    assert incomplete.unit_coverages == (
-        incomplete.unit_coverages[0].__class__(
-            plan.units[0].id,
-            AnalysisUnitCoverageStatus.UNREPORTED,
-            None,
-            None,
-            (),
-            "missing_manifest",
+    incomplete_run = start_analysis_run(
+        AnalysisRunInput(
+            document_id=ledger.document.id,
+            frozen_plan_id=frozen.id,
+            coverage_policy_id="fixture_coverage_policy_v1",
+            coverage_policy_digest=hashlib.sha256(b"fixture_coverage_policy_v1").hexdigest(),
+            started_at=NOW,
+            items=(
+                AnalysisRunItemInput(
+                    analysis_unit_id=plan.units[0].id,
+                    task_type="claim_extraction",
+                    input_fingerprint=hashlib.sha256(b"no-task-yet").hexdigest(),
+                    context_manifest_id=None,
+                    extraction_task_id=None,
+                ),
+            ),
         ),
+        ledger,
     )
+    incomplete = build_coverage_report(incomplete_run.analysis_run.id, ledger)
+    assert incomplete.state is AnalysisCoverageState.INCOMPLETE
+    assert incomplete.unit_coverages[0].status is AnalysisUnitCoverageStatus.UNREPORTED
+    assert incomplete.unit_coverages[0].reason == "missing_manifest"
 
     manifest = build_context_manifest(
         ContextManifestInput(
@@ -1110,10 +1202,36 @@ def test_frozen_analysis_plan_requires_every_unit_to_reconcile_before_completion
     )
     assert outcome.proposed_change_batch is not None
 
-    complete = build_document_coverage_report(frozen.id, ledger)
+    complete_run = start_analysis_run(
+        AnalysisRunInput(
+            document_id=ledger.document.id,
+            frozen_plan_id=frozen.id,
+            coverage_policy_id="fixture_coverage_policy_v1",
+            coverage_policy_digest=hashlib.sha256(b"fixture_coverage_policy_v1").hexdigest(),
+            started_at=NOW,
+            items=(
+                AnalysisRunItemInput(
+                    analysis_unit_id=plan.units[0].id,
+                    task_type=outcome.extraction_task.task_type,
+                    input_fingerprint=outcome.extraction_task.task_fingerprint,
+                    context_manifest_id=manifest.id,
+                    extraction_task_id=outcome.extraction_task.id,
+                ),
+            ),
+        ),
+        ledger,
+    )
+    record_analysis_item_attempt(
+        analysis_run_id=complete_run.analysis_run.id,
+        analysis_unit_id=plan.units[0].id,
+        model_run_id=outcome.model_run.id,
+        ledger_repository=ledger,
+    )
+    complete = build_coverage_report(complete_run.analysis_run.id, ledger)
     assert complete.state is AnalysisCoverageState.COMPLETE
     assert complete.unit_coverages[0].status is AnalysisUnitCoverageStatus.PROCESSED_WITH_PROPOSALS
     assert complete.unit_coverages[0].proposal_ids == tuple(
         sorted(outcome.proposed_change_batch.proposed_change_ids_by_local_id.values())
     )
     assert complete.orphan_model_run_ids == ()
+    assert build_coverage_report(incomplete_run.analysis_run.id, ledger) == incomplete

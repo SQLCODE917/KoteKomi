@@ -49,6 +49,11 @@ SourceRegionId = Annotated[str, Field(pattern=r"^srg_[A-Za-z0-9][A-Za-z0-9_-]*$"
 ContextManifestId = Annotated[str, Field(pattern=r"^ctx_[A-Za-z0-9][A-Za-z0-9_-]*$")]
 AnalysisUnitId = Annotated[str, Field(pattern=r"^anu_[A-Za-z0-9][A-Za-z0-9_-]*$")]
 AnalysisPlanId = Annotated[str, Field(pattern=r"^anp_[A-Za-z0-9][A-Za-z0-9_-]*$")]
+AnalysisRunId = Annotated[str, Field(pattern=r"^arn_[A-Za-z0-9][A-Za-z0-9_-]*$")]
+PlannedAnalysisItemId = Annotated[str, Field(pattern=r"^pai_[A-Za-z0-9][A-Za-z0-9_-]*$")]
+AnalysisItemManifestSelectionId = Annotated[str, Field(pattern=r"^ams_[A-Za-z0-9][A-Za-z0-9_-]*$")]
+AnalysisItemTaskSelectionId = Annotated[str, Field(pattern=r"^ats_[A-Za-z0-9][A-Za-z0-9_-]*$")]
+AnalysisItemAttemptId = Annotated[str, Field(pattern=r"^aia_[A-Za-z0-9][A-Za-z0-9_-]*$")]
 ExtractionTaskId = Annotated[str, Field(pattern=r"^ext_[A-Za-z0-9][A-Za-z0-9_-]*$")]
 ModelRunId = Annotated[str, Field(pattern=r"^mrn_[A-Za-z0-9][A-Za-z0-9_-]*$")]
 
@@ -999,6 +1004,57 @@ class AnalysisPlanArtifact(DomainModel):
     plan_digest: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
     payload: dict[str, JsonValue]
     created_at: datetime | None = None
+
+
+class AnalysisRunArtifact(DomainModel):
+    id: AnalysisRunId
+    document_id: DocumentId
+    representation_id: DocumentRepresentationId
+    analysis_plan_id: AnalysisPlanId
+    frozen_plan_digest: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
+    coverage_policy_id: NonEmptyStr
+    coverage_policy_digest: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
+    scope_digest: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
+    started_at: datetime
+
+
+class PlannedAnalysisItem(DomainModel):
+    id: PlannedAnalysisItemId
+    analysis_run_id: AnalysisRunId
+    analysis_unit_id: AnalysisUnitId
+    task_type: NonEmptyStr
+    required: bool
+    ordinal: Annotated[int, Field(ge=0)]
+    dependencies: tuple[PlannedAnalysisItemId, ...] = Field(default_factory=tuple)
+    input_fingerprint: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
+
+
+class AnalysisItemManifestSelection(DomainModel):
+    id: AnalysisItemManifestSelectionId
+    planned_item_id: PlannedAnalysisItemId
+    context_manifest_id: ContextManifestId
+    selection_role: NonEmptyStr
+
+
+class AnalysisItemTaskSelection(DomainModel):
+    id: AnalysisItemTaskSelectionId
+    planned_item_id: PlannedAnalysisItemId
+    extraction_task_id: ExtractionTaskId
+    selection_role: NonEmptyStr
+
+
+class AnalysisItemAttempt(DomainModel):
+    id: AnalysisItemAttemptId
+    planned_item_id: PlannedAnalysisItemId
+    execution_role: NonEmptyStr
+    processing_attempt_id: ProcessingAttemptId | None = None
+    model_run_id: ModelRunId | None = None
+
+    @model_validator(mode="after")
+    def validate_execution_reference(self) -> Self:
+        if (self.processing_attempt_id is None) == (self.model_run_id is None):
+            raise ValueError("AnalysisItemAttempt must reference exactly one execution record.")
+        return self
 
 
 class ModelRun(DomainModel):

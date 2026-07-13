@@ -24,7 +24,11 @@ from kotekomi_application.record_serialization import canonical_record_json
 from kotekomi_application.representation_identity import deterministic_representation_id
 from kotekomi_domain import (
     Actor,
+    AnalysisItemAttempt,
+    AnalysisItemManifestSelection,
+    AnalysisItemTaskSelection,
     AnalysisPlanArtifact,
+    AnalysisRunArtifact,
     AnalysisUnitArtifact,
     ArgumentEdge,
     Assertion,
@@ -49,6 +53,7 @@ from kotekomi_domain import (
     Outcome,
     ParseQualityReport,
     Place,
+    PlannedAnalysisItem,
     ProcessingAttempt,
     ProcessingAttemptOutcome,
     ProcessingTaskFingerprint,
@@ -111,6 +116,11 @@ IMMUTABLE_TABLES = frozenset(
         "context_manifest_artifacts",
         "analysis_unit_artifacts",
         "analysis_plan_artifacts",
+        "analysis_runs",
+        "planned_analysis_items",
+        "analysis_item_manifest_selections",
+        "analysis_item_task_selections",
+        "analysis_item_attempts",
         "extraction_tasks",
         "model_runs",
     }
@@ -150,6 +160,35 @@ RELATIONAL_OWNERSHIP_COLUMNS: dict[str, tuple[tuple[str, str], ...]] = {
     "analysis_plan_artifacts": (
         ("representation_id", "representation_id"),
         ("plan_digest", "plan_digest"),
+    ),
+    "analysis_runs": (
+        ("document_id", "document_id"),
+        ("representation_id", "representation_id"),
+        ("analysis_plan_id", "analysis_plan_id"),
+        ("frozen_plan_digest", "frozen_plan_digest"),
+        ("coverage_policy_id", "coverage_policy_id"),
+        ("coverage_policy_digest", "coverage_policy_digest"),
+        ("scope_digest", "scope_digest"),
+    ),
+    "planned_analysis_items": (
+        ("analysis_run_id", "analysis_run_id"),
+        ("analysis_unit_id", "analysis_unit_id"),
+    ),
+    "analysis_item_manifest_selections": (
+        ("planned_item_id", "planned_item_id"),
+        ("context_manifest_id", "context_manifest_id"),
+        ("selection_role", "selection_role"),
+    ),
+    "analysis_item_task_selections": (
+        ("planned_item_id", "planned_item_id"),
+        ("extraction_task_id", "extraction_task_id"),
+        ("selection_role", "selection_role"),
+    ),
+    "analysis_item_attempts": (
+        ("planned_item_id", "planned_item_id"),
+        ("processing_attempt_id", "processing_attempt_id"),
+        ("model_run_id", "model_run_id"),
+        ("execution_role", "execution_role"),
     ),
     "extraction_tasks": (
         ("context_manifest_id", "context_manifest_id"),
@@ -211,6 +250,15 @@ EVIDENCE_REANCHORING_RELATION_SPEC = RecordSpec(
 CONTEXT_MANIFEST_ARTIFACT_SPEC = RecordSpec("context_manifest_artifacts", ContextManifestArtifact)
 ANALYSIS_UNIT_ARTIFACT_SPEC = RecordSpec("analysis_unit_artifacts", AnalysisUnitArtifact)
 ANALYSIS_PLAN_ARTIFACT_SPEC = RecordSpec("analysis_plan_artifacts", AnalysisPlanArtifact)
+ANALYSIS_RUN_SPEC = RecordSpec("analysis_runs", AnalysisRunArtifact)
+PLANNED_ANALYSIS_ITEM_SPEC = RecordSpec("planned_analysis_items", PlannedAnalysisItem)
+ANALYSIS_ITEM_MANIFEST_SELECTION_SPEC = RecordSpec(
+    "analysis_item_manifest_selections", AnalysisItemManifestSelection
+)
+ANALYSIS_ITEM_TASK_SELECTION_SPEC = RecordSpec(
+    "analysis_item_task_selections", AnalysisItemTaskSelection
+)
+ANALYSIS_ITEM_ATTEMPT_SPEC = RecordSpec("analysis_item_attempts", AnalysisItemAttempt)
 EXTRACTION_TASK_SPEC = RecordSpec("extraction_tasks", ExtractionTask)
 MODEL_RUN_SPEC = RecordSpec("model_runs", ModelRun)
 ASSERTION_SPEC = RecordSpec("assertions", Assertion)
@@ -262,6 +310,12 @@ REQUIRED_LEDGER_TABLES = (
     "context_manifest_artifacts",
     "analysis_unit_artifacts",
     "analysis_plan_artifacts",
+    "analysis_runs",
+    "planned_analysis_items",
+    "analysis_item_manifest_selections",
+    "analysis_item_task_selections",
+    "analysis_item_attempts",
+    "model_run_proposed_changes",
     "extraction_tasks",
     "model_runs",
     "assertions",
@@ -472,6 +526,41 @@ class SQLiteLedgerRepository:
         rows = self._connection.execute(
             f"SELECT payload_json FROM {spec.table_name} WHERE {owner_column} = ? ORDER BY id",
             (owner_id,),
+        ).fetchall()
+        return tuple(spec.model_type.model_validate_json(str(row[0])) for row in rows)
+
+    def _get_by_ids(
+        self, spec: RecordSpec[DomainRecord], record_ids: tuple[str, ...]
+    ) -> tuple[DomainRecord, ...]:
+        """Load only explicitly named immutable records.
+
+        Coverage reconciliation must never discover its scope by scanning a
+        representation or the corpus.  This helper deliberately has no
+        fallback to ``_list``.
+        """
+        if not record_ids:
+            return ()
+        placeholders = ", ".join("?" for _ in record_ids)
+        rows = self._connection.execute(
+            f"SELECT payload_json FROM {spec.table_name} WHERE id IN ({placeholders}) ORDER BY id",
+            record_ids,
+        ).fetchall()
+        return tuple(spec.model_type.model_validate_json(str(row[0])) for row in rows)
+
+    def _list_by_ids(
+        self,
+        spec: RecordSpec[DomainRecord],
+        owner_column: str,
+        owner_ids: tuple[str, ...],
+    ) -> tuple[DomainRecord, ...]:
+        """Load children for an explicit parent-ID set only."""
+        if not owner_ids:
+            return ()
+        placeholders = ", ".join("?" for _ in owner_ids)
+        rows = self._connection.execute(
+            f"SELECT payload_json FROM {spec.table_name} "
+            f"WHERE {owner_column} IN ({placeholders}) ORDER BY {owner_column}, id",
+            owner_ids,
         ).fetchall()
         return tuple(spec.model_type.model_validate_json(str(row[0])) for row in rows)
 
@@ -886,6 +975,84 @@ class SQLiteLedgerRepository:
     def get_analysis_plan_artifact(self, record_id: str) -> AnalysisPlanArtifact | None:
         return self._get(ANALYSIS_PLAN_ARTIFACT_SPEC, record_id)
 
+    def save_analysis_run(self, record: AnalysisRunArtifact) -> None:
+        self._save(ANALYSIS_RUN_SPEC, record)
+
+    def get_analysis_run(self, record_id: str) -> AnalysisRunArtifact | None:
+        return self._get(ANALYSIS_RUN_SPEC, record_id)
+
+    def commit_analysis_run_scope(
+        self,
+        *,
+        analysis_run: AnalysisRunArtifact,
+        planned_items: tuple[PlannedAnalysisItem, ...],
+        manifest_selections: tuple[AnalysisItemManifestSelection, ...],
+        task_selections: tuple[AnalysisItemTaskSelection, ...],
+    ) -> None:
+        """Publish one immutable run scope and all normalized bindings atomically."""
+        self._connection.execute("SAVEPOINT analysis_run_scope")
+        try:
+            self.save_analysis_run(analysis_run)
+            for record in planned_items:
+                self.save_planned_analysis_item(record)
+            for record in manifest_selections:
+                self.save_analysis_item_manifest_selection(record)
+            for record in task_selections:
+                self.save_analysis_item_task_selection(record)
+        except Exception:
+            self._connection.execute("ROLLBACK TO SAVEPOINT analysis_run_scope")
+            self._connection.execute("RELEASE SAVEPOINT analysis_run_scope")
+            raise
+        self._connection.execute("RELEASE SAVEPOINT analysis_run_scope")
+
+    def save_planned_analysis_item(self, record: PlannedAnalysisItem) -> None:
+        self._save(PLANNED_ANALYSIS_ITEM_SPEC, record)
+
+    def list_planned_analysis_items(self, analysis_run_id: str) -> tuple[PlannedAnalysisItem, ...]:
+        return self._list_for_owner(PLANNED_ANALYSIS_ITEM_SPEC, "analysis_run_id", analysis_run_id)
+
+    def save_analysis_item_manifest_selection(self, record: AnalysisItemManifestSelection) -> None:
+        self._save(ANALYSIS_ITEM_MANIFEST_SELECTION_SPEC, record)
+
+    def list_analysis_item_manifest_selections(
+        self, item_ids: tuple[str, ...]
+    ) -> tuple[AnalysisItemManifestSelection, ...]:
+        return self._list_by_ids(ANALYSIS_ITEM_MANIFEST_SELECTION_SPEC, "planned_item_id", item_ids)
+
+    def save_analysis_item_task_selection(self, record: AnalysisItemTaskSelection) -> None:
+        self._save(ANALYSIS_ITEM_TASK_SELECTION_SPEC, record)
+
+    def list_analysis_item_task_selections(
+        self, item_ids: tuple[str, ...]
+    ) -> tuple[AnalysisItemTaskSelection, ...]:
+        return self._list_by_ids(ANALYSIS_ITEM_TASK_SELECTION_SPEC, "planned_item_id", item_ids)
+
+    def save_analysis_item_attempt(self, record: AnalysisItemAttempt) -> None:
+        self._save(ANALYSIS_ITEM_ATTEMPT_SPEC, record)
+
+    def list_analysis_item_attempts(
+        self, item_ids: tuple[str, ...]
+    ) -> tuple[AnalysisItemAttempt, ...]:
+        return self._list_by_ids(ANALYSIS_ITEM_ATTEMPT_SPEC, "planned_item_id", item_ids)
+
+    def get_context_manifests_by_ids(
+        self, record_ids: tuple[str, ...]
+    ) -> tuple[ContextManifestArtifact, ...]:
+        return self._get_by_ids(CONTEXT_MANIFEST_ARTIFACT_SPEC, record_ids)
+
+    def get_extraction_tasks_by_ids(
+        self, record_ids: tuple[str, ...]
+    ) -> tuple[ExtractionTask, ...]:
+        return self._get_by_ids(EXTRACTION_TASK_SPEC, record_ids)
+
+    def get_model_runs_by_ids(self, record_ids: tuple[str, ...]) -> tuple[ModelRun, ...]:
+        return self._get_by_ids(MODEL_RUN_SPEC, record_ids)
+
+    def get_processing_attempts_by_ids(
+        self, record_ids: tuple[str, ...]
+    ) -> tuple[ProcessingAttempt, ...]:
+        return self._get_by_ids(PROCESSING_ATTEMPT_SPEC, record_ids)
+
     def commit_context_planning_outcome(
         self,
         *,
@@ -966,6 +1133,15 @@ class SQLiteLedgerRepository:
             )
             self._successful_model_run_publication_checkpoint("BEFORE_SUCCESSFUL_MODEL_RUN")
             self.save_model_run(model_run)
+            for proposed_change in batch.proposed_changes:
+                self._connection.execute(
+                    """
+                    INSERT INTO model_run_proposed_changes (model_run_id, proposed_change_id)
+                    VALUES (?, ?)
+                    ON CONFLICT(model_run_id, proposed_change_id) DO NOTHING
+                    """,
+                    (model_run.id, proposed_change.id),
+                )
             self._successful_model_run_publication_checkpoint("AFTER_SUCCESSFUL_MODEL_RUN")
             self._successful_model_run_publication_checkpoint("BEFORE_SAVEPOINT_RELEASE")
         except Exception:
@@ -1311,6 +1487,24 @@ class SQLiteLedgerRepository:
 
     def list_proposed_changes(self) -> tuple[ProposedChange, ...]:
         return self._list(PROPOSED_CHANGE_SPEC)
+
+    def list_proposed_changes_for_model_run(self, model_run_id: str) -> tuple[ProposedChange, ...]:
+        """Return proposals whose creating activity explicitly names one run.
+
+        The immutable relation is created atomically with successful model-run
+        publication.  This keeps the reconciliation read index-targeted.
+        """
+        rows = self._connection.execute(
+            """
+            SELECT proposed.payload_json
+            FROM model_run_proposed_changes AS link
+            JOIN proposed_changes AS proposed ON proposed.id = link.proposed_change_id
+            WHERE link.model_run_id = ?
+            ORDER BY link.proposed_change_id
+            """,
+            (model_run_id,),
+        ).fetchall()
+        return tuple(ProposedChange.model_validate_json(str(row[0])) for row in rows)
 
     def save_briefing(self, record: Briefing) -> None:
         self._save(BRIEFING_SPEC, record)

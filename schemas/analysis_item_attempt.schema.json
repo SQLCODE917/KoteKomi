@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "execution_role": {
+      "minLength": 1,
+      "title": "Execution Role",
+      "type": "string"
+    },
+    "id": {
+      "pattern": "^aia_[A-Za-z0-9][A-Za-z0-9_-]*$",
+      "title": "Id",
+      "type": "string"
+    },
+    "model_run_id": {
+      "anyOf": [
+        {
+          "pattern": "^mrn_[A-Za-z0-9][A-Za-z0-9_-]*$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Model Run Id"
+    },
+    "planned_item_id": {
+      "pattern": "^pai_[A-Za-z0-9][A-Za-z0-9_-]*$",
+      "title": "Planned Item Id",
+      "type": "string"
+    },
+    "processing_attempt_id": {
+      "anyOf": [
+        {
+          "pattern": "^pat_[A-Za-z0-9][A-Za-z0-9_-]*$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Processing Attempt Id"
+    }
+  },
+  "required": [
+    "id",
+    "planned_item_id",
+    "execution_role"
+  ],
+  "title": "AnalysisItemAttempt",
+  "type": "object"
+}

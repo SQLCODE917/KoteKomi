@@ -13,6 +13,8 @@ from kotekomi_adapters import (
 from kotekomi_adapters.docling_pdf_parser import DoclingPdfParser, DoclingPdfParserConfig
 from kotekomi_application import (
     AnalysisCoverageState,
+    AnalysisRunInput,
+    AnalysisRunItemInput,
     AnalysisUnitPlanningInput,
     BoundedExtractionInput,
     BoundedExtractionOutcome,
@@ -47,7 +49,7 @@ from kotekomi_application import (
     Uuid4ProcessingAttemptIdFactory,
     approve_proposed_change,
     build_context_manifest,
-    build_document_coverage_report,
+    build_coverage_report,
     build_grounded_candidate_context,
     capture_identity,
     capture_source,
@@ -58,9 +60,11 @@ from kotekomi_application import (
     load_split_analysis_units,
     model_identity_snapshot_digest,
     plan_analysis_units,
+    record_analysis_item_attempt,
     render_context,
     run_bounded_extraction,
     staged_claim_output_schema_bytes,
+    start_analysis_run,
     submit_grounded_candidate_batch,
     verify_evidence_target,
 )
@@ -722,13 +726,94 @@ def test_docling_r1d_staged_extraction_publishes_one_task_local_candidate(
         )
         assert alternate_assertion_change_id != assertion_change.id
         assert repository.get_proposed_change(assertion_change.id) == reviewed_change
-        incomplete_coverage = build_document_coverage_report(frozen_analysis_plan.id, repository)
+        analysis_run = start_analysis_run(
+            AnalysisRunInput(
+                document_id=capture.document.id,
+                frozen_plan_id=frozen_analysis_plan.id,
+                coverage_policy_id="r1d_coverage_v1",
+                coverage_policy_digest=hashlib.sha256(b"r1d_coverage_v1").hexdigest(),
+                started_at=NOW,
+                items=tuple(
+                    AnalysisRunItemInput(
+                        analysis_unit_id=unit.id,
+                        task_type=unit.task_type,
+                        input_fingerprint=(
+                            outcome.extraction_task.task_fingerprint
+                            if unit.id == focus_unit.id
+                            else hashlib.sha256(unit.id.encode()).hexdigest()
+                        ),
+                        context_manifest_id=(manifest.id if unit.id == focus_unit.id else None),
+                        extraction_task_id=(
+                            outcome.extraction_task.id if unit.id == focus_unit.id else None
+                        ),
+                    )
+                    for unit in analysis_plan.units
+                ),
+            ),
+            repository,
+        )
+        record_analysis_item_attempt(
+            analysis_run_id=analysis_run.analysis_run.id,
+            analysis_unit_id=focus_unit.id,
+            model_run_id=outcome.model_run.id,
+            ledger_repository=repository,
+        )
+        incomplete_coverage = build_coverage_report(analysis_run.analysis_run.id, repository)
         assert incomplete_coverage.state is AnalysisCoverageState.INCOMPLETE
         assert incomplete_coverage.total_pages == 1
         assert incomplete_coverage.represented_page_numbers == (1,)
+        focus_coverage = next(
+            coverage
+            for coverage in incomplete_coverage.unit_coverages
+            if coverage.analysis_unit_id == focus_unit.id
+        )
+        assert focus_coverage.model_run_id == outcome.model_run.id
+        assert focus_coverage.model_run_ids == (outcome.model_run.id,)
         assert any(
             coverage.reason == "missing_manifest" for coverage in incomplete_coverage.unit_coverages
         )
+        alternate_analysis_run = start_analysis_run(
+            AnalysisRunInput(
+                document_id=capture.document.id,
+                frozen_plan_id=frozen_analysis_plan.id,
+                coverage_policy_id="r1d_alternate_coverage_v1",
+                coverage_policy_digest=hashlib.sha256(b"r1d_alternate_coverage_v1").hexdigest(),
+                started_at=NOW + timedelta(minutes=4),
+                items=tuple(
+                    AnalysisRunItemInput(
+                        analysis_unit_id=unit.id,
+                        task_type=unit.task_type,
+                        input_fingerprint=(
+                            outcome.extraction_task.task_fingerprint
+                            if unit.id == focus_unit.id
+                            else hashlib.sha256(unit.id.encode()).hexdigest()
+                        ),
+                        context_manifest_id=(manifest.id if unit.id == focus_unit.id else None),
+                        extraction_task_id=(
+                            outcome.extraction_task.id if unit.id == focus_unit.id else None
+                        ),
+                    )
+                    for unit in analysis_plan.units
+                ),
+            ),
+            repository,
+        )
+        record_analysis_item_attempt(
+            analysis_run_id=alternate_analysis_run.analysis_run.id,
+            analysis_unit_id=focus_unit.id,
+            model_run_id=alternate_outcome.model_run.id,
+            ledger_repository=repository,
+        )
+        alternate_coverage = build_coverage_report(
+            alternate_analysis_run.analysis_run.id, repository
+        )
+        alternate_focus_coverage = next(
+            coverage
+            for coverage in alternate_coverage.unit_coverages
+            if coverage.analysis_unit_id == focus_unit.id
+        )
+        assert alternate_focus_coverage.model_run_id == alternate_outcome.model_run.id
+        assert alternate_focus_coverage.model_run_ids == (alternate_outcome.model_run.id,)
 
     reopened_archive = LocalArchiveStore(archive_path)
     with sqlite_ledger_transaction(ledger_path) as repository:
@@ -777,8 +862,12 @@ def test_docling_r1d_staged_extraction_publishes_one_task_local_candidate(
         assert first_provenance is not None
         assert alternate_provenance is not None
         assert first_provenance != alternate_provenance
-        restarted_coverage = build_document_coverage_report(frozen_analysis_plan.id, repository)
+        restarted_coverage = build_coverage_report(analysis_run.analysis_run.id, repository)
         assert restarted_coverage == incomplete_coverage
+        assert (
+            build_coverage_report(alternate_analysis_run.analysis_run.id, repository)
+            == alternate_coverage
+        )
 
     assert len(runtime.requests) == 2
     assert runtime.requests[0].context_manifest_id == manifest.id

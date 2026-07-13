@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "analysis_plan_id": {
+      "pattern": "^anp_[A-Za-z0-9][A-Za-z0-9_-]*$",
+      "title": "Analysis Plan Id",
+      "type": "string"
+    },
+    "coverage_policy_digest": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Coverage Policy Digest",
+      "type": "string"
+    },
+    "coverage_policy_id": {
+      "minLength": 1,
+      "title": "Coverage Policy Id",
+      "type": "string"
+    },
+    "document_id": {
+      "pattern": "^doc_[A-Za-z0-9][A-Za-z0-9_-]*$",
+      "title": "Document Id",
+      "type": "string"
+    },
+    "frozen_plan_digest": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Frozen Plan Digest",
+      "type": "string"
+    },
+    "id": {
+      "pattern": "^arn_[A-Za-z0-9][A-Za-z0-9_-]*$",
+      "title": "Id",
+      "type": "string"
+    },
+    "representation_id": {
+      "pattern": "^rep_[A-Za-z0-9][A-Za-z0-9_-]*$",
+      "title": "Representation Id",
+      "type": "string"
+    },
+    "scope_digest": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Scope Digest",
+      "type": "string"
+    },
+    "started_at": {
+      "format": "date-time",
+      "title": "Started At",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "document_id",
+    "representation_id",
+    "analysis_plan_id",
+    "frozen_plan_digest",
+    "coverage_policy_id",
+    "coverage_policy_digest",
+    "scope_digest",
+    "started_at"
+  ],
+  "title": "AnalysisRunArtifact",
+  "type": "object"
+}
