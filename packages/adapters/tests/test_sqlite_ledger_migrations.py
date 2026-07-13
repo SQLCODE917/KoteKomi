@@ -68,6 +68,10 @@ def test_analysis_coverage_scope_queries_use_targeted_indexes(tmp_path: Path) ->
             "WHERE link.model_run_id = ? ORDER BY link.proposed_change_id",
             ("mrn_query_plan",),
         ),
+        (
+            "SELECT payload_json FROM provenance_activities WHERE id IN (?) ORDER BY id",
+            ("prv_query_plan",),
+        ),
     )
     with sqlite3.connect(ledger_path) as connection:
         plans = tuple(

@@ -12,6 +12,7 @@ from __future__ import annotations
 import hashlib
 import json
 import uuid
+from collections import Counter
 from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
@@ -31,6 +32,7 @@ from kotekomi_domain import (
     PlannedAnalysisItem,
     ProcessingAttempt,
     ProposedChange,
+    ProvenanceActivity,
 )
 from kotekomi_domain.models import JsonValue
 
@@ -71,6 +73,16 @@ class CoveragePolicyDecision(StrEnum):
     SELECTED_LATEST_COMPLETED_VALID_ATTEMPT = "selected_latest_completed_valid_attempt"
 
 
+class CoverageIntegrityFailureReason(StrEnum):
+    MISSING_MANIFEST = "missing_manifest"
+    MULTIPLE_MANIFESTS = "multiple_manifests"
+    UNEXPECTED_MANIFEST = "unexpected_manifest"
+    MISSING_SELECTED_RUN = "missing_selected_run"
+    RUN_TASK_MISMATCH = "run_task_mismatch"
+    PROPOSAL_RUN_MISMATCH = "proposal_run_mismatch"
+    SPLIT_CYCLE = "split_cycle"
+
+
 class AnalysisCoverageLedger(ContextPlanningLedger, Protocol):
     def get_document_representation_bundle(
         self, record_id: str
@@ -107,6 +119,9 @@ class AnalysisCoverageLedger(ContextPlanningLedger, Protocol):
     def list_proposed_changes_for_model_run(
         self, model_run_id: str
     ) -> tuple[ProposedChange, ...]: ...
+    def list_provenance_activities_by_ids(
+        self, record_ids: tuple[str, ...]
+    ) -> tuple[ProvenanceActivity, ...]: ...
     def get_analysis_unit_artifact(self, record_id: str) -> AnalysisUnitArtifact | None: ...
 
 
@@ -228,6 +243,7 @@ class CoverageReport:
     total_pages: int
     represented_page_numbers: tuple[int, ...]
     coverage_records: tuple[CoverageRecord, ...]
+    integrity_failure_reasons: tuple[CoverageIntegrityFailureReason, ...]
     orphan_model_run_ids: tuple[str, ...]
     report_digest: str
 
@@ -463,10 +479,10 @@ def build_coverage_report(
     manifest_ids = tuple(
         sorted({item.expected_manifest_id for item in items if item.expected_manifest_id})
     )
-    manifests = {
-        artifact.id: artifact
-        for artifact in ledger_repository.list_context_manifests_by_ids(manifest_ids)
-    }
+    manifest_records = ledger_repository.list_context_manifests_by_ids(manifest_ids)
+    requested_manifest_ids = set(manifest_ids)
+    manifest_counts = Counter(artifact.id for artifact in manifest_records)
+    manifests = {artifact.id: artifact for artifact in manifest_records}
     tasks_by_fingerprint: dict[str, tuple[ExtractionTask, ...]] = {}
     for task in ledger_repository.list_extraction_tasks_for_manifest_ids(manifest_ids):
         tasks_by_fingerprint[task.task_fingerprint] = (
@@ -488,18 +504,57 @@ def build_coverage_report(
     if coverage_policy.policy_id != run.coverage_policy_id:
         raise ValueError("AnalysisRun coverage policy implementation is unavailable.")
     coverages: dict[str, CoverageRecord] = {}
-    failed = False
+    integrity_failures: set[CoverageIntegrityFailureReason] = set()
     orphan_model_run_ids: set[str] = set()
+    if any(artifact.id not in requested_manifest_ids for artifact in manifest_records):
+        integrity_failures.add(CoverageIntegrityFailureReason.UNEXPECTED_MANIFEST)
+    duplicate_manifest_ids = {
+        manifest_id for manifest_id, count in manifest_counts.items() if count > 1
+    }
+    manifests_by_unit: dict[str, set[str]] = {}
+    for item in items:
+        if item.expected_manifest_id is not None:
+            manifests_by_unit.setdefault(item.analysis_unit_id, set()).add(
+                item.expected_manifest_id
+            )
+    multiple_manifest_item_ids = {
+        item.id
+        for item in items
+        if (
+            item.expected_manifest_id in duplicate_manifest_ids
+            or len(manifests_by_unit.get(item.analysis_unit_id, set())) > 1
+        )
+    }
 
     def reconcile(
         item: PlannedAnalysisItem, visiting: frozenset[str] = frozenset()
     ) -> CoverageRecord:
-        nonlocal failed
         if item.id in coverages:
             return coverages[item.id]
         if item.id in visiting:
-            raise ValueError("AnalysisRun planned-item dependency graph contains a cycle.")
+            integrity_failures.add(CoverageIntegrityFailureReason.SPLIT_CYCLE)
+            return _store(
+                item,
+                CoverageTerminalStatus.UNREPORTED,
+                item.expected_manifest_id,
+                None,
+                None,
+                (),
+                CoverageIntegrityFailureReason.SPLIT_CYCLE.value,
+            )
+        if item.id in multiple_manifest_item_ids:
+            integrity_failures.add(CoverageIntegrityFailureReason.MULTIPLE_MANIFESTS)
+            return _store(
+                item,
+                CoverageTerminalStatus.UNREPORTED,
+                item.expected_manifest_id,
+                None,
+                None,
+                (),
+                CoverageIntegrityFailureReason.MULTIPLE_MANIFESTS.value,
+            )
         if item.expected_manifest_id is None:
+            integrity_failures.add(CoverageIntegrityFailureReason.MISSING_MANIFEST)
             return _store(
                 item,
                 CoverageTerminalStatus.UNREPORTED,
@@ -511,7 +566,7 @@ def build_coverage_report(
             )
         artifact = manifests.get(item.expected_manifest_id)
         if artifact is None:
-            failed = True
+            integrity_failures.add(CoverageIntegrityFailureReason.MISSING_MANIFEST)
             return _store(
                 item,
                 CoverageTerminalStatus.UNREPORTED,
@@ -519,12 +574,12 @@ def build_coverage_report(
                 None,
                 None,
                 (),
-                "selected_manifest_missing",
+                CoverageIntegrityFailureReason.MISSING_MANIFEST.value,
             )
         try:
             manifest = load_context_manifest(artifact.id, ledger_repository)
         except ValueError:
-            failed = True
+            integrity_failures.add(CoverageIntegrityFailureReason.UNEXPECTED_MANIFEST)
             return _store(
                 item,
                 CoverageTerminalStatus.UNREPORTED,
@@ -532,10 +587,10 @@ def build_coverage_report(
                 None,
                 None,
                 (),
-                "manifest_integrity_failure",
+                CoverageIntegrityFailureReason.UNEXPECTED_MANIFEST.value,
             )
         if manifest.analysis_unit_id != item.analysis_unit_id:
-            failed = True
+            integrity_failures.add(CoverageIntegrityFailureReason.UNEXPECTED_MANIFEST)
             return _store(
                 item,
                 CoverageTerminalStatus.UNREPORTED,
@@ -543,10 +598,10 @@ def build_coverage_report(
                 None,
                 None,
                 (),
-                "manifest_unit_mismatch",
+                CoverageIntegrityFailureReason.UNEXPECTED_MANIFEST.value,
             )
         if manifest.representation_id != run.representation_id:
-            failed = True
+            integrity_failures.add(CoverageIntegrityFailureReason.UNEXPECTED_MANIFEST)
             return _store(
                 item,
                 CoverageTerminalStatus.UNREPORTED,
@@ -554,10 +609,10 @@ def build_coverage_report(
                 None,
                 None,
                 (),
-                "manifest_representation_mismatch",
+                CoverageIntegrityFailureReason.UNEXPECTED_MANIFEST.value,
             )
         if manifest.manifest_digest != artifact.manifest_digest:
-            failed = True
+            integrity_failures.add(CoverageIntegrityFailureReason.UNEXPECTED_MANIFEST)
             return _store(
                 item,
                 CoverageTerminalStatus.UNREPORTED,
@@ -565,7 +620,7 @@ def build_coverage_report(
                 None,
                 None,
                 (),
-                "manifest_digest_mismatch",
+                CoverageIntegrityFailureReason.UNEXPECTED_MANIFEST.value,
             )
         if manifest.status is ContextManifestStatus.CONTEXT_BUDGET_BLOCKED:
             return _store(
@@ -599,6 +654,21 @@ def build_coverage_report(
                 reconcile(child_items[child_id], visiting | {item.id})
                 for child_id in manifest.child_analysis_unit_ids
             )
+            if any(
+                child.blocking_reason == CoverageIntegrityFailureReason.SPLIT_CYCLE.value
+                for child in children
+            ):
+                integrity_failures.add(CoverageIntegrityFailureReason.SPLIT_CYCLE)
+                return _store(
+                    item,
+                    CoverageTerminalStatus.UNREPORTED,
+                    manifest.id,
+                    None,
+                    None,
+                    (),
+                    CoverageIntegrityFailureReason.SPLIT_CYCLE.value,
+                    manifest.child_analysis_unit_ids,
+                )
             resolved = all(child.terminal_status in _TERMINAL_SUCCESS for child in children)
             return _store(
                 item,
@@ -624,7 +694,7 @@ def build_coverage_report(
                 "missing_extraction_task",
             )
         if len(matching_tasks) != 1:
-            failed = True
+            integrity_failures.add(CoverageIntegrityFailureReason.RUN_TASK_MISMATCH)
             return _store(
                 item,
                 CoverageTerminalStatus.UNREPORTED,
@@ -632,14 +702,14 @@ def build_coverage_report(
                 None,
                 None,
                 (),
-                "ambiguous_extraction_task",
+                CoverageIntegrityFailureReason.RUN_TASK_MISMATCH.value,
             )
         task = matching_tasks[0]
         if (
             task.context_manifest_id != manifest.id
             or task.context_manifest_digest != manifest.manifest_digest
         ):
-            failed = True
+            integrity_failures.add(CoverageIntegrityFailureReason.RUN_TASK_MISMATCH)
             return _store(
                 item,
                 CoverageTerminalStatus.UNREPORTED,
@@ -647,10 +717,10 @@ def build_coverage_report(
                 task.id,
                 None,
                 (),
-                "task_manifest_mismatch",
+                CoverageIntegrityFailureReason.RUN_TASK_MISMATCH.value,
             )
         if task.task_type != item.task_type or task.task_fingerprint != item.input_fingerprint:
-            failed = True
+            integrity_failures.add(CoverageIntegrityFailureReason.RUN_TASK_MISMATCH)
             return _store(
                 item,
                 CoverageTerminalStatus.UNREPORTED,
@@ -658,7 +728,7 @@ def build_coverage_report(
                 task.id,
                 None,
                 (),
-                "task_input_mismatch",
+                CoverageIntegrityFailureReason.RUN_TASK_MISMATCH.value,
             )
         attempts = tuple(
             attempt
@@ -669,15 +739,35 @@ def build_coverage_report(
             )
         )
         valid_attempts: list[AnalysisItemAttempt] = []
+        missing_selected_run = False
+        run_task_mismatch = False
         for attempt in attempts:
             assert attempt.model_run_id is not None
             linked = model_runs.get(attempt.model_run_id)
-            if linked is None or linked.extraction_task_id != task.id:
+            if linked is None:
+                missing_selected_run = True
+                orphan_model_run_ids.add(attempt.model_run_id)
+            elif (
+                linked.extraction_task_id != task.id
+                or linked.task_fingerprint != item.input_fingerprint
+            ):
+                run_task_mismatch = True
                 orphan_model_run_ids.add(attempt.model_run_id)
             else:
                 valid_attempts.append(attempt)
+        if missing_selected_run:
+            integrity_failures.add(CoverageIntegrityFailureReason.MISSING_SELECTED_RUN)
+        if run_task_mismatch:
+            integrity_failures.add(CoverageIntegrityFailureReason.RUN_TASK_MISMATCH)
         selected_outcome = coverage_policy.select_current_attempt(item, tuple(valid_attempts))
         if selected_outcome.selected_attempt is None:
+            blocking_reason = (
+                CoverageIntegrityFailureReason.MISSING_SELECTED_RUN.value
+                if missing_selected_run
+                else CoverageIntegrityFailureReason.RUN_TASK_MISMATCH.value
+                if run_task_mismatch
+                else "model_task_has_no_run"
+            )
             return _store(
                 item,
                 CoverageTerminalStatus.UNREPORTED,
@@ -685,16 +775,50 @@ def build_coverage_report(
                 task.id,
                 None,
                 (),
-                "model_task_has_no_run",
+                blocking_reason,
                 policy_decision=selected_outcome.policy_decision,
             )
         selected_model_run_id = selected_outcome.selected_attempt.model_run_id
         assert selected_model_run_id is not None
         selected = model_runs[selected_model_run_id]
-        selected_proposal_ids = tuple(
-            proposal.id
-            for proposal in ledger_repository.list_proposed_changes_for_model_run(selected.id)
+        selected_proposals = ledger_repository.list_proposed_changes_for_model_run(selected.id)
+        selected_proposal_ids = tuple(proposal.id for proposal in selected_proposals)
+        provenance_ids = tuple(
+            sorted(
+                {
+                    proposal.provenance_activity_id
+                    for proposal in selected_proposals
+                    if proposal.provenance_activity_id is not None
+                }
+            )
         )
+        provenance_by_id = {
+            activity.id: activity
+            for activity in ledger_repository.list_provenance_activities_by_ids(provenance_ids)
+        }
+        proposal_run_mismatch = (
+            (bool(selected_proposals) and selected.status is not ModelRunStatus.SUCCEEDED)
+            or len(set(selected_proposal_ids)) != len(selected_proposal_ids)
+            or any(
+                proposal.provenance_activity_id is None
+                or proposal.provenance_activity_id not in provenance_by_id
+                or selected.id not in provenance_by_id[proposal.provenance_activity_id].input_ids
+                for proposal in selected_proposals
+            )
+        )
+        if proposal_run_mismatch:
+            integrity_failures.add(CoverageIntegrityFailureReason.PROPOSAL_RUN_MISMATCH)
+            return _store(
+                item,
+                CoverageTerminalStatus.UNREPORTED,
+                manifest.id,
+                task.id,
+                selected.id,
+                (),
+                CoverageIntegrityFailureReason.PROPOSAL_RUN_MISMATCH.value,
+                all_model_run_ids=selected_outcome.all_model_run_ids,
+                policy_decision=selected_outcome.policy_decision,
+            )
         if selected.status is ModelRunStatus.SUCCEEDED:
             return _store(
                 item,
@@ -772,7 +896,7 @@ def build_coverage_report(
     total_pages = len({region.page_number for region in bundle.source_regions})
     state = (
         AnalysisCoverageState.FAILED
-        if failed
+        if integrity_failures
         else AnalysisCoverageState.COMPLETE
         if all(coverage.terminal_status in _TERMINAL_SUCCESS for coverage in all_coverages)
         and len(represented_pages) == total_pages
@@ -788,6 +912,7 @@ def build_coverage_report(
         "represented_page_numbers": represented_pages,
         "coverage_policy_id": coverage_policy.policy_id,
         "coverage_records": [_coverage_payload(coverage) for coverage in all_coverages],
+        "integrity_failure_reasons": sorted(reason.value for reason in integrity_failures),
         "orphan_model_run_ids": sorted(orphan_model_run_ids),
     }
     return CoverageReport(
@@ -799,6 +924,9 @@ def build_coverage_report(
         total_pages=total_pages,
         represented_page_numbers=represented_pages,
         coverage_records=all_coverages,
+        integrity_failure_reasons=tuple(
+            sorted(integrity_failures, key=lambda reason: reason.value)
+        ),
         orphan_model_run_ids=tuple(sorted(orphan_model_run_ids)),
         report_digest=_digest(report_payload),
     )

@@ -1,4 +1,5 @@
 import hashlib
+from copy import deepcopy
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from typing import cast
@@ -13,7 +14,9 @@ from kotekomi_application import (
     BoundedExtractionInput,
     ContextManifest,
     ContextManifestInput,
+    ContextManifestStatus,
     ContextModelProfile,
+    CoverageIntegrityFailureReason,
     CoveragePolicyDecision,
     CoverageTerminalStatus,
     ExecutionSetting,
@@ -33,6 +36,7 @@ from kotekomi_application import (
     build_context_manifest,
     build_coverage_report,
     build_grounded_candidate_context,
+    context_manifest_digest,
     freeze_analysis_plan,
     generation_parameters_digest,
     load_frozen_analysis_plan,
@@ -105,6 +109,7 @@ class FakeGroundedCandidateLedger:
         self.analysis_runs: dict[str, AnalysisRun] = {}
         self.planned_analysis_items: dict[str, PlannedAnalysisItem] = {}
         self.analysis_item_attempts: dict[str, AnalysisItemAttempt] = {}
+        self.context_manifest_query_extras: tuple[ContextManifestArtifact, ...] = ()
         self.fail_successful_commit = False
 
     def get_source(self, record_id: str) -> Source | None:
@@ -225,8 +230,9 @@ class FakeGroundedCandidateLedger:
     def list_context_manifests_by_ids(
         self, record_ids: tuple[str, ...]
     ) -> tuple[ContextManifestArtifact, ...]:
-        return tuple(
-            self.manifests[record_id] for record_id in record_ids if record_id in self.manifests
+        return (
+            *(self.manifests[record_id] for record_id in record_ids if record_id in self.manifests),
+            *self.context_manifest_query_extras,
         )
 
     def list_extraction_tasks_by_ids(
@@ -261,6 +267,15 @@ class FakeGroundedCandidateLedger:
         return tuple(
             self.proposed_changes[proposal_id]
             for proposal_id in self.model_run_proposed_changes.get(model_run_id, ())
+        )
+
+    def list_provenance_activities_by_ids(
+        self, record_ids: tuple[str, ...]
+    ) -> tuple[ProvenanceActivity, ...]:
+        return tuple(
+            self.provenance_activities[record_id]
+            for record_id in record_ids
+            if record_id in self.provenance_activities
         )
 
     def commit_context_planning_outcome(
@@ -1219,7 +1234,10 @@ def test_frozen_analysis_plan_requires_every_unit_to_reconcile_before_completion
         ledger.list_planned_items_for_analysis_run(incomplete_run.id)[0].expected_manifest_id
         is None
     )
-    assert incomplete.state is AnalysisCoverageState.INCOMPLETE
+    assert incomplete.state is AnalysisCoverageState.FAILED
+    assert incomplete.integrity_failure_reasons == (
+        CoverageIntegrityFailureReason.MISSING_MANIFEST,
+    )
     assert incomplete.coverage_records[0].terminal_status is CoverageTerminalStatus.UNREPORTED
     assert incomplete.coverage_records[0].blocking_reason == "missing_manifest"
     assert incomplete.coverage_records[0].policy_decision is (
@@ -1290,6 +1308,7 @@ def test_frozen_analysis_plan_requires_every_unit_to_reconcile_before_completion
     complete = build_coverage_report(complete_run.id, ledger)
     assert complete.state is AnalysisCoverageState.COMPLETE
     assert complete.coverage_policy_id == LATEST_COMPLETED_VALID_ATTEMPT_POLICY_ID
+    assert complete.integrity_failure_reasons == ()
     assert complete.coverage_records[0].terminal_status is (
         CoverageTerminalStatus.PROCESSED_WITH_PROPOSALS
     )
@@ -1396,3 +1415,201 @@ def test_frozen_analysis_plan_requires_every_unit_to_reconcile_before_completion
         failed_coverage.coverage_records[0].blocking_reason == ModelRunStatus.PUBLISH_FAILED.value
     )
     assert build_coverage_report(incomplete_run.id, ledger) == incomplete
+
+
+def _complete_coverage_fixture() -> tuple[
+    FakeGroundedCandidateLedger, AnalysisRun, ContextManifest, ModelRun
+]:
+    ledger = FakeGroundedCandidateLedger()
+    plan = plan_analysis_units(
+        AnalysisUnitPlanningInput(
+            ledger.bundle.representation.id,
+            "fixture_integrity_policy_v1",
+            "claim_extraction",
+        ),
+        ledger,
+    )
+    frozen = freeze_analysis_plan(plan, ledger)
+    manifest = build_context_manifest(
+        ContextManifestInput(
+            analysis_unit=plan.units[0],
+            model_profile=ContextModelProfile("fixture-model", 512, 8, 4),
+            prompt_id="fixture_prompt_v1",
+            prompt_bytes=b"fixture prompt",
+            schema_id="staged_claim_output_v1",
+            schema_bytes=staged_claim_output_schema_bytes(),
+            renderer_version="fixture_renderer_v1",
+        ),
+        ledger,
+        FixtureTokenizer(),
+    ).manifest
+    extraction = run_bounded_extraction(
+        BoundedExtractionInput(
+            source_id=ledger.source.id,
+            document_id=ledger.document.id,
+            representation_id=ledger.bundle.representation.id,
+            context_manifest_id=manifest.id,
+            prompt_bytes=manifest.prompt_bytes,
+            execution_spec=_fixture_execution_spec(manifest),
+            validator_version="fixture-validator-v1",
+            started_at=NOW,
+            completed_at=NOW,
+        ),
+        ledger,
+        FakeModelOutputArchive(),
+        FakeModelTaskRuntime(_valid_staged_output()),
+        Uuid4ModelRunIdFactory(),
+        FixtureTokenizer(),
+        StagedClaimTaskSchemaRegistry(),
+    )
+    run = start_analysis_run(
+        AnalysisRunInput(
+            document_id=ledger.document.id,
+            frozen_plan_id=frozen.id,
+            coverage_policy_id=LATEST_COMPLETED_VALID_ATTEMPT_POLICY_ID,
+            started_at=NOW,
+            items=(
+                AnalysisRunItemInput(
+                    analysis_unit_id=plan.units[0].id,
+                    task_type=extraction.extraction_task.task_type,
+                    input_fingerprint=extraction.extraction_task.task_fingerprint,
+                    expected_manifest_id=manifest.id,
+                ),
+            ),
+        ),
+        ledger,
+    )
+    record_analysis_item_attempt(
+        analysis_run_id=run.id,
+        analysis_unit_id=plan.units[0].id,
+        model_run_id=extraction.model_run.id,
+        ledger_repository=ledger,
+    )
+    return ledger, run, manifest, extraction.model_run
+
+
+def test_coverage_reports_multiple_manifests_as_integrity_failure() -> None:
+    ledger, run, manifest, _ = _complete_coverage_fixture()
+    ledger.context_manifest_query_extras = (ledger.manifests[manifest.id],)
+
+    report = build_coverage_report(run.id, ledger)
+
+    assert report.state is AnalysisCoverageState.FAILED
+    assert report.integrity_failure_reasons == (CoverageIntegrityFailureReason.MULTIPLE_MANIFESTS,)
+    assert report.coverage_records[0].blocking_reason == "multiple_manifests"
+
+
+def test_coverage_reports_unexpected_manifest_as_integrity_failure() -> None:
+    ledger, run, manifest, _ = _complete_coverage_fixture()
+    ledger.context_manifest_query_extras = (
+        ledger.manifests[manifest.id].model_copy(update={"id": "ctx_unexpected"}),
+    )
+
+    report = build_coverage_report(run.id, ledger)
+
+    assert report.state is AnalysisCoverageState.FAILED
+    assert report.integrity_failure_reasons == (CoverageIntegrityFailureReason.UNEXPECTED_MANIFEST,)
+    assert report.coverage_records[0].terminal_status is (
+        CoverageTerminalStatus.PROCESSED_WITH_PROPOSALS
+    )
+
+
+def test_coverage_reports_missing_selected_run_as_integrity_failure() -> None:
+    ledger, run, _, model_run = _complete_coverage_fixture()
+    del ledger.model_runs[model_run.id]
+
+    report = build_coverage_report(run.id, ledger)
+
+    assert report.state is AnalysisCoverageState.FAILED
+    assert report.integrity_failure_reasons == (
+        CoverageIntegrityFailureReason.MISSING_SELECTED_RUN,
+    )
+    assert report.coverage_records[0].blocking_reason == "missing_selected_run"
+
+
+def test_coverage_reports_run_task_mismatch_as_integrity_failure() -> None:
+    ledger, run, _, model_run = _complete_coverage_fixture()
+    ledger.model_runs[model_run.id] = model_run.model_copy(
+        update={"extraction_task_id": "ext_wrong_task"}
+    )
+
+    report = build_coverage_report(run.id, ledger)
+
+    assert report.state is AnalysisCoverageState.FAILED
+    assert report.integrity_failure_reasons == (CoverageIntegrityFailureReason.RUN_TASK_MISMATCH,)
+    assert report.coverage_records[0].blocking_reason == "run_task_mismatch"
+
+
+def test_coverage_reports_proposal_run_mismatch_without_exposing_proposals() -> None:
+    ledger, run, _, model_run = _complete_coverage_fixture()
+    proposal_id = ledger.model_run_proposed_changes[model_run.id][0]
+    provenance_id = ledger.proposed_changes[proposal_id].provenance_activity_id
+    assert provenance_id is not None
+    provenance = ledger.provenance_activities[provenance_id]
+    ledger.provenance_activities[provenance_id] = provenance.model_copy(
+        update={
+            "input_ids": tuple(value for value in provenance.input_ids if value != model_run.id)
+        }
+    )
+
+    report = build_coverage_report(run.id, ledger)
+
+    assert report.state is AnalysisCoverageState.FAILED
+    assert report.integrity_failure_reasons == (
+        CoverageIntegrityFailureReason.PROPOSAL_RUN_MISMATCH,
+    )
+    assert report.coverage_records[0].blocking_reason == "proposal_run_mismatch"
+    assert report.coverage_records[0].selected_proposal_ids == ()
+
+
+def test_coverage_reports_split_cycle_as_integrity_failure() -> None:
+    ledger, original_run, manifest, _ = _complete_coverage_fixture()
+    original_item = ledger.list_planned_items_for_analysis_run(original_run.id)[0]
+    cyclic_template = replace(
+        manifest,
+        status=ContextManifestStatus.SPLIT,
+        split_strategy_id="fixture_cycle_v1",
+        child_analysis_unit_ids=(manifest.analysis_unit_id,),
+    )
+    cyclic_digest = context_manifest_digest(cyclic_template)
+    cyclic_manifest = replace(
+        cyclic_template,
+        id=f"ctx_{cyclic_digest[:24]}",
+        manifest_digest=cyclic_digest,
+    )
+    cyclic_payload = deepcopy(ledger.manifests[manifest.id].payload)
+    integrity = cyclic_payload["integrity"]
+    assert isinstance(integrity, dict)
+    integrity["status"] = ContextManifestStatus.SPLIT.value
+    integrity["split_strategy_id"] = "fixture_cycle_v1"
+    integrity["child_analysis_unit_ids"] = [manifest.analysis_unit_id]
+    ledger.manifests[cyclic_manifest.id] = ContextManifestArtifact(
+        id=cyclic_manifest.id,
+        analysis_unit_id=cyclic_manifest.analysis_unit_id,
+        representation_id=cyclic_manifest.representation_id,
+        manifest_digest=cyclic_manifest.manifest_digest,
+        payload=cyclic_payload,
+    )
+    cyclic_run = start_analysis_run(
+        AnalysisRunInput(
+            document_id=ledger.document.id,
+            frozen_plan_id=original_run.frozen_analysis_plan_id,
+            coverage_policy_id=LATEST_COMPLETED_VALID_ATTEMPT_POLICY_ID,
+            started_at=NOW,
+            items=(
+                AnalysisRunItemInput(
+                    analysis_unit_id=original_item.analysis_unit_id,
+                    task_type=original_item.task_type,
+                    input_fingerprint=original_item.input_fingerprint,
+                    expected_manifest_id=cyclic_manifest.id,
+                ),
+            ),
+        ),
+        ledger,
+    )
+
+    report = build_coverage_report(cyclic_run.id, ledger)
+
+    assert report.state is AnalysisCoverageState.FAILED
+    assert report.integrity_failure_reasons == (CoverageIntegrityFailureReason.SPLIT_CYCLE,)
+    assert report.coverage_records[0].blocking_reason == "split_cycle"

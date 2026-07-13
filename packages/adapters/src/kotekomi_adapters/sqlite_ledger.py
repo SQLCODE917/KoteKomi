@@ -1446,6 +1446,11 @@ class SQLiteLedgerRepository:
     def list_provenance_activities(self) -> tuple[ProvenanceActivity, ...]:
         return self._list(PROVENANCE_ACTIVITY_SPEC)
 
+    def list_provenance_activities_by_ids(
+        self, record_ids: tuple[str, ...]
+    ) -> tuple[ProvenanceActivity, ...]:
+        return self._get_by_ids(PROVENANCE_ACTIVITY_SPEC, record_ids)
+
     def save_proposed_change(self, record: ProposedChange) -> None:
         self._save(PROPOSED_CHANGE_SPEC, record)
 

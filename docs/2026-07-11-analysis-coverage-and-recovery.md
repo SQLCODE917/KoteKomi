@@ -156,6 +156,26 @@ identity.
 `all_model_run_ids` is historical accounting and cannot affect the current
 terminal status or selected proposal set.
 
+Run-scope accounting failures are returned as a `CoverageReport` with
+`state = failed`; they are not downgraded to ordinary incomplete work or
+hidden behind reconciliation exceptions. The initial typed integrity reasons
+are:
+
+```text
+missing_manifest
+multiple_manifests
+unexpected_manifest
+missing_selected_run
+run_task_mismatch
+proposal_run_mismatch
+split_cycle
+```
+
+Item-local failures use the same exact reason in `blocking_reason`. A
+proposal/run mismatch exposes no selected proposals. Report construction may
+still fail fast when the requested AnalysisRun itself, its frozen plan, or its
+document representation cannot be identified at all.
+
 Required operations:
 
 ```python
