@@ -2,6 +2,7 @@
 
 from kotekomi_domain.models import (
     Actor,
+    AnalysisPlanArtifact,
     AnalysisUnitArtifact,
     ArgumentEdge,
     ArgumentEdgeRelation,
@@ -71,6 +72,7 @@ from kotekomi_domain.models import (
 __all__ = [
     "Actor",
     "AnalysisUnitArtifact",
+    "AnalysisPlanArtifact",
     "ArgumentEdge",
     "ArgumentEdgeRelation",
     "Assertion",

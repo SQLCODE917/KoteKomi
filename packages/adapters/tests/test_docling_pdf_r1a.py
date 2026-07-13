@@ -12,6 +12,7 @@ from kotekomi_adapters import (
 )
 from kotekomi_adapters.docling_pdf_parser import DoclingPdfParser, DoclingPdfParserConfig
 from kotekomi_application import (
+    AnalysisCoverageState,
     AnalysisUnitPlanningInput,
     BoundedExtractionInput,
     BoundedExtractionOutcome,
@@ -46,9 +47,11 @@ from kotekomi_application import (
     Uuid4ProcessingAttemptIdFactory,
     approve_proposed_change,
     build_context_manifest,
+    build_document_coverage_report,
     build_grounded_candidate_context,
     capture_identity,
     capture_source,
+    freeze_analysis_plan,
     generation_parameters_digest,
     ingest_pdf,
     load_context_manifest,
@@ -562,15 +565,13 @@ def test_docling_r1d_staged_extraction_publishes_one_task_local_candidate(
             for node in bundle.nodes
             if PRIORITY_SENTENCE in bundle.text_views[0].text[node.start_char : node.end_char]
         )
+        analysis_plan = plan_analysis_units(
+            AnalysisUnitPlanningInput(bundle.representation.id, "r1d_pdf_v1", "claim_extraction"),
+            repository,
+        )
+        frozen_analysis_plan = freeze_analysis_plan(analysis_plan, repository)
         focus_unit = next(
-            unit
-            for unit in plan_analysis_units(
-                AnalysisUnitPlanningInput(
-                    bundle.representation.id, "r1d_pdf_v1", "claim_extraction"
-                ),
-                repository,
-            ).units
-            if unit.focus_node_ids == (priority_node.id,)
+            unit for unit in analysis_plan.units if unit.focus_node_ids == (priority_node.id,)
         )
         manifest = build_context_manifest(
             ContextManifestInput(
@@ -721,6 +722,13 @@ def test_docling_r1d_staged_extraction_publishes_one_task_local_candidate(
         )
         assert alternate_assertion_change_id != assertion_change.id
         assert repository.get_proposed_change(assertion_change.id) == reviewed_change
+        incomplete_coverage = build_document_coverage_report(frozen_analysis_plan.id, repository)
+        assert incomplete_coverage.state is AnalysisCoverageState.INCOMPLETE
+        assert incomplete_coverage.total_pages == 1
+        assert incomplete_coverage.represented_page_numbers == (1,)
+        assert any(
+            coverage.reason == "missing_manifest" for coverage in incomplete_coverage.unit_coverages
+        )
 
     reopened_archive = LocalArchiveStore(archive_path)
     with sqlite_ledger_transaction(ledger_path) as repository:
@@ -769,6 +777,8 @@ def test_docling_r1d_staged_extraction_publishes_one_task_local_candidate(
         assert first_provenance is not None
         assert alternate_provenance is not None
         assert first_provenance != alternate_provenance
+        restarted_coverage = build_document_coverage_report(frozen_analysis_plan.id, repository)
+        assert restarted_coverage == incomplete_coverage
 
     assert len(runtime.requests) == 2
     assert runtime.requests[0].context_manifest_id == manifest.id

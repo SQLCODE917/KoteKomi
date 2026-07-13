@@ -24,6 +24,7 @@ from kotekomi_application.record_serialization import canonical_record_json
 from kotekomi_application.representation_identity import deterministic_representation_id
 from kotekomi_domain import (
     Actor,
+    AnalysisPlanArtifact,
     AnalysisUnitArtifact,
     ArgumentEdge,
     Assertion,
@@ -109,6 +110,7 @@ IMMUTABLE_TABLES = frozenset(
         "evidence_reanchoring_relations",
         "context_manifest_artifacts",
         "analysis_unit_artifacts",
+        "analysis_plan_artifacts",
         "extraction_tasks",
         "model_runs",
     }
@@ -144,6 +146,10 @@ RELATIONAL_OWNERSHIP_COLUMNS: dict[str, tuple[tuple[str, str], ...]] = {
     "analysis_unit_artifacts": (
         ("representation_id", "representation_id"),
         ("unit_fingerprint", "unit_fingerprint"),
+    ),
+    "analysis_plan_artifacts": (
+        ("representation_id", "representation_id"),
+        ("plan_digest", "plan_digest"),
     ),
     "extraction_tasks": (
         ("context_manifest_id", "context_manifest_id"),
@@ -204,6 +210,7 @@ EVIDENCE_REANCHORING_RELATION_SPEC = RecordSpec(
 )
 CONTEXT_MANIFEST_ARTIFACT_SPEC = RecordSpec("context_manifest_artifacts", ContextManifestArtifact)
 ANALYSIS_UNIT_ARTIFACT_SPEC = RecordSpec("analysis_unit_artifacts", AnalysisUnitArtifact)
+ANALYSIS_PLAN_ARTIFACT_SPEC = RecordSpec("analysis_plan_artifacts", AnalysisPlanArtifact)
 EXTRACTION_TASK_SPEC = RecordSpec("extraction_tasks", ExtractionTask)
 MODEL_RUN_SPEC = RecordSpec("model_runs", ModelRun)
 ASSERTION_SPEC = RecordSpec("assertions", Assertion)
@@ -254,6 +261,7 @@ REQUIRED_LEDGER_TABLES = (
     "evidence_reanchoring_relations",
     "context_manifest_artifacts",
     "analysis_unit_artifacts",
+    "analysis_plan_artifacts",
     "extraction_tasks",
     "model_runs",
     "assertions",
@@ -859,11 +867,24 @@ class SQLiteLedgerRepository:
     def get_context_manifest_artifact(self, record_id: str) -> ContextManifestArtifact | None:
         return self._get(CONTEXT_MANIFEST_ARTIFACT_SPEC, record_id)
 
+    def list_context_manifest_artifacts_for_representation(
+        self, representation_id: str
+    ) -> tuple[ContextManifestArtifact, ...]:
+        return self._list_for_owner(
+            CONTEXT_MANIFEST_ARTIFACT_SPEC, "representation_id", representation_id
+        )
+
     def save_analysis_unit_artifact(self, record: AnalysisUnitArtifact) -> None:
         self._save(ANALYSIS_UNIT_ARTIFACT_SPEC, record)
 
     def get_analysis_unit_artifact(self, record_id: str) -> AnalysisUnitArtifact | None:
         return self._get(ANALYSIS_UNIT_ARTIFACT_SPEC, record_id)
+
+    def save_analysis_plan_artifact(self, record: AnalysisPlanArtifact) -> None:
+        self._save(ANALYSIS_PLAN_ARTIFACT_SPEC, record)
+
+    def get_analysis_plan_artifact(self, record_id: str) -> AnalysisPlanArtifact | None:
+        return self._get(ANALYSIS_PLAN_ARTIFACT_SPEC, record_id)
 
     def commit_context_planning_outcome(
         self,
@@ -900,6 +921,9 @@ class SQLiteLedgerRepository:
 
     def list_model_runs_for_task(self, extraction_task_id: str) -> tuple[ModelRun, ...]:
         return self._list_for_owner(MODEL_RUN_SPEC, "extraction_task_id", extraction_task_id)
+
+    def list_model_runs(self) -> tuple[ModelRun, ...]:
+        return self._list(MODEL_RUN_SPEC)
 
     def commit_grounded_candidate_batch(
         self,

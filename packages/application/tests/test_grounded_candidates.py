@@ -5,6 +5,8 @@ from typing import cast
 
 import pytest
 from kotekomi_application import (
+    AnalysisCoverageState,
+    AnalysisUnitCoverageStatus,
     AnalysisUnitPlanningInput,
     BoundedExtractionInput,
     ContextManifest,
@@ -25,8 +27,11 @@ from kotekomi_application import (
     StagedClaimTaskSchemaRegistry,
     Uuid4ModelRunIdFactory,
     build_context_manifest,
+    build_document_coverage_report,
     build_grounded_candidate_context,
+    freeze_analysis_plan,
     generation_parameters_digest,
+    load_frozen_analysis_plan,
     model_execution_spec_digest,
     model_identity_snapshot_digest,
     plan_analysis_units,
@@ -35,6 +40,7 @@ from kotekomi_application import (
     submit_grounded_candidate_batch,
 )
 from kotekomi_domain import (
+    AnalysisPlanArtifact,
     AnalysisUnitArtifact,
     ContextManifestArtifact,
     Document,
@@ -83,6 +89,7 @@ class FakeGroundedCandidateLedger:
         self.model_runs: dict[str, ModelRun] = {}
         self.manifests: dict[str, ContextManifestArtifact] = {}
         self.analysis_units: dict[str, AnalysisUnitArtifact] = {}
+        self.analysis_plans: dict[str, AnalysisPlanArtifact] = {}
         self.fail_successful_commit = False
 
     def get_source(self, record_id: str) -> Source | None:
@@ -157,6 +164,33 @@ class FakeGroundedCandidateLedger:
 
     def get_analysis_unit_artifact(self, record_id: str) -> AnalysisUnitArtifact | None:
         return self.analysis_units.get(record_id)
+
+    def save_analysis_plan_artifact(self, record: AnalysisPlanArtifact) -> None:
+        self.analysis_plans[record.id] = record
+
+    def get_analysis_plan_artifact(self, record_id: str) -> AnalysisPlanArtifact | None:
+        return self.analysis_plans.get(record_id)
+
+    def list_context_manifest_artifacts_for_representation(
+        self, representation_id: str
+    ) -> tuple[ContextManifestArtifact, ...]:
+        return tuple(
+            artifact
+            for artifact in self.manifests.values()
+            if artifact.representation_id == representation_id
+        )
+
+    def list_extraction_tasks(self) -> tuple[ExtractionTask, ...]:
+        return tuple(self.extraction_tasks.values())
+
+    def list_model_runs(self) -> tuple[ModelRun, ...]:
+        return tuple(self.model_runs.values())
+
+    def list_provenance_activities(self) -> tuple[ProvenanceActivity, ...]:
+        return tuple(self.provenance_activities.values())
+
+    def list_proposed_changes(self) -> tuple[ProposedChange, ...]:
+        return tuple(self.proposed_changes.values())
 
     def commit_context_planning_outcome(
         self,
@@ -1014,3 +1048,72 @@ def test_retries_preserve_distinct_model_runs_for_one_task() -> None:
     assert first.model_run.execution_spec_digest == execution_spec_digest
     assert first.model_run.execution_receipt is not None
     assert first.model_run.execution_receipt["input_token_count"] == manifest.input_token_count
+
+
+def test_frozen_analysis_plan_requires_every_unit_to_reconcile_before_completion() -> None:
+    ledger = FakeGroundedCandidateLedger()
+    plan = plan_analysis_units(
+        AnalysisUnitPlanningInput(
+            ledger.bundle.representation.id,
+            "fixture_coverage_policy_v1",
+            "claim_extraction",
+        ),
+        ledger,
+    )
+    frozen = freeze_analysis_plan(plan, ledger)
+    assert load_frozen_analysis_plan(frozen.id, ledger) == frozen
+
+    incomplete = build_document_coverage_report(frozen.id, ledger)
+    assert incomplete.state is AnalysisCoverageState.INCOMPLETE
+    assert incomplete.unit_coverages == (
+        incomplete.unit_coverages[0].__class__(
+            plan.units[0].id,
+            AnalysisUnitCoverageStatus.UNREPORTED,
+            None,
+            None,
+            (),
+            "missing_manifest",
+        ),
+    )
+
+    manifest = build_context_manifest(
+        ContextManifestInput(
+            analysis_unit=plan.units[0],
+            model_profile=ContextModelProfile("fixture-model", 512, 8, 4),
+            prompt_id="fixture_prompt_v1",
+            prompt_bytes=b"fixture prompt",
+            schema_id="staged_claim_output_v1",
+            schema_bytes=staged_claim_output_schema_bytes(),
+            renderer_version="fixture_renderer_v1",
+        ),
+        ledger,
+        FixtureTokenizer(),
+    ).manifest
+    outcome = run_bounded_extraction(
+        BoundedExtractionInput(
+            source_id=ledger.source.id,
+            document_id=ledger.document.id,
+            representation_id=ledger.bundle.representation.id,
+            context_manifest_id=manifest.id,
+            prompt_bytes=manifest.prompt_bytes,
+            execution_spec=_fixture_execution_spec(manifest),
+            validator_version="fixture-validator-v1",
+            started_at=NOW,
+            completed_at=NOW,
+        ),
+        ledger,
+        FakeModelOutputArchive(),
+        FakeModelTaskRuntime(_valid_staged_output()),
+        Uuid4ModelRunIdFactory(),
+        FixtureTokenizer(),
+        StagedClaimTaskSchemaRegistry(),
+    )
+    assert outcome.proposed_change_batch is not None
+
+    complete = build_document_coverage_report(frozen.id, ledger)
+    assert complete.state is AnalysisCoverageState.COMPLETE
+    assert complete.unit_coverages[0].status is AnalysisUnitCoverageStatus.PROCESSED_WITH_PROPOSALS
+    assert complete.unit_coverages[0].proposal_ids == tuple(
+        sorted(outcome.proposed_change_batch.proposed_change_ids_by_local_id.values())
+    )
+    assert complete.orphan_model_run_ids == ()

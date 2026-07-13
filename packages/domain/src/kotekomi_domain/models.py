@@ -48,6 +48,7 @@ ParseQualityReportId = Annotated[str, Field(pattern=r"^pqr_[A-Za-z0-9][A-Za-z0-9
 SourceRegionId = Annotated[str, Field(pattern=r"^srg_[A-Za-z0-9][A-Za-z0-9_-]*$")]
 ContextManifestId = Annotated[str, Field(pattern=r"^ctx_[A-Za-z0-9][A-Za-z0-9_-]*$")]
 AnalysisUnitId = Annotated[str, Field(pattern=r"^anu_[A-Za-z0-9][A-Za-z0-9_-]*$")]
+AnalysisPlanId = Annotated[str, Field(pattern=r"^anp_[A-Za-z0-9][A-Za-z0-9_-]*$")]
 ExtractionTaskId = Annotated[str, Field(pattern=r"^ext_[A-Za-z0-9][A-Za-z0-9_-]*$")]
 ModelRunId = Annotated[str, Field(pattern=r"^mrn_[A-Za-z0-9][A-Za-z0-9_-]*$")]
 
@@ -986,6 +987,16 @@ class AnalysisUnitArtifact(DomainModel):
     id: AnalysisUnitId
     representation_id: DocumentRepresentationId
     unit_fingerprint: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
+    payload: dict[str, JsonValue]
+    created_at: datetime | None = None
+
+
+class AnalysisPlanArtifact(DomainModel):
+    """The immutable frozen scope of one document analysis run."""
+
+    id: AnalysisPlanId
+    representation_id: DocumentRepresentationId
+    plan_digest: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
     payload: dict[str, JsonValue]
     created_at: datetime | None = None
 
