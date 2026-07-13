@@ -1,0 +1,162 @@
+{
+  "matrix_version": "pdf_ingestion_integrated_gold_matrix_v1",
+  "required_fixture_classes": [
+    "clean_born_digital_press_release",
+    "image_only_scan",
+    "mixed_text_and_scan",
+    "two_and_three_column_adversarial_order",
+    "rotated_pages",
+    "repeated_headers_footers_and_page_numbers",
+    "nested_lists_and_section_hierarchy",
+    "merged_and_multilevel_table_headers",
+    "table_continued_across_pages",
+    "footnote_reference_crossing_page_boundary",
+    "definition_reused_several_pages_later",
+    "malformed_font_mapping_or_replacement_glyphs",
+    "truncated_or_corrupt_pdf",
+    "encrypted_pdf_without_credentials",
+    "invalid_parser_coordinates"
+  ],
+  "rows": [
+    {
+      "row_id": "born_digital_press_release",
+      "fixture_id": "pdf_born_digital_press_release_r1",
+      "classes": ["clean_born_digital_press_release"],
+      "expected_page_count": 1,
+      "expected_page_paths": ["embedded"],
+      "expected_transformations": [],
+      "expected_quality": "acceptable",
+      "expected_coverage": "complete",
+      "evidence_overlay": true
+    },
+    {
+      "row_id": "image_only_scan",
+      "fixture_id": "pdf_ocr_linn",
+      "classes": ["image_only_scan"],
+      "expected_page_count": 1,
+      "expected_page_paths": ["ocr"],
+      "expected_transformations": ["render", "ocr"],
+      "expected_quality": "acceptable",
+      "expected_coverage": "complete",
+      "evidence_overlay": true
+    },
+    {
+      "row_id": "mixed_text_and_scan",
+      "fixture_id": "pdf_mixed_born_digital_scan_v1",
+      "classes": ["mixed_text_and_scan"],
+      "expected_page_count": 3,
+      "expected_page_paths": ["embedded", "ocr", "embedded"],
+      "expected_transformations": ["render", "ocr"],
+      "expected_quality": "acceptable",
+      "expected_coverage": "complete",
+      "evidence_overlay": true
+    },
+    {
+      "row_id": "adversarial_layout",
+      "fixture_id": "pdf_adversarial_columns_hierarchy_v1",
+      "classes": [
+        "two_and_three_column_adversarial_order",
+        "rotated_pages",
+        "repeated_headers_footers_and_page_numbers",
+        "nested_lists_and_section_hierarchy"
+      ],
+      "expected_page_count": 3,
+      "expected_page_paths": ["embedded", "embedded", "embedded"],
+      "expected_transformations": [],
+      "expected_quality": "acceptable",
+      "expected_coverage": "complete",
+      "evidence_overlay": true
+    },
+    {
+      "row_id": "complex_table",
+      "fixture_id": "pdf_complex_table_v1",
+      "classes": ["merged_and_multilevel_table_headers"],
+      "parser_mode": "table_structure",
+      "expected_page_count": 1,
+      "expected_page_paths": ["embedded"],
+      "expected_transformations": [],
+      "expected_quality": "acceptable",
+      "expected_tables": 1,
+      "expected_table_fragments": 1,
+      "expected_coverage": "complete",
+      "evidence_overlay": true
+    },
+    {
+      "row_id": "cross_page_table",
+      "fixture_id": "pdf_cross_page_table_nist_srm2259",
+      "classes": ["table_continued_across_pages"],
+      "parser_mode": "table_structure",
+      "expected_page_count": 4,
+      "expected_page_paths": ["embedded", "embedded", "embedded", "embedded"],
+      "expected_transformations": [],
+      "expected_quality": "acceptable",
+      "expected_tables": 1,
+      "expected_table_fragments": 3,
+      "expected_coverage": "complete",
+      "evidence_overlay": true
+    },
+    {
+      "row_id": "cross_page_semantics",
+      "fixture_id": "pdf_cross_page_semantics_v1",
+      "classes": [
+        "footnote_reference_crossing_page_boundary",
+        "definition_reused_several_pages_later"
+      ],
+      "expected_page_count": 4,
+      "expected_page_paths": ["embedded", "embedded", "embedded", "embedded"],
+      "expected_transformations": [],
+      "expected_quality": "acceptable",
+      "expected_footnote_references": 1,
+      "expected_coverage": "complete",
+      "evidence_overlay": true
+    },
+    {
+      "row_id": "malformed_font_fallback",
+      "fixture_id": "pdf_font_truetype_no_mapping",
+      "classes": ["malformed_font_mapping_or_replacement_glyphs"],
+      "expected_page_count": 1,
+      "expected_page_paths": ["ocr"],
+      "expected_transformations": ["render", "ocr"],
+      "expected_quality": "acceptable",
+      "expected_coverage": "complete",
+      "evidence_overlay": true
+    },
+    {
+      "row_id": "truncated_pdf",
+      "fixture_id": "pdf_corrupt_truncated_v1",
+      "classes": ["truncated_or_corrupt_pdf"],
+      "expected_page_count": 0,
+      "expected_page_paths": [],
+      "expected_transformations": [],
+      "expected_quality": "blocked",
+      "expected_coverage": "blocked_before_analysis",
+      "expected_blocking_reason": "PDF source preflight could not establish an authoritative page inventory.",
+      "evidence_overlay": false
+    },
+    {
+      "row_id": "encrypted_without_credentials",
+      "fixture_id": "pdf_encrypted_aes256_v1",
+      "classes": ["encrypted_pdf_without_credentials"],
+      "expected_page_count": 0,
+      "expected_page_paths": [],
+      "expected_transformations": [],
+      "expected_quality": "blocked",
+      "expected_coverage": "blocked_before_analysis",
+      "expected_blocking_reason": "password_required",
+      "evidence_overlay": false
+    },
+    {
+      "row_id": "invalid_parser_coordinates",
+      "fixture_id": "pdf_born_digital_press_release_r1",
+      "classes": ["invalid_parser_coordinates"],
+      "parser_mode": "invalid_coordinates",
+      "expected_page_count": 1,
+      "expected_page_paths": ["not_committed"],
+      "expected_transformations": [],
+      "expected_quality": "failed",
+      "expected_coverage": "failed_before_analysis",
+      "expected_failure_code": "pdf_representation_validation_failure",
+      "evidence_overlay": false
+    }
+  ]
+}

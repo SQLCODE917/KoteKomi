@@ -10,6 +10,7 @@ import uuid
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import datetime
+from functools import cache
 from typing import Literal, Protocol, cast
 
 from kotekomi_domain import DocumentNode, ExtractionTask, ModelRun, ModelRunStatus, TextView
@@ -666,6 +667,7 @@ def _resolved_evidence_candidate(
     )
 
 
+@cache
 def staged_claim_output_schema_bytes() -> bytes:
     schema = TypeAdapter(_CandidateOutput | _AbstentionOutput).json_schema()
     return json.dumps(schema, ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode()

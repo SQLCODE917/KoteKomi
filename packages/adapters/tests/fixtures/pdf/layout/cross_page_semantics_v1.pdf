@@ -1,0 +1,102 @@
+%PDF-1.7
+%‚„œ”
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R 4 0 R 5 0 R 6 0 R] /Count 4 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /CropBox [0 0 612 792] /Resources << /Font << /F1 7 0 R >> >> /Contents 8 0 R >>
+endobj
+4 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /CropBox [0 0 612 792] /Resources << /Font << /F1 7 0 R >> >> /Contents 9 0 R >>
+endobj
+5 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /CropBox [0 0 612 792] /Resources << /Font << /F1 7 0 R >> >> /Contents 10 0 R >>
+endobj
+6 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /CropBox [0 0 612 792] /Resources << /Font << /F1 7 0 R >> >> /Contents 11 0 R >>
+endobj
+7 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding /ToUnicode 12 0 R >>
+endobj
+8 0 obj
+<< /Length 409 >>
+stream
+BT /F1 9 Tf 54 760 Td (KoteKomi Cross-Page Semantics) Tj ET
+BT /F1 9 Tf 54 28 Td (KoteKomi Semantic Corpus - Page 1) Tj ET
+BT /F1 16 Tf 54 700 Td (Cross-Page Semantic Context) Tj ET
+BT /F1 11 Tf 54 648 Td (Community resilience \(CR\) means the capacity to prepare for, recover from, and adapt to disruption.) Tj ET
+BT /F1 11 Tf 54 596 Td (The definition is authoritative context for later CR analysis.) Tj ET
+endstream
+endobj
+9 0 obj
+<< /Length 280 >>
+stream
+BT /F1 9 Tf 54 760 Td (KoteKomi Cross-Page Semantics) Tj ET
+BT /F1 9 Tf 54 28 Td (KoteKomi Semantic Corpus - Page 2) Tj ET
+BT /F1 16 Tf 54 700 Td (Intervening Program Detail) Tj ET
+BT /F1 11 Tf 54 648 Td (The program coordinated local partners during the reporting period.) Tj ET
+endstream
+endobj
+10 0 obj
+<< /Length 255 >>
+stream
+BT /F1 9 Tf 54 760 Td (KoteKomi Cross-Page Semantics) Tj ET
+BT /F1 9 Tf 54 28 Td (KoteKomi Semantic Corpus - Page 3) Tj ET
+BT /F1 16 Tf 54 700 Td (Continuity Result) Tj ET
+BT /F1 11 Tf 54 648 Td (The continuity target improved by 12 percent \(1\).) Tj ET
+endstream
+endobj
+11 0 obj
+<< /Length 357 >>
+stream
+BT /F1 9 Tf 54 760 Td (KoteKomi Cross-Page Semantics) Tj ET
+BT /F1 9 Tf 54 28 Td (KoteKomi Semantic Corpus - Page 4) Tj ET
+BT /F1 8 Tf 54 60 Td (Footnote \(1\): Compared with the 2024 baseline.) Tj ET
+BT /F1 16 Tf 54 700 Td (Distant Definition Reuse) Tj ET
+BT /F1 11 Tf 54 648 Td (CR guides the response described several pages after its definition.) Tj ET
+endstream
+endobj
+12 0 obj
+<< /Length 334 >>
+stream
+/CIDInit /ProcSet findresource begin
+12 dict begin
+begincmap
+/CIDSystemInfo << /Registry (Adobe) /Ordering (UCS) /Supplement 0 >> def
+/CMapName /KoteKomiASCII def
+/CMapType 2 def
+1 begincodespacerange
+<00> <7F>
+endcodespacerange
+1 beginbfrange
+<00> <7F> <0000>
+endbfrange
+endcmap
+CMapName currentdict /CMap defineresource pop
+end
+end
+endstream
+endobj
+xref
+0 13
+0000000000 65535 f 
+0000000015 00000 n 
+0000000064 00000 n 
+0000000139 00000 n 
+0000000288 00000 n 
+0000000437 00000 n 
+0000000587 00000 n 
+0000000737 00000 n 
+0000000852 00000 n 
+0000001311 00000 n 
+0000001641 00000 n 
+0000001947 00000 n 
+0000002355 00000 n 
+trailer
+<< /Size 13 /Root 1 0 R >>
+startxref
+2740
+%%EOF

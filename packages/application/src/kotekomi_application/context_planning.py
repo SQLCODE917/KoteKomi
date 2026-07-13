@@ -201,14 +201,14 @@ def plan_analysis_units(
     planning_input: AnalysisUnitPlanningInput,
     ledger_repository: ContextPlanningLedger,
 ) -> AnalysisPlan:
-    """Create one deterministic paragraph analysis unit from each pinned paragraph node."""
+    """Create deterministic units for general prose and table-caption analysis foci."""
     bundle = _load_acceptable_bundle(planning_input.representation_id, ledger_repository)
-    paragraphs = tuple(
+    analysis_focus_nodes = tuple(
         node
         for node in sorted(
             bundle.nodes, key=lambda candidate: (candidate.order_index, candidate.id)
         )
-        if node.node_type == "paragraph"
+        if node.node_type in {"paragraph", "table_caption"}
     )
     if planning_input.max_focus_nodes_per_unit <= 0:
         raise ValueError("Analysis unit max_focus_nodes_per_unit must be positive.")
@@ -228,8 +228,10 @@ def plan_analysis_units(
             policy_id=planning_input.policy_id,
         )
         for group in (
-            paragraphs[index : index + planning_input.max_focus_nodes_per_unit]
-            for index in range(0, len(paragraphs), planning_input.max_focus_nodes_per_unit)
+            analysis_focus_nodes[index : index + planning_input.max_focus_nodes_per_unit]
+            for index in range(
+                0, len(analysis_focus_nodes), planning_input.max_focus_nodes_per_unit
+            )
         )
     )
     plan = AnalysisPlan(bundle.representation.id, planning_input.policy_id, units)
@@ -906,7 +908,10 @@ def validate_context_manifest_identity(manifest: ContextManifest) -> None:
 
 
 def load_context_manifest(
-    manifest_id: str, ledger_repository: ContextPlanningLedger
+    manifest_id: str,
+    ledger_repository: ContextPlanningLedger,
+    *,
+    verified_bundle: DocumentRepresentationBundle | None = None,
 ) -> ContextManifest:
     """Load the sole canonical manifest representation from the immutable Ledger."""
     artifact = ledger_repository.get_context_manifest_artifact(manifest_id)
@@ -961,7 +966,7 @@ def load_context_manifest(
         )
     except (KeyError, TypeError, ValueError) as exc:
         raise ValueError("ContextManifest persisted artifact is malformed.") from exc
-    validate_context_manifest(manifest, ledger_repository)
+    validate_context_manifest(manifest, ledger_repository, verified_bundle=verified_bundle)
     return manifest
 
 
@@ -1035,6 +1040,8 @@ def verify_context_manifest(
 def validate_context_manifest(
     manifest: ContextManifest,
     ledger_repository: ContextPlanningLedger,
+    *,
+    verified_bundle: DocumentRepresentationBundle | None = None,
 ) -> None:
     """Verify the persisted manifest and every rendered source segment before use."""
     validate_context_manifest_identity(manifest)
@@ -1056,7 +1063,16 @@ def validate_context_manifest(
         raise ValueError("ContextManifest manifest_digest is corrupted.")
     if hashlib.sha256(manifest.rendered_input).hexdigest() != manifest.rendered_input_digest:
         raise ValueError("ContextManifest rendered_input_digest is corrupted.")
-    bundle = _load_acceptable_bundle(manifest.representation_id, ledger_repository)
+    bundle = (
+        _load_acceptable_bundle(manifest.representation_id, ledger_repository)
+        if verified_bundle is None
+        else verified_bundle
+    )
+    if (
+        bundle.representation.id != manifest.representation_id
+        or bundle.quality_report.analyzability is not RepresentationAnalyzability.ACCEPTABLE
+    ):
+        raise ValueError("ContextManifest verified bundle binding is invalid.")
     if len(manifest.selected_candidates) != len(manifest.rendered_segments):
         raise ValueError("ContextManifest selected candidates and rendered segments disagree.")
     prior_end = 0

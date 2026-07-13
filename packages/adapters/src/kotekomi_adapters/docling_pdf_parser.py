@@ -169,7 +169,7 @@ class DoclingPdfParser(PdfDocumentParser):
         config_digest = hashlib.sha256(
             json.dumps(configuration, sort_keys=True, separators=(",", ":")).encode()
         ).hexdigest()
-        return PdfProcessorIdentity("docling", parser_version, config_digest, "6")
+        return PdfProcessorIdentity("docling", parser_version, config_digest, "7")
 
     def parse(self, parse_input: PdfParseInput) -> PdfParseResult:
         if os.environ.get("KOTEKOMI_DOCLING_WORKER") != "1":
@@ -284,7 +284,16 @@ class DoclingPdfParser(PdfDocumentParser):
                     document_converter_type,
                     pdf_format_option_type,
                 ) = _load_docling_components()
+                from docling.datamodel.accelerator_options import AcceleratorDevice
+
+                if self._config.enable_table_structure:
+                    _pin_docling_model_runtime()
                 pipeline_options = pdf_pipeline_options_type()
+                pipeline_options.accelerator_options.num_threads = 1
+                pipeline_options.accelerator_options.device = AcceleratorDevice.CPU
+                pipeline_options.ocr_batch_size = 1
+                pipeline_options.layout_batch_size = 1
+                pipeline_options.table_batch_size = 1
                 pipeline_options.do_ocr = False
                 pipeline_options.do_table_structure = self._config.enable_table_structure
                 converter = document_converter_type(
@@ -454,15 +463,32 @@ def _load_docling_components() -> tuple[type[Any], type[Any], type[Any], type[An
     return DocumentStream, InputFormat, PdfPipelineOptions, DocumentConverter, PdfFormatOption
 
 
+def _pin_docling_model_runtime() -> None:
+    """Make the authoritative CPU model runtime single-threaded and deterministic."""
+    import random
+
+    import numpy
+    import torch
+
+    random.seed(0)
+    numpy.random.seed(0)
+    torch.manual_seed(0)
+    torch.set_num_threads(1)
+    torch.set_num_interop_threads(1)
+    torch.use_deterministic_algorithms(True)
+
+
 def _raise_stack_limit_for_docling_import() -> None:
-    """Avoid Pydantic schema-import stack exhaustion in Docling's recursive models."""
+    """Pin worker stacks high enough for Docling's recursive model runtime."""
+    import threading
+
     soft_limit, hard_limit = resource.getrlimit(resource.RLIMIT_STACK)
-    target_limit = 64 * 1024 * 1024
-    if soft_limit == resource.RLIM_INFINITY or soft_limit >= target_limit:
-        return
-    if hard_limit != resource.RLIM_INFINITY and hard_limit < target_limit:
-        target_limit = hard_limit
-    resource.setrlimit(resource.RLIMIT_STACK, (target_limit, hard_limit))
+    target_limit = 256 * 1024 * 1024
+    if soft_limit != resource.RLIM_INFINITY and soft_limit < target_limit:
+        if hard_limit != resource.RLIM_INFINITY and hard_limit < target_limit:
+            target_limit = hard_limit
+        resource.setrlimit(resource.RLIMIT_STACK, (target_limit, hard_limit))
+    threading.stack_size(64 * 1024 * 1024)
 
 
 def _parse_with_large_stack_worker(
@@ -496,10 +522,12 @@ def _parse_with_large_stack_worker(
     environment = {
         **os.environ,
         "KOTEKOMI_DOCLING_WORKER": "1",
+        "PYTHONHASHSEED": "0",
         "OMP_NUM_THREADS": "1",
         "OPENBLAS_NUM_THREADS": "1",
         "MKL_NUM_THREADS": "1",
         "NUMEXPR_NUM_THREADS": "1",
+        "PYTHONFAULTHANDLER": "1",
     }
     try:
         completed = subprocess.run(
@@ -573,7 +601,7 @@ def _pdf_parse_result_to_payload(result: PdfParseResult) -> dict[str, object]:
             "preflight_tool_version": result.preflight.preflight_tool_version,
         },
         "representation_bundle": (
-            result.representation_bundle.model_dump(mode="json")
+            _representation_bundle_to_worker_payload(result.representation_bundle)
             if result.representation_bundle is not None
             else None
         ),
@@ -597,6 +625,92 @@ def _pdf_parse_result_to_payload(result: PdfParseResult) -> dict[str, object]:
         ],
         "blocking_reasons": list(result.blocking_reasons),
     }
+
+
+def _representation_bundle_to_worker_payload(
+    bundle: DocumentRepresentationBundle,
+) -> dict[str, object]:
+    """Serialize a large flat bundle without Pydantic's recursive bundle serializer."""
+    return {
+        "representation": bundle.representation.model_dump(mode="json"),
+        "text_views": [record.model_dump(mode="json") for record in bundle.text_views],
+        "nodes": [record.model_dump(mode="json") for record in bundle.nodes],
+        "edges": [record.model_dump(mode="json") for record in bundle.edges],
+        "source_regions": [record.model_dump(mode="json") for record in bundle.source_regions],
+        "tables": [record.model_dump(mode="json") for record in bundle.tables],
+        "table_fragments": [record.model_dump(mode="json") for record in bundle.table_fragments],
+        "table_rows": [record.model_dump(mode="json") for record in bundle.table_rows],
+        "table_cells": [record.model_dump(mode="json") for record in bundle.table_cells],
+        "table_annotations": [
+            record.model_dump(mode="json") for record in bundle.table_annotations
+        ],
+        "references": [record.model_dump(mode="json") for record in bundle.references],
+        "quality_report": bundle.quality_report.model_dump(mode="json"),
+    }
+
+
+def _worker_record_list(payload: dict[str, object], key: str) -> list[object]:
+    records = payload.get(key)
+    if not isinstance(records, list):
+        raise RuntimeError(f"Docling worker bundle {key} must be a list.")
+    return records
+
+
+def _representation_bundle_from_worker_payload(
+    payload: dict[str, object],
+) -> DocumentRepresentationBundle:
+    """Validate every worker record before constructing the authoritative bundle."""
+    representation = payload.get("representation")
+    quality_report = payload.get("quality_report")
+    if not isinstance(representation, dict) or not isinstance(quality_report, dict):
+        raise RuntimeError("Docling worker bundle envelope is malformed.")
+    try:
+        return DocumentRepresentationBundle(
+            representation=DocumentRepresentation.model_validate_json(json.dumps(representation)),
+            text_views=tuple(
+                TextView.model_validate_json(json.dumps(record))
+                for record in _worker_record_list(payload, "text_views")
+            ),
+            nodes=tuple(
+                DocumentNode.model_validate_json(json.dumps(record))
+                for record in _worker_record_list(payload, "nodes")
+            ),
+            edges=tuple(
+                DocumentEdge.model_validate_json(json.dumps(record))
+                for record in _worker_record_list(payload, "edges")
+            ),
+            source_regions=tuple(
+                SourceRegion.model_validate_json(json.dumps(record))
+                for record in _worker_record_list(payload, "source_regions")
+            ),
+            tables=tuple(
+                DocumentTable.model_validate_json(json.dumps(record))
+                for record in _worker_record_list(payload, "tables")
+            ),
+            table_fragments=tuple(
+                DocumentTableFragment.model_validate_json(json.dumps(record))
+                for record in _worker_record_list(payload, "table_fragments")
+            ),
+            table_rows=tuple(
+                DocumentTableRow.model_validate_json(json.dumps(record))
+                for record in _worker_record_list(payload, "table_rows")
+            ),
+            table_cells=tuple(
+                DocumentTableCell.model_validate_json(json.dumps(record))
+                for record in _worker_record_list(payload, "table_cells")
+            ),
+            table_annotations=tuple(
+                DocumentTableAnnotation.model_validate_json(json.dumps(record))
+                for record in _worker_record_list(payload, "table_annotations")
+            ),
+            references=tuple(
+                DocumentReference.model_validate_json(json.dumps(record))
+                for record in _worker_record_list(payload, "references")
+            ),
+            quality_report=ParseQualityReport.model_validate_json(json.dumps(quality_report)),
+        )
+    except ValueError as exc:
+        raise RuntimeError("Docling worker bundle records are invalid.") from exc
 
 
 def _pdf_parse_result_from_payload(payload: dict[str, object]) -> PdfParseResult:
@@ -686,7 +800,7 @@ def _pdf_parse_result_from_payload(payload: dict[str, object]) -> PdfParseResult
     return PdfParseResult(
         preflight=preflight,
         representation_bundle=(
-            DocumentRepresentationBundle.model_validate_json(json.dumps(bundle_payload))
+            _representation_bundle_from_worker_payload(bundle_payload)
             if bundle_payload is not None
             else None
         ),
@@ -722,7 +836,27 @@ def _parser_configuration(
         ),
         "page_selection_policy_version": PdfExtractionPolicy.policy_version,
         "policy_id": policy_id,
-        "layout_contract_version": "canonical_pdf_layout_v2",
+        "layout_contract_version": "canonical_pdf_layout_v3",
+        "docling_execution": {
+            "accelerator_device": "cpu",
+            "accelerator_threads": 1,
+            "ocr_batch_size": 1,
+            "layout_batch_size": 1,
+            "table_batch_size": 1,
+            "table_structure_mode": "accurate",
+            "worker_protocol": "flat_bundle_records_v1",
+            "worker_main_stack_bytes": 268_435_456,
+            "worker_thread_stack_bytes": 67_108_864,
+            "python_hash_seed": 0,
+            "table_model_runtime": (
+                {
+                    "random_seed": 0,
+                    "torch_deterministic_algorithms": True,
+                }
+                if config.enable_table_structure
+                else None
+            ),
+        },
         "pdfimages_version": _pdfimages_version(),
         "pdffonts_version": _pdffonts_version(),
         "pdfinfo_version": _pdfinfo_version(),
@@ -1098,7 +1232,9 @@ def _layout_item_from_docling_item(
         resolved_node_type = "table_caption"
     elif re.match(r"^Units?:", normalized_text, re.IGNORECASE):
         resolved_node_type = "table_unit"
-    elif re.match(r"^(?:Note|Footnote|\([A-Za-z0-9]+\)):", normalized_text, re.IGNORECASE):
+    elif re.match(r"^Footnote\s+\([A-Za-z0-9]+\):", normalized_text, re.IGNORECASE):
+        resolved_node_type = "footnote"
+    elif re.match(r"^(?:Note|\([A-Za-z0-9]+\)):", normalized_text, re.IGNORECASE):
         resolved_node_type = "table_note"
     heading_level = getattr(item, "level", None) if resolved_node_type == "heading" else None
     marker = getattr(item, "marker", None) if resolved_node_type == "list_item" else None
@@ -2314,8 +2450,6 @@ def _canonical_table_records(
     tuple[DocumentReference, ...],
     tuple[SourceRegion, ...],
 ]:
-    if not table_fragments:
-        return (), (), (), (), (), (), ()
     nodes_by_id = {node.id: node for node in nodes}
     views_by_id = {view.id: view for view in text_views}
     fragments_by_table: dict[int, list[_TableFragmentSpec]] = {}

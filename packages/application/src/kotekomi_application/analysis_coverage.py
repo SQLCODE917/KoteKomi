@@ -29,6 +29,7 @@ from kotekomi_domain import (
     ExtractionTask,
     ModelRun,
     ModelRunStatus,
+    PdfPreflightReport,
     PlannedAnalysisItem,
     ProcessingAttempt,
     ProposedChange,
@@ -87,6 +88,9 @@ class AnalysisCoverageLedger(ContextPlanningLedger, Protocol):
     def get_document_representation_bundle(
         self, record_id: str
     ) -> DocumentRepresentationBundle | None: ...
+    def find_pdf_preflight_report_for_task(
+        self, task_fingerprint_id: str
+    ) -> PdfPreflightReport | None: ...
     def save_analysis_plan_artifact(self, record: AnalysisPlanArtifact) -> None: ...
     def get_analysis_plan_artifact(self, record_id: str) -> AnalysisPlanArtifact | None: ...
     def commit_analysis_run_scope(
@@ -576,7 +580,11 @@ def build_coverage_report(
                 CoverageIntegrityFailureReason.MISSING_MANIFEST.value,
             )
         try:
-            manifest = load_context_manifest(artifact.id, ledger_repository)
+            manifest = load_context_manifest(
+                artifact.id,
+                ledger_repository,
+                verified_bundle=bundle,
+            )
         except ValueError:
             integrity_failures.add(CoverageIntegrityFailureReason.UNEXPECTED_MANIFEST)
             return _store(
@@ -892,7 +900,19 @@ def build_coverage_report(
         reconcile(item)
     all_coverages = tuple(sorted(coverages.values(), key=lambda coverage: coverage.planned_item_id))
     represented_pages = _represented_pages(bundle, items, ledger_repository)
-    total_pages = len({region.page_number for region in bundle.source_regions})
+    preflight_report = ledger_repository.find_pdf_preflight_report_for_task(
+        bundle.representation.processing_task_fingerprint_id
+    )
+    if preflight_report is not None:
+        total_pages = preflight_report.page_count
+    else:
+        quality_page_count = bundle.quality_report.metric_values.get("page_count")
+        if quality_page_count is None:
+            total_pages = len({region.page_number for region in bundle.source_regions})
+        elif not isinstance(quality_page_count, int) or isinstance(quality_page_count, bool):
+            raise ValueError("Coverage requires an authoritative integer page denominator.")
+        else:
+            total_pages = quality_page_count
     state = (
         AnalysisCoverageState.FAILED
         if integrity_failures

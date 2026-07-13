@@ -66,6 +66,7 @@ from kotekomi_domain import (
     ModelRun,
     ModelRunStatus,
     ParseQualityReport,
+    PdfPreflightReport,
     PlannedAnalysisItem,
     ProcessingAttempt,
     ProposedChange,
@@ -122,6 +123,13 @@ class FakeGroundedCandidateLedger:
         self, record_id: str
     ) -> DocumentRepresentationBundle | None:
         return self.bundle if record_id == self.bundle.representation.id else None
+
+    def find_pdf_preflight_report_for_task(
+        self,
+        task_fingerprint_id: str,
+    ) -> PdfPreflightReport | None:
+        del task_fingerprint_id
+        return None
 
     def get_evidence_target(self, record_id: str) -> EvidenceTarget | None:
         return self.evidence_targets.get(record_id)

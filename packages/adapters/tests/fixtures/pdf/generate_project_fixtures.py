@@ -16,7 +16,7 @@ from pathlib import Path
 
 FIXTURE_ROOT = Path(__file__).resolve().parent
 QPDF_VERSION = "qpdf version 11.9.0"
-GENERATOR_VERSION = "kotekomi_pdf_fixture_generator_v3"
+GENERATOR_VERSION = "kotekomi_pdf_fixture_generator_v4"
 
 
 def _pdf_string(value: str) -> bytes:
@@ -292,6 +292,72 @@ def _adversarial_layout_pdf() -> bytes:
     )
 
 
+def _cross_page_semantics_pdf() -> bytes:
+    """Owned fixture for distant definitions and page-boundary footnote references."""
+
+    page_lines = (
+        (
+            "Cross-Page Semantic Context",
+            "Community resilience (CR) means the capacity to prepare for, recover from, "
+            "and adapt to disruption.",
+            "The definition is authoritative context for later CR analysis.",
+        ),
+        (
+            "Intervening Program Detail",
+            "The program coordinated local partners during the reporting period.",
+        ),
+        (
+            "Continuity Result",
+            "The continuity target improved by 12 percent (1).",
+        ),
+        (
+            "Footnote (1): Compared with the 2024 baseline.",
+            "Distant Definition Reuse",
+            "CR guides the response described several pages after its definition.",
+        ),
+    )
+
+    def page_stream(lines: tuple[str, ...], page_number: int) -> bytes:
+        commands = [
+            b"BT /F1 9 Tf 54 760 Td " + _pdf_string("KoteKomi Cross-Page Semantics") + b" Tj ET",
+            b"BT /F1 9 Tf 54 28 Td "
+            + _pdf_string(f"KoteKomi Semantic Corpus - Page {page_number}")
+            + b" Tj ET",
+        ]
+        positions = (
+            ((60, 8), (700, 16), (648, 11))
+            if page_number == 4
+            else tuple((700 - index * 52, 16 if index == 0 else 11) for index in range(len(lines)))
+        )
+        for line, (y, size) in zip(lines, positions, strict=True):
+            commands.append(
+                f"BT /F1 {size} Tf 54 {y} Td ".encode("ascii") + _pdf_string(line) + b" Tj ET"
+            )
+        return b"\n".join(commands) + b"\n"
+
+    streams = tuple(page_stream(lines, index) for index, lines in enumerate(page_lines, start=1))
+    return _serialize_pdf(
+        (
+            b"<< /Type /Catalog /Pages 2 0 R >>",
+            b"<< /Type /Pages /Kids [3 0 R 4 0 R 5 0 R 6 0 R] /Count 4 >>",
+            *(
+                (
+                    b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] "
+                    b"/CropBox [0 0 612 792] /Resources << /Font << /F1 7 0 R >> >> "
+                    + f"/Contents {8 + index} 0 R >>".encode("ascii")
+                )
+                for index in range(4)
+            ),
+            (
+                b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica "
+                b"/Encoding /WinAnsiEncoding /ToUnicode 12 0 R >>"
+            ),
+            *(_stream(stream) for stream in streams),
+            _unicode_cmap(),
+        )
+    )
+
+
 def _valid_corruption_source_pdf() -> bytes:
     content = b"BT /F1 14 Tf 72 720 Td (KoteKomi controlled corruption source v1) Tj ET\n"
     return _serialize_pdf(
@@ -473,6 +539,7 @@ def generate(output_root: Path) -> None:
     authored_pages = _authored_mixed_pages_pdf()
     complex_table = _complex_table_pdf()
     adversarial_layout = _adversarial_layout_pdf()
+    cross_page_semantics = _cross_page_semantics_pdf()
     encrypted_pdf = _deterministic_aes256_pdf()
     valid_corruption_source = _valid_corruption_source_pdf()
 
@@ -499,6 +566,7 @@ def generate(output_root: Path) -> None:
 
     (table_directory / "complex_table_v1.pdf").write_bytes(complex_table)
     (layout_directory / "adversarial_columns_hierarchy_v1.pdf").write_bytes(adversarial_layout)
+    (layout_directory / "cross_page_semantics_v1.pdf").write_bytes(cross_page_semantics)
     (encrypted_directory / "encrypted_aes256_v1.pdf").write_bytes(encrypted_pdf)
     for filename, contents in _controlled_corruptions(valid_corruption_source).items():
         (corruption_directory / filename).write_bytes(contents)

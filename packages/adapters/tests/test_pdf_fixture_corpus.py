@@ -72,7 +72,7 @@ def _pdf_page_count(path: Path, *, password: str | None = None) -> int:
 
 def test_pdf_fixture_manifest_pins_every_fixture_and_gold_artifact() -> None:
     manifest = _load_manifest()
-    assert manifest["schema_version"] == 2
+    assert manifest["schema_version"] == 3
 
     paths = [entry["path"] for entry in manifest["fixtures"]]
     fixture_ids = [entry["fixture_id"] for entry in manifest["fixtures"]]
@@ -140,6 +140,9 @@ def test_manifest_resolves_license_and_gold_expectation_profiles() -> None:
     assert entries["pdf_adversarial_columns_hierarchy_v1"].get("gold_path") == (
         "gold/adversarial_columns_hierarchy_v1.json"
     )
+    assert entries["pdf_cross_page_semantics_v1"].get("gold_path") == (
+        "gold/cross_page_semantics_v1.json"
+    )
 
 
 def test_project_fixture_generator_is_byte_reproducible(tmp_path: Path) -> None:
@@ -156,6 +159,7 @@ def test_project_fixture_generator_is_byte_reproducible(tmp_path: Path) -> None:
         "mixed/mixed_born_digital_scan_v1.pdf",
         "tables/complex_table_v1.pdf",
         "layout/adversarial_columns_hierarchy_v1.pdf",
+        "layout/cross_page_semantics_v1.pdf",
         "encrypted/encrypted_aes256_v1.pdf",
         "corrupt/generated/corrupt_truncated_v1.pdf",
         "corrupt/generated/corrupt_bad_xref_v1.pdf",

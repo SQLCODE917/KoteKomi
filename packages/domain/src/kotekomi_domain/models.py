@@ -1049,6 +1049,7 @@ def _require_unique_ids(
 
 
 def _validate_document_node_tree(nodes: tuple[DocumentNode, ...]) -> None:
+    nodes_by_id = {node.id: node for node in nodes}
     roots = [node for node in nodes if node.parent_node_id is None]
     if len(roots) != 1:
         raise ValueError("Document representation must contain exactly one root DocumentNode.")
@@ -1066,7 +1067,9 @@ def _validate_document_node_tree(nodes: tuple[DocumentNode, ...]) -> None:
             if parent_id in ancestor_ids:
                 raise ValueError("DocumentNode parentage must not contain a cycle.")
             ancestor_ids.add(parent_id)
-            parent = next(candidate for candidate in nodes if candidate.id == parent_id)
+            parent = nodes_by_id.get(parent_id)
+            if parent is None:
+                raise ValueError("DocumentNode parent_node_id must reference a node in its bundle.")
             parent_id = parent.parent_node_id
 
 
@@ -1078,22 +1081,28 @@ def _validate_reading_order_edges(edges: tuple[DocumentEdge, ...]) -> None:
             *successors.get(edge.from_node_id, ()),
             edge.to_node_id,
         )
-    visiting: set[str] = set()
-    visited: set[str] = set()
-
-    def visit(node_id: str) -> None:
-        if node_id in visiting:
-            raise ValueError("DocumentEdge reading order must not contain a cycle.")
-        if node_id in visited:
-            return
-        visiting.add(node_id)
-        for successor in successors.get(node_id, ()):
-            visit(successor)
-        visiting.remove(node_id)
-        visited.add(node_id)
-
-    for node_id in successors:
-        visit(node_id)
+    state: dict[str, int] = {}
+    for start_node_id in successors:
+        if state.get(start_node_id) == 2:
+            continue
+        stack: list[tuple[str, bool]] = [(start_node_id, False)]
+        while stack:
+            node_id, expanded = stack.pop()
+            if expanded:
+                state[node_id] = 2
+                continue
+            node_state = state.get(node_id, 0)
+            if node_state == 1:
+                raise ValueError("DocumentEdge reading order must not contain a cycle.")
+            if node_state == 2:
+                continue
+            state[node_id] = 1
+            stack.append((node_id, True))
+            for successor in reversed(successors.get(node_id, ())):
+                if state.get(successor) == 1:
+                    raise ValueError("DocumentEdge reading order must not contain a cycle.")
+                if state.get(successor, 0) == 0:
+                    stack.append((successor, False))
 
 
 def _validate_document_table_structure(
@@ -1264,43 +1273,55 @@ def canonical_representation_digest(
 ) -> str:
     """Return the SHA-256 digest of a stable representation serialization."""
 
-    representation_payload = representation.model_dump(mode="json")
+    representation_payload = _canonical_record_payload(representation)
     representation_payload.pop("canonical_output_digest")
     representation_payload.pop("created_at")
     payload = {
         "representation": representation_payload,
         "text_views": [
-            view.model_dump(mode="json") for view in sorted(text_views, key=lambda view: view.id)
+            _canonical_record_payload(view) for view in sorted(text_views, key=lambda view: view.id)
         ],
-        "nodes": [node.model_dump(mode="json") for node in sorted(nodes, key=lambda node: node.id)],
-        "edges": [edge.model_dump(mode="json") for edge in sorted(edges, key=lambda edge: edge.id)],
+        "nodes": [
+            _canonical_record_payload(node) for node in sorted(nodes, key=lambda node: node.id)
+        ],
+        "edges": [
+            _canonical_record_payload(edge) for edge in sorted(edges, key=lambda edge: edge.id)
+        ],
         "source_regions": [
-            region.model_dump(mode="json")
+            _canonical_record_payload(region)
             for region in sorted(source_regions, key=lambda region: region.id)
         ],
-        "tables": [table.model_dump(mode="json") for table in sorted(tables, key=lambda x: x.id)],
+        "tables": [
+            _canonical_record_payload(table) for table in sorted(tables, key=lambda x: x.id)
+        ],
         "table_fragments": [
-            fragment.model_dump(mode="json")
+            _canonical_record_payload(fragment)
             for fragment in sorted(table_fragments, key=lambda x: x.id)
         ],
         "table_rows": [
-            row.model_dump(mode="json") for row in sorted(table_rows, key=lambda x: x.id)
+            _canonical_record_payload(row) for row in sorted(table_rows, key=lambda x: x.id)
         ],
         "table_cells": [
-            cell.model_dump(mode="json") for cell in sorted(table_cells, key=lambda x: x.id)
+            _canonical_record_payload(cell) for cell in sorted(table_cells, key=lambda x: x.id)
         ],
         "table_annotations": [
-            annotation.model_dump(mode="json")
+            _canonical_record_payload(annotation)
             for annotation in sorted(table_annotations, key=lambda x: x.id)
         ],
         "references": [
-            reference.model_dump(mode="json")
+            _canonical_record_payload(reference)
             for reference in sorted(references, key=lambda x: x.id)
         ],
-        "quality_report": quality_report.model_dump(mode="json"),
+        "quality_report": _canonical_record_payload(quality_report),
     }
     canonical_json = json.dumps(payload, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
     return hashlib.sha256(canonical_json.encode("utf-8")).hexdigest()
+
+
+def _canonical_record_payload(record: DomainModel) -> dict[str, object]:
+    """Map one flat authority record without Pydantic's recursive serializer."""
+
+    return {field_name: getattr(record, field_name) for field_name in type(record).model_fields}
 
 
 class TableEvidenceSelector(DomainModel):

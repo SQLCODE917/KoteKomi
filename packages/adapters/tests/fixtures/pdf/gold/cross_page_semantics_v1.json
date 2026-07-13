@@ -1,0 +1,34 @@
+{
+  "fixture_version": "cross_page_semantics_v1",
+  "page_count": 4,
+  "definition": {
+    "page": 1,
+    "acronym": "CR",
+    "exact_text": "Community resilience (CR) means the capacity to prepare for, recover from, and adapt to disruption."
+  },
+  "definition_reuse": {
+    "page": 4,
+    "exact_text": "CR guides the response described several pages after its definition.",
+    "required_context_role": "definition"
+  },
+  "footnote": {
+    "marker_page": 3,
+    "marker_text": "(1)",
+    "marker_paragraph": "The continuity target improved by 12 percent (1).",
+    "target_page": 4,
+    "target_text": "Footnote (1): Compared with the 2024 baseline."
+  },
+  "furniture_lines": [
+    "KoteKomi Cross-Page Semantics",
+    "KoteKomi Semantic Corpus - Page 1",
+    "KoteKomi Semantic Corpus - Page 2",
+    "KoteKomi Semantic Corpus - Page 3",
+    "KoteKomi Semantic Corpus - Page 4"
+  ],
+  "must": [
+    "link_page_3_marker_to_page_4_target",
+    "include_page_1_definition_for_page_4_reuse",
+    "exclude_furniture_from_logical_context",
+    "preserve_all_four_page_regions"
+  ]
+}

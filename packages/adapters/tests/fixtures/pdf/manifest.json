@@ -1,9 +1,9 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "downloaded_at": "2026-07-13T07:56:34-04:00",
   "generator": {
     "path": "generate_project_fixtures.py",
-    "version": "kotekomi_pdf_fixture_generator_v3",
+    "version": "kotekomi_pdf_fixture_generator_v4",
     "qpdf_version": "11.9.0",
     "openssl_compatibility": "3.x AES output"
   },
@@ -19,6 +19,8 @@
     "multilevel_and_spanning_table_headers",
     "cross_page_tables",
     "footnotes_and_cross_references",
+    "footnote_reference_crossing_page_boundary",
+    "definition_reused_several_pages_later",
     "fonts_without_usable_unicode_mappings",
     "encrypted_pdf",
     "corrupt_pdf",
@@ -88,6 +90,12 @@
       "expected_page_count": 3,
       "extraction_mode": "embedded_text_layout",
       "must_not": ["use_object_order", "interleave_columns", "include_furniture_in_body_text", "apply_rotation_twice", "flatten_nested_lists"]
+    },
+    "canonical_cross_page_semantics": {
+      "expected_parser_disposition": "acceptable",
+      "expected_page_count": 4,
+      "extraction_mode": "embedded_text_layout",
+      "must_not": ["lose_cross_page_footnote", "omit_distant_definition", "include_furniture_in_body_text"]
     },
     "rotated_ocr": {
       "expected_parser_disposition": "acceptable_or_explicitly_degraded",
@@ -200,6 +208,20 @@
       "expectation_profile": "canonical_adversarial_layout",
       "gold_path": "gold/adversarial_columns_hierarchy_v1.json",
       "requirements": ["multi_column_reading_order", "three_column_adversarial_reading_order", "repeated_headers_and_footers", "rotated_pages", "nested_lists_and_section_hierarchy"]
+    },
+    {
+      "fixture_id": "pdf_cross_page_semantics_v1",
+      "path": "layout/cross_page_semantics_v1.pdf",
+      "media_type": "application/pdf",
+      "origin": "generated",
+      "generator_version": "kotekomi_pdf_fixture_generator_v4",
+      "local_sha256": "0533f62621e6afde6ad402dff410d1eb8cf0c827811625b6d83aa93dd880f8de",
+      "size_bytes": 3066,
+      "license_profile": "project_owned",
+      "license_disposition": "project_owned",
+      "expectation_profile": "canonical_cross_page_semantics",
+      "gold_path": "gold/cross_page_semantics_v1.json",
+      "requirements": ["footnote_reference_crossing_page_boundary", "definition_reused_several_pages_later"]
     },
     {
       "fixture_id": "pdf_rotation_cardinal_ocrmypdf",
@@ -572,6 +594,14 @@
     {
       "path": "gold/controlled_corruptions_v1.json",
       "sha256": "8524b974dfef4bbb5ab32c6d769c48cf3c067044b5d97d8c4844c6c5b76f57e8"
+    },
+    {
+      "path": "gold/cross_page_semantics_v1.json",
+      "sha256": "41797ad40fed7250348cc41f3c636d010ad23d2151bd01a3a97018a9bb24a0b3"
+    },
+    {
+      "path": "gold/integrated_gold_matrix_v1.json",
+      "sha256": "01f6aea94ad05b163062e7fc124ab58ac442548df7d0f0ec81792889bca39ac0"
     }
   ],
   "parser_output_mutations": [

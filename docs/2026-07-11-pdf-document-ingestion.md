@@ -1,6 +1,7 @@
 # TDD: PDF Document Ingestion
 
 - **Status:** Accepted
+- **Implementation status:** GREEN — integrated gold matrix passed 2026-07-13
 - **Parent:** [Authoritative Document Ingestion Program](2026-07-11-authoritative-document-ingestion-program.md)
 - **Depends on:** [Source Capture](2026-07-11-source-capture-and-document-versioning.md), [Representations](2026-07-11-versioned-document-representations.md), [Evidence Targets](2026-07-11-replayable-evidence-targets.md)
 
@@ -174,6 +175,17 @@ The repository's redistributable corpus SHALL include at least:
 - Deployment documentation identifies native dependencies and a deterministic container or lockfile strategy.
 
 ## 11. Completion gates
+
+The authoritative sign-off artifact is
+`packages/adapters/tests/fixtures/pdf/gold/integrated_gold_matrix_v1.json`. Its exact
+fixture-class partition is executed by
+`packages/adapters/tests/test_pdf_integrated_gold_matrix.py`. Every row crosses public capture
+and PDF ingestion, authoritative preflight and page accounting, transformation selection,
+canonical representation and quality policy, context planning or an explicit typed block,
+evidence replay where applicable, run-scoped coverage, SQLite restart, and a deterministic
+rerun. Rows execute in isolated processes so native parser state from one fixture cannot affect
+another; each row performs both processing invocations and the restart proof within that one
+isolated process.
 
 ### Correctness criteria
 
