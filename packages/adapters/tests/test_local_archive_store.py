@@ -15,6 +15,7 @@ def test_initialize_creates_archive_directories(tmp_path: Path) -> None:
     assert not (tmp_path / "documents" / "extracted").exists()
     assert (tmp_path / "attachments").is_dir()
     assert (tmp_path / "briefings" / "daily").is_dir()
+    assert (tmp_path / "transformations").is_dir()
 
 
 def test_put_and_read_raw_source(tmp_path: Path) -> None:
@@ -45,6 +46,20 @@ def test_put_and_read_model_run_output(tmp_path: Path) -> None:
 
     assert outcome.object.relative_path == "model-runs/mrn_fixture_output.json"
     assert store.read_model_run_output("mrn_fixture_output") == content
+
+
+def test_put_and_reuse_pdf_transformation_blob(tmp_path: Path) -> None:
+    store = LocalArchiveStore(tmp_path)
+    store.initialize()
+    content = b'{"page":2,"text":"OCR output"}'
+    digest = hashlib.sha256(content).hexdigest()
+
+    created = store.put_pdf_transformation_blob(f"blb_{digest}", content, digest)
+    reused = store.put_pdf_transformation_blob(f"blb_{digest}", content, digest)
+
+    assert created.object.relative_path == f"transformations/blb_{digest}.bin"
+    assert reused.object == created.object
+    assert store.read_pdf_transformation_blob(f"blb_{digest}") == content
 
 
 def test_stage_and_promote_briefing_markdown(tmp_path: Path) -> None:

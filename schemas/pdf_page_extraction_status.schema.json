@@ -36,6 +36,20 @@
       "title": "Id",
       "type": "string"
     },
+    "ocr_confidence": {
+      "anyOf": [
+        {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Ocr Confidence"
+    },
     "page_index": {
       "minimum": 1,
       "title": "Page Index",
@@ -58,6 +72,11 @@
       },
       "title": "Policy Reasons",
       "type": "array"
+    },
+    "policy_version": {
+      "minLength": 1,
+      "title": "Policy Version",
+      "type": "string"
     },
     "preflight_report_id": {
       "pattern": "^pfr_[A-Za-z0-9][A-Za-z0-9_-]*$",
@@ -114,6 +133,7 @@
     "extracted_character_count",
     "rotation_applied",
     "policy_id",
+    "policy_version",
     "policy_reasons"
   ],
   "title": "PdfPageExtractionStatus",

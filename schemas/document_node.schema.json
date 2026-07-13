@@ -1,4 +1,16 @@
 {
+  "$defs": {
+    "PdfExtractionPath": {
+      "enum": [
+        "embedded",
+        "ocr",
+        "mixed",
+        "inaccessible"
+      ],
+      "title": "PdfExtractionPath",
+      "type": "string"
+    }
+  },
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
   "properties": {
@@ -6,6 +18,17 @@
       "minimum": 0,
       "title": "End Char",
       "type": "integer"
+    },
+    "extraction_path": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/PdfExtractionPath"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
     },
     "id": {
       "pattern": "^nod_[A-Za-z0-9][A-Za-z0-9_-]*$",

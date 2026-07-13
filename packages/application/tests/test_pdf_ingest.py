@@ -72,8 +72,19 @@ def test_pdf_extraction_policy_emits_explicit_terminal_page_decisions() -> None:
         representation_analyzability=None,
         source_blocked=False,
     )
+    recovered_high_rate = policy.select_page_outcome(
+        page=PdfPagePreflight(1, 612, 792, 0, 120, suspicious_glyph_rate=0.01),
+        page_has_output=True,
+        representation_analyzability=None,
+        source_blocked=False,
+        selected_path=PdfExtractionPath.OCR,
+        ocr_confidence=0.75,
+    )
     assert low_rate.status is PdfPageQualityStatus.ACCEPTABLE
-    assert high_rate.status is PdfPageQualityStatus.DEGRADED
+    assert high_rate.status is PdfPageQualityStatus.BLOCKED
+    assert high_rate.reasons == ("selected_ocr_output_missing",)
+    assert recovered_high_rate.extraction_path is PdfExtractionPath.OCR
+    assert recovered_high_rate.status is PdfPageQualityStatus.DEGRADED
 
 
 class SequenceAttemptIdFactory:

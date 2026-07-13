@@ -1219,6 +1219,8 @@ def _assert_r1a_representation(
         "paragraph_node_count": 15,
         "list_item_node_count": 0,
         "furniture_node_count": 2,
+        "embedded_node_count": 19,
+        "ocr_node_count": 0,
         "source_region_count": 19,
     }
     assert len(bundle.text_views) == 2

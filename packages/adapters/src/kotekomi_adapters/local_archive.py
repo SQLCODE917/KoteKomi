@@ -19,6 +19,7 @@ RAW_SOURCE_DIR = Path("sources/raw")
 ATTACHMENTS_DIR = Path("attachments")
 BRIEFING_DAILY_DIR = Path("briefings/daily")
 MODEL_RUNS_DIR = Path("model-runs")
+PDF_TRANSFORMATIONS_DIR = Path("transformations")
 STAGING_DIR = Path(".staging")
 
 
@@ -32,6 +33,7 @@ class LocalArchiveStore:
             ATTACHMENTS_DIR,
             BRIEFING_DAILY_DIR,
             MODEL_RUNS_DIR,
+            PDF_TRANSFORMATIONS_DIR,
         ):
             self._absolute_path(relative_dir).mkdir(parents=True, exist_ok=True)
 
@@ -61,6 +63,34 @@ class LocalArchiveStore:
 
     def read_raw_source(self, source_id: str) -> bytes:
         relative_path = RAW_SOURCE_DIR / f"{_validate_archive_id(source_id)}.bin"
+        return self._absolute_path(relative_path).read_bytes()
+
+    def put_pdf_transformation_blob(
+        self,
+        object_id: str,
+        payload: bytes,
+        expected_digest: str,
+    ) -> ArchivePutOutcome:
+        actual_digest = hashlib.sha256(payload).hexdigest()
+        if actual_digest != expected_digest:
+            raise ValueError("PDF transformation payload does not match expected digest.")
+        relative_path = PDF_TRANSFORMATIONS_DIR / f"{_validate_archive_id(object_id)}.bin"
+        absolute_path = self._absolute_path(relative_path)
+        if absolute_path.exists():
+            existing = absolute_path.read_bytes()
+            if hashlib.sha256(existing).hexdigest() != expected_digest:
+                raise ValueError("PDF transformation object conflicts with its expected digest.")
+            return ArchivePutOutcome(
+                ArchivePutDisposition.REUSED,
+                ArchiveObject(relative_path.as_posix(), len(existing)),
+            )
+        return ArchivePutOutcome(
+            ArchivePutDisposition.CREATED,
+            self._write_bytes(relative_path, absolute_path, payload),
+        )
+
+    def read_pdf_transformation_blob(self, object_id: str) -> bytes:
+        relative_path = PDF_TRANSFORMATIONS_DIR / f"{_validate_archive_id(object_id)}.bin"
         return self._absolute_path(relative_path).read_bytes()
 
     def put_model_run_output(

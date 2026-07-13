@@ -39,6 +39,9 @@ def main() -> None:
         DoclingPdfParserConfig(
             enable_ocr=bool(config_payload["enable_ocr"]),
             enable_table_structure=bool(config_payload["enable_table_structure"]),
+            ocr_language=str(config_payload["ocr_language"]),
+            ocr_render_scale=int(config_payload["ocr_render_scale"]),
+            ocr_text_score=float(config_payload["ocr_text_score"]),
         )
     )
     result = parser.parse(parse_input)

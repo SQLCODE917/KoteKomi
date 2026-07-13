@@ -965,11 +965,20 @@ class SQLiteLedgerRepository:
         report = self.get_pdf_preflight_report(preflight_report_id)
         if report is None:
             return None
+        transformations = self.list_pdf_transformation_artifacts_for_report(report.id)
+        transformation_blobs = tuple(
+            blob
+            for artifact in transformations
+            if (blob := self.get_raw_blob(artifact.output_blob_id)) is not None
+        )
+        if len(transformation_blobs) != len(transformations):
+            raise RuntimeError("PDF transformation artifact output RawBlob is missing.")
         return PdfPageAccountingBundle(
             preflight_report=report,
             page_inventory=self.list_pdf_page_inventory_for_report(report.id),
             page_extraction_statuses=self.list_pdf_page_extraction_statuses_for_report(report.id),
-            transformation_artifacts=self.list_pdf_transformation_artifacts_for_report(report.id),
+            transformation_artifacts=transformations,
+            transformation_blobs=transformation_blobs,
         )
 
     def commit_pdf_document_processing(
@@ -1066,7 +1075,12 @@ class SQLiteLedgerRepository:
         self._save(PDF_PREFLIGHT_REPORT_SPEC, validated.preflight_report)
         for page in validated.page_inventory:
             self._save(PDF_PAGE_INVENTORY_SPEC, page)
-        for artifact in validated.transformation_artifacts:
+        for artifact, blob in zip(
+            validated.transformation_artifacts,
+            validated.transformation_blobs,
+            strict=True,
+        ):
+            self.save_raw_blob(blob)
             self._save(PDF_TRANSFORMATION_ARTIFACT_SPEC, artifact)
         for status in validated.page_extraction_statuses:
             self._save(PDF_PAGE_EXTRACTION_STATUS_SPEC, status)
@@ -1484,6 +1498,7 @@ class SQLiteLedgerRepository:
             "pdf_page_inventory": "pdf_page_inventories",
             "pdf_page_extraction_status": "pdf_page_extraction_statuses",
             "pdf_transformation_artifact": "pdf_transformation_artifacts",
+            "pdf_transformation_blob": "raw_blobs",
         }
         for artifact in record.output_artifacts:
             table_name = table_by_kind[artifact.kind.value]

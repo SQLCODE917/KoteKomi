@@ -18,6 +18,8 @@ from kotekomi_domain import (
     PdfPageInventory,
     PdfPageQualityStatus,
     PdfPreflightReport,
+    PdfTransformationArtifact,
+    PdfTransformationType,
     ProcessingArtifactKind,
     ProcessingArtifactRef,
     ProcessingAttempt,
@@ -141,7 +143,51 @@ class PdfParseInput:
 class PdfParseResult:
     preflight: PdfPreflight
     representation_bundle: DocumentRepresentationBundle | None
+    transformation_payloads: tuple[PdfTransformationPayload, ...] = ()
     blocking_reasons: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class PdfTransformationPayload:
+    activity_type: PdfTransformationType
+    input_digest: str
+    output_payload: bytes
+    output_media_type: str
+    tool_name: str
+    tool_version: str
+    model_name: str
+    model_version: str
+    model_digest: str
+    configuration_digest: str
+    page_scope: tuple[int, ...]
+    language_set: tuple[str, ...] = ()
+    confidence: float | None = None
+
+    def __post_init__(self) -> None:
+        digests = (self.input_digest, self.model_digest, self.configuration_digest)
+        if any(len(digest) != 64 or set(digest) - set("0123456789abcdef") for digest in digests):
+            raise ValueError("PDF transformation payload digests must be lowercase SHA-256.")
+        if not self.output_payload or not self.output_media_type:
+            raise ValueError(
+                "PDF transformation payload requires archived output bytes and media type."
+            )
+        if not self.page_scope or tuple(sorted(set(self.page_scope))) != self.page_scope:
+            raise ValueError("PDF transformation payload requires sorted unique page scope.")
+        if self.confidence is not None and not 0 <= self.confidence <= 1:
+            raise ValueError("PDF transformation confidence must be between zero and one.")
+        if self.activity_type is PdfTransformationType.OCR:
+            if len(self.page_scope) != 1:
+                raise ValueError("An OCR payload must account for exactly one PDF page.")
+            if not self.language_set:
+                raise ValueError("An OCR payload requires its language set.")
+            if self.confidence is None:
+                raise ValueError("An OCR payload requires page confidence.")
+        elif self.language_set or self.confidence is not None:
+            raise ValueError("A non-OCR payload cannot claim OCR language or confidence.")
+
+    @property
+    def output_digest(self) -> str:
+        return hashlib.sha256(self.output_payload).hexdigest()
 
 
 @dataclass(frozen=True)
@@ -161,9 +207,22 @@ class PdfPagePolicyDecision:
 
 @dataclass(frozen=True)
 class PdfExtractionPolicy:
-    """Initial versioned policy for terminal accounting of parser-produced pages."""
+    """Versioned page-selection and terminal-accounting policy."""
 
     policy_id: str
+    policy_version = "selective_pdf_page_policy_v1"
+
+    def select_extraction_path(self, page: PdfPagePreflight) -> PdfExtractionPath:
+        if (
+            page.embedded_text_character_count == 0
+            or page.suspicious_glyph_rate >= 0.01
+            or (
+                "font_unicode_mapping_unavailable" in page.warnings
+                and page.embedded_text_character_count < 64
+            )
+        ):
+            return PdfExtractionPath.OCR
+        return PdfExtractionPath.EMBEDDED
 
     def select_page_outcome(
         self,
@@ -172,6 +231,8 @@ class PdfExtractionPolicy:
         page_has_output: bool,
         representation_analyzability: RepresentationAnalyzability | None,
         source_blocked: bool,
+        selected_path: PdfExtractionPath | None = None,
+        ocr_confidence: float | None = None,
     ) -> PdfPagePolicyDecision:
         if source_blocked:
             return PdfPagePolicyDecision(
@@ -185,29 +246,49 @@ class PdfExtractionPolicy:
                 PdfPageQualityStatus.BLOCKED,
                 ("parser_omitted_page_output",),
             )
-        if page.embedded_text_character_count == 0:
+        selected = selected_path or self.select_extraction_path(page)
+        if selected is PdfExtractionPath.OCR and ocr_confidence is None:
             return PdfPagePolicyDecision(
                 PdfExtractionPath.INACCESSIBLE,
                 PdfPageQualityStatus.BLOCKED,
-                ("page_requires_ocr_without_transformation_artifact",),
+                ("selected_ocr_output_missing",),
             )
         if representation_analyzability is RepresentationAnalyzability.BLOCKED:
             status = PdfPageQualityStatus.BLOCKED
             reason = "representation_quality_blocked"
         elif (
-            representation_analyzability is RepresentationAnalyzability.DEGRADED
-            or page.suspicious_glyph_rate >= 0.01
+            selected is PdfExtractionPath.OCR
+            and ocr_confidence is not None
+            and ocr_confidence < 0.8
+        ):
+            status = PdfPageQualityStatus.DEGRADED
+            reason = "ocr_confidence_requires_degraded_quality"
+        elif representation_analyzability is RepresentationAnalyzability.DEGRADED or (
+            selected is PdfExtractionPath.EMBEDDED and page.suspicious_glyph_rate >= 0.01
         ):
             status = PdfPageQualityStatus.DEGRADED
             reason = "embedded_text_requires_degraded_quality"
         else:
             status = PdfPageQualityStatus.ACCEPTABLE
-            reason = "usable_embedded_text"
+            reason = (
+                "usable_ocr_text" if selected is PdfExtractionPath.OCR else "usable_embedded_text"
+            )
         return PdfPagePolicyDecision(
-            PdfExtractionPath.EMBEDDED,
+            selected,
             status,
             (reason,),
         )
+
+
+class PdfTransformationArchive(Protocol):
+    def put_pdf_transformation_blob(
+        self,
+        object_id: str,
+        payload: bytes,
+        expected_digest: str,
+    ) -> object: ...
+
+    def read_pdf_transformation_blob(self, object_id: str) -> bytes: ...
 
 
 class PdfDocumentParser(Protocol):
@@ -269,6 +350,7 @@ def ingest_pdf(
     parser: PdfDocumentParser,
     attempt_id_factory: ProcessingAttemptIdFactory,
     clock: ProcessingClock | None = None,
+    transformation_archive: PdfTransformationArchive | None = None,
 ) -> PdfIngestOutcome:
     # Validate the build before consulting the parser or writing any task/attempt.
     ingest_input.build_identity.snapshot()
@@ -319,6 +401,24 @@ def ingest_pdf(
             retryable=False,
         ),
     )
+    try:
+        transformation_blobs = _archive_pdf_transformation_payloads(
+            parse_result.transformation_payloads,
+            raw_blob,
+            ingest_input.ingested_at,
+            transformation_archive,
+        )
+    except Exception as exc:
+        _record_pdf_failure(
+            ledger_repository=ledger_repository,
+            attempt=attempt,
+            finished_at=processing_clock.now(),
+            exception=exc,
+            code="pdf_transformation_archive_failure",
+            stage=ProcessingStage.ARCHIVE,
+            safe_message="PDF transformation output could not be archived.",
+        )
+        raise
     bundle = parse_result.representation_bundle
     if bundle is None:
         blocking_reasons = parse_result.blocking_reasons or (
@@ -330,6 +430,7 @@ def ingest_pdf(
             raw_blob=raw_blob,
             parse_result=parse_result,
             extraction_policy=extraction_policy,
+            transformation_blobs=transformation_blobs,
         )
         provenance = _pdf_page_accounting_provenance(
             document=document,
@@ -399,6 +500,7 @@ def ingest_pdf(
             raw_blob=raw_blob,
             parse_result=parse_result,
             extraction_policy=extraction_policy,
+            transformation_blobs=transformation_blobs,
         )
         _validate_page_accounting_quality(bundle, page_accounting)
     except ValueError as error:
@@ -431,6 +533,7 @@ def ingest_pdf(
             *(page.id for page in page_accounting.page_inventory),
             *(status.id for status in page_accounting.page_extraction_statuses),
             *(artifact.id for artifact in page_accounting.transformation_artifacts),
+            *(blob.id for blob in page_accounting.transformation_blobs),
         ),
         occurred_at=ingest_input.ingested_at,
     )
@@ -560,6 +663,7 @@ def validate_representation_for_processing_task(
     validated_bundle = DocumentRepresentationBundle.model_validate(bundle.model_dump())
     _validate_pdf_region_geometry(parse_result.preflight, validated_bundle)
     _validate_pdf_text_views_and_reading_order(validated_bundle)
+    _validate_pdf_extraction_provenance(parse_result, validated_bundle)
 
 
 def _build_pdf_page_accounting(
@@ -569,6 +673,7 @@ def _build_pdf_page_accounting(
     raw_blob: RawBlob,
     parse_result: PdfParseResult,
     extraction_policy: PdfExtractionPolicy,
+    transformation_blobs: tuple[RawBlob, ...],
 ) -> PdfPageAccountingBundle:
     report_id = _derived_pdf_record_id("pfr", task.id, "preflight")
     page_inventory_ids = tuple(
@@ -578,6 +683,38 @@ def _build_pdf_page_accounting(
     status_ids = tuple(
         _derived_pdf_record_id("pes", report_id, str(page.page_index))
         for page in parse_result.preflight.pages
+    )
+    blob_id_by_digest = {
+        raw_blob.digest: raw_blob.id,
+        **{blob.digest: blob.id for blob in transformation_blobs},
+    }
+    transformation_artifacts = tuple(
+        PdfTransformationArtifact(
+            id=_derived_pdf_record_id(
+                "pta",
+                report_id,
+                payload.activity_type.value,
+                payload.output_digest,
+            ),
+            preflight_report_id=report_id,
+            input_blob_id=blob_id_by_digest[payload.input_digest],
+            output_blob_id=blob.id,
+            activity_type=payload.activity_type,
+            tool_name=payload.tool_name,
+            tool_version=payload.tool_version,
+            model_name=payload.model_name,
+            model_version=payload.model_version,
+            model_digest=payload.model_digest,
+            configuration_digest=payload.configuration_digest,
+            page_scope=payload.page_scope,
+            language_set=payload.language_set,
+            confidence=payload.confidence,
+        )
+        for payload, blob in zip(
+            parse_result.transformation_payloads,
+            transformation_blobs,
+            strict=True,
+        )
     )
     report = PdfPreflightReport(
         id=report_id,
@@ -590,6 +727,7 @@ def _build_pdf_page_accounting(
         permissions=parse_result.preflight.permissions,
         page_inventory_ids=page_inventory_ids,
         page_extraction_status_ids=status_ids,
+        transformation_artifact_ids=tuple(artifact.id for artifact in transformation_artifacts),
         global_issues=tuple(
             dict.fromkeys(
                 (
@@ -646,6 +784,21 @@ def _build_pdf_page_accounting(
         strict=True,
     ):
         page_has_output = page.page_index in covered_pages
+        selected_path = extraction_policy.select_extraction_path(page)
+        page_transformations = tuple(
+            artifact
+            for artifact in transformation_artifacts
+            if page.page_index in artifact.page_scope
+        )
+        ocr_artifact = next(
+            (
+                artifact
+                for artifact in page_transformations
+                if artifact.activity_type is PdfTransformationType.OCR
+            ),
+            None,
+        )
+        page_ocr_confidence = ocr_artifact.confidence if ocr_artifact is not None else None
         decision = extraction_policy.select_page_outcome(
             page=page,
             page_has_output=page_has_output,
@@ -653,6 +806,8 @@ def _build_pdf_page_accounting(
                 bundle.quality_report.analyzability if bundle is not None else None
             ),
             source_blocked=bundle is None,
+            selected_path=selected_path,
+            ocr_confidence=page_ocr_confidence,
         )
         statuses.append(
             PdfPageExtractionStatus(
@@ -669,14 +824,66 @@ def _build_pdf_page_accounting(
                 rotation_applied=page.rotation,
                 warnings=page.warnings,
                 policy_id=extraction_policy.policy_id,
+                policy_version=extraction_policy.policy_version,
                 policy_reasons=decision.reasons,
+                ocr_confidence=(
+                    page_ocr_confidence
+                    if decision.extraction_path in {PdfExtractionPath.OCR, PdfExtractionPath.MIXED}
+                    else None
+                ),
+                transformation_artifact_ids=tuple(
+                    artifact.id
+                    for artifact in page_transformations
+                    if decision.extraction_path
+                    in {
+                        PdfExtractionPath.OCR,
+                        PdfExtractionPath.MIXED,
+                    }
+                ),
             )
         )
     return PdfPageAccountingBundle(
         preflight_report=report,
         page_inventory=page_inventory,
         page_extraction_statuses=tuple(statuses),
+        transformation_artifacts=transformation_artifacts,
+        transformation_blobs=transformation_blobs,
     )
+
+
+def _archive_pdf_transformation_payloads(
+    payloads: tuple[PdfTransformationPayload, ...],
+    raw_blob: RawBlob,
+    created_at: datetime,
+    archive: PdfTransformationArchive | None,
+) -> tuple[RawBlob, ...]:
+    if payloads and archive is None:
+        raise ValueError("PDF transformation output requires an Archive capability.")
+    if archive is None:
+        return ()
+    available_input_digests = {raw_blob.digest}
+    blobs: list[RawBlob] = []
+    for payload in payloads:
+        if payload.input_digest not in available_input_digests:
+            raise ValueError("PDF transformation input digest is not archived by this task.")
+        output_digest = payload.output_digest
+        blob_id = f"blb_{output_digest}"
+        archive.put_pdf_transformation_blob(blob_id, payload.output_payload, output_digest)
+        if archive.read_pdf_transformation_blob(blob_id) != payload.output_payload:
+            raise ValueError("Archived PDF transformation bytes disagree with parser output.")
+        blobs.append(
+            RawBlob(
+                id=blob_id,
+                hash_algorithm="sha256",
+                digest=output_digest,
+                byte_length=len(payload.output_payload),
+                media_type=payload.output_media_type,
+                storage_locator=f"transformations/{blob_id}.bin",
+                created_at=created_at,
+            )
+        )
+        available_input_digests.add(output_digest)
+    return tuple(blobs)
 
 
 def _derived_pdf_record_id(prefix: str, *parts: str) -> str:
@@ -736,6 +943,15 @@ def _page_accounting_artifact_refs(
             )
             for artifact in page_accounting.transformation_artifacts
         ),
+        *(
+            ProcessingArtifactRef(
+                kind=ProcessingArtifactKind.PDF_TRANSFORMATION_BLOB,
+                artifact_id=blob.id,
+                role="archived_pdf_transformation_bytes",
+                digest=blob.digest,
+            )
+            for blob in page_accounting.transformation_blobs
+        ),
     )
 
 
@@ -757,6 +973,7 @@ def _pdf_page_accounting_provenance(
             *(page.id for page in page_accounting.page_inventory),
             *(status.id for status in page_accounting.page_extraction_statuses),
             *(artifact.id for artifact in page_accounting.transformation_artifacts),
+            *(blob.id for blob in page_accounting.transformation_blobs),
         ),
         occurred_at=occurred_at,
     )
@@ -817,6 +1034,49 @@ def _validate_pdf_text_views_and_reading_order(
     actual_pairs = tuple((edge.from_node_id, edge.to_node_id) for edge in reading_edges)
     if actual_pairs != expected_pairs:
         raise ValueError("PDF reading-order edges must form one exact logical-node chain.")
+
+
+def _validate_pdf_extraction_provenance(
+    parse_result: PdfParseResult,
+    bundle: DocumentRepresentationBundle,
+) -> None:
+    policy = PdfExtractionPolicy(parse_result.preflight.parser_name)
+    selected_ocr_pages = {
+        page.page_index
+        for page in parse_result.preflight.pages
+        if policy.select_extraction_path(page) is PdfExtractionPath.OCR
+    }
+    covered_pages = {region.page_number for region in bundle.source_regions}
+    expected_transformed_pages = selected_ocr_pages & covered_pages
+    ocr_payload_pages = {
+        page
+        for payload in parse_result.transformation_payloads
+        if payload.activity_type is PdfTransformationType.OCR
+        for page in payload.page_scope
+    }
+    render_payload_pages = {
+        page
+        for payload in parse_result.transformation_payloads
+        if payload.activity_type is PdfTransformationType.RENDER
+        for page in payload.page_scope
+    }
+    if (
+        ocr_payload_pages != expected_transformed_pages
+        or render_payload_pages != expected_transformed_pages
+    ):
+        raise ValueError("PDF OCR and render transformations must match selected pages exactly.")
+    for node in bundle.nodes:
+        if node.parent_node_id is None:
+            continue
+        expected_path = (
+            PdfExtractionPath.OCR
+            if any(page in selected_ocr_pages for page in node.source_page_numbers)
+            else PdfExtractionPath.EMBEDDED
+        )
+        if node.extraction_path is not expected_path:
+            raise ValueError("PDF node extraction provenance disagrees with page selection.")
+        if expected_path is PdfExtractionPath.OCR and node.parser_confidence is None:
+            raise ValueError("OCR-derived PDF nodes require parser confidence.")
 
 
 def _provenance_id(document_id: str, representation_id: str, policy_id: str) -> str:

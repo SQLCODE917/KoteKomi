@@ -20,7 +20,8 @@
         "pdf_preflight_report",
         "pdf_page_inventory",
         "pdf_page_extraction_status",
-        "pdf_transformation_artifact"
+        "pdf_transformation_artifact",
+        "pdf_transformation_blob"
       ],
       "title": "ProcessingArtifactKind",
       "type": "string"
@@ -153,6 +154,7 @@
         "build_identity",
         "attempt_start",
         "parser",
+        "archive",
         "representation_validation",
         "persistence",
         "reconciliation"

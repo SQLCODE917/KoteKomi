@@ -53,6 +53,21 @@
       "title": "Language Set",
       "type": "array"
     },
+    "model_digest": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Model Digest",
+      "type": "string"
+    },
+    "model_name": {
+      "minLength": 1,
+      "title": "Model Name",
+      "type": "string"
+    },
+    "model_version": {
+      "minLength": 1,
+      "title": "Model Version",
+      "type": "string"
+    },
     "output_blob_id": {
       "pattern": "^blb_[A-Za-z0-9][A-Za-z0-9_-]*$",
       "title": "Output Blob Id",
@@ -90,6 +105,9 @@
     "activity_type",
     "tool_name",
     "tool_version",
+    "model_name",
+    "model_version",
+    "model_digest",
     "configuration_digest",
     "page_scope"
   ],

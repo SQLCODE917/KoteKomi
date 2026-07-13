@@ -559,7 +559,7 @@
   "gold_artifacts": [
     {
       "path": "gold/mixed_born_digital_scan_v1.json",
-      "sha256": "5c50cd371c7e75ecaf1b73305610086c1954df4e5618b7c3fdc569a349a9cef2"
+      "sha256": "f17d202759018524e769a9f89d27f9a4887d800594ffb6c1836f42356e2c63a9"
     },
     {
       "path": "gold/complex_table_v1.json",

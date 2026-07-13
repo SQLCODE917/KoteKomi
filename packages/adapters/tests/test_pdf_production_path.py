@@ -493,6 +493,7 @@ def _representation_bundle(
         source_region_ids=(region.id,),
         source_page_numbers=(1,),
         source_text_digest=hashlib.sha256(text.encode("utf-8")).hexdigest(),
+        extraction_path=PdfExtractionPath.EMBEDDED,
     )
     edge = DocumentEdge(
         id=f"deg_{representation_key}_contains_1",

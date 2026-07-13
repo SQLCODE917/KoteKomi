@@ -17,15 +17,18 @@ from dataclasses import dataclass, replace
 from functools import cache
 from importlib.metadata import PackageNotFoundError, version
 from io import BytesIO
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
 from kotekomi_application.pdf_ingest import (
     PdfDocumentParser,
+    PdfExtractionPolicy,
     PdfPagePreflight,
     PdfParseInput,
     PdfParseResult,
     PdfPreflight,
     PdfProcessorIdentity,
+    PdfTransformationPayload,
 )
 
 if TYPE_CHECKING:
@@ -38,6 +41,8 @@ from kotekomi_domain import (
     DocumentRepresentation,
     DocumentRepresentationBundle,
     ParseQualityReport,
+    PdfExtractionPath,
+    PdfTransformationType,
     RepresentationAnalyzability,
     SourceCoordinateSystem,
     SourceRegion,
@@ -51,8 +56,11 @@ HASH_ID_LENGTH = 24
 
 @dataclass(frozen=True)
 class DoclingPdfParserConfig:
-    enable_ocr: bool = False
+    enable_ocr: bool = True
     enable_table_structure: bool = False
+    ocr_language: str = "english"
+    ocr_render_scale: int = 2
+    ocr_text_score: float = 0.5
 
 
 @dataclass(frozen=True)
@@ -82,10 +90,23 @@ class _LayoutItem:
     regions: tuple[_LayoutRegion, ...]
     heading_level: int | None = None
     marker: str | None = None
+    extraction_path: PdfExtractionPath = PdfExtractionPath.EMBEDDED
+    confidence: float | None = None
 
 
 class PdfSourcePreflightError(RuntimeError):
     """The source bytes cannot yield a trustworthy PDF page inventory."""
+
+
+class PdfOcrNoUsableTextError(RuntimeError):
+    def __init__(
+        self,
+        page_number: int,
+        transformation_payloads: tuple[PdfTransformationPayload, ...],
+    ) -> None:
+        super().__init__(f"Selective OCR produced no usable text for page {page_number}.")
+        self.page_number = page_number
+        self.transformation_payloads = transformation_payloads
 
 
 class DoclingPdfParser(PdfDocumentParser):
@@ -100,7 +121,7 @@ class DoclingPdfParser(PdfDocumentParser):
         config_digest = hashlib.sha256(
             json.dumps(configuration, sort_keys=True, separators=(",", ":")).encode()
         ).hexdigest()
-        return PdfProcessorIdentity("docling", parser_version, config_digest, "3")
+        return PdfProcessorIdentity("docling", parser_version, config_digest, "4")
 
     def parse(self, parse_input: PdfParseInput) -> PdfParseResult:
         if os.environ.get("KOTEKOMI_DOCLING_WORKER") != "1":
@@ -123,54 +144,107 @@ class DoclingPdfParser(PdfDocumentParser):
                 representation_bundle=None,
                 blocking_reasons=(reason,),
             )
-        try:
-            (
-                document_stream_type,
-                input_format,
-                pdf_pipeline_options_type,
-                document_converter_type,
-                pdf_format_option_type,
-            ) = _load_docling_components()
-            pipeline_options = pdf_pipeline_options_type()
-            pipeline_options.do_ocr = self._config.enable_ocr
-            pipeline_options.do_table_structure = self._config.enable_table_structure
-            converter = document_converter_type(
-                allowed_formats=[input_format.PDF],
-                format_options={
-                    input_format.PDF: pdf_format_option_type(pipeline_options=pipeline_options),
-                },
+        extraction_policy = PdfExtractionPolicy(parse_input.policy_id)
+        selected_ocr_pages = tuple(
+            page.page_index
+            for page in source_preflight.pages
+            if extraction_policy.select_extraction_path(page) is PdfExtractionPath.OCR
+        )
+        if selected_ocr_pages and not self._config.enable_ocr:
+            reason = "Selective OCR is required but disabled for pages: " + ",".join(
+                str(page) for page in selected_ocr_pages
             )
-            conversion = converter.convert(
-                document_stream_type(
-                    name=f"{parse_input.document.id}.pdf",
-                    stream=BytesIO(parse_input.raw_bytes),
+            return PdfParseResult(
+                preflight=replace(
+                    source_preflight,
+                    warnings=(*source_preflight.warnings, "selected_ocr_disabled"),
                 ),
-                raises_on_error=False,
+                representation_bundle=None,
+                blocking_reasons=(reason,),
             )
-            blocking_reasons = _conversion_blocking_reasons(conversion)
-            if blocking_reasons:
-                return PdfParseResult(
-                    preflight=replace(
-                        source_preflight,
-                        warnings=tuple(
-                            dict.fromkeys(
-                                (
-                                    *source_preflight.warnings,
-                                    "source_access_blocked",
-                                    *blocking_reasons,
-                                )
-                            )
-                        ),
-                    ),
-                    representation_bundle=None,
-                    blocking_reasons=blocking_reasons,
-                )
-            if _conversion_failed(conversion):
-                raise RuntimeError("Docling conversion returned a processor failure status.")
-            docling_page_geometry = _page_geometry_from_document(conversion.document)
+        try:
             page_geometry = _page_geometry_from_preflight(source_preflight)
-            _validate_docling_page_geometry(docling_page_geometry, page_geometry)
-            layout_items = _layout_items_from_document(conversion.document, page_geometry)
+            if len(selected_ocr_pages) == source_preflight.page_count:
+                embedded_items: tuple[_LayoutItem, ...] = ()
+            else:
+                (
+                    document_stream_type,
+                    input_format,
+                    pdf_pipeline_options_type,
+                    document_converter_type,
+                    pdf_format_option_type,
+                ) = _load_docling_components()
+                pipeline_options = pdf_pipeline_options_type()
+                pipeline_options.do_ocr = False
+                pipeline_options.do_table_structure = self._config.enable_table_structure
+                converter = document_converter_type(
+                    allowed_formats=[input_format.PDF],
+                    format_options={
+                        input_format.PDF: pdf_format_option_type(pipeline_options=pipeline_options),
+                    },
+                )
+                conversion = converter.convert(
+                    document_stream_type(
+                        name=f"{parse_input.document.id}.pdf",
+                        stream=BytesIO(parse_input.raw_bytes),
+                    ),
+                    raises_on_error=False,
+                )
+                blocking_reasons = _conversion_blocking_reasons(conversion)
+                if blocking_reasons:
+                    return PdfParseResult(
+                        preflight=replace(
+                            source_preflight,
+                            warnings=tuple(
+                                dict.fromkeys(
+                                    (
+                                        *source_preflight.warnings,
+                                        "source_access_blocked",
+                                        *blocking_reasons,
+                                    )
+                                )
+                            ),
+                        ),
+                        representation_bundle=None,
+                        blocking_reasons=blocking_reasons,
+                    )
+                if _conversion_failed(conversion):
+                    raise RuntimeError("Docling conversion returned a processor failure status.")
+                docling_page_geometry = tuple(
+                    page
+                    for page in _page_geometry_from_document(conversion.document)
+                    if page.page_number not in selected_ocr_pages
+                )
+                embedded_page_geometry = tuple(
+                    page for page in page_geometry if page.page_number not in selected_ocr_pages
+                )
+                _validate_docling_page_geometry(docling_page_geometry, embedded_page_geometry)
+                embedded_items = tuple(
+                    item
+                    for item in _layout_items_from_document(conversion.document, page_geometry)
+                    if item.regions[0].page_number not in selected_ocr_pages
+                )
+            ocr_items, transformation_payloads = _ocr_selected_pages(
+                parse_input.raw_bytes,
+                page_geometry,
+                selected_ocr_pages,
+                self._config,
+            )
+            layout_items = _finalize_layout_items(
+                (*embedded_items, *ocr_items),
+                page_geometry,
+            )
+        except PdfOcrNoUsableTextError as exc:
+            reason = str(exc)
+            return PdfParseResult(
+                preflight=replace(
+                    source_preflight,
+                    warnings=(*source_preflight.warnings, "selected_ocr_no_usable_text"),
+                ),
+                representation_bundle=None,
+                transformation_payloads=exc.transformation_payloads,
+                blocking_reasons=(reason,),
+            )
         except Exception as exc:
             blocked_result = _source_blocked_result(
                 exc,
@@ -194,6 +268,7 @@ class DoclingPdfParser(PdfDocumentParser):
         return PdfParseResult(
             preflight=preflight,
             representation_bundle=bundle,
+            transformation_payloads=transformation_payloads,
         )
 
 
@@ -234,6 +309,9 @@ def _parse_with_large_stack_worker(
         "config": {
             "enable_ocr": config.enable_ocr,
             "enable_table_structure": config.enable_table_structure,
+            "ocr_language": config.ocr_language,
+            "ocr_render_scale": config.ocr_render_scale,
+            "ocr_text_score": config.ocr_text_score,
         },
     }
     environment = {**os.environ, "KOTEKOMI_DOCLING_WORKER": "1"}
@@ -282,6 +360,24 @@ def _pdf_parse_result_to_payload(result: PdfParseResult) -> dict[str, object]:
             if result.representation_bundle is not None
             else None
         ),
+        "transformation_payloads": [
+            {
+                "activity_type": payload.activity_type.value,
+                "input_digest": payload.input_digest,
+                "output_payload_base64": base64.b64encode(payload.output_payload).decode("ascii"),
+                "output_media_type": payload.output_media_type,
+                "tool_name": payload.tool_name,
+                "tool_version": payload.tool_version,
+                "model_name": payload.model_name,
+                "model_version": payload.model_version,
+                "model_digest": payload.model_digest,
+                "configuration_digest": payload.configuration_digest,
+                "page_scope": list(payload.page_scope),
+                "language_set": list(payload.language_set),
+                "confidence": payload.confidence,
+            }
+            for payload in result.transformation_payloads
+        ],
         "blocking_reasons": list(result.blocking_reasons),
     }
 
@@ -341,6 +437,35 @@ def _pdf_parse_result_from_payload(payload: dict[str, object]) -> PdfParseResult
         isinstance(reason, str) for reason in blocking_reasons
     ):
         raise RuntimeError("Docling worker blocking reasons are malformed.")
+    transformations_payload = payload.get("transformation_payloads", [])
+    if not isinstance(transformations_payload, list):
+        raise RuntimeError("Docling worker transformation payloads are malformed.")
+    try:
+        transformations = tuple(
+            PdfTransformationPayload(
+                activity_type=PdfTransformationType(str(item["activity_type"])),
+                input_digest=str(item["input_digest"]),
+                output_payload=base64.b64decode(str(item["output_payload_base64"]), validate=True),
+                output_media_type=str(item["output_media_type"]),
+                tool_name=str(item["tool_name"]),
+                tool_version=str(item["tool_version"]),
+                model_name=str(item["model_name"]),
+                model_version=str(item["model_version"]),
+                model_digest=str(item["model_digest"]),
+                configuration_digest=str(item["configuration_digest"]),
+                page_scope=tuple(int(page) for page in item["page_scope"]),
+                language_set=tuple(str(language) for language in item["language_set"]),
+                confidence=(
+                    float(item["confidence"]) if item.get("confidence") is not None else None
+                ),
+            )
+            for item in transformations_payload
+            if isinstance(item, dict)
+        )
+        if len(transformations) != len(transformations_payload):
+            raise ValueError("transformation must be an object")
+    except (KeyError, TypeError, ValueError) as exc:
+        raise RuntimeError("Docling worker transformation payload is malformed.") from exc
     return PdfParseResult(
         preflight=preflight,
         representation_bundle=(
@@ -348,6 +473,7 @@ def _pdf_parse_result_from_payload(payload: dict[str, object]) -> PdfParseResult
             if bundle_payload is not None
             else None
         ),
+        transformation_payloads=transformations,
         blocking_reasons=tuple(blocking_reasons),
     )
 
@@ -365,12 +491,22 @@ def _parser_configuration(
     config: DoclingPdfParserConfig,
     policy_id: str,
 ) -> dict[str, object]:
+    ocr_identity = _rapidocr_identity() if config.enable_ocr else None
     return {
         "enable_ocr": config.enable_ocr,
         "enable_table_structure": config.enable_table_structure,
+        "ocr_language": config.ocr_language,
+        "ocr_render_scale": config.ocr_render_scale,
+        "ocr_text_score": config.ocr_text_score,
+        "ocr_identity": ocr_identity,
+        "ocr_render_engine": (
+            {"name": "pypdfium2", "version": version("pypdfium2")} if config.enable_ocr else None
+        ),
+        "page_selection_policy_version": PdfExtractionPolicy.policy_version,
         "policy_id": policy_id,
         "layout_contract_version": "canonical_pdf_layout_v2",
         "pdfimages_version": _pdfimages_version(),
+        "pdffonts_version": _pdffonts_version(),
         "pdfinfo_version": _pdfinfo_version(),
         "pdftotext_version": _pdftotext_version(),
     }
@@ -436,9 +572,16 @@ def _layout_items_from_document(
         layout_item = _layout_item_from_docling_item(item, geometry_by_page, node_type="furniture")
         if layout_item is not None:
             layout_items.append(layout_item)
+    return tuple(layout_items)
+
+
+def _finalize_layout_items(
+    layout_items: tuple[_LayoutItem, ...],
+    page_geometry: tuple[_PageGeometry, ...],
+) -> tuple[_LayoutItem, ...]:
     if not layout_items:
-        raise ValueError("Docling conversion produced no body text items.")
-    classified_items = _classify_repeated_furniture(tuple(layout_items))
+        raise ValueError("PDF processing produced no usable text items.")
+    classified_items = _classify_repeated_furniture(layout_items)
     leveled_items = _assign_heading_levels(classified_items)
     return _order_layout_items(leveled_items, page_geometry)
 
@@ -485,6 +628,176 @@ def _layout_item_from_docling_item(
         heading_level=int(heading_level) if heading_level is not None else None,
         marker=str(marker) if marker else None,
     )
+
+
+def _ocr_selected_pages(
+    raw_bytes: bytes,
+    page_geometry: tuple[_PageGeometry, ...],
+    selected_pages: tuple[int, ...],
+    config: DoclingPdfParserConfig,
+) -> tuple[tuple[_LayoutItem, ...], tuple[PdfTransformationPayload, ...]]:
+    if not selected_pages:
+        return (), ()
+    try:
+        import pypdfium2 as pdfium  # pyright: ignore[reportMissingTypeStubs]
+        from rapidocr import RapidOCR  # pyright: ignore[reportMissingTypeStubs]
+    except ImportError as exc:
+        raise RuntimeError("Pinned selective OCR runtime is unavailable.") from exc
+
+    identity = _rapidocr_identity()
+    ocr_configuration = {
+        "engine": "rapidocr_onnxruntime",
+        "language": config.ocr_language,
+        "render_scale": config.ocr_render_scale,
+        "text_score": config.ocr_text_score,
+        "selection_policy": PdfExtractionPolicy.policy_version,
+    }
+    ocr_configuration_digest = _canonical_json_digest(ocr_configuration)
+    render_configuration = {
+        "format": "png",
+        "render_scale": config.ocr_render_scale,
+        "rotation_contract": "canonical_page_orientation_v1",
+    }
+    render_configuration_digest = _canonical_json_digest(render_configuration)
+    renderer_version = version("pypdfium2")
+    renderer_model_digest = _canonical_json_digest(
+        {"renderer": "pdfium", "version": renderer_version}
+    )
+    pdf = pdfium.PdfDocument(BytesIO(raw_bytes))
+    ocr = RapidOCR(params={"Global.text_score": config.ocr_text_score})
+    geometry_by_page = {page.page_number: page for page in page_geometry}
+    items: list[_LayoutItem] = []
+    payloads: list[PdfTransformationPayload] = []
+    raw_digest = hashlib.sha256(raw_bytes).hexdigest()
+    for page_number in selected_pages:
+        geometry = geometry_by_page[page_number]
+        page = pdf[page_number - 1]
+        bitmap = page.render(scale=config.ocr_render_scale)
+        image = bitmap.to_pil()
+        png_buffer = BytesIO()
+        image.save(png_buffer, format="PNG", optimize=False, compress_level=9)
+        png_bytes = png_buffer.getvalue()
+        png_digest = hashlib.sha256(png_bytes).hexdigest()
+        payloads.append(
+            PdfTransformationPayload(
+                activity_type=PdfTransformationType.RENDER,
+                input_digest=raw_digest,
+                output_payload=png_bytes,
+                output_media_type="image/png",
+                tool_name="pypdfium2",
+                tool_version=renderer_version,
+                model_name="pdfium_page_renderer",
+                model_version=renderer_version,
+                model_digest=renderer_model_digest,
+                configuration_digest=render_configuration_digest,
+                page_scope=(page_number,),
+            )
+        )
+        result = cast(Any, ocr(image))
+        if result is None or not result.txts:
+            raise PdfOcrNoUsableTextError(page_number, tuple(payloads))
+        scores = tuple(float(score) for score in result.scores)
+        boxes = tuple(box.tolist() for box in result.boxes)
+        if not (len(result.txts) == len(scores) == len(boxes)):
+            raise RuntimeError("Selective OCR returned inconsistent text, score, and box counts.")
+        sidecar_records: list[dict[str, object]] = []
+        for text, score, box in zip(result.txts, scores, boxes, strict=True):
+            normalized_text = str(text).strip()
+            if not normalized_text:
+                raise RuntimeError("Selective OCR returned an empty text record.")
+            xs = tuple(float(point[0]) for point in box)
+            ys = tuple(float(point[1]) for point in box)
+            left = min(xs) * geometry.width / image.width
+            right = max(xs) * geometry.width / image.width
+            top = min(ys) * geometry.height / image.height
+            bottom = max(ys) * geometry.height / image.height
+            region = _LayoutRegion(
+                page_number,
+                geometry.width,
+                geometry.height,
+                left,
+                top,
+                right,
+                bottom,
+                geometry.rotation,
+            )
+            items.append(
+                _LayoutItem(
+                    text=normalized_text,
+                    node_type="paragraph",
+                    regions=(region,),
+                    extraction_path=PdfExtractionPath.OCR,
+                    confidence=score,
+                )
+            )
+            sidecar_records.append(
+                {
+                    "box": [[round(float(value), 6) for value in point] for point in box],
+                    "confidence": round(score, 6),
+                    "text": normalized_text,
+                }
+            )
+        page_confidence = sum(scores) / len(scores)
+        sidecar = json.dumps(
+            {
+                "configuration": ocr_configuration,
+                "engine": identity,
+                "input_digest": png_digest,
+                "page": page_number,
+                "records": sidecar_records,
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode()
+        payloads.append(
+            PdfTransformationPayload(
+                activity_type=PdfTransformationType.OCR,
+                input_digest=png_digest,
+                output_payload=sidecar,
+                output_media_type="application/vnd.kotekomi.pdf-ocr+json",
+                tool_name="rapidocr",
+                tool_version=cast(str, identity["engine_version"]),
+                model_name=cast(str, identity["model_name"]),
+                model_version=cast(str, identity["model_version"]),
+                model_digest=cast(str, identity["model_digest"]),
+                configuration_digest=ocr_configuration_digest,
+                page_scope=(page_number,),
+                language_set=(config.ocr_language,),
+                confidence=page_confidence,
+            )
+        )
+    return tuple(items), tuple(payloads)
+
+
+@cache
+def _rapidocr_identity() -> dict[str, object]:
+    import rapidocr  # pyright: ignore[reportMissingTypeStubs]
+
+    model_root = Path(rapidocr.__file__).parent / "models"
+    model_names = (
+        "PP-OCRv6_det_small.onnx",
+        "ch_ppocr_mobile_v2.0_cls_mobile.onnx",
+        "PP-OCRv6_rec_small.onnx",
+    )
+    model_digests = {
+        name: hashlib.sha256((model_root / name).read_bytes()).hexdigest() for name in model_names
+    }
+    engine_version = version("rapidocr")
+    return {
+        "backend": "onnxruntime",
+        "backend_version": version("onnxruntime"),
+        "engine_version": engine_version,
+        "model_digest": _canonical_json_digest(model_digests),
+        "model_name": "+".join(model_names),
+        "model_version": f"rapidocr-bundled-{engine_version}",
+        "models": model_digests,
+    }
+
+
+def _canonical_json_digest(value: object) -> str:
+    return hashlib.sha256(
+        json.dumps(value, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
 
 
 def _classify_repeated_furniture(
@@ -786,6 +1099,7 @@ def preflight_pdf_source(raw_bytes: bytes, parser_version: str) -> PdfPreflight:
         )
     image_coverage = _image_coverage_by_page(raw_bytes, tuple(geometries))
     text_metrics = _embedded_text_metrics_by_page(raw_bytes, page_count)
+    font_warnings = _font_mapping_warnings_by_page(raw_bytes, page_count)
     pages = tuple(
         replace(
             page,
@@ -793,6 +1107,9 @@ def preflight_pdf_source(raw_bytes: bytes, parser_version: str) -> PdfPreflight:
             image_coverage=image_coverage[page.page_index],
             suspicious_glyph_rate=text_metrics[page.page_index][1],
             glyph_issue_count=text_metrics[page.page_index][2],
+            warnings=(
+                font_warnings[page.page_index] if text_metrics[page.page_index][0] < 64 else ()
+            ),
         )
         for page in page_preflights
     )
@@ -894,6 +1211,37 @@ def _embedded_text_metrics_by_page(
     return metrics
 
 
+def _font_mapping_warnings_by_page(
+    raw_bytes: bytes,
+    page_count: int,
+) -> dict[int, tuple[str, ...]]:
+    warnings: dict[int, tuple[str, ...]] = {}
+    with tempfile.NamedTemporaryFile(suffix=".pdf") as temporary_pdf:
+        temporary_pdf.write(raw_bytes)
+        temporary_pdf.flush()
+        for page_index in range(1, page_count + 1):
+            completed = subprocess.run(
+                ("pdffonts", "-f", str(page_index), "-l", str(page_index), temporary_pdf.name),
+                check=False,
+                capture_output=True,
+                text=True,
+                env={**os.environ, "LC_ALL": "C"},
+            )
+            if completed.returncode != 0:
+                raise PdfSourcePreflightError(
+                    "PDF source preflight could not inspect font Unicode mappings."
+                )
+            font_rows = tuple(
+                line.split() for line in completed.stdout.splitlines()[2:] if line.strip()
+            )
+            warnings[page_index] = (
+                ("font_unicode_mapping_unavailable",)
+                if any(len(fields) >= 3 and fields[-3] == "no" for fields in font_rows)
+                else ()
+            )
+    return warnings
+
+
 def _pdf_version(raw_bytes: bytes) -> str:
     match = re.search(rb"%PDF-([0-9]+\.[0-9]+)", raw_bytes[:1024])
     return match.group(1).decode("ascii") if match is not None else "unknown"
@@ -919,6 +1267,21 @@ def _pdfimages_version() -> str:
     if not first_line.startswith("pdfimages version "):
         raise RuntimeError("pdfimages version is unavailable for processing identity.")
     return first_line.removeprefix("pdfimages version ")
+
+
+@cache
+def _pdffonts_version() -> str:
+    completed = subprocess.run(
+        ("pdffonts", "-v"),
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    output = f"{completed.stdout}\n{completed.stderr}"
+    first_line = next((line.strip() for line in output.splitlines() if line.strip()), "")
+    if not first_line.startswith("pdffonts version "):
+        raise RuntimeError("pdffonts version is unavailable for processing identity.")
+    return first_line.removeprefix("pdffonts version ")
 
 
 @cache
@@ -1041,6 +1404,11 @@ def build_docling_representation_bundle(
         text_view_id=logical_view_id,
         start_char=0,
         end_char=len(logical_text),
+        extraction_path=(
+            PdfExtractionPath.MIXED
+            if len({item.extraction_path for item in layout_items}) > 1
+            else layout_items[0].extraction_path
+        ),
     )
     nodes = (root, *nodes)
     contains_edges = tuple(
@@ -1216,6 +1584,8 @@ def _canonical_layout_records(
             source_region_ids=tuple(region_ids),
             source_page_numbers=tuple(sorted({region.page_number for region in item.regions})),
             source_text_digest=hashlib.sha256(rendered_text.encode("utf-8")).hexdigest(),
+            parser_confidence=item.confidence,
+            extraction_path=item.extraction_path,
         )
         nodes.append(node)
         parent_paths[node.id] = structural_path
@@ -1284,6 +1654,12 @@ def _quality_report(
             "paragraph_node_count": sum(node.node_type == "paragraph" for node in content_nodes),
             "list_item_node_count": sum(node.node_type == "list_item" for node in content_nodes),
             "furniture_node_count": sum(node.node_type == "furniture" for node in content_nodes),
+            "embedded_node_count": sum(
+                node.extraction_path is PdfExtractionPath.EMBEDDED for node in content_nodes
+            ),
+            "ocr_node_count": sum(
+                node.extraction_path is PdfExtractionPath.OCR for node in content_nodes
+            ),
             "source_region_count": len(source_regions),
         },
         issues=tuple(issues),

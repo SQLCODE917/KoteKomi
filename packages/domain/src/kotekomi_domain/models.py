@@ -182,6 +182,7 @@ class ProcessingArtifactKind(StrEnum):
     PDF_PAGE_INVENTORY = "pdf_page_inventory"
     PDF_PAGE_EXTRACTION_STATUS = "pdf_page_extraction_status"
     PDF_TRANSFORMATION_ARTIFACT = "pdf_transformation_artifact"
+    PDF_TRANSFORMATION_BLOB = "pdf_transformation_blob"
 
 
 class OutputDisposition(StrEnum):
@@ -193,6 +194,7 @@ class ProcessingStage(StrEnum):
     BUILD_IDENTITY = "build_identity"
     ATTEMPT_START = "attempt_start"
     PARSER = "parser"
+    ARCHIVE = "archive"
     REPRESENTATION_VALIDATION = "representation_validation"
     PERSISTENCE = "persistence"
     RECONCILIATION = "reconciliation"
@@ -509,7 +511,9 @@ class PdfPageExtractionStatus(DomainModel):
     rotation_applied: Annotated[int, Field(ge=0, le=270, multiple_of=90)]
     warnings: tuple[NonEmptyStr, ...] = Field(default_factory=tuple)
     policy_id: NonEmptyStr
+    policy_version: NonEmptyStr
     policy_reasons: tuple[NonEmptyStr, ...]
+    ocr_confidence: Confidence | None = None
     transformation_artifact_ids: tuple[PdfTransformationArtifactId, ...] = Field(
         default_factory=tuple
     )
@@ -525,14 +529,19 @@ class PdfPageExtractionStatus(DomainModel):
                 raise ValueError("An inaccessible PDF page cannot claim extracted output.")
         if self.status is not PdfPageQualityStatus.BLOCKED and self.representation_id is None:
             raise ValueError("An analyzable PDF page status requires a representation.")
-        if self.extraction_path in {PdfExtractionPath.OCR, PdfExtractionPath.MIXED} and not (
-            self.transformation_artifact_ids
-        ):
-            raise ValueError("An OCR-derived PDF page requires a transformation artifact.")
+        if self.extraction_path in {PdfExtractionPath.OCR, PdfExtractionPath.MIXED}:
+            if not self.transformation_artifact_ids:
+                raise ValueError("An OCR-derived PDF page requires a transformation artifact.")
+            if self.ocr_confidence is None:
+                raise ValueError("An OCR-derived PDF page requires OCR confidence.")
         if self.extraction_path is PdfExtractionPath.EMBEDDED and (
             self.transformation_artifact_ids
         ):
             raise ValueError("An embedded-only PDF page cannot claim a transformation artifact.")
+        if self.extraction_path not in {PdfExtractionPath.OCR, PdfExtractionPath.MIXED} and (
+            self.ocr_confidence is not None
+        ):
+            raise ValueError("A non-OCR PDF page cannot claim OCR confidence.")
         return self
 
 
@@ -544,6 +553,9 @@ class PdfTransformationArtifact(DomainModel):
     activity_type: PdfTransformationType
     tool_name: NonEmptyStr
     tool_version: NonEmptyStr
+    model_name: NonEmptyStr
+    model_version: NonEmptyStr
+    model_digest: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
     configuration_digest: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
     page_scope: tuple[Annotated[int, Field(ge=1)], ...]
     language_set: tuple[NonEmptyStr, ...] = Field(default_factory=tuple)
@@ -557,6 +569,15 @@ class PdfTransformationArtifact(DomainModel):
             raise ValueError("PdfTransformationArtifact requires a unique nonempty page scope.")
         if tuple(sorted(self.page_scope)) != self.page_scope:
             raise ValueError("PdfTransformationArtifact page scope must be sorted.")
+        if self.activity_type is PdfTransformationType.OCR:
+            if len(self.page_scope) != 1:
+                raise ValueError("An OCR transformation must account for exactly one PDF page.")
+            if not self.language_set:
+                raise ValueError("An OCR transformation requires its language set.")
+            if self.confidence is None:
+                raise ValueError("An OCR transformation requires page confidence.")
+        elif self.language_set or self.confidence is not None:
+            raise ValueError("A non-OCR transformation cannot claim OCR language or confidence.")
         return self
 
 
@@ -567,6 +588,7 @@ class PdfPageAccountingBundle(DomainModel):
     page_inventory: tuple[PdfPageInventory, ...]
     page_extraction_statuses: tuple[PdfPageExtractionStatus, ...]
     transformation_artifacts: tuple[PdfTransformationArtifact, ...] = Field(default_factory=tuple)
+    transformation_blobs: tuple[RawBlob, ...] = Field(default_factory=tuple)
 
     @model_validator(mode="after")
     def validate_accounting(self) -> Self:
@@ -574,6 +596,7 @@ class PdfPageAccountingBundle(DomainModel):
         _require_unique_ids(self.page_inventory, "PdfPageInventory")
         _require_unique_ids(self.page_extraction_statuses, "PdfPageExtractionStatus")
         _require_unique_ids(self.transformation_artifacts, "PdfTransformationArtifact")
+        _require_unique_ids(self.transformation_blobs, "PDF transformation RawBlob")
         if tuple(page.id for page in self.page_inventory) != report.page_inventory_ids:
             raise ValueError("PDF page inventory does not match the preflight denominator.")
         if (
@@ -598,6 +621,11 @@ class PdfPageAccountingBundle(DomainModel):
         transformations_by_id = {
             artifact.id: artifact for artifact in self.transformation_artifacts
         }
+        transformation_blobs_by_id = {blob.id: blob for blob in self.transformation_blobs}
+        if tuple(artifact.output_blob_id for artifact in self.transformation_artifacts) != tuple(
+            blob.id for blob in self.transformation_blobs
+        ):
+            raise ValueError("PDF transformation blobs must match artifact outputs in order.")
         for page in self.page_inventory:
             if page.preflight_report_id != report.id:
                 raise ValueError("PdfPageInventory must belong to its preflight report.")
@@ -613,13 +641,32 @@ class PdfPageAccountingBundle(DomainModel):
                 artifact = transformations_by_id.get(artifact_id)
                 if artifact is None or status.page_index not in artifact.page_scope:
                     raise ValueError("PDF page status references an unrelated transformation.")
+            if status.extraction_path in {
+                PdfExtractionPath.OCR,
+                PdfExtractionPath.MIXED,
+            }:
+                ocr_artifacts = tuple(
+                    transformations_by_id[artifact_id]
+                    for artifact_id in status.transformation_artifact_ids
+                    if transformations_by_id[artifact_id].activity_type is PdfTransformationType.OCR
+                )
+                if len(ocr_artifacts) != 1:
+                    raise ValueError(
+                        "An OCR-derived PDF page must reference exactly one OCR transformation."
+                    )
+                if status.ocr_confidence != ocr_artifacts[0].confidence:
+                    raise ValueError("PDF page OCR confidence must match its OCR transformation.")
+        available_inputs = {report.raw_blob_id}
         for artifact in self.transformation_artifacts:
             if artifact.preflight_report_id != report.id:
                 raise ValueError("PdfTransformationArtifact must belong to its preflight report.")
-            if artifact.input_blob_id != report.raw_blob_id:
-                raise ValueError("PDF transformation input must be the archived source blob.")
+            if artifact.input_blob_id not in available_inputs:
+                raise ValueError("PDF transformation input must be archived before its output.")
+            if artifact.output_blob_id not in transformation_blobs_by_id:
+                raise ValueError("PDF transformation output must be an archived RawBlob.")
             if any(page > report.page_count for page in artifact.page_scope):
                 raise ValueError("PDF transformation page scope exceeds the page denominator.")
+            available_inputs.add(artifact.output_blob_id)
         return self
 
 
@@ -660,6 +707,7 @@ class DocumentNode(DomainModel):
     source_page_numbers: tuple[Annotated[int, Field(ge=1)], ...] = Field(default_factory=tuple)
     source_text_digest: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")] | None = None
     parser_confidence: Confidence | None = None
+    extraction_path: PdfExtractionPath | None = None
 
     @model_validator(mode="after")
     def validate_range(self) -> Self:
@@ -800,7 +848,8 @@ def _require_unique_ids(
         | SourceRegion
         | PdfPageInventory
         | PdfPageExtractionStatus
-        | PdfTransformationArtifact,
+        | PdfTransformationArtifact
+        | RawBlob,
         ...,
     ],
     record_name: str,

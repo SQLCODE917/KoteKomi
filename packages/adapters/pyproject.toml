@@ -8,6 +8,7 @@ dependencies = [
   "kotekomi-application",
   "kotekomi-domain",
   "networkx>=3.4,<4",
+  "onnxruntime>=1.23,<2",
 ]
 
 [tool.uv.sources]

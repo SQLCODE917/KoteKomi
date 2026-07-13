@@ -8,6 +8,7 @@ from kotekomi_domain import (
     PdfPreflightReport,
     PdfTransformationArtifact,
     PdfTransformationType,
+    RawBlob,
 )
 
 
@@ -38,6 +39,7 @@ def _status(
     representation_id: str | None = "rep_fixture",
     extracted_character_count: int = 120,
     transformation_artifact_ids: tuple[str, ...] = (),
+    ocr_confidence: float | None = None,
 ) -> PdfPageExtractionStatus:
     return PdfPageExtractionStatus(
         id=f"pes_fixture_{page_index}",
@@ -50,8 +52,10 @@ def _status(
         extracted_character_count=extracted_character_count,
         rotation_applied=0,
         policy_id="pdf_extraction_policy_v1",
+        policy_version="selective_pdf_page_policy_v1",
         policy_reasons=("usable_embedded_text",),
         transformation_artifact_ids=transformation_artifact_ids,
+        ocr_confidence=ocr_confidence,
     )
 
 
@@ -107,6 +111,9 @@ def test_pdf_page_accounting_binds_ocr_status_to_archived_transformation() -> No
         activity_type=PdfTransformationType.OCR,
         tool_name="fixture_ocr",
         tool_version="1",
+        model_name="fixture_ocr_model",
+        model_version="1",
+        model_digest="b" * 64,
         configuration_digest="a" * 64,
         page_scope=(1,),
         language_set=("eng",),
@@ -116,6 +123,7 @@ def test_pdf_page_accounting_binds_ocr_status_to_archived_transformation() -> No
         1,
         extraction_path=PdfExtractionPath.OCR,
         transformation_artifact_ids=(artifact.id,),
+        ocr_confidence=0.95,
     )
     report = _report(page_count=1).model_copy(
         update={"transformation_artifact_ids": (artifact.id,)}
@@ -126,9 +134,66 @@ def test_pdf_page_accounting_binds_ocr_status_to_archived_transformation() -> No
         page_inventory=(_page(1),),
         page_extraction_statuses=(status,),
         transformation_artifacts=(artifact,),
+        transformation_blobs=(
+            RawBlob(
+                id="blb_fixture_ocr",
+                hash_algorithm="sha256",
+                digest="c" * 64,
+                byte_length=10,
+                media_type="application/json",
+                storage_locator="transformations/blb_fixture_ocr.bin",
+            ),
+        ),
     )
 
     assert accounting.page_extraction_statuses[0].transformation_artifact_ids == (artifact.id,)
+
+
+def test_pdf_page_accounting_rejects_disagreeing_ocr_confidence() -> None:
+    artifact = PdfTransformationArtifact(
+        id="pta_fixture_ocr_1",
+        preflight_report_id="pfr_fixture",
+        input_blob_id="blb_fixture",
+        output_blob_id="blb_fixture_ocr",
+        activity_type=PdfTransformationType.OCR,
+        tool_name="fixture_ocr",
+        tool_version="1",
+        model_name="fixture_ocr_model",
+        model_version="1",
+        model_digest="b" * 64,
+        configuration_digest="a" * 64,
+        page_scope=(1,),
+        language_set=("eng",),
+        confidence=0.95,
+    )
+    report = _report(page_count=1).model_copy(
+        update={"transformation_artifact_ids": (artifact.id,)}
+    )
+
+    with pytest.raises(ValueError, match="confidence must match"):
+        PdfPageAccountingBundle(
+            preflight_report=report,
+            page_inventory=(_page(1),),
+            page_extraction_statuses=(
+                _status(
+                    1,
+                    extraction_path=PdfExtractionPath.OCR,
+                    transformation_artifact_ids=(artifact.id,),
+                    ocr_confidence=0.75,
+                ),
+            ),
+            transformation_artifacts=(artifact,),
+            transformation_blobs=(
+                RawBlob(
+                    id="blb_fixture_ocr",
+                    hash_algorithm="sha256",
+                    digest="c" * 64,
+                    byte_length=10,
+                    media_type="application/json",
+                    storage_locator="transformations/blb_fixture_ocr.bin",
+                ),
+            ),
+        )
 
 
 def test_inaccessible_page_cannot_claim_an_acceptable_representation() -> None:

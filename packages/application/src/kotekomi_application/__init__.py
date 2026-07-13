@@ -132,6 +132,8 @@ from kotekomi_application.pdf_ingest import (
     PdfParseResult,
     PdfPreflight,
     PdfProcessorIdentity,
+    PdfTransformationArchive,
+    PdfTransformationPayload,
     ingest_pdf,
     validate_representation_for_processing_task,
 )
@@ -419,6 +421,8 @@ __all__ = [
     "PdfParseInput",
     "PdfParseResult",
     "PdfProcessorIdentity",
+    "PdfTransformationArchive",
+    "PdfTransformationPayload",
     "validate_representation_for_processing_task",
     "PdfPreflight",
     "BuildIdentity",

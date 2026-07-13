@@ -1,6 +1,19 @@
 {
   "fixture_id": "mixed_born_digital_scan_v1",
   "page_count": 3,
+  "selection_policy_version": "selective_pdf_page_policy_v1",
+  "ocr_execution": {
+    "engine": "rapidocr",
+    "engine_version": "3.9.1",
+    "backend": "onnxruntime",
+    "language_set": ["english"],
+    "model_names": [
+      "PP-OCRv6_det_small.onnx",
+      "ch_ppocr_mobile_v2.0_cls_mobile.onnx",
+      "PP-OCRv6_rec_small.onnx"
+    ],
+    "archived_artifact_types": ["render", "ocr"]
+  },
   "page_processing": [
     {
       "page": 1,
