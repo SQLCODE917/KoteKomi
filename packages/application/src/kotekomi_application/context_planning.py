@@ -30,6 +30,8 @@ class ContextCandidateRole(StrEnum):
     HEADING = "heading"
     DEFINITION = "definition"
     FURNITURE = "furniture"
+    TABLE_HEADER = "table_header"
+    TABLE_CONTEXT = "table_context"
 
 
 class ContextManifestStatus(StrEnum):
@@ -67,6 +69,24 @@ class AnalysisUnitPlanningInput:
     policy_id: str
     task_type: str
     max_focus_nodes_per_unit: int = 1
+
+
+@dataclass(frozen=True)
+class TableCellAnalysisPlanningInput:
+    representation_id: str
+    table_cell_id: str
+    policy_id: str
+    task_type: str
+
+
+@dataclass(frozen=True)
+class TableCellAnalysisPlanningOutcome:
+    analysis_unit: AnalysisUnit | None
+    blocked_reason: str | None = None
+
+    def __post_init__(self) -> None:
+        if (self.analysis_unit is None) == (self.blocked_reason is None):
+            raise ValueError("Table-cell planning requires exactly one unit or blocked reason.")
 
 
 @dataclass(frozen=True)
@@ -216,6 +236,60 @@ def plan_analysis_units(
     for unit in plan.units:
         _persist_analysis_unit(unit, ledger_repository)
     return plan
+
+
+def plan_table_cell_analysis_unit(
+    planning_input: TableCellAnalysisPlanningInput,
+    ledger_repository: ContextPlanningLedger,
+) -> TableCellAnalysisPlanningOutcome:
+    """Plan a claim task only when the selected value retains complete header ancestry."""
+    bundle = _load_acceptable_bundle(planning_input.representation_id, ledger_repository)
+    cell = next(
+        (
+            candidate
+            for candidate in bundle.table_cells
+            if candidate.id == planning_input.table_cell_id
+        ),
+        None,
+    )
+    if cell is None or cell.node_id is None:
+        return TableCellAnalysisPlanningOutcome(None, "table_cell_text_unavailable")
+    if cell.is_row_header or cell.is_column_header:
+        return TableCellAnalysisPlanningOutcome(None, "table_header_is_not_a_claim_value")
+    if not cell.row_header_cell_ids:
+        return TableCellAnalysisPlanningOutcome(None, "missing_row_header_ancestry")
+    if not cell.column_header_cell_ids:
+        return TableCellAnalysisPlanningOutcome(None, "missing_column_header_ancestry")
+    cells_by_id = {candidate.id: candidate for candidate in bundle.table_cells}
+    required_cells = tuple(
+        cells_by_id.get(cell_id)
+        for cell_id in (*cell.row_header_cell_ids, *cell.column_header_cell_ids)
+    )
+    if any(header is None or header.node_id is None for header in required_cells):
+        return TableCellAnalysisPlanningOutcome(None, "table_header_text_unavailable")
+    table = next(candidate for candidate in bundle.tables if candidate.id == cell.table_id)
+    annotations_by_id = {item.id: item for item in bundle.table_annotations}
+    annotation_nodes = tuple(
+        _node_by_id(bundle, annotations_by_id[annotation_id].node_id)
+        for annotation_id in table.annotation_ids
+    )
+    dependencies = (
+        tuple(
+            _node_by_id(bundle, cast(str, header.node_id))
+            for header in required_cells
+            if header is not None
+        )
+        + annotation_nodes
+    )
+    unit = _analysis_unit(
+        representation_id=bundle.representation.id,
+        task_type=planning_input.task_type,
+        focus_nodes=(_node_by_id(bundle, cell.node_id),),
+        dependency_nodes=dependencies,
+        policy_id=planning_input.policy_id,
+    )
+    _persist_analysis_unit(unit, ledger_repository)
+    return TableCellAnalysisPlanningOutcome(unit)
 
 
 def build_context_manifest(
@@ -380,12 +454,30 @@ def _context_candidates(
         if dependency is None:
             raise ValueError(f"AnalysisUnit references missing dependency node: {dependency_id}")
         focus_id = unit.focus_node_ids[0]
+        if dependency.node_type in {
+            "table_row_header",
+            "table_column_header",
+            "table_corner_header",
+        }:
+            role = ContextCandidateRole.TABLE_HEADER
+            reason_code = "table_header_ancestry"
+        elif dependency.node_type in {"table_caption", "table_unit", "table_note", "footnote"}:
+            role = ContextCandidateRole.TABLE_CONTEXT
+            reason_code = "table_annotation"
+        else:
+            role = ContextCandidateRole.DEFINITION
+            reason_code = "acronym_definition"
+        priority = (
+            2
+            if role is ContextCandidateRole.TABLE_HEADER
+            else (3 if role is ContextCandidateRole.TABLE_CONTEXT else 4)
+        )
         candidates[dependency.id] = _candidate(
             dependency,
-            ContextCandidateRole.DEFINITION,
-            "acronym_definition",
+            role,
+            reason_code,
             True,
-            4,
+            priority,
             (focus_id, "acronym", dependency.id),
             tokenizer,
             bundle,
@@ -509,6 +601,12 @@ def _load_acceptable_bundle(
         edges=bundle.edges,
         source_regions=bundle.source_regions,
         quality_report=bundle.quality_report,
+        tables=bundle.tables,
+        table_fragments=bundle.table_fragments,
+        table_rows=bundle.table_rows,
+        table_cells=bundle.table_cells,
+        table_annotations=bundle.table_annotations,
+        references=bundle.references,
     )
     if actual_digest != bundle.representation.canonical_output_digest:
         raise ValueError("Context planning DocumentRepresentation digest is corrupted.")

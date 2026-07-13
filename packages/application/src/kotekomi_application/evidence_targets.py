@@ -229,6 +229,12 @@ def _validate_evidence_target(
         edges=bundle.edges,
         source_regions=bundle.source_regions,
         quality_report=bundle.quality_report,
+        tables=bundle.tables,
+        table_fragments=bundle.table_fragments,
+        table_rows=bundle.table_rows,
+        table_cells=bundle.table_cells,
+        table_annotations=bundle.table_annotations,
+        references=bundle.references,
     )
     if bundle.representation.canonical_output_digest != actual_output_digest:
         raise ValueError("DocumentRepresentation canonical_output_digest is corrupted.")
@@ -270,11 +276,43 @@ def _validate_evidence_target(
         node = nodes.get(node_id)
         if node is None or node.text_view_id != evidence_target.text_view_id:
             raise ValueError("EvidenceTarget node selector does not match its TextView.")
-        if node.start_char > evidence_target.start_char or node.end_char < evidence_target.end_char:
+        if evidence_target.table_selector is None and (
+            node.start_char > evidence_target.start_char or node.end_char < evidence_target.end_char
+        ):
             raise ValueError(
                 "EvidenceTarget node selector does not contain the selected occurrence."
             )
         selected_nodes.append(node)
+    if evidence_target.table_selector is not None:
+        selector = evidence_target.table_selector
+        table = next((item for item in bundle.tables if item.id == selector.table_id), None)
+        cell = next((item for item in bundle.table_cells if item.id == selector.cell_id), None)
+        if table is None or cell is None or cell.table_id != table.id or cell.node_id is None:
+            raise ValueError("EvidenceTarget table selector references a missing table cell.")
+        if (
+            selector.row_header_cell_ids != cell.row_header_cell_ids
+            or selector.column_header_cell_ids != cell.column_header_cell_ids
+        ):
+            raise ValueError("EvidenceTarget table selector header ancestry is incomplete.")
+        cells = {item.id: item for item in bundle.table_cells}
+        header_cells = tuple(
+            cells.get(cell_id)
+            for cell_id in (*cell.row_header_cell_ids, *cell.column_header_cell_ids)
+        )
+        if any(header is None or header.node_id is None for header in header_cells):
+            raise ValueError("EvidenceTarget table selector header text is unavailable.")
+        expected_node_ids = (
+            cell.node_id,
+            *(header.node_id for header in header_cells if header is not None),
+        )
+        if evidence_target.node_ids != expected_node_ids:
+            raise ValueError("EvidenceTarget table selector nodes omit required header ancestry.")
+        cell_node = nodes[cell.node_id]
+        if (
+            cell_node.start_char > evidence_target.start_char
+            or cell_node.end_char < evidence_target.end_char
+        ):
+            raise ValueError("EvidenceTarget table cell does not contain the selected value.")
     source_region_ids = {region.id for region in bundle.source_regions}
     if not set(evidence_target.pdf_region_ids).issubset(source_region_ids):
         raise ValueError("EvidenceTarget PDF region selector is missing from its representation.")
@@ -285,7 +323,9 @@ def _validate_evidence_target(
         selected_node_region_ids
     ):
         raise ValueError("EvidenceTarget region selectors do not match its node selectors.")
-    if evidence_target.dom_selector is not None or evidence_target.table_selector is not None:
-        raise ValueError(
-            "DOM and table evidence selectors are not yet represented by this parser output."
-        )
+    if evidence_target.table_selector is not None and set(evidence_target.pdf_region_ids) != (
+        selected_node_region_ids
+    ):
+        raise ValueError("EvidenceTarget table selector must retain every cell and header region.")
+    if evidence_target.dom_selector is not None:
+        raise ValueError("DOM evidence selectors are not yet represented by this parser output.")

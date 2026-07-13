@@ -3,8 +3,9 @@
   "page_count": 1,
   "coordinate_system": "pdf_points_top_left_v1",
   "caption": "Table 1. Regional measurements",
-  "nearby_body_text": "Nearby body paragraph establishes table context.",
-  "footnote": "Note: blank 2025 cells for Region A are intentionally empty.",
+  "nearby_body_text": "See Table 1 for regional measurement context.",
+  "units": "Units: index points",
+  "footnote": "(a): adjusted value. Note: blank 2025 cells for Region A are intentionally empty.",
   "cells": [
     {
       "id": "measurements",
@@ -232,7 +233,7 @@
       "column": 4,
       "row_span": 1,
       "column_span": 1,
-      "text": "23",
+      "text": "23(a)",
       "row_header_ancestry": ["region_b"],
       "column_header_ancestry": ["measurements", "year_2025", "q2_2025"],
       "source_region": [1, 412, 342, 492, 392]

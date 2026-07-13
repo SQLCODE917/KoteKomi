@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "cell_ids": {
+      "items": {
+        "pattern": "^tcl_[A-Za-z0-9][A-Za-z0-9_-]*$",
+        "type": "string"
+      },
+      "title": "Cell Ids",
+      "type": "array"
+    },
+    "fragment_id": {
+      "pattern": "^tfr_[A-Za-z0-9][A-Za-z0-9_-]*$",
+      "title": "Fragment Id",
+      "type": "string"
+    },
+    "fragment_row_index": {
+      "minimum": 0,
+      "title": "Fragment Row Index",
+      "type": "integer"
+    },
+    "id": {
+      "pattern": "^trw_[A-Za-z0-9][A-Za-z0-9_-]*$",
+      "title": "Id",
+      "type": "string"
+    },
+    "representation_id": {
+      "pattern": "^rep_[A-Za-z0-9][A-Za-z0-9_-]*$",
+      "title": "Representation Id",
+      "type": "string"
+    },
+    "row_index": {
+      "minimum": 0,
+      "title": "Row Index",
+      "type": "integer"
+    },
+    "table_id": {
+      "pattern": "^tbl_[A-Za-z0-9][A-Za-z0-9_-]*$",
+      "title": "Table Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "representation_id",
+    "table_id",
+    "fragment_id",
+    "row_index",
+    "fragment_row_index",
+    "cell_ids"
+  ],
+  "title": "DocumentTableRow",
+  "type": "object"
+}

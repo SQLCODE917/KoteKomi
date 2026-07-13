@@ -13,10 +13,11 @@ endobj
 << /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding /ToUnicode 6 0 R >>
 endobj
 5 0 obj
-<< /Length 1175 >>
+<< /Length 1250 >>
 stream
 BT /F1 16 Tf 72 690 Td (Table 1. Regional measurements) Tj ET
-BT /F1 10 Tf 72 668 Td (Nearby body paragraph establishes table context.) Tj ET
+BT /F1 10 Tf 72 668 Td (See Table 1 for regional measurement context.) Tj ET
+BT /F1 9 Tf 72 650 Td (Units: index points) Tj ET
 0.8 w
 72 620 m 72 400 l S
 172 620 m 172 400 l S
@@ -48,8 +49,8 @@ BT /F1 10 Tf 190 425 Td (20) Tj ET
 BT /F1 7 Tf 185 412 Td (adjusted) Tj ET
 BT /F1 10 Tf 278 425 Td (21) Tj ET
 BT /F1 10 Tf 358 425 Td (22) Tj ET
-BT /F1 10 Tf 438 425 Td (23) Tj ET
-BT /F1 9 Tf 72 375 Td (Note: blank 2025 cells for Region A are intentionally empty.) Tj ET
+BT /F1 10 Tf 438 425 Td (23\(a\)) Tj ET
+BT /F1 9 Tf 72 375 Td (\(a\): adjusted value. Note: blank 2025 cells for Region A are intentionally empty.) Tj ET
 endstream
 endobj
 6 0 obj
@@ -81,9 +82,9 @@ xref
 0000000121 00000 n 
 0000000270 00000 n 
 0000000384 00000 n 
-0000001610 00000 n 
+0000001685 00000 n 
 trailer
 << /Size 7 /Root 1 0 R >>
 startxref
-1994
+2069
 %%EOF

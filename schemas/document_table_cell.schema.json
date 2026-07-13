@@ -1,0 +1,111 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "column_header_cell_ids": {
+      "items": {
+        "pattern": "^tcl_[A-Za-z0-9][A-Za-z0-9_-]*$",
+        "type": "string"
+      },
+      "title": "Column Header Cell Ids",
+      "type": "array"
+    },
+    "column_index": {
+      "minimum": 0,
+      "title": "Column Index",
+      "type": "integer"
+    },
+    "column_span": {
+      "minimum": 1,
+      "title": "Column Span",
+      "type": "integer"
+    },
+    "fragment_id": {
+      "pattern": "^tfr_[A-Za-z0-9][A-Za-z0-9_-]*$",
+      "title": "Fragment Id",
+      "type": "string"
+    },
+    "id": {
+      "pattern": "^tcl_[A-Za-z0-9][A-Za-z0-9_-]*$",
+      "title": "Id",
+      "type": "string"
+    },
+    "is_column_header": {
+      "default": false,
+      "title": "Is Column Header",
+      "type": "boolean"
+    },
+    "is_row_header": {
+      "default": false,
+      "title": "Is Row Header",
+      "type": "boolean"
+    },
+    "node_id": {
+      "anyOf": [
+        {
+          "pattern": "^nod_[A-Za-z0-9][A-Za-z0-9_-]*$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Node Id"
+    },
+    "representation_id": {
+      "pattern": "^rep_[A-Za-z0-9][A-Za-z0-9_-]*$",
+      "title": "Representation Id",
+      "type": "string"
+    },
+    "row_header_cell_ids": {
+      "items": {
+        "pattern": "^tcl_[A-Za-z0-9][A-Za-z0-9_-]*$",
+        "type": "string"
+      },
+      "title": "Row Header Cell Ids",
+      "type": "array"
+    },
+    "row_id": {
+      "pattern": "^trw_[A-Za-z0-9][A-Za-z0-9_-]*$",
+      "title": "Row Id",
+      "type": "string"
+    },
+    "row_index": {
+      "minimum": 0,
+      "title": "Row Index",
+      "type": "integer"
+    },
+    "row_span": {
+      "minimum": 1,
+      "title": "Row Span",
+      "type": "integer"
+    },
+    "source_region_ids": {
+      "items": {
+        "pattern": "^srg_[A-Za-z0-9][A-Za-z0-9_-]*$",
+        "type": "string"
+      },
+      "title": "Source Region Ids",
+      "type": "array"
+    },
+    "table_id": {
+      "pattern": "^tbl_[A-Za-z0-9][A-Za-z0-9_-]*$",
+      "title": "Table Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "representation_id",
+    "table_id",
+    "fragment_id",
+    "row_id",
+    "row_index",
+    "column_index",
+    "row_span",
+    "column_span"
+  ],
+  "title": "DocumentTableCell",
+  "type": "object"
+}

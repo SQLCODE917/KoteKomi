@@ -38,14 +38,22 @@ from kotekomi_domain import (
     DocumentEdge,
     DocumentEdgeProvenanceKind,
     DocumentNode,
+    DocumentReference,
+    DocumentReferenceKind,
     DocumentRepresentation,
     DocumentRepresentationBundle,
+    DocumentTable,
+    DocumentTableAnnotation,
+    DocumentTableCell,
+    DocumentTableFragment,
+    DocumentTableRow,
     ParseQualityReport,
     PdfExtractionPath,
     PdfTransformationType,
     RepresentationAnalyzability,
     SourceCoordinateSystem,
     SourceRegion,
+    TableAnnotationKind,
     TextView,
     TextViewKind,
     canonical_representation_digest,
@@ -57,7 +65,7 @@ HASH_ID_LENGTH = 24
 @dataclass(frozen=True)
 class DoclingPdfParserConfig:
     enable_ocr: bool = True
-    enable_table_structure: bool = False
+    enable_table_structure: bool = True
     ocr_language: str = "english"
     ocr_render_scale: int = 2
     ocr_text_score: float = 0.5
@@ -92,6 +100,31 @@ class _LayoutItem:
     marker: str | None = None
     extraction_path: PdfExtractionPath = PdfExtractionPath.EMBEDDED
     confidence: float | None = None
+    semantic_key: str | None = None
+
+
+@dataclass(frozen=True)
+class _TableCellSpec:
+    semantic_key: str | None
+    row_index: int
+    column_index: int
+    row_span: int
+    column_span: int
+    is_row_header: bool
+    is_column_header: bool
+    row_header_keys: tuple[str, ...]
+    column_header_keys: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class _TableFragmentSpec:
+    table_index: int
+    fragment_index: int
+    page_numbers: tuple[int, ...]
+    regions: tuple[_LayoutRegion, ...]
+    row_count: int
+    column_count: int
+    cells: tuple[_TableCellSpec, ...]
 
 
 class PdfSourcePreflightError(RuntimeError):
@@ -121,7 +154,7 @@ class DoclingPdfParser(PdfDocumentParser):
         config_digest = hashlib.sha256(
             json.dumps(configuration, sort_keys=True, separators=(",", ":")).encode()
         ).hexdigest()
-        return PdfProcessorIdentity("docling", parser_version, config_digest, "4")
+        return PdfProcessorIdentity("docling", parser_version, config_digest, "5")
 
     def parse(self, parse_input: PdfParseInput) -> PdfParseResult:
         if os.environ.get("KOTEKOMI_DOCLING_WORKER") != "1":
@@ -164,6 +197,7 @@ class DoclingPdfParser(PdfDocumentParser):
             )
         try:
             page_geometry = _page_geometry_from_preflight(source_preflight)
+            table_fragments: tuple[_TableFragmentSpec, ...] = ()
             if len(selected_ocr_pages) == source_preflight.page_count:
                 embedded_items: tuple[_LayoutItem, ...] = ()
             else:
@@ -219,11 +253,17 @@ class DoclingPdfParser(PdfDocumentParser):
                     page for page in page_geometry if page.page_number not in selected_ocr_pages
                 )
                 _validate_docling_page_geometry(docling_page_geometry, embedded_page_geometry)
-                embedded_items = tuple(
+                ordinary_items = tuple(
                     item
                     for item in _layout_items_from_document(conversion.document, page_geometry)
                     if item.regions[0].page_number not in selected_ocr_pages
                 )
+                table_items, table_fragments = _table_layout_from_document(
+                    conversion.document,
+                    page_geometry,
+                    excluded_pages=frozenset(selected_ocr_pages),
+                )
+                embedded_items = (*ordinary_items, *table_items)
             ocr_items, transformation_payloads = _ocr_selected_pages(
                 parse_input.raw_bytes,
                 page_geometry,
@@ -263,6 +303,7 @@ class DoclingPdfParser(PdfDocumentParser):
             layout_items=layout_items,
             parser_version=parser_version,
             config=self._config,
+            table_fragments=table_fragments,
         )
 
         return PdfParseResult(
@@ -575,6 +616,261 @@ def _layout_items_from_document(
     return tuple(layout_items)
 
 
+def _table_layout_from_document(
+    document: DoclingDocument,
+    page_geometry: tuple[_PageGeometry, ...],
+    *,
+    excluded_pages: frozenset[int],
+) -> tuple[tuple[_LayoutItem, ...], tuple[_TableFragmentSpec, ...]]:
+    geometry_by_page = {page.page_number: page for page in page_geometry}
+    items: list[_LayoutItem] = []
+    fragments: list[_TableFragmentSpec] = []
+    prior_signature: tuple[str, ...] | None = None
+    prior_last_page: int | None = None
+    logical_table_index = 0
+    fragment_index = 0
+    for native_table_index, table in enumerate(cast(Any, document).tables, start=1):
+        provenance = tuple(cast(Any, getattr(table, "prov", ())))
+        if not provenance:
+            raise ValueError("Docling table has no PDF provenance.")
+        table_regions = tuple(
+            _layout_region_from_provenance(item, geometry_by_page) for item in provenance
+        )
+        page_numbers = tuple(sorted({region.page_number for region in table_regions}))
+        if set(page_numbers) & excluded_pages:
+            continue
+        data = table.data
+        raw_cells = tuple(data.table_cells)
+        row_count = int(data.num_rows)
+        column_count = int(data.num_cols)
+        if row_count <= 0 or column_count <= 0 or not raw_cells:
+            raise ValueError("Docling table structure has no canonical rows or cells.")
+        column_header_rows = tuple(
+            int(cell.start_row_offset_idx) for cell in raw_cells if bool(cell.column_header)
+        )
+        first_header_row = min(column_header_rows, default=-1)
+        header_signature = tuple(
+            " ".join(str(cell.text).split()).casefold()
+            for cell in raw_cells
+            if bool(cell.column_header) and int(cell.start_row_offset_idx) == first_header_row
+        )
+        signature = header_signature
+        first_page = page_numbers[0]
+        if (
+            header_signature
+            and prior_signature == signature
+            and prior_last_page is not None
+            and first_page == prior_last_page + 1
+        ):
+            fragment_index += 1
+        else:
+            logical_table_index += 1
+            fragment_index = 0
+        prior_signature = signature
+        prior_last_page = page_numbers[-1]
+
+        normalized = _normalized_docling_table_cells(
+            raw_cells,
+            row_count=row_count,
+            column_count=column_count,
+        )
+        semantic_key_by_native_index: dict[int, str] = {}
+        for native_index, cell in enumerate(raw_cells):
+            text = " ".join(str(cell.text).split())
+            if not text:
+                continue
+            semantic_key = f"table:{native_table_index}:cell:{native_index}"
+            semantic_key_by_native_index[native_index] = semantic_key
+            page = geometry_by_page[page_numbers[0]]
+            region = _layout_region_from_bbox(cell.bbox, page)
+            is_row_header = bool(cell.row_header)
+            is_column_header = bool(cell.column_header)
+            if is_row_header and is_column_header:
+                node_type = "table_corner_header"
+            elif is_row_header:
+                node_type = "table_row_header"
+            elif is_column_header:
+                node_type = "table_column_header"
+            else:
+                node_type = "table_cell"
+            items.append(
+                _LayoutItem(
+                    text=text,
+                    node_type=node_type,
+                    regions=(region,),
+                    semantic_key=semantic_key,
+                )
+            )
+        specs: list[_TableCellSpec] = []
+        occupied: set[tuple[int, int]] = set()
+        for native_index, normalized_cell in enumerate(normalized):
+            start_row, end_row, start_column, end_column = normalized_cell
+            occupied.update(
+                (row, column)
+                for row in range(start_row, end_row)
+                for column in range(start_column, end_column)
+            )
+            cell = raw_cells[native_index]
+            row_header_keys = tuple(
+                semantic_key_by_native_index[index]
+                for index, header in enumerate(normalized)
+                if index in semantic_key_by_native_index
+                and bool(raw_cells[index].row_header)
+                and header[0] <= start_row < header[1]
+                and header[2] < start_column
+            )
+            column_header_keys = tuple(
+                semantic_key_by_native_index[index]
+                for index, header in enumerate(normalized)
+                if index in semantic_key_by_native_index
+                and bool(raw_cells[index].column_header)
+                and header[0] < start_row
+                and header[2] <= start_column < header[3]
+            )
+            specs.append(
+                _TableCellSpec(
+                    semantic_key=semantic_key_by_native_index.get(native_index),
+                    row_index=start_row,
+                    column_index=start_column,
+                    row_span=end_row - start_row,
+                    column_span=end_column - start_column,
+                    is_row_header=bool(cell.row_header),
+                    is_column_header=bool(cell.column_header),
+                    row_header_keys=row_header_keys,
+                    column_header_keys=column_header_keys,
+                )
+            )
+        for row in range(row_count):
+            for column in range(column_count):
+                if (row, column) not in occupied:
+                    specs.append(
+                        _TableCellSpec(
+                            semantic_key=None,
+                            row_index=row,
+                            column_index=column,
+                            row_span=1,
+                            column_span=1,
+                            is_row_header=False,
+                            is_column_header=False,
+                            row_header_keys=tuple(
+                                semantic_key_by_native_index[index]
+                                for index, header in enumerate(normalized)
+                                if index in semantic_key_by_native_index
+                                and bool(raw_cells[index].row_header)
+                                and header[0] <= row < header[1]
+                                and header[2] < column
+                            ),
+                            column_header_keys=tuple(
+                                semantic_key_by_native_index[index]
+                                for index, header in enumerate(normalized)
+                                if index in semantic_key_by_native_index
+                                and bool(raw_cells[index].column_header)
+                                and header[0] < row
+                                and header[2] <= column < header[3]
+                            ),
+                        )
+                    )
+        fragments.append(
+            _TableFragmentSpec(
+                table_index=logical_table_index,
+                fragment_index=fragment_index,
+                page_numbers=page_numbers,
+                regions=table_regions,
+                row_count=row_count,
+                column_count=column_count,
+                cells=tuple(sorted(specs, key=lambda spec: (spec.row_index, spec.column_index))),
+            )
+        )
+    return tuple(items), tuple(fragments)
+
+
+def _normalized_docling_table_cells(
+    raw_cells: tuple[Any, ...],
+    *,
+    row_count: int,
+    column_count: int,
+) -> tuple[tuple[int, int, int, int], ...]:
+    normalized = [
+        [
+            int(cell.start_row_offset_idx),
+            int(cell.end_row_offset_idx),
+            int(cell.start_col_offset_idx),
+            int(cell.end_col_offset_idx),
+        ]
+        for cell in raw_cells
+    ]
+    for index, cell in enumerate(raw_cells):
+        if bool(cell.row_header):
+            next_rows = tuple(
+                candidate[0]
+                for candidate, other in zip(normalized, raw_cells, strict=True)
+                if bool(other.row_header)
+                and candidate[2] == normalized[index][2]
+                and candidate[0] > normalized[index][0]
+            )
+            normalized[index][1] = min(next_rows, default=row_count)
+        if bool(cell.column_header):
+            peers = tuple(
+                (peer_index, candidate)
+                for peer_index, (candidate, other) in enumerate(
+                    zip(normalized, raw_cells, strict=True)
+                )
+                if bool(other.column_header) and candidate[0] == normalized[index][0]
+            )
+            later_starts = tuple(
+                candidate[2]
+                for peer_index, candidate in peers
+                if peer_index != index and candidate[2] > normalized[index][2]
+            )
+            if later_starts:
+                normalized[index][3] = min(later_starts)
+            elif len(peers) > 1:
+                normalized[index][3] = column_count
+            else:
+                child_headers = tuple(
+                    candidate
+                    for candidate, other in zip(normalized, raw_cells, strict=True)
+                    if bool(other.column_header) and candidate[0] > normalized[index][0]
+                )
+                if child_headers:
+                    normalized[index][2] = min(candidate[2] for candidate in child_headers)
+                    normalized[index][3] = max(candidate[3] for candidate in child_headers)
+    for start_row, end_row, start_column, end_column in normalized:
+        if not (
+            0 <= start_row < end_row <= row_count and 0 <= start_column < end_column <= column_count
+        ):
+            raise ValueError("Docling table cell span lies outside its table grid.")
+    return tuple(tuple(values) for values in normalized)  # type: ignore[return-value]
+
+
+def _layout_region_from_bbox(bounding_box: Any, page: _PageGeometry) -> _LayoutRegion:
+    coordinate_origin = str(getattr(getattr(bounding_box, "coord_origin", None), "value", ""))
+    left = float(bounding_box.l)
+    right = float(bounding_box.r)
+    if coordinate_origin == "BOTTOMLEFT":
+        top = page.height - float(bounding_box.t)
+        bottom = page.height - float(bounding_box.b)
+    elif coordinate_origin == "TOPLEFT":
+        top = float(bounding_box.t)
+        bottom = float(bounding_box.b)
+    else:
+        raise ValueError("Docling table cell uses an unknown coordinate origin.")
+    if left < 0 or top < 0 or right <= left or bottom <= top:
+        raise ValueError("Docling table cell has invalid PDF bounds.")
+    if right > page.width or bottom > page.height:
+        raise ValueError("Docling table cell exceeds its PDF page bounds.")
+    return _LayoutRegion(
+        page.page_number,
+        page.width,
+        page.height,
+        left,
+        top,
+        right,
+        bottom,
+        page.rotation,
+    )
+
+
 def _finalize_layout_items(
     layout_items: tuple[_LayoutItem, ...],
     page_geometry: tuple[_PageGeometry, ...],
@@ -619,6 +915,13 @@ def _layout_item_from_docling_item(
         }.get(str(label), "paragraph")
     if content_layer == "furniture":
         resolved_node_type = "furniture"
+    normalized_text = text.strip()
+    if re.match(r"^Table\s+\w+", normalized_text, re.IGNORECASE):
+        resolved_node_type = "table_caption"
+    elif re.match(r"^Units?:", normalized_text, re.IGNORECASE):
+        resolved_node_type = "table_unit"
+    elif re.match(r"^(?:Note|Footnote|\([A-Za-z0-9]+\)):", normalized_text, re.IGNORECASE):
+        resolved_node_type = "table_note"
     heading_level = getattr(item, "level", None) if resolved_node_type == "heading" else None
     marker = getattr(item, "marker", None) if resolved_node_type == "list_item" else None
     return _LayoutItem(
@@ -805,6 +1108,8 @@ def _classify_repeated_furniture(
 ) -> tuple[_LayoutItem, ...]:
     occurrences: dict[str, set[int]] = {}
     for item in layout_items:
+        if item.node_type.startswith("table_"):
+            continue
         region = item.regions[0]
         near_page_edge = region.top <= region.page_height * 0.1 or (
             region.bottom >= region.page_height * 0.9
@@ -816,7 +1121,8 @@ def _classify_repeated_furniture(
     repeated_keys = {key for key, pages in occurrences.items() if len(pages) >= 2}
     return tuple(
         replace(item, node_type="furniture")
-        if re.sub(r"\d+", "#", " ".join(item.text.casefold().split())) in repeated_keys
+        if not item.node_type.startswith("table_")
+        and re.sub(r"\d+", "#", " ".join(item.text.casefold().split())) in repeated_keys
         else item
         for item in layout_items
     )
@@ -1360,6 +1666,7 @@ def build_docling_representation_bundle(
     layout_items: tuple[_LayoutItem, ...],
     parser_version: str,
     config: DoclingPdfParserConfig,
+    table_fragments: tuple[_TableFragmentSpec, ...] = (),
 ) -> DocumentRepresentationBundle:
     input_digest = hashlib.sha256(parse_input.raw_bytes).hexdigest()
     configuration = _parser_configuration(config, parse_input.policy_id)
@@ -1372,12 +1679,14 @@ def build_docling_representation_bundle(
     display_view_id = f"tvw_{representation_key}_display"
     root_node_id = f"nod_{representation_key}_document"
     quality_id = f"pqr_{representation_key}_quality_v1"
-    logical_text, display_text, nodes, source_regions = _canonical_layout_records(
-        representation_id=representation_id,
-        representation_key=representation_key,
-        logical_view_id=logical_view_id,
-        display_view_id=display_view_id,
-        layout_items=layout_items,
+    logical_text, display_text, nodes, source_regions, semantic_node_ids = (
+        _canonical_layout_records(
+            representation_id=representation_id,
+            representation_key=representation_key,
+            logical_view_id=logical_view_id,
+            display_view_id=display_view_id,
+            layout_items=layout_items,
+        )
     )
     logical_view = TextView(
         id=logical_view_id,
@@ -1411,6 +1720,23 @@ def build_docling_representation_bundle(
         ),
     )
     nodes = (root, *nodes)
+    (
+        tables,
+        canonical_fragments,
+        table_rows,
+        table_cells,
+        table_annotations,
+        references,
+        table_source_regions,
+    ) = _canonical_table_records(
+        representation_id=representation_id,
+        representation_key=representation_key,
+        table_fragments=table_fragments,
+        semantic_node_ids=semantic_node_ids,
+        nodes=nodes,
+        text_views=(logical_view, display_view),
+    )
+    source_regions = (*source_regions, *table_source_regions)
     contains_edges = tuple(
         DocumentEdge(
             id=f"deg_{representation_key}_contains_{node.order_index:04d}",
@@ -1448,6 +1774,9 @@ def build_docling_representation_bundle(
         source_regions=source_regions,
         logical_text=logical_text,
         display_text=display_text,
+        tables=tables,
+        table_cells=table_cells,
+        table_fragments=canonical_fragments,
     )
     template = DocumentRepresentation(
         id=representation_id,
@@ -1469,6 +1798,12 @@ def build_docling_representation_bundle(
                 edges=edges,
                 source_regions=source_regions,
                 quality_report=quality_report,
+                tables=tables,
+                table_fragments=canonical_fragments,
+                table_rows=table_rows,
+                table_cells=table_cells,
+                table_annotations=table_annotations,
+                references=references,
             )
         }
     )
@@ -1478,6 +1813,12 @@ def build_docling_representation_bundle(
         nodes=nodes,
         edges=edges,
         source_regions=source_regions,
+        tables=tables,
+        table_fragments=canonical_fragments,
+        table_rows=table_rows,
+        table_cells=table_cells,
+        table_annotations=table_annotations,
+        references=references,
         quality_report=quality_report,
     )
 
@@ -1489,7 +1830,13 @@ def _canonical_layout_records(
     logical_view_id: str,
     display_view_id: str,
     layout_items: tuple[_LayoutItem, ...],
-) -> tuple[str, str, tuple[DocumentNode, ...], tuple[SourceRegion, ...]]:
+) -> tuple[
+    str,
+    str,
+    tuple[DocumentNode, ...],
+    tuple[SourceRegion, ...],
+    dict[str, str],
+]:
     display_text, display_ranges = _render_layout_text(layout_items)
     logical_items = tuple(item for item in layout_items if item.node_type != "furniture")
     logical_text, compact_logical_ranges = _render_layout_text(logical_items)
@@ -1501,6 +1848,7 @@ def _canonical_layout_records(
             logical_index += 1
     nodes: list[DocumentNode] = []
     source_regions: list[SourceRegion] = []
+    semantic_node_ids: dict[str, str] = {}
     root_node_id = f"nod_{representation_key}_document"
     parent_paths: dict[str, tuple[str, ...]] = {root_node_id: ("document",)}
     section_stack: list[tuple[int, str, str]] = []
@@ -1588,12 +1936,389 @@ def _canonical_layout_records(
             extraction_path=item.extraction_path,
         )
         nodes.append(node)
+        if item.semantic_key is not None:
+            if item.semantic_key in semantic_node_ids:
+                raise ValueError("PDF layout semantic keys must be unique.")
+            semantic_node_ids[item.semantic_key] = node.id
         parent_paths[node.id] = structural_path
         if item.node_type == "heading":
             section_stack.append((item.heading_level or 1, node.id, item.text))
         elif item.node_type == "list_item":
             list_stack.append((min(region.left for region in item.regions), node.id))
-    return logical_text, display_text, tuple(nodes), tuple(source_regions)
+    return logical_text, display_text, tuple(nodes), tuple(source_regions), semantic_node_ids
+
+
+def _canonical_table_records(
+    *,
+    representation_id: str,
+    representation_key: str,
+    table_fragments: tuple[_TableFragmentSpec, ...],
+    semantic_node_ids: dict[str, str],
+    nodes: tuple[DocumentNode, ...],
+    text_views: tuple[TextView, ...],
+) -> tuple[
+    tuple[DocumentTable, ...],
+    tuple[DocumentTableFragment, ...],
+    tuple[DocumentTableRow, ...],
+    tuple[DocumentTableCell, ...],
+    tuple[DocumentTableAnnotation, ...],
+    tuple[DocumentReference, ...],
+    tuple[SourceRegion, ...],
+]:
+    if not table_fragments:
+        return (), (), (), (), (), (), ()
+    nodes_by_id = {node.id: node for node in nodes}
+    views_by_id = {view.id: view for view in text_views}
+    fragments_by_table: dict[int, list[_TableFragmentSpec]] = {}
+    for fragment in table_fragments:
+        fragments_by_table.setdefault(fragment.table_index, []).append(fragment)
+    semantic_cell_ids: dict[str, str] = {}
+    for fragment in table_fragments:
+        for cell in fragment.cells:
+            if cell.semantic_key is None:
+                continue
+            semantic_cell_ids[cell.semantic_key] = (
+                f"tcl_{representation_key}_{fragment.table_index:02d}_"
+                f"{fragment.fragment_index:02d}_{cell.row_index:04d}_{cell.column_index:04d}"
+            )
+
+    canonical_tables: list[DocumentTable] = []
+    canonical_fragments: list[DocumentTableFragment] = []
+    canonical_rows: list[DocumentTableRow] = []
+    canonical_cells: list[DocumentTableCell] = []
+    canonical_annotations: list[DocumentTableAnnotation] = []
+    table_regions: list[SourceRegion] = []
+    for table_index, fragment_specs in sorted(fragments_by_table.items()):
+        ordered_fragments = tuple(sorted(fragment_specs, key=lambda item: item.fragment_index))
+        table_id = f"tbl_{representation_key}_{table_index:02d}"
+        table_fragment_ids: list[str] = []
+        table_row_ids: list[str] = []
+        table_cell_ids: list[str] = []
+        row_offset = 0
+        prior_fragment_id: str | None = None
+        for fragment in ordered_fragments:
+            fragment_id = (
+                f"tfr_{representation_key}_{table_index:02d}_{fragment.fragment_index:02d}"
+            )
+            table_fragment_ids.append(fragment_id)
+            fragment_region_ids: list[str] = []
+            for region_index, region in enumerate(fragment.regions, start=1):
+                region_id = (
+                    f"srg_{representation_key}_table_{table_index:02d}_"
+                    f"{fragment.fragment_index:02d}_{region_index:02d}"
+                )
+                fragment_region_ids.append(region_id)
+                table_regions.append(
+                    SourceRegion(
+                        id=region_id,
+                        representation_id=representation_id,
+                        coordinate_system=SourceCoordinateSystem.PDF_POINTS_TOP_LEFT_V1,
+                        page_number=region.page_number,
+                        page_width=region.page_width,
+                        page_height=region.page_height,
+                        left=region.left,
+                        top=region.top,
+                        right=region.right,
+                        bottom=region.bottom,
+                        rotation_applied=region.rotation_applied,
+                    )
+                )
+            cells_by_row: dict[int, list[_TableCellSpec]] = {}
+            for cell in fragment.cells:
+                cells_by_row.setdefault(cell.row_index, []).append(cell)
+            fragment_cell_ids: dict[tuple[int, int], str] = {}
+            for local_row_index, row_cells in sorted(cells_by_row.items()):
+                global_row_index = row_offset + local_row_index
+                row_id = (
+                    f"trw_{representation_key}_{table_index:02d}_"
+                    f"{fragment.fragment_index:02d}_{local_row_index:04d}"
+                )
+                row_cell_ids: list[str] = []
+                for cell in sorted(row_cells, key=lambda item: item.column_index):
+                    cell_id = (
+                        semantic_cell_ids[cell.semantic_key]
+                        if cell.semantic_key is not None
+                        else (
+                            f"tcl_{representation_key}_{table_index:02d}_"
+                            f"{fragment.fragment_index:02d}_{cell.row_index:04d}_"
+                            f"{cell.column_index:04d}_empty"
+                        )
+                    )
+                    row_cell_ids.append(cell_id)
+                    table_cell_ids.append(cell_id)
+                    fragment_cell_ids[(cell.row_index, cell.column_index)] = cell_id
+                    node_id = (
+                        semantic_node_ids[cell.semantic_key]
+                        if cell.semantic_key is not None
+                        else None
+                    )
+                    source_region_ids = (
+                        nodes_by_id[node_id].source_region_ids if node_id is not None else ()
+                    )
+                    canonical_cells.append(
+                        DocumentTableCell(
+                            id=cell_id,
+                            representation_id=representation_id,
+                            table_id=table_id,
+                            fragment_id=fragment_id,
+                            row_id=row_id,
+                            node_id=node_id,
+                            row_index=global_row_index,
+                            column_index=cell.column_index,
+                            row_span=cell.row_span,
+                            column_span=cell.column_span,
+                            is_row_header=cell.is_row_header,
+                            is_column_header=cell.is_column_header,
+                            row_header_cell_ids=tuple(
+                                semantic_cell_ids[key] for key in cell.row_header_keys
+                            ),
+                            column_header_cell_ids=tuple(
+                                semantic_cell_ids[key] for key in cell.column_header_keys
+                            ),
+                            source_region_ids=source_region_ids,
+                        )
+                    )
+                table_row_ids.append(row_id)
+                canonical_rows.append(
+                    DocumentTableRow(
+                        id=row_id,
+                        representation_id=representation_id,
+                        table_id=table_id,
+                        fragment_id=fragment_id,
+                        row_index=global_row_index,
+                        fragment_row_index=local_row_index,
+                        cell_ids=tuple(row_cell_ids),
+                    )
+                )
+            repeated_headers = tuple(
+                fragment_cell_ids[(cell.row_index, cell.column_index)]
+                for cell in fragment.cells
+                if fragment.fragment_index > 0 and (cell.is_row_header or cell.is_column_header)
+            )
+            canonical_fragments.append(
+                DocumentTableFragment(
+                    id=fragment_id,
+                    representation_id=representation_id,
+                    table_id=table_id,
+                    fragment_index=fragment.fragment_index,
+                    page_numbers=fragment.page_numbers,
+                    source_region_ids=tuple(fragment_region_ids),
+                    continued_from_fragment_id=prior_fragment_id,
+                    repeated_header_cell_ids=repeated_headers,
+                )
+            )
+            prior_fragment_id = fragment_id
+            row_offset += fragment.row_count
+
+        canonical_tables.append(
+            DocumentTable(
+                id=table_id,
+                representation_id=representation_id,
+                fragment_ids=tuple(table_fragment_ids),
+                row_ids=tuple(table_row_ids),
+                cell_ids=tuple(table_cell_ids),
+                annotation_ids=(),
+            )
+        )
+    table_pages = {
+        table.id: {
+            page
+            for fragment in canonical_fragments
+            if fragment.table_id == table.id
+            for page in fragment.page_numbers
+        }
+        for table in canonical_tables
+    }
+    table_node_orders = {
+        table.id: tuple(
+            nodes_by_id[cell.node_id].order_index
+            for cell in canonical_cells
+            if cell.table_id == table.id and cell.node_id is not None
+        )
+        for table in canonical_tables
+    }
+    annotation_ids_by_table: dict[str, list[str]] = {table.id: [] for table in canonical_tables}
+    table_node_ids = {cell.node_id for cell in canonical_cells if cell.node_id is not None}
+    for node in nodes:
+        annotation_kind = _table_annotation_kind(node, views_by_id)
+        if annotation_kind is None or node.id in table_node_ids:
+            continue
+        eligible_tables = tuple(
+            table
+            for table in canonical_tables
+            if set(node.source_page_numbers) & table_pages[table.id] and table_node_orders[table.id]
+        )
+        if not eligible_tables:
+            continue
+        table = min(
+            eligible_tables,
+            key=lambda candidate: (
+                min(abs(node.order_index - order) for order in table_node_orders[candidate.id]),
+                candidate.id,
+            ),
+        )
+        table_index = canonical_tables.index(table) + 1
+        annotation_id = (
+            f"tan_{representation_key}_{table_index:02d}_{annotation_kind.value}_"
+            f"{len(annotation_ids_by_table[table.id]) + 1:02d}"
+        )
+        annotation_ids_by_table[table.id].append(annotation_id)
+        matching_fragments = tuple(
+            fragment
+            for fragment in canonical_fragments
+            if fragment.table_id == table.id
+            and set(fragment.page_numbers) & set(node.source_page_numbers)
+        )
+        canonical_annotations.append(
+            DocumentTableAnnotation(
+                id=annotation_id,
+                representation_id=representation_id,
+                table_id=table.id,
+                fragment_id=(matching_fragments[0].id if len(matching_fragments) == 1 else None),
+                kind=annotation_kind,
+                node_id=node.id,
+                source_region_ids=node.source_region_ids,
+            )
+        )
+    canonical_tables = [
+        table.model_copy(update={"annotation_ids": tuple(annotation_ids_by_table[table.id])})
+        for table in canonical_tables
+    ]
+    references = _canonical_document_references(
+        representation_id=representation_id,
+        representation_key=representation_key,
+        nodes=nodes,
+        text_views=views_by_id,
+    )
+    return (
+        tuple(canonical_tables),
+        tuple(canonical_fragments),
+        tuple(canonical_rows),
+        tuple(canonical_cells),
+        tuple(canonical_annotations),
+        references,
+        tuple(table_regions),
+    )
+
+
+def _table_annotation_kind(
+    node: DocumentNode,
+    text_views: dict[str, TextView],
+) -> TableAnnotationKind | None:
+    text = text_views[node.text_view_id].text[node.start_char : node.end_char].strip()
+    if re.match(r"^Table\s+\w+", text, re.IGNORECASE):
+        return TableAnnotationKind.CAPTION
+    if re.match(r"^Units?:", text, re.IGNORECASE):
+        return TableAnnotationKind.UNIT
+    if node.node_type in {"footnote", "table_note"} or re.match(
+        r"^(?:Note|Footnote|\([A-Za-z0-9]+\)):", text, re.IGNORECASE
+    ):
+        return TableAnnotationKind.NOTE
+    return None
+
+
+def _canonical_document_references(
+    *,
+    representation_id: str,
+    representation_key: str,
+    nodes: tuple[DocumentNode, ...],
+    text_views: dict[str, TextView],
+) -> tuple[DocumentReference, ...]:
+    references: list[DocumentReference] = []
+    node_text = {
+        node.id: text_views[node.text_view_id].text[node.start_char : node.end_char]
+        for node in nodes
+    }
+    caption_targets: dict[str, list[DocumentNode]] = {}
+    footnote_targets: dict[str, list[DocumentNode]] = {}
+    for node in nodes:
+        if node.parent_node_id is None:
+            continue
+        text = node_text[node.id].strip()
+        caption_match = re.match(r"^(Table\s+\w+)", text, re.IGNORECASE)
+        if caption_match:
+            caption_targets.setdefault(caption_match.group(1).casefold(), []).append(node)
+        footnote_match = re.match(
+            r"^(?:Footnote\s+)?(\([A-Za-z0-9]+\)|[*†‡]):?", text, re.IGNORECASE
+        )
+        if footnote_match and node.node_type in {"footnote", "table_note"}:
+            footnote_targets.setdefault(footnote_match.group(1).casefold(), []).append(node)
+    for marker_node in nodes:
+        if marker_node.parent_node_id is None:
+            continue
+        text = node_text[marker_node.id]
+        for label, targets in caption_targets.items():
+            for match in re.finditer(re.escape(label), text, re.IGNORECASE):
+                eligible_targets = tuple(
+                    target for target in targets if target.id != marker_node.id
+                )
+                if not eligible_targets:
+                    continue
+                target = min(
+                    eligible_targets,
+                    key=lambda candidate: (
+                        abs(marker_node.order_index - candidate.order_index),
+                        candidate.id,
+                    ),
+                )
+                references.append(
+                    _document_reference(
+                        representation_id,
+                        representation_key,
+                        len(references) + 1,
+                        DocumentReferenceKind.CROSS_REFERENCE,
+                        marker_node,
+                        target,
+                        match,
+                    )
+                )
+        for label, targets in footnote_targets.items():
+            for match in re.finditer(re.escape(label), text, re.IGNORECASE):
+                eligible_targets = tuple(
+                    target for target in targets if target.id != marker_node.id
+                )
+                if not eligible_targets:
+                    continue
+                target = min(
+                    eligible_targets,
+                    key=lambda candidate: (
+                        abs(marker_node.order_index - candidate.order_index),
+                        candidate.id,
+                    ),
+                )
+                references.append(
+                    _document_reference(
+                        representation_id,
+                        representation_key,
+                        len(references) + 1,
+                        DocumentReferenceKind.FOOTNOTE,
+                        marker_node,
+                        target,
+                        match,
+                    )
+                )
+    return tuple(references)
+
+
+def _document_reference(
+    representation_id: str,
+    representation_key: str,
+    index: int,
+    kind: DocumentReferenceKind,
+    marker_node: DocumentNode,
+    target_node: DocumentNode,
+    match: re.Match[str],
+) -> DocumentReference:
+    return DocumentReference(
+        id=f"drf_{representation_key}_{index:04d}",
+        representation_id=representation_id,
+        kind=kind,
+        marker_node_id=marker_node.id,
+        target_node_id=target_node.id,
+        marker_start_char=marker_node.start_char + match.start(),
+        marker_end_char=marker_node.start_char + match.end(),
+        marker_text=match.group(0),
+    )
 
 
 def _render_layout_text(
@@ -1627,6 +2352,9 @@ def _quality_report(
     source_regions: tuple[SourceRegion, ...],
     logical_text: str,
     display_text: str,
+    tables: tuple[DocumentTable, ...] = (),
+    table_cells: tuple[DocumentTableCell, ...] = (),
+    table_fragments: tuple[DocumentTableFragment, ...] = (),
 ) -> ParseQualityReport:
     expected_pages = {page.page_number for page in page_geometry}
     covered_pages = {region.page_number for region in source_regions}
@@ -1661,6 +2389,9 @@ def _quality_report(
                 node.extraction_path is PdfExtractionPath.OCR for node in content_nodes
             ),
             "source_region_count": len(source_regions),
+            "table_count": len(tables),
+            "table_cell_count": len(table_cells),
+            "table_fragment_count": len(table_fragments),
         },
         issues=tuple(issues),
         analyzability=(

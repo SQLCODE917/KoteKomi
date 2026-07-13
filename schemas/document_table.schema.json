@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "One logical table, potentially assembled from multiple page fragments.",
+  "properties": {
+    "annotation_ids": {
+      "items": {
+        "pattern": "^tan_[A-Za-z0-9][A-Za-z0-9_-]*$",
+        "type": "string"
+      },
+      "title": "Annotation Ids",
+      "type": "array"
+    },
+    "cell_ids": {
+      "items": {
+        "pattern": "^tcl_[A-Za-z0-9][A-Za-z0-9_-]*$",
+        "type": "string"
+      },
+      "title": "Cell Ids",
+      "type": "array"
+    },
+    "fragment_ids": {
+      "items": {
+        "pattern": "^tfr_[A-Za-z0-9][A-Za-z0-9_-]*$",
+        "type": "string"
+      },
+      "title": "Fragment Ids",
+      "type": "array"
+    },
+    "id": {
+      "pattern": "^tbl_[A-Za-z0-9][A-Za-z0-9_-]*$",
+      "title": "Id",
+      "type": "string"
+    },
+    "representation_id": {
+      "pattern": "^rep_[A-Za-z0-9][A-Za-z0-9_-]*$",
+      "title": "Representation Id",
+      "type": "string"
+    },
+    "row_ids": {
+      "items": {
+        "pattern": "^trw_[A-Za-z0-9][A-Za-z0-9_-]*$",
+        "type": "string"
+      },
+      "title": "Row Ids",
+      "type": "array"
+    }
+  },
+  "required": [
+    "id",
+    "representation_id",
+    "fragment_ids",
+    "row_ids",
+    "cell_ids"
+  ],
+  "title": "DocumentTable",
+  "type": "object"
+}

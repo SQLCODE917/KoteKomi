@@ -306,8 +306,8 @@
       "media_type": "application/pdf",
       "origin": "generated",
       "generator_version": "kotekomi_pdf_fixture_generator_v3",
-      "local_sha256": "5d12562e249e8e51f963c3f1578471d8ced92edc4c2079ffabca42f62f8e30a8",
-      "size_bytes": 2198,
+      "local_sha256": "0d05a75d046914ffc90eee9ac96dab3b7233fdde58777a96d8d7a06f94cc4c89",
+      "size_bytes": 2273,
       "license_profile": "project_owned",
       "license_disposition": "project_owned",
       "expectation_profile": "canonical_complex_table",
@@ -563,7 +563,7 @@
     },
     {
       "path": "gold/complex_table_v1.json",
-      "sha256": "0480d4faf3225e8b3f6b6cba6e8a237fdb4982e7a7b6f58d0cd47120caa8f981"
+      "sha256": "be78d7c85df177dd8b713a784c6d7a6aff7a8dc6f31c046c6f5b9780865aa2a5"
     },
     {
       "path": "gold/adversarial_columns_hierarchy_v1.json",

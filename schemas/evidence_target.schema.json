@@ -30,6 +30,45 @@
           "type": "null"
         }
       ]
+    },
+    "TableEvidenceSelector": {
+      "additionalProperties": false,
+      "properties": {
+        "cell_id": {
+          "pattern": "^tcl_[A-Za-z0-9][A-Za-z0-9_-]*$",
+          "title": "Cell Id",
+          "type": "string"
+        },
+        "column_header_cell_ids": {
+          "items": {
+            "pattern": "^tcl_[A-Za-z0-9][A-Za-z0-9_-]*$",
+            "type": "string"
+          },
+          "title": "Column Header Cell Ids",
+          "type": "array"
+        },
+        "row_header_cell_ids": {
+          "items": {
+            "pattern": "^tcl_[A-Za-z0-9][A-Za-z0-9_-]*$",
+            "type": "string"
+          },
+          "title": "Row Header Cell Ids",
+          "type": "array"
+        },
+        "table_id": {
+          "pattern": "^tbl_[A-Za-z0-9][A-Za-z0-9_-]*$",
+          "title": "Table Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "table_id",
+        "cell_id",
+        "row_header_cell_ids",
+        "column_header_cell_ids"
+      ],
+      "title": "TableEvidenceSelector",
+      "type": "object"
     }
   },
   "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -124,17 +163,13 @@
     "table_selector": {
       "anyOf": [
         {
-          "additionalProperties": {
-            "$ref": "#/$defs/JsonValue"
-          },
-          "type": "object"
+          "$ref": "#/$defs/TableEvidenceSelector"
         },
         {
           "type": "null"
         }
       ],
-      "default": null,
-      "title": "Table Selector"
+      "default": null
     },
     "text_view_digest": {
       "pattern": "^[a-f0-9]{64}$",

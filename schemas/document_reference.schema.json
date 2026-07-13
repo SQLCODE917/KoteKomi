@@ -1,0 +1,66 @@
+{
+  "$defs": {
+    "DocumentReferenceKind": {
+      "enum": [
+        "footnote",
+        "cross_reference"
+      ],
+      "title": "DocumentReferenceKind",
+      "type": "string"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "pattern": "^drf_[A-Za-z0-9][A-Za-z0-9_-]*$",
+      "title": "Id",
+      "type": "string"
+    },
+    "kind": {
+      "$ref": "#/$defs/DocumentReferenceKind"
+    },
+    "marker_end_char": {
+      "exclusiveMinimum": 0,
+      "title": "Marker End Char",
+      "type": "integer"
+    },
+    "marker_node_id": {
+      "pattern": "^nod_[A-Za-z0-9][A-Za-z0-9_-]*$",
+      "title": "Marker Node Id",
+      "type": "string"
+    },
+    "marker_start_char": {
+      "minimum": 0,
+      "title": "Marker Start Char",
+      "type": "integer"
+    },
+    "marker_text": {
+      "minLength": 1,
+      "title": "Marker Text",
+      "type": "string"
+    },
+    "representation_id": {
+      "pattern": "^rep_[A-Za-z0-9][A-Za-z0-9_-]*$",
+      "title": "Representation Id",
+      "type": "string"
+    },
+    "target_node_id": {
+      "pattern": "^nod_[A-Za-z0-9][A-Za-z0-9_-]*$",
+      "title": "Target Node Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "representation_id",
+    "kind",
+    "marker_node_id",
+    "target_node_id",
+    "marker_start_char",
+    "marker_end_char",
+    "marker_text"
+  ],
+  "title": "DocumentReference",
+  "type": "object"
+}

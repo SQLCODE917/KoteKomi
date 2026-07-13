@@ -58,6 +58,12 @@ PdfPreflightReportId = Annotated[str, Field(pattern=r"^pfr_[A-Za-z0-9][A-Za-z0-9
 PdfPageInventoryId = Annotated[str, Field(pattern=r"^ppi_[A-Za-z0-9][A-Za-z0-9_-]*$")]
 PdfPageExtractionStatusId = Annotated[str, Field(pattern=r"^pes_[A-Za-z0-9][A-Za-z0-9_-]*$")]
 PdfTransformationArtifactId = Annotated[str, Field(pattern=r"^pta_[A-Za-z0-9][A-Za-z0-9_-]*$")]
+DocumentTableId = Annotated[str, Field(pattern=r"^tbl_[A-Za-z0-9][A-Za-z0-9_-]*$")]
+DocumentTableFragmentId = Annotated[str, Field(pattern=r"^tfr_[A-Za-z0-9][A-Za-z0-9_-]*$")]
+DocumentTableRowId = Annotated[str, Field(pattern=r"^trw_[A-Za-z0-9][A-Za-z0-9_-]*$")]
+DocumentTableCellId = Annotated[str, Field(pattern=r"^tcl_[A-Za-z0-9][A-Za-z0-9_-]*$")]
+DocumentTableAnnotationId = Annotated[str, Field(pattern=r"^tan_[A-Za-z0-9][A-Za-z0-9_-]*$")]
+DocumentReferenceId = Annotated[str, Field(pattern=r"^drf_[A-Za-z0-9][A-Za-z0-9_-]*$")]
 
 
 def utc_now() -> datetime:
@@ -145,6 +151,17 @@ class PdfTransformationType(StrEnum):
     REPAIR = "repair"
     RENDER = "render"
     OCR = "ocr"
+
+
+class TableAnnotationKind(StrEnum):
+    CAPTION = "caption"
+    UNIT = "unit"
+    NOTE = "note"
+
+
+class DocumentReferenceKind(StrEnum):
+    FOOTNOTE = "footnote"
+    CROSS_REFERENCE = "cross_reference"
 
 
 class EvidenceValidationAttemptStatus(StrEnum):
@@ -728,6 +745,141 @@ class DocumentEdge(DomainModel):
     provenance_id: NonEmptyStr
 
 
+class DocumentTable(DomainModel):
+    """One logical table, potentially assembled from multiple page fragments."""
+
+    id: DocumentTableId
+    representation_id: DocumentRepresentationId
+    fragment_ids: tuple[DocumentTableFragmentId, ...]
+    row_ids: tuple[DocumentTableRowId, ...]
+    cell_ids: tuple[DocumentTableCellId, ...]
+    annotation_ids: tuple[DocumentTableAnnotationId, ...] = Field(default_factory=tuple)
+
+    @model_validator(mode="after")
+    def validate_membership(self) -> Self:
+        for label, values in (
+            ("fragment", self.fragment_ids),
+            ("row", self.row_ids),
+            ("cell", self.cell_ids),
+            ("annotation", self.annotation_ids),
+        ):
+            if len(set(values)) != len(values):
+                raise ValueError(f"DocumentTable {label} IDs must be unique.")
+        if not self.fragment_ids or not self.row_ids or not self.cell_ids:
+            raise ValueError("DocumentTable requires fragments, rows, and cells.")
+        return self
+
+
+class DocumentTableFragment(DomainModel):
+    id: DocumentTableFragmentId
+    representation_id: DocumentRepresentationId
+    table_id: DocumentTableId
+    fragment_index: Annotated[int, Field(ge=0)]
+    page_numbers: tuple[Annotated[int, Field(ge=1)], ...]
+    source_region_ids: tuple[SourceRegionId, ...]
+    continued_from_fragment_id: DocumentTableFragmentId | None = None
+    repeated_header_cell_ids: tuple[DocumentTableCellId, ...] = Field(default_factory=tuple)
+
+    @model_validator(mode="after")
+    def validate_fragment(self) -> Self:
+        if not self.page_numbers or tuple(sorted(set(self.page_numbers))) != self.page_numbers:
+            raise ValueError("DocumentTableFragment requires sorted unique pages.")
+        if not self.source_region_ids or len(set(self.source_region_ids)) != len(
+            self.source_region_ids
+        ):
+            raise ValueError("DocumentTableFragment requires unique source regions.")
+        if len(set(self.repeated_header_cell_ids)) != len(self.repeated_header_cell_ids):
+            raise ValueError("Repeated table-header cell IDs must be unique.")
+        if self.continued_from_fragment_id == self.id:
+            raise ValueError("DocumentTableFragment cannot continue from itself.")
+        return self
+
+
+class DocumentTableRow(DomainModel):
+    id: DocumentTableRowId
+    representation_id: DocumentRepresentationId
+    table_id: DocumentTableId
+    fragment_id: DocumentTableFragmentId
+    row_index: Annotated[int, Field(ge=0)]
+    fragment_row_index: Annotated[int, Field(ge=0)]
+    cell_ids: tuple[DocumentTableCellId, ...]
+
+    @model_validator(mode="after")
+    def validate_cells(self) -> Self:
+        if not self.cell_ids or len(set(self.cell_ids)) != len(self.cell_ids):
+            raise ValueError("DocumentTableRow requires unique cells.")
+        return self
+
+
+class DocumentTableCell(DomainModel):
+    id: DocumentTableCellId
+    representation_id: DocumentRepresentationId
+    table_id: DocumentTableId
+    fragment_id: DocumentTableFragmentId
+    row_id: DocumentTableRowId
+    node_id: DocumentNodeId | None = None
+    row_index: Annotated[int, Field(ge=0)]
+    column_index: Annotated[int, Field(ge=0)]
+    row_span: Annotated[int, Field(ge=1)]
+    column_span: Annotated[int, Field(ge=1)]
+    is_row_header: bool = False
+    is_column_header: bool = False
+    row_header_cell_ids: tuple[DocumentTableCellId, ...] = Field(default_factory=tuple)
+    column_header_cell_ids: tuple[DocumentTableCellId, ...] = Field(default_factory=tuple)
+    source_region_ids: tuple[SourceRegionId, ...] = Field(default_factory=tuple)
+
+    @model_validator(mode="after")
+    def validate_cell(self) -> Self:
+        if self.id in self.row_header_cell_ids or self.id in self.column_header_cell_ids:
+            raise ValueError("DocumentTableCell cannot be its own header ancestor.")
+        if len(set(self.row_header_cell_ids)) != len(self.row_header_cell_ids) or len(
+            set(self.column_header_cell_ids)
+        ) != len(self.column_header_cell_ids):
+            raise ValueError("DocumentTableCell header ancestry must be unique.")
+        if len(set(self.source_region_ids)) != len(self.source_region_ids):
+            raise ValueError("DocumentTableCell source regions must be unique.")
+        if self.node_id is None and self.source_region_ids:
+            raise ValueError("A table cell without text cannot claim text source regions.")
+        return self
+
+
+class DocumentTableAnnotation(DomainModel):
+    id: DocumentTableAnnotationId
+    representation_id: DocumentRepresentationId
+    table_id: DocumentTableId
+    fragment_id: DocumentTableFragmentId | None = None
+    kind: TableAnnotationKind
+    node_id: DocumentNodeId
+    source_region_ids: tuple[SourceRegionId, ...]
+
+    @model_validator(mode="after")
+    def validate_regions(self) -> Self:
+        if not self.source_region_ids or len(set(self.source_region_ids)) != len(
+            self.source_region_ids
+        ):
+            raise ValueError("DocumentTableAnnotation requires unique source regions.")
+        return self
+
+
+class DocumentReference(DomainModel):
+    id: DocumentReferenceId
+    representation_id: DocumentRepresentationId
+    kind: DocumentReferenceKind
+    marker_node_id: DocumentNodeId
+    target_node_id: DocumentNodeId
+    marker_start_char: Annotated[int, Field(ge=0)]
+    marker_end_char: Annotated[int, Field(gt=0)]
+    marker_text: NonEmptyStr
+
+    @model_validator(mode="after")
+    def validate_reference(self) -> Self:
+        if self.marker_node_id == self.target_node_id:
+            raise ValueError("DocumentReference marker and target must differ.")
+        if self.marker_end_char <= self.marker_start_char:
+            raise ValueError("DocumentReference marker range must be positive.")
+        return self
+
+
 class ParseQualityReport(DomainModel):
     id: ParseQualityReportId
     representation_id: DocumentRepresentationId
@@ -744,6 +896,12 @@ class DocumentRepresentationBundle(DomainModel):
     nodes: tuple[DocumentNode, ...]
     edges: tuple[DocumentEdge, ...] = Field(default_factory=tuple)
     source_regions: tuple[SourceRegion, ...] = Field(default_factory=tuple)
+    tables: tuple[DocumentTable, ...] = Field(default_factory=tuple)
+    table_fragments: tuple[DocumentTableFragment, ...] = Field(default_factory=tuple)
+    table_rows: tuple[DocumentTableRow, ...] = Field(default_factory=tuple)
+    table_cells: tuple[DocumentTableCell, ...] = Field(default_factory=tuple)
+    table_annotations: tuple[DocumentTableAnnotation, ...] = Field(default_factory=tuple)
+    references: tuple[DocumentReference, ...] = Field(default_factory=tuple)
     quality_report: ParseQualityReport
 
     @model_validator(mode="after")
@@ -756,6 +914,12 @@ class DocumentRepresentationBundle(DomainModel):
         _require_unique_ids(self.nodes, "DocumentNode")
         _require_unique_ids(self.edges, "DocumentEdge")
         _require_unique_ids(self.source_regions, "SourceRegion")
+        _require_unique_ids(self.tables, "DocumentTable")
+        _require_unique_ids(self.table_fragments, "DocumentTableFragment")
+        _require_unique_ids(self.table_rows, "DocumentTableRow")
+        _require_unique_ids(self.table_cells, "DocumentTableCell")
+        _require_unique_ids(self.table_annotations, "DocumentTableAnnotation")
+        _require_unique_ids(self.references, "DocumentReference")
         if not text_views:
             raise ValueError("Document representation must contain at least one TextView.")
         if len({view.kind for view in self.text_views}) != len(self.text_views):
@@ -825,6 +989,18 @@ class DocumentRepresentationBundle(DomainModel):
             if edge.from_node_id == edge.to_node_id:
                 raise ValueError("DocumentEdge must not be a self-edge.")
         _validate_reading_order_edges(self.edges)
+        _validate_document_table_structure(
+            representation_id=representation_id,
+            text_views=text_views,
+            nodes=nodes,
+            source_regions=source_regions,
+            tables=self.tables,
+            fragments=self.table_fragments,
+            rows=self.table_rows,
+            cells=self.table_cells,
+            annotations=self.table_annotations,
+            references=self.references,
+        )
         actual_digest = canonical_representation_digest(
             self.representation,
             text_views=self.text_views,
@@ -832,6 +1008,12 @@ class DocumentRepresentationBundle(DomainModel):
             edges=self.edges,
             source_regions=self.source_regions,
             quality_report=self.quality_report,
+            tables=self.tables,
+            table_fragments=self.table_fragments,
+            table_rows=self.table_rows,
+            table_cells=self.table_cells,
+            table_annotations=self.table_annotations,
+            references=self.references,
         )
         if self.representation.canonical_output_digest != actual_digest:
             raise ValueError(
@@ -849,7 +1031,13 @@ def _require_unique_ids(
         | PdfPageInventory
         | PdfPageExtractionStatus
         | PdfTransformationArtifact
-        | RawBlob,
+        | RawBlob
+        | DocumentTable
+        | DocumentTableFragment
+        | DocumentTableRow
+        | DocumentTableCell
+        | DocumentTableAnnotation
+        | DocumentReference,
         ...,
     ],
     record_name: str,
@@ -906,6 +1094,157 @@ def _validate_reading_order_edges(edges: tuple[DocumentEdge, ...]) -> None:
         visit(node_id)
 
 
+def _validate_document_table_structure(
+    *,
+    representation_id: str,
+    text_views: dict[str, TextView],
+    nodes: dict[str, DocumentNode],
+    source_regions: dict[str, SourceRegion],
+    tables: tuple[DocumentTable, ...],
+    fragments: tuple[DocumentTableFragment, ...],
+    rows: tuple[DocumentTableRow, ...],
+    cells: tuple[DocumentTableCell, ...],
+    annotations: tuple[DocumentTableAnnotation, ...],
+    references: tuple[DocumentReference, ...],
+) -> None:
+    tables_by_id = {table.id: table for table in tables}
+    fragments_by_id = {fragment.id: fragment for fragment in fragments}
+    rows_by_id = {row.id: row for row in rows}
+    cells_by_id = {cell.id: cell for cell in cells}
+    annotations_by_id = {annotation.id: annotation for annotation in annotations}
+    for table in tables:
+        if table.representation_id != representation_id:
+            raise ValueError("DocumentTable must belong to its representation.")
+        table_fragments = tuple(fragments_by_id.get(record_id) for record_id in table.fragment_ids)
+        table_rows = tuple(rows_by_id.get(record_id) for record_id in table.row_ids)
+        table_cells = tuple(cells_by_id.get(record_id) for record_id in table.cell_ids)
+        table_annotations = tuple(
+            annotations_by_id.get(record_id) for record_id in table.annotation_ids
+        )
+        if any(record is None for record in table_fragments):
+            raise ValueError("DocumentTable references a missing fragment.")
+        if any(record is None for record in table_rows):
+            raise ValueError("DocumentTable references a missing row.")
+        if any(record is None for record in table_cells):
+            raise ValueError("DocumentTable references a missing cell.")
+        if any(record is None for record in table_annotations):
+            raise ValueError("DocumentTable references a missing annotation.")
+        prior_fragment_id: str | None = None
+        for index, fragment in enumerate(table_fragments):
+            assert fragment is not None
+            if (
+                fragment.representation_id != representation_id
+                or fragment.table_id != table.id
+                or fragment.fragment_index != index
+                or fragment.continued_from_fragment_id != prior_fragment_id
+            ):
+                raise ValueError("DocumentTable fragment continuation chain is invalid.")
+            if any(region_id not in source_regions for region_id in fragment.source_region_ids):
+                raise ValueError("DocumentTableFragment references a missing SourceRegion.")
+            prior_fragment_id = fragment.id
+        for row in table_rows:
+            assert row is not None
+            if (
+                row.representation_id != representation_id
+                or row.table_id != table.id
+                or row.fragment_id not in table.fragment_ids
+            ):
+                raise ValueError("DocumentTableRow belongs to an unrelated table fragment.")
+            if (
+                tuple(cell.id for cell in table_cells if cell is not None and cell.row_id == row.id)
+                != row.cell_ids
+            ):
+                raise ValueError("DocumentTableRow cell membership is not canonical.")
+        occupied: set[tuple[int, int]] = set()
+        for cell in table_cells:
+            assert cell is not None
+            if (
+                cell.representation_id != representation_id
+                or cell.table_id != table.id
+                or cell.fragment_id not in table.fragment_ids
+                or cell.row_id not in table.row_ids
+            ):
+                raise ValueError("DocumentTableCell belongs to an unrelated table row.")
+            for coordinate in (
+                (row, column)
+                for row in range(cell.row_index, cell.row_index + cell.row_span)
+                for column in range(cell.column_index, cell.column_index + cell.column_span)
+            ):
+                if coordinate in occupied:
+                    raise ValueError("DocumentTableCell spans overlap.")
+                occupied.add(coordinate)
+            if cell.node_id is not None:
+                node = nodes.get(cell.node_id)
+                if node is None or node.node_type not in {
+                    "table_cell",
+                    "table_row_header",
+                    "table_column_header",
+                    "table_corner_header",
+                }:
+                    raise ValueError("DocumentTableCell requires a canonical table-cell node.")
+                if cell.source_region_ids != node.source_region_ids:
+                    raise ValueError("DocumentTableCell regions must match its text node.")
+            for header_id in cell.row_header_cell_ids:
+                header = cells_by_id.get(header_id)
+                if header is None or header.table_id != table.id or not header.is_row_header:
+                    raise ValueError("DocumentTableCell row-header ancestry is invalid.")
+            for header_id in cell.column_header_cell_ids:
+                header = cells_by_id.get(header_id)
+                if header is None or header.table_id != table.id or not header.is_column_header:
+                    raise ValueError("DocumentTableCell column-header ancestry is invalid.")
+        for fragment in table_fragments:
+            assert fragment is not None
+            for header_id in fragment.repeated_header_cell_ids:
+                header = cells_by_id.get(header_id)
+                if header is None or not (header.is_row_header or header.is_column_header):
+                    raise ValueError("DocumentTableFragment repeated header is invalid.")
+        for annotation in table_annotations:
+            assert annotation is not None
+            node = nodes.get(annotation.node_id)
+            if (
+                annotation.representation_id != representation_id
+                or annotation.table_id != table.id
+                or (
+                    annotation.fragment_id is not None
+                    and annotation.fragment_id not in table.fragment_ids
+                )
+                or node is None
+                or annotation.source_region_ids != node.source_region_ids
+            ):
+                raise ValueError("DocumentTableAnnotation is not grounded in its table.")
+    if set(fragment.table_id for fragment in fragments) - set(tables_by_id):
+        raise ValueError("Orphan DocumentTableFragment is forbidden.")
+    if set(row.table_id for row in rows) - set(tables_by_id):
+        raise ValueError("Orphan DocumentTableRow is forbidden.")
+    if set(cell.table_id for cell in cells) - set(tables_by_id):
+        raise ValueError("Orphan DocumentTableCell is forbidden.")
+    if set(annotation.table_id for annotation in annotations) - set(tables_by_id):
+        raise ValueError("Orphan DocumentTableAnnotation is forbidden.")
+    for reference in references:
+        marker = nodes.get(reference.marker_node_id)
+        target = nodes.get(reference.target_node_id)
+        if reference.representation_id != representation_id or marker is None or target is None:
+            raise ValueError("DocumentReference endpoints must belong to its representation.")
+        if marker.text_view_id not in text_views:
+            raise ValueError("DocumentReference marker TextView is missing.")
+        if (
+            reference.marker_start_char < marker.start_char
+            or reference.marker_end_char > marker.end_char
+        ):
+            raise ValueError("DocumentReference marker range lies outside its marker node.")
+        marker_view = text_views[marker.text_view_id]
+        if (
+            marker_view.text[reference.marker_start_char : reference.marker_end_char]
+            != reference.marker_text
+        ):
+            raise ValueError("DocumentReference marker text does not match its TextView.")
+        if reference.kind is DocumentReferenceKind.FOOTNOTE and target.node_type not in {
+            "footnote",
+            "table_note",
+        }:
+            raise ValueError("Footnote DocumentReference requires a footnote target.")
+
+
 def canonical_representation_digest(
     representation: DocumentRepresentation,
     *,
@@ -914,6 +1253,12 @@ def canonical_representation_digest(
     edges: tuple[DocumentEdge, ...],
     source_regions: tuple[SourceRegion, ...],
     quality_report: ParseQualityReport,
+    tables: tuple[DocumentTable, ...] = (),
+    table_fragments: tuple[DocumentTableFragment, ...] = (),
+    table_rows: tuple[DocumentTableRow, ...] = (),
+    table_cells: tuple[DocumentTableCell, ...] = (),
+    table_annotations: tuple[DocumentTableAnnotation, ...] = (),
+    references: tuple[DocumentReference, ...] = (),
 ) -> str:
     """Return the SHA-256 digest of a stable representation serialization."""
 
@@ -931,10 +1276,46 @@ def canonical_representation_digest(
             region.model_dump(mode="json")
             for region in sorted(source_regions, key=lambda region: region.id)
         ],
+        "tables": [table.model_dump(mode="json") for table in sorted(tables, key=lambda x: x.id)],
+        "table_fragments": [
+            fragment.model_dump(mode="json")
+            for fragment in sorted(table_fragments, key=lambda x: x.id)
+        ],
+        "table_rows": [
+            row.model_dump(mode="json") for row in sorted(table_rows, key=lambda x: x.id)
+        ],
+        "table_cells": [
+            cell.model_dump(mode="json") for cell in sorted(table_cells, key=lambda x: x.id)
+        ],
+        "table_annotations": [
+            annotation.model_dump(mode="json")
+            for annotation in sorted(table_annotations, key=lambda x: x.id)
+        ],
+        "references": [
+            reference.model_dump(mode="json")
+            for reference in sorted(references, key=lambda x: x.id)
+        ],
         "quality_report": quality_report.model_dump(mode="json"),
     }
     canonical_json = json.dumps(payload, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
     return hashlib.sha256(canonical_json.encode("utf-8")).hexdigest()
+
+
+class TableEvidenceSelector(DomainModel):
+    table_id: DocumentTableId
+    cell_id: DocumentTableCellId
+    row_header_cell_ids: tuple[DocumentTableCellId, ...]
+    column_header_cell_ids: tuple[DocumentTableCellId, ...]
+
+    @model_validator(mode="after")
+    def validate_header_ancestry(self) -> Self:
+        if not self.row_header_cell_ids or not self.column_header_cell_ids:
+            raise ValueError("TableEvidenceSelector requires row and column header ancestry.")
+        if len(set(self.row_header_cell_ids)) != len(self.row_header_cell_ids) or len(
+            set(self.column_header_cell_ids)
+        ) != len(self.column_header_cell_ids):
+            raise ValueError("TableEvidenceSelector header ancestry must be unique.")
+        return self
 
 
 class EvidenceTarget(DomainModel):
@@ -953,7 +1334,7 @@ class EvidenceTarget(DomainModel):
     node_ids: tuple[DocumentNodeId, ...] = Field(default_factory=tuple)
     pdf_region_ids: tuple[SourceRegionId, ...] = Field(default_factory=tuple)
     dom_selector: dict[str, JsonValue] | None = None
-    table_selector: dict[str, JsonValue] | None = None
+    table_selector: TableEvidenceSelector | None = None
     created_at: datetime = Field(default_factory=utc_now)
 
     @model_validator(mode="after")

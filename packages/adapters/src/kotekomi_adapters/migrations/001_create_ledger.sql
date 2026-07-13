@@ -197,6 +197,53 @@ CREATE TABLE IF NOT EXISTS source_regions (
   representation_id TEXT NOT NULL, payload_json TEXT NOT NULL,
   FOREIGN KEY (representation_id) REFERENCES document_representations(id)
 );
+CREATE TABLE IF NOT EXISTS document_tables (
+  id TEXT PRIMARY KEY, created_at TEXT, updated_at TEXT, status TEXT, review_status TEXT,
+  representation_id TEXT NOT NULL, payload_json TEXT NOT NULL,
+  FOREIGN KEY (representation_id) REFERENCES document_representations(id)
+);
+CREATE TABLE IF NOT EXISTS document_table_fragments (
+  id TEXT PRIMARY KEY, created_at TEXT, updated_at TEXT, status TEXT, review_status TEXT,
+  representation_id TEXT NOT NULL, table_id TEXT NOT NULL,
+  payload_json TEXT NOT NULL,
+  FOREIGN KEY (representation_id) REFERENCES document_representations(id),
+  FOREIGN KEY (table_id) REFERENCES document_tables(id)
+);
+CREATE TABLE IF NOT EXISTS document_table_rows (
+  id TEXT PRIMARY KEY, created_at TEXT, updated_at TEXT, status TEXT, review_status TEXT,
+  representation_id TEXT NOT NULL, table_id TEXT NOT NULL,
+  fragment_id TEXT NOT NULL, payload_json TEXT NOT NULL,
+  FOREIGN KEY (representation_id) REFERENCES document_representations(id),
+  FOREIGN KEY (table_id) REFERENCES document_tables(id),
+  FOREIGN KEY (fragment_id) REFERENCES document_table_fragments(id)
+);
+CREATE TABLE IF NOT EXISTS document_table_cells (
+  id TEXT PRIMARY KEY, created_at TEXT, updated_at TEXT, status TEXT, review_status TEXT,
+  representation_id TEXT NOT NULL, table_id TEXT NOT NULL,
+  fragment_id TEXT NOT NULL, row_id TEXT NOT NULL, node_id TEXT, payload_json TEXT NOT NULL,
+  FOREIGN KEY (representation_id) REFERENCES document_representations(id),
+  FOREIGN KEY (table_id) REFERENCES document_tables(id),
+  FOREIGN KEY (fragment_id) REFERENCES document_table_fragments(id),
+  FOREIGN KEY (row_id) REFERENCES document_table_rows(id),
+  FOREIGN KEY (node_id) REFERENCES document_nodes(id)
+);
+CREATE TABLE IF NOT EXISTS document_table_annotations (
+  id TEXT PRIMARY KEY, created_at TEXT, updated_at TEXT, status TEXT, review_status TEXT,
+  representation_id TEXT NOT NULL, table_id TEXT NOT NULL,
+  fragment_id TEXT, node_id TEXT NOT NULL, payload_json TEXT NOT NULL,
+  FOREIGN KEY (representation_id) REFERENCES document_representations(id),
+  FOREIGN KEY (table_id) REFERENCES document_tables(id),
+  FOREIGN KEY (fragment_id) REFERENCES document_table_fragments(id),
+  FOREIGN KEY (node_id) REFERENCES document_nodes(id)
+);
+CREATE TABLE IF NOT EXISTS document_references (
+  id TEXT PRIMARY KEY, created_at TEXT, updated_at TEXT, status TEXT, review_status TEXT,
+  representation_id TEXT NOT NULL,
+  marker_node_id TEXT NOT NULL, target_node_id TEXT NOT NULL, payload_json TEXT NOT NULL,
+  FOREIGN KEY (representation_id) REFERENCES document_representations(id),
+  FOREIGN KEY (marker_node_id) REFERENCES document_nodes(id),
+  FOREIGN KEY (target_node_id) REFERENCES document_nodes(id)
+);
 CREATE TABLE IF NOT EXISTS parse_quality_reports (
   id TEXT PRIMARY KEY, created_at TEXT, updated_at TEXT, status TEXT, review_status TEXT,
   representation_id TEXT NOT NULL, payload_json TEXT NOT NULL,
@@ -207,6 +254,12 @@ CREATE INDEX IF NOT EXISTS idx_text_views_representation_id ON text_views(repres
 CREATE INDEX IF NOT EXISTS idx_document_nodes_representation_id ON document_nodes(representation_id);
 CREATE INDEX IF NOT EXISTS idx_document_edges_representation_id ON document_edges(representation_id);
 CREATE INDEX IF NOT EXISTS idx_source_regions_representation_id ON source_regions(representation_id);
+CREATE INDEX IF NOT EXISTS idx_document_tables_representation_id ON document_tables(representation_id);
+CREATE INDEX IF NOT EXISTS idx_document_table_fragments_representation_id ON document_table_fragments(representation_id);
+CREATE INDEX IF NOT EXISTS idx_document_table_rows_representation_id ON document_table_rows(representation_id);
+CREATE INDEX IF NOT EXISTS idx_document_table_cells_representation_id ON document_table_cells(representation_id);
+CREATE INDEX IF NOT EXISTS idx_document_table_annotations_representation_id ON document_table_annotations(representation_id);
+CREATE INDEX IF NOT EXISTS idx_document_references_representation_id ON document_references(representation_id);
 CREATE INDEX IF NOT EXISTS idx_parse_quality_reports_representation_id ON parse_quality_reports(representation_id);
 CREATE TABLE IF NOT EXISTS assertion_evidence_links (
   id TEXT PRIMARY KEY, created_at TEXT, updated_at TEXT, status TEXT, review_status TEXT,
@@ -263,6 +316,12 @@ CREATE TRIGGER IF NOT EXISTS immutable_text_views_no_update BEFORE UPDATE ON tex
 CREATE TRIGGER IF NOT EXISTS immutable_document_nodes_no_update BEFORE UPDATE ON document_nodes BEGIN SELECT RAISE(ABORT, 'document_nodes are immutable'); END;
 CREATE TRIGGER IF NOT EXISTS immutable_document_edges_no_update BEFORE UPDATE ON document_edges BEGIN SELECT RAISE(ABORT, 'document_edges are immutable'); END;
 CREATE TRIGGER IF NOT EXISTS immutable_source_regions_no_update BEFORE UPDATE ON source_regions BEGIN SELECT RAISE(ABORT, 'source_regions are immutable'); END;
+CREATE TRIGGER IF NOT EXISTS immutable_document_tables_no_update BEFORE UPDATE ON document_tables BEGIN SELECT RAISE(ABORT, 'document_tables are immutable'); END;
+CREATE TRIGGER IF NOT EXISTS immutable_document_table_fragments_no_update BEFORE UPDATE ON document_table_fragments BEGIN SELECT RAISE(ABORT, 'document_table_fragments are immutable'); END;
+CREATE TRIGGER IF NOT EXISTS immutable_document_table_rows_no_update BEFORE UPDATE ON document_table_rows BEGIN SELECT RAISE(ABORT, 'document_table_rows are immutable'); END;
+CREATE TRIGGER IF NOT EXISTS immutable_document_table_cells_no_update BEFORE UPDATE ON document_table_cells BEGIN SELECT RAISE(ABORT, 'document_table_cells are immutable'); END;
+CREATE TRIGGER IF NOT EXISTS immutable_document_table_annotations_no_update BEFORE UPDATE ON document_table_annotations BEGIN SELECT RAISE(ABORT, 'document_table_annotations are immutable'); END;
+CREATE TRIGGER IF NOT EXISTS immutable_document_references_no_update BEFORE UPDATE ON document_references BEGIN SELECT RAISE(ABORT, 'document_references are immutable'); END;
 CREATE TRIGGER IF NOT EXISTS immutable_parse_quality_reports_no_update BEFORE UPDATE ON parse_quality_reports BEGIN SELECT RAISE(ABORT, 'parse_quality_reports are immutable'); END;
 CREATE TRIGGER IF NOT EXISTS immutable_provenance_activities_no_update BEFORE UPDATE ON provenance_activities BEGIN SELECT RAISE(ABORT, 'provenance_activities are immutable'); END;
 CREATE TRIGGER IF NOT EXISTS immutable_evidence_targets_no_update BEFORE UPDATE ON evidence_targets BEGIN SELECT RAISE(ABORT, 'evidence_targets are immutable'); END;
@@ -283,6 +342,12 @@ CREATE TRIGGER IF NOT EXISTS immutable_text_views_no_delete BEFORE DELETE ON tex
 CREATE TRIGGER IF NOT EXISTS immutable_document_nodes_no_delete BEFORE DELETE ON document_nodes BEGIN SELECT RAISE(ABORT, 'document_nodes are immutable'); END;
 CREATE TRIGGER IF NOT EXISTS immutable_document_edges_no_delete BEFORE DELETE ON document_edges BEGIN SELECT RAISE(ABORT, 'document_edges are immutable'); END;
 CREATE TRIGGER IF NOT EXISTS immutable_source_regions_no_delete BEFORE DELETE ON source_regions BEGIN SELECT RAISE(ABORT, 'source_regions are immutable'); END;
+CREATE TRIGGER IF NOT EXISTS immutable_document_tables_no_delete BEFORE DELETE ON document_tables BEGIN SELECT RAISE(ABORT, 'document_tables are immutable'); END;
+CREATE TRIGGER IF NOT EXISTS immutable_document_table_fragments_no_delete BEFORE DELETE ON document_table_fragments BEGIN SELECT RAISE(ABORT, 'document_table_fragments are immutable'); END;
+CREATE TRIGGER IF NOT EXISTS immutable_document_table_rows_no_delete BEFORE DELETE ON document_table_rows BEGIN SELECT RAISE(ABORT, 'document_table_rows are immutable'); END;
+CREATE TRIGGER IF NOT EXISTS immutable_document_table_cells_no_delete BEFORE DELETE ON document_table_cells BEGIN SELECT RAISE(ABORT, 'document_table_cells are immutable'); END;
+CREATE TRIGGER IF NOT EXISTS immutable_document_table_annotations_no_delete BEFORE DELETE ON document_table_annotations BEGIN SELECT RAISE(ABORT, 'document_table_annotations are immutable'); END;
+CREATE TRIGGER IF NOT EXISTS immutable_document_references_no_delete BEFORE DELETE ON document_references BEGIN SELECT RAISE(ABORT, 'document_references are immutable'); END;
 CREATE TRIGGER IF NOT EXISTS immutable_parse_quality_reports_no_delete BEFORE DELETE ON parse_quality_reports BEGIN SELECT RAISE(ABORT, 'parse_quality_reports are immutable'); END;
 CREATE TRIGGER IF NOT EXISTS immutable_provenance_activities_no_delete BEFORE DELETE ON provenance_activities BEGIN SELECT RAISE(ABORT, 'provenance_activities are immutable'); END;
 CREATE TRIGGER IF NOT EXISTS immutable_evidence_targets_no_delete BEFORE DELETE ON evidence_targets BEGIN SELECT RAISE(ABORT, 'evidence_targets are immutable'); END;

@@ -137,7 +137,8 @@ def _authored_mixed_pages_pdf() -> bytes:
 def _complex_table_pdf() -> bytes:
     commands = [
         b"BT /F1 16 Tf 72 690 Td (Table 1. Regional measurements) Tj ET",
-        b"BT /F1 10 Tf 72 668 Td (Nearby body paragraph establishes table context.) Tj ET",
+        b"BT /F1 10 Tf 72 668 Td (See Table 1 for regional measurement context.) Tj ET",
+        b"BT /F1 9 Tf 72 650 Td (Units: index points) Tj ET",
         b"0.8 w",
     ]
     for x in (72, 172, 252, 332, 412, 492):
@@ -163,7 +164,7 @@ def _complex_table_pdf() -> bytes:
         (185, 412, "adjusted", 7),
         (278, 425, "21", 10),
         (358, 425, "22", 10),
-        (438, 425, "23", 10),
+        (438, 425, "23(a)", 10),
     )
 
     for x, y, label, size in labels:
@@ -177,7 +178,10 @@ def _complex_table_pdf() -> bytes:
         )
     commands.append(
         b"BT /F1 9 Tf 72 375 Td "
-        b"(Note: blank 2025 cells for Region A are intentionally empty.) Tj ET"
+        + _pdf_string(
+            "(a): adjusted value. Note: blank 2025 cells for Region A are intentionally empty."
+        )
+        + b" Tj ET"
     )
     content = b"\n".join(commands) + b"\n"
     return _serialize_pdf(

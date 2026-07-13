@@ -37,9 +37,15 @@ from kotekomi_domain import (
     Document,
     DocumentEdge,
     DocumentNode,
+    DocumentReference,
     DocumentRepresentation,
     DocumentRepresentationBundle,
     DocumentRevisionRelation,
+    DocumentTable,
+    DocumentTableAnnotation,
+    DocumentTableCell,
+    DocumentTableFragment,
+    DocumentTableRow,
     Entity,
     Event,
     EvidenceReanchoringRelation,
@@ -107,6 +113,12 @@ IMMUTABLE_TABLES = frozenset(
         "document_nodes",
         "document_edges",
         "source_regions",
+        "document_tables",
+        "document_table_fragments",
+        "document_table_rows",
+        "document_table_cells",
+        "document_table_annotations",
+        "document_references",
         "parse_quality_reports",
         "pdf_preflight_reports",
         "pdf_page_inventories",
@@ -153,6 +165,34 @@ RELATIONAL_OWNERSHIP_COLUMNS: dict[str, tuple[tuple[str, str], ...]] = {
     ),
     "document_edges": (("representation_id", "representation_id"),),
     "source_regions": (("representation_id", "representation_id"),),
+    "document_tables": (("representation_id", "representation_id"),),
+    "document_table_fragments": (
+        ("representation_id", "representation_id"),
+        ("table_id", "table_id"),
+    ),
+    "document_table_rows": (
+        ("representation_id", "representation_id"),
+        ("table_id", "table_id"),
+        ("fragment_id", "fragment_id"),
+    ),
+    "document_table_cells": (
+        ("representation_id", "representation_id"),
+        ("table_id", "table_id"),
+        ("fragment_id", "fragment_id"),
+        ("row_id", "row_id"),
+        ("node_id", "node_id"),
+    ),
+    "document_table_annotations": (
+        ("representation_id", "representation_id"),
+        ("table_id", "table_id"),
+        ("fragment_id", "fragment_id"),
+        ("node_id", "node_id"),
+    ),
+    "document_references": (
+        ("representation_id", "representation_id"),
+        ("marker_node_id", "marker_node_id"),
+        ("target_node_id", "target_node_id"),
+    ),
     "parse_quality_reports": (("representation_id", "representation_id"),),
     "pdf_preflight_reports": (
         ("document_id", "document_id"),
@@ -240,6 +280,12 @@ TEXT_VIEW_SPEC = RecordSpec("text_views", TextView)
 DOCUMENT_NODE_SPEC = RecordSpec("document_nodes", DocumentNode)
 DOCUMENT_EDGE_SPEC = RecordSpec("document_edges", DocumentEdge)
 SOURCE_REGION_SPEC = RecordSpec("source_regions", SourceRegion)
+DOCUMENT_TABLE_SPEC = RecordSpec("document_tables", DocumentTable)
+DOCUMENT_TABLE_FRAGMENT_SPEC = RecordSpec("document_table_fragments", DocumentTableFragment)
+DOCUMENT_TABLE_ROW_SPEC = RecordSpec("document_table_rows", DocumentTableRow)
+DOCUMENT_TABLE_CELL_SPEC = RecordSpec("document_table_cells", DocumentTableCell)
+DOCUMENT_TABLE_ANNOTATION_SPEC = RecordSpec("document_table_annotations", DocumentTableAnnotation)
+DOCUMENT_REFERENCE_SPEC = RecordSpec("document_references", DocumentReference)
 PARSE_QUALITY_REPORT_SPEC = RecordSpec("parse_quality_reports", ParseQualityReport)
 PDF_PREFLIGHT_REPORT_SPEC = RecordSpec("pdf_preflight_reports", PdfPreflightReport)
 PDF_PAGE_INVENTORY_SPEC = RecordSpec("pdf_page_inventories", PdfPageInventory)
@@ -319,6 +365,12 @@ REQUIRED_LEDGER_TABLES = (
     "document_nodes",
     "document_edges",
     "source_regions",
+    "document_tables",
+    "document_table_fragments",
+    "document_table_rows",
+    "document_table_cells",
+    "document_table_annotations",
+    "document_references",
     "parse_quality_reports",
     "pdf_preflight_reports",
     "pdf_page_inventories",
@@ -687,6 +739,14 @@ class SQLiteLedgerRepository:
         nodes = self.list_document_nodes_for_representation(representation.id)
         edges = self.list_document_edges_for_representation(representation.id)
         source_regions = self.list_source_regions_for_representation(representation.id)
+        tables = self.list_document_tables_for_representation(representation.id)
+        table_fragments = self.list_document_table_fragments_for_representation(representation.id)
+        table_rows = self.list_document_table_rows_for_representation(representation.id)
+        table_cells = self.list_document_table_cells_for_representation(representation.id)
+        table_annotations = self.list_document_table_annotations_for_representation(
+            representation.id
+        )
+        references = self.list_document_references_for_representation(representation.id)
         quality_reports = self.list_parse_quality_reports_for_representation(representation.id)
         if len(quality_reports) != 1:
             raise RuntimeError("Document representation must have exactly one ParseQualityReport.")
@@ -696,6 +756,12 @@ class SQLiteLedgerRepository:
             nodes=nodes,
             edges=edges,
             source_regions=source_regions,
+            tables=tables,
+            table_fragments=table_fragments,
+            table_rows=table_rows,
+            table_cells=table_cells,
+            table_annotations=table_annotations,
+            references=references,
             quality_report=quality_reports[0],
         )
 
@@ -828,6 +894,18 @@ class SQLiteLedgerRepository:
             self.save_source_region(region)
         for edge in bundle.edges:
             self.save_document_edge(edge)
+        for table in bundle.tables:
+            self.save_document_table(table)
+        for fragment in bundle.table_fragments:
+            self.save_document_table_fragment(fragment)
+        for row in bundle.table_rows:
+            self.save_document_table_row(row)
+        for cell in bundle.table_cells:
+            self.save_document_table_cell(cell)
+        for annotation in bundle.table_annotations:
+            self.save_document_table_annotation(annotation)
+        for reference in bundle.references:
+            self.save_document_reference(reference)
         self.save_parse_quality_report(bundle.quality_report)
         return BundleCommitOutcome(BundleCommitDisposition.CREATED, bundle.representation.id)
 
@@ -838,6 +916,12 @@ class SQLiteLedgerRepository:
                 self.list_document_nodes_for_representation(representation_id),
                 self.list_document_edges_for_representation(representation_id),
                 self.list_source_regions_for_representation(representation_id),
+                self.list_document_tables_for_representation(representation_id),
+                self.list_document_table_fragments_for_representation(representation_id),
+                self.list_document_table_rows_for_representation(representation_id),
+                self.list_document_table_cells_for_representation(representation_id),
+                self.list_document_table_annotations_for_representation(representation_id),
+                self.list_document_references_for_representation(representation_id),
                 self.list_parse_quality_reports_for_representation(representation_id),
             )
         )
@@ -895,6 +979,60 @@ class SQLiteLedgerRepository:
         self, representation_id: str
     ) -> tuple[SourceRegion, ...]:
         return self._list_for_owner(SOURCE_REGION_SPEC, "representation_id", representation_id)
+
+    def save_document_table(self, record: DocumentTable) -> None:
+        self._save(DOCUMENT_TABLE_SPEC, record)
+
+    def list_document_tables_for_representation(
+        self, representation_id: str
+    ) -> tuple[DocumentTable, ...]:
+        return self._list_for_owner(DOCUMENT_TABLE_SPEC, "representation_id", representation_id)
+
+    def save_document_table_fragment(self, record: DocumentTableFragment) -> None:
+        self._save(DOCUMENT_TABLE_FRAGMENT_SPEC, record)
+
+    def list_document_table_fragments_for_representation(
+        self, representation_id: str
+    ) -> tuple[DocumentTableFragment, ...]:
+        return self._list_for_owner(
+            DOCUMENT_TABLE_FRAGMENT_SPEC, "representation_id", representation_id
+        )
+
+    def save_document_table_row(self, record: DocumentTableRow) -> None:
+        self._save(DOCUMENT_TABLE_ROW_SPEC, record)
+
+    def list_document_table_rows_for_representation(
+        self, representation_id: str
+    ) -> tuple[DocumentTableRow, ...]:
+        return self._list_for_owner(DOCUMENT_TABLE_ROW_SPEC, "representation_id", representation_id)
+
+    def save_document_table_cell(self, record: DocumentTableCell) -> None:
+        self._save(DOCUMENT_TABLE_CELL_SPEC, record)
+
+    def list_document_table_cells_for_representation(
+        self, representation_id: str
+    ) -> tuple[DocumentTableCell, ...]:
+        return self._list_for_owner(
+            DOCUMENT_TABLE_CELL_SPEC, "representation_id", representation_id
+        )
+
+    def save_document_table_annotation(self, record: DocumentTableAnnotation) -> None:
+        self._save(DOCUMENT_TABLE_ANNOTATION_SPEC, record)
+
+    def list_document_table_annotations_for_representation(
+        self, representation_id: str
+    ) -> tuple[DocumentTableAnnotation, ...]:
+        return self._list_for_owner(
+            DOCUMENT_TABLE_ANNOTATION_SPEC, "representation_id", representation_id
+        )
+
+    def save_document_reference(self, record: DocumentReference) -> None:
+        self._save(DOCUMENT_REFERENCE_SPEC, record)
+
+    def list_document_references_for_representation(
+        self, representation_id: str
+    ) -> tuple[DocumentReference, ...]:
+        return self._list_for_owner(DOCUMENT_REFERENCE_SPEC, "representation_id", representation_id)
 
     def save_parse_quality_report(self, record: ParseQualityReport) -> None:
         self._save(PARSE_QUALITY_REPORT_SPEC, record)

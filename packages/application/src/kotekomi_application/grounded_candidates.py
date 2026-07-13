@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import re
 from collections.abc import Iterable
 from dataclasses import dataclass
@@ -27,6 +28,7 @@ from kotekomi_domain import (
     Source,
     SourceAuthority,
     SourceRegion,
+    TableEvidenceSelector,
     TextView,
     canonical_evidence_target_digest,
     canonical_representation_digest,
@@ -96,6 +98,7 @@ class GroundedEvidenceCandidate:
     pdf_region_ids: tuple[str, ...] = ()
     prefix_text: str = ""
     suffix_text: str = ""
+    table_selector: TableEvidenceSelector | None = None
 
 
 @dataclass(frozen=True)
@@ -178,6 +181,12 @@ def build_grounded_candidate_context(
         edges=bundle.edges,
         source_regions=bundle.source_regions,
         quality_report=bundle.quality_report,
+        tables=bundle.tables,
+        table_fragments=bundle.table_fragments,
+        table_rows=bundle.table_rows,
+        table_cells=bundle.table_cells,
+        table_annotations=bundle.table_annotations,
+        references=bundle.references,
     )
     if actual_digest != bundle.representation.canonical_output_digest:
         raise ValueError("Grounded candidate context DocumentRepresentation digest is corrupted.")
@@ -278,6 +287,17 @@ def prepare_grounded_candidate_batch(
             raise ValueError(
                 f"Grounded evidence candidate {candidate.local_id} references a missing TextView."
             )
+        table_selector_identity = (
+            (
+                json.dumps(
+                    candidate.table_selector.model_dump(mode="json"),
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ),
+            )
+            if candidate.table_selector is not None
+            else ()
+        )
         evidence_id = _deterministic_id(
             "etg",
             batch_input.task_fingerprint,
@@ -290,6 +310,7 @@ def prepare_grounded_candidate_batch(
             candidate.suffix_text,
             *candidate.node_ids,
             *candidate.pdf_region_ids,
+            *table_selector_identity,
         )
         candidate_evidence = EvidenceTarget(
             id=evidence_id,
@@ -306,6 +327,7 @@ def prepare_grounded_candidate_batch(
             suffix_text=candidate.suffix_text,
             node_ids=candidate.node_ids,
             pdf_region_ids=candidate.pdf_region_ids,
+            table_selector=candidate.table_selector,
             created_at=batch_input.submitted_at,
         )
         existing_evidence = ledger_repository.get_evidence_target(evidence_id)

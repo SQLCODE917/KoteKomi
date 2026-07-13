@@ -1222,6 +1222,9 @@ def _assert_r1a_representation(
         "embedded_node_count": 19,
         "ocr_node_count": 0,
         "source_region_count": 19,
+        "table_count": 0,
+        "table_cell_count": 0,
+        "table_fragment_count": 0,
     }
     assert len(bundle.text_views) == 2
     views_by_kind = {view.kind: view for view in bundle.text_views}
