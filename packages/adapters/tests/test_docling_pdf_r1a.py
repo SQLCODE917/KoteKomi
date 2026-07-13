@@ -12,6 +12,7 @@ from kotekomi_adapters import (
 )
 from kotekomi_adapters.docling_pdf_parser import DoclingPdfParser, DoclingPdfParserConfig
 from kotekomi_application import (
+    LATEST_COMPLETED_VALID_ATTEMPT_POLICY_ID,
     AnalysisCoverageState,
     AnalysisRunInput,
     AnalysisRunItemInput,
@@ -24,6 +25,7 @@ from kotekomi_application import (
     ContextManifestInput,
     ContextManifestStatus,
     ContextModelProfile,
+    CoveragePolicyDecision,
     ExecutionSetting,
     GroundedAssertionCandidate,
     GroundedCandidateBatchInput,
@@ -730,7 +732,7 @@ def test_docling_r1d_staged_extraction_publishes_one_task_local_candidate(
             AnalysisRunInput(
                 document_id=capture.document.id,
                 frozen_plan_id=frozen_analysis_plan.id,
-                coverage_policy_id="r1d_coverage_v1",
+                coverage_policy_id=LATEST_COMPLETED_VALID_ATTEMPT_POLICY_ID,
                 started_at=NOW,
                 items=tuple(
                     AnalysisRunItemInput(
@@ -760,19 +762,23 @@ def test_docling_r1d_staged_extraction_publishes_one_task_local_candidate(
         assert incomplete_coverage.represented_page_numbers == (1,)
         focus_coverage = next(
             coverage
-            for coverage in incomplete_coverage.unit_coverages
+            for coverage in incomplete_coverage.coverage_records
             if coverage.analysis_unit_id == focus_unit.id
         )
-        assert focus_coverage.model_run_id == outcome.model_run.id
-        assert focus_coverage.model_run_ids == (outcome.model_run.id,)
+        assert focus_coverage.selected_model_run_id == outcome.model_run.id
+        assert focus_coverage.all_model_run_ids == (outcome.model_run.id,)
+        assert focus_coverage.policy_decision is (
+            CoveragePolicyDecision.SELECTED_LATEST_COMPLETED_VALID_ATTEMPT
+        )
         assert any(
-            coverage.reason == "missing_manifest" for coverage in incomplete_coverage.unit_coverages
+            coverage.blocking_reason == "missing_manifest"
+            for coverage in incomplete_coverage.coverage_records
         )
         alternate_analysis_run = start_analysis_run(
             AnalysisRunInput(
                 document_id=capture.document.id,
                 frozen_plan_id=frozen_analysis_plan.id,
-                coverage_policy_id="r1d_alternate_coverage_v1",
+                coverage_policy_id=LATEST_COMPLETED_VALID_ATTEMPT_POLICY_ID,
                 started_at=NOW + timedelta(minutes=4),
                 items=tuple(
                     AnalysisRunItemInput(
@@ -799,11 +805,11 @@ def test_docling_r1d_staged_extraction_publishes_one_task_local_candidate(
         alternate_coverage = build_coverage_report(alternate_analysis_run.id, repository)
         alternate_focus_coverage = next(
             coverage
-            for coverage in alternate_coverage.unit_coverages
+            for coverage in alternate_coverage.coverage_records
             if coverage.analysis_unit_id == focus_unit.id
         )
-        assert alternate_focus_coverage.model_run_id == alternate_outcome.model_run.id
-        assert alternate_focus_coverage.model_run_ids == (alternate_outcome.model_run.id,)
+        assert alternate_focus_coverage.selected_model_run_id == alternate_outcome.model_run.id
+        assert alternate_focus_coverage.all_model_run_ids == (alternate_outcome.model_run.id,)
 
     reopened_archive = LocalArchiveStore(archive_path)
     with sqlite_ledger_transaction(ledger_path) as repository:

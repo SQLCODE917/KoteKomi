@@ -124,13 +124,37 @@ CoverageRecord:
   coverage_record_id:
   planned_item_id:
   terminal_status:
-  selected_processing_attempt_id:
   selected_model_run_id:
-  proposal_ids:
-  abstention_reason:
-  blocking_reason:
+  selected_proposal_ids:
+  all_model_run_ids:
   policy_decision:
+  blocking_reason:
+  abstention_reason:
 ```
+
+Outcome selection is an explicit versioned Application policy:
+
+```python
+class CoveragePolicy(Protocol):
+    @property
+    def policy_id(self) -> str: ...
+
+    def select_current_attempt(
+        self,
+        planned_item: PlannedAnalysisItem,
+        attempts: tuple[AnalysisItemAttempt, ...],
+    ) -> SelectedCoverageOutcome: ...
+```
+
+The initial policy is `latest_completed_valid_attempt_v1`. An `AnalysisRun`
+pins that exact identity. An unavailable or unknown policy is an integrity
+failure, not an invitation to apply a default. The policy selects the latest
+valid linked execution by immutable completion time and then stable execution
+identity.
+
+`selected_proposal_ids` are loaded only from `selected_model_run_id`.
+`all_model_run_ids` is historical accounting and cannot affect the current
+terminal status or selected proposal set.
 
 Required operations:
 

@@ -49,6 +49,19 @@
   "additionalProperties": false,
   "description": "An immutable invocation attempt, including terminal failures and abstentions.",
   "properties": {
+    "abstention_reason": {
+      "anyOf": [
+        {
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Abstention Reason"
+    },
     "completed_at": {
       "format": "date-time",
       "title": "Completed At",

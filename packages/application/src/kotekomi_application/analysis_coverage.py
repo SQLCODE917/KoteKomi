@@ -46,6 +46,7 @@ from kotekomi_application.context_planning import (
 
 HASH_ID_LENGTH = 24
 PRIMARY_EXECUTION_ROLE = "primary"
+LATEST_COMPLETED_VALID_ATTEMPT_POLICY_ID = "latest_completed_valid_attempt_v1"
 
 
 class AnalysisCoverageState(StrEnum):
@@ -54,7 +55,7 @@ class AnalysisCoverageState(StrEnum):
     FAILED = "failed"
 
 
-class AnalysisUnitCoverageStatus(StrEnum):
+class CoverageTerminalStatus(StrEnum):
     PROCESSED_WITH_PROPOSALS = "processed_with_proposals"
     PROCESSED_NO_PROPOSALS = "processed_no_proposals"
     ABSTAINED = "abstained"
@@ -62,6 +63,12 @@ class AnalysisUnitCoverageStatus(StrEnum):
     MODEL_FAILED = "model_failed"
     SPLIT_RESOLVED = "split_resolved"
     UNREPORTED = "unreported"
+
+
+class CoveragePolicyDecision(StrEnum):
+    SELECTION_NOT_APPLICABLE = "selection_not_applicable"
+    NO_COMPLETED_VALID_ATTEMPT = "no_completed_valid_attempt"
+    SELECTED_LATEST_COMPLETED_VALID_ATTEMPT = "selected_latest_completed_valid_attempt"
 
 
 class AnalysisCoverageLedger(ContextPlanningLedger, Protocol):
@@ -132,17 +139,83 @@ class AnalysisRunInput:
 
 
 @dataclass(frozen=True)
-class AnalysisUnitCoverage:
+class SelectedCoverageOutcome:
+    selected_attempt: AnalysisItemAttempt | None
+    all_model_run_ids: tuple[str, ...]
+    policy_decision: CoveragePolicyDecision
+
+
+class CoveragePolicy(Protocol):
+    @property
+    def policy_id(self) -> str: ...
+
+    def select_current_attempt(
+        self,
+        planned_item: PlannedAnalysisItem,
+        attempts: tuple[AnalysisItemAttempt, ...],
+    ) -> SelectedCoverageOutcome: ...
+
+
+@dataclass(frozen=True)
+class LatestCompletedValidAttemptCoveragePolicy:
+    """Select the last immutable ModelRun linked by a valid item attempt."""
+
+    model_runs_by_id: dict[str, ModelRun]
+
+    @property
+    def policy_id(self) -> str:
+        return LATEST_COMPLETED_VALID_ATTEMPT_POLICY_ID
+
+    def select_current_attempt(
+        self,
+        planned_item: PlannedAnalysisItem,
+        attempts: tuple[AnalysisItemAttempt, ...],
+    ) -> SelectedCoverageOutcome:
+        candidates = tuple(
+            (attempt, self.model_runs_by_id[attempt.model_run_id])
+            for attempt in attempts
+            if attempt.execution_role == PRIMARY_EXECUTION_ROLE
+            and attempt.model_run_id is not None
+            and attempt.model_run_id in self.model_runs_by_id
+            and self.model_runs_by_id[attempt.model_run_id].task_fingerprint
+            == planned_item.input_fingerprint
+        )
+        all_model_run_ids = tuple(sorted({run.id for _, run in candidates}))
+        if not candidates:
+            return SelectedCoverageOutcome(
+                selected_attempt=None,
+                all_model_run_ids=(),
+                policy_decision=CoveragePolicyDecision.NO_COMPLETED_VALID_ATTEMPT,
+            )
+        selected_attempt, _ = max(
+            candidates,
+            key=lambda candidate: (
+                candidate[1].completed_at,
+                candidate[1].id,
+                candidate[0].id,
+            ),
+        )
+        return SelectedCoverageOutcome(
+            selected_attempt=selected_attempt,
+            all_model_run_ids=all_model_run_ids,
+            policy_decision=CoveragePolicyDecision.SELECTED_LATEST_COMPLETED_VALID_ATTEMPT,
+        )
+
+
+@dataclass(frozen=True)
+class CoverageRecord:
     planned_item_id: str
     analysis_unit_id: str
-    status: AnalysisUnitCoverageStatus
+    terminal_status: CoverageTerminalStatus
     context_manifest_id: str | None
     extraction_task_id: str | None
-    model_run_id: str | None
-    proposal_ids: tuple[str, ...]
-    reason: str | None
+    selected_model_run_id: str | None
+    selected_proposal_ids: tuple[str, ...]
+    all_model_run_ids: tuple[str, ...]
+    policy_decision: CoveragePolicyDecision
+    blocking_reason: str | None
+    abstention_reason: str | None
     child_analysis_unit_ids: tuple[str, ...] = ()
-    model_run_ids: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -150,10 +223,11 @@ class CoverageReport:
     analysis_run_id: str
     frozen_plan_id: str
     representation_id: str
+    coverage_policy_id: str
     state: AnalysisCoverageState
     total_pages: int
     represented_page_numbers: tuple[int, ...]
-    unit_coverages: tuple[AnalysisUnitCoverage, ...]
+    coverage_records: tuple[CoverageRecord, ...]
     orphan_model_run_ids: tuple[str, ...]
     report_digest: str
 
@@ -246,8 +320,8 @@ def start_analysis_run(
         not item.task_type or not _is_digest(item.input_fingerprint) for item in run_input.items
     ):
         raise ValueError("AnalysisRun item task types and input fingerprints are required.")
-    if not run_input.coverage_policy_id:
-        raise ValueError("AnalysisRun coverage policy identity is required.")
+    if run_input.coverage_policy_id != LATEST_COMPLETED_VALID_ATTEMPT_POLICY_ID:
+        raise ValueError("AnalysisRun coverage policy identity is unknown.")
 
     manifest_ids = tuple(
         sorted({item.expected_manifest_id for item in run_input.items if item.expected_manifest_id})
@@ -410,13 +484,16 @@ def build_coverage_report(
         )
     )
     model_runs = {record.id: record for record in ledger_repository.list_model_runs_by_ids(run_ids)}
-    coverages: dict[str, AnalysisUnitCoverage] = {}
+    coverage_policy: CoveragePolicy = LatestCompletedValidAttemptCoveragePolicy(model_runs)
+    if coverage_policy.policy_id != run.coverage_policy_id:
+        raise ValueError("AnalysisRun coverage policy implementation is unavailable.")
+    coverages: dict[str, CoverageRecord] = {}
     failed = False
     orphan_model_run_ids: set[str] = set()
 
     def reconcile(
         item: PlannedAnalysisItem, visiting: frozenset[str] = frozenset()
-    ) -> AnalysisUnitCoverage:
+    ) -> CoverageRecord:
         nonlocal failed
         if item.id in coverages:
             return coverages[item.id]
@@ -425,7 +502,7 @@ def build_coverage_report(
         if item.expected_manifest_id is None:
             return _store(
                 item,
-                AnalysisUnitCoverageStatus.UNREPORTED,
+                CoverageTerminalStatus.UNREPORTED,
                 None,
                 None,
                 None,
@@ -437,7 +514,7 @@ def build_coverage_report(
             failed = True
             return _store(
                 item,
-                AnalysisUnitCoverageStatus.UNREPORTED,
+                CoverageTerminalStatus.UNREPORTED,
                 item.expected_manifest_id,
                 None,
                 None,
@@ -450,7 +527,7 @@ def build_coverage_report(
             failed = True
             return _store(
                 item,
-                AnalysisUnitCoverageStatus.UNREPORTED,
+                CoverageTerminalStatus.UNREPORTED,
                 artifact.id,
                 None,
                 None,
@@ -461,7 +538,7 @@ def build_coverage_report(
             failed = True
             return _store(
                 item,
-                AnalysisUnitCoverageStatus.UNREPORTED,
+                CoverageTerminalStatus.UNREPORTED,
                 artifact.id,
                 None,
                 None,
@@ -472,7 +549,7 @@ def build_coverage_report(
             failed = True
             return _store(
                 item,
-                AnalysisUnitCoverageStatus.UNREPORTED,
+                CoverageTerminalStatus.UNREPORTED,
                 artifact.id,
                 None,
                 None,
@@ -483,7 +560,7 @@ def build_coverage_report(
             failed = True
             return _store(
                 item,
-                AnalysisUnitCoverageStatus.UNREPORTED,
+                CoverageTerminalStatus.UNREPORTED,
                 artifact.id,
                 None,
                 None,
@@ -493,7 +570,7 @@ def build_coverage_report(
         if manifest.status is ContextManifestStatus.CONTEXT_BUDGET_BLOCKED:
             return _store(
                 item,
-                AnalysisUnitCoverageStatus.CONTEXT_BUDGET_BLOCKED,
+                CoverageTerminalStatus.CONTEXT_BUDGET_BLOCKED,
                 manifest.id,
                 None,
                 None,
@@ -510,7 +587,7 @@ def build_coverage_report(
             if missing_children:
                 return _store(
                     item,
-                    AnalysisUnitCoverageStatus.UNREPORTED,
+                    CoverageTerminalStatus.UNREPORTED,
                     manifest.id,
                     None,
                     None,
@@ -522,12 +599,12 @@ def build_coverage_report(
                 reconcile(child_items[child_id], visiting | {item.id})
                 for child_id in manifest.child_analysis_unit_ids
             )
-            resolved = all(child.status in _TERMINAL_SUCCESS for child in children)
+            resolved = all(child.terminal_status in _TERMINAL_SUCCESS for child in children)
             return _store(
                 item,
-                AnalysisUnitCoverageStatus.SPLIT_RESOLVED
+                CoverageTerminalStatus.SPLIT_RESOLVED
                 if resolved
-                else AnalysisUnitCoverageStatus.UNREPORTED,
+                else CoverageTerminalStatus.UNREPORTED,
                 manifest.id,
                 None,
                 None,
@@ -539,7 +616,7 @@ def build_coverage_report(
         if len(matching_tasks) == 0:
             return _store(
                 item,
-                AnalysisUnitCoverageStatus.UNREPORTED,
+                CoverageTerminalStatus.UNREPORTED,
                 manifest.id,
                 None,
                 None,
@@ -550,7 +627,7 @@ def build_coverage_report(
             failed = True
             return _store(
                 item,
-                AnalysisUnitCoverageStatus.UNREPORTED,
+                CoverageTerminalStatus.UNREPORTED,
                 manifest.id,
                 None,
                 None,
@@ -565,7 +642,7 @@ def build_coverage_report(
             failed = True
             return _store(
                 item,
-                AnalysisUnitCoverageStatus.UNREPORTED,
+                CoverageTerminalStatus.UNREPORTED,
                 manifest.id,
                 task.id,
                 None,
@@ -576,7 +653,7 @@ def build_coverage_report(
             failed = True
             return _store(
                 item,
-                AnalysisUnitCoverageStatus.UNREPORTED,
+                CoverageTerminalStatus.UNREPORTED,
                 manifest.id,
                 task.id,
                 None,
@@ -591,88 +668,99 @@ def build_coverage_report(
                 and attempt.model_run_id is not None
             )
         )
-        valid_runs: list[ModelRun] = []
+        valid_attempts: list[AnalysisItemAttempt] = []
         for attempt in attempts:
             assert attempt.model_run_id is not None
             linked = model_runs.get(attempt.model_run_id)
             if linked is None or linked.extraction_task_id != task.id:
                 orphan_model_run_ids.add(attempt.model_run_id)
             else:
-                valid_runs.append(linked)
-        if not valid_runs:
+                valid_attempts.append(attempt)
+        selected_outcome = coverage_policy.select_current_attempt(item, tuple(valid_attempts))
+        if selected_outcome.selected_attempt is None:
             return _store(
                 item,
-                AnalysisUnitCoverageStatus.UNREPORTED,
+                CoverageTerminalStatus.UNREPORTED,
                 manifest.id,
                 task.id,
                 None,
                 (),
                 "model_task_has_no_run",
+                policy_decision=selected_outcome.policy_decision,
             )
-        selected = max(valid_runs, key=lambda candidate: (candidate.completed_at, candidate.id))
-        proposal_ids = tuple(
+        selected_model_run_id = selected_outcome.selected_attempt.model_run_id
+        assert selected_model_run_id is not None
+        selected = model_runs[selected_model_run_id]
+        selected_proposal_ids = tuple(
             proposal.id
             for proposal in ledger_repository.list_proposed_changes_for_model_run(selected.id)
         )
-        all_run_ids = tuple(sorted(run.id for run in valid_runs))
         if selected.status is ModelRunStatus.SUCCEEDED:
             return _store(
                 item,
-                AnalysisUnitCoverageStatus.PROCESSED_WITH_PROPOSALS
-                if proposal_ids
-                else AnalysisUnitCoverageStatus.PROCESSED_NO_PROPOSALS,
+                CoverageTerminalStatus.PROCESSED_WITH_PROPOSALS
+                if selected_proposal_ids
+                else CoverageTerminalStatus.PROCESSED_NO_PROPOSALS,
                 manifest.id,
                 task.id,
                 selected.id,
-                proposal_ids,
+                selected_proposal_ids,
                 None,
-                model_run_ids=all_run_ids,
+                all_model_run_ids=selected_outcome.all_model_run_ids,
+                policy_decision=selected_outcome.policy_decision,
             )
         if selected.status is ModelRunStatus.ABSTAINED:
             return _store(
                 item,
-                AnalysisUnitCoverageStatus.ABSTAINED,
+                CoverageTerminalStatus.ABSTAINED,
                 manifest.id,
                 task.id,
                 selected.id,
                 (),
                 None,
-                model_run_ids=all_run_ids,
+                all_model_run_ids=selected_outcome.all_model_run_ids,
+                policy_decision=selected_outcome.policy_decision,
+                abstention_reason=selected.abstention_reason,
             )
         return _store(
             item,
-            AnalysisUnitCoverageStatus.MODEL_FAILED,
+            CoverageTerminalStatus.MODEL_FAILED,
             manifest.id,
             task.id,
             selected.id,
             (),
             selected.status.value,
-            model_run_ids=all_run_ids,
+            all_model_run_ids=selected_outcome.all_model_run_ids,
+            policy_decision=selected_outcome.policy_decision,
         )
 
     def _store(
         item: PlannedAnalysisItem,
-        status: AnalysisUnitCoverageStatus,
+        terminal_status: CoverageTerminalStatus,
         manifest_id: str | None,
         task_id: str | None,
-        model_run_id: str | None,
-        proposal_ids: tuple[str, ...],
-        reason: str | None,
+        selected_model_run_id: str | None,
+        selected_proposal_ids: tuple[str, ...],
+        blocking_reason: str | None,
         child_ids: tuple[str, ...] = (),
         *,
-        model_run_ids: tuple[str, ...] = (),
-    ) -> AnalysisUnitCoverage:
-        coverage = AnalysisUnitCoverage(
-            item.id,
-            item.analysis_unit_id,
-            status,
-            manifest_id,
-            task_id,
-            model_run_id,
-            proposal_ids,
-            reason,
-            child_ids,
-            model_run_ids,
+        all_model_run_ids: tuple[str, ...] = (),
+        policy_decision: CoveragePolicyDecision = CoveragePolicyDecision.SELECTION_NOT_APPLICABLE,
+        abstention_reason: str | None = None,
+    ) -> CoverageRecord:
+        coverage = CoverageRecord(
+            planned_item_id=item.id,
+            analysis_unit_id=item.analysis_unit_id,
+            terminal_status=terminal_status,
+            context_manifest_id=manifest_id,
+            extraction_task_id=task_id,
+            selected_model_run_id=selected_model_run_id,
+            selected_proposal_ids=selected_proposal_ids,
+            all_model_run_ids=all_model_run_ids,
+            policy_decision=policy_decision,
+            blocking_reason=blocking_reason,
+            abstention_reason=abstention_reason,
+            child_analysis_unit_ids=child_ids,
         )
         coverages[item.id] = coverage
         return coverage
@@ -686,7 +774,7 @@ def build_coverage_report(
         AnalysisCoverageState.FAILED
         if failed
         else AnalysisCoverageState.COMPLETE
-        if all(coverage.status in _TERMINAL_SUCCESS for coverage in all_coverages)
+        if all(coverage.terminal_status in _TERMINAL_SUCCESS for coverage in all_coverages)
         and len(represented_pages) == total_pages
         and not orphan_model_run_ids
         else AnalysisCoverageState.INCOMPLETE
@@ -698,29 +786,31 @@ def build_coverage_report(
         "state": state.value,
         "total_pages": total_pages,
         "represented_page_numbers": represented_pages,
-        "unit_coverages": [_coverage_payload(coverage) for coverage in all_coverages],
+        "coverage_policy_id": coverage_policy.policy_id,
+        "coverage_records": [_coverage_payload(coverage) for coverage in all_coverages],
         "orphan_model_run_ids": sorted(orphan_model_run_ids),
     }
     return CoverageReport(
-        run.id,
-        run.frozen_analysis_plan_id,
-        run.representation_id,
-        state,
-        total_pages,
-        represented_pages,
-        all_coverages,
-        tuple(sorted(orphan_model_run_ids)),
-        _digest(report_payload),
+        analysis_run_id=run.id,
+        frozen_plan_id=run.frozen_analysis_plan_id,
+        representation_id=run.representation_id,
+        coverage_policy_id=coverage_policy.policy_id,
+        state=state,
+        total_pages=total_pages,
+        represented_page_numbers=represented_pages,
+        coverage_records=all_coverages,
+        orphan_model_run_ids=tuple(sorted(orphan_model_run_ids)),
+        report_digest=_digest(report_payload),
     )
 
 
 _TERMINAL_SUCCESS = frozenset(
     {
-        AnalysisUnitCoverageStatus.PROCESSED_WITH_PROPOSALS,
-        AnalysisUnitCoverageStatus.PROCESSED_NO_PROPOSALS,
-        AnalysisUnitCoverageStatus.ABSTAINED,
-        AnalysisUnitCoverageStatus.CONTEXT_BUDGET_BLOCKED,
-        AnalysisUnitCoverageStatus.SPLIT_RESOLVED,
+        CoverageTerminalStatus.PROCESSED_WITH_PROPOSALS,
+        CoverageTerminalStatus.PROCESSED_NO_PROPOSALS,
+        CoverageTerminalStatus.ABSTAINED,
+        CoverageTerminalStatus.CONTEXT_BUDGET_BLOCKED,
+        CoverageTerminalStatus.SPLIT_RESOLVED,
     }
 )
 
@@ -767,18 +857,20 @@ def _validate_dependencies(
             raise ValueError("AnalysisRun item cannot depend on itself.")
 
 
-def _coverage_payload(coverage: AnalysisUnitCoverage) -> dict[str, object]:
+def _coverage_payload(coverage: CoverageRecord) -> dict[str, object]:
     return {
         "planned_item_id": coverage.planned_item_id,
         "analysis_unit_id": coverage.analysis_unit_id,
-        "status": coverage.status.value,
+        "terminal_status": coverage.terminal_status.value,
         "context_manifest_id": coverage.context_manifest_id,
         "extraction_task_id": coverage.extraction_task_id,
-        "model_run_id": coverage.model_run_id,
-        "proposal_ids": list(coverage.proposal_ids),
-        "reason": coverage.reason,
+        "selected_model_run_id": coverage.selected_model_run_id,
+        "selected_proposal_ids": list(coverage.selected_proposal_ids),
+        "all_model_run_ids": list(coverage.all_model_run_ids),
+        "policy_decision": coverage.policy_decision.value,
+        "blocking_reason": coverage.blocking_reason,
+        "abstention_reason": coverage.abstention_reason,
         "child_analysis_unit_ids": list(coverage.child_analysis_unit_ids),
-        "model_run_ids": list(coverage.model_run_ids),
     }
 
 

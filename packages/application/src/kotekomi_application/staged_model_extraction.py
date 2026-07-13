@@ -407,6 +407,7 @@ def run_bounded_extraction(
                 ModelRunStatus.ABSTAINED,
                 output_digest=output_digest,
                 execution_receipt=response.execution_receipt,
+                abstention_reason=parsed.reason,
             )
             ledger_repository.save_model_run(run)
             return BoundedExtractionOutcome(task, run, None)
@@ -499,6 +500,7 @@ def _model_run(
     *,
     output_digest: str | None = None,
     execution_receipt: ModelExecutionReceipt | None = None,
+    abstention_reason: str | None = None,
     error: Exception | None = None,
 ) -> ModelRun:
     return ModelRun(
@@ -518,6 +520,7 @@ def _model_run(
         raw_output_artifact_id=(model_run_id if output_digest is not None else None),
         output_digest=output_digest,
         status=status,
+        abstention_reason=abstention_reason,
         error_code=(type(error).__name__ if error is not None else None),
         error_message=(str(error) if error is not None else None),
         started_at=extraction_input.started_at,

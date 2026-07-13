@@ -1074,6 +1074,7 @@ class ModelRun(DomainModel):
     raw_output_artifact_id: NonEmptyStr | None = None
     output_digest: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")] | None = None
     status: ModelRunStatus
+    abstention_reason: NonEmptyStr | None = None
     error_code: str | None = None
     error_message: str | None = None
     started_at: datetime
@@ -1088,6 +1089,10 @@ class ModelRun(DomainModel):
             raise ValueError("ModelRun raw output artifact and digest must be recorded together.")
         if self.status in {ModelRunStatus.SUCCEEDED, ModelRunStatus.ABSTAINED} and not has_artifact:
             raise ValueError("Successful or abstained ModelRun requires archived raw output.")
+        if self.status is ModelRunStatus.ABSTAINED and self.abstention_reason is None:
+            raise ValueError("Abstained ModelRun requires an abstention reason.")
+        if self.status is not ModelRunStatus.ABSTAINED and self.abstention_reason is not None:
+            raise ValueError("Only an abstained ModelRun may have an abstention reason.")
         response_statuses = {
             ModelRunStatus.SUCCEEDED,
             ModelRunStatus.ABSTAINED,

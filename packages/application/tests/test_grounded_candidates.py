@@ -5,15 +5,17 @@ from typing import cast
 
 import pytest
 from kotekomi_application import (
+    LATEST_COMPLETED_VALID_ATTEMPT_POLICY_ID,
     AnalysisCoverageState,
     AnalysisRunInput,
     AnalysisRunItemInput,
-    AnalysisUnitCoverageStatus,
     AnalysisUnitPlanningInput,
     BoundedExtractionInput,
     ContextManifest,
     ContextManifestInput,
     ContextModelProfile,
+    CoveragePolicyDecision,
+    CoverageTerminalStatus,
     ExecutionSetting,
     GroundedAssertionCandidate,
     GroundedCandidateBatchInput,
@@ -664,6 +666,48 @@ def test_staged_extraction_archives_invalid_task_local_output_without_proposals(
     assert archive.outputs[outcome.model_run.id] == raw_output
 
 
+def test_staged_extraction_persists_exact_abstention_reason_on_model_run() -> None:
+    ledger = FakeGroundedCandidateLedger()
+    archive = FakeModelOutputArchive()
+    manifest = _ready_manifest_for_staged_test(ledger)
+    raw_output = (
+        b'{"kind":"abstain","schema_id":"staged_claim_output_v1",'
+        b'"reason":"insufficient task-local evidence"}'
+    )
+
+    outcome = run_bounded_extraction(
+        BoundedExtractionInput(
+            source_id=ledger.source.id,
+            document_id=ledger.document.id,
+            representation_id=ledger.bundle.representation.id,
+            context_manifest_id=manifest.id,
+            prompt_bytes=manifest.prompt_bytes,
+            execution_spec=_fixture_execution_spec(manifest),
+            validator_version="fixture-validator-v1",
+            started_at=NOW,
+            completed_at=NOW,
+        ),
+        ledger,
+        archive,
+        FakeModelTaskRuntime(raw_output),
+        Uuid4ModelRunIdFactory(),
+        FixtureTokenizer(),
+        StagedClaimTaskSchemaRegistry(),
+    )
+
+    assert outcome.model_run.status is ModelRunStatus.ABSTAINED
+    assert outcome.model_run.abstention_reason == "insufficient task-local evidence"
+    assert ledger.model_runs[outcome.model_run.id] == outcome.model_run
+    assert archive.outputs[outcome.model_run.id] == raw_output
+    assert outcome.proposed_change_batch is None
+    with pytest.raises(ValueError, match="Only an abstained ModelRun"):
+        ModelRun.model_validate(
+            {**outcome.model_run.model_dump(), "status": ModelRunStatus.SUCCEEDED}
+        )
+    with pytest.raises(ValueError, match="requires an abstention reason"):
+        ModelRun.model_validate({**outcome.model_run.model_dump(), "abstention_reason": None})
+
+
 def test_staged_extraction_rejects_a_mismatched_execution_receipt_after_archiving_output() -> None:
     ledger = FakeGroundedCandidateLedger()
     archive = FakeModelOutputArchive()
@@ -1132,11 +1176,30 @@ def test_frozen_analysis_plan_requires_every_unit_to_reconcile_before_completion
     frozen = freeze_analysis_plan(plan, ledger)
     assert load_frozen_analysis_plan(frozen.id, ledger) == frozen
 
+    with pytest.raises(ValueError, match="coverage policy identity is unknown"):
+        start_analysis_run(
+            AnalysisRunInput(
+                document_id=ledger.document.id,
+                frozen_plan_id=frozen.id,
+                coverage_policy_id="undeclared_coverage_policy_v1",
+                started_at=NOW,
+                items=(
+                    AnalysisRunItemInput(
+                        analysis_unit_id=plan.units[0].id,
+                        task_type="claim_extraction",
+                        input_fingerprint=hashlib.sha256(b"unknown-policy").hexdigest(),
+                        expected_manifest_id=None,
+                    ),
+                ),
+            ),
+            ledger,
+        )
+
     incomplete_run = start_analysis_run(
         AnalysisRunInput(
             document_id=ledger.document.id,
             frozen_plan_id=frozen.id,
-            coverage_policy_id="fixture_coverage_policy_v1",
+            coverage_policy_id=LATEST_COMPLETED_VALID_ATTEMPT_POLICY_ID,
             started_at=NOW,
             items=(
                 AnalysisRunItemInput(
@@ -1157,8 +1220,11 @@ def test_frozen_analysis_plan_requires_every_unit_to_reconcile_before_completion
         is None
     )
     assert incomplete.state is AnalysisCoverageState.INCOMPLETE
-    assert incomplete.unit_coverages[0].status is AnalysisUnitCoverageStatus.UNREPORTED
-    assert incomplete.unit_coverages[0].reason == "missing_manifest"
+    assert incomplete.coverage_records[0].terminal_status is CoverageTerminalStatus.UNREPORTED
+    assert incomplete.coverage_records[0].blocking_reason == "missing_manifest"
+    assert incomplete.coverage_records[0].policy_decision is (
+        CoveragePolicyDecision.SELECTION_NOT_APPLICABLE
+    )
 
     manifest = build_context_manifest(
         ContextManifestInput(
@@ -1198,7 +1264,7 @@ def test_frozen_analysis_plan_requires_every_unit_to_reconcile_before_completion
         AnalysisRunInput(
             document_id=ledger.document.id,
             frozen_plan_id=frozen.id,
-            coverage_policy_id="fixture_coverage_policy_v1",
+            coverage_policy_id=LATEST_COMPLETED_VALID_ATTEMPT_POLICY_ID,
             started_at=NOW,
             items=(
                 AnalysisRunItemInput(
@@ -1223,13 +1289,21 @@ def test_frozen_analysis_plan_requires_every_unit_to_reconcile_before_completion
     )
     complete = build_coverage_report(complete_run.id, ledger)
     assert complete.state is AnalysisCoverageState.COMPLETE
-    assert complete.unit_coverages[0].status is AnalysisUnitCoverageStatus.PROCESSED_WITH_PROPOSALS
-    assert complete.unit_coverages[0].proposal_ids == tuple(
+    assert complete.coverage_policy_id == LATEST_COMPLETED_VALID_ATTEMPT_POLICY_ID
+    assert complete.coverage_records[0].terminal_status is (
+        CoverageTerminalStatus.PROCESSED_WITH_PROPOSALS
+    )
+    assert complete.coverage_records[0].selected_proposal_ids == tuple(
         sorted(outcome.proposed_change_batch.proposed_change_ids_by_local_id.values())
+    )
+    assert complete.coverage_records[0].selected_model_run_id == outcome.model_run.id
+    assert complete.coverage_records[0].all_model_run_ids == (outcome.model_run.id,)
+    assert complete.coverage_records[0].policy_decision is (
+        CoveragePolicyDecision.SELECTED_LATEST_COMPLETED_VALID_ATTEMPT
     )
     assert complete.orphan_model_run_ids == ()
 
-    historical_proposal_ids = complete.unit_coverages[0].proposal_ids
+    historical_proposal_ids = complete.coverage_records[0].selected_proposal_ids
     no_proposal_run = ModelRun.model_validate(
         {
             **outcome.model_run.model_dump(),
@@ -1247,11 +1321,14 @@ def test_frozen_analysis_plan_requires_every_unit_to_reconcile_before_completion
         ledger_repository=ledger,
     )
     no_proposal_coverage = build_coverage_report(complete_run.id, ledger)
-    assert no_proposal_coverage.unit_coverages[0].status is (
-        AnalysisUnitCoverageStatus.PROCESSED_NO_PROPOSALS
+    assert no_proposal_coverage.coverage_records[0].terminal_status is (
+        CoverageTerminalStatus.PROCESSED_NO_PROPOSALS
     )
-    assert no_proposal_coverage.unit_coverages[0].model_run_id == no_proposal_run.id
-    assert no_proposal_coverage.unit_coverages[0].proposal_ids == ()
+    assert no_proposal_coverage.coverage_records[0].selected_model_run_id == no_proposal_run.id
+    assert no_proposal_coverage.coverage_records[0].selected_proposal_ids == ()
+    assert no_proposal_coverage.coverage_records[0].all_model_run_ids == tuple(
+        sorted((outcome.model_run.id, no_proposal_run.id))
+    )
     assert (
         tuple(
             proposal.id
@@ -1265,6 +1342,7 @@ def test_frozen_analysis_plan_requires_every_unit_to_reconcile_before_completion
             **outcome.model_run.model_dump(),
             "id": "mrn_coverage_abstained",
             "status": ModelRunStatus.ABSTAINED,
+            "abstention_reason": "insufficient task-local evidence",
             "started_at": NOW + timedelta(minutes=2),
             "completed_at": NOW + timedelta(minutes=2),
         }
@@ -1278,15 +1356,22 @@ def test_frozen_analysis_plan_requires_every_unit_to_reconcile_before_completion
         ledger_repository=ledger,
     )
     abstained_coverage = build_coverage_report(complete_run.id, ledger)
-    assert abstained_coverage.unit_coverages[0].status is AnalysisUnitCoverageStatus.ABSTAINED
-    assert abstained_coverage.unit_coverages[0].model_run_id == abstained_run.id
-    assert abstained_coverage.unit_coverages[0].proposal_ids == ()
+    assert (
+        abstained_coverage.coverage_records[0].terminal_status is CoverageTerminalStatus.ABSTAINED
+    )
+    assert abstained_coverage.coverage_records[0].selected_model_run_id == abstained_run.id
+    assert abstained_coverage.coverage_records[0].selected_proposal_ids == ()
+    assert (
+        abstained_coverage.coverage_records[0].abstention_reason
+        == "insufficient task-local evidence"
+    )
 
     publish_failed_run = ModelRun.model_validate(
         {
             **outcome.model_run.model_dump(),
             "id": "mrn_coverage_publish_failed",
             "status": ModelRunStatus.PUBLISH_FAILED,
+            "abstention_reason": None,
             "error_code": "InjectedPublicationFailure",
             "error_message": "injected publication failure",
             "started_at": NOW + timedelta(minutes=3),
@@ -1302,8 +1387,12 @@ def test_frozen_analysis_plan_requires_every_unit_to_reconcile_before_completion
         ledger_repository=ledger,
     )
     failed_coverage = build_coverage_report(complete_run.id, ledger)
-    assert failed_coverage.unit_coverages[0].status is AnalysisUnitCoverageStatus.MODEL_FAILED
-    assert failed_coverage.unit_coverages[0].model_run_id == publish_failed_run.id
-    assert failed_coverage.unit_coverages[0].proposal_ids == ()
-    assert failed_coverage.unit_coverages[0].reason == ModelRunStatus.PUBLISH_FAILED.value
+    assert (
+        failed_coverage.coverage_records[0].terminal_status is CoverageTerminalStatus.MODEL_FAILED
+    )
+    assert failed_coverage.coverage_records[0].selected_model_run_id == publish_failed_run.id
+    assert failed_coverage.coverage_records[0].selected_proposal_ids == ()
+    assert (
+        failed_coverage.coverage_records[0].blocking_reason == ModelRunStatus.PUBLISH_FAILED.value
+    )
     assert build_coverage_report(incomplete_run.id, ledger) == incomplete
