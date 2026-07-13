@@ -18,7 +18,11 @@ from kotekomi_adapters.sqlite_ledger import (
 )
 
 if TYPE_CHECKING:
-    from kotekomi_adapters.docling_pdf_parser import DoclingPdfParser, DoclingPdfParserConfig
+    from kotekomi_adapters.docling_pdf_parser import (
+        DoclingPdfParser,
+        DoclingPdfParserConfig,
+        preflight_pdf_source,
+    )
 
 __all__ = [
     "DoclingPdfParser",
@@ -36,15 +40,21 @@ __all__ = [
     "SQLiteLedgerInitializer",
     "SQLiteLedgerRepository",
     "sqlite_ledger_transaction",
+    "preflight_pdf_source",
 ]
 
 
 def __getattr__(name: str) -> object:
-    if name in {"DoclingPdfParser", "DoclingPdfParserConfig"}:
-        from kotekomi_adapters.docling_pdf_parser import DoclingPdfParser, DoclingPdfParserConfig
+    if name in {"DoclingPdfParser", "DoclingPdfParserConfig", "preflight_pdf_source"}:
+        from kotekomi_adapters.docling_pdf_parser import (
+            DoclingPdfParser,
+            DoclingPdfParserConfig,
+            preflight_pdf_source,
+        )
 
         return {
             "DoclingPdfParser": DoclingPdfParser,
             "DoclingPdfParserConfig": DoclingPdfParserConfig,
+            "preflight_pdf_source": preflight_pdf_source,
         }[name]
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

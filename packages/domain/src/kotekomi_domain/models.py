@@ -54,6 +54,10 @@ PlannedAnalysisItemId = Annotated[str, Field(pattern=r"^pai_[A-Za-z0-9][A-Za-z0-
 AnalysisItemAttemptId = Annotated[str, Field(pattern=r"^aia_[A-Za-z0-9][A-Za-z0-9_-]*$")]
 ExtractionTaskId = Annotated[str, Field(pattern=r"^ext_[A-Za-z0-9][A-Za-z0-9_-]*$")]
 ModelRunId = Annotated[str, Field(pattern=r"^mrn_[A-Za-z0-9][A-Za-z0-9_-]*$")]
+PdfPreflightReportId = Annotated[str, Field(pattern=r"^pfr_[A-Za-z0-9][A-Za-z0-9_-]*$")]
+PdfPageInventoryId = Annotated[str, Field(pattern=r"^ppi_[A-Za-z0-9][A-Za-z0-9_-]*$")]
+PdfPageExtractionStatusId = Annotated[str, Field(pattern=r"^pes_[A-Za-z0-9][A-Za-z0-9_-]*$")]
+PdfTransformationArtifactId = Annotated[str, Field(pattern=r"^pta_[A-Za-z0-9][A-Za-z0-9_-]*$")]
 
 
 def utc_now() -> datetime:
@@ -124,6 +128,25 @@ class SourceCoordinateSystem(StrEnum):
     PDF_POINTS_BOTTOM_LEFT_RAW_V1 = "pdf_points_bottom_left_raw_v1"
 
 
+class PdfExtractionPath(StrEnum):
+    EMBEDDED = "embedded"
+    OCR = "ocr"
+    MIXED = "mixed"
+    INACCESSIBLE = "inaccessible"
+
+
+class PdfPageQualityStatus(StrEnum):
+    ACCEPTABLE = "acceptable"
+    DEGRADED = "degraded"
+    BLOCKED = "blocked"
+
+
+class PdfTransformationType(StrEnum):
+    REPAIR = "repair"
+    RENDER = "render"
+    OCR = "ocr"
+
+
 class EvidenceValidationAttemptStatus(StrEnum):
     SUCCEEDED = "succeeded"
     FAILED = "failed"
@@ -155,6 +178,10 @@ class ProcessingArtifactKind(StrEnum):
     SOURCE_REGION = "source_region"
     QUALITY_REPORT = "quality_report"
     PROVENANCE_ACTIVITY = "provenance_activity"
+    PDF_PREFLIGHT_REPORT = "pdf_preflight_report"
+    PDF_PAGE_INVENTORY = "pdf_page_inventory"
+    PDF_PAGE_EXTRACTION_STATUS = "pdf_page_extraction_status"
+    PDF_TRANSFORMATION_ARTIFACT = "pdf_transformation_artifact"
 
 
 class OutputDisposition(StrEnum):
@@ -406,6 +433,196 @@ class TextView(DomainModel):
         return self
 
 
+class PdfPreflightReport(DomainModel):
+    """Immutable authoritative denominator for one PDF processing task."""
+
+    id: PdfPreflightReportId
+    document_id: DocumentId
+    raw_blob_id: RawBlobId
+    processing_task_fingerprint_id: ProcessingTaskFingerprintId
+    pdf_version: NonEmptyStr
+    page_count: Annotated[int, Field(ge=0)]
+    encrypted: bool
+    permissions: tuple[NonEmptyStr, ...] = Field(default_factory=tuple)
+    page_inventory_ids: tuple[PdfPageInventoryId, ...]
+    page_extraction_status_ids: tuple[PdfPageExtractionStatusId, ...]
+    transformation_artifact_ids: tuple[PdfTransformationArtifactId, ...] = Field(
+        default_factory=tuple
+    )
+    global_issues: tuple[NonEmptyStr, ...] = Field(default_factory=tuple)
+    preflight_tool: NonEmptyStr
+    tool_version: NonEmptyStr
+
+    @model_validator(mode="after")
+    def validate_page_denominator(self) -> Self:
+        if len(self.page_inventory_ids) != self.page_count:
+            raise ValueError("PdfPreflightReport must enumerate every page inventory record.")
+        if len(self.page_extraction_status_ids) != self.page_count:
+            raise ValueError("PdfPreflightReport must enumerate one status for every page.")
+        if len(set(self.page_inventory_ids)) != len(self.page_inventory_ids):
+            raise ValueError("PdfPreflightReport page inventory IDs must be unique.")
+        if len(set(self.page_extraction_status_ids)) != len(self.page_extraction_status_ids):
+            raise ValueError("PdfPreflightReport page status IDs must be unique.")
+        if len(set(self.transformation_artifact_ids)) != len(self.transformation_artifact_ids):
+            raise ValueError("PdfPreflightReport transformation artifact IDs must be unique.")
+        return self
+
+
+class PdfPageInventory(DomainModel):
+    id: PdfPageInventoryId
+    preflight_report_id: PdfPreflightReportId
+    page_index: Annotated[int, Field(ge=1)]
+    media_width: Annotated[float, Field(gt=0)]
+    media_height: Annotated[float, Field(gt=0)]
+    crop_left: Annotated[float, Field(ge=0)]
+    crop_top: Annotated[float, Field(ge=0)]
+    crop_right: Annotated[float, Field(gt=0)]
+    crop_bottom: Annotated[float, Field(gt=0)]
+    rotation: Annotated[int, Field(ge=0, le=270, multiple_of=90)]
+    embedded_text_character_count: Annotated[int, Field(ge=0)]
+    image_coverage: Confidence
+    suspicious_glyph_rate: Confidence
+    glyph_issue_count: Annotated[int, Field(ge=0)]
+    warnings: tuple[NonEmptyStr, ...] = Field(default_factory=tuple)
+
+    @model_validator(mode="after")
+    def validate_geometry(self) -> Self:
+        if (
+            self.crop_right <= self.crop_left
+            or self.crop_bottom <= self.crop_top
+            or self.crop_right > self.media_width
+            or self.crop_bottom > self.media_height
+        ):
+            raise ValueError("PdfPageInventory CropBox must lie within its MediaBox.")
+        return self
+
+
+class PdfPageExtractionStatus(DomainModel):
+    id: PdfPageExtractionStatusId
+    preflight_report_id: PdfPreflightReportId
+    page_inventory_id: PdfPageInventoryId
+    page_index: Annotated[int, Field(ge=1)]
+    representation_id: DocumentRepresentationId | None = None
+    extraction_path: PdfExtractionPath
+    status: PdfPageQualityStatus
+    extracted_character_count: Annotated[int, Field(ge=0)]
+    rotation_applied: Annotated[int, Field(ge=0, le=270, multiple_of=90)]
+    warnings: tuple[NonEmptyStr, ...] = Field(default_factory=tuple)
+    policy_id: NonEmptyStr
+    policy_reasons: tuple[NonEmptyStr, ...]
+    transformation_artifact_ids: tuple[PdfTransformationArtifactId, ...] = Field(
+        default_factory=tuple
+    )
+
+    @model_validator(mode="after")
+    def validate_terminal_status(self) -> Self:
+        if not self.policy_reasons:
+            raise ValueError("PdfPageExtractionStatus requires an explicit policy reason.")
+        if self.extraction_path is PdfExtractionPath.INACCESSIBLE:
+            if self.status is not PdfPageQualityStatus.BLOCKED:
+                raise ValueError("An inaccessible PDF page must be blocked.")
+            if self.representation_id is not None or self.extracted_character_count != 0:
+                raise ValueError("An inaccessible PDF page cannot claim extracted output.")
+        if self.status is not PdfPageQualityStatus.BLOCKED and self.representation_id is None:
+            raise ValueError("An analyzable PDF page status requires a representation.")
+        if self.extraction_path in {PdfExtractionPath.OCR, PdfExtractionPath.MIXED} and not (
+            self.transformation_artifact_ids
+        ):
+            raise ValueError("An OCR-derived PDF page requires a transformation artifact.")
+        if self.extraction_path is PdfExtractionPath.EMBEDDED and (
+            self.transformation_artifact_ids
+        ):
+            raise ValueError("An embedded-only PDF page cannot claim a transformation artifact.")
+        return self
+
+
+class PdfTransformationArtifact(DomainModel):
+    id: PdfTransformationArtifactId
+    preflight_report_id: PdfPreflightReportId
+    input_blob_id: RawBlobId
+    output_blob_id: RawBlobId
+    activity_type: PdfTransformationType
+    tool_name: NonEmptyStr
+    tool_version: NonEmptyStr
+    configuration_digest: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
+    page_scope: tuple[Annotated[int, Field(ge=1)], ...]
+    language_set: tuple[NonEmptyStr, ...] = Field(default_factory=tuple)
+    confidence: Confidence | None = None
+
+    @model_validator(mode="after")
+    def validate_page_scope(self) -> Self:
+        if self.output_blob_id == self.input_blob_id:
+            raise ValueError("A PDF transformation output must differ from its source blob.")
+        if not self.page_scope or len(set(self.page_scope)) != len(self.page_scope):
+            raise ValueError("PdfTransformationArtifact requires a unique nonempty page scope.")
+        if tuple(sorted(self.page_scope)) != self.page_scope:
+            raise ValueError("PdfTransformationArtifact page scope must be sorted.")
+        return self
+
+
+class PdfPageAccountingBundle(DomainModel):
+    """Complete authoritative PDF page accounting, validated as one commit unit."""
+
+    preflight_report: PdfPreflightReport
+    page_inventory: tuple[PdfPageInventory, ...]
+    page_extraction_statuses: tuple[PdfPageExtractionStatus, ...]
+    transformation_artifacts: tuple[PdfTransformationArtifact, ...] = Field(default_factory=tuple)
+
+    @model_validator(mode="after")
+    def validate_accounting(self) -> Self:
+        report = self.preflight_report
+        _require_unique_ids(self.page_inventory, "PdfPageInventory")
+        _require_unique_ids(self.page_extraction_statuses, "PdfPageExtractionStatus")
+        _require_unique_ids(self.transformation_artifacts, "PdfTransformationArtifact")
+        if tuple(page.id for page in self.page_inventory) != report.page_inventory_ids:
+            raise ValueError("PDF page inventory does not match the preflight denominator.")
+        if (
+            tuple(status.id for status in self.page_extraction_statuses)
+            != report.page_extraction_status_ids
+        ):
+            raise ValueError("PDF page statuses do not match the preflight denominator.")
+        if (
+            tuple(artifact.id for artifact in self.transformation_artifacts)
+            != report.transformation_artifact_ids
+        ):
+            raise ValueError("PDF transformations do not match the preflight report.")
+        expected_page_indices = tuple(range(1, report.page_count + 1))
+        if tuple(page.page_index for page in self.page_inventory) != expected_page_indices:
+            raise ValueError("PDF page inventory must be ordered and contiguous from page 1.")
+        if (
+            tuple(status.page_index for status in self.page_extraction_statuses)
+            != expected_page_indices
+        ):
+            raise ValueError("PDF page statuses must be ordered and contiguous from page 1.")
+        inventories_by_id = {page.id: page for page in self.page_inventory}
+        transformations_by_id = {
+            artifact.id: artifact for artifact in self.transformation_artifacts
+        }
+        for page in self.page_inventory:
+            if page.preflight_report_id != report.id:
+                raise ValueError("PdfPageInventory must belong to its preflight report.")
+        for status in self.page_extraction_statuses:
+            inventory = inventories_by_id.get(status.page_inventory_id)
+            if status.preflight_report_id != report.id or inventory is None:
+                raise ValueError("PdfPageExtractionStatus must belong to its page inventory.")
+            if inventory.page_index != status.page_index:
+                raise ValueError("PDF page status and inventory page index must agree.")
+            if inventory.rotation != status.rotation_applied:
+                raise ValueError("PDF page status and inventory rotation must agree.")
+            for artifact_id in status.transformation_artifact_ids:
+                artifact = transformations_by_id.get(artifact_id)
+                if artifact is None or status.page_index not in artifact.page_scope:
+                    raise ValueError("PDF page status references an unrelated transformation.")
+        for artifact in self.transformation_artifacts:
+            if artifact.preflight_report_id != report.id:
+                raise ValueError("PdfTransformationArtifact must belong to its preflight report.")
+            if artifact.input_blob_id != report.raw_blob_id:
+                raise ValueError("PDF transformation input must be the archived source blob.")
+            if any(page > report.page_count for page in artifact.page_scope):
+                raise ValueError("PDF transformation page scope exceeds the page denominator.")
+        return self
+
+
 class SourceRegion(DomainModel):
     id: SourceRegionId
     representation_id: DocumentRepresentationId
@@ -569,7 +786,16 @@ class DocumentRepresentationBundle(DomainModel):
 
 
 def _require_unique_ids(
-    records: tuple[TextView | DocumentNode | DocumentEdge | SourceRegion, ...],
+    records: tuple[
+        TextView
+        | DocumentNode
+        | DocumentEdge
+        | SourceRegion
+        | PdfPageInventory
+        | PdfPageExtractionStatus
+        | PdfTransformationArtifact,
+        ...,
+    ],
     record_name: str,
 ) -> None:
     if len({record.id for record in records}) != len(records):

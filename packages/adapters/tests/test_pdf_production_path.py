@@ -38,6 +38,9 @@ from kotekomi_domain import (
     DocumentRepresentationBundle,
     DocumentVersionKind,
     ParseQualityReport,
+    PdfExtractionPath,
+    PdfPageAccountingBundle,
+    PdfPageQualityStatus,
     ProcessingAttemptOutcome,
     ProcessingAttemptStatus,
     ProcessingStage,
@@ -88,6 +91,8 @@ class FixturePdfParser:
             preflight=PdfPreflight(
                 parser_name="fixture_pdf",
                 parser_version="1",
+                preflight_tool="fixture_preflight",
+                preflight_tool_version="1",
                 encrypted=False,
                 page_count=1,
                 pages=(
@@ -110,6 +115,38 @@ class InterruptedFixturePdfParser(FixturePdfParser):
         del parse_input
         self.parse_calls += 1
         raise KeyboardInterrupt("simulated PDF process interruption")
+
+
+class OmittedPageBlockedFixturePdfParser(FixturePdfParser):
+    def __init__(self) -> None:
+        super().__init__(analyzability=RepresentationAnalyzability.BLOCKED)
+
+    def parse(self, parse_input: PdfParseInput) -> PdfParseResult:
+        result = super().parse(parse_input)
+        first_page = result.preflight.pages[0]
+        return PdfParseResult(
+            preflight=PdfPreflight(
+                parser_name=result.preflight.parser_name,
+                parser_version=result.preflight.parser_version,
+                preflight_tool=result.preflight.preflight_tool,
+                preflight_tool_version=result.preflight.preflight_tool_version,
+                encrypted=False,
+                page_count=2,
+                pages=(
+                    first_page,
+                    PdfPagePreflight(
+                        page_index=2,
+                        width=612,
+                        height=792,
+                        rotation=0,
+                        embedded_text_character_count=0,
+                        image_coverage=1.0,
+                    ),
+                ),
+            ),
+            representation_bundle=result.representation_bundle,
+            blocking_reasons=("fixture parser omitted page 2 output",),
+        )
 
 
 class MismatchedFixturePdfParser(FixturePdfParser):
@@ -144,6 +181,8 @@ class MismatchedFixturePdfParser(FixturePdfParser):
             preflight = PdfPreflight(
                 parser_name="wrong_parser",
                 parser_version=preflight.parser_version,
+                preflight_tool=preflight.preflight_tool,
+                preflight_tool_version=preflight.preflight_tool_version,
                 encrypted=preflight.encrypted,
                 page_count=preflight.page_count,
                 pages=preflight.pages,
@@ -153,6 +192,8 @@ class MismatchedFixturePdfParser(FixturePdfParser):
             preflight = PdfPreflight(
                 parser_name=preflight.parser_name,
                 parser_version="wrong",
+                preflight_tool=preflight.preflight_tool,
+                preflight_tool_version=preflight.preflight_tool_version,
                 encrypted=preflight.encrypted,
                 page_count=preflight.page_count,
                 pages=preflight.pages,
@@ -206,6 +247,8 @@ class MutatingFixturePdfParser(FixturePdfParser):
             preflight = PdfPreflight(
                 parser_name=preflight.parser_name,
                 parser_version=preflight.parser_version,
+                preflight_tool=preflight.preflight_tool,
+                preflight_tool_version=preflight.preflight_tool_version,
                 encrypted=preflight.encrypted,
                 page_count=preflight.page_count,
                 pages=(page,),
@@ -283,11 +326,12 @@ class MutatingFixturePdfParser(FixturePdfParser):
 
 
 class PersistenceFailingRepository(SQLiteLedgerRepository):
-    def commit_document_representation_processing(
+    def commit_pdf_document_processing(
         self,
         *,
         expected_task_fingerprint_id: str,
         bundle: DocumentRepresentationBundle,
+        page_accounting: PdfPageAccountingBundle,
         created_provenance_activity: ProvenanceActivity,
         created_outcome: ProcessingAttemptOutcome,
         reused_outcome: ProcessingAttemptOutcome,
@@ -295,6 +339,7 @@ class PersistenceFailingRepository(SQLiteLedgerRepository):
         del (
             expected_task_fingerprint_id,
             bundle,
+            page_accounting,
             created_provenance_activity,
             created_outcome,
             reused_outcome,
@@ -319,19 +364,21 @@ def persistence_failing_transaction(
         connection.close()
 
 
-def _capture_request() -> CaptureRequest:
-    digest = hashlib.sha256(RAW_PDF).hexdigest()
+def _capture_request(
+    raw_pdf: bytes = RAW_PDF, fixture_key: str = "pdf-production-path"
+) -> CaptureRequest:
+    digest = hashlib.sha256(raw_pdf).hexdigest()
     return CaptureRequest(
         identity_hint=SourceIdentityHint(
             source_type=SourceType.PDF,
             title="PDF production-path fixture",
-            stable_key="pdf-production-path-fixture",
-            uri="file:///pdf-production-path-fixture.pdf",
+            stable_key=f"{fixture_key}-fixture",
+            uri=f"file:///{fixture_key}-fixture.pdf",
         ),
-        payload=RAW_PDF,
+        payload=raw_pdf,
         media_type="application/pdf",
         storage_locator=f"sources/raw/blb_{digest}.bin",
-        idempotency_key="pdf-production-path-v1",
+        idempotency_key=f"{fixture_key}-v1",
         retrieval_method="fixture",
         requested_uri="file:///pdf-production-path-fixture.pdf",
         canonical_uri="file:///pdf-production-path-fixture.pdf",
@@ -349,10 +396,18 @@ def _capture_request() -> CaptureRequest:
     )
 
 
-def _initialize_captured_pdf(ledger_path: Path) -> tuple[str, str]:
+def _initialize_captured_pdf(
+    ledger_path: Path,
+    raw_pdf: bytes = RAW_PDF,
+    fixture_key: str = "pdf-production-path",
+) -> tuple[str, str]:
     SQLiteLedgerInitializer(ledger_path).initialize()
     with sqlite_ledger_transaction(ledger_path) as repository:
-        capture = capture_source(_capture_request(), repository, StableSourceIdentityPolicy())
+        capture = capture_source(
+            _capture_request(raw_pdf, fixture_key),
+            repository,
+            StableSourceIdentityPolicy(),
+        )
     return capture.document.id, capture.raw_blob.id
 
 
@@ -360,10 +415,11 @@ def _ingest_input(
     document_id: str,
     raw_blob_id: str,
     build_identity: BuildIdentity = BUILD_IDENTITY,
+    raw_pdf: bytes = RAW_PDF,
 ) -> PdfIngestInput:
     return PdfIngestInput(
         document_id=document_id,
-        raw_bytes=RAW_PDF,
+        raw_bytes=raw_pdf,
         policy_id=POLICY_ID,
         ingested_at=NOW,
         raw_blob_id=raw_blob_id,
@@ -506,11 +562,18 @@ def test_pdf_production_path_creates_then_reuses_after_restart(tmp_path: Path) -
         assert reused.provenance_activity_id is None
         assert repository.get_document_representation_bundle(created.representation_id) is not None
         attempts = repository.list_processing_attempts(task_id)
+        page_accounting = repository.get_pdf_page_accounting_bundle(created.preflight_report_id)
         outcomes = tuple(
             repository.get_processing_attempt_outcome(attempt.id) for attempt in attempts
         )
 
     assert parser.parse_calls == 2
+    assert page_accounting is not None
+    assert page_accounting.preflight_report.page_count == 1
+    assert len(page_accounting.page_inventory) == 1
+    assert len(page_accounting.page_extraction_statuses) == 1
+    assert page_accounting.page_extraction_statuses[0].status.value == "acceptable"
+    assert page_accounting.page_extraction_statuses[0].extraction_path.value == "embedded"
     assert len(attempts) == 2
     assert all(outcome is not None for outcome in outcomes)
     assert {
@@ -589,6 +652,71 @@ def test_pdf_production_path_persists_blocked_diagnostic_bundle(tmp_path: Path) 
     assert attempt_outcome.output_artifacts
 
 
+def test_pdf_omitted_page_remains_in_authoritative_terminal_accounting_after_restart(
+    tmp_path: Path,
+) -> None:
+    ledger_path = tmp_path / "ledger.db"
+    document_id, raw_blob_id = _initialize_captured_pdf(ledger_path)
+
+    with sqlite_ledger_transaction(ledger_path) as repository:
+        outcome = ingest_pdf(
+            _ingest_input(document_id, raw_blob_id),
+            repository,
+            OmittedPageBlockedFixturePdfParser(),
+            Uuid4ProcessingAttemptIdFactory(),
+        )
+
+    with sqlite_ledger_transaction(ledger_path) as repository:
+        accounting = repository.get_pdf_page_accounting_bundle(outcome.preflight_report_id)
+        assert outcome.representation_id is not None
+        representation = repository.get_document_representation_bundle(outcome.representation_id)
+
+    assert accounting is not None
+    assert representation is not None
+    assert accounting.preflight_report.page_count == 2
+    assert [page.page_index for page in accounting.page_inventory] == [1, 2]
+    assert [status.page_index for status in accounting.page_extraction_statuses] == [1, 2]
+    assert [status.status.value for status in accounting.page_extraction_statuses] == [
+        "blocked",
+        "blocked",
+    ]
+    assert accounting.page_extraction_statuses[1].extraction_path.value == "inaccessible"
+    assert accounting.page_extraction_statuses[1].policy_reasons == ("parser_omitted_page_output",)
+    assert representation.quality_report.analyzability is RepresentationAnalyzability.BLOCKED
+
+
+def test_pdf_page_accounting_tables_reject_direct_update_and_delete(tmp_path: Path) -> None:
+    ledger_path = tmp_path / "ledger.db"
+    document_id, raw_blob_id = _initialize_captured_pdf(ledger_path)
+    with sqlite_ledger_transaction(ledger_path) as repository:
+        outcome = ingest_pdf(
+            _ingest_input(document_id, raw_blob_id),
+            repository,
+            FixturePdfParser(),
+            Uuid4ProcessingAttemptIdFactory(),
+        )
+        accounting = repository.get_pdf_page_accounting_bundle(outcome.preflight_report_id)
+
+    assert accounting is not None
+    records = (
+        ("pdf_preflight_reports", accounting.preflight_report.id),
+        ("pdf_page_inventories", accounting.page_inventory[0].id),
+        (
+            "pdf_page_extraction_statuses",
+            accounting.page_extraction_statuses[0].id,
+        ),
+    )
+    with sqlite3.connect(ledger_path) as connection:
+        for table, record_id in records:
+            with pytest.raises(sqlite3.DatabaseError, match="immutable"):
+                connection.execute(
+                    f"UPDATE {table} SET payload_json = '{{}}' WHERE id = ?",
+                    (record_id,),
+                )
+            with pytest.raises(sqlite3.DatabaseError, match="immutable"):
+                connection.execute(f"DELETE FROM {table} WHERE id = ?", (record_id,))
+
+
 def test_pdf_production_path_records_docling_source_access_as_blocked(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -599,9 +727,22 @@ def test_pdf_production_path_records_docling_source_access_as_blocked(
     def raise_security_error() -> tuple[object, object, object, object, object]:
         raise exceptions.SecurityError("fixture source access blocked")
 
+    def fixture_preflight(_raw_bytes: bytes, parser_version: str) -> PdfPreflight:
+        return PdfPreflight(
+            parser_name="docling",
+            parser_version=parser_version,
+            encrypted=False,
+            page_count=1,
+            pages=(PdfPagePreflight(1, 612, 792, 0, 20),),
+            pdf_version="1.7",
+            preflight_tool="fixture_preflight",
+            preflight_tool_version="1",
+        )
+
     ledger_path = tmp_path / "ledger.db"
     document_id, raw_blob_id = _initialize_captured_pdf(ledger_path)
     monkeypatch.setattr(docling_pdf_parser, "_load_docling_components", raise_security_error)
+    monkeypatch.setattr(docling_pdf_parser, "preflight_pdf_source", fixture_preflight)
     monkeypatch.setenv("KOTEKOMI_DOCLING_WORKER", "1")
 
     with sqlite_ledger_transaction(ledger_path) as repository:
@@ -621,10 +762,65 @@ def test_pdf_production_path_records_docling_source_access_as_blocked(
         attempts = repository.list_processing_attempts(task_id)
         outcome = repository.get_processing_attempt_outcome(attempts[0].id)
         assert repository.list_document_representations() == ()
+        accounting = repository.get_pdf_page_accounting_bundle(result.preflight_report_id)
 
     assert outcome is not None
     assert outcome.status is ProcessingAttemptStatus.BLOCKED
     assert outcome.failure is None
+    assert accounting is not None
+    assert accounting.preflight_report.page_count == 1
+    assert accounting.preflight_report.pdf_version == "1.7"
+    assert len(accounting.page_extraction_statuses) == 1
+    assert accounting.page_extraction_statuses[0].extraction_path is PdfExtractionPath.INACCESSIBLE
+    assert accounting.page_extraction_statuses[0].status is PdfPageQualityStatus.BLOCKED
+
+
+@pytest.mark.parametrize(
+    "fixture_path",
+    (
+        "fixtures/pdf/encrypted/encrypted_aes256_v1.pdf",
+        "fixtures/pdf/corrupt/ocrmypdf-invalid.pdf",
+    ),
+)
+def test_public_pdf_ingestion_blocks_when_source_preflight_cannot_establish_pages(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    fixture_path: str,
+) -> None:
+    raw_pdf = (Path(__file__).parent / fixture_path).read_bytes()
+    fixture_key = Path(fixture_path).stem
+    ledger_path = tmp_path / "ledger.db"
+    document_id, raw_blob_id = _initialize_captured_pdf(
+        ledger_path,
+        raw_pdf,
+        fixture_key,
+    )
+    monkeypatch.setenv("KOTEKOMI_DOCLING_WORKER", "1")
+
+    with sqlite_ledger_transaction(ledger_path) as repository:
+        result = ingest_pdf(
+            _ingest_input(document_id, raw_blob_id, raw_pdf=raw_pdf),
+            repository,
+            DoclingPdfParser(DoclingPdfParserConfig()),
+            Uuid4ProcessingAttemptIdFactory(),
+        )
+
+    assert result.representation_id is None
+    assert result.blocking_reasons == (
+        "PDF source preflight could not establish an authoritative page inventory.",
+    )
+    task_id = _only_processing_task_id(ledger_path)
+    with sqlite_ledger_transaction(ledger_path) as repository:
+        attempts = repository.list_processing_attempts(task_id)
+        outcome = repository.get_processing_attempt_outcome(attempts[0].id)
+        accounting = repository.get_pdf_page_accounting_bundle(result.preflight_report_id)
+
+    assert outcome is not None
+    assert outcome.status is ProcessingAttemptStatus.BLOCKED
+    assert outcome.failure is None
+    assert accounting is not None
+    assert accounting.preflight_report.page_count == 0
+    assert accounting.page_extraction_statuses == ()
 
 
 def test_pdf_production_path_records_validation_failure_without_representation(
@@ -747,6 +943,7 @@ def test_pdf_parser_output_mutations_fail_closed_and_retry_cleanly(
         assert repository.list_source_regions() == ()
         assert repository.list_parse_quality_reports() == ()
         assert repository.list_provenance_activities() == ()
+        assert repository.find_pdf_preflight_report_for_task(task_id) is None
 
     assert len(attempts_after_failure) == 1
     assert failed_outcome is not None

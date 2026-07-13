@@ -1,0 +1,106 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "Immutable authoritative denominator for one PDF processing task.",
+  "properties": {
+    "document_id": {
+      "pattern": "^doc_[A-Za-z0-9][A-Za-z0-9_-]*$",
+      "title": "Document Id",
+      "type": "string"
+    },
+    "encrypted": {
+      "title": "Encrypted",
+      "type": "boolean"
+    },
+    "global_issues": {
+      "items": {
+        "minLength": 1,
+        "type": "string"
+      },
+      "title": "Global Issues",
+      "type": "array"
+    },
+    "id": {
+      "pattern": "^pfr_[A-Za-z0-9][A-Za-z0-9_-]*$",
+      "title": "Id",
+      "type": "string"
+    },
+    "page_count": {
+      "minimum": 0,
+      "title": "Page Count",
+      "type": "integer"
+    },
+    "page_extraction_status_ids": {
+      "items": {
+        "pattern": "^pes_[A-Za-z0-9][A-Za-z0-9_-]*$",
+        "type": "string"
+      },
+      "title": "Page Extraction Status Ids",
+      "type": "array"
+    },
+    "page_inventory_ids": {
+      "items": {
+        "pattern": "^ppi_[A-Za-z0-9][A-Za-z0-9_-]*$",
+        "type": "string"
+      },
+      "title": "Page Inventory Ids",
+      "type": "array"
+    },
+    "pdf_version": {
+      "minLength": 1,
+      "title": "Pdf Version",
+      "type": "string"
+    },
+    "permissions": {
+      "items": {
+        "minLength": 1,
+        "type": "string"
+      },
+      "title": "Permissions",
+      "type": "array"
+    },
+    "preflight_tool": {
+      "minLength": 1,
+      "title": "Preflight Tool",
+      "type": "string"
+    },
+    "processing_task_fingerprint_id": {
+      "pattern": "^ptf_[A-Za-z0-9][A-Za-z0-9_-]*$",
+      "title": "Processing Task Fingerprint Id",
+      "type": "string"
+    },
+    "raw_blob_id": {
+      "pattern": "^blb_[A-Za-z0-9][A-Za-z0-9_-]*$",
+      "title": "Raw Blob Id",
+      "type": "string"
+    },
+    "tool_version": {
+      "minLength": 1,
+      "title": "Tool Version",
+      "type": "string"
+    },
+    "transformation_artifact_ids": {
+      "items": {
+        "pattern": "^pta_[A-Za-z0-9][A-Za-z0-9_-]*$",
+        "type": "string"
+      },
+      "title": "Transformation Artifact Ids",
+      "type": "array"
+    }
+  },
+  "required": [
+    "id",
+    "document_id",
+    "raw_blob_id",
+    "processing_task_fingerprint_id",
+    "pdf_version",
+    "page_count",
+    "encrypted",
+    "page_inventory_ids",
+    "page_extraction_status_ids",
+    "preflight_tool",
+    "tool_version"
+  ],
+  "title": "PdfPreflightReport",
+  "type": "object"
+}

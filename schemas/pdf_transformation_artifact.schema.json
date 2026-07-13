@@ -1,0 +1,98 @@
+{
+  "$defs": {
+    "PdfTransformationType": {
+      "enum": [
+        "repair",
+        "render",
+        "ocr"
+      ],
+      "title": "PdfTransformationType",
+      "type": "string"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "activity_type": {
+      "$ref": "#/$defs/PdfTransformationType"
+    },
+    "confidence": {
+      "anyOf": [
+        {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Confidence"
+    },
+    "configuration_digest": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Configuration Digest",
+      "type": "string"
+    },
+    "id": {
+      "pattern": "^pta_[A-Za-z0-9][A-Za-z0-9_-]*$",
+      "title": "Id",
+      "type": "string"
+    },
+    "input_blob_id": {
+      "pattern": "^blb_[A-Za-z0-9][A-Za-z0-9_-]*$",
+      "title": "Input Blob Id",
+      "type": "string"
+    },
+    "language_set": {
+      "items": {
+        "minLength": 1,
+        "type": "string"
+      },
+      "title": "Language Set",
+      "type": "array"
+    },
+    "output_blob_id": {
+      "pattern": "^blb_[A-Za-z0-9][A-Za-z0-9_-]*$",
+      "title": "Output Blob Id",
+      "type": "string"
+    },
+    "page_scope": {
+      "items": {
+        "minimum": 1,
+        "type": "integer"
+      },
+      "title": "Page Scope",
+      "type": "array"
+    },
+    "preflight_report_id": {
+      "pattern": "^pfr_[A-Za-z0-9][A-Za-z0-9_-]*$",
+      "title": "Preflight Report Id",
+      "type": "string"
+    },
+    "tool_name": {
+      "minLength": 1,
+      "title": "Tool Name",
+      "type": "string"
+    },
+    "tool_version": {
+      "minLength": 1,
+      "title": "Tool Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "preflight_report_id",
+    "input_blob_id",
+    "output_blob_id",
+    "activity_type",
+    "tool_name",
+    "tool_version",
+    "configuration_digest",
+    "page_scope"
+  ],
+  "title": "PdfTransformationArtifact",
+  "type": "object"
+}

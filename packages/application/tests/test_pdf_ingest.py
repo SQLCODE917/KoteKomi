@@ -5,9 +5,12 @@ from typing import cast
 import pytest
 from kotekomi_application import (
     BuildIdentity,
+    BundleCommitDisposition,
     PdfDocumentParser,
+    PdfExtractionPolicy,
     PdfIngestInput,
     PdfIngestLedger,
+    PdfPagePreflight,
     PdfParseInput,
     PdfParseResult,
     PdfPreflight,
@@ -18,16 +21,59 @@ from kotekomi_application import (
 )
 from kotekomi_domain import (
     Document,
+    PdfExtractionPath,
+    PdfPageAccountingBundle,
+    PdfPageQualityStatus,
     ProcessingAttempt,
     ProcessingAttemptOutcome,
     ProcessingAttemptStatus,
     ProcessingTaskFingerprint,
+    ProvenanceActivity,
     RawBlob,
 )
 
 NOW = datetime(2026, 7, 11, tzinfo=UTC)
 RAW_PDF = b"%PDF-1.7\nfixture"
 BUILD_IDENTITY = BuildIdentity("fixture", "fixture", "a" * 64, "1")
+
+
+def test_pdf_extraction_policy_emits_explicit_terminal_page_decisions() -> None:
+    policy = PdfExtractionPolicy("pdf_policy_v1")
+    page = PdfPagePreflight(1, 612, 792, 0, 120)
+
+    acceptable = policy.select_page_outcome(
+        page=page,
+        page_has_output=True,
+        representation_analyzability=None,
+        source_blocked=False,
+    )
+    omitted = policy.select_page_outcome(
+        page=page,
+        page_has_output=False,
+        representation_analyzability=None,
+        source_blocked=False,
+    )
+
+    assert acceptable.extraction_path is PdfExtractionPath.EMBEDDED
+    assert acceptable.status is PdfPageQualityStatus.ACCEPTABLE
+    assert omitted.extraction_path is PdfExtractionPath.INACCESSIBLE
+    assert omitted.status is PdfPageQualityStatus.BLOCKED
+    assert omitted.reasons == ("parser_omitted_page_output",)
+
+    low_rate = policy.select_page_outcome(
+        page=PdfPagePreflight(1, 612, 792, 0, 120, suspicious_glyph_rate=0.009),
+        page_has_output=True,
+        representation_analyzability=None,
+        source_blocked=False,
+    )
+    high_rate = policy.select_page_outcome(
+        page=PdfPagePreflight(1, 612, 792, 0, 120, suspicious_glyph_rate=0.01),
+        page_has_output=True,
+        representation_analyzability=None,
+        source_blocked=False,
+    )
+    assert low_rate.status is PdfPageQualityStatus.ACCEPTABLE
+    assert high_rate.status is PdfPageQualityStatus.DEGRADED
 
 
 class SequenceAttemptIdFactory:
@@ -61,6 +107,8 @@ class FakePdfParser:
             preflight=PdfPreflight(
                 parser_name="fake_pdf",
                 parser_version="1",
+                preflight_tool="fixture_preflight",
+                preflight_tool_version="1",
                 encrypted=False,
                 page_count=0,
                 pages=(),
@@ -93,6 +141,8 @@ class FakePdfLedger:
         self.tasks: dict[str, ProcessingTaskFingerprint] = {}
         self.attempts: dict[str, ProcessingAttempt] = {}
         self.outcomes: dict[str, ProcessingAttemptOutcome] = {}
+        self.page_accounting: PdfPageAccountingBundle | None = None
+        self.provenance: dict[str, ProvenanceActivity] = {}
 
     def get_document(self, record_id: str) -> Document | None:
         return self.document if record_id == self.document.id else None
@@ -113,6 +163,30 @@ class FakePdfLedger:
 
     def append_processing_attempt_outcome(self, record: ProcessingAttemptOutcome) -> None:
         self.outcomes[record.id] = record
+
+    def save_provenance_activity(self, record: ProvenanceActivity) -> None:
+        self.provenance[record.id] = record
+
+    def commit_blocked_pdf_processing(
+        self,
+        *,
+        expected_task_fingerprint_id: str,
+        page_accounting: PdfPageAccountingBundle,
+        created_provenance_activity: ProvenanceActivity,
+        created_outcome: ProcessingAttemptOutcome,
+        reused_outcome: ProcessingAttemptOutcome,
+    ) -> BundleCommitDisposition:
+        assert page_accounting.preflight_report.processing_task_fingerprint_id == (
+            expected_task_fingerprint_id
+        )
+        if self.page_accounting is None:
+            self.page_accounting = page_accounting
+            self.save_provenance_activity(created_provenance_activity)
+            self.append_processing_attempt_outcome(created_outcome)
+            return BundleCommitDisposition.CREATED
+        assert self.page_accounting == page_accounting
+        self.append_processing_attempt_outcome(reused_outcome)
+        return BundleCommitDisposition.REUSED
 
     def commit_processing_attempt_start(self) -> None:
         return None
@@ -155,17 +229,21 @@ class FakePdfLedger:
 
 
 def test_ingest_pdf_returns_typed_blocked_outcome_without_publishing_representation() -> None:
+    ledger = FakePdfLedger()
     outcome = ingest_pdf(
         PdfIngestInput(
             "doc_pdf_fixture", RAW_PDF, "pdf_policy_v1", NOW, "blb_pdf_fixture", BUILD_IDENTITY
         ),
-        cast(PdfIngestLedger, FakePdfLedger()),
+        cast(PdfIngestLedger, ledger),
         cast(PdfDocumentParser, FakePdfParser()),
         SequenceAttemptIdFactory(),
     )
 
     assert outcome.representation_id is None
-    assert outcome.provenance_activity_id is None
+    assert outcome.provenance_activity_id is not None
+    assert ledger.page_accounting is not None
+    assert outcome.preflight_report_id == ledger.page_accounting.preflight_report.id
+    assert ledger.page_accounting.preflight_report.page_count == 0
     assert outcome.blocking_reasons == ("fixture parser blocked",)
 
 

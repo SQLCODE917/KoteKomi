@@ -248,6 +248,7 @@ def test_docling_r1a_ingests_the_press_release_as_an_analyzeable_representation(
         )
         assert first.representation_id is not None
         stored_bundle = repository.get_document_representation_bundle(first.representation_id)
+        first_accounting = repository.get_pdf_page_accounting_bundle(first.preflight_report_id)
 
     with sqlite_ledger_transaction(ledger_path) as repository:
         second = ingest_pdf(
@@ -259,6 +260,7 @@ def test_docling_r1a_ingests_the_press_release_as_an_analyzeable_representation(
         )
         assert second.representation_id is not None
         replayed_bundle = repository.get_document_representation_bundle(second.representation_id)
+        second_accounting = repository.get_pdf_page_accounting_bundle(second.preflight_report_id)
 
     assert archive.read_raw_source(capture.raw_blob.id) == RAW_PDF
     assert first.representation_id == second.representation_id
@@ -271,6 +273,16 @@ def test_docling_r1a_ingests_the_press_release_as_an_analyzeable_representation(
     assert first_result.representation_bundle == second_result.representation_bundle
     assert stored_bundle is not None
     assert replayed_bundle is not None
+    assert first_accounting is not None
+    assert second_accounting == first_accounting
+    assert first_accounting.preflight_report.pdf_version == "1.7"
+    assert first_accounting.preflight_report.page_count == 1
+    assert len(first_accounting.page_inventory) == 1
+    assert first_accounting.page_inventory[0].image_coverage > 0
+    assert first_accounting.page_inventory[0].suspicious_glyph_rate > 0
+    assert first_accounting.page_inventory[0].glyph_issue_count > 0
+    assert len(first_accounting.page_extraction_statuses) == 1
+    assert first_accounting.page_extraction_statuses[0].status.value == "acceptable"
     _assert_persisted_bundle(first_result.representation_bundle, stored_bundle)
     _assert_persisted_bundle(first_result.representation_bundle, replayed_bundle)
 
@@ -1185,7 +1197,12 @@ def _assert_r1a_representation(
             width=612.0,
             height=792.0,
             rotation=0,
-            embedded_text_character_count=2463,
+            embedded_text_character_count=2484,
+            crop_right=612.0,
+            crop_bottom=792.0,
+            image_coverage=0.010242698477992595,
+            suspicious_glyph_rate=0.0012077294685990338,
+            glyph_issue_count=3,
         ),
     )
     assert parse_result.blocking_reasons == ()

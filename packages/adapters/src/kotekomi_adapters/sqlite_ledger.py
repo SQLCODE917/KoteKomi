@@ -50,6 +50,11 @@ from kotekomi_domain import (
     Organization,
     Outcome,
     ParseQualityReport,
+    PdfPageAccountingBundle,
+    PdfPageExtractionStatus,
+    PdfPageInventory,
+    PdfPreflightReport,
+    PdfTransformationArtifact,
     Place,
     PlannedAnalysisItem,
     ProcessingAttempt,
@@ -103,6 +108,10 @@ IMMUTABLE_TABLES = frozenset(
         "document_edges",
         "source_regions",
         "parse_quality_reports",
+        "pdf_preflight_reports",
+        "pdf_page_inventories",
+        "pdf_page_extraction_statuses",
+        "pdf_transformation_artifacts",
         "provenance_activities",
         "evidence_targets",
         "evidence_validation_attempts",
@@ -145,6 +154,26 @@ RELATIONAL_OWNERSHIP_COLUMNS: dict[str, tuple[tuple[str, str], ...]] = {
     "document_edges": (("representation_id", "representation_id"),),
     "source_regions": (("representation_id", "representation_id"),),
     "parse_quality_reports": (("representation_id", "representation_id"),),
+    "pdf_preflight_reports": (
+        ("document_id", "document_id"),
+        ("raw_blob_id", "raw_blob_id"),
+        ("processing_task_fingerprint_id", "processing_task_fingerprint_id"),
+    ),
+    "pdf_page_inventories": (
+        ("preflight_report_id", "preflight_report_id"),
+        ("page_index", "page_index"),
+    ),
+    "pdf_page_extraction_statuses": (
+        ("preflight_report_id", "preflight_report_id"),
+        ("page_inventory_id", "page_inventory_id"),
+        ("page_index", "page_index"),
+        ("representation_id", "representation_id"),
+    ),
+    "pdf_transformation_artifacts": (
+        ("preflight_report_id", "preflight_report_id"),
+        ("input_blob_id", "input_blob_id"),
+        ("output_blob_id", "output_blob_id"),
+    ),
     "context_manifest_artifacts": (
         ("representation_id", "representation_id"),
         ("manifest_digest", "manifest_digest"),
@@ -212,6 +241,14 @@ DOCUMENT_NODE_SPEC = RecordSpec("document_nodes", DocumentNode)
 DOCUMENT_EDGE_SPEC = RecordSpec("document_edges", DocumentEdge)
 SOURCE_REGION_SPEC = RecordSpec("source_regions", SourceRegion)
 PARSE_QUALITY_REPORT_SPEC = RecordSpec("parse_quality_reports", ParseQualityReport)
+PDF_PREFLIGHT_REPORT_SPEC = RecordSpec("pdf_preflight_reports", PdfPreflightReport)
+PDF_PAGE_INVENTORY_SPEC = RecordSpec("pdf_page_inventories", PdfPageInventory)
+PDF_PAGE_EXTRACTION_STATUS_SPEC = RecordSpec(
+    "pdf_page_extraction_statuses", PdfPageExtractionStatus
+)
+PDF_TRANSFORMATION_ARTIFACT_SPEC = RecordSpec(
+    "pdf_transformation_artifacts", PdfTransformationArtifact
+)
 DOCUMENT_REVISION_RELATION_SPEC = RecordSpec(
     "document_revision_relations",
     DocumentRevisionRelation,
@@ -283,6 +320,10 @@ REQUIRED_LEDGER_TABLES = (
     "document_edges",
     "source_regions",
     "parse_quality_reports",
+    "pdf_preflight_reports",
+    "pdf_page_inventories",
+    "pdf_page_extraction_statuses",
+    "pdf_transformation_artifacts",
     "document_revision_relations",
     "evidence_targets",
     "evidence_validation_attempts",
@@ -871,6 +912,200 @@ class SQLiteLedgerRepository:
             PARSE_QUALITY_REPORT_SPEC, "representation_id", representation_id
         )
 
+    def get_pdf_preflight_report(self, record_id: str) -> PdfPreflightReport | None:
+        return self._get(PDF_PREFLIGHT_REPORT_SPEC, record_id)
+
+    def find_pdf_preflight_report_for_task(
+        self, task_fingerprint_id: str
+    ) -> PdfPreflightReport | None:
+        reports = self._list_for_owner(
+            PDF_PREFLIGHT_REPORT_SPEC,
+            "processing_task_fingerprint_id",
+            task_fingerprint_id,
+        )
+        if len(reports) > 1:
+            raise RuntimeError("A PDF processing task has multiple preflight reports.")
+        return reports[0] if reports else None
+
+    def list_pdf_page_inventory_for_report(
+        self, preflight_report_id: str
+    ) -> tuple[PdfPageInventory, ...]:
+        records = self._list_for_owner(
+            PDF_PAGE_INVENTORY_SPEC, "preflight_report_id", preflight_report_id
+        )
+        return tuple(sorted(records, key=lambda record: record.page_index))
+
+    def list_pdf_page_extraction_statuses_for_report(
+        self, preflight_report_id: str
+    ) -> tuple[PdfPageExtractionStatus, ...]:
+        records = self._list_for_owner(
+            PDF_PAGE_EXTRACTION_STATUS_SPEC,
+            "preflight_report_id",
+            preflight_report_id,
+        )
+        return tuple(sorted(records, key=lambda record: record.page_index))
+
+    def list_pdf_transformation_artifacts_for_report(
+        self, preflight_report_id: str
+    ) -> tuple[PdfTransformationArtifact, ...]:
+        records = self._list_for_owner(
+            PDF_TRANSFORMATION_ARTIFACT_SPEC,
+            "preflight_report_id",
+            preflight_report_id,
+        )
+        by_id = {record.id: record for record in records}
+        report = self.get_pdf_preflight_report(preflight_report_id)
+        if report is None:
+            return ()
+        return tuple(by_id[record_id] for record_id in report.transformation_artifact_ids)
+
+    def get_pdf_page_accounting_bundle(
+        self, preflight_report_id: str
+    ) -> PdfPageAccountingBundle | None:
+        report = self.get_pdf_preflight_report(preflight_report_id)
+        if report is None:
+            return None
+        return PdfPageAccountingBundle(
+            preflight_report=report,
+            page_inventory=self.list_pdf_page_inventory_for_report(report.id),
+            page_extraction_statuses=self.list_pdf_page_extraction_statuses_for_report(report.id),
+            transformation_artifacts=self.list_pdf_transformation_artifacts_for_report(report.id),
+        )
+
+    def commit_pdf_document_processing(
+        self,
+        *,
+        expected_task_fingerprint_id: str,
+        bundle: DocumentRepresentationBundle,
+        page_accounting: PdfPageAccountingBundle,
+        created_provenance_activity: ProvenanceActivity,
+        created_outcome: ProcessingAttemptOutcome,
+        reused_outcome: ProcessingAttemptOutcome,
+    ) -> BundleCommitOutcome:
+        self._connection.execute("SAVEPOINT pdf_document_processing")
+        try:
+            self._validate_pdf_page_accounting_binding(
+                expected_task_fingerprint_id=expected_task_fingerprint_id,
+                representation_id=bundle.representation.id,
+                page_accounting=page_accounting,
+                created_outcome=created_outcome,
+                reused_outcome=reused_outcome,
+            )
+            self._validate_processing_task_binding(
+                expected_task_fingerprint_id=expected_task_fingerprint_id,
+                bundle=bundle,
+                created_outcome=created_outcome,
+                reused_outcome=reused_outcome,
+            )
+            representation_outcome = self.commit_document_representation_bundle(bundle)
+            accounting_disposition = self._commit_pdf_page_accounting(page_accounting)
+            if representation_outcome.disposition.value != accounting_disposition.value:
+                raise ImmutableRecordConflict(
+                    "PdfDocumentProcessing",
+                    expected_task_fingerprint_id,
+                    representation_outcome.disposition.value,
+                    accounting_disposition.value,
+                )
+            if representation_outcome.disposition is BundleCommitDisposition.CREATED:
+                self.save_provenance_activity(created_provenance_activity)
+                self.append_processing_attempt_outcome(created_outcome)
+            else:
+                self.append_processing_attempt_outcome(reused_outcome)
+        except Exception:
+            self._connection.execute("ROLLBACK TO SAVEPOINT pdf_document_processing")
+            self._connection.execute("RELEASE SAVEPOINT pdf_document_processing")
+            raise
+        self._connection.execute("RELEASE SAVEPOINT pdf_document_processing")
+        return representation_outcome
+
+    def commit_blocked_pdf_processing(
+        self,
+        *,
+        expected_task_fingerprint_id: str,
+        page_accounting: PdfPageAccountingBundle,
+        created_provenance_activity: ProvenanceActivity,
+        created_outcome: ProcessingAttemptOutcome,
+        reused_outcome: ProcessingAttemptOutcome,
+    ) -> BundleCommitDisposition:
+        self._connection.execute("SAVEPOINT blocked_pdf_processing")
+        try:
+            self._validate_pdf_page_accounting_binding(
+                expected_task_fingerprint_id=expected_task_fingerprint_id,
+                representation_id=None,
+                page_accounting=page_accounting,
+                created_outcome=created_outcome,
+                reused_outcome=reused_outcome,
+            )
+            disposition = self._commit_pdf_page_accounting(page_accounting)
+            if disposition is BundleCommitDisposition.CREATED:
+                self.save_provenance_activity(created_provenance_activity)
+                self.append_processing_attempt_outcome(created_outcome)
+            else:
+                self.append_processing_attempt_outcome(reused_outcome)
+        except Exception:
+            self._connection.execute("ROLLBACK TO SAVEPOINT blocked_pdf_processing")
+            self._connection.execute("RELEASE SAVEPOINT blocked_pdf_processing")
+            raise
+        self._connection.execute("RELEASE SAVEPOINT blocked_pdf_processing")
+        return disposition
+
+    def _commit_pdf_page_accounting(
+        self, page_accounting: PdfPageAccountingBundle
+    ) -> BundleCommitDisposition:
+        validated = PdfPageAccountingBundle.model_validate(page_accounting.model_dump())
+        existing = self.get_pdf_page_accounting_bundle(validated.preflight_report.id)
+        if existing is not None:
+            if existing == validated:
+                return BundleCommitDisposition.REUSED
+            raise ImmutableRecordConflict(
+                "PdfPageAccountingBundle",
+                validated.preflight_report.id,
+                hashlib.sha256(canonical_record_json(existing).encode()).hexdigest(),
+                hashlib.sha256(canonical_record_json(validated).encode()).hexdigest(),
+            )
+        self._save(PDF_PREFLIGHT_REPORT_SPEC, validated.preflight_report)
+        for page in validated.page_inventory:
+            self._save(PDF_PAGE_INVENTORY_SPEC, page)
+        for artifact in validated.transformation_artifacts:
+            self._save(PDF_TRANSFORMATION_ARTIFACT_SPEC, artifact)
+        for status in validated.page_extraction_statuses:
+            self._save(PDF_PAGE_EXTRACTION_STATUS_SPEC, status)
+        return BundleCommitDisposition.CREATED
+
+    def _validate_pdf_page_accounting_binding(
+        self,
+        *,
+        expected_task_fingerprint_id: str,
+        representation_id: str | None,
+        page_accounting: PdfPageAccountingBundle,
+        created_outcome: ProcessingAttemptOutcome,
+        reused_outcome: ProcessingAttemptOutcome,
+    ) -> None:
+        report = page_accounting.preflight_report
+        if report.processing_task_fingerprint_id != expected_task_fingerprint_id:
+            raise ValueError("PDF preflight report does not belong to the expected task.")
+        if created_outcome.attempt_id != reused_outcome.attempt_id:
+            raise ValueError("Created and reused PDF outcomes must belong to one attempt.")
+        attempt = self.get_processing_attempt(created_outcome.attempt_id)
+        if attempt is None or attempt.task_fingerprint_id != expected_task_fingerprint_id:
+            raise ValueError("PDF processing outcome attempt does not belong to the task.")
+        for outcome in (created_outcome, reused_outcome):
+            report_refs = tuple(
+                artifact
+                for artifact in outcome.output_artifacts
+                if artifact.kind.value == "pdf_preflight_report"
+            )
+            if len(report_refs) != 1 or report_refs[0].artifact_id != report.id:
+                raise ValueError("PDF processing outcome must reference its preflight report.")
+        status_representation_ids = {
+            status.representation_id
+            for status in page_accounting.page_extraction_statuses
+            if status.representation_id is not None
+        }
+        expected_ids: set[str] = {representation_id} if representation_id is not None else set()
+        if status_representation_ids != expected_ids:
+            raise ValueError("PDF page statuses do not bind to the committed representation.")
+
     def save_raw_blob(self, record: RawBlob) -> None:
         self._save(RAW_BLOB_SPEC, record)
 
@@ -1245,6 +1480,10 @@ class SQLiteLedgerRepository:
             "source_region": "source_regions",
             "quality_report": "parse_quality_reports",
             "provenance_activity": "provenance_activities",
+            "pdf_preflight_report": "pdf_preflight_reports",
+            "pdf_page_inventory": "pdf_page_inventories",
+            "pdf_page_extraction_status": "pdf_page_extraction_statuses",
+            "pdf_transformation_artifact": "pdf_transformation_artifacts",
         }
         for artifact in record.output_artifacts:
             table_name = table_by_kind[artifact.kind.value]

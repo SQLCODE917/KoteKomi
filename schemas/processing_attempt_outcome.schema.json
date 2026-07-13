@@ -16,7 +16,11 @@
         "document_edge",
         "source_region",
         "quality_report",
-        "provenance_activity"
+        "provenance_activity",
+        "pdf_preflight_report",
+        "pdf_page_inventory",
+        "pdf_page_extraction_status",
+        "pdf_transformation_artifact"
       ],
       "title": "ProcessingArtifactKind",
       "type": "string"

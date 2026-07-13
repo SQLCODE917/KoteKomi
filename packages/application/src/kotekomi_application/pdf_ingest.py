@@ -12,9 +12,16 @@ from kotekomi_domain import (
     Document,
     DocumentRepresentationBundle,
     OutputDisposition,
+    PdfExtractionPath,
+    PdfPageAccountingBundle,
+    PdfPageExtractionStatus,
+    PdfPageInventory,
+    PdfPageQualityStatus,
+    PdfPreflightReport,
     ProcessingArtifactKind,
     ProcessingArtifactRef,
     ProcessingAttempt,
+    ProcessingAttemptOutcome,
     ProcessingAttemptStatus,
     ProcessingBlocker,
     ProcessingFailure,
@@ -38,6 +45,7 @@ from kotekomi_application.processing import (
 )
 from kotekomi_application.representation_identity import (
     BundleCommitDisposition,
+    BundleCommitOutcome,
     DocumentRepresentationBundleLedger,
     deterministic_representation_id,
 )
@@ -58,6 +66,9 @@ class PdfPagePreflight:
     crop_top: float = 0.0
     crop_right: float | None = None
     crop_bottom: float | None = None
+    image_coverage: float = 0.0
+    suspicious_glyph_rate: float = 0.0
+    glyph_issue_count: int = 0
 
     def __post_init__(self) -> None:
         values = (self.width, self.height, self.crop_left, self.crop_top)
@@ -69,6 +80,10 @@ class PdfPagePreflight:
             raise ValueError("PDF crop geometry must contain only finite coordinates.")
         if self.page_index < 1 or self.width <= 0 or self.height <= 0:
             raise ValueError("PDF page geometry must identify a positive page and bounds.")
+        if not 0 <= self.image_coverage <= 1:
+            raise ValueError("PDF page image coverage must be between zero and one.")
+        if not 0 <= self.suspicious_glyph_rate <= 1 or self.glyph_issue_count < 0:
+            raise ValueError("PDF page glyph metrics must be nonnegative bounded values.")
         if self.rotation not in {0, 90, 180, 270}:
             raise ValueError("PDF page rotation must be a cardinal rotation.")
         if (
@@ -94,10 +109,14 @@ class PdfPagePreflight:
 class PdfPreflight:
     parser_name: str
     parser_version: str
+    preflight_tool: str
+    preflight_tool_version: str
     encrypted: bool
     page_count: int
     pages: tuple[PdfPagePreflight, ...]
     warnings: tuple[str, ...] = ()
+    pdf_version: str = "unknown"
+    permissions: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         if self.page_count != len(self.pages):
@@ -132,6 +151,64 @@ class PdfProcessorIdentity:
     output_contract_version: str
 
 
+@dataclass(frozen=True)
+class PdfPagePolicyDecision:
+    extraction_path: PdfExtractionPath
+    status: PdfPageQualityStatus
+    reasons: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class PdfExtractionPolicy:
+    """Initial versioned policy for terminal accounting of parser-produced pages."""
+
+    policy_id: str
+
+    def select_page_outcome(
+        self,
+        *,
+        page: PdfPagePreflight,
+        page_has_output: bool,
+        representation_analyzability: RepresentationAnalyzability | None,
+        source_blocked: bool,
+    ) -> PdfPagePolicyDecision:
+        if source_blocked:
+            return PdfPagePolicyDecision(
+                PdfExtractionPath.INACCESSIBLE,
+                PdfPageQualityStatus.BLOCKED,
+                ("source_inaccessible",),
+            )
+        if not page_has_output:
+            return PdfPagePolicyDecision(
+                PdfExtractionPath.INACCESSIBLE,
+                PdfPageQualityStatus.BLOCKED,
+                ("parser_omitted_page_output",),
+            )
+        if page.embedded_text_character_count == 0:
+            return PdfPagePolicyDecision(
+                PdfExtractionPath.INACCESSIBLE,
+                PdfPageQualityStatus.BLOCKED,
+                ("page_requires_ocr_without_transformation_artifact",),
+            )
+        if representation_analyzability is RepresentationAnalyzability.BLOCKED:
+            status = PdfPageQualityStatus.BLOCKED
+            reason = "representation_quality_blocked"
+        elif (
+            representation_analyzability is RepresentationAnalyzability.DEGRADED
+            or page.suspicious_glyph_rate >= 0.01
+        ):
+            status = PdfPageQualityStatus.DEGRADED
+            reason = "embedded_text_requires_degraded_quality"
+        else:
+            status = PdfPageQualityStatus.ACCEPTABLE
+            reason = "usable_embedded_text"
+        return PdfPagePolicyDecision(
+            PdfExtractionPath.EMBEDDED,
+            status,
+            (reason,),
+        )
+
+
 class PdfDocumentParser(Protocol):
     def processing_identity(self, policy_id: str) -> PdfProcessorIdentity: ...
 
@@ -142,6 +219,27 @@ class PdfIngestLedger(DocumentRepresentationBundleLedger, ProcessingLedger, Prot
     def get_document(self, record_id: str) -> Document | None: ...
     def get_raw_blob(self, record_id: str) -> RawBlob | None: ...
     def save_provenance_activity(self, record: ProvenanceActivity) -> None: ...
+
+    def commit_pdf_document_processing(
+        self,
+        *,
+        expected_task_fingerprint_id: str,
+        bundle: DocumentRepresentationBundle,
+        page_accounting: PdfPageAccountingBundle,
+        created_provenance_activity: ProvenanceActivity,
+        created_outcome: ProcessingAttemptOutcome,
+        reused_outcome: ProcessingAttemptOutcome,
+    ) -> BundleCommitOutcome: ...
+
+    def commit_blocked_pdf_processing(
+        self,
+        *,
+        expected_task_fingerprint_id: str,
+        page_accounting: PdfPageAccountingBundle,
+        created_provenance_activity: ProvenanceActivity,
+        created_outcome: ProcessingAttemptOutcome,
+        reused_outcome: ProcessingAttemptOutcome,
+    ) -> BundleCommitDisposition: ...
 
 
 @dataclass(frozen=True)
@@ -161,6 +259,7 @@ class PdfIngestOutcome:
     representation_id: str | None
     provenance_activity_id: str | None
     blocking_reasons: tuple[str, ...]
+    preflight_report_id: str
 
 
 def ingest_pdf(
@@ -172,6 +271,7 @@ def ingest_pdf(
 ) -> PdfIngestOutcome:
     # Validate the build before consulting the parser or writing any task/attempt.
     ingest_input.build_identity.snapshot()
+    extraction_policy = PdfExtractionPolicy(ingest_input.policy_id)
     processing_clock = clock or UtcProcessingClock()
     document = ledger_repository.get_document(ingest_input.document_id)
     if document is None:
@@ -223,27 +323,66 @@ def ingest_pdf(
         blocking_reasons = parse_result.blocking_reasons or (
             "PDF parser did not produce a representation bundle.",
         )
-        ledger_repository.append_processing_attempt_outcome(
-            processing_attempt_outcome(
-                attempt=attempt,
-                status=ProcessingAttemptStatus.BLOCKED,
-                finished_at=processing_clock.now(),
-                blocking_reasons=tuple(
-                    ProcessingBlocker(
-                        code="pdf_blocked",
-                        stage=ProcessingStage.PARSER,
-                        safe_message=reason,
-                    )
-                    for reason in blocking_reasons
-                ),
+        page_accounting = _build_pdf_page_accounting(
+            task=task,
+            document=document,
+            raw_blob=raw_blob,
+            parse_result=parse_result,
+            extraction_policy=extraction_policy,
+        )
+        provenance = _pdf_page_accounting_provenance(
+            document=document,
+            page_accounting=page_accounting,
+            policy_id=ingest_input.policy_id,
+            occurred_at=ingest_input.ingested_at,
+        )
+        blockers = tuple(
+            ProcessingBlocker(
+                code="pdf_blocked",
+                stage=ProcessingStage.PARSER,
+                safe_message=reason,
             )
+            for reason in blocking_reasons
+        )
+        accounting_refs = _page_accounting_artifact_refs(page_accounting)
+        created_outcome = processing_attempt_outcome(
+            attempt=attempt,
+            status=ProcessingAttemptStatus.BLOCKED,
+            finished_at=processing_clock.now(),
+            output_artifacts=accounting_refs
+            + (
+                ProcessingArtifactRef(
+                    kind=ProcessingArtifactKind.PROVENANCE_ACTIVITY,
+                    artifact_id=provenance.id,
+                    role="production_provenance",
+                ),
+            ),
+            blocking_reasons=blockers,
+            provenance_activity_id=provenance.id,
+        )
+        reused_outcome = processing_attempt_outcome(
+            attempt=attempt,
+            status=ProcessingAttemptStatus.BLOCKED,
+            finished_at=processing_clock.now(),
+            output_artifacts=accounting_refs,
+            blocking_reasons=blockers,
+        )
+        page_disposition = ledger_repository.commit_blocked_pdf_processing(
+            expected_task_fingerprint_id=task.id,
+            page_accounting=page_accounting,
+            created_provenance_activity=provenance,
+            created_outcome=created_outcome,
+            reused_outcome=reused_outcome,
         )
         return PdfIngestOutcome(
             document_id=document.id,
             preflight=parse_result.preflight,
             representation_id=None,
-            provenance_activity_id=None,
+            provenance_activity_id=(
+                provenance.id if page_disposition is BundleCommitDisposition.CREATED else None
+            ),
             blocking_reasons=blocking_reasons,
+            preflight_report_id=page_accounting.preflight_report.id,
         )
     try:
         validate_representation_for_processing_task(
@@ -253,6 +392,14 @@ def ingest_pdf(
             input_digest=actual_digest,
             parse_result=parse_result,
         )
+        page_accounting = _build_pdf_page_accounting(
+            task=task,
+            document=document,
+            raw_blob=raw_blob,
+            parse_result=parse_result,
+            extraction_policy=extraction_policy,
+        )
+        _validate_page_accounting_quality(bundle, page_accounting)
     except ValueError as error:
         _record_pdf_failure(
             ledger_repository=ledger_repository,
@@ -279,6 +426,10 @@ def ingest_pdf(
             *(region.id for region in bundle.source_regions),
             *(edge.id for edge in bundle.edges),
             bundle.quality_report.id,
+            page_accounting.preflight_report.id,
+            *(page.id for page in page_accounting.page_inventory),
+            *(status.id for status in page_accounting.page_extraction_statuses),
+            *(artifact.id for artifact in page_accounting.transformation_artifacts),
         ),
         occurred_at=ingest_input.ingested_at,
     )
@@ -294,7 +445,7 @@ def ingest_pdf(
             artifact_id=bundle.quality_report.id,
             role="quality_report",
         ),
-    )
+    ) + _page_accounting_artifact_refs(page_accounting)
     blockers = tuple(
         ProcessingBlocker(
             code="pdf_blocked",
@@ -335,9 +486,10 @@ def ingest_pdf(
         blocking_reasons=blockers if is_blocked else (),
     )
     try:
-        commit_outcome = ledger_repository.commit_document_representation_processing(
+        commit_outcome = ledger_repository.commit_pdf_document_processing(
             expected_task_fingerprint_id=task.id,
             bundle=bundle,
+            page_accounting=page_accounting,
             created_provenance_activity=provenance,
             created_outcome=created_outcome,
             reused_outcome=reused_outcome,
@@ -363,6 +515,7 @@ def ingest_pdf(
             else None
         ),
         blocking_reasons=parse_result.blocking_reasons,
+        preflight_report_id=page_accounting.preflight_report.id,
     )
 
 
@@ -405,6 +558,206 @@ def validate_representation_for_processing_task(
     )
     validated_bundle = DocumentRepresentationBundle.model_validate(bundle.model_dump())
     _validate_pdf_region_geometry(parse_result.preflight, validated_bundle)
+
+
+def _build_pdf_page_accounting(
+    *,
+    task: ProcessingTaskFingerprint,
+    document: Document,
+    raw_blob: RawBlob,
+    parse_result: PdfParseResult,
+    extraction_policy: PdfExtractionPolicy,
+) -> PdfPageAccountingBundle:
+    report_id = _derived_pdf_record_id("pfr", task.id, "preflight")
+    page_inventory_ids = tuple(
+        _derived_pdf_record_id("ppi", report_id, str(page.page_index))
+        for page in parse_result.preflight.pages
+    )
+    status_ids = tuple(
+        _derived_pdf_record_id("pes", report_id, str(page.page_index))
+        for page in parse_result.preflight.pages
+    )
+    report = PdfPreflightReport(
+        id=report_id,
+        document_id=document.id,
+        raw_blob_id=raw_blob.id,
+        processing_task_fingerprint_id=task.id,
+        pdf_version=parse_result.preflight.pdf_version,
+        page_count=parse_result.preflight.page_count,
+        encrypted=parse_result.preflight.encrypted,
+        permissions=parse_result.preflight.permissions,
+        page_inventory_ids=page_inventory_ids,
+        page_extraction_status_ids=status_ids,
+        global_issues=tuple(
+            dict.fromkeys(
+                (
+                    ("pdf_version_unknown",)
+                    if parse_result.preflight.pdf_version == "unknown"
+                    else ()
+                )
+                + parse_result.preflight.warnings
+                + parse_result.blocking_reasons
+            )
+        ),
+        preflight_tool=parse_result.preflight.preflight_tool,
+        tool_version=parse_result.preflight.preflight_tool_version,
+    )
+    page_inventory = tuple(
+        PdfPageInventory(
+            id=page_id,
+            preflight_report_id=report.id,
+            page_index=page.page_index,
+            media_width=page.width,
+            media_height=page.height,
+            crop_left=page.crop_left,
+            crop_top=page.crop_top,
+            crop_right=page.resolved_crop_right,
+            crop_bottom=page.resolved_crop_bottom,
+            rotation=page.rotation,
+            embedded_text_character_count=page.embedded_text_character_count,
+            image_coverage=page.image_coverage,
+            suspicious_glyph_rate=page.suspicious_glyph_rate,
+            glyph_issue_count=page.glyph_issue_count,
+            warnings=page.warnings,
+        )
+        for page_id, page in zip(page_inventory_ids, parse_result.preflight.pages, strict=True)
+    )
+    bundle = parse_result.representation_bundle
+    covered_pages: set[int] = (
+        {region.page_number for region in bundle.source_regions} if bundle is not None else set()
+    )
+    extracted_characters_by_page = {page.page_index: 0 for page in parse_result.preflight.pages}
+    if bundle is not None:
+        text_views = {view.id: view for view in bundle.text_views}
+        for node in bundle.nodes:
+            node_length = node.end_char - node.start_char
+            if node.text_view_id not in text_views:
+                continue
+            for page_number in node.source_page_numbers:
+                if page_number in extracted_characters_by_page:
+                    extracted_characters_by_page[page_number] += node_length
+    statuses: list[PdfPageExtractionStatus] = []
+    for status_id, page_id, page in zip(
+        status_ids,
+        page_inventory_ids,
+        parse_result.preflight.pages,
+        strict=True,
+    ):
+        page_has_output = page.page_index in covered_pages
+        decision = extraction_policy.select_page_outcome(
+            page=page,
+            page_has_output=page_has_output,
+            representation_analyzability=(
+                bundle.quality_report.analyzability if bundle is not None else None
+            ),
+            source_blocked=bundle is None,
+        )
+        statuses.append(
+            PdfPageExtractionStatus(
+                id=status_id,
+                preflight_report_id=report.id,
+                page_inventory_id=page_id,
+                page_index=page.page_index,
+                representation_id=(
+                    bundle.representation.id if bundle is not None and page_has_output else None
+                ),
+                extraction_path=decision.extraction_path,
+                status=decision.status,
+                extracted_character_count=extracted_characters_by_page[page.page_index],
+                rotation_applied=page.rotation,
+                warnings=page.warnings,
+                policy_id=extraction_policy.policy_id,
+                policy_reasons=decision.reasons,
+            )
+        )
+    return PdfPageAccountingBundle(
+        preflight_report=report,
+        page_inventory=page_inventory,
+        page_extraction_statuses=tuple(statuses),
+    )
+
+
+def _derived_pdf_record_id(prefix: str, *parts: str) -> str:
+    digest = hashlib.sha256(":".join(parts).encode()).hexdigest()[:HASH_ID_LENGTH]
+    return f"{prefix}_{digest}"
+
+
+def _validate_page_accounting_quality(
+    representation_bundle: DocumentRepresentationBundle,
+    page_accounting: PdfPageAccountingBundle,
+) -> None:
+    has_blocked_page = any(
+        status.status is PdfPageQualityStatus.BLOCKED
+        for status in page_accounting.page_extraction_statuses
+    )
+    if (
+        has_blocked_page
+        and representation_bundle.quality_report.analyzability
+        is not RepresentationAnalyzability.BLOCKED
+    ):
+        raise ValueError(
+            "PDF parser reported an analyzable representation with an unaccounted page."
+        )
+
+
+def _page_accounting_artifact_refs(
+    page_accounting: PdfPageAccountingBundle,
+) -> tuple[ProcessingArtifactRef, ...]:
+    return (
+        ProcessingArtifactRef(
+            kind=ProcessingArtifactKind.PDF_PREFLIGHT_REPORT,
+            artifact_id=page_accounting.preflight_report.id,
+            role="authoritative_pdf_preflight",
+        ),
+        *(
+            ProcessingArtifactRef(
+                kind=ProcessingArtifactKind.PDF_PAGE_INVENTORY,
+                artifact_id=page.id,
+                role=f"pdf_page_{page.page_index}_inventory",
+            )
+            for page in page_accounting.page_inventory
+        ),
+        *(
+            ProcessingArtifactRef(
+                kind=ProcessingArtifactKind.PDF_PAGE_EXTRACTION_STATUS,
+                artifact_id=status.id,
+                role=f"pdf_page_{status.page_index}_terminal_status",
+            )
+            for status in page_accounting.page_extraction_statuses
+        ),
+        *(
+            ProcessingArtifactRef(
+                kind=ProcessingArtifactKind.PDF_TRANSFORMATION_ARTIFACT,
+                artifact_id=artifact.id,
+                role=f"pdf_{artifact.activity_type.value}_transformation",
+                digest=artifact.configuration_digest,
+            )
+            for artifact in page_accounting.transformation_artifacts
+        ),
+    )
+
+
+def _pdf_page_accounting_provenance(
+    *,
+    document: Document,
+    page_accounting: PdfPageAccountingBundle,
+    policy_id: str,
+    occurred_at: datetime,
+) -> ProvenanceActivity:
+    report = page_accounting.preflight_report
+    return ProvenanceActivity(
+        id=_provenance_id(document.id, report.id, policy_id),
+        activity_type=PDF_INGEST_ACTIVITY,
+        agent=report.preflight_tool,
+        input_ids=(document.id, policy_id),
+        output_ids=(
+            report.id,
+            *(page.id for page in page_accounting.page_inventory),
+            *(status.id for status in page_accounting.page_extraction_statuses),
+            *(artifact.id for artifact in page_accounting.transformation_artifacts),
+        ),
+        occurred_at=occurred_at,
+    )
 
 
 def _require_equal(actual: str, expected: str, field: str) -> None:

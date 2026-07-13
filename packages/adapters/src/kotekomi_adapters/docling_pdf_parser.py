@@ -7,10 +7,13 @@ import base64
 import hashlib
 import json
 import os
+import re
 import resource
 import subprocess
 import sys
-from dataclasses import dataclass
+import tempfile
+import unicodedata
+from dataclasses import dataclass, replace
 from functools import cache
 from importlib.metadata import PackageNotFoundError, version
 from io import BytesIO
@@ -77,6 +80,10 @@ class _LayoutItem:
     regions: tuple[_LayoutRegion, ...]
 
 
+class PdfSourcePreflightError(RuntimeError):
+    """The source bytes cannot yield a trustworthy PDF page inventory."""
+
+
 class DoclingPdfParser(PdfDocumentParser):
     """Convert PDF bytes with pinned Docling settings and fail closed on structure."""
 
@@ -89,6 +96,9 @@ class DoclingPdfParser(PdfDocumentParser):
             "enable_ocr": self._config.enable_ocr,
             "enable_table_structure": self._config.enable_table_structure,
             "policy_id": policy_id,
+            "pdfimages_version": _pdfimages_version(),
+            "pdfinfo_version": _pdfinfo_version(),
+            "pdftotext_version": _pdftotext_version(),
         }
         config_digest = hashlib.sha256(
             json.dumps(configuration, sort_keys=True, separators=(",", ":")).encode()
@@ -102,6 +112,20 @@ class DoclingPdfParser(PdfDocumentParser):
 
     def _parse_in_process(self, parse_input: PdfParseInput) -> PdfParseResult:
         parser_version = _docling_version()
+        try:
+            source_preflight = preflight_pdf_source(parse_input.raw_bytes, parser_version)
+        except PdfSourcePreflightError as exc:
+            reason = str(exc)
+            return PdfParseResult(
+                preflight=_blocked_preflight(
+                    parser_version,
+                    (reason,),
+                    _pdf_version(parse_input.raw_bytes),
+                    _pdf_is_encrypted(parse_input.raw_bytes),
+                ),
+                representation_bundle=None,
+                blocking_reasons=(reason,),
+            )
         try:
             (
                 document_stream_type,
@@ -129,7 +153,18 @@ class DoclingPdfParser(PdfDocumentParser):
             blocking_reasons = _conversion_blocking_reasons(conversion)
             if blocking_reasons:
                 return PdfParseResult(
-                    preflight=_blocked_preflight(parser_version, blocking_reasons),
+                    preflight=replace(
+                        source_preflight,
+                        warnings=tuple(
+                            dict.fromkeys(
+                                (
+                                    *source_preflight.warnings,
+                                    "source_access_blocked",
+                                    *blocking_reasons,
+                                )
+                            )
+                        ),
+                    ),
                     representation_bundle=None,
                     blocking_reasons=blocking_reasons,
                 )
@@ -138,11 +173,17 @@ class DoclingPdfParser(PdfDocumentParser):
             page_geometry = _page_geometry_from_document(conversion.document)
             layout_items = _layout_items_from_document(conversion.document, page_geometry)
         except Exception as exc:
-            blocked_result = _source_blocked_result(exc, parser_version)
+            blocked_result = _source_blocked_result(
+                exc,
+                source_preflight,
+            )
             if blocked_result is not None:
                 return blocked_result
             raise RuntimeError(f"Docling conversion failed: {type(exc).__name__}") from exc
-        preflight = _preflight_from_layout(page_geometry, layout_items, parser_version)
+        preflight = _preflight_from_layout(
+            source_preflight,
+            layout_items,
+        )
         bundle = build_docling_representation_bundle(
             parse_input=parse_input,
             page_geometry=page_geometry,
@@ -232,6 +273,10 @@ def _pdf_parse_result_to_payload(result: PdfParseResult) -> dict[str, object]:
             "page_count": result.preflight.page_count,
             "pages": [page.__dict__ for page in result.preflight.pages],
             "warnings": list(result.preflight.warnings),
+            "pdf_version": result.preflight.pdf_version,
+            "permissions": list(result.preflight.permissions),
+            "preflight_tool": result.preflight.preflight_tool,
+            "preflight_tool_version": result.preflight.preflight_tool_version,
         },
         "representation_bundle": (
             result.representation_bundle.model_dump(mode="json")
@@ -266,6 +311,9 @@ def _pdf_parse_result_from_payload(payload: dict[str, object]) -> PdfParseResult
                 crop_bottom=(
                     float(page["crop_bottom"]) if page.get("crop_bottom") is not None else None
                 ),
+                image_coverage=float(page.get("image_coverage", 0.0)),
+                suspicious_glyph_rate=float(page.get("suspicious_glyph_rate", 0.0)),
+                glyph_issue_count=int(page.get("glyph_issue_count", 0)),
             )
             for page in pages_payload
             if isinstance(page, dict)
@@ -275,10 +323,14 @@ def _pdf_parse_result_from_payload(payload: dict[str, object]) -> PdfParseResult
         preflight = PdfPreflight(
             parser_name=str(preflight_payload["parser_name"]),
             parser_version=str(preflight_payload["parser_version"]),
+            preflight_tool=str(preflight_payload["preflight_tool"]),
+            preflight_tool_version=str(preflight_payload["preflight_tool_version"]),
             encrypted=bool(preflight_payload["encrypted"]),
             page_count=int(preflight_payload["page_count"]),
             pages=pages,
             warnings=tuple(preflight_payload.get("warnings", [])),
+            pdf_version=str(preflight_payload.get("pdf_version", "unknown")),
+            permissions=tuple(preflight_payload.get("permissions", [])),
         )
     except (KeyError, TypeError, ValueError) as exc:
         raise RuntimeError("Docling worker preflight is malformed.") from exc
@@ -393,31 +445,15 @@ def _layout_region_from_provenance(
 
 
 def _preflight_from_layout(
-    page_geometry: tuple[_PageGeometry, ...],
+    source_preflight: PdfPreflight,
     layout_items: tuple[_LayoutItem, ...],
-    parser_version: str,
 ) -> PdfPreflight:
-    text_character_counts = {page.page_number: 0 for page in page_geometry}
+    source_pages = {page.page_index for page in source_preflight.pages}
     for item in layout_items:
         for page_number in {region.page_number for region in item.regions}:
-            text_character_counts[page_number] += len(item.text)
-    pages = tuple(
-        PdfPagePreflight(
-            page_index=page.page_number,
-            width=page.width,
-            height=page.height,
-            rotation=0,
-            embedded_text_character_count=text_character_counts[page.page_number],
-        )
-        for page in page_geometry
-    )
-    return PdfPreflight(
-        parser_name="docling",
-        parser_version=parser_version,
-        encrypted=False,
-        page_count=len(pages),
-        pages=pages,
-    )
+            if page_number not in source_pages:
+                raise ValueError("Docling returned content outside the source page inventory.")
+    return source_preflight
 
 
 def _conversion_blocking_reasons(conversion: Any) -> tuple[str, ...]:
@@ -440,7 +476,7 @@ def _conversion_failed(conversion: Any) -> bool:
 
 def _source_blocked_result(
     error: Exception,
-    parser_version: str,
+    source_preflight: PdfPreflight,
 ) -> PdfParseResult | None:
     try:
         from docling.exceptions import DocumentLoadError, OperationNotAllowed, SecurityError
@@ -455,21 +491,266 @@ def _source_blocked_result(
     else:
         return None
     return PdfParseResult(
-        preflight=_blocked_preflight(parser_version, reasons),
+        preflight=replace(
+            source_preflight,
+            warnings=tuple(
+                dict.fromkeys((*source_preflight.warnings, "source_access_blocked", *reasons))
+            ),
+        ),
         representation_bundle=None,
         blocking_reasons=reasons,
     )
 
 
-def _blocked_preflight(parser_version: str, reasons: tuple[str, ...]) -> PdfPreflight:
+def _blocked_preflight(
+    parser_version: str,
+    reasons: tuple[str, ...],
+    pdf_version: str,
+    encrypted: bool,
+) -> PdfPreflight:
     return PdfPreflight(
         parser_name="docling",
         parser_version=parser_version,
-        encrypted=False,
+        encrypted=encrypted,
         page_count=0,
         pages=(),
         warnings=("source_access_blocked", *reasons),
+        pdf_version=pdf_version,
+        preflight_tool="poppler_pdf_preflight",
+        preflight_tool_version=_pdfinfo_version(),
     )
+
+
+def preflight_pdf_source(raw_bytes: bytes, parser_version: str) -> PdfPreflight:
+    with tempfile.NamedTemporaryFile(suffix=".pdf") as temporary_pdf:
+        temporary_pdf.write(raw_bytes)
+        temporary_pdf.flush()
+        completed = subprocess.run(
+            ("pdfinfo", "-f", "1", "-l", "999999", "-box", temporary_pdf.name),
+            check=False,
+            capture_output=True,
+            text=True,
+            env={**os.environ, "LC_ALL": "C"},
+        )
+    if completed.returncode != 0:
+        raise PdfSourcePreflightError(
+            "PDF source preflight could not establish an authoritative page inventory."
+        )
+    output = completed.stdout
+    page_count_match = re.search(r"^Pages:\s+(\d+)\s*$", output, re.MULTILINE)
+    version_match = re.search(r"^PDF version:\s+([^\s]+)\s*$", output, re.MULTILINE)
+    encrypted_match = re.search(r"^Encrypted:\s+(yes|no)(?:\s+\((.*)\))?\s*$", output, re.MULTILINE)
+    if page_count_match is None or version_match is None or encrypted_match is None:
+        raise PdfSourcePreflightError("PDF source preflight returned incomplete document metadata.")
+    page_count = int(page_count_match.group(1))
+    geometries: list[_PageGeometry] = []
+    page_preflights: list[PdfPagePreflight] = []
+    for page_index in range(1, page_count + 1):
+        media_box = _pdfinfo_page_box(output, page_index, "MediaBox")
+        crop_box = _pdfinfo_page_box(output, page_index, "CropBox")
+        rotation_match = re.search(
+            rf"^Page\s+{page_index}\s+rot:\s+(\d+)\s*$",
+            output,
+            re.MULTILINE,
+        )
+        if rotation_match is None:
+            raise PdfSourcePreflightError("PDF source preflight omitted page rotation metadata.")
+        media_left, media_bottom, media_right, media_top = media_box
+        crop_left, crop_bottom, crop_right, crop_top = crop_box
+        width = media_right - media_left
+        height = media_top - media_bottom
+        rotation = int(rotation_match.group(1)) % 360
+        geometries.append(_PageGeometry(page_index, width, height))
+        page_preflights.append(
+            PdfPagePreflight(
+                page_index=page_index,
+                width=width,
+                height=height,
+                rotation=rotation,
+                embedded_text_character_count=0,
+                crop_left=crop_left - media_left,
+                crop_top=media_top - crop_top,
+                crop_right=crop_right - media_left,
+                crop_bottom=media_top - crop_bottom,
+            )
+        )
+    image_coverage = _image_coverage_by_page(raw_bytes, tuple(geometries))
+    text_metrics = _embedded_text_metrics_by_page(raw_bytes, page_count)
+    pages = tuple(
+        replace(
+            page,
+            embedded_text_character_count=text_metrics[page.page_index][0],
+            image_coverage=image_coverage[page.page_index],
+            suspicious_glyph_rate=text_metrics[page.page_index][1],
+            glyph_issue_count=text_metrics[page.page_index][2],
+        )
+        for page in page_preflights
+    )
+    permission_details = encrypted_match.group(2)
+    permissions = (
+        tuple(part.strip() for part in permission_details.split() if part.strip())
+        if permission_details
+        else (("all",) if encrypted_match.group(1) == "no" else ())
+    )
+    return PdfPreflight(
+        parser_name="docling",
+        parser_version=parser_version,
+        encrypted=encrypted_match.group(1) == "yes",
+        page_count=page_count,
+        pages=pages,
+        pdf_version=version_match.group(1),
+        permissions=permissions,
+        preflight_tool="poppler_pdf_preflight",
+        preflight_tool_version=_pdfinfo_version(),
+    )
+
+
+def _pdfinfo_page_box(
+    output: str,
+    page_index: int,
+    box_name: str,
+) -> tuple[float, float, float, float]:
+    match = re.search(
+        rf"^Page\s+{page_index}\s+{box_name}:\s+"
+        r"(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)\s+"
+        r"(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)\s*$",
+        output,
+        re.MULTILINE,
+    )
+    if match is None:
+        raise PdfSourcePreflightError(f"PDF source preflight omitted page {box_name} metadata.")
+    return cast(tuple[float, float, float, float], tuple(map(float, match.groups())))
+
+
+def _embedded_text_metrics_by_page(
+    raw_bytes: bytes,
+    page_count: int,
+) -> dict[int, tuple[int, float, int]]:
+    with tempfile.NamedTemporaryFile(suffix=".pdf") as temporary_pdf:
+        temporary_pdf.write(raw_bytes)
+        temporary_pdf.flush()
+        completed = subprocess.run(
+            ("pdftotext", "-enc", "UTF-8", temporary_pdf.name, "-"),
+            check=False,
+            capture_output=True,
+            text=True,
+            env={**os.environ, "LC_ALL": "C"},
+        )
+    if completed.returncode != 0:
+        raise PdfSourcePreflightError("PDF source preflight could not measure embedded text.")
+    page_texts = completed.stdout.split("\f")
+    if len(page_texts) < page_count:
+        raise PdfSourcePreflightError("PDF source preflight returned incomplete page text metrics.")
+    metrics: dict[int, tuple[int, float, int]] = {}
+    for page_index, page_text in enumerate(page_texts[:page_count], start=1):
+        text = page_text.strip()
+        issue_count = sum(
+            character == "\ufffd"
+            or (unicodedata.category(character) in {"Cc", "Co"} and not character.isspace())
+            for character in text
+        )
+        metrics[page_index] = (
+            len(text),
+            issue_count / len(text) if text else 0.0,
+            issue_count,
+        )
+    return metrics
+
+
+def _pdf_version(raw_bytes: bytes) -> str:
+    match = re.search(rb"%PDF-([0-9]+\.[0-9]+)", raw_bytes[:1024])
+    return match.group(1).decode("ascii") if match is not None else "unknown"
+
+
+def _pdf_is_encrypted(raw_bytes: bytes) -> bool:
+    return re.search(rb"/Encrypt(?:\s|/|<<)", raw_bytes) is not None
+
+
+@cache
+def _pdfimages_version() -> str:
+    completed = subprocess.run(
+        ("pdfimages", "-v"),
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    output = f"{completed.stdout}\n{completed.stderr}"
+    first_line = next(
+        (line.strip() for line in output.splitlines() if line.strip()),
+        "",
+    )
+    if not first_line.startswith("pdfimages version "):
+        raise RuntimeError("pdfimages version is unavailable for processing identity.")
+    return first_line.removeprefix("pdfimages version ")
+
+
+@cache
+def _pdfinfo_version() -> str:
+    completed = subprocess.run(
+        ("pdfinfo", "-v"),
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    output = f"{completed.stdout}\n{completed.stderr}"
+    first_line = next((line.strip() for line in output.splitlines() if line.strip()), "")
+    if not first_line.startswith("pdfinfo version "):
+        raise RuntimeError("pdfinfo version is unavailable for processing identity.")
+    return first_line.removeprefix("pdfinfo version ")
+
+
+@cache
+def _pdftotext_version() -> str:
+    completed = subprocess.run(
+        ("pdftotext", "-v"),
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    output = f"{completed.stdout}\n{completed.stderr}"
+    first_line = next((line.strip() for line in output.splitlines() if line.strip()), "")
+    if not first_line.startswith("pdftotext version "):
+        raise RuntimeError("pdftotext version is unavailable for processing identity.")
+    return first_line.removeprefix("pdftotext version ")
+
+
+def _image_coverage_by_page(
+    raw_bytes: bytes,
+    page_geometry: tuple[_PageGeometry, ...],
+) -> dict[int, float]:
+    coverage = {page.page_number: 0.0 for page in page_geometry}
+    page_area = {page.page_number: page.width * page.height for page in page_geometry}
+    with tempfile.NamedTemporaryFile(suffix=".pdf") as temporary_pdf:
+        temporary_pdf.write(raw_bytes)
+        temporary_pdf.flush()
+        completed = subprocess.run(
+            ("pdfimages", "-list", temporary_pdf.name),
+            check=False,
+            capture_output=True,
+            text=True,
+            env={**os.environ, "LC_ALL": "C"},
+        )
+    if completed.returncode != 0:
+        raise PdfSourcePreflightError("PDF source preflight could not measure page image coverage.")
+    for line in completed.stdout.splitlines():
+        fields = line.split()
+        if len(fields) < 14 or not fields[0].isdigit() or fields[2] != "image":
+            continue
+        page_number = int(fields[0])
+        if page_number not in coverage:
+            continue
+        width_pixels = int(fields[3])
+        height_pixels = int(fields[4])
+        x_dpi = float(fields[12])
+        y_dpi = float(fields[13])
+        if x_dpi <= 0 or y_dpi <= 0:
+            raise RuntimeError("pdfimages returned an invalid image resolution.")
+        image_area = (width_pixels * 72 / x_dpi) * (height_pixels * 72 / y_dpi)
+        coverage[page_number] = min(
+            1.0,
+            coverage[page_number] + image_area / page_area[page_number],
+        )
+    return coverage
 
 
 def build_docling_representation_bundle(
@@ -485,6 +766,9 @@ def build_docling_representation_bundle(
         "enable_ocr": config.enable_ocr,
         "enable_table_structure": config.enable_table_structure,
         "policy_id": parse_input.policy_id,
+        "pdfimages_version": _pdfimages_version(),
+        "pdfinfo_version": _pdfinfo_version(),
+        "pdftotext_version": _pdftotext_version(),
     }
     config_digest = hashlib.sha256(
         json.dumps(configuration, sort_keys=True, separators=(",", ":")).encode()

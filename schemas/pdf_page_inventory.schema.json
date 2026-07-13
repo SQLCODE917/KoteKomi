@@ -1,0 +1,106 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "crop_bottom": {
+      "exclusiveMinimum": 0,
+      "title": "Crop Bottom",
+      "type": "number"
+    },
+    "crop_left": {
+      "minimum": 0,
+      "title": "Crop Left",
+      "type": "number"
+    },
+    "crop_right": {
+      "exclusiveMinimum": 0,
+      "title": "Crop Right",
+      "type": "number"
+    },
+    "crop_top": {
+      "minimum": 0,
+      "title": "Crop Top",
+      "type": "number"
+    },
+    "embedded_text_character_count": {
+      "minimum": 0,
+      "title": "Embedded Text Character Count",
+      "type": "integer"
+    },
+    "glyph_issue_count": {
+      "minimum": 0,
+      "title": "Glyph Issue Count",
+      "type": "integer"
+    },
+    "id": {
+      "pattern": "^ppi_[A-Za-z0-9][A-Za-z0-9_-]*$",
+      "title": "Id",
+      "type": "string"
+    },
+    "image_coverage": {
+      "maximum": 1.0,
+      "minimum": 0.0,
+      "title": "Image Coverage",
+      "type": "number"
+    },
+    "media_height": {
+      "exclusiveMinimum": 0,
+      "title": "Media Height",
+      "type": "number"
+    },
+    "media_width": {
+      "exclusiveMinimum": 0,
+      "title": "Media Width",
+      "type": "number"
+    },
+    "page_index": {
+      "minimum": 1,
+      "title": "Page Index",
+      "type": "integer"
+    },
+    "preflight_report_id": {
+      "pattern": "^pfr_[A-Za-z0-9][A-Za-z0-9_-]*$",
+      "title": "Preflight Report Id",
+      "type": "string"
+    },
+    "rotation": {
+      "maximum": 270,
+      "minimum": 0,
+      "multipleOf": 90,
+      "title": "Rotation",
+      "type": "integer"
+    },
+    "suspicious_glyph_rate": {
+      "maximum": 1.0,
+      "minimum": 0.0,
+      "title": "Suspicious Glyph Rate",
+      "type": "number"
+    },
+    "warnings": {
+      "items": {
+        "minLength": 1,
+        "type": "string"
+      },
+      "title": "Warnings",
+      "type": "array"
+    }
+  },
+  "required": [
+    "id",
+    "preflight_report_id",
+    "page_index",
+    "media_width",
+    "media_height",
+    "crop_left",
+    "crop_top",
+    "crop_right",
+    "crop_bottom",
+    "rotation",
+    "embedded_text_character_count",
+    "image_coverage",
+    "suspicious_glyph_rate",
+    "glyph_issue_count"
+  ],
+  "title": "PdfPageInventory",
+  "type": "object"
+}

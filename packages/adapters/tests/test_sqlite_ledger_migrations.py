@@ -10,7 +10,7 @@ def test_initialize_empty_ledger_creates_required_tables(tmp_path: Path) -> None
     result = SQLiteLedgerInitializer(ledger_path).initialize()
 
     assert result.ledger_path == ledger_path
-    assert result.applied_migrations == ("001", "002", "003", "004", "005", "006")
+    assert result.applied_migrations == ("001", "002", "003", "004", "005", "006", "007")
     with sqlite3.connect(ledger_path) as connection:
         tables = {
             row[0]
@@ -26,13 +26,13 @@ def test_initialize_existing_ledger_is_idempotent(tmp_path: Path) -> None:
     first = initializer.initialize()
     second = initializer.initialize()
 
-    assert first.applied_migrations == ("001", "002", "003", "004", "005", "006")
+    assert first.applied_migrations == ("001", "002", "003", "004", "005", "006", "007")
     assert second.applied_migrations == ()
     with sqlite3.connect(ledger_path) as connection:
         row = connection.execute("SELECT count(*) FROM ledger_migrations").fetchone()
     assert row is not None
     migration_count = row[0]
-    assert migration_count == 6
+    assert migration_count == 7
 
 
 def test_analysis_coverage_scope_queries_use_targeted_indexes(tmp_path: Path) -> None:
@@ -83,3 +83,21 @@ def test_analysis_coverage_scope_queries_use_targeted_indexes(tmp_path: Path) ->
 
     assert all(any("SEARCH" in detail for detail in plan) for plan in plans)
     assert all(not any(detail.startswith("SCAN ") for detail in plan) for plan in plans)
+
+
+def test_pdf_preflight_lookup_uses_the_task_index(tmp_path: Path) -> None:
+    ledger_path = tmp_path / "kotekomi.db"
+    SQLiteLedgerInitializer(ledger_path).initialize()
+
+    with sqlite3.connect(ledger_path) as connection:
+        plan = tuple(
+            str(row[3])
+            for row in connection.execute(
+                "EXPLAIN QUERY PLAN SELECT payload_json FROM pdf_preflight_reports "
+                "WHERE processing_task_fingerprint_id = ? ORDER BY id",
+                ("ptf_query_plan",),
+            )
+        )
+
+    assert any("SEARCH" in detail for detail in plan)
+    assert not any(detail.startswith("SCAN ") for detail in plan)

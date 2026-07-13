@@ -1,0 +1,121 @@
+{
+  "$defs": {
+    "PdfExtractionPath": {
+      "enum": [
+        "embedded",
+        "ocr",
+        "mixed",
+        "inaccessible"
+      ],
+      "title": "PdfExtractionPath",
+      "type": "string"
+    },
+    "PdfPageQualityStatus": {
+      "enum": [
+        "acceptable",
+        "degraded",
+        "blocked"
+      ],
+      "title": "PdfPageQualityStatus",
+      "type": "string"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "extracted_character_count": {
+      "minimum": 0,
+      "title": "Extracted Character Count",
+      "type": "integer"
+    },
+    "extraction_path": {
+      "$ref": "#/$defs/PdfExtractionPath"
+    },
+    "id": {
+      "pattern": "^pes_[A-Za-z0-9][A-Za-z0-9_-]*$",
+      "title": "Id",
+      "type": "string"
+    },
+    "page_index": {
+      "minimum": 1,
+      "title": "Page Index",
+      "type": "integer"
+    },
+    "page_inventory_id": {
+      "pattern": "^ppi_[A-Za-z0-9][A-Za-z0-9_-]*$",
+      "title": "Page Inventory Id",
+      "type": "string"
+    },
+    "policy_id": {
+      "minLength": 1,
+      "title": "Policy Id",
+      "type": "string"
+    },
+    "policy_reasons": {
+      "items": {
+        "minLength": 1,
+        "type": "string"
+      },
+      "title": "Policy Reasons",
+      "type": "array"
+    },
+    "preflight_report_id": {
+      "pattern": "^pfr_[A-Za-z0-9][A-Za-z0-9_-]*$",
+      "title": "Preflight Report Id",
+      "type": "string"
+    },
+    "representation_id": {
+      "anyOf": [
+        {
+          "pattern": "^rep_[A-Za-z0-9][A-Za-z0-9_-]*$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Representation Id"
+    },
+    "rotation_applied": {
+      "maximum": 270,
+      "minimum": 0,
+      "multipleOf": 90,
+      "title": "Rotation Applied",
+      "type": "integer"
+    },
+    "status": {
+      "$ref": "#/$defs/PdfPageQualityStatus"
+    },
+    "transformation_artifact_ids": {
+      "items": {
+        "pattern": "^pta_[A-Za-z0-9][A-Za-z0-9_-]*$",
+        "type": "string"
+      },
+      "title": "Transformation Artifact Ids",
+      "type": "array"
+    },
+    "warnings": {
+      "items": {
+        "minLength": 1,
+        "type": "string"
+      },
+      "title": "Warnings",
+      "type": "array"
+    }
+  },
+  "required": [
+    "id",
+    "preflight_report_id",
+    "page_inventory_id",
+    "page_index",
+    "extraction_path",
+    "status",
+    "extracted_character_count",
+    "rotation_applied",
+    "policy_id",
+    "policy_reasons"
+  ],
+  "title": "PdfPageExtractionStatus",
+  "type": "object"
+}

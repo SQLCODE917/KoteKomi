@@ -1,6 +1,7 @@
 import hashlib
 import sys
 from datetime import UTC, datetime
+from pathlib import Path
 
 import pytest
 from kotekomi_adapters.docling_pdf_parser import DoclingPdfParser, DoclingPdfParserConfig
@@ -8,6 +9,9 @@ from kotekomi_application import PdfParseInput
 from kotekomi_domain import Document
 
 NOW = datetime(2026, 7, 11, tzinfo=UTC)
+FIXTURE_PDF = (
+    Path(__file__).parent / "fixtures/pdf/2025-community-health-improvement-plan-press-release.pdf"
+)
 
 
 def test_adapter_package_does_not_eagerly_import_docling() -> None:
@@ -18,6 +22,23 @@ def test_adapter_package_does_not_eagerly_import_docling() -> None:
     assert "docling.document_converter" not in sys.modules
 
 
+def test_source_preflight_establishes_the_page_denominator_before_docling() -> None:
+    from kotekomi_adapters import docling_pdf_parser
+
+    mixed_pdf = FIXTURE_PDF.parent / "mixed/mixed_born_digital_scan_v1.pdf"
+    preflight = docling_pdf_parser.preflight_pdf_source(mixed_pdf.read_bytes(), "fixture")
+
+    assert preflight.page_count == 3
+    assert tuple(page.page_index for page in preflight.pages) == (1, 2, 3)
+    assert tuple(page.image_coverage for page in preflight.pages) == (
+        0.0,
+        1.0,
+        0.0011883541295306002,
+    )
+    assert preflight.preflight_tool == "poppler_pdf_preflight"
+    assert preflight.preflight_tool_version
+
+
 def test_docling_parser_raises_when_docling_load_fails(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -26,7 +47,7 @@ def test_docling_parser_raises_when_docling_load_fails(
     def fail_to_load() -> tuple[object, object, object, object, object]:
         raise RuntimeError("simulated Docling startup failure")
 
-    raw_pdf = b"%PDF-1.7\nfixture"
+    raw_pdf = FIXTURE_PDF.read_bytes()
     document = Document(
         id="doc_pdf_fixture",
         source_id="src_pdf_fixture",
@@ -69,7 +90,7 @@ def test_docling_parser_returns_a_typed_blocked_result_for_source_conditions(
     def raise_source_condition() -> tuple[object, object, object, object, object]:
         raise getattr(exceptions, exception_name)("fixture source condition")
 
-    raw_pdf = b"%PDF-1.7\nfixture"
+    raw_pdf = FIXTURE_PDF.read_bytes()
     document = Document(
         id="doc_pdf_fixture",
         source_id="src_pdf_fixture",
