@@ -1,16 +1,32 @@
 {
+  "$defs": {
+    "AnalysisRunState": {
+      "enum": [
+        "running",
+        "complete",
+        "incomplete",
+        "failed",
+        "cancelled"
+      ],
+      "title": "AnalysisRunState",
+      "type": "string"
+    }
+  },
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
   "properties": {
-    "analysis_plan_id": {
-      "pattern": "^anp_[A-Za-z0-9][A-Za-z0-9_-]*$",
-      "title": "Analysis Plan Id",
-      "type": "string"
-    },
-    "coverage_policy_digest": {
-      "pattern": "^[a-f0-9]{64}$",
-      "title": "Coverage Policy Digest",
-      "type": "string"
+    "completed_at": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Completed At"
     },
     "coverage_policy_id": {
       "minLength": 1,
@@ -22,9 +38,9 @@
       "title": "Document Id",
       "type": "string"
     },
-    "frozen_plan_digest": {
-      "pattern": "^[a-f0-9]{64}$",
-      "title": "Frozen Plan Digest",
+    "frozen_analysis_plan_id": {
+      "pattern": "^anp_[A-Za-z0-9][A-Za-z0-9_-]*$",
+      "title": "Frozen Analysis Plan Id",
       "type": "string"
     },
     "id": {
@@ -37,28 +53,24 @@
       "title": "Representation Id",
       "type": "string"
     },
-    "scope_digest": {
-      "pattern": "^[a-f0-9]{64}$",
-      "title": "Scope Digest",
-      "type": "string"
-    },
     "started_at": {
       "format": "date-time",
       "title": "Started At",
       "type": "string"
+    },
+    "state": {
+      "$ref": "#/$defs/AnalysisRunState"
     }
   },
   "required": [
     "id",
     "document_id",
     "representation_id",
-    "analysis_plan_id",
-    "frozen_plan_digest",
+    "frozen_analysis_plan_id",
     "coverage_policy_id",
-    "coverage_policy_digest",
-    "scope_digest",
+    "state",
     "started_at"
   ],
-  "title": "AnalysisRunArtifact",
+  "title": "AnalysisRun",
   "type": "object"
 }

@@ -1,8 +1,8 @@
 """Run-scoped analysis coverage and restart-safe reconciliation.
 
 An ``AnalysisPlanArtifact`` names deterministic work.  It is not an execution
-identity.  ``AnalysisRunArtifact`` freezes one invocation's selected manifests
-and tasks, while ``AnalysisItemAttempt`` appends its own model-run history.
+identity.  ``AnalysisRun`` freezes one invocation's planned scope, while
+``AnalysisItemAttempt`` appends references to existing execution records.
 Coverage therefore never discovers membership by scanning the representation or
 the corpus.
 """
@@ -19,10 +19,9 @@ from typing import Protocol, cast
 
 from kotekomi_domain import (
     AnalysisItemAttempt,
-    AnalysisItemManifestSelection,
-    AnalysisItemTaskSelection,
     AnalysisPlanArtifact,
-    AnalysisRunArtifact,
+    AnalysisRun,
+    AnalysisRunState,
     AnalysisUnitArtifact,
     ContextManifestArtifact,
     DocumentRepresentationBundle,
@@ -46,7 +45,6 @@ from kotekomi_application.context_planning import (
 )
 
 HASH_ID_LENGTH = 24
-PRIMARY_SELECTION_ROLE = "primary"
 PRIMARY_EXECUTION_ROLE = "primary"
 
 
@@ -75,21 +73,13 @@ class AnalysisCoverageLedger(ContextPlanningLedger, Protocol):
     def commit_analysis_run_scope(
         self,
         *,
-        analysis_run: AnalysisRunArtifact,
+        analysis_run: AnalysisRun,
         planned_items: tuple[PlannedAnalysisItem, ...],
-        manifest_selections: tuple[AnalysisItemManifestSelection, ...],
-        task_selections: tuple[AnalysisItemTaskSelection, ...],
     ) -> None: ...
-    def get_analysis_run(self, record_id: str) -> AnalysisRunArtifact | None: ...
+    def get_analysis_run(self, record_id: str) -> AnalysisRun | None: ...
     def list_planned_analysis_items(
         self, analysis_run_id: str
     ) -> tuple[PlannedAnalysisItem, ...]: ...
-    def list_analysis_item_manifest_selections(
-        self, item_ids: tuple[str, ...]
-    ) -> tuple[AnalysisItemManifestSelection, ...]: ...
-    def list_analysis_item_task_selections(
-        self, item_ids: tuple[str, ...]
-    ) -> tuple[AnalysisItemTaskSelection, ...]: ...
     def list_analysis_item_attempts(
         self, item_ids: tuple[str, ...]
     ) -> tuple[AnalysisItemAttempt, ...]: ...
@@ -99,6 +89,9 @@ class AnalysisCoverageLedger(ContextPlanningLedger, Protocol):
     ) -> tuple[ContextManifestArtifact, ...]: ...
     def get_extraction_tasks_by_ids(
         self, record_ids: tuple[str, ...]
+    ) -> tuple[ExtractionTask, ...]: ...
+    def get_extraction_tasks_by_fingerprints(
+        self, fingerprints: tuple[str, ...]
     ) -> tuple[ExtractionTask, ...]: ...
     def get_model_runs_by_ids(self, record_ids: tuple[str, ...]) -> tuple[ModelRun, ...]: ...
     def get_processing_attempts_by_ids(
@@ -124,8 +117,7 @@ class AnalysisRunItemInput:
     analysis_unit_id: str
     task_type: str
     input_fingerprint: str
-    context_manifest_id: str | None
-    extraction_task_id: str | None
+    expected_manifest_id: str | None
     required: bool = True
     dependencies: tuple[str, ...] = ()
 
@@ -135,15 +127,8 @@ class AnalysisRunInput:
     document_id: str
     frozen_plan_id: str
     coverage_policy_id: str
-    coverage_policy_digest: str
     started_at: datetime
     items: tuple[AnalysisRunItemInput, ...]
-
-
-@dataclass(frozen=True)
-class AnalysisRunStart:
-    analysis_run: AnalysisRunArtifact
-    planned_items: tuple[PlannedAnalysisItem, ...]
 
 
 @dataclass(frozen=True)
@@ -161,7 +146,7 @@ class AnalysisUnitCoverage:
 
 
 @dataclass(frozen=True)
-class DocumentCoverageReport:
+class CoverageReport:
     analysis_run_id: str
     frozen_plan_id: str
     representation_id: str
@@ -170,7 +155,6 @@ class DocumentCoverageReport:
     represented_page_numbers: tuple[int, ...]
     unit_coverages: tuple[AnalysisUnitCoverage, ...]
     orphan_model_run_ids: tuple[str, ...]
-    scope_digest: str
     report_digest: str
 
     @property
@@ -244,8 +228,8 @@ def load_frozen_analysis_plan(
 def start_analysis_run(
     run_input: AnalysisRunInput,
     ledger_repository: AnalysisCoverageLedger,
-) -> AnalysisRunStart:
-    """Freeze an invocation's selected context/task membership atomically."""
+) -> AnalysisRun:
+    """Freeze one authoritative run and its complete planned-item scope."""
     frozen = load_frozen_analysis_plan(run_input.frozen_plan_id, ledger_repository)
     bundle = ledger_repository.get_document_representation_bundle(frozen.representation_id)
     if bundle is None or bundle.representation.document_id != run_input.document_id:
@@ -262,30 +246,24 @@ def start_analysis_run(
         not item.task_type or not _is_digest(item.input_fingerprint) for item in run_input.items
     ):
         raise ValueError("AnalysisRun item task types and input fingerprints are required.")
-    if not run_input.coverage_policy_id or not _is_digest(run_input.coverage_policy_digest):
-        raise ValueError("AnalysisRun coverage policy identity is invalid.")
+    if not run_input.coverage_policy_id:
+        raise ValueError("AnalysisRun coverage policy identity is required.")
 
     manifest_ids = tuple(
-        sorted({item.context_manifest_id for item in run_input.items if item.context_manifest_id})
+        sorted({item.expected_manifest_id for item in run_input.items if item.expected_manifest_id})
     )
     manifests = {
         artifact.id: artifact
         for artifact in ledger_repository.get_context_manifests_by_ids(manifest_ids)
     }
-    task_ids = tuple(
-        sorted({item.extraction_task_id for item in run_input.items if item.extraction_task_id})
-    )
-    tasks = {task.id: task for task in ledger_repository.get_extraction_tasks_by_ids(task_ids)}
     split_child_ids: set[str] = set()
     for item in run_input.items:
         unit = load_analysis_unit(item.analysis_unit_id, ledger_repository)
         if unit.representation_id != frozen.representation_id:
             raise ValueError("AnalysisRun item is outside the frozen representation.")
-        if item.context_manifest_id is None:
-            if item.extraction_task_id is not None:
-                raise ValueError("AnalysisRun task selection requires a manifest selection.")
+        if item.expected_manifest_id is None:
             continue
-        artifact = manifests.get(item.context_manifest_id)
+        artifact = manifests.get(item.expected_manifest_id)
         if artifact is None:
             raise ValueError("AnalysisRun selected ContextManifest is not persisted.")
         manifest = load_context_manifest(artifact.id, ledger_repository)
@@ -297,35 +275,23 @@ def start_analysis_run(
             raise ValueError("AnalysisRun selected ContextManifest binding is invalid.")
         if manifest.status is ContextManifestStatus.SPLIT:
             split_child_ids.update(manifest.child_analysis_unit_ids)
-        if item.extraction_task_id is None:
-            continue
-        task = tasks.get(item.extraction_task_id)
-        if task is None:
-            raise ValueError("AnalysisRun selected ExtractionTask is not persisted.")
-        if (
-            task.context_manifest_id != manifest.id
-            or task.context_manifest_digest != manifest.manifest_digest
-            or task.task_type != item.task_type
-            or task.task_fingerprint != item.input_fingerprint
-        ):
-            raise ValueError("AnalysisRun selected ExtractionTask binding is invalid.")
     if input_ids - frozen_ids - split_child_ids:
         raise ValueError("AnalysisRun includes an unplanned non-split AnalysisUnit.")
 
     run_id = f"arn_{uuid.uuid4().hex}"
     sorted_inputs = tuple(sorted(run_input.items, key=lambda item: item.analysis_unit_id))
     item_by_unit = {
-        item.analysis_unit_id: PlannedAnalysisItem(
-            id=_scoped_id("pai", run_id=run_id, analysis_unit_id=item.analysis_unit_id),
+        source.analysis_unit_id: PlannedAnalysisItem(
+            id=_scoped_id("pai", run_id=run_id, analysis_unit_id=source.analysis_unit_id),
             analysis_run_id=run_id,
-            analysis_unit_id=item.analysis_unit_id,
-            task_type=item.task_type,
-            required=item.required,
-            ordinal=index,
+            analysis_unit_id=source.analysis_unit_id,
+            task_type=source.task_type,
+            required=source.required,
             dependencies=(),
-            input_fingerprint=item.input_fingerprint,
+            expected_manifest_id=source.expected_manifest_id,
+            input_fingerprint=source.input_fingerprint,
         )
-        for index, item in enumerate(sorted_inputs)
+        for source in sorted_inputs
     }
     planned_items = tuple(item_by_unit[item.analysis_unit_id] for item in sorted_inputs)
     _validate_dependencies(sorted_inputs, item_by_unit)
@@ -339,62 +305,21 @@ def start_analysis_run(
         )
         for item, source in zip(planned_items, sorted_inputs, strict=True)
     )
-    item_by_unit = {item.analysis_unit_id: item for item in planned_items}
-    manifest_selections = tuple(
-        AnalysisItemManifestSelection(
-            id=_scoped_id(
-                "ams",
-                item_id=item_by_unit[source.analysis_unit_id].id,
-                manifest_id=source.context_manifest_id,
-                role=PRIMARY_SELECTION_ROLE,
-            ),
-            planned_item_id=item_by_unit[source.analysis_unit_id].id,
-            context_manifest_id=source.context_manifest_id,
-            selection_role=PRIMARY_SELECTION_ROLE,
-        )
-        for source in sorted_inputs
-        if source.context_manifest_id is not None
-    )
-    task_selections = tuple(
-        AnalysisItemTaskSelection(
-            id=_scoped_id(
-                "ats",
-                item_id=item_by_unit[source.analysis_unit_id].id,
-                task_id=source.extraction_task_id,
-                role=PRIMARY_SELECTION_ROLE,
-            ),
-            planned_item_id=item_by_unit[source.analysis_unit_id].id,
-            extraction_task_id=source.extraction_task_id,
-            selection_role=PRIMARY_SELECTION_ROLE,
-        )
-        for source in sorted_inputs
-        if source.extraction_task_id is not None
-    )
-    scope_payload = _scope_payload(
-        document_id=run_input.document_id,
-        frozen=frozen,
-        coverage_policy_id=run_input.coverage_policy_id,
-        coverage_policy_digest=run_input.coverage_policy_digest,
-        items=sorted_inputs,
-    )
-    run = AnalysisRunArtifact(
+    run = AnalysisRun(
         id=run_id,
         document_id=run_input.document_id,
         representation_id=frozen.representation_id,
-        analysis_plan_id=frozen.id,
-        frozen_plan_digest=frozen.plan_digest,
+        frozen_analysis_plan_id=frozen.id,
         coverage_policy_id=run_input.coverage_policy_id,
-        coverage_policy_digest=run_input.coverage_policy_digest,
-        scope_digest=_digest(scope_payload),
+        state=AnalysisRunState.RUNNING,
         started_at=run_input.started_at,
+        completed_at=None,
     )
     ledger_repository.commit_analysis_run_scope(
         analysis_run=run,
         planned_items=planned_items,
-        manifest_selections=manifest_selections,
-        task_selections=task_selections,
     )
-    return AnalysisRunStart(run, planned_items)
+    return run
 
 
 def record_analysis_item_attempt(
@@ -411,21 +336,16 @@ def record_analysis_item_attempt(
     )
     if item is None:
         raise ValueError("AnalysisUnit is not in the AnalysisRun scope.")
-    task_selections = tuple(
-        selection
-        for selection in ledger_repository.list_analysis_item_task_selections((item.id,))
-        if selection.selection_role == PRIMARY_SELECTION_ROLE
-    )
-    if len(task_selections) != 1:
-        raise ValueError(
-            "AnalysisItem requires exactly one selected extraction task before attempts."
-        )
     model_runs = ledger_repository.get_model_runs_by_ids((model_run_id,))
-    if (
-        len(model_runs) != 1
-        or model_runs[0].extraction_task_id != task_selections[0].extraction_task_id
+    if len(model_runs) != 1 or model_runs[0].task_fingerprint != item.input_fingerprint:
+        raise ValueError("ModelRun does not match the planned item input fingerprint.")
+    tasks = ledger_repository.get_extraction_tasks_by_ids((model_runs[0].extraction_task_id,))
+    if len(tasks) != 1 or tasks[0].task_type != item.task_type:
+        raise ValueError("ModelRun does not match the planned item task type.")
+    if item.expected_manifest_id is not None and (
+        tasks[0].context_manifest_id != item.expected_manifest_id
     ):
-        raise ValueError("ModelRun does not belong to the AnalysisRun selected task.")
+        raise ValueError("ModelRun does not match the planned item expected manifest.")
     attempt = AnalysisItemAttempt(
         id=_scoped_id(
             "aia",
@@ -444,16 +364,13 @@ def record_analysis_item_attempt(
 def build_coverage_report(
     analysis_run_id: str,
     ledger_repository: AnalysisCoverageLedger,
-) -> DocumentCoverageReport:
+) -> CoverageReport:
     """Reconcile one immutable run scope without corpus-wide discovery."""
     run = ledger_repository.get_analysis_run(analysis_run_id)
     if run is None:
         raise ValueError(f"AnalysisRun is not persisted: {analysis_run_id}")
-    frozen = load_frozen_analysis_plan(run.analysis_plan_id, ledger_repository)
-    if (
-        frozen.plan_digest != run.frozen_plan_digest
-        or frozen.representation_id != run.representation_id
-    ):
+    frozen = load_frozen_analysis_plan(run.frozen_analysis_plan_id, ledger_repository)
+    if frozen.representation_id != run.representation_id:
         raise ValueError("AnalysisRun frozen plan binding is corrupted.")
     bundle = ledger_repository.get_document_representation_bundle(run.representation_id)
     if bundle is None or bundle.representation.document_id != run.document_id:
@@ -466,36 +383,21 @@ def build_coverage_report(
     ):
         raise ValueError("AnalysisRun planned-item scope is corrupted.")
     item_ids = tuple(item.id for item in items)
-    manifests_by_item = _manifest_selections_by_item(
-        ledger_repository.list_analysis_item_manifest_selections(item_ids)
-    )
-    tasks_by_item = _task_selections_by_item(
-        ledger_repository.list_analysis_item_task_selections(item_ids)
-    )
     attempts_by_item = _attempts_by_item(ledger_repository.list_analysis_item_attempts(item_ids))
     manifest_ids = tuple(
-        sorted(
-            {
-                selection.context_manifest_id
-                for selections in manifests_by_item.values()
-                for selection in selections
-            }
-        )
-    )
-    task_ids = tuple(
-        sorted(
-            {
-                selection.extraction_task_id
-                for selections in tasks_by_item.values()
-                for selection in selections
-            }
-        )
+        sorted({item.expected_manifest_id for item in items if item.expected_manifest_id})
     )
     manifests = {
         artifact.id: artifact
         for artifact in ledger_repository.get_context_manifests_by_ids(manifest_ids)
     }
-    tasks = {task.id: task for task in ledger_repository.get_extraction_tasks_by_ids(task_ids)}
+    task_fingerprints = tuple(sorted({item.input_fingerprint for item in items}))
+    tasks_by_fingerprint: dict[str, tuple[ExtractionTask, ...]] = {}
+    for task in ledger_repository.get_extraction_tasks_by_fingerprints(task_fingerprints):
+        tasks_by_fingerprint[task.task_fingerprint] = (
+            *tasks_by_fingerprint.get(task.task_fingerprint, ()),
+            task,
+        )
     run_ids = tuple(
         sorted(
             {
@@ -519,8 +421,7 @@ def build_coverage_report(
             return coverages[item.id]
         if item.id in visiting:
             raise ValueError("AnalysisRun planned-item dependency graph contains a cycle.")
-        selections = _primary_manifest_selections(manifests_by_item.get(item.id, ()))
-        if len(selections) == 0:
+        if item.expected_manifest_id is None:
             return _store(
                 item,
                 AnalysisUnitCoverageStatus.UNREPORTED,
@@ -530,25 +431,13 @@ def build_coverage_report(
                 (),
                 "missing_manifest",
             )
-        if len(selections) != 1:
-            failed = True
-            return _store(
-                item,
-                AnalysisUnitCoverageStatus.UNREPORTED,
-                None,
-                None,
-                None,
-                (),
-                "ambiguous_manifest",
-            )
-        selection = selections[0]
-        artifact = manifests.get(selection.context_manifest_id)
+        artifact = manifests.get(item.expected_manifest_id)
         if artifact is None:
             failed = True
             return _store(
                 item,
                 AnalysisUnitCoverageStatus.UNREPORTED,
-                selection.context_manifest_id,
+                item.expected_manifest_id,
                 None,
                 None,
                 (),
@@ -645,8 +534,8 @@ def build_coverage_report(
                 None if resolved else "unresolved_split_child",
                 manifest.child_analysis_unit_ids,
             )
-        task_selection = _primary_task_selections(tasks_by_item.get(item.id, ()))
-        if len(task_selection) == 0:
+        matching_tasks = tasks_by_fingerprint.get(item.input_fingerprint, ())
+        if len(matching_tasks) == 0:
             return _store(
                 item,
                 AnalysisUnitCoverageStatus.UNREPORTED,
@@ -656,7 +545,7 @@ def build_coverage_report(
                 (),
                 "missing_extraction_task",
             )
-        if len(task_selection) != 1:
+        if len(matching_tasks) != 1:
             failed = True
             return _store(
                 item,
@@ -667,18 +556,7 @@ def build_coverage_report(
                 (),
                 "ambiguous_extraction_task",
             )
-        task = tasks.get(task_selection[0].extraction_task_id)
-        if task is None:
-            failed = True
-            return _store(
-                item,
-                AnalysisUnitCoverageStatus.UNREPORTED,
-                manifest.id,
-                task_selection[0].extraction_task_id,
-                None,
-                (),
-                "selected_extraction_task_missing",
-            )
+        task = matching_tasks[0]
         if (
             task.context_manifest_id != manifest.id
             or task.context_manifest_digest != manifest.manifest_digest
@@ -798,7 +676,7 @@ def build_coverage_report(
         coverages[item.id] = coverage
         return coverage
 
-    for item in sorted(items, key=lambda candidate: (candidate.ordinal, candidate.id)):
+    for item in sorted(items, key=lambda candidate: candidate.id):
         reconcile(item)
     all_coverages = tuple(sorted(coverages.values(), key=lambda coverage: coverage.planned_item_id))
     represented_pages = _represented_pages(bundle, items, ledger_repository)
@@ -814,25 +692,23 @@ def build_coverage_report(
     )
     report_payload = {
         "analysis_run_id": run.id,
-        "frozen_plan_id": run.analysis_plan_id,
+        "frozen_plan_id": run.frozen_analysis_plan_id,
         "representation_id": run.representation_id,
         "state": state.value,
         "total_pages": total_pages,
         "represented_page_numbers": represented_pages,
         "unit_coverages": [_coverage_payload(coverage) for coverage in all_coverages],
         "orphan_model_run_ids": sorted(orphan_model_run_ids),
-        "scope_digest": run.scope_digest,
     }
-    return DocumentCoverageReport(
+    return CoverageReport(
         run.id,
-        run.analysis_plan_id,
+        run.frozen_analysis_plan_id,
         run.representation_id,
         state,
         total_pages,
         represented_pages,
         all_coverages,
         tuple(sorted(orphan_model_run_ids)),
-        run.scope_digest,
         _digest(report_payload),
     )
 
@@ -848,24 +724,6 @@ _TERMINAL_SUCCESS = frozenset(
 )
 
 
-def _manifest_selections_by_item(
-    records: tuple[AnalysisItemManifestSelection, ...],
-) -> dict[str, tuple[AnalysisItemManifestSelection, ...]]:
-    grouped: dict[str, tuple[AnalysisItemManifestSelection, ...]] = {}
-    for record in records:
-        grouped[record.planned_item_id] = (*grouped.get(record.planned_item_id, ()), record)
-    return grouped
-
-
-def _task_selections_by_item(
-    records: tuple[AnalysisItemTaskSelection, ...],
-) -> dict[str, tuple[AnalysisItemTaskSelection, ...]]:
-    grouped: dict[str, tuple[AnalysisItemTaskSelection, ...]] = {}
-    for record in records:
-        grouped[record.planned_item_id] = (*grouped.get(record.planned_item_id, ()), record)
-    return grouped
-
-
 def _attempts_by_item(
     records: tuple[AnalysisItemAttempt, ...],
 ) -> dict[str, tuple[AnalysisItemAttempt, ...]]:
@@ -873,18 +731,6 @@ def _attempts_by_item(
     for record in records:
         grouped[record.planned_item_id] = (*grouped.get(record.planned_item_id, ()), record)
     return grouped
-
-
-def _primary_manifest_selections(
-    records: tuple[AnalysisItemManifestSelection, ...],
-) -> tuple[AnalysisItemManifestSelection, ...]:
-    return tuple(record for record in records if record.selection_role == PRIMARY_SELECTION_ROLE)
-
-
-def _primary_task_selections(
-    records: tuple[AnalysisItemTaskSelection, ...],
-) -> tuple[AnalysisItemTaskSelection, ...]:
-    return tuple(record for record in records if record.selection_role == PRIMARY_SELECTION_ROLE)
 
 
 def _represented_pages(
@@ -918,36 +764,6 @@ def _validate_dependencies(
             raise ValueError("AnalysisRun item dependency is outside the frozen scope.")
         if item.analysis_unit_id in item.dependencies:
             raise ValueError("AnalysisRun item cannot depend on itself.")
-
-
-def _scope_payload(
-    *,
-    document_id: str,
-    frozen: FrozenAnalysisPlan,
-    coverage_policy_id: str,
-    coverage_policy_digest: str,
-    items: tuple[AnalysisRunItemInput, ...],
-) -> dict[str, object]:
-    return {
-        "document_id": document_id,
-        "representation_id": frozen.representation_id,
-        "analysis_plan_id": frozen.id,
-        "frozen_plan_digest": frozen.plan_digest,
-        "coverage_policy_id": coverage_policy_id,
-        "coverage_policy_digest": coverage_policy_digest,
-        "items": [
-            {
-                "analysis_unit_id": item.analysis_unit_id,
-                "task_type": item.task_type,
-                "input_fingerprint": item.input_fingerprint,
-                "context_manifest_id": item.context_manifest_id,
-                "extraction_task_id": item.extraction_task_id,
-                "required": item.required,
-                "dependencies": list(item.dependencies),
-            }
-            for item in items
-        ],
-    }
 
 
 def _coverage_payload(coverage: AnalysisUnitCoverage) -> dict[str, object]:

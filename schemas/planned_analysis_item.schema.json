@@ -20,6 +20,19 @@
       "title": "Dependencies",
       "type": "array"
     },
+    "expected_manifest_id": {
+      "anyOf": [
+        {
+          "pattern": "^ctx_[A-Za-z0-9][A-Za-z0-9_-]*$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Expected Manifest Id"
+    },
     "id": {
       "pattern": "^pai_[A-Za-z0-9][A-Za-z0-9_-]*$",
       "title": "Id",
@@ -29,11 +42,6 @@
       "pattern": "^[a-f0-9]{64}$",
       "title": "Input Fingerprint",
       "type": "string"
-    },
-    "ordinal": {
-      "minimum": 0,
-      "title": "Ordinal",
-      "type": "integer"
     },
     "required": {
       "title": "Required",
@@ -51,7 +59,6 @@
     "analysis_unit_id",
     "task_type",
     "required",
-    "ordinal",
     "input_fingerprint"
   ],
   "title": "PlannedAnalysisItem",

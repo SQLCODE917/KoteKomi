@@ -51,8 +51,6 @@ AnalysisUnitId = Annotated[str, Field(pattern=r"^anu_[A-Za-z0-9][A-Za-z0-9_-]*$"
 AnalysisPlanId = Annotated[str, Field(pattern=r"^anp_[A-Za-z0-9][A-Za-z0-9_-]*$")]
 AnalysisRunId = Annotated[str, Field(pattern=r"^arn_[A-Za-z0-9][A-Za-z0-9_-]*$")]
 PlannedAnalysisItemId = Annotated[str, Field(pattern=r"^pai_[A-Za-z0-9][A-Za-z0-9_-]*$")]
-AnalysisItemManifestSelectionId = Annotated[str, Field(pattern=r"^ams_[A-Za-z0-9][A-Za-z0-9_-]*$")]
-AnalysisItemTaskSelectionId = Annotated[str, Field(pattern=r"^ats_[A-Za-z0-9][A-Za-z0-9_-]*$")]
 AnalysisItemAttemptId = Annotated[str, Field(pattern=r"^aia_[A-Za-z0-9][A-Za-z0-9_-]*$")]
 ExtractionTaskId = Annotated[str, Field(pattern=r"^ext_[A-Za-z0-9][A-Za-z0-9_-]*$")]
 ModelRunId = Annotated[str, Field(pattern=r"^mrn_[A-Za-z0-9][A-Za-z0-9_-]*$")]
@@ -1006,16 +1004,33 @@ class AnalysisPlanArtifact(DomainModel):
     created_at: datetime | None = None
 
 
-class AnalysisRunArtifact(DomainModel):
+class AnalysisRunState(StrEnum):
+    RUNNING = "running"
+    COMPLETE = "complete"
+    INCOMPLETE = "incomplete"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+
+
+class AnalysisRun(DomainModel):
     id: AnalysisRunId
     document_id: DocumentId
     representation_id: DocumentRepresentationId
-    analysis_plan_id: AnalysisPlanId
-    frozen_plan_digest: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
+    frozen_analysis_plan_id: AnalysisPlanId
     coverage_policy_id: NonEmptyStr
-    coverage_policy_digest: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
-    scope_digest: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
+    state: AnalysisRunState
     started_at: datetime
+    completed_at: datetime | None = None
+
+    @model_validator(mode="after")
+    def validate_completion(self) -> Self:
+        if self.state is AnalysisRunState.RUNNING and self.completed_at is not None:
+            raise ValueError("A running AnalysisRun cannot have completed_at.")
+        if self.state is not AnalysisRunState.RUNNING and self.completed_at is None:
+            raise ValueError("A terminal AnalysisRun requires completed_at.")
+        if self.completed_at is not None and self.completed_at < self.started_at:
+            raise ValueError("AnalysisRun cannot complete before it starts.")
+        return self
 
 
 class PlannedAnalysisItem(DomainModel):
@@ -1024,23 +1039,9 @@ class PlannedAnalysisItem(DomainModel):
     analysis_unit_id: AnalysisUnitId
     task_type: NonEmptyStr
     required: bool
-    ordinal: Annotated[int, Field(ge=0)]
     dependencies: tuple[PlannedAnalysisItemId, ...] = Field(default_factory=tuple)
+    expected_manifest_id: ContextManifestId | None = None
     input_fingerprint: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
-
-
-class AnalysisItemManifestSelection(DomainModel):
-    id: AnalysisItemManifestSelectionId
-    planned_item_id: PlannedAnalysisItemId
-    context_manifest_id: ContextManifestId
-    selection_role: NonEmptyStr
-
-
-class AnalysisItemTaskSelection(DomainModel):
-    id: AnalysisItemTaskSelectionId
-    planned_item_id: PlannedAnalysisItemId
-    extraction_task_id: ExtractionTaskId
-    selection_role: NonEmptyStr
 
 
 class AnalysisItemAttempt(DomainModel):

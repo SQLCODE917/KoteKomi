@@ -1,24 +1,95 @@
-CREATE TABLE analysis_runs (id TEXT PRIMARY KEY, created_at TEXT, updated_at TEXT, status TEXT, review_status TEXT, document_id TEXT NOT NULL, representation_id TEXT NOT NULL, analysis_plan_id TEXT NOT NULL, frozen_plan_digest TEXT NOT NULL, coverage_policy_id TEXT NOT NULL, coverage_policy_digest TEXT NOT NULL, scope_digest TEXT NOT NULL, payload_json TEXT NOT NULL, FOREIGN KEY (document_id) REFERENCES documents(id), FOREIGN KEY (representation_id) REFERENCES document_representations(id), FOREIGN KEY (analysis_plan_id) REFERENCES analysis_plan_artifacts(id));
-CREATE INDEX analysis_runs_by_scope_digest ON analysis_runs(scope_digest, id);
-CREATE TABLE planned_analysis_items (id TEXT PRIMARY KEY, created_at TEXT, updated_at TEXT, status TEXT, review_status TEXT, analysis_run_id TEXT NOT NULL, analysis_unit_id TEXT NOT NULL, payload_json TEXT NOT NULL, FOREIGN KEY (analysis_run_id) REFERENCES analysis_runs(id), FOREIGN KEY (analysis_unit_id) REFERENCES analysis_unit_artifacts(id));
-CREATE TABLE analysis_item_manifest_selections (id TEXT PRIMARY KEY, created_at TEXT, updated_at TEXT, status TEXT, review_status TEXT, planned_item_id TEXT NOT NULL, context_manifest_id TEXT NOT NULL, selection_role TEXT NOT NULL, payload_json TEXT NOT NULL, UNIQUE(planned_item_id, selection_role), FOREIGN KEY (planned_item_id) REFERENCES planned_analysis_items(id), FOREIGN KEY (context_manifest_id) REFERENCES context_manifest_artifacts(id));
-CREATE TABLE analysis_item_task_selections (id TEXT PRIMARY KEY, created_at TEXT, updated_at TEXT, status TEXT, review_status TEXT, planned_item_id TEXT NOT NULL, extraction_task_id TEXT NOT NULL, selection_role TEXT NOT NULL, payload_json TEXT NOT NULL, UNIQUE(planned_item_id, selection_role), FOREIGN KEY (planned_item_id) REFERENCES planned_analysis_items(id), FOREIGN KEY (extraction_task_id) REFERENCES extraction_tasks(id));
-CREATE TABLE analysis_item_attempts (id TEXT PRIMARY KEY, created_at TEXT, updated_at TEXT, status TEXT, review_status TEXT, planned_item_id TEXT NOT NULL, processing_attempt_id TEXT, model_run_id TEXT, execution_role TEXT NOT NULL, payload_json TEXT NOT NULL, UNIQUE(planned_item_id, processing_attempt_id, model_run_id, execution_role), FOREIGN KEY (planned_item_id) REFERENCES planned_analysis_items(id), FOREIGN KEY (processing_attempt_id) REFERENCES processing_attempts(id), FOREIGN KEY (model_run_id) REFERENCES model_runs(id));
-CREATE TABLE model_run_proposed_changes (model_run_id TEXT NOT NULL, proposed_change_id TEXT NOT NULL, PRIMARY KEY (model_run_id, proposed_change_id), FOREIGN KEY (model_run_id) REFERENCES model_runs(id), FOREIGN KEY (proposed_change_id) REFERENCES proposed_changes(id));
+CREATE TABLE analysis_runs (
+  id TEXT PRIMARY KEY,
+  created_at TEXT,
+  updated_at TEXT,
+  status TEXT,
+  review_status TEXT,
+  document_id TEXT NOT NULL,
+  representation_id TEXT NOT NULL,
+  frozen_analysis_plan_id TEXT NOT NULL,
+  coverage_policy_id TEXT NOT NULL,
+  state TEXT NOT NULL,
+  started_at TEXT NOT NULL,
+  completed_at TEXT,
+  payload_json TEXT NOT NULL,
+  FOREIGN KEY (document_id) REFERENCES documents(id),
+  FOREIGN KEY (representation_id) REFERENCES document_representations(id),
+  FOREIGN KEY (frozen_analysis_plan_id) REFERENCES analysis_plan_artifacts(id)
+);
+
+CREATE TABLE planned_analysis_items (
+  id TEXT PRIMARY KEY,
+  created_at TEXT,
+  updated_at TEXT,
+  status TEXT,
+  review_status TEXT,
+  analysis_run_id TEXT NOT NULL,
+  analysis_unit_id TEXT NOT NULL,
+  task_type TEXT NOT NULL,
+  required INTEGER NOT NULL,
+  expected_manifest_id TEXT,
+  input_fingerprint TEXT NOT NULL,
+  payload_json TEXT NOT NULL,
+  FOREIGN KEY (analysis_run_id) REFERENCES analysis_runs(id),
+  FOREIGN KEY (analysis_unit_id) REFERENCES analysis_unit_artifacts(id),
+  FOREIGN KEY (expected_manifest_id) REFERENCES context_manifest_artifacts(id)
+);
+
+CREATE TABLE analysis_item_attempts (
+  id TEXT PRIMARY KEY,
+  created_at TEXT,
+  updated_at TEXT,
+  status TEXT,
+  review_status TEXT,
+  planned_item_id TEXT NOT NULL,
+  processing_attempt_id TEXT,
+  model_run_id TEXT,
+  execution_role TEXT NOT NULL,
+  payload_json TEXT NOT NULL,
+  UNIQUE (planned_item_id, processing_attempt_id, model_run_id, execution_role),
+  FOREIGN KEY (planned_item_id) REFERENCES planned_analysis_items(id),
+  FOREIGN KEY (processing_attempt_id) REFERENCES processing_attempts(id),
+  FOREIGN KEY (model_run_id) REFERENCES model_runs(id)
+);
+
+CREATE TABLE model_run_proposed_changes (
+  model_run_id TEXT NOT NULL,
+  proposed_change_id TEXT NOT NULL,
+  PRIMARY KEY (model_run_id, proposed_change_id),
+  FOREIGN KEY (model_run_id) REFERENCES model_runs(id),
+  FOREIGN KEY (proposed_change_id) REFERENCES proposed_changes(id)
+);
+
+CREATE INDEX analysis_runs_by_document ON analysis_runs(document_id, id);
 CREATE INDEX planned_analysis_items_by_run ON planned_analysis_items(analysis_run_id, id);
-CREATE INDEX analysis_item_manifest_selections_by_item ON analysis_item_manifest_selections(planned_item_id, selection_role);
-CREATE INDEX analysis_item_task_selections_by_item ON analysis_item_task_selections(planned_item_id, selection_role);
-CREATE INDEX analysis_item_attempts_by_item ON analysis_item_attempts(planned_item_id, model_run_id);
-CREATE INDEX model_run_proposed_changes_by_model_run ON model_run_proposed_changes(model_run_id, proposed_change_id);
-CREATE TRIGGER immutable_analysis_runs_no_update BEFORE UPDATE ON analysis_runs BEGIN SELECT RAISE(ABORT, 'analysis_runs are immutable'); END;
-CREATE TRIGGER immutable_analysis_runs_no_delete BEFORE DELETE ON analysis_runs BEGIN SELECT RAISE(ABORT, 'analysis_runs are immutable'); END;
-CREATE TRIGGER immutable_planned_analysis_items_no_update BEFORE UPDATE ON planned_analysis_items BEGIN SELECT RAISE(ABORT, 'planned_analysis_items are immutable'); END;
-CREATE TRIGGER immutable_planned_analysis_items_no_delete BEFORE DELETE ON planned_analysis_items BEGIN SELECT RAISE(ABORT, 'planned_analysis_items are immutable'); END;
-CREATE TRIGGER immutable_analysis_item_manifest_selections_no_update BEFORE UPDATE ON analysis_item_manifest_selections BEGIN SELECT RAISE(ABORT, 'analysis_item_manifest_selections are immutable'); END;
-CREATE TRIGGER immutable_analysis_item_manifest_selections_no_delete BEFORE DELETE ON analysis_item_manifest_selections BEGIN SELECT RAISE(ABORT, 'analysis_item_manifest_selections are immutable'); END;
-CREATE TRIGGER immutable_analysis_item_task_selections_no_update BEFORE UPDATE ON analysis_item_task_selections BEGIN SELECT RAISE(ABORT, 'analysis_item_task_selections are immutable'); END;
-CREATE TRIGGER immutable_analysis_item_task_selections_no_delete BEFORE DELETE ON analysis_item_task_selections BEGIN SELECT RAISE(ABORT, 'analysis_item_task_selections are immutable'); END;
-CREATE TRIGGER immutable_analysis_item_attempts_no_update BEFORE UPDATE ON analysis_item_attempts BEGIN SELECT RAISE(ABORT, 'analysis_item_attempts are immutable'); END;
-CREATE TRIGGER immutable_analysis_item_attempts_no_delete BEFORE DELETE ON analysis_item_attempts BEGIN SELECT RAISE(ABORT, 'analysis_item_attempts are immutable'); END;
-CREATE TRIGGER immutable_model_run_proposed_changes_no_update BEFORE UPDATE ON model_run_proposed_changes BEGIN SELECT RAISE(ABORT, 'model_run_proposed_changes are immutable'); END;
-CREATE TRIGGER immutable_model_run_proposed_changes_no_delete BEFORE DELETE ON model_run_proposed_changes BEGIN SELECT RAISE(ABORT, 'model_run_proposed_changes are immutable'); END;
+CREATE INDEX planned_analysis_items_by_fingerprint
+  ON planned_analysis_items(input_fingerprint, id);
+CREATE INDEX analysis_item_attempts_by_item
+  ON analysis_item_attempts(planned_item_id, model_run_id, processing_attempt_id);
+CREATE INDEX model_run_proposed_changes_by_model_run
+  ON model_run_proposed_changes(model_run_id, proposed_change_id);
+
+CREATE TRIGGER immutable_analysis_runs_no_update
+BEFORE UPDATE ON analysis_runs
+BEGIN SELECT RAISE(ABORT, 'analysis_runs are immutable'); END;
+CREATE TRIGGER immutable_analysis_runs_no_delete
+BEFORE DELETE ON analysis_runs
+BEGIN SELECT RAISE(ABORT, 'analysis_runs are immutable'); END;
+CREATE TRIGGER immutable_planned_analysis_items_no_update
+BEFORE UPDATE ON planned_analysis_items
+BEGIN SELECT RAISE(ABORT, 'planned_analysis_items are immutable'); END;
+CREATE TRIGGER immutable_planned_analysis_items_no_delete
+BEFORE DELETE ON planned_analysis_items
+BEGIN SELECT RAISE(ABORT, 'planned_analysis_items are immutable'); END;
+CREATE TRIGGER immutable_analysis_item_attempts_no_update
+BEFORE UPDATE ON analysis_item_attempts
+BEGIN SELECT RAISE(ABORT, 'analysis_item_attempts are immutable'); END;
+CREATE TRIGGER immutable_analysis_item_attempts_no_delete
+BEFORE DELETE ON analysis_item_attempts
+BEGIN SELECT RAISE(ABORT, 'analysis_item_attempts are immutable'); END;
+CREATE TRIGGER immutable_model_run_proposed_changes_no_update
+BEFORE UPDATE ON model_run_proposed_changes
+BEGIN SELECT RAISE(ABORT, 'model_run_proposed_changes are immutable'); END;
+CREATE TRIGGER immutable_model_run_proposed_changes_no_delete
+BEFORE DELETE ON model_run_proposed_changes
+BEGIN SELECT RAISE(ABORT, 'model_run_proposed_changes are immutable'); END;

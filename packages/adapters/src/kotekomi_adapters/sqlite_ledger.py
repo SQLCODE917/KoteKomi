@@ -25,10 +25,8 @@ from kotekomi_application.representation_identity import deterministic_represent
 from kotekomi_domain import (
     Actor,
     AnalysisItemAttempt,
-    AnalysisItemManifestSelection,
-    AnalysisItemTaskSelection,
     AnalysisPlanArtifact,
-    AnalysisRunArtifact,
+    AnalysisRun,
     AnalysisUnitArtifact,
     ArgumentEdge,
     Assertion,
@@ -118,8 +116,6 @@ IMMUTABLE_TABLES = frozenset(
         "analysis_plan_artifacts",
         "analysis_runs",
         "planned_analysis_items",
-        "analysis_item_manifest_selections",
-        "analysis_item_task_selections",
         "analysis_item_attempts",
         "extraction_tasks",
         "model_runs",
@@ -164,25 +160,19 @@ RELATIONAL_OWNERSHIP_COLUMNS: dict[str, tuple[tuple[str, str], ...]] = {
     "analysis_runs": (
         ("document_id", "document_id"),
         ("representation_id", "representation_id"),
-        ("analysis_plan_id", "analysis_plan_id"),
-        ("frozen_plan_digest", "frozen_plan_digest"),
+        ("frozen_analysis_plan_id", "frozen_analysis_plan_id"),
         ("coverage_policy_id", "coverage_policy_id"),
-        ("coverage_policy_digest", "coverage_policy_digest"),
-        ("scope_digest", "scope_digest"),
+        ("state", "state"),
+        ("started_at", "started_at"),
+        ("completed_at", "completed_at"),
     ),
     "planned_analysis_items": (
         ("analysis_run_id", "analysis_run_id"),
         ("analysis_unit_id", "analysis_unit_id"),
-    ),
-    "analysis_item_manifest_selections": (
-        ("planned_item_id", "planned_item_id"),
-        ("context_manifest_id", "context_manifest_id"),
-        ("selection_role", "selection_role"),
-    ),
-    "analysis_item_task_selections": (
-        ("planned_item_id", "planned_item_id"),
-        ("extraction_task_id", "extraction_task_id"),
-        ("selection_role", "selection_role"),
+        ("task_type", "task_type"),
+        ("required", "required"),
+        ("expected_manifest_id", "expected_manifest_id"),
+        ("input_fingerprint", "input_fingerprint"),
     ),
     "analysis_item_attempts": (
         ("planned_item_id", "planned_item_id"),
@@ -250,14 +240,8 @@ EVIDENCE_REANCHORING_RELATION_SPEC = RecordSpec(
 CONTEXT_MANIFEST_ARTIFACT_SPEC = RecordSpec("context_manifest_artifacts", ContextManifestArtifact)
 ANALYSIS_UNIT_ARTIFACT_SPEC = RecordSpec("analysis_unit_artifacts", AnalysisUnitArtifact)
 ANALYSIS_PLAN_ARTIFACT_SPEC = RecordSpec("analysis_plan_artifacts", AnalysisPlanArtifact)
-ANALYSIS_RUN_SPEC = RecordSpec("analysis_runs", AnalysisRunArtifact)
+ANALYSIS_RUN_SPEC = RecordSpec("analysis_runs", AnalysisRun)
 PLANNED_ANALYSIS_ITEM_SPEC = RecordSpec("planned_analysis_items", PlannedAnalysisItem)
-ANALYSIS_ITEM_MANIFEST_SELECTION_SPEC = RecordSpec(
-    "analysis_item_manifest_selections", AnalysisItemManifestSelection
-)
-ANALYSIS_ITEM_TASK_SELECTION_SPEC = RecordSpec(
-    "analysis_item_task_selections", AnalysisItemTaskSelection
-)
 ANALYSIS_ITEM_ATTEMPT_SPEC = RecordSpec("analysis_item_attempts", AnalysisItemAttempt)
 EXTRACTION_TASK_SPEC = RecordSpec("extraction_tasks", ExtractionTask)
 MODEL_RUN_SPEC = RecordSpec("model_runs", ModelRun)
@@ -312,8 +296,6 @@ REQUIRED_LEDGER_TABLES = (
     "analysis_plan_artifacts",
     "analysis_runs",
     "planned_analysis_items",
-    "analysis_item_manifest_selections",
-    "analysis_item_task_selections",
     "analysis_item_attempts",
     "model_run_proposed_changes",
     "extraction_tasks",
@@ -975,30 +957,24 @@ class SQLiteLedgerRepository:
     def get_analysis_plan_artifact(self, record_id: str) -> AnalysisPlanArtifact | None:
         return self._get(ANALYSIS_PLAN_ARTIFACT_SPEC, record_id)
 
-    def save_analysis_run(self, record: AnalysisRunArtifact) -> None:
+    def save_analysis_run(self, record: AnalysisRun) -> None:
         self._save(ANALYSIS_RUN_SPEC, record)
 
-    def get_analysis_run(self, record_id: str) -> AnalysisRunArtifact | None:
+    def get_analysis_run(self, record_id: str) -> AnalysisRun | None:
         return self._get(ANALYSIS_RUN_SPEC, record_id)
 
     def commit_analysis_run_scope(
         self,
         *,
-        analysis_run: AnalysisRunArtifact,
+        analysis_run: AnalysisRun,
         planned_items: tuple[PlannedAnalysisItem, ...],
-        manifest_selections: tuple[AnalysisItemManifestSelection, ...],
-        task_selections: tuple[AnalysisItemTaskSelection, ...],
     ) -> None:
-        """Publish one immutable run scope and all normalized bindings atomically."""
+        """Publish one immutable AnalysisRun and its complete planned scope atomically."""
         self._connection.execute("SAVEPOINT analysis_run_scope")
         try:
             self.save_analysis_run(analysis_run)
             for record in planned_items:
                 self.save_planned_analysis_item(record)
-            for record in manifest_selections:
-                self.save_analysis_item_manifest_selection(record)
-            for record in task_selections:
-                self.save_analysis_item_task_selection(record)
         except Exception:
             self._connection.execute("ROLLBACK TO SAVEPOINT analysis_run_scope")
             self._connection.execute("RELEASE SAVEPOINT analysis_run_scope")
@@ -1010,22 +986,6 @@ class SQLiteLedgerRepository:
 
     def list_planned_analysis_items(self, analysis_run_id: str) -> tuple[PlannedAnalysisItem, ...]:
         return self._list_for_owner(PLANNED_ANALYSIS_ITEM_SPEC, "analysis_run_id", analysis_run_id)
-
-    def save_analysis_item_manifest_selection(self, record: AnalysisItemManifestSelection) -> None:
-        self._save(ANALYSIS_ITEM_MANIFEST_SELECTION_SPEC, record)
-
-    def list_analysis_item_manifest_selections(
-        self, item_ids: tuple[str, ...]
-    ) -> tuple[AnalysisItemManifestSelection, ...]:
-        return self._list_by_ids(ANALYSIS_ITEM_MANIFEST_SELECTION_SPEC, "planned_item_id", item_ids)
-
-    def save_analysis_item_task_selection(self, record: AnalysisItemTaskSelection) -> None:
-        self._save(ANALYSIS_ITEM_TASK_SELECTION_SPEC, record)
-
-    def list_analysis_item_task_selections(
-        self, item_ids: tuple[str, ...]
-    ) -> tuple[AnalysisItemTaskSelection, ...]:
-        return self._list_by_ids(ANALYSIS_ITEM_TASK_SELECTION_SPEC, "planned_item_id", item_ids)
 
     def save_analysis_item_attempt(self, record: AnalysisItemAttempt) -> None:
         self._save(ANALYSIS_ITEM_ATTEMPT_SPEC, record)
@@ -1044,6 +1004,11 @@ class SQLiteLedgerRepository:
         self, record_ids: tuple[str, ...]
     ) -> tuple[ExtractionTask, ...]:
         return self._get_by_ids(EXTRACTION_TASK_SPEC, record_ids)
+
+    def get_extraction_tasks_by_fingerprints(
+        self, fingerprints: tuple[str, ...]
+    ) -> tuple[ExtractionTask, ...]:
+        return self._list_by_ids(EXTRACTION_TASK_SPEC, "task_fingerprint", fingerprints)
 
     def get_model_runs_by_ids(self, record_ids: tuple[str, ...]) -> tuple[ModelRun, ...]:
         return self._get_by_ids(MODEL_RUN_SPEC, record_ids)
@@ -1516,9 +1481,11 @@ class SQLiteLedgerRepository:
         return self._list(BRIEFING_SPEC)
 
 
-def _optional_text(value: object) -> str | None:
+def _optional_text(value: object) -> str | int | None:
     if value is None:
         return None
+    if isinstance(value, bool):
+        return int(value)
     return str(value)
 
 

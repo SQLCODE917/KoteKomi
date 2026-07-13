@@ -1,6 +1,6 @@
 import hashlib
 from dataclasses import replace
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import cast
 
 import pytest
@@ -45,10 +45,9 @@ from kotekomi_application import (
 )
 from kotekomi_domain import (
     AnalysisItemAttempt,
-    AnalysisItemManifestSelection,
-    AnalysisItemTaskSelection,
     AnalysisPlanArtifact,
-    AnalysisRunArtifact,
+    AnalysisRun,
+    AnalysisRunState,
     AnalysisUnitArtifact,
     ContextManifestArtifact,
     Document,
@@ -101,10 +100,8 @@ class FakeGroundedCandidateLedger:
         self.manifests: dict[str, ContextManifestArtifact] = {}
         self.analysis_units: dict[str, AnalysisUnitArtifact] = {}
         self.analysis_plans: dict[str, AnalysisPlanArtifact] = {}
-        self.analysis_runs: dict[str, AnalysisRunArtifact] = {}
+        self.analysis_runs: dict[str, AnalysisRun] = {}
         self.planned_analysis_items: dict[str, PlannedAnalysisItem] = {}
-        self.manifest_selections: dict[str, AnalysisItemManifestSelection] = {}
-        self.task_selections: dict[str, AnalysisItemTaskSelection] = {}
         self.analysis_item_attempts: dict[str, AnalysisItemAttempt] = {}
         self.fail_successful_commit = False
 
@@ -193,17 +190,13 @@ class FakeGroundedCandidateLedger:
     def commit_analysis_run_scope(
         self,
         *,
-        analysis_run: AnalysisRunArtifact,
+        analysis_run: AnalysisRun,
         planned_items: tuple[PlannedAnalysisItem, ...],
-        manifest_selections: tuple[AnalysisItemManifestSelection, ...],
-        task_selections: tuple[AnalysisItemTaskSelection, ...],
     ) -> None:
         self.analysis_runs[analysis_run.id] = analysis_run
         self.planned_analysis_items.update({record.id: record for record in planned_items})
-        self.manifest_selections.update({record.id: record for record in manifest_selections})
-        self.task_selections.update({record.id: record for record in task_selections})
 
-    def get_analysis_run(self, record_id: str) -> AnalysisRunArtifact | None:
+    def get_analysis_run(self, record_id: str) -> AnalysisRun | None:
         return self.analysis_runs.get(record_id)
 
     def list_planned_analysis_items(self, analysis_run_id: str) -> tuple[PlannedAnalysisItem, ...]:
@@ -211,22 +204,6 @@ class FakeGroundedCandidateLedger:
             record
             for record in self.planned_analysis_items.values()
             if record.analysis_run_id == analysis_run_id
-        )
-
-    def list_analysis_item_manifest_selections(
-        self, item_ids: tuple[str, ...]
-    ) -> tuple[AnalysisItemManifestSelection, ...]:
-        return tuple(
-            record
-            for record in self.manifest_selections.values()
-            if record.planned_item_id in item_ids
-        )
-
-    def list_analysis_item_task_selections(
-        self, item_ids: tuple[str, ...]
-    ) -> tuple[AnalysisItemTaskSelection, ...]:
-        return tuple(
-            record for record in self.task_selections.values() if record.planned_item_id in item_ids
         )
 
     def save_analysis_item_attempt(self, record: AnalysisItemAttempt) -> None:
@@ -255,6 +232,15 @@ class FakeGroundedCandidateLedger:
             self.extraction_tasks[record_id]
             for record_id in record_ids
             if record_id in self.extraction_tasks
+        )
+
+    def get_extraction_tasks_by_fingerprints(
+        self, fingerprints: tuple[str, ...]
+    ) -> tuple[ExtractionTask, ...]:
+        return tuple(
+            record
+            for record in self.extraction_tasks.values()
+            if record.task_fingerprint in fingerprints
         )
 
     def get_model_runs_by_ids(self, record_ids: tuple[str, ...]) -> tuple[ModelRun, ...]:
@@ -1149,21 +1135,22 @@ def test_frozen_analysis_plan_requires_every_unit_to_reconcile_before_completion
             document_id=ledger.document.id,
             frozen_plan_id=frozen.id,
             coverage_policy_id="fixture_coverage_policy_v1",
-            coverage_policy_digest=hashlib.sha256(b"fixture_coverage_policy_v1").hexdigest(),
             started_at=NOW,
             items=(
                 AnalysisRunItemInput(
                     analysis_unit_id=plan.units[0].id,
                     task_type="claim_extraction",
                     input_fingerprint=hashlib.sha256(b"no-task-yet").hexdigest(),
-                    context_manifest_id=None,
-                    extraction_task_id=None,
+                    expected_manifest_id=None,
                 ),
             ),
         ),
         ledger,
     )
-    incomplete = build_coverage_report(incomplete_run.analysis_run.id, ledger)
+    incomplete = build_coverage_report(incomplete_run.id, ledger)
+    assert incomplete_run.state is AnalysisRunState.RUNNING
+    assert incomplete_run.completed_at is None
+    assert ledger.list_planned_analysis_items(incomplete_run.id)[0].expected_manifest_id is None
     assert incomplete.state is AnalysisCoverageState.INCOMPLETE
     assert incomplete.unit_coverages[0].status is AnalysisUnitCoverageStatus.UNREPORTED
     assert incomplete.unit_coverages[0].reason == "missing_manifest"
@@ -1207,31 +1194,110 @@ def test_frozen_analysis_plan_requires_every_unit_to_reconcile_before_completion
             document_id=ledger.document.id,
             frozen_plan_id=frozen.id,
             coverage_policy_id="fixture_coverage_policy_v1",
-            coverage_policy_digest=hashlib.sha256(b"fixture_coverage_policy_v1").hexdigest(),
             started_at=NOW,
             items=(
                 AnalysisRunItemInput(
                     analysis_unit_id=plan.units[0].id,
                     task_type=outcome.extraction_task.task_type,
                     input_fingerprint=outcome.extraction_task.task_fingerprint,
-                    context_manifest_id=manifest.id,
-                    extraction_task_id=outcome.extraction_task.id,
+                    expected_manifest_id=manifest.id,
                 ),
             ),
         ),
         ledger,
     )
     record_analysis_item_attempt(
-        analysis_run_id=complete_run.analysis_run.id,
+        analysis_run_id=complete_run.id,
         analysis_unit_id=plan.units[0].id,
         model_run_id=outcome.model_run.id,
         ledger_repository=ledger,
     )
-    complete = build_coverage_report(complete_run.analysis_run.id, ledger)
+    assert (
+        ledger.list_planned_analysis_items(complete_run.id)[0].expected_manifest_id == manifest.id
+    )
+    complete = build_coverage_report(complete_run.id, ledger)
     assert complete.state is AnalysisCoverageState.COMPLETE
     assert complete.unit_coverages[0].status is AnalysisUnitCoverageStatus.PROCESSED_WITH_PROPOSALS
     assert complete.unit_coverages[0].proposal_ids == tuple(
         sorted(outcome.proposed_change_batch.proposed_change_ids_by_local_id.values())
     )
     assert complete.orphan_model_run_ids == ()
-    assert build_coverage_report(incomplete_run.analysis_run.id, ledger) == incomplete
+
+    historical_proposal_ids = complete.unit_coverages[0].proposal_ids
+    no_proposal_run = ModelRun.model_validate(
+        {
+            **outcome.model_run.model_dump(),
+            "id": "mrn_coverage_no_proposals",
+            "started_at": NOW + timedelta(minutes=1),
+            "completed_at": NOW + timedelta(minutes=1),
+        }
+    )
+    ledger.save_model_run(no_proposal_run)
+    ledger.model_run_proposed_changes[no_proposal_run.id] = ()
+    record_analysis_item_attempt(
+        analysis_run_id=complete_run.id,
+        analysis_unit_id=plan.units[0].id,
+        model_run_id=no_proposal_run.id,
+        ledger_repository=ledger,
+    )
+    no_proposal_coverage = build_coverage_report(complete_run.id, ledger)
+    assert no_proposal_coverage.unit_coverages[0].status is (
+        AnalysisUnitCoverageStatus.PROCESSED_NO_PROPOSALS
+    )
+    assert no_proposal_coverage.unit_coverages[0].model_run_id == no_proposal_run.id
+    assert no_proposal_coverage.unit_coverages[0].proposal_ids == ()
+    assert (
+        tuple(
+            proposal.id
+            for proposal in ledger.list_proposed_changes_for_model_run(outcome.model_run.id)
+        )
+        == historical_proposal_ids
+    )
+
+    abstained_run = ModelRun.model_validate(
+        {
+            **outcome.model_run.model_dump(),
+            "id": "mrn_coverage_abstained",
+            "status": ModelRunStatus.ABSTAINED,
+            "started_at": NOW + timedelta(minutes=2),
+            "completed_at": NOW + timedelta(minutes=2),
+        }
+    )
+    ledger.save_model_run(abstained_run)
+    ledger.model_run_proposed_changes[abstained_run.id] = ()
+    record_analysis_item_attempt(
+        analysis_run_id=complete_run.id,
+        analysis_unit_id=plan.units[0].id,
+        model_run_id=abstained_run.id,
+        ledger_repository=ledger,
+    )
+    abstained_coverage = build_coverage_report(complete_run.id, ledger)
+    assert abstained_coverage.unit_coverages[0].status is AnalysisUnitCoverageStatus.ABSTAINED
+    assert abstained_coverage.unit_coverages[0].model_run_id == abstained_run.id
+    assert abstained_coverage.unit_coverages[0].proposal_ids == ()
+
+    publish_failed_run = ModelRun.model_validate(
+        {
+            **outcome.model_run.model_dump(),
+            "id": "mrn_coverage_publish_failed",
+            "status": ModelRunStatus.PUBLISH_FAILED,
+            "error_code": "InjectedPublicationFailure",
+            "error_message": "injected publication failure",
+            "started_at": NOW + timedelta(minutes=3),
+            "completed_at": NOW + timedelta(minutes=3),
+        }
+    )
+    ledger.save_model_run(publish_failed_run)
+    ledger.model_run_proposed_changes[publish_failed_run.id] = ()
+    record_analysis_item_attempt(
+        analysis_run_id=complete_run.id,
+        analysis_unit_id=plan.units[0].id,
+        model_run_id=publish_failed_run.id,
+        ledger_repository=ledger,
+    )
+    failed_coverage = build_coverage_report(complete_run.id, ledger)
+    assert failed_coverage.unit_coverages[0].status is AnalysisUnitCoverageStatus.MODEL_FAILED
+    assert failed_coverage.unit_coverages[0].model_run_id == publish_failed_run.id
+    assert failed_coverage.unit_coverages[0].proposal_ids == ()
+    assert failed_coverage.unit_coverages[0].reason == ModelRunStatus.PUBLISH_FAILED.value
+    assert build_coverage_report(incomplete_run.id, ledger) == incomplete
