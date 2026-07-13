@@ -6,6 +6,7 @@ import pytest
 from kotekomi_application import (
     BuildIdentity,
     BundleCommitDisposition,
+    PdfAccessCredential,
     PdfDocumentParser,
     PdfExtractionPolicy,
     PdfIngestInput,
@@ -35,6 +36,38 @@ from kotekomi_domain import (
 NOW = datetime(2026, 7, 11, tzinfo=UTC)
 RAW_PDF = b"%PDF-1.7\nfixture"
 BUILD_IDENTITY = BuildIdentity("fixture", "fixture", "a" * 64, "1")
+
+
+def test_pdf_access_credential_is_ephemeral_and_changes_task_identity_by_id() -> None:
+    parser = FakePdfParser()
+    factory = SequenceAttemptIdFactory()
+    first_credential = PdfAccessCredential("credential-v1", "super-secret-first")
+    second_credential = PdfAccessCredential("credential-v2", "super-secret-second")
+
+    tasks: list[ProcessingTaskFingerprint] = []
+    for credential in (first_credential, second_credential):
+        ledger = FakePdfLedger()
+        ingest_pdf(
+            PdfIngestInput(
+                "doc_pdf_fixture",
+                RAW_PDF,
+                "pdf_policy_v1",
+                NOW,
+                "blb_pdf_fixture",
+                BUILD_IDENTITY,
+                credential,
+            ),
+            cast(PdfIngestLedger, ledger),
+            cast(PdfDocumentParser, parser),
+            factory,
+        )
+        tasks.extend(ledger.tasks.values())
+
+    assert len(tasks) == 2
+    assert len({task.processor_config_digest for task in tasks}) == 2
+    serialized_tasks = "".join(task.model_dump_json() for task in tasks)
+    assert "super-secret" not in serialized_tasks
+    assert "super-secret" not in repr(first_credential)
 
 
 def test_pdf_extraction_policy_emits_explicit_terminal_page_decisions() -> None:

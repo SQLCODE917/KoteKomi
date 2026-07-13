@@ -149,6 +149,45 @@ def test_pdf_page_accounting_binds_ocr_status_to_archived_transformation() -> No
     assert accounting.page_extraction_statuses[0].transformation_artifact_ids == (artifact.id,)
 
 
+def test_document_level_repair_can_precede_an_unavailable_page_inventory() -> None:
+    artifact = PdfTransformationArtifact(
+        id="pta_fixture_repair",
+        preflight_report_id="pfr_fixture",
+        input_blob_id="blb_fixture",
+        output_blob_id="blb_fixture_repair",
+        activity_type=PdfTransformationType.REPAIR,
+        tool_name="fixture_repair",
+        tool_version="1",
+        model_name="deterministic_repair",
+        model_version="1",
+        model_digest="b" * 64,
+        configuration_digest="a" * 64,
+        page_scope=(),
+    )
+    report = _report(page_count=0).model_copy(
+        update={"transformation_artifact_ids": (artifact.id,)}
+    )
+
+    accounting = PdfPageAccountingBundle(
+        preflight_report=report,
+        page_inventory=(),
+        page_extraction_statuses=(),
+        transformation_artifacts=(artifact,),
+        transformation_blobs=(
+            RawBlob(
+                id="blb_fixture_repair",
+                hash_algorithm="sha256",
+                digest="c" * 64,
+                byte_length=10,
+                media_type="application/pdf",
+                storage_locator="transformations/blb_fixture_repair.bin",
+            ),
+        ),
+    )
+
+    assert accounting.transformation_artifacts == (artifact,)
+
+
 def test_pdf_page_accounting_rejects_disagreeing_ocr_confidence() -> None:
     artifact = PdfTransformationArtifact(
         id="pta_fixture_ocr_1",

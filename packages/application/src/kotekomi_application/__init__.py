@@ -124,6 +124,7 @@ from kotekomi_application.model_runtime import (
 )
 from kotekomi_application.pdf_ingest import (
     PDF_INGEST_ACTIVITY,
+    PdfAccessCredential,
     PdfDocumentParser,
     PdfExtractionPolicy,
     PdfIngestInput,
@@ -134,6 +135,7 @@ from kotekomi_application.pdf_ingest import (
     PdfParseInput,
     PdfParseResult,
     PdfPreflight,
+    PdfProcessingError,
     PdfProcessorIdentity,
     PdfTransformationArchive,
     PdfTransformationPayload,
@@ -416,6 +418,7 @@ __all__ = [
     "PipelineStatus",
     "PipelineStatusInput",
     "PDF_INGEST_ACTIVITY",
+    "PdfAccessCredential",
     "PdfDocumentParser",
     "PdfExtractionPolicy",
     "PdfIngestInput",
@@ -430,6 +433,7 @@ __all__ = [
     "PdfTransformationPayload",
     "validate_representation_for_processing_task",
     "PdfPreflight",
+    "PdfProcessingError",
     "BuildIdentity",
     "ProcessingAttemptIdFactory",
     "ProcessingClock",

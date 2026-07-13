@@ -582,8 +582,10 @@ class PdfTransformationArtifact(DomainModel):
     def validate_page_scope(self) -> Self:
         if self.output_blob_id == self.input_blob_id:
             raise ValueError("A PDF transformation output must differ from its source blob.")
-        if not self.page_scope or len(set(self.page_scope)) != len(self.page_scope):
-            raise ValueError("PdfTransformationArtifact requires a unique nonempty page scope.")
+        if len(set(self.page_scope)) != len(self.page_scope):
+            raise ValueError("PdfTransformationArtifact requires a unique page scope.")
+        if self.activity_type is not PdfTransformationType.REPAIR and not self.page_scope:
+            raise ValueError("A page-derived PDF transformation requires a nonempty page scope.")
         if tuple(sorted(self.page_scope)) != self.page_scope:
             raise ValueError("PdfTransformationArtifact page scope must be sorted.")
         if self.activity_type is PdfTransformationType.OCR:

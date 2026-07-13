@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, field, replace
 from datetime import datetime
 from typing import Protocol
 
@@ -137,6 +138,38 @@ class PdfParseInput:
     policy_id: str
     processing_task_fingerprint_id: str
     parsed_at: datetime
+    access_credential: PdfAccessCredential | None = None
+    expected_processor_config_digest: str | None = None
+
+
+@dataclass(frozen=True)
+class PdfAccessCredential:
+    """Ephemeral PDF access secret bound by a non-secret immutable identifier."""
+
+    credential_id: str
+    password: str = field(repr=False, compare=False)
+
+    def __post_init__(self) -> None:
+        if not self.credential_id.strip() or not self.password:
+            raise ValueError("PDF access credentials require an ID and a nonempty password.")
+
+
+class PdfProcessingError(RuntimeError):
+    """Typed, credential-safe failure emitted by a PDF processor Port implementation."""
+
+    def __init__(
+        self,
+        *,
+        code: str,
+        failure_type: str,
+        safe_message: str,
+        retryable: bool,
+    ) -> None:
+        super().__init__(safe_message)
+        self.code = code
+        self.failure_type = failure_type
+        self.safe_message = safe_message
+        self.retryable = retryable
 
 
 @dataclass(frozen=True)
@@ -171,8 +204,10 @@ class PdfTransformationPayload:
             raise ValueError(
                 "PDF transformation payload requires archived output bytes and media type."
             )
-        if not self.page_scope or tuple(sorted(set(self.page_scope))) != self.page_scope:
+        if tuple(sorted(set(self.page_scope))) != self.page_scope:
             raise ValueError("PDF transformation payload requires sorted unique page scope.")
+        if self.activity_type is not PdfTransformationType.REPAIR and not self.page_scope:
+            raise ValueError("A page-derived PDF transformation requires a nonempty page scope.")
         if self.confidence is not None and not 0 <= self.confidence <= 1:
             raise ValueError("PDF transformation confidence must be between zero and one.")
         if self.activity_type is PdfTransformationType.OCR:
@@ -332,6 +367,7 @@ class PdfIngestInput:
     ingested_at: datetime
     raw_blob_id: str
     build_identity: BuildIdentity
+    access_credential: PdfAccessCredential | None = None
 
 
 @dataclass(frozen=True)
@@ -365,7 +401,10 @@ def ingest_pdf(
     raw_blob = ledger_repository.get_raw_blob(ingest_input.raw_blob_id)
     if raw_blob is None or raw_blob.digest != actual_digest:
         raise ValueError("PDF input must reference the immutable RawBlob for its bytes.")
-    processor = parser.processing_identity(ingest_input.policy_id)
+    processor = _bind_processor_identity_to_access_credential(
+        parser.processing_identity(ingest_input.policy_id),
+        ingest_input.access_credential,
+    )
     task = processing_task_fingerprint(
         task_kind="pdf_document_representation",
         document_id=document.id,
@@ -391,15 +430,11 @@ def ingest_pdf(
                 policy_id=ingest_input.policy_id,
                 processing_task_fingerprint_id=task.id,
                 parsed_at=ingest_input.ingested_at,
+                access_credential=ingest_input.access_credential,
+                expected_processor_config_digest=processor.processor_config_digest,
             )
         ),
-        failure_for_exception=lambda exc: ProcessingFailure(
-            code="pdf_processor_failure",
-            failure_type=type(exc).__name__,
-            stage=ProcessingStage.PARSER,
-            safe_message="PDF processor failed before producing a result.",
-            retryable=False,
-        ),
+        failure_for_exception=_pdf_processor_failure,
     )
     try:
         transformation_blobs = _archive_pdf_transformation_payloads(
@@ -626,6 +661,43 @@ def ingest_pdf(
         ),
         blocking_reasons=parse_result.blocking_reasons,
         preflight_report_id=page_accounting.preflight_report.id,
+    )
+
+
+def _bind_processor_identity_to_access_credential(
+    processor: PdfProcessorIdentity,
+    credential: PdfAccessCredential | None,
+) -> PdfProcessorIdentity:
+    if credential is None:
+        return processor
+    bound_digest = hashlib.sha256(
+        json.dumps(
+            {
+                "base_processor_config_digest": processor.processor_config_digest,
+                "access_credential_id": credential.credential_id,
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode()
+    ).hexdigest()
+    return replace(processor, processor_config_digest=bound_digest)
+
+
+def _pdf_processor_failure(exception: Exception) -> ProcessingFailure:
+    if isinstance(exception, PdfProcessingError):
+        return ProcessingFailure(
+            code=exception.code,
+            failure_type=exception.failure_type,
+            stage=ProcessingStage.PARSER,
+            safe_message=exception.safe_message,
+            retryable=exception.retryable,
+        )
+    return ProcessingFailure(
+        code="pdf_processor_failure",
+        failure_type=type(exception).__name__,
+        stage=ProcessingStage.PARSER,
+        safe_message="PDF processor failed before producing a result.",
+        retryable=True,
     )
 
 

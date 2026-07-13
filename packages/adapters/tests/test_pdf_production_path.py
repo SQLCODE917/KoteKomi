@@ -785,16 +785,20 @@ def test_pdf_production_path_records_docling_source_access_as_blocked(
 
 
 @pytest.mark.parametrize(
-    "fixture_path",
+    ("fixture_path", "expected_reason"),
     (
-        "fixtures/pdf/encrypted/encrypted_aes256_v1.pdf",
-        "fixtures/pdf/corrupt/ocrmypdf-invalid.pdf",
+        ("fixtures/pdf/encrypted/encrypted_aes256_v1.pdf", "password_required"),
+        (
+            "fixtures/pdf/corrupt/ocrmypdf-invalid.pdf",
+            "PDF source preflight could not establish an authoritative page inventory.",
+        ),
     ),
 )
 def test_public_pdf_ingestion_blocks_when_source_preflight_cannot_establish_pages(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     fixture_path: str,
+    expected_reason: str,
 ) -> None:
     raw_pdf = (Path(__file__).parent / fixture_path).read_bytes()
     fixture_key = Path(fixture_path).stem
@@ -815,9 +819,7 @@ def test_public_pdf_ingestion_blocks_when_source_preflight_cannot_establish_page
         )
 
     assert result.representation_id is None
-    assert result.blocking_reasons == (
-        "PDF source preflight could not establish an authoritative page inventory.",
-    )
+    assert result.blocking_reasons == (expected_reason,)
     task_id = _only_processing_task_id(ledger_path)
     with sqlite_ledger_transaction(ledger_path) as repository:
         attempts = repository.list_processing_attempts(task_id)

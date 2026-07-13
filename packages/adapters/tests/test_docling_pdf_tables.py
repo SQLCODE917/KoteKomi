@@ -200,7 +200,7 @@ def test_table_value_reaches_context_and_evidence_only_with_header_ancestry_afte
                 build_identity=BuildIdentity("table-proof", "table-proof", "d" * 64, "1"),
             ),
             repository,
-            DoclingPdfParser(DoclingPdfParserConfig()),
+            DoclingPdfParser(DoclingPdfParserConfig(enable_table_structure=True)),
             Uuid4ProcessingAttemptIdFactory(),
         )
         assert ingest.representation_id is not None
@@ -364,7 +364,7 @@ def test_nist_table_continuation_is_one_logical_table_with_three_page_fragments(
     raw_pdf = (
         Path(__file__).parent / "fixtures" / "pdf" / "tables" / "nist-srm-2259-certificate.pdf"
     ).read_bytes()
-    result = DoclingPdfParser(DoclingPdfParserConfig()).parse(
+    result = DoclingPdfParser(DoclingPdfParserConfig(enable_table_structure=True)).parse(
         PdfParseInput(
             document=Document(
                 id="doc_nist_table_continuation",

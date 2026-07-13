@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 from kotekomi_adapters.docling_pdf_parser import DoclingPdfParser, DoclingPdfParserConfig
-from kotekomi_application import PdfParseInput
+from kotekomi_application import PdfParseInput, PdfProcessingError
 from kotekomi_domain import Document
 
 NOW = datetime(2026, 7, 11, tzinfo=UTC)
@@ -56,10 +56,12 @@ def test_docling_parser_raises_when_docling_load_fails(
     monkeypatch.setattr(docling_pdf_parser, "_load_docling_components", fail_to_load)
     monkeypatch.setenv("KOTEKOMI_DOCLING_WORKER", "1")
 
-    with pytest.raises(RuntimeError, match="Docling conversion failed"):
+    with pytest.raises(PdfProcessingError, match="PDF parser failed") as failure:
         DoclingPdfParser(DoclingPdfParserConfig()).parse(
             PdfParseInput(document, raw_pdf, "pdf_policy_v1", "ptf_fixture", NOW)
         )
+    assert failure.value.code == "pdf_parser_failure"
+    assert failure.value.retryable is True
 
 
 @pytest.mark.parametrize(

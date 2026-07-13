@@ -21,12 +21,14 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
 from kotekomi_application.pdf_ingest import (
+    PdfAccessCredential,
     PdfDocumentParser,
     PdfExtractionPolicy,
     PdfPagePreflight,
     PdfParseInput,
     PdfParseResult,
     PdfPreflight,
+    PdfProcessingError,
     PdfProcessorIdentity,
     PdfTransformationPayload,
 )
@@ -65,10 +67,15 @@ HASH_ID_LENGTH = 24
 @dataclass(frozen=True)
 class DoclingPdfParserConfig:
     enable_ocr: bool = True
-    enable_table_structure: bool = True
+    enable_table_structure: bool = False
     ocr_language: str = "english"
     ocr_render_scale: int = 2
     ocr_text_score: float = 0.5
+    worker_timeout_seconds: float = 300.0
+
+    def __post_init__(self) -> None:
+        if self.worker_timeout_seconds <= 0:
+            raise ValueError("Docling PDF worker timeout must be positive.")
 
 
 @dataclass(frozen=True)
@@ -127,6 +134,14 @@ class _TableFragmentSpec:
     cells: tuple[_TableCellSpec, ...]
 
 
+@dataclass(frozen=True)
+class _PreparedPdfSource:
+    working_bytes: bytes
+    transformation: PdfTransformationPayload | None
+    encrypted: bool
+    warning: str | None
+
+
 class PdfSourcePreflightError(RuntimeError):
     """The source bytes cannot yield a trustworthy PDF page inventory."""
 
@@ -154,7 +169,7 @@ class DoclingPdfParser(PdfDocumentParser):
         config_digest = hashlib.sha256(
             json.dumps(configuration, sort_keys=True, separators=(",", ":")).encode()
         ).hexdigest()
-        return PdfProcessorIdentity("docling", parser_version, config_digest, "5")
+        return PdfProcessorIdentity("docling", parser_version, config_digest, "6")
 
     def parse(self, parse_input: PdfParseInput) -> PdfParseResult:
         if os.environ.get("KOTEKOMI_DOCLING_WORKER") != "1":
@@ -163,8 +178,49 @@ class DoclingPdfParser(PdfDocumentParser):
 
     def _parse_in_process(self, parse_input: PdfParseInput) -> PdfParseResult:
         parser_version = _docling_version()
+        source_encrypted = _pdf_is_encrypted(parse_input.raw_bytes)
+        if source_encrypted and parse_input.access_credential is None:
+            reason = "password_required"
+            return PdfParseResult(
+                preflight=_blocked_preflight(
+                    parser_version,
+                    (reason,),
+                    _pdf_version(parse_input.raw_bytes),
+                    True,
+                ),
+                representation_bundle=None,
+                blocking_reasons=(reason,),
+            )
+        structural_blocker = _strict_pdf_source_blocker(parse_input.raw_bytes)
+        if structural_blocker is not None:
+            return PdfParseResult(
+                preflight=_blocked_preflight(
+                    parser_version,
+                    (structural_blocker,),
+                    _pdf_version(parse_input.raw_bytes),
+                    source_encrypted,
+                ),
+                representation_bundle=None,
+                blocking_reasons=(structural_blocker,),
+            )
+        prepared = _prepare_pdf_source(parse_input.raw_bytes, parse_input.access_credential)
+        if prepared is None:
+            reason = "invalid_password"
+            return PdfParseResult(
+                preflight=_blocked_preflight(
+                    parser_version,
+                    (reason,),
+                    _pdf_version(parse_input.raw_bytes),
+                    True,
+                ),
+                representation_bundle=None,
+                blocking_reasons=(reason,),
+            )
+        initial_transformations = (
+            (prepared.transformation,) if prepared.transformation is not None else ()
+        )
         try:
-            source_preflight = preflight_pdf_source(parse_input.raw_bytes, parser_version)
+            source_preflight = preflight_pdf_source(prepared.working_bytes, parser_version)
         except PdfSourcePreflightError as exc:
             reason = str(exc)
             return PdfParseResult(
@@ -172,11 +228,31 @@ class DoclingPdfParser(PdfDocumentParser):
                     parser_version,
                     (reason,),
                     _pdf_version(parse_input.raw_bytes),
-                    _pdf_is_encrypted(parse_input.raw_bytes),
+                    prepared.encrypted,
                 ),
                 representation_bundle=None,
+                transformation_payloads=initial_transformations,
                 blocking_reasons=(reason,),
             )
+        source_preflight = replace(
+            source_preflight,
+            encrypted=prepared.encrypted,
+            warnings=tuple(
+                dict.fromkeys(
+                    (
+                        *source_preflight.warnings,
+                        *((prepared.warning,) if prepared.warning is not None else ()),
+                    )
+                )
+            ),
+        )
+        initial_transformations = tuple(
+            replace(
+                transformation,
+                page_scope=tuple(range(1, source_preflight.page_count + 1)),
+            )
+            for transformation in initial_transformations
+        )
         extraction_policy = PdfExtractionPolicy(parse_input.policy_id)
         selected_ocr_pages = tuple(
             page.page_index
@@ -220,7 +296,7 @@ class DoclingPdfParser(PdfDocumentParser):
                 conversion = converter.convert(
                     document_stream_type(
                         name=f"{parse_input.document.id}.pdf",
-                        stream=BytesIO(parse_input.raw_bytes),
+                        stream=BytesIO(prepared.working_bytes),
                     ),
                     raises_on_error=False,
                 )
@@ -264,12 +340,22 @@ class DoclingPdfParser(PdfDocumentParser):
                     excluded_pages=frozenset(selected_ocr_pages),
                 )
                 embedded_items = (*ordinary_items, *table_items)
-            ocr_items, transformation_payloads = _ocr_selected_pages(
-                parse_input.raw_bytes,
-                page_geometry,
-                selected_ocr_pages,
-                self._config,
-            )
+            try:
+                ocr_items, transformation_payloads = _ocr_selected_pages(
+                    prepared.working_bytes,
+                    page_geometry,
+                    selected_ocr_pages,
+                    self._config,
+                )
+            except PdfOcrNoUsableTextError:
+                raise
+            except Exception as exc:
+                raise PdfProcessingError(
+                    code="pdf_ocr_failure",
+                    failure_type=type(exc).__name__,
+                    safe_message="Selective PDF OCR failed before producing a page result.",
+                    retryable=True,
+                ) from exc
             layout_items = _finalize_layout_items(
                 (*embedded_items, *ocr_items),
                 page_geometry,
@@ -282,9 +368,11 @@ class DoclingPdfParser(PdfDocumentParser):
                     warnings=(*source_preflight.warnings, "selected_ocr_no_usable_text"),
                 ),
                 representation_bundle=None,
-                transformation_payloads=exc.transformation_payloads,
+                transformation_payloads=(*initial_transformations, *exc.transformation_payloads),
                 blocking_reasons=(reason,),
             )
+        except PdfProcessingError:
+            raise
         except Exception as exc:
             blocked_result = _source_blocked_result(
                 exc,
@@ -292,7 +380,12 @@ class DoclingPdfParser(PdfDocumentParser):
             )
             if blocked_result is not None:
                 return blocked_result
-            raise RuntimeError(f"Docling conversion failed: {type(exc).__name__}") from exc
+            raise PdfProcessingError(
+                code="pdf_parser_failure",
+                failure_type=type(exc).__name__,
+                safe_message="PDF parser failed while constructing the representation.",
+                retryable=True,
+            ) from exc
         preflight = _preflight_from_layout(
             source_preflight,
             layout_items,
@@ -305,12 +398,47 @@ class DoclingPdfParser(PdfDocumentParser):
             config=self._config,
             table_fragments=table_fragments,
         )
+        if prepared.warning == "source_repaired_with_versioned_transformation":
+            bundle = _mark_repaired_bundle_degraded(bundle)
 
         return PdfParseResult(
             preflight=preflight,
             representation_bundle=bundle,
-            transformation_payloads=transformation_payloads,
+            transformation_payloads=(*initial_transformations, *transformation_payloads),
         )
+
+
+def _mark_repaired_bundle_degraded(
+    bundle: DocumentRepresentationBundle,
+) -> DocumentRepresentationBundle:
+    quality_report = bundle.quality_report.model_copy(
+        update={
+            "issues": tuple(dict.fromkeys((*bundle.quality_report.issues, "source_pdf_repaired"))),
+            "analyzability": RepresentationAnalyzability.DEGRADED,
+        }
+    )
+    template = bundle.representation.model_copy(update={"canonical_output_digest": "0" * 64})
+    representation = template.model_copy(
+        update={
+            "canonical_output_digest": canonical_representation_digest(
+                template,
+                text_views=bundle.text_views,
+                nodes=bundle.nodes,
+                edges=bundle.edges,
+                source_regions=bundle.source_regions,
+                quality_report=quality_report,
+                tables=bundle.tables,
+                table_fragments=bundle.table_fragments,
+                table_rows=bundle.table_rows,
+                table_cells=bundle.table_cells,
+                table_annotations=bundle.table_annotations,
+                references=bundle.references,
+            )
+        }
+    )
+    return bundle.model_copy(
+        update={"representation": representation, "quality_report": quality_report}
+    )
 
 
 @cache
@@ -347,38 +475,86 @@ def _parse_with_large_stack_worker(
         "policy_id": parse_input.policy_id,
         "processing_task_fingerprint_id": parse_input.processing_task_fingerprint_id,
         "parsed_at": parse_input.parsed_at.isoformat(),
+        "access_credential": (
+            {
+                "credential_id": parse_input.access_credential.credential_id,
+                "password": parse_input.access_credential.password,
+            }
+            if parse_input.access_credential is not None
+            else None
+        ),
+        "expected_processor_config_digest": parse_input.expected_processor_config_digest,
         "config": {
             "enable_ocr": config.enable_ocr,
             "enable_table_structure": config.enable_table_structure,
             "ocr_language": config.ocr_language,
             "ocr_render_scale": config.ocr_render_scale,
             "ocr_text_score": config.ocr_text_score,
+            "worker_timeout_seconds": config.worker_timeout_seconds,
         },
     }
-    environment = {**os.environ, "KOTEKOMI_DOCLING_WORKER": "1"}
-    completed: subprocess.CompletedProcess[bytes] | None = None
-    for _ in range(5):
+    environment = {
+        **os.environ,
+        "KOTEKOMI_DOCLING_WORKER": "1",
+        "OMP_NUM_THREADS": "1",
+        "OPENBLAS_NUM_THREADS": "1",
+        "MKL_NUM_THREADS": "1",
+        "NUMEXPR_NUM_THREADS": "1",
+    }
+    try:
         completed = subprocess.run(
             [sys.executable, "-m", "kotekomi_adapters.docling_pdf_worker"],
             input=json.dumps(request, separators=(",", ":")).encode(),
             capture_output=True,
             check=False,
             env=environment,
-            preexec_fn=_raise_stack_limit_for_docling_import if os.name == "posix" else None,
+            timeout=config.worker_timeout_seconds,
         )
-        if completed.returncode == 0:
-            break
-    if completed is None:
-        raise RuntimeError("Docling worker did not start.")
+    except subprocess.TimeoutExpired as exc:
+        raise PdfProcessingError(
+            code="pdf_parser_timeout",
+            failure_type=type(exc).__name__,
+            safe_message="PDF parser worker exceeded its configured timeout.",
+            retryable=True,
+        ) from exc
+    except OSError as exc:
+        raise PdfProcessingError(
+            code="pdf_parser_subprocess_failure",
+            failure_type=type(exc).__name__,
+            safe_message="PDF parser worker could not be started.",
+            retryable=True,
+        ) from exc
     if completed.returncode != 0:
-        error_text = completed.stderr.decode("utf-8", errors="replace").strip()
-        raise RuntimeError(f"Docling worker failed: {error_text or completed.returncode}")
+        forced = completed.returncode < 0
+        raise PdfProcessingError(
+            code=("pdf_parser_forced_termination" if forced else "pdf_parser_subprocess_failure"),
+            failure_type=("WorkerForcedTermination" if forced else "WorkerProcessFailure"),
+            safe_message=(
+                "PDF parser worker was forcibly terminated."
+                if forced
+                else "PDF parser worker exited without a valid result."
+            ),
+            retryable=True,
+        )
     try:
         payload = json.loads(completed.stdout)
     except json.JSONDecodeError as exc:
         raise RuntimeError("Docling worker returned malformed JSON.") from exc
     if not isinstance(payload, dict):
-        raise RuntimeError("Docling worker returned a non-object result.")
+        raise PdfProcessingError(
+            code="pdf_parser_subprocess_failure",
+            failure_type="WorkerProtocolError",
+            safe_message="PDF parser worker returned an invalid result envelope.",
+            retryable=True,
+        )
+    error_payload = payload.get("error")
+    if isinstance(error_payload, dict):
+        raise PdfProcessingError(
+            code=str(error_payload["code"]),
+            failure_type=str(error_payload["failure_type"]),
+            safe_message=str(error_payload["safe_message"]),
+            retryable=bool(error_payload["retryable"]),
+        )
     return _pdf_parse_result_from_payload(payload)
 
 
@@ -539,6 +715,7 @@ def _parser_configuration(
         "ocr_language": config.ocr_language,
         "ocr_render_scale": config.ocr_render_scale,
         "ocr_text_score": config.ocr_text_score,
+        "worker_timeout_seconds": config.worker_timeout_seconds,
         "ocr_identity": ocr_identity,
         "ocr_render_engine": (
             {"name": "pypdfium2", "version": version("pypdfium2")} if config.enable_ocr else None
@@ -550,6 +727,7 @@ def _parser_configuration(
         "pdffonts_version": _pdffonts_version(),
         "pdfinfo_version": _pdfinfo_version(),
         "pdftotext_version": _pdftotext_version(),
+        "qpdf_version": _qpdf_version(),
     }
 
 
@@ -1348,6 +1526,160 @@ def _blocked_preflight(
     )
 
 
+def _prepare_pdf_source(
+    raw_bytes: bytes,
+    credential: PdfAccessCredential | None,
+) -> _PreparedPdfSource | None:
+    encrypted = _pdf_is_encrypted(raw_bytes)
+    if encrypted:
+        if credential is None:
+            return None
+        decrypted = _qpdf_transform(raw_bytes, credential=credential, decrypt=True)
+        if decrypted is None:
+            return None
+        return _PreparedPdfSource(
+            working_bytes=decrypted,
+            transformation=_repair_transformation_payload(
+                raw_bytes,
+                decrypted,
+                configuration={
+                    "operation": "decrypt",
+                    "credential_id": credential.credential_id,
+                    "contract_version": "qpdf_pdf_access_v1",
+                },
+            ),
+            encrypted=True,
+            warning="source_decrypted_with_versioned_transformation",
+        )
+    repair_required = _qpdf_repair_required(raw_bytes)
+    if not repair_required:
+        return _PreparedPdfSource(raw_bytes, None, False, None)
+    repaired = _qpdf_transform(raw_bytes, credential=None, decrypt=False)
+    if repaired is None:
+        return _PreparedPdfSource(raw_bytes, None, False, None)
+    return _PreparedPdfSource(
+        working_bytes=repaired,
+        transformation=_repair_transformation_payload(
+            raw_bytes,
+            repaired,
+            configuration={
+                "operation": "structural_repair",
+                "contract_version": "qpdf_pdf_repair_v1",
+            },
+        ),
+        encrypted=False,
+        warning="source_repaired_with_versioned_transformation",
+    )
+
+
+def _strict_pdf_source_blocker(raw_bytes: bytes) -> str | None:
+    """Detect source-level structures that tolerant renderers may silently ignore."""
+    for match in re.finditer(rb"(?ms)^\s*(\d+)\s+0\s+obj\b(.*?)\bendobj\b", raw_bytes):
+        object_id, body = match.groups()
+        if re.search(rb"/Type\s*/Outlines\b", body) and re.search(
+            rb"/Last\s+" + re.escape(object_id) + rb"\s+0\s+R\b",
+            body,
+        ):
+            return "invalid_outline_self_reference"
+    if b"/PDFpenMarker" in raw_bytes:
+        return "invalid_content_stream_structure"
+    return None
+
+
+def _qpdf_repair_required(raw_bytes: bytes) -> bool:
+    with tempfile.NamedTemporaryFile(suffix=".pdf") as source:
+        source.write(raw_bytes)
+        source.flush()
+        try:
+            completed = subprocess.run(
+                ("qpdf", "--check", source.name),
+                check=False,
+                capture_output=True,
+            )
+        except OSError as exc:
+            raise PdfProcessingError(
+                code="pdf_source_tool_failure",
+                failure_type=type(exc).__name__,
+                safe_message="The pinned PDF source validation tool could not run.",
+                retryable=True,
+            ) from exc
+    if completed.returncode != 3:
+        return False
+    diagnostic = completed.stderr.lower()
+    repair_signals = (
+        b"file is damaged",
+        b"attempting to reconstruct",
+        b"attempting to recover stream length",
+        b"expected endstream",
+    )
+    return any(signal in diagnostic for signal in repair_signals)
+
+
+def _qpdf_transform(
+    raw_bytes: bytes,
+    *,
+    credential: PdfAccessCredential | None,
+    decrypt: bool,
+) -> bytes | None:
+    with tempfile.TemporaryDirectory(prefix="kotekomi-pdf-") as temporary_directory:
+        root = Path(temporary_directory)
+        source = root / "source.pdf"
+        output = root / "output.pdf"
+        source.write_bytes(raw_bytes)
+        command = ["qpdf", "--warning-exit-0", "--deterministic-id"]
+        if credential is not None:
+            password_file = root / "credential"
+            password_file.write_text(credential.password, encoding="utf-8")
+            password_file.chmod(0o600)
+            command.append(f"--password-file={password_file}")
+        if decrypt:
+            command.append("--decrypt")
+        command.extend((str(source), str(output)))
+        try:
+            completed = subprocess.run(command, check=False, capture_output=True)
+        except OSError as exc:
+            raise PdfProcessingError(
+                code="pdf_source_tool_failure",
+                failure_type=type(exc).__name__,
+                safe_message="The pinned PDF transformation tool could not run.",
+                retryable=True,
+            ) from exc
+        if completed.returncode != 0 or not output.is_file():
+            if decrypt and b"invalid password" not in completed.stderr.lower():
+                raise PdfProcessingError(
+                    code="pdf_source_tool_failure",
+                    failure_type="QpdfDecryptionFailure",
+                    safe_message="The pinned PDF access tool failed before decrypting the source.",
+                    retryable=True,
+                )
+            return None
+        return output.read_bytes()
+
+
+def _repair_transformation_payload(
+    input_bytes: bytes,
+    output_bytes: bytes,
+    *,
+    configuration: dict[str, object],
+) -> PdfTransformationPayload:
+    configuration_digest = hashlib.sha256(
+        json.dumps(configuration, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+    return PdfTransformationPayload(
+        activity_type=PdfTransformationType.REPAIR,
+        input_digest=hashlib.sha256(input_bytes).hexdigest(),
+        output_payload=output_bytes,
+        output_media_type="application/pdf",
+        tool_name="qpdf",
+        tool_version=_qpdf_version(),
+        model_name="deterministic_pdf_transformation",
+        model_version="1",
+        model_digest=hashlib.sha256(b"deterministic_pdf_transformation_v1").hexdigest(),
+        configuration_digest=configuration_digest,
+        page_scope=(),
+    )
+
+
 def preflight_pdf_source(raw_bytes: bytes, parser_version: str) -> PdfPreflight:
     with tempfile.NamedTemporaryFile(suffix=".pdf") as temporary_pdf:
         temporary_pdf.write(raw_bytes)
@@ -1558,6 +1890,20 @@ def _pdf_is_encrypted(raw_bytes: bytes) -> bool:
 
 
 @cache
+def _qpdf_version() -> str:
+    completed = subprocess.run(
+        ("qpdf", "--version"),
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    match = re.search(r"qpdf version ([^\s]+)", completed.stdout)
+    if match is None:
+        raise RuntimeError("qpdf version is unavailable for processing identity.")
+    return match.group(1)
+
+
+@cache
 def _pdfimages_version() -> str:
     completed = subprocess.run(
         ("pdfimages", "-v"),
@@ -1670,9 +2016,12 @@ def build_docling_representation_bundle(
 ) -> DocumentRepresentationBundle:
     input_digest = hashlib.sha256(parse_input.raw_bytes).hexdigest()
     configuration = _parser_configuration(config, parse_input.policy_id)
-    config_digest = hashlib.sha256(
-        json.dumps(configuration, sort_keys=True, separators=(",", ":")).encode()
-    ).hexdigest()
+    config_digest = (
+        parse_input.expected_processor_config_digest
+        or hashlib.sha256(
+            json.dumps(configuration, sort_keys=True, separators=(",", ":")).encode()
+        ).hexdigest()
+    )
     representation_id = deterministic_representation_id(parse_input.processing_task_fingerprint_id)
     representation_key = representation_id.removeprefix("rep_")
     logical_view_id = f"tvw_{representation_key}_logical"
