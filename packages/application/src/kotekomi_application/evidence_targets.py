@@ -238,6 +238,7 @@ def _validate_evidence_target(
         table_cells=bundle.table_cells,
         table_annotations=bundle.table_annotations,
         references=bundle.references,
+        source_selectors=bundle.source_selectors,
     )
     if bundle.representation.canonical_output_digest != actual_output_digest:
         raise ValueError("DocumentRepresentation canonical_output_digest is corrupted.")
@@ -331,4 +332,15 @@ def _validate_evidence_target(
     ):
         raise ValueError("EvidenceTarget table selector must retain every cell and header region.")
     if evidence_target.dom_selector is not None:
-        raise ValueError("DOM evidence selectors are not yet represented by this parser output.")
+        selector_id = evidence_target.dom_selector.get("selector_id")
+        if not isinstance(selector_id, str):
+            raise ValueError("EvidenceTarget DOM selector requires selector_id.")
+        selectors = {selector.id: selector for selector in bundle.source_selectors}
+        selector = selectors.get(selector_id)
+        if selector is None:
+            raise ValueError("EvidenceTarget DOM selector is missing from its representation.")
+        if selector.node_id not in evidence_target.node_ids:
+            raise ValueError("EvidenceTarget DOM selector does not agree with its node selector.")
+        expected_path = evidence_target.dom_selector.get("path")
+        if expected_path != list(selector.path):
+            raise ValueError("EvidenceTarget DOM selector path disagrees with its representation.")

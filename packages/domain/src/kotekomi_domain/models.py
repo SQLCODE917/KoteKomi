@@ -64,6 +64,11 @@ DocumentTableRowId = Annotated[str, Field(pattern=r"^trw_[A-Za-z0-9][A-Za-z0-9_-
 DocumentTableCellId = Annotated[str, Field(pattern=r"^tcl_[A-Za-z0-9][A-Za-z0-9_-]*$")]
 DocumentTableAnnotationId = Annotated[str, Field(pattern=r"^tan_[A-Za-z0-9][A-Za-z0-9_-]*$")]
 DocumentReferenceId = Annotated[str, Field(pattern=r"^drf_[A-Za-z0-9][A-Za-z0-9_-]*$")]
+DocumentSourceSelectorId = Annotated[str, Field(pattern=r"^dss_[A-Za-z0-9][A-Za-z0-9_-]*$")]
+NewsRightsProfileId = Annotated[str, Field(pattern=r"^nrp_[A-Za-z0-9][A-Za-z0-9_-]*$")]
+NewsDeliveryEnvelopeArtifactId = Annotated[str, Field(pattern=r"^nde_[A-Za-z0-9][A-Za-z0-9_-]*$")]
+NewsRevisionClassificationId = Annotated[str, Field(pattern=r"^nrc_[A-Za-z0-9][A-Za-z0-9_-]*$")]
+NewsRepresentationMetadataId = Annotated[str, Field(pattern=r"^nrm_[A-Za-z0-9][A-Za-z0-9_-]*$")]
 
 
 def utc_now() -> datetime:
@@ -98,6 +103,7 @@ class DocumentVersionKind(StrEnum):
     ORIGINAL = "original"
     UPDATE = "update"
     CORRECTION = "correction"
+    CLARIFICATION = "clarification"
     WITHDRAWAL = "withdrawal"
     UNKNOWN = "unknown"
 
@@ -105,6 +111,7 @@ class DocumentVersionKind(StrEnum):
 class DocumentRevisionType(StrEnum):
     UPDATES = "updates"
     CORRECTS = "corrects"
+    CLARIFIES = "clarifies"
     SUPERSEDES = "supersedes"
     WITHDRAWS = "withdraws"
 
@@ -169,6 +176,49 @@ class DocumentReferenceKind(StrEnum):
     CROSS_REFERENCE = "cross_reference"
 
 
+class DocumentSourceSelectorKind(StrEnum):
+    XML_PATH = "xml_path"
+    DOM_PATH = "dom_path"
+    PROVIDER_ELEMENT = "provider_element"
+
+
+class NewsBodyElementKind(StrEnum):
+    HEADLINE = "headline"
+    SUBTITLE = "subtitle"
+    BYLINE = "byline"
+    DATELINE = "dateline"
+    HEADING = "heading"
+    PARAGRAPH = "paragraph"
+    QUOTE = "quote"
+    LIST = "list"
+    LIST_ITEM = "list_item"
+    CAPTION = "caption"
+    MEDIA_REFERENCE = "media_reference"
+
+
+class NewsFormatPrecedence(StrEnum):
+    PROVIDER_NATIVE = "provider_native"
+    NEWSML_G2 = "newsml_g2"
+    NEWSARTICLE_JSON_LD = "newsarticle_json_ld"
+    SEMANTIC_HTML = "semantic_html"
+    MAIN_TEXT_FALLBACK = "main_text_fallback"
+
+
+class NewsUsePurpose(StrEnum):
+    ARCHIVE = "archive"
+    BODY_TEXT = "body_text"
+    LOG = "log"
+    DIAGNOSTIC = "diagnostic"
+    PUBLIC_FIXTURE = "public_fixture"
+    EXPORT = "export"
+    SEARCH_INDEX = "search_index"
+    EMBEDDING = "embedding"
+    MODEL_CONTEXT = "model_context"
+    REVIEW = "review"
+    BRIEFING = "briefing"
+    GRAPH_PUBLICATION = "graph_publication"
+
+
 class EvidenceValidationAttemptStatus(StrEnum):
     SUCCEEDED = "succeeded"
     FAILED = "failed"
@@ -205,6 +255,10 @@ class ProcessingArtifactKind(StrEnum):
     PDF_PAGE_EXTRACTION_STATUS = "pdf_page_extraction_status"
     PDF_TRANSFORMATION_ARTIFACT = "pdf_transformation_artifact"
     PDF_TRANSFORMATION_BLOB = "pdf_transformation_blob"
+    NEWS_DELIVERY_ENVELOPE = "news_delivery_envelope"
+    NEWS_RIGHTS_PROFILE = "news_rights_profile"
+    NEWS_REVISION_CLASSIFICATION = "news_revision_classification"
+    NEWS_REPRESENTATION_METADATA = "news_representation_metadata"
 
 
 class OutputDisposition(StrEnum):
@@ -391,6 +445,183 @@ class SourceCapture(DomainModel):
     embargo_until: datetime | None = None
     captured_at: datetime = Field(default_factory=utc_now)
     transaction_time: datetime = Field(default_factory=utc_now)
+
+
+class ProviderIdentity(DomainModel):
+    provider_namespace: NonEmptyStr
+    provider_item_id: NonEmptyStr
+    provider_version: NonEmptyStr
+    provider_status: NonEmptyStr
+    normalized_version_key: NonEmptyStr
+    canonical_uri: NonEmptyStr | None = None
+
+
+class NewsBodyElement(DomainModel):
+    element_key: NonEmptyStr
+    kind: NewsBodyElementKind
+    order_index: Annotated[int, Field(ge=0)]
+    hierarchy_path: tuple[NonEmptyStr, ...]
+    source_path: tuple[NonEmptyStr, ...]
+    text: str = ""
+    media_reference: NonEmptyStr | None = None
+
+    @model_validator(mode="after")
+    def validate_content(self) -> Self:
+        if not self.text and self.media_reference is None:
+            raise ValueError("NewsBodyElement requires text or a media reference.")
+        if self.kind is NewsBodyElementKind.MEDIA_REFERENCE and self.media_reference is None:
+            raise ValueError("A media-reference element requires media_reference.")
+        return self
+
+
+class NewsRightsFacts(DomainModel):
+    usage_terms: tuple[NonEmptyStr, ...] = Field(default_factory=tuple)
+    distribution_scopes: tuple[NonEmptyStr, ...] = Field(default_factory=tuple)
+    provider_signals: tuple[NonEmptyStr, ...] = Field(default_factory=tuple)
+    embargo_until: datetime | None = None
+    entitlement_expires_at: datetime | None = None
+    archive_permitted: bool
+
+
+class ProviderNewsItem(DomainModel):
+    identity: ProviderIdentity
+    version_created_at: datetime
+    first_published_at: datetime | None = None
+    updated_at: datetime | None = None
+    language: NonEmptyStr | None = None
+    headlines: tuple[NonEmptyStr, ...]
+    bylines: tuple[NonEmptyStr, ...] = Field(default_factory=tuple)
+    dateline: NonEmptyStr | None = None
+    subjects: tuple[NonEmptyStr, ...] = Field(default_factory=tuple)
+    locations: tuple[NonEmptyStr, ...] = Field(default_factory=tuple)
+    body_elements: tuple[NewsBodyElement, ...]
+    media_references: tuple[NonEmptyStr, ...] = Field(default_factory=tuple)
+    rights: NewsRightsFacts
+    raw_metadata: dict[str, JsonValue] = Field(default_factory=dict)
+    format_precedence: NewsFormatPrecedence
+
+    @model_validator(mode="after")
+    def validate_body_order(self) -> Self:
+        order = tuple(element.order_index for element in self.body_elements)
+        if order != tuple(range(len(order))):
+            raise ValueError("ProviderNewsItem body elements must be contiguous from zero.")
+        if len({element.element_key for element in self.body_elements}) != len(self.body_elements):
+            raise ValueError("ProviderNewsItem element keys must be unique.")
+        forbidden_metadata_keys = {"articleBody", "body", "content", "text"}
+        if forbidden_metadata_keys.intersection(self.raw_metadata):
+            raise ValueError("ProviderNewsItem raw_metadata must not duplicate article body text.")
+        return self
+
+
+class NewsRightsProfile(DomainModel):
+    id: NewsRightsProfileId
+    policy_id: NonEmptyStr
+    facts_digest: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
+    provider_namespace: NonEmptyStr
+    usage_terms: tuple[NonEmptyStr, ...] = Field(default_factory=tuple)
+    distribution_scopes: tuple[NonEmptyStr, ...] = Field(default_factory=tuple)
+    provider_signals: tuple[NonEmptyStr, ...] = Field(default_factory=tuple)
+    embargo_until: datetime | None = None
+    entitlement_expires_at: datetime | None = None
+    archive_permitted: bool
+    allowed_purposes: tuple[NewsUsePurpose, ...]
+    created_at: datetime = Field(default_factory=utc_now)
+
+    @model_validator(mode="after")
+    def validate_purposes(self) -> Self:
+        if len(set(self.allowed_purposes)) != len(self.allowed_purposes):
+            raise ValueError("NewsRightsProfile allowed purposes must be unique.")
+        facts = NewsRightsFacts(
+            usage_terms=self.usage_terms,
+            distribution_scopes=self.distribution_scopes,
+            provider_signals=self.provider_signals,
+            embargo_until=self.embargo_until,
+            entitlement_expires_at=self.entitlement_expires_at,
+            archive_permitted=self.archive_permitted,
+        )
+        canonical_facts = json.dumps(
+            facts.model_dump(mode="json"),
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        if hashlib.sha256(canonical_facts.encode()).hexdigest() != self.facts_digest:
+            raise ValueError("NewsRightsProfile facts_digest must match its rights facts.")
+        return self
+
+
+class NewsDeliveryEnvelopeArtifact(DomainModel):
+    id: NewsDeliveryEnvelopeArtifactId
+    capture_id: SourceCaptureId
+    blob_id: RawBlobId
+    envelope_digest: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
+    retrieval_method: NonEmptyStr
+    requested_uri: NonEmptyStr | None = None
+    canonical_uri: NonEmptyStr | None = None
+    response_status: Annotated[int, Field(ge=100, le=599)] | None = None
+    safe_metadata: dict[str, JsonValue] = Field(default_factory=dict)
+    created_at: datetime = Field(default_factory=utc_now)
+
+    @model_validator(mode="after")
+    def reject_secret_metadata(self) -> Self:
+        forbidden = {"authorization", "cookie", "set-cookie", "proxy-authorization"}
+        if _json_contains_forbidden_key(self.safe_metadata, forbidden):
+            raise ValueError("News delivery envelope metadata must not contain secrets.")
+        return self
+
+
+class NewsRevisionClassification(DomainModel):
+    id: NewsRevisionClassificationId
+    document_id: DocumentId
+    source_id: SourceId
+    provider_namespace: NonEmptyStr
+    provider_item_id: NonEmptyStr
+    provider_version: NonEmptyStr
+    provider_status: NonEmptyStr
+    normalized_version_key: NonEmptyStr
+    generic_kind: DocumentVersionKind
+    previous_document_id: DocumentId | None = None
+    provider_kind: NonEmptyStr
+    classification_basis: tuple[NonEmptyStr, ...]
+    content_digest: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
+    rights_profile_id: NewsRightsProfileId
+    recorded_at: datetime = Field(default_factory=utc_now)
+
+    @model_validator(mode="after")
+    def validate_revision_shape(self) -> Self:
+        if self.generic_kind is DocumentVersionKind.UNKNOWN:
+            raise ValueError("News revision classification cannot be unknown.")
+        if self.generic_kind is DocumentVersionKind.ORIGINAL:
+            if self.previous_document_id is not None:
+                raise ValueError("Original news revision cannot have a predecessor.")
+        elif self.previous_document_id is None:
+            raise ValueError("A non-original news revision requires a predecessor.")
+        if not self.classification_basis:
+            raise ValueError("News revision classification requires an explicit basis.")
+        return self
+
+
+class NewsRepresentationMetadata(DomainModel):
+    id: NewsRepresentationMetadataId
+    representation_id: DocumentRepresentationId
+    document_id: DocumentId
+    revision_classification_id: NewsRevisionClassificationId
+    rights_profile_id: NewsRightsProfileId
+    adapter_name: NonEmptyStr
+    adapter_version: NonEmptyStr
+    format_precedence: NewsFormatPrecedence
+    provider_status: NonEmptyStr
+    version_created_at: datetime
+    first_published_at: datetime | None = None
+    updated_at: datetime | None = None
+    language: NonEmptyStr | None = None
+    headlines: tuple[NonEmptyStr, ...]
+    bylines: tuple[NonEmptyStr, ...] = Field(default_factory=tuple)
+    dateline: NonEmptyStr | None = None
+    subjects: tuple[NonEmptyStr, ...] = Field(default_factory=tuple)
+    locations: tuple[NonEmptyStr, ...] = Field(default_factory=tuple)
+    media_references: tuple[NonEmptyStr, ...] = Field(default_factory=tuple)
+    raw_metadata: dict[str, JsonValue] = Field(default_factory=dict)
 
 
 class CaptureDocumentResolution(DomainModel):
@@ -904,6 +1135,21 @@ class DocumentReference(DomainModel):
         return self
 
 
+class DocumentSourceSelector(DomainModel):
+    id: DocumentSourceSelectorId
+    representation_id: DocumentRepresentationId
+    node_id: DocumentNodeId
+    kind: DocumentSourceSelectorKind
+    path: tuple[NonEmptyStr, ...]
+    element_digest: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
+
+    @model_validator(mode="after")
+    def validate_path(self) -> Self:
+        if not self.path:
+            raise ValueError("DocumentSourceSelector requires a nonempty source path.")
+        return self
+
+
 class ParseQualityReport(DomainModel):
     id: ParseQualityReportId
     representation_id: DocumentRepresentationId
@@ -926,6 +1172,7 @@ class DocumentRepresentationBundle(DomainModel):
     table_cells: tuple[DocumentTableCell, ...] = Field(default_factory=tuple)
     table_annotations: tuple[DocumentTableAnnotation, ...] = Field(default_factory=tuple)
     references: tuple[DocumentReference, ...] = Field(default_factory=tuple)
+    source_selectors: tuple[DocumentSourceSelector, ...] = Field(default_factory=tuple)
     quality_report: ParseQualityReport
 
     @model_validator(mode="after")
@@ -944,6 +1191,7 @@ class DocumentRepresentationBundle(DomainModel):
         _require_unique_ids(self.table_cells, "DocumentTableCell")
         _require_unique_ids(self.table_annotations, "DocumentTableAnnotation")
         _require_unique_ids(self.references, "DocumentReference")
+        _require_unique_ids(self.source_selectors, "DocumentSourceSelector")
         if not text_views:
             raise ValueError("Document representation must contain at least one TextView.")
         if len({view.kind for view in self.text_views}) != len(self.text_views):
@@ -1012,6 +1260,21 @@ class DocumentRepresentationBundle(DomainModel):
                 raise ValueError("DocumentEdge endpoints must exist in its representation.")
             if edge.from_node_id == edge.to_node_id:
                 raise ValueError("DocumentEdge must not be a self-edge.")
+        for selector in self.source_selectors:
+            if selector.representation_id != representation_id:
+                raise ValueError("DocumentSourceSelector must belong to the representation.")
+            selected_node = nodes.get(selector.node_id)
+            if selected_node is None:
+                raise ValueError("DocumentSourceSelector node must exist in its representation.")
+            selected_view = text_views[selected_node.text_view_id]
+            selected_text = selected_view.text[selected_node.start_char : selected_node.end_char]
+            if hashlib.sha256(selected_text.encode("utf-8")).hexdigest() != (
+                selector.element_digest
+            ):
+                raise ValueError("DocumentSourceSelector digest must match its DocumentNode text.")
+        selector_node_ids = tuple(selector.node_id for selector in self.source_selectors)
+        if len(set(selector_node_ids)) != len(selector_node_ids):
+            raise ValueError("A DocumentNode may have at most one source selector.")
         _validate_reading_order_edges(self.edges)
         _validate_document_table_structure(
             representation_id=representation_id,
@@ -1038,6 +1301,7 @@ class DocumentRepresentationBundle(DomainModel):
             table_cells=self.table_cells,
             table_annotations=self.table_annotations,
             references=self.references,
+            source_selectors=self.source_selectors,
         )
         if self.representation.canonical_output_digest != actual_digest:
             raise ValueError(
@@ -1061,7 +1325,8 @@ def _require_unique_ids(
         | DocumentTableRow
         | DocumentTableCell
         | DocumentTableAnnotation
-        | DocumentReference,
+        | DocumentReference
+        | DocumentSourceSelector,
         ...,
     ],
     record_name: str,
@@ -1292,6 +1557,7 @@ def canonical_representation_digest(
     table_cells: tuple[DocumentTableCell, ...] = (),
     table_annotations: tuple[DocumentTableAnnotation, ...] = (),
     references: tuple[DocumentReference, ...] = (),
+    source_selectors: tuple[DocumentSourceSelector, ...] = (),
 ) -> str:
     """Return the SHA-256 digest of a stable representation serialization."""
 
@@ -1334,6 +1600,10 @@ def canonical_representation_digest(
             _canonical_record_payload(reference)
             for reference in sorted(references, key=lambda x: x.id)
         ],
+        "source_selectors": [
+            _canonical_record_payload(selector)
+            for selector in sorted(source_selectors, key=lambda x: x.id)
+        ],
         "quality_report": _canonical_record_payload(quality_report),
     }
     canonical_json = json.dumps(payload, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
@@ -1344,6 +1614,17 @@ def _canonical_record_payload(record: DomainModel) -> dict[str, object]:
     """Map one flat authority record without Pydantic's recursive serializer."""
 
     return {field_name: getattr(record, field_name) for field_name in type(record).model_fields}
+
+
+def _json_contains_forbidden_key(value: JsonValue, forbidden: set[str]) -> bool:
+    if isinstance(value, dict):
+        return any(
+            key.casefold() in forbidden or _json_contains_forbidden_key(item, forbidden)
+            for key, item in value.items()
+        )
+    if isinstance(value, list):
+        return any(_json_contains_forbidden_key(item, forbidden) for item in value)
+    return False
 
 
 class TableEvidenceSelector(DomainModel):

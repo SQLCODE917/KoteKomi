@@ -62,27 +62,33 @@ Forbidden:
 ```text
 NewsIngestUseCase
   ├── NewsProviderAdapter
-  │     ├── APAdapter
-  │     ├── ReutersAdapter
+  │     ├── AuthorizedProviderAdapter
   │     ├── NewsMLG2Adapter
   │     └── GenericArticleAdapter
-  ├── ProviderIdentityPolicy
-  ├── RightsPolicy
+  ├── StableSourceIdentityPolicy
+  ├── ExplicitNewsRightsPolicy
   ├── SourceCaptureUseCase
-  ├── CanonicalNewsRepresentationAdapter
-  └── RevisionRelationPolicy
+  ├── ProcessingAttempt execution
+  └── Atomic news representation commit
 ```
 
 Adapters own wire-format knowledge. Application/domain code owns capture, identity conflicts, immutable revisions, validation, and acceptance boundaries.
 
+`AuthorizedProviderAdapter` denotes a provider adapter that passes its repository-external recording suite.
+
 ## 7. Data model and interfaces
 
 ```yaml
-ProviderNewsItem:
-  provider_name:
+ProviderIdentity:
+  provider_namespace:
   provider_item_id:
   provider_version:
   provider_status:
+  normalized_version_key:
+  canonical_uri:
+
+ProviderNewsItem:
+  identity: ProviderIdentity
   version_created_at:
   first_published_at:
   updated_at:
@@ -95,17 +101,75 @@ ProviderNewsItem:
   locations:
   body_elements:
   media_references:
-  rights:
-  embargo:
+  rights: NewsRightsFacts
   raw_metadata:
+  format_precedence:
+
+NewsRightsProfile:
+  policy_id:
+  facts_digest:
+  provider_namespace:
+  usage_terms:
+  distribution_scopes:
+  provider_signals:
+  embargo_until:
+  entitlement_expires_at:
+  archive_permitted:
+  allowed_purposes:
+
+NewsDeliveryEnvelopeArtifact:
+  capture_id:
+  blob_id:
+  envelope_digest:
+  retrieval_method:
+  requested_uri:
+  canonical_uri:
+  response_status:
+  safe_metadata:
 
 NewsRevisionClassification:
   document_id:
   previous_document_id:
-  generic_kind: original | update | correction | clarification | withdrawal | unknown
+  generic_kind: original | update | correction | clarification | withdrawal
   provider_kind:
   classification_basis:
+
+NewsRepresentationMetadata:
+  representation_id:
+  document_id:
+  revision_classification_id:
+  rights_profile_id:
+  adapter_name:
+  adapter_version:
+  format_precedence:
+  provider_status:
+  version_created_at:
+  first_published_at:
+  updated_at:
+  language:
+  headlines:
+  bylines:
+  dateline:
+  subjects:
+  locations:
+  media_references:
+  raw_metadata:
+
+DocumentSourceSelector:
+  representation_id:
+  node_id:
+  kind: xml_path | dom_path | provider_element
+  path:
+  element_digest:
 ```
+
+The Ledger stores each record independently as immutable authority.
+
+The Archive stores the provider payload once.
+
+The logical `TextView` stores the canonical representation body once.
+
+News metadata cannot duplicate the article body.
 
 Required adapter contract:
 
@@ -136,6 +200,10 @@ The adapter preserves the raw permitted response, canonical URL, discovered meta
 
 Archive, logs, test snapshots, exports, and derived stores apply the rights profile. Diagnostic output uses IDs/hashes and bounded metadata, not article bodies, unless an authorized operator explicitly requests content.
 
+Every news downstream entry point resolves `NewsRepresentationMetadata` and `NewsRightsProfile` before admitting a purpose.
+
+The first policy pins archive, body-text, log, diagnostic, public-fixture, export, search, embedding, model-context, review, Briefing, and graph-publication purposes.
+
 ## 9. Format precedence
 
 When more than one representation is available, adapters SHALL prefer:
@@ -148,12 +216,32 @@ When more than one representation is available, adapters SHALL prefer:
 
 Fallback use is recorded and lowers only the representation-completeness assessment, not source credibility.
 
-## 10. Compatibility and delivery
+## 10. Provider conformance and delivery
 
-- Initial delivery may implement one recorded AP adapter and one recorded Reuters adapter behind optional dependencies while the generic DTO and conformance suite are mandatory.
+- The public suite uses synthetic NewsML-G2 and HTML fixtures with invented bodies.
+- AP readiness requires an authorized repository-external recording suite.
+- Reuters readiness requires an authorized repository-external recording suite.
 - Production readiness for a provider requires an authorized recorded payload suite and a read-only live smoke test under project-held credentials.
 - Public CI uses synthetic or provider-authorized fixtures with invented bodies but realistic metadata/version chains.
 - Secrets and entitlements are environment-provided and never stored in artifacts or logs.
+- Generic HTML ingestion never satisfies AP or Reuters readiness.
+- TDD 5 remains incomplete until both private recording suites pass the current revision.
+
+Each private suite uses a repository-external `manifest.json`.
+
+The manifest declares the provider and an ordered `cases` array.
+
+Each case declares:
+
+- a stable case ID;
+- payload and safe envelope paths;
+- an exact provider-neutral item fixture path;
+- media type and safe URIs;
+- exact provider namespace, item ID, version, status, and format precedence;
+- the expected generic revision kind;
+- the expected typed ingestion and replay statuses.
+
+The conformance runner requires deterministic adapter output, authoritative ingestion, and restart replay.
 
 ## 11. Completion gates
 
@@ -187,12 +275,29 @@ This deliverable is incomplete if:
 - provider errors are represented as successful no-text documents;
 - only generic HTML is implemented while claiming Reuters/AP support.
 
-## 12. References
+## 12. Verification state
+
+Public CI must pass:
+
+- the synthetic NewsML-G2 revision chain;
+- the JSON-LD, semantic HTML, and main-text precedence matrix;
+- rights, embargo, identity-conflict, provider-error, parser-failure, and persistence-failure rows;
+- the public path through evidence, context, extraction, coverage, and restart.
+
+Private sign-off must pass:
+
+- the authorized AP recording suite;
+- the authorized Reuters recording suite;
+- each provider's read-only entitlement-gated smoke test.
+
+The repository records public-suite success separately from private provider readiness.
+
+## 13. References
 
 - AP Media API content metadata: https://developer.ap.org/ap-media-api/agent/Content_Metadata_Fields.htm
 - Reuters API integrations: https://reutersagency.com/content-delivery-platforms/api-integrations/
 - IPTC NewsML-G2: https://iptc.org/std/NewsML-G2/specification/
 
-## 13. Halt conditions
+## 14. Halt conditions
 
 Stop and revise for any provider whose contract or payload semantics conflict with archival, versioning, testing, or downstream-use requirements. Do not substitute unauthorized scraping to preserve schedule.

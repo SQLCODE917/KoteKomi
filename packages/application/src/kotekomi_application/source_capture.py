@@ -61,6 +61,7 @@ class CaptureRequest:
     response_metadata: dict[str, JsonValue]
     revision_of_document_id: str | None = None
     revision_type: DocumentRevisionType | None = None
+    provider_namespace: str | None = None
 
 
 @dataclass(frozen=True)
@@ -241,6 +242,7 @@ def capture_source(
             source_type=request.identity_hint.source_type,
             identity_policy_id=identity_policy.policy_id,
             canonical_identity_key=identity_policy.canonical_key(request.identity_hint),
+            provider_namespace=request.provider_namespace,
             provider_item_id=request.provider_item_id,
             created_at=request.transaction_time,
             updated_at=request.transaction_time,
@@ -345,6 +347,7 @@ def _validate_revision_request(request: CaptureRequest, identity: CaptureIdentit
         DocumentVersionKind.ORIGINAL: (),
         DocumentVersionKind.UPDATE: (DocumentRevisionType.UPDATES, DocumentRevisionType.SUPERSEDES),
         DocumentVersionKind.CORRECTION: (DocumentRevisionType.CORRECTS,),
+        DocumentVersionKind.CLARIFICATION: (DocumentRevisionType.CLARIFIES,),
         DocumentVersionKind.WITHDRAWAL: (DocumentRevisionType.WITHDRAWS,),
     }
     allowed = allowed_relations.get(request.version_kind)
@@ -428,6 +431,7 @@ def _is_idempotent_retry(
         source.source_type == request.identity_hint.source_type
         and source.identity_policy_id == identity_policy.policy_id
         and source.canonical_identity_key == identity_policy.canonical_key(request.identity_hint)
+        and source.provider_namespace == request.provider_namespace
         and source.provider_item_id == request.provider_item_id
         and raw_blob.hash_algorithm == "sha256"
         and raw_blob.digest == hashlib.sha256(request.payload).hexdigest()

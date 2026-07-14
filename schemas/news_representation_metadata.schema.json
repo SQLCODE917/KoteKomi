@@ -1,0 +1,212 @@
+{
+  "$defs": {
+    "JsonValue": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "integer"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "NewsFormatPrecedence": {
+      "enum": [
+        "provider_native",
+        "newsml_g2",
+        "newsarticle_json_ld",
+        "semantic_html",
+        "main_text_fallback"
+      ],
+      "title": "NewsFormatPrecedence",
+      "type": "string"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "adapter_name": {
+      "minLength": 1,
+      "title": "Adapter Name",
+      "type": "string"
+    },
+    "adapter_version": {
+      "minLength": 1,
+      "title": "Adapter Version",
+      "type": "string"
+    },
+    "bylines": {
+      "items": {
+        "minLength": 1,
+        "type": "string"
+      },
+      "title": "Bylines",
+      "type": "array"
+    },
+    "dateline": {
+      "anyOf": [
+        {
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Dateline"
+    },
+    "document_id": {
+      "pattern": "^doc_[A-Za-z0-9][A-Za-z0-9_-]*$",
+      "title": "Document Id",
+      "type": "string"
+    },
+    "first_published_at": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "First Published At"
+    },
+    "format_precedence": {
+      "$ref": "#/$defs/NewsFormatPrecedence"
+    },
+    "headlines": {
+      "items": {
+        "minLength": 1,
+        "type": "string"
+      },
+      "title": "Headlines",
+      "type": "array"
+    },
+    "id": {
+      "pattern": "^nrm_[A-Za-z0-9][A-Za-z0-9_-]*$",
+      "title": "Id",
+      "type": "string"
+    },
+    "language": {
+      "anyOf": [
+        {
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Language"
+    },
+    "locations": {
+      "items": {
+        "minLength": 1,
+        "type": "string"
+      },
+      "title": "Locations",
+      "type": "array"
+    },
+    "media_references": {
+      "items": {
+        "minLength": 1,
+        "type": "string"
+      },
+      "title": "Media References",
+      "type": "array"
+    },
+    "provider_status": {
+      "minLength": 1,
+      "title": "Provider Status",
+      "type": "string"
+    },
+    "raw_metadata": {
+      "additionalProperties": {
+        "$ref": "#/$defs/JsonValue"
+      },
+      "title": "Raw Metadata",
+      "type": "object"
+    },
+    "representation_id": {
+      "pattern": "^rep_[A-Za-z0-9][A-Za-z0-9_-]*$",
+      "title": "Representation Id",
+      "type": "string"
+    },
+    "revision_classification_id": {
+      "pattern": "^nrc_[A-Za-z0-9][A-Za-z0-9_-]*$",
+      "title": "Revision Classification Id",
+      "type": "string"
+    },
+    "rights_profile_id": {
+      "pattern": "^nrp_[A-Za-z0-9][A-Za-z0-9_-]*$",
+      "title": "Rights Profile Id",
+      "type": "string"
+    },
+    "subjects": {
+      "items": {
+        "minLength": 1,
+        "type": "string"
+      },
+      "title": "Subjects",
+      "type": "array"
+    },
+    "updated_at": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Updated At"
+    },
+    "version_created_at": {
+      "format": "date-time",
+      "title": "Version Created At",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "representation_id",
+    "document_id",
+    "revision_classification_id",
+    "rights_profile_id",
+    "adapter_name",
+    "adapter_version",
+    "format_precedence",
+    "provider_status",
+    "version_created_at",
+    "headlines"
+  ],
+  "title": "NewsRepresentationMetadata",
+  "type": "object"
+}

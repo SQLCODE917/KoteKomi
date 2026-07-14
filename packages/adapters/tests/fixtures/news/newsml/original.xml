@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<newsItem xmlns="http://iptc.org/std/nar/2006-10-01/"
+          guid="urn:newsml:kotekomi.test:2026-07-14:alpha"
+          version="1" standard="NewsML-G2" standardversion="2.35">
+  <rightsInfo>
+    <usageTerms>Redistributable synthetic test content.</usageTerms>
+  </rightsInfo>
+  <itemMeta>
+    <itemClass qcode="ninat:text"/>
+    <provider><name>KoteKomi Test Wire</name></provider>
+    <versionCreated>2026-07-14T12:00:00Z</versionCreated>
+    <firstCreated>2026-07-14T12:00:00Z</firstCreated>
+    <pubStatus qcode="stat:usable"/>
+    <signal qcode="sig:newscontent"/>
+    <signal qcode="sig:public-fixture"/>
+  </itemMeta>
+  <contentMeta>
+    <language tag="en"/>
+    <headline>Project Atlas enters public evaluation</headline>
+    <by>By Ada Reporter</by>
+    <dateline>WASHINGTON</dateline>
+    <subject><name>Artificial intelligence</name></subject>
+    <located><name>Washington</name></located>
+  </contentMeta>
+  <contentSet>
+    <inlineXML>
+      <nitf xmlns="http://iptc.org/std/NITF/2006-10-18/">
+        <body><body.content>
+          <p>Project Atlas entered public evaluation on Monday.</p>
+          <p>The evaluation will publish monthly safety summaries.</p>
+        </body.content></body>
+      </nitf>
+    </inlineXML>
+  </contentSet>
+</newsItem>

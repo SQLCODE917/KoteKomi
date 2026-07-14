@@ -21,7 +21,11 @@
         "pdf_page_inventory",
         "pdf_page_extraction_status",
         "pdf_transformation_artifact",
-        "pdf_transformation_blob"
+        "pdf_transformation_blob",
+        "news_delivery_envelope",
+        "news_rights_profile",
+        "news_revision_classification",
+        "news_representation_metadata"
       ],
       "title": "ProcessingArtifactKind",
       "type": "string"

@@ -187,6 +187,7 @@ def build_grounded_candidate_context(
         table_cells=bundle.table_cells,
         table_annotations=bundle.table_annotations,
         references=bundle.references,
+        source_selectors=bundle.source_selectors,
     )
     if actual_digest != bundle.representation.canonical_output_digest:
         raise ValueError("Grounded candidate context DocumentRepresentation digest is corrupted.")

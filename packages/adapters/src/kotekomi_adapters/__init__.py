@@ -23,11 +23,13 @@ if TYPE_CHECKING:
         SQLiteLedgerRepository,
         sqlite_ledger_transaction,
     )
+    from kotekomi_adapters.structured_news import GenericArticleAdapter, NewsMLG2Adapter
 
 __all__ = [
     "DoclingPdfParser",
     "DoclingPdfParserConfig",
     "HttpResponse",
+    "GenericArticleAdapter",
     "JsonHttpClient",
     "ImmutableCommitDisposition",
     "ImmutableRecordConflict",
@@ -35,6 +37,7 @@ __all__ = [
     "LlamaServerModelRuntime",
     "LocalArchiveStore",
     "NetworkXGraphAnalyzer",
+    "NewsMLG2Adapter",
     "OllamaModelRuntime",
     "PdfiumEvidenceOverlayRenderer",
     "REQUIRED_LEDGER_TABLES",
@@ -84,6 +87,13 @@ def __getattr__(name: str) -> object:
         )
 
         return PdfiumEvidenceOverlayRenderer
+    if name in {"GenericArticleAdapter", "NewsMLG2Adapter"}:
+        from kotekomi_adapters.structured_news import GenericArticleAdapter, NewsMLG2Adapter
+
+        return {
+            "GenericArticleAdapter": GenericArticleAdapter,
+            "NewsMLG2Adapter": NewsMLG2Adapter,
+        }[name]
     if name in {
         "REQUIRED_LEDGER_TABLES",
         "ImmutableCommitDisposition",

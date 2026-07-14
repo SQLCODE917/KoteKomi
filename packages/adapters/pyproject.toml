@@ -4,6 +4,8 @@ version = "0.1.0"
 description = "KoteKomi Adapters."
 requires-python = ">=3.12,<3.13"
 dependencies = [
+  "beautifulsoup4>=4.13,<5",
+  "defusedxml>=0.7,<1",
   "docling>=2,<3",
   "kotekomi-application",
   "kotekomi-domain",

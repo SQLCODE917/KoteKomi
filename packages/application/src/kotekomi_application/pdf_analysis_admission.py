@@ -91,6 +91,7 @@ def evaluate_pdf_analysis_admission(
         table_cells=bundle.table_cells,
         table_annotations=bundle.table_annotations,
         references=bundle.references,
+        source_selectors=bundle.source_selectors,
     )
     if actual_digest != bundle.representation.canonical_output_digest:
         raise ValueError("PDF analysis admission found a corrupted representation digest.")

@@ -41,6 +41,7 @@ from kotekomi_domain import (
     DocumentRepresentation,
     DocumentRepresentationBundle,
     DocumentRevisionRelation,
+    DocumentSourceSelector,
     DocumentTable,
     DocumentTableAnnotation,
     DocumentTableCell,
@@ -53,6 +54,10 @@ from kotekomi_domain import (
     EvidenceValidationAttempt,
     ExtractionTask,
     ModelRun,
+    NewsDeliveryEnvelopeArtifact,
+    NewsRepresentationMetadata,
+    NewsRevisionClassification,
+    NewsRightsProfile,
     Organization,
     Outcome,
     ParseQualityReport,
@@ -63,6 +68,7 @@ from kotekomi_domain import (
     PdfTransformationArtifact,
     Place,
     PlannedAnalysisItem,
+    ProcessingArtifactKind,
     ProcessingAttempt,
     ProcessingAttemptOutcome,
     ProcessingTaskFingerprint,
@@ -119,6 +125,7 @@ IMMUTABLE_TABLES = frozenset(
         "document_table_cells",
         "document_table_annotations",
         "document_references",
+        "document_source_selectors",
         "parse_quality_reports",
         "pdf_preflight_reports",
         "pdf_page_inventories",
@@ -140,6 +147,10 @@ IMMUTABLE_TABLES = frozenset(
         "analysis_item_attempts",
         "extraction_tasks",
         "model_runs",
+        "news_rights_profiles",
+        "news_delivery_envelope_artifacts",
+        "news_revision_classifications",
+        "news_representation_metadata",
     }
 )
 
@@ -192,6 +203,33 @@ RELATIONAL_OWNERSHIP_COLUMNS: dict[str, tuple[tuple[str, str], ...]] = {
         ("representation_id", "representation_id"),
         ("marker_node_id", "marker_node_id"),
         ("target_node_id", "target_node_id"),
+    ),
+    "document_source_selectors": (
+        ("representation_id", "representation_id"),
+        ("node_id", "node_id"),
+    ),
+    "news_rights_profiles": (
+        ("provider_namespace", "provider_namespace"),
+        ("policy_id", "policy_id"),
+    ),
+    "news_delivery_envelope_artifacts": (
+        ("capture_id", "capture_id"),
+        ("blob_id", "blob_id"),
+    ),
+    "news_revision_classifications": (
+        ("document_id", "document_id"),
+        ("source_id", "source_id"),
+        ("provider_namespace", "provider_namespace"),
+        ("provider_item_id", "provider_item_id"),
+        ("provider_version", "provider_version"),
+        ("normalized_version_key", "normalized_version_key"),
+        ("rights_profile_id", "rights_profile_id"),
+    ),
+    "news_representation_metadata": (
+        ("representation_id", "representation_id"),
+        ("document_id", "document_id"),
+        ("revision_classification_id", "revision_classification_id"),
+        ("rights_profile_id", "rights_profile_id"),
     ),
     "parse_quality_reports": (("representation_id", "representation_id"),),
     "pdf_preflight_reports": (
@@ -286,6 +324,7 @@ DOCUMENT_TABLE_ROW_SPEC = RecordSpec("document_table_rows", DocumentTableRow)
 DOCUMENT_TABLE_CELL_SPEC = RecordSpec("document_table_cells", DocumentTableCell)
 DOCUMENT_TABLE_ANNOTATION_SPEC = RecordSpec("document_table_annotations", DocumentTableAnnotation)
 DOCUMENT_REFERENCE_SPEC = RecordSpec("document_references", DocumentReference)
+DOCUMENT_SOURCE_SELECTOR_SPEC = RecordSpec("document_source_selectors", DocumentSourceSelector)
 PARSE_QUALITY_REPORT_SPEC = RecordSpec("parse_quality_reports", ParseQualityReport)
 PDF_PREFLIGHT_REPORT_SPEC = RecordSpec("pdf_preflight_reports", PdfPreflightReport)
 PDF_PAGE_INVENTORY_SPEC = RecordSpec("pdf_page_inventories", PdfPageInventory)
@@ -328,6 +367,16 @@ PLANNED_ANALYSIS_ITEM_SPEC = RecordSpec("planned_analysis_items", PlannedAnalysi
 ANALYSIS_ITEM_ATTEMPT_SPEC = RecordSpec("analysis_item_attempts", AnalysisItemAttempt)
 EXTRACTION_TASK_SPEC = RecordSpec("extraction_tasks", ExtractionTask)
 MODEL_RUN_SPEC = RecordSpec("model_runs", ModelRun)
+NEWS_RIGHTS_PROFILE_SPEC = RecordSpec("news_rights_profiles", NewsRightsProfile)
+NEWS_DELIVERY_ENVELOPE_ARTIFACT_SPEC = RecordSpec(
+    "news_delivery_envelope_artifacts", NewsDeliveryEnvelopeArtifact
+)
+NEWS_REVISION_CLASSIFICATION_SPEC = RecordSpec(
+    "news_revision_classifications", NewsRevisionClassification
+)
+NEWS_REPRESENTATION_METADATA_SPEC = RecordSpec(
+    "news_representation_metadata", NewsRepresentationMetadata
+)
 ASSERTION_SPEC = RecordSpec("assertions", Assertion)
 RELATIONSHIP_SPEC = RecordSpec("relationships", Relationship)
 OUTCOME_SPEC = RecordSpec("outcomes", Outcome)
@@ -371,6 +420,7 @@ REQUIRED_LEDGER_TABLES = (
     "document_table_cells",
     "document_table_annotations",
     "document_references",
+    "document_source_selectors",
     "parse_quality_reports",
     "pdf_preflight_reports",
     "pdf_page_inventories",
@@ -393,6 +443,10 @@ REQUIRED_LEDGER_TABLES = (
     "model_run_proposed_changes",
     "extraction_tasks",
     "model_runs",
+    "news_rights_profiles",
+    "news_delivery_envelope_artifacts",
+    "news_revision_classifications",
+    "news_representation_metadata",
     "assertions",
     "relationships",
     "outcomes",
@@ -747,6 +801,7 @@ class SQLiteLedgerRepository:
             representation.id
         )
         references = self.list_document_references_for_representation(representation.id)
+        source_selectors = self.list_document_source_selectors_for_representation(representation.id)
         quality_reports = self.list_parse_quality_reports_for_representation(representation.id)
         if len(quality_reports) != 1:
             raise RuntimeError("Document representation must have exactly one ParseQualityReport.")
@@ -762,6 +817,7 @@ class SQLiteLedgerRepository:
             table_cells=table_cells,
             table_annotations=table_annotations,
             references=references,
+            source_selectors=source_selectors,
             quality_report=quality_reports[0],
         )
 
@@ -808,6 +864,60 @@ class SQLiteLedgerRepository:
             self._connection.execute("RELEASE SAVEPOINT document_representation_processing")
             raise
         self._connection.execute("RELEASE SAVEPOINT document_representation_processing")
+        return outcome
+
+    def commit_news_representation_processing(
+        self,
+        *,
+        expected_task_fingerprint_id: str,
+        bundle: DocumentRepresentationBundle,
+        metadata: NewsRepresentationMetadata,
+        created_provenance_activity: ProvenanceActivity,
+        created_outcome: ProcessingAttemptOutcome,
+        reused_outcome: ProcessingAttemptOutcome,
+    ) -> BundleCommitOutcome:
+        """Atomically publish one task-bound news representation and its metadata."""
+        if metadata.representation_id != bundle.representation.id:
+            raise ValueError("News metadata does not belong to its representation bundle.")
+        if metadata.document_id != bundle.representation.document_id:
+            raise ValueError("News metadata and representation must belong to one Document.")
+        classification = self.get_news_revision_classification(metadata.revision_classification_id)
+        if classification is None or classification.document_id != metadata.document_id:
+            raise ValueError("News metadata references a mismatched revision classification.")
+        if classification.rights_profile_id != metadata.rights_profile_id:
+            raise ValueError("News metadata and revision classification disagree on rights.")
+        if classification.provider_status != metadata.provider_status:
+            raise ValueError("News metadata and revision classification disagree on status.")
+        if self.get_news_rights_profile(metadata.rights_profile_id) is None:
+            raise ValueError("News metadata references a missing rights profile.")
+        for outcome in (created_outcome, reused_outcome):
+            metadata_artifacts = tuple(
+                artifact
+                for artifact in outcome.output_artifacts
+                if artifact.kind is ProcessingArtifactKind.NEWS_REPRESENTATION_METADATA
+            )
+            if len(metadata_artifacts) != 1 or metadata_artifacts[0].artifact_id != metadata.id:
+                raise ValueError("Processing outcome news metadata does not match the bundle.")
+        self._connection.execute("SAVEPOINT news_representation_processing")
+        try:
+            self._validate_processing_task_binding(
+                expected_task_fingerprint_id=expected_task_fingerprint_id,
+                bundle=bundle,
+                created_outcome=created_outcome,
+                reused_outcome=reused_outcome,
+            )
+            outcome = self.commit_document_representation_bundle(bundle)
+            self.save_news_representation_metadata(metadata)
+            if outcome.disposition is BundleCommitDisposition.CREATED:
+                self.save_provenance_activity(created_provenance_activity)
+                self.append_processing_attempt_outcome(created_outcome)
+            else:
+                self.append_processing_attempt_outcome(reused_outcome)
+        except Exception:
+            self._connection.execute("ROLLBACK TO SAVEPOINT news_representation_processing")
+            self._connection.execute("RELEASE SAVEPOINT news_representation_processing")
+            raise
+        self._connection.execute("RELEASE SAVEPOINT news_representation_processing")
         return outcome
 
     def _validate_processing_task_binding(
@@ -906,6 +1016,8 @@ class SQLiteLedgerRepository:
             self.save_document_table_annotation(annotation)
         for reference in bundle.references:
             self.save_document_reference(reference)
+        for selector in bundle.source_selectors:
+            self.save_document_source_selector(selector)
         self.save_parse_quality_report(bundle.quality_report)
         return BundleCommitOutcome(BundleCommitDisposition.CREATED, bundle.representation.id)
 
@@ -922,6 +1034,7 @@ class SQLiteLedgerRepository:
                 self.list_document_table_cells_for_representation(representation_id),
                 self.list_document_table_annotations_for_representation(representation_id),
                 self.list_document_references_for_representation(representation_id),
+                self.list_document_source_selectors_for_representation(representation_id),
                 self.list_parse_quality_reports_for_representation(representation_id),
             )
         )
@@ -1033,6 +1146,16 @@ class SQLiteLedgerRepository:
         self, representation_id: str
     ) -> tuple[DocumentReference, ...]:
         return self._list_for_owner(DOCUMENT_REFERENCE_SPEC, "representation_id", representation_id)
+
+    def save_document_source_selector(self, record: DocumentSourceSelector) -> None:
+        self._save(DOCUMENT_SOURCE_SELECTOR_SPEC, record)
+
+    def list_document_source_selectors_for_representation(
+        self, representation_id: str
+    ) -> tuple[DocumentSourceSelector, ...]:
+        return self._list_for_owner(
+            DOCUMENT_SOURCE_SELECTOR_SPEC, "representation_id", representation_id
+        )
 
     def save_parse_quality_report(self, record: ParseQualityReport) -> None:
         self._save(PARSE_QUALITY_REPORT_SPEC, record)
@@ -1321,6 +1444,100 @@ class SQLiteLedgerRepository:
         return self._list_for_owner(
             DOCUMENT_REVISION_RELATION_SPEC, "earlier_document_id", document_id
         )
+
+    def save_news_rights_profile(self, record: NewsRightsProfile) -> None:
+        self._save(NEWS_RIGHTS_PROFILE_SPEC, record)
+
+    def get_news_rights_profile(self, record_id: str) -> NewsRightsProfile | None:
+        return self._get(NEWS_RIGHTS_PROFILE_SPEC, record_id)
+
+    def save_news_delivery_envelope_artifact(self, record: NewsDeliveryEnvelopeArtifact) -> None:
+        capture = self.get_source_capture(record.capture_id)
+        blob = self.get_raw_blob(record.blob_id)
+        if capture is None or blob is None or blob.digest != record.envelope_digest:
+            raise ValueError("News delivery envelope references mismatched capture or blob state.")
+        self._save(NEWS_DELIVERY_ENVELOPE_ARTIFACT_SPEC, record)
+
+    def get_news_delivery_envelope_for_capture(
+        self, capture_id: str
+    ) -> NewsDeliveryEnvelopeArtifact | None:
+        records = self._list_for_owner(
+            NEWS_DELIVERY_ENVELOPE_ARTIFACT_SPEC, "capture_id", capture_id
+        )
+        if len(records) > 1:
+            raise RuntimeError("SourceCapture has multiple news delivery envelopes.")
+        return records[0] if records else None
+
+    def save_news_revision_classification(self, record: NewsRevisionClassification) -> None:
+        document = self.get_document(record.document_id)
+        source = self.get_source(record.source_id)
+        profile = self.get_news_rights_profile(record.rights_profile_id)
+        if document is None or source is None or profile is None:
+            raise ValueError("News revision references missing authoritative records.")
+        if document.source_id != source.id or document.content_sha256 != record.content_digest:
+            raise ValueError("News revision disagrees with its Document or Source.")
+        if document.version_kind is not record.generic_kind:
+            raise ValueError("News revision kind disagrees with its Document.")
+        if (
+            source.provider_namespace != record.provider_namespace
+            or source.provider_item_id != record.provider_item_id
+            or profile.provider_namespace != record.provider_namespace
+        ):
+            raise ValueError("News revision provider identity is inconsistent.")
+        if record.previous_document_id is not None:
+            previous = self.get_document(record.previous_document_id)
+            if previous is None or previous.source_id != source.id:
+                raise ValueError("News revision predecessor does not belong to its Source.")
+        self._save(NEWS_REVISION_CLASSIFICATION_SPEC, record)
+
+    def get_news_revision_classification(self, record_id: str) -> NewsRevisionClassification | None:
+        return self._get(NEWS_REVISION_CLASSIFICATION_SPEC, record_id)
+
+    def find_news_revision(
+        self, provider_namespace: str, provider_item_id: str, provider_version: str
+    ) -> NewsRevisionClassification | None:
+        row = self._connection.execute(
+            """
+            SELECT payload_json FROM news_revision_classifications
+            WHERE provider_namespace = ? AND provider_item_id = ? AND provider_version = ?
+            """,
+            (provider_namespace, provider_item_id, provider_version),
+        ).fetchone()
+        return (
+            NewsRevisionClassification.model_validate_json(str(row[0])) if row is not None else None
+        )
+
+    def list_news_revisions_for_source(
+        self, source_id: str
+    ) -> tuple[NewsRevisionClassification, ...]:
+        records = self._list_for_owner(NEWS_REVISION_CLASSIFICATION_SPEC, "source_id", source_id)
+        return tuple(sorted(records, key=lambda item: (item.normalized_version_key, item.id)))
+
+    def save_news_representation_metadata(self, record: NewsRepresentationMetadata) -> None:
+        representation = self.get_document_representation(record.representation_id)
+        classification = self.get_news_revision_classification(record.revision_classification_id)
+        if representation is None or classification is None:
+            raise ValueError("News representation metadata references missing authority.")
+        if (
+            representation.document_id != record.document_id
+            or classification.document_id != record.document_id
+            or classification.rights_profile_id != record.rights_profile_id
+            or classification.provider_status != record.provider_status
+            or representation.parser_name != record.adapter_name
+            or representation.parser_version != record.adapter_version
+        ):
+            raise ValueError("News representation metadata disagrees with authoritative records.")
+        self._save(NEWS_REPRESENTATION_METADATA_SPEC, record)
+
+    def get_news_representation_metadata(
+        self, representation_id: str
+    ) -> NewsRepresentationMetadata | None:
+        records = self._list_for_owner(
+            NEWS_REPRESENTATION_METADATA_SPEC, "representation_id", representation_id
+        )
+        if len(records) > 1:
+            raise RuntimeError("DocumentRepresentation has multiple news metadata records.")
+        return records[0] if records else None
 
     def save_evidence_target(self, record: EvidenceTarget) -> None:
         self._save(EVIDENCE_TARGET_SPEC, record)
@@ -1658,6 +1875,10 @@ class SQLiteLedgerRepository:
             "pdf_page_extraction_status": "pdf_page_extraction_statuses",
             "pdf_transformation_artifact": "pdf_transformation_artifacts",
             "pdf_transformation_blob": "raw_blobs",
+            "news_delivery_envelope": "news_delivery_envelope_artifacts",
+            "news_rights_profile": "news_rights_profiles",
+            "news_revision_classification": "news_revision_classifications",
+            "news_representation_metadata": "news_representation_metadata",
         }
         for artifact in record.output_artifacts:
             table_name = table_by_kind[artifact.kind.value]

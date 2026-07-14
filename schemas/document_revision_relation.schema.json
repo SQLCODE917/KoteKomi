@@ -4,6 +4,7 @@
       "enum": [
         "updates",
         "corrects",
+        "clarifies",
         "supersedes",
         "withdraws"
       ],

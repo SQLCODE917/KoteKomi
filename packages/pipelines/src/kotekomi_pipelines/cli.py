@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import hashlib
 import io
 import json
 import sys
@@ -12,8 +13,10 @@ from pathlib import Path
 from typing import cast
 
 from kotekomi_adapters import (
+    GenericArticleAdapter,
     LocalArchiveStore,
     NetworkXGraphAnalyzer,
+    NewsMLG2Adapter,
     SQLiteLedgerInitializer,
     sqlite_ledger_transaction,
 )
@@ -23,6 +26,9 @@ from kotekomi_application import (
     GraphConnectionMiningInput,
     JsonValue,
     ModelRuntimeStatus,
+    NewsDeliveryEnvelope,
+    NewsIngestInput,
+    NewsIngestStatus,
     PipelineCommandPlan,
     PipelineNextStep,
     PipelineRunNextResult,
@@ -43,6 +49,7 @@ from kotekomi_application import (
     ReviewQueueInput,
     ReviewReadinessInput,
     ReviewReadinessStatus,
+    UtcProcessingClock,
     Uuid4ProcessingAttemptIdFactory,
     approve_proposed_change,
     commit_authoritative_capture,
@@ -54,6 +61,7 @@ from kotekomi_application import (
     get_review_next,
     get_review_packet,
     get_review_readiness,
+    ingest_structured_news,
     initialize_ledger,
     list_review_queue,
     mine_graph_connections,
@@ -110,6 +118,21 @@ def main(argv: list[str] | None = None) -> int:
             archive_path_override=args.archive_path,
         )
         return add_source_file(config, args.path)
+
+    if args.command == "source" and args.source_command == "add-news":
+        config = load_processing_config(
+            config_path=args.config,
+            ledger_path_override=args.ledger_path,
+            archive_path_override=args.archive_path,
+        )
+        return add_structured_news(
+            config=config,
+            payload_path=args.payload,
+            envelope_path=args.envelope,
+            adapter_name=args.adapter,
+            media_type=args.media_type,
+            output_format=args.output_format,
+        )
 
     if args.command == "model" and args.model_command == "status":
         config = _load_model_config(
@@ -432,6 +455,21 @@ def build_parser() -> argparse.ArgumentParser:
     add_file_parser.add_argument("path", type=Path)
     add_file_parser.add_argument("--ledger-path", type=Path, default=None)
     add_file_parser.add_argument("--archive-path", type=Path, default=None)
+    add_news_parser = source_subparsers.add_parser(
+        "add-news",
+        help="Add a recorded structured-news payload and delivery envelope.",
+    )
+    add_news_parser.add_argument("--payload", type=Path, required=True)
+    add_news_parser.add_argument("--envelope", type=Path, required=True)
+    add_news_parser.add_argument(
+        "--adapter", choices=("newsml-g2", "generic-article"), required=True
+    )
+    add_news_parser.add_argument("--media-type", default=None)
+    add_news_parser.add_argument(
+        "--format", dest="output_format", choices=("text", "json"), default="text"
+    )
+    add_news_parser.add_argument("--ledger-path", type=Path, default=None)
+    add_news_parser.add_argument("--archive-path", type=Path, default=None)
 
     model_parser = subparsers.add_parser("model", help="Local model runtime commands.")
     model_subparsers = model_parser.add_subparsers(dest="model_command")
@@ -749,6 +787,81 @@ def add_source_file(config: ProcessingConfig, source_file_path: Path) -> int:
     print(f"ProvenanceActivity: {result.provenance_activity_id}")
     print(f"Raw path: {result.raw_path}")
     return 0
+
+
+def add_structured_news(
+    *,
+    config: ProcessingConfig,
+    payload_path: Path,
+    envelope_path: Path,
+    adapter_name: str,
+    media_type: str | None,
+    output_format: str,
+) -> int:
+    payload = payload_path.read_bytes()
+    envelope_bytes = envelope_path.read_bytes()
+    envelope_value = json.loads(envelope_bytes)
+    if not isinstance(envelope_value, dict):
+        raise ValueError("Structured-news envelope must be one JSON object.")
+    safe_metadata = cast(dict[str, JsonValue], envelope_value)
+    adapter = NewsMLG2Adapter() if adapter_name == "newsml-g2" else GenericArticleAdapter()
+    resolved_media_type = media_type or (
+        "application/newsml+xml" if adapter_name == "newsml-g2" else "text/html"
+    )
+    now = datetime.now(UTC)
+    payload_digest = hashlib.sha256(payload).hexdigest()
+    archive = LocalArchiveStore(config.storage.archive_path)
+    archive.initialize()
+    with sqlite_ledger_transaction(config.storage.ledger_path) as repository:
+        outcome = ingest_structured_news(
+            NewsIngestInput(
+                delivery=NewsDeliveryEnvelope(
+                    payload=payload,
+                    media_type=resolved_media_type,
+                    envelope_bytes=envelope_bytes,
+                    envelope_media_type="application/json",
+                    retrieval_method="recorded_local_export",
+                    requested_uri=str(payload_path),
+                    canonical_uri=None,
+                    response_status=200,
+                    safe_metadata=safe_metadata,
+                ),
+                captured_at=now,
+                transaction_time=now,
+                idempotency_key=f"news-{payload_digest}",
+                build_identity=config.build_identity,
+            ),
+            repository,
+            archive,
+            adapter,
+            Uuid4ProcessingAttemptIdFactory(),
+            UtcProcessingClock(),
+        )
+    value = {
+        "status": outcome.status.value,
+        "source_id": outcome.source_id,
+        "document_id": outcome.document_id,
+        "representation_id": outcome.representation_id,
+        "processing_attempt_id": outcome.processing_attempt_id,
+        "rights_profile_id": outcome.rights_profile_id,
+        "revision_classification_id": outcome.revision_classification_id,
+        "blocking_code": outcome.blocking_code,
+        "failure_code": outcome.failure_code,
+    }
+    if output_format == "json":
+        print(json.dumps(value, indent=2, sort_keys=True))
+    else:
+        print(f"Structured news: {outcome.status.value}")
+        print(f"Source: {outcome.source_id or '-'}")
+        print(f"Document: {outcome.document_id or '-'}")
+        print(f"Representation: {outcome.representation_id or '-'}")
+        if outcome.blocking_code:
+            print(f"Blocked: {outcome.blocking_code}")
+        if outcome.failure_code:
+            print(f"Failed: {outcome.failure_code}")
+    if outcome.status in {NewsIngestStatus.CREATED, NewsIngestStatus.REUSED}:
+        return 0
+    return 2 if outcome.status is NewsIngestStatus.BLOCKED else 1
 
 
 def show_model_runtime_status(*, config: PipelineConfig, output_format: str) -> int:

@@ -609,6 +609,7 @@ def _load_acceptable_bundle(
         table_cells=bundle.table_cells,
         table_annotations=bundle.table_annotations,
         references=bundle.references,
+        source_selectors=bundle.source_selectors,
     )
     if actual_digest != bundle.representation.canonical_output_digest:
         raise ValueError("Context planning DocumentRepresentation digest is corrupted.")

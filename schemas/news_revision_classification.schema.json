@@ -1,0 +1,121 @@
+{
+  "$defs": {
+    "DocumentVersionKind": {
+      "enum": [
+        "original",
+        "update",
+        "correction",
+        "clarification",
+        "withdrawal",
+        "unknown"
+      ],
+      "title": "DocumentVersionKind",
+      "type": "string"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "classification_basis": {
+      "items": {
+        "minLength": 1,
+        "type": "string"
+      },
+      "title": "Classification Basis",
+      "type": "array"
+    },
+    "content_digest": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Content Digest",
+      "type": "string"
+    },
+    "document_id": {
+      "pattern": "^doc_[A-Za-z0-9][A-Za-z0-9_-]*$",
+      "title": "Document Id",
+      "type": "string"
+    },
+    "generic_kind": {
+      "$ref": "#/$defs/DocumentVersionKind"
+    },
+    "id": {
+      "pattern": "^nrc_[A-Za-z0-9][A-Za-z0-9_-]*$",
+      "title": "Id",
+      "type": "string"
+    },
+    "normalized_version_key": {
+      "minLength": 1,
+      "title": "Normalized Version Key",
+      "type": "string"
+    },
+    "previous_document_id": {
+      "anyOf": [
+        {
+          "pattern": "^doc_[A-Za-z0-9][A-Za-z0-9_-]*$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Previous Document Id"
+    },
+    "provider_item_id": {
+      "minLength": 1,
+      "title": "Provider Item Id",
+      "type": "string"
+    },
+    "provider_kind": {
+      "minLength": 1,
+      "title": "Provider Kind",
+      "type": "string"
+    },
+    "provider_namespace": {
+      "minLength": 1,
+      "title": "Provider Namespace",
+      "type": "string"
+    },
+    "provider_status": {
+      "minLength": 1,
+      "title": "Provider Status",
+      "type": "string"
+    },
+    "provider_version": {
+      "minLength": 1,
+      "title": "Provider Version",
+      "type": "string"
+    },
+    "recorded_at": {
+      "format": "date-time",
+      "title": "Recorded At",
+      "type": "string"
+    },
+    "rights_profile_id": {
+      "pattern": "^nrp_[A-Za-z0-9][A-Za-z0-9_-]*$",
+      "title": "Rights Profile Id",
+      "type": "string"
+    },
+    "source_id": {
+      "pattern": "^src_[A-Za-z0-9][A-Za-z0-9_-]*$",
+      "title": "Source Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "document_id",
+    "source_id",
+    "provider_namespace",
+    "provider_item_id",
+    "provider_version",
+    "provider_status",
+    "normalized_version_key",
+    "generic_kind",
+    "provider_kind",
+    "classification_basis",
+    "content_digest",
+    "rights_profile_id"
+  ],
+  "title": "NewsRevisionClassification",
+  "type": "object"
+}

@@ -1,0 +1,23 @@
+{
+  "provider": "synthetic",
+  "cases": [
+    {
+      "id": "synthetic-original",
+      "payload": "../newsml/original.xml",
+      "envelope": "../envelope.json",
+      "expected_item": "original.expected.json",
+      "media_type": "application/newsml+xml",
+      "requested_uri": "fixture://news/private-harness",
+      "expected": {
+        "provider_namespace": "kotekomi-test-wire",
+        "provider_item_id": "urn:newsml:kotekomi.test:2026-07-14:alpha",
+        "provider_version": "1",
+        "provider_status": "stat:usable|sig:newscontent|sig:public-fixture",
+        "format_precedence": "newsml_g2",
+        "ingest_status": "created",
+        "generic_kind": "original",
+        "replay_status": "reused"
+      }
+    }
+  ]
+}

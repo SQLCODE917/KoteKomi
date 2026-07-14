@@ -1,0 +1,23 @@
+{
+  "matrix_id": "structured_news_public_gold_v1",
+  "rows": [
+    {"id": "newsml_original", "expected": "created"},
+    {"id": "idempotent_reuse", "expected": "reused"},
+    {"id": "newsml_update", "expected": "created"},
+    {"id": "newsml_correction", "expected": "created"},
+    {"id": "newsml_clarification", "expected": "created"},
+    {"id": "newsml_withdrawal", "expected": "blocked"},
+    {"id": "jsonld_article", "expected": "created"},
+    {"id": "semantic_html_article", "expected": "created"},
+    {"id": "main_text_fallback", "expected": "created_degraded"},
+    {"id": "archive_rights_blocked", "expected": "blocked"},
+    {"id": "embargo_export_blocked", "expected": "use_blocked"},
+    {"id": "same_version_identity_conflict", "expected": "failed"},
+    {"id": "malformed_payload", "expected": "failed"},
+    {"id": "expired_credentials", "expected": "blocked"},
+    {"id": "rate_limit", "expected": "blocked"},
+    {"id": "provider_server_error", "expected": "failed"},
+    {"id": "parser_failure", "expected": "failed"},
+    {"id": "persistence_failure", "expected": "failed"}
+  ]
+}

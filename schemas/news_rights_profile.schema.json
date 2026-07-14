@@ -1,0 +1,122 @@
+{
+  "$defs": {
+    "NewsUsePurpose": {
+      "enum": [
+        "archive",
+        "body_text",
+        "log",
+        "diagnostic",
+        "public_fixture",
+        "export",
+        "search_index",
+        "embedding",
+        "model_context",
+        "review",
+        "briefing",
+        "graph_publication"
+      ],
+      "title": "NewsUsePurpose",
+      "type": "string"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "allowed_purposes": {
+      "items": {
+        "$ref": "#/$defs/NewsUsePurpose"
+      },
+      "title": "Allowed Purposes",
+      "type": "array"
+    },
+    "archive_permitted": {
+      "title": "Archive Permitted",
+      "type": "boolean"
+    },
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    },
+    "distribution_scopes": {
+      "items": {
+        "minLength": 1,
+        "type": "string"
+      },
+      "title": "Distribution Scopes",
+      "type": "array"
+    },
+    "embargo_until": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Embargo Until"
+    },
+    "entitlement_expires_at": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Entitlement Expires At"
+    },
+    "facts_digest": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Facts Digest",
+      "type": "string"
+    },
+    "id": {
+      "pattern": "^nrp_[A-Za-z0-9][A-Za-z0-9_-]*$",
+      "title": "Id",
+      "type": "string"
+    },
+    "policy_id": {
+      "minLength": 1,
+      "title": "Policy Id",
+      "type": "string"
+    },
+    "provider_namespace": {
+      "minLength": 1,
+      "title": "Provider Namespace",
+      "type": "string"
+    },
+    "provider_signals": {
+      "items": {
+        "minLength": 1,
+        "type": "string"
+      },
+      "title": "Provider Signals",
+      "type": "array"
+    },
+    "usage_terms": {
+      "items": {
+        "minLength": 1,
+        "type": "string"
+      },
+      "title": "Usage Terms",
+      "type": "array"
+    }
+  },
+  "required": [
+    "id",
+    "policy_id",
+    "facts_digest",
+    "provider_namespace",
+    "archive_permitted",
+    "allowed_purposes"
+  ],
+  "title": "NewsRightsProfile",
+  "type": "object"
+}

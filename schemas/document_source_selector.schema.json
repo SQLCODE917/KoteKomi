@@ -1,0 +1,58 @@
+{
+  "$defs": {
+    "DocumentSourceSelectorKind": {
+      "enum": [
+        "xml_path",
+        "dom_path",
+        "provider_element"
+      ],
+      "title": "DocumentSourceSelectorKind",
+      "type": "string"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "element_digest": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Element Digest",
+      "type": "string"
+    },
+    "id": {
+      "pattern": "^dss_[A-Za-z0-9][A-Za-z0-9_-]*$",
+      "title": "Id",
+      "type": "string"
+    },
+    "kind": {
+      "$ref": "#/$defs/DocumentSourceSelectorKind"
+    },
+    "node_id": {
+      "pattern": "^nod_[A-Za-z0-9][A-Za-z0-9_-]*$",
+      "title": "Node Id",
+      "type": "string"
+    },
+    "path": {
+      "items": {
+        "minLength": 1,
+        "type": "string"
+      },
+      "title": "Path",
+      "type": "array"
+    },
+    "representation_id": {
+      "pattern": "^rep_[A-Za-z0-9][A-Za-z0-9_-]*$",
+      "title": "Representation Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "representation_id",
+    "node_id",
+    "kind",
+    "path",
+    "element_digest"
+  ],
+  "title": "DocumentSourceSelector",
+  "type": "object"
+}

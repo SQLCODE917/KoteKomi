@@ -1,0 +1,125 @@
+{
+  "$defs": {
+    "JsonValue": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "integer"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "blob_id": {
+      "pattern": "^blb_[A-Za-z0-9][A-Za-z0-9_-]*$",
+      "title": "Blob Id",
+      "type": "string"
+    },
+    "canonical_uri": {
+      "anyOf": [
+        {
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Canonical Uri"
+    },
+    "capture_id": {
+      "pattern": "^cap_[A-Za-z0-9][A-Za-z0-9_-]*$",
+      "title": "Capture Id",
+      "type": "string"
+    },
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    },
+    "envelope_digest": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Envelope Digest",
+      "type": "string"
+    },
+    "id": {
+      "pattern": "^nde_[A-Za-z0-9][A-Za-z0-9_-]*$",
+      "title": "Id",
+      "type": "string"
+    },
+    "requested_uri": {
+      "anyOf": [
+        {
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Requested Uri"
+    },
+    "response_status": {
+      "anyOf": [
+        {
+          "maximum": 599,
+          "minimum": 100,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Response Status"
+    },
+    "retrieval_method": {
+      "minLength": 1,
+      "title": "Retrieval Method",
+      "type": "string"
+    },
+    "safe_metadata": {
+      "additionalProperties": {
+        "$ref": "#/$defs/JsonValue"
+      },
+      "title": "Safe Metadata",
+      "type": "object"
+    }
+  },
+  "required": [
+    "id",
+    "capture_id",
+    "blob_id",
+    "envelope_digest",
+    "retrieval_method"
+  ],
+  "title": "NewsDeliveryEnvelopeArtifact",
+  "type": "object"
+}

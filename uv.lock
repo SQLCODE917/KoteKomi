@@ -638,6 +638,8 @@ name = "kotekomi-adapters"
 version = "0.1.0"
 source = { editable = "packages/adapters" }
 dependencies = [
+    { name = "beautifulsoup4" },
+    { name = "defusedxml" },
     { name = "docling" },
     { name = "kotekomi-application" },
     { name = "kotekomi-domain" },
@@ -647,6 +649,8 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
+    { name = "beautifulsoup4", specifier = ">=4.13,<5" },
+    { name = "defusedxml", specifier = ">=0.7,<1" },
     { name = "docling", specifier = ">=2,<3" },
     { name = "kotekomi-application", editable = "packages/application" },
     { name = "kotekomi-domain", editable = "packages/domain" },

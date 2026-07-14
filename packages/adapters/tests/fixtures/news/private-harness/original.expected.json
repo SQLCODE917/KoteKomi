@@ -1,0 +1,81 @@
+{
+  "identity": {
+    "provider_namespace": "kotekomi-test-wire",
+    "provider_item_id": "urn:newsml:kotekomi.test:2026-07-14:alpha",
+    "provider_version": "1",
+    "provider_status": "stat:usable|sig:newscontent|sig:public-fixture",
+    "normalized_version_key": "00000000000000000001",
+    "canonical_uri": null
+  },
+  "version_created_at": "2026-07-14T12:00:00Z",
+  "first_published_at": "2026-07-14T12:00:00Z",
+  "updated_at": "2026-07-14T12:00:00Z",
+  "language": "en",
+  "headlines": ["Project Atlas enters public evaluation"],
+  "bylines": ["By Ada Reporter"],
+  "dateline": "WASHINGTON",
+  "subjects": ["Artificial intelligence"],
+  "locations": ["Washington"],
+  "body_elements": [
+    {
+      "element_key": "element-0001",
+      "kind": "headline",
+      "order_index": 0,
+      "hierarchy_path": ["headline", "1"],
+      "source_path": ["contentMeta", "headline[1]"],
+      "text": "Project Atlas enters public evaluation",
+      "media_reference": null
+    },
+    {
+      "element_key": "element-0002",
+      "kind": "byline",
+      "order_index": 1,
+      "hierarchy_path": ["byline", "2"],
+      "source_path": ["contentMeta", "by[1]"],
+      "text": "By Ada Reporter",
+      "media_reference": null
+    },
+    {
+      "element_key": "element-0003",
+      "kind": "dateline",
+      "order_index": 2,
+      "hierarchy_path": ["dateline", "3"],
+      "source_path": ["contentMeta", "dateline[1]"],
+      "text": "WASHINGTON",
+      "media_reference": null
+    },
+    {
+      "element_key": "element-0004",
+      "kind": "paragraph",
+      "order_index": 3,
+      "hierarchy_path": ["paragraph", "4"],
+      "source_path": ["contentSet", "inlineXML", "p[1]"],
+      "text": "Project Atlas entered public evaluation on Monday.",
+      "media_reference": null
+    },
+    {
+      "element_key": "element-0005",
+      "kind": "paragraph",
+      "order_index": 4,
+      "hierarchy_path": ["paragraph", "5"],
+      "source_path": ["contentSet", "inlineXML", "p[2]"],
+      "text": "The evaluation will publish monthly safety summaries.",
+      "media_reference": null
+    }
+  ],
+  "media_references": [],
+  "rights": {
+    "usage_terms": ["Redistributable synthetic test content."],
+    "distribution_scopes": [],
+    "provider_signals": ["sig:newscontent", "sig:public-fixture"],
+    "embargo_until": null,
+    "entitlement_expires_at": null,
+    "archive_permitted": true
+  },
+  "raw_metadata": {
+    "standard": "NewsML-G2",
+    "standardversion": "2.35",
+    "pub_status": "stat:usable"
+  },
+  "format_precedence": "newsml_g2"
+}
