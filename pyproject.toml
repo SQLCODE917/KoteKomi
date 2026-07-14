@@ -10,6 +10,7 @@ dependencies = [
 [dependency-groups]
 dev = [
   "jsonschema>=4.24,<5",
+  "kotekomi-devtools",
   "pyright>=1.1.400,<2",
   "pytest>=8.4,<9",
   "ruff>=0.12,<1",
@@ -23,6 +24,7 @@ kotekomi-application = { workspace = true }
 kotekomi-adapters = { workspace = true }
 kotekomi-briefing = { workspace = true }
 kotekomi-domain = { workspace = true }
+kotekomi-devtools = { workspace = true }
 kotekomi-pipelines = { workspace = true }
 
 [tool.uv.workspace]
@@ -31,6 +33,7 @@ members = [
   "packages/application",
   "packages/briefing",
   "packages/domain",
+  "packages/devtools",
   "packages/pipelines",
 ]
 
@@ -41,6 +44,7 @@ testpaths = [
   "packages/application/tests",
   "packages/briefing/tests",
   "packages/domain/tests",
+  "packages/devtools/tests",
   "packages/pipelines/tests",
 ]
 pythonpath = [
@@ -48,6 +52,7 @@ pythonpath = [
   "packages/application/src",
   "packages/briefing/src",
   "packages/domain/src",
+  "packages/devtools/src",
   "packages/pipelines/src",
 ]
 
@@ -72,6 +77,8 @@ include = [
   "packages/briefing/tests",
   "packages/domain/src",
   "packages/domain/tests",
+  "packages/devtools/src",
+  "packages/devtools/tests",
   "packages/pipelines/src",
   "packages/pipelines/tests",
   "scripts",
@@ -82,6 +89,7 @@ executionEnvironments = [
     "packages/application/src",
     "packages/briefing/src",
     "packages/domain/src",
+    "packages/devtools/src",
     "packages/pipelines/src",
   ] },
 ]

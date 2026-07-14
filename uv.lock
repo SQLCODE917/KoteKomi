@@ -15,6 +15,7 @@ members = [
     "kotekomi-application",
     "kotekomi-briefing",
     "kotekomi-domain",
+    "kotekomi-devtools",
     "kotekomi-pipelines",
 ]
 
@@ -617,6 +618,7 @@ dependencies = [
 [package.dev-dependencies]
 dev = [
     { name = "jsonschema" },
+    { name = "kotekomi-devtools" },
     { name = "pyright" },
     { name = "pytest" },
     { name = "ruff" },
@@ -628,6 +630,7 @@ requires-dist = [{ name = "kotekomi-pipelines", editable = "packages/pipelines" 
 [package.metadata.requires-dev]
 dev = [
     { name = "jsonschema", specifier = ">=4.24,<5" },
+    { name = "kotekomi-devtools", editable = "packages/devtools" },
     { name = "pyright", specifier = ">=1.1.400,<2" },
     { name = "pytest", specifier = ">=8.4,<9" },
     { name = "ruff", specifier = ">=0.12,<1" },
@@ -698,6 +701,17 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [{ name = "pydantic", specifier = ">=2.11,<3" }]
+
+[[package]]
+name = "kotekomi-devtools"
+version = "0.1.0"
+source = { editable = "packages/devtools" }
+dependencies = [
+    { name = "jsonschema" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "jsonschema", specifier = ">=4.24,<5" }]
 
 [[package]]
 name = "kotekomi-pipelines"
