@@ -88,7 +88,7 @@ class AnalysisCoverageLedger(ContextPlanningLedger, Protocol):
     def get_document_representation_bundle(
         self, record_id: str
     ) -> DocumentRepresentationBundle | None: ...
-    def find_pdf_preflight_report_for_task(
+    def find_latest_complete_pdf_preflight_report_for_task(
         self, task_fingerprint_id: str
     ) -> PdfPreflightReport | None: ...
     def save_analysis_plan_artifact(self, record: AnalysisPlanArtifact) -> None: ...
@@ -900,10 +900,12 @@ def build_coverage_report(
         reconcile(item)
     all_coverages = tuple(sorted(coverages.values(), key=lambda coverage: coverage.planned_item_id))
     represented_pages = _represented_pages(bundle, items, ledger_repository)
-    preflight_report = ledger_repository.find_pdf_preflight_report_for_task(
+    preflight_report = ledger_repository.find_latest_complete_pdf_preflight_report_for_task(
         bundle.representation.processing_task_fingerprint_id
     )
     if preflight_report is not None:
+        if preflight_report.page_count is None:
+            raise ValueError("Complete PDF preflight report requires a page count.")
         total_pages = preflight_report.page_count
     else:
         quality_page_count = bundle.quality_report.metric_values.get("page_count")

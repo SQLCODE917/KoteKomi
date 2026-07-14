@@ -4,6 +4,7 @@ from kotekomi_domain import (
     PdfPageAccountingBundle,
     PdfPageExtractionStatus,
     PdfPageInventory,
+    PdfPageInventoryDisposition,
     PdfPageQualityStatus,
     PdfPreflightReport,
     PdfTransformationArtifact,
@@ -36,7 +37,6 @@ def _status(
     *,
     extraction_path: PdfExtractionPath = PdfExtractionPath.EMBEDDED,
     status: PdfPageQualityStatus = PdfPageQualityStatus.ACCEPTABLE,
-    representation_id: str | None = "rep_fixture",
     extracted_character_count: int = 120,
     transformation_artifact_ids: tuple[str, ...] = (),
     ocr_confidence: float | None = None,
@@ -46,7 +46,6 @@ def _status(
         preflight_report_id="pfr_fixture",
         page_inventory_id=f"ppi_fixture_{page_index}",
         page_index=page_index,
-        representation_id=representation_id,
         extraction_path=extraction_path,
         status=status,
         extracted_character_count=extracted_character_count,
@@ -65,7 +64,9 @@ def _report(page_count: int = 2) -> PdfPreflightReport:
         document_id="doc_fixture",
         raw_blob_id="blb_fixture",
         processing_task_fingerprint_id="ptf_fixture",
+        processing_attempt_id="pat_fixture",
         pdf_version="1.7",
+        page_inventory_disposition=PdfPageInventoryDisposition.COMPLETE,
         page_count=page_count,
         encrypted=False,
         page_inventory_ids=tuple(f"ppi_fixture_{page}" for page in range(1, page_count + 1)),
@@ -165,7 +166,12 @@ def test_document_level_repair_can_precede_an_unavailable_page_inventory() -> No
         page_scope=(),
     )
     report = _report(page_count=0).model_copy(
-        update={"transformation_artifact_ids": (artifact.id,)}
+        update={
+            "page_inventory_disposition": PdfPageInventoryDisposition.UNAVAILABLE,
+            "page_count": None,
+            "global_issues": ("page_inventory_unavailable",),
+            "transformation_artifact_ids": (artifact.id,),
+        }
     )
 
     accounting = PdfPageAccountingBundle(
@@ -186,6 +192,18 @@ def test_document_level_repair_can_precede_an_unavailable_page_inventory() -> No
     )
 
     assert accounting.transformation_artifacts == (artifact,)
+
+
+def test_unavailable_page_inventory_cannot_claim_zero_pages() -> None:
+    payload = _report(page_count=0).model_dump()
+    payload.update(
+        {
+            "page_inventory_disposition": PdfPageInventoryDisposition.UNAVAILABLE,
+            "global_issues": ("page_inventory_unavailable",),
+        }
+    )
+    with pytest.raises(ValueError, match="cannot claim a page count"):
+        PdfPreflightReport.model_validate(payload)
 
 
 def test_pdf_page_accounting_rejects_disagreeing_ocr_confidence() -> None:

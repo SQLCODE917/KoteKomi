@@ -40,7 +40,9 @@ from kotekomi_domain import (
     ParseQualityReport,
     PdfExtractionPath,
     PdfPageAccountingBundle,
+    PdfPageInventoryDisposition,
     PdfPageQualityStatus,
+    ProcessingArtifactKind,
     ProcessingAttemptOutcome,
     ProcessingAttemptStatus,
     ProcessingStage,
@@ -94,6 +96,7 @@ class FixturePdfParser:
                 preflight_tool="fixture_preflight",
                 preflight_tool_version="1",
                 encrypted=False,
+                page_inventory_disposition=PdfPageInventoryDisposition.COMPLETE,
                 page_count=1,
                 pages=(
                     PdfPagePreflight(
@@ -131,6 +134,7 @@ class OmittedPageBlockedFixturePdfParser(FixturePdfParser):
                 preflight_tool=result.preflight.preflight_tool,
                 preflight_tool_version=result.preflight.preflight_tool_version,
                 encrypted=False,
+                page_inventory_disposition=PdfPageInventoryDisposition.COMPLETE,
                 page_count=2,
                 pages=(
                     first_page,
@@ -184,6 +188,7 @@ class MismatchedFixturePdfParser(FixturePdfParser):
                 preflight_tool=preflight.preflight_tool,
                 preflight_tool_version=preflight.preflight_tool_version,
                 encrypted=preflight.encrypted,
+                page_inventory_disposition=preflight.page_inventory_disposition,
                 page_count=preflight.page_count,
                 pages=preflight.pages,
                 warnings=preflight.warnings,
@@ -195,6 +200,7 @@ class MismatchedFixturePdfParser(FixturePdfParser):
                 preflight_tool=preflight.preflight_tool,
                 preflight_tool_version=preflight.preflight_tool_version,
                 encrypted=preflight.encrypted,
+                page_inventory_disposition=preflight.page_inventory_disposition,
                 page_count=preflight.page_count,
                 pages=preflight.pages,
                 warnings=preflight.warnings,
@@ -250,6 +256,7 @@ class MutatingFixturePdfParser(FixturePdfParser):
                 preflight_tool=preflight.preflight_tool,
                 preflight_tool_version=preflight.preflight_tool_version,
                 encrypted=preflight.encrypted,
+                page_inventory_disposition=preflight.page_inventory_disposition,
                 page_count=preflight.page_count,
                 pages=(page,),
                 warnings=preflight.warnings,
@@ -741,6 +748,7 @@ def test_pdf_production_path_records_docling_source_access_as_blocked(
             parser_name="docling",
             parser_version=parser_version,
             encrypted=False,
+            page_inventory_disposition=PdfPageInventoryDisposition.COMPLETE,
             page_count=1,
             pages=(PdfPagePreflight(1, 612, 792, 0, 20),),
             pdf_version="1.7",
@@ -785,12 +793,13 @@ def test_pdf_production_path_records_docling_source_access_as_blocked(
 
 
 @pytest.mark.parametrize(
-    ("fixture_path", "expected_reason"),
+    ("fixture_path", "expected_reason", "expected_page_count"),
     (
-        ("fixtures/pdf/encrypted/encrypted_aes256_v1.pdf", "password_required"),
+        ("fixtures/pdf/encrypted/encrypted_aes256_v1.pdf", "password_required", 1),
         (
             "fixtures/pdf/corrupt/ocrmypdf-invalid.pdf",
             "PDF source preflight could not establish an authoritative page inventory.",
+            None,
         ),
     ),
 )
@@ -799,6 +808,7 @@ def test_public_pdf_ingestion_blocks_when_source_preflight_cannot_establish_page
     monkeypatch: pytest.MonkeyPatch,
     fixture_path: str,
     expected_reason: str,
+    expected_page_count: int | None,
 ) -> None:
     raw_pdf = (Path(__file__).parent / fixture_path).read_bytes()
     fixture_key = Path(fixture_path).stem
@@ -830,8 +840,25 @@ def test_public_pdf_ingestion_blocks_when_source_preflight_cannot_establish_page
     assert outcome.status is ProcessingAttemptStatus.BLOCKED
     assert outcome.failure is None
     assert accounting is not None
-    assert accounting.preflight_report.page_count == 0
-    assert accounting.page_extraction_statuses == ()
+    assert accounting.preflight_report.page_count == expected_page_count
+    if expected_page_count is None:
+        assert (
+            accounting.preflight_report.page_inventory_disposition
+            is PdfPageInventoryDisposition.UNAVAILABLE
+        )
+        assert accounting.page_extraction_statuses == ()
+    else:
+        assert (
+            accounting.preflight_report.page_inventory_disposition
+            is PdfPageInventoryDisposition.COMPLETE
+        )
+        assert len(accounting.page_extraction_statuses) == expected_page_count
+        assert all(
+            status.extraction_path is PdfExtractionPath.INACCESSIBLE
+            and status.status is PdfPageQualityStatus.BLOCKED
+            and expected_reason in status.policy_reasons
+            for status in accounting.page_extraction_statuses
+        )
 
 
 def test_pdf_production_path_records_validation_failure_without_representation(
@@ -954,7 +981,20 @@ def test_pdf_parser_output_mutations_fail_closed_and_retry_cleanly(
         assert repository.list_source_regions() == ()
         assert repository.list_parse_quality_reports() == ()
         assert repository.list_provenance_activities() == ()
-        assert repository.find_pdf_preflight_report_for_task(task_id) is None
+        assert failed_outcome is not None
+        (failed_report_ref,) = tuple(
+            artifact
+            for artifact in failed_outcome.output_artifacts
+            if artifact.kind is ProcessingArtifactKind.PDF_PREFLIGHT_REPORT
+        )
+        failed_accounting = repository.get_pdf_page_accounting_bundle(
+            failed_report_ref.artifact_id
+        )
+        assert failed_accounting is not None
+        assert failed_accounting.preflight_report.page_count == 1
+        (failed_page_status,) = failed_accounting.page_extraction_statuses
+        assert failed_page_status.status is PdfPageQualityStatus.BLOCKED
+        assert failed_page_status.policy_reasons == ("representation_validation_failed",)
 
     assert len(attempts_after_failure) == 1
     assert failed_outcome is not None
@@ -978,6 +1018,17 @@ def test_pdf_parser_output_mutations_fail_closed_and_retry_cleanly(
         )
         assert retry.representation_id is not None
         assert repository.get_document_representation_bundle(retry.representation_id) is not None
+        retry_accounting = repository.get_pdf_page_accounting_bundle(
+            retry.preflight_report_id
+        )
+        assert retry_accounting is not None
+        assert retry_accounting.preflight_report.id != failed_accounting.preflight_report.id
+        (retry_page_status,) = retry_accounting.page_extraction_statuses
+        assert retry_page_status.status is PdfPageQualityStatus.ACCEPTABLE
+        assert (
+            repository.get_pdf_page_accounting_bundle(failed_accounting.preflight_report.id)
+            == failed_accounting
+        )
 
     assert len(attempts_after_retry) == 2
     assert [outcome.status for outcome in outcomes_after_retry if outcome is not None] == [

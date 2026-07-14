@@ -198,6 +198,7 @@ RELATIONAL_OWNERSHIP_COLUMNS: dict[str, tuple[tuple[str, str], ...]] = {
         ("document_id", "document_id"),
         ("raw_blob_id", "raw_blob_id"),
         ("processing_task_fingerprint_id", "processing_task_fingerprint_id"),
+        ("processing_attempt_id", "processing_attempt_id"),
     ),
     "pdf_page_inventories": (
         ("preflight_report_id", "preflight_report_id"),
@@ -207,7 +208,6 @@ RELATIONAL_OWNERSHIP_COLUMNS: dict[str, tuple[tuple[str, str], ...]] = {
         ("preflight_report_id", "preflight_report_id"),
         ("page_inventory_id", "page_inventory_id"),
         ("page_index", "page_index"),
-        ("representation_id", "representation_id"),
     ),
     "pdf_transformation_artifacts": (
         ("preflight_report_id", "preflight_report_id"),
@@ -1053,17 +1053,26 @@ class SQLiteLedgerRepository:
     def get_pdf_preflight_report(self, record_id: str) -> PdfPreflightReport | None:
         return self._get(PDF_PREFLIGHT_REPORT_SPEC, record_id)
 
-    def find_pdf_preflight_report_for_task(
+    def find_latest_complete_pdf_preflight_report_for_task(
         self, task_fingerprint_id: str
     ) -> PdfPreflightReport | None:
-        reports = self._list_for_owner(
-            PDF_PREFLIGHT_REPORT_SPEC,
-            "processing_task_fingerprint_id",
-            task_fingerprint_id,
-        )
-        if len(reports) > 1:
-            raise RuntimeError("A PDF processing task has multiple preflight reports.")
-        return reports[0] if reports else None
+        row = self._connection.execute(
+            """
+            SELECT reports.payload_json
+            FROM pdf_preflight_reports AS reports
+            JOIN processing_attempts AS attempts
+              ON attempts.id = reports.processing_attempt_id
+            WHERE reports.processing_task_fingerprint_id = ?
+              AND json_extract(
+                    reports.payload_json,
+                    '$.page_inventory_disposition'
+                  ) = 'complete'
+            ORDER BY attempts.started_at DESC, attempts.id DESC
+            LIMIT 1
+            """,
+            (task_fingerprint_id,),
+        ).fetchone()
+        return PdfPreflightReport.model_validate_json(str(row[0])) if row is not None else None
 
     def list_pdf_page_inventory_for_report(
         self, preflight_report_id: str
@@ -1145,14 +1154,7 @@ class SQLiteLedgerRepository:
                 reused_outcome=reused_outcome,
             )
             representation_outcome = self.commit_document_representation_bundle(bundle)
-            accounting_disposition = self._commit_pdf_page_accounting(page_accounting)
-            if representation_outcome.disposition.value != accounting_disposition.value:
-                raise ImmutableRecordConflict(
-                    "PdfDocumentProcessing",
-                    expected_task_fingerprint_id,
-                    representation_outcome.disposition.value,
-                    accounting_disposition.value,
-                )
+            self._require_committed_pdf_page_accounting(page_accounting)
             if representation_outcome.disposition is BundleCommitDisposition.CREATED:
                 self.save_provenance_activity(created_provenance_activity)
                 self.append_processing_attempt_outcome(created_outcome)
@@ -1183,18 +1185,42 @@ class SQLiteLedgerRepository:
                 created_outcome=created_outcome,
                 reused_outcome=reused_outcome,
             )
-            disposition = self._commit_pdf_page_accounting(page_accounting)
-            if disposition is BundleCommitDisposition.CREATED:
+            self._require_committed_pdf_page_accounting(page_accounting)
+            if self.get_provenance_activity(created_provenance_activity.id) is None:
                 self.save_provenance_activity(created_provenance_activity)
                 self.append_processing_attempt_outcome(created_outcome)
+                disposition = BundleCommitDisposition.CREATED
             else:
                 self.append_processing_attempt_outcome(reused_outcome)
+                disposition = BundleCommitDisposition.REUSED
         except Exception:
             self._connection.execute("ROLLBACK TO SAVEPOINT blocked_pdf_processing")
             self._connection.execute("RELEASE SAVEPOINT blocked_pdf_processing")
             raise
         self._connection.execute("RELEASE SAVEPOINT blocked_pdf_processing")
         return disposition
+
+    def commit_pdf_page_accounting(
+        self, page_accounting: PdfPageAccountingBundle
+    ) -> BundleCommitDisposition:
+        """Durably preserve the source-page denominator before representation publication."""
+        disposition = self._commit_pdf_page_accounting(page_accounting)
+        self._connection.commit()
+        return disposition
+
+    def _require_committed_pdf_page_accounting(
+        self, page_accounting: PdfPageAccountingBundle
+    ) -> None:
+        existing = self.get_pdf_page_accounting_bundle(page_accounting.preflight_report.id)
+        if existing is None:
+            raise ValueError("PDF representation commit requires durable page accounting.")
+        if existing != page_accounting:
+            raise ImmutableRecordConflict(
+                "PdfPageAccountingBundle",
+                page_accounting.preflight_report.id,
+                hashlib.sha256(canonical_record_json(existing).encode()).hexdigest(),
+                hashlib.sha256(canonical_record_json(page_accounting).encode()).hexdigest(),
+            )
 
     def _commit_pdf_page_accounting(
         self, page_accounting: PdfPageAccountingBundle
@@ -1241,6 +1267,8 @@ class SQLiteLedgerRepository:
         attempt = self.get_processing_attempt(created_outcome.attempt_id)
         if attempt is None or attempt.task_fingerprint_id != expected_task_fingerprint_id:
             raise ValueError("PDF processing outcome attempt does not belong to the task.")
+        if report.processing_attempt_id != attempt.id:
+            raise ValueError("PDF preflight report does not belong to the processing attempt.")
         for outcome in (created_outcome, reused_outcome):
             report_refs = tuple(
                 artifact
@@ -1249,14 +1277,7 @@ class SQLiteLedgerRepository:
             )
             if len(report_refs) != 1 or report_refs[0].artifact_id != report.id:
                 raise ValueError("PDF processing outcome must reference its preflight report.")
-        status_representation_ids = {
-            status.representation_id
-            for status in page_accounting.page_extraction_statuses
-            if status.representation_id is not None
-        }
-        expected_ids: set[str] = {representation_id} if representation_id is not None else set()
-        if status_representation_ids != expected_ids:
-            raise ValueError("PDF page statuses do not bind to the committed representation.")
+        del representation_id
 
     def save_raw_blob(self, record: RawBlob) -> None:
         self._save(RAW_BLOB_SPEC, record)

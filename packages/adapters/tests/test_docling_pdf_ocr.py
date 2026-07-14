@@ -34,6 +34,8 @@ from kotekomi_domain import (
     TextViewKind,
 )
 
+from .pdf_page_accounting_assertions import assert_equivalent_pdf_page_accounting
+
 FIXTURE_ROOT = Path(__file__).parent / "fixtures" / "pdf"
 MIXED_PATH = FIXTURE_ROOT / "mixed" / "mixed_born_digital_scan_v1.pdf"
 GOLD_PATH = FIXTURE_ROOT / "gold" / "mixed_born_digital_scan_v1.json"
@@ -132,7 +134,9 @@ def test_generated_mixed_pdf_selectively_ocrs_one_page_and_replays_after_restart
     assert first_bundle is not None
     assert second_bundle == first_bundle
     assert first_accounting is not None
-    assert second_accounting == first_accounting
+    assert second_accounting is not None
+    assert first.preflight_report_id != second.preflight_report_id
+    assert_equivalent_pdf_page_accounting(first_accounting, second_accounting)
     assert reopened_archive.read_raw_source(capture.raw_blob.id) == RAW_PDF
 
     statuses = first_accounting.page_extraction_statuses

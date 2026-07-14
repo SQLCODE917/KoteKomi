@@ -147,6 +147,11 @@ class PdfPageQualityStatus(StrEnum):
     BLOCKED = "blocked"
 
 
+class PdfPageInventoryDisposition(StrEnum):
+    COMPLETE = "complete"
+    UNAVAILABLE = "unavailable"
+
+
 class PdfTransformationType(StrEnum):
     REPAIR = "repair"
     RENDER = "render"
@@ -459,8 +464,10 @@ class PdfPreflightReport(DomainModel):
     document_id: DocumentId
     raw_blob_id: RawBlobId
     processing_task_fingerprint_id: ProcessingTaskFingerprintId
+    processing_attempt_id: ProcessingAttemptId
     pdf_version: NonEmptyStr
-    page_count: Annotated[int, Field(ge=0)]
+    page_inventory_disposition: PdfPageInventoryDisposition
+    page_count: Annotated[int, Field(ge=0)] | None
     encrypted: bool
     permissions: tuple[NonEmptyStr, ...] = Field(default_factory=tuple)
     page_inventory_ids: tuple[PdfPageInventoryId, ...]
@@ -474,6 +481,16 @@ class PdfPreflightReport(DomainModel):
 
     @model_validator(mode="after")
     def validate_page_denominator(self) -> Self:
+        if self.page_inventory_disposition is PdfPageInventoryDisposition.UNAVAILABLE:
+            if self.page_count is not None:
+                raise ValueError("Unavailable PDF page inventory cannot claim a page count.")
+            if self.page_inventory_ids or self.page_extraction_status_ids:
+                raise ValueError("Unavailable PDF page inventory cannot enumerate page records.")
+            if not self.global_issues:
+                raise ValueError("Unavailable PDF page inventory requires an explicit issue.")
+            return self
+        if self.page_count is None:
+            raise ValueError("Complete PDF page inventory requires a known page count.")
         if len(self.page_inventory_ids) != self.page_count:
             raise ValueError("PdfPreflightReport must enumerate every page inventory record.")
         if len(self.page_extraction_status_ids) != self.page_count:
@@ -521,7 +538,6 @@ class PdfPageExtractionStatus(DomainModel):
     preflight_report_id: PdfPreflightReportId
     page_inventory_id: PdfPageInventoryId
     page_index: Annotated[int, Field(ge=1)]
-    representation_id: DocumentRepresentationId | None = None
     extraction_path: PdfExtractionPath
     status: PdfPageQualityStatus
     extracted_character_count: Annotated[int, Field(ge=0)]
@@ -542,10 +558,8 @@ class PdfPageExtractionStatus(DomainModel):
         if self.extraction_path is PdfExtractionPath.INACCESSIBLE:
             if self.status is not PdfPageQualityStatus.BLOCKED:
                 raise ValueError("An inaccessible PDF page must be blocked.")
-            if self.representation_id is not None or self.extracted_character_count != 0:
+            if self.extracted_character_count != 0:
                 raise ValueError("An inaccessible PDF page cannot claim extracted output.")
-        if self.status is not PdfPageQualityStatus.BLOCKED and self.representation_id is None:
-            raise ValueError("An analyzable PDF page status requires a representation.")
         if self.extraction_path in {PdfExtractionPath.OCR, PdfExtractionPath.MIXED}:
             if not self.transformation_artifact_ids:
                 raise ValueError("An OCR-derived PDF page requires a transformation artifact.")
@@ -628,7 +642,9 @@ class PdfPageAccountingBundle(DomainModel):
             != report.transformation_artifact_ids
         ):
             raise ValueError("PDF transformations do not match the preflight report.")
-        expected_page_indices = tuple(range(1, report.page_count + 1))
+        expected_page_indices = (
+            tuple(range(1, report.page_count + 1)) if report.page_count is not None else ()
+        )
         if tuple(page.page_index for page in self.page_inventory) != expected_page_indices:
             raise ValueError("PDF page inventory must be ordered and contiguous from page 1.")
         if (
@@ -683,7 +699,13 @@ class PdfPageAccountingBundle(DomainModel):
                 raise ValueError("PDF transformation input must be archived before its output.")
             if artifact.output_blob_id not in transformation_blobs_by_id:
                 raise ValueError("PDF transformation output must be an archived RawBlob.")
-            if any(page > report.page_count for page in artifact.page_scope):
+            if report.page_count is None and artifact.page_scope:
+                raise ValueError(
+                    "Unavailable PDF page inventory cannot scope page transformations."
+                )
+            if report.page_count is not None and any(
+                page > report.page_count for page in artifact.page_scope
+            ):
                 raise ValueError("PDF transformation page scope exceeds the page denominator.")
             available_inputs.add(artifact.output_blob_id)
         return self

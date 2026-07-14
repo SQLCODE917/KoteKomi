@@ -17,6 +17,7 @@ from kotekomi_domain import (
     PdfPageAccountingBundle,
     PdfPageExtractionStatus,
     PdfPageInventory,
+    PdfPageInventoryDisposition,
     PdfPageQualityStatus,
     PdfPreflightReport,
     PdfTransformationArtifact,
@@ -43,7 +44,7 @@ from kotekomi_application.processing import (
     ProcessingClock,
     ProcessingLedger,
     UtcProcessingClock,
-    execute_processing_task,
+    begin_processing_task,
     processing_attempt_outcome,
     processing_task_fingerprint,
 )
@@ -116,13 +117,22 @@ class PdfPreflight:
     preflight_tool: str
     preflight_tool_version: str
     encrypted: bool
-    page_count: int
+    page_inventory_disposition: PdfPageInventoryDisposition
+    page_count: int | None
     pages: tuple[PdfPagePreflight, ...]
     warnings: tuple[str, ...] = ()
     pdf_version: str = "unknown"
     permissions: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
+        if self.page_inventory_disposition is PdfPageInventoryDisposition.UNAVAILABLE:
+            if self.page_count is not None or self.pages:
+                raise ValueError("Unavailable PDF preflight cannot claim a page inventory.")
+            if not self.warnings:
+                raise ValueError("Unavailable PDF preflight requires an explicit warning.")
+            return
+        if self.page_count is None:
+            raise ValueError("Complete PDF preflight requires a known page count.")
         if self.page_count != len(self.pages):
             raise ValueError("PDF preflight page_count must match its page inventory.")
         expected_page_indices = tuple(range(1, self.page_count + 1))
@@ -337,6 +347,10 @@ class PdfIngestLedger(DocumentRepresentationBundleLedger, ProcessingLedger, Prot
     def get_raw_blob(self, record_id: str) -> RawBlob | None: ...
     def save_provenance_activity(self, record: ProvenanceActivity) -> None: ...
 
+    def commit_pdf_page_accounting(
+        self, page_accounting: PdfPageAccountingBundle
+    ) -> BundleCommitDisposition: ...
+
     def commit_pdf_document_processing(
         self,
         *,
@@ -417,13 +431,16 @@ def ingest_pdf(
         policy_id=ingest_input.policy_id,
         output_contract_version=processor.output_contract_version,
     )
-    attempt, parse_result = execute_processing_task(
+    attempt = begin_processing_task(
         task=task,
         ledger=ledger_repository,
         attempt_id_factory=attempt_id_factory,
         clock=processing_clock,
         invocation_id=f"pdf:{document.id}:{ingest_input.ingested_at.isoformat()}",
-        operation=lambda _attempt: parser.parse(
+        interruption_basis="PDF processing retry found an unclosed attempt",
+    )
+    try:
+        parse_result = parser.parse(
             PdfParseInput(
                 document=document,
                 raw_bytes=ingest_input.raw_bytes,
@@ -433,9 +450,32 @@ def ingest_pdf(
                 access_credential=ingest_input.access_credential,
                 expected_processor_config_digest=processor.processor_config_digest,
             )
-        ),
-        failure_for_exception=_pdf_processor_failure,
-    )
+        )
+    except Exception as exc:
+        unavailable_result = _unavailable_pdf_parse_result(
+            processor,
+            "processor_failed_before_page_inventory",
+        )
+        page_accounting = _build_pdf_page_accounting(
+            task=task,
+            attempt=attempt,
+            document=document,
+            raw_blob=raw_blob,
+            parse_result=unavailable_result,
+            extraction_policy=extraction_policy,
+            transformation_blobs=(),
+            failure_reason="processor_failed_before_page_inventory",
+        )
+        ledger_repository.commit_pdf_page_accounting(page_accounting)
+        _record_pdf_failure(
+            ledger_repository=ledger_repository,
+            attempt=attempt,
+            finished_at=processing_clock.now(),
+            exception=exc,
+            failure=_pdf_processor_failure(exc),
+            output_artifacts=_page_accounting_artifact_refs(page_accounting),
+        )
+        raise
     try:
         transformation_blobs = _archive_pdf_transformation_payloads(
             parse_result.transformation_payloads,
@@ -444,6 +484,23 @@ def ingest_pdf(
             transformation_archive,
         )
     except Exception as exc:
+        failed_parse_result = replace(
+            parse_result,
+            representation_bundle=None,
+            transformation_payloads=(),
+            blocking_reasons=("transformation_archive_failed",),
+        )
+        page_accounting = _build_pdf_page_accounting(
+            task=task,
+            attempt=attempt,
+            document=document,
+            raw_blob=raw_blob,
+            parse_result=failed_parse_result,
+            extraction_policy=extraction_policy,
+            transformation_blobs=(),
+            failure_reason="transformation_archive_failed",
+        )
+        ledger_repository.commit_pdf_page_accounting(page_accounting)
         _record_pdf_failure(
             ledger_repository=ledger_repository,
             attempt=attempt,
@@ -452,6 +509,7 @@ def ingest_pdf(
             code="pdf_transformation_archive_failure",
             stage=ProcessingStage.ARCHIVE,
             safe_message="PDF transformation output could not be archived.",
+            output_artifacts=_page_accounting_artifact_refs(page_accounting),
         )
         raise
     bundle = parse_result.representation_bundle
@@ -461,12 +519,14 @@ def ingest_pdf(
         )
         page_accounting = _build_pdf_page_accounting(
             task=task,
+            attempt=attempt,
             document=document,
             raw_blob=raw_blob,
             parse_result=parse_result,
             extraction_policy=extraction_policy,
             transformation_blobs=transformation_blobs,
         )
+        page_disposition = ledger_repository.commit_pdf_page_accounting(page_accounting)
         provenance = _pdf_page_accounting_provenance(
             document=document,
             page_accounting=page_accounting,
@@ -504,7 +564,7 @@ def ingest_pdf(
             output_artifacts=accounting_refs,
             blocking_reasons=blockers,
         )
-        page_disposition = ledger_repository.commit_blocked_pdf_processing(
+        ledger_repository.commit_blocked_pdf_processing(
             expected_task_fingerprint_id=task.id,
             page_accounting=page_accounting,
             created_provenance_activity=provenance,
@@ -531,6 +591,7 @@ def ingest_pdf(
         )
         page_accounting = _build_pdf_page_accounting(
             task=task,
+            attempt=attempt,
             document=document,
             raw_blob=raw_blob,
             parse_result=parse_result,
@@ -539,6 +600,17 @@ def ingest_pdf(
         )
         _validate_page_accounting_quality(bundle, page_accounting)
     except ValueError as error:
+        failed_page_accounting = _build_pdf_page_accounting(
+            task=task,
+            attempt=attempt,
+            document=document,
+            raw_blob=raw_blob,
+            parse_result=parse_result,
+            extraction_policy=extraction_policy,
+            transformation_blobs=transformation_blobs,
+            failure_reason="representation_validation_failed",
+        )
+        ledger_repository.commit_pdf_page_accounting(failed_page_accounting)
         _record_pdf_failure(
             ledger_repository=ledger_repository,
             attempt=attempt,
@@ -547,8 +619,10 @@ def ingest_pdf(
             code="pdf_representation_validation_failure",
             stage=ProcessingStage.REPRESENTATION_VALIDATION,
             safe_message="PDF parser returned an invalid representation.",
+            output_artifacts=_page_accounting_artifact_refs(failed_page_accounting),
         )
         raise error
+    ledger_repository.commit_pdf_page_accounting(page_accounting)
     provenance_activity_id = _provenance_id(
         document.id, bundle.representation.id, ingest_input.policy_id
     )
@@ -747,13 +821,15 @@ def validate_representation_for_processing_task(
 def _build_pdf_page_accounting(
     *,
     task: ProcessingTaskFingerprint,
+    attempt: ProcessingAttempt,
     document: Document,
     raw_blob: RawBlob,
     parse_result: PdfParseResult,
     extraction_policy: PdfExtractionPolicy,
     transformation_blobs: tuple[RawBlob, ...],
+    failure_reason: str | None = None,
 ) -> PdfPageAccountingBundle:
-    report_id = _derived_pdf_record_id("pfr", task.id, "preflight")
+    report_id = _derived_pdf_record_id("pfr", task.id, attempt.id, "preflight")
     page_inventory_ids = tuple(
         _derived_pdf_record_id("ppi", report_id, str(page.page_index))
         for page in parse_result.preflight.pages
@@ -799,7 +875,9 @@ def _build_pdf_page_accounting(
         document_id=document.id,
         raw_blob_id=raw_blob.id,
         processing_task_fingerprint_id=task.id,
+        processing_attempt_id=attempt.id,
         pdf_version=parse_result.preflight.pdf_version,
+        page_inventory_disposition=parse_result.preflight.page_inventory_disposition,
         page_count=parse_result.preflight.page_count,
         encrypted=parse_result.preflight.encrypted,
         permissions=parse_result.preflight.permissions,
@@ -877,15 +955,31 @@ def _build_pdf_page_accounting(
             None,
         )
         page_ocr_confidence = ocr_artifact.confidence if ocr_artifact is not None else None
-        decision = extraction_policy.select_page_outcome(
-            page=page,
-            page_has_output=page_has_output,
-            representation_analyzability=(
-                bundle.quality_report.analyzability if bundle is not None else None
-            ),
-            source_blocked=bundle is None,
-            selected_path=selected_path,
-            ocr_confidence=page_ocr_confidence,
+        decision = (
+            PdfPagePolicyDecision(
+                PdfExtractionPath.INACCESSIBLE,
+                PdfPageQualityStatus.BLOCKED,
+                (failure_reason,),
+            )
+            if failure_reason is not None
+            else (
+                PdfPagePolicyDecision(
+                    PdfExtractionPath.INACCESSIBLE,
+                    PdfPageQualityStatus.BLOCKED,
+                    parse_result.blocking_reasons,
+                )
+                if bundle is None and parse_result.blocking_reasons
+                else extraction_policy.select_page_outcome(
+                page=page,
+                page_has_output=page_has_output,
+                representation_analyzability=(
+                    bundle.quality_report.analyzability if bundle is not None else None
+                ),
+                source_blocked=bundle is None,
+                selected_path=selected_path,
+                ocr_confidence=page_ocr_confidence,
+                )
+            )
         )
         statuses.append(
             PdfPageExtractionStatus(
@@ -893,12 +987,13 @@ def _build_pdf_page_accounting(
                 preflight_report_id=report.id,
                 page_inventory_id=page_id,
                 page_index=page.page_index,
-                representation_id=(
-                    bundle.representation.id if bundle is not None and page_has_output else None
-                ),
                 extraction_path=decision.extraction_path,
                 status=decision.status,
-                extracted_character_count=extracted_characters_by_page[page.page_index],
+                extracted_character_count=(
+                    0
+                    if decision.extraction_path is PdfExtractionPath.INACCESSIBLE
+                    else extracted_characters_by_page[page.page_index]
+                ),
                 rotation_applied=page.rotation,
                 warnings=page.warnings,
                 policy_id=extraction_policy.policy_id,
@@ -926,6 +1021,27 @@ def _build_pdf_page_accounting(
         page_extraction_statuses=tuple(statuses),
         transformation_artifacts=transformation_artifacts,
         transformation_blobs=transformation_blobs,
+    )
+
+
+def _unavailable_pdf_parse_result(
+    processor: PdfProcessorIdentity,
+    reason: str,
+) -> PdfParseResult:
+    return PdfParseResult(
+        preflight=PdfPreflight(
+            parser_name=processor.processor_name,
+            parser_version=processor.processor_version,
+            preflight_tool=processor.processor_name,
+            preflight_tool_version=processor.processor_version,
+            encrypted=False,
+            page_inventory_disposition=PdfPageInventoryDisposition.UNAVAILABLE,
+            page_count=None,
+            pages=(),
+            warnings=(reason,),
+        ),
+        representation_bundle=None,
+        blocking_reasons=(reason,),
     )
 
 
@@ -1168,21 +1284,29 @@ def _record_pdf_failure(
     attempt: ProcessingAttempt,
     finished_at: datetime,
     exception: Exception,
-    code: str,
-    stage: ProcessingStage,
-    safe_message: str,
+    code: str | None = None,
+    stage: ProcessingStage | None = None,
+    safe_message: str | None = None,
+    failure: ProcessingFailure | None = None,
+    output_artifacts: tuple[ProcessingArtifactRef, ...] = (),
 ) -> None:
+    resolved_failure = failure
+    if resolved_failure is None:
+        if code is None or stage is None or safe_message is None:
+            raise ValueError("PDF failure recording requires a complete failure description.")
+        resolved_failure = ProcessingFailure(
+            code=code,
+            failure_type=type(exception).__name__,
+            stage=stage,
+            safe_message=safe_message,
+            retryable=False,
+        )
     ledger_repository.record_failed_processing_attempt_outcome(
         processing_attempt_outcome(
             attempt=attempt,
             status=ProcessingAttemptStatus.FAILED,
             finished_at=finished_at,
-            failure=ProcessingFailure(
-                code=code,
-                failure_type=type(exception).__name__,
-                stage=stage,
-                safe_message=safe_message,
-                retryable=False,
-            ),
+            output_artifacts=output_artifacts,
+            failure=resolved_failure,
         )
     )

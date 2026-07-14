@@ -20,9 +20,8 @@ from kotekomi_adapters.docling_pdf_parser import (
 )
 
 
-def main() -> None:
-    _raise_stack_limit_for_docling_import()
-    raw_payload: object = json.loads(sys.stdin.buffer.read())
+def _execute_request(request_bytes: bytes) -> dict[str, object]:
+    raw_payload: object = json.loads(request_bytes)
     if not isinstance(raw_payload, dict):
         raise ValueError("Docling worker request must be an object.")
     payload = cast(dict[str, object], raw_payload)
@@ -67,37 +66,39 @@ def main() -> None:
         )
     )
     result = parser.parse(parse_input)
-    sys.stdout.write(json.dumps(_pdf_parse_result_to_payload(result), separators=(",", ":")))
+    return _pdf_parse_result_to_payload(result)
+
+
+def _error_payload(exc: Exception) -> dict[str, object]:
+    if isinstance(exc, PdfProcessingError):
+        return {
+            "error": {
+                "code": exc.code,
+                "failure_type": exc.failure_type,
+                "safe_message": exc.safe_message,
+                "retryable": exc.retryable,
+            }
+        }
+    return {
+        "error": {
+            "code": "pdf_parser_failure",
+            "failure_type": type(exc).__name__,
+            "safe_message": "PDF parser worker failed before producing a result.",
+            "retryable": True,
+        }
+    }
+
+
+def main() -> None:
+    _raise_stack_limit_for_docling_import()
+    for request_bytes in sys.stdin.buffer:
+        try:
+            payload = _execute_request(request_bytes)
+        except Exception as exc:
+            payload = _error_payload(exc)
+        sys.stdout.write(json.dumps(payload, separators=(",", ":")) + "\n")
+        sys.stdout.flush()
 
 
 if __name__ == "__main__":
-    try:
-        main()
-    except PdfProcessingError as exc:
-        sys.stdout.write(
-            json.dumps(
-                {
-                    "error": {
-                        "code": exc.code,
-                        "failure_type": exc.failure_type,
-                        "safe_message": exc.safe_message,
-                        "retryable": exc.retryable,
-                    }
-                },
-                separators=(",", ":"),
-            )
-        )
-    except Exception as exc:
-        sys.stdout.write(
-            json.dumps(
-                {
-                    "error": {
-                        "code": "pdf_parser_failure",
-                        "failure_type": type(exc).__name__,
-                        "safe_message": "PDF parser worker failed before producing a result.",
-                        "retryable": True,
-                    }
-                },
-                separators=(",", ":"),
-            )
-        )
+    main()

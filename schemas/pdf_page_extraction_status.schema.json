@@ -83,19 +83,6 @@
       "title": "Preflight Report Id",
       "type": "string"
     },
-    "representation_id": {
-      "anyOf": [
-        {
-          "pattern": "^rep_[A-Za-z0-9][A-Za-z0-9_-]*$",
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "default": null,
-      "title": "Representation Id"
-    },
     "rotation_applied": {
       "maximum": 270,
       "minimum": 0,

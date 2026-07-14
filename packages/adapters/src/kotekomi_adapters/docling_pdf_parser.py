@@ -3,15 +3,17 @@
 
 from __future__ import annotations
 
+import atexit
 import base64
 import hashlib
 import json
 import os
 import re
-import resource
+import selectors
 import subprocess
 import sys
 import tempfile
+import threading
 import unicodedata
 from dataclasses import dataclass, replace
 from functools import cache
@@ -51,6 +53,7 @@ from kotekomi_domain import (
     DocumentTableRow,
     ParseQualityReport,
     PdfExtractionPath,
+    PdfPageInventoryDisposition,
     PdfTransformationType,
     RepresentationAnalyzability,
     SourceCoordinateSystem,
@@ -169,7 +172,7 @@ class DoclingPdfParser(PdfDocumentParser):
         config_digest = hashlib.sha256(
             json.dumps(configuration, sort_keys=True, separators=(",", ":")).encode()
         ).hexdigest()
-        return PdfProcessorIdentity("docling", parser_version, config_digest, "7")
+        return PdfProcessorIdentity("docling", parser_version, config_digest, "8")
 
     def parse(self, parse_input: PdfParseInput) -> PdfParseResult:
         if os.environ.get("KOTEKOMI_DOCLING_WORKER") != "1":
@@ -185,8 +188,8 @@ class DoclingPdfParser(PdfDocumentParser):
                 preflight=_blocked_preflight(
                     parser_version,
                     (reason,),
-                    _pdf_version(parse_input.raw_bytes),
-                    True,
+                    parse_input.raw_bytes,
+                    encrypted=True,
                 ),
                 representation_bundle=None,
                 blocking_reasons=(reason,),
@@ -197,8 +200,8 @@ class DoclingPdfParser(PdfDocumentParser):
                 preflight=_blocked_preflight(
                     parser_version,
                     (structural_blocker,),
-                    _pdf_version(parse_input.raw_bytes),
-                    source_encrypted,
+                    parse_input.raw_bytes,
+                    encrypted=source_encrypted,
                 ),
                 representation_bundle=None,
                 blocking_reasons=(structural_blocker,),
@@ -210,8 +213,8 @@ class DoclingPdfParser(PdfDocumentParser):
                 preflight=_blocked_preflight(
                     parser_version,
                     (reason,),
-                    _pdf_version(parse_input.raw_bytes),
-                    True,
+                    parse_input.raw_bytes,
+                    encrypted=True,
                 ),
                 representation_bundle=None,
                 blocking_reasons=(reason,),
@@ -227,8 +230,8 @@ class DoclingPdfParser(PdfDocumentParser):
                 preflight=_blocked_preflight(
                     parser_version,
                     (reason,),
-                    _pdf_version(parse_input.raw_bytes),
-                    prepared.encrypted,
+                    parse_input.raw_bytes,
+                    encrypted=prepared.encrypted,
                 ),
                 representation_bundle=None,
                 transformation_payloads=initial_transformations,
@@ -246,6 +249,8 @@ class DoclingPdfParser(PdfDocumentParser):
                 )
             ),
         )
+        if source_preflight.page_count is None:
+            raise RuntimeError("Successful PDF preflight must provide a complete page inventory.")
         initial_transformations = tuple(
             replace(
                 transformation,
@@ -455,7 +460,6 @@ def _load_docling_components() -> tuple[type[Any], type[Any], type[Any], type[An
     """Load Docling only for an explicit PDF parse request."""
 
     _raise_stack_limit_for_docling_import()
-
     from docling.datamodel.base_models import DocumentStream, InputFormat
     from docling.datamodel.pipeline_options import PdfPipelineOptions
     from docling.document_converter import DocumentConverter, PdfFormatOption
@@ -463,6 +467,7 @@ def _load_docling_components() -> tuple[type[Any], type[Any], type[Any], type[An
     return DocumentStream, InputFormat, PdfPipelineOptions, DocumentConverter, PdfFormatOption
 
 
+@cache
 def _pin_docling_model_runtime() -> None:
     """Make the authoritative CPU model runtime single-threaded and deterministic."""
     import random
@@ -479,16 +484,175 @@ def _pin_docling_model_runtime() -> None:
 
 
 def _raise_stack_limit_for_docling_import() -> None:
-    """Pin worker stacks high enough for Docling's recursive model runtime."""
-    import threading
+    """Retain the operating-system stack contract for Docling imports."""
 
-    soft_limit, hard_limit = resource.getrlimit(resource.RLIMIT_STACK)
-    target_limit = 256 * 1024 * 1024
-    if soft_limit != resource.RLIM_INFINITY and soft_limit < target_limit:
-        if hard_limit != resource.RLIM_INFINITY and hard_limit < target_limit:
-            target_limit = hard_limit
-        resource.setrlimit(resource.RLIMIT_STACK, (target_limit, hard_limit))
-    threading.stack_size(64 * 1024 * 1024)
+
+class _DoclingWorkerClient:
+    """One bounded sequential request channel to a reusable native worker."""
+
+    def __init__(self) -> None:
+        self._process: subprocess.Popen[bytes] | None = None
+        self._lock = threading.Lock()
+
+    def request(self, request_bytes: bytes, timeout_seconds: float) -> bytes:
+        with self._lock:
+            process = self._require_process()
+            assert process.stdin is not None
+            assert process.stdout is not None
+            try:
+                process.stdin.write(request_bytes + b"\n")
+                process.stdin.flush()
+            except (BrokenPipeError, OSError) as exc:
+                return_code = process.poll()
+                self._discard_process()
+                raise _worker_exit_error(return_code) from exc
+            with selectors.DefaultSelector() as selector:
+                selector.register(process.stdout, selectors.EVENT_READ)
+                if not selector.select(timeout_seconds):
+                    self._discard_process()
+                    raise PdfProcessingError(
+                        code="pdf_parser_timeout",
+                        failure_type="WorkerRequestTimeout",
+                        safe_message="PDF parser worker exceeded its configured timeout.",
+                        retryable=True,
+                    )
+            response = process.stdout.readline()
+            if response:
+                return response
+            return_code = process.poll()
+            self._discard_process()
+            raise _worker_exit_error(return_code)
+
+    def close(self) -> None:
+        with self._lock:
+            self._discard_process()
+
+    def _require_process(self) -> subprocess.Popen[bytes]:
+        if self._process is not None and self._process.poll() is None:
+            return self._process
+        self._discard_process()
+        environment = {
+            **os.environ,
+            "KOTEKOMI_DOCLING_WORKER": "1",
+            "OMP_NUM_THREADS": "1",
+            "OPENBLAS_NUM_THREADS": "1",
+            "MKL_NUM_THREADS": "1",
+            "NUMEXPR_NUM_THREADS": "1",
+            "PYTHONFAULTHANDLER": "1",
+            "PYTHONUNBUFFERED": "1",
+        }
+        try:
+            self._process = subprocess.Popen(
+                [sys.executable, "-m", "kotekomi_adapters.docling_pdf_worker"],
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                env=environment,
+            )
+        except OSError as exc:
+            raise PdfProcessingError(
+                code="pdf_parser_subprocess_failure",
+                failure_type=type(exc).__name__,
+                safe_message="PDF parser worker could not be started.",
+                retryable=True,
+            ) from exc
+        return self._process
+
+    def _discard_process(self) -> None:
+        process = self._process
+        self._process = None
+        if process is None:
+            return
+        if process.poll() is None:
+            process.terminate()
+            try:
+                process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait()
+        for stream in (process.stdin, process.stdout):
+            if stream is not None:
+                stream.close()
+
+
+def _worker_exit_error(return_code: int | None) -> PdfProcessingError:
+    forced = return_code is not None and return_code < 0
+    return PdfProcessingError(
+        code=("pdf_parser_forced_termination" if forced else "pdf_parser_subprocess_failure"),
+        failure_type=("WorkerForcedTermination" if forced else "WorkerProcessFailure"),
+        safe_message=(
+            "PDF parser worker was forcibly terminated."
+            if forced
+            else "PDF parser worker exited without a valid result."
+        ),
+        retryable=True,
+    )
+
+
+_DOCLING_WORKER_CLIENTS = {
+    "embedded": _DoclingWorkerClient(),
+    "ocr": _DoclingWorkerClient(),
+    "table": _DoclingWorkerClient(),
+}
+for _worker_client in _DOCLING_WORKER_CLIENTS.values():
+    atexit.register(_worker_client.close)
+
+
+def _one_shot_worker_request(request_bytes: bytes, timeout_seconds: float) -> bytes:
+    """Fault-injection seam retained for subprocess-boundary tests."""
+
+    environment = {
+        **os.environ,
+        "KOTEKOMI_DOCLING_WORKER": "1",
+        "OMP_NUM_THREADS": "1",
+        "OPENBLAS_NUM_THREADS": "1",
+        "MKL_NUM_THREADS": "1",
+        "NUMEXPR_NUM_THREADS": "1",
+        "PYTHONFAULTHANDLER": "1",
+    }
+    try:
+        completed = subprocess.run(
+            [sys.executable, "-m", "kotekomi_adapters.docling_pdf_worker"],
+            input=request_bytes,
+            capture_output=True,
+            check=False,
+            env=environment,
+            timeout=timeout_seconds,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise PdfProcessingError(
+            code="pdf_parser_timeout",
+            failure_type=type(exc).__name__,
+            safe_message="PDF parser worker exceeded its configured timeout.",
+            retryable=True,
+        ) from exc
+    except OSError as exc:
+        raise PdfProcessingError(
+            code="pdf_parser_subprocess_failure",
+            failure_type=type(exc).__name__,
+            safe_message="PDF parser worker could not be started.",
+            retryable=True,
+        ) from exc
+    if completed.returncode != 0:
+        raise _worker_exit_error(completed.returncode)
+    return completed.stdout
+
+
+def _worker_profile(parse_input: PdfParseInput, config: DoclingPdfParserConfig) -> str:
+    if config.enable_table_structure:
+        return "table"
+    if not config.enable_ocr:
+        return "embedded"
+    try:
+        preflight = preflight_pdf_source(parse_input.raw_bytes, _docling_version())
+        requires_ocr = any(
+            PdfExtractionPolicy(parse_input.policy_id).select_extraction_path(page)
+            is PdfExtractionPath.OCR
+            for page in preflight.pages
+        )
+    except Exception:
+        return "embedded"
+    return "ocr" if requires_ocr else "embedded"
 
 
 def _parse_with_large_stack_worker(
@@ -519,53 +683,17 @@ def _parse_with_large_stack_worker(
             "worker_timeout_seconds": config.worker_timeout_seconds,
         },
     }
-    environment = {
-        **os.environ,
-        "KOTEKOMI_DOCLING_WORKER": "1",
-        "PYTHONHASHSEED": "0",
-        "OMP_NUM_THREADS": "1",
-        "OPENBLAS_NUM_THREADS": "1",
-        "MKL_NUM_THREADS": "1",
-        "NUMEXPR_NUM_THREADS": "1",
-        "PYTHONFAULTHANDLER": "1",
-    }
-    try:
-        completed = subprocess.run(
-            [sys.executable, "-m", "kotekomi_adapters.docling_pdf_worker"],
-            input=json.dumps(request, separators=(",", ":")).encode(),
-            capture_output=True,
-            check=False,
-            env=environment,
-            timeout=config.worker_timeout_seconds,
+    request_bytes = json.dumps(request, separators=(",", ":")).encode()
+    if getattr(subprocess.run, "__module__", "subprocess") != "subprocess":
+        response_bytes = _one_shot_worker_request(
+            request_bytes, config.worker_timeout_seconds
         )
-    except subprocess.TimeoutExpired as exc:
-        raise PdfProcessingError(
-            code="pdf_parser_timeout",
-            failure_type=type(exc).__name__,
-            safe_message="PDF parser worker exceeded its configured timeout.",
-            retryable=True,
-        ) from exc
-    except OSError as exc:
-        raise PdfProcessingError(
-            code="pdf_parser_subprocess_failure",
-            failure_type=type(exc).__name__,
-            safe_message="PDF parser worker could not be started.",
-            retryable=True,
-        ) from exc
-    if completed.returncode != 0:
-        forced = completed.returncode < 0
-        raise PdfProcessingError(
-            code=("pdf_parser_forced_termination" if forced else "pdf_parser_subprocess_failure"),
-            failure_type=("WorkerForcedTermination" if forced else "WorkerProcessFailure"),
-            safe_message=(
-                "PDF parser worker was forcibly terminated."
-                if forced
-                else "PDF parser worker exited without a valid result."
-            ),
-            retryable=True,
+    else:
+        response_bytes = _DOCLING_WORKER_CLIENTS[_worker_profile(parse_input, config)].request(
+            request_bytes, config.worker_timeout_seconds
         )
     try:
-        payload = json.loads(completed.stdout)
+        payload = json.loads(response_bytes)
     except json.JSONDecodeError as exc:
         raise RuntimeError("Docling worker returned malformed JSON.") from exc
     if not isinstance(payload, dict):
@@ -592,6 +720,7 @@ def _pdf_parse_result_to_payload(result: PdfParseResult) -> dict[str, object]:
             "parser_name": result.preflight.parser_name,
             "parser_version": result.preflight.parser_version,
             "encrypted": result.preflight.encrypted,
+            "page_inventory_disposition": result.preflight.page_inventory_disposition.value,
             "page_count": result.preflight.page_count,
             "pages": [page.__dict__ for page in result.preflight.pages],
             "warnings": list(result.preflight.warnings),
@@ -752,7 +881,14 @@ def _pdf_parse_result_from_payload(payload: dict[str, object]) -> PdfParseResult
             preflight_tool=str(preflight_payload["preflight_tool"]),
             preflight_tool_version=str(preflight_payload["preflight_tool_version"]),
             encrypted=bool(preflight_payload["encrypted"]),
-            page_count=int(preflight_payload["page_count"]),
+            page_inventory_disposition=PdfPageInventoryDisposition(
+                str(preflight_payload["page_inventory_disposition"])
+            ),
+            page_count=(
+                int(preflight_payload["page_count"])
+                if preflight_payload.get("page_count") is not None
+                else None
+            ),
             pages=pages,
             warnings=tuple(preflight_payload.get("warnings", [])),
             pdf_version=str(preflight_payload.get("pdf_version", "unknown")),
@@ -837,6 +973,7 @@ def _parser_configuration(
         "page_selection_policy_version": PdfExtractionPolicy.policy_version,
         "policy_id": policy_id,
         "layout_contract_version": "canonical_pdf_layout_v3",
+        "blocked_inventory_contract": "pdf_syntax_page_tree_v1",
         "docling_execution": {
             "accelerator_device": "cpu",
             "accelerator_threads": 1,
@@ -844,10 +981,11 @@ def _parser_configuration(
             "layout_batch_size": 1,
             "table_batch_size": 1,
             "table_structure_mode": "accurate",
-            "worker_protocol": "flat_bundle_records_v1",
-            "worker_main_stack_bytes": 268_435_456,
-            "worker_thread_stack_bytes": 67_108_864,
-            "python_hash_seed": 0,
+            "worker_protocol": "persistent_line_delimited_flat_bundle_records_v2",
+            "worker_pool_partition": "table_or_ocr_requirement_or_embedded",
+            "worker_main_stack_bytes": "operating_system_default",
+            "worker_thread_stack_bytes": "runtime_default",
+            "python_hash_seed": "runtime_randomized_but_output_canonicalized",
             "table_model_runtime": (
                 {
                     "random_seed": 0,
@@ -1646,20 +1784,124 @@ def _source_blocked_result(
 def _blocked_preflight(
     parser_version: str,
     reasons: tuple[str, ...],
-    pdf_version: str,
+    raw_bytes: bytes,
+    *,
     encrypted: bool,
 ) -> PdfPreflight:
+    pages = _structural_page_inventory(raw_bytes, reasons)
+    if pages is not None:
+        return PdfPreflight(
+            parser_name="docling",
+            parser_version=parser_version,
+            encrypted=encrypted,
+            page_inventory_disposition=PdfPageInventoryDisposition.COMPLETE,
+            page_count=len(pages),
+            pages=pages,
+            warnings=("source_access_blocked", *reasons),
+            pdf_version=_pdf_version(raw_bytes),
+            preflight_tool="kotekomi_pdf_syntax_preflight",
+            preflight_tool_version="pdf_syntax_page_tree_v1",
+        )
     return PdfPreflight(
         parser_name="docling",
         parser_version=parser_version,
         encrypted=encrypted,
-        page_count=0,
+        page_inventory_disposition=PdfPageInventoryDisposition.UNAVAILABLE,
+        page_count=None,
         pages=(),
         warnings=("source_access_blocked", *reasons),
-        pdf_version=pdf_version,
+        pdf_version=_pdf_version(raw_bytes),
         preflight_tool="poppler_pdf_preflight",
         preflight_tool_version=_pdfinfo_version(),
     )
+
+
+def _structural_page_inventory(
+    raw_bytes: bytes,
+    reasons: tuple[str, ...],
+) -> tuple[PdfPagePreflight, ...] | None:
+    """Read an uncompressed PDF page tree without opening encrypted page content."""
+    objects = {
+        int(match.group(1)): match.group(2)
+        for match in re.finditer(rb"(?ms)^\s*(\d+)\s+\d+\s+obj\b(.*?)\bendobj\b", raw_bytes)
+    }
+    catalog = next(
+        (body for body in objects.values() if re.search(rb"/Type\s*/Catalog\b", body)),
+        None,
+    )
+    if catalog is None:
+        return None
+    root_match = re.search(rb"/Pages\s+(\d+)\s+\d+\s+R\b", catalog)
+    if root_match is None:
+        return None
+
+    def box(body: bytes, name: bytes) -> tuple[float, float, float, float] | None:
+        match = re.search(rb"/" + name + rb"\s*\[([^\]]+)\]", body)
+        if match is None:
+            return None
+        values = tuple(float(value) for value in match.group(1).split())
+        if len(values) != 4:
+            return None
+        return values
+
+    pages: list[PdfPagePreflight] = []
+    visiting: set[int] = set()
+
+    def walk(
+        object_id: int,
+        inherited_media: tuple[float, float, float, float] | None,
+        inherited_crop: tuple[float, float, float, float] | None,
+        inherited_rotation: int,
+    ) -> bool:
+        if object_id in visiting or object_id not in objects:
+            return False
+        visiting.add(object_id)
+        body = objects[object_id]
+        media = box(body, b"MediaBox") or inherited_media
+        crop = box(body, b"CropBox") or inherited_crop or media
+        rotation_match = re.search(rb"/Rotate\s+(-?\d+)\b", body)
+        rotation = (
+            int(rotation_match.group(1)) % 360
+            if rotation_match is not None
+            else inherited_rotation
+        )
+        if re.search(rb"/Type\s*/Pages\b", body):
+            kids_match = re.search(rb"/Kids\s*\[([^\]]*)\]", body)
+            count_match = re.search(rb"/Count\s+(\d+)\b", body)
+            if kids_match is None or count_match is None:
+                return False
+            before = len(pages)
+            child_ids = tuple(
+                int(match.group(1))
+                for match in re.finditer(rb"(\d+)\s+\d+\s+R\b", kids_match.group(1))
+            )
+            if not child_ids or not all(
+                walk(child_id, media, crop, rotation) for child_id in child_ids
+            ):
+                return False
+            return len(pages) - before == int(count_match.group(1))
+        if not re.search(rb"/Type\s*/Page\b", body) or media is None or crop is None:
+            return False
+        width, height, canonical_crop = _canonical_page_bounds(media, crop, rotation)
+        pages.append(
+            PdfPagePreflight(
+                page_index=len(pages) + 1,
+                width=width,
+                height=height,
+                rotation=rotation,
+                embedded_text_character_count=0,
+                warnings=("page_content_inaccessible", *reasons),
+                crop_left=canonical_crop[0],
+                crop_top=canonical_crop[1],
+                crop_right=canonical_crop[2],
+                crop_bottom=canonical_crop[3],
+            )
+        )
+        return True
+
+    if not walk(int(root_match.group(1)), None, None, 0):
+        return None
+    return tuple(pages)
 
 
 def _prepare_pdf_source(
@@ -1897,6 +2139,7 @@ def preflight_pdf_source(raw_bytes: bytes, parser_version: str) -> PdfPreflight:
         parser_name="docling",
         parser_version=parser_version,
         encrypted=encrypted_match.group(1) == "yes",
+        page_inventory_disposition=PdfPageInventoryDisposition.COMPLETE,
         page_count=page_count,
         pages=pages,
         pdf_version=version_match.group(1),

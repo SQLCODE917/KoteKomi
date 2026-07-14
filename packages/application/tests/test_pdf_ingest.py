@@ -24,6 +24,7 @@ from kotekomi_domain import (
     Document,
     PdfExtractionPath,
     PdfPageAccountingBundle,
+    PdfPageInventoryDisposition,
     PdfPageQualityStatus,
     ProcessingAttempt,
     ProcessingAttemptOutcome,
@@ -154,8 +155,10 @@ class FakePdfParser:
                 preflight_tool="fixture_preflight",
                 preflight_tool_version="1",
                 encrypted=False,
-                page_count=0,
+                page_inventory_disposition=PdfPageInventoryDisposition.UNAVAILABLE,
+                page_count=None,
                 pages=(),
+                warnings=("fixture parser blocked",),
             ),
             representation_bundle=None,
             blocking_reasons=("fixture parser blocked",),
@@ -223,13 +226,21 @@ class FakePdfLedger:
         assert page_accounting.preflight_report.processing_task_fingerprint_id == (
             expected_task_fingerprint_id
         )
-        if self.page_accounting is None:
-            self.page_accounting = page_accounting
+        assert self.page_accounting == page_accounting
+        if created_provenance_activity.id not in self.provenance:
             self.save_provenance_activity(created_provenance_activity)
             self.append_processing_attempt_outcome(created_outcome)
             return BundleCommitDisposition.CREATED
-        assert self.page_accounting == page_accounting
         self.append_processing_attempt_outcome(reused_outcome)
+        return BundleCommitDisposition.REUSED
+
+    def commit_pdf_page_accounting(
+        self, page_accounting: PdfPageAccountingBundle
+    ) -> BundleCommitDisposition:
+        if self.page_accounting is None:
+            self.page_accounting = page_accounting
+            return BundleCommitDisposition.CREATED
+        assert self.page_accounting == page_accounting
         return BundleCommitDisposition.REUSED
 
     def commit_processing_attempt_start(self) -> None:
@@ -287,7 +298,11 @@ def test_ingest_pdf_returns_typed_blocked_outcome_without_publishing_representat
     assert outcome.provenance_activity_id is not None
     assert ledger.page_accounting is not None
     assert outcome.preflight_report_id == ledger.page_accounting.preflight_report.id
-    assert ledger.page_accounting.preflight_report.page_count == 0
+    assert ledger.page_accounting.preflight_report.page_count is None
+    assert (
+        ledger.page_accounting.preflight_report.page_inventory_disposition
+        is PdfPageInventoryDisposition.UNAVAILABLE
+    )
     assert outcome.blocking_reasons == ("fixture parser blocked",)
 
 

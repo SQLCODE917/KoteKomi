@@ -13,6 +13,7 @@
     "footnote_reference_crossing_page_boundary",
     "definition_reused_several_pages_later",
     "malformed_font_mapping_or_replacement_glyphs",
+    "deterministically_repairable_degraded_pdf",
     "truncated_or_corrupt_pdf",
     "encrypted_pdf_without_credentials",
     "invalid_parser_coordinates"
@@ -122,11 +123,22 @@
       "evidence_overlay": true
     },
     {
+      "row_id": "repairable_degraded_pdf",
+      "fixture_id": "pdf_corrupt_bad_xref_v1",
+      "classes": ["deterministically_repairable_degraded_pdf"],
+      "expected_page_count": 1,
+      "expected_page_paths": ["ocr"],
+      "expected_transformations": ["repair", "render", "ocr"],
+      "expected_quality": "degraded",
+      "expected_coverage": "parse_quality_requires_review",
+      "evidence_overlay": false
+    },
+    {
       "row_id": "truncated_pdf",
       "fixture_id": "pdf_corrupt_truncated_v1",
       "classes": ["truncated_or_corrupt_pdf"],
-      "expected_page_count": 0,
-      "expected_page_paths": [],
+      "expected_page_count": 1,
+      "expected_page_paths": ["inaccessible"],
       "expected_transformations": [],
       "expected_quality": "blocked",
       "expected_coverage": "blocked_before_analysis",
@@ -137,8 +149,8 @@
       "row_id": "encrypted_without_credentials",
       "fixture_id": "pdf_encrypted_aes256_v1",
       "classes": ["encrypted_pdf_without_credentials"],
-      "expected_page_count": 0,
-      "expected_page_paths": [],
+      "expected_page_count": 1,
+      "expected_page_paths": ["inaccessible"],
       "expected_transformations": [],
       "expected_quality": "blocked",
       "expected_coverage": "blocked_before_analysis",

@@ -1,7 +1,7 @@
 # TDD: PDF Document Ingestion
 
 - **Status:** Accepted
-- **Implementation status:** GREEN — integrated gold matrix passed 2026-07-13
+- **Implementation status:** GREEN — exact closeout and full regression gate passed 2026-07-13
 - **Parent:** [Authoritative Document Ingestion Program](2026-07-11-authoritative-document-ingestion-program.md)
 - **Depends on:** [Source Capture](2026-07-11-source-capture-and-document-versioning.md), [Representations](2026-07-11-versioned-document-representations.md), [Evidence Targets](2026-07-11-replayable-evidence-targets.md)
 
@@ -82,8 +82,10 @@ A Docling-class parser is the default candidate because it exposes hierarchy, la
 PdfPreflightReport:
   report_id:
   document_id:
+  processing_attempt_id:
   pdf_standard_or_version:
-  page_count:
+  page_inventory_disposition: complete | unavailable
+  page_count: integer | null
   encrypted:
   permissions:
   per_page_metrics:
@@ -117,12 +119,33 @@ PdfIngestOutcome:
   selected_representation_id:
   analyzability:
   blocking_reasons:
+
+PdfAnalysisAdmissionOutcome:
+  representation_id:
+  quality_report_id:
+  policy_id:
+  decision: admitted | requires_review | blocked
+  coverage_status: admitted | parse_quality_requires_review | parse_quality_blocked
+
+PdfEvidenceOverlaySpec:
+  evidence_target_id:
+  archived_pdf_object_id:
+  archived_pdf_digest:
+  page_number:
+  media_and_crop_geometry:
+  rotation:
+  coordinate_system:
+  evidence_rectangles:
+  exact_quote:
+  structural_node_ids:
 ```
 
 Required operation:
 
 ```python
 ingest_pdf(document_id, policy_id) -> PdfIngestOutcome
+evaluate_pdf_analysis_admission(representation_id, policy) -> PdfAnalysisAdmissionOutcome
+render_pdf_evidence_overlay(evidence_target_id) -> RenderedPdfEvidenceOverlay
 ```
 
 ## 8. Key interactions and domain rules
@@ -182,10 +205,11 @@ fixture-class partition is executed by
 `packages/adapters/tests/test_pdf_integrated_gold_matrix.py`. Every row crosses public capture
 and PDF ingestion, authoritative preflight and page accounting, transformation selection,
 canonical representation and quality policy, context planning or an explicit typed block,
-evidence replay where applicable, run-scoped coverage, SQLite restart, and a deterministic
-rerun. Rows execute in isolated processes so native parser state from one fixture cannot affect
-another; each row performs both processing invocations and the restart proof within that one
-isolated process.
+evidence validation and an actual archived-page overlay where applicable, run-scoped coverage,
+SQLite restart, and a deterministic rerun. The matrix requires acceptable, degraded, blocked,
+and failed outcomes. Each native parser invocation executes in its own bounded worker process, so
+native parser state from one fixture cannot affect another; every row owns an independent Archive
+and SQLite Ledger and performs both processing invocations and the restart proof within that scope.
 
 ### Correctness criteria
 
@@ -194,7 +218,8 @@ isolated process.
 - Text-node ranges and page regions pass representation validation.
 - Selective OCR runs only on policy-selected pages and preserves non-OCR page provenance.
 - Table gold fixtures retain all expected cells, spans, headers, captions, units, and footnotes.
-- Evidence overlays identify the intended page regions for every gold evidence target.
+- Evidence overlays render archived pages and visibly identify the intended page regions without
+  invoking Docling.
 - Corrupt, inaccessible, and invalid-coordinate fixtures fail closed with typed reasons.
 - A parser/OCR crash cannot publish a complete representation or lose the raw PDF.
 

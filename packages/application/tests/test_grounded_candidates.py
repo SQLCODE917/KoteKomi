@@ -124,7 +124,7 @@ class FakeGroundedCandidateLedger:
     ) -> DocumentRepresentationBundle | None:
         return self.bundle if record_id == self.bundle.representation.id else None
 
-    def find_pdf_preflight_report_for_task(
+    def find_latest_complete_pdf_preflight_report_for_task(
         self,
         task_fingerprint_id: str,
     ) -> PdfPreflightReport | None:

@@ -30,6 +30,8 @@ from kotekomi_domain import (
     TextViewKind,
 )
 
+from .pdf_page_accounting_assertions import assert_equivalent_pdf_page_accounting
+
 FIXTURE_ROOT = Path(__file__).parent / "fixtures" / "pdf"
 PDF_PATH = FIXTURE_ROOT / "layout" / "adversarial_columns_hierarchy_v1.pdf"
 GOLD_PATH = FIXTURE_ROOT / "gold" / "adversarial_columns_hierarchy_v1.json"
@@ -128,7 +130,9 @@ def test_public_pdf_layout_is_rotation_safe_ordered_hierarchical_and_restart_sta
     assert first_bundle is not None
     assert second_bundle == first_bundle
     assert first_accounting is not None
-    assert second_accounting == first_accounting
+    assert second_accounting is not None
+    assert first.preflight_report_id != second.preflight_report_id
+    assert_equivalent_pdf_page_accounting(first_accounting, second_accounting)
     assert [page.rotation for page in first_accounting.page_inventory] == [0, 0, 90]
     assert all(
         status.status is PdfPageQualityStatus.ACCEPTABLE

@@ -26,17 +26,20 @@ from kotekomi_domain import (
 HASH_ID_LENGTH = 24
 
 
-class EvidenceTargetLedger(Protocol):
+class EvidenceTargetReferenceLedger(Protocol):
+    def get_document_representation_bundle(
+        self, record_id: str
+    ) -> DocumentRepresentationBundle | None: ...
+    def get_document(self, record_id: str) -> Document | None: ...
+
+
+class EvidenceTargetLedger(EvidenceTargetReferenceLedger, Protocol):
     def get_evidence_target(self, record_id: str) -> EvidenceTarget | None: ...
     def save_evidence_target(self, record: EvidenceTarget) -> None: ...
     def get_evidence_validation_attempt(
         self, record_id: str
     ) -> EvidenceValidationAttempt | None: ...
     def save_evidence_validation_attempt(self, record: EvidenceValidationAttempt) -> None: ...
-    def get_document_representation_bundle(
-        self, record_id: str
-    ) -> DocumentRepresentationBundle | None: ...
-    def get_document(self, record_id: str) -> Document | None: ...
 
 
 class EvidenceReanchoringLedger(EvidenceTargetLedger, Protocol):
@@ -125,7 +128,7 @@ def validate_evidence_target(
 
 def validate_evidence_target_record(
     evidence_target: EvidenceTarget,
-    ledger_repository: EvidenceTargetLedger,
+    ledger_repository: EvidenceTargetReferenceLedger,
 ) -> None:
     """Fail fast when an unsaved immutable EvidenceTarget cannot be replayed."""
     _validate_evidence_target(evidence_target, ledger_repository)
@@ -217,7 +220,7 @@ def deterministic_evidence_reanchoring_relation_id(
 
 def _validate_evidence_target(
     evidence_target: EvidenceTarget,
-    ledger_repository: EvidenceTargetLedger,
+    ledger_repository: EvidenceTargetReferenceLedger,
 ) -> None:
     bundle = ledger_repository.get_document_representation_bundle(evidence_target.representation_id)
     if bundle is None:

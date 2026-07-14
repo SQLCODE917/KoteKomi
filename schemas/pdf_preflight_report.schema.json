@@ -1,4 +1,14 @@
 {
+  "$defs": {
+    "PdfPageInventoryDisposition": {
+      "enum": [
+        "complete",
+        "unavailable"
+      ],
+      "title": "PdfPageInventoryDisposition",
+      "type": "string"
+    }
+  },
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
   "description": "Immutable authoritative denominator for one PDF processing task.",
@@ -26,9 +36,16 @@
       "type": "string"
     },
     "page_count": {
-      "minimum": 0,
-      "title": "Page Count",
-      "type": "integer"
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Page Count"
     },
     "page_extraction_status_ids": {
       "items": {
@@ -37,6 +54,9 @@
       },
       "title": "Page Extraction Status Ids",
       "type": "array"
+    },
+    "page_inventory_disposition": {
+      "$ref": "#/$defs/PdfPageInventoryDisposition"
     },
     "page_inventory_ids": {
       "items": {
@@ -62,6 +82,11 @@
     "preflight_tool": {
       "minLength": 1,
       "title": "Preflight Tool",
+      "type": "string"
+    },
+    "processing_attempt_id": {
+      "pattern": "^pat_[A-Za-z0-9][A-Za-z0-9_-]*$",
+      "title": "Processing Attempt Id",
       "type": "string"
     },
     "processing_task_fingerprint_id": {
@@ -93,7 +118,9 @@
     "document_id",
     "raw_blob_id",
     "processing_task_fingerprint_id",
+    "processing_attempt_id",
     "pdf_version",
+    "page_inventory_disposition",
     "page_count",
     "encrypted",
     "page_inventory_ids",

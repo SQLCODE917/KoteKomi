@@ -82,6 +82,8 @@ from kotekomi_domain import (
     TextViewKind,
 )
 
+from .pdf_page_accounting_assertions import assert_equivalent_pdf_page_accounting
+
 FIXTURE_PATH = (
     Path(__file__).parent
     / "fixtures"
@@ -287,7 +289,9 @@ def test_docling_r1a_ingests_the_press_release_as_an_analyzeable_representation(
     assert stored_bundle is not None
     assert replayed_bundle is not None
     assert first_accounting is not None
-    assert second_accounting == first_accounting
+    assert second_accounting is not None
+    assert first.preflight_report_id != second.preflight_report_id
+    assert_equivalent_pdf_page_accounting(first_accounting, second_accounting)
     assert first_accounting.preflight_report.pdf_version == "1.7"
     assert first_accounting.preflight_report.page_count == 1
     assert len(first_accounting.page_inventory) == 1

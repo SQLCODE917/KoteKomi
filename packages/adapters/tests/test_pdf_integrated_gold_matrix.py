@@ -4,18 +4,17 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
 import sqlite3
-import subprocess
-import sys
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from io import BytesIO
 from pathlib import Path
 from typing import Any, cast
 
 import pytest
 from kotekomi_adapters import (
     LocalArchiveStore,
+    PdfiumEvidenceOverlayRenderer,
     SQLiteLedgerInitializer,
     sqlite_ledger_transaction,
 )
@@ -44,6 +43,9 @@ from kotekomi_application import (
     ModelIdentitySnapshot,
     ModelTaskRequest,
     ModelTaskResponse,
+    PdfAnalysisAdmissionDecision,
+    PdfAnalysisAdmissionOutcome,
+    PdfAnalysisCoverageStatus,
     PdfIngestInput,
     PdfParseInput,
     PdfParseResult,
@@ -57,12 +59,14 @@ from kotekomi_application import (
     build_coverage_report,
     capture_identity,
     capture_source,
+    evaluate_pdf_analysis_admission,
     freeze_analysis_plan,
     generation_parameters_digest,
     ingest_pdf,
     model_identity_snapshot_digest,
     plan_analysis_units,
     record_analysis_item_attempt,
+    render_pdf_evidence_overlay,
     run_bounded_extraction,
     staged_claim_output_schema_bytes,
     start_analysis_run,
@@ -74,18 +78,31 @@ from kotekomi_domain import (
     DocumentRepresentationBundle,
     DocumentVersionKind,
     ModelRunStatus,
+    PdfPageInventoryDisposition,
+    PdfPageQualityStatus,
+    ProcessingArtifactKind,
     ProcessingAttemptStatus,
     ProcessingStage,
     RepresentationAnalyzability,
     SourceType,
+    TableEvidenceSelector,
     TextViewKind,
 )
+from PIL import Image
+
+from .test_pdf_production_path import FixturePdfParser
 
 FIXTURE_ROOT = Path(__file__).parent / "fixtures" / "pdf"
 MANIFEST = json.loads((FIXTURE_ROOT / "manifest.json").read_text())
 MATRIX_PATH = FIXTURE_ROOT / "gold" / "integrated_gold_matrix_v1.json"
 MATRIX = json.loads(MATRIX_PATH.read_text())
 ROWS = tuple(MATRIX["rows"])
+RENDER_OVERLAY_ROWS = {
+    "born_digital_press_release",
+    "image_only_scan",
+    "adversarial_layout",
+    "complex_table",
+}
 NOW = datetime(2026, 7, 13, 12, 0, tzinfo=UTC)
 BUILD_IDENTITY = BuildIdentity("pdf-gold-matrix", "pdf-gold-matrix", "8" * 64, "1")
 PROMPT_BYTES = b"Return a bounded grounded claim or explicitly abstain."
@@ -171,7 +188,7 @@ class _AbstainingRuntime:
 
 class _InvalidCoordinateParser:
     def __init__(self) -> None:
-        self._delegate = DoclingPdfParser(DoclingPdfParserConfig())
+        self._delegate = FixturePdfParser()
         self.results: list[PdfParseResult] = []
 
     def processing_identity(self, policy_id: str) -> PdfProcessorIdentity:
@@ -291,16 +308,67 @@ def _assert_page_accounting(row: dict[str, Any], accounting: Any) -> None:
     ) == sorted(row["expected_transformations"])
 
 
-def _first_evidence_node(bundle: DocumentRepresentationBundle) -> tuple[DocumentNode, str]:
+def _first_evidence_node(
+    bundle: DocumentRepresentationBundle, *, rotated: bool = False
+) -> tuple[DocumentNode, str]:
     views = {view.id: view for view in bundle.text_views}
+    regions = {region.id: region for region in bundle.source_regions}
     node = next(
         item
         for item in bundle.nodes
         if item.node_type == "paragraph"
         and item.source_region_ids
         and item.end_char > item.start_char
+        and (
+            not rotated
+            or any(regions[region_id].rotation_applied != 0 for region_id in item.source_region_ids)
+        )
     )
     return node, views[node.text_view_id].text[node.start_char : node.end_char]
+
+
+def _table_evidence_candidate(
+    bundle: DocumentRepresentationBundle,
+) -> tuple[DocumentNode, str, tuple[str, ...], tuple[str, ...], TableEvidenceSelector]:
+    cells = {cell.id: cell for cell in bundle.table_cells}
+    nodes = {node.id: node for node in bundle.nodes}
+    cell = next(
+        item
+        for item in bundle.table_cells
+        if item.node_id is not None
+        and item.row_header_cell_ids
+        and item.column_header_cell_ids
+    )
+    header_cells = tuple(
+        cells[cell_id]
+        for cell_id in (*cell.row_header_cell_ids, *cell.column_header_cell_ids)
+    )
+    assert cell.node_id is not None
+    assert all(header.node_id is not None for header in header_cells)
+    node_ids = (cell.node_id, *(header.node_id for header in header_cells if header.node_id))
+    selected_nodes = tuple(nodes[node_id] for node_id in node_ids)
+    node = selected_nodes[0]
+    view = next(view for view in bundle.text_views if view.id == node.text_view_id)
+    text = view.text[node.start_char : node.end_char]
+    region_ids = tuple(
+        dict.fromkeys(
+            region_id
+            for selected_node in selected_nodes
+            for region_id in selected_node.source_region_ids
+        )
+    )
+    return (
+        node,
+        text,
+        node_ids,
+        region_ids,
+        TableEvidenceSelector(
+            table_id=cell.table_id,
+            cell_id=cell.id,
+            row_header_cell_ids=cell.row_header_cell_ids,
+            column_header_cell_ids=cell.column_header_cell_ids,
+        ),
+    )
 
 
 def _submit_overlay(
@@ -310,7 +378,15 @@ def _submit_overlay(
     bundle: DocumentRepresentationBundle,
     repository: Any,
 ) -> tuple[str, str]:
-    node, text = _first_evidence_node(bundle)
+    table_selector = None
+    if row_id == "complex_table":
+        node, text, node_ids, region_ids, table_selector = _table_evidence_candidate(bundle)
+    else:
+        node, text = _first_evidence_node(
+            bundle, rotated=row_id == "adversarial_layout"
+        )
+        node_ids = (node.id,)
+        region_ids = node.source_region_ids
     outcome = submit_grounded_candidate_batch(
         GroundedCandidateBatchInput(
             task_fingerprint=hashlib.sha256(f"overlay:{row_id}".encode()).hexdigest(),
@@ -329,8 +405,9 @@ def _submit_overlay(
                     start_char=node.start_char,
                     end_char=node.end_char,
                     exact_text=text,
-                    node_ids=(node.id,),
-                    pdf_region_ids=node.source_region_ids,
+                    node_ids=node_ids,
+                    pdf_region_ids=region_ids,
+                    table_selector=table_selector,
                 ),
             ),
             assertions=(
@@ -506,33 +583,6 @@ def _assert_specialized_gold(
 
 @pytest.mark.parametrize("row", ROWS, ids=lambda row: cast(dict[str, Any], row)["row_id"])
 def test_integrated_pdf_gold_matrix(row: dict[str, Any], tmp_path: Path) -> None:
-    if os.environ.get("KOTEKOMI_PDF_GOLD_MATRIX_ROW_WORKER") != "1":
-        environment = {
-            **os.environ,
-            "KOTEKOMI_PDF_GOLD_MATRIX_ROW_WORKER": "1",
-            "OMP_NUM_THREADS": "1",
-            "OPENBLAS_NUM_THREADS": "1",
-            "MKL_NUM_THREADS": "1",
-            "NUMEXPR_NUM_THREADS": "1",
-        }
-        completed = subprocess.run(
-            [
-                sys.executable,
-                "-m",
-                "pytest",
-                f"{Path(__file__)}::test_integrated_pdf_gold_matrix[{row['row_id']}]",
-                "-q",
-            ],
-            capture_output=True,
-            check=False,
-            env=environment,
-            timeout=600,
-        )
-        assert completed.returncode == 0, completed.stdout.decode(
-            errors="replace"
-        ) + completed.stderr.decode(errors="replace")
-        return
-
     _, raw_pdf = _fixture(row)
     ledger_path = tmp_path / "ledger.db"
     archive = LocalArchiveStore(tmp_path / "archive")
@@ -544,6 +594,7 @@ def test_integrated_pdf_gold_matrix(row: dict[str, Any], tmp_path: Path) -> None
     analysis_run_id: str | None = None
     evidence_id: str | None = None
     validation_id: str | None = None
+    admission: PdfAnalysisAdmissionOutcome | None = None
 
     if row.get("parser_mode") == "invalid_coordinates":
         parser = _InvalidCoordinateParser()
@@ -568,7 +619,23 @@ def test_integrated_pdf_gold_matrix(row: dict[str, Any], tmp_path: Path) -> None
             assert outcome.failure.code == row["expected_failure_code"]
             assert outcome.failure.stage is ProcessingStage.REPRESENTATION_VALIDATION
             assert repository.list_document_representations() == ()
-            assert repository.find_pdf_preflight_report_for_task(task_id) is None
+            (report_ref,) = tuple(
+                artifact
+                for artifact in outcome.output_artifacts
+                if artifact.kind is ProcessingArtifactKind.PDF_PREFLIGHT_REPORT
+            )
+            first_failed_accounting = repository.get_pdf_page_accounting_bundle(
+                report_ref.artifact_id
+            )
+            assert first_failed_accounting is not None
+            assert (
+                first_failed_accounting.preflight_report.page_inventory_disposition
+                is PdfPageInventoryDisposition.COMPLETE
+            )
+            assert first_failed_accounting.preflight_report.page_count == 1
+            (failed_status,) = first_failed_accounting.page_extraction_statuses
+            assert failed_status.status is PdfPageQualityStatus.BLOCKED
+            assert failed_status.policy_reasons == ("representation_validation_failed",)
         with pytest.raises(ValueError):
             with sqlite_ledger_transaction(ledger_path) as repository:
                 ingest_pdf(
@@ -594,7 +661,31 @@ def test_integrated_pdf_gold_matrix(row: dict[str, Any], tmp_path: Path) -> None
                 for item in outcomes
             )
             assert repository.list_document_representations() == ()
-            assert repository.find_pdf_preflight_report_for_task(task_id) is None
+            report_refs = tuple(
+                artifact
+                for item in outcomes
+                if item is not None
+                for artifact in item.output_artifacts
+                if artifact.kind is ProcessingArtifactKind.PDF_PREFLIGHT_REPORT
+            )
+            assert len(report_refs) == 2
+            report_ids = {report_ref.artifact_id for report_ref in report_refs}
+            assert first_failed_accounting.preflight_report.id in report_ids
+            assert len(report_ids) == 2
+            assert (
+                repository.get_pdf_page_accounting_bundle(
+                    first_failed_accounting.preflight_report.id
+                )
+                == first_failed_accounting
+            )
+            (second_report_id,) = report_ids - {first_failed_accounting.preflight_report.id}
+            second_failed_accounting = repository.get_pdf_page_accounting_bundle(
+                second_report_id
+            )
+            assert second_failed_accounting is not None
+            assert second_failed_accounting.page_extraction_statuses[0].policy_reasons == (
+                "representation_validation_failed",
+            )
         assert archive.read_raw_source(captured.raw_blob_id) == raw_pdf
         return
 
@@ -616,34 +707,55 @@ def test_integrated_pdf_gold_matrix(row: dict[str, Any], tmp_path: Path) -> None
             assert repository.list_document_representations() == ()
             report_identity = accounting.preflight_report.id
         else:
-            assert row["expected_quality"] == "acceptable"
             bundle = repository.get_document_representation_bundle(first.representation_id)
             assert bundle is not None
-            assert bundle.quality_report.analyzability is RepresentationAnalyzability.ACCEPTABLE
             assert {view.kind for view in bundle.text_views} == {
                 TextViewKind.LOGICAL,
                 TextViewKind.DISPLAY,
             }
-            analysis_run_id, manifests = _complete_analysis(
-                row_id=row["row_id"],
-                captured=captured,
-                bundle=bundle,
-                repository=repository,
-                archive=archive,
-            )
-            report = build_coverage_report(analysis_run_id, repository)
-            report_identity = report.report_digest
-            _assert_specialized_gold(row, bundle, manifests)
-            evidence_id, validation_id = _submit_overlay(
-                row_id=row["row_id"],
-                captured=captured,
-                bundle=bundle,
-                repository=repository,
-            )
-            evidence = repository.get_evidence_target(evidence_id)
-            validation = repository.get_evidence_validation_attempt(validation_id)
-            assert evidence is not None and validation is not None
-            assert verify_evidence_target(evidence, validation, repository).valid
+            admission = evaluate_pdf_analysis_admission(first.representation_id, repository)
+            if row["expected_quality"] == "degraded":
+                assert admission.coverage_status.value == row["expected_coverage"]
+                assert (
+                    bundle.quality_report.analyzability
+                    is RepresentationAnalyzability.DEGRADED
+                )
+                assert (
+                    admission.decision
+                    is PdfAnalysisAdmissionDecision.REQUIRES_REVIEW
+                )
+                assert (
+                    admission.coverage_status
+                    is PdfAnalysisCoverageStatus.PARSE_QUALITY_REQUIRES_REVIEW
+                )
+                report_identity = admission
+            else:
+                assert row["expected_quality"] == "acceptable"
+                assert (
+                    bundle.quality_report.analyzability
+                    is RepresentationAnalyzability.ACCEPTABLE
+                )
+                assert admission.decision is PdfAnalysisAdmissionDecision.ADMITTED
+                analysis_run_id, manifests = _complete_analysis(
+                    row_id=row["row_id"],
+                    captured=captured,
+                    bundle=bundle,
+                    repository=repository,
+                    archive=archive,
+                )
+                report = build_coverage_report(analysis_run_id, repository)
+                report_identity = report.report_digest
+                _assert_specialized_gold(row, bundle, manifests)
+                evidence_id, validation_id = _submit_overlay(
+                    row_id=row["row_id"],
+                    captured=captured,
+                    bundle=bundle,
+                    repository=repository,
+                )
+                evidence = repository.get_evidence_target(evidence_id)
+                validation = repository.get_evidence_validation_attempt(validation_id)
+                assert evidence is not None and validation is not None
+                assert verify_evidence_target(evidence, validation, repository).valid
 
     reopened_archive = LocalArchiveStore(tmp_path / "archive")
     with sqlite_ledger_transaction(ledger_path) as repository:
@@ -654,18 +766,58 @@ def test_integrated_pdf_gold_matrix(row: dict[str, Any], tmp_path: Path) -> None
             assert replayed.preflight_report.id == report_identity
         else:
             assert bundle is not None
-            assert analysis_run_id is not None
-            assert evidence_id is not None
-            assert validation_id is not None
             replayed_bundle = repository.get_document_representation_bundle(first.representation_id)
             assert replayed_bundle == bundle
-            assert (
-                build_coverage_report(analysis_run_id, repository).report_digest == report_identity
-            )
-            replayed_evidence = repository.get_evidence_target(evidence_id)
-            replayed_validation = repository.get_evidence_validation_attempt(validation_id)
-            assert replayed_evidence is not None and replayed_validation is not None
-            assert verify_evidence_target(replayed_evidence, replayed_validation, repository).valid
+            if row["expected_quality"] == "degraded":
+                assert admission is not None
+                assert (
+                    evaluate_pdf_analysis_admission(first.representation_id, repository)
+                    == report_identity
+                )
+            else:
+                assert analysis_run_id is not None
+                assert evidence_id is not None
+                assert validation_id is not None
+                assert (
+                    build_coverage_report(analysis_run_id, repository).report_digest
+                    == report_identity
+                )
+                replayed_evidence = repository.get_evidence_target(evidence_id)
+                replayed_validation = repository.get_evidence_validation_attempt(validation_id)
+                assert replayed_evidence is not None and replayed_validation is not None
+                assert verify_evidence_target(
+                    replayed_evidence, replayed_validation, repository
+                ).valid
+                if row["row_id"] not in RENDER_OVERLAY_ROWS:
+                    rendered = None
+                else:
+                    original_parse = DoclingPdfParser.parse
+
+                    def parser_must_not_run(*_args: object, **_kwargs: object) -> object:
+                        raise AssertionError("Reviewer rendering must not invoke Docling.")
+
+                    DoclingPdfParser.parse = parser_must_not_run  # type: ignore[method-assign]
+                    try:
+                        rendered = render_pdf_evidence_overlay(
+                            evidence_id,
+                            repository,
+                            reopened_archive,
+                            PdfiumEvidenceOverlayRenderer(),
+                        )
+                    finally:
+                        DoclingPdfParser.parse = original_parse  # type: ignore[method-assign]
+                if rendered is not None:
+                    assert rendered.spec.exact_quote == replayed_evidence.exact_text
+                    assert rendered.spec.structural_node_ids == replayed_evidence.node_ids
+                    assert rendered.pixel_rectangles
+                    image = Image.open(BytesIO(rendered.png_bytes)).convert("RGB")
+                    assert image.size == (rendered.image_width, rendered.image_height)
+                    for rectangle in rendered.pixel_rectangles:
+                        assert image.getpixel((rectangle.left, rectangle.top)) == (255, 0, 0)
+                    if row["row_id"] == "adversarial_layout":
+                        assert rendered.spec.rotation in {90, 180, 270}
+                    if row["row_id"] == "complex_table":
+                        assert replayed_evidence.table_selector is not None
         rerun = ingest_pdf(
             ingest_input,
             repository,
@@ -675,13 +827,23 @@ def test_integrated_pdf_gold_matrix(row: dict[str, Any], tmp_path: Path) -> None
             reopened_archive,
         )
         assert rerun.representation_id == first.representation_id
-        assert rerun.preflight_report_id == first.preflight_report_id
-        assert repository.get_pdf_page_accounting_bundle(rerun.preflight_report_id) == accounting
+        assert rerun.preflight_report_id != first.preflight_report_id
+        rerun_accounting = repository.get_pdf_page_accounting_bundle(rerun.preflight_report_id)
+        assert rerun_accounting is not None
+        _assert_page_accounting(row, rerun_accounting)
+        assert repository.get_pdf_page_accounting_bundle(first.preflight_report_id) == accounting
         if first.representation_id is not None:
-            assert analysis_run_id is not None
-            assert (
-                build_coverage_report(analysis_run_id, repository).report_digest == report_identity
-            )
+            if row["expected_quality"] == "degraded":
+                assert (
+                    evaluate_pdf_analysis_admission(first.representation_id, repository)
+                    == report_identity
+                )
+            else:
+                assert analysis_run_id is not None
+                assert (
+                    build_coverage_report(analysis_run_id, repository).report_digest
+                    == report_identity
+                )
 
     assert reopened_archive.read_raw_source(captured.raw_blob_id) == raw_pdf
     task_id = _only_task_id(ledger_path)
@@ -706,11 +868,25 @@ def test_integrated_gold_matrix_is_an_exact_fixture_class_partition() -> None:
     assert set(observed) == set(required)
     assert all(
         row["expected_coverage"]
-        in {"complete", "blocked_before_analysis", "failed_before_analysis"}
+        in {
+            "complete",
+            "parse_quality_requires_review",
+            "blocked_before_analysis",
+            "failed_before_analysis",
+        }
         for row in ROWS
     )
+    assert {row["expected_quality"] for row in ROWS} == {
+        "acceptable",
+        "degraded",
+        "blocked",
+        "failed",
+    }
+    assert RENDER_OVERLAY_ROWS <= {row["row_id"] for row in ROWS}
+    assert all(row["evidence_overlay"] for row in ROWS if row["row_id"] in RENDER_OVERLAY_ROWS)
     expected_coverage_by_quality = {
         "acceptable": "complete",
+        "degraded": "parse_quality_requires_review",
         "blocked": "blocked_before_analysis",
         "failed": "failed_before_analysis",
     }

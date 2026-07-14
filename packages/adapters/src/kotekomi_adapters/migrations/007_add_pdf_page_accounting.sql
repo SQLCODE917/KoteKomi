@@ -7,10 +7,13 @@ CREATE TABLE IF NOT EXISTS pdf_preflight_reports (
   document_id TEXT NOT NULL,
   raw_blob_id TEXT NOT NULL,
   processing_task_fingerprint_id TEXT NOT NULL,
+  processing_attempt_id TEXT NOT NULL,
   payload_json TEXT NOT NULL,
   FOREIGN KEY (document_id) REFERENCES documents(id),
   FOREIGN KEY (raw_blob_id) REFERENCES raw_blobs(id),
-  FOREIGN KEY (processing_task_fingerprint_id) REFERENCES processing_task_fingerprints(id)
+  FOREIGN KEY (processing_task_fingerprint_id) REFERENCES processing_task_fingerprints(id),
+  FOREIGN KEY (processing_attempt_id) REFERENCES processing_attempts(id),
+  UNIQUE (processing_attempt_id)
 );
 
 CREATE TABLE IF NOT EXISTS pdf_page_inventories (
@@ -50,16 +53,16 @@ CREATE TABLE IF NOT EXISTS pdf_page_extraction_statuses (
   preflight_report_id TEXT NOT NULL,
   page_inventory_id TEXT NOT NULL,
   page_index INTEGER NOT NULL,
-  representation_id TEXT,
   payload_json TEXT NOT NULL,
   FOREIGN KEY (preflight_report_id) REFERENCES pdf_preflight_reports(id),
   FOREIGN KEY (page_inventory_id) REFERENCES pdf_page_inventories(id),
-  FOREIGN KEY (representation_id) REFERENCES document_representations(id),
   UNIQUE (preflight_report_id, page_index)
 );
 
 CREATE INDEX IF NOT EXISTS idx_pdf_preflight_reports_task
 ON pdf_preflight_reports(processing_task_fingerprint_id);
+CREATE INDEX IF NOT EXISTS idx_pdf_preflight_reports_attempt
+ON pdf_preflight_reports(processing_attempt_id);
 CREATE INDEX IF NOT EXISTS idx_pdf_preflight_reports_document
 ON pdf_preflight_reports(document_id);
 CREATE INDEX IF NOT EXISTS idx_pdf_page_inventories_report
