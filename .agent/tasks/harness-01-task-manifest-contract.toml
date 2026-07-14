@@ -1,0 +1,234 @@
+schema_version = 1
+task_id = "harness-01-task-manifest-contract"
+title = "Task Manifest contract and validation"
+status = "ready_for_terra_high"
+series_id = "terra-high-harness-v1"
+task_class = "repository-tooling"
+model_profile = "terra-high-v1"
+baseline_revision = "e597b49f3929838d303e96347d7137e3f16a69d8"
+tdd_path = "docs/2026-07-14-agent-task-manifest-v1.md"
+tdd_sha256 = "ced9632f98ac23ea7c2d430e345f8d2d7df96237b0da6841e45b5cb1ebb576e1"
+goal = "Validate one immutable Terra-high task manifest without executing it."
+depends_on = []
+allowed_paths = [
+  "pyproject.toml",
+  "uv.lock",
+  "packages/devtools/pyproject.toml",
+  "packages/devtools/src/",
+  "packages/devtools/tests/unit/",
+]
+reference_paths = [
+  "AGENTS.md",
+  "docs/2026-07-14-terra-high-harness-series-plan.md",
+  "docs/agent/writing-tdds.md",
+  "docs/agent/documentation-style.md",
+  "docs/agent/testing.md",
+]
+stop_conditions = [
+  "Validation requires importing a KoteKomi product package.",
+  "A manifest field requires executing arbitrary shell text.",
+  "A required contract has more than one valid interpretation.",
+  "Implementation requires Git inspection or acceptance-command execution.",
+]
+
+[readiness]
+dominant_outcome = "A manifest is accepted or rejected with stable diagnostics."
+contract_family = "task-manifest-v1"
+public_entry_point = "kotekomi-agent validate-task"
+authority = "The protected Leaf TDD and Task Manifest V1 JSON Schema."
+scope_policy = "Validation only; no Git inspection, file verification, or command execution."
+side_effect_boundary = "none"
+failure_policy = "Expected invalid input exits with typed JSON diagnostics and no writes."
+negative_proof = "Invalid paths, duplicate command IDs, malformed input, and shell command strings fail."
+legacy_disposition = "No existing product command or package is replaced."
+unresolved_decisions = []
+
+[budget]
+maximum_production_files = 6
+maximum_test_files = 4
+maximum_production_diff_lines = 450
+
+[[protected_artifacts]]
+path = ".agent/schemas/task-manifest-v1.schema.json"
+sha256 = "b505d4fd89eed61510a2cd669a8a96564927ed43309cd31ed786aff6fb63a460"
+kind = "json-schema"
+
+[[protected_artifacts]]
+path = "docs/2026-07-14-agent-task-manifest-v1.md"
+sha256 = "ced9632f98ac23ea7c2d430e345f8d2d7df96237b0da6841e45b5cb1ebb576e1"
+kind = "leaf-tdd"
+
+[[protected_artifacts]]
+path = "packages/devtools/AGENTS.md"
+sha256 = "17d6502f67f891193b4d9578fff0317359894412aa4897632ef0044560eadaea"
+kind = "agent-instructions"
+
+[[protected_artifacts]]
+path = "packages/devtools/tests/acceptance/test_task_manifest_contract.py"
+sha256 = "f16a8aaa3a3c8c7b513c1c9823b8d0c3ff12af993eaf31762daa320baacbda28"
+kind = "acceptance-test"
+
+[[protected_artifacts]]
+path = "packages/devtools/tests/fixtures/task_manifests/absolute-path.toml"
+sha256 = "2cac2b0af2048f81589f7e9e705fcace60988eddfada01a694d80c70b927e378"
+kind = "fixture"
+
+[[protected_artifacts]]
+path = "packages/devtools/tests/fixtures/task_manifests/backslash-path.toml"
+sha256 = "58c8353dfc11ffe8e20ee5e446e3fc8289a29dafc8dc00cf30a0de3cf5a30a08"
+kind = "fixture"
+
+[[protected_artifacts]]
+path = "packages/devtools/tests/fixtures/task_manifests/duplicate-allowed-path.toml"
+sha256 = "05257486220625afc144f62c73acdf8e4eb32d0b015641f974cbaf2886eaf006"
+kind = "fixture"
+
+[[protected_artifacts]]
+path = "packages/devtools/tests/fixtures/task_manifests/empty-argv.toml"
+sha256 = "61185e161b0075ba2432f8ba35c0ae8ecb1770084d19c200904765da26677483"
+kind = "fixture"
+
+[[protected_artifacts]]
+path = "packages/devtools/tests/fixtures/task_manifests/invalid-baseline-revision.toml"
+sha256 = "dad2a775f40a30376a338a08b563b2d458c0fa12fbad5de5cfcc8440632ada6b"
+kind = "fixture"
+
+[[protected_artifacts]]
+path = "packages/devtools/tests/fixtures/task_manifests/invalid-digest.toml"
+sha256 = "6576de4f44319d52ae3a4e5544e8423c133da33b39338733281a6bc55f496e7e"
+kind = "fixture"
+
+[[protected_artifacts]]
+path = "packages/devtools/tests/fixtures/task_manifests/invalid-profile.toml"
+sha256 = "7720cbfff290ed322f8b9fe9510fe11f4b8faf4f9c88d7728b52c5762bd2df7c"
+kind = "fixture"
+
+[[protected_artifacts]]
+path = "packages/devtools/tests/fixtures/task_manifests/invalid-task-id.toml"
+sha256 = "c13702e7af1431885874732e1f5189a26396513afa51f3092d89bae82770a535"
+kind = "fixture"
+
+[[protected_artifacts]]
+path = "packages/devtools/tests/fixtures/task_manifests/malformed.toml"
+sha256 = "5eb96b6789c6a5fd9fca921601ee76774bd850f7f66b21102b00d4e398601415"
+kind = "fixture"
+
+[[protected_artifacts]]
+path = "packages/devtools/tests/fixtures/task_manifests/missing-required.toml"
+sha256 = "6b80dbe21abc5ff2e98dc0d6d3799e2412e82eef3cb2b76c04b97596de7fa2ff"
+kind = "fixture"
+
+[[protected_artifacts]]
+path = "packages/devtools/tests/fixtures/task_manifests/multiple-errors.toml"
+sha256 = "ae3c909a4b8a30b9c8f0f30d8d63e863ebbe75f485505fb1e5f70913e820fbe7"
+kind = "fixture"
+
+[[protected_artifacts]]
+path = "packages/devtools/tests/fixtures/task_manifests/parent-traversal.toml"
+sha256 = "321aec64a728c89360833fb5e5dba5a32977475789336dbf7acc04ff2a83cf9b"
+kind = "fixture"
+
+[[protected_artifacts]]
+path = "packages/devtools/tests/fixtures/task_manifests/protected-directory-path.toml"
+sha256 = "67c07ecfa8477f578ee40bebc51ad3f2d7713995783115f0d0271c9929f393fe"
+kind = "fixture"
+
+[[protected_artifacts]]
+path = "packages/devtools/tests/fixtures/task_manifests/shell-command-string.toml"
+sha256 = "6384a982a56f1c3bcd781b047ac5044bb1b2f71c38055c3701e910aa56de0680"
+kind = "fixture"
+
+[[protected_artifacts]]
+path = "packages/devtools/tests/fixtures/task_manifests/unknown-nested.toml"
+sha256 = "e2338a03bbe20daf519303c6b50c5ffeae529f81f3cf57da9889c18ba1b89f33"
+kind = "fixture"
+
+[[protected_artifacts]]
+path = "packages/devtools/tests/fixtures/task_manifests/unknown-top-level.toml"
+sha256 = "9351e6bbacad97c030441a37bd80d9f8e3b5a681745cdc8bcf26bde2fd70dc10"
+kind = "fixture"
+
+[[protected_artifacts]]
+path = "packages/devtools/tests/fixtures/task_manifests/unresolved-decisions.toml"
+sha256 = "55dac2e912fc83cd7336933fe06fa12c3087556c4a0961800255b9971e9e54fc"
+kind = "fixture"
+
+[[protected_artifacts]]
+path = "packages/devtools/tests/fixtures/task_manifests/valid-reformatted.toml"
+sha256 = "49405fb26a3acc300d0568d8dfec8a6893447a87017544b4194c3ea998bd974a"
+kind = "fixture"
+
+[[protected_artifacts]]
+path = "packages/devtools/tests/fixtures/task_manifests/valid-reordered.toml"
+sha256 = "67fac232324a203e38d9ac6a61704343c83d8d50c5e4b7ec5012b4fb7d1659d0"
+kind = "fixture"
+
+[[protected_artifacts]]
+path = "packages/devtools/tests/fixtures/task_manifests/valid.toml"
+sha256 = "a567b69e4973c81f6012f491bcaee325109077451a9da3df5152ab6af4d28a1e"
+kind = "fixture"
+
+[[acceptance]]
+id = "h1-contract"
+argv = [
+  "uv",
+  "run",
+  "pytest",
+  "packages/devtools/tests/acceptance/test_task_manifest_contract.py",
+]
+timeout_seconds = 180
+profile = "portable-local"
+
+[[acceptance]]
+id = "repository-ruff"
+argv = [
+  "uv",
+  "run",
+  "ruff",
+  "check",
+]
+timeout_seconds = 180
+profile = "portable-local"
+
+[[acceptance]]
+id = "repository-pyright"
+argv = [
+  "uv",
+  "run",
+  "pyright",
+]
+timeout_seconds = 300
+profile = "portable-local"
+
+[[acceptance]]
+id = "repository-schema-generation"
+argv = [
+  "uv",
+  "run",
+  "python",
+  "scripts/generate_schemas.py",
+]
+timeout_seconds = 300
+profile = "authoritative-linux"
+
+[[acceptance]]
+id = "repository-schema-drift"
+argv = [
+  "git",
+  "diff",
+  "--exit-code",
+  "--",
+  "schemas",
+]
+timeout_seconds = 60
+profile = "authoritative-linux"
+
+[[acceptance]]
+id = "repository-pytest"
+argv = [
+  "uv",
+  "run",
+  "pytest",
+]
+timeout_seconds = 1200
+profile = "authoritative-linux"

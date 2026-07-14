@@ -1,0 +1,108 @@
+{
+  "authoritative_linux_verification": {
+    "conclusion": "success",
+    "head_branch": "harness/h1-task-manifest-contract-candidate-01",
+    "head_sha": "72e286e4adbf749674c6ddb4d3950fb1eecc9567",
+    "receipt_sha256": "7dabe6292133d610fbeeb06532fec4352014b56587b3baa0e277f43eb458bf44",
+    "result": "passed",
+    "run_id": 29369802390,
+    "url": "https://github.com/SQLCODE917/KoteKomi/actions/runs/29369802390"
+  },
+  "candidate": {
+    "branch_at_verification": "harness/h1-task-manifest-contract-candidate-01",
+    "budget": {
+      "production_source_diff_lines": 305,
+      "production_source_files": 3,
+      "total_diff_lines": 384,
+      "unit_test_files": 1
+    },
+    "changed_paths": [
+      "packages/devtools/pyproject.toml",
+      "packages/devtools/src/kotekomi_devtools/__init__.py",
+      "packages/devtools/src/kotekomi_devtools/cli.py",
+      "packages/devtools/src/kotekomi_devtools/task_manifest.py",
+      "packages/devtools/tests/unit/test_task_manifest_cli.py",
+      "pyproject.toml",
+      "uv.lock"
+    ],
+    "commit": "72e286e4adbf749674c6ddb4d3950fb1eecc9567",
+    "file_sha256": {
+      "packages/devtools/pyproject.toml": "6dca7ee38b7e45263f35206c774d9ae2b9f44db68f5ec467189199ca6fca1a00",
+      "packages/devtools/src/kotekomi_devtools/__init__.py": "7d45ae71dcefc3565c902a2e394e3035a016a0af8f2a5cb9e9e877892caa705a",
+      "packages/devtools/src/kotekomi_devtools/cli.py": "58c1b8b35199efc71fadae07e477968ce26b1f2c4ec97e2adc9cd2c00b08426f",
+      "packages/devtools/src/kotekomi_devtools/task_manifest.py": "8a5e86a80cf5be9a597075912b00e5b2496c2d93b4fd8715a003616ce583f108",
+      "packages/devtools/tests/unit/test_task_manifest_cli.py": "23956167f01b6fc1943cef1a3c8ba2498e8d35524be65c78d19094e552b0b7a9",
+      "pyproject.toml": "e58a89ec09fdc7f7111a654537c9dd66d0bebb711a6b46804e9cea66cb85bdf5",
+      "uv.lock": "da1c2933d194fb948eae81b2ceaa7fa96556fda6b6e47d0df9f6097ed9fe784f"
+    },
+    "parent": "698bf85c79b757164bc088ec2ebe58d7dfbe9749"
+  },
+  "candidate_attempt": 1,
+  "candidate_commit_binding": {
+    "bound_file_count": 7,
+    "receipt_sha256": "d0830084f008a99b00008cbea3bba5bf834b7e2832630734c4ba7d6d840e6fe7"
+  },
+  "cohort": "harness_bootstrap",
+  "implementation_run": {
+    "completion_evidence": "turn.completed",
+    "model": "gpt-5.6-terra",
+    "reasoning_effort": "high",
+    "sandbox_rejection_count": 1,
+    "usage": {
+      "cached_input_tokens": 2733568,
+      "input_tokens": 2922403,
+      "output_tokens": 16486,
+      "reasoning_output_tokens": 7267
+    }
+  },
+  "model_profile": "terra-high-v1",
+  "portable_verification": {
+    "candidate_unchanged": true,
+    "checks": [
+      {
+        "exit_code": 0,
+        "id": "01-frozen-workspace-sync"
+      },
+      {
+        "exit_code": 0,
+        "id": "02-protected-acceptance"
+      },
+      {
+        "exit_code": 0,
+        "id": "03-implementation-unit-tests"
+      },
+      {
+        "exit_code": 0,
+        "id": "04-repository-ruff"
+      },
+      {
+        "exit_code": 0,
+        "id": "05-repository-pyright"
+      },
+      {
+        "exit_code": 0,
+        "id": "06-diff-whitespace"
+      }
+    ],
+    "receipt_sha256": "8eba996e02283828fed0955c773ef0c638c1fbab3a1942c4716a9adb51be3ec8",
+    "result": "passed"
+  },
+  "process_outcome": {
+    "first_authoritative_verification_passed": true,
+    "human_rebrief_count": 0,
+    "oracle_revision_after_candidate": false,
+    "specification_revision_after_candidate": false
+  },
+  "receipt_kind": "manual-bootstrap-leaf-verification",
+  "result": "leaf_verified",
+  "schema_version": 1,
+  "specification": {
+    "acceptance_test_sha256": "f16a8aaa3a3c8c7b513c1c9823b8d0c3ff12af993eaf31762daa320baacbda28",
+    "commit": "698bf85c79b757164bc088ec2ebe58d7dfbe9749",
+    "leaf_tdd_sha256": "ced9632f98ac23ea7c2d430e345f8d2d7df96237b0da6841e45b5cb1ebb576e1",
+    "task_manifest_sha256": "fe3fa02711a746f65f04862d3bc239406f42d790b7976199a2c2ddf1f6c348c3"
+  },
+  "task_id": "harness-01-task-manifest-contract",
+  "verification_mode": "manual_frozen_oracle",
+  "verified_at": "2026-07-14T21:38:36.854210+00:00"
+}
