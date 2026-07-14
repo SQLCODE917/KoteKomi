@@ -4,7 +4,7 @@
 
 Document class: Design Series Plan
 
-Planning status: Draft for collaborative review
+Planning status: Accepted
 
 Planning baseline: `d8b8e854fefd832b42b07a979471ff110e8a65ac`
 
