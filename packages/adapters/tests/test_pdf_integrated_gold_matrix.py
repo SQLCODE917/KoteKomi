@@ -634,8 +634,10 @@ def test_integrated_pdf_gold_matrix(row: dict[str, Any], tmp_path: Path) -> None
             )
             assert first_failed_accounting.preflight_report.page_count == 1
             (failed_status,) = first_failed_accounting.page_extraction_statuses
+            assert failed_status.extraction_path.value == row["expected_page_paths"][0]
             assert failed_status.status is PdfPageQualityStatus.BLOCKED
             assert failed_status.policy_reasons == ("representation_validation_failed",)
+            assert row["expected_representation_disposition"] == "not_committed"
         with pytest.raises(ValueError):
             with sqlite_ledger_transaction(ledger_path) as repository:
                 ingest_pdf(
@@ -683,6 +685,10 @@ def test_integrated_pdf_gold_matrix(row: dict[str, Any], tmp_path: Path) -> None
                 second_report_id
             )
             assert second_failed_accounting is not None
+            assert (
+                second_failed_accounting.page_extraction_statuses[0].extraction_path.value
+                == row["expected_page_paths"][0]
+            )
             assert second_failed_accounting.page_extraction_statuses[0].policy_reasons == (
                 "representation_validation_failed",
             )

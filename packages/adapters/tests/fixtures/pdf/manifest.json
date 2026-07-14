@@ -601,7 +601,7 @@
     },
     {
       "path": "gold/integrated_gold_matrix_v1.json",
-      "sha256": "0f191b0ca2ee58824888e7f8c62fcac61fe9a8785da1ab74ddb26b9c2f33bbc1"
+      "sha256": "15c4c9a77e3a97878faa4f92e283fa6e0ece44e3e21824fb9e3e3336707f6bda"
     }
   ],
   "parser_output_mutations": [
