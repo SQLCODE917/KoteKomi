@@ -1,0 +1,65 @@
+# Equivalent formatting must not change the canonical digest.
+schema_version=1
+task_id='example-task'
+title='Example task'
+status='ready_for_terra_high'
+series_id='example-series'
+task_class='repository-tooling'
+model_profile='terra-high-v1'
+baseline_revision='0123456789abcdef0123456789abcdef01234567'
+tdd_path='docs/example-task.md'
+tdd_sha256='aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+goal='Validate one example manifest.'
+depends_on=[
+  'example-prerequisite',
+]
+allowed_paths=[
+  'pyproject.toml',
+  'packages/devtools/src/',
+]
+reference_paths=[
+  'AGENTS.md',
+  'docs/agent/writing-tdds.md',
+]
+stop_conditions=[
+  'A required contract has more than one valid interpretation.',
+]
+
+[readiness]
+dominant_outcome='A manifest is accepted or rejected with stable diagnostics.'
+contract_family='task-manifest-v1'
+public_entry_point='kotekomi-agent validate-task'
+authority='The parsed and schema-validated TOML manifest.'
+scope_policy='Validation only; no Git inspection or command execution.'
+side_effect_boundary='none'
+failure_policy='Invalid input exits with a typed diagnostic and no writes.'
+negative_proof='Invalid paths and shell command strings fail.'
+legacy_disposition='No existing product command is replaced.'
+unresolved_decisions=[]
+
+[budget]
+maximum_production_files=6
+maximum_test_files=4
+maximum_production_diff_lines=450
+
+[[protected_artifacts]]
+path='docs/example-task.md'
+sha256='bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'
+kind='leaf-tdd'
+
+[[acceptance]]
+id='portable-contract'
+argv=[
+  'uv',
+  'run',
+  'pytest',
+  'packages/devtools/tests/acceptance/test_task_manifest_contract.py',
+]
+timeout_seconds=120
+profile='portable-local'
+
+[[acceptance]]
+id='linux-regression'
+argv=['uv','run','pytest']
+timeout_seconds=900
+profile='authoritative-linux'
