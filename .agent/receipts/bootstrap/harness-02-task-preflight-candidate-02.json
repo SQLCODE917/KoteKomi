@@ -1,0 +1,59 @@
+{
+  "candidate_attempt": 2,
+  "candidate_commit": "1faa8b17d059d89fd9ff15ea44c202653e887607",
+  "external_records": {
+    "candidate_ci": {
+      "path": "/Users/DSerbarinov/.local/state/kotekomi/experiments/harness-02-task-preflight/candidate-02-ci.json",
+      "sha256": "9066a03229ecf699823eed8a1da9419ec0adc996a34b75ec8b3a5fae00d68b81"
+    },
+    "commit_binding": {
+      "path": "/Users/DSerbarinov/.local/state/kotekomi/experiments/harness-02-task-preflight/candidate-02-commit/commit-binding.json",
+      "sha256": "62f199e9fb03b90e5c7fd469db37a2ad05a202fff86fa835958606b78d148908"
+    }
+  },
+  "file_identities": {
+    ".agent/tasks/harness-02-task-preflight.toml": "df8bd0e6e0b000410d03ef4d7959f729d4e1c4e493e926baf51eac61ee1b9478",
+    "docs/2026-07-14-agent-task-preflight.md": "c3c702b252a8c0d677a7c9b2f139dd658fa2d3ac20d1ea325306e48fbf9a2bb8",
+    "manifest_canonical_sha256": "8244f72c7d6917ad03472152d55393fe47307c90e8e4e9e31888e3bc9ea1f9b1",
+    "packages/devtools/tests/acceptance/test_task_preflight_contract.py": "14633b4401e1bbe1096a2cacabece1454da51323586e2b3cd5c97da6aa61621f"
+  },
+  "github_actions": {
+    "candidate_ci_conclusion": "success",
+    "candidate_ci_run_id": 30543528101
+  },
+  "local_verification": {
+    "devtools_unit": "2 passed",
+    "h1_acceptance": "40 passed",
+    "h2_acceptance": "52 passed, 0 skipped",
+    "production_diff_lines": 438,
+    "production_files": 2,
+    "pyright": "0 errors, 0 warnings",
+    "ruff": "passed",
+    "test_files": 1
+  },
+  "log_sha256": {
+    "check_matrix": "9987b23d6dcf9023b402d42d9193b9d2778383d193e8bee2429812e68064f727",
+    "h2_acceptance": "5fed3d8a512aac2b8ad8b2ad1a750b86a9f74cf67e6b7459d43ff86a31303e5e",
+    "numstat": "44e23ce78ce278becad1311928313860b42231a23654946561bfa8f59113507f"
+  },
+  "logs": {
+    "check_matrix": "/Users/DSerbarinov/.local/state/kotekomi/experiments/harness-02-task-preflight/verification/check-matrix.log",
+    "h2_acceptance": "/Users/DSerbarinov/.local/state/kotekomi/experiments/harness-02-task-preflight/verification/h2-acceptance.log",
+    "numstat": "/Users/DSerbarinov/.local/state/kotekomi/experiments/harness-02-task-preflight/verification/candidate.numstat"
+  },
+  "process_outcome": {
+    "candidate_01_blocked_by_oracle": true,
+    "candidate_02_budget_reduction": true,
+    "candidate_02_replayed_from_candidate_01": true,
+    "fixture_only_oracle_revision": true,
+    "human_rebrief_count_after_candidate": 1,
+    "oracle_revision_after_candidate": true,
+    "specification_behavior_changed": false
+  },
+  "result": "leaf_verified",
+  "schema_version": 1,
+  "specification_commit": "34e5a06d7ba8207da4b07252a06983e764cf66c7",
+  "task_id": "harness-02-task-preflight",
+  "verification_kind": "manual-bootstrap",
+  "verified_at": "2026-07-30T13:01:21.008239+00:00"
+}

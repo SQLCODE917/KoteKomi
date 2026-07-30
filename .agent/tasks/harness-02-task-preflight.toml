@@ -1,0 +1,180 @@
+schema_version = 1
+task_id = "harness-02-task-preflight"
+title = "Task preflight and protected-oracle locks"
+status = "ready_for_terra_high"
+series_id = "terra-high-harness-v1"
+task_class = "repository-tooling"
+model_profile = "terra-high-v1"
+baseline_revision = "1e04a4a2a638203e8e6901e59bc3baf4cc7dba85"
+tdd_path = "docs/2026-07-14-agent-task-preflight.md"
+tdd_sha256 = "c3c702b252a8c0d677a7c9b2f139dd658fa2d3ac20d1ea325306e48fbf9a2bb8"
+goal = "Prove one validated Terra-high task is ready to begin without changing the repository."
+depends_on = ["harness-01-task-manifest-contract"]
+allowed_paths = [
+  "packages/devtools/src/kotekomi_devtools/cli.py",
+  "packages/devtools/src/kotekomi_devtools/task_preflight.py",
+  "packages/devtools/tests/unit/",
+]
+reference_paths = [
+  "AGENTS.md",
+  ".agent/receipts/bootstrap/harness-01-task-manifest-contract-candidate-01.json",
+  ".agent/schemas/task-manifest-v1.schema.json",
+  "docs/2026-07-14-agent-task-manifest-v1.md",
+  "docs/2026-07-14-terra-high-harness-series-plan.md",
+  "docs/agent/testing.md",
+  "packages/devtools/AGENTS.md",
+  "packages/devtools/src/kotekomi_devtools/task_manifest.py",
+]
+stop_conditions = [
+  "H1 Task Manifest validation must change.",
+  "Preflight requires a repository write.",
+  "A readiness check requires acceptance-command execution.",
+  "Dependency authority requires selecting among several receipts.",
+  "A protected acceptance case has more than one valid result.",
+]
+
+[readiness]
+dominant_outcome = "A validated task is ready or not ready with stable diagnostics."
+contract_family = "task-preflight-v1"
+public_entry_point = "kotekomi-agent preflight-task"
+authority = "The specification commit, protected records, and verified dependency receipts."
+scope_policy = "Read-only Git and filesystem preflight for one Task Manifest."
+side_effect_boundary = "git-read-only"
+failure_policy = "Expected failures return not_ready JSON and no writes."
+negative_proof = "Dirty, unlocked, overlapping, ambiguous, and stale tasks fail."
+legacy_disposition = "H1 validation remains unchanged and active."
+unresolved_decisions = []
+
+[budget]
+maximum_production_files = 2
+maximum_test_files = 2
+maximum_production_diff_lines = 450
+
+[[protected_artifacts]]
+path = ".agent/receipts/bootstrap/harness-01-task-manifest-contract-candidate-01.json"
+sha256 = "f25b9ebaf02aefd97e8f4217dd0145701c585f6abfe5e7768b32eebfe8716fef"
+kind = "fixture"
+
+[[protected_artifacts]]
+path = ".agent/schemas/task-manifest-v1.schema.json"
+sha256 = "b505d4fd89eed61510a2cd669a8a96564927ed43309cd31ed786aff6fb63a460"
+kind = "json-schema"
+
+[[protected_artifacts]]
+path = "docs/2026-07-14-agent-task-preflight.md"
+sha256 = "c3c702b252a8c0d677a7c9b2f139dd658fa2d3ac20d1ea325306e48fbf9a2bb8"
+kind = "leaf-tdd"
+
+[[protected_artifacts]]
+path = "packages/devtools/AGENTS.md"
+sha256 = "17d6502f67f891193b4d9578fff0317359894412aa4897632ef0044560eadaea"
+kind = "agent-instructions"
+
+[[protected_artifacts]]
+path = "packages/devtools/tests/acceptance/test_task_manifest_contract.py"
+sha256 = "f16a8aaa3a3c8c7b513c1c9823b8d0c3ff12af993eaf31762daa320baacbda28"
+kind = "acceptance-test"
+
+[[protected_artifacts]]
+path = "packages/devtools/tests/acceptance/test_task_preflight_contract.py"
+sha256 = "14633b4401e1bbe1096a2cacabece1454da51323586e2b3cd5c97da6aa61621f"
+kind = "acceptance-test"
+
+[[acceptance]]
+id = "h2-cli"
+argv = [
+  "uv",
+  "run",
+  "kotekomi-agent",
+  "preflight-task",
+  "--help",
+]
+timeout_seconds = 60
+profile = "portable-local"
+
+[[acceptance]]
+id = "h2-contract"
+argv = [
+  "uv",
+  "run",
+  "pytest",
+  "packages/devtools/tests/acceptance/test_task_preflight_contract.py",
+]
+timeout_seconds = 300
+profile = "portable-local"
+
+[[acceptance]]
+id = "h1-contract"
+argv = [
+  "uv",
+  "run",
+  "pytest",
+  "packages/devtools/tests/acceptance/test_task_manifest_contract.py",
+]
+timeout_seconds = 180
+profile = "portable-local"
+
+[[acceptance]]
+id = "devtools-unit"
+argv = [
+  "uv",
+  "run",
+  "pytest",
+  "packages/devtools/tests/unit",
+]
+timeout_seconds = 180
+profile = "portable-local"
+
+[[acceptance]]
+id = "repository-ruff"
+argv = [
+  "uv",
+  "run",
+  "ruff",
+  "check",
+]
+timeout_seconds = 180
+profile = "portable-local"
+
+[[acceptance]]
+id = "repository-pyright"
+argv = [
+  "uv",
+  "run",
+  "pyright",
+]
+timeout_seconds = 300
+profile = "portable-local"
+
+[[acceptance]]
+id = "repository-schema-generation"
+argv = [
+  "uv",
+  "run",
+  "python",
+  "scripts/generate_schemas.py",
+]
+timeout_seconds = 300
+profile = "authoritative-linux"
+
+[[acceptance]]
+id = "repository-schema-drift"
+argv = [
+  "git",
+  "diff",
+  "--exit-code",
+  "--",
+  "schemas",
+]
+timeout_seconds = 60
+profile = "authoritative-linux"
+
+[[acceptance]]
+id = "repository-pytest"
+argv = [
+  "uv",
+  "run",
+  "pytest",
+]
+timeout_seconds = 1200
+profile = "authoritative-linux"
