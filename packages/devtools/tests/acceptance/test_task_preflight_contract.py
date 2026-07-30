@@ -699,6 +699,7 @@ def test_untracked_manifest_is_not_ready(
         fixture.root,
         "delete manifest",
     )
+    fixture.manifest_path.parent.mkdir(parents=True, exist_ok=True)
     fixture.manifest_path.write_text(manifest_text)
 
     diagnostics = [

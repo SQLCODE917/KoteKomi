@@ -77,7 +77,7 @@ kind = "acceptance-test"
 
 [[protected_artifacts]]
 path = "packages/devtools/tests/acceptance/test_task_preflight_contract.py"
-sha256 = "f88923b80272fb1b72ce94bfcaefe5ce5adc8291273f67d8f0d7c7e238831d21"
+sha256 = "14633b4401e1bbe1096a2cacabece1454da51323586e2b3cd5c97da6aa61621f"
 kind = "acceptance-test"
 
 [[acceptance]]
