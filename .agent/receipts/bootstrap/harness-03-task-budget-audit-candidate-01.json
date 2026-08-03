@@ -1,0 +1,56 @@
+{
+  "candidate_attempt": 1,
+  "candidate_commit": "178b3120433ed1af2907dc7a88f1cc58ce1f0b10",
+  "parent_commit": "354318a15f87a8c8da9f74f0f514e78cd4fd8ffc",
+  "process_outcome": {
+    "audit_script_repair_after_candidate": true,
+    "audit_script_repair_candidate_defect": false,
+    "budget_reduction_after_candidate": false,
+    "candidate_01_verified": true,
+    "human_rebrief_count_after_candidate": 0,
+    "oracle_revision_after_candidate": false
+  },
+  "receipt_kind": "bootstrap-leaf-verification",
+  "result": "leaf_verified",
+  "schema_version": 1,
+  "task_id": "harness-03-task-budget-audit",
+  "validated_outcome": {
+    "budget": {
+      "maximum_production_diff_lines": 360,
+      "production_diff_lines": 279,
+      "production_files": 2,
+      "status": "within_budget",
+      "test_files": 1
+    },
+    "candidate_ci": "success",
+    "h1_acceptance": "40 passed",
+    "h2_acceptance": "52 passed",
+    "h3_acceptance": "13 passed, 0 skipped",
+    "pyright": "0 errors, 0 warnings",
+    "ruff": "passed",
+    "unit": "3 passed"
+  },
+  "verification_basis": {
+    "candidate_audit_record": {
+      "path": "/Users/DSerbarinov/.local/state/kotekomi/experiments/harness-03-task-budget-audit/candidate-01-audit/candidate-audit.json",
+      "sha256": "1b4e6b7fcc703d2de1e908a31b9b21e7c3e0215e64eab5df41e9828e865858ca"
+    },
+    "candidate_ci_record": {
+      "path": "/Users/DSerbarinov/.local/state/kotekomi/experiments/harness-03-task-budget-audit/candidate-01-ci.json",
+      "sha256": "33461e371005c52b528f5d14154d596999e1b4f0abaad2a5499eaf24d2010bc9"
+    },
+    "candidate_start_record": {
+      "path": "/Users/DSerbarinov/.local/state/kotekomi/experiments/harness-03-task-budget-audit/candidate-01-start.json",
+      "sha256": "06f85f2954caa43b74e58fa3373726be5fb38781e4e8c13b447eefe7faf5bdf4"
+    },
+    "codex_result_record": {
+      "path": "/Users/DSerbarinov/.local/state/kotekomi/experiments/harness-03-task-budget-audit/candidate-01-codex/codex-result.json",
+      "sha256": "a53b49aaa8f8baf69db900d9f13aef9f4153bb6d2c588fd7fd1f2f2526e35a0a"
+    },
+    "commit_binding_record": {
+      "path": "/Users/DSerbarinov/.local/state/kotekomi/experiments/harness-03-task-budget-audit/candidate-01-commit/commit-binding.json",
+      "sha256": "2939881b31358cdc3bc5f24cccc7d2f100275d7573b99f532f05065ba3f6c0d5"
+    }
+  },
+  "verified_at": "2026-07-31T10:10:17.967304+00:00"
+}

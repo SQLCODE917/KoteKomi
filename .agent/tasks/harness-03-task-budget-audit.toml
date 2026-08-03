@@ -1,0 +1,127 @@
+schema_version = 1
+task_id = "harness-03-task-budget-audit"
+title = "H3 Task Budget Audit"
+status = "ready_for_terra_high"
+series_id = "terra-high-harness-v1"
+task_class = "repository-tooling"
+model_profile = "terra-high-v1"
+baseline_revision = "ee481cfb1e9543ab6e3e1d9096f53fd57535b657"
+tdd_path = "docs/2026-07-31-agent-task-budget-audit.md"
+tdd_sha256 = "4cbd830ea320bf1163d23a2be42ed5874045ea90e7c5b99a2e16969d9eeac028"
+goal = "Add a deterministic budget-audit CLI that reports whether one Task Manifest candidate is inside production/test file and production diff line budgets."
+depends_on = ["harness-01-task-manifest-contract", "harness-02-task-preflight"]
+allowed_paths = ["packages/devtools/src/kotekomi_devtools/cli.py", "packages/devtools/src/kotekomi_devtools/task_budget.py", "packages/devtools/tests/unit/"]
+reference_paths = ["AGENTS.md", ".agent/schemas/task-manifest-v1.schema.json", ".agent/receipts/bootstrap/harness-01-task-manifest-contract-candidate-01.json", ".agent/receipts/bootstrap/harness-02-task-preflight-candidate-02.json", "docs/2026-07-14-agent-task-manifest-v1.md", "docs/2026-07-14-agent-task-preflight.md", "docs/agent/testing.md", "packages/devtools/AGENTS.md", "packages/devtools/src/kotekomi_devtools/cli.py", "packages/devtools/src/kotekomi_devtools/task_manifest.py", "packages/devtools/src/kotekomi_devtools/task_preflight.py"]
+stop_conditions = ["A protected artifact changes.", "The implementation escapes allowed paths.", "H3 acceptance remains skipped after implementation.", "H3 acceptance fails.", "H1 or H2 acceptance fails.", "The candidate exceeds the H3 budget."]
+
+[[protected_artifacts]]
+path = ".agent/schemas/task-manifest-v1.schema.json"
+sha256 = "b505d4fd89eed61510a2cd669a8a96564927ed43309cd31ed786aff6fb63a460"
+kind = "json-schema"
+
+[[protected_artifacts]]
+path = ".agent/receipts/bootstrap/harness-01-task-manifest-contract-candidate-01.json"
+sha256 = "f25b9ebaf02aefd97e8f4217dd0145701c585f6abfe5e7768b32eebfe8716fef"
+kind = "fixture"
+
+[[protected_artifacts]]
+path = ".agent/receipts/bootstrap/harness-02-task-preflight-candidate-02.json"
+sha256 = "78b68a7d086edbab52cb309d1d270084c4b74c9c1af1a0825d50812e0c0d2233"
+kind = "fixture"
+
+[[protected_artifacts]]
+path = "packages/devtools/tests/acceptance/test_task_manifest_contract.py"
+sha256 = "f16a8aaa3a3c8c7b513c1c9823b8d0c3ff12af993eaf31762daa320baacbda28"
+kind = "acceptance-test"
+
+[[protected_artifacts]]
+path = "packages/devtools/tests/acceptance/test_task_preflight_contract.py"
+sha256 = "14633b4401e1bbe1096a2cacabece1454da51323586e2b3cd5c97da6aa61621f"
+kind = "acceptance-test"
+
+[[protected_artifacts]]
+path = "packages/devtools/tests/acceptance/test_task_budget_audit_contract.py"
+sha256 = "a94e2f8cbb150c98cb1cc9330fcffdc747d35216b70d7ff2ef3a06dae007a0f3"
+kind = "acceptance-test"
+
+[[protected_artifacts]]
+path = "packages/devtools/AGENTS.md"
+sha256 = "17d6502f67f891193b4d9578fff0317359894412aa4897632ef0044560eadaea"
+kind = "agent-instructions"
+
+[[acceptance]]
+id = "h3-cli"
+argv = ["uv", "run", "kotekomi-agent", "budget-audit", "--help"]
+timeout_seconds = 60
+profile = "portable-local"
+
+[[acceptance]]
+id = "h3-contract"
+argv = ["uv", "run", "pytest", "-p", "no:cacheprovider", "packages/devtools/tests/acceptance/test_task_budget_audit_contract.py"]
+timeout_seconds = 120
+profile = "portable-local"
+
+[[acceptance]]
+id = "h2-contract"
+argv = ["uv", "run", "pytest", "-p", "no:cacheprovider", "packages/devtools/tests/acceptance/test_task_preflight_contract.py"]
+timeout_seconds = 120
+profile = "portable-local"
+
+[[acceptance]]
+id = "h1-contract"
+argv = ["uv", "run", "pytest", "packages/devtools/tests/acceptance/test_task_manifest_contract.py"]
+timeout_seconds = 120
+profile = "portable-local"
+
+[[acceptance]]
+id = "devtools-unit"
+argv = ["uv", "run", "pytest", "packages/devtools/tests/unit"]
+timeout_seconds = 120
+profile = "portable-local"
+
+[[acceptance]]
+id = "repository-ruff"
+argv = ["uv", "run", "ruff", "check"]
+timeout_seconds = 120
+profile = "portable-local"
+
+[[acceptance]]
+id = "repository-pyright"
+argv = ["uv", "run", "pyright"]
+timeout_seconds = 120
+profile = "portable-local"
+
+[[acceptance]]
+id = "repository-schema-generation"
+argv = ["uv", "run", "python", "scripts/generate_schemas.py"]
+timeout_seconds = 120
+profile = "portable-local"
+
+[[acceptance]]
+id = "repository-schema-drift"
+argv = ["git", "diff", "--exit-code", "--", "schemas"]
+timeout_seconds = 60
+profile = "portable-local"
+
+[[acceptance]]
+id = "repository-pytest"
+argv = ["uv", "run", "pytest"]
+timeout_seconds = 300
+profile = "authoritative-linux"
+
+[readiness]
+authority = "The specification commit, protected records, and verified dependency receipts."
+contract_family = "task-budget-audit-v1"
+dominant_outcome = "A candidate is within budget or over budget with stable diagnostics."
+failure_policy = "Expected budget failures return over_budget JSON and no writes."
+legacy_disposition = "H1 validation and H2 preflight remain unchanged and active."
+negative_proof = "Over-budget and out-of-scope candidate diffs fail deterministically."
+public_entry_point = "kotekomi-agent budget-audit"
+scope_policy = "Read-only Git diff budget audit for one Task Manifest."
+side_effect_boundary = "git-read-only"
+unresolved_decisions = []
+
+[budget]
+maximum_production_files = 2
+maximum_test_files = 2
+maximum_production_diff_lines = 360
