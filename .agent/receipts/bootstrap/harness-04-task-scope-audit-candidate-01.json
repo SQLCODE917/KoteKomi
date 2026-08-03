@@ -1,0 +1,120 @@
+{
+  "acceptance": [
+    {
+      "command": "PYTHONDONTWRITEBYTECODE=1 uv run pytest -p no:cacheprovider packages/devtools/tests/acceptance/test_task_scope_audit_contract.py",
+      "id": "h4-scope-audit-contract",
+      "result": "13 passed"
+    },
+    {
+      "command": "PYTHONDONTWRITEBYTECODE=1 uv run pytest -p no:cacheprovider packages/devtools/tests/acceptance/test_task_budget_audit_contract.py",
+      "id": "h3-budget-audit-contract",
+      "result": "13 passed"
+    },
+    {
+      "command": "PYTHONDONTWRITEBYTECODE=1 uv run pytest -p no:cacheprovider packages/devtools/tests/acceptance/test_task_preflight_contract.py",
+      "id": "h2-preflight-contract",
+      "result": "52 passed"
+    },
+    {
+      "command": "uv run pytest packages/devtools/tests/acceptance/test_task_manifest_contract.py",
+      "id": "h1-task-manifest-contract",
+      "result": "40 passed"
+    },
+    {
+      "command": "uv run pytest packages/devtools/tests/unit",
+      "id": "devtools-unit",
+      "result": "3 passed"
+    },
+    {
+      "command": "uv run ruff check",
+      "id": "repository-ruff",
+      "result": "passed"
+    },
+    {
+      "command": "uv run pyright",
+      "id": "repository-pyright",
+      "result": "passed"
+    }
+  ],
+  "audits": {
+    "budget": {
+      "budget": {
+        "maximum_production_diff_lines": 430,
+        "maximum_production_files": 2,
+        "maximum_test_files": 2
+      },
+      "diagnostics": [],
+      "mode": "revision",
+      "status": "within_budget",
+      "totals": {
+        "production_diff_lines": 380,
+        "production_files": 2,
+        "test_files": 0
+      }
+    },
+    "scope": {
+      "changed_paths": [
+        {
+          "allowed": true,
+          "path": "packages/devtools/src/kotekomi_devtools/cli.py",
+          "protected": false
+        },
+        {
+          "allowed": true,
+          "path": "packages/devtools/src/kotekomi_devtools/task_scope.py",
+          "protected": false
+        }
+      ],
+      "diagnostics": [],
+      "mode": "revision",
+      "status": "clean"
+    }
+  },
+  "candidate": {
+    "candidate_audit_record": {
+      "path": "/Users/DSerbarinov/.local/state/kotekomi/experiments/harness-04-task-scope-audit/candidate-01/candidate-audit.json",
+      "sha256": "7024126d60a72a801e741f65944f005d4fc936f909cee46cb95415bdaee0fe1c"
+    },
+    "candidate_ci_record": {
+      "path": "/Users/DSerbarinov/.local/state/kotekomi/experiments/harness-04-task-scope-audit/candidate-01/candidate-ci.json",
+      "sha256": "ec9d7d109e67e909485c6395b11e2fa07ad595db7386c7a15219f0dcb2eba8e3"
+    },
+    "candidate_commit_record": {
+      "path": "/Users/DSerbarinov/.local/state/kotekomi/experiments/harness-04-task-scope-audit/candidate-01/candidate-commit.json",
+      "sha256": "20d5d08aefddf0f2cff9a9dd2de18aacaa1ee3c540fec3e52345df2e66ea3fe9"
+    },
+    "commit": "42f9e0ef631b71cd382a8c0100053103bc06340f",
+    "parent_commit": "54112621977ddd6612b52b06d736abbe567dde67"
+  },
+  "candidate_id": "candidate-01",
+  "ci": {
+    "conclusion": "success",
+    "created_at": "2026-08-03T09:49:17Z",
+    "head_sha": "42f9e0ef631b71cd382a8c0100053103bc06340f",
+    "run_id": 30803025229,
+    "status": "completed",
+    "updated_at": "2026-08-03T09:57:16Z",
+    "url": "https://github.com/SQLCODE917/KoteKomi/actions/runs/30803025229",
+    "workflow_name": "CI"
+  },
+  "created_at": "2026-08-03T12:25:34.384218+00:00",
+  "manifest": {
+    "canonical_sha256": "2179d641af3d617c0c0d8f7f9bfecd0b45ae652db458055fd4d24be27b5e0480",
+    "file_sha256": "83e596d7bb2ecd9e0499ad037b2cf6336df1c3aa3f67a1be96ab26d68b797fab",
+    "path": ".agent/tasks/harness-04-task-scope-audit.toml"
+  },
+  "receipt_kind": "bootstrap-candidate-verification",
+  "result": "leaf_verified",
+  "schema_version": 1,
+  "specification": {
+    "commit": "54112621977ddd6612b52b06d736abbe567dde67",
+    "oracle_repair_record": {
+      "path": "/Users/DSerbarinov/.local/state/kotekomi/experiments/harness-04-task-scope-audit/oracle-repair-01/oracle-repair.json",
+      "sha256": "efc0463115bc5ebe87bb5868f09d26bcaac0fb216cfa62b2b47765f3adf8c354"
+    }
+  },
+  "task_id": "harness-04-task-scope-audit",
+  "verification_notes": [
+    "preflight-task was not run on the verified branch because task_preflight requires HEAD to equal the manifest execution base; preflight readiness belongs to the spec commit."
+  ]
+}
