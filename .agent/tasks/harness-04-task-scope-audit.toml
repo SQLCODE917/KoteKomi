@@ -57,7 +57,7 @@ sha256 = "a94e2f8cbb150c98cb1cc9330fcffdc747d35216b70d7ff2ef3a06dae007a0f3"
 [[protected_artifacts]]
 kind = "acceptance-test"
 path = "packages/devtools/tests/acceptance/test_task_scope_audit_contract.py"
-sha256 = "6ce2681dc4e2e3d11349b78079a0f7fc268b51786c687114378baa6657adcf56"
+sha256 = "d52acd90600db09b5d62e5d5413545ba77fb55f08c7f14cb37e2ddcf7326dbd0"
 
 [[protected_artifacts]]
 kind = "agent-instructions"

@@ -483,8 +483,8 @@ def test_worktree_tracked_modification_is_read_only(tmp_path: Path) -> None:
         "VALUE = 3\n",
     )
 
-    before_index = _index_sha(repo)
     before_status = _status(repo)
+    before_index = _index_sha(repo)
 
     code, payload = _scope_audit(repo, manifest, "--base", base, "--worktree")
 
