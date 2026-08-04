@@ -1,0 +1,50 @@
+{
+  "acceptance": {
+    "devtools_unit": "passed",
+    "h1_manifest_retained": "passed",
+    "h2_preflight_retained": "passed",
+    "h3_budget_audit_retained": "passed",
+    "h4_scope_audit_retained": "passed",
+    "h5_oracle_fixture_toolkit": "passed",
+    "pyright": "passed",
+    "ruff": "passed"
+  },
+  "audits": {
+    "budget": {
+      "budget": {
+        "maximum_production_diff_lines": 1,
+        "maximum_production_files": 1,
+        "maximum_test_files": 4
+      },
+      "diagnostics": [],
+      "status": "within_budget",
+      "totals": {
+        "production_diff_lines": 0,
+        "production_files": 0,
+        "test_files": 4
+      }
+    },
+    "scope": {
+      "diagnostics": [],
+      "status": "clean"
+    }
+  },
+  "candidate_commit": "b95fe146a8eceeaac1862ca743d2c31b781c35cd",
+  "candidate_id": "candidate-01",
+  "created_at": "2026-08-04T08:36:57.003829+00:00",
+  "parent_commit": "980e3596aa9f779fc5efea7e846b6d0511719d7d",
+  "receipt_kind": "bootstrap-candidate",
+  "records": {
+    "candidate_ci": {
+      "path": "/Users/DSerbarinov/.local/state/kotekomi/experiments/harness-05-oracle-fixture-toolkit/candidate-01/candidate-ci.json",
+      "sha256": "2d0d8f11f9ba81425845b16d8c9c756b8da3cde22f6727fc047fd4f368627195"
+    },
+    "candidate_commit": {
+      "path": "/Users/DSerbarinov/.local/state/kotekomi/experiments/harness-05-oracle-fixture-toolkit/candidate-01/candidate-commit.json",
+      "sha256": "8497d0e9c15b9202bde54288c4472f639513be3a6b8098640d6a515abb743cab"
+    }
+  },
+  "result": "accepted",
+  "schema_version": 1,
+  "task_id": "harness-05-oracle-fixture-toolkit"
+}

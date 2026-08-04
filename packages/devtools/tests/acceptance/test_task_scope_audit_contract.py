@@ -1,16 +1,27 @@
 from __future__ import annotations
 
-import hashlib
 import json
 import os
 import shutil
-import subprocess
 import sys
 import tomllib
 from pathlib import Path
 from typing import Any, cast
 
 import pytest
+
+from packages.devtools.tests.acceptance._oracle_fixtures import (
+    assert_status_and_index_unchanged,
+    git,
+    git_output,
+    init_git_repo,
+    render_manifest,
+    run_command,
+    run_json_command,
+    sha256_file,
+    status_then_index_baseline,
+    write_fixture_text,
+)
 
 PROJECT_ROOT = Path(__file__).resolve().parents[4]
 SOURCE_MANIFEST = PROJECT_ROOT / ".agent/tasks/harness-04-task-scope-audit.toml"
@@ -29,33 +40,12 @@ def _env() -> dict[str, str]:
     return env
 
 
-def _run(
-    args: list[str],
-    cwd: Path,
-    *,
-    check: bool = False,
-) -> subprocess.CompletedProcess[str]:
-    result = subprocess.run(
-        [sys.executable, "-c", ENTRYPOINT, *args],
-        cwd=cwd,
-        env=_env(),
-        text=True,
-        capture_output=True,
-        check=False,
-    )
-
-    if check and result.returncode != 0:
-        raise AssertionError(
-            f"Command failed: {args}\n"
-            f"stdout:\n{result.stdout}\n"
-            f"stderr:\n{result.stderr}"
-        )
-
-    return result
-
-
 def _require_scope_audit() -> None:
-    result = _run(["--help"], PROJECT_ROOT)
+    result = run_command(
+        PROJECT_ROOT,
+        (sys.executable, "-c", ENTRYPOINT, "--help"),
+        env=_env(),
+    )
 
     if result.returncode != 0:
         pytest.skip("kotekomi-agent help is unavailable")
@@ -64,51 +54,10 @@ def _require_scope_audit() -> None:
         pytest.skip("scope-audit command is not implemented yet")
 
 
-def _git(repo: Path, args: list[str]) -> str:
-    result = subprocess.run(
-        ["git", *args],
-        cwd=repo,
-        text=True,
-        capture_output=True,
-        check=False,
-    )
-
-    if result.returncode != 0:
-        raise AssertionError(
-            f"git {' '.join(args)} failed\n"
-            f"stdout:\n{result.stdout}\n"
-            f"stderr:\n{result.stderr}"
-        )
-
-    return result.stdout.strip()
-
-
-def _write(path: Path, text: str) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(text, encoding="utf-8")
-
-
-def _sha256(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest()
-
-
-def _index_sha(repo: Path) -> str:
-    index = repo / ".git/index"
-
-    if not index.exists():
-        return ""
-
-    return hashlib.sha256(index.read_bytes()).hexdigest()
-
-
-def _status(repo: Path) -> str:
-    return _git(repo, ["status", "--short"])
-
-
 def _commit_all(repo: Path, message: str) -> str:
-    _git(repo, ["add", "."])
-    _git(repo, ["commit", "-m", message])
-    return _git(repo, ["rev-parse", "HEAD"])
+    git(repo, "add", ".")
+    git(repo, "commit", "-m", message)
+    return git_output(repo, "rev-parse", "HEAD")
 
 
 def _init_repo(tmp_path: Path) -> tuple[Path, str]:
@@ -117,33 +66,31 @@ def _init_repo(tmp_path: Path) -> tuple[Path, str]:
     repo = tmp_path / "repo"
     repo.mkdir()
 
-    _git(repo, ["init"])
-    _git(repo, ["config", "user.email", "scope@example.test"])
-    _git(repo, ["config", "user.name", "Scope Audit Test"])
+    init_git_repo(repo)
 
     schema_target = repo / ".agent/schemas/task-manifest-v1.schema.json"
     schema_target.parent.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(SCHEMA_SOURCE, schema_target)
 
-    _write(
+    write_fixture_text(
         repo / "packages/devtools/src/kotekomi_devtools/cli.py",
         "print('cli')\n",
     )
-    _write(
+    write_fixture_text(
         repo / "packages/devtools/src/kotekomi_devtools/task_scope.py",
         "VALUE = 1\n",
     )
-    _write(
+    write_fixture_text(
         repo / "packages/devtools/tests/unit/test_scope.py",
         "def test_scope() -> None:\n    assert True\n",
     )
-    _write(repo / "packages/devtools/AGENTS.md", "agent rules\n")
-    _write(repo / "docs/example-tdd.md", "example tdd\n")
-    _write(
+    write_fixture_text(repo / "packages/devtools/AGENTS.md", "agent rules\n")
+    write_fixture_text(repo / "docs/example-tdd.md", "example tdd\n")
+    write_fixture_text(
         repo / "packages/devtools/tests/acceptance/test_task_scope.py",
         "def test_contract() -> None:\n    assert True\n",
     )
-    _write(
+    write_fixture_text(
         repo / ".agent/receipts/bootstrap/example.json",
         json.dumps({"result": "ok"}, sort_keys=True) + "\n",
     )
@@ -152,11 +99,11 @@ def _init_repo(tmp_path: Path) -> tuple[Path, str]:
     _write_manifest(repo, base)
     _commit_all(repo, "manifest")
 
-    base_with_manifest = _git(repo, ["rev-parse", "HEAD"])
+    base_with_manifest = git_output(repo, "rev-parse", "HEAD")
     _write_manifest(repo, base_with_manifest)
     _commit_all(repo, "manifest baseline")
 
-    return repo, _git(repo, ["rev-parse", "HEAD"])
+    return repo, git_output(repo, "rev-parse", "HEAD")
 
 
 def _load_source_manifest() -> dict[str, Any]:
@@ -167,7 +114,7 @@ def _manifest_for(repo: Path, baseline: str) -> dict[str, Any]:
     manifest = _load_source_manifest()
     manifest["baseline_revision"] = baseline
     manifest["tdd_path"] = "docs/example-tdd.md"
-    manifest["tdd_sha256"] = _sha256(repo / "docs/example-tdd.md")
+    manifest["tdd_sha256"] = sha256_file(repo / "docs/example-tdd.md")
     manifest["allowed_paths"] = [
         "packages/devtools/src/kotekomi_devtools/cli.py",
         "packages/devtools/src/kotekomi_devtools/task_scope.py",
@@ -180,31 +127,31 @@ def _manifest_for(repo: Path, baseline: str) -> dict[str, Any]:
         {
             "kind": "json-schema",
             "path": ".agent/schemas/task-manifest-v1.schema.json",
-            "sha256": _sha256(
+            "sha256": sha256_file(
                 repo / ".agent/schemas/task-manifest-v1.schema.json"
             ),
         },
         {
             "kind": "leaf-tdd",
             "path": "docs/example-tdd.md",
-            "sha256": _sha256(repo / "docs/example-tdd.md"),
+            "sha256": sha256_file(repo / "docs/example-tdd.md"),
         },
         {
             "kind": "acceptance-test",
             "path": "packages/devtools/tests/acceptance/test_task_scope.py",
-            "sha256": _sha256(
+            "sha256": sha256_file(
                 repo / "packages/devtools/tests/acceptance/test_task_scope.py"
             ),
         },
         {
             "kind": "agent-instructions",
             "path": "packages/devtools/AGENTS.md",
-            "sha256": _sha256(repo / "packages/devtools/AGENTS.md"),
+            "sha256": sha256_file(repo / "packages/devtools/AGENTS.md"),
         },
         {
             "kind": "fixture",
             "path": ".agent/receipts/bootstrap/example.json",
-            "sha256": _sha256(repo / ".agent/receipts/bootstrap/example.json"),
+            "sha256": sha256_file(repo / ".agent/receipts/bootstrap/example.json"),
         },
     ]
     return manifest
@@ -213,75 +160,8 @@ def _manifest_for(repo: Path, baseline: str) -> dict[str, Any]:
 def _write_manifest(repo: Path, baseline: str) -> Path:
     manifest = _manifest_for(repo, baseline)
     path = repo / ".agent/tasks/example-scope-audit.toml"
-    _write(path, _render_manifest(manifest))
+    write_fixture_text(path, render_manifest(manifest))
     return path
-
-
-def _render_manifest(manifest: dict[str, Any]) -> str:
-    top_keys = [
-        "schema_version",
-        "task_id",
-        "title",
-        "status",
-        "series_id",
-        "task_class",
-        "model_profile",
-        "baseline_revision",
-        "tdd_path",
-        "tdd_sha256",
-        "goal",
-        "depends_on",
-        "allowed_paths",
-        "reference_paths",
-        "stop_conditions",
-    ]
-
-    lines: list[str] = []
-
-    for key in top_keys:
-        lines.append(f"{key} = {_toml_value(manifest[key])}")
-
-    lines.append("")
-
-    for item in cast(list[dict[str, Any]], manifest["protected_artifacts"]):
-        lines.append("[[protected_artifacts]]")
-        for key in ["kind", "path", "sha256"]:
-            lines.append(f"{key} = {_toml_value(item[key])}")
-        lines.append("")
-
-    for item in cast(list[dict[str, Any]], manifest["acceptance"]):
-        lines.append("[[acceptance]]")
-        for key in item:
-            lines.append(f"{key} = {_toml_value(item[key])}")
-        lines.append("")
-
-    lines.append("[readiness]")
-    for key, value in cast(dict[str, Any], manifest["readiness"]).items():
-        lines.append(f"{key} = {_toml_value(value)}")
-
-    lines.append("")
-    lines.append("[budget]")
-    for key, value in cast(dict[str, Any], manifest["budget"]).items():
-        lines.append(f"{key} = {_toml_value(value)}")
-
-    return "\n".join(lines) + "\n"
-
-
-def _toml_value(value: Any) -> str:
-    if isinstance(value, str):
-        return json.dumps(value)
-
-    if isinstance(value, bool):
-        return "true" if value else "false"
-
-    if isinstance(value, int):
-        return str(value)
-
-    if isinstance(value, list):
-        items = cast(list[Any], value)
-        return "[" + ", ".join(_toml_value(item) for item in items) + "]"
-
-    raise TypeError(f"Unsupported TOML value: {value!r}")
 
 
 def _scope_audit(
@@ -291,13 +171,14 @@ def _scope_audit(
 ) -> tuple[int, dict[str, Any]]:
     _require_scope_audit()
 
-    result = _run(["scope-audit", str(manifest), *args], repo)
-
-    if not result.stdout:
-        raise AssertionError(f"No stdout. stderr:\n{result.stderr}")
-
-    payload = json.loads(result.stdout)
-    return result.returncode, cast(dict[str, Any], payload)
+    code, payload = run_json_command(
+        repo,
+        (sys.executable, "-c", ENTRYPOINT, "scope-audit", str(manifest), *args),
+        expected_exit_code=None,
+        env=_env(),
+    )
+    assert isinstance(payload, dict)
+    return code, cast(dict[str, Any], payload)
 
 
 def _changed_paths(payload: dict[str, Any]) -> list[str]:
@@ -311,12 +192,20 @@ def _diagnostics(payload: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def test_scope_audit_help_reports_command() -> None:
-    result = _run(["--help"], PROJECT_ROOT)
+    result = run_command(
+        PROJECT_ROOT,
+        (sys.executable, "-c", ENTRYPOINT, "--help"),
+        env=_env(),
+    )
 
     if "scope-audit" not in result.stdout:
         pytest.skip("scope-audit command is not implemented yet")
 
-    help_result = _run(["scope-audit", "--help"], PROJECT_ROOT)
+    help_result = run_command(
+        PROJECT_ROOT,
+        (sys.executable, "-c", ENTRYPOINT, "scope-audit", "--help"),
+        env=_env(),
+    )
 
     assert help_result.returncode == 0
     assert "scope-audit" in help_result.stdout
@@ -329,7 +218,7 @@ def test_revision_allowed_change_is_clean(tmp_path: Path) -> None:
     repo, base = _init_repo(tmp_path)
     manifest = repo / ".agent/tasks/example-scope-audit.toml"
 
-    _write(
+    write_fixture_text(
         repo / "packages/devtools/src/kotekomi_devtools/task_scope.py",
         "VALUE = 2\n",
     )
@@ -368,7 +257,7 @@ def test_revision_disallowed_change_reports_scope_violation(
     repo, base = _init_repo(tmp_path)
     manifest = repo / ".agent/tasks/example-scope-audit.toml"
 
-    _write(repo / "README.md", "outside scope\n")
+    write_fixture_text(repo / "README.md", "outside scope\n")
     head = _commit_all(repo, "outside scope")
 
     code, payload = _scope_audit(repo, manifest, "--base", base, "--head", head)
@@ -393,7 +282,7 @@ def test_revision_protected_change_reports_protected_violation(
     repo, base = _init_repo(tmp_path)
     manifest = repo / ".agent/tasks/example-scope-audit.toml"
 
-    _write(repo / "packages/devtools/AGENTS.md", "changed rules\n")
+    write_fixture_text(repo / "packages/devtools/AGENTS.md", "changed rules\n")
     head = _commit_all(repo, "protected change")
 
     code, payload = _scope_audit(repo, manifest, "--base", base, "--head", head)
@@ -450,7 +339,7 @@ def test_manifest_digest_mismatch_without_diff_reports_violation(
     manifest_path = repo / ".agent/tasks/example-scope-audit.toml"
     manifest = _manifest_for(repo, base)
     manifest["protected_artifacts"][0]["sha256"] = "0" * 64
-    _write(manifest_path, _render_manifest(manifest))
+    write_fixture_text(manifest_path, render_manifest(manifest))
 
     code, payload = _scope_audit(
         repo,
@@ -478,13 +367,12 @@ def test_worktree_tracked_modification_is_read_only(tmp_path: Path) -> None:
     repo, base = _init_repo(tmp_path)
     manifest = repo / ".agent/tasks/example-scope-audit.toml"
 
-    _write(
+    write_fixture_text(
         repo / "packages/devtools/src/kotekomi_devtools/task_scope.py",
         "VALUE = 3\n",
     )
 
-    before_status = _status(repo)
-    before_index = _index_sha(repo)
+    baseline = status_then_index_baseline(repo)
 
     code, payload = _scope_audit(repo, manifest, "--base", base, "--worktree")
 
@@ -492,8 +380,7 @@ def test_worktree_tracked_modification_is_read_only(tmp_path: Path) -> None:
     assert payload["status"] == "clean"
     assert payload["mode"] == "worktree"
     assert payload["head_revision"] == "WORKTREE"
-    assert _index_sha(repo) == before_index
-    assert _status(repo) == before_status
+    assert_status_and_index_unchanged(repo, baseline)
 
 
 def test_worktree_untracked_allowed_is_clean_and_read_only(
@@ -502,21 +389,19 @@ def test_worktree_untracked_allowed_is_clean_and_read_only(
     repo, base = _init_repo(tmp_path)
     manifest = repo / ".agent/tasks/example-scope-audit.toml"
 
-    _write(
+    write_fixture_text(
         repo / "packages/devtools/tests/unit/test_new.py",
         "def test_new():\n    assert True\n",
     )
 
-    before_index = _index_sha(repo)
-    before_status = _status(repo)
+    baseline = status_then_index_baseline(repo)
 
     code, payload = _scope_audit(repo, manifest, "--base", base, "--worktree")
 
     assert code == 0
     assert payload["status"] == "clean"
     assert "packages/devtools/tests/unit/test_new.py" in _changed_paths(payload)
-    assert _index_sha(repo) == before_index
-    assert _status(repo) == before_status
+    assert_status_and_index_unchanged(repo, baseline)
 
 
 def test_worktree_untracked_disallowed_reports_scope_violation_and_read_only(
@@ -525,18 +410,16 @@ def test_worktree_untracked_disallowed_reports_scope_violation_and_read_only(
     repo, base = _init_repo(tmp_path)
     manifest = repo / ".agent/tasks/example-scope-audit.toml"
 
-    _write(repo / "notes.txt", "outside\n")
+    write_fixture_text(repo / "notes.txt", "outside\n")
 
-    before_index = _index_sha(repo)
-    before_status = _status(repo)
+    baseline = status_then_index_baseline(repo)
 
     code, payload = _scope_audit(repo, manifest, "--base", base, "--worktree")
 
     assert code == 1
     assert payload["status"] == "scope_violation"
     assert "notes.txt" in _changed_paths(payload)
-    assert _index_sha(repo) == before_index
-    assert _status(repo) == before_status
+    assert_status_and_index_unchanged(repo, baseline)
 
 
 def test_worktree_protected_modification_reports_violation(
@@ -545,7 +428,7 @@ def test_worktree_protected_modification_reports_violation(
     repo, base = _init_repo(tmp_path)
     manifest = repo / ".agent/tasks/example-scope-audit.toml"
 
-    _write(repo / "packages/devtools/AGENTS.md", "changed in worktree\n")
+    write_fixture_text(repo / "packages/devtools/AGENTS.md", "changed in worktree\n")
 
     code, payload = _scope_audit(repo, manifest, "--base", base, "--worktree")
 
@@ -561,8 +444,8 @@ def test_diagnostics_are_sorted(tmp_path: Path) -> None:
     repo, base = _init_repo(tmp_path)
     manifest = repo / ".agent/tasks/example-scope-audit.toml"
 
-    _write(repo / "z-outside.txt", "z\n")
-    _write(repo / "packages/devtools/AGENTS.md", "changed\n")
+    write_fixture_text(repo / "z-outside.txt", "z\n")
+    write_fixture_text(repo / "packages/devtools/AGENTS.md", "changed\n")
     head = _commit_all(repo, "multiple violations")
 
     code, payload = _scope_audit(repo, manifest, "--base", base, "--head", head)
@@ -583,8 +466,8 @@ def test_changed_paths_and_protected_artifacts_are_sorted(
     repo, base = _init_repo(tmp_path)
     manifest = repo / ".agent/tasks/example-scope-audit.toml"
 
-    _write(repo / "zeta.txt", "z\n")
-    _write(repo / "alpha.txt", "a\n")
+    write_fixture_text(repo / "zeta.txt", "z\n")
+    write_fixture_text(repo / "alpha.txt", "a\n")
     head = _commit_all(repo, "sort paths")
 
     code, payload = _scope_audit(repo, manifest, "--base", base, "--head", head)
