@@ -10,6 +10,7 @@ from pathlib import Path
 from kotekomi_devtools.task_budget import audit_task_budget
 from kotekomi_devtools.task_manifest import validate_task_manifest
 from kotekomi_devtools.task_preflight import preflight_task
+from kotekomi_devtools.task_scope import audit_task_scope
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -25,6 +26,15 @@ def main(argv: list[str] | None = None) -> int:
             result = preflight_task(arguments.path)
             output = result.as_json()
             exit_code = 0 if result.ready else 1
+        elif arguments.command == "scope-audit":
+            result = audit_task_scope(
+                arguments.path,
+                base_revision=arguments.base,
+                head_revision=arguments.head,
+                worktree=arguments.worktree,
+            )
+            output = result.as_json()
+            exit_code = result.exit_code
         else:
             result = audit_task_budget(
                 arguments.path,
@@ -62,6 +72,14 @@ def _build_parser() -> argparse.ArgumentParser:
     budget_audit.add_argument("path", type=Path)
     budget_audit.add_argument("--base", required=True)
     mode = budget_audit.add_mutually_exclusive_group(required=True)
+    mode.add_argument("--head")
+    mode.add_argument("--worktree", action="store_true")
+    scope_audit = subparsers.add_parser(
+        "scope-audit", help="Audit one Task Manifest candidate's scope and protected artifacts."
+    )
+    scope_audit.add_argument("path", type=Path)
+    scope_audit.add_argument("--base", required=True)
+    mode = scope_audit.add_mutually_exclusive_group(required=True)
     mode.add_argument("--head")
     mode.add_argument("--worktree", action="store_true")
     return parser
