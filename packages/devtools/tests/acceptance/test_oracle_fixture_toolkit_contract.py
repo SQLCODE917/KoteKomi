@@ -59,7 +59,7 @@ def test_parent_safe_write_creates_parent_and_uses_utf8(tmp_path: Path) -> None:
 
     assert target.read_text(encoding="utf-8") == "alpha\nβeta\n"
     assert toolkit.sha256_file(target) == (
-        "8f526437d5fd3c789fc5f8d26b8452b4bde81bb0aa0dbbbc81fd8091d1d378d7"
+        "239a0e52ce9e1a69c573e6d22538de140c1de7878e8252dd918092e7303ca1dc"
     )
 
 

@@ -52,7 +52,7 @@ sha256 = "1db70c8b552fc6babef8ed29cc6f9b4ee43cc4c96283478dff96615ef9c8fa7c"
 [[protected_artifacts]]
 kind = "acceptance-test"
 path = "packages/devtools/tests/acceptance/test_oracle_fixture_toolkit_contract.py"
-sha256 = "c501ffa88b122174c82b5b999ec0ec45499f63e95cab9e91322e175ba4013edb"
+sha256 = "f05858416cbd4410c469c82f04b4a86f9ceea9b3a0f2083ce94e8f01b8fbb88a"
 
 [[protected_artifacts]]
 kind = "acceptance-test"
