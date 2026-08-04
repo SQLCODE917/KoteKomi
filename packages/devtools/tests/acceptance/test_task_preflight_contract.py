@@ -3,7 +3,6 @@ from __future__ import annotations
 import ast
 import hashlib
 import json
-import os
 import shutil
 import subprocess
 import tomllib
@@ -12,6 +11,17 @@ from pathlib import Path
 from typing import Any, cast
 
 import pytest
+
+from packages.devtools.tests.acceptance._oracle_fixtures import (
+    git,
+    git_output,
+    init_git_repo,
+    render_manifest,
+    run_command,
+    sha256_file,
+    status_then_index_baseline,
+    write_fixture_text,
+)
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 SCHEMA_SOURCE = (
@@ -23,17 +33,6 @@ SCHEMA_SOURCE = (
 CLI_NAME = "kotekomi-agent"
 MANIFEST_RELATIVE = ".agent/tasks/example-task.toml"
 H1_TASK_ID = "harness-01-task-manifest-contract"
-
-GIT_ENV = {
-    **os.environ,
-    "GIT_AUTHOR_NAME": "KoteKomi Test",
-    "GIT_AUTHOR_EMAIL": "test@example.invalid",
-    "GIT_COMMITTER_NAME": "KoteKomi Test",
-    "GIT_COMMITTER_EMAIL": "test@example.invalid",
-    "GIT_AUTHOR_DATE": "2026-01-01T00:00:00+00:00",
-    "GIT_COMMITTER_DATE": "2026-01-01T00:00:00+00:00",
-}
-
 
 def _preflight_help_reports_absent() -> bool:
     executable = shutil.which(CLI_NAME)
@@ -92,7 +91,10 @@ class RepositoryFixture:
         return self.root / MANIFEST_RELATIVE
 
     def write_manifest(self) -> None:
-        _write(self.manifest_path, _render_manifest(self.manifest))
+        write_fixture_text(
+            self.manifest_path,
+            render_manifest(_manifest_data(self.manifest)),
+        )
 
     def amend(
         self,
@@ -102,9 +104,9 @@ class RepositoryFixture:
             self.manifest = manifest
             self.write_manifest()
 
-        _git(self.root, "add", "-A")
-        _git(self.root, "commit", "--amend", "--no-edit")
-        self.specification_commit = _git_output(
+        git(self.root, "add", "-A")
+        git(self.root, "commit", "--amend", "--no-edit")
+        self.specification_commit = git_output(
             self.root,
             "rev-parse",
             "HEAD",
@@ -129,51 +131,8 @@ def _cli() -> str:
     return executable
 
 
-def _run(
-    cwd: Path,
-    *argv: str,
-    check: bool = True,
-    env: dict[str, str] | None = None,
-) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        argv,
-        cwd=cwd,
-        env=env,
-        text=True,
-        capture_output=True,
-        check=check,
-    )
-
-
-def _git(
-    cwd: Path,
-    *argv: str,
-    check: bool = True,
-) -> subprocess.CompletedProcess[str]:
-    return _run(
-        cwd,
-        "git",
-        *argv,
-        check=check,
-        env=GIT_ENV,
-    )
-
-
-def _git_output(cwd: Path, *argv: str) -> str:
-    return _git(cwd, *argv).stdout.strip()
-
-
-def _write(path: Path, content: str) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(content)
-
-
 def _sha256_bytes(content: bytes) -> str:
     return hashlib.sha256(content).hexdigest()
-
-
-def _sha256_file(path: Path) -> str:
-    return _sha256_bytes(path.read_bytes())
 
 
 def _canonical_manifest_sha(path: Path) -> str:
@@ -187,108 +146,53 @@ def _canonical_manifest_sha(path: Path) -> str:
     return _sha256_bytes(content)
 
 
-def _toml_array(values: tuple[str, ...]) -> str:
-    if not values:
-        return "[]"
-
-    rows = ["["]
-    rows.extend(
-        f"  {json.dumps(value, ensure_ascii=False)},"
-        for value in values
-    )
-    rows.append("]")
-    return "\n".join(rows)
-
-
-def _render_manifest(spec: ManifestSpec) -> str:
-    lines = [
-        "schema_version = 1",
-        f"task_id = {json.dumps(spec.task_id)}",
-        'title = "Example preflight task"',
-        'status = "ready_for_terra_high"',
-        'series_id = "example-series"',
-        'task_class = "repository-tooling"',
-        'model_profile = "terra-high-v1"',
-        (
-            "baseline_revision = "
-            f"{json.dumps(spec.baseline_revision)}"
-        ),
-        f"tdd_path = {json.dumps(spec.tdd_path)}",
-        f"tdd_sha256 = {json.dumps(spec.tdd_sha256)}",
-        'goal = "Prove one disposable task is ready."',
-        "depends_on = " + _toml_array(spec.depends_on),
-        "allowed_paths = " + _toml_array(spec.allowed_paths),
-        "reference_paths = " + _toml_array(
-            spec.reference_paths
-        ),
-        (
-            "stop_conditions = "
-            '["A protected contract conflicts."]'
-        ),
-        "",
-        "[readiness]",
-        (
-            'dominant_outcome = '
-            '"A task is ready or not ready."'
-        ),
-        'contract_family = "task-preflight-v1"',
-        (
-            'public_entry_point = '
-            '"kotekomi-agent preflight-task"'
-        ),
-        (
-            'authority = '
-            '"The committed manifest and protected records."'
-        ),
-        (
-            'scope_policy = '
-            '"Read-only repository preflight."'
-        ),
-        'side_effect_boundary = "git-read-only"',
-        (
-            'failure_policy = '
-            '"Not-ready diagnostics and no writes."'
-        ),
-        (
-            'negative_proof = '
-            '"Dirty, ambiguous, and unlocked tasks fail."'
-        ),
-        (
-            'legacy_disposition = '
-            '"No existing command is replaced."'
-        ),
-        "unresolved_decisions = []",
-        "",
-        "[budget]",
-        "maximum_production_files = 2",
-        "maximum_test_files = 2",
-        "maximum_production_diff_lines = 450",
-        "",
-    ]
-
-    for artifact in spec.protected_artifacts:
-        lines.extend(
-            [
-                "[[protected_artifacts]]",
-                f"path = {json.dumps(artifact.path)}",
-                f"sha256 = {json.dumps(artifact.sha256)}",
-                f"kind = {json.dumps(artifact.kind)}",
-                "",
-            ]
-        )
-
-    lines.extend(
-        [
-            "[[acceptance]]",
-            'id = "example-contract"',
-            'argv = ["python", "-m", "pytest"]',
-            "timeout_seconds = 120",
-            'profile = "portable-local"',
-            "",
-        ]
-    )
-
-    return "\n".join(lines).rstrip() + "\n"
+def _manifest_data(spec: ManifestSpec) -> dict[str, Any]:
+    return {
+        "schema_version": 1,
+        "task_id": spec.task_id,
+        "title": "Example preflight task",
+        "status": "ready_for_terra_high",
+        "series_id": "example-series",
+        "task_class": "repository-tooling",
+        "model_profile": "terra-high-v1",
+        "baseline_revision": spec.baseline_revision,
+        "tdd_path": spec.tdd_path,
+        "tdd_sha256": spec.tdd_sha256,
+        "goal": "Prove one disposable task is ready.",
+        "depends_on": list(spec.depends_on),
+        "allowed_paths": list(spec.allowed_paths),
+        "reference_paths": list(spec.reference_paths),
+        "stop_conditions": ["A protected contract conflicts."],
+        "readiness": {
+            "dominant_outcome": "A task is ready or not ready.",
+            "contract_family": "task-preflight-v1",
+            "public_entry_point": "kotekomi-agent preflight-task",
+            "authority": "The committed manifest and protected records.",
+            "scope_policy": "Read-only repository preflight.",
+            "side_effect_boundary": "git-read-only",
+            "failure_policy": "Not-ready diagnostics and no writes.",
+            "negative_proof": "Dirty, ambiguous, and unlocked tasks fail.",
+            "legacy_disposition": "No existing command is replaced.",
+            "unresolved_decisions": [],
+        },
+        "budget": {
+            "maximum_production_files": 2,
+            "maximum_test_files": 2,
+            "maximum_production_diff_lines": 450,
+        },
+        "protected_artifacts": [
+            {"path": item.path, "sha256": item.sha256, "kind": item.kind}
+            for item in spec.protected_artifacts
+        ],
+        "acceptance": [
+            {
+                "id": "example-contract",
+                "argv": ["python", "-m", "pytest"],
+                "timeout_seconds": 120,
+                "profile": "portable-local",
+            }
+        ],
+    }
 
 
 def _verified_receipt(
@@ -310,22 +214,15 @@ def _verified_receipt(
 
 
 def _commit(cwd: Path, message: str) -> str:
-    _git(cwd, "add", "-A")
-    _git(cwd, "commit", "-m", message)
-    return _git_output(cwd, "rev-parse", "HEAD")
+    git(cwd, "add", "-A")
+    git(cwd, "commit", "-m", message)
+    return git_output(cwd, "rev-parse", "HEAD")
 
 
 def _create_ready_repo(tmp_path: Path) -> RepositoryFixture:
     root = tmp_path / "repo"
     root.mkdir()
-    _git(root, "init", "-q", "-b", "main")
-    _git(root, "config", "user.name", "KoteKomi Test")
-    _git(
-        root,
-        "config",
-        "user.email",
-        "test@example.invalid",
-    )
+    init_git_repo(root)
 
     schema_target = (
         root
@@ -336,19 +233,19 @@ def _create_ready_repo(tmp_path: Path) -> RepositoryFixture:
     schema_target.parent.mkdir(parents=True)
     shutil.copyfile(SCHEMA_SOURCE, schema_target)
 
-    _write(root / "AGENTS.md", "# Test repository\n")
-    _write(
+    write_fixture_text(root / "AGENTS.md", "# Test repository\n")
+    write_fixture_text(
         root / "docs" / "reference" / "guide.md",
         "# Reference\n",
     )
-    _write(root / "README.md", "# Baseline\n")
+    write_fixture_text(root / "README.md", "# Baseline\n")
     baseline = _commit(root, "baseline")
 
     tdd_path = root / "docs" / "task.md"
     protected_path = root / "tests" / "acceptance.py"
-    _write(tdd_path, "# Task contract\n")
-    _write(protected_path, "EXPECTED = 'ready'\n")
-    _write(
+    write_fixture_text(tdd_path, "# Task contract\n")
+    write_fixture_text(protected_path, "EXPECTED = 'ready'\n")
+    write_fixture_text(
         root / ".agent" / "receipts" / "h1.json",
         _verified_receipt(),
     )
@@ -357,7 +254,7 @@ def _create_ready_repo(tmp_path: Path) -> RepositoryFixture:
         baseline_revision=baseline,
         task_id="example-task",
         tdd_path="docs/task.md",
-        tdd_sha256=_sha256_file(tdd_path),
+        tdd_sha256=sha256_file(tdd_path),
         allowed_paths=("src/tool.py", "tests/unit/"),
         reference_paths=(
             "AGENTS.md",
@@ -366,7 +263,7 @@ def _create_ready_repo(tmp_path: Path) -> RepositoryFixture:
         protected_artifacts=(
             Protected(
                 "tests/acceptance.py",
-                _sha256_file(protected_path),
+                sha256_file(protected_path),
             ),
         ),
         depends_on=(H1_TASK_ID,),
@@ -389,13 +286,7 @@ def _run_preflight(
     cwd: Path,
     argument: str,
 ) -> subprocess.CompletedProcess[str]:
-    return _run(
-        cwd,
-        _cli(),
-        "preflight-task",
-        argument,
-        check=False,
-    )
+    return run_command(cwd, (_cli(), "preflight-task", argument))
 
 
 def _payload(
@@ -445,7 +336,7 @@ def _stage2_expected(
         "schema_version": 1,
         "task_id": task_id,
         "manifest_sha256": None,
-        "manifest_file_sha256": _sha256_file(
+        "manifest_file_sha256": sha256_file(
             fixture.manifest_path
         ),
         "execution_base_revision": None,
@@ -468,7 +359,7 @@ def _stage3_expected(
         "manifest_sha256": _canonical_manifest_sha(
             fixture.manifest_path
         ),
-        "manifest_file_sha256": _sha256_file(
+        "manifest_file_sha256": sha256_file(
             fixture.manifest_path
         ),
         "execution_base_revision": (
@@ -498,32 +389,20 @@ def _assert_result(
     assert _payload(completed) == expected
 
 
-def _index_sha(root: Path) -> str:
-    return _sha256_file(root / ".git" / "index")
-
-
 def _branch(root: Path) -> str:
-    return _git_output(root, "branch", "--show-current")
-
-
-def _status(root: Path) -> str:
-    return _git_output(
-        root,
-        "status",
-        "--porcelain=v1",
-        "--untracked-files=all",
-    )
+    return git_output(root, "branch", "--show-current")
 
 
 def test_ready_result_is_exact_deterministic_and_read_only(
     tmp_path: Path,
 ) -> None:
     fixture = _create_ready_repo(tmp_path)
+    before_status, before_index = status_then_index_baseline(fixture.root)
     before = {
-        "head": _git_output(fixture.root, "rev-parse", "HEAD"),
+        "head": git_output(fixture.root, "rev-parse", "HEAD"),
         "branch": _branch(fixture.root),
-        "status": _status(fixture.root),
-        "index": _index_sha(fixture.root),
+        "status": before_status,
+        "index": before_index,
     }
 
     first = fixture.run()
@@ -534,11 +413,12 @@ def test_ready_result_is_exact_deterministic_and_read_only(
     _assert_result(second, expected, exit_code=0)
     assert first.stdout == second.stdout
 
+    after_status, after_index = status_then_index_baseline(fixture.root)
     after = {
-        "head": _git_output(fixture.root, "rev-parse", "HEAD"),
+        "head": git_output(fixture.root, "rev-parse", "HEAD"),
         "branch": _branch(fixture.root),
-        "status": _status(fixture.root),
-        "index": _index_sha(fixture.root),
+        "status": after_status,
+        "index": after_index,
     }
     assert after == before
 
@@ -649,12 +529,12 @@ def test_dirty_worktree_is_not_ready(
     fixture = _create_ready_repo(tmp_path)
 
     if dirty_kind == "staged":
-        _write(fixture.root / "README.md", "# Staged\n")
-        _git(fixture.root, "add", "README.md")
+        write_fixture_text(fixture.root / "README.md", "# Staged\n")
+        git(fixture.root, "add", "README.md")
     elif dirty_kind == "unstaged":
-        _write(fixture.root / "README.md", "# Unstaged\n")
+        write_fixture_text(fixture.root / "README.md", "# Unstaged\n")
     else:
-        _write(fixture.root / "scratch.txt", "untracked\n")
+        write_fixture_text(fixture.root / "scratch.txt", "untracked\n")
 
     expected = _stage3_expected(
         fixture,
@@ -673,15 +553,15 @@ def test_ignored_file_does_not_make_task_dirty(
     tmp_path: Path,
 ) -> None:
     fixture = _create_ready_repo(tmp_path)
-    _write(fixture.root / ".gitignore", "ignored.txt\n")
-    _git(fixture.root, "add", ".gitignore")
-    _git(fixture.root, "commit", "--amend", "--no-edit")
-    fixture.specification_commit = _git_output(
+    write_fixture_text(fixture.root / ".gitignore", "ignored.txt\n")
+    git(fixture.root, "add", ".gitignore")
+    git(fixture.root, "commit", "--amend", "--no-edit")
+    fixture.specification_commit = git_output(
         fixture.root,
         "rev-parse",
         "HEAD",
     )
-    _write(fixture.root / "ignored.txt", "ignored\n")
+    write_fixture_text(fixture.root / "ignored.txt", "ignored\n")
     _assert_result(
         fixture.run(),
         _stage3_expected(fixture, []),
@@ -694,13 +574,12 @@ def test_untracked_manifest_is_not_ready(
 ) -> None:
     fixture = _create_ready_repo(tmp_path)
     manifest_text = fixture.manifest_path.read_text()
-    _git(fixture.root, "rm", MANIFEST_RELATIVE)
+    git(fixture.root, "rm", MANIFEST_RELATIVE)
     fixture.specification_commit = _commit(
         fixture.root,
         "delete manifest",
     )
-    fixture.manifest_path.parent.mkdir(parents=True, exist_ok=True)
-    fixture.manifest_path.write_text(manifest_text)
+    write_fixture_text(fixture.manifest_path, manifest_text)
 
     diagnostics = [
         _diagnostic(
@@ -727,7 +606,7 @@ def test_committed_manifest_symbolic_link_is_not_ready(
     fixture = _create_ready_repo(tmp_path)
     manifest_text = fixture.manifest_path.read_text()
     target = fixture.root / ".agent" / "tasks" / "manifest-target.toml"
-    _write(target, manifest_text)
+    write_fixture_text(target, manifest_text)
     fixture.manifest_path.unlink()
     fixture.manifest_path.symlink_to("manifest-target.toml")
     fixture.amend()
@@ -752,7 +631,7 @@ def test_current_manifest_symbolic_link_is_not_ready(
     fixture = _create_ready_repo(tmp_path)
     manifest_text = fixture.manifest_path.read_text()
     target = fixture.root / ".agent" / "tasks" / "current-target.toml"
-    _write(target, manifest_text)
+    write_fixture_text(target, manifest_text)
     fixture.manifest_path.unlink()
     fixture.manifest_path.symlink_to("current-target.toml")
 
@@ -779,7 +658,7 @@ def test_later_unrelated_head_is_not_execution_base(
     tmp_path: Path,
 ) -> None:
     fixture = _create_ready_repo(tmp_path)
-    _write(fixture.root / "later.txt", "later\n")
+    write_fixture_text(fixture.root / "later.txt", "later\n")
     _commit(fixture.root, "later unrelated commit")
 
     diagnostics = [
@@ -824,12 +703,12 @@ def test_nonancestor_baseline_commit(
     tmp_path: Path,
 ) -> None:
     fixture = _create_ready_repo(tmp_path)
-    tree = _git_output(
+    tree = git_output(
         fixture.root,
         "rev-parse",
         f"{fixture.baseline_commit}^{{tree}}",
     )
-    side = _git_output(
+    side = git_output(
         fixture.root,
         "commit-tree",
         tree,
@@ -888,13 +767,13 @@ def test_tdd_lock_failures(
                 ),
             )
         )
-        _write(fixture.root / "docs" / "untracked.md", content)
-        _write(
+        write_fixture_text(fixture.root / "docs" / "untracked.md", content)
+        write_fixture_text(
             fixture.root / ".git" / "info" / "exclude",
             "docs/untracked.md\n",
         )
     elif mode == "symlink":
-        _write(fixture.root / "docs" / "target.md", "# Target\n")
+        write_fixture_text(fixture.root / "docs" / "target.md", "# Target\n")
         link = fixture.root / "docs" / "link.md"
         link.symlink_to("target.md")
         fixture.amend(
@@ -932,7 +811,7 @@ def test_current_tdd_byte_mutation_is_not_ready(
     tmp_path: Path,
 ) -> None:
     fixture = _create_ready_repo(tmp_path)
-    _write(fixture.root / fixture.manifest.tdd_path, "# Changed task contract\n")
+    write_fixture_text(fixture.root / fixture.manifest.tdd_path, "# Changed task contract\n")
 
     diagnostics = [
         _diagnostic(
@@ -959,7 +838,7 @@ def test_current_tdd_symbolic_link_is_not_ready(
     fixture = _create_ready_repo(tmp_path)
     tdd_path = fixture.root / fixture.manifest.tdd_path
     target = fixture.root / "docs" / "tdd-target.md"
-    _write(target, tdd_path.read_text())
+    write_fixture_text(target, tdd_path.read_text())
     fixture.amend()
     tdd_path.unlink()
     tdd_path.symlink_to("tdd-target.md")
@@ -1018,13 +897,13 @@ def test_protected_artifact_lock_failures(
                 protected_artifacts=(artifact,),
             )
         )
-        _write(fixture.root / "tests" / "untracked.py", content)
-        _write(
+        write_fixture_text(fixture.root / "tests" / "untracked.py", content)
+        write_fixture_text(
             fixture.root / ".git" / "info" / "exclude",
             "tests/untracked.py\n",
         )
     elif mode == "symlink":
-        _write(
+        write_fixture_text(
             fixture.root / "tests" / "target.py",
             "EXPECTED = 'target'\n",
         )
@@ -1070,7 +949,7 @@ def test_current_protected_artifact_byte_mutation_is_not_ready(
 ) -> None:
     fixture = _create_ready_repo(tmp_path)
     artifact = fixture.manifest.protected_artifacts[0]
-    _write(fixture.root / artifact.path, "EXPECTED = 'changed'\n")
+    write_fixture_text(fixture.root / artifact.path, "EXPECTED = 'changed'\n")
 
     diagnostics = [
         _diagnostic(
@@ -1098,7 +977,7 @@ def test_current_protected_artifact_symbolic_link_is_not_ready(
     artifact = fixture.manifest.protected_artifacts[0]
     artifact_path = fixture.root / artifact.path
     target = fixture.root / "tests" / "acceptance-target.py"
-    _write(target, artifact_path.read_text())
+    write_fixture_text(target, artifact_path.read_text())
     fixture.amend()
     artifact_path.unlink()
     artifact_path.symlink_to("acceptance-target.py")
@@ -1165,7 +1044,7 @@ def test_exact_reference_committed_as_symbolic_link_is_not_ready(
     fixture = _create_ready_repo(tmp_path)
     target = fixture.root / "docs" / "reference-target.md"
     link = fixture.root / "docs" / "reference-link.md"
-    _write(target, "# Reference target\n")
+    write_fixture_text(target, "# Reference target\n")
     link.symlink_to("reference-target.md")
     fixture.amend(
         replace(
@@ -1194,7 +1073,7 @@ def test_directory_reference_current_symbolic_link_is_not_ready(
     fixture = _create_ready_repo(tmp_path)
     reference = fixture.root / "docs" / "reference"
     target = fixture.root / "docs" / "reference-target"
-    _write(target / "guide.md", "# Target reference\n")
+    write_fixture_text(target / "guide.md", "# Target reference\n")
     fixture.amend()
     shutil.rmtree(reference)
     reference.symlink_to("reference-target", target_is_directory=True)
@@ -1251,7 +1130,7 @@ def test_allowed_path_symbolic_link_ancestor(
     tmp_path: Path,
 ) -> None:
     fixture = _create_ready_repo(tmp_path)
-    _write(fixture.root / "real" / ".keep", "tracked\n")
+    write_fixture_text(fixture.root / "real" / ".keep", "tracked\n")
     (fixture.root / "linked").symlink_to("real")
     fixture.amend(
         replace(
@@ -1288,19 +1167,19 @@ def test_dependency_receipt_failures(
     rule = "leaf_verified_receipt"
 
     if mode == "malformed-unrelated":
-        _write(receipt_root / "broken.json", "{not json")
-        _write(
+        write_fixture_text(receipt_root / "broken.json", "{not json")
+        write_fixture_text(
             receipt_root / "other.json",
             _verified_receipt(task_id="other-task"),
         )
     elif mode == "failed":
-        _write(
+        write_fixture_text(
             receipt_root / "failed.json",
             _verified_receipt(result="failed"),
         )
     elif mode == "multiple":
-        _write(receipt_root / "one.json", _verified_receipt())
-        _write(receipt_root / "two.json", _verified_receipt())
+        write_fixture_text(receipt_root / "one.json", _verified_receipt())
+        write_fixture_text(receipt_root / "two.json", _verified_receipt())
         rule = "unique_leaf_verified_receipt"
 
     fixture.amend()
@@ -1325,7 +1204,7 @@ def test_untracked_matching_dependency_receipt_does_not_count(
     receipt_root = fixture.root / ".agent" / "receipts"
     (receipt_root / "h1.json").unlink()
     fixture.amend()
-    _write(receipt_root / "untracked.json", _verified_receipt())
+    write_fixture_text(receipt_root / "untracked.json", _verified_receipt())
 
     diagnostics = [
         _diagnostic(
@@ -1351,9 +1230,9 @@ def test_current_receipt_edit_does_not_override_committed_blob(
 ) -> None:
     fixture = _create_ready_repo(tmp_path)
     receipt = fixture.root / ".agent" / "receipts" / "h1.json"
-    _write(receipt, _verified_receipt(result="failed"))
+    write_fixture_text(receipt, _verified_receipt(result="failed"))
     fixture.amend()
-    _write(receipt, _verified_receipt())
+    write_fixture_text(receipt, _verified_receipt())
 
     diagnostics = [
         _diagnostic(
@@ -1381,7 +1260,7 @@ def test_current_receipt_symbolic_link_does_not_override_committed_blob(
     receipt_root = fixture.root / ".agent" / "receipts"
     receipt = receipt_root / "h1.json"
     target = receipt_root / "other.json"
-    _write(target, _verified_receipt(task_id="other-task"))
+    write_fixture_text(target, _verified_receipt(task_id="other-task"))
     fixture.amend()
     receipt.unlink()
     receipt.symlink_to("other.json")
