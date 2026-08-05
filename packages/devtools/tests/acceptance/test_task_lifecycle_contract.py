@@ -121,21 +121,9 @@ def _copy_protected_artifacts(repo: Path) -> None:
         target.write_bytes(source.read_bytes())
 
 
-def _manifest_copy_with_execution_base(repo: Path, execution_base: str) -> Path:
+def _manifest_copy(repo: Path) -> Path:
     manifest_path = repo / ".agent/tasks/harness-06-task-lifecycle-state-machine.toml"
-    source_lines = MANIFEST.read_text(encoding="utf-8").splitlines()
-    output_lines: list[str] = []
-    replaced = False
-
-    for line in source_lines:
-        if line.startswith("execution_base_revision = "):
-            output_lines.append("execution_base_revision = " + json.dumps(execution_base))
-            replaced = True
-        else:
-            output_lines.append(line)
-
-    assert replaced, "execution_base_revision line was not found"
-    oracle.write_fixture_text(manifest_path, "\n".join(output_lines) + "\n")
+    oracle.write_fixture_text(manifest_path, MANIFEST.read_text(encoding="utf-8"))
     return manifest_path
 
 
@@ -207,15 +195,10 @@ def test_spec_phase_reports_head_not_execution_base_after_head_moves(tmp_path: P
     _require_lifecycle_check()
 
     repo = _init_lifecycle_repo(tmp_path)
-    execution_base = _git(repo, "rev-parse", "HEAD")
-    manifest = _manifest_copy_with_execution_base(repo, execution_base)
+    manifest = _manifest_copy(repo)
 
     _git(repo, "add", str(manifest.relative_to(repo)))
     _git(repo, "commit", "-m", "spec manifest")
-    execution_base = _git(repo, "rev-parse", "HEAD")
-    manifest = _manifest_copy_with_execution_base(repo, execution_base)
-    _git(repo, "add", str(manifest.relative_to(repo)))
-    _git(repo, "commit", "-m", "bind execution base")
 
     oracle.write_fixture_text(repo / "advance.txt", "advance\n")
     _git(repo, "add", "advance.txt")
