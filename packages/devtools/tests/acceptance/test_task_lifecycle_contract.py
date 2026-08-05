@@ -121,11 +121,29 @@ def _copy_protected_artifacts(repo: Path) -> None:
         target.write_bytes(source.read_bytes())
 
 
+def _manifest_copy_with_execution_base(repo: Path, execution_base: str) -> Path:
+    manifest_path = repo / ".agent/tasks/harness-06-task-lifecycle-state-machine.toml"
+    source_lines = MANIFEST.read_text(encoding="utf-8").splitlines()
+    output_lines: list[str] = []
+    replaced = False
+
+    for line in source_lines:
+        if line.startswith("execution_base_revision = "):
+            output_lines.append("execution_base_revision = " + json.dumps(execution_base))
+            replaced = True
+        else:
+            output_lines.append(line)
+
+    assert replaced, "execution_base_revision line was not found"
+    oracle.write_fixture_text(manifest_path, "\n".join(output_lines) + "\n")
+    return manifest_path
+
+
 def _init_lifecycle_repo(tmp_path: Path) -> Path:
     repo = tmp_path / "lifecycle-repo"
     repo.mkdir()
 
-    _git(repo, "init")
+    _git(repo, "init", "--initial-branch", "main")
     _git(repo, "config", "user.email", "h6@example.invalid")
     _git(repo, "config", "user.name", "H6 Test")
 
@@ -165,7 +183,7 @@ def _make_merge_commit(repo: Path) -> tuple[str, str, str]:
     _git(repo, "commit", "-m", "verified")
     verified = _git(repo, "rev-parse", "HEAD")
 
-    _git(repo, "switch", "-c", "main", main_base)
+    _git(repo, "switch", "main")
     _git(repo, "merge", "--no-ff", "verified", "-m", "merge verified")
     merge = _git(repo, "rev-parse", "HEAD")
 
@@ -189,11 +207,24 @@ def test_spec_phase_reports_head_not_execution_base_after_head_moves(tmp_path: P
     _require_lifecycle_check()
 
     repo = _init_lifecycle_repo(tmp_path)
+    execution_base = _git(repo, "rev-parse", "HEAD")
+    manifest = _manifest_copy_with_execution_base(repo, execution_base)
+
+    _git(repo, "add", str(manifest.relative_to(repo)))
+    _git(repo, "commit", "-m", "spec manifest")
+    execution_base = _git(repo, "rev-parse", "HEAD")
+    manifest = _manifest_copy_with_execution_base(repo, execution_base)
+    _git(repo, "add", str(manifest.relative_to(repo)))
+    _git(repo, "commit", "-m", "bind execution base")
+
+    oracle.write_fixture_text(repo / "advance.txt", "advance\n")
+    _git(repo, "add", "advance.txt")
+    _git(repo, "commit", "-m", "advance past execution base")
 
     code, payload = _json_result(
         [
             "lifecycle-check",
-            str(MANIFEST),
+            str(manifest),
             "--phase",
             "spec",
         ],
