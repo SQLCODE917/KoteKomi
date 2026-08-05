@@ -74,7 +74,7 @@ sha256 = "63bb7c63830c459351a0e44023f6c59fe6f86bc2d628c00a64d354d68aee3234"
 [[protected_artifacts]]
 kind = "acceptance-test"
 path = "packages/devtools/tests/acceptance/test_task_lifecycle_contract.py"
-sha256 = "d840cc8a5cf6c09ec193f4196ed90e22bdf11c87313ed551a72fdf5b3a81f16e"
+sha256 = "82a005c9f47c1609ddb4948483c892eecea2b4cd5f33456ea6e2e385bd775232"
 
 [[acceptance]]
 id = "h6-task-lifecycle-state-machine-contract"
