@@ -7,6 +7,7 @@ import json
 import sys
 from pathlib import Path
 
+from kotekomi_devtools.receipt_writer import ReceiptWriterError, write_receipt
 from kotekomi_devtools.task_budget import audit_task_budget
 from kotekomi_devtools.task_lifecycle import check_task_lifecycle
 from kotekomi_devtools.task_manifest import validate_task_manifest
@@ -45,6 +46,19 @@ def main(argv: list[str] | None = None) -> int:
             )
             output = result.as_json()
             exit_code = result.exit_code
+        elif arguments.command == "write-receipt":
+            result = write_receipt(
+                task_id=arguments.task_id,
+                record_kind=arguments.record_kind,
+                result=arguments.result,
+                output=arguments.output,
+                input_records=arguments.input_record,
+                artifacts=arguments.artifact,
+                fields=arguments.field,
+                force=arguments.force,
+            )
+            output = result.as_json()
+            exit_code = 0
         else:
             result = audit_task_budget(
                 arguments.path,
@@ -54,6 +68,9 @@ def main(argv: list[str] | None = None) -> int:
             )
             output = result.as_json()
             exit_code = result.exit_code
+    except ReceiptWriterError as error:
+        print(f"kotekomi-agent: {error}", file=sys.stderr)
+        return 2
     except Exception:
         print("kotekomi-agent: internal error", file=sys.stderr)
         return 70
@@ -103,4 +120,15 @@ def _build_parser() -> argparse.ArgumentParser:
     lifecycle_check.add_argument("--records-dir", type=Path)
     lifecycle_check.add_argument("--main-base")
     lifecycle_check.add_argument("--verified")
+    write_receipt = subparsers.add_parser(
+        "write-receipt", help="Write one deterministic task lifecycle receipt."
+    )
+    write_receipt.add_argument("--task-id", required=True)
+    write_receipt.add_argument("--record-kind", required=True)
+    write_receipt.add_argument("--result", required=True)
+    write_receipt.add_argument("--output", type=Path, required=True)
+    write_receipt.add_argument("--input-record", action="append", default=[], metavar="NAME=PATH")
+    write_receipt.add_argument("--artifact", action="append", default=[], metavar="NAME=PATH")
+    write_receipt.add_argument("--field", action="append", default=[], metavar="KEY=VALUE")
+    write_receipt.add_argument("--force", action="store_true")
     return parser
