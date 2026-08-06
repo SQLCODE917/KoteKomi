@@ -12,6 +12,7 @@ from kotekomi_devtools.task_budget import audit_task_budget
 from kotekomi_devtools.task_lifecycle import check_task_lifecycle
 from kotekomi_devtools.task_manifest import validate_task_manifest
 from kotekomi_devtools.task_preflight import preflight_task
+from kotekomi_devtools.task_retrospective import TaskRetrospectiveError, write_task_retrospective
 from kotekomi_devtools.task_scope import audit_task_scope
 
 
@@ -59,6 +60,16 @@ def main(argv: list[str] | None = None) -> int:
             )
             output = result.as_json()
             exit_code = 0
+        elif arguments.command == "task-retrospective":
+            result = write_task_retrospective(
+                arguments.records_dir,
+                output=arguments.output,
+                markdown=arguments.markdown,
+                task_id=arguments.task_id,
+                allow_incomplete=arguments.allow_incomplete,
+            )
+            output = result.as_json()
+            exit_code = 0
         else:
             result = audit_task_budget(
                 arguments.path,
@@ -69,6 +80,9 @@ def main(argv: list[str] | None = None) -> int:
             output = result.as_json()
             exit_code = result.exit_code
     except ReceiptWriterError as error:
+        print(f"kotekomi-agent: {error}", file=sys.stderr)
+        return 2
+    except TaskRetrospectiveError as error:
         print(f"kotekomi-agent: {error}", file=sys.stderr)
         return 2
     except Exception:
@@ -131,4 +145,12 @@ def _build_parser() -> argparse.ArgumentParser:
     write_receipt.add_argument("--artifact", action="append", default=[], metavar="NAME=PATH")
     write_receipt.add_argument("--field", action="append", default=[], metavar="KEY=VALUE")
     write_receipt.add_argument("--force", action="store_true")
+    task_retrospective = subparsers.add_parser(
+        "task-retrospective", help="Write deterministic metrics for task lifecycle records."
+    )
+    task_retrospective.add_argument("records_dir", type=Path, metavar="RECORDS_DIR")
+    task_retrospective.add_argument("--output", type=Path, required=True, metavar="JSON")
+    task_retrospective.add_argument("--markdown", type=Path, required=True, metavar="MARKDOWN")
+    task_retrospective.add_argument("--task-id")
+    task_retrospective.add_argument("--allow-incomplete", action="store_true")
     return parser
