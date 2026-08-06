@@ -89,7 +89,7 @@ sha256 = "065f73c3fb7cb23f001ba436f3169be7ff725c9de078345492b8a3ba6ff2457d"
 [[protected_artifacts]]
 kind = "acceptance-test"
 path = "packages/devtools/tests/acceptance/test_receipt_writer_contract.py"
-sha256 = "893286cc24e9bdd79b886b2961931136dfd934cb98ba931bf21e8c84bea49be8"
+sha256 = "7d455a550719286c8f7eb2d19ad7d9d771ceb37eff2023667894108cf3a64e9d"
 
 [[acceptance]]
 id = "h7-receipt-writer-contract"

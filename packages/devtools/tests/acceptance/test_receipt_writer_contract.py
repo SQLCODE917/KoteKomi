@@ -325,4 +325,4 @@ def test_write_receipt_reports_dirty_worktree_without_cleaning_it(tmp_path: Path
 
     assert git_state["branch"] == "main"
     assert git_state["worktree_clean"] is False
-    assert _git(repo, "status", "--short") == " M tracked.txt"
+    assert _git(repo, "status", "--short") == "M tracked.txt"
