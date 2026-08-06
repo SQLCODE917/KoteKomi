@@ -8,6 +8,7 @@ import sys
 from pathlib import Path
 
 from kotekomi_devtools.task_budget import audit_task_budget
+from kotekomi_devtools.task_lifecycle import check_task_lifecycle
 from kotekomi_devtools.task_manifest import validate_task_manifest
 from kotekomi_devtools.task_preflight import preflight_task
 from kotekomi_devtools.task_scope import audit_task_scope
@@ -32,6 +33,15 @@ def main(argv: list[str] | None = None) -> int:
                 base_revision=arguments.base,
                 head_revision=arguments.head,
                 worktree=arguments.worktree,
+            )
+            output = result.as_json()
+            exit_code = result.exit_code
+        elif arguments.command == "lifecycle-check":
+            result = check_task_lifecycle(
+                arguments.path, phase=arguments.phase, base_revision=arguments.base,
+                head_revision=arguments.head, worktree=arguments.worktree,
+                records_dir=arguments.records_dir, main_base_revision=arguments.main_base,
+                verified_revision=arguments.verified,
             )
             output = result.as_json()
             exit_code = result.exit_code
@@ -82,4 +92,15 @@ def _build_parser() -> argparse.ArgumentParser:
     mode = scope_audit.add_mutually_exclusive_group(required=True)
     mode.add_argument("--head")
     mode.add_argument("--worktree", action="store_true")
+    lifecycle_check = subparsers.add_parser(
+        "lifecycle-check", help="Check which task lifecycle checks are currently valid."
+    )
+    lifecycle_check.add_argument("path", type=Path)
+    lifecycle_check.add_argument("--phase", required=True, metavar="{spec,candidate,verified,main}")
+    lifecycle_check.add_argument("--base")
+    lifecycle_check.add_argument("--head")
+    lifecycle_check.add_argument("--worktree", action="store_true")
+    lifecycle_check.add_argument("--records-dir", type=Path)
+    lifecycle_check.add_argument("--main-base")
+    lifecycle_check.add_argument("--verified")
     return parser
