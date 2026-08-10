@@ -9,7 +9,7 @@ baseline_revision = "85cfb0992153a75ef2fb7824d64dc526bfce49f8"
 tdd_path = "docs/agent-harness/h9/README.md"
 tdd_sha256 = "38d09190354cd6a1f54155fa33aca0770350caef9fbe00640b6d8eb072f8937b"
 goal = "Implement deterministic goal accountability and task ledger commands so implementation agents ask the harness for task state and use deterministic functions for roadmap, goal, and completion updates."
-depends_on = ["harness-07-task-receipt-writer", "harness-08-task-retrospective-metrics"]
+depends_on = ["harness-01-task-manifest-contract", "harness-02-task-preflight", "harness-03-task-budget-audit", "harness-04-task-scope-audit"]
 allowed_paths = [
   "packages/devtools/src/kotekomi_devtools/cli.py",
   "packages/devtools/src/kotekomi_devtools/goal_accountability.py",
