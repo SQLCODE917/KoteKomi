@@ -1,0 +1,169 @@
+schema_version = 1
+task_id = "harness-09-task-ledger-accountability"
+title = "H9 Task Ledger Accountability"
+status = "ready_for_terra_high"
+series_id = "terra-high-harness-v1"
+task_class = "repository-tooling"
+model_profile = "terra-high-v1"
+baseline_revision = "85cfb0992153a75ef2fb7824d64dc526bfce49f8"
+tdd_path = "docs/agent-harness/h9/README.md"
+tdd_sha256 = "38d09190354cd6a1f54155fa33aca0770350caef9fbe00640b6d8eb072f8937b"
+goal = "Implement deterministic goal accountability and task ledger commands so implementation agents ask the harness for task state and use deterministic functions for roadmap, goal, and completion updates."
+depends_on = ["harness-07-task-receipt-writer", "harness-08-task-retrospective-metrics"]
+allowed_paths = [
+  "packages/devtools/src/kotekomi_devtools/cli.py",
+  "packages/devtools/src/kotekomi_devtools/goal_accountability.py",
+  "packages/devtools/src/kotekomi_devtools/task_ledger.py",
+  "packages/devtools/tests/unit/test_goal_accountability.py",
+  "packages/devtools/tests/unit/test_task_ledger.py",
+]
+reference_paths = [
+  "docs/agent-harness/h9/README.md",
+  "docs/agent-harness/h9/architecture.md",
+  "docs/agent-harness/h9/goal-ledger-tdd.md",
+  "docs/agent-harness/h9/task-ledger-tdd.md",
+  "docs/agent-harness/h9/deterministic-recordkeeping-tdd.md",
+  "docs/agent-harness/h9/portable-harness-tdd.md",
+  "docs/agent-harness/h9/retrospective-accountability-tdd.md",
+  "docs/agent-harness/h9/copyable-agents-guidance.md",
+  "packages/devtools/src/kotekomi_devtools/receipt_writer.py",
+  "packages/devtools/src/kotekomi_devtools/task_retrospective.py",
+  "packages/devtools/tests/acceptance/test_receipt_writer_contract.py",
+  "packages/devtools/tests/acceptance/test_task_retrospective_contract.py",
+]
+stop_conditions = [
+  "task manifest schema changed",
+  "protected H9 TDD changed",
+  "protected H9 acceptance test changed",
+  "receipt writer behavior changed",
+  "task-retrospective behavior changed outside explicit H9 CI metric refinement",
+  "implementation agent manually writes ledger state instead of using deterministic functions",
+]
+
+[readiness]
+authority = "The H9 hub and leaf TDD documents define the task-ledger accountability and goal accountability command contracts."
+contract_family = "agent-harness"
+dominant_outcome = "Local commands goal-check and task-ledger write deterministic JSON and Markdown or ledger outputs, enforce goal coverage, and keep roadmap state outside implementation-agent context."
+failure_policy = "Invalid goal coverage, missing evidence, incomplete deferrals, or invalid task completion exits nonzero with deterministic diagnostics."
+legacy_disposition = "Existing H1-H8 commands remain available; H8 task-retrospective may be refined only to support H9 retrospective accountability metrics."
+negative_proof = "The new commands must not call GitHub, switch branches, stage files, create commits, push, invoke Terra, or infer task state from agent context."
+public_entry_point = "kotekomi-agent goal-check and kotekomi-agent task-ledger"
+scope_policy = "Only the CLI, goal accountability module, task ledger module, and H9 unit tests may change in the candidate."
+side_effect_boundary = "goal-check may write only its requested JSON and Markdown outputs; task-ledger update may write only the requested ledger output."
+unresolved_decisions = []
+
+[budget]
+maximum_production_files = 3
+maximum_test_files = 2
+maximum_production_diff_lines = 650
+
+[[protected_artifacts]]
+kind = "json-schema"
+path = ".agent/schemas/task-manifest-v1.schema.json"
+sha256 = "b505d4fd89eed61510a2cd669a8a96564927ed43309cd31ed786aff6fb63a460"
+
+[[protected_artifacts]]
+kind = "agent-instructions"
+path = "packages/devtools/AGENTS.md"
+sha256 = "17d6502f67f891193b4d9578fff0317359894412aa4897632ef0044560eadaea"
+
+[[protected_artifacts]]
+kind = "fixture"
+path = ".agent/tasks/harness-08-task-retrospective-metrics.toml"
+sha256 = "6aab89661274a4e609498f6a2afdd4ae39c6ba2c4c6fa59d12e3150bbe177cf8"
+
+[[protected_artifacts]]
+kind = "leaf-tdd"
+path = "docs/agent-harness/h9/README.md"
+sha256 = "38d09190354cd6a1f54155fa33aca0770350caef9fbe00640b6d8eb072f8937b"
+
+[[protected_artifacts]]
+kind = "leaf-tdd"
+path = "docs/agent-harness/h9/architecture.md"
+sha256 = "e03294ecbd2183a7317d136c195a33514be95cd3fa18f4e3b1fdcb00684e550c"
+
+[[protected_artifacts]]
+kind = "leaf-tdd"
+path = "docs/agent-harness/h9/task-ledger-tdd.md"
+sha256 = "d5f3a7b6e7aed65f71fbc25dab6c567f8874bccc213d38056633fad465ba7016"
+
+[[protected_artifacts]]
+kind = "leaf-tdd"
+path = "docs/agent-harness/h9/goal-ledger-tdd.md"
+sha256 = "bcc0943f9f036053d1ac03c4b02a6ce7e3b58fcbbb998b7ba0d1f23938b16f96"
+
+[[protected_artifacts]]
+kind = "leaf-tdd"
+path = "docs/agent-harness/h9/deterministic-recordkeeping-tdd.md"
+sha256 = "26e1d898d7f143c651cc1214ad0d147c0891e57341efff1889a4aa4cd47e5fdb"
+
+[[protected_artifacts]]
+kind = "leaf-tdd"
+path = "docs/agent-harness/h9/portable-harness-tdd.md"
+sha256 = "76c01be5e7a29d87bb8c74d704e18c863c57e3511ba39121a33a37f8e89ef136"
+
+[[protected_artifacts]]
+kind = "leaf-tdd"
+path = "docs/agent-harness/h9/retrospective-accountability-tdd.md"
+sha256 = "27d07a97738b43e09a582bafb1fc948942e4118606a4ddcfe09586b0dc55b40e"
+
+[[protected_artifacts]]
+kind = "agent-instructions"
+path = "docs/agent-harness/h9/copyable-agents-guidance.md"
+sha256 = "0e0776cf401f090abe8fb969bec72fa0d2c0bec12ee7b11bbe3a427982b7fec7"
+
+[[protected_artifacts]]
+kind = "acceptance-test"
+path = "packages/devtools/tests/acceptance/test_goal_accountability_contract.py"
+sha256 = "0dd642bc49e43b3af4c2e2645ee96458a4803e04b625ed8ba1f8049de0c6ebb0"
+
+[[protected_artifacts]]
+kind = "acceptance-test"
+path = "packages/devtools/tests/acceptance/test_task_ledger_contract.py"
+sha256 = "01a5606e7b4a25bee820b42b83c55b5a07de75f3cb533016b772d6ca1be5ebda"
+
+[[protected_artifacts]]
+kind = "acceptance-test"
+path = "packages/devtools/tests/acceptance/test_task_retrospective_contract.py"
+sha256 = "92e3be98148653d8bbd1d491c528e38b86168ac29640ab0ae1b1f6bc2b009ed6"
+
+[[protected_artifacts]]
+kind = "acceptance-test"
+path = "packages/devtools/tests/acceptance/test_receipt_writer_contract.py"
+sha256 = "7d455a550719286c8f7eb2d19ad7d9d771ceb37eff2023667894108cf3a64e9d"
+
+[[acceptance]]
+id = "h9-goal-accountability-contract"
+argv = ["uv", "run", "pytest", "-p", "no:cacheprovider", "packages/devtools/tests/acceptance/test_goal_accountability_contract.py"]
+timeout_seconds = 60
+profile = "portable-local"
+
+[[acceptance]]
+id = "h9-task-ledger-contract"
+argv = ["uv", "run", "pytest", "-p", "no:cacheprovider", "packages/devtools/tests/acceptance/test_task_ledger_contract.py"]
+timeout_seconds = 60
+profile = "portable-local"
+
+[[acceptance]]
+id = "h8-task-retrospective-contract-retained"
+argv = ["uv", "run", "pytest", "-p", "no:cacheprovider", "packages/devtools/tests/acceptance/test_task_retrospective_contract.py"]
+timeout_seconds = 60
+profile = "portable-local"
+
+[[acceptance]]
+id = "h7-receipt-writer-contract-retained"
+argv = ["uv", "run", "pytest", "-p", "no:cacheprovider", "packages/devtools/tests/acceptance/test_receipt_writer_contract.py"]
+timeout_seconds = 60
+profile = "portable-local"
+
+[[acceptance]]
+id = "repository-static-checks"
+argv = ["uv", "run", "ruff", "check"]
+timeout_seconds = 60
+profile = "portable-local"
+
+[[acceptance]]
+id = "repository-type-checks"
+argv = ["uv", "run", "pyright"]
+timeout_seconds = 60
+profile = "portable-local"
