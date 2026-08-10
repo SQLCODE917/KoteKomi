@@ -7,8 +7,16 @@ import json
 import sys
 from pathlib import Path
 
+from kotekomi_devtools.goal_accountability import GoalAccountabilityError, write_goal_report
 from kotekomi_devtools.receipt_writer import ReceiptWriterError, write_receipt
 from kotekomi_devtools.task_budget import audit_task_budget
+from kotekomi_devtools.task_ledger import (
+    TaskLedgerError,
+    current_task,
+    next_task,
+    task_status,
+    update_task_ledger,
+)
 from kotekomi_devtools.task_lifecycle import check_task_lifecycle
 from kotekomi_devtools.task_manifest import validate_task_manifest
 from kotekomi_devtools.task_preflight import preflight_task
@@ -70,6 +78,32 @@ def main(argv: list[str] | None = None) -> int:
             )
             output = result.as_json()
             exit_code = 0
+        elif arguments.command == "goal-check":
+            result = write_goal_report(
+                arguments.goals_file,
+                arguments.records_dir,
+                output=arguments.output,
+                markdown=arguments.markdown,
+            )
+            output = result.as_json()
+            exit_code = 0 if result.ready else 1
+        elif arguments.command == "task-ledger":
+            if arguments.task_ledger_command == "current":
+                output = current_task(arguments.ledger_file)
+            elif arguments.task_ledger_command == "next":
+                output = next_task(arguments.ledger_file)
+            elif arguments.task_ledger_command == "status":
+                output = task_status(arguments.ledger_file, arguments.task_id)
+            else:
+                result = update_task_ledger(
+                    arguments.ledger_file,
+                    arguments.task_id,
+                    status=arguments.status,
+                    evidence=arguments.evidence,
+                    output=arguments.output,
+                )
+                output = result.as_json()
+            exit_code = 0
         else:
             result = audit_task_budget(
                 arguments.path,
@@ -85,11 +119,19 @@ def main(argv: list[str] | None = None) -> int:
     except TaskRetrospectiveError as error:
         print(f"kotekomi-agent: {error}", file=sys.stderr)
         return 2
+    except GoalAccountabilityError as error:
+        print(f"kotekomi-agent: {error}", file=sys.stderr)
+        return 2
+    except TaskLedgerError as error:
+        print(
+            json.dumps(error.as_json(), ensure_ascii=False, separators=(",", ":"), sort_keys=True)
+        )
+        return 1 if error.code == "h9.task.goals_unmet" else 2
     except Exception:
         print("kotekomi-agent: internal error", file=sys.stderr)
         return 70
 
-    print(json.dumps(output, ensure_ascii=False, separators=(",", ":")))
+    print(json.dumps(output, ensure_ascii=False, separators=(",", ":"), sort_keys=True))
     return exit_code
 
 
@@ -153,4 +195,26 @@ def _build_parser() -> argparse.ArgumentParser:
     task_retrospective.add_argument("--markdown", type=Path, required=True, metavar="MARKDOWN")
     task_retrospective.add_argument("--task-id")
     task_retrospective.add_argument("--allow-incomplete", action="store_true")
+    goal_check = subparsers.add_parser("goal-check", help="Check deterministic goal coverage.")
+    goal_check.add_argument("goals_file", type=Path, metavar="GOALS_FILE")
+    goal_check.add_argument("--records-dir", type=Path, required=True, metavar="RECORDS_DIR")
+    goal_check.add_argument("--output", type=Path, required=True, metavar="JSON")
+    goal_check.add_argument("--markdown", type=Path, required=True, metavar="MARKDOWN")
+    task_ledger = subparsers.add_parser(
+        "task-ledger", help="Read and update deterministic task state."
+    )
+    task_ledger_commands = task_ledger.add_subparsers(dest="task_ledger_command", required=True)
+    current = task_ledger_commands.add_parser("current", help="Print the current task.")
+    current.add_argument("ledger_file", type=Path, metavar="LEDGER_FILE")
+    next_task_parser = task_ledger_commands.add_parser("next", help="Print the next planned task.")
+    next_task_parser.add_argument("ledger_file", type=Path, metavar="LEDGER_FILE")
+    status = task_ledger_commands.add_parser("status", help="Print task status and next action.")
+    status.add_argument("ledger_file", type=Path, metavar="LEDGER_FILE")
+    status.add_argument("task_id", metavar="TASK_ID")
+    update = task_ledger_commands.add_parser("update", help="Write one validated task transition.")
+    update.add_argument("ledger_file", type=Path, metavar="LEDGER_FILE")
+    update.add_argument("task_id", metavar="TASK_ID")
+    update.add_argument("--status", required=True)
+    update.add_argument("--evidence", type=Path, required=True, metavar="EVIDENCE")
+    update.add_argument("--output", type=Path, required=True, metavar="LEDGER_FILE")
     return parser
