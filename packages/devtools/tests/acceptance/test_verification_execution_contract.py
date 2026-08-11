@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import shlex
 import subprocess
@@ -42,7 +43,24 @@ def _json(path: Path) -> dict[str, Any]:
 
 
 def _write_json(path: Path, payload: dict[str, Any]) -> None:
-    path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    stable_payload = dict(payload)
+    if {
+        "argv",
+        "check_id",
+        "command",
+        "exit_code",
+        "log_path",
+        "log_sha256",
+        "status",
+    }.issubset(stable_payload):
+        log_path = path.with_suffix(".log")
+        log_path.write_text("ok\n", encoding="utf-8")
+        stable_payload["log_path"] = str(log_path)
+        stable_payload["log_sha256"] = hashlib.sha256(log_path.read_bytes()).hexdigest()
+    path.write_text(
+        json.dumps(stable_payload, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
 
 
 def _plan(path: Path, checks: list[dict[str, Any]]) -> None:
@@ -347,3 +365,72 @@ def test_verify_checks_reports_extra_records_without_satisfying_plan(tmp_path: P
     assert "verification_execution.check_missing" in codes
     assert "verification_execution.extra_record" in codes
     assert "verification_execution.extra_record" in markdown.read_text(encoding="utf-8")
+
+def test_verify_checks_rejects_missing_run_log(tmp_path: Path) -> None:
+    _require_execution_commands()
+
+    argv = ["uv", "run", "--project", str(PROJECT_ROOT), "python", "-c", "print('ok')"]
+    plan = tmp_path / "plan.json"
+    record = tmp_path / "record.json"
+    log = tmp_path / "record.log"
+    output = tmp_path / "verify.json"
+    markdown = tmp_path / "verify.md"
+    _plan(
+        plan,
+        [
+            {
+                "id": "sample-missing-log",
+                "command": shlex.join(argv),
+                "reason": "test fixture",
+                "source": "manifest",
+            }
+        ],
+    )
+    run_result = _run_check("sample-missing-log", record, log, argv)
+    assert run_result.returncode == 0
+    payload = _json(record)
+    payload["log_path"] = str(tmp_path / "missing.log")
+    record.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+    result = _verify(plan, [record], output, markdown)
+
+    assert result.returncode == 1
+    report = _json(output)
+    assert report["status"] == "not_ready"
+    codes = {item["code"] for item in report["diagnostics"]}
+    assert "verification_execution.log_missing" in codes
+
+
+def test_verify_checks_rejects_run_log_digest_mismatch(tmp_path: Path) -> None:
+    _require_execution_commands()
+
+    argv = ["uv", "run", "--project", str(PROJECT_ROOT), "python", "-c", "print('ok')"]
+    plan = tmp_path / "plan.json"
+    record = tmp_path / "record.json"
+    log = tmp_path / "record.log"
+    output = tmp_path / "verify.json"
+    markdown = tmp_path / "verify.md"
+    _plan(
+        plan,
+        [
+            {
+                "id": "sample-bad-log-digest",
+                "command": shlex.join(argv),
+                "reason": "test fixture",
+                "source": "manifest",
+            }
+        ],
+    )
+    run_result = _run_check("sample-bad-log-digest", record, log, argv)
+    assert run_result.returncode == 0
+    payload = _json(record)
+    payload["log_sha256"] = "0" * 64
+    record.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+    result = _verify(plan, [record], output, markdown)
+
+    assert result.returncode == 1
+    report = _json(output)
+    assert report["status"] == "not_ready"
+    codes = {item["code"] for item in report["diagnostics"]}
+    assert "verification_execution.log_digest_mismatch" in codes

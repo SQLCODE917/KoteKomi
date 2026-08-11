@@ -379,6 +379,8 @@ def _run_record(
     command = payload.get("command")
     status = payload.get("status")
     exit_code = payload.get("exit_code")
+    log_path = payload.get("log_path")
+    log_sha256 = payload.get("log_sha256")
     raw_argv = payload.get("argv")
 
     if isinstance(raw_argv, list):
@@ -419,6 +421,17 @@ def _run_record(
         )
         return None
 
+    if not isinstance(log_path, str) or not isinstance(log_sha256, str):
+        diagnostics.append(
+            ExecutionDiagnostic(
+                "verification_execution.run_record_invalid",
+                f"/run_records/{index}",
+                "run_record_requires_log_path_and_log_sha256",
+            )
+        )
+        return None
+    if not _run_record_log_is_valid(path, log_path, log_sha256, index, diagnostics):
+        return None
     return RunRecordSummary(
         path=str(path),
         check_id=check_id,
@@ -427,6 +440,64 @@ def _run_record(
         exit_code=exit_code,
     )
 
+
+
+def _run_record_log_is_valid(
+    record_path: Path,
+    log_path: str,
+    log_sha256: str,
+    index: int,
+    diagnostics: list[ExecutionDiagnostic],
+) -> bool:
+    if len(log_sha256) != 64:
+        diagnostics.append(
+            ExecutionDiagnostic(
+                "verification_execution.log_digest_invalid",
+                f"/run_records/{index}/log_sha256",
+                "run_record_log_sha256_must_be_64_hex_characters",
+            )
+        )
+        return False
+    try:
+        int(log_sha256, 16)
+    except ValueError:
+        diagnostics.append(
+            ExecutionDiagnostic(
+                "verification_execution.log_digest_invalid",
+                f"/run_records/{index}/log_sha256",
+                "run_record_log_sha256_must_be_64_hex_characters",
+            )
+        )
+        return False
+
+    resolved_log = Path(log_path)
+    if not resolved_log.is_absolute():
+        resolved_log = record_path.parent / resolved_log
+
+    try:
+        log_bytes = resolved_log.read_bytes()
+    except OSError:
+        diagnostics.append(
+            ExecutionDiagnostic(
+                "verification_execution.log_missing",
+                f"/run_records/{index}/log_path",
+                "run_record_log_path_must_exist",
+            )
+        )
+        return False
+
+    actual_sha256 = hashlib.sha256(log_bytes).hexdigest()
+    if actual_sha256 != log_sha256:
+        diagnostics.append(
+            ExecutionDiagnostic(
+                "verification_execution.log_digest_mismatch",
+                f"/run_records/{index}/log_sha256",
+                "run_record_log_sha256_must_match_log_bytes",
+            )
+        )
+        return False
+
+    return True
 
 def _load_json(
     path: Path,
