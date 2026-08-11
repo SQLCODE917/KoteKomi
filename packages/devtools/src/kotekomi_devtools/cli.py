@@ -27,8 +27,33 @@ from kotekomi_devtools.verification_plan import VerificationPlanError, write_ver
 
 def main(argv: list[str] | None = None) -> int:
     """Run the agent harness command selected by ``argv``."""
+    raw_argv = list(argv) if argv is not None else None
+    if raw_argv is None:
+        import sys as _sys
+
+        raw_argv = _sys.argv[1:]
+    if raw_argv[:1] == ["run-check"] and "--" in raw_argv:
+        separator = raw_argv.index("--")
+        import json as _json
+
+        from .verification_execution import run_check
+
+        run_parser = argparse.ArgumentParser(prog="kotekomi-agent run-check")
+        run_parser.add_argument("check_id", metavar="CHECK_ID")
+        run_parser.add_argument("--output", type=Path, required=True)
+        run_parser.add_argument("--log", type=Path, required=True)
+        run_args = run_parser.parse_args(raw_argv[1:separator])
+        record = run_check(
+            run_args.check_id,
+            output=run_args.output,
+            log=run_args.log,
+            argv=tuple(raw_argv[separator + 1 :]),
+        )
+        print(_json.dumps(record.as_json(), separators=(",", ":"), sort_keys=True))
+        return record.exit_code
+
     parser = _build_parser()
-    arguments = parser.parse_args(argv)
+    arguments = parser.parse_args(raw_argv)
     try:
         if arguments.command == "validate-task":
             result = validate_task_manifest(arguments.path)
