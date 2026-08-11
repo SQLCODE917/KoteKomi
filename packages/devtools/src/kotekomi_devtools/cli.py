@@ -124,14 +124,14 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     except TaskLedgerError as error:
         print(
-            json.dumps(error.as_json(), ensure_ascii=False, separators=(",", ":"), sort_keys=True)
+            json.dumps(error.as_json(), ensure_ascii=False, separators=(",", ":"))
         )
         return 1 if error.code == "h9.task.goals_unmet" else 2
     except Exception:
         print("kotekomi-agent: internal error", file=sys.stderr)
         return 70
 
-    print(json.dumps(output, ensure_ascii=False, separators=(",", ":"), sort_keys=True))
+    print(json.dumps(output, ensure_ascii=False, separators=(",", ":")))
     return exit_code
 
 
