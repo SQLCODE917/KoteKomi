@@ -90,6 +90,11 @@ Use temporary directories and disposable repositories for later Git-facing leave
 
 Do not require network access in package tests.
 
+## Verification Planning
+
+Before implementation and before candidate verification, run `kotekomi-agent verification-plan`.
+Run every required check it returns. Do not manually infer, omit, or replace returned checks.
+
 ## H1 Implementation Scope
 
 The H1 task manifest defines the exact allowed paths.

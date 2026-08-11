@@ -1,0 +1,186 @@
+schema_version = 1
+task_id = "harness-09-followup-retrospective-verification-plan"
+title = "H9 Follow-up Retrospective Verification Plan"
+status = "ready_for_terra_high"
+series_id = "terra-high-harness-v1"
+task_class = "repository-tooling"
+model_profile = "terra-high-v1"
+baseline_revision = "35d1e8144c7abe08ef2cd4df3f1150fb89f2d354"
+tdd_path = "docs/agent-harness/h9-followup/README.md"
+tdd_sha256 = "f367682a20690a8bdbf2544d9bb2c0f3a274cdcf05c2004e76a6e303560bb92a"
+goal = "Convert the H9 retrospective into deterministic verification planning so touched shared harness paths expand local checks without relying on agent memory."
+depends_on = ["harness-01-task-manifest-contract", "harness-02-task-preflight", "harness-03-task-budget-audit", "harness-04-task-scope-audit"]
+allowed_paths = [
+  "packages/devtools/src/kotekomi_devtools/cli.py",
+  "packages/devtools/src/kotekomi_devtools/verification_plan.py",
+  "packages/devtools/src/kotekomi_devtools/task_lifecycle.py",
+  "packages/devtools/AGENTS.md",
+  "packages/devtools/tests/unit/test_verification_plan.py",
+]
+reference_paths = [
+  "docs/agent-harness/h9-followup/README.md",
+  "docs/agent-harness/h9-followup/retrospective.md",
+  "docs/agent-harness/h9-followup/verification-plan-tdd.md",
+  "docs/agent-harness/h9-followup/operational-guidance.md",
+  "docs/agent-harness/h9-followup/h10-readiness.md",
+  "packages/devtools/src/kotekomi_devtools/goal_accountability.py",
+  "packages/devtools/src/kotekomi_devtools/task_ledger.py",
+  "packages/devtools/src/kotekomi_devtools/task_manifest.py",
+  "packages/devtools/src/kotekomi_devtools/task_preflight.py",
+  "packages/devtools/src/kotekomi_devtools/task_lifecycle.py",
+]
+stop_conditions = [
+  "task manifest schema changed",
+  "protected H9 follow-up docs changed",
+  "protected verification-plan acceptance test changed",
+  "protected exact-output CLI acceptance test changed",
+  "verification-plan begins running tests or mutating git state",
+  "AGENTS guidance expands into path-specific check memorization instead of delegating to verification-plan",
+]
+
+[readiness]
+authority = "The H9 follow-up docs define the deterministic verification-plan command and minimal AGENTS guidance."
+contract_family = "agent-harness"
+dominant_outcome = "verification-plan computes required local checks from manifest acceptance, retained checks, quality checks, and low-maintenance touched-path rules."
+failure_policy = "Uncovered changed paths exit nonzero with deterministic diagnostics and write deterministic JSON and Markdown outputs."
+legacy_disposition = "Existing H1-H9 commands remain available and exact-output CLI contracts remain stable."
+negative_proof = "verification-plan must not run tests, call GitHub, switch branches, stage files, create commits, push, invoke Terra, or infer completion from agent context."
+public_entry_point = "kotekomi-agent verification-plan"
+scope_policy = "Only CLI registration, verification_plan module, compact AGENTS guidance, a narrow lifecycle compatibility repair, and verification-plan unit tests may change in the candidate."
+side_effect_boundary = "verification-plan may write only the requested JSON and Markdown report outputs."
+unresolved_decisions = []
+
+[budget]
+maximum_production_files = 3
+maximum_test_files = 1
+maximum_production_diff_lines = 450
+
+[[protected_artifacts]]
+kind = "json-schema"
+path = ".agent/schemas/task-manifest-v1.schema.json"
+sha256 = "b505d4fd89eed61510a2cd669a8a96564927ed43309cd31ed786aff6fb63a460"
+
+[[protected_artifacts]]
+kind = "leaf-tdd"
+path = "docs/agent-harness/h9-followup/README.md"
+sha256 = "f367682a20690a8bdbf2544d9bb2c0f3a274cdcf05c2004e76a6e303560bb92a"
+
+[[protected_artifacts]]
+kind = "leaf-tdd"
+path = "docs/agent-harness/h9-followup/retrospective.md"
+sha256 = "b2ae94da0c791ed3f7e3e29e22bc181df19cc410435926c40c41a58ec9a0b826"
+
+[[protected_artifacts]]
+kind = "leaf-tdd"
+path = "docs/agent-harness/h9-followup/verification-plan-tdd.md"
+sha256 = "b617391c122ba0b791569c20e180927ec7048a717a62e8bdd5983a965e80aab1"
+
+[[protected_artifacts]]
+kind = "agent-instructions"
+path = "docs/agent-harness/h9-followup/operational-guidance.md"
+sha256 = "75abb1296197550d81e8cc25656e3d63ff49fdff7e1068d00d230ba0fc79a15d"
+
+[[protected_artifacts]]
+kind = "leaf-tdd"
+path = "docs/agent-harness/h9-followup/h10-readiness.md"
+sha256 = "6e290e65a6b60ac55c554d404dc6abac1f016f9f575433336f7d8699158b5adc"
+
+[[protected_artifacts]]
+kind = "acceptance-test"
+path = "packages/devtools/tests/acceptance/test_verification_plan_contract.py"
+sha256 = "79850e3ae79f5ed1e61abf58e8ad2201ff96dfdc4a2c3edac7839e4d7589d982"
+
+[[protected_artifacts]]
+kind = "acceptance-test"
+path = "packages/devtools/tests/acceptance/test_task_manifest_contract.py"
+sha256 = "f16a8aaa3a3c8c7b513c1c9823b8d0c3ff12af993eaf31762daa320baacbda28"
+
+[[protected_artifacts]]
+kind = "acceptance-test"
+path = "packages/devtools/tests/acceptance/test_task_preflight_contract.py"
+sha256 = "7eef90e918b1d82cd16c88d81f893b67e8a21a745c0304c659c07805576b1c8a"
+
+[[protected_artifacts]]
+kind = "acceptance-test"
+path = "packages/devtools/tests/acceptance/test_goal_accountability_contract.py"
+sha256 = "0dd642bc49e43b3af4c2e2645ee96458a4803e04b625ed8ba1f8049de0c6ebb0"
+
+[[protected_artifacts]]
+kind = "acceptance-test"
+path = "packages/devtools/tests/acceptance/test_task_ledger_contract.py"
+sha256 = "01a5606e7b4a25bee820b42b83c55b5a07de75f3cb533016b772d6ca1be5ebda"
+
+[[protected_artifacts]]
+kind = "acceptance-test"
+path = "packages/devtools/tests/acceptance/test_task_retrospective_contract.py"
+sha256 = "92e3be98148653d8bbd1d491c528e38b86168ac29640ab0ae1b1f6bc2b009ed6"
+
+[[protected_artifacts]]
+kind = "acceptance-test"
+path = "packages/devtools/tests/acceptance/test_receipt_writer_contract.py"
+sha256 = "7d455a550719286c8f7eb2d19ad7d9d771ceb37eff2023667894108cf3a64e9d"
+
+[[protected_artifacts]]
+kind = "acceptance-test"
+path = "packages/devtools/tests/acceptance/test_task_lifecycle_contract.py"
+sha256 = "f4552c402f8d7f1b0c730e2c57d53d2a978ba5b4ce3f59e3bdf0d11584b7f330"
+
+[[acceptance]]
+id = "h9-followup-verification-plan-contract"
+argv = ["uv", "run", "pytest", "-p", "no:cacheprovider", "packages/devtools/tests/acceptance/test_verification_plan_contract.py"]
+timeout_seconds = 60
+profile = "portable-local"
+
+[[acceptance]]
+id = "task-manifest-contract-retained"
+argv = ["uv", "run", "pytest", "-p", "no:cacheprovider", "packages/devtools/tests/acceptance/test_task_manifest_contract.py"]
+timeout_seconds = 120
+profile = "portable-local"
+
+[[acceptance]]
+id = "task-preflight-contract-retained"
+argv = ["uv", "run", "pytest", "-p", "no:cacheprovider", "packages/devtools/tests/acceptance/test_task_preflight_contract.py"]
+timeout_seconds = 120
+profile = "portable-local"
+
+[[acceptance]]
+id = "h9-goal-accountability-contract-retained"
+argv = ["uv", "run", "pytest", "-p", "no:cacheprovider", "packages/devtools/tests/acceptance/test_goal_accountability_contract.py"]
+timeout_seconds = 60
+profile = "portable-local"
+
+[[acceptance]]
+id = "h9-task-ledger-contract-retained"
+argv = ["uv", "run", "pytest", "-p", "no:cacheprovider", "packages/devtools/tests/acceptance/test_task_ledger_contract.py"]
+timeout_seconds = 60
+profile = "portable-local"
+
+[[acceptance]]
+id = "h8-task-retrospective-contract-retained"
+argv = ["uv", "run", "pytest", "-p", "no:cacheprovider", "packages/devtools/tests/acceptance/test_task_retrospective_contract.py"]
+timeout_seconds = 60
+profile = "portable-local"
+
+[[acceptance]]
+id = "h7-receipt-writer-contract-retained"
+argv = ["uv", "run", "pytest", "-p", "no:cacheprovider", "packages/devtools/tests/acceptance/test_receipt_writer_contract.py"]
+timeout_seconds = 60
+profile = "portable-local"
+
+[[acceptance]]
+id = "h6-task-lifecycle-contract-retained"
+argv = ["uv", "run", "pytest", "-p", "no:cacheprovider", "packages/devtools/tests/acceptance/test_task_lifecycle_contract.py"]
+timeout_seconds = 120
+profile = "portable-local"
+
+[[acceptance]]
+id = "repository-static-checks"
+argv = ["uv", "run", "ruff", "check"]
+timeout_seconds = 60
+profile = "portable-local"
+
+[[acceptance]]
+id = "repository-type-checks"
+argv = ["uv", "run", "pyright"]
+timeout_seconds = 60
+profile = "portable-local"

@@ -22,6 +22,7 @@ from kotekomi_devtools.task_manifest import validate_task_manifest
 from kotekomi_devtools.task_preflight import preflight_task
 from kotekomi_devtools.task_retrospective import TaskRetrospectiveError, write_task_retrospective
 from kotekomi_devtools.task_scope import audit_task_scope
+from kotekomi_devtools.verification_plan import VerificationPlanError, write_verification_plan
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -87,6 +88,16 @@ def main(argv: list[str] | None = None) -> int:
             )
             output = result.as_json()
             exit_code = 0 if result.ready else 1
+        elif arguments.command == "verification-plan":
+            result = write_verification_plan(
+                arguments.path,
+                base_revision=arguments.base,
+                head_revision=arguments.head,
+                output=arguments.output,
+                markdown=arguments.markdown,
+            )
+            output = result.as_json()
+            exit_code = result.exit_code
         elif arguments.command == "task-ledger":
             if arguments.task_ledger_command == "current":
                 output = current_task(arguments.ledger_file)
@@ -120,6 +131,9 @@ def main(argv: list[str] | None = None) -> int:
         print(f"kotekomi-agent: {error}", file=sys.stderr)
         return 2
     except GoalAccountabilityError as error:
+        print(f"kotekomi-agent: {error}", file=sys.stderr)
+        return 2
+    except VerificationPlanError as error:
         print(f"kotekomi-agent: {error}", file=sys.stderr)
         return 2
     except TaskLedgerError as error:
@@ -200,6 +214,14 @@ def _build_parser() -> argparse.ArgumentParser:
     goal_check.add_argument("--records-dir", type=Path, required=True, metavar="RECORDS_DIR")
     goal_check.add_argument("--output", type=Path, required=True, metavar="JSON")
     goal_check.add_argument("--markdown", type=Path, required=True, metavar="MARKDOWN")
+    verification_plan = subparsers.add_parser(
+        "verification-plan", help="Plan deterministic local checks for one revision range."
+    )
+    verification_plan.add_argument("path", type=Path, metavar="MANIFEST")
+    verification_plan.add_argument("--base", required=True, metavar="BASE")
+    verification_plan.add_argument("--head", required=True, metavar="HEAD")
+    verification_plan.add_argument("--output", type=Path, required=True, metavar="JSON")
+    verification_plan.add_argument("--markdown", type=Path, required=True, metavar="MARKDOWN")
     task_ledger = subparsers.add_parser(
         "task-ledger", help="Read and update deterministic task state."
     )
