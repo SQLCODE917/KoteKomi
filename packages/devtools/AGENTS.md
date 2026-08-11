@@ -104,3 +104,10 @@ Do not change the Leaf TDD, task manifest, JSON Schema, this file, acceptance te
 The implementer can report candidate completion only.
 
 Independent verification determines whether H1 is complete.
+## Verification Execution
+
+Run verification-plan.
+Run every required check through run-check.
+Run verify-checks to prove every required check succeeded.
+Do not manually infer, omit, or replace checks.
+

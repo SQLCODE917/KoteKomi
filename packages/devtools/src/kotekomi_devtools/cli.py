@@ -88,6 +88,37 @@ def main(argv: list[str] | None = None) -> int:
             )
             output = result.as_json()
             exit_code = 0 if result.ready else 1
+        elif arguments.command == "run-check":
+            import json as _json
+            from pathlib import Path as _Path
+
+            from .verification_execution import run_check
+
+            command_argv = tuple(arguments.argv)
+            if command_argv[:1] == ("--",):
+                command_argv = command_argv[1:]
+            record = run_check(
+                arguments.check_id,
+                output=_Path(arguments.output),
+                log=_Path(arguments.log),
+                argv=command_argv,
+            )
+            print(_json.dumps(record.as_json(), separators=(",", ":"), sort_keys=True))
+            return record.exit_code
+        elif arguments.command == "verify-checks":
+            import json as _json
+            from pathlib import Path as _Path
+
+            from .verification_execution import verify_check_records
+
+            report = verify_check_records(
+                _Path(arguments.plan_json),
+                run_records=tuple(_Path(item) for item in arguments.run_record),
+                output=_Path(arguments.output),
+                markdown=_Path(arguments.markdown),
+            )
+            print(_json.dumps(report.as_json(), separators=(",", ":"), sort_keys=True))
+            return report.exit_code
         elif arguments.command == "verification-plan":
             result = write_verification_plan(
                 arguments.path,
@@ -222,6 +253,29 @@ def _build_parser() -> argparse.ArgumentParser:
     verification_plan.add_argument("--head", required=True, metavar="HEAD")
     verification_plan.add_argument("--output", type=Path, required=True, metavar="JSON")
     verification_plan.add_argument("--markdown", type=Path, required=True, metavar="MARKDOWN")
+    run_check_parser = subparsers.add_parser(
+        "run-check",
+        help="Run one verification check and record its execution.",
+    )
+    run_check_parser.add_argument("check_id", metavar="CHECK_ID")
+    run_check_parser.add_argument("--output", required=True, help="Path to check record JSON.")
+    run_check_parser.add_argument("--log", required=True, help="Path to combined check log.")
+    run_check_parser.add_argument("argv", nargs="*", metavar="COMMAND")
+
+    verify_checks_parser = subparsers.add_parser(
+        "verify-checks",
+        help="Verify check run records against a verification plan.",
+    )
+    verify_checks_parser.add_argument("plan_json", metavar="PLAN_JSON")
+    verify_checks_parser.add_argument(
+        "--run-record",
+        action="append",
+        default=[],
+        help="Path to one check run record JSON.",
+    )
+    verify_checks_parser.add_argument("--output", required=True, help="Path to JSON report.")
+    verify_checks_parser.add_argument("--markdown", required=True, help="Path to Markdown report.")
+
     task_ledger = subparsers.add_parser(
         "task-ledger", help="Read and update deterministic task state."
     )
