@@ -267,6 +267,11 @@ def _ignored_scope_diagnostic(
             scope, _location_index(location, "/protected_artifacts/")
         )
         return artifact is not None and artifact.actual_sha256 == artifact.expected_sha256
+    if code == "task_scope.protected_artifact_digest_mismatch":
+        artifact = _artifact_at_manifest_index(
+            scope, _location_index(location, "/protected_artifacts/")
+        )
+        return artifact is not None and not artifact.changed
     return False
 
 
