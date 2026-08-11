@@ -86,7 +86,7 @@ sha256 = "6e290e65a6b60ac55c554d404dc6abac1f016f9f575433336f7d8699158b5adc"
 [[protected_artifacts]]
 kind = "acceptance-test"
 path = "packages/devtools/tests/acceptance/test_verification_plan_contract.py"
-sha256 = "d33a394bf66aa374e5514e76eb22e3c9ddafdb5bcd6bbfb336b0f4de7de281cc"
+sha256 = "79850e3ae79f5ed1e61abf58e8ad2201ff96dfdc4a2c3edac7839e4d7589d982"
 
 [[protected_artifacts]]
 kind = "acceptance-test"
