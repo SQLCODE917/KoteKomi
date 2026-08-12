@@ -347,16 +347,22 @@ def _check_main(
     head: str | None,
 ) -> LifecycleResult:
     revisions = (("/main_base", main_base), ("/verified", verified), ("/head", head))
-    if any(revision is None for _, revision in revisions):
+    missing_main_revisions = (
+        (main_base, "/main-base", "missing_main_base", "main_requires_main_base"),
+        (verified, "/verified", "missing_verified", "main_requires_verified"),
+        (head, "/head", "missing_head", "main_requires_head"),
+    )
+    diagnostics = [
+        _diagnostic(code, location, rule)
+        for value, location, code, rule in missing_main_revisions
+        if value is None
+    ]
+    if diagnostics:
         return _result(
             "invalid",
             task_id,
             phase,
-            (
-                _diagnostic(
-                    "missing_merge_revisions", "/head", "main_requires_main_base_verified_and_head"
-                ),
-            ),
+            tuple(diagnostics),
             checks,
         )
     resolved = tuple(

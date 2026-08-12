@@ -1,0 +1,166 @@
+schema_version = 1
+task_id = "harness-11-lifecycle-ergonomics-early-gates"
+title = "H11 Lifecycle ergonomics and early gates"
+status = "ready_for_terra_high"
+series_id = "terra-high-harness-v1"
+task_class = "repository-tooling"
+model_profile = "terra-high-v1"
+baseline_revision = "fc168de82ab4543a2708adc47000d69efe641363"
+tdd_path = "docs/agent-harness/h11/README.md"
+tdd_sha256 = "2d4efd476040bd907f6395825ded86283ad7d461b4be523c40b5dca40fc43192"
+goal = "Improve lifecycle-check main-phase diagnostics and require candidate lifecycle before expensive dogfood or CI."
+depends_on = [
+  "harness-09-followup-retrospective-verification-plan",
+  "harness-10-verification-execution-accountability",
+]
+allowed_paths = [
+  "packages/devtools/src/kotekomi_devtools/cli.py",
+  "packages/devtools/src/kotekomi_devtools/task_lifecycle.py",
+  "packages/devtools/AGENTS.md",
+  "packages/devtools/tests/acceptance/test_task_lifecycle_contract.py",
+  "packages/devtools/tests/unit/test_task_lifecycle.py",
+]
+reference_paths = [
+  "docs/agent-harness/h11/README.md",
+  "docs/agent-harness/h11/acceptance-criteria.md",
+  "docs/agent-harness/h11/tdd.md",
+  "docs/agent-harness/h11/dogfood-plan.md",
+  "docs/agent-harness/h11/operator-notes.md",
+  "docs/agent-harness/h10/README.md",
+  "docs/agent-harness/h10/acceptance-criteria.md",
+  "packages/devtools/src/kotekomi_devtools/verification_plan.py",
+  "packages/devtools/src/kotekomi_devtools/verification_execution.py",
+  "packages/devtools/tests/acceptance/test_verification_plan_contract.py",
+  "packages/devtools/tests/acceptance/test_verification_execution_contract.py",
+]
+stop_conditions = [
+  "task manifest schema changed",
+  "protected H11 docs changed after spec",
+  "verification-plan, run-check, or verify-checks semantics changed",
+  "candidate lifecycle is deferred until after dogfood verification execution or CI",
+  "main lifecycle missing-argument diagnostics remain generic only",
+]
+
+[readiness]
+authority = "The H11 docs define lifecycle-check main-phase ergonomics and early candidate gate accountability."
+contract_family = "agent-harness"
+dominant_outcome = "lifecycle-check reports actionable main-phase missing-argument diagnostics and AGENTS guidance requires early candidate lifecycle."
+failure_policy = "Missing main lifecycle arguments return invalid JSON with deterministic diagnostics; invalid candidate guidance is caught by tests."
+legacy_disposition = "Existing H1-H10 commands remain available and exact-output contracts remain stable."
+negative_proof = "H11 must not change verification-plan, run-check, verify-checks, receipt schema, task manifest schema, or GitHub CI behavior."
+public_entry_point = "kotekomi-agent lifecycle-check"
+scope_policy = "Only lifecycle CLI/help, task_lifecycle behavior, compact AGENTS guidance, and lifecycle tests may change in the candidate."
+side_effect_boundary = "lifecycle-check remains read-only; tests must not require network, GitHub, global repository state, commits, or pushes."
+unresolved_decisions = []
+
+[budget]
+maximum_production_files = 3
+maximum_test_files = 2
+maximum_production_diff_lines = 420
+
+[[protected_artifacts]]
+kind = "json-schema"
+path = ".agent/schemas/task-manifest-v1.schema.json"
+sha256 = "b505d4fd89eed61510a2cd669a8a96564927ed43309cd31ed786aff6fb63a460"
+
+[[protected_artifacts]]
+kind = "leaf-tdd"
+path = "docs/agent-harness/h11/README.md"
+sha256 = "2d4efd476040bd907f6395825ded86283ad7d461b4be523c40b5dca40fc43192"
+
+[[protected_artifacts]]
+kind = "leaf-tdd"
+path = "docs/agent-harness/h11/acceptance-criteria.md"
+sha256 = "8e7178ff972af8826245ef1deea0eab45e87cfb8c74b09c6a7ce871cbd0e727a"
+
+[[protected_artifacts]]
+kind = "leaf-tdd"
+path = "docs/agent-harness/h11/tdd.md"
+sha256 = "9ab96590f9cfad32b1a7d9530e81f702ae0433711bc15f043f724256d2bb3efe"
+
+[[protected_artifacts]]
+kind = "agent-instructions"
+path = "docs/agent-harness/h11/dogfood-plan.md"
+sha256 = "bec109a306bd9e8f83c7fdc95688b273c376d392c6bd41a5ce2393667c2feff5"
+
+[[protected_artifacts]]
+kind = "agent-instructions"
+path = "docs/agent-harness/h11/operator-notes.md"
+sha256 = "c4d9eb1850869e0af4e90ea575367eb2eb06ce1cddcf7921a3f7e384089774e5"
+
+[[protected_artifacts]]
+kind = "leaf-tdd"
+path = "docs/agent-harness/h10/README.md"
+sha256 = "101cde45c230f06e7bf8636ac12ef47be93e6f7ce308cde49b407fefdaa4d957"
+
+[[protected_artifacts]]
+kind = "leaf-tdd"
+path = "docs/agent-harness/h10/acceptance-criteria.md"
+sha256 = "14b4b6ed3e933e73f083921ac78e7eb6fe2f5960d74ff6562cb1f710e500ee84"
+
+[[protected_artifacts]]
+kind = "acceptance-test"
+path = "packages/devtools/tests/acceptance/test_verification_execution_contract.py"
+sha256 = "edb5d4db5d7fdcd05167c09734876a73d5aabe0310db0fbafe6e70b0125a67ce"
+
+[[protected_artifacts]]
+kind = "acceptance-test"
+path = "packages/devtools/tests/acceptance/test_verification_plan_contract.py"
+sha256 = "79850e3ae79f5ed1e61abf58e8ad2201ff96dfdc4a2c3edac7839e4d7589d982"
+
+[[protected_artifacts]]
+kind = "acceptance-test"
+path = "packages/devtools/tests/acceptance/test_task_manifest_contract.py"
+sha256 = "f16a8aaa3a3c8c7b513c1c9823b8d0c3ff12af993eaf31762daa320baacbda28"
+
+[[protected_artifacts]]
+kind = "acceptance-test"
+path = "packages/devtools/tests/acceptance/test_task_preflight_contract.py"
+sha256 = "7eef90e918b1d82cd16c88d81f893b67e8a21a745c0304c659c07805576b1c8a"
+
+[[protected_artifacts]]
+kind = "acceptance-test"
+path = "packages/devtools/tests/acceptance/test_receipt_writer_contract.py"
+sha256 = "7d455a550719286c8f7eb2d19ad7d9d771ceb37eff2023667894108cf3a64e9d"
+
+[[acceptance]]
+id = "h11-lifecycle-contract"
+argv = ["uv", "run", "pytest", "-p", "no:cacheprovider", "packages/devtools/tests/acceptance/test_task_lifecycle_contract.py"]
+timeout_seconds = 120
+profile = "portable-local"
+
+[[acceptance]]
+id = "h11-lifecycle-unit"
+argv = ["uv", "run", "pytest", "-p", "no:cacheprovider", "packages/devtools/tests/unit/test_task_lifecycle.py"]
+timeout_seconds = 120
+profile = "portable-local"
+
+[[acceptance]]
+id = "h10-verification-execution-contract-retained"
+argv = ["uv", "run", "pytest", "-p", "no:cacheprovider", "packages/devtools/tests/acceptance/test_verification_execution_contract.py"]
+timeout_seconds = 120
+profile = "portable-local"
+
+[[acceptance]]
+id = "h9-followup-verification-plan-contract-retained"
+argv = ["uv", "run", "pytest", "-p", "no:cacheprovider", "packages/devtools/tests/acceptance/test_verification_plan_contract.py"]
+timeout_seconds = 120
+profile = "portable-local"
+
+[[acceptance]]
+id = "task-manifest-contract-retained"
+argv = ["uv", "run", "pytest", "-p", "no:cacheprovider", "packages/devtools/tests/acceptance/test_task_manifest_contract.py"]
+timeout_seconds = 120
+profile = "portable-local"
+
+[[acceptance]]
+id = "repository-static-checks"
+argv = ["uv", "run", "ruff", "check"]
+timeout_seconds = 120
+profile = "portable-local"
+
+[[acceptance]]
+id = "repository-type-checks"
+argv = ["uv", "run", "pyright"]
+timeout_seconds = 120
+profile = "portable-local"
