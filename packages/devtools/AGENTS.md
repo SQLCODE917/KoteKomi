@@ -129,3 +129,10 @@ when the harness command can own that state transition.
 When CLI dispatch or delimiter handling changes, rely on `verification-plan`
 to require the CLI delimiter regression contract. Do not omit or replace the
 generated delimiter check with a manually chosen success-only smoke test.
+
+## Verification-plan coverage edits
+
+When harness-owned devtools paths are changed, rely on `verification-plan`
+to select the matching deterministic coverage checks. Do not replace the
+generated plan with broad local full-suite pytest or hand-picked smoke
+tests, and keep unknown changed paths fail-closed.
