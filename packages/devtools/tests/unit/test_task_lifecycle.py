@@ -5,7 +5,7 @@ import os
 import subprocess
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 MANIFEST = REPO_ROOT / ".agent/tasks/harness-06-task-lifecycle-state-machine.toml"
@@ -104,3 +104,63 @@ def test_main_phase_rejects_unexpected_merge_parents() -> None:
     assert code != 0
     assert payload["status"] in {"not_ready", "invalid"}
     assert payload["diagnostics"]
+
+def _h11_rules(payload: dict[str, Any]) -> set[str]:
+    diagnostics = cast(list[object], payload.get("diagnostics", []))
+    rules: set[str] = set()
+    for item in diagnostics:
+        assert isinstance(item, dict)
+        diagnostic = cast(dict[str, object], item)
+        rule = diagnostic.get("rule")
+        if isinstance(rule, str):
+            rules.add(rule)
+    return rules
+
+
+def test_main_phase_reports_specific_missing_revision_arguments() -> None:
+    code, all_missing, _ = _run("--phase", "main")
+    assert code == 1
+    assert {
+        "main_requires_main_base",
+        "main_requires_verified",
+        "main_requires_head",
+    } <= _h11_rules(all_missing)
+
+    code, missing_verified, _ = _run(
+        "--phase",
+        "main",
+        "--main-base",
+        "HEAD",
+        "--head",
+        "HEAD",
+    )
+    assert code == 1
+    assert {"main_requires_verified"} <= _h11_rules(missing_verified)
+    assert "main_requires_main_base" not in _h11_rules(missing_verified)
+    assert "main_requires_head" not in _h11_rules(missing_verified)
+
+    code, missing_main_base, _ = _run(
+        "--phase",
+        "main",
+        "--verified",
+        "HEAD",
+        "--head",
+        "HEAD",
+    )
+    assert code == 1
+    assert {"main_requires_main_base"} <= _h11_rules(missing_main_base)
+    assert "main_requires_verified" not in _h11_rules(missing_main_base)
+    assert "main_requires_head" not in _h11_rules(missing_main_base)
+
+    code, missing_head, _ = _run(
+        "--phase",
+        "main",
+        "--main-base",
+        "HEAD",
+        "--verified",
+        "HEAD",
+    )
+    assert code == 1
+    assert {"main_requires_head"} <= _h11_rules(missing_head)
+    assert "main_requires_main_base" not in _h11_rules(missing_head)
+    assert "main_requires_verified" not in _h11_rules(missing_head)

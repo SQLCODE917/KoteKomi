@@ -340,3 +340,66 @@ def test_main_phase_verifies_merge_parents(tmp_path: Path) -> None:
     assert payload["status"] == "ready"
     assert "merge-parents" in payload["required_checks"]
     assert "main-ci-record" in payload["required_checks"]
+
+def _h11_diagnostic_rules(payload: dict[str, Any]) -> set[str]:
+    diagnostics = cast(list[object], payload.get("diagnostics", []))
+    rules: set[str] = set()
+    for item in diagnostics:
+        assert isinstance(item, dict)
+        diagnostic = cast(dict[str, object], item)
+        rule = diagnostic.get("rule")
+        if isinstance(rule, str):
+            rules.add(rule)
+    return rules
+
+
+def test_main_phase_reports_specific_missing_revision_arguments() -> None:
+    _require_lifecycle_check()
+
+    cases: list[tuple[list[str], set[str]]] = [
+        (
+            [],
+            {
+                "main_requires_main_base",
+                "main_requires_verified",
+                "main_requires_head",
+            },
+        ),
+        (
+            ["--main-base", "HEAD", "--head", "HEAD"],
+            {"main_requires_verified"},
+        ),
+        (
+            ["--verified", "HEAD", "--head", "HEAD"],
+            {"main_requires_main_base"},
+        ),
+        (
+            ["--main-base", "HEAD", "--verified", "HEAD"],
+            {"main_requires_head"},
+        ),
+    ]
+
+    for extra_args, expected_rules in cases:
+        code, payload = _json_result(
+            [
+                "lifecycle-check",
+                str(MANIFEST),
+                "--phase",
+                "main",
+                *extra_args,
+            ]
+        )
+        assert code == 1
+        _assert_common_payload(payload, "main")
+        assert expected_rules <= _h11_diagnostic_rules(payload)
+
+
+def test_agents_guidance_requires_candidate_lifecycle_before_dogfood_and_ci() -> None:
+    agents_text = (Path(__file__).resolve().parents[2] / "AGENTS.md").read_text(
+        encoding="utf-8"
+    )
+    normalized = " ".join(agents_text.lower().split())
+
+    assert "candidate lifecycle" in normalized
+    assert "before dogfood verification execution" in normalized
+    assert "before candidate ci" in normalized

@@ -111,3 +111,8 @@ Run every required check through run-check.
 Run verify-checks to prove every required check succeeded.
 Do not manually infer, omit, or replace checks.
 
+## Candidate lifecycle gate
+
+Candidate lifecycle is an early gate. After creating the candidate commit, run
+`kotekomi-agent lifecycle-check` with `--phase candidate` before dogfood
+verification execution, before candidate CI, and before any main merge work.
