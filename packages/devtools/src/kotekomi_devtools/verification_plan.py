@@ -43,6 +43,19 @@ _CLI_TOUCHED_CHECKS = (
             "packages/devtools/tests/acceptance/test_task_preflight_contract.py",
         ),
     ),
+    (
+        "cli-delimiter-regression-contract",
+        (
+            "uv",
+            "run",
+            "pytest",
+            "-p",
+            "no:cacheprovider",
+            "packages/devtools/tests/acceptance/test_verification_execution_contract.py",
+            "-k",
+            "delimiter",
+        ),
+    ),
 )
 
 

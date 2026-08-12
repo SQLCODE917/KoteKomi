@@ -353,3 +353,83 @@ def test_verification_plan_fails_closed_for_uncovered_path(tmp_path: Path) -> No
         }
     ]
     assert "unplanned.txt" in markdown.read_text(encoding="utf-8")
+
+
+def _h13_fixture_repo(tmp_path: Path) -> tuple[Path, Path, str]:
+    repo = tmp_path / "h13-fixture"
+    repo.mkdir()
+    manifest = repo / ".agent" / "tasks" / "h13-fixture.toml"
+    cli_path = (
+        repo
+        / "packages"
+        / "devtools"
+        / "src"
+        / "kotekomi_devtools"
+        / "cli.py"
+    )
+    manifest_text = (
+        "schema_version = 1\n"
+        'task_id = "h13-fixture"\n'
+        "allowed_paths = [\n"
+        '  "packages/devtools/src/kotekomi_devtools/cli.py",\n'
+        "]\n"
+        "reference_paths = []\n"
+        "\n"
+        "[[acceptance]]\n"
+        'id = "fixture-contract"\n'
+        'argv = ["uv", "run", "pytest", "-p", "no:cacheprovider", "fixture.py"]\n'
+        "timeout_seconds = 60\n"
+        'profile = "portable-local"\n'
+    )
+    _write(manifest, manifest_text)
+    _write(cli_path, "print('base cli')\n")
+    _git(repo, "init")
+    _git(repo, "config", "user.email", "h13@example.invalid")
+    _git(repo, "config", "user.name", "H13 Test")
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-m", "base")
+    base = _git(repo, "rev-parse", "HEAD")
+    return repo, manifest, base
+
+
+def test_cli_delimiter_changes_require_regression_contract(
+    tmp_path: Path,
+) -> None:
+    repo, manifest, base = _h13_fixture_repo(tmp_path)
+    cli_path = (
+        repo
+        / "packages"
+        / "devtools"
+        / "src"
+        / "kotekomi_devtools"
+        / "cli.py"
+    )
+    _write(cli_path, "print('changed cli dispatch')\n")
+    _git(repo, "add", "packages/devtools/src/kotekomi_devtools/cli.py")
+    _git(repo, "commit", "-m", "touch cli dispatch")
+    head = _git(repo, "rev-parse", "HEAD")
+    output = tmp_path / "plan.json"
+    markdown = tmp_path / "plan.md"
+
+    result = _run_plan(repo, manifest, base, head, output, markdown)
+
+    assert result.returncode == 0, result.stderr
+    payload = _json(output)
+    checks_value = payload.get("checks", [])
+    assert isinstance(checks_value, list)
+    checks = cast(list[object], checks_value)
+    delimiter_checks: list[dict[str, object]] = []
+    for check in checks:
+        if not isinstance(check, dict):
+            continue
+        candidate = cast(dict[str, object], check)
+        if candidate.get("id") == "cli-delimiter-regression-contract":
+            delimiter_checks.append(candidate)
+    assert len(delimiter_checks) == 1
+    delimiter_check = delimiter_checks[0]
+    assert delimiter_check.get("source") == "touched-path"
+    command_value = delimiter_check.get("command")
+    assert command_value is not None
+    command = str(command_value)
+    assert "test_verification_execution_contract.py" in command
+    assert "-k delimiter" in command

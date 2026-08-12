@@ -42,6 +42,7 @@ def test_plan_adds_shared_cli_contracts_and_fails_closed(
     assert not plan.ready
     assert plan.exit_code == 1
     assert [check.id for check in plan.checks] == [
+        "cli-delimiter-regression-contract",
         "feature-contract",
         "repository-static-checks",
         "repository-type-checks",
