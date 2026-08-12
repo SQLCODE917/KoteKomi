@@ -26,6 +26,7 @@ allowed_paths = [
   "packages/devtools/AGENTS.md",
   "packages/devtools/src/kotekomi_devtools/verification_plan.py",
   "packages/devtools/tests/acceptance/test_verification_plan_contract.py",
+  "packages/devtools/tests/unit/test_verification_plan.py",
   "packages/devtools/tests/acceptance/test_verification_execution_contract.py",
 ]
 reference_paths = [
@@ -57,7 +58,7 @@ unresolved_decisions = []
 
 [budget]
 maximum_production_files = 1
-maximum_test_files = 2
+maximum_test_files = 3
 maximum_production_diff_lines = 250
 
 [[protected_artifacts]]
@@ -104,6 +105,12 @@ profile = "portable-local"
 [[acceptance]]
 id = "h13-cli-delimiter-execution-contract"
 argv = ["uv", "run", "pytest", "-p", "no:cacheprovider", "packages/devtools/tests/acceptance/test_verification_execution_contract.py", "-k", "delimiter"]
+timeout_seconds = 60
+profile = "portable-local"
+
+[[acceptance]]
+id = "h13-verification-plan-unit-contract"
+argv = ["uv", "run", "pytest", "-p", "no:cacheprovider", "packages/devtools/tests/unit/test_verification_plan.py"]
 timeout_seconds = 60
 profile = "portable-local"
 
