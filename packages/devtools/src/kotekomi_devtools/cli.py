@@ -9,6 +9,12 @@ from pathlib import Path
 
 from kotekomi_devtools.goal_accountability import GoalAccountabilityError, write_goal_report
 from kotekomi_devtools.receipt_writer import ReceiptWriterError, write_receipt
+from kotekomi_devtools.step_scripts import (
+    StepScriptError,
+    record_step_failure,
+    step_preflight_payload,
+    write_step_json,
+)
 from kotekomi_devtools.task_budget import audit_task_budget
 from kotekomi_devtools.task_ledger import (
     TaskLedgerError,
@@ -81,6 +87,34 @@ def main(argv: list[str] | None = None) -> int:
             )
             output = result.as_json()
             exit_code = result.exit_code
+        elif arguments.command == "step-preflight":
+            output = step_preflight_payload(
+                task_id=arguments.task_id,
+                base=arguments.base,
+                branch=arguments.branch,
+                expected_origin_main=arguments.expected_origin_main,
+                origin_main_ref=arguments.origin_main_ref,
+                remote_branches=arguments.remote_branch,
+                state_file=arguments.state_file,
+                cwd=arguments.cwd,
+                recover_candidate=arguments.recover_candidate,
+                allow_dirty_main=arguments.allow_dirty_main,
+            )
+            write_step_json(output, arguments.output, force=True)
+            exit_code = 0 if output.get("status") == "ready" else 1
+        elif arguments.command == "record-step-failure":
+            output = record_step_failure(
+                task_id=arguments.task_id,
+                step=arguments.step,
+                reason=arguments.reason,
+                output=arguments.output,
+                log=arguments.log,
+                state_file=arguments.state_file,
+                cwd=arguments.cwd,
+                origin_main_ref=arguments.origin_main_ref,
+                force=arguments.force,
+            )
+            exit_code = 0
         elif arguments.command == "write-receipt":
             result = write_receipt(
                 task_id=arguments.task_id,
@@ -180,6 +214,9 @@ def main(argv: list[str] | None = None) -> int:
             )
             output = result.as_json()
             exit_code = result.exit_code
+    except StepScriptError as error:
+        print(f"kotekomi-agent: {error}", file=sys.stderr)
+        return 2
     except ReceiptWriterError as error:
         print(f"kotekomi-agent: {error}", file=sys.stderr)
         return 2
@@ -278,6 +315,42 @@ def _build_parser() -> argparse.ArgumentParser:
     verification_plan.add_argument("--head", required=True, metavar="HEAD")
     verification_plan.add_argument("--output", type=Path, required=True, metavar="JSON")
     verification_plan.add_argument("--markdown", type=Path, required=True, metavar="MARKDOWN")
+    step_preflight = subparsers.add_parser(
+        "step-preflight", help="Record deterministic local step preflight state."
+    )
+    step_preflight.add_argument("--task-id", required=True)
+    step_preflight.add_argument("--base", required=True)
+    step_preflight.add_argument("--branch", required=True)
+    step_preflight.add_argument("--expected-origin-main")
+    step_preflight.add_argument("--origin-main-ref", default="origin/main")
+    step_preflight.add_argument("--remote-branch", action="append", default=[])
+    step_preflight.add_argument("--state-file", type=Path)
+    step_preflight.add_argument("--output", type=Path)
+    step_preflight.add_argument("--cwd", type=Path, default=Path("."))
+    step_preflight.add_argument("--recover-candidate", action="store_true")
+    step_preflight.add_argument("--allow-dirty-main", action="store_true")
+
+    record_step_failure_parser = subparsers.add_parser(
+        "record-step-failure",
+        help="Write a deterministic failed local generated-step record.",
+    )
+    record_step_failure_parser.add_argument("--task-id", required=True)
+    record_step_failure_parser.add_argument("--step", required=True)
+    record_step_failure_parser.add_argument("--reason", required=True)
+    record_step_failure_parser.add_argument("--output", type=Path, required=True)
+    record_step_failure_parser.add_argument("--log", type=Path)
+    record_step_failure_parser.add_argument("--state-file", type=Path)
+    record_step_failure_parser.add_argument(
+        "--cwd",
+        type=Path,
+        default=Path("."),
+    )
+    record_step_failure_parser.add_argument(
+        "--origin-main-ref",
+        default="origin/main",
+    )
+    record_step_failure_parser.add_argument("--force", action="store_true")
+
     run_check_parser = subparsers.add_parser(
         "run-check",
         help="Run one verification check and record its execution.",
