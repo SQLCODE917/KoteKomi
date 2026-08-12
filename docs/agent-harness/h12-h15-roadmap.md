@@ -66,3 +66,9 @@ At any point in a dogfood run, the operator can ask the harness for the task sta
 2. H13 second because CLI dispatch regressions are high leverage and narrowly scoped.
 3. H14 third because broader planner coverage benefits from safer scripts and stronger CLI planner tests.
 4. H15 fourth because receipt-chain status can then cover the expanded harness flow.
+
+## H13 execution note
+
+H13 implements the CLI delimiter regression planner rule. The acceptance target
+is that `verification-plan` requires the delimiter contract whenever `cli.py`
+changes, so future CLI dispatch edits do not rely on operator memory.

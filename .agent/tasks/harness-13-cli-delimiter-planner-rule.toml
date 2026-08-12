@@ -1,0 +1,132 @@
+schema_version = 1
+task_id = "harness-13-cli-delimiter-planner-rule"
+title = "H13 CLI Delimiter Planner Rule"
+status = "ready_for_terra_high"
+series_id = "terra-high-harness-v1"
+task_class = "repository-tooling"
+model_profile = "terra-high-v1"
+baseline_revision = "8ab70856b7459940d1c980eb917ba71be6b9f9bf"
+tdd_path = "docs/agent-harness/h13/README.md"
+tdd_sha256 = "2d15b4d748304bbf013b92ef49bab9f4dad7e3c365dbf9c64672f5e128037067"
+goal = "Require the CLI delimiter regression contract from verification-plan whenever CLI dispatch changes."
+depends_on = [
+  "harness-09-followup-retrospective-verification-plan",
+  "harness-10-verification-execution-accountability",
+  "harness-11-lifecycle-ergonomics-early-gates",
+  "harness-12-step-script-safety",
+]
+allowed_paths = [
+  ".agent/tasks/harness-13-cli-delimiter-planner-rule.toml",
+  "docs/agent-harness/h12-h15-roadmap.md",
+  "docs/agent-harness/h13/README.md",
+  "docs/agent-harness/h13/acceptance-criteria.md",
+  "docs/agent-harness/h13/dogfood-plan.md",
+  "docs/agent-harness/h13/operator-notes.md",
+  "docs/agent-harness/h13/tdd.md",
+  "packages/devtools/AGENTS.md",
+  "packages/devtools/src/kotekomi_devtools/verification_plan.py",
+  "packages/devtools/tests/acceptance/test_verification_plan_contract.py",
+  "packages/devtools/tests/acceptance/test_verification_execution_contract.py",
+]
+reference_paths = [
+  "docs/agent-harness/h9-followup/verification-plan-tdd.md",
+  "docs/agent-harness/h10/README.md",
+  "docs/agent-harness/h11/README.md",
+  "docs/agent-harness/h12/README.md",
+  "packages/devtools/src/kotekomi_devtools/cli.py",
+  "packages/devtools/src/kotekomi_devtools/verification_execution.py",
+]
+stop_conditions = [
+  "task manifest schema changed",
+  "verification-plan starts executing tests or mutating git",
+  "run-check delimiter contract weakens to success-only assertions",
+  "planner rule expands into broad path-specific memorization",
+]
+
+[readiness]
+authority = "H12-H15 roadmap and H13 docs define the CLI delimiter planner-rule follow-up."
+contract_family = "agent-harness"
+dominant_outcome = "verification-plan includes the CLI delimiter regression contract when CLI dispatch changes."
+failure_policy = "Missing planner coverage exits nonzero in acceptance tests and blocks candidate dogfood."
+legacy_disposition = "Existing H9 through H12 commands and contracts remain available."
+negative_proof = "The planner must not run tests, mutate Git, call GitHub, or infer completion from agent context."
+public_entry_point = "kotekomi-agent verification-plan"
+scope_policy = "Only planner rule, focused acceptance tests, and compact guidance may change."
+side_effect_boundary = "verification-plan may write only requested JSON and Markdown outputs."
+unresolved_decisions = []
+
+[budget]
+maximum_production_files = 1
+maximum_test_files = 2
+maximum_production_diff_lines = 250
+
+[[protected_artifacts]]
+kind = "json-schema"
+path = ".agent/schemas/task-manifest-v1.schema.json"
+sha256 = "b505d4fd89eed61510a2cd669a8a96564927ed43309cd31ed786aff6fb63a460"
+
+[[protected_artifacts]]
+kind = "leaf-tdd"
+path = "docs/agent-harness/h13/README.md"
+sha256 = "2d15b4d748304bbf013b92ef49bab9f4dad7e3c365dbf9c64672f5e128037067"
+
+[[protected_artifacts]]
+kind = "leaf-tdd"
+path = "docs/agent-harness/h13/acceptance-criteria.md"
+sha256 = "c62c9ccafe88642a345e54cd1a85da1a4e9ce97fe6a646cee7bd1244b6619a64"
+
+[[protected_artifacts]]
+kind = "leaf-tdd"
+path = "docs/agent-harness/h13/dogfood-plan.md"
+sha256 = "ecfe8b80b21912530207667a2e4751d56274951428a803c9e9448cf1a8a3e516"
+
+[[protected_artifacts]]
+kind = "agent-instructions"
+path = "docs/agent-harness/h13/operator-notes.md"
+sha256 = "d7e2b22c23d71eed47a150bce23425791fd4d87bc1106fd2d25ae35fb757b5c1"
+
+[[protected_artifacts]]
+kind = "leaf-tdd"
+path = "docs/agent-harness/h13/tdd.md"
+sha256 = "b843049a16f1e89d1cc4b7addd339a65a18b532debbeec3c90270ee655e2eb97"
+
+[[protected_artifacts]]
+kind = "leaf-tdd"
+path = "docs/agent-harness/h12-h15-roadmap.md"
+sha256 = "c931fb8bca045ec6911078d48544ed4c974d96bc3839d3e69905bb6556d33d24"
+
+[[acceptance]]
+id = "h13-cli-delimiter-planner-contract"
+argv = ["uv", "run", "pytest", "-p", "no:cacheprovider", "packages/devtools/tests/acceptance/test_verification_plan_contract.py", "-k", "cli_delimiter"]
+timeout_seconds = 60
+profile = "portable-local"
+
+[[acceptance]]
+id = "h13-cli-delimiter-execution-contract"
+argv = ["uv", "run", "pytest", "-p", "no:cacheprovider", "packages/devtools/tests/acceptance/test_verification_execution_contract.py", "-k", "delimiter"]
+timeout_seconds = 60
+profile = "portable-local"
+
+[[acceptance]]
+id = "h9-followup-verification-plan-contract-retained"
+argv = ["uv", "run", "pytest", "-p", "no:cacheprovider", "packages/devtools/tests/acceptance/test_verification_plan_contract.py"]
+timeout_seconds = 120
+profile = "portable-local"
+
+[[acceptance]]
+id = "h10-verification-execution-contract-retained"
+argv = ["uv", "run", "pytest", "-p", "no:cacheprovider", "packages/devtools/tests/acceptance/test_verification_execution_contract.py"]
+timeout_seconds = 120
+profile = "portable-local"
+
+[[acceptance]]
+id = "task-manifest-contract-retained"
+argv = ["uv", "run", "pytest", "-p", "no:cacheprovider", "packages/devtools/tests/acceptance/test_task_manifest_contract.py"]
+timeout_seconds = 120
+profile = "portable-local"
+
+[[acceptance]]
+id = "task-preflight-contract-retained"
+argv = ["uv", "run", "pytest", "-p", "no:cacheprovider", "packages/devtools/tests/acceptance/test_task_preflight_contract.py"]
+timeout_seconds = 120
+profile = "portable-local"
