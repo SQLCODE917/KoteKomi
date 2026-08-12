@@ -434,3 +434,46 @@ def test_verify_checks_rejects_run_log_digest_mismatch(tmp_path: Path) -> None:
     assert report["status"] == "not_ready"
     codes = {item["code"] for item in report["diagnostics"]}
     assert "verification_execution.log_digest_mismatch" in codes
+
+
+def test_run_check_preserves_delimiter_command_arguments(tmp_path: Path) -> None:
+    output = tmp_path / "record.json"
+    log = tmp_path / "check.log"
+
+    result = _run_cli(
+        [
+            "run-check",
+            "cli-delimiter-regression-contract",
+            "--output",
+            str(output),
+            "--log",
+            str(log),
+            "--",
+            "uv",
+            "run",
+            "python",
+            "-c",
+            "import sys; print('|'.join(sys.argv[1:]))",
+            "--option-like",
+            "value",
+            "--",
+            "tail",
+        ]
+    )
+
+    assert result.returncode == 0, result.stderr
+    payload = _json(output)
+    assert payload["check_id"] == "cli-delimiter-regression-contract"
+    assert payload["status"] == "passed"
+    assert payload["argv"] == [
+        "uv",
+        "run",
+        "python",
+        "-c",
+        "import sys; print('|'.join(sys.argv[1:]))",
+        "--option-like",
+        "value",
+        "--",
+        "tail",
+    ]
+    assert "--option-like|value|--|tail" in log.read_text(encoding="utf-8")

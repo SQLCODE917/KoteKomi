@@ -123,3 +123,9 @@ Generated local dogfood scripts must use deterministic harness commands for
 step preflight, failed-candidate recovery, and failed-step recording. Do not
 encode bespoke branch-reset or failure-record policies in one-off scripts
 when the harness command can own that state transition.
+
+## CLI dispatch edits
+
+When CLI dispatch or delimiter handling changes, rely on `verification-plan`
+to require the CLI delimiter regression contract. Do not omit or replace the
+generated delimiter check with a manually chosen success-only smoke test.
