@@ -116,3 +116,10 @@ Do not manually infer, omit, or replace checks.
 Candidate lifecycle is an early gate. After creating the candidate commit, run
 `kotekomi-agent lifecycle-check` with `--phase candidate` before dogfood
 verification execution, before candidate CI, and before any main merge work.
+
+## Generated local step scripts
+
+Generated local dogfood scripts must use deterministic harness commands for
+step preflight, failed-candidate recovery, and failed-step recording. Do not
+encode bespoke branch-reset or failure-record policies in one-off scripts
+when the harness command can own that state transition.

@@ -1,0 +1,193 @@
+schema_version = 1
+task_id = "harness-12-step-script-safety"
+title = "H12 Step script safety"
+status = "ready_for_terra_high"
+series_id = "terra-high-harness-v1"
+task_class = "repository-tooling"
+model_profile = "terra-high-v1"
+baseline_revision = "85e4b4b743661b0173e0189e01d641dbafad0f33"
+tdd_path = "docs/agent-harness/h12/README.md"
+tdd_sha256 = "5473c6cf87403e40b73b32b05b8e31748024a962665b00aed437b1a5eb380d2c"
+goal = "Add deterministic local step preflight, safe failed-candidate recovery, and failed-step recording so generated dogfood scripts are safer."
+depends_on = [
+  "harness-11-lifecycle-ergonomics-early-gates",
+]
+allowed_paths = [
+  "packages/devtools/src/kotekomi_devtools/cli.py",
+  "packages/devtools/src/kotekomi_devtools/step_scripts.py",
+  "packages/devtools/AGENTS.md",
+  "packages/devtools/tests/acceptance/test_step_scripts_contract.py",
+  "packages/devtools/tests/unit/test_step_scripts.py",
+]
+reference_paths = [
+  "docs/agent-harness/h12-h15-roadmap.md",
+  "docs/agent-harness/h12/README.md",
+  "docs/agent-harness/h12/acceptance-criteria.md",
+  "docs/agent-harness/h12/tdd.md",
+  "docs/agent-harness/h12/dogfood-plan.md",
+  "docs/agent-harness/h12/operator-notes.md",
+  "docs/agent-harness/h11/README.md",
+  "docs/agent-harness/h11/acceptance-criteria.md",
+  "packages/devtools/src/kotekomi_devtools/task_lifecycle.py",
+  "packages/devtools/src/kotekomi_devtools/verification_plan.py",
+  "packages/devtools/src/kotekomi_devtools/verification_execution.py",
+]
+stop_conditions = [
+  "task manifest schema changed",
+  "protected H12 docs changed after spec",
+  "lifecycle-check behavior changed",
+  "verification-plan, run-check, or verify-checks semantics changed",
+  "recovery mode can discard dirty main by default",
+  "tests require network, GitHub, global repository state, commits, pushes, or branch switching",
+]
+
+[readiness]
+authority = "The H12 docs define deterministic local step preflight, failed-candidate recovery, and failed-step recording."
+contract_family = "agent-harness"
+dominant_outcome = "Generated local dogfood scripts rely on deterministic harness commands for preflight/recovery/failure recording."
+failure_policy = "Unsafe dirty states fail closed; dirty main is refused by default."
+legacy_disposition = "Existing H1-H11 lifecycle, verification, and receipt commands remain stable."
+negative_proof = "H12 must not change lifecycle-check, verification-plan, run-check, verify-checks, receipt schema, task manifest schema, or CI behavior."
+public_entry_point = "kotekomi-agent step-preflight"
+scope_policy = "Only CLI wiring, new step script helper module, compact AGENTS guidance, and step script tests may change in the candidate."
+side_effect_boundary = "Tests must not require network, GitHub, global repository state, commits, pushes, or branch switching."
+unresolved_decisions = []
+
+[budget]
+maximum_production_files = 3
+maximum_test_files = 2
+maximum_production_diff_lines = 520
+
+[[protected_artifacts]]
+kind = "json-schema"
+path = ".agent/schemas/task-manifest-v1.schema.json"
+sha256 = "b505d4fd89eed61510a2cd669a8a96564927ed43309cd31ed786aff6fb63a460"
+
+[[protected_artifacts]]
+kind = "leaf-tdd"
+path = "docs/agent-harness/h12-h15-roadmap.md"
+sha256 = "eea856f48f7eaedca40002ceccfa23369cd6ac171b3d6b628b561177e95f622a"
+
+[[protected_artifacts]]
+kind = "leaf-tdd"
+path = "docs/agent-harness/h12/README.md"
+sha256 = "5473c6cf87403e40b73b32b05b8e31748024a962665b00aed437b1a5eb380d2c"
+
+[[protected_artifacts]]
+kind = "leaf-tdd"
+path = "docs/agent-harness/h12/acceptance-criteria.md"
+sha256 = "796b1b485f263db1f5aa5bb5d7bf6bd4d124a41d42aa0d07a8fced94f82f23a8"
+
+[[protected_artifacts]]
+kind = "leaf-tdd"
+path = "docs/agent-harness/h12/tdd.md"
+sha256 = "bb5667277ba60a8103329f58cc332b00bd2d463154473f46c28538722e2f077a"
+
+[[protected_artifacts]]
+kind = "agent-instructions"
+path = "docs/agent-harness/h12/dogfood-plan.md"
+sha256 = "c3c905466ac6431431b871e42a2998499722fe3c43d4be5afa277310c3e5b0a4"
+
+[[protected_artifacts]]
+kind = "agent-instructions"
+path = "docs/agent-harness/h12/operator-notes.md"
+sha256 = "225ebf18baad1abac1cc88535631a4cd3ce406bad5ff4a602c4e0f304200e3ec"
+
+[[protected_artifacts]]
+kind = "task-manifest"
+path = ".agent/tasks/harness-11-lifecycle-ergonomics-early-gates.toml"
+sha256 = "c311f50669dd948acc79ad7953d596c126e867a73fe44fd2b15480cc760af21c"
+
+[[protected_artifacts]]
+kind = "leaf-tdd"
+path = "docs/agent-harness/h11/README.md"
+sha256 = "2d4efd476040bd907f6395825ded86283ad7d461b4be523c40b5dca40fc43192"
+
+[[protected_artifacts]]
+kind = "leaf-tdd"
+path = "docs/agent-harness/h11/acceptance-criteria.md"
+sha256 = "8e7178ff972af8826245ef1deea0eab45e87cfb8c74b09c6a7ce871cbd0e727a"
+
+[[protected_artifacts]]
+kind = "acceptance-test"
+path = "packages/devtools/tests/acceptance/test_task_lifecycle_contract.py"
+sha256 = "c98930ebe98b18cb4c5f6458e480423f5afbd761f4684ae6955a320decb4d174"
+
+[[protected_artifacts]]
+kind = "acceptance-test"
+path = "packages/devtools/tests/unit/test_task_lifecycle.py"
+sha256 = "e1877a7c2fe6b7df0b96d60750e5904ecc7541d52a06a18c70588b866b8ea137"
+
+[[protected_artifacts]]
+kind = "acceptance-test"
+path = "packages/devtools/tests/acceptance/test_verification_plan_contract.py"
+sha256 = "79850e3ae79f5ed1e61abf58e8ad2201ff96dfdc4a2c3edac7839e4d7589d982"
+
+[[protected_artifacts]]
+kind = "acceptance-test"
+path = "packages/devtools/tests/acceptance/test_verification_execution_contract.py"
+sha256 = "edb5d4db5d7fdcd05167c09734876a73d5aabe0310db0fbafe6e70b0125a67ce"
+
+[[protected_artifacts]]
+kind = "acceptance-test"
+path = "packages/devtools/tests/acceptance/test_task_manifest_contract.py"
+sha256 = "f16a8aaa3a3c8c7b513c1c9823b8d0c3ff12af993eaf31762daa320baacbda28"
+
+[[protected_artifacts]]
+kind = "acceptance-test"
+path = "packages/devtools/tests/acceptance/test_task_preflight_contract.py"
+sha256 = "7eef90e918b1d82cd16c88d81f893b67e8a21a745c0304c659c07805576b1c8a"
+
+[[acceptance]]
+id = "h12-step-scripts-contract"
+argv = ["uv", "run", "pytest", "-p", "no:cacheprovider", "packages/devtools/tests/acceptance/test_step_scripts_contract.py"]
+timeout_seconds = 120
+profile = "portable-local"
+
+[[acceptance]]
+id = "h12-step-scripts-unit"
+argv = ["uv", "run", "pytest", "-p", "no:cacheprovider", "packages/devtools/tests/unit/test_step_scripts.py"]
+timeout_seconds = 120
+profile = "portable-local"
+
+[[acceptance]]
+id = "h11-lifecycle-contract-retained"
+argv = ["uv", "run", "pytest", "-p", "no:cacheprovider", "packages/devtools/tests/acceptance/test_task_lifecycle_contract.py"]
+timeout_seconds = 120
+profile = "portable-local"
+
+[[acceptance]]
+id = "h11-lifecycle-unit-retained"
+argv = ["uv", "run", "pytest", "-p", "no:cacheprovider", "packages/devtools/tests/unit/test_task_lifecycle.py"]
+timeout_seconds = 120
+profile = "portable-local"
+
+[[acceptance]]
+id = "h10-verification-execution-contract-retained"
+argv = ["uv", "run", "pytest", "-p", "no:cacheprovider", "packages/devtools/tests/acceptance/test_verification_execution_contract.py"]
+timeout_seconds = 120
+profile = "portable-local"
+
+[[acceptance]]
+id = "h9-followup-verification-plan-contract-retained"
+argv = ["uv", "run", "pytest", "-p", "no:cacheprovider", "packages/devtools/tests/acceptance/test_verification_plan_contract.py"]
+timeout_seconds = 120
+profile = "portable-local"
+
+[[acceptance]]
+id = "task-manifest-contract-retained"
+argv = ["uv", "run", "pytest", "-p", "no:cacheprovider", "packages/devtools/tests/acceptance/test_task_manifest_contract.py"]
+timeout_seconds = 120
+profile = "portable-local"
+
+[[acceptance]]
+id = "repository-static-checks"
+argv = ["uv", "run", "ruff", "check"]
+timeout_seconds = 120
+profile = "portable-local"
+
+[[acceptance]]
+id = "repository-type-checks"
+argv = ["uv", "run", "pyright"]
+timeout_seconds = 120
+profile = "portable-local"
