@@ -433,3 +433,131 @@ def test_cli_delimiter_changes_require_regression_contract(
     command = str(command_value)
     assert "test_verification_execution_contract.py" in command
     assert "-k delimiter" in command
+
+
+def _h14_coverage_fixture_repo(
+    tmp_path: Path,
+    name: str,
+    allowed_path: str,
+) -> tuple[Path, Path, str]:
+    repo = tmp_path / name
+    repo.mkdir()
+    manifest = repo / ".agent" / "tasks" / f"{name}.toml"
+    changed_file = repo / allowed_path
+    manifest_text = (
+        "schema_version = 1\n"
+        f'task_id = "{name}"\n'
+        "allowed_paths = [\n"
+        f'  "{allowed_path}",\n'
+        "]\n"
+        "reference_paths = []\n"
+        "\n"
+        "[[acceptance]]\n"
+        'id = "fixture-contract"\n'
+        'argv = ["uv", "run", "pytest", "-p", "no:cacheprovider", "fixture.py"]\n'
+        "timeout_seconds = 60\n"
+        'profile = "portable-local"\n'
+    )
+    _write(manifest, manifest_text)
+    _write(changed_file, "print('base')\n")
+    _git(repo, "init")
+    _git(repo, "config", "user.email", "h14@example.invalid")
+    _git(repo, "config", "user.name", "H14 Test")
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-m", "base")
+    base = _git(repo, "rev-parse", "HEAD")
+    return repo, manifest, base
+
+
+def _h14_coverage_checks(payload: dict[str, object]) -> list[dict[str, object]]:
+    checks_value = payload.get("checks", [])
+    assert isinstance(checks_value, list)
+    checks: list[dict[str, object]] = []
+    for check in cast(list[object], checks_value):
+        assert isinstance(check, dict)
+        checks.append(cast(dict[str, object], check))
+    return checks
+
+
+def test_h14_coverage_known_harness_paths_emit_touched_path_contracts(
+    tmp_path: Path,
+) -> None:
+    cases = [
+        (
+            "packages/devtools/src/kotekomi_devtools/step_scripts.py",
+            {
+                "step-scripts-acceptance-contract",
+                "step-scripts-unit-contract",
+            },
+        ),
+        (
+            "packages/devtools/src/kotekomi_devtools/task_lifecycle.py",
+            {
+                "task-lifecycle-acceptance-contract",
+                "task-lifecycle-unit-contract",
+            },
+        ),
+        (
+            "packages/devtools/src/kotekomi_devtools/verification_execution.py",
+            {"verification-execution-contract"},
+        ),
+        (
+            "packages/devtools/src/kotekomi_devtools/verification_plan.py",
+            {
+                "verification-plan-acceptance-contract",
+                "verification-plan-unit-contract",
+            },
+        ),
+    ]
+
+    for index, (changed_path, expected_ids) in enumerate(cases):
+        repo, manifest, base = _h14_coverage_fixture_repo(
+            tmp_path,
+            f"h14-coverage-{index}",
+            changed_path,
+        )
+        _write(repo / changed_path, "print('changed')\n")
+        _git(repo, "add", changed_path)
+        _git(repo, "commit", "-m", "touch h14 path")
+        head = _git(repo, "rev-parse", "HEAD")
+        output = tmp_path / f"plan-{index}.json"
+        markdown = tmp_path / f"plan-{index}.md"
+
+        result = _run_plan(repo, manifest, base, head, output, markdown)
+
+        assert result.returncode == 0, result.stderr
+        payload = _json(output)
+        assert payload.get("status") == "ready"
+        checks = _h14_coverage_checks(payload)
+        touched_ids = {
+            str(check.get("id"))
+            for check in checks
+            if check.get("source") == "touched-path"
+        }
+        assert expected_ids.issubset(touched_ids)
+
+
+def test_h14_coverage_unknown_path_fails_closed_with_diagnostics(
+    tmp_path: Path,
+) -> None:
+    repo, manifest, base = _h14_coverage_fixture_repo(
+        tmp_path,
+        "h14-unknown-path",
+        "packages/devtools/src/kotekomi_devtools/known.py",
+    )
+    unknown_path = "packages/devtools/src/kotekomi_devtools/uncovered.py"
+    _write(repo / unknown_path, "print('unknown')\n")
+    _git(repo, "add", unknown_path)
+    _git(repo, "commit", "-m", "touch unknown path")
+    head = _git(repo, "rev-parse", "HEAD")
+    output = tmp_path / "unknown-plan.json"
+    markdown = tmp_path / "unknown-plan.md"
+
+    result = _run_plan(repo, manifest, base, head, output, markdown)
+
+    assert result.returncode != 0
+    payload = _json(output)
+    assert payload.get("status") != "ready"
+    diagnostics = payload.get("diagnostics", [])
+    assert isinstance(diagnostics, list)
+    assert diagnostics
