@@ -51,7 +51,7 @@ One TDD = one independently shippable and revertable unit of work.
 If the architecture diagram would need more than ~6 components, or the doc would need more than 3–4 sequence diagrams, or any diagram cannot be drawn in simple ASCII — the scope is too big or too low-level.
 Stop and propose a split into multiple TDDs instead of writing one.
 
-**Narrative Spine\* Rule**
+**Narrative Spine Rule**
 
 Always think of a design as 3 levels:
 
