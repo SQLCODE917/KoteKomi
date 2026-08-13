@@ -1,0 +1,98 @@
+schema_version = 1
+task_id = "harness-15-deterministic-receipt-chain-status-command"
+title = "H15 Deterministic Receipt-Chain Status Command"
+status = "ready_for_terra_high"
+series_id = "terra-high-harness-v1"
+task_class = "repository-tooling"
+model_profile = "terra-high-v1"
+baseline_revision = "69855333017187f9b400f5175fde39cb66c0d32a"
+tdd_path = "docs/agent-harness/h15/README.md"
+tdd_sha256 = "d6564ab8c2ee3bae47aaca6d6f36e904a7ec06e44228e0882827a4733f5c9c9b"
+goal = "Add a read-only deterministic receipt-chain status command that reports complete, missing, and digest-mismatched task receipt chains."
+depends_on = ["harness-09-followup-retrospective-verification-plan", "harness-10-verification-execution-accountability", "harness-11-lifecycle-ergonomics-early-gates", "harness-12-step-script-safety", "harness-13-cli-delimiter-planner-rule", "harness-14-verification-plan-coverage-expansion"]
+allowed_paths = [".agent/tasks/harness-15-deterministic-receipt-chain-status-command.toml", "docs/agent-harness/h15/README.md", "docs/agent-harness/h15/acceptance-criteria.md", "docs/agent-harness/h15/dogfood-plan.md", "docs/agent-harness/h15/operator-notes.md", "docs/agent-harness/h15/tdd.md", "packages/devtools/AGENTS.md", "packages/devtools/src/kotekomi_devtools/cli.py", "packages/devtools/src/kotekomi_devtools/receipt_chain_status.py", "packages/devtools/tests/acceptance/test_receipt_chain_status_contract.py", "packages/devtools/tests/unit/test_receipt_chain_status.py"]
+reference_paths = [".agent/tasks/harness-14-verification-plan-coverage-expansion.toml", "docs/agent-harness/h14/README.md", "packages/devtools/src/kotekomi_devtools/verification_execution.py", "packages/devtools/src/kotekomi_devtools/verification_plan.py", "packages/devtools/tests/acceptance/test_verification_execution_contract.py", "packages/devtools/tests/acceptance/test_verification_plan_contract.py", "packages/devtools/tests/unit/test_verification_plan.py"]
+stop_conditions = ["receipt-chain status command mutates git or writes receipts", "receipt-chain status is inferred from chat context or prose notes", "missing receipts produce success status", "digest mismatches produce success status", "output schema is unstable or omits diagnostics"]
+
+[readiness]
+authority = "H15 docs define a deterministic read-only receipt-chain status command."
+contract_family = "agent-harness"
+dominant_outcome = "receipt-chain status is computed from receipt files and expected digests, not agent memory."
+failure_policy = "Missing receipts, unreadable receipts, and digest mismatches produce nonzero status and diagnostics."
+legacy_disposition = "H9 through H14 verification, lifecycle, step-script, delimiter, and coverage contracts remain retained."
+negative_proof = "The command must not write receipts, mutate Git, call GitHub, or infer completion from agent context."
+public_entry_point = "kotekomi-agent receipt-chain-status"
+scope_policy = "Only the CLI status command, focused tests, and compact guidance may change."
+side_effect_boundary = "receipt-chain-status is read-only except for explicitly requested output files."
+unresolved_decisions = []
+
+[budget]
+maximum_production_files = 2
+maximum_test_files = 2
+maximum_production_diff_lines = 300
+
+[[protected_artifacts]]
+kind = "json-schema"
+path = ".agent/schemas/task-manifest-v1.schema.json"
+sha256 = "b505d4fd89eed61510a2cd669a8a96564927ed43309cd31ed786aff6fb63a460"
+[[protected_artifacts]]
+kind = "leaf-tdd"
+path = "docs/agent-harness/h15/README.md"
+sha256 = "d6564ab8c2ee3bae47aaca6d6f36e904a7ec06e44228e0882827a4733f5c9c9b"
+[[protected_artifacts]]
+kind = "leaf-tdd"
+path = "docs/agent-harness/h15/acceptance-criteria.md"
+sha256 = "8a35858400ba1e1411fb68ec6e4853a820f7d878328df4e2154b50b3a777cdb2"
+[[protected_artifacts]]
+kind = "leaf-tdd"
+path = "docs/agent-harness/h15/dogfood-plan.md"
+sha256 = "cd24ad11e6ae678a6ac80c567e9540e5694da9f72003ee10428c67d4f004ee8f"
+[[protected_artifacts]]
+kind = "agent-instructions"
+path = "docs/agent-harness/h15/operator-notes.md"
+sha256 = "71438847ecc2d18aca671de5333811bca2befbb477cf023fbc2b130003e6fab3"
+[[protected_artifacts]]
+kind = "leaf-tdd"
+path = "docs/agent-harness/h15/tdd.md"
+sha256 = "72df9eac9c2655ef407a808b64d6818c1c7dd529370c8530bed4314a91eb8096"
+
+[[acceptance]]
+id = "h15-receipt-chain-status-unit-contract"
+argv = ["uv", "run", "pytest", "-p", "no:cacheprovider", "packages/devtools/tests/unit/test_receipt_chain_status.py"]
+timeout_seconds = 60
+profile = "portable-local"
+[[acceptance]]
+id = "h15-receipt-chain-status-acceptance-contract"
+argv = ["uv", "run", "pytest", "-p", "no:cacheprovider", "packages/devtools/tests/acceptance/test_receipt_chain_status_contract.py"]
+timeout_seconds = 90
+profile = "portable-local"
+[[acceptance]]
+id = "h14-verification-plan-coverage-contract-retained"
+argv = ["uv", "run", "pytest", "-p", "no:cacheprovider", "packages/devtools/tests/acceptance/test_verification_plan_contract.py", "-k", "coverage"]
+timeout_seconds = 90
+profile = "portable-local"
+[[acceptance]]
+id = "h13-cli-delimiter-planner-contract-retained"
+argv = ["uv", "run", "pytest", "-p", "no:cacheprovider", "packages/devtools/tests/acceptance/test_verification_plan_contract.py", "-k", "cli_delimiter"]
+timeout_seconds = 60
+profile = "portable-local"
+[[acceptance]]
+id = "h9-followup-verification-plan-contract-retained"
+argv = ["uv", "run", "pytest", "-p", "no:cacheprovider", "packages/devtools/tests/acceptance/test_verification_plan_contract.py"]
+timeout_seconds = 120
+profile = "portable-local"
+[[acceptance]]
+id = "h10-verification-execution-contract-retained"
+argv = ["uv", "run", "pytest", "-p", "no:cacheprovider", "packages/devtools/tests/acceptance/test_verification_execution_contract.py"]
+timeout_seconds = 120
+profile = "portable-local"
+[[acceptance]]
+id = "task-manifest-contract-retained"
+argv = ["uv", "run", "pytest", "-p", "no:cacheprovider", "packages/devtools/tests/acceptance/test_task_manifest_contract.py"]
+timeout_seconds = 120
+profile = "portable-local"
+[[acceptance]]
+id = "task-preflight-contract-retained"
+argv = ["uv", "run", "pytest", "-p", "no:cacheprovider", "packages/devtools/tests/acceptance/test_task_preflight_contract.py"]
+timeout_seconds = 120
+profile = "portable-local"

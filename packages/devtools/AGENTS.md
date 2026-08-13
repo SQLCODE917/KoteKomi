@@ -136,3 +136,10 @@ When harness-owned devtools paths are changed, rely on `verification-plan`
 to select the matching deterministic coverage checks. Do not replace the
 generated plan with broad local full-suite pytest or hand-picked smoke
 tests, and keep unknown changed paths fail-closed.
+
+## Receipt-chain status edits
+
+Receipt-chain status must stay deterministic and read-only. Compute status
+from receipt files, expected record names, and optional expected SHA-256
+values; do not infer completion from chat context, roadmap prose, or
+implementation-agent memory.

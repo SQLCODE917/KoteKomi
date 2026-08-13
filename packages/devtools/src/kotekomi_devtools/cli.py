@@ -8,6 +8,7 @@ import sys
 from pathlib import Path
 
 from kotekomi_devtools.goal_accountability import GoalAccountabilityError, write_goal_report
+from kotekomi_devtools.receipt_chain_status import run_receipt_chain_status_command
 from kotekomi_devtools.receipt_writer import ReceiptWriterError, write_receipt
 from kotekomi_devtools.step_scripts import (
     StepScriptError,
@@ -115,6 +116,8 @@ def main(argv: list[str] | None = None) -> int:
                 force=arguments.force,
             )
             exit_code = 0
+        elif arguments.command == "receipt-chain-status":
+            return run_receipt_chain_status_command(arguments)
         elif arguments.command == "write-receipt":
             result = write_receipt(
                 task_id=arguments.task_id,
@@ -283,6 +286,19 @@ def _build_parser() -> argparse.ArgumentParser:
     lifecycle_check.add_argument("--records-dir", type=Path)
     lifecycle_check.add_argument("--main-base")
     lifecycle_check.add_argument("--verified")
+    receipt_chain_status = subparsers.add_parser(
+        "receipt-chain-status",
+        help="Report deterministic receipt-chain status.",
+    )
+    receipt_chain_status.add_argument("--task-id", required=True)
+    receipt_chain_status.add_argument("--phase", required=True)
+    receipt_chain_status.add_argument("--receipt", action="append", default=[])
+    receipt_chain_status.add_argument("--expect", action="append", default=[])
+    receipt_chain_status.add_argument("--required", action="append", default=[])
+    receipt_chain_status.add_argument("--state-root", default="~/.local/state/kotekomi/experiments")
+    receipt_chain_status.add_argument("--output")
+    receipt_chain_status.add_argument("--markdown")
+
     write_receipt = subparsers.add_parser(
         "write-receipt", help="Write one deterministic task lifecycle receipt."
     )
