@@ -26,7 +26,7 @@ PHASE_REQUIREMENTS = {
     "candidate": {"candidate_lifecycle", "candidate_commit"},
     "verification": {"verification_plan", "verify_checks"},
     "candidate_ci": {"candidate_ci"},
-    "main": {"main_merge", "main_lifecycle"},
+    "main": {"main_promotion", "main_lifecycle"},
     "main_ci": {"main_ci", "cleanup"},
     "complete": {"receipt_chain_status"},
 }
@@ -155,18 +155,35 @@ def workflow_status(
     blocked = _ci_diagnostic("candidate", candidate_ci, candidate["commit_sha"], "commit_sha")
     if blocked:
         return "candidate_ci", "blocked", [], [blocked]
-    if "main_merge" not in kinds:
-        return "main", "produce_main_merge_evidence", ["main_merge"], []
-    merge = _payload(root, entries, "main_merge")
-    if merge["verified_parent_commit"] != candidate["commit_sha"]:
+    if "main_promotion" not in kinds:
+        return "main", "produce_main_promotion_evidence", ["main_promotion"], []
+    promotion = _payload(root, entries, "main_promotion")
+    if (
+        promotion["promotion_kind"] == "merge"
+        and promotion["verified_parent_commit"] != candidate["commit_sha"]
+    ):
         return (
             "main",
             "blocked",
             [],
             [
                 _diagnostic(
-                    "main_merge_candidate_mismatch",
+                    "main_promotion_candidate_mismatch",
                     "verified_parent_commit_matches_candidate_commit",
+                )
+            ],
+        )
+    if (
+        promotion["promotion_kind"] == "direct"
+        and promotion["promotion_commit"] != candidate["commit_sha"]
+    ):
+        return (
+            "main",
+            "blocked",
+            [],
+            [
+                _diagnostic(
+                    "main_promotion_candidate_mismatch", "promotion_commit_matches_candidate_commit"
                 )
             ],
         )
@@ -175,7 +192,7 @@ def workflow_status(
     if "main_ci" not in kinds:
         return "main_ci", "produce_main_ci_evidence", ["main_ci"], []
     main_ci = _payload(root, entries, "main_ci")
-    blocked = _ci_diagnostic("main", main_ci, merge["merge_commit"], "merge_commit")
+    blocked = _ci_diagnostic("main", main_ci, promotion["promotion_commit"], "promotion_commit")
     if blocked:
         return "main_ci", "blocked", [], [blocked]
     if "cleanup" not in kinds:
@@ -219,7 +236,7 @@ def _suggested_commands(action: str, task_id: str, run_id: str, manifest_path: s
         "produce_candidate_commit_evidence": "record-candidate-commit",
         "produce_verification_evidence": "verification-plan",
         "produce_candidate_ci_evidence": "record-candidate-ci",
-        "produce_main_merge_evidence": "record-main-merge",
+        "produce_main_promotion_evidence": "record-main-promotion",
         "produce_main_lifecycle_evidence": "lifecycle-check",
         "produce_main_ci_evidence": "record-main-ci",
         "produce_cleanup_evidence": "record-branch-cleanup",

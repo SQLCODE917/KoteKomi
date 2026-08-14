@@ -44,6 +44,9 @@ def _repo(tmp_path: Path) -> tuple[Path, str, str]:
     _git(repo, "init", "--initial-branch", "main")
     _git(repo, "config", "user.name", "Test")
     _git(repo, "config", "user.email", "test@example.invalid")
+    remote = tmp_path / "origin.git"
+    _git(tmp_path, "init", "--bare", str(remote))
+    _git(repo, "remote", "add", "origin", str(remote))
     (repo / "base.txt").write_text("base\n")
     _git(repo, "add", ".")
     _git(repo, "commit", "-m", "base")
@@ -57,6 +60,7 @@ def _repo(tmp_path: Path) -> tuple[Path, str, str]:
     _git(repo, "add", ".")
     _git(repo, "commit", "-m", "main")
     _git(repo, "merge", "--no-ff", "candidate", "-m", "merge candidate")
+    _git(repo, "push", "-u", "origin", "main")
     return repo, candidate, _git(repo, "rev-parse", "HEAD")
 
 
@@ -75,7 +79,7 @@ def test_lifecycle_producers_write_canonical_records_and_events(tmp_path: Path) 
     commands = [
         ("record-candidate-commit", "--commit", candidate),
         ("record-candidate-ci", "--ci-result", str(candidate_ci)),
-        ("record-main-merge", "--merge", merge),
+        ("record-main-promotion", "--commit", merge),
         ("record-main-ci", "--ci-result", str(main_ci)),
         ("record-branch-cleanup", "--branch", "candidate"),
     ]

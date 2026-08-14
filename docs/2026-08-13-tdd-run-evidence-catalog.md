@@ -341,7 +341,7 @@ The `verify_checks` evidence type uses subject identifier `verify-checks`.
 
 The `candidate_ci` evidence type uses subject identifier `candidate`.
 
-The `main_merge` evidence type uses subject identifier `main`.
+The `main_promotion` evidence type uses subject identifier `main`.
 
 The `main_lifecycle` evidence type uses subject identifier `main`.
 
@@ -371,7 +371,7 @@ The canonical `verify_checks` path has path scope `state` and path `experiments/
 
 The canonical `candidate_ci` path has path scope `state` and path `experiments/<task-id>/runs/<run-id>/ci/candidate.json`.
 
-The canonical `main_merge` path has path scope `state` and path `experiments/<task-id>/runs/<run-id>/git/main-merge.json`.
+The canonical `main_promotion` path has path scope `state` and path `experiments/<task-id>/runs/<run-id>/git/main-promotion.json`.
 
 The canonical `main_lifecycle` path has path scope `state` and path `experiments/<task-id>/runs/<run-id>/lifecycle/main.json`.
 
@@ -403,7 +403,7 @@ The `verification` phase requires candidate evidence, `verification_plan`, all p
 
 The `candidate_ci` phase requires verification evidence and `candidate_ci` evidence.
 
-The `main` phase requires candidate CI evidence, `main_merge`, and `main_lifecycle` evidence.
+The `main` phase requires candidate CI evidence, `main_promotion`, and `main_lifecycle` evidence.
 
 The `main_ci` phase requires main evidence, `main_ci`, and `cleanup` evidence.
 
@@ -427,7 +427,7 @@ The `verify_checks` trusted fields are `status`, `planned_check_count`, `execute
 
 The `candidate_ci` and `main_ci` trusted fields are `conclusion` and `head_sha`.
 
-The `main_merge` trusted fields are `merge_commit`, `parent_commit`, and `verified_parent_commit`.
+The `main_promotion` trusted fields are `promotion_kind`, `promotion_commit`, `parent_commit`, and `verified_parent_commit`.
 
 The `cleanup` trusted fields are `branch_cleanup_complete` and `remaining_branches`.
 

@@ -88,7 +88,7 @@ def record_candidate_ci(
     )
 
 
-def record_main_merge(
+def record_main_promotion(
     *,
     task_id: str,
     run_id: str,
@@ -97,15 +97,18 @@ def record_main_merge(
     output: Path | None = None,
     markdown: Path | None = None,
 ) -> LifecycleEvidenceResult:
-    merge = _resolve_commit(revision)
-    parents = _parents(merge)
-    if len(parents) != 2:
-        raise LifecycleEvidenceError("main merge requires exactly two parents")
+    promotion = _resolve_commit(revision)
+    if _resolve_commit("origin/main") != promotion:
+        raise LifecycleEvidenceError("main promotion must equal origin/main")
+    parents = _parents(promotion)
+    if len(parents) not in {1, 2}:
+        raise LifecycleEvidenceError("main promotion requires one or two parents")
     payload: Json = {
         "schema_version": 1,
-        "merge_commit": merge,
+        "promotion_kind": "merge" if len(parents) == 2 else "direct",
+        "promotion_commit": promotion,
         "parent_commit": parents[0],
-        "verified_parent_commit": parents[1],
+        "verified_parent_commit": parents[1] if len(parents) == 2 else None,
         "diagnostics": [],
     }
     return _publish(
@@ -113,10 +116,10 @@ def record_main_merge(
         run_id,
         state_root_path,
         "main",
-        "main_merge",
+        "main_promotion",
         "main",
         payload,
-        "record-main-merge",
+        "record-main-promotion",
         output,
         markdown,
     )

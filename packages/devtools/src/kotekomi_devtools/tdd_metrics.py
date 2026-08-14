@@ -53,7 +53,7 @@ def _metric(root: Path, binding: Json, run: Json) -> Json:
         "verification_plan",
         "verify_checks",
         "candidate_ci",
-        "main_merge",
+        "main_promotion",
         "main_lifecycle",
         "main_ci",
         "cleanup",

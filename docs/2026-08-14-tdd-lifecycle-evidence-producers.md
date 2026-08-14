@@ -4,7 +4,7 @@
 
 A user wants `implement-tdd` to name executable Harness commands for every remaining lifecycle phase.
 
-The evidence catalog defines canonical paths for candidate commit, candidate CI, main merge, main CI, and cleanup evidence.
+The evidence catalog defines canonical paths for candidate commit, candidate CI, main promotion, main CI, and cleanup evidence.
 
 The Harness does not yet expose commands that create those canonical records.
 
@@ -14,7 +14,9 @@ This TDD uses the term `candidate commit` for the Git commit created before cand
 
 This TDD uses the term `CI result record` for a local JSON record that reports one CI conclusion for one commit.
 
-This TDD uses the term `main merge` for a two-parent Git merge commit on the main branch.
+This TDD uses the term `main promotion` for candidate code that reaches the main branch.
+
+A main promotion is either a two-parent merge commit or a direct candidate commit on `origin/main`.
 
 This TDD uses the term `cleanup branch` for one candidate branch that the operator expects Git to remove.
 
@@ -104,21 +106,27 @@ CI result boundary:
 
 - CI-11: Each CI producer exits zero after it records a valid CI conclusion.
 
-Main merge boundary:
+Main promotion boundary:
 
-- MM-01: `record-main-merge` accepts `--merge <revision>`.
+- MP-01: `record-main-promotion` accepts `--commit <revision>`.
 
-- MM-02: The command resolves the revision to one local Git commit.
+- MP-02: The command resolves the revision to one local Git commit.
 
-- MM-03: The command blocks unless the resolved commit has exactly two parents.
+- MP-03: The command blocks unless the resolved commit has one or two parents.
 
-- MM-04: The command writes `merge_commit` as the resolved merge SHA-1.
+- MP-04: The command blocks unless `origin/main` resolves to the promotion commit.
 
-- MM-05: The command writes `parent_commit` as the first-parent SHA-1.
+- MP-05: The command writes `promotion_kind` as `merge` for two parents and `direct` for one parent.
 
-- MM-06: The command writes `verified_parent_commit` as the second-parent SHA-1.
+- MP-06: The command writes `promotion_commit` as the resolved promotion SHA-1.
 
-- MM-07: The command writes main merge evidence with phase `main` and subject identifier `main`.
+- MP-07: The command writes `parent_commit` as the first-parent SHA-1.
+
+- MP-08: The command writes `verified_parent_commit` as the second-parent SHA-1 for a merge promotion.
+
+- MP-09: The command writes `verified_parent_commit` as null for a direct promotion.
+
+- MP-10: The command writes main promotion evidence with phase `main` and subject identifier `main`.
 
 Cleanup boundary:
 
@@ -142,7 +150,7 @@ Workflow boundary:
 
 - WF-02: The workflow suggests `record-candidate-ci` when candidate CI evidence is missing.
 
-- WF-03: The workflow suggests `record-main-merge` when main merge evidence is missing.
+- WF-03: The workflow suggests `record-main-promotion` when main promotion evidence is missing.
 
 - WF-04: The workflow suggests `record-main-ci` when main CI evidence is missing.
 
@@ -156,9 +164,11 @@ Workflow boundary:
 
 - WF-09: The workflow blocks unless candidate CI `head_sha` equals candidate commit `commit_sha`.
 
-- WF-10: The workflow blocks unless main merge `verified_parent_commit` equals candidate commit `commit_sha`.
+- WF-10: The workflow blocks unless merge promotion `verified_parent_commit` equals candidate commit `commit_sha`.
 
-- WF-11: The workflow blocks unless main CI `head_sha` equals main merge `merge_commit`.
+- WF-11: The workflow blocks unless direct promotion `promotion_commit` equals candidate commit `commit_sha`.
+
+- WF-12: The workflow blocks unless main CI `head_sha` equals main promotion `promotion_commit`.
 
 ## Proposed Architecture
 
@@ -208,7 +218,7 @@ Operator       CI producer        CI result record       Evidence catalog
 | --- | --- |
 | Candidate commit | `schema_version`, `commit_sha`, `parent_sha`, `diagnostics` |
 | Candidate CI | `schema_version`, `conclusion`, `head_sha`, `ci_result_sha256`, `diagnostics` |
-| Main merge | `schema_version`, `merge_commit`, `parent_commit`, `verified_parent_commit`, `diagnostics` |
+| Main promotion | `schema_version`, `promotion_kind`, `promotion_commit`, `parent_commit`, `verified_parent_commit`, `diagnostics` |
 | Main CI | `schema_version`, `conclusion`, `head_sha`, `ci_result_sha256`, `diagnostics` |
 | Cleanup | `schema_version`, `branch_cleanup_complete`, `remaining_branches`, `diagnostics` |
 
@@ -224,7 +234,7 @@ kotekomi-agent <producer> --task-id <task-id> --run <run-id>
 ```text
 record-candidate-commit --commit <revision>
 record-candidate-ci --ci-result <path>
-record-main-merge --merge <revision>
+record-main-promotion --commit <revision>
 record-main-ci --ci-result <path>
 record-branch-cleanup --branch <branch-name> [--branch <branch-name>...]
 ```
@@ -242,8 +252,11 @@ The CI producers preserve a failing CI conclusion as canonical evidence.
 The workflow treats a CI result as evidence only for the lifecycle commit whose
 SHA-1 equals its `head_sha`.
 
-The workflow treats a main merge as the continuation of the candidate only
-when its second parent equals the recorded candidate commit.
+The workflow treats a merge promotion as the continuation of the candidate
+only when its second parent equals the recorded candidate commit.
+
+The workflow treats a direct promotion as the continuation of the candidate
+only when its promotion commit equals the recorded candidate commit.
 
 The cleanup producer records incomplete cleanup when Git still exposes a requested branch.
 
@@ -281,9 +294,11 @@ The workflow reports a blocked diagnostic from WF-06 through WF-08 without a nex
 
 - AC-CI-05: CLI tests prove failing CI conclusions create evidence and return success.
 
-- AC-MM-01: Repository tests prove main merge records use ordered merge parents.
+- AC-MP-01: Repository tests prove merge promotions use ordered merge parents.
 
-- AC-MM-02: Repository tests prove a non-merge commit blocks main merge recording.
+- AC-MP-02: Repository tests prove direct promotions use the sole parent and `origin/main` head.
+
+- AC-MP-03: Repository tests prove commits with more than two parents block promotion recording.
 
 - AC-CL-01: Repository tests prove cleanup records list requested local and origin branches.
 

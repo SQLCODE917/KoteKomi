@@ -22,7 +22,7 @@ from kotekomi_devtools.lifecycle_evidence import (
     record_candidate_ci,
     record_candidate_commit,
     record_main_ci,
-    record_main_merge,
+    record_main_promotion,
 )
 from kotekomi_devtools.receipt_chain_status import run_receipt_chain_status_command
 from kotekomi_devtools.receipt_writer import ReceiptWriterError, write_receipt
@@ -125,7 +125,7 @@ def _dispatch_command(arguments: argparse.Namespace) -> CliResponse | int:
         "task-ledger": _handle_ledger_command,
         "record-candidate-commit": _handle_lifecycle_evidence_command,
         "record-candidate-ci": _handle_lifecycle_evidence_command,
-        "record-main-merge": _handle_lifecycle_evidence_command,
+        "record-main-promotion": _handle_lifecycle_evidence_command,
         "record-main-ci": _handle_lifecycle_evidence_command,
         "record-branch-cleanup": _handle_lifecycle_evidence_command,
     }
@@ -479,8 +479,8 @@ def _handle_lifecycle_evidence_command(arguments: argparse.Namespace) -> CliResp
         result = record_candidate_commit(revision=arguments.commit, **common)
     elif arguments.command == "record-candidate-ci":
         result = record_candidate_ci(ci_result=arguments.ci_result, **common)
-    elif arguments.command == "record-main-merge":
-        result = record_main_merge(revision=arguments.merge, **common)
+    elif arguments.command == "record-main-promotion":
+        result = record_main_promotion(revision=arguments.commit, **common)
     elif arguments.command == "record-main-ci":
         result = record_main_ci(ci_result=arguments.ci_result, **common)
     else:
@@ -753,10 +753,12 @@ def _add_lifecycle_evidence_parsers(subparsers: Any) -> None:
         help="Record one candidate CI result as canonical evidence.",
     )
     candidate_ci.add_argument("--ci-result", type=Path, required=True)
-    main_merge = subparsers.add_parser(
-        "record-main-merge", parents=[common], help="Record one main merge as canonical evidence."
+    main_promotion = subparsers.add_parser(
+        "record-main-promotion",
+        parents=[common],
+        help="Record one main promotion as canonical evidence.",
     )
-    main_merge.add_argument("--merge", required=True)
+    main_promotion.add_argument("--commit", required=True)
     main_ci = subparsers.add_parser(
         "record-main-ci", parents=[common], help="Record one main CI result as canonical evidence."
     )
