@@ -6,8 +6,6 @@ A user wants to compare the effectiveness of Technical Design Documents.
 
 The user knows each Technical Design Document by local file path.
 
-A TDD can have one implementation run or many implementation runs.
-
 TDD metrics provide raw facts for one implementation run.
 
 The user still needs a scorecard that converts those facts into comparable dimensions.
@@ -24,7 +22,7 @@ Primary end-to-end Flow:
 
 1. The user gives the Harness one TDD path or asks for all known scorecards.
 
-2. The Harness reads or computes TDD metrics for the selected runs.
+2. The Harness reads or computes TDD metrics.
 
 3. The Harness computes one or more TDD scorecards.
 
@@ -36,9 +34,7 @@ Primary end-to-end Flow:
 
 ## Goals
 
-- The user can score all runs for one TDD path.
-
-- The user can score one selected implementation run.
+- The user can score one TDD from its TDD path.
 
 - The user can score all known TDDs without giving a TDD path.
 
@@ -54,35 +50,27 @@ Primary end-to-end Flow:
 
 Scorecard boundary:
 
-- SC-01: The scorecard generator reads TDD metrics for all runs when the user supplies one TDD path and no run selector.
+- SC-01: The scorecard generator reads one TDD metrics collection when the user supplies a TDD path.
 
 - SC-02: The scorecard generator reads all known TDD metrics when the user supplies no TDD path.
 
-- SC-03: The scorecard generator reads one TDD metrics record when the user supplies `--run`.
+- SC-03: The scorecard generator writes one TDD scorecard for each selected metrics record.
 
-- SC-04: The scorecard generator reads the highest ordinal TDD metrics record when the user supplies `--latest`.
+- SC-04: Each TDD scorecard includes the primary TDD path.
 
-- SC-05: The scorecard generator writes one TDD scorecard for each metrics record.
+- SC-05: Each TDD scorecard includes TDD paths.
 
-- SC-06: Each TDD scorecard includes the primary TDD path.
+- SC-06: Each TDD scorecard includes the TDD digest.
 
-- SC-07: Each TDD scorecard includes all TDD paths.
+- SC-07: Each TDD scorecard includes the task identifier.
 
-- SC-08: Each TDD scorecard includes the TDD digest.
+- SC-08: Each TDD scorecard includes the implementation run identifier.
 
-- SC-09: Each TDD scorecard includes the task identifier.
+- SC-09: Each TDD scorecard includes raw metrics.
 
-- SC-10: Each TDD scorecard includes the implementation run identifier.
+- SC-10: Each TDD scorecard includes score dimensions.
 
-- SC-11: Each TDD scorecard includes raw metrics.
-
-- SC-12: Each TDD scorecard includes score dimensions.
-
-- SC-13: Each TDD scorecard includes diagnostics.
-
-- SC-14: The scorecard collection includes `scorecard_collection_path`.
-
-- SC-15: The scorecard collection includes `scorecard_record_paths`.
+- SC-11: Each TDD scorecard includes diagnostics.
 
 Score dimension boundary:
 
@@ -98,93 +86,31 @@ Score dimension boundary:
 
 - SD-06: The scorecard includes `evidence_confidence`.
 
-- SD-07: The scorecard includes `overall_score` for complete and partial scorecards.
+- SD-07: The scorecard includes `provisional_overall_score` when the scorecard status is complete or partial.
 
-- SD-08: The scorecard has no `overall_score` for blocked scorecards.
+- SD-08: The scorecard includes `overall_score` only when `ranking_eligible` is true.
 
-Score formula boundary:
-
-- SF-01: `evidence_confidence` starts at 100 and subtracts 10 for each missing receipt up to 100.
-
-- SF-02: `evidence_confidence` becomes 0 when digest mismatch count is greater than 0.
-
-- SF-03: `verification_completeness` equals verified check count divided by planned check count times 100.
-
-- SF-04: `verification_completeness` equals 0 when planned check count is 0.
-
-- SF-05: `lifecycle_completeness` equals 100 when candidate lifecycle and main lifecycle are ready.
-
-- SF-06: `lifecycle_completeness` equals 50 when exactly one lifecycle value is ready.
-
-- SF-07: `lifecycle_completeness` equals 0 when neither lifecycle value is ready.
-
-- SF-08: `scope_discipline` starts at 100 and subtracts 20 for each budget violation and protected artifact violation up to 100.
-
-- SF-09: `first_pass_effectiveness` equals 100 when repair count is 0 and both CI conclusions are success.
-
-- SF-10: `first_pass_effectiveness` equals 50 when repair count is 0 and exactly one CI conclusion is success.
-
-- SF-11: `first_pass_effectiveness` equals 0 when repair count is greater than 0.
-
-- SF-12: `repair_efficiency` starts at 100 and subtracts 25 for each repair count up to 100.
-
-- SF-13: `overall_score` weights evidence confidence at 20 percent.
-
-- SF-14: `overall_score` weights verification completeness at 20 percent.
-
-- SF-15: `overall_score` weights lifecycle completeness at 20 percent.
-
-- SF-16: `overall_score` weights scope discipline at 15 percent.
-
-- SF-17: `overall_score` weights first-pass effectiveness at 15 percent.
-
-- SF-18: `overall_score` weights repair efficiency at 10 percent.
-
-- SF-19: The score engine rounds each dimension score and overall score to the nearest integer.
-
-- SF-20: The score engine rounds a fractional part of exactly 0.5 away from zero.
-
-- SF-21: The score engine clamps each score to the range 0 through 100 after rounding.
-
-Status boundary:
-
-- SB-01: A complete metrics record produces a complete scorecard.
-
-- SB-02: A partial metrics record produces a partial scorecard.
-
-- SB-03: A blocked metrics record produces a blocked scorecard.
-
-- SB-04: A partial scorecard computes available dimensions and lowers evidence confidence.
-
-- SB-05: A blocked scorecard preserves diagnostics and omits overall score.
+- SD-09: The scorecard includes `ranking_eligible`.
 
 Comparison boundary:
 
 - CP-01: The comparison generator reads two or more TDD paths.
 
-- CP-02: The comparison generator reads two or more TDD scorecard files.
+- CP-02: The comparison generator reads two or more TDD scorecards.
 
 - CP-03: The comparison generator writes a comparison JSON report.
 
-- CP-04: The comparison generator writes a comparison Markdown report.
+- CP-04: The comparison generator writes a comparison Markdown report when requested.
 
-- CP-05: The comparison report orders scorecards by overall score.
+- CP-05: The comparison report ranks only scorecards with `ranking_eligible` true.
 
-- CP-06: The comparison report orders complete scorecards before partial scorecards when overall scores tie.
+- CP-06: The comparison report shows raw metric deltas.
 
-- CP-07: The comparison report orders partial scorecards before blocked scorecards.
+- CP-07: The comparison report shows score dimension deltas.
 
-- CP-08: The comparison report orders equal scorecards by primary TDD path and implementation run identifier.
+- CP-08: The comparison report shows evidence confidence for each scorecard.
 
-- CP-09: The comparison report shows raw metric deltas.
-
-- CP-10: The comparison report shows score dimension deltas.
-
-- CP-11: The comparison report shows evidence confidence for each scorecard.
-
-- CP-12: The comparison report includes `comparison_report_path`.
-
-- CP-13: The comparison report includes `scorecard_input_paths`.
+- CP-09: The comparison identifier is deterministic from input scorecard digests.
 
 ## Proposed Architecture
 
@@ -196,7 +122,7 @@ The metrics command owns metrics creation when no metrics record exists.
 
 The score engine owns deterministic score dimensions.
 
-The report writer owns stdout JSON and optional report copies.
+The report writer owns JSON and Markdown output.
 
 ```text
 +------------------+      +-------------------+      +------------------+
@@ -261,25 +187,23 @@ Operator      Compare command      Scorecard resolver      Report writer
 
 ## Data Model
 
-The Harness will create one TDD scorecard record per metrics record.
+The canonical scorecard record path is `<state-root>/experiments/<task-id>/runs/<implementation-run-id>/scorecard/tdd-scorecard.json`.
 
-The scorecard record path is:
+The per-task scorecard collection path is `<state-root>/experiments/<task-id>/scorecards/tdd-scorecards.collection.json`.
 
-```text
-<state-root>/experiments/<task-id>/runs/<implementation-run-id>/scorecard/tdd-scorecard.json
-```
+The all-known scorecard global report path is `<state-root>/tdds/reports/scorecards/all-known.scorecards.json`.
 
-The scorecard collection path for one task is:
+The comparison global report path is `<state-root>/tdds/reports/comparisons/<comparison-id>.json`.
 
-```text
-<state-root>/experiments/<task-id>/scorecards/tdd-scorecard-collection.json
-```
+Scorecard collection records are aggregate reports.
 
-The scorecard collection path for all known TDDs is:
+Scorecard collection records do not appear in a run evidence index.
 
-```text
-<state-root>/tdds/scorecards/tdd-scorecard-collection.json
-```
+Comparison reports are global reports.
+
+Comparison reports do not appear in a run evidence index.
+
+Run-scoped scorecard records appear in the run evidence index.
 
 The TDD scorecard record has these fields:
 
@@ -301,7 +225,11 @@ The TDD scorecard record has these fields:
 
 - `score_dimensions`
 
+- `provisional_overall_score`
+
 - `overall_score`
+
+- `ranking_eligible`
 
 - `diagnostics`
 
@@ -319,7 +247,7 @@ The score dimensions object has these fields:
 
 - `evidence_confidence`
 
-The scorecard collection has these fields:
+The scorecard collection record has these fields:
 
 - `schema_version`
 
@@ -333,15 +261,11 @@ The scorecard collection has these fields:
 
 - `diagnostics`
 
-The `scorecard_record_paths` value maps implementation run identifiers to scorecard record paths.
-
 The comparison report has these fields:
 
 - `schema_version`
 
-- `comparison_report_path`
-
-- `scorecard_input_paths`
+- `comparison_id`
 
 - `scorecards`
 
@@ -353,36 +277,12 @@ The comparison report has these fields:
 
 - `diagnostics`
 
-The Harness will read scorecards by primary TDD path.
-
-The Harness will read scorecards by TDD digest.
-
-The Harness will read scorecards by implementation run identifier.
-
 ## APIs / Interfaces
 
-The all-runs single TDD scorecard CLI contract is:
+The scorecard CLI contract is:
 
 ```text
-kotekomi-agent tdd-score <tdd-path> [--output <scorecard-json>] [--markdown <scorecard-md>]
-```
-
-The one-run scorecard CLI contract is:
-
-```text
-kotekomi-agent tdd-score <tdd-path> --run <implementation-run-id> [--output <scorecard-json>] [--markdown <scorecard-md>]
-```
-
-The latest-run scorecard CLI contract is:
-
-```text
-kotekomi-agent tdd-score <tdd-path> --latest [--output <scorecard-json>] [--markdown <scorecard-md>]
-```
-
-The all known scorecards CLI contract is:
-
-```text
-kotekomi-agent tdd-score [--output <scorecards-json>] [--markdown <scorecards-md>]
+kotekomi-agent tdd-score [<tdd-path>] [--run <implementation-run-id>] [--latest] [--output <scorecard-json>] [--markdown <scorecard-md>]
 ```
 
 The comparison CLI contract for TDD paths is:
@@ -397,35 +297,29 @@ The comparison CLI contract for scorecards is:
 kotekomi-agent tdd-compare --scorecard <scorecard-json> --scorecard <scorecard-json> [--scorecard <scorecard-json>...] [--output <comparison-json>] [--markdown <comparison-md>]
 ```
 
-Both comparison forms require at least two inputs.
+All commands print JSON to stdout by default.
 
-The CLI prints scorecard or comparison JSON to stdout when `--output` is absent.
+The optional `--output` path writes a JSON copy.
 
-The `--output` file is an optional JSON copy.
-
-The `--markdown` file is an optional Markdown copy.
-
-Each score dimension uses a numeric range from 0 through 100.
-
-The overall score uses a numeric range from 0 through 100 for complete and partial scorecards.
-
-Blocked scorecards omit overall score.
+The optional `--markdown` path writes a Markdown copy.
 
 ## Behavior & Domain Rules
 
 The scorecard generator computes scores from TDD metrics.
 
-The scorecard generator computes metrics when no metrics record exists for the selected run.
+The scorecard generator computes metrics when no metrics record exists for the selected TDD path and run.
 
-The scorecard generator computes scorecards for all runs of one TDD when the command has one TDD path and no run selector.
+The scorecard generator computes scorecards for all known TDDs and all runs when the command has no TDD path and no selector.
 
-The scorecard generator computes scorecards for all known TDDs when the command has no TDD path.
+The scorecard generator computes scorecards for all runs for one TDD when the command has a TDD path and no selector.
 
-The scorecard generator blocks when `--run` and `--latest` appear together.
+The `--latest` selector requires a TDD path.
+
+The `--run` selector requires a TDD path.
+
+The `--run` selector is mutually exclusive with `--latest`.
 
 The scorecard generator preserves raw metrics in the TDD scorecard.
-
-The scorecard generator lowers evidence confidence when required evidence is missing.
 
 The scorecard generator records blocked status when TDD metrics status is blocked.
 
@@ -433,113 +327,193 @@ The scorecard generator records partial status when TDD metrics status is partia
 
 The scorecard generator records complete status when TDD metrics status is complete.
 
-The comparison generator orders scorecards by the comparison boundary rules.
+The score engine computes `evidence_confidence` as `100 - min(100, receipt_missing_count * 20 + digest_mismatch_count * 40 + missing_evidence_count * 15)`.
+
+The score engine sets `verification_completeness` to 100 when `planned_check_count` is 0 and `verified_check_count` is 0.
+
+The score engine computes `verification_completeness` as `100 * verified_check_count / planned_check_count` when `planned_check_count` is greater than 0.
+
+The score engine computes `lifecycle_completeness` as the average of five components.
+
+The candidate lifecycle component is 100 when `candidate_lifecycle_ready` is true and 0 otherwise.
+
+The main lifecycle component is 100 when `main_lifecycle_ready` is true and 0 otherwise.
+
+The candidate CI component is 100 when `candidate_ci_conclusion` is `success` and 0 otherwise.
+
+The main CI component is 100 when `main_ci_conclusion` is `success` and 0 otherwise.
+
+The cleanup component is 100 when `branch_cleanup_complete` is true and 0 otherwise.
+
+The score engine computes `scope_discipline` as `100 - min(100, budget_violation_count * 25 + protected_artifact_violation_count * 50)`.
+
+The score engine computes `first_pass_effectiveness` as `100 - min(100, repair_count * 20 + failed_check_count * 10 + candidate_ci_penalty)`.
+
+The candidate CI penalty is 0 when `candidate_ci_conclusion` is `success`.
+
+The candidate CI penalty is 25 when `candidate_ci_conclusion` is not `success`.
+
+The score engine computes `repair_efficiency` as `100 - min(100, repair_count * 15)`.
+
+The score engine treats missing numeric fields in partial metrics as 0.
+
+The score engine treats missing boolean fields in partial metrics as false.
+
+The score engine treats missing string conclusion fields in partial metrics as a non-success value.
+
+The score engine adds a diagnostic for each missing field used by a partial scorecard dimension.
+
+The provisional score uses these weights:
+
+- `evidence_confidence`: 20 percent
+
+- `verification_completeness`: 20 percent
+
+- `lifecycle_completeness`: 20 percent
+
+- `scope_discipline`: 15 percent
+
+- `first_pass_effectiveness`: 15 percent
+
+- `repair_efficiency`: 10 percent
+
+The score engine computes each raw dimension value before rounding.
+
+The score engine clamps each raw dimension value to the range 0 through 100 before rounding.
+
+The score engine rounds each clamped dimension score to the nearest integer.
+
+The score engine rounds fractional values ending in exactly `.5` away from zero.
+
+The score engine computes the weighted provisional score from rounded dimension scores.
+
+The score engine clamps the raw provisional score to the range 0 through 100 before rounding.
+
+The score engine rounds the clamped provisional score to the nearest integer with the same `.5` tie rule.
+
+A blocked scorecard has no provisional or comparable score.
+
+A partial scorecard computes all dimensions with missing inputs set to the fallback values in this TDD.
+
+A partial scorecard lowers evidence confidence through missing evidence count.
+
+A partial scorecard records the computed value as `provisional_overall_score`.
+
+A partial scorecard with zero evidence confidence sets `overall_score` to null.
+
+A partial scorecard with zero evidence confidence sets `ranking_eligible` to false.
+
+A partial scorecard with positive evidence confidence sets `overall_score` to `provisional_overall_score`.
+
+A partial scorecard with positive evidence confidence sets `ranking_eligible` to true.
+
+A complete scorecard sets both scores to the computed value.
+
+A complete scorecard sets `ranking_eligible` to true.
+
+The comparison generator excludes ineligible scorecards from `ranking`.
+
+The comparison generator retains ineligible scorecards in the report for diagnostic analysis.
+
+The comparison generator orders complete scorecards before partial scorecards when comparable scores are equal.
+
+The comparison generator orders higher comparable scores before lower comparable scores.
+
+The comparison generator orders equal scores by higher evidence confidence.
+
+The comparison generator orders remaining ties by lexicographic implementation run identifier.
 
 The comparison generator shows repair count separately from final CI conclusions.
 
 The comparison generator does not overwrite input scorecards.
 
+The scorecard digest is the SHA-256 digest of canonical scorecard JSON bytes.
+
+The canonical scorecard JSON uses UTF-8, sorted keys, and no insignificant whitespace.
+
+The comparison input is a UTF-8 JSON array of scorecard digest strings sorted lexicographically with no insignificant whitespace.
+
+The comparison identifier is `compare-` plus the first 16 lowercase hexadecimal characters of SHA-256 over the comparison input.
+
+The comparison command rejects duplicate scorecard digests.
+
 ## Acceptance Criteria
 
-- AC-SC-01: CLI tests prove the scorecard command reads all runs for one TDD path.
+- AC-SC-01: CLI tests prove the scorecard command reads one TDD path.
 
 - AC-SC-02: CLI tests prove the scorecard command reads all known TDDs when the command has no TDD path.
 
-- AC-SC-03: CLI tests prove the scorecard command reads one run with `--run`.
+- AC-SC-03: CLI tests prove the scorecard command writes one scorecard per selected metrics record.
 
-- AC-SC-04: CLI tests prove the scorecard command reads the highest ordinal run with `--latest`.
+- AC-SC-03A: CLI tests prove `--latest` without a TDD path returns blocked status.
 
-- AC-SC-05: CLI tests prove the scorecard command writes one scorecard per metrics record.
+- AC-SC-03B: CLI tests prove `--run` without a TDD path returns blocked status.
 
-- AC-SC-EX-01: CLI tests prove `kotekomi-agent tdd-score <tdd-path>` runs as documented.
+- AC-SC-03C: CLI tests prove `--run` and `--latest` are mutually exclusive.
 
-- AC-SC-EX-02: CLI tests prove `kotekomi-agent tdd-score` runs as documented.
+- AC-SC-04: Schema tests prove each scorecard includes the primary TDD path.
 
-- AC-SC-EX-03: CLI tests prove `--output` writes an optional JSON copy.
+- AC-SC-05: Schema tests prove each scorecard includes TDD paths.
 
-- AC-SC-EX-04: CLI tests prove `--markdown` writes an optional Markdown copy.
+- AC-SC-06: Schema tests prove each scorecard includes the TDD digest.
 
-- AC-SC-06: Schema tests prove each scorecard includes the primary TDD path.
+- AC-SC-07: Schema tests prove each scorecard includes the task identifier.
 
-- AC-SC-07: Schema tests prove each scorecard includes all TDD paths.
+- AC-SC-08: Schema tests prove each scorecard includes the implementation run identifier.
 
-- AC-SC-08: Schema tests prove each scorecard includes the TDD digest.
+- AC-SC-09: Schema tests prove each scorecard includes raw metrics.
 
-- AC-SC-09: Schema tests prove each scorecard includes the task identifier.
+- AC-SC-10: Schema tests prove each scorecard includes score dimensions.
 
-- AC-SC-10: Schema tests prove each scorecard includes the implementation run identifier.
+- AC-SC-11: Schema tests prove each scorecard includes diagnostics.
 
-- AC-SC-11: Schema tests prove each scorecard includes raw metrics.
+- AC-SD-01: Unit tests prove `scope_discipline` changes when budget violations change.
 
-- AC-SC-12: Schema tests prove each scorecard includes score dimensions.
+- AC-SD-02: Unit tests prove `verification_completeness` changes when verified check count changes.
 
-- AC-SC-13: Schema tests prove each scorecard includes diagnostics.
+- AC-SD-03: Unit tests prove `first_pass_effectiveness` changes when repair count changes.
 
-- AC-SC-14: Schema tests prove the collection includes `scorecard_collection_path`.
+- AC-SD-04: Unit tests prove `repair_efficiency` changes when repair count changes.
 
-- AC-SC-15: Schema tests prove the collection includes `scorecard_record_paths`.
+- AC-SD-05: Unit tests prove `lifecycle_completeness` changes when lifecycle readiness changes.
 
-- AC-SD-01: Unit tests prove the scorecard includes `scope_discipline`.
+- AC-SD-06: Unit tests prove `evidence_confidence` changes when missing receipt count changes.
 
-- AC-SD-02: Unit tests prove the scorecard includes `verification_completeness`.
+- AC-SD-06A: Unit tests prove `evidence_confidence` changes when missing evidence count changes.
 
-- AC-SD-03: Unit tests prove the scorecard includes `first_pass_effectiveness`.
+- AC-SD-07: Unit tests prove `provisional_overall_score` uses the weights from this TDD.
 
-- AC-SD-04: Unit tests prove the scorecard includes `repair_efficiency`.
+- AC-SD-07A: Unit tests prove zero planned checks produce 100 verification completeness when verified check count is 0.
 
-- AC-SD-05: Unit tests prove the scorecard includes `lifecycle_completeness`.
+- AC-SD-07B: Unit tests prove candidate CI penalty changes first-pass effectiveness.
 
-- AC-SD-06: Unit tests prove the scorecard includes `evidence_confidence`.
+- AC-SD-07C: Unit tests prove partial scorecards with zero evidence confidence have no comparable score.
 
-- AC-SD-07: Unit tests prove complete and partial scorecards include `overall_score`.
+- AC-SD-07D: Unit tests prove partial scorecards retain a provisional score when evidence confidence is zero.
 
-- AC-SD-08: Unit tests prove blocked scorecards omit `overall_score`.
+- AC-SD-07E: Unit tests prove `ranking_eligible` follows evidence confidence and scorecard status.
 
-- AC-SF-01: Unit tests prove each formula requirement from SF-01 through SF-18.
-
-- AC-SF-02: Unit tests prove half-up rounding for values with a fractional part of exactly 0.5.
-
-- AC-SF-03: Unit tests prove scores clamp to 0 through 100 after rounding.
-
-- AC-SB-01: Unit tests prove complete metrics produce complete scorecards.
-
-- AC-SB-02: Unit tests prove partial metrics produce partial scorecards.
-
-- AC-SB-03: Unit tests prove blocked metrics produce blocked scorecards.
-
-- AC-SB-04: Unit tests prove partial scorecards compute available dimensions and lower evidence confidence.
-
-- AC-SB-05: Unit tests prove blocked scorecards preserve diagnostics and omit overall score.
+- AC-SD-08: Unit tests prove `.5` scores round away from zero.
 
 - AC-CP-01: CLI tests prove comparison reads two or more TDD paths.
 
 - AC-CP-02: CLI tests prove comparison reads two or more scorecards.
 
-- AC-CP-03: CLI tests prove comparison writes JSON.
+- AC-CP-03: CLI tests prove comparison writes JSON by default.
 
-- AC-CP-04: CLI tests prove comparison writes Markdown.
+- AC-CP-04: CLI tests prove optional Markdown output works.
 
-- AC-CP-05: Unit tests prove comparison order by overall score.
+- AC-CP-05: Unit tests prove comparison order by status, score, evidence confidence, and run identifier.
 
-- AC-CP-06: Unit tests prove complete scorecards sort before partial scorecards when overall scores tie.
+- AC-CP-06: Unit tests prove raw metric deltas appear in comparison output.
 
-- AC-CP-07: Unit tests prove partial scorecards sort before blocked scorecards.
+- AC-CP-07: Unit tests prove score dimension deltas appear in comparison output.
 
-- AC-CP-08: Unit tests prove equal scorecards sort by primary TDD path and implementation run identifier.
+- AC-CP-08: Unit tests prove evidence confidence appears for each scorecard.
 
-- AC-CP-EX-01: CLI tests prove `kotekomi-agent tdd-compare <tdd-path> <tdd-path>` runs as documented.
+- AC-CP-09: Unit tests prove comparison identifier derivation is deterministic.
 
-- AC-CP-EX-02: CLI tests prove scorecard-file comparison runs without optional output flags.
-
-- AC-CP-09: Unit tests prove raw metric deltas appear in comparison output.
-
-- AC-CP-10: Unit tests prove score dimension deltas appear in comparison output.
-
-- AC-CP-11: Unit tests prove evidence confidence appears for each scorecard.
-
-- AC-CP-12: Schema tests prove comparison output includes `comparison_report_path`.
-
-- AC-CP-13: Schema tests prove comparison output includes `scorecard_input_paths`.
+- AC-CP-10: Unit tests prove duplicate scorecard digests are rejected.
 
 ## Reference Implementations
 
@@ -556,5 +530,3 @@ The comparison generator does not overwrite input scorecards.
 The implementer must halt if the score formula cannot preserve raw metrics beside derived scores.
 
 The implementer must halt if comparison cannot distinguish complete, partial, and blocked scorecards.
-
-The implementer must halt if metrics cannot distinguish implementation runs.

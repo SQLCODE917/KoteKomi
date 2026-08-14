@@ -9,6 +9,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
 
+from kotekomi_devtools.evidence_catalog import state_root, write_canonical_record
+
 
 @dataclass(frozen=True)
 class ReceiptSpec:
@@ -46,8 +48,7 @@ def _default_specs(
         ),
     }
     return tuple(
-        ReceiptSpec(name, root / relative_path)
-        for name, relative_path in defaults.get(phase, ())
+        ReceiptSpec(name, root / relative_path) for name, relative_path in defaults.get(phase, ())
     )
 
 
@@ -143,10 +144,21 @@ def build_receipt_chain_status(
             entry["status"] = "ready"
         entries.append(entry)
 
+    digest_mismatches = [
+        str(entry["name"]) for entry in entries if entry.get("status") == "digest_mismatch"
+    ]
+    present = [entry for entry in entries if entry.get("status") == "ready"]
     return {
         "diagnostics": diagnostics,
+        "digest_mismatch_count": len(digest_mismatches),
+        "digest_mismatches": digest_mismatches,
+        "expected_receipts": names,
         "missing_required_records": sorted(set(missing)),
+        "missing_receipts": sorted(set(missing)),
         "phase": phase,
+        "receipt_missing_count": len(missing),
+        "receipt_present_count": len(present),
+        "receipt_total_count": len(entries),
         "receipts": entries,
         "schema_version": 1,
         "status": "ready" if not diagnostics else "blocked",
@@ -199,16 +211,9 @@ def _name_value(raw: str, option: str) -> tuple[str, str]:
 
 def run_receipt_chain_status_command(arguments: argparse.Namespace) -> int:
     try:
-        expectations = dict(
-            _name_value(raw, "--expect") for raw in (arguments.expect or ())
-        )
-        pairs = (
-            _name_value(raw, "--receipt") for raw in (arguments.receipt or ())
-        )
-        receipts = [
-            ReceiptSpec(name, path, expectations.pop(name, None))
-            for name, path in pairs
-        ]
+        expectations = dict(_name_value(raw, "--expect") for raw in (arguments.expect or ()))
+        pairs = (_name_value(raw, "--receipt") for raw in (arguments.receipt or ()))
+        receipts = [ReceiptSpec(name, path, expectations.pop(name, None)) for name, path in pairs]
         receipts += [
             ReceiptSpec(name, Path("__missing_expected_receipt__"), digest)
             for name, digest in sorted(expectations.items())
@@ -227,6 +232,17 @@ def run_receipt_chain_status_command(arguments: argparse.Namespace) -> int:
         receipts=receipts,
         required_names=arguments.required or (),
     )
+    if getattr(arguments, "run", None):
+        write_canonical_record(
+            state_root(Path(arguments.state_root)),
+            arguments.task_id,
+            arguments.run,
+            phase="complete",
+            evidence_type="receipt_chain_status",
+            subject_id="receipt-chain",
+            payload=payload,
+            producer_command="receipt-chain-status",
+        )
     text = json.dumps(payload, indent=2, sort_keys=True) + "\n"
     if arguments.output:
         Path(arguments.output).write_text(text, encoding="utf-8")
@@ -234,4 +250,3 @@ def run_receipt_chain_status_command(arguments: argparse.Namespace) -> int:
         Path(arguments.markdown).write_text(markdown_status(payload), encoding="utf-8")
     print(text, end="")
     return 0 if payload["status"] == "ready" else 1
-

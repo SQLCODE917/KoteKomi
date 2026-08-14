@@ -34,6 +34,7 @@ Before changing code, read:
 | changing Briefing output | `docs/agent/domain.md`, `docs/agent/pipelines.md`, `docs/agent/output-format.md`, `docs/agent/testing.md` |
 | changing exporters | `docs/agent/adapters.md`, `docs/agent/domain.md`, `docs/agent/testing.md` |
 | changing tests | `docs/agent/testing.md` |
+| implementing a TDD | `docs/agent/implement-tdd-workflow.md`, `docs/agent/testing.md` |
 
 ## Authority Order
 

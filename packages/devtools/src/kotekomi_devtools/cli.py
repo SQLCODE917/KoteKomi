@@ -7,6 +7,11 @@ import json
 import sys
 from pathlib import Path
 
+from kotekomi_devtools.evidence_catalog import (
+    read_index,
+    state_root,
+    write_canonical_record,
+)
 from kotekomi_devtools.goal_accountability import GoalAccountabilityError, write_goal_report
 from kotekomi_devtools.receipt_chain_status import run_receipt_chain_status_command
 from kotekomi_devtools.receipt_writer import ReceiptWriterError, write_receipt
@@ -30,6 +35,9 @@ from kotekomi_devtools.task_preflight import preflight_task
 from kotekomi_devtools.task_retrospective import TaskRetrospectiveError, write_task_retrospective
 from kotekomi_devtools.task_scope import audit_task_scope
 from kotekomi_devtools.tdd_binding import TddBindingError, bind_tdd
+from kotekomi_devtools.tdd_metrics import tdd_metrics
+from kotekomi_devtools.tdd_scorecards import compare_scorecards, compare_tdds, tdd_score
+from kotekomi_devtools.tdd_workflow import implement_tdd
 from kotekomi_devtools.verification_plan import VerificationPlanError, write_verification_plan
 
 
@@ -50,6 +58,9 @@ def main(argv: list[str] | None = None) -> int:
         run_parser.add_argument("check_id", metavar="CHECK_ID")
         run_parser.add_argument("--output", type=Path, required=True)
         run_parser.add_argument("--log", type=Path, required=True)
+        run_parser.add_argument("--task-id")
+        run_parser.add_argument("--run")
+        run_parser.add_argument("--state-root", type=Path, default=Path("~/.local/state/kotekomi"))
         run_args = run_parser.parse_args(raw_argv[1:separator])
         record = run_check(
             run_args.check_id,
@@ -57,6 +68,20 @@ def main(argv: list[str] | None = None) -> int:
             log=run_args.log,
             argv=tuple(raw_argv[separator + 1 :]),
         )
+        if run_args.run:
+            if not run_args.task_id:
+                run_parser.error("--run requires --task-id")
+            payload = record.as_json() | {"outcome": record.status, "diagnostics": []}
+            write_canonical_record(
+                state_root(run_args.state_root),
+                run_args.task_id,
+                run_args.run,
+                phase="verification",
+                evidence_type="run_check",
+                subject_id=record.check_id,
+                payload=payload,
+                producer_command="run-check",
+            )
         print(_json.dumps(record.as_json(), separators=(",", ":"), sort_keys=True))
         return record.exit_code
 
@@ -92,6 +117,23 @@ def main(argv: list[str] | None = None) -> int:
                 verified_revision=arguments.verified,
             )
             output = result.as_json()
+            if arguments.run:
+                if not arguments.task_id:
+                    raise ValueError("lifecycle-check --run requires --task-id")
+                evidence_type = (
+                    "candidate_lifecycle" if arguments.phase == "candidate" else "main_lifecycle"
+                )
+                output = output | {"ready": result.status == "ready"}
+                write_canonical_record(
+                    state_root(arguments.state_root),
+                    arguments.task_id,
+                    arguments.run,
+                    phase="candidate" if evidence_type == "candidate_lifecycle" else "main",
+                    evidence_type=evidence_type,
+                    subject_id="candidate" if evidence_type == "candidate_lifecycle" else "main",
+                    payload=output,
+                    producer_command="lifecycle-check",
+                )
             exit_code = result.exit_code
         elif arguments.command == "step-preflight":
             output = step_preflight_payload(
@@ -140,11 +182,75 @@ def main(argv: list[str] | None = None) -> int:
             result = bind_tdd(
                 arguments.tdd_path,
                 output=arguments.output,
-                receipt=arguments.receipt,
                 state_root=arguments.state_root,
             )
             output = result.as_json()
             exit_code = result.exit_code
+        elif arguments.command == "evidence-index":
+            output = read_index(state_root(arguments.state_root), arguments.task_id, arguments.run)
+            if arguments.output:
+                arguments.output.parent.mkdir(parents=True, exist_ok=True)
+                arguments.output.write_text(
+                    json.dumps(output, sort_keys=True, separators=(",", ":")) + "\n"
+                )
+            exit_code = 0
+        elif arguments.command == "implement-tdd":
+            exit_code, output = implement_tdd(
+                arguments.tdd_path,
+                state_root_path=arguments.state_root,
+                output=arguments.output,
+                markdown=arguments.markdown,
+                new_run=arguments.new_run,
+                abandon_run=arguments.abandon_run,
+            )
+        elif arguments.command == "tdd-metrics":
+            exit_code, output = tdd_metrics(
+                arguments.tdd_path,
+                state_root_path=arguments.state_root,
+                run_id=arguments.run,
+                latest=arguments.latest,
+                output=arguments.output,
+                markdown=arguments.markdown,
+            )
+        elif arguments.command == "tdd-score":
+            exit_code, output = tdd_score(
+                arguments.tdd_path,
+                state_root_path=arguments.state_root,
+                run_id=arguments.run,
+                latest=arguments.latest,
+                output=arguments.output,
+                markdown=arguments.markdown,
+            )
+        elif arguments.command == "tdd-compare":
+            if arguments.scorecard and arguments.tdd_path:
+                exit_code, output = (
+                    1,
+                    {
+                        "schema_version": 1,
+                        "status": "blocked",
+                        "diagnostics": [
+                            {
+                                "code": "compare.selector",
+                                "location": "/",
+                                "rule": "scorecard_and_tdd_path_mutually_exclusive",
+                            }
+                        ],
+                    },
+                )
+            elif arguments.scorecard:
+                exit_code, output = compare_scorecards(
+                    [Path(item) for item in arguments.scorecard],
+                    output=arguments.output,
+                    markdown=arguments.markdown,
+                    state_root_path=arguments.state_root,
+                )
+            else:
+                exit_code, output = compare_tdds(
+                    arguments.tdd_path,
+                    output=arguments.output,
+                    markdown=arguments.markdown,
+                    state_root_path=arguments.state_root,
+                )
         elif arguments.command == "task-retrospective":
             result = write_task_retrospective(
                 arguments.records_dir,
@@ -179,6 +285,20 @@ def main(argv: list[str] | None = None) -> int:
                 log=_Path(arguments.log),
                 argv=command_argv,
             )
+            if arguments.run:
+                if not arguments.task_id:
+                    raise ValueError("run-check --run requires --task-id")
+                payload = record.as_json() | {"outcome": record.status, "diagnostics": []}
+                write_canonical_record(
+                    state_root(arguments.state_root),
+                    arguments.task_id,
+                    arguments.run,
+                    phase="verification",
+                    evidence_type="run_check",
+                    subject_id=record.check_id,
+                    payload=payload,
+                    producer_command="run-check",
+                )
             print(_json.dumps(record.as_json(), separators=(",", ":"), sort_keys=True))
             return record.exit_code
         elif arguments.command == "verify-checks":
@@ -193,6 +313,31 @@ def main(argv: list[str] | None = None) -> int:
                 output=_Path(arguments.output),
                 markdown=_Path(arguments.markdown),
             )
+            if arguments.run:
+                if not arguments.task_id:
+                    raise ValueError("verify-checks --run requires --task-id")
+                report_payload = report.as_json()
+                records = report_payload["records"]
+                output_payload = report_payload | {
+                    "planned_check_count": len(report_payload["planned_check_ids"]),
+                    "executed_check_count": len(records),
+                    "verified_check_count": len(report_payload["completed_check_ids"]),
+                    "failed_check_count": sum(
+                        1
+                        for record in records
+                        if record["status"] != "passed" or record["exit_code"] != 0
+                    ),
+                }
+                write_canonical_record(
+                    state_root(arguments.state_root),
+                    arguments.task_id,
+                    arguments.run,
+                    phase="verification",
+                    evidence_type="verify_checks",
+                    subject_id="verify-checks",
+                    payload=output_payload,
+                    producer_command="verify-checks",
+                )
             print(_json.dumps(report.as_json(), separators=(",", ":"), sort_keys=True))
             return report.exit_code
         elif arguments.command == "verification-plan":
@@ -204,6 +349,20 @@ def main(argv: list[str] | None = None) -> int:
                 markdown=arguments.markdown,
             )
             output = result.as_json()
+            if arguments.run:
+                if not arguments.task_id:
+                    raise ValueError("verification-plan --run requires --task-id")
+                output = output | {"planned_checks": output["checks"]}
+                write_canonical_record(
+                    state_root(arguments.state_root),
+                    arguments.task_id,
+                    arguments.run,
+                    phase="verification",
+                    evidence_type="verification_plan",
+                    subject_id="plan",
+                    payload=output,
+                    producer_command="verification-plan",
+                )
             exit_code = result.exit_code
         elif arguments.command == "task-ledger":
             if arguments.task_ledger_command == "current":
@@ -301,6 +460,9 @@ def _build_parser() -> argparse.ArgumentParser:
     lifecycle_check.add_argument("--records-dir", type=Path)
     lifecycle_check.add_argument("--main-base")
     lifecycle_check.add_argument("--verified")
+    lifecycle_check.add_argument("--task-id")
+    lifecycle_check.add_argument("--run")
+    lifecycle_check.add_argument("--state-root", type=Path, default=Path("~/.local/state/kotekomi"))
     receipt_chain_status = subparsers.add_parser(
         "receipt-chain-status",
         help="Report deterministic receipt-chain status.",
@@ -310,7 +472,8 @@ def _build_parser() -> argparse.ArgumentParser:
     receipt_chain_status.add_argument("--receipt", action="append", default=[])
     receipt_chain_status.add_argument("--expect", action="append", default=[])
     receipt_chain_status.add_argument("--required", action="append", default=[])
-    receipt_chain_status.add_argument("--state-root", default="~/.local/state/kotekomi/experiments")
+    receipt_chain_status.add_argument("--run")
+    receipt_chain_status.add_argument("--state-root", default="~/.local/state/kotekomi")
     receipt_chain_status.add_argument("--output")
     receipt_chain_status.add_argument("--markdown")
 
@@ -329,14 +492,46 @@ def _build_parser() -> argparse.ArgumentParser:
         "tdd-bind", help="Create or read a canonical binding for one local TDD."
     )
     tdd_bind.add_argument("tdd_path", type=Path, metavar="TDD_PATH")
-    tdd_bind.add_argument("--output", type=Path, required=True, metavar="BINDING_JSON")
-    tdd_bind.add_argument("--receipt", type=Path, required=True, metavar="RECEIPT_JSON")
+    tdd_bind.add_argument("--output", type=Path, metavar="BINDING_JSON")
     tdd_bind.add_argument(
         "--state-root",
         type=Path,
-        default=Path("~/.local/state/kotekomi/experiments"),
+        default=Path("~/.local/state/kotekomi"),
         metavar="STATE_ROOT",
     )
+    evidence_index = subparsers.add_parser(
+        "evidence-index", help="Read one canonical run evidence index."
+    )
+    evidence_index.add_argument("--task-id", required=True)
+    evidence_index.add_argument("--run", required=True)
+    evidence_index.add_argument("--state-root", type=Path, default=Path("~/.local/state/kotekomi"))
+    evidence_index.add_argument("--output", type=Path)
+    implement = subparsers.add_parser("implement-tdd", help="Resolve TDD implementation status.")
+    implement.add_argument("tdd_path", type=Path)
+    mode = implement.add_mutually_exclusive_group()
+    mode.add_argument("--new-run", action="store_true")
+    mode.add_argument("--abandon-run")
+    implement.add_argument("--state-root", type=Path, default=Path("~/.local/state/kotekomi"))
+    implement.add_argument("--output", type=Path)
+    implement.add_argument("--markdown", type=Path)
+    for command, help_text in (
+        ("tdd-metrics", "Generate TDD implementation metrics."),
+        ("tdd-score", "Generate TDD scorecards."),
+    ):
+        parser_item = subparsers.add_parser(command, help=help_text)
+        parser_item.add_argument("tdd_path", type=Path, nargs="?")
+        selector = parser_item.add_mutually_exclusive_group()
+        selector.add_argument("--run")
+        selector.add_argument("--latest", action="store_true")
+        parser_item.add_argument("--state-root", type=Path, default=Path("~/.local/state/kotekomi"))
+        parser_item.add_argument("--output", type=Path)
+        parser_item.add_argument("--markdown", type=Path)
+    compare = subparsers.add_parser("tdd-compare", help="Compare TDD scorecards.")
+    compare.add_argument("tdd_path", nargs="*")
+    compare.add_argument("--scorecard", action="append", default=[])
+    compare.add_argument("--state-root", type=Path, default=Path("~/.local/state/kotekomi"))
+    compare.add_argument("--output", type=Path)
+    compare.add_argument("--markdown", type=Path)
     task_retrospective = subparsers.add_parser(
         "task-retrospective", help="Write deterministic metrics for task lifecycle records."
     )
@@ -358,6 +553,11 @@ def _build_parser() -> argparse.ArgumentParser:
     verification_plan.add_argument("--head", required=True, metavar="HEAD")
     verification_plan.add_argument("--output", type=Path, required=True, metavar="JSON")
     verification_plan.add_argument("--markdown", type=Path, required=True, metavar="MARKDOWN")
+    verification_plan.add_argument("--task-id")
+    verification_plan.add_argument("--run")
+    verification_plan.add_argument(
+        "--state-root", type=Path, default=Path("~/.local/state/kotekomi")
+    )
     step_preflight = subparsers.add_parser(
         "step-preflight", help="Record deterministic local step preflight state."
     )
@@ -401,6 +601,11 @@ def _build_parser() -> argparse.ArgumentParser:
     run_check_parser.add_argument("check_id", metavar="CHECK_ID")
     run_check_parser.add_argument("--output", required=True, help="Path to check record JSON.")
     run_check_parser.add_argument("--log", required=True, help="Path to combined check log.")
+    run_check_parser.add_argument("--task-id")
+    run_check_parser.add_argument("--run")
+    run_check_parser.add_argument(
+        "--state-root", type=Path, default=Path("~/.local/state/kotekomi")
+    )
     run_check_parser.add_argument("argv", nargs="*", metavar="COMMAND")
 
     verify_checks_parser = subparsers.add_parser(
@@ -416,6 +621,11 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     verify_checks_parser.add_argument("--output", required=True, help="Path to JSON report.")
     verify_checks_parser.add_argument("--markdown", required=True, help="Path to Markdown report.")
+    verify_checks_parser.add_argument("--task-id")
+    verify_checks_parser.add_argument("--run")
+    verify_checks_parser.add_argument(
+        "--state-root", type=Path, default=Path("~/.local/state/kotekomi")
+    )
 
     task_ledger = subparsers.add_parser(
         "task-ledger", help="Read and update deterministic task state."

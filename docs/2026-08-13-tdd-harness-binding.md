@@ -16,7 +16,15 @@ The Harness does not yet identify the exact Technical Design Document that cause
 
 The user cannot compare Technical Design Documents unless the Harness links each implementation result to exact Technical Design Document content.
 
-This TDD uses the term `TDD path` for the local file path that identifies the Technical Design Document.
+This TDD uses the term `TDD path` for the repository-relative local file path that identifies the Technical Design Document.
+
+This TDD uses the term `requested TDD path` for the TDD path supplied to the current command.
+
+This TDD uses the term `primary TDD path` for the first TDD path that created a canonical binding.
+
+This TDD uses the term `TDD path alias` for any later TDD path that has the same TDD digest as the canonical binding.
+
+This TDD uses the term `TDD paths` for the sorted set that contains the primary TDD path and all TDD path aliases.
 
 This TDD uses the term `TDD snapshot` for the exact bytes that the Harness stores after it reads the TDD path.
 
@@ -26,11 +34,11 @@ This TDD uses the term `TDD title` for the first heading in the TDD snapshot.
 
 This TDD uses the term `task identifier` for the internal Harness identifier for one TDD digest.
 
-This TDD uses the term `TDD binding` for the canonical record that links one TDD digest to one task identifier.
+This TDD uses the term `TDD binding` for the current stored record that links one TDD digest to one task identifier.
 
-This TDD uses the term `TDD index` for the derived local lookup file for TDD bindings.
+This TDD uses the term `TDD binding revision` for an immutable historical copy of a TDD binding.
 
-This TDD uses the term `TDD alias` for an additional TDD path that points to the same TDD digest.
+This TDD uses the term `TDD index` for the derived local lookup file that maps TDD paths, TDD digests, and task identifiers to canonical bindings.
 
 Primary end-to-end Flow:
 
@@ -44,15 +52,15 @@ Primary end-to-end Flow:
 
 5. The Harness looks up the TDD digest in the TDD index.
 
-6. The Harness reuses the existing TDD binding when the TDD digest is already known.
+6. The Harness reuses the existing task identifier when the TDD digest is already known.
 
-7. The Harness derives a task identifier when the TDD digest is not known.
+7. The Harness derives a task identifier only when the TDD digest is unknown.
 
-8. The Harness writes or updates the canonical TDD binding.
+8. The Harness writes or updates the TDD binding.
 
-9. The Harness writes an immutable binding revision and an immutable receipt.
+9. The Harness writes an immutable TDD binding revision and an immutable receipt.
 
-10. The Harness rebuilds or updates the TDD index.
+10. The Harness updates the TDD index.
 
 ## Goals
 
@@ -60,11 +68,11 @@ Primary end-to-end Flow:
 
 - The user can identify which Technical Design Document authorized a Harness task.
 
-- The user can use multiple local paths for the same TDD content without creating duplicate tasks.
+- The Harness does not create duplicate tasks for identical TDD content.
 
 - The user can detect when a TDD path changed after the first binding.
 
-- The operator can use a TDD binding as the first receipt in an implementation evidence chain.
+- The operator can use a TDD binding as the first evidence record in an implementation run.
 
 - A later scorecard can attribute Harness metrics to exact TDD content.
 
@@ -76,69 +84,85 @@ TDD path boundary:
 
 - TP-02: The TDD path reader resolves a relative path from the current working directory.
 
-- TP-03: The TDD path reader does not fetch network resources.
+- TP-03: The TDD path reader normalizes the TDD path to a repository-relative path.
 
-- TP-04: The TDD path reader stores the exact TDD snapshot that it reads.
+- TP-04: The TDD path reader does not fetch network resources.
 
-- TP-05: The TDD path reader returns a blocked result when it cannot read the TDD path.
+- TP-05: The TDD path reader stores the exact TDD snapshot that it reads.
+
+- TP-06: The TDD path reader returns a blocked result when it cannot read the TDD path.
 
 Task identity boundary:
 
-- TI-01: The task identity resolver reads the TDD title from the first markdown heading when it exists.
+- TI-01: The task identity resolver uses digest-first lookup.
 
-- TI-02: The task identity resolver uses the TDD file name when the TDD title does not exist.
+- TI-02: The task identity resolver reuses the existing task identifier when the TDD digest is already known.
 
-- TI-03: The task identity resolver creates a slug from the selected title or file name.
+- TI-03: The task identity resolver reads the TDD title from the first markdown heading when the TDD digest is unknown and the heading exists.
 
-- TI-04: The task identity resolver appends a 12-hex-character digest suffix to the slug.
+- TI-04: The task identity resolver uses the TDD file name when the TDD digest is unknown and the TDD title does not exist.
 
-- TI-05: The task identity resolver creates a task identifier only for an unknown TDD digest.
+- TI-05: The task identity resolver creates a slug from the selected title or file name.
 
-- TI-06: The task identity resolver reuses the existing task identifier when the TDD digest is known.
+- TI-06: The task identity resolver appends a 12-character lowercase hexadecimal digest suffix to the slug.
 
-- TI-07: The task identity resolver reports a blocked collision when a new TDD digest maps to an existing task identifier.
+- TI-07: The task identity resolver uses the derived value as the task identifier for an unknown TDD digest.
 
-- TI-08: The task identity resolver exposes a test-only collision fixture for TI-07 tests.
+- TI-08: The task identity resolver exposes a fixture-only collision resolver for tests.
+
+- TI-09: The task identity resolver blocks when the candidate task identifier already belongs to a different TDD digest.
 
 TDD binding boundary:
 
 - TB-01: The TDD binding writer computes the TDD digest from the TDD snapshot.
 
-- TB-02: The TDD binding writer stores the primary TDD path.
+- TB-02: The TDD binding writer stores the requested TDD path.
 
-- TB-03: The TDD binding writer stores all known TDD paths for the TDD digest.
+- TB-03: The TDD binding writer stores the primary TDD path.
 
-- TB-04: The TDD binding writer stores the TDD digest.
+- TB-04: The TDD binding writer stores TDD paths.
 
-- TB-05: The TDD binding writer stores the task identifier.
+- TB-05: The TDD binding writer stores the TDD digest.
 
-- TB-06: The TDD binding writer stores the canonical binding path.
+- TB-06: The TDD binding writer stores the task identifier.
 
-- TB-07: The TDD binding writer stores the latest binding revision number.
+- TB-07: The TDD binding writer returns blocked status when the same requested TDD path already maps to a different TDD digest.
 
-- TB-08: The TDD binding writer returns a ready result when the same TDD path already has the same TDD digest.
+- TB-08: The TDD binding writer returns ready status when the same requested TDD path already maps to the same TDD digest.
 
-- TB-09: The TDD binding writer returns a blocked result when the same TDD path already has a different TDD digest.
+- TB-09: The TDD binding writer treats a new requested TDD path with a known TDD digest as a TDD path alias.
 
-- TB-10: The TDD binding writer adds a TDD alias when a new TDD path has an existing TDD digest.
+- TB-10: The TDD binding writer keeps the first-bound path as the primary TDD path.
 
-- TB-11: The TDD binding writer writes a new binding revision when it adds a TDD alias.
+- TB-11: The TDD binding writer keeps TDD paths unique.
 
-- TB-12: The TDD binding writer does not derive a new task identifier for a known TDD digest.
+- TB-12: The TDD binding writer sorts TDD paths lexicographically after each update.
 
-Receipt boundary:
+- TB-13: The TDD binding writer keeps TDD path aliases permanent until a future explicit alias removal command exists.
 
-- RB-01: The Harness writes one immutable receipt for each binding revision.
+Canonical storage boundary:
 
-- RB-02: The receipt includes the TDD digest.
+- CS-01: The Harness stores the current binding at `<state-root>/experiments/<task-id>/spec/tdd-binding.json`.
 
-- RB-03: The receipt includes the task identifier.
+- CS-02: The Harness stores the TDD snapshot at `<state-root>/experiments/<task-id>/spec/tdd-snapshot.md`.
 
-- RB-04: The receipt includes the binding revision number.
+- CS-03: The Harness stores immutable binding revisions under `<state-root>/experiments/<task-id>/spec/tdd-binding-revisions/`.
 
-- RB-05: The Harness does not overwrite an existing binding receipt.
+- CS-04: The Harness stores immutable binding receipts under `<state-root>/experiments/<task-id>/spec/receipts/`.
 
-Index boundary:
+- CS-05: The Harness stores the TDD index at `<state-root>/tdds/index.json`.
+
+- CS-06: The Harness names binding revisions as `tdd-binding-<revision>.json` with a three-digit decimal revision.
+
+- CS-07: The Harness names binding receipts as `tdd-binding-<revision>.receipt.json` with the same revision number.
+
+- CS-08: The Harness updates `tdd-binding.json` as the current binding copy after each ready binding update.
+
+- CS-09: The Harness never overwrites an existing binding revision.
+
+- CS-10: The Harness never overwrites an existing binding receipt.
+
+TDD index boundary:
 
 - IX-01: The TDD index maps each TDD path to one task identifier.
 
@@ -146,39 +170,47 @@ Index boundary:
 
 - IX-03: The TDD index maps each task identifier to one canonical binding path.
 
-- IX-04: The TDD index is derived local state.
+- IX-04: The Harness rebuilds the TDD index by scanning canonical bindings when the index is missing.
 
-- IX-05: The Harness rebuilds the TDD index by scanning canonical TDD bindings when the index is missing.
+- IX-05: The Harness treats canonical bindings as source of truth when the index conflicts with canonical bindings.
 
-- IX-06: The Harness rebuilds the TDD index when the index conflicts with canonical TDD bindings.
+- IX-06: The Harness updates the TDD index after each ready binding update.
 
-- IX-07: Canonical TDD bindings win over stale TDD index entries.
+Receipt boundary:
+
+- RB-01: The Harness writes one immutable receipt for each TDD binding revision.
+
+- RB-02: The receipt includes the TDD digest.
+
+- RB-03: The receipt includes the task identifier.
+
+- RB-04: The receipt includes the binding revision number.
+
+- RB-05: The receipt includes the SHA-256 digest of the binding revision file.
 
 CLI boundary:
 
 - CLI-01: The CLI exposes a command that creates or reads a TDD binding from a TDD path.
 
-- CLI-02: The CLI prints JSON output for the TDD binding result to stdout by default.
+- CLI-02: The CLI prints JSON to stdout by default.
 
-- CLI-03: The CLI returns a nonzero exit code for a blocked TDD binding result.
+- CLI-03: The CLI accepts an optional `--output` path that writes a JSON copy of the result.
 
-- CLI-04: The CLI accepts an optional output path for an operator report copy.
+- CLI-04: The CLI treats `--output` as an operator report and not as canonical state.
 
-- CLI-05: The CLI does not require a receipt path.
-
-- CLI-06: The normal documented command runs without optional output flags.
+- CLI-05: The CLI returns a nonzero exit code for a blocked TDD binding result.
 
 ## Proposed Architecture
 
 The TDD path reader owns local file access.
 
-The task identity resolver owns deterministic task identifier creation for unknown TDD digests.
+The task identity resolver owns deterministic task identifier creation.
 
-The TDD binding writer owns canonical binding records and immutable binding revisions.
+The TDD binding writer owns TDD digest computation and TDD binding storage.
 
-The receipt writer owns immutable binding receipts.
+The TDD index writer owns derived local lookup state.
 
-The TDD index builder owns derived lookup state.
+The receipt writer owns immutable TDD binding receipts.
 
 The CLI owns the operator boundary.
 
@@ -189,19 +221,14 @@ The CLI owns the operator boundary.
                                       |                         |
                                       v                         v
                             +--------------------+      +--------------+
-                            | TDD index builder  | <--- | TDD snapshot |
-                            +--------------------+      +--------------+
-                                      |
-                                      v
-                            +--------------------+
-                            | Task identity      |
-                            | resolver           |
+                            | Task identity      | <--- | TDD snapshot |
+                            | resolver           |      +--------------+
                             +--------------------+
                                       |
                                       v
-                            +--------------------+
-                            | TDD binding writer |
-                            +--------------------+
+                            +--------------------+      +-------------+
+                            | TDD binding writer | ---> | TDD index   |
+                            +--------------------+      +-------------+
                                       |
                                       v
                             +--------------------+
@@ -214,111 +241,64 @@ The CLI owns the operator boundary.
 Primary sequence:
 
 ```text
-Operator       CLI          Path reader      Index builder    Binding writer    Receipt writer
-   |            |                |                 |                  |                 |
-   | bind TDD   |                |                 |                  |                 |
-   |----------->|                |                 |                  |                 |
-   |            | read path      |                 |                  |                 |
-   |            |--------------->|                 |                  |                 |
-   |            | snapshot       |                 |                  |                 |
-   |            |<---------------|                 |                  |                 |
-   |            | resolve digest |                 |                  |                 |
-   |            |--------------------------------->|                  |                 |
-   |            | binding facts  |                 |                  |                 |
-   |            |<---------------------------------|                  |                 |
-   |            | write binding  |                 |                  |                 |
-   |            |--------------------------------------------------->|                 |
-   |            | binding        |                 |                  |                 |
-   |            |<---------------------------------------------------|                 |
-   |            | write receipt  |                 |                  |                 |
-   |            |-------------------------------------------------------------------->|
-   |            | receipt        |                 |                  |                 |
-   |            |<--------------------------------------------------------------------|
-   | JSON       |                |                 |                  |                 |
-   |<-----------|                |                 |                  |                 |
+Operator       CLI          Path reader      Identity resolver    Binding writer    Index writer    Receipt writer
+   |            |                |                  |                   |               |              |
+   | bind TDD   |                |                  |                   |               |              |
+   |----------->|                |                  |                   |               |              |
+   |            | read path      |                  |                   |               |              |
+   |            |--------------->|                  |                   |               |              |
+   |            | snapshot       |                  |                   |               |              |
+   |            |<---------------|                  |                   |               |              |
+   |            | resolve id     |                  |                   |               |              |
+   |            |---------------------------------->|                   |               |              |
+   |            | task id        |                  |                   |               |              |
+   |            |<----------------------------------|                   |               |              |
+   |            | write binding  |                  |                   |               |              |
+   |            |----------------------------------------------------->|               |              |
+   |            | binding        |                  |                   |               |              |
+   |            |<-----------------------------------------------------|               |              |
+   |            | update index   |                  |                   |               |              |
+   |            |-------------------------------------------------------------------->|              |
+   |            | write receipt  |                  |                   |               |              |
+   |            |----------------------------------------------------------------------------------->|
+   | JSON       |                |                  |                   |               |              |
+   |<-----------|                |                  |                   |               |              |
 ```
 
 Alias sequence:
 
 ```text
-Operator       CLI          Path reader      Index builder      Binding writer
-   |            |                |                 |                    |
-   | bind path  |                |                 |                    |
-   |----------->|                |                 |                    |
-   |            | read path      |                 |                    |
-   |            |--------------->|                 |                    |
-   |            | snapshot       |                 |                    |
-   |            |<---------------|                 |                    |
-   |            | known digest   |                 |                    |
-   |            |--------------------------------->|                    |
-   |            | existing task  |                 |                    |
-   |            |<---------------------------------|                    |
-   |            | add alias      |                 |                    |
-   |            |---------------------------------------------------->|
-   |            | new revision   |                 |                    |
-   |            |<----------------------------------------------------|
-   | ready JSON |                |                 |                    |
-   |<-----------|                |                 |                    |
-```
-
-Drift sequence:
-
-```text
-Operator       CLI          Path reader      Index builder
-   |            |                |                 |
-   | bind path  |                |                 |
-   |----------->|                |                 |
-   |            | read path      |                 |
-   |            |--------------->|                 |
-   |            | snapshot       |                 |
-   |            |<---------------|                 |
-   |            | path conflict  |                 |
-   |            |--------------------------------->|
-   |            | blocked result |                 |
-   |            |<---------------------------------|
-   | blocked    |                |                 |
-   |<-----------|                |                 |
+Operator       CLI          Path reader      Binding writer      Index writer      Receipt writer
+   |            |                |                  |                   |               |
+   | bind TDD   |                |                  |                   |               |
+   |----------->|                |                  |                   |               |
+   |            | read path      |                  |                   |               |
+   |            |--------------->|                  |                   |               |
+   |            | same digest    |                  |                   |               |
+   |            |<---------------|                  |                   |               |
+   |            | add alias      |                  |                   |               |
+   |            |---------------------------------->|                   |               |
+   |            | new revision   |                  |                   |               |
+   |            |<----------------------------------|                   |               |
+   |            | update index   |                  |                   |               |
+   |            |----------------------------------------------------->|               |
+   |            | write receipt  |                  |                   |               |
+   |            |-------------------------------------------------------------------->|
+   | ready JSON |                |                  |                   |               |
+   |<-----------|                |                  |                   |               |
 ```
 
 ## Data Model
 
-The Harness will create one canonical TDD binding per TDD digest.
-
-The canonical binding path is:
-
-```text
-<state-root>/experiments/<task-id>/spec/tdd-binding.json
-```
-
-The TDD snapshot path is:
-
-```text
-<state-root>/experiments/<task-id>/spec/tdd-snapshot.md
-```
-
-The binding revision directory is:
-
-```text
-<state-root>/experiments/<task-id>/spec/tdd-binding-revisions/
-```
-
-The binding receipt directory is:
-
-```text
-<state-root>/experiments/<task-id>/spec/receipts/
-```
-
-The TDD index path is:
-
-```text
-<state-root>/tdds/index.json
-```
+The Harness will create one current TDD binding record per task identifier.
 
 The current TDD binding record has these fields:
 
 - `schema_version`
 
 - `task_id`
+
+- `requested_tdd_path`
 
 - `primary_tdd_path`
 
@@ -340,59 +320,39 @@ The current TDD binding record has these fields:
 
 - `diagnostics`
 
-The binding revision record has the same fields as the current TDD binding record.
-
-The binding revision file name uses this form:
-
-```text
-tdd-binding-<three-digit-revision>.json
-```
-
-The binding receipt file name uses this form:
-
-```text
-tdd-binding-<three-digit-revision>.receipt.json
-```
+The immutable TDD binding revision has the same fields as the current TDD binding record.
 
 The TDD index record has these fields:
 
 - `schema_version`
 
-- `by_tdd_path`
+- `paths`
 
-- `by_tdd_sha256`
+- `digests`
 
-- `by_task_id`
+- `tasks`
 
 - `diagnostics`
 
-The `tdd_paths` list contains unique normalized repository-relative paths.
+The `paths` map uses TDD path keys and task identifier values.
 
-The `tdd_paths` list is sorted lexicographically after the Harness adds any new path.
+The `digests` map uses TDD digest keys and task identifier values.
 
-The `primary_tdd_path` value is the first path that created the canonical TDD binding.
+The `tasks` map uses task identifier keys and state-root-relative canonical binding path values.
 
-The `primary_tdd_path` value appears in `tdd_paths`.
+The Harness will read TDD binding records by TDD path through the TDD index.
 
-A TDD alias is permanent until a future explicit alias-removal command exists.
+The Harness will read TDD binding records by TDD digest through the TDD index.
+
+The Harness will read TDD binding records by task identifier through the TDD index.
 
 ## APIs / Interfaces
 
 The CLI contract is:
 
 ```text
-kotekomi-agent tdd-bind <tdd-path> [--output <binding-report-json>]
+kotekomi-agent tdd-bind <tdd-path> [--output <binding-json>]
 ```
-
-The CLI prints the JSON result to stdout when `--output` is absent.
-
-The `--output` file is an optional operator report copy.
-
-The `--output` file does not define canonical Harness state.
-
-The CLI writes canonical Harness state under the canonical binding path.
-
-The CLI writes canonical receipts under the binding receipt directory.
 
 The JSON result contract is:
 
@@ -406,7 +366,6 @@ tdd_paths
 tdd_snapshot_path
 tdd_sha256
 tdd_title
-canonical_binding_path
 latest_binding_revision
 latest_binding_revision_path
 latest_binding_receipt_path
@@ -421,25 +380,23 @@ The ready result uses `status = ready`.
 
 The Harness treats the TDD snapshot as the source of identity.
 
-The Harness treats the TDD digest as the stable TDD identity.
+The Harness resolves identity by TDD digest before it derives a task identifier.
 
 The Harness treats the TDD path string as location metadata.
 
-The Harness derives the task identifier from the TDD title or TDD file name and a 12-hex-character digest suffix only when the TDD digest is unknown.
+The Harness derives the task identifier only for an unknown TDD digest.
 
-The Harness reuses the existing task identifier when the TDD digest is known.
+The Harness derives the task identifier from the TDD title or TDD file name and a 12-character digest suffix.
 
-The Harness allows the same TDD digest to bind to more than one TDD path.
+The first binding for a TDD digest wins the task identifier for that TDD digest.
 
-The Harness blocks when one TDD path already has a different TDD digest.
+The Harness treats identical TDD bytes at different paths as TDD path aliases.
 
-The Harness blocks when a new TDD digest maps to an existing task identifier.
+The Harness blocks when one TDD path already maps to a different TDD digest.
+
+The Harness blocks when a derived task identifier collides with a different TDD digest.
 
 The Harness preserves the old TDD binding when a drift check blocks.
-
-The Harness writes a new binding revision after each successful alias update.
-
-The Harness writes a new immutable receipt after each binding revision.
 
 The Harness records a diagnostic when the TDD path cannot be read.
 
@@ -453,53 +410,57 @@ The Harness records a diagnostic when the task identifier collides with a differ
 
 - AC-TP-02: Acceptance tests prove the command resolves a relative path from the current working directory.
 
-- AC-TP-03: Acceptance tests prove the command rejects network-style sources.
+- AC-TP-03: Acceptance tests prove the command normalizes a repository-relative TDD path.
 
-- AC-TP-04: Acceptance tests prove the command writes a TDD snapshot.
+- AC-TP-04: Acceptance tests prove the command rejects network-style sources.
 
-- AC-TP-05: Acceptance tests prove an unreadable TDD path returns blocked status.
+- AC-TP-05: Acceptance tests prove the command writes a TDD snapshot.
 
-- AC-TI-01: Unit tests prove the task identifier uses the first markdown heading for an unknown digest.
+- AC-TP-06: Acceptance tests prove an unreadable TDD path returns blocked status.
 
-- AC-TI-02: Unit tests prove the task identifier uses the file name when no heading exists for an unknown digest.
+- AC-TI-01: Unit tests prove digest-first lookup reuses an existing task identifier.
 
-- AC-TI-03: Unit tests prove the task identifier includes a slug.
+- AC-TI-02: Unit tests prove the task identifier uses the first markdown heading for an unknown digest when it exists.
 
-- AC-TI-04: Unit tests prove the task identifier includes a 12-hex-character digest suffix.
+- AC-TI-03: Unit tests prove the task identifier uses the file name for an unknown digest when no heading exists.
 
-- AC-TI-05: Unit tests prove equal TDD snapshot bytes reuse the same task identifier.
+- AC-TI-04: Unit tests prove the task identifier includes a slug.
 
-- AC-TI-06: Unit tests use the test-only collision fixture to prove task identifier collision returns blocked status.
+- AC-TI-05: Unit tests prove the task identifier includes a 12-character digest suffix.
+
+- AC-TI-06: Unit tests prove a fixture-only collision resolver can create a deterministic collision case.
+
+- AC-TI-07: Unit tests prove task identifier collision with a different digest returns blocked status.
 
 - AC-TB-01: Unit tests prove equal TDD snapshot bytes produce equal TDD digests.
 
 - AC-TB-02: Unit tests prove changed TDD snapshot bytes produce different TDD digests.
 
-- AC-TB-03: Acceptance tests prove the binding record includes `primary_tdd_path`.
+- AC-TB-03: Acceptance tests prove the binding record includes the requested TDD path.
 
-- AC-TB-04: Acceptance tests prove the binding record includes `tdd_paths`.
+- AC-TB-04: Acceptance tests prove the binding record includes the primary TDD path.
 
-- AC-TB-05: Acceptance tests prove the binding record includes the task identifier.
+- AC-TB-05: Acceptance tests prove the binding record includes sorted unique TDD paths.
 
-- AC-TB-06: Acceptance tests prove conflicting TDD path binding returns blocked status.
+- AC-TB-06: Acceptance tests prove the binding record includes the task identifier.
 
-- AC-TB-07: Acceptance tests prove repeated binding with the same path and digest returns ready status.
+- AC-TB-07: Acceptance tests prove conflicting TDD path binding returns blocked status.
 
-- AC-TB-08: Acceptance tests prove identical content at two paths produces one canonical TDD binding.
+- AC-TB-08: Acceptance tests prove repeated binding with the same digest returns ready status.
 
-- AC-TB-09: Acceptance tests prove the second identical path becomes a TDD alias.
+- AC-TB-09: Acceptance tests prove identical heading-less files at different paths become aliases of the first binding.
 
-- AC-TB-10: Acceptance tests prove alias updates write a new binding revision.
+- AC-CS-01: Acceptance tests prove the current binding exists at the canonical current binding path.
 
-- AC-RB-01: Acceptance tests prove each binding revision writes one immutable receipt through the receipt writer.
+- AC-CS-02: Acceptance tests prove the TDD snapshot exists at the canonical snapshot path.
 
-- AC-RB-02: Receipt tests prove each receipt includes the TDD digest.
+- AC-CS-03: Acceptance tests prove each ready binding update writes a new immutable binding revision.
 
-- AC-RB-03: Receipt tests prove each receipt includes the task identifier.
+- AC-CS-04: Acceptance tests prove each ready binding update writes a new immutable receipt.
 
-- AC-RB-04: Receipt tests prove each receipt includes the binding revision number.
+- AC-CS-05: Acceptance tests prove old binding revisions are not overwritten.
 
-- AC-RB-05: Acceptance tests prove the receipt writer does not overwrite an existing binding receipt.
+- AC-CS-06: Acceptance tests prove old binding receipts are not overwritten.
 
 - AC-IX-01: Acceptance tests prove the TDD index maps TDD paths to task identifiers.
 
@@ -507,21 +468,23 @@ The Harness records a diagnostic when the task identifier collides with a differ
 
 - AC-IX-03: Acceptance tests prove the TDD index maps task identifiers to canonical binding paths.
 
-- AC-IX-04: Acceptance tests prove the Harness rebuilds a missing TDD index.
+- AC-IX-04: Acceptance tests prove the Harness rebuilds the TDD index when the index is missing.
 
-- AC-IX-05: Acceptance tests prove canonical TDD bindings win over stale TDD index entries.
+- AC-RB-01: Receipt tests prove each binding revision has one immutable receipt.
+
+- AC-RB-02: Receipt tests prove the receipt includes the TDD digest.
+
+- AC-RB-03: Receipt tests prove the receipt includes the task identifier.
+
+- AC-RB-04: Receipt tests prove the receipt includes the binding revision number.
 
 - AC-CLI-01: CLI tests prove the command exists.
 
-- AC-CLI-02: CLI tests prove the command prints JSON to stdout when `--output` is absent.
+- AC-CLI-02: CLI tests prove the command prints JSON to stdout by default.
 
-- AC-CLI-03: CLI tests prove blocked status returns a nonzero exit code.
+- AC-CLI-03: CLI tests prove optional `--output` writes a JSON copy.
 
-- AC-CLI-04: CLI tests prove `--output` writes an operator report copy.
-
-- AC-CLI-05: CLI tests prove the normal command does not require a receipt path.
-
-- AC-CLI-06: CLI tests prove `kotekomi-agent tdd-bind <tdd-path>` runs as documented.
+- AC-CLI-04: CLI tests prove blocked status returns a nonzero exit code.
 
 ## Reference Implementations
 
@@ -535,6 +498,6 @@ The Harness records a diagnostic when the task identifier collides with a differ
 
 ## Constraints and Halt Conditions
 
-The implementer must halt if the task manifest schema cannot reference a TDD binding by path and digest.
+The implementer must halt if the task manifest schema cannot reference a TDD binding by `tdd_path` and `tdd_sha256`.
 
-The implementer must halt if the task identifier collision fixture cannot be isolated from production behavior.
+The implementer must halt if the task identifier rule produces a real collision outside the fixture-only test seam.
