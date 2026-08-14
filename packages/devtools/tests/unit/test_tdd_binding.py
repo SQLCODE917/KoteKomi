@@ -37,6 +37,7 @@ def test_equal_content_adds_alias_and_revision(tmp_path: Path) -> None:
     original = bind_tdd(first, cwd=tmp_path, state_root=root)
     alias = bind_tdd(second, cwd=tmp_path, state_root=root)
     assert alias.status == "ready" and alias.binding is not None
+    assert original.binding is not None
     assert alias.binding["task_id"] == original.binding["task_id"]
     assert alias.binding["tdd_paths"] == ["one.md", "two.md"]
     assert alias.binding["latest_binding_revision"] == 2
@@ -47,7 +48,10 @@ def test_drift_blocks_and_preserves_binding(tmp_path: Path) -> None:
     path.write_text("# One\n")
     root = tmp_path / "state"
     first = bind_tdd(path, cwd=tmp_path, state_root=root)
+    assert first.binding is not None
     path.write_text("# Changed\n")
     changed = bind_tdd(path, cwd=tmp_path, state_root=root)
     assert changed.status == "blocked"
-    assert lookup_tdd_binding(root, tdd_path="one.md")["tdd_sha256"] == first.binding["tdd_sha256"]
+    preserved = lookup_tdd_binding(root, tdd_path="one.md")
+    assert preserved is not None
+    assert preserved["tdd_sha256"] == first.binding["tdd_sha256"]

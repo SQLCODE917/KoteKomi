@@ -1,8 +1,8 @@
-from kotekomi_devtools.tdd_scorecards import _score
+from kotekomi_devtools.tdd_scorecards import score_metrics
 
 
 def test_scorecard_penalizes_missing_evidence_and_zero_planned_checks() -> None:
-    result = _score(
+    result = score_metrics(
         {
             "task_id": "t",
             "primary_tdd_path": "t.md",

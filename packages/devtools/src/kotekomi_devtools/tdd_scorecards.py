@@ -22,7 +22,7 @@ def _round(value: float) -> int:
     return int(value + 0.5)
 
 
-def _score(metric: Json) -> Json:
+def score_metrics(metric: Json) -> Json:
     missing = int(metric.get("missing_evidence_count", 0))
     receipt_missing = int(metric.get("receipt_missing_count", 0))
     mismatch = int(metric.get("digest_mismatch_count", 0))
@@ -107,7 +107,7 @@ def tdd_score(
 ) -> tuple[int, Json]:
     root = state_root(state_root_path)
     code, metrics = tdd_metrics(tdd_path, state_root_path=root, run_id=run_id, latest=latest)
-    cards = [_score(metric) for metric in metrics.get("metrics", [])]
+    cards = [score_metrics(metric) for metric in metrics.get("metrics", [])]
     for card in cards:
         rel = (
             f"experiments/{card['task_id']}/runs/"

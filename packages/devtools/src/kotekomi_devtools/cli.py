@@ -5,7 +5,10 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from kotekomi_devtools.evidence_catalog import (
     read_index,
@@ -40,374 +43,41 @@ from kotekomi_devtools.tdd_scorecards import compare_scorecards, compare_tdds, t
 from kotekomi_devtools.tdd_workflow import implement_tdd
 from kotekomi_devtools.verification_plan import VerificationPlanError, write_verification_plan
 
+type JsonObject = dict[str, Any]
+type CommandHandler = Callable[[argparse.Namespace], "CliResponse | int"]
+
+
+@dataclass(frozen=True)
+class CliResponse:
+    """A command result with its CLI serialization policy."""
+
+    exit_code: int
+    output: JsonObject
+    ensure_ascii: bool = False
+    sort_keys: bool = False
+
 
 def main(argv: list[str] | None = None) -> int:
     """Run the agent harness command selected by ``argv``."""
-    raw_argv = list(argv) if argv is not None else None
-    if raw_argv is None:
-        import sys as _sys
-
-        raw_argv = _sys.argv[1:]
-    if raw_argv[:1] == ["run-check"] and "--" in raw_argv:
-        separator = raw_argv.index("--")
-        import json as _json
-
-        from .verification_execution import run_check
-
-        run_parser = argparse.ArgumentParser(prog="kotekomi-agent run-check")
-        run_parser.add_argument("check_id", metavar="CHECK_ID")
-        run_parser.add_argument("--output", type=Path, required=True)
-        run_parser.add_argument("--log", type=Path, required=True)
-        run_parser.add_argument("--task-id")
-        run_parser.add_argument("--run")
-        run_parser.add_argument("--state-root", type=Path, default=Path("~/.local/state/kotekomi"))
-        run_args = run_parser.parse_args(raw_argv[1:separator])
-        record = run_check(
-            run_args.check_id,
-            output=run_args.output,
-            log=run_args.log,
-            argv=tuple(raw_argv[separator + 1 :]),
-        )
-        if run_args.run:
-            if not run_args.task_id:
-                run_parser.error("--run requires --task-id")
-            payload = record.as_json() | {"outcome": record.status, "diagnostics": []}
-            write_canonical_record(
-                state_root(run_args.state_root),
-                run_args.task_id,
-                run_args.run,
-                phase="verification",
-                evidence_type="run_check",
-                subject_id=record.check_id,
-                payload=payload,
-                producer_command="run-check",
-            )
-        print(_json.dumps(record.as_json(), separators=(",", ":"), sort_keys=True))
-        return record.exit_code
-
+    raw_argv = list(argv) if argv is not None else sys.argv[1:]
     parser = _build_parser()
-    arguments = parser.parse_args(raw_argv)
     try:
-        if arguments.command == "validate-task":
-            result = validate_task_manifest(arguments.path)
-            output = result.as_json()
-            exit_code = 0 if result.valid else 1
-        elif arguments.command == "preflight-task":
-            result = preflight_task(arguments.path)
-            output = result.as_json()
-            exit_code = 0 if result.ready else 1
-        elif arguments.command == "scope-audit":
-            result = audit_task_scope(
-                arguments.path,
-                base_revision=arguments.base,
-                head_revision=arguments.head,
-                worktree=arguments.worktree,
-            )
-            output = result.as_json()
-            exit_code = result.exit_code
-        elif arguments.command == "lifecycle-check":
-            result = check_task_lifecycle(
-                arguments.path,
-                phase=arguments.phase,
-                base_revision=arguments.base,
-                head_revision=arguments.head,
-                worktree=arguments.worktree,
-                records_dir=arguments.records_dir,
-                main_base_revision=arguments.main_base,
-                verified_revision=arguments.verified,
-            )
-            output = result.as_json()
-            if arguments.run:
-                if not arguments.task_id:
-                    raise ValueError("lifecycle-check --run requires --task-id")
-                evidence_type = (
-                    "candidate_lifecycle" if arguments.phase == "candidate" else "main_lifecycle"
-                )
-                output = output | {"ready": result.status == "ready"}
-                write_canonical_record(
-                    state_root(arguments.state_root),
-                    arguments.task_id,
-                    arguments.run,
-                    phase="candidate" if evidence_type == "candidate_lifecycle" else "main",
-                    evidence_type=evidence_type,
-                    subject_id="candidate" if evidence_type == "candidate_lifecycle" else "main",
-                    payload=output,
-                    producer_command="lifecycle-check",
-                )
-            exit_code = result.exit_code
-        elif arguments.command == "step-preflight":
-            output = step_preflight_payload(
-                task_id=arguments.task_id,
-                base=arguments.base,
-                branch=arguments.branch,
-                expected_origin_main=arguments.expected_origin_main,
-                origin_main_ref=arguments.origin_main_ref,
-                remote_branches=arguments.remote_branch,
-                state_file=arguments.state_file,
-                cwd=arguments.cwd,
-                recover_candidate=arguments.recover_candidate,
-                allow_dirty_main=arguments.allow_dirty_main,
-            )
-            write_step_json(output, arguments.output, force=True)
-            exit_code = 0 if output.get("status") == "ready" else 1
-        elif arguments.command == "record-step-failure":
-            output = record_step_failure(
-                task_id=arguments.task_id,
-                step=arguments.step,
-                reason=arguments.reason,
-                output=arguments.output,
-                log=arguments.log,
-                state_file=arguments.state_file,
-                cwd=arguments.cwd,
-                origin_main_ref=arguments.origin_main_ref,
-                force=arguments.force,
-            )
-            exit_code = 0
-        elif arguments.command == "receipt-chain-status":
-            return run_receipt_chain_status_command(arguments)
-        elif arguments.command == "write-receipt":
-            result = write_receipt(
-                task_id=arguments.task_id,
-                record_kind=arguments.record_kind,
-                result=arguments.result,
-                output=arguments.output,
-                input_records=arguments.input_record,
-                artifacts=arguments.artifact,
-                fields=arguments.field,
-                force=arguments.force,
-            )
-            output = result.as_json()
-            exit_code = 0
-        elif arguments.command == "tdd-bind":
-            result = bind_tdd(
-                arguments.tdd_path,
-                output=arguments.output,
-                state_root=arguments.state_root,
-            )
-            output = result.as_json()
-            exit_code = result.exit_code
-        elif arguments.command == "evidence-index":
-            output = read_index(state_root(arguments.state_root), arguments.task_id, arguments.run)
-            if arguments.output:
-                arguments.output.parent.mkdir(parents=True, exist_ok=True)
-                arguments.output.write_text(
-                    json.dumps(output, sort_keys=True, separators=(",", ":")) + "\n"
-                )
-            exit_code = 0
-        elif arguments.command == "implement-tdd":
-            exit_code, output = implement_tdd(
-                arguments.tdd_path,
-                state_root_path=arguments.state_root,
-                output=arguments.output,
-                markdown=arguments.markdown,
-                new_run=arguments.new_run,
-                abandon_run=arguments.abandon_run,
-            )
-        elif arguments.command == "tdd-metrics":
-            exit_code, output = tdd_metrics(
-                arguments.tdd_path,
-                state_root_path=arguments.state_root,
-                run_id=arguments.run,
-                latest=arguments.latest,
-                output=arguments.output,
-                markdown=arguments.markdown,
-            )
-        elif arguments.command == "tdd-score":
-            exit_code, output = tdd_score(
-                arguments.tdd_path,
-                state_root_path=arguments.state_root,
-                run_id=arguments.run,
-                latest=arguments.latest,
-                output=arguments.output,
-                markdown=arguments.markdown,
-            )
-        elif arguments.command == "tdd-compare":
-            if arguments.scorecard and arguments.tdd_path:
-                exit_code, output = (
-                    1,
-                    {
-                        "schema_version": 1,
-                        "status": "blocked",
-                        "diagnostics": [
-                            {
-                                "code": "compare.selector",
-                                "location": "/",
-                                "rule": "scorecard_and_tdd_path_mutually_exclusive",
-                            }
-                        ],
-                    },
-                )
-            elif arguments.scorecard:
-                exit_code, output = compare_scorecards(
-                    [Path(item) for item in arguments.scorecard],
-                    output=arguments.output,
-                    markdown=arguments.markdown,
-                    state_root_path=arguments.state_root,
-                )
-            else:
-                exit_code, output = compare_tdds(
-                    arguments.tdd_path,
-                    output=arguments.output,
-                    markdown=arguments.markdown,
-                    state_root_path=arguments.state_root,
-                )
-        elif arguments.command == "task-retrospective":
-            result = write_task_retrospective(
-                arguments.records_dir,
-                output=arguments.output,
-                markdown=arguments.markdown,
-                task_id=arguments.task_id,
-                allow_incomplete=arguments.allow_incomplete,
-            )
-            output = result.as_json()
-            exit_code = 0
-        elif arguments.command == "goal-check":
-            result = write_goal_report(
-                arguments.goals_file,
-                arguments.records_dir,
-                output=arguments.output,
-                markdown=arguments.markdown,
-            )
-            output = result.as_json()
-            exit_code = 0 if result.ready else 1
-        elif arguments.command == "run-check":
-            import json as _json
-            from pathlib import Path as _Path
-
-            from .verification_execution import run_check
-
-            command_argv = tuple(arguments.argv)
-            if command_argv[:1] == ("--",):
-                command_argv = command_argv[1:]
-            record = run_check(
-                arguments.check_id,
-                output=_Path(arguments.output),
-                log=_Path(arguments.log),
-                argv=command_argv,
-            )
-            if arguments.run:
-                if not arguments.task_id:
-                    raise ValueError("run-check --run requires --task-id")
-                payload = record.as_json() | {"outcome": record.status, "diagnostics": []}
-                write_canonical_record(
-                    state_root(arguments.state_root),
-                    arguments.task_id,
-                    arguments.run,
-                    phase="verification",
-                    evidence_type="run_check",
-                    subject_id=record.check_id,
-                    payload=payload,
-                    producer_command="run-check",
-                )
-            print(_json.dumps(record.as_json(), separators=(",", ":"), sort_keys=True))
-            return record.exit_code
-        elif arguments.command == "verify-checks":
-            import json as _json
-            from pathlib import Path as _Path
-
-            from .verification_execution import verify_check_records
-
-            report = verify_check_records(
-                _Path(arguments.plan_json),
-                run_records=tuple(_Path(item) for item in arguments.run_record),
-                output=_Path(arguments.output),
-                markdown=_Path(arguments.markdown),
-            )
-            if arguments.run:
-                if not arguments.task_id:
-                    raise ValueError("verify-checks --run requires --task-id")
-                report_payload = report.as_json()
-                records = report_payload["records"]
-                output_payload = report_payload | {
-                    "planned_check_count": len(report_payload["planned_check_ids"]),
-                    "executed_check_count": len(records),
-                    "verified_check_count": len(report_payload["completed_check_ids"]),
-                    "failed_check_count": sum(
-                        1
-                        for record in records
-                        if record["status"] != "passed" or record["exit_code"] != 0
-                    ),
-                }
-                write_canonical_record(
-                    state_root(arguments.state_root),
-                    arguments.task_id,
-                    arguments.run,
-                    phase="verification",
-                    evidence_type="verify_checks",
-                    subject_id="verify-checks",
-                    payload=output_payload,
-                    producer_command="verify-checks",
-                )
-            print(_json.dumps(report.as_json(), separators=(",", ":"), sort_keys=True))
-            return report.exit_code
-        elif arguments.command == "verification-plan":
-            result = write_verification_plan(
-                arguments.path,
-                base_revision=arguments.base,
-                head_revision=arguments.head,
-                output=arguments.output,
-                markdown=arguments.markdown,
-            )
-            output = result.as_json()
-            if arguments.run:
-                if not arguments.task_id:
-                    raise ValueError("verification-plan --run requires --task-id")
-                output = output | {"planned_checks": output["checks"]}
-                write_canonical_record(
-                    state_root(arguments.state_root),
-                    arguments.task_id,
-                    arguments.run,
-                    phase="verification",
-                    evidence_type="verification_plan",
-                    subject_id="plan",
-                    payload=output,
-                    producer_command="verification-plan",
-                )
-            exit_code = result.exit_code
-        elif arguments.command == "task-ledger":
-            if arguments.task_ledger_command == "current":
-                output = current_task(arguments.ledger_file)
-            elif arguments.task_ledger_command == "next":
-                output = next_task(arguments.ledger_file)
-            elif arguments.task_ledger_command == "status":
-                output = task_status(arguments.ledger_file, arguments.task_id)
-            else:
-                result = update_task_ledger(
-                    arguments.ledger_file,
-                    arguments.task_id,
-                    status=arguments.status,
-                    evidence=arguments.evidence,
-                    output=arguments.output,
-                )
-                output = result.as_json()
-            exit_code = 0
+        if raw_argv[:1] == ["run-check"] and "--" in raw_argv:
+            response: CliResponse | int = _run_delimited_run_check(raw_argv)
         else:
-            result = audit_task_budget(
-                arguments.path,
-                base_revision=arguments.base,
-                head_revision=arguments.head,
-                worktree=arguments.worktree,
-            )
-            output = result.as_json()
-            exit_code = result.exit_code
+            response = _dispatch_command(parser.parse_args(raw_argv))
     except StepScriptError as error:
-        print(f"kotekomi-agent: {error}", file=sys.stderr)
-        return 2
+        return _render_error(error)
     except ReceiptWriterError as error:
-        print(f"kotekomi-agent: {error}", file=sys.stderr)
-        return 2
+        return _render_error(error)
     except TddBindingError as error:
-        print(f"kotekomi-agent: {error}", file=sys.stderr)
-        return 2
+        return _render_error(error)
     except TaskRetrospectiveError as error:
-        print(f"kotekomi-agent: {error}", file=sys.stderr)
-        return 2
+        return _render_error(error)
     except GoalAccountabilityError as error:
-        print(f"kotekomi-agent: {error}", file=sys.stderr)
-        return 2
+        return _render_error(error)
     except VerificationPlanError as error:
-        print(f"kotekomi-agent: {error}", file=sys.stderr)
-        return 2
+        return _render_error(error)
     except TaskLedgerError as error:
         print(json.dumps(error.as_json(), ensure_ascii=False, separators=(",", ":")))
         return 1 if error.code == "h9.task.goals_unmet" else 2
@@ -415,8 +85,388 @@ def main(argv: list[str] | None = None) -> int:
         print("kotekomi-agent: internal error", file=sys.stderr)
         return 70
 
-    print(json.dumps(output, ensure_ascii=False, separators=(",", ":")))
-    return exit_code
+    if isinstance(response, int):
+        return response
+    return _render_response(response)
+
+
+def _dispatch_command(arguments: argparse.Namespace) -> CliResponse | int:
+    handlers: dict[str, CommandHandler] = {
+        "validate-task": _handle_task_command,
+        "preflight-task": _handle_task_command,
+        "budget-audit": _handle_task_command,
+        "scope-audit": _handle_task_command,
+        "lifecycle-check": _handle_task_command,
+        "step-preflight": _handle_step_command,
+        "record-step-failure": _handle_step_command,
+        "receipt-chain-status": _handle_receipt_command,
+        "write-receipt": _handle_receipt_command,
+        "tdd-bind": _handle_tdd_command,
+        "evidence-index": _handle_tdd_command,
+        "implement-tdd": _handle_tdd_command,
+        "tdd-metrics": _handle_tdd_command,
+        "tdd-score": _handle_tdd_command,
+        "tdd-compare": _handle_tdd_command,
+        "task-retrospective": _handle_reporting_command,
+        "goal-check": _handle_reporting_command,
+        "run-check": _handle_verification_command,
+        "verify-checks": _handle_verification_command,
+        "verification-plan": _handle_verification_command,
+        "task-ledger": _handle_ledger_command,
+    }
+    return handlers[arguments.command](arguments)
+
+
+def _handle_task_command(arguments: argparse.Namespace) -> CliResponse:
+    if arguments.command == "validate-task":
+        result = validate_task_manifest(arguments.path)
+        return CliResponse(0 if result.valid else 1, result.as_json())
+    if arguments.command == "preflight-task":
+        result = preflight_task(arguments.path)
+        return CliResponse(0 if result.ready else 1, result.as_json())
+    if arguments.command == "budget-audit":
+        result = audit_task_budget(
+            arguments.path,
+            base_revision=arguments.base,
+            head_revision=arguments.head,
+            worktree=arguments.worktree,
+        )
+        return CliResponse(result.exit_code, result.as_json())
+    if arguments.command == "scope-audit":
+        result = audit_task_scope(
+            arguments.path,
+            base_revision=arguments.base,
+            head_revision=arguments.head,
+            worktree=arguments.worktree,
+        )
+        return CliResponse(result.exit_code, result.as_json())
+    return _handle_lifecycle_check(arguments)
+
+
+def _handle_lifecycle_check(arguments: argparse.Namespace) -> CliResponse:
+    result = check_task_lifecycle(
+        arguments.path,
+        phase=arguments.phase,
+        base_revision=arguments.base,
+        head_revision=arguments.head,
+        worktree=arguments.worktree,
+        records_dir=arguments.records_dir,
+        main_base_revision=arguments.main_base,
+        verified_revision=arguments.verified,
+    )
+    output = result.as_json()
+    if arguments.run:
+        if not arguments.task_id:
+            raise ValueError("lifecycle-check --run requires --task-id")
+        evidence_type = (
+            "candidate_lifecycle" if arguments.phase == "candidate" else "main_lifecycle"
+        )
+        output = output | {"ready": result.status == "ready"}
+        write_canonical_record(
+            state_root(arguments.state_root),
+            arguments.task_id,
+            arguments.run,
+            phase="candidate" if evidence_type == "candidate_lifecycle" else "main",
+            evidence_type=evidence_type,
+            subject_id="candidate" if evidence_type == "candidate_lifecycle" else "main",
+            payload=output,
+            producer_command="lifecycle-check",
+        )
+    return CliResponse(result.exit_code, output)
+
+
+def _handle_step_command(arguments: argparse.Namespace) -> CliResponse:
+    if arguments.command == "step-preflight":
+        output = step_preflight_payload(
+            task_id=arguments.task_id,
+            base=arguments.base,
+            branch=arguments.branch,
+            expected_origin_main=arguments.expected_origin_main,
+            origin_main_ref=arguments.origin_main_ref,
+            remote_branches=arguments.remote_branch,
+            state_file=arguments.state_file,
+            cwd=arguments.cwd,
+            recover_candidate=arguments.recover_candidate,
+            allow_dirty_main=arguments.allow_dirty_main,
+        )
+        write_step_json(output, arguments.output, force=True)
+        return CliResponse(0 if output.get("status") == "ready" else 1, output)
+    output = record_step_failure(
+        task_id=arguments.task_id,
+        step=arguments.step,
+        reason=arguments.reason,
+        output=arguments.output,
+        log=arguments.log,
+        state_file=arguments.state_file,
+        cwd=arguments.cwd,
+        origin_main_ref=arguments.origin_main_ref,
+        force=arguments.force,
+    )
+    return CliResponse(0, output)
+
+
+def _handle_receipt_command(arguments: argparse.Namespace) -> CliResponse | int:
+    if arguments.command == "receipt-chain-status":
+        return run_receipt_chain_status_command(arguments)
+    result = write_receipt(
+        task_id=arguments.task_id,
+        record_kind=arguments.record_kind,
+        result=arguments.result,
+        output=arguments.output,
+        input_records=arguments.input_record,
+        artifacts=arguments.artifact,
+        fields=arguments.field,
+        force=arguments.force,
+    )
+    return CliResponse(0, result.as_json())
+
+
+def _handle_tdd_command(arguments: argparse.Namespace) -> CliResponse:
+    if arguments.command == "tdd-bind":
+        result = bind_tdd(
+            arguments.tdd_path, output=arguments.output, state_root=arguments.state_root
+        )
+        return CliResponse(result.exit_code, result.as_json())
+    if arguments.command == "evidence-index":
+        output = read_index(state_root(arguments.state_root), arguments.task_id, arguments.run)
+        if arguments.output:
+            arguments.output.parent.mkdir(parents=True, exist_ok=True)
+            arguments.output.write_text(
+                json.dumps(output, sort_keys=True, separators=(",", ":")) + "\n"
+            )
+        return CliResponse(0, output)
+    if arguments.command == "implement-tdd":
+        code, output = implement_tdd(
+            arguments.tdd_path,
+            state_root_path=arguments.state_root,
+            output=arguments.output,
+            markdown=arguments.markdown,
+            new_run=arguments.new_run,
+            abandon_run=arguments.abandon_run,
+        )
+        return CliResponse(code, output)
+    if arguments.command == "tdd-metrics":
+        code, output = tdd_metrics(
+            arguments.tdd_path,
+            state_root_path=arguments.state_root,
+            run_id=arguments.run,
+            latest=arguments.latest,
+            output=arguments.output,
+            markdown=arguments.markdown,
+        )
+        return CliResponse(code, output)
+    if arguments.command == "tdd-score":
+        code, output = tdd_score(
+            arguments.tdd_path,
+            state_root_path=arguments.state_root,
+            run_id=arguments.run,
+            latest=arguments.latest,
+            output=arguments.output,
+            markdown=arguments.markdown,
+        )
+        return CliResponse(code, output)
+    return _handle_tdd_compare(arguments)
+
+
+def _handle_tdd_compare(arguments: argparse.Namespace) -> CliResponse:
+    if arguments.scorecard and arguments.tdd_path:
+        return CliResponse(
+            1,
+            {
+                "schema_version": 1,
+                "status": "blocked",
+                "diagnostics": [
+                    {
+                        "code": "compare.selector",
+                        "location": "/",
+                        "rule": "scorecard_and_tdd_path_mutually_exclusive",
+                    }
+                ],
+            },
+        )
+    if arguments.scorecard:
+        code, output = compare_scorecards(
+            [Path(item) for item in arguments.scorecard],
+            output=arguments.output,
+            markdown=arguments.markdown,
+            state_root_path=arguments.state_root,
+        )
+        return CliResponse(code, output)
+    code, output = compare_tdds(
+        arguments.tdd_path,
+        output=arguments.output,
+        markdown=arguments.markdown,
+        state_root_path=arguments.state_root,
+    )
+    return CliResponse(code, output)
+
+
+def _handle_reporting_command(arguments: argparse.Namespace) -> CliResponse:
+    if arguments.command == "task-retrospective":
+        result = write_task_retrospective(
+            arguments.records_dir,
+            output=arguments.output,
+            markdown=arguments.markdown,
+            task_id=arguments.task_id,
+            allow_incomplete=arguments.allow_incomplete,
+        )
+        return CliResponse(0, result.as_json())
+    result = write_goal_report(
+        arguments.goals_file,
+        arguments.records_dir,
+        output=arguments.output,
+        markdown=arguments.markdown,
+    )
+    return CliResponse(0 if result.ready else 1, result.as_json())
+
+
+def _handle_verification_command(arguments: argparse.Namespace) -> CliResponse:
+    if arguments.command == "run-check":
+        command_argv = tuple(arguments.argv)
+        if command_argv[:1] == ("--",):
+            command_argv = command_argv[1:]
+        return _run_check_response(arguments, command_argv)
+    if arguments.command == "verify-checks":
+        return _handle_verify_checks(arguments)
+    return _handle_verification_plan(arguments)
+
+
+def _run_delimited_run_check(raw_argv: list[str]) -> CliResponse:
+    separator = raw_argv.index("--")
+    parser = argparse.ArgumentParser(prog="kotekomi-agent run-check")
+    parser.add_argument("check_id", metavar="CHECK_ID")
+    parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--log", type=Path, required=True)
+    parser.add_argument("--task-id")
+    parser.add_argument("--run")
+    parser.add_argument("--state-root", type=Path, default=Path("~/.local/state/kotekomi"))
+    arguments = parser.parse_args(raw_argv[1:separator])
+    if arguments.run and not arguments.task_id:
+        parser.error("--run requires --task-id")
+    return _run_check_response(arguments, tuple(raw_argv[separator + 1 :]))
+
+
+def _run_check_response(
+    arguments: argparse.Namespace, command_argv: tuple[str, ...]
+) -> CliResponse:
+    from .verification_execution import run_check
+
+    record = run_check(
+        arguments.check_id,
+        output=Path(arguments.output),
+        log=Path(arguments.log),
+        argv=command_argv,
+    )
+    if arguments.run:
+        if not arguments.task_id:
+            raise ValueError("run-check --run requires --task-id")
+        write_canonical_record(
+            state_root(arguments.state_root),
+            arguments.task_id,
+            arguments.run,
+            phase="verification",
+            evidence_type="run_check",
+            subject_id=record.check_id,
+            payload=record.as_json() | {"outcome": record.status, "diagnostics": []},
+            producer_command="run-check",
+        )
+    return CliResponse(record.exit_code, record.as_json(), ensure_ascii=True, sort_keys=True)
+
+
+def _handle_verify_checks(arguments: argparse.Namespace) -> CliResponse:
+    from .verification_execution import verify_check_records
+
+    report = verify_check_records(
+        Path(arguments.plan_json),
+        run_records=tuple(Path(item) for item in arguments.run_record),
+        output=Path(arguments.output),
+        markdown=Path(arguments.markdown),
+    )
+    if arguments.run:
+        if not arguments.task_id:
+            raise ValueError("verify-checks --run requires --task-id")
+        report_payload = report.as_json()
+        records = report_payload["records"]
+        payload = report_payload | {
+            "planned_check_count": len(report_payload["planned_check_ids"]),
+            "executed_check_count": len(records),
+            "verified_check_count": len(report_payload["completed_check_ids"]),
+            "failed_check_count": sum(
+                1 for record in records if record["status"] != "passed" or record["exit_code"] != 0
+            ),
+        }
+        write_canonical_record(
+            state_root(arguments.state_root),
+            arguments.task_id,
+            arguments.run,
+            phase="verification",
+            evidence_type="verify_checks",
+            subject_id="verify-checks",
+            payload=payload,
+            producer_command="verify-checks",
+        )
+    return CliResponse(report.exit_code, report.as_json(), ensure_ascii=True, sort_keys=True)
+
+
+def _handle_verification_plan(arguments: argparse.Namespace) -> CliResponse:
+    result = write_verification_plan(
+        arguments.path,
+        base_revision=arguments.base,
+        head_revision=arguments.head,
+        output=arguments.output,
+        markdown=arguments.markdown,
+    )
+    output = result.as_json()
+    if arguments.run:
+        if not arguments.task_id:
+            raise ValueError("verification-plan --run requires --task-id")
+        output = output | {"planned_checks": output["checks"]}
+        write_canonical_record(
+            state_root(arguments.state_root),
+            arguments.task_id,
+            arguments.run,
+            phase="verification",
+            evidence_type="verification_plan",
+            subject_id="plan",
+            payload=output,
+            producer_command="verification-plan",
+        )
+    return CliResponse(result.exit_code, output)
+
+
+def _handle_ledger_command(arguments: argparse.Namespace) -> CliResponse:
+    if arguments.task_ledger_command == "current":
+        output = current_task(arguments.ledger_file)
+    elif arguments.task_ledger_command == "next":
+        output = next_task(arguments.ledger_file)
+    elif arguments.task_ledger_command == "status":
+        output = task_status(arguments.ledger_file, arguments.task_id)
+    else:
+        output = update_task_ledger(
+            arguments.ledger_file,
+            arguments.task_id,
+            status=arguments.status,
+            evidence=arguments.evidence,
+            output=arguments.output,
+        ).as_json()
+    return CliResponse(0, output)
+
+
+def _render_response(response: CliResponse) -> int:
+    print(
+        json.dumps(
+            response.output,
+            ensure_ascii=response.ensure_ascii,
+            separators=(",", ":"),
+            sort_keys=response.sort_keys,
+        )
+    )
+    return response.exit_code
+
+
+def _render_error(error: Exception) -> int:
+    print(f"kotekomi-agent: {error}", file=sys.stderr)
+    return 2
 
 
 def entrypoint() -> None:
