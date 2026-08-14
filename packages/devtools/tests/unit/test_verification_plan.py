@@ -54,6 +54,7 @@ def test_plan_adds_shared_cli_contracts_and_fails_closed(
         "retained-contract-retained",
         "task-manifest-contract",
         "task-preflight-contract",
+        "tdd-binding-acceptance-contract",
     ]
     assert plan.diagnostics[0].as_json() == {
         "code": "verification_plan.uncovered_changed_path",
@@ -187,6 +188,13 @@ def test_h14_coverage_known_harness_paths_add_required_contracts(
                 "verification-plan-unit-contract",
             },
         ),
+        (
+            "packages/devtools/src/kotekomi_devtools/tdd_binding.py",
+            {
+                "tdd-binding-acceptance-contract",
+                "tdd-binding-unit-contract",
+            },
+        ),
     ]
 
     for index, (changed_path, expected_ids) in enumerate(cases):
@@ -221,9 +229,7 @@ def test_h14_coverage_unknown_path_still_fails_closed(
     monkeypatch.setattr(
         verification_plan,
         "_changed_paths",
-        _h14_coverage_changed_paths(
-            ("packages/devtools/src/kotekomi_devtools/uncovered.py",)
-        ),
+        _h14_coverage_changed_paths(("packages/devtools/src/kotekomi_devtools/uncovered.py",)),
     )
 
     plan = build_verification_plan(

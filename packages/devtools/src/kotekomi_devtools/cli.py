@@ -29,6 +29,7 @@ from kotekomi_devtools.task_manifest import validate_task_manifest
 from kotekomi_devtools.task_preflight import preflight_task
 from kotekomi_devtools.task_retrospective import TaskRetrospectiveError, write_task_retrospective
 from kotekomi_devtools.task_scope import audit_task_scope
+from kotekomi_devtools.tdd_binding import TddBindingError, bind_tdd
 from kotekomi_devtools.verification_plan import VerificationPlanError, write_verification_plan
 
 
@@ -81,9 +82,13 @@ def main(argv: list[str] | None = None) -> int:
             exit_code = result.exit_code
         elif arguments.command == "lifecycle-check":
             result = check_task_lifecycle(
-                arguments.path, phase=arguments.phase, base_revision=arguments.base,
-                head_revision=arguments.head, worktree=arguments.worktree,
-                records_dir=arguments.records_dir, main_base_revision=arguments.main_base,
+                arguments.path,
+                phase=arguments.phase,
+                base_revision=arguments.base,
+                head_revision=arguments.head,
+                worktree=arguments.worktree,
+                records_dir=arguments.records_dir,
+                main_base_revision=arguments.main_base,
                 verified_revision=arguments.verified,
             )
             output = result.as_json()
@@ -131,6 +136,15 @@ def main(argv: list[str] | None = None) -> int:
             )
             output = result.as_json()
             exit_code = 0
+        elif arguments.command == "tdd-bind":
+            result = bind_tdd(
+                arguments.tdd_path,
+                output=arguments.output,
+                receipt=arguments.receipt,
+                state_root=arguments.state_root,
+            )
+            output = result.as_json()
+            exit_code = result.exit_code
         elif arguments.command == "task-retrospective":
             result = write_task_retrospective(
                 arguments.records_dir,
@@ -223,6 +237,9 @@ def main(argv: list[str] | None = None) -> int:
     except ReceiptWriterError as error:
         print(f"kotekomi-agent: {error}", file=sys.stderr)
         return 2
+    except TddBindingError as error:
+        print(f"kotekomi-agent: {error}", file=sys.stderr)
+        return 2
     except TaskRetrospectiveError as error:
         print(f"kotekomi-agent: {error}", file=sys.stderr)
         return 2
@@ -233,9 +250,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"kotekomi-agent: {error}", file=sys.stderr)
         return 2
     except TaskLedgerError as error:
-        print(
-            json.dumps(error.as_json(), ensure_ascii=False, separators=(",", ":"))
-        )
+        print(json.dumps(error.as_json(), ensure_ascii=False, separators=(",", ":")))
         return 1 if error.code == "h9.task.goals_unmet" else 2
     except Exception:
         print("kotekomi-agent: internal error", file=sys.stderr)
@@ -310,6 +325,18 @@ def _build_parser() -> argparse.ArgumentParser:
     write_receipt.add_argument("--artifact", action="append", default=[], metavar="NAME=PATH")
     write_receipt.add_argument("--field", action="append", default=[], metavar="KEY=VALUE")
     write_receipt.add_argument("--force", action="store_true")
+    tdd_bind = subparsers.add_parser(
+        "tdd-bind", help="Create or read a canonical binding for one local TDD."
+    )
+    tdd_bind.add_argument("tdd_path", type=Path, metavar="TDD_PATH")
+    tdd_bind.add_argument("--output", type=Path, required=True, metavar="BINDING_JSON")
+    tdd_bind.add_argument("--receipt", type=Path, required=True, metavar="RECEIPT_JSON")
+    tdd_bind.add_argument(
+        "--state-root",
+        type=Path,
+        default=Path("~/.local/state/kotekomi/experiments"),
+        metavar="STATE_ROOT",
+    )
     task_retrospective = subparsers.add_parser(
         "task-retrospective", help="Write deterministic metrics for task lifecycle records."
     )

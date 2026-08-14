@@ -77,7 +77,11 @@
 - verify Briefing Markdown renders the orthogonal eight-section outline with `uv run pytest packages/briefing/tests/test_markdown_briefing_renderer.py packages/pipelines/tests/test_briefing_generate.py`
 - verify Briefing citation numbers resolve through structured registry data with `uv run pytest packages/application/tests/test_generate_briefing.py packages/pipelines/tests/test_briefing_generate.py`
 
-## 6. Documentation checks
+## 6. Harness checks
+- verify TDD binding snapshot, task identity, canonical binding, derived index, drift blocking, lookup rebuild, receipt, and CLI contracts with `uv run pytest -p no:cacheprovider packages/devtools/tests/unit/test_tdd_binding.py packages/devtools/tests/acceptance/test_tdd_binding_contract.py`
+- run the generated Harness verification plan for changed `packages/devtools` paths and execute every returned check through `kotekomi-agent run-check`
+
+## 7. Documentation checks
 - verify glossary terms match Domain Core names
 - verify command examples run
 - verify cross-references resolve
@@ -85,7 +89,7 @@
 - verify managed llama-server LaunchAgent rendering and user-domain lifecycle with `uv run pytest packages/pipelines/tests/test_managed_llama_server.py`
 - verify happy-path fixtures contain no dangling cross-record references
 
-## 7. Forbidden patterns
+## 8. Forbidden patterns
 - Adapter imports inside Domain Core
 - Adapter code deciding Domain meaning, status transitions, review outcomes, or repair policy
 - accepted Assertion without ProvenanceActivity

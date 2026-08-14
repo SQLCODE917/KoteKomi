@@ -56,6 +56,17 @@ _CLI_TOUCHED_CHECKS = (
             "delimiter",
         ),
     ),
+    (
+        "tdd-binding-acceptance-contract",
+        (
+            "uv",
+            "run",
+            "pytest",
+            "-p",
+            "no:cacheprovider",
+            "packages/devtools/tests/acceptance/test_tdd_binding_contract.py",
+        ),
+    ),
 )
 
 
@@ -64,228 +75,278 @@ _H14_TOUCHED_PATH_CHECKS = {
         (
             "step-scripts-acceptance-contract",
             (
-                        "uv",
-            "run",
-            "pytest",
-            "-p",
-            "no:cacheprovider",
-            "packages/devtools/tests/acceptance/test_step_scripts_contract.py",
-        )
+                "uv",
+                "run",
+                "pytest",
+                "-p",
+                "no:cacheprovider",
+                "packages/devtools/tests/acceptance/test_step_scripts_contract.py",
+            ),
         ),
         (
             "step-scripts-unit-contract",
             (
-                        "uv",
-            "run",
-            "pytest",
-            "-p",
-            "no:cacheprovider",
-            "packages/devtools/tests/unit/test_step_scripts.py",
-        )
+                "uv",
+                "run",
+                "pytest",
+                "-p",
+                "no:cacheprovider",
+                "packages/devtools/tests/unit/test_step_scripts.py",
+            ),
         ),
     ),
     "packages/devtools/tests/acceptance/test_step_scripts_contract.py": (
         (
             "step-scripts-acceptance-contract",
             (
-                        "uv",
-            "run",
-            "pytest",
-            "-p",
-            "no:cacheprovider",
-            "packages/devtools/tests/acceptance/test_step_scripts_contract.py",
-        )
+                "uv",
+                "run",
+                "pytest",
+                "-p",
+                "no:cacheprovider",
+                "packages/devtools/tests/acceptance/test_step_scripts_contract.py",
+            ),
         ),
     ),
     "packages/devtools/tests/unit/test_step_scripts.py": (
         (
             "step-scripts-unit-contract",
             (
-                        "uv",
-            "run",
-            "pytest",
-            "-p",
-            "no:cacheprovider",
-            "packages/devtools/tests/unit/test_step_scripts.py",
-        )
+                "uv",
+                "run",
+                "pytest",
+                "-p",
+                "no:cacheprovider",
+                "packages/devtools/tests/unit/test_step_scripts.py",
+            ),
         ),
     ),
     "packages/devtools/src/kotekomi_devtools/task_lifecycle.py": (
         (
             "task-lifecycle-acceptance-contract",
             (
-                        "uv",
-            "run",
-            "pytest",
-            "-p",
-            "no:cacheprovider",
-            "packages/devtools/tests/acceptance/test_task_lifecycle_contract.py",
-        )
+                "uv",
+                "run",
+                "pytest",
+                "-p",
+                "no:cacheprovider",
+                "packages/devtools/tests/acceptance/test_task_lifecycle_contract.py",
+            ),
         ),
         (
             "task-lifecycle-unit-contract",
             (
-                        "uv",
-            "run",
-            "pytest",
-            "-p",
-            "no:cacheprovider",
-            "packages/devtools/tests/unit/test_task_lifecycle.py",
-        )
+                "uv",
+                "run",
+                "pytest",
+                "-p",
+                "no:cacheprovider",
+                "packages/devtools/tests/unit/test_task_lifecycle.py",
+            ),
         ),
     ),
     "packages/devtools/tests/acceptance/test_task_lifecycle_contract.py": (
         (
             "task-lifecycle-acceptance-contract",
             (
-                        "uv",
-            "run",
-            "pytest",
-            "-p",
-            "no:cacheprovider",
-            "packages/devtools/tests/acceptance/test_task_lifecycle_contract.py",
-        )
+                "uv",
+                "run",
+                "pytest",
+                "-p",
+                "no:cacheprovider",
+                "packages/devtools/tests/acceptance/test_task_lifecycle_contract.py",
+            ),
         ),
     ),
     "packages/devtools/tests/unit/test_task_lifecycle.py": (
         (
             "task-lifecycle-unit-contract",
             (
-                        "uv",
-            "run",
-            "pytest",
-            "-p",
-            "no:cacheprovider",
-            "packages/devtools/tests/unit/test_task_lifecycle.py",
-        )
+                "uv",
+                "run",
+                "pytest",
+                "-p",
+                "no:cacheprovider",
+                "packages/devtools/tests/unit/test_task_lifecycle.py",
+            ),
         ),
     ),
     "packages/devtools/src/kotekomi_devtools/task_manifest.py": (
         (
             "task-manifest-contract",
             (
-                        "uv",
-            "run",
-            "pytest",
-            "-p",
-            "no:cacheprovider",
-            "packages/devtools/tests/acceptance/test_task_manifest_contract.py",
-        )
+                "uv",
+                "run",
+                "pytest",
+                "-p",
+                "no:cacheprovider",
+                "packages/devtools/tests/acceptance/test_task_manifest_contract.py",
+            ),
         ),
     ),
     "packages/devtools/tests/acceptance/test_task_manifest_contract.py": (
         (
             "task-manifest-contract",
             (
-                        "uv",
-            "run",
-            "pytest",
-            "-p",
-            "no:cacheprovider",
-            "packages/devtools/tests/acceptance/test_task_manifest_contract.py",
-        )
+                "uv",
+                "run",
+                "pytest",
+                "-p",
+                "no:cacheprovider",
+                "packages/devtools/tests/acceptance/test_task_manifest_contract.py",
+            ),
         ),
     ),
     "packages/devtools/src/kotekomi_devtools/task_preflight.py": (
         (
             "task-preflight-contract",
             (
-                        "uv",
-            "run",
-            "pytest",
-            "-p",
-            "no:cacheprovider",
-            "packages/devtools/tests/acceptance/test_task_preflight_contract.py",
-        )
+                "uv",
+                "run",
+                "pytest",
+                "-p",
+                "no:cacheprovider",
+                "packages/devtools/tests/acceptance/test_task_preflight_contract.py",
+            ),
         ),
     ),
     "packages/devtools/tests/acceptance/test_task_preflight_contract.py": (
         (
             "task-preflight-contract",
             (
-                        "uv",
-            "run",
-            "pytest",
-            "-p",
-            "no:cacheprovider",
-            "packages/devtools/tests/acceptance/test_task_preflight_contract.py",
-        )
+                "uv",
+                "run",
+                "pytest",
+                "-p",
+                "no:cacheprovider",
+                "packages/devtools/tests/acceptance/test_task_preflight_contract.py",
+            ),
+        ),
+    ),
+    "packages/devtools/src/kotekomi_devtools/tdd_binding.py": (
+        (
+            "tdd-binding-acceptance-contract",
+            (
+                "uv",
+                "run",
+                "pytest",
+                "-p",
+                "no:cacheprovider",
+                "packages/devtools/tests/acceptance/test_tdd_binding_contract.py",
+            ),
+        ),
+        (
+            "tdd-binding-unit-contract",
+            (
+                "uv",
+                "run",
+                "pytest",
+                "-p",
+                "no:cacheprovider",
+                "packages/devtools/tests/unit/test_tdd_binding.py",
+            ),
+        ),
+    ),
+    "packages/devtools/tests/acceptance/test_tdd_binding_contract.py": (
+        (
+            "tdd-binding-acceptance-contract",
+            (
+                "uv",
+                "run",
+                "pytest",
+                "-p",
+                "no:cacheprovider",
+                "packages/devtools/tests/acceptance/test_tdd_binding_contract.py",
+            ),
+        ),
+    ),
+    "packages/devtools/tests/unit/test_tdd_binding.py": (
+        (
+            "tdd-binding-unit-contract",
+            (
+                "uv",
+                "run",
+                "pytest",
+                "-p",
+                "no:cacheprovider",
+                "packages/devtools/tests/unit/test_tdd_binding.py",
+            ),
         ),
     ),
     "packages/devtools/src/kotekomi_devtools/verification_execution.py": (
         (
             "verification-execution-contract",
             (
-                        "uv",
-            "run",
-            "pytest",
-            "-p",
-            "no:cacheprovider",
-            "packages/devtools/tests/acceptance/test_verification_execution_contract.py",
-        )
+                "uv",
+                "run",
+                "pytest",
+                "-p",
+                "no:cacheprovider",
+                "packages/devtools/tests/acceptance/test_verification_execution_contract.py",
+            ),
         ),
     ),
     "packages/devtools/tests/acceptance/test_verification_execution_contract.py": (
         (
             "verification-execution-contract",
             (
-                        "uv",
-            "run",
-            "pytest",
-            "-p",
-            "no:cacheprovider",
-            "packages/devtools/tests/acceptance/test_verification_execution_contract.py",
-        )
+                "uv",
+                "run",
+                "pytest",
+                "-p",
+                "no:cacheprovider",
+                "packages/devtools/tests/acceptance/test_verification_execution_contract.py",
+            ),
         ),
     ),
     "packages/devtools/src/kotekomi_devtools/verification_plan.py": (
         (
             "verification-plan-acceptance-contract",
             (
-                        "uv",
-            "run",
-            "pytest",
-            "-p",
-            "no:cacheprovider",
-            "packages/devtools/tests/acceptance/test_verification_plan_contract.py",
-        )
+                "uv",
+                "run",
+                "pytest",
+                "-p",
+                "no:cacheprovider",
+                "packages/devtools/tests/acceptance/test_verification_plan_contract.py",
+            ),
         ),
         (
             "verification-plan-unit-contract",
             (
-                        "uv",
-            "run",
-            "pytest",
-            "-p",
-            "no:cacheprovider",
-            "packages/devtools/tests/unit/test_verification_plan.py",
-        )
+                "uv",
+                "run",
+                "pytest",
+                "-p",
+                "no:cacheprovider",
+                "packages/devtools/tests/unit/test_verification_plan.py",
+            ),
         ),
     ),
     "packages/devtools/tests/acceptance/test_verification_plan_contract.py": (
         (
             "verification-plan-acceptance-contract",
             (
-                        "uv",
-            "run",
-            "pytest",
-            "-p",
-            "no:cacheprovider",
-            "packages/devtools/tests/acceptance/test_verification_plan_contract.py",
-        )
+                "uv",
+                "run",
+                "pytest",
+                "-p",
+                "no:cacheprovider",
+                "packages/devtools/tests/acceptance/test_verification_plan_contract.py",
+            ),
         ),
     ),
     "packages/devtools/tests/unit/test_verification_plan.py": (
         (
             "verification-plan-unit-contract",
             (
-                        "uv",
-            "run",
-            "pytest",
-            "-p",
-            "no:cacheprovider",
-            "packages/devtools/tests/unit/test_verification_plan.py",
-        )
+                "uv",
+                "run",
+                "pytest",
+                "-p",
+                "no:cacheprovider",
+                "packages/devtools/tests/unit/test_verification_plan.py",
+            ),
         ),
     ),
 }
