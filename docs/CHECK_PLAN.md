@@ -80,6 +80,7 @@
 ## 6. Harness checks
 - verify TDD binding snapshot, task identity, canonical binding, derived index, drift blocking, lookup rebuild, receipt, and CLI contracts with `uv run pytest -p no:cacheprovider packages/devtools/tests/unit/test_tdd_binding.py packages/devtools/tests/acceptance/test_tdd_binding_contract.py`
 - verify run evidence, implementation workflow, metrics, and scorecard contracts with `uv run pytest -p no:cacheprovider packages/devtools/tests/unit/test_evidence_catalog.py packages/devtools/tests/unit/test_tdd_scorecards.py packages/devtools/tests/acceptance/test_tdd_workflow_contract.py`
+- verify lifecycle evidence producers, Git/CI validation, canonical indexing, and workflow commit binding with `uv run pytest -p no:cacheprovider packages/devtools/tests/unit/test_lifecycle_evidence.py packages/devtools/tests/acceptance/test_lifecycle_evidence_producers_contract.py packages/devtools/tests/acceptance/test_tdd_workflow_contract.py`
 - run the generated Harness verification plan for changed `packages/devtools` paths and execute every returned check through `kotekomi-agent run-check`
 
 ## 7. Documentation checks

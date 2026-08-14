@@ -1,0 +1,108 @@
+schema_version = 1
+task_id = "tdd-lifecycle-evidence-producers-31bb5fd3a176"
+title = "TDD Lifecycle Evidence Producers"
+status = "ready_for_terra_high"
+series_id = "tdd-harness-followup"
+task_class = "repository-tooling"
+model_profile = "terra-high-v1"
+baseline_revision = "0e74f2fd92ee2221f3012e390ae008774473523d"
+tdd_path = "docs/2026-08-14-tdd-lifecycle-evidence-producers.md"
+tdd_sha256 = "31bb5fd3a176cfe949b0f1f2f80d3a3d9ed2f036df2deae4962e9ff767383564"
+goal = "Add deterministic Harness commands that record candidate commit, CI, main merge, main CI, and branch cleanup lifecycle evidence."
+depends_on = []
+allowed_paths = [
+  ".agent/tasks/tdd-lifecycle-evidence-producers-31bb5fd3a176.toml",
+  "docs/2026-08-14-tdd-lifecycle-evidence-producers.md",
+  "docs/CHECK_PLAN.md",
+  "packages/devtools/src/kotekomi_devtools/cli.py",
+  "packages/devtools/src/kotekomi_devtools/lifecycle_evidence.py",
+  "packages/devtools/src/kotekomi_devtools/tdd_workflow.py",
+  "packages/devtools/src/kotekomi_devtools/verification_plan.py",
+  "packages/devtools/tests/unit/test_lifecycle_evidence.py",
+  "packages/devtools/tests/acceptance/test_lifecycle_evidence_producers_contract.py",
+  "packages/devtools/tests/acceptance/test_tdd_workflow_contract.py",
+  "packages/devtools/tests/unit/test_verification_plan.py"
+]
+reference_paths = [
+  "packages/devtools/src/kotekomi_devtools/evidence_catalog.py",
+  "packages/devtools/src/kotekomi_devtools/task_lifecycle.py",
+  "packages/devtools/src/kotekomi_devtools/verification_execution.py",
+  "packages/devtools/tests/unit/test_evidence_catalog.py",
+  "packages/devtools/tests/acceptance/test_verification_execution_contract.py"
+]
+stop_conditions = [
+  "a lifecycle producer mutates Git, branches, remotes, or CI state",
+  "invalid lifecycle input writes canonical evidence",
+  "workflow accepts CI evidence for a different lifecycle commit",
+  "workflow accepts a main merge whose verified parent is not the candidate commit",
+  "verification-plan leaves a changed lifecycle-producer path uncovered"
+]
+
+[readiness]
+authority = "The Lifecycle Evidence Producers TDD defines the producer interfaces and workflow behavior."
+contract_family = "tdd-harness"
+dominant_outcome = "Every lifecycle phase has deterministic, canonical evidence from a named Harness command."
+failure_policy = "Invalid Git and CI facts block before evidence is written; valid failed CI and incomplete cleanup facts remain recorded."
+legacy_disposition = "Existing evidence catalog, lifecycle check, verification execution, and workflow commands remain retained."
+negative_proof = "The commands never delete branches, modify Git state, call a CI service, or fabricate lifecycle evidence."
+public_entry_point = "kotekomi-agent record-candidate-commit"
+scope_policy = "Only lifecycle producers, workflow selection, verification coverage, focused tests, and required documentation may change."
+side_effect_boundary = "Producer commands write only canonical state-root evidence, evidence index/event records, and explicitly requested report copies."
+unresolved_decisions = []
+
+[budget]
+maximum_production_files = 4
+maximum_test_files = 4
+maximum_production_diff_lines = 1200
+
+[[protected_artifacts]]
+kind = "json-schema"
+path = ".agent/schemas/task-manifest-v1.schema.json"
+sha256 = "b505d4fd89eed61510a2cd669a8a96564927ed43309cd31ed786aff6fb63a460"
+
+[[protected_artifacts]]
+kind = "leaf-tdd"
+path = "docs/2026-08-14-tdd-lifecycle-evidence-producers.md"
+sha256 = "31bb5fd3a176cfe949b0f1f2f80d3a3d9ed2f036df2deae4962e9ff767383564"
+
+[[acceptance]]
+id = "lifecycle-evidence-unit-contract"
+argv = ["uv", "run", "pytest", "-p", "no:cacheprovider", "packages/devtools/tests/unit/test_lifecycle_evidence.py"]
+timeout_seconds = 90
+profile = "portable-local"
+
+[[acceptance]]
+id = "lifecycle-evidence-producers-acceptance-contract"
+argv = ["uv", "run", "pytest", "-p", "no:cacheprovider", "packages/devtools/tests/acceptance/test_lifecycle_evidence_producers_contract.py"]
+timeout_seconds = 120
+profile = "portable-local"
+
+[[acceptance]]
+id = "tdd-workflow-lifecycle-contract"
+argv = ["uv", "run", "pytest", "-p", "no:cacheprovider", "packages/devtools/tests/acceptance/test_tdd_workflow_contract.py"]
+timeout_seconds = 120
+profile = "portable-local"
+
+[[acceptance]]
+id = "verification-plan-contract-retained"
+argv = ["uv", "run", "pytest", "-p", "no:cacheprovider", "packages/devtools/tests/acceptance/test_verification_plan_contract.py"]
+timeout_seconds = 120
+profile = "portable-local"
+
+[[acceptance]]
+id = "verification-execution-contract-retained"
+argv = ["uv", "run", "pytest", "-p", "no:cacheprovider", "packages/devtools/tests/acceptance/test_verification_execution_contract.py"]
+timeout_seconds = 120
+profile = "portable-local"
+
+[[acceptance]]
+id = "repository-static-checks"
+argv = ["uv", "run", "ruff", "check"]
+timeout_seconds = 120
+profile = "portable-local"
+
+[[acceptance]]
+id = "repository-type-checks"
+argv = ["uv", "run", "pyright"]
+timeout_seconds = 120
+profile = "portable-local"

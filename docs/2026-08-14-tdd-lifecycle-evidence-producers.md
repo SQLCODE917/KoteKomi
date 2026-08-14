@@ -154,6 +154,12 @@ Workflow boundary:
 
 - WF-08: The workflow blocks when cleanup evidence has `branch_cleanup_complete` false.
 
+- WF-09: The workflow blocks unless candidate CI `head_sha` equals candidate commit `commit_sha`.
+
+- WF-10: The workflow blocks unless main merge `verified_parent_commit` equals candidate commit `commit_sha`.
+
+- WF-11: The workflow blocks unless main CI `head_sha` equals main merge `merge_commit`.
+
 ## Proposed Architecture
 
 Each lifecycle evidence producer owns one evidence type.
@@ -232,6 +238,12 @@ Each producer can replace only its current evidence index entry.
 Each producer preserves prior evidence event log entries.
 
 The CI producers preserve a failing CI conclusion as canonical evidence.
+
+The workflow treats a CI result as evidence only for the lifecycle commit whose
+SHA-1 equals its `head_sha`.
+
+The workflow treats a main merge as the continuation of the candidate only
+when its second parent equals the recorded candidate commit.
 
 The cleanup producer records incomplete cleanup when Git still exposes a requested branch.
 

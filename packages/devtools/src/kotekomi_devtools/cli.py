@@ -16,6 +16,14 @@ from kotekomi_devtools.evidence_catalog import (
     write_canonical_record,
 )
 from kotekomi_devtools.goal_accountability import GoalAccountabilityError, write_goal_report
+from kotekomi_devtools.lifecycle_evidence import (
+    LifecycleEvidenceError,
+    record_branch_cleanup,
+    record_candidate_ci,
+    record_candidate_commit,
+    record_main_ci,
+    record_main_merge,
+)
 from kotekomi_devtools.receipt_chain_status import run_receipt_chain_status_command
 from kotekomi_devtools.receipt_writer import ReceiptWriterError, write_receipt
 from kotekomi_devtools.step_scripts import (
@@ -76,6 +84,8 @@ def main(argv: list[str] | None = None) -> int:
         return _render_error(error)
     except GoalAccountabilityError as error:
         return _render_error(error)
+    except LifecycleEvidenceError as error:
+        return _render_error(error)
     except VerificationPlanError as error:
         return _render_error(error)
     except TaskLedgerError as error:
@@ -113,6 +123,11 @@ def _dispatch_command(arguments: argparse.Namespace) -> CliResponse | int:
         "verify-checks": _handle_verification_command,
         "verification-plan": _handle_verification_command,
         "task-ledger": _handle_ledger_command,
+        "record-candidate-commit": _handle_lifecycle_evidence_command,
+        "record-candidate-ci": _handle_lifecycle_evidence_command,
+        "record-main-merge": _handle_lifecycle_evidence_command,
+        "record-main-ci": _handle_lifecycle_evidence_command,
+        "record-branch-cleanup": _handle_lifecycle_evidence_command,
     }
     return handlers[arguments.command](arguments)
 
@@ -452,6 +467,27 @@ def _handle_ledger_command(arguments: argparse.Namespace) -> CliResponse:
     return CliResponse(0, output)
 
 
+def _handle_lifecycle_evidence_command(arguments: argparse.Namespace) -> CliResponse:
+    common = {
+        "task_id": arguments.task_id,
+        "run_id": arguments.run,
+        "state_root_path": arguments.state_root,
+        "output": arguments.output,
+        "markdown": arguments.markdown,
+    }
+    if arguments.command == "record-candidate-commit":
+        result = record_candidate_commit(revision=arguments.commit, **common)
+    elif arguments.command == "record-candidate-ci":
+        result = record_candidate_ci(ci_result=arguments.ci_result, **common)
+    elif arguments.command == "record-main-merge":
+        result = record_main_merge(revision=arguments.merge, **common)
+    elif arguments.command == "record-main-ci":
+        result = record_main_ci(ci_result=arguments.ci_result, **common)
+    else:
+        result = record_branch_cleanup(branches=tuple(arguments.branch), **common)
+    return CliResponse(0, result.as_json())
+
+
 def _render_response(response: CliResponse) -> int:
     print(
         json.dumps(
@@ -513,6 +549,7 @@ def _build_parser() -> argparse.ArgumentParser:
     lifecycle_check.add_argument("--task-id")
     lifecycle_check.add_argument("--run")
     lifecycle_check.add_argument("--state-root", type=Path, default=Path("~/.local/state/kotekomi"))
+    _add_lifecycle_evidence_parsers(subparsers)
     receipt_chain_status = subparsers.add_parser(
         "receipt-chain-status",
         help="Report deterministic receipt-chain status.",
@@ -695,3 +732,38 @@ def _build_parser() -> argparse.ArgumentParser:
     update.add_argument("--evidence", type=Path, required=True, metavar="EVIDENCE")
     update.add_argument("--output", type=Path, required=True, metavar="LEDGER_FILE")
     return parser
+
+
+def _add_lifecycle_evidence_parsers(subparsers: Any) -> None:
+    common = argparse.ArgumentParser(add_help=False)
+    common.add_argument("--task-id", required=True)
+    common.add_argument("--run", required=True)
+    common.add_argument("--state-root", type=Path, default=Path("~/.local/state/kotekomi"))
+    common.add_argument("--output", type=Path)
+    common.add_argument("--markdown", type=Path)
+    candidate_commit = subparsers.add_parser(
+        "record-candidate-commit",
+        parents=[common],
+        help="Record one candidate commit as canonical evidence.",
+    )
+    candidate_commit.add_argument("--commit", required=True)
+    candidate_ci = subparsers.add_parser(
+        "record-candidate-ci",
+        parents=[common],
+        help="Record one candidate CI result as canonical evidence.",
+    )
+    candidate_ci.add_argument("--ci-result", type=Path, required=True)
+    main_merge = subparsers.add_parser(
+        "record-main-merge", parents=[common], help="Record one main merge as canonical evidence."
+    )
+    main_merge.add_argument("--merge", required=True)
+    main_ci = subparsers.add_parser(
+        "record-main-ci", parents=[common], help="Record one main CI result as canonical evidence."
+    )
+    main_ci.add_argument("--ci-result", type=Path, required=True)
+    cleanup = subparsers.add_parser(
+        "record-branch-cleanup",
+        parents=[common],
+        help="Record requested candidate branch cleanup evidence.",
+    )
+    cleanup.add_argument("--branch", action="append", required=True)

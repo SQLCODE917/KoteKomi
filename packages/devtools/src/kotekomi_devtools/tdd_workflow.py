@@ -118,44 +118,111 @@ def _create_or_reload(root: Path, task: str, *, new_run: bool, abandon: str | No
     return selected
 
 
-def _status(root: Path, entries: list[Json], manifest_exists: bool) -> tuple[str, str, list[str]]:
+def workflow_status(
+    root: Path, entries: list[Json], manifest_exists: bool
+) -> tuple[str, str, list[str], list[Json]]:
     kinds = {item["evidence_type"] for item in entries}
     if not manifest_exists or not PHASE_REQUIREMENTS["spec"].issubset(kinds):
-        return "spec", "create_task_manifest", sorted(PHASE_REQUIREMENTS["spec"] - kinds)
-    for phase in ("candidate", "verification", "candidate_ci", "main", "main_ci", "complete"):
-        if not PHASE_REQUIREMENTS[phase].issubset(kinds):
-            return phase, f"produce_{phase}_evidence", sorted(PHASE_REQUIREMENTS[phase] - kinds)
-        if phase == "verification":
-            plan_entry = next(
-                item for item in entries if item["evidence_type"] == "verification_plan"
-            )
-            plan = _read(root / plan_entry["path"])
-            planned = plan.get("planned_checks", [])
-            if not isinstance(planned, list):
-                return "verification", "produce_verification_evidence", ["verification_plan"]
-            planned_checks = cast(list[dict[str, object]], planned)
-            if not all(isinstance(item.get("id"), str) for item in planned_checks):
-                return "verification", "produce_verification_evidence", ["verification_plan"]
-            planned_ids = {str(item["id"]) for item in planned_checks}
-            recorded_ids = {
-                str(item["subject_id"]) for item in entries if item["evidence_type"] == "run_check"
-            }
-            missing_checks = sorted(f"run_check:{item}" for item in planned_ids - recorded_ids)
-            if missing_checks:
-                return "verification", "produce_verification_evidence", missing_checks
-    return "complete", "complete", []
+        return "spec", "create_task_manifest", sorted(PHASE_REQUIREMENTS["spec"] - kinds), []
+    if "candidate_lifecycle" not in kinds:
+        return "candidate", "produce_candidate_lifecycle_evidence", ["candidate_lifecycle"], []
+    if "candidate_commit" not in kinds:
+        return "candidate", "produce_candidate_commit_evidence", ["candidate_commit"], []
+    if not PHASE_REQUIREMENTS["verification"].issubset(kinds):
+        return (
+            "verification",
+            "produce_verification_evidence",
+            sorted(PHASE_REQUIREMENTS["verification"] - kinds),
+            [],
+        )
+    plan = _payload(root, entries, "verification_plan")
+    planned = plan.get("planned_checks", [])
+    if not isinstance(planned, list) or not all(
+        isinstance(item.get("id"), str) for item in cast(list[Json], planned)
+    ):
+        return "verification", "produce_verification_evidence", ["verification_plan"], []
+    planned_ids = {str(item["id"]) for item in cast(list[Json], planned)}
+    recorded_ids = {
+        str(item["subject_id"]) for item in entries if item["evidence_type"] == "run_check"
+    }
+    missing_checks = sorted(f"run_check:{item}" for item in planned_ids - recorded_ids)
+    if missing_checks:
+        return "verification", "produce_verification_evidence", missing_checks, []
+    if "candidate_ci" not in kinds:
+        return "candidate_ci", "produce_candidate_ci_evidence", ["candidate_ci"], []
+    candidate = _payload(root, entries, "candidate_commit")
+    candidate_ci = _payload(root, entries, "candidate_ci")
+    blocked = _ci_diagnostic("candidate", candidate_ci, candidate["commit_sha"], "commit_sha")
+    if blocked:
+        return "candidate_ci", "blocked", [], [blocked]
+    if "main_merge" not in kinds:
+        return "main", "produce_main_merge_evidence", ["main_merge"], []
+    merge = _payload(root, entries, "main_merge")
+    if merge["verified_parent_commit"] != candidate["commit_sha"]:
+        return (
+            "main",
+            "blocked",
+            [],
+            [
+                _diagnostic(
+                    "main_merge_candidate_mismatch",
+                    "verified_parent_commit_matches_candidate_commit",
+                )
+            ],
+        )
+    if "main_lifecycle" not in kinds:
+        return "main", "produce_main_lifecycle_evidence", ["main_lifecycle"], []
+    if "main_ci" not in kinds:
+        return "main_ci", "produce_main_ci_evidence", ["main_ci"], []
+    main_ci = _payload(root, entries, "main_ci")
+    blocked = _ci_diagnostic("main", main_ci, merge["merge_commit"], "merge_commit")
+    if blocked:
+        return "main_ci", "blocked", [], [blocked]
+    if "cleanup" not in kinds:
+        return "main_ci", "produce_cleanup_evidence", ["cleanup"], []
+    cleanup = _payload(root, entries, "cleanup")
+    if cleanup["branch_cleanup_complete"] is not True:
+        return (
+            "main_ci",
+            "blocked",
+            [],
+            [_diagnostic("cleanup_incomplete", "branch_cleanup_complete")],
+        )
+    if "receipt_chain_status" not in kinds:
+        return "complete", "produce_complete_evidence", ["receipt_chain_status"], []
+    return "complete", "complete", [], []
+
+
+def _payload(root: Path, entries: list[Json], evidence_type: str) -> Json:
+    entry = next(item for item in entries if item["evidence_type"] == evidence_type)
+    return _read(root / entry["path"])
+
+
+def _ci_diagnostic(name: str, ci: Json, expected_sha: object, expected_field: str) -> Json | None:
+    if ci["conclusion"] != "success":
+        return _diagnostic(f"{name}_ci_not_success", "conclusion_is_success")
+    if ci["head_sha"] != expected_sha:
+        return _diagnostic(f"{name}_ci_commit_mismatch", f"head_sha_matches_{expected_field}")
+    return None
+
+
+def _diagnostic(code: str, rule: str) -> Json:
+    return {"code": f"workflow.{code}", "location": "/evidence", "rule": rule}
 
 
 def _suggested_commands(action: str, task_id: str, run_id: str, manifest_path: str) -> list[Json]:
-    if action == "complete":
+    if action in {"blocked", "complete"}:
         return []
     command = {
         "create_task_manifest": "create-task-manifest",
-        "produce_candidate_evidence": "lifecycle-check",
+        "produce_candidate_lifecycle_evidence": "lifecycle-check",
+        "produce_candidate_commit_evidence": "record-candidate-commit",
         "produce_verification_evidence": "verification-plan",
         "produce_candidate_ci_evidence": "record-candidate-ci",
-        "produce_main_evidence": "record-main-merge",
+        "produce_main_merge_evidence": "record-main-merge",
+        "produce_main_lifecycle_evidence": "lifecycle-check",
         "produce_main_ci_evidence": "record-main-ci",
+        "produce_cleanup_evidence": "record-branch-cleanup",
         "produce_complete_evidence": "receipt-chain-status",
     }.get(action, "evidence-index")
     arguments = ["--task-id", task_id, "--run", run_id]
@@ -293,10 +360,10 @@ def implement_tdd(
                 {"code": "workflow.evidence_invalid", "location": "/evidence", "rule": str(error)}
             ],
         }
-    phase, action, missing = _status(root, entries, manifest.exists())
+    phase, action, missing, diagnostics = workflow_status(root, entries, manifest.exists())
     result: Json = {
         "schema_version": 1,
-        "status": "ready",
+        "status": "blocked" if action == "blocked" else "ready",
         "task_id": task,
         "implementation_run_id": run_id,
         "requested_tdd_path": binding_result.requested_tdd_path,
@@ -306,7 +373,7 @@ def implement_tdd(
         "manifest_path": str(manifest.relative_to(Path.cwd())),
         "manifest_validation_status": validation_status,
         "implementation_phase": phase,
-        "next_action": action,
+        "next_action": None if action == "blocked" else action,
         "required_evidence": sorted(PHASE_REQUIREMENTS.get(phase, set())),
         "missing_evidence": missing,
         "producer_arguments": {
@@ -323,7 +390,7 @@ def implement_tdd(
             run_id,
             str(manifest.relative_to(Path.cwd())),
         ),
-        "diagnostics": [],
+        "diagnostics": diagnostics,
     }
     if output:
         _write(output, result)
