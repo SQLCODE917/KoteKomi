@@ -132,9 +132,11 @@ def _schema_diagnostics(parsed: JsonObject) -> list[Diagnostic]:
         v1_shape = dict(parsed)
         v1_shape["schema_version"] = 1
         v1_validator = Draft202012Validator(_load_schema(1))
-        diagnostics.extend(
-            _schema_diagnostic(error) for error in v1_validator.iter_errors(v1_shape)
-        )  # type: ignore[reportUnknownMemberType]
+        v1_errors = cast(
+            Iterable[ValidationError],
+            v1_validator.iter_errors(v1_shape),  # type: ignore[reportUnknownMemberType]
+        )
+        diagnostics.extend(_schema_diagnostic(error) for error in v1_errors)
     return diagnostics
 
 

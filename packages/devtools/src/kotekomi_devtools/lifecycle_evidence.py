@@ -281,12 +281,15 @@ def _require_feature_tip(
         payload = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as error:
         raise LifecycleEvidenceError("feature branch evidence is invalid") from error
-    if not isinstance(payload, dict) or not isinstance(payload.get("branch"), str):
+    if not isinstance(payload, dict):
         raise LifecycleEvidenceError("feature branch evidence is invalid")
-    branch = cast(str, payload["branch"])
+    feature_evidence = cast(Json, payload)
+    branch = feature_evidence.get("branch")
+    if not isinstance(branch, str):
+        raise LifecycleEvidenceError("feature branch evidence is invalid")
     if _remote_ref_commit(branch) != commit:
         raise LifecycleEvidenceError("candidate commit must equal the remote feature tip")
-    specification = payload.get("specification_revision")
+    specification = feature_evidence.get("specification_revision")
     if (
         not isinstance(specification, str)
         or specification == commit
