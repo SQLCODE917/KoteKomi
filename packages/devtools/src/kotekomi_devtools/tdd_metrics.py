@@ -15,6 +15,14 @@ from kotekomi_devtools.evidence_catalog import (
 from kotekomi_devtools.tdd_binding import list_tdd_bindings, lookup_tdd_binding
 
 type Json = dict[str, Any]
+_REPAIR_OUTCOMES: dict[str, tuple[set[str], set[str]]] = {
+    "candidate_lifecycle": ({"ready"}, {"not_ready", "blocked"}),
+    "run_check": ({"passed"}, {"failed", "blocked"}),
+    "verify_checks": ({"passed"}, {"failed", "blocked"}),
+    "candidate_ci": ({"success"}, {"failure", "cancelled", "skipped", "blocked"}),
+    "main_lifecycle": ({"ready"}, {"not_ready", "blocked"}),
+    "main_ci": ({"success"}, {"failure", "cancelled", "skipped", "blocked"}),
+}
 
 
 def _write(path: Path, value: object) -> None:
@@ -29,6 +37,32 @@ def _read(path: Path) -> Json:
 def _runs(root: Path, task: str) -> list[Json]:
     index = _read(root / "experiments" / task / "runs" / "index.json")
     return sorted(index["runs"], key=lambda row: row["ordinal"])
+
+
+def _repair_history(events: list[Json]) -> tuple[bool, int]:
+    """Return repair-history availability and repaired failures from immutable events."""
+    pending_failures: dict[tuple[str, str, str], int] = {}
+    repairs = 0
+    for event in events:
+        evidence_type = event.get("evidence_type")
+        if evidence_type not in _REPAIR_OUTCOMES:
+            continue
+        outcome = event.get("evidence_outcome")
+        successful, unsuccessful = _REPAIR_OUTCOMES[evidence_type]
+        if event.get("schema_version") != 2 or not isinstance(outcome, str):
+            return False, 0
+        if outcome not in successful | unsuccessful:
+            return False, 0
+        key = (
+            str(event.get("phase", "")),
+            evidence_type,
+            str(event.get("subject_id", "")),
+        )
+        if outcome in unsuccessful:
+            pending_failures[key] = pending_failures.get(key, 0) + 1
+        else:
+            repairs += pending_failures.pop(key, 0)
+    return True, repairs
 
 
 def _metric(root: Path, binding: Json, run: Json) -> Json:
@@ -79,20 +113,7 @@ def _metric(root: Path, binding: Json, run: Json) -> Json:
         if event_path.exists()
         else []
     )
-    repairs = sum(
-        1
-        for event in events
-        if event.get("status") in {"failed", "blocked", "failure"}
-        and event.get("evidence_type")
-        in {
-            "candidate_lifecycle",
-            "run_check",
-            "verify_checks",
-            "candidate_ci",
-            "main_lifecycle",
-            "main_ci",
-        }
-    )
+    repair_history_available, repairs = _repair_history(events)
     lifecycle_diagnostics = candidate.get("diagnostics", []) + main.get("diagnostics", [])
     result: Json = {
         "schema_version": 1,
@@ -114,6 +135,7 @@ def _metric(root: Path, binding: Json, run: Json) -> Json:
         "failed_check_count": checks.get("failed_check_count", 0),
         "candidate_ci_conclusion": cci.get("conclusion", "missing"),
         "main_ci_conclusion": mci.get("conclusion", "missing"),
+        "repair_history_available": repair_history_available,
         "repair_count": repairs,
         "budget_violation_count": sum(
             1
@@ -132,7 +154,18 @@ def _metric(root: Path, binding: Json, run: Json) -> Json:
         "diagnostics": [
             {"code": "metrics.missing_evidence", "location": "/evidence", "rule": item}
             for item in sorted(missing)
-        ],
+        ]
+        + (
+            []
+            if repair_history_available
+            else [
+                {
+                    "code": "metrics.repair_history_unavailable",
+                    "location": "/evidence/events.jsonl",
+                    "rule": "repair_relevant_events_require_schema_version_2_outcomes",
+                }
+            ]
+        ),
     }
     rel = f"experiments/{task}/runs/{run_id}/metrics/tdd-metrics.json"
     _write(root / rel, result)

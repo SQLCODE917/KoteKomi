@@ -7,6 +7,34 @@ import pytest
 from kotekomi_devtools import tdd_metrics
 
 
+def _event(outcome: str) -> dict[str, object]:
+    return {
+        "schema_version": 2,
+        "phase": "verification",
+        "evidence_type": "run_check",
+        "subject_id": "typecheck",
+        "evidence_outcome": outcome,
+    }
+
+
+def test_repair_history_counts_each_failed_event_before_success() -> None:
+    assert tdd_metrics._repair_history([_event("failed"), _event("failed"), _event("passed")]) == (
+        True,
+        2,
+    )
+
+
+def test_repair_history_does_not_count_an_unrepaired_failure() -> None:
+    assert tdd_metrics._repair_history([_event("failed")]) == (True, 0)
+
+
+def test_repair_history_marks_schema_v1_events_unavailable() -> None:
+    assert tdd_metrics._repair_history([{"evidence_type": "run_check", "status": "ready"}]) == (
+        False,
+        0,
+    )
+
+
 def test_metrics_requires_main_promotion_evidence(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

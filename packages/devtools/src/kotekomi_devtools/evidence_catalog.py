@@ -83,6 +83,74 @@ class EvidenceError(ValueError):
     pass
 
 
+def _event_outcome(evidence_type: str, payload: Json) -> str:
+    """Return the normalized producer result for one indexed evidence record."""
+    recorded_types = {
+        "task_manifest",
+        "tdd_binding",
+        "specification_revision",
+        "feature_branch",
+        "candidate_commit",
+        "main_promotion",
+    }
+    if evidence_type in recorded_types:
+        return "recorded"
+    if evidence_type in {"candidate_lifecycle", "main_lifecycle"}:
+        ready = payload.get("ready")
+        if type(ready) is not bool:
+            raise EvidenceError(f"{evidence_type} requires boolean ready for event outcome")
+        return "ready" if ready else "not_ready"
+    if evidence_type == "run_check":
+        status = payload.get("status")
+        if status in {"passed", "failed"}:
+            return cast(str, status)
+        raise EvidenceError("run_check requires passed or failed status for event outcome")
+    if evidence_type in {"verification_plan", "verify_checks"}:
+        status = payload.get("status")
+        if status == "ready":
+            return "passed"
+        if status == "not_ready":
+            return "failed"
+        raise EvidenceError(f"{evidence_type} requires ready or not_ready status for event outcome")
+    if evidence_type == "receipt_chain_status":
+        status = payload.get("status")
+        if status == "ready":
+            return "passed"
+        if status == "blocked":
+            return "failed"
+        raise EvidenceError("receipt_chain_status requires ready or blocked status")
+    if evidence_type in {"candidate_ci", "main_ci"}:
+        conclusion = payload.get("conclusion")
+        if conclusion in {"success", "failure", "cancelled", "skipped"}:
+            return cast(str, conclusion)
+        raise EvidenceError(f"{evidence_type} requires a CI conclusion for event outcome")
+    if evidence_type == "cleanup":
+        complete = payload.get("branch_cleanup_complete")
+        if type(complete) is not bool:
+            raise EvidenceError(
+                "cleanup requires boolean branch_cleanup_complete for event outcome"
+            )
+        return "passed" if complete else "failed"
+    if evidence_type == "task_manifest_validation":
+        status = payload.get("status")
+        if status == "valid":
+            return "passed"
+        if status == "invalid":
+            return "failed"
+        raise EvidenceError("task_manifest_validation requires valid or invalid status")
+    if evidence_type in {"metrics_record", "scorecard_record"}:
+        status = payload.get("status")
+        if status in {"complete", "partial", "blocked"}:
+            return cast(str, status)
+        raise EvidenceError(f"{evidence_type} requires complete, partial, or blocked status")
+    if evidence_type == "candidate_verification_receipt":
+        outcome = payload.get("outcome")
+        if outcome in {"passed", "failed"}:
+            return cast(str, outcome)
+        raise EvidenceError("candidate_verification_receipt requires passed or failed outcome")
+    raise EvidenceError(f"no event outcome rule for evidence type: {evidence_type}")
+
+
 def state_root(value: Path | None) -> Path:
     return (value or Path("~/.local/state/kotekomi")).expanduser().resolve()
 
@@ -299,6 +367,8 @@ def index_record(
     if not target.is_file():
         raise EvidenceError(f"evidence file is missing: {target}")
     index = read_index(root, task, run)
+    payload = _load_evidence_payload(target, evidence_type)
+    outcome = _event_outcome(evidence_type, payload)
     entry = {
         "phase": phase,
         "evidence_type": evidence_type,
@@ -310,6 +380,14 @@ def index_record(
         "diagnostics": diagnostics or [],
     }
     key = (phase, evidence_type, subject_id)
+    previous = next(
+        (
+            item
+            for item in index["entries"]
+            if (item["phase"], item["evidence_type"], item["subject_id"]) == key
+        ),
+        None,
+    )
     entries = [
         item
         for item in index["entries"]
@@ -327,15 +405,17 @@ def index_record(
     index["entries"] = entries
     _write(_index_path(root, task, run), index)
     event = {
-        "schema_version": 1,
+        "schema_version": 2,
         "task_id": task,
         "implementation_run_id": run,
         "event_type": "evidence_indexed",
         "phase": phase,
         "evidence_type": evidence_type,
         "subject_id": subject_id,
-        "status": "ready",
+        "index_status": "ready",
+        "evidence_outcome": outcome,
         "sha256": entry["sha256"],
+        "previous_sha256": previous["sha256"] if previous else None,
         "created_at": datetime.now(UTC).isoformat(),
     }
     event_path = _events_path(root, task, run)

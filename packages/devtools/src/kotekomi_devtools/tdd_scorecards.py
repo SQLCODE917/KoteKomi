@@ -11,6 +11,15 @@ from kotekomi_devtools.evidence_catalog import index_record, state_root
 from kotekomi_devtools.tdd_metrics import tdd_metrics
 
 type Json = dict[str, Any]
+_SCORE_WEIGHTS = {
+    "evidence_confidence": 0.2,
+    "verification_completeness": 0.2,
+    "lifecycle_completeness": 0.2,
+    "scope_discipline": 0.15,
+    "first_pass_effectiveness": 0.15,
+    "repair_efficiency": 0.1,
+}
+_REPAIR_DIMENSIONS = ("first_pass_effectiveness", "repair_efficiency")
 
 
 def _write(path: Path, value: object) -> None:
@@ -30,7 +39,7 @@ def score_metrics(metric: Json) -> Json:
     verified = int(metric.get("verified_check_count", 0))
     repairs = int(metric.get("repair_count", 0))
     failed = int(metric.get("failed_check_count", 0))
-    dimensions = {
+    all_dimensions = {
         "evidence_confidence": 100 - min(100, receipt_missing * 20 + mismatch * 40 + missing * 15),
         "verification_completeness": 100
         if planned == 0 and verified == 0
@@ -62,25 +71,32 @@ def score_metrics(metric: Json) -> Json:
         ),
         "repair_efficiency": 100 - min(100, repairs * 15),
     }
-    dimensions = {key: _round(max(0, min(100, value))) for key, value in dimensions.items()}
-    overall = _round(
-        sum(
-            dimensions[key] * weight
-            for key, weight in {
-                "evidence_confidence": 0.2,
-                "verification_completeness": 0.2,
-                "lifecycle_completeness": 0.2,
-                "scope_discipline": 0.15,
-                "first_pass_effectiveness": 0.15,
-                "repair_efficiency": 0.1,
-            }.items()
+    repair_history_available = metric.get("repair_history_available") is True
+    omitted = [] if repair_history_available else list(_REPAIR_DIMENSIONS)
+    dimensions = {
+        key: _round(max(0, min(100, value)))
+        for key, value in all_dimensions.items()
+        if key not in omitted
+    }
+    scored_weight_total = round(sum(_SCORE_WEIGHTS[key] for key in dimensions), 2)
+    provisional_overall_score = None
+    if metric["status"] != "blocked":
+        provisional_overall_score = _round(
+            sum(dimensions[key] * _SCORE_WEIGHTS[key] for key in dimensions) / scored_weight_total
         )
+    ranking_eligible = metric["status"] == "complete" or (
+        metric["status"] == "partial" and dimensions["evidence_confidence"] > 0
     )
-    overall_score = None
-    if metric["status"] != "blocked" and not (
-        metric["status"] == "partial" and dimensions["evidence_confidence"] == 0
-    ):
-        overall_score = overall
+    overall_score = provisional_overall_score if ranking_eligible else None
+    diagnostics = list(metric.get("diagnostics", []))
+    if not repair_history_available:
+        diagnostics.append(
+            {
+                "code": "scorecard.repair_history_unavailable",
+                "location": "/raw_metrics/repair_history_available",
+                "rule": "omit_repair_dimensions_and_reweight_available_dimensions",
+            }
+        )
     return {
         "schema_version": 1,
         "task_id": metric["task_id"],
@@ -91,8 +107,12 @@ def score_metrics(metric: Json) -> Json:
         "status": metric["status"],
         "raw_metrics": metric,
         "score_dimensions": dimensions,
+        "omitted_score_dimensions": omitted,
+        "scored_weight_total": scored_weight_total,
+        "provisional_overall_score": provisional_overall_score,
         "overall_score": overall_score,
-        "diagnostics": metric.get("diagnostics", []),
+        "ranking_eligible": ranking_eligible,
+        "diagnostics": diagnostics,
     }
 
 
@@ -226,7 +246,9 @@ def _comparison(cards: list[Json]) -> tuple[int, Json]:
             "deltas": {
                 field: int(card["score_dimensions"][field])
                 - int(baseline["score_dimensions"][field])
-                for field in sorted(card["score_dimensions"])
+                for field in sorted(
+                    set(card["score_dimensions"]) & set(baseline["score_dimensions"])
+                )
             },
         }
         for card in cards
