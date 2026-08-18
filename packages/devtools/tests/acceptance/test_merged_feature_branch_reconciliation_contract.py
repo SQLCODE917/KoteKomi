@@ -195,10 +195,16 @@ def test_reconciliation_blocks_before_writing_main_evidence_for_wrong_candidate(
     ci.write_text(
         json.dumps({"schema_version": 1, "conclusion": "success", "head_sha": final_main})
     )
-    candidate_record = (
-        state / "experiments" / TASK / "runs" / RUN / "git" / "candidate-commit.json"
+    write_canonical_record(
+        state,
+        TASK,
+        RUN,
+        phase="candidate",
+        evidence_type="candidate_commit",
+        subject_id="candidate",
+        payload={"commit_sha": base, "parent_sha": base},
+        producer_command="test",
     )
-    candidate_record.write_text(json.dumps({"commit_sha": base, "parent_sha": base}))
 
     result = _run(
         repo,
