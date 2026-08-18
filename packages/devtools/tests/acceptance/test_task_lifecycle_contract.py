@@ -109,6 +109,7 @@ def _protected_paths() -> tuple[str, ...]:
     assert paths, "manifest did not expose protected_artifacts"
     return tuple(dict.fromkeys(paths))
 
+
 def _copy_protected_artifacts(repo: Path) -> None:
     for relative in _protected_paths():
         source = REPO_ROOT / relative
@@ -123,7 +124,7 @@ def _copy_protected_artifacts(repo: Path) -> None:
 
 def _init_lifecycle_repo(tmp_path: Path) -> Path:
     repo = tmp_path / "lifecycle-repo"
-    repo.mkdir()
+    repo.mkdir(parents=True)
 
     _git(repo, "init", "--initial-branch", "main")
     _git(repo, "config", "user.email", "h6@example.invalid")
@@ -170,6 +171,31 @@ def _make_merge_commit(repo: Path) -> tuple[str, str, str]:
     merge = _git(repo, "rev-parse", "HEAD")
 
     return main_base, verified, merge
+
+
+def _make_direct_commit(repo: Path) -> tuple[str, str]:
+    main_base = _git(repo, "rev-parse", "HEAD")
+    oracle.write_fixture_text(repo / "direct.txt", "direct\n")
+    _git(repo, "add", "direct.txt")
+    _git(repo, "commit", "-m", "direct")
+    return main_base, _git(repo, "rev-parse", "HEAD")
+
+
+def _make_octopus_commit(repo: Path) -> tuple[str, str, str]:
+    main_base = _git(repo, "rev-parse", "HEAD")
+    _git(repo, "switch", "-c", "first")
+    oracle.write_fixture_text(repo / "first.txt", "first\n")
+    _git(repo, "add", "first.txt")
+    _git(repo, "commit", "-m", "first")
+    verified = _git(repo, "rev-parse", "HEAD")
+    _git(repo, "switch", "main")
+    _git(repo, "switch", "-c", "second", main_base)
+    oracle.write_fixture_text(repo / "second.txt", "second\n")
+    _git(repo, "add", "second.txt")
+    _git(repo, "commit", "-m", "second")
+    _git(repo, "switch", "main")
+    _git(repo, "merge", "--no-ff", "first", "second", "-m", "octopus")
+    return main_base, verified, _git(repo, "rev-parse", "HEAD")
 
 
 def test_lifecycle_check_help_lists_phase_values() -> None:
@@ -313,7 +339,7 @@ def test_verified_phase_accepts_present_candidate_records(tmp_path: Path) -> Non
     }
 
 
-def test_main_phase_verifies_merge_parents(tmp_path: Path) -> None:
+def test_main_phase_verifies_direct_and_merge_topology(tmp_path: Path) -> None:
     _require_lifecycle_check()
 
     repo = _init_lifecycle_repo(tmp_path)
@@ -338,8 +364,117 @@ def test_main_phase_verifies_merge_parents(tmp_path: Path) -> None:
     _assert_common_payload(payload, "main")
     assert code == 0
     assert payload["status"] == "ready"
-    assert "merge-parents" in payload["required_checks"]
+    assert "promotion-topology" in payload["required_checks"]
     assert "main-ci-record" in payload["required_checks"]
+
+    direct_repo = _init_lifecycle_repo(tmp_path / "direct")
+    main_base, direct = _make_direct_commit(direct_repo)
+    code, payload = _json_result(
+        [
+            "lifecycle-check",
+            str(MANIFEST),
+            "--phase",
+            "main",
+            "--main-base",
+            main_base,
+            "--verified",
+            direct,
+            "--head",
+            direct,
+        ],
+        cwd=direct_repo,
+    )
+    _assert_common_payload(payload, "main")
+    assert code == 0
+    assert payload["status"] == "ready"
+
+
+def test_main_phase_rejects_invalid_promotion_topology(tmp_path: Path) -> None:
+    _require_lifecycle_check()
+
+    direct_repo = _init_lifecycle_repo(tmp_path / "direct")
+    main_base, direct = _make_direct_commit(direct_repo)
+    code, payload = _json_result(
+        [
+            "lifecycle-check",
+            str(MANIFEST),
+            "--phase",
+            "main",
+            "--main-base",
+            main_base,
+            "--verified",
+            main_base,
+            "--head",
+            direct,
+        ],
+        cwd=direct_repo,
+    )
+    assert code == 1
+    assert "task_lifecycle.direct_promotion_mismatch" in _diagnostic_codes(payload)
+    assert "main_requires_expected_direct_promotion" in _h11_diagnostic_rules(payload)
+
+    merge_repo = _init_lifecycle_repo(tmp_path / "merge")
+    main_base, verified, merge = _make_merge_commit(merge_repo)
+    code, payload = _json_result(
+        [
+            "lifecycle-check",
+            str(MANIFEST),
+            "--phase",
+            "main",
+            "--main-base",
+            main_base,
+            "--verified",
+            main_base,
+            "--head",
+            merge,
+        ],
+        cwd=merge_repo,
+    )
+    assert code == 1
+    assert "task_lifecycle.merge_parent_mismatch" in _diagnostic_codes(payload)
+    assert "main_requires_expected_merge_parents" in _h11_diagnostic_rules(payload)
+
+    root_repo = _init_lifecycle_repo(tmp_path / "root")
+    root = _git(root_repo, "rev-parse", "HEAD")
+    code, payload = _json_result(
+        [
+            "lifecycle-check",
+            str(MANIFEST),
+            "--phase",
+            "main",
+            "--main-base",
+            root,
+            "--verified",
+            root,
+            "--head",
+            root,
+        ],
+        cwd=root_repo,
+    )
+    assert code == 1
+    assert "task_lifecycle.unsupported_promotion_topology" in _diagnostic_codes(payload)
+    assert "main_requires_direct_or_merge_promotion" in _h11_diagnostic_rules(payload)
+
+    octopus_repo = _init_lifecycle_repo(tmp_path / "octopus")
+    main_base, verified, octopus = _make_octopus_commit(octopus_repo)
+    code, payload = _json_result(
+        [
+            "lifecycle-check",
+            str(MANIFEST),
+            "--phase",
+            "main",
+            "--main-base",
+            main_base,
+            "--verified",
+            verified,
+            "--head",
+            octopus,
+        ],
+        cwd=octopus_repo,
+    )
+    assert code == 1
+    assert "task_lifecycle.unsupported_promotion_topology" in _diagnostic_codes(payload)
+
 
 def _h11_diagnostic_rules(payload: dict[str, Any]) -> set[str]:
     diagnostics = cast(list[object], payload.get("diagnostics", []))
@@ -395,9 +530,7 @@ def test_main_phase_reports_specific_missing_revision_arguments() -> None:
 
 
 def test_agents_guidance_requires_candidate_lifecycle_before_dogfood_and_ci() -> None:
-    agents_text = (Path(__file__).resolve().parents[2] / "AGENTS.md").read_text(
-        encoding="utf-8"
-    )
+    agents_text = (Path(__file__).resolve().parents[2] / "AGENTS.md").read_text(encoding="utf-8")
     normalized = " ".join(agents_text.lower().split())
 
     assert "candidate lifecycle" in normalized

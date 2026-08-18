@@ -11,7 +11,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
 
-from kotekomi_devtools.evidence_catalog import state_root, write_canonical_record
+from kotekomi_devtools.evidence_catalog import (
+    EvidenceError,
+    state_root,
+    validated_entries,
+    write_canonical_record,
+)
 
 type Json = dict[str, Any]
 _SHA1 = re.compile(r"[0-9a-f]{40}")
@@ -157,10 +162,11 @@ def record_branch_cleanup(
     output: Path | None = None,
     markdown: Path | None = None,
 ) -> LifecycleEvidenceResult:
-    if not branches:
-        raise LifecycleEvidenceError("branch cleanup requires at least one --branch")
     if len(set(branches)) != len(branches):
         raise LifecycleEvidenceError("branch cleanup branches must be unique")
+    root = state_root(state_root_path)
+    if not branches:
+        _require_direct_main_promotion(root, task_id, run_id)
     remaining = sorted(branch for branch in branches if _branch_exists(branch))
     payload: Json = {
         "schema_version": 1,
@@ -180,6 +186,25 @@ def record_branch_cleanup(
         output,
         markdown,
     )
+
+
+def _require_direct_main_promotion(root: Path, task_id: str, run_id: str) -> None:
+    try:
+        entries = validated_entries(root, task_id, run_id)
+    except EvidenceError as error:
+        raise LifecycleEvidenceError("main promotion evidence is invalid") from error
+    entry = next((item for item in entries if item["evidence_type"] == "main_promotion"), None)
+    if entry is None or entry["path_scope"] != "state":
+        raise LifecycleEvidenceError("zero-branch cleanup requires direct main promotion evidence")
+    try:
+        value = json.loads((root / entry["path"]).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise LifecycleEvidenceError("main promotion evidence is invalid") from error
+    if not isinstance(value, dict):
+        raise LifecycleEvidenceError("main promotion evidence is invalid")
+    promotion = cast(Json, value)
+    if promotion.get("promotion_kind") != "direct":
+        raise LifecycleEvidenceError("zero-branch cleanup requires direct main promotion evidence")
 
 
 def _record_ci(

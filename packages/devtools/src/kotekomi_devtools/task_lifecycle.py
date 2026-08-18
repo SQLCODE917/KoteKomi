@@ -22,7 +22,7 @@ _PHASE_CHECKS: dict[str, tuple[str, ...]] = {
     "spec": ("validate-task", "preflight-task"),
     "candidate": ("validate-task", "scope-audit", "budget-audit", "protected-artifacts"),
     "verified": ("candidate-commit-record", "candidate-ci-record"),
-    "main": ("merge-parents", "main-ci-record"),
+    "main": ("promotion-topology", "main-ci-record"),
 }
 _CANDIDATE_RECORDS = ("candidate-commit.json", "candidate-ci.json")
 
@@ -377,7 +377,24 @@ def _check_main(
         return _result("invalid", task_id, phase, unresolved, checks)
 
     main_base, verified, head = (cast(str, revision) for _, revision in resolved)
-    if _parents(head) != (main_base, verified):
+    parents = _parents(head)
+    if len(parents) == 1:
+        if head == verified and parents == (main_base,):
+            return _result("ready", task_id, phase, (), checks)
+        return _result(
+            "not_ready",
+            task_id,
+            phase,
+            (
+                _diagnostic(
+                    "direct_promotion_mismatch", "/head", "main_requires_expected_direct_promotion"
+                ),
+            ),
+            checks,
+        )
+    if len(parents) == 2:
+        if parents == (main_base, verified):
+            return _result("ready", task_id, phase, (), checks)
         return _result(
             "not_ready",
             task_id,
@@ -389,7 +406,19 @@ def _check_main(
             ),
             checks,
         )
-    return _result("ready", task_id, phase, (), checks)
+    return _result(
+        "not_ready",
+        task_id,
+        phase,
+        (
+            _diagnostic(
+                "unsupported_promotion_topology",
+                "/head",
+                "main_requires_direct_or_merge_promotion",
+            ),
+        ),
+        checks,
+    )
 
 
 def _load_manifest(path: Path) -> JsonObject:

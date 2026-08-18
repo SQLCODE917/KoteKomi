@@ -1,0 +1,60 @@
+schema_version = 1
+task_id = "tdd-direct-main-lifecycle-4ea4ccd4120c"
+title = "Direct Main Lifecycle"
+status = "ready_for_terra_high"
+series_id = "tdd-harness-followup"
+task_class = "repository-tooling"
+model_profile = "terra-high-v1"
+baseline_revision = "af68925b985105ca2d74c77bcccdac5b81c7f1bb"
+tdd_path = "docs/2026-08-18-tdd-direct-main-lifecycle.md"
+tdd_sha256 = "4ea4ccd4120c9f50e7e2e61c479812b467daad8cfb667d08859954b2fbc6872c"
+goal = "Close valid direct main promotion runs with truthful lifecycle and cleanup evidence."
+depends_on = ["tdd-record-main-promotion-3eb109f62037"]
+allowed_paths = [".agent/tasks/tdd-direct-main-lifecycle-4ea4ccd4120c.toml", "docs/2026-08-18-tdd-direct-main-lifecycle.md", "packages/devtools/src/kotekomi_devtools/cli.py", "packages/devtools/src/kotekomi_devtools/lifecycle_evidence.py", "packages/devtools/src/kotekomi_devtools/task_lifecycle.py", "packages/devtools/src/kotekomi_devtools/tdd_workflow.py", "packages/devtools/tests/acceptance/test_lifecycle_evidence_producers_contract.py", "packages/devtools/tests/acceptance/test_task_lifecycle_contract.py", "packages/devtools/tests/acceptance/test_tdd_workflow_contract.py"]
+reference_paths = ["packages/devtools/src/kotekomi_devtools/evidence_catalog.py", "docs/2026-08-14-tdd-lifecycle-evidence-producers.md", "docs/2026-08-18-tdd-record-main-promotion.md"]
+stop_conditions = ["the implementation changes the main lifecycle evidence schema", "zero-branch cleanup accepts missing or unvalidated main promotion evidence", "the workflow advances from a non-ready main lifecycle record"]
+
+[readiness]
+authority = "The direct main lifecycle TDD defines this follow-up contract."
+contract_family = "tdd-harness"
+dominant_outcome = "The Harness closes valid direct main promotion runs."
+failure_policy = "Invalid promotion topology and non-ready lifecycle evidence block the workflow."
+legacy_disposition = "The merge-only main lifecycle rule is replaced."
+negative_proof = "The lifecycle and cleanup commands do not mutate Git or remote state."
+public_entry_point = "kotekomi-agent lifecycle-check and record-branch-cleanup"
+scope_policy = "Lifecycle topology, workflow readiness, and direct cleanup only."
+side_effect_boundary = "Canonical run evidence and requested report copies only."
+unresolved_decisions = []
+
+[budget]
+maximum_production_files = 4
+maximum_test_files = 3
+maximum_production_diff_lines = 300
+
+[[protected_artifacts]]
+kind = "json-schema"
+path = ".agent/schemas/task-manifest-v1.schema.json"
+sha256 = "b505d4fd89eed61510a2cd669a8a96564927ed43309cd31ed786aff6fb63a460"
+
+[[protected_artifacts]]
+kind = "leaf-tdd"
+path = "docs/2026-08-18-tdd-direct-main-lifecycle.md"
+sha256 = "4ea4ccd4120c9f50e7e2e61c479812b467daad8cfb667d08859954b2fbc6872c"
+
+[[acceptance]]
+id = "direct-main-lifecycle-contract"
+argv = ["uv", "run", "pytest", "-p", "no:cacheprovider", "packages/devtools/tests/acceptance/test_task_lifecycle_contract.py", "packages/devtools/tests/acceptance/test_lifecycle_evidence_producers_contract.py", "packages/devtools/tests/acceptance/test_tdd_workflow_contract.py"]
+timeout_seconds = 120
+profile = "portable-local"
+
+[[acceptance]]
+id = "repository-static-checks"
+argv = ["uv", "run", "ruff", "check"]
+timeout_seconds = 120
+profile = "portable-local"
+
+[[acceptance]]
+id = "repository-type-checks"
+argv = ["uv", "run", "pyright"]
+timeout_seconds = 120
+profile = "portable-local"

@@ -40,7 +40,7 @@ def _cli(repo: Path, state: Path, *args: str) -> subprocess.CompletedProcess[str
 
 def _repo(tmp_path: Path) -> tuple[Path, str, str]:
     repo = tmp_path / "repo"
-    repo.mkdir()
+    repo.mkdir(parents=True)
     _git(repo, "init", "--initial-branch", "main")
     _git(repo, "config", "user.name", "Test")
     _git(repo, "config", "user.email", "test@example.invalid")
@@ -176,6 +176,28 @@ def test_main_promotion_records_direct_commit_and_report_copies(tmp_path: Path) 
     assert index["entries"][-1]["evidence_type"] == "main_promotion"
     assert index["entries"][-1]["path"] == canonical.relative_to(state).as_posix()
     assert len((root / "evidence" / "events.jsonl").read_text().splitlines()) == 1
+
+
+def test_zero_branch_cleanup_requires_direct_main_promotion(tmp_path: Path) -> None:
+    direct_repo, _, direct = _direct_repo(tmp_path / "direct")
+    direct_state = tmp_path / "direct-state"
+    assert (
+        _cli(direct_repo, direct_state, "record-main-promotion", "--commit", direct).returncode == 0
+    )
+    result = _cli(direct_repo, direct_state, "record-branch-cleanup")
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout)["branch_cleanup_complete"] is True
+    assert json.loads(result.stdout)["remaining_branches"] == []
+
+    merge_repo, _, merge = _repo(tmp_path / "merge")
+    merge_state = tmp_path / "merge-state"
+    assert _cli(merge_repo, merge_state, "record-main-promotion", "--commit", merge).returncode == 0
+    assert _cli(merge_repo, merge_state, "record-branch-cleanup").returncode == 2
+    assert _cli(merge_repo, tmp_path / "missing-state", "record-branch-cleanup").returncode == 2
+
+    canonical = direct_state / "experiments" / TASK / "runs" / RUN / "git" / "main-promotion.json"
+    canonical.write_text('{"promotion_kind":"direct"}\n')
+    assert _cli(direct_repo, direct_state, "record-branch-cleanup").returncode == 2
 
 
 def test_main_promotion_rejects_invalid_topology_and_origin_state(tmp_path: Path) -> None:

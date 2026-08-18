@@ -768,4 +768,4 @@ def _add_lifecycle_evidence_parsers(subparsers: Any) -> None:
         parents=[common],
         help="Record requested candidate branch cleanup evidence.",
     )
-    cleanup.add_argument("--branch", action="append", required=True)
+    cleanup.add_argument("--branch", action="append", default=[])

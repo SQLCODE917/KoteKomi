@@ -189,6 +189,14 @@ def workflow_status(
         )
     if "main_lifecycle" not in kinds:
         return "main", "produce_main_lifecycle_evidence", ["main_lifecycle"], []
+    main_lifecycle = _payload(root, entries, "main_lifecycle")
+    if main_lifecycle.get("ready") is not True:
+        return (
+            "main",
+            "blocked",
+            [],
+            [_diagnostic("main_lifecycle_not_ready", "main_lifecycle_is_ready")],
+        )
     if "main_ci" not in kinds:
         return "main_ci", "produce_main_ci_evidence", ["main_ci"], []
     main_ci = _payload(root, entries, "main_ci")

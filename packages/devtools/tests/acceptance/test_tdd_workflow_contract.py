@@ -139,3 +139,38 @@ def test_workflow_selects_and_validates_main_promotion_evidence(tmp_path: Path) 
     }
     assert status_for("main-ci", main_ci)[1] == "blocked"
     assert status_for("main-ci", main_ci)[3][0]["code"] == "workflow.main_ci_commit_mismatch"
+
+
+def test_workflow_blocks_non_ready_main_lifecycle(tmp_path: Path) -> None:
+    root = tmp_path / "state"
+    records: dict[str, dict[str, Any]] = {
+        "candidate_commit": {"commit_sha": "candidate", "parent_sha": "base"},
+        "verification_plan": {"planned_checks": []},
+        "verify_checks": {"status": "ready"},
+        "candidate_ci": {"conclusion": "success", "head_sha": "candidate"},
+        "main_promotion": {
+            "promotion_kind": "direct",
+            "promotion_commit": "candidate",
+            "parent_commit": "base",
+            "verified_parent_commit": None,
+        },
+        "main_lifecycle": {"ready": False},
+        "main_ci": {"conclusion": "success", "head_sha": "candidate"},
+        "cleanup": {"branch_cleanup_complete": True},
+    }
+    entries = [
+        {"evidence_type": "tdd_binding", "path": "binding.json"},
+        {"evidence_type": "task_manifest", "path": "manifest.toml"},
+        {"evidence_type": "task_manifest_validation", "path": "manifest-validation.json"},
+        {"evidence_type": "candidate_lifecycle", "path": "candidate-lifecycle.json"},
+    ]
+    for evidence_type, payload in records.items():
+        path = root / f"{evidence_type}.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(payload))
+        entries.append({"evidence_type": evidence_type, "path": path.name})
+
+    phase, action, missing, diagnostics = workflow_status(root, entries, True)
+
+    assert (phase, action, missing) == ("main", "blocked", [])
+    assert diagnostics[0]["code"] == "workflow.main_lifecycle_not_ready"
