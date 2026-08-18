@@ -39,7 +39,7 @@ def _runs(root: Path, task: str) -> list[Json]:
     return sorted(index["runs"], key=lambda row: row["ordinal"])
 
 
-def _repair_history(events: list[Json]) -> tuple[bool, int]:
+def repair_history(events: list[Json]) -> tuple[bool, int]:
     """Return repair-history availability and repaired failures from immutable events."""
     pending_failures: dict[tuple[str, str, str], int] = {}
     repairs = 0
@@ -113,7 +113,7 @@ def _metric(root: Path, binding: Json, run: Json) -> Json:
         if event_path.exists()
         else []
     )
-    repair_history_available, repairs = _repair_history(events)
+    repair_history_available, repairs = repair_history(events)
     lifecycle_diagnostics = candidate.get("diagnostics", []) + main.get("diagnostics", [])
     result: Json = {
         "schema_version": 1,
