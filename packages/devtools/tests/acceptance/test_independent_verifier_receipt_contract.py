@@ -195,15 +195,19 @@ def test_verify_candidate_commits_a_receipt_that_binds_frozen_revisions(tmp_path
     assert recorded["base_revision"] == base
     assert recorded["specification_revision"] == specification
     assert recorded["candidate_revision"] == candidate
-    assert recorded["manifest"]["sha256"] == hashlib.sha256(
-        (repo / ".agent/tasks/independent-verifier-example.toml").read_bytes()
-    ).hexdigest()
+    assert (
+        recorded["manifest"]["sha256"]
+        == hashlib.sha256(
+            (repo / ".agent/tasks/independent-verifier-example.toml").read_bytes()
+        ).hexdigest()
+    )
     assert recorded["outcome"] == "passed"
     assert len(recorded["check_results"]) >= 1
     verification_commit = str(payload["verification_commit"])
-    assert git_output(repo, "diff-tree", "--no-commit-id", "--name-only", "-r", verification_commit) == str(
-        payload["receipt_path"]
+    changed_path = git_output(
+        repo, "diff-tree", "--no-commit-id", "--name-only", "-r", verification_commit
     )
+    assert changed_path == str(payload["receipt_path"])
 
 
 def test_verify_candidate_records_protected_artifact_failure_and_retry(tmp_path: Path) -> None:
