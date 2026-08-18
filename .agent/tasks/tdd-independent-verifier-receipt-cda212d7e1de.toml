@@ -1,0 +1,65 @@
+schema_version = 1
+task_id = "tdd-independent-verifier-receipt-cda212d7e1de"
+title = "Independent Verifier Receipt"
+status = "ready_for_terra_high"
+series_id = "tdd-harness-followup"
+task_class = "repository-tooling"
+model_profile = "terra-high-v1"
+baseline_revision = "abac9f4e2ef4bbd8b1fb84f7d564eb23fa93d000"
+tdd_path = "docs/2026-08-18-tdd-independent-verifier-receipt.md"
+tdd_sha256 = "cda212d7e1de1c455a849fa0eaa063b144d88f85b30ea5892bd7132bf9550f3e"
+goal = "Create an immutable Verification Receipt that independently binds one frozen candidate."
+depends_on = ["tdd-direct-main-lifecycle-4ea4ccd4120c"]
+allowed_paths = [".agent/tasks/tdd-independent-verifier-receipt-cda212d7e1de.toml", "docs/2026-08-18-tdd-independent-verifier-receipt.md", "packages/devtools/src/kotekomi_devtools/cli.py", "packages/devtools/src/kotekomi_devtools/candidate_verifier.py", "packages/devtools/tests/acceptance/test_independent_verifier_receipt_contract.py", "packages/devtools/tests/unit/test_candidate_verifier.py", "docs/CHECK_PLAN.md"]
+reference_paths = ["packages/devtools/src/kotekomi_devtools/task_scope.py", "packages/devtools/src/kotekomi_devtools/verification_plan.py", "packages/devtools/src/kotekomi_devtools/verification_execution.py"]
+stop_conditions = ["the implementation modifies the Task Manifest schema", "the implementation changes a protected acceptance test", "the implementation promotes a task or changes the Acceptance Registry"]
+
+[readiness]
+authority = "The independent verifier receipt TDD defines this contract."
+contract_family = "tdd-harness"
+dominant_outcome = "The verifier commits one immutable receipt for one frozen candidate."
+failure_policy = "Candidate check failures create failed receipts. Invalid prerequisites create no receipt."
+legacy_disposition = "Generic lifecycle receipts remain separate from Verification Receipts."
+negative_proof = "The verifier changes only a receipt branch and uses detached worktrees."
+public_entry_point = "kotekomi-agent verify-candidate"
+scope_policy = "Candidate topology, verification receipts, and detached candidate checks only."
+side_effect_boundary = "One tracked Verification Receipt commit and one verification ref update."
+unresolved_decisions = []
+
+[budget]
+maximum_production_files = 2
+maximum_test_files = 2
+maximum_production_diff_lines = 600
+
+[[protected_artifacts]]
+kind = "json-schema"
+path = ".agent/schemas/task-manifest-v1.schema.json"
+sha256 = "b505d4fd89eed61510a2cd669a8a96564927ed43309cd31ed786aff6fb63a460"
+
+[[protected_artifacts]]
+kind = "leaf-tdd"
+path = "docs/2026-08-18-tdd-independent-verifier-receipt.md"
+sha256 = "cda212d7e1de1c455a849fa0eaa063b144d88f85b30ea5892bd7132bf9550f3e"
+
+[[protected_artifacts]]
+kind = "acceptance-test"
+path = "packages/devtools/tests/acceptance/test_independent_verifier_receipt_contract.py"
+sha256 = "2028c4a2bbe3155e1c649e87bd654c7ffd51dfac1a3ff0c8b7325c37245ba164"
+
+[[acceptance]]
+id = "independent-verifier-receipt-contract"
+argv = ["uv", "run", "pytest", "-p", "no:cacheprovider", "packages/devtools/tests/acceptance/test_independent_verifier_receipt_contract.py"]
+timeout_seconds = 120
+profile = "portable-local"
+
+[[acceptance]]
+id = "repository-static-checks"
+argv = ["uv", "run", "ruff", "check"]
+timeout_seconds = 120
+profile = "portable-local"
+
+[[acceptance]]
+id = "repository-type-checks"
+argv = ["uv", "run", "pyright"]
+timeout_seconds = 120
+profile = "portable-local"
