@@ -1,0 +1,60 @@
+schema_version = 2
+task_id = "tdd-metrics-repair-history-e05ab3f473a8"
+title = "Metrics Repair History"
+status = "ready_for_terra_high"
+series_id = "tdd-harness-feature-branch"
+task_class = "repository-tooling"
+model_profile = "terra-high-v1"
+baseline_revision = "8ef151f730d410cb1f2831bb3ef3345f20cbdb24"
+tdd_path = "docs/2026-08-18-tdd-metrics-repair-history.md"
+tdd_sha256 = "e05ab3f473a8d0729ef9f1b62808ff88c6f72b5426c9fec5451a81e4530a096e"
+goal = "Record repair outcomes and score legacy repair history truthfully."
+depends_on = ["tdd-feature-branch-default-7f13f74551a4"]
+allowed_paths = [".agent/tasks/tdd-metrics-repair-history-e05ab3f473a8.toml", "packages/devtools/src/kotekomi_devtools/evidence_catalog.py", "packages/devtools/src/kotekomi_devtools/tdd_metrics.py", "packages/devtools/src/kotekomi_devtools/tdd_scorecards.py", "packages/devtools/tests/unit/test_evidence_catalog.py", "packages/devtools/tests/unit/test_tdd_metrics.py", "packages/devtools/tests/unit/test_tdd_scorecards.py"]
+reference_paths = ["docs/2026-08-13-tdd-implementation-metrics.md", "docs/2026-08-13-tdd-scorecards-and-comparison.md", "packages/devtools/tests/acceptance/test_metrics_repair_history_contract.py"]
+stop_conditions = ["the implementation infers legacy outcomes", "the implementation changes a producer command interface", "a scorecard treats unavailable repair history as zero repairs"]
+
+[readiness]
+authority = "The Metrics Repair History TDD defines this task."
+contract_family = "tdd-harness"
+dominant_outcome = "Metrics report repaired failures and legacy uncertainty truthfully."
+failure_policy = "An undefined event outcome blocks evidence indexing."
+legacy_disposition = "Legacy event logs remain readable with unavailable repair history."
+negative_proof = "The metrics collector does not infer legacy outcomes from Git history or logs."
+public_entry_point = "kotekomi-agent tdd-metrics and tdd-score"
+scope_policy = "Evidence events, metrics, scorecards, and their deterministic tests only."
+side_effect_boundary = "Canonical state evidence, metrics records, and scorecard records only."
+unresolved_decisions = []
+
+[budget]
+maximum_production_files = 3
+maximum_test_files = 3
+maximum_production_diff_lines = 300
+
+[[protected_artifacts]]
+kind = "leaf-tdd"
+path = "docs/2026-08-18-tdd-metrics-repair-history.md"
+sha256 = "e05ab3f473a8d0729ef9f1b62808ff88c6f72b5426c9fec5451a81e4530a096e"
+
+[[protected_artifacts]]
+kind = "acceptance-test"
+path = "packages/devtools/tests/acceptance/test_metrics_repair_history_contract.py"
+sha256 = "ca93862f27af3ca73ea7d51f24f952b65815056d18f2985c45d1cc24c20a9e30"
+
+[[acceptance]]
+id = "metrics-repair-history-contract"
+argv = ["uv", "run", "pytest", "-p", "no:cacheprovider", "packages/devtools/tests/acceptance/test_metrics_repair_history_contract.py", "packages/devtools/tests/unit/test_evidence_catalog.py", "packages/devtools/tests/unit/test_tdd_metrics.py", "packages/devtools/tests/unit/test_tdd_scorecards.py"]
+timeout_seconds = 120
+profile = "portable-local"
+
+[[acceptance]]
+id = "repository-static-checks"
+argv = ["uv", "run", "ruff", "check"]
+timeout_seconds = 120
+profile = "portable-local"
+
+[[acceptance]]
+id = "repository-type-checks"
+argv = ["uv", "run", "pyright"]
+timeout_seconds = 120
+profile = "portable-local"
