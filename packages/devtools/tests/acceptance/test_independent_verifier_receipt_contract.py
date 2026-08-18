@@ -170,6 +170,17 @@ def _payload(result: subprocess.CompletedProcess[str]) -> dict[str, Any]:
     return cast(dict[str, Any], value)
 
 
+def _receipt(repo: Path, payload: dict[str, Any]) -> dict[str, Any]:
+    text = git_output(
+        repo,
+        "show",
+        f"{payload['verification_commit']}:{payload['receipt_path']}",
+    )
+    value = json.loads(text)
+    assert isinstance(value, dict)
+    return cast(dict[str, Any], value)
+
+
 def test_verify_candidate_commits_a_receipt_that_binds_frozen_revisions(tmp_path: Path) -> None:
     repo, base, specification, candidate, fake_bin = _repo(tmp_path)
 
@@ -178,8 +189,7 @@ def test_verify_candidate_commits_a_receipt_that_binds_frozen_revisions(tmp_path
     assert result.returncode == 0, result.stderr
     payload = _payload(result)
     assert payload["outcome"] == "passed"
-    receipt = repo / str(payload["receipt_path"])
-    recorded = _payload(subprocess.CompletedProcess([], 0, receipt.read_text(), ""))
+    recorded = _receipt(repo, payload)
     assert recorded["base_revision"] == base
     assert recorded["specification_revision"] == specification
     assert recorded["candidate_revision"] == candidate
@@ -204,7 +214,7 @@ def test_verify_candidate_records_protected_artifact_failure_and_retry(tmp_path:
     assert failed.returncode == 1, failed.stderr
     failed_payload = _payload(failed)
     assert failed_payload["outcome"] == "failed"
-    assert (repo / str(failed_payload["receipt_path"])).is_file()
+    assert _receipt(repo, failed_payload)["outcome"] == "failed"
     retry = _verify(repo, fake_bin, base, specification, changed_candidate)
     assert retry.returncode == 1, retry.stderr
     assert str(_payload(retry)["receipt_path"]).endswith("attempt-0002.json")

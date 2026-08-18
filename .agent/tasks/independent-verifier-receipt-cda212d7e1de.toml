@@ -44,7 +44,7 @@ sha256 = "cda212d7e1de1c455a849fa0eaa063b144d88f85b30ea5892bd7132bf9550f3e"
 [[protected_artifacts]]
 kind = "acceptance-test"
 path = "packages/devtools/tests/acceptance/test_independent_verifier_receipt_contract.py"
-sha256 = "2028c4a2bbe3155e1c649e87bd654c7ffd51dfac1a3ff0c8b7325c37245ba164"
+sha256 = "816d4f3a6937f6a0535dbedd2d4c7211c7eadbc958f6ec74aef83b7611685b45"
 
 [[acceptance]]
 id = "independent-verifier-receipt-contract"
