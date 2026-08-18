@@ -50,6 +50,7 @@ def record_candidate_commit(
     parents = _parents(commit)
     if not parents:
         raise LifecycleEvidenceError("candidate commit requires a first parent")
+    _require_feature_tip(task_id, run_id, state_root_path, commit)
     payload: Json = {
         "schema_version": 1,
         "commit_sha": commit,
@@ -65,6 +66,63 @@ def record_candidate_commit(
         "candidate",
         payload,
         "record-candidate-commit",
+        output,
+        markdown,
+    )
+
+
+def create_feature_branch(
+    *,
+    task_id: str,
+    run_id: str,
+    specification_revision: str,
+    manifest_sha256: str,
+    state_root_path: Path | None,
+    output: Path | None = None,
+    markdown: Path | None = None,
+) -> LifecycleEvidenceResult:
+    """Create one task branch at a persisted specification revision without switching HEAD."""
+    specification = _resolve_commit(specification_revision)
+    branch = f"feature/{task_id}"
+    local = _ref_commit(f"refs/heads/{branch}")
+    remote = _remote_ref_commit(branch)
+    if (
+        local is not None
+        and local != specification
+        or remote is not None
+        and remote != specification
+    ):
+        raise LifecycleEvidenceError("feature branch conflicts with specification revision")
+    created_local = local is None
+    if created_local:
+        _require_success(_git("branch", branch, specification), "feature branch creation failed")
+        local = specification
+    if remote is None:
+        pushed = _git("push", "origin", f"refs/heads/{branch}:refs/heads/{branch}")
+        if pushed.returncode != 0:
+            if created_local:
+                _git("update-ref", "-d", f"refs/heads/{branch}", specification)
+            raise LifecycleEvidenceError("feature branch push failed")
+        remote = _remote_ref_commit(branch)
+    if local != specification or remote != specification:
+        raise LifecycleEvidenceError("feature branch conflicts with specification revision")
+    payload: Json = {
+        "schema_version": 1,
+        "branch": branch,
+        "specification_revision": specification,
+        "local_revision": local,
+        "remote_revision": remote,
+        "diagnostics": [],
+    }
+    return _publish(
+        task_id,
+        run_id,
+        state_root_path,
+        "candidate",
+        "feature_branch",
+        "feature-branch",
+        payload,
+        "create-feature-branch",
         output,
         markdown,
     )
@@ -205,6 +263,60 @@ def _require_direct_main_promotion(root: Path, task_id: str, run_id: str) -> Non
     promotion = cast(Json, value)
     if promotion.get("promotion_kind") != "direct":
         raise LifecycleEvidenceError("zero-branch cleanup requires direct main promotion evidence")
+
+
+def _require_feature_tip(
+    task_id: str, run_id: str, state_root_path: Path | None, commit: str
+) -> None:
+    root = state_root(state_root_path)
+    try:
+        entries = validated_entries(root, task_id, run_id)
+    except EvidenceError as error:
+        raise LifecycleEvidenceError("feature branch evidence is invalid") from error
+    entry = next((item for item in entries if item["evidence_type"] == "feature_branch"), None)
+    if entry is None:
+        return
+    path = root / entry["path"]
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise LifecycleEvidenceError("feature branch evidence is invalid") from error
+    if not isinstance(payload, dict) or not isinstance(payload.get("branch"), str):
+        raise LifecycleEvidenceError("feature branch evidence is invalid")
+    branch = cast(str, payload["branch"])
+    if _remote_ref_commit(branch) != commit:
+        raise LifecycleEvidenceError("candidate commit must equal the remote feature tip")
+    specification = payload.get("specification_revision")
+    if (
+        not isinstance(specification, str)
+        or specification == commit
+        or not _is_ancestor(specification, commit)
+    ):
+        raise LifecycleEvidenceError(
+            "candidate commit must descend from the specification revision"
+        )
+
+
+def _ref_commit(ref: str) -> str | None:
+    result = _git("rev-parse", "--verify", f"{ref}^{{commit}}")
+    return result.stdout.strip() if result.returncode == 0 else None
+
+
+def _remote_ref_commit(branch: str) -> str | None:
+    result = _git("ls-remote", "--exit-code", "origin", f"refs/heads/{branch}")
+    if result.returncode != 0:
+        return None
+    fields = result.stdout.split()
+    return fields[0] if fields and _SHA1.fullmatch(fields[0]) else None
+
+
+def _is_ancestor(ancestor: str, descendant: str) -> bool:
+    return _git("merge-base", "--is-ancestor", ancestor, descendant).returncode == 0
+
+
+def _require_success(result: subprocess.CompletedProcess[str], message: str) -> None:
+    if result.returncode != 0:
+        raise LifecycleEvidenceError(message)
 
 
 def _record_ci(

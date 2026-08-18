@@ -25,7 +25,10 @@ type DiagnosticCode = Literal[
 
 _IDENTIFIER = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 _WILDCARD_CHARACTERS = frozenset("*?[]")
-_SCHEMA_PATH = Path(".agent/schemas/task-manifest-v1.schema.json")
+_SCHEMA_PATHS = {
+    1: Path(".agent/schemas/task-manifest-v1.schema.json"),
+    2: Path(".agent/schemas/task-manifest-v2.schema.json"),
+}
 
 
 @dataclass(frozen=True)
@@ -111,16 +114,32 @@ def _parsed_identity(parsed: Mapping[str, object]) -> tuple[int | None, str | No
     schema_version = parsed.get("schema_version")
     task_id = parsed.get("task_id")
     return (
-        schema_version if type(schema_version) is int and schema_version == 1 else None,
+        schema_version if type(schema_version) is int and schema_version in _SCHEMA_PATHS else None,
         task_id if isinstance(task_id, str) and _IDENTIFIER.fullmatch(task_id) else None,
     )
 
 
 def _schema_diagnostics(parsed: JsonObject) -> list[Diagnostic]:
-    schema = json.loads(_SCHEMA_PATH.read_text(encoding="utf-8"))
+    version = parsed.get("schema_version")
+    if type(version) is not int or version not in _SCHEMA_PATHS:
+        schema = _load_schema(1)
+        validator = Draft202012Validator(schema)
+        return [_schema_diagnostic(error) for error in validator.iter_errors(parsed)]  # type: ignore[reportUnknownMemberType]
+    schema = _load_schema(version)
     validator = Draft202012Validator(schema)
-    errors: Iterable[ValidationError] = validator.iter_errors(parsed)  # type: ignore[reportUnknownMemberType]
-    return [_schema_diagnostic(error) for error in errors]
+    diagnostics = [_schema_diagnostic(error) for error in validator.iter_errors(parsed)]  # type: ignore[reportUnknownMemberType]
+    if version == 2:
+        v1_shape = dict(parsed)
+        v1_shape["schema_version"] = 1
+        v1_validator = Draft202012Validator(_load_schema(1))
+        diagnostics.extend(
+            _schema_diagnostic(error) for error in v1_validator.iter_errors(v1_shape)
+        )  # type: ignore[reportUnknownMemberType]
+    return diagnostics
+
+
+def _load_schema(version: int) -> JsonObject:
+    return cast(JsonObject, json.loads(_SCHEMA_PATHS[version].read_text(encoding="utf-8")))
 
 
 def _schema_diagnostic(error: ValidationError) -> Diagnostic:

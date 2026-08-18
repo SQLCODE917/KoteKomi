@@ -19,6 +19,7 @@ from kotekomi_devtools.evidence_catalog import (
 from kotekomi_devtools.goal_accountability import GoalAccountabilityError, write_goal_report
 from kotekomi_devtools.lifecycle_evidence import (
     LifecycleEvidenceError,
+    create_feature_branch,
     record_branch_cleanup,
     record_candidate_ci,
     record_candidate_commit,
@@ -130,6 +131,7 @@ def _dispatch_command(arguments: argparse.Namespace) -> CliResponse | int:
         "record-main-promotion": _handle_lifecycle_evidence_command,
         "record-main-ci": _handle_lifecycle_evidence_command,
         "record-branch-cleanup": _handle_lifecycle_evidence_command,
+        "create-feature-branch": _handle_lifecycle_evidence_command,
     }
     return handlers[arguments.command](arguments)
 
@@ -488,6 +490,12 @@ def _handle_lifecycle_evidence_command(arguments: argparse.Namespace) -> CliResp
     }
     if arguments.command == "record-candidate-commit":
         result = record_candidate_commit(revision=arguments.commit, **common)
+    elif arguments.command == "create-feature-branch":
+        result = create_feature_branch(
+            specification_revision=arguments.specification_revision,
+            manifest_sha256=arguments.manifest_sha256,
+            **common,
+        )
     elif arguments.command == "record-candidate-ci":
         result = record_candidate_ci(ci_result=arguments.ci_result, **common)
     elif arguments.command == "record-main-promotion":
@@ -769,6 +777,14 @@ def _add_lifecycle_evidence_parsers(subparsers: Any) -> None:
         help="Record one candidate commit as canonical evidence.",
     )
     candidate_commit.add_argument("--commit", required=True)
+    feature_branch = subparsers.add_parser(
+        "create-feature-branch",
+        parents=[common],
+        help="Create and push the canonical task feature branch.",
+    )
+    feature_branch.add_argument("manifest", type=Path)
+    feature_branch.add_argument("--specification-revision", required=True)
+    feature_branch.add_argument("--manifest-sha256", required=True)
     candidate_ci = subparsers.add_parser(
         "record-candidate-ci",
         parents=[common],

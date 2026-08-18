@@ -24,6 +24,8 @@ _TRUSTED_FIELDS: dict[str, tuple[str, ...]] = {
     "task_manifest": ("task_id", "tdd_path", "tdd_sha256"),
     "tdd_binding": ("task_id", "primary_tdd_path", "tdd_paths", "tdd_sha256"),
     "task_manifest_validation": ("status", "task_id", "tdd_path", "tdd_sha256", "diagnostics"),
+    "specification_revision": ("specification_revision", "manifest_sha256"),
+    "feature_branch": ("branch", "specification_revision"),
     "candidate_lifecycle": ("ready", "diagnostics"),
     "candidate_commit": ("commit_sha", "parent_sha"),
     "verification_plan": ("status", "planned_checks"),
@@ -128,6 +130,8 @@ def canonical_relative(
     run = f"experiments/{task_id}/runs/{run_id}"
     fixed = {
         "task_manifest_validation": f"{run}/spec/task-manifest-validation.json",
+        "specification_revision": f"{run}/git/specification-revision.json",
+        "feature_branch": f"{run}/git/feature-branch.json",
         "candidate_lifecycle": f"{run}/lifecycle/candidate.json",
         "candidate_commit": f"{run}/git/candidate-commit.json",
         "verification_plan": f"{run}/verification/verification-plan.json",
@@ -215,6 +219,8 @@ def rebuild_index(root: Path, task: str, run: str) -> Json:
         ("intake", "tdd_binding", "binding"),
         ("spec", "task_manifest", "manifest"),
         ("spec", "task_manifest_validation", "manifest"),
+        ("spec", "specification_revision", "specification"),
+        ("candidate", "feature_branch", "feature-branch"),
         ("candidate", "candidate_lifecycle", "candidate"),
         ("candidate", "candidate_commit", "candidate"),
         ("verification", "verification_plan", "plan"),

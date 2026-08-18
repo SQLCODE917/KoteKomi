@@ -1,0 +1,8 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://kotekomi.local/schemas/task-manifest-v2.schema.json",
+    "title": "KoteKomi Task Manifest V2",
+    "type": "object",
+    "required": ["schema_version"],
+    "properties": {"schema_version": {"type": "integer", "const": 2}}
+}

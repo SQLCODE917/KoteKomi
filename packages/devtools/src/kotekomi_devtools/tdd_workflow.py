@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
+import subprocess
 import tomllib
 from datetime import UTC, datetime
 from pathlib import Path
@@ -16,7 +18,9 @@ from kotekomi_devtools.evidence_catalog import (
     run_root,
     state_root,
     validated_entries,
+    write_canonical_record,
 )
+from kotekomi_devtools.lifecycle_evidence import LifecycleEvidenceError, create_feature_branch
 from kotekomi_devtools.task_manifest import validate_task_manifest
 from kotekomi_devtools.tdd_binding import bind_tdd
 
@@ -158,6 +162,13 @@ def workflow_status(
     if "main_promotion" not in kinds:
         return "main", "produce_main_promotion_evidence", ["main_promotion"], []
     promotion = _payload(root, entries, "main_promotion")
+    if "feature_branch" in kinds and promotion["promotion_kind"] == "direct":
+        return (
+            "main",
+            "blocked",
+            [],
+            [_diagnostic("direct_main_promotion", "feature_branch_runs_require_merge_promotion")],
+        )
     if (
         promotion["promotion_kind"] == "merge"
         and promotion["verified_parent_commit"] != candidate["commit_sha"]
@@ -291,6 +302,7 @@ def implement_tdd(
         }
     binding = binding_result.binding or {}
     task = str(binding["task_id"])
+    feature_branch: str | None = None
     try:
         run = _create_or_reload(root, task, new_run=new_run, abandon=abandon_run)
     except ValueError as error:
@@ -373,7 +385,52 @@ def implement_tdd(
                     }
                 ],
             }
+        if manifest_identity.get("schema_version") == 1:
+            return 0, {
+                "schema_version": 1,
+                "status": "historical",
+                "task_id": task,
+                "implementation_run_id": run_id,
+                "requested_tdd_path": binding_result.requested_tdd_path,
+                "primary_tdd_path": binding["primary_tdd_path"],
+                "tdd_paths": binding["tdd_paths"],
+                "tdd_sha256": binding["tdd_sha256"],
+                "manifest_path": str(manifest.relative_to(Path.cwd())),
+                "manifest_validation_status": validation_status,
+                "implementation_phase": "historical",
+                "next_action": None,
+                "missing_evidence": [],
+                "producer_arguments": {},
+                "suggested_commands": [],
+                "diagnostics": [],
+            }
+        if manifest_identity.get("schema_version") == 2:
+            try:
+                specification = _record_specification(root, task, run_id, manifest)
+                branch_result = create_feature_branch(
+                    task_id=task,
+                    run_id=run_id,
+                    specification_revision=specification,
+                    manifest_sha256=hashlib.sha256(manifest.read_bytes()).hexdigest(),
+                    state_root_path=root,
+                )
+            except (EvidenceError, LifecycleEvidenceError) as error:
+                return 1, {
+                    "schema_version": 1,
+                    "status": "blocked",
+                    "task_id": task,
+                    "implementation_run_id": run_id,
+                    "diagnostics": [
+                        {
+                            "code": "workflow.feature_branch_invalid",
+                            "location": "/feature_branch",
+                            "rule": str(error),
+                        }
+                    ],
+                }
+            feature_branch = cast(str, branch_result.payload["branch"])
     try:
+        rebuild_index(root, task, run_id)
         entries = validated_entries(root, task, run_id)
     except EvidenceError as error:
         return 1, {
@@ -417,9 +474,63 @@ def implement_tdd(
         ),
         "diagnostics": diagnostics,
     }
+    if feature_branch is not None:
+        result["feature_branch"] = feature_branch
     if output:
         _write(output, result)
     if markdown:
         markdown.parent.mkdir(parents=True, exist_ok=True)
         markdown.write_text(f"# Implement TDD\n\nPhase: `{phase}`\n\nNext action: `{action}`\n")
     return 0, result
+
+
+def _record_specification(root: Path, task: str, run_id: str, manifest: Path) -> str:
+    """Persist the clean current-main specification once for a V2 run."""
+    path = root / canonical_relative("specification_revision", task, run_id, "specification")[1]
+    manifest_sha256 = hashlib.sha256(manifest.read_bytes()).hexdigest()
+    if path.is_file():
+        payload = _read(path)
+        if payload.get("manifest_sha256") != manifest_sha256:
+            raise EvidenceError("specification manifest conflict")
+        revision = payload.get("specification_revision")
+        if isinstance(revision, str):
+            return revision
+        raise EvidenceError("specification revision is invalid")
+    branch = _git("branch", "--show-current")
+    head = _git("rev-parse", "HEAD")
+    origin_main = _git("rev-parse", "origin/main")
+    status = _git("status", "--porcelain")
+    manifest_blob = _git("show", f"HEAD:{manifest.relative_to(Path.cwd()).as_posix()}")
+    if (
+        branch.returncode != 0
+        or branch.stdout.strip() != "main"
+        or head.returncode != 0
+        or origin_main.returncode != 0
+        or head.stdout.strip() != origin_main.stdout.strip()
+        or status.returncode != 0
+        or status.stdout
+        or manifest_blob.returncode != 0
+        or manifest_blob.stdout.encode() != manifest.read_bytes()
+    ):
+        raise EvidenceError("specification requires clean current main with committed manifest")
+    revision = head.stdout.strip()
+    write_canonical_record(
+        root,
+        task,
+        run_id,
+        phase="spec",
+        evidence_type="specification_revision",
+        subject_id="specification",
+        payload={
+            "schema_version": 1,
+            "specification_revision": revision,
+            "manifest_sha256": manifest_sha256,
+            "diagnostics": [],
+        },
+        producer_command="implement-tdd",
+    )
+    return revision
+
+
+def _git(*arguments: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(["git", *arguments], text=True, capture_output=True, check=False)
