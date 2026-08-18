@@ -10,7 +10,7 @@ tdd_path = "docs/2026-08-18-tdd-independent-verifier-receipt.md"
 tdd_sha256 = "cda212d7e1de1c455a849fa0eaa063b144d88f85b30ea5892bd7132bf9550f3e"
 goal = "Create an immutable Verification Receipt that independently binds one frozen candidate."
 depends_on = ["tdd-direct-main-lifecycle-4ea4ccd4120c"]
-allowed_paths = [".agent/tasks/independent-verifier-receipt-cda212d7e1de.toml", "docs/2026-08-18-tdd-independent-verifier-receipt.md", "packages/devtools/src/kotekomi_devtools/cli.py", "packages/devtools/src/kotekomi_devtools/candidate_verifier.py", "packages/devtools/tests/acceptance/test_independent_verifier_receipt_contract.py", "packages/devtools/tests/unit/test_candidate_verifier.py", "docs/CHECK_PLAN.md"]
+allowed_paths = [".agent/tasks/independent-verifier-receipt-cda212d7e1de.toml", "docs/2026-08-18-tdd-independent-verifier-receipt.md", "packages/devtools/src/kotekomi_devtools/cli.py", "packages/devtools/src/kotekomi_devtools/candidate_verifier.py", "packages/devtools/src/kotekomi_devtools/verification_plan.py", "packages/devtools/tests/acceptance/test_independent_verifier_receipt_contract.py", "packages/devtools/tests/unit/test_candidate_verifier.py", "docs/CHECK_PLAN.md"]
 reference_paths = ["packages/devtools/src/kotekomi_devtools/task_scope.py", "packages/devtools/src/kotekomi_devtools/verification_plan.py", "packages/devtools/src/kotekomi_devtools/verification_execution.py"]
 stop_conditions = ["the implementation modifies the Task Manifest schema", "the implementation changes a protected acceptance test", "the implementation promotes a task or changes the Acceptance Registry"]
 
