@@ -1,0 +1,60 @@
+schema_version = 2
+task_id = "tdd-feature-branch-resume-fe5ac6a07392"
+title = "Feature Branch Resume"
+status = "ready_for_terra_high"
+series_id = "tdd-harness-feature-branch"
+task_class = "repository-tooling"
+model_profile = "terra-high-v1"
+baseline_revision = "e7facc567e2b756fec67ae3a6dd6929330518a68"
+tdd_path = "docs/2026-08-18-tdd-feature-branch-resume.md"
+tdd_sha256 = "fe5ac6a073925517cad00d18292302e9b12ecd04f00da0fee301a8b72bdef785"
+goal = "Resume a feature-branch task after a candidate commit advances its branch."
+depends_on = ["tdd-feature-branch-default-7f13f74551a4"]
+allowed_paths = [".agent/tasks/tdd-feature-branch-resume-fe5ac6a07392.toml", "packages/devtools/src/kotekomi_devtools/tdd_workflow.py"]
+reference_paths = ["docs/2026-08-18-tdd-feature-branch-default.md", "packages/devtools/src/kotekomi_devtools/lifecycle_evidence.py", "packages/devtools/tests/acceptance/test_feature_branch_resume_contract.py"]
+stop_conditions = ["the workflow recreates a feature branch after initial branch evidence exists", "the implementation weakens initial branch creation validation", "the workflow validates an advanced feature tip"]
+
+[readiness]
+authority = "The Feature Branch Resume TDD defines this task."
+contract_family = "tdd-harness"
+dominant_outcome = "An active feature-branch run resumes after its candidate branch advances."
+failure_policy = "The workflow blocks conflicting initial branch evidence."
+legacy_disposition = "Historical direct-main records remain read-only."
+negative_proof = "The workflow does not recreate an existing feature branch."
+public_entry_point = "kotekomi-agent implement-tdd"
+scope_policy = "Feature branch resume logic only."
+side_effect_boundary = "Canonical Harness evidence only."
+unresolved_decisions = []
+
+[budget]
+maximum_production_files = 1
+maximum_test_files = 1
+maximum_production_diff_lines = 80
+
+[[protected_artifacts]]
+kind = "leaf-tdd"
+path = "docs/2026-08-18-tdd-feature-branch-resume.md"
+sha256 = "fe5ac6a073925517cad00d18292302e9b12ecd04f00da0fee301a8b72bdef785"
+
+[[protected_artifacts]]
+kind = "acceptance-test"
+path = "packages/devtools/tests/acceptance/test_feature_branch_resume_contract.py"
+sha256 = "6b1721a292258f567ac4613ec8f85da2fa4fa1c8bafac255ecae11a259da79ef"
+
+[[acceptance]]
+id = "feature-branch-resume-contract"
+argv = ["uv", "run", "pytest", "-p", "no:cacheprovider", "packages/devtools/tests/acceptance/test_feature_branch_resume_contract.py"]
+timeout_seconds = 120
+profile = "portable-local"
+
+[[acceptance]]
+id = "repository-static-checks"
+argv = ["uv", "run", "ruff", "check"]
+timeout_seconds = 120
+profile = "portable-local"
+
+[[acceptance]]
+id = "repository-type-checks"
+argv = ["uv", "run", "pyright"]
+timeout_seconds = 120
+profile = "portable-local"
