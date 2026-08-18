@@ -98,3 +98,13 @@ def test_run_check_path_is_stable() -> None:
     assert scope == "state" and path.endswith(
         "/checks/run-checks/" + __import__("hashlib").sha256(b"lint").hexdigest()[:16] + ".json"
     )
+
+
+def test_main_promotion_is_the_only_canonical_main_promotion_type() -> None:
+    scope, path = canonical_relative("main_promotion", "task", "task-run-001", "main")
+    assert (scope, path) == (
+        "state",
+        "experiments/task/runs/task-run-001/git/main-promotion.json",
+    )
+    with pytest.raises(EvidenceError, match="unknown evidence type"):
+        canonical_relative("main_merge", "task", "task-run-001", "main")

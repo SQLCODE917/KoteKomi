@@ -72,3 +72,70 @@ def test_workflow_blocks_ci_and_merge_evidence_for_the_wrong_commit(tmp_path: Pa
 
     assert (phase, action, missing) == ("candidate_ci", "blocked", [])
     assert diagnostics[0]["code"] == "workflow.candidate_ci_commit_mismatch"
+
+
+def test_workflow_selects_and_validates_main_promotion_evidence(tmp_path: Path) -> None:
+    def status_for(
+        directory: str, records: dict[str, dict[str, Any]]
+    ) -> tuple[str, str, list[str], list[dict[str, Any]]]:
+        root = tmp_path / directory
+        entries = [
+            {"evidence_type": "tdd_binding", "path": "binding.json"},
+            {"evidence_type": "task_manifest", "path": "manifest.toml"},
+            {"evidence_type": "task_manifest_validation", "path": "manifest-validation.json"},
+            {"evidence_type": "candidate_lifecycle", "path": "candidate-lifecycle.json"},
+        ]
+        for evidence_type, payload in records.items():
+            path = root / f"{evidence_type}.json"
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(json.dumps(payload))
+            entries.append({"evidence_type": evidence_type, "path": path.name})
+        return workflow_status(root, entries, True)
+
+    base: dict[str, dict[str, Any]] = {
+        "candidate_commit": {"commit_sha": "candidate", "parent_sha": "base"},
+        "verification_plan": {"planned_checks": []},
+        "verify_checks": {"status": "ready"},
+        "candidate_ci": {"conclusion": "success", "head_sha": "candidate"},
+    }
+    assert status_for("missing", base)[:3] == (
+        "main",
+        "produce_main_promotion_evidence",
+        ["main_promotion"],
+    )
+
+    direct = base | {
+        "main_promotion": {
+            "promotion_kind": "direct",
+            "promotion_commit": "different",
+            "parent_commit": "base",
+            "verified_parent_commit": None,
+        }
+    }
+    assert status_for("direct", direct)[1] == "blocked"
+    assert (
+        status_for("direct", direct)[3][0]["code"] == "workflow.main_promotion_candidate_mismatch"
+    )
+
+    merge = base | {
+        "main_promotion": {
+            "promotion_kind": "merge",
+            "promotion_commit": "merge",
+            "parent_commit": "base",
+            "verified_parent_commit": "different",
+        }
+    }
+    assert status_for("merge", merge)[1] == "blocked"
+
+    main_ci = base | {
+        "main_promotion": {
+            "promotion_kind": "direct",
+            "promotion_commit": "candidate",
+            "parent_commit": "base",
+            "verified_parent_commit": None,
+        },
+        "main_lifecycle": {"ready": True},
+        "main_ci": {"conclusion": "success", "head_sha": "different"},
+    }
+    assert status_for("main-ci", main_ci)[1] == "blocked"
+    assert status_for("main-ci", main_ci)[3][0]["code"] == "workflow.main_ci_commit_mismatch"

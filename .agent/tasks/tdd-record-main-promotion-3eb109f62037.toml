@@ -1,0 +1,60 @@
+schema_version = 1
+task_id = "tdd-record-main-promotion-3eb109f62037"
+title = "Record Main Promotion Contract Completion"
+status = "ready_for_terra_high"
+series_id = "tdd-harness-followup"
+task_class = "repository-tooling"
+model_profile = "terra-high-v1"
+baseline_revision = "de481d362cf83292b613ee9bd3a9d27d85d59611"
+tdd_path = "docs/2026-08-18-tdd-record-main-promotion.md"
+tdd_sha256 = "3eb109f620370a8ec1763f8f3081a63efad8c428df9805b91bfe7502501626c2"
+goal = "Prove direct and merge main promotion evidence contracts."
+depends_on = []
+allowed_paths = [".agent/tasks/tdd-record-main-promotion-3eb109f62037.toml", "docs/2026-08-18-tdd-record-main-promotion.md", "packages/devtools/tests/acceptance/test_lifecycle_evidence_producers_contract.py", "packages/devtools/tests/acceptance/test_tdd_workflow_contract.py", "packages/devtools/tests/unit/test_evidence_catalog.py", "packages/devtools/tests/unit/test_lifecycle_evidence.py", "packages/devtools/tests/unit/test_tdd_metrics.py"]
+reference_paths = ["packages/devtools/src/kotekomi_devtools/lifecycle_evidence.py", "packages/devtools/src/kotekomi_devtools/evidence_catalog.py", "packages/devtools/src/kotekomi_devtools/tdd_workflow.py", "packages/devtools/src/kotekomi_devtools/tdd_metrics.py"]
+stop_conditions = ["tests modify Git state outside disposable repositories", "the producer accepts a non-origin/main commit", "the implementation restores main_merge compatibility"]
+
+[readiness]
+authority = "The record-main-promotion TDD defines this contract-completion task."
+contract_family = "tdd-harness"
+dominant_outcome = "The Harness proves direct and merge main promotion evidence."
+failure_policy = "Invalid promotion facts block before canonical evidence writes."
+legacy_disposition = "main_merge remains removed."
+negative_proof = "The command does not mutate Git or remote state."
+public_entry_point = "kotekomi-agent record-main-promotion"
+scope_policy = "Tests and contract proof only."
+side_effect_boundary = "Canonical evidence and requested report copies only."
+unresolved_decisions = []
+
+[budget]
+maximum_production_files = 1
+maximum_test_files = 4
+maximum_production_diff_lines = 100
+
+[[protected_artifacts]]
+kind = "json-schema"
+path = ".agent/schemas/task-manifest-v1.schema.json"
+sha256 = "b505d4fd89eed61510a2cd669a8a96564927ed43309cd31ed786aff6fb63a460"
+
+[[protected_artifacts]]
+kind = "leaf-tdd"
+path = "docs/2026-08-18-tdd-record-main-promotion.md"
+sha256 = "3eb109f620370a8ec1763f8f3081a63efad8c428df9805b91bfe7502501626c2"
+
+[[acceptance]]
+id = "main-promotion-contract"
+argv = ["uv", "run", "pytest", "-p", "no:cacheprovider", "packages/devtools/tests/acceptance/test_lifecycle_evidence_producers_contract.py", "packages/devtools/tests/acceptance/test_tdd_workflow_contract.py", "packages/devtools/tests/unit/test_evidence_catalog.py", "packages/devtools/tests/unit/test_lifecycle_evidence.py", "packages/devtools/tests/unit/test_tdd_metrics.py"]
+timeout_seconds = 120
+profile = "portable-local"
+
+[[acceptance]]
+id = "repository-static-checks"
+argv = ["uv", "run", "ruff", "check"]
+timeout_seconds = 120
+profile = "portable-local"
+
+[[acceptance]]
+id = "repository-type-checks"
+argv = ["uv", "run", "pyright"]
+timeout_seconds = 120
+profile = "portable-local"

@@ -1,0 +1,67 @@
+import hashlib
+import json
+from pathlib import Path
+from typing import Any
+
+import pytest
+from kotekomi_devtools import tdd_metrics
+
+
+def test_metrics_requires_main_promotion_evidence(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    task = "task"
+    run = "task-run-001"
+    state = tmp_path / "state"
+    snapshot = state / "experiments" / task / "spec" / "tdd-snapshot.md"
+    snapshot.parent.mkdir(parents=True)
+    snapshot.write_text("# TDD\n")
+    tdd_sha256 = hashlib.sha256(snapshot.read_bytes()).hexdigest()
+    (snapshot.parent / "tdd-binding.json").write_text(
+        json.dumps(
+            {
+                "status": "ready",
+                "task_id": task,
+                "primary_tdd_path": "docs/tdd.md",
+                "tdd_paths": ["docs/tdd.md"],
+                "tdd_snapshot_path": str(snapshot),
+                "tdd_sha256": tdd_sha256,
+            }
+        )
+    )
+    runs = state / "experiments" / task / "runs"
+    runs.mkdir(parents=True)
+    (runs / "index.json").write_text(
+        json.dumps(
+            {
+                "runs": [
+                    {
+                        "implementation_run_id": run,
+                        "ordinal": 1,
+                        "status": "active",
+                    }
+                ]
+            }
+        )
+    )
+
+    def promotion_only_entries(_root: Path, _task: str, _run: str) -> list[dict[str, Any]]:
+        return [
+            {
+                "evidence_type": "main_promotion",
+                "path_scope": "state",
+                "path": "unused.json",
+            }
+        ]
+
+    monkeypatch.setattr(tdd_metrics, "validated_entries", promotion_only_entries)
+
+    code, collection = tdd_metrics.tdd_metrics("docs/tdd.md", state_root_path=state, run_id=run)
+
+    result = collection["metrics"][0]
+    assert code == 0
+    assert result["status"] == "partial"
+    assert result["present_evidence_count"] == 1
+    assert result["missing_evidence_count"] == 12
+    assert result["required_evidence_count"] == 13
+    assert "main_promotion" not in {item["rule"] for item in result["diagnostics"]}
