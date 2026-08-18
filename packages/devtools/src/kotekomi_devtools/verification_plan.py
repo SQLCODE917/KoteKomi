@@ -349,6 +349,34 @@ _H14_TOUCHED_PATH_CHECKS = {
             ),
         ),
     ),
+    "packages/devtools/src/kotekomi_devtools/candidate_verifier.py": (
+        (
+            "independent-verifier-receipt-contract",
+            (
+                "uv",
+                "run",
+                "pytest",
+                "-p",
+                "no:cacheprovider",
+                "packages/devtools/tests/acceptance/test_independent_verifier_receipt_contract.py",
+                "packages/devtools/tests/unit/test_candidate_verifier.py",
+            ),
+        ),
+    ),
+    "packages/devtools/tests/unit/test_candidate_verifier.py": (
+        (
+            "independent-verifier-receipt-contract",
+            (
+                "uv",
+                "run",
+                "pytest",
+                "-p",
+                "no:cacheprovider",
+                "packages/devtools/tests/acceptance/test_independent_verifier_receipt_contract.py",
+                "packages/devtools/tests/unit/test_candidate_verifier.py",
+            ),
+        ),
+    ),
 }
 
 
@@ -591,7 +619,7 @@ def _checks(
 
 
 def _has_shared_rule(path: str) -> bool:
-    return path == _CLI_PATH
+    return path in {_CLI_PATH, "docs/CHECK_PLAN.md"}
 
 
 def _changed_paths(base_revision: str, head_revision: str) -> tuple[str, ...]:

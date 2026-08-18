@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from kotekomi_devtools.candidate_verifier import verify_candidate
 from kotekomi_devtools.evidence_catalog import (
     read_index,
     state_root,
@@ -122,6 +123,7 @@ def _dispatch_command(arguments: argparse.Namespace) -> CliResponse | int:
         "run-check": _handle_verification_command,
         "verify-checks": _handle_verification_command,
         "verification-plan": _handle_verification_command,
+        "verify-candidate": _handle_verification_command,
         "task-ledger": _handle_ledger_command,
         "record-candidate-commit": _handle_lifecycle_evidence_command,
         "record-candidate-ci": _handle_lifecycle_evidence_command,
@@ -336,6 +338,15 @@ def _handle_reporting_command(arguments: argparse.Namespace) -> CliResponse:
 
 
 def _handle_verification_command(arguments: argparse.Namespace) -> CliResponse:
+    if arguments.command == "verify-candidate":
+        result = verify_candidate(
+            arguments.manifest,
+            base_revision=arguments.base,
+            specification_revision=arguments.specification,
+            candidate_revision=arguments.candidate,
+            profile=arguments.profile,
+        )
+        return CliResponse(result.exit_code, result.as_json())
     if arguments.command == "run-check":
         command_argv = tuple(arguments.argv)
         if command_argv[:1] == ("--",):
@@ -644,6 +655,17 @@ def _build_parser() -> argparse.ArgumentParser:
     verification_plan.add_argument("--run")
     verification_plan.add_argument(
         "--state-root", type=Path, default=Path("~/.local/state/kotekomi")
+    )
+    verify_candidate = subparsers.add_parser(
+        "verify-candidate",
+        help="Verify one frozen candidate and commit an immutable receipt.",
+    )
+    verify_candidate.add_argument("--manifest", type=Path, required=True)
+    verify_candidate.add_argument("--base", required=True)
+    verify_candidate.add_argument("--specification", required=True)
+    verify_candidate.add_argument("--candidate", required=True)
+    verify_candidate.add_argument(
+        "--profile", required=True, choices=("portable-local", "authoritative-linux")
     )
     step_preflight = subparsers.add_parser(
         "step-preflight", help="Record deterministic local step preflight state."
