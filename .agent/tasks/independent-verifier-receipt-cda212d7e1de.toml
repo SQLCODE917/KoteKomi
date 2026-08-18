@@ -27,7 +27,7 @@ side_effect_boundary = "One tracked Verification Receipt commit and one verifica
 unresolved_decisions = []
 
 [budget]
-maximum_production_files = 2
+maximum_production_files = 3
 maximum_test_files = 2
 maximum_production_diff_lines = 600
 
