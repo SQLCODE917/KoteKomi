@@ -1,0 +1,55 @@
+schema_version = 2
+task_id = "tdd-merged-feature-branch-reconciliation-caca33eead8d"
+title = "Merged Feature Branch Reconciliation"
+status = "ready_for_terra_high"
+series_id = "tdd-harness-feature-branch"
+task_class = "repository-tooling"
+model_profile = "terra-high-v1"
+baseline_revision = "d9b43fa160314ff248ab66b21749cbb5de74ba33"
+tdd_path = "docs/2026-08-18-tdd-merged-feature-branch-reconciliation.md"
+tdd_sha256 = "caca33eead8d1ce04163a317f9f35051cc3bb4f5b4ccc4b95c8cc5e6b0b1372d"
+goal = "Close eligible historical feature merges with portable result and cleanup evidence."
+depends_on = ["tdd-feature-branch-default-7f13f74551a4", "tdd-metrics-repair-history-e05ab3f473a8"]
+allowed_paths = [".agent/tasks/tdd-merged-feature-branch-reconciliation-caca33eead8d.toml", "packages/devtools/src/kotekomi_devtools/cli.py", "packages/devtools/src/kotekomi_devtools/evidence_catalog.py", "packages/devtools/src/kotekomi_devtools/feature_branch_reconciliation.py", "packages/devtools/src/kotekomi_devtools/tdd_metrics.py", "packages/devtools/src/kotekomi_devtools/tdd_workflow.py", "packages/devtools/tests/acceptance/test_merged_feature_branch_reconciliation_contract.py", "packages/devtools/tests/acceptance/test_tdd_workflow_contract.py", "packages/devtools/tests/unit/test_evidence_catalog.py", "packages/devtools/tests/unit/test_feature_branch_reconciliation.py", "packages/devtools/tests/unit/test_tdd_metrics.py"]
+reference_paths = ["docs/2026-08-18-tdd-feature-branch-promotion-completion.md", "packages/devtools/src/kotekomi_devtools/lifecycle_evidence.py", "packages/devtools/tests/acceptance/test_lifecycle_evidence_producers_contract.py"]
+stop_conditions = ["the command changes origin/main", "the command changes historical candidate CI evidence", "the command deletes a branch before publishing the result tag", "the command force-pushes a branch or result tag"]
+
+[readiness]
+authority = "The Merged Feature Branch Reconciliation TDD defines this task."
+contract_family = "tdd-harness"
+dominant_outcome = "An eligible historic feature merge receives a portable completed result and cleanup evidence."
+failure_policy = "Invalid evidence, topology, CI, tag, or deletion facts block with deterministic diagnostics."
+legacy_disposition = "Historical candidate CI records remain read-only evidence."
+negative_proof = "The reconciliation producer does not create or change a main commit."
+public_entry_point = "kotekomi-agent reconcile-merged-feature-branch"
+scope_policy = "Reconciliation, catalog, workflow, metrics, and deterministic tests only."
+side_effect_boundary = "Result tag and non-force feature-branch deletion after final-main CI validation."
+unresolved_decisions = []
+
+[budget]
+maximum_production_files = 5
+maximum_test_files = 4
+maximum_production_diff_lines = 600
+
+[[protected_artifacts]]
+kind = "leaf-tdd"
+path = "docs/2026-08-18-tdd-merged-feature-branch-reconciliation.md"
+sha256 = "caca33eead8d1ce04163a317f9f35051cc3bb4f5b4ccc4b95c8cc5e6b0b1372d"
+
+[[acceptance]]
+id = "merged-feature-branch-reconciliation-contract"
+argv = ["uv", "run", "pytest", "-p", "no:cacheprovider", "packages/devtools/tests/acceptance/test_merged_feature_branch_reconciliation_contract.py", "packages/devtools/tests/acceptance/test_tdd_workflow_contract.py", "packages/devtools/tests/unit/test_evidence_catalog.py", "packages/devtools/tests/unit/test_feature_branch_reconciliation.py", "packages/devtools/tests/unit/test_tdd_metrics.py"]
+timeout_seconds = 180
+profile = "portable-local"
+
+[[acceptance]]
+id = "repository-static-checks"
+argv = ["uv", "run", "ruff", "check"]
+timeout_seconds = 120
+profile = "portable-local"
+
+[[acceptance]]
+id = "repository-type-checks"
+argv = ["uv", "run", "pyright"]
+timeout_seconds = 120
+profile = "portable-local"
