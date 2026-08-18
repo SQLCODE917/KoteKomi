@@ -1,0 +1,65 @@
+schema_version = 1
+task_id = "tdd-feature-branch-default-7f13f74551a4"
+title = "Feature Branch Default"
+status = "ready_for_terra_high"
+series_id = "tdd-harness-feature-branch"
+task_class = "repository-tooling"
+model_profile = "terra-high-v1"
+baseline_revision = "a750ed2fd6dcaa1d0eee3db2fa2f5586feb962ef"
+tdd_path = "docs/2026-08-18-tdd-feature-branch-default.md"
+tdd_sha256 = "7f13f74551a493e20f71dd4283d72c898654d53c0fab6f84fff7babf3f2d8ec7"
+goal = "Make Task Manifest V2 feature branches the default active Harness flow."
+depends_on = []
+allowed_paths = [".agent/schemas/task-manifest-v2.schema.json", ".agent/tasks/tdd-feature-branch-default-7f13f74551a4.toml", "packages/devtools/src/kotekomi_devtools/cli.py", "packages/devtools/src/kotekomi_devtools/evidence_catalog.py", "packages/devtools/src/kotekomi_devtools/lifecycle_evidence.py", "packages/devtools/src/kotekomi_devtools/task_manifest.py", "packages/devtools/src/kotekomi_devtools/tdd_workflow.py", "packages/devtools/tests/acceptance/test_tdd_workflow_contract.py", "packages/devtools/tests/unit/test_evidence_catalog.py", "packages/devtools/tests/unit/test_lifecycle_evidence.py", "packages/devtools/tests/unit/test_task_manifest_cli.py"]
+reference_paths = [".agent/schemas/task-manifest-v1.schema.json", "docs/2026-08-13-tdd-run-evidence-catalog.md", "packages/devtools/src/kotekomi_devtools/tdd_binding.py", "packages/devtools/tests/acceptance/test_feature_branch_default_contract.py"]
+stop_conditions = ["the implementation changes Task Manifest V1 validation", "a V2 run accepts a candidate that is not the remote feature tip", "an active run creates or resumes direct-main promotion"]
+
+[readiness]
+authority = "The Feature Branch Default TDD defines this task."
+contract_family = "tdd-harness"
+dominant_outcome = "A valid V2 task starts on its pushed feature branch."
+failure_policy = "Invalid manifest, specification, branch, and candidate topology block before evidence publication."
+legacy_disposition = "Task Manifest V1 and direct-main records remain read-only historical input."
+negative_proof = "The feature-branch producer does not switch the caller worktree or force-push."
+public_entry_point = "kotekomi-agent implement-tdd and record-candidate-commit"
+scope_policy = "Manifest-version, specification, feature-branch, candidate, catalog, and workflow contracts only."
+side_effect_boundary = "Canonical state evidence and non-force local and origin feature refs."
+unresolved_decisions = []
+
+[budget]
+maximum_production_files = 6
+maximum_test_files = 4
+maximum_production_diff_lines = 700
+
+[[protected_artifacts]]
+kind = "json-schema"
+path = ".agent/schemas/task-manifest-v1.schema.json"
+sha256 = "b505d4fd89eed61510a2cd669a8a96564927ed43309cd31ed786aff6fb63a460"
+
+[[protected_artifacts]]
+kind = "leaf-tdd"
+path = "docs/2026-08-18-tdd-feature-branch-default.md"
+sha256 = "7f13f74551a493e20f71dd4283d72c898654d53c0fab6f84fff7babf3f2d8ec7"
+
+[[protected_artifacts]]
+kind = "acceptance-test"
+path = "packages/devtools/tests/acceptance/test_feature_branch_default_contract.py"
+sha256 = "e7710f2f9055c510f01fc4c1fe8241414d1a657d9495a970cba781af95e098ce"
+
+[[acceptance]]
+id = "feature-branch-default-contract"
+argv = ["uv", "run", "pytest", "-p", "no:cacheprovider", "packages/devtools/tests/acceptance/test_feature_branch_default_contract.py", "packages/devtools/tests/acceptance/test_tdd_workflow_contract.py", "packages/devtools/tests/unit/test_evidence_catalog.py", "packages/devtools/tests/unit/test_lifecycle_evidence.py", "packages/devtools/tests/unit/test_task_manifest_cli.py"]
+timeout_seconds = 120
+profile = "portable-local"
+
+[[acceptance]]
+id = "repository-static-checks"
+argv = ["uv", "run", "ruff", "check"]
+timeout_seconds = 120
+profile = "portable-local"
+
+[[acceptance]]
+id = "repository-type-checks"
+argv = ["uv", "run", "pyright"]
+timeout_seconds = 120
+profile = "portable-local"
