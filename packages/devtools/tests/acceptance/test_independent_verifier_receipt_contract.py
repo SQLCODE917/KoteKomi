@@ -211,7 +211,7 @@ def test_verify_candidate_commits_a_receipt_that_binds_frozen_revisions(tmp_path
 
 
 def test_verify_candidate_records_protected_artifact_failure_and_retry(tmp_path: Path) -> None:
-    repo, base, specification, candidate, fake_bin = _repo(tmp_path)
+    repo, base, specification, _candidate, fake_bin = _repo(tmp_path)
     write_fixture_text(
         repo / "packages/devtools/tests/acceptance/example_contract.py",
         "def test_contract() -> None:\n    assert False\n",
@@ -230,7 +230,7 @@ def test_verify_candidate_records_protected_artifact_failure_and_retry(tmp_path:
 
 
 def test_verify_candidate_rejects_manifest_drift_without_a_receipt(tmp_path: Path) -> None:
-    repo, base, specification, candidate, fake_bin = _repo(tmp_path)
+    repo, base, specification, _candidate, fake_bin = _repo(tmp_path)
     manifest = repo / ".agent/tasks/independent-verifier-example.toml"
     manifest.write_text(manifest.read_text(encoding="utf-8") + "\n", encoding="utf-8")
     drifted = _commit(repo, "drift manifest")
