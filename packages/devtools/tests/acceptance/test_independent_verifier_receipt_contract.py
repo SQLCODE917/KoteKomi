@@ -115,7 +115,9 @@ def _repo(tmp_path: Path) -> tuple[Path, str, str, str, Path]:
     repo = tmp_path / "repo"
     repo.mkdir()
     init_git_repo(repo)
-    shutil.copyfile(SCHEMA_SOURCE, repo / ".agent/schemas/task-manifest-v1.schema.json")
+    schema = repo / ".agent/schemas/task-manifest-v1.schema.json"
+    schema.parent.mkdir(parents=True)
+    shutil.copyfile(SCHEMA_SOURCE, schema)
     write_fixture_text(repo / "docs/example-tdd.md", "# Example TDD\n")
     write_fixture_text(
         repo / "packages/devtools/tests/acceptance/example_contract.py",
