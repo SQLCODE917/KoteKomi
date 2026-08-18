@@ -407,13 +407,33 @@ def implement_tdd(
         if manifest_identity.get("schema_version") == 2:
             try:
                 specification = _record_specification(root, task, run_id, manifest)
-                branch_result = create_feature_branch(
-                    task_id=task,
-                    run_id=run_id,
-                    specification_revision=specification,
-                    manifest_sha256=hashlib.sha256(manifest.read_bytes()).hexdigest(),
-                    state_root_path=root,
+                existing = next(
+                    (
+                        item
+                        for item in validated_entries(root, task, run_id)
+                        if item["evidence_type"] == "feature_branch"
+                    ),
+                    None,
                 )
+                if existing is not None:
+                    branch = _read(root / existing["path"])
+                    if (
+                        branch.get("branch") != f"feature/{task}"
+                        or branch.get("specification_revision") != specification
+                    ):
+                        raise EvidenceError(
+                            "feature branch evidence conflicts with specification revision"
+                        )
+                    feature_branch = str(branch["branch"])
+                else:
+                    branch_result = create_feature_branch(
+                        task_id=task,
+                        run_id=run_id,
+                        specification_revision=specification,
+                        manifest_sha256=hashlib.sha256(manifest.read_bytes()).hexdigest(),
+                        state_root_path=root,
+                    )
+                    feature_branch = cast(str, branch_result.payload["branch"])
             except (EvidenceError, LifecycleEvidenceError) as error:
                 return 1, {
                     "schema_version": 1,
@@ -428,7 +448,6 @@ def implement_tdd(
                         }
                     ],
                 }
-            feature_branch = cast(str, branch_result.payload["branch"])
     try:
         rebuild_index(root, task, run_id)
         entries = validated_entries(root, task, run_id)
