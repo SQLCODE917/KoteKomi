@@ -208,7 +208,10 @@ def test_verify_candidate_commits_a_receipt_that_binds_frozen_revisions(tmp_path
 
 def test_verify_candidate_records_protected_artifact_failure_and_retry(tmp_path: Path) -> None:
     repo, base, specification, candidate, fake_bin = _repo(tmp_path)
-    write_fixture_text(repo / "docs/example-tdd.md", "# Changed TDD\n")
+    write_fixture_text(
+        repo / "packages/devtools/tests/acceptance/example_contract.py",
+        "def test_contract() -> None:\n    assert False\n",
+    )
     changed_candidate = _commit(repo, "changed protected artifact")
 
     failed = _verify(repo, fake_bin, base, specification, changed_candidate)
