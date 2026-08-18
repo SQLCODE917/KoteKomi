@@ -1,5 +1,5 @@
 schema_version = 1
-task_id = "tdd-independent-verifier-receipt-cda212d7e1de"
+task_id = "independent-verifier-receipt-cda212d7e1de"
 title = "Independent Verifier Receipt"
 status = "ready_for_terra_high"
 series_id = "tdd-harness-followup"
