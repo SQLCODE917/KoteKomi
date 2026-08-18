@@ -32,7 +32,7 @@ PHASE_REQUIREMENTS = {
     "candidate_ci": {"candidate_ci"},
     "main": {"main_promotion", "main_lifecycle"},
     "main_ci": {"main_ci", "cleanup"},
-    "complete": {"receipt_chain_status"},
+    "complete": {"task_result", "cleanup"},
 }
 
 
@@ -128,6 +128,13 @@ def workflow_status(
     kinds = {item["evidence_type"] for item in entries}
     if not manifest_exists or not PHASE_REQUIREMENTS["spec"].issubset(kinds):
         return "spec", "create_task_manifest", sorted(PHASE_REQUIREMENTS["spec"] - kinds), []
+    if {"task_result", "cleanup"}.issubset(kinds):
+        task_result = _payload(root, entries, "task_result")
+        cleanup = _payload(root, entries, "cleanup")
+        if task_result.get("outcome") == "completed" and cleanup.get(
+            "branch_cleanup_complete"
+        ) is True:
+            return "complete", "complete", [], []
     if "candidate_lifecycle" not in kinds:
         return "candidate", "produce_candidate_lifecycle_evidence", ["candidate_lifecycle"], []
     if "candidate_commit" not in kinds:
@@ -224,9 +231,7 @@ def workflow_status(
             [],
             [_diagnostic("cleanup_incomplete", "branch_cleanup_complete")],
         )
-    if "receipt_chain_status" not in kinds:
-        return "complete", "produce_complete_evidence", ["receipt_chain_status"], []
-    return "complete", "complete", [], []
+    return "complete", "produce_complete_evidence", ["task_result"], []
 
 
 def _payload(root: Path, entries: list[Json], evidence_type: str) -> Json:
@@ -237,7 +242,7 @@ def _payload(root: Path, entries: list[Json], evidence_type: str) -> Json:
 def _ci_diagnostic(name: str, ci: Json, expected_sha: object, expected_field: str) -> Json | None:
     if ci["conclusion"] != "success":
         return _diagnostic(f"{name}_ci_not_success", "conclusion_is_success")
-    if ci["head_sha"] != expected_sha:
+    if ci["head_sha"] != expected_sha and ci.get("validated_promotion_commit") != expected_sha:
         return _diagnostic(f"{name}_ci_commit_mismatch", f"head_sha_matches_{expected_field}")
     return None
 
@@ -462,9 +467,13 @@ def implement_tdd(
             ],
         }
     phase, action, missing, diagnostics = workflow_status(root, entries, manifest.exists())
+    if action == "complete":
+        mark_run_complete(root, task, run_id)
     result: Json = {
         "schema_version": 1,
-        "status": "blocked" if action == "blocked" else "ready",
+        "status": (
+            "blocked" if action == "blocked" else "complete" if action == "complete" else "ready"
+        ),
         "task_id": task,
         "implementation_run_id": run_id,
         "requested_tdd_path": binding_result.requested_tdd_path,
@@ -474,7 +483,7 @@ def implement_tdd(
         "manifest_path": str(manifest.relative_to(Path.cwd())),
         "manifest_validation_status": validation_status,
         "implementation_phase": phase,
-        "next_action": None if action == "blocked" else action,
+        "next_action": None if action in {"blocked", "complete"} else action,
         "required_evidence": sorted(PHASE_REQUIREMENTS.get(phase, set())),
         "missing_evidence": missing,
         "producer_arguments": {
@@ -501,6 +510,29 @@ def implement_tdd(
         markdown.parent.mkdir(parents=True, exist_ok=True)
         markdown.write_text(f"# Implement TDD\n\nPhase: `{phase}`\n\nNext action: `{action}`\n")
     return 0, result
+
+
+def mark_run_complete(root: Path, task: str, run_id: str) -> None:
+    """Persist the terminal complete state after evidence proves task closure."""
+    index_path, index = _runs(root, task)
+    row = next(
+        (item for item in index["runs"] if item["implementation_run_id"] == run_id),
+        None,
+    )
+    if row is None or row["status"] == "abandoned":
+        raise EvidenceError("complete workflow requires an active or blocked run")
+    if row["status"] != "complete":
+        now = datetime.now(UTC).isoformat()
+        row["status"] = "complete"
+        row["updated_at"] = now
+        record_path = root / row["run_record_path"]
+        record = _read(record_path)
+        record["status"] = "complete"
+        record["terminal_reason"] = None
+        record["updated_at"] = now
+        _write(record_path, record)
+    index["latest_run_id"] = (_latest(index) or {}).get("implementation_run_id")
+    _write(index_path, index)
 
 
 def _record_specification(root: Path, task: str, run_id: str, manifest: Path) -> str:

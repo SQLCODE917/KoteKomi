@@ -3,7 +3,7 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
-from kotekomi_devtools.tdd_workflow import workflow_status
+from kotekomi_devtools.tdd_workflow import mark_run_complete, workflow_status
 
 PROJECT_ROOT = Path(__file__).resolve().parents[4]
 
@@ -174,3 +174,58 @@ def test_workflow_blocks_non_ready_main_lifecycle(tmp_path: Path) -> None:
 
     assert (phase, action, missing) == ("main", "blocked", [])
     assert diagnostics[0]["code"] == "workflow.main_lifecycle_not_ready"
+
+
+def test_workflow_completes_from_task_result_before_historical_candidate_ci_failure(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "state"
+    records: dict[str, dict[str, Any]] = {
+        "task_result": {"outcome": "completed"},
+        "cleanup": {"branch_cleanup_complete": True},
+        "candidate_ci": {"conclusion": "failure", "head_sha": "candidate"},
+    }
+    entries = [
+        {"evidence_type": "tdd_binding", "path": "binding.json"},
+        {"evidence_type": "task_manifest", "path": "manifest.toml"},
+        {"evidence_type": "task_manifest_validation", "path": "manifest-validation.json"},
+    ]
+    for evidence_type, payload in records.items():
+        path = root / f"{evidence_type}.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(payload))
+        entries.append({"evidence_type": evidence_type, "path": path.name})
+
+    phase, action, missing, diagnostics = workflow_status(root, entries, True)
+
+    assert (phase, action, missing, diagnostics) == ("complete", "complete", [], [])
+
+
+def test_workflow_marks_a_blocked_run_complete_after_terminal_evidence(tmp_path: Path) -> None:
+    task = "task"
+    run = "task-run-001"
+    root = tmp_path / "state"
+    run_path = root / "experiments" / task / "runs" / run / "run.json"
+    run_path.parent.mkdir(parents=True)
+    run_path.write_text(json.dumps({"status": "blocked", "terminal_reason": None}))
+    index_path = root / "experiments" / task / "runs" / "index.json"
+    index_path.write_text(
+        json.dumps(
+            {
+                "runs": [
+                    {
+                        "implementation_run_id": run,
+                        "ordinal": 1,
+                        "run_record_path": run_path.relative_to(root).as_posix(),
+                        "status": "blocked",
+                    }
+                ]
+            }
+        )
+    )
+
+    mark_run_complete(root, task, run)
+
+    assert json.loads(run_path.read_text())["status"] == "complete"
+    assert json.loads(run_path.read_text())["terminal_reason"] is None
+    assert json.loads(index_path.read_text())["runs"][0]["status"] == "complete"

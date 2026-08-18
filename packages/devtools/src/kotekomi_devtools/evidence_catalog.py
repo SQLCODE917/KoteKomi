@@ -47,6 +47,14 @@ _TRUSTED_FIELDS: dict[str, tuple[str, ...]] = {
     "main_lifecycle": ("ready", "diagnostics"),
     "main_ci": ("conclusion", "head_sha"),
     "cleanup": ("branch_cleanup_complete", "remaining_branches"),
+    "task_result": (
+        "schema_version",
+        "outcome",
+        "tag",
+        "target_commit",
+        "tag_message_sha256",
+        "diagnostics",
+    ),
     "receipt_chain_status": (
         "status",
         "receipt_total_count",
@@ -124,6 +132,11 @@ def _event_outcome(evidence_type: str, payload: Json) -> str:
         if conclusion in {"success", "failure", "cancelled", "skipped"}:
             return cast(str, conclusion)
         raise EvidenceError(f"{evidence_type} requires a CI conclusion for event outcome")
+    if evidence_type == "task_result":
+        outcome = payload.get("outcome")
+        if outcome in {"completed", "abandoned"}:
+            return cast(str, outcome)
+        raise EvidenceError("task_result requires completed or abandoned outcome")
     if evidence_type == "cleanup":
         complete = payload.get("branch_cleanup_complete")
         if type(complete) is not bool:
@@ -209,6 +222,7 @@ def canonical_relative(
         "main_lifecycle": f"{run}/lifecycle/main.json",
         "main_ci": f"{run}/ci/main.json",
         "cleanup": f"{run}/cleanup/branch-cleanup.json",
+        "task_result": f"{run}/results/task-result.json",
         "receipt_chain_status": f"{run}/receipts/receipt-chain-status.json",
         "metrics_record": f"{run}/metrics/tdd-metrics.json",
         "scorecard_record": f"{run}/scorecard/tdd-scorecard.json",
@@ -298,6 +312,7 @@ def rebuild_index(root: Path, task: str, run: str) -> Json:
         ("main", "main_lifecycle", "main"),
         ("main_ci", "main_ci", "main"),
         ("main_ci", "cleanup", "cleanup"),
+        ("complete", "task_result", "result"),
         ("complete", "receipt_chain_status", "receipt-chain"),
         ("complete", "metrics_record", run),
         ("complete", "scorecard_record", run),
@@ -440,4 +455,8 @@ def validated_entries(root: Path, task: str, run: str) -> list[Json]:
             raise EvidenceError(
                 f"evidence fields missing for {entry['evidence_type']}: {', '.join(missing)}"
             )
+        if entry["evidence_type"] == "main_ci":
+            promotion = payload.get("validated_promotion_commit")
+            if promotion is not None and not isinstance(promotion, str):
+                raise EvidenceError("main_ci validated_promotion_commit must be a string")
     return entries

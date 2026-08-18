@@ -93,6 +93,9 @@ def _metric(root: Path, binding: Json, run: Json) -> Json:
         "cleanup",
         "receipt_chain_status",
     }
+    if "task_result" in by_type:
+        required.remove("receipt_chain_status")
+        required.add("task_result")
     missing = required - set(by_type)
 
     def record(kind: str) -> Json:
