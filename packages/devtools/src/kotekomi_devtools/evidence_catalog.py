@@ -28,6 +28,17 @@ _TRUSTED_FIELDS: dict[str, tuple[str, ...]] = {
     "feature_branch": ("branch", "specification_revision"),
     "candidate_lifecycle": ("ready", "diagnostics"),
     "candidate_commit": ("commit_sha", "parent_sha"),
+    "candidate_verification_receipt": (
+        "schema_version",
+        "outcome",
+        "profile",
+        "receipt_path",
+        "receipt_sha256",
+        "receipt_commit",
+        "base_revision",
+        "specification_revision",
+        "candidate_revision",
+    ),
     "verification_plan": ("status", "planned_checks"),
     "run_check": ("check_id", "outcome", "diagnostics"),
     "verify_checks": (
@@ -202,6 +213,9 @@ def canonical_relative(
         "feature_branch": f"{run}/git/feature-branch.json",
         "candidate_lifecycle": f"{run}/lifecycle/candidate.json",
         "candidate_commit": f"{run}/git/candidate-commit.json",
+        "candidate_verification_receipt": (
+            f"{run}/receipts/candidate-verification-{subject_id}.json"
+        ),
         "verification_plan": f"{run}/verification/verification-plan.json",
         "verify_checks": f"{run}/checks/verify-checks.json",
         "candidate_ci": f"{run}/ci/candidate.json",
@@ -216,6 +230,11 @@ def canonical_relative(
     }
     if evidence_type == "task_manifest":
         return "repo", f".agent/tasks/{task_id}.toml"
+    if evidence_type == "candidate_verification_receipt" and subject_id not in {
+        "portable-local",
+        "authoritative-linux",
+    }:
+        raise EvidenceError("candidate verification receipt requires a known profile subject")
     if evidence_type == "run_check":
         return (
             "state",
@@ -291,6 +310,8 @@ def rebuild_index(root: Path, task: str, run: str) -> Json:
         ("candidate", "feature_branch", "feature-branch"),
         ("candidate", "candidate_lifecycle", "candidate"),
         ("candidate", "candidate_commit", "candidate"),
+        ("verification", "candidate_verification_receipt", "portable-local"),
+        ("verification", "candidate_verification_receipt", "authoritative-linux"),
         ("verification", "verification_plan", "plan"),
         ("verification", "verify_checks", "verify-checks"),
         ("candidate_ci", "candidate_ci", "candidate"),

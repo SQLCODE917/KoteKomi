@@ -174,3 +174,13 @@ def test_main_promotion_is_the_only_canonical_main_promotion_type() -> None:
     )
     with pytest.raises(EvidenceError, match="unknown evidence type"):
         canonical_relative("main_merge", "task", "task-run-001", "main")
+
+
+def test_candidate_verification_receipts_use_profile_specific_canonical_paths() -> None:
+    scope, path = canonical_relative(
+        "candidate_verification_receipt", "task", "task-run-001", "portable-local"
+    )
+    assert (scope, path) == (
+        "state",
+        "experiments/task/runs/task-run-001/receipts/candidate-verification-portable-local.json",
+    )

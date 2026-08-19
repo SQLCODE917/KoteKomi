@@ -3,7 +3,7 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
-from kotekomi_devtools.tdd_workflow import workflow_status
+from kotekomi_devtools.tdd_workflow import _suggested_commands, workflow_status
 
 PROJECT_ROOT = Path(__file__).resolve().parents[4]
 
@@ -51,9 +51,16 @@ def test_workflow_creates_run_and_requests_manifest(tmp_path: Path) -> None:
 def test_workflow_blocks_ci_and_merge_evidence_for_the_wrong_commit(tmp_path: Path) -> None:
     root = tmp_path / "state"
     records: dict[str, dict[str, Any]] = {
+        "specification_revision": {"specification_revision": "specification"},
         "candidate_commit": {"commit_sha": "candidate", "parent_sha": "base"},
         "verification_plan": {"planned_checks": []},
         "verify_checks": {"status": "ready"},
+        "candidate_verification_receipt": {
+            "outcome": "passed",
+            "receipt_commit": "receipt",
+            "specification_revision": "specification",
+            "candidate_revision": "candidate",
+        },
         "candidate_ci": {"conclusion": "success", "head_sha": "different"},
     }
     entries = [
@@ -93,10 +100,17 @@ def test_workflow_selects_and_validates_main_promotion_evidence(tmp_path: Path) 
         return workflow_status(root, entries, True)
 
     base: dict[str, dict[str, Any]] = {
+        "specification_revision": {"specification_revision": "specification"},
         "candidate_commit": {"commit_sha": "candidate", "parent_sha": "base"},
         "verification_plan": {"planned_checks": []},
         "verify_checks": {"status": "ready"},
-        "candidate_ci": {"conclusion": "success", "head_sha": "candidate"},
+        "candidate_verification_receipt": {
+            "outcome": "passed",
+            "receipt_commit": "receipt",
+            "specification_revision": "specification",
+            "candidate_revision": "candidate",
+        },
+        "candidate_ci": {"conclusion": "success", "head_sha": "receipt"},
     }
     assert status_for("missing", base)[:3] == (
         "main",
@@ -130,7 +144,7 @@ def test_workflow_selects_and_validates_main_promotion_evidence(tmp_path: Path) 
     main_ci = base | {
         "main_promotion": {
             "promotion_kind": "direct",
-            "promotion_commit": "candidate",
+            "promotion_commit": "receipt",
             "parent_commit": "base",
             "verified_parent_commit": None,
         },
@@ -144,13 +158,20 @@ def test_workflow_selects_and_validates_main_promotion_evidence(tmp_path: Path) 
 def test_workflow_blocks_non_ready_main_lifecycle(tmp_path: Path) -> None:
     root = tmp_path / "state"
     records: dict[str, dict[str, Any]] = {
+        "specification_revision": {"specification_revision": "specification"},
         "candidate_commit": {"commit_sha": "candidate", "parent_sha": "base"},
         "verification_plan": {"planned_checks": []},
         "verify_checks": {"status": "ready"},
-        "candidate_ci": {"conclusion": "success", "head_sha": "candidate"},
+        "candidate_verification_receipt": {
+            "outcome": "passed",
+            "receipt_commit": "receipt",
+            "specification_revision": "specification",
+            "candidate_revision": "candidate",
+        },
+        "candidate_ci": {"conclusion": "success", "head_sha": "receipt"},
         "main_promotion": {
             "promotion_kind": "direct",
-            "promotion_commit": "candidate",
+            "promotion_commit": "receipt",
             "parent_commit": "base",
             "verified_parent_commit": None,
         },
@@ -174,3 +195,55 @@ def test_workflow_blocks_non_ready_main_lifecycle(tmp_path: Path) -> None:
 
     assert (phase, action, missing) == ("main", "blocked", [])
     assert diagnostics[0]["code"] == "workflow.main_lifecycle_not_ready"
+
+
+def test_workflow_requires_and_derives_a_portable_candidate_receipt_command(tmp_path: Path) -> None:
+    manifest = tmp_path / "task.toml"
+    manifest.write_text('baseline_revision = "base"\n', encoding="utf-8")
+    root = tmp_path / "state"
+    records = {
+        "specification_revision": {"specification_revision": "specification"},
+        "candidate_commit": {"commit_sha": "candidate", "parent_sha": "base"},
+        "verification_plan": {"planned_checks": []},
+        "verify_checks": {"status": "ready"},
+    }
+    entries = [
+        {"evidence_type": "tdd_binding", "path": "binding.json"},
+        {"evidence_type": "task_manifest", "path": "manifest.toml"},
+        {"evidence_type": "task_manifest_validation", "path": "manifest-validation.json"},
+        {"evidence_type": "candidate_lifecycle", "path": "candidate-lifecycle.json"},
+    ]
+    for evidence_type, payload in records.items():
+        path = root / f"{evidence_type}.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(payload))
+        entries.append({"evidence_type": evidence_type, "path": path.name})
+
+    assert workflow_status(root, entries, True)[:3] == (
+        "verification",
+        "verify_candidate",
+        ["candidate_verification_receipt"],
+    )
+    command = _suggested_commands(
+        "verify_candidate", "task", "task-run-001", str(manifest), root, entries
+    )[0]
+
+    assert command == {
+        "command": "verify-candidate",
+        "arguments": [
+            "--manifest",
+            str(manifest),
+            "--base",
+            "base",
+            "--specification",
+            "specification",
+            "--candidate",
+            "candidate",
+            "--profile",
+            "portable-local",
+            "--task-id",
+            "task",
+            "--run",
+            "task-run-001",
+        ],
+    }

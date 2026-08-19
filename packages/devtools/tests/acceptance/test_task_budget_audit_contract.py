@@ -27,6 +27,7 @@ SCHEMA_SOURCE = REPO_ROOT / ".agent" / "schemas" / "task-manifest-v1.schema.json
 CLI_NAME = "kotekomi-agent"
 MANIFEST_RELATIVE = ".agent/tasks/example-task.toml"
 
+
 def _budget_help_reports_absent() -> bool:
     executable = shutil.which(CLI_NAME)
     if executable is None:
@@ -185,6 +186,45 @@ def test_no_changes_is_within_budget(tmp_path: Path) -> None:
     )
 
 
+def test_revision_excludes_a_valid_verification_receipt_from_budget(tmp_path: Path) -> None:
+    fixture = _create_ready_repo(tmp_path)
+    write_fixture_text(
+        fixture.root / "packages/devtools/src/kotekomi_devtools/a.py",
+        "candidate\n",
+    )
+    candidate = fixture.commit("candidate")
+    receipt_path = (
+        ".agent/receipts/verification/example-budget-task/"
+        f"{candidate}/portable-local/attempt-0001.json"
+    )
+    write_fixture_text(
+        fixture.root / receipt_path,
+        json.dumps(
+            {
+                "receipt_kind": "candidate_verification",
+                "task_id": "example-budget-task",
+                "candidate_revision": candidate,
+                "profile": "portable-local",
+                "attempt": 1,
+            },
+            sort_keys=True,
+        )
+        + "\n",
+    )
+    receipt = fixture.commit("receipt")
+
+    result = _payload(fixture.run_revision(receipt), exit_code=0)
+
+    assert result["totals"] == {
+        "production_files": 1,
+        "test_files": 0,
+        "production_diff_lines": 1,
+    }
+    assert result["path_stats"] == [
+        _path_stat("packages/devtools/src/kotekomi_devtools/a.py", "production", 1, 0)
+    ]
+
+
 def test_revision_diff_over_production_lines(tmp_path: Path) -> None:
     fixture = _create_ready_repo(tmp_path)
     write_fixture_text(
@@ -263,9 +303,7 @@ def test_revision_diff_outside_allowed_paths(tmp_path: Path) -> None:
     head = fixture.commit("outside allowed paths")
     result = _payload(fixture.run_revision(head), exit_code=1)
 
-    assert result["path_stats"] == [
-        _path_stat("docs/notes.md", "other", 1, 0)
-    ]
+    assert result["path_stats"] == [_path_stat("docs/notes.md", "other", 1, 0)]
     assert result["diagnostics"] == [
         _diagnostic(
             "task_budget.scope_violation",
@@ -356,9 +394,7 @@ def test_worktree_untracked_file_outside_allowed_paths(tmp_path: Path) -> None:
     write_fixture_text(fixture.root / "scratch.txt", "outside\n")
     result = _payload(fixture.run_worktree(), exit_code=1)
 
-    assert result["path_stats"] == [
-        _path_stat("scratch.txt", "other", 1, 0)
-    ]
+    assert result["path_stats"] == [_path_stat("scratch.txt", "other", 1, 0)]
     assert result["diagnostics"] == [
         _diagnostic(
             "task_budget.scope_violation",

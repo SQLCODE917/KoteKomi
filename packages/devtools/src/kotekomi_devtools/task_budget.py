@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import tomllib
@@ -153,28 +154,96 @@ def _path_stats(
     head_revision: str | None,
     worktree: bool,
 ) -> tuple[PathStat, ...]:
-    arguments = ["diff", "--numstat", "--no-renames", "-z", base_revision]
-    if not worktree:
-        arguments.append(cast(str, head_revision))
-    tracked = _git(*arguments)
-    if tracked.returncode != 0:
-        raise RuntimeError("unable to inspect Git diff")
-
-    stats = _parse_numstat(tracked.stdout)
+    if worktree:
+        tracked = _git("diff", "--numstat", "--no-renames", "-z", base_revision)
+        if tracked.returncode != 0:
+            raise RuntimeError("unable to inspect Git diff")
+        stats = _parse_numstat(tracked.stdout)
+    else:
+        stats = _revision_stats(base_revision, cast(str, head_revision))
     if worktree:
         for path in _untracked_paths():
-            stats[path] = ( _untracked_lines(path), 0)
+            stats[path] = (_untracked_lines(path), 0)
     return tuple(
         PathStat(path, _classify(path), added, deleted)
         for path, (added, deleted) in sorted(stats.items())
     )
 
 
+def _revision_stats(base_revision: str, head_revision: str) -> dict[str, tuple[int, int]]:
+    commits = _git("rev-list", "--reverse", f"{base_revision}..{head_revision}")
+    if commits.returncode != 0:
+        raise RuntimeError("unable to inspect Git revision range")
+    totals: dict[str, tuple[int, int]] = {}
+    for commit in commits.stdout.decode("ascii").splitlines():
+        paths = _commit_paths(commit)
+        if _is_verification_receipt_commit(commit, paths):
+            continue
+        result = _git(
+            "diff-tree", "--no-commit-id", "--numstat", "--no-renames", "-r", "-z", commit
+        )
+        if result.returncode != 0:
+            raise RuntimeError("unable to inspect Git commit stats")
+        for path, (added, deleted) in _parse_numstat(result.stdout).items():
+            old_added, old_deleted = totals.get(path, (0, 0))
+            totals[path] = (old_added + added, old_deleted + deleted)
+    return totals
+
+
+def _commit_paths(commit: str) -> tuple[str, ...]:
+    result = _git("diff-tree", "--no-commit-id", "--name-only", "--no-renames", "-r", "-z", commit)
+    if result.returncode != 0:
+        raise RuntimeError("unable to inspect Git commit paths")
+    return tuple(path.decode("utf-8") for path in result.stdout.split(b"\0") if path)
+
+
+def _is_verification_receipt_commit(commit: str, paths: tuple[str, ...]) -> bool:
+    parents = _git("show", "-s", "--format=%P", commit)
+    if parents.returncode != 0:
+        raise RuntimeError("unable to inspect Git commit parents")
+    parent_ids = parents.stdout.decode("ascii").split()
+    if len(parent_ids) != 1 or len(paths) != 1:
+        return False
+    path = paths[0]
+    parts = path.split("/")
+    if len(parts) != 7 or parts[:3] != [".agent", "receipts", "verification"]:
+        return False
+    task_id, candidate, profile, filename = parts[3:]
+    if profile not in {"portable-local", "authoritative-linux"}:
+        return False
+    if not filename.startswith("attempt-") or not filename.endswith(".json"):
+        return False
+    ordinal = filename.removeprefix("attempt-").removesuffix(".json")
+    if len(ordinal) != 4 or not ordinal.isdigit() or int(ordinal) < 1:
+        return False
+    result = _git("show", f"{commit}:{path}")
+    if result.returncode != 0:
+        return False
+    try:
+        decoded: object = json.loads(result.stdout)
+    except json.JSONDecodeError:
+        return False
+    if not isinstance(decoded, dict):
+        return False
+    payload = cast(JsonObject, decoded)
+    return (
+        payload.get("receipt_kind"),
+        payload.get("task_id"),
+        payload.get("candidate_revision"),
+        payload.get("profile"),
+        payload.get("attempt"),
+    ) == (
+        "candidate_verification",
+        task_id,
+        parent_ids[0],
+        profile,
+        int(ordinal),
+    ) and candidate == parent_ids[0]
+
+
 def _git(*arguments: str) -> subprocess.CompletedProcess[bytes]:
     try:
-        return subprocess.run(
-            ["git", *arguments], capture_output=True, check=False
-        )
+        return subprocess.run(["git", *arguments], capture_output=True, check=False)
     except OSError as error:
         raise RuntimeError("unable to run git") from error
 

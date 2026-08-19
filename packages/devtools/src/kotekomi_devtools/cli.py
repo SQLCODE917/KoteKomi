@@ -347,6 +347,9 @@ def _handle_verification_command(arguments: argparse.Namespace) -> CliResponse:
             specification_revision=arguments.specification,
             candidate_revision=arguments.candidate,
             profile=arguments.profile,
+            task_id=arguments.task_id,
+            run_id=arguments.run,
+            state_root_path=arguments.state_root,
         )
         return CliResponse(result.exit_code, result.as_json())
     if arguments.command == "run-check":
@@ -675,6 +678,9 @@ def _build_parser() -> argparse.ArgumentParser:
     verify_candidate.add_argument(
         "--profile", required=True, choices=("portable-local", "authoritative-linux")
     )
+    verify_candidate.add_argument("--task-id")
+    verify_candidate.add_argument("--run")
+    verify_candidate.add_argument("--state-root", type=Path)
     step_preflight = subparsers.add_parser(
         "step-preflight", help="Record deterministic local step preflight state."
     )
