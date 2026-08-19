@@ -78,10 +78,7 @@ def reconcile_merged_feature_branch(
         raise FeatureBranchReconciliationError(
             "promotion first parent must equal specification revision"
         )
-    if parents[1] != candidate_commit:
-        raise FeatureBranchReconciliationError(
-            "promotion second parent must equal candidate commit"
-        )
+    verified_parent = verified_merge_parent(root, entries, candidate_commit, main_base, parents[1])
     ci = read_ci_result(ci_result)
     if ci["conclusion"] != "success" or ci["head_sha"] != final_commit:
         raise FeatureBranchReconciliationError("final main CI must succeed for final main")
@@ -107,15 +104,17 @@ def reconcile_merged_feature_branch(
     elif remote_tag_target is not None:
         raise FeatureBranchReconciliationError("result tag conflicts with reconciliation")
 
-    if _remote_branch_target(expected_branch) != candidate_commit:
-        raise FeatureBranchReconciliationError("remote feature tip must equal candidate commit")
+    if _remote_branch_target(expected_branch) != verified_parent:
+        raise FeatureBranchReconciliationError(
+            "remote feature tip must equal verified merge parent"
+        )
 
     promotion_payload: Json = {
         "schema_version": 1,
         "promotion_kind": "merge",
         "promotion_commit": merge_commit,
         "parent_commit": main_base,
-        "verified_parent_commit": candidate_commit,
+        "verified_parent_commit": verified_parent,
         "diagnostics": [],
     }
     lifecycle_payload: Json = {"schema_version": 1, "ready": True, "diagnostics": []}
@@ -176,6 +175,10 @@ def _entries(root: Path, task_id: str, run_id: str) -> list[Json]:
 
 def _payload(root: Path, entries: list[Json], evidence_type: str) -> Json:
     entry = next(entry for entry in entries if entry["evidence_type"] == evidence_type)
+    return _entry_payload(root, entry, evidence_type)
+
+
+def _entry_payload(root: Path, entry: Json, evidence_type: str) -> Json:
     if entry.get("path_scope") != "state":
         raise FeatureBranchReconciliationError(f"{evidence_type} must use state evidence")
     try:
@@ -185,6 +188,53 @@ def _payload(root: Path, entries: list[Json], evidence_type: str) -> Json:
     if not isinstance(value, dict):
         raise FeatureBranchReconciliationError(f"{evidence_type} is invalid")
     return cast(Json, value)
+
+
+def verified_merge_parent(
+    root: Path,
+    entries: list[Json],
+    candidate_commit: str,
+    specification_revision: str,
+    merge_second_parent: str,
+) -> str:
+    if merge_second_parent == candidate_commit:
+        return candidate_commit
+    receipt = _portable_receipt(root, entries)
+    receipt_commit = receipt.get("receipt_commit")
+    if not isinstance(receipt_commit, str):
+        raise FeatureBranchReconciliationError("portable receipt has invalid receipt commit")
+    if merge_second_parent != receipt_commit:
+        raise FeatureBranchReconciliationError(
+            "promotion second parent must equal candidate or portable receipt commit"
+        )
+    if receipt.get("outcome") != "passed":
+        raise FeatureBranchReconciliationError("portable receipt outcome must be passed")
+    if receipt.get("candidate_revision") != candidate_commit:
+        raise FeatureBranchReconciliationError(
+            "portable receipt candidate revision must equal candidate commit"
+        )
+    if receipt.get("specification_revision") != specification_revision:
+        raise FeatureBranchReconciliationError(
+            "portable receipt specification revision must equal specification evidence"
+        )
+    return receipt_commit
+
+
+def _portable_receipt(root: Path, entries: list[Json]) -> Json:
+    entry = next(
+        (
+            entry
+            for entry in entries
+            if entry["evidence_type"] == "candidate_verification_receipt"
+            and entry.get("subject_id") == "portable-local"
+        ),
+        None,
+    )
+    if entry is None:
+        raise FeatureBranchReconciliationError(
+            "portable receipt is required for receipt merge parent"
+        )
+    return _entry_payload(root, entry, "candidate_verification_receipt")
 
 
 def _existing_result(root: Path, entries: list[Json]) -> Json | None:
