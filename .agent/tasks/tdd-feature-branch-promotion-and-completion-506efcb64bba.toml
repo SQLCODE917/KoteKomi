@@ -1,0 +1,55 @@
+schema_version = 2
+task_id = "tdd-feature-branch-promotion-and-completion-506efcb64bba"
+title = "Feature Branch Promotion and Completion"
+status = "ready_for_terra_high"
+series_id = "tdd-harness-feature-branch"
+task_class = "repository-tooling"
+model_profile = "terra-high-v1"
+baseline_revision = "53e85411b0bc5b330d9ae29afd14ad9284eed204"
+tdd_path = "docs/2026-08-18-tdd-feature-branch-promotion-completion.md"
+tdd_sha256 = "506efcb64bba8d12def1f3479098b884dbac32855d9b7ab00747d5140c10a9ba"
+goal = "Promote verified feature branches, record portable terminal results, and clean them up after main CI."
+depends_on = ["tdd-feature-branch-default-7f13f74551a4", "tdd-feature-branch-verification-receipt-a5b508342aaf"]
+allowed_paths = [".agent/tasks/tdd-feature-branch-promotion-and-completion-506efcb64bba.toml", "packages/devtools/src/kotekomi_devtools/cli.py", "packages/devtools/src/kotekomi_devtools/evidence_catalog.py", "packages/devtools/src/kotekomi_devtools/feature_branch_completion.py", "packages/devtools/src/kotekomi_devtools/feature_branch_promotion.py", "packages/devtools/src/kotekomi_devtools/tdd_metrics.py", "packages/devtools/src/kotekomi_devtools/tdd_workflow.py", "packages/devtools/tests/acceptance/test_feature_branch_promotion_completion_contract.py", "packages/devtools/tests/acceptance/test_tdd_workflow_contract.py", "packages/devtools/tests/unit/test_evidence_catalog.py", "packages/devtools/tests/unit/test_tdd_metrics.py"]
+reference_paths = ["docs/2026-08-18-tdd-feature-branch-verification-receipt.md", "packages/devtools/src/kotekomi_devtools/lifecycle_evidence.py", "packages/devtools/src/kotekomi_devtools/task_lifecycle.py", "packages/devtools/tests/acceptance/test_feature_branch_verification_receipt_contract.py"]
+stop_conditions = ["the implementation creates or resumes a direct-main run", "the implementation force-pushes main, a feature branch, or a result tag", "the implementation deletes a feature branch before publishing its result tag", "the implementation changes the protected leaf TDD"]
+
+[readiness]
+authority = "The Feature Branch Promotion and Completion TDD defines this task."
+contract_family = "tdd-harness"
+dominant_outcome = "A verified feature branch is merged, main-CI validated, tagged, and removed."
+failure_policy = "Invalid evidence, topology, tags, or remote races block before canonical success evidence; cleanup failures remain explicit incomplete evidence."
+legacy_disposition = "Direct-main records remain read-only historical evidence."
+negative_proof = "The producers never force-push and never delete main."
+public_entry_point = "kotekomi-agent promote-feature-branch, complete-feature-branch, and abandon-feature-branch"
+scope_policy = "Promotion, completion, catalog, workflow, metrics, CLI, and deterministic Git tests only."
+side_effect_boundary = "Non-force feature-to-main merge, result tag publication, and feature-ref deletion after main CI."
+unresolved_decisions = []
+
+[budget]
+maximum_production_files = 7
+maximum_test_files = 4
+maximum_production_diff_lines = 1400
+
+[[protected_artifacts]]
+kind = "leaf-tdd"
+path = "docs/2026-08-18-tdd-feature-branch-promotion-completion.md"
+sha256 = "506efcb64bba8d12def1f3479098b884dbac32855d9b7ab00747d5140c10a9ba"
+
+[[acceptance]]
+id = "feature-branch-promotion-completion-contract"
+argv = ["uv", "run", "pytest", "-p", "no:cacheprovider", "packages/devtools/tests/acceptance/test_feature_branch_promotion_completion_contract.py", "packages/devtools/tests/acceptance/test_tdd_workflow_contract.py", "packages/devtools/tests/unit/test_evidence_catalog.py", "packages/devtools/tests/unit/test_tdd_metrics.py"]
+timeout_seconds = 240
+profile = "portable-local"
+
+[[acceptance]]
+id = "repository-static-checks"
+argv = ["uv", "run", "ruff", "check"]
+timeout_seconds = 120
+profile = "portable-local"
+
+[[acceptance]]
+id = "repository-type-checks"
+argv = ["uv", "run", "pyright"]
+timeout_seconds = 180
+profile = "portable-local"
