@@ -1,0 +1,55 @@
+schema_version = 2
+task_id = "remote-main-specification-authority-27467fdbad1b"
+title = "Remote Main Specification Authority"
+status = "ready_for_terra_high"
+series_id = "tdd-harness-feature-branch"
+task_class = "repository-tooling"
+model_profile = "terra-high-v1"
+baseline_revision = "22c861675d4f0b784cda9182f875b1cf047c0cc2"
+tdd_path = "docs/2026-08-19-tdd-remote-main-specification-authority.md"
+tdd_sha256 = "27467fdbad1b283c4e4c01da620ce800261f55151ccfd9fb49cd28d7ce75ab93"
+goal = "Bind V2 runs to remote main manifest snapshots without caller checkout authority."
+depends_on = ["tdd-feature-branch-default-7f13f74551a4"]
+allowed_paths = [".agent/tasks/remote-main-specification-authority-27467fdbad1b.toml", "docs/2026-08-19-tdd-remote-main-specification-authority.md", "packages/devtools/src/kotekomi_devtools/evidence_catalog.py", "packages/devtools/src/kotekomi_devtools/task_manifest.py", "packages/devtools/src/kotekomi_devtools/tdd_workflow.py", "packages/devtools/tests/acceptance/test_remote_main_specification_authority_contract.py", "packages/devtools/tests/unit/test_evidence_catalog.py", "packages/devtools/tests/unit/test_task_manifest.py"]
+reference_paths = ["docs/2026-08-18-tdd-feature-branch-default.md", "packages/devtools/src/kotekomi_devtools/lifecycle_evidence.py"]
+stop_conditions = ["the implementation reads a local manifest to establish V2 specification evidence", "the implementation adds a local-main fallback"]
+
+[readiness]
+authority = "The Remote Main Specification Authority TDD defines this task."
+contract_family = "tdd-harness"
+dominant_outcome = "A V2 run starts from an immutable origin main snapshot."
+failure_policy = "Remote specification failures block before V2 spec evidence."
+legacy_disposition = "V1 remains historical with repository-scoped manifest evidence."
+negative_proof = "The caller checkout does not define V2 specification state."
+public_entry_point = "kotekomi-agent implement-tdd"
+scope_policy = "Remote specification, catalog, manifest validation, workflow, and tests only."
+side_effect_boundary = "State evidence and non-force feature refs only."
+unresolved_decisions = []
+
+[budget]
+maximum_production_files = 3
+maximum_test_files = 2
+maximum_production_diff_lines = 700
+
+[[protected_artifacts]]
+kind = "leaf-tdd"
+path = "docs/2026-08-19-tdd-remote-main-specification-authority.md"
+sha256 = "27467fdbad1b283c4e4c01da620ce800261f55151ccfd9fb49cd28d7ce75ab93"
+
+[[acceptance]]
+id = "remote-main-specification-authority-contract"
+argv = ["uv", "run", "pytest", "-p", "no:cacheprovider", "packages/devtools/tests/acceptance/test_remote_main_specification_authority_contract.py", "packages/devtools/tests/unit/test_evidence_catalog.py", "packages/devtools/tests/unit/test_task_manifest_cli.py"]
+timeout_seconds = 240
+profile = "portable-local"
+
+[[acceptance]]
+id = "repository-static-checks"
+argv = ["uv", "run", "ruff", "check"]
+timeout_seconds = 120
+profile = "portable-local"
+
+[[acceptance]]
+id = "repository-type-checks"
+argv = ["uv", "run", "pyright"]
+timeout_seconds = 180
+profile = "portable-local"
