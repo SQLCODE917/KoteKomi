@@ -320,6 +320,8 @@ def suggested_commands(
             "--profile",
             "portable-local",
             *arguments,
+            "--state-root",
+            str(root),
         ]
     return [{"command": command, "arguments": arguments}]
 

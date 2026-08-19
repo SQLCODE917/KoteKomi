@@ -245,5 +245,7 @@ def test_workflow_requires_and_derives_a_portable_candidate_receipt_command(tmp_
             "task",
             "--run",
             "task-run-001",
+            "--state-root",
+            str(root),
         ],
     }
