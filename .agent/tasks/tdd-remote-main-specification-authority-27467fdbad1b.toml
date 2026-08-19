@@ -1,5 +1,5 @@
 schema_version = 2
-task_id = "remote-main-specification-authority-27467fdbad1b"
+task_id = "tdd-remote-main-specification-authority-27467fdbad1b"
 title = "Remote Main Specification Authority"
 status = "ready_for_terra_high"
 series_id = "tdd-harness-feature-branch"
@@ -10,7 +10,7 @@ tdd_path = "docs/2026-08-19-tdd-remote-main-specification-authority.md"
 tdd_sha256 = "27467fdbad1b283c4e4c01da620ce800261f55151ccfd9fb49cd28d7ce75ab93"
 goal = "Bind V2 runs to remote main manifest snapshots without caller checkout authority."
 depends_on = ["tdd-feature-branch-default-7f13f74551a4"]
-allowed_paths = [".agent/tasks/remote-main-specification-authority-27467fdbad1b.toml", "docs/2026-08-19-tdd-remote-main-specification-authority.md", "packages/devtools/src/kotekomi_devtools/evidence_catalog.py", "packages/devtools/src/kotekomi_devtools/task_manifest.py", "packages/devtools/src/kotekomi_devtools/tdd_workflow.py", "packages/devtools/tests/acceptance/test_remote_main_specification_authority_contract.py", "packages/devtools/tests/unit/test_evidence_catalog.py", "packages/devtools/tests/unit/test_task_manifest.py"]
+allowed_paths = [".agent/tasks/tdd-remote-main-specification-authority-27467fdbad1b.toml", "docs/2026-08-19-tdd-remote-main-specification-authority.md", "packages/devtools/src/kotekomi_devtools/evidence_catalog.py", "packages/devtools/src/kotekomi_devtools/task_manifest.py", "packages/devtools/src/kotekomi_devtools/tdd_workflow.py", "packages/devtools/tests/acceptance/test_remote_main_specification_authority_contract.py", "packages/devtools/tests/unit/test_evidence_catalog.py", "packages/devtools/tests/unit/test_task_manifest_cli.py"]
 reference_paths = ["docs/2026-08-18-tdd-feature-branch-default.md", "packages/devtools/src/kotekomi_devtools/lifecycle_evidence.py"]
 stop_conditions = ["the implementation reads a local manifest to establish V2 specification evidence", "the implementation adds a local-main fallback"]
 
