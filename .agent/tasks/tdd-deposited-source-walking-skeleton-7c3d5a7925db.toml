@@ -16,8 +16,12 @@ allowed_paths = [
   "docs/2026-08-13-live-source-walking-skeleton.md",
   "docs/CHECK_PLAN.md",
   "packages/application/src/kotekomi_application/__init__.py",
+  "packages/application/src/kotekomi_application/pipeline_readiness.py",
   "packages/application/src/kotekomi_application/source_file_ingest.py",
   "packages/application/tests/test_add_source_from_file.py",
+  "packages/application/tests/test_pipeline_readiness.py",
+  "packages/adapters/src/kotekomi_adapters/docling_pdf_parser.py",
+  "packages/adapters/tests/test_docling_pdf_parser.py",
   "packages/pipelines/src/kotekomi_pipelines/cli.py",
   "packages/pipelines/tests/test_source_add_file.py"
 ]
@@ -49,9 +53,9 @@ side_effect_boundary = "Ledger records and Archive objects for one deposited Sou
 unresolved_decisions = []
 
 [budget]
-maximum_production_files = 3
-maximum_test_files = 2
-maximum_production_diff_lines = 900
+maximum_production_files = 5
+maximum_test_files = 4
+maximum_production_diff_lines = 1400
 
 [[protected_artifacts]]
 kind = "leaf-tdd"
@@ -62,6 +66,18 @@ sha256 = "7c3d5a7925db20c00078371f86314392c5935e877fbeaa18332f918bec36e5ce"
 id = "deposited-source-application"
 argv = ["uv", "run", "pytest", "packages/application/tests/test_add_source_from_file.py", "packages/application/tests/test_pdf_ingest.py"]
 timeout_seconds = 240
+profile = "portable-local"
+
+[[acceptance]]
+id = "deposited-source-adapter"
+argv = ["uv", "run", "pytest", "packages/adapters/tests/test_docling_pdf_parser.py"]
+timeout_seconds = 180
+profile = "portable-local"
+
+[[acceptance]]
+id = "deposited-source-readiness"
+argv = ["uv", "run", "pytest", "packages/application/tests/test_pipeline_readiness.py"]
+timeout_seconds = 120
 profile = "portable-local"
 
 [[acceptance]]
