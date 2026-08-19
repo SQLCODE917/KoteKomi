@@ -1,0 +1,83 @@
+schema_version = 2
+task_id = "tdd-deposited-source-walking-skeleton-7c3d5a7925db"
+title = "Deposited-Source Walking Skeleton"
+status = "ready_for_terra_high"
+series_id = "deposited-source"
+task_class = "orchestration"
+model_profile = "terra-high-v1"
+baseline_revision = "3117f6ad72a69e50ffe5a402ae51046b1ad8ddb9"
+tdd_path = "docs/2026-08-13-live-source-walking-skeleton.md"
+tdd_sha256 = "7c3d5a7925db20c00078371f86314392c5935e877fbeaa18332f918bec36e5ce"
+goal = "Archive user-deposited PDF, Markdown, and text sources under stable HTTPS Source identities and create their authoritative representations."
+depends_on = []
+allowed_paths = [
+  ".agent/tasks/tdd-deposited-source-walking-skeleton-7c3d5a7925db.toml",
+  ".gitignore",
+  "docs/2026-08-13-live-source-walking-skeleton.md",
+  "docs/CHECK_PLAN.md",
+  "packages/application/src/kotekomi_application/__init__.py",
+  "packages/application/src/kotekomi_application/source_file_ingest.py",
+  "packages/application/tests/test_add_source_from_file.py",
+  "packages/pipelines/src/kotekomi_pipelines/cli.py",
+  "packages/pipelines/tests/test_source_add_file.py"
+]
+reference_paths = [
+  "packages/application/src/kotekomi_application/source_capture.py",
+  "packages/application/src/kotekomi_application/pdf_ingest.py",
+  "packages/adapters/src/kotekomi_adapters/docling_pdf_parser.py",
+  "packages/adapters/tests/test_pdf_production_path.py",
+  "packages/pipelines/src/kotekomi_pipelines/config.py"
+]
+stop_conditions = [
+  "the implementation fetches a Source URL or adds browser or MediaWiki client code",
+  "the implementation uses a local staging path as a Source identity key",
+  "a PDF parser receives staging bytes instead of archived bytes",
+  "the implementation adds retrieval, embeddings, Assertions, ProposedChanges, graph state, or Briefings",
+  "the implementation commits user-provided raw input files"
+]
+
+[readiness]
+authority = "The Deposited-Source Walking Skeleton TDD defines this task."
+contract_family = "source-ingest"
+dominant_outcome = "A user archives and represents a deposited Wikipedia PDF with a stable Source URL and no network access."
+failure_policy = "Invalid input fails before canonical state; PDF blockers retain canonical capture and report typed reasons."
+legacy_disposition = "Existing local-file calls without a Source URL remain outside this new Pipeline contract."
+negative_proof = "The command does not fetch the URL or create derived retrieval or intelligence state."
+public_entry_point = "kotekomi source add-file"
+scope_policy = "Deposited source capture, PDF composition, CLI output, focused tests, and required documentation only."
+side_effect_boundary = "Ledger records and Archive objects for one deposited Source only."
+unresolved_decisions = []
+
+[budget]
+maximum_production_files = 3
+maximum_test_files = 2
+maximum_production_diff_lines = 900
+
+[[protected_artifacts]]
+kind = "leaf-tdd"
+path = "docs/2026-08-13-live-source-walking-skeleton.md"
+sha256 = "7c3d5a7925db20c00078371f86314392c5935e877fbeaa18332f918bec36e5ce"
+
+[[acceptance]]
+id = "deposited-source-application"
+argv = ["uv", "run", "pytest", "packages/application/tests/test_add_source_from_file.py", "packages/application/tests/test_pdf_ingest.py"]
+timeout_seconds = 240
+profile = "portable-local"
+
+[[acceptance]]
+id = "deposited-source-pipeline"
+argv = ["uv", "run", "pytest", "packages/pipelines/tests/test_source_add_file.py"]
+timeout_seconds = 180
+profile = "portable-local"
+
+[[acceptance]]
+id = "repository-static-checks"
+argv = ["uv", "run", "ruff", "check"]
+timeout_seconds = 120
+profile = "portable-local"
+
+[[acceptance]]
+id = "repository-type-checks"
+argv = ["uv", "run", "pyright"]
+timeout_seconds = 180
+profile = "portable-local"
