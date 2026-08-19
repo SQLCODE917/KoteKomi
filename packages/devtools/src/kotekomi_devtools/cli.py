@@ -16,6 +16,10 @@ from kotekomi_devtools.evidence_catalog import (
     state_root,
     write_canonical_record,
 )
+from kotekomi_devtools.feature_branch_reconciliation import (
+    FeatureBranchReconciliationError,
+    reconcile_merged_feature_branch,
+)
 from kotekomi_devtools.goal_accountability import GoalAccountabilityError, write_goal_report
 from kotekomi_devtools.lifecycle_evidence import (
     LifecycleEvidenceError,
@@ -88,6 +92,8 @@ def main(argv: list[str] | None = None) -> int:
         return _render_error(error)
     except LifecycleEvidenceError as error:
         return _render_error(error)
+    except FeatureBranchReconciliationError as error:
+        return _render_error(error)
     except VerificationPlanError as error:
         return _render_error(error)
     except TaskLedgerError as error:
@@ -132,6 +138,7 @@ def _dispatch_command(arguments: argparse.Namespace) -> CliResponse | int:
         "record-main-ci": _handle_lifecycle_evidence_command,
         "record-branch-cleanup": _handle_lifecycle_evidence_command,
         "create-feature-branch": _handle_lifecycle_evidence_command,
+        "reconcile-merged-feature-branch": _handle_feature_branch_reconciliation_command,
     }
     return handlers[arguments.command](arguments)
 
@@ -510,6 +517,20 @@ def _handle_lifecycle_evidence_command(arguments: argparse.Namespace) -> CliResp
     return CliResponse(0, result.as_json())
 
 
+def _handle_feature_branch_reconciliation_command(arguments: argparse.Namespace) -> CliResponse:
+    result = reconcile_merged_feature_branch(
+        task_id=arguments.task_id,
+        run_id=arguments.run,
+        promotion=arguments.promotion,
+        final_main=arguments.final_main,
+        ci_result=arguments.ci_result,
+        state_root_path=arguments.state_root,
+        output=arguments.output,
+        markdown=arguments.markdown,
+    )
+    return CliResponse(0, result.as_json())
+
+
 def _render_response(response: CliResponse) -> int:
     print(
         json.dumps(
@@ -813,3 +834,11 @@ def _add_lifecycle_evidence_parsers(subparsers: Any) -> None:
         help="Record requested candidate branch cleanup evidence.",
     )
     cleanup.add_argument("--branch", action="append", default=[])
+    reconciliation = subparsers.add_parser(
+        "reconcile-merged-feature-branch",
+        parents=[common],
+        help="Close one eligible feature branch that already reached main.",
+    )
+    reconciliation.add_argument("--promotion", required=True)
+    reconciliation.add_argument("--final-main", required=True)
+    reconciliation.add_argument("--ci-result", type=Path, required=True)

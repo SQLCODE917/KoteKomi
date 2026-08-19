@@ -93,3 +93,79 @@ def test_metrics_requires_main_promotion_evidence(
     assert result["missing_evidence_count"] == 12
     assert result["required_evidence_count"] == 13
     assert "main_promotion" not in {item["rule"] for item in result["diagnostics"]}
+
+
+def test_metrics_accepts_task_result_instead_of_receipt_chain(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    task = "task"
+    run = "task-run-001"
+    state = tmp_path / "state"
+    required = {
+        "tdd_binding",
+        "task_manifest",
+        "task_manifest_validation",
+        "candidate_lifecycle",
+        "candidate_commit",
+        "verification_plan",
+        "verify_checks",
+        "candidate_ci",
+        "main_promotion",
+        "main_lifecycle",
+        "main_ci",
+        "cleanup",
+        "task_result",
+    }
+    entries: list[dict[str, Any]] = []
+    payloads: dict[str, dict[str, Any]] = {
+        "verification_plan": {"planned_checks": []},
+        "verify_checks": {
+            "executed_check_count": 0,
+            "verified_check_count": 0,
+            "failed_check_count": 0,
+        },
+        "candidate_lifecycle": {"ready": True, "diagnostics": []},
+        "main_lifecycle": {"ready": True, "diagnostics": []},
+        "candidate_ci": {"conclusion": "failure"},
+        "main_ci": {"conclusion": "success"},
+        "cleanup": {"branch_cleanup_complete": True},
+        "task_result": {"outcome": "completed"},
+    }
+    for evidence_type in required:
+        path = state / f"{evidence_type}.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(payloads.get(evidence_type, {})))
+        entries.append(
+            {"evidence_type": evidence_type, "path_scope": "state", "path": path.name}
+        )
+    snapshot = state / "experiments" / task / "spec" / "tdd-snapshot.md"
+    snapshot.parent.mkdir(parents=True, exist_ok=True)
+    snapshot.write_text("# TDD\n")
+    tdd_sha256 = hashlib.sha256(snapshot.read_bytes()).hexdigest()
+    (snapshot.parent / "tdd-binding.json").write_text(
+        json.dumps(
+            {
+                "status": "ready",
+                "task_id": task,
+                "primary_tdd_path": "docs/tdd.md",
+                "tdd_paths": ["docs/tdd.md"],
+                "tdd_snapshot_path": str(snapshot),
+                "tdd_sha256": tdd_sha256,
+            }
+        )
+    )
+    runs = state / "experiments" / task / "runs"
+    runs.mkdir(parents=True, exist_ok=True)
+    (runs / "index.json").write_text(
+        json.dumps({"runs": [{"implementation_run_id": run, "ordinal": 1, "status": "active"}]})
+    )
+
+    def entries_for(_root: Path, _task: str, _run: str) -> list[dict[str, Any]]:
+        return entries
+
+    monkeypatch.setattr(tdd_metrics, "validated_entries", entries_for)
+    _, collection = tdd_metrics.tdd_metrics("docs/tdd.md", state_root_path=state, run_id=run)
+    result = collection["metrics"][0]
+
+    assert result["status"] == "complete"
+    assert result["missing_evidence_count"] == 0
