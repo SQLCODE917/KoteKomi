@@ -68,10 +68,28 @@ class ValidationResult:
 
 def validate_task_manifest(path: Path) -> ValidationResult:
     """Validate a Task Manifest without accessing its referenced records."""
-    parsed = _read_toml(path)
-    if isinstance(parsed, ValidationResult):
-        return parsed
+    try:
+        text = path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return _file_failure("task_manifest.file_not_found", "exists")
+    except UnicodeDecodeError:
+        return _file_failure("task_manifest.file_unreadable", "utf8")
+    except OSError:
+        return _file_failure("task_manifest.file_unreadable", "readable")
+    return validate_task_manifest_text(text)
 
+
+def validate_task_manifest_text(text: str) -> ValidationResult:
+    """Validate Task Manifest TOML supplied by a deterministic boundary."""
+    try:
+        parsed = tomllib.loads(text)
+    except tomllib.TOMLDecodeError:
+        return ValidationResult(
+            None,
+            None,
+            None,
+            (Diagnostic("task_manifest.toml_parse_error", "", "toml"),),
+        )
     identity = _parsed_identity(parsed)
     schema_diagnostics = _schema_diagnostics(parsed)
     if schema_diagnostics:
@@ -82,28 +100,6 @@ def validate_task_manifest(path: Path) -> ValidationResult:
         return ValidationResult(*identity, None, _sorted(semantic_diagnostics))
 
     return ValidationResult(*identity, _canonical_digest(parsed), ())
-
-
-def _read_toml(path: Path) -> JsonObject | ValidationResult:
-    try:
-        text = path.read_text(encoding="utf-8")
-    except FileNotFoundError:
-        return _file_failure("task_manifest.file_not_found", "exists")
-    except UnicodeDecodeError:
-        return _file_failure("task_manifest.file_unreadable", "utf8")
-    except OSError:
-        return _file_failure("task_manifest.file_unreadable", "readable")
-
-    try:
-        parsed = tomllib.loads(text)
-    except tomllib.TOMLDecodeError:
-        return ValidationResult(
-            None,
-            None,
-            None,
-            (Diagnostic("task_manifest.toml_parse_error", "", "toml"),),
-        )
-    return parsed
 
 
 def _file_failure(code: DiagnosticCode, rule: str) -> ValidationResult:

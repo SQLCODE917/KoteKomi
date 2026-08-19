@@ -304,7 +304,6 @@ def rebuild_index(root: Path, task: str, run: str) -> Json:
     """Recreate a missing index from the canonical records that already exist."""
     known_records = (
         ("intake", "tdd_binding", "binding"),
-        ("spec", "task_manifest", "manifest"),
         ("spec", "task_manifest_validation", "manifest"),
         ("spec", "specification_revision", "specification"),
         ("candidate", "feature_branch", "feature-branch"),
@@ -326,6 +325,40 @@ def rebuild_index(root: Path, task: str, run: str) -> Json:
     index_path = _index_path(root, task, run)
     if index_path.exists():
         return read_index(root, task, run)
+    remote_manifest_path = f"experiments/{task}/runs/{run}/spec/task-manifest.toml"
+    if (root / remote_manifest_path).is_file():
+        index_record(
+            root,
+            task,
+            run,
+            phase="spec",
+            evidence_type="task_manifest",
+            subject_id="manifest",
+            path_scope="state",
+            relative_path=remote_manifest_path,
+            producer_command="evidence-index-rebuild",
+        )
+    else:
+        scope, relative_path = canonical_relative("task_manifest", task, run, "manifest")
+        repository_manifest = Path.cwd() / relative_path
+        try:
+            repository_manifest_version = tomllib.loads(
+                repository_manifest.read_text(encoding="utf-8")
+            ).get("schema_version")
+        except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError):
+            repository_manifest_version = None
+        if repository_manifest_version == 1:
+            index_record(
+                root,
+                task,
+                run,
+                phase="spec",
+                evidence_type="task_manifest",
+                subject_id="manifest",
+                path_scope=scope,
+                relative_path=relative_path,
+                producer_command="evidence-index-rebuild",
+            )
     for phase, evidence_type, subject_id in known_records:
         scope, relative_path = canonical_relative(evidence_type, task, run, subject_id)
         base = Path.cwd() if scope == "repo" else root

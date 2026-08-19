@@ -21,7 +21,7 @@ from kotekomi_devtools.evidence_catalog import (
     write_canonical_record,
 )
 from kotekomi_devtools.lifecycle_evidence import LifecycleEvidenceError, create_feature_branch
-from kotekomi_devtools.task_manifest import validate_task_manifest
+from kotekomi_devtools.task_manifest import validate_task_manifest_text
 from kotekomi_devtools.tdd_binding import bind_tdd
 
 type Json = dict[str, Any]
@@ -39,6 +39,11 @@ PHASE_REQUIREMENTS = {
 def _write(path: Path, value: Json) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(value, sort_keys=True, separators=(",", ":")) + "\n")
+
+
+def _write_bytes(path: Path, value: bytes) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(value)
 
 
 def _read(path: Path) -> Json:
@@ -385,52 +390,51 @@ def implement_tdd(
         relative_path=rel,
         producer_command="implement-tdd",
     )
-    manifest = Path.cwd() / ".agent" / "tasks" / f"{task}.toml"
-    validation_status = "missing"
-    if manifest.exists():
-        scope, rel = canonical_relative("task_manifest", task, run_id)
-        index_record(
-            root,
-            task,
-            run_id,
-            phase="spec",
-            evidence_type="task_manifest",
-            subject_id="manifest",
-            path_scope=scope,
-            relative_path=rel,
-            producer_command="implement-tdd",
-        )
-        validation = validate_task_manifest(manifest)
-        validation_status = "valid" if validation.valid else "invalid"
+    manifest, validation_status, manifest_identity, manifest_sha256, remote_error = (
+        _manifest_for_run(root, task, run_id, binding)
+    )
+    if remote_error is not None:
+        return 2, _remote_specification_blocked(task, run_id, remote_error)
+    if manifest is not None:
+        if manifest_identity.get("schema_version") == 1:
+            return 0, _historical_result(
+                binding_result.requested_tdd_path,
+                binding,
+                task,
+                run_id,
+                manifest,
+                validation_status,
+            )
         try:
-            manifest_identity = tomllib.loads(manifest.read_text(encoding="utf-8"))
-        except (OSError, tomllib.TOMLDecodeError):
-            manifest_identity = {}
-        manifest_tdd_path = manifest_identity.get("tdd_path")
-        manifest_tdd_sha256 = manifest_identity.get("tdd_sha256")
-        validation_payload = validation.as_json() | {
-            "tdd_path": manifest_tdd_path,
-            "tdd_sha256": manifest_tdd_sha256,
-        }
-        vscope, vrel = canonical_relative("task_manifest_validation", task, run_id)
-        _write(root / vrel, validation_payload)
-        index_record(
-            root,
-            task,
-            run_id,
-            phase="spec",
-            evidence_type="task_manifest_validation",
-            subject_id="manifest",
-            path_scope=vscope,
-            relative_path=vrel,
-            producer_command="implement-tdd",
-        )
-        if (
-            not validation.valid
-            or validation.task_id != task
-            or manifest_tdd_sha256 != binding["tdd_sha256"]
-            or manifest_tdd_path not in cast(list[str], binding["tdd_paths"])
-        ):
+            specification = _record_specification(root, task, run_id, manifest_sha256)
+            existing = next(
+                (
+                    item
+                    for item in validated_entries(root, task, run_id)
+                    if item["evidence_type"] == "feature_branch"
+                ),
+                None,
+            )
+            if existing is not None:
+                branch = _read(root / existing["path"])
+                if (
+                    branch.get("branch") != f"feature/{task}"
+                    or branch.get("specification_revision") != specification
+                ):
+                    raise EvidenceError(
+                        "feature branch evidence conflicts with specification revision"
+                    )
+                feature_branch = str(branch["branch"])
+            else:
+                branch_result = create_feature_branch(
+                    task_id=task,
+                    run_id=run_id,
+                    specification_revision=specification,
+                    manifest_sha256=manifest_sha256,
+                    state_root_path=root,
+                )
+                feature_branch = cast(str, branch_result.payload["branch"])
+        except (EvidenceError, LifecycleEvidenceError) as error:
             return 1, {
                 "schema_version": 1,
                 "status": "blocked",
@@ -438,75 +442,12 @@ def implement_tdd(
                 "implementation_run_id": run_id,
                 "diagnostics": [
                     {
-                        "code": "workflow.manifest_invalid",
-                        "location": "/manifest",
-                        "rule": "binding_identity_matches_valid_manifest",
+                        "code": "workflow.feature_branch_invalid",
+                        "location": "/feature_branch",
+                        "rule": str(error),
                     }
                 ],
             }
-        if manifest_identity.get("schema_version") == 1:
-            return 0, {
-                "schema_version": 1,
-                "status": "historical",
-                "task_id": task,
-                "implementation_run_id": run_id,
-                "requested_tdd_path": binding_result.requested_tdd_path,
-                "primary_tdd_path": binding["primary_tdd_path"],
-                "tdd_paths": binding["tdd_paths"],
-                "tdd_sha256": binding["tdd_sha256"],
-                "manifest_path": str(manifest.relative_to(Path.cwd())),
-                "manifest_validation_status": validation_status,
-                "implementation_phase": "historical",
-                "next_action": None,
-                "missing_evidence": [],
-                "producer_arguments": {},
-                "suggested_commands": [],
-                "diagnostics": [],
-            }
-        if manifest_identity.get("schema_version") == 2:
-            try:
-                specification = _record_specification(root, task, run_id, manifest)
-                existing = next(
-                    (
-                        item
-                        for item in validated_entries(root, task, run_id)
-                        if item["evidence_type"] == "feature_branch"
-                    ),
-                    None,
-                )
-                if existing is not None:
-                    branch = _read(root / existing["path"])
-                    if (
-                        branch.get("branch") != f"feature/{task}"
-                        or branch.get("specification_revision") != specification
-                    ):
-                        raise EvidenceError(
-                            "feature branch evidence conflicts with specification revision"
-                        )
-                    feature_branch = str(branch["branch"])
-                else:
-                    branch_result = create_feature_branch(
-                        task_id=task,
-                        run_id=run_id,
-                        specification_revision=specification,
-                        manifest_sha256=hashlib.sha256(manifest.read_bytes()).hexdigest(),
-                        state_root_path=root,
-                    )
-                    feature_branch = cast(str, branch_result.payload["branch"])
-            except (EvidenceError, LifecycleEvidenceError) as error:
-                return 1, {
-                    "schema_version": 1,
-                    "status": "blocked",
-                    "task_id": task,
-                    "implementation_run_id": run_id,
-                    "diagnostics": [
-                        {
-                            "code": "workflow.feature_branch_invalid",
-                            "location": "/feature_branch",
-                            "rule": str(error),
-                        }
-                    ],
-                }
     try:
         rebuild_index(root, task, run_id)
         entries = validated_entries(root, task, run_id)
@@ -520,7 +461,7 @@ def implement_tdd(
                 {"code": "workflow.evidence_invalid", "location": "/evidence", "rule": str(error)}
             ],
         }
-    phase, action, missing, diagnostics = workflow_status(root, entries, manifest.exists())
+    phase, action, missing, diagnostics = workflow_status(root, entries, manifest is not None)
     result: Json = {
         "schema_version": 1,
         "status": "blocked" if action == "blocked" else "ready",
@@ -530,7 +471,7 @@ def implement_tdd(
         "primary_tdd_path": binding["primary_tdd_path"],
         "tdd_paths": binding["tdd_paths"],
         "tdd_sha256": binding["tdd_sha256"],
-        "manifest_path": str(manifest.relative_to(Path.cwd())),
+        "manifest_path": str(manifest) if manifest is not None else None,
         "manifest_validation_status": validation_status,
         "implementation_phase": phase,
         "next_action": None if action == "blocked" else action,
@@ -548,7 +489,7 @@ def implement_tdd(
             action,
             task,
             run_id,
-            str(manifest.relative_to(Path.cwd())),
+            str(manifest) if manifest is not None else "",
             root,
             entries,
         ),
@@ -564,10 +505,9 @@ def implement_tdd(
     return 0, result
 
 
-def _record_specification(root: Path, task: str, run_id: str, manifest: Path) -> str:
-    """Persist the clean current-main specification once for a V2 run."""
+def _record_specification(root: Path, task: str, run_id: str, manifest_sha256: str) -> str:
+    """Persist the remote-main specification once for a V2 run."""
     path = root / canonical_relative("specification_revision", task, run_id, "specification")[1]
-    manifest_sha256 = hashlib.sha256(manifest.read_bytes()).hexdigest()
     if path.is_file():
         payload = _read(path)
         if payload.get("manifest_sha256") != manifest_sha256:
@@ -576,24 +516,9 @@ def _record_specification(root: Path, task: str, run_id: str, manifest: Path) ->
         if isinstance(revision, str):
             return revision
         raise EvidenceError("specification revision is invalid")
-    branch = _git("branch", "--show-current")
-    head = _git("rev-parse", "HEAD")
-    origin_main = _git("rev-parse", "origin/main")
-    status = _git("status", "--porcelain")
-    manifest_blob = _git("show", f"HEAD:{manifest.relative_to(Path.cwd()).as_posix()}")
-    if (
-        branch.returncode != 0
-        or branch.stdout.strip() != "main"
-        or head.returncode != 0
-        or origin_main.returncode != 0
-        or head.stdout.strip() != origin_main.stdout.strip()
-        or status.returncode != 0
-        or status.stdout
-        or manifest_blob.returncode != 0
-        or manifest_blob.stdout.encode() != manifest.read_bytes()
-    ):
-        raise EvidenceError("specification requires clean current main with committed manifest")
-    revision = head.stdout.strip()
+    revision = _specification_revision(root, task, run_id)
+    if revision is None:
+        raise EvidenceError("remote specification revision is missing")
     write_canonical_record(
         root,
         task,
@@ -612,5 +537,233 @@ def _record_specification(root: Path, task: str, run_id: str, manifest: Path) ->
     return revision
 
 
+def _manifest_for_run(
+    root: Path, task: str, run_id: str, binding: Json
+) -> tuple[Path | None, str, Json, str, str | None]:
+    """Return the manifest immutable to this run, or one remote-specification failure."""
+    entries = validated_entries(root, task, run_id)
+    specification = next(
+        (item for item in entries if item["evidence_type"] == "specification_revision"), None
+    )
+    manifest_entry = next(
+        (
+            item
+            for item in entries
+            if item["evidence_type"] == "task_manifest" and item["path_scope"] == "state"
+        ),
+        None,
+    )
+    if specification is not None or manifest_entry is not None:
+        if specification is None or manifest_entry is None:
+            return None, "invalid", {}, "", "persisted specification evidence is incomplete"
+        manifest = root / str(manifest_entry["path"])
+        raw = manifest.read_bytes()
+        specification_payload = _read(root / str(specification["path"]))
+        if specification_payload.get("manifest_sha256") != hashlib.sha256(raw).hexdigest():
+            return None, "invalid", {}, "", "persisted manifest digest conflicts with specification"
+        return _validate_and_index_manifest(
+            root, task, run_id, manifest, raw, binding, path_scope="state"
+        )
+
+    local_manifest = Path.cwd() / ".agent" / "tasks" / f"{task}.toml"
+    if local_manifest.is_file() and _manifest_schema_version(local_manifest) == 1:
+        return _validate_and_index_manifest(
+            root,
+            task,
+            run_id,
+            local_manifest,
+            local_manifest.read_bytes(),
+            binding,
+            path_scope="repo",
+        )
+    if not local_manifest.exists():
+        return None, "missing", {}, "", None
+    fetched = _git("fetch", "origin", "main")
+    if fetched.returncode != 0:
+        return None, "invalid", {}, "", "origin main fetch failed"
+    revision_result = _git("rev-parse", "refs/remotes/origin/main")
+    if revision_result.returncode != 0:
+        return None, "invalid", {}, "", "origin main cannot be resolved"
+    revision = revision_result.stdout.strip()
+    blob = _git_bytes("show", f"{revision}:.agent/tasks/{task}.toml")
+    if blob.returncode != 0:
+        return None, "invalid", {}, "", "remote task manifest is absent"
+    _, _, remote_error = _validated_manifest_identity(blob.stdout, task, binding)
+    if remote_error is not None:
+        return None, "invalid", {}, "", remote_error
+    remote_manifest = run_root(root, task, run_id) / "spec" / "task-manifest.toml"
+    _write_bytes(remote_manifest, blob.stdout)
+    result = _validate_and_index_manifest(
+        root, task, run_id, remote_manifest, blob.stdout, binding, path_scope="state"
+    )
+    if result[4] is not None:
+        return result
+    _write(
+        root / canonical_relative("specification_revision", task, run_id, "specification")[1],
+        {
+            "schema_version": 1,
+            "specification_revision": revision,
+            "manifest_sha256": hashlib.sha256(blob.stdout).hexdigest(),
+            "diagnostics": [],
+        },
+    )
+    _, specification_path = canonical_relative(
+        "specification_revision", task, run_id, "specification"
+    )
+    index_record(
+        root,
+        task,
+        run_id,
+        phase="spec",
+        evidence_type="specification_revision",
+        subject_id="specification",
+        path_scope="state",
+        relative_path=specification_path,
+        producer_command="implement-tdd",
+    )
+    return result
+
+
+def _validate_and_index_manifest(
+    root: Path,
+    task: str,
+    run_id: str,
+    manifest: Path,
+    raw: bytes,
+    binding: Json,
+    *,
+    path_scope: str,
+) -> tuple[Path | None, str, Json, str, str | None]:
+    validation_status, identity, error = _validated_manifest_identity(raw, task, binding)
+    if error is not None:
+        return None, validation_status, identity, "", error
+    text = raw.decode("utf-8")
+    validation = validate_task_manifest_text(text)
+    manifest_tdd_path = identity["tdd_path"]
+    manifest_tdd_sha256 = identity["tdd_sha256"]
+    relative_path = (
+        manifest.relative_to(root).as_posix()
+        if path_scope == "state"
+        else f".agent/tasks/{task}.toml"
+    )
+    index_record(
+        root,
+        task,
+        run_id,
+        phase="spec",
+        evidence_type="task_manifest",
+        subject_id="manifest",
+        path_scope=path_scope,
+        relative_path=relative_path,
+        producer_command="implement-tdd",
+    )
+    validation_payload = validation.as_json() | {
+        "tdd_path": manifest_tdd_path,
+        "tdd_sha256": manifest_tdd_sha256,
+    }
+    _, validation_path = canonical_relative("task_manifest_validation", task, run_id)
+    _write(root / validation_path, validation_payload)
+    index_record(
+        root,
+        task,
+        run_id,
+        phase="spec",
+        evidence_type="task_manifest_validation",
+        subject_id="manifest",
+        path_scope="state",
+        relative_path=validation_path,
+        producer_command="implement-tdd",
+    )
+    return manifest, validation_status, identity, hashlib.sha256(raw).hexdigest(), None
+
+
+def _validated_manifest_identity(
+    raw: bytes, task: str, binding: Json
+) -> tuple[str, Json, str | None]:
+    try:
+        text = raw.decode("utf-8")
+    except UnicodeDecodeError:
+        return "invalid", {}, "remote task manifest is not UTF-8"
+    validation = validate_task_manifest_text(text)
+    validation_status = "valid" if validation.valid else "invalid"
+    try:
+        identity = tomllib.loads(text)
+    except tomllib.TOMLDecodeError:
+        identity = {}
+    if (
+        not validation.valid
+        or validation.task_id != task
+        or identity.get("tdd_sha256") != binding["tdd_sha256"]
+        or identity.get("tdd_path") not in cast(list[str], binding["tdd_paths"])
+    ):
+        return validation_status, identity, "remote manifest does not match TDD binding"
+    return validation_status, identity, None
+
+
+def _specification_revision(root: Path, task: str, run_id: str) -> str | None:
+    path = root / canonical_relative("specification_revision", task, run_id, "specification")[1]
+    if not path.is_file():
+        return None
+    revision = _read(path).get("specification_revision")
+    return revision if isinstance(revision, str) else None
+
+
+def _manifest_schema_version(manifest: Path) -> int | None:
+    try:
+        parsed = tomllib.loads(manifest.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError):
+        return None
+    version = parsed.get("schema_version")
+    return version if type(version) is int else None
+
+
+def _historical_result(
+    requested_tdd_path: str | None,
+    binding: Json,
+    task: str,
+    run_id: str,
+    manifest: Path,
+    validation_status: str,
+) -> Json:
+    return {
+        "schema_version": 1,
+        "status": "historical",
+        "task_id": task,
+        "implementation_run_id": run_id,
+        "requested_tdd_path": requested_tdd_path,
+        "primary_tdd_path": binding["primary_tdd_path"],
+        "tdd_paths": binding["tdd_paths"],
+        "tdd_sha256": binding["tdd_sha256"],
+        "manifest_path": str(manifest),
+        "manifest_validation_status": validation_status,
+        "implementation_phase": "historical",
+        "next_action": None,
+        "missing_evidence": [],
+        "producer_arguments": {},
+        "suggested_commands": [],
+        "diagnostics": [],
+    }
+
+
+def _remote_specification_blocked(task: str, run_id: str, rule: str) -> Json:
+    return {
+        "schema_version": 1,
+        "status": "blocked",
+        "task_id": task,
+        "implementation_run_id": run_id,
+        "diagnostics": [
+            {
+                "code": "workflow.remote_specification_invalid",
+                "location": "/specification",
+                "rule": rule,
+            }
+        ],
+    }
+
+
 def _git(*arguments: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(["git", *arguments], text=True, capture_output=True, check=False)
+
+
+def _git_bytes(*arguments: str) -> subprocess.CompletedProcess[bytes]:
+    return subprocess.run(["git", *arguments], capture_output=True, check=False)
