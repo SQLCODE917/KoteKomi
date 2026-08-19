@@ -3,7 +3,7 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
-from kotekomi_devtools.tdd_workflow import _suggested_commands, workflow_status
+from kotekomi_devtools.tdd_workflow import suggested_commands, workflow_status
 
 PROJECT_ROOT = Path(__file__).resolve().parents[4]
 
@@ -201,13 +201,13 @@ def test_workflow_requires_and_derives_a_portable_candidate_receipt_command(tmp_
     manifest = tmp_path / "task.toml"
     manifest.write_text('baseline_revision = "base"\n', encoding="utf-8")
     root = tmp_path / "state"
-    records = {
+    records: dict[str, dict[str, Any]] = {
         "specification_revision": {"specification_revision": "specification"},
         "candidate_commit": {"commit_sha": "candidate", "parent_sha": "base"},
         "verification_plan": {"planned_checks": []},
         "verify_checks": {"status": "ready"},
     }
-    entries = [
+    entries: list[dict[str, Any]] = [
         {"evidence_type": "tdd_binding", "path": "binding.json"},
         {"evidence_type": "task_manifest", "path": "manifest.toml"},
         {"evidence_type": "task_manifest_validation", "path": "manifest-validation.json"},
@@ -224,7 +224,7 @@ def test_workflow_requires_and_derives_a_portable_candidate_receipt_command(tmp_
         "verify_candidate",
         ["candidate_verification_receipt"],
     )
-    command = _suggested_commands(
+    command = suggested_commands(
         "verify_candidate", "task", "task-run-001", str(manifest), root, entries
     )[0]
 

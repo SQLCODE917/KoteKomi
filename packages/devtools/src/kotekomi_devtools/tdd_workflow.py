@@ -276,7 +276,7 @@ def _diagnostic(code: str, rule: str) -> Json:
     return {"code": f"workflow.{code}", "location": "/evidence", "rule": rule}
 
 
-def _suggested_commands(
+def suggested_commands(
     action: str,
     task_id: str,
     run_id: str,
@@ -542,7 +542,7 @@ def implement_tdd(
                 root / "experiments" / task / "runs" / run_id / "evidence" / "index.json"
             ),
         },
-        "suggested_commands": _suggested_commands(
+        "suggested_commands": suggested_commands(
             action,
             task,
             run_id,
