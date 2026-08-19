@@ -8,12 +8,20 @@ from kotekomi_application import (
     ArchivePutDisposition,
     ArchivePutOutcome,
     AuthoritativeCaptureRequest,
+    AuthoritativePdfCaptureRequest,
     BuildIdentity,
     BundleCommitDisposition,
     BundleCommitOutcome,
+    PdfPagePreflight,
+    PdfParseInput,
+    PdfParseResult,
+    PdfPreflight,
+    PdfProcessingError,
+    PdfProcessorIdentity,
     ProcessingTaskDisposition,
     StagedArchiveObject,
     commit_authoritative_capture,
+    commit_authoritative_pdf_capture,
 )
 from kotekomi_domain import (
     CaptureDocumentResolution,
@@ -24,6 +32,8 @@ from kotekomi_domain import (
     DocumentRepresentationBundle,
     DocumentRevisionRelation,
     ParseQualityReport,
+    PdfPageAccountingBundle,
+    PdfPageInventoryDisposition,
     ProcessingAttempt,
     ProcessingAttemptOutcome,
     ProcessingAttemptStatus,
@@ -360,6 +370,82 @@ class FakeLedgerRepository:
     def save_provenance_activity(self, record: ProvenanceActivity) -> None:
         self.provenance_activities[record.id] = record
 
+    def commit_pdf_page_accounting(
+        self, page_accounting: PdfPageAccountingBundle
+    ) -> BundleCommitDisposition:
+        del page_accounting
+        return BundleCommitDisposition.CREATED
+
+    def commit_pdf_document_processing(
+        self,
+        *,
+        expected_task_fingerprint_id: str,
+        bundle: DocumentRepresentationBundle,
+        page_accounting: PdfPageAccountingBundle,
+        created_provenance_activity: ProvenanceActivity,
+        created_outcome: ProcessingAttemptOutcome,
+        reused_outcome: ProcessingAttemptOutcome,
+    ) -> BundleCommitOutcome:
+        del page_accounting
+        return self.commit_document_representation_processing(
+            expected_task_fingerprint_id=expected_task_fingerprint_id,
+            bundle=bundle,
+            created_provenance_activity=created_provenance_activity,
+            created_outcome=created_outcome,
+            reused_outcome=reused_outcome,
+        )
+
+    def commit_blocked_pdf_processing(
+        self,
+        *,
+        expected_task_fingerprint_id: str,
+        page_accounting: PdfPageAccountingBundle,
+        created_provenance_activity: ProvenanceActivity,
+        created_outcome: ProcessingAttemptOutcome,
+        reused_outcome: ProcessingAttemptOutcome,
+    ) -> BundleCommitDisposition:
+        del expected_task_fingerprint_id, page_accounting, reused_outcome
+        self.save_provenance_activity(created_provenance_activity)
+        self.append_processing_attempt_outcome(created_outcome)
+        return BundleCommitDisposition.CREATED
+
+
+class BlockingPdfParser:
+    def __init__(self) -> None:
+        self.received_bytes: bytes | None = None
+
+    def processing_identity(self, policy_id: str) -> PdfProcessorIdentity:
+        del policy_id
+        return PdfProcessorIdentity("blocking_pdf", "1", "b" * 64, "1")
+
+    def parse(self, parse_input: PdfParseInput) -> PdfParseResult:
+        self.received_bytes = parse_input.raw_bytes
+        return PdfParseResult(
+            preflight=PdfPreflight(
+                parser_name="blocking_pdf",
+                parser_version="1",
+                preflight_tool="fixture",
+                preflight_tool_version="1",
+                encrypted=False,
+                page_inventory_disposition=PdfPageInventoryDisposition.COMPLETE,
+                page_count=1,
+                pages=(PdfPagePreflight(1, 612, 792, 0, 0),),
+            ),
+            representation_bundle=None,
+            blocking_reasons=("fixture_pdf_blocked",),
+        )
+
+
+class FailingPdfParser(BlockingPdfParser):
+    def parse(self, parse_input: PdfParseInput) -> PdfParseResult:
+        self.received_bytes = parse_input.raw_bytes
+        raise PdfProcessingError(
+            code="fixture_pdf_failure",
+            failure_type="FixtureFailure",
+            safe_message="Fixture parser failed.",
+            retryable=True,
+        )
+
 
 def test_commit_authoritative_capture_creates_source_document_and_provenance() -> None:
     raw_bytes = FIXTURE_PATH.read_bytes()
@@ -646,6 +732,99 @@ def test_commit_authoritative_capture_rejects_changed_bytes_without_revision_dec
     assert len(ledger.raw_blobs) == len(ledger.source_captures) == len(ledger.documents) == 1
     assert len(ledger.document_revision_relations) == 0
     assert archive.read_raw_source(next(iter(ledger.raw_blobs))) == b"original note"
+
+
+def test_deposited_text_source_uses_url_identity_and_creates_a_revision() -> None:
+    archive = FakeArchiveStore()
+    ledger = FakeLedgerRepository()
+    source_url = "https://Example.TEST/articles/revision#ignored"
+    first = commit_authoritative_capture(
+        AuthoritativeCaptureRequest(
+            local_file_path="raw/article.md",
+            filename="article.md",
+            raw_bytes=b"# Article\n\nFirst version.",
+            source_url=source_url,
+            ingested_at=NOW,
+            build_identity=BUILD_IDENTITY,
+        ),
+        archive,
+        ledger,
+    )
+    second = commit_authoritative_capture(
+        AuthoritativeCaptureRequest(
+            local_file_path="raw/article-renamed.md",
+            filename="article-renamed.md",
+            raw_bytes=b"# Article\n\nSecond version.",
+            source_url="https://example.test/articles/revision",
+            ingested_at=NOW.replace(hour=13),
+            build_identity=BUILD_IDENTITY,
+        ),
+        archive,
+        ledger,
+    )
+
+    source = ledger.sources[first.source_id]
+    capture = ledger.source_captures[next(reversed(ledger.source_captures))]
+    assert first.source_id == second.source_id
+    assert first.document_id != second.document_id
+    assert source.canonical_identity_key == "https://example.test/articles/revision"
+    assert capture.requested_uri == source.canonical_identity_key
+    assert capture.retrieval_method == "user_deposited_file"
+    assert len(ledger.document_revision_relations) == 1
+
+
+def test_deposited_pdf_archives_before_reporting_a_typed_blocker() -> None:
+    archive = FakeArchiveStore()
+    ledger = FakeLedgerRepository()
+    parser = BlockingPdfParser()
+    raw_bytes = b"%PDF-1.7\nfixture"
+
+    result = commit_authoritative_pdf_capture(
+        AuthoritativePdfCaptureRequest(
+            local_file_path="raw/article.pdf",
+            filename="article.pdf",
+            raw_bytes=raw_bytes,
+            source_url="https://example.test/wiki/article",
+            ingested_at=NOW,
+            build_identity=BUILD_IDENTITY,
+        ),
+        archive,
+        ledger,
+        parser,
+    )
+
+    assert parser.received_bytes == raw_bytes
+    assert archive.read_raw_source(next(iter(ledger.raw_blobs))) == raw_bytes
+    assert result.representation_id is None
+    assert result.blocking_reasons == ("fixture_pdf_blocked",)
+    assert ledger.sources[result.source_id].canonical_identity_key == "https://example.test/wiki/article"
+    assert result.document_id in ledger.documents
+
+
+def test_deposited_pdf_retains_capture_after_a_parser_failure() -> None:
+    archive = FakeArchiveStore()
+    ledger = FakeLedgerRepository()
+    parser = FailingPdfParser()
+
+    result = commit_authoritative_pdf_capture(
+        AuthoritativePdfCaptureRequest(
+            local_file_path="raw/article.pdf",
+            filename="article.pdf",
+            raw_bytes=b"%PDF-1.7\nfixture",
+            source_url="https://example.test/wiki/article",
+            ingested_at=NOW,
+            build_identity=BUILD_IDENTITY,
+        ),
+        archive,
+        ledger,
+        parser,
+    )
+
+    assert result.failed is True
+    assert result.blocking_reasons == ("fixture_pdf_failure",)
+    assert result.source_id in ledger.sources
+    assert result.document_id in ledger.documents
+    assert archive.raw_writes
 
 
 def test_commit_authoritative_capture_preserves_promoted_archive_objects_after_ledger_failure() -> (

@@ -49,7 +49,7 @@
 
 ## 5. Pipeline checks
 - run URL ingest fixture
-- run local file ingest fixture with `uv run pytest packages/pipelines/tests/test_source_add_file.py`
+- verify deposited PDF, Markdown, and text source ingestion with `uv run pytest packages/application/tests/test_add_source_from_file.py packages/adapters/tests/test_docling_pdf_parser.py packages/application/tests/test_pipeline_readiness.py packages/pipelines/tests/test_source_add_file.py`
 - verify llama-server and Ollama Adapter contracts with `uv run pytest packages/adapters/tests/test_local_model_runtimes.py`
 - verify local model runtime config and agent status JSON with `uv run pytest packages/pipelines/tests/test_cli.py`
 - verify named `macbook` and `wsl-4090` profiles resolve into the shared ModelExecution configuration with `uv run pytest packages/pipelines/tests/test_cli.py`

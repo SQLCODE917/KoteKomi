@@ -33,7 +33,7 @@ from kotekomi_application.review_queue_packet import (
     get_review_readiness,
 )
 
-SOURCE_INGEST_COMMAND = "kotekomi source add-file <path>"
+SOURCE_INGEST_COMMAND = "kotekomi source add-file <path> --source-url <https-url>"
 REVIEW_NEXT_COMMAND = "kotekomi review next"
 GRAPH_PROJECT_COMMAND = "kotekomi graph project"
 GRAPH_MINE_COMMAND = "kotekomi graph mine"
@@ -60,6 +60,7 @@ class PipelineStatusInput:
     ledger_path: str | None = None
     archive_path: str | None = None
     source_file_path: str | None = None
+    source_url: str | None = None
     model_runtime_adapter: str | None = None
     model_endpoint: str | None = None
     model_name: str | None = None
@@ -368,6 +369,11 @@ def _source_ingest_plan(
             "source_file_path",
             "Path to a local Source file.",
         ),
+        *_missing_string(
+            pipeline_input.source_url,
+            "source_url",
+            "Canonical HTTPS URL for the deposited Source.",
+        ),
         *_missing_path(
             pipeline_input.ledger_path,
             "ledger_path",
@@ -381,6 +387,8 @@ def _source_ingest_plan(
             "source",
             "add-file",
             _required_value(pipeline_input.source_file_path, "source_file_path"),
+            "--source-url",
+            _required_value(pipeline_input.source_url, "source_url"),
             "--ledger-path",
             _required_value(pipeline_input.ledger_path, "ledger_path"),
             "--archive-path",

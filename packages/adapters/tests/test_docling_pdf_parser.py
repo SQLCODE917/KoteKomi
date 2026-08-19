@@ -1,3 +1,5 @@
+# pyright: reportPrivateUsage=false
+
 import hashlib
 import sys
 from datetime import UTC, datetime
@@ -37,6 +39,20 @@ def test_source_preflight_establishes_the_page_denominator_before_docling() -> N
     )
     assert preflight.preflight_tool == "poppler_pdf_preflight"
     assert preflight.preflight_tool_version
+
+
+def test_docling_geometry_accepts_float_precision_drift_and_rejects_material_change() -> None:
+    from kotekomi_adapters import docling_pdf_parser
+
+    source = (docling_pdf_parser._PageGeometry(1, 595.92, 841.92, 0),)
+    precision_drift = (
+        docling_pdf_parser._PageGeometry(1, 595.9199829101562, 841.9199829101562, 0),
+    )
+    material_change = (docling_pdf_parser._PageGeometry(1, 595.91, 841.92, 0),)
+
+    docling_pdf_parser._validate_docling_page_geometry(precision_drift, source)
+    with pytest.raises(ValueError, match="canonical source geometry"):
+        docling_pdf_parser._validate_docling_page_geometry(material_change, source)
 
 
 def test_docling_parser_raises_when_docling_load_fails(

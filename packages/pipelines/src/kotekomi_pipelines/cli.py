@@ -13,6 +13,8 @@ from pathlib import Path
 from typing import cast
 
 from kotekomi_adapters import (
+    DoclingPdfParser,
+    DoclingPdfParserConfig,
     GenericArticleAdapter,
     LocalArchiveStore,
     NetworkXGraphAnalyzer,
@@ -22,6 +24,7 @@ from kotekomi_adapters import (
 )
 from kotekomi_application import (
     AuthoritativeCaptureRequest,
+    AuthoritativePdfCaptureRequest,
     BriefingGenerationInput,
     GraphConnectionMiningInput,
     JsonValue,
@@ -53,6 +56,7 @@ from kotekomi_application import (
     Uuid4ProcessingAttemptIdFactory,
     approve_proposed_change,
     commit_authoritative_capture,
+    commit_authoritative_pdf_capture,
     edit_proposed_change,
     export_review_editable_record,
     generate_briefing,
@@ -66,6 +70,7 @@ from kotekomi_application import (
     list_review_queue,
     mine_graph_connections,
     model_runtime_status_to_json,
+    normalize_source_url,
     pipeline_next_to_json,
     pipeline_status_to_json,
     project_ledger_graph,
@@ -117,7 +122,7 @@ def main(argv: list[str] | None = None) -> int:
             ledger_path_override=args.ledger_path,
             archive_path_override=args.archive_path,
         )
-        return add_source_file(config, args.path)
+        return add_source_file(config, args.path, args.source_url, args.output_format)
 
     if args.command == "source" and args.source_command == "add-news":
         config = load_processing_config(
@@ -317,6 +322,7 @@ def main(argv: list[str] | None = None) -> int:
             config=config,
             output_format=args.output_format,
             source_file_path=args.source_file_path,
+            source_url=args.source_url,
             model_output_fixture_path=args.model_output_fixture,
             document_id=args.document_id,
             briefing_title=args.briefing_title,
@@ -339,6 +345,7 @@ def main(argv: list[str] | None = None) -> int:
             config=config,
             output_format=args.output_format,
             source_file_path=args.source_file_path,
+            source_url=args.source_url,
             model_output_fixture_path=args.model_output_fixture,
             document_id=args.document_id,
             briefing_title=args.briefing_title,
@@ -362,6 +369,7 @@ def main(argv: list[str] | None = None) -> int:
             output_format=args.output_format,
             dry_run=args.dry_run,
             source_file_path=args.source_file_path,
+            source_url=args.source_url,
             model_output_fixture_path=args.model_output_fixture,
             document_id=args.document_id,
             briefing_title=args.briefing_title,
@@ -453,6 +461,10 @@ def build_parser() -> argparse.ArgumentParser:
         help="Add a local file as a Source.",
     )
     add_file_parser.add_argument("path", type=Path)
+    add_file_parser.add_argument("--source-url", required=True)
+    add_file_parser.add_argument(
+        "--format", dest="output_format", choices=("text", "json"), default="text"
+    )
     add_file_parser.add_argument("--ledger-path", type=Path, default=None)
     add_file_parser.add_argument("--archive-path", type=Path, default=None)
     add_news_parser = source_subparsers.add_parser(
@@ -670,6 +682,7 @@ def build_parser() -> argparse.ArgumentParser:
     pipeline_status_parser.add_argument("--ledger-path", type=Path, default=None)
     pipeline_status_parser.add_argument("--archive-path", type=Path, default=None)
     pipeline_status_parser.add_argument("--source-file-path", type=Path, default=None)
+    pipeline_status_parser.add_argument("--source-url", default=None)
     _add_model_runtime_arguments(pipeline_status_parser, include_fixture=True)
     pipeline_status_parser.add_argument("--document-id", default=None)
     pipeline_status_parser.add_argument("--briefing-title", default=None)
@@ -686,6 +699,7 @@ def build_parser() -> argparse.ArgumentParser:
     pipeline_next_parser.add_argument("--ledger-path", type=Path, default=None)
     pipeline_next_parser.add_argument("--archive-path", type=Path, default=None)
     pipeline_next_parser.add_argument("--source-file-path", type=Path, default=None)
+    pipeline_next_parser.add_argument("--source-url", default=None)
     _add_model_runtime_arguments(pipeline_next_parser, include_fixture=True)
     pipeline_next_parser.add_argument("--document-id", default=None)
     pipeline_next_parser.add_argument("--briefing-title", default=None)
@@ -703,6 +717,7 @@ def build_parser() -> argparse.ArgumentParser:
     pipeline_run_next_parser.add_argument("--ledger-path", type=Path, default=None)
     pipeline_run_next_parser.add_argument("--archive-path", type=Path, default=None)
     pipeline_run_next_parser.add_argument("--source-file-path", type=Path, default=None)
+    pipeline_run_next_parser.add_argument("--source-url", default=None)
     _add_model_runtime_arguments(pipeline_run_next_parser, include_fixture=True)
     pipeline_run_next_parser.add_argument("--document-id", default=None)
     pipeline_run_next_parser.add_argument("--briefing-title", default=None)
@@ -764,28 +779,85 @@ def init_ledger(config: PipelineConfig) -> int:
     return 0
 
 
-def add_source_file(config: ProcessingConfig, source_file_path: Path) -> int:
+def add_source_file(
+    config: ProcessingConfig,
+    source_file_path: Path,
+    source_url: str,
+    output_format: str,
+) -> int:
+    source_url = normalize_source_url(source_url)
     raw_bytes = source_file_path.read_bytes()
+    payload: dict[str, JsonValue]
     archive_store = LocalArchiveStore(config.storage.archive_path)
     archive_store.initialize()
     with sqlite_ledger_transaction(config.storage.ledger_path) as ledger_repository:
-        result = commit_authoritative_capture(
-            AuthoritativeCaptureRequest(
-                local_file_path=str(source_file_path),
-                filename=source_file_path.name,
-                raw_bytes=raw_bytes,
-                ingested_at=datetime.now(UTC),
-                build_identity=config.build_identity,
-            ),
-            archive_store,
-            ledger_repository,
-            Uuid4ProcessingAttemptIdFactory(),
-        )
-    status = "created" if result.created else "already_exists"
-    print(f"Source {status}: {result.source_id}")
-    print(f"Document: {result.document_id}")
-    print(f"ProvenanceActivity: {result.provenance_activity_id}")
-    print(f"Raw path: {result.raw_path}")
+        if source_file_path.suffix.lower() == ".pdf":
+            result = commit_authoritative_pdf_capture(
+                AuthoritativePdfCaptureRequest(
+                    local_file_path=str(source_file_path),
+                    filename=source_file_path.name,
+                    raw_bytes=raw_bytes,
+                    source_url=source_url,
+                    ingested_at=datetime.now(UTC),
+                    build_identity=config.build_identity,
+                ),
+                archive_store,
+                ledger_repository,
+                DoclingPdfParser(DoclingPdfParserConfig()),
+                Uuid4ProcessingAttemptIdFactory(),
+            )
+            status = (
+                "failed"
+                if result.failed
+                else "blocked"
+                if result.blocking_reasons
+                else "created"
+                if result.created
+                else "reused"
+            )
+            payload = {
+                "status": status,
+                "source_id": result.source_id,
+                "document_id": result.document_id,
+                "raw_path": result.raw_path,
+                "representation_id": result.representation_id,
+                "provenance_activity_id": result.provenance_activity_id,
+                "blocking_reasons": list(result.blocking_reasons),
+            }
+        else:
+            result = commit_authoritative_capture(
+                AuthoritativeCaptureRequest(
+                    local_file_path=str(source_file_path),
+                    filename=source_file_path.name,
+                    raw_bytes=raw_bytes,
+                    ingested_at=datetime.now(UTC),
+                    build_identity=config.build_identity,
+                    source_url=source_url,
+                ),
+                archive_store,
+                ledger_repository,
+                Uuid4ProcessingAttemptIdFactory(),
+            )
+            payload = {
+                "status": "created" if result.created else "reused",
+                "source_id": result.source_id,
+                "document_id": result.document_id,
+                "raw_path": result.raw_path,
+                "representation_id": result.representation_id,
+                "provenance_activity_id": result.provenance_activity_id,
+                "blocking_reasons": [],
+            }
+    if output_format == "json":
+        print(json.dumps(payload, sort_keys=True))
+        return 0
+    print(f"Source {payload['status']}: {payload['source_id']}")
+    print(f"Document: {payload['document_id']}")
+    if payload["provenance_activity_id"] is not None:
+        print(f"ProvenanceActivity: {payload['provenance_activity_id']}")
+    print(f"Raw path: {payload['raw_path']}")
+    blocking_reasons = cast(list[str], payload["blocking_reasons"])
+    if blocking_reasons:
+        print(f"Blockers: {', '.join(blocking_reasons)}")
     return 0
 
 
@@ -1119,6 +1191,7 @@ def show_pipeline_status(
     config: PipelineConfig,
     output_format: str,
     source_file_path: Path | None,
+    source_url: str | None,
     model_output_fixture_path: Path | None,
     document_id: str | None,
     briefing_title: str | None,
@@ -1128,6 +1201,7 @@ def show_pipeline_status(
             _pipeline_status_input(
                 config=config,
                 source_file_path=source_file_path,
+                source_url=source_url,
                 model_output_fixture_path=model_output_fixture_path,
                 document_id=document_id,
                 briefing_title=briefing_title,
@@ -1146,6 +1220,7 @@ def show_pipeline_next(
     config: PipelineConfig,
     output_format: str,
     source_file_path: Path | None,
+    source_url: str | None,
     model_output_fixture_path: Path | None,
     document_id: str | None,
     briefing_title: str | None,
@@ -1155,6 +1230,7 @@ def show_pipeline_next(
             _pipeline_status_input(
                 config=config,
                 source_file_path=source_file_path,
+                source_url=source_url,
                 model_output_fixture_path=model_output_fixture_path,
                 document_id=document_id,
                 briefing_title=briefing_title,
@@ -1174,6 +1250,7 @@ def run_pipeline_next(
     output_format: str,
     dry_run: bool,
     source_file_path: Path | None,
+    source_url: str | None,
     model_output_fixture_path: Path | None,
     document_id: str | None,
     briefing_title: str | None,
@@ -1181,6 +1258,7 @@ def run_pipeline_next(
     pipeline_input = _pipeline_status_input(
         config=config,
         source_file_path=source_file_path,
+        source_url=source_url,
         model_output_fixture_path=model_output_fixture_path,
         document_id=document_id,
         briefing_title=briefing_title,
@@ -1273,6 +1351,7 @@ def _pipeline_status_input(
     *,
     config: PipelineConfig,
     source_file_path: Path | None,
+    source_url: str | None,
     model_output_fixture_path: Path | None,
     document_id: str | None,
     briefing_title: str | None,
@@ -1281,6 +1360,7 @@ def _pipeline_status_input(
         ledger_path=str(config.ledger_path),
         archive_path=str(config.archive_path),
         source_file_path=_optional_resolved_path(source_file_path),
+        source_url=source_url,
         model_runtime_adapter=config.model_execution.adapter,
         model_endpoint=config.model_execution.endpoint,
         model_name=config.model_execution.model,
