@@ -1,0 +1,55 @@
+schema_version = 2
+task_id = "tdd-receipt-aware-reconciliation-9563cdd21b51"
+title = "TDD Receipt-Aware Reconciliation"
+status = "ready_for_terra_high"
+series_id = "tdd-harness-feature-branch"
+task_class = "repository-tooling"
+model_profile = "terra-high-v1"
+baseline_revision = "abd7d8bf4a1b67ae84f377c65e94e7aa0b1de026"
+tdd_path = "docs/2026-08-19-tdd-receipt-aware-reconciliation.md"
+tdd_sha256 = "9563cdd21b5193d7ec53dcd3f05b4fb59673c3f0cc9687597a077cb048c94601"
+goal = "Reconcile receipt-based feature merges without weakening candidate or receipt binding."
+depends_on = ["tdd-feature-branch-verification-receipt-a5b508342aaf", "tdd-merged-feature-branch-reconciliation-caca33eead8d"]
+allowed_paths = [".agent/tasks/tdd-receipt-aware-reconciliation-9563cdd21b51.toml", "docs/2026-08-19-tdd-receipt-aware-reconciliation.md", "packages/devtools/src/kotekomi_devtools/feature_branch_reconciliation.py", "packages/devtools/src/kotekomi_devtools/tdd_workflow.py", "packages/devtools/tests/acceptance/test_receipt_aware_reconciliation_contract.py", "packages/devtools/tests/unit/test_receipt_aware_reconciliation.py"]
+reference_paths = ["docs/2026-08-18-tdd-merged-feature-branch-reconciliation.md", "docs/2026-08-18-tdd-feature-branch-verification-receipt.md", "packages/devtools/src/kotekomi_devtools/candidate_verifier.py"]
+stop_conditions = ["the implementation accepts a receipt that does not bind the recorded candidate and specification", "the implementation changes candidate CI evidence", "the implementation deletes a feature branch before result-tag publication"]
+
+[readiness]
+authority = "The Receipt-Aware Reconciliation TDD defines this task."
+contract_family = "tdd-harness"
+dominant_outcome = "The Harness closes a receipt-based historical merge with portable evidence."
+failure_policy = "An unbound receipt, wrong merge parent, or wrong feature tip blocks before reconciliation evidence."
+legacy_disposition = "Direct candidate-parent merges retain their current reconciliation path."
+negative_proof = "The producer does not weaken receipt identity checks."
+public_entry_point = "kotekomi-agent reconcile-merged-feature-branch"
+scope_policy = "Receipt-aware reconciliation, workflow, and deterministic tests only."
+side_effect_boundary = "Existing result tag and feature branch deletion actions only."
+unresolved_decisions = []
+
+[budget]
+maximum_production_files = 2
+maximum_test_files = 2
+maximum_production_diff_lines = 500
+
+[[protected_artifacts]]
+kind = "leaf-tdd"
+path = "docs/2026-08-19-tdd-receipt-aware-reconciliation.md"
+sha256 = "9563cdd21b5193d7ec53dcd3f05b4fb59673c3f0cc9687597a077cb048c94601"
+
+[[acceptance]]
+id = "receipt-aware-reconciliation-contract"
+argv = ["uv", "run", "pytest", "-p", "no:cacheprovider", "packages/devtools/tests/acceptance/test_receipt_aware_reconciliation_contract.py", "packages/devtools/tests/unit/test_receipt_aware_reconciliation.py"]
+timeout_seconds = 180
+profile = "portable-local"
+
+[[acceptance]]
+id = "repository-static-checks"
+argv = ["uv", "run", "ruff", "check"]
+timeout_seconds = 120
+profile = "portable-local"
+
+[[acceptance]]
+id = "repository-type-checks"
+argv = ["uv", "run", "pyright"]
+timeout_seconds = 180
+profile = "portable-local"
