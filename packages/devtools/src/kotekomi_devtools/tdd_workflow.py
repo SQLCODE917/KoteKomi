@@ -197,7 +197,7 @@ def workflow_status(
     if blocked:
         return "candidate_ci", "blocked", [], [blocked]
     if "main_promotion" not in kinds:
-        return "main", "produce_main_promotion_evidence", ["main_promotion"], []
+        return "main", "promote_feature_branch", ["main_promotion"], []
     promotion = _payload(root, entries, "main_promotion")
     if "feature_branch" in kinds and promotion["promotion_kind"] == "direct":
         return (
@@ -251,8 +251,10 @@ def workflow_status(
     blocked = _ci_diagnostic("main", main_ci, promotion["promotion_commit"], "promotion_commit")
     if blocked:
         return "main_ci", "blocked", [], [blocked]
+    if "task_result" not in kinds:
+        return "main_ci", "complete_feature_branch", ["task_result", "cleanup"], []
     if "cleanup" not in kinds:
-        return "main_ci", "produce_cleanup_evidence", ["cleanup"], []
+        return "main_ci", "complete_feature_branch", ["cleanup"], []
     cleanup = _payload(root, entries, "cleanup")
     if cleanup["branch_cleanup_complete"] is not True:
         return (
@@ -298,10 +300,10 @@ def suggested_commands(
         "produce_verification_evidence": "verification-plan",
         "verify_candidate": "verify-candidate",
         "produce_candidate_ci_evidence": "record-candidate-ci",
-        "produce_main_promotion_evidence": "record-main-promotion",
+        "promote_feature_branch": "promote-feature-branch",
         "produce_main_lifecycle_evidence": "lifecycle-check",
         "produce_main_ci_evidence": "record-main-ci",
-        "produce_cleanup_evidence": "record-branch-cleanup",
+        "complete_feature_branch": "complete-feature-branch",
         "produce_complete_evidence": "receipt-chain-status",
     }.get(action, "evidence-index")
     arguments = ["--task-id", task_id, "--run", run_id]
@@ -328,6 +330,8 @@ def suggested_commands(
             "--state-root",
             str(root),
         ]
+    if action in {"promote_feature_branch", "complete_feature_branch"}:
+        arguments.extend(["--state-root", str(root)])
     return [{"command": command, "arguments": arguments}]
 
 

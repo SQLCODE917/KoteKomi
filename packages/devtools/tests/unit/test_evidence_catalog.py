@@ -184,3 +184,11 @@ def test_candidate_verification_receipts_use_profile_specific_canonical_paths() 
         "state",
         "experiments/task/runs/task-run-001/receipts/candidate-verification-portable-local.json",
     )
+
+
+def test_task_result_has_one_canonical_complete_path() -> None:
+    scope, path = canonical_relative("task_result", "task", "task-run-001", "result")
+    assert (scope, path) == (
+        "state",
+        "experiments/task/runs/task-run-001/results/task-result.json",
+    )

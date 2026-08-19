@@ -20,6 +20,12 @@ from kotekomi_devtools.feature_branch_reconciliation import (
     FeatureBranchReconciliationError,
     reconcile_merged_feature_branch,
 )
+from kotekomi_devtools.feature_branch_promotion import (
+    FeatureBranchPromotionError,
+    abandon_feature_branch,
+    complete_feature_branch,
+    promote_feature_branch,
+)
 from kotekomi_devtools.goal_accountability import GoalAccountabilityError, write_goal_report
 from kotekomi_devtools.lifecycle_evidence import (
     LifecycleEvidenceError,
@@ -94,6 +100,8 @@ def main(argv: list[str] | None = None) -> int:
         return _render_error(error)
     except FeatureBranchReconciliationError as error:
         return _render_error(error)
+    except FeatureBranchPromotionError as error:
+        return _render_error(error)
     except VerificationPlanError as error:
         return _render_error(error)
     except TaskLedgerError as error:
@@ -124,6 +132,9 @@ def _dispatch_command(arguments: argparse.Namespace) -> CliResponse | int:
         "implement-tdd": _handle_tdd_command,
         "tdd-metrics": _handle_tdd_command,
         "tdd-score": _handle_tdd_command,
+        "promote-feature-branch": _handle_feature_branch_command,
+        "complete-feature-branch": _handle_feature_branch_command,
+        "abandon-feature-branch": _handle_feature_branch_command,
         "tdd-compare": _handle_tdd_command,
         "task-retrospective": _handle_reporting_command,
         "goal-check": _handle_reporting_command,
@@ -531,6 +542,21 @@ def _handle_feature_branch_reconciliation_command(arguments: argparse.Namespace)
     return CliResponse(0, result.as_json())
 
 
+def _handle_feature_branch_command(arguments: argparse.Namespace) -> CliResponse:
+    common = {
+        "task_id": arguments.task_id,
+        "run_id": arguments.run,
+        "state_root_path": arguments.state_root,
+    }
+    if arguments.command == "promote-feature-branch":
+        result = promote_feature_branch(**common)
+    elif arguments.command == "complete-feature-branch":
+        result = complete_feature_branch(**common)
+    else:
+        result = abandon_feature_branch(**common)
+    return CliResponse(result.exit_code, result.payload)
+
+
 def _render_response(response: CliResponse) -> int:
     print(
         json.dumps(
@@ -842,3 +868,9 @@ def _add_lifecycle_evidence_parsers(subparsers: Any) -> None:
     reconciliation.add_argument("--promotion", required=True)
     reconciliation.add_argument("--final-main", required=True)
     reconciliation.add_argument("--ci-result", type=Path, required=True)
+    for name, help_text in (
+        ("promote-feature-branch", "Promote the verified feature receipt to main."),
+        ("complete-feature-branch", "Tag and clean up a main-CI-verified feature branch."),
+        ("abandon-feature-branch", "Tag and clean up an abandoned feature branch."),
+    ):
+        subparsers.add_parser(name, parents=[common], help=help_text)
