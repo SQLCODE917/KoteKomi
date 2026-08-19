@@ -28,7 +28,7 @@ type Json = dict[str, Any]
 PHASE_REQUIREMENTS = {
     "spec": {"tdd_binding", "task_manifest", "task_manifest_validation"},
     "candidate": {"candidate_lifecycle", "candidate_commit"},
-    "verification": {"verification_plan", "verify_checks"},
+    "verification": {"verification_plan", "verify_checks", "candidate_verification_receipt"},
     "candidate_ci": {"candidate_ci"},
     "main": {"main_promotion", "main_lifecycle"},
     "main_ci": {"main_ci", "cleanup"},
@@ -132,11 +132,12 @@ def workflow_status(
         return "candidate", "produce_candidate_lifecycle_evidence", ["candidate_lifecycle"], []
     if "candidate_commit" not in kinds:
         return "candidate", "produce_candidate_commit_evidence", ["candidate_commit"], []
-    if not PHASE_REQUIREMENTS["verification"].issubset(kinds):
+    required_verification = {"verification_plan", "verify_checks"}
+    if not required_verification.issubset(kinds):
         return (
             "verification",
             "produce_verification_evidence",
-            sorted(PHASE_REQUIREMENTS["verification"] - kinds),
+            sorted(required_verification - kinds),
             [],
         )
     plan = _payload(root, entries, "verification_plan")
@@ -152,11 +153,40 @@ def workflow_status(
     missing_checks = sorted(f"run_check:{item}" for item in planned_ids - recorded_ids)
     if missing_checks:
         return "verification", "produce_verification_evidence", missing_checks, []
+    receipt_entry = next(
+        (
+            item
+            for item in entries
+            if item["evidence_type"] == "candidate_verification_receipt"
+            and item.get("subject_id", "portable-local") == "portable-local"
+        ),
+        None,
+    )
+    if receipt_entry is None:
+        return "verification", "verify_candidate", ["candidate_verification_receipt"], []
+    receipt = _read(root / receipt_entry["path"])
+    if receipt.get("outcome") != "passed":
+        return (
+            "verification",
+            "blocked",
+            [],
+            [_diagnostic("candidate_receipt_not_passed", "portable_local_receipt_is_passed")],
+        )
+    specification = _payload(root, entries, "specification_revision")
+    candidate = _payload(root, entries, "candidate_commit")
+    if receipt.get("specification_revision") != specification.get(
+        "specification_revision"
+    ) or receipt.get("candidate_revision") != candidate.get("commit_sha"):
+        return (
+            "verification",
+            "blocked",
+            [],
+            [_diagnostic("candidate_receipt_mismatch", "receipt_revisions_match_run_evidence")],
+        )
     if "candidate_ci" not in kinds:
         return "candidate_ci", "produce_candidate_ci_evidence", ["candidate_ci"], []
-    candidate = _payload(root, entries, "candidate_commit")
     candidate_ci = _payload(root, entries, "candidate_ci")
-    blocked = _ci_diagnostic("candidate", candidate_ci, candidate["commit_sha"], "commit_sha")
+    blocked = _ci_diagnostic("candidate", candidate_ci, receipt["receipt_commit"], "receipt_commit")
     if blocked:
         return "candidate_ci", "blocked", [], [blocked]
     if "main_promotion" not in kinds:
@@ -171,7 +201,7 @@ def workflow_status(
         )
     if (
         promotion["promotion_kind"] == "merge"
-        and promotion["verified_parent_commit"] != candidate["commit_sha"]
+        and promotion["verified_parent_commit"] != receipt["receipt_commit"]
     ):
         return (
             "main",
@@ -186,7 +216,7 @@ def workflow_status(
         )
     if (
         promotion["promotion_kind"] == "direct"
-        and promotion["promotion_commit"] != candidate["commit_sha"]
+        and promotion["promotion_commit"] != receipt["receipt_commit"]
     ):
         return (
             "main",
@@ -246,7 +276,14 @@ def _diagnostic(code: str, rule: str) -> Json:
     return {"code": f"workflow.{code}", "location": "/evidence", "rule": rule}
 
 
-def _suggested_commands(action: str, task_id: str, run_id: str, manifest_path: str) -> list[Json]:
+def suggested_commands(
+    action: str,
+    task_id: str,
+    run_id: str,
+    manifest_path: str,
+    root: Path,
+    entries: list[Json],
+) -> list[Json]:
     if action in {"blocked", "complete"}:
         return []
     command = {
@@ -254,6 +291,7 @@ def _suggested_commands(action: str, task_id: str, run_id: str, manifest_path: s
         "produce_candidate_lifecycle_evidence": "lifecycle-check",
         "produce_candidate_commit_evidence": "record-candidate-commit",
         "produce_verification_evidence": "verification-plan",
+        "verify_candidate": "verify-candidate",
         "produce_candidate_ci_evidence": "record-candidate-ci",
         "produce_main_promotion_evidence": "record-main-promotion",
         "produce_main_lifecycle_evidence": "lifecycle-check",
@@ -264,6 +302,27 @@ def _suggested_commands(action: str, task_id: str, run_id: str, manifest_path: s
     arguments = ["--task-id", task_id, "--run", run_id]
     if action == "create_task_manifest":
         arguments.extend(["--manifest-path", manifest_path])
+    if action == "produce_complete_evidence":
+        arguments.extend(["--phase", "complete"])
+    if action == "verify_candidate":
+        manifest = tomllib.loads(Path(manifest_path).read_text(encoding="utf-8"))
+        specification = _payload(root, entries, "specification_revision")
+        candidate = _payload(root, entries, "candidate_commit")
+        arguments = [
+            "--manifest",
+            manifest_path,
+            "--base",
+            str(manifest["baseline_revision"]),
+            "--specification",
+            str(specification["specification_revision"]),
+            "--candidate",
+            str(candidate["commit_sha"]),
+            "--profile",
+            "portable-local",
+            *arguments,
+            "--state-root",
+            str(root),
+        ]
     return [{"command": command, "arguments": arguments}]
 
 
@@ -485,11 +544,13 @@ def implement_tdd(
                 root / "experiments" / task / "runs" / run_id / "evidence" / "index.json"
             ),
         },
-        "suggested_commands": _suggested_commands(
+        "suggested_commands": suggested_commands(
             action,
             task,
             run_id,
             str(manifest.relative_to(Path.cwd())),
+            root,
+            entries,
         ),
         "diagnostics": diagnostics,
     }

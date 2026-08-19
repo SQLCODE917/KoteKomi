@@ -15,6 +15,12 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Any, Literal, cast
 
+from kotekomi_devtools.evidence_catalog import (
+    EvidenceError,
+    state_root,
+    validated_entries,
+    write_canonical_record,
+)
 from kotekomi_devtools.task_manifest import validate_task_manifest
 from kotekomi_devtools.task_scope import audit_task_scope
 from kotekomi_devtools.verification_execution import run_check
@@ -45,7 +51,7 @@ class CandidateVerificationResult:
         return 0 if self.outcome == "passed" else 1
 
     def as_json(self) -> JsonObject:
-        return {
+        payload: JsonObject = {
             "status": self.status,
             "schema_version": 1,
             "task_id": self.task_id,
@@ -53,10 +59,13 @@ class CandidateVerificationResult:
             "outcome": self.outcome,
             "receipt_path": self.receipt_path,
             "receipt_sha256": self.receipt_sha256,
-            "verification_branch": self.verification_branch,
-            "verification_commit": self.verification_commit,
+            "receipt_commit": self.verification_commit,
             "diagnostics": list(self.diagnostics),
         }
+        if self.verification_branch is not None:
+            payload["verification_branch"] = self.verification_branch
+            payload["verification_commit"] = self.verification_commit
+        return payload
 
 
 def verify_candidate(
@@ -66,14 +75,29 @@ def verify_candidate(
     specification_revision: str,
     candidate_revision: str,
     profile: str,
+    task_id: str | None = None,
+    run_id: str | None = None,
+    state_root_path: Path | None = None,
 ) -> CandidateVerificationResult:
     """Verify one frozen candidate and commit one immutable receipt attempt."""
+    requested_task_id = task_id
+    active_run = requested_task_id is not None
     if profile not in {"portable-local", "authoritative-linux"}:
         return _invalid(profile, "profile_invalid", "/profile", "known_verification_profile")
     if profile == "authoritative-linux" and platform.system() != "Linux":
         return _invalid(profile, "profile_platform_invalid", "/profile", "linux_required")
     if not _repository_relative(manifest_path):
         return _invalid(profile, "manifest_path_invalid", "/manifest", "repository_relative_posix")
+    active_arguments = (task_id, run_id, state_root_path)
+    if any(value is not None for value in active_arguments) and any(
+        value is None for value in active_arguments
+    ):
+        return _invalid(
+            profile,
+            "active_run_arguments_incomplete",
+            "/",
+            "task_id_run_and_state_root_required_together",
+        )
 
     root = _repository_root()
     if root is None:
@@ -143,6 +167,8 @@ def verify_candidate(
                     "execution_base_matches",
                 )
             task_id = validation.task_id
+            if requested_task_id is not None and requested_task_id != task_id:
+                return _invalid(profile, "task_id_mismatch", "/task_id", "manifest_task_id_matches")
             tdd_path = manifest.get("tdd_path")
             specification_tdd = (
                 _blob(root, specification, tdd_path) if isinstance(tdd_path, str) else None
@@ -157,6 +183,17 @@ def verify_candidate(
                 return _invalid(
                     profile, "tdd_changed", "/tdd_path", "tdd_frozen_after_specification"
                 )
+
+            if active_run and run_id is not None and state_root_path is not None:
+                active_error = _active_evidence_error(
+                    state_root(state_root_path),
+                    task_id,
+                    run_id,
+                    specification,
+                    candidate,
+                )
+                if active_error is not None:
+                    return _invalid(profile, *active_error)
 
             scope = audit_task_scope(
                 manifest_path,
@@ -186,6 +223,25 @@ def verify_candidate(
         else "failed"
     )
     artifacts = _protected_artifacts(manifest, manifest_name, tdd_path, specification_manifest)
+    if active_run and run_id is not None and state_root_path is not None:
+        return _record_feature_branch_receipt(
+            root=root,
+            evidence_root=state_root(state_root_path),
+            task_id=task_id,
+            run_id=run_id,
+            profile=cast(Profile, profile),
+            base=base,
+            specification=specification,
+            candidate=candidate,
+            manifest_name=manifest_name,
+            specification_manifest=specification_manifest,
+            artifacts=artifacts,
+            outcome=outcome,
+            scope_payload=scope_payload,
+            plan_payload=plan_payload,
+            check_results=check_results,
+            diagnostics=diagnostics,
+        )
     branch = _verification_branch(task_id, candidate, cast(Profile, profile))
     branch_state = _branch_state(root, branch, task_id, candidate, cast(Profile, profile))
     if branch_state is None:
@@ -235,6 +291,276 @@ def verify_candidate(
         commit,
         tuple(diagnostics),
     )
+
+
+def _active_evidence_error(
+    evidence_root: Path,
+    task_id: str,
+    run_id: str,
+    specification: str,
+    candidate: str,
+) -> tuple[str, str, str] | None:
+    try:
+        entries = validated_entries(evidence_root, task_id, run_id)
+    except EvidenceError:
+        return "run_evidence_invalid", "/evidence", "valid_run_evidence"
+    payloads: dict[str, JsonObject] = {}
+    for entry in entries:
+        kind = entry["evidence_type"]
+        if kind not in {"specification_revision", "feature_branch", "candidate_commit"}:
+            continue
+        try:
+            value = json.loads((evidence_root / entry["path"]).read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return "run_evidence_invalid", "/evidence", "readable_canonical_record"
+        if not isinstance(value, dict):
+            return "run_evidence_invalid", "/evidence", "object_canonical_record"
+        payloads[kind] = cast(JsonObject, value)
+    if set(payloads) != {"specification_revision", "feature_branch", "candidate_commit"}:
+        return (
+            "run_evidence_missing",
+            "/evidence",
+            "specification_feature_branch_and_candidate_records",
+        )
+    if payloads["specification_revision"].get("specification_revision") != specification:
+        return "specification_evidence_mismatch", "/specification", "specification_evidence_matches"
+    if payloads["feature_branch"].get("branch") != f"feature/{task_id}":
+        return "feature_branch_evidence_mismatch", "/feature_branch", "canonical_feature_branch"
+    if payloads["feature_branch"].get("specification_revision") != specification:
+        return (
+            "feature_branch_evidence_mismatch",
+            "/feature_branch",
+            "feature_branch_specification_matches",
+        )
+    if payloads["candidate_commit"].get("commit_sha") != candidate:
+        return "candidate_evidence_mismatch", "/candidate", "candidate_evidence_matches"
+    return None
+
+
+def _record_feature_branch_receipt(
+    *,
+    root: Path,
+    evidence_root: Path,
+    task_id: str,
+    run_id: str,
+    profile: Profile,
+    base: str,
+    specification: str,
+    candidate: str,
+    manifest_name: str,
+    specification_manifest: bytes,
+    artifacts: list[JsonObject],
+    outcome: Literal["passed", "failed"],
+    scope_payload: JsonObject,
+    plan_payload: JsonObject,
+    check_results: list[JsonObject],
+    diagnostics: list[dict[str, str]],
+) -> CandidateVerificationResult:
+    existing = _matching_feature_receipt(root, task_id, candidate, profile)
+    if existing is not None:
+        commit, receipt_path, receipt_bytes, receipt = existing
+        return _index_feature_receipt(
+            evidence_root,
+            task_id,
+            run_id,
+            profile,
+            receipt_path,
+            receipt_bytes,
+            commit,
+            cast(Literal["passed", "failed"], receipt["outcome"]),
+            base,
+            specification,
+            candidate,
+            cast(list[dict[str, str]], receipt["diagnostics"]),
+        )
+    branch = f"feature/{task_id}"
+    if _remote_feature_tip(root, branch) != candidate:
+        return _invalid(
+            profile,
+            "feature_branch_changed",
+            "/feature_branch",
+            "remote_feature_tip_matches_candidate",
+        )
+    receipt_path = _receipt_path(task_id, candidate, profile, 1)
+    receipt = {
+        "schema_version": 1,
+        "receipt_kind": "candidate_verification",
+        "task_id": task_id,
+        "attempt": 1,
+        "profile": profile,
+        "outcome": outcome,
+        "base_revision": base,
+        "specification_revision": specification,
+        "candidate_revision": candidate,
+        "manifest": {"path": manifest_name, "sha256": _sha256(specification_manifest)},
+        "protected_artifacts": artifacts,
+        "scope_audit": scope_payload,
+        "verification_plan": plan_payload,
+        "check_results": check_results,
+        "diagnostics": diagnostics,
+    }
+    receipt_bytes = _canonical_json(receipt)
+    commit = _commit_receipt(root, candidate, receipt_path, receipt_bytes)
+    if commit is None:
+        return _invalid(profile, "receipt_commit_failed", "/receipt", "receipt_commit_created")
+    pushed = _git(
+        root,
+        "push",
+        "origin",
+        f"{commit}:refs/heads/{branch}",
+        allow_failure=True,
+    )
+    if pushed is None or pushed.returncode != 0 or _remote_feature_tip(root, branch) != commit:
+        return _invalid(
+            profile,
+            "feature_branch_changed",
+            "/feature_branch",
+            "remote_feature_tip_matches_receipt",
+        )
+    return _index_feature_receipt(
+        evidence_root,
+        task_id,
+        run_id,
+        profile,
+        receipt_path,
+        receipt_bytes,
+        commit,
+        outcome,
+        base,
+        specification,
+        candidate,
+        diagnostics,
+    )
+
+
+def _index_feature_receipt(
+    evidence_root: Path,
+    task_id: str,
+    run_id: str,
+    profile: Profile,
+    receipt_path: str,
+    receipt_bytes: bytes,
+    commit: str,
+    outcome: Literal["passed", "failed"],
+    base: str,
+    specification: str,
+    candidate: str,
+    diagnostics: list[dict[str, str]],
+) -> CandidateVerificationResult:
+    write_canonical_record(
+        evidence_root,
+        task_id,
+        run_id,
+        phase="verification",
+        evidence_type="candidate_verification_receipt",
+        subject_id=profile,
+        payload={
+            "schema_version": 1,
+            "outcome": outcome,
+            "profile": profile,
+            "receipt_path": receipt_path,
+            "receipt_sha256": _sha256(receipt_bytes),
+            "receipt_commit": commit,
+            "base_revision": base,
+            "specification_revision": specification,
+            "candidate_revision": candidate,
+            "diagnostics": diagnostics,
+        },
+        producer_command="verify-candidate",
+    )
+    return CandidateVerificationResult(
+        "complete",
+        task_id,
+        profile,
+        outcome,
+        receipt_path,
+        _sha256(receipt_bytes),
+        None,
+        commit,
+        tuple(diagnostics),
+    )
+
+
+def _matching_feature_receipt(
+    root: Path, task_id: str, candidate: str, profile: Profile
+) -> tuple[str, str, bytes, JsonObject] | None:
+    branch = f"feature/{task_id}"
+    tip = _remote_feature_tip(root, branch)
+    if tip is None:
+        return None
+    commits = _git(root, "rev-list", "--reverse", f"{candidate}..{tip}", allow_failure=True)
+    if commits is None or commits.returncode != 0:
+        return None
+    for commit in commits.stdout.splitlines():
+        parents = _git(root, "show", "-s", "--format=%P", commit)
+        changed = _git(root, "diff-tree", "--no-commit-id", "--name-only", "-r", commit)
+        if parents is None or changed is None or parents.stdout.split() != [candidate]:
+            continue
+        paths = changed.stdout.splitlines()
+        if len(paths) != 1:
+            continue
+        receipt_path = paths[0]
+        receipt_bytes = _blob(root, commit, receipt_path)
+        if receipt_bytes is None:
+            continue
+        try:
+            decoded = json.loads(receipt_bytes)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(decoded, dict):
+            continue
+        receipt = cast(JsonObject, decoded)
+        if _valid_matching_receipt(receipt, task_id, candidate, profile, receipt_path):
+            return commit, receipt_path, receipt_bytes, receipt
+    return None
+
+
+def _valid_matching_receipt(
+    receipt: JsonObject, task_id: str, candidate: str, profile: Profile, path: str
+) -> bool:
+    expected_prefix = f".agent/receipts/verification/{task_id}/{candidate}/{profile}/attempt-"
+    if not path.startswith(expected_prefix) or not path.endswith(".json"):
+        return False
+    required = {
+        "schema_version",
+        "receipt_kind",
+        "task_id",
+        "attempt",
+        "profile",
+        "outcome",
+        "base_revision",
+        "specification_revision",
+        "candidate_revision",
+        "manifest",
+        "protected_artifacts",
+        "scope_audit",
+        "verification_plan",
+        "check_results",
+        "diagnostics",
+    }
+    return (
+        required.issubset(receipt)
+        and (
+            receipt.get("schema_version"),
+            receipt.get("receipt_kind"),
+            receipt.get("task_id"),
+            receipt.get("candidate_revision"),
+            receipt.get("profile"),
+            receipt.get("outcome"),
+        )
+        == (1, "candidate_verification", task_id, candidate, profile, receipt.get("outcome"))
+        and receipt.get("outcome") in {"passed", "failed"}
+    )
+
+
+def _remote_feature_tip(root: Path, branch: str) -> str | None:
+    result = _git(
+        root, "ls-remote", "--heads", "origin", f"refs/heads/{branch}", allow_failure=True
+    )
+    if result is None or result.returncode != 0:
+        return None
+    fields = result.stdout.split()
+    return fields[0] if len(fields) == 2 else None
 
 
 def _execute_checks(

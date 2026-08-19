@@ -27,10 +27,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[4]
 SOURCE_MANIFEST = PROJECT_ROOT / ".agent/tasks/harness-04-task-scope-audit.toml"
 SCHEMA_SOURCE = PROJECT_ROOT / ".agent/schemas/task-manifest-v1.schema.json"
 PYTHONPATH = str(PROJECT_ROOT / "packages/devtools/src")
-ENTRYPOINT = (
-    "from kotekomi_devtools.cli import entrypoint; "
-    "raise SystemExit(entrypoint())"
-)
+ENTRYPOINT = "from kotekomi_devtools.cli import entrypoint; raise SystemExit(entrypoint())"
 
 
 def _env() -> dict[str, str]:
@@ -120,16 +117,12 @@ def _manifest_for(repo: Path, baseline: str) -> dict[str, Any]:
         "packages/devtools/src/kotekomi_devtools/task_scope.py",
         "packages/devtools/tests/unit/",
     ]
-    manifest["reference_paths"] = [
-        "packages/devtools/src/kotekomi_devtools/task_budget.py"
-    ]
+    manifest["reference_paths"] = ["packages/devtools/src/kotekomi_devtools/task_budget.py"]
     manifest["protected_artifacts"] = [
         {
             "kind": "json-schema",
             "path": ".agent/schemas/task-manifest-v1.schema.json",
-            "sha256": sha256_file(
-                repo / ".agent/schemas/task-manifest-v1.schema.json"
-            ),
+            "sha256": sha256_file(repo / ".agent/schemas/task-manifest-v1.schema.json"),
         },
         {
             "kind": "leaf-tdd",
@@ -139,9 +132,7 @@ def _manifest_for(repo: Path, baseline: str) -> dict[str, Any]:
         {
             "kind": "acceptance-test",
             "path": "packages/devtools/tests/acceptance/test_task_scope.py",
-            "sha256": sha256_file(
-                repo / "packages/devtools/tests/acceptance/test_task_scope.py"
-            ),
+            "sha256": sha256_file(repo / "packages/devtools/tests/acceptance/test_task_scope.py"),
         },
         {
             "kind": "agent-instructions",
@@ -190,7 +181,6 @@ def _diagnostics(payload: dict[str, Any]) -> list[dict[str, Any]]:
     return cast(list[dict[str, Any]], payload["diagnostics"])
 
 
-
 def test_scope_audit_help_reports_command() -> None:
     result = run_command(
         PROJECT_ROOT,
@@ -231,9 +221,7 @@ def test_revision_allowed_change_is_clean(tmp_path: Path) -> None:
     assert payload["mode"] == "revision"
     assert payload["base_revision"] == base
     assert payload["head_revision"] == head
-    assert _changed_paths(payload) == [
-        "packages/devtools/src/kotekomi_devtools/task_scope.py"
-    ]
+    assert _changed_paths(payload) == ["packages/devtools/src/kotekomi_devtools/task_scope.py"]
     assert payload["changed_paths"][0]["allowed"] is True
     assert payload["changed_paths"][0]["protected"] is False
     assert payload["diagnostics"] == []
@@ -249,6 +237,40 @@ def test_no_changes_is_clean(tmp_path: Path) -> None:
     assert payload["status"] == "clean"
     assert payload["changed_paths"] == []
     assert payload["diagnostics"] == []
+
+
+def test_revision_ignores_only_a_valid_verification_receipt_commit(tmp_path: Path) -> None:
+    repo, base = _init_repo(tmp_path)
+    manifest = repo / ".agent/tasks/example-scope-audit.toml"
+    write_fixture_text(
+        repo / "packages/devtools/src/kotekomi_devtools/task_scope.py",
+        "VALUE = 2\n",
+    )
+    candidate = _commit_all(repo, "candidate")
+    receipt_path = (
+        ".agent/receipts/verification/example-scope-audit/"
+        f"{candidate}/portable-local/attempt-0001.json"
+    )
+    write_fixture_text(
+        repo / receipt_path,
+        json.dumps(
+            {
+                "receipt_kind": "candidate_verification",
+                "task_id": "example-scope-audit",
+                "candidate_revision": candidate,
+                "profile": "portable-local",
+                "attempt": 1,
+            },
+            sort_keys=True,
+        )
+        + "\n",
+    )
+    receipt = _commit_all(repo, "receipt")
+
+    code, payload = _scope_audit(repo, manifest, "--base", base, "--head", receipt)
+
+    assert code == 0
+    assert _changed_paths(payload) == ["packages/devtools/src/kotekomi_devtools/task_scope.py"]
 
 
 def test_revision_disallowed_change_reports_scope_violation(
@@ -453,10 +475,7 @@ def test_diagnostics_are_sorted(tmp_path: Path) -> None:
     assert code == 1
 
     diagnostics = _diagnostics(payload)
-    keys = [
-        (item["location"], item["code"], item["rule"])
-        for item in diagnostics
-    ]
+    keys = [(item["location"], item["code"], item["rule"]) for item in diagnostics]
     assert keys == sorted(keys)
 
 
@@ -475,8 +494,5 @@ def test_changed_paths_and_protected_artifacts_are_sorted(
     assert code == 1
     assert _changed_paths(payload) == sorted(_changed_paths(payload))
 
-    protected_paths = [
-        item["path"]
-        for item in payload["protected_artifacts"]
-    ]
+    protected_paths = [item["path"] for item in payload["protected_artifacts"]]
     assert protected_paths == sorted(protected_paths)

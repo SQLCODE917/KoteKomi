@@ -3,13 +3,19 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import subprocess
 import sys
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
 
-from kotekomi_devtools.evidence_catalog import state_root, write_canonical_record
+from kotekomi_devtools.evidence_catalog import (
+    EvidenceError,
+    state_root,
+    validated_entries,
+    write_canonical_record,
+)
 
 
 @dataclass(frozen=True)
@@ -209,7 +215,191 @@ def _name_value(raw: str, option: str) -> tuple[str, str]:
     return name, value
 
 
+def _run_scoped_status(*, task_id: str, run_id: str, root: Path, phase: str) -> dict[str, object]:
+    name = "candidate-verification-portable-local"
+    diagnostics: list[dict[str, str]] = []
+    entry: dict[str, object] = {"name": name, "exists": False, "status": "missing"}
+    try:
+        entries = validated_entries(root, task_id, run_id)
+    except EvidenceError as error:
+        diagnostics.append(
+            _diagnostic("receipt_chain_status.invalid_evidence", "/evidence", str(error))
+        )
+        entries = []
+    receipt_entry = next(
+        (
+            item
+            for item in entries
+            if item["evidence_type"] == "candidate_verification_receipt"
+            and item["subject_id"] == "portable-local"
+        ),
+        None,
+    )
+    if receipt_entry is None:
+        diagnostics.append(
+            _diagnostic(
+                "receipt_chain_status.missing_receipt",
+                f"/receipts/{name}",
+                "receipt evidence is missing",
+            )
+        )
+    else:
+        evidence_value = json.loads((root / receipt_entry["path"]).read_text(encoding="utf-8"))
+        if not isinstance(evidence_value, dict):
+            diagnostics.append(
+                _diagnostic(
+                    "receipt_chain_status.invalid_receipt",
+                    f"/receipts/{name}",
+                    "receipt evidence is not an object",
+                )
+            )
+        else:
+            evidence = cast(dict[str, object], evidence_value)
+            receipt_path = evidence.get("receipt_path")
+            receipt_commit = evidence.get("receipt_commit")
+            expected_sha = evidence.get("receipt_sha256")
+            if not all(
+                isinstance(value, str) for value in (receipt_path, receipt_commit, expected_sha)
+            ):
+                diagnostics.append(
+                    _diagnostic(
+                        "receipt_chain_status.invalid_receipt",
+                        f"/receipts/{name}",
+                        "receipt evidence fields are invalid",
+                    )
+                )
+            else:
+                blob = _git_blob(cast(str, receipt_commit), cast(str, receipt_path))
+                entry = {
+                    "name": name,
+                    "exists": blob is not None,
+                    "path": f"{receipt_commit}:{receipt_path}",
+                }
+                if blob is None:
+                    diagnostics.append(
+                        _diagnostic(
+                            "receipt_chain_status.missing_receipt",
+                            f"/receipts/{name}",
+                            "receipt blob is unavailable",
+                        )
+                    )
+                    entry["status"] = "missing"
+                elif hashlib.sha256(blob).hexdigest() != expected_sha:
+                    diagnostics.append(
+                        _diagnostic(
+                            "receipt_chain_status.digest_mismatch",
+                            f"/receipts/{name}/sha256",
+                            "receipt digest differs from canonical evidence",
+                        )
+                    )
+                    entry["status"] = "digest_mismatch"
+                else:
+                    try:
+                        receipt = cast(dict[str, object], json.loads(blob))
+                    except json.JSONDecodeError:
+                        receipt = None
+                    if not isinstance(receipt, dict) or (
+                        receipt.get("receipt_kind"),
+                        receipt.get("task_id"),
+                        receipt.get("profile"),
+                        receipt.get("candidate_revision"),
+                    ) != (
+                        "candidate_verification",
+                        task_id,
+                        "portable-local",
+                        evidence.get("candidate_revision"),
+                    ):
+                        diagnostics.append(
+                            _diagnostic(
+                                "receipt_chain_status.invalid_receipt",
+                                f"/receipts/{name}",
+                                "receipt does not bind canonical evidence",
+                            )
+                        )
+                        entry["status"] = "invalid"
+                    else:
+                        entry["sha256"] = expected_sha
+                        entry["status"] = "ready"
+                        promotion_entry = next(
+                            (item for item in entries if item["evidence_type"] == "main_promotion"),
+                            None,
+                        )
+                        if promotion_entry is not None:
+                            promotion_value = json.loads(
+                                (root / promotion_entry["path"]).read_text(encoding="utf-8")
+                            )
+                            if not isinstance(promotion_value, dict) or not _ancestor(
+                                cast(str, receipt_commit),
+                                str(
+                                    cast(dict[str, object], promotion_value).get(
+                                        "promotion_commit", ""
+                                    )
+                                ),
+                            ):
+                                diagnostics.append(
+                                    _diagnostic(
+                                        "receipt_chain_status.receipt_not_promoted",
+                                        f"/receipts/{name}",
+                                        "receipt commit is not an ancestor of main promotion",
+                                    )
+                                )
+                                entry["status"] = "not_promoted"
+    present = int(entry.get("status") == "ready")
+    return {
+        "schema_version": 1,
+        "task_id": task_id,
+        "phase": phase,
+        "status": "ready" if not diagnostics else "blocked",
+        "receipt_total_count": 1,
+        "receipt_present_count": present,
+        "receipt_missing_count": 1 - present,
+        "digest_mismatch_count": int(entry.get("status") == "digest_mismatch"),
+        "expected_receipts": [name],
+        "missing_receipts": [] if present else [name],
+        "digest_mismatches": [name] if entry.get("status") == "digest_mismatch" else [],
+        "receipts": [entry],
+        "diagnostics": diagnostics,
+    }
+
+
+def _git_blob(commit: str, path: str) -> bytes | None:
+    result = subprocess.run(["git", "show", f"{commit}:{path}"], capture_output=True, check=False)
+    return result.stdout if result.returncode == 0 else None
+
+
+def _ancestor(older: str, newer: str) -> bool:
+    result = subprocess.run(
+        ["git", "merge-base", "--is-ancestor", older, newer], capture_output=True, check=False
+    )
+    return result.returncode == 0
+
+
 def run_receipt_chain_status_command(arguments: argparse.Namespace) -> int:
+    if getattr(arguments, "run", None):
+        root = state_root(Path(arguments.state_root))
+        payload = _run_scoped_status(
+            task_id=arguments.task_id,
+            run_id=arguments.run,
+            root=root,
+            phase=arguments.phase,
+        )
+        write_canonical_record(
+            root,
+            arguments.task_id,
+            arguments.run,
+            phase="complete",
+            evidence_type="receipt_chain_status",
+            subject_id="receipt-chain",
+            payload=payload,
+            producer_command="receipt-chain-status",
+        )
+        text = json.dumps(payload, indent=2, sort_keys=True) + "\n"
+        if arguments.output:
+            Path(arguments.output).write_text(text, encoding="utf-8")
+        if arguments.markdown:
+            Path(arguments.markdown).write_text(markdown_status(payload), encoding="utf-8")
+        print(text, end="")
+        return 0 if payload["status"] == "ready" else 1
     try:
         expectations = dict(_name_value(raw, "--expect") for raw in (arguments.expect or ()))
         pairs = (_name_value(raw, "--receipt") for raw in (arguments.receipt or ()))
