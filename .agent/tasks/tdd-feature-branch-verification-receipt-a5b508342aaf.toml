@@ -1,0 +1,55 @@
+schema_version = 2
+task_id = "tdd-feature-branch-verification-receipt-a5b508342aaf"
+title = "Feature Branch Verification Receipt"
+status = "ready_for_terra_high"
+series_id = "tdd-harness-feature-branch"
+task_class = "repository-tooling"
+model_profile = "terra-high-v1"
+baseline_revision = "827f396bbff1c40d1441c0fe813937331f2f93b6"
+tdd_path = "docs/2026-08-18-tdd-feature-branch-verification-receipt.md"
+tdd_sha256 = "a5b508342aaf89d26adf2ed6d7dd1e0dbaccd8bbe8f047123351ec61b64321ff"
+goal = "Record immutable independent candidate verification receipts on active task feature branches."
+depends_on = ["independent-verifier-receipt-cda212d7e1de", "tdd-feature-branch-default-7f13f74551a4"]
+allowed_paths = [".agent/tasks/tdd-feature-branch-verification-receipt-a5b508342aaf.toml", "packages/devtools/src/kotekomi_devtools/candidate_verifier.py", "packages/devtools/src/kotekomi_devtools/cli.py", "packages/devtools/src/kotekomi_devtools/evidence_catalog.py", "packages/devtools/src/kotekomi_devtools/receipt_chain_status.py", "packages/devtools/src/kotekomi_devtools/task_budget.py", "packages/devtools/src/kotekomi_devtools/task_scope.py", "packages/devtools/src/kotekomi_devtools/tdd_workflow.py", "packages/devtools/tests/acceptance/test_feature_branch_verification_receipt_contract.py", "packages/devtools/tests/acceptance/test_receipt_chain_status_contract.py", "packages/devtools/tests/acceptance/test_tdd_workflow_contract.py", "packages/devtools/tests/acceptance/test_task_budget_audit_contract.py", "packages/devtools/tests/acceptance/test_task_scope_audit_contract.py", "packages/devtools/tests/unit/test_candidate_verifier.py", "packages/devtools/tests/unit/test_evidence_catalog.py", "packages/devtools/tests/unit/test_receipt_chain_status.py"]
+reference_paths = ["docs/2026-08-18-tdd-independent-verifier-receipt.md", "packages/devtools/src/kotekomi_devtools/lifecycle_evidence.py", "packages/devtools/src/kotekomi_devtools/verification_execution.py", "packages/devtools/src/kotekomi_devtools/verification_plan.py", "packages/devtools/tests/acceptance/test_independent_verifier_receipt_contract.py"]
+stop_conditions = ["the implementation promotes or deletes a feature branch", "the implementation force-pushes a branch", "the implementation changes the protected historical independent verifier acceptance test", "the implementation creates or updates a verification branch for an active run"]
+
+[readiness]
+authority = "The Feature Branch Verification Receipt TDD defines this task."
+contract_family = "tdd-harness"
+dominant_outcome = "An active task records a receipt commit on its verified feature branch."
+failure_policy = "Invalid candidate prerequisites create no receipt; audit and check failures create failed receipts."
+legacy_disposition = "The historical no-run independent verifier route remains available for its protected acceptance contract."
+negative_proof = "An active verifier uses a detached candidate worktree, writes one receipt commit, and does not create a verification branch."
+public_entry_point = "kotekomi-agent verify-candidate"
+scope_policy = "Candidate verification, evidence catalog, workflow, receipt-chain, scope, budget, and deterministic tests only."
+side_effect_boundary = "One non-force receipt commit and push to the active feature branch, followed by canonical evidence."
+unresolved_decisions = []
+
+[budget]
+maximum_production_files = 8
+maximum_test_files = 8
+maximum_production_diff_lines = 1300
+
+[[protected_artifacts]]
+kind = "leaf-tdd"
+path = "docs/2026-08-18-tdd-feature-branch-verification-receipt.md"
+sha256 = "a5b508342aaf89d26adf2ed6d7dd1e0dbaccd8bbe8f047123351ec61b64321ff"
+
+[[acceptance]]
+id = "feature-branch-verification-receipt-contract"
+argv = ["uv", "run", "pytest", "-p", "no:cacheprovider", "packages/devtools/tests/acceptance/test_feature_branch_verification_receipt_contract.py", "packages/devtools/tests/acceptance/test_independent_verifier_receipt_contract.py", "packages/devtools/tests/acceptance/test_receipt_chain_status_contract.py", "packages/devtools/tests/acceptance/test_tdd_workflow_contract.py", "packages/devtools/tests/acceptance/test_task_budget_audit_contract.py", "packages/devtools/tests/acceptance/test_task_scope_audit_contract.py", "packages/devtools/tests/unit/test_candidate_verifier.py", "packages/devtools/tests/unit/test_evidence_catalog.py", "packages/devtools/tests/unit/test_receipt_chain_status.py"]
+timeout_seconds = 240
+profile = "portable-local"
+
+[[acceptance]]
+id = "repository-static-checks"
+argv = ["uv", "run", "ruff", "check"]
+timeout_seconds = 120
+profile = "portable-local"
+
+[[acceptance]]
+id = "repository-type-checks"
+argv = ["uv", "run", "pyright"]
+timeout_seconds = 180
+profile = "portable-local"
