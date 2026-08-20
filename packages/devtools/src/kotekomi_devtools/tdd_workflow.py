@@ -34,6 +34,7 @@ PHASE_REQUIREMENTS = {
     "main_ci": {"main_ci", "cleanup"},
     "complete": {"task_result", "cleanup"},
 }
+_TERMINAL_RUN_STATUSES = {"abandoned", "bootstrap_aborted", "complete"}
 
 
 def _write(path: Path, value: Json) -> None:
@@ -64,7 +65,7 @@ def _runs(root: Path, task: str) -> tuple[Path, Json]:
 
 def _latest(index: Json) -> Json | None:
     rows = index["runs"]
-    live = [row for row in rows if row["status"] != "abandoned"]
+    live = [row for row in rows if row["status"] not in _TERMINAL_RUN_STATUSES]
     pool = live or rows
     return max(pool, key=lambda row: row["ordinal"], default=None)
 
@@ -128,6 +129,20 @@ def workflow_status(
     kinds = {item["evidence_type"] for item in entries}
     if not manifest_exists or not PHASE_REQUIREMENTS["spec"].issubset(kinds):
         return "spec", "create_task_manifest", sorted(PHASE_REQUIREMENTS["spec"] - kinds), []
+    if "bootstrap_abort" in kinds:
+        bootstrap_abort = _payload(root, entries, "bootstrap_abort")
+        if (
+            bootstrap_abort.get("status") == "complete"
+            and bootstrap_abort.get("branch_cleanup_complete") is True
+            and bootstrap_abort.get("remaining_branches") == []
+        ):
+            return "complete", "bootstrap_aborted", [], []
+        return (
+            "candidate",
+            "blocked",
+            [],
+            [_diagnostic("bootstrap_abort_incomplete", "branch_cleanup_complete")],
+        )
     if {"task_result", "cleanup"}.issubset(kinds):
         task_result = _payload(root, entries, "task_result")
         cleanup = _payload(root, entries, "cleanup")
@@ -289,7 +304,7 @@ def suggested_commands(
     root: Path,
     entries: list[Json],
 ) -> list[Json]:
-    if action in {"blocked", "complete"}:
+    if action in {"blocked", "complete", "bootstrap_aborted"}:
         return []
     command = {
         "create_task_manifest": "create-task-manifest",
@@ -528,10 +543,16 @@ def implement_tdd(
     phase, action, missing, diagnostics = workflow_status(root, entries, manifest.exists())
     if action == "complete":
         mark_run_complete(root, task, run_id)
+    elif action == "bootstrap_aborted":
+        mark_run_bootstrap_aborted(root, task, run_id)
     result: Json = {
         "schema_version": 1,
         "status": (
-            "blocked" if action == "blocked" else "complete" if action == "complete" else "ready"
+            "blocked"
+            if action == "blocked"
+            else "complete"
+            if action in {"complete", "bootstrap_aborted"}
+            else "ready"
         ),
         "task_id": task,
         "implementation_run_id": run_id,
@@ -542,8 +563,10 @@ def implement_tdd(
         "manifest_path": str(manifest.relative_to(Path.cwd())),
         "manifest_validation_status": validation_status,
         "implementation_phase": phase,
-        "next_action": None if action in {"blocked", "complete"} else action,
-        "required_evidence": sorted(PHASE_REQUIREMENTS.get(phase, set())),
+        "next_action": None if action in {"blocked", "complete", "bootstrap_aborted"} else action,
+        "required_evidence": (
+            [] if action == "bootstrap_aborted" else sorted(PHASE_REQUIREMENTS.get(phase, set()))
+        ),
         "missing_evidence": missing,
         "producer_arguments": {
             "task_id": task,
@@ -590,6 +613,29 @@ def mark_run_complete(root: Path, task: str, run_id: str) -> None:
         record = _read(record_path)
         record["status"] = "complete"
         record["terminal_reason"] = None
+        record["updated_at"] = now
+        _write(record_path, record)
+    index["latest_run_id"] = (_latest(index) or {}).get("implementation_run_id")
+    _write(index_path, index)
+
+
+def mark_run_bootstrap_aborted(root: Path, task: str, run_id: str) -> None:
+    """Persist terminal bootstrap-aborted state after complete branch cleanup."""
+    index_path, index = _runs(root, task)
+    row = next(
+        (item for item in index["runs"] if item["implementation_run_id"] == run_id),
+        None,
+    )
+    if row is None or row["status"] in {"abandoned", "complete"}:
+        raise EvidenceError("bootstrap abort requires an active or blocked run")
+    if row["status"] != "bootstrap_aborted":
+        now = datetime.now(UTC).isoformat()
+        row["status"] = "bootstrap_aborted"
+        row["updated_at"] = now
+        record_path = root / row["run_record_path"]
+        record = _read(record_path)
+        record["status"] = "bootstrap_aborted"
+        record["terminal_reason"] = "bootstrap_aborted"
         record["updated_at"] = now
         _write(record_path, record)
     index["latest_run_id"] = (_latest(index) or {}).get("implementation_run_id")

@@ -26,6 +26,13 @@ _TRUSTED_FIELDS: dict[str, tuple[str, ...]] = {
     "task_manifest_validation": ("status", "task_id", "tdd_path", "tdd_sha256", "diagnostics"),
     "specification_revision": ("specification_revision", "manifest_sha256"),
     "feature_branch": ("branch", "specification_revision"),
+    "bootstrap_abort": (
+        "schema_version",
+        "status",
+        "branch_cleanup_complete",
+        "remaining_branches",
+        "diagnostics",
+    ),
     "candidate_lifecycle": ("ready", "diagnostics"),
     "candidate_commit": ("commit_sha", "parent_sha"),
     "candidate_verification_receipt": (
@@ -155,6 +162,13 @@ def _event_outcome(evidence_type: str, payload: Json) -> str:
                 "cleanup requires boolean branch_cleanup_complete for event outcome"
             )
         return "passed" if complete else "failed"
+    if evidence_type == "bootstrap_abort":
+        status = payload.get("status")
+        if status == "complete":
+            return "passed"
+        if status == "incomplete":
+            return "failed"
+        raise EvidenceError("bootstrap_abort requires complete or incomplete status")
     if evidence_type == "task_manifest_validation":
         status = payload.get("status")
         if status == "valid":
@@ -224,6 +238,7 @@ def canonical_relative(
         "task_manifest_validation": f"{run}/spec/task-manifest-validation.json",
         "specification_revision": f"{run}/git/specification-revision.json",
         "feature_branch": f"{run}/git/feature-branch.json",
+        "bootstrap_abort": f"{run}/lifecycle/bootstrap-abort.json",
         "candidate_lifecycle": f"{run}/lifecycle/candidate.json",
         "candidate_commit": f"{run}/git/candidate-commit.json",
         "candidate_verification_receipt": (
@@ -322,6 +337,7 @@ def rebuild_index(root: Path, task: str, run: str) -> Json:
         ("spec", "task_manifest_validation", "manifest"),
         ("spec", "specification_revision", "specification"),
         ("candidate", "feature_branch", "feature-branch"),
+        ("candidate", "bootstrap_abort", "bootstrap"),
         ("candidate", "candidate_lifecycle", "candidate"),
         ("candidate", "candidate_commit", "candidate"),
         ("verification", "candidate_verification_receipt", "portable-local"),

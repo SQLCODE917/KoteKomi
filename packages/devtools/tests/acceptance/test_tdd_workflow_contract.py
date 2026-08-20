@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Any
 
 from kotekomi_devtools.tdd_workflow import (
+    mark_run_bootstrap_aborted,
     mark_run_complete,
     suggested_commands,
     workflow_status,
@@ -280,6 +281,31 @@ def test_workflow_completes_from_task_result_before_historical_candidate_ci_fail
     assert (phase, action, missing, diagnostics) == ("complete", "complete", [], [])
 
 
+def test_workflow_recognizes_complete_bootstrap_abort_as_terminal(tmp_path: Path) -> None:
+    root = tmp_path / "state"
+    root.mkdir()
+    abort = root / "bootstrap-abort.json"
+    abort.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "status": "complete",
+                "branch_cleanup_complete": True,
+                "remaining_branches": [],
+                "diagnostics": [],
+            }
+        )
+    )
+    entries = [
+        {"evidence_type": "tdd_binding", "path": "binding.json"},
+        {"evidence_type": "task_manifest", "path": "manifest.toml"},
+        {"evidence_type": "task_manifest_validation", "path": "manifest-validation.json"},
+        {"evidence_type": "bootstrap_abort", "path": abort.name},
+    ]
+
+    assert workflow_status(root, entries, True) == ("complete", "bootstrap_aborted", [], [])
+
+
 def test_workflow_marks_a_blocked_run_complete_after_terminal_evidence(tmp_path: Path) -> None:
     task = "task"
     run = "task-run-001"
@@ -308,3 +334,32 @@ def test_workflow_marks_a_blocked_run_complete_after_terminal_evidence(tmp_path:
     assert json.loads(run_path.read_text())["status"] == "complete"
     assert json.loads(run_path.read_text())["terminal_reason"] is None
     assert json.loads(index_path.read_text())["runs"][0]["status"] == "complete"
+
+
+def test_workflow_marks_an_active_run_bootstrap_aborted(tmp_path: Path) -> None:
+    task = "task"
+    run = "task-run-001"
+    root = tmp_path / "state"
+    run_path = root / "experiments" / task / "runs" / run / "run.json"
+    run_path.parent.mkdir(parents=True)
+    run_path.write_text(json.dumps({"status": "active", "terminal_reason": None}))
+    index_path = root / "experiments" / task / "runs" / "index.json"
+    index_path.write_text(
+        json.dumps(
+            {
+                "runs": [
+                    {
+                        "implementation_run_id": run,
+                        "ordinal": 1,
+                        "run_record_path": run_path.relative_to(root).as_posix(),
+                        "status": "active",
+                    }
+                ]
+            }
+        )
+    )
+
+    mark_run_bootstrap_aborted(root, task, run)
+
+    assert json.loads(run_path.read_text())["status"] == "bootstrap_aborted"
+    assert json.loads(index_path.read_text())["runs"][0]["status"] == "bootstrap_aborted"

@@ -10,6 +10,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from kotekomi_devtools.bootstrap_run_abort import (
+    BootstrapRunAbortError,
+    abort_bootstrap_run,
+)
 from kotekomi_devtools.candidate_verifier import verify_candidate
 from kotekomi_devtools.evidence_catalog import (
     read_index,
@@ -92,6 +96,8 @@ def main(argv: list[str] | None = None) -> int:
         return _render_error(error)
     except LifecycleEvidenceError as error:
         return _render_error(error)
+    except BootstrapRunAbortError as error:
+        return _render_error(error)
     except FeatureBranchReconciliationError as error:
         return _render_error(error)
     except VerificationPlanError as error:
@@ -139,6 +145,7 @@ def _dispatch_command(arguments: argparse.Namespace) -> CliResponse | int:
         "record-branch-cleanup": _handle_lifecycle_evidence_command,
         "create-feature-branch": _handle_lifecycle_evidence_command,
         "reconcile-merged-feature-branch": _handle_feature_branch_reconciliation_command,
+        "abort-bootstrap-run": _handle_bootstrap_run_abort_command,
     }
     return handlers[arguments.command](arguments)
 
@@ -531,6 +538,15 @@ def _handle_feature_branch_reconciliation_command(arguments: argparse.Namespace)
     return CliResponse(0, result.as_json())
 
 
+def _handle_bootstrap_run_abort_command(arguments: argparse.Namespace) -> CliResponse:
+    result = abort_bootstrap_run(
+        task_id=arguments.task_id,
+        run_id=arguments.run,
+        state_root_path=arguments.state_root,
+    )
+    return CliResponse(result.exit_code, result.as_json())
+
+
 def _render_response(response: CliResponse) -> int:
     print(
         json.dumps(
@@ -644,6 +660,15 @@ def _build_parser() -> argparse.ArgumentParser:
     implement.add_argument("--state-root", type=Path, default=Path("~/.local/state/kotekomi"))
     implement.add_argument("--output", type=Path)
     implement.add_argument("--markdown", type=Path)
+    bootstrap_abort = subparsers.add_parser(
+        "abort-bootstrap-run",
+        help="Abort one unchanged bootstrap feature branch without a result tag.",
+    )
+    bootstrap_abort.add_argument("--task-id", required=True)
+    bootstrap_abort.add_argument("--run", required=True)
+    bootstrap_abort.add_argument(
+        "--state-root", type=Path, default=Path("~/.local/state/kotekomi")
+    )
     for command, help_text in (
         ("tdd-metrics", "Generate TDD implementation metrics."),
         ("tdd-score", "Generate TDD scorecards."),
