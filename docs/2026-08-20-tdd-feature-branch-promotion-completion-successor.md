@@ -1,5 +1,7 @@
 # TDD Feature Branch Promotion Completion Successor
 
+- **Status:** Accepted
+
 ## Context & Problem
 
 The original Feature Branch Promotion and Completion task ended with a historical abandoned result tag before it produced a verifier-compatible candidate.
