@@ -9,7 +9,7 @@ baseline_revision = "5a31f5af581619ca4cdc97c11decb9b65edce3de"
 tdd_path = "docs/2026-08-20-tdd-bootstrap-run-abort.md"
 tdd_sha256 = "8a2482fb5bee7eda7a69b4a13d063818aa4a0eb8ce6fc2ac5d77fcb29dc49df2"
 goal = "Abort an unchanged bootstrap run without creating a task result tag."
-depends_on = ["tdd-feature-branch-default-7f13f74551a4"]
+depends_on = []
 allowed_paths = [
   "packages/devtools/src/kotekomi_devtools/bootstrap_run_abort.py",
   "packages/devtools/src/kotekomi_devtools/cli.py",
