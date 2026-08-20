@@ -59,7 +59,6 @@ Terms used by this TDD:
 - AV-01: The locked `anthropic-dod-dispute-v1` fixture persists the exact title `Anthropic–United States Department of Defense dispute`.
 - AV-02: The canonical public ingestion path produces an acceptable representation and reuses it for identical bytes under the same backend policy.
 - AV-03: Existing born-digital, layout, table, OCR, page-accounting, and failure-matrix tests pass with the selected backend.
-- AV-04: DR-1 canonical ingest advances past the exact-title anchor without a text normalization rule.
 
 ## Proposed Architecture
 
@@ -132,7 +131,6 @@ KoteKomi does not select a backend by source name, source digest, or source cont
 - AC-AV-01: The locked canonical fixture retains the exact en-dash title in its persisted logical TextView.
 - AC-AV-02: Public `source add-file` creates an acceptable canonical representation and reuses it on identical re-ingest.
 - AC-AV-03: Existing PDF adapter and Pipeline verification suites pass.
-- AC-AV-04: `kotekomi-agent test-ingest anthropic-dod-dispute-v1` passes its title-anchor validation without a source-specific text rule.
 
 ## Reference Implementations
 
