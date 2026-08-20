@@ -1,0 +1,74 @@
+schema_version = 2
+task_id = "pdf-authoritative-backend-selection-successor-339f470f6111"
+title = "PDF Authoritative Backend Selection Successor"
+status = "ready_for_terra_high"
+series_id = "pdf-authoritative-ingestion"
+task_class = "adapter-contract"
+model_profile = "terra-high-v1"
+baseline_revision = "b712a41fde0a14611f0ea0e876e9c5c8bab736f3"
+tdd_path = "docs/2026-08-20-pdf-authoritative-backend-selection-successor.md"
+tdd_sha256 = "339f470f61115631cf3d24610972296291d13fc7775b7e41a3323e0f383c7ba0"
+goal = "Select PyPdfium as the one authoritative Docling backend and bind that policy into deterministic parser identity."
+depends_on = []
+allowed_paths = [
+  "packages/adapters/src/kotekomi_adapters/docling_pdf_parser.py",
+  "packages/adapters/tests/test_docling_pdf_parser.py"
+]
+reference_paths = [
+  "docs/2026-08-20-pdf-authoritative-backend-selection-successor.md",
+  "docs/2026-07-11-R0-C-deterministic-representation-identity-and-atomic-bundle-commit.md",
+  "packages/adapters/src/kotekomi_adapters/docling_pdf_parser.py",
+  "packages/adapters/tests/test_docling_pdf_parser.py"
+]
+stop_conditions = [
+  "the implementation selects a backend by source identity or source content",
+  "the implementation combines text or layout from multiple PDF backends",
+  "the implementation changes existing accepted representation records",
+  "the implementation adds a fallback to the former default backend"
+]
+
+[readiness]
+authority = "The PDF Authoritative Backend Selection Successor TDD defines this task."
+contract_family = "authoritative-pdf-representation"
+dominant_outcome = "One PyPdfium-backed Docling conversion creates the authoritative PDF representation."
+failure_policy = "A selected-backend parse failure remains a typed parser failure."
+legacy_disposition = "The former default backend no longer produces new authoritative embedded-text representations."
+negative_proof = "No per-source backend selection, backend fallback, or cross-tool text patch exists."
+public_entry_point = "kotekomi source add-file"
+scope_policy = "One Adapter backend policy and focused Adapter tests only."
+side_effect_boundary = "New immutable representations can differ by parser configuration; existing records remain unchanged."
+unresolved_decisions = []
+
+[budget]
+maximum_production_files = 1
+maximum_test_files = 1
+maximum_production_diff_lines = 300
+
+[[protected_artifacts]]
+kind = "leaf-tdd"
+path = "docs/2026-08-20-pdf-authoritative-backend-selection-successor.md"
+sha256 = "339f470f61115631cf3d24610972296291d13fc7775b7e41a3323e0f383c7ba0"
+
+[[acceptance]]
+id = "pdf-backend-policy"
+argv = ["uv", "run", "pytest", "packages/adapters/tests/test_docling_pdf_parser.py"]
+timeout_seconds = 240
+profile = "portable-local"
+
+[[acceptance]]
+id = "pdf-backend-regression"
+argv = ["uv", "run", "pytest", "packages/adapters/tests/test_docling_pdf_r1a.py", "packages/adapters/tests/test_docling_pdf_layout.py", "packages/adapters/tests/test_docling_pdf_tables.py", "packages/adapters/tests/test_docling_pdf_ocr.py", "packages/adapters/tests/test_pdf_production_path.py"]
+timeout_seconds = 600
+profile = "portable-local"
+
+[[acceptance]]
+id = "repository-static-checks"
+argv = ["uv", "run", "ruff", "check"]
+timeout_seconds = 120
+profile = "portable-local"
+
+[[acceptance]]
+id = "repository-type-checks"
+argv = ["uv", "run", "pyright"]
+timeout_seconds = 180
+profile = "portable-local"
