@@ -91,6 +91,7 @@ def _metric(root: Path, binding: Json, run: Json) -> Json:
         "main_lifecycle",
         "main_ci",
         "cleanup",
+        "task_result",
         "receipt_chain_status",
     }
     if "task_result" in by_type:

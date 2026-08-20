@@ -118,7 +118,7 @@ def test_workflow_selects_and_validates_main_promotion_evidence(tmp_path: Path) 
     }
     assert status_for("missing", base)[:3] == (
         "main",
-        "produce_main_promotion_evidence",
+        "promote_feature_branch",
         ["main_promotion"],
     )
 
