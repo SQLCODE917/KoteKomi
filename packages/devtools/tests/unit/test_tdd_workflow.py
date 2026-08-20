@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from kotekomi_devtools.tdd_workflow import _create_or_reload
+from kotekomi_devtools.tdd_workflow import create_or_reload_run
 
 
 def test_new_run_can_follow_a_bootstrap_aborted_run(tmp_path: Path) -> None:
@@ -33,7 +33,7 @@ def test_new_run_can_follow_a_bootstrap_aborted_run(tmp_path: Path) -> None:
         )
     )
 
-    created = _create_or_reload(tmp_path, task, new_run=True, abandon=None)
+    created = create_or_reload_run(tmp_path, task, new_run=True, abandon=None)
 
     assert created["implementation_run_id"] == "task-run-002"
     assert created["status"] == "active"

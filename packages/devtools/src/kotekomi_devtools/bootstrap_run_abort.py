@@ -77,7 +77,7 @@ def abort_bootstrap_run(
 
 def _entries(root: Path, task_id: str, run_id: str) -> list[Json]:
     try:
-        return cast(list[Json], validated_entries(root, task_id, run_id))
+        return validated_entries(root, task_id, run_id)
     except EvidenceError as error:
         raise BootstrapRunAbortError("run evidence is invalid") from error
 
@@ -150,10 +150,13 @@ def _payload(root: Path, entries: list[Json], evidence_type: str) -> Json:
 def _run_status(root: Path, task_id: str, run_id: str) -> str:
     path = root / "experiments" / task_id / "runs" / run_id / "run.json"
     try:
-        record = json.loads(path.read_text(encoding="utf-8"))
+        value: object = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as error:
         raise BootstrapRunAbortError("run record is unreadable") from error
-    status = record.get("status") if isinstance(record, dict) else None
+    if not isinstance(value, dict):
+        raise BootstrapRunAbortError("run record has invalid status")
+    record = cast(Json, value)
+    status = record.get("status")
     if not isinstance(status, str):
         raise BootstrapRunAbortError("run record has invalid status")
     return status

@@ -70,7 +70,7 @@ def _latest(index: Json) -> Json | None:
     return max(pool, key=lambda row: row["ordinal"], default=None)
 
 
-def _create_or_reload(root: Path, task: str, *, new_run: bool, abandon: str | None) -> Json:
+def create_or_reload_run(root: Path, task: str, *, new_run: bool, abandon: str | None) -> Json:
     index_path, index = _runs(root, task)
     rows = index["runs"]
     if abandon:
@@ -383,7 +383,7 @@ def implement_tdd(
     task = str(binding["task_id"])
     feature_branch: str | None = None
     try:
-        run = _create_or_reload(root, task, new_run=new_run, abandon=abandon_run)
+        run = create_or_reload_run(root, task, new_run=new_run, abandon=abandon_run)
     except ValueError as error:
         return 1, {
             "schema_version": 1,
