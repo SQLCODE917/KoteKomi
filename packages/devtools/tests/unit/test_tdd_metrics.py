@@ -90,8 +90,8 @@ def test_metrics_requires_main_promotion_evidence(
     assert code == 0
     assert result["status"] == "partial"
     assert result["present_evidence_count"] == 1
-    assert result["missing_evidence_count"] == 12
-    assert result["required_evidence_count"] == 13
+    assert result["missing_evidence_count"] == 13
+    assert result["required_evidence_count"] == 14
     assert "main_promotion" not in {item["rule"] for item in result["diagnostics"]}
 
 
