@@ -16,15 +16,15 @@ from kotekomi_devtools.evidence_catalog import (
     state_root,
     write_canonical_record,
 )
-from kotekomi_devtools.feature_branch_reconciliation import (
-    FeatureBranchReconciliationError,
-    reconcile_merged_feature_branch,
-)
 from kotekomi_devtools.feature_branch_promotion import (
     FeatureBranchPromotionError,
     abandon_feature_branch,
     complete_feature_branch,
     promote_feature_branch,
+)
+from kotekomi_devtools.feature_branch_reconciliation import (
+    FeatureBranchReconciliationError,
+    reconcile_merged_feature_branch,
 )
 from kotekomi_devtools.goal_accountability import GoalAccountabilityError, write_goal_report
 from kotekomi_devtools.lifecycle_evidence import (
