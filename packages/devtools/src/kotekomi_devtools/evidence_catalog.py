@@ -111,6 +111,7 @@ def _event_outcome(evidence_type: str, payload: Json) -> str:
         "feature_branch",
         "candidate_commit",
         "main_promotion",
+        "task_result",
     }
     if evidence_type in recorded_types:
         return "recorded"
