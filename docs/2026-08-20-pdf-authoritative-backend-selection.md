@@ -1,6 +1,6 @@
 # PDF Authoritative Backend Selection
 
-- Status: Proposed
+- Status: Accepted
 - Depends on: `docs/2026-08-13-live-source-walking-skeleton.md`
 - Enables: canonical DR-1 deposited-PDF validation
 
