@@ -243,6 +243,7 @@ def _publish_tag(tag: str, target: str, message: str) -> bool:
 
 
 def _cleanup(root: Path, task: str, run: str, branch: str, target: str, command: str) -> bool:
+    local_cleanup_safe = True
     for block in _git("worktree", "list", "--porcelain").stdout.strip().split("\n\n"):
         lines = block.splitlines()
         path = next(
@@ -258,10 +259,15 @@ def _cleanup(root: Path, task: str, run: str, branch: str, target: str, command:
         )
         if path and head == branch:
             if _git("status", "--porcelain", cwd=Path(path)).stdout:
-                break
+                local_cleanup_safe = False
+                continue
             _git("switch", "--detach", target, cwd=Path(path))
-    _git("branch", "-d", branch)
-    _git("push", "origin", "--delete", branch)
+    local_deleted = (
+        local_cleanup_safe
+        and _git("branch", "-d", branch).returncode == 0
+    )
+    if local_deleted:
+        _git("push", "origin", "--delete", branch)
     remaining: list[str] = []
     if _git("show-ref", "--verify", "--quiet", f"refs/heads/{branch}").returncode == 0:
         remaining.append(branch)
