@@ -9,7 +9,7 @@ baseline_revision = "fdc7de3b1e17db91434548e44fbd18e76088e53b"
 tdd_path = "docs/2026-08-20-document-retrieval-mvp.md"
 tdd_sha256 = "4a4ff3a45c4c20f50332ce6dd92533dca133a655130b1b224761f321f2fde1ee"
 goal = "Build exact and lexical document retrieval from accepted representations through ContextPlanner without creating a separate RAG system."
-depends_on = ["tdd-deposited-source-walking-skeleton-7c3d5a7925db"]
+depends_on = []
 allowed_paths = [
   ".agent/scenarios/anthropic-dod-dispute-v1/scenario.json",
   "docs/CHECK_PLAN.md",
