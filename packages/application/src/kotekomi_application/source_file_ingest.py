@@ -7,11 +7,14 @@ from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Protocol
+from urllib.parse import urlsplit, urlunsplit
 
 from kotekomi_domain import (
+    Document,
     DocumentNode,
     DocumentRepresentation,
     DocumentRepresentationBundle,
+    DocumentRevisionType,
     DocumentVersionKind,
     OutputDisposition,
     ParseQualityReport,
@@ -28,7 +31,15 @@ from kotekomi_domain import (
     TextViewKind,
     canonical_representation_digest,
 )
+from kotekomi_domain.models import JsonValue
 
+from kotekomi_application.pdf_ingest import (
+    PdfDocumentParser,
+    PdfIngestInput,
+    PdfIngestLedger,
+    PdfProcessingError,
+    ingest_pdf,
+)
 from kotekomi_application.ports import ArchiveStore
 from kotekomi_application.processing import (
     BuildIdentity,
@@ -83,6 +94,10 @@ class SourceFileLedger(
     ) -> DocumentRepresentationBundle | None: ...
 
 
+class PdfSourceFileLedger(SourceFileLedger, PdfIngestLedger, Protocol):
+    """Ledger contract for a captured PDF and its authoritative representation."""
+
+
 @dataclass(frozen=True)
 class AuthoritativeCaptureRequest:
     local_file_path: str
@@ -92,6 +107,7 @@ class AuthoritativeCaptureRequest:
     build_identity: BuildIdentity
     source_identity_key: str | None = None
     idempotency_key: str | None = None
+    source_url: str | None = None
 
 
 @dataclass(frozen=True)
@@ -101,6 +117,29 @@ class AuthoritativeCaptureOutcome:
     representation_id: str
     provenance_activity_id: str
     raw_path: str
+    created: bool
+
+
+@dataclass(frozen=True)
+class AuthoritativePdfCaptureRequest:
+    local_file_path: str
+    filename: str
+    raw_bytes: bytes
+    source_url: str
+    ingested_at: datetime
+    build_identity: BuildIdentity
+    policy_id: str = "pdf_document_v1"
+
+
+@dataclass(frozen=True)
+class AuthoritativePdfCaptureOutcome:
+    source_id: str
+    document_id: str
+    raw_path: str
+    representation_id: str | None
+    provenance_activity_id: str | None
+    blocking_reasons: tuple[str, ...]
+    failed: bool
     created: bool
 
 
@@ -121,31 +160,38 @@ def commit_authoritative_capture(
     ingest_input.build_identity.snapshot()
     resolved_attempt_id_factory = attempt_id_factory or Uuid4ProcessingAttemptIdFactory()
     processing_clock = clock or UtcProcessingClock()
+    source_url = (
+        normalize_source_url(ingest_input.source_url)
+        if ingest_input.source_url is not None
+        else None
+    )
     extracted_text = ingest_input.raw_bytes.decode("utf-8")
     source_type = infer_source_type(extracted_text)
     source_title = extract_source_title(ingest_input.filename, extracted_text)
     published_at = parse_dateline_date(extracted_text)
     content_sha256 = hashlib.sha256(ingest_input.raw_bytes).hexdigest()
-    source_key = ingest_input.source_identity_key or str(
+    source_key = source_url or ingest_input.source_identity_key or str(
         Path(ingest_input.local_file_path).resolve()
     )
-    idempotency_key = ingest_input.idempotency_key or _local_file_request_fingerprint(
-        source_key, content_sha256
+    idempotency_key = ingest_input.idempotency_key or (
+        _deposited_request_fingerprint(source_key, content_sha256)
+        if source_url is not None
+        else _local_file_request_fingerprint(source_key, content_sha256)
     )
     request = CaptureRequest(
         identity_hint=SourceIdentityHint(
-            source_type=source_type,
+            source_type=SourceType.ARTICLE if source_url is not None else source_type,
             title=source_title,
             stable_key=source_key,
-            uri=ingest_input.local_file_path,
+            uri=source_url or ingest_input.local_file_path,
         ),
         payload=ingest_input.raw_bytes,
         media_type="text/markdown" if suffix == ".md" else "text/plain",
         storage_locator="pending",
         idempotency_key=idempotency_key,
-        retrieval_method="local_file",
-        requested_uri=ingest_input.local_file_path,
-        canonical_uri=ingest_input.local_file_path,
+        retrieval_method="user_deposited_file" if source_url is not None else "local_file",
+        requested_uri=source_url or ingest_input.local_file_path,
+        canonical_uri=source_url or ingest_input.local_file_path,
         provider_item_id=None,
         provider_version=None,
         version_kind=DocumentVersionKind.ORIGINAL,
@@ -155,7 +201,7 @@ def commit_authoritative_capture(
         transaction_time=ingest_input.ingested_at,
         rights_profile_id=None,
         embargo_until=None,
-        request_metadata={},
+        request_metadata=_deposited_request_metadata(ingest_input, source_url),
         response_metadata={},
     )
     identity_policy = StableSourceIdentityPolicy()
@@ -163,8 +209,17 @@ def commit_authoritative_capture(
     prior_documents = ledger_repository.list_documents_for_source(identity.source_id)
     existing_document = ledger_repository.get_document(identity.document_id)
     if existing_document is None and prior_documents:
-        raise ValueError(
-            "UNCLASSIFIED_REVISION: changed local-file bytes require an explicit revision decision."
+        if source_url is None:
+            raise ValueError(
+                "UNCLASSIFIED_REVISION: changed local-file bytes require "
+                "an explicit revision decision."
+            )
+        prior_document = _latest_document(prior_documents)
+        request = replace(
+            request,
+            version_kind=DocumentVersionKind.UPDATE,
+            revision_of_document_id=prior_document.id,
+            revision_type=DocumentRevisionType.UPDATES,
         )
     request = replace(
         request,
@@ -205,6 +260,7 @@ def commit_authoritative_capture(
             _capture_provenance_activity(
                 capture=outcome,
                 local_file_path=ingest_input.local_file_path,
+                source_url=source_url,
             )
         )
         attempt, _ = execute_processing_task(
@@ -264,6 +320,7 @@ def commit_authoritative_capture(
             _capture_provenance_activity(
                 capture=outcome,
                 local_file_path=ingest_input.local_file_path,
+                source_url=source_url,
             )
         )
         document = outcome.document
@@ -426,6 +483,126 @@ def commit_authoritative_capture(
     )
 
 
+def commit_authoritative_pdf_capture(
+    ingest_input: AuthoritativePdfCaptureRequest,
+    archive_store: ArchiveStore,
+    ledger_repository: PdfSourceFileLedger,
+    parser: PdfDocumentParser,
+    attempt_id_factory: ProcessingAttemptIdFactory | None = None,
+    clock: ProcessingClock | None = None,
+) -> AuthoritativePdfCaptureOutcome:
+    """Capture deposited PDF bytes, then create their authoritative PDF representation."""
+    if Path(ingest_input.filename).suffix.lower() != ".pdf":
+        raise ValueError("Authoritative PDF capture requires a .pdf filename.")
+    ingest_input.build_identity.snapshot()
+    source_url = normalize_source_url(ingest_input.source_url)
+    processing_clock = clock or UtcProcessingClock()
+    source_key = source_url
+    content_sha256 = hashlib.sha256(ingest_input.raw_bytes).hexdigest()
+    idempotency_key = _deposited_request_fingerprint(source_key, content_sha256)
+    request = CaptureRequest(
+        identity_hint=SourceIdentityHint(
+            source_type=SourceType.ARTICLE,
+            title=Path(ingest_input.filename).stem,
+            stable_key=source_key,
+            uri=source_url,
+        ),
+        payload=ingest_input.raw_bytes,
+        media_type="application/pdf",
+        storage_locator="pending",
+        idempotency_key=idempotency_key,
+        retrieval_method="user_deposited_file",
+        requested_uri=source_url,
+        canonical_uri=source_url,
+        provider_item_id=None,
+        provider_version=None,
+        version_kind=DocumentVersionKind.ORIGINAL,
+        publication_time=None,
+        provider_update_time=None,
+        captured_at=ingest_input.ingested_at,
+        transaction_time=ingest_input.ingested_at,
+        rights_profile_id=None,
+        embargo_until=None,
+        request_metadata={
+            "local_file_path": ingest_input.local_file_path,
+            "filename": ingest_input.filename,
+        },
+        response_metadata={},
+    )
+    identity_policy = StableSourceIdentityPolicy()
+    identity = capture_identity(request, identity_policy)
+    existing_document = ledger_repository.get_document(identity.document_id)
+    prior_documents = ledger_repository.list_documents_for_source(identity.source_id)
+    if existing_document is None and prior_documents:
+        request = replace(
+            request,
+            version_kind=DocumentVersionKind.UPDATE,
+            revision_of_document_id=_latest_document(prior_documents).id,
+            revision_type=DocumentRevisionType.UPDATES,
+        )
+    request = replace(request, storage_locator=f"sources/raw/{identity.raw_blob_id}.bin")
+    archive_store.put_if_absent_or_identical(
+        identity.raw_blob_id,
+        ingest_input.raw_bytes,
+        content_sha256,
+    )
+    capture = capture_source(request, ledger_repository, identity_policy)
+    ledger_repository.save_provenance_activity(
+        _capture_provenance_activity(
+            capture=capture,
+            local_file_path=ingest_input.local_file_path,
+            source_url=source_url,
+        )
+    )
+    archived_bytes = archive_store.read_raw_source(capture.raw_blob.id)
+    try:
+        pdf_outcome = ingest_pdf(
+            PdfIngestInput(
+                document_id=capture.document.id,
+                raw_bytes=archived_bytes,
+                policy_id=ingest_input.policy_id,
+                ingested_at=ingest_input.ingested_at,
+                raw_blob_id=capture.raw_blob.id,
+                build_identity=ingest_input.build_identity,
+            ),
+            ledger_repository,
+            parser,
+            attempt_id_factory or Uuid4ProcessingAttemptIdFactory(),
+            processing_clock,
+        )
+    except PdfProcessingError as error:
+        return AuthoritativePdfCaptureOutcome(
+            source_id=capture.source.id,
+            document_id=capture.document.id,
+            raw_path=capture.raw_blob.storage_locator,
+            representation_id=None,
+            provenance_activity_id=None,
+            blocking_reasons=(error.code,),
+            failed=True,
+            created=capture.created,
+        )
+    return AuthoritativePdfCaptureOutcome(
+        source_id=capture.source.id,
+        document_id=capture.document.id,
+        raw_path=capture.raw_blob.storage_locator,
+        representation_id=pdf_outcome.representation_id,
+        provenance_activity_id=(
+            pdf_outcome.provenance_activity_id
+            if pdf_outcome.representation_id is not None
+            else None
+        ),
+        blocking_reasons=pdf_outcome.blocking_reasons,
+        failed=False,
+        created=(
+            capture.created
+            or (
+                pdf_outcome.representation_id is not None
+                and pdf_outcome.provenance_activity_id is not None
+            )
+        ),
+    )
+
+
 def _require_complete_existing_closure(
     *,
     archive_store: ArchiveStore,
@@ -486,6 +663,11 @@ def _local_file_request_fingerprint(source_key: str, content_sha256: str) -> str
     return hashlib.sha256(f"local_file_v1:{source_key}:{content_sha256}".encode()).hexdigest()
 
 
+def _deposited_request_fingerprint(source_url: str, content_sha256: str) -> str:
+    value = f"deposited_source_v1:{source_url}:{content_sha256}"
+    return hashlib.sha256(value.encode()).hexdigest()
+
+
 def _capture_provenance_activity_id(source_capture_id: str) -> str:
     return f"prv_{source_capture_id.removeprefix('cap_')}"
 
@@ -504,6 +686,7 @@ def _capture_provenance_activity(
     *,
     capture: CaptureOutcome,
     local_file_path: str,
+    source_url: str | None,
 ) -> ProvenanceActivity:
     source = capture.source
     raw_blob = capture.raw_blob
@@ -511,12 +694,47 @@ def _capture_provenance_activity(
     document = capture.document
     return ProvenanceActivity(
         id=_capture_provenance_activity_id(source_capture.id),
-        activity_type="source_file_capture",
+        activity_type=(
+            "deposited_source_capture" if source_url is not None else "source_file_capture"
+        ),
         agent="kotekomi",
-        input_ids=(local_file_path,),
+        input_ids=(source_url, local_file_path) if source_url is not None else (local_file_path,),
         output_ids=(source.id, raw_blob.id, source_capture.id, document.id),
         occurred_at=source_capture.transaction_time,
     )
+
+
+def _deposited_request_metadata(
+    ingest_input: AuthoritativeCaptureRequest,
+    source_url: str | None,
+) -> dict[str, JsonValue]:
+    if source_url is None:
+        return {}
+    return {
+        "local_file_path": ingest_input.local_file_path,
+        "filename": ingest_input.filename,
+    }
+
+
+def _latest_document(documents: tuple[Document, ...]) -> Document:
+    if not documents:
+        raise ValueError("A Document revision requires an earlier Document.")
+    return max(documents, key=lambda document: (document.created_at, document.id))
+
+
+def normalize_source_url(source_url: str) -> str:
+    parsed = urlsplit(source_url.strip())
+    if parsed.scheme.lower() != "https" or parsed.hostname is None:
+        raise ValueError("Source URL must be an absolute HTTPS URL with a host.")
+    if parsed.username is not None or parsed.password is not None:
+        raise ValueError("Source URL must not include user credentials.")
+    try:
+        port = parsed.port
+    except ValueError as exc:
+        raise ValueError("Source URL has an invalid port.") from exc
+    host = parsed.hostname.lower()
+    netloc = host if port is None else f"{host}:{port}"
+    return urlunsplit(("https", netloc, parsed.path or "/", parsed.query, ""))
 
 
 def extract_source_title(filename: str, extracted_text: str) -> str:

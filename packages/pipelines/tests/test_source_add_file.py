@@ -1,3 +1,4 @@
+import json
 import sqlite3
 from pathlib import Path
 
@@ -12,6 +13,16 @@ FIXTURE_PATH = (
     / "anthropic_model_release_review.md"
 )
 FIXTURE_TITLE = "Anthropic delayed model rollout after U.S. review raised cyber-safety concerns"
+SOURCE_URL = "https://example.test/articles/anthropic-review"
+PDF_FIXTURE_PATH = (
+    Path(__file__).resolve().parents[2]
+    / "adapters"
+    / "tests"
+    / "fixtures"
+    / "pdf"
+    / "2025-community-health-improvement-plan-press-release.pdf"
+)
+PDF_SOURCE_URL = "https://example.test/articles/community-health-plan"
 
 
 def ledger_init_args(ledger_path: Path, archive_path: Path) -> list[str]:
@@ -56,16 +67,22 @@ def test_source_add_file_ingests_fixture_into_ledger_and_archive(
             "source",
             "add-file",
             str(FIXTURE_PATH),
+            "--source-url",
+            SOURCE_URL,
             "--ledger-path",
             str(ledger_path),
             "--archive-path",
             str(archive_path),
+            "--format",
+            "json",
         ]
     )
 
     output = capsys.readouterr().out
     assert exit_code == 0
-    assert "Source created: src_" in output
+    result = json.loads(output)
+    assert result["status"] == "created"
+    assert result["source_id"].startswith("src_")
     with sqlite_ledger_transaction(ledger_path) as repository:
         sources = repository.list_sources()
         documents = repository.list_documents()
@@ -104,17 +121,17 @@ def test_source_add_file_ingests_fixture_into_ledger_and_archive(
     capture_provenance = next(
         activity
         for activity in provenance_activities
-        if activity.activity_type == "source_file_capture"
+        if activity.activity_type == "deposited_source_capture"
     )
     representation_provenance = next(
         activity
         for activity in provenance_activities
         if activity.activity_type == "source_file_representation"
     )
-    assert source.canonical_identity_key == str(FIXTURE_PATH.resolve())
+    assert source.canonical_identity_key == SOURCE_URL
     assert raw_blobs[0].storage_locator.startswith("sources/raw/blb_")
     assert (archive_path / raw_blobs[0].storage_locator).is_file()
-    assert capture_provenance.input_ids == (str(FIXTURE_PATH),)
+    assert capture_provenance.input_ids == (SOURCE_URL, str(FIXTURE_PATH))
     assert capture_provenance.output_ids == (
         source.id,
         raw_blobs[0].id,
@@ -137,6 +154,91 @@ def test_source_add_file_ingests_fixture_into_ledger_and_archive(
     assert (bundle.nodes[0].start_char, bundle.nodes[0].end_char) == (0, len(text_views[0].text))
 
 
+def test_source_add_file_ingests_project_pdf_fixture(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    ledger_path = tmp_path / "ledger" / "kotekomi.db"
+    archive_path = tmp_path / "archive"
+    config_path = processing_config(tmp_path)
+    assert main(ledger_init_args(ledger_path, archive_path)) == 0
+    capsys.readouterr()
+
+    exit_code = main(
+        [
+            "--config",
+            str(config_path),
+            "source",
+            "add-file",
+            str(PDF_FIXTURE_PATH),
+            "--source-url",
+            PDF_SOURCE_URL,
+            "--ledger-path",
+            str(ledger_path),
+            "--archive-path",
+            str(archive_path),
+            "--format",
+            "json",
+        ]
+    )
+
+    result = json.loads(capsys.readouterr().out)
+    assert exit_code == 0
+    assert result["status"] == "created"
+    assert result["representation_id"].startswith("rep_")
+    assert result["blocking_reasons"] == []
+    with sqlite_ledger_transaction(ledger_path) as repository:
+        source = repository.list_sources()[0]
+        raw_blob = repository.list_raw_blobs()[0]
+        representations = repository.list_document_representations()
+    assert source.canonical_identity_key == PDF_SOURCE_URL
+    assert (archive_path / raw_blob.storage_locator).read_bytes() == PDF_FIXTURE_PATH.read_bytes()
+    assert len(representations) == 1
+
+    assert (
+        main(
+            [
+                "--config",
+                str(config_path),
+                "source",
+                "add-file",
+                str(PDF_FIXTURE_PATH),
+                "--source-url",
+                PDF_SOURCE_URL,
+                "--ledger-path",
+                str(ledger_path),
+                "--archive-path",
+                str(archive_path),
+                "--format",
+                "json",
+            ]
+        )
+        == 0
+    )
+    assert json.loads(capsys.readouterr().out)["status"] == "reused"
+
+
+def test_source_add_file_rejects_missing_or_invalid_source_url(
+    tmp_path: Path,
+) -> None:
+    config_path = processing_config(tmp_path)
+
+    with pytest.raises(SystemExit):
+        main(["--config", str(config_path), "source", "add-file", str(FIXTURE_PATH)])
+    with pytest.raises(ValueError, match="absolute HTTPS URL"):
+        main(
+            [
+                "--config",
+                str(config_path),
+                "source",
+                "add-file",
+                str(FIXTURE_PATH),
+                "--source-url",
+                "http://example.test/article",
+            ]
+        )
+
+
 def test_source_add_file_is_idempotent(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
@@ -152,6 +254,8 @@ def test_source_add_file_is_idempotent(
         "source",
         "add-file",
         str(FIXTURE_PATH),
+        "--source-url",
+        SOURCE_URL,
         "--ledger-path",
         str(ledger_path),
         "--archive-path",
@@ -163,7 +267,7 @@ def test_source_add_file_is_idempotent(
     assert main(args) == 0
 
     output = capsys.readouterr().out
-    assert "Source already_exists: src_" in output
+    assert "Source reused: src_" in output
     with sqlite_ledger_transaction(ledger_path) as repository:
         assert len(repository.list_sources()) == 1
         assert len(repository.list_documents()) == 1

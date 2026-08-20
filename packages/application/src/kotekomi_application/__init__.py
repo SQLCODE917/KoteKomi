@@ -289,7 +289,11 @@ from kotekomi_application.source_capture import (
 from kotekomi_application.source_file_ingest import (
     AuthoritativeCaptureOutcome,
     AuthoritativeCaptureRequest,
+    AuthoritativePdfCaptureOutcome,
+    AuthoritativePdfCaptureRequest,
     commit_authoritative_capture,
+    commit_authoritative_pdf_capture,
+    normalize_source_url,
 )
 from kotekomi_application.staged_model_extraction import (
     BoundedExtractionInput,
@@ -535,6 +539,8 @@ __all__ = [
     "ReanchoringOutcome",
     "AuthoritativeCaptureRequest",
     "AuthoritativeCaptureOutcome",
+    "AuthoritativePdfCaptureRequest",
+    "AuthoritativePdfCaptureOutcome",
     "StagedArchiveObject",
     "StagedExtractionLedger",
     "StructuredNewsLedger",
@@ -542,6 +548,8 @@ __all__ = [
     "TaskSchemaRegistry",
     "Uuid4ModelRunIdFactory",
     "commit_authoritative_capture",
+    "commit_authoritative_pdf_capture",
+    "normalize_source_url",
     "capture_source",
     "capture_identity",
     "canonical_record_json",

@@ -7,6 +7,7 @@ import atexit
 import base64
 import hashlib
 import json
+import math
 import os
 import re
 import selectors
@@ -65,6 +66,7 @@ from kotekomi_domain import (
 )
 
 HASH_ID_LENGTH = 24
+PAGE_GEOMETRY_TOLERANCE_POINTS = 0.001
 
 
 @dataclass(frozen=True)
@@ -1036,9 +1038,17 @@ def _validate_docling_page_geometry(
         source_page = source_by_number.get(docling_page.page_number)
         if source_page is None:
             raise ValueError("Docling returned a page outside the source inventory.")
-        if (docling_page.width, docling_page.height) != (
-            source_page.width,
-            source_page.height,
+        if not (
+            math.isclose(
+                docling_page.width,
+                source_page.width,
+                abs_tol=PAGE_GEOMETRY_TOLERANCE_POINTS,
+            )
+            and math.isclose(
+                docling_page.height,
+                source_page.height,
+                abs_tol=PAGE_GEOMETRY_TOLERANCE_POINTS,
+            )
         ):
             raise ValueError("Docling page geometry disagrees with canonical source geometry.")
 
