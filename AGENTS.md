@@ -35,6 +35,7 @@ Before changing code, read:
 | changing exporters | `docs/agent/adapters.md`, `docs/agent/domain.md`, `docs/agent/testing.md` |
 | changing tests | `docs/agent/testing.md` |
 | implementing a TDD | `docs/agent/implement-tdd-workflow.md`, `docs/agent/testing.md` |
+| diagnosing PDF authoritative text | `docs/agent/pdf-authoritative-text-fidelity.md`, `docs/agent/adapters.md`, `docs/agent/testing.md` |
 
 ## Authority Order
 
