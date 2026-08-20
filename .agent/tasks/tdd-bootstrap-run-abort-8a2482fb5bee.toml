@@ -1,0 +1,73 @@
+schema_version = 2
+task_id = "tdd-bootstrap-run-abort-8a2482fb5bee"
+title = "Bootstrap Run Abort"
+status = "ready_for_terra_high"
+series_id = "tdd-harness-feature-branch"
+task_class = "repository-tooling"
+model_profile = "terra-high-v1"
+baseline_revision = "5a31f5af581619ca4cdc97c11decb9b65edce3de"
+tdd_path = "docs/2026-08-20-tdd-bootstrap-run-abort.md"
+tdd_sha256 = "8a2482fb5bee7eda7a69b4a13d063818aa4a0eb8ce6fc2ac5d77fcb29dc49df2"
+goal = "Abort an unchanged bootstrap run without creating a task result tag."
+depends_on = ["tdd-feature-branch-default-7f13f74551a4"]
+allowed_paths = [
+  "packages/devtools/src/kotekomi_devtools/bootstrap_run_abort.py",
+  "packages/devtools/src/kotekomi_devtools/cli.py",
+  "packages/devtools/src/kotekomi_devtools/evidence_catalog.py",
+  "packages/devtools/src/kotekomi_devtools/tdd_workflow.py",
+  "packages/devtools/tests/acceptance/test_bootstrap_run_abort_contract.py",
+  "packages/devtools/tests/acceptance/test_tdd_workflow_contract.py",
+  "packages/devtools/tests/unit/test_evidence_catalog.py",
+  "packages/devtools/tests/unit/test_tdd_workflow.py"
+]
+reference_paths = [
+  "packages/devtools/src/kotekomi_devtools/feature_branch_reconciliation.py",
+  "packages/devtools/src/kotekomi_devtools/lifecycle_evidence.py",
+  "packages/devtools/tests/acceptance/test_feature_branch_default_contract.py"
+]
+stop_conditions = [
+  "the command creates, deletes, or changes a result tag",
+  "the command deletes a branch that contains candidate evidence",
+  "the command force-pushes or force-deletes a feature branch",
+  "the implementation changes the protected leaf TDD"
+]
+
+[readiness]
+authority = "The Bootstrap Run Abort TDD defines this task."
+contract_family = "tdd-harness"
+dominant_outcome = "The Harness removes an unchanged bootstrap feature branch without a terminal result tag."
+failure_policy = "Invalid run state or changed feature refs block before deletion; failed deletion writes incomplete cleanup evidence."
+legacy_disposition = "Existing abandoned result tags remain read-only historical records."
+negative_proof = "The command does not create a task result tag or delete a branch with a candidate."
+public_entry_point = "kotekomi-agent abort-bootstrap-run"
+scope_policy = "Bootstrap abort, evidence catalog, workflow, CLI, and deterministic Git tests only."
+side_effect_boundary = "Non-force deletion of unchanged local and origin feature refs and canonical run evidence."
+unresolved_decisions = []
+
+[budget]
+maximum_production_files = 4
+maximum_test_files = 4
+maximum_production_diff_lines = 700
+
+[[protected_artifacts]]
+kind = "leaf-tdd"
+path = "docs/2026-08-20-tdd-bootstrap-run-abort.md"
+sha256 = "8a2482fb5bee7eda7a69b4a13d063818aa4a0eb8ce6fc2ac5d77fcb29dc49df2"
+
+[[acceptance]]
+id = "bootstrap-run-abort-contract"
+argv = ["uv", "run", "pytest", "-p", "no:cacheprovider", "packages/devtools/tests/acceptance/test_bootstrap_run_abort_contract.py", "packages/devtools/tests/acceptance/test_tdd_workflow_contract.py", "packages/devtools/tests/unit/test_evidence_catalog.py", "packages/devtools/tests/unit/test_tdd_workflow.py"]
+timeout_seconds = 180
+profile = "portable-local"
+
+[[acceptance]]
+id = "repository-static-checks"
+argv = ["uv", "run", "ruff", "check"]
+timeout_seconds = 120
+profile = "portable-local"
+
+[[acceptance]]
+id = "repository-type-checks"
+argv = ["uv", "run", "pyright"]
+timeout_seconds = 180
+profile = "portable-local"
