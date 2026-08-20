@@ -1,0 +1,150 @@
+schema_version = 2
+task_id = "dr-1-document-retrieval-mvp-4a4ff3a45c4c"
+title = "DR-1 Document Retrieval MVP"
+status = "ready_for_terra_high"
+series_id = "derived-retrieval"
+task_class = "repository-tooling"
+model_profile = "terra-high-v1"
+baseline_revision = "fdc7de3b1e17db91434548e44fbd18e76088e53b"
+tdd_path = "docs/2026-08-20-document-retrieval-mvp.md"
+tdd_sha256 = "4a4ff3a45c4c20f50332ce6dd92533dca133a655130b1b224761f321f2fde1ee"
+goal = "Build exact and lexical document retrieval from accepted representations through ContextPlanner without creating a separate RAG system."
+depends_on = ["tdd-deposited-source-walking-skeleton-7c3d5a7925db"]
+allowed_paths = [
+  ".agent/scenarios/anthropic-dod-dispute-v1/scenario.json",
+  "docs/CHECK_PLAN.md",
+  "packages/domain/src/kotekomi_domain/__init__.py",
+  "packages/domain/src/kotekomi_domain/models.py",
+  "packages/domain/src/kotekomi_domain/schemas.py",
+  "packages/domain/tests/test_document_retrieval.py",
+  "packages/application/src/kotekomi_application/__init__.py",
+  "packages/application/src/kotekomi_application/context_planning.py",
+  "packages/application/src/kotekomi_application/document_retrieval.py",
+  "packages/application/src/kotekomi_application/ports.py",
+  "packages/application/tests/test_document_retrieval.py",
+  "packages/adapters/src/kotekomi_adapters/__init__.py",
+  "packages/adapters/src/kotekomi_adapters/migrations/009_add_document_retrieval.sql",
+  "packages/adapters/src/kotekomi_adapters/sqlite_document_retrieval.py",
+  "packages/adapters/src/kotekomi_adapters/sqlite_ledger.py",
+  "packages/adapters/tests/test_sqlite_document_retrieval.py",
+  "packages/pipelines/src/kotekomi_pipelines/cli.py",
+  "packages/pipelines/tests/test_document_retrieval.py",
+  "packages/devtools/src/kotekomi_devtools/cli.py",
+  "packages/devtools/src/kotekomi_devtools/retrieval_scenarios.py",
+  "packages/devtools/tests/acceptance/test_retrieval_scenario_contract.py",
+  "packages/devtools/tests/unit/test_retrieval_scenarios.py"
+]
+reference_paths = [
+  "docs/2026-07-11-derived-document-retrieval.md",
+  "packages/application/src/kotekomi_application/context_planning.py",
+  "packages/application/src/kotekomi_application/source_file_ingest.py",
+  "packages/adapters/src/kotekomi_adapters/sqlite_ledger.py",
+  "packages/pipelines/src/kotekomi_pipelines/cli.py",
+  "packages/devtools/src/kotekomi_devtools/verification_execution.py"
+]
+stop_conditions = [
+  "the implementation reads raw/ during retrieval build or query",
+  "the implementation imports product packages from devtools",
+  "the implementation adds embeddings, semantic retrieval, Ledger retrieval, graph retrieval, or a RAG subsystem",
+  "the implementation treats index rows as authoritative evidence",
+  "the implementation fetches the scenario URL",
+  "the implementation edits protected TDD, schemas, query packs, suite, or ingest expectations"
+]
+
+[readiness]
+authority = "The DR-1 Document Retrieval MVP TDD and derived retrieval program envelope define this task."
+contract_family = "derived-document-retrieval"
+dominant_outcome = "A pinned accepted representation yields exact and lexical authoritative node hits and ContextManifests."
+failure_policy = "Missing, stale, corrupt, or incompatible derived state fails explicitly; canonical fixture failures remain visible receipts."
+legacy_disposition = "No previous retrieval contract exists."
+negative_proof = "No retrieval index becomes authoritative and no semantic, Ledger, graph, or RAG behavior is introduced."
+public_entry_point = "kotekomi retrieval build-document, kotekomi retrieval query, kotekomi-agent test-ingest, and kotekomi-agent test-query"
+scope_policy = "Document-plane exact and lexical retrieval, ContextPlanner bridge, SQLite derived state, public CLIs, scenario harnesses, and focused tests only."
+side_effect_boundary = "Disposable SQLite retrieval projections and immutable query/receipt records derived from one accepted representation."
+unresolved_decisions = []
+
+[budget]
+maximum_production_files = 14
+maximum_test_files = 7
+maximum_production_diff_lines = 3000
+
+[[protected_artifacts]]
+kind = "leaf-tdd"
+path = "docs/2026-08-20-document-retrieval-mvp.md"
+sha256 = "4a4ff3a45c4c20f50332ce6dd92533dca133a655130b1b224761f321f2fde1ee"
+
+[[protected_artifacts]]
+kind = "json-schema"
+path = ".agent/schemas/retrieval-scenario-v1.schema.json"
+sha256 = "1487f41de7abb4f4f2b69606ea3764eecddfa26e4961b826a554139b6a6014ff"
+
+[[protected_artifacts]]
+kind = "json-schema"
+path = ".agent/schemas/retrieval-ingest-expectations-v1.schema.json"
+sha256 = "7cd648d7c53cbf601af3dbfd6f85bafb6b3cc352799cc3bb5816eca5825351e2"
+
+[[protected_artifacts]]
+kind = "json-schema"
+path = ".agent/schemas/retrieval-query-case-v1.schema.json"
+sha256 = "c3f8e04256925b688f6acdeb0b19debea1f30c96270cddd4d4cf56393dc3e472"
+
+[[protected_artifacts]]
+kind = "json-schema"
+path = ".agent/schemas/retrieval-query-suite-v1.schema.json"
+sha256 = "6069421bbce71231183cd91c4f7cc05930034f8d707f889e8554f315311407c8"
+
+[[protected_artifacts]]
+kind = "fixture"
+path = ".agent/scenarios/anthropic-dod-dispute-v1/ingest-expectations.json"
+sha256 = "677eac8e8b1bb2fbfa4098d25569eacff41745fece5e56be1d1ad0ec24fb2990"
+
+[[protected_artifacts]]
+kind = "fixture"
+path = ".agent/scenarios/anthropic-dod-dispute-v1/queries/base-v1.jsonl"
+sha256 = "d86984972aae82e5a5c60bd678c5e9dca4662107381ddf4d23bdca0b8fe7aa47"
+
+[[protected_artifacts]]
+kind = "fixture"
+path = ".agent/scenarios/anthropic-dod-dispute-v1/queries/dr-1-document-exact-lexical-v1.jsonl"
+sha256 = "7ce2703bb6a3903f229708986ed950a564d9256fd0301b2160235a6723a56616"
+
+[[protected_artifacts]]
+kind = "fixture"
+path = ".agent/scenarios/anthropic-dod-dispute-v1/suites/dr-1-v1.json"
+sha256 = "82d3308104aa55d24731b483f5af70e506d9f8405f9df6a54dda78c63f0091cb"
+
+[[acceptance]]
+id = "document-retrieval-domain-application"
+argv = ["uv", "run", "pytest", "packages/domain/tests/test_document_retrieval.py", "packages/application/tests/test_document_retrieval.py"]
+timeout_seconds = 240
+profile = "portable-local"
+
+[[acceptance]]
+id = "document-retrieval-adapter"
+argv = ["uv", "run", "pytest", "packages/adapters/tests/test_sqlite_document_retrieval.py"]
+timeout_seconds = 240
+profile = "portable-local"
+
+[[acceptance]]
+id = "document-retrieval-pipeline"
+argv = ["uv", "run", "pytest", "packages/pipelines/tests/test_document_retrieval.py"]
+timeout_seconds = 240
+profile = "portable-local"
+
+[[acceptance]]
+id = "document-retrieval-scenario-harness"
+argv = ["uv", "run", "pytest", "packages/devtools/tests/unit/test_retrieval_scenarios.py", "packages/devtools/tests/acceptance/test_retrieval_scenario_contract.py"]
+timeout_seconds = 240
+profile = "portable-local"
+
+[[acceptance]]
+id = "repository-static-checks"
+argv = ["uv", "run", "ruff", "check"]
+timeout_seconds = 120
+profile = "portable-local"
+
+[[acceptance]]
+id = "repository-type-checks"
+argv = ["uv", "run", "pyright"]
+timeout_seconds = 180
+profile = "portable-local"
