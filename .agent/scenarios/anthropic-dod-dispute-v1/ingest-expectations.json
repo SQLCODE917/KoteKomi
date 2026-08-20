@@ -1,0 +1,107 @@
+{
+  "schema_version": "retrieval-ingest-expectations-v1",
+  "scenario_id": "anthropic-dod-dispute-v1",
+  "required_analyzability": "acceptable",
+  "minimum_page_count": 4,
+  "required_node_types": [
+    "heading",
+    "paragraph"
+  ],
+  "required_text_anchors": [
+    {
+      "anchor_id": "title",
+      "text": "Anthropic–United States Department of Defense dispute",
+      "match_mode": "exact_substring",
+      "minimum_occurrences": 1,
+      "expected_node_types": [
+        "heading",
+        "paragraph"
+      ]
+    },
+    {
+      "anchor_id": "directive-3000-09",
+      "text": "Directive 3000.09",
+      "match_mode": "exact_substring",
+      "minimum_occurrences": 1,
+      "expected_node_types": [
+        "paragraph"
+      ]
+    },
+    {
+      "anchor_id": "emil-michael",
+      "text": "Emil Michael",
+      "match_mode": "exact_substring",
+      "minimum_occurrences": 1,
+      "expected_node_types": [
+        "paragraph"
+      ]
+    },
+    {
+      "anchor_id": "all-lawful-purposes",
+      "text": "all lawful purposes",
+      "match_mode": "casefold_substring",
+      "minimum_occurrences": 1,
+      "expected_node_types": [
+        "paragraph"
+      ]
+    },
+    {
+      "anchor_id": "supply-chain-risk",
+      "text": "supply chain risk",
+      "match_mode": "casefold_substring",
+      "minimum_occurrences": 1,
+      "expected_node_types": [
+        "paragraph",
+        "heading"
+      ]
+    },
+    {
+      "anchor_id": "fascsa",
+      "text": "FASCSA",
+      "match_mode": "exact_substring",
+      "minimum_occurrences": 1,
+      "expected_node_types": [
+        "paragraph"
+      ]
+    },
+    {
+      "anchor_id": "cross-the-rubicon",
+      "text": "cross the Rubicon",
+      "match_mode": "casefold_substring",
+      "minimum_occurrences": 1,
+      "expected_node_types": [
+        "paragraph"
+      ]
+    },
+    {
+      "anchor_id": "district-docket",
+      "text": "3:26-cv-01996",
+      "match_mode": "exact_substring",
+      "minimum_occurrences": 1,
+      "expected_node_types": [
+        "paragraph",
+        "table"
+      ]
+    },
+    {
+      "anchor_id": "appeal-docket",
+      "text": "26-1049",
+      "match_mode": "exact_substring",
+      "minimum_occurrences": 1,
+      "expected_node_types": [
+        "paragraph",
+        "table"
+      ]
+    }
+  ],
+  "required_section_headings": [
+    "Background",
+    "Dispute",
+    "Impact",
+    "Lawsuits"
+  ],
+  "require_archived_byte_equality": true,
+  "require_restart_reload": true,
+  "require_idempotent_reingest": true,
+  "network_policy": "forbidden"
+}

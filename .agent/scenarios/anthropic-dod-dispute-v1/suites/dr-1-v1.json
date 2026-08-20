@@ -1,0 +1,34 @@
+{
+  "schema_version": "retrieval-query-suite-v1",
+  "suite_id": "dr-1-v1",
+  "scenario_id": "anthropic-dod-dispute-v1",
+  "description": "Cumulative DR-1 canonical suite for document exact and lexical retrieval through ContextPlanner.",
+  "cumulative": true,
+  "execution_order": [
+    "test-ingest",
+    "test-query"
+  ],
+  "query_pack_paths": [
+    ".agent/scenarios/anthropic-dod-dispute-v1/queries/base-v1.jsonl",
+    ".agent/scenarios/anthropic-dod-dispute-v1/queries/dr-1-document-exact-lexical-v1.jsonl"
+  ],
+  "required_planes": [
+    "document"
+  ],
+  "required_channels": [
+    "exact",
+    "lexical"
+  ],
+  "policy_ids": {
+    "unit_policy_id": "document_node_unit_v1",
+    "projection_policy_id": "document_exact_lexical_projection_v1",
+    "query_policy_id": "document_exact_before_lexical_v1",
+    "context_profile_id": "retrieval-validation-v1"
+  },
+  "thresholds": {
+    "required_case_pass_rate": 1.0,
+    "unique_exact_rank_1_rate": 1.0,
+    "require_zero_forbidden_evidence": true,
+    "require_rebuild_equivalence": true
+  }
+}

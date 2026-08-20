@@ -1,0 +1,108 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kotekomi.local/schemas/retrieval-ingest-expectations-v1.schema.json",
+  "title": "KoteKomi retrieval ingest expectations v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "scenario_id",
+    "required_analyzability",
+    "minimum_page_count",
+    "required_node_types",
+    "required_text_anchors",
+    "required_section_headings",
+    "require_archived_byte_equality",
+    "require_restart_reload",
+    "require_idempotent_reingest",
+    "network_policy"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "retrieval-ingest-expectations-v1"
+    },
+    "scenario_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "required_analyzability": {
+      "const": "acceptable"
+    },
+    "minimum_page_count": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "required_node_types": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "required_text_anchors": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "anchor_id",
+          "text",
+          "match_mode",
+          "minimum_occurrences"
+        ],
+        "properties": {
+          "anchor_id": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9-]*$"
+          },
+          "text": {
+            "type": "string",
+            "minLength": 1
+          },
+          "match_mode": {
+            "enum": [
+              "exact_substring",
+              "casefold_substring"
+            ]
+          },
+          "minimum_occurrences": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "expected_node_types": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        }
+      }
+    },
+    "required_section_headings": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "require_archived_byte_equality": {
+      "const": true
+    },
+    "require_restart_reload": {
+      "const": true
+    },
+    "require_idempotent_reingest": {
+      "const": true
+    },
+    "network_policy": {
+      "const": "forbidden"
+    }
+  }
+}

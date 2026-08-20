@@ -1,0 +1,132 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kotekomi.local/schemas/retrieval-scenario-v1.schema.json",
+  "title": "KoteKomi retrieval canonical scenario v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "scenario_id",
+    "description",
+    "fixture",
+    "source",
+    "paths",
+    "network_policy"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "retrieval-scenario-v1"
+    },
+    "scenario_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]*-v[0-9]+$"
+    },
+    "description": {
+      "type": "string",
+      "minLength": 1
+    },
+    "fixture": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "repository_path",
+        "media_type",
+        "fixture_lock"
+      ],
+      "properties": {
+        "repository_path": {
+          "type": "string",
+          "pattern": "^raw/.+\\.pdf$"
+        },
+        "media_type": {
+          "const": "application/pdf"
+        },
+        "fixture_lock": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "state",
+                "sha256",
+                "page_count"
+              ],
+              "properties": {
+                "state": {
+                  "const": "unlocked"
+                },
+                "sha256": {
+                  "type": "null"
+                },
+                "page_count": {
+                  "type": "null"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "state",
+                "sha256",
+                "page_count"
+              ],
+              "properties": {
+                "state": {
+                  "const": "locked"
+                },
+                "sha256": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                },
+                "page_count": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "normalized_url",
+        "capture_method"
+      ],
+      "properties": {
+        "normalized_url": {
+          "type": "string",
+          "format": "uri",
+          "pattern": "^https://"
+        },
+        "capture_method": {
+          "const": "user_deposited_file"
+        }
+      }
+    },
+    "paths": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ingest_expectations",
+        "suite_directory"
+      ],
+      "properties": {
+        "ingest_expectations": {
+          "type": "string",
+          "pattern": "^\\.agent/scenarios/"
+        },
+        "suite_directory": {
+          "type": "string",
+          "pattern": "^\\.agent/scenarios/"
+        }
+      }
+    },
+    "network_policy": {
+      "const": "forbidden"
+    }
+  }
+}
