@@ -6,9 +6,9 @@
     "repository_path": "raw/Anthropic–United_States_Department_of_Defense_dispute.pdf",
     "media_type": "application/pdf",
     "fixture_lock": {
-      "state": "unlocked",
-      "sha256": null,
-      "page_count": null
+      "state": "locked",
+      "sha256": "c63c85796559453acf708dab46a35da36ffed00a408a25275576ba07138e9624",
+      "page_count": 8
     }
   },
   "source": {

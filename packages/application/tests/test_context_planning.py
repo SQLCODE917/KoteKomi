@@ -1,3 +1,5 @@
+# pyright: reportPrivateUsage=false
+
 import hashlib
 from copy import deepcopy
 from dataclasses import replace
@@ -15,6 +17,7 @@ from kotekomi_application import (
     render_context,
     verify_context_manifest,
 )
+from kotekomi_application.context_planning import _definition_nodes_for_focus
 from kotekomi_domain import (
     AnalysisUnitArtifact,
     ContextManifestArtifact,
@@ -30,7 +33,8 @@ from kotekomi_domain import (
 
 NOW = datetime(2026, 7, 12, tzinfo=UTC)
 TEXT = (
-    "Community Health Improvement Plan\n"
+    "Community Health\n"
+    "Improvement Plan\n"
     "Community Health Improvement Plan (CHIP) defines the county strategy.\n"
     "The CHIP identifies health priorities.\n"
     "Furniture header"
@@ -96,7 +100,9 @@ def _bundle() -> DocumentRepresentationBundle:
         text=TEXT,
         normalization_policy="fixture_display_v1",
     )
-    heading_end = TEXT.index("\n")
+    outer_heading_end = TEXT.index("\n")
+    heading_start = outer_heading_end + 1
+    heading_end = TEXT.index("\n", heading_start)
     definition_start = heading_end + 1
     definition_end = definition_start + len(
         "Community Health Improvement Plan (CHIP) defines the county strategy."
@@ -113,22 +119,32 @@ def _bundle() -> DocumentRepresentationBundle:
         start_char=0,
         end_char=len(LOGICAL_TEXT),
     )
-    heading = DocumentNode(
-        id="nod_context_heading",
+    outer_heading = DocumentNode(
+        id="nod_context_outer_heading",
         representation_id=representation_id,
         parent_node_id=root.id,
         node_type="heading",
         order_index=1,
         text_view_id=text_view.id,
         start_char=0,
+        end_char=outer_heading_end,
+    )
+    heading = DocumentNode(
+        id="nod_context_heading",
+        representation_id=representation_id,
+        parent_node_id=outer_heading.id,
+        node_type="heading",
+        order_index=2,
+        text_view_id=text_view.id,
+        start_char=heading_start,
         end_char=heading_end,
     )
     definition = DocumentNode(
         id="nod_context_definition",
         representation_id=representation_id,
-        parent_node_id=root.id,
+        parent_node_id=heading.id,
         node_type="paragraph",
-        order_index=2,
+        order_index=3,
         text_view_id=text_view.id,
         start_char=definition_start,
         end_char=definition_end,
@@ -136,9 +152,9 @@ def _bundle() -> DocumentRepresentationBundle:
     focus = DocumentNode(
         id="nod_context_focus",
         representation_id=representation_id,
-        parent_node_id=root.id,
+        parent_node_id=heading.id,
         node_type="paragraph",
-        order_index=3,
+        order_index=4,
         text_view_id=text_view.id,
         start_char=focus_start,
         end_char=focus_end,
@@ -148,7 +164,7 @@ def _bundle() -> DocumentRepresentationBundle:
         representation_id=representation_id,
         parent_node_id=root.id,
         node_type="furniture",
-        order_index=4,
+        order_index=5,
         text_view_id=display_view.id,
         start_char=furniture_start,
         end_char=len(TEXT),
@@ -174,7 +190,7 @@ def _bundle() -> DocumentRepresentationBundle:
             "canonical_output_digest": canonical_representation_digest(
                 template,
                 text_views=(text_view, display_view),
-                nodes=(root, heading, definition, focus, furniture),
+                nodes=(root, outer_heading, heading, definition, focus, furniture),
                 edges=(),
                 source_regions=(),
                 quality_report=quality_report,
@@ -184,7 +200,7 @@ def _bundle() -> DocumentRepresentationBundle:
     return DocumentRepresentationBundle(
         representation=representation,
         text_views=(text_view, display_view),
-        nodes=(root, heading, definition, focus, furniture),
+        nodes=(root, outer_heading, heading, definition, focus, furniture),
         quality_report=quality_report,
     )
 
@@ -217,12 +233,15 @@ def test_context_planner_includes_required_definition_and_excludes_furniture() -
     assert first.manifest.status is ContextManifestStatus.READY
     assert tuple(candidate.node_id for candidate in first.manifest.selected_candidates) == (
         "nod_context_focus",
+        "nod_context_outer_heading",
         "nod_context_heading",
         "nod_context_definition",
     )
     assert first.manifest.excluded_candidates[0].candidate.node_id == "nod_context_furniture"
     assert first.manifest.excluded_candidates[0].reason_code == "furniture_excluded"
     assert b"Community Health Improvement Plan (CHIP)" in first.manifest.rendered_input
+    assert b"Community Health" in first.manifest.rendered_input
+    assert b"Improvement Plan" in first.manifest.rendered_input
     assert b"Furniture header" not in first.manifest.rendered_input
     assert first.manifest.input_token_count <= 250
     assert (
@@ -267,6 +286,32 @@ def test_context_planner_splits_multiple_focus_nodes_and_blocks_one_oversized_un
     )
     assert blocked.manifest.status is ContextManifestStatus.CONTEXT_BUDGET_BLOCKED
     assert blocked.blocked_reason == "required_context_exceeds_budget"
+    assert tuple(
+        excluded.candidate.node_id for excluded in blocked.manifest.excluded_candidates
+    ) == (
+        "nod_context_focus",
+        "nod_context_outer_heading",
+        "nod_context_heading",
+        "nod_context_definition",
+        "nod_context_furniture",
+    )
+    assert all(
+        excluded.reason_code == "required_context_exceeds_budget"
+        for excluded in blocked.manifest.excluded_candidates
+    )
+
+
+def test_definition_resolution_excludes_structural_document_root() -> None:
+    bundle = _bundle()
+    nodes = tuple(
+        node.model_copy(update={"node_type": "furniture"})
+        if node.id == "nod_context_definition"
+        else node
+        for node in bundle.nodes
+    )
+    focus = next(node for node in nodes if node.id == "nod_context_focus")
+
+    assert _definition_nodes_for_focus(focus, bundle.model_copy(update={"nodes": nodes})) == ()
 
 
 def test_context_manifest_rejects_tampered_candidates_segments_and_token_count() -> None:
