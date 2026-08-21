@@ -377,6 +377,7 @@ def _run_query_cases(
     outcomes: list[JsonObject] = []
     observations: dict[str, JsonObject] = {}
     for case in cases:
+        case_hybrid = hybrid and case.get("schema_version") == "retrieval-query-case-v3"
         arguments = [
             "retrieval",
             "query",
@@ -393,7 +394,7 @@ def _run_query_cases(
             "--format",
             "json",
         ]
-        if hybrid:
+        if case_hybrid:
             arguments = ["--config", str(config_path), *arguments]
         elif "semantic" in case["required_channels"]:
             if embedding_profile_id is None:
@@ -409,6 +410,8 @@ def _run_query_cases(
                 "--embedding-profile",
                 embedding_profile_id,
             ]
+        else:
+            arguments.extend(("--channel", "exact-lexical"))
         query = _product_json(*arguments)
         _validate_query_case(case, query)
         query_id = _required_str(case, "query_id")

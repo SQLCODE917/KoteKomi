@@ -142,4 +142,5 @@ def test_dr3_cumulative_scenario_assets_validate() -> None:
     assert [case["query_id"] for case in dr3_cases] == [
         "dr3-unique-directive",
         "dr3-nonunique-fascsa",
+        "dr3-semantic-risk",
     ]
