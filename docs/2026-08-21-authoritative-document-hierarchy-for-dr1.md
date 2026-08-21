@@ -189,4 +189,3 @@ Stop when the implementation needs to modify the locked PDF.
 Stop when a change adds semantic, Ledger-plane, graph-plane, or prompt-construction behavior.
 Stop when a change turns Poppler diagnostics into a cross-parser equality gate.
 Leave the existing PDF-table fixture failures outside this successor unless they prevent the acceptance criteria above.
-
