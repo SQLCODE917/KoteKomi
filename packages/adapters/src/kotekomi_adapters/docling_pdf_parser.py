@@ -113,6 +113,8 @@ class _LayoutItem:
     extraction_path: PdfExtractionPath = PdfExtractionPath.EMBEDDED
     confidence: float | None = None
     semantic_key: str | None = None
+    source_item_key: str | None = None
+    source_heading_parent_key: str | None = None
 
 
 @dataclass(frozen=True)
@@ -1060,11 +1062,24 @@ def _layout_items_from_document(
     geometry_by_page = {page.page_number: page for page in page_geometry}
     layout_items: list[_LayoutItem] = []
     seen_item_refs: set[str] = set()
-    for item, _depth in document.iterate_items():
+    heading_stack: list[tuple[int, str]] = []
+    for item, depth in document.iterate_items():
         layout_item = _layout_item_from_docling_item(item, geometry_by_page)
         if layout_item is not None:
-            layout_items.append(layout_item)
-            seen_item_refs.add(str(getattr(item, "self_ref", "")))
+            item_key = str(getattr(item, "self_ref", ""))
+            while heading_stack and heading_stack[-1][0] >= depth:
+                heading_stack.pop()
+            source_heading_parent_key = heading_stack[-1][1] if heading_stack else None
+            layout_items.append(
+                replace(
+                    layout_item,
+                    source_item_key=item_key or None,
+                    source_heading_parent_key=source_heading_parent_key,
+                )
+            )
+            seen_item_refs.add(item_key)
+            if layout_item.node_type == "heading" and item_key:
+                heading_stack.append((depth, item_key))
     for item in cast(Any, document.texts):
         content_layer = getattr(getattr(item, "content_layer", None), "value", None)
         item_ref = str(getattr(item, "self_ref", ""))
@@ -1376,6 +1391,8 @@ def _layout_item_from_docling_item(
     if content_layer == "furniture":
         resolved_node_type = "furniture"
     normalized_text = text.strip()
+    if resolved_node_type == "heading" and not _has_semantic_heading_text(normalized_text):
+        resolved_node_type = "paragraph"
     if re.match(r"^Table\s+\w+", normalized_text, re.IGNORECASE):
         resolved_node_type = "table_caption"
     elif re.match(r"^Units?:", normalized_text, re.IGNORECASE):
@@ -1393,6 +1410,10 @@ def _layout_item_from_docling_item(
         heading_level=int(heading_level) if heading_level is not None else None,
         marker=str(marker) if marker else None,
     )
+
+
+def _has_semantic_heading_text(value: str) -> bool:
+    return any(character.isalnum() for character in value)
 
 
 def _ocr_selected_pages(
@@ -2589,6 +2610,7 @@ def _canonical_layout_records(
     semantic_node_ids: dict[str, str] = {}
     root_node_id = f"nod_{representation_key}_document"
     parent_paths: dict[str, tuple[str, ...]] = {root_node_id: ("document",)}
+    source_heading_nodes: dict[str, DocumentNode] = {}
     section_stack: list[tuple[int, str, str]] = []
     list_stack: list[tuple[float, str]] = []
     current_page: int | None = None
@@ -2597,7 +2619,6 @@ def _canonical_layout_records(
         node_id = f"nod_{representation_key}_{order_index:04d}"
         page_number = item.regions[0].page_number
         if page_number != current_page:
-            section_stack.clear()
             list_stack.clear()
             current_page = page_number
         rendered_text = _rendered_layout_item_text(item)
@@ -2628,8 +2649,23 @@ def _canonical_layout_records(
             text_view_id = logical_view_id
             start_char, end_char = logical_ranges[item_index]
         else:
-            parent_id = section_stack[-1][1] if section_stack else root_node_id
-            section_path = tuple(entry[2] for entry in section_stack)
+            source_parent = (
+                source_heading_nodes.get(item.source_heading_parent_key)
+                if item.source_heading_parent_key is not None
+                else None
+            )
+            if item.source_heading_parent_key is not None and source_parent is None:
+                raise ValueError("Docling heading parent is unavailable in canonical layout order.")
+            parent_id = (
+                source_parent.id
+                if source_parent is not None
+                else (section_stack[-1][1] if section_stack else root_node_id)
+            )
+            section_path = (
+                source_parent.section_path
+                if source_parent is not None
+                else tuple(entry[2] for entry in section_stack)
+            )
             text_view_id = logical_view_id
             start_char, end_char = logical_ranges[item_index]
             list_stack.clear()
@@ -2679,6 +2715,8 @@ def _canonical_layout_records(
                 raise ValueError("PDF layout semantic keys must be unique.")
             semantic_node_ids[item.semantic_key] = node.id
         parent_paths[node.id] = structural_path
+        if item.node_type == "heading" and item.source_item_key is not None:
+            source_heading_nodes[item.source_item_key] = node
         if item.node_type == "heading":
             section_stack.append((item.heading_level or 1, node.id, item.text))
         elif item.node_type == "list_item":

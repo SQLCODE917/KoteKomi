@@ -198,6 +198,50 @@ def test_source_add_file_ingests_project_pdf_fixture(
     assert (
         main(
             [
+                "retrieval",
+                "build-document",
+                "--representation-id",
+                result["representation_id"],
+                "--ledger-path",
+                str(ledger_path),
+                "--format",
+                "json",
+            ]
+        )
+        == 0
+    )
+    build = json.loads(capsys.readouterr().out)
+    assert build["status"] == "complete"
+    assert build["unit_count"] > 0
+    assert (
+        main(
+            [
+                "retrieval",
+                "query",
+                "--representation-id",
+                result["representation_id"],
+                "--query",
+                "community health assessment",
+                "--maximum-hits",
+                "1",
+                "--context-profile",
+                "retrieval-validation-v1",
+                "--ledger-path",
+                str(ledger_path),
+                "--format",
+                "json",
+            ]
+        )
+        == 0
+    )
+    query = json.loads(capsys.readouterr().out)
+    assert query["status"] == "complete"
+    assert query["hits"][0]["selection_reason"] == "exact_before_lexical"
+    assert "community health assessment" in query["context_manifest_rendered_input"]
+
+    assert (
+        main(
+            [
                 "--config",
                 str(config_path),
                 "source",
