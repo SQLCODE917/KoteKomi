@@ -1,0 +1,78 @@
+schema_version = 2
+task_id = "tdd-superseded-task-closure-b5ff068b973e"
+title = "Superseded Task Closure"
+status = "ready_for_terra_high"
+series_id = "tdd-harness-feature-branch"
+task_class = "repository-tooling"
+model_profile = "terra-high-v1"
+baseline_revision = "9e1050f8f9fef83b3ce45ed3d6f6c2c473ba213a"
+tdd_path = "docs/2026-08-21-tdd-superseded-task-closure.md"
+tdd_sha256 = "b5ff068b973e1cd677e231df9472e83edfa924417b21699675bdcd5b965ac027"
+goal = "Close a task whose completed successor delivered its patch after a scope discovery."
+depends_on = []
+allowed_paths = [
+  "packages/devtools/src/kotekomi_devtools/cli.py",
+  "packages/devtools/src/kotekomi_devtools/evidence_catalog.py",
+  "packages/devtools/src/kotekomi_devtools/superseded_task_closure.py",
+  "packages/devtools/src/kotekomi_devtools/tdd_metrics.py",
+  "packages/devtools/src/kotekomi_devtools/tdd_scorecards.py",
+  "packages/devtools/src/kotekomi_devtools/tdd_workflow.py",
+  "packages/devtools/tests/acceptance/test_superseded_task_closure_contract.py",
+  "packages/devtools/tests/acceptance/test_tdd_workflow_contract.py",
+  "packages/devtools/tests/unit/test_evidence_catalog.py",
+  "packages/devtools/tests/unit/test_tdd_metrics.py",
+  "packages/devtools/tests/unit/test_tdd_scorecards.py"
+]
+reference_paths = [
+  "docs/2026-08-18-tdd-feature-branch-promotion-completion.md",
+  "docs/2026-08-18-tdd-merged-feature-branch-reconciliation.md",
+  "packages/devtools/src/kotekomi_devtools/feature_branch_promotion.py",
+  "packages/devtools/src/kotekomi_devtools/feature_branch_reconciliation.py",
+  "packages/devtools/src/kotekomi_devtools/evidence_catalog.py"
+]
+stop_conditions = [
+  "the implementation creates missing historical candidate, verification, promotion, or CI evidence",
+  "the implementation force-pushes a tag, main, or a feature branch",
+  "the implementation deletes a feature branch before both required tags publish",
+  "the implementation changes the protected leaf TDD or task manifest"
+]
+
+[readiness]
+authority = "The Superseded Task Closure TDD defines this task."
+contract_family = "tdd-harness"
+dominant_outcome = "A completed successor closes a patch-equivalent superseded task without false lifecycle evidence."
+failure_policy = "Invalid successor evidence, Git ancestry, patch identity, tags, or cleanup blocks before canonical success evidence."
+legacy_disposition = "The command records existing historic delivery without recreating its lifecycle."
+negative_proof = "The command does not change origin/main or force any Git reference."
+public_entry_point = "kotekomi-agent close-superseded-task"
+scope_policy = "Superseded result, handoff retention, cleanup, workflow, metrics, scorecard, CLI, and deterministic Git tests only."
+side_effect_boundary = "Annotated tag publication and non-force deletion of one superseded feature branch."
+unresolved_decisions = []
+
+[budget]
+maximum_production_files = 6
+maximum_test_files = 5
+maximum_production_diff_lines = 1800
+
+[[protected_artifacts]]
+kind = "leaf-tdd"
+path = "docs/2026-08-21-tdd-superseded-task-closure.md"
+sha256 = "b5ff068b973e1cd677e231df9472e83edfa924417b21699675bdcd5b965ac027"
+
+[[acceptance]]
+id = "superseded-task-closure-contract"
+argv = ["uv", "run", "pytest", "-p", "no:cacheprovider", "packages/devtools/tests/acceptance/test_superseded_task_closure_contract.py", "packages/devtools/tests/acceptance/test_tdd_workflow_contract.py", "packages/devtools/tests/unit/test_evidence_catalog.py", "packages/devtools/tests/unit/test_tdd_metrics.py", "packages/devtools/tests/unit/test_tdd_scorecards.py"]
+timeout_seconds = 240
+profile = "portable-local"
+
+[[acceptance]]
+id = "repository-static-checks"
+argv = ["uv", "run", "ruff", "check"]
+timeout_seconds = 120
+profile = "portable-local"
+
+[[acceptance]]
+id = "repository-type-checks"
+argv = ["uv", "run", "pyright"]
+timeout_seconds = 180
+profile = "portable-local"
