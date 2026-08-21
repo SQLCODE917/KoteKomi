@@ -34,6 +34,7 @@ PHASE_REQUIREMENTS = {
     "main_ci": {"main_ci", "cleanup"},
     "complete": {"task_result", "cleanup"},
 }
+_TERMINAL_RUN_STATUSES = {"complete", "abandoned", "superseded"}
 
 
 def _write(path: Path, value: Json) -> None:
@@ -64,7 +65,7 @@ def _runs(root: Path, task: str) -> tuple[Path, Json]:
 
 def _latest(index: Json) -> Json | None:
     rows = index["runs"]
-    live = [row for row in rows if row["status"] != "abandoned"]
+    live = [row for row in rows if row["status"] not in _TERMINAL_RUN_STATUSES]
     pool = live or rows
     return max(pool, key=lambda row: row["ordinal"], default=None)
 
@@ -74,7 +75,7 @@ def _create_or_reload(root: Path, task: str, *, new_run: bool, abandon: str | No
     rows = index["runs"]
     if abandon:
         matched = next((row for row in rows if row["implementation_run_id"] == abandon), None)
-        if matched is None or matched["status"] in {"complete", "abandoned"}:
+        if matched is None or matched["status"] in _TERMINAL_RUN_STATUSES:
             raise ValueError("run cannot be abandoned")
         matched["status"] = "abandoned"
         matched["updated_at"] = datetime.now(UTC).isoformat()
@@ -90,6 +91,8 @@ def _create_or_reload(root: Path, task: str, *, new_run: bool, abandon: str | No
             raise ValueError("cannot create a new run while a non-terminal run exists")
         selected = latest
     else:
+        if latest and latest["status"] == "superseded":
+            raise ValueError("superseded task cannot create or resume a run")
         if latest and latest["status"] in {"complete", "abandoned"} and not new_run and not abandon:
             selected = latest
         else:
@@ -131,10 +134,16 @@ def workflow_status(
     if {"task_result", "cleanup"}.issubset(kinds):
         task_result = _payload(root, entries, "task_result")
         cleanup = _payload(root, entries, "cleanup")
-        if task_result.get("outcome") == "completed" and cleanup.get(
-            "branch_cleanup_complete"
-        ) is True:
+        if (
+            cleanup.get("branch_cleanup_complete") is True
+            and task_result.get("outcome") == "completed"
+        ):
             return "complete", "complete", [], []
+        if (
+            cleanup.get("branch_cleanup_complete") is True
+            and task_result.get("outcome") == "superseded"
+        ):
+            return "complete", "superseded", [], []
     if "candidate_lifecycle" not in kinds:
         return "candidate", "produce_candidate_lifecycle_evidence", ["candidate_lifecycle"], []
     if "candidate_commit" not in kinds:
@@ -291,7 +300,7 @@ def suggested_commands(
     root: Path,
     entries: list[Json],
 ) -> list[Json]:
-    if action in {"blocked", "complete"}:
+    if action in {"blocked", "complete", "superseded"}:
         return []
     command = {
         "create_task_manifest": "create-task-manifest",
@@ -532,10 +541,18 @@ def implement_tdd(
     phase, action, missing, diagnostics = workflow_status(root, entries, manifest.exists())
     if action == "complete":
         mark_run_complete(root, task, run_id)
+    if action == "superseded":
+        mark_run_superseded(root, task, run_id)
     result: Json = {
         "schema_version": 1,
         "status": (
-            "blocked" if action == "blocked" else "complete" if action == "complete" else "ready"
+            "blocked"
+            if action == "blocked"
+            else "complete"
+            if action == "complete"
+            else "superseded"
+            if action == "superseded"
+            else "ready"
         ),
         "task_id": task,
         "implementation_run_id": run_id,
@@ -546,7 +563,7 @@ def implement_tdd(
         "manifest_path": str(manifest.relative_to(Path.cwd())),
         "manifest_validation_status": validation_status,
         "implementation_phase": phase,
-        "next_action": None if action in {"blocked", "complete"} else action,
+        "next_action": None if action in {"blocked", "complete", "superseded"} else action,
         "required_evidence": sorted(PHASE_REQUIREMENTS.get(phase, set())),
         "missing_evidence": missing,
         "producer_arguments": {
@@ -594,6 +611,29 @@ def mark_run_complete(root: Path, task: str, run_id: str) -> None:
         record = _read(record_path)
         record["status"] = "complete"
         record["terminal_reason"] = None
+        record["updated_at"] = now
+        _write(record_path, record)
+    index["latest_run_id"] = (_latest(index) or {}).get("implementation_run_id")
+    _write(index_path, index)
+
+
+def mark_run_superseded(root: Path, task: str, run_id: str) -> None:
+    """Persist terminal supersession after a completed successor proves delivery."""
+    index_path, index = _runs(root, task)
+    row = next(
+        (item for item in index["runs"] if item["implementation_run_id"] == run_id),
+        None,
+    )
+    if row is None or row["status"] in {"complete", "abandoned"}:
+        raise EvidenceError("superseded workflow requires an active or blocked run")
+    if row["status"] != "superseded":
+        now = datetime.now(UTC).isoformat()
+        row["status"] = "superseded"
+        row["updated_at"] = now
+        record_path = root / row["run_record_path"]
+        record = _read(record_path)
+        record["status"] = "superseded"
+        record["terminal_reason"] = "superseded_by_successor"
         record["updated_at"] = now
         _write(record_path, record)
     index["latest_run_id"] = (_latest(index) or {}).get("implementation_run_id")

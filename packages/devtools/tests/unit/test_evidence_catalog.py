@@ -159,6 +159,39 @@ def test_reader_requires_type_specific_trusted_fields(tmp_path: Path) -> None:
         validated_entries(root, "t", "t-run-001")
 
 
+def test_reader_requires_supersession_fields_for_superseded_task_result(tmp_path: Path) -> None:
+    root = tmp_path / "state"
+    relative = "experiments/t/runs/t-run-001/results/task-result.json"
+    path = root / relative
+    path.parent.mkdir(parents=True)
+    path.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "outcome": "superseded",
+                "tag": "kotekomi/tasks/t/result",
+                "target_commit": "a" * 40,
+                "tag_message_sha256": "b" * 64,
+                "diagnostics": [],
+            }
+        )
+    )
+    index_record(
+        root,
+        "t",
+        "t-run-001",
+        phase="complete",
+        evidence_type="task_result",
+        subject_id="result",
+        path_scope="state",
+        relative_path=relative,
+        producer_command="test",
+    )
+
+    with pytest.raises(EvidenceError, match="superseded task-result fields missing"):
+        validated_entries(root, "t", "t-run-001")
+
+
 def test_run_check_path_is_stable() -> None:
     scope, path = canonical_relative("run_check", "task", "task-run-001", "lint")
     assert scope == "state" and path.endswith(

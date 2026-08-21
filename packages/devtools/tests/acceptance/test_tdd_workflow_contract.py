@@ -5,6 +5,7 @@ from typing import Any
 
 from kotekomi_devtools.tdd_workflow import (
     mark_run_complete,
+    mark_run_superseded,
     suggested_commands,
     workflow_status,
 )
@@ -278,6 +279,53 @@ def test_workflow_completes_from_task_result_before_historical_candidate_ci_fail
     phase, action, missing, diagnostics = workflow_status(root, entries, True)
 
     assert (phase, action, missing, diagnostics) == ("complete", "complete", [], [])
+
+
+def test_workflow_marks_superseded_task_terminal_before_candidate_evidence(tmp_path: Path) -> None:
+    root = tmp_path / "state"
+    root.mkdir()
+    task_result = root / "task-result.json"
+    cleanup = root / "cleanup.json"
+    task_result.write_text(json.dumps({"outcome": "superseded"}))
+    cleanup.write_text(json.dumps({"branch_cleanup_complete": True}))
+    entries = [
+        {"evidence_type": "tdd_binding", "path": "binding.json"},
+        {"evidence_type": "task_manifest", "path": "manifest.toml"},
+        {"evidence_type": "task_manifest_validation", "path": "manifest-validation.json"},
+        {"evidence_type": "task_result", "path": task_result.name},
+        {"evidence_type": "cleanup", "path": cleanup.name},
+    ]
+
+    assert workflow_status(root, entries, True) == ("complete", "superseded", [], [])
+
+
+def test_mark_run_superseded_records_terminal_reason(tmp_path: Path) -> None:
+    task = "task"
+    run = "task-run-001"
+    root = tmp_path / "state"
+    run_path = root / "experiments" / task / "runs" / run / "run.json"
+    run_path.parent.mkdir(parents=True)
+    run_path.write_text(json.dumps({"status": "blocked", "terminal_reason": None}))
+    index_path = root / "experiments" / task / "runs" / "index.json"
+    index_path.write_text(
+        json.dumps(
+            {
+                "runs": [
+                    {
+                        "implementation_run_id": run,
+                        "ordinal": 1,
+                        "run_record_path": run_path.relative_to(root).as_posix(),
+                        "status": "blocked",
+                    }
+                ]
+            }
+        )
+    )
+
+    mark_run_superseded(root, task, run)
+
+    assert json.loads(run_path.read_text())["status"] == "superseded"
+    assert json.loads(run_path.read_text())["terminal_reason"] == "superseded_by_successor"
 
 
 def test_workflow_marks_a_blocked_run_complete_after_terminal_evidence(tmp_path: Path) -> None:

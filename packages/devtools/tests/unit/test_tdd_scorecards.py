@@ -1,6 +1,24 @@
 from kotekomi_devtools.tdd_scorecards import score_metrics
 
 
+def test_superseded_scorecard_has_no_implementation_quality_score() -> None:
+    result = score_metrics(
+        {
+            "task_id": "t",
+            "primary_tdd_path": "t.md",
+            "tdd_paths": ["t.md"],
+            "tdd_sha256": "a" * 64,
+            "implementation_run_id": "t-run-001",
+            "status": "superseded",
+            "diagnostics": [],
+        }
+    )
+
+    assert result["score_dimensions"] == {}
+    assert result["overall_score"] is None
+    assert result["ranking_eligible"] is False
+
+
 def test_scorecard_penalizes_missing_evidence_and_zero_planned_checks() -> None:
     result = score_metrics(
         {

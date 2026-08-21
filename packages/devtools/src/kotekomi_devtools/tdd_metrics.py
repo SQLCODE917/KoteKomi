@@ -78,6 +78,13 @@ def _metric(root: Path, binding: Json, run: Json) -> Json:
             "diagnostics": [{"code": "metrics.evidence", "location": "/", "rule": str(error)}],
         }
     by_type = {entry["evidence_type"]: entry for entry in entries}
+
+    def record(kind: str) -> Json:
+        entry = by_type.get(kind)
+        return _read(root / entry["path"]) if entry and entry["path_scope"] == "state" else {}
+
+    result_record = record("task_result")
+    superseded = result_record.get("outcome") == "superseded"
     required = {
         "tdd_binding",
         "task_manifest",
@@ -94,14 +101,18 @@ def _metric(root: Path, binding: Json, run: Json) -> Json:
         "task_result",
         "receipt_chain_status",
     }
-    if "task_result" in by_type:
+    if superseded:
+        required = {
+            "tdd_binding",
+            "task_manifest",
+            "task_manifest_validation",
+            "task_result",
+            "cleanup",
+        }
+    elif "task_result" in by_type:
         required.remove("receipt_chain_status")
         required.add("task_result")
     missing = required - set(by_type)
-
-    def record(kind: str) -> Json:
-        entry = by_type.get(kind)
-        return _read(root / entry["path"]) if entry and entry["path_scope"] == "state" else {}
 
     receipt = record("receipt_chain_status")
     plan = record("verification_plan")
@@ -126,7 +137,9 @@ def _metric(root: Path, binding: Json, run: Json) -> Json:
         "tdd_paths": binding["tdd_paths"],
         "tdd_sha256": binding["tdd_sha256"],
         "implementation_run_id": run_id,
-        "status": "complete" if not missing else "partial",
+        "status": (
+            "superseded" if superseded and not missing else "complete" if not missing else "partial"
+        ),
         "receipt_total_count": receipt.get("receipt_total_count", 0),
         "receipt_present_count": receipt.get("receipt_present_count", 0),
         "receipt_missing_count": receipt.get("receipt_missing_count", 0),
@@ -152,6 +165,11 @@ def _metric(root: Path, binding: Json, run: Json) -> Json:
             if str(item.get("code", "")).startswith("protected_artifact.")
         ),
         "branch_cleanup_complete": cleanup.get("branch_cleanup_complete", False),
+        "successor_task_id": result_record.get("successor_task_id"),
+        "successor_run_id": result_record.get("successor_run_id"),
+        "scope_discovery_supersession_count": 1
+        if result_record.get("supersession_reason") == "scope_discovery"
+        else 0,
         "required_evidence_count": len(required),
         "present_evidence_count": len(required - missing),
         "missing_evidence_count": len(missing),
