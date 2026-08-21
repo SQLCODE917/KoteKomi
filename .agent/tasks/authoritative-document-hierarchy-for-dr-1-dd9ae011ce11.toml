@@ -8,22 +8,30 @@ model_profile = "terra-high-v1"
 baseline_revision = "f7847c02d2ad7abbf358167b316d232885189855"
 tdd_path = "docs/2026-08-21-authoritative-document-hierarchy-for-dr1.md"
 tdd_sha256 = "dd9ae011ce114a3e1db2cdc175762c089d173e4c8c2dc37c21d590b9c20f95e4"
-goal = "Preserve authoritative document hierarchy and correct locked DR-1 scenario assertions without adding retrieval scope."
-depends_on = ["dr-1-document-retrieval-mvp-4a4ff3a45c4c"]
+goal = "Carry forward the unfinished DR-1 path and preserve authoritative document hierarchy for its locked scenario."
+depends_on = []
 allowed_paths = [
   ".agent/scenarios/anthropic-dod-dispute-v1/ingest-expectations.json",
   ".agent/scenarios/anthropic-dod-dispute-v1/queries/dr-1-document-exact-lexical-v1.jsonl",
+  ".agent/scenarios/anthropic-dod-dispute-v1/scenario.json",
   ".agent/tasks/authoritative-document-hierarchy-for-dr-1-dd9ae011ce11.toml",
   "docs/2026-08-21-authoritative-document-hierarchy-for-dr1.md",
   "docs/CHECK_PLAN.md",
+  "packages/adapters/src/kotekomi_adapters/__init__.py",
   "packages/adapters/src/kotekomi_adapters/docling_pdf_parser.py",
+  "packages/adapters/src/kotekomi_adapters/sqlite_document_retrieval.py",
   "packages/adapters/tests/test_docling_pdf_layout.py",
+  "packages/adapters/tests/test_sqlite_document_retrieval.py",
+  "packages/application/src/kotekomi_application/__init__.py",
   "packages/application/src/kotekomi_application/context_planning.py",
   "packages/application/src/kotekomi_application/document_retrieval.py",
   "packages/application/tests/test_context_planning.py",
   "packages/application/tests/test_document_retrieval.py",
+  "packages/devtools/src/kotekomi_devtools/cli.py",
   "packages/devtools/src/kotekomi_devtools/retrieval_scenarios.py",
   "packages/devtools/tests/unit/test_retrieval_scenarios.py",
+  "packages/domain/src/kotekomi_domain/__init__.py",
+  "packages/domain/src/kotekomi_domain/models.py",
   "packages/pipelines/src/kotekomi_pipelines/cli.py",
   "packages/pipelines/tests/test_source_add_file.py"
 ]
@@ -44,21 +52,21 @@ stop_conditions = [
 ]
 
 [readiness]
-authority = "The Authoritative Document Hierarchy for DR-1 TDD and DR-1 TDD define this task."
+authority = "The Authoritative Document Hierarchy for DR-1 TDD and DR-1 TDD define this cumulative task."
 contract_family = "authoritative-document-hierarchy"
 dominant_outcome = "Retrieved focus nodes produce original-text context with their complete authoritative heading chain."
 failure_policy = "Missing declared hierarchy fails explicitly and required context over budget records every exclusion."
-legacy_disposition = "The task replaces visual-only parent choice for nodes with a Docling source heading parent."
+legacy_disposition = "The task carries the unmerged DR-1 implementation after it exposed a required hierarchy gap."
 negative_proof = "The task adds no semantic retrieval, cross-parser text repair, or inferred source relationship."
 public_entry_point = "kotekomi source add-file, kotekomi retrieval build-document --rebuild, kotekomi-agent test-ingest, and kotekomi-agent test-query"
-scope_policy = "PDF hierarchy mapping, ContextPlanner ancestry, scenario assertions, public index rebuild, and focused tests only."
+scope_policy = "The DR-1 retrieval path, hierarchy mapping, scenario assertions, public index rebuild, and focused tests only."
 side_effect_boundary = "Accepted representation structure, ContextManifest diagnostics, and disposable document-index projections for one locked scenario."
 unresolved_decisions = []
 
 [budget]
-maximum_production_files = 5
+maximum_production_files = 12
 maximum_test_files = 5
-maximum_production_diff_lines = 1400
+maximum_production_diff_lines = 5000
 
 [[protected_artifacts]]
 kind = "leaf-tdd"
@@ -125,4 +133,3 @@ id = "repository-type-checks"
 argv = ["uv", "run", "pyright"]
 timeout_seconds = 180
 profile = "portable-local"
-
