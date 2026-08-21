@@ -223,7 +223,10 @@ def test_metrics_report_scope_discovery_supersession_without_missing_lifecycle(
         json.dumps({"runs": [{"implementation_run_id": run, "ordinal": 1, "status": "active"}]})
     )
 
-    monkeypatch.setattr(tdd_metrics, "validated_entries", lambda *_: entries)
+    def entries_for(_root: Path, _task: str, _run: str) -> list[dict[str, Any]]:
+        return entries
+
+    monkeypatch.setattr(tdd_metrics, "validated_entries", entries_for)
 
     _, collection = tdd_metrics.tdd_metrics("docs/tdd.md", state_root_path=state, run_id=run)
 
