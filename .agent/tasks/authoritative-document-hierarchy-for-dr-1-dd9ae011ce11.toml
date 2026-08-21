@@ -1,0 +1,128 @@
+schema_version = 2
+task_id = "authoritative-document-hierarchy-for-dr-1-dd9ae011ce11"
+title = "Authoritative Document Hierarchy for DR-1"
+status = "ready_for_terra_high"
+series_id = "derived-retrieval"
+task_class = "adapter-contract"
+model_profile = "terra-high-v1"
+baseline_revision = "f7847c02d2ad7abbf358167b316d232885189855"
+tdd_path = "docs/2026-08-21-authoritative-document-hierarchy-for-dr1.md"
+tdd_sha256 = "dd9ae011ce114a3e1db2cdc175762c089d173e4c8c2dc37c21d590b9c20f95e4"
+goal = "Preserve authoritative document hierarchy and correct locked DR-1 scenario assertions without adding retrieval scope."
+depends_on = ["dr-1-document-retrieval-mvp-4a4ff3a45c4c"]
+allowed_paths = [
+  ".agent/scenarios/anthropic-dod-dispute-v1/ingest-expectations.json",
+  ".agent/scenarios/anthropic-dod-dispute-v1/queries/dr-1-document-exact-lexical-v1.jsonl",
+  ".agent/tasks/authoritative-document-hierarchy-for-dr-1-dd9ae011ce11.toml",
+  "docs/2026-08-21-authoritative-document-hierarchy-for-dr1.md",
+  "docs/CHECK_PLAN.md",
+  "packages/adapters/src/kotekomi_adapters/docling_pdf_parser.py",
+  "packages/adapters/tests/test_docling_pdf_layout.py",
+  "packages/application/src/kotekomi_application/context_planning.py",
+  "packages/application/src/kotekomi_application/document_retrieval.py",
+  "packages/application/tests/test_context_planning.py",
+  "packages/application/tests/test_document_retrieval.py",
+  "packages/devtools/src/kotekomi_devtools/retrieval_scenarios.py",
+  "packages/devtools/tests/unit/test_retrieval_scenarios.py",
+  "packages/pipelines/src/kotekomi_pipelines/cli.py",
+  "packages/pipelines/tests/test_source_add_file.py"
+]
+reference_paths = [
+  "docs/2026-07-11-derived-document-retrieval.md",
+  "docs/2026-08-20-document-retrieval-mvp.md",
+  "packages/adapters/src/kotekomi_adapters/docling_pdf_parser.py",
+  "packages/application/src/kotekomi_application/context_planning.py",
+  "packages/pipelines/src/kotekomi_pipelines/cli.py",
+  "packages/devtools/src/kotekomi_devtools/retrieval_scenarios.py"
+]
+stop_conditions = [
+  "the implementation infers a missing source heading relationship",
+  "the implementation changes the locked PDF or its fixture digest",
+  "the implementation adds semantic, Ledger-plane, graph-plane, or prompt-construction behavior",
+  "the implementation restores a Poppler and Docling text equality gate",
+  "the existing PDF-table fixture failures prevent a focused hierarchy correction"
+]
+
+[readiness]
+authority = "The Authoritative Document Hierarchy for DR-1 TDD and DR-1 TDD define this task."
+contract_family = "authoritative-document-hierarchy"
+dominant_outcome = "Retrieved focus nodes produce original-text context with their complete authoritative heading chain."
+failure_policy = "Missing declared hierarchy fails explicitly and required context over budget records every exclusion."
+legacy_disposition = "The task replaces visual-only parent choice for nodes with a Docling source heading parent."
+negative_proof = "The task adds no semantic retrieval, cross-parser text repair, or inferred source relationship."
+public_entry_point = "kotekomi source add-file, kotekomi retrieval build-document --rebuild, kotekomi-agent test-ingest, and kotekomi-agent test-query"
+scope_policy = "PDF hierarchy mapping, ContextPlanner ancestry, scenario assertions, public index rebuild, and focused tests only."
+side_effect_boundary = "Accepted representation structure, ContextManifest diagnostics, and disposable document-index projections for one locked scenario."
+unresolved_decisions = []
+
+[budget]
+maximum_production_files = 5
+maximum_test_files = 5
+maximum_production_diff_lines = 1400
+
+[[protected_artifacts]]
+kind = "leaf-tdd"
+path = "docs/2026-08-21-authoritative-document-hierarchy-for-dr1.md"
+sha256 = "dd9ae011ce114a3e1db2cdc175762c089d173e4c8c2dc37c21d590b9c20f95e4"
+
+[[protected_artifacts]]
+kind = "leaf-tdd"
+path = "docs/2026-08-20-document-retrieval-mvp.md"
+sha256 = "4a4ff3a45c4c20f50332ce6dd92533dca133a655130b1b224761f321f2fde1ee"
+
+[[protected_artifacts]]
+kind = "json-schema"
+path = ".agent/schemas/retrieval-scenario-v1.schema.json"
+sha256 = "1487f41de7abb4f4f2b69606ea3764eecddfa26e4961b826a554139b6a6014ff"
+
+[[protected_artifacts]]
+kind = "json-schema"
+path = ".agent/schemas/retrieval-ingest-expectations-v1.schema.json"
+sha256 = "7cd648d7c53cbf601af3dbfd6f85bafb6b3cc352799cc3bb5816eca5825351e2"
+
+[[protected_artifacts]]
+kind = "json-schema"
+path = ".agent/schemas/retrieval-query-case-v1.schema.json"
+sha256 = "c3f8e04256925b688f6acdeb0b19debea1f30c96270cddd4d4cf56393dc3e472"
+
+[[protected_artifacts]]
+kind = "json-schema"
+path = ".agent/schemas/retrieval-query-suite-v1.schema.json"
+sha256 = "6069421bbce71231183cd91c4f7cc05930034f8d707f889e8554f315311407c8"
+
+[[acceptance]]
+id = "document-hierarchy-adapter"
+argv = ["uv", "run", "pytest", "packages/adapters/tests/test_docling_pdf_layout.py"]
+timeout_seconds = 240
+profile = "portable-local"
+
+[[acceptance]]
+id = "document-hierarchy-application"
+argv = ["uv", "run", "pytest", "packages/application/tests/test_context_planning.py", "packages/application/tests/test_document_retrieval.py"]
+timeout_seconds = 240
+profile = "portable-local"
+
+[[acceptance]]
+id = "document-hierarchy-pipeline"
+argv = ["uv", "run", "pytest", "packages/pipelines/tests/test_source_add_file.py"]
+timeout_seconds = 240
+profile = "portable-local"
+
+[[acceptance]]
+id = "document-hierarchy-scenario"
+argv = ["uv", "run", "pytest", "packages/devtools/tests/unit/test_retrieval_scenarios.py"]
+timeout_seconds = 240
+profile = "portable-local"
+
+[[acceptance]]
+id = "repository-static-checks"
+argv = ["uv", "run", "ruff", "check"]
+timeout_seconds = 120
+profile = "portable-local"
+
+[[acceptance]]
+id = "repository-type-checks"
+argv = ["uv", "run", "pyright"]
+timeout_seconds = 180
+profile = "portable-local"
+
