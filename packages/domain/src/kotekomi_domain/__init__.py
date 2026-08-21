@@ -31,6 +31,7 @@ from kotekomi_domain.models import (
     DocumentRetrievalUnit,
     DocumentRevisionRelation,
     DocumentRevisionType,
+    DocumentSemanticRepresentation,
     DocumentSourceSelector,
     DocumentSourceSelectorKind,
     DocumentTable,
@@ -39,6 +40,7 @@ from kotekomi_domain.models import (
     DocumentTableFragment,
     DocumentTableRow,
     DocumentVersionKind,
+    EmbeddingModelIdentity,
     Entity,
     EntityKind,
     EpistemicScope,
@@ -115,6 +117,7 @@ from kotekomi_domain.models import (
     deterministic_retrieval_representation_id,
     document_exact_lexical_representation_fingerprint,
     document_retrieval_unit_fingerprint,
+    document_semantic_representation_fingerprint,
 )
 
 __all__ = [
@@ -144,6 +147,7 @@ __all__ = [
     "DocumentRepresentation",
     "DocumentRepresentationBundle",
     "DocumentExactLexicalRepresentation",
+    "DocumentSemanticRepresentation",
     "DocumentRetrievalUnit",
     "DocumentReference",
     "DocumentReferenceKind",
@@ -168,6 +172,7 @@ __all__ = [
     "EvidenceTarget",
     "EvidenceValidationAttempt",
     "EvidenceValidationAttemptStatus",
+    "EmbeddingModelIdentity",
     "Organization",
     "Outcome",
     "ModelRun",
@@ -231,5 +236,6 @@ __all__ = [
     "deterministic_document_retrieval_unit_id",
     "deterministic_retrieval_representation_id",
     "document_exact_lexical_representation_fingerprint",
+    "document_semantic_representation_fingerprint",
     "document_retrieval_unit_fingerprint",
 ]

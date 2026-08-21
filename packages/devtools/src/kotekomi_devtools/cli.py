@@ -174,6 +174,7 @@ def _handle_retrieval_scenario_command(arguments: argparse.Namespace) -> CliResp
             arguments.scenario_id,
             suite_id=arguments.suite_id,
             scenario_state_root=arguments.state_root,
+            embedding_profile_id=arguments.embedding_profile,
         )
     return CliResponse(0, output)
 
@@ -695,6 +696,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     test_query_parser.add_argument("scenario_id")
     test_query_parser.add_argument("--suite", dest="suite_id", required=True)
+    test_query_parser.add_argument("--embedding-profile", default=None)
     test_query_parser.add_argument(
         "--state-root", type=Path, default=Path("~/.local/state/kotekomi")
     )

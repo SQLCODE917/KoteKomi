@@ -8,10 +8,13 @@ if TYPE_CHECKING:
         DoclingPdfParserConfig,
         preflight_pdf_source,
     )
+    from kotekomi_adapters.llama_server_embeddings import LlamaServerEmbeddingAdapter
     from kotekomi_adapters.llama_server_model_runtime import LlamaServerModelRuntime
+    from kotekomi_adapters.lm_studio_embeddings import LMStudioEmbeddingAdapter
     from kotekomi_adapters.local_archive import LocalArchiveStore
     from kotekomi_adapters.model_http import HttpResponse, JsonHttpClient
     from kotekomi_adapters.networkx_graph_analyzer import NetworkXGraphAnalyzer
+    from kotekomi_adapters.ollama_embeddings import OllamaEmbeddingAdapter
     from kotekomi_adapters.ollama_model_runtime import OllamaModelRuntime
     from kotekomi_adapters.pdf_evidence_overlay_renderer import PdfiumEvidenceOverlayRenderer
     from kotekomi_adapters.sqlite_document_retrieval import SQLiteDocumentRetrievalAdapter
@@ -36,10 +39,13 @@ __all__ = [
     "ImmutableRecordConflict",
     "NonDeterministicParserOutputConflict",
     "LlamaServerModelRuntime",
+    "LlamaServerEmbeddingAdapter",
+    "LMStudioEmbeddingAdapter",
     "LocalArchiveStore",
     "NetworkXGraphAnalyzer",
     "NewsMLG2Adapter",
     "OllamaModelRuntime",
+    "OllamaEmbeddingAdapter",
     "PdfiumEvidenceOverlayRenderer",
     "REQUIRED_LEDGER_TABLES",
     "SQLiteLedgerInitializer",
@@ -67,6 +73,14 @@ def __getattr__(name: str) -> object:
         from kotekomi_adapters.llama_server_model_runtime import LlamaServerModelRuntime
 
         return LlamaServerModelRuntime
+    if name == "LlamaServerEmbeddingAdapter":
+        from kotekomi_adapters.llama_server_embeddings import LlamaServerEmbeddingAdapter
+
+        return LlamaServerEmbeddingAdapter
+    if name == "LMStudioEmbeddingAdapter":
+        from kotekomi_adapters.lm_studio_embeddings import LMStudioEmbeddingAdapter
+
+        return LMStudioEmbeddingAdapter
     if name == "LocalArchiveStore":
         from kotekomi_adapters.local_archive import LocalArchiveStore
 
@@ -83,6 +97,10 @@ def __getattr__(name: str) -> object:
         from kotekomi_adapters.ollama_model_runtime import OllamaModelRuntime
 
         return OllamaModelRuntime
+    if name == "OllamaEmbeddingAdapter":
+        from kotekomi_adapters.ollama_embeddings import OllamaEmbeddingAdapter
+
+        return OllamaEmbeddingAdapter
     if name == "PdfiumEvidenceOverlayRenderer":
         from kotekomi_adapters.pdf_evidence_overlay_renderer import (
             PdfiumEvidenceOverlayRenderer,

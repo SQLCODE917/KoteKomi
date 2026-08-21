@@ -17,9 +17,12 @@ from kotekomi_adapters import (
     DoclingPdfParser,
     DoclingPdfParserConfig,
     GenericArticleAdapter,
+    LlamaServerEmbeddingAdapter,
+    LMStudioEmbeddingAdapter,
     LocalArchiveStore,
     NetworkXGraphAnalyzer,
     NewsMLG2Adapter,
+    OllamaEmbeddingAdapter,
     SQLiteDocumentRetrievalAdapter,
     SQLiteLedgerInitializer,
     sqlite_ledger_transaction,
@@ -29,6 +32,9 @@ from kotekomi_application import (
     AuthoritativePdfCaptureRequest,
     BriefingGenerationInput,
     BuildDocumentRetrievalProjectionCommand,
+    BuildDocumentSemanticProjectionCommand,
+    EmbeddingPort,
+    EmbeddingProfile,
     GraphConnectionMiningInput,
     JsonValue,
     ModelRuntimeStatus,
@@ -41,6 +47,7 @@ from kotekomi_application import (
     PipelineStatus,
     PipelineStatusInput,
     QueryDocumentRetrievalCommand,
+    QueryDocumentSemanticRetrievalCommand,
     ReviewDrainInput,
     ReviewDrainResult,
     ReviewDrainStoppedReason,
@@ -60,6 +67,7 @@ from kotekomi_application import (
     Uuid4ProcessingAttemptIdFactory,
     approve_proposed_change,
     build_document_retrieval_projection,
+    build_document_semantic_projection,
     commit_authoritative_capture,
     commit_authoritative_pdf_capture,
     edit_proposed_change,
@@ -80,6 +88,7 @@ from kotekomi_application import (
     pipeline_status_to_json,
     project_ledger_graph,
     query_document_retrieval,
+    query_document_semantic_retrieval,
     reject_proposed_change,
     review_drain_result_to_json,
     review_next_decision_result_to_json,
@@ -123,6 +132,8 @@ def main(argv: list[str] | None = None) -> int:
         return init_ledger(config)
 
     if args.command == "retrieval" and args.retrieval_command == "build-document":
+        if args.embedding_profile is not None and args.channel != "semantic":
+            parser.error("--embedding-profile requires --channel semantic.")
         config = load_config(
             config_path=args.config,
             ledger_path_override=args.ledger_path,
@@ -133,9 +144,13 @@ def main(argv: list[str] | None = None) -> int:
             representation_id=args.representation_id,
             output_format=args.output_format,
             rebuild=args.rebuild,
+            channel=args.channel,
+            embedding_profile=_embedding_profile(config, args.embedding_profile),
         )
 
     if args.command == "retrieval" and args.retrieval_command == "query":
+        if args.embedding_profile is not None and args.channel != "semantic":
+            parser.error("--embedding-profile requires --channel semantic.")
         config = load_config(
             config_path=args.config,
             ledger_path_override=args.ledger_path,
@@ -148,6 +163,8 @@ def main(argv: list[str] | None = None) -> int:
             maximum_hits=args.maximum_hits,
             context_profile=args.context_profile,
             output_format=args.output_format,
+            channel=args.channel,
+            embedding_profile=_embedding_profile(config, args.embedding_profile),
         )
 
     if args.command == "source" and args.source_command == "add-file":
@@ -520,9 +537,11 @@ def build_parser() -> argparse.ArgumentParser:
     retrieval_parser = subparsers.add_parser("retrieval", help="Derived retrieval commands.")
     retrieval_subparsers = retrieval_parser.add_subparsers(dest="retrieval_command")
     retrieval_build_parser = retrieval_subparsers.add_parser(
-        "build-document", help="Build a disposable document exact and lexical projection."
+        "build-document", help="Build a disposable document retrieval projection."
     )
     retrieval_build_parser.add_argument("--representation-id", required=True)
+    retrieval_build_parser.add_argument("--channel", choices=("semantic",), default=None)
+    retrieval_build_parser.add_argument("--embedding-profile", default=None)
     retrieval_build_parser.add_argument(
         "--rebuild",
         action="store_true",
@@ -539,6 +558,8 @@ def build_parser() -> argparse.ArgumentParser:
     retrieval_query_parser.add_argument("--query", required=True)
     retrieval_query_parser.add_argument("--maximum-hits", required=True, type=int)
     retrieval_query_parser.add_argument("--context-profile", required=True)
+    retrieval_query_parser.add_argument("--channel", choices=("semantic",), default=None)
+    retrieval_query_parser.add_argument("--embedding-profile", default=None)
     retrieval_query_parser.add_argument(
         "--format", dest="output_format", choices=("text", "json"), default="text"
     )
@@ -852,18 +873,44 @@ def _retrieval_index_path(ledger_path: Path) -> Path:
 
 
 def build_document_retrieval_index(
-    *, ledger_path: Path, representation_id: str, output_format: str, rebuild: bool = False
+    *,
+    ledger_path: Path,
+    representation_id: str,
+    output_format: str,
+    rebuild: bool = False,
+    channel: str | None = None,
+    embedding_profile: EmbeddingProfile | None = None,
 ) -> int:
     projection = SQLiteDocumentRetrievalAdapter(_retrieval_index_path(ledger_path))
     try:
-        if rebuild:
-            projection.delete_projection(representation_id)
-        with sqlite_ledger_transaction(ledger_path) as ledger_repository:
-            result = build_document_retrieval_projection(
-                BuildDocumentRetrievalProjectionCommand(representation_id=representation_id),
-                ledger_repository=ledger_repository,
-                projection=projection,
-            )
+        if channel == "semantic":
+            if embedding_profile is None:
+                return _print_retrieval_payload(
+                    {"status": "failed", "failure": "semantic_profile_unavailable"}, output_format
+                )
+            profile = embedding_profile
+            if rebuild:
+                projection.delete_semantic_projection(representation_id, profile.profile_id)
+            with sqlite_ledger_transaction(ledger_path) as ledger_repository:
+                result = build_document_semantic_projection(
+                    BuildDocumentSemanticProjectionCommand(
+                        representation_id=representation_id, embedding_profile=profile
+                    ),
+                    ledger_repository=ledger_repository,
+                    projection=projection,
+                    embedding=_embedding_adapter(profile.adapter_id),
+                )
+        else:
+            if embedding_profile is not None:
+                raise ValueError("--embedding-profile requires --channel semantic.")
+            if rebuild:
+                projection.delete_projection(representation_id)
+            with sqlite_ledger_transaction(ledger_path) as ledger_repository:
+                result = build_document_retrieval_projection(
+                    BuildDocumentRetrievalProjectionCommand(representation_id=representation_id),
+                    ledger_repository=ledger_repository,
+                    projection=projection,
+                )
     finally:
         projection.close()
     payload = {
@@ -875,6 +922,12 @@ def build_document_retrieval_index(
         "content_fingerprint": result.content_fingerprint,
         "reused_existing_manifest": result.reused_existing_manifest,
         "failure": result.failure.value if result.failure is not None else None,
+        "embedding_profile_id": result.embedding_profile_id,
+        "embedding_model_identity": (
+            result.embedding_model_identity.model_dump(mode="json")
+            if result.embedding_model_identity is not None
+            else None
+        ),
     }
     return _print_retrieval_payload(payload, output_format)
 
@@ -887,21 +940,46 @@ def query_document_retrieval_index(
     maximum_hits: int,
     context_profile: str,
     output_format: str,
+    channel: str | None = None,
+    embedding_profile: EmbeddingProfile | None = None,
 ) -> int:
     projection = SQLiteDocumentRetrievalAdapter(_retrieval_index_path(ledger_path))
     try:
         with sqlite_ledger_transaction(ledger_path) as ledger_repository:
-            result = query_document_retrieval(
-                QueryDocumentRetrievalCommand(
-                    representation_id=representation_id,
-                    query_text=query,
-                    maximum_hits=maximum_hits,
-                    context_profile_id=context_profile,
-                ),
-                ledger_repository=ledger_repository,
-                projection=projection,
-                tokenizer=_RetrievalValidationTokenizer(),
-            )
+            if channel == "semantic":
+                if embedding_profile is None:
+                    return _print_retrieval_payload(
+                        {"status": "failed", "failure": "semantic_profile_unavailable"},
+                        output_format,
+                    )
+                profile = embedding_profile
+                result = query_document_semantic_retrieval(
+                    QueryDocumentSemanticRetrievalCommand(
+                        representation_id=representation_id,
+                        query_text=query,
+                        maximum_hits=maximum_hits,
+                        context_profile_id=context_profile,
+                        embedding_profile=profile,
+                    ),
+                    ledger_repository=ledger_repository,
+                    projection=projection,
+                    embedding=_embedding_adapter(profile.adapter_id),
+                    tokenizer=_RetrievalValidationTokenizer(),
+                )
+            else:
+                if embedding_profile is not None:
+                    raise ValueError("--embedding-profile requires --channel semantic.")
+                result = query_document_retrieval(
+                    QueryDocumentRetrievalCommand(
+                        representation_id=representation_id,
+                        query_text=query,
+                        maximum_hits=maximum_hits,
+                        context_profile_id=context_profile,
+                    ),
+                    ledger_repository=ledger_repository,
+                    projection=projection,
+                    tokenizer=_RetrievalValidationTokenizer(),
+                )
             bundle = ledger_repository.get_document_representation_bundle(representation_id)
     finally:
         projection.close()
@@ -922,8 +1000,30 @@ def query_document_retrieval_index(
         ),
         "authoritative_nodes": authoritative_nodes,
         "failure": result.failure.value if result.failure is not None else None,
+        "embedding_profile_id": result.embedding_profile_id,
+        "embedding_model_identity": (
+            result.embedding_model_identity.model_dump(mode="json")
+            if result.embedding_model_identity is not None
+            else None
+        ),
     }
     return _print_retrieval_payload(payload, output_format)
+
+
+def _embedding_profile(config: PipelineConfig, profile_id: str | None) -> EmbeddingProfile | None:
+    if profile_id is None:
+        return None
+    return config.embedding_profiles.get(profile_id)
+
+
+def _embedding_adapter(adapter_id: str) -> EmbeddingPort:
+    if adapter_id == "lm_studio":
+        return LMStudioEmbeddingAdapter()
+    if adapter_id == "llama_server":
+        return LlamaServerEmbeddingAdapter()
+    if adapter_id == "ollama":
+        return OllamaEmbeddingAdapter()
+    raise ValueError(f"Unsupported embedding Adapter: {adapter_id}.")
 
 
 def _retrieval_authoritative_nodes(

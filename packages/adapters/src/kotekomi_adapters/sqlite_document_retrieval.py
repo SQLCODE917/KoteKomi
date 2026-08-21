@@ -3,15 +3,19 @@
 from __future__ import annotations
 
 import hashlib
+import math
 import re
 import sqlite3
+import struct
 from pathlib import Path
+from typing import cast
 
 from kotekomi_application.document_retrieval import (
     ChannelCandidate,
     DocumentRetrievalError,
     ProjectionBuildInput,
     RetrievalFailureCode,
+    SemanticProjectionBuildInput,
 )
 from kotekomi_domain import (
     RetrievalChannel,
@@ -251,6 +255,157 @@ class SQLiteDocumentRetrievalAdapter:
         )
         self._connection.commit()
 
+    def publish_semantic(
+        self, build: SemanticProjectionBuildInput
+    ) -> tuple[RetrievalIndexManifest, bool]:
+        """Publish one complete semantic projection atomically, separate from DR-1 rows."""
+        manifest = build.manifest
+        if (
+            manifest.channels != (RetrievalChannel.SEMANTIC,)
+            or manifest.embedding_profile_id is None
+            or manifest.embedding_model_identity is None
+        ):
+            raise DocumentRetrievalError(
+                RetrievalFailureCode.INDEX_CORRUPT, "Semantic build requires a semantic manifest."
+            )
+        self._connection.execute("BEGIN IMMEDIATE")
+        try:
+            existing_row = self._connection.execute(
+                "SELECT manifest_json FROM semantic_retrieval_manifests "
+                "WHERE index_manifest_id = ?",
+                (manifest.index_manifest_id,),
+            ).fetchone()
+            if existing_row is not None:
+                existing = RetrievalIndexManifest.model_validate_json(existing_row["manifest_json"])
+                self._validate_semantic_complete(existing)
+                self._connection.execute("COMMIT")
+                return existing, True
+            self._delete_semantic_rows(manifest.representation_id, manifest.embedding_profile_id)
+            representations = {item.retrieval_unit_id: item for item in build.representations}
+            vectors = {item.retrieval_unit_id: item for item in build.vectors}
+            if len(representations) != len(build.units) or len(vectors) != len(build.units):
+                raise DocumentRetrievalError(
+                    RetrievalFailureCode.INDEX_CORRUPT,
+                    "Each semantic retrieval unit requires one representation and vector.",
+                )
+            for unit in build.units:
+                representation = representations.get(unit.retrieval_unit_id)
+                vector = vectors.get(unit.retrieval_unit_id)
+                if representation is None or vector is None:
+                    raise DocumentRetrievalError(
+                        RetrievalFailureCode.INDEX_CORRUPT,
+                        "A semantic retrieval unit projection is missing.",
+                    )
+                self._validate_vector(
+                    vector.vector, manifest.embedding_model_identity.vector_dimension
+                )
+                self._connection.execute(
+                    """
+                    INSERT INTO semantic_retrieval_units (
+                        manifest_id, retrieval_unit_id, source_order, unit_json,
+                        representation_json, vector, vector_digest
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        manifest.index_manifest_id,
+                        unit.retrieval_unit_id,
+                        unit.source_order,
+                        unit.model_dump_json(),
+                        representation.model_dump_json(),
+                        vector.vector,
+                        vector.vector_digest,
+                    ),
+                )
+            self._validate_semantic_written_build(manifest)
+            self._connection.execute(
+                """
+                INSERT INTO semantic_retrieval_manifests (
+                    index_manifest_id, representation_id, embedding_profile_id, manifest_json
+                ) VALUES (?, ?, ?, ?)
+                """,
+                (
+                    manifest.index_manifest_id,
+                    manifest.representation_id,
+                    manifest.embedding_profile_id,
+                    manifest.model_dump_json(),
+                ),
+            )
+            self._connection.execute("COMMIT")
+            return manifest, False
+        except Exception:
+            self._connection.execute("ROLLBACK")
+            raise
+
+    def get_complete_semantic_manifest(
+        self, representation_id: str, profile_id: str
+    ) -> RetrievalIndexManifest | None:
+        row = self._connection.execute(
+            """
+            SELECT manifest_json FROM semantic_retrieval_manifests
+            WHERE representation_id = ? AND embedding_profile_id = ?
+            """,
+            (representation_id, profile_id),
+        ).fetchone()
+        if row is None:
+            return None
+        try:
+            manifest = RetrievalIndexManifest.model_validate_json(row["manifest_json"])
+            self._validate_semantic_complete(manifest)
+            return manifest
+        except (ValueError, TypeError) as exc:
+            raise DocumentRetrievalError(
+                RetrievalFailureCode.INDEX_CORRUPT, "Semantic retrieval index manifest is corrupt."
+            ) from exc
+
+    def semantic_candidates(
+        self, manifest: RetrievalIndexManifest, query_vector: bytes
+    ) -> tuple[ChannelCandidate, ...]:
+        identity = manifest.embedding_model_identity
+        if identity is None:
+            raise DocumentRetrievalError(
+                RetrievalFailureCode.INDEX_CORRUPT, "Semantic manifest lacks model identity."
+            )
+        query = self._validate_vector(query_vector, identity.vector_dimension)
+        rows = self._connection.execute(
+            """
+            SELECT retrieval_unit_id, source_order, vector
+            FROM semantic_retrieval_units
+            WHERE manifest_id = ?
+            """,
+            (manifest.index_manifest_id,),
+        ).fetchall()
+        scored: list[tuple[float, int, str]] = []
+        for row in rows:
+            vector = self._validate_vector(cast(bytes, row["vector"]), identity.vector_dimension)
+            scored.append(
+                (
+                    self._cosine(query, vector),
+                    cast(int, row["source_order"]),
+                    cast(str, row["retrieval_unit_id"]),
+                )
+            )
+        scored.sort(key=lambda item: (-item[0], item[1], item[2]))
+        return tuple(
+            ChannelCandidate(
+                retrieval_unit_id=unit_id,
+                channel=RetrievalChannel.SEMANTIC,
+                channel_rank=rank,
+                raw_score=score,
+                matched_field="cosine_similarity",
+            )
+            for rank, (score, _, unit_id) in enumerate(scored, start=1)
+        )
+
+    def delete_semantic_projection(self, representation_id: str, profile_id: str) -> None:
+        """Delete semantic derived rows only; Ledger and Archive remain untouched."""
+        self._connection.execute("BEGIN IMMEDIATE")
+        try:
+            self._delete_semantic_rows(representation_id, profile_id)
+            self._connection.execute("COMMIT")
+        except Exception:
+            self._connection.execute("ROLLBACK")
+            raise
+
     def delete_projection(self, representation_id: str) -> None:
         """Delete derived rows only, for deterministic rebuild verification."""
         self._connection.execute("BEGIN IMMEDIATE")
@@ -298,6 +453,76 @@ class SQLiteDocumentRetrievalAdapter:
             )
         self._validate_written_build(manifest)
 
+    def _validate_semantic_complete(self, manifest: RetrievalIndexManifest) -> None:
+        if manifest.channels != (RetrievalChannel.SEMANTIC,):
+            raise DocumentRetrievalError(
+                RetrievalFailureCode.INDEX_CORRUPT, "Semantic index has non-semantic channels."
+            )
+        if manifest.publication_status != "complete":
+            raise DocumentRetrievalError(
+                RetrievalFailureCode.INDEX_INCOMPLETE, "Semantic index is not complete."
+            )
+        self._validate_semantic_written_build(manifest)
+
+    def _validate_semantic_written_build(self, manifest: RetrievalIndexManifest) -> None:
+        count = self._connection.execute(
+            "SELECT COUNT(*) FROM semantic_retrieval_units WHERE manifest_id = ?",
+            (manifest.index_manifest_id,),
+        ).fetchone()[0]
+        if count != manifest.unit_count:
+            raise DocumentRetrievalError(
+                RetrievalFailureCode.INDEX_INCOMPLETE,
+                "Unpublished semantic projection did not write all rows.",
+            )
+
+    def _delete_semantic_rows(self, representation_id: str, profile_id: str) -> None:
+        rows = self._connection.execute(
+            """
+            SELECT index_manifest_id FROM semantic_retrieval_manifests
+            WHERE representation_id = ? AND embedding_profile_id = ?
+            """,
+            (representation_id, profile_id),
+        ).fetchall()
+        for row in rows:
+            self._connection.execute(
+                "DELETE FROM semantic_retrieval_units WHERE manifest_id = ?",
+                (row["index_manifest_id"],),
+            )
+        self._connection.execute(
+            """
+            DELETE FROM semantic_retrieval_manifests
+            WHERE representation_id = ? AND embedding_profile_id = ?
+            """,
+            (representation_id, profile_id),
+        )
+
+    @staticmethod
+    def _validate_vector(payload: bytes, dimension: int) -> tuple[float, ...]:
+        if len(payload) != dimension * 4:
+            raise DocumentRetrievalError(
+                RetrievalFailureCode.INDEX_CORRUPT, "Semantic vector has an invalid byte length."
+            )
+        vector = struct.unpack(f"<{dimension}f", payload)
+        if not all(math.isfinite(value) for value in vector):
+            raise DocumentRetrievalError(
+                RetrievalFailureCode.INDEX_CORRUPT, "Semantic vector has a non-finite value."
+            )
+        norm = math.sqrt(sum(value * value for value in vector))
+        if norm == 0 or not math.isfinite(norm):
+            raise DocumentRetrievalError(
+                RetrievalFailureCode.INDEX_CORRUPT, "Semantic vector is zero or invalid."
+            )
+        return vector
+
+    @staticmethod
+    def _cosine(left: tuple[float, ...], right: tuple[float, ...]) -> float:
+        score = sum(a * b for a, b in zip(left, right, strict=True))
+        if not math.isfinite(score):
+            raise DocumentRetrievalError(
+                RetrievalFailureCode.INDEX_CORRUPT, "Semantic cosine score is non-finite."
+            )
+        return score
+
     def _initialize(self) -> None:
         self._connection.executescript(
             """
@@ -337,6 +562,23 @@ class SQLiteDocumentRetrievalAdapter:
             CREATE TABLE IF NOT EXISTS retrieval_query_records (
                 retrieval_query_id TEXT PRIMARY KEY,
                 record_json TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS semantic_retrieval_manifests (
+                index_manifest_id TEXT PRIMARY KEY,
+                representation_id TEXT NOT NULL,
+                embedding_profile_id TEXT NOT NULL,
+                manifest_json TEXT NOT NULL,
+                UNIQUE (representation_id, embedding_profile_id)
+            );
+            CREATE TABLE IF NOT EXISTS semantic_retrieval_units (
+                manifest_id TEXT NOT NULL,
+                retrieval_unit_id TEXT NOT NULL,
+                source_order INTEGER NOT NULL,
+                unit_json TEXT NOT NULL,
+                representation_json TEXT NOT NULL,
+                vector BLOB NOT NULL,
+                vector_digest TEXT NOT NULL,
+                PRIMARY KEY (manifest_id, retrieval_unit_id)
             );
             """
         )
