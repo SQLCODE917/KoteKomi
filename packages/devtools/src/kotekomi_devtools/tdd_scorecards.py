@@ -32,6 +32,32 @@ def _round(value: float) -> int:
 
 
 def score_metrics(metric: Json) -> Json:
+    if metric["status"] == "superseded":
+        diagnostics = list(metric.get("diagnostics", []))
+        diagnostics.append(
+            {
+                "code": "scorecard.superseded",
+                "location": "/raw_metrics/status",
+                "rule": "superseded_runs_have_no_implementation_quality_score",
+            }
+        )
+        return {
+            "schema_version": 1,
+            "task_id": metric["task_id"],
+            "primary_tdd_path": metric["primary_tdd_path"],
+            "tdd_paths": metric["tdd_paths"],
+            "tdd_sha256": metric["tdd_sha256"],
+            "implementation_run_id": metric["implementation_run_id"],
+            "status": "superseded",
+            "raw_metrics": metric,
+            "score_dimensions": {},
+            "omitted_score_dimensions": sorted(_SCORE_WEIGHTS),
+            "scored_weight_total": 0,
+            "provisional_overall_score": None,
+            "overall_score": None,
+            "ranking_eligible": False,
+            "diagnostics": diagnostics,
+        }
     missing = int(metric.get("missing_evidence_count", 0))
     receipt_missing = int(metric.get("receipt_missing_count", 0))
     mismatch = int(metric.get("digest_mismatch_count", 0))
@@ -146,7 +172,9 @@ def tdd_score(
             producer_command="tdd-score",
         )
     collection_status = (
-        "complete"
+        "superseded"
+        if cards and all(card["status"] == "superseded" for card in cards)
+        else "complete"
         if cards and all(card["status"] == "complete" for card in cards)
         else "partial"
         if cards
@@ -216,7 +244,7 @@ def _comparison(cards: list[Json]) -> tuple[int, Json]:
         key=lambda card: (
             card.get("status") != "complete",
             -(card.get("overall_score") or -1),
-            -card["score_dimensions"]["evidence_confidence"],
+            -card.get("score_dimensions", {}).get("evidence_confidence", 0),
             card["implementation_run_id"],
         )
     )

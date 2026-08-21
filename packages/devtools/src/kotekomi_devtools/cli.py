@@ -45,6 +45,7 @@ from kotekomi_devtools.step_scripts import (
     step_preflight_payload,
     write_step_json,
 )
+from kotekomi_devtools.superseded_task_closure import close_superseded_task
 from kotekomi_devtools.task_budget import audit_task_budget
 from kotekomi_devtools.task_ledger import (
     TaskLedgerError,
@@ -154,6 +155,7 @@ def _dispatch_command(arguments: argparse.Namespace) -> CliResponse | int:
         "record-branch-cleanup": _handle_lifecycle_evidence_command,
         "create-feature-branch": _handle_lifecycle_evidence_command,
         "reconcile-merged-feature-branch": _handle_feature_branch_reconciliation_command,
+        "close-superseded-task": _handle_superseded_task_closure_command,
         "test-ingest": _handle_retrieval_scenario_command,
         "test-query": _handle_retrieval_scenario_command,
     }
@@ -564,6 +566,20 @@ def _handle_feature_branch_reconciliation_command(arguments: argparse.Namespace)
     return CliResponse(0, result.as_json())
 
 
+def _handle_superseded_task_closure_command(arguments: argparse.Namespace) -> CliResponse:
+    result = close_superseded_task(
+        task_id=arguments.task_id,
+        run_id=arguments.run,
+        successor_task_id=arguments.successor_task_id,
+        successor_run_id=arguments.successor_run,
+        handoff_commit=arguments.handoff_commit,
+        state_root_path=arguments.state_root,
+        output=arguments.output,
+        markdown=arguments.markdown,
+    )
+    return CliResponse(result.exit_code, result.payload)
+
+
 def _handle_feature_branch_command(arguments: argparse.Namespace) -> CliResponse:
     common = {
         "task_id": arguments.task_id,
@@ -906,6 +922,14 @@ def _add_lifecycle_evidence_parsers(subparsers: Any) -> None:
     reconciliation.add_argument("--promotion", required=True)
     reconciliation.add_argument("--final-main", required=True)
     reconciliation.add_argument("--ci-result", type=Path, required=True)
+    superseded = subparsers.add_parser(
+        "close-superseded-task",
+        parents=[common],
+        help="Close one task whose completed successor carried its handoff patch.",
+    )
+    superseded.add_argument("--successor-task-id", required=True)
+    superseded.add_argument("--successor-run", required=True)
+    superseded.add_argument("--handoff-commit", required=True)
     for name, help_text in (
         ("promote-feature-branch", "Promote the verified feature receipt to main."),
         ("complete-feature-branch", "Tag and clean up a main-CI-verified feature branch."),

@@ -169,3 +169,68 @@ def test_metrics_accepts_task_result_instead_of_receipt_chain(
 
     assert result["status"] == "complete"
     assert result["missing_evidence_count"] == 0
+
+
+def test_metrics_report_scope_discovery_supersession_without_missing_lifecycle(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    task = "task"
+    run = "task-run-001"
+    state = tmp_path / "state"
+    required = {
+        "tdd_binding",
+        "task_manifest",
+        "task_manifest_validation",
+        "task_result",
+        "cleanup",
+    }
+    entries: list[dict[str, Any]] = []
+    payloads: dict[str, dict[str, Any]] = {
+        "task_result": {
+            "outcome": "superseded",
+            "supersession_reason": "scope_discovery",
+            "successor_task_id": "successor",
+            "successor_run_id": "successor-run-001",
+        },
+        "cleanup": {"branch_cleanup_complete": True},
+    }
+    for evidence_type in required:
+        path = state / f"{evidence_type}.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(payloads.get(evidence_type, {})))
+        entries.append(
+            {"evidence_type": evidence_type, "path_scope": "state", "path": path.name}
+        )
+    snapshot = state / "experiments" / task / "spec" / "tdd-snapshot.md"
+    snapshot.parent.mkdir(parents=True)
+    snapshot.write_text("# TDD\n")
+    tdd_sha256 = hashlib.sha256(snapshot.read_bytes()).hexdigest()
+    (snapshot.parent / "tdd-binding.json").write_text(
+        json.dumps(
+            {
+                "status": "ready",
+                "task_id": task,
+                "primary_tdd_path": "docs/tdd.md",
+                "tdd_paths": ["docs/tdd.md"],
+                "tdd_snapshot_path": str(snapshot),
+                "tdd_sha256": tdd_sha256,
+            }
+        )
+    )
+    runs = state / "experiments" / task / "runs"
+    runs.mkdir(parents=True, exist_ok=True)
+    (runs / "index.json").write_text(
+        json.dumps({"runs": [{"implementation_run_id": run, "ordinal": 1, "status": "active"}]})
+    )
+
+    def entries_for(_root: Path, _task: str, _run: str) -> list[dict[str, Any]]:
+        return entries
+
+    monkeypatch.setattr(tdd_metrics, "validated_entries", entries_for)
+
+    _, collection = tdd_metrics.tdd_metrics("docs/tdd.md", state_root_path=state, run_id=run)
+
+    result = collection["metrics"][0]
+    assert result["status"] == "superseded"
+    assert result["scope_discovery_supersession_count"] == 1
+    assert result["missing_evidence_count"] == 0

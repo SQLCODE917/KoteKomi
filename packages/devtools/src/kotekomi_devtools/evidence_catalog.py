@@ -111,7 +111,6 @@ def _event_outcome(evidence_type: str, payload: Json) -> str:
         "feature_branch",
         "candidate_commit",
         "main_promotion",
-        "task_result",
     }
     if evidence_type in recorded_types:
         return "recorded"
@@ -146,9 +145,9 @@ def _event_outcome(evidence_type: str, payload: Json) -> str:
         raise EvidenceError(f"{evidence_type} requires a CI conclusion for event outcome")
     if evidence_type == "task_result":
         outcome = payload.get("outcome")
-        if outcome in {"completed", "abandoned"}:
+        if outcome in {"completed", "abandoned", "superseded"}:
             return cast(str, outcome)
-        raise EvidenceError("task_result requires completed or abandoned outcome")
+        raise EvidenceError("task_result requires completed, abandoned, or superseded outcome")
     if evidence_type == "cleanup":
         complete = payload.get("branch_cleanup_complete")
         if type(complete) is not bool:
@@ -165,9 +164,11 @@ def _event_outcome(evidence_type: str, payload: Json) -> str:
         raise EvidenceError("task_manifest_validation requires valid or invalid status")
     if evidence_type in {"metrics_record", "scorecard_record"}:
         status = payload.get("status")
-        if status in {"complete", "partial", "blocked"}:
+        if status in {"complete", "partial", "blocked", "superseded"}:
             return cast(str, status)
-        raise EvidenceError(f"{evidence_type} requires complete, partial, or blocked status")
+        raise EvidenceError(
+            f"{evidence_type} requires complete, partial, blocked, or superseded status"
+        )
     if evidence_type == "candidate_verification_receipt":
         outcome = payload.get("outcome")
         if outcome in {"passed", "failed"}:
@@ -481,4 +482,21 @@ def validated_entries(root: Path, task: str, run: str) -> list[Json]:
             promotion = payload.get("validated_promotion_commit")
             if promotion is not None and not isinstance(promotion, str):
                 raise EvidenceError("main_ci validated_promotion_commit must be a string")
+        if entry["evidence_type"] == "task_result" and payload.get("outcome") == "superseded":
+            required_supersession = (
+                "supersession_reason",
+                "successor_task_id",
+                "successor_run_id",
+                "successor_result_tag",
+                "successor_target_commit",
+                "handoff_commit",
+                "handoff_patch_id",
+            )
+            missing_supersession = [
+                field for field in required_supersession if field not in payload
+            ]
+            if missing_supersession:
+                raise EvidenceError(
+                    "superseded task-result fields missing: " + ", ".join(missing_supersession)
+                )
     return entries
