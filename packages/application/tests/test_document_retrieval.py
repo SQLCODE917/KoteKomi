@@ -7,11 +7,13 @@ from kotekomi_application import (
     ChannelCandidate,
     EmbeddingBatch,
     EmbeddingProfile,
+    QueryDocumentHybridRetrievalCommand,
     QueryDocumentRetrievalCommand,
     QueryDocumentSemanticRetrievalCommand,
     RetrievalFailureCode,
     build_document_retrieval_projection,
     build_document_semantic_projection,
+    query_document_hybrid_retrieval,
     query_document_retrieval,
     query_document_semantic_retrieval,
 )
@@ -95,6 +97,36 @@ class FakeProjection:
         self, manifest: RetrievalIndexManifest, normalized_query: str
     ) -> tuple[ChannelCandidate, ...]:
         assert self.build is not None
+        if normalized_query.casefold() == "many":
+            return (
+                ChannelCandidate(
+                    retrieval_unit_id=self.build.units[-1].retrieval_unit_id,
+                    channel=RetrievalChannel.EXACT,
+                    channel_rank=1,
+                    matched_field="body_nfc",
+                ),
+                ChannelCandidate(
+                    retrieval_unit_id=self.build.units[-2].retrieval_unit_id,
+                    channel=RetrievalChannel.EXACT,
+                    channel_rank=2,
+                    matched_field="body_nfc",
+                ),
+            )
+        if normalized_query.casefold() == "tie":
+            return (
+                ChannelCandidate(
+                    retrieval_unit_id=self.build.units[0].retrieval_unit_id,
+                    channel=RetrievalChannel.EXACT,
+                    channel_rank=1,
+                    matched_field="body_nfc",
+                ),
+                ChannelCandidate(
+                    retrieval_unit_id=self.build.units[1].retrieval_unit_id,
+                    channel=RetrievalChannel.EXACT,
+                    channel_rank=2,
+                    matched_field="body_nfc",
+                ),
+            )
         if normalized_query.casefold() != "needle":
             return ()
         return (
@@ -109,7 +141,18 @@ class FakeProjection:
     def lexical_candidates(
         self, manifest: RetrievalIndexManifest, query_text: str
     ) -> tuple[ChannelCandidate, ...]:
-        return ()
+        if query_text.casefold() not in {"many", "tie"}:
+            return ()
+        assert self.build is not None
+        return (
+            ChannelCandidate(
+                retrieval_unit_id=self.build.units[-2].retrieval_unit_id,
+                channel=RetrievalChannel.LEXICAL,
+                channel_rank=1,
+                raw_score=-1.0,
+                matched_field="fts5",
+            ),
+        )
 
     def save_query_record(self, record: RetrievalQueryRecord) -> None:
         self.query_records.append(record)
@@ -127,6 +170,7 @@ class FakeSemanticProjection:
         self.manifest: RetrievalIndexManifest | None = None
         self.build: SemanticProjectionBuildInput | None = None
         self.query_records: list[RetrievalQueryRecord] = []
+        self.candidate_index = -1
 
     def publish_semantic(
         self, build: SemanticProjectionBuildInput
@@ -154,7 +198,7 @@ class FakeSemanticProjection:
         assert self.build is not None
         return (
             ChannelCandidate(
-                retrieval_unit_id=self.build.units[-1].retrieval_unit_id,
+                retrieval_unit_id=self.build.units[self.candidate_index].retrieval_unit_id,
                 channel=RetrievalChannel.SEMANTIC,
                 channel_rank=1,
                 raw_score=1.0,
@@ -411,3 +455,180 @@ def test_semantic_retrieval_rejects_oversized_rendered_input() -> None:
     assert result.status == "failed"
     assert result.failure is RetrievalFailureCode.SEMANTIC_INPUT_TOO_LARGE
     assert embedding.inputs == []
+
+
+def test_hybrid_retrieval_uses_exact_guard_without_a_query_embedding() -> None:
+    ledger = FakeLedger()
+    exact_projection = FakeProjection()
+    semantic_projection = FakeSemanticProjection()
+    profile = _embedding_profile()
+    embedding = FakeEmbedding(profile)
+    build_document_retrieval_projection(
+        BuildDocumentRetrievalProjectionCommand(ledger.bundle.representation.id),
+        ledger_repository=ledger,
+        projection=exact_projection,
+    )
+    build_document_semantic_projection(
+        BuildDocumentSemanticProjectionCommand(ledger.bundle.representation.id, profile),
+        ledger_repository=ledger,
+        projection=semantic_projection,
+        embedding=embedding,
+    )
+    embedding.inputs.clear()
+
+    result = query_document_hybrid_retrieval(
+        QueryDocumentHybridRetrievalCommand(
+            representation_id=ledger.bundle.representation.id,
+            query_text="Needle",
+            maximum_hits=1,
+            context_profile_id="retrieval-validation-v1",
+            embedding_profile=profile,
+        ),
+        ledger_repository=ledger,
+        exact_lexical_projection=exact_projection,
+        semantic_projection=semantic_projection,
+        embedding=embedding,
+        tokenizer=Tokenizer(),
+    )
+
+    assert result.status == "complete"
+    assert result.consulted_channels == (RetrievalChannel.EXACT,)
+    assert result.hits[0].selection_reason == "unique_exact_guard"
+    assert result.hits[0].fusion_score is None
+    assert embedding.inputs == []
+
+
+def test_hybrid_retrieval_fuses_all_channels_and_marks_only_selected_hits() -> None:
+    ledger = FakeLedger()
+    exact_projection = FakeProjection()
+    semantic_projection = FakeSemanticProjection()
+    profile = _embedding_profile()
+    embedding = FakeEmbedding(profile)
+    build_document_retrieval_projection(
+        BuildDocumentRetrievalProjectionCommand(ledger.bundle.representation.id),
+        ledger_repository=ledger,
+        projection=exact_projection,
+    )
+    build_document_semantic_projection(
+        BuildDocumentSemanticProjectionCommand(ledger.bundle.representation.id, profile),
+        ledger_repository=ledger,
+        projection=semantic_projection,
+        embedding=embedding,
+    )
+
+    result = query_document_hybrid_retrieval(
+        QueryDocumentHybridRetrievalCommand(
+            representation_id=ledger.bundle.representation.id,
+            query_text="many",
+            maximum_hits=1,
+            context_profile_id="retrieval-validation-v1",
+            embedding_profile=profile,
+        ),
+        ledger_repository=ledger,
+        exact_lexical_projection=exact_projection,
+        semantic_projection=semantic_projection,
+        embedding=embedding,
+        tokenizer=Tokenizer(),
+    )
+
+    assert result.status == "complete"
+    assert result.consulted_channels == (
+        RetrievalChannel.EXACT,
+        RetrievalChannel.LEXICAL,
+        RetrievalChannel.SEMANTIC,
+    )
+    assert len(result.hits) == 2
+    assert result.hits[0].selection_reason == "rrf60_fusion"
+    assert result.hits[0].fusion_score == 2 / 61
+    assert result.hits[0].selected is True
+    assert result.hits[1].selected is False
+    assert len(exact_projection.query_records[0].candidate_hits) == 2
+
+
+def test_hybrid_retrieval_uses_all_channels_when_exact_returns_no_candidates() -> None:
+    ledger = FakeLedger()
+    exact_projection = FakeProjection()
+    semantic_projection = FakeSemanticProjection()
+    profile = _embedding_profile()
+    embedding = FakeEmbedding(profile)
+    build_document_retrieval_projection(
+        BuildDocumentRetrievalProjectionCommand(ledger.bundle.representation.id),
+        ledger_repository=ledger,
+        projection=exact_projection,
+    )
+    build_document_semantic_projection(
+        BuildDocumentSemanticProjectionCommand(ledger.bundle.representation.id, profile),
+        ledger_repository=ledger,
+        projection=semantic_projection,
+        embedding=embedding,
+    )
+    embedding.inputs.clear()
+
+    result = query_document_hybrid_retrieval(
+        QueryDocumentHybridRetrievalCommand(
+            representation_id=ledger.bundle.representation.id,
+            query_text="no exact match",
+            maximum_hits=1,
+            context_profile_id="retrieval-validation-v1",
+            embedding_profile=profile,
+        ),
+        ledger_repository=ledger,
+        exact_lexical_projection=exact_projection,
+        semantic_projection=semantic_projection,
+        embedding=embedding,
+        tokenizer=Tokenizer(),
+    )
+
+    assert result.status == "complete"
+    assert result.consulted_channels == (
+        RetrievalChannel.EXACT,
+        RetrievalChannel.LEXICAL,
+        RetrievalChannel.SEMANTIC,
+    )
+    assert result.hits[0].selection_reason == "rrf60_fusion"
+    assert embedding.inputs == [("search_query: no exact match",)]
+
+
+def test_hybrid_retrieval_breaks_equal_rrf_scores_by_source_order() -> None:
+    ledger = FakeLedger()
+    exact_projection = FakeProjection()
+    semantic_projection = FakeSemanticProjection()
+    profile = _embedding_profile()
+    embedding = FakeEmbedding(profile)
+    build_document_retrieval_projection(
+        BuildDocumentRetrievalProjectionCommand(ledger.bundle.representation.id),
+        ledger_repository=ledger,
+        projection=exact_projection,
+    )
+    build_document_semantic_projection(
+        BuildDocumentSemanticProjectionCommand(ledger.bundle.representation.id, profile),
+        ledger_repository=ledger,
+        projection=semantic_projection,
+        embedding=embedding,
+    )
+
+    result = query_document_hybrid_retrieval(
+        QueryDocumentHybridRetrievalCommand(
+            representation_id=ledger.bundle.representation.id,
+            query_text="tie",
+            maximum_hits=4,
+            context_profile_id="retrieval-validation-v1",
+            embedding_profile=profile,
+        ),
+        ledger_repository=ledger,
+        exact_lexical_projection=exact_projection,
+        semantic_projection=semantic_projection,
+        embedding=embedding,
+        tokenizer=Tokenizer(),
+    )
+
+    assert result.status == "complete"
+    assert result.hits[1].fusion_score == result.hits[2].fusion_score == 1 / 61
+    assert exact_projection.build is not None
+    source_order = {
+        unit.retrieval_unit_id: unit.source_order for unit in exact_projection.build.units
+    }
+    assert (
+        source_order[result.hits[1].retrieval_unit_id]
+        < source_order[result.hits[2].retrieval_unit_id]
+    )
