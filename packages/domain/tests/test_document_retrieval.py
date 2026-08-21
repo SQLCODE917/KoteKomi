@@ -3,6 +3,9 @@ import hashlib
 import pytest
 from kotekomi_domain import (
     DocumentSemanticRepresentation,
+    RetrievalChannel,
+    RetrievalChannelObservation,
+    RetrievalHit,
     deterministic_retrieval_representation_id,
     document_semantic_representation_fingerprint,
 )
@@ -47,3 +50,33 @@ def test_semantic_representation_rejects_an_identity_that_does_not_match_inputs(
             embedding_input_digest="c" * 64,
             representation_fingerprint="d" * 64,
         )
+
+
+def test_retrieval_hit_records_each_channel_manifest_and_fusion_score() -> None:
+    hit = RetrievalHit(
+        retrieval_unit_id="dru_fixture",
+        authoritative_node_ids=("nod_fixture",),
+        original_text_digest="a" * 64,
+        channel_observations=(
+            RetrievalChannelObservation(
+                channel=RetrievalChannel.EXACT,
+                index_manifest_id="rim_exact",
+                channel_rank=1,
+            ),
+            RetrievalChannelObservation(
+                channel=RetrievalChannel.SEMANTIC,
+                index_manifest_id="rim_semantic",
+                channel_rank=2,
+                raw_score=0.9,
+            ),
+        ),
+        final_rank=1,
+        selected=True,
+        selection_reason="rrf60_fusion",
+        fusion_score=(1 / 61) + (1 / 62),
+    )
+
+    assert {item.index_manifest_id for item in hit.channel_observations} == {
+        "rim_exact",
+        "rim_semantic",
+    }

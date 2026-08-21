@@ -92,6 +92,8 @@ def test_ingest(scenario_id: str, *, lock_fixture: bool, scenario_state_root: Pa
         representation_id,
         "--ledger-path",
         str(ledger_path),
+        "--channel",
+        "exact-lexical",
         "--format",
         "json",
     )
@@ -180,6 +182,7 @@ def test_query(
     suite_schema = {
         "retrieval-query-suite-v1": "retrieval-query-suite-v1.schema.json",
         "retrieval-query-suite-v2": "retrieval-query-suite-v2.schema.json",
+        "retrieval-query-suite-v3": "retrieval-query-suite-v3.schema.json",
     }.get(str(suite_value.get("schema_version")))
     if suite_schema is None:
         raise RetrievalScenarioError("query_suite_invalid", "Unsupported query suite schema.")
@@ -192,6 +195,9 @@ def test_query(
     representation_id = _required_str(ingest, "representation_id")
     config_path = Path(_required_str(ingest, "config_path"))
     semantic_profile = suite["policy_ids"].get("embedding_profile_id")
+    hybrid = (
+        suite["policy_ids"].get("query_policy_id") == "document_exact_lexical_semantic_rrf60_v1"
+    )
     if semantic_profile is not None:
         if embedding_profile_id != semantic_profile:
             raise RetrievalScenarioError(
@@ -201,7 +207,7 @@ def test_query(
         _write_semantic_profile(
             config_path, ledger_path, Path(_required_str(ingest, "archive_path"))
         )
-    build = _product_json(
+    build_arguments = [
         "retrieval",
         "build-document",
         "--representation-id",
@@ -210,11 +216,16 @@ def test_query(
         str(ledger_path),
         "--format",
         "json",
-    )
+    ]
+    if not hybrid:
+        build_arguments.extend(("--channel", "exact-lexical"))
+    elif semantic_profile is not None:
+        build_arguments = ["--config", str(config_path), *build_arguments]
+    build = _product_json(*build_arguments)
     if build.get("status") != "complete":
         raise RetrievalScenarioError("canonical_query_failed", "Public retrieval build failed.")
     semantic_build: JsonObject | None = None
-    if semantic_profile is not None:
+    if semantic_profile is not None and not hybrid:
         semantic_build = _product_json(
             "--config",
             str(config_path),
@@ -243,21 +254,11 @@ def test_query(
         suite["policy_ids"]["context_profile_id"],
         config_path=config_path,
         embedding_profile_id=embedding_profile_id,
+        hybrid=hybrid,
     )
-    rebuilt = _product_json(
-        "retrieval",
-        "build-document",
-        "--representation-id",
-        representation_id,
-        "--ledger-path",
-        str(ledger_path),
-        "--format",
-        "json",
-        "--rebuild",
-    )
-    if rebuilt.get("status") != "complete" or rebuilt.get("content_fingerprint") != build.get(
-        "content_fingerprint"
-    ):
+    rebuilt_arguments = [*build_arguments, "--rebuild"]
+    rebuilt = _product_json(*rebuilt_arguments)
+    if rebuilt.get("status") != "complete" or not _equivalent_build(build, rebuilt, hybrid=hybrid):
         raise RetrievalScenarioError(
             "canonical_query_failed", "Derived index did not rebuild equivalently."
         )
@@ -292,26 +293,36 @@ def test_query(
         suite["policy_ids"]["context_profile_id"],
         config_path=config_path,
         embedding_profile_id=embedding_profile_id,
+        hybrid=hybrid,
     )
     if rebuilt_observations != baseline_observations:
         raise RetrievalScenarioError(
             "canonical_query_failed", "Delete-and-rebuild changed observable query behavior."
         )
+    exact_manifest_id, semantic_manifest_id = _scenario_manifest_ids(
+        build, semantic_build, hybrid=hybrid
+    )
     result = {
         "scenario_id": scenario_id,
         "suite_id": suite_id,
         "representation_id": representation_id,
-        "index_manifest_id": build["index_manifest_id"],
-        "semantic_index_manifest_id": (
-            semantic_build["index_manifest_id"] if semantic_build is not None else None
-        ),
+        "index_manifest_id": exact_manifest_id,
+        "semantic_index_manifest_id": semantic_manifest_id,
         "embedding_profile_id": (
-            semantic_build["embedding_profile_id"] if semantic_build is not None else None
+            build.get("embedding_profile_id")
+            if hybrid
+            else semantic_build.get("embedding_profile_id")
+            if semantic_build is not None
+            else None
         ),
         "embedding_model_identity": (
-            semantic_build["embedding_model_identity"] if semantic_build is not None else None
+            build.get("embedding_model_identity")
+            if hybrid
+            else semantic_build.get("embedding_model_identity")
+            if semantic_build is not None
+            else None
         ),
-        "content_fingerprint": build["content_fingerprint"],
+        "content_fingerprint": build.get("content_fingerprint"),
         "query_outcomes": outcomes,
         "rebuild_equivalent": True,
     }
@@ -330,6 +341,29 @@ def test_query(
     return {**result, **receipt.as_json()}
 
 
+def _scenario_manifest_ids(
+    build: JsonObject, semantic_build: JsonObject | None, *, hybrid: bool
+) -> tuple[str, str | None]:
+    if hybrid:
+        manifest_ids = _string_list(build.get("index_manifest_ids"))
+        if len(manifest_ids) != 2:
+            raise RetrievalScenarioError(
+                "canonical_query_failed", "Hybrid build did not publish two index manifests."
+            )
+        return manifest_ids[0], manifest_ids[1]
+    return _required_str(build, "index_manifest_id"), (
+        _required_str(semantic_build, "index_manifest_id") if semantic_build is not None else None
+    )
+
+
+def _equivalent_build(build: JsonObject, rebuilt: JsonObject, *, hybrid: bool) -> bool:
+    if hybrid:
+        return _string_list(rebuilt.get("index_manifest_ids")) == _string_list(
+            build.get("index_manifest_ids")
+        )
+    return rebuilt.get("content_fingerprint") == build.get("content_fingerprint")
+
+
 def _run_query_cases(
     cases: Sequence[JsonObject],
     representation_id: str,
@@ -338,6 +372,7 @@ def _run_query_cases(
     *,
     config_path: Path,
     embedding_profile_id: str | None,
+    hybrid: bool,
 ) -> tuple[list[JsonObject], dict[str, JsonObject]]:
     outcomes: list[JsonObject] = []
     observations: dict[str, JsonObject] = {}
@@ -358,7 +393,9 @@ def _run_query_cases(
             "--format",
             "json",
         ]
-        if "semantic" in case["required_channels"]:
+        if hybrid:
+            arguments = ["--config", str(config_path), *arguments]
+        elif "semantic" in case["required_channels"]:
             if embedding_profile_id is None:
                 raise RetrievalScenarioError(
                     "semantic_profile_unavailable", "Semantic profile is absent."
@@ -384,6 +421,8 @@ def _run_query_cases(
                 "context_manifest_id": query["context_manifest_id"],
                 "embedding_profile_id": query["embedding_profile_id"],
                 "embedding_model_identity": query["embedding_model_identity"],
+                "query_policy_id": query.get("query_policy_id"),
+                "consulted_channels": query.get("consulted_channels", []),
             }
         )
         observations[query_id] = {
@@ -393,6 +432,8 @@ def _run_query_cases(
             "context_manifest_rendered_input": query["context_manifest_rendered_input"],
             "embedding_profile_id": query["embedding_profile_id"],
             "embedding_model_identity": query["embedding_model_identity"],
+            "query_policy_id": query.get("query_policy_id"),
+            "consulted_channels": query.get("consulted_channels", []),
         }
     return outcomes, observations
 
@@ -434,6 +475,8 @@ def validate_ingest_anchors(
         query = _product_json(
             "retrieval",
             "query",
+            "--channel",
+            "exact-lexical",
             "--representation-id",
             representation_id,
             "--query",
@@ -508,6 +551,18 @@ def _validate_query_case(case: JsonObject, query: JsonObject) -> None:
         raise RetrievalScenarioError(
             "canonical_query_failed", f"Missing required channel: {case['query_id']}"
         )
+    expected_reason = case.get("expected_selection_reason")
+    if expected_reason is not None and not all(
+        hit.get("selection_reason") == expected_reason for hit in hits
+    ):
+        raise RetrievalScenarioError(
+            "canonical_query_failed", f"Unexpected selection reason: {case['query_id']}"
+        )
+    expected_consulted = case.get("expected_consulted_channels")
+    if expected_consulted is not None and query.get("consulted_channels") != expected_consulted:
+        raise RetrievalScenarioError(
+            "canonical_query_failed", f"Unexpected consulted channels: {case['query_id']}"
+        )
     rendered = str(query.get("context_manifest_rendered_input") or "")
     for expected in case["expected_hits"]:
         normalized_anchor = _normalize_anchor_text(expected["anchor_text"])
@@ -561,6 +616,7 @@ def _load_cases(suite: JsonObject) -> list[JsonObject]:
                 schema = {
                     "retrieval-query-case-v1": "retrieval-query-case-v1.schema.json",
                     "retrieval-query-case-v2": "retrieval-query-case-v2.schema.json",
+                    "retrieval-query-case-v3": "retrieval-query-case-v3.schema.json",
                 }.get(str(case.get("schema_version")))
                 if schema is None:
                     raise RetrievalScenarioError(
@@ -731,6 +787,9 @@ def _write_semantic_profile(config_path: Path, ledger_path: Path, archive_path: 
         + "\n"
         + "\n".join(
             (
+                "[document_retrieval]",
+                'default_embedding_profile = "semantic-validation-v1"',
+                "",
                 "[embedding_profiles.semantic-validation-v1]",
                 'adapter = "lm_studio"',
                 'endpoint = "http://127.0.0.1:1234/v1"',

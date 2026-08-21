@@ -32,6 +32,7 @@ from kotekomi_application import (
     AuthoritativePdfCaptureRequest,
     BriefingGenerationInput,
     BuildDocumentRetrievalProjectionCommand,
+    BuildDocumentRetrievalProjectionResult,
     BuildDocumentSemanticProjectionCommand,
     EmbeddingPort,
     EmbeddingProfile,
@@ -46,6 +47,7 @@ from kotekomi_application import (
     PipelineRunNextResult,
     PipelineStatus,
     PipelineStatusInput,
+    QueryDocumentHybridRetrievalCommand,
     QueryDocumentRetrievalCommand,
     QueryDocumentSemanticRetrievalCommand,
     ReviewDrainInput,
@@ -87,6 +89,7 @@ from kotekomi_application import (
     pipeline_next_to_json,
     pipeline_status_to_json,
     project_ledger_graph,
+    query_document_hybrid_retrieval,
     query_document_retrieval,
     query_document_semantic_retrieval,
     reject_proposed_change,
@@ -145,7 +148,13 @@ def main(argv: list[str] | None = None) -> int:
             output_format=args.output_format,
             rebuild=args.rebuild,
             channel=args.channel,
-            embedding_profile=_embedding_profile(config, args.embedding_profile),
+            embedding_profile=(
+                _embedding_profile(config, args.embedding_profile)
+                if args.channel == "semantic"
+                else _normal_embedding_profile(config)
+                if args.channel is None
+                else None
+            ),
         )
 
     if args.command == "retrieval" and args.retrieval_command == "query":
@@ -164,7 +173,13 @@ def main(argv: list[str] | None = None) -> int:
             context_profile=args.context_profile,
             output_format=args.output_format,
             channel=args.channel,
-            embedding_profile=_embedding_profile(config, args.embedding_profile),
+            embedding_profile=(
+                _embedding_profile(config, args.embedding_profile)
+                if args.channel == "semantic"
+                else _normal_embedding_profile(config)
+                if args.channel is None
+                else None
+            ),
         )
 
     if args.command == "source" and args.source_command == "add-file":
@@ -540,7 +555,9 @@ def build_parser() -> argparse.ArgumentParser:
         "build-document", help="Build a disposable document retrieval projection."
     )
     retrieval_build_parser.add_argument("--representation-id", required=True)
-    retrieval_build_parser.add_argument("--channel", choices=("semantic",), default=None)
+    retrieval_build_parser.add_argument(
+        "--channel", choices=("exact-lexical", "semantic"), default=None
+    )
     retrieval_build_parser.add_argument("--embedding-profile", default=None)
     retrieval_build_parser.add_argument(
         "--rebuild",
@@ -558,7 +575,9 @@ def build_parser() -> argparse.ArgumentParser:
     retrieval_query_parser.add_argument("--query", required=True)
     retrieval_query_parser.add_argument("--maximum-hits", required=True, type=int)
     retrieval_query_parser.add_argument("--context-profile", required=True)
-    retrieval_query_parser.add_argument("--channel", choices=("semantic",), default=None)
+    retrieval_query_parser.add_argument(
+        "--channel", choices=("exact-lexical", "semantic"), default=None
+    )
     retrieval_query_parser.add_argument("--embedding-profile", default=None)
     retrieval_query_parser.add_argument(
         "--format", dest="output_format", choices=("text", "json"), default="text"
@@ -900,9 +919,8 @@ def build_document_retrieval_index(
                     projection=projection,
                     embedding=_embedding_adapter(profile.adapter_id),
                 )
-        else:
-            if embedding_profile is not None:
-                raise ValueError("--embedding-profile requires --channel semantic.")
+            payload = _retrieval_build_payload(result)
+        elif channel == "exact-lexical":
             if rebuild:
                 projection.delete_projection(representation_id)
             with sqlite_ledger_transaction(ledger_path) as ledger_repository:
@@ -911,9 +929,65 @@ def build_document_retrieval_index(
                     ledger_repository=ledger_repository,
                     projection=projection,
                 )
+            payload = _retrieval_build_payload(result)
+        else:
+            if embedding_profile is None:
+                return _print_retrieval_payload(
+                    {"status": "failed", "failure": "hybrid_profile_unavailable"}, output_format
+                )
+            profile = embedding_profile
+            if rebuild:
+                projection.delete_projection(representation_id)
+                projection.delete_semantic_projection(representation_id, profile.profile_id)
+            with sqlite_ledger_transaction(ledger_path) as ledger_repository:
+                exact_result = build_document_retrieval_projection(
+                    BuildDocumentRetrievalProjectionCommand(representation_id=representation_id),
+                    ledger_repository=ledger_repository,
+                    projection=projection,
+                )
+                semantic_result = build_document_semantic_projection(
+                    BuildDocumentSemanticProjectionCommand(
+                        representation_id=representation_id, embedding_profile=profile
+                    ),
+                    ledger_repository=ledger_repository,
+                    projection=projection,
+                    embedding=_embedding_adapter(profile.adapter_id),
+                )
+            payload = {
+                "status": (
+                    "complete"
+                    if exact_result.status == "complete" and semantic_result.status == "complete"
+                    else "failed"
+                ),
+                "representation_id": representation_id,
+                "index_manifest_ids": [
+                    exact_result.index_manifest_id,
+                    semantic_result.index_manifest_id,
+                ],
+                "unit_count": exact_result.unit_count,
+                "representation_count": exact_result.representation_count,
+                "failure": next(
+                    (
+                        item.failure.value
+                        for item in (exact_result, semantic_result)
+                        if item.failure is not None
+                    ),
+                    None,
+                ),
+                "embedding_profile_id": semantic_result.embedding_profile_id,
+                "embedding_model_identity": (
+                    semantic_result.embedding_model_identity.model_dump(mode="json")
+                    if semantic_result.embedding_model_identity is not None
+                    else None
+                ),
+            }
     finally:
         projection.close()
-    payload = {
+    return _print_retrieval_payload(payload, output_format)
+
+
+def _retrieval_build_payload(result: BuildDocumentRetrievalProjectionResult) -> dict[str, object]:
+    return {
         "status": result.status,
         "representation_id": result.representation_id,
         "index_manifest_id": result.index_manifest_id,
@@ -929,7 +1003,6 @@ def build_document_retrieval_index(
             else None
         ),
     }
-    return _print_retrieval_payload(payload, output_format)
 
 
 def query_document_retrieval_index(
@@ -966,9 +1039,7 @@ def query_document_retrieval_index(
                     embedding=_embedding_adapter(profile.adapter_id),
                     tokenizer=_RetrievalValidationTokenizer(),
                 )
-            else:
-                if embedding_profile is not None:
-                    raise ValueError("--embedding-profile requires --channel semantic.")
+            elif channel == "exact-lexical":
                 result = query_document_retrieval(
                     QueryDocumentRetrievalCommand(
                         representation_id=representation_id,
@@ -978,6 +1049,27 @@ def query_document_retrieval_index(
                     ),
                     ledger_repository=ledger_repository,
                     projection=projection,
+                    tokenizer=_RetrievalValidationTokenizer(),
+                )
+            else:
+                if embedding_profile is None:
+                    return _print_retrieval_payload(
+                        {"status": "failed", "failure": "hybrid_profile_unavailable"},
+                        output_format,
+                    )
+                profile = embedding_profile
+                result = query_document_hybrid_retrieval(
+                    QueryDocumentHybridRetrievalCommand(
+                        representation_id=representation_id,
+                        query_text=query,
+                        maximum_hits=maximum_hits,
+                        context_profile_id=context_profile,
+                        embedding_profile=profile,
+                    ),
+                    ledger_repository=ledger_repository,
+                    exact_lexical_projection=projection,
+                    semantic_projection=projection,
+                    embedding=_embedding_adapter(profile.adapter_id),
                     tokenizer=_RetrievalValidationTokenizer(),
                 )
             bundle = ledger_repository.get_document_representation_bundle(representation_id)
@@ -1006,6 +1098,8 @@ def query_document_retrieval_index(
             if result.embedding_model_identity is not None
             else None
         ),
+        "query_policy_id": result.query_policy_id,
+        "consulted_channels": [channel.value for channel in result.consulted_channels],
     }
     return _print_retrieval_payload(payload, output_format)
 
@@ -1014,6 +1108,11 @@ def _embedding_profile(config: PipelineConfig, profile_id: str | None) -> Embedd
     if profile_id is None:
         return None
     return config.embedding_profiles.get(profile_id)
+
+
+def _normal_embedding_profile(config: PipelineConfig) -> EmbeddingProfile | None:
+    profile_id = config.document_retrieval_embedding_profile_id
+    return config.embedding_profiles.get(profile_id) if profile_id is not None else None
 
 
 def _embedding_adapter(adapter_id: str) -> EmbeddingPort:
