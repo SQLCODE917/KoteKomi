@@ -14,6 +14,7 @@ if TYPE_CHECKING:
     from kotekomi_adapters.networkx_graph_analyzer import NetworkXGraphAnalyzer
     from kotekomi_adapters.ollama_model_runtime import OllamaModelRuntime
     from kotekomi_adapters.pdf_evidence_overlay_renderer import PdfiumEvidenceOverlayRenderer
+    from kotekomi_adapters.sqlite_document_retrieval import SQLiteDocumentRetrievalAdapter
     from kotekomi_adapters.sqlite_ledger import (
         REQUIRED_LEDGER_TABLES,
         ImmutableCommitDisposition,
@@ -43,6 +44,7 @@ __all__ = [
     "REQUIRED_LEDGER_TABLES",
     "SQLiteLedgerInitializer",
     "SQLiteLedgerRepository",
+    "SQLiteDocumentRetrievalAdapter",
     "sqlite_ledger_transaction",
     "preflight_pdf_source",
 ]
@@ -122,4 +124,8 @@ def __getattr__(name: str) -> object:
             "SQLiteLedgerRepository": SQLiteLedgerRepository,
             "sqlite_ledger_transaction": sqlite_ledger_transaction,
         }[name]
+    if name == "SQLiteDocumentRetrievalAdapter":
+        from kotekomi_adapters.sqlite_document_retrieval import SQLiteDocumentRetrievalAdapter
+
+        return SQLiteDocumentRetrievalAdapter
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

@@ -8,6 +8,7 @@ import hashlib
 import io
 import json
 import sys
+from collections.abc import Mapping
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import cast
@@ -19,6 +20,7 @@ from kotekomi_adapters import (
     LocalArchiveStore,
     NetworkXGraphAnalyzer,
     NewsMLG2Adapter,
+    SQLiteDocumentRetrievalAdapter,
     SQLiteLedgerInitializer,
     sqlite_ledger_transaction,
 )
@@ -26,6 +28,7 @@ from kotekomi_application import (
     AuthoritativeCaptureRequest,
     AuthoritativePdfCaptureRequest,
     BriefingGenerationInput,
+    BuildDocumentRetrievalProjectionCommand,
     GraphConnectionMiningInput,
     JsonValue,
     ModelRuntimeStatus,
@@ -37,6 +40,7 @@ from kotekomi_application import (
     PipelineRunNextResult,
     PipelineStatus,
     PipelineStatusInput,
+    QueryDocumentRetrievalCommand,
     ReviewDrainInput,
     ReviewDrainResult,
     ReviewDrainStoppedReason,
@@ -55,6 +59,7 @@ from kotekomi_application import (
     UtcProcessingClock,
     Uuid4ProcessingAttemptIdFactory,
     approve_proposed_change,
+    build_document_retrieval_projection,
     commit_authoritative_capture,
     commit_authoritative_pdf_capture,
     edit_proposed_change,
@@ -74,6 +79,7 @@ from kotekomi_application import (
     pipeline_next_to_json,
     pipeline_status_to_json,
     project_ledger_graph,
+    query_document_retrieval,
     reject_proposed_change,
     review_drain_result_to_json,
     review_next_decision_result_to_json,
@@ -86,7 +92,7 @@ from kotekomi_application import (
     run_review_next_decision,
 )
 from kotekomi_briefing import MarkdownBriefingRenderer
-from kotekomi_domain import ReviewStatus
+from kotekomi_domain import DocumentRepresentationBundle, ReviewStatus
 
 from kotekomi_pipelines.config import (
     MODEL_RUNTIME_ADAPTERS,
@@ -115,6 +121,34 @@ def main(argv: list[str] | None = None) -> int:
             archive_path_override=args.archive_path,
         )
         return init_ledger(config)
+
+    if args.command == "retrieval" and args.retrieval_command == "build-document":
+        config = load_config(
+            config_path=args.config,
+            ledger_path_override=args.ledger_path,
+            archive_path_override=None,
+        )
+        return build_document_retrieval_index(
+            ledger_path=config.ledger_path,
+            representation_id=args.representation_id,
+            output_format=args.output_format,
+            rebuild=args.rebuild,
+        )
+
+    if args.command == "retrieval" and args.retrieval_command == "query":
+        config = load_config(
+            config_path=args.config,
+            ledger_path_override=args.ledger_path,
+            archive_path_override=None,
+        )
+        return query_document_retrieval_index(
+            ledger_path=config.ledger_path,
+            representation_id=args.representation_id,
+            query=args.query,
+            maximum_hits=args.maximum_hits,
+            context_profile=args.context_profile,
+            output_format=args.output_format,
+        )
 
     if args.command == "source" and args.source_command == "add-file":
         config = load_processing_config(
@@ -483,6 +517,33 @@ def build_parser() -> argparse.ArgumentParser:
     add_news_parser.add_argument("--ledger-path", type=Path, default=None)
     add_news_parser.add_argument("--archive-path", type=Path, default=None)
 
+    retrieval_parser = subparsers.add_parser("retrieval", help="Derived retrieval commands.")
+    retrieval_subparsers = retrieval_parser.add_subparsers(dest="retrieval_command")
+    retrieval_build_parser = retrieval_subparsers.add_parser(
+        "build-document", help="Build a disposable document exact and lexical projection."
+    )
+    retrieval_build_parser.add_argument("--representation-id", required=True)
+    retrieval_build_parser.add_argument(
+        "--rebuild",
+        action="store_true",
+        help="Delete the disposable projection before rebuilding it from authoritative state.",
+    )
+    retrieval_build_parser.add_argument(
+        "--format", dest="output_format", choices=("text", "json"), default="text"
+    )
+    retrieval_build_parser.add_argument("--ledger-path", type=Path, default=None)
+    retrieval_query_parser = retrieval_subparsers.add_parser(
+        "query", help="Retrieve document nodes and construct authoritative context."
+    )
+    retrieval_query_parser.add_argument("--representation-id", required=True)
+    retrieval_query_parser.add_argument("--query", required=True)
+    retrieval_query_parser.add_argument("--maximum-hits", required=True, type=int)
+    retrieval_query_parser.add_argument("--context-profile", required=True)
+    retrieval_query_parser.add_argument(
+        "--format", dest="output_format", choices=("text", "json"), default="text"
+    )
+    retrieval_query_parser.add_argument("--ledger-path", type=Path, default=None)
+
     model_parser = subparsers.add_parser("model", help="Local model runtime commands.")
     model_subparsers = model_parser.add_subparsers(dest="model_command")
     model_status_parser = model_subparsers.add_parser(
@@ -777,6 +838,125 @@ def init_ledger(config: PipelineConfig) -> int:
     print(f"Archive path ready: {config.archive_path}")
     print(f"Applied migrations: {migrations}")
     return 0
+
+
+class _RetrievalValidationTokenizer:
+    tokenizer_id = "retrieval_validation_whitespace_v1"
+
+    def count_tokens(self, rendered_input: bytes) -> int:
+        return len(rendered_input.decode("utf-8").split())
+
+
+def _retrieval_index_path(ledger_path: Path) -> Path:
+    return ledger_path.with_suffix(".retrieval.sqlite")
+
+
+def build_document_retrieval_index(
+    *, ledger_path: Path, representation_id: str, output_format: str, rebuild: bool = False
+) -> int:
+    projection = SQLiteDocumentRetrievalAdapter(_retrieval_index_path(ledger_path))
+    try:
+        if rebuild:
+            projection.delete_projection(representation_id)
+        with sqlite_ledger_transaction(ledger_path) as ledger_repository:
+            result = build_document_retrieval_projection(
+                BuildDocumentRetrievalProjectionCommand(representation_id=representation_id),
+                ledger_repository=ledger_repository,
+                projection=projection,
+            )
+    finally:
+        projection.close()
+    payload = {
+        "status": result.status,
+        "representation_id": result.representation_id,
+        "index_manifest_id": result.index_manifest_id,
+        "unit_count": result.unit_count,
+        "representation_count": result.representation_count,
+        "content_fingerprint": result.content_fingerprint,
+        "reused_existing_manifest": result.reused_existing_manifest,
+        "failure": result.failure.value if result.failure is not None else None,
+    }
+    return _print_retrieval_payload(payload, output_format)
+
+
+def query_document_retrieval_index(
+    *,
+    ledger_path: Path,
+    representation_id: str,
+    query: str,
+    maximum_hits: int,
+    context_profile: str,
+    output_format: str,
+) -> int:
+    projection = SQLiteDocumentRetrievalAdapter(_retrieval_index_path(ledger_path))
+    try:
+        with sqlite_ledger_transaction(ledger_path) as ledger_repository:
+            result = query_document_retrieval(
+                QueryDocumentRetrievalCommand(
+                    representation_id=representation_id,
+                    query_text=query,
+                    maximum_hits=maximum_hits,
+                    context_profile_id=context_profile,
+                ),
+                ledger_repository=ledger_repository,
+                projection=projection,
+                tokenizer=_RetrievalValidationTokenizer(),
+            )
+            bundle = ledger_repository.get_document_representation_bundle(representation_id)
+    finally:
+        projection.close()
+    authoritative_nodes = _retrieval_authoritative_nodes(result.selected_node_ids, bundle)
+    payload = {
+        "status": result.status,
+        "retrieval_query_id": result.retrieval_query_id,
+        "representation_id": result.representation_id,
+        "index_manifest_ids": list(result.index_manifest_ids),
+        "hits": [hit.model_dump(mode="json") for hit in result.hits],
+        "selected_node_ids": list(result.selected_node_ids),
+        "analysis_unit_id": result.analysis_unit_id,
+        "context_manifest_id": result.context_manifest_id,
+        "context_manifest_rendered_input": (
+            result.context_manifest_rendered_input.decode("utf-8")
+            if result.context_manifest_rendered_input is not None
+            else None
+        ),
+        "authoritative_nodes": authoritative_nodes,
+        "failure": result.failure.value if result.failure is not None else None,
+    }
+    return _print_retrieval_payload(payload, output_format)
+
+
+def _retrieval_authoritative_nodes(
+    selected_node_ids: tuple[str, ...], bundle: DocumentRepresentationBundle | None
+) -> list[dict[str, object]]:
+    if bundle is None:
+        return []
+    nodes = {node.id: node for node in bundle.nodes}
+    text_views = {view.id: view for view in bundle.text_views}
+    result: list[dict[str, object]] = []
+    for node_id in selected_node_ids:
+        node = nodes.get(node_id)
+        if node is None:
+            continue
+        text_view = text_views[node.text_view_id]
+        result.append(
+            {
+                "node_id": node.id,
+                "node_type": node.node_type,
+                "section_path": list(node.section_path),
+                "text": text_view.text[node.start_char : node.end_char],
+            }
+        )
+    return result
+
+
+def _print_retrieval_payload(payload: Mapping[str, object], output_format: str) -> int:
+    if output_format == "json":
+        print(json.dumps(payload, sort_keys=True))
+    else:
+        print(f"Retrieval {payload['status']}")
+        print(json.dumps(payload, sort_keys=True, indent=2))
+    return 0 if payload["status"] == "complete" else 1
 
 
 def add_source_file(

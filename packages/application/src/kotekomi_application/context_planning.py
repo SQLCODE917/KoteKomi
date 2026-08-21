@@ -90,6 +90,16 @@ class TableCellAnalysisPlanningOutcome:
 
 
 @dataclass(frozen=True)
+class RetrievalSelectionAnalysisUnitInput:
+    """Pinned authoritative focus nodes selected by a retrieval policy."""
+
+    representation_id: str
+    focus_node_ids: tuple[str, ...]
+    policy_id: str
+    task_type: str = "document_retrieval"
+
+
+@dataclass(frozen=True)
 class AnalysisUnit:
     id: str
     representation_id: str
@@ -294,6 +304,42 @@ def plan_table_cell_analysis_unit(
     return TableCellAnalysisPlanningOutcome(unit)
 
 
+def create_analysis_unit_from_retrieval_selection(
+    selection: RetrievalSelectionAnalysisUnitInput,
+    ledger_repository: ContextPlanningLedger,
+) -> AnalysisUnit:
+    """Persist a ContextPlanner unit for externally selected authoritative nodes.
+
+    Retrieval supplies identities only; dependency expansion and packing remain owned by
+    ContextPlanner when the resulting unit is rendered.
+    """
+    bundle = _load_acceptable_bundle(selection.representation_id, ledger_repository)
+    if not selection.focus_node_ids:
+        raise ValueError("Retrieval selection requires at least one focus node.")
+    if len(set(selection.focus_node_ids)) != len(selection.focus_node_ids):
+        raise ValueError("Retrieval selection focus node IDs must be unique.")
+    nodes = tuple(_node_by_id(bundle, node_id) for node_id in selection.focus_node_ids)
+    dependencies = tuple(
+        sorted(
+            {
+                dependency.id: dependency
+                for node in nodes
+                for dependency in _definition_nodes_for_focus(node, bundle)
+            }.values(),
+            key=lambda node: (node.order_index, node.id),
+        )
+    )
+    unit = _analysis_unit(
+        representation_id=bundle.representation.id,
+        task_type=selection.task_type,
+        focus_nodes=nodes,
+        dependency_nodes=dependencies,
+        policy_id=selection.policy_id,
+    )
+    _persist_analysis_unit(unit, ledger_repository)
+    return unit
+
+
 def build_context_manifest(
     manifest_input: ContextManifestInput,
     ledger_repository: ContextPlanningLedger,
@@ -439,17 +485,24 @@ def _context_candidates(
         candidates[focus.id] = _candidate(
             focus, ContextCandidateRole.FOCUS, "focus_node", True, 1, (), tokenizer, bundle
         )
-        heading = _nearest_ancestor_heading(focus, bundle)
-        if heading is not None:
-            candidates[heading.id] = _candidate(
-                heading,
-                ContextCandidateRole.HEADING,
-                "ancestor_heading",
-                True,
-                3,
-                (focus.id, heading.id),
-                tokenizer,
-                bundle,
+        ancestor_headings = _ancestor_heading_chain(focus, bundle)
+        for index, heading in enumerate(ancestor_headings):
+            dependency_path = (
+                focus.id,
+                *tuple(node.id for node in reversed(ancestor_headings[index:])),
+            )
+            candidates.setdefault(
+                heading.id,
+                _candidate(
+                    heading,
+                    ContextCandidateRole.HEADING,
+                    "ancestor_heading",
+                    True,
+                    3,
+                    dependency_path,
+                    tokenizer,
+                    bundle,
+                ),
             )
     for dependency_id in unit.dependency_node_ids:
         dependency = nodes.get(dependency_id)
@@ -501,7 +554,6 @@ def _context_candidates(
             candidates.values(),
             key=lambda candidate: (
                 candidate.priority,
-                len(candidate.dependency_path),
                 nodes[candidate.node_id].order_index,
                 candidate.node_id,
             ),
@@ -566,6 +618,7 @@ def _definition_nodes_for_focus(
             node
             for node in bundle.nodes
             if node.order_index < focus_node.order_index
+            and node.node_type not in {"document", "furniture"}
             and f"({acronym})" in _node_text(node, bundle)
         )
         if matches:
@@ -573,16 +626,20 @@ def _definition_nodes_for_focus(
     return tuple(sorted({node.id: node for node in definitions}.values(), key=lambda node: node.id))
 
 
-def _nearest_ancestor_heading(
+def _ancestor_heading_chain(
     focus_node: DocumentNode,
     bundle: DocumentRepresentationBundle,
-) -> DocumentNode | None:
-    headings = tuple(
-        node
-        for node in bundle.nodes
-        if node.node_type == "heading" and node.order_index < focus_node.order_index
-    )
-    return max(headings, key=lambda node: (node.order_index, node.id), default=None)
+) -> tuple[DocumentNode, ...]:
+    """Return the authoritative heading ancestry from outermost to innermost."""
+    nodes_by_id = {node.id: node for node in bundle.nodes}
+    ancestors: list[DocumentNode] = []
+    parent_id = focus_node.parent_node_id
+    while parent_id is not None:
+        parent = nodes_by_id[parent_id]
+        if parent.node_type == "heading":
+            ancestors.append(parent)
+        parent_id = parent.parent_node_id
+    return tuple(reversed(ancestors))
 
 
 def _load_acceptable_bundle(

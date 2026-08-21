@@ -38,6 +38,7 @@ from kotekomi_devtools.lifecycle_evidence import (
 )
 from kotekomi_devtools.receipt_chain_status import run_receipt_chain_status_command
 from kotekomi_devtools.receipt_writer import ReceiptWriterError, write_receipt
+from kotekomi_devtools.retrieval_scenarios import RetrievalScenarioError, test_ingest, test_query
 from kotekomi_devtools.step_scripts import (
     StepScriptError,
     record_step_failure,
@@ -102,6 +103,9 @@ def main(argv: list[str] | None = None) -> int:
         return _render_error(error)
     except FeatureBranchPromotionError as error:
         return _render_error(error)
+    except RetrievalScenarioError as error:
+        print(json.dumps({"status": "failed", "failure": error.code, "message": str(error)}))
+        return 1
     except VerificationPlanError as error:
         return _render_error(error)
     except TaskLedgerError as error:
@@ -150,8 +154,26 @@ def _dispatch_command(arguments: argparse.Namespace) -> CliResponse | int:
         "record-branch-cleanup": _handle_lifecycle_evidence_command,
         "create-feature-branch": _handle_lifecycle_evidence_command,
         "reconcile-merged-feature-branch": _handle_feature_branch_reconciliation_command,
+        "test-ingest": _handle_retrieval_scenario_command,
+        "test-query": _handle_retrieval_scenario_command,
     }
     return handlers[arguments.command](arguments)
+
+
+def _handle_retrieval_scenario_command(arguments: argparse.Namespace) -> CliResponse:
+    if arguments.command == "test-ingest":
+        output = test_ingest(
+            arguments.scenario_id,
+            lock_fixture=arguments.lock_fixture,
+            scenario_state_root=arguments.state_root,
+        )
+    else:
+        output = test_query(
+            arguments.scenario_id,
+            suite_id=arguments.suite_id,
+            scenario_state_root=arguments.state_root,
+        )
+    return CliResponse(0, output)
 
 
 def _handle_task_command(arguments: argparse.Namespace) -> CliResponse:
@@ -644,6 +666,22 @@ def _build_parser() -> argparse.ArgumentParser:
     write_receipt.add_argument("--artifact", action="append", default=[], metavar="NAME=PATH")
     write_receipt.add_argument("--field", action="append", default=[], metavar="KEY=VALUE")
     write_receipt.add_argument("--force", action="store_true")
+    test_ingest_parser = subparsers.add_parser(
+        "test-ingest", help="Run the canonical deposited-source ingest scenario."
+    )
+    test_ingest_parser.add_argument("scenario_id")
+    test_ingest_parser.add_argument("--lock-fixture", action="store_true")
+    test_ingest_parser.add_argument(
+        "--state-root", type=Path, default=Path("~/.local/state/kotekomi")
+    )
+    test_query_parser = subparsers.add_parser(
+        "test-query", help="Run one canonical derived retrieval query suite."
+    )
+    test_query_parser.add_argument("scenario_id")
+    test_query_parser.add_argument("--suite", dest="suite_id", required=True)
+    test_query_parser.add_argument(
+        "--state-root", type=Path, default=Path("~/.local/state/kotekomi")
+    )
     tdd_bind = subparsers.add_parser(
         "tdd-bind", help="Create or read a canonical binding for one local TDD."
     )

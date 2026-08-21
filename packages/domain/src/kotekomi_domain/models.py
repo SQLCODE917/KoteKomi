@@ -2239,3 +2239,252 @@ class Briefing(DomainModel):
     provenance_activity_id: ProvenanceActivityId
     markdown_path: NonEmptyStr | None = None
     generated_at: datetime = Field(default_factory=utc_now)
+
+
+class RetrievalPlane(StrEnum):
+    """The authoritative universe a derived retrieval projection searches."""
+
+    DOCUMENT = "document"
+
+
+class RetrievalChannel(StrEnum):
+    """The derived search mechanism that produced an observation."""
+
+    EXACT = "exact"
+    LEXICAL = "lexical"
+
+
+class DocumentRetrievalUnit(DomainModel):
+    retrieval_unit_id: str
+    plane: RetrievalPlane = RetrievalPlane.DOCUMENT
+    source_snapshot_id: NonEmptyStr
+    representation_id: DocumentRepresentationId
+    node_ids: tuple[DocumentNodeId, ...]
+    source_order: int = Field(ge=0)
+    structural_role: NonEmptyStr
+    section_path: tuple[str, ...] = ()
+    source_page_numbers: tuple[int, ...] = ()
+    original_text_digest: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
+    unit_policy_id: NonEmptyStr = "document_node_unit_v1"
+    unit_fingerprint: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
+
+    @model_validator(mode="after")
+    def validate_single_node(self) -> Self:
+        if len(self.node_ids) != 1:
+            raise ValueError("DR-1 DocumentRetrievalUnit requires exactly one node.")
+        expected_fingerprint = document_retrieval_unit_fingerprint(
+            source_snapshot_id=self.source_snapshot_id,
+            representation_id=self.representation_id,
+            node_ids=self.node_ids,
+            source_order=self.source_order,
+            structural_role=self.structural_role,
+            section_path=self.section_path,
+            source_page_numbers=self.source_page_numbers,
+            original_text_digest=self.original_text_digest,
+            unit_policy_id=self.unit_policy_id,
+        )
+        if self.unit_fingerprint != expected_fingerprint:
+            raise ValueError("DocumentRetrievalUnit fingerprint must use canonical unit fields.")
+        if self.retrieval_unit_id != deterministic_document_retrieval_unit_id(expected_fingerprint):
+            raise ValueError("DocumentRetrievalUnit ID must derive from its fingerprint.")
+        return self
+
+
+class DocumentExactLexicalRepresentation(DomainModel):
+    retrieval_representation_id: str
+    retrieval_unit_id: NonEmptyStr
+    plane: RetrievalPlane = RetrievalPlane.DOCUMENT
+    source_snapshot_id: NonEmptyStr
+    source_fingerprint: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
+    projection_policy_id: NonEmptyStr = "document_exact_lexical_projection_v1"
+    projection_builder_version: NonEmptyStr
+    exact_fields: dict[str, str]
+    lexical_fields: dict[str, str]
+    field_digests: dict[str, str]
+    representation_fingerprint: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
+
+    @model_validator(mode="after")
+    def validate_identity(self) -> Self:
+        expected_digests = {
+            name: hashlib.sha256(value.encode("utf-8")).hexdigest()
+            for name, value in {**self.exact_fields, **self.lexical_fields}.items()
+        }
+        if self.field_digests != expected_digests:
+            raise ValueError("Retrieval representation field digests must match fields.")
+        expected_fingerprint = document_exact_lexical_representation_fingerprint(
+            retrieval_unit_id=self.retrieval_unit_id,
+            source_snapshot_id=self.source_snapshot_id,
+            source_fingerprint=self.source_fingerprint,
+            projection_policy_id=self.projection_policy_id,
+            projection_builder_version=self.projection_builder_version,
+            exact_fields=self.exact_fields,
+            lexical_fields=self.lexical_fields,
+            field_digests=self.field_digests,
+        )
+        if self.representation_fingerprint != expected_fingerprint:
+            raise ValueError("Retrieval representation fingerprint must use canonical fields.")
+        if self.retrieval_representation_id != deterministic_retrieval_representation_id(
+            expected_fingerprint
+        ):
+            raise ValueError("Retrieval representation ID must derive from its fingerprint.")
+        return self
+
+
+class RetrievalChannelObservation(DomainModel):
+    channel: RetrievalChannel
+    channel_rank: int = Field(ge=1)
+    raw_score: float | None = None
+    matched_field: str | None = None
+    matched_literal_digest: Annotated[str | None, Field(pattern=r"^[a-f0-9]{64}$")] = None
+
+
+class RetrievalHit(DomainModel):
+    retrieval_unit_id: NonEmptyStr
+    plane: RetrievalPlane = RetrievalPlane.DOCUMENT
+    authoritative_node_ids: tuple[DocumentNodeId, ...]
+    original_text_digest: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
+    index_manifest_id: NonEmptyStr
+    channel_observations: tuple[RetrievalChannelObservation, ...]
+    final_rank: int = Field(ge=1)
+    selected: bool
+    selection_reason: NonEmptyStr
+
+    @model_validator(mode="after")
+    def validate_hit(self) -> Self:
+        if not self.authoritative_node_ids:
+            raise ValueError("RetrievalHit requires authoritative node IDs.")
+        if not self.channel_observations:
+            raise ValueError("RetrievalHit requires at least one channel observation.")
+        if len({observation.channel for observation in self.channel_observations}) != len(
+            self.channel_observations
+        ):
+            raise ValueError("RetrievalHit channel observations must be unique by channel.")
+        return self
+
+
+class RetrievalQueryRecord(DomainModel):
+    """Inspectable derived provenance for one document retrieval operation."""
+
+    retrieval_query_id: NonEmptyStr
+    representation_id: DocumentRepresentationId
+    source_snapshot_id: NonEmptyStr
+    query_text: str
+    normalized_query_text: str
+    query_policy_id: NonEmptyStr
+    index_manifest_ids: tuple[NonEmptyStr, ...]
+    candidate_hits: tuple[RetrievalHit, ...] = ()
+    selected_node_ids: tuple[DocumentNodeId, ...] = ()
+    analysis_unit_id: NonEmptyStr | None = None
+    context_manifest_id: NonEmptyStr | None = None
+    failure_code: str | None = None
+    created_at: datetime = Field(default_factory=utc_now)
+
+    @model_validator(mode="after")
+    def validate_completion(self) -> Self:
+        has_context = self.context_manifest_id is not None
+        has_analysis_unit = self.analysis_unit_id is not None
+        if has_context != has_analysis_unit:
+            raise ValueError("A retrieval query context requires its AnalysisUnit identity.")
+        if self.failure_code is None and not self.index_manifest_ids:
+            raise ValueError("A successful retrieval query requires an index manifest.")
+        return self
+
+
+class RetrievalIndexManifest(DomainModel):
+    index_manifest_id: NonEmptyStr
+    plane: RetrievalPlane = RetrievalPlane.DOCUMENT
+    channels: tuple[RetrievalChannel, ...]
+    source_snapshot_id: NonEmptyStr
+    representation_id: DocumentRepresentationId
+    representation_digest: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
+    unit_policy_id: NonEmptyStr
+    projection_policy_id: NonEmptyStr
+    query_policy_compatibility: NonEmptyStr
+    adapter_identity: NonEmptyStr
+    adapter_configuration_digest: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
+    unit_count: int = Field(ge=0)
+    representation_count: int = Field(ge=0)
+    content_fingerprint: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
+    publication_status: NonEmptyStr
+    created_at: datetime = Field(default_factory=utc_now)
+    published_at: datetime | None = None
+
+    @model_validator(mode="after")
+    def validate_manifest(self) -> Self:
+        if self.channels != (RetrievalChannel.EXACT, RetrievalChannel.LEXICAL):
+            raise ValueError("DR-1 index manifests require exact and lexical channels in order.")
+        if self.representation_count != self.unit_count:
+            raise ValueError("DR-1 has one retrieval representation per unit.")
+        if self.publication_status == "complete" and self.published_at is None:
+            raise ValueError("A complete RetrievalIndexManifest requires published_at.")
+        if self.publication_status != "complete" and self.published_at is not None:
+            raise ValueError("Only a complete RetrievalIndexManifest may be published.")
+        return self
+
+
+def _retrieval_digest(value: object) -> str:
+    return hashlib.sha256(
+        json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+    ).hexdigest()
+
+
+def document_retrieval_unit_fingerprint(
+    *,
+    source_snapshot_id: str,
+    representation_id: str,
+    node_ids: tuple[str, ...],
+    source_order: int,
+    structural_role: str,
+    section_path: tuple[str, ...],
+    source_page_numbers: tuple[int, ...],
+    original_text_digest: str,
+    unit_policy_id: str,
+) -> str:
+    """Return the stable identity of one document retrieval unit."""
+    return _retrieval_digest(
+        {
+            "source_snapshot_id": source_snapshot_id,
+            "representation_id": representation_id,
+            "node_ids": node_ids,
+            "source_order": source_order,
+            "structural_role": structural_role,
+            "section_path": section_path,
+            "source_page_numbers": source_page_numbers,
+            "original_text_digest": original_text_digest,
+            "unit_policy_id": unit_policy_id,
+        }
+    )
+
+
+def deterministic_document_retrieval_unit_id(fingerprint: str) -> str:
+    return f"dru_{fingerprint[:24]}"
+
+
+def document_exact_lexical_representation_fingerprint(
+    *,
+    retrieval_unit_id: str,
+    source_snapshot_id: str,
+    source_fingerprint: str,
+    projection_policy_id: str,
+    projection_builder_version: str,
+    exact_fields: dict[str, str],
+    lexical_fields: dict[str, str],
+    field_digests: dict[str, str],
+) -> str:
+    """Return the stable identity of one exact-plus-lexical projection."""
+    return _retrieval_digest(
+        {
+            "retrieval_unit_id": retrieval_unit_id,
+            "source_snapshot_id": source_snapshot_id,
+            "source_fingerprint": source_fingerprint,
+            "projection_policy_id": projection_policy_id,
+            "projection_builder_version": projection_builder_version,
+            "exact_fields": exact_fields,
+            "lexical_fields": lexical_fields,
+            "field_digests": field_digests,
+        }
+    )
+
+
+def deterministic_retrieval_representation_id(fingerprint: str) -> str:
+    return f"drp_{fingerprint[:24]}"

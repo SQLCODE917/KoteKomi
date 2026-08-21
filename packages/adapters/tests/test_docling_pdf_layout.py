@@ -1,3 +1,5 @@
+# pyright: reportPrivateUsage=false
+
 import hashlib
 import json
 from datetime import UTC, datetime
@@ -10,6 +12,12 @@ from kotekomi_adapters import (
     LocalArchiveStore,
     SQLiteLedgerInitializer,
     sqlite_ledger_transaction,
+)
+from kotekomi_adapters.docling_pdf_parser import (
+    _canonical_layout_records,
+    _has_semantic_heading_text,
+    _LayoutItem,
+    _LayoutRegion,
 )
 from kotekomi_application import (
     BuildIdentity,
@@ -84,6 +92,95 @@ def _ingest_input(document_id: str, raw_blob_id: str) -> PdfIngestInput:
 
 def _node_text(node: DocumentNode, views_by_id: dict[str, str]) -> str:
     return views_by_id[node.text_view_id][node.start_char : node.end_char]
+
+
+def test_punctuation_only_heading_text_is_not_semantic() -> None:
+    assert not _has_semantic_heading_text("###")
+    assert _has_semantic_heading_text("1. Background")
+
+
+def test_canonical_layout_preserves_heading_ancestry_across_page_boundaries() -> None:
+    page_one_region = _LayoutRegion(1, 612.0, 792.0, 54.0, 72.0, 300.0, 90.0, 0)
+    page_two_region = _LayoutRegion(2, 612.0, 792.0, 54.0, 72.0, 500.0, 102.0, 0)
+    _, _, nodes, _, _ = _canonical_layout_records(
+        representation_id="rep_cross_page_hierarchy",
+        representation_key="cross_page_hierarchy",
+        logical_view_id="tvw_cross_page_logical",
+        display_view_id="tvw_cross_page_display",
+        layout_items=(
+            _LayoutItem("Background", "heading", (page_one_region,), heading_level=1),
+            _LayoutItem(
+                "Artificial intelligence in the U.S. military",
+                "heading",
+                (page_one_region,),
+                heading_level=2,
+            ),
+            _LayoutItem(
+                "Directive 3000.09 governs responsible military AI use.",
+                "paragraph",
+                (page_two_region,),
+            ),
+        ),
+    )
+
+    background, military_ai, directive = nodes
+
+    assert military_ai.parent_node_id == background.id
+    assert directive.parent_node_id == military_ai.id
+    assert directive.section_path == (
+        "Background",
+        "Artificial intelligence in the U.S. military",
+    )
+    assert directive.structural_path == (
+        "document",
+        "heading:0001",
+        "heading:0002",
+        "paragraph:0003",
+    )
+
+
+def test_canonical_layout_uses_docling_heading_parent_over_visual_reordering() -> None:
+    region = _LayoutRegion(1, 612.0, 792.0, 54.0, 72.0, 500.0, 102.0, 0)
+    _, _, nodes, _, _ = _canonical_layout_records(
+        representation_id="rep_docling_parent",
+        representation_key="docling_parent",
+        logical_view_id="tvw_docling_parent_logical",
+        display_view_id="tvw_docling_parent_display",
+        layout_items=(
+            _LayoutItem(
+                "Document title",
+                "heading",
+                (region,),
+                heading_level=1,
+                source_item_key="title",
+            ),
+            _LayoutItem(
+                "Appeal case",
+                "heading",
+                (region,),
+                heading_level=2,
+                source_item_key="appeal-case",
+            ),
+            _LayoutItem(
+                "References",
+                "heading",
+                (region,),
+                heading_level=1,
+                source_item_key="references",
+            ),
+            _LayoutItem(
+                "26-1049",
+                "paragraph",
+                (region,),
+                source_heading_parent_key="appeal-case",
+            ),
+        ),
+    )
+
+    _, appeal_case, _, docket = nodes
+
+    assert docket.parent_node_id == appeal_case.id
+    assert docket.section_path == ("Document title", "Appeal case")
 
 
 def test_public_pdf_layout_is_rotation_safe_ordered_hierarchical_and_restart_stable(

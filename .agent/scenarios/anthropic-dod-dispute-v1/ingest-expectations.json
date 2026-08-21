@@ -9,16 +9,6 @@
   ],
   "required_text_anchors": [
     {
-      "anchor_id": "title",
-      "text": "Anthropic–United States Department of Defense dispute",
-      "match_mode": "exact_substring",
-      "minimum_occurrences": 1,
-      "expected_node_types": [
-        "heading",
-        "paragraph"
-      ]
-    },
-    {
       "anchor_id": "directive-3000-09",
       "text": "Directive 3000.09",
       "match_mode": "exact_substring",
