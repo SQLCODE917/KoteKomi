@@ -1,5 +1,5 @@
 schema_version = 2
-task_id = "tdd-superseded-task-closure-b5ff068b973e"
+task_id = "superseded-task-closure-b5ff068b973e"
 title = "Superseded Task Closure"
 status = "ready_for_terra_high"
 series_id = "tdd-harness-feature-branch"
