@@ -1,0 +1,24 @@
+{
+  "schema_version": "retrieval-query-suite-v3",
+  "suite_id": "dr-3-v1",
+  "scenario_id": "anthropic-dod-dispute-v1",
+  "description": "Cumulative DR-3 hybrid document retrieval through ContextPlanner.",
+  "cumulative": true,
+  "execution_order": ["test-ingest", "test-query"],
+  "query_pack_paths": [
+    ".agent/scenarios/anthropic-dod-dispute-v1/queries/base-v1.jsonl",
+    ".agent/scenarios/anthropic-dod-dispute-v1/queries/dr-1-document-exact-lexical-v1.jsonl",
+    ".agent/scenarios/anthropic-dod-dispute-v1/queries/dr-2-document-semantic-v1.jsonl",
+    ".agent/scenarios/anthropic-dod-dispute-v1/queries/dr-3-document-hybrid-v1.jsonl"
+  ],
+  "required_planes": ["document"],
+  "required_channels": ["exact", "lexical", "semantic"],
+  "policy_ids": {
+    "unit_policy_id": "document_node_unit_v1",
+    "projection_policy_id": "document_semantic_projection_v1",
+    "query_policy_id": "document_exact_lexical_semantic_rrf60_v1",
+    "context_profile_id": "retrieval-validation-v1",
+    "embedding_profile_id": "semantic-validation-v1"
+  },
+  "thresholds": {"required_case_pass_rate": 1.0, "require_rebuild_equivalence": true}
+}
