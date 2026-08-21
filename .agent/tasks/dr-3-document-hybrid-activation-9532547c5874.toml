@@ -1,0 +1,103 @@
+schema_version = 2
+task_id = "dr-3-document-hybrid-activation-9532547c5874"
+title = "DR-3 Document Hybrid Activation"
+status = "ready_for_terra_high"
+series_id = "derived-retrieval"
+task_class = "orchestration"
+model_profile = "terra-high-v1"
+baseline_revision = "c0d23e1b33fb8424f7871a2aa93e99ed847bdcc9"
+tdd_path = "docs/2026-08-21-document-hybrid-activation.md"
+tdd_sha256 = "9532547c5874fd7d13f51e54070d3aefada7c18f2e98603dfd4a0c15f584108e"
+goal = "Deliver the mandatory document hybrid query path with exact precedence and inspectable rank fusion."
+depends_on = []
+allowed_paths = [
+  ".agent/scenarios/anthropic-dod-dispute-v1/queries/dr-3-document-hybrid-v1.jsonl",
+  ".agent/scenarios/anthropic-dod-dispute-v1/suites/dr-3-v1.json",
+  ".agent/schemas/retrieval-query-case-v3.schema.json",
+  ".agent/schemas/retrieval-query-suite-v3.schema.json",
+  ".agent/tasks/dr-3-document-hybrid-activation-9532547c5874.toml",
+  "docs/2026-08-21-document-hybrid-activation.md",
+  "docs/CHECK_PLAN.md",
+  "packages/adapters/src/kotekomi_adapters/sqlite_document_retrieval.py",
+  "packages/adapters/tests/test_sqlite_document_retrieval.py",
+  "packages/application/src/kotekomi_application/__init__.py",
+  "packages/application/src/kotekomi_application/document_retrieval.py",
+  "packages/application/tests/test_document_retrieval.py",
+  "packages/devtools/src/kotekomi_devtools/retrieval_scenarios.py",
+  "packages/devtools/tests/unit/test_retrieval_scenarios.py",
+  "packages/domain/src/kotekomi_domain/__init__.py",
+  "packages/domain/src/kotekomi_domain/models.py",
+  "packages/domain/tests/test_document_retrieval.py",
+  "packages/pipelines/src/kotekomi_pipelines/cli.py",
+  "packages/pipelines/src/kotekomi_pipelines/config.py",
+  "packages/pipelines/tests/test_cli.py",
+  "packages/pipelines/tests/test_document_retrieval.py"
+]
+reference_paths = [
+  "docs/2026-07-11-derived-document-retrieval.md",
+  "docs/2026-08-20-document-retrieval-mvp.md",
+  "docs/2026-08-21-context-enriched-document-semantic-retrieval.md",
+  "packages/application/src/kotekomi_application/context_planning.py",
+  "packages/application/src/kotekomi_application/document_retrieval.py",
+  "packages/adapters/src/kotekomi_adapters/sqlite_document_retrieval.py",
+  "packages/devtools/src/kotekomi_devtools/retrieval_scenarios.py"
+]
+stop_conditions = [
+  "the implementation changes a closed DR-1 or DR-2 schema, query pack, or query suite",
+  "the implementation adds a reranker, query generation, Ledger retrieval, graph retrieval, or answer generation",
+  "the implementation makes a raw retrieval score evidence confidence",
+  "the implementation sends derived retrieval material to ContextPlanner",
+  "the implementation silently falls back when the normal semantic profile or manifest is unavailable"
+]
+
+[readiness]
+authority = "The DR-3 Document Hybrid Activation TDD defines this task."
+contract_family = "derived-retrieval"
+dominant_outcome = "One normal document query returns authoritative nodes through exact precedence or deterministic hybrid fusion."
+failure_policy = "Missing profiles and missing, stale, incomplete, corrupt, or incompatible manifests return typed failures."
+legacy_disposition = "DR-1 and DR-2 remain available as diagnostic channel commands while the normal path becomes hybrid."
+negative_proof = "DR-3 creates no canonical retrieval state, reranker, query generation, new retrieval plane, or prompt construction path."
+public_entry_point = "kotekomi retrieval build-document and kotekomi retrieval query without --channel"
+scope_policy = "Document-plane hybrid activation, provenance, canonical scenario contracts, and focused tests only."
+side_effect_boundary = "Disposable exact, lexical, and semantic SQLite rows, query records, ContextManifests, and Harness receipts."
+unresolved_decisions = []
+
+[budget]
+maximum_production_files = 10
+maximum_test_files = 7
+maximum_production_diff_lines = 5000
+
+[[protected_artifacts]]
+kind = "leaf-tdd"
+path = "docs/2026-08-21-document-hybrid-activation.md"
+sha256 = "9532547c5874fd7d13f51e54070d3aefada7c18f2e98603dfd4a0c15f584108e"
+
+[[acceptance]]
+id = "document-hybrid-domain-application"
+argv = ["uv", "run", "pytest", "packages/domain/tests/test_document_retrieval.py", "packages/application/tests/test_document_retrieval.py"]
+timeout_seconds = 240
+profile = "portable-local"
+
+[[acceptance]]
+id = "document-hybrid-adapter"
+argv = ["uv", "run", "pytest", "packages/adapters/tests/test_sqlite_document_retrieval.py"]
+timeout_seconds = 240
+profile = "portable-local"
+
+[[acceptance]]
+id = "document-hybrid-pipeline-scenario"
+argv = ["uv", "run", "pytest", "packages/pipelines/tests/test_cli.py", "packages/pipelines/tests/test_document_retrieval.py", "packages/devtools/tests/unit/test_retrieval_scenarios.py"]
+timeout_seconds = 240
+profile = "portable-local"
+
+[[acceptance]]
+id = "repository-static-checks"
+argv = ["uv", "run", "ruff", "check"]
+timeout_seconds = 120
+profile = "portable-local"
+
+[[acceptance]]
+id = "repository-type-checks"
+argv = ["uv", "run", "pyright"]
+timeout_seconds = 240
+profile = "portable-local"
