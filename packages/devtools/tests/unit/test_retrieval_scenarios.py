@@ -126,3 +126,20 @@ def test_query_case_requires_the_selected_node_authoritative_section_path() -> N
 
     with pytest.raises(retrieval_scenarios.RetrievalScenarioError, match="Missing expected anchor"):
         retrieval_scenarios._validate_query_case(case, query)
+
+
+def test_dr3_cumulative_scenario_assets_validate() -> None:
+    suite = retrieval_scenarios._load_validated(
+        retrieval_scenarios.REPOSITORY_ROOT
+        / ".agent/scenarios/anthropic-dod-dispute-v1/suites/dr-3-v1.json",
+        "retrieval-query-suite-v3.schema.json",
+        "query_suite_invalid",
+    )
+
+    cases = retrieval_scenarios._load_cases(suite)
+
+    dr3_cases = [case for case in cases if case["schema_version"] == "retrieval-query-case-v3"]
+    assert [case["query_id"] for case in dr3_cases] == [
+        "dr3-unique-directive",
+        "dr3-nonunique-fascsa",
+    ]

@@ -44,6 +44,7 @@ class PipelineConfig:
     archive_path: Path
     model_execution: ModelExecutionConfig
     embedding_profiles: dict[str, EmbeddingProfile]
+    document_retrieval_embedding_profile_id: str | None
 
 
 @dataclass(frozen=True)
@@ -144,11 +145,15 @@ def load_config(
         max_output_tokens=model_max_output_tokens_override,
     )
 
+    embedding_profiles = _embedding_profiles(raw_config, config_base)
     return PipelineConfig(
         ledger_path=ledger_path.resolve(),
         archive_path=archive_path.resolve(),
         model_execution=model_runtime,
-        embedding_profiles=_embedding_profiles(raw_config, config_base),
+        embedding_profiles=embedding_profiles,
+        document_retrieval_embedding_profile_id=_document_retrieval_embedding_profile_id(
+            raw_config, embedding_profiles
+        ),
     )
 
 
@@ -354,6 +359,26 @@ def _embedding_profiles(
             timeout_seconds=_positive_float(fields, "timeout_seconds"),
         )
     return profiles
+
+
+def _document_retrieval_embedding_profile_id(
+    raw_config: dict[str, object], profiles: dict[str, EmbeddingProfile]
+) -> str | None:
+    value = raw_config.get("document_retrieval")
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise TypeError("Config document_retrieval must be a table.")
+    fields = cast(dict[object, object], value)
+    if set(fields) != {"default_embedding_profile"}:
+        raise ValueError("Config document_retrieval requires only default_embedding_profile.")
+    profile_id = _string_value(
+        {key: item for key, item in fields.items() if isinstance(key, str)},
+        "default_embedding_profile",
+    )
+    if profile_id not in profiles:
+        raise ValueError("Config document_retrieval default_embedding_profile is unknown.")
+    return profile_id
 
 
 def _validated_embedding_profile_table(
