@@ -1,5 +1,5 @@
 schema_version = 2
-task_id = "verification-plan-receipt-scope-474179deda5f"
+task_id = "verification-plan-receipt-scope-b090f28c6569"
 title = "Verification Plan Receipt Scope"
 status = "ready_for_terra_high"
 series_id = "agent-harness"
@@ -7,7 +7,7 @@ task_class = "repository-tooling"
 model_profile = "terra-high-v1"
 baseline_revision = "0b5b2233a835355a55022eef01a62edecb67f0c2"
 tdd_path = "docs/2026-08-21-verification-plan-receipt-scope.md"
-tdd_sha256 = "474179deda5f462f08e168a38e75011825d337723094e5a10bbba539ee6fe0ae"
+tdd_sha256 = "b090f28c65691aca66a21d7af4a973a507d4afdaf084e3962229529a1938ca2f"
 goal = "Allow verification planning to exclude only a trusted candidate receipt-only commit."
 depends_on = []
 allowed_paths = [
@@ -47,7 +47,7 @@ maximum_production_diff_lines = 350
 [[protected_artifacts]]
 kind = "leaf-tdd"
 path = "docs/2026-08-21-verification-plan-receipt-scope.md"
-sha256 = "474179deda5f462f08e168a38e75011825d337723094e5a10bbba539ee6fe0ae"
+sha256 = "b090f28c65691aca66a21d7af4a973a507d4afdaf084e3962229529a1938ca2f"
 
 [[acceptance]]
 id = "verification-plan-receipt-scope-contract"

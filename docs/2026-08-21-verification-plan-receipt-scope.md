@@ -1,4 +1,4 @@
-# TDD Verification Plan Receipt Scope
+# Verification Plan Receipt Scope
 
 ## Context & Problem
 
