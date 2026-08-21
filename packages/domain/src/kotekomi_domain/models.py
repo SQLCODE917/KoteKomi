@@ -2252,6 +2252,7 @@ class RetrievalChannel(StrEnum):
 
     EXACT = "exact"
     LEXICAL = "lexical"
+    SEMANTIC = "semantic"
 
 
 class DocumentRetrievalUnit(DomainModel):
@@ -2330,6 +2331,54 @@ class DocumentExactLexicalRepresentation(DomainModel):
         return self
 
 
+class EmbeddingModelIdentity(DomainModel):
+    """Pinned identity returned by an embedding Adapter for derived state."""
+
+    adapter_id: NonEmptyStr
+    model_id: NonEmptyStr
+    model_digest: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
+    vector_dimension: int = Field(gt=0)
+    configuration_digest: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
+
+
+class DocumentSemanticRepresentation(DomainModel):
+    """A reproducible semantic projection recipe, without text or vector payloads."""
+
+    retrieval_representation_id: str
+    retrieval_unit_id: NonEmptyStr
+    plane: RetrievalPlane = RetrievalPlane.DOCUMENT
+    source_snapshot_id: NonEmptyStr
+    source_fingerprint: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
+    projection_policy_id: NonEmptyStr = "document_semantic_projection_v1"
+    projection_builder_version: NonEmptyStr
+    renderer_policy_id: NonEmptyStr
+    embedding_input_digest: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
+    representation_fingerprint: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
+
+    @model_validator(mode="after")
+    def validate_identity(self) -> Self:
+        expected_fingerprint = document_semantic_representation_fingerprint(
+            retrieval_unit_id=self.retrieval_unit_id,
+            source_snapshot_id=self.source_snapshot_id,
+            source_fingerprint=self.source_fingerprint,
+            projection_policy_id=self.projection_policy_id,
+            projection_builder_version=self.projection_builder_version,
+            renderer_policy_id=self.renderer_policy_id,
+            embedding_input_digest=self.embedding_input_digest,
+        )
+        if self.representation_fingerprint != expected_fingerprint:
+            raise ValueError(
+                "Semantic retrieval representation fingerprint must use canonical fields."
+            )
+        if self.retrieval_representation_id != deterministic_retrieval_representation_id(
+            expected_fingerprint
+        ):
+            raise ValueError(
+                "Semantic retrieval representation ID must derive from its fingerprint."
+            )
+        return self
+
+
 class RetrievalChannelObservation(DomainModel):
     channel: RetrievalChannel
     channel_rank: int = Field(ge=1)
@@ -2372,6 +2421,8 @@ class RetrievalQueryRecord(DomainModel):
     normalized_query_text: str
     query_policy_id: NonEmptyStr
     index_manifest_ids: tuple[NonEmptyStr, ...]
+    embedding_profile_id: NonEmptyStr | None = None
+    embedding_model_identity: EmbeddingModelIdentity | None = None
     candidate_hits: tuple[RetrievalHit, ...] = ()
     selected_node_ids: tuple[DocumentNodeId, ...] = ()
     analysis_unit_id: NonEmptyStr | None = None
@@ -2387,6 +2438,8 @@ class RetrievalQueryRecord(DomainModel):
             raise ValueError("A retrieval query context requires its AnalysisUnit identity.")
         if self.failure_code is None and not self.index_manifest_ids:
             raise ValueError("A successful retrieval query requires an index manifest.")
+        if (self.embedding_profile_id is None) != (self.embedding_model_identity is None):
+            raise ValueError("Embedding query provenance requires both profile and model identity.")
         return self
 
 
@@ -2402,6 +2455,8 @@ class RetrievalIndexManifest(DomainModel):
     query_policy_compatibility: NonEmptyStr
     adapter_identity: NonEmptyStr
     adapter_configuration_digest: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
+    embedding_profile_id: NonEmptyStr | None = None
+    embedding_model_identity: EmbeddingModelIdentity | None = None
     unit_count: int = Field(ge=0)
     representation_count: int = Field(ge=0)
     content_fingerprint: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
@@ -2411,8 +2466,19 @@ class RetrievalIndexManifest(DomainModel):
 
     @model_validator(mode="after")
     def validate_manifest(self) -> Self:
-        if self.channels != (RetrievalChannel.EXACT, RetrievalChannel.LEXICAL):
-            raise ValueError("DR-1 index manifests require exact and lexical channels in order.")
+        exact_lexical = (RetrievalChannel.EXACT, RetrievalChannel.LEXICAL)
+        semantic = (RetrievalChannel.SEMANTIC,)
+        if self.channels not in {exact_lexical, semantic}:
+            raise ValueError("Document index manifests require exact/lexical or semantic channels.")
+        has_embedding = (
+            self.embedding_model_identity is not None and self.embedding_profile_id is not None
+        )
+        if self.channels == semantic and not has_embedding:
+            raise ValueError("A semantic index manifest requires an embedding profile and model.")
+        if self.channels != semantic and (
+            self.embedding_model_identity is not None or self.embedding_profile_id is not None
+        ):
+            raise ValueError("Only a semantic index manifest may carry embedding provenance.")
         if self.representation_count != self.unit_count:
             raise ValueError("DR-1 has one retrieval representation per unit.")
         if self.publication_status == "complete" and self.published_at is None:
@@ -2482,6 +2548,30 @@ def document_exact_lexical_representation_fingerprint(
             "exact_fields": exact_fields,
             "lexical_fields": lexical_fields,
             "field_digests": field_digests,
+        }
+    )
+
+
+def document_semantic_representation_fingerprint(
+    *,
+    retrieval_unit_id: str,
+    source_snapshot_id: str,
+    source_fingerprint: str,
+    projection_policy_id: str,
+    projection_builder_version: str,
+    renderer_policy_id: str,
+    embedding_input_digest: str,
+) -> str:
+    """Return the stable identity of one semantic projection recipe."""
+    return _retrieval_digest(
+        {
+            "retrieval_unit_id": retrieval_unit_id,
+            "source_snapshot_id": source_snapshot_id,
+            "source_fingerprint": source_fingerprint,
+            "projection_policy_id": projection_policy_id,
+            "projection_builder_version": projection_builder_version,
+            "renderer_policy_id": renderer_policy_id,
+            "embedding_input_digest": embedding_input_digest,
         }
     )
 

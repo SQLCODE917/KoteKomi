@@ -7,13 +7,14 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
 
-from kotekomi_application import BuildIdentity
+from kotekomi_application import BuildIdentity, EmbeddingProfile
 
 DEFAULT_CONFIG_PATH = Path("kotekomi.toml")
 DEFAULT_LEDGER_PATH = Path("data/kotekomi.db")
 DEFAULT_ARCHIVE_PATH = Path("data/archive")
 DEFAULT_RUNTIME_PROFILE = "macbook"
 MODEL_RUNTIME_ADAPTERS = ("llama_server", "ollama", "fixture")
+EMBEDDING_ADAPTERS = ("lm_studio", "llama_server", "ollama")
 MODEL_RUNTIME_CONFIG_KEYS = frozenset(
     {
         "adapter",
@@ -42,6 +43,7 @@ class PipelineConfig:
     ledger_path: Path
     archive_path: Path
     model_execution: ModelExecutionConfig
+    embedding_profiles: dict[str, EmbeddingProfile]
 
 
 @dataclass(frozen=True)
@@ -146,6 +148,7 @@ def load_config(
         ledger_path=ledger_path.resolve(),
         archive_path=archive_path.resolve(),
         model_execution=model_runtime,
+        embedding_profiles=_embedding_profiles(raw_config, config_base),
     )
 
 
@@ -321,3 +324,71 @@ def _path_from_config(
     else:
         raise TypeError(f"Config key {key} must be a string path.")
     return path if path.is_absolute() else config_base / path
+
+
+def _embedding_profiles(
+    raw_config: dict[str, object], config_base: Path
+) -> dict[str, EmbeddingProfile]:
+    value = raw_config.get("embedding_profiles", {})
+    if not isinstance(value, dict):
+        raise TypeError("Config embedding_profiles must be a table.")
+    profiles: dict[str, EmbeddingProfile] = {}
+    for profile_id, raw_profile in cast(dict[object, object], value).items():
+        if not isinstance(profile_id, str) or not profile_id.strip():
+            raise TypeError("Embedding profile IDs must be non-empty strings.")
+        if not isinstance(raw_profile, dict):
+            raise TypeError(f"Embedding profile {profile_id} must be a table.")
+        fields = _validated_embedding_profile_table(
+            cast(dict[object, object], raw_profile), profile_id
+        )
+        path = Path(_string_value(fields, "model_path"))
+        profiles[profile_id] = EmbeddingProfile(
+            profile_id=profile_id,
+            adapter_id=_string_value(fields, "adapter"),
+            endpoint=_string_value(fields, "endpoint"),
+            model_id=_string_value(fields, "model"),
+            model_path=str(path if path.is_absolute() else config_base / path),
+            model_digest=_sha256_value(fields, "model_digest"),
+            expected_vector_dimension=_positive_int(fields, "vector_dimension"),
+            maximum_rendered_characters=_positive_int(fields, "maximum_rendered_characters"),
+            timeout_seconds=_positive_float(fields, "timeout_seconds"),
+        )
+    return profiles
+
+
+def _validated_embedding_profile_table(
+    raw_profile: dict[object, object], profile_id: str
+) -> dict[str, object]:
+    fields: dict[str, object] = {}
+    for key, value in raw_profile.items():
+        if not isinstance(key, str):
+            raise TypeError(f"Embedding profile {profile_id} keys must be strings.")
+        fields[key] = value
+    required = {
+        "adapter",
+        "endpoint",
+        "model",
+        "model_path",
+        "model_digest",
+        "vector_dimension",
+        "maximum_rendered_characters",
+        "timeout_seconds",
+    }
+    unknown = sorted(set(fields) - required)
+    missing = sorted(required - set(fields))
+    if unknown:
+        raise ValueError(f"Unknown embedding profile {profile_id} keys: {', '.join(unknown)}.")
+    if missing:
+        raise ValueError(f"Embedding profile {profile_id} is missing: {', '.join(missing)}.")
+    adapter = _string_value(fields, "adapter")
+    if adapter not in EMBEDDING_ADAPTERS:
+        allowed = ", ".join(EMBEDDING_ADAPTERS)
+        raise ValueError(f"Embedding profile adapter must be one of: {allowed}.")
+    return fields
+
+
+def _sha256_value(values: dict[str, object], key: str) -> str:
+    value = _string_value(values, key)
+    if len(value) != 64 or any(character not in "0123456789abcdef" for character in value):
+        raise ValueError(f"Embedding profile {key} must be a lowercase SHA-256 digest.")
+    return value

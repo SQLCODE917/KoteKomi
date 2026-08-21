@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -27,18 +28,14 @@ class RetrievalScenarioError(ValueError):
         self.code = code
 
 
-def test_ingest(
-    scenario_id: str, *, lock_fixture: bool, scenario_state_root: Path
-) -> JsonObject:
+def test_ingest(scenario_id: str, *, lock_fixture: bool, scenario_state_root: Path) -> JsonObject:
     scenario_path = _scenario_path(scenario_id)
     scenario = _load_validated(
         scenario_path, "retrieval-scenario-v1.schema.json", "scenario_schema_invalid"
     )
     fixture = _fixture_path(scenario)
     if not fixture.is_file():
-        raise RetrievalScenarioError(
-            "fixture_missing", f"Canonical fixture is missing: {fixture}"
-        )
+        raise RetrievalScenarioError("fixture_missing", f"Canonical fixture is missing: {fixture}")
     fixture_digest = _sha256_file(fixture)
     page_count = _pdf_page_count(fixture)
     lock = scenario["fixture"]["fixture_lock"]
@@ -124,6 +121,7 @@ def test_ingest(
         "page_count": page_count,
         "ledger_path": str(ledger_path),
         "archive_path": str(archive_path),
+        "config_path": str(config_path),
         "representation_id": representation_id,
         "representation_digest": build["content_fingerprint"],
         "source_id": first["source_id"],
@@ -131,9 +129,7 @@ def test_ingest(
         "idempotent_reingest": True,
     }
     result_path = scenario_root / "ingest-result.json"
-    result_path.write_text(
-        json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8"
-    )
+    result_path.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     receipt = write_receipt(
         task_id=scenario_id,
         record_kind="canonical_ingest",
@@ -149,7 +145,13 @@ def test_ingest(
     return {**result, **receipt.as_json()}
 
 
-def test_query(scenario_id: str, *, suite_id: str, scenario_state_root: Path) -> JsonObject:
+def test_query(
+    scenario_id: str,
+    *,
+    suite_id: str,
+    scenario_state_root: Path,
+    embedding_profile_id: str | None = None,
+) -> JsonObject:
     scenario_path = _scenario_path(scenario_id)
     scenario = _load_validated(
         scenario_path, "retrieval-scenario-v1.schema.json", "scenario_schema_invalid"
@@ -161,9 +163,7 @@ def test_query(scenario_id: str, *, suite_id: str, scenario_state_root: Path) ->
         )
     fixture = _fixture_path(scenario)
     if not fixture.is_file():
-        raise RetrievalScenarioError(
-            "fixture_missing", f"Canonical fixture is missing: {fixture}"
-        )
+        raise RetrievalScenarioError("fixture_missing", f"Canonical fixture is missing: {fixture}")
     if _sha256_file(fixture) != lock["sha256"]:
         raise RetrievalScenarioError(
             "fixture_digest_mismatch", "Fixture bytes do not match the locked scenario."
@@ -176,15 +176,31 @@ def test_query(scenario_id: str, *, suite_id: str, scenario_state_root: Path) ->
         )
     ingest = _read_object(ingest_path)
     suite_path = REPOSITORY_ROOT / scenario["paths"]["suite_directory"] / f"{suite_id}.json"
-    suite = _load_validated(
-        suite_path, "retrieval-query-suite-v1.schema.json", "query_suite_invalid"
-    )
+    suite_value = _read_object(suite_path)
+    suite_schema = {
+        "retrieval-query-suite-v1": "retrieval-query-suite-v1.schema.json",
+        "retrieval-query-suite-v2": "retrieval-query-suite-v2.schema.json",
+    }.get(str(suite_value.get("schema_version")))
+    if suite_schema is None:
+        raise RetrievalScenarioError("query_suite_invalid", "Unsupported query suite schema.")
+    suite = _load_validated(suite_path, suite_schema, "query_suite_invalid")
     if suite["scenario_id"] != scenario_id:
         raise RetrievalScenarioError(
             "query_suite_invalid", "Query suite belongs to another scenario."
         )
     ledger_path = Path(_required_str(ingest, "ledger_path"))
     representation_id = _required_str(ingest, "representation_id")
+    config_path = Path(_required_str(ingest, "config_path"))
+    semantic_profile = suite["policy_ids"].get("embedding_profile_id")
+    if semantic_profile is not None:
+        if embedding_profile_id != semantic_profile:
+            raise RetrievalScenarioError(
+                "semantic_profile_unavailable",
+                "The canonical semantic suite requires its pinned embedding profile.",
+            )
+        _write_semantic_profile(
+            config_path, ledger_path, Path(_required_str(ingest, "archive_path"))
+        )
     build = _product_json(
         "retrieval",
         "build-document",
@@ -197,9 +213,36 @@ def test_query(scenario_id: str, *, suite_id: str, scenario_state_root: Path) ->
     )
     if build.get("status") != "complete":
         raise RetrievalScenarioError("canonical_query_failed", "Public retrieval build failed.")
+    semantic_build: JsonObject | None = None
+    if semantic_profile is not None:
+        semantic_build = _product_json(
+            "--config",
+            str(config_path),
+            "retrieval",
+            "build-document",
+            "--representation-id",
+            representation_id,
+            "--ledger-path",
+            str(ledger_path),
+            "--channel",
+            "semantic",
+            "--embedding-profile",
+            str(semantic_profile),
+            "--format",
+            "json",
+        )
+        if semantic_build.get("status") != "complete":
+            raise RetrievalScenarioError(
+                "canonical_query_failed", "Public semantic retrieval build failed."
+            )
     cases = _load_cases(suite)
     outcomes, baseline_observations = _run_query_cases(
-        cases, representation_id, ledger_path, suite["policy_ids"]["context_profile_id"]
+        cases,
+        representation_id,
+        ledger_path,
+        suite["policy_ids"]["context_profile_id"],
+        config_path=config_path,
+        embedding_profile_id=embedding_profile_id,
     )
     rebuilt = _product_json(
         "retrieval",
@@ -212,15 +255,43 @@ def test_query(scenario_id: str, *, suite_id: str, scenario_state_root: Path) ->
         "json",
         "--rebuild",
     )
-    if (
-        rebuilt.get("status") != "complete"
-        or rebuilt.get("content_fingerprint") != build.get("content_fingerprint")
+    if rebuilt.get("status") != "complete" or rebuilt.get("content_fingerprint") != build.get(
+        "content_fingerprint"
     ):
         raise RetrievalScenarioError(
             "canonical_query_failed", "Derived index did not rebuild equivalently."
         )
+    if semantic_build is not None:
+        rebuilt_semantic = _product_json(
+            "--config",
+            str(config_path),
+            "retrieval",
+            "build-document",
+            "--representation-id",
+            representation_id,
+            "--ledger-path",
+            str(ledger_path),
+            "--channel",
+            "semantic",
+            "--embedding-profile",
+            str(semantic_profile),
+            "--rebuild",
+            "--format",
+            "json",
+        )
+        if rebuilt_semantic.get("status") != "complete" or rebuilt_semantic.get(
+            "content_fingerprint"
+        ) != semantic_build.get("content_fingerprint"):
+            raise RetrievalScenarioError(
+                "canonical_query_failed", "Semantic derived index did not rebuild equivalently."
+            )
     _, rebuilt_observations = _run_query_cases(
-        cases, representation_id, ledger_path, suite["policy_ids"]["context_profile_id"]
+        cases,
+        representation_id,
+        ledger_path,
+        suite["policy_ids"]["context_profile_id"],
+        config_path=config_path,
+        embedding_profile_id=embedding_profile_id,
     )
     if rebuilt_observations != baseline_observations:
         raise RetrievalScenarioError(
@@ -231,14 +302,21 @@ def test_query(scenario_id: str, *, suite_id: str, scenario_state_root: Path) ->
         "suite_id": suite_id,
         "representation_id": representation_id,
         "index_manifest_id": build["index_manifest_id"],
+        "semantic_index_manifest_id": (
+            semantic_build["index_manifest_id"] if semantic_build is not None else None
+        ),
+        "embedding_profile_id": (
+            semantic_build["embedding_profile_id"] if semantic_build is not None else None
+        ),
+        "embedding_model_identity": (
+            semantic_build["embedding_model_identity"] if semantic_build is not None else None
+        ),
         "content_fingerprint": build["content_fingerprint"],
         "query_outcomes": outcomes,
         "rebuild_equivalent": True,
     }
     result_path = scenario_root / "query-result.json"
-    result_path.write_text(
-        json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8"
-    )
+    result_path.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     receipt = write_receipt(
         task_id=scenario_id,
         record_kind="canonical_query",
@@ -246,7 +324,7 @@ def test_query(scenario_id: str, *, suite_id: str, scenario_state_root: Path) ->
         output=scenario_root / "query-receipt.json",
         input_records=(f"ingest_result={ingest_path}",),
         artifacts=(f"query_result={result_path}",),
-        fields=(f"suite_id={suite_id}", f"representation_id={representation_id}"),
+        fields=_query_receipt_fields(result),
         force=True,
     )
     return {**result, **receipt.as_json()}
@@ -257,11 +335,14 @@ def _run_query_cases(
     representation_id: str,
     ledger_path: Path,
     context_profile_id: str,
+    *,
+    config_path: Path,
+    embedding_profile_id: str | None,
 ) -> tuple[list[JsonObject], dict[str, JsonObject]]:
     outcomes: list[JsonObject] = []
     observations: dict[str, JsonObject] = {}
     for case in cases:
-        query = _product_json(
+        arguments = [
             "retrieval",
             "query",
             "--representation-id",
@@ -276,17 +357,74 @@ def _run_query_cases(
             str(ledger_path),
             "--format",
             "json",
-        )
+        ]
+        if "semantic" in case["required_channels"]:
+            if embedding_profile_id is None:
+                raise RetrievalScenarioError(
+                    "semantic_profile_unavailable", "Semantic profile is absent."
+                )
+            arguments = [
+                "--config",
+                str(config_path),
+                *arguments,
+                "--channel",
+                "semantic",
+                "--embedding-profile",
+                embedding_profile_id,
+            ]
+        query = _product_json(*arguments)
         _validate_query_case(case, query)
         query_id = _required_str(case, "query_id")
-        outcomes.append({"query_id": query_id, "retrieval_query_id": query["retrieval_query_id"]})
+        outcomes.append(
+            {
+                "query_id": query_id,
+                "retrieval_query_id": query["retrieval_query_id"],
+                "index_manifest_ids": query["index_manifest_ids"],
+                "selected_node_ids": query["selected_node_ids"],
+                "context_manifest_id": query["context_manifest_id"],
+                "embedding_profile_id": query["embedding_profile_id"],
+                "embedding_model_identity": query["embedding_model_identity"],
+            }
+        )
         observations[query_id] = {
             "hits": query["hits"],
             "selected_node_ids": query["selected_node_ids"],
             "authoritative_nodes": query["authoritative_nodes"],
             "context_manifest_rendered_input": query["context_manifest_rendered_input"],
+            "embedding_profile_id": query["embedding_profile_id"],
+            "embedding_model_identity": query["embedding_model_identity"],
         }
     return outcomes, observations
+
+
+def _query_receipt_fields(result: JsonObject) -> tuple[str, ...]:
+    fields = [
+        f"suite_id={_required_str(result, 'suite_id')}",
+        f"representation_id={_required_str(result, 'representation_id')}",
+    ]
+    profile = result.get("embedding_profile_id")
+    manifest = result.get("semantic_index_manifest_id")
+    identity = result.get("embedding_model_identity")
+    if isinstance(profile, str) and isinstance(manifest, str) and isinstance(identity, dict):
+        identity_value = cast(JsonObject, identity)
+        dimension = identity_value.get("vector_dimension")
+        if not isinstance(dimension, int) or isinstance(dimension, bool) or dimension <= 0:
+            raise RetrievalScenarioError(
+                "canonical_query_failed", "Semantic model identity has no valid vector dimension."
+            )
+        fields.extend(
+            (
+                f"embedding_profile_id={profile}",
+                f"semantic_index_manifest_id={manifest}",
+                f"embedding_adapter_id={_required_str(identity_value, 'adapter_id')}",
+                f"embedding_model_id={_required_str(identity_value, 'model_id')}",
+                f"embedding_model_digest={_required_str(identity_value, 'model_digest')}",
+                f"embedding_vector_dimension={dimension}",
+                "embedding_configuration_digest="
+                f"{_required_str(identity_value, 'configuration_digest')}",
+            )
+        )
+    return tuple(fields)
 
 
 def validate_ingest_anchors(
@@ -314,9 +452,9 @@ def validate_ingest_anchors(
         normalized_text = _normalize_anchor_text(text)
         found = sum(
             (
-                _normalize_anchor_text(str(node.get("text", ""))).casefold().count(
-                    normalized_text.casefold()
-                )
+                _normalize_anchor_text(str(node.get("text", "")))
+                .casefold()
+                .count(normalized_text.casefold())
                 if expectation["match_mode"] == "casefold_substring"
                 else _normalize_anchor_text(str(node.get("text", ""))).count(normalized_text)
             )
@@ -347,9 +485,7 @@ def _primary_text_fidelity_failure(expectation: JsonObject) -> RetrievalScenario
 
 def _validate_query_case(case: JsonObject, query: JsonObject) -> None:
     if query.get("status") != "complete" or not query.get("context_manifest_id"):
-        raise RetrievalScenarioError(
-            "canonical_query_failed", f"Query failed: {case['query_id']}"
-        )
+        raise RetrievalScenarioError("canonical_query_failed", f"Query failed: {case['query_id']}")
     hits_value = query.get("hits")
     if not isinstance(hits_value, list):
         raise RetrievalScenarioError(
@@ -402,8 +538,7 @@ def _validate_query_case(case: JsonObject, query: JsonObject) -> None:
         if expected["must_be_unique_exact"]:
             first: JsonObject = hits[0] if hits else {}
             observed = {
-                item.get("channel")
-                for item in _object_list(first.get("channel_observations", []))
+                item.get("channel") for item in _object_list(first.get("channel_observations", []))
             }
             if first.get("final_rank") != 1 or "exact" not in observed:
                 raise RetrievalScenarioError(
@@ -423,9 +558,15 @@ def _load_cases(suite: JsonObject) -> list[JsonObject]:
         for line in path.read_text(encoding="utf-8").splitlines():
             if line.strip():
                 case = json.loads(line)
-                _validate(
-                    case, "retrieval-query-case-v1.schema.json", "query_suite_invalid"
-                )
+                schema = {
+                    "retrieval-query-case-v1": "retrieval-query-case-v1.schema.json",
+                    "retrieval-query-case-v2": "retrieval-query-case-v2.schema.json",
+                }.get(str(case.get("schema_version")))
+                if schema is None:
+                    raise RetrievalScenarioError(
+                        "query_suite_invalid", "Unsupported query case schema."
+                    )
+                _validate(case, schema, "query_suite_invalid")
                 cases.append(case)
     return cases
 
@@ -468,9 +609,7 @@ def _product_text(*arguments: str) -> None:
 def _scenario_path(scenario_id: str) -> Path:
     path = REPOSITORY_ROOT / ".agent" / "scenarios" / scenario_id / "scenario.json"
     if not path.is_file():
-        raise RetrievalScenarioError(
-            "scenario_schema_invalid", f"Unknown scenario: {scenario_id}"
-        )
+        raise RetrievalScenarioError("scenario_schema_invalid", f"Unknown scenario: {scenario_id}")
     return path
 
 
@@ -511,9 +650,7 @@ def _read_object(path: Path) -> JsonObject:
             "scenario_schema_invalid", f"Cannot read JSON: {path}"
         ) from exc
     if not isinstance(value, dict):
-        raise RetrievalScenarioError(
-            "scenario_schema_invalid", f"JSON object required: {path}"
-        )
+        raise RetrievalScenarioError("scenario_schema_invalid", f"JSON object required: {path}")
     return cast(JsonObject, value)
 
 
@@ -538,9 +675,7 @@ def _path_suffix_matches(path: list[str], suffix: object) -> bool:
     return not required or path[-len(required) :] == required
 
 
-def _node_rank_is_at_most(
-    node: JsonObject, ranks: Mapping[str, object], maximum: object
-) -> bool:
+def _node_rank_is_at_most(node: JsonObject, ranks: Mapping[str, object], maximum: object) -> bool:
     node_id = node.get("node_id")
     rank = ranks.get(node_id) if isinstance(node_id, str) else None
     return isinstance(rank, int) and isinstance(maximum, int) and rank <= maximum
@@ -552,9 +687,7 @@ def _pdf_page_count(path: Path) -> int:
         raise RetrievalScenarioError(
             "canonical_ingest_failed", "pdfinfo is required to lock PDF fixtures."
         )
-    completed = subprocess.run(
-        [pdfinfo, str(path)], capture_output=True, text=True, check=False
-    )
+    completed = subprocess.run([pdfinfo, str(path)], capture_output=True, text=True, check=False)
     match = next(
         (
             line.partition(":")[2].strip()
@@ -583,6 +716,35 @@ def _processing_config(ledger_path: Path, archive_path: Path) -> str:
             "",
         )
     )
+
+
+def _write_semantic_profile(config_path: Path, ledger_path: Path, archive_path: Path) -> None:
+    model_path = os.environ.get("KOTEKOMI_LM_STUDIO_EMBEDDING_MODEL_PATH")
+    if not model_path or not Path(model_path).is_file():
+        raise RetrievalScenarioError(
+            "semantic_profile_unavailable",
+            "Set KOTEKOMI_LM_STUDIO_EMBEDDING_MODEL_PATH to the pinned local Nomic model file.",
+        )
+    digest = _sha256_file(Path(model_path))
+    config = (
+        _processing_config(ledger_path, archive_path)
+        + "\n"
+        + "\n".join(
+            (
+                "[embedding_profiles.semantic-validation-v1]",
+                'adapter = "lm_studio"',
+                'endpoint = "http://127.0.0.1:1234/v1"',
+                'model = "text-embedding-nomic-embed-text-v1.5"',
+                f'model_path = "{Path(model_path)}"',
+                f'model_digest = "{digest}"',
+                "vector_dimension = 768",
+                "maximum_rendered_characters = 2048",
+                "timeout_seconds = 300",
+                "",
+            )
+        )
+    )
+    config_path.write_text(config, encoding="utf-8")
 
 
 def _sha256_file(path: Path) -> str:
