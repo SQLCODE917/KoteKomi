@@ -343,7 +343,7 @@ Document: `docs/2026-08-20-document-retrieval-mvp.md`
 
 Working result: a semantic document channel embeds deterministic contextual representations while returning only original source evidence. The semantic channel is available explicitly but is not yet the default hybrid policy.
 
-Detailed TDD: write only after DR-1 is complete and measured.
+Document: `docs/2026-08-21-context-enriched-document-semantic-retrieval.md`
 
 ### DR-3 - Document Hybrid Activation
 
