@@ -329,6 +329,158 @@ def test_verification_plan_allows_manifest_scoped_non_cli_path(tmp_path: Path) -
     assert "task-preflight-contract" not in check_ids
 
 
+def test_verification_plan_excludes_a_valid_receipt_only_commit(tmp_path: Path) -> None:
+    _require_verification_plan()
+    repo, manifest, base = _repo(tmp_path)
+    changed_path = DEVTOOLS_SRC / "verification_plan.py"
+    _write(repo / changed_path, "NEW = True\n")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-m", "candidate")
+    candidate = _git(repo, "rev-parse", "HEAD")
+    receipt_path = (
+        ".agent/receipts/verification/"
+        f"{TASK_ID}/{candidate}/portable-local/attempt-0001.json"
+    )
+    _write(
+        repo / receipt_path,
+        json.dumps(
+            {
+                "attempt": 1,
+                "candidate_revision": candidate,
+                "profile": "portable-local",
+                "receipt_kind": "candidate_verification",
+                "task_id": TASK_ID,
+            },
+            sort_keys=True,
+        )
+        + "\n",
+    )
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-m", "receipt")
+    head = _git(repo, "rev-parse", "HEAD")
+    output, markdown = tmp_path / "plan.json", tmp_path / "plan.md"
+
+    result = _run_plan(repo, manifest, base, head, output, markdown)
+
+    assert result.returncode == 0, result.stderr
+    payload = _json(output)
+    assert payload["status"] == "ready"
+    assert payload["changed_paths"] == [str(changed_path)]
+    assert payload["diagnostics"] == []
+
+
+def test_verification_plan_keeps_an_invalid_receipt_path_uncovered(tmp_path: Path) -> None:
+    _require_verification_plan()
+    repo, manifest, base = _repo(tmp_path)
+    receipt_path = ".agent/receipts/verification/not-a-receipt.json"
+    _write(repo / receipt_path, "{}\n")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-m", "invalid receipt")
+    head = _git(repo, "rev-parse", "HEAD")
+    output, markdown = tmp_path / "plan.json", tmp_path / "plan.md"
+
+    result = _run_plan(repo, manifest, base, head, output, markdown)
+
+    assert result.returncode == 1
+    payload = _json(output)
+    assert payload["changed_paths"] == [receipt_path]
+    assert payload["diagnostics"] == [
+        {
+            "code": "verification_plan.uncovered_changed_path",
+            "location": "/changed_paths/0",
+            "rule": "changed_paths_require_manifest_or_shared_rule",
+        }
+    ]
+
+
+@pytest.mark.parametrize(
+    ("receipt_text", "commit_message"),
+    [
+        ("not JSON\n", "malformed receipt"),
+        (
+            json.dumps(
+                {
+                    "attempt": 1,
+                    "candidate_revision": "0" * 40,
+                    "profile": "portable-local",
+                    "receipt_kind": "candidate_verification",
+                    "task_id": TASK_ID,
+                },
+                sort_keys=True,
+            )
+            + "\n",
+            "mismatched receipt",
+        ),
+    ],
+)
+def test_verification_plan_keeps_invalid_receipt_content_uncovered(
+    tmp_path: Path,
+    receipt_text: str,
+    commit_message: str,
+) -> None:
+    _require_verification_plan()
+    repo, manifest, base = _repo(tmp_path)
+    changed_path = DEVTOOLS_SRC / "verification_plan.py"
+    _write(repo / changed_path, "NEW = True\n")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-m", "candidate")
+    candidate = _git(repo, "rev-parse", "HEAD")
+    receipt_path = (
+        ".agent/receipts/verification/"
+        f"{TASK_ID}/{candidate}/portable-local/attempt-0001.json"
+    )
+    _write(repo / receipt_path, receipt_text)
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-m", commit_message)
+    head = _git(repo, "rev-parse", "HEAD")
+    output, markdown = tmp_path / "plan.json", tmp_path / "plan.md"
+
+    result = _run_plan(repo, manifest, base, head, output, markdown)
+
+    assert result.returncode == 1
+    payload = _json(output)
+    assert payload["changed_paths"] == [receipt_path, str(changed_path)]
+
+
+def test_verification_plan_keeps_a_multi_path_receipt_commit_uncovered(tmp_path: Path) -> None:
+    _require_verification_plan()
+    repo, manifest, base = _repo(tmp_path)
+    changed_path = DEVTOOLS_SRC / "verification_plan.py"
+    _write(repo / changed_path, "NEW = True\n")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-m", "candidate")
+    candidate = _git(repo, "rev-parse", "HEAD")
+    receipt_path = (
+        ".agent/receipts/verification/"
+        f"{TASK_ID}/{candidate}/portable-local/attempt-0001.json"
+    )
+    _write(
+        repo / receipt_path,
+        json.dumps(
+            {
+                "attempt": 1,
+                "candidate_revision": candidate,
+                "profile": "portable-local",
+                "receipt_kind": "candidate_verification",
+                "task_id": TASK_ID,
+            },
+            sort_keys=True,
+        )
+        + "\n",
+    )
+    _write(repo / "unplanned.txt", "extra change\n")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-m", "receipt and extra")
+    head = _git(repo, "rev-parse", "HEAD")
+    output, markdown = tmp_path / "plan.json", tmp_path / "plan.md"
+
+    result = _run_plan(repo, manifest, base, head, output, markdown)
+
+    assert result.returncode == 1
+    payload = _json(output)
+    assert payload["changed_paths"] == [receipt_path, str(changed_path), "unplanned.txt"]
+
+
 def test_verification_plan_fails_closed_for_uncovered_path(tmp_path: Path) -> None:
     _require_verification_plan()
     repo, manifest, base = _repo(tmp_path)
