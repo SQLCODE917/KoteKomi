@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import re
 from datetime import UTC, datetime
 from enum import StrEnum
@@ -2381,6 +2382,7 @@ class DocumentSemanticRepresentation(DomainModel):
 
 class RetrievalChannelObservation(DomainModel):
     channel: RetrievalChannel
+    index_manifest_id: NonEmptyStr
     channel_rank: int = Field(ge=1)
     raw_score: float | None = None
     matched_field: str | None = None
@@ -2392,11 +2394,11 @@ class RetrievalHit(DomainModel):
     plane: RetrievalPlane = RetrievalPlane.DOCUMENT
     authoritative_node_ids: tuple[DocumentNodeId, ...]
     original_text_digest: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
-    index_manifest_id: NonEmptyStr
     channel_observations: tuple[RetrievalChannelObservation, ...]
     final_rank: int = Field(ge=1)
     selected: bool
     selection_reason: NonEmptyStr
+    fusion_score: float | None = None
 
     @model_validator(mode="after")
     def validate_hit(self) -> Self:
@@ -2408,6 +2410,12 @@ class RetrievalHit(DomainModel):
             self.channel_observations
         ):
             raise ValueError("RetrievalHit channel observations must be unique by channel.")
+        if self.fusion_score is not None and not math.isfinite(self.fusion_score):
+            raise ValueError("RetrievalHit fusion score must be finite.")
+        if self.selection_reason == "rrf60_fusion" and self.fusion_score is None:
+            raise ValueError("RRF retrieval hits require a fusion score.")
+        if self.selection_reason == "unique_exact_guard" and self.fusion_score is not None:
+            raise ValueError("Exact guard retrieval hits cannot have a fusion score.")
         return self
 
 
@@ -2421,6 +2429,7 @@ class RetrievalQueryRecord(DomainModel):
     normalized_query_text: str
     query_policy_id: NonEmptyStr
     index_manifest_ids: tuple[NonEmptyStr, ...]
+    consulted_channels: tuple[RetrievalChannel, ...] = ()
     embedding_profile_id: NonEmptyStr | None = None
     embedding_model_identity: EmbeddingModelIdentity | None = None
     candidate_hits: tuple[RetrievalHit, ...] = ()

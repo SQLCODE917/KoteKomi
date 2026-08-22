@@ -51,6 +51,7 @@ DOCUMENT_SEMANTIC_PROJECTION_POLICY_ID = "document_semantic_projection_v1"
 DOCUMENT_SEMANTIC_QUERY_POLICY_ID = "document_semantic_v1"
 DOCUMENT_SEMANTIC_BUILDER_VERSION = "dr2_document_semantic_v1"
 DOCUMENT_SEMANTIC_RENDERER_POLICY_ID = "document_structural_context_v1"
+DOCUMENT_HYBRID_QUERY_POLICY_ID = "document_exact_lexical_semantic_rrf60_v1"
 RETRIEVAL_CONTEXT_PLANNER_POLICY_ID = "retrieval_selection_v1"
 
 
@@ -138,6 +139,15 @@ class QueryDocumentSemanticRetrievalCommand:
 
 
 @dataclass(frozen=True)
+class QueryDocumentHybridRetrievalCommand:
+    representation_id: str
+    query_text: str
+    maximum_hits: int
+    context_profile_id: str
+    embedding_profile: EmbeddingProfile
+
+
+@dataclass(frozen=True)
 class BuildDocumentRetrievalProjectionResult:
     status: str
     representation_id: str
@@ -165,6 +175,8 @@ class QueryDocumentRetrievalResult:
     failure: RetrievalFailureCode | None = None
     embedding_profile_id: str | None = None
     embedding_model_identity: EmbeddingModelIdentity | None = None
+    query_policy_id: str | None = None
+    consulted_channels: tuple[RetrievalChannel, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -449,6 +461,7 @@ def query_document_retrieval(
             normalized_query_text=normalized_query,
             query_policy_id=DOCUMENT_QUERY_POLICY_ID,
             index_manifest_ids=(manifest.index_manifest_id,),
+            consulted_channels=(RetrievalChannel.EXACT, RetrievalChannel.LEXICAL),
             candidate_hits=hits,
             selected_node_ids=selected_node_ids,
             analysis_unit_id=analysis_unit_id,
@@ -465,6 +478,8 @@ def query_document_retrieval(
             analysis_unit_id=analysis_unit_id,
             context_manifest_id=context_manifest_id,
             context_manifest_rendered_input=rendered_input,
+            query_policy_id=DOCUMENT_QUERY_POLICY_ID,
+            consulted_channels=(RetrievalChannel.EXACT, RetrievalChannel.LEXICAL),
         )
     except DocumentRetrievalError as exc:
         return QueryDocumentRetrievalResult(
@@ -556,6 +571,7 @@ def query_document_semantic_retrieval(
             normalized_query_text=normalized_query,
             query_policy_id=DOCUMENT_SEMANTIC_QUERY_POLICY_ID,
             index_manifest_ids=(manifest.index_manifest_id,),
+            consulted_channels=(RetrievalChannel.SEMANTIC,),
             embedding_profile_id=command.embedding_profile.profile_id,
             embedding_model_identity=batch.model_identity,
             candidate_hits=hits,
@@ -576,6 +592,160 @@ def query_document_semantic_retrieval(
             context_manifest_rendered_input=rendered_input,
             embedding_profile_id=command.embedding_profile.profile_id,
             embedding_model_identity=batch.model_identity,
+            query_policy_id=DOCUMENT_SEMANTIC_QUERY_POLICY_ID,
+            consulted_channels=(RetrievalChannel.SEMANTIC,),
+        )
+    except DocumentRetrievalError as exc:
+        return QueryDocumentRetrievalResult(
+            status="failed",
+            retrieval_query_id=None,
+            representation_id=command.representation_id,
+            index_manifest_ids=(),
+            hits=(),
+            selected_node_ids=(),
+            analysis_unit_id=None,
+            context_manifest_id=None,
+            context_manifest_rendered_input=None,
+            failure=exc.code,
+        )
+
+
+def query_document_hybrid_retrieval(
+    command: QueryDocumentHybridRetrievalCommand,
+    *,
+    ledger_repository: ContextPlanningLedger,
+    exact_lexical_projection: DocumentRetrievalProjectionPort,
+    semantic_projection: DocumentSemanticProjectionPort,
+    embedding: EmbeddingPort,
+    tokenizer: ContextTokenizer,
+) -> QueryDocumentRetrievalResult:
+    """Run the mandatory document policy and delegate context construction."""
+    try:
+        if command.maximum_hits <= 0:
+            raise DocumentRetrievalError(
+                RetrievalFailureCode.QUERY_EMPTY, "maximum_hits must be positive."
+            )
+        normalized_exact = normalize_exact_text(command.query_text)
+        normalized_semantic = normalize_semantic_text(command.query_text)
+        if not normalized_exact or not normalized_semantic:
+            raise DocumentRetrievalError(
+                RetrievalFailureCode.QUERY_EMPTY, "Retrieval query is empty."
+            )
+        bundle, representation_digest = _load_acceptable_bundle(
+            command.representation_id, ledger_repository
+        )
+        exact_manifest = exact_lexical_projection.get_complete_manifest(command.representation_id)
+        semantic_manifest = semantic_projection.get_complete_semantic_manifest(
+            command.representation_id, command.embedding_profile.profile_id
+        )
+        if exact_manifest is None or semantic_manifest is None:
+            raise DocumentRetrievalError(
+                RetrievalFailureCode.INDEX_NOT_FOUND,
+                "Hybrid retrieval requires complete exact/lexical and semantic indexes.",
+            )
+        _validate_manifest(exact_manifest, bundle, representation_digest, None)
+        _validate_semantic_manifest(
+            semantic_manifest,
+            bundle,
+            representation_digest,
+            None,
+            command.embedding_profile,
+        )
+        if exact_manifest.unit_policy_id != semantic_manifest.unit_policy_id:
+            raise DocumentRetrievalError(
+                RetrievalFailureCode.INDEX_STALE,
+                "Hybrid retrieval indexes use different retrieval unit policies.",
+            )
+        units = {
+            unit.retrieval_unit_id: unit
+            for unit in build_document_retrieval_units(bundle, representation_digest)
+        }
+        exact = exact_lexical_projection.exact_candidates(exact_manifest, normalized_exact)
+        if len(exact) == 1:
+            hits = _rank_exact_guard_hit(exact[0], units, exact_manifest.index_manifest_id)
+            consulted = (RetrievalChannel.EXACT,)
+            consulted_manifest_ids = (exact_manifest.index_manifest_id,)
+            model_identity: EmbeddingModelIdentity | None = None
+            profile_id: str | None = None
+        else:
+            semantic_input = _semantic_query_input(normalized_semantic)
+            if len(semantic_input) > command.embedding_profile.maximum_rendered_characters:
+                raise DocumentRetrievalError(
+                    RetrievalFailureCode.SEMANTIC_INPUT_TOO_LARGE,
+                    "Semantic query exceeds the configured character limit for "
+                    f"profile {command.embedding_profile.profile_id}.",
+                )
+            batch = embedding.embed(command.embedding_profile, (semantic_input,))
+            _validate_embedding_batch(batch, command.embedding_profile, 1)
+            query_vector = _normalized_vector_record("semantic-query", batch.vectors[0]).vector
+            lexical = exact_lexical_projection.lexical_candidates(
+                exact_manifest, command.query_text
+            )
+            semantic = semantic_projection.semantic_candidates(semantic_manifest, query_vector)
+            hits = _rank_hybrid_hits(
+                exact,
+                lexical,
+                semantic,
+                units,
+                exact_manifest.index_manifest_id,
+                semantic_manifest.index_manifest_id,
+                command.maximum_hits,
+            )
+            consulted = (
+                RetrievalChannel.EXACT,
+                RetrievalChannel.LEXICAL,
+                RetrievalChannel.SEMANTIC,
+            )
+            consulted_manifest_ids = (
+                exact_manifest.index_manifest_id,
+                semantic_manifest.index_manifest_id,
+            )
+            model_identity = batch.model_identity
+            profile_id = command.embedding_profile.profile_id
+        _validate_hit_sources(hits, units, bundle)
+        selected_node_ids = tuple(
+            node_id for hit in hits if hit.selected for node_id in hit.authoritative_node_ids
+        )
+        analysis_unit_id, context_manifest_id, rendered_input = _build_retrieval_context(
+            command.representation_id,
+            selected_node_ids,
+            command.context_profile_id,
+            ledger_repository,
+            tokenizer,
+        )
+        query_record = RetrievalQueryRecord(
+            retrieval_query_id=_hybrid_query_id(
+                command.representation_id, command.query_text, consulted_manifest_ids
+            ),
+            representation_id=command.representation_id,
+            source_snapshot_id=exact_manifest.source_snapshot_id,
+            query_text=command.query_text,
+            normalized_query_text=normalized_exact,
+            query_policy_id=DOCUMENT_HYBRID_QUERY_POLICY_ID,
+            index_manifest_ids=consulted_manifest_ids,
+            consulted_channels=consulted,
+            embedding_profile_id=profile_id,
+            embedding_model_identity=model_identity,
+            candidate_hits=hits,
+            selected_node_ids=selected_node_ids,
+            analysis_unit_id=analysis_unit_id,
+            context_manifest_id=context_manifest_id,
+        )
+        exact_lexical_projection.save_query_record(query_record)
+        return QueryDocumentRetrievalResult(
+            status="complete",
+            retrieval_query_id=query_record.retrieval_query_id,
+            representation_id=command.representation_id,
+            index_manifest_ids=consulted_manifest_ids,
+            hits=hits,
+            selected_node_ids=selected_node_ids,
+            analysis_unit_id=analysis_unit_id,
+            context_manifest_id=context_manifest_id,
+            context_manifest_rendered_input=rendered_input,
+            embedding_profile_id=profile_id,
+            embedding_model_identity=model_identity,
+            query_policy_id=DOCUMENT_HYBRID_QUERY_POLICY_ID,
+            consulted_channels=consulted,
         )
     except DocumentRetrievalError as exc:
         return QueryDocumentRetrievalResult(
@@ -904,10 +1074,10 @@ def _rank_semantic_hits(
                 retrieval_unit_id=unit.retrieval_unit_id,
                 authoritative_node_ids=unit.node_ids,
                 original_text_digest=unit.original_text_digest,
-                index_manifest_id=manifest_id,
                 channel_observations=(
                     RetrievalChannelObservation(
                         channel=RetrievalChannel.SEMANTIC,
+                        index_manifest_id=manifest_id,
                         channel_rank=candidate.channel_rank,
                         raw_score=candidate.raw_score,
                         matched_field="cosine_similarity",
@@ -919,6 +1089,93 @@ def _rank_semantic_hits(
             )
         )
     return tuple(hits)
+
+
+def _rank_exact_guard_hit(
+    candidate: ChannelCandidate,
+    units: dict[str, DocumentRetrievalUnit],
+    manifest_id: str,
+) -> tuple[RetrievalHit, ...]:
+    unit = units.get(candidate.retrieval_unit_id)
+    if unit is None or candidate.channel is not RetrievalChannel.EXACT:
+        raise DocumentRetrievalError(
+            RetrievalFailureCode.INDEX_CORRUPT, "Exact index references an unknown unit."
+        )
+    return (
+        RetrievalHit(
+            retrieval_unit_id=unit.retrieval_unit_id,
+            authoritative_node_ids=unit.node_ids,
+            original_text_digest=unit.original_text_digest,
+            channel_observations=(
+                RetrievalChannelObservation(
+                    channel=RetrievalChannel.EXACT,
+                    index_manifest_id=manifest_id,
+                    channel_rank=candidate.channel_rank,
+                    raw_score=candidate.raw_score,
+                    matched_field=candidate.matched_field,
+                    matched_literal_digest=candidate.matched_literal_digest,
+                ),
+            ),
+            final_rank=1,
+            selected=True,
+            selection_reason="unique_exact_guard",
+        ),
+    )
+
+
+def _rank_hybrid_hits(
+    exact: tuple[ChannelCandidate, ...],
+    lexical: tuple[ChannelCandidate, ...],
+    semantic: tuple[ChannelCandidate, ...],
+    units: dict[str, DocumentRetrievalUnit],
+    exact_manifest_id: str,
+    semantic_manifest_id: str,
+    maximum_hits: int,
+) -> tuple[RetrievalHit, ...]:
+    observations: dict[str, list[RetrievalChannelObservation]] = {}
+    for candidate in (*exact, *lexical, *semantic):
+        unit = units.get(candidate.retrieval_unit_id)
+        if unit is None:
+            raise DocumentRetrievalError(
+                RetrievalFailureCode.INDEX_CORRUPT, "Hybrid index references an unknown unit."
+            )
+        manifest_id = (
+            semantic_manifest_id
+            if candidate.channel is RetrievalChannel.SEMANTIC
+            else exact_manifest_id
+        )
+        observations.setdefault(candidate.retrieval_unit_id, []).append(
+            RetrievalChannelObservation(
+                channel=candidate.channel,
+                index_manifest_id=manifest_id,
+                channel_rank=candidate.channel_rank,
+                raw_score=candidate.raw_score,
+                matched_field=candidate.matched_field,
+                matched_literal_digest=candidate.matched_literal_digest,
+            )
+        )
+
+    def sort_key(unit_id: str) -> tuple[float, int, str]:
+        score = sum(1.0 / (60 + row.channel_rank) for row in observations[unit_id])
+        unit = units[unit_id]
+        return (-score, unit.source_order, unit_id)
+
+    ordered = sorted(observations, key=sort_key)
+    return tuple(
+        RetrievalHit(
+            retrieval_unit_id=unit_id,
+            authoritative_node_ids=units[unit_id].node_ids,
+            original_text_digest=units[unit_id].original_text_digest,
+            channel_observations=tuple(
+                sorted(observations[unit_id], key=lambda row: row.channel.value)
+            ),
+            final_rank=rank,
+            selected=rank <= maximum_hits,
+            selection_reason="rrf60_fusion",
+            fusion_score=-sort_key(unit_id)[0],
+        )
+        for rank, unit_id in enumerate(ordered, start=1)
+    )
 
 
 def _build_retrieval_context(
@@ -1072,6 +1329,7 @@ def _rank_hits(
         observations.setdefault(candidate.retrieval_unit_id, []).append(
             RetrievalChannelObservation(
                 channel=candidate.channel,
+                index_manifest_id=manifest_id,
                 channel_rank=candidate.channel_rank,
                 raw_score=candidate.raw_score,
                 matched_field=candidate.matched_field,
@@ -1105,7 +1363,6 @@ def _rank_hits(
             retrieval_unit_id=unit_id,
             authoritative_node_ids=units[unit_id].node_ids,
             original_text_digest=units[unit_id].original_text_digest,
-            index_manifest_id=manifest_id,
             channel_observations=tuple(
                 sorted(observations[unit_id], key=lambda row: (row.channel.value, row.channel_rank))
             ),
@@ -1154,6 +1411,11 @@ def _context_profile(profile_id: str) -> ContextModelProfile:
 
 def _query_id(representation_id: str, query_text: str, manifest_id: str) -> str:
     return f"rqr_{_digest((representation_id, query_text, manifest_id))[:24]}"
+
+
+def _hybrid_query_id(representation_id: str, query_text: str, manifest_ids: tuple[str, ...]) -> str:
+    digest = _digest((representation_id, query_text, DOCUMENT_HYBRID_QUERY_POLICY_ID, manifest_ids))
+    return f"rqr_{digest[:24]}"
 
 
 def _digest(value: object) -> str:
