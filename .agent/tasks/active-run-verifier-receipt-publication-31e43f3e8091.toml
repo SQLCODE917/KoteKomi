@@ -1,0 +1,74 @@
+schema_version = 2
+task_id = "active-run-verifier-receipt-publication-31e43f3e8091"
+title = "Active-Run Verifier Receipt Publication"
+status = "ready_for_terra_high"
+series_id = "agent-harness"
+task_class = "repository-tooling"
+model_profile = "terra-high-v1"
+baseline_revision = "90c18eb52d9cd6bb3e816da09ce91a77caf3cf77"
+tdd_path = "docs/2026-08-22-active-run-verifier-receipt-publication.md"
+tdd_sha256 = "31e43f3e809182bea1f8edafe03d280740b77ca544445d46b21ef5644855a961"
+goal = "Publish and index an active-run candidate verification receipt through a deterministic local remote."
+depends_on = []
+allowed_paths = [
+  "packages/devtools/src/kotekomi_devtools/candidate_verifier.py",
+  "packages/devtools/src/kotekomi_devtools/cli.py",
+  "packages/devtools/tests/acceptance/test_independent_verifier_receipt_contract.py",
+  "packages/devtools/tests/unit/test_candidate_verifier.py"
+]
+reference_paths = [
+  "docs/2026-08-22-active-run-verifier-receipt-publication.md",
+  "packages/devtools/src/kotekomi_devtools/evidence_catalog.py",
+  "packages/devtools/src/kotekomi_devtools/tdd_workflow.py"
+]
+stop_conditions = [
+  "the implementation requires GitHub access in repository tests",
+  "the implementation adds a broad exception handler",
+  "the implementation changes the verifier CLI arguments or receipt fields"
+]
+
+[readiness]
+authority = "The Active-Run Verifier Receipt Publication TDD defines this task."
+contract_family = "agent-harness"
+dominant_outcome = "An active verifier invocation publishes and indexes one receipt commit."
+failure_policy = "A remote-tip mismatch returns an invalid JSON result without a receipt."
+legacy_disposition = "Existing non-active verifier behavior remains unchanged."
+negative_proof = "The task does not require a network service or change public verifier inputs."
+public_entry_point = "kotekomi-agent verify-candidate"
+scope_policy = "Active-run receipt publication, CLI result rendering, and focused tests only."
+side_effect_boundary = "One receipt-only commit, remote feature-tip update, and canonical run evidence record."
+unresolved_decisions = []
+
+[budget]
+maximum_production_files = 2
+maximum_test_files = 2
+maximum_production_diff_lines = 500
+
+[[protected_artifacts]]
+kind = "leaf-tdd"
+path = "docs/2026-08-22-active-run-verifier-receipt-publication.md"
+sha256 = "31e43f3e809182bea1f8edafe03d280740b77ca544445d46b21ef5644855a961"
+
+[[acceptance]]
+id = "active-verifier-receipt-contract"
+argv = ["uv", "run", "pytest", "-p", "no:cacheprovider", "packages/devtools/tests/acceptance/test_independent_verifier_receipt_contract.py"]
+timeout_seconds = 180
+profile = "portable-local"
+
+[[acceptance]]
+id = "candidate-verifier-unit-contract"
+argv = ["uv", "run", "pytest", "-p", "no:cacheprovider", "packages/devtools/tests/unit/test_candidate_verifier.py"]
+timeout_seconds = 120
+profile = "portable-local"
+
+[[acceptance]]
+id = "repository-static-checks"
+argv = ["uv", "run", "ruff", "check"]
+timeout_seconds = 120
+profile = "portable-local"
+
+[[acceptance]]
+id = "repository-type-checks"
+argv = ["uv", "run", "pyright"]
+timeout_seconds = 240
+profile = "portable-local"
