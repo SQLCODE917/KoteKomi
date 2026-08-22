@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import subprocess
 import tomllib
 from datetime import UTC, datetime
 from pathlib import Path
@@ -211,14 +212,27 @@ def _load(path: Path) -> Json:
     return cast(Json, value)
 
 
-def _load_evidence_payload(path: Path, evidence_type: str) -> Json:
+def _load_evidence_payload_bytes(value: bytes, evidence_type: str, location: str) -> Json:
     if evidence_type == "task_manifest":
         try:
-            payload = tomllib.loads(path.read_text(encoding="utf-8"))
-        except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError) as error:
-            raise EvidenceError(f"invalid task manifest: {path}") from error
+            payload = tomllib.loads(value.decode("utf-8"))
+        except (UnicodeDecodeError, tomllib.TOMLDecodeError) as error:
+            raise EvidenceError(f"invalid task manifest: {location}") from error
         return payload
-    return _load(path)
+    try:
+        payload = json.loads(value.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise EvidenceError(f"invalid evidence JSON: {location}") from error
+    if not isinstance(payload, dict):
+        raise EvidenceError(f"invalid evidence JSON: {location}")
+    return cast(Json, payload)
+
+
+def _load_evidence_payload(path: Path, evidence_type: str) -> Json:
+    try:
+        return _load_evidence_payload_bytes(path.read_bytes(), evidence_type, str(path))
+    except OSError as error:
+        raise EvidenceError(f"invalid evidence file: {path}") from error
 
 
 def canonical_relative(
@@ -465,48 +479,98 @@ def index_record(
         stream.write(json.dumps(event, sort_keys=True, separators=(",", ":")) + "\n")
 
 
+def _validate_payload(evidence_type: str, payload: Json) -> None:
+    trusted_fields = _TRUSTED_FIELDS.get(evidence_type)
+    if trusted_fields is None:
+        raise EvidenceError(f"unknown evidence type: {evidence_type}")
+    missing = [field for field in trusted_fields if field not in payload]
+    if missing:
+        raise EvidenceError(
+            f"evidence fields missing for {evidence_type}: {', '.join(missing)}"
+        )
+    if evidence_type == "main_ci":
+        promotion = payload.get("validated_promotion_commit")
+        if promotion is not None and not isinstance(promotion, str):
+            raise EvidenceError("main_ci validated_promotion_commit must be a string")
+    if evidence_type == "task_result" and payload.get("outcome") == "superseded":
+        required_supersession = (
+            "supersession_reason",
+            "successor_task_id",
+            "successor_run_id",
+            "successor_result_tag",
+            "successor_target_commit",
+            "handoff_commit",
+            "handoff_patch_id",
+            "delivery_base_commit",
+            "delivery_head_commit",
+            "delivery_patch_id",
+            "successor_delivery_base_commit",
+            "successor_delivery_patch_id",
+            "delivery_relation",
+            "historic_delivery_diff_sha256",
+        )
+        missing_supersession = [
+            field for field in required_supersession if field not in payload
+        ]
+        if missing_supersession:
+            raise EvidenceError(
+                "superseded task-result fields missing: " + ", ".join(missing_supersession)
+            )
+
+
+def _specification_revision(root: Path, entries: list[Json]) -> str:
+    entry = next(
+        (item for item in entries if item["evidence_type"] == "specification_revision"),
+        None,
+    )
+    if entry is None:
+        raise EvidenceError("specification revision evidence is missing")
+    if entry["path_scope"] != "state":
+        raise EvidenceError("specification revision evidence must use state scope")
+    path = root / entry["path"]
+    if not path.is_file() or digest(path) != entry["sha256"]:
+        raise EvidenceError(f"evidence digest mismatch: {entry['path']}")
+    payload = _load_evidence_payload(path, "specification_revision")
+    _validate_payload("specification_revision", payload)
+    revision = payload["specification_revision"]
+    if not isinstance(revision, str):
+        raise EvidenceError("specification revision is invalid")
+    return revision
+
+
+def _repository_bytes(revision: str, relative_path: str) -> bytes:
+    result = subprocess.run(
+        ["git", "show", f"{revision}:{relative_path}"],
+        capture_output=True,
+        check=False,
+    )
+    if result.returncode:
+        raise EvidenceError(f"pinned repository evidence is unavailable: {relative_path}")
+    return result.stdout
+
+
 def validated_entries(root: Path, task: str, run: str) -> list[Json]:
     entries = read_index(root, task, run)["entries"]
+    revision = (
+        _specification_revision(root, entries)
+        if any(entry["path_scope"] == "repo" for entry in entries)
+        else None
+    )
     for entry in entries:
-        base = Path.cwd() if entry["path_scope"] == "repo" else root
-        path = base / entry["path"]
-        if not path.is_file() or digest(path) != entry["sha256"]:
+        if entry["path_scope"] == "repo":
+            assert revision is not None
+            value = _repository_bytes(revision, entry["path"])
+            payload = _load_evidence_payload_bytes(
+                value, entry["evidence_type"], entry["path"]
+            )
+            actual_digest = hashlib.sha256(value).hexdigest()
+        else:
+            path = root / entry["path"]
+            if not path.is_file():
+                raise EvidenceError(f"evidence digest mismatch: {entry['path']}")
+            payload = _load_evidence_payload(path, entry["evidence_type"])
+            actual_digest = digest(path)
+        if actual_digest != entry["sha256"]:
             raise EvidenceError(f"evidence digest mismatch: {entry['path']}")
-        payload = _load_evidence_payload(path, entry["evidence_type"])
-        trusted_fields = _TRUSTED_FIELDS.get(entry["evidence_type"])
-        if trusted_fields is None:
-            raise EvidenceError(f"unknown evidence type: {entry['evidence_type']}")
-        missing = [field for field in trusted_fields if field not in payload]
-        if missing:
-            raise EvidenceError(
-                f"evidence fields missing for {entry['evidence_type']}: {', '.join(missing)}"
-            )
-        if entry["evidence_type"] == "main_ci":
-            promotion = payload.get("validated_promotion_commit")
-            if promotion is not None and not isinstance(promotion, str):
-                raise EvidenceError("main_ci validated_promotion_commit must be a string")
-        if entry["evidence_type"] == "task_result" and payload.get("outcome") == "superseded":
-            required_supersession = (
-                "supersession_reason",
-                "successor_task_id",
-                "successor_run_id",
-                "successor_result_tag",
-                "successor_target_commit",
-                "handoff_commit",
-                "handoff_patch_id",
-                "delivery_base_commit",
-                "delivery_head_commit",
-                "delivery_patch_id",
-                "successor_delivery_base_commit",
-                "successor_delivery_patch_id",
-                "delivery_relation",
-                "historic_delivery_diff_sha256",
-            )
-            missing_supersession = [
-                field for field in required_supersession if field not in payload
-            ]
-            if missing_supersession:
-                raise EvidenceError(
-                    "superseded task-result fields missing: " + ", ".join(missing_supersession)
-                )
+        _validate_payload(entry["evidence_type"], payload)
     return entries

@@ -385,6 +385,20 @@ def test_closure_accepts_a_contained_handoff_patch(
     assert len(record["historic_delivery_diff_sha256"]) == 64
 
 
+def test_contained_closure_reads_the_historic_task_manifest_at_its_pinned_revision(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo, state, handoff = _fixture(tmp_path, monkeypatch)
+    manifest = repo / f".agent/tasks/{TASK}.toml"
+    manifest.write_text(manifest.read_text() + 'baseline_revision = "corrected-later"\n')
+    _commit(repo, "correct task manifest after specification")
+
+    result = _run(repo, state, handoff, "--delivery-relation", "contained")
+
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout)["status"] == "superseded"
+
+
 def test_contained_closure_blocks_when_successor_omits_the_historic_diff(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -1,4 +1,5 @@
 import json
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -8,7 +9,72 @@ from kotekomi_devtools.evidence_catalog import (
     index_record,
     read_index,
     validated_entries,
+    write_canonical_record,
 )
+
+
+def _git(repo: Path, *arguments: str) -> str:
+    result = subprocess.run(
+        ["git", *arguments], cwd=repo, text=True, capture_output=True, check=True
+    )
+    return result.stdout.strip()
+
+
+def _repository_manifest(repo: Path, value: str = "one") -> Path:
+    path = repo / ".agent/tasks/t.toml"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        "\n".join(
+            [
+                'task_id = "t"',
+                'tdd_path = "docs/t.md"',
+                'tdd_sha256 = "' + "a" * 64 + '"',
+                f'value = "{value}"',
+                "",
+            ]
+        )
+    )
+    return path
+
+
+def _pinned_manifest_run(
+    root: Path, repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> str:
+    subprocess.run(["git", "init", "-b", "main", str(repo)], check=True, capture_output=True)
+    _git(repo, "config", "user.email", "test@example.com")
+    _git(repo, "config", "user.name", "Test")
+    _repository_manifest(repo)
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-m", "specification")
+    revision = _git(repo, "rev-parse", "HEAD")
+    monkeypatch.chdir(repo)
+    index_record(
+        root,
+        "t",
+        "t-run-001",
+        phase="spec",
+        evidence_type="task_manifest",
+        subject_id="manifest",
+        path_scope="repo",
+        relative_path=".agent/tasks/t.toml",
+        producer_command="test",
+    )
+    write_canonical_record(
+        root,
+        "t",
+        "t-run-001",
+        phase="spec",
+        evidence_type="specification_revision",
+        subject_id="specification",
+        payload={
+            "schema_version": 1,
+            "specification_revision": revision,
+            "manifest_sha256": "a" * 64,
+            "diagnostics": [],
+        },
+        producer_command="test",
+    )
+    return revision
 
 
 def test_index_orders_and_replaces_one_evidence_key(
@@ -136,6 +202,99 @@ def test_digest_mismatch_blocks_reader(tmp_path: Path) -> None:
     )
     path.write_text('{"conclusion":"failure"}\n')
     with pytest.raises(EvidenceError, match="digest mismatch"):
+        validated_entries(root, "t", "t-run-001")
+
+
+def test_reader_uses_pinned_revision_for_repository_scoped_evidence(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "state"
+    repo = tmp_path / "repo"
+    _pinned_manifest_run(root, repo, monkeypatch)
+    _repository_manifest(repo, "current-checkout-change")
+
+    entries = validated_entries(root, "t", "t-run-001")
+
+    assert [entry["evidence_type"] for entry in entries] == [
+        "specification_revision",
+        "task_manifest",
+    ]
+
+
+def test_reader_blocks_repository_scoped_evidence_without_a_specification_revision(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "state"
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    monkeypatch.chdir(repo)
+    _repository_manifest(repo)
+    index_record(
+        root,
+        "t",
+        "t-run-001",
+        phase="spec",
+        evidence_type="task_manifest",
+        subject_id="manifest",
+        path_scope="repo",
+        relative_path=".agent/tasks/t.toml",
+        producer_command="test",
+    )
+
+    with pytest.raises(EvidenceError, match="specification revision evidence is missing"):
+        validated_entries(root, "t", "t-run-001")
+
+
+def test_reader_blocks_repository_evidence_missing_from_the_pinned_revision(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "state"
+    repo = tmp_path / "repo"
+    _pinned_manifest_run(root, repo, monkeypatch)
+    specification_path = (
+        root / "experiments/t/runs/t-run-001/git/specification-revision.json"
+    )
+    write_canonical_record(
+        root,
+        "t",
+        "t-run-001",
+        phase="spec",
+        evidence_type="specification_revision",
+        subject_id="specification",
+        payload={
+            "schema_version": 1,
+            "specification_revision": "0" * 40,
+            "manifest_sha256": "a" * 64,
+            "diagnostics": [],
+        },
+        producer_command="test",
+    )
+    assert specification_path.is_file()
+
+    with pytest.raises(EvidenceError, match="pinned repository evidence is unavailable"):
+        validated_entries(root, "t", "t-run-001")
+
+
+def test_reader_blocks_repository_evidence_with_a_pinned_digest_mismatch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "state"
+    repo = tmp_path / "repo"
+    _pinned_manifest_run(root, repo, monkeypatch)
+    _repository_manifest(repo, "incoherent-indexed-bytes")
+    index_record(
+        root,
+        "t",
+        "t-run-001",
+        phase="spec",
+        evidence_type="task_manifest",
+        subject_id="manifest",
+        path_scope="repo",
+        relative_path=".agent/tasks/t.toml",
+        producer_command="test",
+    )
+
+    with pytest.raises(EvidenceError, match="evidence digest mismatch"):
         validated_entries(root, "t", "t-run-001")
 
 
