@@ -66,7 +66,7 @@ def _write_spec(repo: Path) -> None:
     )
 
 
-def _seed_original(state: Path, repo: Path) -> None:
+def _seed_original(state: Path, repo: Path, specification: str) -> None:
     binding = {
         "schema_version": 1,
         "task_id": TASK,
@@ -113,9 +113,24 @@ def _seed_original(state: Path, repo: Path) -> None:
         },
         producer_command="test",
     )
+    write_canonical_record(
+        state,
+        TASK,
+        RUN,
+        phase="spec",
+        evidence_type="specification_revision",
+        subject_id="specification",
+        payload={
+            "schema_version": 1,
+            "specification_revision": specification,
+            "manifest_sha256": "b" * 64,
+            "diagnostics": [],
+        },
+        producer_command="test",
+    )
 
 
-def _seed_successor(state: Path, candidate: str, target: str) -> None:
+def _seed_successor(state: Path, candidate: str, target: str, specification: str) -> None:
     tag = f"kotekomi/tasks/{SUCCESSOR}/result"
     write_canonical_record(
         state,
@@ -128,6 +143,21 @@ def _seed_successor(state: Path, candidate: str, target: str) -> None:
             "schema_version": 1,
             "commit_sha": candidate,
             "parent_sha": "0" * 40,
+            "diagnostics": [],
+        },
+        producer_command="test",
+    )
+    write_canonical_record(
+        state,
+        SUCCESSOR,
+        SUCCESSOR_RUN,
+        phase="spec",
+        evidence_type="specification_revision",
+        subject_id="specification",
+        payload={
+            "schema_version": 1,
+            "specification_revision": specification,
+            "manifest_sha256": "b" * 64,
             "diagnostics": [],
         },
         producer_command="test",
@@ -166,7 +196,9 @@ def _seed_successor(state: Path, candidate: str, target: str) -> None:
     )
 
 
-def _fixture(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path, Path, str]:
+def _fixture(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *, merge_handoff: bool = False
+) -> tuple[Path, Path, str]:
     repo = tmp_path / "repo"
     repo.mkdir()
     init_git_repo(repo)
@@ -175,16 +207,43 @@ def _fixture(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path, Pat
     git(repo, "remote", "add", "origin", str(remote))
     _write_spec(repo)
     _commit(repo, "specification")
+    specification = git_output(repo, "rev-parse", "HEAD")
     git(repo, "push", "-u", "origin", "main")
     git(repo, "switch", "-c", f"feature/{TASK}")
     (repo / "handoff.txt").write_text("carried patch\n")
     handoff = _commit(repo, "original handoff")
     git(repo, "push", "-u", "origin", f"feature/{TASK}")
+    if merge_handoff:
+        git(repo, "switch", "-c", "receipt", handoff)
+        receipt_path = (
+            f".agent/receipts/verification/{TASK}/{handoff}/portable-local/attempt-0001.json"
+        )
+        (repo / receipt_path).parent.mkdir(parents=True)
+        (repo / receipt_path).write_text(
+            json.dumps(
+                {
+                    "attempt": 1,
+                    "candidate_revision": handoff,
+                    "profile": "portable-local",
+                    "receipt_kind": "candidate_verification",
+                    "task_id": TASK,
+                },
+                sort_keys=True,
+            )
+            + "\n"
+        )
+        _commit(repo, "receipt")
+        git(repo, "switch", f"feature/{TASK}")
+        git(repo, "merge", "--no-ff", "receipt", "-m", "receipt merge")
+        handoff = git_output(repo, "rev-parse", "HEAD")
+        git(repo, "push", "origin", f"feature/{TASK}")
     git(repo, "switch", "-c", f"feature/{SUCCESSOR}")
     git(repo, "rm", "handoff.txt")
     _commit(repo, "revert handoff")
     (repo / "handoff.txt").write_text("carried patch\n")
     candidate = _commit(repo, "successor handoff")
+    (repo / "different.txt").write_text("different patch\n")
+    _commit(repo, "different successor patch")
     git(repo, "switch", "main")
     git(repo, "merge", "--no-ff", f"feature/{SUCCESSOR}", "-m", "successor merge")
     target = git_output(repo, "rev-parse", "HEAD")
@@ -193,8 +252,8 @@ def _fixture(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path, Pat
     git(repo, "push", "origin", "main", f"refs/tags/{tag}")
     state = tmp_path / "state"
     monkeypatch.chdir(repo)
-    _seed_original(state, repo)
-    _seed_successor(state, candidate, target)
+    _seed_original(state, repo, specification)
+    _seed_successor(state, candidate, target, specification)
     return repo, state, handoff
 
 
@@ -238,7 +297,7 @@ def test_closure_blocks_when_handoff_patch_differs(
         subject_id="candidate",
         payload={
             "schema_version": 1,
-            "commit_sha": git_output(repo, "rev-parse", f"feature/{SUCCESSOR}~1"),
+            "commit_sha": git_output(repo, "rev-parse", f"feature/{SUCCESSOR}"),
             "parent_sha": "0" * 40,
             "diagnostics": [],
         },
@@ -250,3 +309,18 @@ def test_closure_blocks_when_handoff_patch_differs(
     assert result.returncode == 2
     assert "handoff patch does not match" in result.stdout
     assert git_output(repo, "ls-remote", "origin", f"refs/heads/feature/{TASK}")
+
+
+def test_closure_resolves_a_receipt_merge_delivery_range(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo, state, handoff = _fixture(tmp_path, monkeypatch, merge_handoff=True)
+
+    result = _run(repo, state, handoff)
+
+    assert result.returncode == 0, result.stderr
+    record = json.loads(
+        (state / "experiments" / TASK / "runs" / RUN / "results/task-result.json").read_text()
+    )
+    assert record["delivery_head_commit"] != handoff
+    assert record["delivery_patch_id"] == record["successor_delivery_patch_id"]
