@@ -253,3 +253,93 @@ def test_completion_retains_remote_branch_when_local_cleanup_is_not_possible(
         (state / "experiments" / TASK / "runs" / RUN / "cleanup/branch-cleanup.json").read_text()
     )
     assert cleanup["branch_cleanup_complete"] is False
+
+
+def test_abandonment_cleans_an_orphan_branch_without_replacing_supersession(
+    tmp_path: Path,
+) -> None:
+    repo, state, specification, _, _ = _fixture(tmp_path)
+    branch = f"feature/{TASK}"
+    git(repo, "branch", "-D", branch)
+    git(repo, "push", "origin", "--delete", branch)
+    git(repo, "branch", branch, specification)
+    git(repo, "push", "-u", "origin", branch)
+    run_path = state / "experiments" / TASK / "runs" / RUN / "run.json"
+    run_path.parent.mkdir(parents=True, exist_ok=True)
+    run_path.write_text(
+        json.dumps({"status": "abandoned", "terminal_reason": "operator_abandoned"})
+    )
+    historical_run = f"{TASK}-run-000"
+    historical_path = state / "experiments" / TASK / "runs" / historical_run / "run.json"
+    historical_path.parent.mkdir(parents=True)
+    historical_path.write_text(json.dumps({"status": "superseded"}))
+    (historical_path.parent.parent / "index.json").write_text(
+        json.dumps(
+            {
+                "runs": [
+                    {
+                        "implementation_run_id": historical_run,
+                        "ordinal": 0,
+                        "run_record_path": historical_path.relative_to(state).as_posix(),
+                        "status": "superseded",
+                    },
+                    {
+                        "implementation_run_id": RUN,
+                        "ordinal": 1,
+                        "run_record_path": run_path.relative_to(state).as_posix(),
+                        "status": "abandoned",
+                    },
+                ]
+            }
+        )
+    )
+    tag = f"kotekomi/tasks/{TASK}/result"
+    message = json.dumps(
+        {"schema_version": 1, "outcome": "superseded", "task_id": TASK}, sort_keys=True
+    )
+    git(repo, "tag", "-a", tag, specification, "-m", message)
+    git(repo, "push", "origin", f"refs/tags/{tag}")
+    contents = git_output(repo, "for-each-ref", tag, "--format=%(contents)")
+    write_canonical_record(
+        state,
+        TASK,
+        historical_run,
+        phase="complete",
+        evidence_type="task_result",
+        subject_id="result",
+        payload={
+            "schema_version": 1,
+            "outcome": "superseded",
+            "tag": tag,
+            "target_commit": specification,
+            "tag_message_sha256": hashlib.sha256(contents.encode()).hexdigest(),
+            "supersession_reason": "scope_discovery",
+            "successor_task_id": "successor",
+            "successor_run_id": "successor-run-001",
+            "successor_result_tag": "kotekomi/tasks/successor/result",
+            "successor_target_commit": specification,
+            "handoff_commit": specification,
+            "handoff_patch_id": "a" * 40,
+            "delivery_base_commit": "b" * 40,
+            "delivery_head_commit": specification,
+            "delivery_patch_id": "a" * 40,
+            "successor_delivery_base_commit": "b" * 40,
+            "successor_delivery_patch_id": "a" * 40,
+            "delivery_relation": "exact",
+            "historic_delivery_diff_sha256": "c" * 64,
+            "diagnostics": [],
+        },
+        producer_command="test",
+    )
+
+    abandoned = _run(repo, state, "abandon-feature-branch")
+
+    assert abandoned.returncode == 0, abandoned.stderr
+    assert git_output(repo, "ls-remote", "origin", f"refs/heads/feature/{TASK}") == ""
+    assert not (
+        state / "experiments" / TASK / "runs" / RUN / "results/task-result.json"
+    ).exists()
+    cleanup = json.loads(
+        (state / "experiments" / TASK / "runs" / RUN / "cleanup/branch-cleanup.json").read_text()
+    )
+    assert cleanup["terminal_result_preserved"] is True

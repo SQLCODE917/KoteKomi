@@ -55,6 +55,59 @@ def test_workflow_creates_run_and_requests_manifest(tmp_path: Path) -> None:
     ).is_file()
 
 
+def test_abandonment_is_terminal_and_does_not_create_a_replacement_run(tmp_path: Path) -> None:
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "docs" / "one.md").write_text("# One\n")
+    command = [
+        "uv",
+        "run",
+        "--project",
+        str(PROJECT_ROOT),
+        "kotekomi-agent",
+        "implement-tdd",
+        "docs/one.md",
+        "--state-root",
+        str(tmp_path / "state"),
+    ]
+    started = subprocess.run(command, cwd=tmp_path, text=True, capture_output=True, check=False)
+    run_id = json.loads(started.stdout)["implementation_run_id"]
+
+    abandoned = subprocess.run(
+        [*command, "--abandon-run", run_id],
+        cwd=tmp_path,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert abandoned.returncode == 0
+    assert json.loads(abandoned.stdout)["status"] == "abandoned"
+    task_id = json.loads(started.stdout)["task_id"]
+    index_path = tmp_path / "state" / "experiments" / task_id / "runs/index.json"
+    index = json.loads(index_path.read_text())
+    assert [row["implementation_run_id"] for row in index["runs"]] == [run_id]
+    assert not list((tmp_path / "state").rglob("feature-branch.json"))
+
+    repeated = subprocess.run(
+        [*command, "--abandon-run", run_id],
+        cwd=tmp_path,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert repeated.returncode == 0
+    assert json.loads(repeated.stdout)["next_action"] is None
+
+    resumed = subprocess.run(command, cwd=tmp_path, text=True, capture_output=True, check=False)
+    assert json.loads(resumed.stdout)["status"] == "abandoned"
+
+    new_run = subprocess.run(
+        [*command, "--new-run"], cwd=tmp_path, text=True, capture_output=True, check=False
+    )
+    assert new_run.returncode == 0
+    assert json.loads(new_run.stdout)["implementation_run_id"] != run_id
+
+
 def test_workflow_blocks_ci_and_merge_evidence_for_the_wrong_commit(tmp_path: Path) -> None:
     root = tmp_path / "state"
     records: dict[str, dict[str, Any]] = {
@@ -380,6 +433,8 @@ def test_mark_run_superseded_reclassifies_an_abandoned_run_with_canonical_eviden
             "delivery_patch_id": "patch",
             "successor_delivery_base_commit": "base",
             "successor_delivery_patch_id": "patch",
+            "delivery_relation": "exact",
+            "historic_delivery_diff_sha256": "digest",
             "diagnostics": [],
         },
         producer_command="test",

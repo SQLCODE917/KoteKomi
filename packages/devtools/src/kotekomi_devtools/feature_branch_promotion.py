@@ -87,6 +87,19 @@ def _remote(branch: str) -> str:
     return fields[0]
 
 
+def _remote_tag_target(tag: str) -> str | None:
+    result = _git("ls-remote", "--tags", "origin", f"refs/tags/{tag}*")
+    exact = f"refs/tags/{tag}"
+    fields = [line.split() for line in result.stdout.splitlines()]
+    if not any(len(item) == 2 and item[1] == exact for item in fields):
+        return None
+    peeled = next(
+        (item[0] for item in fields if len(item) == 2 and item[1] == f"{exact}^{{}}"),
+        None,
+    )
+    return peeled if peeled and len(peeled) == 40 else None
+
+
 def _result(code: int, **payload: Any) -> FeatureBranchResult:
     return FeatureBranchResult(code, {"schema_version": 1, **payload})
 
@@ -242,7 +255,16 @@ def _publish_tag(tag: str, target: str, message: str) -> bool:
     )
 
 
-def _cleanup(root: Path, task: str, run: str, branch: str, target: str, command: str) -> bool:
+def _cleanup(
+    root: Path,
+    task: str,
+    run: str,
+    branch: str,
+    target: str,
+    command: str,
+    *,
+    terminal_result_preserved: bool = False,
+) -> bool:
     local_cleanup_safe = True
     for block in _git("worktree", "list", "--porcelain").stdout.strip().split("\n\n"):
         lines = block.splitlines()
@@ -284,6 +306,7 @@ def _cleanup(root: Path, task: str, run: str, branch: str, target: str, command:
             "schema_version": 1,
             "branch_cleanup_complete": not remaining,
             "remaining_branches": remaining,
+            **({"terminal_result_preserved": True} if terminal_result_preserved else {}),
             "diagnostics": [],
         },
         producer_command=command,
@@ -291,10 +314,57 @@ def _cleanup(root: Path, task: str, run: str, branch: str, target: str, command:
     return not remaining
 
 
+def _preserved_superseded_result(root: Path, task_id: str, run_id: str) -> Json | None:
+    """Return one validated superseded result owned by an earlier run."""
+    index_path = root / "experiments" / task_id / "runs" / "index.json"
+    try:
+        raw_index = json.loads(index_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise FeatureBranchPromotionError("task run index is unavailable") from error
+    if not isinstance(raw_index, dict):
+        raise FeatureBranchPromotionError("task run index is invalid")
+    index = cast(Json, raw_index)
+    rows_value = index.get("runs")
+    if not isinstance(rows_value, list):
+        raise FeatureBranchPromotionError("task run index is invalid")
+    raw_rows = cast(list[object], rows_value)
+    for raw_row in raw_rows:
+        if not isinstance(raw_row, dict):
+            raise FeatureBranchPromotionError("task run index is invalid")
+        row = cast(Json, raw_row)
+        if row.get("implementation_run_id") == run_id:
+            continue
+        historical_run = row.get("implementation_run_id")
+        if not isinstance(historical_run, str):
+            raise FeatureBranchPromotionError("task run index is invalid")
+        try:
+            result = _payload(root, task_id, historical_run, "task_result")
+        except FeatureBranchPromotionError:
+            continue
+        if result.get("outcome") != "superseded":
+            continue
+        tag = result.get("tag")
+        target = result.get("target_commit")
+        digest = result.get("tag_message_sha256")
+        if not all(isinstance(value, str) for value in (tag, target, digest)):
+            raise FeatureBranchPromotionError("superseded result is invalid")
+        contents = _git("for-each-ref", str(tag), "--format=%(contents)")
+        if (
+            _remote_tag_target(str(tag)) != target
+            or contents.returncode
+            or hashlib.sha256(contents.stdout.encode()).hexdigest() != digest
+        ):
+            raise FeatureBranchPromotionError("superseded result tag conflicts with evidence")
+        return result
+    return None
+
+
 def _complete(
     *, task_id: str, run_id: str, state_root_path: Path | None, abandoned: bool
 ) -> FeatureBranchResult:
     root = state_root(state_root_path)
+    preserved_result: Json | None = None
+    tag_body: Json = {}
     try:
         feature = _payload(root, task_id, run_id, "feature_branch")
         branch = str(feature["branch"])
@@ -305,14 +375,20 @@ def _complete(
             if record.get("status") != "abandoned":
                 raise FeatureBranchPromotionError("abandonment requires an abandoned run record")
             target = _remote(branch)
-            tag_body: Json = {
-                "schema_version": 1,
-                "task_id": task_id,
-                "implementation_run_id": run_id,
-                "outcome": "abandoned",
-                "feature_tip": target,
-                "terminal_reason": "operator_abandoned",
-            }
+            preserved_result = _preserved_superseded_result(root, task_id, run_id)
+            if preserved_result is None:
+                tag_body: Json = {
+                    "schema_version": 1,
+                    "task_id": task_id,
+                    "implementation_run_id": run_id,
+                    "outcome": "abandoned",
+                    "feature_tip": target,
+                    "terminal_reason": "operator_abandoned",
+                }
+            elif target != preserved_result.get("target_commit"):
+                raise FeatureBranchPromotionError(
+                    "orphan feature tip must equal preserved superseded result"
+                )
         else:
             promotion, ci, receipt = (
                 _payload(root, task_id, run_id, "main_promotion"),
@@ -345,32 +421,35 @@ def _complete(
             status="blocked",
             diagnostics=[{"code": "completion.prerequisite", "rule": str(error)}],
         )
-    tag, message = f"kotekomi/tasks/{task_id}/result", _message(tag_body)
-    if not _publish_tag(tag, target, message):
-        return _result(
-            2,
-            status="blocked",
-            diagnostics=[
-                {"code": "completion.tag_conflict", "rule": "matching_published_result_tag"}
-            ],
+    if preserved_result is None:
+        tag, message = f"kotekomi/tasks/{task_id}/result", _message(tag_body)
+        if not _publish_tag(tag, target, message):
+            return _result(
+                2,
+                status="blocked",
+                diagnostics=[
+                    {"code": "completion.tag_conflict", "rule": "matching_published_result_tag"}
+                ],
+            )
+        write_canonical_record(
+            root,
+            task_id,
+            run_id,
+            phase="complete",
+            evidence_type="task_result",
+            subject_id="result",
+            payload={
+                "schema_version": 1,
+                "outcome": tag_body["outcome"],
+                "tag": tag,
+                "target_commit": target,
+                "tag_message_sha256": hashlib.sha256(message.encode()).hexdigest(),
+                "diagnostics": [],
+            },
+            producer_command="abandon-feature-branch" if abandoned else "complete-feature-branch",
         )
-    write_canonical_record(
-        root,
-        task_id,
-        run_id,
-        phase="complete",
-        evidence_type="task_result",
-        subject_id="result",
-        payload={
-            "schema_version": 1,
-            "outcome": tag_body["outcome"],
-            "tag": tag,
-            "target_commit": target,
-            "tag_message_sha256": hashlib.sha256(message.encode()).hexdigest(),
-            "diagnostics": [],
-        },
-        producer_command="abandon-feature-branch" if abandoned else "complete-feature-branch",
-    )
+    else:
+        tag = str(preserved_result["tag"])
     cleaned = _cleanup(
         root,
         task_id,
@@ -378,6 +457,7 @@ def _complete(
         branch,
         target,
         "abandon-feature-branch" if abandoned else "complete-feature-branch",
+        terminal_result_preserved=preserved_result is not None,
     )
     return _result(
         0 if cleaned else 2,
