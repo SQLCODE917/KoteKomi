@@ -312,8 +312,13 @@ def test_active_run_publishes_and_reuses_a_remote_receipt(tmp_path: Path) -> Non
     receipt_commit = str(payload["receipt_commit"])
     assert git_output(remote, "rev-parse", f"refs/heads/feature/{task_id}") == receipt_commit
     entries = validated_entries(state, task_id, run_id)
-    evidence_types = [entry["evidence_type"] for entry in entries]
-    assert evidence_types.count("candidate_verification_receipt") == 1
+    receipts = [
+        entry for entry in entries if entry["evidence_type"] == "candidate_verification_receipt"
+    ]
+    assert len(receipts) == 1
+    indexed_receipt = json.loads((state / receipts[0]["path"]).read_text(encoding="utf-8"))
+    assert indexed_receipt["candidate_revision"] == candidate
+    assert indexed_receipt["receipt_commit"] == receipt_commit
     repeated = _verify(
         repo,
         fake_bin,
