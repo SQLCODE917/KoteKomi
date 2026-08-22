@@ -1,0 +1,95 @@
+schema_version = 2
+task_id = "dr-3-core-recovery-successor-14ae0dbdf3f4"
+title = "DR-3 Core Recovery Successor"
+status = "ready_for_terra_high"
+series_id = "derived-retrieval"
+task_class = "orchestration"
+model_profile = "terra-high-v1"
+baseline_revision = "2b90ff6fe3ca387645ac526b157a614159ba20ce"
+tdd_path = "docs/2026-08-22-dr-3-core-recovery-successor.md"
+tdd_sha256 = "14ae0dbdf3f47e8fbed0d7c8c0c50da39fd748b27fb8ca96d146ed8e9e0b62e8"
+goal = "Deliver the historical DR-3 hybrid retrieval patch through a completed feature branch and preserve both historic attempts as superseded evidence."
+depends_on = []
+allowed_paths = [
+  ".agent/scenarios/anthropic-dod-dispute-v1/queries/dr-3-document-hybrid-v1.jsonl",
+  ".agent/scenarios/anthropic-dod-dispute-v1/suites/dr-3-v1.json",
+  ".agent/schemas/retrieval-query-case-v3.schema.json",
+  ".agent/schemas/retrieval-query-suite-v3.schema.json",
+  "docs/CHECK_PLAN.md",
+  "packages/application/src/kotekomi_application/__init__.py",
+  "packages/application/src/kotekomi_application/document_retrieval.py",
+  "packages/application/tests/test_document_retrieval.py",
+  "packages/devtools/src/kotekomi_devtools/retrieval_scenarios.py",
+  "packages/devtools/tests/unit/test_retrieval_scenarios.py",
+  "packages/domain/src/kotekomi_domain/models.py",
+  "packages/domain/tests/test_document_retrieval.py",
+  "packages/pipelines/src/kotekomi_pipelines/cli.py",
+  "packages/pipelines/src/kotekomi_pipelines/config.py",
+  "packages/pipelines/tests/test_document_retrieval.py"
+]
+reference_paths = [
+  "docs/2026-08-21-document-hybrid-activation.md",
+  "docs/2026-08-22-dr-3-core-recovery-successor.md",
+  "docs/2026-08-22-historical-merge-handoff-closure.md",
+  "packages/devtools/src/kotekomi_devtools/superseded_task_closure.py",
+  "packages/application/src/kotekomi_application/context_planning.py",
+  "packages/adapters/src/kotekomi_adapters/sqlite_document_retrieval.py"
+]
+stop_conditions = [
+  "the successor candidate patch differs from stable patch ID 8bcd4f449a707dac86725bc69d3b04d9dc156f83",
+  "the implementation changes the accepted DR-3 TDD or its original task manifest",
+  "the implementation adds DR-4 behavior or changes DR-1 or DR-2 scenario assets",
+  "the locked canonical PDF or semantic-validation-v1 profile is unavailable"
+]
+
+[readiness]
+authority = "The DR-3 Core Recovery Successor TDD defines this task."
+contract_family = "derived-retrieval"
+dominant_outcome = "The exact historical DR-3 delivery patch reaches main through a completed successor feature branch."
+failure_policy = "A patch mismatch, unavailable canonical fixture or profile, failed verification, or incomplete cleanup blocks historic closure."
+legacy_disposition = "The original blocked DR-3 task and the prior successor remain intact until this successor completes, then become superseded evidence."
+negative_proof = "The successor adds no retrieval behavior beyond the historical DR-3 handoff patch."
+public_entry_point = "kotekomi retrieval build-document and kotekomi retrieval query without --channel"
+scope_policy = "The exact historical DR-3 source, test, scenario, schema, and check-plan handoff paths only."
+side_effect_boundary = "Disposable retrieval indexes, query records, ContextManifests, and Harness lifecycle receipts."
+unresolved_decisions = []
+
+[budget]
+maximum_production_files = 10
+maximum_test_files = 5
+maximum_production_diff_lines = 1200
+
+[[protected_artifacts]]
+kind = "leaf-tdd"
+path = "docs/2026-08-22-dr-3-core-recovery-successor.md"
+sha256 = "14ae0dbdf3f47e8fbed0d7c8c0c50da39fd748b27fb8ca96d146ed8e9e0b62e8"
+
+[[acceptance]]
+id = "document-hybrid-domain-application"
+argv = ["uv", "run", "pytest", "packages/domain/tests/test_document_retrieval.py", "packages/application/tests/test_document_retrieval.py"]
+timeout_seconds = 240
+profile = "portable-local"
+
+[[acceptance]]
+id = "document-hybrid-adapter"
+argv = ["uv", "run", "pytest", "packages/adapters/tests/test_sqlite_document_retrieval.py"]
+timeout_seconds = 240
+profile = "portable-local"
+
+[[acceptance]]
+id = "document-hybrid-pipeline-scenario"
+argv = ["uv", "run", "pytest", "packages/pipelines/tests/test_cli.py", "packages/pipelines/tests/test_document_retrieval.py", "packages/devtools/tests/unit/test_retrieval_scenarios.py"]
+timeout_seconds = 240
+profile = "portable-local"
+
+[[acceptance]]
+id = "repository-static-checks"
+argv = ["uv", "run", "ruff", "check"]
+timeout_seconds = 120
+profile = "portable-local"
+
+[[acceptance]]
+id = "repository-type-checks"
+argv = ["uv", "run", "pyright"]
+timeout_seconds = 240
+profile = "portable-local"
