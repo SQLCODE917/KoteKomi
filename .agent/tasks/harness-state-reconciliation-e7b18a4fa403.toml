@@ -1,0 +1,77 @@
+schema_version = 2
+task_id = "harness-state-reconciliation-e7b18a4fa403"
+title = "Harness State Reconciliation"
+status = "ready_for_terra_high"
+series_id = "tdd-harness-feature-branch"
+task_class = "repository-tooling"
+model_profile = "terra-high-v1"
+baseline_revision = "3187990f82cbe624fd79e95f89d9199182b11431"
+tdd_path = "docs/2026-08-22-harness-state-reconciliation.md"
+tdd_sha256 = "e7b18a4fa40319c73c924aa4e03148e8cbb659d6eb32916a8da940dd03d6e7b8"
+goal = "Reconcile abandoned, superseded, and orphan feature-branch Harness state without changing historical delivery evidence."
+depends_on = ["superseded-task-closure-b5ff068b973e"]
+allowed_paths = [
+  "docs/CHECK_PLAN.md",
+  "packages/devtools/src/kotekomi_devtools/cli.py",
+  "packages/devtools/src/kotekomi_devtools/evidence_catalog.py",
+  "packages/devtools/src/kotekomi_devtools/feature_branch_promotion.py",
+  "packages/devtools/src/kotekomi_devtools/superseded_task_closure.py",
+  "packages/devtools/src/kotekomi_devtools/tdd_workflow.py",
+  "packages/devtools/tests/acceptance/test_feature_branch_promotion_completion_contract.py",
+  "packages/devtools/tests/acceptance/test_superseded_task_closure_contract.py",
+  "packages/devtools/tests/acceptance/test_tdd_workflow_contract.py",
+  "packages/devtools/tests/unit/test_evidence_catalog.py"
+]
+reference_paths = [
+  "docs/2026-08-21-tdd-superseded-task-closure.md",
+  "docs/2026-08-22-historical-merge-handoff-closure.md",
+  "packages/devtools/src/kotekomi_devtools/feature_branch_reconciliation.py",
+  "packages/devtools/src/kotekomi_devtools/task_scope.py"
+]
+stop_conditions = [
+  "the implementation force-pushes or force-deletes a Git reference",
+  "the implementation changes origin/main",
+  "the implementation creates historic candidate, verification, promotion, or CI evidence",
+  "the implementation accepts contained delivery without strict Git proof",
+  "the implementation changes the protected leaf TDD or task manifest"
+]
+
+[readiness]
+authority = "The Harness State Reconciliation TDD defines this task."
+contract_family = "tdd-harness"
+dominant_outcome = "The Harness reports terminal runs accurately and retains proof before it removes historic feature branches."
+failure_policy = "Invalid run state, delivery proof, tag, or cleanup blocks before state repair or branch deletion."
+legacy_disposition = "Existing result and handoff tags remain the historic authority."
+negative_proof = "The producers never force a Git reference or recreate historic lifecycle evidence."
+public_entry_point = "kotekomi-agent implement-tdd, close-superseded-task, and abandon-feature-branch"
+scope_policy = "Harness workflow, superseded closure, orphan cleanup, evidence catalog, CLI, checks, and deterministic Git tests only."
+side_effect_boundary = "Canonical Harness state, annotated task tags, and non-force feature-reference deletion only."
+unresolved_decisions = []
+
+[budget]
+maximum_production_files = 5
+maximum_test_files = 4
+maximum_production_diff_lines = 1400
+
+[[protected_artifacts]]
+kind = "leaf-tdd"
+path = "docs/2026-08-22-harness-state-reconciliation.md"
+sha256 = "e7b18a4fa40319c73c924aa4e03148e8cbb659d6eb32916a8da940dd03d6e7b8"
+
+[[acceptance]]
+id = "harness-state-reconciliation-contract"
+argv = ["uv", "run", "pytest", "-p", "no:cacheprovider", "packages/devtools/tests/acceptance/test_tdd_workflow_contract.py", "packages/devtools/tests/acceptance/test_superseded_task_closure_contract.py", "packages/devtools/tests/acceptance/test_feature_branch_promotion_completion_contract.py", "packages/devtools/tests/unit/test_evidence_catalog.py"]
+timeout_seconds = 240
+profile = "portable-local"
+
+[[acceptance]]
+id = "repository-static-checks"
+argv = ["uv", "run", "ruff", "check"]
+timeout_seconds = 120
+profile = "portable-local"
+
+[[acceptance]]
+id = "repository-type-checks"
+argv = ["uv", "run", "pyright"]
+timeout_seconds = 240
+profile = "portable-local"
