@@ -491,6 +491,11 @@ def validated_entries(root: Path, task: str, run: str) -> list[Json]:
                 "successor_target_commit",
                 "handoff_commit",
                 "handoff_patch_id",
+                "delivery_base_commit",
+                "delivery_head_commit",
+                "delivery_patch_id",
+                "successor_delivery_base_commit",
+                "successor_delivery_patch_id",
             )
             missing_supersession = [
                 field for field in required_supersession if field not in payload

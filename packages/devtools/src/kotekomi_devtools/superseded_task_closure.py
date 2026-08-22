@@ -48,7 +48,7 @@ def close_superseded_task(
     """Publish supersession evidence and remove one retained feature branch."""
     root = state_root(state_root_path)
     try:
-        _require_original_specification(root, task_id, run_id)
+        original_specification = _original_specification(root, task_id, run_id)
         successor = _successor(root, successor_task_id, successor_run_id)
         handoff = _commit(handoff_commit)
         branch = f"feature/{task_id}"
@@ -64,8 +64,12 @@ def close_superseded_task(
             raise SupersededTaskClosureError(
                 "handoff commit is not reachable from local feature branch"
             )
-        patch_id = _patch_id(handoff)
-        if patch_id != _patch_id(successor["candidate_commit"]):
+        delivery_head = _delivery_head(handoff)
+        patch_id = _range_patch_id(original_specification, delivery_head)
+        successor_patch_id = _range_patch_id(
+            successor["specification_revision"], successor["candidate_commit"]
+        )
+        if patch_id != successor_patch_id:
             raise SupersededTaskClosureError("handoff patch does not match successor candidate")
         message = _message(
             task_id,
@@ -76,6 +80,10 @@ def close_superseded_task(
             successor["target_commit"],
             handoff,
             patch_id,
+            original_specification,
+            delivery_head,
+            successor["specification_revision"],
+            successor_patch_id,
         )
         result_tag = f"kotekomi/tasks/{task_id}/result"
         handoff_tag = f"kotekomi/tasks/{task_id}/superseded-handoff"
@@ -94,6 +102,11 @@ def close_superseded_task(
             "successor_target_commit": successor["target_commit"],
             "handoff_commit": handoff,
             "handoff_patch_id": patch_id,
+            "delivery_base_commit": original_specification,
+            "delivery_head_commit": delivery_head,
+            "delivery_patch_id": patch_id,
+            "successor_delivery_base_commit": successor["specification_revision"],
+            "successor_delivery_patch_id": successor_patch_id,
             "diagnostics": [],
         }
         write_canonical_record(
@@ -146,11 +159,18 @@ def close_superseded_task(
         )
 
 
-def _require_original_specification(root: Path, task_id: str, run_id: str) -> None:
-    kinds = {str(entry["evidence_type"]) for entry in _entries(root, task_id, run_id)}
+def _original_specification(root: Path, task_id: str, run_id: str) -> str:
+    entries = _entries(root, task_id, run_id)
+    kinds = {str(entry["evidence_type"]) for entry in entries}
     required = {"tdd_binding", "task_manifest", "task_manifest_validation"}
     if not required.issubset(kinds):
         raise SupersededTaskClosureError("original task specification evidence is incomplete")
+    specification = _payload(root, entries, "specification_revision").get(
+        "specification_revision"
+    )
+    if not isinstance(specification, str):
+        raise SupersededTaskClosureError("original specification revision is invalid")
+    return _commit(specification)
 
 
 def _successor(root: Path, task_id: str, run_id: str) -> Json:
@@ -158,12 +178,16 @@ def _successor(root: Path, task_id: str, run_id: str) -> Json:
     result = _payload(root, entries, "task_result")
     cleanup = _payload(root, entries, "cleanup")
     candidate = _payload(root, entries, "candidate_commit")
+    specification = _payload(root, entries, "specification_revision")
     if result.get("outcome") != "completed" or cleanup.get("branch_cleanup_complete") is not True:
         raise SupersededTaskClosureError("successor task is not completed with cleanup")
     target = result.get("target_commit")
     tag = result.get("tag")
     candidate_commit = candidate.get("commit_sha")
-    if not all(isinstance(value, str) for value in (target, tag, candidate_commit)):
+    specification_revision = specification.get("specification_revision")
+    if not all(
+        isinstance(value, str) for value in (target, tag, candidate_commit, specification_revision)
+    ):
         raise SupersededTaskClosureError("successor task result is invalid")
     if _remote_tag_target(cast(str, tag)) != target:
         raise SupersededTaskClosureError("published successor result tag does not match evidence")
@@ -179,6 +203,7 @@ def _successor(root: Path, task_id: str, run_id: str) -> Json:
         "result_tag": tag,
         "target_commit": target_commit,
         "candidate_commit": candidate_revision,
+        "specification_revision": _commit(cast(str, specification_revision)),
     }
 
 
@@ -213,6 +238,10 @@ def _message(
     successor_target_commit: str,
     handoff_commit: str,
     handoff_patch_id: str,
+    delivery_base_commit: str,
+    delivery_head_commit: str,
+    successor_delivery_base_commit: str,
+    successor_delivery_patch_id: str,
 ) -> str:
     return json.dumps(
         {
@@ -227,6 +256,11 @@ def _message(
             "successor_target_commit": successor_target_commit,
             "handoff_commit": handoff_commit,
             "handoff_patch_id": handoff_patch_id,
+            "delivery_base_commit": delivery_base_commit,
+            "delivery_head_commit": delivery_head_commit,
+            "delivery_patch_id": handoff_patch_id,
+            "successor_delivery_base_commit": successor_delivery_base_commit,
+            "successor_delivery_patch_id": successor_delivery_patch_id,
         },
         sort_keys=True,
         separators=(",", ":"),
@@ -326,8 +360,79 @@ def _tag_message(tag: str) -> str:
     return result.stdout
 
 
-def _patch_id(commit: str) -> str:
-    show = _git("show", "--pretty=format:", commit)
+def _delivery_head(feature_tip: str) -> str:
+    current = feature_tip
+    while True:
+        parents = _parents(current)
+        if len(parents) == 1 and _is_receipt_only_commit(current):
+            current = parents[0]
+            continue
+        if len(parents) == 2 and _is_receipt_only_commit(parents[1]):
+            current = parents[0]
+            continue
+        return current
+
+
+def _parents(commit: str) -> tuple[str, ...]:
+    result = _git("show", "-s", "--format=%P", commit)
+    values = tuple(result.stdout.split())
+    if result.returncode or not all(_SHA1.fullmatch(value) for value in values):
+        raise SupersededTaskClosureError("commit parents are unavailable")
+    return values
+
+
+def _is_receipt_only_commit(commit: str) -> bool:
+    parents = _parents(commit)
+    changed = _git("diff-tree", "--no-commit-id", "--name-only", "-r", commit)
+    paths = changed.stdout.splitlines()
+    if changed.returncode or len(parents) != 1 or len(paths) != 1:
+        return False
+    path = paths[0]
+    parts = path.split("/")
+    if len(parts) != 7 or parts[:3] != [".agent", "receipts", "verification"]:
+        return False
+    task_id, candidate, profile, filename = parts[3:]
+    ordinal = filename.removeprefix("attempt-").removesuffix(".json")
+    if (
+        profile not in {"portable-local", "authoritative-linux"}
+        or not filename.startswith("attempt-")
+        or not filename.endswith(".json")
+        or len(ordinal) != 4
+        or not ordinal.isdigit()
+        or int(ordinal) < 1
+    ):
+        return False
+    receipt = _git("show", f"{commit}:{path}")
+    if receipt.returncode:
+        return False
+    try:
+        decoded = json.loads(receipt.stdout)
+    except json.JSONDecodeError:
+        return False
+    if not isinstance(decoded, dict):
+        return False
+    payload = cast(Json, decoded)
+    return candidate == parents[0] and (
+        payload.get("receipt_kind"),
+        payload.get("task_id"),
+        payload.get("candidate_revision"),
+        payload.get("profile"),
+        payload.get("attempt"),
+    ) == ("candidate_verification", task_id, parents[0], profile, int(ordinal))
+
+
+def _range_patch_id(base: str, head: str) -> str:
+    receipt_paths = _receipt_paths_in_range(base, head)
+    show = _git(
+        "diff",
+        "--binary",
+        "--no-ext-diff",
+        base,
+        head,
+        "--",
+        ".",
+        *(f":(exclude){path}" for path in receipt_paths),
+    )
     if show.returncode:
         raise SupersededTaskClosureError("commit patch is unavailable")
     try:
@@ -345,6 +450,18 @@ def _patch_id(commit: str) -> str:
     if result.returncode or len(fields) != 2 or _SHA1.fullmatch(fields[0]) is None:
         raise SupersededTaskClosureError("commit patch ID is unavailable")
     return fields[0]
+
+
+def _receipt_paths_in_range(base: str, head: str) -> tuple[str, ...]:
+    commits = _git("rev-list", "--reverse", f"{base}..{head}")
+    if commits.returncode:
+        raise SupersededTaskClosureError("delivery range is unavailable")
+    paths: list[str] = []
+    for commit in commits.stdout.splitlines():
+        if _is_receipt_only_commit(commit):
+            changed = _git("diff-tree", "--no-commit-id", "--name-only", "-r", commit)
+            paths.extend(changed.stdout.splitlines())
+    return tuple(sorted(set(paths)))
 
 
 def _is_ancestor(ancestor: str, descendant: str) -> bool:
