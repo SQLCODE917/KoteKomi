@@ -1,0 +1,66 @@
+schema_version = 2
+task_id = "abandoned-run-supersession-3866db094b5f"
+title = "Abandoned Run Supersession"
+status = "ready_for_terra_high"
+series_id = "agent-harness"
+task_class = "repository-tooling"
+model_profile = "terra-high-v1"
+baseline_revision = "ed89911b016ec0c0e5f03cf3a23e2614abd3672a"
+tdd_path = "docs/2026-08-22-abandoned-run-supersession.md"
+tdd_sha256 = "3866db094b5fdfaee7c6629e020f44bb8686a0c740c7f1f4b77fb917fb0cdc17"
+goal = "Reclassify an abandoned candidate run after canonical supersession evidence proves delivery."
+depends_on = []
+allowed_paths = [
+  "packages/devtools/src/kotekomi_devtools/tdd_workflow.py",
+  "packages/devtools/tests/acceptance/test_tdd_workflow_contract.py"
+]
+reference_paths = [
+  "docs/2026-08-22-abandoned-run-supersession.md",
+  "packages/devtools/src/kotekomi_devtools/superseded_task_closure.py",
+  "packages/devtools/src/kotekomi_devtools/evidence_catalog.py"
+]
+stop_conditions = [
+  "the implementation changes the closure producer or task-result schema",
+  "the implementation reclassifies a run without canonical supersession evidence",
+  "the implementation changes active or blocked supersession behavior"
+]
+
+[readiness]
+authority = "The Abandoned Run Supersession TDD defines this task."
+contract_family = "agent-harness"
+dominant_outcome = "A completed successor reclassifies its abandoned predecessor as superseded."
+failure_policy = "Missing or incomplete supersession evidence leaves the abandoned run unchanged."
+legacy_disposition = "Existing active and blocked supersession behavior remains unchanged."
+negative_proof = "The task does not change Git closure behavior or task-result records."
+public_entry_point = "kotekomi-agent implement-tdd"
+scope_policy = "One workflow status transition and its contract tests."
+side_effect_boundary = "One run record and run index update after existing closure evidence."
+unresolved_decisions = []
+
+[budget]
+maximum_production_files = 1
+maximum_test_files = 1
+maximum_production_diff_lines = 180
+
+[[protected_artifacts]]
+kind = "leaf-tdd"
+path = "docs/2026-08-22-abandoned-run-supersession.md"
+sha256 = "3866db094b5fdfaee7c6629e020f44bb8686a0c740c7f1f4b77fb917fb0cdc17"
+
+[[acceptance]]
+id = "abandoned-run-supersession-contract"
+argv = ["uv", "run", "pytest", "-p", "no:cacheprovider", "packages/devtools/tests/acceptance/test_tdd_workflow_contract.py"]
+timeout_seconds = 120
+profile = "portable-local"
+
+[[acceptance]]
+id = "repository-static-checks"
+argv = ["uv", "run", "ruff", "check"]
+timeout_seconds = 120
+profile = "portable-local"
+
+[[acceptance]]
+id = "repository-type-checks"
+argv = ["uv", "run", "pyright"]
+timeout_seconds = 240
+profile = "portable-local"
