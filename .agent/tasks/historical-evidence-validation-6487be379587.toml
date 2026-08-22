@@ -1,0 +1,69 @@
+schema_version = 2
+task_id = "historical-evidence-validation-6487be379587"
+title = "Historical Evidence Validation"
+status = "ready_for_terra_high"
+series_id = "tdd-harness-feature-branch"
+task_class = "repository-tooling"
+model_profile = "terra-high-v1"
+baseline_revision = "7c0f81297cc89dc117a3c52a9c5b3f2caf21da3f"
+tdd_path = "docs/2026-08-22-historical-evidence-validation.md"
+tdd_sha256 = "6487be379587f967d465526688db1a8931745eb8a2fc45239502279e2670bec7"
+goal = "Validate repository-scoped Harness evidence from the immutable specification revision so historical delivery closure remains safe after later manifest corrections."
+depends_on = ["harness-state-reconciliation-e7b18a4fa403"]
+allowed_paths = [
+  "docs/CHECK_PLAN.md",
+  "packages/devtools/src/kotekomi_devtools/evidence_catalog.py",
+  "packages/devtools/tests/acceptance/test_superseded_task_closure_contract.py",
+  "packages/devtools/tests/unit/test_evidence_catalog.py"
+]
+reference_paths = [
+  "docs/2026-08-22-harness-state-reconciliation.md",
+  "packages/devtools/src/kotekomi_devtools/superseded_task_closure.py",
+  "packages/devtools/src/kotekomi_devtools/tdd_workflow.py"
+]
+stop_conditions = [
+  "the implementation rewrites historical evidence indexes or manifest digests",
+  "the implementation validates repository-scoped evidence from current-checkout bytes",
+  "the implementation weakens SHA-256 validation",
+  "the implementation changes the protected leaf TDD or task manifest"
+]
+
+[readiness]
+authority = "The Historical Evidence Validation TDD defines this task."
+contract_family = "tdd-harness"
+dominant_outcome = "The Harness validates repository-scoped historic evidence from the commit that pinned it."
+failure_policy = "A missing, unreadable, invalid, or mismatching pinned revision blocks validation before a closure changes state or references."
+legacy_disposition = "Existing evidence indexes and specification-revision records remain the historic authority."
+negative_proof = "The catalog never substitutes mutable current-checkout bytes for pinned repository evidence."
+public_entry_point = "kotekomi-agent close-superseded-task"
+scope_policy = "Evidence catalog validation and deterministic Harness contract tests only."
+side_effect_boundary = "Read-only Git object lookup during evidence validation."
+unresolved_decisions = []
+
+[budget]
+maximum_production_files = 1
+maximum_test_files = 2
+maximum_production_diff_lines = 500
+
+[[protected_artifacts]]
+kind = "leaf-tdd"
+path = "docs/2026-08-22-historical-evidence-validation.md"
+sha256 = "6487be379587f967d465526688db1a8931745eb8a2fc45239502279e2670bec7"
+
+[[acceptance]]
+id = "historical-evidence-validation-contract"
+argv = ["uv", "run", "pytest", "-p", "no:cacheprovider", "packages/devtools/tests/unit/test_evidence_catalog.py", "packages/devtools/tests/acceptance/test_superseded_task_closure_contract.py"]
+timeout_seconds = 240
+profile = "portable-local"
+
+[[acceptance]]
+id = "repository-static-checks"
+argv = ["uv", "run", "ruff", "check"]
+timeout_seconds = 120
+profile = "portable-local"
+
+[[acceptance]]
+id = "repository-type-checks"
+argv = ["uv", "run", "pyright"]
+timeout_seconds = 240
+profile = "portable-local"
