@@ -343,3 +343,55 @@ def test_abandonment_cleans_an_orphan_branch_without_replacing_supersession(
         (state / "experiments" / TASK / "runs" / RUN / "cleanup/branch-cleanup.json").read_text()
     )
     assert cleanup["terminal_result_preserved"] is True
+
+
+def test_abandonment_cleans_a_tagged_unmerged_feature_branch(tmp_path: Path) -> None:
+    repo, state, _, _, receipt = _fixture(tmp_path)
+    run_path = state / "experiments" / TASK / "runs" / RUN / "run.json"
+    run_path.parent.mkdir(parents=True, exist_ok=True)
+    run_path.write_text(
+        json.dumps({"status": "abandoned", "terminal_reason": "operator_abandoned"})
+    )
+    (run_path.parent.parent / "index.json").write_text(
+        json.dumps({"runs": [{"implementation_run_id": RUN}]})
+    )
+
+    abandoned = _run(repo, state, "abandon-feature-branch")
+
+    assert abandoned.returncode == 0, abandoned.stderr
+    tag = f"kotekomi/tasks/{TASK}/result"
+    assert _remote(repo, f"refs/tags/{tag}^{{}}") == receipt
+    assert (
+        subprocess.run(
+            ["git", "show-ref", "--verify", f"refs/heads/feature/{TASK}"],
+            cwd=repo,
+            capture_output=True,
+            check=False,
+        ).returncode
+        != 0
+    )
+    assert git_output(repo, "ls-remote", "origin", f"refs/heads/feature/{TASK}") == ""
+
+
+def test_abandonment_retains_a_local_ref_that_differs_from_the_remote_tip(tmp_path: Path) -> None:
+    repo, state, _, candidate, receipt = _fixture(tmp_path)
+    run_path = state / "experiments" / TASK / "runs" / RUN / "run.json"
+    run_path.parent.mkdir(parents=True, exist_ok=True)
+    run_path.write_text(
+        json.dumps({"status": "abandoned", "terminal_reason": "operator_abandoned"})
+    )
+    (run_path.parent.parent / "index.json").write_text(
+        json.dumps({"runs": [{"implementation_run_id": RUN}]})
+    )
+    git(repo, "branch", "-f", f"feature/{TASK}", candidate)
+
+    abandoned = _run(repo, state, "abandon-feature-branch")
+
+    assert abandoned.returncode == 2
+    assert git_output(repo, "rev-parse", f"feature/{TASK}") == candidate
+    assert _remote(repo, f"refs/heads/feature/{TASK}") == receipt
+    cleanup = json.loads(
+        (state / "experiments" / TASK / "runs" / RUN / "cleanup/branch-cleanup.json").read_text()
+    )
+    assert cleanup["branch_cleanup_complete"] is False
+    assert cleanup["remaining_branches"] == [f"feature/{TASK}", f"origin/feature/{TASK}"]

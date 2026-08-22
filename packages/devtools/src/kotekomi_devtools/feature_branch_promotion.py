@@ -260,7 +260,8 @@ def _cleanup(
     task: str,
     run: str,
     branch: str,
-    target: str,
+    feature_tip: str,
+    result_target: str,
     command: str,
     *,
     terminal_result_preserved: bool = False,
@@ -283,13 +284,19 @@ def _cleanup(
             if _git("status", "--porcelain", cwd=Path(path)).stdout:
                 local_cleanup_safe = False
                 continue
-            _git("switch", "--detach", target, cwd=Path(path))
-    local_deleted = (
-        local_cleanup_safe
-        and _git("branch", "-d", branch).returncode == 0
-    )
+            _git("switch", "--detach", result_target, cwd=Path(path))
+    local_ref = f"refs/heads/{branch}"
+    local_tip = _git("show-ref", "--verify", "--hash", local_ref)
+    local_deleted = local_tip.returncode != 0
+    if local_cleanup_safe and local_tip.returncode == 0 and local_tip.stdout.strip() == feature_tip:
+        local_deleted = _git("update-ref", "-d", local_ref, feature_tip).returncode == 0
     if local_deleted:
-        _git("push", "origin", "--delete", branch)
+        _git(
+            "push",
+            f"--force-with-lease=refs/heads/{branch}:{feature_tip}",
+            "origin",
+            f":refs/heads/{branch}",
+        )
     remaining: list[str] = []
     if _git("show-ref", "--verify", "--quiet", f"refs/heads/{branch}").returncode == 0:
         remaining.append(branch)
@@ -375,6 +382,7 @@ def _complete(
             if record.get("status") != "abandoned":
                 raise FeatureBranchPromotionError("abandonment requires an abandoned run record")
             target = _remote(branch)
+            feature_tip = target
             preserved_result = _preserved_superseded_result(root, task_id, run_id)
             if preserved_result is None:
                 tag_body: Json = {
@@ -415,6 +423,7 @@ def _complete(
                     json.dumps(ci, sort_keys=True, separators=(",", ":")).encode()
                 ).hexdigest(),
             }
+            feature_tip = str(receipt["receipt_commit"])
     except (FeatureBranchPromotionError, OSError, json.JSONDecodeError) as error:
         return _result(
             2,
@@ -455,6 +464,7 @@ def _complete(
         task_id,
         run_id,
         branch,
+        feature_tip,
         target,
         "abandon-feature-branch" if abandoned else "complete-feature-branch",
         terminal_result_preserved=preserved_result is not None,
