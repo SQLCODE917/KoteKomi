@@ -3,6 +3,8 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
+import pytest
+from kotekomi_devtools.evidence_catalog import EvidenceError, write_canonical_record
 from kotekomi_devtools.tdd_workflow import (
     mark_run_complete,
     mark_run_superseded,
@@ -326,6 +328,118 @@ def test_mark_run_superseded_records_terminal_reason(tmp_path: Path) -> None:
 
     assert json.loads(run_path.read_text())["status"] == "superseded"
     assert json.loads(run_path.read_text())["terminal_reason"] == "superseded_by_successor"
+
+
+def test_mark_run_superseded_reclassifies_an_abandoned_run_with_canonical_evidence(
+    tmp_path: Path,
+) -> None:
+    task = "task"
+    run = "task-run-001"
+    root = tmp_path / "state"
+    run_path = root / "experiments" / task / "runs" / run / "run.json"
+    run_path.parent.mkdir(parents=True)
+    run_path.write_text(
+        json.dumps({"status": "abandoned", "terminal_reason": "operator_abandoned"})
+    )
+    (run_path.parent.parent / "index.json").write_text(
+        json.dumps(
+            {
+                "runs": [
+                    {
+                        "implementation_run_id": run,
+                        "ordinal": 1,
+                        "run_record_path": run_path.relative_to(root).as_posix(),
+                        "status": "abandoned",
+                    }
+                ]
+            }
+        )
+    )
+    write_canonical_record(
+        root,
+        task,
+        run,
+        phase="complete",
+        evidence_type="task_result",
+        subject_id="result",
+        payload={
+            "schema_version": 1,
+            "outcome": "superseded",
+            "tag": "kotekomi/tasks/task/result",
+            "target_commit": "target",
+            "tag_message_sha256": "digest",
+            "supersession_reason": "scope_discovery",
+            "successor_task_id": "successor",
+            "successor_run_id": "successor-run-001",
+            "successor_result_tag": "kotekomi/tasks/successor/result",
+            "successor_target_commit": "target",
+            "handoff_commit": "handoff",
+            "handoff_patch_id": "patch",
+            "delivery_base_commit": "base",
+            "delivery_head_commit": "head",
+            "delivery_patch_id": "patch",
+            "successor_delivery_base_commit": "base",
+            "successor_delivery_patch_id": "patch",
+            "diagnostics": [],
+        },
+        producer_command="test",
+    )
+    write_canonical_record(
+        root,
+        task,
+        run,
+        phase="main_ci",
+        evidence_type="cleanup",
+        subject_id="cleanup",
+        payload={
+            "schema_version": 1,
+            "branch_cleanup_complete": True,
+            "remaining_branches": [],
+            "diagnostics": [],
+        },
+        producer_command="test",
+    )
+
+    mark_run_superseded(root, task, run)
+
+    record = json.loads(run_path.read_text())
+    assert record["status"] == "superseded"
+    assert record["terminal_reason"] == "superseded_by_successor"
+    assert record["prior_status"] == "abandoned"
+    assert record["prior_terminal_reason"] == "operator_abandoned"
+
+
+def test_mark_run_superseded_retains_an_abandoned_run_without_evidence(tmp_path: Path) -> None:
+    task = "task"
+    run = "task-run-001"
+    root = tmp_path / "state"
+    run_path = root / "experiments" / task / "runs" / run / "run.json"
+    run_path.parent.mkdir(parents=True)
+    run_path.write_text(
+        json.dumps({"status": "abandoned", "terminal_reason": "operator_abandoned"})
+    )
+    (run_path.parent.parent / "index.json").write_text(
+        json.dumps(
+            {
+                "runs": [
+                    {
+                        "implementation_run_id": run,
+                        "ordinal": 1,
+                        "run_record_path": run_path.relative_to(root).as_posix(),
+                        "status": "abandoned",
+                    }
+                ]
+            }
+        )
+    )
+
+    with pytest.raises(EvidenceError, match="superseded workflow requires canonical evidence"):
+        mark_run_superseded(root, task, run)
+
+    assert json.loads(run_path.read_text()) == {
+        "status": "abandoned",
+        "terminal_reason": "operator_abandoned",
+    }
 
 
 def test_workflow_marks_a_blocked_run_complete_after_terminal_evidence(tmp_path: Path) -> None:
