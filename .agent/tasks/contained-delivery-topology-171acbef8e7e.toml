@@ -1,0 +1,68 @@
+schema_version = 2
+task_id = "contained-delivery-topology-171acbef8e7e"
+title = "Contained Delivery Topology"
+status = "ready_for_terra_high"
+series_id = "tdd-harness-feature-branch"
+task_class = "repository-tooling"
+model_profile = "terra-high-v1"
+baseline_revision = "cb749e8c83d8e2ba3a0b522ac432f40c6a7e0bdb"
+tdd_path = "docs/2026-08-22-contained-delivery-topology.md"
+tdd_sha256 = "171acbef8e7e105167cf99cfcc0c38db9a06ded2cd64a4209c8a33d80b4119cb"
+goal = "Close a strictly contained historic delivery from an equivalent Git lineage without using an invalid ancestry condition."
+depends_on = ["historical-evidence-validation-6487be379587"]
+allowed_paths = [
+  "docs/CHECK_PLAN.md",
+  "packages/devtools/src/kotekomi_devtools/superseded_task_closure.py",
+  "packages/devtools/tests/acceptance/test_superseded_task_closure_contract.py"
+]
+reference_paths = [
+  "docs/2026-08-22-harness-state-reconciliation.md",
+  "docs/2026-08-22-historical-evidence-validation.md",
+  "packages/devtools/src/kotekomi_devtools/evidence_catalog.py"
+]
+stop_conditions = [
+  "the implementation weakens the reverse-application proof",
+  "the implementation deletes a feature reference whose tip differs from the named handoff commit",
+  "the implementation force-deletes a Git reference",
+  "the implementation changes the protected leaf TDD or task manifest"
+]
+
+[readiness]
+authority = "The Contained Delivery Topology TDD defines this task."
+contract_family = "tdd-harness"
+dominant_outcome = "The Harness closes a strictly contained historic delivery without requiring equivalent commits to share ancestry."
+failure_policy = "A mismatching local tip, remote tip, or delivery diff blocks before the producer changes state or references."
+legacy_disposition = "Exact delivery closure retains patch-equality behavior."
+negative_proof = "The producer never infers contained delivery from topology and never force-deletes a reference."
+public_entry_point = "kotekomi-agent close-superseded-task"
+scope_policy = "Superseded closure topology checks and disposable-Git contract tests only."
+side_effect_boundary = "Canonical Harness state, annotated task tags, and non-force feature-reference deletion only."
+unresolved_decisions = []
+
+[budget]
+maximum_production_files = 1
+maximum_test_files = 1
+maximum_production_diff_lines = 300
+
+[[protected_artifacts]]
+kind = "leaf-tdd"
+path = "docs/2026-08-22-contained-delivery-topology.md"
+sha256 = "171acbef8e7e105167cf99cfcc0c38db9a06ded2cd64a4209c8a33d80b4119cb"
+
+[[acceptance]]
+id = "contained-delivery-topology-contract"
+argv = ["uv", "run", "pytest", "-p", "no:cacheprovider", "packages/devtools/tests/acceptance/test_superseded_task_closure_contract.py"]
+timeout_seconds = 240
+profile = "portable-local"
+
+[[acceptance]]
+id = "repository-static-checks"
+argv = ["uv", "run", "ruff", "check"]
+timeout_seconds = 120
+profile = "portable-local"
+
+[[acceptance]]
+id = "repository-type-checks"
+argv = ["uv", "run", "pyright"]
+timeout_seconds = 240
+profile = "portable-local"
