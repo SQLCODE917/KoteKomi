@@ -624,20 +624,48 @@ def mark_run_superseded(root: Path, task: str, run_id: str) -> None:
         (item for item in index["runs"] if item["implementation_run_id"] == run_id),
         None,
     )
-    if row is None or row["status"] in {"complete", "abandoned"}:
+    if row is None or row["status"] == "complete":
         raise EvidenceError("superseded workflow requires an active or blocked run")
+    if row["status"] == "abandoned" and not _has_complete_supersession_evidence(
+        root, task, run_id
+    ):
+        raise EvidenceError("superseded workflow requires canonical evidence")
     if row["status"] != "superseded":
         now = datetime.now(UTC).isoformat()
+        prior_status = row["status"]
         row["status"] = "superseded"
         row["updated_at"] = now
         record_path = root / row["run_record_path"]
         record = _read(record_path)
+        if prior_status == "abandoned":
+            record["prior_status"] = "abandoned"
+            record["prior_terminal_reason"] = record.get("terminal_reason")
         record["status"] = "superseded"
         record["terminal_reason"] = "superseded_by_successor"
         record["updated_at"] = now
         _write(record_path, record)
     index["latest_run_id"] = (_latest(index) or {}).get("implementation_run_id")
     _write(index_path, index)
+
+
+def _has_complete_supersession_evidence(root: Path, task: str, run_id: str) -> bool:
+    try:
+        entries = validated_entries(root, task, run_id)
+    except EvidenceError:
+        return False
+    payloads: dict[str, Json] = {}
+    for evidence_type in ("task_result", "cleanup"):
+        entry = next((item for item in entries if item["evidence_type"] == evidence_type), None)
+        if entry is None or entry["path_scope"] != "state":
+            return False
+        try:
+            payloads[evidence_type] = _read(root / str(entry["path"]))
+        except (OSError, ValueError, json.JSONDecodeError):
+            return False
+    return (
+        payloads["task_result"].get("outcome") == "superseded"
+        and payloads["cleanup"].get("branch_cleanup_complete") is True
+    )
 
 
 def _record_specification(root: Path, task: str, run_id: str, manifest: Path) -> str:
