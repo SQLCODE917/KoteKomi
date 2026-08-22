@@ -200,6 +200,8 @@ def test_source_add_file_ingests_project_pdf_fixture(
             [
                 "retrieval",
                 "build-document",
+                "--channel",
+                "exact-lexical",
                 "--representation-id",
                 result["representation_id"],
                 "--ledger-path",
@@ -218,6 +220,8 @@ def test_source_add_file_ingests_project_pdf_fixture(
             [
                 "retrieval",
                 "query",
+                "--channel",
+                "exact-lexical",
                 "--representation-id",
                 result["representation_id"],
                 "--query",
