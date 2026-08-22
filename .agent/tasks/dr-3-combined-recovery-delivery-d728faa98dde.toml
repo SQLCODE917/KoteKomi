@@ -1,0 +1,93 @@
+schema_version = 2
+task_id = "dr-3-combined-recovery-delivery-d728faa98dde"
+title = "DR-3 Combined Recovery Delivery"
+status = "ready_for_terra_high"
+series_id = "derived-retrieval"
+task_class = "orchestration"
+model_profile = "terra-high-v1"
+baseline_revision = "a7ae4fe851ef27e6dd151436fe2b7dfe12856448"
+tdd_path = "docs/2026-08-22-dr-3-combined-recovery-delivery.md"
+tdd_sha256 = "d728faa98ddedffc4d874d2648a0afd33892da93c272f1c7eede17c0d1325dc9"
+goal = "Deliver the resolved combined DR-3 hybrid and exact-lexical diagnostic behavior through a completed feature branch."
+depends_on = []
+allowed_paths = [
+  ".agent/scenarios/anthropic-dod-dispute-v1/queries/dr-3-document-hybrid-v1.jsonl",
+  ".agent/scenarios/anthropic-dod-dispute-v1/suites/dr-3-v1.json",
+  ".agent/schemas/retrieval-query-case-v3.schema.json",
+  ".agent/schemas/retrieval-query-suite-v3.schema.json",
+  "docs/CHECK_PLAN.md",
+  "packages/application/src/kotekomi_application/__init__.py",
+  "packages/application/src/kotekomi_application/document_retrieval.py",
+  "packages/application/tests/test_document_retrieval.py",
+  "packages/devtools/src/kotekomi_devtools/retrieval_scenarios.py",
+  "packages/devtools/tests/unit/test_retrieval_scenarios.py",
+  "packages/domain/src/kotekomi_domain/models.py",
+  "packages/domain/tests/test_document_retrieval.py",
+  "packages/pipelines/src/kotekomi_pipelines/cli.py",
+  "packages/pipelines/src/kotekomi_pipelines/config.py",
+  "packages/pipelines/tests/test_document_retrieval.py",
+  "packages/pipelines/tests/test_source_add_file.py"
+]
+reference_paths = [
+  "docs/2026-08-21-document-hybrid-activation.md",
+  "docs/2026-08-22-dr-3-exact-lexical-diagnostic-cli.md",
+  "packages/adapters/src/kotekomi_adapters/sqlite_document_retrieval.py",
+  "packages/application/src/kotekomi_application/context_planning.py"
+]
+stop_conditions = [
+  "the successor candidate differs from stable patch ID 3e630f06b12dfddd5953672e25b9e3300a472159",
+  "the implementation adds DR-4 behavior",
+  "the locked canonical PDF or semantic-validation-v1 profile is unavailable"
+]
+
+[readiness]
+authority = "The DR-3 Combined Recovery Delivery TDD defines this task."
+contract_family = "derived-retrieval"
+dominant_outcome = "The resolved DR-3 delivery tree reaches main through a verified feature branch."
+failure_policy = "A patch mismatch, unavailable canonical profile, failed verification, failed CI, or incomplete cleanup blocks historic closure."
+legacy_disposition = "The original DR-3 task and prior closeout task remain intact until this successor completes, then become superseded evidence."
+negative_proof = "The successor adds no retrieval behavior beyond the resolved combined delivery tree."
+public_entry_point = "kotekomi retrieval build-document and kotekomi retrieval query"
+scope_policy = "The resolved historical DR-3 hybrid and diagnostic handoff paths only."
+side_effect_boundary = "Disposable retrieval indexes, query records, ContextManifests, and Harness lifecycle receipts."
+unresolved_decisions = []
+
+[budget]
+maximum_production_files = 10
+maximum_test_files = 6
+maximum_production_diff_lines = 1250
+
+[[protected_artifacts]]
+kind = "leaf-tdd"
+path = "docs/2026-08-22-dr-3-combined-recovery-delivery.md"
+sha256 = "d728faa98ddedffc4d874d2648a0afd33892da93c272f1c7eede17c0d1325dc9"
+
+[[acceptance]]
+id = "document-hybrid-domain-application"
+argv = ["uv", "run", "pytest", "packages/domain/tests/test_document_retrieval.py", "packages/application/tests/test_document_retrieval.py"]
+timeout_seconds = 240
+profile = "portable-local"
+
+[[acceptance]]
+id = "document-hybrid-adapter"
+argv = ["uv", "run", "pytest", "packages/adapters/tests/test_sqlite_document_retrieval.py"]
+timeout_seconds = 240
+profile = "portable-local"
+
+[[acceptance]]
+id = "document-hybrid-pipeline-scenario"
+argv = ["uv", "run", "pytest", "packages/pipelines/tests/test_cli.py", "packages/pipelines/tests/test_document_retrieval.py", "packages/pipelines/tests/test_source_add_file.py", "packages/devtools/tests/unit/test_retrieval_scenarios.py"]
+timeout_seconds = 240
+profile = "portable-local"
+
+[[acceptance]]
+id = "repository-static-checks"
+argv = ["uv", "run", "ruff", "check"]
+timeout_seconds = 120
+profile = "portable-local"
+
+[[acceptance]]
+id = "repository-type-checks"
+argv = ["uv", "run", "pyright"]
+timeout_seconds = 240
+profile = "portable-local"
