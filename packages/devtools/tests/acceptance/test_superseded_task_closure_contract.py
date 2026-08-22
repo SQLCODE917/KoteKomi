@@ -257,6 +257,22 @@ def _fixture(
     return repo, state, handoff
 
 
+def _historical_result_tag(repo: Path, handoff: str, *, outcome: str) -> str:
+    tag = f"kotekomi/tasks/{TASK}/result"
+    message = json.dumps(
+        {
+            "schema_version": 1,
+            "task_id": TASK,
+            "implementation_run_id": RUN,
+            "outcome": outcome,
+        },
+        sort_keys=True,
+    )
+    git(repo, "tag", "-a", tag, handoff, "-m", message)
+    git(repo, "push", "origin", f"refs/tags/{tag}")
+    return tag
+
+
 def test_closure_tags_patch_equivalent_handoff_and_deletes_feature_branch(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -324,3 +340,44 @@ def test_closure_resolves_a_receipt_merge_delivery_range(
     )
     assert record["delivery_head_commit"] != handoff
     assert record["delivery_patch_id"] == record["successor_delivery_patch_id"]
+
+
+def test_closure_retains_an_abandoned_result_tag(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo, state, handoff = _fixture(tmp_path, monkeypatch)
+    historical = _historical_result_tag(repo, handoff, outcome="abandoned")
+    historical_target = git_output(repo, "rev-parse", f"{historical}^{{}}")
+    historical_message = git_output(repo, "for-each-ref", historical, "--format=%(contents)")
+
+    result = _run(repo, state, handoff)
+
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    superseded = f"kotekomi/tasks/{TASK}/superseded-result"
+    assert payload["result_tag"] == superseded
+    assert payload["historical_result_tag"] == historical
+    assert git_output(repo, "rev-parse", f"{historical}^{{}}") == historical_target
+    assert (
+        git_output(repo, "for-each-ref", historical, "--format=%(contents)")
+        == historical_message
+    )
+    assert git_output(repo, "ls-remote", "origin", f"refs/tags/{superseded}^{{}}")
+    record = json.loads(
+        (state / "experiments" / TASK / "runs" / RUN / "results/task-result.json").read_text()
+    )
+    assert record["tag"] == superseded
+    assert record["historical_result_tag"] == historical
+
+
+def test_closure_blocks_a_non_abandoned_historical_result_tag(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo, state, handoff = _fixture(tmp_path, monkeypatch)
+    _historical_result_tag(repo, handoff, outcome="completed")
+
+    result = _run(repo, state, handoff)
+
+    assert result.returncode == 2
+    assert "historical result tag conflicts" in result.stdout
+    assert git_output(repo, "ls-remote", "origin", f"refs/heads/feature/{TASK}")
