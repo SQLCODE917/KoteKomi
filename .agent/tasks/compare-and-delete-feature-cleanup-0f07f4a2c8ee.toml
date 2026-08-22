@@ -1,0 +1,69 @@
+schema_version = 2
+task_id = "compare-and-delete-feature-cleanup-0f07f4a2c8ee"
+title = "Compare-and-Delete Feature Cleanup"
+status = "ready_for_terra_high"
+series_id = "tdd-harness-feature-branch"
+task_class = "repository-tooling"
+model_profile = "terra-high-v1"
+baseline_revision = "3cc5f083ef550283a2bde4f7a8ef2ad42edb81ef"
+tdd_path = "docs/2026-08-22-compare-and-delete-feature-cleanup.md"
+tdd_sha256 = "0f07f4a2c8ee3017514b2e90d482e7f7e0a8e26ff1b191a7bd520eca0e697060"
+goal = "Delete a tagged abandoned feature branch only when local and remote refs still equal its recorded feature tip."
+depends_on = ["contained-delivery-topology-171acbef8e7e"]
+allowed_paths = [
+  "docs/CHECK_PLAN.md",
+  "packages/devtools/src/kotekomi_devtools/feature_branch_promotion.py",
+  "packages/devtools/tests/acceptance/test_feature_branch_promotion_completion_contract.py"
+]
+reference_paths = [
+  "docs/2026-08-18-tdd-feature-branch-promotion-completion.md",
+  "packages/devtools/src/kotekomi_devtools/superseded_task_closure.py",
+  "packages/devtools/src/kotekomi_devtools/evidence_catalog.py"
+]
+stop_conditions = [
+  "the implementation deletes a feature ref before a matching result tag exists",
+  "the implementation deletes a local or remote ref whose commit differs from the expected feature tip",
+  "the implementation uses an unrestricted local or remote feature-ref deletion",
+  "the implementation changes promotion or result-tag contracts",
+  "the implementation changes the protected leaf TDD or task manifest"
+]
+
+[readiness]
+authority = "The Compare-and-Delete Feature Cleanup TDD defines this task."
+contract_family = "tdd-harness"
+dominant_outcome = "The Harness removes a tagged abandoned feature branch without requiring the branch to merge into main."
+failure_policy = "A local or remote ref mismatch retains that ref and writes incomplete cleanup evidence."
+legacy_disposition = "Merge-only local branch deletion is replaced by compare-and-delete ref deletion."
+negative_proof = "The producer never deletes a ref without its recorded expected feature tip."
+public_entry_point = "kotekomi-agent abandon-feature-branch"
+scope_policy = "Feature cleanup comparison, lease enforcement, and disposable-Git contract tests only."
+side_effect_boundary = "Annotated task tags, named local feature refs, named remote feature refs, and canonical cleanup evidence only."
+unresolved_decisions = []
+
+[budget]
+maximum_production_files = 1
+maximum_test_files = 1
+maximum_production_diff_lines = 160
+
+[[protected_artifacts]]
+kind = "leaf-tdd"
+path = "docs/2026-08-22-compare-and-delete-feature-cleanup.md"
+sha256 = "0f07f4a2c8ee3017514b2e90d482e7f7e0a8e26ff1b191a7bd520eca0e697060"
+
+[[acceptance]]
+id = "compare-and-delete-feature-cleanup-contract"
+argv = ["uv", "run", "pytest", "-p", "no:cacheprovider", "packages/devtools/tests/acceptance/test_feature_branch_promotion_completion_contract.py"]
+timeout_seconds = 240
+profile = "portable-local"
+
+[[acceptance]]
+id = "repository-static-checks"
+argv = ["uv", "run", "ruff", "check"]
+timeout_seconds = 120
+profile = "portable-local"
+
+[[acceptance]]
+id = "repository-type-checks"
+argv = ["uv", "run", "pyright"]
+timeout_seconds = 240
+profile = "portable-local"
