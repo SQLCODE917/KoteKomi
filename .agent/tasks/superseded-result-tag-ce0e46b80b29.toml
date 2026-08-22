@@ -1,0 +1,66 @@
+schema_version = 2
+task_id = "superseded-result-tag-ce0e46b80b29"
+title = "Superseded Result Tag"
+status = "ready_for_terra_high"
+series_id = "agent-harness"
+task_class = "repository-tooling"
+model_profile = "terra-high-v1"
+baseline_revision = "2d320369e252a3301b89a3f3bc23b8804c6bf859"
+tdd_path = "docs/2026-08-22-superseded-result-tag.md"
+tdd_sha256 = "ce0e46b80b2917beed172e4f8cd8ebb1f4553281a64add9bb900bf6681d0a598"
+goal = "Preserve an abandoned result tag while recording the later superseded task outcome."
+depends_on = ["tdd-abandoned-run-supersession-3866db094b5f"]
+allowed_paths = [
+  "packages/devtools/src/kotekomi_devtools/superseded_task_closure.py",
+  "packages/devtools/tests/acceptance/test_superseded_task_closure_contract.py"
+]
+reference_paths = [
+  "docs/2026-08-22-superseded-result-tag.md",
+  "packages/devtools/src/kotekomi_devtools/feature_branch_promotion.py",
+  "packages/devtools/src/kotekomi_devtools/evidence_catalog.py"
+]
+stop_conditions = [
+  "the implementation modifies a published tag",
+  "the implementation changes normal completed-task result tag behavior",
+  "the implementation deletes a branch before every required tag is published"
+]
+
+[readiness]
+authority = "The Superseded Result Tag TDD defines this task."
+contract_family = "agent-harness"
+dominant_outcome = "A later supersession retains the earlier abandoned result tag."
+failure_policy = "Invalid historical or superseded tags retain the feature branch."
+legacy_disposition = "Superseded closure retains its existing result tag when no historical tag exists."
+negative_proof = "The task does not alter a result tag or use force publication."
+public_entry_point = "kotekomi-agent close-superseded-task"
+scope_policy = "Result-tag selection, task-result evidence, and closure contract tests."
+side_effect_boundary = "Annotated Git tags and existing branch cleanup."
+unresolved_decisions = []
+
+[budget]
+maximum_production_files = 1
+maximum_test_files = 1
+maximum_production_diff_lines = 260
+
+[[protected_artifacts]]
+kind = "leaf-tdd"
+path = "docs/2026-08-22-superseded-result-tag.md"
+sha256 = "ce0e46b80b2917beed172e4f8cd8ebb1f4553281a64add9bb900bf6681d0a598"
+
+[[acceptance]]
+id = "superseded-result-tag-contract"
+argv = ["uv", "run", "pytest", "-p", "no:cacheprovider", "packages/devtools/tests/acceptance/test_superseded_task_closure_contract.py"]
+timeout_seconds = 180
+profile = "portable-local"
+
+[[acceptance]]
+id = "repository-static-checks"
+argv = ["uv", "run", "ruff", "check"]
+timeout_seconds = 120
+profile = "portable-local"
+
+[[acceptance]]
+id = "repository-type-checks"
+argv = ["uv", "run", "pyright"]
+timeout_seconds = 240
+profile = "portable-local"
