@@ -67,6 +67,45 @@ def _write_spec(repo: Path) -> None:
 
 
 def _seed_original(state: Path, repo: Path, specification: str) -> None:
+    run_path = state / "experiments" / TASK / "runs" / RUN / "run.json"
+    run_path.parent.mkdir(parents=True)
+    run_path.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "task_id": TASK,
+                "implementation_run_id": RUN,
+                "ordinal": 1,
+                "run_record_path": run_path.relative_to(state).as_posix(),
+                "status": "abandoned",
+                "started_at": "2026-08-22T00:00:00+00:00",
+                "updated_at": "2026-08-22T00:00:00+00:00",
+                "terminal_reason": "operator_abandoned",
+                "diagnostics": [],
+            }
+        )
+    )
+    (run_path.parent.parent / "index.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "task_id": TASK,
+                "runs": [
+                    {
+                        "implementation_run_id": RUN,
+                        "ordinal": 1,
+                        "run_record_path": run_path.relative_to(state).as_posix(),
+                        "status": "abandoned",
+                        "started_at": "2026-08-22T00:00:00+00:00",
+                        "updated_at": "2026-08-22T00:00:00+00:00",
+                    }
+                ],
+                "latest_run_id": RUN,
+                "next_ordinal": 2,
+                "diagnostics": [],
+            }
+        )
+    )
     binding = {
         "schema_version": 1,
         "task_id": TASK,
@@ -298,6 +337,10 @@ def test_closure_tags_patch_equivalent_handoff_and_deletes_feature_branch(
     assert record["outcome"] == "superseded"
     assert record["supersession_reason"] == "scope_discovery"
     assert len(record["handoff_patch_id"]) == 40
+    assert record["delivery_relation"] == "exact"
+    assert json.loads(
+        (state / "experiments" / TASK / "runs" / RUN / "run.json").read_text()
+    )["status"] == "superseded"
 
 
 def test_closure_blocks_when_handoff_patch_differs(
@@ -325,6 +368,74 @@ def test_closure_blocks_when_handoff_patch_differs(
     assert result.returncode == 2
     assert "handoff patch does not match" in result.stdout
     assert git_output(repo, "ls-remote", "origin", f"refs/heads/feature/{TASK}")
+
+
+def test_closure_accepts_a_contained_handoff_patch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo, state, handoff = _fixture(tmp_path, monkeypatch)
+
+    result = _run(repo, state, handoff, "--delivery-relation", "contained")
+
+    assert result.returncode == 0, result.stderr
+    record = json.loads(
+        (state / "experiments" / TASK / "runs" / RUN / "results/task-result.json").read_text()
+    )
+    assert record["delivery_relation"] == "contained"
+    assert len(record["historic_delivery_diff_sha256"]) == 64
+
+
+def test_contained_closure_blocks_when_successor_omits_the_historic_diff(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo, state, handoff = _fixture(tmp_path, monkeypatch)
+    specification_path = (
+        state / "experiments" / TASK / "runs" / RUN / "git/specification-revision.json"
+    )
+    specification = json.loads(specification_path.read_text())["specification_revision"]
+    write_canonical_record(
+        state,
+        SUCCESSOR,
+        SUCCESSOR_RUN,
+        phase="candidate",
+        evidence_type="candidate_commit",
+        subject_id="candidate",
+        payload={
+            "schema_version": 1,
+            "commit_sha": specification,
+            "parent_sha": "0" * 40,
+            "diagnostics": [],
+        },
+        producer_command="test",
+    )
+
+    result = _run(repo, state, handoff, "--delivery-relation", "contained")
+
+    assert result.returncode == 2
+    assert "commit patch ID is unavailable" in result.stdout
+    assert git_output(repo, "ls-remote", "origin", f"refs/heads/feature/{TASK}")
+
+
+def test_closure_retry_repairs_a_stale_run_without_a_feature_branch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo, state, handoff = _fixture(tmp_path, monkeypatch)
+    first = _run(repo, state, handoff)
+    assert first.returncode == 0, first.stderr
+    run_path = state / "experiments" / TASK / "runs" / RUN / "run.json"
+    index_path = run_path.parent.parent / "index.json"
+    run = json.loads(run_path.read_text())
+    run["status"] = "abandoned"
+    run["terminal_reason"] = "operator_abandoned"
+    run_path.write_text(json.dumps(run))
+    index = json.loads(index_path.read_text())
+    index["runs"][0]["status"] = "abandoned"
+    index_path.write_text(json.dumps(index))
+
+    retried = _run(repo, state, "0" * 40)
+
+    assert retried.returncode == 0, retried.stdout
+    assert json.loads(run_path.read_text())["status"] == "superseded"
 
 
 def test_closure_resolves_a_receipt_merge_delivery_range(

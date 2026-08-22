@@ -7,6 +7,7 @@ import json
 import os
 import re
 import subprocess
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
@@ -17,6 +18,7 @@ from kotekomi_devtools.evidence_catalog import (
     validated_entries,
     write_canonical_record,
 )
+from kotekomi_devtools.tdd_workflow import mark_run_superseded
 
 type Json = dict[str, Any]
 _SHA1 = re.compile(r"[0-9a-f]{40}")
@@ -41,6 +43,7 @@ def close_superseded_task(
     successor_task_id: str,
     successor_run_id: str,
     handoff_commit: str,
+    delivery_relation: str = "exact",
     state_root_path: Path | None,
     output: Path | None = None,
     markdown: Path | None = None,
@@ -48,8 +51,22 @@ def close_superseded_task(
     """Publish supersession evidence and remove one retained feature branch."""
     root = state_root(state_root_path)
     try:
+        if delivery_relation not in {"exact", "contained"}:
+            raise SupersededTaskClosureError("delivery relation must be exact or contained")
         original_specification = _original_specification(root, task_id, run_id)
         successor = _successor(root, successor_task_id, successor_run_id)
+        retry = _completed_supersession(
+            root,
+            task_id,
+            run_id,
+            successor_task_id,
+            successor_run_id,
+            successor["target_commit"],
+        )
+        if retry is not None:
+            mark_run_superseded(root, task_id, run_id)
+            _write_copies(retry, output, markdown)
+            return SupersededTaskClosureResult(0, retry)
         handoff = _commit(handoff_commit)
         branch = f"feature/{task_id}"
         local_tip = _local_branch(branch)
@@ -65,12 +82,18 @@ def close_superseded_task(
                 "handoff commit is not reachable from local feature branch"
             )
         delivery_head = _delivery_head(handoff)
-        patch_id = _range_patch_id(original_specification, delivery_head)
+        delivery_diff = _delivery_diff(original_specification, delivery_head)
+        patch_id = _patch_id(delivery_diff)
         successor_patch_id = _range_patch_id(
             successor["specification_revision"], successor["candidate_commit"]
         )
-        if patch_id != successor_patch_id:
+        if delivery_relation == "exact" and patch_id != successor_patch_id:
             raise SupersededTaskClosureError("handoff patch does not match successor candidate")
+        if delivery_relation == "contained":
+            if not delivery_diff:
+                raise SupersededTaskClosureError("contained delivery must not be empty")
+            _require_contained_delivery(delivery_diff, successor["candidate_commit"])
+        delivery_diff_sha256 = _digest_text(delivery_diff)
         message = _message(
             task_id,
             run_id,
@@ -84,6 +107,8 @@ def close_superseded_task(
             delivery_head,
             successor["specification_revision"],
             successor_patch_id,
+            delivery_relation,
+            delivery_diff_sha256,
         )
         result_tag, historical_result_tag = _result_tag(
             task_id, successor["target_commit"], message
@@ -108,6 +133,8 @@ def close_superseded_task(
             "delivery_patch_id": patch_id,
             "successor_delivery_base_commit": successor["specification_revision"],
             "successor_delivery_patch_id": successor_patch_id,
+            "delivery_relation": delivery_relation,
+            "historic_delivery_diff_sha256": delivery_diff_sha256,
             "diagnostics": [],
         }
         if historical_result_tag is not None:
@@ -133,6 +160,8 @@ def close_superseded_task(
             payload=cleanup,
             producer_command="close-superseded-task",
         )
+        if not failed:
+            mark_run_superseded(root, task_id, run_id)
         payload: Json = {
             "schema_version": 1,
             "status": "superseded" if not failed else "incomplete_cleanup",
@@ -145,6 +174,7 @@ def close_superseded_task(
             "successor_run_id": successor_run_id,
             "successor_target_commit": successor["target_commit"],
             "handoff_commit": handoff,
+            "delivery_relation": delivery_relation,
             "cleanup": cleanup,
             "diagnostics": [],
         }
@@ -233,6 +263,50 @@ def _payload(root: Path, entries: list[Json], evidence_type: str) -> Json:
     return cast(Json, payload)
 
 
+def _completed_supersession(
+    root: Path,
+    task_id: str,
+    run_id: str,
+    successor_task_id: str,
+    successor_run_id: str,
+    successor_target: str,
+) -> Json | None:
+    """Return matching complete supersession evidence for a state-only retry."""
+    entries = _entries(root, task_id, run_id)
+    kinds = {str(entry["evidence_type"]) for entry in entries}
+    if not {"task_result", "cleanup"}.issubset(kinds):
+        return None
+    result = _payload(root, entries, "task_result")
+    cleanup = _payload(root, entries, "cleanup")
+    if result.get("outcome") != "superseded" or cleanup.get("branch_cleanup_complete") is not True:
+        return None
+    if (
+        result.get("successor_task_id") != successor_task_id
+        or result.get("successor_run_id") != successor_run_id
+        or result.get("successor_target_commit") != successor_target
+    ):
+        raise SupersededTaskClosureError("existing supersession evidence conflicts")
+    tag = result.get("tag")
+    digest = result.get("tag_message_sha256")
+    if not isinstance(tag, str) or not isinstance(digest, str):
+        raise SupersededTaskClosureError("existing supersession result is invalid")
+    if _remote_tag_target(tag) != successor_target:
+        raise SupersededTaskClosureError("existing supersession tag target is invalid")
+    if _digest_text(_tag_message(tag)) != digest:
+        raise SupersededTaskClosureError("existing supersession tag digest is invalid")
+    return {
+        "schema_version": 1,
+        "status": "superseded",
+        "task_id": task_id,
+        "implementation_run_id": run_id,
+        "result_tag": tag,
+        "successor_task_id": successor_task_id,
+        "successor_run_id": successor_run_id,
+        "successor_target_commit": successor_target,
+        "diagnostics": [],
+    }
+
+
 def _message(
     task_id: str,
     run_id: str,
@@ -246,6 +320,8 @@ def _message(
     delivery_head_commit: str,
     successor_delivery_base_commit: str,
     successor_delivery_patch_id: str,
+    delivery_relation: str,
+    historic_delivery_diff_sha256: str,
 ) -> str:
     return json.dumps(
         {
@@ -265,6 +341,8 @@ def _message(
             "delivery_patch_id": handoff_patch_id,
             "successor_delivery_base_commit": successor_delivery_base_commit,
             "successor_delivery_patch_id": successor_delivery_patch_id,
+            "delivery_relation": delivery_relation,
+            "historic_delivery_diff_sha256": historic_delivery_diff_sha256,
         },
         sort_keys=True,
         separators=(",", ":"),
@@ -380,7 +458,7 @@ def _tag_message(tag: str) -> str:
     result = _git("for-each-ref", f"refs/tags/{tag}", "--format=%(contents)")
     if result.returncode or not result.stdout:
         raise SupersededTaskClosureError("published tag message is unavailable locally")
-    return result.stdout
+    return result.stdout.rstrip("\n") + "\n"
 
 
 def _delivery_head(feature_tip: str) -> str:
@@ -445,6 +523,10 @@ def _is_receipt_only_commit(commit: str) -> bool:
 
 
 def _range_patch_id(base: str, head: str) -> str:
+    return _patch_id(_delivery_diff(base, head))
+
+
+def _delivery_diff(base: str, head: str) -> str:
     receipt_paths = _receipt_paths_in_range(base, head)
     show = _git(
         "diff",
@@ -458,10 +540,14 @@ def _range_patch_id(base: str, head: str) -> str:
     )
     if show.returncode:
         raise SupersededTaskClosureError("commit patch is unavailable")
+    return show.stdout
+
+
+def _patch_id(diff: str) -> str:
     try:
         result = subprocess.run(
             ["git", "patch-id", "--stable"],
-            input=show.stdout,
+            input=diff,
             text=True,
             capture_output=True,
             check=False,
@@ -473,6 +559,33 @@ def _range_patch_id(base: str, head: str) -> str:
     if result.returncode or len(fields) != 2 or _SHA1.fullmatch(fields[0]) is None:
         raise SupersededTaskClosureError("commit patch ID is unavailable")
     return fields[0]
+
+
+def _require_contained_delivery(delivery_diff: str, successor_candidate: str) -> None:
+    """Prove that the successor candidate retains every historic delivery hunk."""
+    with tempfile.TemporaryDirectory(prefix="kotekomi-contained-delivery-") as temporary:
+        index = Path(temporary) / "index"
+        env = os.environ | {
+            "GIT_OPTIONAL_LOCKS": "0",
+            "GIT_INDEX_FILE": str(index),
+        }
+        read_tree = _git_with_env(env, "read-tree", successor_candidate)
+        if read_tree.returncode:
+            raise SupersededTaskClosureError("successor candidate tree is unavailable")
+        reverse = _git_with_env(
+            env,
+            "apply",
+            "--cached",
+            "--check",
+            "--reverse",
+            "--whitespace=nowarn",
+            "-",
+            input_text=delivery_diff,
+        )
+    if reverse.returncode:
+        raise SupersededTaskClosureError(
+            "historic delivery is not contained in successor candidate"
+        )
 
 
 def _receipt_paths_in_range(base: str, head: str) -> tuple[str, ...]:
@@ -503,6 +616,22 @@ def _git(*arguments: str) -> subprocess.CompletedProcess[str]:
             capture_output=True,
             check=False,
             env=os.environ | {"GIT_OPTIONAL_LOCKS": "0"},
+        )
+    except OSError as error:
+        raise SupersededTaskClosureError("Git executable is unavailable") from error
+
+
+def _git_with_env(
+    env: dict[str, str], *arguments: str, input_text: str | None = None
+) -> subprocess.CompletedProcess[str]:
+    try:
+        return subprocess.run(
+            ["git", "--no-optional-locks", *arguments],
+            input=input_text,
+            text=True,
+            capture_output=True,
+            check=False,
+            env=env,
         )
     except OSError as error:
         raise SupersededTaskClosureError("Git executable is unavailable") from error

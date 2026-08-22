@@ -75,16 +75,20 @@ def _create_or_reload(root: Path, task: str, *, new_run: bool, abandon: str | No
     rows = index["runs"]
     if abandon:
         matched = next((row for row in rows if row["implementation_run_id"] == abandon), None)
-        if matched is None or matched["status"] in _TERMINAL_RUN_STATUSES:
+        if matched is None or matched["status"] in {"complete", "superseded"}:
             raise ValueError("run cannot be abandoned")
-        matched["status"] = "abandoned"
-        matched["updated_at"] = datetime.now(UTC).isoformat()
-        record_path = root / matched["run_record_path"]
-        record = _read(record_path)
-        record["status"] = "abandoned"
-        record["terminal_reason"] = "operator_abandoned"
-        record["updated_at"] = matched["updated_at"]
-        _write(record_path, record)
+        if matched["status"] != "abandoned":
+            matched["status"] = "abandoned"
+            matched["updated_at"] = datetime.now(UTC).isoformat()
+            record_path = root / matched["run_record_path"]
+            record = _read(record_path)
+            record["status"] = "abandoned"
+            record["terminal_reason"] = "operator_abandoned"
+            record["updated_at"] = matched["updated_at"]
+            _write(record_path, record)
+        index["latest_run_id"] = (_latest(index) or {}).get("implementation_run_id")
+        _write(index_path, index)
+        return matched
     latest = _latest(index)
     if latest and latest["status"] in {"active", "blocked"}:
         if new_run:
@@ -92,8 +96,10 @@ def _create_or_reload(root: Path, task: str, *, new_run: bool, abandon: str | No
         selected = latest
     else:
         if latest and latest["status"] == "superseded":
-            raise ValueError("superseded task cannot create or resume a run")
-        if latest and latest["status"] in {"complete", "abandoned"} and not new_run and not abandon:
+            if new_run:
+                raise ValueError("superseded task cannot create or resume a run")
+            selected = latest
+        elif latest and latest["status"] in {"complete", "abandoned"} and not new_run:
             selected = latest
         else:
             ordinal = int(index["next_ordinal"])
@@ -123,6 +129,43 @@ def _create_or_reload(root: Path, task: str, *, new_run: bool, abandon: str | No
     index["latest_run_id"] = (_latest(index) or {}).get("implementation_run_id")
     _write(index_path, index)
     return selected
+
+
+def _terminal_result(
+    *,
+    binding_result: Any,
+    binding: Json,
+    task: str,
+    run: Json,
+    root: Path,
+) -> Json:
+    """Return a terminal run without creating or indexing further evidence."""
+    run_id = str(run["implementation_run_id"])
+    status = str(run["status"])
+    return {
+        "schema_version": 1,
+        "status": status,
+        "task_id": task,
+        "implementation_run_id": run_id,
+        "requested_tdd_path": binding_result.requested_tdd_path,
+        "primary_tdd_path": binding["primary_tdd_path"],
+        "tdd_paths": binding["tdd_paths"],
+        "tdd_sha256": binding["tdd_sha256"],
+        "implementation_phase": status,
+        "next_action": None,
+        "required_evidence": [],
+        "missing_evidence": [],
+        "producer_arguments": {
+            "task_id": task,
+            "implementation_run_id": run_id,
+            "run_root": str(run_root(root, task, run_id)),
+            "evidence_index_path": str(
+                root / "experiments" / task / "runs" / run_id / "evidence" / "index.json"
+            ),
+        },
+        "suggested_commands": [],
+        "diagnostics": [],
+    }
 
 
 def workflow_status(
@@ -389,6 +432,20 @@ def implement_tdd(
             "task_id": task,
             "diagnostics": [{"code": "workflow.run", "location": "/run", "rule": str(error)}],
         }
+    if abandon_run is not None or run["status"] in _TERMINAL_RUN_STATUSES:
+        result = _terminal_result(
+            binding_result=binding_result,
+            binding=binding,
+            task=task,
+            run=run,
+            root=root,
+        )
+        if output:
+            _write(output, result)
+        if markdown:
+            markdown.parent.mkdir(parents=True, exist_ok=True)
+            markdown.write_text(f"# Implement TDD\n\nPhase: `{result['implementation_phase']}`\n")
+        return 0, result
     run_id = str(run["implementation_run_id"])
     rebuild_index(root, task, run_id)
     scope, rel = canonical_relative("tdd_binding", task, run_id)

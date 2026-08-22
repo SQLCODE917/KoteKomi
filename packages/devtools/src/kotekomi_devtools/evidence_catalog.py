@@ -154,6 +154,9 @@ def _event_outcome(evidence_type: str, payload: Json) -> str:
             raise EvidenceError(
                 "cleanup requires boolean branch_cleanup_complete for event outcome"
             )
+        preserved = payload.get("terminal_result_preserved")
+        if preserved is not None and type(preserved) is not bool:
+            raise EvidenceError("cleanup terminal_result_preserved must be boolean")
         return "passed" if complete else "failed"
     if evidence_type == "task_manifest_validation":
         status = payload.get("status")
@@ -496,6 +499,8 @@ def validated_entries(root: Path, task: str, run: str) -> list[Json]:
                 "delivery_patch_id",
                 "successor_delivery_base_commit",
                 "successor_delivery_patch_id",
+                "delivery_relation",
+                "historic_delivery_diff_sha256",
             )
             missing_supersession = [
                 field for field in required_supersession if field not in payload
