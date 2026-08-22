@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kotekomi.local/schemas/retrieval-query-case-v3.schema.json",
+  "title": "KoteKomi retrieval query case v3",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "query_id", "query_text", "query_kind", "required_plane", "required_channels", "expected_selection_reason", "expected_consulted_channels", "expected_hits", "context_expectations", "gate"],
+  "properties": {
+    "schema_version": {"const": "retrieval-query-case-v3"},
+    "query_id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"},
+    "query_text": {"type": "string", "minLength": 1},
+    "query_kind": {"enum": ["exact_literal", "lexical", "semantic_paraphrase"]},
+    "required_plane": {"const": "document"},
+    "required_channels": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"enum": ["exact", "lexical", "semantic"]}},
+    "expected_selection_reason": {"enum": ["unique_exact_guard", "rrf60_fusion"]},
+    "expected_consulted_channels": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"enum": ["exact", "lexical", "semantic"]}},
+    "expected_hits": {
+      "type": "array", "minItems": 1,
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["anchor_text", "section_path_suffix", "maximum_rank", "must_be_unique_exact"],
+        "properties": {
+          "anchor_text": {"type": "string", "minLength": 1},
+          "section_path_suffix": {"type": "array", "items": {"type": "string", "minLength": 1}},
+          "maximum_rank": {"type": "integer", "minimum": 1},
+          "must_be_unique_exact": {"type": "boolean"},
+          "expected_node_types": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}}
+        }
+      }
+    },
+    "context_expectations": {
+      "type": "object", "additionalProperties": false,
+      "required": ["require_manifest", "required_anchor_texts", "forbidden_projection_kinds"],
+      "properties": {
+        "require_manifest": {"const": true},
+        "required_anchor_texts": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+        "forbidden_projection_kinds": {"type": "array", "uniqueItems": true, "items": {"enum": ["normalized_exact_field", "fts_projection", "embedding_text", "contextual_prefix", "generated_navigation"]}}
+      }
+    },
+    "gate": {"enum": ["required", "diagnostic"]},
+    "notes": {"type": "string"}
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"expected_selection_reason": {"const": "unique_exact_guard"}}},
+      "then": {"properties": {"expected_consulted_channels": {"const": ["exact"]}, "required_channels": {"const": ["exact"]}}}
+    },
+    {
+      "if": {"properties": {"expected_selection_reason": {"const": "rrf60_fusion"}}},
+      "then": {"properties": {"expected_consulted_channels": {"const": ["exact", "lexical", "semantic"]}}}
+    }
+  ]
+}
