@@ -1,0 +1,74 @@
+schema_version = 2
+task_id = "historical-merge-handoff-closure-1e4262bfb4a5"
+title = "Historical Merge Handoff Closure"
+status = "ready_for_terra_high"
+series_id = "agent-harness"
+task_class = "repository-tooling"
+model_profile = "terra-high-v1"
+baseline_revision = "fa80e64679aa90368ea3ae18aab102ba6eea2c45"
+tdd_path = "docs/2026-08-22-historical-merge-handoff-closure.md"
+tdd_sha256 = "1e4262bfb4a59d344533b85bb19a6460b160db18e2440720175ebf7bbd0c9c6f"
+goal = "Close a historical task when a receipt merge follows its delivered code range."
+depends_on = ["superseded-task-closure-b5ff068b973e"]
+allowed_paths = [
+  "packages/devtools/src/kotekomi_devtools/evidence_catalog.py",
+  "packages/devtools/src/kotekomi_devtools/superseded_task_closure.py",
+  "packages/devtools/tests/acceptance/test_superseded_task_closure_contract.py",
+  "packages/devtools/tests/unit/test_evidence_catalog.py"
+]
+reference_paths = [
+  "docs/2026-08-21-tdd-superseded-task-closure.md",
+  "packages/devtools/src/kotekomi_devtools/task_scope.py",
+  "packages/devtools/tests/acceptance/test_feature_branch_verification_receipt_contract.py"
+]
+stop_conditions = [
+  "the implementation accepts a receipt directory by path prefix",
+  "the implementation deletes a feature branch before delivery-patch validation",
+  "the implementation changes the close-superseded-task command interface"
+]
+
+[readiness]
+authority = "The Historical Merge Handoff Closure TDD defines this task."
+contract_family = "agent-harness"
+dominant_outcome = "A completed successor can close a task whose original delivery used a receipt merge."
+failure_policy = "Invalid receipt history and unequal delivery patches block before tag publication or cleanup."
+legacy_disposition = "The existing single-commit handoff closure remains available."
+negative_proof = "The closure command does not infer delivery from a path prefix or delete before validation."
+public_entry_point = "kotekomi-agent close-superseded-task"
+scope_policy = "Historical handoff comparison, supersession evidence, and focused tests only."
+side_effect_boundary = "Result tags, handoff tags, branch cleanup, and canonical supersession evidence."
+unresolved_decisions = []
+
+[budget]
+maximum_production_files = 2
+maximum_test_files = 2
+maximum_production_diff_lines = 500
+
+[[protected_artifacts]]
+kind = "leaf-tdd"
+path = "docs/2026-08-22-historical-merge-handoff-closure.md"
+sha256 = "1e4262bfb4a59d344533b85bb19a6460b160db18e2440720175ebf7bbd0c9c6f"
+
+[[acceptance]]
+id = "historical-merge-handoff-closure-contract"
+argv = ["uv", "run", "pytest", "-p", "no:cacheprovider", "packages/devtools/tests/acceptance/test_superseded_task_closure_contract.py"]
+timeout_seconds = 120
+profile = "portable-local"
+
+[[acceptance]]
+id = "supersession-evidence-unit-contract"
+argv = ["uv", "run", "pytest", "-p", "no:cacheprovider", "packages/devtools/tests/unit/test_evidence_catalog.py"]
+timeout_seconds = 120
+profile = "portable-local"
+
+[[acceptance]]
+id = "repository-static-checks"
+argv = ["uv", "run", "ruff", "check"]
+timeout_seconds = 120
+profile = "portable-local"
+
+[[acceptance]]
+id = "repository-type-checks"
+argv = ["uv", "run", "pyright"]
+timeout_seconds = 240
+profile = "portable-local"
