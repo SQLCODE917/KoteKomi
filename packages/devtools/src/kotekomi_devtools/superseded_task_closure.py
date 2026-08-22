@@ -73,13 +73,9 @@ def close_superseded_task(
         remote_tip = _remote_branch(branch)
         if local_tip != handoff:
             raise SupersededTaskClosureError("handoff commit must equal local feature tip")
-        if not _is_ancestor(remote_tip, successor["target_commit"]):
+        if remote_tip != handoff:
             raise SupersededTaskClosureError(
-                "remote feature tip is not reachable from successor target"
-            )
-        if not _is_ancestor(handoff, local_tip):
-            raise SupersededTaskClosureError(
-                "handoff commit is not reachable from local feature branch"
+                "handoff commit must equal remote feature tip"
             )
         delivery_head = _delivery_head(handoff)
         delivery_diff = _delivery_diff(original_specification, delivery_head)

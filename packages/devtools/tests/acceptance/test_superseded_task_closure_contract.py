@@ -385,6 +385,38 @@ def test_closure_accepts_a_contained_handoff_patch(
     assert len(record["historic_delivery_diff_sha256"]) == 64
 
 
+def test_contained_closure_accepts_an_equivalent_non_ancestor_handoff(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo, state, _ = _fixture(tmp_path, monkeypatch)
+    specification = git_output(repo, "rev-parse", "main^")
+    git(repo, "switch", "-C", f"feature/{TASK}", specification)
+    (repo / "handoff.txt").write_text("carried patch\n")
+    handoff = _commit(repo, "equivalent non-ancestor handoff")
+    git(repo, "push", "--force", "origin", f"feature/{TASK}")
+
+    result = _run(repo, state, handoff, "--delivery-relation", "contained")
+
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout)["status"] == "superseded"
+
+
+def test_closure_blocks_when_remote_feature_tip_differs_from_handoff(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo, state, handoff = _fixture(tmp_path, monkeypatch)
+    git(repo, "switch", "main")
+    (repo / "different.txt").write_text("remote drift\n")
+    remote_tip = _commit(repo, "remote drift")
+    git(repo, "push", "--force", "origin", f"{remote_tip}:feature/{TASK}")
+
+    result = _run(repo, state, handoff, "--delivery-relation", "contained")
+
+    assert result.returncode == 2
+    assert "handoff commit must equal remote feature tip" in result.stdout
+    assert git_output(repo, "ls-remote", "origin", f"refs/heads/feature/{TASK}")
+
+
 def test_contained_closure_reads_the_historic_task_manifest_at_its_pinned_revision(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
