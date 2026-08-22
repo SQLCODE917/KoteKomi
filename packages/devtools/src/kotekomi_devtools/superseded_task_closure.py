@@ -85,9 +85,10 @@ def close_superseded_task(
             successor["specification_revision"],
             successor_patch_id,
         )
-        result_tag = f"kotekomi/tasks/{task_id}/result"
+        result_tag, historical_result_tag = _result_tag(
+            task_id, successor["target_commit"], message
+        )
         handoff_tag = f"kotekomi/tasks/{task_id}/superseded-handoff"
-        _publish_matching_tag(result_tag, successor["target_commit"], message)
         _publish_matching_tag(handoff_tag, handoff, message)
         result: Json = {
             "schema_version": 1,
@@ -109,6 +110,8 @@ def close_superseded_task(
             "successor_delivery_patch_id": successor_patch_id,
             "diagnostics": [],
         }
+        if historical_result_tag is not None:
+            result["historical_result_tag"] = historical_result_tag
         write_canonical_record(
             root,
             task_id,
@@ -136,6 +139,7 @@ def close_superseded_task(
             "task_id": task_id,
             "implementation_run_id": run_id,
             "result_tag": result_tag,
+            "historical_result_tag": historical_result_tag,
             "handoff_tag": handoff_tag,
             "successor_task_id": successor_task_id,
             "successor_run_id": successor_run_id,
@@ -280,6 +284,25 @@ def _publish_matching_tag(tag: str, target: str, message: str) -> None:
         return
     if remote_target != target or _tag_message(tag) != message:
         raise SupersededTaskClosureError("published tag conflicts with superseded closure")
+
+
+def _result_tag(task_id: str, target: str, message: str) -> tuple[str, str | None]:
+    historical = f"kotekomi/tasks/{task_id}/result"
+    if _remote_tag_target(historical) is None:
+        _publish_matching_tag(historical, target, message)
+        return historical, None
+    try:
+        decoded = json.loads(_tag_message(historical))
+    except json.JSONDecodeError as error:
+        raise SupersededTaskClosureError("historical result tag is invalid") from error
+    if not isinstance(decoded, dict):
+        raise SupersededTaskClosureError("historical result tag is invalid")
+    payload = cast(Json, decoded)
+    if payload.get("outcome") != "abandoned":
+        raise SupersededTaskClosureError("historical result tag conflicts with superseded closure")
+    superseded = f"kotekomi/tasks/{task_id}/superseded-result"
+    _publish_matching_tag(superseded, target, message)
+    return superseded, historical
 
 
 def _cleanup(branch: str, expected_local_tip: str) -> tuple[Json, bool]:
