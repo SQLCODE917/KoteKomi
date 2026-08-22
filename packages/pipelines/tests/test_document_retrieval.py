@@ -35,7 +35,7 @@ timeout_seconds = 300
     assert profile.expected_vector_dimension == 768
 
 
-def test_retrieval_without_a_channel_preserves_the_dr1_dispatch(
+def test_retrieval_exact_lexical_channel_passes_no_embedding_profile(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     captured: dict[str, object] = {}
@@ -49,10 +49,19 @@ def test_retrieval_without_a_channel_preserves_the_dr1_dispatch(
         fake_build_document_retrieval_index,
     )
 
-    exit_code = main(["retrieval", "build-document", "--representation-id", "rep_fixture"])
+    exit_code = main(
+        [
+            "retrieval",
+            "build-document",
+            "--channel",
+            "exact-lexical",
+            "--representation-id",
+            "rep_fixture",
+        ]
+    )
 
     assert exit_code == 0
-    assert captured["channel"] is None
+    assert captured["channel"] == "exact-lexical"
     assert captured["embedding_profile"] is None
 
 
@@ -70,6 +79,8 @@ def test_retrieval_rejects_an_embedding_profile_without_semantic_channel() -> No
                 "1",
                 "--context-profile",
                 "retrieval-validation-v1",
+                "--channel",
+                "exact-lexical",
                 "--embedding-profile",
                 "semantic-validation-v1",
             ]

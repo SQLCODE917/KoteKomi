@@ -540,7 +540,9 @@ def build_parser() -> argparse.ArgumentParser:
         "build-document", help="Build a disposable document retrieval projection."
     )
     retrieval_build_parser.add_argument("--representation-id", required=True)
-    retrieval_build_parser.add_argument("--channel", choices=("semantic",), default=None)
+    retrieval_build_parser.add_argument(
+        "--channel", choices=("semantic", "exact-lexical"), default=None
+    )
     retrieval_build_parser.add_argument("--embedding-profile", default=None)
     retrieval_build_parser.add_argument(
         "--rebuild",
@@ -558,7 +560,9 @@ def build_parser() -> argparse.ArgumentParser:
     retrieval_query_parser.add_argument("--query", required=True)
     retrieval_query_parser.add_argument("--maximum-hits", required=True, type=int)
     retrieval_query_parser.add_argument("--context-profile", required=True)
-    retrieval_query_parser.add_argument("--channel", choices=("semantic",), default=None)
+    retrieval_query_parser.add_argument(
+        "--channel", choices=("semantic", "exact-lexical"), default=None
+    )
     retrieval_query_parser.add_argument("--embedding-profile", default=None)
     retrieval_query_parser.add_argument(
         "--format", dest="output_format", choices=("text", "json"), default="text"
