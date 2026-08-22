@@ -9,6 +9,8 @@ import sys
 from pathlib import Path
 from typing import Any, cast
 
+from kotekomi_devtools.evidence_catalog import validated_entries, write_canonical_record
+
 from packages.devtools.tests.acceptance._oracle_fixtures import (
     git,
     git_output,
@@ -140,9 +142,12 @@ def _verify(
     base: str,
     specification: str,
     candidate: str,
+    *,
+    task_id: str | None = None,
+    run_id: str | None = None,
+    state_root: Path | None = None,
 ) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        [
+    arguments = [
             sys.executable,
             "-c",
             ENTRYPOINT,
@@ -157,13 +162,59 @@ def _verify(
             candidate,
             "--profile",
             "portable-local",
-        ],
+        ]
+    if task_id is not None and run_id is not None and state_root is not None:
+        arguments.extend(["--task-id", task_id, "--run", run_id, "--state-root", str(state_root)])
+    return subprocess.run(
+        arguments,
         cwd=repo,
         text=True,
         capture_output=True,
         check=False,
         env=_env(fake_bin),
     )
+
+
+def _active_run(
+    repo: Path,
+    tmp_path: Path,
+    base: str,
+    specification: str,
+    candidate: str,
+) -> tuple[str, str, Path, Path]:
+    task_id = "independent-verifier-example"
+    run_id = "independent-verifier-example-run-001"
+    remote = tmp_path / "origin.git"
+    git(tmp_path, "init", "--bare", str(remote))
+    git(repo, "remote", "add", "origin", str(remote))
+    git(repo, "push", "origin", f"{candidate}:refs/heads/feature/{task_id}")
+    state = tmp_path / "state"
+    manifest = repo / ".agent/tasks/independent-verifier-example.toml"
+    records = (
+        (
+            "specification_revision",
+            "specification",
+            {"specification_revision": specification, "manifest_sha256": sha256_file(manifest)},
+        ),
+        (
+            "feature_branch",
+            "branch",
+            {"branch": f"feature/{task_id}", "specification_revision": specification},
+        ),
+        ("candidate_commit", "candidate", {"commit_sha": candidate, "parent_sha": specification}),
+    )
+    for evidence_type, subject_id, payload in records:
+        write_canonical_record(
+            state,
+            task_id,
+            run_id,
+            phase="candidate",
+            evidence_type=evidence_type,
+            subject_id=subject_id,
+            payload={"schema_version": 1, **payload, "diagnostics": []},
+            producer_command="test",
+        )
+    return task_id, run_id, state, remote
 
 
 def _payload(result: subprocess.CompletedProcess[str]) -> dict[str, Any]:
@@ -239,3 +290,67 @@ def test_verify_candidate_rejects_manifest_drift_without_a_receipt(tmp_path: Pat
 
     assert result.returncode == 2
     assert _payload(result)["receipt_path"] is None
+
+
+def test_active_run_publishes_and_reuses_a_remote_receipt(tmp_path: Path) -> None:
+    repo, base, specification, candidate, fake_bin = _repo(tmp_path)
+    task_id, run_id, state, remote = _active_run(repo, tmp_path, base, specification, candidate)
+
+    first = _verify(
+        repo,
+        fake_bin,
+        base,
+        specification,
+        candidate,
+        task_id=task_id,
+        run_id=run_id,
+        state_root=state,
+    )
+
+    assert first.returncode == 0, first.stderr
+    payload = _payload(first)
+    receipt_commit = str(payload["receipt_commit"])
+    assert git_output(remote, "rev-parse", f"refs/heads/feature/{task_id}") == receipt_commit
+    entries = validated_entries(state, task_id, run_id)
+    receipts = [
+        entry for entry in entries if entry["evidence_type"] == "candidate_verification_receipt"
+    ]
+    assert len(receipts) == 1
+    indexed_receipt = json.loads((state / receipts[0]["path"]).read_text(encoding="utf-8"))
+    assert indexed_receipt["candidate_revision"] == candidate
+    assert indexed_receipt["receipt_commit"] == receipt_commit
+    repeated = _verify(
+        repo,
+        fake_bin,
+        base,
+        specification,
+        candidate,
+        task_id=task_id,
+        run_id=run_id,
+        state_root=state,
+    )
+    assert repeated.returncode == 0, repeated.stderr
+    assert _payload(repeated)["receipt_commit"] == receipt_commit
+
+
+def test_active_run_remote_tip_mismatch_emits_json_without_a_receipt(tmp_path: Path) -> None:
+    repo, base, specification, candidate, fake_bin = _repo(tmp_path)
+    task_id, run_id, state, remote = _active_run(repo, tmp_path, base, specification, candidate)
+    write_fixture_text(repo / "other.txt", "other\n")
+    other = _commit(repo, "other")
+    git(repo, "push", "--force", "origin", f"{other}:refs/heads/feature/{task_id}")
+
+    result = _verify(
+        repo,
+        fake_bin,
+        base,
+        specification,
+        candidate,
+        task_id=task_id,
+        run_id=run_id,
+        state_root=state,
+    )
+
+    assert result.returncode == 2
+    assert _payload(result)["diagnostics"][0]["code"] == "feature_branch_changed"
+    assert git_output(remote, "rev-parse", f"refs/heads/feature/{task_id}") == other
