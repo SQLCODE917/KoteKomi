@@ -1,226 +1,83 @@
-# TDD: Evidence-Weighted Graph Projections
+# DR-6.1: Evidence-Linked Graph Projections
 
-- **Status:** Accepted
-- **Parent:** [Authoritative Document Ingestion Program](2026-07-11-authoritative-document-ingestion-program.md)
-- **Depends on:** replayable evidence, coverage, source lineage, and derived retrieval
+- Status: Accepted
+- Parent: [Derived Document Retrieval Program](2026-07-11-derived-document-retrieval.md)
+- Depends on: [Knowledge-Graph Retrieval Plane](2026-08-23-knowledge-graph-retrieval-plane.md)
+- Active child: [Evidence-Linked Graph Projection MVP](2026-08-23-evidence-linked-graph-projection-mvp.md)
 
-## 1. Context and problem
+## Context & Problem
 
-KoteKomi grows a knowledge graph by adding relationships among concepts. A naked model-generated weighted edge hides which assertions, evidence, source versions, lineage groups, review decisions, and temporal conditions produced the number. Graph edges and weights must therefore be derived projections over reified authoritative assertions.
+KoteKomi can navigate current accepted Relationships through the Knowledge-Graph retrieval plane.
+The graph traversal result identifies the accepted Assertions that justify a Relationship.
+The graph does not yet provide a dedicated projection that explains each Relationship through validated source evidence.
 
-## 2. Goals
+**Relationship** is an accepted canonical record that connects two canonical graph nodes.
+**Evidence graph** is a disposable projection that maps one current accepted Relationship to its accepted Assertion basis.
+**Contribution** is a derived record that traces one Relationship support Assertion to terminal direct Assertions and their validated EvidenceTargets.
+**Projection policy** is the named rule that selects current accepted Relationships and builds Contributions.
+**Score** is a numeric or ordered assessment that combines Contributions.
 
-- Keep accepted `Assertion` records and evidence links as canonical epistemic units.
-- Build graph edges from inspectable `EdgeContribution` records.
-- Keep quality dimensions separate and explicit before any aggregate score.
-- Account for source lineage so republications do not multiply support.
-- Preserve supporting, contradicting, withdrawn, and superseded contributions.
-- Version every projection and scoring policy.
-- Rebuild and explain every edge and score from authoritative snapshots.
-- Distinguish publication, capture, claim-valid, and ledger transaction times.
+### Primary flow
 
-## 3. Non-goals and forbidden approaches
+1. An operator builds an evidence graph from the current accepted Ledger.
+2. The Application traces every selected Relationship support Assertion to terminal direct Assertions.
+3. The Application accepts terminal evidence only through accepted AssertionEvidenceLinks with successful EvidenceValidationAttempts.
+4. The projection stores an EvidenceGraphEdge and one or more Contributions in disposable derived storage.
+5. A user requests an explanation for a canonical Relationship ID.
+6. The Application resolves the Contribution EvidenceTargets through ContextPlanner and returns original source context.
 
-This TDD does not require one universal probability of truth.
+## Goals
 
-Forbidden:
+- An analyst can inspect the validated source basis for each projected Relationship.
+- An operator can delete and rebuild evidence graph state without changing Ledger or Archive records.
+- Each derived result identifies the accepted Ledger snapshot and Projection policy that produced it.
+- Later graph features can add lineage, time, dimensions, and Scores without changing DR-6.1A records.
 
-- letting the model write canonical weighted edges directly;
-- treating extraction confidence as world-truth probability;
-- hiding unknown values inside arbitrary numeric defaults;
-- counting each syndicated document as an independent contribution;
-- deleting contradictory, corrected, expired, or historical assertions from provenance;
-- changing historical scores without a new policy/snapshot;
-- storing graph projections as the only copy of accepted relationships;
-- calling an uncalibrated aggregate a probability.
+## Program Decisions
 
-## 4. Requirements
+The Ledger, Archive, accepted Assertions, EvidenceTargets, AssertionEvidenceLinks, and EvidenceValidationAttempts remain authoritative.
+EvidenceGraphEdges, Contributions, manifests, explanation records, dimensions, and Scores remain derived state.
+Every EvidenceGraphEdge must trace to current accepted Assertions and successful evidence validation.
+The Application must preserve unknown values as explicit values when a later child needs them.
+The Application must not publish a Score until a child TDD defines its policy and interpretation.
+The Application must not call an uncalibrated Score a probability.
+Each projection manifest must identify its source snapshot, Projection policy, builder version, adapter identity, configuration digest, and content fingerprint.
+Deleting a projection must not change authoritative records.
+Rebuilding from identical authoritative inputs and policy must preserve selected edges and Contributions.
 
-1. Projection input is a pinned accepted-ledger snapshot plus evidence, coverage, lineage, authority, and temporal policy data.
-2. Each projected semantic edge lists the assertions and evidence links that contribute.
-3. Each contribution records polarity, status, lineage cluster, temporal scope, and quality dimensions.
-4. Dimensions include at least grounding quality, extraction quality, source-reported certainty, source authority within scope, lineage independence, temporal applicability, and review state.
-5. World-state assessment remains separate from the certainty with which a source reported a statement.
-6. Missing dimensions remain unknown and are surfaced to policy.
-7. A scoring policy declares inclusion rules, aggregation, contradiction handling, time reference, normalization, calibration status, and output interpretation.
-8. Same-lineage contributions are combined according to policy before cross-lineage aggregation.
-9. Corrections, withdrawals, and temporal expiry influence current projections without deleting historical contributions.
-10. Projection build is deterministic for a pinned snapshot/policy and publishes atomically.
-11. An explanation API reconstructs every score and edge from contribution records.
-12. Projection deletion/rebuild cannot change authoritative assertions or evidence.
+## Delivery Map
 
-## 5. Invariants
+| Child | Purpose | Validation |
+| --- | --- | --- |
+| DR-6.1A | Project current Relationships into Contributions that trace to validated evidence. | A canonical source produces an inspectable Relationship explanation and identical rebuild result. |
+| DR-6.1B | Add source lineage groups and independence inputs. | A syndicated-source fixture preserves all sources but identifies one lineage group. |
+| DR-6.1C | Add temporal and historical projection views. | A correction or withdrawal fixture returns distinct current and as-of explanations. |
+| DR-6.1D | Add explicit dimensions and a named Score policy. | A contradiction and unknown-dimension fixture exposes each input without false probability semantics. |
 
-- Every `EdgeContribution` references an accepted assertion and its validated evidence links.
-- Every projected edge has one named policy and one source snapshot.
-- No contribution is counted as independent more than once per lineage cluster under a policy.
-- Unknown is not coerced to zero, neutral, or maximum.
-- Supporting and contradicting contributions remain separately inspectable.
-- A current-state projection and a historical-as-of projection can differ without mutating inputs.
-- Rebuild with the same snapshot and policy yields the same canonical output digest.
-- A scalar score, when emitted, is reproducible from visible dimensions and is labeled with its interpretation/calibration status.
+DR-6.1A is the only child specified for implementation now.
+The project must design each later child after it evaluates the completed preceding child.
 
-## 6. Proposed architecture
+## Proposed Architecture
 
 ```text
-Accepted Ledger Snapshot
-  + Evidence validation
-  + Coverage state
-  + Source lineage clusters
-  + Authority/temporal policies
-              │
-              ▼
-ContributionBuilder
-              │
-              ▼
-GraphProjectionBuilder(policy-versioned)
-  ├── semantic edges
-  ├── dimensional annotations
-  ├── optional aggregate scores
-  └── explanation records
+Accepted Ledger + Archive
+          |
+          v
+Evidence graph Application
+          |
+          v
+Derived graph sidecar
+          |
+          v
+Relationship explanation -> ContextPlanner -> ContextManifest
 ```
 
-The graph store is a read model. Reified assertions remain the canonical source for relationships.
+The Application owns current-state selection and evidence tracing.
+The graph sidecar stores only derived rows and explanation records.
+ContextPlanner owns the original-source context that an explanation exposes.
 
-## 7. Data model and interfaces
+## Constraints and Halt Conditions
 
-```yaml
-EdgeContribution:
-  contribution_id:
-  assertion_id:
-  assertion_evidence_link_ids:
-  projected_subject_id:
-  projected_predicate:
-  projected_object_id_or_value:
-  polarity:
-  assertion_status:
-  lineage_cluster_id:
-  valid_time:
-  publication_time:
-  capture_time:
-  transaction_time:
-  grounding_quality:
-  extraction_quality:
-  source_reported_certainty:
-  source_authority_scope:
-  independence_class:
-  world_state_assessment:
-
-GraphScorePolicy:
-  policy_id:
-  version:
-  input_snapshot_rules:
-  inclusion_rules:
-  lineage_aggregation:
-  contradiction_handling:
-  temporal_reference:
-  missing_value_rules:
-  dimension_normalization:
-  aggregate_formula:
-  calibration_status:
-  output_interpretation:
-
-WeightedGraphEdge:
-  projected_edge_id:
-  subject_id:
-  predicate:
-  object_id_or_value:
-  policy_id:
-  source_snapshot_id:
-  contribution_ids:
-  dimension_summary:
-  aggregate_score:
-  output_digest:
-```
-
-Required operations:
-
-```python
-build_edge_contributions(snapshot_id, policy_id) -> ContributionSet
-build_graph_projection(snapshot_id, policy_id, as_of=None) -> GraphProjection
-explain_projected_edge(edge_id) -> EdgeExplanation
-verify_projection(projection_id) -> ProjectionVerificationResult
-```
-
-## 8. Key interactions and domain rules
-
-### Multiple syndicated reports
-
-All accepted assertions remain visible, but contributions sharing one upstream lineage cluster are combined before independent-source aggregation. Raw document count remains available in the explanation.
-
-### Correction or withdrawal
-
-Historical projections show what was accepted at the selected transaction time. Current projections apply correction/withdrawal policy and mark displaced contributions rather than erasing them.
-
-### Contradiction
-
-Support and contradiction dimensions are reported separately. A policy may calculate a net score, but explanation exposes each side and does not present disagreement as missing data.
-
-### Unknown authority or truth assessment
-
-The dimension remains unknown. A policy may exclude aggregate output or emit a bounded “insufficient inputs” state. It cannot silently assign a convenient number.
-
-### Calibration
-
-An aggregate may be called a probability only after a documented calibration/evaluation process demonstrates that interpretation for a named domain and data distribution.
-
-## 9. Temporal behavior
-
-The projection SHALL distinguish:
-
-- `valid_time`: when the asserted condition holds in the world;
-- `publication_time`: when the source published it;
-- `capture_time`: when KoteKomi received it;
-- `transaction_time`: when KoteKomi recorded/accepted it.
-
-“As of” queries declare which clock they constrain. Defaults are explicit in the policy and API.
-
-## 10. Compatibility and delivery
-
-- Initial delivery may expose only dimensions and contribution counts; an aggregate scalar is optional.
-- Existing graph edges can be rebuilt as projections and linked to their source assertions.
-- Projection schemas can live in SQLite, graph DB, or files, but canonical serialization and explanation behavior are backend-neutral.
-- Policy updates create new projections; they never rewrite old score records.
-
-## 11. Completion gates
-
-### Correctness criteria
-
-- Every projected edge and dimension traces to accepted assertions and validated evidence links.
-- Rebuild from the same snapshot/policy produces the same edge IDs, contribution sets, dimensions, scores, and output digest.
-- Syndicated fixtures contribute one independence unit while preserving every underlying assertion/document.
-- Contradictory fixtures expose both sides and follow the declared policy exactly.
-- Correction, withdrawal, and temporal fixtures produce correct current and historical projections without deleting history.
-- Unknown dimension fixtures remain unknown through storage, API, explanation, and aggregation.
-- Deleting graph stores and rebuilding changes no authoritative record.
-- A scalar without calibrated semantics is never labeled probability.
-
-### Success criteria
-
-- An analyst can expand any weighted edge into its policy, dimensions, assertions, exact evidence, source versions, lineage clusters, and review history.
-- Two policy versions can be compared over the same snapshot without ambiguity.
-- Current-state and historical-as-of queries return policy-correct, reproducible results.
-- Projection build and verification run automatically after accepted-ledger changes.
-- Evaluation fixtures demonstrate no support inflation from repeated captures, revisions, or republications.
-
-### Failure criteria
-
-This deliverable is incomplete if:
-
-- the graph contains authoritative relationships that cannot be reconstructed from assertions;
-- a model-generated strength is stored as the accepted edge weight;
-- extraction confidence is presented as truth probability;
-- source copies inflate independent support;
-- corrected/contradictory evidence disappears from explanation;
-- missing values are silently replaced with arbitrary numbers;
-- a score changes without a different snapshot or policy identity;
-- projection loss destroys source, evidence, or review information.
-
-## 12. References
-
-- KoteKomi epistemic scope and source-authority documentation
-- Microsoft GraphRAG outputs as a derived-graph precedent: https://microsoft.github.io/graphrag/index/outputs/
-
-## 13. Halt conditions
-
-Stop and revise when an asserted graph relationship cannot remain reified and evidence-linked, when score semantics cannot be stated precisely, or when calibration data contradicts a probability interpretation.
+Stop a child when a Contribution cannot trace to an accepted Assertion and a successfully validated EvidenceTarget.
+Stop a child when it needs a Score before a named policy defines the Score inputs and interpretation.
+Stop a child when it needs a source-lineage or temporal decision that no accepted child TDD defines.

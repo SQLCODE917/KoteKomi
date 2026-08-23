@@ -2,8 +2,13 @@ import hashlib
 
 import pytest
 from kotekomi_domain import (
+    AssertionStatus,
     DocumentRetrievalUnit,
     DocumentSemanticRepresentation,
+    EvidenceGraphContribution,
+    EvidenceGraphEdge,
+    EvidenceNecessity,
+    EvidencePolarity,
     RetrievalChannel,
     RetrievalChannelObservation,
     RetrievalHit,
@@ -145,3 +150,43 @@ def test_retrieval_hit_records_each_channel_manifest_and_fusion_score() -> None:
         "rim_exact",
         "rim_semantic",
     }
+
+
+def test_evidence_graph_records_keep_the_validated_evidence_basis_explicit() -> None:
+    contribution = EvidenceGraphContribution(
+        contribution_id="egc_fixture",
+        evidence_graph_edge_id="ege_fixture",
+        relationship_id="rel_fixture",
+        supporting_assertion_id="ast_inference",
+        terminal_assertion_ids=("ast_direct",),
+        assertion_evidence_link_ids=("ael_direct",),
+        validation_attempt_ids=("eva_direct",),
+        evidence_target_ids=("etg_direct",),
+        assertion_status=AssertionStatus.CONFIRMED,
+        source_authorities=(),
+        evidence_polarities=(EvidencePolarity.SUPPORTS,),
+        evidence_necessities=(EvidenceNecessity.REQUIRED,),
+    )
+    edge = EvidenceGraphEdge(
+        evidence_graph_edge_id="ege_fixture",
+        relationship_id="rel_fixture",
+        subject_id="org_subject",
+        predicate="is_subject_to_policy",
+        object_id="org_object",
+        contribution_ids=(contribution.contribution_id,),
+    )
+
+    assert edge.contribution_ids == ("egc_fixture",)
+    assert contribution.evidence_target_ids == ("etg_direct",)
+
+
+def test_evidence_graph_edge_rejects_an_empty_contribution_set() -> None:
+    with pytest.raises(ValidationError, match="one or more contributions"):
+        EvidenceGraphEdge(
+            evidence_graph_edge_id="ege_fixture",
+            relationship_id="rel_fixture",
+            subject_id="org_subject",
+            predicate="is_subject_to_policy",
+            object_id="org_object",
+            contribution_ids=(),
+        )

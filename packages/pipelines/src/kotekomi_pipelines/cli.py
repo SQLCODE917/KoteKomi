@@ -35,10 +35,12 @@ from kotekomi_application import (
     BuildDocumentRetrievalProjectionCommand,
     BuildDocumentRetrievalProjectionResult,
     BuildDocumentSemanticProjectionCommand,
+    BuildEvidenceGraphProjectionCommand,
     BuildKnowledgeGraphProjectionCommand,
     BuildLedgerRetrievalProjectionCommand,
     EmbeddingPort,
     EmbeddingProfile,
+    ExplainEvidenceGraphRelationshipCommand,
     JsonValue,
     LedgerRetrievalFilters,
     ModelRuntimeStatus,
@@ -75,11 +77,13 @@ from kotekomi_application import (
     approve_proposed_change,
     build_document_retrieval_projection,
     build_document_semantic_projection,
+    build_evidence_graph_projection,
     build_knowledge_graph_projection,
     build_ledger_retrieval_projection,
     commit_authoritative_capture,
     commit_authoritative_pdf_capture,
     edit_proposed_change,
+    explain_evidence_graph_relationship,
     export_review_editable_record,
     generate_briefing,
     get_pipeline_next,
@@ -249,6 +253,31 @@ def main(argv: list[str] | None = None) -> int:
             seed=args.seed,
             maximum_hops=args.maximum_hops,
             maximum_hits=args.maximum_hits,
+            context_profile=args.context_profile,
+            output_format=args.output_format,
+        )
+
+    if args.command == "retrieval" and args.retrieval_command == "build-graph-evidence":
+        config = load_config(
+            config_path=args.config,
+            ledger_path_override=args.ledger_path,
+            archive_path_override=None,
+        )
+        return build_evidence_graph_projection_index(
+            ledger_path=config.ledger_path,
+            output_format=args.output_format,
+            rebuild=args.rebuild,
+        )
+
+    if args.command == "retrieval" and args.retrieval_command == "explain-graph-relationship":
+        config = load_config(
+            config_path=args.config,
+            ledger_path_override=args.ledger_path,
+            archive_path_override=None,
+        )
+        return explain_evidence_graph_relationship_index(
+            ledger_path=config.ledger_path,
+            relationship_id=args.relationship_id,
             context_profile=args.context_profile,
             output_format=args.output_format,
         )
@@ -687,6 +716,25 @@ def build_parser() -> argparse.ArgumentParser:
         "--format", dest="output_format", choices=("text", "json"), default="text"
     )
     retrieval_graph_query_parser.add_argument("--ledger-path", type=Path, default=None)
+    retrieval_evidence_graph_build_parser = retrieval_subparsers.add_parser(
+        "build-graph-evidence",
+        help="Build a disposable evidence-linked Relationship graph projection.",
+    )
+    retrieval_evidence_graph_build_parser.add_argument("--rebuild", action="store_true")
+    retrieval_evidence_graph_build_parser.add_argument(
+        "--format", dest="output_format", choices=("text", "json"), default="text"
+    )
+    retrieval_evidence_graph_build_parser.add_argument("--ledger-path", type=Path, default=None)
+    retrieval_evidence_graph_explain_parser = retrieval_subparsers.add_parser(
+        "explain-graph-relationship",
+        help="Explain one Relationship through accepted Assertions and source evidence.",
+    )
+    retrieval_evidence_graph_explain_parser.add_argument("--relationship-id", required=True)
+    retrieval_evidence_graph_explain_parser.add_argument("--context-profile", required=True)
+    retrieval_evidence_graph_explain_parser.add_argument(
+        "--format", dest="output_format", choices=("text", "json"), default="text"
+    )
+    retrieval_evidence_graph_explain_parser.add_argument("--ledger-path", type=Path, default=None)
 
     model_parser = subparsers.add_parser("model", help="Local model runtime commands.")
     model_subparsers = model_parser.add_subparsers(dest="model_command")
@@ -1256,6 +1304,67 @@ def query_knowledge_graph_retrieval_index(
             "context_results": [item.model_dump(mode="json") for item in result.context_results],
             "failure": result.failure.value if result.failure is not None else None,
             "query_policy_id": result.query_policy_id,
+        },
+        output_format,
+    )
+
+
+def build_evidence_graph_projection_index(
+    *, ledger_path: Path, output_format: str, rebuild: bool
+) -> int:
+    projection = SQLiteKnowledgeGraphRetrievalAdapter(_knowledge_graph_index_path(ledger_path))
+    try:
+        if rebuild:
+            projection.delete_evidence_graph_projection()
+        with sqlite_ledger_transaction(ledger_path) as ledger_repository:
+            result = build_evidence_graph_projection(
+                BuildEvidenceGraphProjectionCommand(),
+                ledger_repository=ledger_repository,
+                projection=projection,
+            )
+    finally:
+        projection.close()
+    return _print_retrieval_payload(
+        {
+            "status": result.status,
+            "projection_manifest_id": result.projection_manifest_id,
+            "edge_count": result.edge_count,
+            "contribution_count": result.contribution_count,
+            "content_fingerprint": result.content_fingerprint,
+            "reused_existing_manifest": result.reused_existing_manifest,
+            "failure": result.failure.value if result.failure is not None else None,
+        },
+        output_format,
+    )
+
+
+def explain_evidence_graph_relationship_index(
+    *, ledger_path: Path, relationship_id: str, context_profile: str, output_format: str
+) -> int:
+    projection = SQLiteKnowledgeGraphRetrievalAdapter(_knowledge_graph_index_path(ledger_path))
+    try:
+        with sqlite_ledger_transaction(ledger_path) as ledger_repository:
+            result = explain_evidence_graph_relationship(
+                ExplainEvidenceGraphRelationshipCommand(
+                    relationship_id=relationship_id,
+                    context_profile_id=context_profile,
+                ),
+                ledger_repository=ledger_repository,
+                projection=projection,
+                tokenizer=_RetrievalValidationTokenizer(),
+            )
+    finally:
+        projection.close()
+    return _print_retrieval_payload(
+        {
+            "status": result.status,
+            "explanation_id": result.explanation_id,
+            "projection_manifest_id": result.projection_manifest_id,
+            "edge": result.edge.model_dump(mode="json") if result.edge is not None else None,
+            "contributions": [item.model_dump(mode="json") for item in result.contributions],
+            "context_results": [item.model_dump(mode="json") for item in result.context_results],
+            "failure": result.failure.value if result.failure is not None else None,
+            "policy_id": result.policy_id,
         },
         output_format,
     )

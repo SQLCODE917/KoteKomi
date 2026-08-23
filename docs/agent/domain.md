@@ -23,6 +23,10 @@ Use these exact terms.
 | EvidenceTarget | A precise pointer to evidence inside a Document. |
 | Assertion | An atomic statement about the world, a Source, another Assertion, or an inference. |
 | Relationship | A typed edge between two domain objects. |
+| EvidenceGraphEdge | A derived edge that maps one current Relationship to its evidence Contributions. |
+| EvidenceGraphContribution | A derived trace from one Relationship support Assertion to validated EvidenceTargets. |
+| EvidenceGraphProjectionManifest | A derived record that identifies one complete evidence graph snapshot. |
+| EvidenceGraphExplanationRecord | A derived record of one Relationship explanation request. |
 | ArgumentEdge | A typed edge between two Assertions. |
 | Outcome | A real-world result linked to Actors, Organizations, Events, or Assertions. |
 | ProvenanceActivity | A recorded action that created or changed domain records. |

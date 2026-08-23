@@ -159,9 +159,9 @@ The ContextManifest contains no graph labels, path text, or index rows as source
 
 The implementation removes the PoC NetworkX graph projection and graph-mining workflow.
 
-The next graph slice implements evidence-weighted graph projections from `2026-07-11-evidence-weighted-graph-projections.md`.
+The next graph program implements evidence-linked graph projections from `2026-07-11-evidence-weighted-graph-projections.md`.
 
-That slice adds historical policy, lineage handling, quality dimensions, and score semantics before DR-7 cross-plane orchestration.
+The active MVP traces current Relationships to validated evidence before later children add lineage, time, dimensions, and Scores.
 
 ## Acceptance Criteria
 

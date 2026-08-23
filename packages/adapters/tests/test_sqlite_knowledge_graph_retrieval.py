@@ -1,9 +1,21 @@
+import sqlite3
 from datetime import UTC, datetime
 from pathlib import Path
 
 from kotekomi_adapters.sqlite_knowledge_graph_retrieval import SQLiteKnowledgeGraphRetrievalAdapter
+from kotekomi_application.evidence_graph_projection import (
+    EvidenceGraphError,
+    EvidenceGraphFailureCode,
+    EvidenceGraphProjectionBuildInput,
+)
 from kotekomi_application.knowledge_graph_retrieval import KnowledgeGraphProjectionBuildInput
 from kotekomi_domain import (
+    AssertionStatus,
+    EvidenceGraphContribution,
+    EvidenceGraphEdge,
+    EvidenceGraphProjectionManifest,
+    EvidenceNecessity,
+    EvidencePolarity,
     KnowledgeGraphEdge,
     KnowledgeGraphNode,
     KnowledgeGraphRetrievalIndexManifest,
@@ -11,6 +23,7 @@ from kotekomi_domain import (
     LedgerRetrievalRecordType,
     RetrievalChannel,
 )
+from pytest import raises
 
 
 def _build() -> KnowledgeGraphProjectionBuildInput:
@@ -81,5 +94,82 @@ def test_sqlite_graph_retrieval_publishes_labels_and_edges(tmp_path: Path) -> No
         assert exact[0].node_id == "org_anthropic"
         assert projection.load_edges(manifest)[0].edge_id == "gre_contract"
         assert projection.publish(_build())[1] is True
+    finally:
+        projection.close()
+
+
+def _evidence_build() -> EvidenceGraphProjectionBuildInput:
+    edge = EvidenceGraphEdge(
+        evidence_graph_edge_id="ege_contract",
+        relationship_id="rel_contract",
+        subject_id="org_anthropic",
+        predicate="is_subject_to_policy",
+        object_id="org_department",
+        contribution_ids=("egc_contract",),
+    )
+    contribution = EvidenceGraphContribution(
+        contribution_id="egc_contract",
+        evidence_graph_edge_id=edge.evidence_graph_edge_id,
+        relationship_id=edge.relationship_id,
+        supporting_assertion_id="ast_contract",
+        terminal_assertion_ids=("ast_contract",),
+        assertion_evidence_link_ids=("ael_contract",),
+        validation_attempt_ids=("eva_contract",),
+        evidence_target_ids=("etg_contract",),
+        assertion_status=AssertionStatus.REPORTED,
+        source_authorities=(),
+        evidence_polarities=(EvidencePolarity.SUPPORTS,),
+        evidence_necessities=(EvidenceNecessity.REQUIRED,),
+    )
+    manifest = EvidenceGraphProjectionManifest(
+        projection_manifest_id="egm_contract",
+        source_snapshot_digest="a" * 64,
+        projection_policy_id="evidence_graph_relationship_contributions_v1",
+        builder_version="dr6_1_evidence_graph_projection_v1",
+        adapter_identity="sqlite_evidence_graph_projection_v1",
+        adapter_configuration_digest="b" * 64,
+        edge_count=1,
+        contribution_count=1,
+        content_fingerprint="c" * 64,
+        publication_status="complete",
+        published_at=datetime(2026, 8, 23, tzinfo=UTC),
+    )
+    return EvidenceGraphProjectionBuildInput(manifest, (edge,), (contribution,))
+
+
+def test_sqlite_evidence_graph_projection_publishes_and_rebuilds(tmp_path: Path) -> None:
+    projection = SQLiteKnowledgeGraphRetrievalAdapter(tmp_path / "graph.sqlite")
+    try:
+        manifest, reused = projection.publish_evidence_graph(_evidence_build())
+
+        assert reused is False
+        assert projection.get_complete_evidence_graph_manifest() == manifest
+        edge = projection.load_evidence_graph_edge(manifest, "rel_contract")
+        assert edge is not None
+        assert edge.evidence_graph_edge_id == "ege_contract"
+        assert projection.load_evidence_graph_contributions(manifest, edge.evidence_graph_edge_id)[
+            0
+        ].evidence_target_ids == ("etg_contract",)
+        projection.delete_evidence_graph_projection()
+        assert projection.get_complete_evidence_graph_manifest() is None
+        assert projection.publish_evidence_graph(_evidence_build())[1] is False
+    finally:
+        projection.close()
+
+
+def test_sqlite_evidence_graph_projection_rejects_manifest_with_missing_rows(
+    tmp_path: Path,
+) -> None:
+    database_path = tmp_path / "graph.sqlite"
+    projection = SQLiteKnowledgeGraphRetrievalAdapter(database_path)
+    try:
+        projection.publish_evidence_graph(_evidence_build())
+        with sqlite3.connect(database_path) as connection:
+            connection.execute("DELETE FROM evidence_graph_contributions")
+
+        with raises(EvidenceGraphError) as raised:
+            projection.get_complete_evidence_graph_manifest()
+
+        assert raised.value.code is EvidenceGraphFailureCode.PROJECTION_CORRUPT
     finally:
         projection.close()
