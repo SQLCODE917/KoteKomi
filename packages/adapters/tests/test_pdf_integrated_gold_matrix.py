@@ -4,9 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
 import sqlite3
-import subprocess
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from io import BytesIO
@@ -95,7 +93,6 @@ from PIL import Image
 from .test_pdf_production_path import FixturePdfParser
 
 FIXTURE_ROOT = Path(__file__).parent / "fixtures" / "pdf"
-FIXTURE_QPDF_VERSION = "qpdf version 11.9.0"
 MANIFEST = json.loads((FIXTURE_ROOT / "manifest.json").read_text())
 MATRIX_PATH = FIXTURE_ROOT / "gold" / "integrated_gold_matrix_v1.json"
 MATRIX = json.loads(MATRIX_PATH.read_text())
@@ -276,19 +273,9 @@ def _ingest_input(captured: _CapturedPdf, raw_pdf: bytes, row_id: str) -> PdfIng
 
 
 def _parser(row: dict[str, Any]) -> DoclingPdfParser:
-    qpdf_executable = os.environ.get("KOTEKOMI_QPDF_EXECUTABLE", "qpdf")
-    version = subprocess.run(
-        (qpdf_executable, "--version"), check=True, capture_output=True, text=True
-    ).stdout.splitlines()[0]
-    if version != FIXTURE_QPDF_VERSION:
-        raise RuntimeError(
-            f"integrated PDF gold requires {FIXTURE_QPDF_VERSION!r}, found {version!r}; "
-            "set KOTEKOMI_QPDF_EXECUTABLE to the pinned executable"
-        )
     return DoclingPdfParser(
         DoclingPdfParserConfig(
             enable_table_structure=row.get("parser_mode") == "table_structure",
-            qpdf_executable=qpdf_executable,
         )
     )
 

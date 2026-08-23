@@ -16,7 +16,6 @@ import tempfile
 from pathlib import Path
 
 FIXTURE_ROOT = Path(__file__).resolve().parent
-QPDF_VERSION = "qpdf version 11.9.0"
 GENERATOR_VERSION = "kotekomi_pdf_fixture_generator_v4"
 
 
@@ -510,9 +509,8 @@ def _require_qpdf(qpdf_executable: str) -> None:
     version_output = subprocess.run(
         (qpdf, "--version"), check=True, capture_output=True, text=True
     ).stdout.strip()
-    version = version_output.splitlines()[0]
-    if version != QPDF_VERSION:
-        raise RuntimeError(f"expected {QPDF_VERSION!r}, found {version!r}")
+    if not version_output:
+        raise RuntimeError("qpdf version output is empty")
     if shutil.which("openssl") is None:
         raise RuntimeError("OpenSSL is required to generate the AES-256 fixture")
 

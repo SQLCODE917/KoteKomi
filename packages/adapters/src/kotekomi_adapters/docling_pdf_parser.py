@@ -229,6 +229,22 @@ class DoclingPdfParser(PdfDocumentParser):
                 representation_bundle=None,
                 blocking_reasons=(structural_blocker,),
             )
+        raw_source_preflight: PdfPreflight | None = None
+        if not source_encrypted:
+            try:
+                raw_source_preflight = preflight_pdf_source(parse_input.raw_bytes, parser_version)
+            except PdfSourcePreflightError as exc:
+                reason = str(exc)
+                return PdfParseResult(
+                    preflight=_blocked_preflight(
+                        parser_version,
+                        (reason,),
+                        parse_input.raw_bytes,
+                        encrypted=False,
+                    ),
+                    representation_bundle=None,
+                    blocking_reasons=(reason,),
+                )
         prepared = _prepare_pdf_source(
             parse_input.raw_bytes,
             parse_input.access_credential,
@@ -249,21 +265,24 @@ class DoclingPdfParser(PdfDocumentParser):
         initial_transformations = (
             (prepared.transformation,) if prepared.transformation is not None else ()
         )
-        try:
-            source_preflight = preflight_pdf_source(prepared.working_bytes, parser_version)
-        except PdfSourcePreflightError as exc:
-            reason = str(exc)
-            return PdfParseResult(
-                preflight=_blocked_preflight(
-                    parser_version,
-                    (reason,),
-                    parse_input.raw_bytes,
-                    encrypted=prepared.encrypted,
-                ),
-                representation_bundle=None,
-                transformation_payloads=initial_transformations,
-                blocking_reasons=(reason,),
-            )
+        if raw_source_preflight is not None and prepared.transformation is None:
+            source_preflight = raw_source_preflight
+        else:
+            try:
+                source_preflight = preflight_pdf_source(prepared.working_bytes, parser_version)
+            except PdfSourcePreflightError as exc:
+                reason = str(exc)
+                return PdfParseResult(
+                    preflight=_blocked_preflight(
+                        parser_version,
+                        (reason,),
+                        parse_input.raw_bytes,
+                        encrypted=prepared.encrypted,
+                    ),
+                    representation_bundle=None,
+                    transformation_payloads=initial_transformations,
+                    blocking_reasons=(reason,),
+                )
         source_preflight = replace(
             source_preflight,
             encrypted=prepared.encrypted,

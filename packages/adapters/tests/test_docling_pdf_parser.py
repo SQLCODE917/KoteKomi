@@ -41,6 +41,36 @@ def test_source_preflight_establishes_the_page_denominator_before_docling() -> N
     assert preflight.preflight_tool_version
 
 
+def test_docling_parser_blocks_an_uninventoried_source_before_qpdf_repair(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from kotekomi_adapters import docling_pdf_parser
+
+    raw_pdf = (FIXTURE_PDF.parent / "corrupt/generated/corrupt_truncated_v1.pdf").read_bytes()
+    document = Document(
+        id="doc_truncated_fixture",
+        source_id="src_truncated_fixture",
+        content_sha256=hashlib.sha256(raw_pdf).hexdigest(),
+    )
+
+    def repair_must_not_run(*args: object, **kwargs: object) -> object:
+        del args, kwargs
+        raise AssertionError("qpdf repair must not run before source inventory succeeds")
+
+    monkeypatch.setattr(docling_pdf_parser, "_prepare_pdf_source", repair_must_not_run)
+    monkeypatch.setenv("KOTEKOMI_DOCLING_WORKER", "1")
+
+    result = DoclingPdfParser(DoclingPdfParserConfig()).parse(
+        PdfParseInput(document, raw_pdf, "pdf_policy_v1", "ptf_fixture", NOW)
+    )
+
+    assert result.representation_bundle is None
+    assert result.transformation_payloads == ()
+    assert result.blocking_reasons == (
+        "PDF source preflight could not establish an authoritative page inventory.",
+    )
+
+
 def test_docling_parser_qpdf_configuration_overrides_the_environment(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

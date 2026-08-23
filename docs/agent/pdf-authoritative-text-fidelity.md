@@ -6,7 +6,11 @@ The Docling representation path is the sole producer of authoritative PDF text.
 
 KoteKomi stores that text unchanged in the accepted `DocumentRepresentationBundle`.
 
-Poppler and qpdf inspect deposited PDF bytes before extraction.
+Poppler establishes the source page inventory before qpdf repairs an unencrypted PDF.
+
+qpdf can repair only a source whose original bytes have a complete page inventory.
+
+KoteKomi blocks a source with no original page inventory before a repaired derivative can reach Docling.
 
 Their output must not rewrite, supplement, or validate individual characters in authoritative text.
 
