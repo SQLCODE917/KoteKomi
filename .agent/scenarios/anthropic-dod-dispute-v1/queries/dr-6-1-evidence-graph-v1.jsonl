@@ -1,0 +1,1 @@
+{"schema_version":"evidence-graph-query-case-v1","query_id":"dr6-1-anthropic-policy","graph_seed":"Anthropic","relationship_id":"rel_anthropic_policy","required_evidence_target_ids":["etg_directive"],"required_terminal_assertion_ids":["ast_directive_current"],"require_context":true,"gate":"required"}

@@ -6,6 +6,11 @@ import re
 import sqlite3
 from pathlib import Path
 
+from kotekomi_application.evidence_graph_projection import (
+    EvidenceGraphError,
+    EvidenceGraphFailureCode,
+    EvidenceGraphProjectionBuildInput,
+)
 from kotekomi_application.knowledge_graph_retrieval import (
     KnowledgeGraphProjectionBuildInput,
     KnowledgeGraphRetrievalError,
@@ -13,6 +18,10 @@ from kotekomi_application.knowledge_graph_retrieval import (
     KnowledgeGraphSeedMatch,
 )
 from kotekomi_domain import (
+    EvidenceGraphContribution,
+    EvidenceGraphEdge,
+    EvidenceGraphExplanationRecord,
+    EvidenceGraphProjectionManifest,
     KnowledgeGraphEdge,
     KnowledgeGraphRetrievalIndexManifest,
     KnowledgeGraphRetrievalQueryRecord,
@@ -42,6 +51,169 @@ class SQLiteKnowledgeGraphRetrievalAdapter:
             DELETE FROM knowledge_graph_units;
             DELETE FROM knowledge_graph_manifests;
             """
+        )
+        self._connection.commit()
+
+    def delete_evidence_graph_projection(self) -> None:
+        self._connection.executescript(
+            """
+            DELETE FROM evidence_graph_explanation_records;
+            DELETE FROM evidence_graph_contributions;
+            DELETE FROM evidence_graph_edges;
+            DELETE FROM evidence_graph_manifests;
+            """
+        )
+        self._connection.commit()
+
+    def publish_evidence_graph(
+        self, build: EvidenceGraphProjectionBuildInput
+    ) -> tuple[EvidenceGraphProjectionManifest, bool]:
+        manifest = build.manifest
+        if len({item.evidence_graph_edge_id for item in build.edges}) != len(build.edges):
+            raise EvidenceGraphError(
+                EvidenceGraphFailureCode.PROJECTION_CORRUPT,
+                "Evidence graph edges are not unique.",
+            )
+        if len({item.contribution_id for item in build.contributions}) != len(build.contributions):
+            raise EvidenceGraphError(
+                EvidenceGraphFailureCode.PROJECTION_CORRUPT,
+                "Evidence graph contributions are not unique.",
+            )
+        self._connection.execute("BEGIN IMMEDIATE")
+        try:
+            row = self._connection.execute(
+                "SELECT manifest_json FROM evidence_graph_manifests "
+                "WHERE projection_manifest_id = ?",
+                (manifest.projection_manifest_id,),
+            ).fetchone()
+            if row is not None:
+                existing = EvidenceGraphProjectionManifest.model_validate_json(
+                    str(row["manifest_json"])
+                )
+                self._validate_evidence_graph_manifest(existing)
+                self._validate_evidence_graph_written_build(existing)
+                self._connection.execute("COMMIT")
+                return existing, True
+            self._connection.executescript(
+                """
+                DELETE FROM evidence_graph_explanation_records;
+                DELETE FROM evidence_graph_contributions;
+                DELETE FROM evidence_graph_edges;
+                DELETE FROM evidence_graph_manifests;
+                """
+            )
+            for edge in build.edges:
+                self._connection.execute(
+                    """
+                    INSERT INTO evidence_graph_edges
+                    (evidence_graph_edge_id, relationship_id, edge_json)
+                    VALUES (?, ?, ?)
+                    """,
+                    (edge.evidence_graph_edge_id, edge.relationship_id, edge.model_dump_json()),
+                )
+            for contribution in build.contributions:
+                self._connection.execute(
+                    """
+                    INSERT INTO evidence_graph_contributions
+                    (contribution_id, evidence_graph_edge_id, contribution_json)
+                    VALUES (?, ?, ?)
+                    """,
+                    (
+                        contribution.contribution_id,
+                        contribution.evidence_graph_edge_id,
+                        contribution.model_dump_json(),
+                    ),
+                )
+            counts = (
+                self._connection.execute("SELECT COUNT(*) FROM evidence_graph_edges").fetchone()[0],
+                self._connection.execute(
+                    "SELECT COUNT(*) FROM evidence_graph_contributions"
+                ).fetchone()[0],
+            )
+            if counts != (manifest.edge_count, manifest.contribution_count):
+                raise EvidenceGraphError(
+                    EvidenceGraphFailureCode.PROJECTION_CORRUPT,
+                    "Evidence graph write count does not match the projection manifest.",
+                )
+            self._connection.execute(
+                """
+                INSERT INTO evidence_graph_manifests (projection_manifest_id, manifest_json)
+                VALUES (?, ?)
+                """,
+                (manifest.projection_manifest_id, manifest.model_dump_json()),
+            )
+            self._connection.execute("COMMIT")
+            return manifest, False
+        except Exception:
+            self._connection.execute("ROLLBACK")
+            raise
+
+    def get_complete_evidence_graph_manifest(self) -> EvidenceGraphProjectionManifest | None:
+        row = self._connection.execute(
+            "SELECT manifest_json FROM evidence_graph_manifests ORDER BY projection_manifest_id"
+        ).fetchone()
+        if row is None:
+            return None
+        try:
+            manifest = EvidenceGraphProjectionManifest.model_validate_json(
+                str(row["manifest_json"])
+            )
+            self._validate_evidence_graph_manifest(manifest)
+            self._validate_evidence_graph_written_build(manifest)
+            return manifest
+        except (TypeError, ValueError) as exc:
+            raise EvidenceGraphError(
+                EvidenceGraphFailureCode.PROJECTION_CORRUPT,
+                "Evidence graph projection manifest is corrupt.",
+            ) from exc
+
+    def load_evidence_graph_edge(
+        self, manifest: EvidenceGraphProjectionManifest, relationship_id: str
+    ) -> EvidenceGraphEdge | None:
+        del manifest
+        row = self._connection.execute(
+            "SELECT edge_json FROM evidence_graph_edges WHERE relationship_id = ?",
+            (relationship_id,),
+        ).fetchone()
+        if row is None:
+            return None
+        try:
+            return EvidenceGraphEdge.model_validate_json(str(row["edge_json"]))
+        except (TypeError, ValueError) as exc:
+            raise EvidenceGraphError(
+                EvidenceGraphFailureCode.PROJECTION_CORRUPT,
+                "Evidence graph edge payload is corrupt.",
+            ) from exc
+
+    def load_evidence_graph_contributions(
+        self, manifest: EvidenceGraphProjectionManifest, edge_id: str
+    ) -> tuple[EvidenceGraphContribution, ...]:
+        del manifest
+        rows = self._connection.execute(
+            """
+            SELECT contribution_json FROM evidence_graph_contributions
+            WHERE evidence_graph_edge_id = ? ORDER BY contribution_id
+            """,
+            (edge_id,),
+        ).fetchall()
+        try:
+            return tuple(
+                EvidenceGraphContribution.model_validate_json(str(row["contribution_json"]))
+                for row in rows
+            )
+        except (TypeError, ValueError) as exc:
+            raise EvidenceGraphError(
+                EvidenceGraphFailureCode.PROJECTION_CORRUPT,
+                "Evidence graph contribution payload is corrupt.",
+            ) from exc
+
+    def save_evidence_graph_explanation(self, record: EvidenceGraphExplanationRecord) -> None:
+        self._connection.execute(
+            """
+            INSERT OR REPLACE INTO evidence_graph_explanation_records
+            (explanation_id, record_json) VALUES (?, ?)
+            """,
+            (record.explanation_id, record.model_dump_json()),
         )
         self._connection.commit()
 
@@ -253,6 +425,28 @@ class SQLiteKnowledgeGraphRetrievalAdapter:
                 "Knowledge-Graph index manifest is incomplete.",
             )
 
+    def _validate_evidence_graph_manifest(self, manifest: EvidenceGraphProjectionManifest) -> None:
+        if manifest.publication_status != "complete":
+            raise EvidenceGraphError(
+                EvidenceGraphFailureCode.PROJECTION_CORRUPT,
+                "Evidence graph projection manifest is incomplete.",
+            )
+
+    def _validate_evidence_graph_written_build(
+        self, manifest: EvidenceGraphProjectionManifest
+    ) -> None:
+        counts = (
+            self._connection.execute("SELECT COUNT(*) FROM evidence_graph_edges").fetchone()[0],
+            self._connection.execute(
+                "SELECT COUNT(*) FROM evidence_graph_contributions"
+            ).fetchone()[0],
+        )
+        if counts != (manifest.edge_count, manifest.contribution_count):
+            raise EvidenceGraphError(
+                EvidenceGraphFailureCode.PROJECTION_CORRUPT,
+                "Evidence graph rows do not match the projection manifest.",
+            )
+
     def _validate_written_build(self, manifest: KnowledgeGraphRetrievalIndexManifest) -> None:
         counts = (
             self._connection.execute("SELECT COUNT(*) FROM knowledge_graph_units").fetchone()[0],
@@ -298,6 +492,26 @@ class SQLiteKnowledgeGraphRetrievalAdapter:
             );
             CREATE TABLE IF NOT EXISTS knowledge_graph_query_records (
                 retrieval_query_id TEXT PRIMARY KEY NOT NULL,
+                record_json TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS evidence_graph_manifests (
+                projection_manifest_id TEXT PRIMARY KEY NOT NULL,
+                manifest_json TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS evidence_graph_edges (
+                evidence_graph_edge_id TEXT PRIMARY KEY NOT NULL,
+                relationship_id TEXT UNIQUE NOT NULL,
+                edge_json TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS evidence_graph_contributions (
+                contribution_id TEXT PRIMARY KEY NOT NULL,
+                evidence_graph_edge_id TEXT NOT NULL,
+                contribution_json TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS evidence_graph_contributions_by_edge
+                ON evidence_graph_contributions (evidence_graph_edge_id, contribution_id);
+            CREATE TABLE IF NOT EXISTS evidence_graph_explanation_records (
+                explanation_id TEXT PRIMARY KEY NOT NULL,
                 record_json TEXT NOT NULL
             );
             """

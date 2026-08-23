@@ -43,3 +43,50 @@ def test_graph_retrieval_commands_route_to_the_public_pipeline(
     )
     assert captured["seed"] == "Anthropic"
     assert captured["maximum_hops"] == 2
+
+
+def test_evidence_graph_commands_route_to_the_public_pipeline(
+    monkeypatch: MonkeyPatch, tmp_path: Path
+) -> None:
+    captured: dict[str, object] = {}
+
+    def build(**kwargs: object) -> int:
+        captured.update(kwargs)
+        return 0
+
+    monkeypatch.setattr("kotekomi_pipelines.cli.build_evidence_graph_projection_index", build)
+    assert (
+        main(
+            [
+                "retrieval",
+                "build-graph-evidence",
+                "--ledger-path",
+                str(tmp_path / "ledger.sqlite"),
+                "--rebuild",
+            ]
+        )
+        == 0
+    )
+    assert captured["rebuild"] is True
+
+    def explain(**kwargs: object) -> int:
+        captured.update(kwargs)
+        return 0
+
+    monkeypatch.setattr("kotekomi_pipelines.cli.explain_evidence_graph_relationship_index", explain)
+    assert (
+        main(
+            [
+                "retrieval",
+                "explain-graph-relationship",
+                "--ledger-path",
+                str(tmp_path / "ledger.sqlite"),
+                "--relationship-id",
+                "rel_policy",
+                "--context-profile",
+                "retrieval-validation-v1",
+            ]
+        )
+        == 0
+    )
+    assert captured["relationship_id"] == "rel_policy"

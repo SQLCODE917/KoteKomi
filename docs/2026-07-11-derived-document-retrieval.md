@@ -371,6 +371,14 @@ Working result: deterministic graph traversal nominates accepted records and sou
 
 Document: `docs/2026-08-23-knowledge-graph-retrieval-plane.md`
 
+### DR-6.1 - Evidence-Linked Graph Projections
+
+Working result: each current accepted Relationship has an inspectable derived source basis before later graph policy adds lineage, time, or Scores.
+
+Program: `docs/2026-07-11-evidence-weighted-graph-projections.md`
+
+Active MVP TDD: `docs/2026-08-23-evidence-linked-graph-projection-mvp.md`
+
 ### DR-7 - Cross-Plane Orchestration
 
 Working result: a versioned query plan sequences Ledger discovery, graph expansion, document evidence retrieval, and ContextPlanner execution without one global score space.

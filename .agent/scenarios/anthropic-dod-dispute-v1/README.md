@@ -67,3 +67,11 @@ uv run python scripts/verify_dr6_canonical.py
 ```
 
 `queries/dr-6-knowledge-graph-v1.jsonl` and `suites/dr-6-v1.json` define exact and lexical Graph seed cases.
+
+## DR-6.1A local run
+
+```bash
+uv run python scripts/verify_dr6_1_canonical.py
+```
+
+`queries/dr-6-1-evidence-graph-v1.jsonl` defines Relationship explanations that trace to validated EvidenceTargets.

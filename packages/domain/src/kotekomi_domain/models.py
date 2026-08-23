@@ -2581,6 +2581,101 @@ class KnowledgeGraphRetrievalIndexManifest(DomainModel):
         return self
 
 
+class EvidenceGraphContribution(DomainModel):
+    """One accepted Assertion contribution to a derived Relationship edge."""
+
+    contribution_id: NonEmptyStr
+    evidence_graph_edge_id: NonEmptyStr
+    relationship_id: RelationshipId
+    supporting_assertion_id: AssertionId
+    terminal_assertion_ids: tuple[AssertionId, ...]
+    assertion_evidence_link_ids: tuple[AssertionEvidenceLinkId, ...]
+    validation_attempt_ids: tuple[EvidenceValidationAttemptId, ...]
+    evidence_target_ids: tuple[EvidenceTargetId, ...]
+    assertion_status: AssertionStatus
+    source_authorities: tuple[SourceAuthority, ...]
+    evidence_polarities: tuple[EvidencePolarity, ...]
+    evidence_necessities: tuple[EvidenceNecessity, ...]
+
+    @model_validator(mode="after")
+    def validate_evidence_basis(self) -> Self:
+        if not self.terminal_assertion_ids:
+            raise ValueError("EvidenceGraphContribution requires terminal Assertions.")
+        if not self.assertion_evidence_link_ids:
+            raise ValueError("EvidenceGraphContribution requires AssertionEvidenceLinks.")
+        if not self.validation_attempt_ids:
+            raise ValueError("EvidenceGraphContribution requires validation attempts.")
+        if not self.evidence_target_ids:
+            raise ValueError("EvidenceGraphContribution requires EvidenceTargets.")
+        return self
+
+
+class EvidenceGraphEdge(DomainModel):
+    """A derived semantic edge for one current accepted Relationship."""
+
+    evidence_graph_edge_id: NonEmptyStr
+    relationship_id: RelationshipId
+    subject_id: EntityId | ActorId | OrganizationId | EventId | PlaceId
+    predicate: NonEmptyStr
+    object_id: EntityId | ActorId | OrganizationId | EventId | PlaceId
+    contribution_ids: tuple[NonEmptyStr, ...]
+
+    @model_validator(mode="after")
+    def validate_contributions(self) -> Self:
+        if not self.contribution_ids:
+            raise ValueError("EvidenceGraphEdge requires one or more contributions.")
+        if len(set(self.contribution_ids)) != len(self.contribution_ids):
+            raise ValueError("EvidenceGraphEdge contribution IDs must be unique.")
+        return self
+
+
+class EvidenceGraphProjectionManifest(DomainModel):
+    """One complete derived evidence graph projection."""
+
+    projection_manifest_id: NonEmptyStr
+    source_snapshot_digest: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
+    projection_policy_id: NonEmptyStr
+    builder_version: NonEmptyStr
+    adapter_identity: NonEmptyStr
+    adapter_configuration_digest: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
+    edge_count: int = Field(ge=0)
+    contribution_count: int = Field(ge=0)
+    content_fingerprint: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
+    publication_status: NonEmptyStr
+    created_at: datetime = Field(default_factory=utc_now)
+    published_at: datetime | None = None
+
+    @model_validator(mode="after")
+    def validate_publication(self) -> Self:
+        if self.publication_status == "complete" and self.published_at is None:
+            raise ValueError("A complete EvidenceGraphProjectionManifest requires published_at.")
+        if self.publication_status != "complete" and self.published_at is not None:
+            raise ValueError("Only a complete EvidenceGraphProjectionManifest may be published.")
+        return self
+
+
+class EvidenceGraphExplanationRecord(DomainModel):
+    """Inspectable result of explaining one derived evidence graph edge."""
+
+    explanation_id: NonEmptyStr
+    projection_manifest_id: NonEmptyStr
+    source_snapshot_digest: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
+    relationship_id: RelationshipId
+    evidence_graph_edge_id: NonEmptyStr | None = None
+    contribution_ids: tuple[NonEmptyStr, ...] = ()
+    context_results: tuple[LedgerContextResult, ...] = ()
+    failure_code: str | None = None
+    created_at: datetime = Field(default_factory=utc_now)
+
+    @model_validator(mode="after")
+    def validate_outcome(self) -> Self:
+        if self.failure_code is None and self.evidence_graph_edge_id is None:
+            raise ValueError("A successful EvidenceGraphExplanationRecord requires an edge ID.")
+        if self.failure_code is None and not self.contribution_ids:
+            raise ValueError("A successful EvidenceGraphExplanationRecord requires contributions.")
+        return self
+
+
 class DocumentRetrievalUnit(DomainModel):
     retrieval_unit_id: str
     plane: RetrievalPlane = RetrievalPlane.DOCUMENT
