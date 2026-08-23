@@ -35,6 +35,7 @@ from kotekomi_domain import (
     ReviewStatus,
     Source,
     SourceAuthority,
+    SourceType,
 )
 
 NOW = datetime(2026, 7, 8, 12, 0, tzinfo=UTC)
@@ -51,6 +52,49 @@ class FakeMiningLedger:
             Organization(id="org_anthropic", name="Anthropic"),
             Organization(id="org_commerce_department", name="Commerce Department"),
         )
+        self.sources = (
+            Source(
+                id="src_article_a",
+                source_type=SourceType.ARTICLE,
+                identity_policy_id="fixture_v1",
+                canonical_identity_key="article_a",
+            ),
+        )
+        self.documents = (
+            Document(
+                id="doc_article_a",
+                source_id="src_article_a",
+                content_sha256="a" * 64,
+            ),
+        )
+        self.evidence_targets = (
+            EvidenceTarget(
+                id="etg_delay",
+                source_id="src_article_a",
+                document_id="doc_article_a",
+                exact_text="Anthropic delayed rollout.",
+                representation_id="rep_article_a",
+                text_view_id="tvw_article_a",
+                text_view_digest="b" * 64,
+                start_char=0,
+                end_char=27,
+                normalization_policy="fixture_v1",
+                node_ids=("nod_delay",),
+            ),
+            EvidenceTarget(
+                id="etg_suspension",
+                source_id="src_article_a",
+                document_id="doc_article_a",
+                exact_text="Anthropic suspended access.",
+                representation_id="rep_article_a",
+                text_view_id="tvw_article_a",
+                text_view_digest="b" * 64,
+                start_char=0,
+                end_char=28,
+                normalization_policy="fixture_v1",
+                node_ids=("nod_suspension",),
+            ),
+        )
         self.assertions = (
             Assertion(
                 id="ast_delay",
@@ -60,8 +104,10 @@ class FakeMiningLedger:
                 predicate="postponed_rollout",
                 object_value={"model": "Claude Fable 5"},
                 status=AssertionStatus.REPORTED,
-                source_authority=SourceAuthority.NOT_APPLICABLE,
-                attribution_basis=AttributionBasis.NOT_APPLICABLE,
+                source_authority=SourceAuthority.SECONDARY,
+                attribution_basis=AttributionBasis.REPORTED_BY_SOURCE,
+                source_ids=("src_article_a",),
+                evidence_target_ids=("etg_delay",),
                 provenance_activity_ids=("prv_review_delay",),
             ),
             Assertion(
@@ -72,8 +118,10 @@ class FakeMiningLedger:
                 predicate="suspended_enterprise_access",
                 object_value={"date": "2026-06-23"},
                 status=AssertionStatus.REPORTED,
-                source_authority=SourceAuthority.NOT_APPLICABLE,
-                attribution_basis=AttributionBasis.NOT_APPLICABLE,
+                source_authority=SourceAuthority.SECONDARY,
+                attribution_basis=AttributionBasis.REPORTED_BY_SOURCE,
+                source_ids=("src_article_a",),
+                evidence_target_ids=("etg_suspension",),
                 provenance_activity_ids=("prv_review_suspension",),
             ),
         )
@@ -102,13 +150,13 @@ class FakeMiningLedger:
         return ()
 
     def list_sources(self) -> tuple[Source, ...]:
-        return ()
+        return self.sources
 
     def list_documents(self) -> tuple[Document, ...]:
-        return ()
+        return self.documents
 
     def list_evidence_targets(self) -> tuple[EvidenceTarget, ...]:
-        return ()
+        return self.evidence_targets
 
     def list_assertions(self) -> tuple[Assertion, ...]:
         return self.assertions

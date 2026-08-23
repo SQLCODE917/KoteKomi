@@ -2024,11 +2024,14 @@ class SQLiteLedgerRepository:
         evidence_links: tuple[AssertionEvidenceLink, ...],
         review_provenance: ProvenanceActivity,
         proposed_change_transition: ProposedChange,
+        superseded_assertion: Assertion | None = None,
     ) -> None:
         self._connection.execute("SAVEPOINT accepted_assertion_with_evidence")
         try:
             self.save_provenance_activity(review_provenance)
             self.save_assertion(assertion)
+            if superseded_assertion is not None:
+                self.save_assertion(superseded_assertion)
             for evidence_link in evidence_links:
                 self._save_assertion_evidence_link(evidence_link)
             self.save_proposed_change(proposed_change_transition)

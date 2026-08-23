@@ -361,7 +361,9 @@ Document: `docs/2026-08-22-hierarchical-document-retrieval.md`
 
 Working result: exact, structured, and lexical discovery over accepted Ledger records can resolve through evidence links to original document nodes. Start without Ledger embeddings.
 
-Detailed TDD: write only after the document plane establishes the shared contracts.
+Document: `docs/2026-08-23-ledger-retrieval-plane.md`
+
+Prerequisite: `docs/2026-08-23-assertion-evidence-basis-and-lineage.md`
 
 ### DR-6 - Knowledge-Graph Retrieval Plane
 

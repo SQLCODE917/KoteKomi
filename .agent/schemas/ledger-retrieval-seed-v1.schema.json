@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kotekomi.local/schemas/ledger-retrieval-seed-v1.schema.json",
+  "title": "KoteKomi Ledger retrieval seed v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "organizations", "evidence_anchor", "direct_assertions", "analytic_assertion", "relationship", "outcome"],
+  "properties": {
+    "schema_version": {"const": "ledger-retrieval-seed-v1"},
+    "organizations": {"type": "array", "minItems": 2, "items": {"type": "object", "additionalProperties": false, "required": ["id", "name"], "properties": {"id": {"type": "string"}, "name": {"type": "string"}}}},
+    "evidence_anchor": {"type": "string", "minLength": 1},
+    "direct_assertions": {"type": "array", "minItems": 2, "items": {"type": "object"}},
+    "analytic_assertion": {"type": "object"},
+    "relationship": {"type": "object"},
+    "outcome": {"type": "object"}
+  }
+}

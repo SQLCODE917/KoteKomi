@@ -27,6 +27,7 @@ if TYPE_CHECKING:
         SQLiteLedgerRepository,
         sqlite_ledger_transaction,
     )
+    from kotekomi_adapters.sqlite_ledger_retrieval import SQLiteLedgerRetrievalAdapter
     from kotekomi_adapters.structured_news import GenericArticleAdapter, NewsMLG2Adapter
 
 __all__ = [
@@ -51,6 +52,7 @@ __all__ = [
     "SQLiteLedgerInitializer",
     "SQLiteLedgerRepository",
     "SQLiteDocumentRetrievalAdapter",
+    "SQLiteLedgerRetrievalAdapter",
     "sqlite_ledger_transaction",
     "preflight_pdf_source",
 ]
@@ -146,4 +148,8 @@ def __getattr__(name: str) -> object:
         from kotekomi_adapters.sqlite_document_retrieval import SQLiteDocumentRetrievalAdapter
 
         return SQLiteDocumentRetrievalAdapter
+    if name == "SQLiteLedgerRetrievalAdapter":
+        from kotekomi_adapters.sqlite_ledger_retrieval import SQLiteLedgerRetrievalAdapter
+
+        return SQLiteLedgerRetrievalAdapter
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

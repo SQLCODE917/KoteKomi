@@ -295,6 +295,27 @@
       ],
       "title": "Subject Entity Id"
     },
+    "supersedes_assertion_id": {
+      "anyOf": [
+        {
+          "pattern": "^ast_[A-Za-z0-9][A-Za-z0-9_-]*$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Supersedes Assertion Id"
+    },
+    "supporting_assertion_ids": {
+      "items": {
+        "pattern": "^ast_[A-Za-z0-9][A-Za-z0-9_-]*$",
+        "type": "string"
+      },
+      "title": "Supporting Assertion Ids",
+      "type": "array"
+    },
     "updated_at": {
       "format": "date-time",
       "title": "Updated At",

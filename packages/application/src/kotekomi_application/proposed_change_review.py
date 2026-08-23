@@ -92,6 +92,7 @@ class ProposedChangeReviewLedger(EvidenceTargetLedger, Protocol):
     def save_evidence_target(self, record: EvidenceTarget) -> None: ...
 
     def get_assertion(self, record_id: str) -> Assertion | None: ...
+    def list_assertions(self) -> tuple[Assertion, ...]: ...
     def save_assertion(self, record: Assertion) -> None: ...
     def commit_reviewed_assertion_acceptance(
         self,
@@ -100,6 +101,7 @@ class ProposedChangeReviewLedger(EvidenceTargetLedger, Protocol):
         evidence_links: tuple[AssertionEvidenceLink, ...],
         review_provenance: ProvenanceActivity,
         proposed_change_transition: ProposedChange,
+        superseded_assertion: Assertion | None = None,
     ) -> None: ...
 
     def get_relationship(self, record_id: str) -> Relationship | None: ...
@@ -146,6 +148,7 @@ class ReviewProposedChangeResult:
     accepted_record_id: str | None = None
     accepted_record_type: str | None = None
     assertion_evidence_link_ids: tuple[str, ...] = ()
+    superseded_assertion_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -468,6 +471,7 @@ def _review_proposed_change_result_to_json(
         "provenance_activity_id": result.provenance_activity_id,
         "accepted_record_id": result.accepted_record_id,
         "accepted_record_type": result.accepted_record_type,
+        "superseded_assertion_id": result.superseded_assertion_id,
     }
 
 
@@ -513,6 +517,16 @@ def approve_proposed_change(
         pending_provenance_activity=provenance_activity,
         ledger_repository=ledger_repository,
     )
+    superseded_assertion = _superseded_assertion(
+        accepted_record=accepted_record,
+        provenance_activity_id=provenance_activity.id,
+        reviewed_at=review_input.reviewed_at,
+        ledger_repository=ledger_repository,
+    )
+    if superseded_assertion is not None:
+        provenance_activity = provenance_activity.model_copy(
+            update={"output_ids": (*provenance_activity.output_ids, superseded_assertion.id)}
+        )
 
     if isinstance(accepted_record, Assertion):
         ledger_repository.commit_reviewed_assertion_acceptance(
@@ -520,6 +534,7 @@ def approve_proposed_change(
             evidence_links=evidence_links,
             review_provenance=provenance_activity,
             proposed_change_transition=reviewed_change,
+            superseded_assertion=superseded_assertion,
         )
     else:
         ledger_repository.save_provenance_activity(provenance_activity)
@@ -533,6 +548,9 @@ def approve_proposed_change(
         accepted_record_id=accepted_record_id,
         accepted_record_type=record_type,
         assertion_evidence_link_ids=tuple(link.id for link in evidence_links),
+        superseded_assertion_id=(
+            superseded_assertion.id if superseded_assertion is not None else None
+        ),
     )
 
 
@@ -617,6 +635,16 @@ def edit_proposed_change(
         pending_provenance_activity=provenance_activity,
         ledger_repository=ledger_repository,
     )
+    superseded_assertion = _superseded_assertion(
+        accepted_record=accepted_record,
+        provenance_activity_id=provenance_activity.id,
+        reviewed_at=review_input.reviewed_at,
+        ledger_repository=ledger_repository,
+    )
+    if superseded_assertion is not None:
+        provenance_activity = provenance_activity.model_copy(
+            update={"output_ids": (*provenance_activity.output_ids, superseded_assertion.id)}
+        )
 
     if isinstance(accepted_record, Assertion):
         ledger_repository.commit_reviewed_assertion_acceptance(
@@ -624,6 +652,7 @@ def edit_proposed_change(
             evidence_links=evidence_links,
             review_provenance=provenance_activity,
             proposed_change_transition=reviewed_change,
+            superseded_assertion=superseded_assertion,
         )
     else:
         ledger_repository.save_provenance_activity(provenance_activity)
@@ -637,6 +666,9 @@ def edit_proposed_change(
         accepted_record_id=accepted_record_id,
         accepted_record_type=record_type,
         assertion_evidence_link_ids=tuple(link.id for link in evidence_links),
+        superseded_assertion_id=(
+            superseded_assertion.id if superseded_assertion is not None else None
+        ),
     )
 
 
@@ -857,6 +889,8 @@ def _validate_accepted_record_references(
             _require_source(ledger_repository, source_id, accepted_record.id)
         for evidence_target_id in accepted_record.evidence_target_ids:
             _require_evidence_target(ledger_repository, evidence_target_id, accepted_record.id)
+        _validate_assertion_support_graph(accepted_record, ledger_repository)
+        _validate_supersession_predecessor(accepted_record, ledger_repository)
         for provenance_activity_id in accepted_record.provenance_activity_ids:
             _require_provenance_activity(
                 ledger_repository,
@@ -994,10 +1028,117 @@ def _require_assertion(
     record_id: str,
     referring_record_id: str,
 ) -> None:
-    if ledger_repository.get_assertion(record_id) is None:
+    assertion = ledger_repository.get_assertion(record_id)
+    if assertion is None:
         raise ValueError(
             f"Accepted record {referring_record_id} references missing Assertion: {record_id}"
         )
+    if assertion.status is AssertionStatus.PROPOSED:
+        raise ValueError(
+            f"Accepted record {referring_record_id} references proposed Assertion: {record_id}"
+        )
+
+
+def _validate_assertion_support_graph(
+    assertion: Assertion,
+    ledger_repository: ProposedChangeReviewLedger,
+) -> None:
+    if assertion.assertion_type is not AssertionType.ANALYTIC_INFERENCE:
+        return
+    complete: set[str] = set()
+
+    def terminal_direct_count(support_id: str, visiting: set[str]) -> int:
+        if support_id in visiting:
+            raise ValueError(f"Assertion {assertion.id} support graph contains a cycle.")
+        if support_id in complete:
+            return 0
+        support = ledger_repository.get_assertion(support_id)
+        if support is None:
+            raise ValueError(
+                f"Assertion {assertion.id} references missing supporting Assertion: {support_id}"
+            )
+        if support.status is AssertionStatus.PROPOSED:
+            raise ValueError(
+                f"Assertion {assertion.id} references proposed supporting Assertion: {support_id}"
+            )
+        visiting.add(support_id)
+        if support.assertion_type is AssertionType.ANALYTIC_INFERENCE:
+            count = sum(
+                terminal_direct_count(child_id, visiting)
+                for child_id in support.supporting_assertion_ids
+            )
+        else:
+            count = 1
+        visiting.remove(support_id)
+        complete.add(support_id)
+        return count
+
+    terminal_count = sum(
+        terminal_direct_count(support_id, {assertion.id})
+        for support_id in assertion.supporting_assertion_ids
+    )
+    if terminal_count == 0:
+        raise ValueError(f"Assertion {assertion.id} has no terminal Direct Assertion.")
+
+
+def _validate_supersession_predecessor(
+    successor: Assertion,
+    ledger_repository: ProposedChangeReviewLedger,
+) -> None:
+    predecessor_id = successor.supersedes_assertion_id
+    if predecessor_id is None:
+        return
+    predecessor = ledger_repository.get_assertion(predecessor_id)
+    if predecessor is None:
+        raise ValueError(f"Assertion {successor.id} supersedes missing Assertion: {predecessor_id}")
+    if predecessor.status in {
+        AssertionStatus.PROPOSED,
+        AssertionStatus.SUPERSEDED,
+        AssertionStatus.RETRACTED,
+    }:
+        raise ValueError(
+            f"Assertion {successor.id} supersedes non-current Assertion: {predecessor_id}"
+        )
+    if (
+        predecessor.subject_entity_id != successor.subject_entity_id
+        or predecessor.predicate != successor.predicate
+        or predecessor.epistemic_scope is not successor.epistemic_scope
+    ):
+        raise ValueError("Supersession requires the same subject, predicate, and EpistemicScope.")
+    if any(
+        item.supersedes_assertion_id == predecessor_id
+        for item in ledger_repository.list_assertions()
+    ):
+        raise ValueError(f"Assertion {predecessor_id} already has a successor.")
+
+
+def _superseded_assertion(
+    *,
+    accepted_record: AcceptedReviewRecord,
+    provenance_activity_id: str,
+    reviewed_at: datetime,
+    ledger_repository: ProposedChangeReviewLedger,
+) -> Assertion | None:
+    if not isinstance(accepted_record, Assertion):
+        return None
+    predecessor_id = accepted_record.supersedes_assertion_id
+    if predecessor_id is None:
+        return None
+    predecessor = ledger_repository.get_assertion(predecessor_id)
+    if predecessor is None:
+        raise ValueError(
+            f"Assertion {accepted_record.id} supersedes missing Assertion: {predecessor_id}"
+        )
+    return predecessor.model_copy(
+        update={
+            "status": AssertionStatus.SUPERSEDED,
+            "provenance_activity_ids": (
+                *predecessor.provenance_activity_ids,
+                provenance_activity_id,
+            ),
+            "updated_at": reviewed_at,
+        }
+    )
 
 
 def _require_provenance_activity(

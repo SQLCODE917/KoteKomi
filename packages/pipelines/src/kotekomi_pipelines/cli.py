@@ -25,6 +25,7 @@ from kotekomi_adapters import (
     OllamaEmbeddingAdapter,
     SQLiteDocumentRetrievalAdapter,
     SQLiteLedgerInitializer,
+    SQLiteLedgerRetrievalAdapter,
     sqlite_ledger_transaction,
 )
 from kotekomi_application import (
@@ -34,10 +35,12 @@ from kotekomi_application import (
     BuildDocumentRetrievalProjectionCommand,
     BuildDocumentRetrievalProjectionResult,
     BuildDocumentSemanticProjectionCommand,
+    BuildLedgerRetrievalProjectionCommand,
     EmbeddingPort,
     EmbeddingProfile,
     GraphConnectionMiningInput,
     JsonValue,
+    LedgerRetrievalFilters,
     ModelRuntimeStatus,
     NewsDeliveryEnvelope,
     NewsIngestInput,
@@ -50,6 +53,7 @@ from kotekomi_application import (
     QueryDocumentHybridRetrievalCommand,
     QueryDocumentRetrievalCommand,
     QueryDocumentSemanticRetrievalCommand,
+    QueryLedgerRetrievalCommand,
     ReviewDrainInput,
     ReviewDrainResult,
     ReviewDrainStoppedReason,
@@ -70,6 +74,7 @@ from kotekomi_application import (
     approve_proposed_change,
     build_document_retrieval_projection,
     build_document_semantic_projection,
+    build_ledger_retrieval_projection,
     commit_authoritative_capture,
     commit_authoritative_pdf_capture,
     edit_proposed_change,
@@ -92,6 +97,7 @@ from kotekomi_application import (
     query_document_hybrid_retrieval,
     query_document_retrieval,
     query_document_semantic_retrieval,
+    query_ledger_retrieval,
     reject_proposed_change,
     review_drain_result_to_json,
     review_next_decision_result_to_json,
@@ -104,7 +110,12 @@ from kotekomi_application import (
     run_review_next_decision,
 )
 from kotekomi_briefing import MarkdownBriefingRenderer
-from kotekomi_domain import DocumentRepresentationBundle, ReviewStatus
+from kotekomi_domain import (
+    AssertionStatus,
+    DocumentRepresentationBundle,
+    LedgerRetrievalRecordType,
+    ReviewStatus,
+)
 
 from kotekomi_pipelines.config import (
     MODEL_RUNTIME_ADAPTERS,
@@ -180,6 +191,38 @@ def main(argv: list[str] | None = None) -> int:
                 if args.channel is None
                 else None
             ),
+        )
+
+    if args.command == "retrieval" and args.retrieval_command == "build-ledger":
+        config = load_config(
+            config_path=args.config,
+            ledger_path_override=args.ledger_path,
+            archive_path_override=None,
+        )
+        return build_ledger_retrieval_index(
+            ledger_path=config.ledger_path,
+            output_format=args.output_format,
+            rebuild=args.rebuild,
+        )
+
+    if args.command == "retrieval" and args.retrieval_command == "query-ledger":
+        config = load_config(
+            config_path=args.config,
+            ledger_path_override=args.ledger_path,
+            archive_path_override=None,
+        )
+        return query_ledger_retrieval_index(
+            ledger_path=config.ledger_path,
+            query=args.query or "",
+            record_id=args.record_id,
+            record_type=args.record_type,
+            assertion_statuses=tuple(args.assertion_status),
+            subject_id=args.subject_id,
+            predicate=args.predicate,
+            policy=args.policy,
+            maximum_hits=args.maximum_hits,
+            context_profile=args.context_profile,
+            output_format=args.output_format,
         )
 
     if args.command == "source" and args.source_command == "add-file":
@@ -583,6 +626,36 @@ def build_parser() -> argparse.ArgumentParser:
         "--format", dest="output_format", choices=("text", "json"), default="text"
     )
     retrieval_query_parser.add_argument("--ledger-path", type=Path, default=None)
+    retrieval_ledger_build_parser = retrieval_subparsers.add_parser(
+        "build-ledger", help="Build a disposable Ledger retrieval projection."
+    )
+    retrieval_ledger_build_parser.add_argument("--rebuild", action="store_true")
+    retrieval_ledger_build_parser.add_argument(
+        "--format", dest="output_format", choices=("text", "json"), default="text"
+    )
+    retrieval_ledger_build_parser.add_argument("--ledger-path", type=Path, default=None)
+    retrieval_ledger_query_parser = retrieval_subparsers.add_parser(
+        "query-ledger", help="Retrieve accepted Ledger records and authoritative context."
+    )
+    retrieval_ledger_query_parser.add_argument("--query", default=None)
+    retrieval_ledger_query_parser.add_argument("--record-id", default=None)
+    retrieval_ledger_query_parser.add_argument(
+        "--record-type", choices=("assertion", "relationship", "outcome"), default=None
+    )
+    retrieval_ledger_query_parser.add_argument("--assertion-status", action="append", default=[])
+    retrieval_ledger_query_parser.add_argument("--subject-id", default=None)
+    retrieval_ledger_query_parser.add_argument("--predicate", default=None)
+    retrieval_ledger_query_parser.add_argument(
+        "--policy",
+        choices=("current-relevance", "current-latest", "audit-history"),
+        default="current-relevance",
+    )
+    retrieval_ledger_query_parser.add_argument("--maximum-hits", required=True, type=int)
+    retrieval_ledger_query_parser.add_argument("--context-profile", required=True)
+    retrieval_ledger_query_parser.add_argument(
+        "--format", dest="output_format", choices=("text", "json"), default="text"
+    )
+    retrieval_ledger_query_parser.add_argument("--ledger-path", type=Path, default=None)
 
     model_parser = subparsers.add_parser("model", help="Local model runtime commands.")
     model_subparsers = model_parser.add_subparsers(dest="model_command")
@@ -1003,6 +1076,96 @@ def _retrieval_build_payload(result: BuildDocumentRetrievalProjectionResult) -> 
             else None
         ),
     }
+
+
+def build_ledger_retrieval_index(*, ledger_path: Path, output_format: str, rebuild: bool) -> int:
+    projection = SQLiteLedgerRetrievalAdapter(_retrieval_index_path(ledger_path))
+    try:
+        if rebuild:
+            projection.delete_projection()
+        with sqlite_ledger_transaction(ledger_path) as ledger_repository:
+            result = build_ledger_retrieval_projection(
+                BuildLedgerRetrievalProjectionCommand(),
+                ledger_repository=ledger_repository,
+                projection=projection,
+            )
+    finally:
+        projection.close()
+    return _print_retrieval_payload(
+        {
+            "status": result.status,
+            "index_manifest_id": result.index_manifest_id,
+            "unit_count": result.unit_count,
+            "representation_count": result.representation_count,
+            "content_fingerprint": result.content_fingerprint,
+            "reused_existing_manifest": result.reused_existing_manifest,
+            "failure": result.failure.value if result.failure is not None else None,
+        },
+        output_format,
+    )
+
+
+def query_ledger_retrieval_index(
+    *,
+    ledger_path: Path,
+    query: str,
+    record_id: str | None,
+    record_type: str | None,
+    assertion_statuses: tuple[str, ...],
+    subject_id: str | None,
+    predicate: str | None,
+    policy: str,
+    maximum_hits: int,
+    context_profile: str,
+    output_format: str,
+) -> int:
+    policy_ids = {
+        "current-relevance": "ledger_current_relevance_v1",
+        "current-latest": "ledger_current_latest_v1",
+        "audit-history": "ledger_audit_history_v1",
+    }
+    try:
+        filters = LedgerRetrievalFilters(
+            record_id=record_id,
+            record_type=LedgerRetrievalRecordType(record_type) if record_type is not None else None,
+            assertion_statuses=tuple(AssertionStatus(item) for item in assertion_statuses),
+            subject_id=subject_id,
+            predicate=predicate,
+        )
+    except ValueError:
+        return _print_retrieval_payload(
+            {"status": "failed", "failure": "ledger_retrieval_invalid_filter"}, output_format
+        )
+    projection = SQLiteLedgerRetrievalAdapter(_retrieval_index_path(ledger_path))
+    try:
+        with sqlite_ledger_transaction(ledger_path) as ledger_repository:
+            result = query_ledger_retrieval(
+                QueryLedgerRetrievalCommand(
+                    query_text=query,
+                    filters=filters,
+                    policy_id=policy_ids[policy],
+                    maximum_hits=maximum_hits,
+                    context_profile_id=context_profile,
+                ),
+                ledger_repository=ledger_repository,
+                projection=projection,
+                tokenizer=_RetrievalValidationTokenizer(),
+            )
+    finally:
+        projection.close()
+    return _print_retrieval_payload(
+        {
+            "status": result.status,
+            "retrieval_query_id": result.retrieval_query_id,
+            "index_manifest_id": result.index_manifest_id,
+            "hits": [item.model_dump(mode="json") for item in result.hits],
+            "selected_record_ids": list(result.selected_record_ids),
+            "context_results": [item.model_dump(mode="json") for item in result.context_results],
+            "failure": result.failure.value if result.failure is not None else None,
+            "query_policy_id": result.query_policy_id,
+        },
+        output_format,
+    )
 
 
 def query_document_retrieval_index(

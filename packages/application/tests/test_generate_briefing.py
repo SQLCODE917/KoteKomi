@@ -654,6 +654,7 @@ def analytic_assertion_fixture(updated_at: datetime = BEFORE) -> Assertion:
         status=AssertionStatus.CORROBORATED,
         source_authority=SourceAuthority.NOT_APPLICABLE,
         attribution_basis=AttributionBasis.NOT_APPLICABLE,
+        supporting_assertion_ids=("ast_article_a_claim",),
         provenance_activity_ids=("prv_review_inference",),
         current_assessment="Anthropic and Commerce shared a governance outcome.",
         created_at=updated_at,

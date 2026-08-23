@@ -142,6 +142,9 @@ class FakeReviewLedger:
     def get_assertion(self, record_id: str) -> Assertion | None:
         return self.assertions.get(record_id)
 
+    def list_assertions(self) -> tuple[Assertion, ...]:
+        return tuple(self.assertions.values())
+
     def save_assertion(self, record: Assertion) -> None:
         self.assertions[record.id] = record
 
@@ -152,9 +155,12 @@ class FakeReviewLedger:
         evidence_links: tuple[AssertionEvidenceLink, ...],
         review_provenance: ProvenanceActivity,
         proposed_change_transition: ProposedChange,
+        superseded_assertion: Assertion | None = None,
     ) -> None:
         self.provenance_activities[review_provenance.id] = review_provenance
         self.assertions[assertion.id] = assertion
+        if superseded_assertion is not None:
+            self.assertions[superseded_assertion.id] = superseded_assertion
         self.assertion_evidence_links.update({link.id: link for link in evidence_links})
         self.proposed_changes[proposed_change_transition.id] = proposed_change_transition
 
@@ -305,6 +311,7 @@ def seed_reference_records(ledger: FakeReviewLedger) -> None:
         status=AssertionStatus.CORROBORATED,
         source_authority=SourceAuthority.NOT_APPLICABLE,
         attribution_basis=AttributionBasis.NOT_APPLICABLE,
+        supporting_assertion_ids=("ast_delay",),
         provenance_activity_ids=("prv_model_run",),
     )
     ledger.provenance_activities["prv_model_run"] = ProvenanceActivity(
@@ -1184,6 +1191,44 @@ def test_approve_proposed_assertion_marks_it_reported_and_adds_review_provenance
     ]
 
 
+def test_approve_successor_supersedes_matching_predecessor_atomically() -> None:
+    record_id = "pcg_delay_successor"
+    ledger = FakeReviewLedger(
+        (
+            proposed_change(
+                record_id,
+                "Assertion",
+                {
+                    "id": "ast_delay_successor",
+                    "assertion_type": "source_claim",
+                    "epistemic_scope": "source_report",
+                    "subject_entity_id": "org_anthropic",
+                    "predicate": "postponed_rollout",
+                    "object_value": {"model": "Claude Fable 5", "revised": True},
+                    "status": "proposed",
+                    "source_authority": "secondary",
+                    "attribution_basis": "reported_by_source",
+                    "source_ids": ["src_article_a"],
+                    "evidence_target_ids": ["etg_delay"],
+                    "supersedes_assertion_id": "ast_delay",
+                    "provenance_activity_ids": [],
+                },
+            ),
+        )
+    )
+    seed_reference_records(ledger)
+
+    result = approve_proposed_change(review_input(record_id), ledger)
+
+    predecessor = ledger.assertions["ast_delay"]
+    successor = ledger.assertions["ast_delay_successor"]
+    activity = ledger.provenance_activities[result.provenance_activity_id]
+    assert predecessor.status is AssertionStatus.SUPERSEDED
+    assert result.superseded_assertion_id == predecessor.id
+    assert successor.supersedes_assertion_id == predecessor.id
+    assert predecessor.id in activity.output_ids
+
+
 def test_reject_proposed_change_updates_status_without_accepted_record() -> None:
     record_id = "pcg_actor"
     ledger = FakeReviewLedger(
@@ -1477,6 +1522,7 @@ def test_approve_proposed_analytic_assertion_marks_it_corroborated() -> None:
                     "status": "proposed",
                     "source_authority": "not_applicable",
                     "attribution_basis": "not_applicable",
+                    "supporting_assertion_ids": ["ast_delay"],
                     "world_truth_confidence": 0.5,
                     "provenance_activity_ids": [],
                 },
@@ -1490,6 +1536,48 @@ def test_approve_proposed_analytic_assertion_marks_it_corroborated() -> None:
     assertion = ledger.assertions["ast_mined_shared_outcome"]
     assert assertion.status is AssertionStatus.CORROBORATED
     assert assertion.provenance_activity_ids == (result.provenance_activity_id,)
+
+
+def test_approve_analytic_assertion_accepts_shared_terminal_evidence_dag() -> None:
+    record_id = "pcg_analytic_dag"
+    ledger = FakeReviewLedger(
+        (
+            proposed_change(
+                record_id,
+                "Assertion",
+                {
+                    "id": "ast_shared_support_dag",
+                    "assertion_type": "analytic_inference",
+                    "epistemic_scope": "analytic_inference",
+                    "subject_entity_id": "org_anthropic",
+                    "predicate": "supports_shared_terminal_evidence",
+                    "object_value": "accepted",
+                    "status": "proposed",
+                    "source_authority": "not_applicable",
+                    "attribution_basis": "not_applicable",
+                    "supporting_assertion_ids": [
+                        "ast_shared_outcome",
+                        "ast_second_shared_outcome",
+                    ],
+                    "provenance_activity_ids": [],
+                },
+            ),
+        )
+    )
+    seed_reference_records(ledger)
+    ledger.assertions["ast_second_shared_outcome"] = ledger.assertions[
+        "ast_shared_outcome"
+    ].model_copy(
+        update={
+            "id": "ast_second_shared_outcome",
+            "predicate": "second_shared_governance_outcome_with",
+        }
+    )
+
+    result = approve_proposed_change(review_input(record_id), ledger)
+
+    assert result.accepted_record_id == "ast_shared_support_dag"
+    assert ledger.assertions[result.accepted_record_id].status is AssertionStatus.CORROBORATED
 
 
 def test_review_rejects_missing_proposed_change() -> None:

@@ -23,6 +23,7 @@ https://en.wikipedia.org/wiki/Anthropic%E2%80%93United_States_Department_of_Defe
 7. Execute public retrieval build and query commands for retrieval validation.
 8. Treat query records and ContextManifests as the mandatory oracle. LLM prose is optional.
 9. Add future immutable query packs and cumulative suites without rewriting closed packs.
+10. Run the DR-5 Ledger plane with its public commands and canonical verifier; it does not use Harness state.
 
 ## First local run
 
@@ -49,3 +50,12 @@ uv run kotekomi-agent test-query anthropic-dod-dispute-v1 --suite dr-1-v1
 - `suites/dr-1-v1.json`: cumulative DR-1 execution contract.
 
 Harness receipts are generated evidence. They are not edited into these scenario inputs by hand.
+
+## DR-5 local run
+
+```bash
+uv run python scripts/verify_dr5_canonical.py
+```
+
+`ledger-seed-v1.json` declares accepted Ledger records tied to an authoritative text anchor.
+`queries/dr-5-ledger-v1.jsonl` and `suites/dr-5-v1.json` are the immutable Ledger retrieval oracle.

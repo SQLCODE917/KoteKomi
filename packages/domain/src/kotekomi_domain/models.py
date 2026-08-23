@@ -1895,6 +1895,8 @@ class Assertion(DomainModel):
     current_assessment: str = ""
     source_ids: tuple[SourceId, ...] = Field(default_factory=tuple)
     evidence_target_ids: tuple[EvidenceTargetId, ...] = Field(default_factory=tuple)
+    supporting_assertion_ids: tuple[AssertionId, ...] = Field(default_factory=tuple)
+    supersedes_assertion_id: AssertionId | None = None
     authority_source_ids: tuple[SourceId, ...] = Field(default_factory=tuple)
     authority_evidence_target_ids: tuple[EvidenceTargetId, ...] = Field(default_factory=tuple)
     provenance_activity_ids: tuple[ProvenanceActivityId, ...] = Field(default_factory=tuple)
@@ -1910,9 +1912,6 @@ class Assertion(DomainModel):
 
         if is_accepted_status(self.status) and not self.provenance_activity_ids:
             raise ValueError("Accepted Assertion must reference a ProvenanceActivity.")
-
-        if is_accepted_status(self.status) and self.source_ids and not self.evidence_target_ids:
-            raise ValueError("Accepted Source-backed Assertion must reference an EvidenceTarget.")
 
         if (
             self.assertion_type is AssertionType.ANALYTIC_INFERENCE
@@ -1933,6 +1932,29 @@ class Assertion(DomainModel):
             raise ValueError(
                 "Non-source-backed Assertion must use source_authority not_applicable."
             )
+
+        if self.assertion_type is AssertionType.ANALYTIC_INFERENCE:
+            if not self.supporting_assertion_ids:
+                raise ValueError("Analytic Inference must reference supporting Assertions.")
+            if len(set(self.supporting_assertion_ids)) != len(self.supporting_assertion_ids):
+                raise ValueError("Analytic Inference supporting Assertion IDs must be unique.")
+            if self.id in self.supporting_assertion_ids:
+                raise ValueError("Analytic Inference cannot support itself.")
+            if self.source_ids or self.evidence_target_ids:
+                raise ValueError("Analytic Inference cannot directly reference source evidence.")
+            if self.authority_source_ids or self.authority_evidence_target_ids:
+                raise ValueError("Analytic Inference cannot declare authority evidence.")
+            if self.source_authority is not SourceAuthority.NOT_APPLICABLE:
+                raise ValueError("Analytic Inference must use source_authority not_applicable.")
+            if self.attribution_basis is not AttributionBasis.NOT_APPLICABLE:
+                raise ValueError("Analytic Inference must use attribution_basis not_applicable.")
+        else:
+            if not self.source_ids or not self.evidence_target_ids:
+                raise ValueError(
+                    "Direct Assertion must reference Source and EvidenceTarget records."
+                )
+            if self.supporting_assertion_ids:
+                raise ValueError("Direct Assertion cannot reference supporting Assertions.")
 
         if (
             self.epistemic_scope is EpistemicScope.ATTRIBUTED_STATEMENT
@@ -1982,6 +2004,14 @@ class Relationship(DomainModel):
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
 
+    @model_validator(mode="after")
+    def validate_assertion_basis(self) -> Self:
+        if not self.assertion_ids:
+            raise ValueError("Relationship must reference one or more Assertions.")
+        if len(set(self.assertion_ids)) != len(self.assertion_ids):
+            raise ValueError("Relationship Assertion IDs must be unique.")
+        return self
+
 
 class Outcome(DomainModel):
     id: OutcomeId
@@ -1992,6 +2022,14 @@ class Outcome(DomainModel):
     assertion_ids: tuple[AssertionId, ...] = Field(default_factory=tuple)
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
+
+    @model_validator(mode="after")
+    def validate_assertion_basis(self) -> Self:
+        if not self.assertion_ids:
+            raise ValueError("Outcome must reference one or more Assertions.")
+        if len(set(self.assertion_ids)) != len(self.assertion_ids):
+            raise ValueError("Outcome Assertion IDs must be unique.")
+        return self
 
 
 class ArgumentEdge(DomainModel):
@@ -2246,6 +2284,7 @@ class RetrievalPlane(StrEnum):
     """The authoritative universe a derived retrieval projection searches."""
 
     DOCUMENT = "document"
+    LEDGER = "ledger"
 
 
 class RetrievalChannel(StrEnum):
@@ -2254,6 +2293,139 @@ class RetrievalChannel(StrEnum):
     EXACT = "exact"
     LEXICAL = "lexical"
     SEMANTIC = "semantic"
+    STRUCTURED_FILTER = "structured_filter"
+
+
+class LedgerRetrievalRecordType(StrEnum):
+    ASSERTION = "assertion"
+    RELATIONSHIP = "relationship"
+    OUTCOME = "outcome"
+
+
+class LedgerRetrievalUnit(DomainModel):
+    retrieval_unit_id: NonEmptyStr
+    plane: RetrievalPlane = RetrievalPlane.LEDGER
+    source_record_id: NonEmptyStr
+    record_type: LedgerRetrievalRecordType
+    evidence_assertion_ids: tuple[AssertionId, ...]
+    assertion_status: AssertionStatus | None = None
+    subject_id: str | None = None
+    predicate: str | None = None
+    updated_at: datetime
+    source_snapshot_digest: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
+    source_order: int = Field(ge=0)
+    unit_policy_id: NonEmptyStr
+    unit_fingerprint: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
+
+    @model_validator(mode="after")
+    def validate_unit(self) -> Self:
+        if not self.evidence_assertion_ids:
+            raise ValueError("Ledger RetrievalUnit requires evidence Assertion IDs.")
+        if len(set(self.evidence_assertion_ids)) != len(self.evidence_assertion_ids):
+            raise ValueError("Ledger RetrievalUnit evidence Assertion IDs must be unique.")
+        return self
+
+
+class LedgerExactLexicalRepresentation(DomainModel):
+    retrieval_representation_id: NonEmptyStr
+    retrieval_unit_id: NonEmptyStr
+    plane: RetrievalPlane = RetrievalPlane.LEDGER
+    source_snapshot_digest: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
+    projection_policy_id: NonEmptyStr
+    projection_builder_version: NonEmptyStr
+    exact_text: str
+    lexical_text: str
+    representation_fingerprint: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
+
+
+class LedgerRetrievalHit(DomainModel):
+    retrieval_unit_id: NonEmptyStr
+    plane: RetrievalPlane = RetrievalPlane.LEDGER
+    source_record_id: NonEmptyStr
+    record_type: LedgerRetrievalRecordType
+    terminal_evidence_target_ids: tuple[EvidenceTargetId, ...]
+    channel_observations: tuple[RetrievalChannelObservation, ...]
+    lineage_predecessor_id: AssertionId | None = None
+    lineage_successor_id: AssertionId | None = None
+    final_rank: int = Field(ge=1)
+    selected: bool
+    selection_reason: NonEmptyStr
+
+    @model_validator(mode="after")
+    def validate_hit(self) -> Self:
+        if not self.terminal_evidence_target_ids:
+            raise ValueError("Ledger RetrievalHit requires terminal EvidenceTarget IDs.")
+        if not self.channel_observations:
+            raise ValueError("Ledger RetrievalHit requires channel observations.")
+        if len({item.channel for item in self.channel_observations}) != len(
+            self.channel_observations
+        ):
+            raise ValueError("Ledger RetrievalHit channel observations must be unique.")
+        return self
+
+
+class LedgerContextResult(DomainModel):
+    representation_id: DocumentRepresentationId
+    focus_node_ids: tuple[DocumentNodeId, ...]
+    analysis_unit_id: NonEmptyStr | None = None
+    context_manifest_id: NonEmptyStr | None = None
+    status: NonEmptyStr
+    blocked_reason: str | None = None
+
+
+class LedgerRetrievalQueryRecord(DomainModel):
+    retrieval_query_id: NonEmptyStr
+    source_snapshot_digest: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
+    query_text: str
+    normalized_query_text: str
+    query_policy_id: NonEmptyStr
+    index_manifest_id: NonEmptyStr
+    record_type: LedgerRetrievalRecordType | None = None
+    record_id: str | None = None
+    assertion_statuses: tuple[AssertionStatus, ...] = ()
+    subject_id: str | None = None
+    predicate: str | None = None
+    candidate_hits: tuple[LedgerRetrievalHit, ...] = ()
+    selected_record_ids: tuple[NonEmptyStr, ...] = ()
+    context_results: tuple[LedgerContextResult, ...] = ()
+    failure_code: str | None = None
+    created_at: datetime = Field(default_factory=utc_now)
+
+
+class LedgerRetrievalIndexManifest(DomainModel):
+    index_manifest_id: NonEmptyStr
+    plane: RetrievalPlane = RetrievalPlane.LEDGER
+    channels: tuple[RetrievalChannel, ...]
+    source_snapshot_digest: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
+    unit_policy_id: NonEmptyStr
+    projection_policy_id: NonEmptyStr
+    query_policy_compatibility: NonEmptyStr
+    adapter_identity: NonEmptyStr
+    adapter_configuration_digest: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
+    unit_count: int = Field(ge=0)
+    representation_count: int = Field(ge=0)
+    content_fingerprint: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
+    publication_status: NonEmptyStr
+    created_at: datetime = Field(default_factory=utc_now)
+    published_at: datetime | None = None
+
+    @model_validator(mode="after")
+    def validate_manifest(self) -> Self:
+        if self.channels != (
+            RetrievalChannel.EXACT,
+            RetrievalChannel.LEXICAL,
+            RetrievalChannel.STRUCTURED_FILTER,
+        ):
+            raise ValueError(
+                "Ledger index manifests require exact, lexical, and structured channels."
+            )
+        if self.representation_count != self.unit_count:
+            raise ValueError("Ledger retrieval has one representation per unit.")
+        if self.publication_status == "complete" and self.published_at is None:
+            raise ValueError("A complete LedgerRetrievalIndexManifest requires published_at.")
+        if self.publication_status != "complete" and self.published_at is not None:
+            raise ValueError("Only a complete LedgerRetrievalIndexManifest may be published.")
+        return self
 
 
 class DocumentRetrievalUnit(DomainModel):

@@ -8,6 +8,8 @@ from kotekomi_domain import (
     AssertionType,
     AttributionBasis,
     EpistemicScope,
+    Outcome,
+    Relationship,
     SourceAuthority,
 )
 from pydantic import ValidationError
@@ -78,7 +80,7 @@ def test_rejects_source_backed_accepted_assertion_without_evidence_target() -> N
         Assertion(**kwargs)
 
 
-def test_allows_proposed_assertion_before_review() -> None:
+def test_rejects_direct_assertion_without_source_basis_before_review() -> None:
     kwargs = valid_assertion_kwargs()
     kwargs["status"] = AssertionStatus.PROPOSED
     kwargs["source_authority"] = SourceAuthority.NOT_APPLICABLE
@@ -87,9 +89,8 @@ def test_allows_proposed_assertion_before_review() -> None:
     kwargs["evidence_target_ids"] = ()
     kwargs["provenance_activity_ids"] = ()
 
-    assertion = Assertion(**kwargs)
-
-    assert assertion.status is AssertionStatus.PROPOSED
+    with pytest.raises(ValidationError, match="Direct Assertion"):
+        Assertion(**kwargs)
 
 
 def test_rejects_missing_epistemic_scope() -> None:
@@ -158,7 +159,26 @@ def test_rejects_analytic_inference_without_matching_epistemic_scope() -> None:
         Assertion(**kwargs)
 
 
-def test_accepts_non_source_analytic_inference() -> None:
+def test_accepts_analytic_inference_with_supporting_assertion() -> None:
+    kwargs = valid_assertion_kwargs()
+    kwargs.update(
+        {
+            "assertion_type": AssertionType.ANALYTIC_INFERENCE,
+            "epistemic_scope": EpistemicScope.ANALYTIC_INFERENCE,
+            "source_authority": SourceAuthority.NOT_APPLICABLE,
+            "attribution_basis": AttributionBasis.NOT_APPLICABLE,
+            "source_ids": (),
+            "evidence_target_ids": (),
+            "supporting_assertion_ids": ("ast_source_claim",),
+        }
+    )
+
+    assertion = Assertion(**kwargs)
+
+    assert assertion.source_authority is SourceAuthority.NOT_APPLICABLE
+
+
+def test_rejects_analytic_inference_without_supporting_assertion() -> None:
     kwargs = valid_assertion_kwargs()
     kwargs.update(
         {
@@ -171,9 +191,23 @@ def test_accepts_non_source_analytic_inference() -> None:
         }
     )
 
-    assertion = Assertion(**kwargs)
+    with pytest.raises(ValidationError, match="supporting Assertions"):
+        Assertion(**kwargs)
 
-    assert assertion.source_authority is SourceAuthority.NOT_APPLICABLE
+
+def test_rejects_relationship_without_an_assertion_basis() -> None:
+    with pytest.raises(ValidationError, match="one or more Assertions"):
+        Relationship(
+            id="rel_anthropic_defense",
+            subject_id="org_anthropic",
+            predicate="is_subject_to_policy",
+            object_id="org_us_department_of_defense",
+        )
+
+
+def test_rejects_outcome_without_an_assertion_basis() -> None:
+    with pytest.raises(ValidationError, match="one or more Assertions"):
+        Outcome(id="out_policy_requirement", description="A policy requirement exists.")
 
 
 def test_rejects_causal_inference_without_causal_confidence() -> None:
@@ -181,6 +215,11 @@ def test_rejects_causal_inference_without_causal_confidence() -> None:
     kwargs["assertion_type"] = AssertionType.ANALYTIC_INFERENCE
     kwargs["epistemic_scope"] = EpistemicScope.ANALYTIC_INFERENCE
     kwargs["qualifiers"] = {"causal": True}
+    kwargs["source_authority"] = SourceAuthority.NOT_APPLICABLE
+    kwargs["attribution_basis"] = AttributionBasis.NOT_APPLICABLE
+    kwargs["source_ids"] = ()
+    kwargs["evidence_target_ids"] = ()
+    kwargs["supporting_assertion_ids"] = ("ast_source_claim",)
 
     with pytest.raises(ValidationError, match="causal_confidence"):
         Assertion(**kwargs)

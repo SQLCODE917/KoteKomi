@@ -254,6 +254,7 @@ def _candidate_proposed_changes(
         status=AssertionStatus.PROPOSED,
         source_authority=SourceAuthority.NOT_APPLICABLE,
         attribution_basis=AttributionBasis.NOT_APPLICABLE,
+        supporting_assertion_ids=candidate.supporting_assertion_ids,
         world_truth_confidence=0.5,
         qualifiers={
             "mining_rule": GRAPH_CONNECTION_MINING_RULE,

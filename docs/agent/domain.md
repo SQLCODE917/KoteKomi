@@ -72,9 +72,9 @@ An Assertion has an AttributionBasis.
 
 An accepted Assertion has at least one ProvenanceActivity.
 
-A Source-backed Assertion has at least one Source.
+A Direct Assertion has at least one Source and EvidenceTarget.
 
-A Source-backed accepted Assertion has at least one EvidenceTarget.
+A Direct Assertion has no supporting Assertion IDs.
 
 An analytic inference has `assertion_type = analytic_inference`.
 
@@ -83,6 +83,12 @@ An analytic inference has `epistemic_scope = analytic_inference`.
 A non-source analytic inference has `source_authority = not_applicable`.
 
 A non-source analytic inference has `attribution_basis = not_applicable`.
+
+An analytic inference has one or more supporting Assertion IDs.
+
+An analytic inference has no direct Source or EvidenceTarget reference.
+
+Every supporting Assertion chain ends in a Direct Assertion.
 
 An attributed statement has `attributed_to_id`.
 
@@ -93,6 +99,8 @@ A causal analytic inference has `causal_confidence`.
 A contradiction creates an ArgumentEdge with `relation = contradicts`.
 
 A superseded Assertion keeps its original record.
+
+A successor Assertion names one predecessor through `supersedes_assertion_id`.
 
 ## ProposedChange Rules
 

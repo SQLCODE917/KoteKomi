@@ -1,0 +1,15 @@
+{
+  "schema_version": "ledger-retrieval-seed-v1",
+  "organizations": [
+    {"id": "org_anthropic", "name": "Anthropic"},
+    {"id": "org_us_department_of_defense", "name": "United States Department of Defense"}
+  ],
+  "evidence_anchor": "Directive 3000.09",
+  "direct_assertions": [
+    {"id": "ast_directive_initial", "predicate": "is_subject_to_policy", "object_value": "Directive 3000.09", "status": "reported"},
+    {"id": "ast_directive_current", "predicate": "is_subject_to_policy", "object_value": "Directive 3000.09", "status": "reported", "supersedes_assertion_id": "ast_directive_initial"}
+  ],
+  "analytic_assertion": {"id": "ast_directive_inference", "predicate": "policy_requirement_is_material", "object_value": "Directive 3000.09", "status": "corroborated", "supporting_assertion_ids": ["ast_directive_current"]},
+  "relationship": {"id": "rel_anthropic_policy", "subject_id": "org_anthropic", "predicate": "is_subject_to_policy", "object_id": "org_us_department_of_defense", "assertion_ids": ["ast_directive_current"]},
+  "outcome": {"id": "out_policy_requirement", "description": "Directive 3000.09 is a material policy requirement for Anthropic.", "organization_ids": ["org_anthropic", "org_us_department_of_defense"], "assertion_ids": ["ast_directive_current", "ast_directive_inference"]}
+}

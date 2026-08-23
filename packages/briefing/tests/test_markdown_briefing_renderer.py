@@ -267,6 +267,7 @@ def test_markdown_renderer_includes_citations_and_analytic_inference_label() -> 
                     status=AssertionStatus.CORROBORATED,
                     source_authority=SourceAuthority.NOT_APPLICABLE,
                     attribution_basis=AttributionBasis.NOT_APPLICABLE,
+                    supporting_assertion_ids=("ast_source_claim",),
                     provenance_activity_ids=("prv_review",),
                     current_assessment="Anthropic and Commerce shared a governance outcome.",
                 ),
