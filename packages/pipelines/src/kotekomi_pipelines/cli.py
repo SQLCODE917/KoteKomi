@@ -118,6 +118,7 @@ from kotekomi_briefing import MarkdownBriefingRenderer
 from kotekomi_domain import (
     AssertionStatus,
     DocumentRepresentationBundle,
+    EvidenceGraphViewKind,
     LedgerRetrievalRecordType,
     ReviewStatus,
 )
@@ -268,6 +269,7 @@ def main(argv: list[str] | None = None) -> int:
             ledger_path=config.ledger_path,
             output_format=args.output_format,
             rebuild=args.rebuild,
+            as_of=args.as_of,
         )
 
     if args.command == "retrieval" and args.retrieval_command == "explain-graph-relationship":
@@ -281,6 +283,7 @@ def main(argv: list[str] | None = None) -> int:
             relationship_id=args.relationship_id,
             context_profile=args.context_profile,
             output_format=args.output_format,
+            as_of=args.as_of,
         )
 
     if args.command == "source" and args.source_command == "add-file":
@@ -736,6 +739,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Build a disposable evidence-linked Relationship graph projection.",
     )
     retrieval_evidence_graph_build_parser.add_argument("--rebuild", action="store_true")
+    retrieval_evidence_graph_build_parser.add_argument("--as-of", type=_parse_utc_timestamp)
     retrieval_evidence_graph_build_parser.add_argument(
         "--format", dest="output_format", choices=("text", "json"), default="text"
     )
@@ -745,6 +749,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Explain one Relationship through accepted Assertions and source evidence.",
     )
     retrieval_evidence_graph_explain_parser.add_argument("--relationship-id", required=True)
+    retrieval_evidence_graph_explain_parser.add_argument("--as-of", type=_parse_utc_timestamp)
     retrieval_evidence_graph_explain_parser.add_argument("--context-profile", required=True)
     retrieval_evidence_graph_explain_parser.add_argument(
         "--format", dest="output_format", choices=("text", "json"), default="text"
@@ -1341,15 +1346,18 @@ def query_knowledge_graph_retrieval_index(
 
 
 def build_evidence_graph_projection_index(
-    *, ledger_path: Path, output_format: str, rebuild: bool
+    *, ledger_path: Path, output_format: str, rebuild: bool, as_of: datetime | None
 ) -> int:
     projection = SQLiteKnowledgeGraphRetrievalAdapter(_knowledge_graph_index_path(ledger_path))
     try:
         if rebuild:
-            projection.delete_evidence_graph_projection()
+            projection.delete_evidence_graph_projection(
+                EvidenceGraphViewKind.AS_OF if as_of is not None else EvidenceGraphViewKind.CURRENT,
+                as_of,
+            )
         with sqlite_ledger_transaction(ledger_path) as ledger_repository:
             result = build_evidence_graph_projection(
-                BuildEvidenceGraphProjectionCommand(),
+                BuildEvidenceGraphProjectionCommand(as_of=as_of),
                 ledger_repository=ledger_repository,
                 projection=projection,
             )
@@ -1364,6 +1372,8 @@ def build_evidence_graph_projection_index(
             "lineage_cluster_count": result.lineage_cluster_count,
             "content_fingerprint": result.content_fingerprint,
             "reused_existing_manifest": result.reused_existing_manifest,
+            "view_kind": result.view_kind.value,
+            "as_of": result.as_of.isoformat() if result.as_of is not None else None,
             "failure": result.failure.value if result.failure is not None else None,
         },
         output_format,
@@ -1371,7 +1381,12 @@ def build_evidence_graph_projection_index(
 
 
 def explain_evidence_graph_relationship_index(
-    *, ledger_path: Path, relationship_id: str, context_profile: str, output_format: str
+    *,
+    ledger_path: Path,
+    relationship_id: str,
+    context_profile: str,
+    output_format: str,
+    as_of: datetime | None,
 ) -> int:
     projection = SQLiteKnowledgeGraphRetrievalAdapter(_knowledge_graph_index_path(ledger_path))
     try:
@@ -1380,6 +1395,7 @@ def explain_evidence_graph_relationship_index(
                 ExplainEvidenceGraphRelationshipCommand(
                     relationship_id=relationship_id,
                     context_profile_id=context_profile,
+                    as_of=as_of,
                 ),
                 ledger_repository=ledger_repository,
                 projection=projection,
@@ -1402,9 +1418,21 @@ def explain_evidence_graph_relationship_index(
             "context_results": [item.model_dump(mode="json") for item in result.context_results],
             "failure": result.failure.value if result.failure is not None else None,
             "policy_id": result.policy_id,
+            "view_kind": result.view_kind.value,
+            "as_of": result.as_of.isoformat() if result.as_of is not None else None,
         },
         output_format,
     )
+
+
+def _parse_utc_timestamp(value: str) -> datetime:
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("--as-of must be an RFC 3339 UTC timestamp.") from exc
+    if parsed.tzinfo is None or parsed.utcoffset() != UTC.utcoffset(parsed):
+        raise argparse.ArgumentTypeError("--as-of must use a UTC offset.")
+    return parsed.astimezone(UTC)
 
 
 def query_document_retrieval_index(

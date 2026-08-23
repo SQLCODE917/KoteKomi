@@ -131,6 +131,13 @@ class CrossSourceRelationState(StrEnum):
     NO_CROSS_SOURCE_RELATION_RECORDED = "no_cross_source_relation_recorded"
 
 
+class EvidenceGraphViewKind(StrEnum):
+    """The accepted-Ledger time boundary for a derived evidence graph view."""
+
+    CURRENT = "current"
+    AS_OF = "as_of"
+
+
 class TextViewKind(StrEnum):
     LOGICAL = "logical"
     DISPLAY = "display"
@@ -2715,6 +2722,8 @@ class EvidenceGraphProjectionManifest(DomainModel):
     projection_manifest_id: NonEmptyStr
     source_snapshot_digest: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
     projection_policy_id: NonEmptyStr
+    view_kind: EvidenceGraphViewKind = EvidenceGraphViewKind.CURRENT
+    as_of: datetime | None = None
     builder_version: NonEmptyStr
     adapter_identity: NonEmptyStr
     adapter_configuration_digest: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
@@ -2728,6 +2737,7 @@ class EvidenceGraphProjectionManifest(DomainModel):
 
     @model_validator(mode="after")
     def validate_publication(self) -> Self:
+        _validate_evidence_graph_view(self.view_kind, self.as_of)
         if self.publication_status == "complete" and self.published_at is None:
             raise ValueError("A complete EvidenceGraphProjectionManifest requires published_at.")
         if self.publication_status != "complete" and self.published_at is not None:
@@ -2742,6 +2752,8 @@ class EvidenceGraphExplanationRecord(DomainModel):
     projection_manifest_id: NonEmptyStr
     source_snapshot_digest: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
     relationship_id: RelationshipId
+    view_kind: EvidenceGraphViewKind = EvidenceGraphViewKind.CURRENT
+    as_of: datetime | None = None
     evidence_graph_edge_id: NonEmptyStr | None = None
     contribution_ids: tuple[NonEmptyStr, ...] = ()
     source_document_ids: tuple[DocumentId, ...] = ()
@@ -2752,11 +2764,24 @@ class EvidenceGraphExplanationRecord(DomainModel):
 
     @model_validator(mode="after")
     def validate_outcome(self) -> Self:
+        _validate_evidence_graph_view(self.view_kind, self.as_of)
         if self.failure_code is None and self.evidence_graph_edge_id is None:
             raise ValueError("A successful EvidenceGraphExplanationRecord requires an edge ID.")
         if self.failure_code is None and not self.contribution_ids:
             raise ValueError("A successful EvidenceGraphExplanationRecord requires contributions.")
         return self
+
+
+def _validate_evidence_graph_view(
+    view_kind: EvidenceGraphViewKind, as_of: datetime | None
+) -> None:
+    if view_kind is EvidenceGraphViewKind.CURRENT and as_of is not None:
+        raise ValueError("A current EvidenceGraph view cannot define as_of.")
+    if view_kind is EvidenceGraphViewKind.AS_OF:
+        if as_of is None:
+            raise ValueError("An as_of EvidenceGraph view requires as_of.")
+        if as_of.tzinfo is None or as_of.utcoffset() != UTC.utcoffset(as_of):
+            raise ValueError("EvidenceGraph as_of must use UTC.")
 
 
 class DocumentRetrievalUnit(DomainModel):

@@ -1,7 +1,7 @@
 from pathlib import Path
 
 from kotekomi_pipelines.cli import main
-from pytest import MonkeyPatch
+from pytest import MonkeyPatch, raises
 
 
 def test_graph_retrieval_commands_route_to_the_public_pipeline(
@@ -63,11 +63,14 @@ def test_evidence_graph_commands_route_to_the_public_pipeline(
                 "--ledger-path",
                 str(tmp_path / "ledger.sqlite"),
                 "--rebuild",
+                "--as-of",
+                "2026-08-20T12:00:00Z",
             ]
         )
         == 0
     )
     assert captured["rebuild"] is True
+    assert str(captured["as_of"]) == "2026-08-20 12:00:00+00:00"
 
     def explain(**kwargs: object) -> int:
         captured.update(kwargs)
@@ -83,6 +86,8 @@ def test_evidence_graph_commands_route_to_the_public_pipeline(
                 str(tmp_path / "ledger.sqlite"),
                 "--relationship-id",
                 "rel_policy",
+                "--as-of",
+                "2026-08-20T12:00:00Z",
                 "--context-profile",
                 "retrieval-validation-v1",
             ]
@@ -90,3 +95,16 @@ def test_evidence_graph_commands_route_to_the_public_pipeline(
         == 0
     )
     assert captured["relationship_id"] == "rel_policy"
+    assert str(captured["as_of"]) == "2026-08-20 12:00:00+00:00"
+
+
+def test_evidence_graph_temporal_commands_reject_a_timestamp_without_an_offset() -> None:
+    with raises(SystemExit):
+        main(
+            [
+                "retrieval",
+                "build-graph-evidence",
+                "--as-of",
+                "2026-08-20T12:00:00",
+            ]
+        )

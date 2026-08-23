@@ -86,3 +86,15 @@ The verifier deposits the same locked local bytes under the primary source URL a
 declared test reprint URL. It then proposes and reviews an exact-byte republication
 relation, and verifies that the evidence graph shows one reviewed lineage cluster while
 keeping original source context for both Documents.
+
+## DR-6.1C local run
+
+```bash
+uv run python scripts/verify_dr6_1c_canonical.py
+```
+
+The verifier deposits the locked local PDF through the public source Pipeline.
+It then creates two reviewed PDF-backed Assertions at fixed UTC review times.
+The as-of explanation returns the earlier accepted Assertion.
+The current explanation returns the reviewed successor.
+Both ContextManifests retain original PDF text and authoritative DocumentNode IDs.

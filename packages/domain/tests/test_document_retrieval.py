@@ -1,4 +1,5 @@
 import hashlib
+from datetime import UTC, datetime
 
 import pytest
 from kotekomi_domain import (
@@ -9,6 +10,8 @@ from kotekomi_domain import (
     EvidenceGraphContribution,
     EvidenceGraphEdge,
     EvidenceGraphLineageMembership,
+    EvidenceGraphProjectionManifest,
+    EvidenceGraphViewKind,
     EvidenceNecessity,
     EvidencePolarity,
     RetrievalChannel,
@@ -200,3 +203,40 @@ def test_evidence_graph_edge_rejects_an_empty_contribution_set() -> None:
             object_id="org_object",
             contribution_ids=(),
         )
+
+
+def test_evidence_graph_manifest_requires_a_valid_temporal_view_boundary() -> None:
+    historical = _evidence_graph_manifest(
+        view_kind=EvidenceGraphViewKind.AS_OF,
+        as_of=datetime(2026, 8, 20, tzinfo=UTC),
+    )
+
+    assert historical.as_of == datetime(2026, 8, 20, tzinfo=UTC)
+    with pytest.raises(ValidationError, match="requires as_of"):
+        _evidence_graph_manifest(view_kind=EvidenceGraphViewKind.AS_OF)
+    with pytest.raises(ValidationError, match="cannot define as_of"):
+        _evidence_graph_manifest(
+            view_kind=EvidenceGraphViewKind.CURRENT,
+            as_of=datetime(2026, 8, 20, tzinfo=UTC),
+        )
+
+
+def _evidence_graph_manifest(
+    *, view_kind: EvidenceGraphViewKind, as_of: datetime | None = None
+) -> EvidenceGraphProjectionManifest:
+    return EvidenceGraphProjectionManifest(
+        projection_manifest_id="egm_fixture",
+        source_snapshot_digest="a" * 64,
+        projection_policy_id="evidence_graph_temporal_relationship_contributions_v1",
+        view_kind=view_kind,
+        as_of=as_of,
+        builder_version="dr6_1_evidence_graph_projection_v2",
+        adapter_identity="test",
+        adapter_configuration_digest="b" * 64,
+        edge_count=0,
+        contribution_count=0,
+        lineage_cluster_count=0,
+        content_fingerprint="c" * 64,
+        publication_status="complete",
+        published_at=datetime(2026, 8, 23, tzinfo=UTC),
+    )

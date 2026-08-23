@@ -4,7 +4,7 @@
 - Parent: [Derived Document Retrieval Program](2026-07-11-derived-document-retrieval.md)
 - Depends on: [Knowledge-Graph Retrieval Plane](2026-08-23-knowledge-graph-retrieval-plane.md)
 - Implemented child: [Evidence-Linked Graph Projection MVP](2026-08-23-evidence-linked-graph-projection-mvp.md)
-- Latest implemented child: [Evidence Graph Lineage Inputs](2026-08-23-evidence-graph-lineage-inputs.md)
+- Latest implemented child: [Evidence Graph Temporal Views](2026-08-23-evidence-graph-temporal-views.md)
 
 ## Context & Problem
 
@@ -55,8 +55,8 @@ Rebuilding from identical authoritative inputs and policy must preserve selected
 | DR-6.1C | Add temporal and historical projection views. | A correction or withdrawal fixture returns distinct current and as-of explanations. |
 | DR-6.1D | Add explicit dimensions and a named Score policy. | A contradiction and unknown-dimension fixture exposes each input without false probability semantics. |
 
-DR-6.1B is complete. The project must design DR-6.1C only after it evaluates the
-completed lineage behavior.
+DR-6.1C is complete. The project must design DR-6.1D only after it evaluates the
+completed temporal behavior.
 
 ## Proposed Architecture
 
