@@ -230,9 +230,12 @@ def test_promotion_creates_verified_merge_and_completion_tags_then_cleans_branch
         (state / "experiments" / TASK / "runs" / RUN / "results/task-result.json").read_text()
     )
     assert record["target_commit"] == promotion
-    assert record["tag_message_sha256"] == hashlib.sha256(
-        git_output(repo, "for-each-ref", f"refs/tags/{tag}", "--format=%(contents)").encode()
-    ).hexdigest()
+    assert (
+        record["tag_message_sha256"]
+        == hashlib.sha256(
+            git_output(repo, "for-each-ref", f"refs/tags/{tag}", "--format=%(contents)").encode()
+        ).hexdigest()
+    )
 
 
 def test_completion_retains_remote_branch_when_local_cleanup_is_not_possible(
@@ -336,9 +339,7 @@ def test_abandonment_cleans_an_orphan_branch_without_replacing_supersession(
 
     assert abandoned.returncode == 0, abandoned.stderr
     assert git_output(repo, "ls-remote", "origin", f"refs/heads/feature/{TASK}") == ""
-    assert not (
-        state / "experiments" / TASK / "runs" / RUN / "results/task-result.json"
-    ).exists()
+    assert not (state / "experiments" / TASK / "runs" / RUN / "results/task-result.json").exists()
     cleanup = json.loads(
         (state / "experiments" / TASK / "runs" / RUN / "cleanup/branch-cleanup.json").read_text()
     )

@@ -96,9 +96,7 @@ def evaluate_pdf_analysis_admission(
     if actual_digest != bundle.representation.canonical_output_digest:
         raise ValueError("PDF analysis admission found a corrupted representation digest.")
     selected_policy = policy or PdfAnalysisAdmissionPolicy()
-    decision, coverage_status = selected_policy.decide(
-        bundle.quality_report.analyzability
-    )
+    decision, coverage_status = selected_policy.decide(bundle.quality_report.analyzability)
     return PdfAnalysisAdmissionOutcome(
         representation_id=representation_id,
         quality_report_id=bundle.quality_report.id,

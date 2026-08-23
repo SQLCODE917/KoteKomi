@@ -42,7 +42,7 @@ The same rule applies to lexical indexes, exact-search tables, generated retriev
 8. Keep retrieval-plane semantics separate from retrieval-channel mechanics.
 9. Integrate retrieval through the existing ContextPlanner architecture.
 10. Avoid a parallel RAG subsystem or a second prompt-construction path.
-11. Validate every child TDD with the same canonical deposited PDF, first through `test-ingest`, then through `test-query`.
+11. Validate every child TDD with the same locked canonical deposited PDF through public commands.
 12. Preserve complete query, policy, index, selection, and context provenance.
 
 ## Non-goals
@@ -355,7 +355,7 @@ Detailed TDD: write only after DR-2 evidence exists.
 
 Working result: small searchable units expose parent and structural ancestry to ContextPlanner without automatically dumping entire parents into model context.
 
-Detailed TDD: write only after DR-3 is stable.
+Document: `docs/2026-08-22-hierarchical-document-retrieval.md`
 
 ### DR-5 - Ledger Retrieval Plane
 
@@ -395,43 +395,34 @@ The required sequence for every child TDD is:
 
 ```text
 fixed deposited PDF bytes
-    -> test-ingest
+    -> public deposited-source ingest
     -> pinned acceptable representation
     -> build projections owned by the active child TDD
-    -> test-query
+    -> public retrieval query
     -> RetrievalQueryRecord
     -> ContextManifest
-    -> harness verification receipt
+    -> direct local conformance result
 ```
 
 The scenario must not fetch or regenerate the live Wikipedia page. The source URL supplies identity and attribution only.
 
 ### Fixture lock
 
-The committed scenario begins with an explicit unlocked fixture state because the repository does not track the PDF bytes. The first operator who has the canonical local PDF runs:
-
-```bash
-uv run kotekomi-agent test-ingest anthropic-dod-dispute-v1 --lock-fixture
-```
-
-The command must deterministically compute and write the exact SHA-256 and page count, then continue through the public deposited-source ingest path. It must refuse to overwrite an already locked scenario. Different bytes require a new scenario version, not a silent update to `v1`.
-
-Normal validation runs are:
-
-```bash
-uv run kotekomi-agent test-ingest anthropic-dod-dispute-v1
-uv run kotekomi-agent test-query anthropic-dod-dispute-v1 --suite dr-1-v1
-```
-
-Future suites replace `dr-1-v1` with their cumulative suite ID.
+The committed scenario carries a locked SHA-256 and page count because the repository does not track the PDF bytes.
+A local conformance script must reject a missing fixture, a different digest, or a different page count.
+A different fixture requires a new scenario version.
+DR-1 through DR-3 scenario commands remain historical validation tools.
+New retrieval work uses public `kotekomi` commands and a direct local conformance script.
 
 ### Validation tiers
 
-Ordinary CI uses small project-owned fixtures and deterministic unit, contract, and integration tests. The untracked canonical PDF is required for local child-TDD closeout through the harness. A missing or mismatched local fixture must produce a typed visible result; it must not be reported as a passing or skipped acceptance run.
+Ordinary CI uses small project-owned fixtures and deterministic unit, contract, and integration tests. The untracked canonical PDF is required for local child-TDD closeout through a direct local conformance script. A missing or mismatched local fixture must produce a typed visible result; it must not be reported as a passing or skipped acceptance run.
 
 ### Query-pack progression
 
-Each child TDD adds one immutable query pack. Its cumulative suite references all earlier packs without copying or editing them.
+DR-1 through DR-3 query packs and suites are immutable historical validation inputs.
+An active child TDD that uses the historical scenario runner adds one new immutable query pack.
+Its cumulative suite references prior packs without copying or editing them.
 
 ```text
 DR-1 suite = base-v1 + DR-1-v1
@@ -472,7 +463,7 @@ Capability completion and default activation are separate states.
 
 A semantic adapter may be complete and queryable while the default remains exact plus lexical. A later activation slice changes the default only after cumulative evaluation passes. Failed or inconclusive experiments leave the previous working policy intact and their derived state may be deleted.
 
-The harness owns program, slice, task, check, and evidence state. Implementation agents invoke deterministic operations; they do not manually maintain roadmap status or verification receipts.
+The retrieval program uses ordinary repository checks and direct local conformance scripts. It does not require Harness task lifecycle or receipt functions.
 
 ## Program-level acceptance criteria
 
@@ -489,7 +480,7 @@ The program is complete when all planned child deliverables have been accepted a
 9. Every selected result resolves to authoritative identities.
 10. Deleting every retrieval index loses no knowledge and each projection can be rebuilt from pinned authoritative state.
 11. ContextPlanner remains the only final context-construction authority.
-12. The canonical scenario passes its cumulative final suite through `test-ingest` and `test-query`.
+12. The canonical scenario passes the active child TDD's direct local conformance check.
 13. Historical query behavior remains inspectable through pinned policies, manifests, and records.
 
 ## Reference architecture and source files
@@ -501,7 +492,6 @@ Child TDDs should use these existing seams rather than creating parallel ones:
 - `packages/application/src/kotekomi_application/context_planning.py`
 - the persisted `DocumentRepresentationBundle` repository Port and Adapter
 - the Archive and Ledger authority rules in root `AGENTS.md`
-- repository-local harness conventions in `packages/devtools/AGENTS.md`
 - TDD conventions in `docs/agent/writing-tdds.md`
 
 ## Halt conditions
@@ -517,4 +507,4 @@ Stop the active child TDD and revise its design if implementation would:
 7. fetch the live Wikipedia page during canonical-scenario validation;
 8. silently accept changed canonical PDF bytes;
 9. make the untracked canonical PDF a normal CI dependency;
-10. update roadmap, task, or receipt state through agent-authored free-form files rather than deterministic harness operations.
+10. treat a direct local conformance result as a Harness receipt or lifecycle record.

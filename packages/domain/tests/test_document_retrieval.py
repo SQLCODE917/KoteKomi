@@ -2,11 +2,14 @@ import hashlib
 
 import pytest
 from kotekomi_domain import (
+    DocumentRetrievalUnit,
     DocumentSemanticRepresentation,
     RetrievalChannel,
     RetrievalChannelObservation,
     RetrievalHit,
+    deterministic_document_retrieval_unit_id,
     deterministic_retrieval_representation_id,
+    document_retrieval_unit_fingerprint,
     document_semantic_representation_fingerprint,
 )
 from pydantic import ValidationError
@@ -36,6 +39,68 @@ def test_semantic_representation_has_only_rebuild_provenance() -> None:
 
     assert "derived input" not in representation.model_dump_json()
     assert "vector" not in representation.model_dump_json()
+
+
+def _hierarchical_unit(
+    *,
+    parent_node_id: str = "nod_section",
+    ancestor_node_ids: tuple[str, ...] = ("nod_root", "nod_title", "nod_section"),
+) -> DocumentRetrievalUnit:
+    fingerprint = document_retrieval_unit_fingerprint(
+        source_snapshot_id="a" * 64,
+        representation_id="rep_fixture",
+        node_ids=("nod_focus",),
+        parent_node_id=parent_node_id,
+        ancestor_node_ids=ancestor_node_ids,
+        source_order=4,
+        structural_role="paragraph",
+        section_path=("Title", "Section"),
+        source_page_numbers=(1,),
+        original_text_digest="b" * 64,
+        unit_policy_id="document_node_hierarchy_unit_v2",
+    )
+    return DocumentRetrievalUnit(
+        retrieval_unit_id=deterministic_document_retrieval_unit_id(fingerprint),
+        source_snapshot_id="a" * 64,
+        representation_id="rep_fixture",
+        node_ids=("nod_focus",),
+        parent_node_id=parent_node_id,
+        ancestor_node_ids=ancestor_node_ids,
+        source_order=4,
+        structural_role="paragraph",
+        section_path=("Title", "Section"),
+        source_page_numbers=(1,),
+        original_text_digest="b" * 64,
+        unit_policy_id="document_node_hierarchy_unit_v2",
+        unit_fingerprint=fingerprint,
+    )
+
+
+def test_document_retrieval_unit_records_complete_ancestor_identity() -> None:
+    unit = _hierarchical_unit()
+
+    assert unit.parent_node_id == "nod_section"
+    assert unit.ancestor_node_ids == ("nod_root", "nod_title", "nod_section")
+    assert unit.retrieval_unit_id.startswith("dru_")
+
+
+@pytest.mark.parametrize(
+    ("parent_node_id", "ancestor_node_ids", "message"),
+    (
+        ("nod_section", (), "ancestor chain"),
+        ("nod_section", ("nod_root", "nod_root", "nod_section"), "must not repeat"),
+        ("nod_section", ("nod_root", "nod_focus", "nod_section"), "exclude its focal"),
+        ("nod_other", ("nod_root", "nod_title", "nod_section"), "direct parent"),
+    ),
+)
+def test_document_retrieval_unit_rejects_invalid_ancestor_identity(
+    parent_node_id: str, ancestor_node_ids: tuple[str, ...], message: str
+) -> None:
+    with pytest.raises(ValidationError, match=message):
+        _hierarchical_unit(
+            parent_node_id=parent_node_id,
+            ancestor_node_ids=ancestor_node_ids,
+        )
 
 
 def test_semantic_representation_rejects_an_identity_that_does_not_match_inputs() -> None:

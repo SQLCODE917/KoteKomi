@@ -987,9 +987,7 @@ def test_pdf_parser_output_mutations_fail_closed_and_retry_cleanly(
             for artifact in failed_outcome.output_artifacts
             if artifact.kind is ProcessingArtifactKind.PDF_PREFLIGHT_REPORT
         )
-        failed_accounting = repository.get_pdf_page_accounting_bundle(
-            failed_report_ref.artifact_id
-        )
+        failed_accounting = repository.get_pdf_page_accounting_bundle(failed_report_ref.artifact_id)
         assert failed_accounting is not None
         assert failed_accounting.preflight_report.page_count == 1
         (failed_page_status,) = failed_accounting.page_extraction_statuses
@@ -1018,9 +1016,7 @@ def test_pdf_parser_output_mutations_fail_closed_and_retry_cleanly(
         )
         assert retry.representation_id is not None
         assert repository.get_document_representation_bundle(retry.representation_id) is not None
-        retry_accounting = repository.get_pdf_page_accounting_bundle(
-            retry.preflight_report_id
-        )
+        retry_accounting = repository.get_pdf_page_accounting_bundle(retry.preflight_report_id)
         assert retry_accounting is not None
         assert retry_accounting.preflight_report.id != failed_accounting.preflight_report.id
         (retry_page_status,) = retry_accounting.page_extraction_statuses

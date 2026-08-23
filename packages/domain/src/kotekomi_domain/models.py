@@ -2262,22 +2262,34 @@ class DocumentRetrievalUnit(DomainModel):
     source_snapshot_id: NonEmptyStr
     representation_id: DocumentRepresentationId
     node_ids: tuple[DocumentNodeId, ...]
+    parent_node_id: DocumentNodeId
+    ancestor_node_ids: tuple[DocumentNodeId, ...]
     source_order: int = Field(ge=0)
     structural_role: NonEmptyStr
     section_path: tuple[str, ...] = ()
     source_page_numbers: tuple[int, ...] = ()
     original_text_digest: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
-    unit_policy_id: NonEmptyStr = "document_node_unit_v1"
+    unit_policy_id: NonEmptyStr = "document_node_hierarchy_unit_v2"
     unit_fingerprint: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
 
     @model_validator(mode="after")
     def validate_single_node(self) -> Self:
         if len(self.node_ids) != 1:
-            raise ValueError("DR-1 DocumentRetrievalUnit requires exactly one node.")
+            raise ValueError("DocumentRetrievalUnit requires exactly one focal node.")
+        if not self.ancestor_node_ids:
+            raise ValueError("DocumentRetrievalUnit requires an ancestor chain.")
+        if len(set(self.ancestor_node_ids)) != len(self.ancestor_node_ids):
+            raise ValueError("DocumentRetrievalUnit ancestor chain must not repeat a node.")
+        if self.node_ids[0] in self.ancestor_node_ids:
+            raise ValueError("DocumentRetrievalUnit ancestor chain must exclude its focal node.")
+        if self.ancestor_node_ids[-1] != self.parent_node_id:
+            raise ValueError("DocumentRetrievalUnit direct parent must end its ancestor chain.")
         expected_fingerprint = document_retrieval_unit_fingerprint(
             source_snapshot_id=self.source_snapshot_id,
             representation_id=self.representation_id,
             node_ids=self.node_ids,
+            parent_node_id=self.parent_node_id,
+            ancestor_node_ids=self.ancestor_node_ids,
             source_order=self.source_order,
             structural_role=self.structural_role,
             section_path=self.section_path,
@@ -2508,6 +2520,8 @@ def document_retrieval_unit_fingerprint(
     source_snapshot_id: str,
     representation_id: str,
     node_ids: tuple[str, ...],
+    parent_node_id: str,
+    ancestor_node_ids: tuple[str, ...],
     source_order: int,
     structural_role: str,
     section_path: tuple[str, ...],
@@ -2521,6 +2535,8 @@ def document_retrieval_unit_fingerprint(
             "source_snapshot_id": source_snapshot_id,
             "representation_id": representation_id,
             "node_ids": node_ids,
+            "parent_node_id": parent_node_id,
+            "ancestor_node_ids": ancestor_node_ids,
             "source_order": source_order,
             "structural_role": structural_role,
             "section_path": section_path,

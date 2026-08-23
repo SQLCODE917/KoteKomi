@@ -1,6 +1,9 @@
+# pyright: reportPrivateUsage=false
+
 import hashlib
 from datetime import UTC, datetime
 from pathlib import Path
+from types import SimpleNamespace
 
 from kotekomi_adapters import (
     DoclingPdfParser,
@@ -8,6 +11,10 @@ from kotekomi_adapters import (
     LocalArchiveStore,
     SQLiteLedgerInitializer,
     sqlite_ledger_transaction,
+)
+from kotekomi_adapters.docling_pdf_parser import (
+    _NativeTableLayout,
+    _recovered_column_header_indexes,
 )
 from kotekomi_application import (
     BuildIdentity,
@@ -383,6 +390,10 @@ def test_nist_table_continuation_is_one_logical_table_with_three_page_fragments(
     continuation = next(table for table in bundle.tables if len(table.fragment_ids) == 3)
     fragments_by_id = {fragment.id: fragment for fragment in bundle.table_fragments}
     fragments = tuple(fragments_by_id[fragment_id] for fragment_id in continuation.fragment_ids)
+    cells_by_fragment = {
+        fragment.id: tuple(cell for cell in bundle.table_cells if cell.fragment_id == fragment.id)
+        for fragment in fragments
+    }
     assert tuple(fragment.page_numbers for fragment in fragments) == ((2,), (3,), (4,))
     assert tuple(fragment.fragment_index for fragment in fragments) == (0, 1, 2)
     assert fragments[0].continued_from_fragment_id is None
@@ -390,3 +401,49 @@ def test_nist_table_continuation_is_one_logical_table_with_three_page_fragments(
     assert fragments[2].continued_from_fragment_id == fragments[1].id
     assert fragments[1].repeated_header_cell_ids
     assert fragments[2].repeated_header_cell_ids
+    page_two_header_cells = tuple(
+        cell for cell in cells_by_fragment[fragments[0].id] if cell.is_column_header
+    )
+    page_two_header_text = tuple(
+        _node_text(bundle, cell.node_id) for cell in page_two_header_cells if cell.node_id
+    )
+    assert page_two_header_text == (
+        "PCB No. (a)",
+        "BZ No. (a)",
+        "Compound",
+        "CAS Registry No.",
+        "Mass Fraction (μg/g) (b)",
+    )
+    page_two_first_data_cell = next(
+        cell
+        for cell in cells_by_fragment[fragments[0].id]
+        if cell.row_index == 1 and cell.column_index == 0
+    )
+    assert page_two_first_data_cell.column_header_cell_ids
+
+
+def test_unmatched_adjacent_table_rows_do_not_promote_column_headers() -> None:
+    current = _NativeTableLayout(
+        native_table_index=1,
+        page_numbers=(2,),
+        regions=(),
+        raw_cells=(SimpleNamespace(start_row_offset_idx=0),),
+        row_count=1,
+        column_count=1,
+        declared_header_signature=(),
+        leading_row_index=0,
+        leading_row_signature=((0, "first table"),),
+    )
+    following = _NativeTableLayout(
+        native_table_index=2,
+        page_numbers=(3,),
+        regions=(),
+        raw_cells=(),
+        row_count=1,
+        column_count=1,
+        declared_header_signature=((0, "different table"),),
+        leading_row_index=0,
+        leading_row_signature=((0, "different table"),),
+    )
+
+    assert _recovered_column_header_indexes((current, following)) == {}

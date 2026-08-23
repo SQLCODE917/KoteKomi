@@ -151,10 +151,7 @@ def _import_roots(path: Path) -> set[str]:
 
 
 def _dependency_names(values: list[str]) -> set[str]:
-    return {
-        re.split(r"[\s<>=!~\[]", dependency, maxsplit=1)[0].lower()
-        for dependency in values
-    }
+    return {re.split(r"[\s<>=!~\[]", dependency, maxsplit=1)[0].lower() for dependency in values}
 
 
 def _diagnostic(code: str, location: str, rule: str) -> dict[str, str]:
@@ -175,11 +172,14 @@ def test_valid_manifest_has_exact_compact_output_and_digest() -> None:
         "manifest_sha256": EXPECTED_VALID_DIGEST,
         "diagnostics": [],
     }
-    expected_stdout = json.dumps(
-        expected,
-        ensure_ascii=False,
-        separators=(",", ":"),
-    ) + "\n"
+    expected_stdout = (
+        json.dumps(
+            expected,
+            ensure_ascii=False,
+            separators=(",", ":"),
+        )
+        + "\n"
+    )
 
     assert completed.returncode == 0
     assert completed.stderr == ""
@@ -411,7 +411,7 @@ def test_duplicate_reference_path_is_rejected(tmp_path: Path) -> None:
 
 def test_duplicate_protected_artifact_path_is_rejected(tmp_path: Path) -> None:
     block = (
-        '[[protected_artifacts]]\n'
+        "[[protected_artifacts]]\n"
         'path = "docs/example-task.md"\n'
         'sha256 = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"\n'
         'kind = "leaf-tdd"\n'
@@ -527,18 +527,14 @@ def test_missing_file_has_stable_diagnostic() -> None:
         "schema_version": None,
         "task_id": None,
         "manifest_sha256": None,
-        "diagnostics": [
-            _diagnostic("task_manifest.file_not_found", "", "exists")
-        ],
+        "diagnostics": [_diagnostic("task_manifest.file_not_found", "", "exists")],
     }
 
 
 def test_directory_has_stable_unreadable_diagnostic(tmp_path: Path) -> None:
     _assert_invalid_path(
         tmp_path,
-        diagnostics=[
-            _diagnostic("task_manifest.file_unreadable", "", "readable")
-        ],
+        diagnostics=[_diagnostic("task_manifest.file_unreadable", "", "readable")],
         schema_version=None,
         task_id=None,
     )
@@ -564,9 +560,7 @@ def test_malformed_toml_has_stable_diagnostic() -> None:
         "schema_version": None,
         "task_id": None,
         "manifest_sha256": None,
-        "diagnostics": [
-            _diagnostic("task_manifest.toml_parse_error", "", "toml")
-        ],
+        "diagnostics": [_diagnostic("task_manifest.toml_parse_error", "", "toml")],
     }
 
 
@@ -608,14 +602,10 @@ def test_validation_executes_no_command_and_changes_no_repository_state(
     tmp_path: Path,
 ) -> None:
     sentinel = tmp_path / "executed.txt"
-    command = (
-        "from pathlib import Path; "
-        f"Path({str(sentinel)!r}).write_text('executed')"
+    command = f"from pathlib import Path; Path({str(sentinel)!r}).write_text('executed')"
+    replacement = (
+        "argv = [" + ", ".join(json.dumps(value) for value in ("python", "-c", command)) + "]"
     )
-    replacement = "argv = [" + ", ".join(
-        json.dumps(value)
-        for value in ("python", "-c", command)
-    ) + "]"
     path = _write_variant(
         tmp_path,
         "inert-command.toml",
@@ -674,9 +664,7 @@ def test_root_workspace_and_quality_tools_include_devtools() -> None:
 
     assert "packages/devtools" in uv["workspace"]["members"]
     assert uv["sources"]["kotekomi-devtools"] == {"workspace": True}
-    assert "kotekomi-devtools" in _dependency_names(
-        configuration["dependency-groups"]["dev"]
-    )
+    assert "kotekomi-devtools" in _dependency_names(configuration["dependency-groups"]["dev"])
     assert "packages/devtools/tests" in pytest_configuration["testpaths"]
     assert "packages/devtools/src" in pytest_configuration["pythonpath"]
     assert "packages/devtools/src" in pyright["include"]

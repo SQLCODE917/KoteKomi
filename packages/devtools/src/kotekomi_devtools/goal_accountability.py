@@ -164,9 +164,12 @@ def _check_goal(
             return False
         valid = True
         for evidence_index, reference in enumerate(cast(list[object], evidence)):
-            valid = _check_evidence(
-                reference, f"{location}.evidence[{evidence_index}]", records_dir, diagnostics
-            ) and valid
+            valid = (
+                _check_evidence(
+                    reference, f"{location}.evidence[{evidence_index}]", records_dir, diagnostics
+                )
+                and valid
+            )
         return valid
     elif disposition == "deferred":
         if not _nonempty_string(goal.get("reason")):
@@ -231,9 +234,7 @@ def _check_evidence(
     return True
 
 
-def _diagnostic(
-    diagnostics: list[GoalDiagnostic], code: str, location: str, message: str
-) -> None:
+def _diagnostic(diagnostics: list[GoalDiagnostic], code: str, location: str, message: str) -> None:
     diagnostics.append(GoalDiagnostic(code, location, message))
 
 
@@ -242,8 +243,10 @@ def _nonempty_string(value: object) -> bool:
 
 
 def _sha256(value: object) -> bool:
-    return isinstance(value, str) and len(value) == 64 and all(
-        character in "0123456789abcdefABCDEF" for character in value
+    return (
+        isinstance(value, str)
+        and len(value) == 64
+        and all(character in "0123456789abcdefABCDEF" for character in value)
     )
 
 

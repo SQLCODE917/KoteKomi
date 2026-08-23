@@ -71,15 +71,23 @@ def preflight_task(manifest_path: str) -> PreflightResult:
     validation = validate_task_manifest(path)
     if not validation.valid:
         return PreflightResult(
-            validation.schema_version, validation.task_id, None, manifest_file_sha256, None,
+            validation.schema_version,
+            validation.task_id,
+            None,
+            manifest_file_sha256,
+            None,
             validation.diagnostics,
         )
 
     parsed = tomllib.loads(path.read_text(encoding="utf-8"))
     diagnostics, execution_base = _stage_three(repository_root, manifest_path, parsed)
     return PreflightResult(
-        validation.schema_version, validation.task_id, validation.manifest_sha256,
-        manifest_file_sha256, execution_base, _sorted(diagnostics),
+        validation.schema_version,
+        validation.task_id,
+        validation.manifest_sha256,
+        manifest_file_sha256,
+        execution_base,
+        _sorted(diagnostics),
     )
 
 
@@ -278,9 +286,7 @@ def _git_stdout(*arguments: str) -> str | None:
 
 def _git(*arguments: str) -> subprocess.CompletedProcess[str] | None:
     try:
-        return subprocess.run(
-            ["git", *arguments], text=True, capture_output=True, check=False
-        )
+        return subprocess.run(["git", *arguments], text=True, capture_output=True, check=False)
     except OSError:
         return None
 
@@ -376,10 +382,7 @@ def _matches_digest(revision: str, path: str, current: Path, expected: str) -> b
     if committed is None or committed.returncode != 0:
         return False
     current_digest = _file_digest(current)
-    return (
-        hashlib.sha256(committed.stdout).hexdigest() == expected
-        and current_digest == expected
-    )
+    return hashlib.sha256(committed.stdout).hexdigest() == expected and current_digest == expected
 
 
 def _file_digest(path: Path) -> str | None:

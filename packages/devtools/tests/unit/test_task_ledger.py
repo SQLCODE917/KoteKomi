@@ -19,9 +19,7 @@ def test_task_completion_gate_requires_ready_goal_coverage_without_writing(tmp_p
     original = ledger.read_bytes()
 
     with pytest.raises(TaskLedgerError, match="goal coverage") as error:
-        update_task_ledger(
-            ledger, "task-one", status="complete", evidence=evidence, output=ledger
-        )
+        update_task_ledger(ledger, "task-one", status="complete", evidence=evidence, output=ledger)
 
     assert error.value.code == "h9.task.goals_unmet"
     assert ledger.read_bytes() == original
@@ -55,9 +53,7 @@ def test_task_transition_requires_the_expected_previous_status(tmp_path: Path) -
     assert error.value.code == "h9.task.transition_invalid"
 
 
-def _ledger(
-    root: Path, *, goal_coverage: str, status: str = "main_verified"
-) -> Path:
+def _ledger(root: Path, *, goal_coverage: str, status: str = "main_verified") -> Path:
     path = root / "ledger.json"
     path.write_text(
         json.dumps(

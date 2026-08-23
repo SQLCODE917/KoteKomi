@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import os
 import re
 import shutil
 import subprocess
@@ -498,14 +499,14 @@ def _controlled_corruptions(valid_pdf: bytes) -> dict[str, bytes]:
     }
 
 
-def _run_qpdf(*arguments: str) -> None:
-    subprocess.run(("qpdf", *arguments), check=True)
+def _run_qpdf(qpdf_executable: str, *arguments: str) -> None:
+    subprocess.run((qpdf_executable, *arguments), check=True)
 
 
-def _require_qpdf() -> None:
-    qpdf = shutil.which("qpdf")
+def _require_qpdf(qpdf_executable: str) -> None:
+    qpdf = shutil.which(qpdf_executable)
     if qpdf is None:
-        raise RuntimeError("qpdf is required to generate project PDF fixtures")
+        raise RuntimeError(f"qpdf executable is unavailable: {qpdf_executable}")
     version_output = subprocess.run(
         (qpdf, "--version"), check=True, capture_output=True, text=True
     ).stdout.strip()
@@ -516,8 +517,8 @@ def _require_qpdf() -> None:
         raise RuntimeError("OpenSSL is required to generate the AES-256 fixture")
 
 
-def generate(output_root: Path) -> None:
-    _require_qpdf()
+def generate(output_root: Path, *, qpdf_executable: str) -> None:
+    _require_qpdf(qpdf_executable)
     linn_pdf = FIXTURE_ROOT / "ocr" / "ocrmypdf-linn.pdf"
     if not linn_pdf.is_file():
         raise RuntimeError(f"missing pinned source fixture: {linn_pdf}")
@@ -550,6 +551,7 @@ def generate(output_root: Path) -> None:
         mixed_output = temporary_directory / "mixed_born_digital_scan_v1.pdf"
 
         _run_qpdf(
+            qpdf_executable,
             "--empty",
             "--deterministic-id",
             "--pages",
@@ -575,8 +577,12 @@ def generate(output_root: Path) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--output-root", type=Path, default=FIXTURE_ROOT)
+    parser.add_argument(
+        "--qpdf-executable",
+        default=os.environ.get("KOTEKOMI_QPDF_EXECUTABLE", "qpdf"),
+    )
     arguments = parser.parse_args()
-    generate(arguments.output_root)
+    generate(arguments.output_root, qpdf_executable=arguments.qpdf_executable)
 
 
 if __name__ == "__main__":

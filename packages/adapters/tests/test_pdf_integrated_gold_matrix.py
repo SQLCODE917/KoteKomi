@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import sqlite3
+import subprocess
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from io import BytesIO
@@ -93,6 +95,7 @@ from PIL import Image
 from .test_pdf_production_path import FixturePdfParser
 
 FIXTURE_ROOT = Path(__file__).parent / "fixtures" / "pdf"
+FIXTURE_QPDF_VERSION = "qpdf version 11.9.0"
 MANIFEST = json.loads((FIXTURE_ROOT / "manifest.json").read_text())
 MATRIX_PATH = FIXTURE_ROOT / "gold" / "integrated_gold_matrix_v1.json"
 MATRIX = json.loads(MATRIX_PATH.read_text())
@@ -273,8 +276,20 @@ def _ingest_input(captured: _CapturedPdf, raw_pdf: bytes, row_id: str) -> PdfIng
 
 
 def _parser(row: dict[str, Any]) -> DoclingPdfParser:
+    qpdf_executable = os.environ.get("KOTEKOMI_QPDF_EXECUTABLE", "qpdf")
+    version = subprocess.run(
+        (qpdf_executable, "--version"), check=True, capture_output=True, text=True
+    ).stdout.splitlines()[0]
+    if version != FIXTURE_QPDF_VERSION:
+        raise RuntimeError(
+            f"integrated PDF gold requires {FIXTURE_QPDF_VERSION!r}, found {version!r}; "
+            "set KOTEKOMI_QPDF_EXECUTABLE to the pinned executable"
+        )
     return DoclingPdfParser(
-        DoclingPdfParserConfig(enable_table_structure=row.get("parser_mode") == "table_structure")
+        DoclingPdfParserConfig(
+            enable_table_structure=row.get("parser_mode") == "table_structure",
+            qpdf_executable=qpdf_executable,
+        )
     )
 
 
@@ -335,13 +350,10 @@ def _table_evidence_candidate(
     cell = next(
         item
         for item in bundle.table_cells
-        if item.node_id is not None
-        and item.row_header_cell_ids
-        and item.column_header_cell_ids
+        if item.node_id is not None and item.row_header_cell_ids and item.column_header_cell_ids
     )
     header_cells = tuple(
-        cells[cell_id]
-        for cell_id in (*cell.row_header_cell_ids, *cell.column_header_cell_ids)
+        cells[cell_id] for cell_id in (*cell.row_header_cell_ids, *cell.column_header_cell_ids)
     )
     assert cell.node_id is not None
     assert all(header.node_id is not None for header in header_cells)
@@ -382,9 +394,7 @@ def _submit_overlay(
     if row_id == "complex_table":
         node, text, node_ids, region_ids, table_selector = _table_evidence_candidate(bundle)
     else:
-        node, text = _first_evidence_node(
-            bundle, rotated=row_id == "adversarial_layout"
-        )
+        node, text = _first_evidence_node(bundle, rotated=row_id == "adversarial_layout")
         node_ids = (node.id,)
         region_ids = node.source_region_ids
     outcome = submit_grounded_candidate_batch(
@@ -681,9 +691,7 @@ def test_integrated_pdf_gold_matrix(row: dict[str, Any], tmp_path: Path) -> None
                 == first_failed_accounting
             )
             (second_report_id,) = report_ids - {first_failed_accounting.preflight_report.id}
-            second_failed_accounting = repository.get_pdf_page_accounting_bundle(
-                second_report_id
-            )
+            second_failed_accounting = repository.get_pdf_page_accounting_bundle(second_report_id)
             assert second_failed_accounting is not None
             assert (
                 second_failed_accounting.page_extraction_statuses[0].extraction_path.value
@@ -722,14 +730,8 @@ def test_integrated_pdf_gold_matrix(row: dict[str, Any], tmp_path: Path) -> None
             admission = evaluate_pdf_analysis_admission(first.representation_id, repository)
             if row["expected_quality"] == "degraded":
                 assert admission.coverage_status.value == row["expected_coverage"]
-                assert (
-                    bundle.quality_report.analyzability
-                    is RepresentationAnalyzability.DEGRADED
-                )
-                assert (
-                    admission.decision
-                    is PdfAnalysisAdmissionDecision.REQUIRES_REVIEW
-                )
+                assert bundle.quality_report.analyzability is RepresentationAnalyzability.DEGRADED
+                assert admission.decision is PdfAnalysisAdmissionDecision.REQUIRES_REVIEW
                 assert (
                     admission.coverage_status
                     is PdfAnalysisCoverageStatus.PARSE_QUALITY_REQUIRES_REVIEW
@@ -737,10 +739,7 @@ def test_integrated_pdf_gold_matrix(row: dict[str, Any], tmp_path: Path) -> None
                 report_identity = admission
             else:
                 assert row["expected_quality"] == "acceptable"
-                assert (
-                    bundle.quality_report.analyzability
-                    is RepresentationAnalyzability.ACCEPTABLE
-                )
+                assert bundle.quality_report.analyzability is RepresentationAnalyzability.ACCEPTABLE
                 assert admission.decision is PdfAnalysisAdmissionDecision.ADMITTED
                 analysis_run_id, manifests = _complete_analysis(
                     row_id=row["row_id"],

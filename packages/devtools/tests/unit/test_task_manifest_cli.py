@@ -10,9 +10,13 @@ FIXTURE_ROOT = REPOSITORY_ROOT / "packages/devtools/tests/fixtures/task_manifest
 
 
 def test_cli_emits_compact_output_for_a_manifest_with_non_ascii_text(tmp_path: Path) -> None:
-    manifest = (FIXTURE_ROOT / "valid.toml").read_text().replace(
-        'title = "Example task"',
-        'title = "Résumé"',
+    manifest = (
+        (FIXTURE_ROOT / "valid.toml")
+        .read_text()
+        .replace(
+            'title = "Example task"',
+            'title = "Résumé"',
+        )
     )
     manifest_path = tmp_path / "non-ascii.toml"
     manifest_path.write_text(manifest, encoding="utf-8")

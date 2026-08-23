@@ -12,6 +12,7 @@ from kotekomi_application import (
     QueryDocumentSemanticRetrievalCommand,
     RetrievalFailureCode,
     build_document_retrieval_projection,
+    build_document_retrieval_units,
     build_document_semantic_projection,
     query_document_hybrid_retrieval,
     query_document_retrieval,
@@ -363,6 +364,18 @@ def test_document_retrieval_uses_fake_port_hits_and_authoritative_context() -> N
     )
 
     assert build.status == "complete"
+    units = build_document_retrieval_units(
+        ledger.bundle, ledger.bundle.representation.canonical_output_digest
+    )
+    needle_unit = next(
+        unit for unit in units if unit.node_ids == ("nod_document_retrieval_needle",)
+    )
+    assert needle_unit.parent_node_id == "nod_document_retrieval_section"
+    assert needle_unit.ancestor_node_ids == (
+        "nod_document_retrieval_root",
+        "nod_document_retrieval_title",
+        "nod_document_retrieval_section",
+    )
     assert result.status == "complete"
     assert result.hits[0].selection_reason == "exact_before_lexical"
     assert result.selected_node_ids == ("nod_document_retrieval_needle",)
@@ -383,6 +396,35 @@ def test_document_retrieval_rejects_a_stale_manifest() -> None:
     )
     assert projection.manifest is not None
     projection.manifest = projection.manifest.model_copy(update={"representation_digest": "c" * 64})
+
+    result = query_document_retrieval(
+        QueryDocumentRetrievalCommand(
+            representation_id=ledger.bundle.representation.id,
+            query_text="Needle",
+            maximum_hits=1,
+            context_profile_id="retrieval-validation-v1",
+        ),
+        ledger_repository=ledger,
+        projection=projection,
+        tokenizer=Tokenizer(),
+    )
+
+    assert result.status == "failed"
+    assert result.failure is RetrievalFailureCode.INDEX_STALE
+
+
+def test_document_retrieval_rejects_a_v1_unit_manifest() -> None:
+    ledger = FakeLedger()
+    projection = FakeProjection()
+    build_document_retrieval_projection(
+        BuildDocumentRetrievalProjectionCommand(ledger.bundle.representation.id),
+        ledger_repository=ledger,
+        projection=projection,
+    )
+    assert projection.manifest is not None
+    projection.manifest = projection.manifest.model_copy(
+        update={"unit_policy_id": "document_node_unit_v1"}
+    )
 
     result = query_document_retrieval(
         QueryDocumentRetrievalCommand(

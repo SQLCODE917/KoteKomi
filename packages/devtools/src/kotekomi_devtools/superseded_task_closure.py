@@ -74,9 +74,7 @@ def close_superseded_task(
         if local_tip != handoff:
             raise SupersededTaskClosureError("handoff commit must equal local feature tip")
         if remote_tip != handoff:
-            raise SupersededTaskClosureError(
-                "handoff commit must equal remote feature tip"
-            )
+            raise SupersededTaskClosureError("handoff commit must equal remote feature tip")
         delivery_head = _delivery_head(handoff)
         delivery_diff = _delivery_diff(original_specification, delivery_head)
         patch_id = _patch_id(delivery_diff)
@@ -195,9 +193,7 @@ def _original_specification(root: Path, task_id: str, run_id: str) -> str:
     required = {"tdd_binding", "task_manifest", "task_manifest_validation"}
     if not required.issubset(kinds):
         raise SupersededTaskClosureError("original task specification evidence is incomplete")
-    specification = _payload(root, entries, "specification_revision").get(
-        "specification_revision"
-    )
+    specification = _payload(root, entries, "specification_revision").get("specification_revision")
     if not isinstance(specification, str):
         raise SupersededTaskClosureError("original specification revision is invalid")
     return _commit(specification)
@@ -319,30 +315,33 @@ def _message(
     delivery_relation: str,
     historic_delivery_diff_sha256: str,
 ) -> str:
-    return json.dumps(
-        {
-            "schema_version": 1,
-            "task_id": task_id,
-            "implementation_run_id": run_id,
-            "outcome": "superseded",
-            "supersession_reason": "scope_discovery",
-            "successor_task_id": successor_task_id,
-            "successor_run_id": successor_run_id,
-            "successor_result_tag": successor_result_tag,
-            "successor_target_commit": successor_target_commit,
-            "handoff_commit": handoff_commit,
-            "handoff_patch_id": handoff_patch_id,
-            "delivery_base_commit": delivery_base_commit,
-            "delivery_head_commit": delivery_head_commit,
-            "delivery_patch_id": handoff_patch_id,
-            "successor_delivery_base_commit": successor_delivery_base_commit,
-            "successor_delivery_patch_id": successor_delivery_patch_id,
-            "delivery_relation": delivery_relation,
-            "historic_delivery_diff_sha256": historic_delivery_diff_sha256,
-        },
-        sort_keys=True,
-        separators=(",", ":"),
-    ) + "\n"
+    return (
+        json.dumps(
+            {
+                "schema_version": 1,
+                "task_id": task_id,
+                "implementation_run_id": run_id,
+                "outcome": "superseded",
+                "supersession_reason": "scope_discovery",
+                "successor_task_id": successor_task_id,
+                "successor_run_id": successor_run_id,
+                "successor_result_tag": successor_result_tag,
+                "successor_target_commit": successor_target_commit,
+                "handoff_commit": handoff_commit,
+                "handoff_patch_id": handoff_patch_id,
+                "delivery_base_commit": delivery_base_commit,
+                "delivery_head_commit": delivery_head_commit,
+                "delivery_patch_id": handoff_patch_id,
+                "successor_delivery_base_commit": successor_delivery_base_commit,
+                "successor_delivery_patch_id": successor_delivery_patch_id,
+                "delivery_relation": delivery_relation,
+                "historic_delivery_diff_sha256": historic_delivery_diff_sha256,
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        + "\n"
+    )
 
 
 def _publish_matching_tag(tag: str, target: str, message: str) -> None:
@@ -645,7 +644,5 @@ def _write_copies(payload: Json, output: Path | None, markdown: Path | None) -> 
     if markdown:
         markdown.parent.mkdir(parents=True, exist_ok=True)
         markdown.write_text(
-            "# Superseded Task Closure\n\n```json\n"
-            + json.dumps(payload, indent=2)
-            + "\n```\n"
+            "# Superseded Task Closure\n\n```json\n" + json.dumps(payload, indent=2) + "\n```\n"
         )

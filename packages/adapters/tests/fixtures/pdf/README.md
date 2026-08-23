@@ -43,10 +43,15 @@ The four `corrupt/generated/` files are precise mutations of the same valid,
 project-owned source. `gold/controlled_corruptions_v1.json` records the mutation
 algorithm and resulting digest for each file.
 
+Run the pinned qpdf executable through `KOTEKOMI_QPDF_EXECUTABLE`.
+The full fixture and integrated PDF gold suites use that same executable.
+The executable must report `qpdf version 11.9.0`.
+
 Regenerate all project-owned mixed, table, encrypted, and corruption fixtures with:
 
 ```sh
-python3 packages/adapters/tests/fixtures/pdf/generate_project_fixtures.py
+KOTEKOMI_QPDF_EXECUTABLE=/absolute/path/to/qpdf-11.9.0 \
+  python3 packages/adapters/tests/fixtures/pdf/generate_project_fixtures.py
 ```
 
 The generator is pinned to qpdf 11.9.0 for page assembly and uses OpenSSL's

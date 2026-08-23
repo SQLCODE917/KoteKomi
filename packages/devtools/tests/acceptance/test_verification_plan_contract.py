@@ -338,8 +338,7 @@ def test_verification_plan_excludes_a_valid_receipt_only_commit(tmp_path: Path) 
     _git(repo, "commit", "-m", "candidate")
     candidate = _git(repo, "rev-parse", "HEAD")
     receipt_path = (
-        ".agent/receipts/verification/"
-        f"{TASK_ID}/{candidate}/portable-local/attempt-0001.json"
+        f".agent/receipts/verification/{TASK_ID}/{candidate}/portable-local/attempt-0001.json"
     )
     _write(
         repo / receipt_path,
@@ -426,8 +425,7 @@ def test_verification_plan_keeps_invalid_receipt_content_uncovered(
     _git(repo, "commit", "-m", "candidate")
     candidate = _git(repo, "rev-parse", "HEAD")
     receipt_path = (
-        ".agent/receipts/verification/"
-        f"{TASK_ID}/{candidate}/portable-local/attempt-0001.json"
+        f".agent/receipts/verification/{TASK_ID}/{candidate}/portable-local/attempt-0001.json"
     )
     _write(repo / receipt_path, receipt_text)
     _git(repo, "add", "-A")
@@ -451,8 +449,7 @@ def test_verification_plan_keeps_a_multi_path_receipt_commit_uncovered(tmp_path:
     _git(repo, "commit", "-m", "candidate")
     candidate = _git(repo, "rev-parse", "HEAD")
     receipt_path = (
-        ".agent/receipts/verification/"
-        f"{TASK_ID}/{candidate}/portable-local/attempt-0001.json"
+        f".agent/receipts/verification/{TASK_ID}/{candidate}/portable-local/attempt-0001.json"
     )
     _write(
         repo / receipt_path,
@@ -511,14 +508,7 @@ def _h13_fixture_repo(tmp_path: Path) -> tuple[Path, Path, str]:
     repo = tmp_path / "h13-fixture"
     repo.mkdir()
     manifest = repo / ".agent" / "tasks" / "h13-fixture.toml"
-    cli_path = (
-        repo
-        / "packages"
-        / "devtools"
-        / "src"
-        / "kotekomi_devtools"
-        / "cli.py"
-    )
+    cli_path = repo / "packages" / "devtools" / "src" / "kotekomi_devtools" / "cli.py"
     manifest_text = (
         "schema_version = 1\n"
         'task_id = "h13-fixture"\n'
@@ -548,14 +538,7 @@ def test_cli_delimiter_changes_require_regression_contract(
     tmp_path: Path,
 ) -> None:
     repo, manifest, base = _h13_fixture_repo(tmp_path)
-    cli_path = (
-        repo
-        / "packages"
-        / "devtools"
-        / "src"
-        / "kotekomi_devtools"
-        / "cli.py"
-    )
+    cli_path = repo / "packages" / "devtools" / "src" / "kotekomi_devtools" / "cli.py"
     _write(cli_path, "print('changed cli dispatch')\n")
     _git(repo, "add", "packages/devtools/src/kotekomi_devtools/cli.py")
     _git(repo, "commit", "-m", "touch cli dispatch")
@@ -682,9 +665,7 @@ def test_h14_coverage_known_harness_paths_emit_touched_path_contracts(
         assert payload.get("status") == "ready"
         checks = _h14_coverage_checks(payload)
         touched_ids = {
-            str(check.get("id"))
-            for check in checks
-            if check.get("source") == "touched-path"
+            str(check.get("id")) for check in checks if check.get("source") == "touched-path"
         }
         assert expected_ids.issubset(touched_ids)
 

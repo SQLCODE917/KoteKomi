@@ -338,9 +338,10 @@ def test_closure_tags_patch_equivalent_handoff_and_deletes_feature_branch(
     assert record["supersession_reason"] == "scope_discovery"
     assert len(record["handoff_patch_id"]) == 40
     assert record["delivery_relation"] == "exact"
-    assert json.loads(
-        (state / "experiments" / TASK / "runs" / RUN / "run.json").read_text()
-    )["status"] == "superseded"
+    assert (
+        json.loads((state / "experiments" / TASK / "runs" / RUN / "run.json").read_text())["status"]
+        == "superseded"
+    )
 
 
 def test_closure_blocks_when_handoff_patch_differs(
@@ -516,8 +517,7 @@ def test_closure_retains_an_abandoned_result_tag(
     assert payload["historical_result_tag"] == historical
     assert git_output(repo, "rev-parse", f"{historical}^{{}}") == historical_target
     assert (
-        git_output(repo, "for-each-ref", historical, "--format=%(contents)")
-        == historical_message
+        git_output(repo, "for-each-ref", historical, "--format=%(contents)") == historical_message
     )
     assert git_output(repo, "ls-remote", "origin", f"refs/tags/{superseded}^{{}}")
     record = json.loads(

@@ -28,9 +28,20 @@ def test_receipt_chain_status_cli_reports_complete_chain(tmp_path: Path) -> None
     markdown = tmp_path / "status.md"
 
     result = _run_status(
-        "--task-id", "h15-fixture", "--phase", "spec",
-        "--receipt", f"spec-commit={receipt}", "--expect", f"spec-commit={digest}",
-        "--required", "spec-commit", "--output", str(output), "--markdown", str(markdown),
+        "--task-id",
+        "h15-fixture",
+        "--phase",
+        "spec",
+        "--receipt",
+        f"spec-commit={receipt}",
+        "--expect",
+        f"spec-commit={digest}",
+        "--required",
+        "spec-commit",
+        "--output",
+        str(output),
+        "--markdown",
+        str(markdown),
     )
 
     assert result.returncode == 0, result.stderr
@@ -47,9 +58,16 @@ def test_receipt_chain_status_cli_fails_closed_for_missing_default(tmp_path: Pat
     output = tmp_path / "missing.json"
 
     result = _run_status(
-        "--task-id", "h15-fixture", "--phase", "spec",
-        "--state-root", str(tmp_path / "state"), "--required", "spec-ci",
-        "--output", str(output),
+        "--task-id",
+        "h15-fixture",
+        "--phase",
+        "spec",
+        "--state-root",
+        str(tmp_path / "state"),
+        "--required",
+        "spec-ci",
+        "--output",
+        str(output),
     )
 
     assert result.returncode == 1
@@ -68,9 +86,18 @@ def test_receipt_chain_status_cli_fails_closed_for_digest_mismatch(tmp_path: Pat
     output = tmp_path / "mismatch.json"
 
     result = _run_status(
-        "--task-id", "h15-fixture", "--phase", "candidate",
-        "--receipt", f"candidate-ci={receipt}", "--expect", f"candidate-ci={'0' * 64}",
-        "--required", "candidate-ci", "--output", str(output),
+        "--task-id",
+        "h15-fixture",
+        "--phase",
+        "candidate",
+        "--receipt",
+        f"candidate-ci={receipt}",
+        "--expect",
+        f"candidate-ci={'0' * 64}",
+        "--required",
+        "candidate-ci",
+        "--output",
+        str(output),
     )
 
     assert result.returncode == 1

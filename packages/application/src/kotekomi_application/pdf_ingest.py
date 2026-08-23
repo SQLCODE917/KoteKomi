@@ -970,14 +970,14 @@ def _build_pdf_page_accounting(
                 )
                 if bundle is None and parse_result.blocking_reasons
                 else extraction_policy.select_page_outcome(
-                page=page,
-                page_has_output=page_has_output,
-                representation_analyzability=(
-                    bundle.quality_report.analyzability if bundle is not None else None
-                ),
-                source_blocked=bundle is None,
-                selected_path=selected_path,
-                ocr_confidence=page_ocr_confidence,
+                    page=page,
+                    page_has_output=page_has_output,
+                    representation_analyzability=(
+                        bundle.quality_report.analyzability if bundle is not None else None
+                    ),
+                    source_blocked=bundle is None,
+                    selected_path=selected_path,
+                    ocr_confidence=page_ocr_confidence,
                 )
             )
         )

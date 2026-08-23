@@ -60,9 +60,7 @@ def step_preflight_payload(
                     "expected_candidate_branch",
                 )
             )
-        if expected_origin_main is not None and (
-            state.origin_main != expected_origin_main
-        ):
+        if expected_origin_main is not None and (state.origin_main != expected_origin_main):
             diagnostics.append(
                 _step_diagnostic(
                     "origin_main_mismatch",
@@ -101,12 +99,8 @@ def step_preflight_payload(
             recovered = True
     else:
         if state.branch != branch:
-            diagnostics.append(
-                _step_diagnostic("branch_mismatch", "/branch", "expected_branch")
-            )
-        if expected_origin_main is not None and (
-            state.origin_main != expected_origin_main
-        ):
+            diagnostics.append(_step_diagnostic("branch_mismatch", "/branch", "expected_branch"))
+        if expected_origin_main is not None and (state.origin_main != expected_origin_main):
             diagnostics.append(
                 _step_diagnostic(
                     "origin_main_mismatch",
@@ -249,10 +243,7 @@ def _load_step_state(
             branch=_required_string(payload, "branch"),
             head=_required_string(payload, "head"),
             origin_main=_required_string(payload, "origin_main"),
-            remote_refs={
-                str(key): str(value)
-                for key, value in remote_refs_payload.items()
-            },
+            remote_refs={str(key): str(value) for key, value in remote_refs_payload.items()},
             worktree_status=_required_string(payload, "worktree_status"),
         )
 
@@ -260,9 +251,7 @@ def _load_step_state(
         branch=_git(cwd, "branch", "--show-current"),
         head=_git(cwd, "rev-parse", "HEAD"),
         origin_main=_git(cwd, "rev-parse", origin_main_ref),
-        remote_refs={
-            branch: _remote_ref(cwd, branch) for branch in remote_branches
-        },
+        remote_refs={branch: _remote_ref(cwd, branch) for branch in remote_branches},
         worktree_status=_git(cwd, "status", "--porcelain"),
     )
 

@@ -9,10 +9,7 @@ from typing import Any, cast
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 MANIFEST = REPO_ROOT / ".agent/tasks/harness-06-task-lifecycle-state-machine.toml"
-ENTRYPOINT = (
-    "from kotekomi_devtools.cli import entrypoint; "
-    "raise SystemExit(entrypoint())"
-)
+ENTRYPOINT = "from kotekomi_devtools.cli import entrypoint; raise SystemExit(entrypoint())"
 H5_MAIN_MERGE = "37e6b8c886fdb39288f1c88bc26ede7bbf704b50"
 H5_MAIN_PARENT = "63fa7cae7c4a5f03619ceeec953aee7fbf7eea53"
 H5_VERIFIED = "17bb8e2b77ab2b5edaf5a540fc6ac28c855dcfed"
@@ -68,9 +65,7 @@ def test_verified_phase_requires_json_object_records(tmp_path: Path) -> None:
     (records_dir / "candidate-commit.json").write_text("{}\n", encoding="utf-8")
     (records_dir / "candidate-ci.json").write_text("[]\n", encoding="utf-8")
 
-    code, payload, output = _run(
-        "--phase", "verified", "--records-dir", str(records_dir)
-    )
+    code, payload, output = _run("--phase", "verified", "--records-dir", str(records_dir))
 
     assert code != 0
     assert payload["status"] == "invalid"
@@ -104,6 +99,7 @@ def test_main_phase_rejects_unexpected_merge_parents() -> None:
     assert code != 0
     assert payload["status"] in {"not_ready", "invalid"}
     assert payload["diagnostics"]
+
 
 def _h11_rules(payload: dict[str, Any]) -> set[str]:
     diagnostics = cast(list[object], payload.get("diagnostics", []))

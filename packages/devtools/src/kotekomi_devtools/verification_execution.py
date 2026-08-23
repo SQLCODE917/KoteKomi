@@ -160,9 +160,7 @@ class VerificationExecutionReport:
         lines.extend(["", "## Diagnostics", ""])
         if self.diagnostics:
             for diagnostic in self.diagnostics:
-                lines.append(
-                    f"- `{diagnostic.code}` at `{diagnostic.location}`: {diagnostic.rule}"
-                )
+                lines.append(f"- `{diagnostic.code}` at `{diagnostic.location}`: {diagnostic.rule}")
         else:
             lines.append("- None.")
         return "\n".join(lines) + "\n"
@@ -441,7 +439,6 @@ def _run_record(
     )
 
 
-
 def _run_record_log_is_valid(
     record_path: Path,
     log_path: str,
@@ -498,6 +495,7 @@ def _run_record_log_is_valid(
         return False
 
     return True
+
 
 def _load_json(
     path: Path,

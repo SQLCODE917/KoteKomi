@@ -683,9 +683,7 @@ def mark_run_superseded(root: Path, task: str, run_id: str) -> None:
     )
     if row is None or row["status"] == "complete":
         raise EvidenceError("superseded workflow requires an active or blocked run")
-    if row["status"] == "abandoned" and not _has_complete_supersession_evidence(
-        root, task, run_id
-    ):
+    if row["status"] == "abandoned" and not _has_complete_supersession_evidence(root, task, run_id):
         raise EvidenceError("superseded workflow requires canonical evidence")
     if row["status"] != "superseded":
         now = datetime.now(UTC).isoformat()

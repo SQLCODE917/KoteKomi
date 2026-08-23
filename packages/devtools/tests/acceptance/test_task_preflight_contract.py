@@ -24,15 +24,11 @@ from packages.devtools.tests.acceptance._oracle_fixtures import (
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
-SCHEMA_SOURCE = (
-    REPO_ROOT
-    / ".agent"
-    / "schemas"
-    / "task-manifest-v1.schema.json"
-)
+SCHEMA_SOURCE = REPO_ROOT / ".agent" / "schemas" / "task-manifest-v1.schema.json"
 CLI_NAME = "kotekomi-agent"
 MANIFEST_RELATIVE = ".agent/tasks/example-task.toml"
 H1_TASK_ID = "harness-01-task-manifest-contract"
+
 
 def _preflight_help_reports_absent() -> bool:
     executable = shutil.which(CLI_NAME)
@@ -224,12 +220,7 @@ def _create_ready_repo(tmp_path: Path) -> RepositoryFixture:
     root.mkdir()
     init_git_repo(root)
 
-    schema_target = (
-        root
-        / ".agent"
-        / "schemas"
-        / "task-manifest-v1.schema.json"
-    )
+    schema_target = root / ".agent" / "schemas" / "task-manifest-v1.schema.json"
     schema_target.parent.mkdir(parents=True)
     shutil.copyfile(SCHEMA_SOURCE, schema_target)
 
@@ -336,9 +327,7 @@ def _stage2_expected(
         "schema_version": 1,
         "task_id": task_id,
         "manifest_sha256": None,
-        "manifest_file_sha256": sha256_file(
-            fixture.manifest_path
-        ),
+        "manifest_file_sha256": sha256_file(fixture.manifest_path),
         "execution_base_revision": None,
         "diagnostics": diagnostics,
     }
@@ -349,22 +338,12 @@ def _stage3_expected(
     diagnostics: list[dict[str, str]],
 ) -> dict[str, object]:
     return {
-        "status": (
-            "ready"
-            if not diagnostics
-            else "not_ready"
-        ),
+        "status": ("ready" if not diagnostics else "not_ready"),
         "schema_version": 1,
         "task_id": fixture.manifest.task_id,
-        "manifest_sha256": _canonical_manifest_sha(
-            fixture.manifest_path
-        ),
-        "manifest_file_sha256": sha256_file(
-            fixture.manifest_path
-        ),
-        "execution_base_revision": (
-            fixture.specification_commit
-        ),
+        "manifest_sha256": _canonical_manifest_sha(fixture.manifest_path),
+        "manifest_file_sha256": sha256_file(fixture.manifest_path),
+        "execution_base_revision": (fixture.specification_commit),
         "diagnostics": diagnostics,
     }
 
@@ -762,9 +741,7 @@ def test_tdd_lock_failures(
             replace(
                 fixture.manifest,
                 tdd_path="docs/untracked.md",
-                tdd_sha256=_sha256_bytes(
-                    content.encode("utf-8")
-                ),
+                tdd_sha256=_sha256_bytes(content.encode("utf-8")),
             )
         )
         write_fixture_text(fixture.root / "docs" / "untracked.md", content)
@@ -1378,14 +1355,8 @@ def _import_roots(path: Path) -> set[str]:
 
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
-            roots.update(
-                alias.name.split(".", 1)[0]
-                for alias in node.names
-            )
-        elif (
-            isinstance(node, ast.ImportFrom)
-            and node.module is not None
-        ):
+            roots.update(alias.name.split(".", 1)[0] for alias in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.module is not None:
             roots.add(node.module.split(".", 1)[0])
 
     return roots
@@ -1401,14 +1372,7 @@ def test_product_packages_import_no_devtools() -> None:
             "domain",
             "pipelines",
         )
-        for path in sorted(
-            (
-                REPO_ROOT
-                / "packages"
-                / package
-                / "src"
-            ).rglob("*.py")
-        )
+        for path in sorted((REPO_ROOT / "packages" / package / "src").rglob("*.py"))
         if "kotekomi_devtools" in _import_roots(path)
     ]
     assert violations == []

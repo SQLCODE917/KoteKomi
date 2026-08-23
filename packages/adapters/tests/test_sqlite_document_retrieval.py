@@ -1,10 +1,13 @@
 import hashlib
+import sqlite3
 import struct
 from datetime import UTC, datetime
 from pathlib import Path
 
+import pytest
 from kotekomi_adapters.sqlite_document_retrieval import SQLiteDocumentRetrievalAdapter
 from kotekomi_application.document_retrieval import (
+    DocumentRetrievalError,
     ProjectionBuildInput,
     SemanticProjectionBuildInput,
     SemanticVectorRecord,
@@ -30,18 +33,22 @@ def _build() -> ProjectionBuildInput:
         source_snapshot_id="a" * 64,
         representation_id="rep_retrieval_fixture",
         node_ids=("nod_retrieval_fixture",),
+        parent_node_id="nod_retrieval_root",
+        ancestor_node_ids=("nod_retrieval_root",),
         source_order=1,
         structural_role="paragraph",
         section_path=("Fixture",),
         source_page_numbers=(1,),
         original_text_digest=original_text_digest,
-        unit_policy_id="document_node_unit_v1",
+        unit_policy_id="document_node_hierarchy_unit_v2",
     )
     unit = DocumentRetrievalUnit(
         retrieval_unit_id=deterministic_document_retrieval_unit_id(unit_fingerprint),
         source_snapshot_id="a" * 64,
         representation_id="rep_retrieval_fixture",
         node_ids=("nod_retrieval_fixture",),
+        parent_node_id="nod_retrieval_root",
+        ancestor_node_ids=("nod_retrieval_root",),
         source_order=1,
         structural_role="paragraph",
         section_path=("Fixture",),
@@ -94,7 +101,7 @@ def _build() -> ProjectionBuildInput:
         source_snapshot_id=unit.source_snapshot_id,
         representation_id=unit.representation_id,
         representation_digest="b" * 64,
-        unit_policy_id="document_node_unit_v1",
+        unit_policy_id="document_node_hierarchy_unit_v2",
         projection_policy_id="document_exact_lexical_projection_v1",
         query_policy_compatibility="document_exact_before_lexical_v1",
         adapter_identity="fixture",
@@ -126,6 +133,15 @@ def test_sqlite_document_retrieval_is_exact_lexical_and_rebuildable(tmp_path: Pa
         assert [candidate.retrieval_unit_id for candidate in lexical] == [
             build.units[0].retrieval_unit_id
         ]
+        with sqlite3.connect(tmp_path / "retrieval.sqlite") as connection:
+            row = connection.execute(
+                "SELECT unit_json FROM retrieval_units WHERE retrieval_unit_id = ?",
+                (build.units[0].retrieval_unit_id,),
+            ).fetchone()
+        assert row is not None
+        stored = DocumentRetrievalUnit.model_validate_json(row[0])
+        assert stored.parent_node_id == "nod_retrieval_root"
+        assert stored.ancestor_node_ids == ("nod_retrieval_root",)
 
         adapter.delete_projection(manifest.representation_id)
 
@@ -136,6 +152,19 @@ def test_sqlite_document_retrieval_is_exact_lexical_and_rebuildable(tmp_path: Pa
         assert adapter.exact_candidates(rebuilt, "Needle") == adapter.exact_candidates(
             manifest, "Needle"
         )
+    finally:
+        adapter.close()
+
+
+def test_sqlite_document_retrieval_rejects_a_unit_policy_mismatch(tmp_path: Path) -> None:
+    build = _build()
+    adapter = SQLiteDocumentRetrievalAdapter(tmp_path / "retrieval.sqlite")
+    mismatched_unit = build.units[0].model_copy(update={"unit_policy_id": "document_node_unit_v1"})
+    try:
+        with pytest.raises(DocumentRetrievalError, match="unit policy"):
+            adapter.publish(
+                ProjectionBuildInput(build.manifest, (mismatched_unit,), build.representations)
+            )
     finally:
         adapter.close()
 
@@ -169,7 +198,7 @@ def test_sqlite_document_retrieval_keeps_semantic_projection_separate(tmp_path: 
         source_snapshot_id=unit.source_snapshot_id,
         representation_id=unit.representation_id,
         representation_digest="b" * 64,
-        unit_policy_id="document_node_unit_v1",
+        unit_policy_id="document_node_hierarchy_unit_v2",
         projection_policy_id="document_semantic_projection_v1",
         query_policy_compatibility="document_semantic_v1",
         adapter_identity="fixture",

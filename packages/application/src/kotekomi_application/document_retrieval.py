@@ -15,6 +15,7 @@ from typing import Protocol
 
 from kotekomi_domain import (
     DocumentExactLexicalRepresentation,
+    DocumentNode,
     DocumentRepresentationBundle,
     DocumentRetrievalUnit,
     DocumentSemanticRepresentation,
@@ -43,7 +44,7 @@ from kotekomi_application.context_planning import (
     create_analysis_unit_from_retrieval_selection,
 )
 
-DOCUMENT_UNIT_POLICY_ID = "document_node_unit_v1"
+DOCUMENT_UNIT_POLICY_ID = "document_node_hierarchy_unit_v2"
 DOCUMENT_PROJECTION_POLICY_ID = "document_exact_lexical_projection_v1"
 DOCUMENT_QUERY_POLICY_ID = "document_exact_before_lexical_v1"
 DOCUMENT_PROJECTION_BUILDER_VERSION = "dr1_document_projection_v1"
@@ -766,6 +767,7 @@ def build_document_retrieval_units(
     bundle: DocumentRepresentationBundle, representation_digest: str
 ) -> tuple[DocumentRetrievalUnit, ...]:
     logical = next(view for view in bundle.text_views if view.kind.value == "logical")
+    nodes_by_id = {node.id: node for node in bundle.nodes}
     eligible = tuple(
         node
         for node in sorted(bundle.nodes, key=lambda node: (node.order_index, node.id))
@@ -775,6 +777,8 @@ def build_document_retrieval_units(
     )
     units: list[DocumentRetrievalUnit] = []
     for node in eligible:
+        ancestor_node_ids = _ancestor_node_ids(node.id, nodes_by_id)
+        parent_node_id = ancestor_node_ids[-1]
         section_path = node.section_path
         text = logical.text[node.start_char : node.end_char]
         digest = hashlib.sha256(text.encode("utf-8")).hexdigest()
@@ -782,6 +786,8 @@ def build_document_retrieval_units(
             source_snapshot_id=bundle.representation.input_blob_digest,
             representation_id=bundle.representation.id,
             node_ids=(node.id,),
+            parent_node_id=parent_node_id,
+            ancestor_node_ids=ancestor_node_ids,
             source_order=node.order_index,
             structural_role=node.node_type,
             section_path=section_path,
@@ -795,6 +801,8 @@ def build_document_retrieval_units(
                 source_snapshot_id=bundle.representation.input_blob_digest,
                 representation_id=bundle.representation.id,
                 node_ids=(node.id,),
+                parent_node_id=parent_node_id,
+                ancestor_node_ids=ancestor_node_ids,
                 source_order=node.order_index,
                 structural_role=node.node_type,
                 section_path=section_path,
@@ -804,6 +812,24 @@ def build_document_retrieval_units(
             )
         )
     return tuple(units)
+
+
+def _ancestor_node_ids(node_id: str, nodes_by_id: dict[str, DocumentNode]) -> tuple[str, ...]:
+    """Return an authoritative node's root-to-parent chain."""
+    node = nodes_by_id.get(node_id)
+    if node is None:
+        raise ValueError(f"Document retrieval references missing node: {node_id}")
+    parent_id = node.parent_node_id
+    ancestors: list[str] = []
+    while parent_id is not None:
+        parent = nodes_by_id.get(parent_id)
+        if parent is None:
+            raise ValueError(f"Document retrieval references missing parent node: {parent_id}")
+        ancestors.append(parent.id)
+        parent_id = parent.parent_node_id
+    if not ancestors:
+        raise ValueError("Document retrieval units require a non-root DocumentNode.")
+    return tuple(reversed(ancestors))
 
 
 def build_document_exact_lexical_representation(
@@ -1303,6 +1329,11 @@ def _validate_manifest(
     if manifest.publication_status != "complete":
         raise DocumentRetrievalError(
             RetrievalFailureCode.INDEX_INCOMPLETE, "Index is not complete."
+        )
+    if manifest.unit_policy_id != DOCUMENT_UNIT_POLICY_ID:
+        raise DocumentRetrievalError(
+            RetrievalFailureCode.INDEX_STALE,
+            "Index does not match the current document retrieval-unit policy.",
         )
     if (
         manifest.representation_digest != representation_digest

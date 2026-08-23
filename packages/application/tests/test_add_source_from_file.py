@@ -797,7 +797,10 @@ def test_deposited_pdf_archives_before_reporting_a_typed_blocker() -> None:
     assert archive.read_raw_source(next(iter(ledger.raw_blobs))) == raw_bytes
     assert result.representation_id is None
     assert result.blocking_reasons == ("fixture_pdf_blocked",)
-    assert ledger.sources[result.source_id].canonical_identity_key == "https://example.test/wiki/article"
+    assert (
+        ledger.sources[result.source_id].canonical_identity_key
+        == "https://example.test/wiki/article"
+    )
     assert result.document_id in ledger.documents
 
 

@@ -18,6 +18,7 @@ from kotekomi_application.document_retrieval import (
     SemanticProjectionBuildInput,
 )
 from kotekomi_domain import (
+    DocumentRetrievalUnit,
     RetrievalChannel,
     RetrievalIndexManifest,
     RetrievalQueryRecord,
@@ -37,6 +38,7 @@ class SQLiteDocumentRetrievalAdapter:
 
     def publish(self, build: ProjectionBuildInput) -> tuple[RetrievalIndexManifest, bool]:
         manifest = build.manifest
+        self._validate_unit_policies(manifest, build.units)
         self._connection.execute("BEGIN IMMEDIATE")
         try:
             row = self._connection.execute(
@@ -268,6 +270,7 @@ class SQLiteDocumentRetrievalAdapter:
             raise DocumentRetrievalError(
                 RetrievalFailureCode.INDEX_CORRUPT, "Semantic build requires a semantic manifest."
             )
+        self._validate_unit_policies(manifest, build.units)
         self._connection.execute("BEGIN IMMEDIATE")
         try:
             existing_row = self._connection.execute(
@@ -444,6 +447,16 @@ class SQLiteDocumentRetrievalAdapter:
             raise DocumentRetrievalError(
                 RetrievalFailureCode.INDEX_INCOMPLETE,
                 "Unpublished retrieval projection did not write all rows.",
+            )
+
+    @staticmethod
+    def _validate_unit_policies(
+        manifest: RetrievalIndexManifest, units: tuple[DocumentRetrievalUnit, ...]
+    ) -> None:
+        if any(unit.unit_policy_id != manifest.unit_policy_id for unit in units):
+            raise DocumentRetrievalError(
+                RetrievalFailureCode.INDEX_CORRUPT,
+                "Retrieval unit policy does not match its index manifest.",
             )
 
     def _validate_complete(self, manifest: RetrievalIndexManifest) -> None:

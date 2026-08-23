@@ -89,9 +89,7 @@ def _git_command(repo: Path, *args: str) -> subprocess.CompletedProcess[str]:
 
     if result.returncode != 0:
         raise AssertionError(
-            f"git {' '.join(args)} failed\n"
-            f"stdout:\n{result.stdout}\n"
-            f"stderr:\n{result.stderr}"
+            f"git {' '.join(args)} failed\nstdout:\n{result.stdout}\nstderr:\n{result.stderr}"
         )
 
     return result

@@ -37,9 +37,7 @@ def _repository_manifest(repo: Path, value: str = "one") -> Path:
     return path
 
 
-def _pinned_manifest_run(
-    root: Path, repo: Path, monkeypatch: pytest.MonkeyPatch
-) -> str:
+def _pinned_manifest_run(root: Path, repo: Path, monkeypatch: pytest.MonkeyPatch) -> str:
     subprocess.run(["git", "init", "-b", "main", str(repo)], check=True, capture_output=True)
     _git(repo, "config", "user.email", "test@example.com")
     _git(repo, "config", "user.name", "Test")
@@ -251,9 +249,7 @@ def test_reader_blocks_repository_evidence_missing_from_the_pinned_revision(
     root = tmp_path / "state"
     repo = tmp_path / "repo"
     _pinned_manifest_run(root, repo, monkeypatch)
-    specification_path = (
-        root / "experiments/t/runs/t-run-001/git/specification-revision.json"
-    )
+    specification_path = root / "experiments/t/runs/t-run-001/git/specification-revision.json"
     write_canonical_record(
         root,
         "t",

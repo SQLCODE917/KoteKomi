@@ -170,8 +170,10 @@ def commit_authoritative_capture(
     source_title = extract_source_title(ingest_input.filename, extracted_text)
     published_at = parse_dateline_date(extracted_text)
     content_sha256 = hashlib.sha256(ingest_input.raw_bytes).hexdigest()
-    source_key = source_url or ingest_input.source_identity_key or str(
-        Path(ingest_input.local_file_path).resolve()
+    source_key = (
+        source_url
+        or ingest_input.source_identity_key
+        or str(Path(ingest_input.local_file_path).resolve())
     )
     idempotency_key = ingest_input.idempotency_key or (
         _deposited_request_fingerprint(source_key, content_sha256)

@@ -160,9 +160,12 @@ def test_reconciliation_records_final_main_and_deletes_the_feature_branch(tmp_pa
     assert json.loads(result.stdout)["status"] == "complete"
     assert candidate_ci.read_bytes() == before
     assert _git(repo, "ls-remote", "origin", f"refs/heads/feature/{TASK}") == ""
-    assert subprocess.run(
-        ["git", "show-ref", "--verify", "--quiet", f"refs/heads/feature/{TASK}"], cwd=repo
-    ).returncode == 1
+    assert (
+        subprocess.run(
+            ["git", "show-ref", "--verify", "--quiet", f"refs/heads/feature/{TASK}"], cwd=repo
+        ).returncode
+        == 1
+    )
     assert final_main in _git(
         repo, "ls-remote", "--tags", "origin", f"refs/tags/kotekomi/tasks/{TASK}/result*"
     )

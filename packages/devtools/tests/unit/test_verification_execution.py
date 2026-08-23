@@ -126,6 +126,7 @@ def test_verify_check_records_reports_command_mismatch(tmp_path: Path) -> None:
     assert report.exit_code == 1
     assert _codes(output) == {"verification_execution.command_mismatch"}
 
+
 def _log_integrity_record(path: Path, check_id: str, argv: list[str]) -> None:
     log_path = path.with_suffix(".log")
     log_path.write_text("ok\n", encoding="utf-8")

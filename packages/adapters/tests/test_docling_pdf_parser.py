@@ -41,6 +41,19 @@ def test_source_preflight_establishes_the_page_denominator_before_docling() -> N
     assert preflight.preflight_tool_version
 
 
+def test_docling_parser_qpdf_configuration_overrides_the_environment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from kotekomi_adapters import docling_pdf_parser
+
+    monkeypatch.setenv("KOTEKOMI_QPDF_EXECUTABLE", "/toolchain/environment-qpdf")
+
+    assert docling_pdf_parser._configured_qpdf_executable("/toolchain/pinned-qpdf") == (
+        "/toolchain/pinned-qpdf"
+    )
+    assert docling_pdf_parser._configured_qpdf_executable(None) == "/toolchain/environment-qpdf"
+
+
 def test_docling_geometry_accepts_float_precision_drift_and_rejects_material_change() -> None:
     from kotekomi_adapters import docling_pdf_parser
 

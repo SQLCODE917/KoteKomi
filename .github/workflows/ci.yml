@@ -6,7 +6,9 @@ on:
 
 jobs:
   verify:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    env:
+      KOTEKOMI_QPDF_EXECUTABLE: /usr/bin/qpdf
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5

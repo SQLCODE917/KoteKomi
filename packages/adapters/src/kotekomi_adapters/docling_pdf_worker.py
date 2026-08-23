@@ -63,6 +63,7 @@ def _execute_request(request_bytes: bytes) -> dict[str, object]:
             ocr_render_scale=int(str(config_payload["ocr_render_scale"])),
             ocr_text_score=float(str(config_payload["ocr_text_score"])),
             worker_timeout_seconds=float(str(config_payload["worker_timeout_seconds"])),
+            qpdf_executable=str(config_payload["qpdf_executable"]),
         )
     )
     result = parser.parse(parse_input)

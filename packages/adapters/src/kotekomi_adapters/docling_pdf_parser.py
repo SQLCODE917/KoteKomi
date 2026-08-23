@@ -77,6 +77,7 @@ class DoclingPdfParserConfig:
     ocr_render_scale: int = 2
     ocr_text_score: float = 0.5
     worker_timeout_seconds: float = 300.0
+    qpdf_executable: str | None = None
 
     def __post_init__(self) -> None:
         if self.worker_timeout_seconds <= 0:
@@ -142,6 +143,21 @@ class _TableFragmentSpec:
 
 
 @dataclass(frozen=True)
+class _NativeTableLayout:
+    """Docling table data retained until adjacent fragments can be classified."""
+
+    native_table_index: int
+    page_numbers: tuple[int, ...]
+    regions: tuple[_LayoutRegion, ...]
+    raw_cells: tuple[Any, ...]
+    row_count: int
+    column_count: int
+    declared_header_signature: tuple[tuple[int, str], ...]
+    leading_row_index: int
+    leading_row_signature: tuple[tuple[int, str], ...]
+
+
+@dataclass(frozen=True)
 class _PreparedPdfSource:
     working_bytes: bytes
     transformation: PdfTransformationPayload | None
@@ -168,7 +184,10 @@ class DoclingPdfParser(PdfDocumentParser):
     """Convert PDF bytes with pinned Docling settings and fail closed on structure."""
 
     def __init__(self, config: DoclingPdfParserConfig) -> None:
-        self._config = config
+        self._config = replace(
+            config,
+            qpdf_executable=_configured_qpdf_executable(config.qpdf_executable),
+        )
 
     def processing_identity(self, policy_id: str) -> PdfProcessorIdentity:
         parser_version = _docling_version()
@@ -176,7 +195,7 @@ class DoclingPdfParser(PdfDocumentParser):
         config_digest = hashlib.sha256(
             json.dumps(configuration, sort_keys=True, separators=(",", ":")).encode()
         ).hexdigest()
-        return PdfProcessorIdentity("docling", parser_version, config_digest, "8")
+        return PdfProcessorIdentity("docling", parser_version, config_digest, "9")
 
     def parse(self, parse_input: PdfParseInput) -> PdfParseResult:
         if os.environ.get("KOTEKOMI_DOCLING_WORKER") != "1":
@@ -210,7 +229,11 @@ class DoclingPdfParser(PdfDocumentParser):
                 representation_bundle=None,
                 blocking_reasons=(structural_blocker,),
             )
-        prepared = _prepare_pdf_source(parse_input.raw_bytes, parse_input.access_credential)
+        prepared = _prepare_pdf_source(
+            parse_input.raw_bytes,
+            parse_input.access_credential,
+            qpdf_executable=_configured_qpdf_executable(self._config.qpdf_executable),
+        )
         if prepared is None:
             reason = "invalid_password"
             return PdfParseResult(
@@ -685,13 +708,12 @@ def _parse_with_large_stack_worker(
             "ocr_render_scale": config.ocr_render_scale,
             "ocr_text_score": config.ocr_text_score,
             "worker_timeout_seconds": config.worker_timeout_seconds,
+            "qpdf_executable": _configured_qpdf_executable(config.qpdf_executable),
         },
     }
     request_bytes = json.dumps(request, separators=(",", ":")).encode()
     if getattr(subprocess.run, "__module__", "subprocess") != "subprocess":
-        response_bytes = _one_shot_worker_request(
-            request_bytes, config.worker_timeout_seconds
-        )
+        response_bytes = _one_shot_worker_request(request_bytes, config.worker_timeout_seconds)
     else:
         response_bytes = _DOCLING_WORKER_CLIENTS[_worker_profile(parse_input, config)].request(
             request_bytes, config.worker_timeout_seconds
@@ -970,13 +992,14 @@ def _parser_configuration(
         "ocr_render_scale": config.ocr_render_scale,
         "ocr_text_score": config.ocr_text_score,
         "worker_timeout_seconds": config.worker_timeout_seconds,
+        "qpdf_executable": _configured_qpdf_executable(config.qpdf_executable),
         "ocr_identity": ocr_identity,
         "ocr_render_engine": (
             {"name": "pypdfium2", "version": version("pypdfium2")} if config.enable_ocr else None
         ),
         "page_selection_policy_version": PdfExtractionPolicy.policy_version,
         "policy_id": policy_id,
-        "layout_contract_version": "canonical_pdf_layout_v3",
+        "layout_contract_version": "canonical_pdf_layout_v4",
         "blocked_inventory_contract": "pdf_syntax_page_tree_v1",
         "docling_execution": {
             "accelerator_device": "cpu",
@@ -1003,7 +1026,7 @@ def _parser_configuration(
         "pdffonts_version": _pdffonts_version(),
         "pdfinfo_version": _pdfinfo_version(),
         "pdftotext_version": _pdftotext_version(),
-        "qpdf_version": _qpdf_version(),
+        "qpdf_version": _qpdf_version(_configured_qpdf_executable(config.qpdf_executable)),
     }
 
 
@@ -1097,37 +1120,29 @@ def _table_layout_from_document(
     *,
     excluded_pages: frozenset[int],
 ) -> tuple[tuple[_LayoutItem, ...], tuple[_TableFragmentSpec, ...]]:
+    native_tables = _native_table_layouts(
+        document,
+        page_geometry,
+        excluded_pages=excluded_pages,
+    )
+    recovered_header_indexes = _recovered_column_header_indexes(native_tables)
     geometry_by_page = {page.page_number: page for page in page_geometry}
     items: list[_LayoutItem] = []
     fragments: list[_TableFragmentSpec] = []
-    prior_signature: tuple[str, ...] | None = None
+    prior_signature: tuple[tuple[int, str], ...] | None = None
     prior_last_page: int | None = None
     logical_table_index = 0
     fragment_index = 0
-    for native_table_index, table in enumerate(cast(Any, document).tables, start=1):
-        provenance = tuple(cast(Any, getattr(table, "prov", ())))
-        if not provenance:
-            raise ValueError("Docling table has no PDF provenance.")
-        table_regions = tuple(
-            _layout_region_from_provenance(item, geometry_by_page) for item in provenance
-        )
-        page_numbers = tuple(sorted({region.page_number for region in table_regions}))
-        if set(page_numbers) & excluded_pages:
-            continue
-        data = table.data
-        raw_cells = tuple(data.table_cells)
-        row_count = int(data.num_rows)
-        column_count = int(data.num_cols)
-        if row_count <= 0 or column_count <= 0 or not raw_cells:
-            raise ValueError("Docling table structure has no canonical rows or cells.")
-        column_header_rows = tuple(
-            int(cell.start_row_offset_idx) for cell in raw_cells if bool(cell.column_header)
-        )
-        first_header_row = min(column_header_rows, default=-1)
-        header_signature = tuple(
-            " ".join(str(cell.text).split()).casefold()
-            for cell in raw_cells
-            if bool(cell.column_header) and int(cell.start_row_offset_idx) == first_header_row
+    for native_table in native_tables:
+        native_table_index = native_table.native_table_index
+        table_regions = native_table.regions
+        page_numbers = native_table.page_numbers
+        raw_cells = native_table.raw_cells
+        row_count = native_table.row_count
+        column_count = native_table.column_count
+        promoted_header_indexes = recovered_header_indexes.get(native_table_index, frozenset())
+        header_signature = native_table.declared_header_signature or (
+            native_table.leading_row_signature if promoted_header_indexes else ()
         )
         signature = header_signature
         first_page = page_numbers[0]
@@ -1149,6 +1164,12 @@ def _table_layout_from_document(
             row_count=row_count,
             column_count=column_count,
         )
+        column_header_indexes = frozenset(
+            native_index
+            for native_index, cell in enumerate(raw_cells)
+            if bool(cell.column_header) or native_index in promoted_header_indexes
+        )
+
         semantic_key_by_native_index: dict[int, str] = {}
         for native_index, cell in enumerate(raw_cells):
             text = " ".join(str(cell.text).split())
@@ -1159,12 +1180,12 @@ def _table_layout_from_document(
             page = geometry_by_page[page_numbers[0]]
             region = _layout_region_from_bbox(cell.bbox, page)
             is_row_header = bool(cell.row_header)
-            is_column_header = bool(cell.column_header)
-            if is_row_header and is_column_header:
+            cell_is_column_header = native_index in column_header_indexes
+            if is_row_header and cell_is_column_header:
                 node_type = "table_corner_header"
             elif is_row_header:
                 node_type = "table_row_header"
-            elif is_column_header:
+            elif cell_is_column_header:
                 node_type = "table_column_header"
             else:
                 node_type = "table_cell"
@@ -1198,7 +1219,7 @@ def _table_layout_from_document(
                 semantic_key_by_native_index[index]
                 for index, header in enumerate(normalized)
                 if index in semantic_key_by_native_index
-                and bool(raw_cells[index].column_header)
+                and index in column_header_indexes
                 and header[0] < start_row
                 and header[2] <= start_column < header[3]
             )
@@ -1210,7 +1231,7 @@ def _table_layout_from_document(
                     row_span=end_row - start_row,
                     column_span=end_column - start_column,
                     is_row_header=bool(cell.row_header),
-                    is_column_header=bool(cell.column_header),
+                    is_column_header=native_index in column_header_indexes,
                     row_header_keys=row_header_keys,
                     column_header_keys=column_header_keys,
                 )
@@ -1239,7 +1260,7 @@ def _table_layout_from_document(
                                 semantic_key_by_native_index[index]
                                 for index, header in enumerate(normalized)
                                 if index in semantic_key_by_native_index
-                                and bool(raw_cells[index].column_header)
+                                and index in column_header_indexes
                                 and header[0] < row
                                 and header[2] <= column < header[3]
                             ),
@@ -1257,6 +1278,99 @@ def _table_layout_from_document(
             )
         )
     return tuple(items), tuple(fragments)
+
+
+def _native_table_layouts(
+    document: DoclingDocument,
+    page_geometry: tuple[_PageGeometry, ...],
+    *,
+    excluded_pages: frozenset[int],
+) -> tuple[_NativeTableLayout, ...]:
+    geometry_by_page = {page.page_number: page for page in page_geometry}
+    native_tables: list[_NativeTableLayout] = []
+    for native_table_index, table in enumerate(cast(Any, document).tables, start=1):
+        provenance = tuple(cast(Any, getattr(table, "prov", ())))
+        if not provenance:
+            raise ValueError("Docling table has no PDF provenance.")
+        regions = tuple(
+            _layout_region_from_provenance(item, geometry_by_page) for item in provenance
+        )
+        page_numbers = tuple(sorted({region.page_number for region in regions}))
+        if set(page_numbers) & excluded_pages:
+            continue
+        data = table.data
+        raw_cells = tuple(data.table_cells)
+        row_count = int(data.num_rows)
+        column_count = int(data.num_cols)
+        if row_count <= 0 or column_count <= 0 or not raw_cells:
+            raise ValueError("Docling table structure has no canonical rows or cells.")
+        column_header_rows = tuple(
+            int(cell.start_row_offset_idx) for cell in raw_cells if bool(cell.column_header)
+        )
+        leading_row_index = min(int(cell.start_row_offset_idx) for cell in raw_cells)
+        native_tables.append(
+            _NativeTableLayout(
+                native_table_index=native_table_index,
+                page_numbers=page_numbers,
+                regions=regions,
+                raw_cells=raw_cells,
+                row_count=row_count,
+                column_count=column_count,
+                declared_header_signature=_table_row_signature(
+                    raw_cells,
+                    row_index=min(column_header_rows, default=-1),
+                    column_headers_only=True,
+                ),
+                leading_row_index=leading_row_index,
+                leading_row_signature=_table_row_signature(
+                    raw_cells,
+                    row_index=leading_row_index,
+                    column_headers_only=False,
+                ),
+            )
+        )
+    return tuple(native_tables)
+
+
+def _table_row_signature(
+    raw_cells: tuple[Any, ...],
+    *,
+    row_index: int,
+    column_headers_only: bool,
+) -> tuple[tuple[int, str], ...]:
+    return tuple(
+        (int(cell.start_col_offset_idx), " ".join(str(cell.text).split()).casefold())
+        for _, cell in sorted(
+            enumerate(raw_cells),
+            key=lambda item: (
+                int(item[1].start_col_offset_idx),
+                int(item[1].end_col_offset_idx),
+                item[0],
+            ),
+        )
+        if int(cell.start_row_offset_idx) == row_index
+        and (not column_headers_only or bool(cell.column_header))
+    )
+
+
+def _recovered_column_header_indexes(
+    native_tables: tuple[_NativeTableLayout, ...],
+) -> dict[int, frozenset[int]]:
+    recovered: dict[int, frozenset[int]] = {}
+    for current, following in zip(native_tables, native_tables[1:], strict=False):
+        if (
+            current.declared_header_signature
+            or not current.leading_row_signature
+            or current.leading_row_signature != following.declared_header_signature
+            or following.page_numbers[0] != current.page_numbers[-1] + 1
+        ):
+            continue
+        recovered[current.native_table_index] = frozenset(
+            native_index
+            for native_index, cell in enumerate(current.raw_cells)
+            if int(cell.start_row_offset_idx) == current.leading_row_index
+        )
+    return recovered
 
 
 def _normalized_docling_table_cells(
@@ -1892,9 +2006,7 @@ def _structural_page_inventory(
         crop = box(body, b"CropBox") or inherited_crop or media
         rotation_match = re.search(rb"/Rotate\s+(-?\d+)\b", body)
         rotation = (
-            int(rotation_match.group(1)) % 360
-            if rotation_match is not None
-            else inherited_rotation
+            int(rotation_match.group(1)) % 360 if rotation_match is not None else inherited_rotation
         )
         if re.search(rb"/Type\s*/Pages\b", body):
             kids_match = re.search(rb"/Kids\s*\[([^\]]*)\]", body)
@@ -1938,12 +2050,19 @@ def _structural_page_inventory(
 def _prepare_pdf_source(
     raw_bytes: bytes,
     credential: PdfAccessCredential | None,
+    *,
+    qpdf_executable: str,
 ) -> _PreparedPdfSource | None:
     encrypted = _pdf_is_encrypted(raw_bytes)
     if encrypted:
         if credential is None:
             return None
-        decrypted = _qpdf_transform(raw_bytes, credential=credential, decrypt=True)
+        decrypted = _qpdf_transform(
+            raw_bytes,
+            credential=credential,
+            decrypt=True,
+            qpdf_executable=qpdf_executable,
+        )
         if decrypted is None:
             return None
         return _PreparedPdfSource(
@@ -1956,14 +2075,20 @@ def _prepare_pdf_source(
                     "credential_id": credential.credential_id,
                     "contract_version": "qpdf_pdf_access_v1",
                 },
+                qpdf_executable=qpdf_executable,
             ),
             encrypted=True,
             warning="source_decrypted_with_versioned_transformation",
         )
-    repair_required = _qpdf_repair_required(raw_bytes)
+    repair_required = _qpdf_repair_required(raw_bytes, qpdf_executable=qpdf_executable)
     if not repair_required:
         return _PreparedPdfSource(raw_bytes, None, False, None)
-    repaired = _qpdf_transform(raw_bytes, credential=None, decrypt=False)
+    repaired = _qpdf_transform(
+        raw_bytes,
+        credential=None,
+        decrypt=False,
+        qpdf_executable=qpdf_executable,
+    )
     if repaired is None:
         return _PreparedPdfSource(raw_bytes, None, False, None)
     return _PreparedPdfSource(
@@ -1975,6 +2100,7 @@ def _prepare_pdf_source(
                 "operation": "structural_repair",
                 "contract_version": "qpdf_pdf_repair_v1",
             },
+            qpdf_executable=qpdf_executable,
         ),
         encrypted=False,
         warning="source_repaired_with_versioned_transformation",
@@ -1995,13 +2121,13 @@ def _strict_pdf_source_blocker(raw_bytes: bytes) -> str | None:
     return None
 
 
-def _qpdf_repair_required(raw_bytes: bytes) -> bool:
+def _qpdf_repair_required(raw_bytes: bytes, *, qpdf_executable: str) -> bool:
     with tempfile.NamedTemporaryFile(suffix=".pdf") as source:
         source.write(raw_bytes)
         source.flush()
         try:
             completed = subprocess.run(
-                ("qpdf", "--check", source.name),
+                (qpdf_executable, "--check", source.name),
                 check=False,
                 capture_output=True,
             )
@@ -2029,13 +2155,14 @@ def _qpdf_transform(
     *,
     credential: PdfAccessCredential | None,
     decrypt: bool,
+    qpdf_executable: str,
 ) -> bytes | None:
     with tempfile.TemporaryDirectory(prefix="kotekomi-pdf-") as temporary_directory:
         root = Path(temporary_directory)
         source = root / "source.pdf"
         output = root / "output.pdf"
         source.write_bytes(raw_bytes)
-        command = ["qpdf", "--warning-exit-0", "--deterministic-id"]
+        command = [qpdf_executable, "--warning-exit-0", "--deterministic-id"]
         if credential is not None:
             password_file = root / "credential"
             password_file.write_text(credential.password, encoding="utf-8")
@@ -2070,6 +2197,7 @@ def _repair_transformation_payload(
     output_bytes: bytes,
     *,
     configuration: dict[str, object],
+    qpdf_executable: str,
 ) -> PdfTransformationPayload:
     configuration_digest = hashlib.sha256(
         json.dumps(configuration, sort_keys=True, separators=(",", ":")).encode()
@@ -2080,7 +2208,7 @@ def _repair_transformation_payload(
         output_payload=output_bytes,
         output_media_type="application/pdf",
         tool_name="qpdf",
-        tool_version=_qpdf_version(),
+        tool_version=_qpdf_version(qpdf_executable),
         model_name="deterministic_pdf_transformation",
         model_version="1",
         model_digest=hashlib.sha256(b"deterministic_pdf_transformation_v1").hexdigest(),
@@ -2299,10 +2427,16 @@ def _pdf_is_encrypted(raw_bytes: bytes) -> bool:
     return re.search(rb"/Encrypt(?:\s|/|<<)", raw_bytes) is not None
 
 
+def _configured_qpdf_executable(configured_executable: str | None) -> str:
+    if configured_executable is not None:
+        return configured_executable
+    return os.environ.get("KOTEKOMI_QPDF_EXECUTABLE", "qpdf")
+
+
 @cache
-def _qpdf_version() -> str:
+def _qpdf_version(qpdf_executable: str) -> str:
     completed = subprocess.run(
-        ("qpdf", "--version"),
+        (qpdf_executable, "--version"),
         check=True,
         capture_output=True,
         text=True,

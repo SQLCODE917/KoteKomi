@@ -135,9 +135,7 @@ def test_metrics_accepts_task_result_instead_of_receipt_chain(
         path = state / f"{evidence_type}.json"
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(payloads.get(evidence_type, {})))
-        entries.append(
-            {"evidence_type": evidence_type, "path_scope": "state", "path": path.name}
-        )
+        entries.append({"evidence_type": evidence_type, "path_scope": "state", "path": path.name})
     snapshot = state / "experiments" / task / "spec" / "tdd-snapshot.md"
     snapshot.parent.mkdir(parents=True, exist_ok=True)
     snapshot.write_text("# TDD\n")
@@ -198,9 +196,7 @@ def test_metrics_report_scope_discovery_supersession_without_missing_lifecycle(
         path = state / f"{evidence_type}.json"
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(payloads.get(evidence_type, {})))
-        entries.append(
-            {"evidence_type": evidence_type, "path_scope": "state", "path": path.name}
-        )
+        entries.append({"evidence_type": evidence_type, "path_scope": "state", "path": path.name})
     snapshot = state / "experiments" / task / "spec" / "tdd-snapshot.md"
     snapshot.parent.mkdir(parents=True)
     snapshot.write_text("# TDD\n")

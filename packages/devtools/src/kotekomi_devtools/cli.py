@@ -933,9 +933,7 @@ def _add_lifecycle_evidence_parsers(subparsers: Any) -> None:
     superseded.add_argument("--successor-task-id", required=True)
     superseded.add_argument("--successor-run", required=True)
     superseded.add_argument("--handoff-commit", required=True)
-    superseded.add_argument(
-        "--delivery-relation", choices=("exact", "contained"), default="exact"
-    )
+    superseded.add_argument("--delivery-relation", choices=("exact", "contained"), default="exact")
     for name, help_text in (
         ("promote-feature-branch", "Promote the verified feature receipt to main."),
         ("complete-feature-branch", "Tag and clean up a main-CI-verified feature branch."),

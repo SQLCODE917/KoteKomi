@@ -12,7 +12,9 @@ from kotekomi_application import (
     ContextManifestInput,
     ContextManifestStatus,
     ContextModelProfile,
+    RetrievalSelectionAnalysisUnitInput,
     build_context_manifest,
+    create_analysis_unit_from_retrieval_selection,
     plan_analysis_units,
     render_context,
     verify_context_manifest,
@@ -217,6 +219,49 @@ def _manifest_input(unit: AnalysisUnit, *, limit: int) -> ContextManifestInput:
     )
 
 
+def _nonheading_parent_bundle() -> DocumentRepresentationBundle:
+    bundle = _bundle()
+    logical = next(view for view in bundle.text_views if view.kind is TextViewKind.LOGICAL)
+    text = logical.text.replace(
+        "The CHIP identifies health priorities.", "The plan identifies health priorities."
+    )
+    assert len(text) == len(logical.text)
+    updated_logical = logical.model_copy(
+        update={"text": text, "content_digest": hashlib.sha256(text.encode()).hexdigest()}
+    )
+    nodes = tuple(
+        node.model_copy(update={"parent_node_id": "nod_context_definition"})
+        if node.id == "nod_context_focus"
+        else node
+        for node in bundle.nodes
+    )
+    template = bundle.representation.model_copy(update={"canonical_output_digest": "0" * 64})
+    representation = template.model_copy(
+        update={
+            "canonical_output_digest": canonical_representation_digest(
+                template,
+                text_views=(
+                    updated_logical,
+                    *tuple(view for view in bundle.text_views if view.id != logical.id),
+                ),
+                nodes=nodes,
+                edges=bundle.edges,
+                source_regions=bundle.source_regions,
+                quality_report=bundle.quality_report,
+            )
+        }
+    )
+    return DocumentRepresentationBundle(
+        representation=representation,
+        text_views=(
+            updated_logical,
+            *tuple(view for view in bundle.text_views if view.id != logical.id),
+        ),
+        nodes=nodes,
+        quality_report=bundle.quality_report,
+    )
+
+
 def test_context_planner_includes_required_definition_and_excludes_furniture() -> None:
     ledger = FakeContextPlanningLedger()
     plan = plan_analysis_units(
@@ -254,6 +299,33 @@ def test_context_planner_includes_required_definition_and_excludes_furniture() -
         )
         == first.manifest.rendered_input
     )
+
+
+def test_retrieval_context_includes_heading_ancestors_without_parent_body() -> None:
+    ledger = FakeContextPlanningLedger()
+    ledger.bundle = _nonheading_parent_bundle()
+    unit = create_analysis_unit_from_retrieval_selection(
+        RetrievalSelectionAnalysisUnitInput(
+            representation_id=ledger.bundle.representation.id,
+            focus_node_ids=("nod_context_focus",),
+            policy_id="retrieval_selection_v1",
+        ),
+        ledger,
+    )
+
+    outcome = build_context_manifest(
+        _manifest_input(unit, limit=256), ledger, ExactWhitespaceTokenizer()
+    )
+
+    assert outcome.manifest.status is ContextManifestStatus.READY
+    assert tuple(candidate.node_id for candidate in outcome.manifest.selected_candidates) == (
+        "nod_context_focus",
+        "nod_context_outer_heading",
+        "nod_context_heading",
+    )
+    assert b"Community Health" in outcome.manifest.rendered_input
+    assert b"Improvement Plan" in outcome.manifest.rendered_input
+    assert b"Community Health Improvement Plan (CHIP)" not in outcome.manifest.rendered_input
 
 
 def test_context_planner_splits_multiple_focus_nodes_and_blocks_one_oversized_unit() -> None:

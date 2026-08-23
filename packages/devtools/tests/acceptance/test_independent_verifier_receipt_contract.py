@@ -148,21 +148,21 @@ def _verify(
     state_root: Path | None = None,
 ) -> subprocess.CompletedProcess[str]:
     arguments = [
-            sys.executable,
-            "-c",
-            ENTRYPOINT,
-            "verify-candidate",
-            "--manifest",
-            ".agent/tasks/independent-verifier-example.toml",
-            "--base",
-            base,
-            "--specification",
-            specification,
-            "--candidate",
-            candidate,
-            "--profile",
-            "portable-local",
-        ]
+        sys.executable,
+        "-c",
+        ENTRYPOINT,
+        "verify-candidate",
+        "--manifest",
+        ".agent/tasks/independent-verifier-example.toml",
+        "--base",
+        base,
+        "--specification",
+        specification,
+        "--candidate",
+        candidate,
+        "--profile",
+        "portable-local",
+    ]
     if task_id is not None and run_id is not None and state_root is not None:
         arguments.extend(["--task-id", task_id, "--run", run_id, "--state-root", str(state_root)])
     return subprocess.run(

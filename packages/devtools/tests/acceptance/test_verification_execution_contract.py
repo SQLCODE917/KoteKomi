@@ -31,9 +31,7 @@ def _require_execution_commands() -> None:
             missing.append(command)
     if missing:
         missing_text = ", ".join(missing)
-        pytest.skip(
-            f"verification execution commands are not implemented yet: {missing_text}"
-        )
+        pytest.skip(f"verification execution commands are not implemented yet: {missing_text}")
 
 
 def _json(path: Path) -> dict[str, Any]:
@@ -365,6 +363,7 @@ def test_verify_checks_reports_extra_records_without_satisfying_plan(tmp_path: P
     assert "verification_execution.check_missing" in codes
     assert "verification_execution.extra_record" in codes
     assert "verification_execution.extra_record" in markdown.read_text(encoding="utf-8")
+
 
 def test_verify_checks_rejects_missing_run_log(tmp_path: Path) -> None:
     _require_execution_commands()

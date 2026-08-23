@@ -485,9 +485,7 @@ def _validate_payload(evidence_type: str, payload: Json) -> None:
         raise EvidenceError(f"unknown evidence type: {evidence_type}")
     missing = [field for field in trusted_fields if field not in payload]
     if missing:
-        raise EvidenceError(
-            f"evidence fields missing for {evidence_type}: {', '.join(missing)}"
-        )
+        raise EvidenceError(f"evidence fields missing for {evidence_type}: {', '.join(missing)}")
     if evidence_type == "main_ci":
         promotion = payload.get("validated_promotion_commit")
         if promotion is not None and not isinstance(promotion, str):
@@ -509,9 +507,7 @@ def _validate_payload(evidence_type: str, payload: Json) -> None:
             "delivery_relation",
             "historic_delivery_diff_sha256",
         )
-        missing_supersession = [
-            field for field in required_supersession if field not in payload
-        ]
+        missing_supersession = [field for field in required_supersession if field not in payload]
         if missing_supersession:
             raise EvidenceError(
                 "superseded task-result fields missing: " + ", ".join(missing_supersession)
@@ -560,9 +556,7 @@ def validated_entries(root: Path, task: str, run: str) -> list[Json]:
         if entry["path_scope"] == "repo":
             assert revision is not None
             value = _repository_bytes(revision, entry["path"])
-            payload = _load_evidence_payload_bytes(
-                value, entry["evidence_type"], entry["path"]
-            )
+            payload = _load_evidence_payload_bytes(value, entry["evidence_type"], entry["path"])
             actual_digest = hashlib.sha256(value).hexdigest()
         else:
             path = root / entry["path"]
