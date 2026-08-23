@@ -44,7 +44,7 @@ Adapter outbound structured values come from Domain Core records or Application 
 | `ArchiveStore` | local filesystem | object storage |
 | `VectorIndex` | LanceDB or sqlite-vec | Qdrant |
 | `ModelRuntime` | Ollama or llama.cpp | MLX, vLLM, cloud LLM |
-| `GraphAnalyzer` | NetworkX | Neo4j |
+| `Graph retrieval projection` | SQLite sidecar | graph database adapter |
 | `SourceFetcher` | trafilatura/manual file import | browser capture, search API |
 | `BriefingWriter` | Markdown file writer | web UI, email, task output |
 

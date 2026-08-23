@@ -1,0 +1,11 @@
+{
+  "schema_version": "knowledge-graph-retrieval-suite-v1",
+  "suite_id": "dr-6-v1",
+  "scenario_id": "anthropic-dod-dispute-v1",
+  "seed_path": ".agent/scenarios/anthropic-dod-dispute-v1/ledger-seed-v1.json",
+  "query_pack_paths": [
+    ".agent/scenarios/anthropic-dod-dispute-v1/queries/dr-6-knowledge-graph-v1.jsonl"
+  ],
+  "required_channels": ["exact", "lexical", "graph_traversal"],
+  "require_rebuild_equivalence": true
+}

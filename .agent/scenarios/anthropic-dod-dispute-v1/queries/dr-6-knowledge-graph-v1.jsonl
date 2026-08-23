@@ -1,0 +1,2 @@
+{"schema_version":"knowledge-graph-retrieval-query-case-v1","query_id":"dr6-exact-anthropic","seed_text":"Anthropic","maximum_hops":2,"required_selected_record_ids":["rel_anthropic_policy","out_policy_requirement"],"require_context":true,"gate":"required"}
+{"schema_version":"knowledge-graph-retrieval-query-case-v1","query_id":"dr6-lexical-department","seed_text":"Department of Defense","maximum_hops":2,"required_selected_record_ids":["rel_anthropic_policy","out_policy_requirement"],"require_context":true,"gate":"required"}

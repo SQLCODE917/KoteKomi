@@ -248,45 +248,6 @@ class ModelRuntimeReadiness(Protocol):
     def check_readiness(self) -> ModelRuntimeStatus: ...
 
 
-@dataclass(frozen=True)
-class GraphNode:
-    id: str
-    node_type: str
-    label: str
-
-
-@dataclass(frozen=True)
-class GraphEdge:
-    id: str
-    source_id: str
-    target_id: str
-    edge_type: str
-    label: str
-    source_record_id: str
-
-
-@dataclass(frozen=True)
-class GraphProjection:
-    nodes: tuple[GraphNode, ...]
-    edges: tuple[GraphEdge, ...]
-
-
-@dataclass(frozen=True)
-class GraphConnectionCandidate:
-    subject_organization_id: str
-    object_organization_id: str
-    outcome_id: str
-    supporting_assertion_ids: tuple[str, ...]
-
-
-class GraphAnalyzer(Protocol):
-    def project(
-        self,
-        nodes: tuple[GraphNode, ...],
-        edges: tuple[GraphEdge, ...],
-    ) -> GraphProjection: ...
-
-
 class LedgerRepository(Protocol):
     def list_accepted_canonical_records(self) -> tuple[AcceptedCanonicalRecord, ...]: ...
 

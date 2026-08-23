@@ -195,7 +195,7 @@ class ReviewReadinessStatus:
     pending_record_type_counts: dict[str, int]
     pending_reference_count: int
     missing_reference_count: int
-    can_project_graph: bool
+    can_build_graph_retrieval: bool
     can_generate_briefing: bool
     next_recommended_command: str
     blockers: tuple[ReviewReadinessBlocker, ...]
@@ -379,11 +379,11 @@ def get_review_readiness(
             for blocker in blockers
             if blocker.resolution_status is ReviewReferenceResolution.MISSING
         ),
-        can_project_graph=not review_required,
+        can_build_graph_retrieval=not review_required,
         can_generate_briefing=not review_required,
         next_recommended_command="kotekomi review next"
         if review_required
-        else "kotekomi graph project",
+        else "kotekomi retrieval build-graph",
         blockers=tuple(blockers),
     )
 
@@ -443,7 +443,7 @@ def review_readiness_to_json(status: ReviewReadinessStatus) -> dict[str, JsonVal
         "pending_record_type_counts": pending_record_type_counts,
         "pending_reference_count": status.pending_reference_count,
         "missing_reference_count": status.missing_reference_count,
-        "can_project_graph": status.can_project_graph,
+        "can_build_graph_retrieval": status.can_build_graph_retrieval,
         "can_generate_briefing": status.can_generate_briefing,
         "next_recommended_command": status.next_recommended_command,
         "blockers": [

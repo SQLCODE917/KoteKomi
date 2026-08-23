@@ -13,11 +13,13 @@ if TYPE_CHECKING:
     from kotekomi_adapters.lm_studio_embeddings import LMStudioEmbeddingAdapter
     from kotekomi_adapters.local_archive import LocalArchiveStore
     from kotekomi_adapters.model_http import HttpResponse, JsonHttpClient
-    from kotekomi_adapters.networkx_graph_analyzer import NetworkXGraphAnalyzer
     from kotekomi_adapters.ollama_embeddings import OllamaEmbeddingAdapter
     from kotekomi_adapters.ollama_model_runtime import OllamaModelRuntime
     from kotekomi_adapters.pdf_evidence_overlay_renderer import PdfiumEvidenceOverlayRenderer
     from kotekomi_adapters.sqlite_document_retrieval import SQLiteDocumentRetrievalAdapter
+    from kotekomi_adapters.sqlite_knowledge_graph_retrieval import (
+        SQLiteKnowledgeGraphRetrievalAdapter,
+    )
     from kotekomi_adapters.sqlite_ledger import (
         REQUIRED_LEDGER_TABLES,
         ImmutableCommitDisposition,
@@ -43,7 +45,6 @@ __all__ = [
     "LlamaServerEmbeddingAdapter",
     "LMStudioEmbeddingAdapter",
     "LocalArchiveStore",
-    "NetworkXGraphAnalyzer",
     "NewsMLG2Adapter",
     "OllamaModelRuntime",
     "OllamaEmbeddingAdapter",
@@ -53,6 +54,7 @@ __all__ = [
     "SQLiteLedgerRepository",
     "SQLiteDocumentRetrievalAdapter",
     "SQLiteLedgerRetrievalAdapter",
+    "SQLiteKnowledgeGraphRetrievalAdapter",
     "sqlite_ledger_transaction",
     "preflight_pdf_source",
 ]
@@ -91,10 +93,6 @@ def __getattr__(name: str) -> object:
         from kotekomi_adapters.model_http import HttpResponse, JsonHttpClient
 
         return {"HttpResponse": HttpResponse, "JsonHttpClient": JsonHttpClient}[name]
-    if name == "NetworkXGraphAnalyzer":
-        from kotekomi_adapters.networkx_graph_analyzer import NetworkXGraphAnalyzer
-
-        return NetworkXGraphAnalyzer
     if name == "OllamaModelRuntime":
         from kotekomi_adapters.ollama_model_runtime import OllamaModelRuntime
 
@@ -152,4 +150,10 @@ def __getattr__(name: str) -> object:
         from kotekomi_adapters.sqlite_ledger_retrieval import SQLiteLedgerRetrievalAdapter
 
         return SQLiteLedgerRetrievalAdapter
+    if name == "SQLiteKnowledgeGraphRetrievalAdapter":
+        from kotekomi_adapters.sqlite_knowledge_graph_retrieval import (
+            SQLiteKnowledgeGraphRetrievalAdapter,
+        )
+
+        return SQLiteKnowledgeGraphRetrievalAdapter
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

@@ -358,7 +358,7 @@ def test_review_readiness_reports_pending_and_missing_references() -> None:
     assert status.pending_record_type_counts == {"Assertion": 1, "EvidenceTarget": 1}
     assert status.pending_reference_count == 1
     assert status.missing_reference_count == 1
-    assert status.can_project_graph is False
+    assert status.can_build_graph_retrieval is False
     assert status.can_generate_briefing is False
     assert status.next_recommended_command == "kotekomi review next"
     blocker_keys = {
@@ -379,9 +379,9 @@ def test_review_readiness_reports_downstream_ready_when_no_pending_records() -> 
     assert status.pending_record_type_counts == {}
     assert status.pending_reference_count == 0
     assert status.missing_reference_count == 0
-    assert status.can_project_graph is True
+    assert status.can_build_graph_retrieval is True
     assert status.can_generate_briefing is True
-    assert status.next_recommended_command == "kotekomi graph project"
+    assert status.next_recommended_command == "kotekomi retrieval build-graph"
     assert status.blockers == ()
 
 

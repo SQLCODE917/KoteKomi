@@ -20,7 +20,7 @@ KoteKomi does not yet expose structured review state that agents can consume wit
 
 Non-goals:
 
-- This TDD does not block graph projection commands.
+- This TDD does not establish graph retrieval freshness.
 - This TDD does not block Briefing generation commands.
 - This TDD does not add a scheduler or workflow engine.
 - This TDD does not add Ledger tables.
@@ -45,7 +45,7 @@ Forbidden approaches:
 - `review status` must report pending counts by record type.
 - `review status` must report `pending_reference_count`.
 - `review status` must report `missing_reference_count`.
-- `review status` must report `can_project_graph`.
+- `review status` must report `can_build_graph_retrieval`.
 - `review status` must report `can_generate_briefing`.
 - `review status` must report `next_recommended_command`.
 - `review status` must fail fast on malformed matching ProposedChange records.
@@ -134,7 +134,7 @@ ReviewReadinessStatus
 - pending_record_type_counts
 - pending_reference_count
 - missing_reference_count
-- can_project_graph
+- can_build_graph_retrieval
 - can_generate_briefing
 - next_recommended_command
 - blockers
@@ -177,10 +177,10 @@ kotekomi review show --format json
 ## 10. Behavior & Domain Rules
 
 `review_required` is `true` when at least one matching ProposedChange is pending.
-`can_project_graph` is `false` when `review_required` is `true`.
+`can_build_graph_retrieval` is `false` when `review_required` is `true`.
 `can_generate_briefing` is `false` when `review_required` is `true`.
 `next_recommended_command` is `kotekomi review next` when review is required.
-`next_recommended_command` is `kotekomi graph project` when no review is required.
+`next_recommended_command` is `kotekomi retrieval build-graph` when no review is required.
 
 Readiness counts `pending` references separately from `missing` references.
 Pending references identify dependency order work.
@@ -192,7 +192,7 @@ Example:
 ```text
 The Ledger has 16 pending ProposedChange records.
 review_required = true
-can_project_graph = false
+can_build_graph_retrieval = false
 next_recommended_command = kotekomi review next
 ```
 
@@ -202,7 +202,7 @@ Example:
 The Ledger has no pending ProposedChange records.
 review_required = false
 can_generate_briefing = true
-next_recommended_command = kotekomi graph project
+next_recommended_command = kotekomi retrieval build-graph
 ```
 
 Example:
