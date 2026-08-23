@@ -45,6 +45,46 @@ def test_graph_retrieval_commands_route_to_the_public_pipeline(
     assert captured["maximum_hops"] == 2
 
 
+def test_cross_plane_query_routes_one_free_text_query_to_the_public_pipeline(
+    monkeypatch: MonkeyPatch, tmp_path: Path
+) -> None:
+    captured: dict[str, object] = {}
+
+    def query(**kwargs: object) -> int:
+        captured.update(kwargs)
+        return 0
+
+    monkeypatch.setattr("kotekomi_pipelines.cli.query_cross_plane_retrieval_index", query)
+    assert (
+        main(
+            [
+                "retrieval",
+                "query-cross-plane",
+                "--ledger-path",
+                str(tmp_path / "ledger.sqlite"),
+                "--query",
+                "Anthropic",
+            ]
+        )
+        == 0
+    )
+    assert captured["query"] == "Anthropic"
+
+
+def test_cross_plane_query_rejects_caller_supplied_plane_limits() -> None:
+    with raises(SystemExit):
+        main(
+            [
+                "retrieval",
+                "query-cross-plane",
+                "--query",
+                "Anthropic",
+                "--maximum-hits",
+                "5",
+            ]
+        )
+
+
 def test_evidence_graph_commands_route_to_the_public_pipeline(
     monkeypatch: MonkeyPatch, tmp_path: Path
 ) -> None:

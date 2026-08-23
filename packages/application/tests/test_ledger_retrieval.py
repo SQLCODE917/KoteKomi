@@ -104,12 +104,15 @@ class FakeProjection(LedgerRetrievalProjectionPort):
         self.manifest = manifest
         self.candidates = candidates
         self.record: LedgerRetrievalQueryRecord | None = None
+        self.published = 0
 
     def publish(
         self, build: LedgerProjectionBuildInput
     ) -> tuple[LedgerRetrievalIndexManifest, bool]:
-        del build
-        return self.manifest, False
+        reused = self.manifest == build.manifest
+        self.manifest = build.manifest
+        self.published += 1
+        return self.manifest, reused
 
     def get_complete_manifest(self) -> LedgerRetrievalIndexManifest | None:
         return self.manifest
@@ -197,6 +200,23 @@ def test_units_include_only_accepted_searchable_records() -> None:
     assert snapshot
     assert {unit.source_record_id for unit in units} == {"ast_current", "ast_old"}
     assert all(unit.evidence_assertion_ids == (unit.source_record_id,) for unit in units)
+
+
+def test_ledger_retrieval_rebuilds_a_stale_projection_before_query() -> None:
+    ledger = FakeLedger()
+    units, _ = build_ledger_retrieval_units(ledger)
+    projection = FakeProjection(_manifest("f" * 64, len(units)), ())
+
+    result = query_ledger_retrieval(
+        QueryLedgerRetrievalCommand(query_text="Directive 3000.09"),
+        ledger_repository=ledger,
+        projection=projection,
+        tokenizer=NoopTokenizer(),
+    )
+
+    assert result.status == "complete"
+    assert projection.published == 1
+    assert result.index_manifest_id == projection.manifest.index_manifest_id
 
 
 def test_current_policy_excludes_superseded_hits_before_evidence_resolution() -> None:

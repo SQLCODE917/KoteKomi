@@ -236,6 +236,7 @@ def explain_evidence_graph_relationship(
                 EvidenceGraphFailureCode.RELATIONSHIP_NOT_FOUND,
                 "Evidence graph explanation requires a Relationship ID and known policy.",
             )
+        _ensure_evidence_graph_projection(command.as_of, ledger_repository, projection)
         view_kind = _view_kind(command.as_of)
         _, _, _, _, _, snapshot = build_evidence_graph_state(ledger_repository, as_of=command.as_of)
         manifest = projection.get_complete_evidence_graph_manifest(view_kind, command.as_of)
@@ -344,6 +345,28 @@ def explain_evidence_graph_relationship(
             lineage_cluster_count=0,
             failure=exc.code,
             as_of=command.as_of,
+        )
+
+
+def _ensure_evidence_graph_projection(
+    as_of: datetime | None,
+    ledger_repository: EvidenceGraphLedger,
+    projection: EvidenceGraphProjectionPort,
+) -> None:
+    view_kind = _view_kind(as_of)
+    _, _, _, _, _, snapshot = build_evidence_graph_state(ledger_repository, as_of=as_of)
+    manifest = projection.get_complete_evidence_graph_manifest(view_kind, as_of)
+    if manifest is not None and manifest.source_snapshot_digest == snapshot:
+        return
+    result = build_evidence_graph_projection(
+        BuildEvidenceGraphProjectionCommand(as_of=as_of),
+        ledger_repository=ledger_repository,
+        projection=projection,
+    )
+    if result.status != "complete":
+        raise EvidenceGraphError(
+            result.failure or EvidenceGraphFailureCode.PROJECTION_CORRUPT,
+            "Evidence-graph projection readiness failed.",
         )
 
 

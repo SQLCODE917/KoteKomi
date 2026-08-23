@@ -342,14 +342,9 @@ def _bundle() -> DocumentRepresentationBundle:
     )
 
 
-def test_document_retrieval_uses_fake_port_hits_and_authoritative_context() -> None:
+def test_document_retrieval_builds_missing_projection_and_returns_authoritative_context() -> None:
     ledger = FakeLedger()
     projection = FakeProjection()
-    build = build_document_retrieval_projection(
-        BuildDocumentRetrievalProjectionCommand(ledger.bundle.representation.id),
-        ledger_repository=ledger,
-        projection=projection,
-    )
 
     result = query_document_retrieval(
         QueryDocumentRetrievalCommand(
@@ -363,7 +358,7 @@ def test_document_retrieval_uses_fake_port_hits_and_authoritative_context() -> N
         tokenizer=Tokenizer(),
     )
 
-    assert build.status == "complete"
+    assert projection.manifest is not None
     units = build_document_retrieval_units(
         ledger.bundle, ledger.bundle.representation.canonical_output_digest
     )
@@ -386,7 +381,7 @@ def test_document_retrieval_uses_fake_port_hits_and_authoritative_context() -> N
     assert len(projection.query_records) == 1
 
 
-def test_document_retrieval_rejects_a_stale_manifest() -> None:
+def test_document_retrieval_rebuilds_a_stale_manifest() -> None:
     ledger = FakeLedger()
     projection = FakeProjection()
     build_document_retrieval_projection(
@@ -409,11 +404,12 @@ def test_document_retrieval_rejects_a_stale_manifest() -> None:
         tokenizer=Tokenizer(),
     )
 
-    assert result.status == "failed"
-    assert result.failure is RetrievalFailureCode.INDEX_STALE
+    assert result.status == "complete"
+    assert projection.manifest is not None
+    assert projection.manifest.representation_digest != "c" * 64
 
 
-def test_document_retrieval_rejects_a_v1_unit_manifest() -> None:
+def test_document_retrieval_rebuilds_a_v1_unit_manifest() -> None:
     ledger = FakeLedger()
     projection = FakeProjection()
     build_document_retrieval_projection(
@@ -438,22 +434,17 @@ def test_document_retrieval_rejects_a_v1_unit_manifest() -> None:
         tokenizer=Tokenizer(),
     )
 
-    assert result.status == "failed"
-    assert result.failure is RetrievalFailureCode.INDEX_STALE
+    assert result.status == "complete"
+    assert projection.manifest is not None
+    assert projection.manifest.unit_policy_id == "document_node_hierarchy_unit_v2"
 
 
-def test_semantic_retrieval_uses_fake_embedding_and_authoritative_context() -> None:
+def test_semantic_retrieval_builds_missing_projection_and_returns_authoritative_context() -> None:
     ledger = FakeLedger()
     profile = _embedding_profile()
     projection = FakeSemanticProjection()
     embedding = FakeEmbedding(profile)
 
-    build = build_document_semantic_projection(
-        BuildDocumentSemanticProjectionCommand(ledger.bundle.representation.id, profile),
-        ledger_repository=ledger,
-        projection=projection,
-        embedding=embedding,
-    )
     result = query_document_semantic_retrieval(
         QueryDocumentSemanticRetrievalCommand(
             representation_id=ledger.bundle.representation.id,
@@ -468,9 +459,7 @@ def test_semantic_retrieval_uses_fake_embedding_and_authoritative_context() -> N
         tokenizer=Tokenizer(),
     )
 
-    assert build.status == "complete"
-    assert build.embedding_profile_id == profile.profile_id
-    assert build.embedding_model_identity is not None
+    assert projection.manifest is not None
     assert result.status == "complete"
     assert result.selected_node_ids == ("nod_document_retrieval_needle",)
     assert embedding.inputs[0][0].startswith("search_document: Source title: Fixture title\n")

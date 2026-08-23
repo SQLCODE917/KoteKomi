@@ -29,6 +29,7 @@ from kotekomi_adapters import (
     sqlite_ledger_transaction,
 )
 from kotekomi_application import (
+    CROSS_PLANE_QUERY_POLICY_ID,
     AuthoritativeCaptureRequest,
     AuthoritativePdfCaptureRequest,
     BriefingGenerationInput,
@@ -52,6 +53,7 @@ from kotekomi_application import (
     PipelineRunNextResult,
     PipelineStatus,
     PipelineStatusInput,
+    QueryCrossPlaneCommand,
     QueryDocumentHybridRetrievalCommand,
     QueryDocumentRetrievalCommand,
     QueryDocumentSemanticRetrievalCommand,
@@ -98,6 +100,7 @@ from kotekomi_application import (
     normalize_source_url,
     pipeline_next_to_json,
     pipeline_status_to_json,
+    query_cross_plane,
     query_document_hybrid_retrieval,
     query_document_retrieval,
     query_document_semantic_retrieval,
@@ -256,6 +259,18 @@ def main(argv: list[str] | None = None) -> int:
             maximum_hops=args.maximum_hops,
             maximum_hits=args.maximum_hits,
             context_profile=args.context_profile,
+            output_format=args.output_format,
+        )
+
+    if args.command == "retrieval" and args.retrieval_command == "query-cross-plane":
+        config = load_config(
+            config_path=args.config,
+            ledger_path_override=args.ledger_path,
+            archive_path_override=None,
+        )
+        return query_cross_plane_retrieval_index(
+            ledger_path=config.ledger_path,
+            query=args.query,
             output_format=args.output_format,
         )
 
@@ -734,6 +749,15 @@ def build_parser() -> argparse.ArgumentParser:
         "--format", dest="output_format", choices=("text", "json"), default="text"
     )
     retrieval_graph_query_parser.add_argument("--ledger-path", type=Path, default=None)
+    retrieval_cross_plane_query_parser = retrieval_subparsers.add_parser(
+        "query-cross-plane",
+        help="Run the named Ledger-to-Graph evidence retrieval policy.",
+    )
+    retrieval_cross_plane_query_parser.add_argument("--query", required=True)
+    retrieval_cross_plane_query_parser.add_argument(
+        "--format", dest="output_format", choices=("text", "json"), default="text"
+    )
+    retrieval_cross_plane_query_parser.add_argument("--ledger-path", type=Path, default=None)
     retrieval_evidence_graph_build_parser = retrieval_subparsers.add_parser(
         "build-graph-evidence",
         help="Build a disposable evidence-linked Relationship graph projection.",
@@ -1340,6 +1364,40 @@ def query_knowledge_graph_retrieval_index(
             "context_results": [item.model_dump(mode="json") for item in result.context_results],
             "failure": result.failure.value if result.failure is not None else None,
             "query_policy_id": result.query_policy_id,
+        },
+        output_format,
+    )
+
+
+def query_cross_plane_retrieval_index(
+    *, ledger_path: Path, query: str, output_format: str
+) -> int:
+    ledger_projection = SQLiteLedgerRetrievalAdapter(_retrieval_index_path(ledger_path))
+    graph_projection = SQLiteKnowledgeGraphRetrievalAdapter(
+        _knowledge_graph_index_path(ledger_path)
+    )
+    try:
+        with sqlite_ledger_transaction(ledger_path) as ledger_repository:
+            result = query_cross_plane(
+                QueryCrossPlaneCommand(query_text=query, policy_id=CROSS_PLANE_QUERY_POLICY_ID),
+                ledger_repository=ledger_repository,
+                ledger_projection=ledger_projection,
+                graph_projection=graph_projection,
+                tokenizer=_RetrievalValidationTokenizer(),
+            )
+    finally:
+        ledger_projection.close()
+        graph_projection.close()
+    return _print_retrieval_payload(
+        {
+            "status": result.status,
+            "cross_plane_query_id": result.cross_plane_query_id,
+            "policy_id": CROSS_PLANE_QUERY_POLICY_ID,
+            "transitions": [item.model_dump(mode="json") for item in result.transitions],
+            "selected_record_ids": list(result.selected_record_ids),
+            "terminal_evidence_target_ids": list(result.terminal_evidence_target_ids),
+            "context_results": [item.model_dump(mode="json") for item in result.context_results],
+            "failure": result.failure.value if result.failure is not None else None,
         },
         output_format,
     )

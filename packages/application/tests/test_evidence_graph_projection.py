@@ -1,5 +1,5 @@
 from datetime import UTC, datetime
-from typing import cast
+from typing import Any, cast
 
 from kotekomi_application.evidence_graph_projection import (
     EVIDENCE_GRAPH_PROJECTION_POLICY_ID,
@@ -423,11 +423,8 @@ def test_reviewed_relation_groups_two_contributing_documents() -> None:
 
 
 class StaleProjection:
-    def get_complete_evidence_graph_manifest(
-        self, *args: object
-    ) -> EvidenceGraphProjectionManifest:
-        del args
-        return EvidenceGraphProjectionManifest(
+    def __init__(self) -> None:
+        self.manifest = EvidenceGraphProjectionManifest(
             projection_manifest_id="egm_stale",
             source_snapshot_digest="f" * 64,
             projection_policy_id=EVIDENCE_GRAPH_PROJECTION_POLICY_ID,
@@ -441,6 +438,26 @@ class StaleProjection:
             publication_status="complete",
             published_at=NOW,
         )
+        self.published = 0
+        self.records: list[object] = []
+
+    def get_complete_evidence_graph_manifest(
+        self, *args: object
+    ) -> EvidenceGraphProjectionManifest:
+        del args
+        return self.manifest
+
+    def publish_evidence_graph(self, build: Any) -> tuple[EvidenceGraphProjectionManifest, bool]:
+        self.manifest = cast(EvidenceGraphProjectionManifest, build.manifest)
+        self.published += 1
+        return self.manifest, False
+
+    def load_evidence_graph_edge(self, *args: object) -> None:
+        del args
+        return None
+
+    def save_evidence_graph_explanation(self, record: object) -> None:
+        self.records.append(record)
 
 
 class NoopTokenizer:
@@ -484,18 +501,20 @@ class MissingRelationshipProjection:
         self.records.append(record)
 
 
-def test_stale_evidence_graph_manifest_blocks_explanation() -> None:
+def test_stale_evidence_graph_manifest_rebuilds_before_explanation() -> None:
     ledger = FakeLedger(validation_status=EvidenceValidationAttemptStatus.SUCCEEDED)
+    projection = StaleProjection()
 
     result = explain_evidence_graph_relationship(
         ExplainEvidenceGraphRelationshipCommand(relationship_id="rel_policy"),
         ledger_repository=cast(EvidenceGraphLedger, ledger),
-        projection=cast(EvidenceGraphProjectionPort, StaleProjection()),
+        projection=cast(EvidenceGraphProjectionPort, projection),
         tokenizer=NoopTokenizer(),
     )
 
     assert result.status == "failed"
-    assert result.failure is EvidenceGraphFailureCode.PROJECTION_STALE
+    assert result.failure is EvidenceGraphFailureCode.RELATIONSHIP_NOT_FOUND
+    assert projection.published == 1
 
 
 def test_missing_relationship_records_a_typed_failed_explanation() -> None:

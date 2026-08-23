@@ -19,6 +19,7 @@ from kotekomi_application.knowledge_graph_retrieval import (
     KnowledgeGraphSeedMatch,
 )
 from kotekomi_domain import (
+    CrossPlaneQueryRecord,
     EvidenceGraphContribution,
     EvidenceGraphDimension,
     EvidenceGraphEdge,
@@ -596,6 +597,27 @@ class SQLiteKnowledgeGraphRetrievalAdapter:
         )
         self._connection.commit()
 
+    def save_cross_plane_query_record(self, record: CrossPlaneQueryRecord) -> None:
+        self._connection.execute(
+            """
+            INSERT OR REPLACE INTO cross_plane_query_records
+            (cross_plane_query_id, record_json) VALUES (?, ?)
+            """,
+            (record.cross_plane_query_id, record.model_dump_json()),
+        )
+        self._connection.commit()
+
+    def get_cross_plane_query_record(self, query_id: str) -> CrossPlaneQueryRecord | None:
+        row = self._connection.execute(
+            "SELECT record_json FROM cross_plane_query_records WHERE cross_plane_query_id = ?",
+            (query_id,),
+        ).fetchone()
+        return (
+            CrossPlaneQueryRecord.model_validate_json(str(row["record_json"]))
+            if row is not None
+            else None
+        )
+
     def _validate_complete(self, manifest: KnowledgeGraphRetrievalIndexManifest) -> None:
         if manifest.publication_status != "complete":
             raise KnowledgeGraphRetrievalError(
@@ -711,6 +733,10 @@ class SQLiteKnowledgeGraphRetrievalAdapter:
             );
             CREATE TABLE IF NOT EXISTS knowledge_graph_query_records (
                 retrieval_query_id TEXT PRIMARY KEY NOT NULL,
+                record_json TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS cross_plane_query_records (
+                cross_plane_query_id TEXT PRIMARY KEY NOT NULL,
                 record_json TEXT NOT NULL
             );
             CREATE TABLE IF NOT EXISTS evidence_graph_manifests (

@@ -3066,6 +3066,49 @@ class RetrievalQueryRecord(DomainModel):
         return self
 
 
+class CrossPlaneQueryPhase(StrEnum):
+    LEDGER_DISCOVERY = "ledger_discovery"
+    GRAPH_EXPANSION = "graph_expansion"
+    DOCUMENT_EVIDENCE = "document_evidence"
+    CONTEXT_PLANNING = "context_planning"
+
+
+class CrossPlaneTransition(DomainModel):
+    phase: CrossPlaneQueryPhase
+    plane: RetrievalPlane | None = None
+    status: NonEmptyStr
+    local_query_record_id: NonEmptyStr | None = None
+    index_manifest_id: NonEmptyStr | None = None
+    selected_record_ids: tuple[NonEmptyStr, ...] = ()
+    terminal_evidence_target_ids: tuple[EvidenceTargetId, ...] = ()
+    failure_code: str | None = None
+
+
+class CrossPlaneQueryRecord(DomainModel):
+    """Inspectable provenance for one role-aware Cross-plane retrieval query."""
+
+    cross_plane_query_id: NonEmptyStr
+    query_text: str
+    normalized_query_text: str
+    policy_id: NonEmptyStr
+    transitions: tuple[CrossPlaneTransition, ...]
+    selected_record_ids: tuple[NonEmptyStr, ...] = ()
+    terminal_evidence_target_ids: tuple[EvidenceTargetId, ...] = ()
+    context_results: tuple[LedgerContextResult, ...] = ()
+    failure_code: str | None = None
+    created_at: datetime = Field(default_factory=utc_now)
+
+    @model_validator(mode="after")
+    def validate_transitions(self) -> Self:
+        if not self.transitions:
+            raise ValueError("A CrossPlaneQueryRecord requires at least one transition.")
+        if self.transitions[0].phase is not CrossPlaneQueryPhase.LEDGER_DISCOVERY:
+            raise ValueError("A CrossPlaneQueryRecord starts with Ledger discovery.")
+        if len({item.phase for item in self.transitions}) != len(self.transitions):
+            raise ValueError("Cross-plane transition phases must be unique.")
+        return self
+
+
 class RetrievalIndexManifest(DomainModel):
     index_manifest_id: NonEmptyStr
     plane: RetrievalPlane = RetrievalPlane.DOCUMENT

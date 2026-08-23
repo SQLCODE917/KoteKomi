@@ -98,3 +98,22 @@ It then creates two reviewed PDF-backed Assertions at fixed UTC review times.
 The as-of explanation returns the earlier accepted Assertion.
 The current explanation returns the reviewed successor.
 Both ContextManifests retain original PDF text and authoritative DocumentNode IDs.
+
+## Projection readiness local run
+
+```bash
+uv run python scripts/verify_projection_readiness_canonical.py
+```
+
+The verifier ingests the locked local PDF and runs document, Ledger, Knowledge-Graph, and
+evidence-graph queries without prior build commands.
+It deletes the derived sidecars and proves that the next public queries rebuild equivalent results.
+
+## Fresh wiki demonstration
+
+```bash
+uv run python scripts/demo_wiki_pdf_questions.py
+```
+
+The demonstration starts with an empty local wiki, ingests the locked PDF, and prints source-backed
+document retrieval results with authoritative node IDs, manifest IDs, query records, and context IDs.

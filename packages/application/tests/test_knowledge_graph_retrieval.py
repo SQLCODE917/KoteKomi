@@ -1,5 +1,5 @@
 from datetime import UTC, datetime
-from typing import cast
+from typing import Any, cast
 
 from kotekomi_application.knowledge_graph_retrieval import (
     KnowledgeGraphLedger,
@@ -90,6 +90,12 @@ class AmbiguousProjection:
     def __init__(self, manifest: KnowledgeGraphRetrievalIndexManifest) -> None:
         self.manifest = manifest
         self.saved_records: list[object] = []
+        self.published = 0
+
+    def publish(self, build: Any) -> tuple[KnowledgeGraphRetrievalIndexManifest, bool]:
+        self.manifest = cast(KnowledgeGraphRetrievalIndexManifest, build.manifest)
+        self.published += 1
+        return self.manifest, False
 
     def get_complete_manifest(self) -> KnowledgeGraphRetrievalIndexManifest:
         return self.manifest
@@ -175,7 +181,7 @@ def test_ambiguous_seed_records_candidates_and_typed_failure() -> None:
     assert len(projection.saved_records) == 1
 
 
-def test_stale_graph_manifest_blocks_query_before_seed_resolution() -> None:
+def test_stale_graph_manifest_rebuilds_before_seed_resolution() -> None:
     ledger = FakeLedger()
     manifest = KnowledgeGraphRetrievalIndexManifest(
         index_manifest_id="grm_stale",
@@ -198,13 +204,15 @@ def test_stale_graph_manifest_blocks_query_before_seed_resolution() -> None:
         published_at=NOW,
     )
 
+    projection = AmbiguousProjection(manifest)
     result = query_knowledge_graph(
         QueryKnowledgeGraphCommand(seed_text="Anthropic"),
         ledger_repository=cast(KnowledgeGraphLedger, ledger),
-        projection=cast(KnowledgeGraphProjectionPort, AmbiguousProjection(manifest)),
+        projection=cast(KnowledgeGraphProjectionPort, projection),
         tokenizer=NoopTokenizer(),
     )
 
     assert result.status == "failed"
     assert result.failure is not None
-    assert result.failure.value == "knowledge_graph_index_stale"
+    assert result.failure.value == "knowledge_graph_seed_ambiguous"
+    assert projection.published == 1

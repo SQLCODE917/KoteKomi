@@ -379,6 +379,65 @@ def build_document_semantic_projection(
         )
 
 
+def _ensure_exact_lexical_projection(
+    representation_id: str,
+    ledger_repository: ContextPlanningLedger,
+    projection: DocumentRetrievalProjectionPort,
+) -> None:
+    bundle, representation_digest = _load_acceptable_bundle(representation_id, ledger_repository)
+    manifest = projection.get_complete_manifest(representation_id)
+    if manifest is not None:
+        try:
+            _validate_manifest(manifest, bundle, representation_digest, None)
+            return
+        except DocumentRetrievalError as exc:
+            if exc.code is not RetrievalFailureCode.INDEX_STALE:
+                raise
+    result = build_document_retrieval_projection(
+        BuildDocumentRetrievalProjectionCommand(representation_id),
+        ledger_repository=ledger_repository,
+        projection=projection,
+    )
+    if result.status != "complete":
+        raise DocumentRetrievalError(
+            result.failure or RetrievalFailureCode.INDEX_CORRUPT,
+            "Document exact-lexical projection readiness failed.",
+        )
+
+
+def _ensure_semantic_projection(
+    representation_id: str,
+    embedding_profile: EmbeddingProfile,
+    ledger_repository: ContextPlanningLedger,
+    projection: DocumentSemanticProjectionPort,
+    embedding: EmbeddingPort,
+) -> None:
+    bundle, representation_digest = _load_acceptable_bundle(representation_id, ledger_repository)
+    manifest = projection.get_complete_semantic_manifest(
+        representation_id, embedding_profile.profile_id
+    )
+    if manifest is not None:
+        try:
+            _validate_semantic_manifest(
+                manifest, bundle, representation_digest, None, embedding_profile
+            )
+            return
+        except DocumentRetrievalError as exc:
+            if exc.code is not RetrievalFailureCode.INDEX_STALE:
+                raise
+    result = build_document_semantic_projection(
+        BuildDocumentSemanticProjectionCommand(representation_id, embedding_profile),
+        ledger_repository=ledger_repository,
+        projection=projection,
+        embedding=embedding,
+    )
+    if result.status != "complete":
+        raise DocumentRetrievalError(
+            result.failure or RetrievalFailureCode.INDEX_CORRUPT,
+            "Document semantic projection readiness failed.",
+        )
+
+
 def query_document_retrieval(
     command: QueryDocumentRetrievalCommand,
     *,
@@ -397,6 +456,7 @@ def query_document_retrieval(
             raise DocumentRetrievalError(
                 RetrievalFailureCode.QUERY_EMPTY, "Retrieval query is empty."
             )
+        _ensure_exact_lexical_projection(command.representation_id, ledger_repository, projection)
         bundle, representation_digest = _load_acceptable_bundle(
             command.representation_id, ledger_repository
         )
@@ -523,6 +583,13 @@ def query_document_semantic_retrieval(
                 "Semantic query exceeds the configured character limit for "
                 f"profile {command.embedding_profile.profile_id}.",
             )
+        _ensure_semantic_projection(
+            command.representation_id,
+            command.embedding_profile,
+            ledger_repository,
+            projection,
+            embedding,
+        )
         bundle, representation_digest = _load_acceptable_bundle(
             command.representation_id, ledger_repository
         )
@@ -632,6 +699,16 @@ def query_document_hybrid_retrieval(
             raise DocumentRetrievalError(
                 RetrievalFailureCode.QUERY_EMPTY, "Retrieval query is empty."
             )
+        _ensure_exact_lexical_projection(
+            command.representation_id, ledger_repository, exact_lexical_projection
+        )
+        _ensure_semantic_projection(
+            command.representation_id,
+            command.embedding_profile,
+            ledger_repository,
+            semantic_projection,
+            embedding,
+        )
         bundle, representation_digest = _load_acceptable_bundle(
             command.representation_id, ledger_repository
         )

@@ -218,6 +218,7 @@ def query_ledger_retrieval(
 ) -> QueryLedgerRetrievalResult:
     try:
         _validate_query(command)
+        _ensure_ledger_projection(ledger_repository, projection)
         normalized_query = normalize_exact_text(command.query_text)
         units, source_snapshot_digest = build_ledger_retrieval_units(ledger_repository)
         manifest = projection.get_complete_manifest()
@@ -280,6 +281,26 @@ def query_ledger_retrieval(
             context_results=(),
             failure=exc.code,
             query_policy_id=command.policy_id,
+        )
+
+
+def _ensure_ledger_projection(
+    ledger_repository: LedgerRetrievalLedger,
+    projection: LedgerRetrievalProjectionPort,
+) -> None:
+    _, snapshot = build_ledger_retrieval_units(ledger_repository)
+    manifest = projection.get_complete_manifest()
+    if manifest is not None and manifest.source_snapshot_digest == snapshot:
+        return
+    result = build_ledger_retrieval_projection(
+        BuildLedgerRetrievalProjectionCommand(),
+        ledger_repository=ledger_repository,
+        projection=projection,
+    )
+    if result.status != "complete":
+        raise LedgerRetrievalError(
+            result.failure or LedgerRetrievalFailureCode.INDEX_CORRUPT,
+            "Ledger projection readiness failed.",
         )
 
 

@@ -209,6 +209,7 @@ def query_knowledge_graph(
 ) -> QueryKnowledgeGraphResult:
     try:
         _validate_query(command)
+        _ensure_knowledge_graph_projection(ledger_repository, projection)
         normalized_seed = normalize_exact_text(command.seed_text)
         units, _, _, snapshot = build_knowledge_graph_retrieval_state(ledger_repository)
         manifest = projection.get_complete_manifest()
@@ -295,6 +296,26 @@ def query_knowledge_graph(
             selected_record_ids=(),
             context_results=(),
             failure=exc.code,
+        )
+
+
+def _ensure_knowledge_graph_projection(
+    ledger_repository: KnowledgeGraphLedger,
+    projection: KnowledgeGraphProjectionPort,
+) -> None:
+    _, _, _, snapshot = build_knowledge_graph_retrieval_state(ledger_repository)
+    manifest = projection.get_complete_manifest()
+    if manifest is not None and manifest.source_snapshot_digest == snapshot:
+        return
+    result = build_knowledge_graph_projection(
+        BuildKnowledgeGraphProjectionCommand(),
+        ledger_repository=ledger_repository,
+        projection=projection,
+    )
+    if result.status != "complete":
+        raise KnowledgeGraphRetrievalError(
+            result.failure or KnowledgeGraphRetrievalFailureCode.INDEX_CORRUPT,
+            "Knowledge-Graph projection readiness failed.",
         )
 
 

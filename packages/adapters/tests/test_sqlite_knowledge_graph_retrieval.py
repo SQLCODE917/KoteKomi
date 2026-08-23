@@ -11,6 +11,9 @@ from kotekomi_application.evidence_graph_projection import (
 from kotekomi_application.knowledge_graph_retrieval import KnowledgeGraphProjectionBuildInput
 from kotekomi_domain import (
     AssertionStatus,
+    CrossPlaneQueryPhase,
+    CrossPlaneQueryRecord,
+    CrossPlaneTransition,
     CrossSourceRelationState,
     EvidenceGraphContribution,
     EvidenceGraphDimension,
@@ -103,6 +106,29 @@ def test_sqlite_graph_retrieval_publishes_labels_and_edges(tmp_path: Path) -> No
         assert exact[0].node_id == "org_anthropic"
         assert projection.load_edges(manifest)[0].edge_id == "gre_contract"
         assert projection.publish(_build())[1] is True
+    finally:
+        projection.close()
+
+
+def test_sqlite_graph_sidecar_persists_cross_plane_query_provenance(tmp_path: Path) -> None:
+    projection = SQLiteKnowledgeGraphRetrievalAdapter(tmp_path / "graph.sqlite")
+    try:
+        record = CrossPlaneQueryRecord(
+            cross_plane_query_id="cpq_contract",
+            query_text="Anthropic",
+            normalized_query_text="anthropic",
+            policy_id="cross_plane_ledger_graph_evidence_v1",
+            transitions=(
+                CrossPlaneTransition(
+                    phase=CrossPlaneQueryPhase.LEDGER_DISCOVERY,
+                    status="complete",
+                    selected_record_ids=("rel_contract",),
+                ),
+            ),
+        )
+        projection.save_cross_plane_query_record(record)
+
+        assert projection.get_cross_plane_query_record(record.cross_plane_query_id) == record
     finally:
         projection.close()
 

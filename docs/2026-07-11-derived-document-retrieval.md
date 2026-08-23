@@ -385,7 +385,9 @@ Latest implemented child TDD: `docs/2026-08-23-evidence-graph-lineage-inputs.md`
 
 Working result: a versioned query plan sequences Ledger discovery, graph expansion, document evidence retrieval, and ContextPlanner execution without one global score space.
 
-Detailed TDD: write only after all three planes have working baselines.
+Prerequisite: `docs/2026-08-23-derived-projection-readiness.md`
+
+Document: `docs/2026-08-23-cross-plane-orchestration.md`
 
 ## Canonical scenario validation
 
