@@ -107,6 +107,28 @@
         }
       }
     },
+    "lineage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["reprint_source"],
+      "properties": {
+        "reprint_source": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["normalized_url", "capture_method"],
+          "properties": {
+            "normalized_url": {
+              "type": "string",
+              "format": "uri",
+              "pattern": "^https://"
+            },
+            "capture_method": {
+              "const": "user_deposited_file"
+            }
+          }
+        }
+      }
+    },
     "paths": {
       "type": "object",
       "additionalProperties": false,

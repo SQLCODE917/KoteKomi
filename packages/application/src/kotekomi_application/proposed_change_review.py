@@ -17,6 +17,7 @@ from kotekomi_domain import (
     AssertionEvidenceRole,
     AssertionStatus,
     AssertionType,
+    Document,
     Entity,
     Event,
     EvidenceNecessity,
@@ -30,6 +31,7 @@ from kotekomi_domain import (
     Relationship,
     ReviewStatus,
     Source,
+    SourceLineageRelation,
 )
 from kotekomi_domain.models import JsonValue
 
@@ -64,6 +66,7 @@ type AcceptedReviewRecord = (
     | Relationship
     | Outcome
     | ArgumentEdge
+    | SourceLineageRelation
 )
 
 
@@ -87,6 +90,9 @@ class ProposedChangeReviewLedger(EvidenceTargetLedger, Protocol):
     def get_place(self, record_id: str) -> Place | None: ...
 
     def get_source(self, record_id: str) -> Source | None: ...
+
+    def get_document(self, record_id: str) -> Document | None: ...
+    def save_source_lineage_relation(self, record: SourceLineageRelation) -> None: ...
 
     def get_evidence_target(self, record_id: str) -> EvidenceTarget | None: ...
     def save_evidence_target(self, record: EvidenceTarget) -> None: ...
@@ -489,6 +495,7 @@ def approve_proposed_change(
     accepted_record = _accepted_record_from_proposed_change(
         proposed_change=proposed_change,
         provenance_activity_id=provenance_activity_id,
+        reviewed_at=review_input.reviewed_at,
     )
     accepted_record_id = _record_id(accepted_record)
     evidence_links = _prepared_assertion_evidence_links(
@@ -606,6 +613,7 @@ def edit_proposed_change(
         record_type=record_type,
         record_json=review_input.accepted_record_json,
         provenance_activity_id=provenance_activity_id,
+        reviewed_at=review_input.reviewed_at,
     )
     accepted_record_id = _record_id(accepted_record)
     evidence_links = _prepared_assertion_evidence_links(
@@ -712,6 +720,7 @@ def _accepted_record_from_proposed_change(
     *,
     proposed_change: ProposedChange,
     provenance_activity_id: str,
+    reviewed_at: datetime,
 ) -> AcceptedReviewRecord:
     record_type = _proposal_record_type(proposed_change)
     record_json = _proposal_record_json(proposed_change)
@@ -719,6 +728,7 @@ def _accepted_record_from_proposed_change(
         record_type=record_type,
         record_json=record_json,
         provenance_activity_id=provenance_activity_id,
+        reviewed_at=reviewed_at,
     )
 
 
@@ -727,6 +737,7 @@ def _accepted_record_from_json(
     record_type: str,
     record_json: dict[str, JsonValue],
     provenance_activity_id: str,
+    reviewed_at: datetime,
 ) -> AcceptedReviewRecord:
     if record_type == "Actor":
         return Actor.model_validate_json(json.dumps(record_json))
@@ -744,6 +755,8 @@ def _accepted_record_from_json(
         return Outcome.model_validate_json(json.dumps(record_json))
     if record_type == "ArgumentEdge":
         return ArgumentEdge.model_validate_json(json.dumps(record_json))
+    if record_type == "SourceLineageRelation":
+        return _accepted_source_lineage_relation(record_json, provenance_activity_id, reviewed_at)
     raise ValueError(f"Unsupported ProposedChange record_type: {record_type}")
 
 
@@ -768,6 +781,17 @@ def _accepted_assertion(
         provenance_ids.append(provenance_activity_id)
     assertion_json["provenance_activity_ids"] = provenance_ids
     return Assertion.model_validate_json(json.dumps(assertion_json))
+
+
+def _accepted_source_lineage_relation(
+    record_json: dict[str, JsonValue],
+    provenance_activity_id: str,
+    reviewed_at: datetime,
+) -> SourceLineageRelation:
+    relation_json = dict(record_json)
+    relation_json["review_provenance_activity_id"] = provenance_activity_id
+    relation_json["reviewed_at"] = reviewed_at.isoformat()
+    return SourceLineageRelation.model_validate_json(json.dumps(relation_json))
 
 
 def _prepared_assertion_evidence_links(
@@ -918,6 +942,24 @@ def _validate_accepted_record_references(
         _require_assertion(ledger_repository, argument_edge.to_assertion_id, argument_edge.id)
         for evidence_target_id in argument_edge.evidence_target_ids:
             _require_evidence_target(ledger_repository, evidence_target_id, argument_edge.id)
+    elif isinstance(accepted_record, SourceLineageRelation):
+        first, second = (
+            _require_document(ledger_repository, document_id, accepted_record.id)
+            for document_id in accepted_record.document_ids
+        )
+        if first.source_id == second.source_id:
+            raise ValueError("Source lineage relation requires two distinct Sources.")
+        if (
+            first.content_sha256 != second.content_sha256
+            or first.content_sha256 != accepted_record.shared_content_sha256
+        ):
+            raise ValueError("Source lineage relation requires identical Document bytes.")
+        _require_provenance_activity(
+            ledger_repository,
+            accepted_record.review_provenance_activity_id,
+            accepted_record.id,
+            pending_provenance_activity.id,
+        )
     else:
         raise TypeError(f"Unsupported accepted record type: {type(accepted_record).__name__}")
 
@@ -1005,11 +1047,13 @@ def _require_document(
     ledger_repository: ProposedChangeReviewLedger,
     record_id: str,
     referring_record_id: str,
-) -> None:
-    if ledger_repository.get_document(record_id) is None:
+) -> Document:
+    document = ledger_repository.get_document(record_id)
+    if document is None:
         raise ValueError(
             f"Accepted record {referring_record_id} references missing Document: {record_id}"
         )
+    return document
 
 
 def _require_evidence_target(
@@ -1177,6 +1221,8 @@ def _save_accepted_record(
     elif type(accepted_record) is ArgumentEdge:
         argument_edge = accepted_record
         ledger_repository.save_argument_edge(argument_edge)
+    elif isinstance(accepted_record, SourceLineageRelation):
+        ledger_repository.save_source_lineage_relation(accepted_record)
     else:
         raise TypeError(f"Unsupported accepted record type: {type(accepted_record).__name__}")
 

@@ -27,6 +27,7 @@ from kotekomi_domain import (
     Relationship,
     Source,
     SourceAuthority,
+    SourceLineageRelation,
 )
 
 type AcceptedCanonicalRecord = (
@@ -37,6 +38,7 @@ type AcceptedCanonicalRecord = (
     | Event
     | Source
     | Document
+    | SourceLineageRelation
     | EvidenceTarget
     | Assertion
     | Relationship

@@ -3,10 +3,12 @@ import hashlib
 import pytest
 from kotekomi_domain import (
     AssertionStatus,
+    CrossSourceRelationState,
     DocumentRetrievalUnit,
     DocumentSemanticRepresentation,
     EvidenceGraphContribution,
     EvidenceGraphEdge,
+    EvidenceGraphLineageMembership,
     EvidenceNecessity,
     EvidencePolarity,
     RetrievalChannel,
@@ -162,6 +164,14 @@ def test_evidence_graph_records_keep_the_validated_evidence_basis_explicit() -> 
         assertion_evidence_link_ids=("ael_direct",),
         validation_attempt_ids=("eva_direct",),
         evidence_target_ids=("etg_direct",),
+        source_document_ids=("doc_fixture",),
+        lineage_memberships=(
+            EvidenceGraphLineageMembership(
+                document_id="doc_fixture",
+                lineage_cluster_id="lcl_fixture",
+                cross_source_relation_state=CrossSourceRelationState.NO_CROSS_SOURCE_RELATION_RECORDED,
+            ),
+        ),
         assertion_status=AssertionStatus.CONFIRMED,
         source_authorities=(),
         evidence_polarities=(EvidencePolarity.SUPPORTS,),

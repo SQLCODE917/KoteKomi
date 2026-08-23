@@ -60,6 +60,7 @@ from kotekomi_domain.models import (
     Relationship,
     Source,
     SourceCapture,
+    SourceLineageRelation,
     SourceRegion,
     TextView,
 )
@@ -85,6 +86,7 @@ DOMAIN_SCHEMA_MODELS: dict[str, DomainModelType] = {
     "document_representation.schema.json": DocumentRepresentation,
     "document_reference.schema.json": DocumentReference,
     "document_revision_relation.schema.json": DocumentRevisionRelation,
+    "source_lineage_relation.schema.json": SourceLineageRelation,
     "document_source_selector.schema.json": DocumentSourceSelector,
     "document_table.schema.json": DocumentTable,
     "document_table_annotation.schema.json": DocumentTableAnnotation,

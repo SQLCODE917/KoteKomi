@@ -20,11 +20,14 @@ Use these exact terms.
 | Place | A physical or virtual location. |
 | Source | An external artifact that contains information. |
 | Document | A local archived copy of a Source or extracted content from a Source. |
+| SourceLineageRelation | A reviewed canonical relation between two distinct source Documents. |
 | EvidenceTarget | A precise pointer to evidence inside a Document. |
 | Assertion | An atomic statement about the world, a Source, another Assertion, or an inference. |
 | Relationship | A typed edge between two domain objects. |
 | EvidenceGraphEdge | A derived edge that maps one current Relationship to its evidence Contributions. |
 | EvidenceGraphContribution | A derived trace from one Relationship support Assertion to validated EvidenceTargets. |
+| EvidenceGraphLineageCluster | A derived group of contributing Documents connected by reviewed SourceLineageRelations. |
+| EvidenceGraphLineageMembership | A derived mapping from a contributing Document to its lineage cluster. |
 | EvidenceGraphProjectionManifest | A derived record that identifies one complete evidence graph snapshot. |
 | EvidenceGraphExplanationRecord | A derived record of one Relationship explanation request. |
 | ArgumentEdge | A typed edge between two Assertions. |

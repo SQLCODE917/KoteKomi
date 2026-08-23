@@ -22,6 +22,7 @@ from kotekomi_domain import (
     Place,
     Relationship,
     Source,
+    SourceLineageRelation,
 )
 from kotekomi_domain.models import JsonValue
 
@@ -593,6 +594,8 @@ def _records_after(records: tuple[AcceptedCanonicalRecord, ...], boundary: datet
 def _record_timestamp(record: AcceptedCanonicalRecord) -> datetime:
     if isinstance(record, (ArgumentEdge, EvidenceTarget)):
         return record.created_at
+    if isinstance(record, SourceLineageRelation):
+        return record.reviewed_at
     return record.updated_at
 
 

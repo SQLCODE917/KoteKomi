@@ -119,6 +119,7 @@ from kotekomi_application.evidence_graph_projection import (
     EvidenceGraphStateLedger,
     ExplainEvidenceGraphRelationshipCommand,
     ExplainEvidenceGraphRelationshipResult,
+    build_evidence_graph_lineage_clusters,
     build_evidence_graph_projection,
     build_evidence_graph_state,
     explain_evidence_graph_relationship,
@@ -369,6 +370,12 @@ from kotekomi_application.source_file_ingest import (
     commit_authoritative_pdf_capture,
     normalize_source_url,
 )
+from kotekomi_application.source_lineage import (
+    ProposeVerbatimRepublicationInput,
+    ProposeVerbatimRepublicationResult,
+    SourceLineageProposalFailure,
+    propose_verbatim_republication,
+)
 from kotekomi_application.staged_model_extraction import (
     BoundedExtractionInput,
     BoundedExtractionOutcome,
@@ -501,6 +508,9 @@ __all__ = [
     "EvidenceGraphStateLedger",
     "ExplainEvidenceGraphRelationshipCommand",
     "ExplainEvidenceGraphRelationshipResult",
+    "ProposeVerbatimRepublicationInput",
+    "ProposeVerbatimRepublicationResult",
+    "SourceLineageProposalFailure",
     "DocumentRepresentationBundleLedger",
     "CoverageReport",
     "JsonValue",
@@ -743,6 +753,7 @@ __all__ = [
     "embedding_profile_configuration_digest",
     "build_document_retrieval_projection",
     "build_evidence_graph_projection",
+    "build_evidence_graph_lineage_clusters",
     "build_evidence_graph_state",
     "build_ledger_retrieval_projection",
     "build_knowledge_graph_projection",
@@ -776,6 +787,7 @@ __all__ = [
     "validate_context_manifest_identity",
     "verify_evidence_target",
     "explain_evidence_graph_relationship",
+    "propose_verbatim_republication",
     "authorize_news_use",
     "authorize_news_representation_use",
     "select_current_news_revision",

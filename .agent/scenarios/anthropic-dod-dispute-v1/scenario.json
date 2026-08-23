@@ -15,6 +15,12 @@
     "normalized_url": "https://en.wikipedia.org/wiki/Anthropic%E2%80%93United_States_Department_of_Defense_dispute",
     "capture_method": "user_deposited_file"
   },
+  "lineage": {
+    "reprint_source": {
+      "normalized_url": "https://example.test/reprints/anthropic-dod-dispute.pdf",
+      "capture_method": "user_deposited_file"
+    }
+  },
   "paths": {
     "ingest_expectations": ".agent/scenarios/anthropic-dod-dispute-v1/ingest-expectations.json",
     "suite_directory": ".agent/scenarios/anthropic-dod-dispute-v1/suites"

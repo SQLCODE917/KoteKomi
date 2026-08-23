@@ -78,6 +78,7 @@ from kotekomi_domain import (
     Relationship,
     Source,
     SourceCapture,
+    SourceLineageRelation,
     SourceRegion,
     TextView,
 )
@@ -338,6 +339,7 @@ DOCUMENT_REVISION_RELATION_SPEC = RecordSpec(
     "document_revision_relations",
     DocumentRevisionRelation,
 )
+SOURCE_LINEAGE_RELATION_SPEC = RecordSpec("source_lineage_relations", SourceLineageRelation)
 RAW_BLOB_SPEC = RecordSpec("raw_blobs", RawBlob)
 SOURCE_CAPTURE_SPEC = RecordSpec("source_captures", SourceCapture)
 CAPTURE_DOCUMENT_RESOLUTION_SPEC = RecordSpec(
@@ -393,6 +395,7 @@ ACCEPTED_CANONICAL_RECORD_SPECS = (
     EVENT_SPEC,
     SOURCE_SPEC,
     DOCUMENT_SPEC,
+    SOURCE_LINEAGE_RELATION_SPEC,
     EVIDENCE_TARGET_SPEC,
     ASSERTION_SPEC,
     RELATIONSHIP_SPEC,
@@ -427,6 +430,7 @@ REQUIRED_LEDGER_TABLES = (
     "pdf_page_extraction_statuses",
     "pdf_transformation_artifacts",
     "document_revision_relations",
+    "source_lineage_relations",
     "evidence_targets",
     "evidence_validation_attempts",
     "processing_task_fingerprints",
@@ -1437,6 +1441,15 @@ class SQLiteLedgerRepository:
 
     def list_document_revision_relations(self) -> tuple[DocumentRevisionRelation, ...]:
         return self._list(DOCUMENT_REVISION_RELATION_SPEC)
+
+    def save_source_lineage_relation(self, record: SourceLineageRelation) -> None:
+        self._save(SOURCE_LINEAGE_RELATION_SPEC, record)
+
+    def get_source_lineage_relation(self, record_id: str) -> SourceLineageRelation | None:
+        return self._get(SOURCE_LINEAGE_RELATION_SPEC, record_id)
+
+    def list_source_lineage_relations(self) -> tuple[SourceLineageRelation, ...]:
+        return self._list(SOURCE_LINEAGE_RELATION_SPEC)
 
     def list_document_revision_relations_from(
         self, document_id: str
