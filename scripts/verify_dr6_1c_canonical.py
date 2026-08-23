@@ -16,6 +16,7 @@ from kotekomi_application import (
     verify_context_manifest,
 )
 from kotekomi_domain import (
+    ArgumentEdge,
     Assertion,
     AssertionStatus,
     AssertionType,
@@ -305,7 +306,7 @@ def _validate(ledger: Any, attempt_id: str, target: EvidenceTarget, attempted_at
 def _approve(
     ledger: Any,
     change_id: str,
-    record: Organization | EvidenceTarget | Assertion | Relationship,
+    record: Organization | EvidenceTarget | Assertion | Relationship | ArgumentEdge,
     reviewed_at: datetime,
     *,
     evidence_target_id: str | None = None,
@@ -349,9 +350,7 @@ def _approve(
 def _build_and_explain_case(
     ledger_path: Path, case: JsonObject, targets: dict[str, EvidenceTarget]
 ) -> JsonObject:
-    view_args = (
-        ("--as-of", str(case["as_of"])) if case["view_kind"] == "as_of" else ()
-    )
+    view_args = ("--as-of", str(case["as_of"])) if case["view_kind"] == "as_of" else ()
     built = command_json(
         "retrieval",
         "build-graph-evidence",
@@ -462,6 +461,12 @@ def _canonical_timestamp_text(value: object) -> str | None:
 def _complete(payload: JsonObject, code: str) -> None:
     if payload.get("status") != "complete":
         raise ConformanceError(code, str(payload.get("failure")))
+
+
+seed_temporal_correction = _seed_temporal_correction
+approve = _approve
+complete = _complete
+verify_contexts = _verify_contexts
 
 
 def _required(payload: JsonObject, key: str) -> str:

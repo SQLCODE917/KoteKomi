@@ -13,10 +13,15 @@ from kotekomi_domain import (
     AssertionStatus,
     CrossSourceRelationState,
     EvidenceGraphContribution,
+    EvidenceGraphDimension,
+    EvidenceGraphDimensionName,
+    EvidenceGraphDimensionValue,
     EvidenceGraphEdge,
     EvidenceGraphLineageCluster,
     EvidenceGraphLineageMembership,
     EvidenceGraphProjectionManifest,
+    EvidenceGraphScore,
+    EvidenceGraphScoreValue,
     EvidenceGraphViewKind,
     EvidenceNecessity,
     EvidencePolarity,
@@ -141,6 +146,23 @@ def _evidence_build() -> EvidenceGraphProjectionBuildInput:
         policy_id="reviewed_exact_content_sha256_v1",
         cluster_fingerprint="d" * 64,
     )
+    dimension = EvidenceGraphDimension(
+        dimension_id="egd_contract",
+        projection_manifest_id="egm_contract",
+        relationship_id=edge.relationship_id,
+        name=EvidenceGraphDimensionName.VALIDATED_EVIDENCE,
+        value=EvidenceGraphDimensionValue.PRESENT,
+        policy_id="evidence_graph_evidence_status_v1",
+        input_ids=("eva_contract",),
+    )
+    score = EvidenceGraphScore(
+        score_id="egs_contract",
+        projection_manifest_id="egm_contract",
+        relationship_id=edge.relationship_id,
+        policy_id="evidence_graph_evidence_status_v1",
+        value=EvidenceGraphScoreValue.SUPPORTED,
+        dimension_ids=(dimension.dimension_id,),
+    )
     manifest = EvidenceGraphProjectionManifest(
         projection_manifest_id="egm_contract",
         source_snapshot_digest="a" * 64,
@@ -151,11 +173,15 @@ def _evidence_build() -> EvidenceGraphProjectionBuildInput:
         edge_count=1,
         contribution_count=1,
         lineage_cluster_count=1,
+        dimension_count=1,
+        score_count=1,
         content_fingerprint="c" * 64,
         publication_status="complete",
         published_at=datetime(2026, 8, 23, tzinfo=UTC),
     )
-    return EvidenceGraphProjectionBuildInput(manifest, (edge,), (contribution,), (cluster,))
+    return EvidenceGraphProjectionBuildInput(
+        manifest, (edge,), (contribution,), (cluster,), (dimension,), (score,)
+    )
 
 
 def test_sqlite_evidence_graph_projection_publishes_and_rebuilds(tmp_path: Path) -> None:
@@ -173,6 +199,13 @@ def test_sqlite_evidence_graph_projection_publishes_and_rebuilds(tmp_path: Path)
         ].evidence_target_ids == ("etg_contract",)
         clusters = projection.load_evidence_graph_lineage_clusters(manifest, ("lcl_contract",))
         assert clusters[0].document_ids == ("doc_contract",)
+        assert (
+            projection.load_evidence_graph_dimensions(manifest, "rel_contract")[0].value.value
+            == "present"
+        )
+        score = projection.load_evidence_graph_score(manifest, "rel_contract")
+        assert score is not None
+        assert score.value.value == "supported"
         projection.delete_evidence_graph_projection()
         assert projection.get_complete_evidence_graph_manifest() is None
         assert projection.publish_evidence_graph(_evidence_build())[1] is False
@@ -221,6 +254,18 @@ def test_sqlite_evidence_graph_projection_keeps_current_and_as_of_views_isolated
             tuple(
                 item.model_copy(update={"source_snapshot_digest": "e" * 64})
                 for item in current.lineage_clusters
+            ),
+            tuple(
+                item.model_copy(
+                    update={"projection_manifest_id": historical_manifest.projection_manifest_id}
+                )
+                for item in current.dimensions
+            ),
+            tuple(
+                item.model_copy(
+                    update={"projection_manifest_id": historical_manifest.projection_manifest_id}
+                )
+                for item in current.scores
             ),
         )
         projection.publish_evidence_graph(current)
