@@ -22,11 +22,15 @@ from kotekomi_domain import (
     EvidenceGraphLineageCluster,
     EvidenceGraphLineageMembership,
     EvidenceGraphProjectionManifest,
+    EvidenceGraphViewKind,
     EvidenceTarget,
     EvidenceValidationAttempt,
     EvidenceValidationAttemptStatus,
     LedgerContextResult,
+    ProposedChange,
+    ProvenanceActivity,
     Relationship,
+    ReviewStatus,
     SourceLineageRelation,
 )
 
@@ -41,8 +45,8 @@ from kotekomi_application.context_planning import (
 )
 from kotekomi_application.ports import AcceptedCanonicalRecord
 
-EVIDENCE_GRAPH_PROJECTION_POLICY_ID = "evidence_graph_relationship_contributions_v1"
-EVIDENCE_GRAPH_BUILDER_VERSION = "dr6_1_evidence_graph_projection_v1"
+EVIDENCE_GRAPH_PROJECTION_POLICY_ID = "evidence_graph_temporal_relationship_contributions_v1"
+EVIDENCE_GRAPH_BUILDER_VERSION = "dr6_1_evidence_graph_projection_v2"
 EVIDENCE_GRAPH_EXPLANATION_POLICY_ID = "evidence_graph_relationship_explanation_v1"
 EVIDENCE_GRAPH_LINEAGE_POLICY_ID = "reviewed_exact_content_sha256_v1"
 
@@ -52,6 +56,8 @@ class EvidenceGraphFailureCode(StrEnum):
     PROJECTION_STALE = "evidence_graph_projection_stale"
     PROJECTION_CORRUPT = "evidence_graph_projection_corrupt"
     EVIDENCE_INVALID = "evidence_graph_evidence_invalid"
+    TEMPORAL_PROVENANCE_INVALID = "evidence_graph_temporal_provenance_invalid"
+    TEMPORAL_VIEW_INVALID = "evidence_graph_temporal_view_invalid"
     RELATIONSHIP_NOT_FOUND = "evidence_graph_relationship_not_found"
     CONTEXT_PLANNING_FAILED = "evidence_graph_context_planning_failed"
 
@@ -64,7 +70,7 @@ class EvidenceGraphError(ValueError):
 
 @dataclass(frozen=True)
 class BuildEvidenceGraphProjectionCommand:
-    pass
+    as_of: datetime | None = None
 
 
 @dataclass(frozen=True)
@@ -72,6 +78,7 @@ class ExplainEvidenceGraphRelationshipCommand:
     relationship_id: str
     context_profile_id: str = "retrieval-validation-v1"
     policy_id: str = EVIDENCE_GRAPH_EXPLANATION_POLICY_ID
+    as_of: datetime | None = None
 
 
 @dataclass(frozen=True)
@@ -91,6 +98,8 @@ class BuildEvidenceGraphProjectionResult:
     lineage_cluster_count: int
     content_fingerprint: str | None
     reused_existing_manifest: bool
+    view_kind: EvidenceGraphViewKind = EvidenceGraphViewKind.CURRENT
+    as_of: datetime | None = None
     failure: EvidenceGraphFailureCode | None = None
 
 
@@ -107,6 +116,8 @@ class ExplainEvidenceGraphRelationshipResult:
     lineage_cluster_count: int = 0
     failure: EvidenceGraphFailureCode | None = None
     policy_id: str | None = None
+    view_kind: EvidenceGraphViewKind = EvidenceGraphViewKind.CURRENT
+    as_of: datetime | None = None
 
 
 class EvidenceGraphStateLedger(Protocol):
@@ -114,6 +125,8 @@ class EvidenceGraphStateLedger(Protocol):
     def get_evidence_target(self, record_id: str) -> EvidenceTarget | None: ...
     def list_assertion_evidence_links(self) -> tuple[AssertionEvidenceLink, ...]: ...
     def list_evidence_validation_attempts(self) -> tuple[EvidenceValidationAttempt, ...]: ...
+    def list_provenance_activities(self) -> tuple[ProvenanceActivity, ...]: ...
+    def list_proposed_changes(self) -> tuple[ProposedChange, ...]: ...
 
 
 class EvidenceGraphLedger(EvidenceGraphStateLedger, ContextPlanningLedger, Protocol):
@@ -124,7 +137,9 @@ class EvidenceGraphProjectionPort(Protocol):
     def publish_evidence_graph(
         self, build: EvidenceGraphProjectionBuildInput
     ) -> tuple[EvidenceGraphProjectionManifest, bool]: ...
-    def get_complete_evidence_graph_manifest(self) -> EvidenceGraphProjectionManifest | None: ...
+    def get_complete_evidence_graph_manifest(
+        self, view_kind: EvidenceGraphViewKind, as_of: datetime | None
+    ) -> EvidenceGraphProjectionManifest | None: ...
     def load_evidence_graph_edge(
         self, manifest: EvidenceGraphProjectionManifest, relationship_id: str
     ) -> EvidenceGraphEdge | None: ...
@@ -143,10 +158,12 @@ def build_evidence_graph_projection(
     ledger_repository: EvidenceGraphLedger,
     projection: EvidenceGraphProjectionPort,
 ) -> BuildEvidenceGraphProjectionResult:
-    del command
     try:
-        edges, contributions, clusters, snapshot = build_evidence_graph_state(ledger_repository)
-        manifest = _manifest(snapshot, edges, contributions, clusters)
+        view_kind = _view_kind(command.as_of)
+        edges, contributions, clusters, snapshot = build_evidence_graph_state(
+            ledger_repository, as_of=command.as_of
+        )
+        manifest = _manifest(snapshot, edges, contributions, clusters, view_kind, command.as_of)
         published, reused = projection.publish_evidence_graph(
             EvidenceGraphProjectionBuildInput(manifest, edges, contributions, clusters)
         )
@@ -158,6 +175,8 @@ def build_evidence_graph_projection(
             lineage_cluster_count=len(clusters),
             content_fingerprint=published.content_fingerprint,
             reused_existing_manifest=reused,
+            view_kind=view_kind,
+            as_of=command.as_of,
         )
     except EvidenceGraphError as exc:
         return BuildEvidenceGraphProjectionResult(
@@ -168,6 +187,7 @@ def build_evidence_graph_projection(
             lineage_cluster_count=0,
             content_fingerprint=None,
             reused_existing_manifest=False,
+            as_of=command.as_of,
             failure=exc.code,
         )
 
@@ -188,8 +208,9 @@ def explain_evidence_graph_relationship(
                 EvidenceGraphFailureCode.RELATIONSHIP_NOT_FOUND,
                 "Evidence graph explanation requires a Relationship ID and known policy.",
             )
-        _, _, _, snapshot = build_evidence_graph_state(ledger_repository)
-        manifest = projection.get_complete_evidence_graph_manifest()
+        view_kind = _view_kind(command.as_of)
+        _, _, _, snapshot = build_evidence_graph_state(ledger_repository, as_of=command.as_of)
+        manifest = projection.get_complete_evidence_graph_manifest(view_kind, command.as_of)
         if manifest is None:
             raise EvidenceGraphError(
                 EvidenceGraphFailureCode.PROJECTION_NOT_FOUND,
@@ -238,6 +259,8 @@ def explain_evidence_graph_relationship(
             projection_manifest_id=manifest.projection_manifest_id,
             source_snapshot_digest=snapshot,
             relationship_id=command.relationship_id,
+            view_kind=view_kind,
+            as_of=command.as_of,
             evidence_graph_edge_id=edge.evidence_graph_edge_id,
             contribution_ids=edge.contribution_ids,
             source_document_ids=tuple(
@@ -264,6 +287,8 @@ def explain_evidence_graph_relationship(
             raw_document_count=len(record.source_document_ids),
             lineage_cluster_count=len(clusters),
             policy_id=command.policy_id,
+            view_kind=view_kind,
+            as_of=command.as_of,
         )
     except EvidenceGraphError as exc:
         return ExplainEvidenceGraphRelationshipResult(
@@ -277,11 +302,12 @@ def explain_evidence_graph_relationship(
             raw_document_count=0,
             lineage_cluster_count=0,
             failure=exc.code,
+            as_of=command.as_of,
         )
 
 
 def build_evidence_graph_state(
-    ledger_repository: EvidenceGraphStateLedger,
+    ledger_repository: EvidenceGraphStateLedger, *, as_of: datetime | None = None
 ) -> tuple[
     tuple[EvidenceGraphEdge, ...],
     tuple[EvidenceGraphContribution, ...],
@@ -289,7 +315,20 @@ def build_evidence_graph_state(
     str,
 ]:
     records = ledger_repository.list_accepted_canonical_records()
+    view_kind = _view_kind(as_of)
+    activities = ledger_repository.list_provenance_activities() if as_of is not None else ()
+    acceptance = (
+        _acceptance_activities(ledger_repository.list_proposed_changes(), activities)
+        if as_of is not None
+        else {}
+    )
     assertions = tuple(item for item in records if isinstance(item, Assertion))
+    if as_of is not None:
+        assertions = tuple(
+            _historical_assertion(item, _accepted_change(item.id, acceptance, as_of))
+            for item in assertions
+            if _accepted_change(item.id, acceptance, as_of) is not None
+        )
     current_assertions = tuple(sorted(_current_assertions(assertions), key=lambda item: item.id))
     current_assertion_ids = {item.id for item in current_assertions}
     relationships = tuple(
@@ -298,6 +337,7 @@ def build_evidence_graph_state(
                 item
                 for item in records
                 if isinstance(item, Relationship)
+                and _is_selected_at(item.id, acceptance, as_of)
                 and set(item.assertion_ids).issubset(current_assertion_ids)
             ),
             key=lambda item: item.id,
@@ -308,12 +348,25 @@ def build_evidence_graph_state(
     )
     all_lineage_relations = tuple(
         sorted(
-            (item for item in records if isinstance(item, SourceLineageRelation)),
+            (
+                item
+                for item in records
+                if isinstance(item, SourceLineageRelation)
+                and _is_selected_at(item.id, acceptance, as_of)
+            ),
             key=lambda item: item.id,
         )
     )
-    links = ledger_repository.list_assertion_evidence_links()
-    attempts = ledger_repository.list_evidence_validation_attempts()
+    links = tuple(
+        item
+        for item in ledger_repository.list_assertion_evidence_links()
+        if _link_is_selected_at(item, activities, as_of)
+    )
+    attempts = tuple(
+        item
+        for item in ledger_repository.list_evidence_validation_attempts()
+        if as_of is None or item.attempted_at <= as_of
+    )
     evidence_ids = {
         evidence_id
         for assertion in current_assertions
@@ -323,6 +376,7 @@ def build_evidence_graph_state(
         target
         for evidence_id in sorted(evidence_ids)
         if (target := ledger_repository.get_evidence_target(evidence_id)) is not None
+        and _is_selected_at(target.id, acceptance, as_of)
     )
     assertions_by_id = {item.id: item for item in current_assertions}
     targets_by_id = {item.id: item for item in targets}
@@ -337,6 +391,8 @@ def build_evidence_graph_state(
     )
     snapshot = _digest(
         {
+            "view_kind": view_kind.value,
+            "as_of": as_of.isoformat() if as_of is not None else None,
             "relationships": [item.model_dump(mode="json") for item in relationships],
             "assertions": [item.model_dump(mode="json") for item in current_assertions],
             "links": [
@@ -349,6 +405,22 @@ def build_evidence_graph_state(
             "documents": [item.model_dump(mode="json") for item in documents],
             "source_lineage_relations": [
                 item.model_dump(mode="json") for item in lineage_relations
+            ],
+            "acceptance_activities": [
+                item.model_dump(mode="json")
+                for item in _selected_acceptance_activities(
+                    acceptance,
+                    tuple(
+                        sorted(
+                            {
+                                *(item.id for item in relationships),
+                                *(item.id for item in current_assertions),
+                                *(item.id for item in targets),
+                            }
+                        )
+                    ),
+                    as_of,
+                )
             ],
         }
     )
@@ -398,6 +470,119 @@ def build_evidence_graph_state(
             )
         )
     return tuple(edges), tuple(contributions), clusters, snapshot
+
+
+@dataclass(frozen=True)
+class _Acceptance:
+    change: ProposedChange
+    activity: ProvenanceActivity
+
+
+def _view_kind(as_of: datetime | None) -> EvidenceGraphViewKind:
+    if as_of is None:
+        return EvidenceGraphViewKind.CURRENT
+    if as_of.tzinfo is None or as_of.utcoffset() != UTC.utcoffset(as_of):
+        raise EvidenceGraphError(
+            EvidenceGraphFailureCode.TEMPORAL_VIEW_INVALID,
+            "Evidence graph as_of must use UTC.",
+        )
+    return EvidenceGraphViewKind.AS_OF
+
+
+def _acceptance_activities(
+    changes: tuple[ProposedChange, ...], activities: tuple[ProvenanceActivity, ...]
+) -> dict[str, tuple[_Acceptance, ...]]:
+    result: dict[str, list[_Acceptance]] = {}
+    for change in changes:
+        if change.review_status not in {ReviewStatus.APPROVED, ReviewStatus.EDITED}:
+            continue
+        accepted_json = change.accepted_json
+        record_id = accepted_json.get("id") if accepted_json is not None else None
+        if not isinstance(record_id, str):
+            continue
+        candidates = tuple(
+            activity
+            for activity in activities
+            if change.id in activity.input_ids and record_id in activity.output_ids
+        )
+        result.setdefault(record_id, []).extend(
+            _Acceptance(change, activity) for activity in candidates
+        )
+    return {record_id: tuple(items) for record_id, items in result.items()}
+
+
+def _accepted_change(
+    record_id: str, acceptance: dict[str, tuple[_Acceptance, ...]], as_of: datetime
+) -> _Acceptance | None:
+    entries = acceptance.get(record_id, ())
+    if len(entries) != 1:
+        raise EvidenceGraphError(
+            EvidenceGraphFailureCode.TEMPORAL_PROVENANCE_INVALID,
+            "Historical evidence graph record has no unambiguous acceptance activity.",
+        )
+    entry = entries[0]
+    return entry if entry.activity.occurred_at <= as_of else None
+
+
+def _is_selected_at(
+    record_id: str, acceptance: dict[str, tuple[_Acceptance, ...]], as_of: datetime | None
+) -> bool:
+    return as_of is None or _accepted_change(record_id, acceptance, as_of) is not None
+
+
+def _historical_assertion(assertion: Assertion, acceptance: _Acceptance | None) -> Assertion:
+    if acceptance is None or acceptance.change.accepted_json is None:
+        raise EvidenceGraphError(
+            EvidenceGraphFailureCode.TEMPORAL_PROVENANCE_INVALID,
+            "Historical Assertion has no accepted payload.",
+        )
+    try:
+        restored = Assertion.model_validate_json(json.dumps(acceptance.change.accepted_json))
+    except ValueError as exc:
+        raise EvidenceGraphError(
+            EvidenceGraphFailureCode.TEMPORAL_PROVENANCE_INVALID,
+            "Historical Assertion accepted payload is invalid.",
+        ) from exc
+    if restored.id != assertion.id:
+        raise EvidenceGraphError(
+            EvidenceGraphFailureCode.TEMPORAL_PROVENANCE_INVALID,
+            "Historical Assertion accepted payload has another record ID.",
+        )
+    return restored
+
+
+def _link_is_selected_at(
+    link: AssertionEvidenceLink, activities: tuple[ProvenanceActivity, ...], as_of: datetime | None
+) -> bool:
+    if as_of is None:
+        return True
+    activity = next((item for item in activities if item.id == link.provenance_id), None)
+    if activity is None:
+        raise EvidenceGraphError(
+            EvidenceGraphFailureCode.TEMPORAL_PROVENANCE_INVALID,
+            "Historical AssertionEvidenceLink has no provenance activity.",
+        )
+    return activity.occurred_at <= as_of
+
+
+def _selected_acceptance_activities(
+    acceptance: dict[str, tuple[_Acceptance, ...]],
+    record_ids: tuple[str, ...],
+    as_of: datetime | None,
+) -> tuple[ProvenanceActivity, ...]:
+    if as_of is None:
+        return ()
+    return tuple(
+        sorted(
+            (
+                entry.activity
+                for record_id in record_ids
+                for entry in acceptance.get(record_id, ())
+                if entry.activity.occurred_at <= as_of
+            ),
+            key=lambda item: item.id,
+        )
+    )
 
 
 def _contributing_document_ids(
@@ -719,6 +904,8 @@ def _failed_explanation(
         projection_manifest_id=manifest.projection_manifest_id,
         source_snapshot_digest=snapshot,
         relationship_id=command.relationship_id,
+        view_kind=_view_kind(command.as_of),
+        as_of=command.as_of,
         failure_code=failure.value,
     )
     projection.save_evidence_graph_explanation(record)
@@ -734,6 +921,8 @@ def _failed_explanation(
         lineage_cluster_count=0,
         failure=failure,
         policy_id=command.policy_id,
+        view_kind=_view_kind(command.as_of),
+        as_of=command.as_of,
     )
 
 
@@ -742,6 +931,8 @@ def _manifest(
     edges: tuple[EvidenceGraphEdge, ...],
     contributions: tuple[EvidenceGraphContribution, ...],
     lineage_clusters: tuple[EvidenceGraphLineageCluster, ...],
+    view_kind: EvidenceGraphViewKind,
+    as_of: datetime | None,
 ) -> EvidenceGraphProjectionManifest:
     content = _digest(
         {
@@ -755,6 +946,8 @@ def _manifest(
         projection_manifest_id=f"egm_{content[:24]}",
         source_snapshot_digest=snapshot,
         projection_policy_id=EVIDENCE_GRAPH_PROJECTION_POLICY_ID,
+        view_kind=view_kind,
+        as_of=as_of,
         builder_version=EVIDENCE_GRAPH_BUILDER_VERSION,
         adapter_identity="sqlite_evidence_graph_projection_v1",
         adapter_configuration_digest=_digest({"adapter": "sqlite_evidence_graph_projection_v1"}),

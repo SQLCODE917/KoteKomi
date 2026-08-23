@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kotekomi.local/schemas/evidence-graph-temporal-seed-v1.schema.json",
+  "title": "KoteKomi evidence graph temporal seed v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "initial_reviewed_at",
+    "correction_reviewed_at",
+    "as_of",
+    "initial",
+    "corrected"
+  ],
+  "properties": {
+    "schema_version": {"const": "evidence-graph-temporal-seed-v1"},
+    "initial_reviewed_at": {"type": "string", "format": "date-time"},
+    "correction_reviewed_at": {"type": "string", "format": "date-time"},
+    "as_of": {"type": "string", "format": "date-time"},
+    "initial": {"$ref": "#/$defs/assertion"},
+    "corrected": {"$ref": "#/$defs/assertion"}
+  },
+  "$defs": {
+    "assertion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "assertion_id",
+        "relationship_id",
+        "evidence_target_id",
+        "anchor_text",
+        "object_value"
+      ],
+      "properties": {
+        "assertion_id": {"type": "string", "pattern": "^ast_[A-Za-z0-9][A-Za-z0-9_-]*$"},
+        "relationship_id": {"type": "string", "pattern": "^rel_[A-Za-z0-9][A-Za-z0-9_-]*$"},
+        "evidence_target_id": {"type": "string", "pattern": "^etg_[A-Za-z0-9][A-Za-z0-9_-]*$"},
+        "anchor_text": {"type": "string", "minLength": 1},
+        "object_value": {"type": "string", "minLength": 1}
+      }
+    }
+  }
+}

@@ -30,7 +30,10 @@ from kotekomi_domain import (
     EvidenceValidationAttempt,
     EvidenceValidationAttemptStatus,
     Organization,
+    ProposedChange,
+    ProvenanceActivity,
     Relationship,
+    ReviewStatus,
     SourceAuthority,
     SourceLineageRelation,
     SourceLineageRelationType,
@@ -119,6 +122,146 @@ class FakeLedger:
         return self.target if record_id == self.target.id else None
 
 
+class TemporalLedger(FakeLedger):
+    initial_reviewed_at = datetime(2026, 8, 20, tzinfo=UTC)
+    correction_reviewed_at = datetime(2026, 8, 21, tzinfo=UTC)
+
+    def __init__(self) -> None:
+        super().__init__(validation_status=EvidenceValidationAttemptStatus.SUCCEEDED)
+        self.target = self.target.model_copy(update={"id": "etg_initial"})
+        initial = self.direct.model_copy(
+            update={
+                "id": "ast_initial",
+                "status": AssertionStatus.SUPERSEDED,
+                "evidence_target_ids": (self.target.id,),
+                "created_at": self.initial_reviewed_at,
+                "updated_at": self.correction_reviewed_at,
+            }
+        )
+        corrected = self.direct.model_copy(
+            update={
+                "id": "ast_corrected",
+                "supersedes_assertion_id": initial.id,
+                "evidence_target_ids": (self.target.id,),
+                "provenance_activity_ids": ("prv_corrected",),
+                "created_at": self.correction_reviewed_at,
+                "updated_at": self.correction_reviewed_at,
+            }
+        )
+        self.initial = initial
+        self.corrected = corrected
+        self.initial_relationship = self.relationship.model_copy(
+            update={
+                "id": "rel_initial",
+                "assertion_ids": (initial.id,),
+                "created_at": self.initial_reviewed_at,
+                "updated_at": self.initial_reviewed_at,
+            }
+        )
+        self.current_relationship = self.relationship.model_copy(
+            update={
+                "id": "rel_corrected",
+                "assertion_ids": (corrected.id,),
+                "created_at": self.correction_reviewed_at,
+                "updated_at": self.correction_reviewed_at,
+            }
+        )
+        self.link = self.link.model_copy(
+            update={
+                "id": "ael_initial",
+                "assertion_id": initial.id,
+                "evidence_target_id": self.target.id,
+                "provenance_id": "prv_initial",
+                "created_at": self.initial_reviewed_at,
+            }
+        )
+        self.attempt = self.attempt.model_copy(
+            update={"evidence_target_id": self.target.id, "attempted_at": self.initial_reviewed_at}
+        )
+        self.corrected_link = self.link.model_copy(
+            update={
+                "id": "ael_corrected",
+                "assertion_id": corrected.id,
+                "provenance_id": "prv_corrected",
+                "created_at": self.correction_reviewed_at,
+            }
+        )
+        self.activities = (
+            _approval("pcg_target", self.target.id, self.initial_reviewed_at, "prv_target"),
+            _approval("pcg_initial", initial.id, self.initial_reviewed_at, "prv_initial"),
+            _approval(
+                "pcg_rel_initial",
+                self.initial_relationship.id,
+                self.initial_reviewed_at,
+                "prv_rel_initial",
+            ),
+            _approval("pcg_corrected", corrected.id, self.correction_reviewed_at, "prv_corrected"),
+            _approval(
+                "pcg_rel_corrected",
+                self.current_relationship.id,
+                self.correction_reviewed_at,
+                "prv_rel_corrected",
+            ),
+        )
+        self.changes: tuple[ProposedChange, ...] = (
+            _change("pcg_target", self.target),
+            _change("pcg_initial", initial.model_copy(update={"status": AssertionStatus.REPORTED})),
+            _change("pcg_rel_initial", self.initial_relationship),
+            _change("pcg_corrected", corrected),
+            _change("pcg_rel_corrected", self.current_relationship),
+        )
+
+    def list_accepted_canonical_records(self) -> tuple[AcceptedCanonicalRecord, ...]:
+        return (
+            self.anthropic,
+            self.department,
+            self.document,
+            self.initial,
+            self.corrected,
+            self.initial_relationship,
+            self.current_relationship,
+        )
+
+    def list_assertion_evidence_links(self) -> tuple[AssertionEvidenceLink, ...]:
+        return self.link, self.corrected_link
+
+    def list_provenance_activities(self) -> tuple[ProvenanceActivity, ...]:
+        return self.activities
+
+    def list_proposed_changes(self) -> tuple[ProposedChange, ...]:
+        return self.changes
+
+
+def _approval(
+    change_id: str, record_id: str, occurred_at: datetime, activity_id: str
+) -> ProvenanceActivity:
+    return ProvenanceActivity(
+        id=activity_id,
+        activity_type="proposed_change_approved",
+        agent="reviewer",
+        input_ids=(change_id,),
+        output_ids=(record_id,),
+        occurred_at=occurred_at,
+    )
+
+
+def _change(
+    change_id: str, record: Assertion | EvidenceTarget | Relationship
+) -> ProposedChange:
+    return ProposedChange(
+        id=change_id,
+        review_status=ReviewStatus.APPROVED,
+        proposed_json={
+            "record_type": type(record).__name__,
+            "record": record.model_dump(mode="json"),
+        },
+        accepted_json=record.model_dump(mode="json"),
+        provenance_activity_id="prv_seed",
+        created_at=NOW,
+        updated_at=NOW,
+    )
+
+
 def _direct_assertion(assertion_id: str) -> Assertion:
     return Assertion(
         id=assertion_id,
@@ -187,6 +330,33 @@ def test_evidence_graph_rejects_failed_evidence_validation() -> None:
     assert raised.value.code is EvidenceGraphFailureCode.EVIDENCE_INVALID
 
 
+def test_evidence_graph_reconstructs_current_and_as_of_correction_views() -> None:
+    ledger = TemporalLedger()
+
+    historical = build_evidence_graph_state(
+        cast(EvidenceGraphStateLedger, ledger), as_of=datetime(2026, 8, 20, 12, tzinfo=UTC)
+    )
+    current = build_evidence_graph_state(cast(EvidenceGraphStateLedger, ledger))
+
+    assert historical[0][0].relationship_id == ledger.initial_relationship.id
+    assert historical[1][0].terminal_assertion_ids == (ledger.initial.id,)
+    assert current[0][0].relationship_id == ledger.current_relationship.id
+    assert current[1][0].terminal_assertion_ids == (ledger.corrected.id,)
+    assert historical[3] != current[3]
+
+
+def test_evidence_graph_historical_view_rejects_missing_acceptance_provenance() -> None:
+    ledger = TemporalLedger()
+    ledger.changes = tuple(item for item in ledger.changes if item.id != "pcg_initial")
+
+    with raises(EvidenceGraphError) as raised:
+        build_evidence_graph_state(
+            cast(EvidenceGraphStateLedger, ledger), as_of=datetime(2026, 8, 20, 12, tzinfo=UTC)
+        )
+
+    assert raised.value.code is EvidenceGraphFailureCode.TEMPORAL_PROVENANCE_INVALID
+
+
 def test_reviewed_relation_groups_two_contributing_documents() -> None:
     first = Document(
         id="doc_first",
@@ -225,7 +395,10 @@ def test_reviewed_relation_groups_two_contributing_documents() -> None:
 
 
 class StaleProjection:
-    def get_complete_evidence_graph_manifest(self) -> EvidenceGraphProjectionManifest:
+    def get_complete_evidence_graph_manifest(
+        self, *args: object
+    ) -> EvidenceGraphProjectionManifest:
+        del args
         return EvidenceGraphProjectionManifest(
             projection_manifest_id="egm_stale",
             source_snapshot_digest="f" * 64,
@@ -267,7 +440,10 @@ class MissingRelationshipProjection:
         )
         self.records: list[object] = []
 
-    def get_complete_evidence_graph_manifest(self) -> EvidenceGraphProjectionManifest:
+    def get_complete_evidence_graph_manifest(
+        self, *args: object
+    ) -> EvidenceGraphProjectionManifest:
+        del args
         return self.manifest
 
     def load_evidence_graph_edge(

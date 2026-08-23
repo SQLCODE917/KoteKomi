@@ -1,0 +1,11 @@
+{
+  "schema_version": "evidence-graph-temporal-suite-v1",
+  "suite_id": "dr-6-1c-v1",
+  "scenario_id": "anthropic-dod-dispute-v1",
+  "seed_path": ".agent/scenarios/anthropic-dod-dispute-v1/ledger-temporal-seed-v1.json",
+  "query_pack_paths": [
+    ".agent/scenarios/anthropic-dod-dispute-v1/queries/dr-6-1c-evidence-graph-temporal-v1.jsonl"
+  ],
+  "projection_policy_id": "evidence_graph_temporal_relationship_contributions_v1",
+  "require_rebuild_equivalence": true
+}

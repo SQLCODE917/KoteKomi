@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 import sqlite3
+from datetime import datetime
 from pathlib import Path
 
 from kotekomi_application.evidence_graph_projection import (
@@ -23,6 +24,7 @@ from kotekomi_domain import (
     EvidenceGraphExplanationRecord,
     EvidenceGraphLineageCluster,
     EvidenceGraphProjectionManifest,
+    EvidenceGraphViewKind,
     KnowledgeGraphEdge,
     KnowledgeGraphRetrievalIndexManifest,
     KnowledgeGraphRetrievalQueryRecord,
@@ -55,16 +57,13 @@ class SQLiteKnowledgeGraphRetrievalAdapter:
         )
         self._connection.commit()
 
-    def delete_evidence_graph_projection(self) -> None:
-        self._connection.executescript(
-            """
-            DELETE FROM evidence_graph_explanation_records;
-            DELETE FROM evidence_graph_lineage_clusters;
-            DELETE FROM evidence_graph_contributions;
-            DELETE FROM evidence_graph_edges;
-            DELETE FROM evidence_graph_manifests;
-            """
-        )
+    def delete_evidence_graph_projection(
+        self,
+        view_kind: EvidenceGraphViewKind = EvidenceGraphViewKind.CURRENT,
+        as_of: datetime | None = None,
+    ) -> None:
+        manifest_ids = self._evidence_graph_manifest_ids(view_kind, as_of)
+        self._delete_evidence_graph_manifests(manifest_ids)
         self._connection.commit()
 
     def publish_evidence_graph(
@@ -111,32 +110,33 @@ class SQLiteKnowledgeGraphRetrievalAdapter:
                 self._validate_evidence_graph_written_build(existing)
                 self._connection.execute("COMMIT")
                 return existing, True
-            self._connection.executescript(
-                """
-                DELETE FROM evidence_graph_explanation_records;
-                DELETE FROM evidence_graph_lineage_clusters;
-                DELETE FROM evidence_graph_contributions;
-                DELETE FROM evidence_graph_edges;
-                DELETE FROM evidence_graph_manifests;
-                """
+            self._delete_evidence_graph_manifests(
+                self._evidence_graph_manifest_ids(manifest.view_kind, manifest.as_of)
             )
             for edge in build.edges:
                 self._connection.execute(
                     """
                     INSERT INTO evidence_graph_edges
-                    (evidence_graph_edge_id, relationship_id, edge_json)
-                    VALUES (?, ?, ?)
+                    (projection_manifest_id, evidence_graph_edge_id, relationship_id, edge_json)
+                    VALUES (?, ?, ?, ?)
                     """,
-                    (edge.evidence_graph_edge_id, edge.relationship_id, edge.model_dump_json()),
+                    (
+                        manifest.projection_manifest_id,
+                        edge.evidence_graph_edge_id,
+                        edge.relationship_id,
+                        edge.model_dump_json(),
+                    ),
                 )
             for contribution in build.contributions:
                 self._connection.execute(
                     """
                     INSERT INTO evidence_graph_contributions
-                    (contribution_id, evidence_graph_edge_id, contribution_json)
-                    VALUES (?, ?, ?)
+                    (projection_manifest_id, contribution_id, evidence_graph_edge_id,
+                     contribution_json)
+                    VALUES (?, ?, ?, ?)
                     """,
                     (
+                        manifest.projection_manifest_id,
                         contribution.contribution_id,
                         contribution.evidence_graph_edge_id,
                         contribution.model_dump_json(),
@@ -146,17 +146,28 @@ class SQLiteKnowledgeGraphRetrievalAdapter:
                 self._connection.execute(
                     """
                     INSERT INTO evidence_graph_lineage_clusters
-                    (lineage_cluster_id, cluster_json) VALUES (?, ?)
+                    (projection_manifest_id, lineage_cluster_id, cluster_json) VALUES (?, ?, ?)
                     """,
-                    (cluster.lineage_cluster_id, cluster.model_dump_json()),
+                    (
+                        manifest.projection_manifest_id,
+                        cluster.lineage_cluster_id,
+                        cluster.model_dump_json(),
+                    ),
                 )
             counts = (
-                self._connection.execute("SELECT COUNT(*) FROM evidence_graph_edges").fetchone()[0],
                 self._connection.execute(
-                    "SELECT COUNT(*) FROM evidence_graph_contributions"
+                    "SELECT COUNT(*) FROM evidence_graph_edges WHERE projection_manifest_id = ?",
+                    (manifest.projection_manifest_id,),
                 ).fetchone()[0],
                 self._connection.execute(
-                    "SELECT COUNT(*) FROM evidence_graph_lineage_clusters"
+                    "SELECT COUNT(*) FROM evidence_graph_contributions "
+                    "WHERE projection_manifest_id = ?",
+                    (manifest.projection_manifest_id,),
+                ).fetchone()[0],
+                self._connection.execute(
+                    "SELECT COUNT(*) FROM evidence_graph_lineage_clusters "
+                    "WHERE projection_manifest_id = ?",
+                    (manifest.projection_manifest_id,),
                 ).fetchone()[0],
             )
             if counts != (
@@ -170,10 +181,16 @@ class SQLiteKnowledgeGraphRetrievalAdapter:
                 )
             self._connection.execute(
                 """
-                INSERT INTO evidence_graph_manifests (projection_manifest_id, manifest_json)
-                VALUES (?, ?)
+                INSERT INTO evidence_graph_manifests
+                (projection_manifest_id, view_kind, as_of, manifest_json)
+                VALUES (?, ?, ?, ?)
                 """,
-                (manifest.projection_manifest_id, manifest.model_dump_json()),
+                (
+                    manifest.projection_manifest_id,
+                    manifest.view_kind.value,
+                    _timestamp(manifest.as_of),
+                    manifest.model_dump_json(),
+                ),
             )
             self._connection.execute("COMMIT")
             return manifest, False
@@ -181,9 +198,16 @@ class SQLiteKnowledgeGraphRetrievalAdapter:
             self._connection.execute("ROLLBACK")
             raise
 
-    def get_complete_evidence_graph_manifest(self) -> EvidenceGraphProjectionManifest | None:
+    def get_complete_evidence_graph_manifest(
+        self,
+        view_kind: EvidenceGraphViewKind = EvidenceGraphViewKind.CURRENT,
+        as_of: datetime | None = None,
+    ) -> EvidenceGraphProjectionManifest | None:
         row = self._connection.execute(
-            "SELECT manifest_json FROM evidence_graph_manifests ORDER BY projection_manifest_id"
+            "SELECT manifest_json FROM evidence_graph_manifests "
+            "WHERE view_kind = ? AND ((as_of IS NULL AND ? IS NULL) OR as_of = ?) "
+            "ORDER BY projection_manifest_id",
+            (view_kind.value, _timestamp(as_of), _timestamp(as_of)),
         ).fetchone()
         if row is None:
             return None
@@ -203,10 +227,10 @@ class SQLiteKnowledgeGraphRetrievalAdapter:
     def load_evidence_graph_edge(
         self, manifest: EvidenceGraphProjectionManifest, relationship_id: str
     ) -> EvidenceGraphEdge | None:
-        del manifest
         row = self._connection.execute(
-            "SELECT edge_json FROM evidence_graph_edges WHERE relationship_id = ?",
-            (relationship_id,),
+            "SELECT edge_json FROM evidence_graph_edges "
+            "WHERE projection_manifest_id = ? AND relationship_id = ?",
+            (manifest.projection_manifest_id, relationship_id),
         ).fetchone()
         if row is None:
             return None
@@ -221,13 +245,12 @@ class SQLiteKnowledgeGraphRetrievalAdapter:
     def load_evidence_graph_contributions(
         self, manifest: EvidenceGraphProjectionManifest, edge_id: str
     ) -> tuple[EvidenceGraphContribution, ...]:
-        del manifest
         rows = self._connection.execute(
             """
             SELECT contribution_json FROM evidence_graph_contributions
-            WHERE evidence_graph_edge_id = ? ORDER BY contribution_id
+            WHERE projection_manifest_id = ? AND evidence_graph_edge_id = ? ORDER BY contribution_id
             """,
-            (edge_id,),
+            (manifest.projection_manifest_id, edge_id),
         ).fetchall()
         try:
             return tuple(
@@ -249,9 +272,10 @@ class SQLiteKnowledgeGraphRetrievalAdapter:
         rows = self._connection.execute(
             f"""
             SELECT cluster_json FROM evidence_graph_lineage_clusters
-            WHERE lineage_cluster_id IN ({placeholders}) ORDER BY lineage_cluster_id
+            WHERE projection_manifest_id = ? AND lineage_cluster_id IN ({placeholders})
+            ORDER BY lineage_cluster_id
             """,
-            lineage_cluster_ids,
+            (manifest.projection_manifest_id, *lineage_cluster_ids),
         ).fetchall()
         try:
             clusters = tuple(
@@ -274,9 +298,9 @@ class SQLiteKnowledgeGraphRetrievalAdapter:
         self._connection.execute(
             """
             INSERT OR REPLACE INTO evidence_graph_explanation_records
-            (explanation_id, record_json) VALUES (?, ?)
+            (explanation_id, projection_manifest_id, record_json) VALUES (?, ?, ?)
             """,
-            (record.explanation_id, record.model_dump_json()),
+            (record.explanation_id, record.projection_manifest_id, record.model_dump_json()),
         )
         self._connection.commit()
 
@@ -499,12 +523,19 @@ class SQLiteKnowledgeGraphRetrievalAdapter:
         self, manifest: EvidenceGraphProjectionManifest
     ) -> None:
         counts = (
-            self._connection.execute("SELECT COUNT(*) FROM evidence_graph_edges").fetchone()[0],
             self._connection.execute(
-                "SELECT COUNT(*) FROM evidence_graph_contributions"
+                "SELECT COUNT(*) FROM evidence_graph_edges WHERE projection_manifest_id = ?",
+                (manifest.projection_manifest_id,),
             ).fetchone()[0],
             self._connection.execute(
-                "SELECT COUNT(*) FROM evidence_graph_lineage_clusters"
+                "SELECT COUNT(*) FROM evidence_graph_contributions "
+                "WHERE projection_manifest_id = ?",
+                (manifest.projection_manifest_id,),
+            ).fetchone()[0],
+            self._connection.execute(
+                "SELECT COUNT(*) FROM evidence_graph_lineage_clusters "
+                "WHERE projection_manifest_id = ?",
+                (manifest.projection_manifest_id,),
             ).fetchone()[0],
         )
         if counts != (
@@ -531,6 +562,18 @@ class SQLiteKnowledgeGraphRetrievalAdapter:
             )
 
     def _initialize(self) -> None:
+        rows = self._connection.execute("PRAGMA table_info(evidence_graph_edges)").fetchall()
+        columns = {str(row["name"]) for row in rows}
+        if columns and "projection_manifest_id" not in columns:
+            self._connection.executescript(
+                """
+                DROP TABLE IF EXISTS evidence_graph_explanation_records;
+                DROP TABLE IF EXISTS evidence_graph_lineage_clusters;
+                DROP TABLE IF EXISTS evidence_graph_contributions;
+                DROP TABLE IF EXISTS evidence_graph_edges;
+                DROP TABLE IF EXISTS evidence_graph_manifests;
+                """
+            )
         self._connection.executescript(
             """
             CREATE TABLE IF NOT EXISTS knowledge_graph_manifests (
@@ -566,28 +609,73 @@ class SQLiteKnowledgeGraphRetrievalAdapter:
             );
             CREATE TABLE IF NOT EXISTS evidence_graph_manifests (
                 projection_manifest_id TEXT PRIMARY KEY NOT NULL,
+                view_kind TEXT NOT NULL,
+                as_of TEXT,
                 manifest_json TEXT NOT NULL
             );
             CREATE TABLE IF NOT EXISTS evidence_graph_edges (
-                evidence_graph_edge_id TEXT PRIMARY KEY NOT NULL,
-                relationship_id TEXT UNIQUE NOT NULL,
-                edge_json TEXT NOT NULL
+                projection_manifest_id TEXT NOT NULL,
+                evidence_graph_edge_id TEXT NOT NULL,
+                relationship_id TEXT NOT NULL,
+                edge_json TEXT NOT NULL,
+                PRIMARY KEY (projection_manifest_id, evidence_graph_edge_id),
+                UNIQUE (projection_manifest_id, relationship_id)
             );
             CREATE TABLE IF NOT EXISTS evidence_graph_contributions (
-                contribution_id TEXT PRIMARY KEY NOT NULL,
+                projection_manifest_id TEXT NOT NULL,
+                contribution_id TEXT NOT NULL,
                 evidence_graph_edge_id TEXT NOT NULL,
-                contribution_json TEXT NOT NULL
+                contribution_json TEXT NOT NULL,
+                PRIMARY KEY (projection_manifest_id, contribution_id)
             );
             CREATE INDEX IF NOT EXISTS evidence_graph_contributions_by_edge
-                ON evidence_graph_contributions (evidence_graph_edge_id, contribution_id);
+                ON evidence_graph_contributions
+                (projection_manifest_id, evidence_graph_edge_id, contribution_id);
             CREATE TABLE IF NOT EXISTS evidence_graph_explanation_records (
                 explanation_id TEXT PRIMARY KEY NOT NULL,
+                projection_manifest_id TEXT NOT NULL,
                 record_json TEXT NOT NULL
             );
             CREATE TABLE IF NOT EXISTS evidence_graph_lineage_clusters (
-                lineage_cluster_id TEXT PRIMARY KEY NOT NULL,
-                cluster_json TEXT NOT NULL
+                projection_manifest_id TEXT NOT NULL,
+                lineage_cluster_id TEXT NOT NULL,
+                cluster_json TEXT NOT NULL,
+                PRIMARY KEY (projection_manifest_id, lineage_cluster_id)
             );
             """
         )
         self._connection.commit()
+
+    def _evidence_graph_manifest_ids(
+        self, view_kind: EvidenceGraphViewKind, as_of: datetime | None
+    ) -> tuple[str, ...]:
+        rows = self._connection.execute(
+            "SELECT projection_manifest_id FROM evidence_graph_manifests "
+            "WHERE view_kind = ? AND ((as_of IS NULL AND ? IS NULL) OR as_of = ?)",
+            (view_kind.value, _timestamp(as_of), _timestamp(as_of)),
+        ).fetchall()
+        return tuple(str(row["projection_manifest_id"]) for row in rows)
+
+    def _delete_evidence_graph_manifests(self, manifest_ids: tuple[str, ...]) -> None:
+        if not manifest_ids:
+            return
+        placeholders = ", ".join("?" for _ in manifest_ids)
+        self._connection.execute(
+            f"DELETE FROM evidence_graph_explanation_records "
+            f"WHERE projection_manifest_id IN ({placeholders})",
+            manifest_ids,
+        )
+        for table in (
+            "evidence_graph_lineage_clusters",
+            "evidence_graph_contributions",
+            "evidence_graph_edges",
+            "evidence_graph_manifests",
+        ):
+            self._connection.execute(
+                f"DELETE FROM {table} WHERE projection_manifest_id IN ({placeholders})",
+                manifest_ids,
+            )
+
+
+def _timestamp(value: datetime | None) -> str | None:
+    return value.isoformat() if value is not None else None

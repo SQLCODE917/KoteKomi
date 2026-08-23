@@ -17,6 +17,7 @@ from kotekomi_domain import (
     EvidenceGraphLineageCluster,
     EvidenceGraphLineageMembership,
     EvidenceGraphProjectionManifest,
+    EvidenceGraphViewKind,
     EvidenceNecessity,
     EvidencePolarity,
     KnowledgeGraphEdge,
@@ -193,5 +194,95 @@ def test_sqlite_evidence_graph_projection_rejects_manifest_with_missing_rows(
             projection.get_complete_evidence_graph_manifest()
 
         assert raised.value.code is EvidenceGraphFailureCode.PROJECTION_CORRUPT
+    finally:
+        projection.close()
+
+
+def test_sqlite_evidence_graph_projection_keeps_current_and_as_of_views_isolated(
+    tmp_path: Path,
+) -> None:
+    projection = SQLiteKnowledgeGraphRetrievalAdapter(tmp_path / "graph.sqlite")
+    historical_time = datetime(2026, 8, 20, tzinfo=UTC)
+    try:
+        current = _evidence_build()
+        historical_manifest = current.manifest.model_copy(
+            update={
+                "projection_manifest_id": "egm_historical",
+                "view_kind": EvidenceGraphViewKind.AS_OF,
+                "as_of": historical_time,
+                "source_snapshot_digest": "e" * 64,
+                "content_fingerprint": "f" * 64,
+            }
+        )
+        historical = EvidenceGraphProjectionBuildInput(
+            historical_manifest,
+            current.edges,
+            current.contributions,
+            tuple(
+                item.model_copy(update={"source_snapshot_digest": "e" * 64})
+                for item in current.lineage_clusters
+            ),
+        )
+        projection.publish_evidence_graph(current)
+        projection.publish_evidence_graph(historical)
+
+        assert projection.get_complete_evidence_graph_manifest() == current.manifest
+        assert (
+            projection.get_complete_evidence_graph_manifest(
+                EvidenceGraphViewKind.AS_OF, historical_time
+            )
+            == historical_manifest
+        )
+        projection.delete_evidence_graph_projection(EvidenceGraphViewKind.AS_OF, historical_time)
+        assert projection.get_complete_evidence_graph_manifest() == current.manifest
+        assert (
+            projection.get_complete_evidence_graph_manifest(
+                EvidenceGraphViewKind.AS_OF, historical_time
+            )
+            is None
+        )
+    finally:
+        projection.close()
+
+
+def test_sqlite_evidence_graph_projection_resets_only_legacy_evidence_graph_tables(
+    tmp_path: Path,
+) -> None:
+    database_path = tmp_path / "graph.sqlite"
+    with sqlite3.connect(database_path) as connection:
+        connection.executescript(
+            """
+            CREATE TABLE evidence_graph_manifests (
+                projection_manifest_id TEXT PRIMARY KEY,
+                manifest_json TEXT
+            );
+            CREATE TABLE evidence_graph_edges (
+                evidence_graph_edge_id TEXT PRIMARY KEY,
+                relationship_id TEXT,
+                edge_json TEXT
+            );
+            CREATE TABLE evidence_graph_contributions (
+                contribution_id TEXT PRIMARY KEY,
+                evidence_graph_edge_id TEXT,
+                contribution_json TEXT
+            );
+            CREATE TABLE evidence_graph_explanation_records (
+                explanation_id TEXT PRIMARY KEY,
+                record_json TEXT
+            );
+            CREATE TABLE evidence_graph_lineage_clusters (
+                lineage_cluster_id TEXT PRIMARY KEY,
+                cluster_json TEXT
+            );
+            """
+        )
+    projection = SQLiteKnowledgeGraphRetrievalAdapter(database_path)
+    try:
+        with sqlite3.connect(database_path) as connection:
+            columns = {
+                row[1] for row in connection.execute("PRAGMA table_info(evidence_graph_edges)")
+            }
+        assert "projection_manifest_id" in columns
+        assert projection.get_complete_evidence_graph_manifest() is None
     finally:
         projection.close()
