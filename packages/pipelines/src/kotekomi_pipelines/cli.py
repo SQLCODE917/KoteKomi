@@ -136,6 +136,7 @@ from kotekomi_pipelines.managed_llama_server import (
     uninstall_managed_llama_server,
 )
 from kotekomi_pipelines.model_runtime import build_model_runtime_readiness
+from kotekomi_pipelines.source_lineage import propose_verbatim_republication_relation
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -289,6 +290,20 @@ def main(argv: list[str] | None = None) -> int:
             archive_path_override=args.archive_path,
         )
         return add_source_file(config, args.path, args.source_url, args.output_format)
+
+    if args.command == "lineage" and args.lineage_command == "propose-verbatim-republication":
+        config = load_config(
+            config_path=args.config,
+            ledger_path_override=args.ledger_path,
+            archive_path_override=None,
+        )
+        return propose_verbatim_republication_relation(
+            config=config,
+            document_ids=tuple(args.document_id),
+            proposer=args.proposer,
+            rationale=args.rationale,
+            output_format=args.output_format,
+        )
 
     if args.command == "source" and args.source_command == "add-news":
         config = load_processing_config(
@@ -735,6 +750,22 @@ def build_parser() -> argparse.ArgumentParser:
         "--format", dest="output_format", choices=("text", "json"), default="text"
     )
     retrieval_evidence_graph_explain_parser.add_argument("--ledger-path", type=Path, default=None)
+
+    lineage_parser = subparsers.add_parser(
+        "lineage", help="Reviewed cross-source lineage commands."
+    )
+    lineage_subparsers = lineage_parser.add_subparsers(dest="lineage_command", required=True)
+    lineage_propose_parser = lineage_subparsers.add_parser(
+        "propose-verbatim-republication",
+        help="Propose an exact-byte relation between two source Documents for review.",
+    )
+    lineage_propose_parser.add_argument("--document-id", action="append", required=True)
+    lineage_propose_parser.add_argument("--proposer", required=True)
+    lineage_propose_parser.add_argument("--rationale", required=True)
+    lineage_propose_parser.add_argument(
+        "--format", dest="output_format", choices=("text", "json"), default="text"
+    )
+    lineage_propose_parser.add_argument("--ledger-path", type=Path, default=None)
 
     model_parser = subparsers.add_parser("model", help="Local model runtime commands.")
     model_subparsers = model_parser.add_subparsers(dest="model_command")
@@ -1330,6 +1361,7 @@ def build_evidence_graph_projection_index(
             "projection_manifest_id": result.projection_manifest_id,
             "edge_count": result.edge_count,
             "contribution_count": result.contribution_count,
+            "lineage_cluster_count": result.lineage_cluster_count,
             "content_fingerprint": result.content_fingerprint,
             "reused_existing_manifest": result.reused_existing_manifest,
             "failure": result.failure.value if result.failure is not None else None,
@@ -1362,6 +1394,11 @@ def explain_evidence_graph_relationship_index(
             "projection_manifest_id": result.projection_manifest_id,
             "edge": result.edge.model_dump(mode="json") if result.edge is not None else None,
             "contributions": [item.model_dump(mode="json") for item in result.contributions],
+            "lineage_clusters": [
+                item.model_dump(mode="json") for item in result.lineage_clusters
+            ],
+            "raw_document_count": result.raw_document_count,
+            "lineage_cluster_count": result.lineage_cluster_count,
             "context_results": [item.model_dump(mode="json") for item in result.context_results],
             "failure": result.failure.value if result.failure is not None else None,
             "policy_id": result.policy_id,

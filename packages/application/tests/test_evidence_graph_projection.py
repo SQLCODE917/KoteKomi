@@ -9,6 +9,7 @@ from kotekomi_application.evidence_graph_projection import (
     EvidenceGraphProjectionPort,
     EvidenceGraphStateLedger,
     ExplainEvidenceGraphRelationshipCommand,
+    build_evidence_graph_lineage_clusters,
     build_evidence_graph_state,
     explain_evidence_graph_relationship,
 )
@@ -20,6 +21,7 @@ from kotekomi_domain import (
     AssertionStatus,
     AssertionType,
     AttributionBasis,
+    Document,
     EpistemicScope,
     EvidenceGraphProjectionManifest,
     EvidenceNecessity,
@@ -30,6 +32,8 @@ from kotekomi_domain import (
     Organization,
     Relationship,
     SourceAuthority,
+    SourceLineageRelation,
+    SourceLineageRelationType,
 )
 from pytest import raises
 
@@ -40,6 +44,13 @@ class FakeLedger:
     def __init__(self, *, validation_status: EvidenceValidationAttemptStatus) -> None:
         self.anthropic = Organization(id="org_anthropic", name="Anthropic")
         self.department = Organization(id="org_department", name="Department of Defense")
+        self.document = Document(
+            id="doc_policy",
+            source_id="src_policy",
+            content_sha256="c" * 64,
+            created_at=NOW,
+            updated_at=NOW,
+        )
         self.direct = _direct_assertion("ast_direct")
         self.inference = _inference_assertion("ast_inference", self.direct.id)
         self.relationship = Relationship(
@@ -92,6 +103,7 @@ class FakeLedger:
         return (
             self.anthropic,
             self.department,
+            self.document,
             self.direct,
             self.inference,
             self.relationship,
@@ -145,7 +157,7 @@ def _inference_assertion(assertion_id: str, support_id: str) -> Assertion:
 
 
 def test_evidence_graph_resolves_inference_to_validated_direct_evidence() -> None:
-    edges, contributions, snapshot = build_evidence_graph_state(
+    edges, contributions, clusters, snapshot = build_evidence_graph_state(
         cast(
             EvidenceGraphStateLedger,
             FakeLedger(validation_status=EvidenceValidationAttemptStatus.SUCCEEDED),
@@ -159,6 +171,8 @@ def test_evidence_graph_resolves_inference_to_validated_direct_evidence() -> Non
     assert contributions[0].assertion_evidence_link_ids == ("ael_policy",)
     assert contributions[0].validation_attempt_ids == ("eva_policy",)
     assert contributions[0].evidence_target_ids == ("etg_policy",)
+    assert contributions[0].source_document_ids == ("doc_policy",)
+    assert clusters[0].cross_source_relation_state.value == "no_cross_source_relation_recorded"
 
 
 def test_evidence_graph_rejects_failed_evidence_validation() -> None:
@@ -173,6 +187,43 @@ def test_evidence_graph_rejects_failed_evidence_validation() -> None:
     assert raised.value.code is EvidenceGraphFailureCode.EVIDENCE_INVALID
 
 
+def test_reviewed_relation_groups_two_contributing_documents() -> None:
+    first = Document(
+        id="doc_first",
+        source_id="src_first",
+        content_sha256="a" * 64,
+        created_at=NOW,
+        updated_at=NOW,
+    )
+    second = Document(
+        id="doc_second",
+        source_id="src_second",
+        content_sha256="a" * 64,
+        created_at=NOW,
+        updated_at=NOW,
+    )
+    relation = SourceLineageRelation(
+        id="slr_contract",
+        document_ids=(first.id, second.id),
+        relation_type=SourceLineageRelationType.VERBATIM_REPUBLICATION,
+        shared_content_sha256="a" * 64,
+        rationale="The archived bytes are identical.",
+        review_provenance_activity_id="prv_contract",
+        reviewed_at=NOW,
+    )
+
+    clusters, memberships = build_evidence_graph_lineage_clusters(
+        snapshot="b" * 64,
+        documents=(first, second),
+        lineage_relations=(relation,),
+        contributing_document_ids=(first.id, second.id),
+    )
+
+    assert clusters[0].document_ids == (first.id, second.id)
+    assert clusters[0].source_lineage_relation_ids == (relation.id,)
+    assert memberships[first.id].lineage_cluster_id == memberships[second.id].lineage_cluster_id
+
+
 class StaleProjection:
     def get_complete_evidence_graph_manifest(self) -> EvidenceGraphProjectionManifest:
         return EvidenceGraphProjectionManifest(
@@ -184,6 +235,7 @@ class StaleProjection:
             adapter_configuration_digest="a" * 64,
             edge_count=0,
             contribution_count=0,
+            lineage_cluster_count=0,
             content_fingerprint="b" * 64,
             publication_status="complete",
             published_at=NOW,
@@ -208,6 +260,7 @@ class MissingRelationshipProjection:
             adapter_configuration_digest="a" * 64,
             edge_count=0,
             contribution_count=0,
+            lineage_cluster_count=0,
             content_fingerprint="b" * 64,
             publication_status="complete",
             published_at=NOW,
@@ -243,7 +296,7 @@ def test_stale_evidence_graph_manifest_blocks_explanation() -> None:
 
 def test_missing_relationship_records_a_typed_failed_explanation() -> None:
     ledger = FakeLedger(validation_status=EvidenceValidationAttemptStatus.SUCCEEDED)
-    _, _, snapshot = build_evidence_graph_state(cast(EvidenceGraphStateLedger, ledger))
+    _, _, _, snapshot = build_evidence_graph_state(cast(EvidenceGraphStateLedger, ledger))
     projection = MissingRelationshipProjection(snapshot)
 
     result = explain_evidence_graph_relationship(

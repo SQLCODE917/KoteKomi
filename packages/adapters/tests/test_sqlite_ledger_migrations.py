@@ -19,6 +19,7 @@ def test_initialize_empty_ledger_creates_required_tables(tmp_path: Path) -> None
         "006",
         "007",
         "008",
+        "009",
     )
     with sqlite3.connect(ledger_path) as connection:
         tables = {
@@ -44,13 +45,14 @@ def test_initialize_existing_ledger_is_idempotent(tmp_path: Path) -> None:
         "006",
         "007",
         "008",
+        "009",
     )
     assert second.applied_migrations == ()
     with sqlite3.connect(ledger_path) as connection:
         row = connection.execute("SELECT count(*) FROM ledger_migrations").fetchone()
     assert row is not None
     migration_count = row[0]
-    assert migration_count == 8
+    assert migration_count == 9
 
 
 def test_analysis_coverage_scope_queries_use_targeted_indexes(tmp_path: Path) -> None:

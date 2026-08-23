@@ -41,6 +41,7 @@ RawBlobId = Annotated[str, Field(pattern=r"^blb_[A-Za-z0-9][A-Za-z0-9_-]*$")]
 SourceCaptureId = Annotated[str, Field(pattern=r"^cap_[A-Za-z0-9][A-Za-z0-9_-]*$")]
 CaptureDocumentResolutionId = Annotated[str, Field(pattern=r"^cdr_[A-Za-z0-9][A-Za-z0-9_-]*$")]
 DocumentRevisionRelationId = Annotated[str, Field(pattern=r"^drv_[A-Za-z0-9][A-Za-z0-9_-]*$")]
+SourceLineageRelationId = Annotated[str, Field(pattern=r"^slr_[A-Za-z0-9][A-Za-z0-9_-]*$")]
 DocumentRepresentationId = Annotated[str, Field(pattern=r"^rep_[A-Za-z0-9][A-Za-z0-9_-]*$")]
 TextViewId = Annotated[str, Field(pattern=r"^tvw_[A-Za-z0-9][A-Za-z0-9_-]*$")]
 DocumentNodeId = Annotated[str, Field(pattern=r"^nod_[A-Za-z0-9][A-Za-z0-9_-]*$")]
@@ -115,6 +116,19 @@ class DocumentRevisionType(StrEnum):
     CLARIFIES = "clarifies"
     SUPERSEDES = "supersedes"
     WITHDRAWS = "withdraws"
+
+
+class SourceLineageRelationType(StrEnum):
+    """Reviewed cross-source relationship admitted to the canonical Ledger."""
+
+    VERBATIM_REPUBLICATION = "verbatim_republication"
+
+
+class CrossSourceRelationState(StrEnum):
+    """What the Ledger records about a Document's cross-source lineage."""
+
+    RECORDED_RELATION = "recorded_relation"
+    NO_CROSS_SOURCE_RELATION_RECORDED = "no_cross_source_relation_recorded"
 
 
 class TextViewKind(StrEnum):
@@ -658,6 +672,28 @@ class DocumentRevisionRelation(DomainModel):
     def validate_documents(self) -> Self:
         if self.earlier_document_id == self.later_document_id:
             raise ValueError("Document revision relation cannot reference one Document twice.")
+        return self
+
+
+class SourceLineageRelation(DomainModel):
+    """A human-reviewed relation between two distinct source Documents.
+
+    The only DR-6.1B relation is an exact-byte verbatim republication.  It
+    deliberately records no claim about sources that have no such relation.
+    """
+
+    id: SourceLineageRelationId
+    document_ids: tuple[DocumentId, DocumentId]
+    relation_type: SourceLineageRelationType
+    shared_content_sha256: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
+    rationale: NonEmptyStr
+    review_provenance_activity_id: ProvenanceActivityId
+    reviewed_at: datetime
+
+    @model_validator(mode="after")
+    def validate_cross_source_pair(self) -> Self:
+        if self.document_ids[0] >= self.document_ids[1]:
+            raise ValueError("Source lineage Document IDs must be distinct and lexically ordered.")
         return self
 
 
@@ -2592,6 +2628,8 @@ class EvidenceGraphContribution(DomainModel):
     assertion_evidence_link_ids: tuple[AssertionEvidenceLinkId, ...]
     validation_attempt_ids: tuple[EvidenceValidationAttemptId, ...]
     evidence_target_ids: tuple[EvidenceTargetId, ...]
+    source_document_ids: tuple[DocumentId, ...]
+    lineage_memberships: tuple[EvidenceGraphLineageMembership, ...]
     assertion_status: AssertionStatus
     source_authorities: tuple[SourceAuthority, ...]
     evidence_polarities: tuple[EvidencePolarity, ...]
@@ -2607,7 +2645,49 @@ class EvidenceGraphContribution(DomainModel):
             raise ValueError("EvidenceGraphContribution requires validation attempts.")
         if not self.evidence_target_ids:
             raise ValueError("EvidenceGraphContribution requires EvidenceTargets.")
+        if tuple(sorted(set(self.source_document_ids))) != self.source_document_ids:
+            raise ValueError(
+                "EvidenceGraphContribution source Document IDs must be unique and ordered."
+            )
+        membership_document_ids = tuple(item.document_id for item in self.lineage_memberships)
+        if membership_document_ids != self.source_document_ids:
+            raise ValueError(
+                "EvidenceGraphContribution lineage memberships must cover its Documents."
+            )
         return self
+
+
+class EvidenceGraphLineageCluster(DomainModel):
+    """A derived, rebuildable cluster of source Documents for graph evidence."""
+
+    lineage_cluster_id: NonEmptyStr
+    document_ids: tuple[DocumentId, ...]
+    source_lineage_relation_ids: tuple[SourceLineageRelationId, ...] = ()
+    cross_source_relation_state: CrossSourceRelationState
+    source_snapshot_digest: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
+    policy_id: NonEmptyStr
+    cluster_fingerprint: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
+
+    @model_validator(mode="after")
+    def validate_cluster(self) -> Self:
+        if not self.document_ids:
+            raise ValueError("EvidenceGraphLineageCluster requires Documents.")
+        if tuple(sorted(set(self.document_ids))) != self.document_ids:
+            raise ValueError("EvidenceGraphLineageCluster Document IDs must be unique and ordered.")
+        if tuple(sorted(set(self.source_lineage_relation_ids))) != self.source_lineage_relation_ids:
+            raise ValueError("EvidenceGraphLineageCluster relation IDs must be unique and ordered.")
+        if self.cross_source_relation_state is CrossSourceRelationState.RECORDED_RELATION:
+            if not self.source_lineage_relation_ids:
+                raise ValueError("Recorded lineage clusters require accepted relations.")
+        elif self.source_lineage_relation_ids:
+            raise ValueError("Unlinked lineage clusters cannot carry accepted relations.")
+        return self
+
+
+class EvidenceGraphLineageMembership(DomainModel):
+    document_id: DocumentId
+    lineage_cluster_id: NonEmptyStr
+    cross_source_relation_state: CrossSourceRelationState
 
 
 class EvidenceGraphEdge(DomainModel):
@@ -2640,6 +2720,7 @@ class EvidenceGraphProjectionManifest(DomainModel):
     adapter_configuration_digest: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
     edge_count: int = Field(ge=0)
     contribution_count: int = Field(ge=0)
+    lineage_cluster_count: int = Field(ge=0)
     content_fingerprint: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
     publication_status: NonEmptyStr
     created_at: datetime = Field(default_factory=utc_now)
@@ -2663,6 +2744,8 @@ class EvidenceGraphExplanationRecord(DomainModel):
     relationship_id: RelationshipId
     evidence_graph_edge_id: NonEmptyStr | None = None
     contribution_ids: tuple[NonEmptyStr, ...] = ()
+    source_document_ids: tuple[DocumentId, ...] = ()
+    lineage_cluster_ids: tuple[NonEmptyStr, ...] = ()
     context_results: tuple[LedgerContextResult, ...] = ()
     failure_code: str | None = None
     created_at: datetime = Field(default_factory=utc_now)

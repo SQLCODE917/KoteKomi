@@ -1,0 +1,72 @@
+{
+  "$defs": {
+    "SourceLineageRelationType": {
+      "description": "Reviewed cross-source relationship admitted to the canonical Ledger.",
+      "enum": [
+        "verbatim_republication"
+      ],
+      "title": "SourceLineageRelationType",
+      "type": "string"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "A human-reviewed relation between two distinct source Documents.\n\nThe only DR-6.1B relation is an exact-byte verbatim republication.  It\ndeliberately records no claim about sources that have no such relation.",
+  "properties": {
+    "document_ids": {
+      "maxItems": 2,
+      "minItems": 2,
+      "prefixItems": [
+        {
+          "pattern": "^doc_[A-Za-z0-9][A-Za-z0-9_-]*$",
+          "type": "string"
+        },
+        {
+          "pattern": "^doc_[A-Za-z0-9][A-Za-z0-9_-]*$",
+          "type": "string"
+        }
+      ],
+      "title": "Document Ids",
+      "type": "array"
+    },
+    "id": {
+      "pattern": "^slr_[A-Za-z0-9][A-Za-z0-9_-]*$",
+      "title": "Id",
+      "type": "string"
+    },
+    "rationale": {
+      "minLength": 1,
+      "title": "Rationale",
+      "type": "string"
+    },
+    "relation_type": {
+      "$ref": "#/$defs/SourceLineageRelationType"
+    },
+    "review_provenance_activity_id": {
+      "pattern": "^prv_[A-Za-z0-9][A-Za-z0-9_-]*$",
+      "title": "Review Provenance Activity Id",
+      "type": "string"
+    },
+    "reviewed_at": {
+      "format": "date-time",
+      "title": "Reviewed At",
+      "type": "string"
+    },
+    "shared_content_sha256": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Shared Content Sha256",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "document_ids",
+    "relation_type",
+    "shared_content_sha256",
+    "rationale",
+    "review_provenance_activity_id",
+    "reviewed_at"
+  ],
+  "title": "SourceLineageRelation",
+  "type": "object"
+}

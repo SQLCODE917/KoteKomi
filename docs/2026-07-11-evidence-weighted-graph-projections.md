@@ -3,7 +3,8 @@
 - Status: Accepted
 - Parent: [Derived Document Retrieval Program](2026-07-11-derived-document-retrieval.md)
 - Depends on: [Knowledge-Graph Retrieval Plane](2026-08-23-knowledge-graph-retrieval-plane.md)
-- Active child: [Evidence-Linked Graph Projection MVP](2026-08-23-evidence-linked-graph-projection-mvp.md)
+- Implemented child: [Evidence-Linked Graph Projection MVP](2026-08-23-evidence-linked-graph-projection-mvp.md)
+- Latest implemented child: [Evidence Graph Lineage Inputs](2026-08-23-evidence-graph-lineage-inputs.md)
 
 ## Context & Problem
 
@@ -50,12 +51,12 @@ Rebuilding from identical authoritative inputs and policy must preserve selected
 | Child | Purpose | Validation |
 | --- | --- | --- |
 | DR-6.1A | Project current Relationships into Contributions that trace to validated evidence. | A canonical source produces an inspectable Relationship explanation and identical rebuild result. |
-| DR-6.1B | Add source lineage groups and independence inputs. | A syndicated-source fixture preserves all sources but identifies one lineage group. |
+| DR-6.1B | Add reviewed exact-byte source-lineage inputs and derived lineage groups. | Two declared sources with identical deposited bytes preserve both Documents and identify one reviewed lineage group. |
 | DR-6.1C | Add temporal and historical projection views. | A correction or withdrawal fixture returns distinct current and as-of explanations. |
 | DR-6.1D | Add explicit dimensions and a named Score policy. | A contradiction and unknown-dimension fixture exposes each input without false probability semantics. |
 
-DR-6.1A is the only child specified for implementation now.
-The project must design each later child after it evaluates the completed preceding child.
+DR-6.1B is complete. The project must design DR-6.1C only after it evaluates the
+completed lineage behavior.
 
 ## Proposed Architecture
 

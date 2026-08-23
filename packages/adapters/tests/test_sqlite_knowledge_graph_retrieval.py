@@ -11,8 +11,11 @@ from kotekomi_application.evidence_graph_projection import (
 from kotekomi_application.knowledge_graph_retrieval import KnowledgeGraphProjectionBuildInput
 from kotekomi_domain import (
     AssertionStatus,
+    CrossSourceRelationState,
     EvidenceGraphContribution,
     EvidenceGraphEdge,
+    EvidenceGraphLineageCluster,
+    EvidenceGraphLineageMembership,
     EvidenceGraphProjectionManifest,
     EvidenceNecessity,
     EvidencePolarity,
@@ -116,10 +119,26 @@ def _evidence_build() -> EvidenceGraphProjectionBuildInput:
         assertion_evidence_link_ids=("ael_contract",),
         validation_attempt_ids=("eva_contract",),
         evidence_target_ids=("etg_contract",),
+        source_document_ids=("doc_contract",),
+        lineage_memberships=(
+            EvidenceGraphLineageMembership(
+                document_id="doc_contract",
+                lineage_cluster_id="lcl_contract",
+                cross_source_relation_state=CrossSourceRelationState.NO_CROSS_SOURCE_RELATION_RECORDED,
+            ),
+        ),
         assertion_status=AssertionStatus.REPORTED,
         source_authorities=(),
         evidence_polarities=(EvidencePolarity.SUPPORTS,),
         evidence_necessities=(EvidenceNecessity.REQUIRED,),
+    )
+    cluster = EvidenceGraphLineageCluster(
+        lineage_cluster_id="lcl_contract",
+        document_ids=("doc_contract",),
+        cross_source_relation_state=CrossSourceRelationState.NO_CROSS_SOURCE_RELATION_RECORDED,
+        source_snapshot_digest="a" * 64,
+        policy_id="reviewed_exact_content_sha256_v1",
+        cluster_fingerprint="d" * 64,
     )
     manifest = EvidenceGraphProjectionManifest(
         projection_manifest_id="egm_contract",
@@ -130,11 +149,12 @@ def _evidence_build() -> EvidenceGraphProjectionBuildInput:
         adapter_configuration_digest="b" * 64,
         edge_count=1,
         contribution_count=1,
+        lineage_cluster_count=1,
         content_fingerprint="c" * 64,
         publication_status="complete",
         published_at=datetime(2026, 8, 23, tzinfo=UTC),
     )
-    return EvidenceGraphProjectionBuildInput(manifest, (edge,), (contribution,))
+    return EvidenceGraphProjectionBuildInput(manifest, (edge,), (contribution,), (cluster,))
 
 
 def test_sqlite_evidence_graph_projection_publishes_and_rebuilds(tmp_path: Path) -> None:
@@ -150,6 +170,8 @@ def test_sqlite_evidence_graph_projection_publishes_and_rebuilds(tmp_path: Path)
         assert projection.load_evidence_graph_contributions(manifest, edge.evidence_graph_edge_id)[
             0
         ].evidence_target_ids == ("etg_contract",)
+        clusters = projection.load_evidence_graph_lineage_clusters(manifest, ("lcl_contract",))
+        assert clusters[0].document_ids == ("doc_contract",)
         projection.delete_evidence_graph_projection()
         assert projection.get_complete_evidence_graph_manifest() is None
         assert projection.publish_evidence_graph(_evidence_build())[1] is False

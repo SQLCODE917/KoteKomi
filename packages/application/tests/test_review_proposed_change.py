@@ -46,6 +46,7 @@ from kotekomi_domain import (
     ReviewStatus,
     Source,
     SourceAuthority,
+    SourceLineageRelation,
     SourceType,
     TextView,
     TextViewKind,
@@ -76,6 +77,7 @@ class FakeReviewLedger:
         self.relationships: dict[str, Relationship] = {}
         self.outcomes: dict[str, Outcome] = {}
         self.argument_edges: dict[str, ArgumentEdge] = {}
+        self.source_lineage_relations: dict[str, SourceLineageRelation] = {}
 
     def get_proposed_change(self, record_id: str) -> ProposedChange | None:
         return self.proposed_changes.get(record_id)
@@ -181,6 +183,9 @@ class FakeReviewLedger:
 
     def save_argument_edge(self, record: ArgumentEdge) -> None:
         self.argument_edges[record.id] = record
+
+    def save_source_lineage_relation(self, record: SourceLineageRelation) -> None:
+        self.source_lineage_relations[record.id] = record
 
 
 def seed_reference_records(ledger: FakeReviewLedger) -> None:

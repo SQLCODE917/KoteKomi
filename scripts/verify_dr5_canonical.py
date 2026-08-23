@@ -230,13 +230,14 @@ def _approve(
     record_type: str,
     record: JsonObject,
     evidence_id: str | None = None,
+    validation_attempt_id: str = "eva_directive",
 ) -> None:
     proposed: JsonObject = {"record_type": record_type, "stable_label": change_id, "record": record}
     if evidence_id is not None:
         proposed["evidence_links"] = [
             {
                 "evidence_target_id": evidence_id,
-                "validation_attempt_id": "eva_directive",
+                "validation_attempt_id": validation_attempt_id,
                 "role": "direct_support",
                 "polarity": "supports",
                 "necessity": "required",

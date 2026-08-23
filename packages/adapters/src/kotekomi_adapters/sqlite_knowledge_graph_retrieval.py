@@ -21,6 +21,7 @@ from kotekomi_domain import (
     EvidenceGraphContribution,
     EvidenceGraphEdge,
     EvidenceGraphExplanationRecord,
+    EvidenceGraphLineageCluster,
     EvidenceGraphProjectionManifest,
     KnowledgeGraphEdge,
     KnowledgeGraphRetrievalIndexManifest,
@@ -58,6 +59,7 @@ class SQLiteKnowledgeGraphRetrievalAdapter:
         self._connection.executescript(
             """
             DELETE FROM evidence_graph_explanation_records;
+            DELETE FROM evidence_graph_lineage_clusters;
             DELETE FROM evidence_graph_contributions;
             DELETE FROM evidence_graph_edges;
             DELETE FROM evidence_graph_manifests;
@@ -79,6 +81,21 @@ class SQLiteKnowledgeGraphRetrievalAdapter:
                 EvidenceGraphFailureCode.PROJECTION_CORRUPT,
                 "Evidence graph contributions are not unique.",
             )
+        if len({item.lineage_cluster_id for item in build.lineage_clusters}) != len(
+            build.lineage_clusters
+        ):
+            raise EvidenceGraphError(
+                EvidenceGraphFailureCode.PROJECTION_CORRUPT,
+                "Evidence graph lineage clusters are not unique.",
+            )
+        if any(
+            item.source_snapshot_digest != manifest.source_snapshot_digest
+            for item in build.lineage_clusters
+        ):
+            raise EvidenceGraphError(
+                EvidenceGraphFailureCode.PROJECTION_CORRUPT,
+                "Evidence graph lineage cluster does not belong to the projection snapshot.",
+            )
         self._connection.execute("BEGIN IMMEDIATE")
         try:
             row = self._connection.execute(
@@ -97,6 +114,7 @@ class SQLiteKnowledgeGraphRetrievalAdapter:
             self._connection.executescript(
                 """
                 DELETE FROM evidence_graph_explanation_records;
+                DELETE FROM evidence_graph_lineage_clusters;
                 DELETE FROM evidence_graph_contributions;
                 DELETE FROM evidence_graph_edges;
                 DELETE FROM evidence_graph_manifests;
@@ -124,13 +142,28 @@ class SQLiteKnowledgeGraphRetrievalAdapter:
                         contribution.model_dump_json(),
                     ),
                 )
+            for cluster in build.lineage_clusters:
+                self._connection.execute(
+                    """
+                    INSERT INTO evidence_graph_lineage_clusters
+                    (lineage_cluster_id, cluster_json) VALUES (?, ?)
+                    """,
+                    (cluster.lineage_cluster_id, cluster.model_dump_json()),
+                )
             counts = (
                 self._connection.execute("SELECT COUNT(*) FROM evidence_graph_edges").fetchone()[0],
                 self._connection.execute(
                     "SELECT COUNT(*) FROM evidence_graph_contributions"
                 ).fetchone()[0],
+                self._connection.execute(
+                    "SELECT COUNT(*) FROM evidence_graph_lineage_clusters"
+                ).fetchone()[0],
             )
-            if counts != (manifest.edge_count, manifest.contribution_count):
+            if counts != (
+                manifest.edge_count,
+                manifest.contribution_count,
+                manifest.lineage_cluster_count,
+            ):
                 raise EvidenceGraphError(
                     EvidenceGraphFailureCode.PROJECTION_CORRUPT,
                     "Evidence graph write count does not match the projection manifest.",
@@ -205,6 +238,36 @@ class SQLiteKnowledgeGraphRetrievalAdapter:
             raise EvidenceGraphError(
                 EvidenceGraphFailureCode.PROJECTION_CORRUPT,
                 "Evidence graph contribution payload is corrupt.",
+            ) from exc
+
+    def load_evidence_graph_lineage_clusters(
+        self, manifest: EvidenceGraphProjectionManifest, lineage_cluster_ids: tuple[str, ...]
+    ) -> tuple[EvidenceGraphLineageCluster, ...]:
+        if not lineage_cluster_ids:
+            return ()
+        placeholders = ", ".join("?" for _ in lineage_cluster_ids)
+        rows = self._connection.execute(
+            f"""
+            SELECT cluster_json FROM evidence_graph_lineage_clusters
+            WHERE lineage_cluster_id IN ({placeholders}) ORDER BY lineage_cluster_id
+            """,
+            lineage_cluster_ids,
+        ).fetchall()
+        try:
+            clusters = tuple(
+                EvidenceGraphLineageCluster.model_validate_json(str(row["cluster_json"]))
+                for row in rows
+            )
+            if any(
+                item.source_snapshot_digest != manifest.source_snapshot_digest
+                for item in clusters
+            ):
+                raise ValueError("Evidence graph lineage cluster has another source snapshot.")
+            return clusters
+        except (TypeError, ValueError) as exc:
+            raise EvidenceGraphError(
+                EvidenceGraphFailureCode.PROJECTION_CORRUPT,
+                "Evidence graph lineage cluster payload is corrupt.",
             ) from exc
 
     def save_evidence_graph_explanation(self, record: EvidenceGraphExplanationRecord) -> None:
@@ -440,8 +503,15 @@ class SQLiteKnowledgeGraphRetrievalAdapter:
             self._connection.execute(
                 "SELECT COUNT(*) FROM evidence_graph_contributions"
             ).fetchone()[0],
+            self._connection.execute(
+                "SELECT COUNT(*) FROM evidence_graph_lineage_clusters"
+            ).fetchone()[0],
         )
-        if counts != (manifest.edge_count, manifest.contribution_count):
+        if counts != (
+            manifest.edge_count,
+            manifest.contribution_count,
+            manifest.lineage_cluster_count,
+        ):
             raise EvidenceGraphError(
                 EvidenceGraphFailureCode.PROJECTION_CORRUPT,
                 "Evidence graph rows do not match the projection manifest.",
@@ -513,6 +583,10 @@ class SQLiteKnowledgeGraphRetrievalAdapter:
             CREATE TABLE IF NOT EXISTS evidence_graph_explanation_records (
                 explanation_id TEXT PRIMARY KEY NOT NULL,
                 record_json TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS evidence_graph_lineage_clusters (
+                lineage_cluster_id TEXT PRIMARY KEY NOT NULL,
+                cluster_json TEXT NOT NULL
             );
             """
         )

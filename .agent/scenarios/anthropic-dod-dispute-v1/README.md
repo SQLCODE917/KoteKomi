@@ -75,3 +75,14 @@ uv run python scripts/verify_dr6_1_canonical.py
 ```
 
 `queries/dr-6-1-evidence-graph-v1.jsonl` defines Relationship explanations that trace to validated EvidenceTargets.
+
+## DR-6.1B local run
+
+```bash
+uv run python scripts/verify_dr6_1b_canonical.py
+```
+
+The verifier deposits the same locked local bytes under the primary source URL and the
+declared test reprint URL. It then proposes and reviews an exact-byte republication
+relation, and verifies that the evidence graph shows one reviewed lineage cluster while
+keeping original source context for both Documents.

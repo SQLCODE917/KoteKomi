@@ -373,11 +373,13 @@ Document: `docs/2026-08-23-knowledge-graph-retrieval-plane.md`
 
 ### DR-6.1 - Evidence-Linked Graph Projections
 
-Working result: each current accepted Relationship has an inspectable derived source basis before later graph policy adds lineage, time, or Scores.
+Working result: each current accepted Relationship has an inspectable derived source basis, including reviewed cross-source exact-byte lineage where recorded, before later graph policy adds time or Scores.
 
 Program: `docs/2026-07-11-evidence-weighted-graph-projections.md`
 
-Active MVP TDD: `docs/2026-08-23-evidence-linked-graph-projection-mvp.md`
+Implemented MVP TDD: `docs/2026-08-23-evidence-linked-graph-projection-mvp.md`
+
+Latest implemented child TDD: `docs/2026-08-23-evidence-graph-lineage-inputs.md`
 
 ### DR-7 - Cross-Plane Orchestration
 
