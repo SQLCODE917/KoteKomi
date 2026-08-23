@@ -415,6 +415,16 @@ def _page_count(path: Path) -> int:
     )
 
 
+# Public support functions for cumulative retrieval-program verification scripts.
+config_text = _config
+fixture_path = _fixture
+read_json = _read
+run_command = _run
+command_json = _json
+seed_ledger = _seed_ledger
+validate_json = _validate_json
+
+
 if __name__ == "__main__":
     try:
         print(json.dumps(run(), sort_keys=True))

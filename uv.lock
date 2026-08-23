@@ -14,8 +14,8 @@ members = [
     "kotekomi-adapters",
     "kotekomi-application",
     "kotekomi-briefing",
-    "kotekomi-domain",
     "kotekomi-devtools",
+    "kotekomi-domain",
     "kotekomi-pipelines",
 ]
 
@@ -646,7 +646,6 @@ dependencies = [
     { name = "docling" },
     { name = "kotekomi-application" },
     { name = "kotekomi-domain" },
-    { name = "networkx" },
     { name = "onnxruntime" },
 ]
 
@@ -657,7 +656,6 @@ requires-dist = [
     { name = "docling", specifier = ">=2,<3" },
     { name = "kotekomi-application", editable = "packages/application" },
     { name = "kotekomi-domain", editable = "packages/domain" },
-    { name = "networkx", specifier = ">=3.4,<4" },
     { name = "onnxruntime", specifier = ">=1.23,<2" },
 ]
 
@@ -692,17 +690,6 @@ requires-dist = [
 ]
 
 [[package]]
-name = "kotekomi-domain"
-version = "0.1.0"
-source = { editable = "packages/domain" }
-dependencies = [
-    { name = "pydantic" },
-]
-
-[package.metadata]
-requires-dist = [{ name = "pydantic", specifier = ">=2.11,<3" }]
-
-[[package]]
 name = "kotekomi-devtools"
 version = "0.1.0"
 source = { editable = "packages/devtools" }
@@ -712,6 +699,17 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [{ name = "jsonschema", specifier = ">=4.24,<5" }]
+
+[[package]]
+name = "kotekomi-domain"
+version = "0.1.0"
+source = { editable = "packages/domain" }
+dependencies = [
+    { name = "pydantic" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "pydantic", specifier = ">=2.11,<3" }]
 
 [[package]]
 name = "kotekomi-pipelines"

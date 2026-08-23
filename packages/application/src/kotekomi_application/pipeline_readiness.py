@@ -35,8 +35,6 @@ from kotekomi_application.review_queue_packet import (
 
 SOURCE_INGEST_COMMAND = "kotekomi source add-file <path> --source-url <https-url>"
 REVIEW_NEXT_COMMAND = "kotekomi review next"
-GRAPH_PROJECT_COMMAND = "kotekomi graph project"
-GRAPH_MINE_COMMAND = "kotekomi graph mine"
 BRIEFING_GENERATE_COMMAND = "kotekomi briefing generate --title <title>"
 
 
@@ -44,8 +42,6 @@ class PipelineStage(StrEnum):
     READY_FOR_SOURCE_INGEST = "ready_for_source_ingest"
     AWAITING_BOUNDED_EXTRACTION = "awaiting_bounded_extraction"
     REVIEW_REQUIRED = "review_required"
-    READY_FOR_GRAPH_PROJECTION = "ready_for_graph_projection"
-    READY_FOR_GRAPH_MINING = "ready_for_graph_mining"
     READY_FOR_BRIEFING = "ready_for_briefing"
     BRIEFING_CURRENT = "briefing_current"
 
@@ -168,11 +164,7 @@ def get_pipeline_status(
             next_command=REVIEW_NEXT_COMMAND,
             next_command_plan=next_command_plan,
             safe_commands=(REVIEW_NEXT_COMMAND,),
-            blocked_commands=(
-                GRAPH_PROJECT_COMMAND,
-                GRAPH_MINE_COMMAND,
-                BRIEFING_GENERATE_COMMAND,
-            ),
+            blocked_commands=(BRIEFING_GENERATE_COMMAND,),
             blockers=blockers,
             review_required=True,
             pending_count=review_readiness.pending_count,
@@ -204,14 +196,10 @@ def get_pipeline_status(
         stage = PipelineStage.READY_FOR_BRIEFING
         next_command = BRIEFING_GENERATE_COMMAND
         safe_commands = (BRIEFING_GENERATE_COMMAND,)
-    elif indexes.assertions and indexes.relationships and indexes.outcomes:
-        stage = PipelineStage.READY_FOR_GRAPH_MINING
-        next_command = GRAPH_MINE_COMMAND
-        safe_commands = (GRAPH_PROJECT_COMMAND, GRAPH_MINE_COMMAND)
     elif indexes.assertions:
-        stage = PipelineStage.READY_FOR_GRAPH_PROJECTION
-        next_command = GRAPH_PROJECT_COMMAND
-        safe_commands = (GRAPH_PROJECT_COMMAND,)
+        stage = PipelineStage.READY_FOR_BRIEFING
+        next_command = BRIEFING_GENERATE_COMMAND
+        safe_commands = (BRIEFING_GENERATE_COMMAND,)
     else:
         stage = PipelineStage.READY_FOR_SOURCE_INGEST
         next_command = SOURCE_INGEST_COMMAND
@@ -329,22 +317,6 @@ def _command_plan(
         )
     if stage is PipelineStage.REVIEW_REQUIRED:
         return _review_next_plan(stage, pipeline_input, blockers)
-    if stage is PipelineStage.READY_FOR_GRAPH_PROJECTION:
-        return _ledger_only_plan(
-            stage=stage,
-            pipeline_input=pipeline_input,
-            command=GRAPH_PROJECT_COMMAND,
-            argv_prefix=("graph", "project"),
-            blockers=blockers,
-        )
-    if stage is PipelineStage.READY_FOR_GRAPH_MINING:
-        return _ledger_only_plan(
-            stage=stage,
-            pipeline_input=pipeline_input,
-            command=GRAPH_MINE_COMMAND,
-            argv_prefix=("graph", "mine"),
-            blockers=blockers,
-        )
     if stage is PipelineStage.READY_FOR_BRIEFING:
         return _briefing_generate_plan(stage, pipeline_input)
     if stage is PipelineStage.BRIEFING_CURRENT:
@@ -649,10 +621,6 @@ def _next_step_reason(status: PipelineStatus) -> str:
         return "No Source records exist in the Ledger."
     if status.stage is PipelineStage.AWAITING_BOUNDED_EXTRACTION:
         return "Documents await a bounded extraction task; no extraction command is available."
-    if status.stage is PipelineStage.READY_FOR_GRAPH_PROJECTION:
-        return "Accepted Assertions exist and graph projection is the next safe derived step."
-    if status.stage is PipelineStage.READY_FOR_GRAPH_MINING:
-        return "Accepted Assertions, Relationships, and Outcomes can feed graph mining."
     if status.stage is PipelineStage.READY_FOR_BRIEFING:
         return "Accepted analytic records are ready for Briefing generation."
     if status.stage is PipelineStage.BRIEFING_CURRENT:

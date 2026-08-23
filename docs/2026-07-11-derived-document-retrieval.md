@@ -369,7 +369,7 @@ Prerequisite: `docs/2026-08-23-assertion-evidence-basis-and-lineage.md`
 
 Working result: deterministic graph traversal nominates accepted records and source material. Navigation artifacts remain non-evidentiary. Start without graph embeddings or generated community reports.
 
-Detailed TDD: write only after the Ledger plane and evidence-resolution path are stable.
+Document: `docs/2026-08-23-knowledge-graph-retrieval-plane.md`
 
 ### DR-7 - Cross-Plane Orchestration
 

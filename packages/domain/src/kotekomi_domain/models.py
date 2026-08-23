@@ -2285,6 +2285,7 @@ class RetrievalPlane(StrEnum):
 
     DOCUMENT = "document"
     LEDGER = "ledger"
+    KNOWLEDGE_GRAPH = "knowledge_graph"
 
 
 class RetrievalChannel(StrEnum):
@@ -2294,6 +2295,7 @@ class RetrievalChannel(StrEnum):
     LEXICAL = "lexical"
     SEMANTIC = "semantic"
     STRUCTURED_FILTER = "structured_filter"
+    GRAPH_TRAVERSAL = "graph_traversal"
 
 
 class LedgerRetrievalRecordType(StrEnum):
@@ -2425,6 +2427,157 @@ class LedgerRetrievalIndexManifest(DomainModel):
             raise ValueError("A complete LedgerRetrievalIndexManifest requires published_at.")
         if self.publication_status != "complete" and self.published_at is not None:
             raise ValueError("Only a complete LedgerRetrievalIndexManifest may be published.")
+        return self
+
+
+class KnowledgeGraphNode(DomainModel):
+    """A derived searchable node in the Knowledge-Graph retrieval plane."""
+
+    node_id: NonEmptyStr
+    node_type: NonEmptyStr
+    label: NonEmptyStr
+    normalized_label: NonEmptyStr
+    source_order: int = Field(ge=0)
+
+
+class KnowledgeGraphEdge(DomainModel):
+    """A derived, evidence-linked navigation edge."""
+
+    edge_id: NonEmptyStr
+    source_node_id: NonEmptyStr
+    target_node_id: NonEmptyStr
+    edge_type: NonEmptyStr
+    source_record_id: NonEmptyStr
+    evidence_assertion_ids: tuple[AssertionId, ...]
+
+    @model_validator(mode="after")
+    def validate_evidence_basis(self) -> Self:
+        if not self.evidence_assertion_ids:
+            raise ValueError("KnowledgeGraphEdge requires accepted Assertion support.")
+        if len(set(self.evidence_assertion_ids)) != len(self.evidence_assertion_ids):
+            raise ValueError("KnowledgeGraphEdge Assertion support must be unique.")
+        return self
+
+
+class KnowledgeGraphTraversalPath(DomainModel):
+    """One deterministic route through derived graph edges."""
+
+    node_ids: tuple[NonEmptyStr, ...]
+    edge_ids: tuple[NonEmptyStr, ...]
+    edge_directions: tuple[NonEmptyStr, ...]
+
+    @model_validator(mode="after")
+    def validate_path(self) -> Self:
+        if len(self.node_ids) != len(self.edge_ids) + 1:
+            raise ValueError("KnowledgeGraphTraversalPath nodes must bound its edges.")
+        if len(self.edge_ids) != len(self.edge_directions):
+            raise ValueError("KnowledgeGraphTraversalPath directions must match its edges.")
+        if any(direction not in {"forward", "reverse"} for direction in self.edge_directions):
+            raise ValueError("KnowledgeGraphTraversalPath directions must be forward or reverse.")
+        return self
+
+
+class KnowledgeGraphSeedCandidate(DomainModel):
+    node_id: NonEmptyStr
+    node_type: NonEmptyStr
+    label: NonEmptyStr
+    channel_observation: RetrievalChannelObservation
+
+
+class KnowledgeGraphRetrievalUnit(DomainModel):
+    retrieval_unit_id: NonEmptyStr
+    plane: RetrievalPlane = RetrievalPlane.KNOWLEDGE_GRAPH
+    source_record_id: NonEmptyStr
+    record_type: LedgerRetrievalRecordType
+    evidence_assertion_ids: tuple[AssertionId, ...]
+    source_snapshot_digest: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
+    source_order: int = Field(ge=0)
+    unit_policy_id: NonEmptyStr
+    unit_fingerprint: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
+
+    @model_validator(mode="after")
+    def validate_unit(self) -> Self:
+        if not self.evidence_assertion_ids:
+            raise ValueError("KnowledgeGraphRetrievalUnit requires evidence Assertion IDs.")
+        if len(set(self.evidence_assertion_ids)) != len(self.evidence_assertion_ids):
+            raise ValueError("KnowledgeGraphRetrievalUnit Assertion IDs must be unique.")
+        return self
+
+
+class KnowledgeGraphRetrievalHit(DomainModel):
+    retrieval_unit_id: NonEmptyStr
+    plane: RetrievalPlane = RetrievalPlane.KNOWLEDGE_GRAPH
+    source_record_id: NonEmptyStr
+    record_type: LedgerRetrievalRecordType
+    terminal_evidence_target_ids: tuple[EvidenceTargetId, ...]
+    traversal_path: KnowledgeGraphTraversalPath
+    channel_observations: tuple[RetrievalChannelObservation, ...]
+    final_rank: int = Field(ge=1)
+    selected: bool
+    selection_reason: NonEmptyStr
+
+    @model_validator(mode="after")
+    def validate_hit(self) -> Self:
+        if not self.terminal_evidence_target_ids:
+            raise ValueError("KnowledgeGraphRetrievalHit requires terminal EvidenceTarget IDs.")
+        if (
+            len(self.channel_observations) != 1
+            or self.channel_observations[0].channel is not RetrievalChannel.GRAPH_TRAVERSAL
+        ):
+            raise ValueError("KnowledgeGraphRetrievalHit requires one graph traversal observation.")
+        return self
+
+
+class KnowledgeGraphRetrievalQueryRecord(DomainModel):
+    retrieval_query_id: NonEmptyStr
+    source_snapshot_digest: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
+    seed_text: str
+    normalized_seed_text: str
+    query_policy_id: NonEmptyStr
+    index_manifest_id: NonEmptyStr
+    maximum_hops: int = Field(ge=1, le=2)
+    seed_candidates: tuple[KnowledgeGraphSeedCandidate, ...] = ()
+    candidate_hits: tuple[KnowledgeGraphRetrievalHit, ...] = ()
+    selected_record_ids: tuple[NonEmptyStr, ...] = ()
+    context_results: tuple[LedgerContextResult, ...] = ()
+    failure_code: str | None = None
+    created_at: datetime = Field(default_factory=utc_now)
+
+
+class KnowledgeGraphRetrievalIndexManifest(DomainModel):
+    index_manifest_id: NonEmptyStr
+    plane: RetrievalPlane = RetrievalPlane.KNOWLEDGE_GRAPH
+    channels: tuple[RetrievalChannel, ...]
+    source_snapshot_digest: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
+    unit_policy_id: NonEmptyStr
+    projection_policy_id: NonEmptyStr
+    query_policy_compatibility: NonEmptyStr
+    adapter_identity: NonEmptyStr
+    adapter_configuration_digest: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
+    unit_count: int = Field(ge=0)
+    node_count: int = Field(ge=0)
+    edge_count: int = Field(ge=0)
+    content_fingerprint: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
+    publication_status: NonEmptyStr
+    created_at: datetime = Field(default_factory=utc_now)
+    published_at: datetime | None = None
+
+    @model_validator(mode="after")
+    def validate_manifest(self) -> Self:
+        if self.channels != (
+            RetrievalChannel.EXACT,
+            RetrievalChannel.LEXICAL,
+            RetrievalChannel.GRAPH_TRAVERSAL,
+        ):
+            raise ValueError("Knowledge graph manifests require label and traversal channels.")
+        if self.publication_status == "complete" and self.published_at is None:
+            raise ValueError(
+                "A complete KnowledgeGraphRetrievalIndexManifest requires published_at."
+            )
+        if self.publication_status != "complete" and self.published_at is not None:
+            raise ValueError(
+                "Only a complete KnowledgeGraphRetrievalIndexManifest may be published."
+            )
         return self
 
 

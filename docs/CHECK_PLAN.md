@@ -70,11 +70,7 @@
 - verify Pipeline executable agent next-step plans with `uv run pytest packages/application/tests/test_pipeline_readiness.py packages/pipelines/tests/test_pipeline_readiness.py`
 - verify Pipeline run-next execution with `uv run pytest packages/application/tests/test_pipeline_readiness.py packages/pipelines/tests/test_pipeline_readiness.py`
 - verify accepted Ledger writes reject missing cross-record references with `uv run pytest packages/application/tests/test_review_proposed_change.py`
-- run graph projection Application test with `uv run pytest packages/application/tests/test_project_ledger_graph.py`
-- run graph projection Adapter test with `uv run pytest packages/adapters/tests/test_networkx_graph_analyzer.py`
-- run graph projection Pipeline fixture with `uv run pytest packages/pipelines/tests/test_graph_project.py`
-- run graph mining Application test with `uv run pytest packages/application/tests/test_mine_graph_connections.py`
-- run graph mining Pipeline fixture with `uv run pytest packages/pipelines/tests/test_graph_mine.py`
+- verify current Knowledge-Graph traversal, stale sidecar blocking, ContextPlanner evidence handoff, public commands, and the locked local PDF conformance path with `uv run pytest packages/application/tests/test_knowledge_graph_retrieval.py packages/adapters/tests/test_sqlite_knowledge_graph_retrieval.py packages/pipelines/tests/test_knowledge_graph_retrieval.py && uv run python scripts/verify_dr6_canonical.py`
 - run Briefing generation fixture with `uv run pytest packages/pipelines/tests/test_briefing_generate.py`
 - verify Briefing narrative sections use numbered citations without raw canonical Domain IDs with `uv run pytest packages/briefing/tests/test_markdown_briefing_renderer.py packages/pipelines/tests/test_briefing_generate.py`
 - verify Briefing Markdown renders the orthogonal eight-section outline with `uv run pytest packages/briefing/tests/test_markdown_briefing_renderer.py packages/pipelines/tests/test_briefing_generate.py`

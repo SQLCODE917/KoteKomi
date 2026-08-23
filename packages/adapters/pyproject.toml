@@ -9,7 +9,6 @@ dependencies = [
   "docling>=2,<3",
   "kotekomi-application",
   "kotekomi-domain",
-  "networkx>=3.4,<4",
   "onnxruntime>=1.23,<2",
 ]
 

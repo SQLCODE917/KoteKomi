@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kotekomi.local/schemas/knowledge-graph-retrieval-suite-v1.schema.json",
+  "title": "KoteKomi Knowledge-Graph retrieval suite v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "suite_id",
+    "scenario_id",
+    "seed_path",
+    "query_pack_paths",
+    "required_channels",
+    "require_rebuild_equivalence"
+  ],
+  "properties": {
+    "schema_version": {"const": "knowledge-graph-retrieval-suite-v1"},
+    "suite_id": {"const": "dr-6-v1"},
+    "scenario_id": {"type": "string", "minLength": 1},
+    "seed_path": {"type": "string", "pattern": "^\\.agent/scenarios/.+\\.json$"},
+    "query_pack_paths": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {"type": "string", "pattern": "^\\.agent/scenarios/.+\\.jsonl$"}
+    },
+    "required_channels": {"const": ["exact", "lexical", "graph_traversal"]},
+    "require_rebuild_equivalence": {"const": true}
+  }
+}

@@ -23,7 +23,7 @@ Non-goals:
 - This TDD does not block existing commands.
 - This TDD does not add a scheduler.
 - This TDD does not run the next command.
-- This TDD does not persist graph projection metadata.
+- This TDD does not persist graph retrieval metadata.
 - This TDD does not add Ledger tables.
 - This TDD does not add Domain Core records.
 
@@ -33,7 +33,7 @@ Forbidden approaches:
 - The Pipeline must not assemble state by parsing command output.
 - The orchestration layer must not mutate Ledger state.
 - The orchestration layer must not approve or reject ProposedChange records.
-- The orchestration layer must not claim graph projection freshness.
+- The orchestration layer must not claim graph retrieval freshness.
 - The orchestration layer must not hide review blockers.
 
 ## 4. Requirements
@@ -193,19 +193,16 @@ Stage selection uses this order:
 3. `ready_for_assertion_proposal` when Documents exist and no accepted Assertions exist.
 4. `ready_for_briefing` when accepted analytic Assertions or ArgumentEdges exist after the latest Briefing.
 5. `briefing_current` when a Briefing exists and no newer accepted record exists.
-6. `ready_for_graph_mining` when accepted Assertions, Relationships, and Outcomes exist.
-7. `ready_for_graph_projection` when accepted Assertions exist.
+6. `ready_for_briefing` when accepted Assertions exist after the latest Briefing.
 
-`review_required` blocks graph projection, graph mining, and Briefing generation.
+`review_required` blocks graph retrieval build and Briefing generation.
 `ready_for_source_ingest` recommends `kotekomi source add-file <path>`.
 `ready_for_assertion_proposal` recommends `kotekomi source propose-assertions`.
-`ready_for_graph_projection` recommends `kotekomi graph project`.
-`ready_for_graph_mining` recommends `kotekomi graph mine`.
 `ready_for_briefing` recommends `kotekomi briefing generate --title <title>`.
 `briefing_current` has no next command.
 
-Graph projection is derived and not persisted.
-Pipeline Readiness does not report graph projection freshness.
+Graph retrieval state is derived and does not change accepted Ledger records.
+Pipeline Readiness does not report graph retrieval freshness.
 
 Example:
 
@@ -265,7 +262,7 @@ The command does not fetch network content.
 - Enforce gates now: rejected because this slice is read-only.
 - Use Review Readiness alone: rejected because agents need a Pipeline-level next command.
 - Persist pipeline state: rejected because the Ledger already stores canonical inputs.
-- Track graph projection freshness now: rejected because graph projection metadata is not persisted.
+- Track graph retrieval freshness now: rejected because graph retrieval metadata is not persisted.
 
 ## 15. Halt Conditions
 

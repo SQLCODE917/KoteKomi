@@ -59,3 +59,11 @@ uv run python scripts/verify_dr5_canonical.py
 
 `ledger-seed-v1.json` declares accepted Ledger records tied to an authoritative text anchor.
 `queries/dr-5-ledger-v1.jsonl` and `suites/dr-5-v1.json` are the immutable Ledger retrieval oracle.
+
+## DR-6 local run
+
+```bash
+uv run python scripts/verify_dr6_canonical.py
+```
+
+`queries/dr-6-knowledge-graph-v1.jsonl` and `suites/dr-6-v1.json` define exact and lexical Graph seed cases.

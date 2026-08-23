@@ -20,10 +20,10 @@ from kotekomi_adapters import (
     LlamaServerEmbeddingAdapter,
     LMStudioEmbeddingAdapter,
     LocalArchiveStore,
-    NetworkXGraphAnalyzer,
     NewsMLG2Adapter,
     OllamaEmbeddingAdapter,
     SQLiteDocumentRetrievalAdapter,
+    SQLiteKnowledgeGraphRetrievalAdapter,
     SQLiteLedgerInitializer,
     SQLiteLedgerRetrievalAdapter,
     sqlite_ledger_transaction,
@@ -35,10 +35,10 @@ from kotekomi_application import (
     BuildDocumentRetrievalProjectionCommand,
     BuildDocumentRetrievalProjectionResult,
     BuildDocumentSemanticProjectionCommand,
+    BuildKnowledgeGraphProjectionCommand,
     BuildLedgerRetrievalProjectionCommand,
     EmbeddingPort,
     EmbeddingProfile,
-    GraphConnectionMiningInput,
     JsonValue,
     LedgerRetrievalFilters,
     ModelRuntimeStatus,
@@ -53,6 +53,7 @@ from kotekomi_application import (
     QueryDocumentHybridRetrievalCommand,
     QueryDocumentRetrievalCommand,
     QueryDocumentSemanticRetrievalCommand,
+    QueryKnowledgeGraphCommand,
     QueryLedgerRetrievalCommand,
     ReviewDrainInput,
     ReviewDrainResult,
@@ -74,6 +75,7 @@ from kotekomi_application import (
     approve_proposed_change,
     build_document_retrieval_projection,
     build_document_semantic_projection,
+    build_knowledge_graph_projection,
     build_ledger_retrieval_projection,
     commit_authoritative_capture,
     commit_authoritative_pdf_capture,
@@ -88,15 +90,14 @@ from kotekomi_application import (
     ingest_structured_news,
     initialize_ledger,
     list_review_queue,
-    mine_graph_connections,
     model_runtime_status_to_json,
     normalize_source_url,
     pipeline_next_to_json,
     pipeline_status_to_json,
-    project_ledger_graph,
     query_document_hybrid_retrieval,
     query_document_retrieval,
     query_document_semantic_retrieval,
+    query_knowledge_graph,
     query_ledger_retrieval,
     reject_proposed_change,
     review_drain_result_to_json,
@@ -220,6 +221,33 @@ def main(argv: list[str] | None = None) -> int:
             subject_id=args.subject_id,
             predicate=args.predicate,
             policy=args.policy,
+            maximum_hits=args.maximum_hits,
+            context_profile=args.context_profile,
+            output_format=args.output_format,
+        )
+
+    if args.command == "retrieval" and args.retrieval_command == "build-graph":
+        config = load_config(
+            config_path=args.config,
+            ledger_path_override=args.ledger_path,
+            archive_path_override=None,
+        )
+        return build_knowledge_graph_retrieval_index(
+            ledger_path=config.ledger_path,
+            output_format=args.output_format,
+            rebuild=args.rebuild,
+        )
+
+    if args.command == "retrieval" and args.retrieval_command == "query-graph":
+        config = load_config(
+            config_path=args.config,
+            ledger_path_override=args.ledger_path,
+            archive_path_override=None,
+        )
+        return query_knowledge_graph_retrieval_index(
+            ledger_path=config.ledger_path,
+            seed=args.seed,
+            maximum_hops=args.maximum_hops,
             maximum_hits=args.maximum_hits,
             context_profile=args.context_profile,
             output_format=args.output_format,
@@ -484,22 +512,6 @@ def main(argv: list[str] | None = None) -> int:
             briefing_title=args.briefing_title,
         )
 
-    if args.command == "graph" and args.graph_command == "project":
-        config = load_config(
-            config_path=args.config,
-            ledger_path_override=args.ledger_path,
-            archive_path_override=None,
-        )
-        return project_graph(config=config)
-
-    if args.command == "graph" and args.graph_command == "mine":
-        config = load_config(
-            config_path=args.config,
-            ledger_path_override=args.ledger_path,
-            archive_path_override=None,
-        )
-        return mine_graph(config=config)
-
     if args.command == "briefing" and args.briefing_command == "generate":
         config = load_config(
             config_path=args.config,
@@ -656,6 +668,25 @@ def build_parser() -> argparse.ArgumentParser:
         "--format", dest="output_format", choices=("text", "json"), default="text"
     )
     retrieval_ledger_query_parser.add_argument("--ledger-path", type=Path, default=None)
+    retrieval_graph_build_parser = retrieval_subparsers.add_parser(
+        "build-graph", help="Build a disposable Knowledge-Graph retrieval projection."
+    )
+    retrieval_graph_build_parser.add_argument("--rebuild", action="store_true")
+    retrieval_graph_build_parser.add_argument(
+        "--format", dest="output_format", choices=("text", "json"), default="text"
+    )
+    retrieval_graph_build_parser.add_argument("--ledger-path", type=Path, default=None)
+    retrieval_graph_query_parser = retrieval_subparsers.add_parser(
+        "query-graph", help="Traverse current accepted Ledger knowledge from a name phrase."
+    )
+    retrieval_graph_query_parser.add_argument("--seed", required=True)
+    retrieval_graph_query_parser.add_argument("--maximum-hops", type=int, choices=(1, 2), default=2)
+    retrieval_graph_query_parser.add_argument("--maximum-hits", required=True, type=int)
+    retrieval_graph_query_parser.add_argument("--context-profile", required=True)
+    retrieval_graph_query_parser.add_argument(
+        "--format", dest="output_format", choices=("text", "json"), default="text"
+    )
+    retrieval_graph_query_parser.add_argument("--ledger-path", type=Path, default=None)
 
     model_parser = subparsers.add_parser("model", help="Local model runtime commands.")
     model_subparsers = model_parser.add_subparsers(dest="model_command")
@@ -895,19 +926,6 @@ def build_parser() -> argparse.ArgumentParser:
     _add_model_runtime_arguments(pipeline_run_next_parser, include_fixture=True)
     pipeline_run_next_parser.add_argument("--document-id", default=None)
     pipeline_run_next_parser.add_argument("--briefing-title", default=None)
-
-    graph_parser = subparsers.add_parser("graph", help="Graph projection commands.")
-    graph_subparsers = graph_parser.add_subparsers(dest="graph_command")
-    project_parser = graph_subparsers.add_parser(
-        "project",
-        help="Project accepted Ledger records into a graph.",
-    )
-    project_parser.add_argument("--ledger-path", type=Path, default=None)
-    mine_parser = graph_subparsers.add_parser(
-        "mine",
-        help="Mine graph connections into pending ProposedChange records.",
-    )
-    mine_parser.add_argument("--ledger-path", type=Path, default=None)
 
     briefing_parser = subparsers.add_parser("briefing", help="Briefing commands.")
     briefing_subparsers = briefing_parser.add_subparsers(dest="briefing_command")
@@ -1158,6 +1176,81 @@ def query_ledger_retrieval_index(
             "status": result.status,
             "retrieval_query_id": result.retrieval_query_id,
             "index_manifest_id": result.index_manifest_id,
+            "hits": [item.model_dump(mode="json") for item in result.hits],
+            "selected_record_ids": list(result.selected_record_ids),
+            "context_results": [item.model_dump(mode="json") for item in result.context_results],
+            "failure": result.failure.value if result.failure is not None else None,
+            "query_policy_id": result.query_policy_id,
+        },
+        output_format,
+    )
+
+
+def _knowledge_graph_index_path(ledger_path: Path) -> Path:
+    return ledger_path.with_suffix(".knowledge-graph.sqlite")
+
+
+def build_knowledge_graph_retrieval_index(
+    *, ledger_path: Path, output_format: str, rebuild: bool
+) -> int:
+    projection = SQLiteKnowledgeGraphRetrievalAdapter(_knowledge_graph_index_path(ledger_path))
+    try:
+        if rebuild:
+            projection.delete_projection()
+        with sqlite_ledger_transaction(ledger_path) as ledger_repository:
+            result = build_knowledge_graph_projection(
+                BuildKnowledgeGraphProjectionCommand(),
+                ledger_repository=ledger_repository,
+                projection=projection,
+            )
+    finally:
+        projection.close()
+    return _print_retrieval_payload(
+        {
+            "status": result.status,
+            "index_manifest_id": result.index_manifest_id,
+            "unit_count": result.unit_count,
+            "node_count": result.node_count,
+            "edge_count": result.edge_count,
+            "content_fingerprint": result.content_fingerprint,
+            "reused_existing_manifest": result.reused_existing_manifest,
+            "failure": result.failure.value if result.failure is not None else None,
+        },
+        output_format,
+    )
+
+
+def query_knowledge_graph_retrieval_index(
+    *,
+    ledger_path: Path,
+    seed: str,
+    maximum_hops: int,
+    maximum_hits: int,
+    context_profile: str,
+    output_format: str,
+) -> int:
+    projection = SQLiteKnowledgeGraphRetrievalAdapter(_knowledge_graph_index_path(ledger_path))
+    try:
+        with sqlite_ledger_transaction(ledger_path) as ledger_repository:
+            result = query_knowledge_graph(
+                QueryKnowledgeGraphCommand(
+                    seed_text=seed,
+                    maximum_hops=maximum_hops,
+                    maximum_hits=maximum_hits,
+                    context_profile_id=context_profile,
+                ),
+                ledger_repository=ledger_repository,
+                projection=projection,
+                tokenizer=_RetrievalValidationTokenizer(),
+            )
+    finally:
+        projection.close()
+    return _print_retrieval_payload(
+        {
+            "status": result.status,
+            "retrieval_query_id": result.retrieval_query_id,
+            "index_manifest_id": result.index_manifest_id,
+            "seed_candidates": [item.model_dump(mode="json") for item in result.seed_candidates],
             "hits": [item.model_dump(mode="json") for item in result.hits],
             "selected_record_ids": list(result.selected_record_ids),
             "context_results": [item.model_dump(mode="json") for item in result.context_results],
@@ -2104,7 +2197,7 @@ def _review_readiness_text(status: ReviewReadinessStatus) -> str:
         f"Pending ProposedChanges: {status.pending_count}",
         f"Pending references: {status.pending_reference_count}",
         f"Missing references: {status.missing_reference_count}",
-        f"Can project graph: {_bool_text(status.can_project_graph)}",
+        f"Can build graph retrieval: {_bool_text(status.can_build_graph_retrieval)}",
         f"Can generate Briefing: {_bool_text(status.can_generate_briefing)}",
         f"Next recommended command: {status.next_recommended_command}",
         "Pending record types:",
@@ -2441,36 +2534,6 @@ def _json_value(value: object, context: str) -> JsonValue:
             result[key] = _json_value(item, f"{context}.{key}")
         return result
     raise ValueError(f"{context} contains a non-JSON value.")
-
-
-def project_graph(*, config: PipelineConfig) -> int:
-    graph_analyzer = NetworkXGraphAnalyzer()
-    with sqlite_ledger_transaction(config.ledger_path) as ledger_repository:
-        projection = project_ledger_graph(ledger_repository, graph_analyzer)
-
-    print(f"Graph nodes: {len(projection.nodes)}")
-    print(f"Graph edges: {len(projection.edges)}")
-    return 0
-
-
-def mine_graph(*, config: PipelineConfig) -> int:
-    graph_analyzer = NetworkXGraphAnalyzer()
-    with sqlite_ledger_transaction(config.ledger_path) as ledger_repository:
-        result = mine_graph_connections(
-            GraphConnectionMiningInput(mined_at=datetime.now(UTC)),
-            ledger_repository,
-            graph_analyzer,
-        )
-
-    print(f"Candidates: {result.candidate_count}")
-    print(f"ProposedChanges: {len(result.proposed_change_ids)}")
-    if result.provenance_activity_id is None:
-        print("ProvenanceActivity: none")
-    else:
-        print(f"ProvenanceActivity: {result.provenance_activity_id}")
-    for proposed_change_id in result.proposed_change_ids:
-        print(f"ProposedChange: {proposed_change_id}")
-    return 0
 
 
 def generate_markdown_briefing(
