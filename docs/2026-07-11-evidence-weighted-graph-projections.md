@@ -5,6 +5,7 @@
 - Depends on: [Knowledge-Graph Retrieval Plane](2026-08-23-knowledge-graph-retrieval-plane.md)
 - Implemented child: [Evidence-Linked Graph Projection MVP](2026-08-23-evidence-linked-graph-projection-mvp.md)
 - Latest implemented child: [Evidence Graph Temporal Views](2026-08-23-evidence-graph-temporal-views.md)
+- Planned child: [Evidence Graph Dimensions and Score](2026-08-23-evidence-graph-dimensions-and-score.md)
 
 ## Context & Problem
 

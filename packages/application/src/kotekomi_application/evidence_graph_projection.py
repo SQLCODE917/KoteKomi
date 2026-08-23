@@ -10,6 +10,8 @@ from enum import StrEnum
 from typing import Protocol
 
 from kotekomi_domain import (
+    ArgumentEdge,
+    ArgumentEdgeRelation,
     Assertion,
     AssertionEvidenceLink,
     AssertionStatus,
@@ -17,11 +19,16 @@ from kotekomi_domain import (
     CrossSourceRelationState,
     Document,
     EvidenceGraphContribution,
+    EvidenceGraphDimension,
+    EvidenceGraphDimensionName,
+    EvidenceGraphDimensionValue,
     EvidenceGraphEdge,
     EvidenceGraphExplanationRecord,
     EvidenceGraphLineageCluster,
     EvidenceGraphLineageMembership,
     EvidenceGraphProjectionManifest,
+    EvidenceGraphScore,
+    EvidenceGraphScoreValue,
     EvidenceGraphViewKind,
     EvidenceTarget,
     EvidenceValidationAttempt,
@@ -49,6 +56,7 @@ EVIDENCE_GRAPH_PROJECTION_POLICY_ID = "evidence_graph_temporal_relationship_cont
 EVIDENCE_GRAPH_BUILDER_VERSION = "dr6_1_evidence_graph_projection_v2"
 EVIDENCE_GRAPH_EXPLANATION_POLICY_ID = "evidence_graph_relationship_explanation_v1"
 EVIDENCE_GRAPH_LINEAGE_POLICY_ID = "reviewed_exact_content_sha256_v1"
+EVIDENCE_GRAPH_SCORE_POLICY_ID = "evidence_graph_evidence_status_v1"
 
 
 class EvidenceGraphFailureCode(StrEnum):
@@ -87,6 +95,8 @@ class EvidenceGraphProjectionBuildInput:
     edges: tuple[EvidenceGraphEdge, ...]
     contributions: tuple[EvidenceGraphContribution, ...]
     lineage_clusters: tuple[EvidenceGraphLineageCluster, ...]
+    dimensions: tuple[EvidenceGraphDimension, ...] = ()
+    scores: tuple[EvidenceGraphScore, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -96,6 +106,8 @@ class BuildEvidenceGraphProjectionResult:
     edge_count: int
     contribution_count: int
     lineage_cluster_count: int
+    dimension_count: int
+    score_count: int
     content_fingerprint: str | None
     reused_existing_manifest: bool
     view_kind: EvidenceGraphViewKind = EvidenceGraphViewKind.CURRENT
@@ -111,6 +123,8 @@ class ExplainEvidenceGraphRelationshipResult:
     edge: EvidenceGraphEdge | None
     contributions: tuple[EvidenceGraphContribution, ...]
     lineage_clusters: tuple[EvidenceGraphLineageCluster, ...]
+    dimensions: tuple[EvidenceGraphDimension, ...]
+    score: EvidenceGraphScore | None
     context_results: tuple[LedgerContextResult, ...]
     raw_document_count: int = 0
     lineage_cluster_count: int = 0
@@ -149,6 +163,12 @@ class EvidenceGraphProjectionPort(Protocol):
     def load_evidence_graph_lineage_clusters(
         self, manifest: EvidenceGraphProjectionManifest, lineage_cluster_ids: tuple[str, ...]
     ) -> tuple[EvidenceGraphLineageCluster, ...]: ...
+    def load_evidence_graph_dimensions(
+        self, manifest: EvidenceGraphProjectionManifest, relationship_id: str
+    ) -> tuple[EvidenceGraphDimension, ...]: ...
+    def load_evidence_graph_score(
+        self, manifest: EvidenceGraphProjectionManifest, relationship_id: str
+    ) -> EvidenceGraphScore | None: ...
     def save_evidence_graph_explanation(self, record: EvidenceGraphExplanationRecord) -> None: ...
 
 
@@ -160,12 +180,16 @@ def build_evidence_graph_projection(
 ) -> BuildEvidenceGraphProjectionResult:
     try:
         view_kind = _view_kind(command.as_of)
-        edges, contributions, clusters, snapshot = build_evidence_graph_state(
+        edges, contributions, clusters, dimensions, scores, snapshot = build_evidence_graph_state(
             ledger_repository, as_of=command.as_of
         )
-        manifest = _manifest(snapshot, edges, contributions, clusters, view_kind, command.as_of)
+        manifest = _manifest(
+            snapshot, edges, contributions, clusters, dimensions, scores, view_kind, command.as_of
+        )
         published, reused = projection.publish_evidence_graph(
-            EvidenceGraphProjectionBuildInput(manifest, edges, contributions, clusters)
+            EvidenceGraphProjectionBuildInput(
+                manifest, edges, contributions, clusters, dimensions, scores
+            )
         )
         return BuildEvidenceGraphProjectionResult(
             status="complete",
@@ -173,6 +197,8 @@ def build_evidence_graph_projection(
             edge_count=len(edges),
             contribution_count=len(contributions),
             lineage_cluster_count=len(clusters),
+            dimension_count=len(dimensions),
+            score_count=len(scores),
             content_fingerprint=published.content_fingerprint,
             reused_existing_manifest=reused,
             view_kind=view_kind,
@@ -185,6 +211,8 @@ def build_evidence_graph_projection(
             edge_count=0,
             contribution_count=0,
             lineage_cluster_count=0,
+            dimension_count=0,
+            score_count=0,
             content_fingerprint=None,
             reused_existing_manifest=False,
             as_of=command.as_of,
@@ -209,7 +237,7 @@ def explain_evidence_graph_relationship(
                 "Evidence graph explanation requires a Relationship ID and known policy.",
             )
         view_kind = _view_kind(command.as_of)
-        _, _, _, snapshot = build_evidence_graph_state(ledger_repository, as_of=command.as_of)
+        _, _, _, _, _, snapshot = build_evidence_graph_state(ledger_repository, as_of=command.as_of)
         manifest = projection.get_complete_evidence_graph_manifest(view_kind, command.as_of)
         if manifest is None:
             raise EvidenceGraphError(
@@ -253,6 +281,13 @@ def explain_evidence_graph_relationship(
                 EvidenceGraphFailureCode.PROJECTION_CORRUPT,
                 "Evidence graph lineage rows do not match projected contributions.",
             )
+        dimensions = projection.load_evidence_graph_dimensions(manifest, command.relationship_id)
+        score = projection.load_evidence_graph_score(manifest, command.relationship_id)
+        if score is None or tuple(item.dimension_id for item in dimensions) != score.dimension_ids:
+            raise EvidenceGraphError(
+                EvidenceGraphFailureCode.PROJECTION_CORRUPT,
+                "Evidence graph assessment rows do not match the projected Relationship.",
+            )
         contexts = _context_results(contributions, command, ledger_repository, tokenizer)
         record = EvidenceGraphExplanationRecord(
             explanation_id=_explanation_id(command, manifest.projection_manifest_id, snapshot),
@@ -273,6 +308,8 @@ def explain_evidence_graph_relationship(
                 )
             ),
             lineage_cluster_ids=lineage_cluster_ids,
+            dimension_ids=score.dimension_ids,
+            score_id=score.score_id,
             context_results=contexts,
         )
         projection.save_evidence_graph_explanation(record)
@@ -283,6 +320,8 @@ def explain_evidence_graph_relationship(
             edge=edge,
             contributions=contributions,
             lineage_clusters=clusters,
+            dimensions=dimensions,
+            score=score,
             context_results=contexts,
             raw_document_count=len(record.source_document_ids),
             lineage_cluster_count=len(clusters),
@@ -298,6 +337,8 @@ def explain_evidence_graph_relationship(
             edge=None,
             contributions=(),
             lineage_clusters=(),
+            dimensions=(),
+            score=None,
             context_results=(),
             raw_document_count=0,
             lineage_cluster_count=0,
@@ -312,6 +353,8 @@ def build_evidence_graph_state(
     tuple[EvidenceGraphEdge, ...],
     tuple[EvidenceGraphContribution, ...],
     tuple[EvidenceGraphLineageCluster, ...],
+    tuple[EvidenceGraphDimension, ...],
+    tuple[EvidenceGraphScore, ...],
     str,
 ]:
     records = ledger_repository.list_accepted_canonical_records()
@@ -339,6 +382,16 @@ def build_evidence_graph_state(
                 if isinstance(item, Relationship)
                 and _is_selected_at(item.id, acceptance, as_of)
                 and set(item.assertion_ids).issubset(current_assertion_ids)
+            ),
+            key=lambda item: item.id,
+        )
+    )
+    argument_edges = tuple(
+        sorted(
+            (
+                item
+                for item in records
+                if isinstance(item, ArgumentEdge) and _is_selected_at(item.id, acceptance, as_of)
             ),
             key=lambda item: item.id,
         )
@@ -394,6 +447,7 @@ def build_evidence_graph_state(
             "view_kind": view_kind.value,
             "as_of": as_of.isoformat() if as_of is not None else None,
             "relationships": [item.model_dump(mode="json") for item in relationships],
+            "argument_edges": [item.model_dump(mode="json") for item in argument_edges],
             "assertions": [item.model_dump(mode="json") for item in current_assertions],
             "links": [
                 item.model_dump(mode="json") for item in sorted(links, key=lambda item: item.id)
@@ -469,7 +523,13 @@ def build_evidence_graph_state(
                 contribution_ids=tuple(sorted(contribution_ids)),
             )
         )
-    return tuple(edges), tuple(contributions), clusters, snapshot
+    dimensions, scores = _assessment_records(
+        projection_manifest_id=_projection_manifest_id(snapshot),
+        edges=tuple(edges),
+        contributions=tuple(contributions),
+        argument_edges=argument_edges,
+    )
+    return tuple(edges), tuple(contributions), clusters, dimensions, scores, snapshot
 
 
 @dataclass(frozen=True)
@@ -916,6 +976,8 @@ def _failed_explanation(
         edge=None,
         contributions=(),
         lineage_clusters=(),
+        dimensions=(),
+        score=None,
         context_results=(),
         raw_document_count=0,
         lineage_cluster_count=0,
@@ -931,6 +993,8 @@ def _manifest(
     edges: tuple[EvidenceGraphEdge, ...],
     contributions: tuple[EvidenceGraphContribution, ...],
     lineage_clusters: tuple[EvidenceGraphLineageCluster, ...],
+    dimensions: tuple[EvidenceGraphDimension, ...],
+    scores: tuple[EvidenceGraphScore, ...],
     view_kind: EvidenceGraphViewKind,
     as_of: datetime | None,
 ) -> EvidenceGraphProjectionManifest:
@@ -940,10 +1004,12 @@ def _manifest(
             "edges": [item.model_dump(mode="json") for item in edges],
             "contributions": [item.model_dump(mode="json") for item in contributions],
             "lineage_clusters": [item.model_dump(mode="json") for item in lineage_clusters],
+            "dimensions": [item.model_dump(mode="json") for item in dimensions],
+            "scores": [item.model_dump(mode="json") for item in scores],
         }
     )
     return EvidenceGraphProjectionManifest(
-        projection_manifest_id=f"egm_{content[:24]}",
+        projection_manifest_id=_projection_manifest_id(snapshot),
         source_snapshot_digest=snapshot,
         projection_policy_id=EVIDENCE_GRAPH_PROJECTION_POLICY_ID,
         view_kind=view_kind,
@@ -954,10 +1020,123 @@ def _manifest(
         edge_count=len(edges),
         contribution_count=len(contributions),
         lineage_cluster_count=len(lineage_clusters),
+        dimension_count=len(dimensions),
+        score_count=len(scores),
         content_fingerprint=content,
         publication_status="complete",
         published_at=datetime.now(UTC),
     )
+
+
+def _projection_manifest_id(snapshot: str) -> str:
+    identity = (snapshot, EVIDENCE_GRAPH_PROJECTION_POLICY_ID, EVIDENCE_GRAPH_BUILDER_VERSION)
+    return f"egm_{_digest(identity)[:24]}"
+
+
+def _assessment_records(
+    *,
+    projection_manifest_id: str,
+    edges: tuple[EvidenceGraphEdge, ...],
+    contributions: tuple[EvidenceGraphContribution, ...],
+    argument_edges: tuple[ArgumentEdge, ...],
+) -> tuple[tuple[EvidenceGraphDimension, ...], tuple[EvidenceGraphScore, ...]]:
+    contributions_by_edge: dict[str, tuple[EvidenceGraphContribution, ...]] = {
+        edge.evidence_graph_edge_id: tuple(
+            item
+            for item in contributions
+            if item.evidence_graph_edge_id == edge.evidence_graph_edge_id
+        )
+        for edge in edges
+    }
+    dimensions: list[EvidenceGraphDimension] = []
+    scores: list[EvidenceGraphScore] = []
+    for edge in edges:
+        edge_contributions = contributions_by_edge[edge.evidence_graph_edge_id]
+        support_ids = tuple(sorted(item.supporting_assertion_id for item in edge_contributions))
+        validation_ids = tuple(
+            sorted(
+                {item_id for item in edge_contributions for item_id in item.validation_attempt_ids}
+            )
+        )
+        contradiction_ids = tuple(
+            sorted(
+                item.id
+                for item in argument_edges
+                if item.relation is ArgumentEdgeRelation.CONTRADICTS
+                and item.to_assertion_id in support_ids
+            )
+        )
+        document_ids = tuple(
+            sorted({item_id for item in edge_contributions for item_id in item.source_document_ids})
+        )
+        lineage_recorded = all(
+            membership.cross_source_relation_state is CrossSourceRelationState.RECORDED_RELATION
+            for item in edge_contributions
+            for membership in item.lineage_memberships
+        )
+        specifications = (
+            (
+                EvidenceGraphDimensionName.VALIDATED_EVIDENCE,
+                EvidenceGraphDimensionValue.PRESENT,
+                validation_ids,
+            ),
+            (
+                EvidenceGraphDimensionName.CONTRADICTION,
+                (
+                    EvidenceGraphDimensionValue.PRESENT
+                    if contradiction_ids
+                    else EvidenceGraphDimensionValue.ABSENT
+                ),
+                contradiction_ids or support_ids,
+            ),
+            (
+                EvidenceGraphDimensionName.SOURCE_LINEAGE,
+                (
+                    EvidenceGraphDimensionValue.RECORDED_RELATION
+                    if lineage_recorded
+                    else EvidenceGraphDimensionValue.UNKNOWN
+                ),
+                document_ids,
+            ),
+        )
+        edge_dimensions = tuple(
+            EvidenceGraphDimension(
+                dimension_id=f"egd_{
+                    _digest(
+                        (
+                            projection_manifest_id,
+                            edge.relationship_id,
+                            name.value,
+                            value.value,
+                            inputs,
+                        )
+                    )[:24]
+                }",
+                projection_manifest_id=projection_manifest_id,
+                relationship_id=edge.relationship_id,
+                name=name,
+                value=value,
+                policy_id=EVIDENCE_GRAPH_SCORE_POLICY_ID,
+                input_ids=inputs,
+            )
+            for name, value, inputs in specifications
+        )
+        dimensions.extend(edge_dimensions)
+        score_identity = (projection_manifest_id, edge.relationship_id, contradiction_ids)
+        score = EvidenceGraphScore(
+            score_id=f"egs_{_digest(score_identity)[:24]}",
+            projection_manifest_id=projection_manifest_id,
+            relationship_id=edge.relationship_id,
+            policy_id=EVIDENCE_GRAPH_SCORE_POLICY_ID,
+            value=(
+                EvidenceGraphScoreValue.CONTESTED
+                if contradiction_ids
+                else EvidenceGraphScoreValue.SUPPORTED
+            ),
+            dimension_ids=tuple(sorted(item.dimension_id for item in edge_dimensions)),
+        )
+        scores.append(score)
+    return tuple(dimensions), tuple(scores)
 
 
 def _explanation_id(

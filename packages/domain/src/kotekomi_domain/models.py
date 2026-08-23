@@ -138,6 +138,24 @@ class EvidenceGraphViewKind(StrEnum):
     AS_OF = "as_of"
 
 
+class EvidenceGraphDimensionName(StrEnum):
+    VALIDATED_EVIDENCE = "validated_evidence"
+    CONTRADICTION = "contradiction"
+    SOURCE_LINEAGE = "source_lineage"
+
+
+class EvidenceGraphDimensionValue(StrEnum):
+    PRESENT = "present"
+    ABSENT = "absent"
+    UNKNOWN = "unknown"
+    RECORDED_RELATION = "recorded_relation"
+
+
+class EvidenceGraphScoreValue(StrEnum):
+    SUPPORTED = "supported"
+    CONTESTED = "contested"
+
+
 class TextViewKind(StrEnum):
     LOGICAL = "logical"
     DISPLAY = "display"
@@ -2664,6 +2682,56 @@ class EvidenceGraphContribution(DomainModel):
         return self
 
 
+class EvidenceGraphDimension(DomainModel):
+    """One derived, inspectable evidence assessment input."""
+
+    dimension_id: NonEmptyStr
+    projection_manifest_id: NonEmptyStr
+    relationship_id: RelationshipId
+    name: EvidenceGraphDimensionName
+    value: EvidenceGraphDimensionValue
+    policy_id: NonEmptyStr
+    input_ids: tuple[NonEmptyStr, ...]
+
+    @model_validator(mode="after")
+    def validate_value(self) -> Self:
+        allowed = {
+            EvidenceGraphDimensionName.VALIDATED_EVIDENCE: {
+                EvidenceGraphDimensionValue.PRESENT,
+            },
+            EvidenceGraphDimensionName.CONTRADICTION: {
+                EvidenceGraphDimensionValue.PRESENT,
+                EvidenceGraphDimensionValue.ABSENT,
+            },
+            EvidenceGraphDimensionName.SOURCE_LINEAGE: {
+                EvidenceGraphDimensionValue.UNKNOWN,
+                EvidenceGraphDimensionValue.RECORDED_RELATION,
+            },
+        }
+        if self.value not in allowed[self.name]:
+            raise ValueError("EvidenceGraphDimension value does not match its name.")
+        if not self.input_ids or tuple(sorted(set(self.input_ids))) != self.input_ids:
+            raise ValueError("EvidenceGraphDimension input IDs must be unique and ordered.")
+        return self
+
+
+class EvidenceGraphScore(DomainModel):
+    """One derived ordinal assessment under a named evidence policy."""
+
+    score_id: NonEmptyStr
+    projection_manifest_id: NonEmptyStr
+    relationship_id: RelationshipId
+    policy_id: NonEmptyStr
+    value: EvidenceGraphScoreValue
+    dimension_ids: tuple[NonEmptyStr, ...]
+
+    @model_validator(mode="after")
+    def validate_dimensions(self) -> Self:
+        if not self.dimension_ids or tuple(sorted(set(self.dimension_ids))) != self.dimension_ids:
+            raise ValueError("EvidenceGraphScore Dimension IDs must be unique and ordered.")
+        return self
+
+
 class EvidenceGraphLineageCluster(DomainModel):
     """A derived, rebuildable cluster of source Documents for graph evidence."""
 
@@ -2730,6 +2798,8 @@ class EvidenceGraphProjectionManifest(DomainModel):
     edge_count: int = Field(ge=0)
     contribution_count: int = Field(ge=0)
     lineage_cluster_count: int = Field(ge=0)
+    dimension_count: int = Field(default=0, ge=0)
+    score_count: int = Field(default=0, ge=0)
     content_fingerprint: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
     publication_status: NonEmptyStr
     created_at: datetime = Field(default_factory=utc_now)
@@ -2758,6 +2828,8 @@ class EvidenceGraphExplanationRecord(DomainModel):
     contribution_ids: tuple[NonEmptyStr, ...] = ()
     source_document_ids: tuple[DocumentId, ...] = ()
     lineage_cluster_ids: tuple[NonEmptyStr, ...] = ()
+    dimension_ids: tuple[NonEmptyStr, ...] = ()
+    score_id: NonEmptyStr | None = None
     context_results: tuple[LedgerContextResult, ...] = ()
     failure_code: str | None = None
     created_at: datetime = Field(default_factory=utc_now)
@@ -2769,12 +2841,14 @@ class EvidenceGraphExplanationRecord(DomainModel):
             raise ValueError("A successful EvidenceGraphExplanationRecord requires an edge ID.")
         if self.failure_code is None and not self.contribution_ids:
             raise ValueError("A successful EvidenceGraphExplanationRecord requires contributions.")
+        if self.failure_code is None and (not self.dimension_ids or self.score_id is None):
+            raise ValueError(
+                "A successful EvidenceGraphExplanationRecord requires assessment records."
+            )
         return self
 
 
-def _validate_evidence_graph_view(
-    view_kind: EvidenceGraphViewKind, as_of: datetime | None
-) -> None:
+def _validate_evidence_graph_view(view_kind: EvidenceGraphViewKind, as_of: datetime | None) -> None:
     if view_kind is EvidenceGraphViewKind.CURRENT and as_of is not None:
         raise ValueError("A current EvidenceGraph view cannot define as_of.")
     if view_kind is EvidenceGraphViewKind.AS_OF:

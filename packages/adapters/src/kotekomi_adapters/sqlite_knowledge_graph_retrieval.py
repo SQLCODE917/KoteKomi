@@ -20,10 +20,12 @@ from kotekomi_application.knowledge_graph_retrieval import (
 )
 from kotekomi_domain import (
     EvidenceGraphContribution,
+    EvidenceGraphDimension,
     EvidenceGraphEdge,
     EvidenceGraphExplanationRecord,
     EvidenceGraphLineageCluster,
     EvidenceGraphProjectionManifest,
+    EvidenceGraphScore,
     EvidenceGraphViewKind,
     KnowledgeGraphEdge,
     KnowledgeGraphRetrievalIndexManifest,
@@ -86,6 +88,16 @@ class SQLiteKnowledgeGraphRetrievalAdapter:
             raise EvidenceGraphError(
                 EvidenceGraphFailureCode.PROJECTION_CORRUPT,
                 "Evidence graph lineage clusters are not unique.",
+            )
+        if len({item.dimension_id for item in build.dimensions}) != len(build.dimensions):
+            raise EvidenceGraphError(
+                EvidenceGraphFailureCode.PROJECTION_CORRUPT,
+                "Evidence graph Dimensions are not unique.",
+            )
+        if len({item.score_id for item in build.scores}) != len(build.scores):
+            raise EvidenceGraphError(
+                EvidenceGraphFailureCode.PROJECTION_CORRUPT,
+                "Evidence graph Scores are not unique.",
             )
         if any(
             item.source_snapshot_digest != manifest.source_snapshot_digest
@@ -154,6 +166,34 @@ class SQLiteKnowledgeGraphRetrievalAdapter:
                         cluster.model_dump_json(),
                     ),
                 )
+            for dimension in build.dimensions:
+                self._connection.execute(
+                    """
+                    INSERT INTO evidence_graph_dimensions
+                    (projection_manifest_id, dimension_id, relationship_id, dimension_json)
+                    VALUES (?, ?, ?, ?)
+                    """,
+                    (
+                        manifest.projection_manifest_id,
+                        dimension.dimension_id,
+                        dimension.relationship_id,
+                        dimension.model_dump_json(),
+                    ),
+                )
+            for score in build.scores:
+                self._connection.execute(
+                    """
+                    INSERT INTO evidence_graph_scores
+                    (projection_manifest_id, score_id, relationship_id, score_json)
+                    VALUES (?, ?, ?, ?)
+                    """,
+                    (
+                        manifest.projection_manifest_id,
+                        score.score_id,
+                        score.relationship_id,
+                        score.model_dump_json(),
+                    ),
+                )
             counts = (
                 self._connection.execute(
                     "SELECT COUNT(*) FROM evidence_graph_edges WHERE projection_manifest_id = ?",
@@ -169,11 +209,22 @@ class SQLiteKnowledgeGraphRetrievalAdapter:
                     "WHERE projection_manifest_id = ?",
                     (manifest.projection_manifest_id,),
                 ).fetchone()[0],
+                self._connection.execute(
+                    "SELECT COUNT(*) FROM evidence_graph_dimensions "
+                    "WHERE projection_manifest_id = ?",
+                    (manifest.projection_manifest_id,),
+                ).fetchone()[0],
+                self._connection.execute(
+                    "SELECT COUNT(*) FROM evidence_graph_scores WHERE projection_manifest_id = ?",
+                    (manifest.projection_manifest_id,),
+                ).fetchone()[0],
             )
             if counts != (
                 manifest.edge_count,
                 manifest.contribution_count,
                 manifest.lineage_cluster_count,
+                manifest.dimension_count,
+                manifest.score_count,
             ):
                 raise EvidenceGraphError(
                     EvidenceGraphFailureCode.PROJECTION_CORRUPT,
@@ -283,8 +334,7 @@ class SQLiteKnowledgeGraphRetrievalAdapter:
                 for row in rows
             )
             if any(
-                item.source_snapshot_digest != manifest.source_snapshot_digest
-                for item in clusters
+                item.source_snapshot_digest != manifest.source_snapshot_digest for item in clusters
             ):
                 raise ValueError("Evidence graph lineage cluster has another source snapshot.")
             return clusters
@@ -292,6 +342,47 @@ class SQLiteKnowledgeGraphRetrievalAdapter:
             raise EvidenceGraphError(
                 EvidenceGraphFailureCode.PROJECTION_CORRUPT,
                 "Evidence graph lineage cluster payload is corrupt.",
+            ) from exc
+
+    def load_evidence_graph_dimensions(
+        self, manifest: EvidenceGraphProjectionManifest, relationship_id: str
+    ) -> tuple[EvidenceGraphDimension, ...]:
+        rows = self._connection.execute(
+            """
+            SELECT dimension_json FROM evidence_graph_dimensions
+            WHERE projection_manifest_id = ? AND relationship_id = ? ORDER BY dimension_id
+            """,
+            (manifest.projection_manifest_id, relationship_id),
+        ).fetchall()
+        try:
+            return tuple(
+                EvidenceGraphDimension.model_validate_json(str(row["dimension_json"]))
+                for row in rows
+            )
+        except (TypeError, ValueError) as exc:
+            raise EvidenceGraphError(
+                EvidenceGraphFailureCode.PROJECTION_CORRUPT,
+                "Evidence graph Dimension payload is corrupt.",
+            ) from exc
+
+    def load_evidence_graph_score(
+        self, manifest: EvidenceGraphProjectionManifest, relationship_id: str
+    ) -> EvidenceGraphScore | None:
+        row = self._connection.execute(
+            """
+            SELECT score_json FROM evidence_graph_scores
+            WHERE projection_manifest_id = ? AND relationship_id = ?
+            """,
+            (manifest.projection_manifest_id, relationship_id),
+        ).fetchone()
+        if row is None:
+            return None
+        try:
+            return EvidenceGraphScore.model_validate_json(str(row["score_json"]))
+        except (TypeError, ValueError) as exc:
+            raise EvidenceGraphError(
+                EvidenceGraphFailureCode.PROJECTION_CORRUPT,
+                "Evidence graph Score payload is corrupt.",
             ) from exc
 
     def save_evidence_graph_explanation(self, record: EvidenceGraphExplanationRecord) -> None:
@@ -537,11 +628,21 @@ class SQLiteKnowledgeGraphRetrievalAdapter:
                 "WHERE projection_manifest_id = ?",
                 (manifest.projection_manifest_id,),
             ).fetchone()[0],
+            self._connection.execute(
+                "SELECT COUNT(*) FROM evidence_graph_dimensions WHERE projection_manifest_id = ?",
+                (manifest.projection_manifest_id,),
+            ).fetchone()[0],
+            self._connection.execute(
+                "SELECT COUNT(*) FROM evidence_graph_scores WHERE projection_manifest_id = ?",
+                (manifest.projection_manifest_id,),
+            ).fetchone()[0],
         )
         if counts != (
             manifest.edge_count,
             manifest.contribution_count,
             manifest.lineage_cluster_count,
+            manifest.dimension_count,
+            manifest.score_count,
         ):
             raise EvidenceGraphError(
                 EvidenceGraphFailureCode.PROJECTION_CORRUPT,
@@ -564,10 +665,15 @@ class SQLiteKnowledgeGraphRetrievalAdapter:
     def _initialize(self) -> None:
         rows = self._connection.execute("PRAGMA table_info(evidence_graph_edges)").fetchall()
         columns = {str(row["name"]) for row in rows}
-        if columns and "projection_manifest_id" not in columns:
+        dimension_rows = self._connection.execute(
+            "PRAGMA table_info(evidence_graph_dimensions)"
+        ).fetchall()
+        if columns and ("projection_manifest_id" not in columns or not dimension_rows):
             self._connection.executescript(
                 """
                 DROP TABLE IF EXISTS evidence_graph_explanation_records;
+                DROP TABLE IF EXISTS evidence_graph_scores;
+                DROP TABLE IF EXISTS evidence_graph_dimensions;
                 DROP TABLE IF EXISTS evidence_graph_lineage_clusters;
                 DROP TABLE IF EXISTS evidence_graph_contributions;
                 DROP TABLE IF EXISTS evidence_graph_edges;
@@ -642,6 +748,24 @@ class SQLiteKnowledgeGraphRetrievalAdapter:
                 cluster_json TEXT NOT NULL,
                 PRIMARY KEY (projection_manifest_id, lineage_cluster_id)
             );
+            CREATE TABLE IF NOT EXISTS evidence_graph_dimensions (
+                projection_manifest_id TEXT NOT NULL,
+                dimension_id TEXT NOT NULL,
+                relationship_id TEXT NOT NULL,
+                dimension_json TEXT NOT NULL,
+                PRIMARY KEY (projection_manifest_id, dimension_id)
+            );
+            CREATE INDEX IF NOT EXISTS evidence_graph_dimensions_by_relationship
+                ON evidence_graph_dimensions
+                (projection_manifest_id, relationship_id, dimension_id);
+            CREATE TABLE IF NOT EXISTS evidence_graph_scores (
+                projection_manifest_id TEXT NOT NULL,
+                score_id TEXT NOT NULL,
+                relationship_id TEXT NOT NULL,
+                score_json TEXT NOT NULL,
+                PRIMARY KEY (projection_manifest_id, score_id),
+                UNIQUE (projection_manifest_id, relationship_id)
+            );
             """
         )
         self._connection.commit()
@@ -666,6 +790,8 @@ class SQLiteKnowledgeGraphRetrievalAdapter:
             manifest_ids,
         )
         for table in (
+            "evidence_graph_scores",
+            "evidence_graph_dimensions",
             "evidence_graph_lineage_clusters",
             "evidence_graph_contributions",
             "evidence_graph_edges",

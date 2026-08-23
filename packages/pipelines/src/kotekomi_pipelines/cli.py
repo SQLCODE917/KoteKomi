@@ -1370,6 +1370,8 @@ def build_evidence_graph_projection_index(
             "edge_count": result.edge_count,
             "contribution_count": result.contribution_count,
             "lineage_cluster_count": result.lineage_cluster_count,
+            "dimension_count": result.dimension_count,
+            "score_count": result.score_count,
             "content_fingerprint": result.content_fingerprint,
             "reused_existing_manifest": result.reused_existing_manifest,
             "view_kind": result.view_kind.value,
@@ -1410,9 +1412,9 @@ def explain_evidence_graph_relationship_index(
             "projection_manifest_id": result.projection_manifest_id,
             "edge": result.edge.model_dump(mode="json") if result.edge is not None else None,
             "contributions": [item.model_dump(mode="json") for item in result.contributions],
-            "lineage_clusters": [
-                item.model_dump(mode="json") for item in result.lineage_clusters
-            ],
+            "lineage_clusters": [item.model_dump(mode="json") for item in result.lineage_clusters],
+            "dimensions": [item.model_dump(mode="json") for item in result.dimensions],
+            "score": result.score.model_dump(mode="json") if result.score is not None else None,
             "raw_document_count": result.raw_document_count,
             "lineage_cluster_count": result.lineage_cluster_count,
             "context_results": [item.model_dump(mode="json") for item in result.context_results],

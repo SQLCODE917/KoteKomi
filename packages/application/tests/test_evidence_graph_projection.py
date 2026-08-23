@@ -15,6 +15,8 @@ from kotekomi_application.evidence_graph_projection import (
 )
 from kotekomi_application.ports import AcceptedCanonicalRecord
 from kotekomi_domain import (
+    ArgumentEdge,
+    ArgumentEdgeRelation,
     Assertion,
     AssertionEvidenceLink,
     AssertionEvidenceRole,
@@ -101,6 +103,7 @@ class FakeLedger:
             provenance_id="prv_policy",
             created_at=NOW,
         )
+        self.argument_edges: tuple[ArgumentEdge, ...] = ()
 
     def list_accepted_canonical_records(self) -> tuple[AcceptedCanonicalRecord, ...]:
         return (
@@ -110,6 +113,7 @@ class FakeLedger:
             self.direct,
             self.inference,
             self.relationship,
+            *self.argument_edges,
         )
 
     def list_assertion_evidence_links(self) -> tuple[AssertionEvidenceLink, ...]:
@@ -245,9 +249,7 @@ def _approval(
     )
 
 
-def _change(
-    change_id: str, record: Assertion | EvidenceTarget | Relationship
-) -> ProposedChange:
+def _change(change_id: str, record: Assertion | EvidenceTarget | Relationship) -> ProposedChange:
     return ProposedChange(
         id=change_id,
         review_status=ReviewStatus.APPROVED,
@@ -300,7 +302,7 @@ def _inference_assertion(assertion_id: str, support_id: str) -> Assertion:
 
 
 def test_evidence_graph_resolves_inference_to_validated_direct_evidence() -> None:
-    edges, contributions, clusters, snapshot = build_evidence_graph_state(
+    edges, contributions, clusters, dimensions, scores, snapshot = build_evidence_graph_state(
         cast(
             EvidenceGraphStateLedger,
             FakeLedger(validation_status=EvidenceValidationAttemptStatus.SUCCEEDED),
@@ -316,6 +318,8 @@ def test_evidence_graph_resolves_inference_to_validated_direct_evidence() -> Non
     assert contributions[0].evidence_target_ids == ("etg_policy",)
     assert contributions[0].source_document_ids == ("doc_policy",)
     assert clusters[0].cross_source_relation_state.value == "no_cross_source_relation_recorded"
+    assert {item.value.value for item in dimensions} == {"present", "absent", "unknown"}
+    assert scores[0].value.value == "supported"
 
 
 def test_evidence_graph_rejects_failed_evidence_validation() -> None:
@@ -328,6 +332,30 @@ def test_evidence_graph_rejects_failed_evidence_validation() -> None:
         )
 
     assert raised.value.code is EvidenceGraphFailureCode.EVIDENCE_INVALID
+
+
+def test_evidence_graph_marks_a_relationship_contested_from_an_accepted_argument_edge() -> None:
+    ledger = FakeLedger(validation_status=EvidenceValidationAttemptStatus.SUCCEEDED)
+    ledger.argument_edges = (
+        ArgumentEdge(
+            id="arg_contradicts_policy",
+            from_assertion_id=ledger.direct.id,
+            to_assertion_id=ledger.inference.id,
+            relation=ArgumentEdgeRelation.CONTRADICTS,
+            rationale="The source-backed Assertion conflicts with the inference.",
+            confidence=0.9,
+            created_at=NOW,
+        ),
+    )
+
+    _, _, _, dimensions, scores, _ = build_evidence_graph_state(
+        cast(EvidenceGraphStateLedger, ledger)
+    )
+
+    contradiction = next(item for item in dimensions if item.name.value == "contradiction")
+    assert contradiction.value.value == "present"
+    assert contradiction.input_ids == ("arg_contradicts_policy",)
+    assert scores[0].value.value == "contested"
 
 
 def test_evidence_graph_reconstructs_current_and_as_of_correction_views() -> None:
@@ -472,7 +500,7 @@ def test_stale_evidence_graph_manifest_blocks_explanation() -> None:
 
 def test_missing_relationship_records_a_typed_failed_explanation() -> None:
     ledger = FakeLedger(validation_status=EvidenceValidationAttemptStatus.SUCCEEDED)
-    _, _, _, snapshot = build_evidence_graph_state(cast(EvidenceGraphStateLedger, ledger))
+    _, _, _, _, _, snapshot = build_evidence_graph_state(cast(EvidenceGraphStateLedger, ledger))
     projection = MissingRelationshipProjection(snapshot)
 
     result = explain_evidence_graph_relationship(
