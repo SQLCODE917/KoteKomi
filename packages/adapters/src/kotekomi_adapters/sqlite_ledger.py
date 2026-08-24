@@ -53,6 +53,7 @@ from kotekomi_domain import (
     EvidenceTarget,
     EvidenceValidationAttempt,
     ExtractionTask,
+    IngestionRun,
     ModelRun,
     NewsDeliveryEnvelopeArtifact,
     NewsRepresentationMetadata,
@@ -461,6 +462,7 @@ REQUIRED_LEDGER_TABLES = (
     "source_captures",
     "capture_document_resolutions",
     "briefings",
+    "ingestion_runs",
 )
 
 
@@ -702,6 +704,69 @@ class SQLiteLedgerRepository:
         for spec in ACCEPTED_CANONICAL_RECORD_SPECS:
             records.extend(self._list(spec))
         return tuple(sorted(records, key=lambda record: record.id))
+
+    def create_ingestion_run(self, record: IngestionRun) -> None:
+        self._validate_ingestion_run_references(record)
+        payload = canonical_record_json(record)
+        self._connection.execute(
+            """
+            INSERT INTO ingestion_runs (
+              id, started_at, completed_at, status, source_id, document_id,
+              representation_id, provenance_activity_id, payload_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            _ingestion_run_row(record, payload),
+        )
+
+    def get_ingestion_run(self, record_id: str) -> IngestionRun | None:
+        row = self._connection.execute(
+            "SELECT payload_json FROM ingestion_runs WHERE id = ?", (record_id,)
+        ).fetchone()
+        return IngestionRun.model_validate_json(str(row[0])) if row is not None else None
+
+    def complete_ingestion_run_if_running(self, record: IngestionRun) -> bool:
+        self._validate_ingestion_run_references(record)
+        payload = canonical_record_json(record)
+        cursor = self._connection.execute(
+            """
+            UPDATE ingestion_runs
+            SET completed_at = ?, status = ?, source_id = ?, document_id = ?,
+                representation_id = ?, provenance_activity_id = ?, payload_json = ?
+            WHERE id = ? AND status = 'running'
+            """,
+            (
+                _optional_text(record.completed_at),
+                record.status.value,
+                record.source_id,
+                record.document_id,
+                record.representation_id,
+                record.provenance_activity_id,
+                payload,
+                record.id,
+            ),
+        )
+        return cursor.rowcount == 1
+
+    def list_ingestion_runs(self) -> tuple[IngestionRun, ...]:
+        rows = self._connection.execute(
+            "SELECT payload_json FROM ingestion_runs ORDER BY started_at DESC, id DESC"
+        ).fetchall()
+        return tuple(IngestionRun.model_validate_json(str(row[0])) for row in rows)
+
+    def _validate_ingestion_run_references(self, record: IngestionRun) -> None:
+        references = (
+            (record.source_id, self.get_source, "Source"),
+            (record.document_id, self.get_document, "Document"),
+            (record.representation_id, self.get_document_representation, "DocumentRepresentation"),
+            (
+                record.provenance_activity_id,
+                self.get_provenance_activity,
+                "ProvenanceActivity",
+            ),
+        )
+        for record_id, loader, record_type in references:
+            if record_id is not None and loader(record_id) is None:
+                raise ValueError(f"IngestionRun references missing {record_type}: {record_id}")
 
     def save_entity(self, record: Entity) -> None:
         self._save(ENTITY_SPEC, record)
@@ -2144,6 +2209,20 @@ def _optional_text(value: object) -> str | int | None:
     if isinstance(value, bool):
         return int(value)
     return str(value)
+
+
+def _ingestion_run_row(record: IngestionRun, payload_json: str) -> tuple[object, ...]:
+    return (
+        record.id,
+        _optional_text(record.started_at),
+        _optional_text(record.completed_at),
+        record.status.value,
+        record.source_id,
+        record.document_id,
+        record.representation_id,
+        record.provenance_activity_id,
+        payload_json,
+    )
 
 
 def _same_representation_bundle(

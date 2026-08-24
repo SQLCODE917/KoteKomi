@@ -623,7 +623,7 @@ def ingest_pdf(
         )
         raise error
     ledger_repository.commit_pdf_page_accounting(page_accounting)
-    provenance_activity_id = _provenance_id(
+    provenance_activity_id = deterministic_pdf_ingest_activity_id(
         document.id, bundle.representation.id, ingest_input.policy_id
     )
     provenance = ProvenanceActivity(
@@ -1158,7 +1158,7 @@ def _pdf_page_accounting_provenance(
 ) -> ProvenanceActivity:
     report = page_accounting.preflight_report
     return ProvenanceActivity(
-        id=_provenance_id(document.id, report.id, policy_id),
+        id=deterministic_pdf_ingest_activity_id(document.id, report.id, policy_id),
         activity_type=PDF_INGEST_ACTIVITY,
         agent=report.preflight_tool,
         input_ids=(document.id, policy_id),
@@ -1273,7 +1273,9 @@ def _validate_pdf_extraction_provenance(
             raise ValueError("OCR-derived PDF nodes require parser confidence.")
 
 
-def _provenance_id(document_id: str, representation_id: str, policy_id: str) -> str:
+def deterministic_pdf_ingest_activity_id(
+    document_id: str, representation_id: str, policy_id: str
+) -> str:
     value = f"{document_id}:{representation_id}:{policy_id}:{PDF_INGEST_ACTIVITY}"
     return f"prv_{hashlib.sha256(value.encode()).hexdigest()[:HASH_ID_LENGTH]}"
 

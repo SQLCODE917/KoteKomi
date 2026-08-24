@@ -56,6 +56,7 @@ PlannedAnalysisItemId = Annotated[str, Field(pattern=r"^pai_[A-Za-z0-9][A-Za-z0-
 AnalysisItemAttemptId = Annotated[str, Field(pattern=r"^aia_[A-Za-z0-9][A-Za-z0-9_-]*$")]
 ExtractionTaskId = Annotated[str, Field(pattern=r"^ext_[A-Za-z0-9][A-Za-z0-9_-]*$")]
 ModelRunId = Annotated[str, Field(pattern=r"^mrn_[A-Za-z0-9][A-Za-z0-9_-]*$")]
+IngestionRunId = Annotated[str, Field(pattern=r"^igr_[A-Za-z0-9][A-Za-z0-9_-]*$")]
 PdfPreflightReportId = Annotated[str, Field(pattern=r"^pfr_[A-Za-z0-9][A-Za-z0-9_-]*$")]
 PdfPageInventoryId = Annotated[str, Field(pattern=r"^ppi_[A-Za-z0-9][A-Za-z0-9_-]*$")]
 PdfPageExtractionStatusId = Annotated[str, Field(pattern=r"^pes_[A-Za-z0-9][A-Za-z0-9_-]*$")]
@@ -398,6 +399,32 @@ class ReviewStatus(StrEnum):
     APPROVED = "approved"
     REJECTED = "rejected"
     EDITED = "edited"
+
+
+class IngestionRunStatus(StrEnum):
+    RUNNING = "running"
+    CAPTURED = "captured"
+    ERROR = "error"
+
+
+class IngestionFailureStage(StrEnum):
+    ADMISSION = "admission"
+    SOURCE_VALIDATION = "source_validation"
+    ARCHIVE = "archive"
+    SOURCE_CAPTURE = "source_capture"
+    DOCUMENT_REPRESENTATION = "document_representation"
+    RUN_PERSISTENCE = "run_persistence"
+
+
+class IngestionFailureCode(StrEnum):
+    FILE_NOT_FOUND = "file_not_found"
+    UNSUPPORTED_FILE_TYPE = "unsupported_file_type"
+    SOURCE_URL_INVALID = "source_url_invalid"
+    ARCHIVE_INITIALIZATION_FAILED = "archive_initialization_failed"
+    SOURCE_CAPTURE_FAILED = "source_capture_failed"
+    DOCUMENT_REPRESENTATION_BLOCKED = "document_representation_blocked"
+    DOCUMENT_REPRESENTATION_FAILED = "document_representation_failed"
+    INGESTION_RUN_TRANSITION_CONFLICT = "ingestion_run_transition_conflict"
 
 
 def is_accepted_status(status: AssertionStatus) -> bool:
@@ -1782,6 +1809,61 @@ class ProcessingAttempt(DomainModel):
     started_at: datetime
     invocation_id: NonEmptyStr
     initiator: NonEmptyStr | None = None
+
+
+class IngestionRun(DomainModel):
+    """One durable user-admitted deposited-file ingestion attempt."""
+
+    id: IngestionRunId
+    requested_path: NonEmptyStr
+    display_filename: NonEmptyStr
+    requested_source_url: NonEmptyStr
+    normalized_source_url: NonEmptyStr | None = None
+    status: IngestionRunStatus
+    started_at: datetime
+    completed_at: datetime | None = None
+    source_id: SourceId | None = None
+    document_id: DocumentId | None = None
+    representation_id: DocumentRepresentationId | None = None
+    provenance_activity_id: ProvenanceActivityId | None = None
+    failure_stage: IngestionFailureStage | None = None
+    failure_code: IngestionFailureCode | None = None
+    safe_failure_message: NonEmptyStr | None = None
+
+    @model_validator(mode="after")
+    def validate_lifecycle_shape(self) -> Self:
+        canonical_links = (
+            self.source_id,
+            self.document_id,
+            self.representation_id,
+            self.provenance_activity_id,
+        )
+        failure_fields = (
+            self.failure_stage,
+            self.failure_code,
+            self.safe_failure_message,
+        )
+        if self.status is IngestionRunStatus.RUNNING:
+            if self.completed_at is not None or any(canonical_links) or any(failure_fields):
+                raise ValueError("A running IngestionRun cannot contain terminal state.")
+            return self
+        if self.completed_at is None:
+            raise ValueError("A terminal IngestionRun requires completed_at.")
+        if self.completed_at < self.started_at:
+            raise ValueError("IngestionRun cannot complete before it starts.")
+        if self.status is IngestionRunStatus.CAPTURED:
+            if not self.normalized_source_url or not all(canonical_links):
+                raise ValueError("A captured IngestionRun requires canonical capture links.")
+            if any(failure_fields):
+                raise ValueError("A captured IngestionRun cannot contain failure details.")
+            return self
+        if (
+            self.failure_stage is None
+            or self.failure_code is None
+            or self.safe_failure_message is None
+        ):
+            raise ValueError("An error IngestionRun requires safe typed failure details.")
+        return self
 
 
 class BuildIdentitySnapshot(DomainModel):

@@ -1,0 +1,195 @@
+{
+  "$defs": {
+    "IngestionFailureCode": {
+      "enum": [
+        "file_not_found",
+        "unsupported_file_type",
+        "source_url_invalid",
+        "archive_initialization_failed",
+        "source_capture_failed",
+        "document_representation_blocked",
+        "document_representation_failed",
+        "ingestion_run_transition_conflict"
+      ],
+      "title": "IngestionFailureCode",
+      "type": "string"
+    },
+    "IngestionFailureStage": {
+      "enum": [
+        "admission",
+        "source_validation",
+        "archive",
+        "source_capture",
+        "document_representation",
+        "run_persistence"
+      ],
+      "title": "IngestionFailureStage",
+      "type": "string"
+    },
+    "IngestionRunStatus": {
+      "enum": [
+        "running",
+        "captured",
+        "error"
+      ],
+      "title": "IngestionRunStatus",
+      "type": "string"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "One durable user-admitted deposited-file ingestion attempt.",
+  "properties": {
+    "completed_at": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Completed At"
+    },
+    "display_filename": {
+      "minLength": 1,
+      "title": "Display Filename",
+      "type": "string"
+    },
+    "document_id": {
+      "anyOf": [
+        {
+          "pattern": "^doc_[A-Za-z0-9][A-Za-z0-9_-]*$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Document Id"
+    },
+    "failure_code": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/IngestionFailureCode"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "failure_stage": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/IngestionFailureStage"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "id": {
+      "pattern": "^igr_[A-Za-z0-9][A-Za-z0-9_-]*$",
+      "title": "Id",
+      "type": "string"
+    },
+    "normalized_source_url": {
+      "anyOf": [
+        {
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Normalized Source Url"
+    },
+    "provenance_activity_id": {
+      "anyOf": [
+        {
+          "pattern": "^prv_[A-Za-z0-9][A-Za-z0-9_-]*$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Provenance Activity Id"
+    },
+    "representation_id": {
+      "anyOf": [
+        {
+          "pattern": "^rep_[A-Za-z0-9][A-Za-z0-9_-]*$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Representation Id"
+    },
+    "requested_path": {
+      "minLength": 1,
+      "title": "Requested Path",
+      "type": "string"
+    },
+    "requested_source_url": {
+      "minLength": 1,
+      "title": "Requested Source Url",
+      "type": "string"
+    },
+    "safe_failure_message": {
+      "anyOf": [
+        {
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Safe Failure Message"
+    },
+    "source_id": {
+      "anyOf": [
+        {
+          "pattern": "^src_[A-Za-z0-9][A-Za-z0-9_-]*$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Source Id"
+    },
+    "started_at": {
+      "format": "date-time",
+      "title": "Started At",
+      "type": "string"
+    },
+    "status": {
+      "$ref": "#/$defs/IngestionRunStatus"
+    }
+  },
+  "required": [
+    "id",
+    "requested_path",
+    "display_filename",
+    "requested_source_url",
+    "status",
+    "started_at"
+  ],
+  "title": "IngestionRun",
+  "type": "object"
+}

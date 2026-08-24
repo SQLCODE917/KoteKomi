@@ -37,7 +37,9 @@ from kotekomi_application.pdf_ingest import (
     PdfDocumentParser,
     PdfIngestInput,
     PdfIngestLedger,
+    PdfIngestOutcome,
     PdfProcessingError,
+    deterministic_pdf_ingest_activity_id,
     ingest_pdf,
 )
 from kotekomi_application.ports import ArchiveStore
@@ -588,10 +590,10 @@ def commit_authoritative_pdf_capture(
         document_id=capture.document.id,
         raw_path=capture.raw_blob.storage_locator,
         representation_id=pdf_outcome.representation_id,
-        provenance_activity_id=(
-            pdf_outcome.provenance_activity_id
-            if pdf_outcome.representation_id is not None
-            else None
+        provenance_activity_id=_pdf_capture_provenance_activity_id(
+            pdf_outcome=pdf_outcome,
+            document_id=capture.document.id,
+            policy_id=ingest_input.policy_id,
         ),
         blocking_reasons=pdf_outcome.blocking_reasons,
         failed=False,
@@ -602,6 +604,21 @@ def commit_authoritative_pdf_capture(
                 and pdf_outcome.provenance_activity_id is not None
             )
         ),
+    )
+
+
+def _pdf_capture_provenance_activity_id(
+    *,
+    pdf_outcome: PdfIngestOutcome,
+    document_id: str,
+    policy_id: str,
+) -> str | None:
+    if pdf_outcome.representation_id is None:
+        return None
+    return pdf_outcome.provenance_activity_id or deterministic_pdf_ingest_activity_id(
+        document_id,
+        pdf_outcome.representation_id,
+        policy_id,
     )
 
 

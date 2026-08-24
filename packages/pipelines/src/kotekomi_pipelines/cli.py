@@ -30,7 +30,9 @@ from kotekomi_adapters import (
 )
 from kotekomi_application import (
     CROSS_PLANE_QUERY_POLICY_ID,
+    AuthoritativeCaptureOutcome,
     AuthoritativeCaptureRequest,
+    AuthoritativePdfCaptureOutcome,
     AuthoritativePdfCaptureRequest,
     BriefingGenerationInput,
     BuildDocumentRetrievalProjectionCommand,
@@ -39,6 +41,8 @@ from kotekomi_application import (
     BuildEvidenceGraphProjectionCommand,
     BuildKnowledgeGraphProjectionCommand,
     BuildLedgerRetrievalProjectionCommand,
+    CompleteIngestionRunCapturedInput,
+    CompleteIngestionRunErrorInput,
     EmbeddingPort,
     EmbeddingProfile,
     ExplainEvidenceGraphRelationshipCommand,
@@ -74,7 +78,10 @@ from kotekomi_application import (
     ReviewQueueInput,
     ReviewReadinessInput,
     ReviewReadinessStatus,
+    StartIngestionRunInput,
+    UtcIngestionRunClock,
     UtcProcessingClock,
+    Uuid4IngestionRunIdFactory,
     Uuid4ProcessingAttemptIdFactory,
     approve_proposed_change,
     build_document_retrieval_projection,
@@ -84,6 +91,8 @@ from kotekomi_application import (
     build_ledger_retrieval_projection,
     commit_authoritative_capture,
     commit_authoritative_pdf_capture,
+    complete_ingestion_run_as_captured,
+    complete_ingestion_run_as_error,
     edit_proposed_change,
     explain_evidence_graph_relationship,
     export_review_editable_record,
@@ -95,6 +104,7 @@ from kotekomi_application import (
     get_review_readiness,
     ingest_structured_news,
     initialize_ledger,
+    list_ingestion_runs,
     list_review_queue,
     model_runtime_status_to_json,
     normalize_source_url,
@@ -116,12 +126,17 @@ from kotekomi_application import (
     run_next_result_to_json,
     run_review_drain,
     run_review_next_decision,
+    start_ingestion_run,
 )
 from kotekomi_briefing import MarkdownBriefingRenderer
 from kotekomi_domain import (
     AssertionStatus,
     DocumentRepresentationBundle,
     EvidenceGraphViewKind,
+    IngestionFailureCode,
+    IngestionFailureStage,
+    IngestionRun,
+    IngestionRunStatus,
     LedgerRetrievalRecordType,
     ReviewStatus,
 )
@@ -154,6 +169,16 @@ def main(argv: list[str] | None = None) -> int:
             archive_path_override=args.archive_path,
         )
         return init_ledger(config)
+
+    if args.command == "ingest":
+        return ingest_user_file(
+            config_path=args.config,
+            source_file_path=args.path,
+            source_url=args.url,
+        )
+
+    if args.command == "ingestions" and args.ingestions_command == "list":
+        return list_user_ingestion_history(config_path=args.config)
 
     if args.command == "retrieval" and args.retrieval_command == "build-document":
         if args.embedding_profile is not None and args.channel != "semantic":
@@ -630,6 +655,14 @@ def build_parser() -> argparse.ArgumentParser:
         help="Path to kotekomi.toml.",
     )
     subparsers = parser.add_subparsers(dest="command")
+
+    ingest_parser = subparsers.add_parser("ingest", help="Ingest one deposited file for review.")
+    ingest_parser.add_argument("path", type=Path)
+    ingest_parser.add_argument("--url", required=True)
+
+    ingestions_parser = subparsers.add_parser("ingestions", help="User ingestion history.")
+    ingestions_subparsers = ingestions_parser.add_subparsers(dest="ingestions_command")
+    ingestions_subparsers.add_parser("list", help="List admitted ingestion attempts.")
 
     ledger_parser = subparsers.add_parser("ledger", help="Ledger commands.")
     ledger_subparsers = ledger_parser.add_subparsers(dest="ledger_command")
@@ -1728,6 +1761,278 @@ def add_source_file(
     if blocking_reasons:
         print(f"Blockers: {', '.join(blocking_reasons)}")
     return 0
+
+
+def ingest_user_file(*, config_path: Path | None, source_file_path: Path, source_url: str) -> int:
+    """Run the CIR-1 user ingress path without exposing canonical identities."""
+    try:
+        config = load_processing_config(
+            config_path=config_path,
+            ledger_path_override=None,
+            archive_path_override=None,
+        )
+        SQLiteLedgerInitializer(config.storage.ledger_path).initialize()
+    except (OSError, TypeError, ValueError):
+        print("Unable to open configured ingestion storage.", file=sys.stderr)
+        return 1
+
+    display_filename = source_file_path.name
+    if not display_filename:
+        print("The requested path must identify a file.", file=sys.stderr)
+        return 2
+
+    try:
+        with sqlite_ledger_transaction(config.storage.ledger_path) as repository:
+            run = start_ingestion_run(
+                input=StartIngestionRunInput(
+                    requested_path=str(source_file_path),
+                    display_filename=display_filename,
+                    requested_source_url=source_url,
+                ),
+                repository=repository,
+                id_factory=Uuid4IngestionRunIdFactory(),
+                clock=UtcIngestionRunClock(),
+            )
+    except (OSError, ValueError):
+        print("Unable to start the ingestion run.", file=sys.stderr)
+        return 1
+
+    archive_store = LocalArchiveStore(config.storage.archive_path)
+    try:
+        archive_store.initialize()
+    except OSError:
+        return _record_user_ingestion_error(
+            config=config,
+            run=run,
+            failure_stage=IngestionFailureStage.ARCHIVE,
+            failure_code=IngestionFailureCode.ARCHIVE_INITIALIZATION_FAILED,
+            safe_failure_message="Unable to initialize the local Archive.",
+        )
+
+    if source_file_path.suffix.lower() not in {".pdf", ".md", ".txt"}:
+        return _record_user_ingestion_error(
+            config=config,
+            run=run,
+            failure_stage=IngestionFailureStage.SOURCE_VALIDATION,
+            failure_code=IngestionFailureCode.UNSUPPORTED_FILE_TYPE,
+            safe_failure_message="The deposited file type is not supported.",
+        )
+    try:
+        normalized_source_url = normalize_source_url(source_url)
+    except ValueError:
+        return _record_user_ingestion_error(
+            config=config,
+            run=run,
+            failure_stage=IngestionFailureStage.SOURCE_VALIDATION,
+            failure_code=IngestionFailureCode.SOURCE_URL_INVALID,
+            safe_failure_message="The Source URL must be an absolute HTTPS URL.",
+        )
+    try:
+        raw_bytes = source_file_path.read_bytes()
+    except FileNotFoundError:
+        return _record_user_ingestion_error(
+            config=config,
+            run=run,
+            failure_stage=IngestionFailureStage.SOURCE_VALIDATION,
+            failure_code=IngestionFailureCode.FILE_NOT_FOUND,
+            safe_failure_message="The requested deposited file was not found.",
+            normalized_source_url=normalized_source_url,
+        )
+    except OSError:
+        return _record_user_ingestion_error(
+            config=config,
+            run=run,
+            failure_stage=IngestionFailureStage.SOURCE_CAPTURE,
+            failure_code=IngestionFailureCode.SOURCE_CAPTURE_FAILED,
+            safe_failure_message="The deposited file could not be read.",
+            normalized_source_url=normalized_source_url,
+        )
+
+    text_capture_result: AuthoritativeCaptureOutcome | None = None
+    pdf_capture_result: AuthoritativePdfCaptureOutcome | None = None
+    try:
+        with sqlite_ledger_transaction(config.storage.ledger_path) as repository:
+            if source_file_path.suffix.lower() == ".pdf":
+                pdf_capture_result = commit_authoritative_pdf_capture(
+                    AuthoritativePdfCaptureRequest(
+                        local_file_path=str(source_file_path),
+                        filename=display_filename,
+                        raw_bytes=raw_bytes,
+                        source_url=normalized_source_url,
+                        ingested_at=datetime.now(UTC),
+                        build_identity=config.build_identity,
+                    ),
+                    archive_store,
+                    repository,
+                    DoclingPdfParser(DoclingPdfParserConfig()),
+                    Uuid4ProcessingAttemptIdFactory(),
+                )
+            else:
+                text_capture_result = commit_authoritative_capture(
+                    AuthoritativeCaptureRequest(
+                        local_file_path=str(source_file_path),
+                        filename=display_filename,
+                        raw_bytes=raw_bytes,
+                        ingested_at=datetime.now(UTC),
+                        build_identity=config.build_identity,
+                        source_url=normalized_source_url,
+                    ),
+                    archive_store,
+                    repository,
+                    Uuid4ProcessingAttemptIdFactory(),
+                )
+    except Exception:
+        return _record_user_ingestion_error(
+            config=config,
+            run=run,
+            failure_stage=IngestionFailureStage.SOURCE_CAPTURE,
+            failure_code=IngestionFailureCode.SOURCE_CAPTURE_FAILED,
+            safe_failure_message="The deposited source could not be captured.",
+            normalized_source_url=normalized_source_url,
+        )
+
+    if pdf_capture_result is not None and (
+        pdf_capture_result.failed or pdf_capture_result.blocking_reasons
+    ):
+        return _record_user_ingestion_error(
+            config=config,
+            run=run,
+            failure_stage=IngestionFailureStage.DOCUMENT_REPRESENTATION,
+            failure_code=(
+                IngestionFailureCode.DOCUMENT_REPRESENTATION_FAILED
+                if pdf_capture_result.failed
+                else IngestionFailureCode.DOCUMENT_REPRESENTATION_BLOCKED
+            ),
+            safe_failure_message=(
+                "The deposited PDF representation failed."
+                if pdf_capture_result.failed
+                else "The deposited PDF representation is blocked."
+            ),
+            normalized_source_url=normalized_source_url,
+            source_id=pdf_capture_result.source_id,
+            document_id=pdf_capture_result.document_id,
+            representation_id=pdf_capture_result.representation_id,
+            provenance_activity_id=pdf_capture_result.provenance_activity_id,
+        )
+
+    if pdf_capture_result is not None:
+        if (
+            pdf_capture_result.representation_id is None
+            or pdf_capture_result.provenance_activity_id is None
+        ):
+            return _record_user_ingestion_error(
+                config=config,
+                run=run,
+                failure_stage=IngestionFailureStage.DOCUMENT_REPRESENTATION,
+                failure_code=IngestionFailureCode.DOCUMENT_REPRESENTATION_FAILED,
+                safe_failure_message="The deposited PDF representation is incomplete.",
+                normalized_source_url=normalized_source_url,
+                source_id=pdf_capture_result.source_id,
+                document_id=pdf_capture_result.document_id,
+            )
+        source_id = pdf_capture_result.source_id
+        document_id = pdf_capture_result.document_id
+        representation_id = pdf_capture_result.representation_id
+        provenance_activity_id = pdf_capture_result.provenance_activity_id
+    elif text_capture_result is not None:
+        source_id = text_capture_result.source_id
+        document_id = text_capture_result.document_id
+        representation_id = text_capture_result.representation_id
+        provenance_activity_id = text_capture_result.provenance_activity_id
+    else:
+        return _record_user_ingestion_error(
+            config=config,
+            run=run,
+            failure_stage=IngestionFailureStage.SOURCE_CAPTURE,
+            failure_code=IngestionFailureCode.SOURCE_CAPTURE_FAILED,
+            safe_failure_message="The deposited source did not produce a capture result.",
+            normalized_source_url=normalized_source_url,
+        )
+
+    try:
+        with sqlite_ledger_transaction(config.storage.ledger_path) as repository:
+            captured = complete_ingestion_run_as_captured(
+                input=CompleteIngestionRunCapturedInput(
+                    ingestion_run_id=run.id,
+                    normalized_source_url=normalized_source_url,
+                    source_id=source_id,
+                    document_id=document_id,
+                    representation_id=representation_id,
+                    provenance_activity_id=provenance_activity_id,
+                ),
+                repository=repository,
+                clock=UtcIngestionRunClock(),
+            )
+    except (OSError, ValueError):
+        print("Unable to persist the ingestion result.", file=sys.stderr)
+        return 1
+    print(_user_ingestion_row(captured))
+    return 0
+
+
+def list_user_ingestion_history(*, config_path: Path | None) -> int:
+    try:
+        config = load_processing_config(
+            config_path=config_path,
+            ledger_path_override=None,
+            archive_path_override=None,
+        )
+        SQLiteLedgerInitializer(config.storage.ledger_path).initialize()
+        with sqlite_ledger_transaction(config.storage.ledger_path) as repository:
+            runs = list_ingestion_runs(repository)
+    except (OSError, TypeError, ValueError):
+        print("Unable to open configured ingestion storage.", file=sys.stderr)
+        return 1
+    for run in runs:
+        print(_user_ingestion_row(run))
+    return 0
+
+
+def _record_user_ingestion_error(
+    *,
+    config: ProcessingConfig,
+    run: IngestionRun,
+    failure_stage: IngestionFailureStage,
+    failure_code: IngestionFailureCode,
+    safe_failure_message: str,
+    normalized_source_url: str | None = None,
+    source_id: str | None = None,
+    document_id: str | None = None,
+    representation_id: str | None = None,
+    provenance_activity_id: str | None = None,
+) -> int:
+    try:
+        with sqlite_ledger_transaction(config.storage.ledger_path) as repository:
+            complete_ingestion_run_as_error(
+                input=CompleteIngestionRunErrorInput(
+                    ingestion_run_id=run.id,
+                    failure_stage=failure_stage,
+                    failure_code=failure_code,
+                    safe_failure_message=safe_failure_message,
+                    normalized_source_url=normalized_source_url,
+                    source_id=source_id,
+                    document_id=document_id,
+                    representation_id=representation_id,
+                    provenance_activity_id=provenance_activity_id,
+                ),
+                repository=repository,
+                clock=UtcIngestionRunClock(),
+            )
+    except (OSError, ValueError):
+        print("Unable to persist the ingestion failure.", file=sys.stderr)
+        return 1
+    print(safe_failure_message, file=sys.stderr)
+    return 1
+
+
+def _user_ingestion_row(run: IngestionRun) -> str:
+    status = {
+        IngestionRunStatus.RUNNING: "[RUNNING]",
+        IngestionRunStatus.CAPTURED: "[CAPTURED]",
+        IngestionRunStatus.ERROR: "[ERROR]",
+    }[run.status]
+    timestamp = run.started_at.astimezone(UTC).strftime("%Y-%m-%dT%H:%M")
+    return f"{run.display_filename}\t{status}\t{timestamp}"
 
 
 def add_structured_news(
