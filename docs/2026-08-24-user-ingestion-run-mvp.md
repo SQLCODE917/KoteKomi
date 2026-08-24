@@ -63,6 +63,10 @@ CIR-1 deliberately stops at `captured`.
 
 CIR-2 will extend successful ingestion through model work and candidate creation.
 
+The User CLI setup path is `kotekomi init`.
+
+The command creates user-local configuration and initializes the Ledger and Archive.
+
 ## 2. Goals
 
 - A user can archive and represent one deposited file without supplying an internal identifier.
@@ -126,6 +130,10 @@ CIR-1 extends no accepted intelligence contract.
 - C1-CLI-02: The Pipeline exposes `kotekomi ingestions list`.
 - C1-CLI-03: The ingest command accepts `.pdf`, `.md`, and `.txt` suffixes.
 - C1-CLI-04: The ingest command reads Ledger and Archive paths from configuration.
+- C1-CLI-04A: The Pipeline exposes `kotekomi init` for first-run user configuration and storage.
+- C1-CLI-04B: Configuration lookup uses explicit `--config`, `./kotekomi.toml`, then the XDG-style user config.
+- C1-CLI-04C: Missing configuration prints an exact setup remedy and creates no IngestionRun.
+- C1-CLI-04D: The list command loads storage configuration without deriving a BuildIdentity.
 - C1-CLI-05: The ingest command performs no request to the Source URL.
 - C1-CLI-06: A captured run writes one ingestion row to stdout.
 - C1-CLI-07: An error run writes no result row to stdout.
@@ -249,6 +257,28 @@ A failure after run start cannot erase the IngestionRun start record.
 
 A representation blocker cannot erase a committed Source capture.
 
+### Configuration and BuildIdentity
+
+`kotekomi init` creates `~/.config/kotekomi/kotekomi.toml` by default.
+
+`XDG_CONFIG_HOME` replaces the default configuration root.
+
+The default Ledger and Archive live below `~/.local/share/kotekomi`.
+
+`XDG_DATA_HOME` replaces the default data root.
+
+An explicit `--config` path uses sibling `data/kotekomi.db` and `data/archive` paths by default.
+
+The generated configuration records the Ledger path, Archive path, and representation policy version.
+
+The Pipeline derives package version, Git revision, and code digest from the executing Git checkout.
+
+The code digest covers project metadata and every package source file.
+
+The Pipeline fails before admission when it cannot derive that identity.
+
+The list command does not derive an identity because it does not create authoritative processing state.
+
 ## 5. Key Interactions
 
 ### Captured ingestion
@@ -346,6 +376,12 @@ The ingest command is:
 
 ```text
 kotekomi ingest <path> --url <SOURCE_URL>
+```
+
+The setup command is:
+
+```text
+kotekomi init
 ```
 
 The history command is:
@@ -569,6 +605,10 @@ The new User CLI and Operator CLI share Application Layer capture use cases.
 - AC-C1-CLI-14: CLI tests prove two same-file attempts produce two rows.
 - AC-C1-CLI-15: CLI tests prove same bytes reuse canonical Source and Document records.
 - AC-C1-CLI-16: CLI tests prove list order uses full start-time precision.
+- AC-C1-CLI-17: CLI tests prove `kotekomi init` creates the XDG-style configuration and storage.
+- AC-C1-CLI-18: CLI tests prove setup does not overwrite an existing configuration.
+- AC-C1-CLI-19: CLI tests prove a missing configuration names `kotekomi init` as the remedy.
+- AC-C1-CLI-20: CLI tests prove history loading does not require BuildIdentity derivation.
 
 ### Regression
 

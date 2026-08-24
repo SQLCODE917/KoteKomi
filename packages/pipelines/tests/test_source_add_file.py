@@ -40,11 +40,8 @@ def processing_config(tmp_path: Path) -> Path:
     config_path = tmp_path / "kotekomi.toml"
     config_path.write_text(
         """
-[processing.build_identity]
-package_version = "test"
-source_revision = "test"
-artifact_digest = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-representation_policy_version = "1"
+[processing]
+representation_policy_version = "deposited-source-v1"
 """.lstrip()
     )
     return config_path

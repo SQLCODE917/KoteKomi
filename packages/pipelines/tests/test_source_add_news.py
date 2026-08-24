@@ -14,10 +14,7 @@ def _config(tmp_path: Path) -> Path:
     path = tmp_path / "kotekomi.toml"
     path.write_text(
         """
-[processing.build_identity]
-package_version = "test"
-source_revision = "test"
-artifact_digest = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+[processing]
 representation_policy_version = "structured-news-v1"
 """.lstrip()
     )

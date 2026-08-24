@@ -7,6 +7,7 @@ import contextlib
 import hashlib
 import io
 import json
+import sqlite3
 import sys
 from collections.abc import Mapping
 from datetime import UTC, datetime
@@ -145,8 +146,11 @@ from kotekomi_pipelines.config import (
     MODEL_RUNTIME_ADAPTERS,
     PipelineConfig,
     ProcessingConfig,
+    ProcessingConfigurationError,
+    initialize_user_processing_config,
     load_config,
     load_processing_config,
+    load_processing_storage_config,
 )
 from kotekomi_pipelines.managed_llama_server import (
     ManagedLlamaServerConfig,
@@ -169,6 +173,13 @@ def main(argv: list[str] | None = None) -> int:
             archive_path_override=args.archive_path,
         )
         return init_ledger(config)
+
+    if args.command == "init":
+        return initialize_user_environment(
+            config_path=args.config,
+            ledger_path_override=args.ledger_path,
+            archive_path_override=args.archive_path,
+        )
 
     if args.command == "ingest":
         return ingest_user_file(
@@ -664,6 +675,12 @@ def build_parser() -> argparse.ArgumentParser:
     ingestions_subparsers = ingestions_parser.add_subparsers(dest="ingestions_command")
     ingestions_subparsers.add_parser("list", help="List admitted ingestion attempts.")
 
+    init_parser = subparsers.add_parser(
+        "init", help="Create the local user configuration and initialize storage."
+    )
+    init_parser.add_argument("--ledger-path", type=Path, default=None)
+    init_parser.add_argument("--archive-path", type=Path, default=None)
+
     ledger_parser = subparsers.add_parser("ledger", help="Ledger commands.")
     ledger_subparsers = ledger_parser.add_subparsers(dest="ledger_command")
     init_parser = ledger_subparsers.add_parser("init", help="Create or migrate the Ledger.")
@@ -1112,6 +1129,36 @@ def init_ledger(config: PipelineConfig) -> int:
     return 0
 
 
+def initialize_user_environment(
+    *,
+    config_path: Path | None,
+    ledger_path_override: Path | None,
+    archive_path_override: Path | None,
+) -> int:
+    """Create or validate the user config, then initialize its local storage."""
+    try:
+        config_file, config, created = initialize_user_processing_config(
+            config_path=config_path,
+            ledger_path_override=ledger_path_override,
+            archive_path_override=archive_path_override,
+        )
+        config.storage.archive_path.mkdir(parents=True, exist_ok=True)
+        result = initialize_ledger(SQLiteLedgerInitializer(config.storage.ledger_path))
+    except ProcessingConfigurationError as error:
+        print(str(error), file=sys.stderr)
+        return 1
+    except (OSError, sqlite3.Error) as error:
+        print(f"Unable to initialize KoteKomi storage: {error}", file=sys.stderr)
+        return 1
+    action = "Created" if created else "Using"
+    migrations = ", ".join(result.applied_migrations) if result.applied_migrations else "none"
+    print(f"{action} configuration: {config_file}")
+    print(f"Ledger initialized: {result.ledger_path}")
+    print(f"Archive path ready: {config.storage.archive_path}")
+    print(f"Applied migrations: {migrations}")
+    return 0
+
+
 class _RetrievalValidationTokenizer:
     tokenizer_id = "retrieval_validation_whitespace_v1"
 
@@ -1402,9 +1449,7 @@ def query_knowledge_graph_retrieval_index(
     )
 
 
-def query_cross_plane_retrieval_index(
-    *, ledger_path: Path, query: str, output_format: str
-) -> int:
+def query_cross_plane_retrieval_index(*, ledger_path: Path, query: str, output_format: str) -> int:
     ledger_projection = SQLiteLedgerRetrievalAdapter(_retrieval_index_path(ledger_path))
     graph_projection = SQLiteKnowledgeGraphRetrievalAdapter(
         _knowledge_graph_index_path(ledger_path)
@@ -1772,8 +1817,11 @@ def ingest_user_file(*, config_path: Path | None, source_file_path: Path, source
             archive_path_override=None,
         )
         SQLiteLedgerInitializer(config.storage.ledger_path).initialize()
-    except (OSError, TypeError, ValueError):
-        print("Unable to open configured ingestion storage.", file=sys.stderr)
+    except ProcessingConfigurationError as error:
+        print(str(error), file=sys.stderr)
+        return 1
+    except (OSError, sqlite3.Error) as error:
+        print(f"Unable to open KoteKomi storage: {error}", file=sys.stderr)
         return 1
 
     display_filename = source_file_path.name
@@ -1972,7 +2020,7 @@ def ingest_user_file(*, config_path: Path | None, source_file_path: Path, source
 
 def list_user_ingestion_history(*, config_path: Path | None) -> int:
     try:
-        config = load_processing_config(
+        config = load_processing_storage_config(
             config_path=config_path,
             ledger_path_override=None,
             archive_path_override=None,
@@ -1980,8 +2028,11 @@ def list_user_ingestion_history(*, config_path: Path | None) -> int:
         SQLiteLedgerInitializer(config.storage.ledger_path).initialize()
         with sqlite_ledger_transaction(config.storage.ledger_path) as repository:
             runs = list_ingestion_runs(repository)
-    except (OSError, TypeError, ValueError):
-        print("Unable to open configured ingestion storage.", file=sys.stderr)
+    except ProcessingConfigurationError as error:
+        print(str(error), file=sys.stderr)
+        return 1
+    except (OSError, sqlite3.Error) as error:
+        print(f"Unable to open KoteKomi storage: {error}", file=sys.stderr)
         return 1
     for run in runs:
         print(_user_ingestion_row(run))

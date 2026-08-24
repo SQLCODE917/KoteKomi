@@ -29,11 +29,8 @@ def _config(tmp_path: Path) -> Path:
 ledger_path = "{(tmp_path / "state" / "kotekomi.db").as_posix()}"
 archive_path = "{(tmp_path / "state" / "archive").as_posix()}"
 
-[processing.build_identity]
-package_version = "test"
-source_revision = "test"
-artifact_digest = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-representation_policy_version = "1"
+[processing]
+representation_policy_version = "deposited-source-v1"
 '''.lstrip(),
         encoding="utf-8",
     )
@@ -46,18 +43,14 @@ def test_user_ingest_auto_initializes_storage_and_records_history(
     config_path = _config(tmp_path)
 
     assert (
-        main(["--config", str(config_path), "ingest", str(FIXTURE_PATH), "--url", SOURCE_URL])
-        == 0
+        main(["--config", str(config_path), "ingest", str(FIXTURE_PATH), "--url", SOURCE_URL]) == 0
     )
     captured = capsys.readouterr()
 
     assert captured.err == ""
     assert captured.out.startswith("anthropic_model_release_review.md\t[CAPTURED]\t")
     assert "src_" not in captured.out
-    assert (
-        main(["--config", str(config_path), "ingestions", "list"])
-        == 0
-    )
+    assert main(["--config", str(config_path), "ingestions", "list"]) == 0
     history = capsys.readouterr()
     assert history.err == ""
     assert history.out == captured.out
@@ -182,8 +175,7 @@ def test_user_ingest_records_unexpected_capture_failure_without_a_traceback(
     )
 
     assert (
-        main(["--config", str(config_path), "ingest", str(FIXTURE_PATH), "--url", SOURCE_URL])
-        == 1
+        main(["--config", str(config_path), "ingest", str(FIXTURE_PATH), "--url", SOURCE_URL]) == 1
     )
     output = capsys.readouterr()
     assert output.out == ""

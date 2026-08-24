@@ -386,10 +386,7 @@ def _config(ledger_path: Path, archive_path: Path) -> str:
         (
             f'ledger_path = "{ledger_path}"',
             f'archive_path = "{archive_path}"',
-            "[processing.build_identity]",
-            'package_version = "dr5-canonical"',
-            'source_revision = "dr5-canonical"',
-            f'artifact_digest = "{"0" * 64}"',
+            "[processing]",
             'representation_policy_version = "dr5-canonical"',
             "",
         )

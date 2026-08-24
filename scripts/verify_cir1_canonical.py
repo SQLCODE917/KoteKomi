@@ -54,9 +54,11 @@ def run() -> JsonObject:
                 "missing_file_failure_invalid", "Missing-file explanation changed."
             )
         rows = tuple(line for line in history.stdout.splitlines() if line)
-        if len(rows) != 3 or sum("[CAPTURED]" in row for row in rows) != 2 or sum(
-            "[ERROR]" in row for row in rows
-        ) != 1:
+        if (
+            len(rows) != 3
+            or sum("[CAPTURED]" in row for row in rows) != 2
+            or sum("[ERROR]" in row for row in rows) != 1
+        ):
             raise ConformanceError(
                 "history_shape_invalid", "History does not contain two captures and one error."
             )
@@ -127,10 +129,7 @@ def _config(ledger_path: Path, archive_path: Path) -> str:
         (
             f'ledger_path = "{ledger_path}"',
             f'archive_path = "{archive_path}"',
-            "[processing.build_identity]",
-            'package_version = "cir1-canonical"',
-            'source_revision = "cir1-canonical"',
-            f'artifact_digest = "{"0" * 64}"',
+            "[processing]",
             'representation_policy_version = "cir1-canonical"',
             "",
         )

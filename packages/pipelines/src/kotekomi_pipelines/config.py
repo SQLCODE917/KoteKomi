@@ -2,17 +2,21 @@
 
 from __future__ import annotations
 
+import hashlib
+import os
+import subprocess
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 
 from kotekomi_application import BuildIdentity, EmbeddingProfile
 
-DEFAULT_CONFIG_PATH = Path("kotekomi.toml")
+PROJECT_CONFIG_PATH = Path("kotekomi.toml")
 DEFAULT_LEDGER_PATH = Path("data/kotekomi.db")
 DEFAULT_ARCHIVE_PATH = Path("data/archive")
 DEFAULT_RUNTIME_PROFILE = "macbook"
+DEFAULT_REPRESENTATION_POLICY_VERSION = "deposited-source-v1"
 MODEL_RUNTIME_ADAPTERS = ("llama_server", "ollama", "fixture")
 EMBEDDING_ADAPTERS = ("lm_studio", "llama_server", "ollama")
 MODEL_RUNTIME_CONFIG_KEYS = frozenset(
@@ -59,49 +63,247 @@ class ProcessingConfig:
     build_identity: BuildIdentity
 
 
+@dataclass(frozen=True)
+class ProcessingStorageConfig:
+    storage: StorageConfig
+    representation_policy_version: str
+
+
+class ProcessingConfigurationError(ValueError):
+    """A safe user-facing failure while selecting processing configuration."""
+
+
+class MissingProcessingConfigurationError(ProcessingConfigurationError):
+    pass
+
+
+class InvalidProcessingConfigurationError(ProcessingConfigurationError):
+    pass
+
+
+class CheckoutBuildIdentityError(ProcessingConfigurationError):
+    pass
+
+
+def default_user_config_path() -> Path:
+    """Return the XDG-style user configuration location without creating it."""
+    config_home = _environment_path("XDG_CONFIG_HOME", Path.home() / ".config")
+    return config_home / "kotekomi" / "kotekomi.toml"
+
+
+def default_user_data_path() -> Path:
+    """Return the XDG-style user data location without creating it."""
+    data_home = _environment_path("XDG_DATA_HOME", Path.home() / ".local" / "share")
+    return data_home / "kotekomi"
+
+
+def select_config_path(config_path: Path | None) -> Path:
+    """Select explicit, project-local, then user-local configuration."""
+    if config_path is not None:
+        return config_path
+    if PROJECT_CONFIG_PATH.exists():
+        return PROJECT_CONFIG_PATH
+    return default_user_config_path()
+
+
+def initialize_user_processing_config(
+    *,
+    config_path: Path | None,
+    ledger_path_override: Path | None,
+    archive_path_override: Path | None,
+) -> tuple[Path, ProcessingStorageConfig, bool]:
+    """Create a non-destructive user processing config and return its storage settings."""
+    target = (config_path or default_user_config_path()).expanduser().resolve()
+    if target.exists():
+        if ledger_path_override is not None or archive_path_override is not None:
+            raise InvalidProcessingConfigurationError(
+                "Existing KoteKomi configuration is not changed by init; "
+                "remove path overrides or choose a new --config path."
+            )
+        return (
+            target,
+            load_processing_storage_config(
+                config_path=target,
+                ledger_path_override=None,
+                archive_path_override=None,
+            ),
+            False,
+        )
+
+    if config_path is None:
+        data_root = default_user_data_path()
+        default_ledger_path = data_root / "kotekomi.db"
+        default_archive_path = data_root / "archive"
+    else:
+        data_root = target.parent / "data"
+        default_ledger_path = data_root / "kotekomi.db"
+        default_archive_path = data_root / "archive"
+    ledger_path = (ledger_path_override or default_ledger_path).expanduser().resolve()
+    archive_path = (archive_path_override or default_archive_path).expanduser().resolve()
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(_render_user_processing_config(ledger_path, archive_path), encoding="utf-8")
+    return (
+        target,
+        load_processing_storage_config(
+            config_path=target,
+            ledger_path_override=None,
+            archive_path_override=None,
+        ),
+        True,
+    )
+
+
 def load_processing_config(
     *,
     config_path: Path | None,
     ledger_path_override: Path | None,
     archive_path_override: Path | None,
 ) -> ProcessingConfig:
-    selected_config_path = config_path or DEFAULT_CONFIG_PATH
-    if not selected_config_path.exists():
-        raise FileNotFoundError(
-            "Authoritative processing requires an explicit config with processing.build_identity."
-        )
-    with selected_config_path.open("rb") as config_file:
-        raw_config = tomllib.load(config_file)
-    config_base = selected_config_path.parent
-    ledger_path = _path_from_config(raw_config, "ledger_path", DEFAULT_LEDGER_PATH, config_base)
-    archive_path = _path_from_config(raw_config, "archive_path", DEFAULT_ARCHIVE_PATH, config_base)
-    if ledger_path_override is not None:
-        ledger_path = ledger_path_override
-    if archive_path_override is not None:
-        archive_path = archive_path_override
-    processing_value = raw_config.get("processing")
-    if not isinstance(processing_value, dict):
-        raise TypeError("Config processing must be a table.")
-    processing = cast(dict[str, object], processing_value)
-    build = processing.get("build_identity")
-    if not isinstance(build, dict):
-        raise TypeError("Config processing.build_identity must be a table.")
-    build_values = {
-        key: value
-        for key, value in cast(dict[object, object], build).items()
-        if isinstance(key, str)
-    }
-    identity = BuildIdentity(
-        package_version=_string_value(build_values, "package_version"),
-        source_revision=_string_value(build_values, "source_revision"),
-        artifact_digest=_string_value(build_values, "artifact_digest"),
-        representation_policy_version=_string_value(build_values, "representation_policy_version"),
+    processing = load_processing_storage_config(
+        config_path=config_path,
+        ledger_path_override=ledger_path_override,
+        archive_path_override=archive_path_override,
     )
+    identity = derive_checkout_build_identity(processing.representation_policy_version)
     identity.snapshot()
-    return ProcessingConfig(
+    return ProcessingConfig(storage=processing.storage, build_identity=identity)
+
+
+def load_processing_storage_config(
+    *,
+    config_path: Path | None,
+    ledger_path_override: Path | None,
+    archive_path_override: Path | None,
+) -> ProcessingStorageConfig:
+    """Load storage and policy settings without deriving a processing identity."""
+    selected_config_path = select_config_path(config_path).expanduser()
+    if not selected_config_path.exists():
+        raise MissingProcessingConfigurationError(
+            "No KoteKomi configuration found at "
+            f"{selected_config_path}. Run 'kotekomi init' or pass --config PATH."
+        )
+    try:
+        with selected_config_path.open("rb") as config_file:
+            raw_config = tomllib.load(config_file)
+        config_base = selected_config_path.parent
+        ledger_path = _path_from_config(raw_config, "ledger_path", DEFAULT_LEDGER_PATH, config_base)
+        archive_path = _path_from_config(
+            raw_config, "archive_path", DEFAULT_ARCHIVE_PATH, config_base
+        )
+        if ledger_path_override is not None:
+            ledger_path = ledger_path_override
+        if archive_path_override is not None:
+            archive_path = archive_path_override
+        processing_value = raw_config.get("processing")
+        if not isinstance(processing_value, dict):
+            raise TypeError("Config processing must be a table.")
+        processing = cast(dict[str, object], processing_value)
+        if set(processing) != {"representation_policy_version"}:
+            raise ValueError("Config processing requires only representation_policy_version.")
+        policy_version = _string_value(processing, "representation_policy_version")
+    except tomllib.TOMLDecodeError as error:
+        raise InvalidProcessingConfigurationError(
+            f"Invalid KoteKomi configuration at {selected_config_path}: {error}."
+        ) from error
+    except (TypeError, ValueError) as error:
+        raise InvalidProcessingConfigurationError(
+            f"Invalid KoteKomi configuration at {selected_config_path}: {error}"
+        ) from error
+    return ProcessingStorageConfig(
         storage=StorageConfig(ledger_path.resolve(), archive_path.resolve()),
-        build_identity=identity,
+        representation_policy_version=policy_version,
     )
+
+
+def derive_checkout_build_identity(representation_policy_version: str) -> BuildIdentity:
+    """Derive an identity from the code currently executing in a Git checkout."""
+    checkout_root = _executing_checkout_root()
+    package_version = _checkout_package_version(checkout_root)
+    source_revision = _git_output(checkout_root, "rev-parse", "HEAD")
+    return BuildIdentity(
+        package_version=package_version,
+        source_revision=source_revision,
+        artifact_digest=checkout_artifact_digest(checkout_root),
+        representation_policy_version=representation_policy_version,
+    )
+
+
+def _render_user_processing_config(ledger_path: Path, archive_path: Path) -> str:
+    return (
+        f'ledger_path = "{ledger_path.as_posix()}"\n'
+        f'archive_path = "{archive_path.as_posix()}"\n\n'
+        "[processing]\n"
+        f'representation_policy_version = "{DEFAULT_REPRESENTATION_POLICY_VERSION}"\n'
+    )
+
+
+def _executing_checkout_root() -> Path:
+    source_path = Path(__file__).resolve()
+    for candidate in source_path.parents:
+        if (candidate / "pyproject.toml").is_file() and (candidate / "packages").is_dir():
+            try:
+                root = Path(_git_output(candidate, "rev-parse", "--show-toplevel"))
+            except CheckoutBuildIdentityError:
+                break
+            if root == candidate:
+                return root
+    raise CheckoutBuildIdentityError(
+        "Cannot derive authoritative build identity from the executing KoteKomi checkout. "
+        "Run KoteKomi from a Git checkout."
+    )
+
+
+def _git_output(checkout_root: Path, *arguments: str) -> str:
+    try:
+        result = subprocess.run(
+            ("git", "-C", str(checkout_root), *arguments),
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+    except OSError as error:
+        raise CheckoutBuildIdentityError(
+            "Cannot derive authoritative build identity because Git is unavailable. "
+            "Run KoteKomi from a Git checkout."
+        ) from error
+    value = result.stdout.strip()
+    if result.returncode != 0 or not value:
+        raise CheckoutBuildIdentityError(
+            "Cannot derive authoritative build identity from the executing KoteKomi checkout. "
+            "Run KoteKomi from a Git checkout."
+        )
+    return value
+
+
+def _checkout_package_version(checkout_root: Path) -> str:
+    with (checkout_root / "pyproject.toml").open("rb") as project_file:
+        raw_project = tomllib.load(project_file)
+    project = raw_project.get("project")
+    if not isinstance(project, dict):
+        raise CheckoutBuildIdentityError(
+            "Cannot derive authoritative build identity because project metadata is invalid."
+        )
+    project_values = cast(dict[str, Any], project)
+    version = project_values.get("version")
+    if not isinstance(version, str) or not version.strip():
+        raise CheckoutBuildIdentityError(
+            "Cannot derive authoritative build identity because project version is unavailable."
+        )
+    return version
+
+
+def checkout_artifact_digest(checkout_root: Path) -> str:
+    tracked_paths = [checkout_root / "pyproject.toml"]
+    tracked_paths.extend(sorted((checkout_root / "packages").glob("*/pyproject.toml")))
+    tracked_paths.extend(sorted((checkout_root / "packages").glob("*/src/**/*.py")))
+    digest = hashlib.sha256()
+    for path in tracked_paths:
+        relative_path = path.relative_to(checkout_root).as_posix().encode("utf-8")
+        digest.update(relative_path)
+        digest.update(b"\0")
+        digest.update(path.read_bytes())
+        digest.update(b"\0")
+    return digest.hexdigest()
 
 
 def load_config(
@@ -117,12 +319,13 @@ def load_config(
     model_context_tokens_override: int | None = None,
     model_max_output_tokens_override: int | None = None,
 ) -> PipelineConfig:
-    selected_config_path = config_path or DEFAULT_CONFIG_PATH
+    selected_config_path = select_config_path(config_path).expanduser()
     raw_config: dict[str, object] = {}
-    config_base = selected_config_path.parent
+    config_base = Path.cwd()
     if selected_config_path.exists():
         with selected_config_path.open("rb") as config_file:
             raw_config = tomllib.load(config_file)
+        config_base = selected_config_path.parent
     elif config_path is not None:
         raise FileNotFoundError(f"Config file does not exist: {selected_config_path}")
 
@@ -292,7 +495,7 @@ def _apply_model_runtime_overrides(
 def _string_value(values: dict[str, object], key: str) -> str:
     value = values.get(key)
     if not isinstance(value, str) or not value.strip():
-        raise TypeError(f"Model runtime {key} must be a non-empty string.")
+        raise TypeError(f"Config key {key} must be a non-empty string.")
     return value
 
 
@@ -329,6 +532,11 @@ def _path_from_config(
     else:
         raise TypeError(f"Config key {key} must be a string path.")
     return path if path.is_absolute() else config_base / path
+
+
+def _environment_path(name: str, default: Path) -> Path:
+    value = os.environ.get(name)
+    return Path(value) if value else default
 
 
 def _embedding_profiles(

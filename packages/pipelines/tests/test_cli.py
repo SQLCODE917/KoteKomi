@@ -3,7 +3,180 @@ from pathlib import Path
 import pytest
 from kotekomi_application import ModelRuntimeStatus
 from kotekomi_pipelines.cli import main
-from kotekomi_pipelines.config import ModelExecutionConfig, load_config
+from kotekomi_pipelines.config import (
+    CheckoutBuildIdentityError,
+    ModelExecutionConfig,
+    checkout_artifact_digest,
+    derive_checkout_build_identity,
+    load_config,
+    load_processing_storage_config,
+)
+
+USER_INGEST_FIXTURE = (
+    Path(__file__).resolve().parent
+    / "fixtures"
+    / "source_files"
+    / "anthropic_model_release_review.md"
+)
+
+
+def test_user_init_creates_xdg_config_and_no_config_ingestion_history(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    config_home = tmp_path / "config-home"
+    data_home = tmp_path / "data-home"
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(config_home))
+    monkeypatch.setenv("XDG_DATA_HOME", str(data_home))
+    monkeypatch.chdir(tmp_path)
+
+    assert main(["init"]) == 0
+    initialized = capsys.readouterr()
+    config_path = config_home / "kotekomi" / "kotekomi.toml"
+    assert config_path.is_file()
+    assert (data_home / "kotekomi" / "kotekomi.db").is_file()
+    assert (data_home / "kotekomi" / "archive").is_dir()
+    assert f"Created configuration: {config_path}" in initialized.out
+    assert 'representation_policy_version = "deposited-source-v1"' in config_path.read_text()
+
+    assert main(["ingestions", "list"]) == 0
+    assert capsys.readouterr().out == ""
+
+
+def test_user_init_is_idempotent_without_overwriting_config(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config-home"))
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "data-home"))
+    monkeypatch.chdir(tmp_path)
+
+    assert main(["init"]) == 0
+    capsys.readouterr()
+    config_path = tmp_path / "config-home" / "kotekomi" / "kotekomi.toml"
+    first_contents = config_path.read_bytes()
+
+    assert main(["init"]) == 0
+    second = capsys.readouterr()
+    assert config_path.read_bytes() == first_contents
+    assert f"Using configuration: {config_path}" in second.out
+
+
+def test_user_init_enables_no_config_ingest_and_history(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config-home"))
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "data-home"))
+    monkeypatch.chdir(tmp_path)
+
+    assert main(["init"]) == 0
+    capsys.readouterr()
+    assert (
+        main(
+            [
+                "ingest",
+                str(USER_INGEST_FIXTURE),
+                "--url",
+                "https://example.test/articles/anthropic-review",
+            ]
+        )
+        == 0
+    )
+    captured = capsys.readouterr()
+    assert captured.out.startswith("anthropic_model_release_review.md\t[CAPTURED]\t")
+    assert main(["ingestions", "list"]) == 0
+    assert capsys.readouterr().out == captured.out
+
+
+def test_project_config_precedes_user_config(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    user_config = tmp_path / "config-home" / "kotekomi" / "kotekomi.toml"
+    user_config.parent.mkdir(parents=True)
+    user_config.write_text(
+        'ledger_path = "user.db"\narchive_path = "user-archive"\n'
+        '[processing]\nrepresentation_policy_version = "user-v1"\n',
+        encoding="utf-8",
+    )
+    project_config = tmp_path / "project" / "kotekomi.toml"
+    project_config.parent.mkdir()
+    project_config.write_text(
+        'ledger_path = "project.db"\narchive_path = "project-archive"\n'
+        '[processing]\nrepresentation_policy_version = "project-v1"\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config-home"))
+    monkeypatch.chdir(project_config.parent)
+
+    config = load_processing_storage_config(
+        config_path=None,
+        ledger_path_override=None,
+        archive_path_override=None,
+    )
+
+    assert config.storage.ledger_path == (project_config.parent / "project.db").resolve()
+    assert config.representation_policy_version == "project-v1"
+
+
+def test_user_history_missing_config_is_actionable_and_creates_no_ledger(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config-home"))
+    monkeypatch.chdir(tmp_path)
+
+    assert main(["ingestions", "list"]) == 1
+    output = capsys.readouterr()
+    assert output.out == ""
+    assert "No KoteKomi configuration found at" in output.err
+    assert "kotekomi init" in output.err
+    assert not (tmp_path / "data").exists()
+
+
+def test_user_history_does_not_require_processing_identity(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    config_path = tmp_path / "kotekomi.toml"
+    config_path.write_text(
+        '[processing]\nrepresentation_policy_version = "test-v1"\n', encoding="utf-8"
+    )
+
+    def fail_identity(_: str) -> object:
+        raise CheckoutBuildIdentityError("identity unavailable")
+
+    monkeypatch.setattr("kotekomi_pipelines.config.derive_checkout_build_identity", fail_identity)
+    assert main(["--config", str(config_path), "ingestions", "list"]) == 0
+    assert capsys.readouterr().out == ""
+
+
+def test_checkout_build_identity_is_stable_and_binds_current_source() -> None:
+    first = derive_checkout_build_identity("test-v1")
+    second = derive_checkout_build_identity("test-v1")
+
+    assert first == second
+    assert len(first.artifact_digest) == 64
+    assert len(first.source_revision) == 40
+
+
+def test_checkout_artifact_digest_changes_with_package_source(tmp_path: Path) -> None:
+    package_source = tmp_path / "packages" / "pipelines" / "src" / "kotekomi_pipelines"
+    package_source.mkdir(parents=True)
+    (tmp_path / "pyproject.toml").write_text('[project]\nversion = "0.1.0"\n')
+    (tmp_path / "packages" / "pipelines" / "pyproject.toml").write_text("[project]\n")
+    source_file = package_source / "module.py"
+    source_file.write_text("value = 1\n")
+
+    first = checkout_artifact_digest(tmp_path)
+    source_file.write_text("value = 2\n")
+
+    assert checkout_artifact_digest(tmp_path) != first
 
 
 def test_ledger_init_creates_ledger_and_archive_from_flags(

@@ -767,10 +767,7 @@ def _processing_config(ledger_path: Path, archive_path: Path) -> str:
         (
             f'ledger_path = "{ledger_path}"',
             f'archive_path = "{archive_path}"',
-            "[processing.build_identity]",
-            'package_version = "canonical-scenario-v1"',
-            'source_revision = "canonical-scenario-v1"',
-            f'artifact_digest = "{"0" * 64}"',
+            "[processing]",
             'representation_policy_version = "canonical-scenario-v1"',
             "",
         )
