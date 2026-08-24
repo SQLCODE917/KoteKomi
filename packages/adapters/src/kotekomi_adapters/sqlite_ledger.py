@@ -53,6 +53,7 @@ from kotekomi_domain import (
     EvidenceTarget,
     EvidenceValidationAttempt,
     ExtractionTask,
+    IngestionChangeSet,
     IngestionRun,
     ModelRun,
     NewsDeliveryEnvelopeArtifact,
@@ -463,6 +464,7 @@ REQUIRED_LEDGER_TABLES = (
     "capture_document_resolutions",
     "briefings",
     "ingestion_runs",
+    "ingestion_change_sets",
 )
 
 
@@ -724,6 +726,44 @@ class SQLiteLedgerRepository:
         ).fetchone()
         return IngestionRun.model_validate_json(str(row[0])) if row is not None else None
 
+    def save_ingestion_change_set(self, record: IngestionChangeSet) -> None:
+        if self.get_ingestion_run(record.ingestion_run_id) is None:
+            raise ValueError("IngestionChangeSet references missing IngestionRun")
+        analysis_run = self.get_analysis_run(record.analysis_run_id)
+        if analysis_run is None:
+            raise ValueError("IngestionChangeSet references missing AnalysisRun")
+        if analysis_run.representation_id != record.representation_id:
+            raise ValueError("IngestionChangeSet AnalysisRun representation does not match.")
+        missing = [
+            record_id
+            for record_id in record.proposed_change_ids
+            if self.get_proposed_change(record_id) is None
+        ]
+        if missing:
+            raise ValueError("IngestionChangeSet references missing ProposedChange")
+        payload = canonical_record_json(record)
+        self._connection.execute(
+            """
+            INSERT INTO ingestion_change_sets (
+              id, ingestion_run_id, analysis_run_id, representation_id, closed_at, payload_json
+            ) VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (
+                record.id,
+                record.ingestion_run_id,
+                record.analysis_run_id,
+                record.representation_id,
+                _optional_text(record.closed_at),
+                payload,
+            ),
+        )
+
+    def get_ingestion_change_set(self, record_id: str) -> IngestionChangeSet | None:
+        row = self._connection.execute(
+            "SELECT payload_json FROM ingestion_change_sets WHERE id = ?", (record_id,)
+        ).fetchone()
+        return IngestionChangeSet.model_validate_json(str(row[0])) if row is not None else None
+
     def complete_ingestion_run_if_running(self, record: IngestionRun) -> bool:
         self._validate_ingestion_run_references(record)
         payload = canonical_record_json(record)
@@ -763,10 +803,22 @@ class SQLiteLedgerRepository:
                 self.get_provenance_activity,
                 "ProvenanceActivity",
             ),
+            (record.analysis_run_id, self.get_analysis_run, "AnalysisRun"),
+            (
+                record.ingestion_change_set_id,
+                self.get_ingestion_change_set,
+                "IngestionChangeSet",
+            ),
         )
         for record_id, loader, record_type in references:
             if record_id is not None and loader(record_id) is None:
                 raise ValueError(f"IngestionRun references missing {record_type}: {record_id}")
+        if record.ingestion_change_set_id is not None:
+            change_set = self.get_ingestion_change_set(record.ingestion_change_set_id)
+            if change_set is None or change_set.ingestion_run_id != record.id:
+                raise ValueError("IngestionRun must reference its own IngestionChangeSet.")
+            if change_set.analysis_run_id != record.analysis_run_id:
+                raise ValueError("IngestionRun AnalysisRun does not match IngestionChangeSet.")
 
     def save_entity(self, record: Entity) -> None:
         self._save(ENTITY_SPEC, record)

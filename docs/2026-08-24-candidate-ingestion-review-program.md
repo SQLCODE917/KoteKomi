@@ -708,7 +708,7 @@ User stories:
 
 Detailed TDD:
 
-Write after CIR-1 implementation evidence exists.
+[CIR-2 Automatic Extraction and Change Set](2026-08-24-automatic-extraction-change-set.md)
 
 ### CIR-3 - Candidate Knowledge View
 

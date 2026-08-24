@@ -57,6 +57,7 @@ AnalysisItemAttemptId = Annotated[str, Field(pattern=r"^aia_[A-Za-z0-9][A-Za-z0-
 ExtractionTaskId = Annotated[str, Field(pattern=r"^ext_[A-Za-z0-9][A-Za-z0-9_-]*$")]
 ModelRunId = Annotated[str, Field(pattern=r"^mrn_[A-Za-z0-9][A-Za-z0-9_-]*$")]
 IngestionRunId = Annotated[str, Field(pattern=r"^igr_[A-Za-z0-9][A-Za-z0-9_-]*$")]
+IngestionChangeSetId = Annotated[str, Field(pattern=r"^ics_[A-Za-z0-9][A-Za-z0-9_-]*$")]
 PdfPreflightReportId = Annotated[str, Field(pattern=r"^pfr_[A-Za-z0-9][A-Za-z0-9_-]*$")]
 PdfPageInventoryId = Annotated[str, Field(pattern=r"^ppi_[A-Za-z0-9][A-Za-z0-9_-]*$")]
 PdfPageExtractionStatusId = Annotated[str, Field(pattern=r"^pes_[A-Za-z0-9][A-Za-z0-9_-]*$")]
@@ -407,12 +408,18 @@ class IngestionRunStatus(StrEnum):
     ERROR = "error"
 
 
+class IngestionChangeSetOrigin(StrEnum):
+    EXECUTED = "executed"
+    REUSED = "reused"
+
+
 class IngestionFailureStage(StrEnum):
     ADMISSION = "admission"
     SOURCE_VALIDATION = "source_validation"
     ARCHIVE = "archive"
     SOURCE_CAPTURE = "source_capture"
     DOCUMENT_REPRESENTATION = "document_representation"
+    AUTOMATIC_EXTRACTION = "automatic_extraction"
     RUN_PERSISTENCE = "run_persistence"
 
 
@@ -425,6 +432,8 @@ class IngestionFailureCode(StrEnum):
     DOCUMENT_REPRESENTATION_BLOCKED = "document_representation_blocked"
     DOCUMENT_REPRESENTATION_FAILED = "document_representation_failed"
     INGESTION_RUN_TRANSITION_CONFLICT = "ingestion_run_transition_conflict"
+    MODEL_RUNTIME_UNAVAILABLE = "model_runtime_unavailable"
+    AUTOMATIC_EXTRACTION_FAILED = "automatic_extraction_failed"
 
 
 def is_accepted_status(status: AssertionStatus) -> bool:
@@ -1826,6 +1835,8 @@ class IngestionRun(DomainModel):
     document_id: DocumentId | None = None
     representation_id: DocumentRepresentationId | None = None
     provenance_activity_id: ProvenanceActivityId | None = None
+    analysis_run_id: AnalysisRunId | None = None
+    ingestion_change_set_id: IngestionChangeSetId | None = None
     failure_stage: IngestionFailureStage | None = None
     failure_code: IngestionFailureCode | None = None
     safe_failure_message: NonEmptyStr | None = None
@@ -1856,6 +1867,10 @@ class IngestionRun(DomainModel):
                 raise ValueError("A captured IngestionRun requires canonical capture links.")
             if any(failure_fields):
                 raise ValueError("A captured IngestionRun cannot contain failure details.")
+            if (self.analysis_run_id is None) != (self.ingestion_change_set_id is None):
+                raise ValueError(
+                    "A captured IngestionRun requires both CIR-2 links or neither link."
+                )
             return self
         if (
             self.failure_stage is None
@@ -2269,6 +2284,26 @@ class AnalysisRun(DomainModel):
             raise ValueError("A terminal AnalysisRun requires completed_at.")
         if self.completed_at is not None and self.completed_at < self.started_at:
             raise ValueError("AnalysisRun cannot complete before it starts.")
+        return self
+
+
+class IngestionChangeSet(DomainModel):
+    """The immutable pending proposal set selected for one user ingestion."""
+
+    id: IngestionChangeSetId
+    ingestion_run_id: IngestionRunId
+    analysis_run_id: AnalysisRunId
+    representation_id: DocumentRepresentationId
+    coverage_report_digest: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
+    proposed_change_ids: tuple[ProposedChangeId, ...] = Field(default_factory=tuple)
+    analysis_origin: IngestionChangeSetOrigin
+    closed_at: datetime
+    change_set_digest: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
+
+    @model_validator(mode="after")
+    def validate_shape(self) -> Self:
+        if tuple(sorted(set(self.proposed_change_ids))) != self.proposed_change_ids:
+            raise ValueError("IngestionChangeSet ProposedChange IDs must be ordered and distinct.")
         return self
 
 

@@ -492,6 +492,14 @@ def _extraction_task(
     )
 
 
+def bounded_extraction_task_fingerprint(
+    extraction_input: BoundedExtractionInput,
+    manifest: ContextManifest,
+) -> str:
+    """Return the exact immutable task identity without running the model."""
+    return _extraction_task(extraction_input, manifest).task_fingerprint
+
+
 def _model_run(
     extraction_input: BoundedExtractionInput,
     manifest: ContextManifest,

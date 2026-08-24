@@ -10,6 +10,7 @@ import json
 import sqlite3
 import sys
 from collections.abc import Mapping
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import cast
@@ -26,15 +27,22 @@ from kotekomi_adapters import (
     SQLiteDocumentRetrievalAdapter,
     SQLiteKnowledgeGraphRetrievalAdapter,
     SQLiteLedgerInitializer,
+    SQLiteLedgerRepository,
     SQLiteLedgerRetrievalAdapter,
     sqlite_ledger_transaction,
 )
 from kotekomi_application import (
     CROSS_PLANE_QUERY_POLICY_ID,
+    AnalysisRunInput,
+    AnalysisRunItemInput,
+    AnalysisUnit,
+    AnalysisUnitPlanningInput,
     AuthoritativeCaptureOutcome,
     AuthoritativeCaptureRequest,
     AuthoritativePdfCaptureOutcome,
     AuthoritativePdfCaptureRequest,
+    BoundedExtractionInput,
+    BoundedExtractionOutcome,
     BriefingGenerationInput,
     BuildDocumentRetrievalProjectionCommand,
     BuildDocumentRetrievalProjectionResult,
@@ -44,12 +52,18 @@ from kotekomi_application import (
     BuildLedgerRetrievalProjectionCommand,
     CompleteIngestionRunCapturedInput,
     CompleteIngestionRunErrorInput,
+    ContextManifestInput,
+    ContextManifestStatus,
+    ContextModelProfile,
     EmbeddingPort,
     EmbeddingProfile,
+    ExecutionSetting,
     ExplainEvidenceGraphRelationshipCommand,
     JsonValue,
     LedgerRetrievalFilters,
+    ModelExecutionSpec,
     ModelRuntimeStatus,
+    ModelTaskRuntime,
     NewsDeliveryEnvelope,
     NewsIngestInput,
     NewsIngestStatus,
@@ -79,17 +93,23 @@ from kotekomi_application import (
     ReviewQueueInput,
     ReviewReadinessInput,
     ReviewReadinessStatus,
+    StagedClaimTaskSchemaRegistry,
     StartIngestionRunInput,
     UtcIngestionRunClock,
     UtcProcessingClock,
     Uuid4IngestionRunIdFactory,
+    Uuid4ModelRunIdFactory,
     Uuid4ProcessingAttemptIdFactory,
     approve_proposed_change,
+    bounded_extraction_task_fingerprint,
+    build_context_manifest,
+    build_coverage_report,
     build_document_retrieval_projection,
     build_document_semantic_projection,
     build_evidence_graph_projection,
     build_knowledge_graph_projection,
     build_ledger_retrieval_projection,
+    close_ingestion_change_set,
     commit_authoritative_capture,
     commit_authoritative_pdf_capture,
     complete_ingestion_run_as_captured,
@@ -97,6 +117,8 @@ from kotekomi_application import (
     edit_proposed_change,
     explain_evidence_graph_relationship,
     export_review_editable_record,
+    find_reusable_completed_analysis,
+    freeze_analysis_plan,
     generate_briefing,
     get_pipeline_next,
     get_pipeline_status,
@@ -111,12 +133,14 @@ from kotekomi_application import (
     normalize_source_url,
     pipeline_next_to_json,
     pipeline_status_to_json,
+    plan_analysis_units,
     query_cross_plane,
     query_document_hybrid_retrieval,
     query_document_retrieval,
     query_document_semantic_retrieval,
     query_knowledge_graph,
     query_ledger_retrieval,
+    record_analysis_item_attempt,
     reject_proposed_change,
     review_drain_result_to_json,
     review_next_decision_result_to_json,
@@ -124,16 +148,21 @@ from kotekomi_application import (
     review_packet_to_json,
     review_queue_result_to_json,
     review_readiness_to_json,
+    run_bounded_extraction,
     run_next_result_to_json,
     run_review_drain,
     run_review_next_decision,
+    start_analysis_run,
     start_ingestion_run,
 )
+from kotekomi_application.analysis_coverage import LATEST_COMPLETED_VALID_ATTEMPT_POLICY_ID
+from kotekomi_application.ingestion_change_sets import CloseIngestionChangeSetInput
 from kotekomi_briefing import MarkdownBriefingRenderer
 from kotekomi_domain import (
     AssertionStatus,
     DocumentRepresentationBundle,
     EvidenceGraphViewKind,
+    IngestionChangeSetOrigin,
     IngestionFailureCode,
     IngestionFailureStage,
     IngestionRun,
@@ -158,7 +187,7 @@ from kotekomi_pipelines.managed_llama_server import (
     install_managed_llama_server,
     uninstall_managed_llama_server,
 )
-from kotekomi_pipelines.model_runtime import build_model_runtime_readiness
+from kotekomi_pipelines.model_runtime import build_model_runtime_readiness, build_model_task_runtime
 from kotekomi_pipelines.source_lineage import propose_verbatim_republication_relation
 
 
@@ -1811,12 +1840,17 @@ def add_source_file(
 def ingest_user_file(*, config_path: Path | None, source_file_path: Path, source_url: str) -> int:
     """Run the CIR-1 user ingress path without exposing canonical identities."""
     try:
-        config = load_processing_config(
+        processing_config = load_processing_config(
             config_path=config_path,
             ledger_path_override=None,
             archive_path_override=None,
         )
-        SQLiteLedgerInitializer(config.storage.ledger_path).initialize()
+        config = load_config(
+            config_path=config_path,
+            ledger_path_override=None,
+            archive_path_override=None,
+        )
+        SQLiteLedgerInitializer(config.ledger_path).initialize()
     except ProcessingConfigurationError as error:
         print(str(error), file=sys.stderr)
         return 1
@@ -1830,7 +1864,7 @@ def ingest_user_file(*, config_path: Path | None, source_file_path: Path, source
         return 2
 
     try:
-        with sqlite_ledger_transaction(config.storage.ledger_path) as repository:
+        with sqlite_ledger_transaction(config.ledger_path) as repository:
             run = start_ingestion_run(
                 input=StartIngestionRunInput(
                     requested_path=str(source_file_path),
@@ -1845,12 +1879,12 @@ def ingest_user_file(*, config_path: Path | None, source_file_path: Path, source
         print("Unable to start the ingestion run.", file=sys.stderr)
         return 1
 
-    archive_store = LocalArchiveStore(config.storage.archive_path)
+    archive_store = LocalArchiveStore(config.archive_path)
     try:
         archive_store.initialize()
     except OSError:
         return _record_user_ingestion_error(
-            config=config,
+            config=processing_config,
             run=run,
             failure_stage=IngestionFailureStage.ARCHIVE,
             failure_code=IngestionFailureCode.ARCHIVE_INITIALIZATION_FAILED,
@@ -1859,7 +1893,7 @@ def ingest_user_file(*, config_path: Path | None, source_file_path: Path, source
 
     if source_file_path.suffix.lower() not in {".pdf", ".md", ".txt"}:
         return _record_user_ingestion_error(
-            config=config,
+            config=processing_config,
             run=run,
             failure_stage=IngestionFailureStage.SOURCE_VALIDATION,
             failure_code=IngestionFailureCode.UNSUPPORTED_FILE_TYPE,
@@ -1869,7 +1903,7 @@ def ingest_user_file(*, config_path: Path | None, source_file_path: Path, source
         normalized_source_url = normalize_source_url(source_url)
     except ValueError:
         return _record_user_ingestion_error(
-            config=config,
+            config=processing_config,
             run=run,
             failure_stage=IngestionFailureStage.SOURCE_VALIDATION,
             failure_code=IngestionFailureCode.SOURCE_URL_INVALID,
@@ -1879,7 +1913,7 @@ def ingest_user_file(*, config_path: Path | None, source_file_path: Path, source
         raw_bytes = source_file_path.read_bytes()
     except FileNotFoundError:
         return _record_user_ingestion_error(
-            config=config,
+            config=processing_config,
             run=run,
             failure_stage=IngestionFailureStage.SOURCE_VALIDATION,
             failure_code=IngestionFailureCode.FILE_NOT_FOUND,
@@ -1888,7 +1922,7 @@ def ingest_user_file(*, config_path: Path | None, source_file_path: Path, source
         )
     except OSError:
         return _record_user_ingestion_error(
-            config=config,
+            config=processing_config,
             run=run,
             failure_stage=IngestionFailureStage.SOURCE_CAPTURE,
             failure_code=IngestionFailureCode.SOURCE_CAPTURE_FAILED,
@@ -1899,7 +1933,7 @@ def ingest_user_file(*, config_path: Path | None, source_file_path: Path, source
     text_capture_result: AuthoritativeCaptureOutcome | None = None
     pdf_capture_result: AuthoritativePdfCaptureOutcome | None = None
     try:
-        with sqlite_ledger_transaction(config.storage.ledger_path) as repository:
+        with sqlite_ledger_transaction(config.ledger_path) as repository:
             if source_file_path.suffix.lower() == ".pdf":
                 pdf_capture_result = commit_authoritative_pdf_capture(
                     AuthoritativePdfCaptureRequest(
@@ -1908,7 +1942,7 @@ def ingest_user_file(*, config_path: Path | None, source_file_path: Path, source
                         raw_bytes=raw_bytes,
                         source_url=normalized_source_url,
                         ingested_at=datetime.now(UTC),
-                        build_identity=config.build_identity,
+                        build_identity=processing_config.build_identity,
                     ),
                     archive_store,
                     repository,
@@ -1922,7 +1956,7 @@ def ingest_user_file(*, config_path: Path | None, source_file_path: Path, source
                         filename=display_filename,
                         raw_bytes=raw_bytes,
                         ingested_at=datetime.now(UTC),
-                        build_identity=config.build_identity,
+                        build_identity=processing_config.build_identity,
                         source_url=normalized_source_url,
                     ),
                     archive_store,
@@ -1931,7 +1965,7 @@ def ingest_user_file(*, config_path: Path | None, source_file_path: Path, source
                 )
     except Exception:
         return _record_user_ingestion_error(
-            config=config,
+            config=processing_config,
             run=run,
             failure_stage=IngestionFailureStage.SOURCE_CAPTURE,
             failure_code=IngestionFailureCode.SOURCE_CAPTURE_FAILED,
@@ -1943,7 +1977,7 @@ def ingest_user_file(*, config_path: Path | None, source_file_path: Path, source
         pdf_capture_result.failed or pdf_capture_result.blocking_reasons
     ):
         return _record_user_ingestion_error(
-            config=config,
+            config=processing_config,
             run=run,
             failure_stage=IngestionFailureStage.DOCUMENT_REPRESENTATION,
             failure_code=(
@@ -1969,7 +2003,7 @@ def ingest_user_file(*, config_path: Path | None, source_file_path: Path, source
             or pdf_capture_result.provenance_activity_id is None
         ):
             return _record_user_ingestion_error(
-                config=config,
+                config=processing_config,
                 run=run,
                 failure_stage=IngestionFailureStage.DOCUMENT_REPRESENTATION,
                 failure_code=IngestionFailureCode.DOCUMENT_REPRESENTATION_FAILED,
@@ -1989,7 +2023,7 @@ def ingest_user_file(*, config_path: Path | None, source_file_path: Path, source
         provenance_activity_id = text_capture_result.provenance_activity_id
     else:
         return _record_user_ingestion_error(
-            config=config,
+            config=processing_config,
             run=run,
             failure_stage=IngestionFailureStage.SOURCE_CAPTURE,
             failure_code=IngestionFailureCode.SOURCE_CAPTURE_FAILED,
@@ -1998,7 +2032,38 @@ def ingest_user_file(*, config_path: Path | None, source_file_path: Path, source
         )
 
     try:
-        with sqlite_ledger_transaction(config.storage.ledger_path) as repository:
+        runtime = build_model_task_runtime(config.model_execution)
+        readiness = runtime.check_readiness()
+        with sqlite_ledger_transaction(config.ledger_path) as repository:
+            extraction = _automatic_ingestion_extraction(
+                config=config,
+                repository=repository,
+                archive_store=archive_store,
+                runtime=runtime,
+                source_id=source_id,
+                document_id=document_id,
+                representation_id=representation_id,
+                ingestion_run_id=run.id,
+                ready=readiness.ready,
+            )
+            if extraction is None:
+                complete_ingestion_run_as_error(
+                    input=CompleteIngestionRunErrorInput(
+                        ingestion_run_id=run.id,
+                        failure_stage=IngestionFailureStage.AUTOMATIC_EXTRACTION,
+                        failure_code=IngestionFailureCode.AUTOMATIC_EXTRACTION_FAILED,
+                        safe_failure_message="Automatic extraction could not complete.",
+                        normalized_source_url=normalized_source_url,
+                        source_id=source_id,
+                        document_id=document_id,
+                        representation_id=representation_id,
+                        provenance_activity_id=provenance_activity_id,
+                    ),
+                    repository=repository,
+                    clock=UtcIngestionRunClock(),
+                )
+                print("Automatic extraction could not complete.", file=sys.stderr)
+                return 1
             captured = complete_ingestion_run_as_captured(
                 input=CompleteIngestionRunCapturedInput(
                     ingestion_run_id=run.id,
@@ -2007,15 +2072,231 @@ def ingest_user_file(*, config_path: Path | None, source_file_path: Path, source
                     document_id=document_id,
                     representation_id=representation_id,
                     provenance_activity_id=provenance_activity_id,
+                    analysis_run_id=extraction.analysis_run_id,
+                    ingestion_change_set_id=extraction.change_set_id,
                 ),
                 repository=repository,
                 clock=UtcIngestionRunClock(),
             )
     except (OSError, ValueError):
-        print("Unable to persist the ingestion result.", file=sys.stderr)
-        return 1
+        return _record_user_ingestion_error(
+            config=processing_config,
+            run=run,
+            failure_stage=IngestionFailureStage.AUTOMATIC_EXTRACTION,
+            failure_code=IngestionFailureCode.AUTOMATIC_EXTRACTION_FAILED,
+            safe_failure_message="Automatic extraction could not complete.",
+            normalized_source_url=normalized_source_url,
+            source_id=source_id,
+            document_id=document_id,
+            representation_id=representation_id,
+            provenance_activity_id=provenance_activity_id,
+        )
     print(_user_ingestion_row(captured))
+    print(
+        "Extraction: "
+        f"{extraction.proposal_count} proposed changes; "
+        f"{extraction.completed_units}/{extraction.required_units} units complete"
+    )
     return 0
+
+
+@dataclass(frozen=True)
+class _AutomaticExtractionResult:
+    analysis_run_id: str
+    change_set_id: str
+    proposal_count: int
+    completed_units: int
+    required_units: int
+
+
+@dataclass(frozen=True)
+class _PreparedAutomaticExtraction:
+    unit: AnalysisUnit
+    extraction_input: BoundedExtractionInput
+    task_fingerprint: str
+
+
+class _AutomaticExtractionTokenizer:
+    tokenizer_id = "lm_studio_whitespace_v1"
+
+    def count_tokens(self, rendered_input: bytes) -> int:
+        return len(rendered_input.decode("utf-8").split())
+
+
+def _automatic_ingestion_extraction(
+    *,
+    config: PipelineConfig,
+    repository: SQLiteLedgerRepository,
+    archive_store: LocalArchiveStore,
+    runtime: ModelTaskRuntime,
+    source_id: str,
+    document_id: str,
+    representation_id: str,
+    ingestion_run_id: str,
+    ready: bool,
+) -> _AutomaticExtractionResult | None:
+    """Run the CIR-2 bounded claim policy and close its immutable proposal set."""
+    if not ready:
+        return None
+    tokenizer = _AutomaticExtractionTokenizer()
+    prompt_bytes = (
+        Path(__file__).resolve().parents[4] / "prompts" / "cir_automatic_claim_extraction_v1.md"
+    ).read_bytes()
+    prompt_id = "cir_automatic_claim_extraction_v1"
+    prompt_digest = hashlib.sha256(prompt_bytes).hexdigest()
+    schema_registry = StagedClaimTaskSchemaRegistry()
+    schema = schema_registry.resolve("staged_claim_output_v1")
+    planning = plan_analysis_units(
+        AnalysisUnitPlanningInput(
+            representation_id=representation_id,
+            policy_id="cir_automatic_claim_extraction_v1",
+            task_type="claim_extraction",
+            max_focus_nodes_per_unit=4,
+        ),
+        repository,
+    )
+    frozen = freeze_analysis_plan(planning, repository)
+    prepared: list[_PreparedAutomaticExtraction] = []
+    for unit in planning.units:
+        outcome = build_context_manifest(
+            ContextManifestInput(
+                analysis_unit=unit,
+                model_profile=ContextModelProfile(
+                    config.model_execution.profile_name or "lm-studio",
+                    config.model_execution.context_tokens,
+                    config.model_execution.max_output_tokens,
+                    256,
+                ),
+                prompt_id=prompt_id,
+                prompt_bytes=prompt_bytes,
+                schema_id=schema.schema_id,
+                schema_bytes=schema.canonical_schema_bytes,
+                renderer_version="cir_automatic_context_v1",
+            ),
+            repository,
+            tokenizer,
+        )
+        if outcome.manifest.status is not ContextManifestStatus.READY:
+            return None
+        manifest = outcome.manifest
+        execution_spec = ModelExecutionSpec(
+            model_profile_id=config.model_execution.profile_name or "lm-studio",
+            model_identity=runtime.configured_identity,
+            generation_parameters=(
+                ExecutionSetting("max_output_tokens", config.model_execution.max_output_tokens),
+            ),
+            prompt_id=prompt_id,
+            prompt_digest=prompt_digest,
+            schema_id=schema.schema_id,
+            schema_digest=schema.digest,
+            context_manifest_id=manifest.id,
+            context_manifest_digest=manifest.manifest_digest,
+            rendered_input_digest=manifest.rendered_input_digest,
+            output_contract_version=schema.output_contract_version,
+        )
+        extraction_input = BoundedExtractionInput(
+            source_id=source_id,
+            document_id=document_id,
+            representation_id=representation_id,
+            context_manifest_id=manifest.id,
+            prompt_bytes=prompt_bytes,
+            execution_spec=execution_spec,
+            validator_version="cir_automatic_claim_validator_v1",
+            started_at=datetime.now(UTC),
+            completed_at=datetime.now(UTC),
+        )
+        prepared.append(
+            _PreparedAutomaticExtraction(
+                unit=unit,
+                extraction_input=extraction_input,
+                task_fingerprint=bounded_extraction_task_fingerprint(extraction_input, manifest),
+            )
+        )
+    reusable = find_reusable_completed_analysis(
+        representation_id=representation_id,
+        frozen_analysis_plan_id=frozen.id,
+        expected_item_fingerprints=tuple(
+            (prepared_item.unit.id, prepared_item.task_fingerprint) for prepared_item in prepared
+        ),
+        ledger_repository=repository,
+    )
+    if reusable is not None:
+        change_set = close_ingestion_change_set(
+            CloseIngestionChangeSetInput(
+                ingestion_run_id=ingestion_run_id,
+                analysis_run_id=reusable.analysis_run_id,
+                analysis_origin=IngestionChangeSetOrigin.REUSED,
+                closed_at=datetime.now(UTC),
+            ),
+            repository,
+        ).change_set
+        return _AutomaticExtractionResult(
+            analysis_run_id=reusable.analysis_run_id,
+            change_set_id=change_set.id,
+            proposal_count=len(change_set.proposed_change_ids),
+            completed_units=len(reusable.coverage_report.coverage_records),
+            required_units=len(reusable.coverage_report.coverage_records),
+        )
+
+    outcomes: list[tuple[AnalysisUnit, BoundedExtractionOutcome]] = []
+    for prepared_item in prepared:
+        extraction = run_bounded_extraction(
+            prepared_item.extraction_input,
+            repository,
+            archive_store,
+            runtime,
+            Uuid4ModelRunIdFactory(),
+            tokenizer,
+            schema_registry,
+        )
+        outcomes.append((prepared_item.unit, extraction))
+    run = start_analysis_run(
+        AnalysisRunInput(
+            document_id=document_id,
+            frozen_plan_id=frozen.id,
+            coverage_policy_id=LATEST_COMPLETED_VALID_ATTEMPT_POLICY_ID,
+            started_at=datetime.now(UTC),
+            items=tuple(
+                AnalysisRunItemInput(
+                    analysis_unit_id=unit.id,
+                    task_type=extraction.extraction_task.task_type,
+                    input_fingerprint=extraction.extraction_task.task_fingerprint,
+                    expected_manifest_id=extraction.extraction_task.context_manifest_id,
+                )
+                for unit, extraction in outcomes
+            ),
+        ),
+        repository,
+    )
+    for unit, extraction in outcomes:
+        record_analysis_item_attempt(
+            analysis_run_id=run.id,
+            analysis_unit_id=unit.id,
+            model_run_id=extraction.model_run.id,
+            ledger_repository=repository,
+        )
+    report = build_coverage_report(run.id, repository)
+    if not report.complete or any(
+        record.terminal_status.value == "context_budget_blocked"
+        for record in report.coverage_records
+    ):
+        return None
+    change_set = close_ingestion_change_set(
+        CloseIngestionChangeSetInput(
+            ingestion_run_id=ingestion_run_id,
+            analysis_run_id=run.id,
+            analysis_origin=IngestionChangeSetOrigin.EXECUTED,
+            closed_at=datetime.now(UTC),
+        ),
+        repository,
+    ).change_set
+    return _AutomaticExtractionResult(
+        analysis_run_id=run.id,
+        change_set_id=change_set.id,
+        proposal_count=len(change_set.proposed_change_ids),
+        completed_units=len(report.coverage_records),
+        required_units=len(report.coverage_records),
+    )
 
 
 def list_user_ingestion_history(*, config_path: Path | None) -> int:

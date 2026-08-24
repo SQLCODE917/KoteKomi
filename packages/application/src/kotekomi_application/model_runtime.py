@@ -29,6 +29,10 @@ class ModelRuntimeResponseError(ModelRuntimeError):
     """The model server returned an invalid HTTP or response envelope."""
 
 
+class ModelRuntimeDeadlineExceeded(ModelRuntimeError):
+    """A bounded model task exceeded its total wall-clock deadline."""
+
+
 class ModelOutputValidationError(ModelRuntimeError, ValueError):
     """The non-deterministic completion failed the proposal DTO contract."""
 

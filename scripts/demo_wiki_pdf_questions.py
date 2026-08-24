@@ -107,11 +107,7 @@ def _run_question(
     nodes = cast(list[JsonObject], result["authoritative_nodes"])
     context = str(result.get("context_manifest_rendered_input") or "")
     matching_node = next(
-        (
-            node
-            for node in nodes
-            if _contains_anchor(str(node["text"]), question.expected_anchor)
-        ),
+        (node for node in nodes if _contains_anchor(str(node["text"]), question.expected_anchor)),
         None,
     )
     if matching_node is None and not _contains_anchor(context, question.expected_anchor):

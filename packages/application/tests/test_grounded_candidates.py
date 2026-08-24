@@ -28,6 +28,7 @@ from kotekomi_application import (
     ModelExecutionReceipt,
     ModelExecutionSpec,
     ModelIdentitySnapshot,
+    ModelRuntimeDeadlineExceeded,
     ModelTaskRequest,
     ModelTaskResponse,
     PinnedTaskSchema,
@@ -915,6 +916,45 @@ def test_staged_extraction_classifies_runtime_and_archive_failures_truthfully(
             "d" * 64,
             "staged_claim_output_v1",
         )
+
+
+def test_staged_extraction_records_task_deadline_without_partial_proposals() -> None:
+    ledger = FakeGroundedCandidateLedger()
+    manifest = _ready_manifest_for_staged_test(ledger)
+
+    class DeadlineRuntime(FakeModelTaskRuntime):
+        def run_model_task(self, task: ModelTaskRequest) -> ModelTaskResponse:
+            raise ModelRuntimeDeadlineExceeded(
+                "Model task exceeded its configured wall-clock deadline."
+            )
+
+    outcome = run_bounded_extraction(
+        BoundedExtractionInput(
+            source_id=ledger.source.id,
+            document_id=ledger.document.id,
+            representation_id=ledger.bundle.representation.id,
+            context_manifest_id=manifest.id,
+            prompt_bytes=manifest.prompt_bytes,
+            execution_spec=_fixture_execution_spec(manifest),
+            validator_version="fixture-validator-v1",
+            started_at=NOW,
+            completed_at=NOW,
+        ),
+        ledger,
+        FakeModelOutputArchive(),
+        DeadlineRuntime(_valid_staged_output()),
+        Uuid4ModelRunIdFactory(),
+        FixtureTokenizer(),
+        StagedClaimTaskSchemaRegistry(),
+    )
+
+    assert outcome.model_run.status is ModelRunStatus.RUNTIME_FAILED
+    assert (
+        outcome.model_run.error_message == "Model task exceeded its configured wall-clock deadline."
+    )
+    assert outcome.model_run.raw_output_artifact_id is None
+    assert outcome.proposed_change_batch is None
+    assert ledger.proposed_changes == {}
 
 
 def test_staged_extraction_rejects_unpinned_prompt_before_model_invocation() -> None:

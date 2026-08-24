@@ -3,12 +3,18 @@
 from __future__ import annotations
 
 import json
+import time
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Protocol, cast
+from typing import Any, Protocol, cast
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
-from kotekomi_application import ModelRuntimeResponseError, ModelRuntimeUnavailableError
+from kotekomi_application import (
+    ModelRuntimeDeadlineExceeded,
+    ModelRuntimeResponseError,
+    ModelRuntimeUnavailableError,
+)
 from kotekomi_domain.models import JsonValue
 
 READINESS_SCHEMA: dict[str, JsonValue] = {
@@ -33,6 +39,19 @@ class JsonHttpClient(Protocol):
         url: str,
         payload: dict[str, JsonValue] | None,
         timeout_seconds: float,
+    ) -> HttpResponse: ...
+
+
+class StreamingJsonHttpClient(Protocol):
+    """A task-only streaming HTTP boundary with a total wall-clock deadline."""
+
+    def stream_request(
+        self,
+        *,
+        method: str,
+        url: str,
+        payload: dict[str, JsonValue],
+        deadline_seconds: float,
     ) -> HttpResponse: ...
 
 
@@ -62,6 +81,135 @@ class UrllibJsonHttpClient:
             return HttpResponse(status_code=exc.code, body=exc.read().decode("utf-8"))
         except (URLError, TimeoutError, OSError) as exc:
             raise ModelRuntimeUnavailableError(f"Model runtime request failed: {url}") from exc
+
+
+class UrllibSseJsonHttpClient:
+    """Read one SSE response without allowing event activity to extend its deadline."""
+
+    def __init__(self, monotonic_clock: Callable[[], float] = time.monotonic) -> None:
+        self._monotonic_clock = monotonic_clock
+
+    def stream_request(
+        self,
+        *,
+        method: str,
+        url: str,
+        payload: dict[str, JsonValue],
+        deadline_seconds: float,
+    ) -> HttpResponse:
+        if deadline_seconds <= 0:
+            raise ValueError("Streaming request deadline must be positive.")
+        deadline = self._monotonic_clock() + deadline_seconds
+        request = Request(
+            url,
+            data=json.dumps(payload).encode("utf-8"),
+            headers={"Accept": "text/event-stream", "Content-Type": "application/json"},
+            method=method,
+        )
+        try:
+            with urlopen(
+                request, timeout=_remaining_seconds(deadline, self._monotonic_clock)
+            ) as response:
+                if response.status != 200:
+                    return HttpResponse(
+                        status_code=response.status,
+                        body=response.read().decode("utf-8"),
+                    )
+                return HttpResponse(
+                    status_code=response.status,
+                    body=read_sse_completion(response, deadline, self._monotonic_clock),
+                )
+        except HTTPError as exc:
+            return HttpResponse(status_code=exc.code, body=exc.read().decode("utf-8"))
+        except ModelRuntimeDeadlineExceeded:
+            raise
+        except (URLError, OSError) as exc:
+            if self._monotonic_clock() >= deadline:
+                raise ModelRuntimeDeadlineExceeded(
+                    "Model task exceeded its configured wall-clock deadline."
+                ) from exc
+            raise ModelRuntimeUnavailableError(f"Model runtime request failed: {url}") from exc
+
+
+def read_sse_completion(
+    response: object,
+    deadline: float,
+    monotonic_clock: Callable[[], float],
+) -> str:
+    event_name: str | None = None
+    data_lines: list[str] = []
+    while True:
+        _set_stream_read_timeout(response, _remaining_seconds(deadline, monotonic_clock))
+        line = _read_stream_line(response)
+        if not line:
+            break
+        decoded = line.decode("utf-8").rstrip("\r\n")
+        if not decoded:
+            completed = _completed_sse_payload(event_name, data_lines)
+            if completed is not None:
+                return completed
+            event_name = None
+            data_lines = []
+            continue
+        if decoded.startswith("event:"):
+            event_name = decoded.removeprefix("event:").strip()
+            continue
+        if decoded.startswith("data:"):
+            data_lines.append(decoded.removeprefix("data:").lstrip())
+            continue
+        raise ModelRuntimeResponseError("LM Studio SSE event is malformed.")
+    completed = _completed_sse_payload(event_name, data_lines)
+    if completed is not None:
+        return completed
+    raise ModelRuntimeResponseError("LM Studio SSE ended before response.completed.")
+
+
+def _remaining_seconds(deadline: float, monotonic_clock: Callable[[], float]) -> float:
+    remaining = deadline - monotonic_clock()
+    if remaining <= 0:
+        raise ModelRuntimeDeadlineExceeded(
+            "Model task exceeded its configured wall-clock deadline."
+        )
+    return remaining
+
+
+def _set_stream_read_timeout(response: object, timeout_seconds: float) -> None:
+    stream_response = cast(Any, response)
+    try:
+        socket_value = stream_response.fp.raw._sock
+    except AttributeError as exc:
+        raise ModelRuntimeResponseError(
+            "LM Studio SSE response does not expose a readable socket."
+        ) from exc
+    socket_value.settimeout(timeout_seconds)
+
+
+def _read_stream_line(response: object) -> bytes:
+    stream_response = cast(Any, response)
+    try:
+        value = stream_response.readline()
+    except TimeoutError as exc:
+        raise ModelRuntimeDeadlineExceeded(
+            "Model task exceeded its configured wall-clock deadline."
+        ) from exc
+    if not isinstance(value, bytes):
+        raise ModelRuntimeResponseError("LM Studio SSE response line must be bytes.")
+    return value
+
+
+def _completed_sse_payload(event_name: str | None, data_lines: list[str]) -> str | None:
+    if not data_lines:
+        return None
+    payload = parse_json_object("\n".join(data_lines), "LM Studio SSE")
+    event_type = event_name or payload.get("type")
+    if event_type in {"response.failed", "error"}:
+        raise ModelRuntimeResponseError("LM Studio reported a terminal streaming response failure.")
+    if event_type != "response.completed":
+        return None
+    completed = payload.get("response")
+    if not isinstance(completed, dict):
+        raise ModelRuntimeResponseError("LM Studio response.completed requires a response object.")
+    return json.dumps(completed, separators=(",", ":"), ensure_ascii=False)
 
 
 def parse_json_object(body: str, context: str) -> dict[str, object]:

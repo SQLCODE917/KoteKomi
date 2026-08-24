@@ -59,6 +59,8 @@ class CompleteIngestionRunCapturedInput:
     document_id: str
     representation_id: str
     provenance_activity_id: str
+    analysis_run_id: str | None = None
+    ingestion_change_set_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -108,6 +110,8 @@ def complete_ingestion_run_as_captured(
             "document_id": input.document_id,
             "representation_id": input.representation_id,
             "provenance_activity_id": input.provenance_activity_id,
+            "analysis_run_id": input.analysis_run_id,
+            "ingestion_change_set_id": input.ingestion_change_set_id,
             "failure_stage": None,
             "failure_code": None,
             "safe_failure_message": None,
@@ -173,6 +177,4 @@ def _complete_terminal_run(
 def _same_terminal_state(left: IngestionRun, right: IngestionRun) -> bool:
     if left.status is not right.status:
         return False
-    return left.model_dump(exclude={"completed_at"}) == right.model_dump(
-        exclude={"completed_at"}
-    )
+    return left.model_dump(exclude={"completed_at"}) == right.model_dump(exclude={"completed_at"})

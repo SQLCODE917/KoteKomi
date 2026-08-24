@@ -15,9 +15,9 @@ from kotekomi_application import BuildIdentity, EmbeddingProfile
 PROJECT_CONFIG_PATH = Path("kotekomi.toml")
 DEFAULT_LEDGER_PATH = Path("data/kotekomi.db")
 DEFAULT_ARCHIVE_PATH = Path("data/archive")
-DEFAULT_RUNTIME_PROFILE = "macbook"
+DEFAULT_RUNTIME_PROFILE = "lm-studio"
 DEFAULT_REPRESENTATION_POLICY_VERSION = "deposited-source-v1"
-MODEL_RUNTIME_ADAPTERS = ("llama_server", "ollama", "fixture")
+MODEL_RUNTIME_ADAPTERS = ("lm_studio", "llama_server", "ollama", "fixture")
 EMBEDDING_ADAPTERS = ("lm_studio", "llama_server", "ollama")
 MODEL_RUNTIME_CONFIG_KEYS = frozenset(
     {
@@ -231,7 +231,15 @@ def derive_checkout_build_identity(representation_policy_version: str) -> BuildI
 def _render_user_processing_config(ledger_path: Path, archive_path: Path) -> str:
     return (
         f'ledger_path = "{ledger_path.as_posix()}"\n'
-        f'archive_path = "{archive_path.as_posix()}"\n\n'
+        f'archive_path = "{archive_path.as_posix()}"\n'
+        "\n"
+        "# LM Studio is the default local extraction runtime.\n"
+        'runtime_profile = "lm-studio"\n'
+        "\n"
+        "# Alternative profiles are available for model-status. CIR-2 extraction uses LM Studio.\n"
+        '# runtime_profile = "macbook"\n'
+        '# runtime_profile = "wsl-4090"\n'
+        "\n"
         "[processing]\n"
         f'representation_policy_version = "{DEFAULT_REPRESENTATION_POLICY_VERSION}"\n'
     )
@@ -377,6 +385,14 @@ def _model_runtime_from_config(
 
 def _runtime_profiles(raw_config: dict[str, object]) -> dict[str, dict[str, object]]:
     profiles: dict[str, dict[str, object]] = {
+        "lm-studio": {
+            "adapter": "lm_studio",
+            "endpoint": "http://127.0.0.1:1234/v1",
+            "model": "qwen3.8-27b-mlx-textonly",
+            "timeout_seconds": 300.0,
+            "context_tokens": 16384,
+            "max_output_tokens": 8192,
+        },
         "macbook": {
             "adapter": "llama_server",
             "endpoint": "http://127.0.0.1:8080/v1",
@@ -390,6 +406,14 @@ def _runtime_profiles(raw_config: dict[str, object]) -> dict[str, dict[str, obje
             "endpoint": "http://127.0.0.1:11434",
             "model": "qwen3:30b-a3b-instruct-2507-q4_K_M",
             "timeout_seconds": 300.0,
+            "context_tokens": 16384,
+            "max_output_tokens": 8192,
+        },
+        "fixture": {
+            "adapter": "fixture",
+            "endpoint": "fixture://runtime",
+            "model": "fixture-model",
+            "timeout_seconds": 1.0,
             "context_tokens": 16384,
             "max_output_tokens": 8192,
         },

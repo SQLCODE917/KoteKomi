@@ -11,6 +11,7 @@ if TYPE_CHECKING:
     from kotekomi_adapters.llama_server_embeddings import LlamaServerEmbeddingAdapter
     from kotekomi_adapters.llama_server_model_runtime import LlamaServerModelRuntime
     from kotekomi_adapters.lm_studio_embeddings import LMStudioEmbeddingAdapter
+    from kotekomi_adapters.lm_studio_model_runtime import LMStudioModelRuntime
     from kotekomi_adapters.local_archive import LocalArchiveStore
     from kotekomi_adapters.model_http import HttpResponse, JsonHttpClient
     from kotekomi_adapters.ollama_embeddings import OllamaEmbeddingAdapter
@@ -42,6 +43,7 @@ __all__ = [
     "ImmutableRecordConflict",
     "NonDeterministicParserOutputConflict",
     "LlamaServerModelRuntime",
+    "LMStudioModelRuntime",
     "LlamaServerEmbeddingAdapter",
     "LMStudioEmbeddingAdapter",
     "LocalArchiveStore",
@@ -77,6 +79,10 @@ def __getattr__(name: str) -> object:
         from kotekomi_adapters.llama_server_model_runtime import LlamaServerModelRuntime
 
         return LlamaServerModelRuntime
+    if name == "LMStudioModelRuntime":
+        from kotekomi_adapters.lm_studio_model_runtime import LMStudioModelRuntime
+
+        return LMStudioModelRuntime
     if name == "LlamaServerEmbeddingAdapter":
         from kotekomi_adapters.llama_server_embeddings import LlamaServerEmbeddingAdapter
 

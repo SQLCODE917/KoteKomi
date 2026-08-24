@@ -78,6 +78,22 @@ ModelRuntime Adapters must not silently repair, drop, coerce, skip, or clean up 
 
 ModelRuntime Adapters must not write accepted state.
 
+## Task Deadlines
+
+`ModelExecutionConfig.timeout_seconds` is a total wall-clock deadline for an
+executed model task. It is not an idle-read timeout that streaming output can
+extend.
+
+The LM Studio task Adapter uses the streaming `/v1/responses` endpoint so it
+can enforce that deadline while the model is producing output. On expiry it
+closes the client connection, discards partial output, and raises
+`ModelRuntimeDeadlineExceeded`. The Application Layer records the attempt as
+`RUNTIME_FAILED`; it does not retry implicitly or create ProposedChanges from
+partial output.
+
+Readiness and embedding requests remain ordinary bounded HTTP requests. Their
+request timeout is not a model-task execution deadline.
+
 ## Prompt Rules
 
 Prompts live in `prompts/`.

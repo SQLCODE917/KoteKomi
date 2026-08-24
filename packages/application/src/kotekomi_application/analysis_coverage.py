@@ -261,8 +261,6 @@ def freeze_analysis_plan(
     ledger_repository: AnalysisCoverageLedger,
 ) -> FrozenAnalysisPlan:
     """Persist the exact deterministic unit scope before model work begins."""
-    if not plan.units:
-        raise ValueError("AnalysisPlan requires at least one AnalysisUnit.")
     if any(unit.representation_id != plan.representation_id for unit in plan.units):
         raise ValueError("AnalysisPlan units must belong to its representation.")
     for unit in plan.units:
@@ -328,8 +326,6 @@ def start_analysis_run(
     bundle = ledger_repository.get_document_representation_bundle(frozen.representation_id)
     if bundle is None or bundle.representation.document_id != run_input.document_id:
         raise ValueError("AnalysisRun document does not own the frozen representation.")
-    if not run_input.items:
-        raise ValueError("AnalysisRun requires at least one planned item.")
     if len({item.analysis_unit_id for item in run_input.items}) != len(run_input.items):
         raise ValueError("AnalysisRun may select each AnalysisUnit only once.")
     frozen_ids = {unit.id for unit in frozen.units}
@@ -471,7 +467,33 @@ def build_coverage_report(
         raise ValueError("AnalysisRun representation binding is corrupted.")
     items = ledger_repository.list_planned_items_for_analysis_run(run.id)
     if not items:
-        raise ValueError("AnalysisRun has no persisted planned items.")
+        if frozen.units:
+            raise ValueError("AnalysisRun has no persisted planned items.")
+        payload: dict[str, object] = {
+            "analysis_run_id": run.id,
+            "frozen_plan_id": run.frozen_analysis_plan_id,
+            "representation_id": run.representation_id,
+            "state": AnalysisCoverageState.COMPLETE.value,
+            "total_pages": 0,
+            "represented_page_numbers": [],
+            "coverage_policy_id": run.coverage_policy_id,
+            "coverage_records": [],
+            "integrity_failure_reasons": [],
+            "orphan_model_run_ids": [],
+        }
+        return CoverageReport(
+            analysis_run_id=run.id,
+            frozen_plan_id=run.frozen_analysis_plan_id,
+            representation_id=run.representation_id,
+            coverage_policy_id=run.coverage_policy_id,
+            state=AnalysisCoverageState.COMPLETE,
+            total_pages=0,
+            represented_page_numbers=(),
+            coverage_records=(),
+            integrity_failure_reasons=(),
+            orphan_model_run_ids=(),
+            report_digest=_digest(payload),
+        )
     if len({item.id for item in items}) != len(items) or any(
         item.analysis_run_id != run.id for item in items
     ):

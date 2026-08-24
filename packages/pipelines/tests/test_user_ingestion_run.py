@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 from kotekomi_adapters import sqlite_ledger_transaction
-from kotekomi_domain import IngestionRunStatus
+from kotekomi_domain import IngestionChangeSetOrigin, IngestionRunStatus
 from kotekomi_pipelines.cli import main
 
 FIXTURE_PATH = (
@@ -29,6 +29,8 @@ def _config(tmp_path: Path) -> Path:
 ledger_path = "{(tmp_path / "state" / "kotekomi.db").as_posix()}"
 archive_path = "{(tmp_path / "state" / "archive").as_posix()}"
 
+runtime_profile = "fixture"
+
 [processing]
 representation_policy_version = "deposited-source-v1"
 '''.lstrip(),
@@ -50,10 +52,12 @@ def test_user_ingest_auto_initializes_storage_and_records_history(
     assert captured.err == ""
     assert captured.out.startswith("anthropic_model_release_review.md\t[CAPTURED]\t")
     assert "src_" not in captured.out
+    captured_row, summary = captured.out.splitlines()
+    assert summary == "Extraction: 0 proposed changes; 0/0 units complete"
     assert main(["--config", str(config_path), "ingestions", "list"]) == 0
     history = capsys.readouterr()
     assert history.err == ""
-    assert history.out == captured.out
+    assert history.out == f"{captured_row}\n"
     assert history.out.count("\t") == 2
 
 
@@ -72,11 +76,25 @@ def test_user_ingest_retry_creates_two_runs_and_reuses_capture(
         runs = repository.list_ingestion_runs()
         sources = repository.list_sources()
         documents = repository.list_documents()
+        change_set_ids = tuple(run.ingestion_change_set_id for run in runs)
+        assert all(change_set_id is not None for change_set_id in change_set_ids)
+        change_sets = tuple(
+            repository.get_ingestion_change_set(change_set_id)
+            for change_set_id in change_set_ids
+            if change_set_id is not None
+        )
 
     assert len(runs) == 2
     assert all(run.status is IngestionRunStatus.CAPTURED for run in runs)
     assert runs[0].source_id == runs[1].source_id
     assert runs[0].document_id == runs[1].document_id
+    assert runs[0].analysis_run_id == runs[1].analysis_run_id
+    assert len(change_sets) == len(runs)
+    assert all(change_set is not None for change_set in change_sets)
+    assert {change_set.analysis_origin for change_set in change_sets if change_set is not None} == {
+        IngestionChangeSetOrigin.EXECUTED,
+        IngestionChangeSetOrigin.REUSED,
+    }
     assert len(sources) == 1
     assert len(documents) == 1
 

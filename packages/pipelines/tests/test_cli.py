@@ -75,6 +75,13 @@ def test_user_init_enables_no_config_ingest_and_history(
 
     assert main(["init"]) == 0
     capsys.readouterr()
+    config_path = tmp_path / "config-home" / "kotekomi" / "kotekomi.toml"
+    config_path.write_text(
+        config_path.read_text(encoding="utf-8").replace(
+            'runtime_profile = "lm-studio"', 'runtime_profile = "fixture"'
+        ),
+        encoding="utf-8",
+    )
     assert (
         main(
             [
@@ -89,7 +96,7 @@ def test_user_init_enables_no_config_ingest_and_history(
     captured = capsys.readouterr()
     assert captured.out.startswith("anthropic_model_release_review.md\t[CAPTURED]\t")
     assert main(["ingestions", "list"]) == 0
-    assert capsys.readouterr().out == captured.out
+    assert capsys.readouterr().out == f"{captured.out.splitlines()[0]}\n"
 
 
 def test_project_config_precedes_user_config(
@@ -255,19 +262,19 @@ def test_load_config_allows_flag_overrides(tmp_path: Path) -> None:
     assert config.archive_path == Path("override_archive").resolve()
 
 
-def test_load_config_defaults_to_mac_llama_server_profile() -> None:
+def test_load_config_defaults_to_lm_studio_profile() -> None:
     config = load_config(
         config_path=None,
         ledger_path_override=None,
         archive_path_override=None,
     )
 
-    assert config.model_execution.adapter == "llama_server"
-    assert config.model_execution.endpoint == "http://127.0.0.1:8080/v1"
-    assert config.model_execution.model == "Qwen/Qwen3-14B-GGUF:Q4_K_M"
+    assert config.model_execution.adapter == "lm_studio"
+    assert config.model_execution.endpoint == "http://127.0.0.1:1234/v1"
+    assert config.model_execution.model == "qwen3.8-27b-mlx-textonly"
     assert config.model_execution.context_tokens == 16384
     assert config.model_execution.max_output_tokens == 8192
-    assert config.model_execution.profile_name == "macbook"
+    assert config.model_execution.profile_name == "lm-studio"
 
 
 def test_load_config_reads_wsl_ollama_profile(tmp_path: Path) -> None:
