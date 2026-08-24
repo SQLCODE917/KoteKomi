@@ -175,6 +175,10 @@ class FixtureModelTaskRuntime:
     def configured_identity(self) -> ModelIdentitySnapshot:
         return _fixture_model_identity()
 
+    @property
+    def task_deadline_seconds(self) -> float:
+        return 300.0
+
     def run_model_task(self, task: ModelTaskRequest) -> ModelTaskResponse:
         self.requests.append(task)
         return ModelTaskResponse(
@@ -656,8 +660,6 @@ def test_docling_r1d_staged_extraction_publishes_one_task_local_candidate(
                 prompt_bytes=b"Extract one grounded source claim.",
                 execution_spec=_fixture_execution_spec(manifest),
                 validator_version="r1d-evidence-validator-v1",
-                started_at=NOW,
-                completed_at=NOW,
             ),
             repository,
             archive,
@@ -692,8 +694,6 @@ def test_docling_r1d_staged_extraction_publishes_one_task_local_candidate(
                 prompt_bytes=b"Extract one grounded source claim.",
                 execution_spec=_fixture_execution_spec(manifest),
                 validator_version="r1d-evidence-validator-v1",
-                started_at=NOW + timedelta(minutes=2),
-                completed_at=NOW + timedelta(minutes=3),
             ),
             repository,
             archive,
@@ -730,8 +730,6 @@ def test_docling_r1d_staged_extraction_publishes_one_task_local_candidate(
                 prompt_bytes=b"Extract one grounded source claim.",
                 execution_spec=_fixture_execution_spec(manifest),
                 validator_version="r1d-evidence-validator-v1",
-                started_at=NOW + timedelta(minutes=4),
-                completed_at=NOW + timedelta(minutes=5),
             ),
             repository,
             archive,
@@ -846,6 +844,11 @@ def test_docling_r1d_staged_extraction_publishes_one_task_local_candidate(
         assert replayed_run.extraction_task_id == replayed_task.id
         assert replayed_run.execution_receipt is not None
         assert replayed_run.execution_receipt["input_token_count"] == manifest.input_token_count
+        assert replayed_run.execution_diagnostics["deadline_milliseconds"] == 300000
+        assert replayed_run.execution_diagnostics["first_response_event_milliseconds"] is None
+        elapsed_milliseconds = replayed_run.execution_diagnostics["elapsed_milliseconds"]
+        assert isinstance(elapsed_milliseconds, int)
+        assert elapsed_milliseconds >= 0
         assert (
             render_context(
                 manifest.id,
@@ -1000,8 +1003,6 @@ def test_sqlite_model_run_publication_fault_matrix_is_atomic_and_retryable(tmp_p
                 prompt_bytes=b"Extract one grounded source claim.",
                 execution_spec=_fixture_execution_spec(manifest),
                 validator_version="r1d-fault-validator-v1",
-                started_at=NOW,
-                completed_at=NOW,
             ),
             repository,
             archive,
@@ -1077,8 +1078,6 @@ def test_sqlite_model_run_publication_fault_matrix_is_atomic_and_retryable(tmp_p
                     prompt_bytes=b"Extract one grounded source claim.",
                     execution_spec=_fixture_execution_spec(manifest),
                     validator_version="r1d-fault-validator-v1",
-                    started_at=NOW + timedelta(minutes=index * 2),
-                    completed_at=NOW + timedelta(minutes=index * 2, seconds=1),
                 ),
                 repository,
                 archive,
@@ -1104,8 +1103,6 @@ def test_sqlite_model_run_publication_fault_matrix_is_atomic_and_retryable(tmp_p
                     prompt_bytes=b"Extract one grounded source claim.",
                     execution_spec=_fixture_execution_spec(manifest),
                     validator_version="r1d-fault-validator-v1",
-                    started_at=NOW + timedelta(minutes=index * 2, seconds=2),
-                    completed_at=NOW + timedelta(minutes=index * 2, seconds=3),
                 ),
                 repository,
                 archive,

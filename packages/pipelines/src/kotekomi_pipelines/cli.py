@@ -61,7 +61,9 @@ from kotekomi_application import (
     ExplainEvidenceGraphRelationshipCommand,
     JsonValue,
     LedgerRetrievalFilters,
+    ListModelRunLogsInput,
     ModelExecutionSpec,
+    ModelRunLogEntry,
     ModelRuntimeStatus,
     ModelTaskRuntime,
     NewsDeliveryEnvelope,
@@ -128,7 +130,9 @@ from kotekomi_application import (
     ingest_structured_news,
     initialize_ledger,
     list_ingestion_runs,
+    list_model_run_logs,
     list_review_queue,
+    model_run_logs_to_json,
     model_runtime_status_to_json,
     normalize_source_url,
     pipeline_next_to_json,
@@ -219,6 +223,13 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "ingestions" and args.ingestions_command == "list":
         return list_user_ingestion_history(config_path=args.config)
+
+    if args.command == "model" and args.model_command == "runs":
+        return list_model_run_history(
+            config_path=args.config,
+            limit=args.limit,
+            output_format=args.output_format,
+        )
 
     if args.command == "retrieval" and args.retrieval_command == "build-document":
         if args.embedding_profile is not None and args.channel != "semantic":
@@ -888,6 +899,18 @@ def build_parser() -> argparse.ArgumentParser:
         default="text",
     )
     _add_model_runtime_arguments(model_status_parser, include_fixture=False)
+
+    model_runs_parser = model_subparsers.add_parser(
+        "runs",
+        help="List durable model execution diagnostics without exposing model content.",
+    )
+    model_runs_parser.add_argument("--limit", type=int, default=100)
+    model_runs_parser.add_argument(
+        "--format",
+        dest="output_format",
+        choices=("text", "json"),
+        default="text",
+    )
 
     model_server_parser = model_subparsers.add_parser(
         "server",
@@ -2202,8 +2225,6 @@ def _automatic_ingestion_extraction(
             prompt_bytes=prompt_bytes,
             execution_spec=execution_spec,
             validator_version="cir_automatic_claim_validator_v1",
-            started_at=datetime.now(UTC),
-            completed_at=datetime.now(UTC),
         )
         prepared.append(
             _PreparedAutomaticExtraction(
@@ -2320,6 +2341,38 @@ def list_user_ingestion_history(*, config_path: Path | None) -> int:
     return 0
 
 
+def list_model_run_history(
+    *,
+    config_path: Path | None,
+    limit: int,
+    output_format: str,
+) -> int:
+    try:
+        config = load_processing_storage_config(
+            config_path=config_path,
+            ledger_path_override=None,
+            archive_path_override=None,
+        )
+        SQLiteLedgerInitializer(config.storage.ledger_path).initialize()
+        with sqlite_ledger_transaction(config.storage.ledger_path) as repository:
+            result = list_model_run_logs(ListModelRunLogsInput(limit=limit), repository)
+    except ProcessingConfigurationError as error:
+        print(str(error), file=sys.stderr)
+        return 1
+    except ValueError as error:
+        print(str(error), file=sys.stderr)
+        return 1
+    except (OSError, sqlite3.Error) as error:
+        print(f"Unable to open KoteKomi storage: {error}", file=sys.stderr)
+        return 1
+    if output_format == "json":
+        print(json.dumps(model_run_logs_to_json(result), sort_keys=True))
+        return 0
+    for entry in result.entries:
+        print(_model_run_log_row(entry))
+    return 0
+
+
 def _record_user_ingestion_error(
     *,
     config: ProcessingConfig,
@@ -2365,6 +2418,26 @@ def _user_ingestion_row(run: IngestionRun) -> str:
     }[run.status]
     timestamp = run.started_at.astimezone(UTC).strftime("%Y-%m-%dT%H:%M")
     return f"{run.display_filename}\t{status}\t{timestamp}"
+
+
+def _model_run_log_row(entry: ModelRunLogEntry) -> str:
+    first_event = (
+        "unknown"
+        if entry.first_response_event_milliseconds is None
+        else f"{entry.first_response_event_milliseconds}ms"
+    )
+    output_tokens = "unknown" if entry.output_token_count is None else str(entry.output_token_count)
+    requested_tokens = (
+        "unknown"
+        if entry.requested_max_output_tokens is None
+        else str(entry.requested_max_output_tokens)
+    )
+    return (
+        f"{entry.started_at}\t{entry.model_run_id}\t[{entry.status.upper()}]\t"
+        f"elapsed={entry.elapsed_milliseconds}ms\tdeadline={entry.deadline_milliseconds}ms\t"
+        f"first_event={first_event}\toutput_tokens={output_tokens}\t"
+        f"requested_max_output_tokens={requested_tokens}"
+    )
 
 
 def add_structured_news(

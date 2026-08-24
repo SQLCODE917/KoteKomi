@@ -119,6 +119,7 @@ def test_lm_studio_runtime_returns_one_strict_output_text() -> None:
                         "usage": {"output_tokens": 3},
                     }
                 ),
+                first_response_event_milliseconds=25,
             )
         ]
     )
@@ -128,6 +129,8 @@ def test_lm_studio_runtime_returns_one_strict_output_text() -> None:
 
     assert response.raw_output == b'{"kind":"abstain"}'
     assert response.execution_receipt.input_token_count == 2
+    assert response.first_response_event_milliseconds == 25
+    assert runtime.task_deadline_seconds == 1
     assert streaming_client.calls == [
         (
             "POST",
@@ -165,9 +168,15 @@ def test_sse_completion_returns_only_the_completed_response() -> None:
         ]
     )
 
-    result = read_sse_completion(response, deadline=10.0, monotonic_clock=lambda: 0.0)
+    result = read_sse_completion(
+        response,
+        deadline=10.0,
+        started_at=0.0,
+        monotonic_clock=lambda: 0.0,
+    )
 
-    assert json.loads(result) == {"model": "fixture-model", "output": []}
+    assert json.loads(result.body) == {"model": "fixture-model", "output": []}
+    assert result.first_response_event_milliseconds == 0
     assert response.socket.timeouts == [10.0] * 6
 
 
@@ -185,9 +194,9 @@ def test_sse_activity_does_not_extend_the_wall_clock_deadline() -> None:
         return next(values)
 
     with pytest.raises(ModelRuntimeDeadlineExceeded, match="wall-clock deadline"):
-        read_sse_completion(response, deadline=1.0, monotonic_clock=clock)
+        read_sse_completion(response, deadline=1.0, started_at=0.0, monotonic_clock=clock)
 
-    assert response.socket.timeouts == [1.0, 0.8, 0.6]
+    assert response.socket.timeouts == [1.0, 0.6]
 
 
 def test_sse_terminal_failure_discards_partial_output() -> None:
@@ -203,4 +212,9 @@ def test_sse_terminal_failure_discards_partial_output() -> None:
     )
 
     with pytest.raises(ModelRuntimeResponseError, match="terminal streaming response failure"):
-        read_sse_completion(response, deadline=10.0, monotonic_clock=lambda: 0.0)
+        read_sse_completion(
+            response,
+            deadline=10.0,
+            started_at=0.0,
+            monotonic_clock=lambda: 0.0,
+        )

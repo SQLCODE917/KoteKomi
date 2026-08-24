@@ -316,15 +316,21 @@ class FakeModelTaskRuntime:
         *,
         configured_identity: ModelIdentitySnapshot | None = None,
         receipt: ModelExecutionReceipt | None = None,
+        first_response_event_milliseconds: int | None = None,
     ) -> None:
         self.raw_output = raw_output
         self.requests: list[ModelTaskRequest] = []
         self._configured_identity = configured_identity or _fixture_model_identity()
         self._receipt = receipt
+        self._first_response_event_milliseconds = first_response_event_milliseconds
 
     @property
     def configured_identity(self) -> ModelIdentitySnapshot:
         return self._configured_identity
+
+    @property
+    def task_deadline_seconds(self) -> float:
+        return 300.0
 
     def run_model_task(self, task: ModelTaskRequest) -> ModelTaskResponse:
         self.requests.append(task)
@@ -342,7 +348,22 @@ class FakeModelTaskRuntime:
                 input_token_count=len(task.rendered_input.decode().split()),
                 output_token_count=None,
             ),
+            self._first_response_event_milliseconds,
         )
+
+
+class FixedModelRunClock:
+    def __init__(
+        self, timestamps: tuple[datetime, ...], monotonic_values: tuple[float, ...]
+    ) -> None:
+        self._timestamps = iter(timestamps)
+        self._monotonic_values = iter(monotonic_values)
+
+    def now(self) -> datetime:
+        return next(self._timestamps)
+
+    def monotonic_seconds(self) -> float:
+        return next(self._monotonic_values)
 
 
 class FixtureTokenizer:
@@ -671,8 +692,6 @@ def test_staged_extraction_archives_invalid_task_local_output_without_proposals(
             prompt_bytes=prompt_bytes,
             execution_spec=_fixture_execution_spec(manifest),
             validator_version="fixture-validator-v1",
-            started_at=NOW,
-            completed_at=NOW,
         ),
         ledger,
         archive,
@@ -708,8 +727,6 @@ def test_staged_extraction_persists_exact_abstention_reason_on_model_run() -> No
             prompt_bytes=manifest.prompt_bytes,
             execution_spec=_fixture_execution_spec(manifest),
             validator_version="fixture-validator-v1",
-            started_at=NOW,
-            completed_at=NOW,
         ),
         ledger,
         archive,
@@ -730,6 +747,52 @@ def test_staged_extraction_persists_exact_abstention_reason_on_model_run() -> No
         )
     with pytest.raises(ValueError, match="requires an abstention reason"):
         ModelRun.model_validate({**outcome.model_run.model_dump(), "abstention_reason": None})
+
+
+def test_staged_extraction_records_application_owned_execution_timing() -> None:
+    ledger = FakeGroundedCandidateLedger()
+    archive = FakeModelOutputArchive()
+    manifest = _ready_manifest_for_staged_test(ledger)
+    completed_at = NOW + timedelta(seconds=2)
+    clock = FixedModelRunClock((NOW, completed_at), (100.0, 102.25))
+    raw_output = (
+        b'{"kind":"abstain","schema_id":"staged_claim_output_v1",'
+        b'"reason":"insufficient task-local evidence"}'
+    )
+
+    outcome = run_bounded_extraction(
+        BoundedExtractionInput(
+            source_id=ledger.source.id,
+            document_id=ledger.document.id,
+            representation_id=ledger.bundle.representation.id,
+            context_manifest_id=manifest.id,
+            prompt_bytes=manifest.prompt_bytes,
+            execution_spec=_fixture_execution_spec(manifest),
+            validator_version="fixture-validator-v1",
+        ),
+        ledger,
+        archive,
+        FakeModelTaskRuntime(raw_output, first_response_event_milliseconds=125),
+        Uuid4ModelRunIdFactory(),
+        FixtureTokenizer(),
+        StagedClaimTaskSchemaRegistry(),
+        clock,
+    )
+
+    assert outcome.model_run.started_at == NOW
+    assert outcome.model_run.completed_at == completed_at
+    assert outcome.model_run.execution_diagnostics == {
+        "elapsed_milliseconds": 2250,
+        "deadline_milliseconds": 300000,
+        "first_response_event_milliseconds": 125,
+    }
+    with pytest.raises(ValueError, match="execution diagnostics"):
+        ModelRun.model_validate(
+            {
+                **outcome.model_run.model_dump(),
+                "execution_diagnostics": {"elapsed_milliseconds": 2250},
+            }
+        )
 
 
 def test_staged_extraction_rejects_a_mismatched_execution_receipt_after_archiving_output() -> None:
@@ -754,8 +817,6 @@ def test_staged_extraction_rejects_a_mismatched_execution_receipt_after_archivin
         prompt_bytes=manifest.prompt_bytes,
         execution_spec=_fixture_execution_spec(manifest),
         validator_version="fixture-validator-v1",
-        started_at=NOW,
-        completed_at=NOW,
     )
 
     outcome = run_bounded_extraction(
@@ -799,8 +860,6 @@ def test_staged_extraction_rejects_and_persists_a_truncated_input_receipt() -> N
             prompt_bytes=manifest.prompt_bytes,
             execution_spec=execution_spec,
             validator_version="fixture-validator-v1",
-            started_at=NOW,
-            completed_at=NOW,
         ),
         ledger,
         archive,
@@ -888,8 +947,6 @@ def test_staged_extraction_classifies_runtime_and_archive_failures_truthfully(
             prompt_bytes=manifest.prompt_bytes,
             execution_spec=_fixture_execution_spec(manifest),
             validator_version="fixture-validator-v1",
-            started_at=NOW,
-            completed_at=NOW,
         ),
         ledger,
         archive,
@@ -937,8 +994,6 @@ def test_staged_extraction_records_task_deadline_without_partial_proposals() -> 
             prompt_bytes=manifest.prompt_bytes,
             execution_spec=_fixture_execution_spec(manifest),
             validator_version="fixture-validator-v1",
-            started_at=NOW,
-            completed_at=NOW,
         ),
         ledger,
         FakeModelOutputArchive(),
@@ -973,8 +1028,6 @@ def test_staged_extraction_rejects_unpinned_prompt_before_model_invocation() -> 
                 prompt_bytes=b"tampered prompt",
                 execution_spec=_fixture_execution_spec(manifest),
                 validator_version="fixture-validator-v1",
-                started_at=NOW,
-                completed_at=NOW,
             ),
             ledger,
             archive,
@@ -1002,8 +1055,6 @@ def test_staged_extraction_rejects_runtime_identity_mismatch_before_invocation()
         prompt_bytes=manifest.prompt_bytes,
         execution_spec=_fixture_execution_spec(manifest),
         validator_version="fixture-validator-v1",
-        started_at=NOW,
-        completed_at=NOW,
     )
     mismatches = (
         (
@@ -1082,8 +1133,6 @@ def test_staged_extraction_rejects_schema_bytes_that_differ_from_the_validator()
                 prompt_bytes=b"fixture prompt",
                 execution_spec=_fixture_execution_spec(manifest),
                 validator_version="fixture-validator-v1",
-                started_at=NOW,
-                completed_at=NOW,
             ),
             ledger,
             archive,
@@ -1119,8 +1168,6 @@ def test_staged_extraction_schema_forbids_hidden_global_evidence_coordinates() -
             prompt_bytes=b"fixture prompt",
             execution_spec=_fixture_execution_spec(manifest),
             validator_version="fixture-validator-v1",
-            started_at=NOW,
-            completed_at=NOW,
         ),
         ledger,
         archive,
@@ -1151,8 +1198,6 @@ def test_successful_model_run_and_candidate_batch_share_one_atomic_boundary() ->
             prompt_bytes=b"fixture prompt",
             execution_spec=_fixture_execution_spec(manifest),
             validator_version="fixture-validator-v1",
-            started_at=NOW,
-            completed_at=NOW,
         ),
         ledger,
         archive,
@@ -1184,8 +1229,6 @@ def test_retries_preserve_distinct_model_runs_for_one_task() -> None:
         prompt_bytes=b"fixture prompt",
         execution_spec=_fixture_execution_spec(manifest),
         validator_version="fixture-validator-v1",
-        started_at=NOW,
-        completed_at=NOW,
     )
     first = run_bounded_extraction(
         extraction_input,
@@ -1312,8 +1355,6 @@ def test_frozen_analysis_plan_requires_every_unit_to_reconcile_before_completion
             prompt_bytes=manifest.prompt_bytes,
             execution_spec=_fixture_execution_spec(manifest),
             validator_version="fixture-validator-v1",
-            started_at=NOW,
-            completed_at=NOW,
         ),
         ledger,
         FakeModelOutputArchive(),
@@ -1321,6 +1362,7 @@ def test_frozen_analysis_plan_requires_every_unit_to_reconcile_before_completion
         Uuid4ModelRunIdFactory(),
         FixtureTokenizer(),
         StagedClaimTaskSchemaRegistry(),
+        FixedModelRunClock((NOW, NOW), (0.0, 0.0)),
     )
     assert outcome.proposed_change_batch is not None
 
@@ -1498,8 +1540,6 @@ def _complete_coverage_fixture() -> tuple[
             prompt_bytes=manifest.prompt_bytes,
             execution_spec=_fixture_execution_spec(manifest),
             validator_version="fixture-validator-v1",
-            started_at=NOW,
-            completed_at=NOW,
         ),
         ledger,
         FakeModelOutputArchive(),

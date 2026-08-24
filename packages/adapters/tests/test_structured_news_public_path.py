@@ -106,6 +106,10 @@ class _FixtureRuntime:
     def configured_identity(self) -> ModelIdentitySnapshot:
         return _model_identity()
 
+    @property
+    def task_deadline_seconds(self) -> float:
+        return 300.0
+
     def run_model_task(self, task: ModelTaskRequest) -> ModelTaskResponse:
         return ModelTaskResponse(
             self._raw_output,
@@ -229,8 +233,6 @@ def test_newsml_public_path_reaches_proposal_coverage_and_restart(tmp_path: Path
                 prompt_bytes=PROMPT,
                 execution_spec=_execution_spec(manifest),
                 validator_version="news-public-validator-v1",
-                started_at=NOW,
-                completed_at=NOW,
             ),
             repository,
             archive,

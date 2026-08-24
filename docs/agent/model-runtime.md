@@ -94,6 +94,15 @@ partial output.
 Readiness and embedding requests remain ordinary bounded HTTP requests. Their
 request timeout is not a model-task execution deadline.
 
+Every ModelRun stores three application-owned diagnostics: measured elapsed
+milliseconds, configured deadline milliseconds, and an optional first-response
+event latency. LM Studio supplies the last value from its SSE stream; a runtime
+without such an event records `null`. These diagnostics describe execution,
+not source evidence or model confidence.
+
+Use `kotekomi model runs --format json` to inspect durable diagnostics. It is a
+read-only view and must not expose prompts, raw model output, or source text.
+
 ## Prompt Rules
 
 Prompts live in `prompts/`.

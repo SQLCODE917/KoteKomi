@@ -29,6 +29,13 @@ READINESS_SCHEMA: dict[str, JsonValue] = {
 class HttpResponse:
     status_code: int
     body: str
+    first_response_event_milliseconds: int | None = None
+
+
+@dataclass(frozen=True)
+class SseCompletion:
+    body: str
+    first_response_event_milliseconds: int | None
 
 
 class JsonHttpClient(Protocol):
@@ -99,7 +106,8 @@ class UrllibSseJsonHttpClient:
     ) -> HttpResponse:
         if deadline_seconds <= 0:
             raise ValueError("Streaming request deadline must be positive.")
-        deadline = self._monotonic_clock() + deadline_seconds
+        started_at = self._monotonic_clock()
+        deadline = started_at + deadline_seconds
         request = Request(
             url,
             data=json.dumps(payload).encode("utf-8"),
@@ -115,9 +123,16 @@ class UrllibSseJsonHttpClient:
                         status_code=response.status,
                         body=response.read().decode("utf-8"),
                     )
+                completion = read_sse_completion(
+                    response,
+                    deadline,
+                    started_at,
+                    self._monotonic_clock,
+                )
                 return HttpResponse(
                     status_code=response.status,
-                    body=read_sse_completion(response, deadline, self._monotonic_clock),
+                    body=completion.body,
+                    first_response_event_milliseconds=completion.first_response_event_milliseconds,
                 )
         except HTTPError as exc:
             return HttpResponse(status_code=exc.code, body=exc.read().decode("utf-8"))
@@ -134,10 +149,12 @@ class UrllibSseJsonHttpClient:
 def read_sse_completion(
     response: object,
     deadline: float,
+    started_at: float,
     monotonic_clock: Callable[[], float],
-) -> str:
+) -> SseCompletion:
     event_name: str | None = None
     data_lines: list[str] = []
+    first_response_event_milliseconds: int | None = None
     while True:
         _set_stream_read_timeout(response, _remaining_seconds(deadline, monotonic_clock))
         line = _read_stream_line(response)
@@ -147,20 +164,28 @@ def read_sse_completion(
         if not decoded:
             completed = _completed_sse_payload(event_name, data_lines)
             if completed is not None:
-                return completed
+                return SseCompletion(completed, first_response_event_milliseconds)
             event_name = None
             data_lines = []
             continue
         if decoded.startswith("event:"):
+            if first_response_event_milliseconds is None:
+                first_response_event_milliseconds = _elapsed_milliseconds(
+                    started_at, monotonic_clock
+                )
             event_name = decoded.removeprefix("event:").strip()
             continue
         if decoded.startswith("data:"):
+            if first_response_event_milliseconds is None:
+                first_response_event_milliseconds = _elapsed_milliseconds(
+                    started_at, monotonic_clock
+                )
             data_lines.append(decoded.removeprefix("data:").lstrip())
             continue
         raise ModelRuntimeResponseError("LM Studio SSE event is malformed.")
     completed = _completed_sse_payload(event_name, data_lines)
     if completed is not None:
-        return completed
+        return SseCompletion(completed, first_response_event_milliseconds)
     raise ModelRuntimeResponseError("LM Studio SSE ended before response.completed.")
 
 
@@ -171,6 +196,13 @@ def _remaining_seconds(deadline: float, monotonic_clock: Callable[[], float]) ->
             "Model task exceeded its configured wall-clock deadline."
         )
     return remaining
+
+
+def _elapsed_milliseconds(started_at: float, monotonic_clock: Callable[[], float]) -> int:
+    elapsed_milliseconds = int(round((monotonic_clock() - started_at) * 1000))
+    if elapsed_milliseconds < 0:
+        raise ModelRuntimeResponseError("LM Studio SSE monotonic clock moved backwards.")
+    return elapsed_milliseconds
 
 
 def _set_stream_read_timeout(response: object, timeout_seconds: float) -> None:

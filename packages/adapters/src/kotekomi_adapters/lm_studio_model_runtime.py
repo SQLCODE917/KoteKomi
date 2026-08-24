@@ -61,6 +61,10 @@ class LMStudioModelRuntime:
             tokenizer_id="lm_studio_whitespace_v1",
         )
 
+    @property
+    def task_deadline_seconds(self) -> float:
+        return self.timeout_seconds
+
     def check_readiness(self) -> ModelRuntimeStatus:
         try:
             response = self.http_client.request(
@@ -162,7 +166,11 @@ class LMStudioModelRuntime:
             input_token_count=_count_tokens(task.rendered_input),
             output_token_count=output_tokens,
         )
-        return ModelTaskResponse(raw_output=raw_output, execution_receipt=receipt)
+        return ModelTaskResponse(
+            raw_output=raw_output,
+            execution_receipt=receipt,
+            first_response_event_milliseconds=response.first_response_event_milliseconds,
+        )
 
 
 def _model_ids(body: str) -> set[str]:

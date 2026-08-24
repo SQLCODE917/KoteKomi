@@ -2353,6 +2353,7 @@ class ModelRun(DomainModel):
     error_message: str | None = None
     started_at: datetime
     completed_at: datetime
+    execution_diagnostics: dict[str, JsonValue]
     execution_receipt: dict[str, JsonValue] | None = None
 
     @model_validator(mode="after")
@@ -2376,6 +2377,37 @@ class ModelRun(DomainModel):
         }
         if self.status in response_statuses and self.execution_receipt is None:
             raise ValueError("ModelRun with a runtime response requires its execution receipt.")
+        expected_diagnostic_keys = {
+            "elapsed_milliseconds",
+            "deadline_milliseconds",
+            "first_response_event_milliseconds",
+        }
+        if set(self.execution_diagnostics) != expected_diagnostic_keys:
+            raise ValueError("ModelRun execution diagnostics have an invalid shape.")
+        elapsed_milliseconds = self.execution_diagnostics["elapsed_milliseconds"]
+        deadline_milliseconds = self.execution_diagnostics["deadline_milliseconds"]
+        first_response_event_milliseconds = self.execution_diagnostics[
+            "first_response_event_milliseconds"
+        ]
+        if (
+            not isinstance(elapsed_milliseconds, int)
+            or isinstance(elapsed_milliseconds, bool)
+            or elapsed_milliseconds < 0
+        ):
+            raise ValueError("ModelRun execution diagnostics elapsed time is invalid.")
+        if (
+            not isinstance(deadline_milliseconds, int)
+            or isinstance(deadline_milliseconds, bool)
+            or deadline_milliseconds <= 0
+        ):
+            raise ValueError("ModelRun execution diagnostics deadline is invalid.")
+        if first_response_event_milliseconds is not None and (
+            not isinstance(first_response_event_milliseconds, int)
+            or isinstance(first_response_event_milliseconds, bool)
+            or first_response_event_milliseconds < 0
+            or first_response_event_milliseconds > elapsed_milliseconds
+        ):
+            raise ValueError("ModelRun execution diagnostics first response event is invalid.")
         if self.execution_receipt is not None:
             expected_keys = {
                 "model_identity_digest",

@@ -1,7 +1,15 @@
+import json
 from pathlib import Path
 
+import kotekomi_pipelines.cli as cli
 import pytest
-from kotekomi_application import ModelRuntimeStatus
+from kotekomi_application import (
+    ListModelRunLogsInput,
+    ListModelRunLogsResult,
+    ModelRunLogEntry,
+    ModelRunLogLedger,
+    ModelRuntimeStatus,
+)
 from kotekomi_pipelines.cli import main
 from kotekomi_pipelines.config import (
     CheckoutBuildIdentityError,
@@ -161,6 +169,80 @@ def test_user_history_does_not_require_processing_identity(
     monkeypatch.setattr("kotekomi_pipelines.config.derive_checkout_build_identity", fail_identity)
     assert main(["--config", str(config_path), "ingestions", "list"]) == 0
     assert capsys.readouterr().out == ""
+
+
+def test_model_runs_renders_safe_durable_diagnostics(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    config_path = tmp_path / "kotekomi.toml"
+    config_path.write_text(
+        '[processing]\nrepresentation_policy_version = "test-v1"\n', encoding="utf-8"
+    )
+    result = ListModelRunLogsResult(
+        entries=(
+            ModelRunLogEntry(
+                model_run_id="mrn_fixture",
+                extraction_task_id="ext_fixture",
+                runtime_identity="lm_studio",
+                status="succeeded",
+                started_at="2026-08-24T12:00:00+00:00",
+                completed_at="2026-08-24T12:00:01+00:00",
+                requested_max_output_tokens=8192,
+                input_token_count=42,
+                output_token_count=11,
+                elapsed_milliseconds=1000,
+                deadline_milliseconds=300000,
+                first_response_event_milliseconds=250,
+                error_code=None,
+            ),
+        )
+    )
+
+    def fake_list_model_run_logs(
+        input: ListModelRunLogsInput,
+        ledger_repository: ModelRunLogLedger,
+    ) -> ListModelRunLogsResult:
+        del input, ledger_repository
+        return result
+
+    monkeypatch.setattr(cli, "list_model_run_logs", fake_list_model_run_logs)
+
+    assert main(["--config", str(config_path), "model", "runs", "--format", "json"]) == 0
+
+    assert json.loads(capsys.readouterr().out) == {
+        "model_runs": [
+            {
+                "completed_at": "2026-08-24T12:00:01+00:00",
+                "deadline_milliseconds": 300000,
+                "elapsed_milliseconds": 1000,
+                "error_code": None,
+                "extraction_task_id": "ext_fixture",
+                "first_response_event_milliseconds": 250,
+                "input_token_count": 42,
+                "model_run_id": "mrn_fixture",
+                "output_token_count": 11,
+                "requested_max_output_tokens": 8192,
+                "runtime_identity": "lm_studio",
+                "started_at": "2026-08-24T12:00:00+00:00",
+                "status": "succeeded",
+            }
+        ]
+    }
+
+
+def test_model_runs_rejects_non_positive_limit(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    config_path = tmp_path / "kotekomi.toml"
+    config_path.write_text(
+        '[processing]\nrepresentation_policy_version = "test-v1"\n', encoding="utf-8"
+    )
+
+    assert main(["--config", str(config_path), "model", "runs", "--limit", "0"]) == 1
+
+    assert "positive integer" in capsys.readouterr().err
 
 
 def test_checkout_build_identity_is_stable_and_binds_current_source() -> None:

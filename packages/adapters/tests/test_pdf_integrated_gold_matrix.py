@@ -169,6 +169,10 @@ class _AbstainingRuntime:
     def configured_identity(self) -> ModelIdentitySnapshot:
         return _model_identity()
 
+    @property
+    def task_deadline_seconds(self) -> float:
+        return 300.0
+
     def run_model_task(self, task: ModelTaskRequest) -> ModelTaskResponse:
         return ModelTaskResponse(
             ABSTENTION_OUTPUT,
@@ -445,7 +449,7 @@ def _complete_analysis(
     frozen = freeze_analysis_plan(plan, repository)
     manifests: dict[str, ContextManifest] = {}
     runs: dict[str, BoundedExtractionOutcome] = {}
-    for index, unit in enumerate(plan.units):
+    for unit in plan.units:
         manifest = build_context_manifest(
             ContextManifestInput(
                 analysis_unit=unit,
@@ -470,8 +474,6 @@ def _complete_analysis(
                 prompt_bytes=PROMPT_BYTES,
                 execution_spec=_execution_spec(manifest),
                 validator_version="pdf-gold-output-validator-v1",
-                started_at=NOW + timedelta(seconds=index),
-                completed_at=NOW + timedelta(seconds=index + 1),
             ),
             repository,
             archive,

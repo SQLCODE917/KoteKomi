@@ -91,6 +91,13 @@
       "default": null,
       "title": "Error Message"
     },
+    "execution_diagnostics": {
+      "additionalProperties": {
+        "$ref": "#/$defs/JsonValue"
+      },
+      "title": "Execution Diagnostics",
+      "type": "object"
+    },
     "execution_receipt": {
       "anyOf": [
         {
@@ -208,7 +215,8 @@
     "generation_parameters",
     "status",
     "started_at",
-    "completed_at"
+    "completed_at",
+    "execution_diagnostics"
   ],
   "title": "ModelRun",
   "type": "object"

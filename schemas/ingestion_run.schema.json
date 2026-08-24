@@ -9,7 +9,9 @@
         "source_capture_failed",
         "document_representation_blocked",
         "document_representation_failed",
-        "ingestion_run_transition_conflict"
+        "ingestion_run_transition_conflict",
+        "model_runtime_unavailable",
+        "automatic_extraction_failed"
       ],
       "title": "IngestionFailureCode",
       "type": "string"
@@ -21,6 +23,7 @@
         "archive",
         "source_capture",
         "document_representation",
+        "automatic_extraction",
         "run_persistence"
       ],
       "title": "IngestionFailureStage",
@@ -40,6 +43,19 @@
   "additionalProperties": false,
   "description": "One durable user-admitted deposited-file ingestion attempt.",
   "properties": {
+    "analysis_run_id": {
+      "anyOf": [
+        {
+          "pattern": "^arn_[A-Za-z0-9][A-Za-z0-9_-]*$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Analysis Run Id"
+    },
     "completed_at": {
       "anyOf": [
         {
@@ -97,6 +113,19 @@
       "pattern": "^igr_[A-Za-z0-9][A-Za-z0-9_-]*$",
       "title": "Id",
       "type": "string"
+    },
+    "ingestion_change_set_id": {
+      "anyOf": [
+        {
+          "pattern": "^ics_[A-Za-z0-9][A-Za-z0-9_-]*$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Ingestion Change Set Id"
     },
     "normalized_source_url": {
       "anyOf": [

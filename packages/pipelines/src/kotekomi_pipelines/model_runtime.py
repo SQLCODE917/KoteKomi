@@ -45,6 +45,10 @@ class FixtureModelTaskRuntime:
             tokenizer_id="lm_studio_whitespace_v1",
         )
 
+    @property
+    def task_deadline_seconds(self) -> float:
+        return self.config.timeout_seconds
+
     def check_readiness(self) -> ModelRuntimeStatus:
         return ModelRuntimeStatus(
             adapter="fixture",

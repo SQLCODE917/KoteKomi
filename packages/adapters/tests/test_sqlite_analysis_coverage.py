@@ -97,6 +97,10 @@ class FixtureModelRuntime:
     def configured_identity(self) -> ModelIdentitySnapshot:
         return MODEL_IDENTITY
 
+    @property
+    def task_deadline_seconds(self) -> float:
+        return 300.0
+
     def run_model_task(self, task: ModelTaskRequest) -> ModelTaskResponse:
         return ModelTaskResponse(
             raw_output=self.raw_output,
@@ -368,8 +372,6 @@ def _run_extraction(
             prompt_bytes=manifest.prompt_bytes,
             execution_spec=_execution_spec(manifest),
             validator_version="sqlite-coverage-validator-v1",
-            started_at=started_at,
-            completed_at=started_at + timedelta(seconds=1),
         ),
         repository,
         archive,

@@ -6,10 +6,11 @@ import base64
 import hashlib
 import json
 import math
+import time
 import uuid
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from functools import cache
 from typing import Literal, Protocol, cast
 
@@ -205,13 +206,40 @@ class ModelTaskRequest:
 class ModelTaskResponse:
     raw_output: bytes
     execution_receipt: ModelExecutionReceipt
+    first_response_event_milliseconds: int | None = None
+
+    def __post_init__(self) -> None:
+        if self.first_response_event_milliseconds is not None and (
+            type(self.first_response_event_milliseconds) is not int
+            or self.first_response_event_milliseconds < 0
+        ):
+            raise ValueError(
+                "First response event milliseconds must be non-negative when recorded."
+            )
 
 
 class ModelTaskRuntime(Protocol):
     @property
     def configured_identity(self) -> ModelIdentitySnapshot: ...
 
+    @property
+    def task_deadline_seconds(self) -> float: ...
+
     def run_model_task(self, task: ModelTaskRequest) -> ModelTaskResponse: ...
+
+
+class ModelRunClock(Protocol):
+    def now(self) -> datetime: ...
+
+    def monotonic_seconds(self) -> float: ...
+
+
+class UtcModelRunClock:
+    def now(self) -> datetime:
+        return datetime.now(UTC)
+
+    def monotonic_seconds(self) -> float:
+        return time.monotonic()
 
 
 class ModelRunIdFactory(Protocol):
@@ -264,8 +292,6 @@ class BoundedExtractionInput:
     prompt_bytes: bytes
     execution_spec: ModelExecutionSpec
     validator_version: str
-    started_at: datetime
-    completed_at: datetime
 
 
 @dataclass(frozen=True)
@@ -329,6 +355,7 @@ def run_bounded_extraction(
     model_run_id_factory: ModelRunIdFactory,
     tokenizer: ContextTokenizer,
     schema_registry: TaskSchemaRegistry,
+    clock: ModelRunClock | None = None,
 ) -> BoundedExtractionOutcome:
     """Archive one raw response, validate its task-local candidates, then publish atomically."""
     execution_spec = extraction_input.execution_spec
@@ -355,6 +382,8 @@ def run_bounded_extraction(
     _validate_execution_spec(execution_spec, manifest, rendered_input, schema)
     if model_runtime.configured_identity != execution_spec.model_identity:
         raise ValueError("Model runtime configured identity does not match the execution spec.")
+    model_run_clock = clock or UtcModelRunClock()
+    deadline_milliseconds = _deadline_milliseconds(model_runtime.task_deadline_seconds)
     task = _extraction_task(extraction_input, manifest)
     ledger_repository.save_extraction_task(task)
     model_run_id = model_run_id_factory.new_model_run_id()
@@ -368,14 +397,37 @@ def run_bounded_extraction(
         rendered_input_digest=hashlib.sha256(rendered_input).hexdigest(),
         execution_spec=execution_spec,
     )
+    started_at = model_run_clock.now()
+    monotonic_started = model_run_clock.monotonic_seconds()
     try:
         response = model_runtime.run_model_task(request)
     except Exception as exc:
+        completed_at, diagnostics = _completed_diagnostics(
+            model_run_clock,
+            monotonic_started,
+            deadline_milliseconds,
+            None,
+        )
         run = _model_run(
-            extraction_input, manifest, task, model_run_id, ModelRunStatus.RUNTIME_FAILED, error=exc
+            extraction_input,
+            manifest,
+            task,
+            model_run_id,
+            ModelRunStatus.RUNTIME_FAILED,
+            started_at=started_at,
+            completed_at=completed_at,
+            execution_diagnostics=diagnostics,
+            error=exc,
         )
         ledger_repository.save_model_run(run)
         return BoundedExtractionOutcome(task, run, None)
+
+    completed_at, diagnostics = _completed_diagnostics(
+        model_run_clock,
+        monotonic_started,
+        deadline_milliseconds,
+        response.first_response_event_milliseconds,
+    )
 
     output_digest = hashlib.sha256(response.raw_output).hexdigest()
     try:
@@ -391,6 +443,9 @@ def run_bounded_extraction(
             task,
             model_run_id,
             ModelRunStatus.OUTPUT_ARCHIVE_FAILED,
+            started_at=started_at,
+            completed_at=completed_at,
+            execution_diagnostics=diagnostics,
             execution_receipt=response.execution_receipt,
             error=exc,
         )
@@ -406,6 +461,9 @@ def run_bounded_extraction(
                 task,
                 model_run_id,
                 ModelRunStatus.ABSTAINED,
+                started_at=started_at,
+                completed_at=completed_at,
+                execution_diagnostics=diagnostics,
                 output_digest=output_digest,
                 execution_receipt=response.execution_receipt,
                 abstention_reason=parsed.reason,
@@ -414,7 +472,13 @@ def run_bounded_extraction(
             return BoundedExtractionOutcome(task, run, None)
         _validate_task_local_references(parsed, manifest)
         batch_input = _grounded_batch(
-            extraction_input, manifest, task, model_run_id, parsed, ledger_repository
+            extraction_input,
+            manifest,
+            task,
+            model_run_id,
+            parsed,
+            ledger_repository,
+            completed_at,
         )
         batch_commit = prepare_grounded_candidate_batch(batch_input, ledger_repository)
     except (ValidationError, ValueError) as exc:
@@ -424,6 +488,9 @@ def run_bounded_extraction(
             task,
             model_run_id,
             ModelRunStatus.INVALID_OUTPUT,
+            started_at=started_at,
+            completed_at=completed_at,
+            execution_diagnostics=diagnostics,
             output_digest=output_digest,
             execution_receipt=response.execution_receipt,
             error=exc,
@@ -437,6 +504,9 @@ def run_bounded_extraction(
         task,
         model_run_id,
         ModelRunStatus.SUCCEEDED,
+        started_at=started_at,
+        completed_at=completed_at,
+        execution_diagnostics=diagnostics,
         output_digest=output_digest,
         execution_receipt=response.execution_receipt,
     )
@@ -452,6 +522,9 @@ def run_bounded_extraction(
             task,
             model_run_id,
             ModelRunStatus.PUBLISH_FAILED,
+            started_at=started_at,
+            completed_at=completed_at,
+            execution_diagnostics=diagnostics,
             output_digest=output_digest,
             execution_receipt=response.execution_receipt,
             error=exc,
@@ -507,6 +580,9 @@ def _model_run(
     model_run_id: str,
     status: ModelRunStatus,
     *,
+    started_at: datetime,
+    completed_at: datetime,
+    execution_diagnostics: dict[str, JsonValue],
     output_digest: str | None = None,
     execution_receipt: ModelExecutionReceipt | None = None,
     abstention_reason: str | None = None,
@@ -532,12 +608,41 @@ def _model_run(
         abstention_reason=abstention_reason,
         error_code=(type(error).__name__ if error is not None else None),
         error_message=(str(error) if error is not None else None),
-        started_at=extraction_input.started_at,
-        completed_at=extraction_input.completed_at,
+        started_at=started_at,
+        completed_at=completed_at,
+        execution_diagnostics=execution_diagnostics,
         execution_receipt=(
             _execution_receipt_payload(execution_receipt) if execution_receipt is not None else None
         ),
     )
+
+
+def _deadline_milliseconds(deadline_seconds: float) -> int:
+    if not math.isfinite(deadline_seconds) or deadline_seconds <= 0:
+        raise ValueError("Model task deadline must be a positive finite duration.")
+    return int(round(deadline_seconds * 1000))
+
+
+def _completed_diagnostics(
+    clock: ModelRunClock,
+    monotonic_started: float,
+    deadline_milliseconds: int,
+    first_response_event_milliseconds: int | None,
+) -> tuple[datetime, dict[str, JsonValue]]:
+    completed_at = clock.now()
+    elapsed_milliseconds = int(round((clock.monotonic_seconds() - monotonic_started) * 1000))
+    if elapsed_milliseconds < 0:
+        raise ValueError("Model run monotonic clock moved backwards.")
+    if (
+        first_response_event_milliseconds is not None
+        and first_response_event_milliseconds > elapsed_milliseconds
+    ):
+        raise ValueError("Model response event cannot occur after task completion.")
+    return completed_at, {
+        "elapsed_milliseconds": elapsed_milliseconds,
+        "deadline_milliseconds": deadline_milliseconds,
+        "first_response_event_milliseconds": first_response_event_milliseconds,
+    }
 
 
 def _parse_output(
@@ -605,6 +710,7 @@ def _grounded_batch(
     model_run_id: str,
     output: _CandidateOutput,
     ledger_repository: StagedExtractionLedger,
+    submitted_at: datetime,
 ) -> GroundedCandidateBatchInput:
     bundle = ledger_repository.get_document_representation_bundle(
         extraction_input.representation_id
@@ -624,7 +730,7 @@ def _grounded_batch(
         model_name=extraction_input.execution_spec.model_identity.name,
         prompt_id=manifest.prompt_id,
         validator_version=extraction_input.validator_version,
-        submitted_at=extraction_input.completed_at,
+        submitted_at=submitted_at,
         organizations=tuple(
             GroundedOrganizationCandidate(item.local_id, item.name, item.organization_type)
             for item in output.organizations

@@ -70,6 +70,8 @@ An **automatic extraction policy** is the named policy that selects document nod
 - C2-RUN-04: The LM Studio Adapter validates `/v1/models` and runs one strict `/v1/responses` task.
 - C2-RUN-05: The Adapter rejects malformed, mismatched-model, and incomplete responses.
 - C2-RUN-06: A model task timeout is a total wall-clock deadline. Streaming activity cannot extend it; expired tasks discard partial output and become `RUNTIME_FAILED` without an implicit retry.
+- C2-RUN-07: The Application Layer records its measured elapsed duration and configured deadline on every ModelRun; the LM Studio Adapter records first SSE response-event latency when available.
+- C2-RUN-08: `kotekomi model runs --format json` exposes safe, read-only execution diagnostics without prompts, raw output, or source text.
 
 ## 4. Proposed Architecture
 
@@ -139,6 +141,16 @@ The existing ingest command remains:
 kotekomi ingest <path> --url <SOURCE_URL>
 ```
 
+The diagnostic command is:
+
+```text
+kotekomi model runs --format json
+```
+
+It reports ModelRun identity, terminal status, application-measured elapsed time,
+configured deadline, optional first-response-event latency, and token counts. It
+does not expose prompt content, raw model output, or extracted source text.
+
 A successful CIR-2 command prints:
 
 ```text
@@ -176,6 +188,7 @@ The Application Layer creates no CandidateKnowledgeView in CIR-2.
 - AC-C2-06: SQLite tests prove restart-safe record persistence and atomic closure.
 - AC-C2-07: Adapter tests prove strict LM Studio request and response behavior.
 - AC-C2-07A: Adapter and Application tests prove a streaming task cannot extend its wall-clock deadline and produces no partial ProposedChange on expiry.
+- AC-C2-07B: Domain, Application, Adapter, and CLI tests prove every ModelRun persists application-owned timing diagnostics and exposes only safe fields through `kotekomi model runs`.
 - AC-C2-08: CLI tests prove default configuration, safe failures, result summaries, and identifier-free output.
 - AC-C2-09: The local Anthropic--DoD PDF ingestion proves complete coverage, source-grounded pending proposals, and no accepted intelligence writes.
 
@@ -185,3 +198,4 @@ The Application Layer creates no CandidateKnowledgeView in CIR-2.
 - Coverage reconciliation: `packages/application/src/kotekomi_application/analysis_coverage.py`.
 - Ingestion history: `packages/application/src/kotekomi_application/ingestion_runs.py`.
 - LM Studio HTTP validation: `packages/adapters/src/kotekomi_adapters/lm_studio_embeddings.py`.
+- Model-run diagnostics: `packages/application/src/kotekomi_application/model_run_logging.py`.
