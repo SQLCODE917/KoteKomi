@@ -2164,16 +2164,16 @@ def _automatic_ingestion_extraction(
         return None
     tokenizer = _AutomaticExtractionTokenizer()
     prompt_bytes = (
-        Path(__file__).resolve().parents[4] / "prompts" / "cir_automatic_claim_extraction_v3.md"
+        Path(__file__).resolve().parents[4] / "prompts" / "cir_automatic_claim_extraction_v4.md"
     ).read_bytes()
-    prompt_id = "cir_automatic_claim_extraction_v3"
+    prompt_id = "cir_automatic_claim_extraction_v4"
     prompt_digest = hashlib.sha256(prompt_bytes).hexdigest()
     schema_registry = StagedClaimTaskSchemaRegistry()
-    schema = schema_registry.resolve("staged_claim_output_v3")
+    schema = schema_registry.resolve("staged_claim_output_v4")
     planning = plan_analysis_units(
         AnalysisUnitPlanningInput(
             representation_id=representation_id,
-            policy_id="cir_automatic_claim_extraction_v3",
+            policy_id="cir_automatic_claim_extraction_v4",
             task_type="claim_extraction",
             max_focus_nodes_per_unit=4,
             focus_node_types=("paragraph", "table_caption", "list_item"),
@@ -2227,7 +2227,7 @@ def _automatic_ingestion_extraction(
             context_manifest_id=manifest.id,
             prompt_bytes=prompt_bytes,
             execution_spec=execution_spec,
-            validator_version="cir_automatic_claim_validator_v2",
+            validator_version="cir_automatic_claim_validator_v3",
         )
         prepared.append(
             _PreparedAutomaticExtraction(

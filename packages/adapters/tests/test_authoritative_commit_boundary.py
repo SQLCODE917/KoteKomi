@@ -11,7 +11,9 @@ from kotekomi_application import (
     GroundedAssertionCandidate,
     GroundedCandidateBatchInput,
     GroundedEvidenceCandidate,
+    GroundedLiteralObject,
     GroundedOrganizationCandidate,
+    GroundedOrganizationReferenceObject,
     ReviewProposedChangeInput,
     approve_proposed_change,
     canonical_record_json,
@@ -93,7 +95,7 @@ def _grounded_batch(
                 subject_organization_local_id="subject_organization",
                 evidence_local_id="supporting_span",
                 predicate="reported_alpha",
-                object_value="Alpha",
+                object=GroundedLiteralObject("Alpha"),
             ),
         ),
     )
@@ -148,6 +150,65 @@ def _create_public_path_fixture(tmp_path: Path) -> AuthoritativeFixture:
         assertion_id=review.accepted_record_id,
         evidence_link_id=review.assertion_evidence_link_ids[0],
     )
+
+
+def test_entity_object_assertion_persists_after_organization_first_review(tmp_path: Path) -> None:
+    ledger_path = tmp_path / "ledger.db"
+    archive = LocalArchiveStore(tmp_path / "archive")
+    archive.initialize()
+    SQLiteLedgerInitializer(ledger_path).initialize()
+
+    with sqlite_ledger_transaction(ledger_path) as repository:
+        capture = commit_authoritative_capture(_ingest_request(), archive, repository)
+        bundle = repository.get_document_representation_bundle(capture.representation_id)
+        assert bundle is not None
+        batch = _grounded_batch(
+            source_id=capture.source_id,
+            document_id=capture.document_id,
+            representation_id=bundle.representation.id,
+            text_view_id=bundle.text_views[0].id,
+        )
+        entity_batch = replace(
+            batch,
+            organizations=(
+                *batch.organizations,
+                GroundedOrganizationCandidate("object_organization", "Object Organization"),
+            ),
+            assertions=(
+                replace(
+                    batch.assertions[0],
+                    object=GroundedOrganizationReferenceObject("object_organization"),
+                ),
+            ),
+        )
+        outcome = submit_grounded_candidate_batch(entity_batch, repository)
+        for local_id in ("subject_organization", "object_organization", "reported_alpha"):
+            approve_proposed_change(
+                ReviewProposedChangeInput(
+                    outcome.proposed_change_ids_by_local_id[local_id],
+                    "reviewer",
+                    NOW,
+                ),
+                repository,
+            )
+        assertion_id = repository.get_proposed_change(
+            outcome.proposed_change_ids_by_local_id["reported_alpha"]
+        )
+        assert assertion_id is not None
+
+    with sqlite_ledger_transaction(ledger_path) as repository:
+        proposed = repository.get_proposed_change(
+            outcome.proposed_change_ids_by_local_id["reported_alpha"]
+        )
+        assert proposed is not None
+        record = proposed.proposed_json["record"]
+        assert isinstance(record, dict)
+        assertion = repository.get_assertion(str(record["id"]))
+        assert assertion is not None
+        assert assertion.object_entity_id == outcome.organization_ids_by_local_id[
+            "object_organization"
+        ]
+        assert assertion.object_value is None
 
 
 def test_grounded_candidate_batch_rejects_evidence_disagreement_without_partial_records(

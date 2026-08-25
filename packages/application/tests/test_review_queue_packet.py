@@ -301,6 +301,39 @@ def test_review_packet_includes_evidence_assertion_context_and_reference_resolut
     assert resolutions[("EvidenceTarget", "etg_missing")] is ReviewReferenceResolution.MISSING
 
 
+def test_review_packet_marks_proposed_organization_object_as_pending() -> None:
+    assertion = assertion_json()
+    assertion.pop("object_value")
+    assertion["object_entity_id"] = "org_department_of_defense"
+    organization_change = proposed_change(
+        "pcg_department_of_defense",
+        "Organization",
+        {
+            "id": "org_department_of_defense",
+            "name": "Department of Defense",
+            "organization_type": None,
+        },
+    )
+    assertion_change = proposed_change("pcg_assertion", "Assertion", assertion)
+    ledger = seeded_ledger((assertion_change, organization_change))
+
+    queue = list_review_queue(ReviewQueueInput(), ledger)
+    packet = get_review_packet(ReviewPacketInput("pcg_assertion"), ledger)
+    resolutions = {
+        (reference.referenced_type, reference.referenced_id): reference.resolution_status
+        for reference in packet.reference_contexts
+    }
+
+    assert [item.proposed_change_id for item in queue.items] == [
+        "pcg_department_of_defense",
+        "pcg_assertion",
+    ]
+    assert (
+        resolutions[("Organization", "org_department_of_defense")]
+        is ReviewReferenceResolution.PENDING
+    )
+
+
 def test_review_packet_fails_fast_on_malformed_or_unsupported_proposed_change() -> None:
     malformed = ProposedChange(
         id="pcg_malformed",

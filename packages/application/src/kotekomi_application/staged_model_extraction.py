@@ -12,11 +12,11 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from functools import cache
-from typing import Literal, Protocol, cast
+from typing import Annotated, Literal, Protocol, cast
 
 from kotekomi_domain import DocumentNode, ExtractionTask, ModelRun, ModelRunStatus, TextView
 from kotekomi_domain.models import JsonValue
-from pydantic import BaseModel, ConfigDict, TypeAdapter, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError
 
 from kotekomi_application.context_planning import (
     ContextManifest,
@@ -33,7 +33,9 @@ from kotekomi_application.grounded_candidates import (
     GroundedCandidateBatchInput,
     GroundedCandidateLedger,
     GroundedEvidenceCandidate,
+    GroundedLiteralObject,
     GroundedOrganizationCandidate,
+    GroundedOrganizationReferenceObject,
     ProposedChangeBatchOutcome,
     prepare_grounded_candidate_batch,
 )
@@ -271,7 +273,7 @@ class TaskSchemaRegistry(Protocol):
 class StagedClaimTaskSchemaRegistry:
     """The versioned pinned schema registry for the initial claim task."""
 
-    schema_id = "staged_claim_output_v3"
+    schema_id = "staged_claim_output_v4"
 
     def resolve(self, schema_id: str) -> PinnedTaskSchema:
         if schema_id != self.schema_id:
@@ -279,7 +281,7 @@ class StagedClaimTaskSchemaRegistry:
         return PinnedTaskSchema(
             schema_id=self.schema_id,
             canonical_schema_bytes=staged_claim_output_schema_bytes(),
-            output_contract_version="staged_claim_output_v3",
+            output_contract_version="staged_claim_output_v4",
             parse=_parse_staged_claim_output,
         )
 
@@ -317,20 +319,40 @@ class _EvidenceOutput(BaseModel):
     evidence_candidate_id: str
 
 
+class _OrganizationReferenceObjectOutput(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    kind: Literal["organization_reference"]
+    organization_local_id: str
+
+
+class _LiteralObjectOutput(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    kind: Literal["literal"]
+    value: str
+
+
+type _AssertionObjectOutput = Annotated[
+    _OrganizationReferenceObjectOutput | _LiteralObjectOutput,
+    Field(discriminator="kind"),
+]
+
+
 class _AssertionOutput(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
     subject_organization_local_id: str
     evidence_local_id: str
     predicate: str
-    object_value: str
+    object: _AssertionObjectOutput
 
 
 class _CandidateOutput(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
     kind: Literal["candidates"]
-    schema_id: Literal["staged_claim_output_v3"]
+    schema_id: Literal["staged_claim_output_v4"]
     organizations: list[_OrganizationOutput]
     evidence: list[_EvidenceOutput]
     assertions: list[_AssertionOutput]
@@ -340,7 +362,7 @@ class _AbstentionOutput(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
     kind: Literal["abstain"]
-    schema_id: Literal["staged_claim_output_v3"]
+    schema_id: Literal["staged_claim_output_v4"]
     reason: str
 
 
@@ -750,12 +772,20 @@ def _grounded_batch(
                 item.subject_organization_local_id,
                 item.evidence_local_id,
                 item.predicate,
-                item.object_value,
+                _grounded_assertion_object(item.object),
             )
             for ordinal, item in enumerate(output.assertions, start=1)
         ),
         originating_model_run_id=model_run_id,
     )
+
+
+def _grounded_assertion_object(
+    output: _AssertionObjectOutput,
+) -> GroundedOrganizationReferenceObject | GroundedLiteralObject:
+    if isinstance(output, _OrganizationReferenceObjectOutput):
+        return GroundedOrganizationReferenceObject(output.organization_local_id)
+    return GroundedLiteralObject(output.value)
 
 
 def _resolved_evidence_candidate(

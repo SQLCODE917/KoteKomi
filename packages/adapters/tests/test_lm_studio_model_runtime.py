@@ -92,12 +92,12 @@ def _task(runtime: LMStudioModelRuntime) -> ModelTaskRequest:
         generation_parameters=(ExecutionSetting("max_output_tokens", 10),),
         prompt_id="fixture",
         prompt_digest=digest,
-        schema_id="staged_claim_output_v3",
+        schema_id="staged_claim_output_v4",
         schema_digest=digest,
         context_manifest_id="ctx_fixture",
         context_manifest_digest=digest,
         rendered_input_digest="b" * 64,
-        output_contract_version="staged_claim_output_v3",
+        output_contract_version="staged_claim_output_v4",
     )
     return ModelTaskRequest(
         extraction_task_id="ext_fixture",

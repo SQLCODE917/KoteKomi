@@ -32,6 +32,7 @@ from kotekomi_application import (
     GroundedCandidateContext,
     GroundedCandidateContextInput,
     GroundedEvidenceCandidate,
+    GroundedLiteralObject,
     GroundedOrganizationCandidate,
     ModelExecutionReceipt,
     ModelExecutionSpec,
@@ -162,7 +163,7 @@ def _fixture_execution_spec(manifest: ContextManifest) -> ModelExecutionSpec:
         context_manifest_id=manifest.id,
         context_manifest_digest=manifest.manifest_digest,
         rendered_input_digest=manifest.rendered_input_digest,
-        output_contract_version="staged_claim_output_v3",
+        output_contract_version="staged_claim_output_v4",
     )
 
 
@@ -609,7 +610,7 @@ def test_docling_r1d_staged_extraction_publishes_one_task_local_candidate(
                 model_profile=ContextModelProfile("r1d_fixture_model", 512, 64, 16),
                 prompt_id="r1d_claim_extraction",
                 prompt_bytes=b"Extract one grounded source claim.",
-                schema_id="staged_claim_output_v3",
+                schema_id="staged_claim_output_v4",
                 schema_bytes=staged_claim_output_schema_bytes(),
                 renderer_version="r1d_renderer_v1",
                 evidence_selection_policy_id="focus_node_evidence_v1",
@@ -620,7 +621,7 @@ def test_docling_r1d_staged_extraction_publishes_one_task_local_candidate(
         fixture_output = json.dumps(
             {
                 "kind": "candidates",
-                "schema_id": "staged_claim_output_v3",
+                "schema_id": "staged_claim_output_v4",
                 "organizations": [
                     {"local_id": "model_subject", "name": "HealthyJoCo"},
                 ],
@@ -635,9 +636,10 @@ def test_docling_r1d_staged_extraction_publishes_one_task_local_candidate(
                         "subject_organization_local_id": "model_subject",
                         "evidence_local_id": "model_evidence",
                         "predicate": "identified_community_health_priorities",
-                        "object_value": (
-                            "healthcare access, mental health, housing, and food security"
-                        ),
+                        "object": {
+                            "kind": "literal",
+                            "value": "healthcare access, mental health, housing, and food security",
+                        },
                     }
                 ],
             },
@@ -896,7 +898,7 @@ def _r1d_output(*, organization_name: str, predicate: str) -> bytes:
     return json.dumps(
         {
             "kind": "candidates",
-            "schema_id": "staged_claim_output_v3",
+            "schema_id": "staged_claim_output_v4",
             "organizations": [{"local_id": "model_subject", "name": organization_name}],
             "evidence": [
                 {
@@ -909,7 +911,10 @@ def _r1d_output(*, organization_name: str, predicate: str) -> bytes:
                     "subject_organization_local_id": "model_subject",
                     "evidence_local_id": "model_evidence",
                     "predicate": predicate,
-                    "object_value": "healthcare access, mental health, housing, and food security",
+                    "object": {
+                        "kind": "literal",
+                        "value": "healthcare access, mental health, housing, and food security",
+                    },
                 }
             ],
         },
@@ -959,7 +964,7 @@ def test_sqlite_model_run_publication_fault_matrix_is_atomic_and_retryable(tmp_p
                 model_profile=ContextModelProfile("r1d_fixture_model", 512, 64, 16),
                 prompt_id="r1d_claim_extraction",
                 prompt_bytes=b"Extract one grounded source claim.",
-                schema_id="staged_claim_output_v3",
+                schema_id="staged_claim_output_v4",
                 schema_bytes=staged_claim_output_schema_bytes(),
                 renderer_version="r1d_renderer_v1",
                 evidence_selection_policy_id="focus_node_evidence_v1",
@@ -1139,7 +1144,9 @@ def _priority_sentence_batch(
                 subject_organization_local_id="healthy_joco",
                 evidence_local_id="priority_sentence",
                 predicate="identified_community_health_priorities",
-                object_value="healthcare access, mental health, housing, and food security",
+                object=GroundedLiteralObject(
+                    "healthcare access, mental health, housing, and food security"
+                ),
             ),
         ),
     )

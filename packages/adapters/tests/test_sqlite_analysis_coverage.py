@@ -288,7 +288,7 @@ def _execution_spec(manifest: ContextManifest) -> ModelExecutionSpec:
         context_manifest_id=manifest.id,
         context_manifest_digest=manifest.manifest_digest,
         rendered_input_digest=manifest.rendered_input_digest,
-        output_contract_version="staged_claim_output_v3",
+        output_contract_version="staged_claim_output_v4",
     )
 
 
@@ -296,7 +296,7 @@ def _candidate_output(document: DocumentFixture) -> bytes:
     return json.dumps(
         {
             "kind": "candidates",
-            "schema_id": "staged_claim_output_v3",
+            "schema_id": "staged_claim_output_v4",
             "organizations": [{"local_id": "subject", "name": "Fixture Health Department"}],
             "evidence": [
                 {
@@ -309,7 +309,7 @@ def _candidate_output(document: DocumentFixture) -> bytes:
                     "subject_organization_local_id": "subject",
                     "evidence_local_id": "support",
                     "predicate": "reported_health_priority",
-                    "object_value": document.paragraph_text,
+                    "object": {"kind": "literal", "value": document.paragraph_text},
                 }
             ],
         },
@@ -340,7 +340,7 @@ def _build_manifest(
             model_profile=ContextModelProfile("sqlite-coverage-model", 512, 32, 8),
             prompt_id=f"{planner_policy_id}_prompt_v1",
             prompt_bytes=prompt,
-            schema_id="staged_claim_output_v3",
+            schema_id="staged_claim_output_v4",
             schema_bytes=staged_claim_output_schema_bytes(),
             renderer_version="sqlite_coverage_renderer_v1",
             evidence_selection_policy_id="focus_node_evidence_v1",
@@ -584,7 +584,7 @@ def test_sqlite_selected_run_never_inherits_historical_proposals_after_restart(
         raw_output = (
             _candidate_output(document)
             if retry_status is ModelRunStatus.SUCCEEDED
-            else b'{"kind":"abstain","schema_id":"staged_claim_output_v3",'
+            else b'{"kind":"abstain","schema_id":"staged_claim_output_v4",'
             b'"reason":"insufficient task-local evidence"}'
             if retry_status is ModelRunStatus.ABSTAINED
             else b"{}"
@@ -684,7 +684,7 @@ def test_sqlite_multiple_manifests_for_one_unit_fails_after_restart(tmp_path: Pa
                 model_profile=ContextModelProfile("sqlite-coverage-model", 512, 32, 8),
                 prompt_id="multiple_manifest_prompt_b_v1",
                 prompt_bytes=b"Extract using manifest B.",
-                schema_id="staged_claim_output_v3",
+                schema_id="staged_claim_output_v4",
                 schema_bytes=staged_claim_output_schema_bytes(),
                 renderer_version="sqlite_coverage_renderer_v1",
                 evidence_selection_policy_id="focus_node_evidence_v1",

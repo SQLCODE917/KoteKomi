@@ -51,7 +51,8 @@ The candidate is derived state and records its stable local identifier, Document
 
 ### Automatic extraction
 
-- C2-EXT-01: The Application Layer uses `cir_automatic_claim_extraction_v3` and `staged_claim_output_v3`.
+- C2-EXT-01: Superseded by [CIR-2.1](2026-08-25-cir-2-1-typed-assertion-object-mvp.md),
+  which defines the current pinned automatic-extraction prompt and schema contract.
 - C2-EXT-02: The policy plans every paragraph, table-caption, and list-item node.
 - C2-EXT-03: The policy groups at most four focus nodes in one AnalysisUnit.
 - C2-EXT-04: Every required unit uses the existing ContextPlanner and staged claim schema.

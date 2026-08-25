@@ -102,12 +102,25 @@ class GroundedEvidenceCandidate:
 
 
 @dataclass(frozen=True)
+class GroundedOrganizationReferenceObject:
+    organization_local_id: str
+
+
+@dataclass(frozen=True)
+class GroundedLiteralObject:
+    value: str
+
+
+type GroundedAssertionObject = GroundedOrganizationReferenceObject | GroundedLiteralObject
+
+
+@dataclass(frozen=True)
 class GroundedAssertionCandidate:
     local_id: str
     subject_organization_local_id: str
     evidence_local_id: str
     predicate: str
-    object_value: str
+    object: GroundedAssertionObject
     source_authority: SourceAuthority = SourceAuthority.SECONDARY
     attribution_basis: AttributionBasis = AttributionBasis.REPORTED_BY_SOURCE
 
@@ -540,9 +553,10 @@ def _assertion_proposed_change(
         "assertion",
         subject_organization_id,
         candidate.predicate,
-        candidate.object_value,
+        *_assertion_object_identity(candidate.object, organization_ids),
         evidence.id,
     )
+    object_record = _assertion_object_record(candidate.object, organization_ids)
     return ProposedChange(
         id=_deterministic_id("pcg", batch_input.task_fingerprint, "assertion", assertion_id),
         review_status=ReviewStatus.PENDING,
@@ -555,7 +569,7 @@ def _assertion_proposed_change(
                 "epistemic_scope": "source_report",
                 "subject_entity_id": subject_organization_id,
                 "predicate": candidate.predicate,
-                "object_value": candidate.object_value,
+                **object_record,
                 "status": AssertionStatus.PROPOSED.value,
                 "source_authority": candidate.source_authority.value,
                 "attribution_basis": candidate.attribution_basis.value,
@@ -581,6 +595,33 @@ def _assertion_proposed_change(
         created_at=batch_input.submitted_at,
         updated_at=batch_input.submitted_at,
     )
+
+
+def _assertion_object_identity(
+    assertion_object: GroundedAssertionObject,
+    organization_ids: dict[str, str],
+) -> tuple[str, str]:
+    if isinstance(assertion_object, GroundedOrganizationReferenceObject):
+        organization_id = organization_ids.get(assertion_object.organization_local_id)
+        if organization_id is None:
+            raise ValueError(
+                "Grounded Assertion candidate references an unknown task-local Organization "
+                "object: "
+                f"{assertion_object.organization_local_id}"
+            )
+        return ("organization", organization_id)
+    _require_nonempty(assertion_object.value, "Grounded Assertion literal object value")
+    return ("literal", assertion_object.value)
+
+
+def _assertion_object_record(
+    assertion_object: GroundedAssertionObject,
+    organization_ids: dict[str, str],
+) -> dict[str, str]:
+    kind, value = _assertion_object_identity(assertion_object, organization_ids)
+    if kind == "organization":
+        return {"object_entity_id": value}
+    return {"object_value": value}
 
 
 def _require_unique_local_ids(values: Iterable[str], kind: str) -> None:

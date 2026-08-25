@@ -37,6 +37,7 @@ from kotekomi_application import (
     GroundedAssertionCandidate,
     GroundedCandidateBatchInput,
     GroundedEvidenceCandidate,
+    GroundedLiteralObject,
     GroundedOrganizationCandidate,
     ModelExecutionReceipt,
     ModelExecutionSpec,
@@ -109,7 +110,7 @@ PROMPT_BYTES = b"Return a bounded grounded claim or explicitly abstain."
 ABSTENTION_OUTPUT = json.dumps(
     {
         "kind": "abstain",
-        "schema_id": "staged_claim_output_v3",
+        "schema_id": "staged_claim_output_v4",
         "reason": "gold matrix fixture produced no fixture-owned semantic claim",
     },
     separators=(",", ":"),
@@ -160,7 +161,7 @@ def _execution_spec(manifest: ContextManifest) -> ModelExecutionSpec:
         context_manifest_id=manifest.id,
         context_manifest_digest=manifest.manifest_digest,
         rendered_input_digest=manifest.rendered_input_digest,
-        output_contract_version="staged_claim_output_v3",
+        output_contract_version="staged_claim_output_v4",
     )
 
 
@@ -417,7 +418,7 @@ def _submit_overlay(
                     subject_organization_local_id="subject",
                     evidence_local_id="evidence",
                     predicate="appears_in_pdf_gold_fixture",
-                    object_value=row_id,
+                    object=GroundedLiteralObject(row_id),
                 ),
             ),
         ),
@@ -456,7 +457,7 @@ def _complete_analysis(
                 model_profile=ContextModelProfile("pdf_gold_matrix_fixture_model", 65_536, 64, 16),
                 prompt_id="pdf_gold_claim_extraction_v1",
                 prompt_bytes=PROMPT_BYTES,
-                schema_id="staged_claim_output_v3",
+                schema_id="staged_claim_output_v4",
                 schema_bytes=staged_claim_output_schema_bytes(),
                 renderer_version="pdf_gold_renderer_v1",
                 evidence_selection_policy_id="focus_node_evidence_v1",
