@@ -455,7 +455,7 @@ def _ready_manifest_for_staged_test(ledger: FakeGroundedCandidateLedger) -> Cont
             model_profile=ContextModelProfile("fixture-model", 512, 8, 4),
             prompt_id="fixture_prompt_v1",
             prompt_bytes=b"fixture prompt",
-            schema_id="staged_claim_output_v4",
+            schema_id="staged_claim_output_v5",
             schema_bytes=staged_claim_output_schema_bytes(),
             renderer_version="fixture_renderer_v1",
             evidence_selection_policy_id="focus_node_evidence_v1",
@@ -487,18 +487,18 @@ def _fixture_execution_spec(manifest: ContextManifest) -> ModelExecutionSpec:
         context_manifest_id=manifest.id,
         context_manifest_digest=manifest.manifest_digest,
         rendered_input_digest=manifest.rendered_input_digest,
-        output_contract_version="staged_claim_output_v4",
+        output_contract_version="staged_claim_output_v5",
     )
 
 
 def _valid_staged_output() -> bytes:
     return (
-        b'{"kind":"candidates","schema_id":"staged_claim_output_v4",'
+        b'{"kind":"candidates","schema_id":"staged_claim_output_v5",'
         b'"organizations":[{"local_id":"subject","name":"Fixture Organization"}],'
         b'"evidence":[{"local_id":"support","evidence_candidate_id":"evidence_01"}],'
         b'"assertions":[{"subject_organization_local_id":"subject",'
         b'"evidence_local_id":"support",'
-        b'"predicate":"reported_alpha","object":{"kind":"literal","value":"Alpha"}}]}'
+        b'"relation_label":"reported_alpha","object":{"kind":"literal","value":"Alpha"}}]}'
     )
 
 
@@ -530,7 +530,7 @@ def _batch(
                 local_id="claim",
                 subject_organization_local_id="subject",
                 evidence_local_id="support",
-                predicate="reported_alpha",
+                relation_label="reported alpha",
                 object=GroundedLiteralObject("Alpha"),
             ),
         ),
@@ -587,9 +587,7 @@ def test_grounded_candidate_batch_resolves_organization_object_reference() -> No
 
     outcome = submit_grounded_candidate_batch(entity_batch, ledger)
 
-    assertion_change = ledger.proposed_changes[
-        outcome.proposed_change_ids_by_local_id["claim"]
-    ]
+    assertion_change = ledger.proposed_changes[outcome.proposed_change_ids_by_local_id["claim"]]
     record = assertion_change.proposed_json["record"]
     assert isinstance(record, dict)
     assert record["object_entity_id"] == outcome.organization_ids_by_local_id["object"]
@@ -710,7 +708,7 @@ def test_staged_extraction_archives_invalid_task_local_output_without_proposals(
     archive = FakeModelOutputArchive()
     raw_output = b"""{
       "kind":"candidates",
-      "schema_id":"staged_claim_output_v4",
+      "schema_id":"staged_claim_output_v5",
       "organizations":[{"local_id":"subject","name":"Fixture Organization"}],
       "evidence":[{
         "local_id":"support",
@@ -719,7 +717,7 @@ def test_staged_extraction_archives_invalid_task_local_output_without_proposals(
       "assertions":[{
         "subject_organization_local_id":"subject",
         "evidence_local_id":"support",
-        "predicate":"reported_alpha",
+        "relation_label":"reported_alpha",
         "object":{"kind":"literal","value":"Alpha"}
       }]
     }"""
@@ -807,11 +805,11 @@ def test_staged_extraction_archives_invalid_assertion_object_without_proposals(
     archive = FakeModelOutputArchive()
     manifest = _ready_manifest_for_staged_test(ledger)
     raw_output = (
-        b'{"kind":"candidates","schema_id":"staged_claim_output_v4",'
+        b'{"kind":"candidates","schema_id":"staged_claim_output_v5",'
         b'"organizations":[{"local_id":"subject","name":"Fixture Organization"}],'
         b'"evidence":[{"local_id":"support","evidence_candidate_id":"evidence_01"}],'
         b'"assertions":[{"subject_organization_local_id":"subject",'
-        b'"evidence_local_id":"support","predicate":"reported_alpha","object":'
+        b'"evidence_local_id":"support","relation_label":"reported_alpha","object":'
         + assertion_object
         + b"}]}"
     )
@@ -845,7 +843,7 @@ def test_staged_extraction_rejects_duplicate_context_candidate_selection() -> No
     manifest = _ready_manifest_for_staged_test(ledger)
     raw_output = b"""{
       "kind":"candidates",
-      "schema_id":"staged_claim_output_v4",
+      "schema_id":"staged_claim_output_v5",
       "organizations":[{"local_id":"subject","name":"Fixture Organization"}],
       "evidence":[
         {"local_id":"support_a","evidence_candidate_id":"evidence_01"},
@@ -854,7 +852,7 @@ def test_staged_extraction_rejects_duplicate_context_candidate_selection() -> No
       "assertions":[{
         "subject_organization_local_id":"subject",
         "evidence_local_id":"support_a",
-        "predicate":"reported_alpha",
+        "relation_label":"reported_alpha",
         "object":{"kind":"literal","value":"Alpha"}
       }]
     }"""
@@ -888,7 +886,7 @@ def test_staged_extraction_persists_exact_abstention_reason_on_model_run() -> No
     archive = FakeModelOutputArchive()
     manifest = _ready_manifest_for_staged_test(ledger)
     raw_output = (
-        b'{"kind":"abstain","schema_id":"staged_claim_output_v4",'
+        b'{"kind":"abstain","schema_id":"staged_claim_output_v5",'
         b'"reason":"insufficient task-local evidence"}'
     )
 
@@ -930,7 +928,7 @@ def test_staged_extraction_records_application_owned_execution_timing() -> None:
     completed_at = NOW + timedelta(seconds=2)
     clock = FixedModelRunClock((NOW, completed_at), (100.0, 102.25))
     raw_output = (
-        b'{"kind":"abstain","schema_id":"staged_claim_output_v4",'
+        b'{"kind":"abstain","schema_id":"staged_claim_output_v5",'
         b'"reason":"insufficient task-local evidence"}'
     )
 
@@ -1140,12 +1138,12 @@ def test_staged_extraction_classifies_runtime_and_archive_failures_truthfully(
             cast(tuple[ExecutionSetting, ...], ({"temperature": 0},)),
             "fixture_prompt_v1",
             "a" * 64,
-            "staged_claim_output_v4",
+            "staged_claim_output_v5",
             "b" * 64,
             "ctx_fixture",
             "c" * 64,
             "d" * 64,
-            "staged_claim_output_v4",
+            "staged_claim_output_v5",
         )
 
 
@@ -1512,7 +1510,7 @@ def test_frozen_analysis_plan_requires_every_unit_to_reconcile_before_completion
             model_profile=ContextModelProfile("fixture-model", 512, 8, 4),
             prompt_id="fixture_prompt_v1",
             prompt_bytes=b"fixture prompt",
-            schema_id="staged_claim_output_v4",
+            schema_id="staged_claim_output_v5",
             schema_bytes=staged_claim_output_schema_bytes(),
             renderer_version="fixture_renderer_v1",
             evidence_selection_policy_id="focus_node_evidence_v1",
@@ -1698,7 +1696,7 @@ def _complete_coverage_fixture() -> tuple[
             model_profile=ContextModelProfile("fixture-model", 512, 8, 4),
             prompt_id="fixture_prompt_v1",
             prompt_bytes=b"fixture prompt",
-            schema_id="staged_claim_output_v4",
+            schema_id="staged_claim_output_v5",
             schema_bytes=staged_claim_output_schema_bytes(),
             renderer_version="fixture_renderer_v1",
             evidence_selection_policy_id="focus_node_evidence_v1",

@@ -273,7 +273,7 @@ class TaskSchemaRegistry(Protocol):
 class StagedClaimTaskSchemaRegistry:
     """The versioned pinned schema registry for the initial claim task."""
 
-    schema_id = "staged_claim_output_v4"
+    schema_id = "staged_claim_output_v5"
 
     def resolve(self, schema_id: str) -> PinnedTaskSchema:
         if schema_id != self.schema_id:
@@ -281,7 +281,7 @@ class StagedClaimTaskSchemaRegistry:
         return PinnedTaskSchema(
             schema_id=self.schema_id,
             canonical_schema_bytes=staged_claim_output_schema_bytes(),
-            output_contract_version="staged_claim_output_v4",
+            output_contract_version="staged_claim_output_v5",
             parse=_parse_staged_claim_output,
         )
 
@@ -344,7 +344,7 @@ class _AssertionOutput(BaseModel):
 
     subject_organization_local_id: str
     evidence_local_id: str
-    predicate: str
+    relation_label: str
     object: _AssertionObjectOutput
 
 
@@ -352,7 +352,7 @@ class _CandidateOutput(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
     kind: Literal["candidates"]
-    schema_id: Literal["staged_claim_output_v4"]
+    schema_id: Literal["staged_claim_output_v5"]
     organizations: list[_OrganizationOutput]
     evidence: list[_EvidenceOutput]
     assertions: list[_AssertionOutput]
@@ -362,7 +362,7 @@ class _AbstentionOutput(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
     kind: Literal["abstain"]
-    schema_id: Literal["staged_claim_output_v4"]
+    schema_id: Literal["staged_claim_output_v5"]
     reason: str
 
 
@@ -771,7 +771,7 @@ def _grounded_batch(
                 f"assertion_{ordinal:02d}",
                 item.subject_organization_local_id,
                 item.evidence_local_id,
-                item.predicate,
+                item.relation_label,
                 _grounded_assertion_object(item.object),
             )
             for ordinal, item in enumerate(output.assertions, start=1)

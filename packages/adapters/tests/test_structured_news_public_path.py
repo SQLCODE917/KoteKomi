@@ -94,7 +94,7 @@ def _execution_spec(manifest: ContextManifest) -> ModelExecutionSpec:
         context_manifest_id=manifest.id,
         context_manifest_digest=manifest.manifest_digest,
         rendered_input_digest=manifest.rendered_input_digest,
-        output_contract_version="staged_claim_output_v4",
+        output_contract_version="staged_claim_output_v5",
     )
 
 
@@ -181,7 +181,7 @@ def test_newsml_public_path_reaches_proposal_coverage_and_restart(tmp_path: Path
                 model_profile=ContextModelProfile("news_public_fixture_model", 4096, 128, 32),
                 prompt_id="news_public_claim_v1",
                 prompt_bytes=PROMPT,
-                schema_id="staged_claim_output_v4",
+                schema_id="staged_claim_output_v5",
                 schema_bytes=staged_claim_output_schema_bytes(),
                 renderer_version="news_public_renderer_v1",
                 evidence_selection_policy_id="focus_node_evidence_v1",
@@ -193,7 +193,7 @@ def test_newsml_public_path_reaches_proposal_coverage_and_restart(tmp_path: Path
         raw_output = json.dumps(
             {
                 "kind": "candidates",
-                "schema_id": "staged_claim_output_v4",
+                "schema_id": "staged_claim_output_v5",
                 "organizations": [
                     {
                         "local_id": "provider",
@@ -211,7 +211,7 @@ def test_newsml_public_path_reaches_proposal_coverage_and_restart(tmp_path: Path
                     {
                         "subject_organization_local_id": "provider",
                         "evidence_local_id": "evidence",
-                        "predicate": "reported_event",
+                        "relation_label": "reported_event",
                         "object": {
                             "kind": "literal",
                             "value": "Project Atlas entered public evaluation",

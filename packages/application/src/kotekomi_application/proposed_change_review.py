@@ -26,6 +26,7 @@ from kotekomi_domain import (
     Organization,
     Outcome,
     Place,
+    ProposedAssertion,
     ProposedChange,
     ProvenanceActivity,
     Relationship,
@@ -143,6 +144,7 @@ class ReviewProposedChangeInput:
     reviewer: str
     reviewed_at: datetime
     reason: str | None = None
+    canonical_predicate: str | None = None
     accepted_record_json: dict[str, JsonValue] | None = None
 
 
@@ -166,6 +168,7 @@ class ReviewNextDecisionInput:
     source_id: str | None = None
     document_id: str | None = None
     reason: str | None = None
+    canonical_predicate: str | None = None
     accepted_record_json: dict[str, JsonValue] | None = None
     dry_run: bool = False
 
@@ -190,6 +193,7 @@ class ReviewDrainInput:
     source_id: str | None = None
     document_id: str | None = None
     reason: str | None = None
+    canonical_predicate: str | None = None
     accepted_record_json: dict[str, JsonValue] | None = None
     limit: int | None = None
     dry_run: bool = False
@@ -276,6 +280,18 @@ def run_review_drain(
     ledger_repository: ReviewNextDecisionLedger,
 ) -> ReviewDrainResult:
     _validate_review_drain_input(review_input)
+    try:
+        validate_review_drain_selection(review_input, ledger_repository)
+    except ValueError as error:
+        return ReviewDrainResult(
+            decision=review_input.decision,
+            attempted_count=0,
+            executed_count=0,
+            dry_run=review_input.dry_run,
+            stopped_reason=ReviewDrainStoppedReason.VALIDATION_FAILED,
+            item_results=(),
+            error_message=str(error),
+        )
     if review_input.dry_run:
         return _run_review_drain_dry_run(review_input, ledger_repository)
 
@@ -399,6 +415,29 @@ def _validate_review_drain_input(review_input: ReviewDrainInput) -> None:
         raise ValueError("Review Drain limit must be zero or greater.")
 
 
+def validate_review_drain_selection(
+    review_input: ReviewDrainInput,
+    ledger_repository: ReviewNextDecisionLedger,
+) -> None:
+    """Reject bulk approval before any selected Assertion can be mutated."""
+
+    if review_input.decision is not ReviewNextDecision.APPROVE:
+        return
+    queue = list_review_queue(
+        ReviewQueueInput(
+            record_type=review_input.record_type,
+            source_id=review_input.source_id,
+            document_id=review_input.document_id,
+        ),
+        ledger_repository,
+    )
+    selected = queue.items if review_input.limit is None else queue.items[: review_input.limit]
+    if any(item.record_type == "Assertion" for item in selected):
+        raise ValueError(
+            "Review Drain approval requires individual canonical predicate decisions for Assertion."
+        )
+
+
 def _drain_item_input(
     review_input: ReviewDrainInput,
     *,
@@ -412,6 +451,7 @@ def _drain_item_input(
         source_id=review_input.source_id,
         document_id=review_input.document_id,
         reason=review_input.reason,
+        canonical_predicate=review_input.canonical_predicate,
         accepted_record_json=review_input.accepted_record_json,
         dry_run=dry_run,
     )
@@ -439,6 +479,7 @@ def _run_review_decision(
         reviewer=review_input.reviewer,
         reviewed_at=review_input.reviewed_at,
         reason=review_input.reason,
+        canonical_predicate=review_input.canonical_predicate,
         accepted_record_json=review_input.accepted_record_json,
     )
     if review_input.decision is ReviewNextDecision.APPROVE:
@@ -496,6 +537,7 @@ def approve_proposed_change(
         proposed_change=proposed_change,
         provenance_activity_id=provenance_activity_id,
         reviewed_at=review_input.reviewed_at,
+        canonical_predicate=review_input.canonical_predicate,
     )
     accepted_record_id = _record_id(accepted_record)
     evidence_links = _prepared_assertion_evidence_links(
@@ -614,6 +656,7 @@ def edit_proposed_change(
         record_json=review_input.accepted_record_json,
         provenance_activity_id=provenance_activity_id,
         reviewed_at=review_input.reviewed_at,
+        canonical_predicate=review_input.canonical_predicate,
     )
     accepted_record_id = _record_id(accepted_record)
     evidence_links = _prepared_assertion_evidence_links(
@@ -721,14 +764,24 @@ def _accepted_record_from_proposed_change(
     proposed_change: ProposedChange,
     provenance_activity_id: str,
     reviewed_at: datetime,
+    canonical_predicate: str | None,
 ) -> AcceptedReviewRecord:
     record_type = _proposal_record_type(proposed_change)
     record_json = _proposal_record_json(proposed_change)
+    if record_type == "Assertion":
+        proposed_assertion = ProposedAssertion.model_validate_json(json.dumps(record_json))
+        return _accepted_assertion_from_proposal(
+            proposed_assertion,
+            canonical_predicate=canonical_predicate,
+            provenance_activity_id=provenance_activity_id,
+            reviewed_at=reviewed_at,
+        )
     return _accepted_record_from_json(
         record_type=record_type,
         record_json=record_json,
         provenance_activity_id=provenance_activity_id,
         reviewed_at=reviewed_at,
+        canonical_predicate=canonical_predicate,
     )
 
 
@@ -738,6 +791,7 @@ def _accepted_record_from_json(
     record_json: dict[str, JsonValue],
     provenance_activity_id: str,
     reviewed_at: datetime,
+    canonical_predicate: str | None,
 ) -> AcceptedReviewRecord:
     if record_type == "Actor":
         return Actor.model_validate_json(json.dumps(record_json))
@@ -748,6 +802,12 @@ def _accepted_record_from_json(
     if record_type == "EvidenceTarget":
         return EvidenceTarget.model_validate_json(json.dumps(record_json))
     if record_type == "Assertion":
+        required_predicate = _required_canonical_predicate(canonical_predicate)
+        record_predicate = record_json.get("predicate")
+        if record_predicate != required_predicate:
+            raise ValueError(
+                "Assertion edit canonical_predicate must match accepted record predicate."
+            )
         return _accepted_assertion(record_json, provenance_activity_id)
     if record_type == "Relationship":
         return Relationship.model_validate_json(json.dumps(record_json))
@@ -758,6 +818,33 @@ def _accepted_record_from_json(
     if record_type == "SourceLineageRelation":
         return _accepted_source_lineage_relation(record_json, provenance_activity_id, reviewed_at)
     raise ValueError(f"Unsupported ProposedChange record_type: {record_type}")
+
+
+def _accepted_assertion_from_proposal(
+    proposed_assertion: ProposedAssertion,
+    *,
+    canonical_predicate: str | None,
+    provenance_activity_id: str,
+    reviewed_at: datetime,
+) -> Assertion:
+    assertion_json = proposed_assertion.model_dump(mode="json")
+    assertion_json.pop("relation_label")
+    assertion_json["predicate"] = _required_canonical_predicate(canonical_predicate)
+    assertion_json["status"] = (
+        AssertionStatus.CORROBORATED.value
+        if proposed_assertion.assertion_type is AssertionType.ANALYTIC_INFERENCE
+        else AssertionStatus.REPORTED.value
+    )
+    assertion_json["provenance_activity_ids"] = [provenance_activity_id]
+    assertion_json["created_at"] = reviewed_at.isoformat()
+    assertion_json["updated_at"] = reviewed_at.isoformat()
+    return Assertion.model_validate_json(json.dumps(assertion_json))
+
+
+def _required_canonical_predicate(canonical_predicate: str | None) -> str:
+    if canonical_predicate is None or not canonical_predicate.strip():
+        raise ValueError("Assertion review requires canonical_predicate.")
+    return canonical_predicate
 
 
 def _accepted_assertion(

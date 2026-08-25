@@ -474,9 +474,11 @@ def test_review_state_json_serializers_return_structured_objects() -> None:
     assert isinstance(packet_json["reference_contexts"], list)
     assert packet_json["assertion_context"] == {
         "attribution_basis": "reported_by_source",
+        "canonical_predicate_required": True,
         "causal_confidence": None,
         "epistemic_scope": "source_report",
         "extraction_confidence": 0.89,
+        "relation_label": "postponed rollout",
         "source_authority": "secondary",
         "source_report_confidence": 0.91,
         "world_truth_confidence": 0.62,
@@ -495,6 +497,8 @@ def test_review_state_json_serializers_return_structured_objects() -> None:
     ]
     assert action_plans[0]["command"] == "kotekomi review run-next --decision approve"
     assert action_plans[0]["ready_to_execute"] is False
+    approval_inputs = cast(list[dict[str, JsonValue]], action_plans[0]["missing_inputs"])
+    assert [item["name"] for item in approval_inputs] == ["reviewer", "canonical_predicate"]
 
 
 def seeded_ledger(proposed_changes: tuple[ProposedChange, ...]) -> FakeReviewQueueLedger:
@@ -600,9 +604,8 @@ def assertion_json(
         "assertion_type": "source_claim",
         "epistemic_scope": "source_report",
         "subject_entity_id": "org_anthropic",
-        "predicate": "postponed_rollout",
+        "relation_label": "postponed rollout",
         "object_value": {"model": "Claude Fable 5"},
-        "status": "proposed",
         "source_authority": "secondary",
         "attribution_basis": "reported_by_source",
         "source_report_confidence": 0.91,
@@ -610,5 +613,4 @@ def assertion_json(
         "world_truth_confidence": 0.62,
         "source_ids": ["src_article_a"],
         "evidence_target_ids": evidence_ids,
-        "provenance_activity_ids": [],
     }

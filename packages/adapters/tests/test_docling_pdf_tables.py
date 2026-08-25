@@ -335,7 +335,7 @@ def test_table_value_reaches_context_and_evidence_only_with_header_ancestry_afte
                         local_id="claim",
                         subject_organization_local_id="org",
                         evidence_local_id="value",
-                        predicate="reported_table_value",
+                        relation_label="reported table value",
                         object=GroundedLiteralObject("23 index points"),
                     ),
                 ),

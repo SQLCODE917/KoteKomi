@@ -159,6 +159,7 @@ from kotekomi_application import (
     run_review_next_decision,
     start_analysis_run,
     start_ingestion_run,
+    validate_review_drain_selection,
 )
 from kotekomi_application.analysis_coverage import LATEST_COMPLETED_VALID_ATTEMPT_POLICY_ID
 from kotekomi_application.ingestion_change_sets import CloseIngestionChangeSetInput
@@ -447,6 +448,7 @@ def main(argv: list[str] | None = None) -> int:
             config=config,
             proposed_change_id=args.proposed_change_id,
             reviewer=args.reviewer,
+            canonical_predicate=args.canonical_predicate,
         )
 
     if args.command == "review" and args.review_command == "list":
@@ -492,6 +494,7 @@ def main(argv: list[str] | None = None) -> int:
             source_id=args.source_id,
             document_id=args.document_id,
             reason=args.reason,
+            canonical_predicate=args.canonical_predicate,
             accepted_record_json_path=args.accepted_record_json,
             dry_run=args.dry_run,
             output_format=args.output_format,
@@ -511,6 +514,7 @@ def main(argv: list[str] | None = None) -> int:
             source_id=args.source_id,
             document_id=args.document_id,
             reason=args.reason,
+            canonical_predicate=args.canonical_predicate,
             accepted_record_json_path=args.accepted_record_json,
             limit=args.limit,
             dry_run=args.dry_run,
@@ -579,6 +583,7 @@ def main(argv: list[str] | None = None) -> int:
             proposed_change_id=args.proposed_change_id,
             reviewer=args.reviewer,
             accepted_record_json_path=args.accepted_record_json,
+            canonical_predicate=args.canonical_predicate,
         )
 
     if args.command == "pipeline" and args.pipeline_command == "status":
@@ -668,7 +673,12 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def entrypoint() -> None:
-    raise SystemExit(main())
+    try:
+        exit_code = main()
+    except ValueError as error:
+        print(f"Error: {error}", file=sys.stderr)
+        exit_code = 2
+    raise SystemExit(exit_code)
 
 
 def _load_model_config(
@@ -990,6 +1000,7 @@ def build_parser() -> argparse.ArgumentParser:
     run_next_review_parser.add_argument("--source-id", default=None)
     run_next_review_parser.add_argument("--document-id", default=None)
     run_next_review_parser.add_argument("--reason", default=None)
+    run_next_review_parser.add_argument("--canonical-predicate", default=None)
     run_next_review_parser.add_argument("--accepted-record-json", type=Path, default=None)
     run_next_review_parser.add_argument("--dry-run", action="store_true")
     run_next_review_parser.add_argument(
@@ -1013,6 +1024,7 @@ def build_parser() -> argparse.ArgumentParser:
     drain_review_parser.add_argument("--source-id", default=None)
     drain_review_parser.add_argument("--document-id", default=None)
     drain_review_parser.add_argument("--reason", default=None)
+    drain_review_parser.add_argument("--canonical-predicate", default=None)
     drain_review_parser.add_argument("--accepted-record-json", type=Path, default=None)
     drain_review_parser.add_argument("--limit", type=int, default=None)
     drain_review_parser.add_argument("--dry-run", action="store_true")
@@ -1062,6 +1074,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     approve_parser.add_argument("--proposed-change-id", required=True)
     approve_parser.add_argument("--reviewer", required=True)
+    approve_parser.add_argument("--canonical-predicate", default=None)
     approve_parser.add_argument("--ledger-path", type=Path, default=None)
     reject_parser = review_subparsers.add_parser(
         "reject",
@@ -1078,6 +1091,7 @@ def build_parser() -> argparse.ArgumentParser:
     edit_parser.add_argument("--proposed-change-id", required=True)
     edit_parser.add_argument("--reviewer", required=True)
     edit_parser.add_argument("--accepted-record-json", type=Path, required=True)
+    edit_parser.add_argument("--canonical-predicate", default=None)
     edit_parser.add_argument("--ledger-path", type=Path, default=None)
 
     pipeline_parser = subparsers.add_parser(
@@ -2164,16 +2178,16 @@ def _automatic_ingestion_extraction(
         return None
     tokenizer = _AutomaticExtractionTokenizer()
     prompt_bytes = (
-        Path(__file__).resolve().parents[4] / "prompts" / "cir_automatic_claim_extraction_v4.md"
+        Path(__file__).resolve().parents[4] / "prompts" / "cir_automatic_claim_extraction_v5.md"
     ).read_bytes()
-    prompt_id = "cir_automatic_claim_extraction_v4"
+    prompt_id = "cir_automatic_claim_extraction_v5"
     prompt_digest = hashlib.sha256(prompt_bytes).hexdigest()
     schema_registry = StagedClaimTaskSchemaRegistry()
-    schema = schema_registry.resolve("staged_claim_output_v4")
+    schema = schema_registry.resolve("staged_claim_output_v5")
     planning = plan_analysis_units(
         AnalysisUnitPlanningInput(
             representation_id=representation_id,
-            policy_id="cir_automatic_claim_extraction_v4",
+            policy_id="cir_automatic_claim_extraction_v5",
             task_type="claim_extraction",
             max_focus_nodes_per_unit=4,
             focus_node_types=("paragraph", "table_caption", "list_item"),
@@ -2227,7 +2241,7 @@ def _automatic_ingestion_extraction(
             context_manifest_id=manifest.id,
             prompt_bytes=prompt_bytes,
             execution_spec=execution_spec,
-            validator_version="cir_automatic_claim_validator_v3",
+            validator_version="cir_automatic_claim_validator_v4",
         )
         prepared.append(
             _PreparedAutomaticExtraction(
@@ -2600,6 +2614,7 @@ def run_next_review_decision(
     source_id: str | None,
     document_id: str | None,
     reason: str | None,
+    canonical_predicate: str | None,
     accepted_record_json_path: Path | None,
     dry_run: bool,
     output_format: str,
@@ -2617,6 +2632,7 @@ def run_next_review_decision(
                 source_id=source_id,
                 document_id=document_id,
                 reason=reason,
+                canonical_predicate=canonical_predicate,
                 accepted_record_json=accepted_record_json,
                 dry_run=dry_run,
             ),
@@ -2640,6 +2656,7 @@ def drain_review_queue(
     source_id: str | None,
     document_id: str | None,
     reason: str | None,
+    canonical_predicate: str | None,
     accepted_record_json_path: Path | None,
     limit: int | None,
     dry_run: bool,
@@ -2656,6 +2673,7 @@ def drain_review_queue(
         source_id=source_id,
         document_id=document_id,
         reason=reason,
+        canonical_predicate=canonical_predicate,
         accepted_record_json=accepted_record_json,
         limit=limit,
         dry_run=dry_run,
@@ -2664,7 +2682,23 @@ def drain_review_queue(
         with sqlite_ledger_transaction(config.ledger_path) as ledger_repository:
             result = run_review_drain(drain_input, ledger_repository)
     else:
-        result = _drain_review_queue_with_item_transactions(config, drain_input)
+        with sqlite_ledger_transaction(config.ledger_path) as ledger_repository:
+            try:
+                validate_review_drain_selection(drain_input, ledger_repository)
+            except ValueError as error:
+                result = ReviewDrainResult(
+                    decision=drain_input.decision,
+                    attempted_count=0,
+                    executed_count=0,
+                    dry_run=False,
+                    stopped_reason=ReviewDrainStoppedReason.VALIDATION_FAILED,
+                    item_results=(),
+                    error_message=str(error),
+                )
+            else:
+                result = None
+        if result is None:
+            result = _drain_review_queue_with_item_transactions(config, drain_input)
 
     if output_format == "json":
         print(json.dumps(review_drain_result_to_json(result), indent=2, sort_keys=True))
@@ -2691,6 +2725,7 @@ def _drain_review_queue_with_item_transactions(
                         source_id=drain_input.source_id,
                         document_id=drain_input.document_id,
                         reason=drain_input.reason,
+                        canonical_predicate=drain_input.canonical_predicate,
                         accepted_record_json=drain_input.accepted_record_json,
                     ),
                     ledger_repository,
@@ -3390,6 +3425,7 @@ def approve_reviewed_proposed_change(
     config: PipelineConfig,
     proposed_change_id: str,
     reviewer: str,
+    canonical_predicate: str | None,
 ) -> int:
     with sqlite_ledger_transaction(config.ledger_path) as ledger_repository:
         result = approve_proposed_change(
@@ -3397,6 +3433,7 @@ def approve_reviewed_proposed_change(
                 proposed_change_id=proposed_change_id,
                 reviewer=reviewer,
                 reviewed_at=datetime.now(UTC),
+                canonical_predicate=canonical_predicate,
             ),
             ledger_repository,
         )
@@ -3439,6 +3476,7 @@ def edit_reviewed_proposed_change(
     proposed_change_id: str,
     reviewer: str,
     accepted_record_json_path: Path,
+    canonical_predicate: str | None,
 ) -> int:
     accepted_record_json = read_json_object(accepted_record_json_path)
     with sqlite_ledger_transaction(config.ledger_path) as ledger_repository:
@@ -3448,6 +3486,7 @@ def edit_reviewed_proposed_change(
                 reviewer=reviewer,
                 reviewed_at=datetime.now(UTC),
                 accepted_record_json=accepted_record_json,
+                canonical_predicate=canonical_predicate,
             ),
             ledger_repository,
         )

@@ -359,6 +359,7 @@ from kotekomi_application.proposed_change_review import (
     review_next_decision_result_to_json,
     run_review_drain,
     run_review_next_decision,
+    validate_review_drain_selection,
 )
 from kotekomi_application.record_serialization import canonical_record_json
 from kotekomi_application.representation_identity import (
@@ -760,6 +761,7 @@ __all__ = [
     "run_next_result_to_json",
     "run_review_drain",
     "run_review_next_decision",
+    "validate_review_drain_selection",
     "run_bounded_extraction",
     "staged_claim_output_schema_bytes",
     "resolve_briefing_citation",

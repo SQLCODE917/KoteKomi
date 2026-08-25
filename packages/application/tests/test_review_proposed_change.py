@@ -333,6 +333,15 @@ def proposed_change(
     record: dict[str, JsonValue],
     review_status: ReviewStatus = ReviewStatus.PENDING,
 ) -> ProposedChange:
+    if record_type == "Assertion":
+        record = dict(record)
+        predicate = record.pop("predicate", None)
+        if isinstance(predicate, str):
+            record["relation_label"] = predicate.replace("_", " ")
+        record.pop("status", None)
+        record.pop("provenance_activity_ids", None)
+        record.pop("created_at", None)
+        record.pop("updated_at", None)
     proposed_json: dict[str, JsonValue] = {
         "record_type": record_type,
         "stable_label": record_id.removeprefix("pcg_"),
@@ -388,6 +397,7 @@ def review_input(proposed_change_id: str) -> ReviewProposedChangeInput:
         proposed_change_id=proposed_change_id,
         reviewer="analyst",
         reviewed_at=NOW,
+        canonical_predicate="postponed_rollout",
     )
 
 
@@ -946,7 +956,7 @@ def test_review_drain_dry_run_reports_sequence_without_mutation() -> None:
     )
 
 
-def test_review_drain_stops_on_validation_failure_preserving_prior_success() -> None:
+def test_review_drain_blocks_assertion_approval_before_queue_mutation() -> None:
     invalid_assertion: dict[str, JsonValue] = {
         "id": "ast_missing_evidence",
         "assertion_type": "source_claim",
@@ -987,11 +997,11 @@ def test_review_drain_stops_on_validation_failure_preserving_prior_success() -> 
     )
 
     assert result.stopped_reason is ReviewDrainStoppedReason.VALIDATION_FAILED
-    assert result.attempted_count == 2
-    assert result.executed_count == 1
+    assert result.attempted_count == 0
+    assert result.executed_count == 0
     assert result.error_message is not None
-    assert "references missing EvidenceTarget" in result.error_message
-    assert ledger.proposed_changes["pcg_organization"].review_status is ReviewStatus.APPROVED
+    assert "individual canonical predicate" in result.error_message
+    assert ledger.proposed_changes["pcg_organization"].review_status is ReviewStatus.PENDING
     assert ledger.proposed_changes["pcg_invalid_assertion"].review_status is ReviewStatus.PENDING
 
 
@@ -1194,6 +1204,103 @@ def test_approve_proposed_assertion_marks_it_reported_and_adds_review_provenance
     assert reviewed_change.accepted_json["provenance_activity_ids"] == [
         result.provenance_activity_id
     ]
+    proposed_record = cast(dict[str, JsonValue], reviewed_change.proposed_json["record"])
+    assert proposed_record["relation_label"] == "postponed rollout"
+    assert reviewed_change.accepted_json["predicate"] == "postponed_rollout"
+
+
+def test_approve_proposed_assertion_requires_canonical_predicate_without_writes() -> None:
+    record_id = "pcg_assertion"
+    ledger = FakeReviewLedger(
+        (
+            proposed_change(
+                record_id,
+                "Assertion",
+                {
+                    "id": "ast_delay",
+                    "assertion_type": "source_claim",
+                    "epistemic_scope": "source_report",
+                    "subject_entity_id": "org_anthropic",
+                    "predicate": "reports a delayed rollout",
+                    "object_value": "late June",
+                    "status": "proposed",
+                    "source_authority": "secondary",
+                    "attribution_basis": "reported_by_source",
+                    "source_ids": ["src_article_a"],
+                    "evidence_target_ids": ["etg_delay"],
+                    "provenance_activity_ids": [],
+                },
+            ),
+        )
+    )
+    seed_reference_records(ledger)
+
+    with pytest.raises(ValueError, match="requires canonical_predicate"):
+        approve_proposed_change(
+            ReviewProposedChangeInput(record_id, "analyst", NOW),
+            ledger,
+        )
+
+    assert "ast_pending" not in ledger.assertions
+    assert set(ledger.provenance_activities) == {"prv_model_run"}
+    assert ledger.proposed_changes[record_id].review_status is ReviewStatus.PENDING
+
+
+def test_edit_proposed_assertion_requires_matching_canonical_predicate() -> None:
+    record_id = "pcg_assertion"
+    ledger = FakeReviewLedger(
+        (
+            proposed_change(
+                record_id,
+                "Assertion",
+                {
+                    "id": "ast_pending",
+                    "assertion_type": "source_claim",
+                    "epistemic_scope": "source_report",
+                    "subject_entity_id": "org_anthropic",
+                    "predicate": "reports a delayed rollout",
+                    "object_value": "late June",
+                    "status": "proposed",
+                    "source_authority": "secondary",
+                    "attribution_basis": "reported_by_source",
+                    "source_ids": ["src_article_a"],
+                    "evidence_target_ids": ["etg_delay"],
+                    "provenance_activity_ids": [],
+                },
+            ),
+        )
+    )
+    seed_reference_records(ledger)
+    accepted_record: dict[str, JsonValue] = {
+        "id": "ast_pending",
+        "assertion_type": "source_claim",
+        "epistemic_scope": "source_report",
+        "subject_entity_id": "org_anthropic",
+        "predicate": "reported_delay",
+        "object_value": "late June",
+        "status": "reported",
+        "source_authority": "secondary",
+        "attribution_basis": "reported_by_source",
+        "source_ids": ["src_article_a"],
+        "evidence_target_ids": ["etg_delay"],
+        "provenance_activity_ids": [],
+    }
+
+    with pytest.raises(ValueError, match="must match accepted record predicate"):
+        edit_proposed_change(
+            ReviewProposedChangeInput(
+                record_id,
+                "analyst",
+                NOW,
+                canonical_predicate="other_predicate",
+                accepted_record_json=accepted_record,
+            ),
+            ledger,
+        )
+
+    assert "ast_pending" not in ledger.assertions
+    assert set(ledger.provenance_activities) == {"prv_model_run"}
+    assert ledger.proposed_changes[record_id].review_status is ReviewStatus.PENDING
 
 
 def test_approve_successor_supersedes_matching_predecessor_atomically() -> None:
@@ -1294,6 +1401,7 @@ def test_edit_proposed_change_creates_accepted_record_from_corrected_json() -> N
             reviewer="analyst",
             reviewed_at=NOW,
             accepted_record_json=edited_record,
+            canonical_predicate="postponed_rollout",
         ),
         ledger,
     )
@@ -1368,6 +1476,7 @@ def test_edit_proposed_assertion_marks_it_reported_and_adds_review_provenance() 
             reviewer="analyst",
             reviewed_at=NOW,
             accepted_record_json=edited_record,
+            canonical_predicate="postponed_rollout",
         ),
         ledger,
     )

@@ -142,8 +142,9 @@ async def _stream_httpx_sse_request(
     transport: httpx.AsyncBaseTransport | None,
 ) -> HttpResponse:
     started_at = monotonic_clock()
-    async with httpx.AsyncClient(timeout=None, transport=transport) as client, asyncio.timeout(
-        deadline_seconds
+    async with (
+        httpx.AsyncClient(timeout=None, transport=transport) as client,
+        asyncio.timeout(deadline_seconds),
     ):
         async with client.stream(
             method,

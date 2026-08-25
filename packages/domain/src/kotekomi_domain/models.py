@@ -13,6 +13,10 @@ from typing import Annotated, Self
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
 NonEmptyStr = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
+CanonicalPredicate = Annotated[
+    str,
+    StringConstraints(pattern=r"^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$"),
+]
 Confidence = Annotated[float, Field(ge=0.0, le=1.0)]
 type JsonValue = str | int | float | bool | None | list[JsonValue] | dict[str, JsonValue]
 
@@ -2038,7 +2042,7 @@ class Assertion(DomainModel):
     assertion_type: AssertionType
     epistemic_scope: EpistemicScope
     subject_entity_id: EntityId | ActorId | OrganizationId | EventId | PlaceId
-    predicate: NonEmptyStr
+    predicate: CanonicalPredicate
     object_entity_id: EntityId | ActorId | OrganizationId | EventId | PlaceId | None = None
     object_value: JsonValue = None
     status: AssertionStatus
@@ -2150,6 +2154,64 @@ class Assertion(DomainModel):
         ):
             raise ValueError("Causal inference must use assertion_type analytic_inference.")
 
+        return self
+
+
+class ProposedAssertion(DomainModel):
+    """A model-proposed Assertion before a reviewer assigns canonical ontology meaning."""
+
+    id: AssertionId
+    assertion_type: AssertionType
+    epistemic_scope: EpistemicScope
+    subject_entity_id: EntityId | ActorId | OrganizationId | EventId | PlaceId
+    relation_label: NonEmptyStr
+    object_entity_id: EntityId | ActorId | OrganizationId | EventId | PlaceId | None = None
+    object_value: JsonValue = None
+    source_authority: SourceAuthority
+    attribution_basis: AttributionBasis
+    attributed_to_id: ActorId | OrganizationId | None = None
+    source_report_confidence: Confidence | None = None
+    extraction_confidence: Confidence | None = None
+    world_truth_confidence: Confidence | None = None
+    causal_confidence: Confidence | None = None
+    qualifiers: dict[str, JsonValue] = Field(default_factory=dict)
+    current_assessment: str = ""
+    source_ids: tuple[SourceId, ...] = Field(default_factory=tuple)
+    evidence_target_ids: tuple[EvidenceTargetId, ...] = Field(default_factory=tuple)
+    supporting_assertion_ids: tuple[AssertionId, ...] = Field(default_factory=tuple)
+    supersedes_assertion_id: AssertionId | None = None
+    authority_source_ids: tuple[SourceId, ...] = Field(default_factory=tuple)
+    authority_evidence_target_ids: tuple[EvidenceTargetId, ...] = Field(default_factory=tuple)
+
+    @model_validator(mode="after")
+    def validate_proposed_assertion_rules(self) -> Self:
+        """Apply Assertion's intrinsic rules without inventing accepted-state metadata."""
+
+        Assertion(
+            id=self.id,
+            assertion_type=self.assertion_type,
+            epistemic_scope=self.epistemic_scope,
+            subject_entity_id=self.subject_entity_id,
+            predicate="proposed_relation",
+            object_entity_id=self.object_entity_id,
+            object_value=self.object_value,
+            status=AssertionStatus.PROPOSED,
+            source_authority=self.source_authority,
+            attribution_basis=self.attribution_basis,
+            attributed_to_id=self.attributed_to_id,
+            source_report_confidence=self.source_report_confidence,
+            extraction_confidence=self.extraction_confidence,
+            world_truth_confidence=self.world_truth_confidence,
+            causal_confidence=self.causal_confidence,
+            qualifiers=self.qualifiers,
+            current_assessment=self.current_assessment,
+            source_ids=self.source_ids,
+            evidence_target_ids=self.evidence_target_ids,
+            supporting_assertion_ids=self.supporting_assertion_ids,
+            supersedes_assertion_id=self.supersedes_assertion_id,
+            authority_source_ids=self.authority_source_ids,
+            authority_evidence_target_ids=self.authority_evidence_target_ids,
+        )
         return self
 
 

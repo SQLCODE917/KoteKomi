@@ -94,7 +94,7 @@ def _grounded_batch(
                 local_id="reported_alpha",
                 subject_organization_local_id="subject_organization",
                 evidence_local_id="supporting_span",
-                predicate="reported_alpha",
+                relation_label="reported alpha",
                 object=GroundedLiteralObject("Alpha"),
             ),
         ),
@@ -136,6 +136,7 @@ def _create_public_path_fixture(tmp_path: Path) -> AuthoritativeFixture:
                 batch.proposed_change_ids_by_local_id["reported_alpha"],
                 "reviewer",
                 NOW,
+                canonical_predicate="reported_alpha",
             ),
             repository,
         )
@@ -188,6 +189,7 @@ def test_entity_object_assertion_persists_after_organization_first_review(tmp_pa
                     outcome.proposed_change_ids_by_local_id[local_id],
                     "reviewer",
                     NOW,
+                    canonical_predicate="reported_alpha",
                 ),
                 repository,
             )
@@ -205,9 +207,10 @@ def test_entity_object_assertion_persists_after_organization_first_review(tmp_pa
         assert isinstance(record, dict)
         assertion = repository.get_assertion(str(record["id"]))
         assert assertion is not None
-        assert assertion.object_entity_id == outcome.organization_ids_by_local_id[
-            "object_organization"
-        ]
+        assert (
+            assertion.object_entity_id
+            == outcome.organization_ids_by_local_id["object_organization"]
+        )
         assert assertion.object_value is None
 
 

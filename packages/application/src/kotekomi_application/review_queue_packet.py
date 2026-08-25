@@ -19,6 +19,7 @@ from kotekomi_domain import (
     Organization,
     Outcome,
     Place,
+    ProposedAssertion,
     ProposedChange,
     Relationship,
     ReviewStatus,
@@ -43,7 +44,7 @@ type ReviewPacketRecord = (
     | Organization
     | Event
     | EvidenceTarget
-    | Assertion
+    | ProposedAssertion
     | Relationship
     | Outcome
     | ArgumentEdge
@@ -125,6 +126,8 @@ class ReviewReferenceContext:
 
 @dataclass(frozen=True)
 class ReviewAssertionContext:
+    relation_label: str
+    canonical_predicate_required: bool
     epistemic_scope: str
     source_authority: str
     attribution_basis: str
@@ -288,7 +291,7 @@ def get_review_next(
         has_next=True,
         item=item,
         packet=packet,
-        action_plans=_review_action_plans(item.proposed_change_id),
+        action_plans=_review_action_plans(item.proposed_change_id, item.record_type),
     )
 
 
@@ -513,7 +516,24 @@ def _review_action_plan_to_json(action_plan: ReviewActionPlan) -> dict[str, Json
     }
 
 
-def _review_action_plans(proposed_change_id: str) -> tuple[ReviewActionPlan, ...]:
+def _review_action_plans(
+    proposed_change_id: str,
+    record_type: str,
+) -> tuple[ReviewActionPlan, ...]:
+    predicate_requirement = (
+        (
+            ReviewActionPlanInputRequirement(
+                name="canonical_predicate",
+                kind="canonical_predicate",
+                required=True,
+                description=(
+                    "Reviewer-selected lower_snake_case predicate for the accepted Assertion."
+                ),
+            ),
+        )
+        if record_type == "Assertion"
+        else ()
+    )
     return (
         _review_action_plan(
             action="approve",
@@ -526,6 +546,7 @@ def _review_action_plans(proposed_change_id: str) -> tuple[ReviewActionPlan, ...
                     required=True,
                     description="Reviewer name for the review ProvenanceActivity.",
                 ),
+                *predicate_requirement,
             ),
         ),
         _review_action_plan(
@@ -564,6 +585,7 @@ def _review_action_plans(proposed_change_id: str) -> tuple[ReviewActionPlan, ...
                     required=True,
                     description="Path to accepted record JSON.",
                 ),
+                *predicate_requirement,
             ),
         ),
     )
@@ -618,6 +640,8 @@ def _assertion_context_to_json(
     if context is None:
         return None
     return {
+        "relation_label": context.relation_label,
+        "canonical_predicate_required": context.canonical_predicate_required,
         "epistemic_scope": context.epistemic_scope,
         "source_authority": context.source_authority,
         "attribution_basis": context.attribution_basis,
@@ -697,7 +721,7 @@ def _proposed_record_from_json(
     if record_type == "EvidenceTarget":
         return EvidenceTarget.model_validate_json(json.dumps(record_json))
     if record_type == "Assertion":
-        return Assertion.model_validate_json(json.dumps(record_json))
+        return ProposedAssertion.model_validate_json(json.dumps(record_json))
     if record_type == "Relationship":
         return Relationship.model_validate_json(json.dumps(record_json))
     if record_type == "Outcome":
@@ -725,7 +749,7 @@ def _evidence_contexts(
                 ledger_repository,
             )
         )
-    if isinstance(record, Assertion):
+    if isinstance(record, ProposedAssertion):
         for evidence_target_id in record.evidence_target_ids:
             evidence_target = _find_evidence_target(evidence_target_id, ledger_repository)
             if evidence_target is not None:
@@ -845,7 +869,7 @@ def _record_references(record: ReviewPacketRecord) -> tuple[tuple[str, str], ...
     elif isinstance(record, EvidenceTarget):
         references.append(("Source", record.source_id))
         references.append(("Document", record.document_id))
-    elif isinstance(record, Assertion):
+    elif isinstance(record, ProposedAssertion):
         references.append(
             (_entity_reference_type(record.subject_entity_id), record.subject_entity_id)
         )
@@ -972,9 +996,11 @@ def _pending_record_id(proposed_change: ProposedChange) -> str | None:
 
 
 def _assertion_context(record: ReviewPacketRecord) -> ReviewAssertionContext | None:
-    if not isinstance(record, Assertion):
+    if not isinstance(record, ProposedAssertion):
         return None
     return ReviewAssertionContext(
+        relation_label=record.relation_label,
+        canonical_predicate_required=True,
         epistemic_scope=record.epistemic_scope.value,
         source_authority=record.source_authority.value,
         attribution_basis=record.attribution_basis.value,

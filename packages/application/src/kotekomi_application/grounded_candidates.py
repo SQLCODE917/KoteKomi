@@ -11,16 +11,17 @@ from datetime import datetime
 from typing import Protocol
 
 from kotekomi_domain import (
-    AssertionStatus,
     AssertionType,
     AttributionBasis,
     DocumentNode,
+    EpistemicScope,
     EvidenceNecessity,
     EvidencePolarity,
     EvidenceTarget,
     EvidenceValidationAttempt,
     EvidenceValidationAttemptStatus,
     Organization,
+    ProposedAssertion,
     ProposedChange,
     ProvenanceActivity,
     RepresentationAnalyzability,
@@ -119,7 +120,7 @@ class GroundedAssertionCandidate:
     local_id: str
     subject_organization_local_id: str
     evidence_local_id: str
-    predicate: str
+    relation_label: str
     object: GroundedAssertionObject
     source_authority: SourceAuthority = SourceAuthority.SECONDARY
     attribution_basis: AttributionBasis = AttributionBasis.REPORTED_BY_SOURCE
@@ -552,31 +553,36 @@ def _assertion_proposed_change(
         batch_input.task_fingerprint,
         "assertion",
         subject_organization_id,
-        candidate.predicate,
+        candidate.relation_label,
         *_assertion_object_identity(candidate.object, organization_ids),
         evidence.id,
     )
     object_record = _assertion_object_record(candidate.object, organization_ids)
+    proposed_assertion = ProposedAssertion.model_validate(
+        {
+            "id": assertion_id,
+            "assertion_type": AssertionType.SOURCE_CLAIM,
+            "epistemic_scope": EpistemicScope.SOURCE_REPORT,
+            "subject_entity_id": subject_organization_id,
+            "relation_label": candidate.relation_label,
+            **object_record,
+            "source_authority": candidate.source_authority,
+            "attribution_basis": candidate.attribution_basis,
+            "source_ids": (batch_input.source_id,),
+            "evidence_target_ids": (evidence.id,),
+        }
+    )
     return ProposedChange(
         id=_deterministic_id("pcg", batch_input.task_fingerprint, "assertion", assertion_id),
         review_status=ReviewStatus.PENDING,
         proposed_json={
             "record_type": "Assertion",
             "stable_label": assertion_id,
-            "record": {
-                "id": assertion_id,
-                "assertion_type": AssertionType.SOURCE_CLAIM.value,
-                "epistemic_scope": "source_report",
-                "subject_entity_id": subject_organization_id,
-                "predicate": candidate.predicate,
-                **object_record,
-                "status": AssertionStatus.PROPOSED.value,
-                "source_authority": candidate.source_authority.value,
-                "attribution_basis": candidate.attribution_basis.value,
-                "source_ids": [batch_input.source_id],
-                "evidence_target_ids": [evidence.id],
-                "provenance_activity_ids": [],
-            },
+            "record": proposed_assertion.model_dump(
+                mode="json",
+                exclude_none=True,
+                exclude_defaults=True,
+            ),
             "evidence_links": [
                 {
                     "evidence_target_id": evidence.id,

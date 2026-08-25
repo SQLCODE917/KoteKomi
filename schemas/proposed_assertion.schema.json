@@ -1,18 +1,5 @@
 {
   "$defs": {
-    "AssertionStatus": {
-      "enum": [
-        "proposed",
-        "reported",
-        "corroborated",
-        "confirmed",
-        "contradicted",
-        "superseded",
-        "retracted"
-      ],
-      "title": "AssertionStatus",
-      "type": "string"
-    },
     "AssertionType": {
       "enum": [
         "reported_observation",
@@ -95,6 +82,7 @@
   },
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
+  "description": "A model-proposed Assertion before a reviewer assigns canonical ontology meaning.",
   "properties": {
     "assertion_type": {
       "$ref": "#/$defs/AssertionType"
@@ -148,11 +136,6 @@
       ],
       "default": null,
       "title": "Causal Confidence"
-    },
-    "created_at": {
-      "format": "date-time",
-      "title": "Created At",
-      "type": "string"
     },
     "current_assessment": {
       "default": "",
@@ -222,25 +205,17 @@
       "$ref": "#/$defs/JsonValue",
       "default": null
     },
-    "predicate": {
-      "pattern": "^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$",
-      "title": "Predicate",
-      "type": "string"
-    },
-    "provenance_activity_ids": {
-      "items": {
-        "pattern": "^prv_[A-Za-z0-9][A-Za-z0-9_-]*$",
-        "type": "string"
-      },
-      "title": "Provenance Activity Ids",
-      "type": "array"
-    },
     "qualifiers": {
       "additionalProperties": {
         "$ref": "#/$defs/JsonValue"
       },
       "title": "Qualifiers",
       "type": "object"
+    },
+    "relation_label": {
+      "minLength": 1,
+      "title": "Relation Label",
+      "type": "string"
     },
     "source_authority": {
       "$ref": "#/$defs/SourceAuthority"
@@ -266,9 +241,6 @@
       ],
       "default": null,
       "title": "Source Report Confidence"
-    },
-    "status": {
-      "$ref": "#/$defs/AssertionStatus"
     },
     "subject_entity_id": {
       "anyOf": [
@@ -316,11 +288,6 @@
       "title": "Supporting Assertion Ids",
       "type": "array"
     },
-    "updated_at": {
-      "format": "date-time",
-      "title": "Updated At",
-      "type": "string"
-    },
     "world_truth_confidence": {
       "anyOf": [
         {
@@ -341,11 +308,10 @@
     "assertion_type",
     "epistemic_scope",
     "subject_entity_id",
-    "predicate",
-    "status",
+    "relation_label",
     "source_authority",
     "attribution_basis"
   ],
-  "title": "Assertion",
+  "title": "ProposedAssertion",
   "type": "object"
 }

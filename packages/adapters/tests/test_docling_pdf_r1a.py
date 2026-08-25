@@ -163,7 +163,7 @@ def _fixture_execution_spec(manifest: ContextManifest) -> ModelExecutionSpec:
         context_manifest_id=manifest.id,
         context_manifest_digest=manifest.manifest_digest,
         rendered_input_digest=manifest.rendered_input_digest,
-        output_contract_version="staged_claim_output_v4",
+        output_contract_version="staged_claim_output_v5",
     )
 
 
@@ -361,7 +361,10 @@ def test_docling_r1b_replays_the_priority_sentence_after_review_and_restart(
         )
         review = approve_proposed_change(
             ReviewProposedChangeInput(
-                batch.proposed_change_ids_by_local_id["priority_claim"], "reviewer", NOW
+                batch.proposed_change_ids_by_local_id["priority_claim"],
+                "reviewer",
+                NOW,
+                canonical_predicate="identified_community_health_priorities",
             ),
             repository,
         )
@@ -610,7 +613,7 @@ def test_docling_r1d_staged_extraction_publishes_one_task_local_candidate(
                 model_profile=ContextModelProfile("r1d_fixture_model", 512, 64, 16),
                 prompt_id="r1d_claim_extraction",
                 prompt_bytes=b"Extract one grounded source claim.",
-                schema_id="staged_claim_output_v4",
+                schema_id="staged_claim_output_v5",
                 schema_bytes=staged_claim_output_schema_bytes(),
                 renderer_version="r1d_renderer_v1",
                 evidence_selection_policy_id="focus_node_evidence_v1",
@@ -621,7 +624,7 @@ def test_docling_r1d_staged_extraction_publishes_one_task_local_candidate(
         fixture_output = json.dumps(
             {
                 "kind": "candidates",
-                "schema_id": "staged_claim_output_v4",
+                "schema_id": "staged_claim_output_v5",
                 "organizations": [
                     {"local_id": "model_subject", "name": "HealthyJoCo"},
                 ],
@@ -635,7 +638,7 @@ def test_docling_r1d_staged_extraction_publishes_one_task_local_candidate(
                     {
                         "subject_organization_local_id": "model_subject",
                         "evidence_local_id": "model_evidence",
-                        "predicate": "identified_community_health_priorities",
+                        "relation_label": "identified_community_health_priorities",
                         "object": {
                             "kind": "literal",
                             "value": "healthcare access, mental health, housing, and food security",
@@ -712,8 +715,8 @@ def test_docling_r1d_staged_extraction_publishes_one_task_local_candidate(
         assert repository.get_proposed_change(assertion_change.id) == reviewed_change
         assertion_change_id = assertion_change.id
         alternate_output = fixture_output.replace(
-            b'"predicate":"identified_community_health_priorities"',
-            b'"predicate":"reported_community_health_priorities"',
+            b'"relation_label":"identified_community_health_priorities"',
+            b'"relation_label":"reported_community_health_priorities"',
         )
         alternate_runtime = FixtureModelTaskRuntime(alternate_output)
         alternate_outcome = run_bounded_extraction(
@@ -894,11 +897,11 @@ def test_docling_r1d_staged_extraction_publishes_one_task_local_candidate(
     )
 
 
-def _r1d_output(*, organization_name: str, predicate: str) -> bytes:
+def _r1d_output(*, organization_name: str, relation_label: str) -> bytes:
     return json.dumps(
         {
             "kind": "candidates",
-            "schema_id": "staged_claim_output_v4",
+            "schema_id": "staged_claim_output_v5",
             "organizations": [{"local_id": "model_subject", "name": organization_name}],
             "evidence": [
                 {
@@ -910,7 +913,7 @@ def _r1d_output(*, organization_name: str, predicate: str) -> bytes:
                 {
                     "subject_organization_local_id": "model_subject",
                     "evidence_local_id": "model_evidence",
-                    "predicate": predicate,
+                    "relation_label": relation_label,
                     "object": {
                         "kind": "literal",
                         "value": "healthcare access, mental health, housing, and food security",
@@ -964,7 +967,7 @@ def test_sqlite_model_run_publication_fault_matrix_is_atomic_and_retryable(tmp_p
                 model_profile=ContextModelProfile("r1d_fixture_model", 512, 64, 16),
                 prompt_id="r1d_claim_extraction",
                 prompt_bytes=b"Extract one grounded source claim.",
-                schema_id="staged_claim_output_v4",
+                schema_id="staged_claim_output_v5",
                 schema_bytes=staged_claim_output_schema_bytes(),
                 renderer_version="r1d_renderer_v1",
                 evidence_selection_policy_id="focus_node_evidence_v1",
@@ -974,7 +977,7 @@ def test_sqlite_model_run_publication_fault_matrix_is_atomic_and_retryable(tmp_p
         ).manifest
         baseline_output = _r1d_output(
             organization_name="HealthyJoCo",
-            predicate="identified_community_health_priorities",
+            relation_label="identified community health priorities",
         )
         baseline_outcome = run_bounded_extraction(
             BoundedExtractionInput(
@@ -1040,7 +1043,7 @@ def test_sqlite_model_run_publication_fault_matrix_is_atomic_and_retryable(tmp_p
     for index, fault_point in enumerate(fault_points, start=1):
         output = _r1d_output(
             organization_name=f"HealthyJoCo fault {index}",
-            predicate=f"reported_community_health_priorities_{index}",
+            relation_label=f"reported community health priorities {index}",
         )
         with sqlite3.connect(ledger_path) as connection:
             connection.execute("PRAGMA foreign_keys = ON")
@@ -1143,7 +1146,7 @@ def _priority_sentence_batch(
                 local_id="priority_claim",
                 subject_organization_local_id="healthy_joco",
                 evidence_local_id="priority_sentence",
-                predicate="identified_community_health_priorities",
+                relation_label="identified community health priorities",
                 object=GroundedLiteralObject(
                     "healthcare access, mental health, housing, and food security"
                 ),

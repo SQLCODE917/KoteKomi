@@ -1,6 +1,6 @@
 # CIR-2.1: Typed Assertion Object MVP
 
-- Status: Proposed
+- Status: Accepted
 - Program: [Model and Ontology Boundary Program](2026-08-25-model-ontology-boundary-program.md)
 - Deliverable ID: CIR-2.1
 - Depends on: [CIR-2](2026-08-24-automatic-extraction-change-set.md)
@@ -59,8 +59,8 @@ The model-facing contract must represent that distinction.
 - C21-SCHEMA-05: An Assertion draft contains subject, predicate, Object draft, and evidence reference.
 - C21-SCHEMA-06: The staged claim schema does not define `object_value` at the model boundary.
 - C21-SCHEMA-07: The Application Layer assigns assertion local identifiers in output order.
-- C21-SCHEMA-08: The Pipeline uses `staged_claim_output_v4` and `cir_automatic_claim_extraction_v4`.
-- C21-SCHEMA-09: The Pipeline uses `cir_automatic_claim_validator_v3` and the existing context renderer.
+- C21-SCHEMA-08: The original completed slice used `staged_claim_output_v4` and `cir_automatic_claim_extraction_v4`; CIR-2.2 supersedes that staged contract with v5.
+- C21-SCHEMA-09: The original completed slice used `cir_automatic_claim_validator_v3`; CIR-2.2 supersedes it with `cir_automatic_claim_validator_v4` while retaining the existing context renderer.
 
 ### Grounded candidate boundary
 

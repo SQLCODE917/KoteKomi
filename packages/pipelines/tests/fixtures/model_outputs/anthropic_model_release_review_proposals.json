@@ -240,7 +240,7 @@
         "assertion_type": "source_claim",
         "epistemic_scope": "source_report",
         "subject_entity_id": "org_anthropic",
-        "predicate": "postponed_broader_rollout_after_review",
+        "relation_label": "postponed_broader_rollout_after_review",
         "object_value": {
           "model": "Claude Fable 5",
           "timing": "late June 2026",
@@ -283,7 +283,7 @@
         "assertion_type": "source_claim",
         "epistemic_scope": "source_report",
         "subject_entity_id": "act_howard_lutnick",
-        "predicate": "pressed_for_pause_pending_customer_separation_review",
+        "relation_label": "pressed_for_pause_pending_customer_separation_review",
         "object_value": {
           "target": "Anthropic Claude Fable 5 rollout",
           "review_question": "separating U.S. enterprise customers from foreign nationals inside the same companies"
@@ -325,7 +325,7 @@
         "assertion_type": "source_claim",
         "epistemic_scope": "source_report",
         "subject_entity_id": "org_anthropic",
-        "predicate": "temporarily_suspended_enterprise_pilot_access",
+        "relation_label": "temporarily_suspended_enterprise_pilot_access",
         "object_value": {
           "date": "2026-06-23",
           "affected_customer_segments": ["finance", "defense contracting", "pharmaceutical research"],
@@ -366,7 +366,7 @@
       "record": {
         "id": "rel_commerce_review_influenced_anthropic_rollout",
         "subject_id": "org_commerce_department",
-        "predicate": "influenced_release_timing_for",
+        "relation_label": "influenced_release_timing_for",
         "object_id": "org_anthropic",
         "assertion_ids": [
           "ast_anthropic_postponed_fable5_after_us_review",

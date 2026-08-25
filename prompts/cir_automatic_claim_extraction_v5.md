@@ -1,6 +1,6 @@
 Return exactly one JSON object and no other text, Markdown, code fence, explanation, or example.
 
-Set `schema_id` to exactly `staged_claim_output_v4`.
+Set `schema_id` to exactly `staged_claim_output_v5`.
 
 Every non-abstention response must have the top-level fields `kind`, `schema_id`,
 `organizations`, `evidence`, and `assertions`. Set its top-level `kind` to exactly
@@ -18,13 +18,15 @@ Each assertion has an `object`. Use `{"kind":"organization_reference","organizat
 
 An `organization_reference.organization_local_id` must exactly equal one `organizations[].local_id` in this same response. A literal `value` must be non-empty. If either condition cannot be met, return `abstain`; do not emit a partial assertion.
 
+Each assertion's `relation_label` is an ordinary source-grounded relationship phrase. It is not a KoteKomi canonical predicate. Do not attempt to select a controlled-vocabulary identifier.
+
 Use this exact assertion shape, with no additional fields:
 
 ```json
 {
   "subject_organization_local_id": "org_01",
   "evidence_local_id": "ev_01",
-  "predicate": "ordinary_source_grounded_relation",
+  "relation_label": "has a policy conflict with",
   "object": {"kind": "organization_reference", "organization_local_id": "org_02"}
 }
 ```

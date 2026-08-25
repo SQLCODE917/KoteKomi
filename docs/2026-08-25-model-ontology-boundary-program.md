@@ -3,7 +3,10 @@
 - Status: Proposed
 - Program ID: `model-ontology-boundary`
 - Parent program: [Candidate Ingestion Review](2026-08-24-candidate-ingestion-review-program.md)
-- First child: [CIR-2.1 Typed Assertion Object MVP](2026-08-25-cir-2-1-typed-assertion-object-mvp.md)
+- Completed children:
+  - [CIR-2.1 Typed Assertion Object MVP](2026-08-25-cir-2-1-typed-assertion-object-mvp.md)
+  - [CIR-2.2 Predicate Proposal and Review Contract](2026-08-25-cir-2-2-predicate-proposal-review-contract.md)
+- Next child: CIR-2.3 Predicate Vocabulary and Review UX (to be defined from CIR-2.2 review evidence)
 
 ## Context and problem
 

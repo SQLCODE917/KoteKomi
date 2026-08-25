@@ -9,6 +9,7 @@ from kotekomi_domain import (
     AttributionBasis,
     EpistemicScope,
     Outcome,
+    ProposedAssertion,
     Relationship,
     SourceAuthority,
 )
@@ -239,3 +240,46 @@ def test_rejects_bad_id_prefix() -> None:
 
     with pytest.raises(ValidationError, match="string_pattern_mismatch"):
         Assertion(**kwargs)
+
+
+@pytest.mark.parametrize("predicate", ["is_policy_conflict_with", "reported_2026_event"])
+def test_accepts_canonical_assertion_predicate(predicate: str) -> None:
+    assertion = Assertion.model_validate(valid_assertion_kwargs() | {"predicate": predicate})
+
+    assert assertion.predicate == predicate
+
+
+@pytest.mark.parametrize("predicate", ["Policy conflict", "has-policy-conflict", "_starts_bad"])
+def test_rejects_noncanonical_assertion_predicate(predicate: str) -> None:
+    with pytest.raises(ValidationError, match="string_pattern_mismatch"):
+        Assertion.model_validate(valid_assertion_kwargs() | {"predicate": predicate})
+
+
+def test_proposed_assertion_retains_relation_label_without_accepted_state_fields() -> None:
+    values = valid_assertion_kwargs()
+    values.pop("predicate")
+    values.pop("status")
+    values.pop("provenance_activity_ids")
+    values.pop("created_at")
+    values.pop("updated_at")
+    proposed = ProposedAssertion.model_validate(
+        values | {"relation_label": "has a policy conflict with"}
+    )
+
+    assert proposed.relation_label == "has a policy conflict with"
+
+
+def test_proposed_assertion_applies_direct_assertion_evidence_rules() -> None:
+    values = valid_assertion_kwargs()
+    values.pop("predicate")
+    values.pop("status")
+    values.pop("provenance_activity_ids")
+    values.pop("created_at")
+    values.pop("updated_at")
+    values["source_ids"] = ()
+    values["evidence_target_ids"] = ()
+    values["source_authority"] = SourceAuthority.NOT_APPLICABLE
+    values["attribution_basis"] = AttributionBasis.NOT_APPLICABLE
+
+    with pytest.raises(ValidationError, match="Direct Assertion"):
+        ProposedAssertion.model_validate(values | {"relation_label": "reports a conflict"})

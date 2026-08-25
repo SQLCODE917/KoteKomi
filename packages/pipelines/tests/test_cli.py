@@ -28,6 +28,69 @@ USER_INGEST_FIXTURE = (
 )
 
 
+def test_review_commands_expose_optional_canonical_predicate() -> None:
+    parser = cli.build_parser()
+
+    approve = parser.parse_args(
+        [
+            "review",
+            "approve",
+            "--proposed-change-id",
+            "pcg_assertion",
+            "--reviewer",
+            "analyst",
+            "--canonical-predicate",
+            "has_policy_conflict_with",
+        ]
+    )
+    run_next = parser.parse_args(
+        [
+            "review",
+            "run-next",
+            "--decision",
+            "approve",
+            "--reviewer",
+            "analyst",
+            "--canonical-predicate",
+            "has_policy_conflict_with",
+        ]
+    )
+    edit = parser.parse_args(
+        [
+            "review",
+            "edit",
+            "--proposed-change-id",
+            "pcg_assertion",
+            "--reviewer",
+            "analyst",
+            "--accepted-record-json",
+            "accepted.json",
+            "--canonical-predicate",
+            "has_policy_conflict_with",
+        ]
+    )
+
+    assert approve.canonical_predicate == "has_policy_conflict_with"
+    assert run_next.canonical_predicate == "has_policy_conflict_with"
+    assert edit.canonical_predicate == "has_policy_conflict_with"
+
+
+def test_entrypoint_reports_application_validation_errors_without_traceback(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    def failing_main() -> int:
+        raise ValueError("Assertion review requires canonical_predicate.")
+
+    monkeypatch.setattr(cli, "main", failing_main)
+
+    with pytest.raises(SystemExit) as error:
+        cli.entrypoint()
+
+    assert error.value.code == 2
+    assert capsys.readouterr().err == "Error: Assertion review requires canonical_predicate.\n"
+
+
 def test_user_init_creates_xdg_config_and_no_config_ingestion_history(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

@@ -154,14 +154,12 @@ def _assertion_record(*, evidence_target_ids: list[str] | None = None) -> dict[s
         "assertion_type": "source_claim",
         "epistemic_scope": "source_report",
         "subject_entity_id": "org_atomic",
-        "predicate": "reported_alpha",
+        "relation_label": "reports alpha",
         "object_value": "Alpha",
-        "status": "proposed",
         "source_authority": "secondary",
         "attribution_basis": "reported_by_source",
         "source_ids": ["src_atomic"],
         "evidence_target_ids": cast(list[JsonValue], evidence_target_ids or ["etg_atomic"]),
-        "provenance_activity_ids": [],
     }
 
 
@@ -274,7 +272,12 @@ def _validation_attempt_id(evidence_target_id: str) -> str:
 
 
 def _review_input() -> ReviewProposedChangeInput:
-    return ReviewProposedChangeInput("pcg_atomic", "reviewer", NOW)
+    return ReviewProposedChangeInput(
+        "pcg_atomic",
+        "reviewer",
+        NOW,
+        canonical_predicate="reported_alpha",
+    )
 
 
 def _assert_no_acceptance_writes(ledger_path: Path) -> None:
