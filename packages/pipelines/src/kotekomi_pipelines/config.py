@@ -388,10 +388,10 @@ def _runtime_profiles(raw_config: dict[str, object]) -> dict[str, dict[str, obje
         "lm-studio": {
             "adapter": "lm_studio",
             "endpoint": "http://127.0.0.1:1234/v1",
-            "model": "qwen3.8-27b-mlx-textonly",
+            "model": "qwen2.5-14b-instruct",
             "timeout_seconds": 300.0,
             "context_tokens": 16384,
-            "max_output_tokens": 8192,
+            "max_output_tokens": 2048,
         },
         "macbook": {
             "adapter": "llama_server",

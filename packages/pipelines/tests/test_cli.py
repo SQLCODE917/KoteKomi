@@ -353,9 +353,9 @@ def test_load_config_defaults_to_lm_studio_profile() -> None:
 
     assert config.model_execution.adapter == "lm_studio"
     assert config.model_execution.endpoint == "http://127.0.0.1:1234/v1"
-    assert config.model_execution.model == "qwen3.8-27b-mlx-textonly"
+    assert config.model_execution.model == "qwen2.5-14b-instruct"
     assert config.model_execution.context_tokens == 16384
-    assert config.model_execution.max_output_tokens == 8192
+    assert config.model_execution.max_output_tokens == 2048
     assert config.model_execution.profile_name == "lm-studio"
 
 

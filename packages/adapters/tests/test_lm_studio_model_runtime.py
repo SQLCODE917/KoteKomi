@@ -1,9 +1,10 @@
+import asyncio
 import json
-from types import SimpleNamespace
 
+import httpx
 import pytest
 from kotekomi_adapters.lm_studio_model_runtime import LMStudioModelRuntime
-from kotekomi_adapters.model_http import HttpResponse, read_sse_completion
+from kotekomi_adapters.model_http import HttpResponse, HttpxSseJsonHttpClient
 from kotekomi_application import (
     ExecutionSetting,
     ModelExecutionSpec,
@@ -44,22 +45,28 @@ class FakeStreamingHttpClient:
         return self.responses.pop(0)
 
 
-class FakeSocket:
+class StalledAsyncStream(httpx.AsyncByteStream):
     def __init__(self) -> None:
-        self.timeouts: list[float] = []
+        self.closed = False
 
-    def settimeout(self, timeout_seconds: float) -> None:
-        self.timeouts.append(timeout_seconds)
+    async def __aiter__(self):  # type: ignore[override]
+        await asyncio.Event().wait()
+        yield b""
+
+    async def aclose(self) -> None:
+        self.closed = True
 
 
-class FakeStreamResponse:
-    def __init__(self, lines: list[bytes]) -> None:
-        self._lines = lines
-        self.socket = FakeSocket()
-        self.fp = SimpleNamespace(raw=SimpleNamespace(_sock=self.socket))
+class FixedAsyncStream(httpx.AsyncByteStream):
+    def __init__(self, chunks: tuple[bytes, ...]) -> None:
+        self._chunks = chunks
 
-    def readline(self) -> bytes:
-        return self._lines.pop(0) if self._lines else b""
+    async def __aiter__(self):  # type: ignore[override]
+        for chunk in self._chunks:
+            yield chunk
+
+    async def aclose(self) -> None:
+        return None
 
 
 def _runtime(
@@ -85,12 +92,12 @@ def _task(runtime: LMStudioModelRuntime) -> ModelTaskRequest:
         generation_parameters=(ExecutionSetting("max_output_tokens", 10),),
         prompt_id="fixture",
         prompt_digest=digest,
-        schema_id="staged_claim_output_v1",
+        schema_id="staged_claim_output_v3",
         schema_digest=digest,
         context_manifest_id="ctx_fixture",
         context_manifest_digest=digest,
         rendered_input_digest="b" * 64,
-        output_contract_version="staged_claim_output_v1",
+        output_contract_version="staged_claim_output_v3",
     )
     return ModelTaskRequest(
         extraction_task_id="ext_fixture",
@@ -156,65 +163,83 @@ def test_lm_studio_runtime_rejects_missing_output_text() -> None:
         runtime.run_model_task(_task(runtime))
 
 
-def test_sse_completion_returns_only_the_completed_response() -> None:
-    response = FakeStreamResponse(
-        [
-            b"event: response.output_text.delta\n",
-            b'data: {"type":"response.output_text.delta","delta":"partial"}\n',
-            b"\n",
-            b"event: response.completed\n",
-            b'data: {"response":{"model":"fixture-model","output":[]}}\n',
-            b"\n",
-        ]
+def test_httpx_sse_client_enforces_deadline_while_waiting_for_the_first_event() -> None:
+    stream = StalledAsyncStream()
+    transport = httpx.MockTransport(
+        lambda request: httpx.Response(
+            200,
+            headers={"content-type": "text/event-stream"},
+            stream=stream,
+            request=request,
+        )
     )
-
-    result = read_sse_completion(
-        response,
-        deadline=10.0,
-        started_at=0.0,
-        monotonic_clock=lambda: 0.0,
-    )
-
-    assert json.loads(result.body) == {"model": "fixture-model", "output": []}
-    assert result.first_response_event_milliseconds == 0
-    assert response.socket.timeouts == [10.0] * 6
-
-
-def test_sse_activity_does_not_extend_the_wall_clock_deadline() -> None:
-    response = FakeStreamResponse(
-        [
-            b"event: response.output_text.delta\n",
-            b'data: {"type":"response.output_text.delta","delta":"partial"}\n',
-            b"\n",
-        ]
-    )
-    values = iter((0.0, 0.2, 0.4, 1.0))
-
-    def clock() -> float:
-        return next(values)
 
     with pytest.raises(ModelRuntimeDeadlineExceeded, match="wall-clock deadline"):
-        read_sse_completion(response, deadline=1.0, started_at=0.0, monotonic_clock=clock)
+        HttpxSseJsonHttpClient(transport=transport).stream_request(
+            method="POST",
+            url="http://model.test/v1/responses",
+            payload={"stream": True},
+            deadline_seconds=0.01,
+        )
 
-    assert response.socket.timeouts == [1.0, 0.6]
+    assert stream.closed
+
+
+def test_httpx_sse_client_returns_the_completed_response() -> None:
+    output: list[object] = []
+    completed: dict[str, object] = {"model": "fixture-model", "output": output}
+    transport = httpx.MockTransport(
+        lambda request: httpx.Response(
+            200,
+            headers={"content-type": "text/event-stream"},
+            stream=FixedAsyncStream(
+                (
+                    b"event: response.created\n",
+                    b'data: {"type":"response.created"}\n',
+                    b"\n",
+                    b"event: response.completed\n",
+                    f"data: {json.dumps({'response': completed})}\n".encode(),
+                    b"\n",
+                )
+            ),
+            request=request,
+        )
+    )
+
+    response = HttpxSseJsonHttpClient(transport=transport).stream_request(
+        method="POST",
+        url="http://model.test/v1/responses",
+        payload={"stream": True},
+        deadline_seconds=1.0,
+    )
+
+    assert json.loads(response.body) == completed
+    assert response.first_response_event_milliseconds is not None
 
 
 def test_sse_terminal_failure_discards_partial_output() -> None:
-    response = FakeStreamResponse(
-        [
-            b"event: response.output_text.delta\n",
-            b'data: {"type":"response.output_text.delta","delta":"partial"}\n',
-            b"\n",
-            b"event: response.failed\n",
-            b'data: {"type":"response.failed"}\n',
-            b"\n",
-        ]
+    transport = httpx.MockTransport(
+        lambda request: httpx.Response(
+            200,
+            headers={"content-type": "text/event-stream"},
+            stream=FixedAsyncStream(
+                (
+                    b"event: response.output_text.delta\n",
+                    b'data: {"type":"response.output_text.delta","delta":"partial"}\n',
+                    b"\n",
+                    b"event: response.failed\n",
+                    b'data: {"type":"response.failed"}\n',
+                    b"\n",
+                )
+            ),
+            request=request,
+        )
     )
 
     with pytest.raises(ModelRuntimeResponseError, match="terminal streaming response failure"):
-        read_sse_completion(
-            response,
-            deadline=10.0,
-            started_at=0.0,
-            monotonic_clock=lambda: 0.0,
+        HttpxSseJsonHttpClient(transport=transport).stream_request(
+            method="POST",
+            url="http://model.test/v1/responses",
+            payload={"stream": True},
+            deadline_seconds=10.0,
         )

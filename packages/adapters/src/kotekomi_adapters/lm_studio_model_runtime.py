@@ -18,10 +18,10 @@ from kotekomi_application import (
 )
 
 from kotekomi_adapters.model_http import (
+    HttpxSseJsonHttpClient,
     JsonHttpClient,
     StreamingJsonHttpClient,
     UrllibJsonHttpClient,
-    UrllibSseJsonHttpClient,
     error_message,
     parse_json_object,
     required_list,
@@ -50,7 +50,7 @@ class LMStudioModelRuntime:
         self.context_tokens = context_tokens
         self.max_output_tokens = max_output_tokens
         self.http_client = http_client or UrllibJsonHttpClient()
-        self.streaming_http_client = streaming_http_client or UrllibSseJsonHttpClient()
+        self.streaming_http_client = streaming_http_client or HttpxSseJsonHttpClient()
 
     @property
     def configured_identity(self) -> ModelIdentitySnapshot:
@@ -151,13 +151,13 @@ class LMStudioModelRuntime:
                 "LM Studio Responses returned HTTP "
                 f"{response.status_code}: {error_message(response.body)}"
             )
-        payload = parse_json_object(response.body, "LM Studio Responses")
-        if payload.get("model") != self.model:
+        response_payload = parse_json_object(response.body, "LM Studio Responses")
+        if response_payload.get("model") != self.model:
             raise ModelRuntimeResponseError(
                 "LM Studio response model does not match configuration."
             )
-        raw_output = _output_text(payload)
-        output_tokens = _output_tokens(payload)
+        raw_output = _output_text(response_payload)
+        output_tokens = _output_tokens(response_payload)
         settings = task.execution_spec.generation_parameters
         receipt = ModelExecutionReceipt(
             model_identity_digest=model_identity_snapshot_digest(self.configured_identity),

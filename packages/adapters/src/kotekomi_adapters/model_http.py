@@ -2,14 +2,16 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Protocol, cast
+from typing import Protocol, cast
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
+import httpx
 from kotekomi_application import (
     ModelRuntimeDeadlineExceeded,
     ModelRuntimeResponseError,
@@ -90,11 +92,16 @@ class UrllibJsonHttpClient:
             raise ModelRuntimeUnavailableError(f"Model runtime request failed: {url}") from exc
 
 
-class UrllibSseJsonHttpClient:
-    """Read one SSE response without allowing event activity to extend its deadline."""
+class HttpxSseJsonHttpClient:
+    """Read one SSE response under a cancellable total wall-clock deadline."""
 
-    def __init__(self, monotonic_clock: Callable[[], float] = time.monotonic) -> None:
+    def __init__(
+        self,
+        monotonic_clock: Callable[[], float] = time.monotonic,
+        transport: httpx.AsyncBaseTransport | None = None,
+    ) -> None:
         self._monotonic_clock = monotonic_clock
+        self._transport = transport
 
     def stream_request(
         self,
@@ -106,61 +113,66 @@ class UrllibSseJsonHttpClient:
     ) -> HttpResponse:
         if deadline_seconds <= 0:
             raise ValueError("Streaming request deadline must be positive.")
-        started_at = self._monotonic_clock()
-        deadline = started_at + deadline_seconds
-        request = Request(
-            url,
-            data=json.dumps(payload).encode("utf-8"),
-            headers={"Accept": "text/event-stream", "Content-Type": "application/json"},
-            method=method,
-        )
         try:
-            with urlopen(
-                request, timeout=_remaining_seconds(deadline, self._monotonic_clock)
-            ) as response:
-                if response.status != 200:
-                    return HttpResponse(
-                        status_code=response.status,
-                        body=response.read().decode("utf-8"),
-                    )
-                completion = read_sse_completion(
-                    response,
-                    deadline,
-                    started_at,
-                    self._monotonic_clock,
+            return asyncio.run(
+                _stream_httpx_sse_request(
+                    method=method,
+                    url=url,
+                    payload=payload,
+                    deadline_seconds=deadline_seconds,
+                    monotonic_clock=self._monotonic_clock,
+                    transport=self._transport,
                 )
-                return HttpResponse(
-                    status_code=response.status,
-                    body=completion.body,
-                    first_response_event_milliseconds=completion.first_response_event_milliseconds,
-                )
-        except HTTPError as exc:
-            return HttpResponse(status_code=exc.code, body=exc.read().decode("utf-8"))
-        except ModelRuntimeDeadlineExceeded:
-            raise
-        except (URLError, OSError) as exc:
-            if self._monotonic_clock() >= deadline:
-                raise ModelRuntimeDeadlineExceeded(
-                    "Model task exceeded its configured wall-clock deadline."
-                ) from exc
+            )
+        except TimeoutError as exc:
+            raise ModelRuntimeDeadlineExceeded(
+                "Model task exceeded its configured wall-clock deadline."
+            ) from exc
+        except httpx.HTTPError as exc:
             raise ModelRuntimeUnavailableError(f"Model runtime request failed: {url}") from exc
 
 
-def read_sse_completion(
-    response: object,
-    deadline: float,
+async def _stream_httpx_sse_request(
+    *,
+    method: str,
+    url: str,
+    payload: dict[str, JsonValue],
+    deadline_seconds: float,
+    monotonic_clock: Callable[[], float],
+    transport: httpx.AsyncBaseTransport | None,
+) -> HttpResponse:
+    started_at = monotonic_clock()
+    async with httpx.AsyncClient(timeout=None, transport=transport) as client, asyncio.timeout(
+        deadline_seconds
+    ):
+        async with client.stream(
+            method,
+            url,
+            json=payload,
+            headers={"Accept": "text/event-stream", "Content-Type": "application/json"},
+        ) as response:
+            if response.status_code != 200:
+                return HttpResponse(
+                    status_code=response.status_code,
+                    body=(await response.aread()).decode(),
+                )
+            completion = await _read_httpx_sse_completion(response, started_at, monotonic_clock)
+            return HttpResponse(
+                status_code=response.status_code,
+                body=completion.body,
+                first_response_event_milliseconds=completion.first_response_event_milliseconds,
+            )
+
+
+async def _read_httpx_sse_completion(
+    response: httpx.Response,
     started_at: float,
     monotonic_clock: Callable[[], float],
 ) -> SseCompletion:
     event_name: str | None = None
     data_lines: list[str] = []
     first_response_event_milliseconds: int | None = None
-    while True:
-        _set_stream_read_timeout(response, _remaining_seconds(deadline, monotonic_clock))
-        line = _read_stream_line(response)
-        if not line:
-            break
-        decoded = line.decode("utf-8").rstrip("\r\n")
+    async for decoded in response.aiter_lines():
         if not decoded:
             completed = _completed_sse_payload(event_name, data_lines)
             if completed is not None:
@@ -189,44 +201,11 @@ def read_sse_completion(
     raise ModelRuntimeResponseError("LM Studio SSE ended before response.completed.")
 
 
-def _remaining_seconds(deadline: float, monotonic_clock: Callable[[], float]) -> float:
-    remaining = deadline - monotonic_clock()
-    if remaining <= 0:
-        raise ModelRuntimeDeadlineExceeded(
-            "Model task exceeded its configured wall-clock deadline."
-        )
-    return remaining
-
-
 def _elapsed_milliseconds(started_at: float, monotonic_clock: Callable[[], float]) -> int:
     elapsed_milliseconds = int(round((monotonic_clock() - started_at) * 1000))
     if elapsed_milliseconds < 0:
         raise ModelRuntimeResponseError("LM Studio SSE monotonic clock moved backwards.")
     return elapsed_milliseconds
-
-
-def _set_stream_read_timeout(response: object, timeout_seconds: float) -> None:
-    stream_response = cast(Any, response)
-    try:
-        socket_value = stream_response.fp.raw._sock
-    except AttributeError as exc:
-        raise ModelRuntimeResponseError(
-            "LM Studio SSE response does not expose a readable socket."
-        ) from exc
-    socket_value.settimeout(timeout_seconds)
-
-
-def _read_stream_line(response: object) -> bytes:
-    stream_response = cast(Any, response)
-    try:
-        value = stream_response.readline()
-    except TimeoutError as exc:
-        raise ModelRuntimeDeadlineExceeded(
-            "Model task exceeded its configured wall-clock deadline."
-        ) from exc
-    if not isinstance(value, bytes):
-        raise ModelRuntimeResponseError("LM Studio SSE response line must be bytes.")
-    return value
 
 
 def _completed_sse_payload(event_name: str | None, data_lines: list[str]) -> str | None:

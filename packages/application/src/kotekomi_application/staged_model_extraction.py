@@ -23,6 +23,7 @@ from kotekomi_application.context_planning import (
     ContextManifestStatus,
     ContextPlanningLedger,
     ContextTokenizer,
+    EvidenceCandidate,
     render_context,
     verify_context_manifest,
 )
@@ -270,7 +271,7 @@ class TaskSchemaRegistry(Protocol):
 class StagedClaimTaskSchemaRegistry:
     """The versioned pinned schema registry for the initial claim task."""
 
-    schema_id = "staged_claim_output_v1"
+    schema_id = "staged_claim_output_v3"
 
     def resolve(self, schema_id: str) -> PinnedTaskSchema:
         if schema_id != self.schema_id:
@@ -278,7 +279,7 @@ class StagedClaimTaskSchemaRegistry:
         return PinnedTaskSchema(
             schema_id=self.schema_id,
             canonical_schema_bytes=staged_claim_output_schema_bytes(),
-            output_contract_version="staged_claim_output_v1",
+            output_contract_version="staged_claim_output_v3",
             parse=_parse_staged_claim_output,
         )
 
@@ -313,16 +314,12 @@ class _EvidenceOutput(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
     local_id: str
-    node_id: str
-    exact_quote: str
-    node_local_start: int
-    node_local_end: int
+    evidence_candidate_id: str
 
 
 class _AssertionOutput(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
-    local_id: str
     subject_organization_local_id: str
     evidence_local_id: str
     predicate: str
@@ -333,7 +330,7 @@ class _CandidateOutput(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
     kind: Literal["candidates"]
-    schema_id: str
+    schema_id: Literal["staged_claim_output_v3"]
     organizations: list[_OrganizationOutput]
     evidence: list[_EvidenceOutput]
     assertions: list[_AssertionOutput]
@@ -343,7 +340,7 @@ class _AbstentionOutput(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
     kind: Literal["abstain"]
-    schema_id: str
+    schema_id: Literal["staged_claim_output_v3"]
     reason: str
 
 
@@ -675,25 +672,29 @@ def _validate_task_local_references(
     output: _CandidateOutput,
     manifest: ContextManifest,
 ) -> None:
-    visible_node_ids = {
-        node_id
-        for candidate in manifest.selected_candidates
-        for node_id in candidate.source_node_ids
-    }
     if not output.assertions:
         raise ValueError("Candidate output requires at least one assertion or an abstention.")
+    available_evidence_candidate_ids = {candidate.id for candidate in manifest.evidence_candidates}
+    if not available_evidence_candidate_ids:
+        raise ValueError(
+            "Candidate output requires a ContextManifest evidence candidate catalogue."
+        )
     for candidate in output.evidence:
-        if not candidate.node_id:
-            raise ValueError("Candidate evidence requires at least one node reference.")
-        unknown = {candidate.node_id} - visible_node_ids
-        if unknown:
-            raise ValueError("Candidate evidence references nodes absent from the ContextManifest.")
+        if candidate.evidence_candidate_id not in available_evidence_candidate_ids:
+            raise ValueError(
+                "Candidate evidence references an unknown ContextManifest evidence candidate."
+            )
     organization_ids = {candidate.local_id for candidate in output.organizations}
     evidence_ids = {candidate.local_id for candidate in output.evidence}
     if len(organization_ids) != len(output.organizations) or len(evidence_ids) != len(
         output.evidence
     ):
         raise ValueError("Candidate output local IDs must be unique within their task.")
+    selected_evidence_candidate_ids = [
+        candidate.evidence_candidate_id for candidate in output.evidence
+    ]
+    if len(set(selected_evidence_candidate_ids)) != len(selected_evidence_candidate_ids):
+        raise ValueError("Candidate output may select each evidence candidate at most once.")
     for candidate in output.assertions:
         if candidate.subject_organization_local_id not in organization_ids:
             raise ValueError("Candidate assertion references an unknown task-local organization.")
@@ -719,8 +720,15 @@ def _grounded_batch(
         raise ValueError("Bounded extraction references a missing DocumentRepresentation.")
     nodes = {node.id: node for node in bundle.nodes}
     text_views = {text_view.id: text_view for text_view in bundle.text_views}
+    evidence_candidates = {candidate.id: candidate for candidate in manifest.evidence_candidates}
     evidence = tuple(
-        _resolved_evidence_candidate(item, nodes, text_views) for item in output.evidence
+        _resolved_evidence_candidate(
+            item,
+            evidence_candidates,
+            nodes,
+            text_views,
+        )
+        for item in output.evidence
     )
     return GroundedCandidateBatchInput(
         task_fingerprint=task.task_fingerprint,
@@ -738,13 +746,13 @@ def _grounded_batch(
         evidence=evidence,
         assertions=tuple(
             GroundedAssertionCandidate(
-                item.local_id,
+                f"assertion_{ordinal:02d}",
                 item.subject_organization_local_id,
                 item.evidence_local_id,
                 item.predicate,
                 item.object_value,
             )
-            for item in output.assertions
+            for ordinal, item in enumerate(output.assertions, start=1)
         ),
         originating_model_run_id=model_run_id,
     )
@@ -752,22 +760,33 @@ def _grounded_batch(
 
 def _resolved_evidence_candidate(
     output: _EvidenceOutput,
+    evidence_candidates: Mapping[str, EvidenceCandidate],
     nodes: Mapping[str, DocumentNode],
     text_views: Mapping[str, TextView],
 ) -> GroundedEvidenceCandidate:
-    node = nodes.get(output.node_id)
+    selected = evidence_candidates.get(output.evidence_candidate_id)
+    if selected is None:
+        raise ValueError(
+            "Candidate evidence references an unknown ContextManifest evidence candidate."
+        )
+    node = nodes.get(selected.node_id)
     if not isinstance(node, DocumentNode):
-        raise ValueError("Candidate evidence references an unknown task-local DocumentNode.")
+        raise ValueError("ContextManifest evidence candidate references an unknown DocumentNode.")
     text_view = text_views.get(node.text_view_id)
     if not isinstance(text_view, TextView):
-        raise ValueError("Candidate evidence DocumentNode references a missing TextView.")
-    if output.node_local_start < 0 or output.node_local_end > node.end_char - node.start_char:
-        raise ValueError("Candidate evidence node-local offsets lie outside its visible node.")
-    start_char = node.start_char + output.node_local_start
-    end_char = node.start_char + output.node_local_end
+        raise ValueError("ContextManifest evidence candidate references a missing TextView.")
+    if (
+        selected.text_view_id != text_view.id
+        or selected.start_char != node.start_char
+        or selected.end_char != node.end_char
+        or selected.source_region_ids != node.source_region_ids
+    ):
+        raise ValueError(
+            "ContextManifest evidence candidate does not match authoritative source state."
+        )
+    start_char = selected.start_char
+    end_char = selected.end_char
     exact_text = text_view.text[start_char:end_char]
-    if exact_text != output.exact_quote:
-        raise ValueError("Candidate evidence exact_quote does not match its visible node offsets.")
     return GroundedEvidenceCandidate(
         local_id=output.local_id,
         text_view_id=text_view.id,

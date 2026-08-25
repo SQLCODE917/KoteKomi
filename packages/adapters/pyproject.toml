@@ -7,6 +7,7 @@ dependencies = [
   "beautifulsoup4>=4.13,<5",
   "defusedxml>=0.7,<1",
   "docling>=2,<3",
+  "httpx>=0.28,<1",
   "kotekomi-application",
   "kotekomi-domain",
   "onnxruntime>=1.23,<2",

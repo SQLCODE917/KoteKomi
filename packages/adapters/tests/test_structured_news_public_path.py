@@ -94,7 +94,7 @@ def _execution_spec(manifest: ContextManifest) -> ModelExecutionSpec:
         context_manifest_id=manifest.id,
         context_manifest_digest=manifest.manifest_digest,
         rendered_input_digest=manifest.rendered_input_digest,
-        output_contract_version="staged_claim_output_v1",
+        output_contract_version="staged_claim_output_v3",
     )
 
 
@@ -181,21 +181,19 @@ def test_newsml_public_path_reaches_proposal_coverage_and_restart(tmp_path: Path
                 model_profile=ContextModelProfile("news_public_fixture_model", 4096, 128, 32),
                 prompt_id="news_public_claim_v1",
                 prompt_bytes=PROMPT,
-                schema_id="staged_claim_output_v1",
+                schema_id="staged_claim_output_v3",
                 schema_bytes=staged_claim_output_schema_bytes(),
                 renderer_version="news_public_renderer_v1",
+                evidence_selection_policy_id="focus_node_evidence_v1",
             ),
             repository,
             _ExactTokenizer(),
         ).manifest
         assert manifest.status is ContextManifestStatus.READY
-        paragraph = next(node for node in bundle.nodes if node.node_type == "paragraph")
-        view = next(view for view in bundle.text_views if view.id == paragraph.text_view_id)
-        quote = view.text[paragraph.start_char : paragraph.end_char]
         raw_output = json.dumps(
             {
                 "kind": "candidates",
-                "schema_id": "staged_claim_output_v1",
+                "schema_id": "staged_claim_output_v3",
                 "organizations": [
                     {
                         "local_id": "provider",
@@ -206,15 +204,11 @@ def test_newsml_public_path_reaches_proposal_coverage_and_restart(tmp_path: Path
                 "evidence": [
                     {
                         "local_id": "evidence",
-                        "node_id": paragraph.id,
-                        "exact_quote": quote,
-                        "node_local_start": 0,
-                        "node_local_end": len(quote),
+                        "evidence_candidate_id": "evidence_01",
                     }
                 ],
                 "assertions": [
                     {
-                        "local_id": "claim",
                         "subject_organization_local_id": "provider",
                         "evidence_local_id": "evidence",
                         "predicate": "reported_event",
@@ -248,7 +242,7 @@ def test_newsml_public_path_reaches_proposal_coverage_and_restart(tmp_path: Path
         validation_id = (
             extraction.proposed_change_batch.validation_attempt_ids_by_evidence_local_id["evidence"]
         )
-        assert proposal_ids["claim"]
+        assert proposal_ids["assertion_01"]
         evidence = repository.get_evidence_target(evidence_id)
         validation = repository.get_evidence_validation_attempt(validation_id)
         assert evidence is not None and validation is not None
@@ -287,7 +281,7 @@ def test_newsml_public_path_reaches_proposal_coverage_and_restart(tmp_path: Path
             )
         )
         assert report.coverage_records[0].selected_proposal_ids == run_proposal_ids
-        assert proposal_ids["claim"] in run_proposal_ids
+        assert proposal_ids["assertion_01"] in run_proposal_ids
 
     with sqlite_ledger_transaction(ledger_path) as repository:
         restarted_bundle = repository.get_document_representation_bundle(
@@ -295,7 +289,7 @@ def test_newsml_public_path_reaches_proposal_coverage_and_restart(tmp_path: Path
         )
         restarted_manifest = repository.get_context_manifest_artifact(manifest.id)
         restarted_report = build_coverage_report(analysis_run.id, repository)
-        restarted_proposal = repository.get_proposed_change(proposal_ids["claim"])
+        restarted_proposal = repository.get_proposed_change(proposal_ids["assertion_01"])
     assert restarted_bundle == bundle
     assert restarted_manifest is not None
     assert restarted_report == report

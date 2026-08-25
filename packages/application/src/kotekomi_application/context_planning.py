@@ -23,6 +23,7 @@ from kotekomi_domain.models import JsonValue
 
 HASH_ID_LENGTH = 24
 PARAGRAPH_FOCUS_SPLIT_V1 = "paragraph_focus_split_v1"
+FOCUS_NODE_EVIDENCE_SELECTION_V1 = "focus_node_evidence_v1"
 
 
 class ContextCandidateRole(StrEnum):
@@ -69,6 +70,7 @@ class AnalysisUnitPlanningInput:
     policy_id: str
     task_type: str
     max_focus_nodes_per_unit: int = 1
+    focus_node_types: tuple[str, ...] = ("paragraph", "table_caption")
 
 
 @dataclass(frozen=True)
@@ -130,6 +132,18 @@ class ContextCandidate:
 
 
 @dataclass(frozen=True)
+class EvidenceCandidate:
+    """One model-selectable, authoritative evidence span in a ready context."""
+
+    id: str
+    node_id: str
+    text_view_id: str
+    start_char: int
+    end_char: int
+    source_region_ids: tuple[str, ...]
+
+
+@dataclass(frozen=True)
 class ExcludedContextCandidate:
     candidate: ContextCandidate
     reason_code: str
@@ -159,6 +173,7 @@ class ContextManifestInput:
     schema_id: str
     schema_bytes: bytes
     renderer_version: str
+    evidence_selection_policy_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -188,6 +203,8 @@ class ContextManifest:
     input_token_count: int
     manifest_digest: str
     status: ContextManifestStatus
+    evidence_selection_policy_id: str | None = None
+    evidence_candidates: tuple[EvidenceCandidate, ...] = ()
     split_strategy_id: str | None = None
     child_analysis_unit_ids: tuple[str, ...] = ()
     blocked_reason: str | None = None
@@ -211,14 +228,19 @@ def plan_analysis_units(
     planning_input: AnalysisUnitPlanningInput,
     ledger_repository: ContextPlanningLedger,
 ) -> AnalysisPlan:
-    """Create deterministic units for general prose and table-caption analysis foci."""
+    """Create deterministic units for the named structural node types."""
     bundle = _load_acceptable_bundle(planning_input.representation_id, ledger_repository)
+    if not planning_input.focus_node_types:
+        raise ValueError("Analysis unit focus node types cannot be empty.")
+    if len(set(planning_input.focus_node_types)) != len(planning_input.focus_node_types):
+        raise ValueError("Analysis unit focus node types must be distinct.")
+    focus_node_types = frozenset(planning_input.focus_node_types)
     analysis_focus_nodes = tuple(
         node
         for node in sorted(
             bundle.nodes, key=lambda candidate: (candidate.order_index, candidate.id)
         )
-        if node.node_type in {"paragraph", "table_caption"}
+        if node.node_type in focus_node_types
     )
     if planning_input.max_focus_nodes_per_unit <= 0:
         raise ValueError("Analysis unit max_focus_nodes_per_unit must be positive.")
@@ -362,7 +384,9 @@ def build_context_manifest(
             ledger_repository,
         )
     required = tuple(candidate for candidate in candidates if candidate.required)
-    rendered_input, segments = _render_context(manifest_input, required, bundle)
+    rendered_input, segments, evidence_candidates = _render_context(
+        manifest_input, required, bundle
+    )
     if tokenizer.count_tokens(rendered_input) <= token_budget:
         excluded = tuple(
             ExcludedContextCandidate(candidate, "furniture_excluded")
@@ -379,6 +403,7 @@ def build_context_manifest(
                     rendered_input=rendered_input,
                     segments=segments,
                     status=ContextManifestStatus.READY,
+                    evidence_candidates=evidence_candidates,
                 )
             ),
             ledger_repository,
@@ -588,22 +613,71 @@ def _render_context(
     manifest_input: ContextManifestInput,
     candidates: tuple[ContextCandidate, ...],
     bundle: DocumentRepresentationBundle,
-) -> tuple[bytes, tuple[RenderedContextSegment, ...]]:
+) -> tuple[bytes, tuple[RenderedContextSegment, ...], tuple[EvidenceCandidate, ...]]:
     rendered = bytearray(manifest_input.prompt_bytes + b"\n\n" + manifest_input.schema_bytes)
     segments: list[RenderedContextSegment] = []
+    evidence_candidates = _evidence_candidates_for_context(
+        manifest_input.evidence_selection_policy_id, candidates, bundle
+    )
+    evidence_by_node_id = {candidate.node_id: candidate for candidate in evidence_candidates}
     for candidate in candidates:
         node = _node_by_id(bundle, candidate.node_id)
-        segment = _render_node(node, _text_view_by_id(bundle, node.text_view_id))
+        evidence_candidate = evidence_by_node_id.get(node.id)
+        segment = _render_node(
+            node,
+            _text_view_by_id(bundle, node.text_view_id),
+            evidence_candidate_id=(evidence_candidate.id if evidence_candidate else None),
+            include_node_id=manifest_input.evidence_selection_policy_id is None,
+        )
         rendered.extend(b"\n\n")
         start_byte = len(rendered)
         rendered.extend(segment)
         segments.append(RenderedContextSegment(node.id, start_byte, len(rendered)))
-    return bytes(rendered), tuple(segments)
+    return bytes(rendered), tuple(segments), evidence_candidates
 
 
-def _render_node(node: DocumentNode, text_view: TextView) -> bytes:
+def _render_node(
+    node: DocumentNode,
+    text_view: TextView,
+    *,
+    evidence_candidate_id: str | None = None,
+    include_node_id: bool = True,
+) -> bytes:
     text = text_view.text[node.start_char : node.end_char]
-    return f"[{node.node_type}:{node.id}]\n{text}".encode()
+    evidence_label = (
+        f"[evidence_candidate:{evidence_candidate_id}]\n"
+        if evidence_candidate_id is not None
+        else ""
+    )
+    node_label = f"[{node.node_type}:{node.id}]" if include_node_id else f"[{node.node_type}]"
+    return f"{evidence_label}{node_label}\n{text}".encode()
+
+
+def _evidence_candidates_for_context(
+    policy_id: str | None,
+    candidates: tuple[ContextCandidate, ...],
+    bundle: DocumentRepresentationBundle,
+) -> tuple[EvidenceCandidate, ...]:
+    if policy_id is None:
+        return ()
+    if policy_id != FOCUS_NODE_EVIDENCE_SELECTION_V1:
+        raise ValueError(f"Unsupported evidence selection policy: {policy_id}")
+    focus_candidates = tuple(
+        candidate for candidate in candidates if candidate.role is ContextCandidateRole.FOCUS
+    )
+    return tuple(
+        EvidenceCandidate(
+            id=f"evidence_{index:02d}",
+            node_id=node.id,
+            text_view_id=node.text_view_id,
+            start_char=node.start_char,
+            end_char=node.end_char,
+            source_region_ids=node.source_region_ids,
+        )
+        for index, node in enumerate(
+            (_node_by_id(bundle, candidate.node_id) for candidate in focus_candidates), start=1
+        )
+    )
 
 
 def _definition_nodes_for_focus(
@@ -835,6 +909,7 @@ def _manifest(
     rendered_input: bytes,
     segments: tuple[RenderedContextSegment, ...],
     status: ContextManifestStatus,
+    evidence_candidates: tuple[EvidenceCandidate, ...] = (),
     split_strategy_id: str | None = None,
     child_analysis_unit_ids: tuple[str, ...] = (),
     blocked_reason: str | None = None,
@@ -852,6 +927,7 @@ def _manifest(
         "schema_bytes_base64": b64encode(manifest_input.schema_bytes).decode("ascii"),
         "schema_digest": hashlib.sha256(manifest_input.schema_bytes).hexdigest(),
         "renderer_version": manifest_input.renderer_version,
+        "evidence_selection_policy_id": manifest_input.evidence_selection_policy_id,
         "planner_policy_id": manifest_input.analysis_unit.planner_policy_id,
         "tokenizer_id": tokenizer.tokenizer_id,
         "model_profile": manifest_input.model_profile.__dict__,
@@ -861,6 +937,7 @@ def _manifest(
             for item in excluded
         ],
         "segments": [segment.__dict__ for segment in segments],
+        "evidence_candidates": [_evidence_candidate_payload(item) for item in evidence_candidates],
         "rendered_input_digest": rendered_input_digest,
         "input_token_count": input_token_count,
         "status": status.value,
@@ -897,6 +974,8 @@ def _manifest(
         input_token_count=input_token_count,
         manifest_digest=manifest_digest,
         status=status,
+        evidence_selection_policy_id=manifest_input.evidence_selection_policy_id,
+        evidence_candidates=evidence_candidates,
         split_strategy_id=split_strategy_id,
         child_analysis_unit_ids=child_analysis_unit_ids,
         blocked_reason=blocked_reason,
@@ -992,6 +1071,7 @@ def load_context_manifest(
             schema_digest=_required_str(integrity, "schema_digest"),
             schema_bytes=b64decode(_required_str(integrity, "schema_bytes_base64"), validate=True),
             renderer_version=_required_str(integrity, "renderer_version"),
+            evidence_selection_policy_id=_optional_str(integrity, "evidence_selection_policy_id"),
             planner_policy_id=_required_str(integrity, "planner_policy_id"),
             tokenizer_id=_required_str(integrity, "tokenizer_id"),
             model_profile_id=_required_str(_mapping(integrity, "model_profile"), "id"),
@@ -1018,6 +1098,10 @@ def load_context_manifest(
             input_token_count=_required_int(integrity, "input_token_count"),
             manifest_digest=artifact.manifest_digest,
             status=ContextManifestStatus(_required_str(integrity, "status")),
+            evidence_candidates=tuple(
+                _evidence_candidate_from_payload(item)
+                for item in _mapping_list(integrity, "evidence_candidates")
+            ),
             split_strategy_id=_optional_str(integrity, "split_strategy_id"),
             child_analysis_unit_ids=_string_tuple_or_empty(integrity, "child_analysis_unit_ids"),
             blocked_reason=_optional_str(integrity, "blocked_reason"),
@@ -1064,6 +1148,7 @@ def verify_context_manifest(
     if prompt_bytes != manifest.prompt_bytes:
         raise ValueError("ContextManifest prompt bytes do not match the persisted prompt bytes.")
     bundle = _load_acceptable_bundle(manifest.representation_id, ledger_repository)
+    _validate_evidence_candidates(manifest, bundle)
     rendered, segments = _render_verified_input(manifest, bundle, prompt_bytes, schema_bytes)
     if rendered != manifest.rendered_input or segments != manifest.rendered_segments:
         raise ValueError("ContextManifest rendered input or segment boundaries are corrupted.")
@@ -1131,6 +1216,7 @@ def validate_context_manifest(
         or bundle.quality_report.analyzability is not RepresentationAnalyzability.ACCEPTABLE
     ):
         raise ValueError("ContextManifest verified bundle binding is invalid.")
+    _validate_evidence_candidates(manifest, bundle)
     if len(manifest.selected_candidates) != len(manifest.rendered_segments):
         raise ValueError("ContextManifest selected candidates and rendered segments disagree.")
     prior_end = 0
@@ -1142,7 +1228,16 @@ def validate_context_manifest(
         node = _node_by_id(bundle, candidate.node_id)
         if not set(candidate.source_node_ids).issubset({node.id}):
             raise ValueError("ContextManifest candidate source nodes are corrupted.")
-        rendered_node = _render_node(node, _text_view_by_id(bundle, node.text_view_id))
+        evidence_candidate = next(
+            (item for item in manifest.evidence_candidates if item.node_id == candidate.node_id),
+            None,
+        )
+        rendered_node = _render_node(
+            node,
+            _text_view_by_id(bundle, node.text_view_id),
+            evidence_candidate_id=(evidence_candidate.id if evidence_candidate else None),
+            include_node_id=manifest.evidence_selection_policy_id is None,
+        )
         if manifest.rendered_input[segment.start_byte : segment.end_byte] != rendered_node:
             raise ValueError("ContextManifest rendered segment does not match its DocumentNode.")
         prior_end = segment.end_byte
@@ -1160,6 +1255,7 @@ def _artifact_payload(manifest: ContextManifest) -> dict[str, object]:
         "schema_digest": manifest.schema_digest,
         "schema_bytes_base64": b64encode(manifest.schema_bytes).decode("ascii"),
         "renderer_version": manifest.renderer_version,
+        "evidence_selection_policy_id": manifest.evidence_selection_policy_id,
         "planner_policy_id": manifest.planner_policy_id,
         "tokenizer_id": manifest.tokenizer_id,
         "model_profile": {
@@ -1174,6 +1270,9 @@ def _artifact_payload(manifest: ContextManifest) -> dict[str, object]:
             for item in manifest.excluded_candidates
         ],
         "segments": [segment.__dict__ for segment in manifest.rendered_segments],
+        "evidence_candidates": [
+            _evidence_candidate_payload(item) for item in manifest.evidence_candidates
+        ],
         "rendered_input_digest": manifest.rendered_input_digest,
         "input_token_count": manifest.input_token_count,
         "status": manifest.status.value,
@@ -1196,9 +1295,18 @@ def _render_verified_input(
 ) -> tuple[bytes, tuple[RenderedContextSegment, ...]]:
     rendered = bytearray(prompt_bytes + b"\n\n" + schema_bytes)
     segments: list[RenderedContextSegment] = []
+    evidence_by_node_id = {
+        candidate.node_id: candidate for candidate in manifest.evidence_candidates
+    }
     for candidate in manifest.selected_candidates:
         node = _node_by_id(bundle, candidate.node_id)
-        segment = _render_node(node, _text_view_by_id(bundle, node.text_view_id))
+        evidence_candidate = evidence_by_node_id.get(node.id)
+        segment = _render_node(
+            node,
+            _text_view_by_id(bundle, node.text_view_id),
+            evidence_candidate_id=(evidence_candidate.id if evidence_candidate else None),
+            include_node_id=manifest.evidence_selection_policy_id is None,
+        )
         rendered.extend(b"\n\n")
         start_byte = len(rendered)
         rendered.extend(segment)
@@ -1274,6 +1382,17 @@ def _candidate_from_payload(value: dict[str, JsonValue]) -> ContextCandidate:
     )
 
 
+def _evidence_candidate_from_payload(value: dict[str, JsonValue]) -> EvidenceCandidate:
+    return EvidenceCandidate(
+        id=_required_str(value, "id"),
+        node_id=_required_str(value, "node_id"),
+        text_view_id=_required_str(value, "text_view_id"),
+        start_char=_required_int(value, "start_char"),
+        end_char=_required_int(value, "end_char"),
+        source_region_ids=_string_tuple(value, "source_region_ids"),
+    )
+
+
 def _excluded_from_payload(value: dict[str, JsonValue]) -> ExcludedContextCandidate:
     return ExcludedContextCandidate(
         _candidate_from_payload(_mapping(value, "candidate")), _required_str(value, "reason_code")
@@ -1299,6 +1418,40 @@ def _candidate_payload(candidate: ContextCandidate) -> dict[str, object]:
         "source_node_ids": candidate.source_node_ids,
         "estimated_tokens": candidate.estimated_tokens,
     }
+
+
+def _evidence_candidate_payload(candidate: EvidenceCandidate) -> dict[str, object]:
+    return {
+        "id": candidate.id,
+        "node_id": candidate.node_id,
+        "text_view_id": candidate.text_view_id,
+        "start_char": candidate.start_char,
+        "end_char": candidate.end_char,
+        "source_region_ids": candidate.source_region_ids,
+    }
+
+
+def _validate_evidence_candidates(
+    manifest: ContextManifest,
+    bundle: DocumentRepresentationBundle,
+) -> None:
+    if manifest.evidence_selection_policy_id is None:
+        if manifest.evidence_candidates:
+            raise ValueError("ContextManifest has evidence candidates without a selection policy.")
+        return
+    if manifest.evidence_selection_policy_id != FOCUS_NODE_EVIDENCE_SELECTION_V1:
+        raise ValueError("ContextManifest references an unsupported evidence selection policy.")
+    if manifest.status is not ContextManifestStatus.READY:
+        if manifest.evidence_candidates:
+            raise ValueError("Only ready ContextManifest records can expose evidence candidates.")
+        return
+    expected = _evidence_candidates_for_context(
+        manifest.evidence_selection_policy_id,
+        manifest.selected_candidates,
+        bundle,
+    )
+    if manifest.evidence_candidates != expected:
+        raise ValueError("ContextManifest evidence candidate catalogue is corrupted.")
 
 
 def _digest(value: object) -> str:

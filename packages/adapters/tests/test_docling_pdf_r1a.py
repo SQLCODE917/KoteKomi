@@ -162,7 +162,7 @@ def _fixture_execution_spec(manifest: ContextManifest) -> ModelExecutionSpec:
         context_manifest_id=manifest.id,
         context_manifest_digest=manifest.manifest_digest,
         rendered_input_digest=manifest.rendered_input_digest,
-        output_contract_version="staged_claim_output_v1",
+        output_contract_version="staged_claim_output_v3",
     )
 
 
@@ -609,36 +609,29 @@ def test_docling_r1d_staged_extraction_publishes_one_task_local_candidate(
                 model_profile=ContextModelProfile("r1d_fixture_model", 512, 64, 16),
                 prompt_id="r1d_claim_extraction",
                 prompt_bytes=b"Extract one grounded source claim.",
-                schema_id="staged_claim_output_v1",
+                schema_id="staged_claim_output_v3",
                 schema_bytes=staged_claim_output_schema_bytes(),
                 renderer_version="r1d_renderer_v1",
+                evidence_selection_policy_id="focus_node_evidence_v1",
             ),
             repository,
             FixtureExactTokenizer(),
         ).manifest
-        text_view = next(view for view in bundle.text_views if view.kind is TextViewKind.LOGICAL)
-        start_char = text_view.text.index(PRIORITY_SENTENCE)
         fixture_output = json.dumps(
             {
                 "kind": "candidates",
-                "schema_id": "staged_claim_output_v1",
+                "schema_id": "staged_claim_output_v3",
                 "organizations": [
                     {"local_id": "model_subject", "name": "HealthyJoCo"},
                 ],
                 "evidence": [
                     {
                         "local_id": "model_evidence",
-                        "node_id": priority_node.id,
-                        "exact_quote": PRIORITY_SENTENCE,
-                        "node_local_start": start_char - priority_node.start_char,
-                        "node_local_end": (
-                            start_char + len(PRIORITY_SENTENCE) - priority_node.start_char
-                        ),
+                        "evidence_candidate_id": "evidence_01",
                     }
                 ],
                 "assertions": [
                     {
-                        "local_id": "model_claim",
                         "subject_organization_local_id": "model_subject",
                         "evidence_local_id": "model_evidence",
                         "predicate": "identified_community_health_priorities",
@@ -671,7 +664,7 @@ def test_docling_r1d_staged_extraction_publishes_one_task_local_candidate(
         assert outcome.model_run.status is ModelRunStatus.SUCCEEDED, outcome.model_run.error_message
         assert outcome.proposed_change_batch is not None
         assertion_change = repository.get_proposed_change(
-            outcome.proposed_change_batch.proposed_change_ids_by_local_id["model_claim"]
+            outcome.proposed_change_batch.proposed_change_ids_by_local_id["assertion_01"]
         )
         assert assertion_change is not None
         assert assertion_change.proposed_json["stable_label"] != "model_claim"
@@ -742,7 +735,7 @@ def test_docling_r1d_staged_extraction_publishes_one_task_local_candidate(
         assert alternate_outcome.model_run.output_digest != outcome.model_run.output_digest
         assert alternate_outcome.proposed_change_batch is not None
         alternate_assertion_change_id = (
-            alternate_outcome.proposed_change_batch.proposed_change_ids_by_local_id["model_claim"]
+            alternate_outcome.proposed_change_batch.proposed_change_ids_by_local_id["assertion_01"]
         )
         assert alternate_assertion_change_id != assertion_change.id
         assert repository.get_proposed_change(assertion_change.id) == reviewed_change
@@ -899,31 +892,20 @@ def test_docling_r1d_staged_extraction_publishes_one_task_local_candidate(
     )
 
 
-def _r1d_output(
-    *,
-    node_id: str,
-    node_local_start: int,
-    node_local_end: int,
-    organization_name: str,
-    predicate: str,
-) -> bytes:
+def _r1d_output(*, organization_name: str, predicate: str) -> bytes:
     return json.dumps(
         {
             "kind": "candidates",
-            "schema_id": "staged_claim_output_v1",
+            "schema_id": "staged_claim_output_v3",
             "organizations": [{"local_id": "model_subject", "name": organization_name}],
             "evidence": [
                 {
                     "local_id": "model_evidence",
-                    "node_id": node_id,
-                    "exact_quote": PRIORITY_SENTENCE,
-                    "node_local_start": node_local_start,
-                    "node_local_end": node_local_end,
+                    "evidence_candidate_id": "evidence_01",
                 }
             ],
             "assertions": [
                 {
-                    "local_id": "model_claim",
                     "subject_organization_local_id": "model_subject",
                     "evidence_local_id": "model_evidence",
                     "predicate": predicate,
@@ -977,20 +959,15 @@ def test_sqlite_model_run_publication_fault_matrix_is_atomic_and_retryable(tmp_p
                 model_profile=ContextModelProfile("r1d_fixture_model", 512, 64, 16),
                 prompt_id="r1d_claim_extraction",
                 prompt_bytes=b"Extract one grounded source claim.",
-                schema_id="staged_claim_output_v1",
+                schema_id="staged_claim_output_v3",
                 schema_bytes=staged_claim_output_schema_bytes(),
                 renderer_version="r1d_renderer_v1",
+                evidence_selection_policy_id="focus_node_evidence_v1",
             ),
             repository,
             FixtureExactTokenizer(),
         ).manifest
-        text_view = next(view for view in bundle.text_views if view.kind is TextViewKind.LOGICAL)
-        local_start = text_view.text.index(PRIORITY_SENTENCE) - priority_node.start_char
-        local_end = local_start + len(PRIORITY_SENTENCE)
         baseline_output = _r1d_output(
-            node_id=priority_node.id,
-            node_local_start=local_start,
-            node_local_end=local_end,
             organization_name="HealthyJoCo",
             predicate="identified_community_health_priorities",
         )
@@ -1013,7 +990,7 @@ def test_sqlite_model_run_publication_fault_matrix_is_atomic_and_retryable(tmp_p
         )
         assert baseline_outcome.proposed_change_batch is not None
         baseline_assertion_id = (
-            baseline_outcome.proposed_change_batch.proposed_change_ids_by_local_id["model_claim"]
+            baseline_outcome.proposed_change_batch.proposed_change_ids_by_local_id["assertion_01"]
         )
         baseline_assertion = repository.get_proposed_change(baseline_assertion_id)
         assert baseline_assertion is not None
@@ -1057,9 +1034,6 @@ def test_sqlite_model_run_publication_fault_matrix_is_atomic_and_retryable(tmp_p
     retry_outcomes: list[BoundedExtractionOutcome] = []
     for index, fault_point in enumerate(fault_points, start=1):
         output = _r1d_output(
-            node_id=priority_node.id,
-            node_local_start=local_start,
-            node_local_end=local_end,
             organization_name=f"HealthyJoCo fault {index}",
             predicate=f"reported_community_health_priorities_{index}",
         )

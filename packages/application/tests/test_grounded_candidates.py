@@ -275,7 +275,7 @@ class FakeGroundedCandidateLedger:
     def list_proposed_changes_for_model_run(self, model_run_id: str) -> tuple[ProposedChange, ...]:
         return tuple(
             self.proposed_changes[proposal_id]
-            for proposal_id in self.model_run_proposed_changes.get(model_run_id, ())
+            for proposal_id in sorted(self.model_run_proposed_changes.get(model_run_id, ()))
         )
 
     def list_provenance_activities_by_ids(
@@ -453,9 +453,10 @@ def _ready_manifest_for_staged_test(ledger: FakeGroundedCandidateLedger) -> Cont
             model_profile=ContextModelProfile("fixture-model", 512, 8, 4),
             prompt_id="fixture_prompt_v1",
             prompt_bytes=b"fixture prompt",
-            schema_id="staged_claim_output_v1",
+            schema_id="staged_claim_output_v3",
             schema_bytes=staged_claim_output_schema_bytes(),
             renderer_version="fixture_renderer_v1",
+            evidence_selection_policy_id="focus_node_evidence_v1",
         ),
         ledger,
         FixtureTokenizer(),
@@ -484,19 +485,17 @@ def _fixture_execution_spec(manifest: ContextManifest) -> ModelExecutionSpec:
         context_manifest_id=manifest.id,
         context_manifest_digest=manifest.manifest_digest,
         rendered_input_digest=manifest.rendered_input_digest,
-        output_contract_version="staged_claim_output_v1",
+        output_contract_version="staged_claim_output_v3",
     )
 
 
 def _valid_staged_output() -> bytes:
     return (
-        b'{"kind":"candidates","schema_id":"staged_claim_output_v1",'
+        b'{"kind":"candidates","schema_id":"staged_claim_output_v3",'
         b'"organizations":[{"local_id":"subject","name":"Fixture Organization"}],'
-        b'"evidence":[{"local_id":"support","node_id":"nod_grounded_fixture",'
-        b'"exact_quote":"Alpha supports the accepted assertion.",'
-        b'"node_local_start":0,"node_local_end":38}],'
-        b'"assertions":[{"local_id":"claim",'
-        b'"subject_organization_local_id":"subject","evidence_local_id":"support",'
+        b'"evidence":[{"local_id":"support","evidence_candidate_id":"evidence_01"}],'
+        b'"assertions":[{"subject_organization_local_id":"subject",'
+        b'"evidence_local_id":"support",'
         b'"predicate":"reported_alpha","object_value":"Alpha"}]}'
     )
 
@@ -662,17 +661,13 @@ def test_staged_extraction_archives_invalid_task_local_output_without_proposals(
     archive = FakeModelOutputArchive()
     raw_output = b"""{
       "kind":"candidates",
-      "schema_id":"staged_claim_output_v1",
+      "schema_id":"staged_claim_output_v3",
       "organizations":[{"local_id":"subject","name":"Fixture Organization"}],
       "evidence":[{
         "local_id":"support",
-        "node_id":"nod_not_visible",
-        "exact_quote":"Alpha supports the accepted assertion.",
-        "node_local_start":0,
-        "node_local_end":38
+        "evidence_candidate_id":"evidence_99"
       }],
       "assertions":[{
-        "local_id":"claim",
         "subject_organization_local_id":"subject",
         "evidence_local_id":"support",
         "predicate":"reported_alpha",
@@ -703,10 +698,92 @@ def test_staged_extraction_archives_invalid_task_local_output_without_proposals(
 
     assert outcome.model_run.status is ModelRunStatus.INVALID_OUTPUT
     assert outcome.model_run.error_message is not None
-    assert "absent" in outcome.model_run.error_message
+    assert "unknown" in outcome.model_run.error_message
     assert outcome.proposed_change_batch is None
     assert ledger.proposed_changes == {}
     assert archive.outputs[outcome.model_run.id] == raw_output
+
+
+def test_staged_extraction_derives_whole_node_evidence_from_context_candidate() -> None:
+    ledger = FakeGroundedCandidateLedger()
+    manifest = _ready_manifest_for_staged_test(ledger)
+
+    assert manifest.evidence_candidates[0].id == "evidence_01"
+    assert b"[evidence_candidate:evidence_01]" in manifest.rendered_input
+    assert b"nod_grounded_fixture" not in manifest.rendered_input
+
+    outcome = run_bounded_extraction(
+        BoundedExtractionInput(
+            source_id=ledger.source.id,
+            document_id=ledger.document.id,
+            representation_id=ledger.bundle.representation.id,
+            context_manifest_id=manifest.id,
+            prompt_bytes=manifest.prompt_bytes,
+            execution_spec=_fixture_execution_spec(manifest),
+            validator_version="fixture-validator-v2",
+        ),
+        ledger,
+        FakeModelOutputArchive(),
+        FakeModelTaskRuntime(_valid_staged_output()),
+        Uuid4ModelRunIdFactory(),
+        FixtureTokenizer(),
+        StagedClaimTaskSchemaRegistry(),
+    )
+
+    assert outcome.model_run.status is ModelRunStatus.SUCCEEDED
+    assert outcome.proposed_change_batch is not None
+    assert "assertion_01" in outcome.proposed_change_batch.proposed_change_ids_by_local_id
+    evidence_id = outcome.proposed_change_batch.evidence_target_ids_by_local_id["support"]
+    target = ledger.evidence_targets[evidence_id]
+    source_node = ledger.bundle.nodes[1]
+    assert target.text_view_id == source_node.text_view_id
+    assert target.start_char == source_node.start_char
+    assert target.end_char == source_node.end_char
+    assert target.exact_text == TEXT
+    assert target.node_ids == (source_node.id,)
+
+
+def test_staged_extraction_rejects_duplicate_context_candidate_selection() -> None:
+    ledger = FakeGroundedCandidateLedger()
+    manifest = _ready_manifest_for_staged_test(ledger)
+    raw_output = b"""{
+      "kind":"candidates",
+      "schema_id":"staged_claim_output_v3",
+      "organizations":[{"local_id":"subject","name":"Fixture Organization"}],
+      "evidence":[
+        {"local_id":"support_a","evidence_candidate_id":"evidence_01"},
+        {"local_id":"support_b","evidence_candidate_id":"evidence_01"}
+      ],
+      "assertions":[{
+        "subject_organization_local_id":"subject",
+        "evidence_local_id":"support_a",
+        "predicate":"reported_alpha",
+        "object_value":"Alpha"
+      }]
+    }"""
+
+    outcome = run_bounded_extraction(
+        BoundedExtractionInput(
+            source_id=ledger.source.id,
+            document_id=ledger.document.id,
+            representation_id=ledger.bundle.representation.id,
+            context_manifest_id=manifest.id,
+            prompt_bytes=manifest.prompt_bytes,
+            execution_spec=_fixture_execution_spec(manifest),
+            validator_version="fixture-validator-v2",
+        ),
+        ledger,
+        FakeModelOutputArchive(),
+        FakeModelTaskRuntime(raw_output),
+        Uuid4ModelRunIdFactory(),
+        FixtureTokenizer(),
+        StagedClaimTaskSchemaRegistry(),
+    )
+
+    assert outcome.model_run.status is ModelRunStatus.INVALID_OUTPUT
+    assert outcome.model_run.error_message is not None
+    assert "at most once" in outcome.model_run.error_message
+    assert ledger.proposed_changes == {}
 
 
 def test_staged_extraction_persists_exact_abstention_reason_on_model_run() -> None:
@@ -714,7 +791,7 @@ def test_staged_extraction_persists_exact_abstention_reason_on_model_run() -> No
     archive = FakeModelOutputArchive()
     manifest = _ready_manifest_for_staged_test(ledger)
     raw_output = (
-        b'{"kind":"abstain","schema_id":"staged_claim_output_v1",'
+        b'{"kind":"abstain","schema_id":"staged_claim_output_v3",'
         b'"reason":"insufficient task-local evidence"}'
     )
 
@@ -756,7 +833,7 @@ def test_staged_extraction_records_application_owned_execution_timing() -> None:
     completed_at = NOW + timedelta(seconds=2)
     clock = FixedModelRunClock((NOW, completed_at), (100.0, 102.25))
     raw_output = (
-        b'{"kind":"abstain","schema_id":"staged_claim_output_v1",'
+        b'{"kind":"abstain","schema_id":"staged_claim_output_v3",'
         b'"reason":"insufficient task-local evidence"}'
     )
 
@@ -966,12 +1043,12 @@ def test_staged_extraction_classifies_runtime_and_archive_failures_truthfully(
             cast(tuple[ExecutionSetting, ...], ({"temperature": 0},)),
             "fixture_prompt_v1",
             "a" * 64,
-            "staged_claim_output_v1",
+            "staged_claim_output_v3",
             "b" * 64,
             "ctx_fixture",
             "c" * 64,
             "d" * 64,
-            "staged_claim_output_v1",
+            "staged_claim_output_v3",
         )
 
 
@@ -1153,9 +1230,8 @@ def test_staged_extraction_schema_forbids_hidden_global_evidence_coordinates() -
     archive = FakeModelOutputArchive()
     runtime = FakeModelTaskRuntime(
         _valid_staged_output().replace(
-            b'"node_id":"nod_grounded_fixture"',
-            b'"text_view_id":"tvw_grounded_fixture","start_char":0,'
-            b'"pdf_region_ids":[],"node_id":"nod_grounded_fixture"',
+            b'"evidence_candidate_id":"evidence_01"',
+            b'"evidence_candidate_id":"evidence_01","node_id":"nod_grounded_fixture"',
         )
     )
 
@@ -1339,9 +1415,10 @@ def test_frozen_analysis_plan_requires_every_unit_to_reconcile_before_completion
             model_profile=ContextModelProfile("fixture-model", 512, 8, 4),
             prompt_id="fixture_prompt_v1",
             prompt_bytes=b"fixture prompt",
-            schema_id="staged_claim_output_v1",
+            schema_id="staged_claim_output_v3",
             schema_bytes=staged_claim_output_schema_bytes(),
             renderer_version="fixture_renderer_v1",
+            evidence_selection_policy_id="focus_node_evidence_v1",
         ),
         ledger,
         FixtureTokenizer(),
@@ -1524,9 +1601,10 @@ def _complete_coverage_fixture() -> tuple[
             model_profile=ContextModelProfile("fixture-model", 512, 8, 4),
             prompt_id="fixture_prompt_v1",
             prompt_bytes=b"fixture prompt",
-            schema_id="staged_claim_output_v1",
+            schema_id="staged_claim_output_v3",
             schema_bytes=staged_claim_output_schema_bytes(),
             renderer_version="fixture_renderer_v1",
+            evidence_selection_policy_id="focus_node_evidence_v1",
         ),
         ledger,
         FixtureTokenizer(),
@@ -1654,6 +1732,12 @@ def test_coverage_reports_split_cycle_as_integrity_failure() -> None:
     cyclic_template = replace(
         manifest,
         status=ContextManifestStatus.SPLIT,
+        selected_candidates=(),
+        evidence_candidates=(),
+        rendered_segments=(),
+        rendered_input=b"",
+        rendered_input_digest=hashlib.sha256(b"").hexdigest(),
+        input_token_count=0,
         split_strategy_id="fixture_cycle_v1",
         child_analysis_unit_ids=(manifest.analysis_unit_id,),
     )
@@ -1667,8 +1751,14 @@ def test_coverage_reports_split_cycle_as_integrity_failure() -> None:
     integrity = cyclic_payload["integrity"]
     assert isinstance(integrity, dict)
     integrity["status"] = ContextManifestStatus.SPLIT.value
+    integrity["selected"] = []
+    integrity["evidence_candidates"] = []
+    integrity["segments"] = []
+    integrity["rendered_input_digest"] = hashlib.sha256(b"").hexdigest()
+    integrity["input_token_count"] = 0
     integrity["split_strategy_id"] = "fixture_cycle_v1"
     integrity["child_analysis_unit_ids"] = [manifest.analysis_unit_id]
+    cyclic_payload["rendered_input_base64"] = ""
     ledger.manifests[cyclic_manifest.id] = ContextManifestArtifact(
         id=cyclic_manifest.id,
         analysis_unit_id=cyclic_manifest.analysis_unit_id,

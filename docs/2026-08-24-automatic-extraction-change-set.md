@@ -15,19 +15,26 @@ An **IngestionChangeSet** is an immutable closed set of pending ProposedChanges 
 
 An **automatic extraction policy** is the named policy that selects document nodes, context limits, the staged claim schema, and model execution settings.
 
+An **EvidenceCandidate** is one model-selectable, whole-node projection of authoritative source text in a ready ContextManifest.
+
+The candidate is derived state and records its stable local identifier, DocumentNode, TextView, exact character range, and source regions.
+
 ### Primary end-to-end flow
 
 1. The user runs `kotekomi ingest <path> --url <URL>`.
 2. The Pipeline archives and represents the deposited file through the CIR-1 path.
 3. The Application Layer freezes every paragraph and table-caption analysis unit.
-4. The Application Layer runs bounded claim extraction for every required unit.
-5. The Application Layer reconciles coverage and closes one IngestionChangeSet.
-6. The Pipeline records `[CAPTURED]` and prints the extraction summary.
+4. The ContextPlanner renders each focus node with an `evidence_candidate` identifier and persists the complete candidate catalogue in the ContextManifest.
+5. The Application Layer runs bounded claim extraction for every required unit.
+6. The Application Layer resolves every selected candidate identifier into an exact authoritative EvidenceTarget.
+7. The Application Layer reconciles coverage and closes one IngestionChangeSet.
+8. The Pipeline records `[CAPTURED]` and prints the extraction summary.
 
 ## 2. Goals
 
 - The user receives a complete proposed knowledge set without internal identifiers.
 - Every ProposedChange retains model, context, and EvidenceTarget lineage.
+- The model interprets source text but never authors source identifiers, quotations, offsets, or regions.
 - A valid no-claim result remains distinguishable from a failed model task.
 - KoteKomi preserves captured source records when automatic extraction fails.
 - Repeated identical ingestion reuses complete pinned analysis without duplicate pending knowledge.
@@ -44,14 +51,19 @@ An **automatic extraction policy** is the named policy that selects document nod
 
 ### Automatic extraction
 
-- C2-EXT-01: The Application Layer uses `cir_automatic_claim_extraction_v1`.
-- C2-EXT-02: The policy plans every paragraph and table-caption node.
+- C2-EXT-01: The Application Layer uses `cir_automatic_claim_extraction_v3` and `staged_claim_output_v3`.
+- C2-EXT-02: The policy plans every paragraph, table-caption, and list-item node.
 - C2-EXT-03: The policy groups at most four focus nodes in one AnalysisUnit.
 - C2-EXT-04: Every required unit uses the existing ContextPlanner and staged claim schema.
 - C2-EXT-05: The Application Layer records one ModelRun attempt for each executed unit.
 - C2-EXT-06: The Application Layer closes a set only after complete, unblocked required coverage.
 - C2-EXT-07: An abstention, no-proposal result, or representation with no policy-selected nodes counts as completed coverage.
 - C2-EXT-08: A runtime failure, invalid output, or required context block prevents set closure.
+- C2-EXT-09: A ready `focus_node_evidence_v1` ContextManifest contains exactly one `evidence_01`, `evidence_02`, and so on EvidenceCandidate for each selected focus node in rendered order.
+- C2-EXT-10: The rendered model input labels every EvidenceCandidate, omits authoritative DocumentNode IDs, and does not require the model to return a DocumentNode ID, source quotation, character offset, TextView ID, or region ID.
+- C2-EXT-11: The model selects an EvidenceCandidate only by its local identifier, and the Application Layer derives the resulting whole-node EvidenceTarget from the persisted candidate catalogue.
+- C2-EXT-12: An unknown, duplicate, absent, or malformed EvidenceCandidate selection becomes `INVALID_OUTPUT` after raw-output archival and produces no ProposedChange.
+- C2-EXT-13: The Application Layer assigns deterministic assertion local identifiers in model-output order; the model does not author an assertion identifier that has no task-local reference use.
 
 ### IngestionChangeSet
 
@@ -65,7 +77,7 @@ An **automatic extraction policy** is the named policy that selects document nod
 ### Runtime configuration
 
 - C2-RUN-01: The default named runtime profile is `lm-studio`.
-- C2-RUN-02: The default profile uses `http://127.0.0.1:1234/v1` and `qwen3.8-27b-mlx-textonly`.
+- C2-RUN-02: The default profile uses `http://127.0.0.1:1234/v1`, `qwen2.5-14b-instruct`, a 16,384-token context, and a 2,048-token output cap.
 - C2-RUN-03: `kotekomi init` writes the active LM Studio profile and commented llama-server and Ollama alternatives.
 - C2-RUN-04: The LM Studio Adapter validates `/v1/models` and runs one strict `/v1/responses` task.
 - C2-RUN-05: The Adapter rejects malformed, mismatched-model, and incomplete responses.
@@ -85,7 +97,7 @@ Ingestion orchestration use case
 Source capture      AnalysisRun and coverage
   |                    |
   v                    v
-Archive + Ledger <- LM Studio ModelTaskRuntime
+Archive + Ledger <- ContextManifest EvidenceCandidates <- LM Studio ModelTaskRuntime
                          |
                          v
                   IngestionChangeSet
@@ -126,6 +138,22 @@ IngestionChangeSet
     closed_at
     change_set_digest
 ```
+
+```text
+EvidenceCandidate
+    id
+    node_id
+    text_view_id
+    start_char
+    end_char
+    source_region_ids
+```
+
+EvidenceCandidates are persisted inside the immutable ContextManifest integrity payload.
+
+`focus_node_evidence_v1` creates candidates only for selected focus nodes.
+
+The candidate identifiers are local to one ContextManifest and are ordered as `evidence_01`, `evidence_02`, and so on.
 
 The Application Layer derives the digest from every stored field except the record ID and closure timestamp.
 
@@ -174,6 +202,12 @@ The Pipeline closes an empty set after complete no-proposal or abstained coverag
 
 The Application Layer reuses analysis only when the representation, plan, prompt, schema, validator, and execution specification match exactly. AnalysisRun scope records are immutable; complete coverage is attested by the coverage report digest sealed into the change set rather than by mutating the published run record.
 
+The extraction schema contains `evidence_candidate_id` instead of model-authored source selectors.
+
+The Application Layer validates the identifier against the exact persisted ContextManifest catalogue and derives its EvidenceTarget from authoritative source state.
+
+The model does not provide text, offsets, node IDs, TextView IDs, or region IDs for accepted evidence.
+
 The reused set records the prior AnalysisRun and `reused` origin.
 
 The Application Layer creates no CandidateKnowledgeView in CIR-2.
@@ -189,6 +223,8 @@ The Application Layer creates no CandidateKnowledgeView in CIR-2.
 - AC-C2-07: Adapter tests prove strict LM Studio request and response behavior.
 - AC-C2-07A: Adapter and Application tests prove a streaming task cannot extend its wall-clock deadline and produces no partial ProposedChange on expiry.
 - AC-C2-07B: Domain, Application, Adapter, and CLI tests prove every ModelRun persists application-owned timing diagnostics and exposes only safe fields through `kotekomi model runs`.
+- AC-C2-07C: Application tests prove that a selected EvidenceCandidate produces a whole-node authoritative EvidenceTarget without model-authored text or source coordinates.
+- AC-C2-07D: Application tests prove that an unknown, duplicate, or injected source selector is archived as invalid output without a ProposalChange.
 - AC-C2-08: CLI tests prove default configuration, safe failures, result summaries, and identifier-free output.
 - AC-C2-09: The local Anthropic--DoD PDF ingestion proves complete coverage, source-grounded pending proposals, and no accepted intelligence writes.
 
