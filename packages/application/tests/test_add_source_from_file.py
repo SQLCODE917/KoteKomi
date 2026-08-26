@@ -64,6 +64,7 @@ class FakeArchiveStore:
     def __init__(self) -> None:
         self.raw_writes: dict[str, bytes] = {}
         self.staged_writes: dict[str, bytes] = {}
+        self.transformation_writes: dict[str, bytes] = {}
 
     def initialize(self) -> None:
         return None
@@ -92,6 +93,25 @@ class FakeArchiveStore:
             return self.raw_writes[source_id]
         except KeyError as exc:
             raise FileNotFoundError(source_id) from exc
+
+    def put_pdf_transformation_blob(
+        self,
+        object_id: str,
+        payload: bytes,
+        expected_digest: str,
+    ) -> None:
+        if hashlib.sha256(payload).hexdigest() != expected_digest:
+            raise ValueError("Archive payload does not match expected digest.")
+        existing = self.transformation_writes.get(object_id)
+        if existing is not None and existing != payload:
+            raise ValueError("Archive object conflicts with its expected digest.")
+        self.transformation_writes[object_id] = payload
+
+    def read_pdf_transformation_blob(self, object_id: str) -> bytes:
+        try:
+            return self.transformation_writes[object_id]
+        except KeyError as exc:
+            raise FileNotFoundError(object_id) from exc
 
     def read_briefing_markdown(self, briefing_id: str) -> str:
         raise NotImplementedError

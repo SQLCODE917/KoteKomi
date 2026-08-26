@@ -36,7 +36,7 @@ def test_put_and_read_raw_source(tmp_path: Path) -> None:
 
 def test_put_and_read_model_run_output(tmp_path: Path) -> None:
     store = LocalArchiveStore(tmp_path)
-    content = b'{"kind":"abstain","schema_id":"fixture","reason":"ambiguous"}'
+    content = b"outcome: abstain\nreason: ambiguous\n"
 
     outcome = store.put_model_run_output(
         "mrn_fixture_output",

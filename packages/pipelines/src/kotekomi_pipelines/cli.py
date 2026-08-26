@@ -33,7 +33,8 @@ from kotekomi_adapters import (
 )
 from kotekomi_application import (
     CROSS_PLANE_QUERY_POLICY_ID,
-    FOCUS_NODE_EVIDENCE_SELECTION_V1,
+    PARAGRAPH_HYPOTHESIS_EVIDENCE_SELECTION_V1,
+    PARAGRAPH_SEGMENT_V2,
     AnalysisRunInput,
     AnalysisRunItemInput,
     AnalysisUnit,
@@ -60,6 +61,7 @@ from kotekomi_application import (
     EmbeddingProfile,
     ExecutionSetting,
     ExplainEvidenceGraphRelationshipCommand,
+    HypothesisVerifierSpec,
     JsonValue,
     LedgerRetrievalFilters,
     ListModelRunLogsInput,
@@ -70,6 +72,7 @@ from kotekomi_application import (
     NewsDeliveryEnvelope,
     NewsIngestInput,
     NewsIngestStatus,
+    ParagraphHypothesisTaskSchemaRegistry,
     PipelineCommandPlan,
     PipelineNextStep,
     PipelineRunNextResult,
@@ -96,7 +99,6 @@ from kotekomi_application import (
     ReviewQueueInput,
     ReviewReadinessInput,
     ReviewReadinessStatus,
-    StagedClaimTaskSchemaRegistry,
     StartIngestionRunInput,
     UtcIngestionRunClock,
     UtcProcessingClock,
@@ -2178,19 +2180,22 @@ def _automatic_ingestion_extraction(
         return None
     tokenizer = _AutomaticExtractionTokenizer()
     prompt_bytes = (
-        Path(__file__).resolve().parents[4] / "prompts" / "cir_automatic_claim_extraction_v5.md"
+        Path(__file__).resolve().parents[4] / "prompts" / "paragraph_hypothesis_segment_v2.md"
     ).read_bytes()
-    prompt_id = "cir_automatic_claim_extraction_v5"
+    verifier_prompt_bytes = (
+        Path(__file__).resolve().parents[4] / "prompts" / "paragraph_hypothesis_faithfulness_v1.md"
+    ).read_bytes()
+    prompt_id = "paragraph_hypothesis_segment_v2"
     prompt_digest = hashlib.sha256(prompt_bytes).hexdigest()
-    schema_registry = StagedClaimTaskSchemaRegistry()
-    schema = schema_registry.resolve("staged_claim_output_v5")
+    schema_registry = ParagraphHypothesisTaskSchemaRegistry()
+    schema = schema_registry.resolve("paragraph_hypothesis_text_v1")
     planning = plan_analysis_units(
         AnalysisUnitPlanningInput(
             representation_id=representation_id,
-            policy_id="cir_automatic_claim_extraction_v5",
+            policy_id="segment_local_hypothesis_v1",
             task_type="claim_extraction",
-            max_focus_nodes_per_unit=4,
-            focus_node_types=("paragraph", "table_caption", "list_item"),
+            max_focus_nodes_per_unit=1,
+            focus_node_types=("paragraph",),
         ),
         repository,
     )
@@ -2210,8 +2215,9 @@ def _automatic_ingestion_extraction(
                 prompt_bytes=prompt_bytes,
                 schema_id=schema.schema_id,
                 schema_bytes=schema.canonical_schema_bytes,
-                renderer_version="cir_automatic_context_v2",
-                evidence_selection_policy_id=FOCUS_NODE_EVIDENCE_SELECTION_V1,
+                renderer_version="paragraph_hypothesis_segment_context_v2",
+                evidence_selection_policy_id=PARAGRAPH_HYPOTHESIS_EVIDENCE_SELECTION_V1,
+                source_segment_policy_id=PARAGRAPH_SEGMENT_V2,
             ),
             repository,
             tokenizer,
@@ -2241,7 +2247,10 @@ def _automatic_ingestion_extraction(
             context_manifest_id=manifest.id,
             prompt_bytes=prompt_bytes,
             execution_spec=execution_spec,
-            validator_version="cir_automatic_claim_validator_v4",
+            validator_version="paragraph_hypothesis_validator_v1",
+            hypothesis_verifier=HypothesisVerifierSpec(
+                "paragraph_hypothesis_faithfulness_v1", verifier_prompt_bytes
+            ),
         )
         prepared.append(
             _PreparedAutomaticExtraction(

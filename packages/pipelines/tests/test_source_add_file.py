@@ -1,5 +1,6 @@
 import json
 import sqlite3
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -45,6 +46,27 @@ representation_policy_version = "deposited-source-v1"
 """.lstrip()
     )
     return config_path
+
+
+def openable_encrypted_pdf(tmp_path: Path) -> Path:
+    output = tmp_path / "openable-encrypted.pdf"
+    completed = subprocess.run(
+        (
+            "qpdf",
+            "--encrypt",
+            "",
+            "kotekomi-test-owner-v1",
+            "256",
+            "--extract=n",
+            "--",
+            str(PDF_FIXTURE_PATH),
+            str(output),
+        ),
+        check=False,
+        capture_output=True,
+    )
+    assert completed.returncode == 0, completed.stderr.decode("utf-8", errors="replace")
+    return output
 
 
 def test_source_add_file_ingests_fixture_into_ledger_and_archive(
@@ -261,6 +283,42 @@ def test_source_add_file_ingests_project_pdf_fixture(
         == 0
     )
     assert json.loads(capsys.readouterr().out)["status"] == "reused"
+
+
+def test_source_add_file_ingests_openable_encrypted_pdf(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    ledger_path = tmp_path / "ledger" / "kotekomi.db"
+    archive_path = tmp_path / "archive"
+    config_path = processing_config(tmp_path)
+    encrypted_pdf = openable_encrypted_pdf(tmp_path)
+    assert main(ledger_init_args(ledger_path, archive_path)) == 0
+    capsys.readouterr()
+
+    exit_code = main(
+        [
+            "--config",
+            str(config_path),
+            "source",
+            "add-file",
+            str(encrypted_pdf),
+            "--source-url",
+            "https://example.test/articles/openable-encrypted",
+            "--ledger-path",
+            str(ledger_path),
+            "--archive-path",
+            str(archive_path),
+            "--format",
+            "json",
+        ]
+    )
+
+    result = json.loads(capsys.readouterr().out)
+    assert exit_code == 0
+    assert result["status"] == "created"
+    assert result["representation_id"].startswith("rep_")
+    assert list((archive_path / "transformations").glob("blb_*.bin"))
 
 
 def test_source_add_file_rejects_missing_or_invalid_source_url(

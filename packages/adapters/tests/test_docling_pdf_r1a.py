@@ -1,5 +1,4 @@
 import hashlib
-import json
 import sqlite3
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -45,9 +44,9 @@ from kotekomi_application import (
     PdfParseResult,
     PdfProcessorIdentity,
     ReviewProposedChangeInput,
+    SemanticDraftTaskSchemaRegistry,
     SourceIdentityHint,
     StableSourceIdentityPolicy,
-    StagedClaimTaskSchemaRegistry,
     Uuid4ModelRunIdFactory,
     Uuid4ProcessingAttemptIdFactory,
     approve_proposed_change,
@@ -66,7 +65,7 @@ from kotekomi_application import (
     record_analysis_item_attempt,
     render_context,
     run_bounded_extraction,
-    staged_claim_output_schema_bytes,
+    semantic_draft_text_schema_bytes,
     start_analysis_run,
     submit_grounded_candidate_batch,
     verify_evidence_target,
@@ -163,7 +162,7 @@ def _fixture_execution_spec(manifest: ContextManifest) -> ModelExecutionSpec:
         context_manifest_id=manifest.id,
         context_manifest_digest=manifest.manifest_digest,
         rendered_input_digest=manifest.rendered_input_digest,
-        output_contract_version="staged_claim_output_v5",
+        output_contract_version="semantic_draft_text_v1",
     )
 
 
@@ -613,41 +612,21 @@ def test_docling_r1d_staged_extraction_publishes_one_task_local_candidate(
                 model_profile=ContextModelProfile("r1d_fixture_model", 512, 64, 16),
                 prompt_id="r1d_claim_extraction",
                 prompt_bytes=b"Extract one grounded source claim.",
-                schema_id="staged_claim_output_v5",
-                schema_bytes=staged_claim_output_schema_bytes(),
+                schema_id="semantic_draft_text_v1",
+                schema_bytes=semantic_draft_text_schema_bytes(),
                 renderer_version="r1d_renderer_v1",
-                evidence_selection_policy_id="focus_node_evidence_v1",
+                evidence_selection_policy_id="direct_prose_evidence_v1",
             ),
             repository,
             FixtureExactTokenizer(),
         ).manifest
-        fixture_output = json.dumps(
-            {
-                "kind": "candidates",
-                "schema_id": "staged_claim_output_v5",
-                "organizations": [
-                    {"local_id": "model_subject", "name": "HealthyJoCo"},
-                ],
-                "evidence": [
-                    {
-                        "local_id": "model_evidence",
-                        "evidence_candidate_id": "evidence_01",
-                    }
-                ],
-                "assertions": [
-                    {
-                        "subject_organization_local_id": "model_subject",
-                        "evidence_local_id": "model_evidence",
-                        "relation_label": "identified_community_health_priorities",
-                        "object": {
-                            "kind": "literal",
-                            "value": "healthcare access, mental health, housing, and food security",
-                        },
-                    }
-                ],
-            },
-            separators=(",", ":"),
-        ).encode()
+        fixture_output = (
+            b"outcome: claim\n"
+            b"subject: HealthyJoCo\n"
+            b"relation: identified community health priorities\n"
+            b"object_kind: literal\n"
+            b"object: healthcare access, mental health, housing, and food security\n"
+        )
         runtime = FixtureModelTaskRuntime(fixture_output)
         outcome = run_bounded_extraction(
             BoundedExtractionInput(
@@ -664,7 +643,7 @@ def test_docling_r1d_staged_extraction_publishes_one_task_local_candidate(
             runtime,
             Uuid4ModelRunIdFactory(),
             FixtureExactTokenizer(),
-            StagedClaimTaskSchemaRegistry(),
+            SemanticDraftTaskSchemaRegistry(),
         )
         assert outcome.model_run.status is ModelRunStatus.SUCCEEDED, outcome.model_run.error_message
         assert outcome.proposed_change_batch is not None
@@ -698,7 +677,7 @@ def test_docling_r1d_staged_extraction_publishes_one_task_local_candidate(
             runtime,
             Uuid4ModelRunIdFactory(),
             FixtureExactTokenizer(),
-            StagedClaimTaskSchemaRegistry(),
+            SemanticDraftTaskSchemaRegistry(),
         )
         assert retry_outcome.model_run.status is ModelRunStatus.SUCCEEDED
         assert retry_outcome.model_run.id != outcome.model_run.id
@@ -715,8 +694,8 @@ def test_docling_r1d_staged_extraction_publishes_one_task_local_candidate(
         assert repository.get_proposed_change(assertion_change.id) == reviewed_change
         assertion_change_id = assertion_change.id
         alternate_output = fixture_output.replace(
-            b'"relation_label":"identified_community_health_priorities"',
-            b'"relation_label":"reported_community_health_priorities"',
+            b"relation: identified community health priorities",
+            b"relation: reported community health priorities",
         )
         alternate_runtime = FixtureModelTaskRuntime(alternate_output)
         alternate_outcome = run_bounded_extraction(
@@ -734,7 +713,7 @@ def test_docling_r1d_staged_extraction_publishes_one_task_local_candidate(
             alternate_runtime,
             Uuid4ModelRunIdFactory(),
             FixtureExactTokenizer(),
-            StagedClaimTaskSchemaRegistry(),
+            SemanticDraftTaskSchemaRegistry(),
         )
         assert alternate_outcome.model_run.status is ModelRunStatus.SUCCEEDED
         assert alternate_outcome.model_run.output_digest != outcome.model_run.output_digest
@@ -853,7 +832,7 @@ def test_docling_r1d_staged_extraction_publishes_one_task_local_candidate(
                 repository,
                 FixtureExactTokenizer(),
                 b"Extract one grounded source claim.",
-                staged_claim_output_schema_bytes(),
+                semantic_draft_text_schema_bytes(),
             )
             == runtime.requests[0].rendered_input
         )
@@ -898,31 +877,13 @@ def test_docling_r1d_staged_extraction_publishes_one_task_local_candidate(
 
 
 def _r1d_output(*, organization_name: str, relation_label: str) -> bytes:
-    return json.dumps(
-        {
-            "kind": "candidates",
-            "schema_id": "staged_claim_output_v5",
-            "organizations": [{"local_id": "model_subject", "name": organization_name}],
-            "evidence": [
-                {
-                    "local_id": "model_evidence",
-                    "evidence_candidate_id": "evidence_01",
-                }
-            ],
-            "assertions": [
-                {
-                    "subject_organization_local_id": "model_subject",
-                    "evidence_local_id": "model_evidence",
-                    "relation_label": relation_label,
-                    "object": {
-                        "kind": "literal",
-                        "value": "healthcare access, mental health, housing, and food security",
-                    },
-                }
-            ],
-        },
-        separators=(",", ":"),
-    ).encode()
+    return (
+        b"outcome: claim\n"
+        + f"subject: {organization_name}\n".encode()
+        + f"relation: {relation_label}\n".encode()
+        + b"object_kind: literal\n"
+        + b"object: healthcare access, mental health, housing, and food security\n"
+    )
 
 
 def test_sqlite_model_run_publication_fault_matrix_is_atomic_and_retryable(tmp_path: Path) -> None:
@@ -967,8 +928,8 @@ def test_sqlite_model_run_publication_fault_matrix_is_atomic_and_retryable(tmp_p
                 model_profile=ContextModelProfile("r1d_fixture_model", 512, 64, 16),
                 prompt_id="r1d_claim_extraction",
                 prompt_bytes=b"Extract one grounded source claim.",
-                schema_id="staged_claim_output_v5",
-                schema_bytes=staged_claim_output_schema_bytes(),
+                schema_id="semantic_draft_text_v1",
+                schema_bytes=semantic_draft_text_schema_bytes(),
                 renderer_version="r1d_renderer_v1",
                 evidence_selection_policy_id="focus_node_evidence_v1",
             ),
@@ -994,7 +955,7 @@ def test_sqlite_model_run_publication_fault_matrix_is_atomic_and_retryable(tmp_p
             FixtureModelTaskRuntime(baseline_output),
             Uuid4ModelRunIdFactory(),
             FixtureExactTokenizer(),
-            StagedClaimTaskSchemaRegistry(),
+            SemanticDraftTaskSchemaRegistry(),
         )
         assert baseline_outcome.proposed_change_batch is not None
         baseline_assertion_id = (
@@ -1022,7 +983,6 @@ def test_sqlite_model_run_publication_fault_matrix_is_atomic_and_retryable(tmp_p
         "AFTER_PROVENANCE",
         "AFTER_EVIDENCE_TARGET",
         "AFTER_VALIDATION_ATTEMPT",
-        "AFTER_ORGANIZATION_PROPOSAL",
         "AFTER_ASSERTION_PROPOSAL",
         "BEFORE_SUCCESSFUL_MODEL_RUN",
         "AFTER_SUCCESSFUL_MODEL_RUN",
@@ -1042,7 +1002,7 @@ def test_sqlite_model_run_publication_fault_matrix_is_atomic_and_retryable(tmp_p
     retry_outcomes: list[BoundedExtractionOutcome] = []
     for index, fault_point in enumerate(fault_points, start=1):
         output = _r1d_output(
-            organization_name=f"HealthyJoCo fault {index}",
+            organization_name="HealthyJoCo",
             relation_label=f"reported community health priorities {index}",
         )
         with sqlite3.connect(ledger_path) as connection:
@@ -1066,7 +1026,7 @@ def test_sqlite_model_run_publication_fault_matrix_is_atomic_and_retryable(tmp_p
                 FixtureModelTaskRuntime(output),
                 Uuid4ModelRunIdFactory(),
                 FixtureExactTokenizer(),
-                StagedClaimTaskSchemaRegistry(),
+                SemanticDraftTaskSchemaRegistry(),
             )
             assert failed.model_run.status is ModelRunStatus.PUBLISH_FAILED
             assert publication_state(repository) == before
@@ -1091,7 +1051,7 @@ def test_sqlite_model_run_publication_fault_matrix_is_atomic_and_retryable(tmp_p
                 FixtureModelTaskRuntime(output),
                 Uuid4ModelRunIdFactory(),
                 FixtureExactTokenizer(),
-                StagedClaimTaskSchemaRegistry(),
+                SemanticDraftTaskSchemaRegistry(),
             )
             assert retried.model_run.status is ModelRunStatus.SUCCEEDED
             assert repository.get_proposed_change(baseline_assertion_id) == reviewed_assertion

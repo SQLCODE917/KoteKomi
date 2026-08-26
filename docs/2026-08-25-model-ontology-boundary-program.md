@@ -6,7 +6,11 @@
 - Completed children:
   - [CIR-2.1 Typed Assertion Object MVP](2026-08-25-cir-2-1-typed-assertion-object-mvp.md)
   - [CIR-2.2 Predicate Proposal and Review Contract](2026-08-25-cir-2-2-predicate-proposal-review-contract.md)
-- Next child: CIR-2.3 Predicate Vocabulary and Review UX (to be defined from CIR-2.2 review evidence)
+  - [CIR-2.2.1 Direct Prose Semantic Draft MVP](2026-08-25-cir-2-2-1-direct-prose-semantic-draft-mvp.md)
+- Next child:
+  CIR-2.3 Predicate vocabulary and review UX, defined after CIR-2.2.1 evidence is reviewed.
+- Related program:
+  [Paragraph Hypothesis Development Program](2026-08-26-paragraph-hypothesis-development-program.md).
 
 ## Context and problem
 
@@ -18,13 +22,19 @@ The model cannot author accepted Ledger state.
 
 KoteKomi must preserve useful model language without accepting unverified ontology meaning.
 
-The current CIR-2 claim schema represents every assertion object as `object_value`.
+CIR-2.1 lets the model propose a typed organization or literal object.
 
-The schema cannot express a relationship between two task-local organizations.
+CIR-2.2 stores a model relation label in a ProposedAssertion.
 
-The model can therefore place an organization local identifier in a literal-value field.
+CIR-2.2 requires a reviewer to select the canonical predicate for an accepted Assertion.
 
-The Application Layer then creates a literal-valued Assertion instead of an entity relationship.
+The current claim task still lets the model select an EvidenceCandidate from a multi-node context.
+
+The model selected a reference-list item for one proposed relation in the canonical PDF.
+
+The reference-list item identifies a source citation.
+
+The reference-list item does not provide direct prose for that relation.
 
 This program defines the stable boundary between model interpretation and KoteKomi authority.
 
@@ -48,7 +58,9 @@ DocumentRepresentationBundle
 
 ## Terms
 
-**Semantic draft** means small model output that names task-local references and one source claim.
+**Semantic draft** means small model output that describes one source claim without Ledger records.
+
+**Eligible prose** means one focus DocumentNode with `node_type = paragraph`.
 
 **Relation label** means the ordinary-language relationship phrase in a semantic draft.
 
@@ -64,17 +76,17 @@ KoteKomi owns source identity, source text, node identity, source ranges, source
 
 The ContextPlanner owns the source text that one model task receives.
 
-The ContextManifest owns the EvidenceCandidate catalogue that one model task can select.
+The ContextManifest owns the EvidenceCandidate catalogue for one model task.
 
 The model receives original source text and task-local labels.
 
 The model does not receive canonical IDs, Archive paths, database paths, source ranges, or source regions.
 
-The model can propose one organization name, relation label, typed object, and EvidenceCandidate selection.
+The model can propose one organization name, relation label, and typed object.
 
-The Application Layer validates every task-local reference before it creates a ProposedChange.
+The Application Layer binds each model task to one eligible EvidenceCandidate before it creates a ModelTaskRequest.
 
-The Application Layer derives canonical IDs, EvidenceTargets, provenance records, and deterministic record IDs.
+The Application Layer derives all record IDs, EvidenceTargets, provenance records, and task-local identifiers.
 
 The Application Layer archives every raw model output before it validates the semantic draft.
 
@@ -84,31 +96,25 @@ The review flow remains the only path from a model proposal to accepted Ledger s
 
 The accepted Assertion contract already requires exactly one entity object or literal object.
 
-The model-facing contract must expose that same distinction.
+The model-facing contract exposes that same distinction.
 
 The model can use ordinary-language relation labels in a pending proposal.
 
 KoteKomi must govern canonical predicates before it accepts a relation as ontology state.
 
-## MVP
+## Implemented boundary
 
-The first deliverable proves the typed object boundary for task-local organizations.
+CIR-2.1 resolves an organization object to `Assertion.object_entity_id`.
 
-The MVP accepts either a literal object or a task-local organization reference.
+CIR-2.1 resolves a literal object to `Assertion.object_value`.
 
-The MVP resolves a valid organization reference to `Assertion.object_entity_id`.
+CIR-2.2 retains a relation label in each ProposedAssertion.
 
-The MVP resolves a valid literal object to `Assertion.object_value`.
+CIR-2.2 requires a reviewer to supply a canonical predicate before Assertion acceptance.
 
-The MVP retains the current free-text `predicate` field in pending Assertion proposals.
+CIR-2.2.1 binds each model task to one eligible prose node.
 
-The MVP does not define canonical predicates.
-
-The MVP does not add entity references for Actors, Events, Places, or generic Entities.
-
-The MVP does not add automatic predicate normalization.
-
-The MVP does not change the review decision model.
+CIR-2.2.1 replaces the model JSON candidate envelope with a small plain-text SemanticDraft.
 
 ## Later deliverables
 
@@ -116,17 +122,18 @@ Each later deliverable stays undefined until the MVP ships and produces implemen
 
 | Deliverable | Role | Precondition | Postcondition |
 |---|---|---|---|
-| Predicate governance | Maps labels in review. | Typed proposals exist. | Accepted Assertions use canonical predicates. |
+| Direct prose semantic draft | Binds one model task to direct prose. | Typed proposals and predicate review exist. | Each proposed Assertion has deterministic direct evidence. |
+| Predicate vocabulary | Maps labels in review. | Direct prose SemanticDrafts exist. | Accepted Assertions use governed canonical predicates. |
 | Extended references | Adds task-local Actor, Event, Place, and Entity references. | Organization references resolve. | KoteKomi resolves each permitted object kind. |
 | Constrained output | Uses runtime constraints for draft transport. | The draft schema is stable. | The runtime reduces malformed drafts. |
 | Model retry | Records a second bounded attempt after an invalid draft. | Invalid drafts are archived. | Each retry has provenance and a reason. |
 
 ## Validation strategy
 
-The MVP uses Domain and Application tests to prove typed object resolution.
+The MVP uses ContextPlanner and Application tests to prove paragraph-only selection and typed object resolution.
 
-The MVP uses Adapter tests to prove persisted proposed Assertion shape after restart.
+The MVP uses Adapter tests to prove persisted proposed Assertion shape after restart and Pipeline tests to prove one bound paragraph task.
 
-The MVP uses the canonical deposited PDF to prove that CIR-2 remains complete and source-grounded.
+The MVP uses the canonical deposited PDF to prove that CIR-2 remains complete and direct-prose-grounded.
 
 Later deliverables must add their own TDD before implementation.

@@ -18,6 +18,7 @@ from kotekomi_application import (
     AnalysisRunInput,
     AnalysisRunItemInput,
     BoundedExtractionInput,
+    BoundedExtractionOutcome,
     BuildIdentity,
     ContextManifest,
     ContextManifestInput,
@@ -33,7 +34,7 @@ from kotekomi_application import (
     NewsDeliveryEnvelope,
     NewsIngestInput,
     NewsIngestStatus,
-    StagedClaimTaskSchemaRegistry,
+    SemanticDraftTaskSchemaRegistry,
     Uuid4ModelRunIdFactory,
     Uuid4ProcessingAttemptIdFactory,
     build_context_manifest,
@@ -45,7 +46,7 @@ from kotekomi_application import (
     plan_news_analysis_units,
     record_analysis_item_attempt,
     run_bounded_extraction,
-    staged_claim_output_schema_bytes,
+    semantic_draft_text_schema_bytes,
     start_analysis_run,
     verify_evidence_target,
 )
@@ -94,7 +95,7 @@ def _execution_spec(manifest: ContextManifest) -> ModelExecutionSpec:
         context_manifest_id=manifest.id,
         context_manifest_digest=manifest.manifest_digest,
         rendered_input_digest=manifest.rendered_input_digest,
-        output_contract_version="staged_claim_output_v5",
+        output_contract_version="semantic_draft_text_v1",
     )
 
 
@@ -164,7 +165,7 @@ def test_newsml_public_path_reaches_proposal_coverage_and_restart(tmp_path: Path
                 policy_id="news_public_plan_v1",
                 task_type="claim_extraction",
                 as_of=NOW,
-                max_focus_nodes_per_unit=64,
+                max_focus_nodes_per_unit=1,
             ),
             ledger=repository,
         )
@@ -173,77 +174,81 @@ def test_newsml_public_path_reaches_proposal_coverage_and_restart(tmp_path: Path
         assert bundle is not None
         plan = planning.plan
         assert plan is not None
-        assert len(plan.units) == 1
-        frozen = freeze_analysis_plan(plan, repository)
-        manifest = build_context_manifest(
-            ContextManifestInput(
-                analysis_unit=plan.units[0],
-                model_profile=ContextModelProfile("news_public_fixture_model", 4096, 128, 32),
-                prompt_id="news_public_claim_v1",
-                prompt_bytes=PROMPT,
-                schema_id="staged_claim_output_v5",
-                schema_bytes=staged_claim_output_schema_bytes(),
-                renderer_version="news_public_renderer_v1",
-                evidence_selection_policy_id="focus_node_evidence_v1",
-            ),
-            repository,
-            _ExactTokenizer(),
-        ).manifest
-        assert manifest.status is ContextManifestStatus.READY
-        raw_output = json.dumps(
-            {
-                "kind": "candidates",
-                "schema_id": "staged_claim_output_v5",
-                "organizations": [
-                    {
-                        "local_id": "provider",
-                        "name": "KoteKomi Test Wire",
-                        "organization_type": "news_provider",
-                    }
-                ],
-                "evidence": [
-                    {
-                        "local_id": "evidence",
-                        "evidence_candidate_id": "evidence_01",
-                    }
-                ],
-                "assertions": [
-                    {
-                        "subject_organization_local_id": "provider",
-                        "evidence_local_id": "evidence",
-                        "relation_label": "reported_event",
-                        "object": {
-                            "kind": "literal",
-                            "value": "Project Atlas entered public evaluation",
-                        },
-                    }
-                ],
-            },
-            separators=(",", ":"),
-        ).encode()
-        extraction = run_bounded_extraction(
-            BoundedExtractionInput(
-                source_id=ingest.source_id or "",
-                document_id=ingest.document_id or "",
-                representation_id=bundle.representation.id,
-                context_manifest_id=manifest.id,
-                prompt_bytes=PROMPT,
-                execution_spec=_execution_spec(manifest),
-                validator_version="news-public-validator-v1",
-            ),
-            repository,
-            archive,
-            _FixtureRuntime(raw_output),
-            Uuid4ModelRunIdFactory(),
-            _ExactTokenizer(),
-            StagedClaimTaskSchemaRegistry(),
+        focus_unit = next(
+            unit
+            for unit in plan.units
+            if any(
+                node.id in unit.focus_node_ids
+                and "Project Atlas entered public evaluation"
+                in next(
+                    text_view.text[node.start_char : node.end_char]
+                    for text_view in bundle.text_views
+                    if text_view.id == node.text_view_id
+                )
+                for node in bundle.nodes
+            )
         )
+        frozen = freeze_analysis_plan(plan, repository)
+        claim_output = (
+            b"outcome: claim\n"
+            b"subject: Project Atlas\n"
+            b"relation: reported event\n"
+            b"object_kind: literal\n"
+            b"object: public evaluation\n"
+        )
+        manifests: dict[str, ContextManifest] = {}
+        extractions: dict[str, BoundedExtractionOutcome] = {}
+        for unit in plan.units:
+            manifest_for_unit = build_context_manifest(
+                ContextManifestInput(
+                    analysis_unit=unit,
+                    model_profile=ContextModelProfile("news_public_fixture_model", 4096, 128, 32),
+                    prompt_id="news_public_claim_v1",
+                    prompt_bytes=PROMPT,
+                    schema_id="semantic_draft_text_v1",
+                    schema_bytes=semantic_draft_text_schema_bytes(),
+                    renderer_version="news_public_renderer_v1",
+                    evidence_selection_policy_id="direct_prose_evidence_v1",
+                ),
+                repository,
+                _ExactTokenizer(),
+            ).manifest
+            assert manifest_for_unit.status is ContextManifestStatus.READY
+            raw_output = (
+                claim_output
+                if unit.id == focus_unit.id
+                else b"outcome: abstain\nreason: fixture does not propose a claim\n"
+            )
+            manifests[unit.id] = manifest_for_unit
+            extractions[unit.id] = run_bounded_extraction(
+                BoundedExtractionInput(
+                    source_id=ingest.source_id or "",
+                    document_id=ingest.document_id or "",
+                    representation_id=bundle.representation.id,
+                    context_manifest_id=manifest_for_unit.id,
+                    prompt_bytes=PROMPT,
+                    execution_spec=_execution_spec(manifest_for_unit),
+                    validator_version="news-public-validator-v1",
+                ),
+                repository,
+                archive,
+                _FixtureRuntime(raw_output),
+                Uuid4ModelRunIdFactory(),
+                _ExactTokenizer(),
+                SemanticDraftTaskSchemaRegistry(),
+            )
+        manifest = manifests[focus_unit.id]
+        extraction = extractions[focus_unit.id]
         assert extraction.model_run.status is ModelRunStatus.SUCCEEDED
         assert extraction.proposed_change_batch is not None
         proposal_ids = extraction.proposed_change_batch.proposed_change_ids_by_local_id
-        evidence_id = extraction.proposed_change_batch.evidence_target_ids_by_local_id["evidence"]
+        evidence_id = extraction.proposed_change_batch.evidence_target_ids_by_local_id[
+            "evidence_01"
+        ]
         validation_id = (
-            extraction.proposed_change_batch.validation_attempt_ids_by_evidence_local_id["evidence"]
+            extraction.proposed_change_batch.validation_attempt_ids_by_evidence_local_id[
+                "evidence_01"
+            ]
         )
         assert proposal_ids["assertion_01"]
         evidence = repository.get_evidence_target(evidence_id)
@@ -256,23 +261,25 @@ def test_newsml_public_path_reaches_proposal_coverage_and_restart(tmp_path: Path
                 frozen_plan_id=frozen.id,
                 coverage_policy_id=LATEST_COMPLETED_VALID_ATTEMPT_POLICY_ID,
                 started_at=NOW,
-                items=(
+                items=tuple(
                     AnalysisRunItemInput(
-                        analysis_unit_id=plan.units[0].id,
-                        task_type=plan.units[0].task_type,
-                        input_fingerprint=extraction.extraction_task.task_fingerprint,
-                        expected_manifest_id=manifest.id,
-                    ),
+                        analysis_unit_id=unit.id,
+                        task_type=unit.task_type,
+                        input_fingerprint=extractions[unit.id].extraction_task.task_fingerprint,
+                        expected_manifest_id=manifests[unit.id].id,
+                    )
+                    for unit in plan.units
                 ),
             ),
             repository,
         )
-        record_analysis_item_attempt(
-            analysis_run_id=analysis_run.id,
-            analysis_unit_id=plan.units[0].id,
-            model_run_id=extraction.model_run.id,
-            ledger_repository=repository,
-        )
+        for unit in plan.units:
+            record_analysis_item_attempt(
+                analysis_run_id=analysis_run.id,
+                analysis_unit_id=unit.id,
+                model_run_id=extractions[unit.id].model_run.id,
+                ledger_repository=repository,
+            )
         report = build_coverage_report(analysis_run.id, repository)
         assert report.state is AnalysisCoverageState.COMPLETE
         run_proposal_ids = tuple(
@@ -283,7 +290,12 @@ def test_newsml_public_path_reaches_proposal_coverage_and_restart(tmp_path: Path
                 )
             )
         )
-        assert report.coverage_records[0].selected_proposal_ids == run_proposal_ids
+        focus_coverage = next(
+            coverage
+            for coverage in report.coverage_records
+            if coverage.analysis_unit_id == focus_unit.id
+        )
+        assert focus_coverage.selected_proposal_ids == run_proposal_ids
         assert proposal_ids["assertion_01"] in run_proposal_ids
 
     with sqlite_ledger_transaction(ledger_path) as repository:

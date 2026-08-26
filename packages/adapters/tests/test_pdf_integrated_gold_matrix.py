@@ -51,9 +51,9 @@ from kotekomi_application import (
     PdfParseInput,
     PdfParseResult,
     PdfProcessorIdentity,
+    SemanticDraftTaskSchemaRegistry,
     SourceIdentityHint,
     StableSourceIdentityPolicy,
-    StagedClaimTaskSchemaRegistry,
     Uuid4ModelRunIdFactory,
     Uuid4ProcessingAttemptIdFactory,
     build_context_manifest,
@@ -69,7 +69,7 @@ from kotekomi_application import (
     record_analysis_item_attempt,
     render_pdf_evidence_overlay,
     run_bounded_extraction,
-    staged_claim_output_schema_bytes,
+    semantic_draft_text_schema_bytes,
     start_analysis_run,
     submit_grounded_candidate_batch,
     verify_evidence_target,
@@ -107,14 +107,9 @@ RENDER_OVERLAY_ROWS = {
 NOW = datetime(2026, 7, 13, 12, 0, tzinfo=UTC)
 BUILD_IDENTITY = BuildIdentity("pdf-gold-matrix", "pdf-gold-matrix", "8" * 64, "1")
 PROMPT_BYTES = b"Return a bounded grounded claim or explicitly abstain."
-ABSTENTION_OUTPUT = json.dumps(
-    {
-        "kind": "abstain",
-        "schema_id": "staged_claim_output_v5",
-        "reason": "gold matrix fixture produced no fixture-owned semantic claim",
-    },
-    separators=(",", ":"),
-).encode()
+ABSTENTION_OUTPUT = (
+    b"outcome: abstain\nreason: gold matrix fixture produced no fixture-owned semantic claim\n"
+)
 
 
 @dataclass(frozen=True)
@@ -161,7 +156,7 @@ def _execution_spec(manifest: ContextManifest) -> ModelExecutionSpec:
         context_manifest_id=manifest.id,
         context_manifest_digest=manifest.manifest_digest,
         rendered_input_digest=manifest.rendered_input_digest,
-        output_contract_version="staged_claim_output_v5",
+        output_contract_version="semantic_draft_text_v1",
     )
 
 
@@ -457,8 +452,8 @@ def _complete_analysis(
                 model_profile=ContextModelProfile("pdf_gold_matrix_fixture_model", 65_536, 64, 16),
                 prompt_id="pdf_gold_claim_extraction_v1",
                 prompt_bytes=PROMPT_BYTES,
-                schema_id="staged_claim_output_v5",
-                schema_bytes=staged_claim_output_schema_bytes(),
+                schema_id="semantic_draft_text_v1",
+                schema_bytes=semantic_draft_text_schema_bytes(),
                 renderer_version="pdf_gold_renderer_v1",
                 evidence_selection_policy_id="focus_node_evidence_v1",
             ),
@@ -482,7 +477,7 @@ def _complete_analysis(
             _AbstainingRuntime(),
             Uuid4ModelRunIdFactory(),
             _ExactTokenizer(),
-            StagedClaimTaskSchemaRegistry(),
+            SemanticDraftTaskSchemaRegistry(),
         )
         assert outcome.model_run.status is ModelRunStatus.ABSTAINED
         runs[unit.id] = outcome

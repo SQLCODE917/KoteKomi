@@ -142,6 +142,13 @@
       "title": "Model Identity",
       "type": "object"
     },
+    "outcome_metadata": {
+      "additionalProperties": {
+        "$ref": "#/$defs/JsonValue"
+      },
+      "title": "Outcome Metadata",
+      "type": "object"
+    },
     "output_digest": {
       "anyOf": [
         {
@@ -195,6 +202,13 @@
       "pattern": "^[a-f0-9]{64}$",
       "title": "Task Fingerprint",
       "type": "string"
+    },
+    "task_metadata": {
+      "additionalProperties": {
+        "$ref": "#/$defs/JsonValue"
+      },
+      "title": "Task Metadata",
+      "type": "object"
     },
     "tokenizer_id": {
       "minLength": 1,

@@ -8,8 +8,9 @@ import re
 from base64 import b64decode, b64encode
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Protocol, cast
+from typing import Any, Protocol, cast
 
+import pysbd  # type: ignore[import-untyped]
 from kotekomi_domain import (
     AnalysisUnitArtifact,
     ContextManifestArtifact,
@@ -24,6 +25,10 @@ from kotekomi_domain.models import JsonValue
 HASH_ID_LENGTH = 24
 PARAGRAPH_FOCUS_SPLIT_V1 = "paragraph_focus_split_v1"
 FOCUS_NODE_EVIDENCE_SELECTION_V1 = "focus_node_evidence_v1"
+DIRECT_PROSE_EVIDENCE_SELECTION_V1 = "direct_prose_evidence_v1"
+PARAGRAPH_HYPOTHESIS_EVIDENCE_SELECTION_V1 = "paragraph_hypothesis_evidence_v1"
+PARAGRAPH_SEGMENT_V1 = "paragraph_segment_v1"
+PARAGRAPH_SEGMENT_V2 = "paragraph_segment_v2"
 
 
 class ContextCandidateRole(StrEnum):
@@ -110,6 +115,7 @@ class AnalysisUnit:
     dependency_node_ids: tuple[str, ...]
     planner_policy_id: str
     fingerprint: str
+    source_segment_label: str | None = None
 
 
 @dataclass(frozen=True)
@@ -144,6 +150,44 @@ class EvidenceCandidate:
 
 
 @dataclass(frozen=True)
+class SourceSegment:
+    """One task-local, exact source span inside an authoritative Paragraph."""
+
+    label: str
+    start_char: int
+    end_char: int
+    exact_text: str
+
+
+def paragraph_source_segments(
+    text: str, policy_id: str = PARAGRAPH_SEGMENT_V1
+) -> tuple[SourceSegment, ...]:
+    """Derive exact source segments for one versioned policy."""
+    if not text:
+        raise ValueError("Paragraph source text must not be empty.")
+    if policy_id == PARAGRAPH_SEGMENT_V1:
+        boundaries = [match.end() for match in re.finditer(r"[.?!](?=\s+)", text)]
+        starts = (0, *boundaries)
+        ends = (*boundaries, len(text))
+    elif policy_id == PARAGRAPH_SEGMENT_V2:
+        segmenter: Any = pysbd.Segmenter(language="en", clean=False, char_span=True)
+        spans = cast(list[Any], segmenter.segment(text))
+        starts = tuple(span.start for span in spans)
+        ends = tuple(span.end for span in spans)
+    else:
+        raise ValueError(f"Unsupported source segment policy: {policy_id}")
+    return tuple(
+        SourceSegment(
+            label=f"s{index}",
+            start_char=start,
+            end_char=end,
+            exact_text=text[start:end],
+        )
+        for index, (start, end) in enumerate(zip(starts, ends, strict=True), start=1)
+    )
+
+
+@dataclass(frozen=True)
 class ExcludedContextCandidate:
     candidate: ContextCandidate
     reason_code: str
@@ -174,6 +218,8 @@ class ContextManifestInput:
     schema_bytes: bytes
     renderer_version: str
     evidence_selection_policy_id: str | None = None
+    source_segment_policy_id: str | None = None
+    source_segment_label: str | None = None
 
 
 @dataclass(frozen=True)
@@ -204,6 +250,8 @@ class ContextManifest:
     manifest_digest: str
     status: ContextManifestStatus
     evidence_selection_policy_id: str | None = None
+    source_segment_policy_id: str | None = None
+    source_segment_label: str | None = None
     evidence_candidates: tuple[EvidenceCandidate, ...] = ()
     split_strategy_id: str | None = None
     child_analysis_unit_ids: tuple[str, ...] = ()
@@ -266,6 +314,22 @@ def plan_analysis_units(
             )
         )
     )
+    if planning_input.policy_id == "segment_local_hypothesis_v1":
+        units = tuple(
+            _analysis_unit(
+                representation_id=bundle.representation.id,
+                task_type=planning_input.task_type,
+                focus_nodes=(node,),
+                dependency_nodes=(),
+                policy_id=planning_input.policy_id,
+                source_segment_label=segment.label,
+            )
+            for node in analysis_focus_nodes
+            for segment in paragraph_source_segments(
+                _text_view_by_id(bundle, node.text_view_id).text[node.start_char : node.end_char],
+                PARAGRAPH_SEGMENT_V2,
+            )
+        )
     plan = AnalysisPlan(bundle.representation.id, planning_input.policy_id, units)
     for unit in plan.units:
         _persist_analysis_unit(unit, ledger_repository)
@@ -477,6 +541,7 @@ def _analysis_unit(
     focus_nodes: tuple[DocumentNode, ...],
     dependency_nodes: tuple[DocumentNode, ...],
     policy_id: str,
+    source_segment_label: str | None = None,
 ) -> AnalysisUnit:
     dependency_ids = tuple(node.id for node in dependency_nodes)
     focus_node_ids = tuple(node.id for node in focus_nodes)
@@ -486,6 +551,7 @@ def _analysis_unit(
         focus_node_ids=focus_node_ids,
         dependency_node_ids=dependency_ids,
         planner_policy_id=policy_id,
+        source_segment_label=source_segment_label,
     )
     return AnalysisUnit(
         id=deterministic_analysis_unit_id(fingerprint),
@@ -495,6 +561,7 @@ def _analysis_unit(
         dependency_node_ids=dependency_ids,
         planner_policy_id=policy_id,
         fingerprint=fingerprint,
+        source_segment_label=source_segment_label,
     )
 
 
@@ -620,7 +687,12 @@ def _render_context(
         manifest_input.evidence_selection_policy_id, candidates, bundle
     )
     evidence_by_node_id = {candidate.node_id: candidate for candidate in evidence_candidates}
-    for candidate in candidates:
+    rendered_candidates = candidates
+    if manifest_input.source_segment_policy_id in {PARAGRAPH_SEGMENT_V1, PARAGRAPH_SEGMENT_V2}:
+        rendered_candidates = tuple(
+            candidate for candidate in candidates if candidate.node_id in evidence_by_node_id
+        )
+    for candidate in rendered_candidates:
         node = _node_by_id(bundle, candidate.node_id)
         evidence_candidate = evidence_by_node_id.get(node.id)
         segment = _render_node(
@@ -628,6 +700,13 @@ def _render_context(
             _text_view_by_id(bundle, node.text_view_id),
             evidence_candidate_id=(evidence_candidate.id if evidence_candidate else None),
             include_node_id=manifest_input.evidence_selection_policy_id is None,
+            direct_prose=manifest_input.evidence_selection_policy_id
+            in {
+                DIRECT_PROSE_EVIDENCE_SELECTION_V1,
+                PARAGRAPH_HYPOTHESIS_EVIDENCE_SELECTION_V1,
+            },
+            source_segment_policy_id=manifest_input.source_segment_policy_id,
+            source_segment_label=manifest_input.analysis_unit.source_segment_label,
         )
         rendered.extend(b"\n\n")
         start_byte = len(rendered)
@@ -642,15 +721,35 @@ def _render_node(
     *,
     evidence_candidate_id: str | None = None,
     include_node_id: bool = True,
+    direct_prose: bool = False,
+    source_segment_policy_id: str | None = None,
+    source_segment_label: str | None = None,
 ) -> bytes:
     text = text_view.text[node.start_char : node.end_char]
     evidence_label = (
-        f"[evidence_candidate:{evidence_candidate_id}]\n"
+        "[direct_prose]\n"
+        if direct_prose and evidence_candidate_id is not None
+        else f"[evidence_candidate:{evidence_candidate_id}]\n"
         if evidence_candidate_id is not None
         else ""
     )
     node_label = f"[{node.node_type}:{node.id}]" if include_node_id else f"[{node.node_type}]"
-    return f"{evidence_label}{node_label}\n{text}".encode()
+    if source_segment_policy_id is None:
+        rendered_text = text
+    elif source_segment_policy_id in {PARAGRAPH_SEGMENT_V1, PARAGRAPH_SEGMENT_V2}:
+        segments = paragraph_source_segments(text, source_segment_policy_id)
+        if source_segment_label is not None:
+            segments = tuple(
+                segment for segment in segments if segment.label == source_segment_label
+            )
+            if len(segments) != 1:
+                raise ValueError("AnalysisUnit references an unknown SourceSegment.")
+        rendered_text = "\n".join(
+            f"SOURCE SEGMENT: {segment.label}\n{segment.exact_text}" for segment in segments
+        )
+    else:
+        raise ValueError(f"Unsupported source segment policy: {source_segment_policy_id}")
+    return f"{evidence_label}{node_label}\n{rendered_text}".encode()
 
 
 def _evidence_candidates_for_context(
@@ -660,11 +759,27 @@ def _evidence_candidates_for_context(
 ) -> tuple[EvidenceCandidate, ...]:
     if policy_id is None:
         return ()
-    if policy_id != FOCUS_NODE_EVIDENCE_SELECTION_V1:
+    if policy_id not in {
+        FOCUS_NODE_EVIDENCE_SELECTION_V1,
+        DIRECT_PROSE_EVIDENCE_SELECTION_V1,
+        PARAGRAPH_HYPOTHESIS_EVIDENCE_SELECTION_V1,
+    }:
         raise ValueError(f"Unsupported evidence selection policy: {policy_id}")
-    focus_candidates = tuple(
-        candidate for candidate in candidates if candidate.role is ContextCandidateRole.FOCUS
+    focus_nodes = tuple(
+        _node_by_id(bundle, candidate.node_id)
+        for candidate in candidates
+        if candidate.role is ContextCandidateRole.FOCUS
     )
+    if policy_id in {
+        DIRECT_PROSE_EVIDENCE_SELECTION_V1,
+        PARAGRAPH_HYPOTHESIS_EVIDENCE_SELECTION_V1,
+    }:
+        focus_nodes = tuple(
+            sorted(
+                (node for node in focus_nodes if node.node_type == "paragraph"),
+                key=lambda node: node.order_index,
+            )
+        )
     return tuple(
         EvidenceCandidate(
             id=f"evidence_{index:02d}",
@@ -674,9 +789,7 @@ def _evidence_candidates_for_context(
             end_char=node.end_char,
             source_region_ids=node.source_region_ids,
         )
-        for index, node in enumerate(
-            (_node_by_id(bundle, candidate.node_id) for candidate in focus_candidates), start=1
-        )
+        for index, node in enumerate(focus_nodes, start=1)
     )
 
 
@@ -767,6 +880,7 @@ def _analysis_unit_payload(unit: AnalysisUnit) -> dict[str, object]:
         "dependency_node_ids": list(unit.dependency_node_ids),
         "planner_policy_id": unit.planner_policy_id,
         "fingerprint": unit.fingerprint,
+        "source_segment_label": unit.source_segment_label,
     }
 
 
@@ -777,6 +891,7 @@ def analysis_unit_fingerprint(
     focus_node_ids: tuple[str, ...],
     dependency_node_ids: tuple[str, ...],
     planner_policy_id: str,
+    source_segment_label: str | None = None,
 ) -> str:
     """Return the canonical identity digest for one policy-created AnalysisUnit."""
     return _digest(
@@ -786,6 +901,7 @@ def analysis_unit_fingerprint(
             "focus_node_ids": focus_node_ids,
             "dependency_node_ids": dependency_node_ids,
             "planner_policy_id": planner_policy_id,
+            "source_segment_label": source_segment_label,
         }
     )
 
@@ -801,6 +917,7 @@ def validate_analysis_unit_identity(unit: AnalysisUnit) -> None:
         focus_node_ids=unit.focus_node_ids,
         dependency_node_ids=unit.dependency_node_ids,
         planner_policy_id=unit.planner_policy_id,
+        source_segment_label=unit.source_segment_label,
     )
     if unit.fingerprint != expected_fingerprint:
         raise ValueError("AnalysisUnit fingerprint is not derived from its canonical fields.")
@@ -848,6 +965,7 @@ def _analysis_unit_from_payload(payload: dict[str, JsonValue]) -> AnalysisUnit:
             dependency_node_ids=_string_tuple(payload, "dependency_node_ids"),
             planner_policy_id=_required_str(payload, "planner_policy_id"),
             fingerprint=_required_str(payload, "fingerprint"),
+            source_segment_label=_optional_str(payload, "source_segment_label"),
         )
     except (KeyError, TypeError, ValueError) as exc:
         raise ValueError("AnalysisUnit persisted artifact is malformed.") from exc
@@ -928,6 +1046,8 @@ def _manifest(
         "schema_digest": hashlib.sha256(manifest_input.schema_bytes).hexdigest(),
         "renderer_version": manifest_input.renderer_version,
         "evidence_selection_policy_id": manifest_input.evidence_selection_policy_id,
+        "source_segment_policy_id": manifest_input.source_segment_policy_id,
+        "source_segment_label": manifest_input.analysis_unit.source_segment_label,
         "planner_policy_id": manifest_input.analysis_unit.planner_policy_id,
         "tokenizer_id": tokenizer.tokenizer_id,
         "model_profile": manifest_input.model_profile.__dict__,
@@ -975,6 +1095,8 @@ def _manifest(
         manifest_digest=manifest_digest,
         status=status,
         evidence_selection_policy_id=manifest_input.evidence_selection_policy_id,
+        source_segment_policy_id=manifest_input.source_segment_policy_id,
+        source_segment_label=manifest_input.analysis_unit.source_segment_label,
         evidence_candidates=evidence_candidates,
         split_strategy_id=split_strategy_id,
         child_analysis_unit_ids=child_analysis_unit_ids,
@@ -1072,6 +1194,8 @@ def load_context_manifest(
             schema_bytes=b64decode(_required_str(integrity, "schema_bytes_base64"), validate=True),
             renderer_version=_required_str(integrity, "renderer_version"),
             evidence_selection_policy_id=_optional_str(integrity, "evidence_selection_policy_id"),
+            source_segment_policy_id=_optional_str(integrity, "source_segment_policy_id"),
+            source_segment_label=_optional_str(integrity, "source_segment_label"),
             planner_policy_id=_required_str(integrity, "planner_policy_id"),
             tokenizer_id=_required_str(integrity, "tokenizer_id"),
             model_profile_id=_required_str(_mapping(integrity, "model_profile"), "id"),
@@ -1217,12 +1341,18 @@ def validate_context_manifest(
     ):
         raise ValueError("ContextManifest verified bundle binding is invalid.")
     _validate_evidence_candidates(manifest, bundle)
-    if len(manifest.selected_candidates) != len(manifest.rendered_segments):
+    rendered_candidates = manifest.selected_candidates
+    if manifest.source_segment_policy_id in {PARAGRAPH_SEGMENT_V1, PARAGRAPH_SEGMENT_V2}:
+        evidence_node_ids = {candidate.node_id for candidate in manifest.evidence_candidates}
+        rendered_candidates = tuple(
+            candidate
+            for candidate in manifest.selected_candidates
+            if candidate.node_id in evidence_node_ids
+        )
+    if len(rendered_candidates) != len(manifest.rendered_segments):
         raise ValueError("ContextManifest selected candidates and rendered segments disagree.")
     prior_end = 0
-    for candidate, segment in zip(
-        manifest.selected_candidates, manifest.rendered_segments, strict=True
-    ):
+    for candidate, segment in zip(rendered_candidates, manifest.rendered_segments, strict=True):
         if candidate.node_id != segment.node_id or segment.start_byte < prior_end:
             raise ValueError("ContextManifest rendered segment ordering is corrupted.")
         node = _node_by_id(bundle, candidate.node_id)
@@ -1237,6 +1367,13 @@ def validate_context_manifest(
             _text_view_by_id(bundle, node.text_view_id),
             evidence_candidate_id=(evidence_candidate.id if evidence_candidate else None),
             include_node_id=manifest.evidence_selection_policy_id is None,
+            direct_prose=manifest.evidence_selection_policy_id
+            in {
+                DIRECT_PROSE_EVIDENCE_SELECTION_V1,
+                PARAGRAPH_HYPOTHESIS_EVIDENCE_SELECTION_V1,
+            },
+            source_segment_policy_id=manifest.source_segment_policy_id,
+            source_segment_label=manifest.source_segment_label,
         )
         if manifest.rendered_input[segment.start_byte : segment.end_byte] != rendered_node:
             raise ValueError("ContextManifest rendered segment does not match its DocumentNode.")
@@ -1256,6 +1393,8 @@ def _artifact_payload(manifest: ContextManifest) -> dict[str, object]:
         "schema_bytes_base64": b64encode(manifest.schema_bytes).decode("ascii"),
         "renderer_version": manifest.renderer_version,
         "evidence_selection_policy_id": manifest.evidence_selection_policy_id,
+        "source_segment_policy_id": manifest.source_segment_policy_id,
+        "source_segment_label": manifest.source_segment_label,
         "planner_policy_id": manifest.planner_policy_id,
         "tokenizer_id": manifest.tokenizer_id,
         "model_profile": {
@@ -1298,7 +1437,15 @@ def _render_verified_input(
     evidence_by_node_id = {
         candidate.node_id: candidate for candidate in manifest.evidence_candidates
     }
-    for candidate in manifest.selected_candidates:
+    rendered_candidates = manifest.selected_candidates
+    if manifest.source_segment_policy_id in {PARAGRAPH_SEGMENT_V1, PARAGRAPH_SEGMENT_V2}:
+        evidence_node_ids = {candidate.node_id for candidate in manifest.evidence_candidates}
+        rendered_candidates = tuple(
+            candidate
+            for candidate in manifest.selected_candidates
+            if candidate.node_id in evidence_node_ids
+        )
+    for candidate in rendered_candidates:
         node = _node_by_id(bundle, candidate.node_id)
         evidence_candidate = evidence_by_node_id.get(node.id)
         segment = _render_node(
@@ -1306,6 +1453,13 @@ def _render_verified_input(
             _text_view_by_id(bundle, node.text_view_id),
             evidence_candidate_id=(evidence_candidate.id if evidence_candidate else None),
             include_node_id=manifest.evidence_selection_policy_id is None,
+            direct_prose=manifest.evidence_selection_policy_id
+            in {
+                DIRECT_PROSE_EVIDENCE_SELECTION_V1,
+                PARAGRAPH_HYPOTHESIS_EVIDENCE_SELECTION_V1,
+            },
+            source_segment_policy_id=manifest.source_segment_policy_id,
+            source_segment_label=manifest.source_segment_label,
         )
         rendered.extend(b"\n\n")
         start_byte = len(rendered)
@@ -1439,7 +1593,11 @@ def _validate_evidence_candidates(
         if manifest.evidence_candidates:
             raise ValueError("ContextManifest has evidence candidates without a selection policy.")
         return
-    if manifest.evidence_selection_policy_id != FOCUS_NODE_EVIDENCE_SELECTION_V1:
+    if manifest.evidence_selection_policy_id not in {
+        FOCUS_NODE_EVIDENCE_SELECTION_V1,
+        DIRECT_PROSE_EVIDENCE_SELECTION_V1,
+        PARAGRAPH_HYPOTHESIS_EVIDENCE_SELECTION_V1,
+    }:
         raise ValueError("ContextManifest references an unsupported evidence selection policy.")
     if manifest.status is not ContextManifestStatus.READY:
         if manifest.evidence_candidates:
@@ -1452,6 +1610,13 @@ def _validate_evidence_candidates(
     )
     if manifest.evidence_candidates != expected:
         raise ValueError("ContextManifest evidence candidate catalogue is corrupted.")
+    if manifest.source_segment_policy_id not in {None, PARAGRAPH_SEGMENT_V1, PARAGRAPH_SEGMENT_V2}:
+        raise ValueError("ContextManifest references an unsupported source segment policy.")
+    if manifest.source_segment_policy_id in {PARAGRAPH_SEGMENT_V1, PARAGRAPH_SEGMENT_V2}:
+        if manifest.evidence_selection_policy_id != PARAGRAPH_HYPOTHESIS_EVIDENCE_SELECTION_V1:
+            raise ValueError("Paragraph segments require the paragraph-hypothesis evidence policy.")
+        if len(manifest.evidence_candidates) != 1:
+            raise ValueError("Paragraph segments require exactly one evidence candidate.")
 
 
 def _digest(value: object) -> str:

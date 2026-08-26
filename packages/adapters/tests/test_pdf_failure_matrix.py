@@ -180,6 +180,30 @@ CORRUPT_FIXTURES = (
 )
 
 
+def _openable_encrypted_pdf(tmp_path: Path) -> bytes:
+    """Create a PDF with an empty user password and disabled ordinary extraction."""
+
+    source = FIXTURE_ROOT / "2025-community-health-improvement-plan-press-release.pdf"
+    output = tmp_path / "openable-encrypted.pdf"
+    completed = subprocess.run(
+        (
+            "qpdf",
+            "--encrypt",
+            "",
+            "kotekomi-test-owner-v1",
+            "256",
+            "--extract=n",
+            "--",
+            str(source),
+            str(output),
+        ),
+        check=False,
+        capture_output=True,
+    )
+    assert completed.returncode == 0, completed.stderr.decode("utf-8", errors="replace")
+    return output.read_bytes()
+
+
 @pytest.mark.parametrize(
     ("credential", "expected_reason"),
     (
@@ -215,6 +239,36 @@ def test_public_ingestion_blocks_encrypted_pdf_without_valid_credentials(
     assert outcome.status is ProcessingAttemptStatus.BLOCKED
     assert outcome.failure is None
     assert all("test" not in blocker.safe_message for blocker in outcome.blocking_reasons)
+
+
+def test_public_ingestion_accepts_openable_encrypted_pdf_without_credential(
+    tmp_path: Path,
+) -> None:
+    raw_pdf = _openable_encrypted_pdf(tmp_path)
+    ledger_path, archive, document_id, raw_blob_id = _capture_pdf(
+        tmp_path, raw_pdf, "openable-encrypted"
+    )
+
+    with sqlite_ledger_transaction(ledger_path) as repository:
+        result = ingest_pdf(
+            _ingest_input(document_id, raw_blob_id, raw_pdf),
+            repository,
+            DoclingPdfParser(DoclingPdfParserConfig()),
+            Uuid4ProcessingAttemptIdFactory(),
+            clock=_FixedClock(),
+            transformation_archive=archive,
+        )
+        accounting = repository.get_pdf_page_accounting_bundle(result.preflight_report_id)
+
+    assert result.representation_id is not None
+    assert result.blocking_reasons == ()
+    assert accounting is not None
+    assert accounting.preflight_report.encrypted is True
+    assert any(
+        artifact.activity_type is PdfTransformationType.REPAIR
+        for artifact in accounting.transformation_artifacts
+    )
+    assert _only_attempt_outcome(ledger_path).status is ProcessingAttemptStatus.SUCCEEDED
 
 
 def test_public_ingestion_decrypts_with_correct_credential_as_versioned_transformation(

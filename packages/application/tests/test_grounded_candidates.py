@@ -7,6 +7,8 @@ from typing import cast
 import pytest
 from kotekomi_application import (
     LATEST_COMPLETED_VALID_ATTEMPT_POLICY_ID,
+    PARAGRAPH_HYPOTHESIS_EVIDENCE_SELECTION_V1,
+    PARAGRAPH_SEGMENT_V1,
     AnalysisCoverageState,
     AnalysisRunInput,
     AnalysisRunItemInput,
@@ -27,14 +29,16 @@ from kotekomi_application import (
     GroundedLiteralObject,
     GroundedOrganizationCandidate,
     GroundedOrganizationReferenceObject,
+    HypothesisVerifierSpec,
     ModelExecutionReceipt,
     ModelExecutionSpec,
     ModelIdentitySnapshot,
     ModelRuntimeDeadlineExceeded,
     ModelTaskRequest,
     ModelTaskResponse,
+    ParagraphHypothesisTaskSchemaRegistry,
     PinnedTaskSchema,
-    StagedClaimTaskSchemaRegistry,
+    SemanticDraftTaskSchemaRegistry,
     Uuid4ModelRunIdFactory,
     build_context_manifest,
     build_coverage_report,
@@ -45,10 +49,12 @@ from kotekomi_application import (
     load_frozen_analysis_plan,
     model_execution_spec_digest,
     model_identity_snapshot_digest,
+    paragraph_hypothesis_text_schema_bytes,
+    paragraph_source_segments,
     plan_analysis_units,
     record_analysis_item_attempt,
     run_bounded_extraction,
-    staged_claim_output_schema_bytes,
+    semantic_draft_text_schema_bytes,
     start_analysis_run,
     submit_grounded_candidate_batch,
 )
@@ -83,7 +89,11 @@ from kotekomi_domain import (
 )
 
 NOW = datetime(2026, 7, 12, tzinfo=UTC)
-TEXT = "Alpha supports the accepted assertion."
+TEXT = (
+    "Fixture Organization partners with Alpha. "
+    "Fixture Organization supports Beta. "
+    "Gamma collaborates with Delta."
+)
 
 
 class FakeGroundedCandidateLedger:
@@ -354,6 +364,16 @@ class FakeModelTaskRuntime:
         )
 
 
+class SequenceModelTaskRuntime(FakeModelTaskRuntime):
+    def __init__(self, raw_outputs: tuple[bytes, ...]) -> None:
+        super().__init__(raw_outputs[0])
+        self._raw_outputs = iter(raw_outputs)
+
+    def run_model_task(self, task: ModelTaskRequest) -> ModelTaskResponse:
+        self.raw_output = next(self._raw_outputs)
+        return super().run_model_task(task)
+
+
 class FixedModelRunClock:
     def __init__(
         self, timestamps: tuple[datetime, ...], monotonic_values: tuple[float, ...]
@@ -455,10 +475,10 @@ def _ready_manifest_for_staged_test(ledger: FakeGroundedCandidateLedger) -> Cont
             model_profile=ContextModelProfile("fixture-model", 512, 8, 4),
             prompt_id="fixture_prompt_v1",
             prompt_bytes=b"fixture prompt",
-            schema_id="staged_claim_output_v5",
-            schema_bytes=staged_claim_output_schema_bytes(),
+            schema_id="semantic_draft_text_v1",
+            schema_bytes=semantic_draft_text_schema_bytes(),
             renderer_version="fixture_renderer_v1",
-            evidence_selection_policy_id="focus_node_evidence_v1",
+            evidence_selection_policy_id="direct_prose_evidence_v1",
         ),
         ledger,
         FixtureTokenizer(),
@@ -487,18 +507,58 @@ def _fixture_execution_spec(manifest: ContextManifest) -> ModelExecutionSpec:
         context_manifest_id=manifest.id,
         context_manifest_digest=manifest.manifest_digest,
         rendered_input_digest=manifest.rendered_input_digest,
-        output_contract_version="staged_claim_output_v5",
+        output_contract_version="semantic_draft_text_v1",
+    )
+
+
+def _hypothesis_manifest_for_staged_test(ledger: FakeGroundedCandidateLedger) -> ContextManifest:
+    unit = plan_analysis_units(
+        AnalysisUnitPlanningInput(
+            ledger.bundle.representation.id,
+            "paragraph_hypothesis_mvp_v1",
+            "claim_extraction",
+        ),
+        ledger,
+    ).units[0]
+    schema = ParagraphHypothesisTaskSchemaRegistry().resolve("paragraph_hypothesis_text_v1")
+    return build_context_manifest(
+        ContextManifestInput(
+            analysis_unit=unit,
+            model_profile=ContextModelProfile("fixture-model", 512, 8, 4),
+            prompt_id="paragraph_hypothesis_mvp_v3",
+            prompt_bytes=b"fixture paragraph hypothesis prompt",
+            schema_id=schema.schema_id,
+            schema_bytes=schema.canonical_schema_bytes,
+            renderer_version="paragraph_hypothesis_context_v3",
+            evidence_selection_policy_id=PARAGRAPH_HYPOTHESIS_EVIDENCE_SELECTION_V1,
+            source_segment_policy_id=PARAGRAPH_SEGMENT_V1,
+        ),
+        ledger,
+        FixtureTokenizer(),
+    ).manifest
+
+
+def _hypothesis_execution_spec(manifest: ContextManifest) -> ModelExecutionSpec:
+    return replace(
+        _fixture_execution_spec(manifest),
+        schema_id="paragraph_hypothesis_text_v1",
+        schema_digest=hashlib.sha256(paragraph_hypothesis_text_schema_bytes()).hexdigest(),
+        prompt_id=manifest.prompt_id,
+        prompt_digest=manifest.prompt_digest,
+        context_manifest_id=manifest.id,
+        context_manifest_digest=manifest.manifest_digest,
+        rendered_input_digest=manifest.rendered_input_digest,
+        output_contract_version="paragraph_hypothesis_text_v1",
     )
 
 
 def _valid_staged_output() -> bytes:
     return (
-        b'{"kind":"candidates","schema_id":"staged_claim_output_v5",'
-        b'"organizations":[{"local_id":"subject","name":"Fixture Organization"}],'
-        b'"evidence":[{"local_id":"support","evidence_candidate_id":"evidence_01"}],'
-        b'"assertions":[{"subject_organization_local_id":"subject",'
-        b'"evidence_local_id":"support",'
-        b'"relation_label":"reported_alpha","object":{"kind":"literal","value":"Alpha"}}]}'
+        b"outcome: claim\n"
+        b"subject: Fixture Organization\n"
+        b"relation: supports\n"
+        b"object_kind: literal\n"
+        b"object: Alpha\n"
     )
 
 
@@ -706,21 +766,7 @@ def test_submit_grounded_candidate_batch_rejects_selector_disagreement_atomicall
 def test_staged_extraction_archives_invalid_task_local_output_without_proposals() -> None:
     ledger = FakeGroundedCandidateLedger()
     archive = FakeModelOutputArchive()
-    raw_output = b"""{
-      "kind":"candidates",
-      "schema_id":"staged_claim_output_v5",
-      "organizations":[{"local_id":"subject","name":"Fixture Organization"}],
-      "evidence":[{
-        "local_id":"support",
-        "evidence_candidate_id":"evidence_99"
-      }],
-      "assertions":[{
-        "subject_organization_local_id":"subject",
-        "evidence_local_id":"support",
-        "relation_label":"reported_alpha",
-        "object":{"kind":"literal","value":"Alpha"}
-      }]
-    }"""
+    raw_output = _valid_staged_output() + b"evidence_candidate: evidence_99\n"
     runtime = FakeModelTaskRuntime(raw_output)
     manifest = _ready_manifest_for_staged_test(ledger)
     prompt_bytes = manifest.prompt_bytes
@@ -740,12 +786,12 @@ def test_staged_extraction_archives_invalid_task_local_output_without_proposals(
         runtime,
         Uuid4ModelRunIdFactory(),
         FixtureTokenizer(),
-        StagedClaimTaskSchemaRegistry(),
+        SemanticDraftTaskSchemaRegistry(),
     )
 
     assert outcome.model_run.status is ModelRunStatus.INVALID_OUTPUT
     assert outcome.model_run.error_message is not None
-    assert "unknown" in outcome.model_run.error_message
+    assert "fields must match" in outcome.model_run.error_message
     assert outcome.proposed_change_batch is None
     assert ledger.proposed_changes == {}
     assert archive.outputs[outcome.model_run.id] == raw_output
@@ -756,7 +802,7 @@ def test_staged_extraction_derives_whole_node_evidence_from_context_candidate() 
     manifest = _ready_manifest_for_staged_test(ledger)
 
     assert manifest.evidence_candidates[0].id == "evidence_01"
-    assert b"[evidence_candidate:evidence_01]" in manifest.rendered_input
+    assert b"[direct_prose]" in manifest.rendered_input
     assert b"nod_grounded_fixture" not in manifest.rendered_input
 
     outcome = run_bounded_extraction(
@@ -774,13 +820,13 @@ def test_staged_extraction_derives_whole_node_evidence_from_context_candidate() 
         FakeModelTaskRuntime(_valid_staged_output()),
         Uuid4ModelRunIdFactory(),
         FixtureTokenizer(),
-        StagedClaimTaskSchemaRegistry(),
+        SemanticDraftTaskSchemaRegistry(),
     )
 
-    assert outcome.model_run.status is ModelRunStatus.SUCCEEDED
+    assert outcome.model_run.status is ModelRunStatus.SUCCEEDED, outcome.model_run.error_message
     assert outcome.proposed_change_batch is not None
     assert "assertion_01" in outcome.proposed_change_batch.proposed_change_ids_by_local_id
-    evidence_id = outcome.proposed_change_batch.evidence_target_ids_by_local_id["support"]
+    evidence_id = outcome.proposed_change_batch.evidence_target_ids_by_local_id["evidence_01"]
     target = ledger.evidence_targets[evidence_id]
     source_node = ledger.bundle.nodes[1]
     assert target.text_view_id == source_node.text_view_id
@@ -790,30 +836,264 @@ def test_staged_extraction_derives_whole_node_evidence_from_context_candidate() 
     assert target.node_ids == (source_node.id,)
 
 
+def test_paragraph_hypothesis_segments_reconstruct_the_authoritative_paragraph() -> None:
+    segments = paragraph_source_segments(TEXT)
+
+    assert [segment.label for segment in segments] == ["s1", "s2", "s3"]
+    assert "".join(segment.exact_text for segment in segments) == TEXT
+
+
+def test_paragraph_hypothesis_batch_publishes_three_segment_grounded_proposals() -> None:
+    ledger = FakeGroundedCandidateLedger()
+    archive = FakeModelOutputArchive()
+    manifest = _hypothesis_manifest_for_staged_test(ledger)
+    raw_output = (
+        b"claim: s1 | Fixture Organization | partners with | Alpha\n"
+        b"claim: s2 | Fixture Organization | supports | Beta\n"
+        b"claim: s3 | Gamma | collaborates with | Delta\n"
+    )
+
+    outcome = run_bounded_extraction(
+        BoundedExtractionInput(
+            source_id=ledger.source.id,
+            document_id=ledger.document.id,
+            representation_id=ledger.bundle.representation.id,
+            context_manifest_id=manifest.id,
+            prompt_bytes=manifest.prompt_bytes,
+            execution_spec=_hypothesis_execution_spec(manifest),
+            validator_version="paragraph_hypothesis_validator_v1",
+        ),
+        ledger,
+        archive,
+        FakeModelTaskRuntime(raw_output),
+        Uuid4ModelRunIdFactory(),
+        FixtureTokenizer(),
+        ParagraphHypothesisTaskSchemaRegistry(),
+    )
+
+    assert outcome.model_run.status is ModelRunStatus.SUCCEEDED, outcome.model_run.error_message
+    assert outcome.model_run.task_metadata == {"source_segment_policy_id": "paragraph_segment_v1"}
+    assert outcome.model_run.outcome_metadata["unique_claim_count"] == 3
+    assert outcome.proposed_change_batch is not None
+    assert len(ledger.evidence_targets) == 3
+    assert len(ledger.proposed_changes) == 8
+    assert {target.exact_text for target in ledger.evidence_targets.values()} == {
+        "Fixture Organization partners with Alpha.",
+        " Fixture Organization supports Beta.",
+        " Gamma collaborates with Delta.",
+    }
+    assert b"SOURCE SEGMENT: s1" in manifest.rendered_input
+    assert b"Alpha.\nSOURCE SEGMENT: s2\n Fixture Organization" in manifest.rendered_input
+    assert b"nod_grounded_fixture" not in manifest.rendered_input
+
+
+def test_hypothesis_faithfulness_verifier_publishes_only_accepted_claims() -> None:
+    ledger = FakeGroundedCandidateLedger()
+    archive = FakeModelOutputArchive()
+    manifest = _hypothesis_manifest_for_staged_test(ledger)
+    runtime = SequenceModelTaskRuntime(
+        (
+            b"claim: s1 | Fixture Organization | partners with | Alpha\n"
+            b"claim: s2 | Fixture Organization | supports | Beta\n",
+            b"verdict: accept\nreason: direct relationship\n",
+            b"verdict: reject\nreason: relation wording is not direct\n",
+        )
+    )
+
+    outcome = run_bounded_extraction(
+        BoundedExtractionInput(
+            source_id=ledger.source.id,
+            document_id=ledger.document.id,
+            representation_id=ledger.bundle.representation.id,
+            context_manifest_id=manifest.id,
+            prompt_bytes=manifest.prompt_bytes,
+            execution_spec=_hypothesis_execution_spec(manifest),
+            validator_version="paragraph_hypothesis_validator_v1",
+            hypothesis_verifier=HypothesisVerifierSpec("faithfulness-v1", b"verifier prompt"),
+        ),
+        ledger,
+        archive,
+        runtime,
+        Uuid4ModelRunIdFactory(),
+        FixtureTokenizer(),
+        ParagraphHypothesisTaskSchemaRegistry(),
+    )
+
+    assert outcome.model_run.status is ModelRunStatus.SUCCEEDED
+    assert outcome.model_run.outcome_metadata["faithfulness_accepted_claim_count"] == 1
+    assert outcome.model_run.outcome_metadata["faithfulness_rejected_claim_count"] == 1
+    assert outcome.proposed_change_batch is not None
+    assert len(ledger.proposed_changes) == 3
+    verifier_runs = [
+        run for run in ledger.model_runs.values() if run.task_metadata.get("verifies_model_run_id")
+    ]
+    assert len(verifier_runs) == 2
+    assert all(archive.outputs[run.id] for run in verifier_runs)
+    assert runtime.requests[1].task_type == "hypothesis_faithfulness_verification"
+    assert b"Fixture Organization | partners with | Alpha" in runtime.requests[1].rendered_input
+
+
 @pytest.mark.parametrize(
-    "assertion_object",
+    "verifier_output",
     (
-        b'{"kind":"organization_reference","organization_local_id":"missing"}',
-        b'{"kind":"literal","value":"Alpha","organization_local_id":"subject"}',
-        b'{"object_value":"Alpha"}',
+        b"verdict: reject\nreason: relation is inferred\n",
+        b"verdict: maybe\nreason: invalid contract\n",
     ),
 )
-def test_staged_extraction_archives_invalid_assertion_object_without_proposals(
-    assertion_object: bytes,
+def test_hypothesis_faithfulness_verifier_blocks_rejected_or_invalid_claims(
+    verifier_output: bytes,
+) -> None:
+    ledger = FakeGroundedCandidateLedger()
+    manifest = _hypothesis_manifest_for_staged_test(ledger)
+    runtime = SequenceModelTaskRuntime(
+        (
+            b"claim: s1 | Fixture Organization | partners with | Alpha\n",
+            verifier_output,
+        )
+    )
+
+    outcome = run_bounded_extraction(
+        BoundedExtractionInput(
+            source_id=ledger.source.id,
+            document_id=ledger.document.id,
+            representation_id=ledger.bundle.representation.id,
+            context_manifest_id=manifest.id,
+            prompt_bytes=manifest.prompt_bytes,
+            execution_spec=_hypothesis_execution_spec(manifest),
+            validator_version="paragraph_hypothesis_validator_v1",
+            hypothesis_verifier=HypothesisVerifierSpec("faithfulness-v1", b"verifier prompt"),
+        ),
+        ledger,
+        FakeModelOutputArchive(),
+        runtime,
+        Uuid4ModelRunIdFactory(),
+        FixtureTokenizer(),
+        ParagraphHypothesisTaskSchemaRegistry(),
+    )
+
+    assert outcome.model_run.status is ModelRunStatus.SUCCEEDED
+    assert outcome.proposed_change_batch is None
+    assert ledger.proposed_changes == {}
+
+
+@pytest.mark.parametrize(
+    "raw_output",
+    (
+        b"claim: s4 | Fixture Organization | partners with | Alpha\n",
+        b"claim: <s1> | Fixture Organization | partners with | Alpha\n",
+        b"claim: s1 | Fixture Organization | partners with | Missing\n",
+        b"abstain: no relation\nclaim: s1 | Fixture Organization | partners with | Alpha\n",
+        b"\n".join(b"claim: s1 | Fixture Organization | partners with | Alpha" for _ in range(9))
+        + b"\n",
+    ),
+)
+def test_paragraph_hypothesis_invalid_batch_creates_no_proposals(raw_output: bytes) -> None:
+    ledger = FakeGroundedCandidateLedger()
+    manifest = _hypothesis_manifest_for_staged_test(ledger)
+
+    outcome = run_bounded_extraction(
+        BoundedExtractionInput(
+            source_id=ledger.source.id,
+            document_id=ledger.document.id,
+            representation_id=ledger.bundle.representation.id,
+            context_manifest_id=manifest.id,
+            prompt_bytes=manifest.prompt_bytes,
+            execution_spec=_hypothesis_execution_spec(manifest),
+            validator_version="paragraph_hypothesis_validator_v1",
+        ),
+        ledger,
+        FakeModelOutputArchive(),
+        FakeModelTaskRuntime(raw_output),
+        Uuid4ModelRunIdFactory(),
+        FixtureTokenizer(),
+        ParagraphHypothesisTaskSchemaRegistry(),
+    )
+
+    assert outcome.model_run.status is ModelRunStatus.INVALID_OUTPUT
+    assert ledger.proposed_changes == {}
+
+
+def test_paragraph_hypothesis_duplicate_claim_is_visible_but_published_once() -> None:
+    ledger = FakeGroundedCandidateLedger()
+    manifest = _hypothesis_manifest_for_staged_test(ledger)
+    raw_output = (
+        b"claim: s1 | Fixture Organization | partners with | Alpha\n"
+        b"claim: s1 | Fixture Organization | partners with | Alpha\n"
+    )
+
+    outcome = run_bounded_extraction(
+        BoundedExtractionInput(
+            source_id=ledger.source.id,
+            document_id=ledger.document.id,
+            representation_id=ledger.bundle.representation.id,
+            context_manifest_id=manifest.id,
+            prompt_bytes=manifest.prompt_bytes,
+            execution_spec=_hypothesis_execution_spec(manifest),
+            validator_version="paragraph_hypothesis_validator_v1",
+        ),
+        ledger,
+        FakeModelOutputArchive(),
+        FakeModelTaskRuntime(raw_output),
+        Uuid4ModelRunIdFactory(),
+        FixtureTokenizer(),
+        ParagraphHypothesisTaskSchemaRegistry(),
+    )
+
+    assert outcome.model_run.status is ModelRunStatus.SUCCEEDED
+    assert outcome.model_run.outcome_metadata["unique_claim_count"] == 1
+    assert outcome.model_run.outcome_metadata["duplicate_claim_lines"] == [
+        "claim: s1 | Fixture Organization | partners with | Alpha"
+    ]
+    assert len(ledger.evidence_targets) == 1
+
+
+def test_paragraph_hypothesis_reuses_one_evidence_target_for_two_claims_in_one_segment() -> None:
+    ledger = FakeGroundedCandidateLedger()
+    manifest = _hypothesis_manifest_for_staged_test(ledger)
+    raw_output = (
+        b"claim: s1 | Fixture Organization | partners with | Alpha\n"
+        b"claim: s1 | Fixture Organization | supports | Alpha\n"
+    )
+
+    outcome = run_bounded_extraction(
+        BoundedExtractionInput(
+            ledger.source.id,
+            ledger.document.id,
+            ledger.bundle.representation.id,
+            manifest.id,
+            manifest.prompt_bytes,
+            _hypothesis_execution_spec(manifest),
+            "paragraph_hypothesis_validator_v1",
+        ),
+        ledger,
+        FakeModelOutputArchive(),
+        FakeModelTaskRuntime(raw_output),
+        Uuid4ModelRunIdFactory(),
+        FixtureTokenizer(),
+        ParagraphHypothesisTaskSchemaRegistry(),
+    )
+
+    assert outcome.model_run.status is ModelRunStatus.SUCCEEDED
+    assert len(ledger.evidence_targets) == 1
+    assert outcome.proposed_change_batch is not None
+
+
+@pytest.mark.parametrize(
+    "raw_output",
+    (
+        b"outcome: claim\nsubject: Fixture Organization\nrelation: supports\n"
+        b"object_kind: actor\nobject: Alpha\n",
+        b"outcome: claim\nsubject: Fixture Organization\nrelation: supports\nobject: Alpha\n",
+        b"outcome: claim\nsubject: Fixture Organization\nrelation: supports\n"
+        b"object_kind: literal\n",
+    ),
+)
+def test_staged_extraction_archives_invalid_semantic_draft_without_proposals(
+    raw_output: bytes,
 ) -> None:
     ledger = FakeGroundedCandidateLedger()
     archive = FakeModelOutputArchive()
     manifest = _ready_manifest_for_staged_test(ledger)
-    raw_output = (
-        b'{"kind":"candidates","schema_id":"staged_claim_output_v5",'
-        b'"organizations":[{"local_id":"subject","name":"Fixture Organization"}],'
-        b'"evidence":[{"local_id":"support","evidence_candidate_id":"evidence_01"}],'
-        b'"assertions":[{"subject_organization_local_id":"subject",'
-        b'"evidence_local_id":"support","relation_label":"reported_alpha","object":'
-        + assertion_object
-        + b"}]}"
-    )
-
     outcome = run_bounded_extraction(
         BoundedExtractionInput(
             source_id=ledger.source.id,
@@ -829,7 +1109,7 @@ def test_staged_extraction_archives_invalid_assertion_object_without_proposals(
         FakeModelTaskRuntime(raw_output),
         Uuid4ModelRunIdFactory(),
         FixtureTokenizer(),
-        StagedClaimTaskSchemaRegistry(),
+        SemanticDraftTaskSchemaRegistry(),
     )
 
     assert outcome.model_run.status is ModelRunStatus.INVALID_OUTPUT
@@ -838,24 +1118,10 @@ def test_staged_extraction_archives_invalid_assertion_object_without_proposals(
     assert ledger.proposed_changes == {}
 
 
-def test_staged_extraction_rejects_duplicate_context_candidate_selection() -> None:
+def test_staged_extraction_rejects_model_evidence_selection() -> None:
     ledger = FakeGroundedCandidateLedger()
     manifest = _ready_manifest_for_staged_test(ledger)
-    raw_output = b"""{
-      "kind":"candidates",
-      "schema_id":"staged_claim_output_v5",
-      "organizations":[{"local_id":"subject","name":"Fixture Organization"}],
-      "evidence":[
-        {"local_id":"support_a","evidence_candidate_id":"evidence_01"},
-        {"local_id":"support_b","evidence_candidate_id":"evidence_01"}
-      ],
-      "assertions":[{
-        "subject_organization_local_id":"subject",
-        "evidence_local_id":"support_a",
-        "relation_label":"reported_alpha",
-        "object":{"kind":"literal","value":"Alpha"}
-      }]
-    }"""
+    raw_output = _valid_staged_output() + b"evidence_candidate: evidence_01\n"
 
     outcome = run_bounded_extraction(
         BoundedExtractionInput(
@@ -872,12 +1138,50 @@ def test_staged_extraction_rejects_duplicate_context_candidate_selection() -> No
         FakeModelTaskRuntime(raw_output),
         Uuid4ModelRunIdFactory(),
         FixtureTokenizer(),
-        StagedClaimTaskSchemaRegistry(),
+        SemanticDraftTaskSchemaRegistry(),
     )
 
     assert outcome.model_run.status is ModelRunStatus.INVALID_OUTPUT
     assert outcome.model_run.error_message is not None
-    assert "at most once" in outcome.model_run.error_message
+    assert "fields must match" in outcome.model_run.error_message
+    assert ledger.proposed_changes == {}
+
+
+@pytest.mark.parametrize(
+    "raw_output",
+    (
+        b"outcome: claim\nsubject: Unknown Organization\nrelation: supports\n"
+        b"object_kind: literal\nobject: Alpha\n",
+        b"outcome: claim\nsubject: Fixture Organization\nrelation: supports\n"
+        b"object_kind: literal\nobject: Unknown Value\n",
+    ),
+)
+def test_staged_extraction_rejects_an_ungrounded_semantic_draft(raw_output: bytes) -> None:
+    ledger = FakeGroundedCandidateLedger()
+    archive = FakeModelOutputArchive()
+    manifest = _ready_manifest_for_staged_test(ledger)
+
+    outcome = run_bounded_extraction(
+        BoundedExtractionInput(
+            source_id=ledger.source.id,
+            document_id=ledger.document.id,
+            representation_id=ledger.bundle.representation.id,
+            context_manifest_id=manifest.id,
+            prompt_bytes=manifest.prompt_bytes,
+            execution_spec=_fixture_execution_spec(manifest),
+            validator_version="fixture-validator-v2",
+        ),
+        ledger,
+        archive,
+        FakeModelTaskRuntime(raw_output),
+        Uuid4ModelRunIdFactory(),
+        FixtureTokenizer(),
+        SemanticDraftTaskSchemaRegistry(),
+    )
+
+    assert outcome.model_run.status is ModelRunStatus.INVALID_OUTPUT
+    assert outcome.proposed_change_batch is None
+    assert archive.outputs[outcome.model_run.id] == raw_output
     assert ledger.proposed_changes == {}
 
 
@@ -885,10 +1189,7 @@ def test_staged_extraction_persists_exact_abstention_reason_on_model_run() -> No
     ledger = FakeGroundedCandidateLedger()
     archive = FakeModelOutputArchive()
     manifest = _ready_manifest_for_staged_test(ledger)
-    raw_output = (
-        b'{"kind":"abstain","schema_id":"staged_claim_output_v5",'
-        b'"reason":"insufficient task-local evidence"}'
-    )
+    raw_output = b"outcome: abstain\nreason: insufficient task-local evidence\n"
 
     outcome = run_bounded_extraction(
         BoundedExtractionInput(
@@ -905,7 +1206,7 @@ def test_staged_extraction_persists_exact_abstention_reason_on_model_run() -> No
         FakeModelTaskRuntime(raw_output),
         Uuid4ModelRunIdFactory(),
         FixtureTokenizer(),
-        StagedClaimTaskSchemaRegistry(),
+        SemanticDraftTaskSchemaRegistry(),
     )
 
     assert outcome.model_run.status is ModelRunStatus.ABSTAINED
@@ -927,10 +1228,7 @@ def test_staged_extraction_records_application_owned_execution_timing() -> None:
     manifest = _ready_manifest_for_staged_test(ledger)
     completed_at = NOW + timedelta(seconds=2)
     clock = FixedModelRunClock((NOW, completed_at), (100.0, 102.25))
-    raw_output = (
-        b'{"kind":"abstain","schema_id":"staged_claim_output_v5",'
-        b'"reason":"insufficient task-local evidence"}'
-    )
+    raw_output = b"outcome: abstain\nreason: insufficient task-local evidence\n"
 
     outcome = run_bounded_extraction(
         BoundedExtractionInput(
@@ -947,7 +1245,7 @@ def test_staged_extraction_records_application_owned_execution_timing() -> None:
         FakeModelTaskRuntime(raw_output, first_response_event_milliseconds=125),
         Uuid4ModelRunIdFactory(),
         FixtureTokenizer(),
-        StagedClaimTaskSchemaRegistry(),
+        SemanticDraftTaskSchemaRegistry(),
         clock,
     )
 
@@ -998,7 +1296,7 @@ def test_staged_extraction_rejects_a_mismatched_execution_receipt_after_archivin
         runtime,
         Uuid4ModelRunIdFactory(),
         FixtureTokenizer(),
-        StagedClaimTaskSchemaRegistry(),
+        SemanticDraftTaskSchemaRegistry(),
     )
 
     assert outcome.model_run.status is ModelRunStatus.INVALID_OUTPUT
@@ -1038,7 +1336,7 @@ def test_staged_extraction_rejects_and_persists_a_truncated_input_receipt() -> N
         FakeModelTaskRuntime(_valid_staged_output(), receipt=receipt),
         Uuid4ModelRunIdFactory(),
         FixtureTokenizer(),
-        StagedClaimTaskSchemaRegistry(),
+        SemanticDraftTaskSchemaRegistry(),
     )
 
     assert outcome.model_run.status is ModelRunStatus.INVALID_OUTPUT
@@ -1125,7 +1423,7 @@ def test_staged_extraction_classifies_runtime_and_archive_failures_truthfully(
         runtime,
         Uuid4ModelRunIdFactory(),
         FixtureTokenizer(),
-        StagedClaimTaskSchemaRegistry(),
+        SemanticDraftTaskSchemaRegistry(),
     )
 
     assert outcome.model_run.status is expected_status
@@ -1138,12 +1436,12 @@ def test_staged_extraction_classifies_runtime_and_archive_failures_truthfully(
             cast(tuple[ExecutionSetting, ...], ({"temperature": 0},)),
             "fixture_prompt_v1",
             "a" * 64,
-            "staged_claim_output_v5",
+            "semantic_draft_text_v1",
             "b" * 64,
             "ctx_fixture",
             "c" * 64,
             "d" * 64,
-            "staged_claim_output_v5",
+            "semantic_draft_text_v1",
         )
 
 
@@ -1172,7 +1470,7 @@ def test_staged_extraction_records_task_deadline_without_partial_proposals() -> 
         DeadlineRuntime(_valid_staged_output()),
         Uuid4ModelRunIdFactory(),
         FixtureTokenizer(),
-        StagedClaimTaskSchemaRegistry(),
+        SemanticDraftTaskSchemaRegistry(),
     )
 
     assert outcome.model_run.status is ModelRunStatus.RUNTIME_FAILED
@@ -1206,7 +1504,7 @@ def test_staged_extraction_rejects_unpinned_prompt_before_model_invocation() -> 
             runtime,
             Uuid4ModelRunIdFactory(),
             FixtureTokenizer(),
-            StagedClaimTaskSchemaRegistry(),
+            SemanticDraftTaskSchemaRegistry(),
         )
 
     assert runtime.requests == []
@@ -1262,7 +1560,7 @@ def test_staged_extraction_rejects_runtime_identity_mismatch_before_invocation()
                 runtime,
                 Uuid4ModelRunIdFactory(),
                 FixtureTokenizer(),
-                StagedClaimTaskSchemaRegistry(),
+                SemanticDraftTaskSchemaRegistry(),
             )
 
     with pytest.raises(ValueError, match="runtime configured identity"):
@@ -1276,7 +1574,7 @@ def test_staged_extraction_rejects_runtime_identity_mismatch_before_invocation()
             ),
             Uuid4ModelRunIdFactory(),
             FixtureTokenizer(),
-            StagedClaimTaskSchemaRegistry(),
+            SemanticDraftTaskSchemaRegistry(),
         )
 
     assert runtime.requests == []
@@ -1292,7 +1590,7 @@ def test_staged_extraction_rejects_schema_bytes_that_differ_from_the_validator()
 
     class MismatchedSchemaRegistry:
         def resolve(self, schema_id: str) -> PinnedTaskSchema:
-            schema = StagedClaimTaskSchemaRegistry().resolve(schema_id)
+            schema = SemanticDraftTaskSchemaRegistry().resolve(schema_id)
             return replace(schema, canonical_schema_bytes=b'{"type":"null"}')
 
     with pytest.raises(ValueError, match="schema bytes"):
@@ -1323,12 +1621,7 @@ def test_staged_extraction_schema_forbids_hidden_global_evidence_coordinates() -
     ledger = FakeGroundedCandidateLedger()
     manifest = _ready_manifest_for_staged_test(ledger)
     archive = FakeModelOutputArchive()
-    runtime = FakeModelTaskRuntime(
-        _valid_staged_output().replace(
-            b'"evidence_candidate_id":"evidence_01"',
-            b'"evidence_candidate_id":"evidence_01","node_id":"nod_grounded_fixture"',
-        )
-    )
+    runtime = FakeModelTaskRuntime(_valid_staged_output() + b"node_id: nod_grounded_fixture\n")
 
     outcome = run_bounded_extraction(
         BoundedExtractionInput(
@@ -1345,7 +1638,7 @@ def test_staged_extraction_schema_forbids_hidden_global_evidence_coordinates() -
         runtime,
         Uuid4ModelRunIdFactory(),
         FixtureTokenizer(),
-        StagedClaimTaskSchemaRegistry(),
+        SemanticDraftTaskSchemaRegistry(),
     )
 
     assert outcome.model_run.status is ModelRunStatus.INVALID_OUTPUT
@@ -1375,7 +1668,7 @@ def test_successful_model_run_and_candidate_batch_share_one_atomic_boundary() ->
         runtime,
         Uuid4ModelRunIdFactory(),
         FixtureTokenizer(),
-        StagedClaimTaskSchemaRegistry(),
+        SemanticDraftTaskSchemaRegistry(),
     )
 
     assert outcome.model_run.status is ModelRunStatus.PUBLISH_FAILED
@@ -1408,7 +1701,7 @@ def test_retries_preserve_distinct_model_runs_for_one_task() -> None:
         runtime,
         Uuid4ModelRunIdFactory(),
         FixtureTokenizer(),
-        StagedClaimTaskSchemaRegistry(),
+        SemanticDraftTaskSchemaRegistry(),
     )
     second = run_bounded_extraction(
         extraction_input,
@@ -1417,7 +1710,7 @@ def test_retries_preserve_distinct_model_runs_for_one_task() -> None:
         runtime,
         Uuid4ModelRunIdFactory(),
         FixtureTokenizer(),
-        StagedClaimTaskSchemaRegistry(),
+        SemanticDraftTaskSchemaRegistry(),
     )
 
     assert first.extraction_task.id == second.extraction_task.id
@@ -1510,8 +1803,8 @@ def test_frozen_analysis_plan_requires_every_unit_to_reconcile_before_completion
             model_profile=ContextModelProfile("fixture-model", 512, 8, 4),
             prompt_id="fixture_prompt_v1",
             prompt_bytes=b"fixture prompt",
-            schema_id="staged_claim_output_v5",
-            schema_bytes=staged_claim_output_schema_bytes(),
+            schema_id="semantic_draft_text_v1",
+            schema_bytes=semantic_draft_text_schema_bytes(),
             renderer_version="fixture_renderer_v1",
             evidence_selection_policy_id="focus_node_evidence_v1",
         ),
@@ -1533,7 +1826,7 @@ def test_frozen_analysis_plan_requires_every_unit_to_reconcile_before_completion
         FakeModelTaskRuntime(_valid_staged_output()),
         Uuid4ModelRunIdFactory(),
         FixtureTokenizer(),
-        StagedClaimTaskSchemaRegistry(),
+        SemanticDraftTaskSchemaRegistry(),
         FixedModelRunClock((NOW, NOW), (0.0, 0.0)),
     )
     assert outcome.proposed_change_batch is not None
@@ -1696,8 +1989,8 @@ def _complete_coverage_fixture() -> tuple[
             model_profile=ContextModelProfile("fixture-model", 512, 8, 4),
             prompt_id="fixture_prompt_v1",
             prompt_bytes=b"fixture prompt",
-            schema_id="staged_claim_output_v5",
-            schema_bytes=staged_claim_output_schema_bytes(),
+            schema_id="semantic_draft_text_v1",
+            schema_bytes=semantic_draft_text_schema_bytes(),
             renderer_version="fixture_renderer_v1",
             evidence_selection_policy_id="focus_node_evidence_v1",
         ),
@@ -1719,7 +2012,7 @@ def _complete_coverage_fixture() -> tuple[
         FakeModelTaskRuntime(_valid_staged_output()),
         Uuid4ModelRunIdFactory(),
         FixtureTokenizer(),
-        StagedClaimTaskSchemaRegistry(),
+        SemanticDraftTaskSchemaRegistry(),
     )
     run = start_analysis_run(
         AnalysisRunInput(

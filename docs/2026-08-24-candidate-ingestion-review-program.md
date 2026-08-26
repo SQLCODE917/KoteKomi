@@ -728,7 +728,7 @@ User stories:
 
 Detailed TDD:
 
-Write after CIR-2 implementation evidence exists.
+[CIR-3 Candidate Knowledge View](2026-08-25-cir-3-candidate-knowledge-view.md)
 
 ### CIR-4 - Wiki Projection MVP
 
@@ -859,8 +859,8 @@ This section becomes the stable index for child TDDs.
 | Deliverable | Title | TDD |
 |---|---|---|
 | CIR-1 | User Ingestion Run MVP | [CIR-1 TDD](2026-08-24-user-ingestion-run-mvp.md) |
-| CIR-2 | Automatic Extraction and Change Set | Add link after CIR-1 evidence exists. |
-| CIR-3 | Candidate Knowledge View | Add link after CIR-2 evidence exists. |
+| CIR-2 | Automatic Extraction and Change Set | [CIR-2 TDD](2026-08-24-automatic-extraction-change-set.md) |
+| CIR-3 | Candidate Knowledge View | [CIR-3 TDD](2026-08-25-cir-3-candidate-knowledge-view.md) |
 | CIR-4 | Wiki Projection MVP | Add link after CIR-3 evidence exists. |
 | CIR-5 | Candidate Wiki and Change Inspection | Add link after CIR-4 evidence exists. |
 | CIR-6 | Whole-Ingestion Publish and Discard | Add link after CIR-5 evidence exists. |

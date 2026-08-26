@@ -205,18 +205,6 @@ class DoclingPdfParser(PdfDocumentParser):
     def _parse_in_process(self, parse_input: PdfParseInput) -> PdfParseResult:
         parser_version = _docling_version()
         source_encrypted = _pdf_is_encrypted(parse_input.raw_bytes)
-        if source_encrypted and parse_input.access_credential is None:
-            reason = "password_required"
-            return PdfParseResult(
-                preflight=_blocked_preflight(
-                    parser_version,
-                    (reason,),
-                    parse_input.raw_bytes,
-                    encrypted=True,
-                ),
-                representation_bundle=None,
-                blocking_reasons=(reason,),
-            )
         structural_blocker = _strict_pdf_source_blocker(parse_input.raw_bytes)
         if structural_blocker is not None:
             return PdfParseResult(
@@ -251,7 +239,11 @@ class DoclingPdfParser(PdfDocumentParser):
             qpdf_executable=_configured_qpdf_executable(self._config.qpdf_executable),
         )
         if prepared is None:
-            reason = "invalid_password"
+            reason = (
+                "invalid_password"
+                if parse_input.access_credential is not None
+                else "password_required"
+            )
             return PdfParseResult(
                 preflight=_blocked_preflight(
                     parser_version,
@@ -2074,8 +2066,6 @@ def _prepare_pdf_source(
 ) -> _PreparedPdfSource | None:
     encrypted = _pdf_is_encrypted(raw_bytes)
     if encrypted:
-        if credential is None:
-            return None
         decrypted = _qpdf_transform(
             raw_bytes,
             credential=credential,
@@ -2091,7 +2081,16 @@ def _prepare_pdf_source(
                 decrypted,
                 configuration={
                     "operation": "decrypt",
-                    "credential_id": credential.credential_id,
+                    "access_mode": (
+                        "supplied_credential"
+                        if credential is not None
+                        else "no_credential_required"
+                    ),
+                    **(
+                        {"credential_id": credential.credential_id}
+                        if credential is not None
+                        else {}
+                    ),
                     "contract_version": "qpdf_pdf_access_v1",
                 },
                 qpdf_executable=qpdf_executable,

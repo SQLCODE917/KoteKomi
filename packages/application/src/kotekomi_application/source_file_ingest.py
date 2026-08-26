@@ -39,6 +39,7 @@ from kotekomi_application.pdf_ingest import (
     PdfIngestLedger,
     PdfIngestOutcome,
     PdfProcessingError,
+    PdfTransformationArchive,
     deterministic_pdf_ingest_activity_id,
     ingest_pdf,
 )
@@ -98,6 +99,10 @@ class SourceFileLedger(
 
 class PdfSourceFileLedger(SourceFileLedger, PdfIngestLedger, Protocol):
     """Ledger contract for a captured PDF and its authoritative representation."""
+
+
+class PdfSourceFileArchive(ArchiveStore, PdfTransformationArchive, Protocol):
+    """Archive contract for deposited PDF bytes and recorded transformations."""
 
 
 @dataclass(frozen=True)
@@ -489,7 +494,7 @@ def commit_authoritative_capture(
 
 def commit_authoritative_pdf_capture(
     ingest_input: AuthoritativePdfCaptureRequest,
-    archive_store: ArchiveStore,
+    archive_store: PdfSourceFileArchive,
     ledger_repository: PdfSourceFileLedger,
     parser: PdfDocumentParser,
     attempt_id_factory: ProcessingAttemptIdFactory | None = None,
@@ -573,6 +578,7 @@ def commit_authoritative_pdf_capture(
             parser,
             attempt_id_factory or Uuid4ProcessingAttemptIdFactory(),
             processing_clock,
+            transformation_archive=archive_store,
         )
     except PdfProcessingError as error:
         return AuthoritativePdfCaptureOutcome(

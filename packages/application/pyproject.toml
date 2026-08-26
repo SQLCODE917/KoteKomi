@@ -6,6 +6,7 @@ requires-python = ">=3.12,<3.13"
 dependencies = [
   "kotekomi-domain",
   "pydantic>=2.11,<3",
+  "pysbd>=0.3,<1",
 ]
 
 [tool.uv.sources]

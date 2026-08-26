@@ -1755,7 +1755,7 @@ class EvidenceTarget(DomainModel):
     text_view_digest: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
     start_char: Annotated[int, Field(ge=0)]
     end_char: Annotated[int, Field(gt=0)]
-    exact_text: NonEmptyStr
+    exact_text: Annotated[str, StringConstraints(min_length=1)]
     normalization_policy: NonEmptyStr
     prefix_text: str = ""
     suffix_text: str = ""
@@ -2417,6 +2417,8 @@ class ModelRun(DomainModel):
     completed_at: datetime
     execution_diagnostics: dict[str, JsonValue]
     execution_receipt: dict[str, JsonValue] | None = None
+    task_metadata: dict[str, JsonValue] = Field(default_factory=dict)
+    outcome_metadata: dict[str, JsonValue] = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def validate_output_state(self) -> Self:

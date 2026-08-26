@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import hashlib
-import json
 from typing import Protocol
 
 from kotekomi_adapters import (
@@ -63,14 +62,11 @@ class FixtureModelTaskRuntime:
         )
 
     def run_model_task(self, task: ModelTaskRequest) -> ModelTaskResponse:
-        raw_output = json.dumps(
-            {
-                "kind": "abstain",
-                "schema_id": task.execution_spec.schema_id,
-                "reason": "fixture_no_claim",
-            },
-            separators=(",", ":"),
-        ).encode()
+        raw_output = (
+            b"abstain: fixture_no_claim\n"
+            if task.execution_spec.schema_id == "paragraph_hypothesis_text_v1"
+            else b"outcome: abstain\nreason: fixture_no_claim\n"
+        )
         return ModelTaskResponse(
             raw_output=raw_output,
             execution_receipt=ModelExecutionReceipt(

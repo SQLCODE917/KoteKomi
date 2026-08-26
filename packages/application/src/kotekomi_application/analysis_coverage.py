@@ -1062,6 +1062,7 @@ def _unit_payload(unit: AnalysisUnit) -> dict[str, object]:
         "dependency_node_ids": list(unit.dependency_node_ids),
         "planner_policy_id": unit.planner_policy_id,
         "fingerprint": unit.fingerprint,
+        "source_segment_label": unit.source_segment_label,
     }
 
 
@@ -1077,6 +1078,7 @@ def _analysis_unit(value: object) -> AnalysisUnit:
         dependency_node_ids=_string_tuple(payload, "dependency_node_ids"),
         planner_policy_id=_required_string(payload, "planner_policy_id"),
         fingerprint=_required_string(payload, "fingerprint"),
+        source_segment_label=_optional_string(payload, "source_segment_label"),
     )
     validate_analysis_unit_identity(unit)
     return unit
@@ -1084,6 +1086,15 @@ def _analysis_unit(value: object) -> AnalysisUnit:
 
 def _required_string(payload: dict[str, JsonValue], key: str) -> str:
     value = payload[key]
+    if not isinstance(value, str) or not value:
+        raise ValueError
+    return value
+
+
+def _optional_string(payload: dict[str, JsonValue], key: str) -> str | None:
+    value = payload.get(key)
+    if value is None:
+        return None
     if not isinstance(value, str) or not value:
         raise ValueError
     return value

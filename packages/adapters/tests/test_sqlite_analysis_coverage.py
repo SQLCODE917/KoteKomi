@@ -1,5 +1,4 @@
 import hashlib
-import json
 import sqlite3
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -35,7 +34,7 @@ from kotekomi_application import (
     ModelIdentitySnapshot,
     ModelTaskRequest,
     ModelTaskResponse,
-    StagedClaimTaskSchemaRegistry,
+    SemanticDraftTaskSchemaRegistry,
     Uuid4ModelRunIdFactory,
     build_context_manifest,
     build_coverage_report,
@@ -47,7 +46,7 @@ from kotekomi_application import (
     processing_task_fingerprint,
     record_analysis_item_attempt,
     run_bounded_extraction,
-    staged_claim_output_schema_bytes,
+    semantic_draft_text_schema_bytes,
     start_analysis_run,
 )
 from kotekomi_domain import (
@@ -288,34 +287,17 @@ def _execution_spec(manifest: ContextManifest) -> ModelExecutionSpec:
         context_manifest_id=manifest.id,
         context_manifest_digest=manifest.manifest_digest,
         rendered_input_digest=manifest.rendered_input_digest,
-        output_contract_version="staged_claim_output_v5",
+        output_contract_version="semantic_draft_text_v1",
     )
 
 
 def _candidate_output(document: DocumentFixture) -> bytes:
-    return json.dumps(
-        {
-            "kind": "candidates",
-            "schema_id": "staged_claim_output_v5",
-            "organizations": [{"local_id": "subject", "name": "Fixture Health Department"}],
-            "evidence": [
-                {
-                    "local_id": "support",
-                    "evidence_candidate_id": "evidence_01",
-                }
-            ],
-            "assertions": [
-                {
-                    "subject_organization_local_id": "subject",
-                    "evidence_local_id": "support",
-                    "relation_label": "reported_health_priority",
-                    "object": {"kind": "literal", "value": document.paragraph_text},
-                }
-            ],
-        },
-        sort_keys=True,
-        separators=(",", ":"),
-    ).encode("utf-8")
+    return (
+        b"outcome: claim\n"
+        b"subject: Document\n"
+        b"relation: reported health priority\n"
+        b"object_kind: literal\n" + f"object: {document.paragraph_text}\n".encode()
+    )
 
 
 def _build_manifest(
@@ -340,8 +322,8 @@ def _build_manifest(
             model_profile=ContextModelProfile("sqlite-coverage-model", 512, 32, 8),
             prompt_id=f"{planner_policy_id}_prompt_v1",
             prompt_bytes=prompt,
-            schema_id="staged_claim_output_v5",
-            schema_bytes=staged_claim_output_schema_bytes(),
+            schema_id="semantic_draft_text_v1",
+            schema_bytes=semantic_draft_text_schema_bytes(),
             renderer_version="sqlite_coverage_renderer_v1",
             evidence_selection_policy_id="focus_node_evidence_v1",
         ),
@@ -375,7 +357,7 @@ def _run_extraction(
         FixtureModelRuntime(raw_output),
         Uuid4ModelRunIdFactory(),
         ExactWhitespaceTokenizer(),
-        StagedClaimTaskSchemaRegistry(),
+        SemanticDraftTaskSchemaRegistry(),
     )
 
 
@@ -584,8 +566,7 @@ def test_sqlite_selected_run_never_inherits_historical_proposals_after_restart(
         raw_output = (
             _candidate_output(document)
             if retry_status is ModelRunStatus.SUCCEEDED
-            else b'{"kind":"abstain","schema_id":"staged_claim_output_v5",'
-            b'"reason":"insufficient task-local evidence"}'
+            else b"outcome: abstain\nreason: insufficient task-local evidence\n"
             if retry_status is ModelRunStatus.ABSTAINED
             else b"{}"
         )
@@ -684,8 +665,8 @@ def test_sqlite_multiple_manifests_for_one_unit_fails_after_restart(tmp_path: Pa
                 model_profile=ContextModelProfile("sqlite-coverage-model", 512, 32, 8),
                 prompt_id="multiple_manifest_prompt_b_v1",
                 prompt_bytes=b"Extract using manifest B.",
-                schema_id="staged_claim_output_v5",
-                schema_bytes=staged_claim_output_schema_bytes(),
+                schema_id="semantic_draft_text_v1",
+                schema_bytes=semantic_draft_text_schema_bytes(),
                 renderer_version="sqlite_coverage_renderer_v1",
                 evidence_selection_policy_id="focus_node_evidence_v1",
             ),

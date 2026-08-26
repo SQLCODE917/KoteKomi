@@ -7,6 +7,9 @@ from datetime import UTC, datetime
 
 import pytest
 from kotekomi_application import (
+    PARAGRAPH_HYPOTHESIS_EVIDENCE_SELECTION_V1,
+    PARAGRAPH_SEGMENT_V1,
+    PARAGRAPH_SEGMENT_V2,
     AnalysisUnit,
     AnalysisUnitPlanningInput,
     ContextManifestInput,
@@ -15,6 +18,7 @@ from kotekomi_application import (
     RetrievalSelectionAnalysisUnitInput,
     build_context_manifest,
     create_analysis_unit_from_retrieval_selection,
+    paragraph_source_segments,
     plan_analysis_units,
     render_context,
     verify_context_manifest,
@@ -219,6 +223,30 @@ def _manifest_input(unit: AnalysisUnit, *, limit: int) -> ContextManifestInput:
     )
 
 
+def _bundle_with_focus_node_type(node_type: str) -> DocumentRepresentationBundle:
+    bundle = _bundle()
+    nodes = tuple(
+        node.model_copy(update={"node_type": node_type}) if node.id == "nod_context_focus" else node
+        for node in bundle.nodes
+    )
+    representation_template = bundle.representation.model_copy(
+        update={"canonical_output_digest": "0" * 64}
+    )
+    representation = representation_template.model_copy(
+        update={
+            "canonical_output_digest": canonical_representation_digest(
+                representation_template,
+                text_views=bundle.text_views,
+                nodes=nodes,
+                edges=bundle.edges,
+                source_regions=bundle.source_regions,
+                quality_report=bundle.quality_report,
+            )
+        }
+    )
+    return bundle.model_copy(update={"representation": representation, "nodes": nodes})
+
+
 def _nonheading_parent_bundle() -> DocumentRepresentationBundle:
     bundle = _bundle()
     logical = next(view for view in bundle.text_views if view.kind is TextViewKind.LOGICAL)
@@ -301,6 +329,46 @@ def test_context_planner_includes_required_definition_and_excludes_furniture() -
     )
 
 
+def test_segment_local_policy_creates_one_unit_and_context_per_source_segment() -> None:
+    ledger = FakeContextPlanningLedger()
+    plan = plan_analysis_units(
+        AnalysisUnitPlanningInput(
+            ledger.bundle.representation.id,
+            "segment_local_hypothesis_v1",
+            "claim_extraction",
+            focus_node_types=("paragraph",),
+        ),
+        ledger,
+    )
+
+    assert [unit.source_segment_label for unit in plan.units] == ["s1", "s1"]
+    unit = next(unit for unit in plan.units if unit.focus_node_ids == ("nod_context_focus",))
+    manifest = build_context_manifest(
+        replace(
+            _manifest_input(unit, limit=256),
+            evidence_selection_policy_id=PARAGRAPH_HYPOTHESIS_EVIDENCE_SELECTION_V1,
+            source_segment_policy_id=PARAGRAPH_SEGMENT_V1,
+        ),
+        ledger,
+        ExactWhitespaceTokenizer(),
+    ).manifest
+
+    assert b"SOURCE SEGMENT: s1\nThe CHIP identifies health priorities." in manifest.rendered_input
+    assert b"Community Health Improvement Plan" not in manifest.rendered_input
+
+
+def test_paragraph_segment_v2_preserves_initialisms_and_exact_reconstruction() -> None:
+    text = "Top U.S. AI companies joined the U.S. AISI Consortium. Next sentence."
+
+    segments = paragraph_source_segments(text, PARAGRAPH_SEGMENT_V2)
+
+    assert [segment.exact_text for segment in segments] == [
+        "Top U.S. AI companies joined the U.S. AISI Consortium. ",
+        "Next sentence.",
+    ]
+    assert "".join(segment.exact_text for segment in segments) == text
+
+
 def test_retrieval_context_includes_heading_ancestors_without_parent_body() -> None:
     ledger = FakeContextPlanningLedger()
     ledger.bundle = _nonheading_parent_bundle()
@@ -326,6 +394,57 @@ def test_retrieval_context_includes_heading_ancestors_without_parent_body() -> N
     assert b"Community Health" in outcome.manifest.rendered_input
     assert b"Improvement Plan" in outcome.manifest.rendered_input
     assert b"Community Health Improvement Plan (CHIP)" not in outcome.manifest.rendered_input
+
+
+def test_direct_prose_evidence_policy_selects_only_focus_paragraphs() -> None:
+    ledger = FakeContextPlanningLedger()
+    unit = create_analysis_unit_from_retrieval_selection(
+        RetrievalSelectionAnalysisUnitInput(
+            representation_id=ledger.bundle.representation.id,
+            focus_node_ids=("nod_context_focus",),
+            policy_id="direct_prose_fixture_v1",
+        ),
+        ledger,
+    )
+
+    outcome = build_context_manifest(
+        replace(
+            _manifest_input(unit, limit=256),
+            evidence_selection_policy_id="direct_prose_evidence_v1",
+        ),
+        ledger,
+        ExactWhitespaceTokenizer(),
+    )
+
+    assert tuple(candidate.node_id for candidate in outcome.manifest.evidence_candidates) == (
+        "nod_context_focus",
+    )
+    assert b"[direct_prose]" in outcome.manifest.rendered_input
+
+
+def test_direct_prose_evidence_policy_excludes_a_references_list_item() -> None:
+    ledger = FakeContextPlanningLedger()
+    ledger.bundle = _bundle_with_focus_node_type("list_item")
+    unit = create_analysis_unit_from_retrieval_selection(
+        RetrievalSelectionAnalysisUnitInput(
+            representation_id=ledger.bundle.representation.id,
+            focus_node_ids=("nod_context_focus",),
+            policy_id="direct_prose_references_fixture_v1",
+        ),
+        ledger,
+    )
+
+    outcome = build_context_manifest(
+        replace(
+            _manifest_input(unit, limit=256),
+            evidence_selection_policy_id="direct_prose_evidence_v1",
+        ),
+        ledger,
+        ExactWhitespaceTokenizer(),
+    )
+
+    assert outcome.manifest.evidence_candidates == ()
+    assert b"[direct_prose]" not in outcome.manifest.rendered_input
 
 
 def test_context_planner_splits_multiple_focus_nodes_and_blocks_one_oversized_unit() -> None:

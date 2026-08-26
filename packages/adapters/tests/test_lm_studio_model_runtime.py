@@ -92,12 +92,12 @@ def _task(runtime: LMStudioModelRuntime) -> ModelTaskRequest:
         generation_parameters=(ExecutionSetting("max_output_tokens", 10),),
         prompt_id="fixture",
         prompt_digest=digest,
-        schema_id="staged_claim_output_v5",
+        schema_id="semantic_draft_text_v1",
         schema_digest=digest,
         context_manifest_id="ctx_fixture",
         context_manifest_digest=digest,
         rendered_input_digest="b" * 64,
-        output_contract_version="staged_claim_output_v5",
+        output_contract_version="semantic_draft_text_v1",
     )
     return ModelTaskRequest(
         extraction_task_id="ext_fixture",
@@ -121,7 +121,14 @@ def test_lm_studio_runtime_returns_one_strict_output_text() -> None:
                     {
                         "model": "fixture-model",
                         "output": [
-                            {"content": [{"type": "output_text", "text": '{"kind":"abstain"}'}]}
+                            {
+                                "content": [
+                                    {
+                                        "type": "output_text",
+                                        "text": "outcome: abstain\nreason: fixture",
+                                    }
+                                ]
+                            }
                         ],
                         "usage": {"output_tokens": 3},
                     }
@@ -134,7 +141,7 @@ def test_lm_studio_runtime_returns_one_strict_output_text() -> None:
     runtime = _runtime(client, streaming_client)
     response = runtime.run_model_task(_task(runtime))
 
-    assert response.raw_output == b'{"kind":"abstain"}'
+    assert response.raw_output == b"outcome: abstain\nreason: fixture"
     assert response.execution_receipt.input_token_count == 2
     assert response.first_response_event_milliseconds == 25
     assert runtime.task_deadline_seconds == 1

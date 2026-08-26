@@ -166,9 +166,14 @@ Headers and footers are typed and retained. The analysis text view excludes them
 
 Continuation rows, repeated headers, captions, units, and footnotes remain linked. A value cell is not analysis-ready until its header ancestry can be determined or the table is flagged degraded.
 
-### Unreadable or encrypted PDF
+### Unreadable or credential-protected PDF
 
 The raw file is captured. The outcome is `blocked` with page-level reasons. No empty “successful” representation and no model task are created.
+
+An encrypted PDF with no user credential requirement enters the normal extraction path.
+The preflight preserves its encryption state and declared permissions.
+
+A PDF that requires a user credential remains blocked until the caller supplies a valid credential.
 
 ## 9. Required fixture classes
 
@@ -187,7 +192,7 @@ The repository's redistributable corpus SHALL include at least:
 - definition reused several pages later;
 - malformed font mapping or replacement glyphs;
 - truncated/corrupt PDF;
-- encrypted PDF without credentials;
+- encrypted PDF that requires a user credential;
 - deliberately invalid parser coordinates for validator tests.
 
 ## 10. Compatibility and delivery
