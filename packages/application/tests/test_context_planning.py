@@ -10,6 +10,7 @@ from kotekomi_application import (
     PARAGRAPH_HYPOTHESIS_EVIDENCE_SELECTION_V1,
     PARAGRAPH_SEGMENT_V1,
     PARAGRAPH_SEGMENT_V2,
+    PARAGRAPH_SEGMENT_V3,
     AnalysisUnit,
     AnalysisUnitPlanningInput,
     ContextManifestInput,
@@ -21,6 +22,7 @@ from kotekomi_application import (
     paragraph_source_segments,
     plan_analysis_units,
     render_context,
+    source_copy_view,
     verify_context_manifest,
 )
 from kotekomi_application.context_planning import _definition_nodes_for_focus
@@ -367,6 +369,15 @@ def test_paragraph_segment_v2_preserves_initialisms_and_exact_reconstruction() -
         "Next sentence.",
     ]
     assert "".join(segment.exact_text for segment in segments) == text
+
+
+def test_paragraph_segment_v3_renders_a_source_copy_view_without_mutating_source_spans() -> None:
+    text = "The  UK\tand the US collaborated. "
+
+    segments = paragraph_source_segments(text, PARAGRAPH_SEGMENT_V3)
+
+    assert segments[0].exact_text == text
+    assert source_copy_view(segments[0].exact_text) == "The UK and the US collaborated."
 
 
 def test_retrieval_context_includes_heading_ancestors_without_parent_body() -> None:

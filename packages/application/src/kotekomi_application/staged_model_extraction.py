@@ -21,6 +21,7 @@ from pydantic import ValidationError
 from kotekomi_application.context_planning import (
     PARAGRAPH_SEGMENT_V1,
     PARAGRAPH_SEGMENT_V2,
+    PARAGRAPH_SEGMENT_V3,
     ContextManifest,
     ContextManifestStatus,
     ContextPlanningLedger,
@@ -28,6 +29,7 @@ from kotekomi_application.context_planning import (
     EvidenceCandidate,
     paragraph_source_segments,
     render_context,
+    source_copy_view,
     verify_context_manifest,
 )
 from kotekomi_application.grounded_candidates import (
@@ -326,6 +328,7 @@ class BoundedExtractionOutcome:
     extraction_task: ExtractionTask
     model_run: ModelRun
     proposed_change_batch: ProposedChangeBatchOutcome | None
+    verified_hypotheses: tuple[VerifiedHypothesis, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -347,6 +350,14 @@ class AtomicHypothesis:
     subject: str
     relation: str
     object_value: str
+
+
+@dataclass(frozen=True)
+class VerifiedHypothesis:
+    """One verifier-accepted PHP-1 claim and its pending Assertion proposal."""
+
+    hypothesis: AtomicHypothesis
+    proposed_change_id: str
 
 
 @dataclass(frozen=True)
@@ -599,7 +610,17 @@ def run_bounded_extraction(
         )
         ledger_repository.save_model_run(failed_run)
         return BoundedExtractionOutcome(task, failed_run, None)
-    return BoundedExtractionOutcome(task, run, batch_commit.outcome)
+    verified_hypotheses = ()
+    if isinstance(parsed, HypothesisBatch):
+        accepted_claims = _canonical_hypothesis_claims(parsed.claims)
+        verified_hypotheses = tuple(
+            VerifiedHypothesis(
+                claim,
+                batch_commit.outcome.proposed_change_ids_by_local_id[f"assertion_{index:02d}"],
+            )
+            for index, claim in enumerate(accepted_claims, start=1)
+        )
+    return BoundedExtractionOutcome(task, run, batch_commit.outcome, verified_hypotheses)
 
 
 def _extraction_task(
@@ -882,38 +903,35 @@ def _grounded_hypothesis_batch(
     bound_evidence: GroundedEvidenceCandidate,
     submitted_at: datetime,
 ) -> tuple[GroundedCandidateBatchInput, dict[str, JsonValue]]:
-    if manifest.source_segment_policy_id not in {PARAGRAPH_SEGMENT_V1, PARAGRAPH_SEGMENT_V2}:
+    if manifest.source_segment_policy_id not in {
+        PARAGRAPH_SEGMENT_V1,
+        PARAGRAPH_SEGMENT_V2,
+        PARAGRAPH_SEGMENT_V3,
+    }:
         raise ValueError("Hypothesis batch requires a paragraph source segment policy.")
     segments = paragraph_source_segments(
         bound_evidence.exact_text, manifest.source_segment_policy_id
     )
     by_label = {segment.label: segment for segment in segments}
-    unique: dict[tuple[str, str, str, str], AtomicHypothesis] = {}
-    duplicate_lines: list[str] = []
     for claim in output.claims:
         segment = by_label.get(claim.source_segment_label)
         if segment is None:
             raise ValueError("Hypothesis claim references an unknown source segment.")
-        _require_source_grounded(claim.subject, segment.exact_text, "Hypothesis subject")
-        _require_source_grounded(claim.object_value, segment.exact_text, "Hypothesis object")
-        key = (claim.source_segment_label, claim.subject, claim.relation, claim.object_value)
-        if key in unique:
-            duplicate_lines.append(_hypothesis_line(claim))
-        else:
-            unique[key] = claim
-    if not unique:
-        raise ValueError("Hypothesis batch requires at least one claim or an abstention.")
-    ordered = tuple(
-        sorted(
-            unique.values(),
-            key=lambda claim: (
-                int(claim.source_segment_label.removeprefix("s")),
-                claim.subject,
-                claim.relation,
-                claim.object_value,
-            ),
+        _require_hypothesis_source_grounded(
+            claim.subject,
+            segment.exact_text,
+            manifest.source_segment_policy_id,
+            "Hypothesis subject",
         )
-    )
+        _require_hypothesis_source_grounded(
+            claim.object_value,
+            segment.exact_text,
+            manifest.source_segment_policy_id,
+            "Hypothesis object",
+        )
+    ordered, duplicate_lines = _canonical_hypothesis_claims_with_duplicates(output.claims)
+    if not ordered:
+        raise ValueError("Hypothesis batch requires at least one claim or an abstention.")
     organizations: dict[str, str] = {}
     evidence: list[GroundedEvidenceCandidate] = []
     evidence_local_ids_by_segment: dict[str, str] = {}
@@ -1003,7 +1021,11 @@ def _verify_hypothesis_batch(
         {node.id: node for node in bundle.nodes},
         {text_view.id: text_view for text_view in bundle.text_views},
     )
-    if manifest.source_segment_policy_id not in {PARAGRAPH_SEGMENT_V1, PARAGRAPH_SEGMENT_V2}:
+    if manifest.source_segment_policy_id not in {
+        PARAGRAPH_SEGMENT_V1,
+        PARAGRAPH_SEGMENT_V2,
+        PARAGRAPH_SEGMENT_V3,
+    }:
         raise ValueError("Hypothesis verifier requires a paragraph source segment policy.")
     segments = {
         segment.label: segment
@@ -1018,8 +1040,18 @@ def _verify_hypothesis_batch(
         segment = segments.get(claim.source_segment_label)
         if segment is None:
             raise ValueError("Hypothesis claim references an unknown source segment.")
-        _require_source_grounded(claim.subject, segment.exact_text, "Hypothesis subject")
-        _require_source_grounded(claim.object_value, segment.exact_text, "Hypothesis object")
+        _require_hypothesis_source_grounded(
+            claim.subject,
+            segment.exact_text,
+            manifest.source_segment_policy_id,
+            "Hypothesis subject",
+        )
+        _require_hypothesis_source_grounded(
+            claim.object_value,
+            segment.exact_text,
+            manifest.source_segment_policy_id,
+            "Hypothesis object",
+        )
         verdict, verifier_run_id = _run_hypothesis_verifier(
             extraction_input,
             manifest,
@@ -1268,6 +1300,40 @@ def _hypothesis_line(claim: AtomicHypothesis) -> str:
     )
 
 
+def _canonical_hypothesis_claims(
+    claims: tuple[AtomicHypothesis, ...],
+) -> tuple[AtomicHypothesis, ...]:
+    return _canonical_hypothesis_claims_with_duplicates(claims)[0]
+
+
+def _canonical_hypothesis_claims_with_duplicates(
+    claims: tuple[AtomicHypothesis, ...],
+) -> tuple[tuple[AtomicHypothesis, ...], list[str]]:
+    """Keep the deterministic claim order that determines Assertion local IDs."""
+    unique: dict[tuple[str, str, str, str], AtomicHypothesis] = {}
+    duplicate_lines: list[str] = []
+    for claim in claims:
+        key = (claim.source_segment_label, claim.subject, claim.relation, claim.object_value)
+        if key in unique:
+            duplicate_lines.append(_hypothesis_line(claim))
+        else:
+            unique[key] = claim
+    return (
+        tuple(
+            sorted(
+                unique.values(),
+                key=lambda claim: (
+                    int(claim.source_segment_label.removeprefix("s")),
+                    claim.subject,
+                    claim.relation,
+                    claim.object_value,
+                ),
+            )
+        ),
+        duplicate_lines,
+    )
+
+
 def _bound_evidence_candidate(manifest: ContextManifest) -> EvidenceCandidate:
     if len(manifest.evidence_candidates) != 1:
         raise ValueError("SemanticDraft task requires exactly one bound EvidenceCandidate.")
@@ -1338,6 +1404,19 @@ def paragraph_hypothesis_text_schema_bytes() -> bytes:
 def _require_source_grounded(value: str, exact_text: str, label: str) -> None:
     if value not in exact_text:
         raise ValueError(f"{label} must occur in the bound EvidenceCandidate text.")
+
+
+def _require_hypothesis_source_grounded(
+    value: str, exact_text: str, source_segment_policy_id: str | None, label: str
+) -> None:
+    if value.casefold() in {"it", "the institute", "the company", "the department"}:
+        raise ValueError(f"{label} must be a literal named organization mention.")
+    source_text = (
+        source_copy_view(exact_text)
+        if source_segment_policy_id == PARAGRAPH_SEGMENT_V3
+        else exact_text
+    )
+    _require_source_grounded(value, source_text, label)
 
 
 def _task_metadata(manifest: ContextManifest) -> dict[str, JsonValue]:

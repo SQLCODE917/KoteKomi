@@ -16,6 +16,7 @@ from kotekomi_application import (
     generation_parameters_digest,
     model_identity_snapshot_digest,
 )
+from kotekomi_domain.models import JsonValue
 
 from kotekomi_adapters.model_http import (
     HttpxSseJsonHttpClient,
@@ -135,14 +136,15 @@ class LMStudioModelRuntime:
     def run_model_task(self, task: ModelTaskRequest) -> ModelTaskResponse:
         if task.execution_spec.model_identity != self.configured_identity:
             raise ModelRuntimeResponseError("LM Studio task identity does not match configuration.")
+        generation_parameters = _generation_parameters_payload(task, self.max_output_tokens)
         response = self.streaming_http_client.stream_request(
             method="POST",
             url=f"{self.endpoint}/responses",
             payload={
                 "model": self.model,
                 "input": task.rendered_input.decode("utf-8"),
-                "max_output_tokens": self.max_output_tokens,
                 "stream": True,
+                **generation_parameters,
             },
             deadline_seconds=self.timeout_seconds,
         )
@@ -171,6 +173,26 @@ class LMStudioModelRuntime:
             execution_receipt=receipt,
             first_response_event_milliseconds=response.first_response_event_milliseconds,
         )
+
+
+def _generation_parameters_payload(
+    task: ModelTaskRequest, configured_max_output_tokens: int
+) -> dict[str, JsonValue]:
+    supported = frozenset({"max_output_tokens", "seed", "temperature"})
+    values = {setting.key: setting.value for setting in task.execution_spec.generation_parameters}
+    unknown = sorted(set(values) - supported)
+    if unknown:
+        raise ModelRuntimeResponseError(
+            "LM Studio does not support declared generation parameters: " + ", ".join(unknown)
+        )
+    max_output_tokens = values.get("max_output_tokens")
+    if max_output_tokens is None:
+        raise ModelRuntimeResponseError("LM Studio task must declare max_output_tokens.")
+    if max_output_tokens != configured_max_output_tokens:
+        raise ModelRuntimeResponseError(
+            "LM Studio task max_output_tokens does not match configured runtime."
+        )
+    return cast(dict[str, JsonValue], values)
 
 
 def _model_ids(body: str) -> set[str]:

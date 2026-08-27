@@ -9,10 +9,12 @@ from kotekomi_application import (
     LATEST_COMPLETED_VALID_ATTEMPT_POLICY_ID,
     PARAGRAPH_HYPOTHESIS_EVIDENCE_SELECTION_V1,
     PARAGRAPH_SEGMENT_V1,
+    PARAGRAPH_SEGMENT_V3,
     AnalysisCoverageState,
     AnalysisRunInput,
     AnalysisRunItemInput,
     AnalysisUnitPlanningInput,
+    AtomicHypothesis,
     BoundedExtractionInput,
     ContextManifest,
     ContextManifestInput,
@@ -395,13 +397,13 @@ class FixtureTokenizer:
         return len(rendered_input.decode().split())
 
 
-def _bundle(document_id: str) -> DocumentRepresentationBundle:
+def _bundle(document_id: str, text: str = TEXT) -> DocumentRepresentationBundle:
     text_view = TextView(
         id="tvw_grounded_fixture",
         representation_id="rep_grounded_fixture",
         kind=TextViewKind.LOGICAL,
-        content_digest=hashlib.sha256(TEXT.encode()).hexdigest(),
-        text=TEXT,
+        content_digest=hashlib.sha256(text.encode()).hexdigest(),
+        text=text,
         normalization_policy="utf8_identity_v1",
     )
     root = DocumentNode(
@@ -411,7 +413,7 @@ def _bundle(document_id: str) -> DocumentRepresentationBundle:
         order_index=0,
         text_view_id=text_view.id,
         start_char=0,
-        end_char=len(TEXT),
+        end_char=len(text),
     )
     node = DocumentNode(
         id="nod_grounded_fixture",
@@ -421,12 +423,12 @@ def _bundle(document_id: str) -> DocumentRepresentationBundle:
         order_index=1,
         text_view_id=text_view.id,
         start_char=0,
-        end_char=len(TEXT),
+        end_char=len(text),
     )
     quality_report = ParseQualityReport(
         id="pqr_grounded_fixture",
         representation_id="rep_grounded_fixture",
-        metric_values={"text_char_count": len(TEXT)},
+        metric_values={"text_char_count": len(text)},
         analyzability=RepresentationAnalyzability.ACCEPTABLE,
     )
     template = DocumentRepresentation(
@@ -436,7 +438,7 @@ def _bundle(document_id: str) -> DocumentRepresentationBundle:
         parser_version="1",
         parser_config_digest="a" * 64,
         processing_task_fingerprint_id="ptf_grounded_fixture",
-        input_blob_digest=hashlib.sha256(TEXT.encode()).hexdigest(),
+        input_blob_digest=hashlib.sha256(text.encode()).hexdigest(),
         canonical_output_digest="0" * 64,
         created_at=NOW,
     )
@@ -511,7 +513,10 @@ def _fixture_execution_spec(manifest: ContextManifest) -> ModelExecutionSpec:
     )
 
 
-def _hypothesis_manifest_for_staged_test(ledger: FakeGroundedCandidateLedger) -> ContextManifest:
+def _hypothesis_manifest_for_staged_test(
+    ledger: FakeGroundedCandidateLedger,
+    source_segment_policy_id: str = PARAGRAPH_SEGMENT_V1,
+) -> ContextManifest:
     unit = plan_analysis_units(
         AnalysisUnitPlanningInput(
             ledger.bundle.representation.id,
@@ -531,7 +536,7 @@ def _hypothesis_manifest_for_staged_test(ledger: FakeGroundedCandidateLedger) ->
             schema_bytes=schema.canonical_schema_bytes,
             renderer_version="paragraph_hypothesis_context_v3",
             evidence_selection_policy_id=PARAGRAPH_HYPOTHESIS_EVIDENCE_SELECTION_V1,
-            source_segment_policy_id=PARAGRAPH_SEGMENT_V1,
+            source_segment_policy_id=source_segment_policy_id,
         ),
         ledger,
         FixtureTokenizer(),
@@ -793,6 +798,7 @@ def test_staged_extraction_archives_invalid_task_local_output_without_proposals(
     assert outcome.model_run.error_message is not None
     assert "fields must match" in outcome.model_run.error_message
     assert outcome.proposed_change_batch is None
+    assert outcome.verified_hypotheses == ()
     assert ledger.proposed_changes == {}
     assert archive.outputs[outcome.model_run.id] == raw_output
 
@@ -875,6 +881,15 @@ def test_paragraph_hypothesis_batch_publishes_three_segment_grounded_proposals()
     assert outcome.model_run.task_metadata == {"source_segment_policy_id": "paragraph_segment_v1"}
     assert outcome.model_run.outcome_metadata["unique_claim_count"] == 3
     assert outcome.proposed_change_batch is not None
+    assert tuple(item.hypothesis for item in outcome.verified_hypotheses) == (
+        AtomicHypothesis("s1", "Fixture Organization", "partners with", "Alpha"),
+        AtomicHypothesis("s2", "Fixture Organization", "supports", "Beta"),
+        AtomicHypothesis("s3", "Gamma", "collaborates with", "Delta"),
+    )
+    assert tuple(item.proposed_change_id for item in outcome.verified_hypotheses) == tuple(
+        outcome.proposed_change_batch.proposed_change_ids_by_local_id[f"assertion_{index:02d}"]
+        for index in range(1, 4)
+    )
     assert len(ledger.evidence_targets) == 3
     assert len(ledger.proposed_changes) == 8
     assert {target.exact_text for target in ledger.evidence_targets.values()} == {
@@ -885,6 +900,61 @@ def test_paragraph_hypothesis_batch_publishes_three_segment_grounded_proposals()
     assert b"SOURCE SEGMENT: s1" in manifest.rendered_input
     assert b"Alpha.\nSOURCE SEGMENT: s2\n Fixture Organization" in manifest.rendered_input
     assert b"nod_grounded_fixture" not in manifest.rendered_input
+
+
+def test_paragraph_hypothesis_v3_accepts_collapsed_layout_whitespace() -> None:
+    ledger = FakeGroundedCandidateLedger()
+    ledger.bundle = _bundle(ledger.document.id, "Fixture  Organization partners with Alpha.")
+    manifest = _hypothesis_manifest_for_staged_test(ledger, PARAGRAPH_SEGMENT_V3)
+
+    outcome = run_bounded_extraction(
+        BoundedExtractionInput(
+            ledger.source.id,
+            ledger.document.id,
+            ledger.bundle.representation.id,
+            manifest.id,
+            manifest.prompt_bytes,
+            _hypothesis_execution_spec(manifest),
+            "paragraph_hypothesis_validator_v1",
+        ),
+        ledger,
+        FakeModelOutputArchive(),
+        FakeModelTaskRuntime(b"claim: s1 | Fixture Organization | partners with | Alpha\n"),
+        Uuid4ModelRunIdFactory(),
+        FixtureTokenizer(),
+        ParagraphHypothesisTaskSchemaRegistry(),
+    )
+
+    assert outcome.model_run.status is ModelRunStatus.SUCCEEDED
+    assert next(iter(ledger.evidence_targets.values())).exact_text == (
+        "Fixture  Organization partners with Alpha."
+    )
+
+
+def test_paragraph_hypothesis_v3_rejects_a_generic_organization_description() -> None:
+    ledger = FakeGroundedCandidateLedger()
+    manifest = _hypothesis_manifest_for_staged_test(ledger, PARAGRAPH_SEGMENT_V3)
+
+    outcome = run_bounded_extraction(
+        BoundedExtractionInput(
+            ledger.source.id,
+            ledger.document.id,
+            ledger.bundle.representation.id,
+            manifest.id,
+            manifest.prompt_bytes,
+            _hypothesis_execution_spec(manifest),
+            "paragraph_hypothesis_validator_v1",
+        ),
+        ledger,
+        FakeModelOutputArchive(),
+        FakeModelTaskRuntime(b"claim: s1 | It | partners with | Alpha\n"),
+        Uuid4ModelRunIdFactory(),
+        FixtureTokenizer(),
+        ParagraphHypothesisTaskSchemaRegistry(),
+    )
+
+    assert outcome.model_run.status is ModelRunStatus.INVALID_OUTPUT
+    assert outcome.proposed_change_batch is None
 
 
 def test_hypothesis_faithfulness_verifier_publishes_only_accepted_claims() -> None:

@@ -15,7 +15,7 @@ from typing import Any
 from kotekomi_adapters import LocalArchiveStore, sqlite_ledger_transaction
 from kotekomi_application import (
     PARAGRAPH_HYPOTHESIS_EVIDENCE_SELECTION_V1,
-    PARAGRAPH_SEGMENT_V2,
+    PARAGRAPH_SEGMENT_V3,
     AnalysisUnitPlanningInput,
     BoundedExtractionInput,
     ContextManifestInput,
@@ -29,20 +29,23 @@ from kotekomi_application import (
     ParagraphHypothesisTaskSchemaRegistry,
     Uuid4ModelRunIdFactory,
     build_context_manifest,
+    model_execution_spec_digest,
+    paragraph_source_segments,
     plan_analysis_units,
     run_bounded_extraction,
+    source_copy_view,
 )
 from kotekomi_pipelines.cli import main
 from kotekomi_pipelines.config import load_config
 from kotekomi_pipelines.model_runtime import build_model_task_runtime
 
 ROOT = Path(__file__).resolve().parents[1]
-PROMPT_ID = "paragraph_hypothesis_segment_v2"
-PROMPT_PATH = ROOT / "prompts" / "paragraph_hypothesis_segment_v2.md"
+PROMPT_ID = "paragraph_hypothesis_segment_v3"
+PROMPT_PATH = ROOT / "prompts" / "paragraph_hypothesis_segment_v3.md"
 VERIFIER_PROMPT_ID = "paragraph_hypothesis_faithfulness_v1"
 VERIFIER_PROMPT_PATH = ROOT / "prompts" / "paragraph_hypothesis_faithfulness_v1.md"
 ANALYSIS_POLICY_ID = "segment_local_hypothesis_v1"
-RENDERER_VERSION = "paragraph_hypothesis_segment_context_v2"
+RENDERER_VERSION = "paragraph_hypothesis_segment_context_v3"
 
 
 @dataclass(frozen=True)
@@ -52,6 +55,41 @@ class Php1DiagnosticCase:
     source_url: str
     anchor: str
     metadata: dict[str, str] = field(default_factory=lambda: {})
+
+
+@dataclass(frozen=True)
+class Php1Expectation:
+    expectation_id: str
+    case_ids: tuple[str, ...]
+    fixture_path: str
+    paragraph_anchor: str
+    source_segment_anchor: str
+    subject_text: str
+    object_text: str
+    relationship_shape: str
+
+    @property
+    def target_identity(self) -> tuple[str, str, str, str]:
+        return (
+            self.fixture_path,
+            source_copy_view(self.source_segment_anchor),
+            source_copy_view(self.subject_text),
+            source_copy_view(self.object_text),
+        )
+
+
+@dataclass(frozen=True)
+class _ResolvedSegment:
+    fixture_path: str
+    representation_id: str
+    paragraph_node_id: str
+    paragraph_text: str
+    source_segment_label: str
+    unit: Any
+
+    @property
+    def key(self) -> tuple[str, str, str]:
+        return (self.fixture_path, self.paragraph_node_id, self.source_segment_label)
 
 
 class DiagnosticTokenizer:
@@ -146,6 +184,7 @@ def run_cases(
     *,
     representation_policy_version: str,
     include_raw_output: bool,
+    expectations: tuple[Php1Expectation, ...] = (),
 ) -> dict[str, Any]:
     _progress({"event": "run_started", "case_count": len(cases)})
     missing = [case.case_id for case in cases if not (ROOT / case.relative_path).is_file()]
@@ -188,13 +227,56 @@ def run_cases(
         prompt = PROMPT_PATH.read_bytes()
         verifier_prompt = VERIFIER_PROMPT_PATH.read_bytes()
         tokenizer = DiagnosticTokenizer()
-        results: list[dict[str, Any]] = []
         with sqlite_ledger_transaction(ledger_path) as ledger:
+            bundles = {
+                path: _required_bundle(ledger, representation_id)
+                for path, representation_id in representations.items()
+            }
+            units_by_node: dict[tuple[str, str], tuple[Any, ...]] = {}
+            case_plans: dict[str, tuple[_ResolvedSegment, ...]] = {}
+            case_selection_results: dict[str, dict[str, Any]] = {}
+            planned_segments: dict[tuple[str, str, str], _ResolvedSegment] = {}
             for case in cases:
-                _progress({"event": "case_started", "case_id": case.case_id})
-                result = _run_case(
+                selection = _resolve_case_segments(
                     case,
                     representations[case.relative_path],
+                    bundles[case.relative_path],
+                    ledger,
+                    units_by_node,
+                )
+                if isinstance(selection, dict):
+                    case_selection_results[case.case_id] = selection
+                    continue
+                case_plans[case.case_id] = selection
+                planned_segments.update({plan.key: plan for plan in selection})
+
+            expectation_resolutions = {
+                expectation.expectation_id: _resolve_expectation(
+                    expectation,
+                    representations[expectation.fixture_path],
+                    bundles[expectation.fixture_path],
+                    ledger,
+                    units_by_node,
+                )
+                for expectation in expectations
+            }
+            for resolution in expectation_resolutions.values():
+                plan = resolution.get("plan")
+                if isinstance(plan, _ResolvedSegment):
+                    planned_segments[plan.key] = plan
+
+            segment_results: dict[tuple[str, str, str], dict[str, Any]] = {}
+            for key, plan in sorted(planned_segments.items()):
+                _progress(
+                    {
+                        "event": "source_segment_started",
+                        "fixture_path": plan.fixture_path,
+                        "paragraph_node_id": plan.paragraph_node_id,
+                        "source_segment_label": plan.source_segment_label,
+                    }
+                )
+                segment_results[key] = _run_segment(
+                    plan,
                     ledger,
                     archive,
                     config,
@@ -205,6 +287,20 @@ def run_cases(
                     tokenizer,
                     include_raw_output,
                 )
+
+            results: list[dict[str, Any]] = []
+            for case in cases:
+                _progress({"event": "case_started", "case_id": case.case_id})
+                selection_result = case_selection_results.get(case.case_id)
+                if selection_result is not None:
+                    result = {"case_id": case.case_id, **case.metadata, **selection_result}
+                else:
+                    result = _case_result_from_segments(
+                        case,
+                        case_plans[case.case_id],
+                        segment_results,
+                        include_raw_output,
+                    )
                 results.append(result)
                 _progress(
                     {
@@ -213,32 +309,35 @@ def run_cases(
                         "status": result["status"],
                     }
                 )
-    summary = {"status": "completed", "cases": results}
+            target_report = (
+                _target_report(expectations, expectation_resolutions, segment_results)
+                if expectations
+                else None
+            )
+    summary: dict[str, Any] = {"status": "completed", "cases": results}
+    if target_report is not None:
+        summary["target_report"] = target_report
     _progress({"event": "run_completed", "status": summary["status"]})
     return summary
 
 
-def _run_case(
-    case: Php1DiagnosticCase,
-    representation_id: str,
-    ledger: Any,
-    archive: LocalArchiveStore,
-    config: Any,
-    runtime: RecordingRuntime,
-    schema: Any,
-    prompt: bytes,
-    verifier_prompt: bytes,
-    tokenizer: DiagnosticTokenizer,
-    include_raw_output: bool,
-) -> dict[str, Any]:
+def _required_bundle(ledger: Any, representation_id: str) -> Any:
     bundle = ledger.get_document_representation_bundle(representation_id)
     if bundle is None:
         raise ValueError("PHP-1 diagnostic representation is missing.")
-    selected = _paragraph_for_anchor(bundle, case.anchor)
-    result: dict[str, Any] = {"case_id": case.case_id, **case.metadata}
-    if selected is None:
-        return {**result, "status": "selection_missing", "anchor": case.anchor}
-    node_id, paragraph_text = selected
+    return bundle
+
+
+def _units_for_node(
+    representation_id: str,
+    node_id: str,
+    ledger: Any,
+    cache: dict[tuple[str, str], tuple[Any, ...]],
+) -> tuple[Any, ...]:
+    key = (representation_id, node_id)
+    cached = cache.get(key)
+    if cached is not None:
+        return cached
     units = tuple(
         item
         for item in plan_analysis_units(
@@ -252,127 +351,245 @@ def _run_case(
         ).units
         if item.focus_node_ids == (node_id,)
     )
+    cache[key] = units
+    return units
+
+
+def _resolve_case_segments(
+    case: Php1DiagnosticCase,
+    representation_id: str,
+    bundle: Any,
+    ledger: Any,
+    units_by_node: dict[tuple[str, str], tuple[Any, ...]],
+) -> tuple[_ResolvedSegment, ...] | dict[str, Any]:
+    selected = _first_paragraph_for_anchor(bundle, case.anchor)
+    if selected is None:
+        return {"status": "selection_missing", "anchor": case.anchor}
+    node_id, paragraph_text = selected
+    units = _units_for_node(representation_id, node_id, ledger, units_by_node)
     if not units:
-        return {**result, "status": "selection_missing", "anchor": case.anchor}
+        return {"status": "selection_missing", "anchor": case.anchor}
+    return tuple(
+        _ResolvedSegment(
+            case.relative_path,
+            representation_id,
+            node_id,
+            paragraph_text,
+            str(unit.source_segment_label),
+            unit,
+        )
+        for unit in units
+    )
+
+
+def _resolve_expectation(
+    expectation: Php1Expectation,
+    representation_id: str,
+    bundle: Any,
+    ledger: Any,
+    units_by_node: dict[tuple[str, str], tuple[Any, ...]],
+) -> dict[str, Any]:
+    paragraphs = _paragraphs_for_anchor(bundle, expectation.paragraph_anchor)
+    if len(paragraphs) != 1:
+        return {
+            "resolution_status": "unresolved",
+            "diagnostics": ["paragraph_anchor_not_unique"],
+        }
+    node_id, paragraph_text = paragraphs[0]
+    segments = tuple(
+        segment
+        for segment in paragraph_source_segments(paragraph_text, PARAGRAPH_SEGMENT_V3)
+        if _anchor_matches(segment.exact_text, expectation.source_segment_anchor)
+    )
+    if len(segments) != 1:
+        return {
+            "resolution_status": "unresolved",
+            "diagnostics": ["source_segment_anchor_not_unique"],
+        }
+    units = _units_for_node(representation_id, node_id, ledger, units_by_node)
+    source_segment = segments[0]
+    matching_units = tuple(
+        unit for unit in units if unit.source_segment_label == source_segment.label
+    )
+    if len(matching_units) != 1:
+        return {
+            "resolution_status": "unresolved",
+            "diagnostics": ["source_segment_unit_not_unique"],
+        }
+    return {
+        "resolution_status": "resolved",
+        "diagnostics": [],
+        "plan": _ResolvedSegment(
+            expectation.fixture_path,
+            representation_id,
+            node_id,
+            paragraph_text,
+            source_segment.label,
+            matching_units[0],
+        ),
+    }
+
+
+def _run_segment(
+    plan: _ResolvedSegment,
+    ledger: Any,
+    archive: LocalArchiveStore,
+    config: Any,
+    runtime: RecordingRuntime,
+    schema: Any,
+    prompt: bytes,
+    verifier_prompt: bytes,
+    tokenizer: DiagnosticTokenizer,
+    include_raw_output: bool,
+) -> dict[str, Any]:
+    bundle = _required_bundle(ledger, plan.representation_id)
     document = ledger.get_document(bundle.representation.document_id)
     if document is None:
         raise ValueError("PHP-1 diagnostic Document is missing.")
-    segment_results: list[dict[str, Any]] = []
-    for unit in units:
-        manifest = build_context_manifest(
-            ContextManifestInput(
-                unit,
-                ContextModelProfile(
-                    config.model_execution.profile_name or "lm-studio",
-                    config.model_execution.context_tokens,
-                    config.model_execution.max_output_tokens,
-                    256,
-                ),
-                PROMPT_ID,
-                prompt,
-                schema.schema_id,
-                schema.canonical_schema_bytes,
-                RENDERER_VERSION,
-                PARAGRAPH_HYPOTHESIS_EVIDENCE_SELECTION_V1,
-                PARAGRAPH_SEGMENT_V2,
+    manifest = build_context_manifest(
+        ContextManifestInput(
+            plan.unit,
+            ContextModelProfile(
+                config.model_execution.profile_name or "lm-studio",
+                config.model_execution.context_tokens,
+                config.model_execution.max_output_tokens,
+                256,
             ),
-            ledger,
-            tokenizer,
-        ).manifest
-        if manifest.status is not ContextManifestStatus.READY:
-            segment_results.append(
-                {"source_segment_label": unit.source_segment_label, "status": "context_not_ready"}
-            )
-            continue
-        spec = ModelExecutionSpec(
-            config.model_execution.profile_name or "lm-studio",
-            runtime.configured_identity,
-            (ExecutionSetting("max_output_tokens", config.model_execution.max_output_tokens),),
             PROMPT_ID,
-            hashlib.sha256(prompt).hexdigest(),
+            prompt,
             schema.schema_id,
-            schema.digest,
+            schema.canonical_schema_bytes,
+            RENDERER_VERSION,
+            PARAGRAPH_HYPOTHESIS_EVIDENCE_SELECTION_V1,
+            PARAGRAPH_SEGMENT_V3,
+        ),
+        ledger,
+        tokenizer,
+    ).manifest
+    if manifest.status is not ContextManifestStatus.READY:
+        return {
+            "source_segment_label": plan.source_segment_label,
+            "status": "context_not_ready",
+            "model_run_id": None,
+            "proposed_change_ids": [],
+            "verified_hypotheses": [],
+            "prompt_digest": hashlib.sha256(prompt).hexdigest(),
+            "schema_digest": schema.digest,
+            "execution_spec_digest": None,
+        }
+    spec = ModelExecutionSpec(
+        config.model_execution.profile_name or "lm-studio",
+        runtime.configured_identity,
+        (
+            ExecutionSetting("max_output_tokens", config.model_execution.max_output_tokens),
+            ExecutionSetting("seed", 17),
+            ExecutionSetting("temperature", 0),
+        ),
+        PROMPT_ID,
+        hashlib.sha256(prompt).hexdigest(),
+        schema.schema_id,
+        schema.digest,
+        manifest.id,
+        manifest.manifest_digest,
+        manifest.rendered_input_digest,
+        schema.output_contract_version,
+    )
+    response_count = len(runtime.responses)
+    outcome = run_bounded_extraction(
+        BoundedExtractionInput(
+            document.source_id,
+            document.id,
+            plan.representation_id,
             manifest.id,
-            manifest.manifest_digest,
-            manifest.rendered_input_digest,
-            schema.output_contract_version,
-        )
-        response_count = len(runtime.responses)
-        outcome = run_bounded_extraction(
-            BoundedExtractionInput(
-                document.source_id,
-                document.id,
-                representation_id,
-                manifest.id,
-                prompt,
-                spec,
-                "paragraph_hypothesis_validator_v1",
-                HypothesisVerifierSpec(VERIFIER_PROMPT_ID, verifier_prompt),
-            ),
-            ledger,
-            archive,
-            runtime,
-            Uuid4ModelRunIdFactory(),
-            tokenizer,
-            ParagraphHypothesisTaskSchemaRegistry(),
-        )
-        responses = runtime.responses[response_count:]
-        raw_output = (
-            responses[0].raw_output.decode("utf-8", errors="replace")
-            if include_raw_output and responses
-            else None
-        )
-        verifier_raw_outputs = (
-            [response.raw_output.decode("utf-8", errors="replace") for response in responses[1:]]
-            if include_raw_output
-            else []
-        )
-        proposed_change_ids = (
-            list(outcome.proposed_change_batch.proposed_change_ids_by_local_id.values())
-            if outcome.proposed_change_batch
-            else []
-        )
-        outcome_metadata = outcome.model_run.outcome_metadata
-        segment_results.append(
+            prompt,
+            spec,
+            "paragraph_hypothesis_validator_v1",
+            HypothesisVerifierSpec(VERIFIER_PROMPT_ID, verifier_prompt),
+        ),
+        ledger,
+        archive,
+        runtime,
+        Uuid4ModelRunIdFactory(),
+        tokenizer,
+        ParagraphHypothesisTaskSchemaRegistry(),
+    )
+    responses = runtime.responses[response_count:]
+    raw_output = (
+        responses[0].raw_output.decode("utf-8", errors="replace")
+        if include_raw_output and responses
+        else None
+    )
+    verifier_raw_outputs = (
+        [response.raw_output.decode("utf-8", errors="replace") for response in responses[1:]]
+        if include_raw_output
+        else []
+    )
+    proposed_change_ids = (
+        list(outcome.proposed_change_batch.proposed_change_ids_by_local_id.values())
+        if outcome.proposed_change_batch
+        else []
+    )
+    outcome_metadata = outcome.model_run.outcome_metadata
+    return {
+        "source_segment_label": plan.source_segment_label,
+        "status": diagnostic_segment_status(
+            outcome.model_run.status.value,
+            len(proposed_change_ids),
+            outcome_metadata,
+        ),
+        "model_run_id": outcome.model_run.id,
+        "raw_output": raw_output,
+        "verifier_raw_outputs": verifier_raw_outputs,
+        "error_code": outcome.model_run.error_code,
+        "error_message": outcome.model_run.error_message,
+        "abstention_reason": outcome.model_run.abstention_reason,
+        "execution_diagnostics": outcome.model_run.execution_diagnostics,
+        "proposed_change_ids": proposed_change_ids,
+        "faithfulness_accepted_claim_count": outcome_metadata.get(
+            "faithfulness_accepted_claim_count", 0
+        ),
+        "faithfulness_rejected_claim_count": outcome_metadata.get(
+            "faithfulness_rejected_claim_count", 0
+        ),
+        "verified_hypotheses": [
             {
-                "source_segment_label": unit.source_segment_label,
-                "status": diagnostic_segment_status(
-                    outcome.model_run.status.value,
-                    len(proposed_change_ids),
-                    outcome_metadata,
-                ),
-                "model_run_id": outcome.model_run.id,
-                "raw_output": raw_output,
-                "verifier_raw_outputs": verifier_raw_outputs,
-                "error_code": outcome.model_run.error_code,
-                "error_message": outcome.model_run.error_message,
-                "abstention_reason": outcome.model_run.abstention_reason,
-                "execution_diagnostics": outcome.model_run.execution_diagnostics,
-                "proposed_change_ids": proposed_change_ids,
-                "faithfulness_accepted_claim_count": outcome_metadata.get(
-                    "faithfulness_accepted_claim_count", 0
-                ),
-                "faithfulness_rejected_claim_count": outcome_metadata.get(
-                    "faithfulness_rejected_claim_count", 0
-                ),
+                "subject_text": item.hypothesis.subject,
+                "relation_text": item.hypothesis.relation,
+                "object_text": item.hypothesis.object_value,
+                "proposed_change_id": item.proposed_change_id,
             }
-        )
-    statuses = {item["status"] for item in segment_results}
+            for item in outcome.verified_hypotheses
+        ],
+        "prompt_digest": spec.prompt_digest,
+        "schema_digest": spec.schema_digest,
+        "execution_spec_digest": model_execution_spec_digest(spec),
+    }
+
+
+def _case_result_from_segments(
+    case: Php1DiagnosticCase,
+    plans: tuple[_ResolvedSegment, ...],
+    segment_results: dict[tuple[str, str, str], dict[str, Any]],
+    include_raw_output: bool,
+) -> dict[str, Any]:
+    segments = [segment_results[plan.key] for plan in plans]
+    statuses = {item["status"] for item in segments}
     status = diagnostic_case_status(statuses)
     limit_records = tuple(
         evaluate_eight_claim_limit(
             item["raw_output"],
             str(case.metadata.get("provisional_eligibility", "")),
         )
-        for item in segment_results
+        for item in segments
     )
     measurable = tuple(record for record in limit_records if record["state"] == "measured")
     return {
-        **result,
+        "case_id": case.case_id,
+        **case.metadata,
         "status": status,
-        "node_id": node_id,
-        "paragraph_text": paragraph_text if include_raw_output else None,
-        "segments": segment_results,
+        "node_id": plans[0].paragraph_node_id,
+        "paragraph_text": plans[0].paragraph_text if include_raw_output else None,
+        "segments": segments,
         "eight_claim_evaluation": {
             "state": "measured" if measurable else limit_records[0]["state"],
             "excess_claim_line_count": sum(
@@ -382,15 +599,138 @@ def _run_case(
     }
 
 
-def _paragraph_for_anchor(bundle: Any, anchor: str) -> tuple[str, str] | None:
-    text_views = {item.id: item.text for item in bundle.text_views}
-    for node in bundle.nodes:
-        if node.node_type != "paragraph":
+def _target_report(
+    expectations: tuple[Php1Expectation, ...],
+    resolutions: dict[str, dict[str, Any]],
+    segment_results: dict[tuple[str, str, str], dict[str, Any]],
+) -> dict[str, Any]:
+    target_results: list[dict[str, Any]] = []
+    matched_hypotheses: set[tuple[tuple[str, str, str], str, str]] = set()
+    for expectation in expectations:
+        resolution = resolutions[expectation.expectation_id]
+        diagnostics = list(resolution["diagnostics"])
+        base = {
+            "expectation_id": expectation.expectation_id,
+            "case_ids": list(expectation.case_ids),
+            "fixture_path": expectation.fixture_path,
+            "relationship_shape": expectation.relationship_shape,
+            "resolution_status": resolution["resolution_status"],
+            "matched_model_run_ids": [],
+            "matched_proposed_change_ids": [],
+            "prompt_digest": None,
+            "schema_digest": None,
+            "execution_spec_digest": None,
+        }
+        plan = resolution.get("plan")
+        if not isinstance(plan, _ResolvedSegment):
+            target_results.append({**base, "target_status": None, "diagnostics": diagnostics})
             continue
-        text = text_views[node.text_view_id][node.start_char : node.end_char]
-        if _anchor_matches(text, anchor):
-            return node.id, text
-    return None
+        segment = segment_results[plan.key]
+        base.update(
+            {
+                "paragraph_node_id": plan.paragraph_node_id,
+                "source_segment_label": plan.source_segment_label,
+                "prompt_digest": segment["prompt_digest"],
+                "schema_digest": segment["schema_digest"],
+                "execution_spec_digest": segment["execution_spec_digest"],
+            }
+        )
+        matches = tuple(
+            hypothesis
+            for hypothesis in segment["verified_hypotheses"]
+            if _hypothesis_matches_expectation(hypothesis, expectation)
+        )
+        if matches:
+            for hypothesis in matches:
+                matched_hypotheses.add(
+                    (
+                        plan.key,
+                        str(hypothesis["subject_text"]),
+                        str(hypothesis["object_text"]),
+                    )
+                )
+            target_results.append(
+                {
+                    **base,
+                    "target_status": "matched",
+                    "matched_model_run_ids": [segment["model_run_id"]],
+                    "matched_proposed_change_ids": sorted(
+                        str(hypothesis["proposed_change_id"]) for hypothesis in matches
+                    ),
+                    "diagnostics": diagnostics,
+                }
+            )
+            continue
+        target_status = (
+            "missing"
+            if segment["status"] in {"complete", "abstained", "faithfulness_rejected"}
+            else "blocked"
+        )
+        diagnostics.append(f"source_segment_status:{segment['status']}")
+        target_results.append({**base, "target_status": target_status, "diagnostics": diagnostics})
+
+    unexpected: list[dict[str, Any]] = []
+    unexpected_keys: set[tuple[tuple[str, str, str], str, str, str]] = set()
+    for key, segment in sorted(segment_results.items()):
+        fixture_path, paragraph_node_id, source_segment_label = key
+        for hypothesis in segment["verified_hypotheses"]:
+            hypothesis_key = (
+                key,
+                str(hypothesis["subject_text"]),
+                str(hypothesis["object_text"]),
+            )
+            if hypothesis_key in matched_hypotheses:
+                continue
+            unexpected_key = (
+                key,
+                str(hypothesis["subject_text"]),
+                str(hypothesis["relation_text"]),
+                str(hypothesis["object_text"]),
+            )
+            if unexpected_key in unexpected_keys:
+                continue
+            unexpected_keys.add(unexpected_key)
+            unexpected.append(
+                {
+                    "source_fixture_path": fixture_path,
+                    "paragraph_node_id": paragraph_node_id,
+                    "source_segment_label": source_segment_label,
+                    "subject_text": hypothesis["subject_text"],
+                    "relation_text": hypothesis["relation_text"],
+                    "object_text": hypothesis["object_text"],
+                    "model_run_id": segment["model_run_id"],
+                    "proposed_change_ids": [hypothesis["proposed_change_id"]],
+                }
+            )
+    return {
+        "target_results": target_results,
+        "unexpected_hypotheses": unexpected,
+    }
+
+
+def _hypothesis_matches_expectation(
+    hypothesis: dict[str, Any], expectation: Php1Expectation
+) -> bool:
+    return source_copy_view(str(hypothesis["subject_text"])) == source_copy_view(
+        expectation.subject_text
+    ) and source_copy_view(str(hypothesis["object_text"])) == source_copy_view(
+        expectation.object_text
+    )
+
+
+def _paragraphs_for_anchor(bundle: Any, anchor: str) -> tuple[tuple[str, str], ...]:
+    text_views = {item.id: item.text for item in bundle.text_views}
+    return tuple(
+        (node.id, text_views[node.text_view_id][node.start_char : node.end_char])
+        for node in bundle.nodes
+        if node.node_type == "paragraph"
+        and _anchor_matches(text_views[node.text_view_id][node.start_char : node.end_char], anchor)
+    )
+
+
+def _first_paragraph_for_anchor(bundle: Any, anchor: str) -> tuple[str, str] | None:
+    paragraphs = _paragraphs_for_anchor(bundle, anchor)
+    return paragraphs[0] if paragraphs else None
 
 
 def _anchor_matches(text: str, anchor: str) -> bool:

@@ -1,5 +1,6 @@
 import asyncio
 import json
+from dataclasses import replace
 
 import httpx
 import pytest
@@ -89,7 +90,11 @@ def _task(runtime: LMStudioModelRuntime) -> ModelTaskRequest:
     spec = ModelExecutionSpec(
         model_profile_id="lm-studio",
         model_identity=runtime.configured_identity,
-        generation_parameters=(ExecutionSetting("max_output_tokens", 10),),
+        generation_parameters=(
+            ExecutionSetting("max_output_tokens", 10),
+            ExecutionSetting("seed", 17),
+            ExecutionSetting("temperature", 0),
+        ),
         prompt_id="fixture",
         prompt_digest=digest,
         schema_id="semantic_draft_text_v1",
@@ -153,11 +158,31 @@ def test_lm_studio_runtime_returns_one_strict_output_text() -> None:
                 "model": "fixture-model",
                 "input": "one two",
                 "max_output_tokens": 10,
+                "seed": 17,
                 "stream": True,
+                "temperature": 0,
             },
             1,
         )
     ]
+
+
+def test_lm_studio_runtime_rejects_unsupported_generation_parameters() -> None:
+    runtime = _runtime(FakeHttpClient([]), FakeStreamingHttpClient([]))
+    task = _task(runtime)
+    task = replace(
+        task,
+        execution_spec=replace(
+            task.execution_spec,
+            generation_parameters=(
+                ExecutionSetting("max_output_tokens", 10),
+                ExecutionSetting("top_p", 1),
+            ),
+        ),
+    )
+
+    with pytest.raises(ModelRuntimeResponseError, match="top_p"):
+        runtime.run_model_task(task)
 
 
 def test_lm_studio_runtime_rejects_missing_output_text() -> None:

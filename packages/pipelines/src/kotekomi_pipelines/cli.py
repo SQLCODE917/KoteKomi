@@ -34,7 +34,7 @@ from kotekomi_adapters import (
 from kotekomi_application import (
     CROSS_PLANE_QUERY_POLICY_ID,
     PARAGRAPH_HYPOTHESIS_EVIDENCE_SELECTION_V1,
-    PARAGRAPH_SEGMENT_V2,
+    PARAGRAPH_SEGMENT_V3,
     AnalysisRunInput,
     AnalysisRunItemInput,
     AnalysisUnit,
@@ -2180,12 +2180,12 @@ def _automatic_ingestion_extraction(
         return None
     tokenizer = _AutomaticExtractionTokenizer()
     prompt_bytes = (
-        Path(__file__).resolve().parents[4] / "prompts" / "paragraph_hypothesis_segment_v2.md"
+        Path(__file__).resolve().parents[4] / "prompts" / "paragraph_hypothesis_segment_v3.md"
     ).read_bytes()
     verifier_prompt_bytes = (
         Path(__file__).resolve().parents[4] / "prompts" / "paragraph_hypothesis_faithfulness_v1.md"
     ).read_bytes()
-    prompt_id = "paragraph_hypothesis_segment_v2"
+    prompt_id = "paragraph_hypothesis_segment_v3"
     prompt_digest = hashlib.sha256(prompt_bytes).hexdigest()
     schema_registry = ParagraphHypothesisTaskSchemaRegistry()
     schema = schema_registry.resolve("paragraph_hypothesis_text_v1")
@@ -2215,9 +2215,9 @@ def _automatic_ingestion_extraction(
                 prompt_bytes=prompt_bytes,
                 schema_id=schema.schema_id,
                 schema_bytes=schema.canonical_schema_bytes,
-                renderer_version="paragraph_hypothesis_segment_context_v2",
+                renderer_version="paragraph_hypothesis_segment_context_v3",
                 evidence_selection_policy_id=PARAGRAPH_HYPOTHESIS_EVIDENCE_SELECTION_V1,
-                source_segment_policy_id=PARAGRAPH_SEGMENT_V2,
+                source_segment_policy_id=PARAGRAPH_SEGMENT_V3,
             ),
             repository,
             tokenizer,
@@ -2230,6 +2230,8 @@ def _automatic_ingestion_extraction(
             model_identity=runtime.configured_identity,
             generation_parameters=(
                 ExecutionSetting("max_output_tokens", config.model_execution.max_output_tokens),
+                ExecutionSetting("seed", 17),
+                ExecutionSetting("temperature", 0),
             ),
             prompt_id=prompt_id,
             prompt_digest=prompt_digest,

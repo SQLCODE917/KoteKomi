@@ -1,6 +1,12 @@
-Read one authoritative source segment and one proposed relationship.
+Read one authoritative Source copy view and one proposed relationship.
 
 Decide whether the source segment directly states the proposed relationship.
+
+Accept only a claim with two literal named organization mentions from the Source copy view.
+
+Reject pronouns and generic descriptions such as `It`, `the institute`, `the company`, and `the department`.
+
+Reject a claim that converts co-participants in one action into a relationship between them.
 
 Accept only relation wording that faithfully represents the source sentence.
 

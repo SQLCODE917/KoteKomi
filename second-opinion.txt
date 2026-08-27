@@ -1,0 +1,372 @@
+Question:
+Problem: given text "In the Biden administration, Anthropic had reached an agreement with the AI Safety Institute and had participated in a nuclear information safety evaluation.", I need to extract an concepts according to an ontology: Actors (who), Objects (what), Organizations (groups of Actors), Relationship (semantically named graph edge between concepts). For the given text, that would mean extracting something like these:
+Organizations: ["Biden administration", "Anthropic", "AI Safety Institute"],
+Objects:["nuclear information safety evaluation']
+Relationships: ["Anthropic" - "had reached an agreement with" -> "AI Safety Institute", "Anthropic" - "had participated in" -> "nuclear information safety evaluation"]
+
+Is this a known problem? What solutions exist for it? Any open source solutions? See also: LLM-Wiki
+
+Answer:
+Yes. This is a well-known problem, usually described as **ontology-guided information extraction** or **ontology-based knowledge graph construction**.
+
+Let’s separate the pieces.
+
+You have text:
+
+> “In the Biden administration, Anthropic had reached an agreement with the AI Safety Institute and had participated in a nuclear information safety evaluation.”
+
+You want to transform it into a graph:
+
+```text
+concepts + types + relationships + evidence
+```
+
+That combines several established NLP tasks:
+
+- **Named-entity recognition (NER):** find mentions such as “Anthropic” and “AI Safety Institute.”
+- **Entity typing:** assign ontology classes such as `Organization`, `Actor`, or `Object`.
+- **Event extraction:** identify things that happened, such as reaching an agreement or participating in an evaluation.
+- **Relation extraction:** identify semantic edges such as `reached_agreement_with`.
+- **Entity resolution:** decide whether two mentions refer to the same concept.
+- **Ontology alignment:** map the extracted meaning to the labels permitted by your ontology.
+
+NER, relation extraction, event extraction, and structured-output generation are commonly treated as the main components of an information-extraction pipeline. <citation src="9"></citation>
+
+## The important modeling decision
+
+Your proposed output is reasonable, but there is one useful refinement.
+
+“Anthropic reached an agreement with the AI Safety Institute” contains an **agreement event**. “Anthropic participated in a nuclear information safety evaluation” contains an **evaluation event**.
+
+You can represent these as direct binary relationships:
+
+```text
+Anthropic ── reached_agreement_with ──> AI Safety Institute
+Anthropic ── participated_in ──> nuclear information safety evaluation
+```
+
+That is simple and often sufficient.
+
+But if you want to retain more information—dates, locations, evidence, multiple participants, or the agreement itself—the better representation is to make events first-class nodes:
+
+```text
+Anthropic ── participant_in ──> Agreement Event
+AI Safety Institute ── participant_in ──> Agreement Event
+
+Anthropic ── participant_in ──> Evaluation Event
+Evaluation Event ── has_object ──> Nuclear Information Safety
+```
+
+This distinction is important:
+
+- **Direct relation:** compact and easy to query.
+- **Reified event:** more expressive and better for a knowledge graph.
+
+The phrase “nuclear information safety evaluation” is arguably not just an object. It may denote an **evaluation activity or event** whose subject matter is nuclear information safety. Your ontology could therefore contain both:
+
+```text
+Evaluation Event
+Nuclear Information Safety
+```
+
+with a relationship such as:
+
+```text
+Evaluation Event ── evaluates ──> Nuclear Information Safety
+```
+
+## A cleaner extraction for this sentence
+
+Using a direct-edge representation:
+
+```json
+{
+  "entities": [
+    {
+      "id": "biden_administration",
+      "label": "Biden administration",
+      "type": "Organization",
+      "supertype": "Actor",
+      "mention": "Biden administration"
+    },
+    {
+      "id": "anthropic",
+      "label": "Anthropic",
+      "type": "Organization",
+      "supertype": "Actor",
+      "mention": "Anthropic"
+    },
+    {
+      "id": "ai_safety_institute",
+      "label": "AI Safety Institute",
+      "type": "Organization",
+      "supertype": "Actor",
+      "mention": "AI Safety Institute"
+    },
+    {
+      "id": "nuclear_information_safety_evaluation",
+      "label": "nuclear information safety evaluation",
+      "type": "Object",
+      "mention": "nuclear information safety evaluation"
+    }
+  ],
+  "relationships": [
+    {
+      "subject": "anthropic",
+      "predicate": "reached_agreement_with",
+      "object": "ai_safety_institute",
+      "evidence": "Anthropic had reached an agreement with the AI Safety Institute"
+    },
+    {
+      "subject": "anthropic",
+      "predicate": "participated_in",
+      "object": "nuclear_information_safety_evaluation",
+      "evidence": "Anthropic ... had participated in a nuclear information safety evaluation"
+    }
+  ]
+}
+```
+
+The “Biden administration” is extracted as an entity, but the sentence does not clearly state a relationship involving it. “In the Biden administration” is contextual information. Depending on your ontology, you might represent it as:
+
+```text
+Agreement Event ── occurred_during ──> Biden administration
+```
+
+or:
+
+```text
+Anthropic ── operated_during ──> Biden administration
+```
+
+The first is safer because it attaches the phrase to the event rather than inventing a direct relationship between Anthropic and the administration.
+
+## What makes the problem difficult?
+
+The extraction is not merely “find nouns and verbs.” A robust system must handle:
+
+1. **Ontology-specific types**  
+   Generic NER may recognize organizations, but your ontology may require more specialized classes.
+
+2. **Implicit arguments**  
+   “In the Biden administration” does not explicitly say whether the administration sponsored, witnessed, or merely contextualized the events.
+
+3. **Nominal events**  
+   “An agreement” and “an evaluation” are nouns, but they describe events or activities.
+
+4. **Relation naming**  
+   The text says “had reached an agreement with,” while your graph may require `reached_agreement_with`, `negotiated_with`, or `agreement_with`.
+
+5. **Entity boundaries**  
+   The system must decide whether the object is:
+   - `evaluation`
+   - `nuclear information safety evaluation`
+   - `nuclear information safety`
+
+6. **Coreference and omitted subjects**  
+   The second “had participated” has the same subject, Anthropic, even though the sentence coordinates two clauses.
+
+7. **Evidence and hallucination control**  
+   The system should extract only what the passage supports, not add the agreement’s date, terms, or participants from background knowledge.
+
+## Main solution families
+
+### 1. Pipeline information extraction
+
+A conventional pipeline looks like this:
+
+```text
+text
+→ sentence splitting
+→ entity recognition
+→ entity typing
+→ event detection
+→ candidate relation generation
+→ relation classification
+→ ontology mapping
+→ entity normalization
+→ graph insertion
+```
+
+This approach uses specialized models for each step. It is predictable, efficient, and relatively easy to evaluate, but it requires annotated training data and can propagate errors from one stage to the next.
+
+Useful open-source projects include:
+
+- **spaCy** for tokenization, NER, custom entity types, and rule-based matching.
+- **GLiNER** for flexible or zero-shot entity recognition with user-defined labels.
+- **REBEL** for generating subject–relation–object triples directly from text.
+- **OpenNRE** for relation-extraction models and datasets.
+- **DeepKE** for knowledge-extraction and knowledge-base-population workflows.
+- **OpenUE** for universal information extraction.
+- **Zshot** for zero-shot NER and relation extraction.
+- **OmniEvent** for event extraction.
+
+A survey repository lists DeepKE, OpenUE, Zshot, OpenNRE, and OmniEvent among open information-extraction toolkits. <citation src="7"></citation>
+
+### 2. Schema-constrained LLM extraction
+
+An LLM can perform the entire extraction if you provide:
+
+- the ontology,
+- definitions of each class,
+- permitted relationship types,
+- output JSON schema,
+- several examples,
+- a rule to extract only explicitly supported facts.
+
+For example:
+
+```text
+Extract facts from the passage according to this ontology.
+
+Entity types:
+- Actor: an entity that performs or participates in an action
+- Organization: a group or institution; subtype of Actor
+- Object: a thing, topic, artifact, or activity acted upon
+
+Relations:
+- reached_agreement_with(Actor, Actor)
+- participated_in(Actor, Object)
+
+Rules:
+- Extract only facts explicitly supported by the passage.
+- Do not infer unstated relations.
+- Preserve the shortest faithful text span.
+- Include the evidence span for every extraction.
+- Return valid JSON only.
+```
+
+This is often the fastest way to build a prototype, especially when the ontology is small or changing. The weakness is that an unconstrained LLM may invent relations, use inconsistent labels, or produce invalid JSON. Schema validation and a second verification pass are therefore valuable.
+
+Ontology-guided LLM systems commonly use a staged process involving extraction, grounding, corroboration, and knowledge-graph ingestion. <citation src="8"></citation>
+
+### 3. Hybrid extraction
+
+For production systems, a hybrid design is usually stronger:
+
+```text
+LLM or GLiNER → candidate entities
+LLM or RE model → candidate relations
+ontology validator → reject illegal types and edges
+rule engine → enforce constraints
+entity linker → merge duplicate entities
+human review → approve uncertain facts
+graph database → store accepted facts
+```
+
+For your example, validation rules could include:
+
+```text
+reached_agreement_with:
+    subject must be Actor
+    object must be Actor
+
+participated_in:
+    subject must be Actor
+    object must be Object or Event
+```
+
+The LLM proposes facts; the ontology decides whether those facts are legal.
+
+This is preferable to asking the LLM to both interpret the sentence and silently enforce the whole graph model.
+
+## Where graph-based concept selection fits
+
+Graph-based concept selection is related, but it is not exactly the same task.
+
+**Information extraction** builds the graph:
+
+```text
+text → entities, events, relations
+```
+
+**Graph-based concept selection** uses the graph:
+
+```text
+question or new passage → relevant nodes and edges
+```
+
+For example, after extraction you might have:
+
+```text
+Biden administration
+        ↑
+   occurred during
+        ↑
+Agreement Event
+   ↙              ↘
+Anthropic   AI Safety Institute
+
+Anthropic
+    ↓
+participated in
+    ↓
+Evaluation Event
+    ↓
+evaluates
+    ↓
+Nuclear Information Safety
+```
+
+A retrieval system can then select the connected subgraph around `Anthropic`, `AI Safety Institute`, or `nuclear information safety`. This is the conceptual connection to LLM-Wiki: its proposal is to compile raw documents into structured pages with concepts, facts, source references, and bidirectional links, then let an agent search, read, and follow those links. <citation src="1,2"></citation>
+
+So:
+
+- **Extraction** answers: “What concepts and relationships are in this passage?”
+- **Graph-based selection** answers: “Which extracted concepts and relationships are relevant now?”
+- **LLM-Wiki** is an architecture for persistently storing and traversing the resulting concept structure, rather than repeatedly retrieving isolated chunks.
+
+## A practical open-source starting point
+
+For a first implementation, I would use:
+
+```text
+GLiNER or spaCy
+    for entity candidates
+
+LLM with structured JSON output
+    for ontology-specific typing and relations
+
+Pydantic or JSON Schema
+    for output validation
+
+NetworkX
+    for graph experimentation
+
+Neo4j, PostgreSQL, or SQLite
+    for persistent storage
+```
+
+A simple workflow would be:
+
+1. Extract candidate spans with GLiNER or spaCy.
+2. Send the sentence, candidates, and ontology to an LLM.
+3. Ask for entities, events, relations, evidence spans, and confidence.
+4. Validate the JSON against your schema.
+5. Reject relations whose subject or object types violate ontology constraints.
+6. Normalize labels such as `reached an agreement with` to `reached_agreement_with`.
+7. Store each fact with its source text and character offsets.
+8. Review low-confidence or ambiguous facts.
+
+The key design recommendation is to store **provenance** with every edge:
+
+```json
+{
+  "subject": "Anthropic",
+  "predicate": "participated_in",
+  "object": "nuclear information safety evaluation",
+  "source_id": "document-123",
+  "text_span": "Anthropic ... had participated in a nuclear information safety evaluation",
+  "confidence": 0.94
+}
+```
+
+That turns the result from an unsupported model claim into an auditable knowledge-graph assertion.
+
+### Bottom line
+
+The established name for your problem is:
+
+> **Ontology-guided information extraction for knowledge-graph construction**, combining entity extraction, ontology-aware typing, event extraction, relation extraction, and entity linking.
+
+For a prototype, use an LLM with a strict schema. For a reliable system, use a hybrid pipeline in which the LLM proposes structured facts and deterministic ontology validation decides what can enter the graph.
