@@ -2,7 +2,7 @@ import importlib.util
 import json
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
@@ -126,14 +126,277 @@ def test_php1_expectation_catalog_rejects_duplicate_target_identity(tmp_path: Pa
         module.expectation_catalog(module.packet_cases(), catalog)
 
 
-def test_php1_segment_v3_prompt_uses_literal_source_segment_labels() -> None:
-    prompt = (ROOT / "prompts" / "paragraph_hypothesis_segment_v3.md").read_text(encoding="utf-8")
+def test_php1_segment_v6_prompt_calibrates_direct_relation_constructions() -> None:
+    prompt = (ROOT / "prompts" / "paragraph_hypothesis_segment_v6.md").read_text(encoding="utf-8")
 
     assert "SOURCE SEGMENT: sN" in prompt
     assert "claim: s1 |" in prompt
     assert "<sN>" not in prompt
     assert "pronoun" in prompt
     assert "generic description" in prompt
+    assert "was founded as part of" in prompt
+    assert "established as an evolution of" in prompt
+    assert "joined" in prompt
+    assert "reached an agreement with" in prompt
+    assert "had already partnered with" in prompt
+    assert "Through its interoperability with" in prompt
+    assert "coordinated participants" in prompt
+    assert "no blank lines" in prompt
+    assert "Anthropic" not in prompt
+    assert "Palantir" not in prompt
+    assert "UNESCO" not in prompt
+
+
+def test_php1_h1_replay_uses_v6_while_the_current_prompt_remains_v3(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _packet_module()
+    support = _support_module()
+    captured: dict[str, object] = {}
+
+    def blocked_run_cases(*_args: object, **kwargs: object) -> dict[str, object]:
+        captured.update(kwargs)
+        return {"status": "runtime_unavailable", "cases": []}
+
+    monkeypatch.setattr(module, "run_cases", blocked_run_cases)
+
+    result = module.run_h1(None)
+
+    assert support.CURRENT_PHP1_PROMPT.prompt_id == "paragraph_hypothesis_segment_v3"
+    assert cast(Any, captured["prompt_contract"]).prompt_id == "paragraph_hypothesis_segment_v6"
+    assert result["h1_scorecard"]["status"] == "blocked"
+
+
+def test_php1_h1_scorecard_defines_held_out_targets_and_observation() -> None:
+    module = _packet_module()
+    scorecard = module.h1_scorecard(module.expectation_catalog(module.packet_cases()))
+
+    assert scorecard["minimum_matched_count"] == 7
+    assert len(scorecard["scored_expectation_ids"]) == 11
+    assert scorecard["observation_expectation_ids"] == ["php1-target-ai-12-unesco-meity"]
+    assert not (
+        set(scorecard["scored_expectation_ids"]) & set(scorecard["observation_expectation_ids"])
+    )
+
+
+def test_php1_h1_scorecard_rejects_unknown_and_overlapping_targets(tmp_path: Path) -> None:
+    module = _packet_module()
+    payload = json.loads(module.H1_SCORECARD_PATH.read_text(encoding="utf-8"))
+    payload["scored_expectation_ids"].append("unknown-target")
+    path = tmp_path / "scorecard.json"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="unique known targets"):
+        module.h1_scorecard(module.expectation_catalog(module.packet_cases()), path)
+
+    payload = json.loads(module.H1_SCORECARD_PATH.read_text(encoding="utf-8"))
+    payload["observation_expectation_ids"] = [payload["scored_expectation_ids"][0]]
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="conflicting scored and required targets"):
+        module.h1_scorecard(module.expectation_catalog(module.packet_cases()), path)
+
+
+def test_php1_h1_scorecard_requires_baseline_and_structural_target_groups() -> None:
+    module = _packet_module()
+    scorecard = module.h1_scorecard(module.expectation_catalog(module.packet_cases()))
+    target_results = [
+        {"expectation_id": expectation_id, "target_status": "missing"}
+        for expectation_id in scorecard["scored_expectation_ids"]
+        + scorecard["observation_expectation_ids"]
+    ]
+    matched = {
+        "php1-target-ad-06-anthropic-palantir",
+        "php1-target-ad-06-anthropic-aws",
+        "php1-target-ad-09-anthropic-palantir",
+        "php1-target-ai-03-uk-aisi-frontier-taskforce",
+        "php1-target-cs-05-anthropic-aisic",
+        "php1-target-ai-04-us-aisi-nist",
+        "php1-target-ad-04-anthropic-congress",
+    }
+    for target in target_results:
+        if target["expectation_id"] in matched:
+            target["target_status"] = "matched"
+    result = {"target_report": {"target_results": target_results, "unexpected_hypotheses": []}}
+
+    scored = module.h1_result(result, scorecard)
+
+    assert scored["status"] == "passed"
+    assert scored["matched_count"] == 7
+    assert scored["observation_results"] == [
+        {"expectation_id": "php1-target-ai-12-unesco-meity", "target_status": "missing"}
+    ]
+
+    next(
+        item
+        for item in target_results
+        if item["expectation_id"] == "php1-target-ad-06-anthropic-palantir"
+    )["target_status"] = "missing"
+    assert module.h1_result(result, scorecard)["status"] == "failed"
+
+
+def test_php1_h2_derives_source_ordered_candidate_pairs() -> None:
+    support = _support_module()
+    mentions = (
+        support.H2MentionCandidate("Third", 30, 35),
+        support.H2MentionCandidate("First", 0, 5),
+        support.H2MentionCandidate("Second", 12, 18),
+    )
+
+    pairs = support.candidate_pairs(
+        tuple(sorted(mentions, key=lambda item: item.source_copy_start))
+    )
+
+    assert pairs == (
+        support.H2CandidatePair("First", "Second"),
+        support.H2CandidatePair("First", "Third"),
+        support.H2CandidatePair("Second", "Third"),
+    )
+
+
+def test_php1_h2_prompts_cover_complete_mentions_and_supported_relationship_shapes() -> None:
+    mention_prompt = (ROOT / "prompts" / "paragraph_organization_mention_v1.md").read_text(
+        encoding="utf-8"
+    )
+    prompt = (ROOT / "prompts" / "paragraph_organization_pair_relation_v1.md").read_text(
+        encoding="utf-8"
+    )
+
+    assert "coordinated list" in mention_prompt
+    assert "complete Organization name" in mention_prompt
+    assert "legislature" in mention_prompt
+    assert "single proper name can identify a company" in mention_prompt
+    assert "group of states" in mention_prompt
+    assert "Scan the segment from left to right" in mention_prompt
+    assert "parenthetical" in mention_prompt
+    assert "possessive geographic qualifier" in mention_prompt
+    assert "no `abstain:` line" in mention_prompt
+    assert "Do not comment on the result" in mention_prompt
+    assert "coordinated participants" in prompt
+    assert "began consulting" in prompt
+    assert "partnership, agreement, membership, containment, lineage" in prompt
+    assert "directed action, refusal, or interoperability" in prompt
+    assert "established as an evolution of" in prompt
+    assert "elided second clause" in prompt
+    assert "relationship direction expressed by the source" in prompt
+    assert "subject field must equal one candidate exactly" in prompt
+    assert "quoted conditions in the relation field" in prompt
+
+
+def test_php1_h2_prompt_reports_render_full_source_expected_and_actual_results() -> None:
+    module = _packet_module()
+    expectations = module.expectation_catalog(module.packet_cases())[:1]
+    expectation = expectations[0]
+    result: dict[str, Any] = {
+        "status": "completed",
+        "h2_target_report": {
+            "target_results": [
+                {
+                    "expectation_id": expectation.expectation_id,
+                    "target_status": "matched",
+                    "paragraph_node_id": "node-1",
+                    "source_segment_label": "s1",
+                    "diagnostics": [],
+                }
+            ]
+        },
+        "mention_results": [
+            {
+                "fixture_path": expectation.fixture_path,
+                "paragraph_node_id": "node-1",
+                "source_segment_label": "s1",
+                "source_copy_text": "Anthropic joined Congress.",
+                "status": "complete",
+                "raw_output": "mention: s1 | Anthropic\nmention: s1 | Congress",
+            }
+        ],
+        "pair_results": [
+            {
+                "fixture_path": expectation.fixture_path,
+                "paragraph_node_id": "node-1",
+                "source_segment_label": "s1",
+                "judgments": [
+                    {
+                        "first_organization_text": expectation.subject_text,
+                        "second_organization_text": expectation.object_text,
+                        "status": "verified",
+                        "raw_output": "claim: s1 | Anthropic | joined | Congress",
+                        "faithfulness_accepted_claim_count": 1,
+                        "faithfulness_rejected_claim_count": 0,
+                    }
+                ],
+            }
+        ],
+    }
+
+    mention_report, pair_report = module.render_h2_prompt_reports(result, expectations)
+
+    assert mention_report.startswith("Prompt file: prompts/paragraph_organization_mention_v1.md")
+    assert "Source segment:\nAnthropic joined Congress." in mention_report
+    assert f"`{expectation.subject_text}` and `{expectation.object_text}`" in mention_report
+    assert "Actual result:\nMention status: complete" in mention_report
+    assert pair_report.startswith("Prompt file: prompts/paragraph_organization_pair_relation_v1.md")
+    assert "Expected result:" in pair_report
+    assert "Actual result:\nPair status: verified" in pair_report
+
+
+def test_php1_h2_target_result_identifies_first_failed_stage() -> None:
+    support = _support_module()
+    expectation = support.Php1Expectation(
+        "target",
+        ("AD-06",),
+        "raw/Anthropic–United_States_Department_of_Defense_dispute.pdf",
+        "paragraph",
+        "segment",
+        "First Organization",
+        "Second Organization",
+        "partnership",
+    )
+    plan = support._ResolvedSegment("fixture", "representation", "paragraph", "text", "s1", None)
+    mention_result = {
+        "status": "complete",
+        "context_manifest_id": "ctx_mention",
+        "model_run_id": "mrn_mention",
+        "mention_candidates": [
+            {
+                "organization_text": "First Organization",
+                "source_copy_start": 0,
+                "source_copy_end": 18,
+            },
+            {
+                "organization_text": "Second Organization",
+                "source_copy_start": 20,
+                "source_copy_end": 39,
+            },
+        ],
+    }
+    pair_result = {
+        "first_organization_text": "First Organization",
+        "second_organization_text": "Second Organization",
+        "status": "verified",
+        "model_run_id": "mrn_pair",
+        "verified_hypotheses": [
+            {
+                "subject_text": "First Organization",
+                "relation_text": "partnered with",
+                "object_text": "Second Organization",
+                "proposed_change_id": "prp_01",
+            }
+        ],
+    }
+
+    matched = support.h2_target_result(expectation, plan, mention_result, (pair_result,))
+
+    assert matched["target_status"] == "matched"
+    assert matched["subject_mention_state"] == "present"
+    assert matched["candidate_pair_state"] == "present"
+    missing = support.h2_target_result(
+        expectation,
+        plan,
+        {**mention_result, "mention_candidates": mention_result["mention_candidates"][1:]},
+        (),
+    )
+    assert missing["target_status"] == "subject_mention_missing"
 
 
 def test_php1_eight_claim_evaluation_measures_only_eligible_claim_batches() -> None:

@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import cast
 
 import pytest
 from kotekomi_adapters import sqlite_ledger_transaction
@@ -120,6 +121,18 @@ def test_user_ingest_accepts_project_pdf_and_text_files(
         == 0
     )
     assert "[CAPTURED]" in capsys.readouterr().out
+    with sqlite_ledger_transaction(tmp_path / "state" / "kotekomi.db") as repository:
+        extraction_tasks = repository.list_extraction_tasks()
+        context_manifests = repository.list_context_manifest_artifacts_for_representation(
+            repository.list_document_representations()[0].id
+        )
+    assert extraction_tasks
+    assert {task.prompt_id for task in extraction_tasks} == {"paragraph_hypothesis_segment_v3"}
+    assert context_manifests
+    assert {
+        str(cast(dict[str, object], manifest.payload["integrity"])["prompt_id"])
+        for manifest in context_manifests
+    } == {"paragraph_hypothesis_segment_v3"}
     assert (
         main(
             [

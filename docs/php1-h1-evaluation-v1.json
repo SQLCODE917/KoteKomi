@@ -1,0 +1,38 @@
+{
+  "schema_version": "php1_h1_evaluation_v1",
+  "scored_expectation_ids": [
+    "php1-target-ad-04-anthropic-congress",
+    "php1-target-ad-06-anthropic-palantir",
+    "php1-target-ad-06-anthropic-aws",
+    "php1-target-ad-07-anthropic-aisi",
+    "php1-target-ad-09-anthropic-palantir",
+    "php1-target-ad-13-anthropic-dod",
+    "php1-target-ai-03-uk-aisi-frontier-taskforce",
+    "php1-target-ai-04-us-aisi-nist",
+    "php1-target-ai-15-aisi-dsit",
+    "php1-target-ai-18-us-aisi-nist",
+    "php1-target-cs-05-anthropic-aisic"
+  ],
+  "observation_expectation_ids": [
+    "php1-target-ai-12-unesco-meity"
+  ],
+  "required_matched_expectation_ids": [
+    "php1-target-ad-06-anthropic-palantir",
+    "php1-target-ad-06-anthropic-aws",
+    "php1-target-ad-09-anthropic-palantir",
+    "php1-target-ai-03-uk-aisi-frontier-taskforce",
+    "php1-target-cs-05-anthropic-aisic"
+  ],
+  "required_any_matched_expectation_id_sets": [
+    [
+      "php1-target-ai-04-us-aisi-nist",
+      "php1-target-ai-15-aisi-dsit",
+      "php1-target-ai-18-us-aisi-nist"
+    ],
+    [
+      "php1-target-ad-04-anthropic-congress",
+      "php1-target-ad-13-anthropic-dod"
+    ]
+  ],
+  "minimum_matched_count": 7
+}

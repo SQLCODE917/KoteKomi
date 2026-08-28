@@ -38,6 +38,10 @@ from kotekomi_application import (
     ModelRuntimeDeadlineExceeded,
     ModelTaskRequest,
     ModelTaskResponse,
+    OrganizationMention,
+    OrganizationMentionTaskSchemaRegistry,
+    OrganizationQualification,
+    OrganizationQualificationTaskSchemaRegistry,
     ParagraphHypothesisTaskSchemaRegistry,
     PinnedTaskSchema,
     SemanticDraftTaskSchemaRegistry,
@@ -51,6 +55,8 @@ from kotekomi_application import (
     load_frozen_analysis_plan,
     model_execution_spec_digest,
     model_identity_snapshot_digest,
+    organization_mention_text_schema_bytes,
+    organization_qualification_text_schema_bytes,
     paragraph_hypothesis_text_schema_bytes,
     paragraph_source_segments,
     plan_analysis_units,
@@ -557,6 +563,92 @@ def _hypothesis_execution_spec(manifest: ContextManifest) -> ModelExecutionSpec:
     )
 
 
+def _mention_manifest_for_staged_test(ledger: FakeGroundedCandidateLedger) -> ContextManifest:
+    unit = plan_analysis_units(
+        AnalysisUnitPlanningInput(
+            ledger.bundle.representation.id,
+            "paragraph_hypothesis_mvp_v1",
+            "claim_extraction",
+        ),
+        ledger,
+    ).units[0]
+    schema = OrganizationMentionTaskSchemaRegistry().resolve("organization_mention_text_v1")
+    return build_context_manifest(
+        ContextManifestInput(
+            analysis_unit=unit,
+            model_profile=ContextModelProfile("fixture-model", 512, 8, 4),
+            prompt_id="paragraph_organization_mention_v1",
+            prompt_bytes=b"fixture organization mention prompt",
+            schema_id=schema.schema_id,
+            schema_bytes=schema.canonical_schema_bytes,
+            renderer_version="paragraph_hypothesis_segment_context_v3",
+            evidence_selection_policy_id=PARAGRAPH_HYPOTHESIS_EVIDENCE_SELECTION_V1,
+            source_segment_policy_id=PARAGRAPH_SEGMENT_V3,
+        ),
+        ledger,
+        FixtureTokenizer(),
+    ).manifest
+
+
+def _mention_execution_spec(manifest: ContextManifest) -> ModelExecutionSpec:
+    return replace(
+        _fixture_execution_spec(manifest),
+        schema_id="organization_mention_text_v1",
+        schema_digest=hashlib.sha256(organization_mention_text_schema_bytes()).hexdigest(),
+        prompt_id=manifest.prompt_id,
+        prompt_digest=manifest.prompt_digest,
+        context_manifest_id=manifest.id,
+        context_manifest_digest=manifest.manifest_digest,
+        rendered_input_digest=manifest.rendered_input_digest,
+        output_contract_version="organization_mention_text_v1",
+    )
+
+
+def _qualification_manifest_for_staged_test(
+    ledger: FakeGroundedCandidateLedger,
+) -> ContextManifest:
+    unit = plan_analysis_units(
+        AnalysisUnitPlanningInput(
+            ledger.bundle.representation.id,
+            "paragraph_hypothesis_mvp_v1",
+            "claim_extraction",
+        ),
+        ledger,
+    ).units[0]
+    schema = OrganizationQualificationTaskSchemaRegistry().resolve(
+        "organization_qualification_text_v1"
+    )
+    return build_context_manifest(
+        ContextManifestInput(
+            analysis_unit=unit,
+            model_profile=ContextModelProfile("fixture-model", 512, 8, 4),
+            prompt_id="paragraph_organization_qualification_v1",
+            prompt_bytes=b"fixture organization qualification prompt",
+            schema_id=schema.schema_id,
+            schema_bytes=schema.canonical_schema_bytes,
+            renderer_version="paragraph_hypothesis_segment_context_v3",
+            evidence_selection_policy_id=PARAGRAPH_HYPOTHESIS_EVIDENCE_SELECTION_V1,
+            source_segment_policy_id=PARAGRAPH_SEGMENT_V3,
+        ),
+        ledger,
+        FixtureTokenizer(),
+    ).manifest
+
+
+def _qualification_execution_spec(manifest: ContextManifest) -> ModelExecutionSpec:
+    return replace(
+        _fixture_execution_spec(manifest),
+        schema_id="organization_qualification_text_v1",
+        schema_digest=hashlib.sha256(organization_qualification_text_schema_bytes()).hexdigest(),
+        prompt_id=manifest.prompt_id,
+        prompt_digest=manifest.prompt_digest,
+        context_manifest_id=manifest.id,
+        context_manifest_digest=manifest.manifest_digest,
+        rendered_input_digest=manifest.rendered_input_digest,
+        output_contract_version="organization_qualification_text_v1",
+    )
+
+
 def _valid_staged_output() -> bytes:
     return (
         b"outcome: claim\n"
@@ -847,6 +939,73 @@ def test_paragraph_hypothesis_segments_reconstruct_the_authoritative_paragraph()
 
     assert [segment.label for segment in segments] == ["s1", "s2", "s3"]
     assert "".join(segment.exact_text for segment in segments) == TEXT
+
+
+def test_organization_mention_task_records_mentions_without_proposed_changes() -> None:
+    ledger = FakeGroundedCandidateLedger()
+    archive = FakeModelOutputArchive()
+    manifest = _mention_manifest_for_staged_test(ledger)
+
+    outcome = run_bounded_extraction(
+        BoundedExtractionInput(
+            source_id=ledger.source.id,
+            document_id=ledger.document.id,
+            representation_id=ledger.bundle.representation.id,
+            context_manifest_id=manifest.id,
+            prompt_bytes=manifest.prompt_bytes,
+            execution_spec=_mention_execution_spec(manifest),
+            validator_version="organization_mention_validator_v1",
+            task_type="organization_mention_extraction",
+        ),
+        ledger,
+        archive,
+        FakeModelTaskRuntime(b"mention: s1 | Fixture Organization\nmention: s1 | Alpha\n"),
+        Uuid4ModelRunIdFactory(),
+        FixtureTokenizer(),
+        OrganizationMentionTaskSchemaRegistry(),
+    )
+
+    assert outcome.model_run.status is ModelRunStatus.SUCCEEDED
+    assert outcome.proposed_change_batch is None
+    assert outcome.organization_mentions == (
+        OrganizationMention("s1", "Fixture Organization"),
+        OrganizationMention("s1", "Alpha"),
+    )
+    assert outcome.model_run.outcome_metadata == {
+        "contract": "organization_mention_text_v1",
+        "unique_mention_count": 2,
+    }
+    assert outcome.extraction_task.task_type == "organization_mention_extraction"
+    assert not ledger.proposed_changes
+
+
+def test_organization_mention_task_rejects_duplicate_mentions() -> None:
+    ledger = FakeGroundedCandidateLedger()
+    manifest = _mention_manifest_for_staged_test(ledger)
+
+    outcome = run_bounded_extraction(
+        BoundedExtractionInput(
+            source_id=ledger.source.id,
+            document_id=ledger.document.id,
+            representation_id=ledger.bundle.representation.id,
+            context_manifest_id=manifest.id,
+            prompt_bytes=manifest.prompt_bytes,
+            execution_spec=_mention_execution_spec(manifest),
+            validator_version="organization_mention_validator_v1",
+        ),
+        ledger,
+        FakeModelOutputArchive(),
+        FakeModelTaskRuntime(
+            b"mention: s1 | Fixture Organization\nmention: s1 | Fixture Organization\n"
+        ),
+        Uuid4ModelRunIdFactory(),
+        FixtureTokenizer(),
+        OrganizationMentionTaskSchemaRegistry(),
+    )
+
+    assert outcome.model_run.status is ModelRunStatus.INVALID_OUTPUT
+    assert "repeats a name" in str(outcome.model_run.error_message)
+    assert not ledger.proposed_changes
 
 
 def test_paragraph_hypothesis_batch_publishes_three_segment_grounded_proposals() -> None:
@@ -1748,6 +1907,76 @@ def test_successful_model_run_and_candidate_batch_share_one_atomic_boundary() ->
     assert ledger.provenance_activities == {}
     assert ledger.proposed_changes == {}
     assert len(ledger.model_runs) == 1
+
+
+def test_organization_qualification_records_semantic_judgment_without_changes() -> None:
+    ledger = FakeGroundedCandidateLedger()
+    manifest = _qualification_manifest_for_staged_test(ledger)
+    runtime = FakeModelTaskRuntime(b"organization: Fixture Organization\n")
+
+    outcome = run_bounded_extraction(
+        BoundedExtractionInput(
+            source_id=ledger.source.id,
+            document_id=ledger.document.id,
+            representation_id=ledger.bundle.representation.id,
+            context_manifest_id=manifest.id,
+            prompt_bytes=manifest.prompt_bytes,
+            execution_spec=_qualification_execution_spec(manifest),
+            validator_version="organization_qualification_validator_v1",
+            task_type="organization_qualification",
+        ),
+        ledger,
+        FakeModelOutputArchive(),
+        runtime,
+        Uuid4ModelRunIdFactory(),
+        FixtureTokenizer(),
+        OrganizationQualificationTaskSchemaRegistry(),
+    )
+
+    assert outcome.model_run.status is ModelRunStatus.SUCCEEDED
+    assert outcome.organization_qualification == OrganizationQualification("Fixture Organization")
+    assert outcome.proposed_change_batch is None
+    assert runtime.requests[0].task_type == "organization_qualification"
+    assert not ledger.proposed_changes
+
+
+def test_organization_qualification_records_rejection_and_malformed_output() -> None:
+    ledger = FakeGroundedCandidateLedger()
+    manifest = _qualification_manifest_for_staged_test(ledger)
+    extraction_input = BoundedExtractionInput(
+        source_id=ledger.source.id,
+        document_id=ledger.document.id,
+        representation_id=ledger.bundle.representation.id,
+        context_manifest_id=manifest.id,
+        prompt_bytes=manifest.prompt_bytes,
+        execution_spec=_qualification_execution_spec(manifest),
+        validator_version="organization_qualification_validator_v1",
+        task_type="organization_qualification",
+    )
+
+    rejected = run_bounded_extraction(
+        extraction_input,
+        ledger,
+        FakeModelOutputArchive(),
+        FakeModelTaskRuntime(b"reject: not an organization\n"),
+        Uuid4ModelRunIdFactory(),
+        FixtureTokenizer(),
+        OrganizationQualificationTaskSchemaRegistry(),
+    )
+    invalid = run_bounded_extraction(
+        extraction_input,
+        ledger,
+        FakeModelOutputArchive(),
+        FakeModelTaskRuntime(b"organization: elsewhere\nreason: guessed\n"),
+        Uuid4ModelRunIdFactory(),
+        FixtureTokenizer(),
+        OrganizationQualificationTaskSchemaRegistry(),
+    )
+
+    assert rejected.model_run.status is ModelRunStatus.ABSTAINED
+    assert rejected.model_run.outcome_metadata["contract"] == ("organization_qualification_text_v1")
+    assert invalid.model_run.status is ModelRunStatus.INVALID_OUTPUT
+    assert not ledger.proposed_changes
 
 
 def test_retries_preserve_distinct_model_runs_for_one_task() -> None:

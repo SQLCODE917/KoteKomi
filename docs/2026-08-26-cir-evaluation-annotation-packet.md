@@ -41,7 +41,7 @@ It does not prescribe a current canonical predicate.
 | AD-07 | `nod_355e4a2012f9cf3978bcf34a_0011` p. 2 | `reached an agreement with the AI Safety Institute` | cross-source control | Do not resolve the generic name to a source-two institute without an explicit identity discriminator. |
 | AD-08 | `nod_355e4a2012f9cf3978bcf34a_0011` p. 2 | `authorized its workers to use` | temporal | Preserve the Department of Homeland Security actor, Claude inclusion, and the May 2025 end date. |
 | AD-09 | `nod_355e4a2012f9cf3978bcf34a_0011` p. 2 | `Through its interoperability with Palantir` | mediated | Preserve Palantir as the stated mechanism for wider military usage. |
-| AD-10 | `nod_355e4a2012f9cf3978bcf34a_0015` p. 2 | `initially contracted Google Gemini, then OpenAI's ChatGPT` | ordered multiple | Preserve the contract order and keep Gemini and ChatGPT distinct products. |
+| AD-10 | `nod_355e4a2012f9cf3978bcf34a_0015` p. 2 | `initially contracted Google Gemini...then OpenAI's ChatGPT` | ordered multiple | Preserve the contract order and keep Gemini and ChatGPT distinct products. |
 | AD-11 | `nod_355e4a2012f9cf3978bcf34a_0016` p. 3 | `According to Reuters` | attributed multiple | Extract Anthropic opposition to surveillance use and lethal autonomous weapons with Reuters attribution. |
 | AD-12 | `nod_355e4a2012f9cf3978bcf34a_0016` p. 3 | `termination of a contract worth an estimated US$200 million` | causal | Preserve the estimated amount and avoid asserting a precise contractual value. |
 | AD-13 | `nod_355e4a2012f9cf3978bcf34a_0017` p. 3 | `all lawful purposes` | direct | Identify Anthropic's refusal and the Department's threatened cancellation as separate actions. |
@@ -64,7 +64,7 @@ It does not prescribe a current canonical predicate.
 | AI-13 | `nod_10c2e7b4f6020f1a3a68d389_0022` pp. 2–3 | `hub-and-spoke` | organizational model | Identify the IndiaAI Safety Institute's creation, mission, and collaboration model without treating every participant as a founder. |
 | AI-14 | `nod_10c2e7b4f6020f1a3a68d389_0029` p. 3 | `renamed to the Singapore AISI` | identity lineage | Identify the Digital Trust Centre-to-Singapore-AISI rename, NTU placement, and IMDA partnership separately. |
 | AI-15 | `nod_10c2e7b4f6020f1a3a68d389_0033` p. 3 | `continued to be led by Ian Hogarth` | multiple | Preserve UK Taskforce lineage, leadership continuity, and Department for Science placement. |
-| AI-16 | `nod_10c2e7b4f6020f1a3a68d389_0035` p. 4 | `open-sourced an AI safety tool called Inspect` | product capability | Identify the institute's publication and the tool's stated evaluation capabilities. |
+| AI-16 | `nod_10c2e7b4f6020f1a3a68d389_0035` p. 4 | `open-sourced an AI safety tool called...Inspect` | product capability | Identify the institute's publication and the tool's stated evaluation capabilities. |
 | AI-17 | `nod_10c2e7b4f6020f1a3a68d389_0036` p. 4 | `Observers saw the name change` | interpretation control | Keep the inferred future focus attributed to observers. |
 | AI-18 | `nod_10c2e7b4f6020f1a3a68d389_0038` p. 4 | `US AISI was founded` | direct multiple | Identify the November 2023 founding, NIST placement, and Elizabeth Kelly leadership. |
 | AI-19 | `nod_10c2e7b4f6020f1a3a68d389_0039` p. 4 | `more than 200 organizations such as Google, Anthropic or Microsoft` | high-cardinality | Identify AISIC creation and named examples without inventing membership beyond the source. |

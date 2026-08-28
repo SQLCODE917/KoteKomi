@@ -53,7 +53,7 @@ The current annotation packet also evaluates whole Paragraphs while PHP-1 execut
 
 ### Prompt and verifier
 
-- PHP18-PROMPT-01: The Pipeline pins a PHP-1 v3 prompt.
+- PHP18-PROMPT-01: The Pipeline pins a versioned PHP-1 prompt.
 - PHP18-PROMPT-02: The prompt requires literal named organization mentions from the Source copy view.
 - PHP18-PROMPT-03: The prompt directs the model to abstain for pronouns, generic descriptions, and co-participants without an explicit bilateral relation.
 - PHP18-PROMPT-04: The verifier rejects a hypothesis whose subject or object is a pronoun or generic description.
@@ -122,7 +122,7 @@ PHP-3 will provide nearest preceding sentences first and stop at 1,024 input tok
 - AC-PHP18-01: Application tests prove the Source copy view preserves non-whitespace characters and validates collapsed layout whitespace.
 - AC-PHP18-02: Application tests prove EvidenceTargets retain original authoritative Source-segment text.
 - AC-PHP18-03: Adapter tests prove LM Studio receives all supported declared settings and rejects unsupported settings.
-- AC-PHP18-04: Pipeline tests prove PHP-1 pins the v3 prompt and deterministic generation settings.
+- AC-PHP18-04: Pipeline tests prove PHP-1 pins a versioned prompt and deterministic generation settings.
 - AC-PHP18-05: Application tests prove the verifier rejects pronoun and generic-description hypotheses.
 - AC-PHP18-06: Diagnostic tests prove legacy and segment reports remain distinct.
 - AC-PHP18-07: The local 50-row replay writes both reports.
@@ -139,3 +139,9 @@ PHP-3 will provide nearest preceding sentences first and stop at 1,024 input tok
 PHP-1 does not add coreference, Entity resolution, Event extraction, or ontology types.
 PHP-1 does not alter the eight-claim limit.
 PHP-1 retains the 50-row report as a non-gating diagnostic.
+
+H1 evaluated `paragraph_hypothesis_segment_v6`.
+
+H1 did not accept V6 as the production prompt.
+
+The Pipeline continues to use `paragraph_hypothesis_segment_v3`.

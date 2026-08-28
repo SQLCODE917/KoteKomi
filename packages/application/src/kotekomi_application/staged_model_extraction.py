@@ -47,10 +47,6 @@ from kotekomi_application.grounded_candidates import (
 
 HASH_ID_LENGTH = 24
 
-type ParsedModelOutput = (
-    "SemanticDraft | SemanticDraftAbstention | HypothesisBatch | HypothesisBatchAbstention"
-)
-
 
 class StagedExtractionLedger(GroundedCandidateLedger, ContextPlanningLedger, Protocol):
     def save_extraction_task(self, record: ExtractionTask) -> None: ...
@@ -311,6 +307,38 @@ class ParagraphHypothesisTaskSchemaRegistry:
         )
 
 
+class OrganizationMentionTaskSchemaRegistry:
+    """The versioned pinned schema registry for diagnostic Organization mentions."""
+
+    schema_id = "organization_mention_text_v1"
+
+    def resolve(self, schema_id: str) -> PinnedTaskSchema:
+        if schema_id != self.schema_id:
+            raise ValueError(f"Unsupported Organization mention task schema: {schema_id}")
+        return PinnedTaskSchema(
+            schema_id=self.schema_id,
+            canonical_schema_bytes=organization_mention_text_schema_bytes(),
+            output_contract_version="organization_mention_text_v1",
+            parse=_parse_organization_mention_batch,
+        )
+
+
+class OrganizationQualificationTaskSchemaRegistry:
+    """The versioned pinned schema registry for one Organization judgment."""
+
+    schema_id = "organization_qualification_text_v1"
+
+    def resolve(self, schema_id: str) -> PinnedTaskSchema:
+        if schema_id != self.schema_id:
+            raise ValueError(f"Unsupported Organization qualification task schema: {schema_id}")
+        return PinnedTaskSchema(
+            schema_id=self.schema_id,
+            canonical_schema_bytes=organization_qualification_text_schema_bytes(),
+            output_contract_version="organization_qualification_text_v1",
+            parse=_parse_organization_qualification,
+        )
+
+
 @dataclass(frozen=True)
 class BoundedExtractionInput:
     source_id: str
@@ -321,6 +349,7 @@ class BoundedExtractionInput:
     execution_spec: ModelExecutionSpec
     validator_version: str
     hypothesis_verifier: HypothesisVerifierSpec | None = None
+    task_type: str = "claim_extraction"
 
 
 @dataclass(frozen=True)
@@ -329,6 +358,8 @@ class BoundedExtractionOutcome:
     model_run: ModelRun
     proposed_change_batch: ProposedChangeBatchOutcome | None
     verified_hypotheses: tuple[VerifiedHypothesis, ...] = ()
+    organization_mentions: tuple[OrganizationMention, ...] = ()
+    organization_qualification: OrganizationQualification | None = None
 
 
 @dataclass(frozen=True)
@@ -371,6 +402,44 @@ class HypothesisBatchAbstention:
 
 
 @dataclass(frozen=True)
+class OrganizationMention:
+    source_segment_label: str
+    organization_text: str
+
+
+@dataclass(frozen=True)
+class OrganizationMentionBatch:
+    mentions: tuple[OrganizationMention, ...]
+
+
+@dataclass(frozen=True)
+class OrganizationMentionBatchAbstention:
+    reason: str
+
+
+@dataclass(frozen=True)
+class OrganizationQualification:
+    organization_text: str
+
+
+@dataclass(frozen=True)
+class OrganizationQualificationRejection:
+    reason: str
+
+
+type ParsedModelOutput = (
+    SemanticDraft
+    | SemanticDraftAbstention
+    | HypothesisBatch
+    | HypothesisBatchAbstention
+    | OrganizationMentionBatch
+    | OrganizationMentionBatchAbstention
+    | OrganizationQualification
+    | OrganizationQualificationRejection
+)
+
+
+@dataclass(frozen=True)
 class HypothesisVerifierSpec:
     """Pinned model contract for independent PHP-1 relation verification."""
 
@@ -398,7 +467,7 @@ def run_bounded_extraction(
     schema_registry: TaskSchemaRegistry,
     clock: ModelRunClock | None = None,
 ) -> BoundedExtractionOutcome:
-    """Archive one raw response, validate its task-local candidates, then publish atomically."""
+    """Archive and validate task-local candidates, then publish eligible proposals atomically."""
     execution_spec = extraction_input.execution_spec
     schema = schema_registry.resolve(execution_spec.schema_id)
     verified = verify_context_manifest(
@@ -431,7 +500,7 @@ def run_bounded_extraction(
     request = ModelTaskRequest(
         extraction_task_id=task.id,
         task_fingerprint=task.task_fingerprint,
-        task_type="claim_extraction",
+        task_type=extraction_input.task_type,
         context_manifest_id=manifest.id,
         context_manifest_digest=manifest.manifest_digest,
         rendered_input=rendered_input,
@@ -495,7 +564,15 @@ def run_bounded_extraction(
     try:
         _validate_execution_receipt(response.execution_receipt, execution_spec, manifest)
         parsed = _parse_output(response.raw_output, manifest, schema)
-        if isinstance(parsed, (SemanticDraftAbstention, HypothesisBatchAbstention)):
+        if isinstance(
+            parsed,
+            (
+                SemanticDraftAbstention,
+                HypothesisBatchAbstention,
+                OrganizationMentionBatchAbstention,
+                OrganizationQualificationRejection,
+            ),
+        ):
             run = _model_run(
                 extraction_input,
                 manifest,
@@ -548,6 +625,54 @@ def run_bounded_extraction(
                 )
                 ledger_repository.save_model_run(run)
                 return BoundedExtractionOutcome(task, run, None)
+        if isinstance(parsed, OrganizationMentionBatch):
+            run = _model_run(
+                extraction_input,
+                manifest,
+                task,
+                model_run_id,
+                ModelRunStatus.SUCCEEDED,
+                started_at=started_at,
+                completed_at=completed_at,
+                execution_diagnostics=diagnostics,
+                output_digest=output_digest,
+                execution_receipt=response.execution_receipt,
+                outcome_metadata={
+                    "contract": "organization_mention_text_v1",
+                    "unique_mention_count": len(parsed.mentions),
+                },
+            )
+            ledger_repository.save_model_run(run)
+            return BoundedExtractionOutcome(
+                task,
+                run,
+                None,
+                organization_mentions=parsed.mentions,
+            )
+        if isinstance(parsed, OrganizationQualification):
+            run = _model_run(
+                extraction_input,
+                manifest,
+                task,
+                model_run_id,
+                ModelRunStatus.SUCCEEDED,
+                started_at=started_at,
+                completed_at=completed_at,
+                execution_diagnostics=diagnostics,
+                output_digest=output_digest,
+                execution_receipt=response.execution_receipt,
+                outcome_metadata={
+                    "contract": "organization_qualification_text_v1",
+                    "qualified_organization_text": parsed.organization_text,
+                },
+            )
+            ledger_repository.save_model_run(run)
+            return BoundedExtractionOutcome(
+                task,
+                run,
+                None,
+                organization_qualification=parsed,
+            )
         batch_input, outcome_metadata = _grounded_batch(
             extraction_input,
             manifest,
@@ -628,7 +753,7 @@ def _extraction_task(
 ) -> ExtractionTask:
     fingerprint = _digest(
         {
-            "task_type": "claim_extraction",
+            "task_type": extraction_input.task_type,
             "source_id": extraction_input.source_id,
             "document_id": extraction_input.document_id,
             "representation_id": extraction_input.representation_id,
@@ -641,7 +766,7 @@ def _extraction_task(
     )
     return ExtractionTask(
         id=f"ext_{fingerprint[:HASH_ID_LENGTH]}",
-        task_type="claim_extraction",
+        task_type=extraction_input.task_type,
         context_manifest_id=manifest.id,
         context_manifest_digest=manifest.manifest_digest,
         context_manifest_payload=cast(dict[str, JsonValue], _manifest_payload(manifest)),
@@ -745,7 +870,7 @@ def _completed_diagnostics(
 
 def _parse_output(
     raw_output: bytes, manifest: ContextManifest, schema: PinnedTaskSchema
-) -> SemanticDraft | SemanticDraftAbstention | HypothesisBatch | HypothesisBatchAbstention:
+) -> ParsedModelOutput:
     if manifest.schema_id != schema.schema_id or manifest.schema_digest != schema.digest:
         raise ValueError("ContextManifest schema does not match the pinned task schema.")
     return schema.parse(raw_output)
@@ -1401,6 +1526,80 @@ def paragraph_hypothesis_text_schema_bytes() -> bytes:
     )
 
 
+@cache
+def organization_mention_text_schema_bytes() -> bytes:
+    return (
+        b"mention: <sN> | <literal organization name>\n"
+        b"... up to twelve mention lines\n\n"
+        b"or\n\n"
+        b"abstain: <non-empty reason>\n"
+    )
+
+
+@cache
+def organization_qualification_text_schema_bytes() -> bytes:
+    return (
+        b"organization: <complete literal Organization expression>\n\n"
+        b"or\n\n"
+        b"reject: not an organization\n"
+    )
+
+
+def _parse_organization_mention_batch(
+    raw_output: bytes,
+) -> OrganizationMentionBatch | OrganizationMentionBatchAbstention:
+    try:
+        text = raw_output.decode("utf-8")
+    except UnicodeDecodeError as error:
+        raise ValueError("Organization mention output must be UTF-8 text.") from error
+    lines = text.splitlines()
+    if not lines or any(not line or line != line.strip() for line in lines):
+        raise ValueError("Organization mention output must contain only trimmed non-empty lines.")
+    if len(lines) == 1 and lines[0].startswith("abstain: "):
+        reason = lines[0].removeprefix("abstain: ")
+        if not reason:
+            raise ValueError("Organization mention abstention requires a reason.")
+        return OrganizationMentionBatchAbstention(reason)
+    if len(lines) > 12:
+        raise ValueError("Organization mention output exceeds twelve lines.")
+    mentions: list[OrganizationMention] = []
+    for line in lines:
+        prefix, separator, remainder = line.partition(": ")
+        if prefix != "mention" or not separator:
+            raise ValueError("Organization mention lines must begin with 'mention: '.")
+        parts = remainder.split(" | ")
+        if len(parts) != 2 or any(not part for part in parts):
+            raise ValueError("Organization mention lines must contain one label and one name.")
+        source_segment_label, organization_text = parts
+        if not source_segment_label.startswith("s") or not source_segment_label[1:].isdigit():
+            raise ValueError("Organization mention labels must use the sN form.")
+        mentions.append(OrganizationMention(source_segment_label, organization_text))
+    if len({item.organization_text for item in mentions}) != len(mentions):
+        raise ValueError("Organization mention output repeats a name.")
+    return OrganizationMentionBatch(tuple(mentions))
+
+
+def _parse_organization_qualification(
+    raw_output: bytes,
+) -> OrganizationQualification | OrganizationQualificationRejection:
+    try:
+        text = raw_output.decode("utf-8")
+    except UnicodeDecodeError as error:
+        raise ValueError("Organization qualification output must be UTF-8 text.") from error
+    lines = text.splitlines()
+    if len(lines) != 1 or not lines[0] or lines[0] != lines[0].strip():
+        raise ValueError("Organization qualification output must contain one trimmed line.")
+    line = lines[0]
+    if line == "reject: not an organization":
+        return OrganizationQualificationRejection("not an organization")
+    if line.startswith("organization: "):
+        organization_text = line.removeprefix("organization: ")
+        if not organization_text:
+            raise ValueError("Organization qualification requires a literal expression.")
+        return OrganizationQualification(organization_text)
+    raise ValueError("Organization qualification output does not match the contract.")
+
+
 def _require_source_grounded(value: str, exact_text: str, label: str) -> None:
     if value not in exact_text:
         raise ValueError(f"{label} must occur in the bound EvidenceCandidate text.")
@@ -1426,13 +1625,19 @@ def _task_metadata(manifest: ContextManifest) -> dict[str, JsonValue]:
 
 
 def _abstention_outcome_metadata(
-    output: SemanticDraftAbstention | HypothesisBatchAbstention,
+    output: SemanticDraftAbstention
+    | HypothesisBatchAbstention
+    | OrganizationMentionBatchAbstention
+    | OrganizationQualificationRejection,
 ) -> dict[str, JsonValue]:
-    contract = (
-        "paragraph_hypothesis_text_v1"
-        if isinstance(output, HypothesisBatchAbstention)
-        else "semantic_draft_text_v1"
-    )
+    if isinstance(output, HypothesisBatchAbstention):
+        contract = "paragraph_hypothesis_text_v1"
+    elif isinstance(output, OrganizationMentionBatchAbstention):
+        contract = "organization_mention_text_v1"
+    elif isinstance(output, OrganizationQualificationRejection):
+        contract = "organization_qualification_text_v1"
+    else:
+        contract = "semantic_draft_text_v1"
     return {"contract": contract, "unique_claim_count": 0, "duplicate_claim_lines": []}
 
 
