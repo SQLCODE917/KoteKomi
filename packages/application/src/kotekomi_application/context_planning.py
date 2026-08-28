@@ -160,6 +160,45 @@ class SourceSegment:
     exact_text: str
 
 
+@dataclass(frozen=True)
+class SourceCopyView:
+    """One model-facing copy with authoritative boundary provenance."""
+
+    text: str
+    authoritative_text_sha256: str
+    copy_to_authoritative_boundaries: tuple[int, ...]
+
+    def __post_init__(self) -> None:
+        if not self.authoritative_text_sha256:
+            raise ValueError("Source copy requires an authoritative text digest.")
+        if len(self.copy_to_authoritative_boundaries) != len(self.text) + 1:
+            raise ValueError("Source copy boundary count does not match its text.")
+        if any(
+            current > following
+            for current, following in zip(
+                self.copy_to_authoritative_boundaries,
+                self.copy_to_authoritative_boundaries[1:],
+                strict=False,
+            )
+        ):
+            raise ValueError("Source copy boundaries must use authoritative order.")
+
+    def authoritative_range(self, copy_start: int, copy_end: int) -> tuple[int, int]:
+        """Resolve one half-open Source copy range into authoritative coordinates."""
+        if (
+            type(copy_start) is not int
+            or type(copy_end) is not int
+            or copy_start < 0
+            or copy_end <= copy_start
+            or copy_end > len(self.text)
+        ):
+            raise ValueError("Source copy range is invalid.")
+        return (
+            self.copy_to_authoritative_boundaries[copy_start],
+            self.copy_to_authoritative_boundaries[copy_end],
+        )
+
+
 def paragraph_source_segments(
     text: str, policy_id: str = PARAGRAPH_SEGMENT_V1
 ) -> tuple[SourceSegment, ...]:
@@ -188,9 +227,30 @@ def paragraph_source_segments(
     )
 
 
+def derive_source_copy_view(text: str) -> SourceCopyView:
+    """Derive model text and a deterministic map to authoritative characters."""
+    matches = tuple(re.finditer(r"\S+", text))
+    if not matches:
+        return SourceCopyView("", hashlib.sha256(text.encode()).hexdigest(), (0,))
+    output: list[str] = []
+    boundaries: list[int] = [matches[0].start()]
+    for index, match in enumerate(matches):
+        if index:
+            output.append(" ")
+            boundaries.append(match.start())
+        for offset, character in enumerate(match.group()):
+            output.append(character)
+            boundaries.append(match.start() + offset + 1)
+    return SourceCopyView(
+        "".join(output),
+        hashlib.sha256(text.encode()).hexdigest(),
+        tuple(boundaries),
+    )
+
+
 def source_copy_view(text: str) -> str:
     """Derive the model-facing whitespace-normalized copy of authoritative text."""
-    return " ".join(text.split())
+    return derive_source_copy_view(text).text
 
 
 @dataclass(frozen=True)

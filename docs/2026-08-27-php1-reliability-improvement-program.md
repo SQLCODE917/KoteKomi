@@ -4,6 +4,8 @@
 - Program ID: `php1-reliability-improvement`
 - Parent: [Paragraph Hypothesis Development Program](2026-08-26-paragraph-hypothesis-development-program.md)
 - Evaluation corpus: [CIR Evaluation Annotation Packet](2026-08-26-cir-evaluation-annotation-packet.md)
+- Organization Mention Gold: [Human-reviewed exact-span catalog](php1-organization-mention-gold-v1.json)
+- Mention policy: [Named Organization Mention policy](php1-named-organization-mention-policy-v1.json)
 
 ## User outcome
 
@@ -60,7 +62,9 @@ A reviewer remains the only actor that accepts an Assertion into the Ledger.
 
 PHP-1 continues to use only literal named Organization mentions and direct Organization relationships.
 
-PHP-1 does not add coreference, multi-segment evidence, Events, Places, Actors, countries, products, or policy objects.
+PHP-1 does not add coreference, multi-segment evidence, Events, Places, Actors, products, or policy objects.
+
+PHP-1 treats a country expression as an Organization Mention only when the Source assigns its government institutional agency.
 
 The eight-claim limit remains unchanged until reviewed corpus evidence evaluates that limit.
 
@@ -89,7 +93,9 @@ calibration evidence.
 
 H2 separates Organization mention detection from direct-relationship judgment.
 
-H2.1 shows that Qwen2.5 has higher exact-span precision and GLiNER has higher Gold mention overlap.
+H2.1 establishes one human-reviewed Mention Gold for every Organization extraction experiment.
+
+The current Gold contains 209 exact Mentions across 164 Source segments.
 
 H2.2 combines both fallible proposers behind source validation and semantic qualification.
 
@@ -100,8 +106,15 @@ Exact-span recall increased from `0.695402` to `0.844828`, and F1 increased from
 
 Exact-span precision decreased from `0.883212` to `0.777778`.
 
-The qualified path also lost 27 exact Qwen2.5 true positives, although it resolved the reviewed NIST
-alias and preserved the mandatory Anthropic-Palantir Candidate pair in every run.
+The qualified path lost six exact Qwen2.5 true positives and rescued 32 other exact mentions.
+
+The old provisional catalog reported 27 false negatives after qualification.
+
+That historical result is not comparable with H2.2.2 or later policy-aligned runs.
+
+The qualified path resolved the reviewed NIST alias.
+
+The qualified path preserved the mandatory Anthropic-Palantir Candidate pair in every run.
 
 The Pipeline therefore continues to use PHP-1 V3.
 
@@ -114,7 +127,10 @@ The Pipeline therefore continues to use PHP-1 V3.
 | H2 | A reviewer can see whether PHP-1 missed Organization mentions or direct relationships. | H0 resolves one Source segment for each Expectation. | A bounded mention task and relationship task report separate candidate and relationship outcomes. | [PHP-1 Mention and Relationship Diagnosis](2026-08-27-php1-mention-relationship-diagnosis.md) |
 | H2.1 | An operator can compare Qwen2.5 with a specialized Organization span proposer. | H2 records literal Mention candidates separately from Pair judgments. | A 50-case exact-span report compares quality, latency, and stability without changing production PHP-1. | [Specialized Organization Span Proposer Evaluation](2026-08-27-php1-specialized-organization-span-proposer-evaluation.md) |
 | H2.2 | An operator can evaluate source-validated and semantically qualified Organization mentions from both proposers. | H2.1 measures complementary proposer behavior. | Only validated, alias-aware Organization identity candidates enter diagnostic pair generation. | [Organization Mention Qualification](2026-08-27-php1-organization-mention-qualification.md) |
-| H3 | A reviewer does not receive country or other unsupported-type references as Organization hypotheses. | A refined qualified-mention candidate passes the H2.2 no-regression gates. | A production selection TDD adopts qualified mentions without losing demonstrated Qwen2.5 behavior. | Blocked by the H2.2 evaluation result. |
+| H2.2.1 | An operator can interpret mention scores against one Organization contract. | H2.2 exposes contradictory definitions and provisional labels. | The Domain glossary, prompts, policy, and reviewed catalog use one Organization meaning. | [Organization Semantics and Annotation Alignment](2026-08-28-php1-organization-semantics-and-annotation-alignment.md) |
+| H2.2.2 | An operator can trust model inputs, coordinates, and scored relation coverage. | H2.2.1 aligns the benchmark labels. | The evaluator preserves authoritative coordinates, removes the mention cap, skips nonlexical inputs, and records a corrected baseline. | [Organization Mention Input and Benchmark Integrity](2026-08-28-php1-organization-mention-input-and-benchmark-integrity.md) |
+| H2.3 | An operator can measure whether GLiNER adds end-to-end relation coverage monotonically. | H2.2.2 records the corrected Qwen2.5 and GLiNER baseline. | The experiment retains baseline behavior, adds source-valid rescue spans, and judges only new rescue pairs. | [Monotonic GLiNER Rescue](2026-08-28-php1-monotonic-gliner-rescue.md) |
+| H3 | A reviewer receives only semantically qualified Organization candidates after deterministic boundary reconciliation. | H2.3 identifies boundary, reference, and entity-type errors in the monotonic candidate union. | A production selection TDD adopts qualified candidates without losing demonstrated Qwen2.5 behavior. | Planned after H2.3 post-processing. |
 | H4 | A reviewer receives results from one consistent PHP-1 text contract. | H3 identifies remaining format or source-copy failures. | The extraction task and verifier task use consistent Source copy and source-label contracts. | Planned after H3. |
 
 ## Validation strategy
@@ -123,7 +139,7 @@ H0 adds deterministic fixture tests for Expectation resolution and target matchi
 
 H0 retains the existing 50-row replay as a local diagnostic.
 
-Each later TDD uses the H0 report and a held-out source-segment set.
+Each later TDD uses the H0 report and an explicitly versioned source-segment set.
 
 H1 scored eleven binary direct-Organization Expectations and recorded the coordinated consultation
 target only as an Event-frame observation.
@@ -138,9 +154,51 @@ evidence outside accepted Ledger state.
 H2.2 records `not_selected` because higher recall did not compensate for lower precision or lost
 demonstrated true positives.
 
-The held-out set must contain Source segments from all three packet documents.
+H2.2.1 and H2.2.2 repair benchmark authority before another proposer experiment.
+
+H2.3 compares monotonic rescue with the corrected baseline.
+
+H2.3 retained every baseline candidate and exposed complementary GLiNER coverage.
+
+H2.3 remains unselected because source-valid GLiNER spans are not yet semantically qualified Organizations.
+
+The diagnostic retains overlapping boundary variants but excludes those variants from Candidate pair generation.
+
+PHP-1 V3 remains the production path.
+
+The current human-reviewed Gold is a development comparison set, not a held-out release benchmark.
+
+A future release benchmark must be independently annotated and must contain Source segments from all
+three packet documents.
 
 No TDD treats a model result as its own expected result.
+
+## Prompt audit
+
+The Mention, qualification, and pair prompts use one sentence per line.
+
+The qualification and pair prompts use synthetic examples.
+
+The Mention prompt is rule-centered but includes `Google`, `OpenAI`, and `European Union` in boundary
+examples; those names also occur in Mention Gold.
+
+The Mention and qualification prompts apply the same country-as-government and collective-project rules.
+
+The prompts contain 1,299 words in total.
+
+This size fits comfortably beside one bounded Source segment in the 16,384-token local runtime profile.
+
+The prompts remain instruction-dense and are not yet proven minimal for Qwen2.5.
+
+A controlled attempt replaced those corpus-adjacent examples with generic alternatives.
+
+That attempt deterministically reduced Qwen2.5 exact-span F1 from `0.745946` to `0.681440` on the same
+Gold, so the no-regression rule rejected it and retained the demonstrated prompt bytes.
+
+A later calibration must test one bounded prompt change at a time against Mention Gold without changing
+Gold labels.
+
+A separate held-out catalog remains necessary before any release claim.
 
 ## Constraints
 

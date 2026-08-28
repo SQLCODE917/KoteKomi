@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 import statistics
@@ -11,7 +12,41 @@ from pathlib import Path
 from typing import Any, cast
 
 CATALOG_SCHEMA_VERSION = "php1_organization_mention_gold_v1"
+MENTION_POLICY_ID = "named_organization_mention_v1"
+MENTION_POLICY_SCHEMA_VERSION = "php1_named_organization_mention_policy_v1"
+HUMAN_REVIEWED_STATUS = "human_reviewed_development_gold"
 REPETITIONS = 3
+
+
+def load_and_validate_mention_policy(path: Path) -> dict[str, Any]:
+    """Load the exact policy that defines the development benchmark."""
+    raw_value: object = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(raw_value, dict):
+        raise ValueError("PHP-1 Mention policy must be an object.")
+    raw = cast(dict[str, Any], raw_value)
+    required = {
+        "schema_version",
+        "policy_id",
+        "organization_definition",
+        "included_denotations",
+        "excluded_denotations",
+        "boundary_rules",
+    }
+    if set(raw) != required:
+        raise ValueError("PHP-1 Mention policy fields do not match the contract.")
+    if raw["schema_version"] != MENTION_POLICY_SCHEMA_VERSION:
+        raise ValueError("PHP-1 Mention policy schema version does not match the contract.")
+    if raw["policy_id"] != MENTION_POLICY_ID:
+        raise ValueError("PHP-1 Mention policy identity does not match the contract.")
+    for field in ("included_denotations", "excluded_denotations", "boundary_rules"):
+        values = raw[field]
+        if (
+            not isinstance(values, list)
+            or not values
+            or any(not isinstance(item, str) or not item for item in cast(list[object], values))
+        ):
+            raise ValueError(f"PHP-1 Mention policy {field} must contain strings.")
+    return raw
 
 
 def source_segment_key(value: dict[str, Any]) -> tuple[str, str, str]:
@@ -47,11 +82,18 @@ def load_and_validate_catalog(
     if not isinstance(raw_value, dict):
         raise ValueError("H2.1 Mention catalog must be an object.")
     raw = cast(dict[str, object], raw_value)
-    if set(raw) != {"schema_version", "annotation_status", "segments"}:
+    if set(raw) != {
+        "schema_version",
+        "annotation_policy_id",
+        "annotation_status",
+        "segments",
+    }:
         raise ValueError("H2.1 Mention catalog fields do not match the contract.")
     if raw["schema_version"] != CATALOG_SCHEMA_VERSION:
         raise ValueError("H2.1 Mention catalog schema version does not match the contract.")
-    if raw["annotation_status"] != "provisional_agent_authored":
+    if raw["annotation_policy_id"] != MENTION_POLICY_ID:
+        raise ValueError("H2.1 Mention catalog policy does not match the contract.")
+    if raw["annotation_status"] != HUMAN_REVIEWED_STATUS:
         raise ValueError("H2.1 Mention catalog annotation status does not match the contract.")
     raw_segments = raw["segments"]
     if not isinstance(raw_segments, list):
@@ -166,13 +208,14 @@ def normalize_qwen_segment(value: dict[str, Any]) -> dict[str, Any]:
         elapsed_value = diagnostics.get("elapsed_milliseconds")
         if type(elapsed_value) is int:
             elapsed = elapsed_value
-    return {
+    result = {
         "fixture_path": value["fixture_path"],
         "paragraph_node_id": value["paragraph_node_id"],
         "source_segment_label": value["source_segment_label"],
         "source_text_sha256": value["source_text_sha256"],
         "source_text": source_text,
         "status": value["status"],
+        "model_eligibility": value["model_eligibility"],
         "latency_milliseconds": elapsed,
         "proposals": [proposals[key] for key in sorted(proposals)],
         "model_run_id": value["model_run_id"],
@@ -180,6 +223,64 @@ def normalize_qwen_segment(value: dict[str, Any]) -> dict[str, Any]:
         "prompt_digest": value["prompt_digest"],
         "raw_output": value["raw_output"],
         "diagnostics": value["diagnostics"],
+    }
+    return _attach_authoritative_proposal_ranges(result, value)
+
+
+def attach_authoritative_proposal_ranges(
+    proposals: list[dict[str, Any]],
+    source_segment: dict[str, Any],
+) -> list[dict[str, Any]]:
+    """Resolve validated Source copy spans into authoritative coordinates."""
+    source_copy = str(source_segment["source_copy_text"])
+    boundaries = source_segment["copy_to_authoritative_boundaries"]
+    authoritative_text = str(source_segment["authoritative_text"])
+    authoritative_digest = hashlib.sha256(authoritative_text.encode("utf-8")).hexdigest()
+    if authoritative_digest != source_segment["authoritative_text_sha256"]:
+        raise ValueError("Authoritative Source segment digest does not match its text.")
+    if len(boundaries) != len(source_copy) + 1 or any(type(item) is not int for item in boundaries):
+        raise ValueError("Source copy boundary map does not match its text.")
+    mapped: list[dict[str, Any]] = []
+    for proposal in proposals:
+        start = int(proposal["start"])
+        end = int(proposal["end"])
+        if start < 0 or end <= start or end > len(source_copy):
+            raise ValueError("Mention proposal Source copy range is invalid.")
+        if source_copy[start:end] != proposal["text"]:
+            raise ValueError("Mention proposal does not match Source copy characters.")
+        authoritative_start = int(boundaries[start])
+        authoritative_end = int(boundaries[end])
+        authoritative_expression = " ".join(
+            authoritative_text[authoritative_start:authoritative_end].split()
+        )
+        if authoritative_expression != proposal["text"]:
+            raise ValueError("Mention proposal does not resolve to authoritative characters.")
+        mapped.append(
+            {
+                **proposal,
+                "source_copy_start": start,
+                "source_copy_end": end,
+                "authoritative_start": authoritative_start,
+                "authoritative_end": authoritative_end,
+            }
+        )
+    return mapped
+
+
+def _attach_authoritative_proposal_ranges(
+    normalized: dict[str, Any], value: dict[str, Any]
+) -> dict[str, Any]:
+    required = {
+        "source_copy_text",
+        "authoritative_text",
+        "authoritative_text_sha256",
+        "copy_to_authoritative_boundaries",
+    }
+    if not required.issubset(value):
+        return normalized
+    return {
+        **normalized,
+        "proposals": attach_authoritative_proposal_ranges(normalized["proposals"], value),
     }
 
 

@@ -1,0 +1,215 @@
+{
+  "schema_version": "php1_direct_organization_relation_benchmark_v2",
+  "annotation_status": "policy_aligned_development_benchmark",
+  "segments": [
+    {
+      "case_ids": ["AD-04"],
+      "fixture_path": "raw/Anthropic–United_States_Department_of_Defense_dispute.pdf",
+      "paragraph_anchor": "Anthropic privately lobbied for Congress",
+      "source_segment_anchor": "Anthropic privately lobbied for Congress to vote against a bill",
+      "coverage_status": "complete_php1_direct_organization_relations",
+      "relations": [
+        {
+          "expectation_id": "php1-target-ad-04-anthropic-congress",
+          "subject_text": "Anthropic",
+          "relation_text": "privately lobbied for",
+          "object_text": "Congress",
+          "relationship_shape": "directed_action"
+        }
+      ]
+    },
+    {
+      "case_ids": ["AD-06"],
+      "fixture_path": "raw/Anthropic–United_States_Department_of_Defense_dispute.pdf",
+      "paragraph_anchor": "partnered with Palantir and Amazon Web Services",
+      "source_segment_anchor": "Anthropic had already partnered with Palantir and Amazon Web Services",
+      "coverage_status": "complete_php1_direct_organization_relations",
+      "relations": [
+        {
+          "expectation_id": "php1-target-ad-06-anthropic-palantir",
+          "subject_text": "Anthropic",
+          "relation_text": "partnered with",
+          "object_text": "Palantir",
+          "relationship_shape": "partnership"
+        },
+        {
+          "expectation_id": "php1-target-ad-06-anthropic-aws",
+          "subject_text": "Anthropic",
+          "relation_text": "partnered with",
+          "object_text": "Amazon Web Services",
+          "relationship_shape": "partnership"
+        }
+      ]
+    },
+    {
+      "case_ids": ["AD-07"],
+      "fixture_path": "raw/Anthropic–United_States_Department_of_Defense_dispute.pdf",
+      "paragraph_anchor": "reached an agreement with the AI Safety Institute",
+      "source_segment_anchor": "Anthropic had reached an agreement with the AI Safety Institute",
+      "coverage_status": "complete_php1_direct_organization_relations",
+      "relations": [
+        {
+          "expectation_id": "php1-target-ad-07-anthropic-aisi",
+          "subject_text": "Anthropic",
+          "relation_text": "reached an agreement with",
+          "object_text": "AI Safety Institute",
+          "relationship_shape": "agreement"
+        }
+      ]
+    },
+    {
+      "case_ids": ["AD-09"],
+      "fixture_path": "raw/Anthropic–United_States_Department_of_Defense_dispute.pdf",
+      "paragraph_anchor": "Through its interoperability with Palantir",
+      "source_segment_anchor": "Through its interoperability with Palantir",
+      "coverage_status": "complete_php1_direct_organization_relations",
+      "relations": [
+        {
+          "expectation_id": "php1-target-ad-09-anthropic-palantir",
+          "subject_text": "Anthropic",
+          "relation_text": "interoperability with",
+          "object_text": "Palantir",
+          "relationship_shape": "interoperability"
+        },
+        {
+          "expectation_id": "php1-target-ad-09-palantir-dod",
+          "subject_text": "Palantir",
+          "relation_text": "heavily involved in data analysis and analytics at",
+          "object_text": "Department of Defense",
+          "relationship_shape": "directed_activity"
+        }
+      ],
+      "excluded_pair_decisions": [
+        {
+          "subject_text": "Anthropic",
+          "object_text": "U.S. military",
+          "reason": "The source makes Anthropic's technology, not Anthropic, the relation subject."
+        }
+      ]
+    },
+    {
+      "case_ids": ["AD-13"],
+      "fixture_path": "raw/Anthropic–United_States_Department_of_Defense_dispute.pdf",
+      "paragraph_anchor": "Anthropic refused to agree to allow the Department of Defense",
+      "source_segment_anchor": "Anthropic refused to agree to allow the Department of Defense",
+      "coverage_status": "complete_php1_direct_organization_relations",
+      "relations": [
+        {
+          "expectation_id": "php1-target-ad-13-anthropic-dod",
+          "subject_text": "Anthropic",
+          "relation_text": "refused to agree to allow",
+          "object_text": "Department of Defense",
+          "relationship_shape": "refusal"
+        }
+      ],
+      "excluded_pair_decisions": [
+        {
+          "subject_text": "Department of Defense",
+          "object_text": "Anthropic",
+          "reason": "The threat clause uses anaphoric descriptions instead of both literal names."
+        }
+      ]
+    },
+    {
+      "case_ids": ["AI-03", "AI-04"],
+      "fixture_path": "raw/Artificial_intelligence_safety_institute.pdf",
+      "paragraph_anchor": "UK AISI was officially established as an evolution of the Frontier AI Taskforce",
+      "source_segment_anchor": "UK AISI was officially established as an evolution of the Frontier AI Taskforce",
+      "coverage_status": "complete_php1_direct_organization_relations",
+      "relations": [
+        {
+          "expectation_id": "php1-target-ai-03-uk-aisi-frontier-taskforce",
+          "subject_text": "UK AISI",
+          "relation_text": "was officially established as an evolution of",
+          "accepted_relation_texts": [
+            "was officially established as an evolution of",
+            "was established as an evolution of"
+          ],
+          "object_text": "Frontier AI Taskforce",
+          "relationship_shape": "lineage"
+        },
+        {
+          "expectation_id": "php1-target-ai-04-us-aisi-nist",
+          "subject_text": "US AISI",
+          "relation_text": "as part of",
+          "accepted_relation_texts": ["as part of", "is part of"],
+          "object_text": "National Institute of Standards and Technology",
+          "relationship_shape": "containment"
+        }
+      ]
+    },
+    {
+      "case_ids": ["AI-15"],
+      "fixture_path": "raw/Artificial_intelligence_safety_institute.pdf",
+      "paragraph_anchor": "The AISI is part of the United Kingdom's Department for Science",
+      "source_segment_anchor": "The AISI is part of the United Kingdom's Department for Science",
+      "coverage_status": "complete_php1_direct_organization_relations",
+      "relations": [
+        {
+          "expectation_id": "php1-target-ai-15-aisi-dsit",
+          "subject_text": "AISI",
+          "relation_text": "is part of",
+          "object_text": "United Kingdom's Department for Science, Innovation and Technology",
+          "relationship_shape": "containment"
+        }
+      ]
+    },
+    {
+      "case_ids": ["AI-18"],
+      "fixture_path": "raw/Artificial_intelligence_safety_institute.pdf",
+      "paragraph_anchor": "US AISI was founded in November 2023",
+      "source_segment_anchor": "US AISI was founded in November 2023 as part of the National Institute",
+      "coverage_status": "complete_php1_direct_organization_relations",
+      "relations": [
+        {
+          "expectation_id": "php1-target-ai-18-us-aisi-nist",
+          "subject_text": "US AISI",
+          "relation_text": "was founded in November 2023 as part of",
+          "accepted_relation_texts": [
+            "was founded in November 2023 as part of",
+            "was founded as part of"
+          ],
+          "object_text": "National Institute of Standards and Technology (NIST)",
+          "relationship_shape": "containment"
+        }
+      ]
+    },
+    {
+      "case_ids": ["CS-05"],
+      "fixture_path": "raw/241030_Allen_Safety_Network.pdf",
+      "paragraph_anchor": "Anthropic, and Amazon joined the U.S. AISI Consortium",
+      "source_segment_anchor": "top U.S. AI companies such as Google, Microsoft, Anthropic, and Amazon joined the U.S. AISI Consortium",
+      "coverage_status": "complete_php1_direct_organization_relations",
+      "relations": [
+        {
+          "expectation_id": "php1-target-cs-05-google-aisic",
+          "subject_text": "Google",
+          "relation_text": "joined",
+          "object_text": "U.S. AISI Consortium (AISIC)",
+          "relationship_shape": "membership"
+        },
+        {
+          "expectation_id": "php1-target-cs-05-microsoft-aisic",
+          "subject_text": "Microsoft",
+          "relation_text": "joined",
+          "object_text": "U.S. AISI Consortium (AISIC)",
+          "relationship_shape": "membership"
+        },
+        {
+          "expectation_id": "php1-target-cs-05-anthropic-aisic",
+          "subject_text": "Anthropic",
+          "relation_text": "joined",
+          "object_text": "U.S. AISI Consortium (AISIC)",
+          "relationship_shape": "membership"
+        },
+        {
+          "expectation_id": "php1-target-cs-05-amazon-aisic",
+          "subject_text": "Amazon",
+          "relation_text": "joined",
+          "object_text": "U.S. AISI Consortium (AISIC)",
+          "relationship_shape": "membership"
+        }
+      ]
+    }
+  ]
+}

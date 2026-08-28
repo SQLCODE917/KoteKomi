@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import sys
 import tempfile
 from collections.abc import Callable
@@ -12,7 +13,7 @@ from dataclasses import dataclass, field
 from io import StringIO
 from itertools import combinations
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from kotekomi_adapters import LocalArchiveStore, sqlite_ledger_transaction
 from kotekomi_application import (
@@ -37,6 +38,7 @@ from kotekomi_application import (
     build_context_manifest,
     combine_validated_organization_mentions,
     derive_qualified_organization_pairs,
+    derive_source_copy_view,
     fuse_mention_proposals,
     model_execution_spec_digest,
     paragraph_source_segments,
@@ -60,6 +62,10 @@ H2_PAIR_PROMPT_ID = "paragraph_organization_pair_relation_v1"
 H2_PAIR_PROMPT_PATH = ROOT / "prompts" / "paragraph_organization_pair_relation_v1.md"
 H22_QUALIFICATION_PROMPT_ID = "paragraph_organization_qualification_v1"
 H22_QUALIFICATION_PROMPT_PATH = ROOT / "prompts" / "paragraph_organization_qualification_v1.md"
+
+MODEL_ELIGIBLE = "model_eligible"
+NOT_APPLICABLE_NONLEXICAL = "not_applicable_nonlexical"
+_NONLEXICAL_SOURCE_SEGMENT = re.compile(r"^(?:\s*\[[0-9]+\]\s*)+$|^\s*\(\.\.\.\)\s*$")
 
 
 @dataclass(frozen=True)
@@ -185,7 +191,9 @@ def load_packet_source_segments(
                     )
                     continue
                 for plan in result:
-                    source_text = _plan_source_copy(plan)
+                    source_segment = _plan_source_segment(plan)
+                    source_view = derive_source_copy_view(source_segment.exact_text)
+                    source_text = source_view.text
                     entry = selected.setdefault(
                         plan.key,
                         {
@@ -199,6 +207,17 @@ def load_packet_source_segments(
                             "source_segment_label": plan.source_segment_label,
                             "source_text": source_text,
                             "source_text_sha256": hashlib.sha256(source_text.encode()).hexdigest(),
+                            "source_copy_text": source_text,
+                            "authoritative_text": source_segment.exact_text,
+                            "authoritative_text_sha256": source_view.authoritative_text_sha256,
+                            "authoritative_start": source_segment.start_char,
+                            "authoritative_end": source_segment.end_char,
+                            "copy_to_authoritative_boundaries": list(
+                                source_view.copy_to_authoritative_boundaries
+                            ),
+                            "model_eligibility": classify_source_segment_model_eligibility(
+                                source_text
+                            ),
                         },
                     )
                     entry["case_ids"].append(case.case_id)
@@ -292,22 +311,43 @@ def run_qwen_mentions_for_packet(
             for repetition in range(1, repetitions + 1):
                 results: list[dict[str, Any]] = []
                 for key, plan in sorted(plans.items()):
-                    mention_result = _h2_mention_result(
-                        plan,
-                        ledger,
-                        archive,
-                        config,
-                        runtime,
-                        tokenizer,
-                    )
+                    source_copy = _plan_source_copy(plan)
+                    eligibility = classify_source_segment_model_eligibility(source_copy)
+                    if eligibility == NOT_APPLICABLE_NONLEXICAL:
+                        prompt = H2_MENTION_PROMPT_PATH.read_bytes()
+                        schema = OrganizationMentionTaskSchemaRegistry().resolve(
+                            "organization_mention_text_v1"
+                        )
+                        mention_result = {
+                            "status": NOT_APPLICABLE_NONLEXICAL,
+                            "source_segment_label": plan.source_segment_label,
+                            "source_copy_text": source_copy,
+                            "prompt_id": H2_MENTION_PROMPT_ID,
+                            "prompt_digest": hashlib.sha256(prompt).hexdigest(),
+                            "schema_digest": schema.digest,
+                            "context_manifest_id": None,
+                            "model_run_id": None,
+                            "raw_output": None,
+                            "mention_candidates": [],
+                            "diagnostics": [NOT_APPLICABLE_NONLEXICAL],
+                            "execution_spec_digest": None,
+                        }
+                    else:
+                        mention_result = _h2_mention_result(
+                            plan,
+                            ledger,
+                            archive,
+                            config,
+                            runtime,
+                            tokenizer,
+                        )
                     results.append(
                         {
                             "fixture_path": key[0],
                             "paragraph_node_id": key[1],
                             "source_segment_label": key[2],
-                            "source_text_sha256": hashlib.sha256(
-                                _plan_source_copy(plan).encode()
-                            ).hexdigest(),
+                            "source_text_sha256": hashlib.sha256(source_copy.encode()).hexdigest(),
+                            "model_eligibility": eligibility,
                             **mention_result,
                         }
                     )
@@ -326,6 +366,305 @@ def run_qwen_mentions_for_packet(
         },
         "runs": runs,
     }
+
+
+def run_relation_pairs_for_candidate_runs(
+    config_path: Path | None,
+    cases: tuple[Php1DiagnosticCase, ...],
+    expectations: tuple[Php1Expectation, ...],
+    candidate_runs: list[dict[str, Any]],
+    *,
+    representation_policy_version: str = "php1-packet-diagnostic-v2",
+) -> dict[str, Any]:
+    """Judge complete-subset pairs from already recorded Mention candidates."""
+    if len(candidate_runs) != 3:
+        raise ValueError("PHP-1 relation baseline requires exactly three candidate runs.")
+    fixture_cases = {case.relative_path: case for case in cases}
+    required_fixtures = sorted({expectation.fixture_path for expectation in expectations})
+    missing = [path for path in required_fixtures if not (ROOT / path).is_file()]
+    if missing:
+        return {"status": "fixture_missing", "missing_fixture_paths": missing, "runs": []}
+    with tempfile.TemporaryDirectory(prefix="kotekomi-php1-relation-baseline-") as temporary:
+        root = Path(temporary)
+        ledger_path = root / "ledger.sqlite"
+        archive_path = root / "archive"
+        ingest_config = root / "ingest.toml"
+        ingest_config.write_text(
+            f'[processing]\nrepresentation_policy_version = "{representation_policy_version}"\n',
+            encoding="utf-8",
+        )
+        _ledger_init(ledger_path, archive_path)
+        representations: dict[str, str] = {}
+        for fixture_path in required_fixtures:
+            case = fixture_cases.get(fixture_path)
+            if case is None:
+                raise ValueError("PHP-1 relation fixture has no packet case.")
+            output = _source_add(
+                ingest_config,
+                ledger_path,
+                archive_path,
+                ROOT / fixture_path,
+                case.source_url,
+            )
+            representations[fixture_path] = str(output["representation_id"])
+        config = load_config(
+            config_path=config_path,
+            ledger_path_override=ledger_path,
+            archive_path_override=archive_path,
+        )
+        runtime = RecordingRuntime(build_model_task_runtime(config.model_execution))
+        if not runtime.check_readiness().ready:
+            return {"status": "qwen_unavailable", "runs": []}
+        archive = LocalArchiveStore(archive_path)
+        tokenizer = DiagnosticTokenizer()
+        verifier_prompt = VERIFIER_PROMPT_PATH.read_bytes()
+        with sqlite_ledger_transaction(ledger_path) as ledger:
+            bundles = {
+                path: _required_bundle(ledger, representation_id)
+                for path, representation_id in representations.items()
+            }
+            units_by_node: dict[tuple[str, str], tuple[Any, ...]] = {}
+            resolutions = {
+                expectation.expectation_id: _resolve_expectation(
+                    expectation,
+                    representations[expectation.fixture_path],
+                    bundles[expectation.fixture_path],
+                    ledger,
+                    units_by_node,
+                )
+                for expectation in expectations
+            }
+            unresolved = [
+                expectation_id
+                for expectation_id, resolution in resolutions.items()
+                if not isinstance(resolution.get("plan"), _ResolvedSegment)
+            ]
+            if unresolved:
+                return {
+                    "status": "selection_incomplete",
+                    "unresolved_expectation_ids": sorted(unresolved),
+                    "runs": [],
+                }
+            plans = {
+                plan.key: plan
+                for resolution in resolutions.values()
+                if isinstance((plan := resolution.get("plan")), _ResolvedSegment)
+            }
+            review_plans = {
+                (
+                    plan.fixture_path,
+                    hashlib.sha256(_plan_source_copy(plan).encode()).hexdigest(),
+                    plan.source_segment_label,
+                ): plan
+                for plan in plans.values()
+            }
+            expectation_segment_keys = {
+                expectation_id: list(cast(_ResolvedSegment, resolution["plan"]).key)
+                for expectation_id, resolution in resolutions.items()
+            }
+            runs: list[dict[str, Any]] = []
+            for candidate_run in candidate_runs:
+                repetition = int(candidate_run["repetition"])
+                _progress({"event": "relation_baseline_run_started", "repetition": repetition})
+                candidate_segments = {
+                    (
+                        str(item["fixture_path"]),
+                        str(item["source_text_sha256"]),
+                        str(item["source_segment_label"]),
+                    ): item
+                    for item in candidate_run["segments"]
+                }
+                missing_segments = set(review_plans) - set(candidate_segments)
+                if missing_segments:
+                    raise ValueError("PHP-1 candidate run misses a complete relation segment.")
+                run_segments: list[dict[str, Any]] = []
+                for review_key, plan in sorted(review_plans.items()):
+                    candidate_segment = candidate_segments[review_key]
+                    proposals = sorted(
+                        candidate_segment["proposals"],
+                        key=lambda item: (int(item["start"]), int(item["end"]), str(item["text"])),
+                    )
+                    distinct_names: dict[str, H2MentionCandidate] = {}
+                    for proposal in proposals:
+                        text = str(proposal["text"])
+                        distinct_names.setdefault(
+                            text,
+                            H2MentionCandidate(text, int(proposal["start"]), int(proposal["end"])),
+                        )
+                    mentions = tuple(
+                        sorted(
+                            distinct_names.values(),
+                            key=lambda item: (item.source_copy_start, item.organization_text),
+                        )
+                    )
+                    judgments = tuple(
+                        _h2_pair_judgment(
+                            plan,
+                            pair,
+                            ledger,
+                            archive,
+                            config,
+                            runtime,
+                            tokenizer,
+                            verifier_prompt,
+                        )
+                        for pair in candidate_pairs(mentions)
+                    )
+                    run_segments.append(
+                        {
+                            "fixture_path": plan.fixture_path,
+                            "paragraph_node_id": plan.paragraph_node_id,
+                            "source_segment_label": plan.source_segment_label,
+                            "source_text_sha256": review_key[1],
+                            "source_copy_text": _plan_source_copy(plan),
+                            "mention_proposals": proposals,
+                            "pair_results": list(judgments),
+                        }
+                    )
+                runs.append({"repetition": repetition, "segments": run_segments})
+                _progress({"event": "relation_baseline_run_completed", "repetition": repetition})
+    return {
+        "status": "completed",
+        "expectation_segment_keys": expectation_segment_keys,
+        "runs": runs,
+    }
+
+
+def run_rescue_pairs_for_fusion_runs(
+    config_path: Path | None,
+    cases: tuple[Php1DiagnosticCase, ...],
+    expectations: tuple[Php1Expectation, ...],
+    fusion_runs: list[dict[str, Any]],
+    *,
+    representation_policy_version: str = "php1-packet-diagnostic-v2",
+) -> dict[str, Any]:
+    """Judge only new pairs that contain a GLiNER rescue Candidate group."""
+    if len(fusion_runs) != 3:
+        raise ValueError("PHP-1 rescue evaluation requires exactly three fusion runs.")
+    fixture_cases = {case.relative_path: case for case in cases}
+    required_fixtures = sorted({expectation.fixture_path for expectation in expectations})
+    missing = [path for path in required_fixtures if not (ROOT / path).is_file()]
+    if missing:
+        return {"status": "fixture_missing", "missing_fixture_paths": missing, "runs": []}
+    with tempfile.TemporaryDirectory(prefix="kotekomi-php1-rescue-pairs-") as temporary:
+        root = Path(temporary)
+        ledger_path = root / "ledger.sqlite"
+        archive_path = root / "archive"
+        ingest_config = root / "ingest.toml"
+        ingest_config.write_text(
+            f'[processing]\nrepresentation_policy_version = "{representation_policy_version}"\n',
+            encoding="utf-8",
+        )
+        _ledger_init(ledger_path, archive_path)
+        representations: dict[str, str] = {}
+        for fixture_path in required_fixtures:
+            case = fixture_cases.get(fixture_path)
+            if case is None:
+                raise ValueError("PHP-1 rescue fixture has no packet case.")
+            output = _source_add(
+                ingest_config,
+                ledger_path,
+                archive_path,
+                ROOT / fixture_path,
+                case.source_url,
+            )
+            representations[fixture_path] = str(output["representation_id"])
+        config = load_config(
+            config_path=config_path,
+            ledger_path_override=ledger_path,
+            archive_path_override=archive_path,
+        )
+        runtime = RecordingRuntime(build_model_task_runtime(config.model_execution))
+        if not runtime.check_readiness().ready:
+            return {"status": "qwen_unavailable", "runs": []}
+        archive = LocalArchiveStore(archive_path)
+        tokenizer = DiagnosticTokenizer()
+        verifier_prompt = VERIFIER_PROMPT_PATH.read_bytes()
+        with sqlite_ledger_transaction(ledger_path) as ledger:
+            bundles = {
+                path: _required_bundle(ledger, representation_id)
+                for path, representation_id in representations.items()
+            }
+            units_by_node: dict[tuple[str, str], tuple[Any, ...]] = {}
+            resolutions = {
+                expectation.expectation_id: _resolve_expectation(
+                    expectation,
+                    representations[expectation.fixture_path],
+                    bundles[expectation.fixture_path],
+                    ledger,
+                    units_by_node,
+                )
+                for expectation in expectations
+            }
+            unresolved = [
+                expectation_id
+                for expectation_id, resolution in resolutions.items()
+                if not isinstance(resolution.get("plan"), _ResolvedSegment)
+            ]
+            if unresolved:
+                return {
+                    "status": "selection_incomplete",
+                    "unresolved_expectation_ids": sorted(unresolved),
+                    "runs": [],
+                }
+            plans = {
+                plan.key: plan
+                for resolution in resolutions.values()
+                if isinstance((plan := resolution.get("plan")), _ResolvedSegment)
+            }
+            review_plans = {
+                (
+                    plan.fixture_path,
+                    hashlib.sha256(_plan_source_copy(plan).encode()).hexdigest(),
+                    plan.source_segment_label,
+                ): plan
+                for plan in plans.values()
+            }
+            runs: list[dict[str, Any]] = []
+            for fusion_run in fusion_runs:
+                repetition = int(fusion_run["repetition"])
+                fusion_segments = {
+                    (
+                        str(item["fixture_path"]),
+                        str(item["source_text_sha256"]),
+                        str(item["source_segment_label"]),
+                    ): item
+                    for item in fusion_run["segments"]
+                }
+                if set(review_plans) != set(fusion_segments):
+                    raise ValueError(
+                        "PHP-1 fusion run does not cover the complete relation subset."
+                    )
+                run_segments: list[dict[str, Any]] = []
+                for review_key, plan in sorted(review_plans.items()):
+                    segment = fusion_segments[review_key]
+                    judgments = [
+                        _h2_pair_judgment(
+                            plan,
+                            H2CandidatePair(
+                                str(pair["first_candidate_text"]),
+                                str(pair["second_candidate_text"]),
+                            ),
+                            ledger,
+                            archive,
+                            config,
+                            runtime,
+                            tokenizer,
+                            verifier_prompt,
+                        )
+                        for pair in segment["new_candidate_pairs"]
+                    ]
+                    run_segments.append(
+                        {
+                            "fixture_path": plan.fixture_path,
+                            "paragraph_node_id": plan.paragraph_node_id,
+                            "source_segment_label": plan.source_segment_label,
+                            "source_text_sha256": review_key[1],
+                            "pair_results": judgments,
+                        }
+                    )
+                runs.append({"repetition": repetition, "segments": run_segments})
+    return {"status": "completed", "runs": runs}
 
 
 def run_qwen_qualifications_for_packet(
@@ -1304,7 +1643,14 @@ def candidate_pairs(mentions: tuple[H2MentionCandidate, ...]) -> tuple[H2Candida
     )
 
 
-def _plan_source_copy(plan: _ResolvedSegment) -> str:
+def classify_source_segment_model_eligibility(source_copy_text: str) -> str:
+    """Classify deterministic nonlexical controls before model execution."""
+    if not source_copy_text or _NONLEXICAL_SOURCE_SEGMENT.fullmatch(source_copy_text):
+        return NOT_APPLICABLE_NONLEXICAL
+    return MODEL_ELIGIBLE
+
+
+def _plan_source_segment(plan: _ResolvedSegment) -> Any:
     segments = tuple(
         item
         for item in paragraph_source_segments(plan.paragraph_text, PARAGRAPH_SEGMENT_V3)
@@ -1312,7 +1658,11 @@ def _plan_source_copy(plan: _ResolvedSegment) -> str:
     )
     if len(segments) != 1:
         raise ValueError("H2 Source segment resolution is not unique.")
-    return source_copy_view(segments[0].exact_text)
+    return segments[0]
+
+
+def _plan_source_copy(plan: _ResolvedSegment) -> str:
+    return derive_source_copy_view(_plan_source_segment(plan).exact_text).text
 
 
 def _h2_execution_spec(

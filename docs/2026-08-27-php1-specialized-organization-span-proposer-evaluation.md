@@ -21,7 +21,7 @@ The current packet therefore cannot measure mention precision or recall.
 
 **Gold mention** means one reviewed literal Organization occurrence in one Source segment.
 
-**Mention catalog** means the provisional set of Gold mentions for all 50 packet cases.
+**Mention catalog** means the human-reviewed Mention Gold for all 50 packet cases.
 
 **Mention proposer** means a tool that proposes Organization spans from one Source segment.
 
@@ -34,10 +34,10 @@ The current packet therefore cannot measure mention precision or recall.
 ### Primary end-to-end flow
 
 1. The evaluator reloads each authoritative paragraph in the 50-case packet.
-2. The evaluator validates every Mention catalog entry against its Source segment.
+2. The evaluator validates every Mention Gold entry against its Source segment.
 3. Qwen2.5 and GLiNER each propose Organization mentions from the same Source segments.
 4. KoteKomi validates every proposed text span against the Source segment.
-5. The evaluator compares each proposer with the Mention catalog.
+5. The evaluator compares each proposer with Mention Gold.
 6. The evaluator writes one reviewable quality, latency, and stability report.
 
 ## 2. Goals
@@ -50,7 +50,7 @@ The current packet therefore cannot measure mention precision or recall.
 
 ## 3. Requirements
 
-### Mention catalog
+### Mention Gold
 
 - H21-CAT-01: The Mention catalog covers every unique Source segment in all 50 packet cases.
 - H21-CAT-02: The Mention catalog records an empty Gold mention list for a segment with no Organization.
@@ -58,9 +58,11 @@ The current packet therefore cannot measure mention precision or recall.
 - H21-CAT-04: Each catalog segment records its case, fixture, paragraph, label, and source-text digest.
 - H21-CAT-05: The evaluator rejects a Gold mention whose text differs from its recorded source range.
 - H21-CAT-06: The evaluator rejects catalog drift before it invokes either Mention proposer.
-- H21-CAT-07: The catalog uses the Organization definition from H2.
+- H21-CAT-07: The catalog uses the versioned Named Organization Mention policy.
 - H21-CAT-08: The evaluator reanchors a catalog segment after only its derived DocumentNode ID changes.
 - H21-CAT-09: Reanchoring requires one fixture, case set, segment label, and source-text digest match.
+- H21-CAT-10: Every Organization extraction evaluation uses this catalog as its only expected Mention oracle.
+- H21-CAT-11: Production extraction does not read the Gold catalog or specialize behavior for its names.
 
 ### Mention proposer Port
 
@@ -101,6 +103,8 @@ The current packet therefore cannot measure mention precision or recall.
 - H21-REP-07: The evaluator records every false positive and false negative with Source segment identity.
 - H21-REP-08: The evaluator reports `completed` regardless of which Mention proposer scores higher.
 - H21-REP-09: The evaluator reports a typed blocked status for a missing fixture or unavailable proposer.
+- H21-REP-10: The report binds the Gold catalog, Mention policy, prompts, sources, and proposer identities by digest.
+- H21-REP-11: The review report exposes authoritative input and each stage output for every Source segment.
 
 ### Production isolation
 
@@ -111,7 +115,7 @@ The current packet therefore cannot measure mention precision or recall.
 ## 4. Proposed Architecture
 
 ```text
-50-case packet + Mention catalog
+50-case packet + Mention Gold
                 |
                 v
           PHP-1 evaluator
@@ -200,6 +204,10 @@ The command returns nonzero for a typed blocked result or a contract failure.
 
 The GLiNER Adapter uses `gliner` version `0.2.28` through the workspace lock file.
 
+The GLiNER Adapter is a normative implementation of the `OrganizationMentionProposer` Port.
+
+Normative Adapter status does not authorize GLiNER proposals as accepted Organizations.
+
 ## 8. Behavior & Domain Rules
 
 The evaluator derives Source segments with the existing PHP-1 segmentation policy.
@@ -230,7 +238,11 @@ The evaluator treats a tool score as proposer metadata.
 
 The evaluator does not convert a tool score into source confidence or evidence confidence.
 
-The evaluator uses the Mention catalog only for evaluation.
+The evaluator uses Mention Gold only for evaluation and regression analysis.
+
+Mention Gold is the sole expected Mention oracle for Qwen, GLiNER, fusion, qualification, rescue, and later post-processing evaluations.
+
+Production code does not read Mention Gold.
 
 ## 9. Acceptance Criteria
 
@@ -248,6 +260,7 @@ The evaluator uses the Mention catalog only for evaluation.
 - AC-H21-ISO-01: Pipeline tests prove public ingestion retains PHP-1 V3.
 - AC-H21-LOCAL-01: The three local fixtures produce one completed three-run comparison.
 - AC-H21-LOCAL-02: The review report exposes source text, Gold mentions, and both proposer results.
+- AC-H21-CAT-04: Tests prove the project catalog contains 50 cases, 164 Source segments, and 209 exact Mentions.
 
 ## 10. Reference Implementations
 
@@ -265,3 +278,19 @@ The implementer must not use either proposer output to define a Gold mention.
 The implementer must halt if the evaluator cannot distinguish model load time from inference latency.
 
 The implementer must halt if the comparison changes production PHP-1 behavior.
+
+## 12. Observed Result
+
+The human review records 209 exact Mentions across 164 Source segments in 50 packet cases.
+
+Seventy-five Source segments contain no Organization Mention.
+
+Qwen2.5 reached exact precision `0.857143`, recall `0.660287`, and F1 `0.745946`.
+
+GLiNER reached exact precision `0.603687`, recall `0.626794`, and F1 `0.615023`.
+
+Both proposers produced identical exact span sets in all three repetitions.
+
+The latest full report and review report remain disposable local evidence.
+
+The committed Gold catalog and policy define the reusable evaluation contract.

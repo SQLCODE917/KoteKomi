@@ -51,10 +51,10 @@ outcomes.
 
 - H2-MENTION-01: The diagnostic sends one Source copy view to one mention task.
 - H2-MENTION-02: The mention task uses `paragraph_organization_mention_v1`.
-- H2-MENTION-03: The mention task returns zero through twelve `mention:` lines or one defined abstention.
+- H2-MENTION-03: The mention task returns one line per distinct Organization name or one defined abstention.
 - H2-MENTION-04: Each `mention:` line contains the Source segment label and one Organization string.
 - H2-MENTION-05: The diagnostic accepts a Mention candidate only when its text occurs literally in the Source copy view.
-- H2-MENTION-06: The diagnostic rejects an entire mention response with an unknown label, duplicate string, malformed line, or more than twelve lines.
+- H2-MENTION-06: The diagnostic rejects an entire mention response with an unknown label, duplicate string, or malformed line.
 - H2-MENTION-07: The diagnostic orders accepted Mention candidates by their first Source copy position.
 - H2-MENTION-08: The diagnostic records the source-copy start and end position for each Mention candidate.
 
@@ -62,7 +62,7 @@ outcomes.
 
 - H2-PAIR-01: The diagnostic derives one Candidate pair for every unordered pair of Mention candidates.
 - H2-PAIR-02: The diagnostic derives no Candidate pair across Source segments.
-- H2-PAIR-03: The diagnostic derives at most sixty-six Candidate pairs for one Source segment.
+- H2-PAIR-03: The diagnostic records the complete bounded set of Candidate pairs.
 - H2-PAIR-04: The diagnostic records zero Candidate pairs when the Mention result has fewer than two candidates.
 
 ### Pair judgment

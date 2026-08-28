@@ -1530,7 +1530,7 @@ def paragraph_hypothesis_text_schema_bytes() -> bytes:
 def organization_mention_text_schema_bytes() -> bytes:
     return (
         b"mention: <sN> | <literal organization name>\n"
-        b"... up to twelve mention lines\n\n"
+        b"... one line for each distinct organization name\n\n"
         b"or\n\n"
         b"abstain: <non-empty reason>\n"
     )
@@ -1560,8 +1560,6 @@ def _parse_organization_mention_batch(
         if not reason:
             raise ValueError("Organization mention abstention requires a reason.")
         return OrganizationMentionBatchAbstention(reason)
-    if len(lines) > 12:
-        raise ValueError("Organization mention output exceeds twelve lines.")
     mentions: list[OrganizationMention] = []
     for line in lines:
         prefix, separator, remainder = line.partition(": ")

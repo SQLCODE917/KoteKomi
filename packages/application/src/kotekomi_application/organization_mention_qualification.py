@@ -297,7 +297,7 @@ def resolve_document_organization_identities(
     declaration_values: list[tuple[ValidatedOrganizationMention, str, str, bool]] = []
     expanded_by_alias: dict[str, set[str]] = defaultdict(set)
     for mention in mentions:
-        parsed = _parenthetical_alias(mention.text)
+        parsed = parenthetical_organization_alias(mention.text)
         if parsed is None:
             continue
         expanded, alias, matches = parsed
@@ -400,7 +400,8 @@ def derive_qualified_organization_pairs(
     )
 
 
-def _parenthetical_alias(text: str) -> tuple[str, str, bool] | None:
+def parenthetical_organization_alias(text: str) -> tuple[str, str, bool] | None:
+    """Parse one literal expanded-name and initialism declaration."""
     matched = _PARENTHETICAL_NAME.fullmatch(text)
     if matched is None:
         return None

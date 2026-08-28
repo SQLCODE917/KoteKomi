@@ -1008,6 +1008,34 @@ def test_organization_mention_task_rejects_duplicate_mentions() -> None:
     assert not ledger.proposed_changes
 
 
+def test_organization_mention_task_accepts_more_than_twelve_distinct_names() -> None:
+    ledger = FakeGroundedCandidateLedger()
+    manifest = _mention_manifest_for_staged_test(ledger)
+    raw_output = "\n".join(f"mention: s1 | Organization {index}" for index in range(1, 15)).encode()
+
+    outcome = run_bounded_extraction(
+        BoundedExtractionInput(
+            source_id=ledger.source.id,
+            document_id=ledger.document.id,
+            representation_id=ledger.bundle.representation.id,
+            context_manifest_id=manifest.id,
+            prompt_bytes=manifest.prompt_bytes,
+            execution_spec=_mention_execution_spec(manifest),
+            validator_version="organization_mention_validator_v1",
+            task_type="organization_mention_extraction",
+        ),
+        ledger,
+        FakeModelOutputArchive(),
+        FakeModelTaskRuntime(raw_output),
+        Uuid4ModelRunIdFactory(),
+        FixtureTokenizer(),
+        OrganizationMentionTaskSchemaRegistry(),
+    )
+
+    assert outcome.model_run.status is ModelRunStatus.SUCCEEDED
+    assert len(outcome.organization_mentions) == 14
+
+
 def test_paragraph_hypothesis_batch_publishes_three_segment_grounded_proposals() -> None:
     ledger = FakeGroundedCandidateLedger()
     archive = FakeModelOutputArchive()

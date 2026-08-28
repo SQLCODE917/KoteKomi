@@ -15,7 +15,7 @@ Use these exact terms.
 | Ledger | The canonical local SQLite database. |
 | Archive | The local file tree for Sources, Documents, Briefings, and exports. |
 | Actor | A person or role-bearing entity. |
-| Organization | A company, agency, lab, publisher, university, nonprofit, think tank, or institution. |
+| Organization | A collective Agent with a common purpose beyond its current members that can act collectively. |
 | Event | A bounded real-world happening with time, participants, and optional place. |
 | Place | A physical or virtual location. |
 | Source | An external artifact that contains information. |
@@ -50,10 +50,23 @@ The system uses Assertion rather than Fact.
 
 An Assertion tracks uncertainty, contradiction, and inference.
 
+An Organization can be formal or informal.
+
+An Organization can be a company, agency, lab, publisher, university, nonprofit, think tank, or institution.
+
+An Organization can be a government, department, court, legislature, administration, or military body.
+
+An Organization can be a club, consortium, joint venture, collaboration, institutional network, or supranational body.
+
+A bare country, region, or other Place is not an Organization.
+
+A country expression denotes an Organization when the Source assigns its government collective agency.
+
 The Ontology Profile maps to these external patterns:
 
 | Standard pattern | KoteKomi use |
 |---|---|
+| W3C Organization | Organization, OrganizationalUnit, and collective Agent semantics |
 | Wikidata statement model | Assertion subject-predicate-object pattern with qualifiers and references |
 | W3C PROV-O | ProvenanceActivity model |
 | Nanopublication pattern | Assertion plus provenance plus publication metadata |

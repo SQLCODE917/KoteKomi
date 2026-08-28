@@ -1,8 +1,10 @@
 # CIR Evaluation Annotation Packet
 
-- **Status:** Proposed human-review packet
+Expanded reviewer view: [PHP-1 Data-In / Expected-Out Review Packet](2026-08-28-php1-data-in-expected-out-review.md)
+
+- **Status:** Exact Organization Mentions are human-reviewed; broad semantic expectations remain provisional.
 - **Purpose:** Seed an independent evaluation set for extraction and evidence-grounding work.
-- **Not a gold corpus:** A reviewer must confirm each semantic expectation before an automated gate uses it.
+- **Release status:** This packet is not a held-out release or generalization benchmark.
 
 ## 1. Corpus snapshot
 
@@ -94,10 +96,10 @@ It includes one deliberate cross-source identity control around the ambiguous na
 The packet does not claim source-level completeness.
 It supplies a first representative review set for testing a scalable extraction design.
 
-## 4. Provisional PHP-1 eligibility labels
+## 4. PHP-1 development eligibility labels
 
 These labels classify the current PHP-1 organization-to-organization task.
-They remain agent-authored annotations until independent reviewers approve the packet.
+They provide reviewed development feedback for the current packet.
 
 | Case | Label | Reason |
 | --- | --- | --- |

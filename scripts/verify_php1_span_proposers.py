@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import sys
 from pathlib import Path
@@ -22,13 +23,17 @@ from kotekomi_application import (
     propose_validated_organization_mentions,
 )
 from php1_diagnostic_support import (
+    MODEL_ELIGIBLE,
     ROOT,
     load_packet_source_segments,
     run_qwen_mentions_for_packet,
 )
 from php1_span_proposer_evaluation import (
+    HUMAN_REVIEWED_STATUS,
     REPETITIONS,
+    attach_authoritative_proposal_ranges,
     load_and_validate_catalog,
+    load_and_validate_mention_policy,
     normalize_qwen_segment,
     proposer_report,
     render_review_report,
@@ -36,6 +41,7 @@ from php1_span_proposer_evaluation import (
 from verify_php1_packet import packet_cases
 
 CATALOG_PATH = ROOT / "docs/php1-organization-mention-gold-v1.json"
+POLICY_PATH = ROOT / "docs/php1-named-organization-mention-policy-v1.json"
 
 
 def _progress(event: dict[str, Any]) -> None:
@@ -48,6 +54,7 @@ def run(config_path: Path | None = None) -> dict[str, Any]:
     source_result = load_packet_source_segments(cases)
     if source_result["status"] != "completed":
         return source_result
+    policy = load_and_validate_mention_policy(POLICY_PATH)
     catalog = load_and_validate_catalog(CATALOG_PATH, source_result)
     source_segments = cast(list[dict[str, Any]], source_result["segments"])
     _progress({"event": "catalog_validated", "source_segment_count": len(source_segments)})
@@ -67,20 +74,13 @@ def run(config_path: Path | None = None) -> dict[str, Any]:
         results: list[dict[str, Any]] = []
         for segment in source_segments:
             source_text = str(segment["source_text"])
-            batch = propose_validated_organization_mentions(
-                OrganizationMentionProposalInput(source_text),
-                gliner,
-            )
-            results.append(
-                {
-                    "fixture_path": segment["fixture_path"],
-                    "paragraph_node_id": segment["paragraph_node_id"],
-                    "source_segment_label": segment["source_segment_label"],
-                    "source_text_sha256": segment["source_text_sha256"],
-                    "source_text": source_text,
-                    "status": "complete",
-                    "latency_milliseconds": batch.inference_elapsed_milliseconds,
-                    "proposals": [
+            if segment["model_eligibility"] == MODEL_ELIGIBLE:
+                batch = propose_validated_organization_mentions(
+                    OrganizationMentionProposalInput(source_text),
+                    gliner,
+                )
+                proposals = attach_authoritative_proposal_ranges(
+                    [
                         {
                             "text": item.text,
                             "start": item.start,
@@ -89,6 +89,25 @@ def run(config_path: Path | None = None) -> dict[str, Any]:
                         }
                         for item in batch.proposals
                     ],
+                    segment,
+                )
+                latency_milliseconds = batch.inference_elapsed_milliseconds
+                status = "complete"
+            else:
+                proposals = []
+                latency_milliseconds = None
+                status = str(segment["model_eligibility"])
+            results.append(
+                {
+                    "fixture_path": segment["fixture_path"],
+                    "paragraph_node_id": segment["paragraph_node_id"],
+                    "source_segment_label": segment["source_segment_label"],
+                    "source_text_sha256": segment["source_text_sha256"],
+                    "source_text": source_text,
+                    "status": status,
+                    "model_eligibility": segment["model_eligibility"],
+                    "latency_milliseconds": latency_milliseconds,
+                    "proposals": proposals,
                 }
             )
         gliner_runs.append({"repetition": repetition, "segments": results})
@@ -98,11 +117,30 @@ def run(config_path: Path | None = None) -> dict[str, Any]:
     qwen_result = run_qwen_mentions_for_packet(config_path, cases, repetitions=REPETITIONS)
     if qwen_result["status"] != "completed":
         return qwen_result
+    source_by_key = {
+        (
+            str(segment["fixture_path"]),
+            str(segment["source_text_sha256"]),
+            str(segment["source_segment_label"]),
+        ): segment
+        for segment in source_segments
+    }
     qwen_runs = [
         {
             "repetition": int(run_value["repetition"]),
             "segments": [
-                normalize_qwen_segment(segment)
+                normalize_qwen_segment(
+                    {
+                        **segment,
+                        **source_by_key[
+                            (
+                                str(segment["fixture_path"]),
+                                str(segment["source_text_sha256"]),
+                                str(segment["source_segment_label"]),
+                            )
+                        ],
+                    }
+                )
                 for segment in cast(list[dict[str, Any]], run_value["segments"])
             ],
         }
@@ -121,8 +159,13 @@ def run(config_path: Path | None = None) -> dict[str, Any]:
     result = {
         "status": "completed",
         "schema_version": "php1_span_proposer_comparison_v1",
+        "annotation_policy_id": policy["policy_id"],
+        "annotation_policy_sha256": hashlib.sha256(POLICY_PATH.read_bytes()).hexdigest(),
+        "annotation_status": HUMAN_REVIEWED_STATUS,
         "catalog_path": str(CATALOG_PATH.relative_to(ROOT)),
+        "catalog_sha256": hashlib.sha256(CATALOG_PATH.read_bytes()).hexdigest(),
         "catalog": list(catalog),
+        "gold_mention_count": sum(len(item["gold_mentions"]) for item in catalog),
         "source_segment_count": len(source_segments),
         "case_count": len(cases),
         "repetitions": REPETITIONS,

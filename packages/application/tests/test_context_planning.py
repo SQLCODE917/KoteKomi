@@ -19,6 +19,7 @@ from kotekomi_application import (
     RetrievalSelectionAnalysisUnitInput,
     build_context_manifest,
     create_analysis_unit_from_retrieval_selection,
+    derive_source_copy_view,
     paragraph_source_segments,
     plan_analysis_units,
     render_context,
@@ -378,6 +379,26 @@ def test_paragraph_segment_v3_renders_a_source_copy_view_without_mutating_source
 
     assert segments[0].exact_text == text
     assert source_copy_view(segments[0].exact_text) == "The UK and the US collaborated."
+
+
+def test_source_copy_view_maps_collapsed_whitespace_to_authoritative_ranges() -> None:
+    source = "  The  UK\tand\nUS.  "
+
+    view = derive_source_copy_view(source)
+
+    assert view.text == "The UK and US."
+    assert source[view.authoritative_range(0, 3)[0] : view.authoritative_range(0, 3)[1]] == "The"
+    space_start, space_end = view.authoritative_range(3, 4)
+    assert source[space_start:space_end] == "  "
+    us_start, us_end = view.authoritative_range(11, 14)
+    assert source[us_start:us_end] == "US."
+
+
+def test_source_copy_view_rejects_invalid_copy_ranges() -> None:
+    view = derive_source_copy_view("Anthropic")
+
+    with pytest.raises(ValueError, match="range is invalid"):
+        view.authoritative_range(3, 3)
 
 
 def test_retrieval_context_includes_heading_ancestors_without_parent_body() -> None:

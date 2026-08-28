@@ -254,10 +254,25 @@ def test_php1_h2_derives_source_ordered_candidate_pairs() -> None:
     )
 
 
+def test_php1_h2_classifies_nonlexical_segments_without_a_model_task() -> None:
+    support = _support_module()
+
+    assert support.classify_source_segment_model_eligibility("[25][26]") == (
+        "not_applicable_nonlexical"
+    )
+    assert support.classify_source_segment_model_eligibility("(...)") == (
+        "not_applicable_nonlexical"
+    )
+    assert support.classify_source_segment_model_eligibility("Next Steps") == "model_eligible"
+
+
 def test_php1_h2_prompts_cover_complete_mentions_and_supported_relationship_shapes() -> None:
     mention_prompt = (ROOT / "prompts" / "paragraph_organization_mention_v1.md").read_text(
         encoding="utf-8"
     )
+    qualification_prompt = (
+        ROOT / "prompts" / "paragraph_organization_qualification_v1.md"
+    ).read_text(encoding="utf-8")
     prompt = (ROOT / "prompts" / "paragraph_organization_pair_relation_v1.md").read_text(
         encoding="utf-8"
     )
@@ -265,13 +280,18 @@ def test_php1_h2_prompts_cover_complete_mentions_and_supported_relationship_shap
     assert "coordinated list" in mention_prompt
     assert "complete Organization name" in mention_prompt
     assert "legislature" in mention_prompt
-    assert "single proper name can identify a company" in mention_prompt
-    assert "group of states" in mention_prompt
+    assert "single proper name can identify an Organization" in mention_prompt
+    assert "collective Agent" in mention_prompt
     assert "Scan the segment from left to right" in mention_prompt
     assert "parenthetical" in mention_prompt
     assert "possessive geographic qualifier" in mention_prompt
     assert "no `abstain:` line" in mention_prompt
     assert "Do not comment on the result" in mention_prompt
+    assert "government acting collectively" in mention_prompt
+    assert "government collective action" in qualification_prompt
+    assert "project or initiative that does not denote a collective Agent" in qualification_prompt
+    for corpus_name in ("Anthropic", "AISI", "Project Maven", "Stargate", "Palantir"):
+        assert corpus_name not in qualification_prompt
     assert "coordinated participants" in prompt
     assert "began consulting" in prompt
     assert "partnership, agreement, membership, containment, lineage" in prompt

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import importlib.util
 import json
 import sys
@@ -56,14 +57,19 @@ def _catalog_segment(source: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _catalog(segments: list[dict[str, Any]]) -> dict[str, Any]:
+    return {
+        "schema_version": "php1_organization_mention_gold_v1",
+        "annotation_policy_id": "named_organization_mention_v1",
+        "annotation_status": "human_reviewed_development_gold",
+        "segments": segments,
+    }
+
+
 def test_catalog_requires_complete_exact_source_coverage(tmp_path: Path) -> None:
     module = _module()
     source = _source()
-    catalog = {
-        "schema_version": module.CATALOG_SCHEMA_VERSION,
-        "annotation_status": "provisional_agent_authored",
-        "segments": [_catalog_segment(source)],
-    }
+    catalog = _catalog([_catalog_segment(source)])
     path = tmp_path / "catalog.json"
     path.write_text(json.dumps(catalog), encoding="utf-8")
 
@@ -82,13 +88,7 @@ def test_catalog_reanchors_after_only_the_derived_node_id_changes(tmp_path: Path
     catalog_segment["paragraph_node_id"] = "nod_prior_build"
     path = tmp_path / "catalog.json"
     path.write_text(
-        json.dumps(
-            {
-                "schema_version": module.CATALOG_SCHEMA_VERSION,
-                "annotation_status": "provisional_agent_authored",
-                "segments": [catalog_segment],
-            }
-        ),
+        json.dumps(_catalog([catalog_segment])),
         encoding="utf-8",
     )
 
@@ -108,8 +108,23 @@ def test_project_catalog_covers_all_packet_cases_and_unique_segments() -> None:
 
     assert len(catalog["segments"]) == 164
     assert len({case_id for item in catalog["segments"] for case_id in item["case_ids"]}) == 50
-    assert sum(len(item["gold_mentions"]) for item in catalog["segments"]) == 174
-    assert sum(not item["gold_mentions"] for item in catalog["segments"]) == 83
+    assert catalog["annotation_policy_id"] == "named_organization_mention_v1"
+    assert catalog["annotation_status"] == "human_reviewed_development_gold"
+    assert sum(len(item["gold_mentions"]) for item in catalog["segments"]) == 209
+    assert sum(not item["gold_mentions"] for item in catalog["segments"]) == 75
+
+
+def test_project_mention_policy_matches_the_catalog_contract() -> None:
+    module = _module()
+
+    policy = module.load_and_validate_mention_policy(
+        ROOT / "docs/php1-named-organization-mention-policy-v1.json"
+    )
+
+    assert policy["policy_id"] == module.MENTION_POLICY_ID
+    assert "country names used only as places" in policy["excluded_denotations"]
+    assert any("assigned institutional agency" in rule for rule in policy["boundary_rules"])
+    assert "military bodies" in policy["included_denotations"]
 
 
 def test_catalog_rejects_source_digest_and_span_drift(tmp_path: Path) -> None:
@@ -119,13 +134,7 @@ def test_catalog_rejects_source_digest_and_span_drift(tmp_path: Path) -> None:
     catalog_segment["source_text_sha256"] = "b" * 64
     path = tmp_path / "catalog.json"
     path.write_text(
-        json.dumps(
-            {
-                "schema_version": module.CATALOG_SCHEMA_VERSION,
-                "annotation_status": "provisional_agent_authored",
-                "segments": [catalog_segment],
-            }
-        ),
+        json.dumps(_catalog([catalog_segment])),
         encoding="utf-8",
     )
 
@@ -139,6 +148,25 @@ def test_qwen_name_expands_to_every_exact_occurrence() -> None:
     result = module.exact_name_occurrences("Anthropic met Anthropic.", "Anthropic")
 
     assert [(item["start"], item["end"]) for item in result] == [(0, 9), (14, 23)]
+
+
+def test_proposal_ranges_resolve_from_source_copy_to_authoritative_text() -> None:
+    module = _module()
+    source_segment = {
+        "source_copy_text": "The UK",
+        "authoritative_text": "  The  UK\n",
+        "authoritative_text_sha256": hashlib.sha256(b"  The  UK\n").hexdigest(),
+        "copy_to_authoritative_boundaries": [2, 3, 4, 5, 7, 8, 9],
+    }
+
+    result = module.attach_authoritative_proposal_ranges(
+        [{"text": "UK", "start": 4, "end": 6, "score": 0.9}],
+        source_segment,
+    )
+
+    assert result[0]["source_copy_start"] == 4
+    assert result[0]["authoritative_start"] == 7
+    assert result[0]["authoritative_end"] == 9
 
 
 def test_scoring_reports_exact_and_boundary_failures() -> None:
