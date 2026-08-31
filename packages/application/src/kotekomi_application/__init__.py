@@ -162,6 +162,15 @@ from kotekomi_application.evidence_targets import (
     validate_evidence_target_record,
     verify_evidence_target,
 )
+from kotekomi_application.extraction_stage_trace import (
+    ExtractionStageStatus,
+    ExtractionStageTrace,
+    build_extraction_stage_trace,
+    canonical_extraction_stage_trace_json,
+    extraction_stage_trace_from_json,
+    extraction_stage_trace_to_json,
+    validate_extraction_stage_trace_chain,
+)
 from kotekomi_application.grounded_candidates import (
     GROUNDED_CANDIDATE_BATCH_ACTIVITY,
     GroundedAssertionCandidate,
@@ -603,6 +612,13 @@ __all__ = [
     "ContextPlanningLedger",
     "ContextPlanningOutcome",
     "EvidenceCandidate",
+    "ExtractionStageStatus",
+    "ExtractionStageTrace",
+    "build_extraction_stage_trace",
+    "canonical_extraction_stage_trace_json",
+    "extraction_stage_trace_from_json",
+    "extraction_stage_trace_to_json",
+    "validate_extraction_stage_trace_chain",
     "SourceSegment",
     "SourceCopyView",
     "RetrievalSelectionAnalysisUnitInput",

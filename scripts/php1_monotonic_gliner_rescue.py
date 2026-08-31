@@ -8,9 +8,15 @@ from pathlib import Path
 from typing import Any, cast
 
 from kotekomi_application import (
+    ExtractionStageStatus,
     MentionProposalObservation,
+    build_extraction_stage_trace,
+    extraction_stage_trace_from_json,
+    extraction_stage_trace_to_json,
     fuse_monotonic_organization_candidates,
+    validate_extraction_stage_trace_chain,
 )
+from kotekomi_domain.models import JsonValue
 from php1_corrected_baseline import (
     corrected_baseline_input_digests,
     proposer_identity_digests,
@@ -91,6 +97,51 @@ def build_monotonic_fusion_runs(baseline: dict[str, Any]) -> list[dict[str, Any]
                 baseline_observations=baseline_observations,
                 rescue_observations=rescue_observations,
             )
+            trace_run_id = _trace_run_id(key, int(qwen_run["repetition"]))
+            baseline_trace = _proposer_stage_trace(
+                trace_run_id,
+                0,
+                source_segment_id,
+                "qwen2.5-h2-mention-v1",
+                qwen_segment,
+            )
+            rescue_trace = _proposer_stage_trace(
+                trace_run_id,
+                1,
+                source_segment_id,
+                "gliner-medium-v2.1",
+                gliner_segment,
+            )
+            fusion_output = cast(
+                dict[str, JsonValue],
+                {
+                    "mention_candidates": [
+                        candidate.__dict__ for candidate in fusion.mention_candidates
+                    ],
+                    "candidate_groups": [group.__dict__ for group in fusion.candidate_groups],
+                    "candidate_pairs": [pair.__dict__ for pair in fusion.candidate_pairs],
+                    "pair_exclusions": [exclusion.__dict__ for exclusion in fusion.pair_exclusions],
+                },
+            )
+            fusion_trace = build_extraction_stage_trace(
+                trace_run_id=trace_run_id,
+                ordinal=2,
+                stage_id="organization_candidate_fusion",
+                stage_version="monotonic_v1",
+                producer_id="kotekomi",
+                source_segment_id=source_segment_id,
+                source_text_sha256=key[1],
+                parent_trace_ids=tuple(sorted((baseline_trace.id, rescue_trace.id))),
+                input_record_ids=(str(qwen_segment["paragraph_node_id"]),),
+                configuration={"policy": "monotonic_organization_candidate_fusion_v1"},
+                input_payload={
+                    "baseline_trace_id": baseline_trace.id,
+                    "rescue_trace_id": rescue_trace.id,
+                },
+                output_payload=fusion_output,
+                status=ExtractionStageStatus.COMPLETED,
+            )
+            validate_extraction_stage_trace_chain((baseline_trace, rescue_trace, fusion_trace))
             segments.append(
                 {
                     "fixture_path": qwen_segment["fixture_path"],
@@ -100,8 +151,10 @@ def build_monotonic_fusion_runs(baseline: dict[str, Any]) -> list[dict[str, Any]
                     "source_text": source_text,
                     "source_segment_id": source_segment_id,
                     "gold_mentions": gold_segment["gold_mentions"],
-                    "baseline_input": _proposer_input_trace("qwen2.5-h2-mention-v1", qwen_segment),
-                    "rescue_input": _proposer_input_trace("gliner-medium-v2.1", gliner_segment),
+                    "stage_traces": [
+                        extraction_stage_trace_to_json(trace)
+                        for trace in (baseline_trace, rescue_trace, fusion_trace)
+                    ],
                     "status": "fused_candidates",
                     "proposals": [
                         {
@@ -153,6 +206,7 @@ def run_monotonic_rescue(
     )
     if rescue_pair_runs["status"] != "completed":
         return rescue_pair_runs
+    _append_rescue_pair_stage_traces(complete_fusion_runs, rescue_pair_runs)
     combined_relation_runs = _combined_relation_runs(baseline_relation, rescue_pair_runs)
     expectation_keys = cast(dict[str, list[str]], baseline_relation["expectation_segment_keys"])
     relation_scores = [
@@ -352,10 +406,8 @@ def render_rescue_review_report(result: dict[str, Any]) -> str:
                     f"Source input: {segment['source_text']}",
                     "Gold output: "
                     + json.dumps(segment["gold_mentions"], ensure_ascii=False, sort_keys=True),
-                    "Qwen input/output: "
-                    + json.dumps(segment["baseline_input"], ensure_ascii=False, sort_keys=True),
-                    "GLiNER input/output: "
-                    + json.dumps(segment["rescue_input"], ensure_ascii=False, sort_keys=True),
+                    "Typed stage traces: "
+                    + json.dumps(segment["stage_traces"], ensure_ascii=False, sort_keys=True),
                     "Fused candidate output: "
                     + json.dumps(segment["mention_candidates"], ensure_ascii=False, sort_keys=True),
                     "Candidate groups: "
@@ -467,19 +519,126 @@ def _observation(proposer_id: str, value: dict[str, Any]) -> MentionProposalObse
     )
 
 
-def _proposer_input_trace(proposer_id: str, value: dict[str, Any]) -> dict[str, Any]:
-    """Retain one source-bound proposer input and its complete observable output."""
-    return {
-        "proposer_id": proposer_id,
-        "source_text": value["source_text"],
-        "source_text_sha256": value["source_text_sha256"],
-        "status": value["status"],
-        "model_eligibility": value["model_eligibility"],
-        "model_run_id": value.get("model_run_id"),
-        "prompt_digest": value.get("prompt_digest"),
-        "raw_output": value.get("raw_output"),
-        "proposals": value["proposals"],
-    }
+def _proposer_stage_trace(
+    trace_run_id: str,
+    ordinal: int,
+    source_segment_id: str,
+    proposer_id: str,
+    value: dict[str, Any],
+) -> Any:
+    """Bind one proposer invocation and complete observable output to its source."""
+    status, diagnostics = _stage_status(str(value["status"]), value.get("diagnostics"))
+    model_run_id = value.get("model_run_id")
+    prompt_digest = value.get("prompt_digest")
+    return build_extraction_stage_trace(
+        trace_run_id=trace_run_id,
+        ordinal=ordinal,
+        stage_id="organization_mention_proposal",
+        stage_version="v1",
+        producer_id=proposer_id,
+        source_segment_id=source_segment_id,
+        source_text_sha256=str(value["source_text_sha256"]),
+        input_record_ids=(str(value["paragraph_node_id"]),),
+        execution_record_ids=((str(model_run_id),) if model_run_id is not None else ()),
+        configuration={
+            "model_eligibility": str(value["model_eligibility"]),
+            "prompt_digest": str(prompt_digest) if prompt_digest is not None else None,
+        },
+        input_payload={
+            "source_text": str(value["source_text"]),
+            "source_text_sha256": str(value["source_text_sha256"]),
+        },
+        output_payload={
+            "proposer_status": str(value["status"]),
+            "raw_output": str(value["raw_output"]) if value.get("raw_output") is not None else None,
+            "proposals": value["proposals"],
+        },
+        status=status,
+        diagnostics=diagnostics,
+    )
+
+
+def _append_rescue_pair_stage_traces(
+    fusion_runs: list[dict[str, Any]], rescue_pair_runs: dict[str, Any]
+) -> None:
+    """Add typed relation-judgment traces to the source run that created each pair."""
+    for fusion_run, pair_run in zip(fusion_runs, rescue_pair_runs["runs"], strict=True):
+        pair_segments = {
+            _review_key(item): item for item in cast(list[dict[str, Any]], pair_run["segments"])
+        }
+        for fusion_segment in cast(list[dict[str, Any]], fusion_run["segments"]):
+            pair_segment = pair_segments[_review_key(fusion_segment)]
+            traces = [
+                extraction_stage_trace_from_json(item)
+                for item in cast(list[dict[str, Any]], fusion_segment["stage_traces"])
+            ]
+            fusion_trace = traces[-1]
+            for offset, pair_result in enumerate(
+                cast(list[dict[str, Any]], pair_segment["pair_results"]), start=3
+            ):
+                pair_status, diagnostics = _stage_status(
+                    str(pair_result["status"]), pair_result.get("diagnostics")
+                )
+                model_run_id = pair_result.get("model_run_id")
+                trace = build_extraction_stage_trace(
+                    trace_run_id=fusion_trace.trace_run_id,
+                    ordinal=offset,
+                    stage_id="organization_pair_relation_judgment",
+                    stage_version="h2_pair_v1",
+                    producer_id="qwen2.5-h2-pair-v1",
+                    source_segment_id=fusion_trace.source_segment_id,
+                    source_text_sha256=fusion_trace.source_text_sha256,
+                    parent_trace_ids=(fusion_trace.id,),
+                    input_record_ids=(str(fusion_segment["paragraph_node_id"]),),
+                    execution_record_ids=((str(model_run_id),) if model_run_id is not None else ()),
+                    configuration={
+                        "prompt_digest": pair_result.get("prompt_digest"),
+                        "policy": "php1_h2_pair_judgment_v1",
+                    },
+                    input_payload={
+                        "source_text": str(fusion_segment["source_text"]),
+                        "first_organization_text": str(pair_result["first_organization_text"]),
+                        "second_organization_text": str(pair_result["second_organization_text"]),
+                    },
+                    output_payload=pair_result,
+                    status=pair_status,
+                    diagnostics=diagnostics,
+                )
+                traces.append(trace)
+            validate_extraction_stage_trace_chain(tuple(traces))
+            fusion_segment["stage_traces"] = [
+                extraction_stage_trace_to_json(trace) for trace in traces
+            ]
+
+
+def _stage_status(
+    producer_status: str, diagnostics_value: Any
+) -> tuple[ExtractionStageStatus, tuple[str, ...]]:
+    if diagnostics_value is None:
+        diagnostics = ()
+    elif isinstance(diagnostics_value, (list, tuple)):
+        diagnostic_strings: list[str] = []
+        for item in cast(list[object] | tuple[object, ...], diagnostics_value):
+            if not isinstance(item, str) or not item.strip():
+                raise ValueError("Extraction stage diagnostics must be non-empty strings.")
+            diagnostic_strings.append(item)
+        diagnostics = tuple(sorted(set(diagnostic_strings)))
+    else:
+        raise ValueError("Extraction stage diagnostics must be non-empty strings.")
+    if producer_status in {"complete", "completed", "verified"}:
+        return ExtractionStageStatus.COMPLETED, diagnostics
+    if producer_status == "not_applicable":
+        return ExtractionStageStatus.NOT_APPLICABLE, diagnostics or (producer_status,)
+    if producer_status in {"blocked", "runtime_unavailable"}:
+        return ExtractionStageStatus.BLOCKED, diagnostics or (producer_status,)
+    if producer_status in {"abstained", "pair_abstained", "pair_invalid", "rejected"}:
+        return ExtractionStageStatus.REJECTED, diagnostics or (producer_status,)
+    return ExtractionStageStatus.FAILED, diagnostics or (producer_status,)
+
+
+def _trace_run_id(key: tuple[str, str, str], repetition: int) -> str:
+    identity = "\x1f".join((*key, str(repetition), "php1_h23_stage_trace_v1"))
+    return f"etr_{hashlib.sha256(identity.encode('utf-8')).hexdigest()[:24]}"
 
 
 def _review_key(value: dict[str, Any]) -> tuple[str, str, str]:

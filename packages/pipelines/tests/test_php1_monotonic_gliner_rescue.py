@@ -166,13 +166,67 @@ def test_monotonic_fusion_trace_binds_gold_source_and_each_proposer_output() -> 
 
     segment = runs[0]["segments"][0]
     assert segment["gold_mentions"][1]["text"] == "Palantir"
-    assert segment["baseline_input"]["raw_output"] == "mention: s1 | Anthropic"
-    assert segment["rescue_input"]["proposals"][1]["text"] == "Palantir"
+    traces = segment["stage_traces"]
+    assert [trace["stage_id"] for trace in traces] == [
+        "organization_mention_proposal",
+        "organization_mention_proposal",
+        "organization_candidate_fusion",
+    ]
+    assert traces[0]["output"]["raw_output"] == "mention: s1 | Anthropic"
+    assert traces[1]["output"]["proposals"][1]["text"] == "Palantir"
+    assert traces[2]["parent_trace_ids"] == sorted([traces[0]["id"], traces[1]["id"]])
     assert [item["text"] for item in segment["mention_candidates"]] == [
         "Anthropic",
         "Palantir",
     ]
     assert segment["source_text_sha256"] == segment["mention_candidates"][0]["source_text_digest"]
+
+
+def test_relation_judgment_extends_the_same_typed_source_trace_chain() -> None:
+    module = _module()
+    runs = module.build_monotonic_fusion_runs(_fusion_baseline())
+    pair_runs: dict[str, Any] = {
+        "status": "completed",
+        "runs": [
+            {
+                "repetition": repetition,
+                "segments": [
+                    {
+                        "fixture_path": "raw/test.pdf",
+                        "paragraph_node_id": "nod_test",
+                        "source_segment_label": "s1",
+                        "source_text_sha256": hashlib.sha256(
+                            b"Anthropic met Palantir."
+                        ).hexdigest(),
+                        "pair_results": [
+                            {
+                                "first_organization_text": "Anthropic",
+                                "second_organization_text": "Palantir",
+                                "status": "pair_abstained",
+                                "diagnostics": [],
+                                "model_run_id": "run_pair",
+                                "prompt_digest": "c" * 64,
+                                "raw_output": "abstain",
+                            }
+                        ],
+                    }
+                ],
+            }
+            for repetition in range(1, 4)
+        ],
+    }
+
+    module._append_rescue_pair_stage_traces(runs, pair_runs)
+
+    traces = runs[0]["segments"][0]["stage_traces"]
+    assert [trace["ordinal"] for trace in traces] == [0, 1, 2, 3]
+    assert traces[3]["status"] == "rejected"
+    assert traces[3]["diagnostics"] == ["pair_abstained"]
+    assert traces[3]["execution_record_ids"] == ["run_pair"]
+    assert traces[3]["parent_trace_ids"] == [traces[2]["id"]]
+
+    with pytest.raises(ValueError, match="diagnostics must be non-empty strings"):
+        module._stage_status("blocked", "not-a-diagnostic-list")
 
 
 def test_baseline_binding_rejects_partial_and_drifted_evidence() -> None:
@@ -293,8 +347,16 @@ def test_review_report_exposes_baseline_gates_and_unexpected_relations() -> None
                         "source_text_sha256": "b" * 64,
                         "source_text": "Anthropic met Palantir.",
                         "gold_mentions": [{"text": "Anthropic", "start": 0, "end": 9}],
-                        "baseline_input": {"proposals": [{"text": "Anthropic"}]},
-                        "rescue_input": {"proposals": [{"text": "Palantir"}]},
+                        "stage_traces": [
+                            {
+                                "stage_id": "organization_mention_proposal",
+                                "producer_id": "qwen2.5-h2-mention-v1",
+                            },
+                            {
+                                "stage_id": "organization_mention_proposal",
+                                "producer_id": "gliner-medium-v2.1",
+                            },
+                        ],
                         "mention_candidates": [{"text": "Anthropic"}],
                         "candidate_groups": [{"preferred_text": "Anthropic"}],
                         "candidate_pairs": [
@@ -338,8 +400,9 @@ def test_review_report_exposes_baseline_gates_and_unexpected_relations() -> None
     assert '"model_revision": "revision"' in review
     assert "Palantir | interoperability with | Anthropic" in review
     assert "Source input: Anthropic met Palantir." in review
-    assert "Qwen input/output" in review
-    assert "GLiNER input/output" in review
+    assert "Typed stage traces" in review
+    assert "qwen2.5-h2-mention-v1" in review
+    assert "gliner-medium-v2.1" in review
     assert "Pair input/output" in review
     summary = module.compact_rescue_summary(result, b"full report\n")
     assert summary["quality_runs"][0]["mention_candidate_count"] == 1
