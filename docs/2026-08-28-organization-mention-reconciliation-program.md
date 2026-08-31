@@ -272,6 +272,8 @@ The trace is not accepted Ledger knowledge and cannot authorize a `ProposedChang
 
 **TDD:** [Organization Mention Boundary Reconciliation MVP](2026-08-31-organization-mention-boundary-reconciliation.md)
 
+**Outcome:** Selected after the frozen development replay and one sealed held-out evaluation; see [Organization Boundary Reconciliation Result](organization-boundary-reconciliation-result-v1.json).
+
 ### ORG-R2 — Semantic Organization qualification comparison
 
 **User story:** As a reviewer, I see whether a literal expression denotes an Organization and which fallible system made that judgment.

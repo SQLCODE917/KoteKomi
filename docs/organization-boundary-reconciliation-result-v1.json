@@ -1,0 +1,118 @@
+{
+  "schema_version": "organization_boundary_reconciliation_result_v1",
+  "policy_id": "organization_boundary_reconciliation_v1",
+  "policy_freeze_commit": "7e0475715d39ccb072795acfa66d957575092bf1",
+  "prompt_sha256": "182e71ddd76fd03849151ba1b8d42621ad2c75e2a795b37e23d89b071a51ac17",
+  "selection_status": "selected",
+  "counts_are_three_repetition_totals": true,
+  "development": {
+    "catalog_sha256": "ad6df9e4811324d2d238632793680dd06581622f9d86c4844ac2b7d3fc7d097b",
+    "proposal_report_path": "docs/organization-boundary-reconciliation-development-proposers-v1.json",
+    "proposal_report_sha256": "064034470224a81db9d27efc351475fec632ed4ebb3ceaf27c5d81522b7fac5e",
+    "reconciliation_report_sha256": "20939947291d50e1be1fae39108aa69a34b2b01c0860c002a66f1e6eb1bac5e6",
+    "source_segment_count": 164,
+    "counts": {
+      "gold_count": 627,
+      "candidate_count": 846,
+      "resolved_decision_count": 15,
+      "ambiguous_decision_count": 51,
+      "wrong_resolved_decision_count": 0,
+      "ambiguous_winner_count": 0,
+      "candidate_retention_failure_count": 0,
+      "exact_selected_count": 489,
+      "selected_count": 693,
+      "missed_gold_count": 138,
+      "spurious_selected_count": 204
+    },
+    "unique_safe_resolution_counts": {
+      "exact_parenthetical_alias_v1": 5,
+      "terminal_possessive_suffix_v1": 0
+    },
+    "proposer_run_1": {
+      "qwen2.5-h2-mention-v1": {
+        "precision": 0.857143,
+        "recall": 0.660287,
+        "f1": 0.745946,
+        "exact_set_stable_segment_rate": 1.0
+      },
+      "gliner-medium-v2.1": {
+        "precision": 0.603687,
+        "recall": 0.626794,
+        "f1": 0.615023,
+        "exact_set_stable_segment_rate": 1.0
+      }
+    },
+    "qwen_status_counts": {
+      "abstained": 216,
+      "complete": 183,
+      "invalid": 21,
+      "not_applicable_nonlexical": 72
+    },
+    "gates": {
+      "zero_wrong_resolved_decisions": true,
+      "safe_non_equal_resolution_observed": true,
+      "candidate_retention_complete": true,
+      "ambiguous_components_have_no_winner": true
+    }
+  },
+  "held_out": {
+    "catalog_path": "docs/organization-mention-held-out-gold-v1.json",
+    "catalog_sha256": "fb62ac41c03874d18733cc8040fb9c40869c46ce6fdfad26dcf6511c1af481f4",
+    "proposal_report_path": "docs/organization-boundary-reconciliation-held-out-proposers-v1.json",
+    "proposal_report_sha256": "65bf5fb838c54d35abb242c2c959c1800b68e38ca2c59bb6f97f656b709cc85d",
+    "reconciliation_report_sha256": "4eb10d5905e8a4ba9b801f5052c9c820b5079cc032e49f848fa15fc14b3f00e8",
+    "evaluation_count": 1,
+    "source_segment_count": 170,
+    "literal_gold_count_per_repetition": 150,
+    "resolved_reference_gold_excluded_from_scoring": 5,
+    "counts": {
+      "gold_count": 450,
+      "candidate_count": 666,
+      "resolved_decision_count": 12,
+      "ambiguous_decision_count": 39,
+      "wrong_resolved_decision_count": 0,
+      "ambiguous_winner_count": 0,
+      "candidate_retention_failure_count": 0,
+      "exact_selected_count": 339,
+      "selected_count": 555,
+      "missed_gold_count": 111,
+      "spurious_selected_count": 216
+    },
+    "unique_safe_resolution_counts": {
+      "exact_parenthetical_alias_v1": 3,
+      "terminal_possessive_suffix_v1": 1
+    },
+    "proposer_run_1": {
+      "qwen2.5-h2-mention-v1": {
+        "precision": 0.809524,
+        "recall": 0.566667,
+        "f1": 0.666667,
+        "exact_set_stable_segment_rate": 1.0
+      },
+      "gliner-medium-v2.1": {
+        "precision": 0.521505,
+        "recall": 0.646667,
+        "f1": 0.577381,
+        "exact_set_stable_segment_rate": 1.0
+      }
+    },
+    "qwen_status_counts": {
+      "abstained": 300,
+      "complete": 165,
+      "invalid_output": 12,
+      "not_applicable_nonlexical": 33
+    },
+    "gates": {
+      "zero_wrong_resolved_decisions": true,
+      "safe_non_equal_resolution_observed": true,
+      "candidate_retention_complete": true,
+      "ambiguous_components_have_no_winner": true
+    }
+  },
+  "interpretation": {
+    "spurious_selected_status": "qualification_pending",
+    "semantic_organization_qualification_deferred_to": "ORG-R2",
+    "reference_resolution_gold_scored": false,
+    "production_pipeline_changed": false
+  }
+}

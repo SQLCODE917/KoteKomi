@@ -339,3 +339,17 @@ Semantic qualification, ReFinED, acronym or reference resolution, prompt changes
 Stop after the deterministic policy, development replay, and one sealed held-out evaluation are recorded and verified.
 
 Do not begin ORG-R2.
+
+## Implementation result
+
+The implementation was frozen at commit `7e0475715d39ccb072795acfa66d957575092bf1` before the held-out catalog was evaluated.
+
+The development and one-time held-out evaluations selected `organization_boundary_reconciliation_v1` with zero wrong resolved decisions, complete candidate retention, no ambiguous winner, and safe non-equal conflict resolution.
+
+The held-out pass safely resolved three unique exact parenthetical-alias conflicts and one unique terminal-possessive conflict.
+
+The five context-dependent reference entries remained excluded from ORG-R1 scoring as designed.
+
+Uncontested non-Gold selections remain `qualification_pending`; ORG-R1 did not reinterpret those semantic type decisions as boundary failures.
+
+The compact immutable result and artifact digests are recorded in [Organization Boundary Reconciliation Result](organization-boundary-reconciliation-result-v1.json).
