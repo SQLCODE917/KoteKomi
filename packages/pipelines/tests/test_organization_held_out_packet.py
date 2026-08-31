@@ -55,11 +55,28 @@ def test_held_out_packet_requires_notes_for_resolved_organization(tmp_path: Path
     packet = module.DEFAULT_PACKET.read_text(encoding="utf-8")
     invalid = packet.replace(
         "- Anthropic\n\n### Reviewer notes",
-        "- resolved: name absent from source\n\n### Reviewer notes",
+        "- resolved: name <= Anthropic | Anthropic\n\n### Reviewer notes",
         1,
     )
     path = tmp_path / "invalid.md"
     path.write_text(invalid, encoding="utf-8")
 
     with pytest.raises(ValueError, match="requires Reviewer notes"):
+        module.validate_held_out_packet(path, verify_fixture_bytes=False)
+
+
+def test_held_out_packet_requires_exact_source_components_for_resolved_gold(
+    tmp_path: Path,
+) -> None:
+    module = _module()
+    packet = module.DEFAULT_PACKET.read_text(encoding="utf-8")
+    invalid = packet.replace(
+        "resolved: United States AISI <= AISIs | United States",
+        "resolved: United States AISI",
+        1,
+    )
+    path = tmp_path / "invalid.md"
+    path.write_text(invalid, encoding="utf-8")
+
+    with pytest.raises(ValueError, match="must declare exact source components"):
         module.validate_held_out_packet(path, verify_fixture_bytes=False)

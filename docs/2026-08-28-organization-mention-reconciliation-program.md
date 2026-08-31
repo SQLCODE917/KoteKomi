@@ -270,6 +270,8 @@ The trace is not accepted Ledger knowledge and cannot authorize a `ProposedChang
 
 **Postcondition:** Named deterministic rules resolve safe cases and preserve every unresolved conflict without silent loss.
 
+**TDD:** [Organization Mention Boundary Reconciliation MVP](2026-08-31-organization-mention-boundary-reconciliation.md)
+
 ### ORG-R2 — Semantic Organization qualification comparison
 
 **User story:** As a reviewer, I see whether a literal expression denotes an Organization and which fallible system made that judgment.

@@ -1178,9 +1178,9 @@ Instead, the AISI network may consider leveraging each member's comparative adva
 
 ### Gold Organization Mentions
 
-- resolved: United States AISI
-- resolved: United Kingdom AISI
-- resolved: Singapore AISI
+- resolved: United States AISI <= AISIs | United States
+- resolved: United Kingdom AISI <= AISIs | United Kingdom
+- resolved: Singapore AISI <= AISIs | Singapore
 
 ### Reviewer notes
 
@@ -1230,8 +1230,8 @@ The network's leadership and voting structures need not be zero sum, however. In
 
 ### Gold Organization Mentions
 
-- resolved: U.S. AISI
-- resolved: UK AISI
+- resolved: U.S. AISI <= U.S. | AISIs
+- resolved: UK AISI <= UK | AISIs
 - United States
 - AISI network
 - AISI network

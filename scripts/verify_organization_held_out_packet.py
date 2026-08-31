@@ -99,16 +99,18 @@ def validate_held_out_packet(
                 if gold_result == "None":
                     continue
                 if gold_result.startswith("resolved: "):
-                    organization = gold_result.removeprefix("resolved: ")
-                    if not organization:
-                        raise ValueError(
-                            f"HO-{match.group('number')} has an empty resolved Organization."
-                        )
+                    organization, components = _resolved_gold(gold_result)
                     if not reviewer_notes:
                         raise ValueError(
                             f"HO-{match.group('number')} resolved Organization "
                             f"{organization!r} requires Reviewer notes."
                         )
+                    for component in components:
+                        if component not in source:
+                            raise ValueError(
+                                f"HO-{match.group('number')} resolved source component "
+                                f"{component!r} is not present in the source."
+                            )
                     resolved_gold_count += 1
                     continue
                 if gold_result not in source:
@@ -182,6 +184,17 @@ def _required_match(pattern: re.Pattern[str], value: str, label: str) -> re.Matc
     if match is None:
         raise ValueError(f"Held-out packet misses {label}.")
     return match
+
+
+def _resolved_gold(value: str) -> tuple[str, tuple[str, ...]]:
+    expression = value.removeprefix("resolved: ")
+    parts = tuple(part.strip() for part in expression.split("<=", maxsplit=1))
+    if len(parts) != 2 or not parts[0]:
+        raise ValueError("Resolved Organization must declare exact source components.")
+    components = tuple(part.strip() for part in parts[1].split("|") if part.strip())
+    if len(components) < 2:
+        raise ValueError("Resolved Organization requires at least two source components.")
+    return parts[0], components
 
 
 def main() -> int:
