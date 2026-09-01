@@ -693,29 +693,17 @@ def render_comparison_report(
                 *_read_jsonl(directory / "executions-refined.jsonl"),
             )
         }
-        lines.extend((f"# {phase.replace('_', '-')} phase", ""))
         for candidate_record in candidates:
             candidate = cast(dict[str, Any], candidate_record["candidate"])
             source = source_by_id[str(candidate_record["source_record_id"])]
             gold = cast(dict[str, Any], candidate_record["gold_classification"])
             lines.extend(
                 (
-                    f"## {phase.replace('_', '-')} — {candidate['id']}",
-                    "",
-                    f"Fixture: `{source['fixture_path']}`",
-                    f"Paragraph node: `{source['paragraph_node_id']}`",
-                    f"Source segment: `{source['source_segment_id']}` "
-                    f"(`{source['source_segment_label']}`)",
-                    f"Source SHA-256: `{source['source_text_sha256']}`",
-                    "",
-                    "Exact data in for all three runs — authoritative source segment:",
+                    f"### {phase.replace('_', '-')} - {candidate['id']}",
                     "",
                     *_markdown_quote(str(source["source_text"])),
                     "",
                     f"Exact candidate: {json.dumps(candidate['text'], ensure_ascii=False)}",
-                    f"Half-open offsets: `[{candidate['start']}, {candidate['end']})`",
-                    f"ORG-R1 boundary decision: `{candidate['boundary_decision_id']}` "
-                    f"({candidate['boundary_status']}, `{candidate['boundary_rule_id']}`)",
                     f"Gold expectation: {_gold_expectation(gold)}",
                     "",
                 )
@@ -727,17 +715,14 @@ def render_comparison_report(
                 refined_evaluation = _qualification_result_evaluation(refined, gold)
                 lines.extend(
                     (
-                        f"### Run {repetition}",
+                        f"Run {repetition}:",
                         "",
-                        f"Qwen2.5 — `{qwen['execution_status']}` / "
-                        f"`{qwen.get('judgment')}`; exact raw output "
-                        f"{json.dumps(_qwen_raw_output(qwen), ensure_ascii=False)}; "
-                        f"{qwen_evaluation}. Evidence: `{qwen['id']}`.",
-                        f"ReFinED — `{refined['execution_status']}` / "
-                        f"`{refined.get('judgment')}`; "
-                        f"{_compact_refined_result(cast(dict[str, Any], refined['output']))}; "
-                        f"{refined_evaluation}. Evidence: `{refined['id']}`.",
-                        f"Comparative evaluation: "
+                        f"Qwen2.5: {json.dumps(_qwen_raw_output(qwen), ensure_ascii=False)} "
+                        f"→ `{qwen.get('judgment')}` ({qwen_evaluation})",
+                        f"ReFinED: "
+                        f"{_compact_refined_output(cast(dict[str, Any], refined['output']))} "
+                        f"→ `{refined.get('judgment')}` ({refined_evaluation})",
+                        f"Evaluation: "
                         f"{_comparative_evaluation(qwen_evaluation, refined_evaluation, gold)}",
                         "",
                     )
@@ -807,26 +792,14 @@ def _qwen_raw_output(execution: dict[str, Any]) -> object:
     return cast(dict[str, Any], execution["output"]).get("raw_output")
 
 
-def _compact_refined_result(output: dict[str, Any]) -> str:
-    predicted_entity = output.get("predicted_entity")
-    if isinstance(predicted_entity, dict):
-        entity = cast(dict[str, Any], predicted_entity)
-        entity_text = json.dumps(
-            {
-                "wikidata_entity_id": entity.get("wikidata_entity_id"),
-                "wikipedia_entity_title": entity.get("wikipedia_entity_title"),
-            },
-            ensure_ascii=False,
-            sort_keys=True,
-        )
-    else:
-        entity_text = "null"
-    return (
-        f"returned {json.dumps(output.get('returned_text'), ensure_ascii=False)} at "
-        f"[{output.get('start')}, {output.get('end')}); coarse mention "
-        f"`{output.get('coarse_mention_type')}`; failed class check "
-        f"`{output.get('failed_class_check')}`; entity `{entity_text}`; link score "
-        f"`{output.get('entity_linking_score')}`"
+def _compact_refined_output(output: dict[str, Any]) -> str:
+    return json.dumps(
+        {
+            "coarse_mention_type": output.get("coarse_mention_type"),
+            "failed_class_check": output.get("failed_class_check"),
+        },
+        ensure_ascii=False,
+        sort_keys=True,
     )
 
 
