@@ -44,6 +44,10 @@ from kotekomi_application.grounded_candidates import (
     ProposedChangeBatchOutcome,
     prepare_grounded_candidate_batch,
 )
+from kotekomi_application.organization_semantic_qualification import (
+    OrganizationQualificationJudgment,
+    parse_organization_qualification_output,
+)
 
 HASH_ID_LENGTH = 24
 
@@ -339,6 +343,22 @@ class OrganizationQualificationTaskSchemaRegistry:
         )
 
 
+class OrganizationQualificationLabelTaskSchemaRegistry:
+    """The ORG-R2 tri-state schema for one immutable candidate boundary."""
+
+    schema_id = "organization_qualification_label_v1"
+
+    def resolve(self, schema_id: str) -> PinnedTaskSchema:
+        if schema_id != self.schema_id:
+            raise ValueError(f"Unsupported Organization qualification label schema: {schema_id}")
+        return PinnedTaskSchema(
+            schema_id=self.schema_id,
+            canonical_schema_bytes=organization_qualification_label_schema_bytes(),
+            output_contract_version="organization_qualification_label_v1",
+            parse=_parse_organization_qualification_label,
+        )
+
+
 @dataclass(frozen=True)
 class BoundedExtractionInput:
     source_id: str
@@ -360,6 +380,7 @@ class BoundedExtractionOutcome:
     verified_hypotheses: tuple[VerifiedHypothesis, ...] = ()
     organization_mentions: tuple[OrganizationMention, ...] = ()
     organization_qualification: OrganizationQualification | None = None
+    organization_qualification_judgment: OrganizationQualificationJudgment | None = None
 
 
 @dataclass(frozen=True)
@@ -436,6 +457,7 @@ type ParsedModelOutput = (
     | OrganizationMentionBatchAbstention
     | OrganizationQualification
     | OrganizationQualificationRejection
+    | OrganizationQualificationJudgment
 )
 
 
@@ -672,6 +694,30 @@ def run_bounded_extraction(
                 run,
                 None,
                 organization_qualification=parsed,
+            )
+        if isinstance(parsed, OrganizationQualificationJudgment):
+            run = _model_run(
+                extraction_input,
+                manifest,
+                task,
+                model_run_id,
+                ModelRunStatus.SUCCEEDED,
+                started_at=started_at,
+                completed_at=completed_at,
+                execution_diagnostics=diagnostics,
+                output_digest=output_digest,
+                execution_receipt=response.execution_receipt,
+                outcome_metadata={
+                    "contract": "organization_qualification_label_v1",
+                    "judgment": parsed.value,
+                },
+            )
+            ledger_repository.save_model_run(run)
+            return BoundedExtractionOutcome(
+                task,
+                run,
+                None,
+                organization_qualification_judgment=parsed,
             )
         batch_input, outcome_metadata = _grounded_batch(
             extraction_input,
@@ -1545,6 +1591,11 @@ def organization_qualification_text_schema_bytes() -> bytes:
     )
 
 
+@cache
+def organization_qualification_label_schema_bytes() -> bytes:
+    return b"organization\nnot_organization\nambiguous\n"
+
+
 def _parse_organization_mention_batch(
     raw_output: bytes,
 ) -> OrganizationMentionBatch | OrganizationMentionBatchAbstention:
@@ -1596,6 +1647,16 @@ def _parse_organization_qualification(
             raise ValueError("Organization qualification requires a literal expression.")
         return OrganizationQualification(organization_text)
     raise ValueError("Organization qualification output does not match the contract.")
+
+
+def _parse_organization_qualification_label(
+    raw_output: bytes,
+) -> OrganizationQualificationJudgment:
+    try:
+        text = raw_output.decode("utf-8")
+    except UnicodeDecodeError as error:
+        raise ValueError("Organization qualification label must be UTF-8 text.") from error
+    return parse_organization_qualification_output(text)
 
 
 def _require_source_grounded(value: str, exact_text: str, label: str) -> None:

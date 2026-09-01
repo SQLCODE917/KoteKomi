@@ -282,6 +282,11 @@ The trace is not accepted Ledger knowledge and cannot authorize a `ProposedChang
 
 **Postcondition:** Qwen2.5 and at least one established contextual typing or linking approach are compared on identical candidates.
 
+**TDD:** [Organization Semantic Qualification Comparison](2026-08-31-organization-semantic-qualification-comparison.md)
+
+**Outcome:** Qwen2.5 and pinned ReFinED V1 were compared over sealed development and held-out
+bundles; neither path entered production. See [Organization Semantic Qualification Result](organization-semantic-qualification-result-v1.json).
+
 ### ORG-R3 — Explicit acronym declarations
 
 **User story:** As a reviewer, I see a source-declared abbreviation resolve to one document-local Organization identity.
@@ -306,9 +311,9 @@ The trace is not accepted Ledger knowledge and cannot authorize a `ProposedChang
 
 **Postcondition:** One explicitly selected path enters the Pipeline, or production remains unchanged with complete evidence explaining why.
 
-Only ORG-R1 receives a detailed TDD after ORG-R0 and human annotation are complete.
+ORG-R1 and ORG-R2 now have detailed TDDs and retained outcomes.
 
-Later TDDs remain black boxes until evidence from the prior increment defines them.
+ORG-R3 and later TDDs remain black boxes until evidence from the prior increment defines them.
 
 ## Stop conditions
 

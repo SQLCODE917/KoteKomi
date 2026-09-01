@@ -41,6 +41,7 @@ from kotekomi_application import (
     OrganizationMention,
     OrganizationMentionTaskSchemaRegistry,
     OrganizationQualification,
+    OrganizationQualificationLabelTaskSchemaRegistry,
     OrganizationQualificationTaskSchemaRegistry,
     ParagraphHypothesisTaskSchemaRegistry,
     PinnedTaskSchema,
@@ -65,6 +66,12 @@ from kotekomi_application import (
     semantic_draft_text_schema_bytes,
     start_analysis_run,
     submit_grounded_candidate_batch,
+)
+from kotekomi_application.organization_semantic_qualification import (
+    OrganizationQualificationJudgment,
+)
+from kotekomi_application.staged_model_extraction import (
+    organization_qualification_label_schema_bytes,
 )
 from kotekomi_domain import (
     AnalysisItemAttempt,
@@ -646,6 +653,51 @@ def _qualification_execution_spec(manifest: ContextManifest) -> ModelExecutionSp
         context_manifest_digest=manifest.manifest_digest,
         rendered_input_digest=manifest.rendered_input_digest,
         output_contract_version="organization_qualification_text_v1",
+    )
+
+
+def _qualification_label_manifest_for_staged_test(
+    ledger: FakeGroundedCandidateLedger,
+) -> ContextManifest:
+    unit = plan_analysis_units(
+        AnalysisUnitPlanningInput(
+            ledger.bundle.representation.id,
+            "paragraph_hypothesis_mvp_v1",
+            "claim_extraction",
+        ),
+        ledger,
+    ).units[0]
+    schema = OrganizationQualificationLabelTaskSchemaRegistry().resolve(
+        "organization_qualification_label_v1"
+    )
+    return build_context_manifest(
+        ContextManifestInput(
+            analysis_unit=unit,
+            model_profile=ContextModelProfile("fixture-model", 512, 8, 4),
+            prompt_id="paragraph_organization_qualification_v2",
+            prompt_bytes=b"fixture tri-state organization qualification prompt",
+            schema_id=schema.schema_id,
+            schema_bytes=schema.canonical_schema_bytes,
+            renderer_version="paragraph_hypothesis_segment_context_v3",
+            evidence_selection_policy_id=PARAGRAPH_HYPOTHESIS_EVIDENCE_SELECTION_V1,
+            source_segment_policy_id=PARAGRAPH_SEGMENT_V3,
+        ),
+        ledger,
+        FixtureTokenizer(),
+    ).manifest
+
+
+def _qualification_label_execution_spec(manifest: ContextManifest) -> ModelExecutionSpec:
+    return replace(
+        _fixture_execution_spec(manifest),
+        schema_id="organization_qualification_label_v1",
+        schema_digest=hashlib.sha256(organization_qualification_label_schema_bytes()).hexdigest(),
+        prompt_id=manifest.prompt_id,
+        prompt_digest=manifest.prompt_digest,
+        context_manifest_id=manifest.id,
+        context_manifest_digest=manifest.manifest_digest,
+        rendered_input_digest=manifest.rendered_input_digest,
+        output_contract_version="organization_qualification_label_v1",
     )
 
 
@@ -2004,6 +2056,80 @@ def test_organization_qualification_records_rejection_and_malformed_output() -> 
     assert rejected.model_run.status is ModelRunStatus.ABSTAINED
     assert rejected.model_run.outcome_metadata["contract"] == ("organization_qualification_text_v1")
     assert invalid.model_run.status is ModelRunStatus.INVALID_OUTPUT
+    assert not ledger.proposed_changes
+
+
+@pytest.mark.parametrize(
+    ("raw_output", "expected"),
+    [
+        (b"organization", OrganizationQualificationJudgment.ORGANIZATION),
+        (b"not_organization", OrganizationQualificationJudgment.NOT_ORGANIZATION),
+        (b"ambiguous", OrganizationQualificationJudgment.AMBIGUOUS),
+    ],
+)
+def test_organization_qualification_label_records_exact_tri_state_model_run(
+    raw_output: bytes,
+    expected: OrganizationQualificationJudgment,
+) -> None:
+    ledger = FakeGroundedCandidateLedger()
+    manifest = _qualification_label_manifest_for_staged_test(ledger)
+    runtime = FakeModelTaskRuntime(raw_output)
+
+    outcome = run_bounded_extraction(
+        BoundedExtractionInput(
+            source_id=ledger.source.id,
+            document_id=ledger.document.id,
+            representation_id=ledger.bundle.representation.id,
+            context_manifest_id=manifest.id,
+            prompt_bytes=manifest.prompt_bytes,
+            execution_spec=_qualification_label_execution_spec(manifest),
+            validator_version="organization_qualification_label_validator_v1",
+            task_type="organization_qualification_label",
+        ),
+        ledger,
+        FakeModelOutputArchive(),
+        runtime,
+        Uuid4ModelRunIdFactory(),
+        FixtureTokenizer(),
+        OrganizationQualificationLabelTaskSchemaRegistry(),
+    )
+
+    assert outcome.model_run.status is ModelRunStatus.SUCCEEDED
+    assert outcome.organization_qualification_judgment is expected
+    assert outcome.model_run.outcome_metadata == {
+        "contract": "organization_qualification_label_v1",
+        "judgment": expected.value,
+    }
+    assert runtime.requests[0].rendered_input == manifest.rendered_input
+    assert runtime.requests[0].task_type == "organization_qualification_label"
+    assert not ledger.proposed_changes
+
+
+def test_organization_qualification_label_rejects_nonliteral_output() -> None:
+    ledger = FakeGroundedCandidateLedger()
+    manifest = _qualification_label_manifest_for_staged_test(ledger)
+
+    outcome = run_bounded_extraction(
+        BoundedExtractionInput(
+            source_id=ledger.source.id,
+            document_id=ledger.document.id,
+            representation_id=ledger.bundle.representation.id,
+            context_manifest_id=manifest.id,
+            prompt_bytes=manifest.prompt_bytes,
+            execution_spec=_qualification_label_execution_spec(manifest),
+            validator_version="organization_qualification_label_validator_v1",
+            task_type="organization_qualification_label",
+        ),
+        ledger,
+        FakeModelOutputArchive(),
+        FakeModelTaskRuntime(b"organization\n"),
+        Uuid4ModelRunIdFactory(),
+        FixtureTokenizer(),
+        OrganizationQualificationLabelTaskSchemaRegistry(),
+    )
+
+    assert outcome.model_run.status is ModelRunStatus.INVALID_OUTPUT
+    assert outcome.organization_qualification_judgment is None
     assert not ledger.proposed_changes
 
 
