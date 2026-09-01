@@ -415,6 +415,58 @@ def test_tracked_org_r2_bundle_retains_complete_lineage(phase: str) -> None:
     runner._validate_bundle_lineage(ROOT / "docs/evaluations/org-r2" / phase, phase)
 
 
+@pytest.mark.parametrize(
+    ("status", "judgment", "eligibility", "expected", "evaluation"),
+    [
+        ("completed", "organization", "exact_gold", "organization", "correct"),
+        (
+            "completed",
+            "ambiguous",
+            "exact_gold",
+            "organization",
+            "incorrect abstention; Gold expects organization",
+        ),
+        (
+            "completed",
+            "organization",
+            "disjoint_gold",
+            "not_organization",
+            "incorrect; Gold expects not_organization",
+        ),
+        (
+            "invalid_output",
+            None,
+            "exact_gold",
+            "organization",
+            "not a semantic result: invalid_output",
+        ),
+        (
+            "completed",
+            "organization",
+            "boundary_case",
+            None,
+            "not scored: non-exact Gold overlap is an ORG-R1 boundary case",
+        ),
+    ],
+)
+def test_compact_comparison_uses_gold_relative_evaluations(
+    status: str,
+    judgment: str | None,
+    eligibility: str,
+    expected: str | None,
+    evaluation: str,
+) -> None:
+    runner = _module("run_organization_semantic_qualification")
+
+    assert (
+        runner._qualification_result_evaluation(
+            {"execution_status": status, "judgment": judgment},
+            {"eligibility": eligibility, "expected_judgment": expected},
+        )
+        == evaluation
+    )
+
+
 def _execution(
     candidate_id: str,
     producer_id: str,

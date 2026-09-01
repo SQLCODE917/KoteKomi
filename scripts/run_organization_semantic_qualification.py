@@ -646,6 +646,190 @@ def write_result_record(
     return result
 
 
+def render_comparison_report(
+    *,
+    development_dir: Path,
+    held_out_dir: Path,
+    output_path: Path,
+) -> dict[str, Any]:
+    """Render every paired execution with exact input and Gold-relative evaluation."""
+    lines = [
+        "# ORG-R2 paired semantic-qualification results",
+        "",
+        "Each entry compares Qwen2.5 and ReFinED on the same immutable ORG-R1 candidate.",
+        "The evaluation is derived from the reviewed Gold catalog; neither producer is authority.",
+        "Boundary cases are shown but excluded from semantic scoring.",
+        "",
+    ]
+    rendered_runs = 0
+    for phase, directory in (
+        ("development", development_dir),
+        ("held_out", held_out_dir),
+    ):
+        _validate_sealed_manifest(directory, phase)
+        records = _read_jsonl(directory / "inputs.jsonl")
+        source_by_id = {
+            str(record["id"]): record for record in records if record.get("record_type") == "source"
+        }
+        candidates = sorted(
+            (record for record in records if record.get("record_type") == "candidate"),
+            key=lambda record: (
+                str(source_by_id[str(record["source_record_id"])].get("fixture_path")),
+                str(source_by_id[str(record["source_record_id"])].get("paragraph_node_id")),
+                str(source_by_id[str(record["source_record_id"])].get("source_segment_label")),
+                int(cast(dict[str, Any], record["candidate"])["start"]),
+                int(cast(dict[str, Any], record["candidate"])["end"]),
+                str(record["id"]),
+            ),
+        )
+        executions = {
+            (
+                int(record["repetition"]),
+                str(record["candidate_id"]),
+                str(record["producer_id"]),
+            ): record
+            for record in (
+                *_read_jsonl(directory / "executions-qwen.jsonl"),
+                *_read_jsonl(directory / "executions-refined.jsonl"),
+            )
+        }
+        lines.extend((f"# {phase.replace('_', '-')} phase", ""))
+        for candidate_record in candidates:
+            candidate = cast(dict[str, Any], candidate_record["candidate"])
+            source = source_by_id[str(candidate_record["source_record_id"])]
+            gold = cast(dict[str, Any], candidate_record["gold_classification"])
+            lines.extend(
+                (
+                    f"## {phase.replace('_', '-')} — {candidate['id']}",
+                    "",
+                    f"Fixture: `{source['fixture_path']}`",
+                    f"Paragraph node: `{source['paragraph_node_id']}`",
+                    f"Source segment: `{source['source_segment_id']}` "
+                    f"(`{source['source_segment_label']}`)",
+                    f"Source SHA-256: `{source['source_text_sha256']}`",
+                    "",
+                    "Exact data in for all three runs — authoritative source segment:",
+                    "",
+                    *_markdown_quote(str(source["source_text"])),
+                    "",
+                    f"Exact candidate: {json.dumps(candidate['text'], ensure_ascii=False)}",
+                    f"Half-open offsets: `[{candidate['start']}, {candidate['end']})`",
+                    f"ORG-R1 boundary decision: `{candidate['boundary_decision_id']}` "
+                    f"({candidate['boundary_status']}, `{candidate['boundary_rule_id']}`)",
+                    f"Gold expectation: {_gold_expectation(gold)}",
+                    "",
+                )
+            )
+            for repetition in range(1, REPETITIONS + 1):
+                qwen = executions[(repetition, str(candidate["id"]), "qwen")]
+                refined = executions[(repetition, str(candidate["id"]), "refined")]
+                qwen_evaluation = _qualification_result_evaluation(qwen, gold)
+                refined_evaluation = _qualification_result_evaluation(refined, gold)
+                lines.extend(
+                    (
+                        f"### Run {repetition}",
+                        "",
+                        f"Qwen2.5 — `{qwen['execution_status']}` / "
+                        f"`{qwen.get('judgment')}`; exact raw output "
+                        f"{json.dumps(_qwen_raw_output(qwen), ensure_ascii=False)}; "
+                        f"{qwen_evaluation}. Evidence: `{qwen['id']}`.",
+                        f"ReFinED — `{refined['execution_status']}` / "
+                        f"`{refined.get('judgment')}`; "
+                        f"{_compact_refined_result(cast(dict[str, Any], refined['output']))}; "
+                        f"{refined_evaluation}. Evidence: `{refined['id']}`.",
+                        f"Comparative evaluation: "
+                        f"{_comparative_evaluation(qwen_evaluation, refined_evaluation, gold)}",
+                        "",
+                    )
+                )
+                rendered_runs += 1
+    payload = "\n".join(lines).rstrip() + "\n"
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(payload, encoding="utf-8")
+    return {
+        "status": "completed",
+        "output": str(output_path),
+        "run_count": rendered_runs,
+        "sha256": hashlib.sha256(payload.encode("utf-8")).hexdigest(),
+    }
+
+
+def _qualification_result_evaluation(
+    execution: dict[str, Any],
+    gold: dict[str, Any],
+) -> str:
+    if gold["eligibility"] == "boundary_case":
+        return "not scored: non-exact Gold overlap is an ORG-R1 boundary case"
+    if execution["execution_status"] != "completed":
+        return f"not a semantic result: {execution['execution_status']}"
+    judgment = execution.get("judgment")
+    expected = gold["expected_judgment"]
+    if judgment == expected:
+        return "correct"
+    if judgment == "ambiguous":
+        return f"incorrect abstention; Gold expects {expected}"
+    return f"incorrect; Gold expects {expected}"
+
+
+def _comparative_evaluation(
+    qwen_evaluation: str,
+    refined_evaluation: str,
+    gold: dict[str, Any],
+) -> str:
+    if gold["eligibility"] == "boundary_case":
+        return "neither result is semantically scored because the candidate boundary is unresolved"
+    qwen_correct = qwen_evaluation == "correct"
+    refined_correct = refined_evaluation == "correct"
+    if qwen_correct and refined_correct:
+        return "both producers agree with Gold"
+    if qwen_correct:
+        return "only Qwen2.5 agrees with Gold"
+    if refined_correct:
+        return "only ReFinED agrees with Gold"
+    return "neither producer agrees with Gold"
+
+
+def _gold_expectation(gold: dict[str, Any]) -> str:
+    if gold["eligibility"] == "boundary_case":
+        overlaps = ", ".join(
+            json.dumps(span["text"], ensure_ascii=False)
+            for span in cast(list[dict[str, Any]], gold["overlapping_gold_spans"])
+        )
+        return f"boundary case, excluded from semantic scoring; overlaps {overlaps}"
+    return f"`{gold['expected_judgment']}` ({gold['eligibility']})"
+
+
+def _markdown_quote(value: str) -> tuple[str, ...]:
+    return tuple(f"> {line}" if line else ">" for line in value.splitlines())
+
+
+def _qwen_raw_output(execution: dict[str, Any]) -> object:
+    return cast(dict[str, Any], execution["output"]).get("raw_output")
+
+
+def _compact_refined_result(output: dict[str, Any]) -> str:
+    predicted_entity = output.get("predicted_entity")
+    if isinstance(predicted_entity, dict):
+        entity = cast(dict[str, Any], predicted_entity)
+        entity_text = json.dumps(
+            {
+                "wikidata_entity_id": entity.get("wikidata_entity_id"),
+                "wikipedia_entity_title": entity.get("wikipedia_entity_title"),
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+        )
+    else:
+        entity_text = "null"
+    return (
+        f"returned {json.dumps(output.get('returned_text'), ensure_ascii=False)} at "
+        f"[{output.get('start')}, {output.get('end')}); coarse mention "
+        f"`{output.get('coarse_mention_type')}`; failed class check "
+        f"`{output.get('failed_class_check')}`; entity `{entity_text}`; link score "
+        f"`{output.get('entity_linking_score')}`"
+    )
+
+
 def _validate_org_r1_dependency(
     result_path: Path,
     *,
@@ -1455,6 +1639,10 @@ def main() -> int:
     result_parser.add_argument("--held-out-dir", type=Path, required=True)
     result_parser.add_argument("--org-r1-result", type=Path, required=True)
     result_parser.add_argument("--output", type=Path, required=True)
+    comparison_parser = subparsers.add_parser("render-comparison")
+    comparison_parser.add_argument("--development-dir", type=Path, required=True)
+    comparison_parser.add_argument("--held-out-dir", type=Path, required=True)
+    comparison_parser.add_argument("--output", type=Path, required=True)
     arguments = parser.parse_args()
     if arguments.command == "prepare":
         result = prepare(
@@ -1473,11 +1661,17 @@ def main() -> int:
         result = run_qwen(output_dir=arguments.output_dir, config_path=arguments.config)
     elif arguments.command == "finalize":
         result = finalize(arguments.output_dir)
-    else:
+    elif arguments.command == "write-result":
         result = write_result_record(
             development_dir=arguments.development_dir,
             held_out_dir=arguments.held_out_dir,
             org_r1_result_path=arguments.org_r1_result,
+            output_path=arguments.output,
+        )
+    else:
+        result = render_comparison_report(
+            development_dir=arguments.development_dir,
+            held_out_dir=arguments.held_out_dir,
             output_path=arguments.output,
         )
     print(canonical_json(result))
