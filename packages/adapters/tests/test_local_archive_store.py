@@ -8,8 +8,11 @@ from kotekomi_application import (
     HybridPreviewStatus,
     StagedArchiveObject,
     build_hybrid_extraction_preview,
+    build_hybrid_reference_preview_record,
     canonical_hybrid_extraction_preview_bytes,
+    canonical_hybrid_reference_preview_bytes,
     hybrid_extraction_preview_sha256,
+    hybrid_reference_preview_sha256,
 )
 
 
@@ -23,6 +26,7 @@ def test_initialize_creates_archive_directories(tmp_path: Path) -> None:
     assert (tmp_path / "attachments").is_dir()
     assert (tmp_path / "briefings" / "daily").is_dir()
     assert (tmp_path / "extraction" / "previews").is_dir()
+    assert (tmp_path / "extraction" / "reference-previews").is_dir()
     assert (tmp_path / "transformations").is_dir()
 
 
@@ -98,6 +102,67 @@ def test_hybrid_extraction_preview_rejects_immutable_identity_conflict(
 
     with pytest.raises(ValueError, match="immutable identity"):
         store.put_hybrid_extraction_preview(preview, payload, digest)
+
+
+def test_put_reuse_and_restart_hybrid_reference_preview(tmp_path: Path) -> None:
+    store = LocalArchiveStore(tmp_path)
+    store.initialize()
+    parent = build_hybrid_extraction_preview(
+        representation_id="rep_fixture",
+        paragraph_node_id="nod_fixture",
+        context_manifest_id="ctx_fixture",
+        ontology_card_sha256="a" * 64,
+        terminal_status=HybridPreviewStatus.COMPLETE,
+    )
+    preview = build_hybrid_reference_preview_record(
+        parent_preview_id=parent.id,
+        parent_preview_sha256=hybrid_extraction_preview_sha256(parent),
+        representation_id="rep_fixture",
+        alias_declarations=(),
+        reference_decisions=(),
+        traces=(),
+    )
+    payload = canonical_hybrid_reference_preview_bytes(preview)
+    digest = hybrid_reference_preview_sha256(preview)
+
+    created = store.put_hybrid_reference_preview(preview, payload, digest)
+    reused = store.put_hybrid_reference_preview(preview, payload, digest)
+    reopened = LocalArchiveStore(tmp_path)
+
+    assert created.disposition is ArchivePutDisposition.CREATED
+    assert reused.disposition is ArchivePutDisposition.REUSED
+    assert reopened.read_hybrid_reference_preview(preview.id) == payload
+
+
+def test_hybrid_reference_preview_rejects_tampered_stored_bytes(tmp_path: Path) -> None:
+    store = LocalArchiveStore(tmp_path)
+    store.initialize()
+    parent = build_hybrid_extraction_preview(
+        representation_id="rep_fixture",
+        paragraph_node_id="nod_fixture",
+        context_manifest_id="ctx_fixture",
+        ontology_card_sha256="a" * 64,
+        terminal_status=HybridPreviewStatus.COMPLETE,
+    )
+    preview = build_hybrid_reference_preview_record(
+        parent_preview_id=parent.id,
+        parent_preview_sha256=hybrid_extraction_preview_sha256(parent),
+        representation_id="rep_fixture",
+        alias_declarations=(),
+        reference_decisions=(),
+        traces=(),
+    )
+    payload = canonical_hybrid_reference_preview_bytes(preview)
+    store.put_hybrid_reference_preview(
+        preview,
+        payload,
+        hybrid_reference_preview_sha256(preview),
+    )
+    stored = tmp_path / "extraction" / "reference-previews" / f"{preview.id}.json"
+    stored.write_bytes(b"different bytes")
+
+    with pytest.raises(ValueError):
+        store.read_hybrid_reference_preview(preview.id)
 
 
 def test_put_and_reuse_pdf_transformation_blob(tmp_path: Path) -> None:

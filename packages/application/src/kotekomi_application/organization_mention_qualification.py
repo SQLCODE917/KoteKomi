@@ -3,17 +3,12 @@
 from __future__ import annotations
 
 import hashlib
-import re
 from collections import defaultdict
 from dataclasses import dataclass
 from enum import StrEnum
 from itertools import combinations
 
-_FUNCTION_WORDS = frozenset({"a", "an", "and", "at", "for", "in", "of", "on", "the", "to"})
-_PARENTHETICAL_NAME = re.compile(r"^(?P<expanded>.+?)\s+\((?P<alias>[^()]+)\)$")
-_DOTTED_GEOGRAPHIC_PREFIX = re.compile(r"^(?:[A-Z]\.){2,}\s+")
-_UPPER_GEOGRAPHIC_PREFIX = re.compile(r"^[A-Z]{2,3}\s+")
-_WORD = re.compile(r"[A-Za-zÀ-ÖØ-öø-ÿ0-9]+")
+from kotekomi_application.document_aliases import parse_parenthetical_alias
 
 
 class QualificationStatus(StrEnum):
@@ -402,36 +397,7 @@ def derive_qualified_organization_pairs(
 
 def parenthetical_organization_alias(text: str) -> tuple[str, str, bool] | None:
     """Parse one literal expanded-name and initialism declaration."""
-    matched = _PARENTHETICAL_NAME.fullmatch(text)
-    if matched is None:
-        return None
-    expanded = matched.group("expanded")
-    alias = matched.group("alias")
-    normalized_alias = _initialism_value(alias)
-    if len(normalized_alias) < 2 or normalized_alias != alias.upper().replace(".", ""):
-        return expanded, alias, False
-    candidates = (_initialism(expanded), _initialism(_remove_geographic_prefix(expanded)))
-    return expanded, alias, normalized_alias in candidates
-
-
-def _initialism(text: str) -> str:
-    values: list[str] = []
-    for word in _WORD.findall(text):
-        if word.casefold() in _FUNCTION_WORDS:
-            continue
-        values.append(word if word.isupper() and len(word) > 1 else word[0])
-    return _initialism_value("".join(values))
-
-
-def _initialism_value(text: str) -> str:
-    return "".join(character for character in text.upper() if character.isalnum())
-
-
-def _remove_geographic_prefix(text: str) -> str:
-    dotted = _DOTTED_GEOGRAPHIC_PREFIX.sub("", text, count=1)
-    if dotted != text:
-        return dotted
-    return _UPPER_GEOGRAPHIC_PREFIX.sub("", text, count=1)
+    return parse_parenthetical_alias(text)
 
 
 def _name_key(text: str) -> str:

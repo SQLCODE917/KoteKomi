@@ -14,6 +14,11 @@ from kotekomi_application import (
     ArchivePutOutcome,
     StagedArchiveObject,
 )
+from kotekomi_application.hybrid_document_references import (
+    HybridReferencePreview,
+    canonical_hybrid_reference_preview_bytes,
+    hybrid_reference_preview_from_bytes,
+)
 from kotekomi_application.hybrid_mention_interpretation import (
     HybridExtractionPreview,
     canonical_hybrid_extraction_preview_bytes,
@@ -26,6 +31,7 @@ ATTACHMENTS_DIR = Path("attachments")
 BRIEFING_DAILY_DIR = Path("briefings/daily")
 MODEL_RUNS_DIR = Path("model-runs")
 HYBRID_EXTRACTION_PREVIEWS_DIR = Path("extraction/previews")
+HYBRID_REFERENCE_PREVIEWS_DIR = Path("extraction/reference-previews")
 PDF_TRANSFORMATIONS_DIR = Path("transformations")
 STAGING_DIR = Path(".staging")
 
@@ -41,6 +47,7 @@ class LocalArchiveStore:
             BRIEFING_DAILY_DIR,
             MODEL_RUNS_DIR,
             HYBRID_EXTRACTION_PREVIEWS_DIR,
+            HYBRID_REFERENCE_PREVIEWS_DIR,
             PDF_TRANSFORMATIONS_DIR,
         ):
             self._absolute_path(relative_dir).mkdir(parents=True, exist_ok=True)
@@ -185,6 +192,56 @@ class LocalArchiveStore:
             or canonical_hybrid_extraction_preview_bytes(preview) != payload
         ):
             raise ValueError("Stored HybridExtractionPreview failed canonical validation.")
+        return payload
+
+    def put_hybrid_reference_preview(
+        self,
+        preview: HybridReferencePreview,
+        payload: bytes,
+        expected_sha256: str,
+    ) -> ArchivePutOutcome:
+        parsed = hybrid_reference_preview_from_bytes(payload)
+        if parsed != preview or canonical_hybrid_reference_preview_bytes(parsed) != payload:
+            raise ValueError("HybridReferencePreview payload is not its canonical DTO encoding.")
+        if hashlib.sha256(payload).hexdigest() != expected_sha256:
+            raise ValueError("HybridReferencePreview payload does not match expected digest.")
+        relative_path = HYBRID_REFERENCE_PREVIEWS_DIR / (f"{_validate_archive_id(preview.id)}.json")
+        absolute_path = self._absolute_path(relative_path)
+        if absolute_path.exists():
+            existing = absolute_path.read_bytes()
+            if existing != payload:
+                raise ValueError("HybridReferencePreview conflicts with its immutable identity.")
+            return ArchivePutOutcome(
+                ArchivePutDisposition.REUSED,
+                ArchiveObject(relative_path.as_posix(), len(existing)),
+            )
+        staged_relative = _staged_relative_path(relative_path)
+        staged_path = self._absolute_path(staged_relative)
+        self._write_bytes(staged_relative, staged_path, payload)
+        absolute_path.parent.mkdir(parents=True, exist_ok=True)
+        disposition = ArchivePutDisposition.CREATED
+        try:
+            os.link(staged_path, absolute_path)
+        except FileExistsError:
+            existing = absolute_path.read_bytes()
+            if existing != payload:
+                raise ValueError(
+                    "HybridReferencePreview conflicts with its immutable identity."
+                ) from None
+            disposition = ArchivePutDisposition.REUSED
+        finally:
+            staged_path.unlink(missing_ok=True)
+        return ArchivePutOutcome(
+            disposition,
+            ArchiveObject(relative_path.as_posix(), len(payload)),
+        )
+
+    def read_hybrid_reference_preview(self, preview_id: str) -> bytes:
+        relative_path = HYBRID_REFERENCE_PREVIEWS_DIR / (f"{_validate_archive_id(preview_id)}.json")
+        payload = self._absolute_path(relative_path).read_bytes()
+        preview = hybrid_reference_preview_from_bytes(payload)
+        if preview.id != preview_id or canonical_hybrid_reference_preview_bytes(preview) != payload:
+            raise ValueError("Stored HybridReferencePreview failed canonical validation.")
         return payload
 
     def read_briefing_markdown(self, briefing_id: str) -> str:
