@@ -18,7 +18,6 @@ from kotekomi_application.context_planning import (
     ContextModelProfile,
     ContextTokenizer,
     RetrievalSelectionAnalysisUnitInput,
-    SourceSegment,
     build_context_manifest,
     create_analysis_unit_from_retrieval_selection,
     paragraph_source_segments,
@@ -44,6 +43,7 @@ from kotekomi_application.hybrid_mention_interpretation import (
     canonical_hybrid_extraction_preview_bytes,
     fuse_mention_observations,
     hybrid_extraction_preview_sha256,
+    hybrid_source_segment_id,
     map_proposal_drafts_to_observations,
     observation_from_proposal,
     reconcile_mention_boundaries,
@@ -166,7 +166,7 @@ def run_hybrid_mention_preview(
     )
     segments = paragraph_source_segments(paragraph_text, PARAGRAPH_SEGMENT_V2)
     segment_ids = {
-        segment.label: _segment_id(command.representation_id, node.id, segment)
+        segment.label: hybrid_source_segment_id(command.representation_id, node.id, segment)
         for segment in segments
     }
     source_text_by_id = {segment_ids[item.label]: item.exact_text for item in segments}
@@ -694,20 +694,6 @@ def _publish_preview(
         sha256=digest,
         archive_path=f"extraction/previews/{preview.id}.json",
     )
-
-
-def _segment_id(representation_id: str, node_id: str, segment: SourceSegment) -> str:
-    payload = "\x1f".join(
-        (
-            representation_id,
-            node_id,
-            segment.label,
-            str(segment.start_char),
-            str(segment.end_char),
-            hashlib.sha256(segment.exact_text.encode()).hexdigest(),
-        )
-    )
-    return f"seg_{hashlib.sha256(payload.encode()).hexdigest()[:24]}"
 
 
 def _trace_run_id(source_segment_id: str, *model_run_ids: str) -> str:

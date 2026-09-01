@@ -980,6 +980,23 @@ def hybrid_extraction_preview_from_bytes(payload: bytes) -> HybridExtractionPrev
     return HybridExtractionPreview.model_validate_json(payload)
 
 
+def hybrid_source_segment_id(
+    representation_id: str,
+    node_id: str,
+    segment: SourceSegment,
+) -> str:
+    """Derive the stable HP-1 identity for one paragraph SourceSegment."""
+    return _id(
+        "seg",
+        representation_id,
+        node_id,
+        segment.label,
+        str(segment.start_char),
+        str(segment.end_char),
+        hashlib.sha256(segment.exact_text.encode()).hexdigest(),
+    )
+
+
 def _strict_utf8_lines(raw_output: bytes, label: str) -> str:
     try:
         text = raw_output.decode("utf-8")

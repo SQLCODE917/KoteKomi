@@ -64,6 +64,7 @@ from kotekomi_application import (
     ExplainEvidenceGraphRelationshipCommand,
     HybridMentionPreviewCommand,
     HybridPreviewStatus,
+    HybridReferencePreviewCommand,
     HypothesisVerifierSpec,
     JsonValue,
     LedgerRetrievalFilters,
@@ -160,6 +161,7 @@ from kotekomi_application import (
     review_readiness_to_json,
     run_bounded_extraction,
     run_hybrid_mention_preview,
+    run_hybrid_reference_preview,
     run_next_result_to_json,
     run_review_drain,
     run_review_next_decision,
@@ -462,6 +464,14 @@ def main(argv: list[str] | None = None) -> int:
             representation_id=args.representation_id,
             paragraph_node_id=args.node_id,
         )
+
+    if args.command == "extraction" and args.extraction_command == "resolve-references":
+        config = load_config(
+            config_path=args.config,
+            ledger_path_override=args.ledger_path,
+            archive_path_override=args.archive_path,
+        )
+        return resolve_hybrid_references(config=config, parent_preview_id=args.preview_id)
 
     if args.command == "review" and args.review_command == "approve":
         config = load_config(
@@ -994,6 +1004,13 @@ def build_parser() -> argparse.ArgumentParser:
     preview_mentions_parser.add_argument("--ledger-path", type=Path, default=None)
     preview_mentions_parser.add_argument("--archive-path", type=Path, default=None)
     _add_model_runtime_arguments(preview_mentions_parser, include_fixture=True)
+    resolve_references_parser = extraction_subparsers.add_parser(
+        "resolve-references",
+        help="Resolve exact document aliases from one immutable mention Preview.",
+    )
+    resolve_references_parser.add_argument("--preview-id", required=True)
+    resolve_references_parser.add_argument("--ledger-path", type=Path, default=None)
+    resolve_references_parser.add_argument("--archive-path", type=Path, default=None)
 
     review_parser = subparsers.add_parser("review", help="ProposedChange review commands.")
     review_subparsers = review_parser.add_subparsers(dest="review_command")
@@ -2260,6 +2277,33 @@ def preview_hybrid_mentions(
     for diagnostic in result.preview.diagnostics:
         print(diagnostic, file=sys.stderr)
     return 0 if result.preview.terminal_status is HybridPreviewStatus.COMPLETE else 1
+
+
+def resolve_hybrid_references(*, config: PipelineConfig, parent_preview_id: str) -> int:
+    """Run HP-2 and print one portable deterministic Preview result."""
+    archive = LocalArchiveStore(config.archive_path)
+    archive.initialize()
+    with sqlite_ledger_transaction(config.ledger_path) as repository:
+        result = run_hybrid_reference_preview(
+            command=HybridReferencePreviewCommand(parent_preview_id),
+            ledger=repository,
+            archive=archive,
+        )
+    print(
+        json.dumps(
+            {
+                "archive_path": result.archive_path,
+                "parent_preview_id": result.preview.parent_preview_id,
+                "preview_id": result.preview.id,
+                "sha256": result.sha256,
+                "status": result.preview.terminal_status,
+            },
+            sort_keys=True,
+        )
+    )
+    for diagnostic in result.preview.diagnostics:
+        print(diagnostic, file=sys.stderr)
+    return 0
 
 
 def _automatic_ingestion_extraction(

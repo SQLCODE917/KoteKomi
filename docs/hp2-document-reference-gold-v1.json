@@ -1,0 +1,70 @@
+{
+  "schema_version": "hp2_document_reference_gold_v1",
+  "policy_id": "hybrid_document_reference_v1",
+  "review_basis": "Accepted HP-2 deterministic alias contract",
+  "cases": [
+    {
+      "id": "HP2-01",
+      "paragraphs": [
+        "National Institute of Standards and Technology (NIST) issued guidance.",
+        "NIST revised the guidance."
+      ],
+      "focus_paragraph_index": 1,
+      "candidate_text": "NIST",
+      "expected_status": "resolved",
+      "expected_reason": "unique_explicit_alias",
+      "expected_expanded_literals": [
+        "National Institute of Standards and Technology"
+      ]
+    },
+    {
+      "id": "HP2-02",
+      "paragraphs": [
+        "Agency One (AO) acted.",
+        "Agency Other (AO) replied.",
+        "AO changed its policy."
+      ],
+      "focus_paragraph_index": 2,
+      "candidate_text": "AO",
+      "expected_status": "ambiguous",
+      "expected_reason": "conflicting_explicit_alias",
+      "expected_expanded_literals": [
+        "Agency One",
+        "Agency Other"
+      ]
+    },
+    {
+      "id": "HP2-03",
+      "paragraphs": [
+        "The institute published guidance. It revised the guidance."
+      ],
+      "focus_paragraph_index": 0,
+      "candidate_text": "It",
+      "expected_status": "unresolved",
+      "expected_reason": "semantic_resolution_deferred",
+      "expected_expanded_literals": []
+    },
+    {
+      "id": "HP2-04",
+      "paragraphs": [
+        "NIST published guidance."
+      ],
+      "focus_paragraph_index": 0,
+      "candidate_text": "NIST",
+      "expected_status": "unresolved",
+      "expected_reason": "explicit_alias_missing",
+      "expected_expanded_literals": []
+    },
+    {
+      "id": "HP2-05",
+      "paragraphs": [
+        "AI safety institutes (AISIs) coordinate research."
+      ],
+      "focus_paragraph_index": 0,
+      "candidate_text": "AISIs",
+      "expected_status": null,
+      "expected_reason": null,
+      "expected_expanded_literals": []
+    }
+  ]
+}

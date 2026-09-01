@@ -8,13 +8,17 @@ import pytest
 from kotekomi_application import (
     HybridMentionPreviewResult,
     HybridPreviewStatus,
+    HybridReferencePreviewCommand,
+    HybridReferencePreviewResult,
     ListModelRunLogsInput,
     ListModelRunLogsResult,
     ModelRunLogEntry,
     ModelRunLogLedger,
     ModelRuntimeStatus,
     build_hybrid_extraction_preview,
+    build_hybrid_reference_preview_record,
     hybrid_extraction_preview_sha256,
+    hybrid_reference_preview_sha256,
 )
 from kotekomi_pipelines.cli import main
 from kotekomi_pipelines.config import (
@@ -200,6 +204,101 @@ def test_hybrid_mention_preview_prints_exact_portable_result(
     )
     assert json.loads(capsys.readouterr().out) == {
         "archive_path": f"extraction/previews/{preview.id}.json",
+        "preview_id": preview.id,
+        "sha256": digest,
+        "status": "complete",
+    }
+
+
+def test_hybrid_reference_command_routes_parent_preview_without_model_config(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = PipelineConfig(
+        ledger_path=tmp_path / "kotekomi.db",
+        archive_path=tmp_path / "archive",
+        model_execution=ModelExecutionConfig(
+            "fixture", "fixture://local", "fixture", 300.0, 1024, 64
+        ),
+        embedding_profiles={},
+        document_retrieval_embedding_profile_id=None,
+    )
+    received: list[tuple[PipelineConfig, str]] = []
+
+    def fake_load_config(**kwargs: object) -> PipelineConfig:
+        del kwargs
+        return config
+
+    def fake_resolve(*, config: PipelineConfig, parent_preview_id: str) -> int:
+        received.append((config, parent_preview_id))
+        return 0
+
+    monkeypatch.setattr(cli, "load_config", fake_load_config)
+    monkeypatch.setattr(cli, "resolve_hybrid_references", fake_resolve)
+
+    assert main(["extraction", "resolve-references", "--preview-id", "hxp_fixture"]) == 0
+    assert received == [(config, "hxp_fixture")]
+
+
+def test_hybrid_reference_command_prints_exact_portable_result(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    config = PipelineConfig(
+        ledger_path=tmp_path / "kotekomi.db",
+        archive_path=tmp_path / "archive",
+        model_execution=ModelExecutionConfig(
+            "fixture", "fixture://local", "fixture", 300.0, 1024, 64
+        ),
+        embedding_profiles={},
+        document_retrieval_embedding_profile_id=None,
+    )
+    parent = build_hybrid_extraction_preview(
+        representation_id="rep_fixture",
+        paragraph_node_id="nod_fixture",
+        context_manifest_id="ctx_fixture",
+        ontology_card_sha256="a" * 64,
+        terminal_status=HybridPreviewStatus.COMPLETE,
+    )
+    preview = build_hybrid_reference_preview_record(
+        parent_preview_id=parent.id,
+        parent_preview_sha256=hybrid_extraction_preview_sha256(parent),
+        representation_id="rep_fixture",
+        alias_declarations=(),
+        reference_decisions=(),
+        traces=(),
+    )
+    digest = hybrid_reference_preview_sha256(preview)
+
+    class FakeArchive:
+        def __init__(self, archive_path: Path) -> None:
+            assert archive_path == config.archive_path
+
+        def initialize(self) -> None:
+            pass
+
+    @contextmanager
+    def fake_transaction(ledger_path: Path) -> Generator[object]:
+        assert ledger_path == config.ledger_path
+        yield object()
+
+    def fake_run(**kwargs: object) -> HybridReferencePreviewResult:
+        assert kwargs["command"] == HybridReferencePreviewCommand(parent.id)
+        return HybridReferencePreviewResult(
+            preview,
+            digest,
+            f"extraction/reference-previews/{preview.id}.json",
+        )
+
+    monkeypatch.setattr(cli, "LocalArchiveStore", FakeArchive)
+    monkeypatch.setattr(cli, "sqlite_ledger_transaction", fake_transaction)
+    monkeypatch.setattr(cli, "run_hybrid_reference_preview", fake_run)
+
+    assert cli.resolve_hybrid_references(config=config, parent_preview_id=parent.id) == 0
+    assert json.loads(capsys.readouterr().out) == {
+        "archive_path": f"extraction/reference-previews/{preview.id}.json",
+        "parent_preview_id": parent.id,
         "preview_id": preview.id,
         "sha256": digest,
         "status": "complete",
