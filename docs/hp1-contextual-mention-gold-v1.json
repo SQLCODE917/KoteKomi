@@ -1,0 +1,110 @@
+{
+  "schema_version": "hp1_contextual_mention_gold_v1",
+  "annotation_status": "accepted_tdd_diagnostic_gold",
+  "annotation_policy_id": "hybrid_mention_interpretation_v1",
+  "source_fixture_path": "packages/application/tests/fixtures/hybrid-mention-context-v1.json",
+  "source_fixture_sha256": "8ebc2ac409db6447c298c2b73b6c6f1fcb56bc7e9cda53aab06771f478a884a3",
+  "cases": [
+    {
+      "case_id": "HP1-01",
+      "representation_id": "rep_hp1_context_fixture",
+      "paragraph_node_id": "nod_hp1_01",
+      "source_text_sha256": "03aecb039e161ea9947fe7fd2a0a8a16e13d36537dc5f7994155164e6d54b57c",
+      "candidate": {"start": 0, "end": 14, "text": "European Union"},
+      "proposal_type_hints": ["geopolitical_entity", "organization"],
+      "expected": {"referentiality": "specific_entity", "contextual_kind": "organization", "discourse_role": "origin"},
+      "reviewer_notes": "The expression identifies the institutional origin of the guidance rather than a location."
+    },
+    {
+      "case_id": "HP1-02",
+      "representation_id": "rep_hp1_context_fixture",
+      "paragraph_node_id": "nod_hp1_02",
+      "source_text_sha256": "9f6cdb78635d1af761599aeadf7878901d52b695a96c4350ea5fe029d4645718",
+      "candidate": {"start": 0, "end": 5, "text": "AISIs"},
+      "proposal_type_hints": ["organization"],
+      "expected": {"referentiality": "generic_class", "contextual_kind": "organization", "discourse_role": "actor"},
+      "reviewer_notes": "The plural expression describes a class of institutes, not one institute."
+    },
+    {
+      "case_id": "HP1-03",
+      "representation_id": "rep_561e34f74a03ac8f05edb4a3",
+      "paragraph_node_id": "nod_561e34f74a03ac8f05edb4a3_0008",
+      "source_segment_id": "src_3597db1d9d37a0110e843d36",
+      "source_text_sha256": "730c74f24dc733581373754b323c559f1bf67fc8ca517c94673e90f3c34759fc",
+      "candidate": {"start": 40, "end": 54, "text": "European Union"},
+      "proposal_type_hints": ["geopolitical_entity", "government", "organization"],
+      "expected": {"referentiality": "specific_entity", "contextual_kind": "government", "discourse_role": "actor"},
+      "reviewer_notes": "The country-like expression has collective agency as a signatory."
+    },
+    {
+      "case_id": "HP1-04",
+      "representation_id": "rep_hp1_context_fixture",
+      "paragraph_node_id": "nod_hp1_04",
+      "source_text_sha256": "c27231f57a35a07331652a25080c19fbf9aacf4baa02c791d9e3a9d608f1cd0c",
+      "candidate": {"start": 0, "end": 13, "text": "Google Gemini"},
+      "proposal_type_hints": ["organization", "product"],
+      "expected": {"referentiality": "specific_entity", "contextual_kind": "product", "discourse_role": "actor"},
+      "reviewer_notes": "The complete expression names a product even though its first token names an Organization."
+    },
+    {
+      "case_id": "HP1-05",
+      "representation_id": "rep_hp1_context_fixture",
+      "paragraph_node_id": "nod_hp1_05",
+      "source_text_sha256": "0886d04bb32032a3a0ded18fba8ffb9d637965d101b25146ffc3c2b472845678",
+      "candidate": {"start": 34, "end": 36, "text": "It"},
+      "proposal_type_hints": ["organization"],
+      "expected": {"referentiality": "anaphoric", "contextual_kind": "organization", "discourse_role": "actor"},
+      "reviewer_notes": "The visible preceding sentence supplies an organizational antecedent."
+    },
+    {
+      "case_id": "HP1-06",
+      "representation_id": "rep_hp1_context_fixture",
+      "paragraph_node_id": "nod_hp1_06",
+      "source_text_sha256": "e4860734676e13d37a504d0ce66236acbb320e6d5d72227d6323e05b98733a6c",
+      "candidate": {"start": 0, "end": 7, "text": "Mercury"},
+      "proposal_type_hints": ["organization", "person", "place", "product"],
+      "expected": {"referentiality": "unclear", "contextual_kind": "unclear", "discourse_role": "actor"},
+      "reviewer_notes": "The action is visible, but the expression's identity and kind are underdetermined."
+    },
+    {
+      "case_id": "HP1-07",
+      "representation_id": "rep_hp1_context_fixture",
+      "paragraph_node_id": "nod_hp1_07",
+      "source_text_sha256": "87423be5631cdbe5b168668ed3b12097d424101cbfbcda9a9cb402e3f6f16317",
+      "candidate": {"start": 23, "end": 29, "text": "France"},
+      "proposal_type_hints": ["geopolitical_entity", "government", "place"],
+      "expected": {"referentiality": "specific_entity", "contextual_kind": "place", "discourse_role": "location"},
+      "reviewer_notes": "The country name is only the event location in this context."
+    },
+    {
+      "case_id": "HP1-08",
+      "representation_id": "rep_hp1_context_fixture",
+      "paragraph_node_id": "nod_hp1_08",
+      "source_text_sha256": "9434a76a70afb1dbaa6032d8cc4f0c05698a4a0aedea0cead3aeea6ec751d6d0",
+      "candidate": {"start": 21, "end": 34, "text": "Project Maven"},
+      "proposal_type_hints": ["organization", "project"],
+      "expected": {"referentiality": "specific_entity", "contextual_kind": "project", "discourse_role": "object"},
+      "reviewer_notes": "The named project is the target of the criticism."
+    },
+    {
+      "case_id": "HP1-09",
+      "representation_id": "rep_hp1_context_fixture",
+      "paragraph_node_id": "nod_hp1_09",
+      "source_text_sha256": "04561c762e62a1c9b7091c9aa419a3bc4691190a5a3710e29c5e2571f059e1c6",
+      "candidate": {"start": 4, "end": 13, "text": "Anthropic"},
+      "proposal_type_hints": ["organization"],
+      "expected": {"referentiality": "specific_entity", "contextual_kind": "organization", "discourse_role": "modifier"},
+      "reviewer_notes": "The Organization expression qualifies the policy rather than acting."
+    },
+    {
+      "case_id": "HP1-10",
+      "representation_id": "rep_hp1_context_fixture",
+      "paragraph_node_id": "nod_hp1_10",
+      "source_text_sha256": "4313db323d2838469235da607427a3c6e01138e7e474773c25cc75c0df88b5d0",
+      "candidate": {"start": 0, "end": 15, "text": "IndiaAI Mission"},
+      "proposal_type_hints": ["initiative", "organization", "project"],
+      "expected": {"referentiality": "specific_entity", "contextual_kind": "initiative", "discourse_role": "actor"},
+      "reviewer_notes": "The source treats the named coordinated mission as the actor, not as a standing institution."
+    }
+  ]
+}

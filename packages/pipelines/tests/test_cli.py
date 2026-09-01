@@ -1,19 +1,26 @@
 import json
+from collections.abc import Generator
+from contextlib import contextmanager
 from pathlib import Path
 
 import kotekomi_pipelines.cli as cli
 import pytest
 from kotekomi_application import (
+    HybridMentionPreviewResult,
+    HybridPreviewStatus,
     ListModelRunLogsInput,
     ListModelRunLogsResult,
     ModelRunLogEntry,
     ModelRunLogLedger,
     ModelRuntimeStatus,
+    build_hybrid_extraction_preview,
+    hybrid_extraction_preview_sha256,
 )
 from kotekomi_pipelines.cli import main
 from kotekomi_pipelines.config import (
     CheckoutBuildIdentityError,
     ModelExecutionConfig,
+    PipelineConfig,
     checkout_artifact_digest,
     derive_checkout_build_identity,
     load_config,
@@ -73,6 +80,130 @@ def test_review_commands_expose_optional_canonical_predicate() -> None:
     assert approve.canonical_predicate == "has_policy_conflict_with"
     assert run_next.canonical_predicate == "has_policy_conflict_with"
     assert edit.canonical_predicate == "has_policy_conflict_with"
+
+
+def test_hybrid_mention_preview_command_routes_explicit_source_identity(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = PipelineConfig(
+        ledger_path=tmp_path / "kotekomi.db",
+        archive_path=tmp_path / "archive",
+        model_execution=ModelExecutionConfig(
+            "fixture",
+            "fixture://local",
+            "qwen2.5-fixture",
+            300.0,
+            16_384,
+            512,
+        ),
+        embedding_profiles={},
+        document_retrieval_embedding_profile_id=None,
+    )
+    received: list[tuple[PipelineConfig, str, str]] = []
+
+    def fake_load_model_config(**kwargs: object) -> PipelineConfig:
+        del kwargs
+        return config
+
+    def fake_preview_hybrid_mentions(
+        *, config: PipelineConfig, representation_id: str, paragraph_node_id: str
+    ) -> int:
+        received.append((config, representation_id, paragraph_node_id))
+        return 0
+
+    monkeypatch.setattr(cli, "_load_model_config", fake_load_model_config)
+    monkeypatch.setattr(cli, "preview_hybrid_mentions", fake_preview_hybrid_mentions)
+
+    assert (
+        main(
+            [
+                "extraction",
+                "preview-mentions",
+                "--representation-id",
+                "rep_fixture",
+                "--node-id",
+                "nod_fixture",
+            ]
+        )
+        == 0
+    )
+    assert received == [(config, "rep_fixture", "nod_fixture")]
+
+
+def test_hybrid_mention_preview_prints_exact_portable_result(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    config = PipelineConfig(
+        ledger_path=tmp_path / "kotekomi.db",
+        archive_path=tmp_path / "archive",
+        model_execution=ModelExecutionConfig(
+            "fixture",
+            "fixture://local",
+            "qwen2.5-fixture",
+            300.0,
+            16_384,
+            512,
+        ),
+        embedding_profiles={},
+        document_retrieval_embedding_profile_id=None,
+    )
+    preview = build_hybrid_extraction_preview(
+        representation_id="rep_fixture",
+        paragraph_node_id="nod_fixture",
+        context_manifest_id="ctx_fixture",
+        ontology_card_sha256="a" * 64,
+        terminal_status=HybridPreviewStatus.COMPLETE,
+    )
+    digest = hybrid_extraction_preview_sha256(preview)
+
+    class FakeArchive:
+        def __init__(self, archive_path: Path) -> None:
+            assert archive_path == config.archive_path
+
+        def initialize(self) -> None:
+            pass
+
+    @contextmanager
+    def fake_transaction(ledger_path: Path) -> Generator[object]:
+        assert ledger_path == config.ledger_path
+        yield object()
+
+    def fake_run(**kwargs: object) -> HybridMentionPreviewResult:
+        assert kwargs["prompt_bytes"]
+        assert kwargs["ontology_card_bytes"]
+        return HybridMentionPreviewResult(
+            preview,
+            digest,
+            f"extraction/previews/{preview.id}.json",
+        )
+
+    def fake_build_runtime(config_value: object) -> object:
+        del config_value
+        return object()
+
+    monkeypatch.setattr(cli, "LocalArchiveStore", FakeArchive)
+    monkeypatch.setattr(cli, "sqlite_ledger_transaction", fake_transaction)
+    monkeypatch.setattr(cli, "build_model_task_runtime", fake_build_runtime)
+    monkeypatch.setattr(cli, "GlinerMentionProposer", lambda: object())
+    monkeypatch.setattr(cli, "run_hybrid_mention_preview", fake_run)
+
+    assert (
+        cli.preview_hybrid_mentions(
+            config=config,
+            representation_id="rep_fixture",
+            paragraph_node_id="nod_fixture",
+        )
+        == 0
+    )
+    assert json.loads(capsys.readouterr().out) == {
+        "archive_path": f"extraction/previews/{preview.id}.json",
+        "preview_id": preview.id,
+        "sha256": digest,
+        "status": "complete",
+    }
 
 
 def test_entrypoint_reports_application_validation_errors_without_traceback(

@@ -1,6 +1,6 @@
 # TDD: Hybrid Mention Interpretation MVP
 
-- Status: Proposed
+- Status: Accepted
 - Program: [Hybrid Intelligence Extraction Pipeline](2026-09-01-hybrid-intelligence-extraction-pipeline.md)
 - Increment: HP-1
 - Depends on: [Staged Model Extraction](2026-07-11-staged-model-extraction.md)
@@ -223,7 +223,7 @@ HP-1 reuses ExtractionStageTrace as derived diagnostic evidence.
 
 ```text
 MentionObservation
-  observation_id
+  id
   source_segment_id
   start
   end
@@ -231,27 +231,32 @@ MentionObservation
   type_hints
   producer_id
   execution_record_id
+  score
   diagnostics
 
 MentionCandidate
-  candidate_id
+  id
   source_segment_id
+  source_text_sha256
   start
   end
   text
   observation_ids
-  boundary_status
-  boundary_rule_id
+  type_hints
 
 MentionBoundaryDecision
-  decision_id
+  id
+  source_segment_id
   candidate_ids
   status
   rule_id
   selected_candidate_ids
+  preserved_candidate_ids
+  alias_evidence_candidate_ids
+  diagnostics
 
 MentionInterpretation
-  interpretation_id
+  id
   candidate_id
   referentiality
   contextual_kind
@@ -261,16 +266,19 @@ MentionInterpretation
   trace_id
 
 HybridExtractionPreview
-  preview_id
+  schema_version
+  id
   representation_id
   paragraph_node_id
   context_manifest_id
   policy_id
-  ontology_card_digest
+  ontology_card_sha256
   observations
   candidates
   boundary_decisions
   interpretations
+  extraction_task_ids
+  model_run_ids
   traces
   terminal_status
   diagnostics
@@ -315,6 +323,11 @@ The Archive stores each HybridExtractionPreview as derived evidence.
 
 The Ledger stores only the existing execution records created by HP-1.
 
+The reviewed diagnostic catalog is `docs/hp1-contextual-mention-gold-v1.json`.
+
+The catalog binds its exact source text to
+`packages/application/tests/fixtures/hybrid-mention-context-v1.json`.
+
 ## APIs / Interfaces
 
 The Operator CLI adds `kotekomi extraction preview-mentions`.
@@ -327,6 +340,21 @@ The command emits one JSON object to stdout.
 
 The command sends runtime diagnostics to stderr.
 
+The command returns exit code `0` only for a `complete` preview.
+
+The command returns exit code `1` for a `partial` or `blocked` preview.
+
+The command prints these fields for every published preview:
+
+```text
+status
+preview_id
+sha256
+archive_path
+```
+
+The Archive path is `extraction/previews/<preview-id>.json`.
+
 The Application Layer defines one generic MentionProposer Port.
 
 The GLiNER Adapter implements the generic MentionProposer Port.
@@ -337,11 +365,30 @@ The Application Layer defines one PreviewStore Port.
 
 The Archive Adapter implements the PreviewStore Port.
 
+The PreviewStore rejects different bytes for an existing Preview identity.
+
+The PreviewStore can reuse identical bytes for an existing Preview identity.
+
+The Application Layer derives the Preview identity from the canonical Preview body.
+
+The Preview body excludes the Preview identity during identity derivation.
+
+The Preview body includes the nondeterministic ModelRun and trace identities.
+
+Therefore, a new model execution creates a new Preview identity.
+
 ## Behavior & Domain Rules
 
 The Pipeline requires both proposer results before it reconciles candidates.
 
 One blocked proposer produces a blocked HybridExtractionPreview and skips reconciliation.
+
+One proposer output that fails its complete output contract produces a blocked
+HybridExtractionPreview and skips reconciliation.
+
+One valid proposer abstention supplies an empty proposal set.
+
+The Pipeline continues after one valid proposer abstention when the other proposer succeeds.
 
 One invalid MentionObservation does not invalidate another source-valid observation.
 
@@ -361,9 +408,50 @@ The terminal preview reports `complete`, `partial`, or `blocked`.
 
 A partial preview contains at least one valid MentionCandidate and one failed interpretation task.
 
+A complete preview can contain no MentionCandidate when both proposer executions terminate with
+valid empty results.
+
 ReFinED does not run during HP-1.
 
 HP-1 does not resolve global entity identity or document-level coreference.
+
+### Model output contracts
+
+The Qwen2.5 proposer returns one line for each proposal:
+
+```text
+mention: <sN> | <contextual-kind>[,<contextual-kind>...] | <literal expression>
+```
+
+The Qwen2.5 proposer can return one abstention line:
+
+```text
+abstain: <non-empty reason>
+```
+
+The Application Layer maps each literal expression only inside its named SourceSegment.
+
+The Qwen2.5 interpretation task returns exactly five lines:
+
+```text
+candidate: c1
+referentiality: <allowed Referentiality value>
+contextual_kind: <allowed ContextualKind value>
+discourse_role: <allowed DiscourseRole value>
+support: <sN>
+```
+
+The Application Layer rejects a different line order, an unknown value, or another line.
+
+### Proposer execution records
+
+The Pipeline records one ExtractionTask and one ModelRun for the GLiNER proposer.
+
+The Pipeline records one ExtractionTask and one ModelRun for the Qwen2.5 proposer.
+
+The Pipeline stores the canonical GLiNER Adapter output as the GLiNER ModelRun raw output.
+
+The Pipeline stores the exact Qwen2.5 runtime output as the Qwen2.5 ModelRun raw output.
 
 ## Acceptance Criteria
 

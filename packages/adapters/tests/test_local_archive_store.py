@@ -3,7 +3,14 @@ from pathlib import Path
 
 import pytest
 from kotekomi_adapters import LocalArchiveStore
-from kotekomi_application import StagedArchiveObject
+from kotekomi_application import (
+    ArchivePutDisposition,
+    HybridPreviewStatus,
+    StagedArchiveObject,
+    build_hybrid_extraction_preview,
+    canonical_hybrid_extraction_preview_bytes,
+    hybrid_extraction_preview_sha256,
+)
 
 
 def test_initialize_creates_archive_directories(tmp_path: Path) -> None:
@@ -15,6 +22,7 @@ def test_initialize_creates_archive_directories(tmp_path: Path) -> None:
     assert not (tmp_path / "documents" / "extracted").exists()
     assert (tmp_path / "attachments").is_dir()
     assert (tmp_path / "briefings" / "daily").is_dir()
+    assert (tmp_path / "extraction" / "previews").is_dir()
     assert (tmp_path / "transformations").is_dir()
 
 
@@ -46,6 +54,50 @@ def test_put_and_read_model_run_output(tmp_path: Path) -> None:
 
     assert outcome.object.relative_path == "model-runs/mrn_fixture_output.json"
     assert store.read_model_run_output("mrn_fixture_output") == content
+
+
+def test_put_reuse_and_restart_hybrid_extraction_preview(tmp_path: Path) -> None:
+    store = LocalArchiveStore(tmp_path)
+    store.initialize()
+    preview = build_hybrid_extraction_preview(
+        representation_id="rep_fixture",
+        paragraph_node_id="nod_fixture",
+        context_manifest_id="ctx_fixture",
+        ontology_card_sha256="a" * 64,
+        terminal_status=HybridPreviewStatus.COMPLETE,
+    )
+    payload = canonical_hybrid_extraction_preview_bytes(preview)
+    digest = hybrid_extraction_preview_sha256(preview)
+
+    created = store.put_hybrid_extraction_preview(preview, payload, digest)
+    reused = store.put_hybrid_extraction_preview(preview, payload, digest)
+    reopened = LocalArchiveStore(tmp_path)
+
+    assert created.disposition is ArchivePutDisposition.CREATED
+    assert reused.disposition is ArchivePutDisposition.REUSED
+    assert reopened.read_hybrid_extraction_preview(preview.id) == payload
+
+
+def test_hybrid_extraction_preview_rejects_immutable_identity_conflict(
+    tmp_path: Path,
+) -> None:
+    store = LocalArchiveStore(tmp_path)
+    store.initialize()
+    preview = build_hybrid_extraction_preview(
+        representation_id="rep_fixture",
+        paragraph_node_id="nod_fixture",
+        context_manifest_id="ctx_fixture",
+        ontology_card_sha256="a" * 64,
+        terminal_status=HybridPreviewStatus.COMPLETE,
+    )
+    payload = canonical_hybrid_extraction_preview_bytes(preview)
+    digest = hybrid_extraction_preview_sha256(preview)
+    store.put_hybrid_extraction_preview(preview, payload, digest)
+    stored_path = tmp_path / "extraction" / "previews" / f"{preview.id}.json"
+    stored_path.write_bytes(b"different bytes")
+
+    with pytest.raises(ValueError, match="immutable identity"):
+        store.put_hybrid_extraction_preview(preview, payload, digest)
 
 
 def test_put_and_reuse_pdf_transformation_blob(tmp_path: Path) -> None:

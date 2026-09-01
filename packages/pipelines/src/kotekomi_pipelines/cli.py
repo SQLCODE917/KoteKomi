@@ -19,6 +19,7 @@ from kotekomi_adapters import (
     DoclingPdfParser,
     DoclingPdfParserConfig,
     GenericArticleAdapter,
+    GlinerMentionProposer,
     LlamaServerEmbeddingAdapter,
     LMStudioEmbeddingAdapter,
     LocalArchiveStore,
@@ -61,6 +62,8 @@ from kotekomi_application import (
     EmbeddingProfile,
     ExecutionSetting,
     ExplainEvidenceGraphRelationshipCommand,
+    HybridMentionPreviewCommand,
+    HybridPreviewStatus,
     HypothesisVerifierSpec,
     JsonValue,
     LedgerRetrievalFilters,
@@ -156,6 +159,7 @@ from kotekomi_application import (
     review_queue_result_to_json,
     review_readiness_to_json,
     run_bounded_extraction,
+    run_hybrid_mention_preview,
     run_next_result_to_json,
     run_review_drain,
     run_review_next_decision,
@@ -438,6 +442,25 @@ def main(argv: list[str] | None = None) -> int:
             server_command=args.server_command,
             llama_server_path=getattr(args, "llama_server_path", None),
             output_format=args.output_format,
+        )
+
+    if args.command == "extraction" and args.extraction_command == "preview-mentions":
+        config = _load_model_config(
+            config_path=args.config,
+            ledger_path_override=args.ledger_path,
+            archive_path_override=args.archive_path,
+            runtime_profile=args.runtime_profile,
+            model_runtime_adapter=args.model_runtime,
+            model_endpoint=args.model_endpoint,
+            model_name=args.model_name,
+            model_timeout_seconds=args.model_timeout_seconds,
+            model_context_tokens=args.model_context_tokens,
+            model_max_output_tokens=args.model_max_output_tokens,
+        )
+        return preview_hybrid_mentions(
+            config=config,
+            representation_id=args.representation_id,
+            paragraph_node_id=args.node_id,
         )
 
     if args.command == "review" and args.review_command == "approve":
@@ -956,6 +979,21 @@ def build_parser() -> argparse.ArgumentParser:
             choices=("text", "json"),
             default="text",
         )
+
+    extraction_parser = subparsers.add_parser(
+        "extraction",
+        help="Derived intelligence extraction previews.",
+    )
+    extraction_subparsers = extraction_parser.add_subparsers(dest="extraction_command")
+    preview_mentions_parser = extraction_subparsers.add_parser(
+        "preview-mentions",
+        help="Interpret broad mention candidates from one authoritative paragraph.",
+    )
+    preview_mentions_parser.add_argument("--representation-id", required=True)
+    preview_mentions_parser.add_argument("--node-id", required=True)
+    preview_mentions_parser.add_argument("--ledger-path", type=Path, default=None)
+    preview_mentions_parser.add_argument("--archive-path", type=Path, default=None)
+    _add_model_runtime_arguments(preview_mentions_parser, include_fixture=True)
 
     review_parser = subparsers.add_parser("review", help="ProposedChange review commands.")
     review_subparsers = review_parser.add_subparsers(dest="review_command")
@@ -2161,6 +2199,67 @@ class _AutomaticExtractionTokenizer:
 
     def count_tokens(self, rendered_input: bytes) -> int:
         return len(rendered_input.decode("utf-8").split())
+
+
+def preview_hybrid_mentions(
+    *,
+    config: PipelineConfig,
+    representation_id: str,
+    paragraph_node_id: str,
+) -> int:
+    """Run HP-1 and print one portable preview result."""
+    archive = LocalArchiveStore(config.archive_path)
+    archive.initialize()
+    runtime = build_model_task_runtime(config.model_execution)
+    prompt_bytes = (
+        Path(__file__).resolve().parents[4] / "prompts" / "hybrid_mention_task_v1.md"
+    ).read_bytes()
+    ontology_card_bytes = (
+        Path(__file__).resolve().parents[4] / "prompts" / "hybrid_mention_ontology_card_v1.md"
+    ).read_bytes()
+    with sqlite_ledger_transaction(config.ledger_path) as repository:
+        result = run_hybrid_mention_preview(
+            command=HybridMentionPreviewCommand(
+                representation_id=representation_id,
+                paragraph_node_id=paragraph_node_id,
+                model_profile=ContextModelProfile(
+                    config.model_execution.profile_name or "lm-studio",
+                    config.model_execution.context_tokens,
+                    config.model_execution.max_output_tokens,
+                    256,
+                ),
+                generation_parameters=(
+                    ExecutionSetting(
+                        "max_output_tokens",
+                        config.model_execution.max_output_tokens,
+                    ),
+                    ExecutionSetting("seed", 17),
+                    ExecutionSetting("temperature", 0),
+                ),
+            ),
+            ledger=repository,
+            archive=archive,
+            proposer=GlinerMentionProposer(),
+            model_runtime=runtime,
+            model_run_id_factory=Uuid4ModelRunIdFactory(),
+            tokenizer=_AutomaticExtractionTokenizer(),
+            prompt_bytes=prompt_bytes,
+            ontology_card_bytes=ontology_card_bytes,
+        )
+    print(
+        json.dumps(
+            {
+                "archive_path": result.archive_path,
+                "preview_id": result.preview.id,
+                "sha256": result.sha256,
+                "status": result.preview.terminal_status.value,
+            },
+            sort_keys=True,
+        )
+    )
+    for diagnostic in result.preview.diagnostics:
+        print(diagnostic, file=sys.stderr)
+    return 0 if result.preview.terminal_status is HybridPreviewStatus.COMPLETE else 1
 
 
 def _automatic_ingestion_extraction(

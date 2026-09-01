@@ -9,9 +9,14 @@ from kotekomi_adapters.gliner_organization_mention_proposer import (
     GLINER_MODEL_ID,
     GLINER_MODEL_REVISION,
     GLINER_THRESHOLD,
+    GlinerMentionProposer,
     GlinerOrganizationMentionProposer,
 )
-from kotekomi_application import OrganizationMentionProposalInput
+from kotekomi_application import (
+    MentionProposalInput,
+    OrganizationMentionProposalInput,
+    SourceSegment,
+)
 
 
 class FakeGlinerModel:
@@ -97,3 +102,35 @@ def test_gliner_adapter_rejects_unpinned_package_version(
 
     with pytest.raises(RuntimeError, match="must be 0.2.28"):
         GlinerOrganizationMentionProposer()
+
+
+def test_generic_gliner_adapter_uses_requested_labels_and_source_segment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "kotekomi_adapters.gliner_organization_mention_proposer.version",
+        _version_028,
+    )
+    model = FakeGlinerModel(
+        [{"text": "Gemini", "start": 0, "end": 6, "score": 0.87, "label": "product"}]
+    )
+    loads: list[tuple[str, str, str]] = []
+    times = _clock(1.0, 1.125, 2.0, 2.01)
+    proposer = GlinerMentionProposer(
+        model_loader=lambda model_id, revision, device: (
+            loads.append((model_id, revision, device)) or model
+        ),
+        monotonic_clock=lambda: next(times),
+    )
+    proposal_input = MentionProposalInput(
+        (SourceSegment("s1", 0, 14, "Gemini acted."),),
+        ("organization", "product"),
+    )
+
+    result = proposer.propose(proposal_input)
+
+    assert loads == [(GLINER_MODEL_ID, GLINER_MODEL_REVISION, GLINER_DEVICE)]
+    assert model.calls == [("Gemini acted.", ["organization", "product"], GLINER_THRESHOLD)]
+    assert result.configuration == (("device", "cpu"), ("threshold", 0.5))
+    assert result.proposals[0].source_segment_label == "s1"
+    assert result.proposals[0].type_hints == ("product",)
