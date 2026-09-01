@@ -44,6 +44,13 @@ from kotekomi_application.grounded_candidates import (
     ProposedChangeBatchOutcome,
     prepare_grounded_candidate_batch,
 )
+from kotekomi_application.hybrid_mention_interpretation import (
+    MentionInterpretationDraft,
+    MentionProposalAbstention,
+    MentionProposalDraftBatch,
+    hybrid_mention_task_schema_bytes,
+    parse_hybrid_mention_task_output,
+)
 from kotekomi_application.organization_semantic_qualification import (
     OrganizationQualificationJudgment,
     parse_organization_qualification_output,
@@ -359,6 +366,22 @@ class OrganizationQualificationLabelTaskSchemaRegistry:
         )
 
 
+class HybridMentionTaskSchemaRegistry:
+    """The pinned proposal and contextual interpretation output contracts."""
+
+    schema_id = "hybrid_mention_task_text_v1"
+
+    def resolve(self, schema_id: str) -> PinnedTaskSchema:
+        if schema_id != self.schema_id:
+            raise ValueError(f"Unsupported hybrid mention task schema: {schema_id}")
+        return PinnedTaskSchema(
+            schema_id=self.schema_id,
+            canonical_schema_bytes=hybrid_mention_task_schema_bytes(),
+            output_contract_version=self.schema_id,
+            parse=parse_hybrid_mention_task_output,
+        )
+
+
 @dataclass(frozen=True)
 class BoundedExtractionInput:
     source_id: str
@@ -370,6 +393,8 @@ class BoundedExtractionInput:
     validator_version: str
     hypothesis_verifier: HypothesisVerifierSpec | None = None
     task_type: str = "claim_extraction"
+    input_candidate_ids: tuple[str, ...] = ()
+    task_local_input: bytes = b""
 
 
 @dataclass(frozen=True)
@@ -381,6 +406,8 @@ class BoundedExtractionOutcome:
     organization_mentions: tuple[OrganizationMention, ...] = ()
     organization_qualification: OrganizationQualification | None = None
     organization_qualification_judgment: OrganizationQualificationJudgment | None = None
+    mention_proposal_drafts: MentionProposalDraftBatch | None = None
+    mention_interpretation_draft: MentionInterpretationDraft | None = None
 
 
 @dataclass(frozen=True)
@@ -458,6 +485,9 @@ type ParsedModelOutput = (
     | OrganizationQualification
     | OrganizationQualificationRejection
     | OrganizationQualificationJudgment
+    | MentionProposalDraftBatch
+    | MentionProposalAbstention
+    | MentionInterpretationDraft
 )
 
 
@@ -504,13 +534,14 @@ def run_bounded_extraction(
         raise ValueError("Bounded extraction requires a ready ContextManifest.")
     if manifest.representation_id != extraction_input.representation_id:
         raise ValueError("Bounded extraction ContextManifest does not match its representation.")
-    rendered_input = render_context(
+    rendered_context = render_context(
         manifest.id,
         ledger_repository,
         tokenizer,
         extraction_input.prompt_bytes,
         schema.canonical_schema_bytes,
     )
+    rendered_input = _compose_task_input(rendered_context, extraction_input.task_local_input)
     _validate_execution_spec(execution_spec, manifest, rendered_input, schema)
     if model_runtime.configured_identity != execution_spec.model_identity:
         raise ValueError("Model runtime configured identity does not match the execution spec.")
@@ -584,7 +615,12 @@ def run_bounded_extraction(
         ledger_repository.save_model_run(run)
         return BoundedExtractionOutcome(task, run, None)
     try:
-        _validate_execution_receipt(response.execution_receipt, execution_spec, manifest)
+        _validate_execution_receipt(
+            response.execution_receipt,
+            execution_spec,
+            manifest,
+            expected_input_token_count=tokenizer.count_tokens(rendered_input),
+        )
         parsed = _parse_output(response.raw_output, manifest, schema)
         if isinstance(
             parsed,
@@ -593,6 +629,7 @@ def run_bounded_extraction(
                 HypothesisBatchAbstention,
                 OrganizationMentionBatchAbstention,
                 OrganizationQualificationRejection,
+                MentionProposalAbstention,
             ),
         ):
             run = _model_run(
@@ -719,6 +756,56 @@ def run_bounded_extraction(
                 None,
                 organization_qualification_judgment=parsed,
             )
+        if isinstance(parsed, MentionProposalDraftBatch):
+            run = _model_run(
+                extraction_input,
+                manifest,
+                task,
+                model_run_id,
+                ModelRunStatus.SUCCEEDED,
+                started_at=started_at,
+                completed_at=completed_at,
+                execution_diagnostics=diagnostics,
+                output_digest=output_digest,
+                execution_receipt=response.execution_receipt,
+                outcome_metadata={
+                    "contract": "hybrid_mention_proposal_text_v1",
+                    "proposal_count": len(parsed.proposals),
+                },
+            )
+            ledger_repository.save_model_run(run)
+            return BoundedExtractionOutcome(
+                task,
+                run,
+                None,
+                mention_proposal_drafts=parsed,
+            )
+        if isinstance(parsed, MentionInterpretationDraft):
+            run = _model_run(
+                extraction_input,
+                manifest,
+                task,
+                model_run_id,
+                ModelRunStatus.SUCCEEDED,
+                started_at=started_at,
+                completed_at=completed_at,
+                execution_diagnostics=diagnostics,
+                output_digest=output_digest,
+                execution_receipt=response.execution_receipt,
+                outcome_metadata={
+                    "contract": "hybrid_mention_interpretation_text_v1",
+                    "referentiality": parsed.referentiality.value,
+                    "contextual_kind": parsed.contextual_kind.value,
+                    "discourse_role": parsed.discourse_role.value,
+                },
+            )
+            ledger_repository.save_model_run(run)
+            return BoundedExtractionOutcome(
+                task,
+                run,
+                None,
+                mention_interpretation_draft=parsed,
+            )
         batch_input, outcome_metadata = _grounded_batch(
             extraction_input,
             manifest,
@@ -797,25 +884,34 @@ def run_bounded_extraction(
 def _extraction_task(
     extraction_input: BoundedExtractionInput, manifest: ContextManifest
 ) -> ExtractionTask:
-    fingerprint = _digest(
-        {
-            "task_type": extraction_input.task_type,
-            "source_id": extraction_input.source_id,
-            "document_id": extraction_input.document_id,
-            "representation_id": extraction_input.representation_id,
-            "context_manifest_digest": manifest.manifest_digest,
-            "prompt_id": manifest.prompt_id,
-            "schema_id": manifest.schema_id,
-            "execution_spec_digest": model_execution_spec_digest(extraction_input.execution_spec),
-            "validator_version": extraction_input.validator_version,
-        }
-    )
+    fingerprint_payload: dict[str, JsonValue] = {
+        "task_type": extraction_input.task_type,
+        "source_id": extraction_input.source_id,
+        "document_id": extraction_input.document_id,
+        "representation_id": extraction_input.representation_id,
+        "context_manifest_digest": manifest.manifest_digest,
+        "prompt_id": manifest.prompt_id,
+        "schema_id": manifest.schema_id,
+        "execution_spec_digest": model_execution_spec_digest(extraction_input.execution_spec),
+        "validator_version": extraction_input.validator_version,
+    }
+    if extraction_input.input_candidate_ids:
+        fingerprint_payload["input_candidate_ids"] = list(extraction_input.input_candidate_ids)
+    if extraction_input.task_local_input:
+        fingerprint_payload["task_local_input_digest"] = hashlib.sha256(
+            extraction_input.task_local_input
+        ).hexdigest()
+    fingerprint = _digest(fingerprint_payload)
     return ExtractionTask(
         id=f"ext_{fingerprint[:HASH_ID_LENGTH]}",
         task_type=extraction_input.task_type,
         context_manifest_id=manifest.id,
         context_manifest_digest=manifest.manifest_digest,
-        context_manifest_payload=cast(dict[str, JsonValue], _manifest_payload(manifest)),
+        context_manifest_payload=cast(
+            dict[str, JsonValue],
+            _manifest_payload(manifest, task_local_input=extraction_input.task_local_input),
+        ),
+        input_candidate_ids=extraction_input.input_candidate_ids,
         prompt_id=manifest.prompt_id,
         schema_id=manifest.schema_id,
         model_profile_id=extraction_input.execution_spec.model_profile_id,
@@ -1687,8 +1783,11 @@ def _abstention_outcome_metadata(
     output: SemanticDraftAbstention
     | HypothesisBatchAbstention
     | OrganizationMentionBatchAbstention
-    | OrganizationQualificationRejection,
+    | OrganizationQualificationRejection
+    | MentionProposalAbstention,
 ) -> dict[str, JsonValue]:
+    if isinstance(output, MentionProposalAbstention):
+        return {"contract": "hybrid_mention_proposal_text_v1", "proposal_count": 0}
     if isinstance(output, HypothesisBatchAbstention):
         contract = "paragraph_hypothesis_text_v1"
     elif isinstance(output, OrganizationMentionBatchAbstention):
@@ -1700,8 +1799,10 @@ def _abstention_outcome_metadata(
     return {"contract": contract, "unique_claim_count": 0, "duplicate_claim_lines": []}
 
 
-def _manifest_payload(manifest: ContextManifest) -> dict[str, object]:
-    return {
+def _manifest_payload(
+    manifest: ContextManifest, *, task_local_input: bytes = b""
+) -> dict[str, object]:
+    payload: dict[str, object] = {
         "id": manifest.id,
         "manifest_digest": manifest.manifest_digest,
         "rendered_input_base64": base64.b64encode(manifest.rendered_input).decode("ascii"),
@@ -1712,6 +1813,16 @@ def _manifest_payload(manifest: ContextManifest) -> dict[str, object]:
             for item in manifest.excluded_candidates
         ],
     }
+    if task_local_input:
+        payload["task_local_input_base64"] = base64.b64encode(task_local_input).decode("ascii")
+        payload["task_local_input_digest"] = hashlib.sha256(task_local_input).hexdigest()
+    return payload
+
+
+def _compose_task_input(rendered_context: bytes, task_local_input: bytes) -> bytes:
+    if not task_local_input:
+        return rendered_context
+    return rendered_context + b"\n\n[task]\n" + task_local_input
 
 
 def _settings_payload(settings: tuple[ExecutionSetting, ...]) -> dict[str, ExecutionScalar]:

@@ -1,0 +1,65 @@
+{
+  "schema_version": "hybrid_mention_context_fixture_v1",
+  "paragraphs": [
+    {
+      "case_id": "HP1-01",
+      "representation_id": "rep_hp1_context_fixture",
+      "paragraph_node_id": "nod_hp1_01",
+      "text": "European Union guidance was adopted by the institute."
+    },
+    {
+      "case_id": "HP1-02",
+      "representation_id": "rep_hp1_context_fixture",
+      "paragraph_node_id": "nod_hp1_02",
+      "text": "AISIs have prioritized the hiring of technical staff."
+    },
+    {
+      "case_id": "HP1-03",
+      "representation_id": "rep_561e34f74a03ac8f05edb4a3",
+      "paragraph_node_id": "nod_561e34f74a03ac8f05edb4a3_0008",
+      "text": "At the AI Seoul Summit in May 2024, the European Union and other countries agreed to create their own AI safety institutes, forming an international network."
+    },
+    {
+      "case_id": "HP1-04",
+      "representation_id": "rep_hp1_context_fixture",
+      "paragraph_node_id": "nod_hp1_04",
+      "text": "Google Gemini competed with another model."
+    },
+    {
+      "case_id": "HP1-05",
+      "representation_id": "rep_hp1_context_fixture",
+      "paragraph_node_id": "nod_hp1_05",
+      "text": "The institute published guidance. It later revised the guidance."
+    },
+    {
+      "case_id": "HP1-06",
+      "representation_id": "rep_hp1_context_fixture",
+      "paragraph_node_id": "nod_hp1_06",
+      "text": "Mercury changed its policy."
+    },
+    {
+      "case_id": "HP1-07",
+      "representation_id": "rep_hp1_context_fixture",
+      "paragraph_node_id": "nod_hp1_07",
+      "text": "The summit occurred in France."
+    },
+    {
+      "case_id": "HP1-08",
+      "representation_id": "rep_hp1_context_fixture",
+      "paragraph_node_id": "nod_hp1_08",
+      "text": "Officials criticized Project Maven."
+    },
+    {
+      "case_id": "HP1-09",
+      "representation_id": "rep_hp1_context_fixture",
+      "paragraph_node_id": "nod_hp1_09",
+      "text": "The Anthropic policy applies to all staff."
+    },
+    {
+      "case_id": "HP1-10",
+      "representation_id": "rep_hp1_context_fixture",
+      "paragraph_node_id": "nod_hp1_10",
+      "text": "IndiaAI Mission announced a new grant."
+    }
+  ]
+}

@@ -9,6 +9,7 @@ if TYPE_CHECKING:
         preflight_pdf_source,
     )
     from kotekomi_adapters.gliner_organization_mention_proposer import (
+        GlinerMentionProposer,
         GlinerOrganizationMentionProposer,
     )
     from kotekomi_adapters.llama_server_embeddings import LlamaServerEmbeddingAdapter
@@ -42,6 +43,7 @@ __all__ = [
     "HttpResponse",
     "GenericArticleAdapter",
     "GlinerOrganizationMentionProposer",
+    "GlinerMentionProposer",
     "JsonHttpClient",
     "ImmutableCommitDisposition",
     "ImmutableRecordConflict",
@@ -67,12 +69,16 @@ __all__ = [
 
 
 def __getattr__(name: str) -> object:
-    if name == "GlinerOrganizationMentionProposer":
+    if name in {"GlinerMentionProposer", "GlinerOrganizationMentionProposer"}:
         from kotekomi_adapters.gliner_organization_mention_proposer import (
+            GlinerMentionProposer,
             GlinerOrganizationMentionProposer,
         )
 
-        return GlinerOrganizationMentionProposer
+        return {
+            "GlinerMentionProposer": GlinerMentionProposer,
+            "GlinerOrganizationMentionProposer": GlinerOrganizationMentionProposer,
+        }[name]
     if name in {"DoclingPdfParser", "DoclingPdfParserConfig", "preflight_pdf_source"}:
         from kotekomi_adapters.docling_pdf_parser import (
             DoclingPdfParser,

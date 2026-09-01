@@ -38,6 +38,7 @@ from kotekomi_application.briefing_generation import (
 from kotekomi_application.context_planning import (
     DIRECT_PROSE_EVIDENCE_SELECTION_V1,
     FOCUS_NODE_EVIDENCE_SELECTION_V1,
+    HYBRID_MENTION_EVIDENCE_SELECTION_V1,
     PARAGRAPH_HYPOTHESIS_EVIDENCE_SELECTION_V1,
     PARAGRAPH_SEGMENT_V1,
     PARAGRAPH_SEGMENT_V2,
@@ -187,6 +188,37 @@ from kotekomi_application.grounded_candidates import (
     build_grounded_candidate_context,
     submit_grounded_candidate_batch,
 )
+from kotekomi_application.hybrid_mention_interpretation import (
+    HYBRID_MENTION_BOUNDARY_POLICY_ID,
+    HYBRID_MENTION_PREVIEW_POLICY_ID,
+    PROPOSER_CONTEXTUAL_KINDS,
+    ContextualKind,
+    DiscourseRole,
+    HybridExtractionPreview,
+    HybridPreviewStatus,
+    MentionBoundaryStatus,
+    MentionInterpretation,
+    MentionObservation,
+    PreviewStore,
+    Referentiality,
+    build_hybrid_extraction_preview,
+    canonical_hybrid_extraction_preview_bytes,
+    hybrid_extraction_preview_from_bytes,
+    hybrid_extraction_preview_sha256,
+    parse_hybrid_mention_task_output,
+    reconcile_mention_boundaries,
+)
+from kotekomi_application.hybrid_mention_interpretation import (
+    MentionBoundaryDecision as HybridMentionBoundaryDecision,
+)
+from kotekomi_application.hybrid_mention_interpretation import (
+    MentionCandidate as HybridMentionCandidate,
+)
+from kotekomi_application.hybrid_mention_preview import (
+    HybridMentionPreviewCommand,
+    HybridMentionPreviewResult,
+    run_hybrid_mention_preview,
+)
 from kotekomi_application.ingestion_change_sets import (
     CloseIngestionChangeSetInput,
     CloseIngestionChangeSetResult,
@@ -249,6 +281,12 @@ from kotekomi_application.ledger_retrieval import (
     build_ledger_retrieval_projection,
     build_ledger_retrieval_units,
     query_ledger_retrieval,
+)
+from kotekomi_application.mention_proposer import (
+    MentionProposal,
+    MentionProposalBatch,
+    MentionProposalInput,
+    MentionProposer,
 )
 from kotekomi_application.model_run_logging import (
     ListModelRunLogsInput,
@@ -492,6 +530,7 @@ from kotekomi_application.staged_model_extraction import (
     BoundedExtractionInput,
     BoundedExtractionOutcome,
     ExecutionSetting,
+    HybridMentionTaskSchemaRegistry,
     HypothesisBatch,
     HypothesisBatchAbstention,
     HypothesisFaithfulnessVerdict,
@@ -690,6 +729,10 @@ __all__ = [
     "ModelRuntimeReadiness",
     "ModelRuntimeResponseError",
     "ModelRuntimeStatus",
+    "MentionProposal",
+    "MentionProposalBatch",
+    "MentionProposalInput",
+    "MentionProposer",
     "NewsDeliveryEnvelope",
     "NewsAnalysisPlanningInput",
     "NewsAnalysisPlanningOutcome",
@@ -1041,4 +1084,29 @@ __all__ = [
     "authorize_news_use",
     "authorize_news_representation_use",
     "select_current_news_revision",
+    "HYBRID_MENTION_EVIDENCE_SELECTION_V1",
+    "HYBRID_MENTION_BOUNDARY_POLICY_ID",
+    "HYBRID_MENTION_PREVIEW_POLICY_ID",
+    "PROPOSER_CONTEXTUAL_KINDS",
+    "ContextualKind",
+    "DiscourseRole",
+    "HybridExtractionPreview",
+    "HybridMentionPreviewCommand",
+    "HybridMentionPreviewResult",
+    "HybridMentionTaskSchemaRegistry",
+    "HybridPreviewStatus",
+    "HybridMentionBoundaryDecision",
+    "MentionBoundaryStatus",
+    "HybridMentionCandidate",
+    "MentionInterpretation",
+    "MentionObservation",
+    "PreviewStore",
+    "Referentiality",
+    "build_hybrid_extraction_preview",
+    "canonical_hybrid_extraction_preview_bytes",
+    "hybrid_extraction_preview_from_bytes",
+    "hybrid_extraction_preview_sha256",
+    "parse_hybrid_mention_task_output",
+    "reconcile_mention_boundaries",
+    "run_hybrid_mention_preview",
 ]

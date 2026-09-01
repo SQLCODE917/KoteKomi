@@ -27,6 +27,7 @@ PARAGRAPH_FOCUS_SPLIT_V1 = "paragraph_focus_split_v1"
 FOCUS_NODE_EVIDENCE_SELECTION_V1 = "focus_node_evidence_v1"
 DIRECT_PROSE_EVIDENCE_SELECTION_V1 = "direct_prose_evidence_v1"
 PARAGRAPH_HYPOTHESIS_EVIDENCE_SELECTION_V1 = "paragraph_hypothesis_evidence_v1"
+HYBRID_MENTION_EVIDENCE_SELECTION_V1 = "hybrid_mention_evidence_v1"
 PARAGRAPH_SEGMENT_V1 = "paragraph_segment_v1"
 PARAGRAPH_SEGMENT_V2 = "paragraph_segment_v2"
 PARAGRAPH_SEGMENT_V3 = "paragraph_segment_v3"
@@ -754,11 +755,15 @@ def _render_context(
     )
     evidence_by_node_id = {candidate.node_id: candidate for candidate in evidence_candidates}
     rendered_candidates = candidates
-    if manifest_input.source_segment_policy_id in {
-        PARAGRAPH_SEGMENT_V1,
-        PARAGRAPH_SEGMENT_V2,
-        PARAGRAPH_SEGMENT_V3,
-    }:
+    if (
+        manifest_input.source_segment_policy_id
+        in {
+            PARAGRAPH_SEGMENT_V1,
+            PARAGRAPH_SEGMENT_V2,
+            PARAGRAPH_SEGMENT_V3,
+        }
+        and manifest_input.evidence_selection_policy_id != HYBRID_MENTION_EVIDENCE_SELECTION_V1
+    ):
         rendered_candidates = tuple(
             candidate for candidate in candidates if candidate.node_id in evidence_by_node_id
         )
@@ -774,8 +779,11 @@ def _render_context(
             in {
                 DIRECT_PROSE_EVIDENCE_SELECTION_V1,
                 PARAGRAPH_HYPOTHESIS_EVIDENCE_SELECTION_V1,
+                HYBRID_MENTION_EVIDENCE_SELECTION_V1,
             },
-            source_segment_policy_id=manifest_input.source_segment_policy_id,
+            source_segment_policy_id=(
+                manifest_input.source_segment_policy_id if evidence_candidate is not None else None
+            ),
             source_segment_label=manifest_input.analysis_unit.source_segment_label,
         )
         rendered.extend(b"\n\n")
@@ -845,6 +853,7 @@ def _evidence_candidates_for_context(
         FOCUS_NODE_EVIDENCE_SELECTION_V1,
         DIRECT_PROSE_EVIDENCE_SELECTION_V1,
         PARAGRAPH_HYPOTHESIS_EVIDENCE_SELECTION_V1,
+        HYBRID_MENTION_EVIDENCE_SELECTION_V1,
     }:
         raise ValueError(f"Unsupported evidence selection policy: {policy_id}")
     focus_nodes = tuple(
@@ -855,6 +864,7 @@ def _evidence_candidates_for_context(
     if policy_id in {
         DIRECT_PROSE_EVIDENCE_SELECTION_V1,
         PARAGRAPH_HYPOTHESIS_EVIDENCE_SELECTION_V1,
+        HYBRID_MENTION_EVIDENCE_SELECTION_V1,
     }:
         focus_nodes = tuple(
             sorted(
@@ -1424,11 +1434,15 @@ def validate_context_manifest(
         raise ValueError("ContextManifest verified bundle binding is invalid.")
     _validate_evidence_candidates(manifest, bundle)
     rendered_candidates = manifest.selected_candidates
-    if manifest.source_segment_policy_id in {
-        PARAGRAPH_SEGMENT_V1,
-        PARAGRAPH_SEGMENT_V2,
-        PARAGRAPH_SEGMENT_V3,
-    }:
+    if (
+        manifest.source_segment_policy_id
+        in {
+            PARAGRAPH_SEGMENT_V1,
+            PARAGRAPH_SEGMENT_V2,
+            PARAGRAPH_SEGMENT_V3,
+        }
+        and manifest.evidence_selection_policy_id != HYBRID_MENTION_EVIDENCE_SELECTION_V1
+    ):
         evidence_node_ids = {candidate.node_id for candidate in manifest.evidence_candidates}
         rendered_candidates = tuple(
             candidate
@@ -1457,8 +1471,11 @@ def validate_context_manifest(
             in {
                 DIRECT_PROSE_EVIDENCE_SELECTION_V1,
                 PARAGRAPH_HYPOTHESIS_EVIDENCE_SELECTION_V1,
+                HYBRID_MENTION_EVIDENCE_SELECTION_V1,
             },
-            source_segment_policy_id=manifest.source_segment_policy_id,
+            source_segment_policy_id=(
+                manifest.source_segment_policy_id if evidence_candidate is not None else None
+            ),
             source_segment_label=manifest.source_segment_label,
         )
         if manifest.rendered_input[segment.start_byte : segment.end_byte] != rendered_node:
@@ -1524,11 +1541,15 @@ def _render_verified_input(
         candidate.node_id: candidate for candidate in manifest.evidence_candidates
     }
     rendered_candidates = manifest.selected_candidates
-    if manifest.source_segment_policy_id in {
-        PARAGRAPH_SEGMENT_V1,
-        PARAGRAPH_SEGMENT_V2,
-        PARAGRAPH_SEGMENT_V3,
-    }:
+    if (
+        manifest.source_segment_policy_id
+        in {
+            PARAGRAPH_SEGMENT_V1,
+            PARAGRAPH_SEGMENT_V2,
+            PARAGRAPH_SEGMENT_V3,
+        }
+        and manifest.evidence_selection_policy_id != HYBRID_MENTION_EVIDENCE_SELECTION_V1
+    ):
         evidence_node_ids = {candidate.node_id for candidate in manifest.evidence_candidates}
         rendered_candidates = tuple(
             candidate
@@ -1547,8 +1568,11 @@ def _render_verified_input(
             in {
                 DIRECT_PROSE_EVIDENCE_SELECTION_V1,
                 PARAGRAPH_HYPOTHESIS_EVIDENCE_SELECTION_V1,
+                HYBRID_MENTION_EVIDENCE_SELECTION_V1,
             },
-            source_segment_policy_id=manifest.source_segment_policy_id,
+            source_segment_policy_id=(
+                manifest.source_segment_policy_id if evidence_candidate is not None else None
+            ),
             source_segment_label=manifest.source_segment_label,
         )
         rendered.extend(b"\n\n")
@@ -1687,6 +1711,7 @@ def _validate_evidence_candidates(
         FOCUS_NODE_EVIDENCE_SELECTION_V1,
         DIRECT_PROSE_EVIDENCE_SELECTION_V1,
         PARAGRAPH_HYPOTHESIS_EVIDENCE_SELECTION_V1,
+        HYBRID_MENTION_EVIDENCE_SELECTION_V1,
     }:
         raise ValueError("ContextManifest references an unsupported evidence selection policy.")
     if manifest.status is not ContextManifestStatus.READY:
@@ -1712,8 +1737,11 @@ def _validate_evidence_candidates(
         PARAGRAPH_SEGMENT_V2,
         PARAGRAPH_SEGMENT_V3,
     }:
-        if manifest.evidence_selection_policy_id != PARAGRAPH_HYPOTHESIS_EVIDENCE_SELECTION_V1:
-            raise ValueError("Paragraph segments require the paragraph-hypothesis evidence policy.")
+        if manifest.evidence_selection_policy_id not in {
+            PARAGRAPH_HYPOTHESIS_EVIDENCE_SELECTION_V1,
+            HYBRID_MENTION_EVIDENCE_SELECTION_V1,
+        }:
+            raise ValueError("Paragraph segments require a supported paragraph evidence policy.")
         if len(manifest.evidence_candidates) != 1:
             raise ValueError("Paragraph segments require exactly one evidence candidate.")
 
