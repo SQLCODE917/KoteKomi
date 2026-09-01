@@ -8,6 +8,7 @@
 - Prerequisite: [Derived Retrieval Program](2026-07-11-derived-document-retrieval.md)
 - Prerequisite: [Derived Projection Readiness](2026-08-23-derived-projection-readiness.md)
 - First child deliverable: [CIR-1 User Ingestion Run MVP](2026-08-24-user-ingestion-run-mvp.md)
+- Current extraction program: [Hybrid Intelligence Extraction Pipeline](2026-09-01-hybrid-intelligence-extraction-pipeline.md)
 
 ## Context and problem
 

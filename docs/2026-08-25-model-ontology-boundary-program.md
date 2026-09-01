@@ -1,16 +1,21 @@
 # Model and Ontology Boundary Program
 
-- Status: Proposed
+- Status: Superseded
+- Successor: [Hybrid Intelligence Extraction Pipeline](2026-09-01-hybrid-intelligence-extraction-pipeline.md)
 - Program ID: `model-ontology-boundary`
 - Parent program: [Candidate Ingestion Review](2026-08-24-candidate-ingestion-review-program.md)
 - Completed children:
   - [CIR-2.1 Typed Assertion Object MVP](2026-08-25-cir-2-1-typed-assertion-object-mvp.md)
   - [CIR-2.2 Predicate Proposal and Review Contract](2026-08-25-cir-2-2-predicate-proposal-review-contract.md)
   - [CIR-2.2.1 Direct Prose Semantic Draft MVP](2026-08-25-cir-2-2-1-direct-prose-semantic-draft-mvp.md)
-- Next child:
-  CIR-2.3 Predicate vocabulary and review UX, defined after CIR-2.2.1 evidence is reviewed.
+- Superseded next child:
+  CIR-2.3 Predicate vocabulary and review UX.
 - Related program:
   [Paragraph Hypothesis Development Program](2026-08-26-paragraph-hypothesis-development-program.md).
+
+The completed CIR-2.1, CIR-2.2, and CIR-2.2.1 results remain historical implementation evidence.
+
+The Hybrid Pipeline supersedes the planned CIR-2.3 and later model-boundary work.
 
 ## Context and problem
 
@@ -116,9 +121,9 @@ CIR-2.2.1 binds each model task to one eligible prose node.
 
 CIR-2.2.1 replaces the model JSON candidate envelope with a small plain-text SemanticDraft.
 
-## Later deliverables
+## Superseded delivery map
 
-Each later deliverable stays undefined until the MVP ships and produces implementation evidence.
+This table records the former delivery sequence.
 
 | Deliverable | Role | Precondition | Postcondition |
 |---|---|---|---|
@@ -136,4 +141,4 @@ The MVP uses Adapter tests to prove persisted proposed Assertion shape after res
 
 The MVP uses the canonical deposited PDF to prove that CIR-2 remains complete and direct-prose-grounded.
 
-Later deliverables must add their own TDD before implementation.
+The Hybrid Pipeline replaces all undelivered entries in this table.

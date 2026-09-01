@@ -1,10 +1,15 @@
 # Paragraph Hypothesis Development Program
 
-- Status: Proposed
+- Status: Superseded
+- Successor: [Hybrid Intelligence Extraction Pipeline](2026-09-01-hybrid-intelligence-extraction-pipeline.md)
 - Program ID: `paragraph-hypothesis-development`
 - Parent: [Candidate Ingestion Review Program](2026-08-24-candidate-ingestion-review-program.md)
 - Related program: [Model and Ontology Boundary Program](2026-08-25-model-ontology-boundary-program.md)
 - Evaluation corpus: [CIR Evaluation Annotation Packet](2026-08-26-cir-evaluation-annotation-packet.md)
+
+The completed PHP-1 increments remain historical implementation and evaluation evidence.
+
+The Hybrid Pipeline supersedes PHP-2 through PHP-6 and all new production selection work.
 
 ## Context and problem
 
@@ -98,11 +103,11 @@ The eight-claim batch limit is an initial PHP-1 design decision.
 
 The program evaluates that limit after PHP-1 produces reviewed corpus evidence.
 
-## Incremental delivery
+## Historical delivery map
 
-Each deliverable leaves the prior working path intact.
+This table records the delivered PHP-1 increments and the superseded future sequence.
 
-Only the MVP has a complete TDD.
+The Hybrid Pipeline replaces every undelivered entry.
 
 Each later TDD is written after the preceding deliverable produces reviewed evidence.
 

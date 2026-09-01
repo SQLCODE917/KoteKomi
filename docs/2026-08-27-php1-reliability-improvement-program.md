@@ -1,11 +1,16 @@
 # PHP-1 Reliability Improvement Program
 
-- Status: Accepted
+- Status: Superseded
+- Successor: [Hybrid Intelligence Extraction Pipeline](2026-09-01-hybrid-intelligence-extraction-pipeline.md)
 - Program ID: `php1-reliability-improvement`
 - Parent: [Paragraph Hypothesis Development Program](2026-08-26-paragraph-hypothesis-development-program.md)
 - Evaluation corpus: [CIR Evaluation Annotation Packet](2026-08-26-cir-evaluation-annotation-packet.md)
 - Organization Mention Gold: [Human-reviewed exact-span catalog](php1-organization-mention-gold-v1.json)
 - Mention policy: [Named Organization Mention policy](php1-named-organization-mention-policy-v1.json)
+
+The completed H0 through H2 experiments remain historical implementation and evaluation evidence.
+
+The Hybrid Pipeline supersedes new PHP-1 production selection and reliability increments.
 
 ## User outcome
 

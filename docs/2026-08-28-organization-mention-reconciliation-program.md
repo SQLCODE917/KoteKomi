@@ -1,9 +1,14 @@
 # Organization Mention Reconciliation and Resolution Program
 
-- Status: Design accepted for incremental implementation
+- Status: Superseded
+- Successor: [Hybrid Intelligence Extraction Pipeline](2026-09-01-hybrid-intelligence-extraction-pipeline.md)
 - Parent: [PHP-1 Reliability Improvement Program](2026-08-27-php1-reliability-improvement-program.md)
 - Development oracle: [PHP-1 Organization Mention Gold](php1-organization-mention-gold-v1.json)
 - Held-out annotation packet: [Organization Mention Held-Out Annotation Packet](2026-08-28-organization-mention-held-out-annotation-packet.md)
+
+The ORG-R0 foundation and sealed ORG-R1 and ORG-R2 outcomes remain historical evidence.
+
+The Hybrid Pipeline supersedes ORG-R3 through ORG-R5.
 
 ## User outcome
 
@@ -287,7 +292,7 @@ The trace is not accepted Ledger knowledge and cannot authorize a `ProposedChang
 **Outcome:** Qwen2.5 and pinned ReFinED V1 were compared over sealed development and held-out
 bundles; neither path entered production. See [Organization Semantic Qualification Result](organization-semantic-qualification-result-v1.json).
 
-### ORG-R3 — Explicit acronym declarations
+### Superseded ORG-R3 — Explicit acronym declarations
 
 **User story:** As a reviewer, I see a source-declared abbreviation resolve to one document-local Organization identity.
 
@@ -295,7 +300,7 @@ bundles; neither path entered production. See [Organization Semantic Qualificati
 
 **Postcondition:** Unique explicit declarations resolve deterministically and conflicting declarations remain ambiguous.
 
-### ORG-R4 — Bounded reference-resolution experiment
+### Superseded ORG-R4 — Bounded reference-resolution experiment
 
 **User story:** As a reviewer, I see whether a later acronym, pronoun, collective, or country expression refers to an earlier Organization.
 
@@ -303,7 +308,7 @@ bundles; neither path entered production. See [Organization Semantic Qualificati
 
 **Postcondition:** At least one established coreference approach is compared with KoteKomi's bounded semantic task, with false links treated as integrity failures.
 
-### ORG-R5 — Production selection
+### Superseded ORG-R5 — Production selection
 
 **User story:** As a user, I receive better Organization extraction without losing any demonstrated capability or weakening wiki integrity.
 
@@ -313,7 +318,7 @@ bundles; neither path entered production. See [Organization Semantic Qualificati
 
 ORG-R1 and ORG-R2 now have detailed TDDs and retained outcomes.
 
-ORG-R3 and later TDDs remain black boxes until evidence from the prior increment defines them.
+The Hybrid Pipeline replaces ORG-R3 through ORG-R5.
 
 ## Stop conditions
 

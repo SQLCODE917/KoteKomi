@@ -1,9 +1,14 @@
 # CIR-3: Candidate Knowledge View
 
-- Status: Proposed
+- Status: Superseded
+- Successor: [Hybrid Intelligence Extraction Pipeline](2026-09-01-hybrid-intelligence-extraction-pipeline.md)
 - Program: [Candidate Ingestion Review](2026-08-24-candidate-ingestion-review-program.md)
 - Deliverable ID: CIR-3
 - Depends on: [CIR-2](2026-08-24-automatic-extraction-change-set.md)
+
+The candidate knowledge view remains a desired user outcome.
+
+The project will redesign that outcome after HP-7 defines the complete ProposedChange input.
 
 ## 1. Context & Problem
 
