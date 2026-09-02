@@ -32,6 +32,16 @@ from kotekomi_adapters import (
     SQLiteLedgerRetrievalAdapter,
     sqlite_ledger_transaction,
 )
+from kotekomi_adapters.refined_entity_linking import (
+    REFINED_ENTITY_SET,
+    REFINED_MODEL_ID,
+    REFINED_MODEL_REVISION,
+    REFINED_PACKAGE_REVISION,
+    REFINED_RESOURCE_MANIFEST_SHA256,
+    REFINED_RUNTIME_IDENTITY,
+    RefinedEntityLinkingAdapter,
+    RefinedEntityLinkingConfig,
+)
 from kotekomi_application import (
     CROSS_PLANE_QUERY_POLICY_ID,
     PARAGRAPH_HYPOTHESIS_EVIDENCE_SELECTION_V1,
@@ -60,8 +70,14 @@ from kotekomi_application import (
     ContextModelProfile,
     EmbeddingPort,
     EmbeddingProfile,
+    EntityLinkerIdentity,
+    EntityLinkingExecution,
+    EntityLinkingInput,
+    EntityLinkingPort,
     ExecutionSetting,
     ExplainEvidenceGraphRelationshipCommand,
+    HybridEntityGroundingCommand,
+    HybridEntityGroundingStatus,
     HybridMentionPreviewCommand,
     HybridPreviewStatus,
     HybridReferencePreviewCommand,
@@ -160,6 +176,7 @@ from kotekomi_application import (
     review_queue_result_to_json,
     review_readiness_to_json,
     run_bounded_extraction,
+    run_hybrid_entity_grounding_preview,
     run_hybrid_mention_preview,
     run_hybrid_reference_preview,
     run_next_result_to_json,
@@ -472,6 +489,14 @@ def main(argv: list[str] | None = None) -> int:
             archive_path_override=args.archive_path,
         )
         return resolve_hybrid_references(config=config, parent_preview_id=args.preview_id)
+
+    if args.command == "extraction" and args.extraction_command == "ground-entities":
+        config = load_config(
+            config_path=args.config,
+            ledger_path_override=args.ledger_path,
+            archive_path_override=args.archive_path,
+        )
+        return ground_hybrid_entities(config=config, parent_preview_id=args.preview_id)
 
     if args.command == "review" and args.review_command == "approve":
         config = load_config(
@@ -1011,6 +1036,13 @@ def build_parser() -> argparse.ArgumentParser:
     resolve_references_parser.add_argument("--preview-id", required=True)
     resolve_references_parser.add_argument("--ledger-path", type=Path, default=None)
     resolve_references_parser.add_argument("--archive-path", type=Path, default=None)
+    ground_entities_parser = extraction_subparsers.add_parser(
+        "ground-entities",
+        help="Propose ranked external identities for one immutable reference Preview.",
+    )
+    ground_entities_parser.add_argument("--preview-id", required=True)
+    ground_entities_parser.add_argument("--ledger-path", type=Path, default=None)
+    ground_entities_parser.add_argument("--archive-path", type=Path, default=None)
 
     review_parser = subparsers.add_parser("review", help="ProposedChange review commands.")
     review_subparsers = review_parser.add_subparsers(dest="review_command")
@@ -2304,6 +2336,85 @@ def resolve_hybrid_references(*, config: PipelineConfig, parent_preview_id: str)
     for diagnostic in result.preview.diagnostics:
         print(diagnostic, file=sys.stderr)
     return 0
+
+
+@dataclass(frozen=True)
+class _UnavailableEntityLinker:
+    error: Exception
+    identity: EntityLinkerIdentity
+
+    def link(self, request: EntityLinkingInput) -> EntityLinkingExecution:
+        del request
+        raise self.error
+
+
+def ground_hybrid_entities(*, config: PipelineConfig, parent_preview_id: str) -> int:
+    """Run HP-3 and print one portable ranked-candidate Preview result."""
+    archive = LocalArchiveStore(config.archive_path)
+    archive.initialize()
+    adapter: RefinedEntityLinkingAdapter | None = None
+    default_timeout = 300.0
+    identity = EntityLinkerIdentity(
+        producer_id="refined:1.0",
+        model_id=REFINED_MODEL_ID,
+        model_revision=REFINED_MODEL_REVISION,
+        entity_set=REFINED_ENTITY_SET,
+        package_revision=REFINED_PACKAGE_REVISION,
+        resource_manifest_sha256=REFINED_RESOURCE_MANIFEST_SHA256,
+        runtime_identity=REFINED_RUNTIME_IDENTITY,
+        timeout_seconds=(
+            config.entity_linking.timeout_seconds
+            if config.entity_linking is not None
+            else default_timeout
+        ),
+    )
+    if config.entity_linking is None:
+        linker: EntityLinkingPort = _UnavailableEntityLinker(
+            RuntimeError("Entity-linking runtime is not configured."), identity
+        )
+    else:
+        worker_script = (
+            Path(__file__).resolve().parents[4] / "scripts" / "refined_entity_linking_worker.py"
+        )
+        try:
+            adapter = RefinedEntityLinkingAdapter(
+                RefinedEntityLinkingConfig(
+                    python_executable=config.entity_linking.python_executable,
+                    worker_script=worker_script,
+                    data_dir=config.entity_linking.data_dir,
+                    timeout_seconds=config.entity_linking.timeout_seconds,
+                )
+            )
+        except (OSError, RuntimeError, ValueError) as error:
+            linker = _UnavailableEntityLinker(error, identity)
+        else:
+            linker = adapter
+    try:
+        with sqlite_ledger_transaction(config.ledger_path) as repository:
+            result = run_hybrid_entity_grounding_preview(
+                command=HybridEntityGroundingCommand(parent_preview_id),
+                ledger=repository,
+                archive=archive,
+                linker=linker,
+            )
+    finally:
+        if adapter is not None:
+            adapter.close()
+    print(
+        json.dumps(
+            {
+                "archive_path": result.archive_path,
+                "parent_preview_id": result.preview.parent_preview_id,
+                "preview_id": result.preview.id,
+                "sha256": result.sha256,
+                "status": result.preview.terminal_status.value,
+            },
+            sort_keys=True,
+        )
+    )
+    for diagnostic in result.preview.diagnostics:
+        print(diagnostic, file=sys.stderr)
+    return 0 if result.preview.terminal_status is HybridEntityGroundingStatus.COMPLETE else 1
 
 
 def _automatic_ingestion_extraction(

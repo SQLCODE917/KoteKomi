@@ -2,10 +2,16 @@ import json
 from collections.abc import Generator
 from contextlib import contextmanager
 from pathlib import Path
+from typing import cast
 
 import kotekomi_pipelines.cli as cli
 import pytest
 from kotekomi_application import (
+    EntityLinkingInput,
+    EntityLinkingPort,
+    HybridEntityGroundingCommand,
+    HybridEntityGroundingResult,
+    HybridEntityGroundingStatus,
     HybridMentionPreviewResult,
     HybridPreviewStatus,
     HybridReferencePreviewCommand,
@@ -15,14 +21,17 @@ from kotekomi_application import (
     ModelRunLogEntry,
     ModelRunLogLedger,
     ModelRuntimeStatus,
+    build_hybrid_entity_grounding_preview_record,
     build_hybrid_extraction_preview,
     build_hybrid_reference_preview_record,
+    hybrid_entity_grounding_preview_sha256,
     hybrid_extraction_preview_sha256,
     hybrid_reference_preview_sha256,
 )
 from kotekomi_pipelines.cli import main
 from kotekomi_pipelines.config import (
     CheckoutBuildIdentityError,
+    EntityLinkingConfig,
     ModelExecutionConfig,
     PipelineConfig,
     checkout_artifact_digest,
@@ -303,6 +312,181 @@ def test_hybrid_reference_command_prints_exact_portable_result(
         "sha256": digest,
         "status": "complete",
     }
+
+
+def test_hybrid_entity_grounding_command_routes_parent_preview(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = PipelineConfig(
+        ledger_path=tmp_path / "kotekomi.db",
+        archive_path=tmp_path / "archive",
+        model_execution=ModelExecutionConfig(
+            "fixture", "fixture://local", "fixture", 300.0, 1024, 64
+        ),
+        embedding_profiles={},
+        document_retrieval_embedding_profile_id=None,
+    )
+    received: list[tuple[PipelineConfig, str]] = []
+
+    def fake_load_config(**kwargs: object) -> PipelineConfig:
+        del kwargs
+        return config
+
+    def fake_ground(*, config: PipelineConfig, parent_preview_id: str) -> int:
+        received.append((config, parent_preview_id))
+        return 1
+
+    monkeypatch.setattr(cli, "load_config", fake_load_config)
+    monkeypatch.setattr(cli, "ground_hybrid_entities", fake_ground)
+
+    assert main(["extraction", "ground-entities", "--preview-id", "hrp_fixture"]) == 1
+    assert received == [(config, "hrp_fixture")]
+
+
+def test_hybrid_entity_grounding_prints_exact_portable_result(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    config = PipelineConfig(
+        ledger_path=tmp_path / "kotekomi.db",
+        archive_path=tmp_path / "archive",
+        model_execution=ModelExecutionConfig(
+            "fixture", "fixture://local", "fixture", 300.0, 1024, 64
+        ),
+        embedding_profiles={},
+        document_retrieval_embedding_profile_id=None,
+        entity_linking=EntityLinkingConfig(
+            adapter="refined",
+            python_executable=Path("/fixture/python"),
+            data_dir=Path("/fixture/resources"),
+            timeout_seconds=300.0,
+        ),
+    )
+    preview = build_hybrid_entity_grounding_preview_record(
+        parent_preview_id="hrp_" + "1" * 24,
+        parent_preview_sha256="a" * 64,
+        mention_preview_id="hxp_" + "2" * 24,
+        mention_preview_sha256="b" * 64,
+        representation_id="rep_fixture",
+        eligibility=(),
+        link_evidence=(),
+        extraction_task_ids=(),
+        model_run_ids=(),
+        traces=(),
+        terminal_status=HybridEntityGroundingStatus.COMPLETE,
+        diagnostics=(),
+    )
+    digest = hybrid_entity_grounding_preview_sha256(preview)
+
+    class FakeArchive:
+        def __init__(self, archive_path: Path) -> None:
+            assert archive_path == config.archive_path
+
+        def initialize(self) -> None:
+            pass
+
+    class FakeAdapter:
+        def __init__(self, adapter_config: object) -> None:
+            del adapter_config
+
+        def close(self) -> None:
+            pass
+
+    @contextmanager
+    def fake_transaction(ledger_path: Path) -> Generator[object]:
+        assert ledger_path == config.ledger_path
+        yield object()
+
+    def fake_run(**kwargs: object) -> HybridEntityGroundingResult:
+        command = cast(HybridEntityGroundingCommand, kwargs["command"])
+        assert command.parent_preview_id == preview.parent_preview_id
+        return HybridEntityGroundingResult(
+            preview,
+            digest,
+            f"extraction/entity-grounding-previews/{preview.id}.json",
+        )
+
+    monkeypatch.setattr(cli, "LocalArchiveStore", FakeArchive)
+    monkeypatch.setattr(cli, "RefinedEntityLinkingAdapter", FakeAdapter)
+    monkeypatch.setattr(cli, "sqlite_ledger_transaction", fake_transaction)
+    monkeypatch.setattr(cli, "run_hybrid_entity_grounding_preview", fake_run)
+
+    assert (
+        cli.ground_hybrid_entities(config=config, parent_preview_id=preview.parent_preview_id) == 0
+    )
+    assert json.loads(capsys.readouterr().out) == {
+        "archive_path": f"extraction/entity-grounding-previews/{preview.id}.json",
+        "parent_preview_id": preview.parent_preview_id,
+        "preview_id": preview.id,
+        "sha256": digest,
+        "status": "complete",
+    }
+
+
+def test_hybrid_entity_grounding_missing_runtime_publishes_blocked_result(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    config = PipelineConfig(
+        ledger_path=tmp_path / "kotekomi.db",
+        archive_path=tmp_path / "archive",
+        model_execution=ModelExecutionConfig(
+            "fixture", "fixture://local", "fixture", 300.0, 1024, 64
+        ),
+        embedding_profiles={},
+        document_retrieval_embedding_profile_id=None,
+    )
+    preview = build_hybrid_entity_grounding_preview_record(
+        parent_preview_id="hrp_" + "1" * 24,
+        parent_preview_sha256="a" * 64,
+        mention_preview_id="hxp_" + "2" * 24,
+        mention_preview_sha256="b" * 64,
+        representation_id="rep_fixture",
+        eligibility=(),
+        link_evidence=(),
+        extraction_task_ids=(),
+        model_run_ids=(),
+        traces=(),
+        terminal_status=HybridEntityGroundingStatus.BLOCKED,
+        diagnostics=("entity_linking_runtime_unavailable",),
+    )
+    digest = hybrid_entity_grounding_preview_sha256(preview)
+
+    class FakeArchive:
+        def __init__(self, archive_path: Path) -> None:
+            assert archive_path == config.archive_path
+
+        def initialize(self) -> None:
+            pass
+
+    @contextmanager
+    def fake_transaction(ledger_path: Path) -> Generator[object]:
+        assert ledger_path == config.ledger_path
+        yield object()
+
+    def fake_run(**kwargs: object) -> HybridEntityGroundingResult:
+        linker = cast(EntityLinkingPort, kwargs["linker"])
+        with pytest.raises(RuntimeError, match="not configured"):
+            linker.link(cast(EntityLinkingInput, object()))
+        return HybridEntityGroundingResult(
+            preview,
+            digest,
+            f"extraction/entity-grounding-previews/{preview.id}.json",
+        )
+
+    monkeypatch.setattr(cli, "LocalArchiveStore", FakeArchive)
+    monkeypatch.setattr(cli, "sqlite_ledger_transaction", fake_transaction)
+    monkeypatch.setattr(cli, "run_hybrid_entity_grounding_preview", fake_run)
+
+    assert (
+        cli.ground_hybrid_entities(config=config, parent_preview_id=preview.parent_preview_id) == 1
+    )
+    captured = capsys.readouterr()
+    assert json.loads(captured.out)["status"] == "blocked"
+    assert captured.err == "entity_linking_runtime_unavailable\n"
 
 
 def test_entrypoint_reports_application_validation_errors_without_traceback(
@@ -715,6 +899,116 @@ def test_load_config_rejects_unknown_model_runtime_key(tmp_path: Path) -> None:
     config_path.write_text('[model_runtime]\nmodel_nmae = "typo"\n')
 
     with pytest.raises(ValueError, match="Unknown model_runtime config keys: model_nmae"):
+        load_config(
+            config_path=config_path,
+            ledger_path_override=None,
+            archive_path_override=None,
+        )
+
+
+def test_load_config_reads_strict_entity_linking_paths_relative_to_config(
+    tmp_path: Path,
+) -> None:
+    config_path = tmp_path / "config" / "kotekomi.toml"
+    config_path.parent.mkdir()
+    config_path.write_text(
+        """
+[entity_linking]
+adapter = "refined"
+python_executable = "runtime/bin/python"
+data_dir = "runtime/resources"
+timeout_seconds = 45
+""".strip()
+    )
+
+    config = load_config(
+        config_path=config_path,
+        ledger_path_override=None,
+        archive_path_override=None,
+    )
+
+    assert config.entity_linking == EntityLinkingConfig(
+        adapter="refined",
+        python_executable=config_path.parent / "runtime/bin/python",
+        data_dir=config_path.parent / "runtime/resources",
+        timeout_seconds=45.0,
+    )
+
+
+def test_load_config_allows_missing_entity_linking_and_rejects_unknown_keys(
+    tmp_path: Path,
+) -> None:
+    assert (
+        load_config(
+            config_path=None,
+            ledger_path_override=tmp_path / "ledger.db",
+            archive_path_override=tmp_path / "archive",
+        ).entity_linking
+        is None
+    )
+    config_path = tmp_path / "invalid.toml"
+    config_path.write_text(
+        """
+[entity_linking]
+adapter = "refined"
+python_executable = "/runtime/python"
+data_dir = "/runtime/resources"
+timeout_seconds = 45
+worker_script = "/untrusted/worker.py"
+""".strip()
+    )
+
+    with pytest.raises(ValueError, match="Unknown entity_linking"):
+        load_config(
+            config_path=config_path,
+            ledger_path_override=None,
+            archive_path_override=None,
+        )
+
+
+@pytest.mark.parametrize(
+    ("table", "message"),
+    [
+        (
+            """
+[entity_linking]
+adapter = "unknown"
+python_executable = "/runtime/python"
+data_dir = "/runtime/resources"
+timeout_seconds = 45
+""",
+            "adapter must be refined",
+        ),
+        (
+            """
+[entity_linking]
+adapter = "refined"
+python_executable = "/runtime/python"
+data_dir = "/runtime/resources"
+""",
+            "Missing entity_linking config keys: timeout_seconds",
+        ),
+        (
+            """
+[entity_linking]
+adapter = "refined"
+python_executable = "/runtime/python"
+data_dir = "/runtime/resources"
+timeout_seconds = 0
+""",
+            "must be a positive",
+        ),
+    ],
+)
+def test_load_config_rejects_invalid_entity_linking_contract(
+    tmp_path: Path,
+    table: str,
+    message: str,
+) -> None:
+    config_path = tmp_path / "invalid-entity-linking.toml"
+    config_path.write_text(table.strip())
+
+    with pytest.raises((TypeError, ValueError), match=message):
         load_config(
             config_path=config_path,
             ledger_path_override=None,
