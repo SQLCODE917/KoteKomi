@@ -21,6 +21,10 @@ if TYPE_CHECKING:
     from kotekomi_adapters.ollama_embeddings import OllamaEmbeddingAdapter
     from kotekomi_adapters.ollama_model_runtime import OllamaModelRuntime
     from kotekomi_adapters.pdf_evidence_overlay_renderer import PdfiumEvidenceOverlayRenderer
+    from kotekomi_adapters.refined_entity_linking import (
+        RefinedEntityLinkingAdapter,
+        RefinedEntityLinkingConfig,
+    )
     from kotekomi_adapters.sqlite_document_retrieval import SQLiteDocumentRetrievalAdapter
     from kotekomi_adapters.sqlite_knowledge_graph_retrieval import (
         SQLiteKnowledgeGraphRetrievalAdapter,
@@ -57,6 +61,8 @@ __all__ = [
     "OllamaModelRuntime",
     "OllamaEmbeddingAdapter",
     "PdfiumEvidenceOverlayRenderer",
+    "RefinedEntityLinkingAdapter",
+    "RefinedEntityLinkingConfig",
     "REQUIRED_LEDGER_TABLES",
     "SQLiteLedgerInitializer",
     "SQLiteLedgerRepository",
@@ -129,6 +135,16 @@ def __getattr__(name: str) -> object:
         )
 
         return PdfiumEvidenceOverlayRenderer
+    if name in {"RefinedEntityLinkingAdapter", "RefinedEntityLinkingConfig"}:
+        from kotekomi_adapters.refined_entity_linking import (
+            RefinedEntityLinkingAdapter,
+            RefinedEntityLinkingConfig,
+        )
+
+        return {
+            "RefinedEntityLinkingAdapter": RefinedEntityLinkingAdapter,
+            "RefinedEntityLinkingConfig": RefinedEntityLinkingConfig,
+        }[name]
     if name in {"GenericArticleAdapter", "NewsMLG2Adapter"}:
         from kotekomi_adapters.structured_news import GenericArticleAdapter, NewsMLG2Adapter
 

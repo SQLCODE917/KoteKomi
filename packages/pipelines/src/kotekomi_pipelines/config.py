@@ -19,6 +19,10 @@ DEFAULT_RUNTIME_PROFILE = "lm-studio"
 DEFAULT_REPRESENTATION_POLICY_VERSION = "deposited-source-v1"
 MODEL_RUNTIME_ADAPTERS = ("lm_studio", "llama_server", "ollama", "fixture")
 EMBEDDING_ADAPTERS = ("lm_studio", "llama_server", "ollama")
+ENTITY_LINKING_ADAPTERS = ("refined",)
+ENTITY_LINKING_CONFIG_KEYS = frozenset(
+    {"adapter", "python_executable", "data_dir", "timeout_seconds"}
+)
 MODEL_RUNTIME_CONFIG_KEYS = frozenset(
     {
         "adapter",
@@ -43,12 +47,21 @@ class ModelExecutionConfig:
 
 
 @dataclass(frozen=True)
+class EntityLinkingConfig:
+    adapter: str
+    python_executable: Path
+    data_dir: Path
+    timeout_seconds: float
+
+
+@dataclass(frozen=True)
 class PipelineConfig:
     ledger_path: Path
     archive_path: Path
     model_execution: ModelExecutionConfig
     embedding_profiles: dict[str, EmbeddingProfile]
     document_retrieval_embedding_profile_id: str | None
+    entity_linking: EntityLinkingConfig | None = None
 
 
 @dataclass(frozen=True)
@@ -365,6 +378,37 @@ def load_config(
         document_retrieval_embedding_profile_id=_document_retrieval_embedding_profile_id(
             raw_config, embedding_profiles
         ),
+        entity_linking=_entity_linking_config(raw_config, config_base),
+    )
+
+
+def _entity_linking_config(
+    raw_config: dict[str, object], config_base: Path
+) -> EntityLinkingConfig | None:
+    value = raw_config.get("entity_linking")
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise TypeError("Config entity_linking must be a table.")
+    fields = {str(key): item for key, item in cast(dict[object, object], value).items()}
+    if any(not isinstance(key, str) for key in cast(dict[object, object], value)):
+        raise TypeError("Config entity_linking keys must be strings.")
+    unknown = sorted(set(fields) - ENTITY_LINKING_CONFIG_KEYS)
+    if unknown:
+        raise ValueError(f"Unknown entity_linking config keys: {', '.join(unknown)}.")
+    missing = sorted(ENTITY_LINKING_CONFIG_KEYS - set(fields))
+    if missing:
+        raise ValueError(f"Missing entity_linking config keys: {', '.join(missing)}.")
+    adapter = _string_value(fields, "adapter")
+    if adapter not in ENTITY_LINKING_ADAPTERS:
+        raise ValueError("Entity-linking adapter must be refined.")
+    python_path = Path(_string_value(fields, "python_executable"))
+    data_path = Path(_string_value(fields, "data_dir"))
+    return EntityLinkingConfig(
+        adapter=adapter,
+        python_executable=(python_path if python_path.is_absolute() else config_base / python_path),
+        data_dir=(data_path if data_path.is_absolute() else config_base / data_path),
+        timeout_seconds=_positive_float(fields, "timeout_seconds"),
     )
 
 
