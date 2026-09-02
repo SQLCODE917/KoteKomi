@@ -5,8 +5,9 @@
 - Parent: [Candidate Ingestion Review Program](2026-08-24-candidate-ingestion-review-program.md)
 - Architecture envelope: [Staged Model Extraction](2026-07-11-staged-model-extraction.md)
 - First deliverable: [HP-1 Hybrid Mention Interpretation MVP](2026-09-01-hybrid-mention-interpretation-mvp.md)
-- Current deliverable: [HP-4 Hybrid Event Frame Drafts](2026-09-01-hybrid-event-frame-drafts.md)
-- Current evaluation: [HP-4 Event Frame Evaluation](2026-09-02-hp4-event-frame-evaluation.md)
+- Completed through: [HP-4 Hybrid Event Frame Drafts](2026-09-01-hybrid-event-frame-drafts.md)
+- Latest evaluation: [HP-4 Event Frame Evaluation](2026-09-02-hp4-event-frame-evaluation.md)
+- Next planning boundary: HP-5 Atomic Claims and Ontology Validation
 - Supersedes: [Model and Ontology Boundary Program](2026-08-25-model-ontology-boundary-program.md)
 - Supersedes: [Paragraph Hypothesis Development Program](2026-08-26-paragraph-hypothesis-development-program.md)
 - Supersedes: [PHP-1 Reliability Improvement Program](2026-08-27-php1-reliability-improvement-program.md)
@@ -248,9 +249,11 @@ Each deliverable leaves the prior working path intact.
 
 Each deliverable produces evidence that defines the next TDD.
 
-HP-1 through HP-4 have accepted TDDs.
+HP-1 through HP-4 have accepted, implemented, and verified TDDs.
 
-Later TDDs remain intentionally undefined until HP-4 evidence shapes the next bounded slice.
+HP-5 remains intentionally undefined until its design incorporates the HP-4 evaluation evidence.
+
+HP-6 and HP-7 remain black-box deliverables until their preceding increments produce evidence.
 
 | Deliverable | User story | Precondition | Postcondition |
 | --- | --- | --- | --- |
