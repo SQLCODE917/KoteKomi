@@ -35,6 +35,18 @@ from kotekomi_application import (
     run_hybrid_mention_preview,
     run_hybrid_reference_preview,
 )
+from kotekomi_application.hybrid_atomic_claim_preview import (
+    HybridAtomicClaimArchive,
+    HybridAtomicClaimCommand,
+    HybridAtomicClaimLedger,
+    load_hybrid_atomic_claim_preview,
+    publish_hybrid_atomic_claim_preview,
+    run_hybrid_atomic_claim_preview,
+)
+from kotekomi_application.hybrid_atomic_claims import (
+    HybridAtomicClaimPreview,
+    HybridAtomicClaimStatus,
+)
 from kotekomi_application.hybrid_event_frame_preview import (
     HybridEventFrameArchive,
     HybridEventFrameLedger,
@@ -51,6 +63,8 @@ from kotekomi_domain import (
     DocumentNode,
     DocumentRepresentation,
     DocumentRepresentationBundle,
+    EvidenceTarget,
+    EvidenceValidationAttempt,
     ExtractionTask,
     ModelRun,
     ParseQualityReport,
@@ -97,6 +111,8 @@ class _Ledger:
         self.analysis_units: dict[str, AnalysisUnitArtifact] = {}
         self.extraction_tasks: dict[str, ExtractionTask] = {}
         self.model_runs: dict[str, ModelRun] = {}
+        self.evidence_targets: dict[str, EvidenceTarget] = {}
+        self.evidence_attempts: dict[str, EvidenceValidationAttempt] = {}
         self.accepted_state_called = False
 
     def get_source(self, record_id: str) -> Source | None:
@@ -137,6 +153,18 @@ class _Ledger:
     def save_model_run(self, record: ModelRun) -> None:
         self.model_runs[record.id] = record
 
+    def get_evidence_target(self, record_id: str) -> EvidenceTarget | None:
+        return self.evidence_targets.get(record_id)
+
+    def save_evidence_target(self, record: EvidenceTarget) -> None:
+        self.evidence_targets[record.id] = record
+
+    def get_evidence_validation_attempt(self, record_id: str) -> EvidenceValidationAttempt | None:
+        return self.evidence_attempts.get(record_id)
+
+    def save_evidence_validation_attempt(self, record: EvidenceValidationAttempt) -> None:
+        self.evidence_attempts[record.id] = record
+
     def commit_successful_model_run_and_candidate_batch(
         self, *, model_run: ModelRun, batch: object
     ) -> None:
@@ -152,6 +180,7 @@ class _Archive:
         self.reference_previews: dict[str, bytes] = {}
         self.grounding_previews: dict[str, bytes] = {}
         self.event_previews: dict[str, bytes] = {}
+        self.atomic_claim_previews: dict[str, bytes] = {}
 
     def put_model_run_output(
         self, model_run_id: str, payload: bytes, expected_digest: str
@@ -195,6 +224,21 @@ class _Archive:
 
     def read_hybrid_event_frame_preview(self, preview_id: str) -> bytes:
         return self.event_previews[preview_id]
+
+    def put_hybrid_atomic_claim_preview(
+        self,
+        preview: HybridAtomicClaimPreview,
+        payload: bytes,
+        expected_sha256: str,
+    ) -> object:
+        assert hashlib.sha256(payload).hexdigest() == expected_sha256
+        existing = self.atomic_claim_previews.get(preview.id)
+        assert existing is None or existing == payload
+        self.atomic_claim_previews[preview.id] = payload
+        return object()
+
+    def read_hybrid_atomic_claim_preview(self, preview_id: str) -> bytes:
+        return self.atomic_claim_previews[preview_id]
 
 
 class _MentionProposer:
@@ -469,6 +513,147 @@ def test_hp4_maps_place_qualifier_and_explicit_attribution_candidate() -> None:
     assert frame.attribution_candidate_ids == (mention.preview.candidates[0].id,)
     assert frame.qualifiers[0].kind.value == "place"
     assert frame.qualifiers[0].text == "Washington"
+
+
+def test_hp5_atomizes_hp4_without_repairing_open_labels_or_creating_model_runs() -> None:
+    ledger, archive, _, grounding = _parent_evidence()
+    hp4 = _run_hp4(ledger, archive, grounding.id, _Runtime("events"))
+
+    first = run_hybrid_atomic_claim_preview(
+        command=HybridAtomicClaimCommand(hp4.preview.id, NOW),
+        ledger=cast(HybridAtomicClaimLedger, ledger),
+        archive=cast(HybridAtomicClaimArchive, archive),
+    )
+    publish_hybrid_atomic_claim_preview(first, cast(HybridAtomicClaimArchive, archive))
+    second = run_hybrid_atomic_claim_preview(
+        command=HybridAtomicClaimCommand(hp4.preview.id, datetime(2026, 9, 2, tzinfo=UTC)),
+        ledger=cast(HybridAtomicClaimLedger, ledger),
+        archive=cast(HybridAtomicClaimArchive, archive),
+    )
+    publish_hybrid_atomic_claim_preview(second, cast(HybridAtomicClaimArchive, archive))
+
+    assert first.preview.terminal_status is HybridAtomicClaimStatus.COMPLETE
+    assert first.preview.id == second.preview.id
+    assert len(first.preview.event_subjects) == 1
+    assert len(first.preview.atomic_claims) == 6
+    assert len(first.preview.evidence_target_ids) == 1
+    assert len(first.preview.traces) == 2
+    assert {item.code for item in first.preview.ontology_reports[0].findings} == {
+        "unmapped_argument_role",
+        "unmapped_event_type",
+    }
+    assert {item.role_label for item in first.preview.atomic_claims if item.role_label} == {
+        "policy_establisher"
+    }
+    assert not any(trace.execution_record_ids for trace in first.preview.traces)
+    assert (
+        load_hybrid_atomic_claim_preview(
+            first.preview.id,
+            cast(HybridAtomicClaimLedger, ledger),
+            cast(HybridAtomicClaimArchive, archive),
+        )
+        == first.preview
+    )
+
+
+def test_hp5_preserves_candidate_attribution_as_an_explicit_contract_gap() -> None:
+    ledger, archive, _, grounding = _parent_evidence()
+    hp4 = _run_hp4(
+        ledger,
+        archive,
+        grounding.id,
+        _Runtime(
+            "events",
+            frame_output=(
+                b"event: e1\n"
+                b"polarity: affirmed\n"
+                b"modality: actual\n"
+                b"attribution: c1\n"
+                b"argument: c1 | actor | s1\n"
+            ),
+        ),
+    )
+
+    result = run_hybrid_atomic_claim_preview(
+        command=HybridAtomicClaimCommand(hp4.preview.id, NOW),
+        ledger=cast(HybridAtomicClaimLedger, ledger),
+        archive=cast(HybridAtomicClaimArchive, archive),
+    )
+    publish_hybrid_atomic_claim_preview(result, cast(HybridAtomicClaimArchive, archive))
+
+    report = result.preview.ontology_reports[0]
+    assert "attribution_support_missing" in {item.code for item in report.findings}
+    assert "according_to" not in {item.predicate.value for item in result.preview.atomic_claims}
+
+
+def test_hp5_retains_valid_frames_from_a_partial_hp4_preview() -> None:
+    ledger, archive, _, grounding = _parent_evidence()
+    hp4 = _run_hp4(
+        ledger,
+        archive,
+        grounding.id,
+        _Runtime(
+            "events",
+            trigger_output=(
+                b"event: e1 | s1 | announced | event\nevent: e2 | s1 | established | event\n"
+            ),
+            frame_outputs=(
+                b"event: e1\npolarity: affirmed\nmodality: actual\nattribution: source_narrator\n",
+                b"event: e2\npolarity: affirmed\nmodality: actual\nattribution: c99\n",
+            ),
+        ),
+    )
+    assert hp4.preview.terminal_status is HybridEventFrameStatus.PARTIAL
+
+    result = run_hybrid_atomic_claim_preview(
+        command=HybridAtomicClaimCommand(hp4.preview.id, NOW),
+        ledger=cast(HybridAtomicClaimLedger, ledger),
+        archive=cast(HybridAtomicClaimArchive, archive),
+    )
+    publish_hybrid_atomic_claim_preview(result, cast(HybridAtomicClaimArchive, archive))
+
+    assert result.preview.terminal_status is HybridAtomicClaimStatus.PARTIAL
+    assert len(result.preview.event_subjects) == 1
+    assert result.preview.diagnostics == ("hp4_status:partial",)
+
+
+def test_hp5_preserves_complete_empty_and_blocked_parent_states() -> None:
+    ledger, archive, _, grounding = _parent_evidence()
+    complete_parent = _run_hp4(
+        ledger,
+        archive,
+        grounding.id,
+        _Runtime(
+            "events",
+            trigger_output=b"abstain: no explicit event in the target segment\n",
+        ),
+    )
+    complete = run_hybrid_atomic_claim_preview(
+        command=HybridAtomicClaimCommand(complete_parent.preview.id, NOW),
+        ledger=cast(HybridAtomicClaimLedger, ledger),
+        archive=cast(HybridAtomicClaimArchive, archive),
+    )
+    assert complete.preview.terminal_status is HybridAtomicClaimStatus.COMPLETE
+    assert complete.preview.event_subjects == ()
+    assert complete.preview.evidence_target_ids == ()
+
+    blocked_parent = _run_hp4(
+        ledger,
+        archive,
+        grounding.id,
+        _Runtime(
+            "events",
+            trigger_output=b"event: e1 | s1 | missing literal | event\n",
+        ),
+    )
+    blocked = run_hybrid_atomic_claim_preview(
+        command=HybridAtomicClaimCommand(blocked_parent.preview.id, NOW),
+        ledger=cast(HybridAtomicClaimLedger, ledger),
+        archive=cast(HybridAtomicClaimArchive, archive),
+    )
+    assert blocked.preview.terminal_status is HybridAtomicClaimStatus.BLOCKED
+    assert blocked.preview.diagnostics == ("hp4_status:blocked", "no_valid_event_frames")
+    assert blocked.preview.evidence_target_ids == ()
 
 
 def test_hp4_preserves_a_frame_abstention_as_typed_non_applicable_evidence() -> None:

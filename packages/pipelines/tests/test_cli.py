@@ -9,6 +9,9 @@ import pytest
 from kotekomi_application import (
     EntityLinkingInput,
     EntityLinkingPort,
+    HybridAtomicClaimCommand,
+    HybridAtomicClaimResult,
+    HybridAtomicClaimStatus,
     HybridEntityGroundingCommand,
     HybridEntityGroundingResult,
     HybridEntityGroundingStatus,
@@ -24,10 +27,12 @@ from kotekomi_application import (
     ModelRunLogEntry,
     ModelRunLogLedger,
     ModelRuntimeStatus,
+    build_hybrid_atomic_claim_preview,
     build_hybrid_entity_grounding_preview_record,
     build_hybrid_event_frame_preview,
     build_hybrid_extraction_preview,
     build_hybrid_reference_preview_record,
+    hybrid_atomic_claim_preview_sha256,
     hybrid_entity_grounding_preview_sha256,
     hybrid_event_frame_preview_sha256,
     hybrid_extraction_preview_sha256,
@@ -598,6 +603,124 @@ def test_hybrid_event_frame_command_prints_portable_result(
         "preview_id": preview.id,
         "sha256": digest,
         "status": "complete",
+    }
+
+
+def test_hybrid_atomic_claim_command_routes_without_a_model_runtime(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = PipelineConfig(
+        ledger_path=tmp_path / "kotekomi.db",
+        archive_path=tmp_path / "archive",
+        model_execution=ModelExecutionConfig(
+            "fixture", "fixture://local", "fixture", 300.0, 1024, 64
+        ),
+        embedding_profiles={},
+        document_retrieval_embedding_profile_id=None,
+    )
+    received: list[tuple[PipelineConfig, str]] = []
+
+    def fake_load_config(**kwargs: object) -> PipelineConfig:
+        del kwargs
+        return config
+
+    def fake_build(*, config: PipelineConfig, parent_preview_id: str) -> int:
+        received.append((config, parent_preview_id))
+        return 0
+
+    monkeypatch.setattr(cli, "load_config", fake_load_config)
+    monkeypatch.setattr(cli, "build_hybrid_atomic_claims", fake_build)
+
+    assert main(["extraction", "build-atomic-claims", "--preview-id", "hep_fixture"]) == 0
+    assert received == [(config, "hep_fixture")]
+
+
+def test_hybrid_atomic_claim_command_prints_counts(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    config = PipelineConfig(
+        ledger_path=tmp_path / "kotekomi.db",
+        archive_path=tmp_path / "archive",
+        model_execution=ModelExecutionConfig(
+            "fixture", "fixture://local", "fixture", 300.0, 1024, 64
+        ),
+        embedding_profiles={},
+        document_retrieval_embedding_profile_id=None,
+    )
+    preview = build_hybrid_atomic_claim_preview(
+        parent_preview_id="hep_" + "1" * 24,
+        parent_preview_sha256="a" * 64,
+        grounding_preview_id="hgp_" + "2" * 24,
+        grounding_preview_sha256="b" * 64,
+        reference_preview_id="hrp_" + "3" * 24,
+        reference_preview_sha256="c" * 64,
+        mention_preview_id="hxp_" + "4" * 24,
+        mention_preview_sha256="d" * 64,
+        representation_id="rep_fixture",
+        paragraph_node_id="nod_fixture",
+        ontology_slice_id="hybrid_event_core_v1",
+        ontology_slice_sha256="e" * 64,
+        terminal_status=HybridAtomicClaimStatus.COMPLETE,
+    )
+    digest = hybrid_atomic_claim_preview_sha256(preview)
+    transaction_open = False
+    published: list[str] = []
+
+    class FakeArchive:
+        def __init__(self, archive_path: Path) -> None:
+            assert archive_path == config.archive_path
+
+        def initialize(self) -> None:
+            pass
+
+    @contextmanager
+    def fake_transaction(ledger_path: Path) -> Generator[object]:
+        nonlocal transaction_open
+        assert ledger_path == config.ledger_path
+        transaction_open = True
+        try:
+            yield object()
+        finally:
+            transaction_open = False
+
+    def fake_run(**kwargs: object) -> HybridAtomicClaimResult:
+        command = cast(HybridAtomicClaimCommand, kwargs["command"])
+        assert command.parent_preview_id == preview.parent_preview_id
+        return HybridAtomicClaimResult(
+            preview,
+            digest,
+            f"extraction/atomic-claim-previews/{preview.id}.json",
+        )
+
+    def fake_publish(result: HybridAtomicClaimResult, archive: object) -> None:
+        del archive
+        assert transaction_open is False
+        published.append(result.preview.id)
+
+    monkeypatch.setattr(cli, "LocalArchiveStore", FakeArchive)
+    monkeypatch.setattr(cli, "sqlite_ledger_transaction", fake_transaction)
+    monkeypatch.setattr(cli, "run_hybrid_atomic_claim_preview", fake_run)
+    monkeypatch.setattr(cli, "publish_hybrid_atomic_claim_preview", fake_publish)
+
+    assert (
+        cli.build_hybrid_atomic_claims(config=config, parent_preview_id=preview.parent_preview_id)
+        == 0
+    )
+    assert published == [preview.id]
+    assert json.loads(capsys.readouterr().out) == {
+        "archive_path": f"extraction/atomic-claim-previews/{preview.id}.json",
+        "claim_count": 0,
+        "evidence_target_count": 0,
+        "ontology_finding_count": 0,
+        "parent_preview_id": preview.parent_preview_id,
+        "preview_id": preview.id,
+        "report_count": 0,
+        "sha256": digest,
+        "status": "complete",
+        "subject_count": 0,
     }
 
 
