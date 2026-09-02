@@ -12,6 +12,9 @@ from kotekomi_application import (
     HybridEntityGroundingCommand,
     HybridEntityGroundingResult,
     HybridEntityGroundingStatus,
+    HybridEventFrameCommand,
+    HybridEventFrameResult,
+    HybridEventFrameStatus,
     HybridMentionPreviewResult,
     HybridPreviewStatus,
     HybridReferencePreviewCommand,
@@ -22,9 +25,11 @@ from kotekomi_application import (
     ModelRunLogLedger,
     ModelRuntimeStatus,
     build_hybrid_entity_grounding_preview_record,
+    build_hybrid_event_frame_preview,
     build_hybrid_extraction_preview,
     build_hybrid_reference_preview_record,
     hybrid_entity_grounding_preview_sha256,
+    hybrid_event_frame_preview_sha256,
     hybrid_extraction_preview_sha256,
     hybrid_reference_preview_sha256,
 )
@@ -487,6 +492,183 @@ def test_hybrid_entity_grounding_missing_runtime_publishes_blocked_result(
     captured = capsys.readouterr()
     assert json.loads(captured.out)["status"] == "blocked"
     assert captured.err == "entity_linking_runtime_unavailable\n"
+
+
+def test_hybrid_event_frame_command_routes_parent_preview(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = PipelineConfig(
+        ledger_path=tmp_path / "kotekomi.db",
+        archive_path=tmp_path / "archive",
+        model_execution=ModelExecutionConfig(
+            "fixture", "fixture://local", "fixture", 300.0, 1024, 64
+        ),
+        embedding_profiles={},
+        document_retrieval_embedding_profile_id=None,
+    )
+    received: list[tuple[PipelineConfig, str]] = []
+
+    def fake_load_model_config(**kwargs: object) -> PipelineConfig:
+        del kwargs
+        return config
+
+    def fake_draft(*, config: PipelineConfig, parent_preview_id: str) -> int:
+        received.append((config, parent_preview_id))
+        return 0
+
+    monkeypatch.setattr(cli, "_load_model_config", fake_load_model_config)
+    monkeypatch.setattr(cli, "draft_hybrid_event_frames", fake_draft)
+
+    assert main(["extraction", "draft-event-frames", "--preview-id", "hgp_fixture"]) == 0
+    assert received == [(config, "hgp_fixture")]
+
+
+def test_hybrid_event_frame_command_prints_portable_result(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    config = PipelineConfig(
+        ledger_path=tmp_path / "kotekomi.db",
+        archive_path=tmp_path / "archive",
+        model_execution=ModelExecutionConfig(
+            "fixture", "fixture://local", "fixture", 300.0, 1024, 64
+        ),
+        embedding_profiles={},
+        document_retrieval_embedding_profile_id=None,
+    )
+    preview = build_hybrid_event_frame_preview(
+        parent_preview_id="hgp_" + "1" * 24,
+        parent_preview_sha256="a" * 64,
+        reference_preview_id="hrp_" + "2" * 24,
+        reference_preview_sha256="b" * 64,
+        mention_preview_id="hxp_" + "3" * 24,
+        mention_preview_sha256="c" * 64,
+        representation_id="rep_fixture",
+        paragraph_node_id="nod_fixture",
+        trigger_context_manifest_id="ctx_trigger",
+        frame_context_manifest_id="ctx_frame",
+        terminal_status=HybridEventFrameStatus.COMPLETE,
+    )
+    digest = hybrid_event_frame_preview_sha256(preview)
+
+    class FakeArchive:
+        def __init__(self, archive_path: Path) -> None:
+            assert archive_path == config.archive_path
+
+        def initialize(self) -> None:
+            pass
+
+    @contextmanager
+    def fake_transaction(ledger_path: Path) -> Generator[object]:
+        assert ledger_path == config.ledger_path
+        yield object()
+
+    def fake_run(**kwargs: object) -> HybridEventFrameResult:
+        command = cast(HybridEventFrameCommand, kwargs["command"])
+        assert command.parent_preview_id == preview.parent_preview_id
+        assert kwargs["trigger_prompt_bytes"]
+        assert kwargs["frame_prompt_bytes"]
+        return HybridEventFrameResult(
+            preview,
+            digest,
+            f"extraction/event-frame-previews/{preview.id}.json",
+        )
+
+    def fake_runtime(runtime_config: ModelExecutionConfig) -> object:
+        assert runtime_config == config.model_execution
+        return object()
+
+    monkeypatch.setattr(cli, "LocalArchiveStore", FakeArchive)
+    monkeypatch.setattr(cli, "build_model_task_runtime", fake_runtime)
+    monkeypatch.setattr(cli, "sqlite_ledger_transaction", fake_transaction)
+    monkeypatch.setattr(cli, "run_hybrid_event_frame_preview", fake_run)
+
+    assert (
+        cli.draft_hybrid_event_frames(
+            config=config,
+            parent_preview_id=preview.parent_preview_id,
+        )
+        == 0
+    )
+    assert json.loads(capsys.readouterr().out) == {
+        "archive_path": f"extraction/event-frame-previews/{preview.id}.json",
+        "parent_preview_id": preview.parent_preview_id,
+        "preview_id": preview.id,
+        "sha256": digest,
+        "status": "complete",
+    }
+
+
+def test_hybrid_event_frame_command_returns_one_for_a_partial_preview(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    config = PipelineConfig(
+        ledger_path=tmp_path / "kotekomi.db",
+        archive_path=tmp_path / "archive",
+        model_execution=ModelExecutionConfig(
+            "fixture", "fixture://local", "fixture", 300.0, 1024, 64
+        ),
+        embedding_profiles={},
+        document_retrieval_embedding_profile_id=None,
+    )
+    preview = build_hybrid_event_frame_preview(
+        parent_preview_id="hgp_" + "1" * 24,
+        parent_preview_sha256="a" * 64,
+        reference_preview_id="hrp_" + "2" * 24,
+        reference_preview_sha256="b" * 64,
+        mention_preview_id="hxp_" + "3" * 24,
+        mention_preview_sha256="c" * 64,
+        representation_id="rep_fixture",
+        paragraph_node_id="nod_fixture",
+        trigger_context_manifest_id="ctx_trigger",
+        frame_context_manifest_id="ctx_frame",
+        terminal_status=HybridEventFrameStatus.PARTIAL,
+        diagnostics=("frame_task_failed:fixture",),
+    )
+
+    class FakeArchive:
+        def __init__(self, archive_path: Path) -> None:
+            assert archive_path == config.archive_path
+
+        def initialize(self) -> None:
+            pass
+
+    @contextmanager
+    def fake_transaction(ledger_path: Path) -> Generator[object]:
+        assert ledger_path == config.ledger_path
+        yield object()
+
+    def fake_runtime(runtime_config: ModelExecutionConfig) -> object:
+        assert runtime_config == config.model_execution
+        return object()
+
+    def fake_run(**kwargs: object) -> HybridEventFrameResult:
+        del kwargs
+        return HybridEventFrameResult(
+            preview,
+            hybrid_event_frame_preview_sha256(preview),
+            f"extraction/event-frame-previews/{preview.id}.json",
+        )
+
+    monkeypatch.setattr(cli, "LocalArchiveStore", FakeArchive)
+    monkeypatch.setattr(cli, "build_model_task_runtime", fake_runtime)
+    monkeypatch.setattr(cli, "sqlite_ledger_transaction", fake_transaction)
+    monkeypatch.setattr(cli, "run_hybrid_event_frame_preview", fake_run)
+
+    assert (
+        cli.draft_hybrid_event_frames(
+            config=config,
+            parent_preview_id=preview.parent_preview_id,
+        )
+        == 1
+    )
+    captured = capsys.readouterr()
+    assert json.loads(captured.out)["status"] == "partial"
+    assert captured.err == "frame_task_failed:fixture\n"
 
 
 def test_entrypoint_reports_application_validation_errors_without_traceback(

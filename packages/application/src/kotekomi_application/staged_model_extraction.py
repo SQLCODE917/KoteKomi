@@ -44,6 +44,12 @@ from kotekomi_application.grounded_candidates import (
     ProposedChangeBatchOutcome,
     prepare_grounded_candidate_batch,
 )
+from kotekomi_application.hybrid_event_model_output import (
+    EventFrameAbstention,
+    EventFrameProposal,
+    EventTriggerAbstention,
+    EventTriggerProposalBatch,
+)
 from kotekomi_application.hybrid_mention_interpretation import (
     MentionInterpretationDraft,
     MentionProposalAbstention,
@@ -408,6 +414,8 @@ class BoundedExtractionOutcome:
     organization_qualification_judgment: OrganizationQualificationJudgment | None = None
     mention_proposal_drafts: MentionProposalDraftBatch | None = None
     mention_interpretation_draft: MentionInterpretationDraft | None = None
+    event_trigger_proposals: EventTriggerProposalBatch | None = None
+    event_frame_proposal: EventFrameProposal | None = None
 
 
 @dataclass(frozen=True)
@@ -488,6 +496,10 @@ type ParsedModelOutput = (
     | MentionProposalDraftBatch
     | MentionProposalAbstention
     | MentionInterpretationDraft
+    | EventTriggerProposalBatch
+    | EventTriggerAbstention
+    | EventFrameProposal
+    | EventFrameAbstention
 )
 
 
@@ -630,6 +642,8 @@ def run_bounded_extraction(
                 OrganizationMentionBatchAbstention,
                 OrganizationQualificationRejection,
                 MentionProposalAbstention,
+                EventTriggerAbstention,
+                EventFrameAbstention,
             ),
         ):
             run = _model_run(
@@ -805,6 +819,55 @@ def run_bounded_extraction(
                 run,
                 None,
                 mention_interpretation_draft=parsed,
+            )
+        if isinstance(parsed, EventTriggerProposalBatch):
+            run = _model_run(
+                extraction_input,
+                manifest,
+                task,
+                model_run_id,
+                ModelRunStatus.SUCCEEDED,
+                started_at=started_at,
+                completed_at=completed_at,
+                execution_diagnostics=diagnostics,
+                output_digest=output_digest,
+                execution_receipt=response.execution_receipt,
+                outcome_metadata={
+                    "contract": "hybrid_event_trigger_text_v1",
+                    "proposal_count": len(parsed.proposals),
+                },
+            )
+            ledger_repository.save_model_run(run)
+            return BoundedExtractionOutcome(
+                task,
+                run,
+                None,
+                event_trigger_proposals=parsed,
+            )
+        if isinstance(parsed, EventFrameProposal):
+            run = _model_run(
+                extraction_input,
+                manifest,
+                task,
+                model_run_id,
+                ModelRunStatus.SUCCEEDED,
+                started_at=started_at,
+                completed_at=completed_at,
+                execution_diagnostics=diagnostics,
+                output_digest=output_digest,
+                execution_receipt=response.execution_receipt,
+                outcome_metadata={
+                    "contract": "hybrid_event_frame_text_v1",
+                    "argument_count": len(parsed.arguments),
+                    "qualifier_count": len(parsed.qualifiers),
+                },
+            )
+            ledger_repository.save_model_run(run)
+            return BoundedExtractionOutcome(
+                task,
+                run,
+                None,
+                event_frame_proposal=parsed,
             )
         batch_input, outcome_metadata = _grounded_batch(
             extraction_input,
@@ -1784,8 +1847,14 @@ def _abstention_outcome_metadata(
     | HypothesisBatchAbstention
     | OrganizationMentionBatchAbstention
     | OrganizationQualificationRejection
-    | MentionProposalAbstention,
+    | MentionProposalAbstention
+    | EventTriggerAbstention
+    | EventFrameAbstention,
 ) -> dict[str, JsonValue]:
+    if isinstance(output, EventTriggerAbstention):
+        return {"contract": "hybrid_event_trigger_text_v1", "proposal_count": 0}
+    if isinstance(output, EventFrameAbstention):
+        return {"contract": "hybrid_event_frame_text_v1", "frame_count": 0}
     if isinstance(output, MentionProposalAbstention):
         return {"contract": "hybrid_mention_proposal_text_v1", "proposal_count": 0}
     if isinstance(output, HypothesisBatchAbstention):

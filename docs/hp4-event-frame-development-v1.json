@@ -1,0 +1,69 @@
+{
+  "schema_version": "hp4_event_frame_development_v1",
+  "policy_id": "hybrid_event_frame_v1",
+  "fixture_path": "raw/Anthropic–United_States_Department_of_Defense_dispute.pdf",
+  "fixture_sha256": "c63c85796559453acf708dab46a35da36ffed00a408a25275576ba07138e9624",
+  "annotation_status": "reviewed_semantic_expectations",
+  "cases": [
+    {
+      "case_id": "HP4-AD-01",
+      "paragraph_anchor": "Directive  3000.09",
+      "expected_semantic_work": "Separate policy establishment, intensified AI use, Project Maven use, concerns, protests, and resignations; preserve 2012 and 2018 as event-specific time qualifiers."
+    },
+    {
+      "case_id": "HP4-AD-02",
+      "paragraph_anchor": "According  to Semafor",
+      "expected_semantic_work": "Separate criticism, opposition, discussions, lobbying, agreement, chastisement, hiring, and publication events; preserve Semafor attribution."
+    },
+    {
+      "case_id": "HP4-AD-03",
+      "paragraph_anchor": "partnered with Palantir and Amazon Web Services",
+      "expected_semantic_work": "Separate both partnerships, the AISI agreement, evaluation participation, authorization, announced future use, conflict, and criticism; preserve future modality and dates."
+    },
+    {
+      "case_id": "HP4-AD-04",
+      "paragraph_anchor": "initially  contracted  Google  Gemini",
+      "expected_semantic_work": "Preserve Hegseth's two announcements and the ordered Google, OpenAI, and planned xAI contracting events."
+    },
+    {
+      "case_id": "HP4-AD-05",
+      "paragraph_anchor": "According  to  Reuters",
+      "expected_semantic_work": "Preserve Semafor and Reuters attribution, two opposed uses, the conflict, and the resulting contract termination with an estimated amount."
+    },
+    {
+      "case_id": "HP4-AD-06",
+      "paragraph_anchor": "all lawful purposes",
+      "expected_semantic_work": "Separate attributed statements, reported use, reassessment, refusal, threat, attempted designation, judicial block, and appellate denial; retain threatened and attempted modality."
+    },
+    {
+      "case_id": "HP4-AD-07",
+      "paragraph_anchor": "did not know whether Claude had been used",
+      "expected_semantic_work": "Represent unknown use as uncertain, preserve the conditional red-line judgment, and keep Amnesty International and Human Rights Watch attribution separate."
+    },
+    {
+      "case_id": "HP4-AD-08",
+      "paragraph_anchor": "to abandon an investment in Anthropic",
+      "expected_semantic_work": "Represent the dispute's causal relation to 1789 Capital abandoning an investment and retain the estimated value wording."
+    },
+    {
+      "case_id": "HP4-AD-09",
+      "paragraph_anchor": "OpenAI \"rushed\"",
+      "expected_semantic_work": "Separate the government's actions, OpenAI seeking a deal, the US starting the war, and Anthropic seeking constraints without inventing additional relations."
+    },
+    {
+      "case_id": "HP4-AD-10",
+      "paragraph_anchor": "contract cancellations proceed",
+      "expected_semantic_work": "Preserve the quotation context, ongoing cancellations and removal, the 180-day qualifier, and the prohibition on Anthropic contracting."
+    },
+    {
+      "case_id": "HP4-AD-11",
+      "paragraph_anchor": "records show that it designated Anthropic",
+      "expected_semantic_work": "Separate the records' designation evidence from the quoted court's legal findings and do not present quoted arguments as independent narrator facts."
+    },
+    {
+      "case_id": "HP4-AD-12",
+      "paragraph_anchor": "The April order  is  not  final",
+      "expected_semantic_work": "Represent the appellate denial, retain the order's non-final status, and preserve attribution for the order, Wired, and quoted experts."
+    }
+  ]
+}

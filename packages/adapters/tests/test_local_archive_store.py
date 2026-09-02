@@ -6,15 +6,19 @@ from kotekomi_adapters import LocalArchiveStore
 from kotekomi_application import (
     ArchivePutDisposition,
     HybridEntityGroundingStatus,
+    HybridEventFrameStatus,
     HybridPreviewStatus,
     StagedArchiveObject,
     build_hybrid_entity_grounding_preview_record,
+    build_hybrid_event_frame_preview,
     build_hybrid_extraction_preview,
     build_hybrid_reference_preview_record,
     canonical_hybrid_entity_grounding_preview_bytes,
+    canonical_hybrid_event_frame_preview_bytes,
     canonical_hybrid_extraction_preview_bytes,
     canonical_hybrid_reference_preview_bytes,
     hybrid_entity_grounding_preview_sha256,
+    hybrid_event_frame_preview_sha256,
     hybrid_extraction_preview_sha256,
     hybrid_reference_preview_sha256,
 )
@@ -32,6 +36,7 @@ def test_initialize_creates_archive_directories(tmp_path: Path) -> None:
     assert (tmp_path / "extraction" / "previews").is_dir()
     assert (tmp_path / "extraction" / "reference-previews").is_dir()
     assert (tmp_path / "extraction" / "entity-grounding-previews").is_dir()
+    assert (tmp_path / "extraction" / "event-frame-previews").is_dir()
     assert (tmp_path / "transformations").is_dir()
 
 
@@ -197,6 +202,69 @@ def test_put_reuse_and_restart_hybrid_entity_grounding_preview(tmp_path: Path) -
     assert created.disposition is ArchivePutDisposition.CREATED
     assert reused.disposition is ArchivePutDisposition.REUSED
     assert reopened.read_hybrid_entity_grounding_preview(preview.id) == payload
+
+
+def test_put_reuse_and_restart_hybrid_event_frame_preview(tmp_path: Path) -> None:
+    store = LocalArchiveStore(tmp_path)
+    store.initialize()
+    preview = build_hybrid_event_frame_preview(
+        parent_preview_id="hgp_" + "1" * 24,
+        parent_preview_sha256="a" * 64,
+        reference_preview_id="hrp_" + "2" * 24,
+        reference_preview_sha256="b" * 64,
+        mention_preview_id="hxp_" + "3" * 24,
+        mention_preview_sha256="c" * 64,
+        representation_id="rep_fixture",
+        paragraph_node_id="nod_fixture",
+        trigger_context_manifest_id="ctx_trigger",
+        frame_context_manifest_id="ctx_frame",
+        terminal_status=HybridEventFrameStatus.COMPLETE,
+    )
+    payload = canonical_hybrid_event_frame_preview_bytes(preview)
+    digest = hybrid_event_frame_preview_sha256(preview)
+
+    created = store.put_hybrid_event_frame_preview(preview, payload, digest)
+    reused = store.put_hybrid_event_frame_preview(preview, payload, digest)
+    reopened = LocalArchiveStore(tmp_path)
+
+    assert created.disposition is ArchivePutDisposition.CREATED
+    assert reused.disposition is ArchivePutDisposition.REUSED
+    assert reopened.read_hybrid_event_frame_preview(preview.id) == payload
+
+
+def test_hybrid_event_frame_preview_rejects_tampered_stored_bytes(tmp_path: Path) -> None:
+    store = LocalArchiveStore(tmp_path)
+    store.initialize()
+    preview = build_hybrid_event_frame_preview(
+        parent_preview_id="hgp_" + "1" * 24,
+        parent_preview_sha256="a" * 64,
+        reference_preview_id="hrp_" + "2" * 24,
+        reference_preview_sha256="b" * 64,
+        mention_preview_id="hxp_" + "3" * 24,
+        mention_preview_sha256="c" * 64,
+        representation_id="rep_fixture",
+        paragraph_node_id="nod_fixture",
+        trigger_context_manifest_id="ctx_trigger",
+        frame_context_manifest_id="ctx_frame",
+        terminal_status=HybridEventFrameStatus.COMPLETE,
+    )
+    payload = canonical_hybrid_event_frame_preview_bytes(preview)
+    store.put_hybrid_event_frame_preview(
+        preview,
+        payload,
+        hybrid_event_frame_preview_sha256(preview),
+    )
+    stored = tmp_path / "extraction" / "event-frame-previews" / f"{preview.id}.json"
+    stored.write_bytes(b"different bytes")
+
+    with pytest.raises(ValueError, match="conflicts with its immutable identity"):
+        store.put_hybrid_event_frame_preview(
+            preview,
+            payload,
+            hybrid_event_frame_preview_sha256(preview),
+        )
+    with pytest.raises(ValueError):
+        store.read_hybrid_event_frame_preview(preview.id)
 
 
 def test_put_and_reuse_pdf_transformation_blob(tmp_path: Path) -> None:

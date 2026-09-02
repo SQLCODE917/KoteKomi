@@ -78,6 +78,8 @@ from kotekomi_application import (
     ExplainEvidenceGraphRelationshipCommand,
     HybridEntityGroundingCommand,
     HybridEntityGroundingStatus,
+    HybridEventFrameCommand,
+    HybridEventFrameStatus,
     HybridMentionPreviewCommand,
     HybridPreviewStatus,
     HybridReferencePreviewCommand,
@@ -177,6 +179,7 @@ from kotekomi_application import (
     review_readiness_to_json,
     run_bounded_extraction,
     run_hybrid_entity_grounding_preview,
+    run_hybrid_event_frame_preview,
     run_hybrid_mention_preview,
     run_hybrid_reference_preview,
     run_next_result_to_json,
@@ -497,6 +500,21 @@ def main(argv: list[str] | None = None) -> int:
             archive_path_override=args.archive_path,
         )
         return ground_hybrid_entities(config=config, parent_preview_id=args.preview_id)
+
+    if args.command == "extraction" and args.extraction_command == "draft-event-frames":
+        config = _load_model_config(
+            config_path=args.config,
+            ledger_path_override=args.ledger_path,
+            archive_path_override=args.archive_path,
+            runtime_profile=args.runtime_profile,
+            model_runtime_adapter=args.model_runtime,
+            model_endpoint=args.model_endpoint,
+            model_name=args.model_name,
+            model_timeout_seconds=args.model_timeout_seconds,
+            model_context_tokens=args.model_context_tokens,
+            model_max_output_tokens=args.model_max_output_tokens,
+        )
+        return draft_hybrid_event_frames(config=config, parent_preview_id=args.preview_id)
 
     if args.command == "review" and args.review_command == "approve":
         config = load_config(
@@ -1043,6 +1061,14 @@ def build_parser() -> argparse.ArgumentParser:
     ground_entities_parser.add_argument("--preview-id", required=True)
     ground_entities_parser.add_argument("--ledger-path", type=Path, default=None)
     ground_entities_parser.add_argument("--archive-path", type=Path, default=None)
+    draft_event_frames_parser = extraction_subparsers.add_parser(
+        "draft-event-frames",
+        help="Draft source-grounded event frames from one immutable grounding Preview.",
+    )
+    draft_event_frames_parser.add_argument("--preview-id", required=True)
+    draft_event_frames_parser.add_argument("--ledger-path", type=Path, default=None)
+    draft_event_frames_parser.add_argument("--archive-path", type=Path, default=None)
+    _add_model_runtime_arguments(draft_event_frames_parser, include_fixture=True)
 
     review_parser = subparsers.add_parser("review", help="ProposedChange review commands.")
     review_subparsers = review_parser.add_subparsers(dest="review_command")
@@ -2415,6 +2441,55 @@ def ground_hybrid_entities(*, config: PipelineConfig, parent_preview_id: str) ->
     for diagnostic in result.preview.diagnostics:
         print(diagnostic, file=sys.stderr)
     return 0 if result.preview.terminal_status is HybridEntityGroundingStatus.COMPLETE else 1
+
+
+def draft_hybrid_event_frames(*, config: PipelineConfig, parent_preview_id: str) -> int:
+    """Run HP-4 and print one portable event-frame Preview result."""
+    archive = LocalArchiveStore(config.archive_path)
+    archive.initialize()
+    runtime = build_model_task_runtime(config.model_execution)
+    prompt_root = Path(__file__).resolve().parents[4] / "prompts"
+    trigger_prompt = (prompt_root / "hybrid_event_trigger_task_v1.md").read_bytes()
+    frame_prompt = (prompt_root / "hybrid_event_frame_task_v1.md").read_bytes()
+    with sqlite_ledger_transaction(config.ledger_path) as repository:
+        result = run_hybrid_event_frame_preview(
+            command=HybridEventFrameCommand(
+                parent_preview_id=parent_preview_id,
+                model_profile=ContextModelProfile(
+                    config.model_execution.profile_name or "lm-studio",
+                    config.model_execution.context_tokens,
+                    config.model_execution.max_output_tokens,
+                    256,
+                ),
+                generation_parameters=(
+                    ExecutionSetting("max_output_tokens", config.model_execution.max_output_tokens),
+                    ExecutionSetting("seed", 17),
+                    ExecutionSetting("temperature", 0),
+                ),
+            ),
+            ledger=repository,
+            archive=archive,
+            model_runtime=runtime,
+            model_run_id_factory=Uuid4ModelRunIdFactory(),
+            tokenizer=_AutomaticExtractionTokenizer(),
+            trigger_prompt_bytes=trigger_prompt,
+            frame_prompt_bytes=frame_prompt,
+        )
+    print(
+        json.dumps(
+            {
+                "archive_path": result.archive_path,
+                "parent_preview_id": result.preview.parent_preview_id,
+                "preview_id": result.preview.id,
+                "sha256": result.sha256,
+                "status": result.preview.terminal_status.value,
+            },
+            sort_keys=True,
+        )
+    )
+    for diagnostic in result.preview.diagnostics:
+        print(diagnostic, file=sys.stderr)
+    return 0 if result.preview.terminal_status is HybridEventFrameStatus.COMPLETE else 1
 
 
 def _automatic_ingestion_extraction(
