@@ -1,5 +1,12 @@
 """KoteKomi Domain Core."""
 
+from kotekomi_domain.hybrid_event_ontology import (
+    HYBRID_EVENT_CORE_V1,
+    HybridEventOntologySlice,
+    HybridEventStructuralPredicate,
+    canonical_hybrid_event_ontology_slice_bytes,
+    hybrid_event_ontology_slice_sha256,
+)
 from kotekomi_domain.models import (
     Actor,
     AnalysisItemAttempt,
@@ -162,6 +169,9 @@ from kotekomi_domain.models import (
 
 __all__ = [
     "Actor",
+    "HYBRID_EVENT_CORE_V1",
+    "HybridEventOntologySlice",
+    "HybridEventStructuralPredicate",
     "AnalysisUnitArtifact",
     "AnalysisPlanArtifact",
     "AnalysisRun",
@@ -312,10 +322,12 @@ __all__ = [
     "TableAnnotationKind",
     "TableEvidenceSelector",
     "canonical_evidence_target_digest",
+    "canonical_hybrid_event_ontology_slice_bytes",
     "canonical_representation_digest",
     "deterministic_document_retrieval_unit_id",
     "deterministic_retrieval_representation_id",
     "document_exact_lexical_representation_fingerprint",
     "document_semantic_representation_fingerprint",
     "document_retrieval_unit_fingerprint",
+    "hybrid_event_ontology_slice_sha256",
 ]

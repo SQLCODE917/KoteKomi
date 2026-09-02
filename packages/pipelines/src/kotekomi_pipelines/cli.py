@@ -76,6 +76,8 @@ from kotekomi_application import (
     EntityLinkingPort,
     ExecutionSetting,
     ExplainEvidenceGraphRelationshipCommand,
+    HybridAtomicClaimCommand,
+    HybridAtomicClaimStatus,
     HybridEntityGroundingCommand,
     HybridEntityGroundingStatus,
     HybridEventFrameCommand,
@@ -163,6 +165,7 @@ from kotekomi_application import (
     pipeline_next_to_json,
     pipeline_status_to_json,
     plan_analysis_units,
+    publish_hybrid_atomic_claim_preview,
     query_cross_plane,
     query_document_hybrid_retrieval,
     query_document_retrieval,
@@ -178,6 +181,7 @@ from kotekomi_application import (
     review_queue_result_to_json,
     review_readiness_to_json,
     run_bounded_extraction,
+    run_hybrid_atomic_claim_preview,
     run_hybrid_entity_grounding_preview,
     run_hybrid_event_frame_preview,
     run_hybrid_mention_preview,
@@ -515,6 +519,14 @@ def main(argv: list[str] | None = None) -> int:
             model_max_output_tokens=args.model_max_output_tokens,
         )
         return draft_hybrid_event_frames(config=config, parent_preview_id=args.preview_id)
+
+    if args.command == "extraction" and args.extraction_command == "build-atomic-claims":
+        config = load_config(
+            config_path=args.config,
+            ledger_path_override=args.ledger_path,
+            archive_path_override=args.archive_path,
+        )
+        return build_hybrid_atomic_claims(config=config, parent_preview_id=args.preview_id)
 
     if args.command == "review" and args.review_command == "approve":
         config = load_config(
@@ -1069,6 +1081,13 @@ def build_parser() -> argparse.ArgumentParser:
     draft_event_frames_parser.add_argument("--ledger-path", type=Path, default=None)
     draft_event_frames_parser.add_argument("--archive-path", type=Path, default=None)
     _add_model_runtime_arguments(draft_event_frames_parser, include_fixture=True)
+    build_atomic_claims_parser = extraction_subparsers.add_parser(
+        "build-atomic-claims",
+        help="Atomize one immutable event-frame Preview and validate its ontology labels.",
+    )
+    build_atomic_claims_parser.add_argument("--preview-id", required=True)
+    build_atomic_claims_parser.add_argument("--ledger-path", type=Path, default=None)
+    build_atomic_claims_parser.add_argument("--archive-path", type=Path, default=None)
 
     review_parser = subparsers.add_parser("review", help="ProposedChange review commands.")
     review_subparsers = review_parser.add_subparsers(dest="review_command")
@@ -2490,6 +2509,41 @@ def draft_hybrid_event_frames(*, config: PipelineConfig, parent_preview_id: str)
     for diagnostic in result.preview.diagnostics:
         print(diagnostic, file=sys.stderr)
     return 0 if result.preview.terminal_status is HybridEventFrameStatus.COMPLETE else 1
+
+
+def build_hybrid_atomic_claims(*, config: PipelineConfig, parent_preview_id: str) -> int:
+    """Run deterministic HP-5 atomization and print one portable Preview result."""
+    archive = LocalArchiveStore(config.archive_path)
+    archive.initialize()
+    with sqlite_ledger_transaction(config.ledger_path) as repository:
+        result = run_hybrid_atomic_claim_preview(
+            command=HybridAtomicClaimCommand(parent_preview_id, datetime.now(UTC)),
+            ledger=repository,
+            archive=archive,
+        )
+    publish_hybrid_atomic_claim_preview(result, archive)
+    print(
+        json.dumps(
+            {
+                "archive_path": result.archive_path,
+                "claim_count": len(result.preview.atomic_claims),
+                "evidence_target_count": len(result.preview.evidence_target_ids),
+                "ontology_finding_count": sum(
+                    len(item.findings) for item in result.preview.ontology_reports
+                ),
+                "parent_preview_id": result.preview.parent_preview_id,
+                "preview_id": result.preview.id,
+                "report_count": len(result.preview.ontology_reports),
+                "sha256": result.sha256,
+                "status": result.preview.terminal_status.value,
+                "subject_count": len(result.preview.event_subjects),
+            },
+            sort_keys=True,
+        )
+    )
+    for diagnostic in result.preview.diagnostics:
+        print(diagnostic, file=sys.stderr)
+    return 0 if result.preview.terminal_status is HybridAtomicClaimStatus.COMPLETE else 1
 
 
 def _automatic_ingestion_extraction(

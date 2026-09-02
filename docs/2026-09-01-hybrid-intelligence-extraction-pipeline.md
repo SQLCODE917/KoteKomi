@@ -5,9 +5,9 @@
 - Parent: [Candidate Ingestion Review Program](2026-08-24-candidate-ingestion-review-program.md)
 - Architecture envelope: [Staged Model Extraction](2026-07-11-staged-model-extraction.md)
 - First deliverable: [HP-1 Hybrid Mention Interpretation MVP](2026-09-01-hybrid-mention-interpretation-mvp.md)
-- Completed through: [HP-4 Hybrid Event Frame Drafts](2026-09-01-hybrid-event-frame-drafts.md)
-- Latest evaluation: [HP-4 Event Frame Evaluation](2026-09-02-hp4-event-frame-evaluation.md)
-- Next planning boundary: HP-5 Atomic Claims and Ontology Validation
+- Completed through: [HP-5 Atomic Claims and Ontology Validation](2026-09-02-hybrid-atomic-claims-ontology-validation.md)
+- Latest evaluation: [HP-5 Atomic Claim and Ontology Evaluation](2026-09-02-hp5-atomic-claim-evaluation.md)
+- Next planning boundary: HP-6 Source Support Verification
 - Supersedes: [Model and Ontology Boundary Program](2026-08-25-model-ontology-boundary-program.md)
 - Supersedes: [Paragraph Hypothesis Development Program](2026-08-26-paragraph-hypothesis-development-program.md)
 - Supersedes: [PHP-1 Reliability Improvement Program](2026-08-27-php1-reliability-improvement-program.md)
@@ -249,9 +249,7 @@ Each deliverable leaves the prior working path intact.
 
 Each deliverable produces evidence that defines the next TDD.
 
-HP-1 through HP-4 have accepted, implemented, and verified TDDs.
-
-HP-5 remains intentionally undefined until its design incorporates the HP-4 evaluation evidence.
+HP-1 through HP-5 have accepted, implemented, and verified TDDs.
 
 HP-6 and HP-7 remain black-box deliverables until their preceding increments produce evidence.
 
@@ -261,7 +259,7 @@ HP-6 and HP-7 remain black-box deliverables until their preceding increments pro
 | [HP-2 Document Reference Resolution](2026-09-01-hybrid-document-reference-resolution.md) | A reviewer can inspect explicit aliases and unresolved document references. | HP-1 preserves ontology-neutral MentionCandidates and interpretations. | The Pipeline emits ReferenceDecisions without inventing antecedents. |
 | [HP-3 Entity Identity Grounding](2026-09-01-hybrid-entity-identity-grounding.md) | A reviewer can inspect known identity candidates only for specific mentions. | HP-2 identifies specific mentions and document-local aliases. | ReFinED emits ranked EntityLinkCandidates or NIL after contextual interpretation. |
 | [HP-4 Event Frame Drafts](2026-09-01-hybrid-event-frame-drafts.md) | A reviewer can inspect each source-grounded event with all participant roles. | HP-3 preserves the verified HP-1 and HP-2 lineage plus optional identity evidence. | Qwen2.5 emits bounded EventFrameDrafts with task-local references. |
-| HP-5 Atomic Claims and Ontology Validation | A reviewer can inspect atomic claims and every ontology violation. | HP-4 supplies validated EventFrameDrafts. | KoteKomi constructs AtomicClaimDrafts and OntologyValidationReports. |
+| [HP-5 Atomic Claims and Ontology Validation](2026-09-02-hybrid-atomic-claims-ontology-validation.md) | A reviewer can inspect atomic claims and every ontology violation. | HP-4 supplies validated EventFrameDrafts. | KoteKomi constructs AtomicClaimDrafts and OntologyValidationReports. |
 | HP-6 Source Support Verification | A reviewer can distinguish supported, partial, contradicted, and ambiguous drafts. | HP-5 supplies exact EvidenceTargets for AtomicClaimDrafts. | A separate bounded task emits one SupportJudgment per AtomicClaimDraft. |
 | HP-7 ProposedChange Integration | A user receives one reviewable candidate change set from an ingested document. | HP-6 supplies complete validated and supported draft lineage. | The Pipeline creates ProposedChanges and preserves review as the acceptance boundary. |
 
