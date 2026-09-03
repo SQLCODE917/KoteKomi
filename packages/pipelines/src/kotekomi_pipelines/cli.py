@@ -82,6 +82,8 @@ from kotekomi_application import (
     HybridEntityGroundingStatus,
     HybridEventFrameCommand,
     HybridEventFrameStatus,
+    HybridEventSemanticsCommand,
+    HybridEventSemanticsStatus,
     HybridMentionPreviewCommand,
     HybridPreviewStatus,
     HybridReferencePreviewCommand,
@@ -166,6 +168,7 @@ from kotekomi_application import (
     pipeline_status_to_json,
     plan_analysis_units,
     publish_hybrid_atomic_claim_preview,
+    publish_hybrid_event_semantics_preview,
     query_cross_plane,
     query_document_hybrid_retrieval,
     query_document_retrieval,
@@ -184,6 +187,7 @@ from kotekomi_application import (
     run_hybrid_atomic_claim_preview,
     run_hybrid_entity_grounding_preview,
     run_hybrid_event_frame_preview,
+    run_hybrid_event_semantics_preview,
     run_hybrid_mention_preview,
     run_hybrid_reference_preview,
     run_next_result_to_json,
@@ -527,6 +531,25 @@ def main(argv: list[str] | None = None) -> int:
             archive_path_override=args.archive_path,
         )
         return build_hybrid_atomic_claims(config=config, parent_preview_id=args.preview_id)
+
+    if args.command == "extraction" and args.extraction_command == "build-event-semantics":
+        config = _load_model_config(
+            config_path=args.config,
+            ledger_path_override=args.ledger_path,
+            archive_path_override=args.archive_path,
+            runtime_profile=args.runtime_profile,
+            model_runtime_adapter=args.model_runtime,
+            model_endpoint=args.model_endpoint,
+            model_name=args.model_name,
+            model_timeout_seconds=args.model_timeout_seconds,
+            model_context_tokens=args.model_context_tokens,
+            model_max_output_tokens=args.model_max_output_tokens,
+        )
+        return build_hybrid_event_semantics(
+            config=config,
+            parent_preview_id=args.preview_id,
+            output_format=args.output_format,
+        )
 
     if args.command == "review" and args.review_command == "approve":
         config = load_config(
@@ -1088,6 +1111,20 @@ def build_parser() -> argparse.ArgumentParser:
     build_atomic_claims_parser.add_argument("--preview-id", required=True)
     build_atomic_claims_parser.add_argument("--ledger-path", type=Path, default=None)
     build_atomic_claims_parser.add_argument("--archive-path", type=Path, default=None)
+    build_event_semantics_parser = extraction_subparsers.add_parser(
+        "build-event-semantics",
+        help="Normalize HP-5 events and independently judge governed semantic statements.",
+    )
+    build_event_semantics_parser.add_argument("--preview-id", required=True)
+    build_event_semantics_parser.add_argument("--ledger-path", type=Path, default=None)
+    build_event_semantics_parser.add_argument("--archive-path", type=Path, default=None)
+    build_event_semantics_parser.add_argument(
+        "--format",
+        dest="output_format",
+        choices=("text", "json"),
+        default="text",
+    )
+    _add_model_runtime_arguments(build_event_semantics_parser, include_fixture=True)
 
     review_parser = subparsers.add_parser("review", help="ProposedChange review commands.")
     review_subparsers = review_parser.add_subparsers(dest="review_command")
@@ -2544,6 +2581,99 @@ def build_hybrid_atomic_claims(*, config: PipelineConfig, parent_preview_id: str
     for diagnostic in result.preview.diagnostics:
         print(diagnostic, file=sys.stderr)
     return 0 if result.preview.terminal_status is HybridAtomicClaimStatus.COMPLETE else 1
+
+
+def build_hybrid_event_semantics(
+    *,
+    config: PipelineConfig,
+    parent_preview_id: str,
+    output_format: str = "text",
+) -> int:
+    """Run HP-6 and print one portable governed-semantics Preview result."""
+    archive = LocalArchiveStore(config.archive_path)
+    archive.initialize()
+    runtime = build_model_task_runtime(config.model_execution)
+    prompt_root = Path(__file__).resolve().parents[4] / "prompts"
+    normalization_prompt = (prompt_root / "hybrid_event_normalization_v1.md").read_bytes()
+    role_completion_prompt = (prompt_root / "hybrid_event_role_completion_v1.md").read_bytes()
+    support_prompt = (prompt_root / "hybrid_semantic_support_v1.md").read_bytes()
+    with sqlite_ledger_transaction(config.ledger_path) as repository:
+        result = run_hybrid_event_semantics_preview(
+            command=HybridEventSemanticsCommand(
+                parent_preview_id=parent_preview_id,
+                model_profile=ContextModelProfile(
+                    config.model_execution.profile_name or "lm-studio",
+                    config.model_execution.context_tokens,
+                    config.model_execution.max_output_tokens,
+                    256,
+                ),
+                generation_parameters=(
+                    ExecutionSetting("max_output_tokens", config.model_execution.max_output_tokens),
+                    ExecutionSetting("seed", 17),
+                    ExecutionSetting("temperature", 0),
+                ),
+            ),
+            ledger=repository,
+            archive=archive,
+            model_runtime=runtime,
+            model_run_id_factory=Uuid4ModelRunIdFactory(),
+            tokenizer=_AutomaticExtractionTokenizer(),
+            normalization_prompt_bytes=normalization_prompt,
+            role_completion_prompt_bytes=role_completion_prompt,
+            support_prompt_bytes=support_prompt,
+        )
+    publish_hybrid_event_semantics_preview(result, archive)
+    counts = {
+        outcome: 0
+        for outcome in (
+            "directly_supported",
+            "partially_supported",
+            "unsupported",
+            "contradicted",
+            "ambiguous",
+        )
+    }
+    for judgment in result.preview.judgments:
+        counts[judgment.outcome.value] += 1
+    payload = {
+        "archive_path": result.archive_path,
+        "assignment_count": len(result.preview.assignments),
+        "diagnostics": list(result.preview.diagnostics),
+        "evidence_target_count": len(result.preview.evidence_target_ids),
+        "event_count": len(result.preview.semantic_events),
+        "gap_count": len(result.preview.gaps),
+        "judgment_count": len(result.preview.judgments),
+        "model_run_count": len(result.preview.model_run_ids),
+        "ontology_profile_id": result.preview.ontology_profile_id,
+        "ontology_profile_sha256": result.preview.ontology_profile_sha256,
+        "outcome_counts": counts,
+        "parent_preview_id": result.preview.parent_preview_id,
+        "preview_id": result.preview.id,
+        "statement_count": len(result.preview.statements),
+        "target_count": len(result.preview.targets),
+        "sha256": result.sha256,
+        "status": result.preview.terminal_status.value,
+        "task_count": len(result.preview.extraction_task_ids),
+    }
+    if output_format == "json":
+        print(json.dumps(payload, sort_keys=True))
+    else:
+        print(f"Preview: {result.preview.id}")
+        print(f"Status: {result.preview.terminal_status.value}")
+        print(f"Events: {len(result.preview.semantic_events)}")
+        print(f"Assignments: {len(result.preview.assignments)}")
+        print(f"Gaps: {len(result.preview.gaps)}")
+        print(f"Statements: {len(result.preview.statements)}")
+        print(f"Judgments: {len(result.preview.judgments)}")
+        for outcome, count in counts.items():
+            print(f"{outcome}: {count}")
+        if result.preview.diagnostics:
+            print("Diagnostics:")
+            for diagnostic in result.preview.diagnostics:
+                print(f"- {diagnostic}")
+    for diagnostic in result.preview.diagnostics:
+        print(diagnostic, file=sys.stderr)
+    return 0 if result.preview.terminal_status is HybridEventSemanticsStatus.COMPLETE else 1
 
 
 def _automatic_ingestion_extraction(

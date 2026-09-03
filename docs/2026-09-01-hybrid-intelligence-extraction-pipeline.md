@@ -5,9 +5,9 @@
 - Parent: [Candidate Ingestion Review Program](2026-08-24-candidate-ingestion-review-program.md)
 - Architecture envelope: [Staged Model Extraction](2026-07-11-staged-model-extraction.md)
 - First deliverable: [HP-1 Hybrid Mention Interpretation MVP](2026-09-01-hybrid-mention-interpretation-mvp.md)
-- Completed through: [HP-5 Atomic Claims and Ontology Validation](2026-09-02-hybrid-atomic-claims-ontology-validation.md)
-- Latest evaluation: [HP-5 Atomic Claim and Ontology Evaluation](2026-09-02-hp5-atomic-claim-evaluation.md)
-- Next planning boundary: HP-6 Source Support Verification
+- Completed through: [HP-6 Qualified Event Semantics and Source Support](2026-09-02-qualified-event-semantics-source-support.md)
+- Latest evaluation: [HP-6 Qualified Event Semantics Evaluation](2026-09-02-hp6-qualified-event-semantics-evaluation.md)
+- Next deliverable: HP-7 ProposedChange Integration
 - Supersedes: [Model and Ontology Boundary Program](2026-08-25-model-ontology-boundary-program.md)
 - Supersedes: [Paragraph Hypothesis Development Program](2026-08-26-paragraph-hypothesis-development-program.md)
 - Supersedes: [PHP-1 Reliability Improvement Program](2026-08-27-php1-reliability-improvement-program.md)
@@ -231,11 +231,15 @@ The Application Layer validates entity kinds, frame roles, predicates, and refer
 
 The Application Layer records every violation in an OntologyValidationReport.
 
-### 10. Judge source support
+### 10. Normalize event semantics and judge source support
 
-A separate Qwen2.5 task compares one AtomicClaimDraft with its exact evidence.
+Qwen2.5 selects one governed frame and governed frame roles from a bounded ontology profile.
 
-The task returns directly supported, partially supported, contradicted, or ambiguous.
+KoteKomi constructs typed event targets and qualified role assignments from authoritative characters.
+
+Separate Qwen2.5 tasks compare deterministic semantic statements with exact evidence.
+
+Each task returns directly supported, partially supported, unsupported, contradicted, or ambiguous.
 
 ### 11. Create reviewable state
 
@@ -249,9 +253,9 @@ Each deliverable leaves the prior working path intact.
 
 Each deliverable produces evidence that defines the next TDD.
 
-HP-1 through HP-5 have accepted, implemented, and verified TDDs.
+HP-1 through HP-6 have accepted, implemented, and verified TDDs.
 
-HP-6 and HP-7 remain black-box deliverables until their preceding increments produce evidence.
+HP-7 remains a black-box deliverable until its TDD incorporates HP-6 evidence.
 
 | Deliverable | User story | Precondition | Postcondition |
 | --- | --- | --- | --- |
@@ -260,8 +264,8 @@ HP-6 and HP-7 remain black-box deliverables until their preceding increments pro
 | [HP-3 Entity Identity Grounding](2026-09-01-hybrid-entity-identity-grounding.md) | A reviewer can inspect known identity candidates only for specific mentions. | HP-2 identifies specific mentions and document-local aliases. | ReFinED emits ranked EntityLinkCandidates or NIL after contextual interpretation. |
 | [HP-4 Event Frame Drafts](2026-09-01-hybrid-event-frame-drafts.md) | A reviewer can inspect each source-grounded event with all participant roles. | HP-3 preserves the verified HP-1 and HP-2 lineage plus optional identity evidence. | Qwen2.5 emits bounded EventFrameDrafts with task-local references. |
 | [HP-5 Atomic Claims and Ontology Validation](2026-09-02-hybrid-atomic-claims-ontology-validation.md) | A reviewer can inspect atomic claims and every ontology violation. | HP-4 supplies validated EventFrameDrafts. | KoteKomi constructs AtomicClaimDrafts and OntologyValidationReports. |
-| HP-6 Source Support Verification | A reviewer can distinguish supported, partial, contradicted, and ambiguous drafts. | HP-5 supplies exact EvidenceTargets for AtomicClaimDrafts. | A separate bounded task emits one SupportJudgment per AtomicClaimDraft. |
-| HP-7 ProposedChange Integration | A user receives one reviewable candidate change set from an ingested document. | HP-6 supplies complete validated and supported draft lineage. | The Pipeline creates ProposedChanges and preserves review as the acceptance boundary. |
+| [HP-6 Qualified Event Semantics and Source Support](2026-09-02-qualified-event-semantics-source-support.md) | A reviewer can inspect governed event frames, qualified roles, explicit gaps, and independent source support. | HP-5 supplies exact EvidenceTargets and lossless open-label evidence. | KoteKomi emits typed semantic drafts and support judgments without changing wiki state. |
+| HP-7 ProposedChange Integration | A user receives one reviewable candidate change set from an ingested document. | HP-6 supplies governed semantic drafts with complete source-support evidence. | The Pipeline creates ProposedChanges and preserves review as the acceptance boundary. |
 
 ## Validation strategy
 

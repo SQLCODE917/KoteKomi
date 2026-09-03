@@ -1,0 +1,188 @@
+{
+    "schema_version": "hp6_event_semantics_gold_v1",
+    "fixture_path": "raw/Anthropic–United_States_Department_of_Defense_dispute.pdf",
+    "fixture_sha256": "c63c85796559453acf708dab46a35da36ffed00a408a25275576ba07138e9624",
+    "ontology_profile_id": "hybrid_event_semantics_v1",
+    "scope": {
+        "parent_evidence_target_count": 14,
+        "detailed_scenario_count": 5,
+        "detailed_event_count": 7,
+        "expected_semantic_statement_support": "directly_supported",
+        "target_boundary_comparison_policy": "exact_or_one_trailing_clause_delimiter_v1",
+        "unlisted_event_policy": "not_scored"
+    },
+    "events": [
+        {
+            "case_id": "HP4-AD-01",
+            "trigger": "intensified",
+            "source_text": "[2] Efforts  to  utilize  artificial  intelligence  intensified  under  the term  of  Secretary Ash  Carter. ",
+            "frame_id": "change_in_intensity",
+            "arguments": [
+                {
+                    "frame_role_id": "change_in_intensity.affected_process",
+                    "target_kind": "mention_candidate",
+                    "target_text": "Efforts  to  utilize  artificial  intelligence"
+                }
+            ],
+            "qualifiers": [],
+            "attribution_kind": "source_narrator"
+        },
+        {
+            "case_id": "HP4-AD-03",
+            "trigger": "authorized",
+            "source_text": "[8]  The Department of Homeland Security  authorized  its  workers  to  use  commercial  artificial  intelligence  systems,  including Anthropic's  Claude,  until  May  2025. ",
+            "frame_id": "authorization",
+            "arguments": [
+                {
+                    "frame_role_id": "authorization.authorized_party",
+                    "target_kind": "source_span",
+                    "target_text": "its  workers"
+                },
+                {
+                    "frame_role_id": "authorization.authorized_resource",
+                    "target_kind": "mention_candidate",
+                    "target_text": "Claude"
+                },
+                {
+                    "frame_role_id": "authorization.authorizer",
+                    "target_kind": "mention_candidate",
+                    "target_text": "Department of Homeland Security"
+                },
+                {
+                    "frame_role_id": "authorization.permitted_action",
+                    "target_kind": "source_span",
+                    "target_text": "use  commercial  artificial  intelligence  systems"
+                }
+            ],
+            "qualifiers": [{"kind": "time", "text": "until  May  2025"}],
+            "attribution_kind": "source_narrator"
+        },
+        {
+            "case_id": "HP4-AD-07",
+            "trigger": "described",
+            "source_text": "[35][36] The  exchange concerned  the  2026  Minab  school  strike,  which Amnesty  International  described  as  an  unlawful  U.S. strike  that  killed  156  people,  including  120  children,  and  which  Human  Rights  Watch  said  should  be investigated as a war crime. ",
+            "frame_id": "characterization",
+            "arguments": [
+                {
+                    "frame_role_id": "characterization.characterization",
+                    "target_kind": "source_span",
+                    "target_text": "an  unlawful  U.S. strike  that  killed  156  people,  including  120  children"
+                },
+                {
+                    "frame_role_id": "characterization.evaluated_subject",
+                    "target_kind": "mention_candidate",
+                    "target_text": "Minab  school  strike"
+                },
+                {
+                    "frame_role_id": "characterization.evaluator",
+                    "target_kind": "mention_candidate",
+                    "target_text": "Amnesty  International"
+                }
+            ],
+            "qualifiers": [{"kind": "time", "text": "2026"}],
+            "attribution_kind": "mention_candidate",
+            "attribution_target_text": "Amnesty  International"
+        },
+        {
+            "case_id": "HP4-AD-07",
+            "trigger": "said",
+            "source_text": "[35][36] The  exchange concerned  the  2026  Minab  school  strike,  which Amnesty  International  described  as  an  unlawful  U.S. strike  that  killed  156  people,  including  120  children,  and  which  Human  Rights  Watch  said  should  be investigated as a war crime. ",
+            "frame_id": "recommendation",
+            "arguments": [
+                {
+                    "frame_role_id": "recommendation.recommendation_subject",
+                    "target_kind": "mention_candidate",
+                    "target_text": "Minab  school  strike"
+                },
+                {
+                    "frame_role_id": "recommendation.recommended_action",
+                    "target_kind": "source_span",
+                    "target_text": "should  be investigated as a war crime"
+                },
+                {
+                    "frame_role_id": "recommendation.recommender",
+                    "target_kind": "mention_candidate",
+                    "target_text": "Human  Rights  Watch"
+                }
+            ],
+            "qualifiers": [],
+            "attribution_kind": "mention_candidate",
+            "attribution_target_text": "Human  Rights  Watch"
+        },
+        {
+            "case_id": "HP4-AD-08",
+            "trigger": "caused",
+            "source_text": "The dispute caused 1789 Capital, a venture capital firm associated with Donald Trump Jr., to abandon an investment in Anthropic worth hundreds of millions of dollars. ",
+            "frame_id": "causation",
+            "arguments": [
+                {
+                    "frame_role_id": "causation.cause",
+                    "target_kind": "source_span",
+                    "target_text": "The dispute"
+                },
+                {
+                    "frame_role_id": "causation.effect",
+                    "target_kind": "event_subject",
+                    "target_text": "abandon"
+                }
+            ],
+            "qualifiers": [],
+            "attribution_kind": "source_narrator"
+        },
+        {
+            "case_id": "HP4-AD-08",
+            "trigger": "abandon",
+            "source_text": "The dispute caused 1789 Capital, a venture capital firm associated with Donald Trump Jr., to abandon an investment in Anthropic worth hundreds of millions of dollars. ",
+            "frame_id": "investment_abandonment",
+            "arguments": [
+                {
+                    "frame_role_id": "investment_abandonment.abandoned_asset",
+                    "target_kind": "source_span",
+                    "target_text": "an investment in Anthropic worth hundreds of millions of dollars"
+                },
+                {
+                    "frame_role_id": "investment_abandonment.disinvestor",
+                    "target_kind": "mention_candidate",
+                    "target_text": "1789 Capital"
+                },
+                {
+                    "frame_role_id": "investment_abandonment.investee",
+                    "target_kind": "mention_candidate",
+                    "target_text": "Anthropic"
+                }
+            ],
+            "qualifiers": [],
+            "attribution_kind": "source_narrator"
+        },
+        {
+            "case_id": "HP4-AD-11",
+            "trigger": "designated",
+            "source_text": "The Department of War's records show that it designated Anthropic as a supply chain risk because  of  its  'hostile  manner  through  the press.' ",
+            "frame_id": "classification",
+            "arguments": [
+                {
+                    "frame_role_id": "classification.assigned_classification",
+                    "target_kind": "source_span",
+                    "target_text": "a supply chain risk"
+                },
+                {
+                    "frame_role_id": "classification.classified_entity",
+                    "target_kind": "mention_candidate",
+                    "target_text": "Anthropic"
+                },
+                {
+                    "frame_role_id": "classification.classifier",
+                    "target_kind": "mention_candidate",
+                    "target_text": "The Department of War"
+                },
+                {
+                    "frame_role_id": "classification.stated_reason",
+                    "target_kind": "source_span",
+                    "target_text": "its  'hostile  manner  through  the press.'"
+                }
+            ],
+            "qualifiers": [],
+            "attribution_kind": "source_narrator"
+        }
+    ]
+}

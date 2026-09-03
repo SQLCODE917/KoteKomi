@@ -4,8 +4,10 @@ import hashlib
 from datetime import UTC, datetime
 from typing import cast
 
+import pytest
 from kotekomi_application import (
     ContextModelProfile,
+    EventAttributionKind,
     ExecutionSetting,
     HybridEntityGroundingPreview,
     HybridEntityGroundingStatus,
@@ -13,6 +15,10 @@ from kotekomi_application import (
     HybridEventFramePreview,
     HybridEventFrameResult,
     HybridEventFrameStatus,
+    HybridEventSemanticsCommand,
+    HybridEventSemanticsPreview,
+    HybridEventSemanticsResult,
+    HybridEventSemanticsStatus,
     HybridExtractionPreview,
     HybridMentionPreviewCommand,
     HybridMentionPreviewResult,
@@ -25,13 +31,17 @@ from kotekomi_application import (
     ModelIdentitySnapshot,
     ModelTaskRequest,
     ModelTaskResponse,
+    SemanticCoverageGapCode,
     build_hybrid_entity_grounding_preview_record,
     canonical_hybrid_entity_grounding_preview_bytes,
     generation_parameters_digest,
     hybrid_entity_grounding_preview_sha256,
     load_hybrid_event_frame_preview,
+    load_hybrid_event_semantics_preview,
     model_identity_snapshot_digest,
+    publish_hybrid_event_semantics_preview,
     run_hybrid_event_frame_preview,
+    run_hybrid_event_semantics_preview,
     run_hybrid_mention_preview,
     run_hybrid_reference_preview,
 )
@@ -39,6 +49,7 @@ from kotekomi_application.hybrid_atomic_claim_preview import (
     HybridAtomicClaimArchive,
     HybridAtomicClaimCommand,
     HybridAtomicClaimLedger,
+    HybridAtomicClaimResult,
     load_hybrid_atomic_claim_preview,
     publish_hybrid_atomic_claim_preview,
     run_hybrid_atomic_claim_preview,
@@ -50,6 +61,15 @@ from kotekomi_application.hybrid_atomic_claims import (
 from kotekomi_application.hybrid_event_frame_preview import (
     HybridEventFrameArchive,
     HybridEventFrameLedger,
+)
+from kotekomi_application.hybrid_event_semantics import (
+    build_event_argument_assignment_draft,
+    build_event_semantic_draft,
+    build_hybrid_event_semantics_preview,
+)
+from kotekomi_application.hybrid_event_semantics_preview import (
+    HybridEventSemanticsArchive,
+    HybridEventSemanticsLedger,
 )
 from kotekomi_application.hybrid_mention_preview import HybridMentionArchive, HybridMentionLedger
 from kotekomi_application.hybrid_reference_preview import (
@@ -69,6 +89,7 @@ from kotekomi_domain import (
     ModelRun,
     ParseQualityReport,
     RepresentationAnalyzability,
+    SemanticArgumentTargetKind,
     Source,
     SourceType,
     TextView,
@@ -181,6 +202,7 @@ class _Archive:
         self.grounding_previews: dict[str, bytes] = {}
         self.event_previews: dict[str, bytes] = {}
         self.atomic_claim_previews: dict[str, bytes] = {}
+        self.event_semantics_previews: dict[str, bytes] = {}
 
     def put_model_run_output(
         self, model_run_id: str, payload: bytes, expected_digest: str
@@ -240,6 +262,21 @@ class _Archive:
     def read_hybrid_atomic_claim_preview(self, preview_id: str) -> bytes:
         return self.atomic_claim_previews[preview_id]
 
+    def put_hybrid_event_semantics_preview(
+        self,
+        preview: HybridEventSemanticsPreview,
+        payload: bytes,
+        expected_sha256: str,
+    ) -> object:
+        assert hashlib.sha256(payload).hexdigest() == expected_sha256
+        existing = self.event_semantics_previews.get(preview.id)
+        assert existing is None or existing == payload
+        self.event_semantics_previews[preview.id] = payload
+        return object()
+
+    def read_hybrid_event_semantics_preview(self, preview_id: str) -> bytes:
+        return self.event_semantics_previews[preview_id]
+
 
 class _MentionProposer:
     def propose(self, proposal_input: MentionProposalInput) -> MentionProposalBatch:
@@ -274,12 +311,22 @@ class _Runtime:
         trigger_output: bytes | None = None,
         frame_output: bytes | None = None,
         frame_outputs: tuple[bytes, ...] | None = None,
+        semantic_output: bytes | None = None,
+        role_output: bytes | None = None,
+        role_outputs: dict[str, tuple[bytes, ...]] | None = None,
+        support_outputs: tuple[bytes, ...] | None = None,
     ) -> None:
         self.stage = stage
         self.trigger_output = trigger_output
         self.frame_output = frame_output
         self.frame_outputs = frame_outputs
         self.frame_ordinal = 0
+        self.semantic_output = semantic_output
+        self.role_output = role_output
+        self.role_outputs = role_outputs or {}
+        self.role_ordinals: dict[str, int] = {}
+        self.support_outputs = support_outputs
+        self.support_ordinal = 0
         self.requests: list[ModelTaskRequest] = []
         self._identity = ModelIdentitySnapshot(
             "qwen2.5-fixture",
@@ -325,6 +372,63 @@ class _Runtime:
                     b"argument: c1 | policy_establisher | s1\n"
                     b"qualifier: time | s1 | 2012\n"
                 )
+        elif self.stage == "semantics" and b"task: select_one_frame_role" in task.rendered_input:
+            selected_role = next(
+                line.removeprefix("select_only_frame_role: ")
+                for line in task.rendered_input.decode().splitlines()
+                if line.startswith("select_only_frame_role: ")
+            )
+            configured_role_outputs = self.role_outputs.get(selected_role)
+            if configured_role_outputs is not None:
+                ordinal = self.role_ordinals.get(selected_role, 0)
+                output = configured_role_outputs[ordinal]
+                self.role_ordinals[selected_role] = ordinal + 1
+            elif (
+                self.role_output is not None
+                and selected_role == "classification.assigned_classification"
+            ):
+                output = self.role_output
+            else:
+                semantic_output = self.semantic_output or (
+                    b"frame: classification\n"
+                    b"argument: classification.classifier | c1\n"
+                    b"argument: classification.classified_entity | Directive 3000.09\n"
+                    b"argument: classification.assigned_classification | 3000.09\n"
+                    b"qualifier: q1\n"
+                    b"reason: The source presents the agency, subject, label, and time.\n"
+                )
+                target = next(
+                    (
+                        line.split(" | ", maxsplit=1)[1]
+                        for line in semantic_output.decode().splitlines()
+                        if line.startswith(f"argument: {selected_role} | ")
+                    ),
+                    None,
+                )
+                output = (
+                    f"target: {target or 'absent'}\n"
+                    "reason: The bounded fixture selects only the supplied frame role.\n"
+                ).encode()
+        elif self.stage == "semantics" and b"task: normalize_one_event" in task.rendered_input:
+            output = self.semantic_output or (
+                b"frame: classification\n"
+                b"argument: classification.classifier | c1\n"
+                b"argument: classification.classified_entity | "
+                b"Directive 3000.09\n"
+                b"argument: classification.assigned_classification | 3000.09\n"
+                b"qualifier: q1\n"
+                b"reason: The source presents the agency, subject, label, and time.\n"
+            )
+        elif (
+            self.stage == "semantics"
+            and b'"task":"judge_one_semantic_statement"' in task.rendered_input
+        ):
+            outputs = self.support_outputs or (
+                b"outcome: directly_supported\n"
+                b"reason: The exact source segment states the semantic component.\n",
+            )
+            output = outputs[self.support_ordinal % len(outputs)]
+            self.support_ordinal += 1
         else:
             raise AssertionError("Unexpected fixture model task.")
         return ModelTaskResponse(
@@ -556,6 +660,553 @@ def test_hp5_atomizes_hp4_without_repairing_open_labels_or_creating_model_runs()
     )
 
 
+def test_hp6_builds_governed_semantics_and_independent_support_evidence() -> None:
+    ledger, archive, _, grounding = _parent_evidence()
+    hp4 = _run_hp4(ledger, archive, grounding.id, _Runtime("events"))
+    hp5 = run_hybrid_atomic_claim_preview(
+        command=HybridAtomicClaimCommand(hp4.preview.id, NOW),
+        ledger=cast(HybridAtomicClaimLedger, ledger),
+        archive=cast(HybridAtomicClaimArchive, archive),
+    )
+    publish_hybrid_atomic_claim_preview(hp5, cast(HybridAtomicClaimArchive, archive))
+    runtime = _Runtime("semantics")
+
+    result = run_hybrid_event_semantics_preview(
+        command=HybridEventSemanticsCommand(
+            hp5.preview.id,
+            ContextModelProfile("fixture-model", 4096, 256, 16),
+            _generation(),
+        ),
+        ledger=cast(HybridEventSemanticsLedger, ledger),
+        archive=cast(HybridEventSemanticsArchive, archive),
+        model_runtime=runtime,
+        model_run_id_factory=_RunIds("semantics"),
+        tokenizer=_Tokenizer(),
+        normalization_prompt_bytes=b"Select supplied governed semantics.",
+        role_completion_prompt_bytes=b"Select one target for the supplied governed role.",
+        support_prompt_bytes=b"Judge one statement against exact source evidence.",
+    )
+    publish_hybrid_event_semantics_preview(result, cast(HybridEventSemanticsArchive, archive))
+
+    assert result.preview.terminal_status is HybridEventSemanticsStatus.COMPLETE
+    assert len(result.preview.semantic_events) == 1
+    assert result.preview.semantic_events[0].frame_id == "classification"
+    assert {item.frame_role_id for item in result.preview.assignments} == {
+        "classification.assigned_classification",
+        "classification.classified_entity",
+        "classification.classifier",
+    }
+    assert {item.upper_role.value for item in result.preview.assignments} == {
+        "agent",
+        "result",
+        "theme",
+    }
+    assert any(
+        item.proposed_role_labels == ("policy_establisher",) for item in result.preview.assignments
+    )
+    assert {item.text for item in result.preview.targets} == {
+        "3000.09",
+        "Department of Defense",
+        "Directive 3000.09",
+    }
+    assert {item.text for item in result.preview.qualifiers} == {"2012"}
+    assert len(result.preview.statements) == len(result.preview.judgments) == 8
+    assert len(result.preview.extraction_task_ids) == len(result.preview.model_run_ids) == 13
+    assert len(result.preview.traces) == 14
+    role_traces = [
+        item for item in result.preview.traces if item.stage_id == "hybrid_event_role_completion"
+    ]
+    assert {cast(dict[str, object], item.input["target_role"])["id"] for item in role_traces} == {
+        "classification.assigned_classification",
+        "classification.classified_entity",
+        "classification.classifier",
+        "classification.stated_reason",
+    }
+    assert all(
+        item.configuration["prompt_sha256"] == result.preview.role_completion_prompt_sha256
+        for item in role_traces
+    )
+    assert all(
+        "reason" not in cast(str, trace.input.get("model_visible_task", ""))
+        for trace in result.preview.traces
+        if trace.stage_id == "hybrid_semantic_source_support"
+    )
+    assert all(
+        b"policy_establisher" not in request.rendered_input for request in runtime.requests[1:]
+    )
+    assert ledger.accepted_state_called is False
+    assert (
+        load_hybrid_event_semantics_preview(
+            result.preview.id,
+            cast(HybridEventSemanticsLedger, ledger),
+            cast(HybridEventSemanticsArchive, archive),
+        )
+        == result.preview
+    )
+
+
+def test_hp6_preview_rejects_an_assignment_from_another_event() -> None:
+    ledger, archive, hp5 = _hp5_parent(_Runtime("events"))
+    result = _run_hp6_fixture(ledger, archive, hp5, _Runtime("semantics"), "cross-event")
+    preview = result.preview
+    event = preview.semantic_events[0]
+    original = preview.assignments[0]
+    alien = build_event_argument_assignment_draft(
+        event_subject_id="esd_" + "f" * 24,
+        frame_id=original.frame_id,
+        target_id=original.target_id,
+        frame_role_id=original.frame_role_id,
+        upper_role=original.upper_role,
+        proposed_role_labels=original.proposed_role_labels,
+        support_evidence_target_id=original.support_evidence_target_id,
+        source_trace_ids=original.source_trace_ids,
+    )
+    assignment_ids = tuple(
+        alien.id if item == original.id else item for item in event.argument_assignment_ids
+    )
+    changed_event = build_event_semantic_draft(
+        event_subject_id=event.event_subject_id,
+        trigger_id=event.trigger_id,
+        trigger_text=event.trigger_text,
+        frame_id=event.frame_id,
+        proposed_event_label=event.proposed_event_label,
+        argument_assignment_ids=assignment_ids,
+        qualifier_ids=event.qualifier_ids,
+        polarity=event.polarity,
+        modality=event.modality,
+        attribution_kind=event.attribution_kind,
+        attribution_target_id=event.attribution_target_id,
+        support_evidence_target_id=event.support_evidence_target_id,
+        normalization_task_id=event.normalization_task_id,
+        normalization_model_run_id=event.normalization_model_run_id,
+        normalization_trace_id=event.normalization_trace_id,
+    )
+    values = preview.model_dump(mode="python", exclude={"id"})
+    for field in (
+        "semantic_events",
+        "targets",
+        "assignments",
+        "qualifiers",
+        "gaps",
+        "statements",
+        "judgments",
+        "traces",
+    ):
+        values[field] = getattr(preview, field)
+    values["semantic_events"] = (changed_event,)
+    values["assignments"] = tuple(
+        alien if item.id == original.id else item for item in preview.assignments
+    )
+
+    with pytest.raises(ValueError, match="assignment from another event"):
+        build_hybrid_event_semantics_preview(**values)
+
+
+def test_hp6_invalid_normalization_contributes_no_partial_semantic_draft() -> None:
+    ledger, archive, hp5 = _hp5_parent(_Runtime("events"))
+    runtime = _Runtime(
+        "semantics",
+        semantic_output=(
+            b"frame: classification\n"
+            b"argument: classification.invented | 3000.09\n"
+            b"reason: This uses an invented role.\n"
+        ),
+    )
+
+    result = _run_hp6_fixture(ledger, archive, hp5, runtime, "invalid-role")
+
+    assert result.preview.terminal_status is HybridEventSemanticsStatus.PARTIAL
+    assert result.preview.semantic_events == ()
+    assert result.preview.assignments == ()
+    assert len(runtime.requests) == 1
+    assert any(
+        item.startswith("normalization_mapping_failed:") for item in result.preview.diagnostics
+    )
+    assert tuple(archive.model_outputs.values())[-1] == runtime.semantic_output
+
+
+def test_hp6_unknown_model_frame_is_archived_as_a_partial_result() -> None:
+    ledger, archive, hp5 = _hp5_parent(_Runtime("events"))
+    runtime = _Runtime(
+        "semantics",
+        semantic_output=(
+            b"frame: invented_frame\n"
+            b"reason: The model invented a frame outside the governed profile.\n"
+        ),
+    )
+
+    result = _run_hp6_fixture(ledger, archive, hp5, runtime, "unknown-frame")
+
+    assert result.preview.terminal_status is HybridEventSemanticsStatus.PARTIAL
+    assert result.preview.semantic_events == ()
+    assert result.preview.assignments == ()
+    assert len(runtime.requests) == 1
+    assert any(item.endswith(":unknown_event_frame") for item in result.preview.diagnostics)
+    assert tuple(archive.model_outputs.values())[-1] == runtime.semantic_output
+
+
+def test_hp6_reuses_a_unique_candidate_named_by_a_source_literal() -> None:
+    ledger, archive, hp5 = _hp5_parent(_Runtime("events"))
+    runtime = _Runtime(
+        "semantics",
+        semantic_output=(
+            b"frame: classification\n"
+            b"argument: classification.classifier | Department of Defense\n"
+            b"argument: classification.classified_entity | Directive 3000.09\n"
+            b"argument: classification.assigned_classification | 3000.09\n"
+            b"reason: The source presents a classifier, subject, and assigned label.\n"
+        ),
+    )
+
+    result = _run_hp6_fixture(ledger, archive, hp5, runtime, "candidate-reuse")
+
+    classifier = next(
+        item
+        for item in result.preview.assignments
+        if item.frame_role_id == "classification.classifier"
+    )
+    target = next(item for item in result.preview.targets if item.id == classifier.target_id)
+    assert target.kind is SemanticArgumentTargetKind.MENTION_CANDIDATE
+    assert target.text == "Department of Defense"
+    assert target.reference_id is not None
+
+
+def test_hp6_counts_a_candidate_converted_to_a_source_span_as_represented() -> None:
+    ledger, archive, hp5 = _hp5_parent(_Runtime("events"))
+    runtime = _Runtime(
+        "semantics",
+        semantic_output=(
+            b"frame: classification\n"
+            b"argument: classification.assigned_classification | Department of Defense\n"
+            b"reason: The candidate is used as a role that admits only a source span.\n"
+        ),
+    )
+
+    result = _run_hp6_fixture(ledger, archive, hp5, runtime, "candidate-as-span")
+
+    assert all(item.code.value != "omitted_parent_argument" for item in result.preview.gaps)
+    assignment = result.preview.assignments[0]
+    target = next(item for item in result.preview.targets if item.id == assignment.target_id)
+    assert target.kind is SemanticArgumentTargetKind.SOURCE_SPAN
+    assert target.text == "Department of Defense"
+
+
+def test_hp6_replaces_an_invalid_model_target_only_with_a_valid_bounded_completion() -> None:
+    ledger, archive, hp5 = _hp5_parent(_Runtime("events"))
+    runtime = _Runtime(
+        "semantics",
+        semantic_output=(
+            b"frame: classification\n"
+            b"argument: classification.classifier | c1\n"
+            b"argument: classification.classified_entity | Directive 3000.09\n"
+            b"argument: classification.assigned_classification | s1\n"
+            b"qualifier: q1\n"
+            b"reason: The primary output contains one invalid local label.\n"
+        ),
+        role_output=(
+            b"target: 3000.09\nreason: The bounded completion copies one exact source value.\n"
+        ),
+    )
+
+    result = _run_hp6_fixture(ledger, archive, hp5, runtime, "role-completion")
+
+    assert len(result.preview.semantic_events) == 1
+    assert any(
+        item.frame_role_id == "classification.assigned_classification"
+        and next(target for target in result.preview.targets if target.id == item.target_id).text
+        == "3000.09"
+        for item in result.preview.assignments
+    )
+    assert any(item.stage_id == "hybrid_event_role_completion" for item in result.preview.traces)
+    assert all("normalization_mapping_failed" not in item for item in result.preview.diagnostics)
+
+
+def test_hp6_reconciles_redundant_catalog_text_without_hiding_model_output() -> None:
+    ledger, archive, hp5 = _hp5_parent(_Runtime("events"))
+    runtime = _Runtime(
+        "semantics",
+        semantic_output=(
+            b"frame: classification\n"
+            b"argument: classification.classified_entity | c1\n"
+            b"reason: The broad proposal supplies one source-backed target.\n"
+        ),
+        role_outputs={
+            "classification.classified_entity": (
+                b"target: c1 | Department of Defense\n"
+                b"reason: This repeats a supplied label and its text.\n",
+            )
+        },
+    )
+
+    result = _run_hp6_fixture(ledger, archive, hp5, runtime, "role-retry")
+
+    role_traces = [
+        item
+        for item in result.preview.traces
+        if item.stage_id == "hybrid_event_role_completion"
+        and cast(dict[str, object], item.input["target_role"])["id"]
+        == "classification.classified_entity"
+    ]
+    assert len(role_traces) == 1
+    reconciliation = next(
+        item
+        for item in result.preview.traces
+        if item.stage_id == "hybrid_event_role_target_reconciliation"
+    )
+    assert reconciliation.parent_trace_ids == (role_traces[0].id,)
+    assert reconciliation.configuration["rule_id"] == "redundant_catalog_label_text_v1"
+    assert any(
+        item.frame_role_id == "classification.classified_entity"
+        and next(target for target in result.preview.targets if target.id == item.target_id).text
+        == "Department of Defense"
+        for item in result.preview.assignments
+    )
+    assert any(
+        output.startswith(b"target: c1 | Department of Defense")
+        for output in archive.model_outputs.values()
+    )
+
+
+def test_hp6_retries_one_source_invalid_role_target() -> None:
+    ledger, archive, hp5 = _hp5_parent(_Runtime("events"))
+    runtime = _Runtime(
+        "semantics",
+        semantic_output=(
+            b"frame: classification\n"
+            b"argument: classification.assigned_classification | 3000.09\n"
+            b"reason: The broad proposal supplies one source-backed target.\n"
+        ),
+        role_outputs={
+            "classification.assigned_classification": (
+                b"target: 3000.09.\nreason: This first target invents terminal punctuation.\n",
+                b"target: 3000.09\nreason: This retry copies the exact source literal.\n",
+            )
+        },
+    )
+
+    result = _run_hp6_fixture(ledger, archive, hp5, runtime, "role-retry")
+
+    role_traces = [
+        item
+        for item in result.preview.traces
+        if item.stage_id == "hybrid_event_role_completion"
+        and cast(dict[str, object], item.input["target_role"])["id"]
+        == "classification.assigned_classification"
+    ]
+    assert len(role_traces) == 2
+    retry_trace = next(
+        item
+        for item in role_traces
+        if "rejected_previous_target:" in cast(str, item.input["model_visible_task"])
+    )
+    first_trace = next(item for item in role_traces if item is not retry_trace)
+    assert "rejected_previous_target: source_literal_not_unique:3000.09." in cast(
+        str, retry_trace.input["model_visible_task"]
+    )
+    assert retry_trace.parent_trace_ids == (first_trace.id,)
+    assert any(
+        item.frame_role_id == "classification.assigned_classification"
+        and next(target for target in result.preview.targets if target.id == item.target_id).text
+        == "3000.09"
+        for item in result.preview.assignments
+    )
+
+
+def test_hp6_does_not_reconcile_mismatched_catalog_text() -> None:
+    ledger, archive, hp5 = _hp5_parent(_Runtime("events"))
+    runtime = _Runtime(
+        "semantics",
+        semantic_output=(
+            b"frame: classification\nreason: The broad proposal identifies only the frame.\n"
+        ),
+        role_outputs={
+            "classification.classified_entity": (
+                b"target: c1 | A different entity\nreason: This catalog text does not match c1.\n",
+                b"target: absent\nreason: The retry does not invent a replacement.\n",
+            )
+        },
+    )
+
+    result = _run_hp6_fixture(ledger, archive, hp5, runtime, "role-mismatch")
+
+    assert not any(
+        item.stage_id == "hybrid_event_role_target_reconciliation" for item in result.preview.traces
+    )
+    assert any(
+        item.code is SemanticCoverageGapCode.MISSING_REQUIRED_ROLE
+        and item.field_value == "classification.classified_entity"
+        for item in result.preview.gaps
+    )
+
+
+def test_hp6_governs_attribution_without_model_serialization() -> None:
+    ledger, archive, _, grounding = _parent_evidence()
+    hp4 = _run_hp4(
+        ledger,
+        archive,
+        grounding.id,
+        _Runtime(
+            "events",
+            frame_output=(
+                b"event: e1\n"
+                b"polarity: affirmed\n"
+                b"modality: actual\n"
+                b"attribution: c1\n"
+                b"argument: c1 | policy_establisher | s1\n"
+                b"qualifier: time | s1 | 2012\n"
+            ),
+        ),
+    )
+    hp5 = run_hybrid_atomic_claim_preview(
+        command=HybridAtomicClaimCommand(hp4.preview.id, NOW),
+        ledger=cast(HybridAtomicClaimLedger, ledger),
+        archive=cast(HybridAtomicClaimArchive, archive),
+    )
+    publish_hybrid_atomic_claim_preview(hp5, cast(HybridAtomicClaimArchive, archive))
+    runtime = _Runtime("semantics")
+
+    result = _run_hp6_fixture(ledger, archive, hp5, runtime, "parent-attribution")
+
+    event = result.preview.semantic_events[0]
+    assert event.attribution_kind is EventAttributionKind.SOURCE_NARRATOR
+    assert event.attribution_target_id is None
+    assert any(item.code.value == "parent_attribution_disagreement" for item in result.preview.gaps)
+    assert b"attribution:" not in runtime.requests[0].rendered_input
+
+
+def test_hp6_derives_reporting_attribution_from_the_governed_agent_role() -> None:
+    ledger, archive, hp5 = _hp5_parent(_Runtime("events"))
+    runtime = _Runtime(
+        "semantics",
+        semantic_output=(
+            b"frame: recommendation\n"
+            b"argument: recommendation.recommender | c1\n"
+            b"argument: recommendation.recommended_action | established  Directive 3000.09\n"
+            b"reason: The bounded fixture exercises governed reporting attribution.\n"
+        ),
+    )
+
+    result = _run_hp6_fixture(ledger, archive, hp5, runtime, "reporting-attribution")
+
+    event = result.preview.semantic_events[0]
+    assert event.attribution_kind is EventAttributionKind.MENTION_CANDIDATE
+    target = next(item for item in result.preview.targets if item.id == event.attribution_target_id)
+    assert target.text == "Department of Defense"
+    assert any(item.code.value == "parent_attribution_disagreement" for item in result.preview.gaps)
+
+
+def test_hp6_unresolved_event_is_explicit_and_does_not_guess_semantics() -> None:
+    ledger, archive, hp5 = _hp5_parent(_Runtime("events"))
+    runtime = _Runtime(
+        "semantics",
+        semantic_output=(
+            b"frame: unresolved\n"
+            b"reason: No supplied frame accurately represents policy establishment.\n"
+        ),
+    )
+
+    result = _run_hp6_fixture(ledger, archive, hp5, runtime, "unresolved")
+
+    assert result.preview.terminal_status is HybridEventSemanticsStatus.PARTIAL
+    assert result.preview.semantic_events == ()
+    assert [item.code.value for item in result.preview.gaps] == ["unmapped_frame"]
+    assert len(runtime.requests) == 1
+
+
+def test_hp6_reports_missing_required_roles_and_omitted_parent_arguments() -> None:
+    ledger, archive, hp5 = _hp5_parent(_Runtime("events"))
+    runtime = _Runtime(
+        "semantics",
+        semantic_output=(
+            b"frame: classification\n"
+            b"argument: classification.assigned_classification | 3000.09\n"
+            b"reason: Only the classification literal was selected.\n"
+        ),
+    )
+
+    result = _run_hp6_fixture(ledger, archive, hp5, runtime, "coverage-gaps")
+
+    assert result.preview.terminal_status is HybridEventSemanticsStatus.PARTIAL
+    assert len(result.preview.semantic_events) == 1
+    parent_argument_id = cast(
+        str,
+        next(
+            item.object_reference_id
+            for item in hp5.preview.atomic_claims
+            if item.predicate.value == "has_argument"
+        ),
+    )
+    assert {(item.code.value, item.field_value) for item in result.preview.gaps} == {
+        ("missing_required_role", "classification.classified_entity"),
+        ("missing_required_role", "classification.classifier"),
+        ("omitted_parent_argument", parent_argument_id),
+        ("omitted_parent_qualifier", "time:2012"),
+    }
+
+
+def test_hp6_quarantines_a_qualifier_not_supplied_by_the_parent_frame() -> None:
+    ledger, archive, hp5 = _hp5_parent(_Runtime("events"))
+    runtime = _Runtime(
+        "semantics",
+        semantic_output=(
+            b"frame: classification\n"
+            b"argument: classification.classifier | c1\n"
+            b"argument: classification.classified_entity | Directive 3000.09\n"
+            b"argument: classification.assigned_classification | 3000.09\n"
+            b"qualifier: q999\n"
+            b"reason: This incorrectly treats a place as a parent time qualifier.\n"
+        ),
+    )
+
+    result = _run_hp6_fixture(ledger, archive, hp5, runtime, "invented-qualifier")
+
+    assert len(result.preview.semantic_events) == 1
+    assert result.preview.qualifiers == ()
+    assert {(item.code.value, item.field_value) for item in result.preview.gaps} >= {
+        ("unsupported_qualifier_proposal", "q999"),
+        ("omitted_parent_qualifier", "time:2012"),
+    }
+
+
+def test_hp6_support_failure_is_isolated_from_later_statements() -> None:
+    ledger, archive, hp5 = _hp5_parent(_Runtime("events"))
+    valid = (
+        b"outcome: directly_supported\n"
+        b"reason: The exact source segment states the semantic component.\n"
+    )
+    runtime = _Runtime(
+        "semantics",
+        support_outputs=(b'{"outcome":"directly_supported"}\n', *(valid for _ in range(7))),
+    )
+
+    result = _run_hp6_fixture(ledger, archive, hp5, runtime, "support-failure")
+
+    assert result.preview.terminal_status is HybridEventSemanticsStatus.PARTIAL
+    assert len(result.preview.semantic_events) == 1
+    assert len(result.preview.statements) == 8
+    assert len(result.preview.judgments) == 7
+    assert len(runtime.requests) == 13
+    assert any(item.startswith("support_task_failed:") for item in result.preview.diagnostics)
+
+
+def test_hp6_blocked_parent_runs_no_model_task() -> None:
+    ledger, archive, hp5 = _hp5_parent(
+        _Runtime(
+            "events",
+            trigger_output=b"event: e1 | s1 | missing literal | invented\n",
+        )
+    )
+    runtime = _Runtime("semantics")
+
+    result = _run_hp6_fixture(ledger, archive, hp5, runtime, "blocked")
+
+    assert hp5.preview.terminal_status is HybridAtomicClaimStatus.BLOCKED
+    assert result.preview.terminal_status is HybridEventSemanticsStatus.BLOCKED
+    assert result.preview.diagnostics == ("hp5_status:blocked",)
+    assert result.preview.semantic_events == ()
+    assert runtime.requests == []
+
+
 def test_hp5_preserves_candidate_attribution_as_an_explicit_contract_gap() -> None:
     ledger, archive, _, grounding = _parent_evidence()
     hp4 = _run_hp4(
@@ -740,6 +1391,44 @@ def _run_hp4(
         tokenizer=_Tokenizer(),
         trigger_prompt_bytes=b"Detect event triggers only.",
         frame_prompt_bytes=b"Assign roles to the supplied event only.",
+    )
+
+
+def _hp5_parent(
+    runtime: _Runtime,
+) -> tuple[_Ledger, _Archive, HybridAtomicClaimResult]:
+    ledger, archive, _, grounding = _parent_evidence()
+    hp4 = _run_hp4(ledger, archive, grounding.id, runtime)
+    hp5 = run_hybrid_atomic_claim_preview(
+        command=HybridAtomicClaimCommand(hp4.preview.id, NOW),
+        ledger=cast(HybridAtomicClaimLedger, ledger),
+        archive=cast(HybridAtomicClaimArchive, archive),
+    )
+    publish_hybrid_atomic_claim_preview(hp5, cast(HybridAtomicClaimArchive, archive))
+    return ledger, archive, hp5
+
+
+def _run_hp6_fixture(
+    ledger: _Ledger,
+    archive: _Archive,
+    hp5: HybridAtomicClaimResult,
+    runtime: _Runtime,
+    run_prefix: str,
+) -> HybridEventSemanticsResult:
+    return run_hybrid_event_semantics_preview(
+        command=HybridEventSemanticsCommand(
+            hp5.preview.id,
+            ContextModelProfile("fixture-model", 4096, 256, 16),
+            _generation(),
+        ),
+        ledger=cast(HybridEventSemanticsLedger, ledger),
+        archive=cast(HybridEventSemanticsArchive, archive),
+        model_runtime=runtime,
+        model_run_id_factory=_RunIds(run_prefix),
+        tokenizer=_Tokenizer(),
+        normalization_prompt_bytes=b"Select supplied governed semantics.",
+        role_completion_prompt_bytes=b"Select one target for the supplied governed role.",
+        support_prompt_bytes=b"Judge one statement against exact source evidence.",
     )
 
 

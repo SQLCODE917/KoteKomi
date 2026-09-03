@@ -2,10 +2,18 @@
 
 from kotekomi_domain.hybrid_event_ontology import (
     HYBRID_EVENT_CORE_V1,
+    HYBRID_EVENT_SEMANTICS_V1,
+    EventFrameDefinition,
+    FrameRoleDefinition,
     HybridEventOntologySlice,
+    HybridEventSemanticsProfile,
     HybridEventStructuralPredicate,
+    SemanticArgumentTargetKind,
+    UpperRole,
     canonical_hybrid_event_ontology_slice_bytes,
+    canonical_hybrid_event_semantics_profile_bytes,
     hybrid_event_ontology_slice_sha256,
+    hybrid_event_semantics_profile_sha256,
 )
 from kotekomi_domain.models import (
     Actor,
@@ -323,6 +331,7 @@ __all__ = [
     "TableEvidenceSelector",
     "canonical_evidence_target_digest",
     "canonical_hybrid_event_ontology_slice_bytes",
+    "canonical_hybrid_event_semantics_profile_bytes",
     "canonical_representation_digest",
     "deterministic_document_retrieval_unit_id",
     "deterministic_retrieval_representation_id",
@@ -330,4 +339,11 @@ __all__ = [
     "document_semantic_representation_fingerprint",
     "document_retrieval_unit_fingerprint",
     "hybrid_event_ontology_slice_sha256",
+    "hybrid_event_semantics_profile_sha256",
+    "EventFrameDefinition",
+    "FrameRoleDefinition",
+    "HybridEventSemanticsProfile",
+    "HYBRID_EVENT_SEMANTICS_V1",
+    "SemanticArgumentTargetKind",
+    "UpperRole",
 ]

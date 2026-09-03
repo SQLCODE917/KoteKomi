@@ -50,6 +50,11 @@ from kotekomi_application.hybrid_event_model_output import (
     EventTriggerAbstention,
     EventTriggerProposalBatch,
 )
+from kotekomi_application.hybrid_event_semantics_model_output import (
+    EventSemanticProposal,
+    EventSemanticRoleTargetProposal,
+    SemanticSupportModelJudgment,
+)
 from kotekomi_application.hybrid_mention_interpretation import (
     MentionInterpretationDraft,
     MentionProposalAbstention,
@@ -416,6 +421,9 @@ class BoundedExtractionOutcome:
     mention_interpretation_draft: MentionInterpretationDraft | None = None
     event_trigger_proposals: EventTriggerProposalBatch | None = None
     event_frame_proposal: EventFrameProposal | None = None
+    event_semantic_proposal: EventSemanticProposal | None = None
+    event_semantic_role_target_proposal: EventSemanticRoleTargetProposal | None = None
+    semantic_support_judgment: SemanticSupportModelJudgment | None = None
 
 
 @dataclass(frozen=True)
@@ -500,6 +508,9 @@ type ParsedModelOutput = (
     | EventTriggerAbstention
     | EventFrameProposal
     | EventFrameAbstention
+    | EventSemanticProposal
+    | EventSemanticRoleTargetProposal
+    | SemanticSupportModelJudgment
 )
 
 
@@ -868,6 +879,83 @@ def run_bounded_extraction(
                 run,
                 None,
                 event_frame_proposal=parsed,
+            )
+        if isinstance(parsed, EventSemanticProposal):
+            run = _model_run(
+                extraction_input,
+                manifest,
+                task,
+                model_run_id,
+                ModelRunStatus.SUCCEEDED,
+                started_at=started_at,
+                completed_at=completed_at,
+                execution_diagnostics=diagnostics,
+                output_digest=output_digest,
+                execution_receipt=response.execution_receipt,
+                outcome_metadata={
+                    "contract": "hybrid_event_normalization_text_v1",
+                    "frame_id": parsed.frame_id,
+                    "argument_count": len(parsed.arguments),
+                    "qualifier_count": len(parsed.qualifiers),
+                    "reason": parsed.reason,
+                },
+            )
+            ledger_repository.save_model_run(run)
+            return BoundedExtractionOutcome(
+                task,
+                run,
+                None,
+                event_semantic_proposal=parsed,
+            )
+        if isinstance(parsed, EventSemanticRoleTargetProposal):
+            run = _model_run(
+                extraction_input,
+                manifest,
+                task,
+                model_run_id,
+                ModelRunStatus.SUCCEEDED,
+                started_at=started_at,
+                completed_at=completed_at,
+                execution_diagnostics=diagnostics,
+                output_digest=output_digest,
+                execution_receipt=response.execution_receipt,
+                outcome_metadata={
+                    "contract": "hybrid_event_role_completion_text_v1",
+                    "target_value": parsed.target_value,
+                    "reason": parsed.reason,
+                },
+            )
+            ledger_repository.save_model_run(run)
+            return BoundedExtractionOutcome(
+                task,
+                run,
+                None,
+                event_semantic_role_target_proposal=parsed,
+            )
+        if isinstance(parsed, SemanticSupportModelJudgment):
+            run = _model_run(
+                extraction_input,
+                manifest,
+                task,
+                model_run_id,
+                ModelRunStatus.SUCCEEDED,
+                started_at=started_at,
+                completed_at=completed_at,
+                execution_diagnostics=diagnostics,
+                output_digest=output_digest,
+                execution_receipt=response.execution_receipt,
+                outcome_metadata={
+                    "contract": "hybrid_semantic_support_text_v1",
+                    "outcome": parsed.outcome.value,
+                    "reason": parsed.reason,
+                },
+            )
+            ledger_repository.save_model_run(run)
+            return BoundedExtractionOutcome(
+                task,
+                run,
+                None,
+                semantic_support_judgment=parsed,
             )
         batch_input, outcome_metadata = _grounded_batch(
             extraction_input,

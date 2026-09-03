@@ -18,6 +18,9 @@ from kotekomi_application import (
     HybridEventFrameCommand,
     HybridEventFrameResult,
     HybridEventFrameStatus,
+    HybridEventSemanticsCommand,
+    HybridEventSemanticsResult,
+    HybridEventSemanticsStatus,
     HybridMentionPreviewResult,
     HybridPreviewStatus,
     HybridReferencePreviewCommand,
@@ -30,14 +33,17 @@ from kotekomi_application import (
     build_hybrid_atomic_claim_preview,
     build_hybrid_entity_grounding_preview_record,
     build_hybrid_event_frame_preview,
+    build_hybrid_event_semantics_preview,
     build_hybrid_extraction_preview,
     build_hybrid_reference_preview_record,
     hybrid_atomic_claim_preview_sha256,
     hybrid_entity_grounding_preview_sha256,
     hybrid_event_frame_preview_sha256,
+    hybrid_event_semantics_preview_sha256,
     hybrid_extraction_preview_sha256,
     hybrid_reference_preview_sha256,
 )
+from kotekomi_domain import hybrid_event_semantics_profile_sha256
 from kotekomi_pipelines.cli import main
 from kotekomi_pipelines.config import (
     CheckoutBuildIdentityError,
@@ -722,6 +728,177 @@ def test_hybrid_atomic_claim_command_prints_counts(
         "status": "complete",
         "subject_count": 0,
     }
+
+
+def test_hybrid_event_semantics_command_routes_model_and_format_arguments(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = PipelineConfig(
+        ledger_path=tmp_path / "kotekomi.db",
+        archive_path=tmp_path / "archive",
+        model_execution=ModelExecutionConfig(
+            "fixture", "fixture://local", "fixture", 300.0, 1024, 64
+        ),
+        embedding_profiles={},
+        document_retrieval_embedding_profile_id=None,
+    )
+    received: list[tuple[PipelineConfig, str, str]] = []
+
+    def fake_load_config(**kwargs: object) -> PipelineConfig:
+        del kwargs
+        return config
+
+    def fake_build(*, config: PipelineConfig, parent_preview_id: str, output_format: str) -> int:
+        received.append((config, parent_preview_id, output_format))
+        return 0
+
+    monkeypatch.setattr(cli, "_load_model_config", fake_load_config)
+    monkeypatch.setattr(cli, "build_hybrid_event_semantics", fake_build)
+
+    assert (
+        main(
+            [
+                "extraction",
+                "build-event-semantics",
+                "--preview-id",
+                "hcp_fixture",
+                "--format",
+                "json",
+            ]
+        )
+        == 0
+    )
+    assert received == [(config, "hcp_fixture", "json")]
+
+
+@pytest.mark.parametrize("output_format", ("json", "text"))
+@pytest.mark.parametrize(
+    ("terminal_status", "diagnostics", "expected_exit"),
+    (
+        (HybridEventSemanticsStatus.COMPLETE, (), 0),
+        (HybridEventSemanticsStatus.PARTIAL, ("support_task_failed:fixture",), 1),
+    ),
+)
+def test_hybrid_event_semantics_command_prints_typed_result(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    output_format: str,
+    terminal_status: HybridEventSemanticsStatus,
+    diagnostics: tuple[str, ...],
+    expected_exit: int,
+) -> None:
+    config = PipelineConfig(
+        ledger_path=tmp_path / "kotekomi.db",
+        archive_path=tmp_path / "archive",
+        model_execution=ModelExecutionConfig(
+            "fixture", "fixture://local", "fixture", 300.0, 1024, 64
+        ),
+        embedding_profiles={},
+        document_retrieval_embedding_profile_id=None,
+    )
+    preview = build_hybrid_event_semantics_preview(
+        parent_preview_id="hcp_" + "1" * 24,
+        parent_preview_sha256="a" * 64,
+        representation_id="rep_fixture",
+        paragraph_node_id="nod_fixture",
+        ontology_profile_id="hybrid_event_semantics_v1",
+        ontology_profile_sha256=hybrid_event_semantics_profile_sha256(),
+        normalization_prompt_sha256="b" * 64,
+        normalization_schema_sha256="c" * 64,
+        role_completion_prompt_sha256="d" * 64,
+        role_completion_schema_sha256="e" * 64,
+        support_prompt_sha256="f" * 64,
+        support_schema_sha256="1" * 64,
+        terminal_status=terminal_status,
+        diagnostics=diagnostics,
+    )
+    digest = hybrid_event_semantics_preview_sha256(preview)
+    published: list[str] = []
+
+    class FakeArchive:
+        def __init__(self, archive_path: Path) -> None:
+            assert archive_path == config.archive_path
+
+        def initialize(self) -> None:
+            pass
+
+    @contextmanager
+    def fake_transaction(ledger_path: Path) -> Generator[object]:
+        assert ledger_path == config.ledger_path
+        yield object()
+
+    def fake_run(**kwargs: object) -> HybridEventSemanticsResult:
+        command = cast(HybridEventSemanticsCommand, kwargs["command"])
+        assert command.parent_preview_id == preview.parent_preview_id
+        return HybridEventSemanticsResult(
+            preview,
+            digest,
+            f"extraction/event-semantic-previews/{preview.id}.json",
+        )
+
+    def fake_publish(result: HybridEventSemanticsResult, archive: object) -> None:
+        del archive
+        published.append(result.preview.id)
+
+    monkeypatch.setattr(cli, "LocalArchiveStore", FakeArchive)
+
+    def fake_runtime(_config: ModelExecutionConfig) -> object:
+        return object()
+
+    monkeypatch.setattr(cli, "build_model_task_runtime", fake_runtime)
+    monkeypatch.setattr(cli, "sqlite_ledger_transaction", fake_transaction)
+    monkeypatch.setattr(cli, "run_hybrid_event_semantics_preview", fake_run)
+    monkeypatch.setattr(cli, "publish_hybrid_event_semantics_preview", fake_publish)
+
+    assert (
+        cli.build_hybrid_event_semantics(
+            config=config,
+            parent_preview_id=preview.parent_preview_id,
+            output_format=output_format,
+        )
+        == expected_exit
+    )
+    output = capsys.readouterr().out
+    assert published == [preview.id]
+    if output_format == "json":
+        assert json.loads(output) == {
+            "archive_path": f"extraction/event-semantic-previews/{preview.id}.json",
+            "assignment_count": 0,
+            "diagnostics": list(diagnostics),
+            "evidence_target_count": 0,
+            "event_count": 0,
+            "gap_count": 0,
+            "judgment_count": 0,
+            "model_run_count": 0,
+            "ontology_profile_id": "hybrid_event_semantics_v1",
+            "ontology_profile_sha256": hybrid_event_semantics_profile_sha256(),
+            "outcome_counts": {
+                "ambiguous": 0,
+                "contradicted": 0,
+                "directly_supported": 0,
+                "partially_supported": 0,
+                "unsupported": 0,
+            },
+            "parent_preview_id": preview.parent_preview_id,
+            "preview_id": preview.id,
+            "sha256": digest,
+            "statement_count": 0,
+            "status": terminal_status.value,
+            "target_count": 0,
+            "task_count": 0,
+        }
+    else:
+        assert f"Preview: {preview.id}" in output
+        assert f"Status: {terminal_status.value}" in output
+        assert "Events: 0" in output
+        assert "Assignments: 0" in output
+        assert "Gaps: 0" in output
+        assert "Statements: 0" in output
+        assert "Judgments: 0" in output
+        for diagnostic in diagnostics:
+            assert diagnostic in output
 
 
 def test_hybrid_event_frame_command_returns_one_for_a_partial_preview(
