@@ -7,7 +7,7 @@
 - First deliverable: [HP-1 Hybrid Mention Interpretation MVP](2026-09-01-hybrid-mention-interpretation-mvp.md)
 - Completed through: [HP-6 Qualified Event Semantics and Source Support](2026-09-02-qualified-event-semantics-source-support.md)
 - Latest evaluation: [HP-6 Qualified Event Semantics Evaluation](2026-09-02-hp6-qualified-event-semantics-evaluation.md)
-- Next deliverable: HP-7 ProposedChange Integration
+- Next deliverable: [HP-7 ProposedChange Integration](2026-09-03-hybrid-proposed-change-integration.md)
 - Supersedes: [Model and Ontology Boundary Program](2026-08-25-model-ontology-boundary-program.md)
 - Supersedes: [Paragraph Hypothesis Development Program](2026-08-26-paragraph-hypothesis-development-program.md)
 - Supersedes: [PHP-1 Reliability Improvement Program](2026-08-27-php1-reliability-improvement-program.md)
@@ -255,7 +255,9 @@ Each deliverable produces evidence that defines the next TDD.
 
 HP-1 through HP-6 have accepted, implemented, and verified TDDs.
 
-HP-7 remains a black-box deliverable until its TDD incorporates HP-6 evidence.
+HP-7 has an accepted TDD that incorporates HP-6 evidence.
+
+Document-wide Hybrid Pipeline orchestration remains a black-box deliverable until HP-7 evidence exists.
 
 | Deliverable | User story | Precondition | Postcondition |
 | --- | --- | --- | --- |
@@ -265,7 +267,8 @@ HP-7 remains a black-box deliverable until its TDD incorporates HP-6 evidence.
 | [HP-4 Event Frame Drafts](2026-09-01-hybrid-event-frame-drafts.md) | A reviewer can inspect each source-grounded event with all participant roles. | HP-3 preserves the verified HP-1 and HP-2 lineage plus optional identity evidence. | Qwen2.5 emits bounded EventFrameDrafts with task-local references. |
 | [HP-5 Atomic Claims and Ontology Validation](2026-09-02-hybrid-atomic-claims-ontology-validation.md) | A reviewer can inspect atomic claims and every ontology violation. | HP-4 supplies validated EventFrameDrafts. | KoteKomi constructs AtomicClaimDrafts and OntologyValidationReports. |
 | [HP-6 Qualified Event Semantics and Source Support](2026-09-02-qualified-event-semantics-source-support.md) | A reviewer can inspect governed event frames, qualified roles, explicit gaps, and independent source support. | HP-5 supplies exact EvidenceTargets and lossless open-label evidence. | KoteKomi emits typed semantic drafts and support judgments without changing wiki state. |
-| HP-7 ProposedChange Integration | A user receives one reviewable candidate change set from an ingested document. | HP-6 supplies governed semantic drafts with complete source-support evidence. | The Pipeline creates ProposedChanges and preserves review as the acceptance boundary. |
+| [HP-7 ProposedChange Integration](2026-09-03-hybrid-proposed-change-integration.md) | A reviewer can inspect governed HP-6 events through the existing review flow. | HP-6 supplies governed semantic drafts with complete source-support evidence. | The Pipeline creates pending ProposedChanges without creating accepted intelligence. |
+| Document-wide Hybrid Pipeline orchestration | A user receives one reviewable candidate change set from an ingested document. | HP-7 converts one HP-6 Preview into a reviewable proposal batch. | One ingestion runs the Hybrid Pipeline over its planned document scope and closes one IngestionChangeSet. |
 
 ## Validation strategy
 

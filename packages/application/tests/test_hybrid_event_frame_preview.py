@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from datetime import UTC, datetime
 from typing import cast
 
@@ -22,6 +23,7 @@ from kotekomi_application import (
     HybridExtractionPreview,
     HybridMentionPreviewCommand,
     HybridMentionPreviewResult,
+    HybridProposalPlan,
     HybridReferencePreview,
     HybridReferencePreviewCommand,
     MentionProposal,
@@ -31,18 +33,27 @@ from kotekomi_application import (
     ModelIdentitySnapshot,
     ModelTaskRequest,
     ModelTaskResponse,
+    ProposalAdmissionReason,
+    ProposalDisposition,
+    ReviewProposedChangeInput,
     SemanticCoverageGapCode,
+    approve_proposed_change,
     build_hybrid_entity_grounding_preview_record,
+    build_hybrid_proposal_plan,
     canonical_hybrid_entity_grounding_preview_bytes,
     generation_parameters_digest,
     hybrid_entity_grounding_preview_sha256,
+    hybrid_proposal_plan_from_bytes,
     load_hybrid_event_frame_preview,
     load_hybrid_event_semantics_preview,
+    load_hybrid_proposal_plan,
     model_identity_snapshot_digest,
     publish_hybrid_event_semantics_preview,
+    reject_proposed_change,
     run_hybrid_event_frame_preview,
     run_hybrid_event_semantics_preview,
     run_hybrid_mention_preview,
+    run_hybrid_proposal_submission,
     run_hybrid_reference_preview,
 )
 from kotekomi_application.hybrid_atomic_claim_preview import (
@@ -76,19 +87,27 @@ from kotekomi_application.hybrid_reference_preview import (
     HybridReferenceArchive,
     HybridReferenceLedger,
 )
+from kotekomi_application.proposed_change_review import ProposedChangeReviewLedger
 from kotekomi_domain import (
+    Actor,
     AnalysisUnitArtifact,
     ContextManifestArtifact,
     Document,
     DocumentNode,
     DocumentRepresentation,
     DocumentRepresentationBundle,
+    Event,
     EvidenceTarget,
     EvidenceValidationAttempt,
     ExtractionTask,
     ModelRun,
+    Organization,
     ParseQualityReport,
+    ProposedAssertion,
+    ProposedChange,
+    ProvenanceActivity,
     RepresentationAnalyzability,
+    ReviewStatus,
     SemanticArgumentTargetKind,
     Source,
     SourceType,
@@ -135,6 +154,11 @@ class _Ledger:
         self.evidence_targets: dict[str, EvidenceTarget] = {}
         self.evidence_attempts: dict[str, EvidenceValidationAttempt] = {}
         self.accepted_state_called = False
+        self.proposed_changes: dict[str, ProposedChange] = {}
+        self.provenance_activities: dict[str, ProvenanceActivity] = {}
+        self.actors: dict[str, Actor] = {}
+        self.organizations: dict[str, Organization] = {}
+        self.events: dict[str, Event] = {}
 
     def get_source(self, record_id: str) -> Source | None:
         return self.source if record_id == self.source.id else None
@@ -186,6 +210,45 @@ class _Ledger:
     def save_evidence_validation_attempt(self, record: EvidenceValidationAttempt) -> None:
         self.evidence_attempts[record.id] = record
 
+    def get_actor(self, record_id: str) -> Actor | None:
+        return self.actors.get(record_id)
+
+    def get_organization(self, record_id: str) -> Organization | None:
+        return self.organizations.get(record_id)
+
+    def get_event(self, record_id: str) -> Event | None:
+        return self.events.get(record_id)
+
+    def get_proposed_change(self, record_id: str) -> ProposedChange | None:
+        return self.proposed_changes.get(record_id)
+
+    def get_provenance_activity(self, record_id: str) -> ProvenanceActivity | None:
+        return self.provenance_activities.get(record_id)
+
+    def save_actor(self, record: Actor) -> None:
+        self.actors[record.id] = record
+
+    def save_organization(self, record: Organization) -> None:
+        self.organizations[record.id] = record
+
+    def save_event(self, record: Event) -> None:
+        self.events[record.id] = record
+
+    def save_proposed_change(self, record: ProposedChange) -> None:
+        self.proposed_changes[record.id] = record
+
+    def save_provenance_activity(self, record: ProvenanceActivity) -> None:
+        self.provenance_activities[record.id] = record
+
+    def commit_hybrid_proposal_batch(
+        self,
+        *,
+        provenance_activity: ProvenanceActivity,
+        proposed_changes: tuple[ProposedChange, ...],
+    ) -> None:
+        self.provenance_activities[provenance_activity.id] = provenance_activity
+        self.proposed_changes.update({item.id: item for item in proposed_changes})
+
     def commit_successful_model_run_and_candidate_batch(
         self, *, model_run: ModelRun, batch: object
     ) -> None:
@@ -203,6 +266,7 @@ class _Archive:
         self.event_previews: dict[str, bytes] = {}
         self.atomic_claim_previews: dict[str, bytes] = {}
         self.event_semantics_previews: dict[str, bytes] = {}
+        self.proposal_plans: dict[str, bytes] = {}
 
     def put_model_run_output(
         self, model_run_id: str, payload: bytes, expected_digest: str
@@ -276,6 +340,21 @@ class _Archive:
 
     def read_hybrid_event_semantics_preview(self, preview_id: str) -> bytes:
         return self.event_semantics_previews[preview_id]
+
+    def put_hybrid_proposal_plan(
+        self,
+        plan: HybridProposalPlan,
+        payload: bytes,
+        expected_sha256: str,
+    ) -> object:
+        assert hashlib.sha256(payload).hexdigest() == expected_sha256
+        existing = self.proposal_plans.get(plan.id)
+        assert existing is None or existing == payload
+        self.proposal_plans[plan.id] = payload
+        return object()
+
+    def read_hybrid_proposal_plan(self, plan_id: str) -> bytes:
+        return self.proposal_plans[plan_id]
 
 
 class _MentionProposer:
@@ -1205,6 +1284,450 @@ def test_hp6_blocked_parent_runs_no_model_task() -> None:
     assert result.preview.diagnostics == ("hp5_status:blocked",)
     assert result.preview.semantic_events == ()
     assert runtime.requests == []
+
+
+def test_hp7_builds_a_reviewable_typed_graph_with_exact_lineage() -> None:
+    ledger, archive, hp5 = _hp5_parent(_Runtime("events"))
+    runtime = _Runtime("semantics")
+    hp6 = _run_hp6_fixture(ledger, archive, hp5, runtime, "hp7-proposed")
+    publish_hybrid_event_semantics_preview(
+        hp6,
+        cast(HybridEventSemanticsArchive, archive),
+    )
+    request_count = len(runtime.requests)
+
+    result = run_hybrid_proposal_submission(
+        preview_id=hp6.preview.id,
+        submitted_at=NOW,
+        ledger=ledger,
+        archive=archive,
+    )
+
+    assert result.publication_disposition == "created"
+    assert len(runtime.requests) == request_count
+    assert len(result.plan.decisions) == 1
+    decision = result.plan.decisions[0]
+    assert decision.disposition is ProposalDisposition.PROPOSED
+    assert decision.reason_codes == ()
+    assert decision.statement_ids == tuple(sorted(item.id for item in hp6.preview.statements))
+    assert decision.judgment_ids == tuple(sorted(item.id for item in hp6.preview.judgments))
+    assert set(decision.model_run_ids).issubset(hp6.preview.model_run_ids)
+    assert hp6.preview.semantic_events[0].normalization_trace_id in decision.source_trace_ids
+    assert all(item.startswith("xst_") for item in decision.source_trace_ids)
+
+    record_types = [
+        cast(str, item.proposed_json["record_type"]) for item in result.plan.proposed_changes
+    ]
+    assert record_types.count("Organization") == 1
+    assert record_types.count("Event") == 1
+    assert record_types.count("Assertion") == 7
+    event_change = next(
+        item
+        for item in result.plan.proposed_changes
+        if item.proposed_json["record_type"] == "Event"
+    )
+    event = Event.model_validate_json(json.dumps(event_change.proposed_json["record"]))
+    organization_change = next(
+        item
+        for item in result.plan.proposed_changes
+        if item.proposed_json["record_type"] == "Organization"
+    )
+    organization = Organization.model_validate_json(
+        json.dumps(organization_change.proposed_json["record"])
+    )
+    assert organization.name == "Department of Defense"
+    assert event.participant_organization_ids == (organization.id,)
+
+    assertions = [
+        ProposedAssertion.model_validate_json(json.dumps(item.proposed_json["record"]))
+        for item in result.plan.proposed_changes
+        if item.proposed_json["record_type"] == "Assertion"
+    ]
+    role_assertions = [item for item in assertions if item.relation_label == "has_argument"]
+    assert len(role_assertions) == 3
+    assert any(item.object_entity_id == organization.id for item in role_assertions)
+    assert any(item.object_value == "Directive 3000.09" for item in role_assertions)
+    assert all(item.evidence_target_ids for item in assertions)
+    for item in result.plan.proposed_changes:
+        lineage = cast(dict[str, object], item.proposed_json["hybrid_lineage"])
+        assert lineage["hp1_preview_id"] == hp5.preview.mention_preview_id
+        assert lineage["hp2_preview_id"] == hp5.preview.reference_preview_id
+        assert lineage["hp3_preview_id"] == hp5.preview.grounding_preview_id
+        assert lineage["hp4_preview_id"] == hp5.preview.parent_preview_id
+        assert lineage["hp5_preview_id"] == hp5.preview.id
+        assert lineage["hp6_preview_id"] == hp6.preview.id
+    trace = result.plan.traces[0]
+    assert trace.input["event"] == hp6.preview.semantic_events[0].model_dump(mode="json")
+    assert trace.output["decision"] == decision.model_dump(mode="json")
+    assert trace.output["proposed_changes"]
+    assert ledger.accepted_state_called is False
+    assert set(ledger.proposed_changes) == {item.id for item in result.plan.proposed_changes}
+    assert result.plan.provenance_activity_id in ledger.provenance_activities
+    assert hybrid_proposal_plan_from_bytes(archive.proposal_plans[result.plan.id]) == result.plan
+    assert load_hybrid_proposal_plan(result.plan.id, ledger, archive) == result.plan
+
+
+def test_hp7_holds_non_direct_support_and_preserves_exact_data_in_and_out() -> None:
+    ledger, archive, hp5 = _hp5_parent(_Runtime("events"))
+    directly_supported = (
+        b"outcome: directly_supported\n"
+        b"reason: The exact source segment states the semantic component.\n"
+    )
+    runtime = _Runtime(
+        "semantics",
+        support_outputs=(
+            b"outcome: partially_supported\nreason: The statement overstates the source.\n",
+            *(directly_supported for _ in range(7)),
+        ),
+    )
+    hp6 = _run_hp6_fixture(ledger, archive, hp5, runtime, "hp7-held")
+    publish_hybrid_event_semantics_preview(
+        hp6,
+        cast(HybridEventSemanticsArchive, archive),
+    )
+
+    result = run_hybrid_proposal_submission(
+        preview_id=hp6.preview.id,
+        submitted_at=NOW,
+        ledger=ledger,
+        archive=archive,
+    )
+
+    assert result.publication_disposition == "created"
+    assert result.plan.proposed_changes == ()
+    assert ledger.proposed_changes == {}
+    assert len(ledger.provenance_activities) == 1
+    decision = result.plan.decisions[0]
+    assert decision.disposition is ProposalDisposition.HELD
+    assert decision.reason_codes == (ProposalAdmissionReason.NON_DIRECT_SUPPORT,)
+    assert result.plan.traces[0].status.value == "rejected"
+    assert result.plan.traces[0].input["judgments"] == [
+        item.model_dump(mode="json") for item in hp6.preview.judgments
+    ]
+    assert result.plan.traces[0].output == {
+        "decision": decision.model_dump(mode="json"),
+        "proposed_changes": [],
+    }
+
+
+def test_hp7_holds_an_event_with_incomplete_support_coverage() -> None:
+    ledger, archive, hp5 = _hp5_parent(_Runtime("events"))
+    directly_supported = (
+        b"outcome: directly_supported\n"
+        b"reason: The exact source segment states the semantic component.\n"
+    )
+    hp6 = _run_hp6_fixture(
+        ledger,
+        archive,
+        hp5,
+        _Runtime(
+            "semantics",
+            support_outputs=(
+                b'{"outcome":"directly_supported"}\n',
+                *(directly_supported for _ in range(7)),
+            ),
+        ),
+        "hp7-missing-support",
+    )
+    publish_hybrid_event_semantics_preview(
+        hp6,
+        cast(HybridEventSemanticsArchive, archive),
+    )
+
+    plan = build_hybrid_proposal_plan(hp6.preview.id, ledger, archive)
+
+    assert plan.decisions[0].disposition is ProposalDisposition.HELD
+    assert plan.decisions[0].reason_codes == (ProposalAdmissionReason.MISSING_SUPPORT_JUDGMENT,)
+    assert plan.proposed_changes == ()
+
+
+def test_hp7_keeps_optional_parent_coverage_gaps_advisory() -> None:
+    ledger, archive, hp5 = _hp5_parent(_Runtime("events"))
+    hp6 = _run_hp6_fixture(
+        ledger,
+        archive,
+        hp5,
+        _Runtime(
+            "semantics",
+            semantic_output=(
+                b"frame: classification\n"
+                b"argument: classification.classifier | c1\n"
+                b"argument: classification.classified_entity | Directive 3000.09\n"
+                b"argument: classification.assigned_classification | 3000.09\n"
+                b"qualifier: q999\n"
+                b"reason: The proposed qualifier is not one of the supplied qualifiers.\n"
+            ),
+        ),
+        "hp7-advisory-gap",
+    )
+    publish_hybrid_event_semantics_preview(
+        hp6,
+        cast(HybridEventSemanticsArchive, archive),
+    )
+
+    plan = build_hybrid_proposal_plan(hp6.preview.id, ledger, archive)
+
+    assert plan.decisions[0].disposition is ProposalDisposition.PROPOSED
+    assert plan.decisions[0].reason_codes == ()
+    assert plan.decisions[0].advisory_gap_ids
+    assert plan.proposed_changes
+
+
+def test_hp7_reuses_identical_proposals_without_resetting_review_status() -> None:
+    ledger, archive, hp5 = _hp5_parent(_Runtime("events"))
+    hp6 = _run_hp6_fixture(
+        ledger,
+        archive,
+        hp5,
+        _Runtime("semantics"),
+        "hp7-reuse",
+    )
+    publish_hybrid_event_semantics_preview(
+        hp6,
+        cast(HybridEventSemanticsArchive, archive),
+    )
+    first = run_hybrid_proposal_submission(
+        preview_id=hp6.preview.id,
+        submitted_at=NOW,
+        ledger=ledger,
+        archive=archive,
+    )
+    reviewed_id = first.plan.proposed_changes[0].id
+    ledger.proposed_changes[reviewed_id] = ledger.proposed_changes[reviewed_id].model_copy(
+        update={"review_status": ReviewStatus.REJECTED}
+    )
+
+    second = run_hybrid_proposal_submission(
+        preview_id=hp6.preview.id,
+        submitted_at=datetime(2026, 9, 2, tzinfo=UTC),
+        ledger=ledger,
+        archive=archive,
+    )
+
+    assert second.plan == first.plan
+    assert second.sha256 == first.sha256
+    assert second.publication_disposition == "reused"
+    assert ledger.proposed_changes[reviewed_id].review_status is ReviewStatus.REJECTED
+    assert len(ledger.proposed_changes) == len(first.plan.proposed_changes)
+    assert len(ledger.provenance_activities) == 1
+
+
+def test_hp7_reuses_one_typed_target_across_multiple_event_bundles() -> None:
+    ledger, archive, _, grounding = _parent_evidence()
+    hp4 = _run_hp4(
+        ledger,
+        archive,
+        grounding.id,
+        _Runtime(
+            "events",
+            trigger_output=(
+                b"event: e1 | s1 | announced | announcement\n"
+                b"event: e2 | s1 | established | policy_establishment\n"
+            ),
+            frame_outputs=(
+                b"event: e1\n"
+                b"polarity: affirmed\n"
+                b"modality: actual\n"
+                b"attribution: source_narrator\n"
+                b"argument: c1 | actor | s1\n",
+                b"event: e2\n"
+                b"polarity: affirmed\n"
+                b"modality: actual\n"
+                b"attribution: source_narrator\n"
+                b"argument: c1 | actor | s1\n",
+            ),
+        ),
+    )
+    hp5 = run_hybrid_atomic_claim_preview(
+        command=HybridAtomicClaimCommand(hp4.preview.id, NOW),
+        ledger=cast(HybridAtomicClaimLedger, ledger),
+        archive=cast(HybridAtomicClaimArchive, archive),
+    )
+    publish_hybrid_atomic_claim_preview(hp5, cast(HybridAtomicClaimArchive, archive))
+    hp6 = _run_hp6_fixture(
+        ledger,
+        archive,
+        hp5,
+        _Runtime("semantics"),
+        "hp7-shared-target",
+    )
+    publish_hybrid_event_semantics_preview(
+        hp6,
+        cast(HybridEventSemanticsArchive, archive),
+    )
+
+    result = run_hybrid_proposal_submission(
+        preview_id=hp6.preview.id,
+        submitted_at=NOW,
+        ledger=ledger,
+        archive=archive,
+    )
+
+    organization_changes = [
+        item
+        for item in result.plan.proposed_changes
+        if item.proposed_json["record_type"] == "Organization"
+    ]
+    assert len(result.plan.decisions) == 2
+    assert len(organization_changes) == 1
+    assert all(
+        organization_changes[0].id in item.proposed_change_ids for item in result.plan.decisions
+    )
+
+
+def test_hp7_gold_event_enters_accepted_state_only_through_existing_review() -> None:
+    ledger, archive, hp5 = _hp5_parent(_Runtime("events"))
+    hp6 = _run_hp6_fixture(
+        ledger,
+        archive,
+        hp5,
+        _Runtime("semantics"),
+        "hp7-review-gold",
+    )
+    publish_hybrid_event_semantics_preview(
+        hp6,
+        cast(HybridEventSemanticsArchive, archive),
+    )
+    result = run_hybrid_proposal_submission(
+        preview_id=hp6.preview.id,
+        submitted_at=NOW,
+        ledger=ledger,
+        archive=archive,
+    )
+    organization_change = next(
+        item
+        for item in result.plan.proposed_changes
+        if item.proposed_json["record_type"] == "Organization"
+    )
+    event_change = next(
+        item
+        for item in result.plan.proposed_changes
+        if item.proposed_json["record_type"] == "Event"
+    )
+    review_ledger = cast(ProposedChangeReviewLedger, ledger)
+
+    approve_proposed_change(
+        ReviewProposedChangeInput(
+            organization_change.id,
+            "fixture-reviewer",
+            datetime(2026, 9, 2, tzinfo=UTC),
+        ),
+        review_ledger,
+    )
+    event_review = approve_proposed_change(
+        ReviewProposedChangeInput(
+            event_change.id,
+            "fixture-reviewer",
+            datetime(2026, 9, 2, tzinfo=UTC),
+        ),
+        review_ledger,
+    )
+
+    assert event_review.review_status is ReviewStatus.APPROVED
+    assert event_review.accepted_record_id in ledger.events
+    assert ledger.proposed_changes[event_change.id].review_status is ReviewStatus.APPROVED
+    evidence = cast(dict[str, object], event_change.proposed_json["evidence"])
+    assert evidence["exact_text"] == PARAGRAPH
+    review_provenance = ledger.provenance_activities[event_review.provenance_activity_id]
+    assert review_provenance.input_ids == (event_change.id,)
+    assert event_review.accepted_record_id in review_provenance.output_ids
+
+
+def test_hp7_reviewer_can_reject_a_fully_supported_event_without_accepted_state() -> None:
+    ledger, archive, hp5 = _hp5_parent(_Runtime("events"))
+    hp6 = _run_hp6_fixture(
+        ledger,
+        archive,
+        hp5,
+        _Runtime("semantics"),
+        "hp7-review-false",
+    )
+    publish_hybrid_event_semantics_preview(
+        hp6,
+        cast(HybridEventSemanticsArchive, archive),
+    )
+    result = run_hybrid_proposal_submission(
+        preview_id=hp6.preview.id,
+        submitted_at=NOW,
+        ledger=ledger,
+        archive=archive,
+    )
+    event_change = next(
+        item
+        for item in result.plan.proposed_changes
+        if item.proposed_json["record_type"] == "Event"
+    )
+
+    review = reject_proposed_change(
+        ReviewProposedChangeInput(
+            event_change.id,
+            "fixture-reviewer",
+            datetime(2026, 9, 2, tzinfo=UTC),
+            reason="The source reports uncertainty, not a recommendation.",
+        ),
+        cast(ProposedChangeReviewLedger, ledger),
+    )
+
+    assert review.review_status is ReviewStatus.REJECTED
+    assert ledger.proposed_changes[event_change.id].review_status is ReviewStatus.REJECTED
+    assert ledger.events == {}
+
+
+def test_hp7_parent_tampering_stops_before_archive_or_ledger_mutation() -> None:
+    ledger, archive, hp5 = _hp5_parent(_Runtime("events"))
+    hp6 = _run_hp6_fixture(
+        ledger,
+        archive,
+        hp5,
+        _Runtime("semantics"),
+        "hp7-tamper",
+    )
+    publish_hybrid_event_semantics_preview(
+        hp6,
+        cast(HybridEventSemanticsArchive, archive),
+    )
+    archive.event_semantics_previews[hp6.preview.id] += b"\n"
+
+    with pytest.raises(ValueError, match="canonical encoding"):
+        run_hybrid_proposal_submission(
+            preview_id=hp6.preview.id,
+            submitted_at=NOW,
+            ledger=ledger,
+            archive=archive,
+        )
+
+    assert archive.proposal_plans == {}
+    assert ledger.proposed_changes == {}
+    assert ledger.provenance_activities == {}
+
+
+def test_hp7_retains_an_unmapped_hp5_event_as_a_plan_diagnostic() -> None:
+    ledger, archive, hp5 = _hp5_parent(_Runtime("events"))
+    hp6 = _run_hp6_fixture(
+        ledger,
+        archive,
+        hp5,
+        _Runtime(
+            "semantics",
+            semantic_output=(
+                b"frame: unresolved\n"
+                b"reason: No governed frame accurately represents the source event.\n"
+            ),
+        ),
+        "hp7-unmapped",
+    )
+    publish_hybrid_event_semantics_preview(
+        hp6,
+        cast(HybridEventSemanticsArchive, archive),
+    )
+
+    plan = build_hybrid_proposal_plan(hp6.preview.id, ledger, archive)
+
+    assert plan.decisions == ()
+    assert plan.proposed_changes == ()
+    assert len(plan.diagnostics) == 1
+    assert plan.diagnostics[0].startswith("unmaterialized_event_subject:")
+    assert ":unmapped_frame:" in plan.diagnostics[0]
 
 
 def test_hp5_preserves_candidate_attribution_as_an_explicit_contract_gap() -> None:

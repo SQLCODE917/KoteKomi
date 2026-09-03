@@ -16,12 +16,14 @@ from kotekomi_application import (
     build_hybrid_event_frame_preview,
     build_hybrid_event_semantics_preview,
     build_hybrid_extraction_preview,
+    build_hybrid_proposal_plan_record,
     build_hybrid_reference_preview_record,
     canonical_hybrid_atomic_claim_preview_bytes,
     canonical_hybrid_entity_grounding_preview_bytes,
     canonical_hybrid_event_frame_preview_bytes,
     canonical_hybrid_event_semantics_preview_bytes,
     canonical_hybrid_extraction_preview_bytes,
+    canonical_hybrid_proposal_plan_bytes,
     canonical_hybrid_reference_preview_bytes,
     hybrid_atomic_claim_preview_sha256,
     hybrid_entity_grounding_preview_sha256,
@@ -48,6 +50,7 @@ def test_initialize_creates_archive_directories(tmp_path: Path) -> None:
     assert (tmp_path / "extraction" / "event-frame-previews").is_dir()
     assert (tmp_path / "extraction" / "atomic-claim-previews").is_dir()
     assert (tmp_path / "extraction" / "event-semantic-previews").is_dir()
+    assert (tmp_path / "extraction" / "proposal-plans").is_dir()
     assert (tmp_path / "transformations").is_dir()
 
 
@@ -350,6 +353,37 @@ def test_put_reuse_and_restart_hybrid_event_semantics_preview(tmp_path: Path) ->
         store.put_hybrid_event_semantics_preview(preview, payload, digest)
     with pytest.raises(ValueError):
         reopened.read_hybrid_event_semantics_preview(preview.id)
+
+
+def test_put_reuse_restart_and_corruption_rejection_for_hybrid_proposal_plan(
+    tmp_path: Path,
+) -> None:
+    store = LocalArchiveStore(tmp_path)
+    store.initialize()
+    plan = build_hybrid_proposal_plan_record(
+        parent_preview_id="hsp_" + "1" * 24,
+        parent_preview_sha256="a" * 64,
+        representation_id="rep_fixture",
+        paragraph_node_id="nod_fixture",
+        provenance_activity_id="prv_" + "2" * 24,
+    )
+    payload = canonical_hybrid_proposal_plan_bytes(plan)
+    digest = hashlib.sha256(payload).hexdigest()
+
+    created = store.put_hybrid_proposal_plan(plan, payload, digest)
+    reused = store.put_hybrid_proposal_plan(plan, payload, digest)
+    reopened = LocalArchiveStore(tmp_path)
+
+    assert created.disposition is ArchivePutDisposition.CREATED
+    assert reused.disposition is ArchivePutDisposition.REUSED
+    assert reopened.read_hybrid_proposal_plan(plan.id) == payload
+
+    stored = tmp_path / "extraction" / "proposal-plans" / f"{plan.id}.json"
+    stored.write_bytes(b"different bytes")
+    with pytest.raises(ValueError, match="conflicts with its immutable identity"):
+        store.put_hybrid_proposal_plan(plan, payload, digest)
+    with pytest.raises(ValueError):
+        reopened.read_hybrid_proposal_plan(plan.id)
 
 
 def test_put_and_reuse_pdf_transformation_blob(tmp_path: Path) -> None:

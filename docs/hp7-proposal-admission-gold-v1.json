@@ -1,0 +1,73 @@
+{
+    "schema_version": "hp7_proposal_admission_gold_v1",
+    "fixture_path": "raw/Anthropic–United_States_Department_of_Defense_dispute.pdf",
+    "fixture_sha256": "c63c85796559453acf708dab46a35da36ffed00a408a25275576ba07138e9624",
+    "parent_gold_path": "docs/hp6-event-semantics-gold-v1.json",
+    "policy_id": "hybrid_proposed_change_v1",
+    "cases": [
+        {
+            "case_id": "HP4-AD-01",
+            "trigger": "intensified",
+            "source_text": "[2] Efforts  to  utilize  artificial  intelligence  intensified  under  the term  of  Secretary Ash  Carter. ",
+            "expected_disposition": "proposed",
+            "review_outcome": "approved",
+            "review_rationale": "The governed change-in-intensity event matches the reviewed HP-6 Gold event."
+        },
+        {
+            "case_id": "HP4-AD-03",
+            "trigger": "authorized",
+            "source_text": "[8]  The Department of Homeland Security  authorized  its  workers  to  use  commercial  artificial  intelligence  systems,  including Anthropic's  Claude,  until  May  2025. ",
+            "expected_disposition": "proposed",
+            "review_outcome": "approved",
+            "review_rationale": "The governed authorization event matches the reviewed HP-6 Gold event."
+        },
+        {
+            "case_id": "HP4-AD-07",
+            "trigger": "described",
+            "source_text": "[35][36] The  exchange concerned  the  2026  Minab  school  strike,  which Amnesty  International  described  as  an  unlawful  U.S. strike  that  killed  156  people,  including  120  children,  and  which  Human  Rights  Watch  said  should  be investigated as a war crime. ",
+            "expected_disposition": "proposed",
+            "review_outcome": "approved",
+            "review_rationale": "The governed characterization event matches the reviewed HP-6 Gold event."
+        },
+        {
+            "case_id": "HP4-AD-07",
+            "trigger": "said",
+            "source_text": "[35][36] The  exchange concerned  the  2026  Minab  school  strike,  which Amnesty  International  described  as  an  unlawful  U.S. strike  that  killed  156  people,  including  120  children,  and  which  Human  Rights  Watch  said  should  be investigated as a war crime. ",
+            "expected_disposition": "proposed",
+            "review_outcome": "approved",
+            "review_rationale": "Human Rights Watch explicitly recommends investigation as a war crime."
+        },
+        {
+            "case_id": "HP4-AD-08",
+            "trigger": "caused",
+            "source_text": "The dispute caused 1789 Capital, a venture capital firm associated with Donald Trump Jr., to abandon an investment in Anthropic worth hundreds of millions of dollars. ",
+            "expected_disposition": "proposed",
+            "review_outcome": "approved",
+            "review_rationale": "The governed causation event matches the reviewed HP-6 Gold event."
+        },
+        {
+            "case_id": "HP4-AD-08",
+            "trigger": "abandon",
+            "source_text": "The dispute caused 1789 Capital, a venture capital firm associated with Donald Trump Jr., to abandon an investment in Anthropic worth hundreds of millions of dollars. ",
+            "expected_disposition": "proposed",
+            "review_outcome": "approved",
+            "review_rationale": "The governed investment-abandonment event matches the reviewed HP-6 Gold event."
+        },
+        {
+            "case_id": "HP4-AD-11",
+            "trigger": "designated",
+            "source_text": "The Department of War's records show that it designated Anthropic as a supply chain risk because  of  its  'hostile  manner  through  the press.' ",
+            "expected_disposition": "proposed",
+            "review_outcome": "approved",
+            "review_rationale": "The governed classification event matches the reviewed HP-6 Gold event."
+        },
+        {
+            "case_id": "HP4-AD-07",
+            "trigger": "said",
+            "source_text": "In  a  June  2026  Bloomberg  interview  about  Claude's  reported  role  in  U.S.  military  targeting  systems, Amodei said Anthropic did not know whether Claude had been used in connection with the Minab school strike,  but  that,  if  it  had,  the  use  case  would  not  violate  Anthropic's  red  lines. ",
+            "expected_disposition": "proposed",
+            "review_outcome": "rejected",
+            "review_rationale": "The source reports uncertainty and a conditional policy assessment, not a recommendation."
+        }
+    ]
+}

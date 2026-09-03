@@ -108,6 +108,59 @@ def test_provenance_activity_is_immutable(tmp_path: Path) -> None:
             )
 
 
+def test_hybrid_proposal_batch_round_trips_as_one_publication(tmp_path: Path) -> None:
+    ledger_path = tmp_path / "kotekomi.db"
+    SQLiteLedgerInitializer(ledger_path).initialize()
+    provenance_activity = sample_domain_records()[12]
+    proposed_change = sample_domain_records()[13]
+
+    with sqlite_ledger_transaction(ledger_path) as repository:
+        repository.commit_hybrid_proposal_batch(
+            provenance_activity=provenance_activity,
+            proposed_changes=(proposed_change,),
+        )
+
+    with sqlite_ledger_transaction(ledger_path) as repository:
+        assert repository.get_provenance_activity(provenance_activity.id) == provenance_activity
+        assert repository.get_proposed_change(proposed_change.id) == proposed_change
+
+
+def test_hybrid_proposal_batch_rolls_back_provenance_when_a_proposal_fails(
+    tmp_path: Path,
+) -> None:
+    ledger_path = tmp_path / "kotekomi.db"
+    SQLiteLedgerInitializer(ledger_path).initialize()
+    provenance_activity = sample_domain_records()[12]
+    proposed_change = sample_domain_records()[13]
+    source = sample_domain_records()[5]
+    with sqlite3.connect(ledger_path) as connection:
+        connection.execute(
+            """
+            CREATE TRIGGER fail_hp7_proposal_insert
+            BEFORE INSERT ON proposed_changes
+            BEGIN
+                SELECT RAISE(ABORT, 'injected HP-7 proposal failure');
+            END
+            """
+        )
+
+    with sqlite_ledger_transaction(ledger_path) as repository:
+        repository.save_source(source)
+        with pytest.raises(sqlite3.DatabaseError, match="injected HP-7 proposal failure"):
+            repository.commit_hybrid_proposal_batch(
+                provenance_activity=provenance_activity,
+                proposed_changes=(proposed_change,),
+            )
+        assert repository.get_source(source.id) == source
+        assert repository.get_provenance_activity(provenance_activity.id) is None
+        assert repository.get_proposed_change(proposed_change.id) is None
+
+    with sqlite_ledger_transaction(ledger_path) as repository:
+        assert repository.get_source(source.id) == source
+        assert repository.get_provenance_activity(provenance_activity.id) is None
+        assert repository.get_proposed_change(proposed_change.id) is None
+
+
 def test_immutable_document_conflict_rolls_back_preceding_transaction_writes(
     tmp_path: Path,
 ) -> None:
