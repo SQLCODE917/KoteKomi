@@ -4,6 +4,7 @@
       "enum": [
         "running",
         "complete",
+        "complete_with_gaps",
         "incomplete",
         "failed",
         "cancelled"

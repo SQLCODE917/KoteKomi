@@ -5,9 +5,9 @@
 - Parent: [Candidate Ingestion Review Program](2026-08-24-candidate-ingestion-review-program.md)
 - Architecture envelope: [Staged Model Extraction](2026-07-11-staged-model-extraction.md)
 - First deliverable: [HP-1 Hybrid Mention Interpretation MVP](2026-09-01-hybrid-mention-interpretation-mvp.md)
-- Completed through: [HP-6 Qualified Event Semantics and Source Support](2026-09-02-qualified-event-semantics-source-support.md)
-- Latest evaluation: [HP-6 Qualified Event Semantics Evaluation](2026-09-02-hp6-qualified-event-semantics-evaluation.md)
-- Next deliverable: [HP-7 ProposedChange Integration](2026-09-03-hybrid-proposed-change-integration.md)
+- Completed through: [HP-8 Hybrid Document Orchestration](2026-09-03-hybrid-document-orchestration.md)
+- Latest evaluation: [HP-8 Document Orchestration Evaluation](2026-09-03-hp8-document-orchestration-evaluation.md)
+- Next deliverable: Not yet designed; use the HP-8 whole-document evidence to select it.
 - Supersedes: [Model and Ontology Boundary Program](2026-08-25-model-ontology-boundary-program.md)
 - Supersedes: [Paragraph Hypothesis Development Program](2026-08-26-paragraph-hypothesis-development-program.md)
 - Supersedes: [PHP-1 Reliability Improvement Program](2026-08-27-php1-reliability-improvement-program.md)
@@ -253,11 +253,7 @@ Each deliverable leaves the prior working path intact.
 
 Each deliverable produces evidence that defines the next TDD.
 
-HP-1 through HP-6 have accepted, implemented, and verified TDDs.
-
-HP-7 has an accepted TDD that incorporates HP-6 evidence.
-
-Document-wide Hybrid Pipeline orchestration remains a black-box deliverable until HP-7 evidence exists.
+HP-1 through HP-8 have accepted, implemented, and verified TDDs.
 
 | Deliverable | User story | Precondition | Postcondition |
 | --- | --- | --- | --- |
@@ -268,7 +264,7 @@ Document-wide Hybrid Pipeline orchestration remains a black-box deliverable unti
 | [HP-5 Atomic Claims and Ontology Validation](2026-09-02-hybrid-atomic-claims-ontology-validation.md) | A reviewer can inspect atomic claims and every ontology violation. | HP-4 supplies validated EventFrameDrafts. | KoteKomi constructs AtomicClaimDrafts and OntologyValidationReports. |
 | [HP-6 Qualified Event Semantics and Source Support](2026-09-02-qualified-event-semantics-source-support.md) | A reviewer can inspect governed event frames, qualified roles, explicit gaps, and independent source support. | HP-5 supplies exact EvidenceTargets and lossless open-label evidence. | KoteKomi emits typed semantic drafts and support judgments without changing wiki state. |
 | [HP-7 ProposedChange Integration](2026-09-03-hybrid-proposed-change-integration.md) | A reviewer can inspect governed HP-6 events through the existing review flow. | HP-6 supplies governed semantic drafts with complete source-support evidence. | The Pipeline creates pending ProposedChanges without creating accepted intelligence. |
-| Document-wide Hybrid Pipeline orchestration | A user receives one reviewable candidate change set from an ingested document. | HP-7 converts one HP-6 Preview into a reviewable proposal batch. | One ingestion runs the Hybrid Pipeline over its planned document scope and closes one IngestionChangeSet. |
+| [HP-8 Hybrid Document Orchestration](2026-09-03-hybrid-document-orchestration.md) | A user receives one reviewable candidate change set from an ingested document. | HP-7 converts one HP-6 Preview into a reviewable proposal batch. | One ingestion runs the Hybrid Pipeline over its planned document scope and closes one IngestionChangeSet. |
 
 ## Validation strategy
 

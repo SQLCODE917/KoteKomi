@@ -1,4 +1,5 @@
 import hashlib
+import json
 from pathlib import Path
 
 import pytest
@@ -6,9 +7,12 @@ from kotekomi_adapters import LocalArchiveStore
 from kotekomi_application import (
     ArchivePutDisposition,
     HybridAtomicClaimStatus,
+    HybridDocumentCoverageReport,
+    HybridDocumentCoverageStatus,
     HybridEntityGroundingStatus,
     HybridEventFrameStatus,
     HybridEventSemanticsStatus,
+    HybridPipelinePolicyManifest,
     HybridPreviewStatus,
     StagedArchiveObject,
     build_hybrid_atomic_claim_preview,
@@ -19,10 +23,12 @@ from kotekomi_application import (
     build_hybrid_proposal_plan_record,
     build_hybrid_reference_preview_record,
     canonical_hybrid_atomic_claim_preview_bytes,
+    canonical_hybrid_document_coverage_report_bytes,
     canonical_hybrid_entity_grounding_preview_bytes,
     canonical_hybrid_event_frame_preview_bytes,
     canonical_hybrid_event_semantics_preview_bytes,
     canonical_hybrid_extraction_preview_bytes,
+    canonical_hybrid_pipeline_policy_manifest_bytes,
     canonical_hybrid_proposal_plan_bytes,
     canonical_hybrid_reference_preview_bytes,
     hybrid_atomic_claim_preview_sha256,
@@ -51,7 +57,54 @@ def test_initialize_creates_archive_directories(tmp_path: Path) -> None:
     assert (tmp_path / "extraction" / "atomic-claim-previews").is_dir()
     assert (tmp_path / "extraction" / "event-semantic-previews").is_dir()
     assert (tmp_path / "extraction" / "proposal-plans").is_dir()
+    assert (tmp_path / "extraction" / "document-policies").is_dir()
+    assert (tmp_path / "extraction" / "paragraph-receipts").is_dir()
+    assert (tmp_path / "extraction" / "document-coverage").is_dir()
     assert (tmp_path / "transformations").is_dir()
+
+
+def test_put_reuse_restart_and_corruption_rejection_for_hybrid_document_evidence(
+    tmp_path: Path,
+) -> None:
+    store = LocalArchiveStore(tmp_path)
+    store.initialize()
+    manifest, report = _empty_hybrid_document_evidence()
+    manifest_bytes = canonical_hybrid_pipeline_policy_manifest_bytes(manifest)
+    report_bytes = canonical_hybrid_document_coverage_report_bytes(report)
+
+    first_manifest = store.put_hybrid_pipeline_policy_manifest(
+        manifest,
+        manifest_bytes,
+        hashlib.sha256(manifest_bytes).hexdigest(),
+    )
+    second_manifest = store.put_hybrid_pipeline_policy_manifest(
+        manifest,
+        manifest_bytes,
+        hashlib.sha256(manifest_bytes).hexdigest(),
+    )
+    first_report = store.put_hybrid_document_coverage_report(
+        report,
+        report_bytes,
+        hashlib.sha256(report_bytes).hexdigest(),
+    )
+    second_report = store.put_hybrid_document_coverage_report(
+        report,
+        report_bytes,
+        hashlib.sha256(report_bytes).hexdigest(),
+    )
+
+    assert first_manifest.disposition is ArchivePutDisposition.CREATED
+    assert second_manifest.disposition is ArchivePutDisposition.REUSED
+    assert first_report.disposition is ArchivePutDisposition.CREATED
+    assert second_report.disposition is ArchivePutDisposition.REUSED
+    restarted = LocalArchiveStore(tmp_path)
+    assert restarted.read_hybrid_pipeline_policy_manifest(manifest.id) == manifest_bytes
+    assert restarted.read_hybrid_document_coverage_report(report.id) == report_bytes
+
+    report_path = tmp_path / "extraction" / "document-coverage" / f"{report.id}.json"
+    report_path.write_bytes(b"{}\n")
+    with pytest.raises(ValueError, match="contract validation"):
+        restarted.read_hybrid_document_coverage_report(report.id)
 
 
 def test_put_and_read_raw_source(tmp_path: Path) -> None:
@@ -501,3 +554,61 @@ def test_archive_ids_reject_path_characters(tmp_path: Path) -> None:
         store.stage_briefing_markdown("brf/escape", "escape")
     with pytest.raises(ValueError, match="unsupported path characters"):
         store.stage_briefing_citations_json("brf/escape", "escape")
+
+
+def _empty_hybrid_document_evidence() -> tuple[
+    HybridPipelinePolicyManifest,
+    HybridDocumentCoverageReport,
+]:
+    policy_payload: dict[str, object] = {
+        "schema_version": "hybrid_pipeline_policy_manifest_v1",
+        "policy_id": "hybrid_document_pipeline_v1",
+        "representation_id": "rep_archive_fixture",
+        "frozen_analysis_plan_id": "anp_archive_fixture",
+        "frozen_analysis_plan_sha256": "a" * 64,
+        "selected_node_count": 0,
+        "excluded_node_count": 1,
+        "model_identity": {"name": "fixture"},
+        "generation_parameters": {"temperature": 0},
+        "mention_proposer_identity": {"name": "fixture"},
+        "entity_linker_identity": {"name": "fixture"},
+        "pins": (),
+    }
+    policy_digest = _json_digest(policy_payload)
+    manifest_body: dict[str, object] = {
+        **policy_payload,
+        "policy_digest": policy_digest,
+        "work_items": (),
+    }
+    manifest = HybridPipelinePolicyManifest.model_validate(
+        {
+            **manifest_body,
+            "id": f"hpm_{_json_digest(manifest_body)[:24]}",
+        }
+    )
+    report_body: dict[str, object] = {
+        "schema_version": "hybrid_document_coverage_report_v1",
+        "policy_manifest_id": manifest.id,
+        "policy_manifest_sha256": hashlib.sha256(
+            canonical_hybrid_pipeline_policy_manifest_bytes(manifest)
+        ).hexdigest(),
+        "representation_id": manifest.representation_id,
+        "status": HybridDocumentCoverageStatus.COMPLETE,
+        "required_paragraph_count": 0,
+        "complete_paragraph_count": 0,
+        "gap_paragraph_count": 0,
+        "records": (),
+        "proposed_change_ids": (),
+    }
+    report = HybridDocumentCoverageReport.model_validate(
+        {
+            **report_body,
+            "id": f"hdc_{_json_digest(report_body)[:24]}",
+        }
+    )
+    return manifest, report
+
+
+def _json_digest(value: object) -> str:
+    payload = json.dumps(value, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
+    return hashlib.sha256(payload.encode()).hexdigest()

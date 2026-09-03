@@ -1,5 +1,10 @@
 # CIR-2: Automatic Extraction and Change Set
 
+The [HP-8 Hybrid Document Orchestration](2026-09-03-hybrid-document-orchestration.md)
+replaces this TDD's paragraph-hypothesis path inside `kotekomi ingest`.
+
+Existing CIR-2 Ledger records remain read-only historical evidence.
+
 - Status: Accepted
 - Program: [Candidate Ingestion Review](2026-08-24-candidate-ingestion-review-program.md)
 - Deliverable ID: CIR-2
