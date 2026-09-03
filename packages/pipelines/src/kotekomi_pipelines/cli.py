@@ -189,6 +189,7 @@ from kotekomi_application import (
     run_hybrid_event_frame_preview,
     run_hybrid_event_semantics_preview,
     run_hybrid_mention_preview,
+    run_hybrid_proposal_submission,
     run_hybrid_reference_preview,
     run_next_result_to_json,
     run_review_drain,
@@ -546,6 +547,18 @@ def main(argv: list[str] | None = None) -> int:
             model_max_output_tokens=args.model_max_output_tokens,
         )
         return build_hybrid_event_semantics(
+            config=config,
+            parent_preview_id=args.preview_id,
+            output_format=args.output_format,
+        )
+
+    if args.command == "extraction" and args.extraction_command == "submit-event-changes":
+        config = load_config(
+            config_path=args.config,
+            ledger_path_override=args.ledger_path,
+            archive_path_override=args.archive_path,
+        )
+        return submit_hybrid_event_changes(
             config=config,
             parent_preview_id=args.preview_id,
             output_format=args.output_format,
@@ -1125,6 +1138,19 @@ def build_parser() -> argparse.ArgumentParser:
         default="text",
     )
     _add_model_runtime_arguments(build_event_semantics_parser, include_fixture=True)
+    submit_event_changes_parser = extraction_subparsers.add_parser(
+        "submit-event-changes",
+        help="Submit reviewable ProposedChanges from one immutable HP-6 Preview.",
+    )
+    submit_event_changes_parser.add_argument("--preview-id", required=True)
+    submit_event_changes_parser.add_argument("--ledger-path", type=Path, default=None)
+    submit_event_changes_parser.add_argument("--archive-path", type=Path, default=None)
+    submit_event_changes_parser.add_argument(
+        "--format",
+        dest="output_format",
+        choices=("text", "json"),
+        default="text",
+    )
 
     review_parser = subparsers.add_parser("review", help="ProposedChange review commands.")
     review_subparsers = review_parser.add_subparsers(dest="review_command")
@@ -2674,6 +2700,64 @@ def build_hybrid_event_semantics(
     for diagnostic in result.preview.diagnostics:
         print(diagnostic, file=sys.stderr)
     return 0 if result.preview.terminal_status is HybridEventSemanticsStatus.COMPLETE else 1
+
+
+def submit_hybrid_event_changes(
+    *,
+    config: PipelineConfig,
+    parent_preview_id: str,
+    output_format: str = "text",
+) -> int:
+    """Build and atomically submit one deterministic HP-7 proposal plan."""
+    archive = LocalArchiveStore(config.archive_path)
+    archive.initialize()
+    try:
+        with sqlite_ledger_transaction(config.ledger_path) as repository:
+            result = run_hybrid_proposal_submission(
+                preview_id=parent_preview_id,
+                submitted_at=datetime.now(UTC),
+                ledger=repository,
+                archive=archive,
+            )
+    except (OSError, sqlite3.Error, ValueError) as error:
+        print(f"HP-7 proposal submission failed: {error}", file=sys.stderr)
+        return 1
+    disposition_counts = {"proposed": 0, "held": 0}
+    for decision in result.plan.decisions:
+        disposition_counts[decision.disposition.value] += 1
+    record_type_counts: dict[str, int] = {}
+    for change in result.plan.proposed_changes:
+        record_type = change.proposed_json.get("record_type")
+        if isinstance(record_type, str):
+            record_type_counts[record_type] = record_type_counts.get(record_type, 0) + 1
+    payload = {
+        "archive_path": result.archive_path,
+        "diagnostics": list(result.plan.diagnostics),
+        "disposition_counts": disposition_counts,
+        "parent_preview_id": result.plan.parent_preview_id,
+        "plan_id": result.plan.id,
+        "proposal_counts": dict(sorted(record_type_counts.items())),
+        "publication_disposition": result.publication_disposition,
+        "sha256": result.sha256,
+        "status": "completed",
+    }
+    if output_format == "json":
+        print(json.dumps(payload, sort_keys=True))
+    else:
+        print(f"Plan: {result.plan.id}")
+        print("Status: completed")
+        print(f"Events proposed: {disposition_counts['proposed']}")
+        print(f"Events held: {disposition_counts['held']}")
+        print(f"Pending proposals: {len(result.plan.proposed_changes)}")
+        for record_type, count in sorted(record_type_counts.items()):
+            print(f"{record_type} proposals: {count}")
+        print(f"Publication: {result.publication_disposition}")
+        if result.plan.diagnostics:
+            print("Diagnostics:")
+            for diagnostic in result.plan.diagnostics:
+                print(f"- {diagnostic}")
+        print("Next: kotekomi review next")
+    return 0
 
 
 def _automatic_ingestion_extraction(

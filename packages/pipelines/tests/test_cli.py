@@ -23,6 +23,7 @@ from kotekomi_application import (
     HybridEventSemanticsStatus,
     HybridMentionPreviewResult,
     HybridPreviewStatus,
+    HybridProposalResult,
     HybridReferencePreviewCommand,
     HybridReferencePreviewResult,
     ListModelRunLogsInput,
@@ -35,6 +36,7 @@ from kotekomi_application import (
     build_hybrid_event_frame_preview,
     build_hybrid_event_semantics_preview,
     build_hybrid_extraction_preview,
+    build_hybrid_proposal_plan_record,
     build_hybrid_reference_preview_record,
     hybrid_atomic_claim_preview_sha256,
     hybrid_entity_grounding_preview_sha256,
@@ -899,6 +901,173 @@ def test_hybrid_event_semantics_command_prints_typed_result(
         assert "Judgments: 0" in output
         for diagnostic in diagnostics:
             assert diagnostic in output
+
+
+def test_hybrid_proposal_command_routes_preview_and_format(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = PipelineConfig(
+        ledger_path=tmp_path / "kotekomi.db",
+        archive_path=tmp_path / "archive",
+        model_execution=ModelExecutionConfig(
+            "fixture", "fixture://local", "fixture", 300.0, 1024, 64
+        ),
+        embedding_profiles={},
+        document_retrieval_embedding_profile_id=None,
+    )
+    received: list[tuple[PipelineConfig, str, str]] = []
+
+    def fake_load_config(**kwargs: object) -> PipelineConfig:
+        del kwargs
+        return config
+
+    def fake_submit(*, config: PipelineConfig, parent_preview_id: str, output_format: str) -> int:
+        received.append((config, parent_preview_id, output_format))
+        return 0
+
+    monkeypatch.setattr(cli, "load_config", fake_load_config)
+    monkeypatch.setattr(cli, "submit_hybrid_event_changes", fake_submit)
+
+    assert (
+        main(
+            [
+                "extraction",
+                "submit-event-changes",
+                "--preview-id",
+                "hsp_fixture",
+                "--format",
+                "json",
+            ]
+        )
+        == 0
+    )
+    assert received == [(config, "hsp_fixture", "json")]
+
+
+@pytest.mark.parametrize("output_format", ("json", "text"))
+def test_hybrid_proposal_command_accepts_a_valid_empty_plan(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    output_format: str,
+) -> None:
+    config = PipelineConfig(
+        ledger_path=tmp_path / "kotekomi.db",
+        archive_path=tmp_path / "archive",
+        model_execution=ModelExecutionConfig(
+            "fixture", "fixture://local", "fixture", 300.0, 1024, 64
+        ),
+        embedding_profiles={},
+        document_retrieval_embedding_profile_id=None,
+    )
+    plan = build_hybrid_proposal_plan_record(
+        parent_preview_id="hsp_" + "1" * 24,
+        parent_preview_sha256="a" * 64,
+        representation_id="rep_fixture",
+        paragraph_node_id="nod_fixture",
+        provenance_activity_id="prv_" + "2" * 24,
+        diagnostics=("unmaterialized_event_subject:esd_fixture:unmapped_frame:scg_fixture",),
+    )
+
+    class FakeArchive:
+        def __init__(self, archive_path: Path) -> None:
+            assert archive_path == config.archive_path
+
+        def initialize(self) -> None:
+            pass
+
+    @contextmanager
+    def fake_transaction(ledger_path: Path) -> Generator[object]:
+        assert ledger_path == config.ledger_path
+        yield object()
+
+    def fake_run(**kwargs: object) -> HybridProposalResult:
+        assert kwargs["preview_id"] == plan.parent_preview_id
+        return HybridProposalResult(
+            plan,
+            "b" * 64,
+            f"extraction/proposal-plans/{plan.id}.json",
+            "created",
+        )
+
+    monkeypatch.setattr(cli, "LocalArchiveStore", FakeArchive)
+    monkeypatch.setattr(cli, "sqlite_ledger_transaction", fake_transaction)
+    monkeypatch.setattr(cli, "run_hybrid_proposal_submission", fake_run)
+
+    assert (
+        cli.submit_hybrid_event_changes(
+            config=config,
+            parent_preview_id=plan.parent_preview_id,
+            output_format=output_format,
+        )
+        == 0
+    )
+    output = capsys.readouterr().out
+    if output_format == "json":
+        assert json.loads(output) == {
+            "archive_path": f"extraction/proposal-plans/{plan.id}.json",
+            "diagnostics": list(plan.diagnostics),
+            "disposition_counts": {"held": 0, "proposed": 0},
+            "parent_preview_id": plan.parent_preview_id,
+            "plan_id": plan.id,
+            "proposal_counts": {},
+            "publication_disposition": "created",
+            "sha256": "b" * 64,
+            "status": "completed",
+        }
+    else:
+        assert f"Plan: {plan.id}" in output
+        assert "Events proposed: 0" in output
+        assert "Events held: 0" in output
+        assert "Pending proposals: 0" in output
+        assert plan.diagnostics[0] in output
+        assert "Next: kotekomi review next" in output
+
+
+def test_hybrid_proposal_command_returns_one_for_invalid_parent_evidence(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    config = PipelineConfig(
+        ledger_path=tmp_path / "kotekomi.db",
+        archive_path=tmp_path / "archive",
+        model_execution=ModelExecutionConfig(
+            "fixture", "fixture://local", "fixture", 300.0, 1024, 64
+        ),
+        embedding_profiles={},
+        document_retrieval_embedding_profile_id=None,
+    )
+
+    class FakeArchive:
+        def __init__(self, archive_path: Path) -> None:
+            assert archive_path == config.archive_path
+
+        def initialize(self) -> None:
+            pass
+
+    @contextmanager
+    def fake_transaction(ledger_path: Path) -> Generator[object]:
+        assert ledger_path == config.ledger_path
+        yield object()
+
+    def fake_run(**kwargs: object) -> HybridProposalResult:
+        del kwargs
+        raise ValueError("parent digest mismatch")
+
+    monkeypatch.setattr(cli, "LocalArchiveStore", FakeArchive)
+    monkeypatch.setattr(cli, "sqlite_ledger_transaction", fake_transaction)
+    monkeypatch.setattr(cli, "run_hybrid_proposal_submission", fake_run)
+
+    assert (
+        cli.submit_hybrid_event_changes(
+            config=config,
+            parent_preview_id="hsp_missing",
+        )
+        == 1
+    )
+    assert "HP-7 proposal submission failed: parent digest mismatch" in capsys.readouterr().err
 
 
 def test_hybrid_event_frame_command_returns_one_for_a_partial_preview(

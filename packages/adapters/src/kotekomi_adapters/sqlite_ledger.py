@@ -1837,6 +1837,24 @@ class SQLiteLedgerRepository:
             raise
         self._connection.execute("RELEASE SAVEPOINT grounded_candidate_batch")
 
+    def commit_hybrid_proposal_batch(
+        self,
+        *,
+        provenance_activity: ProvenanceActivity,
+        proposed_changes: tuple[ProposedChange, ...],
+    ) -> None:
+        """Commit one prevalidated HP-7 proposal graph without partial publication."""
+        self._connection.execute("SAVEPOINT hybrid_proposal_batch")
+        try:
+            self.save_provenance_activity(provenance_activity)
+            for proposed_change in proposed_changes:
+                self.save_proposed_change(proposed_change)
+        except Exception:
+            self._connection.execute("ROLLBACK TO SAVEPOINT hybrid_proposal_batch")
+            self._connection.execute("RELEASE SAVEPOINT hybrid_proposal_batch")
+            raise
+        self._connection.execute("RELEASE SAVEPOINT hybrid_proposal_batch")
+
     def commit_successful_model_run_and_candidate_batch(
         self,
         *,

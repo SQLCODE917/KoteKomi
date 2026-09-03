@@ -44,6 +44,11 @@ from kotekomi_application.hybrid_mention_interpretation import (
     canonical_hybrid_extraction_preview_bytes,
     hybrid_extraction_preview_from_bytes,
 )
+from kotekomi_application.hybrid_proposed_changes import (
+    HybridProposalPlan,
+    canonical_hybrid_proposal_plan_bytes,
+    hybrid_proposal_plan_from_bytes,
+)
 
 ARCHIVE_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
 RAW_SOURCE_DIR = Path("sources/raw")
@@ -56,6 +61,7 @@ HYBRID_ENTITY_GROUNDING_PREVIEWS_DIR = Path("extraction/entity-grounding-preview
 HYBRID_EVENT_FRAME_PREVIEWS_DIR = Path("extraction/event-frame-previews")
 HYBRID_ATOMIC_CLAIM_PREVIEWS_DIR = Path("extraction/atomic-claim-previews")
 HYBRID_EVENT_SEMANTICS_PREVIEWS_DIR = Path("extraction/event-semantic-previews")
+HYBRID_PROPOSAL_PLANS_DIR = Path("extraction/proposal-plans")
 PDF_TRANSFORMATIONS_DIR = Path("transformations")
 STAGING_DIR = Path(".staging")
 
@@ -76,6 +82,7 @@ class LocalArchiveStore:
             HYBRID_EVENT_FRAME_PREVIEWS_DIR,
             HYBRID_ATOMIC_CLAIM_PREVIEWS_DIR,
             HYBRID_EVENT_SEMANTICS_PREVIEWS_DIR,
+            HYBRID_PROPOSAL_PLANS_DIR,
             PDF_TRANSFORMATIONS_DIR,
         ):
             self._absolute_path(relative_dir).mkdir(parents=True, exist_ok=True)
@@ -506,6 +513,56 @@ class LocalArchiveStore:
             or canonical_hybrid_event_semantics_preview_bytes(preview) != payload
         ):
             raise ValueError("Stored HybridEventSemanticsPreview failed canonical validation.")
+        return payload
+
+    def put_hybrid_proposal_plan(
+        self,
+        plan: HybridProposalPlan,
+        payload: bytes,
+        expected_sha256: str,
+    ) -> ArchivePutOutcome:
+        parsed = hybrid_proposal_plan_from_bytes(payload)
+        if parsed != plan or canonical_hybrid_proposal_plan_bytes(parsed) != payload:
+            raise ValueError("HybridProposalPlan payload is not its canonical DTO encoding.")
+        if hashlib.sha256(payload).hexdigest() != expected_sha256:
+            raise ValueError("HybridProposalPlan payload does not match expected digest.")
+        relative_path = HYBRID_PROPOSAL_PLANS_DIR / f"{_validate_archive_id(plan.id)}.json"
+        absolute_path = self._absolute_path(relative_path)
+        if absolute_path.exists():
+            existing = absolute_path.read_bytes()
+            if existing != payload:
+                raise ValueError("HybridProposalPlan conflicts with its immutable identity.")
+            return ArchivePutOutcome(
+                ArchivePutDisposition.REUSED,
+                ArchiveObject(relative_path.as_posix(), len(existing)),
+            )
+        staged_relative = _staged_relative_path(relative_path)
+        staged_path = self._absolute_path(staged_relative)
+        self._write_bytes(staged_relative, staged_path, payload)
+        absolute_path.parent.mkdir(parents=True, exist_ok=True)
+        disposition = ArchivePutDisposition.CREATED
+        try:
+            os.link(staged_path, absolute_path)
+        except FileExistsError:
+            existing = absolute_path.read_bytes()
+            if existing != payload:
+                raise ValueError(
+                    "HybridProposalPlan conflicts with its immutable identity."
+                ) from None
+            disposition = ArchivePutDisposition.REUSED
+        finally:
+            staged_path.unlink(missing_ok=True)
+        return ArchivePutOutcome(
+            disposition,
+            ArchiveObject(relative_path.as_posix(), len(payload)),
+        )
+
+    def read_hybrid_proposal_plan(self, plan_id: str) -> bytes:
+        relative_path = HYBRID_PROPOSAL_PLANS_DIR / f"{_validate_archive_id(plan_id)}.json"
+        payload = self._absolute_path(relative_path).read_bytes()
+        plan = hybrid_proposal_plan_from_bytes(payload)
+        if plan.id != plan_id or canonical_hybrid_proposal_plan_bytes(plan) != payload:
+            raise ValueError("Stored HybridProposalPlan failed canonical validation.")
         return payload
 
     def read_briefing_markdown(self, briefing_id: str) -> str:
