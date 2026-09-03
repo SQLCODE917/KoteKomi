@@ -103,8 +103,19 @@ def _run(*arguments: str, expected_returncode: int = 0) -> subprocess.CompletedP
 
 
 def _validate_output(result: subprocess.CompletedProcess[str], status: str) -> None:
-    if _user_stderr(result.stderr) or not re.fullmatch(
-        rf"[^\t]+\t\{status}\t\d{{4}}-\d{{2}}-\d{{2}}T\d{{2}}:\d{{2}}\n", result.stdout
+    lines = result.stdout.splitlines()
+    result_rows = [
+        line
+        for line in lines
+        if re.fullmatch(rf"[^\t]+\t\{status}\t\d{{4}}-\d{{2}}-\d{{2}}T\d{{2}}:\d{{2}}", line)
+    ]
+    summaries = [line for line in lines if line.startswith("Extraction: ")]
+    progress = [line for line in lines if line.startswith("Extraction paragraph ")]
+    if (
+        _user_stderr(result.stderr)
+        or len(result_rows) != 1
+        or len(summaries) != 1
+        or len(result_rows) + len(summaries) + len(progress) != len(lines)
     ):
         raise ConformanceError("captured_output_invalid", "Captured User CLI row changed.")
 

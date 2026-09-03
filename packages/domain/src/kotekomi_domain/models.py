@@ -2323,6 +2323,7 @@ class AnalysisPlanArtifact(DomainModel):
 class AnalysisRunState(StrEnum):
     RUNNING = "running"
     COMPLETE = "complete"
+    COMPLETE_WITH_GAPS = "complete_with_gaps"
     INCOMPLETE = "incomplete"
     FAILED = "failed"
     CANCELLED = "cancelled"

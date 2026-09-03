@@ -19,6 +19,17 @@ from kotekomi_application.hybrid_atomic_claims import (
     canonical_hybrid_atomic_claim_preview_bytes,
     hybrid_atomic_claim_preview_from_bytes,
 )
+from kotekomi_application.hybrid_document_orchestration import (
+    HybridDocumentCoverageReport,
+    HybridParagraphReceipt,
+    HybridPipelinePolicyManifest,
+    canonical_hybrid_document_coverage_report_bytes,
+    canonical_hybrid_paragraph_receipt_bytes,
+    canonical_hybrid_pipeline_policy_manifest_bytes,
+    hybrid_document_coverage_report_from_bytes,
+    hybrid_paragraph_receipt_from_bytes,
+    hybrid_pipeline_policy_manifest_from_bytes,
+)
 from kotekomi_application.hybrid_document_references import (
     HybridReferencePreview,
     canonical_hybrid_reference_preview_bytes,
@@ -62,6 +73,9 @@ HYBRID_EVENT_FRAME_PREVIEWS_DIR = Path("extraction/event-frame-previews")
 HYBRID_ATOMIC_CLAIM_PREVIEWS_DIR = Path("extraction/atomic-claim-previews")
 HYBRID_EVENT_SEMANTICS_PREVIEWS_DIR = Path("extraction/event-semantic-previews")
 HYBRID_PROPOSAL_PLANS_DIR = Path("extraction/proposal-plans")
+HYBRID_DOCUMENT_POLICIES_DIR = Path("extraction/document-policies")
+HYBRID_PARAGRAPH_RECEIPTS_DIR = Path("extraction/paragraph-receipts")
+HYBRID_DOCUMENT_COVERAGE_DIR = Path("extraction/document-coverage")
 PDF_TRANSFORMATIONS_DIR = Path("transformations")
 STAGING_DIR = Path(".staging")
 
@@ -83,6 +97,9 @@ class LocalArchiveStore:
             HYBRID_ATOMIC_CLAIM_PREVIEWS_DIR,
             HYBRID_EVENT_SEMANTICS_PREVIEWS_DIR,
             HYBRID_PROPOSAL_PLANS_DIR,
+            HYBRID_DOCUMENT_POLICIES_DIR,
+            HYBRID_PARAGRAPH_RECEIPTS_DIR,
+            HYBRID_DOCUMENT_COVERAGE_DIR,
             PDF_TRANSFORMATIONS_DIR,
         ):
             self._absolute_path(relative_dir).mkdir(parents=True, exist_ok=True)
@@ -565,6 +582,87 @@ class LocalArchiveStore:
             raise ValueError("Stored HybridProposalPlan failed canonical validation.")
         return payload
 
+    def put_hybrid_pipeline_policy_manifest(
+        self,
+        manifest: HybridPipelinePolicyManifest,
+        payload: bytes,
+        expected_sha256: str,
+    ) -> ArchivePutOutcome:
+        parsed = hybrid_pipeline_policy_manifest_from_bytes(payload)
+        if parsed != manifest or canonical_hybrid_pipeline_policy_manifest_bytes(parsed) != payload:
+            raise ValueError("Hybrid Pipeline Policy payload is not its canonical DTO encoding.")
+        return self._put_hybrid_evidence(
+            HYBRID_DOCUMENT_POLICIES_DIR,
+            manifest.id,
+            payload,
+            expected_sha256,
+            "Hybrid Pipeline Policy",
+        )
+
+    def read_hybrid_pipeline_policy_manifest(self, manifest_id: str) -> bytes:
+        relative_path = HYBRID_DOCUMENT_POLICIES_DIR / (f"{_validate_archive_id(manifest_id)}.json")
+        payload = self._absolute_path(relative_path).read_bytes()
+        manifest = hybrid_pipeline_policy_manifest_from_bytes(payload)
+        if (
+            manifest.id != manifest_id
+            or canonical_hybrid_pipeline_policy_manifest_bytes(manifest) != payload
+        ):
+            raise ValueError("Stored Hybrid Pipeline Policy failed canonical validation.")
+        return payload
+
+    def put_hybrid_paragraph_receipt(
+        self,
+        receipt: HybridParagraphReceipt,
+        payload: bytes,
+        expected_sha256: str,
+    ) -> ArchivePutOutcome:
+        parsed = hybrid_paragraph_receipt_from_bytes(payload)
+        if parsed != receipt or canonical_hybrid_paragraph_receipt_bytes(parsed) != payload:
+            raise ValueError("Paragraph Receipt payload is not its canonical DTO encoding.")
+        return self._put_hybrid_evidence(
+            HYBRID_PARAGRAPH_RECEIPTS_DIR,
+            receipt.id,
+            payload,
+            expected_sha256,
+            "Paragraph Receipt",
+        )
+
+    def read_hybrid_paragraph_receipt(self, receipt_id: str) -> bytes:
+        relative_path = HYBRID_PARAGRAPH_RECEIPTS_DIR / (f"{_validate_archive_id(receipt_id)}.json")
+        payload = self._absolute_path(relative_path).read_bytes()
+        receipt = hybrid_paragraph_receipt_from_bytes(payload)
+        if receipt.id != receipt_id or canonical_hybrid_paragraph_receipt_bytes(receipt) != payload:
+            raise ValueError("Stored Paragraph Receipt failed canonical validation.")
+        return payload
+
+    def put_hybrid_document_coverage_report(
+        self,
+        report: HybridDocumentCoverageReport,
+        payload: bytes,
+        expected_sha256: str,
+    ) -> ArchivePutOutcome:
+        parsed = hybrid_document_coverage_report_from_bytes(payload)
+        if parsed != report or canonical_hybrid_document_coverage_report_bytes(parsed) != payload:
+            raise ValueError("Hybrid coverage payload is not its canonical DTO encoding.")
+        return self._put_hybrid_evidence(
+            HYBRID_DOCUMENT_COVERAGE_DIR,
+            report.id,
+            payload,
+            expected_sha256,
+            "Hybrid coverage report",
+        )
+
+    def read_hybrid_document_coverage_report(self, report_id: str) -> bytes:
+        relative_path = HYBRID_DOCUMENT_COVERAGE_DIR / (f"{_validate_archive_id(report_id)}.json")
+        payload = self._absolute_path(relative_path).read_bytes()
+        report = hybrid_document_coverage_report_from_bytes(payload)
+        if (
+            report.id != report_id
+            or canonical_hybrid_document_coverage_report_bytes(report) != payload
+        ):
+            raise ValueError("Stored Hybrid coverage report failed canonical validation.")
+        return payload
+
     def read_briefing_markdown(self, briefing_id: str) -> str:
         relative_path = BRIEFING_DAILY_DIR / f"{_validate_archive_id(briefing_id)}.md"
         return self._absolute_path(relative_path).read_text(encoding="utf-8")
@@ -644,6 +742,45 @@ class LocalArchiveStore:
         return ArchiveObject(
             relative_path=relative_path.as_posix(),
             size_bytes=len(content),
+        )
+
+    def _put_hybrid_evidence(
+        self,
+        relative_dir: Path,
+        record_id: str,
+        payload: bytes,
+        expected_sha256: str,
+        label: str,
+    ) -> ArchivePutOutcome:
+        if hashlib.sha256(payload).hexdigest() != expected_sha256:
+            raise ValueError(f"{label} payload does not match expected digest.")
+        relative_path = relative_dir / f"{_validate_archive_id(record_id)}.json"
+        absolute_path = self._absolute_path(relative_path)
+        if absolute_path.exists():
+            existing = absolute_path.read_bytes()
+            if existing != payload:
+                raise ValueError(f"{label} conflicts with its immutable identity.")
+            return ArchivePutOutcome(
+                ArchivePutDisposition.REUSED,
+                ArchiveObject(relative_path.as_posix(), len(existing)),
+            )
+        staged_relative = _staged_relative_path(relative_path)
+        staged_path = self._absolute_path(staged_relative)
+        self._write_bytes(staged_relative, staged_path, payload)
+        absolute_path.parent.mkdir(parents=True, exist_ok=True)
+        disposition = ArchivePutDisposition.CREATED
+        try:
+            os.link(staged_path, absolute_path)
+        except FileExistsError:
+            existing = absolute_path.read_bytes()
+            if existing != payload:
+                raise ValueError(f"{label} conflicts with its immutable identity.") from None
+            disposition = ArchivePutDisposition.REUSED
+        finally:
+            staged_path.unlink(missing_ok=True)
+        return ArchivePutOutcome(
+            disposition,
+            ArchiveObject(relative_path.as_posix(), len(payload)),
         )
 
     def _absolute_path(self, relative_path: Path) -> Path:

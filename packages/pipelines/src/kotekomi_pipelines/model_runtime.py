@@ -62,11 +62,17 @@ class FixtureModelTaskRuntime:
         )
 
     def run_model_task(self, task: ModelTaskRequest) -> ModelTaskResponse:
-        raw_output = (
-            b"abstain: fixture_no_claim\n"
-            if task.execution_spec.schema_id == "paragraph_hypothesis_text_v1"
-            else b"outcome: abstain\nreason: fixture_no_claim\n"
-        )
+        if task.execution_spec.schema_id == "paragraph_hypothesis_text_v1":
+            raw_output = b"abstain: fixture_no_claim\n"
+        elif (
+            task.execution_spec.schema_id == "hybrid_mention_task_text_v1"
+            and task.task_type == "hybrid_mention_proposal"
+        ):
+            raw_output = b"abstain: fixture_no_mentions\n"
+        elif task.execution_spec.schema_id == "hybrid_event_trigger_text_v1":
+            raw_output = b"abstain: fixture_no_event\n"
+        else:
+            raw_output = b"outcome: abstain\nreason: fixture_no_claim\n"
         return ModelTaskResponse(
             raw_output=raw_output,
             execution_receipt=ModelExecutionReceipt(

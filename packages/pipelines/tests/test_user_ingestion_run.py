@@ -1,10 +1,25 @@
+import sqlite3
+from dataclasses import replace
 from pathlib import Path
 from typing import cast
 
 import pytest
-from kotekomi_adapters import sqlite_ledger_transaction
-from kotekomi_domain import IngestionChangeSetOrigin, IngestionRunStatus
+from kotekomi_adapters import SQLiteLedgerRepository, sqlite_ledger_transaction
+from kotekomi_application import (
+    HYBRID_STAGE_ORDER,
+    ModelTaskRequest,
+    ModelTaskResponse,
+    hybrid_document_coverage_report_from_bytes,
+    hybrid_paragraph_receipt_from_bytes,
+)
+from kotekomi_domain import (
+    AnalysisRunState,
+    IngestionChangeSet,
+    IngestionChangeSetOrigin,
+    IngestionRunStatus,
+)
 from kotekomi_pipelines.cli import main
+from kotekomi_pipelines.model_runtime import FixtureModelTaskRuntime
 
 FIXTURE_PATH = (
     Path(__file__).resolve().parent
@@ -54,7 +69,7 @@ def test_user_ingest_auto_initializes_storage_and_records_history(
     assert captured.out.startswith("anthropic_model_release_review.md\t[CAPTURED]\t")
     assert "src_" not in captured.out
     captured_row, summary = captured.out.splitlines()
-    assert summary == "Extraction: 0 proposed changes; 0/0 units complete"
+    assert summary == ("Extraction: 0 proposed changes; 0/0 paragraphs complete; 0 gaps; 0 reused")
     assert main(["--config", str(config_path), "ingestions", "list"]) == 0
     history = capsys.readouterr()
     assert history.err == ""
@@ -127,12 +142,16 @@ def test_user_ingest_accepts_project_pdf_and_text_files(
             repository.list_document_representations()[0].id
         )
     assert extraction_tasks
-    assert {task.prompt_id for task in extraction_tasks} == {"paragraph_hypothesis_segment_v3"}
+    assert "paragraph_hypothesis_segment_v3" not in {task.prompt_id for task in extraction_tasks}
+    assert {task.prompt_id for task in extraction_tasks} >= {
+        "hybrid_gliner_labels_v1",
+        "hybrid_mention_task_v1",
+    }
     assert context_manifests
-    assert {
+    assert "paragraph_hypothesis_segment_v3" not in {
         str(cast(dict[str, object], manifest.payload["integrity"])["prompt_id"])
         for manifest in context_manifests
-    } == {"paragraph_hypothesis_segment_v3"}
+    }
     assert (
         main(
             [
@@ -147,6 +166,205 @@ def test_user_ingest_accepts_project_pdf_and_text_files(
         == 0
     )
     assert "[CAPTURED]" in capsys.readouterr().out
+
+
+def test_user_ingest_checkpoints_and_reuses_the_complete_hybrid_document(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config_path = _config(tmp_path)
+    command = [
+        "--config",
+        str(config_path),
+        "ingest",
+        str(PDF_FIXTURE_PATH),
+        "--url",
+        "https://example.test/articles/hybrid-replay",
+    ]
+
+    assert main(command) == 0
+    first_output = capsys.readouterr()
+    assert first_output.err == ""
+    assert "paragraphs complete; 0 gaps; 0 reused" in first_output.out
+
+    archive_root = tmp_path / "state" / "archive"
+    coverage_paths = tuple((archive_root / "extraction" / "document-coverage").glob("*.json"))
+    receipt_paths = tuple((archive_root / "extraction" / "paragraph-receipts").glob("*.json"))
+    assert len(coverage_paths) == 1
+    report = hybrid_document_coverage_report_from_bytes(coverage_paths[0].read_bytes())
+    receipts = tuple(
+        hybrid_paragraph_receipt_from_bytes(path.read_bytes()) for path in receipt_paths
+    )
+    assert report.required_paragraph_count == len(receipts) > 1
+    assert report.complete_paragraph_count == report.required_paragraph_count
+    assert report.gap_paragraph_count == 0
+    assert all(
+        tuple(stage.stage_id for stage in receipt.stages) == HYBRID_STAGE_ORDER
+        for receipt in receipts
+    )
+
+    ledger_path = tmp_path / "state" / "kotekomi.db"
+    with sqlite_ledger_transaction(ledger_path) as repository:
+        first_task_ids = tuple(item.id for item in repository.list_extraction_tasks())
+        first_model_run_ids = tuple(item.id for item in repository.list_model_runs())
+        first_ingestion = repository.list_ingestion_runs()[0]
+        assert first_ingestion.analysis_run_id is not None
+        first_analysis = repository.get_analysis_run(first_ingestion.analysis_run_id)
+    assert first_analysis is not None
+    assert first_analysis.state is AnalysisRunState.COMPLETE
+
+    def adapter_must_not_start(*args: object, **kwargs: object) -> None:
+        del args, kwargs
+        raise AssertionError("A fully reused HP-8 document started an Adapter.")
+
+    monkeypatch.setattr(
+        "kotekomi_pipelines.hybrid_document_ingestion.GlinerMentionProposer",
+        adapter_must_not_start,
+    )
+    monkeypatch.setattr(
+        "kotekomi_pipelines.hybrid_document_ingestion.RefinedEntityLinkingAdapter",
+        adapter_must_not_start,
+    )
+    assert main(command) == 0
+    replay_output = capsys.readouterr()
+    assert replay_output.err == ""
+    assert replay_output.out.count("(reused)") == report.required_paragraph_count
+    assert f"{report.required_paragraph_count} reused" in replay_output.out
+    with sqlite_ledger_transaction(ledger_path) as repository:
+        assert tuple(item.id for item in repository.list_extraction_tasks()) == first_task_ids
+        assert tuple(item.id for item in repository.list_model_runs()) == first_model_run_ids
+        runs = repository.list_ingestion_runs()
+        replay_change_sets = tuple(
+            repository.get_ingestion_change_set(change_set_id)
+            for run in runs
+            if (change_set_id := run.ingestion_change_set_id) is not None
+        )
+    assert all(item is not None for item in replay_change_sets)
+    assert {item.analysis_origin for item in replay_change_sets if item is not None} == {
+        IngestionChangeSetOrigin.EXECUTED,
+        IngestionChangeSetOrigin.REUSED,
+    }
+    assert runs[0].analysis_run_id == runs[1].analysis_run_id
+
+
+def test_user_ingest_rejects_corrupt_hybrid_checkpoint(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    config_path = _config(tmp_path)
+    command = [
+        "--config",
+        str(config_path),
+        "ingest",
+        str(PDF_FIXTURE_PATH),
+        "--url",
+        "https://example.test/articles/hybrid-corruption",
+    ]
+    assert main(command) == 0
+    capsys.readouterr()
+    receipt_path = next(
+        (tmp_path / "state" / "archive" / "extraction" / "paragraph-receipts").glob("*.json")
+    )
+    receipt_path.write_bytes(b"corrupt checkpoint")
+
+    assert main(command) == 1
+    output = capsys.readouterr()
+    assert "hpr_" not in output.out
+    assert "src_" not in output.out
+    assert output.err == "Automatic extraction could not complete.\n"
+    with sqlite_ledger_transaction(tmp_path / "state" / "kotekomi.db") as repository:
+        runs = repository.list_ingestion_runs()
+    assert len(runs) == 2
+    assert {run.status for run in runs} == {
+        IngestionRunStatus.CAPTURED,
+        IngestionRunStatus.ERROR,
+    }
+
+
+def test_user_ingest_closes_with_accounted_gaps_when_hp1_blocks(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    original = FixtureModelTaskRuntime.run_model_task
+
+    def invalid_mention_output(
+        self: FixtureModelTaskRuntime, task: ModelTaskRequest
+    ) -> ModelTaskResponse:
+        result = original(self, task)
+        if task.task_type == "hybrid_mention_proposal":
+            return replace(result, raw_output=b"invalid fixture output\n")
+        return result
+
+    monkeypatch.setattr(FixtureModelTaskRuntime, "run_model_task", invalid_mention_output)
+    config_path = _config(tmp_path)
+
+    assert (
+        main(
+            [
+                "--config",
+                str(config_path),
+                "ingest",
+                str(PDF_FIXTURE_PATH),
+                "--url",
+                "https://example.test/articles/hybrid-gaps",
+            ]
+        )
+        == 0
+    )
+    output = capsys.readouterr()
+    assert output.err == ""
+    assert "0/15 paragraphs complete; 15 gaps" in output.out
+    coverage_path = next(
+        (tmp_path / "state" / "archive" / "extraction" / "document-coverage").glob("*.json")
+    )
+    report = hybrid_document_coverage_report_from_bytes(coverage_path.read_bytes())
+    assert report.gap_paragraph_count == report.required_paragraph_count == 15
+    with sqlite_ledger_transaction(tmp_path / "state" / "kotekomi.db") as repository:
+        ingestion = repository.list_ingestion_runs()[0]
+        assert ingestion.analysis_run_id is not None
+        analysis = repository.get_analysis_run(ingestion.analysis_run_id)
+    assert analysis is not None
+    assert analysis.state is AnalysisRunState.COMPLETE_WITH_GAPS
+
+
+def test_user_ingest_rolls_back_the_complete_closure_transaction(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fail_change_set(self: SQLiteLedgerRepository, record: IngestionChangeSet) -> None:
+        del self, record
+        raise sqlite3.OperationalError("fixture closure fault")
+
+    monkeypatch.setattr(SQLiteLedgerRepository, "save_ingestion_change_set", fail_change_set)
+    config_path = _config(tmp_path)
+    ledger_path = tmp_path / "state" / "kotekomi.db"
+
+    assert (
+        main(
+            [
+                "--config",
+                str(config_path),
+                "ingest",
+                str(PDF_FIXTURE_PATH),
+                "--url",
+                "https://example.test/articles/hybrid-rollback",
+            ]
+        )
+        == 1
+    )
+    output = capsys.readouterr()
+    assert output.err == "Automatic extraction could not complete.\n"
+    with sqlite3.connect(ledger_path) as connection:
+        assert connection.execute("SELECT COUNT(*) FROM analysis_runs").fetchone() == (0,)
+        assert connection.execute("SELECT COUNT(*) FROM planned_analysis_items").fetchone() == (0,)
+        assert connection.execute("SELECT COUNT(*) FROM proposed_changes").fetchone() == (0,)
+        assert connection.execute("SELECT COUNT(*) FROM ingestion_change_sets").fetchone() == (0,)
+    with sqlite_ledger_transaction(ledger_path) as repository:
+        runs = repository.list_ingestion_runs()
+    assert len(runs) == 1
+    assert runs[0].status is IngestionRunStatus.ERROR
 
 
 @pytest.mark.parametrize(

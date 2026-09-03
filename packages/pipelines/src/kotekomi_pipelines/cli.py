@@ -28,7 +28,6 @@ from kotekomi_adapters import (
     SQLiteDocumentRetrievalAdapter,
     SQLiteKnowledgeGraphRetrievalAdapter,
     SQLiteLedgerInitializer,
-    SQLiteLedgerRepository,
     SQLiteLedgerRetrievalAdapter,
     sqlite_ledger_transaction,
 )
@@ -44,18 +43,10 @@ from kotekomi_adapters.refined_entity_linking import (
 )
 from kotekomi_application import (
     CROSS_PLANE_QUERY_POLICY_ID,
-    PARAGRAPH_HYPOTHESIS_EVIDENCE_SELECTION_V1,
-    PARAGRAPH_SEGMENT_V3,
-    AnalysisRunInput,
-    AnalysisRunItemInput,
-    AnalysisUnit,
-    AnalysisUnitPlanningInput,
     AuthoritativeCaptureOutcome,
     AuthoritativeCaptureRequest,
     AuthoritativePdfCaptureOutcome,
     AuthoritativePdfCaptureRequest,
-    BoundedExtractionInput,
-    BoundedExtractionOutcome,
     BriefingGenerationInput,
     BuildDocumentRetrievalProjectionCommand,
     BuildDocumentRetrievalProjectionResult,
@@ -63,10 +54,7 @@ from kotekomi_application import (
     BuildEvidenceGraphProjectionCommand,
     BuildKnowledgeGraphProjectionCommand,
     BuildLedgerRetrievalProjectionCommand,
-    CompleteIngestionRunCapturedInput,
     CompleteIngestionRunErrorInput,
-    ContextManifestInput,
-    ContextManifestStatus,
     ContextModelProfile,
     EmbeddingPort,
     EmbeddingProfile,
@@ -87,18 +75,14 @@ from kotekomi_application import (
     HybridMentionPreviewCommand,
     HybridPreviewStatus,
     HybridReferencePreviewCommand,
-    HypothesisVerifierSpec,
     JsonValue,
     LedgerRetrievalFilters,
     ListModelRunLogsInput,
-    ModelExecutionSpec,
     ModelRunLogEntry,
     ModelRuntimeStatus,
-    ModelTaskRuntime,
     NewsDeliveryEnvelope,
     NewsIngestInput,
     NewsIngestStatus,
-    ParagraphHypothesisTaskSchemaRegistry,
     PipelineCommandPlan,
     PipelineNextStep,
     PipelineRunNextResult,
@@ -132,24 +116,17 @@ from kotekomi_application import (
     Uuid4ModelRunIdFactory,
     Uuid4ProcessingAttemptIdFactory,
     approve_proposed_change,
-    bounded_extraction_task_fingerprint,
-    build_context_manifest,
-    build_coverage_report,
     build_document_retrieval_projection,
     build_document_semantic_projection,
     build_evidence_graph_projection,
     build_knowledge_graph_projection,
     build_ledger_retrieval_projection,
-    close_ingestion_change_set,
     commit_authoritative_capture,
     commit_authoritative_pdf_capture,
-    complete_ingestion_run_as_captured,
     complete_ingestion_run_as_error,
     edit_proposed_change,
     explain_evidence_graph_relationship,
     export_review_editable_record,
-    find_reusable_completed_analysis,
-    freeze_analysis_plan,
     generate_briefing,
     get_pipeline_next,
     get_pipeline_status,
@@ -166,7 +143,6 @@ from kotekomi_application import (
     normalize_source_url,
     pipeline_next_to_json,
     pipeline_status_to_json,
-    plan_analysis_units,
     publish_hybrid_atomic_claim_preview,
     publish_hybrid_event_semantics_preview,
     query_cross_plane,
@@ -175,7 +151,6 @@ from kotekomi_application import (
     query_document_semantic_retrieval,
     query_knowledge_graph,
     query_ledger_retrieval,
-    record_analysis_item_attempt,
     reject_proposed_change,
     review_drain_result_to_json,
     review_next_decision_result_to_json,
@@ -183,7 +158,6 @@ from kotekomi_application import (
     review_packet_to_json,
     review_queue_result_to_json,
     review_readiness_to_json,
-    run_bounded_extraction,
     run_hybrid_atomic_claim_preview,
     run_hybrid_entity_grounding_preview,
     run_hybrid_event_frame_preview,
@@ -194,18 +168,14 @@ from kotekomi_application import (
     run_next_result_to_json,
     run_review_drain,
     run_review_next_decision,
-    start_analysis_run,
     start_ingestion_run,
     validate_review_drain_selection,
 )
-from kotekomi_application.analysis_coverage import LATEST_COMPLETED_VALID_ATTEMPT_POLICY_ID
-from kotekomi_application.ingestion_change_sets import CloseIngestionChangeSetInput
 from kotekomi_briefing import MarkdownBriefingRenderer
 from kotekomi_domain import (
     AssertionStatus,
     DocumentRepresentationBundle,
     EvidenceGraphViewKind,
-    IngestionChangeSetOrigin,
     IngestionFailureCode,
     IngestionFailureStage,
     IngestionRun,
@@ -223,6 +193,11 @@ from kotekomi_pipelines.config import (
     load_config,
     load_processing_config,
     load_processing_storage_config,
+)
+from kotekomi_pipelines.hybrid_document_ingestion import (
+    HybridDocumentIngestionInput,
+    HybridParagraphProgress,
+    run_hybrid_document_ingestion,
 )
 from kotekomi_pipelines.managed_llama_server import (
     ManagedLlamaServerConfig,
@@ -2267,53 +2242,22 @@ def ingest_user_file(*, config_path: Path | None, source_file_path: Path, source
         )
 
     try:
-        runtime = build_model_task_runtime(config.model_execution)
-        readiness = runtime.check_readiness()
-        with sqlite_ledger_transaction(config.ledger_path) as repository:
-            extraction = _automatic_ingestion_extraction(
-                config=config,
-                repository=repository,
-                archive_store=archive_store,
-                runtime=runtime,
+        extraction = run_hybrid_document_ingestion(
+            input=HybridDocumentIngestionInput(
+                ingestion_run_id=run.id,
                 source_id=source_id,
                 document_id=document_id,
                 representation_id=representation_id,
-                ingestion_run_id=run.id,
-                ready=readiness.ready,
-            )
-            if extraction is None:
-                complete_ingestion_run_as_error(
-                    input=CompleteIngestionRunErrorInput(
-                        ingestion_run_id=run.id,
-                        failure_stage=IngestionFailureStage.AUTOMATIC_EXTRACTION,
-                        failure_code=IngestionFailureCode.AUTOMATIC_EXTRACTION_FAILED,
-                        safe_failure_message="Automatic extraction could not complete.",
-                        normalized_source_url=normalized_source_url,
-                        source_id=source_id,
-                        document_id=document_id,
-                        representation_id=representation_id,
-                        provenance_activity_id=provenance_activity_id,
-                    ),
-                    repository=repository,
-                    clock=UtcIngestionRunClock(),
-                )
-                print("Automatic extraction could not complete.", file=sys.stderr)
-                return 1
-            captured = complete_ingestion_run_as_captured(
-                input=CompleteIngestionRunCapturedInput(
-                    ingestion_run_id=run.id,
-                    normalized_source_url=normalized_source_url,
-                    source_id=source_id,
-                    document_id=document_id,
-                    representation_id=representation_id,
-                    provenance_activity_id=provenance_activity_id,
-                    analysis_run_id=extraction.analysis_run_id,
-                    ingestion_change_set_id=extraction.change_set_id,
-                ),
-                repository=repository,
-                clock=UtcIngestionRunClock(),
-            )
-    except (OSError, ValueError):
+                capture_provenance_activity_id=provenance_activity_id,
+                normalized_source_url=normalized_source_url,
+            ),
+            config=config,
+            archive=archive_store,
+            progress=_print_hybrid_paragraph_progress,
+            model_run_id_factory=Uuid4ModelRunIdFactory(),
+        )
+        captured = extraction.closure.ingestion_run
+    except (OSError, sqlite3.Error, ValueError):
         return _record_user_ingestion_error(
             config=processing_config,
             run=run,
@@ -2327,28 +2271,15 @@ def ingest_user_file(*, config_path: Path | None, source_file_path: Path, source
             provenance_activity_id=provenance_activity_id,
         )
     print(_user_ingestion_row(captured))
+    report = extraction.coverage_report
     print(
         "Extraction: "
-        f"{extraction.proposal_count} proposed changes; "
-        f"{extraction.completed_units}/{extraction.required_units} units complete"
+        f"{len(extraction.closure.change_set.proposed_change_ids)} proposed changes; "
+        f"{report.complete_paragraph_count}/{report.required_paragraph_count} paragraphs complete; "
+        f"{report.gap_paragraph_count} gaps; "
+        f"{extraction.reused_paragraph_count} reused"
     )
     return 0
-
-
-@dataclass(frozen=True)
-class _AutomaticExtractionResult:
-    analysis_run_id: str
-    change_set_id: str
-    proposal_count: int
-    completed_units: int
-    required_units: int
-
-
-@dataclass(frozen=True)
-class _PreparedAutomaticExtraction:
-    unit: AnalysisUnit
-    extraction_input: BoundedExtractionInput
-    task_fingerprint: str
 
 
 class _AutomaticExtractionTokenizer:
@@ -2356,6 +2287,14 @@ class _AutomaticExtractionTokenizer:
 
     def count_tokens(self, rendered_input: bytes) -> int:
         return len(rendered_input.decode("utf-8").split())
+
+
+def _print_hybrid_paragraph_progress(progress: HybridParagraphProgress) -> None:
+    disposition = "reused" if progress.receipt_reused else "executed"
+    print(
+        f"Extraction paragraph {progress.ordinal + 1}/{progress.total}: "
+        f"{progress.status} ({disposition})"
+    )
 
 
 def preview_hybrid_mentions(
@@ -2758,191 +2697,6 @@ def submit_hybrid_event_changes(
                 print(f"- {diagnostic}")
         print("Next: kotekomi review next")
     return 0
-
-
-def _automatic_ingestion_extraction(
-    *,
-    config: PipelineConfig,
-    repository: SQLiteLedgerRepository,
-    archive_store: LocalArchiveStore,
-    runtime: ModelTaskRuntime,
-    source_id: str,
-    document_id: str,
-    representation_id: str,
-    ingestion_run_id: str,
-    ready: bool,
-) -> _AutomaticExtractionResult | None:
-    """Run the CIR-2 bounded claim policy and close its immutable proposal set."""
-    if not ready:
-        return None
-    tokenizer = _AutomaticExtractionTokenizer()
-    prompt_bytes = (
-        Path(__file__).resolve().parents[4] / "prompts" / "paragraph_hypothesis_segment_v3.md"
-    ).read_bytes()
-    verifier_prompt_bytes = (
-        Path(__file__).resolve().parents[4] / "prompts" / "paragraph_hypothesis_faithfulness_v1.md"
-    ).read_bytes()
-    prompt_id = "paragraph_hypothesis_segment_v3"
-    prompt_digest = hashlib.sha256(prompt_bytes).hexdigest()
-    schema_registry = ParagraphHypothesisTaskSchemaRegistry()
-    schema = schema_registry.resolve("paragraph_hypothesis_text_v1")
-    planning = plan_analysis_units(
-        AnalysisUnitPlanningInput(
-            representation_id=representation_id,
-            policy_id="segment_local_hypothesis_v1",
-            task_type="claim_extraction",
-            max_focus_nodes_per_unit=1,
-            focus_node_types=("paragraph",),
-        ),
-        repository,
-    )
-    frozen = freeze_analysis_plan(planning, repository)
-    prepared: list[_PreparedAutomaticExtraction] = []
-    for unit in planning.units:
-        outcome = build_context_manifest(
-            ContextManifestInput(
-                analysis_unit=unit,
-                model_profile=ContextModelProfile(
-                    config.model_execution.profile_name or "lm-studio",
-                    config.model_execution.context_tokens,
-                    config.model_execution.max_output_tokens,
-                    256,
-                ),
-                prompt_id=prompt_id,
-                prompt_bytes=prompt_bytes,
-                schema_id=schema.schema_id,
-                schema_bytes=schema.canonical_schema_bytes,
-                renderer_version="paragraph_hypothesis_segment_context_v3",
-                evidence_selection_policy_id=PARAGRAPH_HYPOTHESIS_EVIDENCE_SELECTION_V1,
-                source_segment_policy_id=PARAGRAPH_SEGMENT_V3,
-            ),
-            repository,
-            tokenizer,
-        )
-        if outcome.manifest.status is not ContextManifestStatus.READY:
-            return None
-        manifest = outcome.manifest
-        execution_spec = ModelExecutionSpec(
-            model_profile_id=config.model_execution.profile_name or "lm-studio",
-            model_identity=runtime.configured_identity,
-            generation_parameters=(
-                ExecutionSetting("max_output_tokens", config.model_execution.max_output_tokens),
-                ExecutionSetting("seed", 17),
-                ExecutionSetting("temperature", 0),
-            ),
-            prompt_id=prompt_id,
-            prompt_digest=prompt_digest,
-            schema_id=schema.schema_id,
-            schema_digest=schema.digest,
-            context_manifest_id=manifest.id,
-            context_manifest_digest=manifest.manifest_digest,
-            rendered_input_digest=manifest.rendered_input_digest,
-            output_contract_version=schema.output_contract_version,
-        )
-        extraction_input = BoundedExtractionInput(
-            source_id=source_id,
-            document_id=document_id,
-            representation_id=representation_id,
-            context_manifest_id=manifest.id,
-            prompt_bytes=prompt_bytes,
-            execution_spec=execution_spec,
-            validator_version="paragraph_hypothesis_validator_v1",
-            hypothesis_verifier=HypothesisVerifierSpec(
-                "paragraph_hypothesis_faithfulness_v1", verifier_prompt_bytes
-            ),
-        )
-        prepared.append(
-            _PreparedAutomaticExtraction(
-                unit=unit,
-                extraction_input=extraction_input,
-                task_fingerprint=bounded_extraction_task_fingerprint(extraction_input, manifest),
-            )
-        )
-    reusable = find_reusable_completed_analysis(
-        representation_id=representation_id,
-        frozen_analysis_plan_id=frozen.id,
-        expected_item_fingerprints=tuple(
-            (prepared_item.unit.id, prepared_item.task_fingerprint) for prepared_item in prepared
-        ),
-        ledger_repository=repository,
-    )
-    if reusable is not None:
-        change_set = close_ingestion_change_set(
-            CloseIngestionChangeSetInput(
-                ingestion_run_id=ingestion_run_id,
-                analysis_run_id=reusable.analysis_run_id,
-                analysis_origin=IngestionChangeSetOrigin.REUSED,
-                closed_at=datetime.now(UTC),
-            ),
-            repository,
-        ).change_set
-        return _AutomaticExtractionResult(
-            analysis_run_id=reusable.analysis_run_id,
-            change_set_id=change_set.id,
-            proposal_count=len(change_set.proposed_change_ids),
-            completed_units=len(reusable.coverage_report.coverage_records),
-            required_units=len(reusable.coverage_report.coverage_records),
-        )
-
-    outcomes: list[tuple[AnalysisUnit, BoundedExtractionOutcome]] = []
-    for prepared_item in prepared:
-        extraction = run_bounded_extraction(
-            prepared_item.extraction_input,
-            repository,
-            archive_store,
-            runtime,
-            Uuid4ModelRunIdFactory(),
-            tokenizer,
-            schema_registry,
-        )
-        outcomes.append((prepared_item.unit, extraction))
-    run = start_analysis_run(
-        AnalysisRunInput(
-            document_id=document_id,
-            frozen_plan_id=frozen.id,
-            coverage_policy_id=LATEST_COMPLETED_VALID_ATTEMPT_POLICY_ID,
-            started_at=datetime.now(UTC),
-            items=tuple(
-                AnalysisRunItemInput(
-                    analysis_unit_id=unit.id,
-                    task_type=extraction.extraction_task.task_type,
-                    input_fingerprint=extraction.extraction_task.task_fingerprint,
-                    expected_manifest_id=extraction.extraction_task.context_manifest_id,
-                )
-                for unit, extraction in outcomes
-            ),
-        ),
-        repository,
-    )
-    for unit, extraction in outcomes:
-        record_analysis_item_attempt(
-            analysis_run_id=run.id,
-            analysis_unit_id=unit.id,
-            model_run_id=extraction.model_run.id,
-            ledger_repository=repository,
-        )
-    report = build_coverage_report(run.id, repository)
-    if not report.complete or any(
-        record.terminal_status.value == "context_budget_blocked"
-        for record in report.coverage_records
-    ):
-        return None
-    change_set = close_ingestion_change_set(
-        CloseIngestionChangeSetInput(
-            ingestion_run_id=ingestion_run_id,
-            analysis_run_id=run.id,
-            analysis_origin=IngestionChangeSetOrigin.EXECUTED,
-            closed_at=datetime.now(UTC),
-        ),
-        repository,
-    ).change_set
-    return _AutomaticExtractionResult(
-        analysis_run_id=run.id,
-        change_set_id=change_set.id,
-        proposal_count=len(change_set.proposed_change_ids),
-        completed_units=len(report.coverage_records),
-        required_units=len(report.coverage_records),
-    )
 
 
 def list_user_ingestion_history(*, config_path: Path | None) -> int:
