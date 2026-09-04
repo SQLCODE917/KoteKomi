@@ -25,6 +25,7 @@ kotekomi-adapters = { workspace = true }
 kotekomi-briefing = { workspace = true }
 kotekomi-domain = { workspace = true }
 kotekomi-devtools = { workspace = true }
+kotekomi-exporters = { workspace = true }
 kotekomi-pipelines = { workspace = true }
 
 [tool.uv.workspace]
@@ -34,6 +35,7 @@ members = [
   "packages/briefing",
   "packages/domain",
   "packages/devtools",
+  "packages/exporters",
   "packages/pipelines",
 ]
 
@@ -45,6 +47,7 @@ testpaths = [
   "packages/briefing/tests",
   "packages/domain/tests",
   "packages/devtools/tests",
+  "packages/exporters/tests",
   "packages/pipelines/tests",
 ]
 pythonpath = [
@@ -53,6 +56,7 @@ pythonpath = [
   "packages/briefing/src",
   "packages/domain/src",
   "packages/devtools/src",
+  "packages/exporters/src",
   "packages/pipelines/src",
 ]
 
@@ -79,6 +83,8 @@ include = [
   "packages/domain/tests",
   "packages/devtools/src",
   "packages/devtools/tests",
+  "packages/exporters/src",
+  "packages/exporters/tests",
   "packages/pipelines/src",
   "packages/pipelines/tests",
   "scripts",
@@ -90,6 +96,7 @@ executionEnvironments = [
     "packages/briefing/src",
     "packages/domain/src",
     "packages/devtools/src",
+    "packages/exporters/src",
     "packages/pipelines/src",
   ] },
 ]

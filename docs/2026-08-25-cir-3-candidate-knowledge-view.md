@@ -1,14 +1,19 @@
 # CIR-3: Candidate Knowledge View
 
 - Status: Superseded
-- Successor: [Hybrid Intelligence Extraction Pipeline](2026-09-01-hybrid-intelligence-extraction-pipeline.md)
+- Successor:
+  [CIR-4 Deterministic Candidate Wiki MVP](2026-09-04-deterministic-candidate-wiki-mvp.md)
 - Program: [Candidate Ingestion Review](2026-08-24-candidate-ingestion-review-program.md)
 - Deliverable ID: CIR-3
 - Depends on: [CIR-2](2026-08-24-automatic-extraction-change-set.md)
 
 The candidate knowledge view remains a desired user outcome.
 
-The project will redesign that outcome after HP-7 defines the complete ProposedChange input.
+HP-7 defined the complete ProposedChange input.
+
+HP-8 defined the document-scoped `IngestionChangeSet` input.
+
+CIR-4 now owns the bounded CandidateKnowledgeView required by the first Wiki projection.
 
 ## 1. Context & Problem
 
