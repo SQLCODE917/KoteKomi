@@ -20,6 +20,8 @@ from kotekomi_application import (
 GLINER_PACKAGE_VERSION = "0.2.28"
 GLINER_MODEL_ID = "urchade/gliner_medium-v2.1"
 GLINER_MODEL_REVISION = "40ec419335d09393f298636f471328b722c6da9e"
+GLINER_TOKENIZER_ID = "microsoft/deberta-v3-base"
+GLINER_TOKENIZER_REVISION = "8ccc9b6f36199bec6961081d44eb72fb3f7353f3"
 GLINER_LABEL = "organization"
 GLINER_THRESHOLD = 0.5
 GLINER_DEVICE = "cpu"
@@ -35,20 +37,21 @@ class _GlinerModel(Protocol):
     ) -> list[dict[str, object]]: ...
 
 
-type _ModelLoader = Callable[[str, str, str], _GlinerModel]
+type _ModelLoader = Callable[[Path, str], _GlinerModel]
 type _MonotonicClock = Callable[[], float]
 
 
-def _load_model(model_id: str, revision: str, device: str) -> _GlinerModel:
+def _load_model(model_directory: Path, device: str) -> _GlinerModel:
     from gliner import GLiNER  # pyright: ignore[reportMissingTypeStubs]
-    from huggingface_hub import snapshot_download  # pyright: ignore[reportUnknownVariableType]
 
-    model_path = snapshot_download(repo_id=model_id, revision=revision, dry_run=False)
     loader = cast(
         Callable[..., object],
         GLiNER.from_pretrained,  # pyright: ignore[reportUnknownMemberType]
     )
-    return cast(_GlinerModel, loader(str(Path(model_path)), map_location=device))
+    return cast(
+        _GlinerModel,
+        loader(str(model_directory), map_location=device, local_files_only=True),
+    )
 
 
 class GlinerOrganizationMentionProposer:
@@ -57,6 +60,7 @@ class GlinerOrganizationMentionProposer:
     def __init__(
         self,
         *,
+        model_directory: Path,
         model_loader: _ModelLoader = _load_model,
         monotonic_clock: _MonotonicClock = time.monotonic,
     ) -> None:
@@ -68,7 +72,7 @@ class GlinerOrganizationMentionProposer:
             )
         self._clock = monotonic_clock
         started = self._clock()
-        self._model = model_loader(GLINER_MODEL_ID, GLINER_MODEL_REVISION, GLINER_DEVICE)
+        self._model = model_loader(model_directory, GLINER_DEVICE)
         self._load_elapsed_milliseconds = _elapsed_milliseconds(started, self._clock())
 
     @property
@@ -103,6 +107,7 @@ class GlinerMentionProposer:
     def __init__(
         self,
         *,
+        model_directory: Path,
         model_loader: _ModelLoader = _load_model,
         monotonic_clock: _MonotonicClock = time.monotonic,
     ) -> None:
@@ -113,6 +118,7 @@ class GlinerMentionProposer:
                 f"found {installed_version}."
             )
         self._clock = monotonic_clock
+        self._model_directory = model_directory
         self._model_loader = model_loader
         self._model: _GlinerModel | None = None
         self._load_elapsed_milliseconds = 0
@@ -124,11 +130,7 @@ class GlinerMentionProposer:
     def propose(self, proposal_input: MentionProposalInput) -> MentionProposalBatch:
         if self._model is None:
             load_started = self._clock()
-            self._model = self._model_loader(
-                GLINER_MODEL_ID,
-                GLINER_MODEL_REVISION,
-                GLINER_DEVICE,
-            )
+            self._model = self._model_loader(self._model_directory, GLINER_DEVICE)
             self._load_elapsed_milliseconds = _elapsed_milliseconds(
                 load_started,
                 self._clock(),
@@ -154,6 +156,8 @@ class GlinerMentionProposer:
             configuration=(
                 ("device", GLINER_DEVICE),
                 ("threshold", GLINER_THRESHOLD),
+                ("tokenizer_id", GLINER_TOKENIZER_ID),
+                ("tokenizer_revision", GLINER_TOKENIZER_REVISION),
             ),
             load_elapsed_milliseconds=self._load_elapsed_milliseconds,
             inference_elapsed_milliseconds=_elapsed_milliseconds(started, completed),

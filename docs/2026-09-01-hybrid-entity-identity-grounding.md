@@ -126,9 +126,9 @@ HP-3 never resolves an Entity, invokes a language model, creates a ProposedChang
 
 ### Configuration and CLI
 
-- HGC-01: Optional strict `[entity_linking]` configuration selects the `refined` Adapter.
-- HGC-02: Configuration requires `python_executable`, `data_dir`, and positive `timeout_seconds`.
-- HGC-03: Relative runtime paths resolve relative to the selected configuration file.
+- HGC-01: KoteKomi selects the `refined` Adapter from the managed Model Resource installation.
+- HGC-02: Configuration can set a positive ReFinED `timeout_seconds` value.
+- HGC-03: The [Model Resource readiness contract](2026-09-04-specialized-model-resource-readiness.md) selects ReFinED runtime paths.
 - HGC-04: Unknown entity-linking keys or Adapter names fail configuration loading.
 - HGC-05: The repository-owned worker script is selected by KoteKomi and is not caller-overridable.
 - HGC-06: `kotekomi extraction ground-entities --preview-id <hp2-preview-id>` runs HP-3.
@@ -175,7 +175,7 @@ The Pipeline composes configuration, Ledger, Archive, Application use case, and 
 - AC-HG-05: Adapter tests prove strict protocol validation, offline flags, caller-span options, finite scores, contiguous ranks, distinct Wikidata IDs, NIL, and exact source alignment.
 - AC-HG-06: A worker test proves each top-k Wikipedia title corresponds to that candidate's own Wikidata ID.
 - AC-HG-07: Archive tests prove immutable create, identical reuse, conflict rejection, and strict reload.
-- AC-HG-08: Configuration tests prove valid, relative, missing, and invalid `[entity_linking]` behavior.
+- AC-HG-08: Configuration tests prove default, positive, and invalid ReFinED timeout behavior.
 - AC-HG-09: CLI tests prove complete and blocked rendering and exit codes.
 - AC-HG-10: Tests prove one task/run/raw-output/receipt/trace chain per attempted SourceSegment.
 - AC-HG-11: Tests prove HP-3 creates no ProposedChange or accepted intelligence.
@@ -228,8 +228,8 @@ uv run pyright
 uv run pytest
 ```
 
-The reviewed local-fixture acceptance additionally requires the two reviewed untracked PDFs and the
-pinned isolated ReFinED runtime.
+The reviewed local-fixture acceptance additionally requires the two reviewed untracked PDFs and a
+ready managed ReFinED Model Resource.
 
 ## Research Basis
 

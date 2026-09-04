@@ -20,6 +20,7 @@ from kotekomi_adapters.gliner_organization_mention_proposer import (
     GLINER_THRESHOLD,
     GlinerOrganizationMentionProposer,
 )
+from kotekomi_adapters.model_resources import gliner_model_path
 from kotekomi_application import (
     ExecutionSetting,
     ModelExecutionSpec,
@@ -59,7 +60,9 @@ def run(catalog_path: Path = DEFAULT_CATALOG, config_path: Path | None = None) -
     readiness = runtime.check_readiness()
     if not readiness.ready:
         return {"status": "qwen_unavailable", "runtime_status": asdict(readiness)}
-    gliner = GlinerOrganizationMentionProposer()
+    gliner = GlinerOrganizationMentionProposer(
+        model_directory=gliner_model_path(config.model_resource_root)
+    )
     if catalog:
         propose_validated_organization_mentions(
             OrganizationMentionProposalInput(str(catalog[0]["source_text"])), gliner

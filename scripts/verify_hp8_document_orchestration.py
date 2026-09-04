@@ -503,7 +503,7 @@ def _findings(
         findings.append({"code": "qwen25_runtime_not_pinned", "actual": model})
     if "gliner" not in str(proposer.get("producer_id", "")):
         findings.append({"code": "gliner_not_pinned", "actual": proposer})
-    if configured.entity_linking is None or linker.get("configured") is not True:
+    if linker.get("configured") is not True:
         findings.append({"code": "refined_not_configured", "actual": linker})
     producer_ids = sorted(
         {
@@ -588,19 +588,19 @@ def _isolated_config(config: PipelineConfig, ledger: Path, archive: Path) -> str
         f"timeout_seconds = {runtime.timeout_seconds}",
         f"context_tokens = {runtime.context_tokens}",
         f"max_output_tokens = {runtime.max_output_tokens}",
+        "",
+        "[model_resources]",
+        f"root = {_toml(config.model_resource_root)}",
     ]
-    if config.entity_linking is not None:
-        linker = config.entity_linking
-        lines.extend(
-            (
-                "",
-                "[entity_linking]",
-                f"adapter = {_toml(linker.adapter)}",
-                f"python_executable = {_toml(linker.python_executable)}",
-                f"data_dir = {_toml(linker.data_dir)}",
-                f"timeout_seconds = {linker.timeout_seconds}",
-            )
+    linker = config.entity_linking
+    lines.extend(
+        (
+            "",
+            "[entity_linking]",
+            f"adapter = {_toml(linker.adapter)}",
+            f"timeout_seconds = {linker.timeout_seconds}",
         )
+    )
     return "\n".join(lines) + "\n"
 
 

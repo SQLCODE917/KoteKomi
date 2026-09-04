@@ -17,6 +17,12 @@ from kotekomi_adapters.gliner_organization_mention_proposer import (
     GLINER_PACKAGE_VERSION,
     GLINER_THRESHOLD,
 )
+from kotekomi_adapters.model_resources import (
+    gliner_expected_resource_identity,
+    gliner_model_path,
+    refined_data_path,
+    refined_python_path,
+)
 from kotekomi_adapters.refined_entity_linking import (
     REFINED_ENTITY_SET,
     REFINED_MODEL_ID,
@@ -244,7 +250,9 @@ class _RuntimeResources:
                 self._proposer = _FixtureMentionProposer()
             else:
                 try:
-                    self._proposer = GlinerMentionProposer()
+                    self._proposer = GlinerMentionProposer(
+                        model_directory=gliner_model_path(self._config.model_resource_root)
+                    )
                 except Exception as error:
                     self._proposer = _UnavailableMentionProposer(error)
         return self._proposer
@@ -261,20 +269,15 @@ class _RuntimeResources:
 
     def _build_linker(self) -> EntityLinkingPort:
         identity = _entity_linker_identity(self._config)
-        if self._config.entity_linking is None:
-            return _UnavailableEntityLinker(
-                RuntimeError("Entity-linking runtime is not configured."),
-                identity,
-            )
         worker_script = (
             Path(__file__).resolve().parents[4] / "scripts" / "refined_entity_linking_worker.py"
         )
         try:
             self._refined = RefinedEntityLinkingAdapter(
                 RefinedEntityLinkingConfig(
-                    python_executable=self._config.entity_linking.python_executable,
+                    python_executable=refined_python_path(self._config.model_resource_root),
                     worker_script=worker_script,
-                    data_dir=self._config.entity_linking.data_dir,
+                    data_dir=refined_data_path(self._config.model_resource_root),
                     timeout_seconds=self._config.entity_linking.timeout_seconds,
                 )
             )
@@ -603,6 +606,7 @@ def _policy_input(
             "producer_id": f"gliner:{GLINER_PACKAGE_VERSION}",
             "model_id": GLINER_MODEL_ID,
             "model_revision": GLINER_MODEL_REVISION,
+            "resource_identity": gliner_expected_resource_identity(),
             "device": GLINER_DEVICE,
             "threshold": GLINER_THRESHOLD,
             "requested_kinds": cast(JsonValue, list(PROPOSER_CONTEXTUAL_KINDS)),
@@ -611,7 +615,7 @@ def _policy_input(
         dict[str, JsonValue],
         _entity_linker_identity(config).model_dump(mode="json"),
     )
-    linker_identity["configured"] = config.entity_linking is not None
+    linker_identity["configured"] = True
     return HybridPolicyManifestInput(
         representation_id=representation_id,
         model_identity=model_identity,
@@ -634,9 +638,7 @@ def _entity_linker_identity(config: PipelineConfig) -> EntityLinkerIdentity:
         package_revision=REFINED_PACKAGE_REVISION,
         resource_manifest_sha256=REFINED_RESOURCE_MANIFEST_SHA256,
         runtime_identity=REFINED_RUNTIME_IDENTITY,
-        timeout_seconds=(
-            config.entity_linking.timeout_seconds if config.entity_linking is not None else 300.0
-        ),
+        timeout_seconds=config.entity_linking.timeout_seconds,
     )
 
 

@@ -50,6 +50,35 @@ Use separate model roles.
 | synthesis model | draft Briefings and analytic summaries |
 | reranker model | rank retrieved evidence |
 
+## Specialized Model Resources
+
+GLiNER and ReFinED use pinned Resource Installations under the shared user data directory.
+
+Install those resources only through:
+
+```bash
+uv run kotekomi model resources install
+```
+
+Inspect them without network access through:
+
+```bash
+uv run kotekomi model resources status
+```
+
+The install command owns every model download and the isolated ReFinED Python environment.
+
+Normal ingestion validates both installations before it writes canonical state.
+
+Normal GLiNER loading uses its managed model and tokenizer files with local-only loading.
+
+Normal ReFinED loading uses its managed Python environment with downloads disabled.
+
+Do not add runtime model downloads to an Adapter or Pipeline.
+
+The [Model Resource readiness TDD](../2026-09-04-specialized-model-resource-readiness.md)
+defines the complete contract.
+
 ## Model Output Rules
 
 Model output creates ProposedChange records.

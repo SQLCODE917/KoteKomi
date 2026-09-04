@@ -18,6 +18,15 @@ if TYPE_CHECKING:
     from kotekomi_adapters.lm_studio_model_runtime import LMStudioModelRuntime
     from kotekomi_adapters.local_archive import LocalArchiveStore
     from kotekomi_adapters.model_http import HttpResponse, JsonHttpClient
+    from kotekomi_adapters.model_resources import (
+        GlinerModelResourceAdapter,
+        ModelResourceInstallationError,
+        RefinedModelResourceAdapter,
+        gliner_expected_resource_identity,
+        gliner_model_path,
+        refined_data_path,
+        refined_python_path,
+    )
     from kotekomi_adapters.ollama_embeddings import OllamaEmbeddingAdapter
     from kotekomi_adapters.ollama_model_runtime import OllamaModelRuntime
     from kotekomi_adapters.pdf_evidence_overlay_renderer import PdfiumEvidenceOverlayRenderer
@@ -57,6 +66,10 @@ __all__ = [
     "LlamaServerEmbeddingAdapter",
     "LMStudioEmbeddingAdapter",
     "LocalArchiveStore",
+    "GlinerModelResourceAdapter",
+    "ModelResourceInstallationError",
+    "RefinedModelResourceAdapter",
+    "gliner_expected_resource_identity",
     "NewsMLG2Adapter",
     "OllamaModelRuntime",
     "OllamaEmbeddingAdapter",
@@ -71,6 +84,9 @@ __all__ = [
     "SQLiteKnowledgeGraphRetrievalAdapter",
     "sqlite_ledger_transaction",
     "preflight_pdf_source",
+    "gliner_model_path",
+    "refined_data_path",
+    "refined_python_path",
 ]
 
 
@@ -121,6 +137,34 @@ def __getattr__(name: str) -> object:
         from kotekomi_adapters.model_http import HttpResponse, JsonHttpClient
 
         return {"HttpResponse": HttpResponse, "JsonHttpClient": JsonHttpClient}[name]
+    if name in {
+        "GlinerModelResourceAdapter",
+        "ModelResourceInstallationError",
+        "RefinedModelResourceAdapter",
+        "gliner_expected_resource_identity",
+        "gliner_model_path",
+        "refined_data_path",
+        "refined_python_path",
+    }:
+        from kotekomi_adapters.model_resources import (
+            GlinerModelResourceAdapter,
+            ModelResourceInstallationError,
+            RefinedModelResourceAdapter,
+            gliner_expected_resource_identity,
+            gliner_model_path,
+            refined_data_path,
+            refined_python_path,
+        )
+
+        return {
+            "GlinerModelResourceAdapter": GlinerModelResourceAdapter,
+            "ModelResourceInstallationError": ModelResourceInstallationError,
+            "RefinedModelResourceAdapter": RefinedModelResourceAdapter,
+            "gliner_expected_resource_identity": gliner_expected_resource_identity,
+            "gliner_model_path": gliner_model_path,
+            "refined_data_path": refined_data_path,
+            "refined_python_path": refined_python_path,
+        }[name]
     if name == "OllamaModelRuntime":
         from kotekomi_adapters.ollama_model_runtime import OllamaModelRuntime
 

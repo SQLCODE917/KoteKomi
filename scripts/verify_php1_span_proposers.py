@@ -18,10 +18,12 @@ from kotekomi_adapters.gliner_organization_mention_proposer import (
     GLINER_THRESHOLD,
     GlinerOrganizationMentionProposer,
 )
+from kotekomi_adapters.model_resources import gliner_model_path
 from kotekomi_application import (
     OrganizationMentionProposalInput,
     propose_validated_organization_mentions,
 )
+from kotekomi_pipelines.config import load_config
 from php1_diagnostic_support import (
     MODEL_ELIGIBLE,
     ROOT,
@@ -60,7 +62,14 @@ def run(config_path: Path | None = None) -> dict[str, Any]:
     _progress({"event": "catalog_validated", "source_segment_count": len(source_segments)})
 
     try:
-        gliner = GlinerOrganizationMentionProposer()
+        config = load_config(
+            config_path=config_path,
+            ledger_path_override=None,
+            archive_path_override=None,
+        )
+        gliner = GlinerOrganizationMentionProposer(
+            model_directory=gliner_model_path(config.model_resource_root)
+        )
     except Exception as exc:
         return {"status": "gliner_unavailable", "diagnostics": [str(exc)]}
     first_source = str(source_segments[0]["source_text"])

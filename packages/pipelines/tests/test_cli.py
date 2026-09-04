@@ -334,10 +334,13 @@ def test_hybrid_mention_preview_prints_exact_portable_result(
         del config_value
         return object()
 
+    def fake_gliner(**_kwargs: object) -> object:
+        return object()
+
     monkeypatch.setattr(cli, "LocalArchiveStore", FakeArchive)
     monkeypatch.setattr(cli, "sqlite_ledger_transaction", fake_transaction)
     monkeypatch.setattr(cli, "build_model_task_runtime", fake_build_runtime)
-    monkeypatch.setattr(cli, "GlinerMentionProposer", lambda: object())
+    monkeypatch.setattr(cli, "GlinerMentionProposer", fake_gliner)
     monkeypatch.setattr(cli, "run_hybrid_mention_preview", fake_run)
 
     assert (
@@ -496,10 +499,9 @@ def test_hybrid_entity_grounding_prints_exact_portable_result(
         document_retrieval_embedding_profile_id=None,
         entity_linking=EntityLinkingConfig(
             adapter="refined",
-            python_executable=Path("/fixture/python"),
-            data_dir=Path("/fixture/resources"),
             timeout_seconds=300.0,
         ),
+        model_resource_root=Path("/fixture/model-resources"),
     )
     preview = build_hybrid_entity_grounding_preview_record(
         parent_preview_id="hrp_" + "1" * 24,
@@ -606,7 +608,7 @@ def test_hybrid_entity_grounding_missing_runtime_publishes_blocked_result(
 
     def fake_run(**kwargs: object) -> HybridEntityGroundingResult:
         linker = cast(EntityLinkingPort, kwargs["linker"])
-        with pytest.raises(RuntimeError, match="not configured"):
+        with pytest.raises(RuntimeError, match="unavailable"):
             linker.link(cast(EntityLinkingInput, object()))
         return HybridEntityGroundingResult(
             preview,
@@ -1708,7 +1710,7 @@ def test_load_config_rejects_unknown_model_runtime_key(tmp_path: Path) -> None:
         )
 
 
-def test_load_config_reads_strict_entity_linking_paths_relative_to_config(
+def test_load_config_reads_managed_resource_root_and_entity_linking_timeout(
     tmp_path: Path,
 ) -> None:
     config_path = tmp_path / "config" / "kotekomi.toml"
@@ -1717,9 +1719,10 @@ def test_load_config_reads_strict_entity_linking_paths_relative_to_config(
         """
 [entity_linking]
 adapter = "refined"
-python_executable = "runtime/bin/python"
-data_dir = "runtime/resources"
 timeout_seconds = 45
+
+[model_resources]
+root = "runtime/resources"
 """.strip()
     )
 
@@ -1731,30 +1734,27 @@ timeout_seconds = 45
 
     assert config.entity_linking == EntityLinkingConfig(
         adapter="refined",
-        python_executable=config_path.parent / "runtime/bin/python",
-        data_dir=config_path.parent / "runtime/resources",
         timeout_seconds=45.0,
     )
+    assert config.model_resource_root == (config_path.parent / "runtime/resources").resolve()
 
 
-def test_load_config_allows_missing_entity_linking_and_rejects_unknown_keys(
+def test_load_config_defaults_entity_linking_and_rejects_unknown_keys(
     tmp_path: Path,
 ) -> None:
-    assert (
-        load_config(
-            config_path=None,
-            ledger_path_override=tmp_path / "ledger.db",
-            archive_path_override=tmp_path / "archive",
-        ).entity_linking
-        is None
+    assert load_config(
+        config_path=None,
+        ledger_path_override=tmp_path / "ledger.db",
+        archive_path_override=tmp_path / "archive",
+    ).entity_linking == EntityLinkingConfig(
+        adapter="refined",
+        timeout_seconds=300.0,
     )
     config_path = tmp_path / "invalid.toml"
     config_path.write_text(
         """
 [entity_linking]
 adapter = "refined"
-python_executable = "/runtime/python"
-data_dir = "/runtime/resources"
 timeout_seconds = 45
 worker_script = "/untrusted/worker.py"
 """.strip()
@@ -1775,8 +1775,6 @@ worker_script = "/untrusted/worker.py"
             """
 [entity_linking]
 adapter = "unknown"
-python_executable = "/runtime/python"
-data_dir = "/runtime/resources"
 timeout_seconds = 45
 """,
             "adapter must be refined",
@@ -1785,8 +1783,6 @@ timeout_seconds = 45
             """
 [entity_linking]
 adapter = "refined"
-python_executable = "/runtime/python"
-data_dir = "/runtime/resources"
 """,
             "Missing entity_linking config keys: timeout_seconds",
         ),
@@ -1794,8 +1790,6 @@ data_dir = "/runtime/resources"
             """
 [entity_linking]
 adapter = "refined"
-python_executable = "/runtime/python"
-data_dir = "/runtime/resources"
 timeout_seconds = 0
 """,
             "must be a positive",

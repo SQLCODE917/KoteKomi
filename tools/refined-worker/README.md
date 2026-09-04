@@ -8,12 +8,10 @@ ReFinED V1 officially uses caller-supplied `Span` records through
 
 It is intentionally excluded from KoteKomi's Python 3.12 dependency graph.
 
-Create a Python 3.10 environment, install `requirements.txt`, then run:
+Install the managed Python 3.10 environment and pinned resources with:
 
 ```bash
-<worker-python> scripts/setup_refined_organization_type_worker.py \
-  --data-dir <resource-directory> \
-  --manifest <temporary-setup-manifest>
+uv run kotekomi model resources install --resource refined
 ```
 
 The setup command is the only network-enabled step.
@@ -26,17 +24,12 @@ Both workers use the same pinned resources and `download_files=false` during nor
 operation. HP-3 uses caller-supplied spans with `apply_class_check=false` because it
 requests identity candidates rather than Organization classification.
 
-Configure HP-3 with:
+Inspect the installation without network access with:
 
-```toml
-[entity_linking]
-adapter = "refined"
-python_executable = "/absolute/or/config-relative/worker/python"
-data_dir = "/absolute/or/config-relative/resource-directory"
-timeout_seconds = 300
+```bash
+uv run kotekomi model resources status
 ```
 
-KoteKomi selects the repository-owned worker script. Configuration cannot substitute
-an untrusted script.
+KoteKomi selects the managed Python executable, resource directory, and repository-owned worker.
 
 The Adapter rejects any resource tree whose digest differs from `resource-lock.json`.

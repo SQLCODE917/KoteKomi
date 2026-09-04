@@ -6,7 +6,7 @@ import hashlib
 import os
 import subprocess
 import tomllib
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, cast
 
@@ -20,9 +20,9 @@ DEFAULT_REPRESENTATION_POLICY_VERSION = "deposited-source-v1"
 MODEL_RUNTIME_ADAPTERS = ("lm_studio", "llama_server", "ollama", "fixture")
 EMBEDDING_ADAPTERS = ("lm_studio", "llama_server", "ollama")
 ENTITY_LINKING_ADAPTERS = ("refined",)
-ENTITY_LINKING_CONFIG_KEYS = frozenset(
-    {"adapter", "python_executable", "data_dir", "timeout_seconds"}
-)
+ENTITY_LINKING_CONFIG_KEYS = frozenset({"adapter", "timeout_seconds"})
+MODEL_RESOURCE_CONFIG_KEYS = frozenset({"root"})
+DEFAULT_ENTITY_LINKING_TIMEOUT_SECONDS = 300.0
 MODEL_RUNTIME_CONFIG_KEYS = frozenset(
     {
         "adapter",
@@ -49,8 +49,6 @@ class ModelExecutionConfig:
 @dataclass(frozen=True)
 class EntityLinkingConfig:
     adapter: str
-    python_executable: Path
-    data_dir: Path
     timeout_seconds: float
 
 
@@ -61,7 +59,15 @@ class PipelineConfig:
     model_execution: ModelExecutionConfig
     embedding_profiles: dict[str, EmbeddingProfile]
     document_retrieval_embedding_profile_id: str | None
-    entity_linking: EntityLinkingConfig | None = None
+    model_resource_root: Path = field(
+        default_factory=lambda: (default_user_data_path() / "model-resources").resolve()
+    )
+    entity_linking: EntityLinkingConfig = field(
+        default_factory=lambda: EntityLinkingConfig(
+            adapter="refined",
+            timeout_seconds=DEFAULT_ENTITY_LINKING_TIMEOUT_SECONDS,
+        )
+    )
 
 
 @dataclass(frozen=True)
@@ -154,7 +160,14 @@ def initialize_user_processing_config(
     ledger_path = (ledger_path_override or default_ledger_path).expanduser().resolve()
     archive_path = (archive_path_override or default_archive_path).expanduser().resolve()
     target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(_render_user_processing_config(ledger_path, archive_path), encoding="utf-8")
+    target.write_text(
+        _render_user_processing_config(
+            ledger_path,
+            archive_path,
+            default_user_data_path() / "model-resources",
+        ),
+        encoding="utf-8",
+    )
     return (
         target,
         load_processing_storage_config(
@@ -241,7 +254,11 @@ def derive_checkout_build_identity(representation_policy_version: str) -> BuildI
     )
 
 
-def _render_user_processing_config(ledger_path: Path, archive_path: Path) -> str:
+def _render_user_processing_config(
+    ledger_path: Path,
+    archive_path: Path,
+    model_resource_root: Path,
+) -> str:
     return (
         f'ledger_path = "{ledger_path.as_posix()}"\n'
         f'archive_path = "{archive_path.as_posix()}"\n'
@@ -255,6 +272,9 @@ def _render_user_processing_config(ledger_path: Path, archive_path: Path) -> str
         "\n"
         "[processing]\n"
         f'representation_policy_version = "{DEFAULT_REPRESENTATION_POLICY_VERSION}"\n'
+        "\n"
+        "[model_resources]\n"
+        f'root = "{model_resource_root.as_posix()}"\n'
     )
 
 
@@ -378,16 +398,19 @@ def load_config(
         document_retrieval_embedding_profile_id=_document_retrieval_embedding_profile_id(
             raw_config, embedding_profiles
         ),
+        model_resource_root=_model_resource_root(raw_config, config_base),
         entity_linking=_entity_linking_config(raw_config, config_base),
     )
 
 
-def _entity_linking_config(
-    raw_config: dict[str, object], config_base: Path
-) -> EntityLinkingConfig | None:
+def _entity_linking_config(raw_config: dict[str, object], config_base: Path) -> EntityLinkingConfig:
+    del config_base
     value = raw_config.get("entity_linking")
     if value is None:
-        return None
+        return EntityLinkingConfig(
+            adapter="refined",
+            timeout_seconds=DEFAULT_ENTITY_LINKING_TIMEOUT_SECONDS,
+        )
     if not isinstance(value, dict):
         raise TypeError("Config entity_linking must be a table.")
     fields = {str(key): item for key, item in cast(dict[object, object], value).items()}
@@ -402,14 +425,30 @@ def _entity_linking_config(
     adapter = _string_value(fields, "adapter")
     if adapter not in ENTITY_LINKING_ADAPTERS:
         raise ValueError("Entity-linking adapter must be refined.")
-    python_path = Path(_string_value(fields, "python_executable"))
-    data_path = Path(_string_value(fields, "data_dir"))
     return EntityLinkingConfig(
         adapter=adapter,
-        python_executable=(python_path if python_path.is_absolute() else config_base / python_path),
-        data_dir=(data_path if data_path.is_absolute() else config_base / data_path),
         timeout_seconds=_positive_float(fields, "timeout_seconds"),
     )
+
+
+def _model_resource_root(raw_config: dict[str, object], config_base: Path) -> Path:
+    value = raw_config.get("model_resources")
+    if value is None:
+        return (default_user_data_path() / "model-resources").resolve()
+    if not isinstance(value, dict):
+        raise TypeError("Config model_resources must be a table.")
+    fields = cast(dict[object, object], value)
+    if any(not isinstance(key, str) for key in fields):
+        raise TypeError("Config model_resources keys must be strings.")
+    values = {cast(str, key): item for key, item in fields.items()}
+    unknown = sorted(set(values) - MODEL_RESOURCE_CONFIG_KEYS)
+    if unknown:
+        raise ValueError(f"Unknown model_resources config keys: {', '.join(unknown)}.")
+    missing = sorted(MODEL_RESOURCE_CONFIG_KEYS - set(values))
+    if missing:
+        raise ValueError(f"Missing model_resources config keys: {', '.join(missing)}.")
+    configured = Path(_string_value(values, "root")).expanduser()
+    return (configured if configured.is_absolute() else config_base / configured).resolve()
 
 
 def _model_runtime_from_config(

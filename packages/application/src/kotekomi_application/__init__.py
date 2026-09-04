@@ -519,6 +519,18 @@ from kotekomi_application.mention_proposer import (
     MentionProposalInput,
     MentionProposer,
 )
+from kotekomi_application.model_resources import (
+    REQUIRED_MODEL_RESOURCE_IDS,
+    ModelResourceAdapter,
+    ModelResourceId,
+    ModelResourceInstallDisposition,
+    ModelResourceInstallResult,
+    ModelResourceReadiness,
+    ModelResourceReadinessReport,
+    ModelResourceStatus,
+    inspect_required_model_resources,
+    install_model_resources,
+)
 from kotekomi_application.model_run_logging import (
     ListModelRunLogsInput,
     ListModelRunLogsResult,
@@ -827,6 +839,16 @@ from kotekomi_application.structured_news import (
 )
 
 __all__ = [
+    "REQUIRED_MODEL_RESOURCE_IDS",
+    "ModelResourceAdapter",
+    "ModelResourceId",
+    "ModelResourceInstallDisposition",
+    "ModelResourceInstallResult",
+    "ModelResourceReadiness",
+    "ModelResourceReadinessReport",
+    "ModelResourceStatus",
+    "inspect_required_model_resources",
+    "install_model_resources",
     "DOCUMENT_ENTITY_RECONCILIATION_POLICY_ID",
     "DOCUMENT_PROPOSAL_ACTIVITY_TYPE",
     "DOCUMENT_PROPOSAL_PLAN_POLICY_ID",

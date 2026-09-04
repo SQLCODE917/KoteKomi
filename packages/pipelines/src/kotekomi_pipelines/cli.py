@@ -24,12 +24,16 @@ from kotekomi_adapters import (
     LlamaServerEmbeddingAdapter,
     LMStudioEmbeddingAdapter,
     LocalArchiveStore,
+    ModelResourceInstallationError,
     NewsMLG2Adapter,
     OllamaEmbeddingAdapter,
     SQLiteDocumentRetrievalAdapter,
     SQLiteKnowledgeGraphRetrievalAdapter,
     SQLiteLedgerInitializer,
     SQLiteLedgerRetrievalAdapter,
+    gliner_model_path,
+    refined_data_path,
+    refined_python_path,
     sqlite_ledger_transaction,
 )
 from kotekomi_adapters.refined_entity_linking import (
@@ -84,6 +88,7 @@ from kotekomi_application import (
     ListIngestionHistoryInput,
     ListModelRunLogsInput,
     ListModelRunLogsResult,
+    ModelResourceId,
     ModelRunLogEntry,
     ModelRuntimeStatus,
     NewsDeliveryEnvelope,
@@ -223,6 +228,12 @@ from kotekomi_pipelines.managed_llama_server import (
     install_managed_llama_server,
     uninstall_managed_llama_server,
 )
+from kotekomi_pipelines.model_resources import (
+    inspect_configured_model_resources,
+    install_configured_model_resources,
+    model_resource_report_json,
+    model_resource_report_text,
+)
 from kotekomi_pipelines.model_runtime import build_model_runtime_readiness, build_model_task_runtime
 from kotekomi_pipelines.source_lineage import propose_verbatim_republication_relation
 
@@ -287,6 +298,19 @@ def main(argv: list[str] | None = None) -> int:
             limit=args.limit,
             output_format=args.output_format,
             ingestion_run_id=args.ingestion_run_id,
+        )
+
+    if args.command == "model" and args.model_command == "resources":
+        resource_names = {
+            "gliner": ModelResourceId.GLINER_MENTION_PROPOSER_V1,
+            "refined": ModelResourceId.REFINED_WIKIPEDIA_V1,
+        }
+        return manage_model_resources(
+            config_path=args.config,
+            resources_command=args.resources_command,
+            selected=tuple(resource_names[item] for item in getattr(args, "resource", None) or ()),
+            repair=getattr(args, "repair", False),
+            output_format=args.output_format,
         )
 
     if args.command == "extraction" and args.extraction_command == "traces":
@@ -1146,6 +1170,35 @@ def build_parser() -> argparse.ArgumentParser:
             default="text",
         )
 
+    model_resources_parser = model_subparsers.add_parser(
+        "resources",
+        help="Inspect or install local specialized-model resources.",
+    )
+    model_resources_subparsers = model_resources_parser.add_subparsers(
+        dest="resources_command", required=True
+    )
+    model_resources_status_parser = model_resources_subparsers.add_parser(
+        "status",
+        help="Inspect specialized-model resources without network access.",
+    )
+    model_resources_status_parser.add_argument(
+        "--format", dest="output_format", choices=("text", "json"), default="text"
+    )
+    model_resources_install_parser = model_resources_subparsers.add_parser(
+        "install",
+        help="Download and validate specialized-model resources.",
+    )
+    model_resources_install_parser.add_argument(
+        "--resource",
+        action="append",
+        choices=("gliner", "refined"),
+        default=None,
+    )
+    model_resources_install_parser.add_argument("--repair", action="store_true")
+    model_resources_install_parser.add_argument(
+        "--format", dest="output_format", choices=("text", "json"), default="text"
+    )
+
     extraction_parser = subparsers.add_parser(
         "extraction",
         help="Derived intelligence extraction previews.",
@@ -1493,7 +1546,52 @@ def initialize_user_environment(
     print(f"Ledger initialized: {result.ledger_path}")
     print(f"Archive path ready: {config.storage.archive_path}")
     print(f"Applied migrations: {migrations}")
+    config_argument = (
+        f" --config {shlex.quote(str(config_file))}" if config_path is not None else ""
+    )
+    print(
+        f"Model resources: inspect with 'uv run kotekomi{config_argument} model resources status'."
+    )
     return 0
+
+
+def manage_model_resources(
+    *,
+    config_path: Path | None,
+    resources_command: str,
+    selected: tuple[ModelResourceId, ...],
+    repair: bool,
+    output_format: str,
+) -> int:
+    """Inspect or explicitly install shared specialized-model resources."""
+    installation_succeeded = resources_command == "install"
+    try:
+        config = load_config(
+            config_path=config_path,
+            ledger_path_override=None,
+            archive_path_override=None,
+        )
+        if resources_command == "install":
+            results = install_configured_model_resources(
+                config,
+                selected=selected,
+                repair=repair,
+            )
+            if output_format == "text":
+                for result in results:
+                    print(
+                        f"{result.readiness.resource_id.value}: {result.disposition.value} "
+                        f"at {result.readiness.root}"
+                    )
+        report = inspect_configured_model_resources(config)
+    except (OSError, ValueError, ModelResourceInstallationError) as error:
+        print(str(error), file=sys.stderr)
+        return 1
+    if output_format == "json":
+        print(model_resource_report_json(report))
+    else:
+        print(model_resource_report_text(report, config_path=config_path))
+    return 0 if installation_succeeded or report.ready else 1
 
 
 class _RetrievalValidationTokenizer:
@@ -2158,6 +2256,15 @@ def ingest_user_file(*, config_path: Path | None, source_file_path: Path, source
             ledger_path_override=None,
             archive_path_override=None,
         )
+        if config.model_execution.adapter != "fixture":
+            resource_report = inspect_configured_model_resources(config)
+            if not resource_report.ready:
+                print("model_resources_not_ready", file=sys.stderr)
+                print(
+                    model_resource_report_text(resource_report, config_path=config_path),
+                    file=sys.stderr,
+                )
+                return 1
         SQLiteLedgerInitializer(config.ledger_path).initialize()
     except ProcessingConfigurationError as error:
         print(str(error), file=sys.stderr)
@@ -2437,7 +2544,9 @@ def preview_hybrid_mentions(
             ),
             ledger=repository,
             archive=archive,
-            proposer=GlinerMentionProposer(),
+            proposer=GlinerMentionProposer(
+                model_directory=gliner_model_path(config.model_resource_root)
+            ),
             model_runtime=runtime,
             model_run_id_factory=Uuid4ModelRunIdFactory(),
             tokenizer=_AutomaticExtractionTokenizer(),
@@ -2502,7 +2611,6 @@ def ground_hybrid_entities(*, config: PipelineConfig, parent_preview_id: str) ->
     archive = LocalArchiveStore(config.archive_path)
     archive.initialize()
     adapter: RefinedEntityLinkingAdapter | None = None
-    default_timeout = 300.0
     identity = EntityLinkerIdentity(
         producer_id="refined:1.0",
         model_id=REFINED_MODEL_ID,
@@ -2511,33 +2619,24 @@ def ground_hybrid_entities(*, config: PipelineConfig, parent_preview_id: str) ->
         package_revision=REFINED_PACKAGE_REVISION,
         resource_manifest_sha256=REFINED_RESOURCE_MANIFEST_SHA256,
         runtime_identity=REFINED_RUNTIME_IDENTITY,
-        timeout_seconds=(
-            config.entity_linking.timeout_seconds
-            if config.entity_linking is not None
-            else default_timeout
-        ),
+        timeout_seconds=config.entity_linking.timeout_seconds,
     )
-    if config.entity_linking is None:
-        linker: EntityLinkingPort = _UnavailableEntityLinker(
-            RuntimeError("Entity-linking runtime is not configured."), identity
-        )
-    else:
-        worker_script = (
-            Path(__file__).resolve().parents[4] / "scripts" / "refined_entity_linking_worker.py"
-        )
-        try:
-            adapter = RefinedEntityLinkingAdapter(
-                RefinedEntityLinkingConfig(
-                    python_executable=config.entity_linking.python_executable,
-                    worker_script=worker_script,
-                    data_dir=config.entity_linking.data_dir,
-                    timeout_seconds=config.entity_linking.timeout_seconds,
-                )
+    worker_script = (
+        Path(__file__).resolve().parents[4] / "scripts" / "refined_entity_linking_worker.py"
+    )
+    try:
+        adapter = RefinedEntityLinkingAdapter(
+            RefinedEntityLinkingConfig(
+                python_executable=refined_python_path(config.model_resource_root),
+                worker_script=worker_script,
+                data_dir=refined_data_path(config.model_resource_root),
+                timeout_seconds=config.entity_linking.timeout_seconds,
             )
-        except (OSError, RuntimeError, ValueError) as error:
-            linker = _UnavailableEntityLinker(error, identity)
-        else:
-            linker = adapter
+        )
+    except (OSError, RuntimeError, ValueError) as error:
+        linker: EntityLinkingPort = _UnavailableEntityLinker(error, identity)
+    else:
+        linker = adapter
     try:
         with sqlite_ledger_transaction(config.ledger_path) as repository:
             result = run_hybrid_entity_grounding_preview(

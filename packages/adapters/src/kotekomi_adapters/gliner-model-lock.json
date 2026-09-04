@@ -1,0 +1,42 @@
+{
+  "files": [
+    {
+      "repository": "urchade/gliner_medium-v2.1",
+      "revision": "40ec419335d09393f298636f471328b722c6da9e",
+      "source_path": "gliner_config.json",
+      "target_path": "gliner_config.json",
+      "sha256": "a8f3c2ecc57deb70077be6940962aa60e82d861a153a5cd2839b91795968ae7d"
+    },
+    {
+      "repository": "urchade/gliner_medium-v2.1",
+      "revision": "40ec419335d09393f298636f471328b722c6da9e",
+      "source_path": "model.safetensors",
+      "target_path": "model.safetensors",
+      "sha256": "922214c0c60f7835bb5c00f52ad1769d38518d5183f85de7bc03893a8403c023"
+    },
+    {
+      "repository": "microsoft/deberta-v3-base",
+      "revision": "8ccc9b6f36199bec6961081d44eb72fb3f7353f3",
+      "source_path": "config.json",
+      "target_path": "config.json",
+      "sha256": "649f6a1ec33c6bdd9a6486d5c66019d461139e54957073eafe9bbc2d34c75b0b"
+    },
+    {
+      "repository": "microsoft/deberta-v3-base",
+      "revision": "8ccc9b6f36199bec6961081d44eb72fb3f7353f3",
+      "source_path": "spm.model",
+      "target_path": "spm.model",
+      "sha256": "c679fbf93643d19aab7ee10c0b99e460bdbc02fedf34b92b05af343b4af586fd"
+    },
+    {
+      "repository": "microsoft/deberta-v3-base",
+      "revision": "8ccc9b6f36199bec6961081d44eb72fb3f7353f3",
+      "source_path": "tokenizer_config.json",
+      "target_path": "tokenizer_config.json",
+      "sha256": "3f3978e0c036f2c2588cac34a6047cbb0af0b0dc1814254e291028529805496d"
+    }
+  ],
+  "package_version": "0.2.28",
+  "resource_id": "gliner_mention_proposer_v1",
+  "schema_version": "gliner_model_lock_v1"
+}

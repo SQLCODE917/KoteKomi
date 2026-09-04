@@ -11,6 +11,7 @@ import hashlib
 import importlib
 import importlib.metadata
 import json
+import os
 import sys
 import time
 from pathlib import Path
@@ -137,6 +138,8 @@ def _load_processor(data_dir: Path) -> Any:
         return _processor
     if not data_dir.is_dir():
         raise WorkerFailure("resources_unavailable", "Pinned ReFinED resources are unavailable.")
+    os.environ["HF_HUB_OFFLINE"] = "1"
+    os.environ["TRANSFORMERS_OFFLINE"] = "1"
     try:
         version = importlib.metadata.version("ReFinED")
     except importlib.metadata.PackageNotFoundError as error:
