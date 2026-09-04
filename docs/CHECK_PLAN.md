@@ -71,6 +71,7 @@
 
 ## 4. Archive checks
 - verify archive cleanup accepts only `StagedArchiveObject` capabilities and run `uv run pytest packages/adapters/tests/test_local_archive_store.py`
+- verify Candidate Wiki immutable build validation, reuse, and failure-preserving active-link replacement with `uv run pytest packages/adapters/tests/test_candidate_wiki_archive.py`
 
 ## 5. Pipeline checks
 - run URL ingest fixture
@@ -104,6 +105,7 @@
 - verify cross-plane Ledger discovery, Graph traversal, terminal EvidenceTarget selection, typed seed outcomes, query provenance, public command output, and locked-PDF rebuild equivalence with `uv run pytest packages/domain/tests/test_cross_plane_retrieval.py packages/application/tests/test_cross_plane_retrieval.py packages/adapters/tests/test_sqlite_knowledge_graph_retrieval.py packages/pipelines/tests/test_cross_plane_retrieval.py && uv run python scripts/verify_dr7_canonical.py`
 - verify User CLI XDG setup, configuration selection, checkout-derived BuildIdentity, guarded IngestionRun history, deposited PDF/Markdown/text reuse, safe typed failures, and locked-PDF closeout with `uv run pytest packages/domain/tests/test_ingestion_runs.py packages/application/tests/test_ingestion_runs.py packages/adapters/tests/test_sqlite_ingestion_runs.py packages/pipelines/tests/test_cli.py packages/pipelines/tests/test_user_ingestion_run.py packages/pipelines/tests/test_source_add_file.py && uv run python scripts/verify_cir1_canonical.py`
 - verify run-scoped ingestion summaries, explicit Hybrid model membership, validated evidence listings, exact stage traces, and executable Pipeline inspection metadata with `uv run pytest packages/application/tests/test_ingestion_observability.py packages/application/tests/test_pipeline_readiness.py packages/adapters/tests/test_local_archive_store.py packages/pipelines/tests/test_cli.py packages/pipelines/tests/test_user_ingestion_run.py`
+- verify deterministic CandidateKnowledgeView review-state resolution, exact evidence replay, complete Wiki page planning, ID-free Markdown, immutable publication, duplicate-filename selection, and public command routing with `uv run pytest packages/application/tests/test_candidate_wiki.py packages/exporters/tests/test_markdown_candidate_wiki.py packages/adapters/tests/test_candidate_wiki_archive.py packages/pipelines/tests/test_candidate_wiki_cli.py`
 - verify ModelRun execution diagnostics, total task deadlines, LM Studio first-response-event timing, and safe public diagnostic history with `uv run pytest packages/application/tests/test_grounded_candidates.py packages/application/tests/test_model_run_logging.py packages/adapters/tests/test_lm_studio_model_runtime.py packages/pipelines/tests/test_cli.py`
 - run Briefing generation fixture with `uv run pytest packages/pipelines/tests/test_briefing_generate.py`
 - verify Briefing narrative sections use numbered citations without raw canonical Domain IDs with `uv run pytest packages/briefing/tests/test_markdown_briefing_renderer.py packages/pipelines/tests/test_briefing_generate.py`

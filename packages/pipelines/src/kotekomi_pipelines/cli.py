@@ -183,6 +183,11 @@ from kotekomi_application import (
     start_ingestion_run,
     validate_review_drain_selection,
 )
+from kotekomi_application.candidate_wiki import (
+    build_candidate_knowledge_view,
+    plan_candidate_wiki,
+    select_candidate_ingestions,
+)
 from kotekomi_briefing import MarkdownBriefingRenderer
 from kotekomi_domain import (
     AssertionStatus,
@@ -195,6 +200,7 @@ from kotekomi_domain import (
     LedgerRetrievalRecordType,
     ReviewStatus,
 )
+from kotekomi_exporters import MarkdownCandidateWikiRenderer
 
 from kotekomi_pipelines.config import (
     MODEL_RUNTIME_ADAPTERS,
@@ -266,6 +272,13 @@ def main(argv: list[str] | None = None) -> int:
             config_path=args.config,
             ingestion_run_id=args.ingestion_run_id,
             output_format=args.output_format,
+        )
+
+    if args.command == "wiki" and args.wiki_command == "build":
+        return build_candidate_wiki(
+            config_path=args.config,
+            filename=args.filename,
+            candidate=args.candidate,
         )
 
     if args.command == "model" and args.model_command == "runs":
@@ -888,6 +901,19 @@ def build_parser() -> argparse.ArgumentParser:
     ingestion_artifacts_parser.add_argument("ingestion_run_id")
     ingestion_artifacts_parser.add_argument(
         "--format", dest="output_format", choices=("text", "jsonl"), default="text"
+    )
+
+    wiki_parser = subparsers.add_parser("wiki", help="Derived Wiki commands.")
+    wiki_subparsers = wiki_parser.add_subparsers(dest="wiki_command", required=True)
+    wiki_build_parser = wiki_subparsers.add_parser(
+        "build", help="Build a deterministic Wiki projection."
+    )
+    wiki_build_parser.add_argument("filename")
+    wiki_build_parser.add_argument(
+        "--candidate",
+        action="store_true",
+        required=True,
+        help="Build from the selected ingestion's reviewable candidate state.",
     )
 
     init_parser = subparsers.add_parser(
@@ -2800,6 +2826,54 @@ def list_user_ingestion_history(*, config_path: Path | None, limit: int, output_
             f"[{entry.status.upper()}]\t{entry.started_at}"
         )
     return 0
+
+
+def build_candidate_wiki(*, config_path: Path | None, filename: str, candidate: bool) -> int:
+    """Build and atomically publish one deterministic Candidate Wiki."""
+    if not candidate:
+        print("Candidate Wiki build requires --candidate.", file=sys.stderr)
+        return 1
+    try:
+        config = load_processing_storage_config(
+            config_path=config_path,
+            ledger_path_override=None,
+            archive_path_override=None,
+        )
+        _require_initialized_ledger(config.storage.ledger_path)
+        archive = LocalArchiveStore(config.storage.archive_path)
+        archive.initialize()
+        with sqlite_ledger_transaction(config.storage.ledger_path) as repository:
+            selection = select_candidate_ingestions(filename, repository)
+            run = choose_candidate_ingestion(selection.matches)
+            view = build_candidate_knowledge_view(run, repository)
+            plan = plan_candidate_wiki(view)
+        rendered = MarkdownCandidateWikiRenderer().render(plan)
+        result = archive.publish_candidate_wiki(rendered)
+    except (ProcessingConfigurationError, OSError, sqlite3.Error, ValueError) as error:
+        print(f"Unable to build Candidate Wiki: {error}", file=sys.stderr)
+        return 1
+    print(result.active_relative_path)
+    return 0
+
+
+def choose_candidate_ingestion(matches: tuple[IngestionRun, ...]) -> IngestionRun:
+    if len(matches) == 1:
+        return matches[0]
+    print("Multiple closed ingestions have that filename:", file=sys.stderr)
+    for number, run in enumerate(matches, start=1):
+        source = run.normalized_source_url or run.requested_source_url
+        print(
+            f"  {number}. {run.started_at.isoformat()} — {source}",
+            file=sys.stderr,
+        )
+    try:
+        raw_choice = input(f"Select ingestion [1-{len(matches)}]: ")
+        choice = int(raw_choice)
+    except (EOFError, ValueError) as error:
+        raise ValueError("A valid ingestion selection is required.") from error
+    if choice < 1 or choice > len(matches):
+        raise ValueError("Ingestion selection is outside the displayed range.")
+    return matches[choice - 1]
 
 
 def show_user_ingestion(

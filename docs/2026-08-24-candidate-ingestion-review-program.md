@@ -9,6 +9,7 @@
 - Prerequisite: [Derived Projection Readiness](2026-08-23-derived-projection-readiness.md)
 - First child deliverable: [CIR-1 User Ingestion Run MVP](2026-08-24-user-ingestion-run-mvp.md)
 - Current extraction program: [Hybrid Intelligence Extraction Pipeline](2026-09-01-hybrid-intelligence-extraction-pipeline.md)
+- Current Wiki deliverable: [CIR-4 Deterministic Candidate Wiki MVP](2026-09-04-deterministic-candidate-wiki-mvp.md)
 
 ## Context and problem
 
@@ -138,6 +139,8 @@ kotekomi ingestions list
 kotekomi ingestions changes <filename>
 
 kotekomi briefing create
+
+kotekomi wiki build <filename> --candidate
 
 kotekomi wiki chat
 
@@ -713,13 +716,15 @@ Detailed TDD:
 
 ### CIR-3 - Candidate Knowledge View
 
-Working result:
+Status:
 
-Application queries can read accepted knowledge plus one IngestionChangeSet.
+The original CIR-3 design is superseded.
 
-The CandidateKnowledgeView has one reproducible candidate snapshot digest.
+HP-7 expanded the candidate record set to Actors, Organizations, Events, and Assertions.
 
-Candidate retrieval and graph projections can use that view without accepted writes.
+HP-8 established the complete document-scoped IngestionChangeSet.
+
+CIR-4 now owns the first bounded CandidateKnowledgeView as part of a visible Wiki result.
 
 User stories:
 
@@ -735,11 +740,15 @@ Detailed TDD:
 
 Working result:
 
-KoteKomi generates a complete deterministic Wiki projection from accepted knowledge.
+KoteKomi generates a complete deterministic Candidate Wiki for one closed ingestion.
 
-The Wiki projector records page input fingerprints and a complete build manifest.
+The Candidate Wiki combines referenced accepted records with pending candidate records.
 
-The user can open `wiki/` with ordinary Markdown tools.
+The Wiki projector records page input fingerprints, citations, and a complete build manifest.
+
+The user can open `review/wiki/` with ordinary Markdown tools.
+
+The command leaves accepted intelligence, published Wiki files, and ingestion status unchanged.
 
 User stories:
 
@@ -748,13 +757,13 @@ User stories:
 
 Detailed TDD:
 
-Write after CIR-3 implementation evidence exists.
+[CIR-4 Deterministic Candidate Wiki MVP](2026-09-04-deterministic-candidate-wiki-mvp.md)
 
 ### CIR-5 - Candidate Wiki and Change Inspection
 
 Working result:
 
-KoteKomi generates `review/wiki/` from the CandidateKnowledgeView.
+KoteKomi promotes one built CandidateKnowledgeView into the active review lifecycle.
 
 The published Wiki remains unchanged.
 
@@ -861,8 +870,8 @@ This section becomes the stable index for child TDDs.
 |---|---|---|
 | CIR-1 | User Ingestion Run MVP | [CIR-1 TDD](2026-08-24-user-ingestion-run-mvp.md) |
 | CIR-2 | Automatic Extraction and Change Set | [CIR-2 TDD](2026-08-24-automatic-extraction-change-set.md) |
-| CIR-3 | Candidate Knowledge View | [CIR-3 TDD](2026-08-25-cir-3-candidate-knowledge-view.md) |
-| CIR-4 | Wiki Projection MVP | Add link after CIR-3 evidence exists. |
+| CIR-3 | Candidate Knowledge View | Superseded by the CIR-4 read model. |
+| CIR-4 | Deterministic Candidate Wiki MVP | [CIR-4 TDD](2026-09-04-deterministic-candidate-wiki-mvp.md) |
 | CIR-5 | Candidate Wiki and Change Inspection | Add link after CIR-4 evidence exists. |
 | CIR-6 | Whole-Ingestion Publish and Discard | Add link after CIR-5 evidence exists. |
 | CIR-7 | Candidate Daily Briefing | Add link after CIR-6 evidence exists. |

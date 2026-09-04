@@ -16,6 +16,7 @@ members = [
     "kotekomi-briefing",
     "kotekomi-devtools",
     "kotekomi-domain",
+    "kotekomi-exporters",
     "kotekomi-pipelines",
 ]
 
@@ -737,6 +738,17 @@ dependencies = [
 requires-dist = [{ name = "pydantic", specifier = ">=2.11,<3" }]
 
 [[package]]
+name = "kotekomi-exporters"
+version = "0.1.0"
+source = { editable = "packages/exporters" }
+dependencies = [
+    { name = "kotekomi-application" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "kotekomi-application", editable = "packages/application" }]
+
+[[package]]
 name = "kotekomi-pipelines"
 version = "0.1.0"
 source = { editable = "packages/pipelines" }
@@ -744,6 +756,7 @@ dependencies = [
     { name = "kotekomi-adapters" },
     { name = "kotekomi-application" },
     { name = "kotekomi-briefing" },
+    { name = "kotekomi-exporters" },
 ]
 
 [package.metadata]
@@ -751,6 +764,7 @@ requires-dist = [
     { name = "kotekomi-adapters", editable = "packages/adapters" },
     { name = "kotekomi-application", editable = "packages/application" },
     { name = "kotekomi-briefing", editable = "packages/briefing" },
+    { name = "kotekomi-exporters", editable = "packages/exporters" },
 ]
 
 [[package]]

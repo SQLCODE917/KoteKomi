@@ -7,6 +7,7 @@ dependencies = [
   "kotekomi-adapters",
   "kotekomi-application",
   "kotekomi-briefing",
+  "kotekomi-exporters",
 ]
 
 [project.scripts]
@@ -16,6 +17,7 @@ kotekomi = "kotekomi_pipelines.cli:entrypoint"
 kotekomi-adapters = { workspace = true }
 kotekomi-application = { workspace = true }
 kotekomi-briefing = { workspace = true }
+kotekomi-exporters = { workspace = true }
 
 [build-system]
 requires = ["hatchling"]

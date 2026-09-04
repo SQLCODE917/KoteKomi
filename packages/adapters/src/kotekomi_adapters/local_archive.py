@@ -5,14 +5,25 @@ from __future__ import annotations
 import hashlib
 import os
 import re
+import shutil
 import uuid
 from pathlib import Path
+from typing import Literal
 
 from kotekomi_application import (
     ArchiveObject,
     ArchivePutDisposition,
     ArchivePutOutcome,
     StagedArchiveObject,
+)
+from kotekomi_application.candidate_wiki import (
+    CandidateWikiPublishResult,
+    RenderedCandidateWiki,
+    WikiBuildManifest,
+    canonical_wiki_citations_bytes,
+    canonical_wiki_manifest_bytes,
+    wiki_build_manifest_from_bytes,
+    wiki_citation_registry_from_bytes,
 )
 from kotekomi_application.hybrid_atomic_claims import (
     HybridAtomicClaimPreview,
@@ -78,6 +89,9 @@ HYBRID_DOCUMENT_POLICIES_DIR = Path("extraction/document-policies")
 HYBRID_PARAGRAPH_RECEIPTS_DIR = Path("extraction/paragraph-receipts")
 HYBRID_DOCUMENT_COVERAGE_DIR = Path("extraction/document-coverage")
 PDF_TRANSFORMATIONS_DIR = Path("transformations")
+REVIEW_DIR = Path("review")
+WIKI_BUILDS_DIR = REVIEW_DIR / "wiki-builds"
+ACTIVE_WIKI_PATH = REVIEW_DIR / "wiki"
 STAGING_DIR = Path(".staging")
 
 
@@ -102,8 +116,54 @@ class LocalArchiveStore:
             HYBRID_PARAGRAPH_RECEIPTS_DIR,
             HYBRID_DOCUMENT_COVERAGE_DIR,
             PDF_TRANSFORMATIONS_DIR,
+            WIKI_BUILDS_DIR,
         ):
             self._absolute_path(relative_dir).mkdir(parents=True, exist_ok=True)
+
+    def publish_candidate_wiki(
+        self, rendered_wiki: RenderedCandidateWiki
+    ) -> CandidateWikiPublishResult:
+        """Validate, immutably publish, then atomically activate one Wiki build."""
+        manifest, files = _validated_candidate_wiki_payload(rendered_wiki)
+        disposition = self._publish_candidate_wiki_build(manifest.build_id, files)
+        self._activate_candidate_wiki_build(manifest.build_id)
+        return CandidateWikiPublishResult(
+            build_id=manifest.build_id,
+            active_relative_path="review/wiki/",
+            disposition=disposition,
+        )
+
+    def _publish_candidate_wiki_build(
+        self, build_id: str, files: dict[str, bytes]
+    ) -> Literal["created", "reused"]:
+        final_path = self._absolute_path(WIKI_BUILDS_DIR / build_id)
+        if final_path.exists():
+            _validate_existing_wiki_build(final_path, files)
+            return "reused"
+        stage_path = self._absolute_path(STAGING_DIR / f"wiki-{uuid.uuid4().hex}")
+        stage_path.mkdir(parents=True)
+        try:
+            _write_wiki_build(stage_path, files)
+            _validate_existing_wiki_build(stage_path, files)
+            final_path.parent.mkdir(parents=True, exist_ok=True)
+            os.replace(stage_path, final_path)
+        finally:
+            if stage_path.exists():
+                shutil.rmtree(stage_path)
+        return "created"
+
+    def _activate_candidate_wiki_build(self, build_id: str) -> None:
+        review_path = self.archive_root.resolve() / REVIEW_DIR
+        review_path.mkdir(parents=True, exist_ok=True)
+        active_path = review_path / ACTIVE_WIKI_PATH.name
+        if active_path.exists() and not active_path.is_symlink():
+            raise ValueError("Candidate Wiki active path exists and is not a symlink.")
+        temporary_link = review_path / f".wiki-{uuid.uuid4().hex}.tmp"
+        try:
+            os.symlink((Path("wiki-builds") / build_id).as_posix(), temporary_link)
+            os.replace(temporary_link, active_path)
+        finally:
+            temporary_link.unlink(missing_ok=True)
 
     def put_if_absent_or_identical(
         self,
@@ -843,3 +903,78 @@ def _staged_relative_path(final_relative_path: Path) -> Path:
     return (
         STAGING_DIR / final_relative_path.parent / f"{final_relative_path.name}.{uuid.uuid4()}.tmp"
     )
+
+
+def _validate_wiki_relative_path(value: str) -> None:
+    path = Path(value)
+    if path.is_absolute() or not path.parts or any(part in {"", ".", ".."} for part in path.parts):
+        raise ValueError(f"Candidate Wiki path is unsafe: {value}")
+    if path.suffix not in {".md", ".json"}:
+        raise ValueError(f"Candidate Wiki file type is unsupported: {value}")
+
+
+def _validated_candidate_wiki_payload(
+    rendered_wiki: RenderedCandidateWiki,
+) -> tuple[WikiBuildManifest, dict[str, bytes]]:
+    files = {item.relative_path: item.payload for item in rendered_wiki.files}
+    if len(files) != len(rendered_wiki.files):
+        raise ValueError("Candidate Wiki contains duplicate file paths.")
+    manifest_payload = files.get("manifest.json")
+    if manifest_payload is None:
+        raise ValueError("Candidate Wiki is missing manifest.json.")
+    manifest = wiki_build_manifest_from_bytes(manifest_payload)
+    if (
+        manifest != rendered_wiki.manifest
+        or canonical_wiki_manifest_bytes(manifest) != manifest_payload
+    ):
+        raise ValueError("Candidate Wiki manifest is not its canonical encoding.")
+    expected_paths = {item.relative_path for item in manifest.files} | {"manifest.json"}
+    if set(files) != expected_paths:
+        raise ValueError("Candidate Wiki files do not match its manifest.")
+    _validate_candidate_wiki_citations(files, manifest)
+    entries = {item.relative_path: item for item in manifest.files}
+    for relative_path, payload in files.items():
+        _validate_wiki_relative_path(relative_path)
+        if relative_path != "manifest.json" and (
+            hashlib.sha256(payload).hexdigest() != entries[relative_path].content_sha256
+        ):
+            raise ValueError(f"Candidate Wiki file digest is invalid: {relative_path}")
+    return manifest, files
+
+
+def _validate_candidate_wiki_citations(
+    files: dict[str, bytes], manifest: WikiBuildManifest
+) -> None:
+    citations_payload = files.get("citations.json")
+    if citations_payload is None:
+        raise ValueError("Candidate Wiki is missing citations.json.")
+    citations = wiki_citation_registry_from_bytes(citations_payload)
+    if (
+        citations.candidate_snapshot_digest != manifest.candidate_snapshot_digest
+        or canonical_wiki_citations_bytes(citations) != citations_payload
+    ):
+        raise ValueError("Candidate Wiki citations are not canonical for its manifest.")
+
+
+def _write_wiki_build(build_path: Path, files: dict[str, bytes]) -> None:
+    for relative_path, payload in sorted(files.items()):
+        target = build_path / relative_path
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(payload)
+
+
+def _validate_existing_wiki_build(build_path: Path, expected_files: dict[str, bytes]) -> None:
+    if not build_path.is_dir() or build_path.is_symlink():
+        raise ValueError("Candidate Wiki build path is not an immutable directory.")
+    descendants = tuple(build_path.rglob("*"))
+    if any(path.is_symlink() for path in descendants):
+        raise ValueError("Candidate Wiki immutable build must not contain symlinks.")
+    actual_paths = {
+        path.relative_to(build_path).as_posix() for path in descendants if path.is_file()
+    }
+    if actual_paths != set(expected_files):
+        raise ValueError("Candidate Wiki build contains absent or extra files.")
+    for relative_path, expected in expected_files.items():
+        path = build_path / relative_path
+        if path.is_symlink() or path.read_bytes() != expected:
+            raise ValueError(f"Candidate Wiki immutable build conflicts: {relative_path}")

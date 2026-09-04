@@ -42,6 +42,13 @@ class EvidenceTargetLedger(EvidenceTargetReferenceLedger, Protocol):
     def save_evidence_validation_attempt(self, record: EvidenceValidationAttempt) -> None: ...
 
 
+class EvidenceTargetReplayLedger(EvidenceTargetReferenceLedger, Protocol):
+    def get_evidence_target(self, record_id: str) -> EvidenceTarget | None: ...
+    def get_evidence_validation_attempt(
+        self, record_id: str
+    ) -> EvidenceValidationAttempt | None: ...
+
+
 class EvidenceReanchoringLedger(EvidenceTargetLedger, Protocol):
     def get_provenance_activity(self, record_id: str) -> ProvenanceActivity | None: ...
     def save_evidence_reanchoring_relation(self, record: EvidenceReanchoringRelation) -> None: ...
@@ -137,7 +144,7 @@ def validate_evidence_target_record(
 def verify_evidence_target(
     evidence_target: EvidenceTarget,
     validation_attempt: EvidenceValidationAttempt,
-    ledger_repository: EvidenceTargetLedger,
+    ledger_repository: EvidenceTargetReplayLedger,
 ) -> EvidenceReplayResult:
     """Replay every selector against the pinned representation without mutating state."""
     if validation_attempt.evidence_target_id != evidence_target.id:
