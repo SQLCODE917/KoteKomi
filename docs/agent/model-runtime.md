@@ -68,6 +68,10 @@ uv run kotekomi model resources status
 
 The install command owns every model download and the isolated ReFinED Python environment.
 
+The ReFinED installer validates the complete pinned dependency graph before model loading.
+
+A runtime-only ReFinED repair reuses an existing resource tree only after digest validation.
+
 Normal ingestion validates both installations before it writes canonical state.
 
 Normal GLiNER loading uses its managed model and tokenizer files with local-only loading.

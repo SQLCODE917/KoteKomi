@@ -184,8 +184,12 @@ def test_refined_install_manages_runtime_resources_and_reuses_them(tmp_path: Pat
         elif command[0].endswith("/python") and "--data-dir" in command:
             data_dir = Path(command[command.index("--data-dir") + 1])
             manifest = Path(command[command.index("--manifest") + 1])
-            data_dir.mkdir()
-            (data_dir / "resource.bin").write_bytes(resource_payload)
+            data_dir.mkdir(exist_ok=True)
+            resource_path = data_dir / "resource.bin"
+            if "--offline" in command:
+                assert resource_path.read_bytes() == resource_payload
+            else:
+                resource_path.write_bytes(resource_payload)
             manifest.write_text(
                 json.dumps(
                     {
@@ -209,9 +213,32 @@ def test_refined_install_manages_runtime_resources_and_reuses_them(tmp_path: Pat
 
     assert installed.disposition is ModelResourceInstallDisposition.INSTALLED
     assert reused.disposition is ModelResourceInstallDisposition.REUSED
-    assert len(commands) == 3
+    assert len(commands) == 4
+    assert commands[2][:3] == ("uv", "pip", "check")
     assert refined_python_path(root).is_file()
     assert (refined_data_path(root) / "resource.bin").read_bytes() == resource_payload
+    assert adapter.inspect(root).status is ModelResourceStatus.READY
+
+    manifest_path = root / "refined_wikipedia_v1" / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["identity"] = "stale-runtime-identity"
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    repaired = adapter.install(root, repair=True)
+
+    assert repaired.disposition is ModelResourceInstallDisposition.REPAIRED
+    assert "--offline" in commands[-1]
+    repaired_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert repaired_manifest["dependency_check_status"] == "passed"
+    assert repaired_manifest["resource_materialization"] == "reused_verified_tree"
+    assert adapter.inspect(root).status is ModelResourceStatus.READY
+
+    (refined_data_path(root) / "resource.bin").write_bytes(b"wrong-resource")
+
+    repaired_after_resource_drift = adapter.install(root, repair=True)
+
+    assert repaired_after_resource_drift.disposition is ModelResourceInstallDisposition.REPAIRED
+    assert "--offline" not in commands[-1]
     assert adapter.inspect(root).status is ModelResourceStatus.READY
 
 
@@ -234,3 +261,16 @@ def test_production_gliner_lock_has_expected_model_and_tokenizer_files() -> None
         "spm.model",
         "tokenizer_config.json",
     }
+
+
+def test_production_refined_requirements_pin_setuptools_for_complete_dependencies() -> None:
+    requirements = (
+        Path(__file__)
+        .resolve()
+        .parents[3]
+        .joinpath("tools/refined-worker/requirements.txt")
+        .read_text(encoding="utf-8")
+        .splitlines()
+    )
+
+    assert "setuptools==83.0.0" in requirements

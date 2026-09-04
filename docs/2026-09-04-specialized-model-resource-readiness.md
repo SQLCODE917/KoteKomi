@@ -95,6 +95,10 @@ The primary flow is:
 - SMR-REF-06: The Resource Installation manifest binds the requirements digest and resource-tree digest.
 - SMR-REF-07: Normal ReFinED workers set `download_files=false`.
 - SMR-REF-08: The Pipeline selects the managed virtual environment and resource directory.
+- SMR-REF-09: The requirements file pins `setuptools` and satisfies every installed dependency requirement.
+- SMR-REF-10: The installer runs an explicit dependency check before it loads ReFinED.
+- SMR-REF-11: A runtime-only repair reuses an existing resource tree only after its digest matches the lock.
+- SMR-REF-12: The installer performs the reuse smoke test with every model download disabled.
 
 ### Ingestion Pipeline
 
@@ -203,6 +207,10 @@ The installer rejects an invalid published installation unless the user supplies
 
 The installer removes the invalid installation only after the replacement passes validation.
 
+The installer can hard-link a verified ReFinED resource tree into a staged runtime-only repair.
+
+The staged repair remains independent from the previous installation after publication.
+
 The status and ingestion commands never repair local resources.
 
 The install command is the only KoteKomi command that accesses model distribution services.
@@ -222,8 +230,9 @@ A failure that occurs after a successful preflight remains observable through ex
 - AC-SMR-GLI-01: Adapter tests prove every GLiNER lock file and digest.
 - AC-SMR-GLI-02: Adapter tests prove the pinned tokenizer is part of the local model directory.
 - AC-SMR-GLI-03: A network trap proves GLiNER inference uses local files only.
-- AC-SMR-REF-01: Adapter tests prove environment, requirements, resource digest, and smoke validation.
+- AC-SMR-REF-01: Adapter tests prove environment, complete dependencies, resource digest, and smoke validation.
 - AC-SMR-REF-02: Worker tests prove every normal ReFinED request disables downloads.
+- AC-SMR-REF-03: Adapter tests prove a runtime-only repair reuses only a digest-valid resource tree.
 - AC-SMR-ING-01: Pipeline tests prove preflight failure precedes every canonical write.
 - AC-SMR-ING-02: Pipeline tests prove ready resources preserve existing partial and blocked runtime outcomes.
 - AC-SMR-ING-03: A canonical offline ingestion produces no Hugging Face download output.

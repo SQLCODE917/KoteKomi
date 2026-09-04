@@ -85,7 +85,7 @@ class _Installer(Protocol):
 
     def inspect(self, resource_root: Path) -> ModelResourceReadiness: ...
 
-    def install_staged(self, staged: Path) -> None: ...
+    def install_staged(self, staged: Path, reusable_installation: Path | None) -> None: ...
 
 
 class GlinerModelResourceAdapter:
@@ -185,7 +185,8 @@ class GlinerModelResourceAdapter:
     ) -> ModelResourceInstallResult:
         return _install(self, resource_root, repair=repair)
 
-    def install_staged(self, staged: Path) -> None:
+    def install_staged(self, staged: Path, reusable_installation: Path | None) -> None:
+        del reusable_installation
         model_dir = staged / "model"
         model_dir.mkdir(parents=True)
         grouped: dict[tuple[str, str], list[_GlinerFileLock]] = {}
@@ -273,6 +274,7 @@ class RefinedModelResourceAdapter:
             or manifest.get("python_version") != REFINED_PYTHON_VERSION
             or manifest.get("requirements_sha256") != _file_digest(self._requirements)
             or manifest.get("resource_manifest_sha256") != self._expected_resource_digest
+            or manifest.get("dependency_check_status") != "passed"
             or manifest.get("smoke_status") != "passed"
         ):
             return _not_ready(
@@ -345,12 +347,13 @@ class RefinedModelResourceAdapter:
     ) -> ModelResourceInstallResult:
         return _install(self, resource_root, repair=repair)
 
-    def install_staged(self, staged: Path) -> None:
+    def install_staged(self, staged: Path, reusable_installation: Path | None) -> None:
         runtime = staged / "runtime"
         data_dir = staged / "data"
         setup_manifest = staged / "setup-manifest.json"
         python = _venv_python(runtime)
         setup_script = self._checkout_root / "scripts" / "setup_refined_organization_type_worker.py"
+        reused_resources = self._reuse_verified_resources(reusable_installation, data_dir)
         self._runner(("uv", "venv", "--python", REFINED_PYTHON_VERSION, str(runtime)))
         self._runner(
             (
@@ -363,16 +366,18 @@ class RefinedModelResourceAdapter:
                 str(self._requirements),
             )
         )
-        self._runner(
-            (
-                str(python),
-                str(setup_script),
-                "--data-dir",
-                str(data_dir),
-                "--manifest",
-                str(setup_manifest),
-            )
+        self._runner(("uv", "pip", "check", "--python", str(python)))
+        setup_command = (
+            str(python),
+            str(setup_script),
+            "--data-dir",
+            str(data_dir),
+            "--manifest",
+            str(setup_manifest),
         )
+        if reused_resources:
+            setup_command += ("--offline",)
+        self._runner(setup_command)
         setup = _load_manifest(setup_manifest)
         locked_fields = (
             "package_version",
@@ -404,9 +409,34 @@ class RefinedModelResourceAdapter:
                 "python_version": REFINED_PYTHON_VERSION,
                 "requirements_sha256": _file_digest(self._requirements),
                 "resource_manifest_sha256": self._expected_resource_digest,
+                "dependency_check_status": "passed",
+                "resource_materialization": (
+                    "reused_verified_tree" if reused_resources else "downloaded"
+                ),
                 "smoke_status": "passed",
             },
         )
+
+    def _reuse_verified_resources(
+        self,
+        reusable_installation: Path | None,
+        staged_data_dir: Path,
+    ) -> bool:
+        if reusable_installation is None:
+            return False
+        existing_data_dir = reusable_installation / "data"
+        try:
+            if (
+                not existing_data_dir.is_dir()
+                or self._tree_digest(existing_data_dir) != self._expected_resource_digest
+            ):
+                return False
+            _link_tree(existing_data_dir, staged_data_dir)
+        except OSError:
+            if staged_data_dir.exists():
+                shutil.rmtree(staged_data_dir)
+            return False
+        return True
 
 
 def gliner_installation_path(resource_root: Path) -> Path:
@@ -454,7 +484,7 @@ def _install(
     backup = resource_root / f".{adapter.resource_id.value}-invalid"
     published = False
     try:
-        adapter.install_staged(staged)
+        adapter.install_staged(staged, target if target.exists() else None)
         if target.exists():
             if backup.exists():
                 shutil.rmtree(backup)
@@ -622,6 +652,15 @@ def _link_or_copy(source: Path, target: Path) -> None:
         os.link(resolved_source, target)
     except OSError:
         shutil.copyfile(resolved_source, target)
+
+
+def _link_tree(source: Path, target: Path) -> None:
+    target.mkdir(parents=True)
+    for source_path in sorted(path for path in source.rglob("*") if path.is_file()):
+        relative_path = source_path.relative_to(source)
+        target_path = target / relative_path
+        target_path.parent.mkdir(parents=True, exist_ok=True)
+        _link_or_copy(source_path, target_path)
 
 
 def _smoke_gliner(model_dir: Path) -> None:

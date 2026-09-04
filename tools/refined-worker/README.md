@@ -16,6 +16,10 @@ uv run kotekomi model resources install --resource refined
 
 The setup command is the only network-enabled step.
 
+The installer validates the pinned environment with `uv pip check` before model loading.
+
+A runtime-only repair can reuse the digest-valid model tree without network access.
+
 The sealed ORG-R2 evaluation starts `scripts/refined_organization_type_worker.py`.
 
 HP-3 entity identity grounding starts `scripts/refined_entity_linking_worker.py`.

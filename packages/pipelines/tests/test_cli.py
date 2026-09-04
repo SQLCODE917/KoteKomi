@@ -577,6 +577,7 @@ def test_hybrid_entity_grounding_missing_runtime_publishes_blocked_result(
         ),
         embedding_profiles={},
         document_retrieval_embedding_profile_id=None,
+        model_resource_root=(tmp_path / "model-resources").resolve(),
     )
     preview = build_hybrid_entity_grounding_preview_record(
         parent_preview_id="hrp_" + "1" * 24,

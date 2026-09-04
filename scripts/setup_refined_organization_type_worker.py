@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import importlib
 import json
+import os
 import time
 from pathlib import Path
 from typing import Any, cast
@@ -23,7 +24,11 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--data-dir", type=Path, required=True)
     parser.add_argument("--manifest", type=Path, required=True)
+    parser.add_argument("--offline", action="store_true")
     arguments = parser.parse_args()
+    if arguments.offline:
+        os.environ["HF_HUB_OFFLINE"] = "1"
+        os.environ["TRANSFORMERS_OFFLINE"] = "1"
     refined_type = cast(Any, importlib.import_module("refined.inference.processor")).Refined
     span_type = cast(Any, importlib.import_module("refined.data_types.base_types")).Span
     arguments.data_dir.mkdir(parents=True, exist_ok=True)
@@ -34,7 +39,7 @@ def main() -> int:
         data_dir=str(arguments.data_dir),
         device="cpu",
         use_precomputed_descriptions=True,
-        download_files=True,
+        download_files=not arguments.offline,
         return_titles=True,
     )
     spans = processor.process_text(
