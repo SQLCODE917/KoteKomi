@@ -370,7 +370,7 @@ def test_user_ingest_rejects_corrupt_hybrid_checkpoint(
     }
 
 
-def test_user_ingest_closes_with_accounted_gaps_when_hp1_blocks(
+def test_user_ingest_continues_after_one_proposer_fails_and_closes_with_gaps(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
     monkeypatch: pytest.MonkeyPatch,
@@ -409,6 +409,18 @@ def test_user_ingest_closes_with_accounted_gaps_when_hp1_blocks(
     )
     report = hybrid_document_coverage_report_from_bytes(coverage_path.read_bytes())
     assert report.gap_paragraph_count == report.required_paragraph_count == 15
+    receipt_paths = tuple(
+        (tmp_path / "state" / "archive" / "extraction" / "paragraph-receipts").glob("*.json")
+    )
+    receipts = tuple(
+        hybrid_paragraph_receipt_from_bytes(path.read_bytes()) for path in receipt_paths
+    )
+    assert len(receipts) == 15
+    assert all(receipt.stages[0].terminal_status == "partial" for receipt in receipts)
+    assert all(
+        "qwen_proposer_failed:invalid_output" in receipt.stages[0].diagnostics
+        for receipt in receipts
+    )
     with sqlite_ledger_transaction(tmp_path / "state" / "kotekomi.db") as repository:
         ingestion = repository.list_ingestion_runs()[0]
         assert ingestion.analysis_run_id is not None

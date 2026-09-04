@@ -37,6 +37,7 @@ from kotekomi_application.hybrid_mention_interpretation import (
     MentionBoundaryDecision,
     MentionCandidate,
     MentionInterpretation,
+    MentionInterpretationDraft,
     MentionObservation,
     PreviewStore,
     build_hybrid_extraction_preview,
@@ -87,6 +88,18 @@ class HybridMentionPreviewResult:
     preview: HybridExtractionPreview
     sha256: str
     archive_path: str
+
+
+@dataclass(frozen=True)
+class _InterpretationExecution:
+    representative_candidate_id: str
+    extraction_task_id: str
+    model_run_id: str
+    trace_id: str
+    draft: MentionInterpretationDraft | None
+    status: ExtractionStageStatus
+    output_payload: dict[str, JsonValue]
+    diagnostics: tuple[str, ...]
 
 
 def run_hybrid_mention_preview(
@@ -225,11 +238,23 @@ def run_hybrid_mention_preview(
         )
         for item in segments
     }
-    if gliner.batch is None or gliner.model_run.status is not ModelRunStatus.SUCCEEDED:
-        diagnostics.append("gliner_proposer_blocked")
-    if qwen.model_run.status not in {ModelRunStatus.SUCCEEDED, ModelRunStatus.ABSTAINED}:
-        diagnostics.append("qwen_proposer_blocked")
-    if diagnostics:
+    gliner_valid = gliner.batch is not None and gliner.model_run.status is ModelRunStatus.SUCCEEDED
+    qwen_valid = qwen.model_run.status is ModelRunStatus.ABSTAINED or (
+        qwen.model_run.status is ModelRunStatus.SUCCEEDED
+        and qwen.mention_proposal_drafts is not None
+    )
+    proposer_failures: dict[str, str] = {}
+    if not gliner_valid:
+        proposer_failures["gliner"] = f"gliner_proposer_failed:{gliner.model_run.status.value}"
+    if not qwen_valid:
+        qwen_failure = (
+            "output_contract"
+            if qwen.model_run.status is ModelRunStatus.SUCCEEDED
+            else qwen.model_run.status.value
+        )
+        proposer_failures["qwen2.5"] = f"qwen_proposer_failed:{qwen_failure}"
+    diagnostics.extend(proposer_failures.values())
+    if not gliner_valid and not qwen_valid:
         for segment in segments:
             source_segment_id = segment_ids[segment.label]
             traces.extend(
@@ -243,12 +268,8 @@ def run_hybrid_mention_preview(
                         extraction_task_id=gliner.extraction_task.id,
                         model_run_id=gliner.model_run.id,
                         model_run_status=gliner.model_run.status,
-                        status=(
-                            ExtractionStageStatus.COMPLETED
-                            if gliner.batch is not None
-                            and gliner.model_run.status is ModelRunStatus.SUCCEEDED
-                            else ExtractionStageStatus.BLOCKED
-                        ),
+                        status=ExtractionStageStatus.FAILED,
+                        diagnostics=(proposer_failures["gliner"],),
                     ),
                     _proposal_trace(
                         trace_run_id=trace_runs[source_segment_id],
@@ -259,12 +280,8 @@ def run_hybrid_mention_preview(
                         extraction_task_id=qwen.extraction_task.id,
                         model_run_id=qwen.model_run.id,
                         model_run_status=qwen.model_run.status,
-                        status=(
-                            ExtractionStageStatus.COMPLETED
-                            if qwen.model_run.status
-                            in {ModelRunStatus.SUCCEEDED, ModelRunStatus.ABSTAINED}
-                            else ExtractionStageStatus.BLOCKED
-                        ),
+                        status=ExtractionStageStatus.FAILED,
+                        diagnostics=(proposer_failures["qwen2.5"],),
                     ),
                 )
             )
@@ -284,38 +301,40 @@ def run_hybrid_mention_preview(
     seen_observation_ids: set[str] = set()
     invalid_observations: list[str] = []
     invalid_by_producer_segment: dict[tuple[str, str], list[str]] = {}
-    assert gliner.batch is not None
     segment_by_label = {item.label: item for item in segments}
-    for index, proposal in enumerate(gliner.batch.proposals):
-        try:
-            segment = segment_by_label[proposal.source_segment_label]
-            if (
-                proposal.end > len(segment.exact_text)
-                or segment.exact_text[proposal.start : proposal.end] != proposal.text
-            ):
-                raise ValueError("source mismatch")
-            if not set(proposal.type_hints).issubset(proposer_input.type_hints):
-                raise ValueError("unrequested type hint")
-            observation = observation_from_proposal(
-                proposal=proposal,
-                source_segment_id=segment_ids[proposal.source_segment_label],
-                producer_id=gliner.batch.proposer_id,
-                execution_record_id=gliner.model_run.id,
-            )
-            if observation.id in seen_observation_ids:
-                raise ValueError("duplicate observation")
-            seen_observation_ids.add(observation.id)
-            observations.append(observation)
-        except (KeyError, ValueError) as error:
-            diagnostic = (
-                f"invalid_observation:gliner:{gliner.model_run.id}:{index}:{type(error).__name__}"
-            )
-            invalid_observations.append(diagnostic)
-            source_segment_id = segment_ids.get(proposal.source_segment_label)
-            if source_segment_id is not None:
-                invalid_by_producer_segment.setdefault(("gliner", source_segment_id), []).append(
-                    diagnostic
+    if gliner_valid:
+        assert gliner.batch is not None
+        for index, proposal in enumerate(gliner.batch.proposals):
+            try:
+                segment = segment_by_label[proposal.source_segment_label]
+                if (
+                    proposal.end > len(segment.exact_text)
+                    or segment.exact_text[proposal.start : proposal.end] != proposal.text
+                ):
+                    raise ValueError("source mismatch")
+                if not set(proposal.type_hints).issubset(proposer_input.type_hints):
+                    raise ValueError("unrequested type hint")
+                observation = observation_from_proposal(
+                    proposal=proposal,
+                    source_segment_id=segment_ids[proposal.source_segment_label],
+                    producer_id=gliner.batch.proposer_id,
+                    execution_record_id=gliner.model_run.id,
                 )
+                if observation.id in seen_observation_ids:
+                    raise ValueError("duplicate observation")
+                seen_observation_ids.add(observation.id)
+                observations.append(observation)
+            except (KeyError, ValueError) as error:
+                diagnostic = (
+                    f"invalid_observation:gliner:{gliner.model_run.id}:{index}:"
+                    f"{type(error).__name__}"
+                )
+                invalid_observations.append(diagnostic)
+                source_segment_id = segment_ids.get(proposal.source_segment_label)
+                if source_segment_id is not None:
+                    invalid_by_producer_segment.setdefault(
+                        ("gliner", source_segment_id), []
+                    ).append(diagnostic)
     if qwen.mention_proposal_drafts is not None:
         for index, draft in enumerate(qwen.mention_proposal_drafts.proposals):
             try:
@@ -368,10 +387,19 @@ def run_hybrid_mention_preview(
                     extraction_task_id=gliner.extraction_task.id,
                     model_run_id=gliner.model_run.id,
                     model_run_status=gliner.model_run.status,
-                    status=ExtractionStageStatus.COMPLETED,
+                    status=(
+                        ExtractionStageStatus.COMPLETED
+                        if gliner_valid
+                        else ExtractionStageStatus.FAILED
+                    ),
                     observations=gliner_observations,
                     diagnostics=tuple(
-                        sorted(invalid_by_producer_segment.get(("gliner", source_segment_id), []))
+                        sorted(
+                            (
+                                *invalid_by_producer_segment.get(("gliner", source_segment_id), []),
+                                *((proposer_failures["gliner"],) if not gliner_valid else ()),
+                            )
+                        )
                     ),
                 ),
                 _proposal_trace(
@@ -383,10 +411,21 @@ def run_hybrid_mention_preview(
                     extraction_task_id=qwen.extraction_task.id,
                     model_run_id=qwen.model_run.id,
                     model_run_status=qwen.model_run.status,
-                    status=ExtractionStageStatus.COMPLETED,
+                    status=(
+                        ExtractionStageStatus.COMPLETED
+                        if qwen_valid
+                        else ExtractionStageStatus.FAILED
+                    ),
                     observations=qwen_observations,
                     diagnostics=tuple(
-                        sorted(invalid_by_producer_segment.get(("qwen2.5", source_segment_id), []))
+                        sorted(
+                            (
+                                *invalid_by_producer_segment.get(
+                                    ("qwen2.5", source_segment_id), []
+                                ),
+                                *((proposer_failures["qwen2.5"],) if not qwen_valid else ()),
+                            )
+                        )
                     ),
                     abstention_reason=qwen.model_run.abstention_reason,
                 ),
@@ -434,7 +473,65 @@ def run_hybrid_mention_preview(
     interpretations: list[MentionInterpretation] = []
     failed_interpretations = 0
     next_ordinal = {segment_ids[item.label]: 3 for item in segments}
+    interpretation_executions: dict[tuple[str, str], _InterpretationExecution] = {}
     for candidate in selected_candidates:
+        reuse_key = (candidate.source_segment_id, candidate.text)
+        reused = interpretation_executions.get(reuse_key)
+        if reused is not None:
+            ordinal = next_ordinal[candidate.source_segment_id]
+            next_ordinal[candidate.source_segment_id] += 1
+            trace_diagnostics = (
+                ()
+                if reused.status is ExtractionStageStatus.COMPLETED
+                else tuple(sorted({*reused.diagnostics, "interpretation_reused_failure"}))
+            )
+            output_payload = {
+                **reused.output_payload,
+                "reused_from_candidate_id": reused.representative_candidate_id,
+                "reused_from_trace_id": reused.trace_id,
+            }
+            trace = build_extraction_stage_trace(
+                trace_run_id=trace_runs[candidate.source_segment_id],
+                ordinal=ordinal,
+                stage_id="mention_interpretation_reuse",
+                stage_version="hybrid_mention_interpretation_reuse_v1",
+                producer_id="kotekomi_application",
+                source_segment_id=candidate.source_segment_id,
+                source_text_sha256=candidate.source_text_sha256,
+                parent_trace_ids=(reused.trace_id,),
+                input_record_ids=tuple(sorted((candidate.id, reused.representative_candidate_id))),
+                execution_record_ids=(reused.extraction_task_id, reused.model_run_id),
+                configuration={
+                    "ontology_card_sha256": card_digest,
+                    "reuse_policy_id": "same_segment_exact_text_v1",
+                },
+                input_payload={
+                    "candidate_id": candidate.id,
+                    "candidate_source_label": source_label_by_id[candidate.source_segment_id],
+                    "candidate_text": candidate.text,
+                },
+                output_payload=output_payload,
+                status=reused.status,
+                diagnostics=trace_diagnostics,
+            )
+            traces.append(trace)
+            if reused.status is ExtractionStageStatus.COMPLETED:
+                assert reused.draft is not None
+                interpretations.append(
+                    resolve_mention_interpretation(
+                        draft=reused.draft,
+                        candidate_labels={"c1": candidate},
+                        source_segment_ids=segment_ids,
+                        model_run_id=reused.model_run_id,
+                        trace_id=trace.id,
+                    )
+                )
+            else:
+                failed_interpretations += 1
+                diagnostics.append(
+                    f"interpretation_reused_failure:{candidate.id}:{reused.model_run_id}"
+                )
+            continue
         local_input = _interpretation_task_input(
             candidate,
             source_label_by_id[candidate.source_segment_id],
@@ -525,6 +622,16 @@ def run_hybrid_mention_preview(
             diagnostics=trace_diagnostics,
         )
         traces.append(trace)
+        interpretation_executions[reuse_key] = _InterpretationExecution(
+            representative_candidate_id=candidate.id,
+            extraction_task_id=outcome.extraction_task.id,
+            model_run_id=outcome.model_run.id,
+            trace_id=trace.id,
+            draft=draft,
+            status=status,
+            output_payload=output_payload,
+            diagnostics=trace_diagnostics,
+        )
         if status is ExtractionStageStatus.COMPLETED:
             assert draft is not None
             interpretations.append(
@@ -537,7 +644,9 @@ def run_hybrid_mention_preview(
                 )
             )
     terminal_status = (
-        HybridPreviewStatus.PARTIAL if failed_interpretations else HybridPreviewStatus.COMPLETE
+        HybridPreviewStatus.PARTIAL
+        if proposer_failures or failed_interpretations
+        else HybridPreviewStatus.COMPLETE
     )
     diagnostics.extend(
         f"interpretation_pending_boundary:{item.id}"
@@ -619,7 +728,7 @@ def _proposal_trace(
 ) -> ExtractionStageTrace:
     trace_diagnostics = diagnostics
     if status is not ExtractionStageStatus.COMPLETED:
-        trace_diagnostics = tuple(sorted({*diagnostics, "proposer_blocked"}))
+        trace_diagnostics = tuple(sorted({*diagnostics, "proposer_failed"}))
     output_payload: dict[str, JsonValue] = {
         "model_run_id": model_run_id,
         "model_run_status": model_run_status.value,

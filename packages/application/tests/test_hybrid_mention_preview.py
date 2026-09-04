@@ -60,7 +60,13 @@ class FixtureTokenizer:
 
 
 class FixtureLedger:
-    def __init__(self, *, paragraph_node_type: str = "paragraph") -> None:
+    def __init__(
+        self,
+        *,
+        paragraph_node_type: str = "paragraph",
+        paragraph_text: str = PARAGRAPH_TEXT,
+    ) -> None:
+        text = f"Institutions\n{paragraph_text}"
         self.source = Source(
             id="src_hybrid_fixture",
             source_type=SourceType.MANUAL_FILE,
@@ -70,9 +76,9 @@ class FixtureLedger:
         self.document = Document(
             id="doc_hybrid_fixture",
             source_id=self.source.id,
-            content_sha256=hashlib.sha256(TEXT.encode()).hexdigest(),
+            content_sha256=hashlib.sha256(text.encode()).hexdigest(),
         )
-        self.bundle = _bundle(self.document.id, paragraph_node_type)
+        self.bundle = _bundle(self.document.id, paragraph_node_type, text)
         self.manifests: dict[str, ContextManifestArtifact] = {}
         self.analysis_units: dict[str, AnalysisUnitArtifact] = {}
         self.extraction_tasks: dict[str, ExtractionTask] = {}
@@ -212,10 +218,16 @@ class FixtureModelRuntime:
         self,
         *,
         proposal_abstains: bool = False,
+        proposal_fails: bool = False,
+        proposal_uses_wrong_contract: bool = False,
+        proposal_output: bytes | None = None,
         invalid_interpretation: bool = False,
     ) -> None:
         self.requests: list[ModelTaskRequest] = []
         self.proposal_abstains = proposal_abstains
+        self.proposal_fails = proposal_fails
+        self.proposal_uses_wrong_contract = proposal_uses_wrong_contract
+        self.proposal_output = proposal_output
         self.invalid_interpretation = invalid_interpretation
         self._identity = ModelIdentitySnapshot(
             "qwen2.5-fixture",
@@ -235,11 +247,22 @@ class FixtureModelRuntime:
     def run_model_task(self, task: ModelTaskRequest) -> ModelTaskResponse:
         self.requests.append(task)
         if b"task: propose_mentions" in task.rendered_input:
-            output = (
-                b"abstain: no source expressions qualify\n"
-                if self.proposal_abstains
-                else b"mention: s1 | geopolitical_entity,organization | European Union\n"
-            )
+            if self.proposal_fails:
+                raise RuntimeError("Qwen runtime unavailable")
+            if self.proposal_output is not None:
+                output = self.proposal_output
+            elif self.proposal_uses_wrong_contract:
+                output = (
+                    b"candidate: c1\n"
+                    b"referentiality: specific_entity\n"
+                    b"contextual_kind: organization\n"
+                    b"discourse_role: origin\n"
+                    b"support: s1\n"
+                )
+            elif self.proposal_abstains:
+                output = b"abstain: no source expressions qualify\n"
+            else:
+                output = b"mention: s1 | geopolitical_entity,organization | European Union\n"
         elif b"task: interpret_mention" in task.rendered_input:
             output = (
                 b"candidate: c1\nreferentiality: specific_entity\n"
@@ -318,18 +341,97 @@ def test_hybrid_preview_runs_complete_source_grounded_path_without_state_change(
     )
 
 
-def test_missing_specialized_proposer_publishes_typed_blocked_preview() -> None:
+def test_failed_specialized_proposer_continues_from_qwen_as_partial() -> None:
     ledger = FixtureLedger()
     archive = FixtureArchive()
     runtime = FixtureModelRuntime()
 
     result = _run(ledger, archive, FixtureProposer(fail=True), runtime)
 
-    assert result.preview.terminal_status is HybridPreviewStatus.BLOCKED
-    assert result.preview.diagnostics == ("gliner_proposer_blocked",)
-    assert result.preview.candidates == ()
-    assert len(runtime.requests) == 1
+    assert result.preview.terminal_status is HybridPreviewStatus.PARTIAL
+    assert result.preview.diagnostics == ("gliner_proposer_failed:runtime_failed",)
+    assert len(result.preview.candidates) == 1
+    assert len(result.preview.interpretations) == 1
+    assert len(runtime.requests) == 2
+    gliner_trace = next(
+        trace
+        for trace in result.preview.traces
+        if trace.stage_id == "mention_proposal" and trace.producer_id == "gliner"
+    )
+    assert gliner_trace.status.value == "failed"
+    assert gliner_trace.output["model_run_status"] == "runtime_failed"
     assert archive.previews[result.preview.id]
+
+
+def test_failed_qwen_proposer_continues_from_gliner_as_partial() -> None:
+    ledger = FixtureLedger()
+    runtime = FixtureModelRuntime(proposal_fails=True)
+
+    result = _run(ledger, FixtureArchive(), FixtureProposer(), runtime)
+
+    assert result.preview.terminal_status is HybridPreviewStatus.PARTIAL
+    assert result.preview.diagnostics == ("qwen_proposer_failed:runtime_failed",)
+    assert len(result.preview.candidates) == 1
+    assert len(result.preview.interpretations) == 1
+    assert len(runtime.requests) == 2
+    assert len(result.preview.extraction_task_ids) == 3
+    assert len(result.preview.model_run_ids) == 3
+
+
+def test_valid_qwen_abstention_and_failed_gliner_produce_partial_empty_preview() -> None:
+    result = _run(
+        FixtureLedger(),
+        FixtureArchive(),
+        FixtureProposer(fail=True),
+        FixtureModelRuntime(proposal_abstains=True),
+    )
+
+    assert result.preview.terminal_status is HybridPreviewStatus.PARTIAL
+    assert result.preview.diagnostics == ("gliner_proposer_failed:runtime_failed",)
+    assert result.preview.observations == ()
+    assert result.preview.candidates == ()
+    assert result.preview.interpretations == ()
+    assert len(result.preview.extraction_task_ids) == 2
+    assert len(result.preview.model_run_ids) == 2
+
+
+def test_two_failed_proposers_produce_blocked_preview() -> None:
+    result = _run(
+        FixtureLedger(),
+        FixtureArchive(),
+        FixtureProposer(fail=True),
+        FixtureModelRuntime(proposal_fails=True),
+    )
+
+    assert result.preview.terminal_status is HybridPreviewStatus.BLOCKED
+    assert result.preview.diagnostics == (
+        "gliner_proposer_failed:runtime_failed",
+        "qwen_proposer_failed:runtime_failed",
+    )
+    assert result.preview.candidates == ()
+    assert {trace.status.value for trace in result.preview.traces} == {"failed"}
+
+
+def test_wrong_qwen_proposer_output_contract_does_not_erase_gliner_result() -> None:
+    archive = FixtureArchive()
+    result = _run(
+        FixtureLedger(),
+        archive,
+        FixtureProposer(),
+        FixtureModelRuntime(proposal_uses_wrong_contract=True),
+    )
+
+    assert result.preview.terminal_status is HybridPreviewStatus.PARTIAL
+    assert result.preview.diagnostics == ("qwen_proposer_failed:output_contract",)
+    assert len(result.preview.candidates) == 1
+    assert len(result.preview.interpretations) == 1
+    qwen_proposal_run_id = next(
+        trace.output["model_run_id"]
+        for trace in result.preview.traces
+        if trace.stage_id == "mention_proposal" and trace.producer_id == "qwen2.5"
+    )
+    assert isinstance(qwen_proposal_run_id, str)
+    assert archive.model_outputs[qwen_proposal_run_id].startswith(b"candidate: c1\n")
 
 
 def test_invalid_observation_is_reported_without_losing_valid_source_evidence() -> None:
@@ -390,6 +492,85 @@ def test_two_valid_empty_proposer_results_produce_complete_empty_preview() -> No
     assert result.preview.terminal_status is HybridPreviewStatus.COMPLETE
     assert result.preview.observations == ()
     assert result.preview.candidates == ()
+    assert result.preview.interpretations == ()
+
+
+def test_same_segment_equal_literals_share_one_interpretation_execution() -> None:
+    paragraph = "The European Union and European Union issued guidance."
+    ledger = FixtureLedger(paragraph_text=paragraph)
+    runtime = FixtureModelRuntime()
+
+    result = _run(ledger, FixtureArchive(), FixtureProposer(), runtime)
+
+    interpretation_requests = [
+        request
+        for request in runtime.requests
+        if request.task_type == "hybrid_mention_interpretation"
+    ]
+    assert len(result.preview.candidates) == 2
+    assert len(interpretation_requests) == 1
+    assert len(result.preview.interpretations) == 2
+    assert len({item.candidate_id for item in result.preview.interpretations}) == 2
+    assert len({item.model_run_id for item in result.preview.interpretations}) == 1
+    reuse_trace = next(
+        trace for trace in result.preview.traces if trace.stage_id == "mention_interpretation_reuse"
+    )
+    original_trace = next(
+        trace for trace in result.preview.traces if trace.id == reuse_trace.parent_trace_ids[0]
+    )
+    assert reuse_trace.producer_id == "kotekomi_application"
+    assert reuse_trace.input["candidate_text"] == "European Union"
+    assert reuse_trace.output["reused_from_candidate_id"] in {
+        item.candidate_id for item in result.preview.interpretations
+    }
+    assert reuse_trace.output["reused_from_trace_id"] == original_trace.id
+    assert reuse_trace.execution_record_ids == original_trace.execution_record_ids
+
+
+def test_interpretation_reuse_does_not_cross_segment_or_literal_boundaries() -> None:
+    paragraph = "The European Union and Council issued guidance. European Union responded."
+    ledger = FixtureLedger(paragraph_text=paragraph)
+    runtime = FixtureModelRuntime(
+        proposal_output=(
+            b"mention: s1 | organization | European Union\n"
+            b"mention: s1 | organization | Council\n"
+            b"mention: s2 | organization | European Union\n"
+        )
+    )
+
+    result = _run(ledger, FixtureArchive(), FixtureProposer(), runtime)
+
+    interpretation_requests = [
+        request
+        for request in runtime.requests
+        if request.task_type == "hybrid_mention_interpretation"
+    ]
+    assert len(result.preview.candidates) == 3
+    assert len(interpretation_requests) == 3
+    assert all(trace.stage_id != "mention_interpretation_reuse" for trace in result.preview.traces)
+
+
+def test_same_segment_interpretation_failure_is_recorded_once_and_reused() -> None:
+    ledger = FixtureLedger(paragraph_text="The European Union and European Union issued guidance.")
+    runtime = FixtureModelRuntime(invalid_interpretation=True)
+
+    result = _run(ledger, FixtureArchive(), FixtureProposer(), runtime)
+
+    interpretation_requests = [
+        request
+        for request in runtime.requests
+        if request.task_type == "hybrid_mention_interpretation"
+    ]
+    interpretation_traces = [
+        trace
+        for trace in result.preview.traces
+        if trace.stage_id in {"mention_interpretation", "mention_interpretation_reuse"}
+    ]
+    assert result.preview.terminal_status is HybridPreviewStatus.PARTIAL
+    assert len(interpretation_requests) == 1
+    assert len(interpretation_traces) == 2
+    assert {trace.status.value for trace in interpretation_traces} == {"failed"}
+    assert len({trace.execution_record_ids for trace in interpretation_traces}) == 1
     assert result.preview.interpretations == ()
 
 
@@ -521,17 +702,21 @@ def _run(
     )
 
 
-def _bundle(document_id: str, paragraph_node_type: str) -> DocumentRepresentationBundle:
+def _bundle(
+    document_id: str,
+    paragraph_node_type: str,
+    text: str = TEXT,
+) -> DocumentRepresentationBundle:
     representation_id = "rep_hybrid_fixture"
     text_view = TextView(
         id="tvw_hybrid_fixture",
         representation_id=representation_id,
         kind=TextViewKind.LOGICAL,
-        content_digest=hashlib.sha256(TEXT.encode()).hexdigest(),
-        text=TEXT,
+        content_digest=hashlib.sha256(text.encode()).hexdigest(),
+        text=text,
         normalization_policy="utf8_identity_v1",
     )
-    heading_end = TEXT.index("\n")
+    heading_end = text.index("\n")
     paragraph_start = heading_end + 1
     root = DocumentNode(
         id="nod_hybrid_root",
@@ -540,7 +725,7 @@ def _bundle(document_id: str, paragraph_node_type: str) -> DocumentRepresentatio
         order_index=0,
         text_view_id=text_view.id,
         start_char=0,
-        end_char=len(TEXT),
+        end_char=len(text),
     )
     heading = DocumentNode(
         id="nod_hybrid_heading",
@@ -560,12 +745,12 @@ def _bundle(document_id: str, paragraph_node_type: str) -> DocumentRepresentatio
         order_index=2,
         text_view_id=text_view.id,
         start_char=paragraph_start,
-        end_char=len(TEXT),
+        end_char=len(text),
     )
     quality = ParseQualityReport(
         id="pqr_hybrid_fixture",
         representation_id=representation_id,
-        metric_values={"text_char_count": len(TEXT)},
+        metric_values={"text_char_count": len(text)},
         analyzability=RepresentationAnalyzability.ACCEPTABLE,
     )
     template = DocumentRepresentation(
@@ -575,7 +760,7 @@ def _bundle(document_id: str, paragraph_node_type: str) -> DocumentRepresentatio
         parser_version="1",
         parser_config_digest="a" * 64,
         processing_task_fingerprint_id="ptf_hybrid_fixture",
-        input_blob_digest=hashlib.sha256(TEXT.encode()).hexdigest(),
+        input_blob_digest=hashlib.sha256(text.encode()).hexdigest(),
         canonical_output_digest="0" * 64,
         created_at=NOW,
     )

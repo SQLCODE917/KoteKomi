@@ -18,6 +18,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from kotekomi_application.context_planning import SourceSegment
 from kotekomi_application.extraction_stage_trace import (
+    ExtractionStageStatus,
     ExtractionStageTrace,
     validate_extraction_stage_trace_chain,
 )
@@ -281,8 +282,6 @@ class HybridExtractionPreview(BaseModel):
             ("diagnostics", self.diagnostics),
         ):
             _require_ordered_distinct(label, values)
-        if self.terminal_status is HybridPreviewStatus.PARTIAL and not self.candidates:
-            raise ValueError("A partial HybridExtractionPreview requires a MentionCandidate.")
         if tuple(sorted(self.observations, key=_observation_key)) != self.observations:
             raise ValueError("HybridExtractionPreview observations must use source order.")
         if tuple(sorted(self.candidates, key=_candidate_key)) != self.candidates:
@@ -356,10 +355,17 @@ class HybridExtractionPreview(BaseModel):
             set(interpretation_candidate_ids) != selected_candidate_ids
         ):
             raise ValueError("A complete HybridExtractionPreview requires every interpretation.")
-        if self.terminal_status is HybridPreviewStatus.PARTIAL and (
-            set(interpretation_candidate_ids) == selected_candidate_ids
-        ):
-            raise ValueError("A partial HybridExtractionPreview requires a failed interpretation.")
+        has_incomplete_stage = any(
+            trace.status is not ExtractionStageStatus.COMPLETED for trace in self.traces
+        )
+        if self.terminal_status is HybridPreviewStatus.COMPLETE and has_incomplete_stage:
+            raise ValueError("A complete HybridExtractionPreview cannot contain a failed stage.")
+        if self.terminal_status is HybridPreviewStatus.PARTIAL and not has_incomplete_stage:
+            raise ValueError(
+                "A partial HybridExtractionPreview requires a failed proposer or interpretation."
+            )
+        if self.terminal_status is HybridPreviewStatus.PARTIAL and not self.diagnostics:
+            raise ValueError("A partial HybridExtractionPreview requires a diagnostic.")
         if self.terminal_status is HybridPreviewStatus.BLOCKED and any(
             (
                 self.observations,

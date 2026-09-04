@@ -97,8 +97,12 @@ The operation creates execution records but does not change accepted intelligenc
 - HM-PRO-07: Each MentionObservation includes one or more ContextualKind type hints.
 - HM-PRO-08: A proposer score remains diagnostic evidence.
 - HM-PRO-09: The Pipeline requires both proposer executions to reach a terminal status.
-- HM-PRO-10: A missing proposer runtime produces a typed blocked result.
+- HM-PRO-10: A missing proposer runtime produces a failed outcome for that proposer.
 - HM-PRO-11: The Pipeline preserves complete raw proposer output before validation.
+- HM-PRO-12: One valid proposer result allows reconciliation to continue when the other proposer fails.
+- HM-PRO-13: One failed proposer makes the terminal Preview `partial` when the other proposer returns a valid result or valid abstention.
+- HM-PRO-14: Two failed proposers make the terminal Preview `blocked` and skip reconciliation.
+- HM-PRO-15: Each proposer failure remains visible in its ModelRun, ExtractionStageTrace, and Preview diagnostics.
 
 ### Boundary reconciliation
 
@@ -138,6 +142,10 @@ The operation creates execution records but does not change accepted intelligenc
 - HM-INT-13: Invalid model output creates no MentionInterpretation.
 - HM-INT-14: Invalid model output preserves the MentionCandidate and failed ModelRun.
 - HM-INT-15: An unclear label is a valid semantic judgment.
+- HM-INT-16: MentionCandidates with the same exact text in the same SourceSegment share one interpretation model execution.
+- HM-INT-17: Each reused interpretation remains a distinct MentionInterpretation bound to its own MentionCandidate.
+- HM-INT-18: One deterministic reuse trace identifies the original candidate, interpretation trace, ExtractionTask, and ModelRun.
+- HM-INT-19: Interpretation reuse never crosses a SourceSegment boundary or a literal-text difference.
 
 ### Diagnostic Gold
 
@@ -379,12 +387,28 @@ Therefore, a new model execution creates a new Preview identity.
 
 ## Behavior & Domain Rules
 
-The Pipeline requires both proposer results before it reconciles candidates.
+The Pipeline requires both proposer executions to terminate before it reconciles candidates.
 
-One blocked proposer produces a blocked HybridExtractionPreview and skips reconciliation.
+The proposer outcome matrix is:
 
-One proposer output that fails its complete output contract produces a blocked
-HybridExtractionPreview and skips reconciliation.
+```text
+GLiNER outcome       Qwen2.5 outcome      Pipeline result
+valid                valid                continue normally
+valid                failed               continue from GLiNER; partial
+failed               valid                continue from Qwen2.5; partial
+valid abstention     failed               continue with no observations from the abstaining proposer; partial
+failed               valid abstention     continue with no observations from the abstaining proposer; partial
+failed               failed               skip reconciliation; blocked
+```
+
+A valid result can contain zero or more source-valid observations.
+
+A missing runtime, runtime failure, output archival failure, invalid complete output contract, or
+missing typed proposer output counts as failure for that proposer.
+
+The Pipeline retains both proposer execution records and one trace per proposer and SourceSegment.
+
+A failed proposer does not erase valid observations from the other proposer.
 
 One valid proposer abstention supplies an empty proposal set.
 
@@ -406,7 +430,14 @@ The Pipeline persists completed interpretations even when another interpretation
 
 The terminal preview reports `complete`, `partial`, or `blocked`.
 
-A partial preview contains at least one valid MentionCandidate and one failed interpretation task.
+A partial preview caused by an interpretation failure contains at least one valid MentionCandidate
+and one failed interpretation task.
+
+A partial preview can instead contain no MentionCandidate when one proposer failed and the other
+returned a valid empty result or valid abstention.
+
+A partial preview can contain complete interpretations when its incompleteness comes only from one
+failed proposer.
 
 A complete preview can contain no MentionCandidate when both proposer executions terminate with
 valid empty results.
@@ -453,18 +484,37 @@ The Pipeline stores the canonical GLiNER Adapter output as the GLiNER ModelRun r
 
 The Pipeline stores the exact Qwen2.5 runtime output as the Qwen2.5 ModelRun raw output.
 
+### Same-segment interpretation reuse
+
+The interpretation task input cannot distinguish two MentionCandidates when their exact text and
+SourceSegment identity are equal.
+
+The Pipeline executes that semantic question once and deterministically maps the valid result to
+each distinct source-bound MentionCandidate.
+
+Each mapped MentionInterpretation keeps its candidate identity and its own ExtractionStageTrace.
+
+The reuse trace identifies the original candidate and trace and references the original
+ExtractionTask and ModelRun.
+
+A failed interpretation execution is reused for the same equivalence class so one identical task
+cannot produce contradictory completion states within one Preview.
+
 ## Acceptance Criteria
 
 - AC-HM-SRC-01: Pipeline tests prove representation and paragraph ownership validation.
 - AC-HM-SRC-02: Pipeline tests prove non-paragraph and missing nodes fail before model work.
 - AC-HM-PRO-01: Adapter tests prove both proposers receive identical SourceSegments.
-- AC-HM-PRO-02: Tests prove a missing proposer produces a typed blocked result.
+- AC-HM-PRO-02: Tests prove every row of the proposer outcome matrix and retention of both execution records.
+- AC-HM-PRO-03: Tests prove invalid individual observations remain isolated from other valid observations.
 - AC-HM-BND-01: Application tests prove equal, parenthetical, possessive, and ambiguous outcomes.
 - AC-HM-BND-02: Perturbation tests prove scores, order, and proposer identity do not select boundaries.
 - AC-HM-ONT-01: Tests prove the task fingerprint changes when the guideline card changes.
 - AC-HM-INT-01: Application tests prove every valid label combination maps without source drift.
 - AC-HM-INT-02: Negative tests prove unknown labels and support segments create no interpretation.
 - AC-HM-INT-03: Tests prove an unclear value remains distinct from invalid model output.
+- AC-HM-INT-04: Tests prove exact same-segment interpretation input executes once and produces distinct source-bound interpretations and reuse traces.
+- AC-HM-INT-05: Tests prove reuse does not cross SourceSegment or literal-text boundaries.
 - AC-HM-GOLD-01: Catalog tests prove source identity, exact characters, and complete expected labels.
 - AC-HM-GOLD-02: The canonical run reports each contextual dimension against the reviewed catalog.
 - AC-HM-PRV-01: Restart tests prove the PreviewStore preserves immutable canonical JSON.
