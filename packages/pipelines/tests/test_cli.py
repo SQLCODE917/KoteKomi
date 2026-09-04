@@ -1,6 +1,7 @@
 import json
 from collections.abc import Generator
 from contextlib import contextmanager
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import cast
 
@@ -32,6 +33,11 @@ from kotekomi_application import (
     ModelRunLogEntry,
     ModelRunLogLedger,
     ModelRuntimeStatus,
+    ReviewActionPlan,
+    ReviewActionPlanInputRequirement,
+    ReviewNextResult,
+    ReviewPacket,
+    ReviewPacketMetadata,
     build_hybrid_atomic_claim_preview,
     build_hybrid_entity_grounding_preview_record,
     build_hybrid_event_frame_preview,
@@ -46,7 +52,7 @@ from kotekomi_application import (
     hybrid_extraction_preview_sha256,
     hybrid_reference_preview_sha256,
 )
-from kotekomi_domain import hybrid_event_semantics_profile_sha256
+from kotekomi_domain import ReviewStatus, hybrid_event_semantics_profile_sha256
 from kotekomi_pipelines.cli import main
 from kotekomi_pipelines.config import (
     CheckoutBuildIdentityError,
@@ -112,6 +118,118 @@ def test_review_commands_expose_optional_canonical_predicate() -> None:
     assert approve.canonical_predicate == "has_policy_conflict_with"
     assert run_next.canonical_predicate == "has_policy_conflict_with"
     assert edit.canonical_predicate == "has_policy_conflict_with"
+
+
+def test_review_next_text_renders_scoped_copyable_action_templates() -> None:
+    packet = _fixture_review_packet("Organization", "org_example")
+    action_plans = (
+        _fixture_review_action_plan("approve", ("reviewer",)),
+        _fixture_review_action_plan("reject", ("reviewer", "reason")),
+        _fixture_review_action_plan(
+            "edit",
+            ("reviewer", "accepted_record_json"),
+        ),
+    )
+
+    rendered = cli.review_next_text(
+        ReviewNextResult(True, None, packet, action_plans),
+        config_path=Path("/tmp/kotekomi.toml"),
+        ledger_path_override=Path("/tmp/kotekomi.db"),
+    )
+
+    assert "uv run kotekomi \\" in rendered
+    assert "--config /tmp/kotekomi.toml \\" in rendered
+    assert "--decision approve \\" in rendered
+    assert "--reviewer <REVIEWER_NAME> \\" in rendered
+    assert "--reason <REJECTION_REASON>" in rendered
+    assert "--accepted-record-json <PATH_TO_CORRECTED_RECORD_JSON>" in rendered
+    assert "--record-type Organization \\" in rendered
+    assert "--source-id src_example \\" in rendered
+    assert "--document-id doc_example \\" in rendered
+    assert "--ledger-path /tmp/kotekomi.db" in rendered
+    assert "Replace placeholders before running:" in rendered
+    assert "missing reviewer" not in rendered
+    assert (
+        "--decision approve \\\n"
+        "      --record-type Organization \\\n"
+        "      --source-id src_example \\\n"
+        "      --document-id doc_example \\\n"
+        "      --ledger-path /tmp/kotekomi.db \\\n"
+        "      --reviewer <REVIEWER_NAME>"
+    ) in rendered
+    reject_section = rendered.split("  reject:\n", maxsplit=1)[1].split("  edit:\n", maxsplit=1)[0]
+    assert reject_section.index("--document-id") < reject_section.index("--reviewer")
+    assert reject_section.index("--reviewer") < reject_section.index("--reason")
+
+
+def test_review_next_assertion_template_requests_canonical_predicate() -> None:
+    packet = _fixture_review_packet("Assertion", "ast_example")
+    action_plan = _fixture_review_action_plan(
+        "approve",
+        ("reviewer", "canonical_predicate"),
+    )
+
+    rendered = cli.review_next_text(
+        ReviewNextResult(True, None, packet, (action_plan,)),
+        config_path=None,
+        ledger_path_override=None,
+    )
+
+    assert "--canonical-predicate <LOWER_SNAKE_CASE_PREDICATE>" in rendered
+    assert "--config" not in rendered
+    assert rendered.index("--document-id") < rendered.index("--reviewer")
+    assert rendered.index("--reviewer") < rendered.index("--canonical-predicate")
+
+
+def _fixture_review_packet(record_type: str, stable_label: str) -> ReviewPacket:
+    timestamp = datetime(2026, 9, 4, tzinfo=UTC)
+    return ReviewPacket(
+        proposed_change_id="pcg_example",
+        review_status=ReviewStatus.PENDING,
+        record_type=record_type,
+        stable_label=stable_label,
+        proposed_record_json={"id": stable_label},
+        metadata=ReviewPacketMetadata(
+            source_id="src_example",
+            document_id="doc_example",
+            model_name=None,
+            prompt_id=None,
+            provenance_activity_id="prv_example",
+            created_at=timestamp,
+            updated_at=timestamp,
+        ),
+        evidence_contexts=(),
+        reference_contexts=(),
+        assertion_context=None,
+    )
+
+
+def _fixture_review_action_plan(
+    action: str,
+    requirement_names: tuple[str, ...],
+) -> ReviewActionPlan:
+    descriptions = {
+        "accepted_record_json": "Path to accepted record JSON.",
+        "canonical_predicate": "Reviewer-selected canonical predicate.",
+        "reason": "Reason for rejecting the ProposedChange.",
+        "reviewer": "Reviewer name for the review ProvenanceActivity.",
+    }
+    return ReviewActionPlan(
+        action=action,
+        command=f"kotekomi review run-next --decision {action}",
+        argv=(),
+        ready_to_execute=False,
+        missing_inputs=tuple(
+            ReviewActionPlanInputRequirement(
+                name=name,
+                kind="string",
+                required=True,
+                description=descriptions[name],
+            )
+            for name in requirement_names
+        ),
+        blockers=(),
+    )
 
 
 def test_hybrid_mention_preview_command_routes_explicit_source_identity(

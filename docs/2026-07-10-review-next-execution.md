@@ -48,6 +48,12 @@ Forbidden approaches:
 - Approve action plans must require a reviewer.
 - Reject action plans must require a reviewer and reason.
 - Edit action plans must require a reviewer and accepted record JSON path.
+- Human text must render each action as a copyable `uv run kotekomi` command template.
+- A command template must retain the explicitly selected configuration and Ledger override.
+- A command template must include the selected Record type, Source ID, and Document ID.
+- A command template must use unquoted angle-bracket metavariables for missing human inputs.
+- A command template must place missing human inputs after all pre-populated arguments.
+- Human text must describe each metavariable as a required replacement.
 - `review next --format json` must emit structured JSON.
 - `review next` must return `has_next=false` when no matching pending ProposedChange exists.
 - `review status` must recommend `kotekomi review next` when review is required.
@@ -187,6 +193,22 @@ kotekomi review next --source-id <source_id>
 kotekomi review next --document-id <document_id>
 ```
 
+Human text renders review actions in this form:
+
+```text
+uv run kotekomi \
+  --config <config_path> \
+  review run-next \
+  --decision approve \
+  --record-type <record_type> \
+  --source-id <source_id> \
+  --document-id <document_id> \
+  --reviewer <REVIEWER_NAME>
+```
+
+The reviewer replaces every angle-bracket metavariable before execution.
+An unchanged metavariable makes the shell command fail before review mutation.
+
 ## 10. Behavior & Domain Rules
 
 Review-Next selection uses the existing Review Queue order.
@@ -223,6 +245,9 @@ review next fails before rendering output.
 - Application tests prove Review-Next JSON includes structured item, packet, and action plans.
 - Application tests prove Review-Next fails fast on malformed selected ProposedChange records.
 - Pipeline tests prove fixture `review next` renders the first pending Review Packet.
+- Pipeline tests prove human action templates retain explicit configuration and Ledger paths.
+- Pipeline tests prove human action templates bind the selected record scope.
+- Pipeline tests prove human action templates expose safe reviewer, reason, record, and predicate metavariables.
 - Pipeline tests prove fixture `review next --format json` parses as JSON.
 - Pipeline tests prove `review next` advances after explicit approval.
 - Pipeline tests prove `review status` recommends `kotekomi review next`.
@@ -236,6 +261,8 @@ review next fails before rendering output.
 JSON output is the agent contract.
 Text output is for humans.
 Both outputs derive from the same Application Layer DTOs.
+The Pipeline adds invocation paths and shell metavariables only to human text.
+The Application Layer does not receive configuration paths.
 
 The command reads local Ledger state only.
 The command does not fetch network content.

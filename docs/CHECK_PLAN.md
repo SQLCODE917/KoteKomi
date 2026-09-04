@@ -86,7 +86,7 @@
 - run ProposedChange review Application test with `uv run pytest packages/application/tests/test_review_proposed_change.py`
 - run ProposedChange review Pipeline fixture with `uv run pytest packages/pipelines/tests/test_review_proposed_change.py`
 - run Review Queue and Review Packet Application tests with `uv run pytest packages/application/tests/test_review_queue_packet.py`
-- run Review Queue and Review Packet Pipeline fixture with `uv run pytest packages/pipelines/tests/test_review_queue_packet.py`
+- run Review Queue, Review Packet, and copyable review-action CLI checks with `uv run pytest packages/pipelines/tests/test_cli.py -k review`
 - verify Review Readiness and agent JSON state with `uv run pytest packages/application/tests/test_review_queue_packet.py packages/pipelines/tests/test_review_queue_packet.py`
 - verify Review-Next execution with `uv run pytest packages/application/tests/test_review_queue_packet.py packages/pipelines/tests/test_review_queue_packet.py`
 - verify Explicit Review-Next Decision Execution with `uv run pytest packages/application/tests/test_review_proposed_change.py packages/pipelines/tests/test_review_proposed_change.py`

@@ -7,6 +7,7 @@ import contextlib
 import hashlib
 import io
 import json
+import shlex
 import sqlite3
 import sys
 from collections.abc import Mapping
@@ -99,6 +100,7 @@ from kotekomi_application import (
     QueryDocumentSemanticRetrievalCommand,
     QueryKnowledgeGraphCommand,
     QueryLedgerRetrievalCommand,
+    ReviewActionPlan,
     ReviewDrainInput,
     ReviewDrainResult,
     ReviewDrainStoppedReason,
@@ -612,6 +614,8 @@ def main(argv: list[str] | None = None) -> int:
         )
         return show_next_reviewed_proposed_change(
             config=config,
+            config_path=args.config,
+            ledger_path_override=args.ledger_path,
             record_type=args.record_type,
             source_id=args.source_id,
             document_id=args.document_id,
@@ -3142,6 +3146,8 @@ def list_reviewed_proposed_changes(
 def show_next_reviewed_proposed_change(
     *,
     config: PipelineConfig,
+    config_path: Path | None,
+    ledger_path_override: Path | None,
     record_type: str | None,
     source_id: str | None,
     document_id: str | None,
@@ -3161,7 +3167,13 @@ def show_next_reviewed_proposed_change(
         print(json.dumps(review_next_result_to_json(result), indent=2, sort_keys=True))
         return 0
 
-    print(_review_next_text(result))
+    print(
+        review_next_text(
+            result,
+            config_path=config_path,
+            ledger_path_override=ledger_path_override,
+        )
+    )
     return 0
 
 
@@ -3645,7 +3657,12 @@ def _review_packet_text(packet: ReviewPacket) -> str:
     return "\n".join(lines)
 
 
-def _review_next_text(result: ReviewNextResult) -> str:
+def review_next_text(
+    result: ReviewNextResult,
+    *,
+    config_path: Path | None,
+    ledger_path_override: Path | None,
+) -> str:
     if not result.has_next:
         return "Next review packet: none"
     if result.packet is None:
@@ -3660,19 +3677,79 @@ def _review_next_text(result: ReviewNextResult) -> str:
         "Review action plans:",
     ]
     for action_plan in result.action_plans:
-        lines.append(
-            f"  {action_plan.action}: {action_plan.command} "
-            f"(ready: {_bool_text(action_plan.ready_to_execute)})"
+        lines.append(f"  {action_plan.action}:")
+        lines.extend(
+            _review_action_command_template(
+                action_plan,
+                packet=result.packet,
+                config_path=config_path,
+                ledger_path_override=ledger_path_override,
+            )
         )
         if action_plan.missing_inputs:
+            lines.append("    Replace placeholders before running:")
             for missing_input in action_plan.missing_inputs:
                 lines.append(
-                    f"    missing {missing_input.name} ({missing_input.kind}): "
+                    f"      {_review_input_placeholder(missing_input.name)}: "
                     f"{missing_input.description}"
                 )
-        else:
-            lines.append("    missing inputs: none")
     return "\n".join(lines)
+
+
+def _review_action_command_template(
+    action_plan: ReviewActionPlan,
+    *,
+    packet: ReviewPacket,
+    config_path: Path | None,
+    ledger_path_override: Path | None,
+) -> tuple[str, ...]:
+    groups: list[tuple[str, ...]] = [("uv", "run", "kotekomi")]
+    if config_path is not None:
+        groups.append(("--config", str(config_path)))
+    groups.extend(
+        (
+            ("review", "run-next"),
+            ("--decision", action_plan.action),
+        )
+    )
+    groups.append(("--record-type", packet.record_type))
+    if packet.metadata.source_id is not None:
+        groups.append(("--source-id", packet.metadata.source_id))
+    if packet.metadata.document_id is not None:
+        groups.append(("--document-id", packet.metadata.document_id))
+    if ledger_path_override is not None:
+        groups.append(("--ledger-path", str(ledger_path_override)))
+    for requirement in action_plan.missing_inputs:
+        groups.append(
+            (
+                "--" + requirement.name.replace("_", "-"),
+                _review_input_placeholder(requirement.name),
+            )
+        )
+    return tuple(
+        f"    {'  ' if index else ''}{' '.join(_shell_template_token(item) for item in group)}"
+        + (" \\" if index < len(groups) - 1 else "")
+        for index, group in enumerate(groups)
+    )
+
+
+def _shell_template_token(value: str) -> str:
+    if value.startswith("<") and value.endswith(">"):
+        return value
+    return shlex.quote(value)
+
+
+def _review_input_placeholder(name: str) -> str:
+    placeholders = {
+        "accepted_record_json": "<PATH_TO_CORRECTED_RECORD_JSON>",
+        "canonical_predicate": "<LOWER_SNAKE_CASE_PREDICATE>",
+        "reason": "<REJECTION_REASON>",
+        "reviewer": "<REVIEWER_NAME>",
+    }
+    try:
+        return placeholders[name]
+    except KeyError as error:
+        raise ValueError(f"Unknown review action input: {name}") from error
 
 
 def _review_next_decision_text(result: ReviewNextDecisionResult) -> str:
