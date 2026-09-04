@@ -23,6 +23,14 @@ from kotekomi_application.analysis_coverage import (
     AnalysisCoverageLedger,
     load_frozen_analysis_plan,
 )
+from kotekomi_application.document_entity_reconciliation import (
+    build_document_entity_reconciliation_preview,
+    build_reconciled_document_proposal_plan,
+    canonical_document_entity_reconciliation_preview_bytes,
+    canonical_reconciled_document_proposal_plan_bytes,
+    load_document_entity_reconciliation_preview,
+    load_reconciled_document_proposal_plan,
+)
 from kotekomi_application.extraction_stage_trace import (
     ExtractionStageTrace,
     extraction_stage_trace_to_json,
@@ -37,6 +45,7 @@ from kotekomi_application.hybrid_document_orchestration import (
     load_hybrid_document_coverage_report,
     read_hybrid_stage_output,
 )
+from kotekomi_application.hybrid_proposed_changes import HybridProposalPlan
 from kotekomi_application.model_run_logging import (
     ModelRunLogEntry,
     model_run_log_entry,
@@ -455,6 +464,7 @@ def _load_hybrid_evidence(
     )
     traces: list[ExtractionStageTrace] = []
     model_run_ids: set[str] = set()
+    proposal_plans: list[HybridProposalPlan] = []
     for record in report.records:
         receipt_bytes = archive.read_hybrid_paragraph_receipt(record.receipt_id)
         if hashlib.sha256(receipt_bytes).hexdigest() != record.receipt_sha256:
@@ -493,6 +503,8 @@ def _load_hybrid_evidence(
                 raise ValueError("Hybrid stage output traces are invalid.")
             output_traces = tuple(cast(ExtractionStageTrace, item) for item in candidate_traces)
             traces.extend(output_traces)
+            if isinstance(output, HybridProposalPlan):
+                proposal_plans.append(output)
             raw_model_run_ids = getattr(output, "model_run_ids", ())
             if not isinstance(raw_model_run_ids, tuple):
                 raise ValueError("Hybrid stage output ModelRun IDs are invalid.")
@@ -500,6 +512,61 @@ def _load_hybrid_evidence(
             if not all(isinstance(item, str) for item in candidate_model_run_ids):
                 raise ValueError("Hybrid stage output ModelRun IDs are invalid.")
             model_run_ids.update(cast(tuple[str, ...], candidate_model_run_ids))
+    reconciliation = build_document_entity_reconciliation_preview(
+        tuple(proposal_plans),
+        cast(HybridDocumentLedger, ledger),
+        representation_id=report.representation_id,
+    )
+    try:
+        archive.read_document_entity_reconciliation_preview(reconciliation.id)
+    except FileNotFoundError:
+        if change_set.proposed_change_ids != report.proposed_change_ids:
+            raise ValueError("Ingestion HP-9 reconciliation evidence is missing.") from None
+    else:
+        reconciliation = load_document_entity_reconciliation_preview(
+            reconciliation.id,
+            ledger=cast(HybridDocumentLedger, ledger),
+            archive=archive,
+        )
+        reconciliation_bytes = canonical_document_entity_reconciliation_preview_bytes(
+            reconciliation
+        )
+        evidence.append(
+            IngestionEvidenceEntry(
+                "derived",
+                "DocumentEntityReconciliationPreview",
+                reconciliation.id,
+                hashlib.sha256(reconciliation_bytes).hexdigest(),
+                archive.ingestion_evidence_path(
+                    "DocumentEntityReconciliationPreview", reconciliation.id
+                ),
+            )
+        )
+        document_plan = build_reconciled_document_proposal_plan(
+            reconciliation,
+            tuple(proposal_plans),
+            cast(HybridDocumentLedger, ledger),
+        )
+        document_plan = load_reconciled_document_proposal_plan(
+            document_plan.id,
+            ledger=cast(HybridDocumentLedger, ledger),
+            archive=archive,
+        )
+        document_plan_bytes = canonical_reconciled_document_proposal_plan_bytes(document_plan)
+        if change_set.proposed_change_ids != tuple(
+            item.id for item in document_plan.proposed_changes
+        ):
+            raise ValueError("IngestionChangeSet does not match its HP-9 Document Plan.")
+        evidence.append(
+            IngestionEvidenceEntry(
+                "derived",
+                "ReconciledDocumentProposalPlan",
+                document_plan.id,
+                hashlib.sha256(document_plan_bytes).hexdigest(),
+                archive.ingestion_evidence_path("ReconciledDocumentProposalPlan", document_plan.id),
+            )
+        )
+        traces.extend(reconciliation.traces)
     trace_by_id: dict[str, ExtractionStageTrace] = {}
     for trace in traces:
         existing = trace_by_id.setdefault(trace.id, trace)

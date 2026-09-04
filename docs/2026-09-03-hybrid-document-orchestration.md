@@ -38,7 +38,8 @@ retains the earlier gap.
 3. The Application Layer plans every paragraph in reading order under one Hybrid Pipeline Policy.
 4. The Application Layer reuses or runs HP-1 through HP-7 for each paragraph.
 5. The Application Layer reconciles every Paragraph Receipt into one Document Coverage Report.
-6. One Ledger transaction publishes pending proposals and closes the IngestionChangeSet.
+6. HP-9 reconciles document-local Actor and Organization candidates.
+7. One Ledger transaction publishes the reconciled proposals and closes the IngestionChangeSet.
 
 ## Goals
 
@@ -110,7 +111,7 @@ retains the earlier gap.
 - HDO-COV-09: The Archive stores the canonical Document Coverage Report.
 - HDO-COV-10: The Document Coverage Report pins every Paragraph Receipt digest.
 - HDO-COV-11: The IngestionChangeSet pins the Document Coverage Report digest.
-- HDO-COV-12: The IngestionChangeSet contains the distinct union of HP-7 proposal IDs.
+- HDO-COV-12: The IngestionChangeSet contains only ProposedChange IDs from the HP-9 Document Proposal Plan.
 - HDO-COV-13: One Ledger transaction stores the AnalysisRun scope and pending proposals.
 - HDO-COV-14: The same transaction stores the IngestionChangeSet and completes the IngestionRun.
 - HDO-COV-15: A closure failure rolls back all new records from HDO-COV-13 and HDO-COV-14.
@@ -213,6 +214,8 @@ The next ingestion of identical bytes and policy reuses those receipts.
 HP-8 does not change prompts, model schemas, ontology semantics, or HP-7 admission.
 
 Reviewer approval remains the only path from ProposedChange to accepted intelligence.
+
+HP-8 submits paragraph HP-7 Plans only through the HP-9 reconciliation contract.
 
 Historical CIR-2 records remain readable Ledger history.
 

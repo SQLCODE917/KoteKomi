@@ -2376,7 +2376,10 @@ def ingest_user_file(*, config_path: Path | None, source_file_path: Path, source
         f"{len(extraction.closure.change_set.proposed_change_ids)} proposed changes; "
         f"{report.complete_paragraph_count}/{report.required_paragraph_count} paragraphs complete; "
         f"{report.gap_paragraph_count} gaps; "
-        f"{extraction.reused_paragraph_count} reused"
+        f"{extraction.reused_paragraph_count} reused; "
+        f"{len(extraction.closure.reconciliation_preview.clusters)} candidate identities; "
+        f"reconciliation {extraction.closure.reconciliation_preview.id}; "
+        f"proposal plan {extraction.closure.document_proposal_plan.id}"
     )
     return 0
 

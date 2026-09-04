@@ -255,6 +255,10 @@ Each deliverable produces evidence that defines the next TDD.
 
 HP-1 through HP-8 have accepted, implemented, and verified TDDs.
 
+HP-9 reconciles paragraph-local named candidates before document proposal submission.
+
+HP-9 is implemented with focused verification and awaits canonical document validation.
+
 | Deliverable | User story | Precondition | Postcondition |
 | --- | --- | --- | --- |
 | [HP-1 Hybrid Mention Interpretation MVP](2026-09-01-hybrid-mention-interpretation-mvp.md) | A reviewer can inspect source-valid mentions and their separate contextual dimensions. | Authoritative paragraphs, proposer Adapters, ORG-R1 rules, and stage traces exist. | One paragraph produces a durable HybridExtractionPreview with no ProposedChange or accepted state change. |
@@ -267,6 +271,7 @@ HP-1 through HP-8 have accepted, implemented, and verified TDDs.
 | [HP-8 Hybrid Document Orchestration](2026-09-03-hybrid-document-orchestration.md) | A user receives one reviewable candidate change set from an ingested document. | HP-7 converts one HP-6 Preview into a reviewable proposal batch. | One ingestion runs the Hybrid Pipeline over its planned document scope and closes one IngestionChangeSet. |
 | [HP-8.1 Mention Interpretation Batching](2026-09-03-hp8-mention-interpretation-batching.md) | Determine whether bounded interpretation batching can reduce model work without losing meaning. | HP-8 records complete model and paragraph evidence. | The rejected experiment preserves its full evidence and leaves production mention behavior unchanged. |
 | [HP-8.2 Semantic Support Batching](2026-09-03-hp8-semantic-support-batching.md) | Determine whether support judgments can share one model request without losing statement-level meaning. | HP-8 supplies complete source-support and model evidence. | The rejected experiment preserves its full evidence and leaves production support behavior unchanged. |
+| [HP-9 Evidence-Backed Document Entity Reconciliation](2026-09-04-evidence-backed-document-entity-reconciliation.md) | A reviewer sees one candidate identity with every source mention. | HP-8 accounts for every paragraph HP-7 Plan. | HP-8 submits one document-level proposal batch that uses reconciled Actor and Organization identities. |
 
 ## Validation strategy
 

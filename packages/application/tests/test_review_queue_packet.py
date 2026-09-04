@@ -334,6 +334,48 @@ def test_review_packet_marks_proposed_organization_object_as_pending() -> None:
     )
 
 
+def test_review_packet_shows_every_reconciled_entity_mention() -> None:
+    change = proposed_change("pcg_anthropic", "Organization", organization_json())
+    first = cast(dict[str, JsonValue], change.proposed_json["evidence"])
+    second = {
+        **first,
+        "exact_text": "Anthropic later",
+        "location": {"section": "later"},
+    }
+    change = change.model_copy(
+        update={
+            "proposed_json": change.proposed_json
+            | {
+                "identity_reconciliation": {
+                    "preview_id": "erp_fixture",
+                    "mention_evidence": [first, second],
+                }
+            }
+        }
+    )
+    ledger = seeded_ledger((change,))
+
+    packet = get_review_packet(ReviewPacketInput(change.id), ledger)
+
+    assert tuple(item.exact_text for item in packet.evidence_contexts) == (
+        "Model evidence text.",
+        "Anthropic later",
+    )
+
+
+def test_review_packet_rejects_malformed_reconciled_mention_evidence() -> None:
+    change = proposed_change("pcg_anthropic", "Organization", organization_json())
+    change = change.model_copy(
+        update={
+            "proposed_json": change.proposed_json
+            | {"identity_reconciliation": {"mention_evidence": "not-a-list"}}
+        }
+    )
+
+    with pytest.raises(ValueError, match="requires mention evidence"):
+        get_review_packet(ReviewPacketInput(change.id), seeded_ledger((change,)))
+
+
 def test_review_packet_fails_fast_on_malformed_or_unsupported_proposed_change() -> None:
     malformed = ProposedChange(
         id="pcg_malformed",

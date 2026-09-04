@@ -522,24 +522,54 @@ def submit_hybrid_proposal_plan(
     ledger: HybridProposalLedger,
 ) -> str:
     """Atomically publish a new pending batch or prove exact prior publication."""
-    _validate_planned_references(plan, ledger)
-    existing_activity = ledger.get_provenance_activity(plan.provenance_activity_id)
+    return submit_planned_proposal_batch(
+        proposed_changes=plan.proposed_changes,
+        provenance_activity_id=plan.provenance_activity_id,
+        activity_type=HYBRID_PROPOSAL_ACTIVITY_TYPE,
+        input_ids=(plan.parent_preview_id,),
+        submitted_at=submitted_at,
+        ledger=ledger,
+        error_label="HP-7",
+    )
+
+
+def submit_planned_proposal_batch(
+    *,
+    proposed_changes: tuple[PlannedProposedChange, ...],
+    provenance_activity_id: str,
+    activity_type: str,
+    input_ids: tuple[str, ...],
+    submitted_at: datetime,
+    ledger: HybridProposalLedger,
+    error_label: str,
+) -> str:
+    """Atomically publish a validated proposal batch or prove exact prior publication."""
+    validate_planned_proposed_changes(proposed_changes, ledger, error_label=error_label)
+    existing_activity = ledger.get_provenance_activity(provenance_activity_id)
     existing_changes = tuple(
         item
-        for planned in plan.proposed_changes
+        for planned in proposed_changes
         if (item := ledger.get_proposed_change(planned.id)) is not None
     )
     if existing_activity is not None or existing_changes:
-        if existing_activity is None or len(existing_changes) != len(plan.proposed_changes):
-            raise ValueError("HP-7 found a partially published proposal batch.")
-        _validate_existing_publication(plan, existing_activity, existing_changes)
+        if existing_activity is None or len(existing_changes) != len(proposed_changes):
+            raise ValueError(f"{error_label} found a partially published proposal batch.")
+        _validate_existing_publication(
+            proposed_changes=proposed_changes,
+            provenance_activity_id=provenance_activity_id,
+            activity_type=activity_type,
+            input_ids=input_ids,
+            activity=existing_activity,
+            changes=existing_changes,
+            error_label=error_label,
+        )
         return "reused"
     activity = ProvenanceActivity(
-        id=plan.provenance_activity_id,
-        activity_type=HYBRID_PROPOSAL_ACTIVITY_TYPE,
+        id=provenance_activity_id,
+        activity_type=activity_type,
         agent=HYBRID_PROPOSAL_AGENT,
-        input_ids=(plan.parent_preview_id,),
-        output_ids=tuple(item.id for item in plan.proposed_changes),
+        input_ids=input_ids,
+        output_ids=tuple(item.id for item in proposed_changes),
         occurred_at=submitted_at,
     )
     changes = tuple(
@@ -553,7 +583,7 @@ def submit_hybrid_proposal_plan(
             created_at=submitted_at,
             updated_at=submitted_at,
         )
-        for item in plan.proposed_changes
+        for item in proposed_changes
     )
     ledger.commit_hybrid_proposal_batch(
         provenance_activity=activity,
@@ -562,23 +592,26 @@ def submit_hybrid_proposal_plan(
     return "created"
 
 
-def _validate_planned_references(
-    plan: HybridProposalPlan,
+def validate_planned_proposed_changes(
+    proposed_changes: tuple[PlannedProposedChange, ...],
     ledger: HybridProposalLedger,
+    *,
+    error_label: str = "Proposal batch",
 ) -> None:
+    """Validate typed proposal bodies and all planned-or-accepted references."""
     planned_records: dict[str, str] = {}
-    for change in plan.proposed_changes:
+    for change in proposed_changes:
         record_type = change.proposed_json.get("record_type")
         record = change.proposed_json.get("record")
         if not isinstance(record_type, str) or not isinstance(record, dict):
-            raise ValueError("HP-7 proposal is missing its typed record body.")
+            raise ValueError(f"{error_label} proposal is missing its typed record body.")
         record_id = record.get("id")
         if not isinstance(record_id, str) or not record_id:
-            raise ValueError("HP-7 proposal record is missing its identity.")
+            raise ValueError(f"{error_label} proposal record is missing its identity.")
         if record_id in planned_records:
-            raise ValueError("HP-7 proposal batch repeats one record identity.")
+            raise ValueError(f"{error_label} repeats one record identity.")
         planned_records[record_id] = record_type
-    for change in plan.proposed_changes:
+    for change in proposed_changes:
         record_type = cast(str, change.proposed_json["record_type"])
         record = cast(dict[str, JsonValue], change.proposed_json["record"])
         if record_type == "Actor":
@@ -588,42 +621,78 @@ def _validate_planned_references(
         elif record_type == "Event":
             event = Event.model_validate_json(_canonical_json(record))
             for actor_id in event.participant_actor_ids:
-                _require_planned_or_accepted(actor_id, "Actor", planned_records, ledger.get_actor)
+                _require_planned_or_accepted(
+                    actor_id,
+                    "Actor",
+                    planned_records,
+                    ledger.get_actor,
+                    error_label,
+                )
             for organization_id in event.participant_organization_ids:
                 _require_planned_or_accepted(
                     organization_id,
                     "Organization",
                     planned_records,
                     ledger.get_organization,
+                    error_label,
                 )
         elif record_type == "Assertion":
             assertion = ProposedAssertion.model_validate_json(_canonical_json(record))
-            _require_entity_reference(assertion.subject_entity_id, planned_records, ledger)
+            _require_entity_reference(
+                assertion.subject_entity_id,
+                planned_records,
+                ledger,
+                error_label,
+            )
             if assertion.object_entity_id is not None:
-                _require_entity_reference(assertion.object_entity_id, planned_records, ledger)
+                _require_entity_reference(
+                    assertion.object_entity_id,
+                    planned_records,
+                    ledger,
+                    error_label,
+                )
             if any(
                 ledger.get_evidence_target(item) is None for item in assertion.evidence_target_ids
             ):
-                raise ValueError("HP-7 Assertion references missing source evidence.")
+                raise ValueError(f"{error_label} Assertion references missing source evidence.")
         else:
-            raise ValueError(f"HP-7 does not support proposal record type: {record_type}")
+            raise ValueError(f"{error_label} does not support record type: {record_type}")
 
 
 def _require_entity_reference(
     record_id: str,
     planned_records: dict[str, str],
     ledger: HybridProposalLedger,
+    error_label: str,
 ) -> None:
     if record_id.startswith("act_"):
-        _require_planned_or_accepted(record_id, "Actor", planned_records, ledger.get_actor)
+        _require_planned_or_accepted(
+            record_id,
+            "Actor",
+            planned_records,
+            ledger.get_actor,
+            error_label,
+        )
     elif record_id.startswith("org_"):
         _require_planned_or_accepted(
-            record_id, "Organization", planned_records, ledger.get_organization
+            record_id,
+            "Organization",
+            planned_records,
+            ledger.get_organization,
+            error_label,
         )
     elif record_id.startswith("evt_"):
-        _require_planned_or_accepted(record_id, "Event", planned_records, ledger.get_event)
+        _require_planned_or_accepted(
+            record_id,
+            "Event",
+            planned_records,
+            ledger.get_event,
+            error_label,
+        )
     else:
-        raise ValueError(f"HP-7 Assertion uses an unsupported entity identity: {record_id}")
+        raise ValueError(
+            f"{error_label} Assertion uses an unsupported entity identity: {record_id}"
+        )
 
 
 def _require_planned_or_accepted(
@@ -631,14 +700,15 @@ def _require_planned_or_accepted(
     expected_type: str,
     planned_records: dict[str, str],
     accepted_lookup: Callable[[str], object | None],
+    error_label: str,
 ) -> None:
     planned_type = planned_records.get(record_id)
     if planned_type is not None:
         if planned_type != expected_type:
-            raise ValueError("HP-7 proposal reference has the wrong record type.")
+            raise ValueError(f"{error_label} reference has the wrong record type.")
         return
     if accepted_lookup(record_id) is None:
-        raise ValueError(f"HP-7 proposal references missing {expected_type}: {record_id}")
+        raise ValueError(f"{error_label} references missing {expected_type}: {record_id}")
 
 
 def run_hybrid_proposal_submission(
@@ -1235,19 +1305,25 @@ def _decision_id(
 
 
 def _validate_existing_publication(
-    plan: HybridProposalPlan,
+    *,
+    proposed_changes: tuple[PlannedProposedChange, ...],
+    provenance_activity_id: str,
+    activity_type: str,
+    input_ids: tuple[str, ...],
     activity: ProvenanceActivity,
     changes: tuple[ProposedChange, ...],
+    error_label: str,
 ) -> None:
     if (
-        activity.activity_type != HYBRID_PROPOSAL_ACTIVITY_TYPE
+        activity.id != provenance_activity_id
+        or activity.activity_type != activity_type
         or activity.agent != HYBRID_PROPOSAL_AGENT
-        or activity.input_ids != (plan.parent_preview_id,)
-        or activity.output_ids != tuple(item.id for item in plan.proposed_changes)
+        or activity.input_ids != input_ids
+        or activity.output_ids != tuple(item.id for item in proposed_changes)
     ):
-        raise ValueError("HP-7 existing provenance activity conflicts with the Plan.")
+        raise ValueError(f"{error_label} existing provenance activity conflicts with its Plan.")
     actual = {item.id: item for item in changes}
-    for planned in plan.proposed_changes:
+    for planned in proposed_changes:
         existing = actual[planned.id]
         if (
             existing.proposed_json != planned.proposed_json
@@ -1255,7 +1331,7 @@ def _validate_existing_publication(
             or existing.document_id != planned.document_id
             or existing.provenance_activity_id != planned.provenance_activity_id
         ):
-            raise ValueError("HP-7 existing ProposedChange conflicts with the Plan.")
+            raise ValueError(f"{error_label} existing ProposedChange conflicts with its Plan.")
 
 
 def _plan_id(payload: dict[str, JsonValue]) -> str:

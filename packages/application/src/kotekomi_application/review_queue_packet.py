@@ -737,11 +737,30 @@ def _evidence_contexts(
     ledger_repository: ReviewQueuePacketLedger,
 ) -> tuple[ReviewEvidenceContext, ...]:
     contexts: list[ReviewEvidenceContext] = []
-    evidence = proposed_change.proposed_json.get("evidence")
-    if isinstance(evidence, dict):
-        contexts.append(
-            _evidence_context_from_json(cast(dict[str, JsonValue], evidence), ledger_repository)
-        )
+    reconciliation = proposed_change.proposed_json.get("identity_reconciliation")
+    if reconciliation is not None and not isinstance(reconciliation, dict):
+        raise ValueError("Identity reconciliation evidence must be a JSON object.")
+    has_reconciliation_evidence = (
+        isinstance(reconciliation, dict) and "mention_evidence" in reconciliation
+    )
+    reconciliation_evidence = (
+        reconciliation.get("mention_evidence") if isinstance(reconciliation, dict) else None
+    )
+    if has_reconciliation_evidence:
+        if not isinstance(reconciliation_evidence, list) or not reconciliation_evidence:
+            raise ValueError("Reconciled named-entity proposal requires mention evidence.")
+        for item in reconciliation_evidence:
+            if not isinstance(item, dict):
+                raise ValueError("Reconciled mention evidence must contain JSON objects.")
+            contexts.append(
+                _evidence_context_from_json(cast(dict[str, JsonValue], item), ledger_repository)
+            )
+    else:
+        evidence = proposed_change.proposed_json.get("evidence")
+        if isinstance(evidence, dict):
+            contexts.append(
+                _evidence_context_from_json(cast(dict[str, JsonValue], evidence), ledger_repository)
+            )
     if isinstance(record, EvidenceTarget):
         contexts.append(
             _evidence_context_from_span(
@@ -807,10 +826,20 @@ def _evidence_context_from_span(
 def _deduplicate_evidence_contexts(
     contexts: list[ReviewEvidenceContext],
 ) -> tuple[ReviewEvidenceContext, ...]:
-    seen: set[tuple[str, str, str]] = set()
+    seen: set[tuple[str, str, str, str]] = set()
     deduplicated: list[ReviewEvidenceContext] = []
     for context in contexts:
-        key = (context.source_id, context.document_id, context.exact_text)
+        key = (
+            context.source_id,
+            context.document_id,
+            context.exact_text,
+            json.dumps(
+                context.location,
+                ensure_ascii=False,
+                separators=(",", ":"),
+                sort_keys=True,
+            ),
+        )
         if key in seen:
             continue
         seen.add(key)

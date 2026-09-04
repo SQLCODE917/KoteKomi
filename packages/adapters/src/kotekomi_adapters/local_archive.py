@@ -25,6 +25,14 @@ from kotekomi_application.candidate_wiki import (
     wiki_build_manifest_from_bytes,
     wiki_citation_registry_from_bytes,
 )
+from kotekomi_application.document_entity_reconciliation import (
+    DocumentEntityReconciliationPreview,
+    ReconciledDocumentProposalPlan,
+    canonical_document_entity_reconciliation_preview_bytes,
+    canonical_reconciled_document_proposal_plan_bytes,
+    document_entity_reconciliation_preview_from_bytes,
+    reconciled_document_proposal_plan_from_bytes,
+)
 from kotekomi_application.hybrid_atomic_claims import (
     HybridAtomicClaimPreview,
     canonical_hybrid_atomic_claim_preview_bytes,
@@ -88,6 +96,8 @@ HYBRID_PROPOSAL_PLANS_DIR = Path("extraction/proposal-plans")
 HYBRID_DOCUMENT_POLICIES_DIR = Path("extraction/document-policies")
 HYBRID_PARAGRAPH_RECEIPTS_DIR = Path("extraction/paragraph-receipts")
 HYBRID_DOCUMENT_COVERAGE_DIR = Path("extraction/document-coverage")
+DOCUMENT_ENTITY_RECONCILIATION_PREVIEWS_DIR = Path("extraction/entity-reconciliation-previews")
+RECONCILED_DOCUMENT_PROPOSAL_PLANS_DIR = Path("extraction/document-proposal-plans")
 PDF_TRANSFORMATIONS_DIR = Path("transformations")
 REVIEW_DIR = Path("review")
 WIKI_BUILDS_DIR = REVIEW_DIR / "wiki-builds"
@@ -115,6 +125,8 @@ class LocalArchiveStore:
             HYBRID_DOCUMENT_POLICIES_DIR,
             HYBRID_PARAGRAPH_RECEIPTS_DIR,
             HYBRID_DOCUMENT_COVERAGE_DIR,
+            DOCUMENT_ENTITY_RECONCILIATION_PREVIEWS_DIR,
+            RECONCILED_DOCUMENT_PROPOSAL_PLANS_DIR,
             PDF_TRANSFORMATIONS_DIR,
             WIKI_BUILDS_DIR,
         ):
@@ -724,6 +736,66 @@ class LocalArchiveStore:
             raise ValueError("Stored Hybrid coverage report failed canonical validation.")
         return payload
 
+    def put_document_entity_reconciliation_preview(
+        self,
+        preview: DocumentEntityReconciliationPreview,
+        payload: bytes,
+        expected_sha256: str,
+    ) -> ArchivePutOutcome:
+        parsed = document_entity_reconciliation_preview_from_bytes(payload)
+        if (
+            parsed != preview
+            or canonical_document_entity_reconciliation_preview_bytes(parsed) != payload
+        ):
+            raise ValueError("HP-9 Preview payload is not its canonical DTO encoding.")
+        return self._put_hybrid_evidence(
+            DOCUMENT_ENTITY_RECONCILIATION_PREVIEWS_DIR,
+            preview.id,
+            payload,
+            expected_sha256,
+            "HP-9 Preview",
+        )
+
+    def read_document_entity_reconciliation_preview(self, preview_id: str) -> bytes:
+        relative_path = DOCUMENT_ENTITY_RECONCILIATION_PREVIEWS_DIR / (
+            f"{_validate_archive_id(preview_id)}.json"
+        )
+        payload = self._absolute_path(relative_path).read_bytes()
+        preview = document_entity_reconciliation_preview_from_bytes(payload)
+        if (
+            preview.id != preview_id
+            or canonical_document_entity_reconciliation_preview_bytes(preview) != payload
+        ):
+            raise ValueError("Stored HP-9 Preview failed canonical validation.")
+        return payload
+
+    def put_reconciled_document_proposal_plan(
+        self,
+        plan: ReconciledDocumentProposalPlan,
+        payload: bytes,
+        expected_sha256: str,
+    ) -> ArchivePutOutcome:
+        parsed = reconciled_document_proposal_plan_from_bytes(payload)
+        if parsed != plan or canonical_reconciled_document_proposal_plan_bytes(parsed) != payload:
+            raise ValueError("HP-9 Document Plan payload is not its canonical DTO encoding.")
+        return self._put_hybrid_evidence(
+            RECONCILED_DOCUMENT_PROPOSAL_PLANS_DIR,
+            plan.id,
+            payload,
+            expected_sha256,
+            "HP-9 Document Plan",
+        )
+
+    def read_reconciled_document_proposal_plan(self, plan_id: str) -> bytes:
+        relative_path = RECONCILED_DOCUMENT_PROPOSAL_PLANS_DIR / (
+            f"{_validate_archive_id(plan_id)}.json"
+        )
+        payload = self._absolute_path(relative_path).read_bytes()
+        plan = reconciled_document_proposal_plan_from_bytes(payload)
+        if plan.id != plan_id or canonical_reconciled_document_proposal_plan_bytes(plan) != payload:
+            raise ValueError("Stored HP-9 Document Plan failed canonical validation.")
+        return payload
+
     def find_hybrid_document_coverage_report_by_sha256(self, expected_sha256: str) -> str | None:
         if re.fullmatch(r"[a-f0-9]{64}", expected_sha256) is None:
             raise ValueError("Hybrid coverage lookup requires a SHA-256 digest.")
@@ -751,6 +823,8 @@ class LocalArchiveStore:
             "HybridDocumentCoverageReport": HYBRID_DOCUMENT_COVERAGE_DIR,
             "HybridPipelinePolicyManifest": HYBRID_DOCUMENT_POLICIES_DIR,
             "HybridParagraphReceipt": HYBRID_PARAGRAPH_RECEIPTS_DIR,
+            "DocumentEntityReconciliationPreview": (DOCUMENT_ENTITY_RECONCILIATION_PREVIEWS_DIR),
+            "ReconciledDocumentProposalPlan": RECONCILED_DOCUMENT_PROPOSAL_PLANS_DIR,
             HybridStageId.HP1_MENTIONS.value: HYBRID_EXTRACTION_PREVIEWS_DIR,
             HybridStageId.HP2_REFERENCES.value: HYBRID_REFERENCE_PREVIEWS_DIR,
             HybridStageId.HP3_GROUNDING.value: HYBRID_ENTITY_GROUNDING_PREVIEWS_DIR,

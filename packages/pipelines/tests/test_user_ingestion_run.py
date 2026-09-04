@@ -70,7 +70,11 @@ def test_user_ingest_auto_initializes_storage_and_records_history(
     assert captured.out.startswith("Ingestion run: igr_")
     assert "src_" not in captured.out
     run_line, captured_row, summary = captured.out.splitlines()
-    assert summary == ("Extraction: 0 proposed changes; 0/0 paragraphs complete; 0 gaps; 0 reused")
+    assert summary.startswith(
+        "Extraction: 0 proposed changes; 0/0 paragraphs complete; 0 gaps; 0 reused; "
+        "0 candidate identities; reconciliation erp_"
+    )
+    assert "; proposal plan rdp_" in summary
     assert main(["--config", str(config_path), "ingestions", "list"]) == 0
     history = capsys.readouterr()
     assert history.err == ""

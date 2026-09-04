@@ -744,6 +744,9 @@ def _proposal_evidence_keys(
     proposal: ProposedChange, record_type: WikiRecordType
 ) -> tuple[str, ...]:
     if record_type != "Assertion":
+        evidence = _reconciled_proposal_evidence(proposal)
+        if evidence is not None:
+            return tuple(f"proposal:{proposal.id}:{ordinal}" for ordinal, _ in enumerate(evidence))
         return (f"proposal:{proposal.id}",)
     raw_links = proposal.proposed_json.get("evidence_links")
     if not isinstance(raw_links, list):
@@ -761,6 +764,26 @@ def _proposal_evidence_references(
     ledger: CandidateWikiLedger,
 ) -> tuple[WikiEvidenceReference, ...]:
     if record.record_type != "Assertion":
+        reconciled_evidence = _reconciled_proposal_evidence(proposal)
+        if reconciled_evidence is not None:
+            references: list[WikiEvidenceReference] = []
+            for ordinal, evidence in enumerate(reconciled_evidence):
+                if (
+                    evidence.source_id != proposal.source_id
+                    or evidence.document_id != proposal.document_id
+                ):
+                    raise ValueError(
+                        "Reconciled proposal evidence does not belong to its ProposedChange."
+                    )
+                references.append(
+                    _proposal_evidence_reference(
+                        proposal.id,
+                        evidence,
+                        bundle,
+                        reference_key=f"proposal:{proposal.id}:{ordinal}",
+                    )
+                )
+            return tuple(references)
         evidence = _ProposalEvidence.model_validate_json(
             _canonical_json(proposal.proposed_json.get("evidence"))
         )
@@ -788,6 +811,8 @@ def _proposal_evidence_reference(
     proposal_id: str,
     evidence: _ProposalEvidence,
     bundle: DocumentRepresentationBundle,
+    *,
+    reference_key: str | None = None,
 ) -> WikiEvidenceReference:
     location = evidence.location
     _validate_selector(
@@ -803,7 +828,7 @@ def _proposal_evidence_reference(
     )
     return WikiEvidenceReference(
         citation_number=0,
-        reference_key=f"proposal:{proposal_id}",
+        reference_key=reference_key or f"proposal:{proposal_id}",
         reference_kind="proposal_evidence",
         source_id=evidence.source_id,
         document_id=evidence.document_id,
@@ -820,6 +845,23 @@ def _proposal_evidence_reference(
         evidence_validation_attempt_id=None,
         proposed_change_id=proposal_id,
     )
+
+
+def _reconciled_proposal_evidence(
+    proposal: ProposedChange,
+) -> tuple[_ProposalEvidence, ...] | None:
+    reconciliation = proposal.proposed_json.get("identity_reconciliation")
+    if not isinstance(reconciliation, dict):
+        return None
+    raw = reconciliation.get("mention_evidence")
+    if raw is None:
+        return None
+    if not isinstance(raw, list) or not raw:
+        raise ValueError("Reconciled named-entity proposal requires mention evidence.")
+    evidence = tuple(_ProposalEvidence.model_validate_json(_canonical_json(item)) for item in raw)
+    if len(set(evidence)) != len(evidence):
+        raise ValueError("Reconciled named-entity proposal repeats mention evidence.")
+    return evidence
 
 
 def _target_evidence_reference(

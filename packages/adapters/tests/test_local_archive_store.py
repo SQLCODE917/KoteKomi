@@ -6,6 +6,7 @@ import pytest
 from kotekomi_adapters import LocalArchiveStore
 from kotekomi_application import (
     ArchivePutDisposition,
+    DocumentEntityReconciliationPreview,
     HybridAtomicClaimStatus,
     HybridDocumentCoverageReport,
     HybridDocumentCoverageStatus,
@@ -14,6 +15,7 @@ from kotekomi_application import (
     HybridEventSemanticsStatus,
     HybridPipelinePolicyManifest,
     HybridPreviewStatus,
+    ReconciledDocumentProposalPlan,
     StagedArchiveObject,
     build_hybrid_atomic_claim_preview,
     build_hybrid_entity_grounding_preview_record,
@@ -22,6 +24,7 @@ from kotekomi_application import (
     build_hybrid_extraction_preview,
     build_hybrid_proposal_plan_record,
     build_hybrid_reference_preview_record,
+    canonical_document_entity_reconciliation_preview_bytes,
     canonical_hybrid_atomic_claim_preview_bytes,
     canonical_hybrid_document_coverage_report_bytes,
     canonical_hybrid_entity_grounding_preview_bytes,
@@ -31,6 +34,7 @@ from kotekomi_application import (
     canonical_hybrid_pipeline_policy_manifest_bytes,
     canonical_hybrid_proposal_plan_bytes,
     canonical_hybrid_reference_preview_bytes,
+    canonical_reconciled_document_proposal_plan_bytes,
     hybrid_atomic_claim_preview_sha256,
     hybrid_entity_grounding_preview_sha256,
     hybrid_event_frame_preview_sha256,
@@ -53,6 +57,8 @@ def test_initialize_creates_archive_directories(tmp_path: Path) -> None:
     assert (tmp_path / "extraction" / "previews").is_dir()
     assert (tmp_path / "extraction" / "reference-previews").is_dir()
     assert (tmp_path / "extraction" / "entity-grounding-previews").is_dir()
+    assert (tmp_path / "extraction" / "entity-reconciliation-previews").is_dir()
+    assert (tmp_path / "extraction" / "document-proposal-plans").is_dir()
     assert (tmp_path / "extraction" / "event-frame-previews").is_dir()
     assert (tmp_path / "extraction" / "atomic-claim-previews").is_dir()
     assert (tmp_path / "extraction" / "event-semantic-previews").is_dir()
@@ -459,6 +465,73 @@ def test_put_reuse_restart_and_corruption_rejection_for_hybrid_proposal_plan(
         store.put_hybrid_proposal_plan(plan, payload, digest)
     with pytest.raises(ValueError):
         reopened.read_hybrid_proposal_plan(plan.id)
+
+
+def test_put_reuse_and_restart_for_document_reconciliation_evidence(
+    tmp_path: Path,
+) -> None:
+    store = LocalArchiveStore(tmp_path)
+    store.initialize()
+    preview_payload: dict[str, object] = {
+        "schema_version": "document_entity_reconciliation_preview_v1",
+        "representation_id": "rep_fixture",
+        "policy_id": "document_entity_reconciliation_v1",
+        "parent_plans": [],
+        "clusters": [],
+        "decisions": [],
+        "justifications": [],
+        "traces": [],
+        "diagnostics": [],
+    }
+    preview = DocumentEntityReconciliationPreview.model_validate(
+        {
+            **preview_payload,
+            "id": f"erp_{_json_digest(preview_payload)[:24]}",
+            "parent_plans": (),
+            "clusters": (),
+            "decisions": (),
+            "justifications": (),
+            "traces": (),
+            "diagnostics": (),
+        }
+    )
+    preview_bytes = canonical_document_entity_reconciliation_preview_bytes(preview)
+    plan_payload: dict[str, object] = {
+        "schema_version": "reconciled_document_proposal_plan_v1",
+        "representation_id": "rep_fixture",
+        "policy_id": "reconciled_document_proposal_plan_v1",
+        "parent_preview_id": preview.id,
+        "parent_preview_sha256": hashlib.sha256(preview_bytes).hexdigest(),
+        "parent_plans": [],
+        "provenance_activity_id": "prv_" + "1" * 24,
+        "proposed_changes": [],
+    }
+    plan = ReconciledDocumentProposalPlan.model_validate(
+        {
+            **plan_payload,
+            "id": f"rdp_{_json_digest(plan_payload)[:24]}",
+            "parent_plans": (),
+            "proposed_changes": (),
+        }
+    )
+    plan_bytes = canonical_reconciled_document_proposal_plan_bytes(plan)
+
+    created_preview = store.put_document_entity_reconciliation_preview(
+        preview, preview_bytes, hashlib.sha256(preview_bytes).hexdigest()
+    )
+    reused_preview = store.put_document_entity_reconciliation_preview(
+        preview, preview_bytes, hashlib.sha256(preview_bytes).hexdigest()
+    )
+    created_plan = store.put_reconciled_document_proposal_plan(
+        plan, plan_bytes, hashlib.sha256(plan_bytes).hexdigest()
+    )
+    reopened = LocalArchiveStore(tmp_path)
+
+    assert created_preview.disposition is ArchivePutDisposition.CREATED
+    assert reused_preview.disposition is ArchivePutDisposition.REUSED
+    assert created_plan.disposition is ArchivePutDisposition.CREATED
+    assert reopened.read_document_entity_reconciliation_preview(preview.id) == preview_bytes
+    assert reopened.read_reconciled_document_proposal_plan(plan.id) == plan_bytes
 
 
 def test_put_and_reuse_pdf_transformation_blob(tmp_path: Path) -> None:

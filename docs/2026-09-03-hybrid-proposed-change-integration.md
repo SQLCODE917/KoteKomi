@@ -32,6 +32,10 @@ Human review will remain the only authority that creates accepted Ledger intelli
 
 **HybridProposalPlan** means one immutable derived plan for all events in one HP-6 Preview.
 
+HP-7 Plans remain paragraph-local derived evidence in the HP-8 document flow.
+
+HP-9 reconciles their named candidates before HP-8 submits ProposedChanges.
+
 **Typed candidate record** means one pending `Actor`, `Organization`, or `Event` record.
 
 **Advisory gap** means an HP-6 gap that records disagreement with an open parent proposal after HP-6 constructed complete governed semantics.

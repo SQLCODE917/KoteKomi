@@ -31,6 +31,16 @@ from kotekomi_application.context_planning import (
     AnalysisUnitPlanningInput,
     plan_analysis_units,
 )
+from kotekomi_application.document_entity_reconciliation import (
+    DocumentEntityReconciliationArchive,
+    DocumentEntityReconciliationPreview,
+    ReconciledDocumentProposalPlan,
+    build_document_entity_reconciliation_preview,
+    build_reconciled_document_proposal_plan,
+    publish_document_entity_reconciliation_preview,
+    publish_reconciled_document_proposal_plan,
+    submit_reconciled_document_proposal_plan,
+)
 from kotekomi_application.hybrid_atomic_claims import (
     canonical_hybrid_atomic_claim_preview_bytes,
     hybrid_atomic_claim_preview_from_bytes,
@@ -56,13 +66,11 @@ from kotekomi_application.hybrid_mention_interpretation import (
     hybrid_extraction_preview_from_bytes,
 )
 from kotekomi_application.hybrid_proposed_changes import (
-    HybridProposalArchive,
     HybridProposalLedger,
     HybridProposalPlan,
     canonical_hybrid_proposal_plan_bytes,
     hybrid_proposal_plan_from_bytes,
     load_hybrid_proposal_plan,
-    submit_hybrid_proposal_plan,
 )
 from kotekomi_application.ingestion_runs import (
     CompleteIngestionRunCapturedInput,
@@ -306,7 +314,7 @@ class HybridDocumentCoverageReport(BaseModel):
         return self
 
 
-class HybridDocumentArchive(HybridProposalArchive, Protocol):
+class HybridDocumentArchive(DocumentEntityReconciliationArchive, Protocol):
     def put_hybrid_pipeline_policy_manifest(
         self,
         manifest: HybridPipelinePolicyManifest,
@@ -381,6 +389,8 @@ class HybridDocumentClosureResult:
     analysis_run: AnalysisRun
     change_set: IngestionChangeSet
     report: HybridDocumentCoverageReport
+    reconciliation_preview: DocumentEntityReconciliationPreview
+    document_proposal_plan: ReconciledDocumentProposalPlan
 
 
 def plan_hybrid_document(
@@ -777,14 +787,38 @@ def close_hybrid_document_ingestion(
         ledger=ledger,
         archive=archive,
     )
+    parent_plans: list[HybridProposalPlan] = []
     for receipt in typed_receipts:
         stage = receipt.stages[-1]
         if stage.disposition is HybridStageDisposition.NOT_RUN:
             continue
         assert stage.output_id is not None
         plan = load_hybrid_proposal_plan(stage.output_id, ledger, archive)
-        submit_hybrid_proposal_plan(plan, submitted_at=input.closed_at, ledger=ledger)
-    change_set = _ingestion_change_set(input, analysis_run, report, analysis_origin)
+        parent_plans.append(plan)
+    reconciliation_preview = build_document_entity_reconciliation_preview(
+        tuple(parent_plans),
+        ledger,
+        representation_id=input.representation_id,
+    )
+    publish_document_entity_reconciliation_preview(reconciliation_preview, archive)
+    document_proposal_plan = build_reconciled_document_proposal_plan(
+        reconciliation_preview,
+        tuple(parent_plans),
+        ledger,
+    )
+    publish_reconciled_document_proposal_plan(document_proposal_plan, archive)
+    submit_reconciled_document_proposal_plan(
+        document_proposal_plan,
+        submitted_at=input.closed_at,
+        ledger=ledger,
+    )
+    change_set = _ingestion_change_set(
+        input,
+        analysis_run,
+        report,
+        analysis_origin,
+        document_proposal_plan,
+    )
     ledger.save_ingestion_change_set(change_set)
     captured = complete_ingestion_run_as_captured(
         CompleteIngestionRunCapturedInput(
@@ -800,7 +834,14 @@ def close_hybrid_document_ingestion(
         cast(IngestionRunRepository, ledger),
         _FixedClock(input.closed_at),
     )
-    return HybridDocumentClosureResult(captured, analysis_run, change_set, report)
+    return HybridDocumentClosureResult(
+        captured,
+        analysis_run,
+        change_set,
+        report,
+        reconciliation_preview,
+        document_proposal_plan,
+    )
 
 
 def load_hybrid_pipeline_policy_manifest(
@@ -875,6 +916,7 @@ def _ingestion_change_set(
     analysis_run: AnalysisRun,
     report: HybridDocumentCoverageReport,
     analysis_origin: IngestionChangeSetOrigin,
+    document_proposal_plan: ReconciledDocumentProposalPlan,
 ) -> IngestionChangeSet:
     payload = {
         "ingestion_run_id": input.ingestion_run_id,
@@ -883,7 +925,7 @@ def _ingestion_change_set(
         "coverage_report_digest": hashlib.sha256(
             canonical_hybrid_document_coverage_report_bytes(report)
         ).hexdigest(),
-        "proposed_change_ids": list(report.proposed_change_ids),
+        "proposed_change_ids": [item.id for item in document_proposal_plan.proposed_changes],
         "analysis_origin": analysis_origin.value,
     }
     digest = _digest(payload)
@@ -893,7 +935,7 @@ def _ingestion_change_set(
         analysis_run_id=analysis_run.id,
         representation_id=input.representation_id,
         coverage_report_digest=cast(str, payload["coverage_report_digest"]),
-        proposed_change_ids=report.proposed_change_ids,
+        proposed_change_ids=tuple(item.id for item in document_proposal_plan.proposed_changes),
         analysis_origin=analysis_origin,
         closed_at=input.closed_at,
         change_set_digest=digest,

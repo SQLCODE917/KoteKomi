@@ -201,6 +201,40 @@ def test_candidate_view_fails_when_proposal_evidence_does_not_replay() -> None:
         build_candidate_knowledge_view(ledger.run, ledger)
 
 
+def test_reconciled_entity_page_preserves_every_source_selector() -> None:
+    ledger = FakeCandidateWikiLedger()
+    proposal = ledger.proposals["pcg_org"]
+    whole = _embedded_evidence()
+    mention = cast(JsonObject, json.loads(json.dumps(whole)))
+    mention["exact_text"] = "Acme"
+    mention["suffix_text"] = TEXT[len("Acme") :]
+    location = cast(JsonObject, mention["location"])
+    location["end_char"] = len("Acme")
+    ledger.proposals[proposal.id] = proposal.model_copy(
+        update={
+            "proposed_json": proposal.proposed_json
+            | {
+                "identity_reconciliation": {
+                    "preview_id": "erp_example",
+                    "mention_evidence": [mention, whole],
+                }
+            }
+        }
+    )
+
+    view = build_candidate_knowledge_view(ledger.run, ledger)
+    organization = next(item for item in view.records if item.record.id == "org_acme")
+    references = tuple(
+        item for item in view.evidence_references if item.proposed_change_id == proposal.id
+    )
+
+    assert organization.evidence_reference_keys == (
+        "proposal:pcg_org:0",
+        "proposal:pcg_org:1",
+    )
+    assert tuple(item.exact_text for item in references) == ("Acme", TEXT)
+
+
 def test_rejected_proposal_body_remains_part_of_candidate_snapshot() -> None:
     ledger = FakeCandidateWikiLedger()
     before = build_candidate_knowledge_view(ledger.run, ledger)
