@@ -23,6 +23,7 @@ from kotekomi_application.hybrid_document_orchestration import (
     HybridDocumentCoverageReport,
     HybridParagraphReceipt,
     HybridPipelinePolicyManifest,
+    HybridStageId,
     canonical_hybrid_document_coverage_report_bytes,
     canonical_hybrid_paragraph_receipt_bytes,
     canonical_hybrid_pipeline_policy_manifest_bytes,
@@ -662,6 +663,47 @@ class LocalArchiveStore:
         ):
             raise ValueError("Stored Hybrid coverage report failed canonical validation.")
         return payload
+
+    def find_hybrid_document_coverage_report_by_sha256(self, expected_sha256: str) -> str | None:
+        if re.fullmatch(r"[a-f0-9]{64}", expected_sha256) is None:
+            raise ValueError("Hybrid coverage lookup requires a SHA-256 digest.")
+        directory = self._absolute_path(HYBRID_DOCUMENT_COVERAGE_DIR)
+        if not directory.exists():
+            return None
+        matches: list[str] = []
+        for path in sorted(directory.glob("*.json")):
+            payload = path.read_bytes()
+            if hashlib.sha256(payload).hexdigest() != expected_sha256:
+                continue
+            report = hybrid_document_coverage_report_from_bytes(payload)
+            if path.stem != report.id:
+                raise ValueError("Stored Hybrid coverage report path has the wrong identity.")
+            if canonical_hybrid_document_coverage_report_bytes(report) != payload:
+                raise ValueError("Stored Hybrid coverage report failed canonical validation.")
+            matches.append(report.id)
+        if len(matches) > 1:
+            raise ValueError("Hybrid coverage digest matches multiple Archive records.")
+        return matches[0] if matches else None
+
+    def ingestion_evidence_path(self, record_type: str, record_id: str) -> str:
+        directories = {
+            "ModelRunOutput": MODEL_RUNS_DIR,
+            "HybridDocumentCoverageReport": HYBRID_DOCUMENT_COVERAGE_DIR,
+            "HybridPipelinePolicyManifest": HYBRID_DOCUMENT_POLICIES_DIR,
+            "HybridParagraphReceipt": HYBRID_PARAGRAPH_RECEIPTS_DIR,
+            HybridStageId.HP1_MENTIONS.value: HYBRID_EXTRACTION_PREVIEWS_DIR,
+            HybridStageId.HP2_REFERENCES.value: HYBRID_REFERENCE_PREVIEWS_DIR,
+            HybridStageId.HP3_GROUNDING.value: HYBRID_ENTITY_GROUNDING_PREVIEWS_DIR,
+            HybridStageId.HP4_EVENT_FRAMES.value: HYBRID_EVENT_FRAME_PREVIEWS_DIR,
+            HybridStageId.HP5_ATOMIC_CLAIMS.value: HYBRID_ATOMIC_CLAIM_PREVIEWS_DIR,
+            HybridStageId.HP6_EVENT_SEMANTICS.value: HYBRID_EVENT_SEMANTICS_PREVIEWS_DIR,
+            HybridStageId.HP7_PROPOSAL_PLAN.value: HYBRID_PROPOSAL_PLANS_DIR,
+        }
+        try:
+            directory = directories[record_type]
+        except KeyError as error:
+            raise ValueError(f"Unsupported ingestion evidence type: {record_type}") from error
+        return (directory / f"{_validate_archive_id(record_id)}.json").as_posix()
 
     def read_briefing_markdown(self, briefing_id: str) -> str:
         relative_path = BRIEFING_DAILY_DIR / f"{_validate_archive_id(briefing_id)}.md"

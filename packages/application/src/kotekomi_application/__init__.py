@@ -244,6 +244,7 @@ from kotekomi_application.hybrid_document_orchestration import (
     load_reusable_hybrid_paragraph_receipt,
     plan_hybrid_document,
     publish_hybrid_paragraph_receipt,
+    read_hybrid_stage_output,
     validate_hybrid_paragraph_receipt,
 )
 from kotekomi_application.hybrid_document_references import (
@@ -411,6 +412,23 @@ from kotekomi_application.ingestion_change_sets import (
     close_ingestion_change_set,
     find_reusable_completed_analysis,
 )
+from kotekomi_application.ingestion_observability import (
+    IngestionEvidenceEntry,
+    IngestionHistoryEntry,
+    IngestionObservabilityArchive,
+    IngestionObservabilityLedger,
+    IngestionSummary,
+    InspectIngestionInput,
+    InspectIngestionResult,
+    ListIngestionHistoryInput,
+    ListIngestionHistoryResult,
+    ingestion_evidence_to_json,
+    ingestion_history_to_json,
+    ingestion_summary_to_json,
+    ingestion_trace_to_json,
+    inspect_ingestion,
+    list_ingestion_history,
+)
 from kotekomi_application.ingestion_runs import (
     CompleteIngestionRunCapturedInput,
     CompleteIngestionRunErrorInput,
@@ -478,6 +496,7 @@ from kotekomi_application.model_run_logging import (
     ModelRunLogEntry,
     ModelRunLogLedger,
     list_model_run_logs,
+    model_run_log_entry,
     model_run_logs_to_json,
 )
 from kotekomi_application.model_runtime import (
@@ -573,6 +592,7 @@ from kotekomi_application.pdf_ingest import (
 from kotekomi_application.pipeline_readiness import (
     PipelineBlocker,
     PipelineCommandPlan,
+    PipelineExecutionClass,
     PipelineNextStep,
     PipelinePlanInputRequirement,
     PipelineRunNextResult,
@@ -1451,4 +1471,22 @@ __all__ = [
     "reconcile_mention_boundaries",
     "run_hybrid_mention_preview",
     "run_hybrid_reference_preview",
+    "read_hybrid_stage_output",
+    "IngestionEvidenceEntry",
+    "IngestionHistoryEntry",
+    "IngestionObservabilityArchive",
+    "IngestionObservabilityLedger",
+    "IngestionSummary",
+    "InspectIngestionInput",
+    "InspectIngestionResult",
+    "ListIngestionHistoryInput",
+    "ListIngestionHistoryResult",
+    "ingestion_evidence_to_json",
+    "ingestion_history_to_json",
+    "ingestion_summary_to_json",
+    "ingestion_trace_to_json",
+    "inspect_ingestion",
+    "list_ingestion_history",
+    "model_run_log_entry",
+    "PipelineExecutionClass",
 ]

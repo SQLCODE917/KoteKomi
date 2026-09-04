@@ -54,7 +54,7 @@ def list_model_run_logs(
         reverse=True,
     )
     return ListModelRunLogsResult(
-        entries=tuple(_log_entry(run) for run in ordered_runs[: input.limit])
+        entries=tuple(model_run_log_entry(run) for run in ordered_runs[: input.limit])
     )
 
 
@@ -81,7 +81,7 @@ def model_run_logs_to_json(result: ListModelRunLogsResult) -> dict[str, JsonValu
     }
 
 
-def _log_entry(run: ModelRun) -> ModelRunLogEntry:
+def model_run_log_entry(run: ModelRun) -> ModelRunLogEntry:
     diagnostics = run.execution_diagnostics
     receipt = run.execution_receipt
     requested_max_output_tokens = run.generation_parameters.get("max_output_tokens")

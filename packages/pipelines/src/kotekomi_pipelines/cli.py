@@ -75,9 +75,14 @@ from kotekomi_application import (
     HybridMentionPreviewCommand,
     HybridPreviewStatus,
     HybridReferencePreviewCommand,
+    IngestionSummary,
+    InspectIngestionInput,
+    InspectIngestionResult,
     JsonValue,
     LedgerRetrievalFilters,
+    ListIngestionHistoryInput,
     ListModelRunLogsInput,
+    ListModelRunLogsResult,
     ModelRunLogEntry,
     ModelRuntimeStatus,
     NewsDeliveryEnvelope,
@@ -134,8 +139,13 @@ from kotekomi_application import (
     get_review_packet,
     get_review_readiness,
     ingest_structured_news,
+    ingestion_evidence_to_json,
+    ingestion_history_to_json,
+    ingestion_summary_to_json,
+    ingestion_trace_to_json,
     initialize_ledger,
-    list_ingestion_runs,
+    inspect_ingestion,
+    list_ingestion_history,
     list_model_run_logs,
     list_review_queue,
     model_run_logs_to_json,
@@ -236,12 +246,39 @@ def main(argv: list[str] | None = None) -> int:
         )
 
     if args.command == "ingestions" and args.ingestions_command == "list":
-        return list_user_ingestion_history(config_path=args.config)
+        return list_user_ingestion_history(
+            config_path=args.config,
+            limit=args.limit,
+            output_format=args.output_format,
+        )
+
+    if args.command == "ingestions" and args.ingestions_command == "show":
+        return show_user_ingestion(
+            config_path=args.config,
+            ingestion_run_id=args.ingestion_run_id,
+            output_format=args.output_format,
+        )
+
+    if args.command == "ingestions" and args.ingestions_command == "artifacts":
+        return list_user_ingestion_artifacts(
+            config_path=args.config,
+            ingestion_run_id=args.ingestion_run_id,
+            output_format=args.output_format,
+        )
 
     if args.command == "model" and args.model_command == "runs":
         return list_model_run_history(
             config_path=args.config,
             limit=args.limit,
+            output_format=args.output_format,
+            ingestion_run_id=args.ingestion_run_id,
+        )
+
+    if args.command == "extraction" and args.extraction_command == "traces":
+        return list_user_ingestion_traces(
+            config_path=args.config,
+            ingestion_run_id=args.ingestion_run_id,
+            stage_id=args.stage_id,
             output_format=args.output_format,
         )
 
@@ -824,8 +861,30 @@ def build_parser() -> argparse.ArgumentParser:
     ingest_parser.add_argument("--url", required=True)
 
     ingestions_parser = subparsers.add_parser("ingestions", help="User ingestion history.")
-    ingestions_subparsers = ingestions_parser.add_subparsers(dest="ingestions_command")
-    ingestions_subparsers.add_parser("list", help="List admitted ingestion attempts.")
+    ingestions_subparsers = ingestions_parser.add_subparsers(
+        dest="ingestions_command", required=True
+    )
+    ingestion_list_parser = ingestions_subparsers.add_parser(
+        "list", help="List admitted ingestion attempts."
+    )
+    ingestion_list_parser.add_argument("--limit", type=int, default=100)
+    ingestion_list_parser.add_argument(
+        "--format", dest="output_format", choices=("text", "json"), default="text"
+    )
+    ingestion_show_parser = ingestions_subparsers.add_parser(
+        "show", help="Show one bounded ingestion summary."
+    )
+    ingestion_show_parser.add_argument("ingestion_run_id")
+    ingestion_show_parser.add_argument(
+        "--format", dest="output_format", choices=("text", "json"), default="text"
+    )
+    ingestion_artifacts_parser = ingestions_subparsers.add_parser(
+        "artifacts", help="List validated evidence for one ingestion."
+    )
+    ingestion_artifacts_parser.add_argument("ingestion_run_id")
+    ingestion_artifacts_parser.add_argument(
+        "--format", dest="output_format", choices=("text", "jsonl"), default="text"
+    )
 
     init_parser = subparsers.add_parser(
         "init", help="Create the local user configuration and initialize storage."
@@ -1017,6 +1076,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="List durable model execution diagnostics without exposing model content.",
     )
     model_runs_parser.add_argument("--limit", type=int, default=100)
+    model_runs_parser.add_argument("--ingestion-run", dest="ingestion_run_id", default=None)
     model_runs_parser.add_argument(
         "--format",
         dest="output_format",
@@ -1061,6 +1121,14 @@ def build_parser() -> argparse.ArgumentParser:
         help="Derived intelligence extraction previews.",
     )
     extraction_subparsers = extraction_parser.add_subparsers(dest="extraction_command")
+    extraction_traces_parser = extraction_subparsers.add_parser(
+        "traces", help="Show exact stage traces for one ingestion."
+    )
+    extraction_traces_parser.add_argument("--ingestion-run", dest="ingestion_run_id", required=True)
+    extraction_traces_parser.add_argument("--stage", dest="stage_id", default=None)
+    extraction_traces_parser.add_argument(
+        "--format", dest="output_format", choices=("text", "jsonl"), default="text"
+    )
     preview_mentions_parser = extraction_subparsers.add_parser(
         "preview-mentions",
         help="Interpret broad mention candidates from one authoritative paragraph.",
@@ -2048,7 +2116,7 @@ def add_source_file(
 
 
 def ingest_user_file(*, config_path: Path | None, source_file_path: Path, source_url: str) -> int:
-    """Run the CIR-1 user ingress path without exposing canonical identities."""
+    """Run user ingestion while exposing only its durable operation identity."""
     try:
         processing_config = load_processing_config(
             config_path=config_path,
@@ -2088,6 +2156,7 @@ def ingest_user_file(*, config_path: Path | None, source_file_path: Path, source
     except (OSError, ValueError):
         print("Unable to start the ingestion run.", file=sys.stderr)
         return 1
+    print(f"Ingestion run: {run.id}")
 
     archive_store = LocalArchiveStore(config.archive_path)
     try:
@@ -2699,25 +2768,113 @@ def submit_hybrid_event_changes(
     return 0
 
 
-def list_user_ingestion_history(*, config_path: Path | None) -> int:
+def list_user_ingestion_history(*, config_path: Path | None, limit: int, output_format: str) -> int:
     try:
         config = load_processing_storage_config(
             config_path=config_path,
             ledger_path_override=None,
             archive_path_override=None,
         )
-        SQLiteLedgerInitializer(config.storage.ledger_path).initialize()
+        _require_initialized_ledger(config.storage.ledger_path)
         with sqlite_ledger_transaction(config.storage.ledger_path) as repository:
-            runs = list_ingestion_runs(repository)
+            result = list_ingestion_history(ListIngestionHistoryInput(limit), repository)
     except ProcessingConfigurationError as error:
+        print(str(error), file=sys.stderr)
+        return 1
+    except ValueError as error:
         print(str(error), file=sys.stderr)
         return 1
     except (OSError, sqlite3.Error) as error:
         print(f"Unable to open KoteKomi storage: {error}", file=sys.stderr)
         return 1
-    for run in runs:
-        print(_user_ingestion_row(run))
+    if output_format == "json":
+        print(json.dumps(ingestion_history_to_json(result), sort_keys=True))
+        return 0
+    for entry in result.entries:
+        print(
+            f"{entry.ingestion_run_id}\t{entry.display_filename}\t"
+            f"[{entry.status.upper()}]\t{entry.started_at}"
+        )
     return 0
+
+
+def show_user_ingestion(
+    *, config_path: Path | None, ingestion_run_id: str, output_format: str
+) -> int:
+    try:
+        result = _inspect_user_ingestion(config_path, ingestion_run_id)
+    except (ProcessingConfigurationError, OSError, sqlite3.Error, ValueError) as error:
+        print(str(error), file=sys.stderr)
+        return 1
+    if output_format == "json":
+        print(json.dumps(ingestion_summary_to_json(result.summary), sort_keys=True))
+        return 0
+    print(_ingestion_summary_text(result.summary))
+    return 0
+
+
+def list_user_ingestion_artifacts(
+    *, config_path: Path | None, ingestion_run_id: str, output_format: str
+) -> int:
+    try:
+        result = _inspect_user_ingestion(config_path, ingestion_run_id)
+    except (ProcessingConfigurationError, OSError, sqlite3.Error, ValueError) as error:
+        print(str(error), file=sys.stderr)
+        return 1
+    for entry in result.evidence:
+        if output_format == "jsonl":
+            print(json.dumps(ingestion_evidence_to_json(entry), sort_keys=True))
+        else:
+            print(
+                f"{entry.authority}\t{entry.record_type}\t{entry.record_id}\t"
+                f"{entry.sha256 or '-'}\t{entry.archive_path or '-'}"
+            )
+    return 0
+
+
+def list_user_ingestion_traces(
+    *,
+    config_path: Path | None,
+    ingestion_run_id: str,
+    stage_id: str | None,
+    output_format: str,
+) -> int:
+    try:
+        result = _inspect_user_ingestion(config_path, ingestion_run_id)
+    except (ProcessingConfigurationError, OSError, sqlite3.Error, ValueError) as error:
+        print(str(error), file=sys.stderr)
+        return 1
+    traces = tuple(
+        trace for trace in result.traces if stage_id is None or trace.stage_id == stage_id
+    )
+    for trace in traces:
+        if output_format == "jsonl":
+            print(json.dumps(ingestion_trace_to_json(trace), sort_keys=True))
+        else:
+            print(
+                f"{trace.source_segment_id}\t{trace.ordinal}\t{trace.stage_id}\t"
+                f"[{trace.status.value.upper()}]\t{trace.id}"
+            )
+    return 0
+
+
+def _inspect_user_ingestion(
+    config_path: Path | None, ingestion_run_id: str
+) -> InspectIngestionResult:
+    config = load_processing_storage_config(
+        config_path=config_path,
+        ledger_path_override=None,
+        archive_path_override=None,
+    )
+    archive = LocalArchiveStore(config.storage.archive_path)
+    _require_initialized_ledger(config.storage.ledger_path)
+    with sqlite_ledger_transaction(config.storage.ledger_path) as repository:
+        return inspect_ingestion(InspectIngestionInput(ingestion_run_id), repository, archive)
+
+
+def _require_initialized_ledger(ledger_path: Path) -> None:
+    if not ledger_path.is_file():
+        raise ValueError("KoteKomi storage is not initialized. Run `kotekomi init` first.")
 
 
 def list_model_run_history(
@@ -2725,16 +2882,23 @@ def list_model_run_history(
     config_path: Path | None,
     limit: int,
     output_format: str,
+    ingestion_run_id: str | None,
 ) -> int:
     try:
+        if limit <= 0:
+            raise ValueError("Model run log limit must be a positive integer.")
         config = load_processing_storage_config(
             config_path=config_path,
             ledger_path_override=None,
             archive_path_override=None,
         )
-        SQLiteLedgerInitializer(config.storage.ledger_path).initialize()
-        with sqlite_ledger_transaction(config.storage.ledger_path) as repository:
-            result = list_model_run_logs(ListModelRunLogsInput(limit=limit), repository)
+        _require_initialized_ledger(config.storage.ledger_path)
+        if ingestion_run_id is None:
+            with sqlite_ledger_transaction(config.storage.ledger_path) as repository:
+                result = list_model_run_logs(ListModelRunLogsInput(limit=limit), repository)
+        else:
+            inspected = _inspect_user_ingestion(config_path, ingestion_run_id)
+            result = ListModelRunLogsResult(inspected.model_runs[:limit])
     except ProcessingConfigurationError as error:
         print(str(error), file=sys.stderr)
         return 1
@@ -2797,6 +2961,40 @@ def _user_ingestion_row(run: IngestionRun) -> str:
     }[run.status]
     timestamp = run.started_at.astimezone(UTC).strftime("%Y-%m-%dT%H:%M")
     return f"{run.display_filename}\t{status}\t{timestamp}"
+
+
+def _ingestion_summary_text(summary: IngestionSummary) -> str:
+    lines = [
+        f"IngestionRun: {summary.ingestion_run_id}",
+        f"File: {summary.display_filename}",
+        f"Status: {summary.status}",
+        f"Started: {summary.started_at}",
+        f"Completed: {summary.completed_at or '-'}",
+        "Elapsed milliseconds: "
+        f"{summary.elapsed_milliseconds if summary.elapsed_milliseconds is not None else '-'}",
+        f"AnalysisRun: {summary.analysis_run_id or '-'}",
+        f"Analysis state: {summary.analysis_state or '-'}",
+        f"Model runs: {summary.model_run_count}",
+        f"Stage traces: {summary.trace_count}",
+        f"Evidence records: {summary.evidence_count}",
+    ]
+    if summary.required_paragraph_count is not None:
+        lines.extend(
+            (
+                f"Required paragraphs: {summary.required_paragraph_count}",
+                f"Complete paragraphs: {summary.complete_paragraph_count}",
+                f"Gap paragraphs: {summary.gap_paragraph_count}",
+            )
+        )
+    if summary.failure_code is not None:
+        lines.extend(
+            (
+                f"Failure stage: {summary.failure_stage}",
+                f"Failure code: {summary.failure_code}",
+                f"Failure: {summary.safe_failure_message}",
+            )
+        )
+    return "\n".join(lines)
 
 
 def _model_run_log_row(entry: ModelRunLogEntry) -> str:
@@ -3643,6 +3841,7 @@ def _pipeline_status_text(status: PipelineStatus) -> str:
         f"Pipeline stage: {status.stage.value}",
         f"Next command: {status.next_command or 'none'}",
         f"Command plan ready: {_bool_text(command_plan.ready_to_execute)}",
+        f"Execution class: {command_plan.execution_class.value}",
         f"Review required: {_bool_text(status.review_required)}",
         f"Pending ProposedChanges: {status.pending_count}",
         f"Missing references: {status.missing_reference_count}",
@@ -3676,6 +3875,7 @@ def _pipeline_status_text(status: PipelineStatus) -> str:
     else:
         lines.append("  none")
     lines.extend(_missing_inputs_text(command_plan))
+    lines.extend(_command_inspection_text(command_plan))
     lines.append("Blockers:")
     if status.blockers:
         lines.extend(
@@ -3693,6 +3893,7 @@ def _pipeline_next_text(next_step: PipelineNextStep) -> str:
         f"Pipeline stage: {next_step.stage.value}",
         f"Next command: {next_step.command or 'none'}",
         f"Command plan ready: {_bool_text(command_plan.ready_to_execute)}",
+        f"Execution class: {command_plan.execution_class.value}",
         f"Reason: {next_step.reason}",
         f"Requires human review: {_bool_text(next_step.requires_human_review)}",
         f"Blocked: {_bool_text(next_step.blocked)}",
@@ -3703,6 +3904,7 @@ def _pipeline_next_text(next_step: PipelineNextStep) -> str:
     else:
         lines.append("  none")
     lines.extend(_missing_inputs_text(command_plan))
+    lines.extend(_command_inspection_text(command_plan))
     lines.append(
         "Blockers:",
     )
@@ -3725,6 +3927,7 @@ def _pipeline_run_next_text(result: PipelineRunNextResult) -> str:
         f"Dry run: {_bool_text(result.dry_run)}",
         f"Exit code: {result.exit_code}",
         f"Reason: {result.reason}",
+        f"Execution class: {result.command_plan.execution_class.value}",
         "Command plan argv:",
     ]
     if result.command_plan.argv:
@@ -3732,6 +3935,7 @@ def _pipeline_run_next_text(result: PipelineRunNextResult) -> str:
     else:
         lines.append("  none")
     lines.extend(_missing_inputs_text(result.command_plan))
+    lines.extend(_command_inspection_text(result.command_plan))
     lines.append("Captured stdout:")
     if result.stdout_lines:
         lines.extend(f"  {line}" for line in result.stdout_lines)
@@ -3769,6 +3973,25 @@ def _missing_inputs_text(command_plan: PipelineCommandPlan) -> list[str]:
             lines.append(
                 f"  {missing_input.name} ({missing_input.kind}): {missing_input.description}"
             )
+    return lines
+
+
+def _command_inspection_text(command_plan: PipelineCommandPlan) -> list[str]:
+    lines = ["Completion probe argv:"]
+    lines.append(
+        f"  {' '.join(command_plan.completion_probe_argv)}"
+        if command_plan.completion_probe_argv
+        else "  none"
+    )
+    lines.append("Evidence argv:")
+    lines.append(
+        f"  {' '.join(command_plan.evidence_argv)}" if command_plan.evidence_argv else "  none"
+    )
+    lines.append("Expected record types:")
+    if command_plan.expected_record_types:
+        lines.extend(f"  {item}" for item in command_plan.expected_record_types)
+    else:
+        lines.append("  none")
     return lines
 
 

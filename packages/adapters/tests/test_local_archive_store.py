@@ -100,11 +100,33 @@ def test_put_reuse_restart_and_corruption_rejection_for_hybrid_document_evidence
     restarted = LocalArchiveStore(tmp_path)
     assert restarted.read_hybrid_pipeline_policy_manifest(manifest.id) == manifest_bytes
     assert restarted.read_hybrid_document_coverage_report(report.id) == report_bytes
+    assert (
+        restarted.find_hybrid_document_coverage_report_by_sha256(
+            hashlib.sha256(report_bytes).hexdigest()
+        )
+        == report.id
+    )
+    assert restarted.find_hybrid_document_coverage_report_by_sha256("0" * 64) is None
 
     report_path = tmp_path / "extraction" / "document-coverage" / f"{report.id}.json"
     report_path.write_bytes(b"{}\n")
     with pytest.raises(ValueError, match="contract validation"):
         restarted.read_hybrid_document_coverage_report(report.id)
+    with pytest.raises(ValueError, match="contract validation"):
+        restarted.find_hybrid_document_coverage_report_by_sha256(
+            hashlib.sha256(b"{}\n").hexdigest()
+        )
+
+
+def test_ingestion_evidence_paths_are_adapter_owned() -> None:
+    store = LocalArchiveStore(Path("unused"))
+
+    assert (
+        store.ingestion_evidence_path("hp4_event_frames", "hef_fixture")
+        == "extraction/event-frame-previews/hef_fixture.json"
+    )
+    with pytest.raises(ValueError, match="Unsupported ingestion evidence type"):
+        store.ingestion_evidence_path("unknown", "record")
 
 
 def test_put_and_read_raw_source(tmp_path: Path) -> None:

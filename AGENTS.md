@@ -20,6 +20,45 @@ Before changing code, read:
 4. `docs/2026-07-08-KoteKomi.md`.
 5. `docs/CHECK_PLAN.md` before finishing the task.
 
+## Cost-Saving Measures
+
+Treat a task as long-running when it can exceed 60 seconds or depends on an external runtime.
+
+Run cheap, focused checks directly.
+
+For long-running local work, provide the human with:
+
+- the exact command;
+- the expected output paths;
+- a deterministic completion-probe command;
+- the success criteria.
+
+The human starts and monitors the command.
+
+Inspect its durable records after the human reports completion.
+
+When the user authorizes a CI push, push and report the branch and commit.
+
+The human monitors CI and reports its terminal result.
+
+Do not poll a long-running local process, deployment, model invocation, or CI run.
+
+User-visible long operations must leave typed Ledger records or validated Archive records.
+
+Do not require every internal function to persist a separate diagnostic record.
+
+Create a deterministic function when three real workflows need the same operation.
+
+Do not create speculative helpers only to satisfy the rule of three.
+
+Keep deterministic functions narrow, composable, and independent of their callers.
+
+Use disposable scripts only to compose stable deterministic functions.
+
+Prefer bounded summaries and explicit IDs over sending large logs through model context.
+
+Use the repository's typed observability commands before inspecting raw files or database rows.
+
 ## Task Routing
 
 | Task | Read |
@@ -36,6 +75,7 @@ Before changing code, read:
 | changing tests | `docs/agent/testing.md` |
 | implementing a TDD | `docs/agent/implement-tdd-workflow.md`, `docs/agent/testing.md` |
 | diagnosing PDF authoritative text | `docs/agent/pdf-authoritative-text-fidelity.md`, `docs/agent/adapters.md`, `docs/agent/testing.md` |
+| long work, CI handoff, or post-run inspection | `docs/agent/long-running-operations.md` |
 
 ## Authority Order
 

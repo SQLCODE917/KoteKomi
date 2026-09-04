@@ -47,6 +47,11 @@ class PipelineStage(StrEnum):
     BRIEFING_CURRENT = "briefing_current"
 
 
+class PipelineExecutionClass(StrEnum):
+    INTERACTIVE = "interactive"
+    LONG_RUNNING = "long_running"
+
+
 class PipelineReadinessLedger(ReviewQueuePacketLedger, Protocol):
     def list_accepted_canonical_records(self) -> tuple[AcceptedCanonicalRecord, ...]: ...
     def list_briefings(self) -> tuple[Briefing, ...]: ...
@@ -94,6 +99,10 @@ class PipelineCommandPlan:
     ready_to_execute: bool
     missing_inputs: tuple[PipelinePlanInputRequirement, ...]
     blockers: tuple[PipelineBlocker, ...]
+    execution_class: PipelineExecutionClass
+    completion_probe_argv: tuple[str, ...]
+    evidence_argv: tuple[str, ...]
+    expected_record_types: tuple[str, ...]
 
 
 @dataclass(frozen=True)
@@ -315,6 +324,10 @@ def _command_plan(
             ready_to_execute=False,
             missing_inputs=(),
             blockers=(),
+            execution_class=PipelineExecutionClass.INTERACTIVE,
+            completion_probe_argv=(),
+            evidence_argv=(),
+            expected_record_types=(),
         )
     if stage is PipelineStage.REVIEW_REQUIRED:
         return _review_next_plan(stage, pipeline_input, blockers)
@@ -328,6 +341,10 @@ def _command_plan(
             ready_to_execute=False,
             missing_inputs=(),
             blockers=blockers,
+            execution_class=PipelineExecutionClass.INTERACTIVE,
+            completion_probe_argv=(),
+            evidence_argv=(),
+            expected_record_types=(),
         )
     raise ValueError(f"Unsupported Pipeline stage: {stage}")
 
@@ -367,6 +384,21 @@ def _source_ingest_plan(
             "--archive-path",
             _required_value(pipeline_input.archive_path, "archive_path"),
         )
+    ledger_path = pipeline_input.ledger_path
+    archive_path = pipeline_input.archive_path
+    inspection_argv: tuple[str, ...] = ()
+    if not missing_inputs:
+        assert ledger_path is not None and archive_path is not None
+        inspection_argv = (
+            "pipeline",
+            "status",
+            "--ledger-path",
+            ledger_path,
+            "--archive-path",
+            archive_path,
+            "--format",
+            "json",
+        )
     return PipelineCommandPlan(
         stage=stage,
         command="kotekomi source add-file",
@@ -374,6 +406,19 @@ def _source_ingest_plan(
         ready_to_execute=not missing_inputs,
         missing_inputs=missing_inputs,
         blockers=(),
+        execution_class=PipelineExecutionClass.LONG_RUNNING,
+        completion_probe_argv=inspection_argv,
+        evidence_argv=inspection_argv,
+        expected_record_types=(
+            (
+                "Source",
+                "Document",
+                "DocumentRepresentationBundle",
+                "ProvenanceActivity",
+            )
+            if not missing_inputs
+            else ()
+        ),
     )
 
 
@@ -418,6 +463,32 @@ def _ledger_only_plan(
         ready_to_execute=not missing_inputs,
         missing_inputs=missing_inputs,
         blockers=blockers,
+        execution_class=PipelineExecutionClass.INTERACTIVE,
+        completion_probe_argv=(
+            (
+                "review",
+                "readiness",
+                "--ledger-path",
+                _required_value(pipeline_input.ledger_path, "ledger_path"),
+                "--format",
+                "json",
+            )
+            if not missing_inputs
+            else ()
+        ),
+        evidence_argv=(
+            (
+                "review",
+                "readiness",
+                "--ledger-path",
+                _required_value(pipeline_input.ledger_path, "ledger_path"),
+                "--format",
+                "json",
+            )
+            if not missing_inputs
+            else ()
+        ),
+        expected_record_types=("ProvenanceActivity",) if not missing_inputs else (),
     )
 
 
@@ -450,6 +521,18 @@ def _briefing_generate_plan(
             "--archive-path",
             _required_value(pipeline_input.archive_path, "archive_path"),
         )
+    inspection_argv: tuple[str, ...] = ()
+    if not missing_inputs:
+        inspection_argv = (
+            "pipeline",
+            "status",
+            "--ledger-path",
+            _required_value(pipeline_input.ledger_path, "ledger_path"),
+            "--archive-path",
+            _required_value(pipeline_input.archive_path, "archive_path"),
+            "--format",
+            "json",
+        )
     return PipelineCommandPlan(
         stage=stage,
         command="kotekomi briefing generate",
@@ -457,6 +540,10 @@ def _briefing_generate_plan(
         ready_to_execute=not missing_inputs,
         missing_inputs=missing_inputs,
         blockers=(),
+        execution_class=PipelineExecutionClass.LONG_RUNNING,
+        completion_probe_argv=inspection_argv,
+        evidence_argv=inspection_argv,
+        expected_record_types=("Briefing", "ProvenanceActivity") if not missing_inputs else (),
     )
 
 
@@ -523,6 +610,10 @@ def pipeline_command_plan_to_json(plan: PipelineCommandPlan) -> dict[str, JsonVa
             for item in plan.missing_inputs
         ],
         "blockers": [_blocker_to_json(blocker) for blocker in plan.blockers],
+        "execution_class": plan.execution_class.value,
+        "completion_probe_argv": list(plan.completion_probe_argv),
+        "evidence_argv": list(plan.evidence_argv),
+        "expected_record_types": list(plan.expected_record_types),
     }
 
 

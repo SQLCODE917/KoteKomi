@@ -1,3 +1,4 @@
+import json
 import sqlite3
 from dataclasses import replace
 from pathlib import Path
@@ -66,15 +67,18 @@ def test_user_ingest_auto_initializes_storage_and_records_history(
     captured = capsys.readouterr()
 
     assert captured.err == ""
-    assert captured.out.startswith("anthropic_model_release_review.md\t[CAPTURED]\t")
+    assert captured.out.startswith("Ingestion run: igr_")
     assert "src_" not in captured.out
-    captured_row, summary = captured.out.splitlines()
+    run_line, captured_row, summary = captured.out.splitlines()
     assert summary == ("Extraction: 0 proposed changes; 0/0 paragraphs complete; 0 gaps; 0 reused")
     assert main(["--config", str(config_path), "ingestions", "list"]) == 0
     history = capsys.readouterr()
     assert history.err == ""
-    assert history.out == f"{captured_row}\n"
-    assert history.out.count("\t") == 2
+    assert history.out.startswith(
+        f"{run_line.removeprefix('Ingestion run: ')}\t"
+        f"{captured_row.split(chr(9), maxsplit=1)[0]}\t[CAPTURED]\t"
+    )
+    assert history.out.count("\t") == 3
 
 
 def test_user_ingest_retry_creates_two_runs_and_reuses_capture(
@@ -211,8 +215,93 @@ def test_user_ingest_checkpoints_and_reuses_the_complete_hybrid_document(
         first_ingestion = repository.list_ingestion_runs()[0]
         assert first_ingestion.analysis_run_id is not None
         first_analysis = repository.get_analysis_run(first_ingestion.analysis_run_id)
+        planned_items = repository.list_planned_items_for_analysis_run(
+            first_ingestion.analysis_run_id
+        )
+        item_attempts = repository.list_analysis_item_attempts_for_items(
+            tuple(item.id for item in planned_items)
+        )
     assert first_analysis is not None
     assert first_analysis.state is AnalysisRunState.COMPLETE
+    assert {item.model_run_id for item in item_attempts if item.model_run_id is not None} == set(
+        first_model_run_ids
+    )
+
+    assert (
+        main(
+            [
+                "--config",
+                str(config_path),
+                "ingestions",
+                "show",
+                first_ingestion.id,
+                "--format",
+                "json",
+            ]
+        )
+        == 0
+    )
+    summary = json.loads(capsys.readouterr().out)
+    assert summary["ingestion_run_id"] == first_ingestion.id
+    assert summary["analysis_state"] == "complete"
+    assert summary["required_paragraph_count"] == report.required_paragraph_count
+    assert summary["model_run_count"] == len(first_model_run_ids)
+    assert "source_text" not in summary
+
+    assert (
+        main(
+            [
+                "--config",
+                str(config_path),
+                "ingestions",
+                "artifacts",
+                first_ingestion.id,
+                "--format",
+                "jsonl",
+            ]
+        )
+        == 0
+    )
+    evidence = tuple(json.loads(line) for line in capsys.readouterr().out.splitlines() if line)
+    assert any(item["record_type"] == "HybridDocumentCoverageReport" for item in evidence)
+    assert any(item["record_type"] == "ModelRunOutput" for item in evidence)
+
+    assert (
+        main(
+            [
+                "--config",
+                str(config_path),
+                "model",
+                "runs",
+                "--ingestion-run",
+                first_ingestion.id,
+                "--format",
+                "json",
+            ]
+        )
+        == 0
+    )
+    model_history = json.loads(capsys.readouterr().out)
+    assert len(model_history["model_runs"]) == len(first_model_run_ids)
+
+    assert (
+        main(
+            [
+                "--config",
+                str(config_path),
+                "extraction",
+                "traces",
+                "--ingestion-run",
+                first_ingestion.id,
+                "--format",
+                "jsonl",
+            ]
+        )
+        == 0
+    )
+    traces = tuple(json.loads(line) for line in capsys.readouterr().out.splitlines() if line)
+    assert traces
+    assert all(item["authority"] == "derived_diagnostic" for item in traces)
 
     def adapter_must_not_start(*args: object, **kwargs: object) -> None:
         del args, kwargs
@@ -386,7 +475,8 @@ def test_user_ingest_persists_expected_failures(
 
     assert main(["--config", str(config_path), "ingest", path, "--url", url]) == 1
     output = capsys.readouterr()
-    assert output.out == ""
+    assert output.out.startswith("Ingestion run: igr_")
+    assert output.out.count("\n") == 1
     assert message in output.err
     assert "src_" not in output.err
     with sqlite_ledger_transaction(tmp_path / "state" / "kotekomi.db") as repository:
@@ -427,7 +517,8 @@ def test_user_ingest_records_unexpected_capture_failure_without_a_traceback(
         main(["--config", str(config_path), "ingest", str(FIXTURE_PATH), "--url", SOURCE_URL]) == 1
     )
     output = capsys.readouterr()
-    assert output.out == ""
+    assert output.out.startswith("Ingestion run: igr_")
+    assert output.out.count("\n") == 1
     assert "could not be captured" in output.err
     assert "internal source text" not in output.err
     with sqlite_ledger_transaction(tmp_path / "state" / "kotekomi.db") as repository:

@@ -10,6 +10,7 @@ from enum import StrEnum
 from typing import Annotated, Literal, Protocol, cast
 
 from kotekomi_domain import (
+    AnalysisItemAttempt,
     AnalysisRun,
     AnalysisRunState,
     DocumentRepresentationBundle,
@@ -575,7 +576,7 @@ def validate_hybrid_paragraph_receipt(
         if stage.disposition is HybridStageDisposition.NOT_RUN:
             continue
         assert stage.output_id is not None and stage.output_sha256 is not None
-        raw, parsed = _read_stage(stage.stage_id, stage.output_id, archive)
+        raw, parsed = read_hybrid_stage_output(stage.stage_id, stage.output_id, archive)
         if hashlib.sha256(raw).hexdigest() != stage.output_sha256:
             raise ValueError("Paragraph Receipt stage digest does not match Archive bytes.")
         parsed_id = getattr(parsed, "id", None)
@@ -770,6 +771,12 @@ def close_hybrid_document_ingestion(
         ) != tuple(sorted(planned_items, key=lambda item: item.id)):
             raise ValueError("Existing HP-8 AnalysisRun conflicts with document coverage.")
         analysis_run = existing_run
+    _record_hybrid_analysis_attempts(
+        planned_items=planned_items,
+        receipts=typed_receipts,
+        ledger=ledger,
+        archive=archive,
+    )
     for receipt in typed_receipts:
         stage = receipt.stages[-1]
         if stage.disposition is HybridStageDisposition.NOT_RUN:
@@ -893,7 +900,7 @@ def _ingestion_change_set(
     )
 
 
-def _read_stage(
+def read_hybrid_stage_output(
     stage_id: HybridStageId,
     output_id: str,
     archive: HybridDocumentArchive,
@@ -929,6 +936,52 @@ def _read_stage(
     if canonical != raw:
         raise ValueError("Hybrid stage output does not use canonical encoding.")
     return raw, parsed
+
+
+def _record_hybrid_analysis_attempts(
+    *,
+    planned_items: tuple[PlannedAnalysisItem, ...],
+    receipts: tuple[HybridParagraphReceipt, ...],
+    ledger: HybridDocumentLedger,
+    archive: HybridDocumentArchive,
+) -> None:
+    memberships: list[tuple[PlannedAnalysisItem, HybridStageId, str]] = []
+    for item, receipt in zip(planned_items, receipts, strict=True):
+        for stage in receipt.stages:
+            if stage.disposition is HybridStageDisposition.NOT_RUN:
+                continue
+            assert stage.output_id is not None
+            _, output = read_hybrid_stage_output(stage.stage_id, stage.output_id, archive)
+            raw_model_run_ids = getattr(output, "model_run_ids", ())
+            if not isinstance(raw_model_run_ids, tuple):
+                raise ValueError("Hybrid stage ModelRun references are invalid.")
+            candidate_model_run_ids = cast(tuple[object, ...], raw_model_run_ids)
+            if not all(isinstance(item, str) for item in candidate_model_run_ids):
+                raise ValueError("Hybrid stage ModelRun references are invalid.")
+            model_run_ids = tuple(cast(str, item) for item in candidate_model_run_ids)
+            memberships.extend(
+                (item, stage.stage_id, model_run_id) for model_run_id in model_run_ids
+            )
+    requested_ids = tuple(sorted({model_run_id for _, _, model_run_id in memberships}))
+    found_ids = {run.id for run in ledger.list_model_runs_by_ids(requested_ids)}
+    if found_ids != set(requested_ids):
+        raise ValueError("Hybrid analysis membership references a missing ModelRun.")
+    for item, stage_id, model_run_id in memberships:
+        ledger.save_analysis_item_attempt(
+            AnalysisItemAttempt(
+                id=_content_id(
+                    "aia",
+                    {
+                        "planned_item_id": item.id,
+                        "model_run_id": model_run_id,
+                        "execution_role": stage_id.value,
+                    },
+                ),
+                planned_item_id=item.id,
+                model_run_id=model_run_id,
+                execution_role=stage_id.value,
+            )
+        )
 
 
 def _validate_stage_lineage(

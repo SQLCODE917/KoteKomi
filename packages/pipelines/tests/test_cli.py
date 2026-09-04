@@ -6,6 +6,7 @@ from typing import cast
 
 import kotekomi_pipelines.cli as cli
 import pytest
+from kotekomi_adapters import SQLiteLedgerInitializer
 from kotekomi_application import (
     EntityLinkingInput,
     EntityLinkingPort,
@@ -1230,9 +1231,32 @@ def test_user_init_enables_no_config_ingest_and_history(
         == 0
     )
     captured = capsys.readouterr()
-    assert captured.out.startswith("anthropic_model_release_review.md\t[CAPTURED]\t")
+    output_lines = captured.out.splitlines()
+    assert output_lines[0].startswith("Ingestion run: igr_")
+    assert output_lines[1].startswith("anthropic_model_release_review.md\t[CAPTURED]\t")
     assert main(["ingestions", "list"]) == 0
-    assert capsys.readouterr().out == f"{captured.out.splitlines()[0]}\n"
+    ingestion_run_id = output_lines[0].removeprefix("Ingestion run: ")
+    assert capsys.readouterr().out.startswith(
+        f"{ingestion_run_id}\tanthropic_model_release_review.md\t[CAPTURED]\t"
+    )
+    assert main(["ingestions", "list", "--limit", "1", "--format", "json"]) == 0
+    history = json.loads(capsys.readouterr().out)
+    assert history["ingestions"][0]["ingestion_run_id"] == ingestion_run_id
+
+
+def test_user_history_rejects_non_positive_limit(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config-home"))
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "data-home"))
+    monkeypatch.chdir(tmp_path)
+    assert main(["init"]) == 0
+    capsys.readouterr()
+
+    assert main(["ingestions", "list", "--limit", "0"]) == 1
+    assert "positive integer" in capsys.readouterr().err
 
 
 def test_project_config_precedes_user_config(
@@ -1287,9 +1311,12 @@ def test_user_history_does_not_require_processing_identity(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     config_path = tmp_path / "kotekomi.toml"
+    ledger_path = tmp_path / "kotekomi.db"
     config_path.write_text(
-        '[processing]\nrepresentation_policy_version = "test-v1"\n', encoding="utf-8"
+        f'ledger_path = "{ledger_path}"\n[processing]\nrepresentation_policy_version = "test-v1"\n',
+        encoding="utf-8",
     )
+    SQLiteLedgerInitializer(ledger_path).initialize()
 
     def fail_identity(_: str) -> object:
         raise CheckoutBuildIdentityError("identity unavailable")
@@ -1305,9 +1332,12 @@ def test_model_runs_renders_safe_durable_diagnostics(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     config_path = tmp_path / "kotekomi.toml"
+    ledger_path = tmp_path / "kotekomi.db"
     config_path.write_text(
-        '[processing]\nrepresentation_policy_version = "test-v1"\n', encoding="utf-8"
+        f'ledger_path = "{ledger_path}"\n[processing]\nrepresentation_policy_version = "test-v1"\n',
+        encoding="utf-8",
     )
+    SQLiteLedgerInitializer(ledger_path).initialize()
     result = ListModelRunLogsResult(
         entries=(
             ModelRunLogEntry(
@@ -1364,9 +1394,12 @@ def test_model_runs_rejects_non_positive_limit(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     config_path = tmp_path / "kotekomi.toml"
+    ledger_path = tmp_path / "kotekomi.db"
     config_path.write_text(
-        '[processing]\nrepresentation_policy_version = "test-v1"\n', encoding="utf-8"
+        f'ledger_path = "{ledger_path}"\n[processing]\nrepresentation_policy_version = "test-v1"\n',
+        encoding="utf-8",
     )
+    SQLiteLedgerInitializer(ledger_path).initialize()
 
     assert main(["--config", str(config_path), "model", "runs", "--limit", "0"]) == 1
 

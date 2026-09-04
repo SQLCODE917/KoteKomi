@@ -7,7 +7,7 @@
 - First deliverable: [HP-1 Hybrid Mention Interpretation MVP](2026-09-01-hybrid-mention-interpretation-mvp.md)
 - Completed through: [HP-8 Hybrid Document Orchestration](2026-09-03-hybrid-document-orchestration.md)
 - Latest evaluation: [HP-8 Document Orchestration Evaluation](2026-09-03-hp8-document-orchestration-evaluation.md)
-- Next deliverable: Not yet designed; use the HP-8 whole-document evidence to select it.
+- Next deliverable: Not yet designed; HP-8.1 and HP-8.2 optimization experiments were rejected by their quality gates.
 - Supersedes: [Model and Ontology Boundary Program](2026-08-25-model-ontology-boundary-program.md)
 - Supersedes: [Paragraph Hypothesis Development Program](2026-08-26-paragraph-hypothesis-development-program.md)
 - Supersedes: [PHP-1 Reliability Improvement Program](2026-08-27-php1-reliability-improvement-program.md)
@@ -265,6 +265,8 @@ HP-1 through HP-8 have accepted, implemented, and verified TDDs.
 | [HP-6 Qualified Event Semantics and Source Support](2026-09-02-qualified-event-semantics-source-support.md) | A reviewer can inspect governed event frames, qualified roles, explicit gaps, and independent source support. | HP-5 supplies exact EvidenceTargets and lossless open-label evidence. | KoteKomi emits typed semantic drafts and support judgments without changing wiki state. |
 | [HP-7 ProposedChange Integration](2026-09-03-hybrid-proposed-change-integration.md) | A reviewer can inspect governed HP-6 events through the existing review flow. | HP-6 supplies governed semantic drafts with complete source-support evidence. | The Pipeline creates pending ProposedChanges without creating accepted intelligence. |
 | [HP-8 Hybrid Document Orchestration](2026-09-03-hybrid-document-orchestration.md) | A user receives one reviewable candidate change set from an ingested document. | HP-7 converts one HP-6 Preview into a reviewable proposal batch. | One ingestion runs the Hybrid Pipeline over its planned document scope and closes one IngestionChangeSet. |
+| [HP-8.1 Mention Interpretation Batching](2026-09-03-hp8-mention-interpretation-batching.md) | Determine whether bounded interpretation batching can reduce model work without losing meaning. | HP-8 records complete model and paragraph evidence. | The rejected experiment preserves its full evidence and leaves production mention behavior unchanged. |
+| [HP-8.2 Semantic Support Batching](2026-09-03-hp8-semantic-support-batching.md) | Determine whether support judgments can share one model request without losing statement-level meaning. | HP-8 supplies complete source-support and model evidence. | The rejected experiment preserves its full evidence and leaves production support behavior unchanged. |
 
 ## Validation strategy
 

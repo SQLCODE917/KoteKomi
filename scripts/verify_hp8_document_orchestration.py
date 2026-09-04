@@ -4,11 +4,13 @@
 from __future__ import annotations
 
 import argparse
+import base64
 import contextlib
 import hashlib
 import io
 import json
 import tempfile
+import time
 from pathlib import Path
 from typing import Any, cast
 
@@ -40,6 +42,11 @@ def main() -> int:
         type=Path,
         help="Preserve the isolated Ledger and Archive under this new directory.",
     )
+    parser.add_argument(
+        "--reuse-state",
+        action="store_true",
+        help="Rebuild a report from an already completed isolated state root.",
+    )
     args = parser.parse_args()
     source = args.source.resolve()
     _validate_locked_source(source)
@@ -54,20 +61,32 @@ def main() -> int:
         root = Path(temporary.name)
     else:
         root = args.state_root.resolve()
-        if root.exists():
+        if root.exists() and not args.reuse_state:
             raise ValueError(f"HP-8 state root already exists: {root}")
-        root.mkdir(parents=True)
+        if not root.exists() and args.reuse_state:
+            raise ValueError(f"HP-8 state root does not exist: {root}")
+        root.mkdir(parents=True, exist_ok=args.reuse_state)
     try:
         ledger_path = root / "kotekomi.db"
         archive_path = root / "archive"
         config_path = root / "kotekomi.toml"
-        config_path.write_text(
-            _isolated_config(configured, ledger_path, archive_path),
-            encoding="utf-8",
-        )
-        first = _ingest(config_path, source, args.url)
+        if not args.reuse_state:
+            config_path.write_text(
+                _isolated_config(configured, ledger_path, archive_path),
+                encoding="utf-8",
+            )
+            first = _ingest(config_path, source, args.url)
+        else:
+            first = {
+                "exit_code": 0,
+                "elapsed_milliseconds": None,
+                "stdout": "",
+                "stderr": "",
+                "recovered_existing_state": True,
+            }
         first_counts = _ledger_counts(ledger_path)
         report, manifest, paragraphs = _document_evidence(ledger_path, archive_path)
+        model_performance, model_executions = model_evidence(ledger_path, archive_path)
         second = _ingest(config_path, source, args.url)
         second_counts = _ledger_counts(ledger_path)
         origins = _change_set_origins(ledger_path)
@@ -95,6 +114,8 @@ def main() -> int:
             "first_public_output": first,
             "replay_public_output": second,
             "first_ledger_counts": first_counts,
+            "model_performance": model_performance,
+            "model_executions": model_executions,
             "replay_ledger_counts": second_counts,
             "ingestion_change_set_origins": origins,
             "findings": findings,
@@ -131,6 +152,7 @@ def main() -> int:
 def _ingest(config_path: Path, source: Path, url: str) -> JsonObject:
     stdout = io.StringIO()
     stderr = io.StringIO()
+    started = time.monotonic()
     with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
         exit_code = ingest_user_file(
             config_path=config_path,
@@ -139,12 +161,129 @@ def _ingest(config_path: Path, source: Path, url: str) -> JsonObject:
         )
     result = {
         "exit_code": exit_code,
+        "elapsed_milliseconds": round((time.monotonic() - started) * 1000),
         "stdout": stdout.getvalue(),
         "stderr": stderr.getvalue(),
     }
     if exit_code != 0:
         raise ValueError(f"HP-8 public ingest failed: {result}")
     return result
+
+
+def model_evidence(ledger_path: Path, archive_path: Path) -> tuple[JsonObject, list[JsonObject]]:
+    archive = LocalArchiveStore(archive_path)
+    with sqlite_ledger_transaction(ledger_path) as ledger:
+        tasks = {item.id: item for item in ledger.list_extraction_tasks()}
+        runs = tuple(ledger.list_model_runs())
+    grouped: dict[tuple[str, str], list[JsonObject]] = {}
+    executions: list[JsonObject] = []
+    for run in runs:
+        task = tasks[run.extraction_task_id]
+        elapsed_value = run.execution_diagnostics["elapsed_milliseconds"]
+        if type(elapsed_value) is not int:
+            raise ValueError("ModelRun elapsed milliseconds must be an integer.")
+        elapsed = elapsed_value
+        receipt = run.execution_receipt or {}
+        model_name = str(run.model_identity.get("name") or run.runtime_identity)
+        grouped.setdefault((task.task_type, model_name), []).append(
+            {
+                "elapsed_milliseconds": elapsed,
+                "first_response_event_milliseconds": run.execution_diagnostics[
+                    "first_response_event_milliseconds"
+                ],
+                "input_token_count": receipt.get("input_token_count"),
+                "output_token_count": receipt.get("output_token_count"),
+                "status": run.status.value,
+            }
+        )
+        manifest_payload = task.context_manifest_payload
+        rendered_value = manifest_payload.get("rendered_input_base64")
+        if rendered_value is None:
+            rendered_input = None
+        else:
+            rendered_context = base64.b64decode(str(rendered_value))
+            task_local_value = manifest_payload.get("task_local_input_base64")
+            task_local_input = (
+                base64.b64decode(str(task_local_value)) if task_local_value is not None else b""
+            )
+            rendered_input = (
+                rendered_context + b"\n\n[task]\n" + task_local_input
+                if task_local_input
+                else rendered_context
+            )
+        try:
+            raw_output = archive.read_model_run_output(run.id).decode("utf-8")
+        except FileNotFoundError:
+            raw_output = None
+        executions.append(
+            {
+                "extraction_task_id": task.id,
+                "model_run_id": run.id,
+                "task_type": task.task_type,
+                "model_name": model_name,
+                "input_candidate_ids": list(task.input_candidate_ids),
+                "rendered_input": (
+                    rendered_input.decode("utf-8") if rendered_input is not None else None
+                ),
+                "context_manifest_payload": manifest_payload,
+                "raw_output": raw_output,
+                "status": run.status.value,
+                "execution_diagnostics": run.execution_diagnostics,
+                "execution_receipt": run.execution_receipt,
+                "outcome_metadata": run.outcome_metadata,
+            }
+        )
+    performance: list[JsonObject] = []
+    for (task_type, model_name), records in sorted(grouped.items()):
+        elapsed_values = sorted(int(item["elapsed_milliseconds"]) for item in records)
+        input_tokens = sorted(
+            int(item["input_token_count"])
+            for item in records
+            if item["input_token_count"] is not None
+        )
+        output_tokens = sorted(
+            int(item["output_token_count"])
+            for item in records
+            if item["output_token_count"] is not None
+        )
+        performance.append(
+            {
+                "task_type": task_type,
+                "model_name": model_name,
+                "run_count": len(records),
+                "elapsed_milliseconds": {
+                    "total": sum(elapsed_values),
+                    "p50": _percentile(elapsed_values, 0.50),
+                    "p95": _percentile(elapsed_values, 0.95),
+                    "maximum": max(elapsed_values),
+                },
+                "input_token_count": {
+                    "total": sum(input_tokens),
+                    "p50": _percentile(input_tokens, 0.50),
+                    "p95": _percentile(input_tokens, 0.95),
+                    "maximum": max(input_tokens, default=0),
+                },
+                "output_token_count": {
+                    "total": sum(output_tokens),
+                    "p50": _percentile(output_tokens, 0.50),
+                    "p95": _percentile(output_tokens, 0.95),
+                    "maximum": max(output_tokens, default=0),
+                },
+                "statuses": {
+                    status: sum(item["status"] == status for item in records)
+                    for status in sorted({str(item["status"]) for item in records})
+                },
+            }
+        )
+    return {"by_task_type": performance}, sorted(
+        executions, key=lambda item: (str(item["task_type"]), str(item["extraction_task_id"]))
+    )
+
+
+def _percentile(values: list[int], fraction: float) -> int:
+    if not values:
+        return 0
+    return values[min(len(values) - 1, max(0, round((len(values) - 1) * fraction)))]
 
 
 def _document_evidence(
