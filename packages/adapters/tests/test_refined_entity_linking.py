@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import importlib.util
+import json
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -13,10 +14,12 @@ from kotekomi_adapters.refined_entity_linking import (
     REFINED_MODEL_REVISION,
     REFINED_PACKAGE_REVISION,
     REFINED_RESOURCE_MANIFEST_SHA256,
+    REFINED_RUNTIME_IDENTITY,
     RefinedEntityLinkingAdapter,
     RefinedEntityLinkingConfig,
     RefinedEntityLinkingWorkerError,
 )
+from kotekomi_adapters.refined_worker_transport import RefinedWorkerExchange
 from kotekomi_application.hybrid_entity_grounding import (
     EntityLinkCandidateKind,
     EntityLinkerIdentity,
@@ -29,18 +32,26 @@ class FakeTransport:
     def __init__(self, response: dict[str, object]) -> None:
         self.response = response
         self.requests: list[dict[str, object]] = []
+        self.discarded = False
 
-    def request(self, payload: dict[str, object]) -> bytes:
+    def request(self, payload: dict[str, object]) -> RefinedWorkerExchange:
         self.requests.append(payload)
-        import json
-
-        return json.dumps(
-            self.response,
+        request_id = "rwr_11111111111111111111111111111111"
+        raw_output = json.dumps(
+            {
+                "schema_version": "refined_worker_exchange_v1",
+                "request_id": request_id,
+                "payload": self.response,
+            },
             allow_nan=False,
             ensure_ascii=False,
             sort_keys=True,
             separators=(",", ":"),
         ).encode()
+        return RefinedWorkerExchange(request_id, self.response, raw_output)
+
+    def discard(self) -> None:
+        self.discarded = True
 
     def close(self) -> None:
         pass
@@ -87,23 +98,27 @@ def test_refined_linker_rejects_malformed_external_output(failure: str) -> None:
     else:
         candidates[0]["score"] = "NaN"  # type: ignore[index]
 
-    adapter = RefinedEntityLinkingAdapter(_config(), transport=FakeTransport(response))
+    transport = FakeTransport(response)
+    adapter = RefinedEntityLinkingAdapter(_config(), transport=transport)
 
     with pytest.raises(ValueError):
         adapter.link(request)
 
+    assert transport.discarded is True
+
 
 def test_refined_linker_exposes_typed_worker_failure() -> None:
+    transport = FakeTransport(
+        {
+            "schema_version": "refined_entity_linking_response_v1",
+            "status": "blocked",
+            "failure": "resources_unavailable",
+            "diagnostics": ["Pinned resources are unavailable."],
+        }
+    )
     adapter = RefinedEntityLinkingAdapter(
         _config(),
-        transport=FakeTransport(
-            {
-                "schema_version": "refined_entity_linking_response_v1",
-                "status": "blocked",
-                "failure": "resources_unavailable",
-                "diagnostics": ["Pinned resources are unavailable."],
-            }
-        ),
+        transport=transport,
     )
 
     with pytest.raises(RefinedEntityLinkingWorkerError) as captured:
@@ -111,6 +126,7 @@ def test_refined_linker_exposes_typed_worker_failure() -> None:
 
     assert captured.value.failure == "resources_unavailable"
     assert captured.value.raw_output
+    assert transport.discarded is False
 
 
 def test_worker_looks_up_each_ranked_title_by_its_own_wikidata_id() -> None:
@@ -149,6 +165,28 @@ def test_worker_does_not_duplicate_nil_when_refined_already_ranked_it() -> None:
     assert [item["kind"] for item in evidence["candidates"]] == ["nil"]
 
 
+def test_worker_exchange_echoes_request_id_for_success_and_failure() -> None:
+    worker = _load_worker_module()
+    request_id = "rwr_11111111111111111111111111111111"
+
+    observed_id, payload = worker._exchange_request(
+        {
+            "schema_version": "refined_worker_exchange_v1",
+            "request_id": request_id,
+            "payload": {"fixture": True},
+        }
+    )
+
+    assert observed_id == request_id
+    assert payload == {"fixture": True}
+    for status in ("completed", "blocked"):
+        assert worker._exchange_response(request_id, {"status": status}) == {
+            "schema_version": "refined_worker_exchange_v1",
+            "request_id": request_id,
+            "payload": {"status": status},
+        }
+
+
 def _request(source: str) -> EntityLinkingInput:
     return EntityLinkingInput(
         source_segment_id="src_fixture",
@@ -177,7 +215,7 @@ def _response(request: EntityLinkingInput) -> dict[str, object]:
             entity_set=REFINED_ENTITY_SET,
             package_revision=REFINED_PACKAGE_REVISION,
             resource_manifest_sha256=REFINED_RESOURCE_MANIFEST_SHA256,
-            runtime_identity="isolated:refined-v1",
+            runtime_identity=REFINED_RUNTIME_IDENTITY,
             timeout_seconds=300.0,
         ).model_dump(mode="json"),
         "load_elapsed_ms": 100,

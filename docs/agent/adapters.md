@@ -63,6 +63,28 @@ Adapter tests prove the Adapter satisfies the same Port contract as Application 
 
 Adapter tests prove deterministic invalid input fails fast.
 
+## Persistent Worker Channels
+
+Persistent subprocess workers use a shared Adapter-internal transport when they share a protocol.
+
+Each request and response carries a unique correlation identity.
+
+One monotonic deadline covers the complete request write and complete response read.
+
+Partial output does not extend the deadline.
+
+Request and response frames have explicit size limits.
+
+A timeout, broken frame, correlation mismatch, unexpected exit, or invalid worker-specific response poisons the worker.
+
+Discard a poisoned worker and its buffered pipes before returning the failure.
+
+The next explicit request may start a fresh worker; the transport does not retry semantic work automatically.
+
+Retain correlated raw output as execution evidence when the Application contract supports raw runtime evidence.
+
+Do not promote transport correlation identities into semantic Ledger records.
+
 ## Add an Adapter
 
 1. Add or update the Port in `packages/application`.

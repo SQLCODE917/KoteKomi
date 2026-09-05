@@ -13,6 +13,7 @@ import importlib
 import importlib.metadata
 import json
 import os
+import re
 import sys
 import time
 from pathlib import Path
@@ -26,6 +27,10 @@ REFINED_PACKAGE_VERSION = "1.0"
 REFINED_RESOURCE_MANIFEST_SHA256 = (
     "75ca7833e4fbcc94bf05b129c591d7656900f1f61edb55cdb0b20f2d6518094b"
 )
+EXCHANGE_SCHEMA_VERSION = "refined_worker_exchange_v1"
+_EXCHANGE_FIELDS = {"schema_version", "request_id", "payload"}
+_REQUEST_ID_PATTERN = re.compile(r"^rwr_[a-f0-9]{32}$")
+_UNCORRELATED_REQUEST_ID = "rwr_00000000000000000000000000000000"
 
 _REQUEST_FIELDS = {
     "schema_version",
@@ -51,14 +56,34 @@ _load_elapsed_ms: int | None = None
 def main() -> int:
     """Serve strict requests until standard input closes."""
     for line in sys.stdin:
+        request_id = _UNCORRELATED_REQUEST_ID
         try:
-            request: object = json.loads(line)
-            response = process_request(request)
+            request_id, payload = _exchange_request(json.loads(line))
+            response = process_request(payload)
         except Exception as error:  # noqa: BLE001 - external worker boundary
             response = _failure_response(error)
-        sys.stdout.write(_canonical_json(response) + "\n")
+        sys.stdout.write(_canonical_json(_exchange_response(request_id, response)) + "\n")
         sys.stdout.flush()
     return 0
+
+
+def _exchange_request(value: object) -> tuple[str, dict[str, object]]:
+    exchange = _mapping("exchange", value)
+    _require_fields("exchange", exchange, _EXCHANGE_FIELDS)
+    if exchange["schema_version"] != EXCHANGE_SCHEMA_VERSION:
+        raise WorkerFailure("unsupported_protocol", "Worker exchange schema is unsupported.")
+    request_id = _string(exchange, "request_id")
+    if _REQUEST_ID_PATTERN.fullmatch(request_id) is None:
+        raise WorkerFailure("invalid_request", "WorkerRequestId is invalid.")
+    return request_id, _mapping("payload", exchange["payload"])
+
+
+def _exchange_response(request_id: str, payload: dict[str, object]) -> dict[str, object]:
+    return {
+        "schema_version": EXCHANGE_SCHEMA_VERSION,
+        "request_id": request_id,
+        "payload": payload,
+    }
 
 
 def process_request(value: object) -> dict[str, object]:

@@ -2,14 +2,10 @@
 
 from __future__ import annotations
 
-import json
 import math
-import selectors
-import subprocess
 from dataclasses import dataclass
 from pathlib import Path
-from types import TracebackType
-from typing import Protocol, cast
+from typing import cast
 
 from kotekomi_application.organization_semantic_qualification import (
     ContextualEntityTypePrediction,
@@ -17,6 +13,11 @@ from kotekomi_application.organization_semantic_qualification import (
     ContextualOrganizationTypeBatch,
     ContextualOrganizationTypeEvidence,
     ContextualOrganizationTypeInput,
+)
+
+from kotekomi_adapters.refined_worker_transport import (
+    RefinedWorkerTransport,
+    SubprocessRefinedWorkerTransport,
 )
 
 REFINED_PACKAGE_REVISION = "7c98036f72c39a8d6d2c097bbde89ea3731901f0"
@@ -95,14 +96,6 @@ class RefinedWorkerConfig:
             raise ValueError("ReFinED worker timeout must be positive.")
 
 
-class RefinedWorkerTransport(Protocol):
-    """Strict request/response transport for an isolated ReFinED runtime."""
-
-    def request(self, payload: dict[str, object]) -> dict[str, object]: ...
-
-    def close(self) -> None: ...
-
-
 class RefinedWorkerError(RuntimeError):
     """Typed isolated-worker failure suitable for a blocked evaluation result."""
 
@@ -110,76 +103,6 @@ class RefinedWorkerError(RuntimeError):
         self.failure = failure
         self.diagnostics = diagnostics
         super().__init__(f"ReFinED worker failed with {failure}: {'; '.join(diagnostics)}")
-
-
-class SubprocessRefinedWorkerTransport:
-    """Persistent line-delimited JSON transport to one pinned Python worker."""
-
-    def __init__(self, config: RefinedWorkerConfig) -> None:
-        if not config.python_executable.is_file():
-            raise RuntimeError("ReFinED worker Python executable is unavailable.")
-        if not config.worker_script.is_file():
-            raise RuntimeError("ReFinED worker script is unavailable.")
-        self._timeout_seconds = config.timeout_seconds
-        self._process = subprocess.Popen(
-            [str(config.python_executable), str(config.worker_script)],
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=None,
-            text=True,
-            encoding="utf-8",
-            bufsize=1,
-        )
-
-    def request(self, payload: dict[str, object]) -> dict[str, object]:
-        process = self._process
-        if process.poll() is not None or process.stdin is None or process.stdout is None:
-            raise RuntimeError("ReFinED worker is not running.")
-        request_text = json.dumps(
-            payload,
-            allow_nan=False,
-            ensure_ascii=False,
-            sort_keys=True,
-            separators=(",", ":"),
-        )
-        process.stdin.write(request_text + "\n")
-        process.stdin.flush()
-        selector = selectors.DefaultSelector()
-        try:
-            selector.register(process.stdout, selectors.EVENT_READ)
-            if not selector.select(self._timeout_seconds):
-                raise TimeoutError("ReFinED worker exceeded its configured timeout.")
-            response_text = process.stdout.readline()
-        finally:
-            selector.close()
-        if not response_text:
-            raise RuntimeError("ReFinED worker exited without a response.")
-        try:
-            response: object = json.loads(response_text)
-        except json.JSONDecodeError as error:
-            raise RuntimeError("ReFinED worker returned malformed JSON.") from error
-        return _mapping("response", response)
-
-    def close(self) -> None:
-        if self._process.poll() is None:
-            self._process.terminate()
-            try:
-                self._process.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                self._process.kill()
-                self._process.wait(timeout=5)
-
-    def __enter__(self) -> SubprocessRefinedWorkerTransport:
-        return self
-
-    def __exit__(
-        self,
-        exc_type: type[BaseException] | None,
-        exc_value: BaseException | None,
-        traceback: TracebackType | None,
-    ) -> None:
-        del exc_type, exc_value, traceback
-        self.close()
 
 
 class RefinedContextualOrganizationTypeAdapter:
@@ -192,18 +115,28 @@ class RefinedContextualOrganizationTypeAdapter:
         transport: RefinedWorkerTransport | None = None,
     ) -> None:
         self._config = config
-        self._transport = transport or SubprocessRefinedWorkerTransport(config)
+        self._transport = transport or SubprocessRefinedWorkerTransport(
+            python_executable=config.python_executable,
+            worker_script=config.worker_script,
+            timeout_seconds=config.timeout_seconds,
+        )
 
     def qualify(
         self,
         request: ContextualOrganizationTypeInput,
     ) -> ContextualOrganizationTypeBatch:
         payload = _request_payload(request, self._config)
-        response = self._transport.request(payload)
-        batch = _parse_response(response)
-        _validate_response_identity(batch)
-        _validate_evidence_alignment(request, batch)
-        return batch
+        exchange = self._transport.request(payload)
+        try:
+            batch = _parse_response(exchange.payload)
+            _validate_response_identity(batch)
+            _validate_evidence_alignment(request, batch)
+            return batch
+        except RefinedWorkerError:
+            raise
+        except Exception:
+            self._transport.discard()
+            raise
 
     def close(self) -> None:
         self._transport.close()
