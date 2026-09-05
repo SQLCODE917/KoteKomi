@@ -24,6 +24,12 @@ The key findings, in priority order:
 | P2 — input contracts | Qwen output is strict bounded text parsed after generation; no decoder schema is sent by the active adapter. | Malformed output is contained, but formatting compliance is left to prompting. There is a supported LM Studio path for testing constrained JSON. |
 | P2 — memory and throughput | Serial semantic calls coexist with retained encoder/worker resources. | Low concurrency is sensible; there is no demonstrated whole-machine memory budget or measured stage-residency policy. |
 
+The runtime-correctness finding is addressed by the
+[Runtime Input Admission TDD](2026-09-04-runtime-input-admission.md): new staged LM Studio
+attempts inspect the complete request with the loaded model's prompt template, tokenizer, and
+context length, then persist a typed pre-transport admission decision. The original observation
+above remains the evidence that motivated the change.
+
 P1 means address early because the issue affects a central objective or a real correctness boundary. It does not imply an accepted-ledger corruption was observed.
 
 ## 2. What the current production flow actually does
@@ -326,4 +332,3 @@ The thresholds below are proposed acceptance targets, not predictions. Freeze mo
 [S25]: https://docling-project.github.io/docling/concepts/docling_document/
 [S26]: https://docling-project.github.io/docling/concepts/chunking/
 [S27]: https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f
-

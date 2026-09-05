@@ -55,4 +55,7 @@ def model_runtime_status_to_json(status: ModelRuntimeStatus) -> dict[str, JsonVa
         "ready": status.ready,
         "error_code": status.error_code,
         "error_message": status.error_message,
+        "configured_context_limit": status.configured_context_limit,
+        "loaded_context_limit": status.loaded_context_limit,
+        "effective_context_limit": status.effective_context_limit,
     }

@@ -16,6 +16,7 @@ Initial runtime Adapters:
 
 - llama-server on macOS Apple Silicon through `LlamaServerModelRuntime`
 - Ollama on WSL/Ubuntu NVIDIA through `OllamaModelRuntime`
+- LM Studio through `LMStudioModelRuntime` for staged local extraction
 
 ## Runtime Profiles
 
@@ -135,6 +136,40 @@ not source evidence or model confidence.
 
 Use `kotekomi model runs --format json` to inspect durable diagnostics. It is a
 read-only view and must not expose prompts, raw model output, or source text.
+
+## Input Admission
+
+A ready `ContextManifest` is not permission to invoke a model after a Pipeline adds
+task-local instructions, candidate catalogs, or other task material.
+
+Before every staged LM Studio invocation:
+
+1. Compose the complete logical request.
+2. Select the configured, already-loaded model.
+3. Apply that model's prompt template through the supported LM Studio SDK.
+4. Count the formatted request with that loaded model's tokenizer.
+5. Read the loaded model's context length.
+6. Let the Application Layer compare the count plus reserved output and safety
+   margin with the lower of configured and loaded context limits.
+
+The Application Layer persists that decision as `ModelInputAdmission` on the
+`ModelRun`. A blocked attempt uses `input_blocked`, records
+`runtime_invoked=false`, and has no execution receipt or output artifact.
+
+Do not estimate production admission with whitespace-separated words. Do not
+silently load a different model, truncate the request, reduce the output reserve,
+or continue when inspection fails. The generation Adapter rechecks the loaded
+model immediately before transport.
+
+The SDK-formatted count and Responses `usage.input_tokens` are different token
+domains. The former is the admission authority for context occupancy. The latter
+is runtime-reported API accounting. Preserve and label both; do not require them
+to be equal and do not introduce a fixed correction factor between them. Bind the
+response through model identity, generation settings, and the exact logical-input
+digest instead.
+
+The [Runtime Input Admission TDD](../2026-09-04-runtime-input-admission.md)
+defines this contract.
 
 ## Prompt Rules
 

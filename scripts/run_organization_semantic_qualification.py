@@ -82,7 +82,7 @@ from organization_semantic_qualification_evaluation import (
     seal_bundle,
     write_canonical_jsonl,
 )
-from php1_diagnostic_support import DiagnosticTokenizer, RecordingRuntime
+from php1_diagnostic_support import RecordingRuntime
 from verify_organization_boundary_reconciliation import run as run_boundary_evaluation
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -309,7 +309,7 @@ def run_qwen(
     schema = OrganizationQualificationLabelTaskSchemaRegistry().resolve(
         "organization_qualification_label_v1"
     )
-    tokenizer = DiagnosticTokenizer()
+    tokenizer = runtime
     written = 0
     for source_index, source in enumerate(sources, start=1):
         ledger = _EvaluationLedger(_evaluation_bundle(source))

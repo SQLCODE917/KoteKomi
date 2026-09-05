@@ -14,7 +14,15 @@ from datetime import UTC, datetime
 from functools import cache
 from typing import Protocol, cast
 
-from kotekomi_domain import DocumentNode, ExtractionTask, ModelRun, ModelRunStatus, TextView
+from kotekomi_domain import (
+    DocumentNode,
+    ExtractionTask,
+    ModelInputAdmission,
+    ModelInputAdmissionStatus,
+    ModelRun,
+    ModelRunStatus,
+    TextView,
+)
 from kotekomi_domain.models import JsonValue
 from pydantic import ValidationError
 
@@ -193,6 +201,8 @@ class ModelExecutionSpec:
 
 @dataclass(frozen=True)
 class ModelExecutionReceipt:
+    """Runtime response evidence; token counts use the runtime API's accounting domain."""
+
     model_identity_digest: str
     generation_parameters_digest: str
     rendered_input_digest: str
@@ -221,6 +231,86 @@ class ModelExecutionReceipt:
 
 
 @dataclass(frozen=True)
+class ModelInputInspectionRequest:
+    model_identity: ModelIdentitySnapshot
+    logical_input: bytes
+    logical_input_digest: str
+
+    def __post_init__(self) -> None:
+        if self.logical_input_digest != hashlib.sha256(self.logical_input).hexdigest():
+            raise ValueError("Model input inspection digest does not match its bytes.")
+
+
+@dataclass(frozen=True)
+class ModelInputMeasurement:
+    model_identity_digest: str
+    runtime_identity: str
+    model_instance_id: str
+    tokenizer_id: str
+    prompt_template_identity: str
+    logical_input_digest: str
+    formatted_input_digest: str
+    formatted_input_token_count: int
+    loaded_context_limit: int
+
+    def __post_init__(self) -> None:
+        for digest in (
+            self.model_identity_digest,
+            self.logical_input_digest,
+            self.formatted_input_digest,
+        ):
+            if len(digest) != 64 or any(
+                character not in "0123456789abcdef" for character in digest
+            ):
+                raise ValueError("Model input measurement digests must be SHA-256 hex.")
+        if not all(
+            (
+                self.runtime_identity,
+                self.model_instance_id,
+                self.tokenizer_id,
+                self.prompt_template_identity,
+            )
+        ):
+            raise ValueError("Model input measurement identity fields must be non-empty.")
+        if (
+            type(self.formatted_input_token_count) is not int
+            or self.formatted_input_token_count < 0
+            or type(self.loaded_context_limit) is not int
+            or self.loaded_context_limit <= 0
+        ):
+            raise ValueError("Model input measurement token values are invalid.")
+
+
+@dataclass(frozen=True)
+class ModelInputAdmissionRequest:
+    model_run_id: str
+    extraction_task_id: str
+    model_profile_id: str
+    model_identity: ModelIdentitySnapshot
+    logical_input: bytes
+    configured_context_limit: int
+    reserved_output_tokens: int
+    safety_margin_tokens: int
+
+    def __post_init__(self) -> None:
+        if not self.model_run_id.startswith("mrn_"):
+            raise ValueError("Model input admission requires a ModelRun ID.")
+        if not self.extraction_task_id.startswith("ext_"):
+            raise ValueError("Model input admission requires an ExtractionTask ID.")
+        if not self.model_profile_id:
+            raise ValueError("Model input admission requires a model profile.")
+        if type(self.configured_context_limit) is not int or self.configured_context_limit <= 0:
+            raise ValueError("Configured model context limit must be positive.")
+        if (
+            type(self.reserved_output_tokens) is not int
+            or self.reserved_output_tokens < 0
+            or type(self.safety_margin_tokens) is not int
+            or self.safety_margin_tokens < 0
+        ):
+            raise ValueError("Model input admission reserves cannot be negative.")
+
+
+@dataclass(frozen=True)
 class ModelTaskRequest:
     extraction_task_id: str
     task_fingerprint: str
@@ -230,6 +320,7 @@ class ModelTaskRequest:
     rendered_input: bytes
     rendered_input_digest: str
     execution_spec: ModelExecutionSpec
+    input_admission: ModelInputAdmission
 
 
 @dataclass(frozen=True)
@@ -248,12 +339,16 @@ class ModelTaskResponse:
             )
 
 
-class ModelTaskRuntime(Protocol):
+class ModelTaskRuntime(ContextTokenizer, Protocol):
     @property
     def configured_identity(self) -> ModelIdentitySnapshot: ...
 
     @property
     def task_deadline_seconds(self) -> float: ...
+
+    def inspect_model_input(
+        self, request: ModelInputInspectionRequest
+    ) -> ModelInputMeasurement: ...
 
     def run_model_task(self, task: ModelTaskRequest) -> ModelTaskResponse: ...
 
@@ -571,8 +666,66 @@ def run_bounded_extraction(
     model_run_clock = clock or UtcModelRunClock()
     deadline_milliseconds = _deadline_milliseconds(model_runtime.task_deadline_seconds)
     task = _extraction_task(extraction_input, manifest)
-    ledger_repository.save_extraction_task(task)
     model_run_id = model_run_id_factory.new_model_run_id()
+    started_at = model_run_clock.now()
+    monotonic_started = model_run_clock.monotonic_seconds()
+    admission: ModelInputAdmission | None = None
+    try:
+        admission = _inspect_and_admit_model_input(
+            model_run_id=model_run_id,
+            task=task,
+            manifest=manifest,
+            rendered_input=rendered_input,
+            execution_spec=execution_spec,
+            model_runtime=model_runtime,
+        )
+    except Exception as exc:
+        ledger_repository.save_extraction_task(task)
+        completed_at, diagnostics = _completed_diagnostics(
+            model_run_clock,
+            monotonic_started,
+            deadline_milliseconds,
+            None,
+        )
+        run = _model_run(
+            extraction_input,
+            manifest,
+            task,
+            model_run_id,
+            ModelRunStatus.RUNTIME_FAILED,
+            started_at=started_at,
+            completed_at=completed_at,
+            execution_diagnostics=diagnostics,
+            input_admission=admission,
+            runtime_invoked=False,
+            error=exc,
+        )
+        ledger_repository.save_model_run(run)
+        return BoundedExtractionOutcome(task, run, None)
+    assert admission is not None
+    ledger_repository.save_extraction_task(task)
+    if admission.status is ModelInputAdmissionStatus.CONTEXT_BUDGET_BLOCKED:
+        completed_at, diagnostics = _completed_diagnostics(
+            model_run_clock,
+            monotonic_started,
+            deadline_milliseconds,
+            None,
+        )
+        run = _model_run(
+            extraction_input,
+            manifest,
+            task,
+            model_run_id,
+            ModelRunStatus.INPUT_BLOCKED,
+            started_at=started_at,
+            completed_at=completed_at,
+            execution_diagnostics=diagnostics,
+            input_admission=admission,
+            runtime_invoked=False,
+            outcome_metadata={"blocked_reason": admission.blocked_reason},
+        )
+        ledger_repository.save_model_run(run)
+        return BoundedExtractionOutcome(task, run, None)
     request = ModelTaskRequest(
         extraction_task_id=task.id,
         task_fingerprint=task.task_fingerprint,
@@ -582,9 +735,8 @@ def run_bounded_extraction(
         rendered_input=rendered_input,
         rendered_input_digest=hashlib.sha256(rendered_input).hexdigest(),
         execution_spec=execution_spec,
+        input_admission=admission,
     )
-    started_at = model_run_clock.now()
-    monotonic_started = model_run_clock.monotonic_seconds()
     try:
         response = model_runtime.run_model_task(request)
     except Exception as exc:
@@ -603,6 +755,8 @@ def run_bounded_extraction(
             started_at=started_at,
             completed_at=completed_at,
             execution_diagnostics=diagnostics,
+            input_admission=admission,
+            runtime_invoked=True,
             error=exc,
         )
         ledger_repository.save_model_run(run)
@@ -632,6 +786,7 @@ def run_bounded_extraction(
             started_at=started_at,
             completed_at=completed_at,
             execution_diagnostics=diagnostics,
+            input_admission=admission,
             execution_receipt=response.execution_receipt,
             error=exc,
         )
@@ -641,8 +796,6 @@ def run_bounded_extraction(
         _validate_execution_receipt(
             response.execution_receipt,
             execution_spec,
-            manifest,
-            expected_input_token_count=tokenizer.count_tokens(rendered_input),
         )
         parsed = _parse_output(response.raw_output, manifest, schema)
         if isinstance(
@@ -666,6 +819,7 @@ def run_bounded_extraction(
                 started_at=started_at,
                 completed_at=completed_at,
                 execution_diagnostics=diagnostics,
+                input_admission=admission,
                 output_digest=output_digest,
                 execution_receipt=response.execution_receipt,
                 abstention_reason=parsed.reason,
@@ -698,6 +852,7 @@ def run_bounded_extraction(
                     started_at=started_at,
                     completed_at=completed_at,
                     execution_diagnostics=diagnostics,
+                    input_admission=admission,
                     output_digest=output_digest,
                     execution_receipt=response.execution_receipt,
                     outcome_metadata={
@@ -719,6 +874,7 @@ def run_bounded_extraction(
                 started_at=started_at,
                 completed_at=completed_at,
                 execution_diagnostics=diagnostics,
+                input_admission=admission,
                 output_digest=output_digest,
                 execution_receipt=response.execution_receipt,
                 outcome_metadata={
@@ -743,6 +899,7 @@ def run_bounded_extraction(
                 started_at=started_at,
                 completed_at=completed_at,
                 execution_diagnostics=diagnostics,
+                input_admission=admission,
                 output_digest=output_digest,
                 execution_receipt=response.execution_receipt,
                 outcome_metadata={
@@ -767,6 +924,7 @@ def run_bounded_extraction(
                 started_at=started_at,
                 completed_at=completed_at,
                 execution_diagnostics=diagnostics,
+                input_admission=admission,
                 output_digest=output_digest,
                 execution_receipt=response.execution_receipt,
                 outcome_metadata={
@@ -791,6 +949,7 @@ def run_bounded_extraction(
                 started_at=started_at,
                 completed_at=completed_at,
                 execution_diagnostics=diagnostics,
+                input_admission=admission,
                 output_digest=output_digest,
                 execution_receipt=response.execution_receipt,
                 outcome_metadata={
@@ -815,6 +974,7 @@ def run_bounded_extraction(
                 started_at=started_at,
                 completed_at=completed_at,
                 execution_diagnostics=diagnostics,
+                input_admission=admission,
                 output_digest=output_digest,
                 execution_receipt=response.execution_receipt,
                 outcome_metadata={
@@ -841,6 +1001,7 @@ def run_bounded_extraction(
                 started_at=started_at,
                 completed_at=completed_at,
                 execution_diagnostics=diagnostics,
+                input_admission=admission,
                 output_digest=output_digest,
                 execution_receipt=response.execution_receipt,
                 outcome_metadata={
@@ -865,6 +1026,7 @@ def run_bounded_extraction(
                 started_at=started_at,
                 completed_at=completed_at,
                 execution_diagnostics=diagnostics,
+                input_admission=admission,
                 output_digest=output_digest,
                 execution_receipt=response.execution_receipt,
                 outcome_metadata={
@@ -890,6 +1052,7 @@ def run_bounded_extraction(
                 started_at=started_at,
                 completed_at=completed_at,
                 execution_diagnostics=diagnostics,
+                input_admission=admission,
                 output_digest=output_digest,
                 execution_receipt=response.execution_receipt,
                 outcome_metadata={
@@ -917,6 +1080,7 @@ def run_bounded_extraction(
                 started_at=started_at,
                 completed_at=completed_at,
                 execution_diagnostics=diagnostics,
+                input_admission=admission,
                 output_digest=output_digest,
                 execution_receipt=response.execution_receipt,
                 outcome_metadata={
@@ -942,6 +1106,7 @@ def run_bounded_extraction(
                 started_at=started_at,
                 completed_at=completed_at,
                 execution_diagnostics=diagnostics,
+                input_admission=admission,
                 output_digest=output_digest,
                 execution_receipt=response.execution_receipt,
                 outcome_metadata={
@@ -978,6 +1143,7 @@ def run_bounded_extraction(
             started_at=started_at,
             completed_at=completed_at,
             execution_diagnostics=diagnostics,
+            input_admission=admission,
             output_digest=output_digest,
             execution_receipt=response.execution_receipt,
             error=exc,
@@ -994,6 +1160,7 @@ def run_bounded_extraction(
         started_at=started_at,
         completed_at=completed_at,
         execution_diagnostics=diagnostics,
+        input_admission=admission,
         output_digest=output_digest,
         execution_receipt=response.execution_receipt,
         outcome_metadata=outcome_metadata,
@@ -1013,6 +1180,7 @@ def run_bounded_extraction(
             started_at=started_at,
             completed_at=completed_at,
             execution_diagnostics=diagnostics,
+            input_admission=admission,
             output_digest=output_digest,
             execution_receipt=response.execution_receipt,
             error=exc,
@@ -1090,12 +1258,14 @@ def _model_run(
     started_at: datetime,
     completed_at: datetime,
     execution_diagnostics: dict[str, JsonValue],
+    input_admission: ModelInputAdmission | None,
     output_digest: str | None = None,
     execution_receipt: ModelExecutionReceipt | None = None,
     abstention_reason: str | None = None,
     outcome_metadata: dict[str, JsonValue] | None = None,
     execution_spec: ModelExecutionSpec | None = None,
     task_metadata_extra: dict[str, JsonValue] | None = None,
+    runtime_invoked: bool = True,
     error: Exception | None = None,
 ) -> ModelRun:
     effective_execution_spec = execution_spec or extraction_input.execution_spec
@@ -1116,6 +1286,8 @@ def _model_run(
             dict[str, JsonValue],
             _settings_payload(effective_execution_spec.generation_parameters),
         ),
+        input_admission=input_admission,
+        runtime_invoked=runtime_invoked,
         raw_output_artifact_id=(model_run_id if output_digest is not None else None),
         output_digest=output_digest,
         status=status,
@@ -1536,8 +1708,68 @@ def _run_hypothesis_verifier(
         execution_spec,
         rendered_input,
     )
-    ledger_repository.save_extraction_task(task)
     model_run_id = model_run_id_factory.new_model_run_id()
+    started_at = clock.now()
+    monotonic_started = clock.monotonic_seconds()
+    deadline_milliseconds = _deadline_milliseconds(model_runtime.task_deadline_seconds)
+    admission: ModelInputAdmission | None = None
+    try:
+        admission = _inspect_and_admit_model_input(
+            model_run_id=model_run_id,
+            task=task,
+            manifest=manifest,
+            rendered_input=rendered_input,
+            execution_spec=execution_spec,
+            model_runtime=model_runtime,
+        )
+    except Exception as exc:
+        ledger_repository.save_extraction_task(task)
+        completed_at, diagnostics = _completed_diagnostics(
+            clock, monotonic_started, deadline_milliseconds, None
+        )
+        run = _model_run(
+            extraction_input,
+            manifest,
+            task,
+            model_run_id,
+            ModelRunStatus.RUNTIME_FAILED,
+            started_at=started_at,
+            completed_at=completed_at,
+            execution_diagnostics=diagnostics,
+            input_admission=admission,
+            execution_spec=execution_spec,
+            task_metadata_extra={"verifies_model_run_id": extraction_model_run_id},
+            runtime_invoked=False,
+            error=exc,
+        )
+        ledger_repository.save_model_run(run)
+        return HypothesisFaithfulnessVerdict(False, "verifier_runtime_failed"), model_run_id
+    assert admission is not None
+    ledger_repository.save_extraction_task(task)
+    if admission.status is ModelInputAdmissionStatus.CONTEXT_BUDGET_BLOCKED:
+        completed_at, diagnostics = _completed_diagnostics(
+            clock, monotonic_started, deadline_milliseconds, None
+        )
+        run = _model_run(
+            extraction_input,
+            manifest,
+            task,
+            model_run_id,
+            ModelRunStatus.INPUT_BLOCKED,
+            started_at=started_at,
+            completed_at=completed_at,
+            execution_diagnostics=diagnostics,
+            input_admission=admission,
+            execution_spec=execution_spec,
+            task_metadata_extra={"verifies_model_run_id": extraction_model_run_id},
+            runtime_invoked=False,
+            outcome_metadata={"blocked_reason": admission.blocked_reason},
+        )
+        ledger_repository.save_model_run(run)
+        return (
+            HypothesisFaithfulnessVerdict(False, "verifier_context_budget_blocked"),
+            model_run_id,
+        )
     request = ModelTaskRequest(
         extraction_task_id=task.id,
         task_fingerprint=task.task_fingerprint,
@@ -1547,10 +1779,8 @@ def _run_hypothesis_verifier(
         rendered_input=rendered_input,
         rendered_input_digest=execution_spec.rendered_input_digest,
         execution_spec=execution_spec,
+        input_admission=admission,
     )
-    started_at = clock.now()
-    monotonic_started = clock.monotonic_seconds()
-    deadline_milliseconds = _deadline_milliseconds(model_runtime.task_deadline_seconds)
     try:
         response = model_runtime.run_model_task(request)
     except Exception as exc:
@@ -1566,8 +1796,10 @@ def _run_hypothesis_verifier(
             started_at=started_at,
             completed_at=completed_at,
             execution_diagnostics=diagnostics,
+            input_admission=admission,
             execution_spec=execution_spec,
             task_metadata_extra={"verifies_model_run_id": extraction_model_run_id},
+            runtime_invoked=True,
             error=exc,
         )
         ledger_repository.save_model_run(run)
@@ -1584,8 +1816,6 @@ def _run_hypothesis_verifier(
         _validate_execution_receipt(
             response.execution_receipt,
             execution_spec,
-            manifest,
-            expected_input_token_count=len(rendered_input.decode("utf-8").split()),
         )
         verdict = _parse_hypothesis_faithfulness_verdict(response.raw_output)
     except (ValidationError, ValueError) as exc:
@@ -1598,6 +1828,7 @@ def _run_hypothesis_verifier(
             started_at=started_at,
             completed_at=completed_at,
             execution_diagnostics=diagnostics,
+            input_admission=admission,
             output_digest=output_digest,
             execution_receipt=response.execution_receipt,
             execution_spec=execution_spec,
@@ -1615,6 +1846,7 @@ def _run_hypothesis_verifier(
         started_at=started_at,
         completed_at=completed_at,
         execution_diagnostics=diagnostics,
+        input_admission=admission,
         output_digest=output_digest,
         execution_receipt=response.execution_receipt,
         execution_spec=execution_spec,
@@ -1982,6 +2214,87 @@ def _compose_task_input(rendered_context: bytes, task_local_input: bytes) -> byt
     return rendered_context + b"\n\n[task]\n" + task_local_input
 
 
+def _inspect_and_admit_model_input(
+    *,
+    model_run_id: str,
+    task: ExtractionTask,
+    manifest: ContextManifest,
+    rendered_input: bytes,
+    execution_spec: ModelExecutionSpec,
+    model_runtime: ModelTaskRuntime,
+) -> ModelInputAdmission:
+    return admit_model_input(
+        ModelInputAdmissionRequest(
+            model_run_id=model_run_id,
+            extraction_task_id=task.id,
+            model_profile_id=manifest.model_profile_id,
+            model_identity=execution_spec.model_identity,
+            logical_input=rendered_input,
+            configured_context_limit=manifest.model_context_limit,
+            reserved_output_tokens=manifest.reserved_output_tokens,
+            safety_margin_tokens=manifest.safety_margin_tokens,
+        ),
+        model_runtime,
+    )
+
+
+def admit_model_input(
+    request: ModelInputAdmissionRequest,
+    model_runtime: ModelTaskRuntime,
+) -> ModelInputAdmission:
+    """Inspect and decide capacity for one complete logical model request."""
+    logical_input_digest = hashlib.sha256(request.logical_input).hexdigest()
+    measurement = model_runtime.inspect_model_input(
+        ModelInputInspectionRequest(
+            model_identity=request.model_identity,
+            logical_input=request.logical_input,
+            logical_input_digest=logical_input_digest,
+        )
+    )
+    expected_identity_digest = model_identity_snapshot_digest(request.model_identity)
+    if measurement.model_identity_digest != expected_identity_digest:
+        raise ValueError("Model input measurement identity does not match the execution spec.")
+    if measurement.runtime_identity != request.model_identity.runtime:
+        raise ValueError("Model input measurement runtime does not match the execution spec.")
+    if measurement.tokenizer_id != request.model_identity.tokenizer_id:
+        raise ValueError("Model input measurement tokenizer does not match the execution spec.")
+    if measurement.logical_input_digest != logical_input_digest:
+        raise ValueError("Model input measurement does not match the complete logical input.")
+    effective_limit = min(request.configured_context_limit, measurement.loaded_context_limit)
+    required_capacity = (
+        measurement.formatted_input_token_count
+        + request.reserved_output_tokens
+        + request.safety_margin_tokens
+    )
+    blocked = required_capacity > effective_limit
+    admission_suffix = request.model_run_id.removeprefix("mrn_")
+    return ModelInputAdmission(
+        id=f"mia_{admission_suffix}",
+        extraction_task_id=request.extraction_task_id,
+        model_profile_id=request.model_profile_id,
+        model_identity_digest=expected_identity_digest,
+        runtime_identity=measurement.runtime_identity,
+        model_instance_id=measurement.model_instance_id,
+        tokenizer_id=measurement.tokenizer_id,
+        prompt_template_identity=measurement.prompt_template_identity,
+        logical_input_digest=logical_input_digest,
+        formatted_input_digest=measurement.formatted_input_digest,
+        configured_context_limit=request.configured_context_limit,
+        loaded_context_limit=measurement.loaded_context_limit,
+        effective_context_limit=effective_limit,
+        formatted_input_token_count=measurement.formatted_input_token_count,
+        reserved_output_tokens=request.reserved_output_tokens,
+        safety_margin_tokens=request.safety_margin_tokens,
+        required_capacity=required_capacity,
+        status=(
+            ModelInputAdmissionStatus.CONTEXT_BUDGET_BLOCKED
+            if blocked
+            else ModelInputAdmissionStatus.READY
+        ),
+        blocked_reason=("complete_request_exceeds_context_budget" if blocked else None),
+    )
+
+
 def _settings_payload(settings: tuple[ExecutionSetting, ...]) -> dict[str, ExecutionScalar]:
     return {setting.key: setting.value for setting in settings}
 
@@ -2064,9 +2377,6 @@ def _validate_execution_spec(
 def _validate_execution_receipt(
     receipt: ModelExecutionReceipt,
     execution_spec: ModelExecutionSpec,
-    manifest: ContextManifest,
-    *,
-    expected_input_token_count: int | None = None,
 ) -> None:
     if receipt.model_identity_digest != model_identity_snapshot_digest(
         execution_spec.model_identity
@@ -2080,15 +2390,6 @@ def _validate_execution_receipt(
         )
     if receipt.rendered_input_digest != execution_spec.rendered_input_digest:
         raise ValueError("Model execution receipt input does not match the execution spec.")
-    input_token_count = (
-        manifest.input_token_count
-        if expected_input_token_count is None
-        else expected_input_token_count
-    )
-    if receipt.input_token_count != input_token_count:
-        raise ValueError(
-            "Model execution receipt input token count does not match ContextManifest."
-        )
 
 
 def _execution_receipt_payload(receipt: ModelExecutionReceipt) -> dict[str, JsonValue]:

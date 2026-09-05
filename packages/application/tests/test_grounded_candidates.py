@@ -35,6 +35,8 @@ from kotekomi_application import (
     ModelExecutionReceipt,
     ModelExecutionSpec,
     ModelIdentitySnapshot,
+    ModelInputInspectionRequest,
+    ModelInputMeasurement,
     ModelRuntimeDeadlineExceeded,
     ModelTaskRequest,
     ModelTaskResponse,
@@ -359,6 +361,26 @@ class FakeModelTaskRuntime:
     def task_deadline_seconds(self) -> float:
         return 300.0
 
+    @property
+    def tokenizer_id(self) -> str:
+        return self.configured_identity.tokenizer_id
+
+    def count_tokens(self, rendered_input: bytes) -> int:
+        return len(rendered_input.decode().split())
+
+    def inspect_model_input(self, request: ModelInputInspectionRequest) -> ModelInputMeasurement:
+        return ModelInputMeasurement(
+            model_identity_digest=model_identity_snapshot_digest(request.model_identity),
+            runtime_identity=self.configured_identity.runtime,
+            model_instance_id=self.configured_identity.name,
+            tokenizer_id=self.tokenizer_id,
+            prompt_template_identity="fixture_no_prompt_template_v1",
+            logical_input_digest=request.logical_input_digest,
+            formatted_input_digest=request.logical_input_digest,
+            formatted_input_token_count=self.count_tokens(request.logical_input),
+            loaded_context_limit=65_536,
+        )
+
     def run_model_task(self, task: ModelTaskRequest) -> ModelTaskResponse:
         self.requests.append(task)
         return ModelTaskResponse(
@@ -372,7 +394,7 @@ class FakeModelTaskRuntime:
                     task.execution_spec.generation_parameters
                 ),
                 rendered_input_digest=task.rendered_input_digest,
-                input_token_count=len(task.rendered_input.decode().split()),
+                input_token_count=task.input_admission.formatted_input_token_count,
                 output_token_count=None,
             ),
             self._first_response_event_milliseconds,
@@ -387,6 +409,29 @@ class SequenceModelTaskRuntime(FakeModelTaskRuntime):
     def run_model_task(self, task: ModelTaskRequest) -> ModelTaskResponse:
         self.raw_output = next(self._raw_outputs)
         return super().run_model_task(task)
+
+
+class FixedAdmissionRuntime(FakeModelTaskRuntime):
+    def __init__(
+        self,
+        raw_output: bytes,
+        *,
+        formatted_input_token_count: int,
+        loaded_context_limit: int,
+    ) -> None:
+        super().__init__(raw_output)
+        self.formatted_input_token_count = formatted_input_token_count
+        self.loaded_context_limit = loaded_context_limit
+        self.inspections: list[ModelInputInspectionRequest] = []
+
+    def inspect_model_input(self, request: ModelInputInspectionRequest) -> ModelInputMeasurement:
+        self.inspections.append(request)
+        measurement = super().inspect_model_input(request)
+        return replace(
+            measurement,
+            formatted_input_token_count=self.formatted_input_token_count,
+            loaded_context_limit=self.loaded_context_limit,
+        )
 
 
 class FixedModelRunClock:
@@ -475,7 +520,13 @@ def _bundle(document_id: str, text: str = TEXT) -> DocumentRepresentationBundle:
     )
 
 
-def _ready_manifest_for_staged_test(ledger: FakeGroundedCandidateLedger) -> ContextManifest:
+def _ready_manifest_for_staged_test(
+    ledger: FakeGroundedCandidateLedger,
+    *,
+    model_context_limit: int = 512,
+    reserved_output_tokens: int = 8,
+    safety_margin_tokens: int = 4,
+) -> ContextManifest:
     unit = plan_analysis_units(
         AnalysisUnitPlanningInput(
             ledger.bundle.representation.id,
@@ -487,7 +538,12 @@ def _ready_manifest_for_staged_test(ledger: FakeGroundedCandidateLedger) -> Cont
     return build_context_manifest(
         ContextManifestInput(
             analysis_unit=unit,
-            model_profile=ContextModelProfile("fixture-model", 512, 8, 4),
+            model_profile=ContextModelProfile(
+                "fixture-model",
+                model_context_limit,
+                reserved_output_tokens,
+                safety_margin_tokens,
+            ),
             prompt_id="fixture_prompt_v1",
             prompt_bytes=b"fixture prompt",
             schema_id="semantic_draft_text_v1",
@@ -910,6 +966,118 @@ def test_submit_grounded_candidate_batch_rejects_selector_disagreement_atomicall
     assert ledger.validation_attempts == {}
     assert ledger.provenance_activities == {}
     assert ledger.proposed_changes == {}
+
+
+@pytest.mark.parametrize(
+    (
+        "configured_limit",
+        "loaded_limit",
+        "formatted_count",
+        "expected_limit",
+        "expected_status",
+    ),
+    (
+        (512, 2_048, 500, 512, ModelRunStatus.SUCCEEDED),
+        (512, 2_048, 501, 512, ModelRunStatus.INPUT_BLOCKED),
+        (2_048, 512, 500, 512, ModelRunStatus.SUCCEEDED),
+        (2_048, 512, 501, 512, ModelRunStatus.INPUT_BLOCKED),
+    ),
+)
+def test_staged_extraction_admits_exact_fit_and_blocks_one_token_over_lower_limit(
+    configured_limit: int,
+    loaded_limit: int,
+    formatted_count: int,
+    expected_limit: int,
+    expected_status: ModelRunStatus,
+) -> None:
+    ledger = FakeGroundedCandidateLedger()
+    archive = FakeModelOutputArchive()
+    manifest = _ready_manifest_for_staged_test(
+        ledger,
+        model_context_limit=configured_limit,
+    )
+    runtime = FixedAdmissionRuntime(
+        _valid_staged_output(),
+        formatted_input_token_count=formatted_count,
+        loaded_context_limit=loaded_limit,
+    )
+
+    outcome = run_bounded_extraction(
+        BoundedExtractionInput(
+            source_id=ledger.source.id,
+            document_id=ledger.document.id,
+            representation_id=ledger.bundle.representation.id,
+            context_manifest_id=manifest.id,
+            prompt_bytes=manifest.prompt_bytes,
+            execution_spec=_fixture_execution_spec(manifest),
+            validator_version="runtime-input-admission-v1",
+        ),
+        ledger,
+        archive,
+        runtime,
+        Uuid4ModelRunIdFactory(),
+        FixtureTokenizer(),
+        SemanticDraftTaskSchemaRegistry(),
+    )
+
+    admission = outcome.model_run.input_admission
+    assert admission is not None
+    assert admission.effective_context_limit == expected_limit
+    assert admission.required_capacity == formatted_count + 8 + 4
+    assert outcome.model_run.status is expected_status
+    assert len(runtime.requests) == (1 if expected_status is ModelRunStatus.SUCCEEDED else 0)
+
+
+def test_task_local_input_turns_ready_manifest_into_auditable_pretransport_block() -> None:
+    ledger = FakeGroundedCandidateLedger()
+    archive = FakeModelOutputArchive()
+    manifest = _ready_manifest_for_staged_test(ledger)
+    task_local_input = b" ".join([b"task-value"] * 2_000)
+    complete_input = manifest.rendered_input + b"\n\n[task]\n" + task_local_input
+    execution_spec = replace(
+        _fixture_execution_spec(manifest),
+        rendered_input_digest=hashlib.sha256(complete_input).hexdigest(),
+    )
+    runtime = FixedAdmissionRuntime(
+        _valid_staged_output(),
+        formatted_input_token_count=2_039,
+        loaded_context_limit=16_384,
+    )
+
+    outcome = run_bounded_extraction(
+        BoundedExtractionInput(
+            source_id=ledger.source.id,
+            document_id=ledger.document.id,
+            representation_id=ledger.bundle.representation.id,
+            context_manifest_id=manifest.id,
+            prompt_bytes=manifest.prompt_bytes,
+            execution_spec=execution_spec,
+            validator_version="runtime-input-admission-v1",
+            task_local_input=task_local_input,
+        ),
+        ledger,
+        archive,
+        runtime,
+        Uuid4ModelRunIdFactory(),
+        FixtureTokenizer(),
+        SemanticDraftTaskSchemaRegistry(),
+    )
+
+    admission = outcome.model_run.input_admission
+    assert admission is not None
+    assert manifest.input_token_count < manifest.model_context_limit
+    assert admission.formatted_input_token_count == 2_039
+    assert admission.required_capacity == 2_051
+    assert admission.status.value == "context_budget_blocked"
+    assert admission.blocked_reason == "complete_request_exceeds_context_budget"
+    assert admission.logical_input_digest == hashlib.sha256(complete_input).hexdigest()
+    assert outcome.model_run.status is ModelRunStatus.INPUT_BLOCKED
+    assert outcome.model_run.runtime_invoked is False
+    assert outcome.model_run.execution_receipt is None
+    assert runtime.requests == []
+    assert archive.outputs == {}
+    assert ledger.proposed_changes == {}
+    assert runtime.inspections[0].logical_input == complete_input
 
 
 def test_staged_extraction_archives_invalid_task_local_output_without_proposals() -> None:
@@ -1615,7 +1783,7 @@ def test_staged_extraction_rejects_a_mismatched_execution_receipt_after_archivin
     assert ledger.proposed_changes == {}
 
 
-def test_staged_extraction_rejects_and_persists_a_truncated_input_receipt() -> None:
+def test_staged_extraction_preserves_distinct_runtime_reported_input_usage() -> None:
     ledger = FakeGroundedCandidateLedger()
     archive = FakeModelOutputArchive()
     manifest = _ready_manifest_for_staged_test(ledger)
@@ -1648,9 +1816,12 @@ def test_staged_extraction_rejects_and_persists_a_truncated_input_receipt() -> N
         SemanticDraftTaskSchemaRegistry(),
     )
 
-    assert outcome.model_run.status is ModelRunStatus.INVALID_OUTPUT
-    assert outcome.model_run.error_message is not None
-    assert "input token count" in outcome.model_run.error_message
+    assert outcome.model_run.status is ModelRunStatus.SUCCEEDED
+    assert outcome.model_run.error_message is None
+    assert outcome.model_run.input_admission is not None
+    assert (
+        outcome.model_run.input_admission.formatted_input_token_count == manifest.input_token_count
+    )
     assert outcome.model_run.execution_receipt == {
         "model_identity_digest": receipt.model_identity_digest,
         "generation_parameters_digest": receipt.generation_parameters_digest,
@@ -1659,7 +1830,7 @@ def test_staged_extraction_rejects_and_persists_a_truncated_input_receipt() -> N
         "output_token_count": 9,
     }
     assert archive.outputs[outcome.model_run.id] == _valid_staged_output()
-    assert ledger.proposed_changes == {}
+    assert len(ledger.proposed_changes) == 2
 
 
 def test_model_execution_spec_has_no_loose_or_colliding_settings() -> None:

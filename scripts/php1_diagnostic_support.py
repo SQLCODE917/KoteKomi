@@ -24,11 +24,14 @@ from kotekomi_application import (
     ContextManifestInput,
     ContextManifestStatus,
     ContextModelProfile,
+    ContextTokenizer,
     ExecutionSetting,
     HypothesisVerifierSpec,
     MentionCandidate,
     MentionProposalObservation,
     ModelExecutionSpec,
+    ModelInputInspectionRequest,
+    ModelInputMeasurement,
     ModelTaskRequest,
     ModelTaskResponse,
     OrganizationMentionTaskSchemaRegistry,
@@ -275,7 +278,7 @@ def run_qwen_mentions_for_packet(
         if not readiness.ready:
             return {"status": "qwen_unavailable", "runs": []}
         archive = LocalArchiveStore(archive_path)
-        tokenizer = DiagnosticTokenizer()
+        tokenizer = runtime
         with sqlite_ledger_transaction(ledger_path) as ledger:
             bundles = {
                 path: _required_bundle(ledger, representation_id)
@@ -416,7 +419,7 @@ def run_relation_pairs_for_candidate_runs(
         if not runtime.check_readiness().ready:
             return {"status": "qwen_unavailable", "runs": []}
         archive = LocalArchiveStore(archive_path)
-        tokenizer = DiagnosticTokenizer()
+        tokenizer = runtime
         verifier_prompt = VERIFIER_PROMPT_PATH.read_bytes()
         with sqlite_ledger_transaction(ledger_path) as ledger:
             bundles = {
@@ -578,7 +581,7 @@ def run_rescue_pairs_for_fusion_runs(
         if not runtime.check_readiness().ready:
             return {"status": "qwen_unavailable", "runs": []}
         archive = LocalArchiveStore(archive_path)
-        tokenizer = DiagnosticTokenizer()
+        tokenizer = runtime
         verifier_prompt = VERIFIER_PROMPT_PATH.read_bytes()
         with sqlite_ledger_transaction(ledger_path) as ledger:
             bundles = {
@@ -712,7 +715,7 @@ def run_qwen_qualifications_for_packet(
         if not runtime.check_readiness().ready:
             return {"status": "qwen_unavailable", "runs": []}
         archive = LocalArchiveStore(archive_path)
-        tokenizer = DiagnosticTokenizer()
+        tokenizer = runtime
         verifier_prompt = VERIFIER_PROMPT_PATH.read_bytes()
         with sqlite_ledger_transaction(ledger_path) as ledger:
             bundles = {
@@ -982,13 +985,6 @@ class _ResolvedSegment:
         return (self.fixture_path, self.paragraph_node_id, self.source_segment_label)
 
 
-class DiagnosticTokenizer:
-    tokenizer_id = "lm_studio_whitespace_v1"
-
-    def count_tokens(self, rendered_input: bytes) -> int:
-        return len(rendered_input.decode("utf-8").split())
-
-
 def evaluate_eight_claim_limit(
     raw_output: str | None, provisional_eligibility: str
 ) -> dict[str, int | str]:
@@ -1062,10 +1058,25 @@ class RecordingRuntime:
     def check_readiness(self) -> Any:
         return self._delegate.check_readiness()
 
+    @property
+    def tokenizer_id(self) -> str:
+        return cast(str, self._delegate.tokenizer_id)
+
+    def count_tokens(self, rendered_input: bytes) -> int:
+        return cast(int, self._delegate.count_tokens(rendered_input))
+
+    def inspect_model_input(self, request: ModelInputInspectionRequest) -> ModelInputMeasurement:
+        return cast(ModelInputMeasurement, self._delegate.inspect_model_input(request))
+
     def run_model_task(self, task: ModelTaskRequest) -> ModelTaskResponse:
         response = self._delegate.run_model_task(task)
         self.responses.append(response)
         return response
+
+    def close(self) -> None:
+        close_delegate = getattr(self._delegate, "close", None)
+        if close_delegate is not None:
+            close_delegate()
 
 
 def run_cases(
@@ -1117,7 +1128,7 @@ def run_cases(
         schema = ParagraphHypothesisTaskSchemaRegistry().resolve("paragraph_hypothesis_text_v1")
         prompt = prompt_contract.prompt_path.read_bytes()
         verifier_prompt = VERIFIER_PROMPT_PATH.read_bytes()
-        tokenizer = DiagnosticTokenizer()
+        tokenizer = runtime
         with sqlite_ledger_transaction(ledger_path) as ledger:
             bundles = {
                 path: _required_bundle(ledger, representation_id)
@@ -1275,7 +1286,7 @@ def run_h2(
             return {"status": "runtime_unavailable", "h2_target_report": {"target_results": []}}
         archive = LocalArchiveStore(archive_path)
         verifier_prompt = VERIFIER_PROMPT_PATH.read_bytes()
-        tokenizer = DiagnosticTokenizer()
+        tokenizer = runtime
         with sqlite_ledger_transaction(ledger_path) as ledger:
             bundles = {
                 path: _required_bundle(ledger, representation_id)
@@ -1507,7 +1518,7 @@ def _run_segment(
     schema: Any,
     prompt: bytes,
     verifier_prompt: bytes,
-    tokenizer: DiagnosticTokenizer,
+    tokenizer: ContextTokenizer,
     include_raw_output: bool,
     prompt_contract: Php1PromptContract,
 ) -> dict[str, Any]:
@@ -1698,7 +1709,7 @@ def _h2_mention_result(
     archive: LocalArchiveStore,
     config: Any,
     runtime: RecordingRuntime,
-    tokenizer: DiagnosticTokenizer,
+    tokenizer: ContextTokenizer,
 ) -> dict[str, Any]:
     bundle = _required_bundle(ledger, plan.representation_id)
     document = ledger.get_document(bundle.representation.document_id)
@@ -1862,7 +1873,7 @@ def _h22_qualification_result(
     archive: LocalArchiveStore,
     config: Any,
     runtime: RecordingRuntime,
-    tokenizer: DiagnosticTokenizer,
+    tokenizer: ContextTokenizer,
 ) -> dict[str, Any]:
     source_text = _plan_source_copy(plan)
     if hashlib.sha256(source_text.encode()).hexdigest() != candidate.source_text_digest:
@@ -2053,7 +2064,7 @@ def _h2_pair_judgment(
     archive: LocalArchiveStore,
     config: Any,
     runtime: RecordingRuntime,
-    tokenizer: DiagnosticTokenizer,
+    tokenizer: ContextTokenizer,
     verifier_prompt: bytes,
 ) -> dict[str, Any]:
     prompt = _h2_pair_prompt(pair)

@@ -2491,13 +2491,6 @@ def ingest_user_file(*, config_path: Path | None, source_file_path: Path, source
     return 0
 
 
-class _AutomaticExtractionTokenizer:
-    tokenizer_id = "lm_studio_whitespace_v1"
-
-    def count_tokens(self, rendered_input: bytes) -> int:
-        return len(rendered_input.decode("utf-8").split())
-
-
 def _print_hybrid_paragraph_progress(progress: HybridParagraphProgress) -> None:
     disposition = "reused" if progress.receipt_reused else "executed"
     print(
@@ -2549,7 +2542,7 @@ def preview_hybrid_mentions(
             ),
             model_runtime=runtime,
             model_run_id_factory=Uuid4ModelRunIdFactory(),
-            tokenizer=_AutomaticExtractionTokenizer(),
+            tokenizer=runtime,
             prompt_bytes=prompt_bytes,
             ontology_card_bytes=ontology_card_bytes,
         )
@@ -2693,7 +2686,7 @@ def draft_hybrid_event_frames(*, config: PipelineConfig, parent_preview_id: str)
             archive=archive,
             model_runtime=runtime,
             model_run_id_factory=Uuid4ModelRunIdFactory(),
-            tokenizer=_AutomaticExtractionTokenizer(),
+            tokenizer=runtime,
             trigger_prompt_bytes=trigger_prompt,
             frame_prompt_bytes=frame_prompt,
         )
@@ -2783,7 +2776,7 @@ def build_hybrid_event_semantics(
             archive=archive,
             model_runtime=runtime,
             model_run_id_factory=Uuid4ModelRunIdFactory(),
-            tokenizer=_AutomaticExtractionTokenizer(),
+            tokenizer=runtime,
             normalization_prompt_bytes=normalization_prompt,
             role_completion_prompt_bytes=role_completion_prompt,
             support_prompt_bytes=support_prompt,
@@ -3189,12 +3182,15 @@ def _model_run_log_row(entry: ModelRunLogEntry) -> str:
         if entry.requested_max_output_tokens is None
         else str(entry.requested_max_output_tokens)
     )
-    return (
+    row = (
         f"{entry.started_at}\t{entry.model_run_id}\t[{entry.status.upper()}]\t"
         f"elapsed={entry.elapsed_milliseconds}ms\tdeadline={entry.deadline_milliseconds}ms\t"
         f"first_event={first_event}\toutput_tokens={output_tokens}\t"
         f"requested_max_output_tokens={requested_tokens}"
     )
+    if entry.input_admission_reason is not None:
+        row += f"\tinput_admission_reason={entry.input_admission_reason}"
+    return row
 
 
 def add_structured_news(

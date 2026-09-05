@@ -191,13 +191,6 @@ class HybridDocumentIngestionResult:
     reused_paragraph_count: int
 
 
-class HybridWhitespaceTokenizer:
-    tokenizer_id = "lm_studio_whitespace_v1"
-
-    def count_tokens(self, rendered_input: bytes) -> int:
-        return len(rendered_input.decode("utf-8").split())
-
-
 @dataclass(frozen=True)
 class _UnavailableEntityLinker:
     error: Exception
@@ -266,6 +259,9 @@ class _RuntimeResources:
     def close(self) -> None:
         if self._refined is not None:
             self._refined.close()
+        close_runtime = getattr(self.runtime, "close", None)
+        if close_runtime is not None:
+            close_runtime()
 
     def _build_linker(self) -> EntityLinkingPort:
         identity = _entity_linker_identity(self._config)
@@ -400,7 +396,7 @@ def _run_paragraph(
             proposer=resources.proposer,
             model_runtime=resources.runtime,
             model_run_id_factory=model_run_id_factory,
-            tokenizer=HybridWhitespaceTokenizer(),
+            tokenizer=resources.runtime,
             prompt_bytes=prompts["hybrid_mention_task_v1.md"],
             ontology_card_bytes=prompts["hybrid_mention_ontology_card_v1.md"],
         )
@@ -440,7 +436,7 @@ def _run_paragraph(
             archive=archive,
             model_runtime=resources.runtime,
             model_run_id_factory=model_run_id_factory,
-            tokenizer=HybridWhitespaceTokenizer(),
+            tokenizer=resources.runtime,
             trigger_prompt_bytes=prompts["hybrid_event_trigger_task_v1.md"],
             frame_prompt_bytes=prompts["hybrid_event_frame_task_v1.md"],
         )
@@ -462,7 +458,7 @@ def _run_paragraph(
             archive=archive,
             model_runtime=resources.runtime,
             model_run_id_factory=model_run_id_factory,
-            tokenizer=HybridWhitespaceTokenizer(),
+            tokenizer=resources.runtime,
             normalization_prompt_bytes=prompts["hybrid_event_normalization_v1.md"],
             role_completion_prompt_bytes=prompts["hybrid_event_role_completion_v1.md"],
             support_prompt_bytes=prompts["hybrid_semantic_support_v1.md"],

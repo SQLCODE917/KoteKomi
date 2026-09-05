@@ -24,13 +24,16 @@ from kotekomi_adapters.model_resources import gliner_model_path
 from kotekomi_application import (
     ExecutionSetting,
     ModelExecutionSpec,
+    ModelInputAdmissionRequest,
     ModelTaskRequest,
     OrganizationMentionBatch,
     OrganizationMentionBatchAbstention,
     OrganizationMentionProposalInput,
     OrganizationMentionTaskSchemaRegistry,
+    admit_model_input,
     propose_validated_organization_mentions,
 )
+from kotekomi_domain import ModelInputAdmissionStatus
 from kotekomi_pipelines.config import load_config
 from kotekomi_pipelines.model_runtime import build_model_task_runtime
 from php1_diagnostic_support import (
@@ -290,8 +293,38 @@ def _qwen_proposals(
         output_contract_version=schema.output_contract_version,
     )
     model_run_id = _id("mrn", source_segment_id, str(repetition), rendered_digest)
+    extraction_task_id = _id("ext", model_run_id)
+    admission = admit_model_input(
+        ModelInputAdmissionRequest(
+            model_run_id=model_run_id,
+            extraction_task_id=extraction_task_id,
+            model_profile_id=spec.model_profile_id,
+            model_identity=spec.model_identity,
+            logical_input=rendered_input,
+            configured_context_limit=model_config.context_tokens,
+            reserved_output_tokens=model_config.max_output_tokens,
+            safety_margin_tokens=256,
+        ),
+        runtime,
+    )
+    if admission.status is ModelInputAdmissionStatus.CONTEXT_BUDGET_BLOCKED:
+        return {
+            "status": "input_blocked",
+            "model_eligibility": MODEL_ELIGIBLE,
+            "latency_milliseconds": 0,
+            "first_response_event_milliseconds": None,
+            "model_run_id": model_run_id,
+            "context_manifest_id": manifest_id,
+            "prompt_digest": prompt_digest,
+            "rendered_input": rendered_input.decode("utf-8"),
+            "raw_output": None,
+            "execution_receipt": None,
+            "input_admission": admission.model_dump(mode="json"),
+            "proposals": [],
+            "diagnostics": [admission.blocked_reason],
+        }
     task = ModelTaskRequest(
-        extraction_task_id=_id("ext", model_run_id),
+        extraction_task_id=extraction_task_id,
         task_fingerprint=hashlib.sha256(
             f"{source_segment_id}:{repetition}:{rendered_digest}".encode()
         ).hexdigest(),
@@ -301,6 +334,7 @@ def _qwen_proposals(
         rendered_input=rendered_input,
         rendered_input_digest=rendered_digest,
         execution_spec=spec,
+        input_admission=admission,
     )
     started = time.monotonic()
     response = runtime.run_model_task(task)
@@ -319,6 +353,7 @@ def _qwen_proposals(
         "rendered_input": rendered_input.decode("utf-8"),
         "raw_output": response.raw_output.decode("utf-8", errors="replace"),
         "execution_receipt": asdict(response.execution_receipt),
+        "input_admission": admission.model_dump(mode="json"),
         "proposals": proposals,
         "diagnostics": diagnostics,
     }

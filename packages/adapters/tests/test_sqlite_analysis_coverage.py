@@ -1,6 +1,6 @@
 import hashlib
 import sqlite3
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -32,6 +32,8 @@ from kotekomi_application import (
     ModelExecutionReceipt,
     ModelExecutionSpec,
     ModelIdentitySnapshot,
+    ModelInputInspectionRequest,
+    ModelInputMeasurement,
     ModelTaskRequest,
     ModelTaskResponse,
     SemanticDraftTaskSchemaRegistry,
@@ -89,8 +91,16 @@ class ExactWhitespaceTokenizer:
 
 
 class FixtureModelRuntime:
-    def __init__(self, raw_output: bytes) -> None:
+    def __init__(
+        self,
+        raw_output: bytes,
+        *,
+        formatted_input_token_count: int | None = None,
+        loaded_context_limit: int = 65_536,
+    ) -> None:
         self.raw_output = raw_output
+        self.formatted_input_token_count = formatted_input_token_count
+        self.loaded_context_limit = loaded_context_limit
 
     @property
     def configured_identity(self) -> ModelIdentitySnapshot:
@@ -99,6 +109,30 @@ class FixtureModelRuntime:
     @property
     def task_deadline_seconds(self) -> float:
         return 300.0
+
+    @property
+    def tokenizer_id(self) -> str:
+        return self.configured_identity.tokenizer_id
+
+    def count_tokens(self, rendered_input: bytes) -> int:
+        return len(rendered_input.decode("utf-8").split())
+
+    def inspect_model_input(self, request: ModelInputInspectionRequest) -> ModelInputMeasurement:
+        return ModelInputMeasurement(
+            model_identity_digest=model_identity_snapshot_digest(request.model_identity),
+            runtime_identity=self.configured_identity.runtime,
+            model_instance_id=self.configured_identity.name,
+            tokenizer_id=self.tokenizer_id,
+            prompt_template_identity="fixture_no_prompt_template_v1",
+            logical_input_digest=request.logical_input_digest,
+            formatted_input_digest=request.logical_input_digest,
+            formatted_input_token_count=(
+                self.count_tokens(request.logical_input)
+                if self.formatted_input_token_count is None
+                else self.formatted_input_token_count
+            ),
+            loaded_context_limit=self.loaded_context_limit,
+        )
 
     def run_model_task(self, task: ModelTaskRequest) -> ModelTaskResponse:
         return ModelTaskResponse(
@@ -111,7 +145,7 @@ class FixtureModelRuntime:
                     task.execution_spec.generation_parameters
                 ),
                 rendered_input_digest=task.rendered_input_digest,
-                input_token_count=len(task.rendered_input.decode("utf-8").split()),
+                input_token_count=task.input_admission.formatted_input_token_count,
                 output_token_count=None,
             ),
         )
@@ -437,6 +471,68 @@ def _assert_restarted_report(
     assert tuple(record.policy_decision for record in restarted.coverage_records) == tuple(
         record.policy_decision for record in expected.coverage_records
     )
+
+
+def test_sqlite_restart_preserves_ready_and_blocked_model_input_admissions(
+    tmp_path: Path,
+) -> None:
+    ledger_path, archive = _initialize(tmp_path)
+    with sqlite_ledger_transaction(ledger_path) as repository:
+        document = _install_document(repository, "input-admission")
+        _, manifest = _build_manifest(
+            repository,
+            document,
+            planner_policy_id="input_admission_plan_v1",
+        )
+        ready = _run_extraction(
+            repository,
+            archive,
+            document,
+            manifest,
+            _candidate_output(document),
+        )
+        task_local_input = b" ".join([b"overflow"] * 600)
+        complete_input = manifest.rendered_input + b"\n\n[task]\n" + task_local_input
+        blocked_spec = replace(
+            _execution_spec(manifest),
+            rendered_input_digest=hashlib.sha256(complete_input).hexdigest(),
+        )
+        blocked = run_bounded_extraction(
+            BoundedExtractionInput(
+                source_id=document.source.id,
+                document_id=document.document.id,
+                representation_id=document.bundle.representation.id,
+                context_manifest_id=manifest.id,
+                prompt_bytes=manifest.prompt_bytes,
+                execution_spec=blocked_spec,
+                validator_version="runtime-input-admission-v1",
+                task_local_input=task_local_input,
+            ),
+            repository,
+            archive,
+            FixtureModelRuntime(
+                _candidate_output(document),
+                formatted_input_token_count=600,
+                loaded_context_limit=512,
+            ),
+            Uuid4ModelRunIdFactory(),
+            ExactWhitespaceTokenizer(),
+            SemanticDraftTaskSchemaRegistry(),
+        )
+
+    assert ready.model_run.input_admission is not None
+    assert blocked.model_run.status is ModelRunStatus.INPUT_BLOCKED
+    assert blocked.model_run.input_admission is not None
+    with sqlite_ledger_transaction(ledger_path) as repository:
+        restarted_ready_task = repository.get_extraction_task(ready.extraction_task.id)
+        restarted_blocked_task = repository.get_extraction_task(blocked.extraction_task.id)
+        restarted_ready_runs = repository.list_model_runs_for_task(ready.extraction_task.id)
+        restarted_blocked_runs = repository.list_model_runs_for_task(blocked.extraction_task.id)
+
+    assert restarted_ready_task == ready.extraction_task
+    assert restarted_blocked_task == blocked.extraction_task
+    assert restarted_ready_runs == (ready.model_run,)
+    assert restarted_blocked_runs == (blocked.model_run,)
 
 
 def test_sqlite_coverage_isolates_unrelated_document_model_runs_after_restart(

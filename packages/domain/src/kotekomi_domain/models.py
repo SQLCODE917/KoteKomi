@@ -59,6 +59,7 @@ AnalysisRunId = Annotated[str, Field(pattern=r"^arn_[A-Za-z0-9][A-Za-z0-9_-]*$")
 PlannedAnalysisItemId = Annotated[str, Field(pattern=r"^pai_[A-Za-z0-9][A-Za-z0-9_-]*$")]
 AnalysisItemAttemptId = Annotated[str, Field(pattern=r"^aia_[A-Za-z0-9][A-Za-z0-9_-]*$")]
 ExtractionTaskId = Annotated[str, Field(pattern=r"^ext_[A-Za-z0-9][A-Za-z0-9_-]*$")]
+ModelInputAdmissionId = Annotated[str, Field(pattern=r"^mia_[A-Za-z0-9][A-Za-z0-9_-]*$")]
 ModelRunId = Annotated[str, Field(pattern=r"^mrn_[A-Za-z0-9][A-Za-z0-9_-]*$")]
 IngestionRunId = Annotated[str, Field(pattern=r"^igr_[A-Za-z0-9][A-Za-z0-9_-]*$")]
 IngestionChangeSetId = Annotated[str, Field(pattern=r"^ics_[A-Za-z0-9][A-Za-z0-9_-]*$")]
@@ -281,6 +282,7 @@ class ProcessingAttemptStatus(StrEnum):
 class ModelRunStatus(StrEnum):
     SUCCEEDED = "succeeded"
     ABSTAINED = "abstained"
+    INPUT_BLOCKED = "input_blocked"
     INVALID_OUTPUT = "invalid_output"
     RUNTIME_FAILED = "runtime_failed"
     OUTPUT_ARCHIVE_FAILED = "output_archive_failed"
@@ -2289,6 +2291,57 @@ class ExtractionTask(DomainModel):
     created_at: datetime | None = None
 
 
+class ModelInputAdmissionStatus(StrEnum):
+    READY = "ready"
+    CONTEXT_BUDGET_BLOCKED = "context_budget_blocked"
+
+
+class ModelInputAdmission(DomainModel):
+    """Application-owned admission decision for one complete model request."""
+
+    id: ModelInputAdmissionId
+    extraction_task_id: ExtractionTaskId
+    model_profile_id: NonEmptyStr
+    model_identity_digest: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
+    runtime_identity: NonEmptyStr
+    model_instance_id: NonEmptyStr
+    tokenizer_id: NonEmptyStr
+    prompt_template_identity: NonEmptyStr
+    logical_input_digest: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
+    formatted_input_digest: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
+    configured_context_limit: Annotated[int, Field(gt=0)]
+    loaded_context_limit: Annotated[int, Field(gt=0)]
+    effective_context_limit: Annotated[int, Field(gt=0)]
+    formatted_input_token_count: Annotated[int, Field(ge=0)]
+    reserved_output_tokens: Annotated[int, Field(ge=0)]
+    safety_margin_tokens: Annotated[int, Field(ge=0)]
+    required_capacity: Annotated[int, Field(ge=0)]
+    status: ModelInputAdmissionStatus
+    blocked_reason: NonEmptyStr | None = None
+
+    @model_validator(mode="after")
+    def validate_capacity(self) -> Self:
+        expected_effective = min(self.configured_context_limit, self.loaded_context_limit)
+        if self.effective_context_limit != expected_effective:
+            raise ValueError("ModelInputAdmission effective limit is inconsistent.")
+        expected_required = (
+            self.formatted_input_token_count
+            + self.reserved_output_tokens
+            + self.safety_margin_tokens
+        )
+        if self.required_capacity != expected_required:
+            raise ValueError("ModelInputAdmission required capacity is inconsistent.")
+        fits = self.required_capacity <= self.effective_context_limit
+        if self.status is ModelInputAdmissionStatus.READY:
+            if not fits or self.blocked_reason is not None:
+                raise ValueError("Ready ModelInputAdmission must fit without a blocked reason.")
+        elif fits or self.blocked_reason != "complete_request_exceeds_context_budget":
+            raise ValueError(
+                "Blocked ModelInputAdmission must exceed capacity with the canonical reason."
+            )
+        return self
+
+
 class ContextManifestArtifact(DomainModel):
     """The immutable authoritative record of one finalized context manifest."""
 
@@ -2396,7 +2449,7 @@ class AnalysisItemAttempt(DomainModel):
 
 
 class ModelRun(DomainModel):
-    """An immutable invocation attempt, including terminal failures and abstentions."""
+    """An immutable execution attempt, including preflight and response failures."""
 
     id: ModelRunId
     extraction_task_id: ExtractionTaskId
@@ -2408,6 +2461,8 @@ class ModelRun(DomainModel):
     schema_digest: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
     execution_spec_digest: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
     generation_parameters: dict[str, JsonValue]
+    input_admission: ModelInputAdmission | None = None
+    runtime_invoked: bool = True
     raw_output_artifact_id: NonEmptyStr | None = None
     output_digest: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")] | None = None
     status: ModelRunStatus
@@ -2433,6 +2488,24 @@ class ModelRun(DomainModel):
             raise ValueError("Abstained ModelRun requires an abstention reason.")
         if self.status is not ModelRunStatus.ABSTAINED and self.abstention_reason is not None:
             raise ValueError("Only an abstained ModelRun may have an abstention reason.")
+        if self.status is ModelRunStatus.INPUT_BLOCKED:
+            if self.runtime_invoked:
+                raise ValueError("Input-blocked ModelRun cannot invoke the runtime.")
+            if (
+                self.input_admission is None
+                or self.input_admission.status
+                is not ModelInputAdmissionStatus.CONTEXT_BUDGET_BLOCKED
+            ):
+                raise ValueError("Input-blocked ModelRun requires a blocked input admission.")
+            if has_artifact or self.execution_receipt is not None:
+                raise ValueError("Input-blocked ModelRun cannot contain model response evidence.")
+        elif not self.runtime_invoked and self.status is not ModelRunStatus.RUNTIME_FAILED:
+            raise ValueError("Only blocked or pre-dispatch failed ModelRuns may skip invocation.")
+        elif self.input_admission is not None:
+            if self.input_admission.status is not ModelInputAdmissionStatus.READY:
+                raise ValueError("Invoked ModelRun requires a ready input admission.")
+            if self.input_admission.extraction_task_id != self.extraction_task_id:
+                raise ValueError("ModelRun input admission belongs to another ExtractionTask.")
         response_statuses = {
             ModelRunStatus.SUCCEEDED,
             ModelRunStatus.ABSTAINED,
@@ -2505,6 +2578,18 @@ class ModelRun(DomainModel):
                 or output_token_count < 0
             ):
                 raise ValueError("ModelRun execution receipt output token count is invalid.")
+            validated_receipt_statuses = {
+                ModelRunStatus.SUCCEEDED,
+                ModelRunStatus.ABSTAINED,
+                ModelRunStatus.PUBLISH_FAILED,
+            }
+            if (
+                self.input_admission is not None
+                and self.status in validated_receipt_statuses
+                and self.execution_receipt["rendered_input_digest"]
+                != self.input_admission.logical_input_digest
+            ):
+                raise ValueError("ModelRun execution receipt does not match input admission.")
         if self.completed_at < self.started_at:
             raise ValueError("ModelRun completed_at must not precede started_at.")
         return self

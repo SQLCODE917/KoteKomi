@@ -244,6 +244,26 @@ class ModelRuntimeStatus:
     ready: bool
     error_code: str | None = None
     error_message: str | None = None
+    configured_context_limit: int | None = None
+    loaded_context_limit: int | None = None
+    effective_context_limit: int | None = None
+
+    def __post_init__(self) -> None:
+        limits = (
+            self.configured_context_limit,
+            self.loaded_context_limit,
+            self.effective_context_limit,
+        )
+        if all(value is None for value in limits):
+            return
+        if any(type(value) is not int or value <= 0 for value in limits):
+            raise ValueError("Model runtime context limits must be positive integers together.")
+        configured = self.configured_context_limit
+        loaded = self.loaded_context_limit
+        effective = self.effective_context_limit
+        assert configured is not None and loaded is not None and effective is not None
+        if effective != min(configured, loaded):
+            raise ValueError("Model runtime effective context limit must be the lower limit.")
 
 
 class ModelRuntimeReadiness(Protocol):

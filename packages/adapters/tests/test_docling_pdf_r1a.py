@@ -36,6 +36,8 @@ from kotekomi_application import (
     ModelExecutionReceipt,
     ModelExecutionSpec,
     ModelIdentitySnapshot,
+    ModelInputInspectionRequest,
+    ModelInputMeasurement,
     ModelTaskRequest,
     ModelTaskResponse,
     PdfIngestInput,
@@ -179,6 +181,26 @@ class FixtureModelTaskRuntime:
     def task_deadline_seconds(self) -> float:
         return 300.0
 
+    @property
+    def tokenizer_id(self) -> str:
+        return self.configured_identity.tokenizer_id
+
+    def count_tokens(self, rendered_input: bytes) -> int:
+        return len(rendered_input.decode("utf-8").split())
+
+    def inspect_model_input(self, request: ModelInputInspectionRequest) -> ModelInputMeasurement:
+        return ModelInputMeasurement(
+            model_identity_digest=model_identity_snapshot_digest(request.model_identity),
+            runtime_identity=self.configured_identity.runtime,
+            model_instance_id=self.configured_identity.name,
+            tokenizer_id=self.tokenizer_id,
+            prompt_template_identity="fixture_no_prompt_template_v1",
+            logical_input_digest=request.logical_input_digest,
+            formatted_input_digest=request.logical_input_digest,
+            formatted_input_token_count=self.count_tokens(request.logical_input),
+            loaded_context_limit=65_536,
+        )
+
     def run_model_task(self, task: ModelTaskRequest) -> ModelTaskResponse:
         self.requests.append(task)
         return ModelTaskResponse(
@@ -191,7 +213,7 @@ class FixtureModelTaskRuntime:
                     task.execution_spec.generation_parameters
                 ),
                 rendered_input_digest=task.rendered_input_digest,
-                input_token_count=len(task.rendered_input.decode("utf-8").split()),
+                input_token_count=task.input_admission.formatted_input_token_count,
                 output_token_count=None,
             ),
         )
