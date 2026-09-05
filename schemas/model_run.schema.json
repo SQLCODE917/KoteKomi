@@ -31,10 +31,148 @@
         }
       ]
     },
+    "ModelInputAdmission": {
+      "additionalProperties": false,
+      "description": "Application-owned admission decision for one complete model request.",
+      "properties": {
+        "blocked_reason": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Blocked Reason"
+        },
+        "configured_context_limit": {
+          "exclusiveMinimum": 0,
+          "title": "Configured Context Limit",
+          "type": "integer"
+        },
+        "effective_context_limit": {
+          "exclusiveMinimum": 0,
+          "title": "Effective Context Limit",
+          "type": "integer"
+        },
+        "extraction_task_id": {
+          "pattern": "^ext_[A-Za-z0-9][A-Za-z0-9_-]*$",
+          "title": "Extraction Task Id",
+          "type": "string"
+        },
+        "formatted_input_digest": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Formatted Input Digest",
+          "type": "string"
+        },
+        "formatted_input_token_count": {
+          "minimum": 0,
+          "title": "Formatted Input Token Count",
+          "type": "integer"
+        },
+        "id": {
+          "pattern": "^mia_[A-Za-z0-9][A-Za-z0-9_-]*$",
+          "title": "Id",
+          "type": "string"
+        },
+        "loaded_context_limit": {
+          "exclusiveMinimum": 0,
+          "title": "Loaded Context Limit",
+          "type": "integer"
+        },
+        "logical_input_digest": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Logical Input Digest",
+          "type": "string"
+        },
+        "model_identity_digest": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Model Identity Digest",
+          "type": "string"
+        },
+        "model_instance_id": {
+          "minLength": 1,
+          "title": "Model Instance Id",
+          "type": "string"
+        },
+        "model_profile_id": {
+          "minLength": 1,
+          "title": "Model Profile Id",
+          "type": "string"
+        },
+        "prompt_template_identity": {
+          "minLength": 1,
+          "title": "Prompt Template Identity",
+          "type": "string"
+        },
+        "required_capacity": {
+          "minimum": 0,
+          "title": "Required Capacity",
+          "type": "integer"
+        },
+        "reserved_output_tokens": {
+          "minimum": 0,
+          "title": "Reserved Output Tokens",
+          "type": "integer"
+        },
+        "runtime_identity": {
+          "minLength": 1,
+          "title": "Runtime Identity",
+          "type": "string"
+        },
+        "safety_margin_tokens": {
+          "minimum": 0,
+          "title": "Safety Margin Tokens",
+          "type": "integer"
+        },
+        "status": {
+          "$ref": "#/$defs/ModelInputAdmissionStatus"
+        },
+        "tokenizer_id": {
+          "minLength": 1,
+          "title": "Tokenizer Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "extraction_task_id",
+        "model_profile_id",
+        "model_identity_digest",
+        "runtime_identity",
+        "model_instance_id",
+        "tokenizer_id",
+        "prompt_template_identity",
+        "logical_input_digest",
+        "formatted_input_digest",
+        "configured_context_limit",
+        "loaded_context_limit",
+        "effective_context_limit",
+        "formatted_input_token_count",
+        "reserved_output_tokens",
+        "safety_margin_tokens",
+        "required_capacity",
+        "status"
+      ],
+      "title": "ModelInputAdmission",
+      "type": "object"
+    },
+    "ModelInputAdmissionStatus": {
+      "enum": [
+        "ready",
+        "context_budget_blocked"
+      ],
+      "title": "ModelInputAdmissionStatus",
+      "type": "string"
+    },
     "ModelRunStatus": {
       "enum": [
         "succeeded",
         "abstained",
+        "input_blocked",
         "invalid_output",
         "runtime_failed",
         "output_archive_failed",
@@ -47,7 +185,7 @@
   },
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
-  "description": "An immutable invocation attempt, including terminal failures and abstentions.",
+  "description": "An immutable execution attempt, including preflight and response failures.",
   "properties": {
     "abstention_reason": {
       "anyOf": [
@@ -135,6 +273,17 @@
       "title": "Id",
       "type": "string"
     },
+    "input_admission": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ModelInputAdmission"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
     "model_identity": {
       "additionalProperties": {
         "$ref": "#/$defs/JsonValue"
@@ -184,6 +333,11 @@
       "minLength": 1,
       "title": "Runtime Identity",
       "type": "string"
+    },
+    "runtime_invoked": {
+      "default": true,
+      "title": "Runtime Invoked",
+      "type": "boolean"
     },
     "schema_digest": {
       "pattern": "^[a-f0-9]{64}$",
