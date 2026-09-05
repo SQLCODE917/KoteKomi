@@ -3,8 +3,6 @@
 
 Reviewed commit: **65d00c7a7cb7be22e1b033d6ae1aeb935428cf04**. Scope: deposited PDF through pending, human-reviewable Intelligence Ledger candidates, assessed for eventual wiki and briefing usefulness on a 24 GB M5 MacBook.
 
-This report supersedes the preliminary design assessment. Public Git access became available, and the repository was cloned successfully. Findings below distinguish source inspection, repository-reported evaluations, locally reproduced behavior, and proposed experiments. No application code was changed. No model inference or M5 performance benchmark was run here.
-
 ## 1. Assessment
 
 **Keep the hybrid architecture. Its allocation of authority is sound, and the code implements much of it carefully. The highest-value work is to improve semantic coverage and execution reliability before undertaking model fine-tuning.**
