@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import hashlib
+import importlib.util
+import json
 from pathlib import Path
+from typing import Any
 
 import pytest
 from kotekomi_adapters.refined_organization_type import (
@@ -14,6 +17,7 @@ from kotekomi_adapters.refined_organization_type import (
     RefinedWorkerConfig,
     RefinedWorkerError,
 )
+from kotekomi_adapters.refined_worker_transport import RefinedWorkerExchange
 from kotekomi_application.organization_mention_boundary_reconciliation import (
     MentionBoundaryDecisionStatus,
 )
@@ -27,10 +31,26 @@ class FakeTransport:
     def __init__(self, response: dict[str, object]) -> None:
         self.response = response
         self.requests: list[dict[str, object]] = []
+        self.discarded = False
 
-    def request(self, payload: dict[str, object]) -> dict[str, object]:
+    def request(self, payload: dict[str, object]) -> RefinedWorkerExchange:
         self.requests.append(payload)
-        return self.response
+        request_id = "rwr_11111111111111111111111111111111"
+        raw_output = json.dumps(
+            {
+                "schema_version": "refined_worker_exchange_v1",
+                "request_id": request_id,
+                "payload": self.response,
+            },
+            allow_nan=False,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode()
+        return RefinedWorkerExchange(request_id, self.response, raw_output)
+
+    def discard(self) -> None:
+        self.discarded = True
 
     def close(self) -> None:
         pass
@@ -168,13 +188,16 @@ def test_refined_adapter_rejects_span_result_integrity_failures(failure: str) ->
         evidences.reverse()
     else:
         evidences[0] = _evidence(first, returned_text="Northstxr")
+    transport = FakeTransport(_response(evidences))
     adapter = RefinedContextualOrganizationTypeAdapter(
         _config(),
-        transport=FakeTransport(_response(evidences)),
+        transport=transport,
     )
 
     with pytest.raises(ValueError, match="ordered input candidates|source characters"):
         adapter.qualify(_request(source, (first, second)))
+
+    assert transport.discarded is True
 
 
 def test_refined_adapter_exposes_typed_worker_failure() -> None:
@@ -186,9 +209,10 @@ def test_refined_adapter_exposes_typed_worker_failure() -> None:
         "failure": "resources_unavailable",
         "diagnostics": ["Pinned ReFinED resources are not installed."],
     }
+    transport = FakeTransport(response)
     adapter = RefinedContextualOrganizationTypeAdapter(
         _config(),
-        transport=FakeTransport(response),
+        transport=transport,
     )
 
     with pytest.raises(RefinedWorkerError, match="resources_unavailable") as captured:
@@ -196,6 +220,7 @@ def test_refined_adapter_exposes_typed_worker_failure() -> None:
 
     assert captured.value.failure == "resources_unavailable"
     assert captured.value.diagnostics == ("Pinned ReFinED resources are not installed.",)
+    assert transport.discarded is False
 
 
 def test_refined_adapter_rejects_response_without_protocol_discriminator() -> None:
@@ -208,3 +233,33 @@ def test_refined_adapter_rejects_response_without_protocol_discriminator() -> No
 
     with pytest.raises(ValueError, match="requires schema_version and status"):
         adapter.qualify(_request(source, (candidate,)))
+
+
+def test_contextual_type_worker_exchange_echoes_request_id() -> None:
+    worker = _load_worker_module()
+    request_id = "rwr_11111111111111111111111111111111"
+
+    observed_id, payload = worker._exchange_request(
+        {
+            "schema_version": "refined_worker_exchange_v1",
+            "request_id": request_id,
+            "payload": {"fixture": True},
+        }
+    )
+
+    assert observed_id == request_id
+    assert payload == {"fixture": True}
+    assert worker._exchange_response(request_id, {"status": "blocked"}) == {
+        "schema_version": "refined_worker_exchange_v1",
+        "request_id": request_id,
+        "payload": {"status": "blocked"},
+    }
+
+
+def _load_worker_module() -> Any:
+    path = Path(__file__).resolve().parents[3] / "scripts" / "refined_organization_type_worker.py"
+    spec = importlib.util.spec_from_file_location("refined_organization_type_worker_test", path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module

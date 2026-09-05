@@ -30,6 +30,11 @@ attempts inspect the complete request with the loaded model's prompt template, t
 context length, then persist a typed pre-transport admission decision. The original observation
 above remains the evidence that motivated the change.
 
+The ReFinED recovery finding is addressed by the
+[ReFinED Worker Channel Recovery TDD](2026-09-04-refined-worker-channel-recovery.md): both ReFinED
+Adapters use one correlated, size-bounded transport with a whole-exchange deadline and discard the
+worker after timeout, framing, correlation, or worker-specific validation failures.
+
 P1 means address early because the issue affects a central objective or a real correctness boundary. It does not imply an accepted-ledger corruption was observed.
 
 ## 2. What the current production flow actually does

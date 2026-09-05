@@ -3,12 +3,9 @@
 from __future__ import annotations
 
 import json
-import selectors
-import subprocess
 from dataclasses import dataclass
 from pathlib import Path
-from types import TracebackType
-from typing import Protocol, cast
+from typing import cast
 
 from kotekomi_application.hybrid_entity_grounding import (
     EntityLinkCandidate,
@@ -22,6 +19,11 @@ from kotekomi_application.hybrid_entity_grounding import (
     EntityLinkingRuntimeResponseError,
 )
 
+from kotekomi_adapters.refined_worker_transport import (
+    RefinedWorkerTransport,
+    SubprocessRefinedWorkerTransport,
+)
+
 REFINED_PACKAGE_REVISION = "7c98036f72c39a8d6d2c097bbde89ea3731901f0"
 REFINED_MODEL_ID = "wikipedia_model"
 REFINED_MODEL_REVISION = "refined-v1-wikipedia-model"
@@ -29,7 +31,7 @@ REFINED_ENTITY_SET = "wikipedia"
 REFINED_RESOURCE_MANIFEST_SHA256 = (
     "75ca7833e4fbcc94bf05b129c591d7656900f1f61edb55cdb0b20f2d6518094b"
 )
-REFINED_RUNTIME_IDENTITY = "isolated:refined-v1"
+REFINED_RUNTIME_IDENTITY = "isolated:refined-worker-exchange-v1"
 
 _REQUEST_FIELDS = {
     "schema_version",
@@ -79,12 +81,6 @@ class RefinedEntityLinkingConfig:
             raise ValueError("ReFinED timeout must be positive.")
 
 
-class RefinedEntityLinkingTransport(Protocol):
-    def request(self, payload: dict[str, object]) -> bytes: ...
-
-    def close(self) -> None: ...
-
-
 class RefinedEntityLinkingWorkerError(EntityLinkingRuntimeResponseError):
     def __init__(
         self,
@@ -100,65 +96,6 @@ class RefinedEntityLinkingWorkerError(EntityLinkingRuntimeResponseError):
         )
 
 
-class SubprocessRefinedEntityLinkingTransport:
-    """Persistent canonical-JSON-lines transport to a pinned isolated worker."""
-
-    def __init__(self, config: RefinedEntityLinkingConfig) -> None:
-        if not config.python_executable.is_file():
-            raise RuntimeError("ReFinED worker Python executable is unavailable.")
-        if not config.worker_script.is_file():
-            raise RuntimeError("ReFinED entity-linking worker script is unavailable.")
-        self._timeout_seconds = config.timeout_seconds
-        self._process = subprocess.Popen(
-            (str(config.python_executable), str(config.worker_script)),
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=None,
-            text=False,
-            bufsize=0,
-        )
-
-    def request(self, payload: dict[str, object]) -> bytes:
-        process = self._process
-        if process.poll() is not None or process.stdin is None or process.stdout is None:
-            raise RuntimeError("ReFinED entity-linking worker is not running.")
-        request_bytes = _canonical_json(payload) + b"\n"
-        process.stdin.write(request_bytes)
-        process.stdin.flush()
-        selector = selectors.DefaultSelector()
-        try:
-            selector.register(process.stdout, selectors.EVENT_READ)
-            if not selector.select(self._timeout_seconds):
-                raise TimeoutError("ReFinED entity-linking worker exceeded its timeout.")
-            response = process.stdout.readline()
-        finally:
-            selector.close()
-        if not response:
-            raise RuntimeError("ReFinED entity-linking worker exited without a response.")
-        return response.removesuffix(b"\n")
-
-    def close(self) -> None:
-        if self._process.poll() is None:
-            self._process.terminate()
-            try:
-                self._process.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                self._process.kill()
-                self._process.wait(timeout=5)
-
-    def __enter__(self) -> SubprocessRefinedEntityLinkingTransport:
-        return self
-
-    def __exit__(
-        self,
-        exc_type: type[BaseException] | None,
-        exc_value: BaseException | None,
-        traceback: TracebackType | None,
-    ) -> None:
-        del exc_type, exc_value, traceback
-        self.close()
-
-
 class RefinedEntityLinkingAdapter:
     """Map official ReFinED caller-span results into generic Application DTOs."""
 
@@ -166,35 +103,47 @@ class RefinedEntityLinkingAdapter:
         self,
         config: RefinedEntityLinkingConfig,
         *,
-        transport: RefinedEntityLinkingTransport | None = None,
+        transport: RefinedWorkerTransport | None = None,
     ) -> None:
         self._config = config
         self._identity = _identity(config.timeout_seconds)
-        self._transport = transport or SubprocessRefinedEntityLinkingTransport(config)
+        self._transport = transport or SubprocessRefinedWorkerTransport(
+            python_executable=config.python_executable,
+            worker_script=config.worker_script,
+            timeout_seconds=config.timeout_seconds,
+        )
 
     @property
     def identity(self) -> EntityLinkerIdentity:
         return self._identity
 
     def link(self, request: EntityLinkingInput) -> EntityLinkingExecution:
-        raw_output = self._transport.request(_request_payload(request, self._config, self.identity))
+        exchange = self._transport.request(_request_payload(request, self._config, self.identity))
+        payload_bytes = _canonical_json(exchange.payload)
         try:
-            return _parse_execution(raw_output, self.identity, request)
+            return _parse_execution(
+                payload_bytes,
+                exchange.raw_output,
+                self.identity,
+                request,
+            )
         except RefinedEntityLinkingWorkerError:
             raise
         except Exception as error:
-            raise EntityLinkingOutputError(str(error), raw_output) from error
+            self._transport.discard()
+            raise EntityLinkingOutputError(str(error), exchange.raw_output) from error
 
     def close(self) -> None:
         self._transport.close()
 
 
 def _parse_execution(
+    payload_bytes: bytes,
     raw_output: bytes,
     expected_identity: EntityLinkerIdentity,
     request: EntityLinkingInput,
 ) -> EntityLinkingExecution:
-    response = _decode_canonical_response(raw_output)
+    response = _decode_canonical_response(payload_bytes)
     if response.get("schema_version") != "refined_entity_linking_response_v1":
         raise ValueError("ReFinED entity-linking response schema is unsupported.")
     if response.get("status") != "completed":
