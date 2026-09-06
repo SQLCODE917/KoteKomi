@@ -73,7 +73,7 @@
 
 ## 4. Archive checks
 - verify archive cleanup accepts only `StagedArchiveObject` capabilities and run `uv run pytest packages/adapters/tests/test_local_archive_store.py`
-- verify Candidate Wiki immutable build validation, reuse, and failure-preserving active-link replacement with `uv run pytest packages/adapters/tests/test_candidate_wiki_archive.py`
+- verify Candidate Wiki immutable build validation, manifest-authorized audit closure, unmanifested-file isolation, reuse, and failure-preserving active-link replacement with `uv run pytest packages/adapters/tests/test_candidate_wiki_archive.py`
 
 ## 5. Pipeline checks
 - run URL ingest fixture

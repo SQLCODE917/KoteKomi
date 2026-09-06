@@ -66,6 +66,25 @@ def test_archive_rejects_changed_file_before_replacing_active_link(tmp_path: Pat
     assert (active / "index.md").read_text() == "first\n"
 
 
+def test_archive_audit_trusts_only_manifested_files(tmp_path: Path) -> None:
+    archive = LocalArchiveStore(tmp_path / "archive")
+    archive.initialize()
+    rendered = _rendered("first")
+    archive.publish_candidate_wiki(rendered)
+    build = tmp_path / "archive" / "review" / "wiki-builds" / rendered.manifest.build_id
+    (build / ".index.md.swp").write_bytes(b"untrusted editor state")
+
+    audit = archive.read_candidate_wiki_audit_bundle(rendered.manifest.build_id)
+    reused = archive.publish_candidate_wiki(rendered)
+
+    assert audit.manifest == rendered.manifest
+    assert reused.disposition == "reused"
+
+    (build / "index.md").write_text("changed\n")
+    with pytest.raises(ValueError, match="digest is invalid"):
+        archive.read_candidate_wiki_audit_bundle(rendered.manifest.build_id)
+
+
 def _rendered(text: str) -> RenderedCandidateWiki:
     index = f"{text}\n".encode()
     snapshot_digest = hashlib.sha256(text.encode()).hexdigest()

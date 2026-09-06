@@ -164,20 +164,13 @@ class LocalArchiveStore:
         build_path = self._absolute_path(WIKI_BUILDS_DIR / _validate_archive_id(build_id))
         if not build_path.is_dir() or build_path.is_symlink():
             raise ValueError(f"Candidate Wiki build does not exist: {build_id}")
-        descendants = tuple(build_path.rglob("*"))
-        if any(path.is_symlink() for path in descendants):
-            raise ValueError("Candidate Wiki immutable build must not contain symlinks.")
-        files = {
-            path.relative_to(build_path).as_posix(): path.read_bytes()
-            for path in descendants
-            if path.is_file()
-        }
-        manifest_payload = files.get("manifest.json")
-        if manifest_payload is None:
-            raise ValueError("Candidate Wiki is missing manifest.json.")
+        manifest_payload = _read_manifested_wiki_file(build_path, "manifest.json")
         manifest = wiki_build_manifest_from_bytes(manifest_payload)
         if manifest.build_id != build_id:
             raise ValueError("Candidate Wiki directory and manifest identities differ.")
+        files = {"manifest.json": manifest_payload}
+        for entry in manifest.files:
+            files[entry.relative_path] = _read_manifested_wiki_file(build_path, entry.relative_path)
         _validated_candidate_wiki_payload(
             RenderedCandidateWiki(
                 manifest=manifest,
@@ -1063,6 +1056,20 @@ def _validate_wiki_relative_path(value: str) -> None:
         raise ValueError(f"Candidate Wiki file type is unsupported: {value}")
 
 
+def _read_manifested_wiki_file(build_path: Path, relative_path: str) -> bytes:
+    _validate_wiki_relative_path(relative_path)
+    file_path = build_path
+    for part in Path(relative_path).parts:
+        file_path /= part
+        if file_path.is_symlink():
+            raise ValueError(
+                f"Candidate Wiki manifested path must not be a symlink: {relative_path}"
+            )
+    if not file_path.is_file():
+        raise ValueError(f"Candidate Wiki is missing manifested file: {relative_path}")
+    return file_path.read_bytes()
+
+
 def _validated_candidate_wiki_payload(
     rendered_wiki: RenderedCandidateWiki,
 ) -> tuple[WikiBuildManifest, dict[str, bytes]]:
@@ -1134,15 +1141,6 @@ def _write_wiki_build(build_path: Path, files: dict[str, bytes]) -> None:
 def _validate_existing_wiki_build(build_path: Path, expected_files: dict[str, bytes]) -> None:
     if not build_path.is_dir() or build_path.is_symlink():
         raise ValueError("Candidate Wiki build path is not an immutable directory.")
-    descendants = tuple(build_path.rglob("*"))
-    if any(path.is_symlink() for path in descendants):
-        raise ValueError("Candidate Wiki immutable build must not contain symlinks.")
-    actual_paths = {
-        path.relative_to(build_path).as_posix() for path in descendants if path.is_file()
-    }
-    if actual_paths != set(expected_files):
-        raise ValueError("Candidate Wiki build contains absent or extra files.")
     for relative_path, expected in expected_files.items():
-        path = build_path / relative_path
-        if path.is_symlink() or path.read_bytes() != expected:
+        if _read_manifested_wiki_file(build_path, relative_path) != expected:
             raise ValueError(f"Candidate Wiki immutable build conflicts: {relative_path}")

@@ -158,6 +158,8 @@ Wiki build's manifest, audit catalog, and citation registry.
   audit references fail explicitly.
 - OWP-AUD-09: `--format json` emits a stable structured result suitable for a Wiki agent.
 - OWP-AUD-10: Default text output remains directly inspectable by a human.
+- OWP-AUD-11: The manifest defines the trusted build closure.
+- OWP-AUD-12: Publication and audit exclude unmanifested editor files from validation and output.
 
 ### Deterministic rendering and publication
 
