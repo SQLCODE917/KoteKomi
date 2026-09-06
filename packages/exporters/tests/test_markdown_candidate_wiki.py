@@ -37,16 +37,22 @@ def test_renderer_is_deterministic_lean_and_exposes_stable_audit_handles() -> No
     assert "## At a glance" in page
     assert "**Characterization Event**" in page
     assert "`evt_characterization`" in page
-    assert "**Evaluator:** Amodei" in page
-    assert "**Evaluated subject:** [Donald Trump](Donald_Trump.md)" in page
+    assert (
+        '**Extracted roles:** characterization **"feudal warlord"**; '
+        "evaluated subject [Donald Trump](Donald_Trump.md); evaluator Amodei"
+    ) in page
+    assert "**Source, page 2:**" in page
+    assert '> Amodei described Donald Trump as a "feudal warlord".' in page
+    assert page.count('> Amodei described Donald Trump as a "feudal warlord".') == 1
     assert "Amodei characterized Donald Trump" not in page
     assert "## Relationships requiring review" in page
-    assert 'Amodei — `described as feudal warlord` → **"feudal warlord"**' in page
+    assert 'Amodei — **described as feudal warlord** → **"feudal warlord"**' in page
     assert "`ast_incomplete`" in page
-    assert "[Characterization](../events/Event.md) — `has_argument` → Amodei" in page
-    assert "`frame_role_id` → `characterization.evaluator`" in page
+    assert "## Event details" not in page
+    assert "Ontology object graph" not in page
+    assert "`has_argument`" not in page
+    assert "`frame_role_id`" not in page
     assert "Source evidence" not in page
-    assert '> Amodei described Donald Trump as a "feudal warlord".' not in page
     assert "<summary>Audit trail</summary>" not in page
     audit = json.loads(
         next(item.payload for item in first.files if item.relative_path == "audit.json")
@@ -77,7 +83,15 @@ def test_renderer_escapes_record_and_source_control_text() -> None:
         page,
         presentations=(page.presentations[0], escaped_assertion),
     )
-    escaped_plan = replace(plan, pages=(escaped_page,))
+    escaped_evidence = tuple(
+        replace(item, exact_text="[source] | <script>\nnext")
+        for item in plan.citation_registry.citations
+    )
+    escaped_plan = replace(
+        plan,
+        pages=(escaped_page,),
+        citation_registry=replace(plan.citation_registry, citations=escaped_evidence),
+    )
 
     markdown = next(
         item.payload.decode()
@@ -85,9 +99,10 @@ def test_renderer_escapes_record_and_source_control_text() -> None:
         if item.relative_path == "actors/Amodei.md"
     )
 
-    assert "used | &lt;script&gt;" in markdown
+    assert "used \\| &lt;script&gt;" in markdown
     assert "**\\[unsafe\\]**" in markdown
     assert "<script>" not in markdown
+    assert "> \\[source\\] \\| &lt;script&gt; next" in markdown
 
 
 def test_renderer_uses_the_same_mechanical_projection_for_every_governed_frame() -> None:
@@ -109,7 +124,8 @@ def test_renderer_uses_the_same_mechanical_projection_for_every_governed_frame()
 
         expected_label = frame.label.replace("_", " ").capitalize()
         assert f"**{expected_label} Event**" in markdown
-        assert "— `has_argument` →" in markdown
+        assert "**Extracted roles:**" in markdown
+        assert "Ontology object graph" not in markdown
 
 
 def _plan() -> CandidateWikiPlan:
@@ -224,7 +240,7 @@ def _plan() -> CandidateWikiPlan:
     )
     return CandidateWikiPlan(
         view_policy_id="candidate_wiki_view_v4",
-        renderer_policy_id="ontology_graph_markdown_wiki_v4",
+        renderer_policy_id="ontology_graph_markdown_wiki_v6",
         ingestion_run_id="igr_example",
         ingestion_change_set_id="ics_example",
         candidate_snapshot_digest="b" * 64,

@@ -69,7 +69,7 @@ Wiki build's manifest, audit catalog, and citation registry.
 2. The Application Layer resolves the selected CandidateKnowledgeView.
 3. The Application Layer groups structural Assertions by Event.
 4. The Application Layer creates WikiEventPresentations and WikiAssertionPresentations.
-5. The exporter renders ontology edges and stable audit handles without inline evidence excerpts.
+5. The exporter renders compact intelligence summaries, exact Event evidence, and stable audit handles.
 6. The exporter writes structured `audit.json` and `citations.json` files.
 7. The Archive Adapter validates and publishes the immutable Candidate Wiki build.
 8. A user or Wiki agent resolves provenance on demand with `kotekomi wiki audit`.
@@ -134,15 +134,17 @@ Wiki build's manifest, audit catalog, and citation registry.
 - OWP-PAGE-01: A named-record page starts with identity details and review state.
 - OWP-PAGE-02: The page lists each Event frame and its role edges under `At a glance`.
 - OWP-PAGE-03: The page lists ordinary pending Assertions under `Relationships requiring review`.
-- OWP-PAGE-04: The page renders one detailed section for each presentation.
-- OWP-PAGE-05: A detailed section displays its ontology object graph.
-- OWP-PAGE-06: A page does not inline source excerpts or detailed provenance.
+- OWP-PAGE-04: The page renders ordinary Assertions as compact relationship lines.
+- OWP-PAGE-05: The page does not render internal ontology edges or qualifiers.
+- OWP-PAGE-06: `At a glance` shows each Event's extracted roles and exact source text.
 - OWP-PAGE-07: Every page carries its Wiki build ID once in YAML frontmatter.
 - OWP-PAGE-08: Every Domain-record page carries its stable record ID in YAML frontmatter.
 - OWP-PAGE-09: A page renders a self-reference as text instead of a self-link.
 - OWP-PAGE-10: The page labels pending and accepted presentations distinctly.
 - OWP-PAGE-11: Every Event and Assertion presentation visibly carries its stable Domain record ID.
 - OWP-PAGE-12: Pages contain no presentation-only citation numbers or audit command instructions.
+- OWP-PAGE-13: The renderer deduplicates source references with the same authoritative text range.
+- OWP-PAGE-14: Detailed provenance remains available only through `wiki audit`.
 
 ### Audit catalog and command
 
@@ -175,6 +177,7 @@ Wiki build's manifest, audit catalog, and citation registry.
 - OWP-REN-10: The build ID derives from pinned snapshot and policy identity without hashing its own
   rendered appearance in page frontmatter.
 - OWP-REN-11: The manifest independently hashes every output file and rejects changed bytes.
+- OWP-REN-12: The reading-projection renderer uses policy ID `ontology_graph_markdown_wiki_v6`.
 
 ## 4. Proposed Architecture
 
@@ -277,10 +280,15 @@ CIR-4.1 preserves CIR-4 view selection, evidence replay, publication, and author
 
 The planner treats the ontology records as the only source of projected meaning.
 
-The renderer shows graph edges and does not generate event prose.
+The renderer shows compact Event roles and ordinary relationships without generating event prose.
 
-The source text remains evidence and does not supply missing presentation fields. It is emitted only
-by deterministic audit resolution, not by the routine Markdown projection.
+The audit catalog retains the complete ontology graph.
+
+The source text remains evidence and does not supply missing presentation fields.
+
+The routine Markdown projection shows exact Event evidence for review.
+
+Deterministic audit resolution supplies the complete provenance record.
 
 Held extraction previews do not enter the Candidate Wiki.
 
@@ -292,8 +300,8 @@ Stable Domain IDs are audit handles. The audit catalog does not make the Wiki ca
 - AC-OWP-02: Application tests prove generic edge rendering across every governed frame.
 - AC-OWP-03: Application tests prove neutral ordinary Assertion rendering under OWP-AST.
 - AC-OWP-04: Page tests prove human layout and page association under OWP-PAGE.
-- AC-OWP-05: Exporter tests prove build frontmatter, stable record handles, lean pages, and structured
-  audit retention under OWP-AUD.
+- AC-OWP-05: Exporter tests prove build frontmatter, stable record handles, compact Event evidence,
+  and structured audit retention under OWP-AUD.
 - AC-OWP-06: Exporter tests prove escaping and byte identity under OWP-REN.
 - AC-OWP-07: Pipeline tests prove the public command and zero model calls.
 - AC-OWP-08: Archive tests prove immutable build replacement remains unchanged.
@@ -308,6 +316,8 @@ Stable Domain IDs are audit handles. The audit catalog does not make the Wiki ca
 - AC-OWP-15: Application tests prove exact record and evidence resolution without Markdown parsing.
 - AC-OWP-16: Adapter tests prove complete immutable-build validation before audit reads.
 - AC-OWP-17: Pipeline tests prove public `wiki audit` routing and JSON output selection.
+- AC-OWP-18: Exporter tests prove duplicate evidence origins produce one source excerpt.
+- AC-OWP-19: Exporter tests prove Markdown omits ontology graph details retained by `wiki audit`.
 
 ## 10. Reference Implementations
 

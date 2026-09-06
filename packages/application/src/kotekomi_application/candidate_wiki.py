@@ -42,7 +42,7 @@ from kotekomi_application.hybrid_event_frames import EventModality, EventPolarit
 from kotekomi_application.record_serialization import canonical_record_json
 
 CANDIDATE_WIKI_VIEW_POLICY_ID = "candidate_wiki_view_v4"
-CANDIDATE_WIKI_RENDERER_POLICY_ID = "ontology_graph_markdown_wiki_v4"
+CANDIDATE_WIKI_RENDERER_POLICY_ID = "ontology_graph_markdown_wiki_v6"
 HASH_ID_LENGTH = 24
 
 type WikiIntelligenceRecord = (
@@ -675,6 +675,7 @@ def plan_candidate_wiki(view: CandidateKnowledgeView) -> CandidateWikiPlan:
     evidence_numbers = {
         item.reference_key: item.citation_number for item in view.evidence_references
     }
+    evidence_by_number = {item.citation_number: item for item in view.evidence_references}
     by_id = {item.record.id: item for item in view.records}
     presentations = _plan_presentations(view.records, by_id, paths, evidence_numbers)
     pages: list[WikiPageInput] = []
@@ -703,6 +704,7 @@ def plan_candidate_wiki(view: CandidateKnowledgeView) -> CandidateWikiPlan:
             links=all_links,
             presentations=(),
             citations=(),
+            evidence_by_number=evidence_by_number,
         )
     )
     document_path = f"documents/{_slug(view.ingestion_run.display_filename)}.md"
@@ -720,6 +722,7 @@ def plan_candidate_wiki(view: CandidateKnowledgeView) -> CandidateWikiPlan:
             links=all_links,
             presentations=presentations,
             citations=tuple(item.citation_number for item in view.evidence_references),
+            evidence_by_number=evidence_by_number,
         )
     )
     for item in named_records:
@@ -739,6 +742,7 @@ def plan_candidate_wiki(view: CandidateKnowledgeView) -> CandidateWikiPlan:
                     if paths[record_id] in presentation.related_paths
                 ),
                 citations=_record_citation_numbers(item, evidence_numbers),
+                evidence_by_number=evidence_by_number,
             )
         )
     ordered_pages = tuple(
@@ -1878,6 +1882,7 @@ def _page(
     links: tuple[WikiLink, ...],
     presentations: tuple[WikiPresentation, ...],
     citations: tuple[int, ...],
+    evidence_by_number: dict[int, WikiEvidenceReference],
 ) -> WikiPageInput:
     all_citations = tuple(
         sorted(
@@ -1903,6 +1908,7 @@ def _page(
         "links": [item.__dict__ for item in links],
         "presentations": [_presentation_json(item) for item in presentations],
         "citations": list(all_citations),
+        "evidence": [_evidence_identity(evidence_by_number[number]) for number in all_citations],
     }
     return WikiPageInput(
         relative_path=relative_path,

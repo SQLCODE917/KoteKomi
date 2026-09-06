@@ -12,10 +12,12 @@ from kotekomi_application.candidate_wiki import (
     CandidateWikiPlan,
     RenderedCandidateWiki,
     RenderedWikiFile,
+    WikiAssertionPresentation,
     WikiBuildFileEntry,
     WikiBuildManifest,
     WikiDetail,
     WikiEventPresentation,
+    WikiEvidenceReference,
     WikiLink,
     WikiOntologyEdge,
     WikiPageInput,
@@ -41,8 +43,14 @@ class MarkdownCandidateWikiRenderer:
         )
         citations = canonical_wiki_citations_bytes(plan.citation_registry)
         audit = canonical_wiki_audit_bytes(plan.audit_catalog)
+        evidence_by_number = {
+            item.citation_number: item for item in plan.citation_registry.citations
+        }
         rendered_pages = tuple(
-            RenderedWikiFile(page.relative_path, _render_page(page, build_id=build_id))
+            RenderedWikiFile(
+                page.relative_path,
+                _render_page(page, build_id=build_id, evidence_by_number=evidence_by_number),
+            )
             for page in plan.pages
         )
         content_files = (
@@ -87,7 +95,12 @@ class MarkdownCandidateWikiRenderer:
         )
 
 
-def _render_page(page: WikiPageInput, *, build_id: str) -> bytes:
+def _render_page(
+    page: WikiPageInput,
+    *,
+    build_id: str,
+    evidence_by_number: dict[int, WikiEvidenceReference],
+) -> bytes:
     lines = [
         "---",
         f"kotekomi_wiki_build_id: {_frontmatter_value(build_id)}",
@@ -111,8 +124,8 @@ def _render_page(page: WikiPageInput, *, build_id: str) -> bytes:
         lines.extend((f"Review state: **{page.state.upper()}**", ""))
     lines.extend(_details(page.details, page.relative_path))
     lines.extend(_links(page.links, page.relative_path))
-    lines.extend(_at_a_glance(page.presentations, page.relative_path))
-    lines.extend(_presentations(page.presentations, page.relative_path))
+    lines.extend(_at_a_glance(page.presentations, page.relative_path, evidence_by_number))
+    lines.extend(_relationships(page.presentations, page.relative_path))
     return ("\n".join(lines).rstrip() + "\n").encode("utf-8")
 
 
@@ -145,6 +158,7 @@ def _links(links: tuple[WikiLink, ...], current_path: str) -> list[str]:
 def _at_a_glance(
     presentations: tuple[WikiPresentation, ...],
     current_path: str,
+    evidence_by_number: dict[int, WikiEvidenceReference],
 ) -> list[str]:
     events = tuple(item for item in presentations if isinstance(item, WikiEventPresentation))
     if not events:
@@ -155,6 +169,7 @@ def _at_a_glance(
             f"- [{event.state.upper()}] `{_code_text(event.event_id)}` · "
             f"**{_markdown_text(_event_label(event))}**"
         )
+        role_parts: list[str] = []
         for edge in event.edges:
             role_id = next(
                 (item.value for item in edge.qualifiers if item.key == "frame_role_id"),
@@ -162,81 +177,81 @@ def _at_a_glance(
             )
             if role_id is None:
                 continue
-            lines.append(
-                f"  - **{_markdown_text(_human_label(role_id.rsplit('.', maxsplit=1)[-1]))}:** "
+            role_parts.append(
+                f"{_markdown_text(_human_label(role_id.rsplit('.', maxsplit=1)[-1]).casefold())} "
                 f"{_edge_object(edge, current_path)}"
             )
+        if role_parts:
+            lines.append(f"  - **Extracted roles:** {'; '.join(role_parts)}")
+        for issue in event.issues:
+            lines.append(f"  - **Review issue:** {_markdown_text(issue)}")
+        for evidence in _event_evidence(event, evidence_by_number):
+            lines.append(f"  - **{_source_label(evidence.page_numbers)}:**")
+            lines.append(f"    > {_markdown_text(evidence.exact_text)}")
     return [*lines, ""]
 
 
-def _presentations(
+def _event_evidence(
+    event: WikiEventPresentation,
+    evidence_by_number: dict[int, WikiEvidenceReference],
+) -> tuple[WikiEvidenceReference, ...]:
+    evidence: list[WikiEvidenceReference] = []
+    seen: set[tuple[object, ...]] = set()
+    for number in event.citation_numbers:
+        reference = evidence_by_number.get(number)
+        if reference is None:
+            raise ValueError(f"Candidate Wiki Event cites missing evidence number: {number}")
+        identity = (
+            reference.source_id,
+            reference.document_id,
+            reference.text_view_id,
+            reference.start_char,
+            reference.end_char,
+            reference.exact_text,
+            reference.page_numbers,
+        )
+        if identity not in seen:
+            seen.add(identity)
+            evidence.append(reference)
+    return tuple(evidence)
+
+
+def _source_label(page_numbers: tuple[int, ...]) -> str:
+    if len(page_numbers) == 1:
+        return f"Source, page {page_numbers[0]}"
+    if page_numbers:
+        return f"Source, pages {', '.join(str(number) for number in page_numbers)}"
+    return "Source"
+
+
+def _relationships(
     presentations: tuple[WikiPresentation, ...],
     current_path: str,
 ) -> list[str]:
-    if not presentations:
+    assertions = tuple(
+        item for item in presentations if isinstance(item, WikiAssertionPresentation)
+    )
+    if not assertions:
         return []
     lines: list[str] = []
-    for section in (
-        "Event details",
-        "Incomplete ontology events",
-        "Relationships",
-        "Relationships requiring review",
+    for state, section in (
+        ("accepted", "Relationships"),
+        ("pending", "Relationships requiring review"),
     ):
-        section_items = tuple(
-            item for item in presentations if _presentation_section(item) == section
-        )
+        section_items = tuple(item for item in assertions if item.state == state)
         if not section_items:
             continue
         lines.extend((f"## {section}", ""))
         for presentation in section_items:
-            lines.extend(_presentation(presentation, current_path))
-    return lines
-
-
-def _presentation_section(presentation: WikiPresentation) -> str:
-    if isinstance(presentation, WikiEventPresentation):
-        return "Event details" if presentation.complete else "Incomplete ontology events"
-    return "Relationships requiring review" if presentation.state == "pending" else "Relationships"
-
-
-def _presentation(
-    presentation: WikiPresentation,
-    current_path: str,
-) -> list[str]:
-    if isinstance(presentation, WikiEventPresentation):
-        record_id = presentation.event_id
-        title = _markdown_text(_event_label(presentation))
-        edges = presentation.edges
-    else:
-        record_id = presentation.edge.assertion_id
-        title = "Relationship" if presentation.state == "accepted" else "Proposed relationship"
-        edges = (presentation.edge,)
-    lines = [
-        f"### `{_code_text(record_id)}` · {title}",
-        "",
-        f"**Review state:** {presentation.state.upper()}",
-        "",
-    ]
-    if isinstance(presentation, WikiEventPresentation) and presentation.issues:
-        lines.extend(("> [!CAUTION]", "> This ontology event is incomplete.", ">"))
-        lines.extend(f"> - {_markdown_text(issue)}" for issue in presentation.issues)
-        lines.append("")
-    lines.extend(_ontology_graph(edges, current_path))
-    return lines
-
-
-def _ontology_graph(edges: tuple[WikiOntologyEdge, ...], current_path: str) -> list[str]:
-    lines = ["#### Ontology object graph", ""]
-    for edge in edges:
-        lines.append(f"- `{_code_text(edge.assertion_id)}` · {_edge_inline(edge, current_path)}")
-        for qualifier in edge.qualifiers:
-            value = (
-                _wiki_link_or_text(qualifier.value, qualifier.value_path, current_path)
-                if qualifier.value_path is not None
-                else f"`{_code_text(qualifier.value)}`"
+            lines.extend(
+                (
+                    f"- [{presentation.state.upper()}] "
+                    f"`{_code_text(presentation.edge.assertion_id)}`",
+                    f"  - {_relationship_edge(presentation.edge, current_path)}",
+                )
             )
-            lines.append(f"  - `{_code_text(qualifier.key)}` → {value}")
-    return [*lines, ""]
+        lines.append("")
+    return lines
 
 
 def _wiki_link(label: str, relative_path: str, current_path: str) -> str:
@@ -251,9 +266,10 @@ def _wiki_link_or_text(label: str, relative_path: str | None, current_path: str)
     return _wiki_link(label, relative_path, current_path)
 
 
-def _edge_inline(edge: WikiOntologyEdge, current_path: str) -> str:
+def _relationship_edge(edge: WikiOntologyEdge, current_path: str) -> str:
     subject = _wiki_link_or_text(edge.subject_label, edge.subject_path, current_path)
-    return f"{subject} — `{_code_text(edge.predicate)}` → {_edge_object(edge, current_path)}"
+    predicate = _markdown_text(edge.predicate)
+    return f"{subject} — **{predicate}** → {_edge_object(edge, current_path)}"
 
 
 def _edge_object(edge: WikiOntologyEdge, current_path: str) -> str:
