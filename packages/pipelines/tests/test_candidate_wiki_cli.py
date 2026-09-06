@@ -42,6 +42,52 @@ def test_public_candidate_wiki_command_dispatches_without_domain_ids(
     }
 
 
+def test_public_candidate_wiki_audit_command_dispatches_with_stable_record_id(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    received: dict[str, object] = {}
+
+    def fake_audit(
+        *,
+        config_path: Path | None,
+        build_id: str,
+        record_id: str,
+        output_format: str,
+    ) -> int:
+        received.update(
+            config_path=config_path,
+            build_id=build_id,
+            record_id=record_id,
+            output_format=output_format,
+        )
+        return 0
+
+    monkeypatch.setattr(cli, "audit_candidate_wiki", fake_audit)
+
+    result = cli.main(
+        [
+            "--config",
+            "/tmp/kotekomi.toml",
+            "wiki",
+            "audit",
+            "--build-id",
+            "wkb_example",
+            "--record-id",
+            "evt_example",
+            "--format",
+            "json",
+        ]
+    )
+
+    assert result == 0
+    assert received == {
+        "config_path": Path("/tmp/kotekomi.toml"),
+        "build_id": "wkb_example",
+        "record_id": "evt_example",
+        "output_format": "json",
+    }
+
+
 def test_duplicate_ingestion_selector_uses_human_number_not_domain_id(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

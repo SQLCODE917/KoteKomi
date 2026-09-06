@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib.util
 import json
 import sys
 import textwrap
@@ -219,6 +220,42 @@ def test_repository_worker_returns_correlated_task_failure(worker_name: str) -> 
     assert first.payload["status"] == "blocked"
     assert first.payload["failure"] == "invalid_request"
     assert second.payload["status"] == "blocked"
+
+
+@pytest.mark.parametrize(
+    "worker_name",
+    ("refined_entity_linking_worker.py", "refined_organization_type_worker.py"),
+)
+def test_repository_worker_suppresses_only_expected_dependency_noise(
+    worker_name: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    worker_script = Path(__file__).resolve().parents[3] / "scripts" / worker_name
+    spec = importlib.util.spec_from_file_location(f"{worker_name}_diagnostic_test", worker_script)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    filters: list[tuple[tuple[object, ...], dict[str, object]]] = []
+
+    def capture_filter(*args: object, **kwargs: object) -> None:
+        filters.append((args, kwargs))
+
+    monkeypatch.setattr(
+        module.warnings,
+        "filterwarnings",
+        capture_filter,
+    )
+
+    module._configure_expected_runtime_diagnostics()
+
+    assert module.os.environ["HF_HUB_OFFLINE"] == "1"
+    assert module.os.environ["TRANSFORMERS_OFFLINE"] == "1"
+    assert module.os.environ["TRANSFORMERS_VERBOSITY"] == "error"
+    assert [item[1]["category"] for item in filters] == [FutureWarning, UserWarning]
+    assert [item[1]["module"] for item in filters] == [
+        r"refined\.inference\.processor",
+        r"torch\.cuda\.amp\.autocast_mode",
+    ]
 
 
 def _worker_starts(worker_script: Path) -> int:

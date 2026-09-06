@@ -124,6 +124,13 @@ from kotekomi_application.hybrid_reference_preview import (
     HybridReferencePreviewResult,
     run_hybrid_reference_preview,
 )
+from kotekomi_application.hybrid_standing_fact_model_output import standing_fact_schema_bytes
+from kotekomi_application.hybrid_standing_facts import (
+    HYBRID_STANDING_FACT_POLICY_ID,
+    HYBRID_STANDING_FACT_SCHEMA_ID,
+    HybridStandingFactCommand,
+    run_hybrid_standing_fact_plan,
+)
 from kotekomi_application.mention_proposer import (
     MentionProposalBatch,
     MentionProposalInput,
@@ -153,6 +160,7 @@ _PROMPT_NAMES = (
     "hybrid_event_normalization_v1.md",
     "hybrid_event_role_completion_v1.md",
     "hybrid_semantic_support_v1.md",
+    "hybrid_standing_fact_task_v1.md",
 )
 
 type _StageResult = (
@@ -290,7 +298,7 @@ def run_hybrid_document_ingestion(
     progress: Callable[[HybridParagraphProgress], None] | None = None,
     model_run_id_factory: ModelRunIdFactory,
 ) -> HybridDocumentIngestionResult:
-    """Run or replay HP-1 through HP-8 for every authoritative paragraph."""
+    """Run or replay every paragraph route before document reconciliation."""
     prompts = _prompt_bytes()
     runtime = build_model_task_runtime(config.model_execution)
     with sqlite_ledger_transaction(config.ledger_path) as ledger:
@@ -483,12 +491,46 @@ def _run_paragraph(
             diagnostics=hp7_diagnostics,
         )
     )
+    with sqlite_ledger_transaction(config.ledger_path) as ledger:
+        hp10 = run_hybrid_standing_fact_plan(
+            command=HybridStandingFactCommand(
+                hp7.id,
+                profile,
+                generation,
+                datetime.now(UTC),
+            ),
+            ledger=ledger,
+            archive=archive,
+            model_runtime=resources.runtime,
+            model_run_id_factory=model_run_id_factory,
+            tokenizer=resources.runtime,
+            prompt_bytes=prompts["hybrid_standing_fact_task_v1.md"],
+        )
+    held_fact_count = sum(item.disposition.value == "held" for item in hp10.plan.decisions)
+    hp10_diagnostics = tuple(
+        sorted(
+            (
+                *hp10.plan.diagnostics,
+                *((f"held_standing_facts:{held_fact_count}",) if held_fact_count else ()),
+            )
+        )
+    )
+    stages.append(
+        HybridParagraphStageRecord(
+            stage_id=HybridStageId.HP10_STANDING_FACTS,
+            disposition=HybridStageDisposition.CREATED,
+            output_id=hp10.plan.id,
+            output_sha256=hp10.sha256,
+            terminal_status=hp10.plan.terminal_status.value,
+            diagnostics=hp10_diagnostics,
+        )
+    )
     receipt = build_hybrid_paragraph_receipt(
         manifest=manifest,
         work=work,
         context_manifest_id=hp1.preview.context_manifest_id,
         stages=tuple(stages),
-        proposed_change_ids=tuple(item.id for item in hp7.proposed_changes),
+        proposed_change_ids=tuple(item.id for item in hp10.plan.proposed_changes),
     )
     publish_hybrid_paragraph_receipt(receipt, archive)
     return receipt
@@ -542,6 +584,7 @@ def _policy_input(
         HYBRID_EVENT_NORMALIZATION_SCHEMA_ID: event_semantic_schema_bytes(),
         HYBRID_EVENT_ROLE_COMPLETION_SCHEMA_ID: event_semantic_role_target_schema_bytes(),
         HYBRID_SEMANTIC_SUPPORT_SCHEMA_ID: semantic_support_schema_bytes(),
+        HYBRID_STANDING_FACT_SCHEMA_ID: standing_fact_schema_bytes(),
     }
     pins.extend(
         HybridPolicyPin(kind="schema", identity=name, sha256=_sha(payload))
@@ -569,6 +612,7 @@ def _policy_input(
         HYBRID_ATOMIC_CLAIM_POLICY_ID,
         HYBRID_EVENT_SEMANTICS_POLICY_ID,
         HYBRID_PROPOSAL_POLICY_ID,
+        HYBRID_STANDING_FACT_POLICY_ID,
     ):
         pins.append(
             HybridPolicyPin(

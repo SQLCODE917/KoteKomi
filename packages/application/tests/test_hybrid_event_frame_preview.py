@@ -85,9 +85,18 @@ from kotekomi_application.hybrid_event_semantics_preview import (
     HybridEventSemanticsLedger,
 )
 from kotekomi_application.hybrid_mention_preview import HybridMentionArchive, HybridMentionLedger
+from kotekomi_application.hybrid_proposed_changes import canonical_hybrid_proposal_plan_bytes
 from kotekomi_application.hybrid_reference_preview import (
     HybridReferenceArchive,
     HybridReferenceLedger,
+)
+from kotekomi_application.hybrid_standing_facts import (
+    HybridStandingFactArchive,
+    HybridStandingFactCommand,
+    HybridStandingFactLedger,
+    StandingFactPlan,
+    load_standing_fact_plan,
+    run_hybrid_standing_fact_plan,
 )
 from kotekomi_application.proposed_change_review import ProposedChangeReviewLedger
 from kotekomi_domain import (
@@ -117,6 +126,7 @@ from kotekomi_domain import (
     TextViewKind,
     canonical_representation_digest,
 )
+from kotekomi_domain.models import JsonValue
 
 NOW = datetime(2026, 9, 1, tzinfo=UTC)
 TEXT = (
@@ -269,6 +279,7 @@ class _Archive:
         self.atomic_claim_previews: dict[str, bytes] = {}
         self.event_semantics_previews: dict[str, bytes] = {}
         self.proposal_plans: dict[str, bytes] = {}
+        self.standing_fact_plans: dict[str, bytes] = {}
 
     def put_model_run_output(
         self, model_run_id: str, payload: bytes, expected_digest: str
@@ -358,6 +369,21 @@ class _Archive:
     def read_hybrid_proposal_plan(self, plan_id: str) -> bytes:
         return self.proposal_plans[plan_id]
 
+    def put_standing_fact_plan(
+        self,
+        plan: StandingFactPlan,
+        payload: bytes,
+        expected_sha256: str,
+    ) -> object:
+        assert hashlib.sha256(payload).hexdigest() == expected_sha256
+        existing = self.standing_fact_plans.get(plan.id)
+        assert existing is None or existing == payload
+        self.standing_fact_plans[plan.id] = payload
+        return object()
+
+    def read_standing_fact_plan(self, plan_id: str) -> bytes:
+        return self.standing_fact_plans[plan_id]
+
 
 class _MentionProposer:
     def propose(self, proposal_input: MentionProposalInput) -> MentionProposalBatch:
@@ -384,6 +410,33 @@ class _MentionProposer:
         )
 
 
+class _TwoMentionProposer(_MentionProposer):
+    def propose(self, proposal_input: MentionProposalInput) -> MentionProposalBatch:
+        segment = proposal_input.source_segments[0]
+        proposals: list[MentionProposal] = []
+        for text in ("Department of Defense", "Directive 3000.09"):
+            start = segment.exact_text.index(text)
+            proposals.append(
+                MentionProposal(
+                    segment.label,
+                    text,
+                    start,
+                    start + len(text),
+                    ("organization",),
+                    0.9,
+                )
+            )
+        return MentionProposalBatch(
+            proposer_id="fixture-gliner",
+            model_id="fixture-gliner",
+            model_revision="v1",
+            configuration=(),
+            load_elapsed_milliseconds=0,
+            inference_elapsed_milliseconds=0,
+            proposals=tuple(proposals),
+        )
+
+
 class _Runtime:
     def __init__(
         self,
@@ -396,6 +449,7 @@ class _Runtime:
         role_output: bytes | None = None,
         role_outputs: dict[str, tuple[bytes, ...]] | None = None,
         support_outputs: tuple[bytes, ...] | None = None,
+        standing_fact_output: bytes | None = None,
     ) -> None:
         self.stage = stage
         self.trigger_output = trigger_output
@@ -408,6 +462,7 @@ class _Runtime:
         self.role_ordinals: dict[str, int] = {}
         self.support_outputs = support_outputs
         self.support_ordinal = 0
+        self.standing_fact_output = standing_fact_output
         self.requests: list[ModelTaskRequest] = []
         self._identity = ModelIdentitySnapshot(
             "qwen2.5-fixture",
@@ -530,6 +585,13 @@ class _Runtime:
             )
             output = outputs[self.support_ordinal % len(outputs)]
             self.support_ordinal += 1
+        elif (
+            self.stage == "standing_facts"
+            and b"task: propose_standing_facts" in task.rendered_input
+        ):
+            output = self.standing_fact_output or (
+                b"fact: c1 | has policy | literal | Directive 3000.09\n"
+            )
         else:
             raise AssertionError("Unexpected fixture model task.")
         return ModelTaskResponse(
@@ -1495,6 +1557,186 @@ def test_hp7_keeps_optional_parent_coverage_gaps_advisory() -> None:
     assert plan.proposed_changes
 
 
+def test_hp10_adds_a_source_bound_standing_fact_without_accepted_state() -> None:
+    ledger, archive, hp5 = _hp5_parent(_Runtime("events"))
+    hp6 = _run_hp6_fixture(
+        ledger,
+        archive,
+        hp5,
+        _Runtime("semantics"),
+        "hp10-parent",
+    )
+    publish_hybrid_event_semantics_preview(
+        hp6,
+        cast(HybridEventSemanticsArchive, archive),
+    )
+    hp7 = build_hybrid_proposal_plan(hp6.preview.id, ledger, archive)
+    payload = canonical_hybrid_proposal_plan_bytes(hp7)
+    archive.put_hybrid_proposal_plan(
+        hp7,
+        payload,
+        hashlib.sha256(payload).hexdigest(),
+    )
+    runtime = _Runtime("standing_facts")
+
+    result = run_hybrid_standing_fact_plan(
+        command=HybridStandingFactCommand(
+            hp7.id,
+            ContextModelProfile("fixture-model", 4096, 256, 16),
+            _generation(),
+            NOW,
+        ),
+        ledger=cast(HybridStandingFactLedger, ledger),
+        archive=cast(HybridStandingFactArchive, archive),
+        model_runtime=runtime,
+        model_run_id_factory=_RunIds("standing-fact"),
+        tokenizer=_Tokenizer(),
+        prompt_bytes=b"Propose source-supported standing facts only.",
+    )
+
+    assertions = [
+        item
+        for item in result.plan.proposed_changes
+        if item.proposed_json["record_type"] == "Assertion"
+        and cast(dict[str, JsonValue], item.proposed_json["record"])["relation_label"]
+        == "has policy"
+    ]
+    assert len(assertions) == 1
+    assertion = ProposedAssertion.model_validate_json(
+        json.dumps(assertions[0].proposed_json["record"])
+    )
+    assert assertion.object_value == "Directive 3000.09"
+    assert ledger.get_evidence_target(assertion.evidence_target_ids[0]) is not None
+    assert result.plan.traces[0].input["source_segment_text"] == PARAGRAPH
+    assert result.plan.traces[0].output["mapped_drafts"]
+    assert (
+        load_standing_fact_plan(
+            result.plan.id,
+            cast(HybridStandingFactLedger, ledger),
+            cast(HybridStandingFactArchive, archive),
+        )
+        == result.plan
+    )
+    replay = run_hybrid_standing_fact_plan(
+        command=HybridStandingFactCommand(
+            hp7.id,
+            ContextModelProfile("fixture-model", 4096, 256, 16),
+            _generation(),
+            NOW,
+        ),
+        ledger=cast(HybridStandingFactLedger, ledger),
+        archive=cast(HybridStandingFactArchive, archive),
+        model_runtime=_Runtime("standing_facts"),
+        model_run_id_factory=_RunIds("standing-fact"),
+        tokenizer=_Tokenizer(),
+        prompt_bytes=b"Propose source-supported standing facts only.",
+    )
+    assert replay.plan == result.plan
+    assert replay.sha256 == result.sha256
+    assert ledger.accepted_state_called is False
+    archive.standing_fact_plans[result.plan.id] += b"\n"
+    with pytest.raises(ValueError, match="Standing Fact Plan does not use canonical encoding"):
+        load_standing_fact_plan(
+            result.plan.id,
+            cast(HybridStandingFactLedger, ledger),
+            cast(HybridStandingFactArchive, archive),
+        )
+
+
+def test_hp10_isolates_an_unknown_candidate_from_a_valid_fact() -> None:
+    ledger, archive, hp5 = _hp5_parent(_Runtime("events"))
+    hp6 = _run_hp6_fixture(
+        ledger,
+        archive,
+        hp5,
+        _Runtime("semantics"),
+        "hp10-isolation-parent",
+    )
+    publish_hybrid_event_semantics_preview(
+        hp6,
+        cast(HybridEventSemanticsArchive, archive),
+    )
+    hp7 = build_hybrid_proposal_plan(hp6.preview.id, ledger, archive)
+    payload = canonical_hybrid_proposal_plan_bytes(hp7)
+    archive.put_hybrid_proposal_plan(
+        hp7,
+        payload,
+        hashlib.sha256(payload).hexdigest(),
+    )
+    runtime = _Runtime(
+        "standing_facts",
+        standing_fact_output=(
+            b"fact: c1 | has policy | literal | Directive 3000.09\n"
+            b"fact: c9 | supervises | entity | c1\n"
+        ),
+    )
+
+    result = run_hybrid_standing_fact_plan(
+        command=HybridStandingFactCommand(
+            hp7.id,
+            ContextModelProfile("fixture-model", 4096, 256, 16),
+            _generation(),
+            NOW,
+        ),
+        ledger=cast(HybridStandingFactLedger, ledger),
+        archive=cast(HybridStandingFactArchive, archive),
+        model_runtime=runtime,
+        model_run_id_factory=_RunIds("standing-fact-isolation"),
+        tokenizer=_Tokenizer(),
+        prompt_bytes=b"Propose source-supported standing facts only.",
+    )
+
+    assert result.plan.terminal_status.value == "partial"
+    assert {item.disposition.value for item in result.plan.decisions} == {"proposed", "held"}
+    assert any("unknown_subject" in item for item in result.plan.diagnostics)
+    assert (
+        sum(
+            item.proposed_json["record_type"] == "Assertion"
+            and cast(dict[str, JsonValue], item.proposed_json["record"])["relation_label"]
+            == "has policy"
+            for item in result.plan.proposed_changes
+        )
+        == 1
+    )
+
+
+def test_hp10_maps_an_entity_object_to_a_distinct_authoritative_identity() -> None:
+    ledger, archive, hp7 = _hp7_parent(
+        mention_proposer=_TwoMentionProposer(),
+        run_prefix="hp10-entity-parent",
+    )
+
+    result = run_hybrid_standing_fact_plan(
+        command=HybridStandingFactCommand(
+            hp7.id,
+            ContextModelProfile("fixture-model", 4096, 256, 16),
+            _generation(),
+            NOW,
+        ),
+        ledger=cast(HybridStandingFactLedger, ledger),
+        archive=cast(HybridStandingFactArchive, archive),
+        model_runtime=_Runtime(
+            "standing_facts",
+            standing_fact_output=b"fact: c1 | governs | entity | c2\n",
+        ),
+        model_run_id_factory=_RunIds("standing-fact-entity"),
+        tokenizer=_Tokenizer(),
+        prompt_bytes=b"Propose source-supported standing facts only.",
+    )
+
+    assertions = [
+        ProposedAssertion.model_validate_json(json.dumps(item.proposed_json["record"]))
+        for item in result.plan.proposed_changes
+        if item.proposed_json["record_type"] == "Assertion"
+        and cast(dict[str, JsonValue], item.proposed_json["record"])["relation_label"] == "governs"
+    ]
+    assert len(assertions) == 1
+    assertion = assertions[0]
+    assert assertion.object_entity_id is not None
+    assert assertion.object_entity_id != assertion.subject_entity_id
+    assert assertion.object_value is None
+
+
 def test_hp7_reuses_identical_proposals_without_resetting_review_status() -> None:
     ledger, archive, hp5 = _hp5_parent(_Runtime("events"))
     hp6 = _run_hp6_fixture(
@@ -1874,6 +2116,17 @@ def _parent_evidence() -> tuple[
     HybridMentionPreviewResult,
     HybridEntityGroundingPreview,
 ]:
+    return _parent_evidence_with_proposer(_MentionProposer())
+
+
+def _parent_evidence_with_proposer(
+    proposer: _MentionProposer,
+) -> tuple[
+    _Ledger,
+    _Archive,
+    HybridMentionPreviewResult,
+    HybridEntityGroundingPreview,
+]:
     ledger = _Ledger()
     archive = _Archive()
     mention_runtime = _Runtime("mentions")
@@ -1886,7 +2139,7 @@ def _parent_evidence() -> tuple[
         ),
         ledger=cast(HybridMentionLedger, ledger),
         archive=cast(HybridMentionArchive, archive),
-        proposer=_MentionProposer(),
+        proposer=proposer,
         model_runtime=mention_runtime,
         model_run_id_factory=_RunIds("mention"),
         tokenizer=_Tokenizer(),
@@ -1941,8 +2194,13 @@ def _run_hp4(
 
 def _hp5_parent(
     runtime: _Runtime,
+    mention_proposer: _MentionProposer | None = None,
 ) -> tuple[_Ledger, _Archive, HybridAtomicClaimResult]:
-    ledger, archive, _, grounding = _parent_evidence()
+    ledger, archive, _, grounding = (
+        _parent_evidence_with_proposer(mention_proposer)
+        if mention_proposer is not None
+        else _parent_evidence()
+    )
     hp4 = _run_hp4(ledger, archive, grounding.id, runtime)
     hp5 = run_hybrid_atomic_claim_preview(
         command=HybridAtomicClaimCommand(hp4.preview.id, NOW),
@@ -1951,6 +2209,33 @@ def _hp5_parent(
     )
     publish_hybrid_atomic_claim_preview(hp5, cast(HybridAtomicClaimArchive, archive))
     return ledger, archive, hp5
+
+
+def _hp7_parent(
+    *,
+    mention_proposer: _MentionProposer | None = None,
+    run_prefix: str,
+) -> tuple[_Ledger, _Archive, HybridProposalPlan]:
+    ledger, archive, hp5 = _hp5_parent(_Runtime("events"), mention_proposer)
+    hp6 = _run_hp6_fixture(
+        ledger,
+        archive,
+        hp5,
+        _Runtime("semantics"),
+        run_prefix,
+    )
+    publish_hybrid_event_semantics_preview(
+        hp6,
+        cast(HybridEventSemanticsArchive, archive),
+    )
+    hp7 = build_hybrid_proposal_plan(hp6.preview.id, ledger, archive)
+    payload = canonical_hybrid_proposal_plan_bytes(hp7)
+    archive.put_hybrid_proposal_plan(
+        hp7,
+        payload,
+        hashlib.sha256(payload).hexdigest(),
+    )
+    return ledger, archive, hp7
 
 
 def _run_hp6_fixture(

@@ -99,6 +99,8 @@ class FixtureModelTaskRuntime:
             raw_output = b"abstain: fixture_no_mentions\n"
         elif task.execution_spec.schema_id == "hybrid_event_trigger_text_v1":
             raw_output = b"abstain: fixture_no_event\n"
+        elif task.execution_spec.schema_id == "hybrid_standing_fact_text_v1":
+            raw_output = b"abstain: fixture_no_standing_fact\n"
         else:
             raw_output = b"outcome: abstain\nreason: fixture_no_claim\n"
         return ModelTaskResponse(

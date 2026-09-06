@@ -189,7 +189,11 @@ from kotekomi_application import (
     validate_review_drain_selection,
 )
 from kotekomi_application.candidate_wiki import (
+    AuditCandidateWikiRecordCommand,
+    CandidateWikiRecordAudit,
+    audit_candidate_wiki_record,
     build_candidate_knowledge_view,
+    candidate_wiki_record_audit_json,
     plan_candidate_wiki,
     select_candidate_ingestions,
 )
@@ -290,6 +294,14 @@ def main(argv: list[str] | None = None) -> int:
             config_path=args.config,
             filename=args.filename,
             candidate=args.candidate,
+        )
+
+    if args.command == "wiki" and args.wiki_command == "audit":
+        return audit_candidate_wiki(
+            config_path=args.config,
+            build_id=args.build_id,
+            record_id=args.record_id,
+            output_format=args.output_format,
         )
 
     if args.command == "model" and args.model_command == "runs":
@@ -938,6 +950,14 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         required=True,
         help="Build from the selected ingestion's reviewable candidate state.",
+    )
+    wiki_audit_parser = wiki_subparsers.add_parser(
+        "audit", help="Show deterministic provenance for one Wiki graph record."
+    )
+    wiki_audit_parser.add_argument("--build-id", required=True)
+    wiki_audit_parser.add_argument("--record-id", required=True)
+    wiki_audit_parser.add_argument(
+        "--format", dest="output_format", choices=("text", "json"), default="text"
     )
 
     init_parser = subparsers.add_parser(
@@ -2951,6 +2971,85 @@ def build_candidate_wiki(*, config_path: Path | None, filename: str, candidate: 
     return 0
 
 
+def audit_candidate_wiki(
+    *,
+    config_path: Path | None,
+    build_id: str,
+    record_id: str,
+    output_format: str,
+) -> int:
+    """Show one immutable Wiki build record and its exact evidence chain."""
+    try:
+        config = load_processing_storage_config(
+            config_path=config_path,
+            ledger_path_override=None,
+            archive_path_override=None,
+        )
+        result = audit_candidate_wiki_record(
+            AuditCandidateWikiRecordCommand(build_id=build_id, record_id=record_id),
+            LocalArchiveStore(config.storage.archive_path),
+        )
+    except (ProcessingConfigurationError, OSError, ValueError) as error:
+        print(f"Unable to audit Candidate Wiki: {error}", file=sys.stderr)
+        return 1
+    payload = candidate_wiki_record_audit_json(result)
+    if output_format == "json":
+        print(json.dumps(payload, ensure_ascii=False, sort_keys=True))
+    else:
+        print(_candidate_wiki_audit_text(result))
+    return 0
+
+
+def _candidate_wiki_audit_text(result: CandidateWikiRecordAudit) -> str:
+    record = result.record
+    lines = [
+        f"Wiki build: {result.build_id}",
+        f"Record: {record.record_id}",
+        f"Record type: {record.record_type}",
+        f"Projection state: {record.state}",
+        f"Review status: {record.review_status or 'not_applicable'}",
+        "Record payload:",
+        json.dumps(record.record_payload, ensure_ascii=False, indent=2, sort_keys=True),
+    ]
+    if record.ontology_edges:
+        lines.append("Ontology edges:")
+        for edge in record.ontology_edges:
+            lines.append(
+                f"  {edge.assertion_id}: {edge.subject_label} --{edge.predicate}--> "
+                f"{edge.object_label}"
+            )
+            lines.extend(f"    {item.key}: {item.value}" for item in edge.qualifiers)
+    if record.proposed_change_ids:
+        lines.append("ProposedChanges: " + ", ".join(record.proposed_change_ids))
+    if record.provenance_activity_ids:
+        lines.append("ProvenanceActivities: " + ", ".join(record.provenance_activity_ids))
+    if result.evidence:
+        lines.append("Evidence:")
+        for evidence in result.evidence:
+            lines.extend(
+                (
+                    f"  Reference: {evidence.reference_key}",
+                    f"  Kind: {evidence.reference_kind}",
+                    f"  Source: {evidence.source_id}",
+                    f"  Document: {evidence.document_id}",
+                    f"  Representation: {evidence.representation_id}",
+                    f"  TextView: {evidence.text_view_id}",
+                    f"  Pages: {', '.join(map(str, evidence.page_numbers)) or 'unavailable'}",
+                    f"  Characters: {evidence.start_char}-{evidence.end_char}",
+                    f"  Exact text: {json.dumps(evidence.exact_text, ensure_ascii=False)}",
+                )
+            )
+            if evidence.evidence_target_id is not None:
+                lines.append(f"  EvidenceTarget: {evidence.evidence_target_id}")
+            if evidence.evidence_validation_attempt_id is not None:
+                lines.append(
+                    f"  EvidenceValidationAttempt: {evidence.evidence_validation_attempt_id}"
+                )
+            if evidence.proposed_change_id is not None:
+                lines.append(f"  ProposedChange: {evidence.proposed_change_id}")
+    return "\n".join(lines)
+
+
 def choose_candidate_ingestion(matches: tuple[IngestionRun, ...]) -> IngestionRun:
     if len(matches) == 1:
         return matches[0]
@@ -3150,6 +3249,9 @@ def _ingestion_summary_text(summary: IngestionSummary) -> str:
         f"Model runs: {summary.model_run_count}",
         f"Stage traces: {summary.trace_count}",
         f"Evidence records: {summary.evidence_count}",
+        f"Standing facts proposed: {summary.standing_fact_proposed_count}",
+        f"Standing facts held: {summary.standing_fact_held_count}",
+        f"Standing fact tasks failed: {summary.standing_fact_failed_task_count}",
     ]
     if summary.required_paragraph_count is not None:
         lines.extend(

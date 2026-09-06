@@ -7,7 +7,7 @@
 - First deliverable: [HP-1 Hybrid Mention Interpretation MVP](2026-09-01-hybrid-mention-interpretation-mvp.md)
 - Completed through: [HP-8 Hybrid Document Orchestration](2026-09-03-hybrid-document-orchestration.md)
 - Latest evaluation: [HP-8 Document Orchestration Evaluation](2026-09-03-hp8-document-orchestration-evaluation.md)
-- Next deliverable: Not yet designed; HP-8.1 and HP-8.2 optimization experiments were rejected by their quality gates.
+- Next deliverable: [HP-10 Paragraph Standing Facts MVP](2026-09-05-paragraph-standing-facts-mvp.md)
 - Supersedes: [Model and Ontology Boundary Program](2026-08-25-model-ontology-boundary-program.md)
 - Supersedes: [Paragraph Hypothesis Development Program](2026-08-26-paragraph-hypothesis-development-program.md)
 - Supersedes: [PHP-1 Reliability Improvement Program](2026-08-27-php1-reliability-improvement-program.md)
@@ -272,6 +272,7 @@ HP-9 is implemented with focused verification and awaits canonical document vali
 | [HP-8.1 Mention Interpretation Batching](2026-09-03-hp8-mention-interpretation-batching.md) | Determine whether bounded interpretation batching can reduce model work without losing meaning. | HP-8 records complete model and paragraph evidence. | The rejected experiment preserves its full evidence and leaves production mention behavior unchanged. |
 | [HP-8.2 Semantic Support Batching](2026-09-03-hp8-semantic-support-batching.md) | Determine whether support judgments can share one model request without losing statement-level meaning. | HP-8 supplies complete source-support and model evidence. | The rejected experiment preserves its full evidence and leaves production support behavior unchanged. |
 | [HP-9 Evidence-Backed Document Entity Reconciliation](2026-09-04-evidence-backed-document-entity-reconciliation.md) | A reviewer sees one candidate identity with every source mention. | HP-8 accounts for every paragraph HP-7 Plan. | HP-8 submits one document-level proposal batch that uses reconciled Actor and Organization identities. |
+| [HP-10 Paragraph Standing Facts MVP](2026-09-05-paragraph-standing-facts-mvp.md) | A reviewer receives source-bound standing relationships and literal attributes. | HP-8 and HP-9 submit reconciled event proposals from every paragraph. | Each eligible paragraph can add standing-fact proposals to the same reconciled review batch. |
 
 ## Validation strategy
 

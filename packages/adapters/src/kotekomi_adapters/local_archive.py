@@ -17,11 +17,18 @@ from kotekomi_application import (
     StagedArchiveObject,
 )
 from kotekomi_application.candidate_wiki import (
+    CandidateWikiAuditBundle,
     CandidateWikiPublishResult,
     RenderedCandidateWiki,
+    RenderedWikiFile,
+    WikiAuditCatalog,
     WikiBuildManifest,
+    WikiCitationRegistry,
+    canonical_wiki_audit_bytes,
     canonical_wiki_citations_bytes,
     canonical_wiki_manifest_bytes,
+    validate_candidate_wiki_audit_bundle,
+    wiki_audit_catalog_from_bytes,
     wiki_build_manifest_from_bytes,
     wiki_citation_registry_from_bytes,
 )
@@ -80,6 +87,11 @@ from kotekomi_application.hybrid_proposed_changes import (
     canonical_hybrid_proposal_plan_bytes,
     hybrid_proposal_plan_from_bytes,
 )
+from kotekomi_application.hybrid_standing_facts import (
+    StandingFactPlan,
+    canonical_standing_fact_plan_bytes,
+    standing_fact_plan_from_bytes,
+)
 
 ARCHIVE_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
 RAW_SOURCE_DIR = Path("sources/raw")
@@ -93,6 +105,7 @@ HYBRID_EVENT_FRAME_PREVIEWS_DIR = Path("extraction/event-frame-previews")
 HYBRID_ATOMIC_CLAIM_PREVIEWS_DIR = Path("extraction/atomic-claim-previews")
 HYBRID_EVENT_SEMANTICS_PREVIEWS_DIR = Path("extraction/event-semantic-previews")
 HYBRID_PROPOSAL_PLANS_DIR = Path("extraction/proposal-plans")
+STANDING_FACT_PLANS_DIR = Path("extraction/standing-fact-plans")
 HYBRID_DOCUMENT_POLICIES_DIR = Path("extraction/document-policies")
 HYBRID_PARAGRAPH_RECEIPTS_DIR = Path("extraction/paragraph-receipts")
 HYBRID_DOCUMENT_COVERAGE_DIR = Path("extraction/document-coverage")
@@ -122,6 +135,7 @@ class LocalArchiveStore:
             HYBRID_ATOMIC_CLAIM_PREVIEWS_DIR,
             HYBRID_EVENT_SEMANTICS_PREVIEWS_DIR,
             HYBRID_PROPOSAL_PLANS_DIR,
+            STANDING_FACT_PLANS_DIR,
             HYBRID_DOCUMENT_POLICIES_DIR,
             HYBRID_PARAGRAPH_RECEIPTS_DIR,
             HYBRID_DOCUMENT_COVERAGE_DIR,
@@ -144,6 +158,42 @@ class LocalArchiveStore:
             active_relative_path="review/wiki/",
             disposition=disposition,
         )
+
+    def read_candidate_wiki_audit_bundle(self, build_id: str) -> CandidateWikiAuditBundle:
+        """Read and validate one immutable Wiki build's structured audit artifacts."""
+        build_path = self._absolute_path(WIKI_BUILDS_DIR / _validate_archive_id(build_id))
+        if not build_path.is_dir() or build_path.is_symlink():
+            raise ValueError(f"Candidate Wiki build does not exist: {build_id}")
+        descendants = tuple(build_path.rglob("*"))
+        if any(path.is_symlink() for path in descendants):
+            raise ValueError("Candidate Wiki immutable build must not contain symlinks.")
+        files = {
+            path.relative_to(build_path).as_posix(): path.read_bytes()
+            for path in descendants
+            if path.is_file()
+        }
+        manifest_payload = files.get("manifest.json")
+        if manifest_payload is None:
+            raise ValueError("Candidate Wiki is missing manifest.json.")
+        manifest = wiki_build_manifest_from_bytes(manifest_payload)
+        if manifest.build_id != build_id:
+            raise ValueError("Candidate Wiki directory and manifest identities differ.")
+        _validated_candidate_wiki_payload(
+            RenderedCandidateWiki(
+                manifest=manifest,
+                files=tuple(
+                    RenderedWikiFile(relative_path, payload)
+                    for relative_path, payload in sorted(files.items())
+                ),
+            )
+        )
+        bundle = CandidateWikiAuditBundle(
+            manifest=manifest,
+            citation_registry=wiki_citation_registry_from_bytes(files["citations.json"]),
+            audit_catalog=wiki_audit_catalog_from_bytes(files["audit.json"]),
+        )
+        validate_candidate_wiki_audit_bundle(bundle)
+        return bundle
 
     def _publish_candidate_wiki_build(
         self, build_id: str, files: dict[str, bytes]
@@ -655,6 +705,31 @@ class LocalArchiveStore:
             raise ValueError("Stored HybridProposalPlan failed canonical validation.")
         return payload
 
+    def put_standing_fact_plan(
+        self,
+        plan: StandingFactPlan,
+        payload: bytes,
+        expected_sha256: str,
+    ) -> ArchivePutOutcome:
+        parsed = standing_fact_plan_from_bytes(payload)
+        if parsed != plan or canonical_standing_fact_plan_bytes(parsed) != payload:
+            raise ValueError("Standing Fact Plan payload is not its canonical DTO encoding.")
+        return self._put_hybrid_evidence(
+            STANDING_FACT_PLANS_DIR,
+            plan.id,
+            payload,
+            expected_sha256,
+            "Standing Fact Plan",
+        )
+
+    def read_standing_fact_plan(self, plan_id: str) -> bytes:
+        relative_path = STANDING_FACT_PLANS_DIR / f"{_validate_archive_id(plan_id)}.json"
+        payload = self._absolute_path(relative_path).read_bytes()
+        plan = standing_fact_plan_from_bytes(payload)
+        if plan.id != plan_id or canonical_standing_fact_plan_bytes(plan) != payload:
+            raise ValueError("Stored Standing Fact Plan failed canonical validation.")
+        return payload
+
     def put_hybrid_pipeline_policy_manifest(
         self,
         manifest: HybridPipelinePolicyManifest,
@@ -832,6 +907,7 @@ class LocalArchiveStore:
             HybridStageId.HP5_ATOMIC_CLAIMS.value: HYBRID_ATOMIC_CLAIM_PREVIEWS_DIR,
             HybridStageId.HP6_EVENT_SEMANTICS.value: HYBRID_EVENT_SEMANTICS_PREVIEWS_DIR,
             HybridStageId.HP7_PROPOSAL_PLAN.value: HYBRID_PROPOSAL_PLANS_DIR,
+            HybridStageId.HP10_STANDING_FACTS.value: STANDING_FACT_PLANS_DIR,
         }
         try:
             directory = directories[record_type]
@@ -1005,7 +1081,9 @@ def _validated_candidate_wiki_payload(
     expected_paths = {item.relative_path for item in manifest.files} | {"manifest.json"}
     if set(files) != expected_paths:
         raise ValueError("Candidate Wiki files do not match its manifest.")
-    _validate_candidate_wiki_citations(files, manifest)
+    citations = _validate_candidate_wiki_citations(files, manifest)
+    audit = _validate_candidate_wiki_audit(files, manifest)
+    validate_candidate_wiki_audit_bundle(CandidateWikiAuditBundle(manifest, citations, audit))
     entries = {item.relative_path: item for item in manifest.files}
     for relative_path, payload in files.items():
         _validate_wiki_relative_path(relative_path)
@@ -1018,7 +1096,7 @@ def _validated_candidate_wiki_payload(
 
 def _validate_candidate_wiki_citations(
     files: dict[str, bytes], manifest: WikiBuildManifest
-) -> None:
+) -> WikiCitationRegistry:
     citations_payload = files.get("citations.json")
     if citations_payload is None:
         raise ValueError("Candidate Wiki is missing citations.json.")
@@ -1028,6 +1106,22 @@ def _validate_candidate_wiki_citations(
         or canonical_wiki_citations_bytes(citations) != citations_payload
     ):
         raise ValueError("Candidate Wiki citations are not canonical for its manifest.")
+    return citations
+
+
+def _validate_candidate_wiki_audit(
+    files: dict[str, bytes], manifest: WikiBuildManifest
+) -> WikiAuditCatalog:
+    audit_payload = files.get("audit.json")
+    if audit_payload is None:
+        raise ValueError("Candidate Wiki is missing audit.json.")
+    audit = wiki_audit_catalog_from_bytes(audit_payload)
+    if (
+        audit.candidate_snapshot_digest != manifest.candidate_snapshot_digest
+        or canonical_wiki_audit_bytes(audit) != audit_payload
+    ):
+        raise ValueError("Candidate Wiki audit catalog is not canonical for its manifest.")
+    return audit
 
 
 def _write_wiki_build(build_path: Path, files: dict[str, bytes]) -> None:

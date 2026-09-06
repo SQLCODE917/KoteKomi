@@ -45,7 +45,7 @@ from kotekomi_application.hybrid_document_orchestration import (
     load_hybrid_document_coverage_report,
     read_hybrid_stage_output,
 )
-from kotekomi_application.hybrid_proposed_changes import HybridProposalPlan
+from kotekomi_application.hybrid_standing_facts import StandingFactPlan
 from kotekomi_application.model_run_logging import (
     ModelRunLogEntry,
     model_run_log_entry,
@@ -148,6 +148,9 @@ class IngestionSummary:
     trace_count: int
     evidence_count: int
     stage_status_counts: tuple[tuple[str, int], ...]
+    standing_fact_proposed_count: int
+    standing_fact_held_count: int
+    standing_fact_failed_task_count: int
 
 
 @dataclass(frozen=True)
@@ -271,6 +274,16 @@ def inspect_ingestion(
         for item in sorted(model_runs, key=lambda item: (item.started_at, item.id), reverse=True)
     )
     stage_counts = Counter(trace.status.value for trace in ordered_traces)
+    standing_fact_traces = tuple(
+        trace for trace in ordered_traces if trace.stage_id == "hybrid_standing_fact_proposal"
+    )
+    standing_fact_decisions = tuple(
+        decision
+        for trace in standing_fact_traces
+        if isinstance((raw_decisions := trace.output.get("decisions")), list)
+        for decision in raw_decisions
+        if isinstance(decision, dict)
+    )
     elapsed = (
         int((run.completed_at - run.started_at).total_seconds() * 1000)
         if run.completed_at is not None
@@ -303,6 +316,15 @@ def inspect_ingestion(
         trace_count=len(ordered_traces),
         evidence_count=len(ordered_evidence),
         stage_status_counts=tuple(sorted(stage_counts.items())),
+        standing_fact_proposed_count=sum(
+            item.get("disposition") == "proposed" for item in standing_fact_decisions
+        ),
+        standing_fact_held_count=sum(
+            item.get("disposition") == "held" for item in standing_fact_decisions
+        ),
+        standing_fact_failed_task_count=sum(
+            trace.status.value == "failed" for trace in standing_fact_traces
+        ),
     )
     return InspectIngestionResult(summary, ordered_evidence, log_entries, ordered_traces)
 
@@ -352,6 +374,9 @@ def ingestion_summary_to_json(summary: IngestionSummary) -> dict[str, JsonValue]
         "trace_count": summary.trace_count,
         "evidence_count": summary.evidence_count,
         "stage_status_counts": dict(summary.stage_status_counts),
+        "standing_fact_proposed_count": summary.standing_fact_proposed_count,
+        "standing_fact_held_count": summary.standing_fact_held_count,
+        "standing_fact_failed_task_count": summary.standing_fact_failed_task_count,
     }
 
 
@@ -464,7 +489,7 @@ def _load_hybrid_evidence(
     )
     traces: list[ExtractionStageTrace] = []
     model_run_ids: set[str] = set()
-    proposal_plans: list[HybridProposalPlan] = []
+    proposal_plans: list[StandingFactPlan] = []
     for record in report.records:
         receipt_bytes = archive.read_hybrid_paragraph_receipt(record.receipt_id)
         if hashlib.sha256(receipt_bytes).hexdigest() != record.receipt_sha256:
@@ -503,7 +528,7 @@ def _load_hybrid_evidence(
                 raise ValueError("Hybrid stage output traces are invalid.")
             output_traces = tuple(cast(ExtractionStageTrace, item) for item in candidate_traces)
             traces.extend(output_traces)
-            if isinstance(output, HybridProposalPlan):
+            if isinstance(output, StandingFactPlan):
                 proposal_plans.append(output)
             raw_model_run_ids = getattr(output, "model_run_ids", ())
             if not isinstance(raw_model_run_ids, tuple):

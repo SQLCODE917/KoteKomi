@@ -70,6 +70,10 @@ from kotekomi_application.hybrid_mention_interpretation import (
     hybrid_mention_task_schema_bytes,
     parse_hybrid_mention_task_output,
 )
+from kotekomi_application.hybrid_standing_fact_model_output import (
+    StandingFactAbstention,
+    StandingFactProposalBatch,
+)
 from kotekomi_application.organization_semantic_qualification import (
     OrganizationQualificationJudgment,
     parse_organization_qualification_output,
@@ -519,6 +523,7 @@ class BoundedExtractionOutcome:
     event_semantic_proposal: EventSemanticProposal | None = None
     event_semantic_role_target_proposal: EventSemanticRoleTargetProposal | None = None
     semantic_support_judgment: SemanticSupportModelJudgment | None = None
+    standing_fact_proposals: StandingFactProposalBatch | None = None
 
 
 @dataclass(frozen=True)
@@ -606,6 +611,8 @@ type ParsedModelOutput = (
     | EventSemanticProposal
     | EventSemanticRoleTargetProposal
     | SemanticSupportModelJudgment
+    | StandingFactProposalBatch
+    | StandingFactAbstention
 )
 
 
@@ -808,6 +815,7 @@ def run_bounded_extraction(
                 MentionProposalAbstention,
                 EventTriggerAbstention,
                 EventFrameAbstention,
+                StandingFactAbstention,
             ),
         ):
             run = _model_run(
@@ -1015,6 +1023,32 @@ def run_bounded_extraction(
                 run,
                 None,
                 event_trigger_proposals=parsed,
+            )
+        if isinstance(parsed, StandingFactProposalBatch):
+            run = _model_run(
+                extraction_input,
+                manifest,
+                task,
+                model_run_id,
+                ModelRunStatus.SUCCEEDED,
+                started_at=started_at,
+                completed_at=completed_at,
+                execution_diagnostics=diagnostics,
+                input_admission=admission,
+                output_digest=output_digest,
+                execution_receipt=response.execution_receipt,
+                outcome_metadata={
+                    "contract": "hybrid_standing_fact_text_v1",
+                    "proposal_count": len(parsed.proposals),
+                    "rejected_line_count": len(parsed.rejections),
+                },
+            )
+            ledger_repository.save_model_run(run)
+            return BoundedExtractionOutcome(
+                task,
+                run,
+                None,
+                standing_fact_proposals=parsed,
             )
         if isinstance(parsed, EventFrameProposal):
             run = _model_run(
@@ -2169,8 +2203,11 @@ def _abstention_outcome_metadata(
     | OrganizationQualificationRejection
     | MentionProposalAbstention
     | EventTriggerAbstention
-    | EventFrameAbstention,
+    | EventFrameAbstention
+    | StandingFactAbstention,
 ) -> dict[str, JsonValue]:
+    if isinstance(output, StandingFactAbstention):
+        return {"contract": "hybrid_standing_fact_text_v1", "proposal_count": 0}
     if isinstance(output, EventTriggerAbstention):
         return {"contract": "hybrid_event_trigger_text_v1", "proposal_count": 0}
     if isinstance(output, EventFrameAbstention):

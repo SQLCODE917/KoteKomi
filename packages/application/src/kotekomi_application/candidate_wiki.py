@@ -12,6 +12,7 @@ from pathlib import PurePosixPath
 from typing import Literal, Protocol, Self, cast
 
 from kotekomi_domain import (
+    HYBRID_EVENT_SEMANTICS_V1,
     Actor,
     Assertion,
     AssertionEvidenceLink,
@@ -21,6 +22,7 @@ from kotekomi_domain import (
     Event,
     EvidenceTarget,
     EvidenceValidationAttempt,
+    HybridEventStructuralPredicate,
     IngestionChangeSet,
     IngestionRun,
     IngestionRunStatus,
@@ -29,15 +31,18 @@ from kotekomi_domain import (
     ProposedAssertion,
     ProposedChange,
     ReviewStatus,
+    SemanticArgumentTargetKind,
     Source,
 )
+from kotekomi_domain.models import JsonValue
 from pydantic import BaseModel, ConfigDict, model_validator
 
 from kotekomi_application.evidence_targets import verify_evidence_target
+from kotekomi_application.hybrid_event_frames import EventModality, EventPolarity
 from kotekomi_application.record_serialization import canonical_record_json
 
-CANDIDATE_WIKI_VIEW_POLICY_ID = "candidate_wiki_view_v1"
-CANDIDATE_WIKI_RENDERER_POLICY_ID = "deterministic_markdown_wiki_v1"
+CANDIDATE_WIKI_VIEW_POLICY_ID = "candidate_wiki_view_v4"
+CANDIDATE_WIKI_RENDERER_POLICY_ID = "ontology_graph_markdown_wiki_v4"
 HASH_ID_LENGTH = 24
 
 type WikiIntelligenceRecord = (
@@ -45,6 +50,9 @@ type WikiIntelligenceRecord = (
 )
 type WikiNamedRecord = Entity | Actor | Organization | Place | Event
 type WikiRecordType = Literal["Entity", "Actor", "Organization", "Place", "Event", "Assertion"]
+type WikiAuditRecordType = Literal[
+    "Source", "Document", "Entity", "Actor", "Organization", "Place", "Event", "Assertion"
+]
 type WikiReferenceKind = Literal["evidence_target", "proposal_evidence"]
 
 
@@ -164,6 +172,74 @@ class _WikiCitationFile(BaseModel):
         return self
 
 
+class _WikiAuditQualifierRecord(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    key: str
+    value: str
+    value_path: str | None
+
+
+class _WikiAuditEdgeRecord(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    assertion_id: str
+    subject_label: str
+    subject_path: str
+    predicate: str
+    object_label: str
+    object_path: str | None
+    qualifiers: tuple[_WikiAuditQualifierRecord, ...]
+
+
+class _WikiAuditRecordFileEntry(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    record_id: str
+    record_type: WikiAuditRecordType
+    state: Literal["accepted", "pending"]
+    review_status: str | None
+    record_payload: dict[str, JsonValue]
+    record_payload_sha256: str
+    proposed_change_ids: tuple[str, ...]
+    provenance_activity_ids: tuple[str, ...]
+    evidence_reference_keys: tuple[str, ...]
+    ontology_edges: tuple[_WikiAuditEdgeRecord, ...]
+
+
+class _WikiAuditFile(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    schema_version: Literal["candidate_wiki_audit_v1"]
+    candidate_snapshot_digest: str
+    records: tuple[_WikiAuditRecordFileEntry, ...]
+
+    @model_validator(mode="after")
+    def validate_catalog(self) -> Self:
+        if re.fullmatch(r"[a-f0-9]{64}", self.candidate_snapshot_digest) is None:
+            raise ValueError("Candidate Wiki audit snapshot identity is invalid.")
+        record_ids = tuple(item.record_id for item in self.records)
+        if record_ids != tuple(sorted(record_ids)) or len(record_ids) != len(set(record_ids)):
+            raise ValueError("Candidate Wiki audit records must have unique, ordered identities.")
+        for item in self.records:
+            if (
+                re.fullmatch(r"[a-f0-9]{64}", item.record_payload_sha256) is None
+                or _sha256_json(item.record_payload) != item.record_payload_sha256
+            ):
+                raise ValueError("Candidate Wiki audit record payload digest is invalid.")
+            payload = item.record_payload.get("record", item.record_payload)
+            if not isinstance(payload, dict) or payload.get("id") != item.record_id:
+                raise ValueError("Candidate Wiki audit payload does not identify its record.")
+            for values in (
+                item.proposed_change_ids,
+                item.provenance_activity_ids,
+                item.evidence_reference_keys,
+            ):
+                if values != tuple(sorted(set(values))):
+                    raise ValueError("Candidate Wiki audit references must be unique and ordered.")
+        return self
+
+
 @dataclass(frozen=True)
 class CandidateIngestionSelection:
     matches: tuple[IngestionRun, ...]
@@ -175,6 +251,8 @@ class CandidateViewRecord:
     record: WikiIntelligenceRecord
     review_status: ReviewStatus
     proposed_change_id: str | None
+    provenance_activity_ids: tuple[str, ...]
+    record_payload_json: str
     source_payload_json: str
     source_payload_sha256: str
     evidence_reference_keys: tuple[str, ...]
@@ -220,6 +298,7 @@ class CandidateKnowledgeView:
 
 @dataclass(frozen=True)
 class WikiLink:
+    record_id: str
     label: str
     relative_path: str
     state: Literal["accepted", "pending"]
@@ -235,26 +314,61 @@ class WikiDetail:
 
 
 @dataclass(frozen=True)
-class WikiStatement:
+class WikiOntologyQualifier:
+    key: str
+    value: str
+    value_path: str | None = None
+
+
+@dataclass(frozen=True)
+class WikiOntologyEdge:
+    assertion_id: str
     subject_label: str
     subject_path: str
-    relation_label: str
+    predicate: str
     object_label: str
     object_path: str | None
+    qualifiers: tuple[WikiOntologyQualifier, ...]
+
+
+@dataclass(frozen=True)
+class WikiAssertionPresentation:
+    presentation_id: str
+    proposed_change_id: str | None
+    edge: WikiOntologyEdge
     state: Literal["accepted", "pending"]
     citation_numbers: tuple[int, ...]
+    related_paths: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class WikiEventPresentation:
+    presentation_id: str
+    event_id: str
+    assertion_ids: tuple[str, ...]
+    proposed_change_ids: tuple[str, ...]
+    frame_id: str
+    complete: bool
+    state: Literal["accepted", "pending"]
+    edges: tuple[WikiOntologyEdge, ...]
+    issues: tuple[str, ...]
+    citation_numbers: tuple[int, ...]
+    related_paths: tuple[str, ...]
+
+
+type WikiPresentation = WikiAssertionPresentation | WikiEventPresentation
 
 
 @dataclass(frozen=True)
 class WikiPageInput:
     relative_path: str
     page_kind: str
+    record_id: str | None
     display_label: str
     state: Literal["accepted", "pending"] | None
     details: tuple[WikiDetail, ...]
     links: tuple[WikiLink, ...]
-    outgoing_statements: tuple[WikiStatement, ...]
-    inbound_statements: tuple[WikiStatement, ...]
+    presentations: tuple[WikiPresentation, ...]
     citation_numbers: tuple[int, ...]
     input_fingerprint: str
 
@@ -266,6 +380,26 @@ class WikiCitationRegistry:
 
 
 @dataclass(frozen=True)
+class WikiAuditRecord:
+    record_id: str
+    record_type: WikiAuditRecordType
+    state: Literal["accepted", "pending"]
+    review_status: str | None
+    record_payload: dict[str, JsonValue]
+    record_payload_sha256: str
+    proposed_change_ids: tuple[str, ...]
+    provenance_activity_ids: tuple[str, ...]
+    evidence_reference_keys: tuple[str, ...]
+    ontology_edges: tuple[WikiOntologyEdge, ...]
+
+
+@dataclass(frozen=True)
+class WikiAuditCatalog:
+    candidate_snapshot_digest: str
+    records: tuple[WikiAuditRecord, ...]
+
+
+@dataclass(frozen=True)
 class CandidateWikiPlan:
     view_policy_id: str
     renderer_policy_id: str
@@ -274,6 +408,7 @@ class CandidateWikiPlan:
     candidate_snapshot_digest: str
     pages: tuple[WikiPageInput, ...]
     citation_registry: WikiCitationRegistry
+    audit_catalog: WikiAuditCatalog
     counts: tuple[tuple[str, int], ...]
 
 
@@ -316,10 +451,35 @@ class CandidateWikiPublishResult:
     disposition: Literal["created", "reused"]
 
 
+@dataclass(frozen=True)
+class CandidateWikiAuditBundle:
+    manifest: WikiBuildManifest
+    citation_registry: WikiCitationRegistry
+    audit_catalog: WikiAuditCatalog
+
+
+@dataclass(frozen=True)
+class AuditCandidateWikiRecordCommand:
+    build_id: str
+    record_id: str
+
+
+@dataclass(frozen=True)
+class CandidateWikiRecordAudit:
+    build_id: str
+    candidate_snapshot_digest: str
+    record: WikiAuditRecord
+    evidence: tuple[WikiEvidenceReference, ...]
+
+
 class CandidateWikiArchive(Protocol):
     def publish_candidate_wiki(
         self, rendered_wiki: RenderedCandidateWiki
     ) -> CandidateWikiPublishResult: ...
+
+
+class CandidateWikiAuditArchive(Protocol):
+    def read_candidate_wiki_audit_bundle(self, build_id: str) -> CandidateWikiAuditBundle: ...
 
 
 def select_candidate_ingestions(
@@ -386,6 +546,8 @@ def build_candidate_knowledge_view(
             record=item.record,
             review_status=item.review_status,
             proposed_change_id=item.proposed_change_id,
+            provenance_activity_ids=item.provenance_activity_ids,
+            record_payload_json=item.record_payload_json,
             source_payload_json=item.source_payload_json,
             source_payload_sha256=item.source_payload_sha256,
             evidence_reference_keys=tuple(
@@ -413,6 +575,10 @@ def build_candidate_knowledge_view(
                 "record_id": item.record.id,
                 "review_status": item.review_status.value,
                 "proposed_change_id": item.proposed_change_id,
+                "provenance_activity_ids": list(item.provenance_activity_ids),
+                "record_payload_sha256": hashlib.sha256(
+                    item.record_payload_json.encode("utf-8")
+                ).hexdigest(),
                 "source_payload_sha256": item.source_payload_sha256,
                 "evidence_reference_keys": list(item.evidence_reference_keys),
             }
@@ -510,11 +676,7 @@ def plan_candidate_wiki(view: CandidateKnowledgeView) -> CandidateWikiPlan:
         item.reference_key: item.citation_number for item in view.evidence_references
     }
     by_id = {item.record.id: item for item in view.records}
-    statements = tuple(
-        _statement(item, by_id, paths, evidence_numbers)
-        for item in view.records
-        if item.record_type == "Assertion"
-    )
+    presentations = _plan_presentations(view.records, by_id, paths, evidence_numbers)
     pages: list[WikiPageInput] = []
     counts = Counter[str]()
     for item in view.records:
@@ -530,6 +692,7 @@ def plan_candidate_wiki(view: CandidateKnowledgeView) -> CandidateWikiPlan:
         _page(
             relative_path="index.md",
             page_kind="home",
+            record_id=None,
             display_label="Candidate Wiki",
             state=None,
             details=(
@@ -538,8 +701,7 @@ def plan_candidate_wiki(view: CandidateKnowledgeView) -> CandidateWikiPlan:
                 WikiDetail("Candidate records", str(len(view.records))),
             ),
             links=all_links,
-            outgoing=(),
-            inbound=(),
+            presentations=(),
             citations=(),
         )
     )
@@ -548,6 +710,7 @@ def plan_candidate_wiki(view: CandidateKnowledgeView) -> CandidateWikiPlan:
         _page(
             relative_path=document_path,
             page_kind="document",
+            record_id=view.document.id,
             display_label=view.ingestion_run.display_filename,
             state="accepted",
             details=(
@@ -555,8 +718,7 @@ def plan_candidate_wiki(view: CandidateKnowledgeView) -> CandidateWikiPlan:
                 WikiDetail("Content SHA-256", view.document.content_sha256),
             ),
             links=all_links,
-            outgoing=statements,
-            inbound=(),
+            presentations=presentations,
             citations=tuple(item.citation_number for item in view.evidence_references),
         )
     )
@@ -566,12 +728,16 @@ def plan_candidate_wiki(view: CandidateKnowledgeView) -> CandidateWikiPlan:
             _page(
                 relative_path=paths[record_id],
                 page_kind=item.record_type.casefold(),
+                record_id=record_id,
                 display_label=_record_label(cast(WikiNamedRecord, item.record)),
                 state="pending" if item.is_pending else "accepted",
                 details=_record_details(item.record, by_id, paths),
                 links=(),
-                outgoing=tuple(row for row in statements if row.subject_path == paths[record_id]),
-                inbound=tuple(row for row in statements if row.object_path == paths[record_id]),
+                presentations=tuple(
+                    presentation
+                    for presentation in presentations
+                    if paths[record_id] in presentation.related_paths
+                ),
                 citations=_record_citation_numbers(item, evidence_numbers),
             )
         )
@@ -585,6 +751,7 @@ def plan_candidate_wiki(view: CandidateKnowledgeView) -> CandidateWikiPlan:
             ),
         )
     )
+    audit_catalog = _plan_wiki_audit_catalog(view, presentations)
     return CandidateWikiPlan(
         view_policy_id=view.view_policy_id,
         renderer_policy_id=CANDIDATE_WIKI_RENDERER_POLICY_ID,
@@ -596,6 +763,7 @@ def plan_candidate_wiki(view: CandidateKnowledgeView) -> CandidateWikiPlan:
             candidate_snapshot_digest=view.candidate_snapshot_digest,
             citations=view.evidence_references,
         ),
+        audit_catalog=audit_catalog,
         counts=tuple(sorted(counts.items())),
     )
 
@@ -609,6 +777,15 @@ def canonical_wiki_citations_bytes(registry: WikiCitationRegistry) -> bytes:
         "schema_version": "candidate_wiki_citations_v1",
         "candidate_snapshot_digest": registry.candidate_snapshot_digest,
         "citations": [_evidence_json(item) for item in registry.citations],
+    }
+    return (_canonical_json(value) + "\n").encode("utf-8")
+
+
+def canonical_wiki_audit_bytes(catalog: WikiAuditCatalog) -> bytes:
+    value = {
+        "schema_version": "candidate_wiki_audit_v1",
+        "candidate_snapshot_digest": catalog.candidate_snapshot_digest,
+        "records": [_wiki_audit_record_json(item) for item in catalog.records],
     }
     return (_canonical_json(value) + "\n").encode("utf-8")
 
@@ -640,6 +817,101 @@ def wiki_citation_registry_from_bytes(payload: bytes) -> WikiCitationRegistry:
             for item in parsed.citations
         ),
     )
+
+
+def wiki_audit_catalog_from_bytes(payload: bytes) -> WikiAuditCatalog:
+    parsed = _WikiAuditFile.model_validate_json(payload)
+    return WikiAuditCatalog(
+        candidate_snapshot_digest=parsed.candidate_snapshot_digest,
+        records=tuple(
+            WikiAuditRecord(
+                record_id=item.record_id,
+                record_type=item.record_type,
+                state=item.state,
+                review_status=item.review_status,
+                record_payload=item.record_payload,
+                record_payload_sha256=item.record_payload_sha256,
+                proposed_change_ids=item.proposed_change_ids,
+                provenance_activity_ids=item.provenance_activity_ids,
+                evidence_reference_keys=item.evidence_reference_keys,
+                ontology_edges=tuple(
+                    _wiki_audit_edge_from_file(edge) for edge in item.ontology_edges
+                ),
+            )
+            for item in parsed.records
+        ),
+    )
+
+
+def audit_candidate_wiki_record(
+    command: AuditCandidateWikiRecordCommand,
+    archive: CandidateWikiAuditArchive,
+) -> CandidateWikiRecordAudit:
+    """Resolve one stable record from one immutable Wiki build without parsing Markdown."""
+    bundle = archive.read_candidate_wiki_audit_bundle(command.build_id)
+    validate_candidate_wiki_audit_bundle(bundle)
+    if bundle.manifest.build_id != command.build_id:
+        raise ValueError("Candidate Wiki audit returned a different build identity.")
+    by_record_id = {item.record_id: item for item in bundle.audit_catalog.records}
+    record = by_record_id.get(command.record_id)
+    if record is None:
+        raise ValueError(
+            f"Candidate Wiki build {command.build_id} has no record: {command.record_id}"
+        )
+    evidence_by_key = {item.reference_key: item for item in bundle.citation_registry.citations}
+    missing = set(record.evidence_reference_keys).difference(evidence_by_key)
+    if missing:
+        raise ValueError(
+            "Candidate Wiki audit record references missing evidence: " + ", ".join(sorted(missing))
+        )
+    return CandidateWikiRecordAudit(
+        build_id=command.build_id,
+        candidate_snapshot_digest=bundle.manifest.candidate_snapshot_digest,
+        record=record,
+        evidence=tuple(
+            sorted(
+                (evidence_by_key[key] for key in record.evidence_reference_keys),
+                key=lambda item: item.citation_number,
+            )
+        ),
+    )
+
+
+def validate_candidate_wiki_audit_bundle(bundle: CandidateWikiAuditBundle) -> None:
+    snapshot_digests = {
+        bundle.manifest.candidate_snapshot_digest,
+        bundle.citation_registry.candidate_snapshot_digest,
+        bundle.audit_catalog.candidate_snapshot_digest,
+    }
+    if len(snapshot_digests) != 1:
+        raise ValueError("Candidate Wiki audit artifacts describe different snapshots.")
+    evidence_keys = {item.reference_key for item in bundle.citation_registry.citations}
+    record_ids = {item.record_id for item in bundle.audit_catalog.records}
+    for record in bundle.audit_catalog.records:
+        missing_evidence = set(record.evidence_reference_keys).difference(evidence_keys)
+        if missing_evidence:
+            raise ValueError(
+                "Candidate Wiki audit record references missing evidence: "
+                + ", ".join(sorted(missing_evidence))
+            )
+        missing_assertions = {edge.assertion_id for edge in record.ontology_edges}.difference(
+            record_ids
+        )
+        if missing_assertions:
+            raise ValueError(
+                "Candidate Wiki audit graph references missing Assertion records: "
+                + ", ".join(sorted(missing_assertions))
+            )
+
+
+def candidate_wiki_record_audit_json(result: CandidateWikiRecordAudit) -> dict[str, object]:
+    return {
+        "schema_version": "candidate_wiki_record_audit_v1",
+        "build_id": result.build_id,
+        "candidate_snapshot_digest": result.candidate_snapshot_digest,
+        "record": _wiki_audit_record_json(result.record),
+        "evidence": [_audit_evidence_json(item) for item in result.evidence],
+    }
 
 
 def wiki_build_manifest_from_bytes(payload: bytes) -> WikiBuildManifest:
@@ -676,7 +948,7 @@ def wiki_build_manifest_from_bytes(payload: bytes) -> WikiBuildManifest:
         files=tuple(file_entries),
         counts=tuple(sorted((str(key), _integer_value(item)) for key, item in raw_counts.items())),
     )
-    if manifest.schema_version != "candidate_wiki_manifest_v1":
+    if manifest.schema_version != "candidate_wiki_manifest_v2":
         raise ValueError("Candidate Wiki manifest schema version is unsupported.")
     expected_id = _wiki_build_id(manifest)
     if manifest.build_id != expected_id:
@@ -699,6 +971,7 @@ def _proposal_view_record(
         payload = proposal.proposed_json.get("record")
         if not isinstance(payload, dict):
             raise ValueError("ProposedChange record payload must be one object.")
+        record_payload_json = _canonical_json(payload)
         source_payload_json = _canonical_json(proposal.proposed_json)
         record = _parse_record(typed_record_type, payload, proposed=True)
     elif proposal.review_status in {ReviewStatus.APPROVED, ReviewStatus.EDITED}:
@@ -708,6 +981,7 @@ def _proposal_view_record(
         persisted = _load_record(record.id, ledger)
         if persisted is None or persisted != record:
             raise ValueError("Reviewed ProposedChange accepted record is absent or changed.")
+        record_payload_json = _canonical_json(proposal.accepted_json)
         source_payload_json = canonical_record_json(record)
     else:
         raise ValueError("Rejected ProposedChange cannot become a Candidate Wiki record.")
@@ -717,6 +991,19 @@ def _proposal_view_record(
         record=record,
         review_status=proposal.review_status,
         proposed_change_id=proposal.id,
+        provenance_activity_ids=tuple(
+            sorted(
+                {
+                    *(record.provenance_activity_ids if isinstance(record, Assertion) else ()),
+                    *(
+                        (proposal.provenance_activity_id,)
+                        if proposal.provenance_activity_id is not None
+                        else ()
+                    ),
+                }
+            )
+        ),
+        record_payload_json=record_payload_json,
         source_payload_json=source_payload_json,
         source_payload_sha256=hashlib.sha256(source_payload_json.encode("utf-8")).hexdigest(),
         evidence_reference_keys=evidence_keys,
@@ -975,6 +1262,10 @@ def _close_references(
                 record=referenced,
                 review_status=ReviewStatus.APPROVED,
                 proposed_change_id=None,
+                provenance_activity_ids=(
+                    referenced.provenance_activity_ids if isinstance(referenced, Assertion) else ()
+                ),
+                record_payload_json=source_json,
                 source_payload_json=source_json,
                 source_payload_sha256=hashlib.sha256(source_json.encode()).hexdigest(),
                 evidence_reference_keys=evidence_keys,
@@ -1111,6 +1402,7 @@ def _record_label(record: WikiNamedRecord) -> str:
 
 def _record_link(item: CandidateViewRecord, path: str, numbers: dict[str, int]) -> WikiLink:
     return WikiLink(
+        record_id=item.record.id,
         label=_record_label(cast(WikiNamedRecord, item.record)),
         relative_path=path,
         state="pending" if item.is_pending else "accepted",
@@ -1123,32 +1415,313 @@ def _record_citation_numbers(item: CandidateViewRecord, numbers: dict[str, int])
     return tuple(numbers[key] for key in item.evidence_reference_keys)
 
 
-def _statement(
+def _plan_presentations(
+    records: tuple[CandidateViewRecord, ...],
+    by_id: dict[str, CandidateViewRecord],
+    paths: dict[str, str],
+    evidence_numbers: dict[str, int],
+) -> tuple[WikiPresentation, ...]:
+    assertion_items = tuple(item for item in records if item.record_type == "Assertion")
+    structural_values = {item.value for item in HybridEventStructuralPredicate}
+    event_assertions: dict[str, list[CandidateViewRecord]] = {}
+    for item in assertion_items:
+        assertion = cast(Assertion | ProposedAssertion, item.record)
+        subject = by_id[assertion.subject_entity_id]
+        if (
+            subject.record_type != "Event"
+            or _assertion_relation(assertion) not in structural_values
+        ):
+            continue
+        event_assertions.setdefault(assertion.subject_entity_id, []).append(item)
+
+    grouped_assertion_ids: set[str] = set()
+    presentations: list[WikiPresentation] = []
+    for event_id, items in sorted(event_assertions.items()):
+        if not any(
+            _assertion_relation(cast(Assertion | ProposedAssertion, item.record))
+            == HybridEventStructuralPredicate.HAS_EVENT_TYPE.value
+            for item in items
+        ):
+            continue
+        ordered = tuple(sorted(items, key=lambda item: item.record.id))
+        grouped_assertion_ids.update(item.record.id for item in ordered)
+        presentations.append(
+            _event_presentation(
+                by_id[event_id],
+                ordered,
+                by_id,
+                paths,
+                evidence_numbers,
+            )
+        )
+
+    presentations.extend(
+        _assertion_presentation(item, by_id, paths, evidence_numbers)
+        for item in assertion_items
+        if item.record.id not in grouped_assertion_ids
+    )
+    return tuple(sorted(presentations, key=_presentation_sort_key))
+
+
+def _assertion_presentation(
     item: CandidateViewRecord,
     by_id: dict[str, CandidateViewRecord],
     paths: dict[str, str],
     evidence_numbers: dict[str, int],
-) -> WikiStatement:
+) -> WikiAssertionPresentation:
     assertion = cast(Assertion | ProposedAssertion, item.record)
-    subject = by_id[assertion.subject_entity_id]
-    subject_record = cast(WikiNamedRecord, subject.record)
-    if assertion.object_entity_id is not None:
-        object_record = by_id[assertion.object_entity_id]
-        object_label = _record_label(cast(WikiNamedRecord, object_record.record))
-        object_path = paths[assertion.object_entity_id]
-    else:
-        object_label = _canonical_json(assertion.object_value)
-        object_path = None
-    relation = assertion.predicate if isinstance(assertion, Assertion) else assertion.relation_label
-    return WikiStatement(
-        subject_label=_record_label(subject_record),
-        subject_path=paths[assertion.subject_entity_id],
-        relation_label=relation,
-        object_label=object_label,
-        object_path=object_path,
+    edge = _ontology_edge(assertion, by_id, paths)
+    related_paths = {
+        paths[assertion.subject_entity_id],
+        *(
+            paths[item_id]
+            for item_id in (assertion.object_entity_id, assertion.attributed_to_id)
+            if item_id
+        ),
+    }
+    return WikiAssertionPresentation(
+        presentation_id=f"assertion:{assertion.id}",
+        proposed_change_id=item.proposed_change_id,
+        edge=edge,
         state="pending" if item.is_pending else "accepted",
         citation_numbers=_record_citation_numbers(item, evidence_numbers),
+        related_paths=tuple(sorted(related_paths)),
     )
+
+
+def _event_presentation(
+    event_item: CandidateViewRecord,
+    assertion_items: tuple[CandidateViewRecord, ...],
+    by_id: dict[str, CandidateViewRecord],
+    paths: dict[str, str],
+    evidence_numbers: dict[str, int],
+) -> WikiEventPresentation:
+    event = cast(Event, event_item.record)
+    assertions = tuple(cast(Assertion | ProposedAssertion, item.record) for item in assertion_items)
+    issues: list[str] = []
+    event_type_assertions = tuple(
+        assertion
+        for assertion in assertions
+        if _assertion_relation(assertion) == HybridEventStructuralPredicate.HAS_EVENT_TYPE.value
+    )
+    if len(event_type_assertions) != 1:
+        issues.append("The Event must have exactly one governed frame.")
+        frame_id = "unknown"
+        frame = None
+    else:
+        value = event_type_assertions[0].object_value
+        frame_id = value if isinstance(value, str) else "unknown"
+        frame = next(
+            (item for item in HYBRID_EVENT_SEMANTICS_V1.frames if item.id == frame_id), None
+        )
+        if frame is None:
+            issues.append(f"Unknown governed frame: {frame_id}.")
+
+    role_assertion_ids: dict[str, str] = {}
+    role_definitions = {item.id: item for item in frame.roles} if frame is not None else {}
+    related_paths = {paths[event.id]}
+    for assertion in assertions:
+        if assertion.object_entity_id is not None:
+            related_paths.add(paths[assertion.object_entity_id])
+        if assertion.attributed_to_id is not None:
+            related_paths.add(paths[assertion.attributed_to_id])
+        if _assertion_relation(assertion) != HybridEventStructuralPredicate.HAS_ARGUMENT.value:
+            continue
+        role_id = assertion.qualifiers.get("frame_role_id")
+        upper_role = assertion.qualifiers.get("upper_role")
+        if not isinstance(role_id, str) or not isinstance(upper_role, str):
+            issues.append(f"Argument {assertion.id} lacks governed role qualifiers.")
+            continue
+        role = role_definitions.get(role_id)
+        if role is None or role.upper_role.value != upper_role:
+            issues.append(f"Argument {assertion.id} has an invalid governed role.")
+            continue
+        target_kind = _semantic_argument_target_kind(assertion, by_id)
+        if target_kind not in role.allowed_target_kinds:
+            issues.append(
+                f"Argument {assertion.id} uses {target_kind.value} "
+                f"where {role.id} does not allow it."
+            )
+            continue
+        if role_id in role_assertion_ids:
+            issues.append(f"Governed role {role_id} occurs more than once.")
+            continue
+        role_assertion_ids[role_id] = assertion.id
+
+    if frame is not None:
+        for role in frame.roles:
+            if role.required and role.id not in role_assertion_ids:
+                issues.append(f"Missing required role: {role.id}.")
+
+    _single_structural_value(
+        assertions,
+        HybridEventStructuralPredicate.HAS_POLARITY,
+        issues,
+        required=True,
+        allowed_values={item.value for item in EventPolarity},
+    )
+    _single_structural_value(
+        assertions,
+        HybridEventStructuralPredicate.HAS_MODALITY,
+        issues,
+        required=True,
+        allowed_values={item.value for item in EventModality},
+    )
+    related_paths.update(
+        paths[record_id]
+        for record_id in (
+            event.place_id,
+            *event.participant_actor_ids,
+            *event.participant_organization_ids,
+        )
+        if record_id is not None
+    )
+    edges = tuple(
+        sorted(
+            (_ontology_edge(assertion, by_id, paths) for assertion in assertions),
+            key=_event_edge_sort_key,
+        )
+    )
+    citations = {
+        *_record_citation_numbers(event_item, evidence_numbers),
+        *(
+            number
+            for item in assertion_items
+            for number in _record_citation_numbers(item, evidence_numbers)
+        ),
+    }
+    proposed_change_ids = {
+        item.proposed_change_id
+        for item in (event_item, *assertion_items)
+        if item.proposed_change_id is not None
+    }
+    state = (
+        "pending" if any(item.is_pending for item in (event_item, *assertion_items)) else "accepted"
+    )
+    return WikiEventPresentation(
+        presentation_id=f"event:{event.id}",
+        event_id=event.id,
+        assertion_ids=tuple(sorted(assertion.id for assertion in assertions)),
+        proposed_change_ids=tuple(sorted(proposed_change_ids)),
+        frame_id=frame_id,
+        complete=frame is not None and not issues,
+        state=state,
+        edges=edges,
+        issues=tuple(sorted(issues)),
+        citation_numbers=tuple(sorted(citations)),
+        related_paths=tuple(sorted(related_paths)),
+    )
+
+
+def _single_structural_value(
+    assertions: tuple[Assertion | ProposedAssertion, ...],
+    predicate: HybridEventStructuralPredicate,
+    issues: list[str],
+    *,
+    required: bool,
+    allowed_values: set[str] | None = None,
+) -> str | None:
+    values = tuple(
+        assertion.object_value
+        for assertion in assertions
+        if _assertion_relation(assertion) == predicate.value
+    )
+    if len(values) != 1 or not isinstance(values[0], str):
+        if required:
+            issues.append(f"The Event must have exactly one {predicate.value} value.")
+        return None
+    value = values[0]
+    if allowed_values is not None and value not in allowed_values:
+        issues.append(f"The Event has an unknown {predicate.value} value: {value}.")
+        return None
+    return value
+
+
+def _assertion_relation(assertion: Assertion | ProposedAssertion) -> str:
+    return assertion.predicate if isinstance(assertion, Assertion) else assertion.relation_label
+
+
+def _assertion_object(
+    assertion: Assertion | ProposedAssertion,
+    by_id: dict[str, CandidateViewRecord],
+    paths: dict[str, str],
+) -> tuple[str, str | None]:
+    if assertion.object_entity_id is None:
+        return _display_value(assertion.object_value), None
+    object_record = by_id[assertion.object_entity_id]
+    return (
+        _record_label(cast(WikiNamedRecord, object_record.record)),
+        paths[assertion.object_entity_id],
+    )
+
+
+def _ontology_edge(
+    assertion: Assertion | ProposedAssertion,
+    by_id: dict[str, CandidateViewRecord],
+    paths: dict[str, str],
+) -> WikiOntologyEdge:
+    subject = by_id[assertion.subject_entity_id]
+    object_label, object_path = _assertion_object(assertion, by_id, paths)
+    qualifiers = [
+        WikiOntologyQualifier(key, _display_value(value))
+        for key, value in sorted(assertion.qualifiers.items())
+    ]
+    if assertion.attributed_to_id is not None:
+        attributed = by_id[assertion.attributed_to_id]
+        qualifiers.append(
+            WikiOntologyQualifier(
+                "attributed_to_id",
+                _record_label(cast(WikiNamedRecord, attributed.record)),
+                paths[assertion.attributed_to_id],
+            )
+        )
+    return WikiOntologyEdge(
+        assertion_id=assertion.id,
+        subject_label=_record_label(cast(WikiNamedRecord, subject.record)),
+        subject_path=paths[assertion.subject_entity_id],
+        predicate=_assertion_relation(assertion),
+        object_label=object_label,
+        object_path=object_path,
+        qualifiers=tuple(qualifiers),
+    )
+
+
+def _event_edge_sort_key(edge: WikiOntologyEdge) -> tuple[int, str, str]:
+    predicate_order = {
+        HybridEventStructuralPredicate.HAS_EVENT_TYPE.value: 0,
+        HybridEventStructuralPredicate.HAS_ARGUMENT.value: 1,
+        HybridEventStructuralPredicate.HAS_TIME.value: 2,
+        HybridEventStructuralPredicate.HAS_PLACE.value: 3,
+        HybridEventStructuralPredicate.HAS_POLARITY.value: 4,
+        HybridEventStructuralPredicate.HAS_MODALITY.value: 5,
+        HybridEventStructuralPredicate.ACCORDING_TO.value: 6,
+    }
+    qualifiers = {item.key: item.value for item in edge.qualifiers}
+    return (
+        predicate_order[edge.predicate],
+        qualifiers.get("frame_role_id", ""),
+        edge.assertion_id,
+    )
+
+
+def _semantic_argument_target_kind(
+    assertion: Assertion | ProposedAssertion,
+    by_id: dict[str, CandidateViewRecord],
+) -> SemanticArgumentTargetKind:
+    if assertion.object_entity_id is None:
+        return SemanticArgumentTargetKind.SOURCE_SPAN
+    if by_id[assertion.object_entity_id].record_type == "Event":
+        return SemanticArgumentTargetKind.EVENT_SUBJECT
+    return SemanticArgumentTargetKind.MENTION_CANDIDATE
+
+
+def _display_value(value: object) -> str:
+    return value if isinstance(value, str) else _canonical_json(value)
+
+
+def _presentation_sort_key(presentation: WikiPresentation) -> tuple[int, str]:
+    first_citation = min(presentation.citation_numbers, default=2**31)
+    return first_citation, presentation.presentation_id
 
 
 def _record_details(
@@ -1195,16 +1768,115 @@ def _record_details(
     raise TypeError("Assertions do not have standalone Wiki pages.")
 
 
+def _plan_wiki_audit_catalog(
+    view: CandidateKnowledgeView,
+    presentations: tuple[WikiPresentation, ...],
+) -> WikiAuditCatalog:
+    items_by_id = {item.record.id: item for item in view.records}
+    evidence_key_by_number = {
+        item.citation_number: item.reference_key for item in view.evidence_references
+    }
+    edge_by_assertion_id: dict[str, WikiOntologyEdge] = {}
+    event_by_id: dict[str, WikiEventPresentation] = {}
+    for presentation in presentations:
+        if isinstance(presentation, WikiEventPresentation):
+            event_by_id[presentation.event_id] = presentation
+            edges = presentation.edges
+        else:
+            edges = (presentation.edge,)
+        for edge in edges:
+            edge_by_assertion_id[edge.assertion_id] = edge
+
+    records: list[WikiAuditRecord] = [
+        _authority_audit_record(
+            "Source",
+            view.source.id,
+            canonical_record_json(view.source),
+            view.ingestion_run.provenance_activity_id,
+        ),
+        _authority_audit_record(
+            "Document",
+            view.document.id,
+            canonical_record_json(view.document),
+            view.ingestion_run.provenance_activity_id,
+        ),
+    ]
+    for item in view.records:
+        record_id = item.record.id
+        proposed_change_ids: set[str] = (
+            {item.proposed_change_id} if item.proposed_change_id else set()
+        )
+        provenance_activity_ids = set(item.provenance_activity_ids)
+        evidence_reference_keys = set(item.evidence_reference_keys)
+        state: Literal["accepted", "pending"] = "pending" if item.is_pending else "accepted"
+        edges = (edge_by_assertion_id[record_id],) if record_id in edge_by_assertion_id else ()
+        event = event_by_id.get(record_id)
+        if event is not None:
+            state = event.state
+            edges = event.edges
+            proposed_change_ids.update(event.proposed_change_ids)
+            for assertion_id in event.assertion_ids:
+                assertion_item = items_by_id[assertion_id]
+                if assertion_item.proposed_change_id is not None:
+                    proposed_change_ids.add(assertion_item.proposed_change_id)
+                provenance_activity_ids.update(assertion_item.provenance_activity_ids)
+            evidence_reference_keys.update(
+                evidence_key_by_number[number] for number in event.citation_numbers
+            )
+        record_payload = _json_object(item.record_payload_json)
+        records.append(
+            WikiAuditRecord(
+                record_id=record_id,
+                record_type=cast(WikiAuditRecordType, item.record_type),
+                state=state,
+                review_status=item.review_status.value,
+                record_payload=record_payload,
+                record_payload_sha256=_sha256_json(record_payload),
+                proposed_change_ids=tuple(sorted(proposed_change_ids)),
+                provenance_activity_ids=tuple(sorted(provenance_activity_ids)),
+                evidence_reference_keys=tuple(sorted(evidence_reference_keys)),
+                ontology_edges=edges,
+            )
+        )
+    return WikiAuditCatalog(
+        candidate_snapshot_digest=view.candidate_snapshot_digest,
+        records=tuple(sorted(records, key=lambda item: item.record_id)),
+    )
+
+
+def _authority_audit_record(
+    record_type: Literal["Source", "Document"],
+    record_id: str,
+    record_payload_json: str,
+    provenance_activity_id: str | None,
+) -> WikiAuditRecord:
+    payload = _json_object(record_payload_json)
+    return WikiAuditRecord(
+        record_id=record_id,
+        record_type=record_type,
+        state="accepted",
+        review_status=None,
+        record_payload=payload,
+        record_payload_sha256=_sha256_json(payload),
+        proposed_change_ids=(),
+        provenance_activity_ids=(
+            (provenance_activity_id,) if provenance_activity_id is not None else ()
+        ),
+        evidence_reference_keys=(),
+        ontology_edges=(),
+    )
+
+
 def _page(
     *,
     relative_path: str,
     page_kind: str,
+    record_id: str | None,
     display_label: str,
     state: Literal["accepted", "pending"] | None,
     details: tuple[WikiDetail, ...],
     links: tuple[WikiLink, ...],
-    outgoing: tuple[WikiStatement, ...],
-    inbound: tuple[WikiStatement, ...],
+    presentations: tuple[WikiPresentation, ...],
     citations: tuple[int, ...],
 ) -> WikiPageInput:
     all_citations = tuple(
@@ -1212,8 +1884,11 @@ def _page(
             {
                 *citations,
                 *(number for link in links for number in link.citation_numbers),
-                *(number for statement in outgoing for number in statement.citation_numbers),
-                *(number for statement in inbound for number in statement.citation_numbers),
+                *(
+                    number
+                    for presentation in presentations
+                    for number in presentation.citation_numbers
+                ),
             }
         )
     )
@@ -1221,25 +1896,96 @@ def _page(
         "renderer_policy_id": CANDIDATE_WIKI_RENDERER_POLICY_ID,
         "relative_path": relative_path,
         "page_kind": page_kind,
+        "record_id": record_id,
         "display_label": display_label,
         "state": state,
         "details": [item.__dict__ for item in details],
         "links": [item.__dict__ for item in links],
-        "outgoing": [item.__dict__ for item in outgoing],
-        "inbound": [item.__dict__ for item in inbound],
+        "presentations": [_presentation_json(item) for item in presentations],
         "citations": list(all_citations),
     }
     return WikiPageInput(
         relative_path=relative_path,
         page_kind=page_kind,
+        record_id=record_id,
         display_label=display_label,
         state=state,
         details=details,
         links=links,
-        outgoing_statements=outgoing,
-        inbound_statements=inbound,
+        presentations=presentations,
         citation_numbers=all_citations,
         input_fingerprint=_sha256_json(payload),
+    )
+
+
+def _presentation_json(presentation: WikiPresentation) -> dict[str, object]:
+    common: dict[str, object] = {
+        "presentation_id": presentation.presentation_id,
+        "state": presentation.state,
+        "citation_numbers": list(presentation.citation_numbers),
+        "related_paths": list(presentation.related_paths),
+    }
+    if isinstance(presentation, WikiEventPresentation):
+        return common | {
+            "presentation_kind": "event",
+            "event_id": presentation.event_id,
+            "assertion_ids": list(presentation.assertion_ids),
+            "proposed_change_ids": list(presentation.proposed_change_ids),
+            "frame_id": presentation.frame_id,
+            "complete": presentation.complete,
+            "edges": [_ontology_edge_json(item) for item in presentation.edges],
+            "issues": list(presentation.issues),
+        }
+    return common | {
+        "presentation_kind": "assertion",
+        "proposed_change_id": presentation.proposed_change_id,
+        "edge": _ontology_edge_json(presentation.edge),
+    }
+
+
+def _ontology_edge_json(edge: WikiOntologyEdge) -> dict[str, object]:
+    return {
+        "assertion_id": edge.assertion_id,
+        "subject_label": edge.subject_label,
+        "subject_path": edge.subject_path,
+        "predicate": edge.predicate,
+        "object_label": edge.object_label,
+        "object_path": edge.object_path,
+        "qualifiers": [item.__dict__ for item in edge.qualifiers],
+    }
+
+
+def _wiki_audit_record_json(record: WikiAuditRecord) -> dict[str, object]:
+    return {
+        "record_id": record.record_id,
+        "record_type": record.record_type,
+        "state": record.state,
+        "review_status": record.review_status,
+        "record_payload": record.record_payload,
+        "record_payload_sha256": record.record_payload_sha256,
+        "proposed_change_ids": list(record.proposed_change_ids),
+        "provenance_activity_ids": list(record.provenance_activity_ids),
+        "evidence_reference_keys": list(record.evidence_reference_keys),
+        "ontology_edges": [_ontology_edge_json(item) for item in record.ontology_edges],
+    }
+
+
+def _wiki_audit_edge_from_file(edge: _WikiAuditEdgeRecord) -> WikiOntologyEdge:
+    return WikiOntologyEdge(
+        assertion_id=edge.assertion_id,
+        subject_label=edge.subject_label,
+        subject_path=edge.subject_path,
+        predicate=edge.predicate,
+        object_label=edge.object_label,
+        object_path=edge.object_path,
+        qualifiers=tuple(
+            WikiOntologyQualifier(
+                key=item.key,
+                value=item.value,
+                value_path=item.value_path,
+            )
+            for item in edge.qualifiers
+        ),
     )
 
 
@@ -1333,6 +2079,12 @@ def _evidence_json(item: WikiEvidenceReference) -> dict[str, object]:
     }
 
 
+def _audit_evidence_json(item: WikiEvidenceReference) -> dict[str, object]:
+    value = _evidence_json(item)
+    value.pop("citation_number")
+    return value
+
+
 def _validate_change_set_digest(change_set: IngestionChangeSet) -> None:
     payload = {
         "ingestion_run_id": change_set.ingestion_run_id,
@@ -1364,6 +2116,7 @@ def _manifest_json(manifest: WikiBuildManifest) -> dict[str, object]:
 def _wiki_build_id(manifest: WikiBuildManifest) -> str:
     value = _manifest_json(manifest)
     value.pop("build_id")
+    value.pop("files")
     return f"wkb_{_sha256_json(value)[:HASH_ID_LENGTH]}"
 
 
@@ -1374,18 +2127,17 @@ def candidate_wiki_build_id(
     ingestion_run_id: str,
     ingestion_change_set_id: str,
     candidate_snapshot_digest: str,
-    files: tuple[WikiBuildFileEntry, ...],
     counts: tuple[tuple[str, int], ...],
 ) -> str:
     manifest = WikiBuildManifest(
-        schema_version="candidate_wiki_manifest_v1",
+        schema_version="candidate_wiki_manifest_v2",
         build_id="pending",
         view_policy_id=view_policy_id,
         renderer_policy_id=renderer_policy_id,
         ingestion_run_id=ingestion_run_id,
         ingestion_change_set_id=ingestion_change_set_id,
         candidate_snapshot_digest=candidate_snapshot_digest,
-        files=files,
+        files=(),
         counts=counts,
     )
     return _wiki_build_id(manifest)
@@ -1413,6 +2165,13 @@ def _integer_value(value: object) -> int:
 
 def _canonical_json(value: object) -> str:
     return json.dumps(value, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
+
+
+def _json_object(value: str) -> dict[str, JsonValue]:
+    parsed: object = json.loads(value)
+    if not isinstance(parsed, dict):
+        raise ValueError("Candidate Wiki record payload must be one JSON object.")
+    return cast(dict[str, JsonValue], parsed)
 
 
 def _sha256_json(value: object) -> str:

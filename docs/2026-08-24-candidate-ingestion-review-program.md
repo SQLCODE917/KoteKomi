@@ -10,6 +10,7 @@
 - First child deliverable: [CIR-1 User Ingestion Run MVP](2026-08-24-user-ingestion-run-mvp.md)
 - Current extraction program: [Hybrid Intelligence Extraction Pipeline](2026-09-01-hybrid-intelligence-extraction-pipeline.md)
 - Current Wiki deliverable: [CIR-4 Deterministic Candidate Wiki MVP](2026-09-04-deterministic-candidate-wiki-mvp.md)
+- Current Wiki presentation: [CIR-4.1 Ontology-Driven Candidate Wiki Projection](2026-09-05-ontology-driven-candidate-wiki-projection.md)
 
 ## Context and problem
 
@@ -759,6 +760,29 @@ Detailed TDD:
 
 [CIR-4 Deterministic Candidate Wiki MVP](2026-09-04-deterministic-candidate-wiki-mvp.md)
 
+### CIR-4.1 - Ontology-Driven Candidate Wiki Projection
+
+Working result:
+
+KoteKomi renders admitted ontology records as mechanical, evidence-backed Wiki presentations.
+
+Governed Events appear as explicit subject-predicate-object edges with their role qualifiers.
+
+Ordinary Assertions appear as neutral relationship cards with exact source evidence.
+
+Each presentation exposes stable Domain IDs in a collapsed Audit trail.
+
+The command makes no model call and changes no accepted intelligence.
+
+User stories:
+
+- US-CIR-04.
+- US-CIR-10.
+
+Detailed TDD:
+
+[CIR-4.1 Ontology-Driven Candidate Wiki Projection](2026-09-05-ontology-driven-candidate-wiki-projection.md)
+
 ### CIR-5 - Candidate Wiki and Change Inspection
 
 Working result:
@@ -872,6 +896,7 @@ This section becomes the stable index for child TDDs.
 | CIR-2 | Automatic Extraction and Change Set | [CIR-2 TDD](2026-08-24-automatic-extraction-change-set.md) |
 | CIR-3 | Candidate Knowledge View | Superseded by the CIR-4 read model. |
 | CIR-4 | Deterministic Candidate Wiki MVP | [CIR-4 TDD](2026-09-04-deterministic-candidate-wiki-mvp.md) |
+| CIR-4.1 | Ontology-Driven Candidate Wiki Projection | [CIR-4.1 TDD](2026-09-05-ontology-driven-candidate-wiki-projection.md) |
 | CIR-5 | Candidate Wiki and Change Inspection | Add link after CIR-4 evidence exists. |
 | CIR-6 | Whole-Ingestion Publish and Discard | Add link after CIR-5 evidence exists. |
 | CIR-7 | Candidate Daily Briefing | Add link after CIR-6 evidence exists. |

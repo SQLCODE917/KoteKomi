@@ -17,6 +17,7 @@ from kotekomi_application import (
     HybridPreviewStatus,
     ReconciledDocumentProposalPlan,
     StagedArchiveObject,
+    StandingFactPlan,
     build_hybrid_atomic_claim_preview,
     build_hybrid_entity_grounding_preview_record,
     build_hybrid_event_frame_preview,
@@ -35,6 +36,7 @@ from kotekomi_application import (
     canonical_hybrid_proposal_plan_bytes,
     canonical_hybrid_reference_preview_bytes,
     canonical_reconciled_document_proposal_plan_bytes,
+    canonical_standing_fact_plan_bytes,
     hybrid_atomic_claim_preview_sha256,
     hybrid_entity_grounding_preview_sha256,
     hybrid_event_frame_preview_sha256,
@@ -63,6 +65,7 @@ def test_initialize_creates_archive_directories(tmp_path: Path) -> None:
     assert (tmp_path / "extraction" / "atomic-claim-previews").is_dir()
     assert (tmp_path / "extraction" / "event-semantic-previews").is_dir()
     assert (tmp_path / "extraction" / "proposal-plans").is_dir()
+    assert (tmp_path / "extraction" / "standing-fact-plans").is_dir()
     assert (tmp_path / "extraction" / "document-policies").is_dir()
     assert (tmp_path / "extraction" / "paragraph-receipts").is_dir()
     assert (tmp_path / "extraction" / "document-coverage").is_dir()
@@ -465,6 +468,55 @@ def test_put_reuse_restart_and_corruption_rejection_for_hybrid_proposal_plan(
         store.put_hybrid_proposal_plan(plan, payload, digest)
     with pytest.raises(ValueError):
         reopened.read_hybrid_proposal_plan(plan.id)
+
+
+def test_put_reuse_restart_and_corruption_rejection_for_standing_fact_plan(
+    tmp_path: Path,
+) -> None:
+    store = LocalArchiveStore(tmp_path)
+    store.initialize()
+    body: dict[str, object] = {
+        "schema_version": "standing_fact_plan_v1",
+        "parent_plan_id": "hpp_" + "1" * 24,
+        "parent_plan_sha256": "a" * 64,
+        "mention_preview_id": "hxp_" + "2" * 24,
+        "mention_preview_sha256": "b" * 64,
+        "reference_preview_id": "hrp_" + "3" * 24,
+        "reference_preview_sha256": "c" * 64,
+        "representation_id": "rep_fixture",
+        "paragraph_node_id": "nod_fixture",
+        "context_manifest_id": None,
+        "policy_id": "hybrid_standing_fact_v1",
+        "provenance_activity_id": "prv_" + "4" * 24,
+        "drafts": [],
+        "decisions": [],
+        "extraction_task_ids": [],
+        "model_run_ids": [],
+        "traces": [],
+        "proposed_changes": [],
+        "terminal_status": "complete",
+        "diagnostics": [],
+    }
+    plan = StandingFactPlan.model_validate_json(
+        json.dumps({**body, "id": "sfp_" + _json_digest(body)[:24]})
+    )
+    payload = canonical_standing_fact_plan_bytes(plan)
+    digest = hashlib.sha256(payload).hexdigest()
+
+    created = store.put_standing_fact_plan(plan, payload, digest)
+    reused = store.put_standing_fact_plan(plan, payload, digest)
+    reopened = LocalArchiveStore(tmp_path)
+
+    assert created.disposition is ArchivePutDisposition.CREATED
+    assert reused.disposition is ArchivePutDisposition.REUSED
+    assert reopened.read_standing_fact_plan(plan.id) == payload
+
+    stored = tmp_path / "extraction" / "standing-fact-plans" / f"{plan.id}.json"
+    stored.write_bytes(b"different bytes")
+    with pytest.raises(ValueError, match="conflicts with its immutable identity"):
+        store.put_standing_fact_plan(plan, payload, digest)
+    with pytest.raises(ValueError):
+        reopened.read_standing_fact_plan(plan.id)
 
 
 def test_put_reuse_and_restart_for_document_reconciliation_evidence(

@@ -28,7 +28,6 @@ from kotekomi_application.extraction_stage_trace import (
 )
 from kotekomi_application.hybrid_proposed_changes import (
     HYBRID_PROPOSAL_AGENT,
-    HybridProposalArchive,
     HybridProposalLedger,
     HybridProposalPlan,
     PlannedProposedChange,
@@ -37,6 +36,13 @@ from kotekomi_application.hybrid_proposed_changes import (
     submit_planned_proposal_batch,
     validate_planned_proposed_changes,
 )
+from kotekomi_application.hybrid_standing_facts import (
+    HybridStandingFactArchive,
+    HybridStandingFactLedger,
+    StandingFactPlan,
+    canonical_standing_fact_plan_bytes,
+    load_standing_fact_plan,
+)
 
 DOCUMENT_ENTITY_RECONCILIATION_POLICY_ID = "document_entity_reconciliation_v1"
 DOCUMENT_PROPOSAL_PLAN_POLICY_ID = "reconciled_document_proposal_plan_v1"
@@ -44,6 +50,7 @@ DOCUMENT_PROPOSAL_ACTIVITY_TYPE = "reconciled_document_proposal_batch_submitted"
 _SHA256 = r"^[a-f0-9]{64}$"
 
 type ReconciledRecordType = Literal["Actor", "Organization"]
+type ParagraphProposalPlan = HybridProposalPlan | StandingFactPlan
 
 
 class IdentityDecisionStatus(StrEnum):
@@ -88,7 +95,7 @@ class ProposalEvidenceSelector(BaseModel):
 class ParentProposalPlanReference(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
-    plan_id: Annotated[str, Field(pattern=r"^hpp_[a-f0-9]{24}$")]
+    plan_id: Annotated[str, Field(pattern=r"^(hpp|sfp)_[a-f0-9]{24}$")]
     sha256: Annotated[str, Field(pattern=_SHA256)]
     paragraph_node_id: Annotated[str, Field(min_length=1)]
 
@@ -396,7 +403,7 @@ class ReconciledDocumentProposalPlan(BaseModel):
         return self
 
 
-class DocumentEntityReconciliationArchive(HybridProposalArchive, Protocol):
+class DocumentEntityReconciliationArchive(HybridStandingFactArchive, Protocol):
     def put_document_entity_reconciliation_preview(
         self,
         preview: DocumentEntityReconciliationPreview,
@@ -422,7 +429,7 @@ def normalize_entity_name(value: str) -> str:
 
 
 def build_document_entity_reconciliation_preview(
-    plans: tuple[HybridProposalPlan, ...],
+    plans: tuple[ParagraphProposalPlan, ...],
     ledger: HybridProposalLedger,
     *,
     representation_id: str | None = None,
@@ -554,7 +561,7 @@ def build_document_entity_reconciliation_preview(
 
 def build_reconciled_document_proposal_plan(
     preview: DocumentEntityReconciliationPreview,
-    plans: tuple[HybridProposalPlan, ...],
+    plans: tuple[ParagraphProposalPlan, ...],
     ledger: HybridProposalLedger,
 ) -> ReconciledDocumentProposalPlan:
     """Rewrite paragraph Plans into one globally referentially valid review batch."""
@@ -659,9 +666,7 @@ def load_document_entity_reconciliation_preview(
 ) -> DocumentEntityReconciliationPreview:
     payload = archive.read_document_entity_reconciliation_preview(preview_id)
     preview = document_entity_reconciliation_preview_from_bytes(payload)
-    plans = tuple(
-        load_hybrid_proposal_plan(item.plan_id, ledger, archive) for item in preview.parent_plans
-    )
+    plans = tuple(_load_parent_plan(item.plan_id, ledger, archive) for item in preview.parent_plans)
     if preview != build_document_entity_reconciliation_preview(
         plans, ledger, representation_id=preview.representation_id
     ):
@@ -680,9 +685,7 @@ def load_reconciled_document_proposal_plan(
     preview = load_document_entity_reconciliation_preview(
         plan.parent_preview_id, ledger=ledger, archive=archive
     )
-    plans = tuple(
-        load_hybrid_proposal_plan(item.plan_id, ledger, archive) for item in plan.parent_plans
-    )
+    plans = tuple(_load_parent_plan(item.plan_id, ledger, archive) for item in plan.parent_plans)
     if plan != build_reconciled_document_proposal_plan(preview, plans, ledger):
         raise ValueError("Stored HP-9 Document Plan no longer matches its parent evidence.")
     return plan
@@ -712,15 +715,35 @@ def reconciled_document_proposal_plan_from_bytes(
     return _parse_canonical(payload, ReconciledDocumentProposalPlan, "HP-9 Document Plan")
 
 
+def _canonical_parent_plan_bytes(plan: ParagraphProposalPlan) -> bytes:
+    if isinstance(plan, StandingFactPlan):
+        return canonical_standing_fact_plan_bytes(plan)
+    return canonical_hybrid_proposal_plan_bytes(plan)
+
+
+def _load_parent_plan(
+    plan_id: str,
+    ledger: HybridProposalLedger,
+    archive: DocumentEntityReconciliationArchive,
+) -> ParagraphProposalPlan:
+    if plan_id.startswith("sfp_"):
+        return load_standing_fact_plan(
+            plan_id,
+            cast(HybridStandingFactLedger, ledger),
+            archive,
+        )
+    return load_hybrid_proposal_plan(plan_id, ledger, archive)
+
+
 def _parent_plan_references(
-    plans: tuple[HybridProposalPlan, ...],
+    plans: tuple[ParagraphProposalPlan, ...],
 ) -> tuple[ParentProposalPlanReference, ...]:
     references = tuple(
         sorted(
             (
                 ParentProposalPlanReference(
                     plan_id=plan.id,
-                    sha256=hashlib.sha256(canonical_hybrid_proposal_plan_bytes(plan)).hexdigest(),
+                    sha256=hashlib.sha256(_canonical_parent_plan_bytes(plan)).hexdigest(),
                     paragraph_node_id=plan.paragraph_node_id,
                 )
                 for plan in plans
@@ -735,7 +758,7 @@ def _parent_plan_references(
     return references
 
 
-def _representation_id(plans: tuple[HybridProposalPlan, ...], *, expected: str | None) -> str:
+def _representation_id(plans: tuple[ParagraphProposalPlan, ...], *, expected: str | None) -> str:
     values = {item.representation_id for item in plans}
     if not values and expected is not None:
         return expected
@@ -748,7 +771,7 @@ def _representation_id(plans: tuple[HybridProposalPlan, ...], *, expected: str |
 
 
 def _unique_raw_changes(
-    plans: tuple[HybridProposalPlan, ...],
+    plans: tuple[ParagraphProposalPlan, ...],
 ) -> dict[str, PlannedProposedChange]:
     changes: dict[str, PlannedProposedChange] = {}
     for plan in plans:
@@ -761,7 +784,7 @@ def _unique_raw_changes(
 
 
 def _entity_occurrences(
-    plans: tuple[HybridProposalPlan, ...],
+    plans: tuple[ParagraphProposalPlan, ...],
     bundle: DocumentRepresentationBundle,
 ) -> tuple[EntityMentionEvidence, ...]:
     occurrences: list[EntityMentionEvidence] = []
@@ -824,7 +847,7 @@ def _decision_status(member: EntityMentionEvidence, member_count: int) -> Identi
 
 
 def _observed_organization_types(
-    plans: tuple[HybridProposalPlan, ...], proposal_ids: tuple[str, ...]
+    plans: tuple[ParagraphProposalPlan, ...], proposal_ids: tuple[str, ...]
 ) -> tuple[str, ...]:
     changes = _unique_raw_changes(plans)
     values: set[str] = set()

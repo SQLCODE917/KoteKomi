@@ -16,6 +16,7 @@ import os
 import re
 import sys
 import time
+import warnings
 from pathlib import Path
 from typing import Any, cast
 
@@ -173,8 +174,7 @@ def _load_processor(data_dir: Path) -> Any:
         return _processor
     if not data_dir.is_dir():
         raise WorkerFailure("resources_unavailable", "Pinned ReFinED resources are not installed.")
-    os.environ["HF_HUB_OFFLINE"] = "1"
-    os.environ["TRANSFORMERS_OFFLINE"] = "1"
+    _configure_expected_runtime_diagnostics()
     try:
         installed_version = importlib.metadata.version("ReFinED")
     except importlib.metadata.PackageNotFoundError as error:
@@ -210,6 +210,25 @@ def _load_processor(data_dir: Path) -> Any:
     _processor_data_dir = data_dir
     _resource_manifest_sha256 = resource_digest
     return processor
+
+
+def _configure_expected_runtime_diagnostics() -> None:
+    """Suppress only known CPU-runtime warnings from the pinned ReFinED stack."""
+    os.environ["HF_HUB_OFFLINE"] = "1"
+    os.environ["TRANSFORMERS_OFFLINE"] = "1"
+    os.environ["TRANSFORMERS_VERBOSITY"] = "error"
+    warnings.filterwarnings(
+        "ignore",
+        message=r"`torch\.cuda\.amp\.autocast.*",
+        category=FutureWarning,
+        module=r"refined\.inference\.processor",
+    )
+    warnings.filterwarnings(
+        "ignore",
+        message=r"CUDA is not available.*",
+        category=UserWarning,
+        module=r"torch\.cuda\.amp\.autocast_mode",
+    )
 
 
 def resource_tree_digest(data_dir: Path) -> str:

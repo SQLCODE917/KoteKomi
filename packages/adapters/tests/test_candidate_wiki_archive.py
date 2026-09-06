@@ -6,10 +6,12 @@ from kotekomi_adapters import LocalArchiveStore
 from kotekomi_application.candidate_wiki import (
     RenderedCandidateWiki,
     RenderedWikiFile,
+    WikiAuditCatalog,
     WikiBuildFileEntry,
     WikiBuildManifest,
     WikiCitationRegistry,
     candidate_wiki_build_id,
+    canonical_wiki_audit_bytes,
     canonical_wiki_citations_bytes,
     canonical_wiki_manifest_bytes,
 )
@@ -35,6 +37,9 @@ def test_archive_publishes_immutable_build_and_atomically_updates_active_link(
     assert active.resolve().name == second.manifest.build_id
     assert (active / "index.md").read_text() == "second\n"
     assert (tmp_path / "archive" / "review" / "wiki-builds" / first.manifest.build_id).is_dir()
+    audit = archive.read_candidate_wiki_audit_bundle(first.manifest.build_id)
+    assert audit.manifest == first.manifest
+    assert audit.audit_catalog.records == ()
 
 
 def test_archive_rejects_changed_file_before_replacing_active_link(tmp_path: Path) -> None:
@@ -67,13 +72,20 @@ def _rendered(text: str) -> RenderedCandidateWiki:
     citations = canonical_wiki_citations_bytes(
         WikiCitationRegistry(candidate_snapshot_digest=snapshot_digest, citations=())
     )
+    audit = canonical_wiki_audit_bytes(
+        WikiAuditCatalog(candidate_snapshot_digest=snapshot_digest, records=())
+    )
     entries = tuple(
         WikiBuildFileEntry(
             relative_path=path,
             input_fingerprint=hashlib.sha256(payload).hexdigest(),
             content_sha256=hashlib.sha256(payload).hexdigest(),
         )
-        for path, payload in (("citations.json", citations), ("index.md", index))
+        for path, payload in (
+            ("audit.json", audit),
+            ("citations.json", citations),
+            ("index.md", index),
+        )
     )
     build_id = candidate_wiki_build_id(
         view_policy_id="candidate_wiki_view_v1",
@@ -81,11 +93,10 @@ def _rendered(text: str) -> RenderedCandidateWiki:
         ingestion_run_id="igr_example",
         ingestion_change_set_id="ics_example",
         candidate_snapshot_digest=snapshot_digest,
-        files=entries,
         counts=(),
     )
     manifest = WikiBuildManifest(
-        schema_version="candidate_wiki_manifest_v1",
+        schema_version="candidate_wiki_manifest_v2",
         build_id=build_id,
         view_policy_id="candidate_wiki_view_v1",
         renderer_policy_id="deterministic_markdown_wiki_v1",
@@ -99,6 +110,7 @@ def _rendered(text: str) -> RenderedCandidateWiki:
         manifest,
         (
             RenderedWikiFile("citations.json", citations),
+            RenderedWikiFile("audit.json", audit),
             RenderedWikiFile("index.md", index),
             RenderedWikiFile("manifest.json", canonical_wiki_manifest_bytes(manifest)),
         ),

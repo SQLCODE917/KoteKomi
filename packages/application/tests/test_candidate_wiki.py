@@ -5,7 +5,14 @@ from typing import cast
 
 import pytest
 from kotekomi_application.candidate_wiki import (
+    AuditCandidateWikiRecordCommand,
+    CandidateWikiAuditBundle,
+    WikiAssertionPresentation,
+    WikiBuildManifest,
+    WikiEventPresentation,
+    audit_candidate_wiki_record,
     build_candidate_knowledge_view,
+    candidate_wiki_build_id,
     plan_candidate_wiki,
     select_candidate_ingestions,
 )
@@ -45,7 +52,7 @@ from kotekomi_domain.models import JsonValue
 
 NOW = datetime(2026, 9, 4, tzinfo=UTC)
 TEXT = "Acme hired Alice."
-TEXT_DIGEST = hashlib.sha256(TEXT.encode()).hexdigest()
+CHARACTERIZATION_TEXT = 'Amodei characterized Donald Trump as a "feudal warlord".'
 type JsonObject = dict[str, JsonValue]
 
 
@@ -152,6 +159,15 @@ class FakeCandidateWikiLedger:
         return ()
 
 
+class FakeCandidateWikiAuditArchive:
+    def __init__(self, bundle: CandidateWikiAuditBundle) -> None:
+        self.bundle = bundle
+
+    def read_candidate_wiki_audit_bundle(self, build_id: str) -> CandidateWikiAuditBundle:
+        assert build_id == self.bundle.manifest.build_id
+        return self.bundle
+
+
 def test_candidate_view_preserves_review_state_closes_references_and_plans_pages() -> None:
     ledger = FakeCandidateWikiLedger()
 
@@ -182,8 +198,12 @@ def test_candidate_view_preserves_review_state_closes_references_and_plans_pages
     }
     event_page = next(page for page in plan.pages if page.page_kind == "event")
     organization_page = next(page for page in plan.pages if page.display_label == "Acme")
-    assert event_page.outgoing_statements[0].relation_label == "hired"
-    assert organization_page.inbound_statements[0].subject_label == "Hiring"
+    event_statement = event_page.presentations[0]
+    organization_statement = organization_page.presentations[0]
+    assert isinstance(event_statement, WikiAssertionPresentation)
+    assert isinstance(organization_statement, WikiAssertionPresentation)
+    assert event_statement.edge.predicate == "hired"
+    assert organization_statement.edge.subject_label == "Hiring"
     pending_org = next(item for item in first.records if item.record.id == "org_acme")
     assert "created_at" not in pending_org.source_payload_json
 
@@ -263,13 +283,133 @@ def test_exact_filename_selector_returns_all_closed_matches_newest_first() -> No
     assert tuple(item.id for item in result.matches) == ("igr_example", "igr_older")
 
 
-def _bundle() -> DocumentRepresentationBundle:
+def test_candidate_wiki_groups_a_complete_characterization_event() -> None:
+    ledger = FakeCandidateWikiLedger()
+    _use_source_text(ledger, CHARACTERIZATION_TEXT)
+    ledger.proposals = _characterization_proposals()
+    ledger.change_set = _change_set(tuple(sorted(ledger.proposals)))
+    ledger.run = ledger.run.model_copy(update={"ingestion_change_set_id": ledger.change_set.id})
+
+    plan = plan_candidate_wiki(build_candidate_knowledge_view(ledger.run, ledger))
+
+    amodei_page = next(page for page in plan.pages if page.display_label == "Amodei")
+    trump_page = next(page for page in plan.pages if page.display_label == "Donald Trump")
+    assert len(amodei_page.presentations) == 1
+    event = amodei_page.presentations[0]
+    assert isinstance(event, WikiEventPresentation)
+    assert trump_page.presentations == (event,)
+    assert event.frame_id == "characterization"
+    assert event.complete is True
+    assert event.issues == ()
+    assert tuple(edge.predicate for edge in event.edges) == (
+        "has_event_type",
+        "has_argument",
+        "has_argument",
+        "has_argument",
+        "has_polarity",
+        "has_modality",
+    )
+    role_edges = {
+        next(
+            qualifier.value for qualifier in edge.qualifiers if qualifier.key == "frame_role_id"
+        ): edge
+        for edge in event.edges
+        if edge.predicate == "has_argument"
+    }
+    assert role_edges["characterization.evaluator"].object_label == "Amodei"
+    assert role_edges["characterization.evaluated_subject"].object_label == "Donald Trump"
+    assert role_edges["characterization.characterization"].object_label == '"feudal warlord"'
+    assert tuple(
+        (qualifier.key, qualifier.value)
+        for qualifier in role_edges["characterization.evaluator"].qualifiers
+    ) == (
+        ("frame_role_id", "characterization.evaluator"),
+        ("upper_role", "agent"),
+    )
+
+
+def test_candidate_wiki_audit_resolves_event_graph_and_exact_evidence() -> None:
+    ledger = FakeCandidateWikiLedger()
+    _use_source_text(ledger, CHARACTERIZATION_TEXT)
+    ledger.proposals = _characterization_proposals()
+    ledger.change_set = _change_set(tuple(sorted(ledger.proposals)))
+    ledger.run = ledger.run.model_copy(update={"ingestion_change_set_id": ledger.change_set.id})
+    plan = plan_candidate_wiki(build_candidate_knowledge_view(ledger.run, ledger))
+    build_id = candidate_wiki_build_id(
+        view_policy_id=plan.view_policy_id,
+        renderer_policy_id=plan.renderer_policy_id,
+        ingestion_run_id=plan.ingestion_run_id,
+        ingestion_change_set_id=plan.ingestion_change_set_id,
+        candidate_snapshot_digest=plan.candidate_snapshot_digest,
+        counts=plan.counts,
+    )
+    archive = FakeCandidateWikiAuditArchive(
+        CandidateWikiAuditBundle(
+            manifest=WikiBuildManifest(
+                schema_version="candidate_wiki_manifest_v2",
+                build_id=build_id,
+                view_policy_id=plan.view_policy_id,
+                renderer_policy_id=plan.renderer_policy_id,
+                ingestion_run_id=plan.ingestion_run_id,
+                ingestion_change_set_id=plan.ingestion_change_set_id,
+                candidate_snapshot_digest=plan.candidate_snapshot_digest,
+                files=(),
+                counts=plan.counts,
+            ),
+            citation_registry=plan.citation_registry,
+            audit_catalog=plan.audit_catalog,
+        )
+    )
+
+    result = audit_candidate_wiki_record(
+        AuditCandidateWikiRecordCommand(build_id, "evt_characterization"), archive
+    )
+
+    assert result.record.record_type == "Event"
+    assert result.record.state == "pending"
+    assert tuple(edge.assertion_id for edge in result.record.ontology_edges) == (
+        "ast_00_event_type",
+        "ast_01_characterization",
+        "ast_02_evaluated_subject",
+        "ast_03_evaluator",
+        "ast_04_polarity",
+        "ast_05_modality",
+    )
+    assert result.record.provenance_activity_ids == ("prv_example",)
+    assert result.evidence
+    assert {item.exact_text for item in result.evidence} == {CHARACTERIZATION_TEXT}
+    with pytest.raises(ValueError, match="has no record: evt_missing"):
+        audit_candidate_wiki_record(
+            AuditCandidateWikiRecordCommand(build_id, "evt_missing"), archive
+        )
+
+
+def test_candidate_wiki_exposes_an_incomplete_governed_event() -> None:
+    ledger = FakeCandidateWikiLedger()
+    _use_source_text(ledger, CHARACTERIZATION_TEXT)
+    proposals = _characterization_proposals()
+    proposals.pop("pcg_characterization_value")
+    ledger.proposals = proposals
+    ledger.change_set = _change_set(tuple(sorted(ledger.proposals)))
+    ledger.run = ledger.run.model_copy(update={"ingestion_change_set_id": ledger.change_set.id})
+
+    plan = plan_candidate_wiki(build_candidate_knowledge_view(ledger.run, ledger))
+
+    event_page = next(page for page in plan.pages if page.display_label == "Characterization")
+    event = event_page.presentations[0]
+    assert isinstance(event, WikiEventPresentation)
+    assert event.complete is False
+    assert event.issues == ("Missing required role: characterization.characterization.",)
+
+
+def _bundle(text: str = TEXT) -> DocumentRepresentationBundle:
+    text_digest = hashlib.sha256(text.encode()).hexdigest()
     text_view = TextView(
         id="tvw_example",
         representation_id="rep_example",
         kind=TextViewKind.LOGICAL,
-        content_digest=TEXT_DIGEST,
-        text=TEXT,
+        content_digest=text_digest,
+        text=text,
         normalization_policy="utf8_identity_v1",
     )
     root = DocumentNode(
@@ -279,7 +419,7 @@ def _bundle() -> DocumentRepresentationBundle:
         order_index=0,
         text_view_id=text_view.id,
         start_char=0,
-        end_char=len(TEXT),
+        end_char=len(text),
     )
     node = DocumentNode(
         id="nod_example",
@@ -289,10 +429,10 @@ def _bundle() -> DocumentRepresentationBundle:
         order_index=1,
         text_view_id=text_view.id,
         start_char=0,
-        end_char=len(TEXT),
+        end_char=len(text),
         source_region_ids=("srg_example",),
         source_page_numbers=(1,),
-        source_text_digest=TEXT_DIGEST,
+        source_text_digest=text_digest,
     )
     region = SourceRegion(
         id="srg_example",
@@ -345,17 +485,18 @@ def _bundle() -> DocumentRepresentationBundle:
     )
 
 
-def _target() -> EvidenceTarget:
+def _target(text: str = TEXT) -> EvidenceTarget:
+    text_digest = hashlib.sha256(text.encode()).hexdigest()
     return EvidenceTarget(
         id="etg_example",
         source_id="src_example",
         document_id="doc_example",
         representation_id="rep_example",
         text_view_id="tvw_example",
-        text_view_digest=TEXT_DIGEST,
+        text_view_digest=text_digest,
         start_char=0,
-        end_char=len(TEXT),
-        exact_text=TEXT,
+        end_char=len(text),
+        exact_text=text,
         normalization_policy="utf8_identity_v1",
         node_ids=("nod_example",),
         created_at=NOW,
@@ -457,14 +598,20 @@ def _proposals(accepted: Organization) -> dict[str, ProposedChange]:
     return proposals
 
 
-def _proposal(change_id: str, record_type: str, record: JsonObject) -> ProposedChange:
+def _proposal(
+    change_id: str,
+    record_type: str,
+    record: JsonObject,
+    *,
+    evidence_text: str = TEXT,
+) -> ProposedChange:
     return ProposedChange(
         id=change_id,
         proposed_json={
             "record_type": record_type,
             "stable_label": str(record["id"]),
             "record": record,
-            "evidence": _embedded_evidence(),
+            "evidence": _embedded_evidence(evidence_text),
         },
         source_id="src_example",
         document_id="doc_example",
@@ -474,22 +621,174 @@ def _proposal(change_id: str, record_type: str, record: JsonObject) -> ProposedC
     )
 
 
-def _embedded_evidence() -> JsonObject:
+def _embedded_evidence(text: str = TEXT) -> JsonObject:
     return {
         "selector_type": "pinned_text",
         "source_id": "src_example",
         "document_id": "doc_example",
-        "exact_text": TEXT,
+        "exact_text": text,
         "prefix_text": "",
         "suffix_text": "",
         "location": {
             "representation_id": "rep_example",
             "text_view_id": "tvw_example",
             "start_char": 0,
-            "end_char": len(TEXT),
+            "end_char": len(text),
             "node_ids": ["nod_example"],
         },
     }
+
+
+def _use_source_text(ledger: FakeCandidateWikiLedger, text: str) -> None:
+    ledger.bundle = _bundle(text)
+    ledger.target = _target(text)
+    ledger.attempt = ledger.attempt.model_copy(
+        update={"target_digest": canonical_evidence_target_digest(ledger.target)}
+    )
+
+
+def _characterization_proposals() -> dict[str, ProposedChange]:
+    records: tuple[tuple[str, str, JsonObject], ...] = (
+        (
+            "pcg_amodei",
+            "Actor",
+            {"id": "act_amodei", "name": "Amodei", "role_names": [], "organization_ids": []},
+        ),
+        (
+            "pcg_trump",
+            "Actor",
+            {
+                "id": "act_donald_trump",
+                "name": "Donald Trump",
+                "role_names": [],
+                "organization_ids": [],
+            },
+        ),
+        (
+            "pcg_characterization_event",
+            "Event",
+            {
+                "id": "evt_characterization",
+                "name": "Characterization",
+                "start_at": None,
+                "end_at": None,
+                "place_id": None,
+                "participant_actor_ids": ["act_amodei", "act_donald_trump"],
+                "participant_organization_ids": [],
+            },
+        ),
+    )
+    proposals = {
+        change_id: _proposal(
+            change_id,
+            record_type,
+            record,
+            evidence_text=CHARACTERIZATION_TEXT,
+        )
+        for change_id, record_type, record in records
+    }
+    proposals.update(
+        {
+            "pcg_characterization_event_type": _characterization_assertion(
+                "pcg_characterization_event_type",
+                "ast_00_event_type",
+                "has_event_type",
+                object_value="characterization",
+            ),
+            "pcg_characterization_value": _characterization_assertion(
+                "pcg_characterization_value",
+                "ast_01_characterization",
+                "has_argument",
+                object_value='"feudal warlord"',
+                qualifiers={
+                    "frame_role_id": "characterization.characterization",
+                    "upper_role": "content",
+                },
+            ),
+            "pcg_characterization_subject": _characterization_assertion(
+                "pcg_characterization_subject",
+                "ast_02_evaluated_subject",
+                "has_argument",
+                object_entity_id="act_donald_trump",
+                qualifiers={
+                    "frame_role_id": "characterization.evaluated_subject",
+                    "upper_role": "theme",
+                },
+            ),
+            "pcg_characterization_evaluator": _characterization_assertion(
+                "pcg_characterization_evaluator",
+                "ast_03_evaluator",
+                "has_argument",
+                object_entity_id="act_amodei",
+                qualifiers={
+                    "frame_role_id": "characterization.evaluator",
+                    "upper_role": "agent",
+                },
+            ),
+            "pcg_characterization_polarity": _characterization_assertion(
+                "pcg_characterization_polarity",
+                "ast_04_polarity",
+                "has_polarity",
+                object_value="affirmed",
+            ),
+            "pcg_characterization_modality": _characterization_assertion(
+                "pcg_characterization_modality",
+                "ast_05_modality",
+                "has_modality",
+                object_value="actual",
+            ),
+        }
+    )
+    return proposals
+
+
+def _characterization_assertion(
+    change_id: str,
+    assertion_id: str,
+    relation_label: str,
+    *,
+    object_entity_id: str | None = None,
+    object_value: JsonValue = None,
+    qualifiers: JsonObject | None = None,
+) -> ProposedChange:
+    return ProposedChange(
+        id=change_id,
+        proposed_json={
+            "record_type": "Assertion",
+            "stable_label": assertion_id,
+            "record": {
+                "id": assertion_id,
+                "assertion_type": "source_claim",
+                "epistemic_scope": "source_report",
+                "subject_entity_id": "evt_characterization",
+                "relation_label": relation_label,
+                "object_entity_id": object_entity_id,
+                "object_value": object_value,
+                "source_authority": "secondary",
+                "attribution_basis": "reported_by_source",
+                "qualifiers": qualifiers or {},
+                "source_ids": ["src_example"],
+                "evidence_target_ids": ["etg_example"],
+                "supporting_assertion_ids": [],
+                "authority_source_ids": [],
+                "authority_evidence_target_ids": [],
+            },
+            "evidence_links": [
+                {
+                    "evidence_target_id": "etg_example",
+                    "validation_attempt_id": "eva_example",
+                    "role": "direct_support",
+                    "polarity": "supports",
+                    "necessity": "required",
+                }
+            ],
+        },
+        source_id="src_example",
+        document_id="doc_example",
+        provenance_activity_id="prv_example",
+        created_at=NOW,
+        updated_at=NOW,
+    )
 
 
 def _change_set(proposal_ids: tuple[str, ...]) -> IngestionChangeSet:

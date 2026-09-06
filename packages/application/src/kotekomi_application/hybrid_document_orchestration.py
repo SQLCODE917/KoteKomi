@@ -66,11 +66,17 @@ from kotekomi_application.hybrid_mention_interpretation import (
     hybrid_extraction_preview_from_bytes,
 )
 from kotekomi_application.hybrid_proposed_changes import (
-    HybridProposalLedger,
     HybridProposalPlan,
     canonical_hybrid_proposal_plan_bytes,
     hybrid_proposal_plan_from_bytes,
     load_hybrid_proposal_plan,
+)
+from kotekomi_application.hybrid_standing_facts import (
+    HybridStandingFactLedger,
+    StandingFactPlan,
+    canonical_standing_fact_plan_bytes,
+    load_standing_fact_plan,
+    standing_fact_plan_from_bytes,
 )
 from kotekomi_application.ingestion_runs import (
     CompleteIngestionRunCapturedInput,
@@ -92,6 +98,7 @@ class HybridStageId(StrEnum):
     HP5_ATOMIC_CLAIMS = "hp5_atomic_claims"
     HP6_EVENT_SEMANTICS = "hp6_event_semantics"
     HP7_PROPOSAL_PLAN = "hp7_proposal_plan"
+    HP10_STANDING_FACTS = "hp10_standing_facts"
 
 
 HYBRID_STAGE_ORDER = tuple(HybridStageId)
@@ -343,7 +350,7 @@ class HybridDocumentArchive(DocumentEntityReconciliationArchive, Protocol):
     def read_hybrid_document_coverage_report(self, report_id: str) -> bytes: ...
 
 
-class HybridDocumentLedger(AnalysisCoverageLedger, HybridProposalLedger, Protocol):
+class HybridDocumentLedger(AnalysisCoverageLedger, HybridStandingFactLedger, Protocol):
     def save_ingestion_change_set(self, record: IngestionChangeSet) -> None: ...
 
     def get_ingestion_change_set(self, record_id: str) -> IngestionChangeSet | None: ...
@@ -601,11 +608,15 @@ def validate_hybrid_paragraph_receipt(
     if isinstance(hp7, HybridProposalPlan):
         if load_hybrid_proposal_plan(hp7.id, ledger, archive) != hp7:
             raise ValueError("Paragraph Receipt HP-7 replay changed its Plan.")
-        proposal_ids = tuple(sorted(item.id for item in hp7.proposed_changes))
+    hp10 = outputs.get(HybridStageId.HP10_STANDING_FACTS)
+    if isinstance(hp10, StandingFactPlan):
+        if load_standing_fact_plan(hp10.id, ledger, archive) != hp10:
+            raise ValueError("Paragraph Receipt HP-10 replay changed its Plan.")
+        proposal_ids = tuple(sorted(item.id for item in hp10.proposed_changes))
         if receipt.proposed_change_ids != proposal_ids:
-            raise ValueError("Paragraph Receipt ProposedChange IDs do not match HP-7.")
+            raise ValueError("Paragraph Receipt ProposedChange IDs do not match HP-10.")
     elif receipt.proposed_change_ids:
-        raise ValueError("Paragraph Receipt has proposals without an HP-7 Plan.")
+        raise ValueError("Paragraph Receipt has proposals without an HP-10 Plan.")
 
 
 def build_hybrid_document_coverage_report(
@@ -787,13 +798,13 @@ def close_hybrid_document_ingestion(
         ledger=ledger,
         archive=archive,
     )
-    parent_plans: list[HybridProposalPlan] = []
+    parent_plans: list[StandingFactPlan] = []
     for receipt in typed_receipts:
         stage = receipt.stages[-1]
         if stage.disposition is HybridStageDisposition.NOT_RUN:
             continue
         assert stage.output_id is not None
-        plan = load_hybrid_proposal_plan(stage.output_id, ledger, archive)
+        plan = load_standing_fact_plan(stage.output_id, ledger, archive)
         parent_plans.append(plan)
     reconciliation_preview = build_document_entity_reconciliation_preview(
         tuple(parent_plans),
@@ -971,10 +982,14 @@ def read_hybrid_stage_output(
         raw = archive.read_hybrid_event_semantics_preview(output_id)
         parsed = hybrid_event_semantics_preview_from_bytes(raw)
         canonical = canonical_hybrid_event_semantics_preview_bytes(parsed)
-    else:
+    elif stage_id is HybridStageId.HP7_PROPOSAL_PLAN:
         raw = archive.read_hybrid_proposal_plan(output_id)
         parsed = hybrid_proposal_plan_from_bytes(raw)
         canonical = canonical_hybrid_proposal_plan_bytes(parsed)
+    else:
+        raw = archive.read_standing_fact_plan(output_id)
+        parsed = standing_fact_plan_from_bytes(raw)
+        canonical = canonical_standing_fact_plan_bytes(parsed)
     if canonical != raw:
         raise ValueError("Hybrid stage output does not use canonical encoding.")
     return raw, parsed
@@ -1047,7 +1062,11 @@ def _validate_stage_lineage(
             if any(outputs.get(later) is not None for later in following):
                 raise ValueError("Paragraph Receipt skips an executed stage.")
             break
-        parent_id = getattr(current, "parent_preview_id", None)
+        parent_id = (
+            getattr(current, "parent_plan_id", None)
+            if stage_id is HybridStageId.HP10_STANDING_FACTS
+            else getattr(current, "parent_preview_id", None)
+        )
         if parent_id != getattr(previous, "id", None):
             raise ValueError("Paragraph Receipt stage parent lineage is invalid.")
         if (

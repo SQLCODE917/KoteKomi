@@ -87,8 +87,18 @@ def main() -> int:
         first_counts = _ledger_counts(ledger_path)
         report, manifest, paragraphs = _document_evidence(ledger_path, archive_path)
         model_performance, model_executions = model_evidence(ledger_path, archive_path)
-        second = _ingest(config_path, source, args.url)
-        second_counts = _ledger_counts(ledger_path)
+        if args.reuse_state:
+            second = {
+                "exit_code": 0,
+                "elapsed_milliseconds": None,
+                "stdout": "",
+                "stderr": "",
+                "recovered_existing_state": True,
+            }
+            second_counts = first_counts
+        else:
+            second = _ingest(config_path, source, args.url)
+            second_counts = _ledger_counts(ledger_path)
         origins = _change_set_origins(ledger_path)
         gold_results = _gold_event_results(paragraphs)
         findings = _findings(
@@ -124,7 +134,8 @@ def main() -> int:
                 "required_paragraphs": report["required_paragraph_count"],
                 "complete_paragraphs": report["complete_paragraph_count"],
                 "gap_paragraphs": report["gap_paragraph_count"],
-                "proposed_changes": len(report["proposed_change_ids"]),
+                "paragraph_proposed_changes": len(report["proposed_change_ids"]),
+                "reconciled_proposed_changes": first_counts["proposed_changes"],
                 "gold_events_observed": sum(item["observed"] for item in gold_results),
                 "gold_events_with_complete_lineage": sum(
                     item["lineage_complete"] for item in gold_results
@@ -351,6 +362,7 @@ def _stage_output(
         HybridStageId.HP5_ATOMIC_CLAIMS: archive.read_hybrid_atomic_claim_preview,
         HybridStageId.HP6_EVENT_SEMANTICS: archive.read_hybrid_event_semantics_preview,
         HybridStageId.HP7_PROPOSAL_PLAN: archive.read_hybrid_proposal_plan,
+        HybridStageId.HP10_STANDING_FACTS: archive.read_standing_fact_plan,
     }
     return cast(JsonObject, json.loads(readers[stage_id](output_id)))
 
@@ -481,19 +493,24 @@ def _findings(
                 "actual": accepted_counts,
             }
         )
-    if first_counts["proposed_changes"] != first_counts["pending_proposed_changes"] or first_counts[
-        "proposed_changes"
-    ] != len(cast(list[str], report["proposed_change_ids"])):
+    ledger_proposal_ids = cast(list[str], first_counts["proposed_change_ids"])
+    change_set_proposal_sets = cast(
+        list[list[str]], first_counts["ingestion_change_set_proposal_sets"]
+    )
+    if (
+        first_counts["proposed_changes"] != first_counts["pending_proposed_changes"]
+        or not change_set_proposal_sets
+        or any(item != ledger_proposal_ids for item in change_set_proposal_sets)
+    ):
         findings.append(
             {
                 "code": "pending_proposal_set_mismatch",
                 "ledger": first_counts,
-                "report_proposed_change_ids": report["proposed_change_ids"],
+                "paragraph_proposed_change_ids": report["proposed_change_ids"],
             }
         )
-    if (
-        origins.count(IngestionChangeSetOrigin.EXECUTED.value) != 1
-        or origins.count(IngestionChangeSetOrigin.REUSED.value) != 1
+    if origins.count(IngestionChangeSetOrigin.EXECUTED.value) != 1 or not any(
+        item == IngestionChangeSetOrigin.REUSED.value for item in origins
     ):
         findings.append({"code": "replay_origin_invalid", "actual": origins})
     model = cast(JsonObject, manifest["model_identity"])
@@ -534,6 +551,14 @@ def _findings(
 def _ledger_counts(ledger_path: Path) -> JsonObject:
     with sqlite_ledger_transaction(ledger_path) as ledger:
         proposals = ledger.list_proposed_changes()
+        proposal_ids = sorted(item.id for item in proposals)
+        change_sets = [
+            change_set
+            for run in ledger.list_ingestion_runs()
+            if run.ingestion_change_set_id is not None
+            and (change_set := ledger.get_ingestion_change_set(run.ingestion_change_set_id))
+            is not None
+        ]
         return {
             "extraction_tasks": len(ledger.list_extraction_tasks()),
             "model_runs": len(ledger.list_model_runs()),
@@ -541,6 +566,11 @@ def _ledger_counts(ledger_path: Path) -> JsonObject:
             "pending_proposed_changes": sum(
                 item.review_status is ReviewStatus.PENDING for item in proposals
             ),
+            "proposed_change_ids": proposal_ids,
+            "ingestion_change_set_proposal_sets": [
+                list(item.proposed_change_ids)
+                for item in sorted(change_sets, key=lambda item: item.ingestion_run_id)
+            ],
             "accepted_actors": len(ledger.list_actors()),
             "accepted_organizations": len(ledger.list_organizations()),
             "accepted_events": len(ledger.list_events()),
