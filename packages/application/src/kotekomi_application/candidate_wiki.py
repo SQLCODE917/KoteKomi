@@ -42,7 +42,7 @@ from kotekomi_application.hybrid_event_frames import EventModality, EventPolarit
 from kotekomi_application.record_serialization import canonical_record_json
 
 CANDIDATE_WIKI_VIEW_POLICY_ID = "candidate_wiki_view_v4"
-CANDIDATE_WIKI_RENDERER_POLICY_ID = "ontology_graph_markdown_wiki_v6"
+CANDIDATE_WIKI_RENDERER_POLICY_ID = "ontology_graph_markdown_wiki_v7"
 HASH_ID_LENGTH = 24
 
 type WikiIntelligenceRecord = (

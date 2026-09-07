@@ -43,11 +43,12 @@ def test_renderer_is_deterministic_lean_and_exposes_stable_audit_handles() -> No
     ) in page
     assert "**Source, page 2:**" in page
     assert '> Amodei described Donald Trump as a "feudal warlord".' in page
-    assert page.count('> Amodei described Donald Trump as a "feudal warlord".') == 1
     assert "Amodei characterized Donald Trump" not in page
     assert "## Relationships requiring review" in page
     assert 'Amodei — **described as feudal warlord** → **"feudal warlord"**' in page
     assert "`ast_incomplete`" in page
+    assert "**Exact source, page 2:**" in page
+    assert page.count('> Amodei described Donald Trump as a "feudal warlord".') == 2
     assert "## Event details" not in page
     assert "Ontology object graph" not in page
     assert "`has_argument`" not in page
@@ -240,7 +241,7 @@ def _plan() -> CandidateWikiPlan:
     )
     return CandidateWikiPlan(
         view_policy_id="candidate_wiki_view_v4",
-        renderer_policy_id="ontology_graph_markdown_wiki_v6",
+        renderer_policy_id="ontology_graph_markdown_wiki_v7",
         ingestion_run_id="igr_example",
         ingestion_change_set_id="ics_example",
         candidate_snapshot_digest="b" * 64,
