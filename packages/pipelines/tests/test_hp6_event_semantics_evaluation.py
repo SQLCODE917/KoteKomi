@@ -6,7 +6,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import cast
 
-from kotekomi_domain import HYBRID_EVENT_SEMANTICS_V1
+from kotekomi_domain import HYBRID_EVENT_SEMANTICS_V2
 
 GOLD_PATH = Path(__file__).resolve().parents[3] / "docs" / "hp6-event-semantics-gold-v1.json"
 SCRIPT_PATH = Path(__file__).resolve().parents[3] / "scripts" / "verify_hp6_event_semantics.py"
@@ -19,10 +19,10 @@ _target_text_matches = cast(
 def test_hp6_gold_catalog_is_bounded_source_valid_and_ontology_valid() -> None:
     catalog = json.loads(GOLD_PATH.read_text())
     events = cast(list[dict[str, object]], catalog["events"])
-    frame_by_id = {item.id: item for item in HYBRID_EVENT_SEMANTICS_V1.frames}
+    frame_by_id = {item.id: item for item in HYBRID_EVENT_SEMANTICS_V2.frames}
 
     assert catalog["schema_version"] == "hp6_event_semantics_gold_v1"
-    assert catalog["ontology_profile_id"] == HYBRID_EVENT_SEMANTICS_V1.id
+    assert catalog["ontology_profile_id"] == HYBRID_EVENT_SEMANTICS_V2.id
     assert catalog["scope"] == {
         "parent_evidence_target_count": 14,
         "detailed_scenario_count": 5,

@@ -35,6 +35,8 @@ from kotekomi_application import (
     ModelInputMeasurement,
     ModelTaskRequest,
     ModelTaskResponse,
+    NaturalLanguageInferenceExecution,
+    NaturalLanguageInferenceInput,
     ProposalAdmissionReason,
     ProposalDisposition,
     ReviewProposedChangeInput,
@@ -94,6 +96,8 @@ from kotekomi_application.hybrid_standing_facts import (
     HybridStandingFactArchive,
     HybridStandingFactCommand,
     HybridStandingFactLedger,
+    StandingFactDisposition,
+    StandingFactHoldReason,
     StandingFactPlan,
     load_standing_fact_plan,
     run_hybrid_standing_fact_plan,
@@ -145,8 +149,23 @@ class _Tokenizer:
         return len(rendered_input.decode().split())
 
 
+class _NliRuntime:
+    def classify(self, request: NaturalLanguageInferenceInput) -> NaturalLanguageInferenceExecution:
+        assert request.premise
+        assert request.hypothesis
+        return NaturalLanguageInferenceExecution(
+            model_id="fixture-nli",
+            model_revision="v1",
+            resource_identity="fixture-nli-resource",
+            contradiction_score=0.01,
+            entailment_score=0.98,
+            neutral_score=0.01,
+            elapsed_milliseconds=1,
+        )
+
+
 class _Ledger:
-    def __init__(self) -> None:
+    def __init__(self, text: str = TEXT) -> None:
         self.source = Source(
             id="src_hp4_fixture",
             source_type=SourceType.MANUAL_FILE,
@@ -156,9 +175,9 @@ class _Ledger:
         self.document = Document(
             id="doc_hp4_fixture",
             source_id=self.source.id,
-            content_sha256=hashlib.sha256(TEXT.encode()).hexdigest(),
+            content_sha256=hashlib.sha256(text.encode()).hexdigest(),
         )
-        self.bundle = _bundle(self.document.id)
+        self.bundle = _bundle(self.document.id, text)
         self.manifests: dict[str, ContextManifestArtifact] = {}
         self.analysis_units: dict[str, AnalysisUnitArtifact] = {}
         self.extraction_tasks: dict[str, ExtractionTask] = {}
@@ -386,9 +405,12 @@ class _Archive:
 
 
 class _MentionProposer:
+    def __init__(self, mention_text: str = "Department of Defense") -> None:
+        self.mention_text = mention_text
+
     def propose(self, proposal_input: MentionProposalInput) -> MentionProposalBatch:
         segment = proposal_input.source_segments[0]
-        text = "Department of Defense"
+        text = self.mention_text
         start = segment.exact_text.index(text)
         return MentionProposalBatch(
             proposer_id="fixture-gliner",
@@ -446,10 +468,14 @@ class _Runtime:
         frame_output: bytes | None = None,
         frame_outputs: tuple[bytes, ...] | None = None,
         semantic_output: bytes | None = None,
+        semantic_outputs: tuple[bytes, ...] | None = None,
+        semantic_outputs_by_trigger: dict[str, bytes] | None = None,
         role_output: bytes | None = None,
         role_outputs: dict[str, tuple[bytes, ...]] | None = None,
         support_outputs: tuple[bytes, ...] | None = None,
         standing_fact_output: bytes | None = None,
+        standing_fact_qualification_output: bytes | None = None,
+        mention_text: str = "Department of Defense",
     ) -> None:
         self.stage = stage
         self.trigger_output = trigger_output
@@ -457,12 +483,17 @@ class _Runtime:
         self.frame_outputs = frame_outputs
         self.frame_ordinal = 0
         self.semantic_output = semantic_output
+        self.semantic_outputs = semantic_outputs
+        self.semantic_outputs_by_trigger = semantic_outputs_by_trigger or {}
+        self.semantic_ordinal = 0
         self.role_output = role_output
         self.role_outputs = role_outputs or {}
         self.role_ordinals: dict[str, int] = {}
         self.support_outputs = support_outputs
         self.support_ordinal = 0
         self.standing_fact_output = standing_fact_output
+        self.standing_fact_qualification_output = standing_fact_qualification_output
+        self.mention_text = mention_text
         self.requests: list[ModelTaskRequest] = []
         self._identity = ModelIdentitySnapshot(
             "qwen2.5-fixture",
@@ -502,7 +533,7 @@ class _Runtime:
     def run_model_task(self, task: ModelTaskRequest) -> ModelTaskResponse:
         self.requests.append(task)
         if self.stage == "mentions" and b"task: propose_mentions" in task.rendered_input:
-            output = b"mention: s1 | organization | Department of Defense\n"
+            output = f"mention: s1 | organization | {self.mention_text}\n".encode()
         elif self.stage == "mentions" and b"task: interpret_mention" in task.rendered_input:
             output = (
                 b"candidate: c1\n"
@@ -566,15 +597,26 @@ class _Runtime:
                     "reason: The bounded fixture selects only the supplied frame role.\n"
                 ).encode()
         elif self.stage == "semantics" and b"task: normalize_one_event" in task.rendered_input:
-            output = self.semantic_output or (
-                b"frame: classification\n"
-                b"argument: classification.classifier | c1\n"
-                b"argument: classification.classified_entity | "
-                b"Directive 3000.09\n"
-                b"argument: classification.assigned_classification | 3000.09\n"
-                b"qualifier: q1\n"
-                b"reason: The source presents the agency, subject, label, and time.\n"
+            target_trigger = next(
+                line.removeprefix("normalize_only_target_trigger: ")
+                for line in task.rendered_input.decode().splitlines()
+                if line.startswith("normalize_only_target_trigger: ")
             )
+            if target_trigger in self.semantic_outputs_by_trigger:
+                output = self.semantic_outputs_by_trigger[target_trigger]
+            elif self.semantic_outputs is not None:
+                output = self.semantic_outputs[self.semantic_ordinal]
+                self.semantic_ordinal += 1
+            else:
+                output = self.semantic_output or (
+                    b"frame: classification\n"
+                    b"argument: classification.classifier | c1\n"
+                    b"argument: classification.classified_entity | "
+                    b"Directive 3000.09\n"
+                    b"argument: classification.assigned_classification | 3000.09\n"
+                    b"qualifier: q1\n"
+                    b"reason: The source presents the agency, subject, label, and time.\n"
+                )
         elif (
             self.stage == "semantics"
             and b'"task":"judge_one_semantic_statement"' in task.rendered_input
@@ -591,6 +633,13 @@ class _Runtime:
         ):
             output = self.standing_fact_output or (
                 b"fact: c1 | has policy | literal | Directive 3000.09\n"
+            )
+        elif (
+            self.stage == "standing_facts" and b"task: qualify_standing_fact" in task.rendered_input
+        ):
+            output = self.standing_fact_qualification_output or (
+                b"outcome: supported_standing_fact\n"
+                b"reason: The exact source states this complete standing relation.\n"
             )
         else:
             raise AssertionError("Unexpected fixture model task.")
@@ -848,6 +897,7 @@ def test_hp6_builds_governed_semantics_and_independent_support_evidence() -> Non
         normalization_prompt_bytes=b"Select supplied governed semantics.",
         role_completion_prompt_bytes=b"Select one target for the supplied governed role.",
         support_prompt_bytes=b"Judge one statement against exact source evidence.",
+        nli_runtime=_NliRuntime(),
     )
     publish_hybrid_event_semantics_preview(result, cast(HybridEventSemanticsArchive, archive))
 
@@ -873,18 +923,22 @@ def test_hp6_builds_governed_semantics_and_independent_support_evidence() -> Non
         "Directive 3000.09",
     }
     assert {item.text for item in result.preview.qualifiers} == {"2012"}
-    assert len(result.preview.statements) == len(result.preview.judgments) == 8
-    assert len(result.preview.extraction_task_ids) == len(result.preview.model_run_ids) == 13
-    assert len(result.preview.traces) == 14
+    assert len(result.preview.statements) == len(result.preview.judgments) == 9
+    assert len(result.preview.extraction_task_ids) == len(result.preview.model_run_ids) == 11
+    assert len(result.preview.traces) == 13
+    assert len(result.preview.propositions) == 1
+    assert len(result.preview.nli_observations) == 1
+    assert len(result.preview.proposition_decisions) == 1
+    assert result.preview.proposition_decisions[0].disposition.value == "supported"
     role_traces = [
         item for item in result.preview.traces if item.stage_id == "hybrid_event_role_completion"
     ]
     assert {cast(dict[str, object], item.input["target_role"])["id"] for item in role_traces} == {
-        "classification.assigned_classification",
-        "classification.classified_entity",
-        "classification.classifier",
         "classification.stated_reason",
     }
+    assert all(
+        item.assignment_origin.value == "normalization" for item in result.preview.assignments
+    )
     assert all(
         item.configuration["prompt_sha256"] == result.preview.role_completion_prompt_sha256
         for item in role_traces
@@ -908,6 +962,109 @@ def test_hp6_builds_governed_semantics_and_independent_support_evidence() -> Non
     )
 
 
+def test_hsq1_builds_a_criticism_event_from_the_amodei_case() -> None:
+    text = (
+        "Criticism\n"
+        "Amodei criticized Trump over Trump's approach to export restrictions on semiconductors."
+    )
+    ledger, archive, hp5 = _hp5_parent_for_text(
+        text=text,
+        mention_text="Amodei",
+        event_runtime=_Runtime(
+            "events",
+            trigger_output=b"event: e1 | s1 | criticized | criticism\n",
+            frame_output=(
+                b"event: e1\n"
+                b"polarity: affirmed\n"
+                b"modality: actual\n"
+                b"attribution: c1\n"
+                b"argument: c1 | critic | s1\n"
+            ),
+        ),
+    )
+
+    result = _run_hp6_fixture(
+        ledger,
+        archive,
+        hp5,
+        _Runtime(
+            "semantics",
+            semantic_output=(
+                b"frame: criticism\n"
+                b"argument: criticism.critic | c1\n"
+                b"argument: criticism.target | Trump's approach to export restrictions "
+                b"on semiconductors\n"
+                b"reason: The source explicitly attributes the criticism to Amodei.\n"
+            ),
+        ),
+        "hsq1-criticism",
+    )
+
+    assert result.preview.terminal_status is HybridEventSemanticsStatus.COMPLETE
+    assert [item.frame_id for item in result.preview.semantic_events] == ["criticism"]
+    assert {item.frame_role_id for item in result.preview.assignments} == {
+        "criticism.critic",
+        "criticism.target",
+    }
+
+
+def test_hsq1_preserves_publication_and_rebuttal_as_separate_events() -> None:
+    text = "Statement\nAnthropic published a statement rebuffing the accusation."
+    ledger, archive, hp5 = _hp5_parent_for_text(
+        text=text,
+        mention_text="Anthropic",
+        event_runtime=_Runtime(
+            "events",
+            trigger_output=(
+                b"event: e1 | s1 | published | publication\nevent: e2 | s1 | rebuffing | rebuttal\n"
+            ),
+            frame_outputs=(
+                b"event: e1\n"
+                b"polarity: affirmed\n"
+                b"modality: actual\n"
+                b"attribution: source_narrator\n"
+                b"argument: c1 | publisher | s1\n",
+                b"event: e2\n"
+                b"polarity: affirmed\n"
+                b"modality: actual\n"
+                b"attribution: c1\n"
+                b"argument: c1 | rebutter | s1\n",
+            ),
+        ),
+    )
+
+    result = _run_hp6_fixture(
+        ledger,
+        archive,
+        hp5,
+        _Runtime(
+            "semantics",
+            semantic_outputs_by_trigger={
+                "published": (
+                    b"frame: publication\n"
+                    b"argument: publication.publisher | c1\n"
+                    b"argument: publication.published_work | a statement\n"
+                    b"reason: The source explicitly states publication.\n"
+                ),
+                "rebuffing": (
+                    b"frame: rebuttal\n"
+                    b"argument: rebuttal.rebutter | c1\n"
+                    b"argument: rebuttal.challenged_claim | the accusation\n"
+                    b"reason: The source explicitly states a rebuttal.\n"
+                ),
+            },
+        ),
+        "hsq1-publication-rebuttal",
+    )
+
+    assert result.preview.terminal_status is HybridEventSemanticsStatus.COMPLETE
+    assert {item.frame_id for item in result.preview.semantic_events} == {
+        "publication",
+        "rebuttal",
+    }
+    assert len({item.event_subject_id for item in result.preview.semantic_events}) == 2
+
+
 def test_hp6_preview_rejects_an_assignment_from_another_event() -> None:
     ledger, archive, hp5 = _hp5_parent(_Runtime("events"))
     result = _run_hp6_fixture(ledger, archive, hp5, _Runtime("semantics"), "cross-event")
@@ -920,6 +1077,7 @@ def test_hp6_preview_rejects_an_assignment_from_another_event() -> None:
         target_id=original.target_id,
         frame_role_id=original.frame_role_id,
         upper_role=original.upper_role,
+        assignment_origin=original.assignment_origin,
         proposed_role_labels=original.proposed_role_labels,
         support_evidence_target_id=original.support_evidence_target_id,
         source_trace_ids=original.source_trace_ids,
@@ -953,6 +1111,9 @@ def test_hp6_preview_rejects_an_assignment_from_another_event() -> None:
         "gaps",
         "statements",
         "judgments",
+        "propositions",
+        "nli_observations",
+        "proposition_decisions",
         "traces",
     ):
         values[field] = getattr(preview, field)
@@ -1084,7 +1245,7 @@ def test_hp6_replaces_an_invalid_model_target_only_with_a_valid_bounded_completi
     assert all("normalization_mapping_failed" not in item for item in result.preview.diagnostics)
 
 
-def test_hp6_reconciles_redundant_catalog_text_without_hiding_model_output() -> None:
+def test_hp6_preserves_valid_normalization_target_without_role_completion() -> None:
     ledger, archive, hp5 = _hp5_parent(_Runtime("events"))
     runtime = _Runtime(
         "semantics",
@@ -1110,21 +1271,15 @@ def test_hp6_reconciles_redundant_catalog_text_without_hiding_model_output() -> 
         and cast(dict[str, object], item.input["target_role"])["id"]
         == "classification.classified_entity"
     ]
-    assert len(role_traces) == 1
-    reconciliation = next(
-        item
-        for item in result.preview.traces
-        if item.stage_id == "hybrid_event_role_target_reconciliation"
-    )
-    assert reconciliation.parent_trace_ids == (role_traces[0].id,)
-    assert reconciliation.configuration["rule_id"] == "redundant_catalog_label_text_v1"
+    assert role_traces == []
     assert any(
         item.frame_role_id == "classification.classified_entity"
         and next(target for target in result.preview.targets if target.id == item.target_id).text
         == "Department of Defense"
+        and item.assignment_origin.value == "normalization"
         for item in result.preview.assignments
     )
-    assert any(
+    assert not any(
         output.startswith(b"target: c1 | Department of Defense")
         for output in archive.model_outputs.values()
     )
@@ -1136,7 +1291,7 @@ def test_hp6_retries_one_source_invalid_role_target() -> None:
         "semantics",
         semantic_output=(
             b"frame: classification\n"
-            b"argument: classification.assigned_classification | 3000.09\n"
+            b"argument: classification.assigned_classification | Directive 9999\n"
             b"reason: The broad proposal supplies one source-backed target.\n"
         ),
         role_outputs={
@@ -1339,16 +1494,16 @@ def test_hp6_support_failure_is_isolated_from_later_statements() -> None:
     )
     runtime = _Runtime(
         "semantics",
-        support_outputs=(b'{"outcome":"directly_supported"}\n', *(valid for _ in range(7))),
+        support_outputs=(b'{"outcome":"directly_supported"}\n', *(valid for _ in range(8))),
     )
 
     result = _run_hp6_fixture(ledger, archive, hp5, runtime, "support-failure")
 
     assert result.preview.terminal_status is HybridEventSemanticsStatus.PARTIAL
     assert len(result.preview.semantic_events) == 1
-    assert len(result.preview.statements) == 8
-    assert len(result.preview.judgments) == 7
-    assert len(runtime.requests) == 13
+    assert len(result.preview.statements) == 9
+    assert len(result.preview.judgments) == 8
+    assert len(runtime.requests) == 11
     assert any(item.startswith("support_task_failed:") for item in result.preview.diagnostics)
 
 
@@ -1483,7 +1638,7 @@ def test_hp7_holds_non_direct_support_and_preserves_exact_data_in_and_out() -> N
     assert len(ledger.provenance_activities) == 1
     decision = result.plan.decisions[0]
     assert decision.disposition is ProposalDisposition.HELD
-    assert decision.reason_codes == (ProposalAdmissionReason.NON_DIRECT_SUPPORT,)
+    assert ProposalAdmissionReason.NON_DIRECT_SUPPORT in decision.reason_codes
     assert result.plan.traces[0].status.value == "rejected"
     assert result.plan.traces[0].input["judgments"] == [
         item.model_dump(mode="json") for item in hp6.preview.judgments
@@ -1521,7 +1676,7 @@ def test_hp7_holds_an_event_with_incomplete_support_coverage() -> None:
     plan = build_hybrid_proposal_plan(hp6.preview.id, ledger, archive)
 
     assert plan.decisions[0].disposition is ProposalDisposition.HELD
-    assert plan.decisions[0].reason_codes == (ProposalAdmissionReason.MISSING_SUPPORT_JUDGMENT,)
+    assert ProposalAdmissionReason.MISSING_SUPPORT_JUDGMENT in (plan.decisions[0].reason_codes)
     assert plan.proposed_changes == ()
 
 
@@ -1592,6 +1747,8 @@ def test_hp10_adds_a_source_bound_standing_fact_without_accepted_state() -> None
         model_run_id_factory=_RunIds("standing-fact"),
         tokenizer=_Tokenizer(),
         prompt_bytes=b"Propose source-supported standing facts only.",
+        qualification_prompt_bytes=b"Classify one complete standing proposition.",
+        nli_runtime=_NliRuntime(),
     )
 
     assertions = [
@@ -1607,8 +1764,11 @@ def test_hp10_adds_a_source_bound_standing_fact_without_accepted_state() -> None
     )
     assert assertion.object_value == "Directive 3000.09"
     assert ledger.get_evidence_target(assertion.evidence_target_ids[0]) is not None
-    assert result.plan.traces[0].input["source_segment_text"] == PARAGRAPH
-    assert result.plan.traces[0].output["mapped_drafts"]
+    proposal_trace = next(
+        item for item in result.plan.traces if item.stage_id == "hybrid_standing_fact_proposal"
+    )
+    assert proposal_trace.input["source_segment_text"] == PARAGRAPH
+    assert proposal_trace.output["mapped_drafts"]
     assert (
         load_standing_fact_plan(
             result.plan.id,
@@ -1630,6 +1790,8 @@ def test_hp10_adds_a_source_bound_standing_fact_without_accepted_state() -> None
         model_run_id_factory=_RunIds("standing-fact"),
         tokenizer=_Tokenizer(),
         prompt_bytes=b"Propose source-supported standing facts only.",
+        qualification_prompt_bytes=b"Classify one complete standing proposition.",
+        nli_runtime=_NliRuntime(),
     )
     assert replay.plan == result.plan
     assert replay.sha256 == result.sha256
@@ -1684,6 +1846,8 @@ def test_hp10_isolates_an_unknown_candidate_from_a_valid_fact() -> None:
         model_run_id_factory=_RunIds("standing-fact-isolation"),
         tokenizer=_Tokenizer(),
         prompt_bytes=b"Propose source-supported standing facts only.",
+        qualification_prompt_bytes=b"Classify one complete standing proposition.",
+        nli_runtime=_NliRuntime(),
     )
 
     assert result.plan.terminal_status.value == "partial"
@@ -1698,6 +1862,65 @@ def test_hp10_isolates_an_unknown_candidate_from_a_valid_fact() -> None:
         )
         == 1
     )
+
+
+def test_hsq5_routes_event_like_standing_fact_material_away_from_assertions() -> None:
+    ledger, archive, hp5 = _hp5_parent(_Runtime("events"))
+    hp6 = _run_hp6_fixture(
+        ledger,
+        archive,
+        hp5,
+        _Runtime("semantics"),
+        "hsq5-event-route-parent",
+    )
+    publish_hybrid_event_semantics_preview(
+        hp6,
+        cast(HybridEventSemanticsArchive, archive),
+    )
+    hp7 = build_hybrid_proposal_plan(hp6.preview.id, ledger, archive)
+    payload = canonical_hybrid_proposal_plan_bytes(hp7)
+    archive.put_hybrid_proposal_plan(
+        hp7,
+        payload,
+        hashlib.sha256(payload).hexdigest(),
+    )
+    runtime = _Runtime(
+        "standing_facts",
+        standing_fact_qualification_output=(
+            b"outcome: event_not_standing\n"
+            b"reason: The proposal describes a bounded establishment event.\n"
+        ),
+    )
+
+    result = run_hybrid_standing_fact_plan(
+        command=HybridStandingFactCommand(
+            hp7.id,
+            ContextModelProfile("fixture-model", 4096, 256, 16),
+            _generation(),
+            NOW,
+        ),
+        ledger=cast(HybridStandingFactLedger, ledger),
+        archive=cast(HybridStandingFactArchive, archive),
+        model_runtime=runtime,
+        model_run_id_factory=_RunIds("hsq5-event-route"),
+        tokenizer=_Tokenizer(),
+        prompt_bytes=b"Propose source-supported standing facts only.",
+        qualification_prompt_bytes=b"Classify one complete standing proposition.",
+        nli_runtime=_NliRuntime(),
+    )
+
+    assert result.plan.decisions[0].disposition is StandingFactDisposition.HELD
+    assert result.plan.decisions[0].reason_codes == (StandingFactHoldReason.EVENT_ROUTE_REQUIRED,)
+    assert result.plan.decisions[0].proposed_change_ids == ()
+    qualification_trace = next(
+        item for item in result.plan.traces if item.stage_id == "hybrid_standing_fact_qualification"
+    )
+    assert qualification_trace.input["source_text"] == PARAGRAPH
+    assert qualification_trace.input["complete_proposition"]["text"] == (
+        "Department of Defense has policy Directive 3000.09."
+    )
+    assert qualification_trace.output["qualification"]["outcome"] == ("event_not_standing")
+    assert ledger.accepted_state_called is False
 
 
 def test_hp10_maps_an_entity_object_to_a_distinct_authoritative_identity() -> None:
@@ -1722,6 +1945,8 @@ def test_hp10_maps_an_entity_object_to_a_distinct_authoritative_identity() -> No
         model_run_id_factory=_RunIds("standing-fact-entity"),
         tokenizer=_Tokenizer(),
         prompt_bytes=b"Propose source-supported standing facts only.",
+        qualification_prompt_bytes=b"Classify one complete standing proposition.",
+        nli_runtime=_NliRuntime(),
     )
 
     assertions = [
@@ -2121,15 +2346,18 @@ def _parent_evidence() -> tuple[
 
 def _parent_evidence_with_proposer(
     proposer: _MentionProposer,
+    *,
+    text: str = TEXT,
+    mention_text: str = "Department of Defense",
 ) -> tuple[
     _Ledger,
     _Archive,
     HybridMentionPreviewResult,
     HybridEntityGroundingPreview,
 ]:
-    ledger = _Ledger()
+    ledger = _Ledger(text)
     archive = _Archive()
-    mention_runtime = _Runtime("mentions")
+    mention_runtime = _Runtime("mentions", mention_text=mention_text)
     mention = run_hybrid_mention_preview(
         command=HybridMentionPreviewCommand(
             representation_id=ledger.bundle.representation.id,
@@ -2211,6 +2439,27 @@ def _hp5_parent(
     return ledger, archive, hp5
 
 
+def _hp5_parent_for_text(
+    *,
+    text: str,
+    mention_text: str,
+    event_runtime: _Runtime,
+) -> tuple[_Ledger, _Archive, HybridAtomicClaimResult]:
+    ledger, archive, _, grounding = _parent_evidence_with_proposer(
+        _MentionProposer(mention_text),
+        text=text,
+        mention_text=mention_text,
+    )
+    hp4 = _run_hp4(ledger, archive, grounding.id, event_runtime)
+    hp5 = run_hybrid_atomic_claim_preview(
+        command=HybridAtomicClaimCommand(hp4.preview.id, NOW),
+        ledger=cast(HybridAtomicClaimLedger, ledger),
+        archive=cast(HybridAtomicClaimArchive, archive),
+    )
+    publish_hybrid_atomic_claim_preview(hp5, cast(HybridAtomicClaimArchive, archive))
+    return ledger, archive, hp5
+
+
 def _hp7_parent(
     *,
     mention_proposer: _MentionProposer | None = None,
@@ -2259,6 +2508,7 @@ def _run_hp6_fixture(
         normalization_prompt_bytes=b"Select supplied governed semantics.",
         role_completion_prompt_bytes=b"Select one target for the supplied governed role.",
         support_prompt_bytes=b"Judge one statement against exact source evidence.",
+        nli_runtime=_NliRuntime(),
     )
 
 
@@ -2270,17 +2520,17 @@ def _generation() -> tuple[ExecutionSetting, ...]:
     )
 
 
-def _bundle(document_id: str) -> DocumentRepresentationBundle:
+def _bundle(document_id: str, text: str = TEXT) -> DocumentRepresentationBundle:
     representation_id = "rep_hp4_fixture"
     text_view = TextView(
         id="tvw_hp4_fixture",
         representation_id=representation_id,
         kind=TextViewKind.LOGICAL,
-        content_digest=hashlib.sha256(TEXT.encode()).hexdigest(),
-        text=TEXT,
+        content_digest=hashlib.sha256(text.encode()).hexdigest(),
+        text=text,
         normalization_policy="utf8_identity_v1",
     )
-    heading_end = TEXT.index("\n")
+    heading_end = text.index("\n")
     paragraph_start = heading_end + 1
     root = DocumentNode(
         id="nod_hp4_root",
@@ -2289,7 +2539,7 @@ def _bundle(document_id: str) -> DocumentRepresentationBundle:
         order_index=0,
         text_view_id=text_view.id,
         start_char=0,
-        end_char=len(TEXT),
+        end_char=len(text),
     )
     heading = DocumentNode(
         id="nod_hp4_heading",
@@ -2309,12 +2559,12 @@ def _bundle(document_id: str) -> DocumentRepresentationBundle:
         order_index=2,
         text_view_id=text_view.id,
         start_char=paragraph_start,
-        end_char=len(TEXT),
+        end_char=len(text),
     )
     quality = ParseQualityReport(
         id="pqr_hp4_fixture",
         representation_id=representation_id,
-        metric_values={"text_char_count": len(TEXT)},
+        metric_values={"text_char_count": len(text)},
         analyzability=RepresentationAnalyzability.ACCEPTABLE,
     )
     template = DocumentRepresentation(
@@ -2324,7 +2574,7 @@ def _bundle(document_id: str) -> DocumentRepresentationBundle:
         parser_version="1",
         parser_config_digest="a" * 64,
         processing_task_fingerprint_id="ptf_hp4_fixture",
-        input_blob_digest=hashlib.sha256(TEXT.encode()).hexdigest(),
+        input_blob_digest=hashlib.sha256(text.encode()).hexdigest(),
         canonical_output_digest="0" * 64,
         created_at=NOW,
     )

@@ -15,7 +15,7 @@ from kotekomi_application.candidate_wiki import (
     WikiOntologyQualifier,
     WikiPageInput,
 )
-from kotekomi_domain import HYBRID_EVENT_SEMANTICS_V1
+from kotekomi_domain import HYBRID_EVENT_SEMANTICS_V2
 from kotekomi_domain.models import JsonValue
 from kotekomi_exporters import MarkdownCandidateWikiRenderer
 
@@ -111,7 +111,7 @@ def test_renderer_uses_the_same_mechanical_projection_for_every_governed_frame()
     event = page.presentations[0]
     assert isinstance(event, WikiEventPresentation)
 
-    for frame in HYBRID_EVENT_SEMANTICS_V1.frames:
+    for frame in HYBRID_EVENT_SEMANTICS_V2.frames:
         frame_event = replace(event, frame_id=frame.id)
         frame_page = replace(page, presentations=(frame_event,))
         markdown = next(

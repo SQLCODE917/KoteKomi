@@ -19,6 +19,10 @@ from kotekomi_application.hybrid_mention_interpretation import (
     canonical_hybrid_extraction_preview_bytes,
     hybrid_extraction_preview_from_bytes,
 )
+from kotekomi_application.semantic_references import (
+    CoreferenceProposerPort,
+    CoreferenceTokenizer,
+)
 
 
 class HybridReferenceLedger(Protocol):
@@ -55,6 +59,8 @@ def run_hybrid_reference_preview(
     command: HybridReferencePreviewCommand,
     ledger: HybridReferenceLedger,
     archive: HybridReferenceArchive,
+    coreference_proposer: CoreferenceProposerPort | None = None,
+    coreference_tokenizer: CoreferenceTokenizer | None = None,
 ) -> HybridReferencePreviewResult:
     """Run deterministic HP-2 resolution and publish one immutable Preview."""
     parent_payload = archive.read_hybrid_extraction_preview(command.parent_preview_id)
@@ -71,6 +77,8 @@ def run_hybrid_reference_preview(
         parent_preview=parent,
         parent_preview_sha256=parent_sha256,
         bundle=bundle,
+        coreference_proposer=coreference_proposer,
+        coreference_tokenizer=coreference_tokenizer,
     )
     payload = canonical_hybrid_reference_preview_bytes(preview)
     digest = hybrid_reference_preview_sha256(preview)

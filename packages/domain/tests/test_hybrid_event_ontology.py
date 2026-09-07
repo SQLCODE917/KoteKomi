@@ -3,7 +3,7 @@ import hashlib
 import pytest
 from kotekomi_domain import (
     HYBRID_EVENT_CORE_V1,
-    HYBRID_EVENT_SEMANTICS_V1,
+    HYBRID_EVENT_SEMANTICS_V2,
     HybridEventOntologySlice,
     HybridEventStructuralPredicate,
     UpperRole,
@@ -43,30 +43,36 @@ def test_hybrid_event_slice_rejects_missing_structural_predicate() -> None:
 def test_hybrid_event_semantics_profile_is_bounded_canonical_and_source_agnostic() -> None:
     payload = canonical_hybrid_event_semantics_profile_bytes()
 
-    assert HYBRID_EVENT_SEMANTICS_V1.upper_roles == tuple(
+    assert HYBRID_EVENT_SEMANTICS_V2.upper_roles == tuple(
         sorted(UpperRole, key=lambda item: item.value)
     )
-    assert tuple(item.id for item in HYBRID_EVENT_SEMANTICS_V1.frames) == (
+    assert tuple(item.id for item in HYBRID_EVENT_SEMANTICS_V2.frames) == (
         "authorization",
         "causation",
         "change_in_intensity",
         "characterization",
         "classification",
+        "criticism",
         "investment_abandonment",
+        "publication",
+        "rebuttal",
         "recommendation",
     )
     assert hybrid_event_semantics_profile_sha256() == hashlib.sha256(payload).hexdigest()
     assert b"initiative_increase" not in payload
     assert b"Anthropic" not in payload
     assert b"Department of Defense" not in payload
-    frames = {item.id: item for item in HYBRID_EVENT_SEMANTICS_V1.frames}
+    frames = {item.id: item for item in HYBRID_EVENT_SEMANTICS_V2.frames}
     assert frames["characterization"].attribution_role_id == "characterization.evaluator"
     assert frames["recommendation"].attribution_role_id == "recommendation.recommender"
     assert frames["authorization"].attribution_role_id is None
+    assert frames["criticism"].attribution_role_id == "criticism.critic"
+    assert frames["publication"].attribution_role_id is None
+    assert frames["rebuttal"].attribution_role_id == "rebuttal.rebutter"
 
 
 def test_hybrid_event_semantics_roles_are_frame_scoped_and_not_metadata() -> None:
-    roles = {role.id: role for frame in HYBRID_EVENT_SEMANTICS_V1.frames for role in frame.roles}
+    roles = {role.id: role for frame in HYBRID_EVENT_SEMANTICS_V2.frames for role in frame.roles}
 
     assert roles["change_in_intensity.affected_process"].upper_role is UpperRole.THEME
     assert roles["authorization.authorizer"].upper_role is UpperRole.AGENT

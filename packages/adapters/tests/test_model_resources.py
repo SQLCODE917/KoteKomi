@@ -6,10 +6,15 @@ from pathlib import Path
 
 import pytest
 from kotekomi_adapters.model_resources import (
+    FCorefModelResourceAdapter,
     GlinerModelResourceAdapter,
     ModelResourceInstallationError,
+    NliDebertaModelResourceAdapter,
     RefinedModelResourceAdapter,
+    fcoref_model_path,
+    fcoref_python_path,
     gliner_model_path,
+    nli_model_path,
     refined_data_path,
     refined_python_path,
 )
@@ -138,6 +143,141 @@ def test_gliner_missing_and_partial_installations_are_distinct(tmp_path: Path) -
     assert adapter.inspect(root).status is ModelResourceStatus.MISSING
     gliner_model_path(root).mkdir(parents=True)
     assert adapter.inspect(root).status is ModelResourceStatus.INCOMPLETE
+
+
+def test_nli_install_is_pinned_local_and_reusable(tmp_path: Path) -> None:
+    files = {"config.json": b"config", "model.safetensors": b"weights"}
+    lock = tmp_path / "nli-lock.json"
+    lock.write_text(
+        json.dumps(
+            {
+                "files": [
+                    {
+                        "repository": "cross-encoder/fixture",
+                        "revision": "fixture-revision",
+                        "source_path": name,
+                        "target_path": name,
+                        "sha256": _digest(payload),
+                    }
+                    for name, payload in files.items()
+                ],
+                "resource_id": "nli_deberta_v3_base_v1",
+                "schema_version": "nli_deberta_model_lock_v1",
+                "transformers_version": "5.8.1",
+            }
+        ),
+        encoding="utf-8",
+    )
+    calls: list[bool] = []
+
+    def download(
+        *,
+        repo_id: str,
+        revision: str,
+        allow_patterns: list[str],
+        local_files_only: bool,
+    ) -> str:
+        del repo_id, revision
+        calls.append(local_files_only)
+        snapshot = tmp_path / "download"
+        snapshot.mkdir(exist_ok=True)
+        for name in allow_patterns:
+            (snapshot / name).write_bytes(files[name])
+        return str(snapshot)
+
+    smoke: list[tuple[Path, str]] = []
+    adapter = NliDebertaModelResourceAdapter(
+        downloader=download,
+        smoke=lambda path, identity: smoke.append((path, identity)),
+        lock_path=lock,
+    )
+    root = (tmp_path / "resources").resolve()
+
+    assert adapter.install(root, repair=False).disposition is (
+        ModelResourceInstallDisposition.INSTALLED
+    )
+    assert adapter.install(root, repair=False).disposition is (
+        ModelResourceInstallDisposition.REUSED
+    )
+    assert calls == [False]
+    assert len(smoke) == 1
+    assert smoke[0][0].name == nli_model_path(root).name
+    assert smoke[0][0].parent.name.startswith(".nli_deberta_v3_base_v1-")
+    assert smoke[0][1] == adapter.inspect(root).expected_identity
+
+
+def test_fcoref_install_is_isolated_pinned_and_optional(tmp_path: Path) -> None:
+    checkout = tmp_path / "checkout"
+    requirements = checkout / "tools" / "fcoref-worker" / "requirements.txt"
+    requirements.parent.mkdir(parents=True)
+    requirements.write_text("fastcoref==2.2.3\n", encoding="utf-8")
+    worker = checkout / "scripts" / "fcoref_worker.py"
+    worker.parent.mkdir()
+    worker.write_text("# fixture\n", encoding="utf-8")
+    files = {"config.json": b"config", "pytorch_model.bin": b"weights"}
+    (requirements.parent / "resource-lock.json").write_text(
+        json.dumps(
+            {
+                "schema_version": "fcoref_worker_resource_lock_v1",
+                "model_id": "biu-nlp/f-coref",
+                "model_revision": "fixture-model-revision",
+                "package_revision": "fixture-package-revision",
+                "files": [
+                    {
+                        "repository": "biu-nlp/f-coref",
+                        "revision": "fixture-model-revision",
+                        "source_path": name,
+                        "target_path": name,
+                        "sha256": _digest(payload),
+                    }
+                    for name, payload in files.items()
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    commands: list[tuple[str, ...]] = []
+
+    def run(command: tuple[str, ...]) -> None:
+        commands.append(command)
+        if command[:2] == ("uv", "venv"):
+            python = Path(command[-1]) / "bin" / "python"
+            python.parent.mkdir(parents=True)
+            python.write_text("fixture", encoding="utf-8")
+
+    def download(**_arguments: object) -> str:
+        snapshot = tmp_path / "snapshot"
+        snapshot.mkdir()
+        for name, payload in files.items():
+            (snapshot / name).write_bytes(payload)
+        return str(snapshot)
+
+    smoke: list[tuple[Path, Path, Path, str]] = []
+
+    def smoke_fcoref(python: Path, script: Path, model: Path, identity: str) -> None:
+        smoke.append((python, script, model, identity))
+
+    adapter = FCorefModelResourceAdapter(
+        downloader=download,  # type: ignore[arg-type]
+        command_runner=run,
+        smoke=smoke_fcoref,
+        checkout_root=checkout,
+        runtime_probe=lambda _python: ("3.12.13", "2.2.3"),
+    )
+    root = (tmp_path / "resources").resolve()
+
+    installed = adapter.install(root, repair=False)
+
+    assert installed.disposition is ModelResourceInstallDisposition.INSTALLED
+    assert adapter.inspect(root).status is ModelResourceStatus.READY
+    assert fcoref_python_path(root).is_file()
+    assert (fcoref_model_path(root) / "pytorch_model.bin").read_bytes() == b"weights"
+    assert len(smoke) == 1
+    assert smoke[0][0].name == "python"
+    assert smoke[0][1] == worker
+    assert smoke[0][2].name == "model"
+    assert smoke[0][3] == adapter.inspect(root).expected_identity
+    assert any(command[:3] == ("uv", "pip", "sync") for command in commands)
 
 
 def _tree_digest(filename: str, payload: bytes) -> str:

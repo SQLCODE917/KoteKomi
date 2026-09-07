@@ -9,14 +9,20 @@ from typing import Protocol
 
 
 class ModelResourceId(StrEnum):
+    FCOREF_V1 = "fcoref_v1"
     GLINER_MENTION_PROPOSER_V1 = "gliner_mention_proposer_v1"
+    NLI_DEBERTA_V3_BASE_V1 = "nli_deberta_v3_base_v1"
     REFINED_WIKIPEDIA_V1 = "refined_wikipedia_v1"
 
 
 REQUIRED_MODEL_RESOURCE_IDS = (
     ModelResourceId.GLINER_MENTION_PROPOSER_V1,
+    ModelResourceId.NLI_DEBERTA_V3_BASE_V1,
     ModelResourceId.REFINED_WIKIPEDIA_V1,
+    ModelResourceId.FCOREF_V1,
 )
+
+MANAGED_MODEL_RESOURCE_IDS = REQUIRED_MODEL_RESOURCE_IDS
 
 
 class ModelResourceStatus(StrEnum):
@@ -61,14 +67,15 @@ class ModelResourceReadinessReport:
     def __post_init__(self) -> None:
         if not self.resource_root.is_absolute():
             raise ValueError("Model Resource root must be absolute.")
-        if tuple(item.resource_id for item in self.resources) != REQUIRED_MODEL_RESOURCE_IDS:
+        if tuple(item.resource_id for item in self.resources) != MANAGED_MODEL_RESOURCE_IDS:
             raise ValueError(
                 "Model Resource readiness must contain every required resource in order."
             )
 
     @property
     def ready(self) -> bool:
-        return all(item.ready for item in self.resources)
+        by_id = {item.resource_id: item for item in self.resources}
+        return all(by_id[resource_id].ready for resource_id in REQUIRED_MODEL_RESOURCE_IDS)
 
 
 class ModelResourceInstallDisposition(StrEnum):
@@ -123,7 +130,7 @@ def install_model_resources(
     """Install selected resources in canonical order."""
     ordered = _ordered_adapters(adapters)
     requested = frozenset(selected or REQUIRED_MODEL_RESOURCE_IDS)
-    if not requested.issubset(REQUIRED_MODEL_RESOURCE_IDS):
+    if not requested.issubset(MANAGED_MODEL_RESOURCE_IDS):
         raise ValueError("Model Resource selection contains an unsupported identifier.")
     return tuple(
         adapter.install(resource_root, repair=repair)
@@ -136,6 +143,6 @@ def _ordered_adapters(
     adapters: tuple[ModelResourceAdapter, ...],
 ) -> tuple[ModelResourceAdapter, ...]:
     by_id = {adapter.resource_id: adapter for adapter in adapters}
-    if len(by_id) != len(adapters) or set(by_id) != set(REQUIRED_MODEL_RESOURCE_IDS):
+    if len(by_id) != len(adapters) or set(by_id) != set(MANAGED_MODEL_RESOURCE_IDS):
         raise ValueError("Exactly one Adapter is required for every Model Resource.")
-    return tuple(by_id[resource_id] for resource_id in REQUIRED_MODEL_RESOURCE_IDS)
+    return tuple(by_id[resource_id] for resource_id in MANAGED_MODEL_RESOURCE_IDS)

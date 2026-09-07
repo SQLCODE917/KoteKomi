@@ -817,6 +817,9 @@ def _frame_task_input(
     antecedent_text_by_id = {
         item.expanded_span.id: item.expanded_span.text for item in references.alias_declarations
     }
+    antecedent_text_by_id.update(
+        {item.id: item.text for item in references.semantic_antecedent_spans}
+    )
     segment_label_by_id = {value: key for key, value in segment_ids.items()}
     trigger_segment_label = segment_label_by_id[trigger.source_segment_id]
     lines = [
@@ -1049,6 +1052,9 @@ def _candidate_catalog(
     antecedent_text_by_id = {
         item.expanded_span.id: item.expanded_span.text for item in references.alias_declarations
     }
+    antecedent_text_by_id.update(
+        {item.id: item.text for item in references.semantic_antecedent_spans}
+    )
     output: list[JsonValue] = []
     for candidate in mentions.candidates:
         if candidate.id not in selected or candidate.id not in candidate_labels:

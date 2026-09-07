@@ -7,9 +7,15 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import cast
+from typing import Protocol, cast
 
-from kotekomi_adapters import GlinerMentionProposer, LocalArchiveStore
+from kotekomi_adapters import (
+    DebertaNliAdapter,
+    FCorefAdapter,
+    FCorefConfig,
+    GlinerMentionProposer,
+    LocalArchiveStore,
+)
 from kotekomi_adapters.gliner_organization_mention_proposer import (
     GLINER_DEVICE,
     GLINER_MODEL_ID,
@@ -18,8 +24,13 @@ from kotekomi_adapters.gliner_organization_mention_proposer import (
     GLINER_THRESHOLD,
 )
 from kotekomi_adapters.model_resources import (
+    fcoref_expected_resource_identity,
+    fcoref_model_path,
+    fcoref_python_path,
     gliner_expected_resource_identity,
     gliner_model_path,
+    nli_expected_resource_identity,
+    nli_model_path,
     refined_data_path,
     refined_python_path,
 )
@@ -125,8 +136,12 @@ from kotekomi_application.hybrid_reference_preview import (
     run_hybrid_reference_preview,
 )
 from kotekomi_application.hybrid_standing_fact_model_output import standing_fact_schema_bytes
+from kotekomi_application.hybrid_standing_fact_qualification_model_output import (
+    standing_fact_qualification_schema_bytes,
+)
 from kotekomi_application.hybrid_standing_facts import (
     HYBRID_STANDING_FACT_POLICY_ID,
+    HYBRID_STANDING_FACT_QUALIFICATION_SCHEMA_ID,
     HYBRID_STANDING_FACT_SCHEMA_ID,
     HybridStandingFactCommand,
     run_hybrid_standing_fact_plan,
@@ -135,6 +150,17 @@ from kotekomi_application.mention_proposer import (
     MentionProposalBatch,
     MentionProposalInput,
     MentionProposer,
+)
+from kotekomi_application.semantic_proposition import (
+    NaturalLanguageInferenceExecution,
+    NaturalLanguageInferenceInput,
+    NaturalLanguageInferencePort,
+)
+from kotekomi_application.semantic_references import (
+    CoreferenceExecution,
+    CoreferenceInput,
+    CoreferenceProposerPort,
+    CoreferenceTokenizer,
 )
 from kotekomi_application.staged_model_extraction import (
     ExecutionSetting,
@@ -161,6 +187,7 @@ _PROMPT_NAMES = (
     "hybrid_event_role_completion_v1.md",
     "hybrid_semantic_support_v1.md",
     "hybrid_standing_fact_task_v1.md",
+    "hybrid_standing_fact_qualification_v1.md",
 )
 
 type _StageResult = (
@@ -234,6 +261,67 @@ class _FixtureMentionProposer:
         )
 
 
+@dataclass(frozen=True)
+class _FixtureNli:
+    def classify(self, request: NaturalLanguageInferenceInput) -> NaturalLanguageInferenceExecution:
+        del request
+        return NaturalLanguageInferenceExecution(
+            model_id="fixture-nli",
+            model_revision="1",
+            resource_identity="fixture-nli-resource",
+            contradiction_score=0.01,
+            entailment_score=0.98,
+            neutral_score=0.01,
+            elapsed_milliseconds=0,
+        )
+
+
+@dataclass(frozen=True)
+class _UnavailableNli:
+    error: Exception
+
+    def classify(self, request: NaturalLanguageInferenceInput) -> NaturalLanguageInferenceExecution:
+        del request
+        raise RuntimeError(f"The NLI Resource is unavailable: {self.error}") from self.error
+
+
+@dataclass(frozen=True)
+class _FixtureCoreference:
+    tokenizer_id: str = "fixture-coreference-tokenizer"
+
+    def count_tokens(self, rendered_input: bytes) -> int:
+        return max(1, len(rendered_input.decode().split()))
+
+    def propose(self, request: CoreferenceInput) -> CoreferenceExecution:
+        del request
+        return CoreferenceExecution(
+            model_id="fixture-coreference",
+            model_revision="1",
+            resource_identity="fixture-coreference-resource",
+            clusters=(),
+            elapsed_milliseconds=0,
+            raw_output=b'{"clusters":[]}',
+        )
+
+
+@dataclass(frozen=True)
+class _UnavailableCoreference:
+    error: Exception
+    tokenizer_id: str = "unavailable-coreference-tokenizer"
+
+    def count_tokens(self, rendered_input: bytes) -> int:
+        del rendered_input
+        raise RuntimeError(f"The F-Coref Resource is unavailable: {self.error}") from self.error
+
+    def propose(self, request: CoreferenceInput) -> CoreferenceExecution:
+        del request
+        raise RuntimeError(f"The F-Coref Resource is unavailable: {self.error}") from self.error
+
+
+class _CoreferenceRuntime(CoreferenceProposerPort, CoreferenceTokenizer, Protocol):
+    pass
+
+
 class _RuntimeResources:
     """Create expensive optional Adapters only after the first receipt cache miss."""
 
@@ -242,6 +330,9 @@ class _RuntimeResources:
         self.runtime = runtime
         self._proposer: MentionProposer | None = None
         self._linker: EntityLinkingPort | None = None
+        self._nli: NaturalLanguageInferencePort | None = None
+        self._coreference: _CoreferenceRuntime | None = None
+        self._fcoref: FCorefAdapter | None = None
         self._refined: RefinedEntityLinkingAdapter | None = None
 
     @property
@@ -264,9 +355,50 @@ class _RuntimeResources:
             self._linker = self._build_linker()
         return self._linker
 
+    @property
+    def nli(self) -> NaturalLanguageInferencePort:
+        if self._nli is None:
+            if self._config.model_execution.adapter == "fixture":
+                self._nli = _FixtureNli()
+            else:
+                try:
+                    self._nli = DebertaNliAdapter(
+                        model_directory=nli_model_path(self._config.model_resource_root).resolve(),
+                        resource_identity=nli_expected_resource_identity(),
+                    )
+                except (OSError, RuntimeError, ValueError) as error:
+                    self._nli = _UnavailableNli(error)
+        return self._nli
+
+    @property
+    def coreference(self) -> _CoreferenceRuntime:
+        if self._coreference is None:
+            if self._config.model_execution.adapter == "fixture":
+                self._coreference = _FixtureCoreference()
+            else:
+                try:
+                    root = self._config.model_resource_root
+                    self._fcoref = FCorefAdapter(
+                        FCorefConfig(
+                            python_executable=fcoref_python_path(root),
+                            worker_script=(
+                                Path(__file__).resolve().parents[4] / "scripts" / "fcoref_worker.py"
+                            ),
+                            model_directory=fcoref_model_path(root).resolve(),
+                            resource_identity=fcoref_expected_resource_identity(),
+                        )
+                    )
+                    self._coreference = self._fcoref
+                except (OSError, RuntimeError, ValueError) as error:
+                    self._coreference = _UnavailableCoreference(error)
+        assert self._coreference is not None
+        return self._coreference
+
     def close(self) -> None:
         if self._refined is not None:
             self._refined.close()
+        if self._fcoref is not None:
+            self._fcoref.close()
         close_runtime = getattr(self.runtime, "close", None)
         if close_runtime is not None:
             close_runtime()
@@ -425,6 +557,8 @@ def _run_paragraph(
             command=HybridReferencePreviewCommand(hp1.preview.id),
             ledger=ledger,
             archive=archive,
+            coreference_proposer=resources.coreference,
+            coreference_tokenizer=resources.coreference,
         )
     stages.append(_stage(HybridStageId.HP2_REFERENCES, hp2))
 
@@ -470,6 +604,7 @@ def _run_paragraph(
             normalization_prompt_bytes=prompts["hybrid_event_normalization_v1.md"],
             role_completion_prompt_bytes=prompts["hybrid_event_role_completion_v1.md"],
             support_prompt_bytes=prompts["hybrid_semantic_support_v1.md"],
+            nli_runtime=resources.nli,
         )
     publish_hybrid_event_semantics_preview(hp6, archive)
     stages.append(_stage(HybridStageId.HP6_EVENT_SEMANTICS, hp6))
@@ -505,6 +640,8 @@ def _run_paragraph(
             model_run_id_factory=model_run_id_factory,
             tokenizer=resources.runtime,
             prompt_bytes=prompts["hybrid_standing_fact_task_v1.md"],
+            qualification_prompt_bytes=prompts["hybrid_standing_fact_qualification_v1.md"],
+            nli_runtime=resources.nli,
         )
     held_fact_count = sum(item.disposition.value == "held" for item in hp10.plan.decisions)
     hp10_diagnostics = tuple(
@@ -585,6 +722,7 @@ def _policy_input(
         HYBRID_EVENT_ROLE_COMPLETION_SCHEMA_ID: event_semantic_role_target_schema_bytes(),
         HYBRID_SEMANTIC_SUPPORT_SCHEMA_ID: semantic_support_schema_bytes(),
         HYBRID_STANDING_FACT_SCHEMA_ID: standing_fact_schema_bytes(),
+        HYBRID_STANDING_FACT_QUALIFICATION_SCHEMA_ID: (standing_fact_qualification_schema_bytes()),
     }
     pins.extend(
         HybridPolicyPin(kind="schema", identity=name, sha256=_sha(payload))
@@ -599,8 +737,18 @@ def _policy_input(
             ),
             HybridPolicyPin(
                 kind="ontology",
-                identity="hybrid_event_semantics_v1",
+                identity="hybrid_event_semantics_v2",
                 sha256=hybrid_event_semantics_profile_sha256(),
+            ),
+            HybridPolicyPin(
+                kind="model_resource",
+                identity="nli_deberta_v3_base_v1",
+                sha256=nli_expected_resource_identity(),
+            ),
+            HybridPolicyPin(
+                kind="model_resource",
+                identity="fcoref_v1",
+                sha256=fcoref_expected_resource_identity(),
             ),
         )
     )

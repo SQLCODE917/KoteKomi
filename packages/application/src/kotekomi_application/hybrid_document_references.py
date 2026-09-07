@@ -13,7 +13,11 @@ from kotekomi_domain import DocumentNode, DocumentRepresentationBundle, TextView
 from kotekomi_domain.models import JsonValue
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from kotekomi_application.context_planning import PARAGRAPH_SEGMENT_V2, paragraph_source_segments
+from kotekomi_application.context_planning import (
+    PARAGRAPH_SEGMENT_V2,
+    SourceSegment,
+    paragraph_source_segments,
+)
 from kotekomi_application.document_aliases import parse_parenthetical_alias
 from kotekomi_application.extraction_stage_trace import (
     ExtractionStageStatus,
@@ -24,11 +28,26 @@ from kotekomi_application.extraction_stage_trace import (
 from kotekomi_application.hybrid_mention_interpretation import (
     HybridExtractionPreview,
     HybridPreviewStatus,
+    MentionInterpretation,
     Referentiality,
     hybrid_source_segment_id,
 )
+from kotekomi_application.semantic_references import (
+    SEMANTIC_REFERENCE_MAX_INPUT_TOKENS,
+    CoreferenceAntecedentInput,
+    CoreferenceInput,
+    CoreferenceObservation,
+    CoreferenceProposerPort,
+    CoreferenceSpan,
+    CoreferenceTokenizer,
+    SemanticReferenceDecision,
+    SemanticReferenceReason,
+    SemanticReferenceResult,
+    SemanticReferenceStatus,
+    resolve_semantic_reference,
+)
 
-HYBRID_REFERENCE_POLICY_ID = "hybrid_document_reference_v1"
+HYBRID_REFERENCE_POLICY_ID = "hybrid_document_reference_v3"
 ALIAS_DECLARATION_RULE_ID = "exact_parenthetical_initialism_v1"
 
 _SHA256_PATTERN = r"^[a-f0-9]{64}$"
@@ -56,6 +75,9 @@ class ReferenceReason(StrEnum):
     CONFLICTING_EXPLICIT_ALIAS = "conflicting_explicit_alias"
     EXPLICIT_ALIAS_MISSING = "explicit_alias_missing"
     SEMANTIC_RESOLUTION_DEFERRED = "semantic_resolution_deferred"
+    UNIQUE_SEMANTIC_ANTECEDENT = "unique_semantic_antecedent"
+    MULTIPLE_SEMANTIC_ANTECEDENTS = "multiple_semantic_antecedents"
+    SEMANTIC_ANTECEDENT_MISSING = "semantic_antecedent_missing"
 
 
 class ReferenceSpan(BaseModel):
@@ -138,6 +160,9 @@ class ReferenceDecision(BaseModel):
     status: ReferenceStatus
     declaration_ids: tuple[Annotated[str, Field(pattern=r"^ald_[a-f0-9]{24}$")], ...] = ()
     antecedent_span_ids: tuple[Annotated[str, Field(pattern=r"^rsp_[a-f0-9]{24}$")], ...] = ()
+    semantic_reference_decision_id: Annotated[str, Field(pattern=r"^srd_[a-f0-9]{24}$")] | None = (
+        None
+    )
     reason: ReferenceReason
     trace_id: Annotated[str, Field(pattern=r"^xst_[a-f0-9]{24}$")]
 
@@ -146,26 +171,45 @@ class ReferenceDecision(BaseModel):
         _require_ordered_distinct("declaration IDs", self.declaration_ids)
         _require_ordered_distinct("antecedent span IDs", self.antecedent_span_ids)
         if self.status is ReferenceStatus.RESOLVED:
-            if (
-                self.reference_kind is not ReferenceKind.EXPLICIT_ALIAS
-                or self.reason is not ReferenceReason.UNIQUE_EXPLICIT_ALIAS
-                or not self.declaration_ids
-                or not self.antecedent_span_ids
-            ):
-                raise ValueError("Resolved ReferenceDecision requires unique alias evidence.")
+            explicit = (
+                self.reference_kind is ReferenceKind.EXPLICIT_ALIAS
+                and self.reason is ReferenceReason.UNIQUE_EXPLICIT_ALIAS
+                and bool(self.declaration_ids)
+                and bool(self.antecedent_span_ids)
+                and self.semantic_reference_decision_id is None
+            )
+            semantic = (
+                self.reference_kind is ReferenceKind.ANAPHORIC
+                and self.reason is ReferenceReason.UNIQUE_SEMANTIC_ANTECEDENT
+                and not self.declaration_ids
+                and len(self.antecedent_span_ids) == 1
+                and self.semantic_reference_decision_id is not None
+            )
+            if not (explicit or semantic):
+                raise ValueError("Resolved ReferenceDecision requires unique reference evidence.")
         elif self.status is ReferenceStatus.AMBIGUOUS:
-            if (
-                self.reference_kind is not ReferenceKind.EXPLICIT_ALIAS
-                or self.reason is not ReferenceReason.CONFLICTING_EXPLICIT_ALIAS
-                or len(self.declaration_ids) < 2
-                or len(self.antecedent_span_ids) < 2
-            ):
-                raise ValueError("Ambiguous ReferenceDecision requires conflicting aliases.")
+            explicit = (
+                self.reference_kind is ReferenceKind.EXPLICIT_ALIAS
+                and self.reason is ReferenceReason.CONFLICTING_EXPLICIT_ALIAS
+                and len(self.declaration_ids) >= 2
+                and len(self.antecedent_span_ids) >= 2
+                and self.semantic_reference_decision_id is None
+            )
+            semantic = (
+                self.reference_kind is ReferenceKind.ANAPHORIC
+                and self.reason is ReferenceReason.MULTIPLE_SEMANTIC_ANTECEDENTS
+                and not self.declaration_ids
+                and len(self.antecedent_span_ids) >= 2
+                and self.semantic_reference_decision_id is not None
+            )
+            if not (explicit or semantic):
+                raise ValueError("Ambiguous ReferenceDecision requires conflicting evidence.")
         elif self.declaration_ids or self.antecedent_span_ids:
             raise ValueError("Unresolved ReferenceDecision cannot name an antecedent.")
         if self.status is ReferenceStatus.UNRESOLVED and self.reason not in {
             ReferenceReason.EXPLICIT_ALIAS_MISSING,
             ReferenceReason.SEMANTIC_RESOLUTION_DEFERRED,
+            ReferenceReason.SEMANTIC_ANTECEDENT_MISSING,
         }:
             raise ValueError("Unresolved ReferenceDecision requires an unresolved reason.")
         if (
@@ -180,6 +224,7 @@ class ReferenceDecision(BaseModel):
             self.reference_kind.value,
             self.status.value,
             self.reason.value,
+            self.semantic_reference_decision_id or "",
             *self.declaration_ids,
             *self.antecedent_span_ids,
         )
@@ -193,14 +238,17 @@ class HybridReferencePreview(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
-    schema_version: Literal["hybrid_reference_preview_v1"] = "hybrid_reference_preview_v1"
+    schema_version: Literal["hybrid_reference_preview_v3"] = "hybrid_reference_preview_v3"
     id: Annotated[str, Field(pattern=r"^hrp_[a-f0-9]{24}$")]
     parent_preview_id: Annotated[str, Field(pattern=r"^hxp_[a-f0-9]{24}$")]
     parent_preview_sha256: Annotated[str, Field(pattern=_SHA256_PATTERN)]
     representation_id: Annotated[str, Field(min_length=1)]
-    policy_id: Literal["hybrid_document_reference_v1"] = HYBRID_REFERENCE_POLICY_ID
+    policy_id: Literal["hybrid_document_reference_v3"] = HYBRID_REFERENCE_POLICY_ID
     alias_declarations: tuple[AliasDeclaration, ...] = ()
     reference_decisions: tuple[ReferenceDecision, ...] = ()
+    semantic_antecedent_spans: tuple[ReferenceSpan, ...] = ()
+    coreference_observations: tuple[CoreferenceObservation, ...] = ()
+    semantic_reference_decisions: tuple[SemanticReferenceDecision, ...] = ()
     traces: tuple[ExtractionStageTrace, ...] = ()
     terminal_status: Literal["complete"] = "complete"
     diagnostics: tuple[Annotated[str, Field(min_length=1)], ...] = ()
@@ -212,6 +260,10 @@ class HybridReferencePreview(BaseModel):
             raise ValueError("HybridReferencePreview declarations must use source order.")
         if tuple(sorted(self.reference_decisions, key=_decision_key)) != self.reference_decisions:
             raise ValueError("HybridReferencePreview decisions must use source order.")
+        if tuple(sorted(self.semantic_antecedent_spans, key=_span_key)) != (
+            self.semantic_antecedent_spans
+        ):
+            raise ValueError("HybridReferencePreview semantic spans must use source order.")
         if tuple(sorted(self.traces, key=_trace_key)) != self.traces:
             raise ValueError("HybridReferencePreview traces must be ordered.")
         declaration_by_id = {item.id: item for item in self.alias_declarations}
@@ -220,6 +272,20 @@ class HybridReferencePreview(BaseModel):
         decision_ids = {item.id for item in self.reference_decisions}
         if len(decision_ids) != len(self.reference_decisions):
             raise ValueError("HybridReferencePreview repeats a ReferenceDecision.")
+        semantic_span_by_id = {item.id: item for item in self.semantic_antecedent_spans}
+        if len(semantic_span_by_id) != len(self.semantic_antecedent_spans):
+            raise ValueError("HybridReferencePreview repeats a semantic antecedent span.")
+        observation_by_id = {item.id: item for item in self.coreference_observations}
+        if len(observation_by_id) != len(self.coreference_observations):
+            raise ValueError("HybridReferencePreview repeats a CoreferenceObservation.")
+        semantic_decision_by_id = {item.id: item for item in self.semantic_reference_decisions}
+        if len(semantic_decision_by_id) != len(self.semantic_reference_decisions):
+            raise ValueError("HybridReferencePreview repeats a SemanticReferenceDecision.")
+        if any(
+            item.observation_id not in observation_by_id
+            for item in self.semantic_reference_decisions
+        ):
+            raise ValueError("SemanticReferenceDecision observation is missing.")
         trace_ids = {item.id for item in self.traces}
         if len(trace_ids) != len(self.traces):
             raise ValueError("HybridReferencePreview repeats an ExtractionStageTrace.")
@@ -230,9 +296,19 @@ class HybridReferencePreview(BaseModel):
         for decision in self.reference_decisions:
             if not set(decision.declaration_ids).issubset(declaration_by_id):
                 raise ValueError("ReferenceDecision references an unknown declaration.")
-            expected_spans = {
-                declaration_by_id[item].expanded_span.id for item in decision.declaration_ids
-            }
+            if decision.semantic_reference_decision_id is None:
+                expected_spans = {
+                    declaration_by_id[item].expanded_span.id for item in decision.declaration_ids
+                }
+            else:
+                semantic = semantic_decision_by_id.get(decision.semantic_reference_decision_id)
+                if semantic is None:
+                    raise ValueError("ReferenceDecision semantic evidence is missing.")
+                expected_spans = set(decision.antecedent_span_ids)
+                if not expected_spans.issubset(semantic_span_by_id):
+                    raise ValueError("ReferenceDecision semantic spans are missing.")
+                if len(expected_spans) != len(semantic.antecedent_span_ids):
+                    raise ValueError("ReferenceDecision semantic span count drifted.")
             if set(decision.antecedent_span_ids) != expected_spans:
                 raise ValueError("ReferenceDecision antecedent spans do not match declarations.")
         traces_by_run: dict[str, list[ExtractionStageTrace]] = defaultdict(list)
@@ -250,6 +326,8 @@ def build_hybrid_reference_preview(
     parent_preview: HybridExtractionPreview,
     parent_preview_sha256: str,
     bundle: DocumentRepresentationBundle,
+    coreference_proposer: CoreferenceProposerPort | None = None,
+    coreference_tokenizer: CoreferenceTokenizer | None = None,
 ) -> HybridReferencePreview:
     """Resolve deterministic document aliases from one verified HP-1 Preview."""
     if parent_preview.terminal_status is HybridPreviewStatus.BLOCKED:
@@ -260,7 +338,11 @@ def build_hybrid_reference_preview(
     if paragraph_node.node_type != "paragraph":
         raise ValueError("HP-2 parent Preview node is not a paragraph.")
     declarations, declaration_traces = find_alias_declarations(bundle)
-    segment_sources = _parent_segment_sources(bundle, paragraph_node)
+    paragraph_text = _text_view(bundle, paragraph_node.text_view_id).text[
+        paragraph_node.start_char : paragraph_node.end_char
+    ]
+    paragraph_segments = paragraph_source_segments(paragraph_text, PARAGRAPH_SEGMENT_V2)
+    segment_sources = _parent_segment_sources(bundle, paragraph_node, paragraph_segments)
     selected_ids = {
         candidate_id
         for decision in parent_preview.boundary_decisions
@@ -275,13 +357,17 @@ def build_hybrid_reference_preview(
         declarations_by_alias[declaration.alias_span.text].append(declaration)
     decisions: list[ReferenceDecision] = []
     decision_traces: list[ExtractionStageTrace] = []
+    semantic_spans: list[ReferenceSpan] = []
+    coreference_observations: list[CoreferenceObservation] = []
+    semantic_decisions: list[SemanticReferenceDecision] = []
+    diagnostics: list[str] = []
     for candidate in parent_preview.candidates:
         if candidate.id not in selected_ids:
             continue
         segment = segment_sources.get(candidate.source_segment_id)
         if segment is None:
             raise ValueError("HP-2 cannot reconstruct a parent Preview SourceSegment.")
-        source_text, segment_start = segment
+        source_text, segment_start = segment.exact_text, segment.start_char
         if hashlib.sha256(source_text.encode()).hexdigest() != candidate.source_text_sha256:
             raise ValueError("HP-2 MentionCandidate source digest drifted.")
         if (
@@ -324,6 +410,62 @@ def build_hybrid_reference_preview(
             continue
         declaration_ids = tuple(sorted(item.id for item in matching))
         antecedent_span_ids = tuple(sorted({item.expanded_span.id for item in matching}))
+        semantic_decision_id: str | None = None
+        semantic_trace: ExtractionStageTrace | None = None
+        if kind is ReferenceKind.ANAPHORIC and coreference_proposer is not None:
+            if coreference_tokenizer is None:
+                raise ValueError("A coreference proposer requires its selected tokenizer.")
+            try:
+                coreference_input, context_start = _bounded_coreference_input(
+                    bundle=bundle,
+                    paragraph_node=paragraph_node,
+                    paragraph_text=paragraph_text,
+                    paragraph_segments=paragraph_segments,
+                    target_segment=segment,
+                    candidate_start=candidate.start,
+                    candidate_end=candidate.end,
+                    tokenizer=coreference_tokenizer,
+                )
+                coreference_input = CoreferenceInput(
+                    source_segment_id=coreference_input.source_segment_id,
+                    source_text=coreference_input.source_text,
+                    target_start=coreference_input.target_start,
+                    target_end=coreference_input.target_end,
+                    antecedent_candidates=_semantic_antecedent_inputs(
+                        parent_preview=parent_preview,
+                        selected_ids=selected_ids,
+                        interpretation_by_candidate=interpretation_by_candidate,
+                        segment_sources=segment_sources,
+                        context_start=context_start,
+                        target_start=segment.start_char + candidate.start,
+                    ),
+                )
+                semantic_result = resolve_semantic_reference(
+                    coreference_input,
+                    coreference_proposer,
+                    coreference_tokenizer,
+                )
+            except (OSError, RuntimeError, ValueError) as error:
+                diagnostics.append(
+                    f"semantic_reference_failed:{candidate.id}:{type(error).__name__}"
+                )
+            else:
+                mapped_spans = tuple(
+                    _semantic_reference_span(
+                        bundle=bundle,
+                        paragraph_node=paragraph_node,
+                        context_start=context_start,
+                        span=span,
+                    )
+                    for span in _selected_semantic_spans(semantic_result)
+                )
+                semantic_spans.extend(mapped_spans)
+                coreference_observations.append(semantic_result.observation)
+                semantic_decisions.append(semantic_result.decision)
+                semantic_decision_id = semantic_result.decision.id
+                semantic_trace = semantic_result.trace
+                antecedent_span_ids = tuple(item.id for item in mapped_spans)
+                status, reason = _semantic_reference_outcome(semantic_result.decision)
         decision_id = _decision_id(
             candidate.id,
             reference_span.id,
@@ -332,8 +474,9 @@ def build_hybrid_reference_preview(
             reason,
             declaration_ids,
             antecedent_span_ids,
+            semantic_decision_id,
         )
-        trace = build_extraction_stage_trace(
+        trace = semantic_trace or build_extraction_stage_trace(
             trace_run_id=_id("hrr", parent_preview.id, candidate.id),
             ordinal=0,
             stage_id="document_reference_resolution",
@@ -355,6 +498,7 @@ def build_hybrid_reference_preview(
                 "status": status.value,
                 "reason": reason.value,
                 "antecedent_span_ids": list(antecedent_span_ids),
+                "semantic_reference_decision_id": semantic_decision_id,
             },
             status=ExtractionStageStatus.COMPLETED,
         )
@@ -367,6 +511,7 @@ def build_hybrid_reference_preview(
                 status=status,
                 declaration_ids=declaration_ids,
                 antecedent_span_ids=antecedent_span_ids,
+                semantic_reference_decision_id=semantic_decision_id,
                 reason=reason,
                 trace_id=trace.id,
             )
@@ -378,7 +523,13 @@ def build_hybrid_reference_preview(
         representation_id=bundle.representation.id,
         alias_declarations=declarations,
         reference_decisions=tuple(sorted(decisions, key=_decision_key)),
+        semantic_antecedent_spans=tuple(
+            sorted({item.id: item for item in semantic_spans}.values(), key=_span_key)
+        ),
+        coreference_observations=tuple(coreference_observations),
+        semantic_reference_decisions=tuple(semantic_decisions),
         traces=tuple(sorted((*declaration_traces, *decision_traces), key=_trace_key)),
+        diagnostics=tuple(sorted(set(diagnostics))),
     )
 
 
@@ -487,16 +638,95 @@ def _declaration_ranges(source_text: str) -> tuple[tuple[int, int, int, int], ..
 def _parent_segment_sources(
     bundle: DocumentRepresentationBundle,
     node: DocumentNode,
-) -> dict[str, tuple[str, int]]:
-    view = _text_view(bundle, node.text_view_id)
-    paragraph = view.text[node.start_char : node.end_char]
+    segments: tuple[SourceSegment, ...],
+) -> dict[str, SourceSegment]:
     return {
-        hybrid_source_segment_id(bundle.representation.id, node.id, segment): (
-            segment.exact_text,
-            segment.start_char,
-        )
-        for segment in paragraph_source_segments(paragraph, PARAGRAPH_SEGMENT_V2)
+        hybrid_source_segment_id(bundle.representation.id, node.id, segment): segment
+        for segment in segments
     }
+
+
+def _bounded_coreference_input(
+    *,
+    bundle: DocumentRepresentationBundle,
+    paragraph_node: DocumentNode,
+    paragraph_text: str,
+    paragraph_segments: tuple[SourceSegment, ...],
+    target_segment: SourceSegment,
+    candidate_start: int,
+    candidate_end: int,
+    tokenizer: CoreferenceTokenizer,
+) -> tuple[CoreferenceInput, int]:
+    """Include the nearest preceding same-paragraph sentences within the model limit."""
+    try:
+        target_ordinal = paragraph_segments.index(target_segment)
+    except ValueError as error:
+        raise ValueError("Coreference target segment is not in its paragraph.") from error
+    context_start = target_segment.start_char
+    context_end = target_segment.end_char
+    for preceding in reversed(paragraph_segments[:target_ordinal]):
+        proposed = paragraph_text[preceding.start_char : context_end]
+        if tokenizer.count_tokens(proposed.encode()) > SEMANTIC_REFERENCE_MAX_INPUT_TOKENS:
+            break
+        context_start = preceding.start_char
+    context = paragraph_text[context_start:context_end]
+    segment_id = hybrid_source_segment_id(
+        bundle.representation.id,
+        paragraph_node.id,
+        target_segment,
+    )
+    return (
+        CoreferenceInput(
+            source_segment_id=segment_id,
+            source_text=context,
+            target_start=target_segment.start_char - context_start + candidate_start,
+            target_end=target_segment.start_char - context_start + candidate_end,
+        ),
+        context_start,
+    )
+
+
+def _semantic_antecedent_inputs(
+    *,
+    parent_preview: HybridExtractionPreview,
+    selected_ids: set[str],
+    interpretation_by_candidate: dict[str, MentionInterpretation],
+    segment_sources: dict[str, SourceSegment],
+    context_start: int,
+    target_start: int,
+) -> tuple[CoreferenceAntecedentInput, ...]:
+    """Project source-valid, specific-entity mentions into one coreference window."""
+    values: list[CoreferenceAntecedentInput] = []
+    for candidate in parent_preview.candidates:
+        interpretation = interpretation_by_candidate.get(candidate.id)
+        if (
+            candidate.id not in selected_ids
+            or interpretation is None
+            or interpretation.referentiality is not Referentiality.SPECIFIC_ENTITY
+        ):
+            continue
+        segment = segment_sources.get(candidate.source_segment_id)
+        if segment is None:
+            raise ValueError("HP-2 cannot reconstruct an antecedent SourceSegment.")
+        if hashlib.sha256(segment.exact_text.encode()).hexdigest() != candidate.source_text_sha256:
+            raise ValueError("HP-2 antecedent MentionCandidate source digest drifted.")
+        if (
+            candidate.end > len(segment.exact_text)
+            or segment.exact_text[candidate.start : candidate.end] != candidate.text
+        ):
+            raise ValueError("HP-2 antecedent MentionCandidate does not match source characters.")
+        paragraph_start = segment.start_char + candidate.start
+        paragraph_end = segment.start_char + candidate.end
+        if paragraph_start < context_start or paragraph_end > target_start:
+            continue
+        values.append(
+            CoreferenceAntecedentInput(
+                source_candidate_id=candidate.id,
+                start=paragraph_start - context_start,
+                end=paragraph_end - context_start,
+            )
+        )
+    return tuple(sorted(values, key=lambda item: (item.start, item.end, item.source_candidate_id)))
 
 
 def _span(
@@ -560,6 +790,7 @@ def _decision_id(
     reason: ReferenceReason,
     declaration_ids: tuple[str, ...],
     antecedent_span_ids: tuple[str, ...],
+    semantic_reference_decision_id: str | None = None,
 ) -> str:
     return _id(
         "rfd",
@@ -568,6 +799,7 @@ def _decision_id(
         kind.value,
         status.value,
         reason.value,
+        semantic_reference_decision_id or "",
         *declaration_ids,
         *antecedent_span_ids,
     )
@@ -576,10 +808,13 @@ def _decision_id(
 def build_hybrid_reference_preview_record(**values: object) -> HybridReferencePreview:
     """Construct one strictly validated HybridReferencePreview DTO."""
     payload = dict(values)
-    payload.setdefault("schema_version", "hybrid_reference_preview_v1")
+    payload.setdefault("schema_version", "hybrid_reference_preview_v3")
     payload.setdefault("policy_id", HYBRID_REFERENCE_POLICY_ID)
     payload.setdefault("terminal_status", "complete")
     payload.setdefault("diagnostics", ())
+    payload.setdefault("semantic_antecedent_spans", ())
+    payload.setdefault("coreference_observations", ())
+    payload.setdefault("semantic_reference_decisions", ())
     json_payload = cast(dict[str, JsonValue], _json_copy(payload))
     json_payload["id"] = _preview_id(json_payload)
     return HybridReferencePreview.model_validate_json(_canonical_json(json_payload))
@@ -629,6 +864,48 @@ def _declaration_key(item: AliasDeclaration) -> tuple[int, int, str]:
 
 def _decision_key(item: ReferenceDecision) -> tuple[int, int, str]:
     return item.reference_span.start_char, item.reference_span.end_char, item.id
+
+
+def _span_key(item: ReferenceSpan) -> tuple[int, int, str]:
+    return item.start_char, item.end_char, item.id
+
+
+def _selected_semantic_spans(result: SemanticReferenceResult) -> tuple[CoreferenceSpan, ...]:
+    by_id = {item.span.id: item.span for item in result.observation.antecedent_candidates}
+    try:
+        return tuple(by_id[item] for item in result.decision.antecedent_span_ids)
+    except KeyError as error:
+        raise ValueError("SemanticReferenceDecision names a missing source span.") from error
+
+
+def _semantic_reference_span(
+    *,
+    bundle: DocumentRepresentationBundle,
+    paragraph_node: DocumentNode,
+    context_start: int,
+    span: CoreferenceSpan,
+) -> ReferenceSpan:
+    return _span(
+        bundle.representation.id,
+        paragraph_node,
+        _text_view(bundle, paragraph_node.text_view_id),
+        paragraph_node.start_char + context_start + span.start,
+        paragraph_node.start_char + context_start + span.end,
+    )
+
+
+def _semantic_reference_outcome(
+    decision: SemanticReferenceDecision,
+) -> tuple[ReferenceStatus, ReferenceReason]:
+    if decision.status is SemanticReferenceStatus.RESOLVED:
+        if decision.reason is not SemanticReferenceReason.UNIQUE_PRECEDING_ANTECEDENT:
+            raise ValueError("Resolved semantic reference reason drifted.")
+        return ReferenceStatus.RESOLVED, ReferenceReason.UNIQUE_SEMANTIC_ANTECEDENT
+    if decision.status is SemanticReferenceStatus.AMBIGUOUS:
+        if decision.reason is not SemanticReferenceReason.MULTIPLE_PRECEDING_ANTECEDENTS:
+            raise ValueError("Ambiguous semantic reference reason drifted.")
+        return ReferenceStatus.AMBIGUOUS, ReferenceReason.MULTIPLE_SEMANTIC_ANTECEDENTS
+    return ReferenceStatus.UNRESOLVED, ReferenceReason.SEMANTIC_ANTECEDENT_MISSING
 
 
 def _trace_key(item: ExtractionStageTrace) -> tuple[str, int, str]:

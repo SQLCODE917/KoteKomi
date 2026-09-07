@@ -162,7 +162,7 @@ Historical evaluation artifacts retain the worker identity and script digest obs
 The WorkerExchange request and response use these required fields:
 
 ```text
-schema_version = refined_worker_exchange_v1
+schema_version = model_worker_exchange_v1
 request_id     = rwr_<32 lowercase hexadecimal characters>
 payload        = worker-specific JSON object
 ```

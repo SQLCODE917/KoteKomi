@@ -7,6 +7,7 @@ from typing import cast
 
 import pytest
 from kotekomi_application import (
+    MANAGED_MODEL_RESOURCE_IDS,
     REQUIRED_MODEL_RESOURCE_IDS,
     ModelResourceInstallDisposition,
     ModelResourceInstallResult,
@@ -53,7 +54,7 @@ def _report(config: PipelineConfig, *, ready: bool) -> ModelResourceReadinessRep
             observed_identity=f"expected:{resource_id.value}" if ready else None,
             diagnostics=() if ready else (f"{resource_id.value} is missing.",),
         )
-        for resource_id in REQUIRED_MODEL_RESOURCE_IDS
+        for resource_id in MANAGED_MODEL_RESOURCE_IDS
     )
     return ModelResourceReadinessReport(config.model_resource_root, resources)
 
@@ -114,7 +115,7 @@ def test_model_resource_status_has_stable_json_contract(
     assert payload["schema_version"] == "model_resource_status_v1"
     assert payload["status"] == "ready"
     assert [item["resource_id"] for item in payload["resources"]] == [
-        item.value for item in REQUIRED_MODEL_RESOURCE_IDS
+        item.value for item in MANAGED_MODEL_RESOURCE_IDS
     ]
 
 
@@ -134,7 +135,7 @@ def test_model_resource_install_routes_selection_and_repair(
         repair: bool,
     ) -> tuple[ModelResourceInstallResult, ...]:
         received.append((selected, repair))
-        readiness = report.resources[1]
+        readiness = report.resources[2]
         return (ModelResourceInstallResult(ModelResourceInstallDisposition.REPAIRED, readiness),)
 
     monkeypatch.setattr(cli, "load_config", _config_loader(config))
@@ -159,7 +160,7 @@ def test_model_resource_install_routes_selection_and_repair(
         == 0
     )
 
-    assert received == [((REQUIRED_MODEL_RESOURCE_IDS[1],), True)]
+    assert received == [((REQUIRED_MODEL_RESOURCE_IDS[2],), True)]
     assert "refined_wikipedia_v1: repaired" in capsys.readouterr().out
 
 

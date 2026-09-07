@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
@@ -26,6 +27,7 @@ from kotekomi_domain import (
     ProposedAssertion,
     Source,
     SourceAuthority,
+    StandingFactQualificationOutcome,
     canonical_evidence_target_digest,
 )
 from kotekomi_domain.models import JsonValue
@@ -98,6 +100,23 @@ from kotekomi_application.hybrid_standing_fact_model_output import (
     parse_standing_fact_output,
     standing_fact_schema_bytes,
 )
+from kotekomi_application.hybrid_standing_fact_qualification_model_output import (
+    StandingFactQualificationOutput,
+    parse_standing_fact_qualification_output,
+    standing_fact_qualification_schema_bytes,
+)
+from kotekomi_application.semantic_proposition import (
+    CompleteProposition,
+    NaturalLanguageInferenceInput,
+    NaturalLanguageInferencePort,
+    NliObservation,
+    PropositionDecision,
+    PropositionDisposition,
+    PropositionKind,
+    build_complete_proposition,
+    build_nli_observation,
+    build_proposition_decision,
+)
 from kotekomi_application.staged_model_extraction import (
     BoundedExtractionInput,
     ExecutionSetting,
@@ -110,11 +129,14 @@ from kotekomi_application.staged_model_extraction import (
     run_bounded_extraction,
 )
 
-HYBRID_STANDING_FACT_POLICY_ID = "hybrid_standing_fact_v1"
+HYBRID_STANDING_FACT_POLICY_ID = "hybrid_standing_fact_v2"
 HYBRID_STANDING_FACT_SCHEMA_ID = "hybrid_standing_fact_text_v1"
 HYBRID_STANDING_FACT_PROMPT_ID = "hybrid_standing_fact_task_v1"
+HYBRID_STANDING_FACT_QUALIFICATION_SCHEMA_ID = "standing_fact_qualification_text_v1"
+HYBRID_STANDING_FACT_QUALIFICATION_PROMPT_ID = "hybrid_standing_fact_qualification_v1"
 HYBRID_STANDING_FACT_EVIDENCE_VALIDATOR = "hybrid_standing_fact_evidence_v1"
 HYBRID_STANDING_FACT_ACTIVITY_TYPE = "hybrid_standing_fact_batch_planned"
+HYBRID_STANDING_FACT_NLI_ENTAILMENT_THRESHOLD = 0.5
 _SHA256 = r"^[a-f0-9]{64}$"
 
 
@@ -124,10 +146,16 @@ class StandingFactDisposition(StrEnum):
 
 
 class StandingFactHoldReason(StrEnum):
+    COMPLETE_PROPOSITION_HELD = "complete_proposition_held"
+    EVENT_ROUTE_REQUIRED = "event_route_required"
+    INCOMPLETE_OR_WRONG_ARGUMENTS = "incomplete_or_wrong_arguments"
     UNKNOWN_SUBJECT = "unknown_subject"
     UNKNOWN_ENTITY_OBJECT = "unknown_entity_object"
     SELF_RELATION = "self_relation"
     LITERAL_NOT_IN_SOURCE = "literal_not_in_source"
+    QUALIFICATION_AMBIGUOUS = "qualification_ambiguous"
+    QUALIFICATION_MISSING = "qualification_missing"
+    SEMANTICALLY_UNSUPPORTED = "semantically_unsupported"
 
 
 class StandingFactPlanStatus(StrEnum):
@@ -172,6 +200,37 @@ class StandingFactDraft(BaseModel):
         return self
 
 
+class StandingFactQualification(BaseModel):
+    """One fallible Qwen classification of a complete standing proposition."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    id: Annotated[str, Field(pattern=r"^sfq_[a-f0-9]{24}$")]
+    draft_id: Annotated[str, Field(pattern=r"^sfd_[a-f0-9]{24}$")]
+    proposition_id: Annotated[str, Field(pattern=r"^cpr_[a-f0-9]{24}$")]
+    outcome: StandingFactQualificationOutcome
+    reason: Annotated[str, Field(min_length=1)]
+    extraction_task_id: Annotated[str, Field(min_length=1)]
+    model_run_id: Annotated[str, Field(min_length=1)]
+
+    @model_validator(mode="after")
+    def validate_identity(self) -> Self:
+        if self.reason != self.reason.strip() or "\n" in self.reason or "\r" in self.reason:
+            raise ValueError("Standing Fact qualification reason must be one trimmed line.")
+        expected = _id(
+            "sfq",
+            self.draft_id,
+            self.proposition_id,
+            self.outcome.value,
+            self.reason,
+            self.extraction_task_id,
+            self.model_run_id,
+        )
+        if self.id != expected:
+            raise ValueError("StandingFactQualification ID does not match its contents.")
+        return self
+
+
 class StandingFactDecision(BaseModel):
     """One deterministic admission decision for one StandingFactDraft."""
 
@@ -180,6 +239,8 @@ class StandingFactDecision(BaseModel):
     id: Annotated[str, Field(pattern=r"^sfdc_[a-f0-9]{24}$")]
     draft_id: Annotated[str, Field(pattern=r"^sfd_[a-f0-9]{24}$")]
     disposition: StandingFactDisposition
+    qualification_id: Annotated[str, Field(pattern=r"^sfq_[a-f0-9]{24}$")] | None = None
+    proposition_decision_id: Annotated[str, Field(pattern=r"^pdc_[a-f0-9]{24}$")] | None = None
     reason_codes: tuple[StandingFactHoldReason, ...] = ()
     proposed_change_ids: tuple[Annotated[str, Field(pattern=r"^pcg_[a-f0-9]{24}$")], ...] = ()
 
@@ -188,14 +249,21 @@ class StandingFactDecision(BaseModel):
         _ordered_distinct("Standing Fact reason codes", tuple(x.value for x in self.reason_codes))
         _ordered_distinct("Standing Fact ProposedChange IDs", self.proposed_change_ids)
         if self.disposition is StandingFactDisposition.PROPOSED:
-            if self.reason_codes or not self.proposed_change_ids:
-                raise ValueError("A proposed Standing Fact requires changes and no hold reason.")
+            if (
+                self.reason_codes
+                or not self.proposed_change_ids
+                or self.qualification_id is None
+                or self.proposition_decision_id is None
+            ):
+                raise ValueError("A proposed Standing Fact requires semantic evidence and changes.")
         elif not self.reason_codes or self.proposed_change_ids:
             raise ValueError("A held Standing Fact requires reasons and no changes.")
         expected = _id(
             "sfdc",
             self.draft_id,
             self.disposition.value,
+            self.qualification_id or "",
+            self.proposition_decision_id or "",
             *(x.value for x in self.reason_codes),
             *self.proposed_change_ids,
         )
@@ -209,7 +277,7 @@ class StandingFactPlan(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
-    schema_version: Literal["standing_fact_plan_v1"] = "standing_fact_plan_v1"
+    schema_version: Literal["standing_fact_plan_v2"] = "standing_fact_plan_v2"
     id: Annotated[str, Field(pattern=r"^sfp_[a-f0-9]{24}$")]
     parent_plan_id: Annotated[str, Field(pattern=r"^hpp_[a-f0-9]{24}$")]
     parent_plan_sha256: Annotated[str, Field(pattern=_SHA256)]
@@ -220,9 +288,14 @@ class StandingFactPlan(BaseModel):
     representation_id: Annotated[str, Field(min_length=1)]
     paragraph_node_id: Annotated[str, Field(min_length=1)]
     context_manifest_id: str | None = None
-    policy_id: Literal["hybrid_standing_fact_v1"] = HYBRID_STANDING_FACT_POLICY_ID
+    qualification_context_manifest_id: str | None = None
+    policy_id: Literal["hybrid_standing_fact_v2"] = HYBRID_STANDING_FACT_POLICY_ID
     provenance_activity_id: Annotated[str, Field(pattern=r"^prv_[a-f0-9]{24}$")]
     drafts: tuple[StandingFactDraft, ...] = ()
+    propositions: tuple[CompleteProposition, ...] = ()
+    qualifications: tuple[StandingFactQualification, ...] = ()
+    nli_observations: tuple[NliObservation, ...] = ()
+    proposition_decisions: tuple[PropositionDecision, ...] = ()
     decisions: tuple[StandingFactDecision, ...] = ()
     extraction_task_ids: tuple[Annotated[str, Field(min_length=1)], ...] = ()
     model_run_ids: tuple[Annotated[str, Field(min_length=1)], ...] = ()
@@ -235,6 +308,13 @@ class StandingFactPlan(BaseModel):
     def validate_contract(self) -> Self:
         for label, values in (
             ("Standing Fact draft IDs", tuple(x.id for x in self.drafts)),
+            ("Standing Fact proposition IDs", tuple(x.id for x in self.propositions)),
+            ("Standing Fact qualification IDs", tuple(x.id for x in self.qualifications)),
+            ("Standing Fact NLI observation IDs", tuple(x.id for x in self.nli_observations)),
+            (
+                "Standing Fact proposition decision IDs",
+                tuple(x.id for x in self.proposition_decisions),
+            ),
             ("Standing Fact decision IDs", tuple(x.id for x in self.decisions)),
             ("Standing Fact task IDs", self.extraction_task_ids),
             ("Standing Fact ModelRun IDs", self.model_run_ids),
@@ -245,12 +325,33 @@ class StandingFactPlan(BaseModel):
             _ordered_distinct(label, values)
         if len(self.extraction_task_ids) != len(self.model_run_ids):
             raise ValueError("Every Standing Fact task requires one ModelRun.")
-        if len(self.extraction_task_ids) != len(self.traces):
-            raise ValueError("Every Standing Fact task requires one stage trace.")
+        trace_execution_ids = {item for trace in self.traces for item in trace.execution_record_ids}
+        if not set(self.extraction_task_ids).issubset(trace_execution_ids):
+            raise ValueError("Every Standing Fact task requires stage trace evidence.")
         if {x.draft_id for x in self.decisions} != {x.id for x in self.drafts}:
             raise ValueError("Standing Fact decisions must cover every mapped draft.")
         if len(self.decisions) != len(self.drafts):
             raise ValueError("Each Standing Fact draft requires exactly one decision.")
+        proposition_by_draft = {item.subject_record_id: item for item in self.propositions}
+        qualification_by_id = {item.id: item for item in self.qualifications}
+        proposition_decision_by_id = {item.id: item for item in self.proposition_decisions}
+        for decision in self.decisions:
+            if decision.qualification_id is None and decision.proposition_decision_id is None:
+                continue
+            qualification = qualification_by_id.get(decision.qualification_id or "")
+            proposition_decision = proposition_decision_by_id.get(
+                decision.proposition_decision_id or ""
+            )
+            proposition = proposition_by_draft.get(decision.draft_id)
+            if (
+                qualification is None
+                or proposition_decision is None
+                or proposition is None
+                or qualification.draft_id != decision.draft_id
+                or qualification.proposition_id != proposition.id
+                or proposition_decision.proposition_id != proposition.id
+            ):
+                raise ValueError("Standing Fact decision semantic evidence does not match.")
         planned_ids = {x.id for x in self.proposed_changes}
         if any(not set(x.proposed_change_ids).issubset(planned_ids) for x in self.decisions):
             raise ValueError("Standing Fact decision references an unknown ProposedChange.")
@@ -258,8 +359,13 @@ class StandingFactPlan(BaseModel):
             x.provenance_activity_id != self.provenance_activity_id for x in self.proposed_changes
         ):
             raise ValueError("Standing Fact changes must share one provenance activity.")
+        traces_by_run: dict[str, list[ExtractionStageTrace]] = defaultdict(list)
         for trace in self.traces:
-            validate_extraction_stage_trace_chain((trace,))
+            traces_by_run[trace.trace_run_id].append(trace)
+        for traces in traces_by_run.values():
+            validate_extraction_stage_trace_chain(
+                tuple(sorted(traces, key=lambda item: item.ordinal))
+            )
         if self.terminal_status is StandingFactPlanStatus.COMPLETE and self.diagnostics:
             raise ValueError("A complete Standing Fact Plan cannot record diagnostics.")
         if self.id != _content_id("sfp", self.model_dump(mode="json", exclude={"id"})):
@@ -338,18 +444,38 @@ class _TaskObservation:
     batch: StandingFactProposalBatch | None
 
 
-class _StandingFactSchemaRegistry:
-    schema_id = HYBRID_STANDING_FACT_SCHEMA_ID
+@dataclass(frozen=True)
+class _QualificationObservation:
+    draft: StandingFactDraft
+    proposition: CompleteProposition
+    source_text: str
+    extraction_task_id: str
+    model_run_id: str
+    model_status: ModelRunStatus
+    raw_output_sha256: str | None
+    qualification: StandingFactQualification | None
+    nli_observation: NliObservation | None
+    proposition_decision: PropositionDecision | None
+    nli_error: str | None
 
+
+class _StandingFactSchemaRegistry:
     def resolve(self, schema_id: str) -> PinnedTaskSchema:
-        if schema_id != self.schema_id:
-            raise ValueError(f"Unsupported Standing Fact schema: {schema_id}")
-        return PinnedTaskSchema(
-            schema_id,
-            standing_fact_schema_bytes(),
-            schema_id,
-            parse_standing_fact_output,
-        )
+        if schema_id == HYBRID_STANDING_FACT_SCHEMA_ID:
+            return PinnedTaskSchema(
+                schema_id,
+                standing_fact_schema_bytes(),
+                schema_id,
+                parse_standing_fact_output,
+            )
+        if schema_id == HYBRID_STANDING_FACT_QUALIFICATION_SCHEMA_ID:
+            return PinnedTaskSchema(
+                schema_id,
+                standing_fact_qualification_schema_bytes(),
+                schema_id,
+                parse_standing_fact_qualification_output,
+            )
+        raise ValueError(f"Unsupported Standing Fact schema: {schema_id}")
 
 
 def run_hybrid_standing_fact_plan(
@@ -361,6 +487,8 @@ def run_hybrid_standing_fact_plan(
     model_run_id_factory: ModelRunIdFactory,
     tokenizer: ContextTokenizer,
     prompt_bytes: bytes,
+    qualification_prompt_bytes: bytes,
+    nli_runtime: NaturalLanguageInferencePort,
 ) -> HybridStandingFactResult:
     """Propose paragraph-local standing facts without writing accepted state."""
     context = _load_context(command.parent_plan_id, ledger, archive)
@@ -368,10 +496,20 @@ def run_hybrid_standing_fact_plan(
     registry: TaskSchemaRegistry = _StandingFactSchemaRegistry()
     schema = registry.resolve(HYBRID_STANDING_FACT_SCHEMA_ID)
     manifest = (
-        _build_manifest(context, command.model_profile, prompt_bytes, schema, ledger, tokenizer)
+        _build_manifest(
+            context,
+            command.model_profile,
+            prompt_bytes,
+            schema,
+            ledger,
+            tokenizer,
+            prompt_id=HYBRID_STANDING_FACT_PROMPT_ID,
+            task_type="hybrid_standing_fact_proposal",
+        )
         if candidates_by_segment
         else None
     )
+    qualification_schema = registry.resolve(HYBRID_STANDING_FACT_QUALIFICATION_SCHEMA_ID)
     observations: list[_TaskObservation] = []
     for segment in context.segments:
         segment_id = context.segment_ids[segment.label]
@@ -431,21 +569,161 @@ def run_hybrid_standing_fact_plan(
             key=lambda item: item.id,
         )
     )
+    decisions: list[StandingFactDecision] = []
+    evidence_by_segment: dict[str, tuple[EvidenceTarget, EvidenceValidationAttempt]] = {}
+    candidates_by_id = {
+        item.candidate.id: item for values in candidates_by_segment.values() for item in values
+    }
+    deterministic_reasons = {draft.id: _hold_reasons(draft, context) for draft in drafts}
+    eligible_drafts = tuple(draft for draft in drafts if not deterministic_reasons[draft.id])
+    qualification_manifest = (
+        _build_manifest(
+            context,
+            command.model_profile,
+            qualification_prompt_bytes,
+            qualification_schema,
+            ledger,
+            tokenizer,
+            prompt_id=HYBRID_STANDING_FACT_QUALIFICATION_PROMPT_ID,
+            task_type="hybrid_standing_fact_qualification",
+        )
+        if eligible_drafts
+        else None
+    )
+    qualification_observations: list[_QualificationObservation] = []
+    for draft in eligible_drafts:
+        evidence = evidence_by_segment.get(draft.source_segment_id)
+        if evidence is None:
+            evidence = _prepare_segment_evidence(
+                context,
+                draft.source_segment_id,
+                command.recorded_at,
+                ledger,
+            )
+            evidence_by_segment[draft.source_segment_id] = evidence
+        proposition = _standing_fact_proposition(draft, candidates_by_id, evidence[0].id)
+        segment = _segment_by_id(context, draft.source_segment_id)
+        assert qualification_manifest is not None
+        task_input = _qualification_task_input(segment.exact_text, proposition)
+        outcome = run_bounded_extraction(
+            BoundedExtractionInput(
+                source_id=context.source.id,
+                document_id=context.document.id,
+                representation_id=context.bundle.representation.id,
+                context_manifest_id=qualification_manifest.id,
+                prompt_bytes=qualification_prompt_bytes,
+                execution_spec=_execution_spec(
+                    qualification_manifest,
+                    model_runtime,
+                    command.generation_parameters,
+                    qualification_schema,
+                    task_input,
+                ),
+                validator_version="standing_fact_qualification_output_v1",
+                task_type="hybrid_standing_fact_qualification",
+                input_candidate_ids=(draft.id,),
+                task_local_input=task_input,
+            ),
+            ledger,
+            archive,
+            model_runtime,
+            model_run_id_factory,
+            tokenizer,
+            registry,
+        )
+        parsed = outcome.standing_fact_qualification
+        qualification = (
+            _qualification_record(
+                draft,
+                proposition,
+                parsed,
+                outcome.extraction_task.id,
+                outcome.model_run.id,
+            )
+            if parsed is not None and outcome.model_run.status is ModelRunStatus.SUCCEEDED
+            else None
+        )
+        nli_observation: NliObservation | None = None
+        proposition_decision: PropositionDecision | None = None
+        nli_error: str | None = None
+        if qualification is not None:
+            try:
+                execution = nli_runtime.classify(
+                    NaturalLanguageInferenceInput(
+                        premise=segment.exact_text,
+                        hypothesis=proposition.text,
+                    )
+                )
+                nli_observation = build_nli_observation(
+                    proposition_id=proposition.id,
+                    premise=segment.exact_text,
+                    hypothesis=proposition.text,
+                    execution=execution,
+                )
+            except (OSError, RuntimeError, ValueError) as error:
+                nli_observation = None
+                nli_error = f"{type(error).__name__}: {error}"
+            proposition_decision = build_proposition_decision(
+                proposition_id=proposition.id,
+                qwen_judgment_id=_qualification_judgment_id(qualification),
+                nli_observation=nli_observation,
+                qwen_directly_supported=(
+                    qualification.outcome
+                    is StandingFactQualificationOutcome.SUPPORTED_STANDING_FACT
+                ),
+                entailment_threshold=HYBRID_STANDING_FACT_NLI_ENTAILMENT_THRESHOLD,
+            )
+        qualification_observations.append(
+            _QualificationObservation(
+                draft,
+                proposition,
+                segment.exact_text,
+                outcome.extraction_task.id,
+                outcome.model_run.id,
+                outcome.model_run.status,
+                outcome.model_run.output_digest,
+                qualification,
+                nli_observation,
+                proposition_decision,
+                nli_error,
+            )
+        )
+    qualification_by_draft = {item.draft.id: item for item in qualification_observations}
     provenance_id = _id(
         "prv",
         HYBRID_STANDING_FACT_ACTIVITY_TYPE,
         context.parent_plan.id,
         *(x.model_run_id for x in observations),
         *(x.id for x in drafts),
+        *(x.model_run_id for x in qualification_observations),
+        *(x.proposition.id for x in qualification_observations),
+        *(x.qualification.id for x in qualification_observations if x.qualification is not None),
+        *(
+            x.nli_observation.id
+            for x in qualification_observations
+            if x.nli_observation is not None
+        ),
+        *(
+            x.proposition_decision.id
+            for x in qualification_observations
+            if x.proposition_decision is not None
+        ),
     )
     changes_by_record_id = _rewrapped_parent_changes(context.parent_plan, provenance_id)
-    decisions: list[StandingFactDecision] = []
-    evidence_by_segment: dict[str, tuple[EvidenceTarget, EvidenceValidationAttempt]] = {}
-    candidates_by_id = {
-        item.candidate.id: item for values in candidates_by_segment.values() for item in values
-    }
     for draft in drafts:
-        reasons = _hold_reasons(draft, context)
+        semantic = qualification_by_draft.get(draft.id)
+        semantic_reasons = (
+            () if deterministic_reasons[draft.id] else _semantic_hold_reasons(semantic)
+        )
+        reasons = tuple(
+            sorted(
+                {
+                    *deterministic_reasons[draft.id],
+                    *semantic_reasons,
+                },
+                key=lambda item: item.value,
+            )
+        )
         proposal_ids: tuple[str, ...] = ()
         if not reasons:
             evidence = evidence_by_segment.get(draft.source_segment_id)
@@ -472,23 +750,52 @@ def run_hybrid_standing_fact_plan(
                 changes_by_record_id.setdefault(record_id, change)
             proposal_ids = tuple(sorted(change.id for change in new_changes.values()))
         disposition = StandingFactDisposition.HELD if reasons else StandingFactDisposition.PROPOSED
+        qualification_id = (
+            semantic.qualification.id
+            if semantic is not None and semantic.qualification is not None
+            else None
+        )
+        proposition_decision_id = (
+            semantic.proposition_decision.id
+            if semantic is not None and semantic.proposition_decision is not None
+            else None
+        )
         decisions.append(
             StandingFactDecision(
-                id=_decision_id(draft.id, disposition, reasons, proposal_ids),
+                id=_decision_id(
+                    draft.id,
+                    disposition,
+                    qualification_id,
+                    proposition_decision_id,
+                    reasons,
+                    proposal_ids,
+                ),
                 draft_id=draft.id,
                 disposition=disposition,
+                qualification_id=qualification_id,
+                proposition_decision_id=proposition_decision_id,
                 reason_codes=reasons,
                 proposed_change_ids=proposal_ids,
             )
         )
 
     diagnostics = _diagnostics(observations, decisions)
-    traces = tuple(
+    proposal_traces = tuple(
         sorted(
             (_trace(item, drafts, tuple(decisions), prompt_bytes, schema) for item in observations),
             key=lambda item: item.id,
         )
     )
+    qualification_traces = tuple(
+        trace
+        for item in qualification_observations
+        for trace in _qualification_traces(
+            item,
+            qualification_prompt_bytes,
+            qualification_schema,
+        )
+    )
+    traces = tuple(sorted((*proposal_traces, *qualification_traces), key=lambda item: item.id))
     changes = tuple(sorted(changes_by_record_id.values(), key=lambda item: item.id))
     validate_planned_proposed_changes(changes, ledger, error_label="HP-10")
     plan = _build_plan(
@@ -496,11 +803,49 @@ def run_hybrid_standing_fact_plan(
         manifest=manifest,
         provenance_activity_id=provenance_id,
         drafts=drafts,
+        propositions=tuple(
+            sorted(
+                (item.proposition for item in qualification_observations),
+                key=lambda item: item.id,
+            )
+        ),
+        qualifications=tuple(
+            sorted(
+                (
+                    item.qualification
+                    for item in qualification_observations
+                    if item.qualification is not None
+                ),
+                key=lambda item: item.id,
+            )
+        ),
+        nli_observations=tuple(
+            sorted(
+                (
+                    item.nli_observation
+                    for item in qualification_observations
+                    if item.nli_observation is not None
+                ),
+                key=lambda item: item.id,
+            )
+        ),
+        proposition_decisions=tuple(
+            sorted(
+                (
+                    item.proposition_decision
+                    for item in qualification_observations
+                    if item.proposition_decision is not None
+                ),
+                key=lambda item: item.id,
+            )
+        ),
         decisions=tuple(sorted(decisions, key=lambda item: item.id)),
         observations=tuple(observations),
+        qualification_observations=tuple(qualification_observations),
         traces=traces,
         proposed_changes=changes,
         diagnostics=diagnostics,
+        qualification_manifest=qualification_manifest,
     )
     payload = canonical_standing_fact_plan_bytes(plan)
     digest = hashlib.sha256(payload).hexdigest()
@@ -630,12 +975,24 @@ def _eligible_candidates(
         declaration.expanded_span.id: declaration.expanded_span.text
         for declaration in context.references.alias_declarations
     }
+    antecedent_by_id.update(
+        {span.id: span.text for span in context.references.semantic_antecedent_spans}
+    )
     grouped: dict[str, list[_EligibleMention]] = {}
     for candidate in context.mentions.candidates:
         interpretation = interpretation_by_id.get(candidate.id)
         if candidate.id not in selected or interpretation is None:
             continue
-        if interpretation.referentiality is not Referentiality.SPECIFIC_ENTITY:
+        reference = reference_by_id.get(candidate.id)
+        resolved_anaphor = (
+            interpretation.referentiality is Referentiality.ANAPHORIC
+            and reference is not None
+            and reference.status is ReferenceStatus.RESOLVED
+        )
+        if (
+            interpretation.referentiality is not Referentiality.SPECIFIC_ENTITY
+            and not resolved_anaphor
+        ):
             continue
         is_person = interpretation.contextual_kind is ContextualKind.PERSON
         is_organization = interpretation.contextual_kind in {
@@ -647,7 +1004,6 @@ def _eligible_candidates(
         )
         if not (is_person or is_organization):
             continue
-        reference = reference_by_id.get(candidate.id)
         if reference is not None and reference.status is not ReferenceStatus.RESOLVED:
             continue
         name = candidate.text
@@ -695,13 +1051,16 @@ def _build_manifest(
     schema: PinnedTaskSchema,
     ledger: HybridStandingFactLedger,
     tokenizer: ContextTokenizer,
+    *,
+    prompt_id: str,
+    task_type: str,
 ) -> ContextManifest:
     unit = create_analysis_unit_from_retrieval_selection(
         RetrievalSelectionAnalysisUnitInput(
             representation_id=context.bundle.representation.id,
             focus_node_ids=(context.parent_plan.paragraph_node_id,),
             policy_id=HYBRID_STANDING_FACT_POLICY_ID,
-            task_type="hybrid_standing_fact_proposal",
+            task_type=task_type,
         ),
         ledger,
     )
@@ -709,7 +1068,7 @@ def _build_manifest(
         ContextManifestInput(
             analysis_unit=unit,
             model_profile=profile,
-            prompt_id=HYBRID_STANDING_FACT_PROMPT_ID,
+            prompt_id=prompt_id,
             prompt_bytes=prompt_bytes,
             schema_id=schema.schema_id,
             schema_bytes=schema.canonical_schema_bytes,
@@ -813,6 +1172,89 @@ def _draft(observation: _TaskObservation, proposal: StandingFactProposal) -> Sta
         extraction_task_id=observation.extraction_task_id,
         model_run_id=observation.model_run_id,
     )
+
+
+def _standing_fact_proposition(
+    draft: StandingFactDraft,
+    candidates_by_id: dict[str, _EligibleMention],
+    evidence_target_id: str,
+) -> CompleteProposition:
+    if draft.subject_candidate_id is None:
+        raise ValueError("A Standing Fact proposition requires a resolved subject.")
+    subject = candidates_by_id[draft.subject_candidate_id].display_name
+    if draft.object_candidate_id is not None:
+        object_value = candidates_by_id[draft.object_candidate_id].display_name
+    else:
+        object_value = draft.object_label_or_literal
+    text = f"{subject} {draft.relation_label} {object_value}."
+    return build_complete_proposition(
+        kind=PropositionKind.STANDING_ASSERTION,
+        subject_record_id=draft.id,
+        text=text,
+        evidence_target_id=evidence_target_id,
+    )
+
+
+def _qualification_task_input(source_text: str, proposition: CompleteProposition) -> bytes:
+    return (
+        "task: qualify_standing_fact\n"
+        f"source_segment_text_json: {json.dumps(source_text, ensure_ascii=False)}\n"
+        f"complete_proposition_json: {json.dumps(proposition.text, ensure_ascii=False)}\n"
+    ).encode()
+
+
+def _qualification_record(
+    draft: StandingFactDraft,
+    proposition: CompleteProposition,
+    output: StandingFactQualificationOutput,
+    extraction_task_id: str,
+    model_run_id: str,
+) -> StandingFactQualification:
+    identifier = _id(
+        "sfq",
+        draft.id,
+        proposition.id,
+        output.outcome.value,
+        output.reason,
+        extraction_task_id,
+        model_run_id,
+    )
+    return StandingFactQualification(
+        id=identifier,
+        draft_id=draft.id,
+        proposition_id=proposition.id,
+        outcome=output.outcome,
+        reason=output.reason,
+        extraction_task_id=extraction_task_id,
+        model_run_id=model_run_id,
+    )
+
+
+def _qualification_judgment_id(qualification: StandingFactQualification) -> str:
+    return _id("spj", "standing_fact_qualification", qualification.id)
+
+
+def _semantic_hold_reasons(
+    observation: _QualificationObservation | None,
+) -> tuple[StandingFactHoldReason, ...]:
+    if observation is None or observation.qualification is None:
+        return (StandingFactHoldReason.QUALIFICATION_MISSING,)
+    outcome = observation.qualification.outcome
+    reasons: set[StandingFactHoldReason] = set()
+    if outcome is StandingFactQualificationOutcome.EVENT_NOT_STANDING:
+        reasons.add(StandingFactHoldReason.EVENT_ROUTE_REQUIRED)
+    elif outcome is StandingFactQualificationOutcome.INCOMPLETE_OR_WRONG_ARGUMENTS:
+        reasons.add(StandingFactHoldReason.INCOMPLETE_OR_WRONG_ARGUMENTS)
+    elif outcome is StandingFactQualificationOutcome.UNSUPPORTED:
+        reasons.add(StandingFactHoldReason.SEMANTICALLY_UNSUPPORTED)
+    elif outcome is StandingFactQualificationOutcome.AMBIGUOUS:
+        reasons.add(StandingFactHoldReason.QUALIFICATION_AMBIGUOUS)
+    if outcome is StandingFactQualificationOutcome.SUPPORTED_STANDING_FACT and (
+        observation.proposition_decision is None
+        or observation.proposition_decision.disposition is not PropositionDisposition.SUPPORTED
+    ):
+        reasons.add(StandingFactHoldReason.COMPLETE_PROPOSITION_HELD)
+    return tuple(sorted(reasons, key=lambda item: item.value))
 
 
 def _hold_reasons(
@@ -1118,24 +1560,125 @@ def _trace(
     )
 
 
+def _qualification_traces(
+    observation: _QualificationObservation,
+    prompt_bytes: bytes,
+    schema: PinnedTaskSchema,
+) -> tuple[ExtractionStageTrace, ExtractionStageTrace]:
+    qualification = observation.qualification
+    qwen_status = (
+        ExtractionStageStatus.COMPLETED
+        if qualification is not None and observation.model_status is ModelRunStatus.SUCCEEDED
+        else ExtractionStageStatus.FAILED
+    )
+    qwen = build_extraction_stage_trace(
+        trace_run_id=f"standing_fact_qualification:{observation.draft.id}",
+        ordinal=0,
+        stage_id="hybrid_standing_fact_qualification",
+        stage_version="1",
+        producer_id="qwen2.5",
+        source_segment_id=observation.draft.source_segment_id,
+        source_text_sha256=hashlib.sha256(observation.source_text.encode()).hexdigest(),
+        input_record_ids=tuple(sorted((observation.draft.id, observation.proposition.id))),
+        execution_record_ids=(observation.extraction_task_id, observation.model_run_id),
+        configuration={
+            "prompt_sha256": hashlib.sha256(prompt_bytes).hexdigest(),
+            "schema_sha256": schema.digest,
+        },
+        input_payload={
+            "source_text": observation.source_text,
+            "complete_proposition": observation.proposition.model_dump(mode="json"),
+            "rendered_task": _qualification_task_input(
+                observation.source_text, observation.proposition
+            ).decode(),
+        },
+        output_payload={
+            "model_run_status": observation.model_status.value,
+            "raw_output_sha256": observation.raw_output_sha256,
+            "qualification": qualification.model_dump(mode="json") if qualification else None,
+        },
+        status=qwen_status,
+        diagnostics=(
+            () if qwen_status is ExtractionStageStatus.COMPLETED else ("missing_qualification",)
+        ),
+    )
+    nli = observation.nli_observation
+    proposition_decision = observation.proposition_decision
+    nli_status = (
+        ExtractionStageStatus.COMPLETED
+        if nli is not None and proposition_decision is not None
+        else ExtractionStageStatus.FAILED
+    )
+    challenger = build_extraction_stage_trace(
+        trace_run_id=f"standing_fact_qualification:{observation.draft.id}",
+        ordinal=1,
+        stage_id="standing_fact_nli_challenge",
+        stage_version="1",
+        producer_id=nli.model_id if nli is not None else "deberta-nli",
+        source_segment_id=observation.draft.source_segment_id,
+        source_text_sha256=hashlib.sha256(observation.source_text.encode()).hexdigest(),
+        parent_trace_ids=(qwen.id,),
+        input_record_ids=(observation.proposition.id,),
+        configuration={
+            "entailment_threshold": HYBRID_STANDING_FACT_NLI_ENTAILMENT_THRESHOLD,
+        },
+        input_payload={
+            "premise": observation.source_text,
+            "hypothesis": observation.proposition.text,
+        },
+        output_payload={
+            "nli_observation": nli.model_dump(mode="json") if nli else None,
+            "nli_error": observation.nli_error,
+            "proposition_decision": (
+                proposition_decision.model_dump(mode="json")
+                if proposition_decision is not None
+                else None
+            ),
+        },
+        status=nli_status,
+        diagnostics=() if nli_status is ExtractionStageStatus.COMPLETED else ("nli_unavailable",),
+    )
+    return qwen, challenger
+
+
 def _build_plan(
     *,
     context: _SourceContext,
     manifest: ContextManifest | None,
     provenance_activity_id: str,
     drafts: tuple[StandingFactDraft, ...],
+    propositions: tuple[CompleteProposition, ...],
+    qualifications: tuple[StandingFactQualification, ...],
+    nli_observations: tuple[NliObservation, ...],
+    proposition_decisions: tuple[PropositionDecision, ...],
     decisions: tuple[StandingFactDecision, ...],
     observations: tuple[_TaskObservation, ...],
+    qualification_observations: tuple[_QualificationObservation, ...],
     traces: tuple[ExtractionStageTrace, ...],
     proposed_changes: tuple[PlannedProposedChange, ...],
     diagnostics: tuple[str, ...],
+    qualification_manifest: ContextManifest | None,
 ) -> StandingFactPlan:
-    extraction_task_ids = tuple(sorted(x.extraction_task_id for x in observations))
-    model_run_ids = tuple(sorted(x.model_run_id for x in observations))
+    extraction_task_ids = tuple(
+        sorted(
+            (
+                *(x.extraction_task_id for x in observations),
+                *(x.extraction_task_id for x in qualification_observations),
+            )
+        )
+    )
+    model_run_ids = tuple(
+        sorted(
+            (
+                *(x.model_run_id for x in observations),
+                *(x.model_run_id for x in qualification_observations),
+            )
+        )
+    )
     payload = cast(
         dict[str, JsonValue],
         {
-            "schema_version": "standing_fact_plan_v1",
+            "schema_version": "standing_fact_plan_v2",
             "parent_plan_id": context.parent_plan.id,
             "parent_plan_sha256": hashlib.sha256(
                 canonical_hybrid_proposal_plan_bytes(context.parent_plan)
@@ -1151,9 +1694,20 @@ def _build_plan(
             "representation_id": context.bundle.representation.id,
             "paragraph_node_id": context.parent_plan.paragraph_node_id,
             "context_manifest_id": manifest.id if manifest else None,
+            "qualification_context_manifest_id": (
+                qualification_manifest.id if qualification_manifest else None
+            ),
             "policy_id": HYBRID_STANDING_FACT_POLICY_ID,
             "provenance_activity_id": provenance_activity_id,
             "drafts": [cast(JsonValue, x.model_dump(mode="json")) for x in drafts],
+            "propositions": [cast(JsonValue, x.model_dump(mode="json")) for x in propositions],
+            "qualifications": [cast(JsonValue, x.model_dump(mode="json")) for x in qualifications],
+            "nli_observations": [
+                cast(JsonValue, x.model_dump(mode="json")) for x in nli_observations
+            ],
+            "proposition_decisions": [
+                cast(JsonValue, x.model_dump(mode="json")) for x in proposition_decisions
+            ],
             "decisions": [cast(JsonValue, x.model_dump(mode="json")) for x in decisions],
             "extraction_task_ids": list(extraction_task_ids),
             "model_run_ids": list(model_run_ids),
@@ -1274,6 +1828,8 @@ def _planned_change(
 def _decision_id(
     draft_id: str,
     disposition: StandingFactDisposition,
+    qualification_id: str | None,
+    proposition_decision_id: str | None,
     reasons: tuple[StandingFactHoldReason, ...],
     proposal_ids: tuple[str, ...],
 ) -> str:
@@ -1281,6 +1837,8 @@ def _decision_id(
         "sfdc",
         draft_id,
         disposition.value,
+        qualification_id or "",
+        proposition_decision_id or "",
         *(x.value for x in reasons),
         *proposal_ids,
     )

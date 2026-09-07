@@ -11,7 +11,7 @@ from enum import StrEnum
 from typing import Annotated, Literal, Protocol, Self, cast
 
 from kotekomi_domain import (
-    HYBRID_EVENT_SEMANTICS_V1,
+    HYBRID_EVENT_SEMANTICS_V2,
     Actor,
     AssertionType,
     AttributionBasis,
@@ -76,6 +76,7 @@ from kotekomi_application.hybrid_mention_interpretation import (
     canonical_hybrid_extraction_preview_bytes,
     hybrid_extraction_preview_from_bytes,
 )
+from kotekomi_application.semantic_proposition import PropositionDisposition
 
 HYBRID_PROPOSAL_POLICY_ID = "hybrid_proposed_change_v1"
 HYBRID_PROPOSAL_ACTIVITY_TYPE = "hybrid_proposal_batch_submitted"
@@ -89,6 +90,8 @@ class ProposalDisposition(StrEnum):
 
 
 class ProposalAdmissionReason(StrEnum):
+    COMPLETE_PROPOSITION_HELD = "complete_proposition_held"
+    COMPLETE_PROPOSITION_MISSING = "complete_proposition_missing"
     MISSING_GOVERNED_ATTRIBUTION = "missing_governed_attribution"
     MISSING_REQUIRED_ROLE = "missing_required_role"
     MISSING_SUPPORT_JUDGMENT = "missing_support_judgment"
@@ -826,7 +829,7 @@ def _admission_reasons(
     reasons: dict[str, set[ProposalAdmissionReason]] = {
         item.event_subject_id: set() for item in preview.semantic_events
     }
-    frame_by_id = {item.id: item for item in HYBRID_EVENT_SEMANTICS_V1.frames}
+    frame_by_id = {item.id: item for item in HYBRID_EVENT_SEMANTICS_V2.frames}
     for event in preview.semantic_events:
         frame = frame_by_id[event.frame_id]
         actual_roles = {item.frame_role_id for item in _event_assignments(preview, event)}
@@ -853,6 +856,25 @@ def _admission_reasons(
                 )
             elif judgments[0].outcome is not SupportOutcome.DIRECTLY_SUPPORTED:
                 reasons[event.event_subject_id].add(ProposalAdmissionReason.NON_DIRECT_SUPPORT)
+        propositions = tuple(
+            item for item in preview.propositions if item.subject_record_id == event.id
+        )
+        if len(propositions) != 1:
+            reasons[event.event_subject_id].add(
+                ProposalAdmissionReason.COMPLETE_PROPOSITION_MISSING
+            )
+            continue
+        decisions = tuple(
+            item
+            for item in preview.proposition_decisions
+            if item.proposition_id == propositions[0].id
+        )
+        if len(decisions) != 1:
+            reasons[event.event_subject_id].add(
+                ProposalAdmissionReason.COMPLETE_PROPOSITION_MISSING
+            )
+        elif decisions[0].disposition is not PropositionDisposition.SUPPORTED:
+            reasons[event.event_subject_id].add(ProposalAdmissionReason.COMPLETE_PROPOSITION_HELD)
     return reasons
 
 
@@ -1103,6 +1125,9 @@ def _resolved_name(
             for declaration in references.alias_declarations
             if declaration.expanded_span.id in antecedent_ids
         ]
+        antecedents.extend(
+            span for span in references.semantic_antecedent_spans if span.id in antecedent_ids
+        )
         if len(antecedents) == 1:
             return antecedents[0].text, antecedents[0].id
     return candidate.text, candidate.id

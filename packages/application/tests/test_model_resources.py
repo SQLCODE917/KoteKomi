@@ -2,6 +2,7 @@ from pathlib import Path
 
 import pytest
 from kotekomi_application import (
+    MANAGED_MODEL_RESOURCE_IDS,
     REQUIRED_MODEL_RESOURCE_IDS,
     ModelResourceId,
     ModelResourceInstallDisposition,
@@ -45,12 +46,14 @@ class _ResourceAdapter:
 
 
 def test_readiness_is_complete_ordered_and_requires_every_resource(tmp_path: Path) -> None:
-    refined = _ResourceAdapter(REQUIRED_MODEL_RESOURCE_IDS[1], ModelResourceStatus.MISSING)
+    nli = _ResourceAdapter(REQUIRED_MODEL_RESOURCE_IDS[1], ModelResourceStatus.READY)
+    refined = _ResourceAdapter(REQUIRED_MODEL_RESOURCE_IDS[2], ModelResourceStatus.MISSING)
     gliner = _ResourceAdapter(REQUIRED_MODEL_RESOURCE_IDS[0], ModelResourceStatus.READY)
+    fcoref = _ResourceAdapter(ModelResourceId.FCOREF_V1, ModelResourceStatus.MISSING)
 
-    report = inspect_required_model_resources(tmp_path.resolve(), (refined, gliner))
+    report = inspect_required_model_resources(tmp_path.resolve(), (refined, fcoref, gliner, nli))
 
-    assert tuple(item.resource_id for item in report.resources) == REQUIRED_MODEL_RESOURCE_IDS
+    assert tuple(item.resource_id for item in report.resources) == MANAGED_MODEL_RESOURCE_IDS
     assert report.ready is False
     with pytest.raises(ValueError, match="Exactly one Adapter"):
         inspect_required_model_resources(tmp_path.resolve(), (gliner,))
@@ -58,11 +61,13 @@ def test_readiness_is_complete_ordered_and_requires_every_resource(tmp_path: Pat
 
 def test_installation_selects_resources_in_canonical_order(tmp_path: Path) -> None:
     gliner = _ResourceAdapter(REQUIRED_MODEL_RESOURCE_IDS[0], ModelResourceStatus.MISSING)
-    refined = _ResourceAdapter(REQUIRED_MODEL_RESOURCE_IDS[1], ModelResourceStatus.MISSING)
+    nli = _ResourceAdapter(REQUIRED_MODEL_RESOURCE_IDS[1], ModelResourceStatus.MISSING)
+    refined = _ResourceAdapter(REQUIRED_MODEL_RESOURCE_IDS[2], ModelResourceStatus.MISSING)
+    fcoref = _ResourceAdapter(ModelResourceId.FCOREF_V1, ModelResourceStatus.MISSING)
 
     results = install_model_resources(
         tmp_path.resolve(),
-        (refined, gliner),
+        (refined, fcoref, gliner, nli),
         selected=(ModelResourceId.REFINED_WIKIPEDIA_V1,),
         repair=True,
     )

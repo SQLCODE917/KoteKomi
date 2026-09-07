@@ -1,0 +1,2 @@
+en-core-web-sm @ https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl
+fastcoref @ https://github.com/shon-otmazgin/fastcoref/archive/ae224139196d122b225af5a7e73b5fc0b6e1076d.zip

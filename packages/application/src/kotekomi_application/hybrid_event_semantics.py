@@ -8,13 +8,23 @@ import re
 from enum import StrEnum
 from typing import Annotated, Literal, Self, cast
 
-from kotekomi_domain import HYBRID_EVENT_SEMANTICS_V1, SemanticArgumentTargetKind, UpperRole
+from kotekomi_domain import (
+    HYBRID_EVENT_SEMANTICS_V2,
+    AssignmentOrigin,
+    SemanticArgumentTargetKind,
+    UpperRole,
+)
 from kotekomi_domain.models import JsonValue
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from kotekomi_application.extraction_stage_trace import ExtractionStageTrace
+from kotekomi_application.semantic_proposition import (
+    CompleteProposition,
+    NliObservation,
+    PropositionDecision,
+)
 
-HYBRID_EVENT_SEMANTICS_POLICY_ID = "hybrid_event_semantics_v1"
+HYBRID_EVENT_SEMANTICS_POLICY_ID = "hybrid_event_semantics_v2"
 HYBRID_EVENT_NORMALIZATION_PROMPT_ID = "hybrid_event_normalization_v1"
 HYBRID_EVENT_NORMALIZATION_SCHEMA_ID = "hybrid_event_normalization_text_v1"
 HYBRID_EVENT_ROLE_COMPLETION_PROMPT_ID = "hybrid_event_role_completion_v1"
@@ -47,6 +57,7 @@ class SemanticStatementKind(StrEnum):
     MODALITY = "modality"
     POLARITY = "polarity"
     QUALIFIER = "qualifier"
+    COMPLETE_PROPOSITION = "complete_proposition"
 
 
 class SupportOutcome(StrEnum):
@@ -113,6 +124,7 @@ class EventArgumentAssignmentDraft(BaseModel):
     target_id: Annotated[str, Field(pattern=r"^sat_[a-f0-9]{24}$")]
     frame_role_id: Annotated[str, Field(min_length=1)]
     upper_role: UpperRole
+    assignment_origin: AssignmentOrigin
     proposed_role_labels: tuple[Annotated[str, Field(min_length=1)], ...] = ()
     support_evidence_target_id: Annotated[str, Field(pattern=r"^etg_[a-f0-9]{24}$")]
     source_trace_ids: tuple[Annotated[str, Field(pattern=r"^xst_[a-f0-9]{24}$")], ...]
@@ -131,6 +143,7 @@ class EventArgumentAssignmentDraft(BaseModel):
             target_id=self.target_id,
             frame_role_id=self.frame_role_id,
             upper_role=self.upper_role,
+            assignment_origin=self.assignment_origin,
             proposed_role_labels=self.proposed_role_labels,
             support_evidence_target_id=self.support_evidence_target_id,
             source_trace_ids=self.source_trace_ids,
@@ -320,7 +333,7 @@ class HybridEventSemanticsPreview(BaseModel):
     parent_preview_sha256: Annotated[str, Field(pattern=_SHA256)]
     representation_id: Annotated[str, Field(min_length=1)]
     paragraph_node_id: Annotated[str, Field(min_length=1)]
-    ontology_profile_id: Literal["hybrid_event_semantics_v1"]
+    ontology_profile_id: Literal["hybrid_event_semantics_v2"]
     ontology_profile_sha256: Annotated[str, Field(pattern=_SHA256)]
     normalization_prompt_sha256: Annotated[str, Field(pattern=_SHA256)]
     normalization_schema_sha256: Annotated[str, Field(pattern=_SHA256)]
@@ -335,6 +348,9 @@ class HybridEventSemanticsPreview(BaseModel):
     gaps: tuple[SemanticCoverageGap, ...] = ()
     statements: tuple[SemanticStatement, ...] = ()
     judgments: tuple[SemanticSupportJudgment, ...] = ()
+    propositions: tuple[CompleteProposition, ...] = ()
+    nli_observations: tuple[NliObservation, ...] = ()
+    proposition_decisions: tuple[PropositionDecision, ...] = ()
     evidence_target_ids: tuple[Annotated[str, Field(pattern=r"^etg_[a-f0-9]{24}$")], ...] = ()
     evidence_validation_attempt_ids: tuple[
         Annotated[str, Field(pattern=r"^eva_[a-f0-9]{24}$")], ...
@@ -355,6 +371,12 @@ class HybridEventSemanticsPreview(BaseModel):
             ("gap IDs", tuple(item.id for item in self.gaps)),
             ("statement IDs", tuple(item.id for item in self.statements)),
             ("judgment IDs", tuple(item.id for item in self.judgments)),
+            ("proposition IDs", tuple(item.id for item in self.propositions)),
+            ("NLI observation IDs", tuple(item.id for item in self.nli_observations)),
+            (
+                "proposition decision IDs",
+                tuple(item.id for item in self.proposition_decisions),
+            ),
             ("evidence target IDs", self.evidence_target_ids),
             ("evidence validation attempt IDs", self.evidence_validation_attempt_ids),
             ("extraction task IDs", self.extraction_task_ids),
@@ -400,6 +422,9 @@ class HybridEventSemanticsPreview(BaseModel):
                 or self.gaps
                 or self.statements
                 or self.judgments
+                or self.propositions
+                or self.nli_observations
+                or self.proposition_decisions
                 or self.evidence_target_ids
                 or self.evidence_validation_attempt_ids
                 or self.extraction_task_ids
@@ -419,12 +444,14 @@ def _validate_preview_references(preview: HybridEventSemanticsPreview) -> None:
     targets = {item.id: item for item in preview.targets}
     qualifiers = {item.id: item for item in preview.qualifiers}
     statements = {item.id: item for item in preview.statements}
+    propositions = {item.id: item for item in preview.propositions}
+    nli_observations = {item.id: item for item in preview.nli_observations}
     traces = {item.id: item for item in preview.traces}
     evidence_target_ids = set(preview.evidence_target_ids)
     attempt_ids = set(preview.evidence_validation_attempt_ids)
     task_ids = set(preview.extraction_task_ids)
     run_ids = set(preview.model_run_ids)
-    frame_by_id = {item.id: item for item in HYBRID_EVENT_SEMANTICS_V1.frames}
+    frame_by_id = {item.id: item for item in HYBRID_EVENT_SEMANTICS_V2.frames}
 
     referenced_assignment_ids: set[str] = set()
     referenced_qualifier_ids: set[str] = set()
@@ -498,6 +525,42 @@ def _validate_preview_references(preview: HybridEventSemanticsPreview) -> None:
         if judgment.extraction_task_id not in task_ids or judgment.model_run_id not in run_ids:
             raise ValueError("SemanticSupportJudgment references unknown execution evidence.")
         judged_statement_ids.add(judgment.statement_id)
+
+    for proposition in propositions.values():
+        event = events.get(proposition.subject_record_id)
+        if event is None or proposition.evidence_target_id != event.support_evidence_target_id:
+            raise ValueError("CompleteProposition does not match its event evidence.")
+        matching_statements = tuple(
+            item
+            for item in statements.values()
+            if item.kind is SemanticStatementKind.COMPLETE_PROPOSITION
+            and item.subject_record_id == proposition.subject_record_id
+            and item.text == proposition.text
+        )
+        if len(matching_statements) != 1:
+            raise ValueError("CompleteProposition requires one matching SemanticStatement.")
+    if len(propositions) != len(events):
+        raise ValueError("Every governed event requires one CompleteProposition.")
+    proposition_ids = set(propositions)
+    if any(item.proposition_id not in proposition_ids for item in nli_observations.values()):
+        raise ValueError("NLI observation references an unknown CompleteProposition.")
+    decisions_by_proposition: dict[str, PropositionDecision] = {}
+    for decision in preview.proposition_decisions:
+        if decision.proposition_id in decisions_by_proposition:
+            raise ValueError("A CompleteProposition has repeated admission decisions.")
+        if decision.proposition_id not in proposition_ids:
+            raise ValueError("PropositionDecision references an unknown CompleteProposition.")
+        if decision.nli_observation_id is not None:
+            observation = nli_observations.get(decision.nli_observation_id)
+            if observation is None or observation.proposition_id != decision.proposition_id:
+                raise ValueError("PropositionDecision NLI evidence does not match.")
+        if decision.qwen_judgment_id is not None and decision.qwen_judgment_id not in {
+            item.id for item in preview.judgments
+        }:
+            raise ValueError("PropositionDecision Qwen evidence does not match.")
+        decisions_by_proposition[decision.proposition_id] = decision
+    if set(decisions_by_proposition) != proposition_ids:
+        raise ValueError("Every CompleteProposition requires one PropositionDecision.")
 
     required_evidence_ids = {
         *(item.support_evidence_target_id for item in events.values()),
@@ -584,6 +647,7 @@ def event_argument_assignment_draft_id(
     target_id: str,
     frame_role_id: str,
     upper_role: UpperRole,
+    assignment_origin: AssignmentOrigin,
     proposed_role_labels: tuple[str, ...],
     support_evidence_target_id: str,
     source_trace_ids: tuple[str, ...],
@@ -595,6 +659,7 @@ def event_argument_assignment_draft_id(
         target_id,
         frame_role_id,
         upper_role.value,
+        assignment_origin.value,
         *proposed_role_labels,
         support_evidence_target_id,
         *source_trace_ids,
@@ -608,6 +673,7 @@ def build_event_argument_assignment_draft(
     target_id: str,
     frame_role_id: str,
     upper_role: UpperRole,
+    assignment_origin: AssignmentOrigin,
     proposed_role_labels: tuple[str, ...],
     support_evidence_target_id: str,
     source_trace_ids: tuple[str, ...],
@@ -620,6 +686,7 @@ def build_event_argument_assignment_draft(
             target_id=target_id,
             frame_role_id=frame_role_id,
             upper_role=upper_role,
+            assignment_origin=assignment_origin,
             proposed_role_labels=proposed_role_labels,
             support_evidence_target_id=support_evidence_target_id,
             source_trace_ids=source_trace_ids,
@@ -629,6 +696,7 @@ def build_event_argument_assignment_draft(
         target_id=target_id,
         frame_role_id=frame_role_id,
         upper_role=upper_role,
+        assignment_origin=assignment_origin,
         proposed_role_labels=proposed_role_labels,
         support_evidence_target_id=support_evidence_target_id,
         source_trace_ids=source_trace_ids,
@@ -887,6 +955,9 @@ def build_hybrid_event_semantics_preview(**values: object) -> HybridEventSemanti
         "gaps",
         "statements",
         "judgments",
+        "propositions",
+        "nli_observations",
+        "proposition_decisions",
         "evidence_target_ids",
         "evidence_validation_attempt_ids",
         "extraction_task_ids",
@@ -903,6 +974,9 @@ def build_hybrid_event_semantics_preview(**values: object) -> HybridEventSemanti
         "gaps",
         "statements",
         "judgments",
+        "propositions",
+        "nli_observations",
+        "proposition_decisions",
         "traces",
     ):
         payload[name] = [

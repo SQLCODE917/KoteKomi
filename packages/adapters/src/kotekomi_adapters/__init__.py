@@ -3,11 +3,13 @@
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from kotekomi_adapters.deberta_nli import DebertaNliAdapter
     from kotekomi_adapters.docling_pdf_parser import (
         DoclingPdfParser,
         DoclingPdfParserConfig,
         preflight_pdf_source,
     )
+    from kotekomi_adapters.fcoref import FCorefAdapter, FCorefConfig
     from kotekomi_adapters.gliner_organization_mention_proposer import (
         GlinerMentionProposer,
         GlinerOrganizationMentionProposer,
@@ -19,11 +21,18 @@ if TYPE_CHECKING:
     from kotekomi_adapters.local_archive import LocalArchiveStore
     from kotekomi_adapters.model_http import HttpResponse, JsonHttpClient
     from kotekomi_adapters.model_resources import (
+        FCorefModelResourceAdapter,
         GlinerModelResourceAdapter,
         ModelResourceInstallationError,
+        NliDebertaModelResourceAdapter,
         RefinedModelResourceAdapter,
+        fcoref_expected_resource_identity,
+        fcoref_model_path,
+        fcoref_python_path,
         gliner_expected_resource_identity,
         gliner_model_path,
+        nli_expected_resource_identity,
+        nli_model_path,
         refined_data_path,
         refined_python_path,
     )
@@ -53,6 +62,9 @@ if TYPE_CHECKING:
 __all__ = [
     "DoclingPdfParser",
     "DoclingPdfParserConfig",
+    "DebertaNliAdapter",
+    "FCorefAdapter",
+    "FCorefConfig",
     "HttpResponse",
     "GenericArticleAdapter",
     "GlinerOrganizationMentionProposer",
@@ -67,9 +79,13 @@ __all__ = [
     "LMStudioEmbeddingAdapter",
     "LocalArchiveStore",
     "GlinerModelResourceAdapter",
+    "FCorefModelResourceAdapter",
     "ModelResourceInstallationError",
+    "NliDebertaModelResourceAdapter",
     "RefinedModelResourceAdapter",
     "gliner_expected_resource_identity",
+    "fcoref_expected_resource_identity",
+    "nli_expected_resource_identity",
     "NewsMLG2Adapter",
     "OllamaModelRuntime",
     "OllamaEmbeddingAdapter",
@@ -85,12 +101,23 @@ __all__ = [
     "sqlite_ledger_transaction",
     "preflight_pdf_source",
     "gliner_model_path",
+    "fcoref_model_path",
+    "fcoref_python_path",
+    "nli_model_path",
     "refined_data_path",
     "refined_python_path",
 ]
 
 
 def __getattr__(name: str) -> object:
+    if name == "DebertaNliAdapter":
+        from kotekomi_adapters.deberta_nli import DebertaNliAdapter
+
+        return DebertaNliAdapter
+    if name in {"FCorefAdapter", "FCorefConfig"}:
+        from kotekomi_adapters.fcoref import FCorefAdapter, FCorefConfig
+
+        return {"FCorefAdapter": FCorefAdapter, "FCorefConfig": FCorefConfig}[name]
     if name in {"GlinerMentionProposer", "GlinerOrganizationMentionProposer"}:
         from kotekomi_adapters.gliner_organization_mention_proposer import (
             GlinerMentionProposer,
@@ -138,30 +165,51 @@ def __getattr__(name: str) -> object:
 
         return {"HttpResponse": HttpResponse, "JsonHttpClient": JsonHttpClient}[name]
     if name in {
+        "FCorefModelResourceAdapter",
         "GlinerModelResourceAdapter",
         "ModelResourceInstallationError",
+        "NliDebertaModelResourceAdapter",
         "RefinedModelResourceAdapter",
+        "fcoref_expected_resource_identity",
+        "fcoref_model_path",
+        "fcoref_python_path",
         "gliner_expected_resource_identity",
         "gliner_model_path",
+        "nli_expected_resource_identity",
+        "nli_model_path",
         "refined_data_path",
         "refined_python_path",
     }:
         from kotekomi_adapters.model_resources import (
+            FCorefModelResourceAdapter,
             GlinerModelResourceAdapter,
             ModelResourceInstallationError,
+            NliDebertaModelResourceAdapter,
             RefinedModelResourceAdapter,
+            fcoref_expected_resource_identity,
+            fcoref_model_path,
+            fcoref_python_path,
             gliner_expected_resource_identity,
             gliner_model_path,
+            nli_expected_resource_identity,
+            nli_model_path,
             refined_data_path,
             refined_python_path,
         )
 
         return {
+            "FCorefModelResourceAdapter": FCorefModelResourceAdapter,
             "GlinerModelResourceAdapter": GlinerModelResourceAdapter,
             "ModelResourceInstallationError": ModelResourceInstallationError,
+            "NliDebertaModelResourceAdapter": NliDebertaModelResourceAdapter,
             "RefinedModelResourceAdapter": RefinedModelResourceAdapter,
+            "fcoref_expected_resource_identity": fcoref_expected_resource_identity,
+            "fcoref_model_path": fcoref_model_path,
+            "fcoref_python_path": fcoref_python_path,
             "gliner_expected_resource_identity": gliner_expected_resource_identity,
             "gliner_model_path": gliner_model_path,
+            "nli_expected_resource_identity": nli_expected_resource_identity,
+            "nli_model_path": nli_model_path,
             "refined_data_path": refined_data_path,
             "refined_python_path": refined_python_path,
         }[name]

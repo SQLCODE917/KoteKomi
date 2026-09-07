@@ -74,6 +74,9 @@ from kotekomi_application.hybrid_standing_fact_model_output import (
     StandingFactAbstention,
     StandingFactProposalBatch,
 )
+from kotekomi_application.hybrid_standing_fact_qualification_model_output import (
+    StandingFactQualificationOutput,
+)
 from kotekomi_application.organization_semantic_qualification import (
     OrganizationQualificationJudgment,
     parse_organization_qualification_output,
@@ -524,6 +527,7 @@ class BoundedExtractionOutcome:
     event_semantic_role_target_proposal: EventSemanticRoleTargetProposal | None = None
     semantic_support_judgment: SemanticSupportModelJudgment | None = None
     standing_fact_proposals: StandingFactProposalBatch | None = None
+    standing_fact_qualification: StandingFactQualificationOutput | None = None
 
 
 @dataclass(frozen=True)
@@ -613,6 +617,7 @@ type ParsedModelOutput = (
     | SemanticSupportModelJudgment
     | StandingFactProposalBatch
     | StandingFactAbstention
+    | StandingFactQualificationOutput
 )
 
 
@@ -1049,6 +1054,32 @@ def run_bounded_extraction(
                 run,
                 None,
                 standing_fact_proposals=parsed,
+            )
+        if isinstance(parsed, StandingFactQualificationOutput):
+            run = _model_run(
+                extraction_input,
+                manifest,
+                task,
+                model_run_id,
+                ModelRunStatus.SUCCEEDED,
+                started_at=started_at,
+                completed_at=completed_at,
+                execution_diagnostics=diagnostics,
+                input_admission=admission,
+                output_digest=output_digest,
+                execution_receipt=response.execution_receipt,
+                outcome_metadata={
+                    "contract": "standing_fact_qualification_text_v1",
+                    "outcome": parsed.outcome.value,
+                    "reason": parsed.reason,
+                },
+            )
+            ledger_repository.save_model_run(run)
+            return BoundedExtractionOutcome(
+                task,
+                run,
+                None,
+                standing_fact_qualification=parsed,
             )
         if isinstance(parsed, EventFrameProposal):
             run = _model_run(

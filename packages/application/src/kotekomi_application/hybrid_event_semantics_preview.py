@@ -8,7 +8,8 @@ from dataclasses import dataclass
 from typing import Literal, Protocol, cast
 
 from kotekomi_domain import (
-    HYBRID_EVENT_SEMANTICS_V1,
+    HYBRID_EVENT_SEMANTICS_V2,
+    AssignmentOrigin,
     DocumentRepresentationBundle,
     EvidenceTarget,
     EvidenceValidationAttempt,
@@ -80,6 +81,7 @@ from kotekomi_application.hybrid_event_semantics import (
     SemanticStatement,
     SemanticStatementKind,
     SemanticSupportJudgment,
+    SupportOutcome,
     build_event_argument_assignment_draft,
     build_event_argument_target_draft,
     build_event_semantic_draft,
@@ -111,6 +113,18 @@ from kotekomi_application.hybrid_mention_interpretation import (
     hybrid_extraction_preview_from_bytes,
     hybrid_source_segment_id,
 )
+from kotekomi_application.semantic_proposition import (
+    CompleteProposition,
+    NaturalLanguageInferenceInput,
+    NaturalLanguageInferencePort,
+    NliObservation,
+    PropositionDecision,
+    PropositionDisposition,
+    PropositionKind,
+    build_complete_proposition,
+    build_nli_observation,
+    build_proposition_decision,
+)
 from kotekomi_application.staged_model_extraction import (
     BoundedExtractionInput,
     ExecutionSetting,
@@ -125,6 +139,7 @@ from kotekomi_application.staged_model_extraction import (
 
 HYBRID_EVENT_SEMANTICS_EVIDENCE_VALIDATOR = "hybrid_event_semantics_evidence_v1"
 HYBRID_EVENT_SEMANTICS_SOURCE_ALIGNMENT = "exact_then_whitespace_equivalent_unique_v1"
+HYBRID_EVENT_NLI_ENTAILMENT_THRESHOLD = 0.5
 
 
 class HybridEventSemanticsLedger(HybridAtomicClaimLedger, StagedExtractionLedger, Protocol):
@@ -195,6 +210,7 @@ class _ConstructedEvent:
     qualifiers: tuple[SemanticQualifierDraft, ...]
     gaps: tuple[SemanticCoverageGap, ...]
     statements: tuple[SemanticStatement, ...]
+    proposition: CompleteProposition
     evidence_targets: tuple[EvidenceTarget, ...]
     evidence_attempts: tuple[EvidenceValidationAttempt, ...]
 
@@ -236,6 +252,7 @@ def run_hybrid_event_semantics_preview(
     normalization_prompt_bytes: bytes,
     role_completion_prompt_bytes: bytes,
     support_prompt_bytes: bytes,
+    nli_runtime: NaturalLanguageInferencePort,
 ) -> HybridEventSemanticsResult:
     """Build governed semantic drafts and independently verify every statement."""
     context = _load_context(command.parent_preview_id, ledger, archive)
@@ -308,6 +325,9 @@ def run_hybrid_event_semantics_preview(
     gaps: list[SemanticCoverageGap] = []
     statements: list[SemanticStatement] = []
     judgments: list[SemanticSupportJudgment] = []
+    propositions: list[CompleteProposition] = []
+    nli_observations: list[NliObservation] = []
+    proposition_decisions: list[PropositionDecision] = []
     evidence_targets: dict[str, EvidenceTarget] = {}
     evidence_attempts: dict[str, EvidenceValidationAttempt] = {}
     task_ids: list[str] = []
@@ -421,8 +441,13 @@ def run_hybrid_event_semantics_preview(
                 primary_arguments[role.id] = argument
 
         normalization_traces = [normalization_trace]
-        selected_arguments: dict[str, EventSemanticArgumentProposal] = {}
+        selected_arguments = dict(primary_arguments)
+        assignment_origins = {
+            role_id: AssignmentOrigin.NORMALIZATION for role_id in primary_arguments
+        }
         for role in frame_definition.roles:
+            if role.id in selected_arguments:
+                continue
             completed_argument: EventSemanticArgumentProposal | None = None
             rejected_target: str | None = None
             role_outcome = None
@@ -550,6 +575,7 @@ def run_hybrid_event_semantics_preview(
                     )
             else:
                 selected_arguments[role.id] = completed_argument
+                assignment_origins[role.id] = AssignmentOrigin.ROLE_COMPLETION
 
         proposal = EventSemanticProposal(
             proposal.frame_id,
@@ -570,6 +596,7 @@ def run_hybrid_event_semantics_preview(
                 segment=segment,
                 local_inputs=local_inputs,
                 proposal=proposal,
+                assignment_origins=assignment_origins,
                 task_id=outcome.extraction_task.id,
                 model_run_id=outcome.model_run.id,
                 normalization_traces=tuple(normalization_traces),
@@ -584,6 +611,7 @@ def run_hybrid_event_semantics_preview(
         qualifiers.extend(constructed.qualifiers)
         gaps.extend(constructed.gaps)
         statements.extend(constructed.statements)
+        propositions.append(constructed.proposition)
         for target in constructed.evidence_targets:
             evidence_targets[target.id] = target
         for attempt in constructed.evidence_attempts:
@@ -660,6 +688,55 @@ def run_hybrid_event_semantics_preview(
                     judgment=judgment,
                 )
             )
+            if statement.kind is SemanticStatementKind.COMPLETE_PROPOSITION:
+                proposition = constructed.proposition
+                observation: NliObservation | None = None
+                nli_error: str | None = None
+                try:
+                    execution = nli_runtime.classify(
+                        NaturalLanguageInferenceInput(
+                            premise=segment.support_target.exact_text,
+                            hypothesis=proposition.text,
+                        )
+                    )
+                    observation = build_nli_observation(
+                        proposition_id=proposition.id,
+                        premise=segment.support_target.exact_text,
+                        hypothesis=proposition.text,
+                        execution=execution,
+                    )
+                    nli_observations.append(observation)
+                except (OSError, RuntimeError, ValueError) as error:
+                    nli_error = str(error)
+                    diagnostics.append(f"nli_task_failed:{proposition.id}:{type(error).__name__}")
+                decision = build_proposition_decision(
+                    proposition_id=proposition.id,
+                    qwen_judgment_id=judgment.id if judgment is not None else None,
+                    nli_observation=observation,
+                    qwen_directly_supported=(
+                        judgment.outcome is SupportOutcome.DIRECTLY_SUPPORTED
+                        if judgment is not None
+                        else None
+                    ),
+                    entailment_threshold=HYBRID_EVENT_NLI_ENTAILMENT_THRESHOLD,
+                )
+                proposition_decisions.append(decision)
+                if decision.disposition is not PropositionDisposition.SUPPORTED:
+                    assert decision.hold_reason is not None
+                    diagnostics.append(
+                        f"complete_proposition_held:{proposition.id}:{decision.hold_reason.value}"
+                    )
+                traces.append(
+                    _nli_trace(
+                        proposition=proposition,
+                        premise=segment.support_target.exact_text,
+                        source_segment_id=segment.segment_id,
+                        observation=observation,
+                        decision=decision,
+                        error=nli_error,
+                        parent_trace_id=traces[-1].id,
+                    )
+                )
 
     if context.parent.terminal_status is HybridAtomicClaimStatus.PARTIAL:
         diagnostics.append("hp5_status:partial")
@@ -668,6 +745,10 @@ def run_hybrid_event_semantics_preview(
         len(events) != len(context.parent.event_subjects)
         or gaps
         or len(judgments) != len(statements)
+        or any(
+            item.disposition is not PropositionDisposition.SUPPORTED
+            for item in proposition_decisions
+        )
         or context.parent.terminal_status is HybridAtomicClaimStatus.PARTIAL
     ):
         status = HybridEventSemanticsStatus.PARTIAL
@@ -682,6 +763,9 @@ def run_hybrid_event_semantics_preview(
         gaps=tuple(sorted(gaps, key=lambda item: item.id)),
         statements=tuple(sorted(statements, key=lambda item: item.id)),
         judgments=tuple(sorted(judgments, key=lambda item: item.id)),
+        propositions=tuple(sorted(propositions, key=lambda item: item.id)),
+        nli_observations=tuple(sorted(nli_observations, key=lambda item: item.id)),
+        proposition_decisions=tuple(sorted(proposition_decisions, key=lambda item: item.id)),
         evidence_target_ids=tuple(sorted(evidence_targets)),
         evidence_validation_attempt_ids=tuple(sorted(evidence_attempts)),
         extraction_task_ids=tuple(task_ids),
@@ -875,6 +959,7 @@ def _construct_event(
     segment: _SegmentContext,
     local_inputs: _LocalInputs,
     proposal: EventSemanticProposal,
+    assignment_origins: dict[str, AssignmentOrigin],
     task_id: str,
     model_run_id: str,
     normalization_traces: tuple[ExtractionStageTrace, ...],
@@ -945,6 +1030,7 @@ def _construct_event(
                 target_id=target.id,
                 frame_role_id=role.id,
                 upper_role=role.upper_role,
+                assignment_origin=assignment_origins[role.id],
                 proposed_role_labels=proposed_labels,
                 support_evidence_target_id=segment.support_target.id,
                 source_trace_ids=parent_trace_ids,
@@ -1098,13 +1184,38 @@ def _construct_event(
         normalization_model_run_id=model_run_id,
         normalization_trace_id=primary_normalization_trace.id,
     )
-    statements = _statements(
-        event,
-        frame_definition,
-        ordered_assignments,
-        target_records,
-        ordered_qualifiers,
-        attribution_target,
+    proposition = build_complete_proposition(
+        kind=PropositionKind.EVENT,
+        subject_record_id=event.id,
+        text=_render_complete_event_proposition(
+            event,
+            frame_definition,
+            ordered_assignments,
+            target_records,
+            ordered_qualifiers,
+        ),
+        evidence_target_id=event.support_evidence_target_id,
+    )
+    statements = (
+        *_statements(
+            event,
+            frame_definition,
+            ordered_assignments,
+            target_records,
+            ordered_qualifiers,
+            attribution_target,
+        ),
+        build_semantic_statement(
+            event_semantic_id=event.id,
+            kind=SemanticStatementKind.COMPLETE_PROPOSITION,
+            subject_record_id=event.id,
+            text=proposition.text,
+            governed_definition=(
+                "The complete proposition preserves the event frame, roles, qualifiers, "
+                "polarity, modality, and attribution as one meaning."
+            ),
+            evidence_target_id=event.support_evidence_target_id,
+        ),
     )
     return _ConstructedEvent(
         event,
@@ -1112,7 +1223,8 @@ def _construct_event(
         ordered_assignments,
         ordered_qualifiers,
         tuple(sorted(gaps, key=lambda item: item.id)),
-        statements,
+        tuple(sorted(statements, key=lambda item: item.id)),
+        proposition,
         tuple(sorted((item[0] for item in evidence_records.values()), key=lambda item: item.id)),
         tuple(sorted((item[1] for item in evidence_records.values()), key=lambda item: item.id)),
     )
@@ -1409,6 +1521,111 @@ def _statements(
     return tuple(sorted(statements, key=lambda item: item.id))
 
 
+def _render_complete_event_proposition(
+    event: EventSemanticDraft,
+    frame: EventFrameDefinition,
+    assignments: tuple[EventArgumentAssignmentDraft, ...],
+    targets: dict[str, EventArgumentTargetDraft],
+    qualifiers: tuple[SemanticQualifierDraft, ...],
+) -> str:
+    """Render one complete proposition through explicit governed-frame dispatch."""
+    values = {
+        assignment.frame_role_id.split(".", maxsplit=1)[1]: targets[assignment.target_id].text
+        for assignment in assignments
+    }
+    if frame.id == "authorization":
+        clause = _frame_clause(values, "authorizer", "authorized_party", "permitted_action")
+        if resource := values.get("authorized_resource"):
+            clause += f" using {resource}"
+    elif frame.id == "causation":
+        clause = _frame_clause(values, "cause", "effect", verb="caused")
+    elif frame.id == "change_in_intensity":
+        clause = (
+            f"{values.get('affected_process', '[missing affected process]')} {event.trigger_text}"
+        )
+    elif frame.id == "characterization":
+        clause = (
+            f"{values.get('evaluator', '[missing evaluator]')} characterized "
+            f"{values.get('evaluated_subject', '[missing evaluated subject]')} as "
+            f"{values.get('characterization', '[missing characterization]')}"
+        )
+    elif frame.id == "classification":
+        clause = (
+            f"{values.get('classifier', '[missing classifier]')} classified "
+            f"{values.get('classified_entity', '[missing classified entity]')} as "
+            f"{values.get('assigned_classification', '[missing classification]')}"
+        )
+        if reason := values.get("stated_reason"):
+            clause += f" because {reason}"
+    elif frame.id == "criticism":
+        clause = (
+            f"{values.get('critic', '[missing critic]')} criticized "
+            f"{values.get('target', '[missing target]')}"
+        )
+        if topic := values.get("topic"):
+            clause += f" about {topic}"
+        if reason := values.get("reason"):
+            clause += f" because {reason}"
+    elif frame.id == "investment_abandonment":
+        clause = (
+            f"{values.get('disinvestor', '[missing disinvestor]')} abandoned "
+            f"{values.get('abandoned_asset', '[missing abandoned asset]')}"
+        )
+        if investee := values.get("investee"):
+            clause += f" in {investee}"
+    elif frame.id == "publication":
+        clause = (
+            f"{values.get('publisher', '[missing publisher]')} published "
+            f"{values.get('published_work', '[missing published work]')}"
+        )
+        if topic := values.get("topic"):
+            clause += f" about {topic}"
+        if audience := values.get("audience"):
+            clause += f" for {audience}"
+    elif frame.id == "rebuttal":
+        clause = (
+            f"{values.get('rebutter', '[missing rebutter]')} rebutted "
+            f"{values.get('challenged_claim', '[missing challenged claim]')}"
+        )
+        if source := values.get("claim_source"):
+            clause += f" from {source}"
+        if medium := values.get("medium"):
+            clause += f" in {medium}"
+    elif frame.id == "recommendation":
+        clause = (
+            f"{values.get('recommender', '[missing recommender]')} recommended "
+            f"{values.get('recommended_action', '[missing recommended action]')}"
+        )
+        if subject := values.get("recommendation_subject"):
+            clause += f" concerning {subject}"
+    else:
+        raise ValueError(f"Unsupported governed frame renderer: {frame.id}")
+    if event.polarity == "negated":
+        clause = f"It is not the case that {clause}"
+    if event.modality != "actual":
+        clause = f"The source presents as {event.modality} that {clause}"
+    for qualifier in sorted(qualifiers, key=lambda item: (item.kind, item.start, item.id)):
+        preposition = "at" if qualifier.kind == "place" else "during"
+        clause += f" {preposition} {qualifier.text}"
+    return f"{clause}."
+
+
+def _frame_clause(
+    values: dict[str, str],
+    first: str,
+    second: str,
+    third: str | None = None,
+    *,
+    verb: str = "authorized",
+) -> str:
+    first_value = values.get(first, f"[missing {first}]")
+    second_value = values.get(second, f"[missing {second}]")
+    clause = f"{first_value} {verb} {second_value}"
+    if third is not None:
+        clause += f" to {values.get(third, f'[missing {third}]')}"
+    return clause
+
+
 def _normalization_task_input(
     *,
     context: _SourceContext,
@@ -1462,7 +1679,7 @@ def _normalization_task_input(
         for index, item in enumerate(frame.qualifiers, start=1)
     )
     lines.append("ontology_profile:")
-    for profile_frame in HYBRID_EVENT_SEMANTICS_V1.frames:
+    for profile_frame in HYBRID_EVENT_SEMANTICS_V2.frames:
         lines.append(f"frame | {profile_frame.id} | {profile_frame.definition}")
         lines.extend(
             " | ".join(
@@ -1854,6 +2071,47 @@ def _support_trace(
     )
 
 
+def _nli_trace(
+    *,
+    proposition: CompleteProposition,
+    premise: str,
+    source_segment_id: str,
+    observation: NliObservation | None,
+    decision: PropositionDecision,
+    error: str | None,
+    parent_trace_id: str,
+) -> ExtractionStageTrace:
+    return build_extraction_stage_trace(
+        trace_run_id=f"hsq3:nli:{proposition.id}",
+        ordinal=0,
+        stage_id="complete_proposition_nli_challenge",
+        stage_version="1",
+        producer_id="deberta-nli",
+        source_segment_id=source_segment_id,
+        source_text_sha256=hashlib.sha256(premise.encode()).hexdigest(),
+        parent_trace_ids=(parent_trace_id,),
+        configuration={
+            "entailment_threshold": HYBRID_EVENT_NLI_ENTAILMENT_THRESHOLD,
+        },
+        input_payload={
+            "premise": premise,
+            "hypothesis": proposition.text,
+            "proposition_id": proposition.id,
+        },
+        output_payload={
+            "observation": observation.model_dump(mode="json") if observation else None,
+            "decision": decision.model_dump(mode="json"),
+        },
+        status=(
+            ExtractionStageStatus.COMPLETED
+            if observation is not None
+            else ExtractionStageStatus.FAILED
+        ),
+        diagnostics=(f"nli_error:{error}",) if error else (),
+        input_record_ids=(proposition.id,),
+    )
+
+
 def _support_judgment(
     statement: SemanticStatement,
     parsed: SemanticSupportModelJudgment | None,
@@ -1874,7 +2132,7 @@ def _support_judgment(
 
 
 def _frame_definition(frame_id: str) -> EventFrameDefinition:
-    frame = next((item for item in HYBRID_EVENT_SEMANTICS_V1.frames if item.id == frame_id), None)
+    frame = next((item for item in HYBRID_EVENT_SEMANTICS_V2.frames if item.id == frame_id), None)
     if frame is None:
         raise ValueError("unknown_event_frame")
     return frame
@@ -1958,7 +2216,7 @@ def _preview_common(
         "parent_preview_sha256": parent_sha256,
         "representation_id": context.parent.representation_id,
         "paragraph_node_id": context.parent.paragraph_node_id,
-        "ontology_profile_id": HYBRID_EVENT_SEMANTICS_V1.id,
+        "ontology_profile_id": HYBRID_EVENT_SEMANTICS_V2.id,
         "ontology_profile_sha256": hybrid_event_semantics_profile_sha256(),
         "normalization_prompt_sha256": hashlib.sha256(normalization_prompt).hexdigest(),
         "normalization_schema_sha256": normalization_schema.digest,

@@ -410,7 +410,7 @@ def test_put_reuse_and_restart_hybrid_event_semantics_preview(tmp_path: Path) ->
         parent_preview_sha256="a" * 64,
         representation_id="rep_fixture",
         paragraph_node_id="nod_fixture",
-        ontology_profile_id="hybrid_event_semantics_v1",
+        ontology_profile_id="hybrid_event_semantics_v2",
         ontology_profile_sha256=hybrid_event_semantics_profile_sha256(),
         normalization_prompt_sha256="b" * 64,
         normalization_schema_sha256="c" * 64,
@@ -476,7 +476,7 @@ def test_put_reuse_restart_and_corruption_rejection_for_standing_fact_plan(
     store = LocalArchiveStore(tmp_path)
     store.initialize()
     body: dict[str, object] = {
-        "schema_version": "standing_fact_plan_v1",
+        "schema_version": "standing_fact_plan_v2",
         "parent_plan_id": "hpp_" + "1" * 24,
         "parent_plan_sha256": "a" * 64,
         "mention_preview_id": "hxp_" + "2" * 24,
@@ -486,9 +486,14 @@ def test_put_reuse_restart_and_corruption_rejection_for_standing_fact_plan(
         "representation_id": "rep_fixture",
         "paragraph_node_id": "nod_fixture",
         "context_manifest_id": None,
-        "policy_id": "hybrid_standing_fact_v1",
+        "qualification_context_manifest_id": None,
+        "policy_id": "hybrid_standing_fact_v2",
         "provenance_activity_id": "prv_" + "4" * 24,
         "drafts": [],
+        "propositions": [],
+        "qualifications": [],
+        "nli_observations": [],
+        "proposition_decisions": [],
         "decisions": [],
         "extraction_task_ids": [],
         "model_run_ids": [],

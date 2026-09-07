@@ -1,0 +1,130 @@
+{
+  "schema_version": "hsq4_coreference_gold_catalog_v2",
+  "catalog_id": "hsq4_coreference_held_out_v2",
+  "annotation_status": "frozen_human_reviewed_source_with_adjudicated_references",
+  "source_packet": "docs/2026-08-28-organization-mention-held-out-annotation-packet.md",
+  "source_packet_sha256": "4e9674f3a41d97025d07d4abb6a2f0ae36b5c7351c1904a5cfdd463d910797b2",
+  "cases": [
+    {
+      "case_id": "HSQ4-HO003-HIM",
+      "fixture_path": "raw/Anthropic–United_States_Department_of_Defense_dispute.pdf",
+      "representation_id": "rep_8bcf8ef98031a6bfe43efec9",
+      "paragraph_node_id": "nod_8bcf8ef98031a6bfe43efec9_0012",
+      "source_text_sha256": "0338f74b8efaea1dbb6d74bdbd6eb4e00a01626af369a3c2bf12b0f14a684bf4",
+      "source_text": "Anthropic's strategy has mirrored Amodei's views toward Trump; in a Facebook post ahead of the 2024 presidential election, Amodei urged his associates to vote for vice president Kamala Harris over Trump, describing him as a \"feudal warlord\". As the Trump administration targeted law firms, Amodei cut ties with the firms Skadden, Arps, Slate, Meagher & Flom and Latham & Watkins, which reached agreements with  the  Trump  administration  to  avoid  punishment.  David  Sacks,  Trump's  advisor  for  artificial intelligence  and  cryptocurrency,  said  on All-In (2020-present)  that Anthropic  was  among  several  \"AI doomers\"  that  support  regulation  he  saw  as  overly  restrictive.  According  to The  Wall  Street  Journal , officials close to Sacks examined whether Anthropic's Claude was a \"woke AI\"; in July, Trump signed an executive order \"Preventing Woke AI in the Federal Government \". [15]",
+      "target": {"text": "him", "occurrence": 1},
+      "antecedent_candidates": [
+        {"text": "Trump", "occurrence": 1},
+        {"text": "Trump", "occurrence": 2}
+      ],
+      "expected_antecedents": [{"text": "Trump", "occurrence": 2}]
+    },
+    {
+      "case_id": "HSQ4-HO005-ITS-TECHNOLOGY",
+      "fixture_path": "raw/Anthropic–United_States_Department_of_Defense_dispute.pdf",
+      "representation_id": "rep_8bcf8ef98031a6bfe43efec9",
+      "paragraph_node_id": "nod_8bcf8ef98031a6bfe43efec9_0018",
+      "source_text_sha256": "fb3661d0d43a3966fa48c039d9f5f4cd6f9878f93d640ec0db1401d22330ad9c",
+      "source_text": "Michael told reporters that Anthropic should \"cross the Rubicon\" and allow the Department of Defense to dictate the terms of how its technology is used. [32] The position of the Department of Defense, and its tactics during the dispute, were widely criticized on grounds including violating the principles of rule-oflaw, market independence and national security. [33][34]",
+      "target": {"text": "its", "occurrence": 1},
+      "antecedent_candidates": [
+        {"text": "Anthropic", "occurrence": 1},
+        {"text": "Department of Defense", "occurrence": 1}
+      ],
+      "expected_antecedents": [{"text": "Anthropic", "occurrence": 1}]
+    },
+    {
+      "case_id": "HSQ4-HO005-ITS-TACTICS",
+      "fixture_path": "raw/Anthropic–United_States_Department_of_Defense_dispute.pdf",
+      "representation_id": "rep_8bcf8ef98031a6bfe43efec9",
+      "paragraph_node_id": "nod_8bcf8ef98031a6bfe43efec9_0018",
+      "source_text_sha256": "fb3661d0d43a3966fa48c039d9f5f4cd6f9878f93d640ec0db1401d22330ad9c",
+      "source_text": "Michael told reporters that Anthropic should \"cross the Rubicon\" and allow the Department of Defense to dictate the terms of how its technology is used. [32] The position of the Department of Defense, and its tactics during the dispute, were widely criticized on grounds including violating the principles of rule-oflaw, market independence and national security. [33][34]",
+      "target": {"text": "its", "occurrence": 2},
+      "antecedent_candidates": [
+        {"text": "Anthropic", "occurrence": 1},
+        {"text": "Department of Defense", "occurrence": 1},
+        {"text": "Department of Defense", "occurrence": 2}
+      ],
+      "expected_antecedents": [{"text": "Department of Defense", "occurrence": 2}]
+    },
+    {
+      "case_id": "HSQ4-HO010-THEIR",
+      "fixture_path": "raw/Artificial_intelligence_safety_institute.pdf",
+      "representation_id": "rep_561e34f74a03ac8f05edb4a3",
+      "paragraph_node_id": "nod_561e34f74a03ac8f05edb4a3_0008",
+      "source_text_sha256": "c29d914849803e39af70dbf0cbfb77be6ccb2938abb0e454162d737193fa2a87",
+      "source_text": "At the AI Seoul Summit in May 2024, the European Union and other countries agreed to create their own AI safety institutes, forming an international network. [1]",
+      "target": {"text": "their", "occurrence": 1},
+      "antecedent_candidates": [
+        {"text": "the European Union and other countries", "occurrence": 1}
+      ],
+      "expected_antecedents": [{"text": "the European Union and other countries", "occurrence": 1}]
+    },
+    {
+      "case_id": "HSQ4-HO012-IT",
+      "fixture_path": "raw/Artificial_intelligence_safety_institute.pdf",
+      "representation_id": "rep_561e34f74a03ac8f05edb4a3",
+      "paragraph_node_id": "nod_561e34f74a03ac8f05edb4a3_0024",
+      "source_text_sha256": "d6eb25ebf1fa2398b2f19fb925f298d5056b76441fdc12be7b4bf362d1202077",
+      "source_text": "The  Japan  AISI  (or  J-AISI) [26] was  founded  in  February 2024. Part of the Information Technology Promotion Agency, it  employs  about  23  people. [15] The  institute  consists  of  the Council of AISI, the  AISI Steering Committee, and a secretariat with six teams. [26] Akiko Murakami (previously of IBM  Japan  and  Sompo  Japan)  serves  as the institute's executive director, and Kenji Hiramoto and Suguru [26]",
+      "target": {"text": "it", "occurrence": 1},
+      "antecedent_candidates": [
+        {"text": "The  Japan  AISI  (or  J-AISI)", "occurrence": 1},
+        {"text": "Information Technology Promotion Agency", "occurrence": 1}
+      ],
+      "expected_antecedents": [{"text": "The  Japan  AISI  (or  J-AISI)", "occurrence": 1}]
+    },
+    {
+      "case_id": "HSQ4-HO013-IT",
+      "fixture_path": "raw/Artificial_intelligence_safety_institute.pdf",
+      "representation_id": "rep_561e34f74a03ac8f05edb4a3",
+      "paragraph_node_id": "nod_561e34f74a03ac8f05edb4a3_0027",
+      "source_text_sha256": "238f4b1981732d31de57018bee8c89a2b7b486b268e99e25db65c4984557a150",
+      "source_text": "Kenya agreed to join the international network of AI safety institutes, but the country has not announced any details yet. [15] It is the only African state in the network. [27]",
+      "target": {"text": "It", "occurrence": 1},
+      "antecedent_candidates": [{"text": "Kenya", "occurrence": 1}],
+      "expected_antecedents": [{"text": "Kenya", "occurrence": 1}]
+    },
+    {
+      "case_id": "HSQ4-HO014-IT-COUNTRY",
+      "fixture_path": "raw/Artificial_intelligence_safety_institute.pdf",
+      "representation_id": "rep_561e34f74a03ac8f05edb4a3",
+      "paragraph_node_id": "nod_561e34f74a03ac8f05edb4a3_0031",
+      "source_text_sha256": "c44392b20a0f9e6f1374c8a0ed144e2998d946ee4b2d6028e110cddcb54515c5",
+      "source_text": "South Korea announced in May 2024 that it would create an AI safety institute under the umbrella of the Electronics and Telecommunications Research Institute. It will be supported by a tentative investment of somewhere between 10 and 20 million South Korean won per year, and employ at least 30 people. [15] The  institute  was  founded  in  November  2024 [29] and  is  based  in  Bundang  District  within  the  city  of Seongnam. [30]",
+      "target": {"text": "it", "occurrence": 1},
+      "antecedent_candidates": [{"text": "South Korea", "occurrence": 1}],
+      "expected_antecedents": [{"text": "South Korea", "occurrence": 1}]
+    },
+    {
+      "case_id": "HSQ4-HO014-IT-INSTITUTE",
+      "fixture_path": "raw/Artificial_intelligence_safety_institute.pdf",
+      "representation_id": "rep_561e34f74a03ac8f05edb4a3",
+      "paragraph_node_id": "nod_561e34f74a03ac8f05edb4a3_0031",
+      "source_text_sha256": "c44392b20a0f9e6f1374c8a0ed144e2998d946ee4b2d6028e110cddcb54515c5",
+      "source_text": "South Korea announced in May 2024 that it would create an AI safety institute under the umbrella of the Electronics and Telecommunications Research Institute. It will be supported by a tentative investment of somewhere between 10 and 20 million South Korean won per year, and employ at least 30 people. [15] The  institute  was  founded  in  November  2024 [29] and  is  based  in  Bundang  District  within  the  city  of Seongnam. [30]",
+      "target": {"text": "It", "occurrence": 1},
+      "antecedent_candidates": [
+        {"text": "South Korea", "occurrence": 1},
+        {"text": "an AI safety institute", "occurrence": 1},
+        {"text": "Electronics and Telecommunications Research Institute", "occurrence": 1}
+      ],
+      "expected_antecedents": [{"text": "an AI safety institute", "occurrence": 1}]
+    },
+    {
+      "case_id": "HSQ4-HO015-ITS",
+      "fixture_path": "raw/Artificial_intelligence_safety_institute.pdf",
+      "representation_id": "rep_561e34f74a03ac8f05edb4a3",
+      "paragraph_node_id": "nod_561e34f74a03ac8f05edb4a3_0040",
+      "source_text_sha256": "061b9b949704daeed594445470fc8e7595173dbe91abc128489a4591808ef246",
+      "source_text": "In  March  2024,  a  budget  of  $10  million  was  allocated. [37] Observers  noted  that  this  investment  is relatively  small,  especially  considering  the  presence  of  many  big AI  companies  in  the  US.  The  NIST itself,  which hosts the AISI, is also known for its chronic lack of funding. [38][6] Biden administration's request for additional funding was met with further budget cuts from congressional appropriators. [39][38]",
+      "target": {"text": "its", "occurrence": 2},
+      "antecedent_candidates": [
+        {"text": "The  NIST itself", "occurrence": 1},
+        {"text": "the AISI", "occurrence": 1}
+      ],
+      "expected_antecedents": [{"text": "The  NIST itself", "occurrence": 1}]
+    }
+  ]
+}

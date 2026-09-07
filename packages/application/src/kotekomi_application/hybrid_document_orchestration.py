@@ -125,7 +125,7 @@ class HybridPolicyPin(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
-    kind: Literal["prompt", "schema", "ontology", "policy"]
+    kind: Literal["prompt", "schema", "ontology", "policy", "model_resource"]
     identity: Annotated[str, Field(min_length=1)]
     sha256: Annotated[str, Field(pattern=_SHA256)]
 

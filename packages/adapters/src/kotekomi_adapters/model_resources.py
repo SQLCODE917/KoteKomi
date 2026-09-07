@@ -15,11 +15,13 @@ from pathlib import Path
 from typing import Protocol, cast
 
 from kotekomi_application import (
+    CoreferenceInput,
     ModelResourceId,
     ModelResourceInstallDisposition,
     ModelResourceInstallResult,
     ModelResourceReadiness,
     ModelResourceStatus,
+    NaturalLanguageInferenceInput,
 )
 
 from .refined_entity_linking import (
@@ -28,14 +30,22 @@ from .refined_entity_linking import (
 )
 
 GLINER_DIRECTORY = ModelResourceId.GLINER_MENTION_PROPOSER_V1.value
+NLI_DIRECTORY = ModelResourceId.NLI_DEBERTA_V3_BASE_V1.value
 REFINED_DIRECTORY = ModelResourceId.REFINED_WIKIPEDIA_V1.value
+FCOREF_DIRECTORY = ModelResourceId.FCOREF_V1.value
 GLINER_MANIFEST_SCHEMA = "gliner_resource_installation_v1"
+NLI_MANIFEST_SCHEMA = "nli_deberta_resource_installation_v1"
 REFINED_MANIFEST_SCHEMA = "refined_resource_installation_v1"
+FCOREF_MANIFEST_SCHEMA = "fcoref_resource_installation_v1"
 REFINED_PYTHON_VERSION = "3.10"
 REFINED_PACKAGE_VERSION = "1.0"
+FCOREF_PYTHON_VERSION = "3.12"
+FCOREF_PACKAGE_VERSION = "2.2.3"
 
 type _CommandRunner = Callable[[tuple[str, ...]], None]
 type _GlinerSmoke = Callable[[Path], None]
+type _NliSmoke = Callable[[Path, str], None]
+type _FCorefSmoke = Callable[[Path, Path, Path, str], None]
 type _RuntimeProbe = Callable[[Path], tuple[str, str]]
 
 
@@ -76,6 +86,22 @@ class _GlinerFileLock:
 @dataclass(frozen=True)
 class _GlinerLock:
     package_version: str
+    files: tuple[_GlinerFileLock, ...]
+    identity: str
+
+
+@dataclass(frozen=True)
+class _NliLock:
+    transformers_version: str
+    files: tuple[_GlinerFileLock, ...]
+    identity: str
+
+
+@dataclass(frozen=True)
+class _FCorefLock:
+    model_id: str
+    model_revision: str
+    package_revision: str
     files: tuple[_GlinerFileLock, ...]
     identity: str
 
@@ -217,6 +243,314 @@ class GlinerModelResourceAdapter:
                 "identity": self._lock.identity,
                 "package_version": self._lock.package_version,
                 "files": _gliner_file_manifest(self._lock),
+                "smoke_status": "passed",
+            },
+        )
+
+
+class NliDebertaModelResourceAdapter:
+    """Install and inspect the pinned local-only NLI model."""
+
+    resource_id = ModelResourceId.NLI_DEBERTA_V3_BASE_V1
+
+    def __init__(
+        self,
+        *,
+        downloader: _SnapshotDownloader | None = None,
+        smoke: _NliSmoke | None = None,
+        lock_path: Path | None = None,
+    ) -> None:
+        self._lock = _load_nli_lock(lock_path)
+        self._downloader = downloader or _snapshot_download
+        self._smoke = smoke or _smoke_nli
+
+    def inspect(self, resource_root: Path) -> ModelResourceReadiness:
+        installation = nli_installation_path(resource_root)
+        try:
+            package_version = version("transformers")
+        except PackageNotFoundError:
+            return _not_ready(
+                self.resource_id,
+                installation,
+                self._lock.identity,
+                ModelResourceStatus.INCOMPLETE,
+                "The pinned Transformers package is unavailable.",
+            )
+        if package_version != self._lock.transformers_version:
+            return _not_ready(
+                self.resource_id,
+                installation,
+                self._lock.identity,
+                ModelResourceStatus.IDENTITY_MISMATCH,
+                f"Transformers package version differs: {package_version}.",
+                package_version,
+            )
+        manifest = _load_manifest(installation / "manifest.json")
+        if manifest is None:
+            status = (
+                ModelResourceStatus.INCOMPLETE
+                if installation.exists()
+                else ModelResourceStatus.MISSING
+            )
+            return _not_ready(
+                self.resource_id,
+                installation,
+                self._lock.identity,
+                status,
+                "NLI Resource Installation manifest is unavailable.",
+            )
+        observed = _manifest_identity(manifest)
+        if (
+            manifest.get("schema_version") != NLI_MANIFEST_SCHEMA
+            or manifest.get("resource_id") != self.resource_id.value
+            or observed != self._lock.identity
+            or manifest.get("transformers_version") != self._lock.transformers_version
+            or manifest.get("files") != _nli_file_manifest(self._lock)
+            or manifest.get("smoke_status") != "passed"
+        ):
+            return _not_ready(
+                self.resource_id,
+                installation,
+                self._lock.identity,
+                ModelResourceStatus.IDENTITY_MISMATCH,
+                "NLI Resource Installation manifest does not match the pinned lock.",
+                observed,
+            )
+        model_dir = nli_model_path(resource_root)
+        for item in self._lock.files:
+            path = model_dir / item.target_path
+            if not path.is_file():
+                return _not_ready(
+                    self.resource_id,
+                    installation,
+                    self._lock.identity,
+                    ModelResourceStatus.INCOMPLETE,
+                    f"NLI required file is unavailable: {item.target_path}.",
+                    observed,
+                )
+            if _file_digest(path) != item.sha256:
+                return _not_ready(
+                    self.resource_id,
+                    installation,
+                    self._lock.identity,
+                    ModelResourceStatus.IDENTITY_MISMATCH,
+                    f"NLI required file digest differs: {item.target_path}.",
+                    observed,
+                )
+        return _ready(self.resource_id, installation, self._lock.identity)
+
+    def install(
+        self,
+        resource_root: Path,
+        *,
+        repair: bool,
+    ) -> ModelResourceInstallResult:
+        return _install(self, resource_root, repair=repair)
+
+    def install_staged(self, staged: Path, reusable_installation: Path | None) -> None:
+        del reusable_installation
+        model_dir = staged / "model"
+        model_dir.mkdir(parents=True)
+        grouped: dict[tuple[str, str], list[_GlinerFileLock]] = {}
+        for item in self._lock.files:
+            grouped.setdefault((item.repository, item.revision), []).append(item)
+        for (repository, revision), items in grouped.items():
+            snapshot = Path(
+                self._downloader(
+                    repo_id=repository,
+                    revision=revision,
+                    allow_patterns=[item.source_path for item in items],
+                    local_files_only=False,
+                )
+            )
+            for item in items:
+                _link_or_copy(snapshot / item.source_path, model_dir / item.target_path)
+        for item in self._lock.files:
+            if _file_digest(model_dir / item.target_path) != item.sha256:
+                raise ModelResourceInstallationError(
+                    f"Downloaded NLI file failed its pinned digest: {item.target_path}."
+                )
+        self._smoke(model_dir, self._lock.identity)
+        _write_manifest(
+            staged / "manifest.json",
+            {
+                "schema_version": NLI_MANIFEST_SCHEMA,
+                "resource_id": self.resource_id.value,
+                "identity": self._lock.identity,
+                "transformers_version": self._lock.transformers_version,
+                "files": _nli_file_manifest(self._lock),
+                "smoke_status": "passed",
+            },
+        )
+
+
+class FCorefModelResourceAdapter:
+    """Install and inspect the isolated, pinned F-Coref worker."""
+
+    resource_id = ModelResourceId.FCOREF_V1
+
+    def __init__(
+        self,
+        *,
+        downloader: _SnapshotDownloader | None = None,
+        command_runner: _CommandRunner | None = None,
+        smoke: _FCorefSmoke | None = None,
+        checkout_root: Path | None = None,
+        runtime_probe: _RuntimeProbe | None = None,
+    ) -> None:
+        self._checkout_root = checkout_root or Path(__file__).resolve().parents[4]
+        self._requirements = self._checkout_root / "tools" / "fcoref-worker" / "requirements.txt"
+        self._resource_lock = self._checkout_root / "tools" / "fcoref-worker" / "resource-lock.json"
+        self._lock = _load_fcoref_lock(self._requirements, self._resource_lock)
+        self._downloader = downloader or _snapshot_download
+        self._runner = command_runner or _run_command
+        self._smoke = smoke or _smoke_fcoref
+        self._runtime_probe = runtime_probe or _probe_fcoref_runtime
+
+    def inspect(self, resource_root: Path) -> ModelResourceReadiness:
+        installation = fcoref_installation_path(resource_root)
+        manifest = _load_manifest(installation / "manifest.json")
+        if manifest is None:
+            status = (
+                ModelResourceStatus.INCOMPLETE
+                if installation.exists()
+                else ModelResourceStatus.MISSING
+            )
+            return _not_ready(
+                self.resource_id,
+                installation,
+                self._lock.identity,
+                status,
+                "F-Coref Resource Installation manifest is unavailable.",
+            )
+        observed = _manifest_identity(manifest)
+        if (
+            manifest.get("schema_version") != FCOREF_MANIFEST_SCHEMA
+            or manifest.get("resource_id") != self.resource_id.value
+            or observed != self._lock.identity
+            or manifest.get("package_revision") != self._lock.package_revision
+            or manifest.get("python_version") != FCOREF_PYTHON_VERSION
+            or manifest.get("requirements_sha256") != _file_digest(self._requirements)
+            or manifest.get("files") != _fcoref_file_manifest(self._lock)
+            or manifest.get("dependency_check_status") != "passed"
+            or manifest.get("smoke_status") != "passed"
+        ):
+            return _not_ready(
+                self.resource_id,
+                installation,
+                self._lock.identity,
+                ModelResourceStatus.IDENTITY_MISMATCH,
+                "F-Coref Resource Installation manifest does not match the pinned lock.",
+                observed,
+            )
+        python = fcoref_python_path(resource_root)
+        if not python.is_file():
+            return _not_ready(
+                self.resource_id,
+                installation,
+                self._lock.identity,
+                ModelResourceStatus.INCOMPLETE,
+                "F-Coref managed Python executable is unavailable.",
+                observed,
+            )
+        try:
+            python_version, package_version = self._runtime_probe(python)
+        except (OSError, RuntimeError) as error:
+            return _not_ready(
+                self.resource_id,
+                installation,
+                self._lock.identity,
+                ModelResourceStatus.INCOMPLETE,
+                f"F-Coref managed runtime is unavailable: {error}",
+                observed,
+            )
+        if not python_version.startswith(f"{FCOREF_PYTHON_VERSION}.") or (
+            package_version != FCOREF_PACKAGE_VERSION
+        ):
+            return _not_ready(
+                self.resource_id,
+                installation,
+                self._lock.identity,
+                ModelResourceStatus.IDENTITY_MISMATCH,
+                "F-Coref managed Python or package version differs from the pinned lock.",
+                observed,
+            )
+        for item in self._lock.files:
+            path = fcoref_model_path(resource_root) / item.target_path
+            if not path.is_file():
+                return _not_ready(
+                    self.resource_id,
+                    installation,
+                    self._lock.identity,
+                    ModelResourceStatus.INCOMPLETE,
+                    f"F-Coref required file is unavailable: {item.target_path}.",
+                    observed,
+                )
+            if _file_digest(path) != item.sha256:
+                return _not_ready(
+                    self.resource_id,
+                    installation,
+                    self._lock.identity,
+                    ModelResourceStatus.IDENTITY_MISMATCH,
+                    f"F-Coref required file digest differs: {item.target_path}.",
+                    observed,
+                )
+        return _ready(self.resource_id, installation, self._lock.identity)
+
+    def install(
+        self,
+        resource_root: Path,
+        *,
+        repair: bool,
+    ) -> ModelResourceInstallResult:
+        return _install(self, resource_root, repair=repair)
+
+    def install_staged(self, staged: Path, reusable_installation: Path | None) -> None:
+        del reusable_installation
+        runtime = staged / "runtime"
+        model_dir = staged / "model"
+        python = _venv_python(runtime)
+        self._runner(("uv", "venv", "--python", FCOREF_PYTHON_VERSION, str(runtime)))
+        self._runner(
+            (
+                "uv",
+                "pip",
+                "sync",
+                "--python",
+                str(python),
+                "--strict",
+                str(self._requirements),
+            )
+        )
+        self._runner(("uv", "pip", "check", "--python", str(python)))
+        model_dir.mkdir()
+        snapshot = Path(
+            self._downloader(
+                repo_id=self._lock.model_id,
+                revision=self._lock.model_revision,
+                allow_patterns=[item.source_path for item in self._lock.files],
+                local_files_only=False,
+            )
+        )
+        for item in self._lock.files:
+            _link_or_copy(snapshot / item.source_path, model_dir / item.target_path)
+            if _file_digest(model_dir / item.target_path) != item.sha256:
+                raise ModelResourceInstallationError(
+                    f"Downloaded F-Coref file failed its pinned digest: {item.target_path}."
+                )
+        worker = self._checkout_root / "scripts" / "fcoref_worker.py"
+        self._smoke(python, worker, model_dir, self._lock.identity)
+        _write_manifest(
+            staged / "manifest.json",
+            {
+                "schema_version": FCOREF_MANIFEST_SCHEMA,
+                "resource_id": self.resource_id.value,
+                "identity": self._lock.identity,
+                "package_revision": self._lock.package_revision,
+                "python_version": FCOREF_PYTHON_VERSION,
+                "requirements_sha256": _file_digest(self._requirements),
+                "files": _fcoref_file_manifest(self._lock),
+                "dependency_check_status": "passed",
                 "smoke_status": "passed",
             },
         )
@@ -451,6 +785,38 @@ def gliner_expected_resource_identity() -> str:
     return _load_gliner_lock().identity
 
 
+def nli_installation_path(resource_root: Path) -> Path:
+    return resource_root / NLI_DIRECTORY
+
+
+def nli_model_path(resource_root: Path) -> Path:
+    return nli_installation_path(resource_root) / "model"
+
+
+def nli_expected_resource_identity() -> str:
+    return _load_nli_lock().identity
+
+
+def fcoref_installation_path(resource_root: Path) -> Path:
+    return resource_root / FCOREF_DIRECTORY
+
+
+def fcoref_python_path(resource_root: Path) -> Path:
+    return _venv_python(fcoref_installation_path(resource_root) / "runtime")
+
+
+def fcoref_model_path(resource_root: Path) -> Path:
+    return fcoref_installation_path(resource_root) / "model"
+
+
+def fcoref_expected_resource_identity() -> str:
+    checkout_root = Path(__file__).resolve().parents[4]
+    return _load_fcoref_lock(
+        checkout_root / "tools" / "fcoref-worker" / "requirements.txt",
+        checkout_root / "tools" / "fcoref-worker" / "resource-lock.json",
+    ).identity
+
+
 def refined_installation_path(resource_root: Path) -> Path:
     return resource_root / REFINED_DIRECTORY
 
@@ -534,6 +900,73 @@ def _load_gliner_lock(lock_path: Path | None = None) -> _GlinerLock:
 
 
 def _gliner_file_manifest(lock: _GlinerLock) -> list[dict[str, str]]:
+    return [
+        {
+            "repository": item.repository,
+            "revision": item.revision,
+            "path": item.target_path,
+            "sha256": item.sha256,
+        }
+        for item in lock.files
+    ]
+
+
+def _load_nli_lock(lock_path: Path | None = None) -> _NliLock:
+    path = lock_path or Path(__file__).with_name("nli-deberta-model-lock.json")
+    payload = cast(dict[str, object], json.loads(path.read_text(encoding="utf-8")))
+    raw_files = cast(list[dict[str, object]], payload["files"])
+    files = tuple(
+        _GlinerFileLock(
+            repository=str(item["repository"]),
+            revision=str(item["revision"]),
+            source_path=str(item["source_path"]),
+            target_path=str(item["target_path"]),
+            sha256=str(item["sha256"]),
+        )
+        for item in raw_files
+    )
+    identity = hashlib.sha256(_canonical_json(payload)).hexdigest()
+    return _NliLock(str(payload["transformers_version"]), files, identity)
+
+
+def _load_fcoref_lock(requirements: Path, resource_lock: Path) -> _FCorefLock:
+    payload = cast(dict[str, object], json.loads(resource_lock.read_text(encoding="utf-8")))
+    raw_files = cast(list[dict[str, object]], payload["files"])
+    files = tuple(
+        _GlinerFileLock(
+            repository=str(item["repository"]),
+            revision=str(item["revision"]),
+            source_path=str(item["source_path"]),
+            target_path=str(item["target_path"]),
+            sha256=str(item["sha256"]),
+        )
+        for item in raw_files
+    )
+    identity = hashlib.sha256(
+        requirements.read_bytes() + b"\0" + resource_lock.read_bytes()
+    ).hexdigest()
+    return _FCorefLock(
+        model_id=str(payload["model_id"]),
+        model_revision=str(payload["model_revision"]),
+        package_revision=str(payload["package_revision"]),
+        files=files,
+        identity=identity,
+    )
+
+
+def _nli_file_manifest(lock: _NliLock) -> list[dict[str, str]]:
+    return [
+        {
+            "repository": item.repository,
+            "revision": item.revision,
+            "path": item.target_path,
+            "sha256": item.sha256,
+        }
+        for item in lock.files
+    ]
+
+
+def _fcoref_file_manifest(lock: _FCorefLock) -> list[dict[str, str]]:
     return [
         {
             "repository": item.repository,
@@ -677,6 +1110,55 @@ def _smoke_gliner(model_dir: Path) -> None:
     model.predict_entities("Anthropic announced an update.", ["organization"], threshold=0.5)
 
 
+def _smoke_nli(model_dir: Path, resource_identity: str) -> None:
+    from .deberta_nli import DebertaNliAdapter
+
+    execution = DebertaNliAdapter(
+        model_directory=model_dir.resolve(),
+        resource_identity=resource_identity,
+    ).classify(
+        NaturalLanguageInferenceInput(
+            premise="Anthropic is an organization.",
+            hypothesis="Anthropic is an organization.",
+        )
+    )
+    if execution.selected_label.value != "entailment":
+        raise ModelResourceInstallationError("The NLI smoke test did not return entailment.")
+
+
+def _smoke_fcoref(
+    python: Path,
+    worker_script: Path,
+    model_dir: Path,
+    resource_identity: str,
+) -> None:
+    from .fcoref import FCorefAdapter, FCorefConfig
+
+    adapter = FCorefAdapter(
+        FCorefConfig(
+            python_executable=python,
+            worker_script=worker_script,
+            model_directory=model_dir.resolve(),
+            resource_identity=resource_identity,
+        )
+    )
+    try:
+        if adapter.count_tokens(b"Trump spoke. He replied.") < 1:
+            raise ModelResourceInstallationError("F-Coref smoke tokenization failed.")
+        execution = adapter.propose(
+            CoreferenceInput(
+                source_segment_id="fcoref_smoke",
+                source_text="Trump spoke. He replied.",
+                target_start=13,
+                target_end=15,
+            )
+        )
+        if execution.model_id != "biu-nlp/f-coref":
+            raise ModelResourceInstallationError("F-Coref smoke identity drifted.")
+    finally:
+        adapter.close()
+
+
 def _run_command(command: tuple[str, ...]) -> None:
     try:
         result = subprocess.run(command, check=False)
@@ -693,6 +1175,24 @@ def _probe_refined_runtime(python: Path) -> tuple[str, str]:
         "import importlib.metadata, platform; "
         "print(platform.python_version()); "
         "print(importlib.metadata.version('ReFinED'))"
+    )
+    result = subprocess.run(
+        (str(python), "-c", probe),
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    lines = result.stdout.splitlines()
+    if result.returncode != 0 or len(lines) != 2 or any(not line for line in lines):
+        raise RuntimeError("version probe failed")
+    return lines[0], lines[1]
+
+
+def _probe_fcoref_runtime(python: Path) -> tuple[str, str]:
+    probe = (
+        "import importlib.metadata, platform; "
+        "print(platform.python_version()); "
+        "print(importlib.metadata.version('fastcoref'))"
     )
     result = subprocess.run(
         (str(python), "-c", probe),

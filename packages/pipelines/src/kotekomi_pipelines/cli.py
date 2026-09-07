@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import cast
 
 from kotekomi_adapters import (
+    DebertaNliAdapter,
     DoclingPdfParser,
     DoclingPdfParserConfig,
     GenericArticleAdapter,
@@ -32,6 +33,8 @@ from kotekomi_adapters import (
     SQLiteLedgerInitializer,
     SQLiteLedgerRetrievalAdapter,
     gliner_model_path,
+    nli_expected_resource_identity,
+    nli_model_path,
     refined_data_path,
     refined_python_path,
     sqlite_ledger_transaction,
@@ -314,7 +317,9 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "model" and args.model_command == "resources":
         resource_names = {
+            "fcoref": ModelResourceId.FCOREF_V1,
             "gliner": ModelResourceId.GLINER_MENTION_PROPOSER_V1,
+            "nli": ModelResourceId.NLI_DEBERTA_V3_BASE_V1,
             "refined": ModelResourceId.REFINED_WIKIPEDIA_V1,
         }
         return manage_model_resources(
@@ -1211,7 +1216,7 @@ def build_parser() -> argparse.ArgumentParser:
     model_resources_install_parser.add_argument(
         "--resource",
         action="append",
-        choices=("gliner", "refined"),
+        choices=("fcoref", "gliner", "nli", "refined"),
         default=None,
     )
     model_resources_install_parser.add_argument("--repair", action="store_true")
@@ -2800,6 +2805,10 @@ def build_hybrid_event_semantics(
             normalization_prompt_bytes=normalization_prompt,
             role_completion_prompt_bytes=role_completion_prompt,
             support_prompt_bytes=support_prompt,
+            nli_runtime=DebertaNliAdapter(
+                model_directory=nli_model_path(config.model_resource_root).resolve(),
+                resource_identity=nli_expected_resource_identity(),
+            ),
         )
     publish_hybrid_event_semantics_preview(result, archive)
     counts = {

@@ -927,7 +927,7 @@ def test_hybrid_event_semantics_command_prints_typed_result(
         parent_preview_sha256="a" * 64,
         representation_id="rep_fixture",
         paragraph_node_id="nod_fixture",
-        ontology_profile_id="hybrid_event_semantics_v1",
+        ontology_profile_id="hybrid_event_semantics_v2",
         ontology_profile_sha256=hybrid_event_semantics_profile_sha256(),
         normalization_prompt_sha256="b" * 64,
         normalization_schema_sha256="c" * 64,
@@ -996,7 +996,7 @@ def test_hybrid_event_semantics_command_prints_typed_result(
             "gap_count": 0,
             "judgment_count": 0,
             "model_run_count": 0,
-            "ontology_profile_id": "hybrid_event_semantics_v1",
+            "ontology_profile_id": "hybrid_event_semantics_v2",
             "ontology_profile_sha256": hybrid_event_semantics_profile_sha256(),
             "outcome_counts": {
                 "ambiguous": 0,

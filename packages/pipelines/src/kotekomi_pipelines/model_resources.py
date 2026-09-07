@@ -6,7 +6,12 @@ import json
 import shlex
 from pathlib import Path
 
-from kotekomi_adapters import GlinerModelResourceAdapter, RefinedModelResourceAdapter
+from kotekomi_adapters import (
+    FCorefModelResourceAdapter,
+    GlinerModelResourceAdapter,
+    NliDebertaModelResourceAdapter,
+    RefinedModelResourceAdapter,
+)
 from kotekomi_application import (
     ModelResourceAdapter,
     ModelResourceId,
@@ -23,7 +28,12 @@ MODEL_RESOURCE_STATUS_SCHEMA = "model_resource_status_v1"
 
 
 def model_resource_adapters() -> tuple[ModelResourceAdapter, ...]:
-    return (GlinerModelResourceAdapter(), RefinedModelResourceAdapter())
+    return (
+        GlinerModelResourceAdapter(),
+        NliDebertaModelResourceAdapter(),
+        RefinedModelResourceAdapter(),
+        FCorefModelResourceAdapter(),
+    )
 
 
 def inspect_configured_model_resources(

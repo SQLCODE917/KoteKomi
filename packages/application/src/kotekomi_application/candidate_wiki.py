@@ -12,7 +12,7 @@ from pathlib import PurePosixPath
 from typing import Literal, Protocol, Self, cast
 
 from kotekomi_domain import (
-    HYBRID_EVENT_SEMANTICS_V1,
+    HYBRID_EVENT_SEMANTICS_V2,
     Actor,
     Assertion,
     AssertionEvidenceLink,
@@ -1516,7 +1516,7 @@ def _event_presentation(
         value = event_type_assertions[0].object_value
         frame_id = value if isinstance(value, str) else "unknown"
         frame = next(
-            (item for item in HYBRID_EVENT_SEMANTICS_V1.frames if item.id == frame_id), None
+            (item for item in HYBRID_EVENT_SEMANTICS_V2.frames if item.id == frame_id), None
         )
         if frame is None:
             issues.append(f"Unknown governed frame: {frame_id}.")

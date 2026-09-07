@@ -8,6 +8,7 @@
 - Completed through: [HP-8 Hybrid Document Orchestration](2026-09-03-hybrid-document-orchestration.md)
 - Latest evaluation: [HP-8 Document Orchestration Evaluation](2026-09-03-hp8-document-orchestration-evaluation.md)
 - Next deliverable: [HP-10 Paragraph Standing Facts MVP](2026-09-05-paragraph-standing-facts-mvp.md)
+- Semantic quality follow-up: [Hybrid Semantic Quality Program](2026-09-06-hybrid-semantic-quality-program.md)
 - Supersedes: [Model and Ontology Boundary Program](2026-08-25-model-ontology-boundary-program.md)
 - Supersedes: [Paragraph Hypothesis Development Program](2026-08-26-paragraph-hypothesis-development-program.md)
 - Supersedes: [PHP-1 Reliability Improvement Program](2026-08-27-php1-reliability-improvement-program.md)

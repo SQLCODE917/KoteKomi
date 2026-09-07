@@ -5,13 +5,19 @@ from pathlib import Path
 from typing import cast
 
 import pytest
-from kotekomi_adapters import SQLiteLedgerRepository, sqlite_ledger_transaction
+from kotekomi_adapters import (
+    SQLiteLedgerRepository,
+    fcoref_expected_resource_identity,
+    nli_expected_resource_identity,
+    sqlite_ledger_transaction,
+)
 from kotekomi_application import (
     HYBRID_STAGE_ORDER,
     ModelTaskRequest,
     ModelTaskResponse,
     hybrid_document_coverage_report_from_bytes,
     hybrid_paragraph_receipt_from_bytes,
+    hybrid_pipeline_policy_manifest_from_bytes,
 )
 from kotekomi_domain import (
     AnalysisRunState,
@@ -211,6 +217,15 @@ def test_user_ingest_checkpoints_and_reuses_the_complete_hybrid_document(
         tuple(stage.stage_id for stage in receipt.stages) == HYBRID_STAGE_ORDER
         for receipt in receipts
     )
+    manifest_path = next((archive_root / "extraction" / "document-policies").glob("*.json"))
+    manifest = hybrid_pipeline_policy_manifest_from_bytes(manifest_path.read_bytes())
+    resource_pins = {
+        item.identity: item.sha256 for item in manifest.pins if item.kind == "model_resource"
+    }
+    assert resource_pins == {
+        "fcoref_v1": fcoref_expected_resource_identity(),
+        "nli_deberta_v3_base_v1": nli_expected_resource_identity(),
+    }
 
     ledger_path = tmp_path / "state" / "kotekomi.db"
     with sqlite_ledger_transaction(ledger_path) as repository:

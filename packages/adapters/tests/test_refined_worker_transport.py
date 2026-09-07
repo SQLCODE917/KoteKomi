@@ -8,9 +8,9 @@ import time
 from pathlib import Path
 
 import pytest
-from kotekomi_adapters.refined_worker_transport import (
-    RefinedWorkerChannelError,
-    SubprocessRefinedWorkerTransport,
+from kotekomi_adapters.correlated_worker_transport import (
+    CorrelatedWorkerChannelError,
+    SubprocessCorrelatedWorkerTransport,
 )
 
 FIRST_REQUEST_ID = "rwr_11111111111111111111111111111111"
@@ -47,7 +47,7 @@ def _worker_script(tmp_path: Path) -> Path:
                 payload = request["payload"]
                 behavior = payload["behavior"]
                 response = {
-                    "schema_version": "refined_worker_exchange_v1",
+                    "schema_version": "model_worker_exchange_v1",
                     "request_id": request_id,
                     "payload": {
                         "behavior": behavior,
@@ -74,7 +74,7 @@ def _worker_script(tmp_path: Path) -> Path:
                     sys.stdout.buffer.write(
                         b'{"payload":{"score":NaN},"request_id":"'
                         + request_id.encode()
-                        + b'","schema_version":"refined_worker_exchange_v1"}\\n'
+                        + b'","schema_version":"model_worker_exchange_v1"}\\n'
                     )
                     sys.stdout.buffer.flush()
                     continue
@@ -89,6 +89,8 @@ def _worker_script(tmp_path: Path) -> Path:
                     response["payload"]["status"] = "blocked"
                 sys.stdout.buffer.write(canonical(response) + b"\\n")
                 sys.stdout.buffer.flush()
+            with open(__file__ + ".closed", "a", encoding="utf-8") as close_log:
+                close_log.write(worker_instance_id + "\\n")
             """
         ),
         encoding="utf-8",
@@ -102,9 +104,9 @@ def _transport(
     *,
     timeout_seconds: float = 0.25,
     max_frame_bytes: int = 1024,
-) -> SubprocessRefinedWorkerTransport:
+) -> SubprocessCorrelatedWorkerTransport:
     iterator = iter(request_ids)
-    return SubprocessRefinedWorkerTransport(
+    return SubprocessCorrelatedWorkerTransport(
         python_executable=Path(sys.executable),
         worker_script=worker_script,
         timeout_seconds=timeout_seconds,
@@ -128,6 +130,7 @@ def test_valid_requests_reuse_one_healthy_worker(tmp_path: Path) -> None:
     assert first.payload["worker_instance_id"] == second.payload["worker_instance_id"]
     assert json.loads(first.raw_output)["request_id"] == FIRST_REQUEST_ID
     assert _worker_starts(worker_script) == 1
+    assert _worker_closes(worker_script) == 1
 
 
 @pytest.mark.parametrize(
@@ -157,7 +160,7 @@ def test_channel_failure_discards_worker_and_next_request_is_clean(
     )
     started = time.monotonic()
     try:
-        with pytest.raises(RefinedWorkerChannelError) as captured:
+        with pytest.raises(CorrelatedWorkerChannelError) as captured:
             transport.request({"behavior": behavior})
         elapsed = time.monotonic() - started
         clean = transport.request({"behavior": "echo"})
@@ -194,7 +197,7 @@ def test_request_frame_limit_fails_before_worker_start(tmp_path: Path) -> None:
         max_frame_bytes=128,
     )
     try:
-        with pytest.raises(RefinedWorkerChannelError) as captured:
+        with pytest.raises(CorrelatedWorkerChannelError) as captured:
             transport.request({"behavior": "echo", "value": "x" * 256})
     finally:
         transport.close()
@@ -260,3 +263,7 @@ def test_repository_worker_suppresses_only_expected_dependency_noise(
 
 def _worker_starts(worker_script: Path) -> int:
     return len(Path(f"{worker_script}.starts").read_text(encoding="utf-8").splitlines())
+
+
+def _worker_closes(worker_script: Path) -> int:
+    return len(Path(f"{worker_script}.closed").read_text(encoding="utf-8").splitlines())
