@@ -2,7 +2,7 @@
 
 from kotekomi_domain.hybrid_event_ontology import (
     HYBRID_EVENT_CORE_V1,
-    HYBRID_EVENT_SEMANTICS_V2,
+    HYBRID_EVENT_SEMANTICS_V4,
     AssignmentOrigin,
     EventFrameDefinition,
     FrameRoleDefinition,
@@ -10,6 +10,7 @@ from kotekomi_domain.hybrid_event_ontology import (
     HybridEventSemanticsProfile,
     HybridEventStructuralPredicate,
     SemanticArgumentTargetKind,
+    TemporalRelation,
     UpperRole,
     canonical_hybrid_event_ontology_slice_bytes,
     canonical_hybrid_event_semantics_profile_bytes,
@@ -349,9 +350,10 @@ __all__ = [
     "EventFrameDefinition",
     "FrameRoleDefinition",
     "HybridEventSemanticsProfile",
-    "HYBRID_EVENT_SEMANTICS_V2",
+    "HYBRID_EVENT_SEMANTICS_V4",
     "AssignmentOrigin",
     "SemanticArgumentTargetKind",
+    "TemporalRelation",
     "UpperRole",
     "StandingFactQualificationOutcome",
 ]

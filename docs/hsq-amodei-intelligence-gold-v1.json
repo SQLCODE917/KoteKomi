@@ -1,0 +1,232 @@
+{
+  "schema_version": "hsq_amodei_intelligence_gold_v1",
+  "fixture_path": "raw/Anthropic–United_States_Department_of_Defense_dispute.pdf",
+  "fixture_sha256": "c63c85796559453acf708dab46a35da36ffed00a408a25275576ba07138e9624",
+  "evaluation_scope": "source_to_candidate_wiki",
+  "focus_actor": {
+    "accepted_names": [
+      "Amodei",
+      "Dario Amodei"
+    ],
+    "record_type": "Actor"
+  },
+  "cases": [
+    {
+      "case_id": "HSQ-AMODEI-01",
+      "paragraph_ordinal": 0,
+      "source_segment_sha256": "377c75c2999935fb1984a2c1a6761a73798539536409742f95cd527cc40f3eb5",
+      "source_text": "Hegseth, the United States secretary of defense, has publicly rebuked Anthropic chief executive Dario Amodei's approach to artificial intelligence.",
+      "expected_events": [
+        {
+          "event_key": "hegseth_rebuked_amodei_approach",
+          "trigger_text": "rebuked",
+          "frame_id": "criticism",
+          "polarity": "affirmed",
+          "modality": "actual",
+          "attribution": "source_narrator",
+          "roles": [
+            {
+              "frame_role_id": "criticism.critic",
+              "upper_role": "agent",
+              "target_kind": "mention_candidate",
+              "exact_text": "Hegseth"
+            },
+            {
+              "frame_role_id": "criticism.target",
+              "upper_role": "theme",
+              "target_kind": "source_span",
+              "exact_text": "Dario Amodei's approach to artificial intelligence",
+              "referenced_entities": [
+                {
+                  "exact_text": "Dario Amodei",
+                  "record_type": "Actor"
+                }
+              ],
+              "contract_status": "required_composite_target_extension"
+            }
+          ],
+          "expected_disposition": "proposed",
+          "expected_summary": "Hegseth publicly rebuked Dario Amodei's approach to artificial intelligence."
+        }
+      ]
+    },
+    {
+      "case_id": "HSQ-AMODEI-02",
+      "paragraph_ordinal": 3,
+      "source_segment_sha256": "7438981c5f67a586e62824f899dde376931333bc69728b43ccd04c167d71b7cf",
+      "source_text": "In January 2025, Anthropic CEO Dario Amodei criticized the artificial intelligence investment project Stargate as \"chaotic\" and opposed Trump's rescission of president Joe Biden's Executive Order on Artificial Intelligence, but noted that Anthropic had held discussions with Trump officials about artificial intelligence policy. ",
+      "expected_events": [
+        {
+          "event_key": "amodei_criticized_stargate",
+          "trigger_text": "criticized",
+          "frame_id": "criticism",
+          "polarity": "affirmed",
+          "modality": "actual",
+          "attribution": "source_narrator",
+          "roles": [
+            {
+              "frame_role_id": "criticism.critic",
+              "upper_role": "agent",
+              "target_kind": "mention_candidate",
+              "exact_text": "Dario Amodei"
+            },
+            {
+              "frame_role_id": "criticism.target",
+              "upper_role": "theme",
+              "target_kind": "mention_candidate",
+              "exact_text": "Stargate"
+            },
+            {
+              "frame_role_id": "criticism.assessment",
+              "upper_role": "content",
+              "target_kind": "source_span",
+              "exact_text": "\"chaotic\"",
+              "contract_status": "required_ontology_extension"
+            }
+          ],
+          "qualifiers": [
+            {
+              "kind": "time",
+              "relation": "at",
+              "exact_text": "January 2025"
+            }
+          ],
+          "expected_disposition": "proposed",
+          "expected_summary": "Dario Amodei criticized Stargate as \"chaotic\" in January 2025."
+        }
+      ]
+    },
+    {
+      "case_id": "HSQ-AMODEI-03",
+      "paragraph_ordinal": 5,
+      "source_segment_sha256": "5367faa6a71b436e486f3f7f29f6d219464cef2cfea476e05efeca768c6c4bda",
+      "source_text": "Anthropic's strategy has mirrored Amodei's views toward Trump; in a Facebook post ahead of the 2024 presidential election, Amodei urged his associates to vote for vice president Kamala Harris over Trump, describing him as a \"feudal warlord\". ",
+      "expected_events": [
+        {
+          "event_key": "amodei_characterized_trump",
+          "trigger_text": "describing",
+          "frame_id": "characterization",
+          "polarity": "affirmed",
+          "modality": "actual",
+          "attribution": "source_narrator",
+          "roles": [
+            {
+              "frame_role_id": "characterization.evaluator",
+              "upper_role": "agent",
+              "target_kind": "mention_candidate",
+              "exact_text": "Amodei",
+              "start": 123,
+              "end": 129
+            },
+            {
+              "frame_role_id": "characterization.evaluated_subject",
+              "upper_role": "theme",
+              "target_kind": "mention_candidate",
+              "exact_text": "him",
+              "resolved_text": "Trump"
+            },
+            {
+              "frame_role_id": "characterization.characterization",
+              "upper_role": "content",
+              "target_kind": "source_span",
+              "exact_text": "a \"feudal warlord\""
+            }
+          ],
+          "qualifiers": [
+            {
+              "kind": "time",
+              "relation": "before",
+              "exact_text": "the 2024 presidential election",
+              "contract_status": "required_qualifier_extension"
+            }
+          ],
+          "expected_disposition": "proposed",
+          "expected_summary": "Dario Amodei characterized Trump as a \"feudal warlord\"."
+        }
+      ]
+    },
+    {
+      "case_id": "HSQ-AMODEI-04",
+      "paragraph_ordinal": 3,
+      "source_segment_sha256": "a7afdc5c867500f7adc72616351ed81d3926940ece27ec64007b9e90ca43965c",
+      "source_text": "[6] The following month, Amodei wrote an op-ed in The New York Times describing  the  artificial  intelligence  regulation bill, then tied to the One Big Beautiful Bill Act, as \"far too blunt an instrument\". ",
+      "expected_events": [
+        {
+          "event_key": "amodei_published_op_ed",
+          "trigger_text": "wrote",
+          "frame_id": "publication",
+          "polarity": "affirmed",
+          "modality": "actual",
+          "attribution": "source_narrator",
+          "roles": [
+            {
+              "frame_role_id": "publication.publisher",
+              "upper_role": "agent",
+              "target_kind": "mention_candidate",
+              "exact_text": "Amodei"
+            },
+            {
+              "frame_role_id": "publication.published_work",
+              "upper_role": "theme",
+              "target_kind": "source_span",
+              "exact_text": "an op-ed"
+            },
+            {
+              "frame_role_id": "publication.outlet",
+              "upper_role": "medium",
+              "target_kind": "mention_candidate",
+              "exact_text": "The New York Times",
+              "contract_status": "required_ontology_extension"
+            },
+            {
+              "frame_role_id": "publication.topic",
+              "upper_role": "content",
+              "target_kind": "source_span",
+              "exact_text": "the  artificial  intelligence  regulation bill, then tied to the One Big Beautiful Bill Act"
+            }
+          ],
+          "expected_disposition": "proposed",
+          "expected_summary": "Amodei published an op-ed in The New York Times about the artificial intelligence regulation bill."
+        },
+        {
+          "event_key": "amodei_characterized_regulation_bill",
+          "trigger_text": "describing",
+          "frame_id": "characterization",
+          "polarity": "affirmed",
+          "modality": "actual",
+          "attribution": "source_narrator",
+          "roles": [
+            {
+              "frame_role_id": "characterization.evaluator",
+              "upper_role": "agent",
+              "target_kind": "mention_candidate",
+              "exact_text": "Amodei"
+            },
+            {
+              "frame_role_id": "characterization.evaluated_subject",
+              "upper_role": "theme",
+              "target_kind": "source_span",
+              "exact_text": "the  artificial  intelligence  regulation bill, then tied to the One Big Beautiful Bill Act"
+            },
+            {
+              "frame_role_id": "characterization.characterization",
+              "upper_role": "content",
+              "target_kind": "source_span",
+              "exact_text": "\"far too blunt an instrument\""
+            }
+          ],
+          "expected_disposition": "proposed",
+          "expected_summary": "Amodei characterized the artificial intelligence regulation bill as \"far too blunt an instrument\"."
+        }
+      ]
+    }
+  ],
+  "wiki_acceptance": {
+    "required_event_count": 5,
+    "required_actor_page": true,
+    "required_exact_source_per_event": true,
+    "required_audit_lineage_per_event": true,
+    "forbidden_incomplete_event": true,
+    "forbidden_unsupported_substitution": true
+  }
+}

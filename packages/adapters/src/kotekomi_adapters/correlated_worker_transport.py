@@ -254,21 +254,9 @@ class SubprocessCorrelatedWorkerTransport:
         self._process = None
         if process is None:
             return
-        cleanup_deadline = self._monotonic_clock() + self._cleanup_allowance_seconds
         try:
             if process.poll() is None:
-                process.terminate()
-                try:
-                    process.wait(timeout=_remaining(cleanup_deadline, self._monotonic_clock))
-                except subprocess.TimeoutExpired:
-                    process.kill()
-                    try:
-                        process.wait(timeout=_remaining(cleanup_deadline, self._monotonic_clock))
-                    except subprocess.TimeoutExpired as error:
-                        raise CorrelatedWorkerChannelError(
-                            "worker_cleanup_failed",
-                            "Model worker did not exit within its cleanup allowance.",
-                        ) from error
+                self._terminate_and_reap(process)
         finally:
             for stream in (process.stdin, process.stdout):
                 if stream is not None:
@@ -280,7 +268,6 @@ class SubprocessCorrelatedWorkerTransport:
         self._process = None
         if process is None:
             return
-        cleanup_deadline = self._monotonic_clock() + self._cleanup_allowance_seconds
         try:
             if process.poll() is None:
                 assert process.stdin is not None
@@ -289,26 +276,29 @@ class SubprocessCorrelatedWorkerTransport:
                 except OSError:
                     pass
                 try:
-                    process.wait(timeout=_remaining(cleanup_deadline, self._monotonic_clock))
+                    process.wait(timeout=self._cleanup_allowance_seconds)
                 except subprocess.TimeoutExpired:
-                    process.terminate()
-                    try:
-                        process.wait(timeout=_remaining(cleanup_deadline, self._monotonic_clock))
-                    except subprocess.TimeoutExpired:
-                        process.kill()
-                        try:
-                            process.wait(
-                                timeout=_remaining(cleanup_deadline, self._monotonic_clock)
-                            )
-                        except subprocess.TimeoutExpired as error:
-                            raise CorrelatedWorkerChannelError(
-                                "worker_cleanup_failed",
-                                "Model worker did not exit within its cleanup allowance.",
-                            ) from error
+                    self._terminate_and_reap(process)
         finally:
             for stream in (process.stdin, process.stdout):
                 if stream is not None and not stream.closed:
                     stream.close()
+
+    def _terminate_and_reap(self, process: subprocess.Popen[bytes]) -> None:
+        """Bound termination and forced reaping as separate lifecycle phases."""
+        process.terminate()
+        try:
+            process.wait(timeout=self._cleanup_allowance_seconds)
+            return
+        except subprocess.TimeoutExpired:
+            process.kill()
+        try:
+            process.wait(timeout=self._cleanup_allowance_seconds)
+        except subprocess.TimeoutExpired as error:
+            raise CorrelatedWorkerChannelError(
+                "worker_cleanup_failed",
+                "Model worker did not exit after bounded termination and forced reaping.",
+            ) from error
 
 
 def _decode_exchange(raw_output: bytes, expected_request_id: str) -> CorrelatedWorkerExchange:
@@ -395,7 +385,3 @@ def _canonical_json(value: object) -> bytes:
 
 def _reject_json_constant(value: str) -> object:
     raise ValueError(f"Non-finite JSON value is not permitted: {value}.")
-
-
-def _remaining(deadline: float, monotonic_clock: Callable[[], float]) -> float:
-    return max(0.001, deadline - monotonic_clock())

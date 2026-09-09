@@ -79,6 +79,10 @@ A timeout, broken frame, correlation mismatch, unexpected exit, or invalid worke
 
 Discard a poisoned worker and its buffered pipes before returning the failure.
 
+Give graceful exit, termination, and forced reaping separate bounded allowances.
+
+Do not reuse an expired lifecycle deadline after sending a stronger process signal.
+
 The next explicit request may start a fresh worker; the transport does not retry semantic work automatically.
 
 Retain correlated raw output as execution evidence when the Application contract supports raw runtime evidence.

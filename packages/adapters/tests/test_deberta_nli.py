@@ -1,7 +1,7 @@
 from pathlib import Path
 
 import pytest
-from kotekomi_adapters.deberta_nli import DebertaNliAdapter, _require_untruncated_input
+from kotekomi_adapters.deberta_nli import DebertaNliAdapter, require_untruncated_input
 from kotekomi_application import NaturalLanguageInferenceInput, NliLabel
 
 
@@ -42,6 +42,6 @@ class _InputIds:
 
 def test_deberta_nli_rejects_input_that_would_require_silent_truncation() -> None:
     with pytest.raises(ValueError, match="exceed the model limit"):
-        _require_untruncated_input({"input_ids": _InputIds(513)}, maximum_tokens=512)
+        require_untruncated_input({"input_ids": _InputIds(513)}, maximum_tokens=512)
 
-    _require_untruncated_input({"input_ids": _InputIds(512)}, maximum_tokens=512)
+    require_untruncated_input({"input_ids": _InputIds(512)}, maximum_tokens=512)

@@ -59,9 +59,6 @@ from kotekomi_application.extraction_stage_trace import (
     build_extraction_stage_trace,
     validate_extraction_stage_trace_chain,
 )
-from kotekomi_application.hybrid_atomic_claim_preview import (
-    load_hybrid_atomic_claim_preview,
-)
 from kotekomi_application.hybrid_document_references import (
     HybridReferencePreview,
     ReferenceStatus,
@@ -71,6 +68,9 @@ from kotekomi_application.hybrid_document_references import (
 from kotekomi_application.hybrid_event_semantics_preview import (
     HybridEventSemanticsLedger,
     load_hybrid_event_semantics_preview,
+)
+from kotekomi_application.hybrid_event_trigger_preview import (
+    load_hybrid_event_trigger_preview,
 )
 from kotekomi_application.hybrid_mention_interpretation import (
     ContextualKind,
@@ -129,7 +129,7 @@ from kotekomi_application.staged_model_extraction import (
     run_bounded_extraction,
 )
 
-HYBRID_STANDING_FACT_POLICY_ID = "hybrid_standing_fact_v2"
+HYBRID_STANDING_FACT_POLICY_ID = "hybrid_standing_fact_v3"
 HYBRID_STANDING_FACT_SCHEMA_ID = "hybrid_standing_fact_text_v1"
 HYBRID_STANDING_FACT_PROMPT_ID = "hybrid_standing_fact_task_v1"
 HYBRID_STANDING_FACT_QUALIFICATION_SCHEMA_ID = "standing_fact_qualification_text_v1"
@@ -277,7 +277,7 @@ class StandingFactPlan(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
-    schema_version: Literal["standing_fact_plan_v2"] = "standing_fact_plan_v2"
+    schema_version: Literal["standing_fact_plan_v3"] = "standing_fact_plan_v3"
     id: Annotated[str, Field(pattern=r"^sfp_[a-f0-9]{24}$")]
     parent_plan_id: Annotated[str, Field(pattern=r"^hpp_[a-f0-9]{24}$")]
     parent_plan_sha256: Annotated[str, Field(pattern=_SHA256)]
@@ -289,7 +289,7 @@ class StandingFactPlan(BaseModel):
     paragraph_node_id: Annotated[str, Field(min_length=1)]
     context_manifest_id: str | None = None
     qualification_context_manifest_id: str | None = None
-    policy_id: Literal["hybrid_standing_fact_v2"] = HYBRID_STANDING_FACT_POLICY_ID
+    policy_id: Literal["hybrid_standing_fact_v3"] = HYBRID_STANDING_FACT_POLICY_ID
     provenance_activity_id: Annotated[str, Field(pattern=r"^prv_[a-f0-9]{24}$")]
     drafts: tuple[StandingFactDraft, ...] = ()
     propositions: tuple[CompleteProposition, ...] = ()
@@ -908,19 +908,19 @@ def _load_context(
     parent = load_hybrid_proposal_plan(parent_plan_id, ledger, archive)
     replay_ledger = cast(HybridEventSemanticsLedger, ledger)
     hp6 = load_hybrid_event_semantics_preview(parent.parent_preview_id, replay_ledger, archive)
-    hp5 = load_hybrid_atomic_claim_preview(hp6.parent_preview_id, replay_ledger, archive)
-    mention_payload = archive.read_hybrid_extraction_preview(hp5.mention_preview_id)
+    hp4 = load_hybrid_event_trigger_preview(hp6.parent_preview_id, archive)
+    mention_payload = archive.read_hybrid_extraction_preview(hp4.mention_preview_id)
     mentions = hybrid_extraction_preview_from_bytes(mention_payload)
     if (
         canonical_hybrid_extraction_preview_bytes(mentions) != mention_payload
-        or hashlib.sha256(mention_payload).hexdigest() != hp5.mention_preview_sha256
+        or hashlib.sha256(mention_payload).hexdigest() != hp4.mention_preview_sha256
     ):
         raise ValueError("HP-10 HP-1 lineage does not match its pinned bytes.")
-    reference_payload = archive.read_hybrid_reference_preview(hp5.reference_preview_id)
+    reference_payload = archive.read_hybrid_reference_preview(hp4.reference_preview_id)
     references = hybrid_reference_preview_from_bytes(reference_payload)
     if (
         canonical_hybrid_reference_preview_bytes(references) != reference_payload
-        or hashlib.sha256(reference_payload).hexdigest() != hp5.reference_preview_sha256
+        or hashlib.sha256(reference_payload).hexdigest() != hp4.reference_preview_sha256
     ):
         raise ValueError("HP-10 HP-2 lineage does not match its pinned bytes.")
     bundle = ledger.get_document_representation_bundle(parent.representation_id)
@@ -1261,6 +1261,15 @@ def _hold_reasons(
     draft: StandingFactDraft,
     context: _SourceContext,
 ) -> tuple[StandingFactHoldReason, ...]:
+    segment = _segment_by_id(context, draft.source_segment_id)
+    return standing_fact_source_hold_reasons(draft, segment.exact_text)
+
+
+def standing_fact_source_hold_reasons(
+    draft: StandingFactDraft,
+    source_text: str,
+) -> tuple[StandingFactHoldReason, ...]:
+    """Apply only source and identity checks before independent semantic qualification."""
     reasons: set[StandingFactHoldReason] = set()
     if draft.subject_candidate_id is None:
         reasons.add(StandingFactHoldReason.UNKNOWN_SUBJECT)
@@ -1270,8 +1279,7 @@ def _hold_reasons(
         elif draft.object_candidate_id == draft.subject_candidate_id:
             reasons.add(StandingFactHoldReason.SELF_RELATION)
     else:
-        segment = _segment_by_id(context, draft.source_segment_id)
-        if draft.object_label_or_literal not in segment.exact_text:
+        if draft.object_label_or_literal not in source_text:
             reasons.add(StandingFactHoldReason.LITERAL_NOT_IN_SOURCE)
     return tuple(sorted(reasons, key=lambda item: item.value))
 
@@ -1678,7 +1686,7 @@ def _build_plan(
     payload = cast(
         dict[str, JsonValue],
         {
-            "schema_version": "standing_fact_plan_v2",
+            "schema_version": "standing_fact_plan_v3",
             "parent_plan_id": context.parent_plan.id,
             "parent_plan_sha256": hashlib.sha256(
                 canonical_hybrid_proposal_plan_bytes(context.parent_plan)

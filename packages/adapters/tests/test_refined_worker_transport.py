@@ -24,11 +24,13 @@ def _worker_script(tmp_path: Path) -> Path:
             """
             import json
             import os
+            import signal
             import sys
             import time
             import uuid
 
             worker_instance_id = uuid.uuid4().hex
+            resist_shutdown = False
             with open(__file__ + ".starts", "a", encoding="utf-8") as start_log:
                 start_log.write(worker_instance_id + "\\n")
 
@@ -57,6 +59,9 @@ def _worker_script(tmp_path: Path) -> Path:
                 if behavior == "silence":
                     time.sleep(2)
                     continue
+                if behavior == "resist_shutdown":
+                    resist_shutdown = True
+                    signal.signal(signal.SIGTERM, signal.SIG_IGN)
                 if behavior == "partial":
                     sys.stdout.buffer.write(b"{")
                     sys.stdout.buffer.flush()
@@ -89,6 +94,8 @@ def _worker_script(tmp_path: Path) -> Path:
                     response["payload"]["status"] = "blocked"
                 sys.stdout.buffer.write(canonical(response) + b"\\n")
                 sys.stdout.buffer.flush()
+            if resist_shutdown:
+                time.sleep(2)
             with open(__file__ + ".closed", "a", encoding="utf-8") as close_log:
                 close_log.write(worker_instance_id + "\\n")
             """
@@ -188,6 +195,21 @@ def test_valid_blocked_payload_keeps_worker_reusable(tmp_path: Path) -> None:
     assert blocked.payload["status"] == "blocked"
     assert blocked.payload["worker_instance_id"] == completed.payload["worker_instance_id"]
     assert _worker_starts(worker_script) == 1
+
+
+def test_close_force_reaps_worker_that_ignores_eof_and_terminate(tmp_path: Path) -> None:
+    worker_script = _worker_script(tmp_path)
+    transport = _transport(worker_script, (FIRST_REQUEST_ID,))
+
+    completed = transport.request({"behavior": "resist_shutdown"})
+    started = time.monotonic()
+    transport.close()
+    elapsed = time.monotonic() - started
+
+    assert completed.payload["behavior"] == "resist_shutdown"
+    assert elapsed < 2
+    assert _worker_starts(worker_script) == 1
+    assert not Path(f"{worker_script}.closed").exists()
 
 
 def test_request_frame_limit_fails_before_worker_start(tmp_path: Path) -> None:

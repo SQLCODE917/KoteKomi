@@ -60,7 +60,7 @@ The user supplies the article URL to KoteKomi without giving KoteKomi network au
 - LS-CAP-02: The Application Layer uses the normalized Source URL as the stable Source identity key.
 - LS-CAP-03: The Application Layer uses the exact file bytes to compute the RawBlob and Document identities.
 - LS-CAP-04: The Application Layer archives exact file bytes before it invokes a representation parser.
-- LS-CAP-05: The Application Layer records the local file path and Source URL in capture provenance.
+- LS-CAP-05: The Application Layer records the canonical absolute local file path and Source URL in capture provenance; equivalent relative and absolute spellings of the same path do not create an idempotency conflict.
 - LS-CAP-06: Identical Source URL and file bytes reuse the existing Source and Document.
 - LS-CAP-07: Changed bytes at one Source URL create a new Document under the existing Source.
 
@@ -126,7 +126,7 @@ The SourceCapture requested URI and canonical URI equal the normalized Source UR
 
 The SourceCapture retrieval method equals `user_deposited_file`.
 
-The SourceCapture request metadata records the local file path and original filename.
+The SourceCapture request metadata records the canonical absolute local file path and original filename.
 
 ## 7. APIs / Interfaces
 
@@ -165,7 +165,7 @@ The Application Layer does not create FTS indexes, SourceProjection records, emb
 - AC-LS-PIPE-03: Pipeline JSON tests return each required field and never perform a network request.
 - AC-LS-CAP-01: Application tests prove the Source URL supplies stable Source identity and capture URI fields.
 - AC-LS-CAP-02: Application tests prove the Archive receives exact bytes before representation parsing.
-- AC-LS-CAP-03: Application tests prove identical bytes reuse canonical records and changed bytes create a Document revision.
+- AC-LS-CAP-03: Application tests prove identical bytes reuse canonical records, including across equivalent relative and absolute local paths, and changed bytes create a Document revision.
 - AC-LS-REP-01: PDF integration tests prove the parser receives captured PDF bytes and commits its representation.
 - AC-LS-REP-02: A blocked PDF test proves capture records remain committed and reports typed blockers.
 - AC-LS-REP-03: Markdown and text tests retain deterministic local-file representation behavior.

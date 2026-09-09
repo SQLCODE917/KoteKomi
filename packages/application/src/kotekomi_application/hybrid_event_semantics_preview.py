@@ -1,21 +1,24 @@
-"""HP-6 governed event normalization and independent source-support orchestration."""
+"""HP-6 bounded governed-event semantics and independent source-support orchestration."""
 
 from __future__ import annotations
 
 import hashlib
 import json
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Literal, Protocol, cast
 
 from kotekomi_domain import (
-    HYBRID_EVENT_SEMANTICS_V2,
+    HYBRID_EVENT_SEMANTICS_V4,
     AssignmentOrigin,
+    DocumentNode,
     DocumentRepresentationBundle,
     EvidenceTarget,
     EvidenceValidationAttempt,
     EvidenceValidationAttemptStatus,
     ModelRunStatus,
     SemanticArgumentTargetKind,
+    TemporalRelation,
     canonical_evidence_target_digest,
     hybrid_event_semantics_profile_sha256,
 )
@@ -31,10 +34,12 @@ from kotekomi_application.context_planning import (
     ContextManifestStatus,
     ContextModelProfile,
     ContextTokenizer,
-    RetrievalSelectionAnalysisUnitInput,
+    SourceCopyView,
     SourceSegment,
+    SourceSegmentAnalysisUnitInput,
     build_context_manifest,
-    create_analysis_unit_from_retrieval_selection,
+    create_analysis_unit_from_source_segment,
+    derive_source_copy_view,
     paragraph_source_segments,
     verify_context_manifest,
 )
@@ -47,25 +52,20 @@ from kotekomi_application.extraction_stage_trace import (
     ExtractionStageTrace,
     build_extraction_stage_trace,
 )
-from kotekomi_application.hybrid_atomic_claim_preview import (
-    HybridAtomicClaimArchive,
-    HybridAtomicClaimLedger,
-    load_hybrid_atomic_claim_preview,
+from kotekomi_application.hybrid_document_references import (
+    HybridReferencePreview,
+    ReferenceDecision,
+    ReferenceSpan,
+    canonical_hybrid_reference_preview_bytes,
+    hybrid_reference_preview_from_bytes,
 )
-from kotekomi_application.hybrid_atomic_claims import (
-    AtomicClaimObjectKind,
-    EventSubjectDraft,
-    HybridAtomicClaimPreview,
-    HybridAtomicClaimStatus,
-    canonical_hybrid_atomic_claim_preview_bytes,
-)
-from kotekomi_application.hybrid_event_frame_preview import load_hybrid_event_frame_preview
-from kotekomi_application.hybrid_event_frames import EventFrameDraft, EventTriggerDraft
 from kotekomi_application.hybrid_event_semantics import (
-    HYBRID_EVENT_NORMALIZATION_PROMPT_ID,
-    HYBRID_EVENT_NORMALIZATION_SCHEMA_ID,
-    HYBRID_EVENT_ROLE_COMPLETION_PROMPT_ID,
-    HYBRID_EVENT_ROLE_COMPLETION_SCHEMA_ID,
+    HYBRID_EVENT_FRAME_SELECTION_PROMPT_ID,
+    HYBRID_EVENT_FRAME_SELECTION_SCHEMA_ID,
+    HYBRID_EVENT_PRESENTATION_PROMPT_ID,
+    HYBRID_EVENT_PRESENTATION_SCHEMA_ID,
+    HYBRID_EVENT_ROLE_SELECTION_PROMPT_ID,
+    HYBRID_EVENT_ROLE_SELECTION_SCHEMA_ID,
     HYBRID_EVENT_SEMANTICS_POLICY_ID,
     HYBRID_SEMANTIC_SUPPORT_PROMPT_ID,
     HYBRID_SEMANTIC_SUPPORT_SCHEMA_ID,
@@ -73,6 +73,7 @@ from kotekomi_application.hybrid_event_semantics import (
     EventArgumentTargetDraft,
     EventAttributionKind,
     EventSemanticDraft,
+    EventSubjectDraft,
     HybridEventSemanticsPreview,
     HybridEventSemanticsStatus,
     SemanticCoverageGap,
@@ -85,6 +86,7 @@ from kotekomi_application.hybrid_event_semantics import (
     build_event_argument_assignment_draft,
     build_event_argument_target_draft,
     build_event_semantic_draft,
+    build_event_subject_draft,
     build_hybrid_event_semantics_preview,
     build_semantic_coverage_gap,
     build_semantic_qualifier_draft,
@@ -96,19 +98,40 @@ from kotekomi_application.hybrid_event_semantics import (
     resolve_unique_source_literal,
 )
 from kotekomi_application.hybrid_event_semantics_model_output import (
+    EventFrameSelection,
+    EventPresentationSelection,
     EventSemanticArgumentProposal,
+    EventSemanticLineRejection,
     EventSemanticProposal,
+    EventSemanticQualifierProposal,
     EventSemanticRoleTargetProposal,
     SemanticSupportModelJudgment,
+    event_frame_selection_schema_bytes,
+    event_presentation_schema_bytes,
     event_semantic_role_target_schema_bytes,
-    event_semantic_schema_bytes,
-    parse_event_semantic_output,
+    parse_event_frame_selection_output,
+    parse_event_presentation_output,
     parse_event_semantic_role_target_output,
     parse_semantic_support_output,
     semantic_support_schema_bytes,
 )
+from kotekomi_application.hybrid_event_trigger_preview import (
+    HybridEventTriggerArchive,
+    HybridEventTriggerLedger,
+    SourceOccurrence,
+    load_hybrid_event_trigger_preview,
+    source_occurrences,
+)
+from kotekomi_application.hybrid_event_triggers import (
+    EventTriggerDraft,
+    HybridEventTriggerPreview,
+    HybridEventTriggerStatus,
+    canonical_hybrid_event_trigger_preview_bytes,
+)
 from kotekomi_application.hybrid_mention_interpretation import (
+    ContextualKind,
     HybridExtractionPreview,
+    MentionBoundaryStatus,
     MentionCandidate,
     hybrid_extraction_preview_from_bytes,
     hybrid_source_segment_id,
@@ -142,11 +165,11 @@ HYBRID_EVENT_SEMANTICS_SOURCE_ALIGNMENT = "exact_then_whitespace_equivalent_uniq
 HYBRID_EVENT_NLI_ENTAILMENT_THRESHOLD = 0.5
 
 
-class HybridEventSemanticsLedger(HybridAtomicClaimLedger, StagedExtractionLedger, Protocol):
+class HybridEventSemanticsLedger(HybridEventTriggerLedger, StagedExtractionLedger, Protocol):
     pass
 
 
-class HybridEventSemanticsArchive(HybridAtomicClaimArchive, Protocol):
+class HybridEventSemanticsArchive(HybridEventTriggerArchive, Protocol):
     def put_model_run_output(
         self, model_run_id: str, payload: bytes, expected_digest: str
     ) -> object: ...
@@ -185,10 +208,10 @@ class _SegmentContext:
 
 @dataclass(frozen=True)
 class _SourceContext:
-    parent: HybridAtomicClaimPreview
+    parent: HybridEventTriggerPreview
     bundle: DocumentRepresentationBundle
     mentions: HybridExtractionPreview
-    frames: dict[str, EventFrameDraft]
+    references: HybridReferencePreview
     triggers: dict[str, EventTriggerDraft]
     candidates: dict[str, MentionCandidate]
     segments: dict[str, _SegmentContext]
@@ -199,7 +222,10 @@ class _SourceContext:
 @dataclass(frozen=True)
 class _LocalInputs:
     candidates: dict[str, MentionCandidate]
-    sibling_events: dict[str, EventSubjectDraft]
+    reference_metadata: dict[str, tuple[ReferenceDecision, tuple[ReferenceSpan, ...]]]
+    source_text: str
+    source_copy: SourceCopyView
+    occurrences: dict[str, SourceOccurrence]
 
 
 @dataclass(frozen=True)
@@ -217,19 +243,26 @@ class _ConstructedEvent:
 
 class _SemanticSchemaRegistry:
     def resolve(self, schema_id: str) -> PinnedTaskSchema:
-        if schema_id == HYBRID_EVENT_NORMALIZATION_SCHEMA_ID:
+        if schema_id == HYBRID_EVENT_FRAME_SELECTION_SCHEMA_ID:
             return PinnedTaskSchema(
                 schema_id,
-                event_semantic_schema_bytes(),
+                event_frame_selection_schema_bytes(),
                 schema_id,
-                parse_event_semantic_output,
+                parse_event_frame_selection_output,
             )
-        if schema_id == HYBRID_EVENT_ROLE_COMPLETION_SCHEMA_ID:
+        if schema_id == HYBRID_EVENT_ROLE_SELECTION_SCHEMA_ID:
             return PinnedTaskSchema(
                 schema_id,
                 event_semantic_role_target_schema_bytes(),
                 schema_id,
                 parse_event_semantic_role_target_output,
+            )
+        if schema_id == HYBRID_EVENT_PRESENTATION_SCHEMA_ID:
+            return PinnedTaskSchema(
+                schema_id,
+                event_presentation_schema_bytes(),
+                schema_id,
+                parse_event_presentation_output,
             )
         if schema_id == HYBRID_SEMANTIC_SUPPORT_SCHEMA_ID:
             return PinnedTaskSchema(
@@ -249,74 +282,41 @@ def run_hybrid_event_semantics_preview(
     model_runtime: ModelTaskRuntime,
     model_run_id_factory: ModelRunIdFactory,
     tokenizer: ContextTokenizer,
-    normalization_prompt_bytes: bytes,
-    role_completion_prompt_bytes: bytes,
+    frame_selection_prompt_bytes: bytes,
+    role_selection_prompt_bytes: bytes,
+    presentation_prompt_bytes: bytes,
     support_prompt_bytes: bytes,
     nli_runtime: NaturalLanguageInferencePort,
 ) -> HybridEventSemanticsResult:
     """Build governed semantic drafts and independently verify every statement."""
     context = _load_context(command.parent_preview_id, ledger, archive)
     registry: TaskSchemaRegistry = _SemanticSchemaRegistry()
-    normalization_schema = registry.resolve(HYBRID_EVENT_NORMALIZATION_SCHEMA_ID)
-    role_completion_schema = registry.resolve(HYBRID_EVENT_ROLE_COMPLETION_SCHEMA_ID)
+    frame_selection_schema = registry.resolve(HYBRID_EVENT_FRAME_SELECTION_SCHEMA_ID)
+    role_selection_schema = registry.resolve(HYBRID_EVENT_ROLE_SELECTION_SCHEMA_ID)
+    presentation_schema = registry.resolve(HYBRID_EVENT_PRESENTATION_SCHEMA_ID)
     support_schema = registry.resolve(HYBRID_SEMANTIC_SUPPORT_SCHEMA_ID)
     parent_sha256 = hashlib.sha256(
-        canonical_hybrid_atomic_claim_preview_bytes(context.parent)
+        canonical_hybrid_event_trigger_preview_bytes(context.parent)
     ).hexdigest()
     common = _preview_common(
         context,
         parent_sha256,
-        normalization_prompt_bytes,
-        normalization_schema,
-        role_completion_prompt_bytes,
-        role_completion_schema,
+        frame_selection_prompt_bytes,
+        frame_selection_schema,
+        role_selection_prompt_bytes,
+        role_selection_schema,
+        presentation_prompt_bytes,
+        presentation_schema,
         support_prompt_bytes,
         support_schema,
     )
-    if context.parent.terminal_status is HybridAtomicClaimStatus.BLOCKED:
+    if context.parent.terminal_status is HybridEventTriggerStatus.BLOCKED:
         preview = build_hybrid_event_semantics_preview(
             **common,
             terminal_status=HybridEventSemanticsStatus.BLOCKED,
-            diagnostics=("hp5_status:blocked",),
+            diagnostics=("hp4_status:blocked",),
         )
         return _result(preview)
-
-    unit = create_analysis_unit_from_retrieval_selection(
-        RetrievalSelectionAnalysisUnitInput(
-            representation_id=context.parent.representation_id,
-            focus_node_ids=(context.parent.paragraph_node_id,),
-            policy_id=HYBRID_EVENT_SEMANTICS_POLICY_ID,
-            task_type="hybrid_event_semantics_preview",
-        ),
-        ledger,
-    )
-    normalization_manifest = _build_manifest(
-        unit=unit,
-        profile=command.model_profile,
-        prompt_id=HYBRID_EVENT_NORMALIZATION_PROMPT_ID,
-        prompt_bytes=normalization_prompt_bytes,
-        schema=normalization_schema,
-        ledger=ledger,
-        tokenizer=tokenizer,
-    )
-    role_completion_manifest = _build_manifest(
-        unit=unit,
-        profile=command.model_profile,
-        prompt_id=HYBRID_EVENT_ROLE_COMPLETION_PROMPT_ID,
-        prompt_bytes=role_completion_prompt_bytes,
-        schema=role_completion_schema,
-        ledger=ledger,
-        tokenizer=tokenizer,
-    )
-    support_manifest = _build_manifest(
-        unit=unit,
-        profile=command.model_profile,
-        prompt_id=HYBRID_SEMANTIC_SUPPORT_PROMPT_ID,
-        prompt_bytes=support_prompt_bytes,
-        schema=support_schema,
-        ledger=ledger,
-        tokenizer=tokenizer,
-    )
 
     events: list[EventSemanticDraft] = []
     targets: list[EventArgumentTargetDraft] = []
@@ -334,38 +334,93 @@ def run_hybrid_event_semantics_preview(
     run_ids: list[str] = []
     traces: list[ExtractionStageTrace] = []
     diagnostics: list[str] = []
+    manifest_cache: dict[
+        str,
+        tuple[ContextManifest, ContextManifest, ContextManifest, ContextManifest],
+    ] = {}
 
-    for subject in context.parent.event_subjects:
-        frame = context.frames[subject.frame_id]
+    subjects = tuple(
+        build_event_subject_draft(parent_preview_id=context.parent.id, trigger_id=item.id)
+        for item in context.parent.triggers
+    )
+    for subject in subjects:
         trigger = context.triggers[subject.trigger_id]
         segment = context.segments[trigger.source_segment_id]
-        local_inputs = _local_inputs(context, subject, segment.segment_id)
-        task_input = _normalization_task_input(
-            context=context,
-            subject=subject,
-            frame=frame,
+        manifests = manifest_cache.get(segment.segment_id)
+        if manifests is None:
+            unit = create_analysis_unit_from_source_segment(
+                SourceSegmentAnalysisUnitInput(
+                    representation_id=context.parent.representation_id,
+                    paragraph_node_id=context.parent.paragraph_node_id,
+                    source_segment_label=segment.segment.label,
+                    policy_id=HYBRID_EVENT_SEMANTICS_POLICY_ID,
+                    task_type="hybrid_event_semantics_preview",
+                ),
+                ledger,
+            )
+            manifests = (
+                _build_manifest(
+                    unit=unit,
+                    profile=command.model_profile,
+                    prompt_id=HYBRID_EVENT_FRAME_SELECTION_PROMPT_ID,
+                    prompt_bytes=frame_selection_prompt_bytes,
+                    schema=frame_selection_schema,
+                    ledger=ledger,
+                    tokenizer=tokenizer,
+                ),
+                _build_manifest(
+                    unit=unit,
+                    profile=command.model_profile,
+                    prompt_id=HYBRID_EVENT_ROLE_SELECTION_PROMPT_ID,
+                    prompt_bytes=role_selection_prompt_bytes,
+                    schema=role_selection_schema,
+                    ledger=ledger,
+                    tokenizer=tokenizer,
+                ),
+                _build_manifest(
+                    unit=unit,
+                    profile=command.model_profile,
+                    prompt_id=HYBRID_EVENT_PRESENTATION_PROMPT_ID,
+                    prompt_bytes=presentation_prompt_bytes,
+                    schema=presentation_schema,
+                    ledger=ledger,
+                    tokenizer=tokenizer,
+                ),
+                _build_manifest(
+                    unit=unit,
+                    profile=command.model_profile,
+                    prompt_id=HYBRID_SEMANTIC_SUPPORT_PROMPT_ID,
+                    prompt_bytes=support_prompt_bytes,
+                    schema=support_schema,
+                    ledger=ledger,
+                    tokenizer=tokenizer,
+                ),
+            )
+            manifest_cache[segment.segment_id] = manifests
+        frame_manifest, role_manifest, presentation_manifest, support_manifest = manifests
+        local_inputs = _local_inputs(context, segment)
+        frame_input = _frame_selection_task_input(
             trigger=trigger,
             segment=segment,
-            local_inputs=local_inputs,
         )
-        outcome = run_bounded_extraction(
+        frame_outcome = run_bounded_extraction(
             BoundedExtractionInput(
                 source_id=context.source_id,
                 document_id=context.document_id,
                 representation_id=context.parent.representation_id,
-                context_manifest_id=normalization_manifest.id,
-                prompt_bytes=normalization_prompt_bytes,
+                context_manifest_id=frame_manifest.id,
+                prompt_bytes=frame_selection_prompt_bytes,
                 execution_spec=_execution_spec(
-                    normalization_manifest,
+                    frame_manifest,
                     model_runtime,
                     command.generation_parameters,
-                    normalization_schema,
-                    task_input,
+                    frame_selection_schema,
+                    frame_input,
                 ),
-                validator_version="hybrid_event_normalization_validator_v1",
-                task_type="hybrid_event_semantic_normalization",
+                validator_version="hybrid_event_frame_selection_validator_v1",
+                task_type="hybrid_event_frame_selection",
                 input_candidate_ids=(subject.id,),
-                task_local_input=task_input,
+                task_local_input=frame_input,
             ),
             ledger,
             archive,
@@ -374,87 +429,73 @@ def run_hybrid_event_semantics_preview(
             tokenizer,
             registry,
         )
-        task_ids.append(outcome.extraction_task.id)
-        run_ids.append(outcome.model_run.id)
-        proposal = outcome.event_semantic_proposal
-        normalization_trace = _normalization_trace(
-            context=context,
+        task_ids.append(frame_outcome.extraction_task.id)
+        run_ids.append(frame_outcome.model_run.id)
+        frame_selection = frame_outcome.event_frame_selection
+        frame_trace = _frame_selection_trace(
             subject=subject,
-            frame=frame,
             trigger=trigger,
             segment=segment,
-            local_inputs=local_inputs,
-            task_input=task_input,
-            prompt_bytes=normalization_prompt_bytes,
-            schema=normalization_schema,
-            task_id=outcome.extraction_task.id,
-            model_run_id=outcome.model_run.id,
-            model_status=outcome.model_run.status,
-            raw_output_sha256=outcome.model_run.output_digest,
-            proposal=proposal,
+            task_input=frame_input,
+            prompt_bytes=frame_selection_prompt_bytes,
+            schema=frame_selection_schema,
+            task_id=frame_outcome.extraction_task.id,
+            model_run_id=frame_outcome.model_run.id,
+            model_status=frame_outcome.model_run.status,
+            raw_output_sha256=frame_outcome.model_run.output_digest,
+            selection=frame_selection,
         )
-        traces.append(normalization_trace)
-        if proposal is None or outcome.model_run.status is not ModelRunStatus.SUCCEEDED:
+        traces.append(frame_trace)
+        if (
+            frame_selection is None
+            or frame_outcome.model_run.status is not ModelRunStatus.SUCCEEDED
+        ):
+            gaps.append(
+                build_semantic_coverage_gap(
+                    event_subject_id=subject.id,
+                    code=SemanticCoverageGapCode.INVALID_REQUIRED_ENVELOPE,
+                    field_value=frame_outcome.model_run.status.value,
+                    detail="The frame-selection task did not return a valid decision.",
+                )
+            )
             diagnostics.append(
-                f"normalization_task_failed:{subject.id}:{outcome.model_run.status.value}"
+                f"frame_selection_failed:{subject.id}:{frame_outcome.model_run.status.value}"
             )
             continue
-        if proposal.frame_id is None:
+        if frame_selection.frame_id is None:
             gaps.append(
                 build_semantic_coverage_gap(
                     event_subject_id=subject.id,
                     code=SemanticCoverageGapCode.UNMAPPED_FRAME,
-                    field_value=frame.id,
+                    field_value=trigger.event_type_label,
                     detail="No governed frame accurately represented the source event.",
                 )
             )
             diagnostics.append(f"unmapped_frame:{subject.id}")
             continue
         try:
-            frame_definition = _frame_definition(proposal.frame_id)
+            frame_definition = _frame_definition(frame_selection.frame_id)
         except ValueError as error:
-            diagnostics.append(f"normalization_mapping_failed:{subject.id}:{error}")
-            continue
-        role_by_id = {item.id: item for item in frame_definition.roles}
-        proposal_roles = [item.frame_role_id for item in proposal.arguments]
-        if any(item not in role_by_id for item in proposal_roles) or len(
-            set(proposal_roles)
-        ) != len(proposal_roles):
-            diagnostics.append(f"normalization_mapping_failed:{subject.id}:invalid_role_shape")
-            continue
-        primary_arguments: dict[str, EventSemanticArgumentProposal] = {}
-        invalid_targets: dict[str, str] = {}
-        for argument in proposal.arguments:
-            role = role_by_id[argument.frame_role_id]
-            try:
-                _resolve_target(
-                    context=context,
-                    segment=segment,
-                    local_inputs=local_inputs,
-                    value=argument.target_value,
-                    allowed_target_kinds=role.allowed_target_kinds,
-                    ledger=ledger,
+            gaps.append(
+                build_semantic_coverage_gap(
+                    event_subject_id=subject.id,
+                    code=SemanticCoverageGapCode.UNMAPPED_FRAME,
+                    field_value=frame_selection.frame_id,
+                    detail="The selected frame is not in the governed event profile.",
                 )
-            except ValueError as error:
-                invalid_targets[role.id] = f"{error}:{argument.target_value}"
-            else:
-                primary_arguments[role.id] = argument
-
-        normalization_traces = [normalization_trace]
-        selected_arguments = dict(primary_arguments)
-        assignment_origins = {
-            role_id: AssignmentOrigin.NORMALIZATION for role_id in primary_arguments
-        }
+            )
+            diagnostics.append(f"frame_selection_mapping_failed:{subject.id}:{error}")
+            continue
+        semantic_traces = [frame_trace]
+        selected_arguments: dict[str, EventSemanticArgumentProposal] = {}
+        assignment_origins: dict[str, AssignmentOrigin] = {}
         for role in frame_definition.roles:
-            if role.id in selected_arguments:
-                continue
             completed_argument: EventSemanticArgumentProposal | None = None
             rejected_target: str | None = None
             role_outcome = None
-            parent_trace_id = normalization_trace.id
+            parent_trace_id = frame_trace.id
             for attempt_ordinal in range(2):
-                role_input = _role_completion_task_input(
-                    context=context,
+                role_input = _role_selection_task_input(
                     trigger=trigger,
                     segment=segment,
                     local_inputs=local_inputs,
@@ -467,17 +508,17 @@ def run_hybrid_event_semantics_preview(
                         source_id=context.source_id,
                         document_id=context.document_id,
                         representation_id=context.parent.representation_id,
-                        context_manifest_id=role_completion_manifest.id,
-                        prompt_bytes=role_completion_prompt_bytes,
+                        context_manifest_id=role_manifest.id,
+                        prompt_bytes=role_selection_prompt_bytes,
                         execution_spec=_execution_spec(
-                            role_completion_manifest,
+                            role_manifest,
                             model_runtime,
                             command.generation_parameters,
-                            role_completion_schema,
+                            role_selection_schema,
                             role_input,
                         ),
-                        validator_version="hybrid_event_role_completion_validator_v1",
-                        task_type="hybrid_event_role_completion",
+                        validator_version="hybrid_event_role_selection_validator_v1",
+                        task_type="hybrid_event_role_selection",
                         input_candidate_ids=(subject.id,),
                         task_local_input=role_input,
                     ),
@@ -491,15 +532,15 @@ def run_hybrid_event_semantics_preview(
                 task_ids.append(role_outcome.extraction_task.id)
                 run_ids.append(role_outcome.model_run.id)
                 role_proposal = role_outcome.event_semantic_role_target_proposal
-                role_trace = _role_completion_trace(
+                role_trace = _role_selection_trace(
                     subject=subject,
                     frame=frame_definition,
                     role=role,
                     trigger=trigger,
                     segment=segment,
                     task_input=role_input,
-                    prompt_bytes=role_completion_prompt_bytes,
-                    schema=role_completion_schema,
+                    prompt_bytes=role_selection_prompt_bytes,
+                    schema=role_selection_schema,
                     task_id=role_outcome.extraction_task.id,
                     model_run_id=role_outcome.model_run.id,
                     model_status=role_outcome.model_run.status,
@@ -508,7 +549,7 @@ def run_hybrid_event_semantics_preview(
                     parent_trace_id=parent_trace_id,
                 )
                 traces.append(role_trace)
-                normalization_traces.append(role_trace)
+                semantic_traces.append(role_trace)
                 parent_trace_id = role_trace.id
                 if role_proposal is None:
                     if (
@@ -518,7 +559,7 @@ def run_hybrid_event_semantics_preview(
                         rejected_target = "invalid_model_output"
                         continue
                     break
-                if role_proposal.target_value is None:
+                if role_proposal.target_selector is None:
                     break
                 try:
                     completed_argument = _completed_role_argument(
@@ -530,80 +571,157 @@ def run_hybrid_event_semantics_preview(
                         ledger,
                     )
                 except ValueError as error:
-                    reconciled = _reconcile_redundant_catalog_target(
-                        role_proposal,
-                        role,
-                        context,
-                        local_inputs,
-                    )
-                    if reconciled is not None:
-                        completed_argument = _completed_role_argument(
-                            reconciled,
-                            role,
-                            context,
-                            segment,
-                            local_inputs,
-                            ledger,
-                        )
-                        reconciliation_trace = _role_target_reconciliation_trace(
-                            subject=subject,
-                            role=role,
-                            trigger=trigger,
-                            segment=segment,
-                            original=role_proposal,
-                            reconciled=reconciled,
-                            parent_trace_id=role_trace.id,
-                        )
-                        traces.append(reconciliation_trace)
-                        normalization_traces.append(reconciliation_trace)
-                        break
                     if attempt_ordinal == 0:
-                        rejected_target = f"{error}:{role_proposal.target_value}"
+                        rejected_target = f"{error}:{role_proposal.target_selector}"
                         continue
                 break
             assert role_outcome is not None
             if completed_argument is None:
-                if (
-                    role_outcome.model_run.status is not ModelRunStatus.SUCCEEDED
-                    or role.required
-                    or role.id in invalid_targets
-                    or role.id in primary_arguments
-                ):
+                if role_outcome.model_run.status is not ModelRunStatus.SUCCEEDED or role.required:
                     diagnostics.append(
-                        f"role_completion_unresolved:{subject.id}:{role.id}:"
+                        f"role_selection_unresolved:{subject.id}:{role.id}:"
                         f"{role_outcome.model_run.status.value}"
                     )
             else:
                 selected_arguments[role.id] = completed_argument
-                assignment_origins[role.id] = AssignmentOrigin.ROLE_COMPLETION
+                assignment_origins[role.id] = AssignmentOrigin.ROLE_SELECTION
+
+        presentation_input = _event_presentation_task_input(
+            trigger=trigger,
+            segment=segment,
+            local_inputs=local_inputs,
+            frame=frame_definition,
+            selected_arguments=selected_arguments,
+        )
+        presentation_outcome = run_bounded_extraction(
+            BoundedExtractionInput(
+                source_id=context.source_id,
+                document_id=context.document_id,
+                representation_id=context.parent.representation_id,
+                context_manifest_id=presentation_manifest.id,
+                prompt_bytes=presentation_prompt_bytes,
+                execution_spec=_execution_spec(
+                    presentation_manifest,
+                    model_runtime,
+                    command.generation_parameters,
+                    presentation_schema,
+                    presentation_input,
+                ),
+                validator_version="hybrid_event_presentation_validator_v1",
+                task_type="hybrid_event_presentation",
+                input_candidate_ids=(subject.id,),
+                task_local_input=presentation_input,
+            ),
+            ledger,
+            archive,
+            model_runtime,
+            model_run_id_factory,
+            tokenizer,
+            registry,
+        )
+        task_ids.append(presentation_outcome.extraction_task.id)
+        run_ids.append(presentation_outcome.model_run.id)
+        presentation = presentation_outcome.event_presentation_selection
+        presentation_trace = _event_presentation_trace(
+            subject=subject,
+            frame=frame_definition,
+            trigger=trigger,
+            segment=segment,
+            task_input=presentation_input,
+            prompt_bytes=presentation_prompt_bytes,
+            schema=presentation_schema,
+            task_id=presentation_outcome.extraction_task.id,
+            model_run_id=presentation_outcome.model_run.id,
+            model_status=presentation_outcome.model_run.status,
+            raw_output_sha256=presentation_outcome.model_run.output_digest,
+            selection=presentation,
+            rejections=presentation_outcome.event_presentation_line_rejections,
+            parent_trace_ids=tuple(item.id for item in semantic_traces),
+        )
+        traces.append(presentation_trace)
+        semantic_traces.append(presentation_trace)
+        for rejection in presentation_outcome.event_presentation_line_rejections:
+            gaps.append(
+                build_semantic_coverage_gap(
+                    event_subject_id=subject.id,
+                    code=SemanticCoverageGapCode.INVALID_OPTIONAL_LINE,
+                    field_value=f"line:{rejection.line_number}",
+                    detail=f"{rejection.code}: {rejection.line}",
+                )
+            )
+        if (
+            presentation is None
+            or presentation_outcome.model_run.status is not ModelRunStatus.SUCCEEDED
+        ):
+            gaps.append(
+                build_semantic_coverage_gap(
+                    event_subject_id=subject.id,
+                    code=SemanticCoverageGapCode.INVALID_REQUIRED_ENVELOPE,
+                    field_value=presentation_outcome.model_run.status.value,
+                    detail="The event-presentation task did not return a valid decision.",
+                )
+            )
+            diagnostics.append(
+                f"presentation_task_failed:{subject.id}:"
+                f"{presentation_outcome.model_run.status.value}"
+            )
+            continue
+
+        try:
+            attribution_value = _resolve_model_selector(
+                presentation.attribution_selector,
+                local_inputs,
+                allow_reserved=True,
+            )
+            resolved_qualifiers = tuple(
+                EventSemanticQualifierProposal(
+                    item.kind,
+                    _resolve_source_selector(item.source_selector, local_inputs),
+                    item.temporal_relation,
+                )
+                for item in presentation.qualifiers
+            )
+        except ValueError as error:
+            gaps.append(
+                build_semantic_coverage_gap(
+                    event_subject_id=subject.id,
+                    code=SemanticCoverageGapCode.INVALID_REQUIRED_ENVELOPE,
+                    field_value=presentation.attribution_selector,
+                    detail=f"Event presentation used an invalid source selector: {error}",
+                )
+            )
+            diagnostics.append(f"presentation_mapping_failed:{subject.id}:{error}")
+            continue
 
         proposal = EventSemanticProposal(
-            proposal.frame_id,
+            frame_definition.id,
+            presentation.polarity,
+            presentation.modality,
+            attribution_value,
             tuple(
                 selected_arguments[item.id]
                 for item in frame_definition.roles
                 if item.id in selected_arguments
             ),
-            proposal.qualifiers,
-            proposal.reason,
+            resolved_qualifiers,
+            f"{frame_selection.reason} {presentation.reason}",
         )
         try:
             constructed = _construct_event(
                 context=context,
                 subject=subject,
-                parent_frame=frame,
                 trigger=trigger,
                 segment=segment,
                 local_inputs=local_inputs,
                 proposal=proposal,
                 assignment_origins=assignment_origins,
-                task_id=outcome.extraction_task.id,
-                model_run_id=outcome.model_run.id,
-                normalization_traces=tuple(normalization_traces),
+                task_id=frame_outcome.extraction_task.id,
+                model_run_id=frame_outcome.model_run.id,
+                selection_traces=tuple(semantic_traces),
                 ledger=ledger,
             )
         except ValueError as error:
-            diagnostics.append(f"normalization_mapping_failed:{subject.id}:{error}")
+            diagnostics.append(f"semantic_construction_failed:{subject.id}:{error}")
             continue
         events.append(cast(EventSemanticDraft, constructed.event))
         targets.extend(constructed.targets)
@@ -622,12 +740,17 @@ def run_hybrid_event_semantics_preview(
                 subject=subject,
                 segment=segment,
                 proposal=proposal,
-                normalization_traces=tuple(normalization_traces),
+                selection_traces=tuple(semantic_traces),
                 constructed=constructed,
             )
         )
 
-        for statement in constructed.statements:
+        complete_statement = next(
+            item
+            for item in constructed.statements
+            if item.kind is SemanticStatementKind.COMPLETE_PROPOSITION
+        )
+        for statement in (complete_statement,):
             support_input = _support_task_input(
                 segment.support_target.exact_text,
                 statement,
@@ -738,18 +861,18 @@ def run_hybrid_event_semantics_preview(
                     )
                 )
 
-    if context.parent.terminal_status is HybridAtomicClaimStatus.PARTIAL:
-        diagnostics.append("hp5_status:partial")
+    if context.parent.terminal_status is HybridEventTriggerStatus.PARTIAL:
+        diagnostics.append("hp4_status:partial")
     status = HybridEventSemanticsStatus.COMPLETE
     if (
-        len(events) != len(context.parent.event_subjects)
+        len(events) != len(context.parent.triggers)
         or gaps
-        or len(judgments) != len(statements)
+        or len(judgments) != len(propositions)
         or any(
             item.disposition is not PropositionDisposition.SUPPORTED
             for item in proposition_decisions
         )
-        or context.parent.terminal_status is HybridAtomicClaimStatus.PARTIAL
+        or context.parent.terminal_status is HybridEventTriggerStatus.PARTIAL
     ):
         status = HybridEventSemanticsStatus.PARTIAL
     preview = build_hybrid_event_semantics_preview(
@@ -800,15 +923,17 @@ def load_hybrid_event_semantics_preview(
         or canonical_hybrid_event_semantics_preview_bytes(preview) != payload
     ):
         raise ValueError("HP-6 Preview identity or canonical encoding is invalid.")
-    parent = load_hybrid_atomic_claim_preview(preview.parent_preview_id, ledger, archive)
+    parent = load_hybrid_event_trigger_preview(preview.parent_preview_id, archive)
     if (
-        hashlib.sha256(canonical_hybrid_atomic_claim_preview_bytes(parent)).hexdigest()
+        hashlib.sha256(canonical_hybrid_event_trigger_preview_bytes(parent)).hexdigest()
         != preview.parent_preview_sha256
         or parent.representation_id != preview.representation_id
         or parent.paragraph_node_id != preview.paragraph_node_id
         or preview.ontology_profile_sha256 != hybrid_event_semantics_profile_sha256()
     ):
-        raise ValueError("HP-6 parent or ontology lineage does not match pinned identities.")
+        raise ValueError(
+            "HP-6 trigger parent or ontology lineage does not match pinned identities."
+        )
     attempts = {
         item.evidence_target_id: item
         for attempt_id in preview.evidence_validation_attempt_ids
@@ -830,11 +955,18 @@ def _load_context(
     ledger: HybridEventSemanticsLedger,
     archive: HybridEventSemanticsArchive,
 ) -> _SourceContext:
-    parent = load_hybrid_atomic_claim_preview(parent_id, ledger, archive)
-    hp4 = load_hybrid_event_frame_preview(parent.parent_preview_id, archive)
+    parent = load_hybrid_event_trigger_preview(parent_id, archive)
     mentions = hybrid_extraction_preview_from_bytes(
         archive.read_hybrid_extraction_preview(parent.mention_preview_id)
     )
+    reference_payload = archive.read_hybrid_reference_preview(parent.reference_preview_id)
+    references = hybrid_reference_preview_from_bytes(reference_payload)
+    if (
+        references.id != parent.reference_preview_id
+        or hashlib.sha256(reference_payload).hexdigest() != parent.reference_preview_sha256
+        or canonical_hybrid_reference_preview_bytes(references) != reference_payload
+    ):
+        raise ValueError("HP-6 reference evidence does not match HP-4 lineage.")
     bundle = ledger.get_document_representation_bundle(parent.representation_id)
     if bundle is None:
         raise ValueError("HP-6 DocumentRepresentationBundle is missing.")
@@ -854,53 +986,26 @@ def _load_context(
         hybrid_source_segment_id(parent.representation_id, parent.paragraph_node_id, item): item
         for item in segments
     }
-    attempts = {
-        item.evidence_target_id: item
-        for attempt_id in parent.evidence_validation_attempt_ids
-        if (item := ledger.get_evidence_validation_attempt(attempt_id)) is not None
-    }
     segment_contexts: dict[str, _SegmentContext] = {}
-    for target_id in parent.evidence_target_ids:
-        target = ledger.get_evidence_target(target_id)
-        attempt = attempts.get(target_id)
-        if target is None or attempt is None:
-            raise ValueError("HP-6 parent evidence records are missing.")
-        replay = verify_evidence_target(target, attempt, ledger)
-        if not replay.valid:
-            raise ValueError(f"HP-6 parent EvidenceTarget replay failed: {replay.error_message}")
-        segment_id = next(
-            (
-                item_id
-                for item_id, item in source_segments.items()
-                if node.start_char + item.start_char == target.start_char
-                and node.start_char + item.end_char == target.end_char
-                and item.exact_text == target.exact_text
-            ),
-            None,
+    for segment_id, segment in source_segments.items():
+        target, attempt = _build_segment_evidence(
+            bundle=bundle,
+            node=node,
+            segment=segment,
+            segment_id=segment_id,
+            source_id=document.source_id,
+            ledger=ledger,
         )
-        if segment_id is None:
-            raise ValueError("HP-6 parent EvidenceTarget is not one SourceSegment.")
-        segment_contexts[segment_id] = _SegmentContext(
-            source_segments[segment_id], segment_id, target, attempt
-        )
-    frames = {item.id: item for item in hp4.frames}
-    triggers = {item.id: item for item in hp4.triggers}
+        segment_contexts[segment_id] = _SegmentContext(segment, segment_id, target, attempt)
+    triggers = {item.id: item for item in parent.triggers}
     candidates = {item.id: item for item in mentions.candidates}
-    if any(
-        item.frame_id not in frames or item.trigger_id not in triggers
-        for item in parent.event_subjects
-    ):
-        raise ValueError("HP-6 event subjects do not match HP-4.")
-    if any(
-        triggers[item.trigger_id].source_segment_id not in segment_contexts
-        for item in parent.event_subjects
-    ):
+    if any(item.source_segment_id not in segment_contexts for item in parent.triggers):
         raise ValueError("HP-6 lacks support evidence for one event subject.")
     return _SourceContext(
         parent,
         bundle,
         mentions,
-        frames,
+        references,
         triggers,
         candidates,
         segment_contexts,
@@ -911,9 +1016,14 @@ def _load_context(
 
 def _local_inputs(
     context: _SourceContext,
-    subject: EventSubjectDraft,
-    segment_id: str,
+    segment: _SegmentContext,
 ) -> _LocalInputs:
+    selected_candidate_ids = {
+        candidate_id
+        for decision in context.mentions.boundary_decisions
+        if decision.status is not MentionBoundaryStatus.AMBIGUOUS
+        for candidate_id in decision.selected_candidate_ids
+    }
     candidates = {
         f"c{ordinal}": item
         for ordinal, item in enumerate(
@@ -921,40 +1031,105 @@ def _local_inputs(
                 (
                     candidate
                     for candidate in context.candidates.values()
-                    if candidate.source_segment_id == segment_id
+                    if candidate.source_segment_id == segment.segment_id
+                    and candidate.id in selected_candidate_ids
                 ),
                 key=lambda item: (item.start, item.end, item.id),
             ),
             start=1,
         )
     }
-    siblings = {
-        f"e{ordinal}": item
-        for ordinal, item in enumerate(
-            sorted(
-                (
-                    sibling
-                    for sibling in context.parent.event_subjects
-                    if sibling.id != subject.id
-                    and context.triggers[sibling.trigger_id].source_segment_id == segment_id
-                ),
-                key=lambda item: (
-                    context.triggers[item.trigger_id].start,
-                    context.triggers[item.trigger_id].end,
-                    item.id,
-                ),
-            ),
-            start=1,
+    decisions = {item.candidate_id: item for item in context.references.reference_decisions}
+    spans = {
+        item.id: item
+        for item in (
+            *(declaration.expanded_span for declaration in context.references.alias_declarations),
+            *context.references.semantic_antecedent_spans,
         )
     }
-    return _LocalInputs(candidates, siblings)
+    reference_metadata = {
+        label: (
+            decision,
+            tuple(spans[item] for item in decision.antecedent_span_ids if item in spans),
+        )
+        for label, candidate in candidates.items()
+        if (decision := decisions.get(candidate.id)) is not None
+    }
+    source_copy = derive_source_copy_view(segment.segment.exact_text)
+    occurrences = {item.occurrence_id: item for item in source_occurrences(source_copy)}
+    return _LocalInputs(
+        candidates,
+        reference_metadata,
+        segment.segment.exact_text,
+        source_copy,
+        occurrences,
+    )
+
+
+def _build_segment_evidence(
+    *,
+    bundle: DocumentRepresentationBundle,
+    node: DocumentNode,
+    segment: SourceSegment,
+    segment_id: str,
+    source_id: str,
+    ledger: HybridEventSemanticsLedger,
+) -> tuple[EvidenceTarget, EvidenceValidationAttempt]:
+    text_view = next(item for item in bundle.text_views if item.id == node.text_view_id)
+    start = node.start_char + segment.start_char
+    end = node.start_char + segment.end_char
+    created_at = datetime.now(UTC)
+    target = EvidenceTarget(
+        id=_id(
+            "etg",
+            bundle.representation.id,
+            text_view.id,
+            segment_id,
+            str(start),
+            str(end),
+            segment.exact_text,
+        ),
+        source_id=source_id,
+        document_id=bundle.representation.document_id,
+        representation_id=bundle.representation.id,
+        text_view_id=text_view.id,
+        text_view_digest=text_view.content_digest,
+        start_char=start,
+        end_char=end,
+        exact_text=segment.exact_text,
+        normalization_policy=text_view.normalization_policy,
+        prefix_text=text_view.text[max(0, start - 32) : start],
+        suffix_text=text_view.text[end : min(len(text_view.text), end + 32)],
+        node_ids=(node.id,),
+        pdf_region_ids=node.source_region_ids,
+        created_at=created_at,
+    )
+    existing = ledger.get_evidence_target(target.id)
+    if existing is not None:
+        if _without_time(existing) != _without_time(target):
+            raise ValueError("HP-6 conflicts with an existing SourceSegment EvidenceTarget.")
+        target = existing
+    validate_evidence_target_record(target, ledger)
+    attempt = EvidenceValidationAttempt(
+        id=_id("eva", target.id, HYBRID_EVENT_SEMANTICS_EVIDENCE_VALIDATOR),
+        evidence_target_id=target.id,
+        target_digest=canonical_evidence_target_digest(target),
+        validator_version=HYBRID_EVENT_SEMANTICS_EVIDENCE_VALIDATOR,
+        status=EvidenceValidationAttemptStatus.SUCCEEDED,
+        attempted_at=created_at,
+    )
+    existing_attempt = ledger.get_evidence_validation_attempt(attempt.id)
+    if existing_attempt is not None:
+        if _without_time(existing_attempt) != _without_time(attempt):
+            raise ValueError("HP-6 conflicts with an existing evidence validation attempt.")
+        attempt = existing_attempt
+    return target, attempt
 
 
 def _construct_event(
     *,
     context: _SourceContext,
     subject: EventSubjectDraft,
-    parent_frame: EventFrameDraft,
     trigger: EventTriggerDraft,
     segment: _SegmentContext,
     local_inputs: _LocalInputs,
@@ -962,7 +1137,7 @@ def _construct_event(
     assignment_origins: dict[str, AssignmentOrigin],
     task_id: str,
     model_run_id: str,
-    normalization_traces: tuple[ExtractionStageTrace, ...],
+    selection_traces: tuple[ExtractionStageTrace, ...],
     ledger: HybridEventSemanticsLedger,
 ) -> _ConstructedEvent:
     frame_definition = _frame_definition(cast(str, proposal.frame_id))
@@ -974,27 +1149,21 @@ def _construct_event(
         segment.support_target.id: (segment.support_target, segment.support_attempt)
     }
     assignments: list[EventArgumentAssignmentDraft] = []
-    parent_claims = tuple(
-        item for item in context.parent.atomic_claims if item.frame_id == parent_frame.id
-    )
-    primary_normalization_trace = normalization_traces[0]
+    frame_selection_trace = selection_traces[0]
     parent_trace_ids = tuple(
         sorted(
             {
-                *(item.id for item in normalization_traces),
-                parent_frame.trace_id,
-                *(trace_id for claim in parent_claims for trace_id in claim.source_trace_ids),
+                *(item.id for item in selection_traces),
+                trigger.trace_id,
             }
         )
     )
-    represented_parent_candidates: set[str] = set()
     for argument in proposal.arguments:
         role = role_by_id.get(argument.frame_role_id)
         if role is None:
             raise ValueError("unknown_frame_role")
         if argument.frame_role_id in seen_roles:
             raise ValueError("repeated_frame_role")
-        candidate_label = _candidate_label(argument.target_value, local_inputs.candidates)
         target, evidence, attempt = _resolve_target(
             context=context,
             segment=segment,
@@ -1010,19 +1179,6 @@ def _construct_event(
         seen_targets.add(target_key)
         target_records[target.id] = target
         evidence_records[evidence.id] = (evidence, attempt)
-        if candidate_label is not None:
-            represented_parent_candidates.add(local_inputs.candidates[candidate_label].id)
-        proposed_labels = tuple(
-            sorted(
-                {
-                    claim.role_label
-                    for claim in parent_claims
-                    if claim.object_kind is AtomicClaimObjectKind.MENTION_CANDIDATE
-                    and claim.object_reference_id == target.reference_id
-                    and claim.role_label is not None
-                }
-            )
-        )
         assignments.append(
             build_event_argument_assignment_draft(
                 event_subject_id=subject.id,
@@ -1031,7 +1187,7 @@ def _construct_event(
                 frame_role_id=role.id,
                 upper_role=role.upper_role,
                 assignment_origin=assignment_origins[role.id],
-                proposed_role_labels=proposed_labels,
+                proposed_role_labels=(),
                 support_evidence_target_id=segment.support_target.id,
                 source_trace_ids=parent_trace_ids,
             )
@@ -1039,35 +1195,27 @@ def _construct_event(
 
     gaps: list[SemanticCoverageGap] = []
     qualifier_records: list[SemanticQualifierDraft] = []
-    represented_parent_qualifiers: set[tuple[str, str]] = set()
-    parent_qualifier_keys = {(item.kind, item.text) for item in parent_frame.qualifiers}
-    qualifier_by_label = {
-        f"q{index}": item for index, item in enumerate(parent_frame.qualifiers, start=1)
-    }
     for qualifier in proposal.qualifiers:
-        parent_qualifier = qualifier_by_label.get(qualifier.qualifier_label)
-        if parent_qualifier is None:
+        try:
+            target, evidence, attempt = _source_span_target(
+                context, segment, qualifier.literal_text, ledger
+            )
+        except ValueError:
             gaps.append(
                 build_semantic_coverage_gap(
                     event_subject_id=subject.id,
                     code=SemanticCoverageGapCode.UNSUPPORTED_QUALIFIER_PROPOSAL,
-                    field_value=qualifier.qualifier_label,
-                    detail="Model qualifier label was not supplied by the parent frame.",
+                    field_value=qualifier.literal_text,
+                    detail="The qualifier does not resolve to one exact source span.",
                 )
             )
             continue
-        target, evidence, attempt = _source_span_target(
-            context, segment, parent_qualifier.text, ledger
-        )
-        qualifier_key = (parent_qualifier.kind, target.text)
-        if qualifier_key not in parent_qualifier_keys:
-            raise ValueError("parent_qualifier_source_mismatch")
-        represented_parent_qualifiers.add(qualifier_key)
         evidence_records[evidence.id] = (evidence, attempt)
         qualifier_records.append(
             build_semantic_qualifier_draft(
                 event_subject_id=subject.id,
-                kind=cast(Literal["time", "place"], parent_qualifier.kind),
+                kind=qualifier.kind,
+                temporal_relation=qualifier.temporal_relation,
                 source_segment_id=segment.segment_id,
                 text=target.text,
                 start=target.start,
@@ -1079,55 +1227,40 @@ def _construct_event(
 
     attribution_target: EventArgumentTargetDraft | None = None
     attribution_kind = EventAttributionKind.SOURCE_NARRATOR
-    if frame_definition.attribution_role_id is not None:
-        attribution_assignment = next(
-            (
-                item
-                for item in assignments
-                if item.frame_role_id == frame_definition.attribution_role_id
-            ),
-            None,
+    if proposal.attribution_value == "unresolved":
+        attribution_kind = EventAttributionKind.UNRESOLVED
+        gaps.append(
+            build_semantic_coverage_gap(
+                event_subject_id=subject.id,
+                code=SemanticCoverageGapCode.MISSING_GOVERNED_ATTRIBUTION,
+                field_value="unresolved",
+                detail="The event-presentation task could not resolve attribution.",
+            )
         )
-        if attribution_assignment is None:
+    elif proposal.attribution_value != "source_narrator":
+        try:
+            attribution_target, evidence, attempt = _resolve_target(
+                context=context,
+                segment=segment,
+                local_inputs=local_inputs,
+                value=proposal.attribution_value,
+                allowed_target_kinds=tuple(SemanticArgumentTargetKind),
+                ledger=ledger,
+            )
+        except ValueError:
             attribution_kind = EventAttributionKind.UNRESOLVED
             gaps.append(
                 build_semantic_coverage_gap(
                     event_subject_id=subject.id,
                     code=SemanticCoverageGapCode.MISSING_GOVERNED_ATTRIBUTION,
-                    field_value=frame_definition.attribution_role_id,
-                    detail="The governed reporting role has no source-backed target.",
+                    field_value=proposal.attribution_value,
+                    detail="The selected attribution does not resolve to source evidence.",
                 )
             )
         else:
-            attribution_target = target_records[attribution_assignment.target_id]
             attribution_kind = EventAttributionKind(attribution_target.kind.value)
-
-    parent_attribution_matches = (
-        parent_frame.source_narrator_attribution
-        and attribution_kind is EventAttributionKind.SOURCE_NARRATOR
-    ) or (
-        not parent_frame.source_narrator_attribution
-        and attribution_target is not None
-        and attribution_target.reference_id is not None
-        and parent_frame.attribution_candidate_ids == (attribution_target.reference_id,)
-    )
-    if not parent_attribution_matches:
-        parent_value = (
-            "source_narrator"
-            if parent_frame.source_narrator_attribution
-            else ",".join(parent_frame.attribution_candidate_ids)
-        )
-        gaps.append(
-            build_semantic_coverage_gap(
-                event_subject_id=subject.id,
-                code=SemanticCoverageGapCode.PARENT_ATTRIBUTION_DISAGREEMENT,
-                field_value=parent_value,
-                detail=(
-                    "The open parent attribution disagrees with the governed frame "
-                    "attribution policy."
-                ),
-            )
-        )
+            target_records[attribution_target.id] = attribution_target
+            evidence_records[evidence.id] = (evidence, attempt)
 
     for role in frame_definition.roles:
         if role.required and role.id not in seen_roles:
@@ -1139,30 +1272,13 @@ def _construct_event(
                     detail=f"Required frame role {role.id} has no source-backed target.",
                 )
             )
-    for claim in parent_claims:
-        if (
-            claim.object_kind is AtomicClaimObjectKind.MENTION_CANDIDATE
-            and claim.object_reference_id not in represented_parent_candidates
-        ):
+        if not role.required and role.id not in seen_roles:
             gaps.append(
                 build_semantic_coverage_gap(
                     event_subject_id=subject.id,
-                    code=SemanticCoverageGapCode.OMITTED_PARENT_ARGUMENT,
-                    field_value=cast(str, claim.object_reference_id),
-                    detail=(
-                        "Parent argument was not represented by a governed role: "
-                        f"{claim.role_label}."
-                    ),
-                )
-            )
-    for qualifier in parent_frame.qualifiers:
-        if (qualifier.kind, qualifier.text) not in represented_parent_qualifiers:
-            gaps.append(
-                build_semantic_coverage_gap(
-                    event_subject_id=subject.id,
-                    code=SemanticCoverageGapCode.OMITTED_PARENT_QUALIFIER,
-                    field_value=f"{qualifier.kind}:{qualifier.text}",
-                    detail="Parent time or place qualifier was not represented.",
+                    code=SemanticCoverageGapCode.MISSING_OPTIONAL_ROLE,
+                    field_value=role.id,
+                    detail=f"Optional frame role {role.id} has no source-backed target.",
                 )
             )
     ordered_assignments = tuple(sorted(assignments, key=lambda item: item.id))
@@ -1175,14 +1291,24 @@ def _construct_event(
         proposed_event_label=trigger.event_type_label,
         argument_assignment_ids=tuple(item.id for item in ordered_assignments),
         qualifier_ids=tuple(item.id for item in ordered_qualifiers),
-        polarity=parent_frame.polarity.value,
-        modality=parent_frame.modality.value,
+        polarity=cast(Literal["affirmed", "negated"], proposal.polarity),
+        modality=cast(
+            Literal[
+                "actual",
+                "planned",
+                "possible",
+                "uncertain",
+                "recommended",
+                "hypothetical",
+            ],
+            proposal.modality,
+        ),
         attribution_kind=attribution_kind,
         attribution_target_id=(attribution_target.id if attribution_target is not None else None),
         support_evidence_target_id=segment.support_target.id,
-        normalization_task_id=task_id,
-        normalization_model_run_id=model_run_id,
-        normalization_trace_id=primary_normalization_trace.id,
+        frame_selection_task_id=task_id,
+        frame_selection_model_run_id=model_run_id,
+        frame_selection_trace_id=frame_selection_trace.id,
     )
     proposition = build_complete_proposition(
         kind=PropositionKind.EVENT,
@@ -1255,23 +1381,6 @@ def _resolve_target(
             )
         if SemanticArgumentTargetKind.SOURCE_SPAN in allowed_target_kinds:
             return _source_span_target(context, segment, candidate.text, ledger)
-        raise ValueError("target_kind_not_allowed")
-    sibling = local_inputs.sibling_events.get(value)
-    if sibling is not None:
-        trigger = context.triggers[sibling.trigger_id]
-        if SemanticArgumentTargetKind.EVENT_SUBJECT in allowed_target_kinds:
-            return _referenced_target(
-                context,
-                segment,
-                SemanticArgumentTargetKind.EVENT_SUBJECT,
-                sibling.id,
-                trigger.text,
-                trigger.start,
-                trigger.end,
-                ledger,
-            )
-        if SemanticArgumentTargetKind.SOURCE_SPAN in allowed_target_kinds:
-            return _source_span_target(context, segment, trigger.text, ledger)
         raise ValueError("target_kind_not_allowed")
     if SemanticArgumentTargetKind.SOURCE_SPAN not in allowed_target_kinds:
         raise ValueError("target_kind_not_allowed")
@@ -1388,8 +1497,48 @@ def _referenced_target(
         end=local_end,
         evidence_target_id=target.id,
         evidence_validation_attempt_id=attempt.id,
+        embedded_candidate_ids=(
+            _embedded_entity_candidate_ids(context, segment, local_start, local_end)
+            if kind is SemanticArgumentTargetKind.SOURCE_SPAN
+            else ()
+        ),
     )
     return draft, target, attempt
+
+
+def _embedded_entity_candidate_ids(
+    context: _SourceContext,
+    segment: _SegmentContext,
+    start: int,
+    end: int,
+) -> tuple[str, ...]:
+    selected = {
+        candidate_id
+        for decision in context.mentions.boundary_decisions
+        if decision.status is not MentionBoundaryStatus.AMBIGUOUS
+        for candidate_id in decision.selected_candidate_ids
+    }
+    typed = {
+        item.candidate_id
+        for item in context.mentions.interpretations
+        if item.contextual_kind
+        in {
+            ContextualKind.PERSON,
+            ContextualKind.GOVERNMENT,
+            ContextualKind.ORGANIZATION,
+        }
+    }
+    return tuple(
+        sorted(
+            item.id
+            for item in context.candidates.values()
+            if item.id in selected
+            and item.id in typed
+            and item.source_segment_id == segment.segment_id
+            and start <= item.start
+            and item.end <= end
+        )
+    )
 
 
 def _persist_evidence(
@@ -1533,12 +1682,20 @@ def _render_complete_event_proposition(
         assignment.frame_role_id.split(".", maxsplit=1)[1]: targets[assignment.target_id].text
         for assignment in assignments
     }
-    if frame.id == "authorization":
+    if frame.id == "agreement":
+        clause = _frame_clause(values, "agreeing_party", "counterparty", verb="agreed with")
+        if content := values.get("agreement_content"):
+            clause += f" concerning {content}"
+    elif frame.id == "authorization":
         clause = _frame_clause(values, "authorizer", "authorized_party", "permitted_action")
         if resource := values.get("authorized_resource"):
             clause += f" using {resource}"
     elif frame.id == "causation":
         clause = _frame_clause(values, "cause", "effect", verb="caused")
+    elif frame.id == "communication":
+        clause = _frame_clause(values, "communicator", "counterparty", verb="communicated with")
+        if topic := values.get("topic"):
+            clause += f" about {topic}"
     elif frame.id == "change_in_intensity":
         clause = (
             f"{values.get('affected_process', '[missing affected process]')} {event.trigger_text}"
@@ -1562,17 +1719,34 @@ def _render_complete_event_proposition(
             f"{values.get('critic', '[missing critic]')} criticized "
             f"{values.get('target', '[missing target]')}"
         )
+        if assessment := values.get("assessment"):
+            clause += f" as {assessment}"
         if topic := values.get("topic"):
             clause += f" about {topic}"
         if reason := values.get("reason"):
             clause += f" because {reason}"
     elif frame.id == "investment_abandonment":
-        clause = (
-            f"{values.get('disinvestor', '[missing disinvestor]')} abandoned "
-            f"{values.get('abandoned_asset', '[missing abandoned asset]')}"
-        )
+        abandoned_asset = values.get("abandoned_asset", "[missing abandoned asset]")
+        clause = f"{values.get('disinvestor', '[missing disinvestor]')} abandoned {abandoned_asset}"
         if investee := values.get("investee"):
-            clause += f" in {investee}"
+            normalized_asset = f" {' '.join(abandoned_asset.casefold().split())} "
+            normalized_investee = f" {' '.join(investee.casefold().split())} "
+            if normalized_investee not in normalized_asset:
+                clause += f" in {investee}"
+    elif frame.id == "legal_ruling":
+        clause = (
+            f"{values.get('deciding_authority', '[missing deciding authority]')} issued "
+            f"{values.get('ruling', '[missing ruling]')} concerning "
+            f"{values.get('matter', '[missing matter]')}"
+        )
+        if affected_party := values.get("affected_party"):
+            clause += f", affecting {affected_party}"
+    elif frame.id == "policy_change":
+        clause = (
+            f"{values.get('policy_actor', '[missing policy actor]')} made "
+            f"{values.get('change', '[missing change]')} to "
+            f"{values.get('policy', '[missing policy]')}"
+        )
     elif frame.id == "publication":
         clause = (
             f"{values.get('publisher', '[missing publisher]')} published "
@@ -1580,6 +1754,8 @@ def _render_complete_event_proposition(
         )
         if topic := values.get("topic"):
             clause += f" about {topic}"
+        if outlet := values.get("outlet"):
+            clause += f" in {outlet}"
         if audience := values.get("audience"):
             clause += f" for {audience}"
     elif frame.id == "rebuttal":
@@ -1598,6 +1774,12 @@ def _render_complete_event_proposition(
         )
         if subject := values.get("recommendation_subject"):
             clause += f" concerning {subject}"
+    elif frame.id == "refusal":
+        clause = _frame_clause(values, "refuser", "refused_action", verb="refused")
+    elif frame.id == "threat":
+        clause = _frame_clause(values, "threatener", "threatened_action", verb="threatened")
+        if target := values.get("target"):
+            clause += f" against {target}"
     else:
         raise ValueError(f"Unsupported governed frame renderer: {frame.id}")
     if event.polarity == "negated":
@@ -1605,7 +1787,11 @@ def _render_complete_event_proposition(
     if event.modality != "actual":
         clause = f"The source presents as {event.modality} that {clause}"
     for qualifier in sorted(qualifiers, key=lambda item: (item.kind, item.start, item.id)):
-        preposition = "at" if qualifier.kind == "place" else "during"
+        preposition = (
+            "at"
+            if qualifier.kind == "place"
+            else cast(TemporalRelation, qualifier.temporal_relation).value
+        )
         clause += f" {preposition} {qualifier.text}"
     return f"{clause}."
 
@@ -1626,81 +1812,28 @@ def _frame_clause(
     return clause
 
 
-def _normalization_task_input(
+def _frame_selection_task_input(
     *,
-    context: _SourceContext,
-    subject: EventSubjectDraft,
-    frame: EventFrameDraft,
     trigger: EventTriggerDraft,
     segment: _SegmentContext,
-    local_inputs: _LocalInputs,
 ) -> bytes:
-    candidate_label_by_id = {
-        candidate.id: label for label, candidate in local_inputs.candidates.items()
-    }
     lines = [
-        "task: normalize_one_event",
+        "task: select_one_event_frame",
         f"target_trigger: {trigger.text}",
         f"open_event_label_proposal: {trigger.event_type_label}",
-        f"polarity_from_parent: {frame.polarity.value}",
-        f"modality_from_parent: {frame.modality.value}",
         f"source_segment: {segment.segment.exact_text}",
         f"source_before_target_trigger: {segment.segment.exact_text[: trigger.start]}",
         f"source_after_target_trigger: {segment.segment.exact_text[trigger.end :]}",
-        "parent_argument_proposals:",
+        "governed_frame_catalog:",
     ]
-    lines.extend(
-        " | ".join(
-            (
-                candidate_label_by_id.get(item.candidate_id, "not_in_source_segment"),
-                item.role_label,
-            )
-        )
-        for item in frame.arguments
-    )
-    lines.append("mention_candidate_catalog:")
-    lines.extend(
-        f"{label} | {candidate.text}" for label, candidate in local_inputs.candidates.items()
-    )
-    lines.append("sibling_event_catalog:")
-    lines.extend(
-        " | ".join(
-            (
-                label,
-                context.triggers[item.trigger_id].text,
-                context.triggers[item.trigger_id].event_type_label,
-            )
-        )
-        for label, item in local_inputs.sibling_events.items()
-    )
-    lines.append("parent_qualifier_proposals:")
-    lines.extend(
-        f"q{index} | {item.kind} | {item.text}"
-        for index, item in enumerate(frame.qualifiers, start=1)
-    )
-    lines.append("ontology_profile:")
-    for profile_frame in HYBRID_EVENT_SEMANTICS_V2.frames:
+    for profile_frame in HYBRID_EVENT_SEMANTICS_V4.frames:
         lines.append(f"frame | {profile_frame.id} | {profile_frame.definition}")
-        lines.extend(
-            " | ".join(
-                (
-                    "role",
-                    role.id,
-                    "required" if role.required else "optional",
-                    ",".join(item.value for item in role.allowed_target_kinds),
-                    role.upper_role.value,
-                    role.definition,
-                )
-            )
-            for role in profile_frame.roles
-        )
-    lines.append(f"normalize_only_target_trigger: {trigger.text}")
+    lines.append(f"classify_only_target_trigger: {trigger.text}")
     return "\n".join(lines).encode()
 
 
-def _role_completion_task_input(
+def _role_selection_task_input(
     *,
-    context: _SourceContext,
     trigger: EventTriggerDraft,
     segment: _SegmentContext,
     local_inputs: _LocalInputs,
@@ -1732,21 +1865,68 @@ def _role_completion_task_input(
         for label, candidate in local_inputs.candidates.items()
         if SemanticArgumentTargetKind.MENTION_CANDIDATE in role.allowed_target_kinds
     )
-    lines.append("sibling_event_catalog:")
+    lines.append("reference_metadata:")
     lines.extend(
         " | ".join(
             (
                 label,
-                context.triggers[item.trigger_id].text,
-                context.triggers[item.trigger_id].event_type_label,
+                decision.status.value,
+                ", ".join(span.text for span in antecedents) or "none",
             )
         )
-        for label, item in local_inputs.sibling_events.items()
-        if SemanticArgumentTargetKind.EVENT_SUBJECT in role.allowed_target_kinds
+        for label, (decision, antecedents) in local_inputs.reference_metadata.items()
+        if label in local_inputs.candidates
+    )
+    lines.append("source_occurrence_catalog:")
+    lines.extend(
+        f"{item.occurrence_id} | {item.text}" for item in local_inputs.occurrences.values()
     )
     if rejected_target is not None:
         lines.append(f"rejected_previous_target: {rejected_target}")
     lines.append(f"select_only_frame_role: {role.id}")
+    return "\n".join(lines).encode()
+
+
+def _event_presentation_task_input(
+    *,
+    trigger: EventTriggerDraft,
+    segment: _SegmentContext,
+    local_inputs: _LocalInputs,
+    frame: EventFrameDefinition,
+    selected_arguments: dict[str, EventSemanticArgumentProposal],
+) -> bytes:
+    lines = [
+        "task: classify_one_event_presentation",
+        f"target_trigger: {trigger.text}",
+        f"selected_frame: {frame.id} | {frame.definition}",
+        f"source_segment: {segment.segment.exact_text}",
+        "selected_role_targets:",
+    ]
+    lines.extend(
+        f"{role.id} | {selected_arguments[role.id].target_value}"
+        for role in frame.roles
+        if role.id in selected_arguments
+    )
+    lines.append("mention_candidate_catalog:")
+    lines.extend(
+        f"{label} | {candidate.text}" for label, candidate in local_inputs.candidates.items()
+    )
+    lines.append("reference_metadata:")
+    lines.extend(
+        " | ".join(
+            (
+                label,
+                decision.status.value,
+                ", ".join(span.text for span in antecedents) or "none",
+            )
+        )
+        for label, (decision, antecedents) in local_inputs.reference_metadata.items()
+    )
+    lines.append("source_occurrence_catalog:")
+    lines.extend(
+        f"{item.occurrence_id} | {item.text}" for item in local_inputs.occurrences.values()
+    )
+    lines.append(f"classify_only_presentation_for: {trigger.text}")
     return "\n".join(lines).encode()
 
 
@@ -1758,15 +1938,12 @@ def _completed_role_argument(
     local_inputs: _LocalInputs,
     ledger: HybridEventSemanticsLedger,
 ) -> EventSemanticArgumentProposal | None:
-    if proposal is None or proposal.target_value is None:
+    if proposal is None or proposal.target_selector is None:
         return None
-    target_value = proposal.target_value
+    target_value = _resolve_model_selector(proposal.target_selector, local_inputs)
     if (
         target_value in local_inputs.candidates
         and SemanticArgumentTargetKind.MENTION_CANDIDATE not in role.allowed_target_kinds
-    ) or (
-        target_value in local_inputs.sibling_events
-        and SemanticArgumentTargetKind.EVENT_SUBJECT not in role.allowed_target_kinds
     ):
         raise ValueError("target_kind_not_allowed")
     _resolve_target(
@@ -1780,34 +1957,27 @@ def _completed_role_argument(
     return EventSemanticArgumentProposal(role.id, target_value)
 
 
-def _reconcile_redundant_catalog_target(
-    proposal: EventSemanticRoleTargetProposal,
-    role: FrameRoleDefinition,
-    context: _SourceContext,
+def _resolve_model_selector(
+    selector: str,
     local_inputs: _LocalInputs,
-) -> EventSemanticRoleTargetProposal | None:
-    parts = proposal.target_value.split(" | ", maxsplit=1) if proposal.target_value else []
-    if len(parts) != 2:
-        return None
-    label, copied_text = parts
-    candidate = local_inputs.candidates.get(label)
-    if (
-        candidate is not None
-        and SemanticArgumentTargetKind.MENTION_CANDIDATE in role.allowed_target_kinds
-        and _normalized_text(copied_text) == _normalized_text(candidate.text)
-    ):
-        return EventSemanticRoleTargetProposal(label, proposal.reason)
-    sibling = local_inputs.sibling_events.get(label)
-    if sibling is None or SemanticArgumentTargetKind.EVENT_SUBJECT not in role.allowed_target_kinds:
-        return None
-    trigger = context.triggers[sibling.trigger_id]
-    if _normalized_text(copied_text) != _normalized_text(trigger.text):
-        return None
-    return EventSemanticRoleTargetProposal(label, proposal.reason)
+    *,
+    allow_reserved: bool = False,
+) -> str:
+    if allow_reserved and selector in {"source_narrator", "unresolved"}:
+        return selector
+    if selector in local_inputs.candidates:
+        return selector
+    return _resolve_source_selector(selector, local_inputs)
 
 
-def _normalized_text(value: str) -> str:
-    return " ".join(value.split())
+def _resolve_source_selector(selector: str, local_inputs: _LocalInputs) -> str:
+    endpoints = selector.split("-", maxsplit=1)
+    first = local_inputs.occurrences.get(endpoints[0])
+    last = local_inputs.occurrences.get(endpoints[-1])
+    if first is None or last is None or first.start > last.start:
+        raise ValueError("unknown_or_reversed_source_selector")
+    start, end = local_inputs.source_copy.authoritative_range(first.start, last.end)
+    return local_inputs.source_text[start:end]
 
 
 def _support_task_input(evidence_text: str, statement: SemanticStatement) -> bytes:
@@ -1824,14 +1994,11 @@ def _support_task_input(evidence_text: str, statement: SemanticStatement) -> byt
     ).encode()
 
 
-def _normalization_trace(
+def _frame_selection_trace(
     *,
-    context: _SourceContext,
     subject: EventSubjectDraft,
-    frame: EventFrameDraft,
     trigger: EventTriggerDraft,
     segment: _SegmentContext,
-    local_inputs: _LocalInputs,
     task_input: bytes,
     prompt_bytes: bytes,
     schema: PinnedTaskSchema,
@@ -1839,20 +2006,17 @@ def _normalization_trace(
     model_run_id: str,
     model_status: ModelRunStatus,
     raw_output_sha256: str | None,
-    proposal: EventSemanticProposal | None,
-    stage_id: str = "hybrid_event_normalization",
-    parent_trace_ids: tuple[str, ...] = (),
+    selection: EventFrameSelection | None,
 ) -> ExtractionStageTrace:
-    completed = proposal is not None and model_status is ModelRunStatus.SUCCEEDED
+    completed = selection is not None and model_status is ModelRunStatus.SUCCEEDED
     return build_extraction_stage_trace(
-        trace_run_id=f"hp6:normalize:{subject.id}:{model_run_id}",
+        trace_run_id=f"hp6:frame:{subject.id}:{model_run_id}",
         ordinal=0,
-        stage_id=stage_id,
+        stage_id="hybrid_event_frame_selection",
         stage_version="1",
         producer_id="qwen2.5",
         source_segment_id=segment.segment_id,
         source_text_sha256=hashlib.sha256(segment.segment.exact_text.encode()).hexdigest(),
-        parent_trace_ids=parent_trace_ids,
         configuration={
             "policy_id": HYBRID_EVENT_SEMANTICS_POLICY_ID,
             "ontology_sha256": hybrid_event_semantics_profile_sha256(),
@@ -1863,32 +2027,23 @@ def _normalization_trace(
             dict[str, JsonValue],
             {
                 "event_subject": subject.model_dump(mode="json"),
-                "parent_frame": frame.model_dump(mode="json"),
                 "trigger": trigger.model_dump(mode="json"),
-                "local_candidates": {
-                    label: item.model_dump(mode="json")
-                    for label, item in local_inputs.candidates.items()
-                },
-                "local_sibling_events": {
-                    label: item.model_dump(mode="json")
-                    for label, item in local_inputs.sibling_events.items()
-                },
                 "model_visible_task": task_input.decode(),
             },
         ),
         output_payload={
             "model_run_status": model_status.value,
             "raw_output_sha256": raw_output_sha256,
-            "parsed_proposal": _model_payload(proposal),
+            "parsed_selection": _model_payload(selection),
         },
         status=ExtractionStageStatus.COMPLETED if completed else ExtractionStageStatus.FAILED,
         diagnostics=() if completed else (f"model_run_status:{model_status.value}",),
-        input_record_ids=tuple(sorted({subject.id, frame.id, trigger.id})),
+        input_record_ids=tuple(sorted({subject.id, trigger.id})),
         execution_record_ids=(task_id, model_run_id),
     )
 
 
-def _role_completion_trace(
+def _role_selection_trace(
     *,
     subject: EventSubjectDraft,
     frame: EventFrameDefinition,
@@ -1907,9 +2062,9 @@ def _role_completion_trace(
 ) -> ExtractionStageTrace:
     completed = proposal is not None and model_status is ModelRunStatus.SUCCEEDED
     return build_extraction_stage_trace(
-        trace_run_id=f"hp6:complete-role:{subject.id}:{role.id}:{model_run_id}",
+        trace_run_id=f"hp6:select-role:{subject.id}:{role.id}:{model_run_id}",
         ordinal=0,
-        stage_id="hybrid_event_role_completion",
+        stage_id="hybrid_event_role_selection",
         stage_version="1",
         producer_id="qwen2.5",
         source_segment_id=segment.segment_id,
@@ -1943,40 +2098,54 @@ def _role_completion_trace(
     )
 
 
-def _role_target_reconciliation_trace(
+def _event_presentation_trace(
     *,
     subject: EventSubjectDraft,
-    role: FrameRoleDefinition,
+    frame: EventFrameDefinition,
     trigger: EventTriggerDraft,
     segment: _SegmentContext,
-    original: EventSemanticRoleTargetProposal,
-    reconciled: EventSemanticRoleTargetProposal,
-    parent_trace_id: str,
+    task_input: bytes,
+    prompt_bytes: bytes,
+    schema: PinnedTaskSchema,
+    task_id: str,
+    model_run_id: str,
+    model_status: ModelRunStatus,
+    raw_output_sha256: str | None,
+    selection: EventPresentationSelection | None,
+    rejections: tuple[EventSemanticLineRejection, ...],
+    parent_trace_ids: tuple[str, ...],
 ) -> ExtractionStageTrace:
+    completed = selection is not None and model_status is ModelRunStatus.SUCCEEDED
     return build_extraction_stage_trace(
-        trace_run_id=f"hp6:reconcile-role:{subject.id}:{role.id}:{parent_trace_id}",
+        trace_run_id=f"hp6:presentation:{subject.id}:{model_run_id}",
         ordinal=0,
-        stage_id="hybrid_event_role_target_reconciliation",
+        stage_id="hybrid_event_presentation",
         stage_version="1",
-        producer_id="kotekomi",
+        producer_id="qwen2.5",
         source_segment_id=segment.segment_id,
         source_text_sha256=hashlib.sha256(segment.segment.exact_text.encode()).hexdigest(),
-        parent_trace_ids=(parent_trace_id,),
+        parent_trace_ids=tuple(sorted(parent_trace_ids)),
         configuration={
-            "rule_id": "redundant_catalog_label_text_v1",
             "policy_id": HYBRID_EVENT_SEMANTICS_POLICY_ID,
+            "prompt_sha256": hashlib.sha256(prompt_bytes).hexdigest(),
+            "schema_sha256": schema.digest,
         },
         input_payload={
-            "event_subject_id": subject.id,
-            "frame_role": role.model_dump(mode="json"),
+            "event_subject": subject.model_dump(mode="json"),
+            "selected_frame": frame.model_dump(mode="json"),
             "trigger": trigger.model_dump(mode="json"),
-            "model_target_proposal": _model_payload(original),
+            "model_visible_task": task_input.decode(),
         },
         output_payload={
-            "reconciled_target_proposal": _model_payload(reconciled),
+            "model_run_status": model_status.value,
+            "raw_output_sha256": raw_output_sha256,
+            "parsed_selection": _model_payload(selection),
+            "line_rejections": [_model_payload(item) for item in rejections],
         },
-        status=ExtractionStageStatus.COMPLETED,
-        input_record_ids=tuple(sorted((subject.id, trigger.id))),
+        status=ExtractionStageStatus.COMPLETED if completed else ExtractionStageStatus.FAILED,
+        diagnostics=() if completed else (f"model_run_status:{model_status.value}",),
+        input_record_ids=tuple(sorted({subject.id, trigger.id})),
+        execution_record_ids=(task_id, model_run_id),
     )
 
 
@@ -1985,18 +2154,18 @@ def _construction_trace(
     subject: EventSubjectDraft,
     segment: _SegmentContext,
     proposal: EventSemanticProposal,
-    normalization_traces: tuple[ExtractionStageTrace, ...],
+    selection_traces: tuple[ExtractionStageTrace, ...],
     constructed: _ConstructedEvent,
 ) -> ExtractionStageTrace:
     return build_extraction_stage_trace(
-        trace_run_id=normalization_traces[0].trace_run_id,
+        trace_run_id=selection_traces[0].trace_run_id,
         ordinal=1,
         stage_id="hybrid_event_semantic_construction",
         stage_version="1",
         producer_id="kotekomi",
         source_segment_id=segment.segment_id,
         source_text_sha256=hashlib.sha256(segment.segment.exact_text.encode()).hexdigest(),
-        parent_trace_ids=tuple(sorted(item.id for item in normalization_traces)),
+        parent_trace_ids=tuple(sorted(item.id for item in selection_traces)),
         configuration={
             "policy_id": HYBRID_EVENT_SEMANTICS_POLICY_ID,
             "evidence_validator": HYBRID_EVENT_SEMANTICS_EVIDENCE_VALIDATOR,
@@ -2132,7 +2301,7 @@ def _support_judgment(
 
 
 def _frame_definition(frame_id: str) -> EventFrameDefinition:
-    frame = next((item for item in HYBRID_EVENT_SEMANTICS_V2.frames if item.id == frame_id), None)
+    frame = next((item for item in HYBRID_EVENT_SEMANTICS_V4.frames if item.id == frame_id), None)
     if frame is None:
         raise ValueError("unknown_event_frame")
     return frame
@@ -2204,10 +2373,12 @@ def _execution_spec(
 def _preview_common(
     context: _SourceContext,
     parent_sha256: str,
-    normalization_prompt: bytes,
-    normalization_schema: PinnedTaskSchema,
-    role_completion_prompt: bytes,
-    role_completion_schema: PinnedTaskSchema,
+    frame_selection_prompt: bytes,
+    frame_selection_schema: PinnedTaskSchema,
+    role_selection_prompt: bytes,
+    role_selection_schema: PinnedTaskSchema,
+    presentation_prompt: bytes,
+    presentation_schema: PinnedTaskSchema,
     support_prompt: bytes,
     support_schema: PinnedTaskSchema,
 ) -> dict[str, object]:
@@ -2216,12 +2387,14 @@ def _preview_common(
         "parent_preview_sha256": parent_sha256,
         "representation_id": context.parent.representation_id,
         "paragraph_node_id": context.parent.paragraph_node_id,
-        "ontology_profile_id": HYBRID_EVENT_SEMANTICS_V2.id,
+        "ontology_profile_id": HYBRID_EVENT_SEMANTICS_V4.id,
         "ontology_profile_sha256": hybrid_event_semantics_profile_sha256(),
-        "normalization_prompt_sha256": hashlib.sha256(normalization_prompt).hexdigest(),
-        "normalization_schema_sha256": normalization_schema.digest,
-        "role_completion_prompt_sha256": hashlib.sha256(role_completion_prompt).hexdigest(),
-        "role_completion_schema_sha256": role_completion_schema.digest,
+        "frame_selection_prompt_sha256": hashlib.sha256(frame_selection_prompt).hexdigest(),
+        "frame_selection_schema_sha256": frame_selection_schema.digest,
+        "role_selection_prompt_sha256": hashlib.sha256(role_selection_prompt).hexdigest(),
+        "role_selection_schema_sha256": role_selection_schema.digest,
+        "presentation_prompt_sha256": hashlib.sha256(presentation_prompt).hexdigest(),
+        "presentation_schema_sha256": presentation_schema.digest,
         "support_prompt_sha256": hashlib.sha256(support_prompt).hexdigest(),
         "support_schema_sha256": support_schema.digest,
     }

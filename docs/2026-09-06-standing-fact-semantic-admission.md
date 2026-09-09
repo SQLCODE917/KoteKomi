@@ -1,6 +1,6 @@
 # TDD: Standing-Fact Semantic Admission
 
-- Status: Implemented; resource-backed and canonical verification pending
+- Status: Corrective deterministic Event-boundary integration implemented; canonical verification pending
 - Deliverable ID: HSQ-5
 - Program: [Hybrid Semantic Quality Program](2026-09-06-hybrid-semantic-quality-program.md)
 - Depends on: [HSQ-4 Bounded Semantic Reference Resolution](2026-09-06-bounded-semantic-reference-resolution.md)
@@ -46,6 +46,7 @@ It can therefore flatten events or substitute an incomplete subject.
 - SFA-APP-05: `event_not_standing` produces `event_route_required` without a standing ProposedChange.
 - SFA-APP-06: An unresolved reference holds the draft.
 - SFA-APP-07: An absent semantic subject holds the draft.
+- SFA-APP-08: A standing draft over a SourceSegment with an explicit Event trigger is held as `event_route_required` before model qualification.
 
 ## Proposed Architecture
 
@@ -93,6 +94,7 @@ The plan retains held drafts and exact stage evidence.
 - AC-SFA-APP-03: `Amodei's statement included views` does not substitute Amodei as subject.
 - AC-SFA-APP-04: `effort executor` event material receives `event_route_required`.
 - AC-SFA-APP-05: Every decision retains exact Qwen, NLI, source, and deterministic validation evidence.
+- AC-SFA-APP-06: Qwen and NLI agreement cannot admit a binary Assertion that bypasses an Event discovered in the same source segment.
 
 ## Reference Implementations
 

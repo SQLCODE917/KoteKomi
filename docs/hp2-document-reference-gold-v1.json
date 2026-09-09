@@ -1,6 +1,6 @@
 {
   "schema_version": "hp2_document_reference_gold_v1",
-  "policy_id": "hybrid_document_reference_v3",
+  "policy_id": "hybrid_document_reference_v4",
   "review_basis": "Accepted HP-2 deterministic alias contract",
   "cases": [
     {

@@ -38,8 +38,8 @@ from kotekomi_application.organization_mention_qualification import (
     MentionProposalObservation as OrganizationMentionProposalObservation,
 )
 
-HYBRID_MENTION_BOUNDARY_POLICY_ID = "hybrid_mention_boundary_v1"
-HYBRID_MENTION_PREVIEW_POLICY_ID = "hybrid_mention_preview_v1"
+HYBRID_MENTION_BOUNDARY_POLICY_ID = "hybrid_mention_boundary_v2"
+HYBRID_MENTION_PREVIEW_POLICY_ID = "hybrid_mention_preview_v2"
 HYBRID_MENTION_TASK_SCHEMA_ID = "hybrid_mention_task_text_v1"
 
 _SHA256_PATTERN = r"^[a-f0-9]{64}$"
@@ -257,12 +257,12 @@ class HybridExtractionPreview(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
-    schema_version: Literal["hybrid_extraction_preview_v1"] = "hybrid_extraction_preview_v1"
+    schema_version: Literal["hybrid_extraction_preview_v2"] = "hybrid_extraction_preview_v2"
     id: Annotated[str, Field(pattern=r"^hxp_[a-f0-9]{24}$")]
     representation_id: Annotated[str, Field(min_length=1)]
     paragraph_node_id: Annotated[str, Field(min_length=1)]
     context_manifest_id: Annotated[str, Field(min_length=1)]
-    policy_id: Literal["hybrid_mention_preview_v1"] = HYBRID_MENTION_PREVIEW_POLICY_ID
+    policy_id: Literal["hybrid_mention_preview_v2"] = HYBRID_MENTION_PREVIEW_POLICY_ID
     ontology_card_sha256: Annotated[str, Field(pattern=_SHA256_PATTERN)]
     observations: tuple[MentionObservation, ...] = ()
     candidates: tuple[MentionCandidate, ...] = ()
@@ -311,11 +311,16 @@ class HybridExtractionPreview(BaseModel):
         }
         if candidate_observation_ids != observation_ids:
             raise ValueError("HybridExtractionPreview must retain every valid observation.")
+        trace_ids = {item.id for item in self.traces}
         if any(
             observation.execution_record_id not in self.model_run_ids
+            and not (
+                observation.producer_id == "kotekomi_reference_marker_v1"
+                and observation.execution_record_id in trace_ids
+            )
             for observation in self.observations
         ):
-            raise ValueError("HybridExtractionPreview observation ModelRun is missing.")
+            raise ValueError("HybridExtractionPreview observation provenance is missing.")
         decided_candidate_ids = tuple(
             candidate_id
             for decision in self.boundary_decisions
@@ -956,7 +961,7 @@ def resolve_mention_interpretation(
 
 def build_hybrid_extraction_preview(**values: object) -> HybridExtractionPreview:
     payload = dict(values)
-    payload.setdefault("schema_version", "hybrid_extraction_preview_v1")
+    payload.setdefault("schema_version", "hybrid_extraction_preview_v2")
     payload.setdefault("policy_id", HYBRID_MENTION_PREVIEW_POLICY_ID)
     for field_name in (
         "observations",

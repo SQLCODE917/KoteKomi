@@ -824,6 +824,54 @@ def test_deposited_pdf_archives_before_reporting_a_typed_blocker() -> None:
     assert result.document_id in ledger.documents
 
 
+def test_deposited_pdf_retry_reuses_capture_across_equivalent_local_paths() -> None:
+    archive = FakeArchiveStore()
+    ledger = FakeLedgerRepository()
+    raw_bytes = b"%PDF-1.7\nfixture"
+    source_url = "https://example.test/wiki/article"
+    absolute_path = str(Path("raw/article.pdf").resolve())
+
+    first = commit_authoritative_pdf_capture(
+        AuthoritativePdfCaptureRequest(
+            local_file_path=absolute_path,
+            filename="article.pdf",
+            raw_bytes=raw_bytes,
+            source_url=source_url,
+            ingested_at=NOW,
+            build_identity=BUILD_IDENTITY,
+        ),
+        archive,
+        ledger,
+        BlockingPdfParser(),
+    )
+    second = commit_authoritative_pdf_capture(
+        AuthoritativePdfCaptureRequest(
+            local_file_path="raw/../raw/article.pdf",
+            filename="article.pdf",
+            raw_bytes=raw_bytes,
+            source_url=source_url,
+            ingested_at=NOW.replace(hour=13),
+            build_identity=BUILD_IDENTITY,
+        ),
+        archive,
+        ledger,
+        BlockingPdfParser(),
+    )
+
+    capture = next(iter(ledger.source_captures.values()))
+    provenance = next(
+        activity
+        for activity in ledger.provenance_activities.values()
+        if activity.activity_type == "deposited_source_capture"
+    )
+    assert first.source_id == second.source_id
+    assert first.document_id == second.document_id
+    assert second.created is False
+    assert capture.request_metadata["local_file_path"] == absolute_path
+    assert provenance.input_ids == (source_url, absolute_path)
+    assert len(ledger.source_captures) == 1
+
+
 def test_deposited_pdf_retains_capture_after_a_parser_failure() -> None:
     archive = FakeArchiveStore()
     ledger = FakeLedgerRepository()

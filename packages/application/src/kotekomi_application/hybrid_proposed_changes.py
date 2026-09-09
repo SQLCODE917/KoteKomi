@@ -11,7 +11,7 @@ from enum import StrEnum
 from typing import Annotated, Literal, Protocol, Self, cast
 
 from kotekomi_domain import (
-    HYBRID_EVENT_SEMANTICS_V2,
+    HYBRID_EVENT_SEMANTICS_V4,
     Actor,
     AssertionType,
     AttributionBasis,
@@ -36,20 +36,22 @@ from kotekomi_domain import (
 from kotekomi_domain.models import JsonValue
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from kotekomi_application.context_planning import (
+    PARAGRAPH_SEGMENT_V2,
+    paragraph_source_segments,
+)
 from kotekomi_application.extraction_stage_trace import (
     ExtractionStageStatus,
     ExtractionStageTrace,
     build_extraction_stage_trace,
     validate_extraction_stage_trace_chain,
 )
-from kotekomi_application.hybrid_atomic_claim_preview import load_hybrid_atomic_claim_preview
 from kotekomi_application.hybrid_document_references import (
     HybridReferencePreview,
     ReferenceStatus,
     canonical_hybrid_reference_preview_bytes,
     hybrid_reference_preview_from_bytes,
 )
-from kotekomi_application.hybrid_event_frame_preview import load_hybrid_event_frame_preview
 from kotekomi_application.hybrid_event_semantics import (
     EventArgumentAssignmentDraft,
     EventArgumentTargetDraft,
@@ -58,6 +60,7 @@ from kotekomi_application.hybrid_event_semantics import (
     SemanticCoverageGap,
     SemanticCoverageGapCode,
     SemanticStatement,
+    SemanticStatementKind,
     SemanticSupportJudgment,
     SupportOutcome,
     canonical_hybrid_event_semantics_preview_bytes,
@@ -67,6 +70,7 @@ from kotekomi_application.hybrid_event_semantics_preview import (
     HybridEventSemanticsLedger,
     load_hybrid_event_semantics_preview,
 )
+from kotekomi_application.hybrid_event_trigger_preview import load_hybrid_event_trigger_preview
 from kotekomi_application.hybrid_mention_interpretation import (
     ContextualKind,
     DiscourseRole,
@@ -75,6 +79,7 @@ from kotekomi_application.hybrid_mention_interpretation import (
     Referentiality,
     canonical_hybrid_extraction_preview_bytes,
     hybrid_extraction_preview_from_bytes,
+    hybrid_source_segment_id,
 )
 from kotekomi_application.semantic_proposition import PropositionDisposition
 
@@ -208,6 +213,13 @@ class HybridProposalPlan(BaseModel):
             "planned ProposedChange IDs",
             tuple(item.id for item in self.proposed_changes),
         )
+        record_ids: list[str] = []
+        for item in self.proposed_changes:
+            record = item.proposed_json.get("record")
+            if not isinstance(record, dict) or not isinstance(record.get("id"), str):
+                raise ValueError("HP-7 planned change lacks a typed record identity.")
+            record_ids.append(cast(str, record["id"]))
+        _distinct("planned record identities", tuple(record_ids))
         _ordered_distinct("diagnostics", self.diagnostics)
         if len(self.decisions) != len(self.traces):
             raise ValueError("Every HP-7 admission decision requires one stage trace.")
@@ -284,11 +296,11 @@ class HybridProposalResult:
 @dataclass(frozen=True)
 class _Lineage:
     preview: HybridEventSemanticsPreview
-    hp5_preview_id: str
     hp4_preview_id: str
     hp3_preview_id: str
     mentions: HybridExtractionPreview
     references: HybridReferencePreview
+    bundle: DocumentRepresentationBundle
     source_id: str
     document_id: str
     evidence_by_id: dict[str, EvidenceTarget]
@@ -300,7 +312,6 @@ class _TypedTarget:
     record_type: Literal["Actor", "Organization"]
     record_id: str
     record_json: dict[str, JsonValue]
-    source_target: EvidenceTarget
 
 
 def build_hybrid_proposal_plan_record(
@@ -764,22 +775,21 @@ def _load_lineage(
 ) -> _Lineage:
     replay_ledger = cast(HybridEventSemanticsLedger, ledger)
     preview = load_hybrid_event_semantics_preview(preview_id, replay_ledger, archive)
-    hp5 = load_hybrid_atomic_claim_preview(preview.parent_preview_id, replay_ledger, archive)
-    hp4 = load_hybrid_event_frame_preview(hp5.parent_preview_id, archive)
-    mention_payload = archive.read_hybrid_extraction_preview(hp5.mention_preview_id)
+    hp4 = load_hybrid_event_trigger_preview(preview.parent_preview_id, archive)
+    mention_payload = archive.read_hybrid_extraction_preview(hp4.mention_preview_id)
     mentions = hybrid_extraction_preview_from_bytes(mention_payload)
     if (
-        mentions.id != hp5.mention_preview_id
+        mentions.id != hp4.mention_preview_id
         or canonical_hybrid_extraction_preview_bytes(mentions) != mention_payload
-        or hashlib.sha256(mention_payload).hexdigest() != hp5.mention_preview_sha256
+        or hashlib.sha256(mention_payload).hexdigest() != hp4.mention_preview_sha256
     ):
         raise ValueError("HP-7 HP-1 lineage does not match its pinned identity.")
-    reference_payload = archive.read_hybrid_reference_preview(hp5.reference_preview_id)
+    reference_payload = archive.read_hybrid_reference_preview(hp4.reference_preview_id)
     references = hybrid_reference_preview_from_bytes(reference_payload)
     if (
-        references.id != hp5.reference_preview_id
+        references.id != hp4.reference_preview_id
         or canonical_hybrid_reference_preview_bytes(references) != reference_payload
-        or hashlib.sha256(reference_payload).hexdigest() != hp5.reference_preview_sha256
+        or hashlib.sha256(reference_payload).hexdigest() != hp4.reference_preview_sha256
     ):
         raise ValueError("HP-7 HP-2 lineage does not match its pinned identity.")
     bundle = ledger.get_document_representation_bundle(preview.representation_id)
@@ -811,11 +821,11 @@ def _load_lineage(
         raise ValueError("HP-7 evidence validation coverage is incomplete.")
     return _Lineage(
         preview=preview,
-        hp5_preview_id=hp5.id,
         hp4_preview_id=hp4.id,
         hp3_preview_id=hp4.parent_preview_id,
         mentions=mentions,
         references=references,
+        bundle=bundle,
         source_id=source.id,
         document_id=document.id,
         evidence_by_id=evidence_by_id,
@@ -829,7 +839,7 @@ def _admission_reasons(
     reasons: dict[str, set[ProposalAdmissionReason]] = {
         item.event_subject_id: set() for item in preview.semantic_events
     }
-    frame_by_id = {item.id: item for item in HYBRID_EVENT_SEMANTICS_V2.frames}
+    frame_by_id = {item.id: item for item in HYBRID_EVENT_SEMANTICS_V4.frames}
     for event in preview.semantic_events:
         frame = frame_by_id[event.frame_id]
         actual_roles = {item.frame_role_id for item in _event_assignments(preview, event)}
@@ -838,13 +848,17 @@ def _admission_reasons(
         for gap in _event_gaps(preview, event):
             if reason := _HARD_GAP_REASONS.get(gap.code):
                 reasons[event.event_subject_id].add(reason)
-        statements = _event_statements(preview, event)
-        if not statements:
+        complete_statements = tuple(
+            item
+            for item in _event_statements(preview, event)
+            if item.kind is SemanticStatementKind.COMPLETE_PROPOSITION
+        )
+        if len(complete_statements) != 1:
             reasons[event.event_subject_id].add(ProposalAdmissionReason.MISSING_SUPPORT_JUDGMENT)
         judgments_by_statement: dict[str, list[SemanticSupportJudgment]] = {}
         for judgment in preview.judgments:
             judgments_by_statement.setdefault(judgment.statement_id, []).append(judgment)
-        for statement in statements:
+        for statement in complete_statements:
             judgments = judgments_by_statement.get(statement.id, [])
             if not judgments:
                 reasons[event.event_subject_id].add(
@@ -890,25 +904,32 @@ def _build_event_changes(
     support = lineage.evidence_by_id[event.support_evidence_target_id]
     assignments = _event_assignments(preview, event)
     typed_targets: dict[str, _TypedTarget] = {}
+    embedded_typed_targets: dict[str, _TypedTarget] = {}
     participant_actor_ids: set[str] = set()
     participant_organization_ids: set[str] = set()
     for assignment in assignments:
         target = _target(preview, assignment.target_id)
         typed = _typed_target(lineage, target)
         if typed is None:
-            continue
-        typed_targets[target.id] = typed
-        if assignment.upper_role in {UpperRole.AGENT, UpperRole.PARTICIPANT}:
-            if typed.record_type == "Actor":
-                participant_actor_ids.add(typed.record_id)
-            else:
-                participant_organization_ids.add(typed.record_id)
+            pass
+        else:
+            typed_targets[target.id] = typed
+            if assignment.upper_role in {UpperRole.AGENT, UpperRole.PARTICIPANT}:
+                if typed.record_type == "Actor":
+                    participant_actor_ids.add(typed.record_id)
+                else:
+                    participant_organization_ids.add(typed.record_id)
+        for candidate_id in target.embedded_candidate_ids:
+            embedded = _typed_candidate(lineage, candidate_id)
+            if embedded is not None:
+                embedded_typed_targets[candidate_id] = embedded
     lineage_json = _lineage_json(lineage, event)
     changes: list[PlannedProposedChange] = []
-    for target_id, typed in sorted(
-        typed_targets.items(), key=lambda item: (item[1].record_id, item[0])
-    ):
-        target = _target(preview, target_id)
+    typed_changes = {
+        item.record_id: item for item in (*typed_targets.values(), *embedded_typed_targets.values())
+    }
+    for typed in sorted(typed_changes.values(), key=lambda item: item.record_id):
+        candidate_id = _canonical_candidate_id(lineage, typed.record_id)
         changes.append(
             _planned_change(
                 provenance_activity_id=provenance_activity_id,
@@ -918,8 +939,11 @@ def _build_event_changes(
                     "record_type": typed.record_type,
                     "stable_label": typed.record_id,
                     "record": typed.record_json,
-                    "evidence": _evidence_json(typed.source_target),
-                    "hybrid_lineage": _typed_target_lineage_json(lineage, target),
+                    "evidence": _candidate_evidence_json(lineage, candidate_id),
+                    "hybrid_lineage": _typed_candidate_lineage_json(
+                        lineage,
+                        candidate_id,
+                    ),
                 },
             )
         )
@@ -949,6 +973,7 @@ def _build_event_changes(
         event_id=event_id,
         event_ids=event_ids,
         typed_targets=typed_targets,
+        embedded_typed_targets=embedded_typed_targets,
     )
     support_attempt = lineage.attempt_by_evidence_id[support.id]
     for assertion in assertions:
@@ -986,6 +1011,7 @@ def _proposed_assertions(
     event_id: str,
     event_ids: dict[str, str],
     typed_targets: dict[str, _TypedTarget],
+    embedded_typed_targets: dict[str, _TypedTarget],
 ) -> tuple[ProposedAssertion, ...]:
     support_id = event.support_evidence_target_id
     assertions: list[ProposedAssertion] = []
@@ -1045,6 +1071,17 @@ def _proposed_assertions(
                 "upper_role": assignment.upper_role.value,
             },
         )
+        for candidate_id in target.embedded_candidate_ids:
+            embedded = embedded_typed_targets.get(candidate_id)
+            if embedded is not None:
+                add(
+                    HybridEventStructuralPredicate.HAS_ARGUMENT_ENTITY_REFERENCE,
+                    object_entity_id=embedded.record_id,
+                    qualifiers={
+                        "frame_role_id": assignment.frame_role_id,
+                        "upper_role": assignment.upper_role.value,
+                    },
+                )
     qualifier_by_id = {item.id: item for item in lineage.preview.qualifiers}
     for qualifier_id in event.qualifier_ids:
         qualifier = qualifier_by_id[qualifier_id]
@@ -1053,6 +1090,11 @@ def _proposed_assertions(
             if qualifier.kind == "time"
             else HybridEventStructuralPredicate.HAS_PLACE,
             object_value=qualifier.text,
+            qualifiers=(
+                {"temporal_relation": qualifier.temporal_relation.value}
+                if qualifier.temporal_relation is not None
+                else None
+            ),
         )
     add(HybridEventStructuralPredicate.HAS_POLARITY, object_value=event.polarity)
     add(HybridEventStructuralPredicate.HAS_MODALITY, object_value=event.modality)
@@ -1070,8 +1112,15 @@ def _proposed_assertions(
 def _typed_target(lineage: _Lineage, target: EventArgumentTargetDraft) -> _TypedTarget | None:
     if target.kind.value != "mention_candidate" or target.reference_id is None:
         return None
+    return _typed_candidate(lineage, target.reference_id)
+
+
+def _typed_candidate(
+    lineage: _Lineage,
+    candidate_id: str,
+) -> _TypedTarget | None:
     candidates = {item.id: item for item in lineage.mentions.candidates}
-    candidate = candidates.get(target.reference_id)
+    candidate = candidates.get(candidate_id)
     if candidate is None:
         raise ValueError("HP-7 semantic target references an unknown MentionCandidate.")
     interpretations = [
@@ -1083,13 +1132,12 @@ def _typed_target(lineage: _Lineage, target: EventArgumentTargetDraft) -> _Typed
     if interpretation.referentiality is not Referentiality.SPECIFIC_ENTITY:
         return None
     name, identity = _resolved_name(lineage.references, candidate)
-    target_evidence = lineage.evidence_by_id[target.evidence_target_id]
     if interpretation.contextual_kind is ContextualKind.PERSON:
         record_id = _id("act", lineage.preview.representation_id, identity)
         record = Actor(id=record_id, name=name).model_dump(
             mode="json", exclude={"created_at", "updated_at"}
         )
-        return _TypedTarget("Actor", record_id, cast(dict[str, JsonValue], record), target_evidence)
+        return _TypedTarget("Actor", record_id, cast(dict[str, JsonValue], record))
     is_organization = interpretation.contextual_kind in {
         ContextualKind.ORGANIZATION,
         ContextualKind.GOVERNMENT,
@@ -1106,9 +1154,76 @@ def _typed_target(lineage: _Lineage, target: EventArgumentTargetDraft) -> _Typed
         name=name,
         organization_type=organization_type,
     ).model_dump(mode="json", exclude={"created_at", "updated_at"})
-    return _TypedTarget(
-        "Organization", record_id, cast(dict[str, JsonValue], record), target_evidence
+    return _TypedTarget("Organization", record_id, cast(dict[str, JsonValue], record))
+
+
+def _canonical_candidate_id(lineage: _Lineage, record_id: str) -> str:
+    matches: list[tuple[bool, int, str]] = []
+    for ordinal, candidate in enumerate(lineage.mentions.candidates):
+        typed = _typed_candidate(lineage, candidate.id)
+        if typed is None or typed.record_id != record_id:
+            continue
+        resolved_name, _ = _resolved_name(lineage.references, candidate)
+        matches.append((candidate.text != resolved_name, ordinal, candidate.id))
+    if not matches:
+        raise ValueError("HP-7 typed record has no source MentionCandidate.")
+    return min(matches)[2]
+
+
+def _candidate_evidence_json(
+    lineage: _Lineage,
+    candidate_id: str,
+) -> dict[str, JsonValue]:
+    candidate = next(
+        (item for item in lineage.mentions.candidates if item.id == candidate_id),
+        None,
     )
+    if candidate is None:
+        raise ValueError("HP-7 candidate evidence references an unknown MentionCandidate.")
+    node = next(
+        (item for item in lineage.bundle.nodes if item.id == lineage.preview.paragraph_node_id),
+        None,
+    )
+    if node is None or node.node_type != "paragraph":
+        raise ValueError("HP-7 candidate evidence paragraph is missing or invalid.")
+    view = next(
+        (item for item in lineage.bundle.text_views if item.id == node.text_view_id),
+        None,
+    )
+    if view is None:
+        raise ValueError("HP-7 candidate evidence TextView is missing.")
+    paragraph_text = view.text[node.start_char : node.end_char]
+    segments = paragraph_source_segments(paragraph_text, PARAGRAPH_SEGMENT_V2)
+    segment = next(
+        (
+            item
+            for item in segments
+            if hybrid_source_segment_id(lineage.preview.representation_id, node.id, item)
+            == candidate.source_segment_id
+        ),
+        None,
+    )
+    if segment is None:
+        raise ValueError("HP-7 candidate evidence SourceSegment is missing.")
+    start = node.start_char + segment.start_char + candidate.start
+    end = node.start_char + segment.start_char + candidate.end
+    if view.text[start:end] != candidate.text:
+        raise ValueError("HP-7 candidate evidence does not replay exact source characters.")
+    return {
+        "source_id": lineage.source_id,
+        "document_id": lineage.document_id,
+        "selector_type": "pinned_text",
+        "exact_text": candidate.text,
+        "prefix_text": view.text[max(0, start - 32) : start],
+        "suffix_text": view.text[end : min(len(view.text), end + 32)],
+        "location": {
+            "representation_id": lineage.preview.representation_id,
+            "text_view_id": view.id,
+            "start_char": start,
+            "end_char": end,
+            "node_ids": [node.id],
+        },
+    }
 
 
 def _resolved_name(
@@ -1150,7 +1265,6 @@ def _lineage_json(lineage: _Lineage, event: EventSemanticDraft) -> dict[str, Jso
             "hp2_preview_id": lineage.references.id,
             "hp3_preview_id": lineage.hp3_preview_id,
             "hp4_preview_id": lineage.hp4_preview_id,
-            "hp5_preview_id": lineage.hp5_preview_id,
             "hp6_preview_id": lineage.preview.id,
             "hp6_event_semantic_id": event.id,
             "semantic_statement_ids": sorted(item.id for item in statements),
@@ -1161,21 +1275,15 @@ def _lineage_json(lineage: _Lineage, event: EventSemanticDraft) -> dict[str, Jso
     )
 
 
-def _typed_target_lineage_json(
+def _typed_candidate_lineage_json(
     lineage: _Lineage,
-    target: EventArgumentTargetDraft,
+    candidate_id: str,
 ) -> dict[str, JsonValue]:
-    if target.reference_id is None:
-        raise ValueError("HP-7 typed target is missing its MentionCandidate identity.")
     interpretations = [
-        item
-        for item in lineage.mentions.interpretations
-        if item.candidate_id == target.reference_id
+        item for item in lineage.mentions.interpretations if item.candidate_id == candidate_id
     ]
     reference_decisions = [
-        item
-        for item in lineage.references.reference_decisions
-        if item.candidate_id == target.reference_id
+        item for item in lineage.references.reference_decisions if item.candidate_id == candidate_id
     ]
     return cast(
         dict[str, JsonValue],
@@ -1184,9 +1292,8 @@ def _typed_target_lineage_json(
             "hp2_preview_id": lineage.references.id,
             "hp3_preview_id": lineage.hp3_preview_id,
             "hp4_preview_id": lineage.hp4_preview_id,
-            "hp5_preview_id": lineage.hp5_preview_id,
             "hp6_preview_id": lineage.preview.id,
-            "mention_candidate_id": target.reference_id,
+            "mention_candidate_id": candidate_id,
             "mention_interpretation_ids": sorted(item.id for item in interpretations),
             "reference_decision_ids": sorted(item.id for item in reference_decisions),
             "model_run_ids": sorted(item.model_run_id for item in interpretations),
@@ -1276,9 +1383,9 @@ def _event_execution_lineage(
     judgments: tuple[SemanticSupportJudgment, ...],
 ) -> tuple[tuple[str, ...], tuple[str, ...]]:
     """Collect only the HP-6 traces and model runs that contributed to one event."""
-    trace_ids = {event.normalization_trace_id}
+    trace_ids = {event.frame_selection_trace_id}
     trace_ids.update(item for assignment in assignments for item in assignment.source_trace_ids)
-    run_ids = {event.normalization_model_run_id}
+    run_ids = {event.frame_selection_model_run_id}
     run_ids.update(item.model_run_id for item in judgments)
     statement_ids = {item.id for item in statements}
     for trace in preview.traces:

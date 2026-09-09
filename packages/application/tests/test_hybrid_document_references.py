@@ -22,6 +22,8 @@ from kotekomi_application import (
     ReferenceReason,
     ReferenceStatus,
     Referentiality,
+    SemanticReferenceChallengeExecution,
+    SemanticReferenceChallengeInput,
     build_extraction_stage_trace,
     build_hybrid_extraction_preview,
     build_hybrid_reference_preview,
@@ -40,10 +42,14 @@ from kotekomi_application.hybrid_mention_interpretation import (
     observation_from_proposal,
     resolve_mention_interpretation,
 )
+from kotekomi_application.semantic_reference_challenge_model_output import (
+    SemanticReferenceChallengeSelection,
+)
 from kotekomi_domain import (
     DocumentNode,
     DocumentRepresentation,
     DocumentRepresentationBundle,
+    ModelRunStatus,
     ParseQualityReport,
     RepresentationAnalyzability,
     TextView,
@@ -141,6 +147,26 @@ class _WindowRecordingProposer:
         )
 
 
+class _Challenger:
+    def challenge(
+        self, request: SemanticReferenceChallengeInput
+    ) -> SemanticReferenceChallengeExecution:
+        selection = SemanticReferenceChallengeSelection(
+            request.antecedent_candidates[0].id,
+            False,
+            "The source context identifies this antecedent.",
+        )
+        return SemanticReferenceChallengeExecution(
+            selection=selection,
+            extraction_task_id="ext_reference_challenge",
+            model_run_id="mrn_reference_challenge",
+            model_status=ModelRunStatus.SUCCEEDED,
+            producer_id="qwen2.5-fixture",
+            model_visible_task=b"exact bounded reference task",
+            raw_output_sha256="a" * 64,
+        )
+
+
 def test_find_alias_declarations_preserves_exact_document_ranges() -> None:
     bundle = _bundle(
         (
@@ -212,6 +238,7 @@ def test_validated_semantic_reference_becomes_a_source_bound_hp2_decision() -> N
             (((trump, trump + len("Trump")), (him, him + len("him"))),)
         ),
         coreference_tokenizer=_Tokenizer(),
+        semantic_reference_challenger=_Challenger(),
     )
 
     decision = next(
@@ -236,6 +263,7 @@ def test_semantic_reference_uses_bounded_preceding_same_paragraph_sentences() ->
         bundle=bundle,
         coreference_proposer=proposer,
         coreference_tokenizer=_Tokenizer(),
+        semantic_reference_challenger=_Challenger(),
     )
 
     assert proposer.request is not None
@@ -257,6 +285,7 @@ def test_semantic_reference_excludes_a_preceding_sentence_beyond_the_token_limit
         bundle=bundle,
         coreference_proposer=proposer,
         coreference_tokenizer=_Tokenizer(),
+        semantic_reference_challenger=_Challenger(),
     )
 
     assert proposer.request is not None

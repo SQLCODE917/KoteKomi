@@ -1,0 +1,448 @@
+{
+  "schema_version": "hsq_task_allocation_gold_v1",
+  "catalog_id": "anthropic-held-out-v1",
+  "catalog_role": "held_out",
+  "fixture_path": "raw/Anthropic–United_States_Department_of_Defense_dispute.pdf",
+  "fixture_sha256": "c63c85796559453acf708dab46a35da36ffed00a408a25275576ba07138e9624",
+  "focus_entity": {
+    "name": "Anthropic",
+    "record_type": "Organization"
+  },
+  "sources": [
+    {
+      "source_id": "anthropic-p1",
+      "paragraph_ordinal": 1,
+      "source_text_sha256": "86ba43dd74f414301968e6caca8a1aba6ddd61895d412266d69c158eea552116",
+      "source_text": "Since  January  2026,  the  United  States  Department  of  Defense  has  conflicted  with  the  artificial intelligence  company Anthropic  over  the  use  of  its  products  for  military  purposes  and  mass  domestic surveillance."
+    },
+    {
+      "source_id": "anthropic-p3",
+      "paragraph_ordinal": 3,
+      "source_text_sha256": "f9e7331550f2264199d6fa7570d4444647a81630d80629db9b78d1561b0e295c",
+      "source_text": "In Donald Trump's second presidency, Anthropic publicly disagreed with the administration's policies and initiatives. In January 2025, Anthropic CEO Dario Amodei criticized the artificial intelligence investment project Stargate as \"chaotic\" and opposed Trump's rescission of president Joe Biden's Executive Order on Artificial Intelligence, but noted that Anthropic had held discussions with Trump officials about artificial intelligence policy. [5] Amid discussions over the One Big Beautiful Bill Act, Anthropic privately lobbied for Congress to vote against a bill preventing states from regulating artificial intelligence and expressed opposition to an artificial intelligence agreement signed among Gulf states in Trump's visit to the Middle East  in  May.  According  to Semafor ,  Trump  officials  chastised  Anthropic's  hiring  of  several  officials involved  in  the  Biden  administration,  including  Elizabeth  Kelly,  the  former  director  of  the  Artificial Intelligence Safety Institute; Tarun Chhabra, the coordinator for technology and national security in the National Security Council; and Ben Buchanan, Biden's advisor for artificial intelligence. [6] The following month, Amodei wrote an op-ed in The New York Times describing  the  artificial  intelligence  regulation bill, then tied to the One Big Beautiful Bill Act, as \"far too blunt an instrument\". [7]"
+    },
+    {
+      "source_id": "anthropic-p4",
+      "paragraph_ordinal": 4,
+      "source_text_sha256": "d950958d35ca62e8710eeb4147ead86f010d1be215d82b0c25eb4f5c3c8793f0",
+      "source_text": "Prior to the dispute, the Trump administration had integrated Anthropic's services. By November 2024, Anthropic had already partnered with Palantir and Amazon Web Services, companies that offered services with FedRAMP authorization. In the Biden administration, Anthropic had reached an agreement with the AI Safety Institute and had participated in a nuclear information safety evaluation. [8]  The Department of Homeland Security  authorized  its  workers  to  use  commercial  artificial  intelligence  systems,  including Anthropic's  Claude,  until  May  2025. [9] Through  its  interoperability  with  Palantir,  a  company  heavily involved in data analysis and analytics at the Department of Defense, Anthropic's technology achieved relatively widespread usage in the U.S. military. [10] The following month, Anthropic announced that it would allow national security customers to use Claude Gov. [11][12] Anthropic's orthogonal usage policy to the  surveillance  systems  implemented  at  the  Federal  Bureau  of  Investigation,  the  Secret  Service,  and Immigration and Customs Enforcement led to a conflict between Anthropic and the Trump administration by September. [13] That month,  Amodei criticized Trump's approach to export restrictions on semiconductors. [14]"
+    },
+    {
+      "source_id": "anthropic-p5",
+      "paragraph_ordinal": 5,
+      "source_text_sha256": "0338f74b8efaea1dbb6d74bdbd6eb4e00a01626af369a3c2bf12b0f14a684bf4",
+      "source_text": "Anthropic's strategy has mirrored Amodei's views toward Trump; in a Facebook post ahead of the 2024 presidential election, Amodei urged his associates to vote for vice president Kamala Harris over Trump, describing him as a \"feudal warlord\". As the Trump administration targeted law firms, Amodei cut ties with the firms Skadden, Arps, Slate, Meagher & Flom and Latham & Watkins, which reached agreements with  the  Trump  administration  to  avoid  punishment.  David  Sacks,  Trump's  advisor  for  artificial intelligence  and  cryptocurrency,  said  on All-In (2020-present)  that Anthropic  was  among  several  \"AI doomers\"  that  support  regulation  he  saw  as  overly  restrictive.  According  to The  Wall  Street  Journal , officials close to Sacks examined whether Anthropic's Claude was a \"woke AI\"; in July, Trump signed an executive order \"Preventing Woke AI in the Federal Government \". [15]"
+    },
+    {
+      "source_id": "anthropic-p6",
+      "paragraph_ordinal": 6,
+      "source_text_sha256": "c608ac71f813d95607a005494b5cc90fb949590778631fcec2e34bf09e57327a",
+      "source_text": "Sacks viewed Amodei's decision to attend the World Economic Forum over Trump's second inauguration; his  hiring  of  Biden  officials;  and  Anthropic's  association  with  the  philanthropic  initiative  Open Philanthropy as evidence that Anthropic would not support Trump's agenda. [15] In October 2025, Sacks stated that  Anthropic was \"running a sophisticated regulatory capture strategy based on fearmongering.\" [16] That month, Amodei published a blog post rebuffing \"inaccurate claims\" from the Trump administration  on  Anthropic's  policies,  intensifying  the  dispute.  Amodei's  statement  included  views explicitly espoused by vice president JD Vance. [17]  In December, Amodei met with Trump officials and several senators in an effort to improve Anthropic's relationship with the Trump administration. [18]"
+    },
+    {
+      "source_id": "anthropic-p8",
+      "paragraph_ordinal": 8,
+      "source_text_sha256": "816e22e0b20af43e9910be7c091b9ea71c465ad8201e753d066c0da3b4f16a3d",
+      "source_text": "In January 2026, Semafor reported that the Department of Defense had conflicted with Anthropic over its policies on lethal military force and that Hegseth's comment on woke AI was a reference to Anthropic. [22] According  to  Reuters,  Anthropic  representatives  opposed  the  use  of  the  company's  products  for surveillance  or  to  develop  lethal  autonomous  weapons. [23] The  dispute  between  Anthropic  and  the Department of Defense resulted in the termination of a contract worth an estimated US$200 million. [24]"
+    },
+    {
+      "source_id": "anthropic-p9",
+      "paragraph_ordinal": 9,
+      "source_text_sha256": "6cdf8a966832ff76c58884abb931daddc41794a0c5596476d4822a634f97c543",
+      "source_text": "In February 2026, Emil Michael, the under secretary of defense for research and engineering, stated that the Department of Defense would expand access to commercial artificial intelligence systems, including Anthropic's  Claude,  to  unclassified  and  classified  domains. [25] That  month, Axios reported  that  the Department of Defense had used Claude in the United States intervention in Venezuela. Anthropic told Axios that it would reassess its partnership with the Department of Defense after the revelations. [26] After Anthropic refused to agree to allow the Department of Defense to use Claude for \"all lawful purposes\", the  department threatened to cancel its contracts with the company. [27] Hegseth  additionally  moved to label  Anthropic  a  \"supply  chain  risk\",  which  would  have  forced  military  contractors  to  cut  ties  with Anthropic. [28] A federal judge blocked most of this designation, describing it as punitive. [29][30]  The D.C. Circuit denied Anthropic's emergency motion for a stay of the FASCSA designation in April so it remains in effect for covered systems. [31]"
+    },
+    {
+      "source_id": "anthropic-p16",
+      "paragraph_ordinal": 16,
+      "source_text_sha256": "728aa92b8ddfb4d0a1299beee22b77cb6a7f8ea0a605c558fe6e1ec5be4d9a9c",
+      "source_text": "In  April  2026,  the  Court  of  Appeals  for  the  D.C. Circuit in a per curiam order denied  Anthropic's motion to  lift  the  FASCSA  designation. [45] The April order  is  not  final.  The  court's  order  said  lifting  the designation \"would force the United States military to prolong  its  dealings  with  an  unwanted  vendor  of critical  AI  services  in  the  middle  of  a  significant ongoing military conflict\". According to Wired , \"Several experts in government contracting and corporate  rights\"  said  \"Anthropic  has  a  strong  case against  the  government,  but  the  courts  sometimes refuse to overrule the White House on matters related to national security.\" [46]"
+    }
+  ],
+  "items": [
+    {
+      "item_id": "ANT-01",
+      "source_id": "anthropic-p1",
+      "source_segment_label": "s1",
+      "source_segment_sha256": "86ba43dd74f414301968e6caca8a1aba6ddd61895d412266d69c158eea552116",
+      "expected_summary": "The Department of Defense and Anthropic were in conflict over military and mass-surveillance uses of Anthropic products.",
+      "expected_route": "typed_ontology_gap",
+      "expected_trigger_text": "conflicted",
+      "expected_gap_code": "unmapped_frame",
+      "expected_references": [
+        {"reference_text": "its", "antecedent_text": "Anthropic"}
+      ],
+      "expected_disposition": "typed_ontology_gap",
+      "allocation_cases": ["reference_challenge", "typed_ontology_gap"]
+    },
+    {
+      "item_id": "ANT-02",
+      "source_id": "anthropic-p3",
+      "source_segment_label": "s1",
+      "source_segment_sha256": "02900fb841706fa9467502a58cd97d95a1f5efbce2bda1968df3882ce6f84a98",
+      "expected_summary": "Anthropic publicly disagreed with Trump-administration policies and initiatives.",
+      "expected_route": "event",
+      "expected_trigger_text": "disagreed",
+      "expected_frame_id": "criticism",
+      "expected_roles": [
+        {"frame_role_id": "criticism.critic", "accepted_source_texts": ["Anthropic"]},
+        {"frame_role_id": "criticism.target", "accepted_source_texts": ["the administration's policies and initiatives"]}
+      ],
+      "expected_polarity": "affirmed",
+      "expected_modality": "actual",
+      "expected_attribution": "source_narrator",
+      "expected_disposition": "proposed",
+      "allocation_cases": ["source_occurrence_selection", "bounded_frame_and_roles"]
+    },
+    {
+      "item_id": "ANT-03",
+      "source_id": "anthropic-p3",
+      "source_segment_label": "s3",
+      "source_segment_sha256": "366526aee085c2fd687932f907504c4b35fc07f3e5cfb85e463549ccb35ee097",
+      "expected_summary": "Anthropic lobbied Congress to vote against a bill preventing states from regulating artificial intelligence.",
+      "expected_route": "event",
+      "expected_trigger_text": "lobbied",
+      "expected_frame_id": "recommendation",
+      "expected_roles": [
+        {"frame_role_id": "recommendation.recommender", "accepted_source_texts": ["Anthropic"]},
+        {"frame_role_id": "recommendation.recommended_action", "accepted_source_texts": ["Congress to vote against a bill preventing states from regulating artificial intelligence"]},
+        {"frame_role_id": "recommendation.recommendation_subject", "accepted_source_texts": ["a bill preventing states from regulating artificial intelligence"]}
+      ],
+      "expected_polarity": "affirmed",
+      "expected_modality": "actual",
+      "expected_attribution": "source_narrator",
+      "expected_disposition": "proposed",
+      "allocation_cases": ["bounded_frame_and_roles", "proposition_gate"]
+    },
+    {
+      "item_id": "ANT-04",
+      "source_id": "anthropic-p3",
+      "source_segment_label": "s3",
+      "source_segment_sha256": "366526aee085c2fd687932f907504c4b35fc07f3e5cfb85e463549ccb35ee097",
+      "expected_summary": "Anthropic opposed an artificial-intelligence agreement signed among Gulf states.",
+      "expected_route": "event",
+      "expected_trigger_text": "opposition",
+      "expected_frame_id": "criticism",
+      "expected_roles": [
+        {"frame_role_id": "criticism.critic", "accepted_source_texts": ["Anthropic"]},
+        {"frame_role_id": "criticism.target", "accepted_source_texts": ["an artificial intelligence agreement signed among Gulf states"]}
+      ],
+      "expected_qualifiers": [
+        {"kind": "time", "relation": "at", "accepted_source_texts": ["in  May"]}
+      ],
+      "expected_polarity": "affirmed",
+      "expected_modality": "actual",
+      "expected_attribution": "source_narrator",
+      "expected_disposition": "proposed",
+      "allocation_cases": ["source_occurrence_selection", "bounded_frame_and_roles"]
+    },
+    {
+      "item_id": "ANT-05",
+      "source_id": "anthropic-p3",
+      "source_segment_label": "s4",
+      "source_segment_sha256": "0b00e02937fd49d1209d1bf86322e0f8835f2465b396f3170a63deb3199576fd",
+      "expected_summary": "Trump officials chastised Anthropic for hiring officials involved in the Biden administration.",
+      "expected_route": "event",
+      "expected_trigger_text": "chastised",
+      "expected_frame_id": "criticism",
+      "expected_roles": [
+        {"frame_role_id": "criticism.critic", "accepted_source_texts": ["Trump  officials"]},
+        {"frame_role_id": "criticism.target", "accepted_source_texts": ["Anthropic's  hiring  of  several  officials involved  in  the  Biden  administration"]}
+      ],
+      "expected_attribution": "mention_candidate",
+      "expected_polarity": "affirmed",
+      "expected_modality": "actual",
+      "expected_disposition": "proposed",
+      "allocation_cases": ["bounded_frame_and_roles"]
+    },
+    {
+      "item_id": "ANT-06",
+      "source_id": "anthropic-p4",
+      "source_segment_label": "s1",
+      "source_segment_sha256": "afddb03eb96d930f71aa0fd3bbedc15708b79c7cf29f8f5704db61050b897347",
+      "expected_summary": "The Trump administration integrated Anthropic's services.",
+      "expected_route": "typed_ontology_gap",
+      "expected_trigger_text": "integrated",
+      "expected_gap_code": "unmapped_frame",
+      "expected_disposition": "typed_ontology_gap",
+      "allocation_cases": ["typed_ontology_gap"]
+    },
+    {
+      "item_id": "ANT-07",
+      "source_id": "anthropic-p4",
+      "source_segment_label": "s2",
+      "source_segment_sha256": "0795adfe1efe5e6d52d303ab445dcd467fb1990979a64e565027f47e006de630",
+      "expected_summary": "Anthropic partnered with Palantir.",
+      "expected_route": "event",
+      "expected_trigger_text": "partnered",
+      "expected_frame_id": "agreement",
+      "expected_roles": [
+        {"frame_role_id": "agreement.agreeing_party", "accepted_source_texts": ["Anthropic"]},
+        {"frame_role_id": "agreement.counterparty", "accepted_source_texts": ["Palantir and Amazon Web Services"]}
+      ],
+      "expected_qualifiers": [
+        {"kind": "time", "relation": "at", "accepted_source_texts": ["By November 2024"]}
+      ],
+      "expected_polarity": "affirmed",
+      "expected_modality": "actual",
+      "expected_attribution": "source_narrator",
+      "expected_disposition": "proposed",
+      "allocation_cases": ["bounded_frame_and_roles"]
+    },
+    {
+      "item_id": "ANT-08",
+      "source_id": "anthropic-p4",
+      "source_segment_label": "s2",
+      "source_segment_sha256": "0795adfe1efe5e6d52d303ab445dcd467fb1990979a64e565027f47e006de630",
+      "expected_summary": "Anthropic partnered with Amazon Web Services.",
+      "expected_route": "event",
+      "expected_trigger_text": "partnered",
+      "expected_frame_id": "agreement",
+      "expected_roles": [
+        {"frame_role_id": "agreement.agreeing_party", "accepted_source_texts": ["Anthropic"]},
+        {"frame_role_id": "agreement.counterparty", "accepted_source_texts": ["Palantir and Amazon Web Services"]}
+      ],
+      "expected_qualifiers": [
+        {"kind": "time", "relation": "at", "accepted_source_texts": ["By November 2024"]}
+      ],
+      "expected_polarity": "affirmed",
+      "expected_modality": "actual",
+      "expected_attribution": "source_narrator",
+      "expected_disposition": "proposed",
+      "allocation_cases": ["bounded_frame_and_roles"]
+    },
+    {
+      "item_id": "ANT-09",
+      "source_id": "anthropic-p4",
+      "source_segment_label": "s3",
+      "source_segment_sha256": "a33aa0419db9172a14b903112cf0565b69cb1951ccc1be26453f8e3fca95803b",
+      "expected_summary": "Anthropic reached an agreement with the AI Safety Institute.",
+      "expected_route": "event",
+      "expected_trigger_text": "agreement",
+      "expected_frame_id": "agreement",
+      "expected_roles": [
+        {"frame_role_id": "agreement.agreeing_party", "accepted_source_texts": ["Anthropic"]},
+        {"frame_role_id": "agreement.counterparty", "accepted_source_texts": ["the AI Safety Institute"]}
+      ],
+      "expected_polarity": "affirmed",
+      "expected_modality": "actual",
+      "expected_attribution": "source_narrator",
+      "expected_disposition": "proposed",
+      "allocation_cases": ["source_occurrence_selection", "bounded_frame_and_roles"]
+    },
+    {
+      "item_id": "ANT-10",
+      "source_id": "anthropic-p4",
+      "source_segment_label": "s3",
+      "source_segment_sha256": "a33aa0419db9172a14b903112cf0565b69cb1951ccc1be26453f8e3fca95803b",
+      "expected_summary": "Anthropic participated in a nuclear-information safety evaluation.",
+      "expected_route": "typed_ontology_gap",
+      "expected_trigger_text": "participated",
+      "expected_gap_code": "unmapped_frame",
+      "expected_disposition": "typed_ontology_gap",
+      "allocation_cases": ["typed_ontology_gap"]
+    },
+    {
+      "item_id": "ANT-11",
+      "source_id": "anthropic-p4",
+      "source_segment_label": "s5",
+      "source_segment_sha256": "78a7c69be071a4600ec23a3a1270861d9c91f4eda858bf69b9e135326923de06",
+      "expected_summary": "Anthropic's technology had relatively widespread use in the U.S. military.",
+      "expected_route": "standing_fact",
+      "expected_standing_fact": {
+        "subject_text": "Anthropic",
+        "relation_terms": ["technology", "usage"],
+        "object_text": "U.S. military"
+      },
+      "expected_disposition": "proposed",
+      "allocation_cases": ["parallel_routes"]
+    },
+    {
+      "item_id": "ANT-12",
+      "source_id": "anthropic-p4",
+      "source_segment_label": "s6",
+      "source_segment_sha256": "30dc8490626091a79e85a0cec763e420f09a5405580df4126821f361a61d226b",
+      "expected_summary": "Anthropic would allow national-security customers to use Claude Gov.",
+      "expected_route": "event",
+      "expected_trigger_text": "allow",
+      "expected_frame_id": "authorization",
+      "expected_roles": [
+        {"frame_role_id": "authorization.authorizer", "accepted_source_texts": ["Anthropic"]},
+        {"frame_role_id": "authorization.authorized_party", "accepted_source_texts": ["national security customers"]},
+        {"frame_role_id": "authorization.permitted_action", "accepted_source_texts": ["use Claude Gov"]},
+        {"frame_role_id": "authorization.authorized_resource", "accepted_source_texts": ["Claude Gov"]}
+      ],
+      "expected_polarity": "affirmed",
+      "expected_modality": "planned",
+      "expected_attribution": "source_narrator",
+      "expected_disposition": "proposed",
+      "allocation_cases": ["bounded_frame_and_roles", "proposition_gate"]
+    },
+    {
+      "item_id": "ANT-13",
+      "source_id": "anthropic-p4",
+      "source_segment_label": "s6",
+      "source_segment_sha256": "30dc8490626091a79e85a0cec763e420f09a5405580df4126821f361a61d226b",
+      "expected_summary": "Anthropic's usage policy caused conflict between Anthropic and the Trump administration.",
+      "expected_route": "event",
+      "expected_trigger_text": "led",
+      "expected_frame_id": "causation",
+      "expected_roles": [
+        {"frame_role_id": "causation.cause", "accepted_source_texts": ["Anthropic's orthogonal usage policy to the  surveillance  systems  implemented  at  the  Federal  Bureau  of  Investigation,  the  Secret  Service,  and Immigration and Customs Enforcement"]},
+        {"frame_role_id": "causation.effect", "accepted_source_texts": ["a conflict between Anthropic and the Trump administration"]}
+      ],
+      "expected_qualifiers": [
+        {"kind": "time", "relation": "at", "accepted_source_texts": ["by September"]}
+      ],
+      "expected_polarity": "affirmed",
+      "expected_modality": "actual",
+      "expected_attribution": "source_narrator",
+      "expected_disposition": "proposed",
+      "allocation_cases": ["bounded_frame_and_roles"]
+    },
+    {
+      "item_id": "ANT-14",
+      "source_id": "anthropic-p5",
+      "source_segment_label": "s3",
+      "source_segment_sha256": "dc22fc7f0613d4a3528f233e81fe016bf787816324c591b5db499f3a1ca4983f",
+      "expected_summary": "David Sacks said on All-In that Anthropic was among several AI doomers supporting regulation he viewed as overly restrictive.",
+      "expected_route": "event",
+      "expected_trigger_text": "said",
+      "expected_frame_id": "communication",
+      "expected_roles": [
+        {"frame_role_id": "communication.communicator", "accepted_source_texts": ["David  Sacks"]},
+        {"frame_role_id": "communication.counterparty", "accepted_source_texts": ["All-In (2020-present)"]},
+        {"frame_role_id": "communication.topic", "accepted_source_texts": ["Anthropic  was  among  several  \"AI doomers\"  that  support  regulation  he  saw  as  overly  restrictive"]}
+      ],
+      "expected_references": [
+        {"reference_text": "he", "antecedent_text": "Sacks"}
+      ],
+      "expected_polarity": "affirmed",
+      "expected_modality": "actual",
+      "expected_attribution": "source_narrator",
+      "expected_disposition": "proposed",
+      "allocation_cases": ["bounded_frame_and_roles", "proposition_gate"]
+    },
+    {
+      "item_id": "ANT-15",
+      "source_id": "anthropic-p6",
+      "expected_summary": "David Sacks characterized Anthropic as running a sophisticated regulatory-capture strategy based on fearmongering.",
+      "source_segment_label": "s2",
+      "source_segment_sha256": "c458619bad7a713e3b1208d9f0ba0b966c0afb9d6434fafaa78a529c53513d53",
+      "expected_route": "typed_ontology_gap",
+      "expected_trigger_text": "stated",
+      "expected_frame_id": "communication",
+      "expected_gap_code": "missing_required_role",
+      "expected_disposition": "typed_ontology_gap",
+      "allocation_cases": ["bounded_frame_and_roles", "typed_ontology_gap"]
+    },
+    {
+      "item_id": "ANT-16",
+      "source_id": "anthropic-p8",
+      "source_segment_label": "s2",
+      "source_segment_sha256": "e60354f5fbd6baab378096fe495f8248d381de0a2f80026e74d663158a37a9b5",
+      "expected_summary": "Anthropic representatives opposed using Anthropic products for surveillance or lethal autonomous weapons.",
+      "expected_route": "event",
+      "expected_trigger_text": "opposed",
+      "expected_frame_id": "criticism",
+      "expected_roles": [
+        {"frame_role_id": "criticism.critic", "accepted_source_texts": ["Anthropic  representatives"]},
+        {"frame_role_id": "criticism.target", "accepted_source_texts": ["the  use  of  the  company's  products  for surveillance  or  to  develop  lethal  autonomous  weapons"]}
+      ],
+      "expected_references": [
+        {"reference_text": "company's", "antecedent_text": "Anthropic"}
+      ],
+      "expected_polarity": "affirmed",
+      "expected_modality": "actual",
+      "expected_attribution": "mention_candidate",
+      "expected_disposition": "proposed",
+      "allocation_cases": ["reference_challenge", "bounded_frame_and_roles", "proposition_gate"]
+    },
+    {
+      "item_id": "ANT-17",
+      "source_id": "anthropic-p9",
+      "source_segment_label": "s3",
+      "source_segment_sha256": "0beeec6c1c754c1fb161806b020436eebc3c62d3f70c5ec4275e0aa384852276",
+      "expected_summary": "Anthropic told Axios that it would reassess its partnership with the Department of Defense.",
+      "expected_route": "event",
+      "expected_trigger_text": "told",
+      "expected_frame_id": "communication",
+      "expected_roles": [
+        {"frame_role_id": "communication.communicator", "accepted_source_texts": ["Anthropic"]},
+        {"frame_role_id": "communication.counterparty", "accepted_source_texts": ["Axios"]},
+        {"frame_role_id": "communication.topic", "accepted_source_texts": ["it would reassess its partnership with the Department of Defense after the revelations"]}
+      ],
+      "expected_references": [
+        {"reference_text": "it", "antecedent_text": "Anthropic"},
+        {"reference_text": "its", "antecedent_text": "Anthropic"}
+      ],
+      "expected_polarity": "affirmed",
+      "expected_modality": "actual",
+      "expected_attribution": "source_narrator",
+      "expected_disposition": "proposed",
+      "allocation_cases": ["bounded_frame_and_roles", "proposition_gate"]
+    },
+    {
+      "item_id": "ANT-18",
+      "source_id": "anthropic-p9",
+      "source_segment_label": "s4",
+      "source_segment_sha256": "0fb6e397a4b659ea94ce6c9c0a8644405720b53c12f92e7ccdffd02e7439b37c",
+      "expected_summary": "Anthropic refused to allow the Department of Defense to use Claude for all lawful purposes.",
+      "expected_route": "event",
+      "expected_trigger_text": "refused",
+      "expected_frame_id": "refusal",
+      "expected_roles": [
+        {"frame_role_id": "refusal.refuser", "accepted_source_texts": ["Anthropic"]},
+        {"frame_role_id": "refusal.refused_action", "accepted_source_texts": ["to agree to allow the Department of Defense to use Claude for \"all lawful purposes\""]}
+      ],
+      "expected_polarity": "affirmed",
+      "expected_modality": "actual",
+      "expected_attribution": "source_narrator",
+      "expected_disposition": "proposed",
+      "allocation_cases": ["bounded_frame_and_roles"]
+    },
+    {
+      "item_id": "ANT-19",
+      "source_id": "anthropic-p9",
+      "source_segment_label": "s5",
+      "source_segment_sha256": "692f5648a137080916fa77a1dbf310444ee2bc7d1f60e152bbb474f9bb985606",
+      "expected_summary": "Hegseth moved to classify Anthropic as a supply-chain risk.",
+      "expected_route": "event",
+      "expected_trigger_text": "label",
+      "expected_frame_id": "classification",
+      "expected_roles": [
+        {"frame_role_id": "classification.classifier", "accepted_source_texts": ["Hegseth"]},
+        {"frame_role_id": "classification.classified_entity", "accepted_source_texts": ["Anthropic"]},
+        {"frame_role_id": "classification.assigned_classification", "accepted_source_texts": ["a  \"supply  chain  risk\""]}
+      ],
+      "expected_polarity": "affirmed",
+      "expected_modality": "planned",
+      "expected_attribution": "source_narrator",
+      "expected_disposition": "proposed",
+      "allocation_cases": ["source_occurrence_selection", "bounded_frame_and_roles"]
+    },
+    {
+      "item_id": "ANT-20",
+      "source_id": "anthropic-p16",
+      "source_segment_label": "s1",
+      "source_segment_sha256": "1b3c5c61b91f86034d7dbf1d9fda8fb75128fa5c8ca85ba35e4d32a0e7e04863",
+      "expected_summary": "The D.C. Circuit denied Anthropic's motion to lift the FASCSA designation.",
+      "expected_route": "event",
+      "expected_trigger_text": "denied",
+      "expected_frame_id": "legal_ruling",
+      "expected_roles": [
+        {"frame_role_id": "legal_ruling.deciding_authority", "accepted_source_texts": ["the  Court  of  Appeals  for  the  D.C. Circuit"]},
+        {"frame_role_id": "legal_ruling.matter", "accepted_source_texts": ["Anthropic's motion to  lift  the  FASCSA  designation"]},
+        {"frame_role_id": "legal_ruling.ruling", "accepted_source_texts": ["denied"]},
+        {"frame_role_id": "legal_ruling.affected_party", "accepted_source_texts": ["Anthropic"]}
+      ],
+      "expected_qualifiers": [
+        {"kind": "time", "relation": "at", "accepted_source_texts": ["April 2026"]}
+      ],
+      "expected_polarity": "affirmed",
+      "expected_modality": "actual",
+      "expected_attribution": "source_narrator",
+      "expected_disposition": "proposed",
+      "allocation_cases": ["bounded_frame_and_roles", "proposition_gate"]
+    }
+  ]
+}

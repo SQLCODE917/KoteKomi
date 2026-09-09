@@ -8,9 +8,15 @@ from kotekomi_application import (
     CoreferenceExecution,
     CoreferenceInput,
     CoreferenceSpanProposal,
+    SemanticReferenceChallengeExecution,
+    SemanticReferenceChallengeInput,
     SemanticReferenceStatus,
     resolve_semantic_reference,
 )
+from kotekomi_application.semantic_reference_challenge_model_output import (
+    SemanticReferenceChallengeSelection,
+)
+from kotekomi_domain import ModelRunStatus
 
 
 class _Tokenizer:
@@ -39,7 +45,44 @@ class _Proposer:
         )
 
 
-def test_him_resolves_to_the_one_visible_preceding_antecedent() -> None:
+class _Challenger:
+    def __init__(self, result: str = "first") -> None:
+        self.result = result
+        self.requests: list[SemanticReferenceChallengeInput] = []
+
+    def challenge(
+        self, request: SemanticReferenceChallengeInput
+    ) -> SemanticReferenceChallengeExecution:
+        self.requests.append(request)
+        if self.result == "ambiguous":
+            selection = SemanticReferenceChallengeSelection(None, True, "Two candidates remain.")
+        elif self.result == "unresolved":
+            selection = SemanticReferenceChallengeSelection(
+                None, False, "No candidate is supported."
+            )
+        elif self.result == "unknown":
+            selection = SemanticReferenceChallengeSelection(
+                "cfa_000000000000000000000000", False, "An unknown candidate was returned."
+            )
+        else:
+            ordinal = 1 if self.result == "second" else 0
+            selection = SemanticReferenceChallengeSelection(
+                request.antecedent_candidates[ordinal].id,
+                False,
+                "The source context identifies this candidate.",
+            )
+        return SemanticReferenceChallengeExecution(
+            selection=selection,
+            extraction_task_id="ext_reference_challenge",
+            model_run_id="mrn_reference_challenge",
+            model_status=ModelRunStatus.SUCCEEDED,
+            producer_id="qwen2.5-fixture",
+            model_visible_task=b"exact bounded reference task",
+            raw_output_sha256="a" * 64,
+        )
+
+
+def test_him_resolves_only_after_the_challenger_selects_the_specialist_candidate() -> None:
     text = "Amodei compared Trump to a feudal warlord and criticized him."
     target_start = text.index("him")
     trump_start = text.index("Trump")
@@ -54,6 +97,7 @@ def test_him_resolves_to_the_one_visible_preceding_antecedent() -> None:
         ),
         _Proposer((((trump_start, trump_start + 5), (target_start, target_start + 3)),)),
         _Tokenizer(),
+        _Challenger(),
     )
 
     assert result.decision.status is SemanticReferenceStatus.RESOLVED
@@ -81,6 +125,7 @@ def test_multiple_preceding_antecedents_remain_ambiguous() -> None:
         ),
         _Proposer((((trump, trump + 5), (amodei, amodei + 6), (target, target + 3)),)),
         _Tokenizer(),
+        _Challenger("ambiguous"),
     )
 
     assert result.decision.status is SemanticReferenceStatus.AMBIGUOUS
@@ -106,6 +151,7 @@ def test_repeated_cluster_mentions_of_one_candidate_identity_select_the_nearest(
         ),
         _Proposer((((first, first + 5), (second, second + 5), (target, target + 3)),)),
         _Tokenizer(),
+        _Challenger(),
     )
 
     assert result.decision.status is SemanticReferenceStatus.RESOLVED
@@ -135,6 +181,7 @@ def test_model_boundary_overreach_reconciles_to_the_best_source_candidate() -> N
         ),
         _Proposer((((0, text.index(", revised")), (target, target + 3)),)),
         _Tokenizer(),
+        _Challenger(),
     )
 
     assert result.decision.status is SemanticReferenceStatus.RESOLVED
@@ -152,6 +199,7 @@ def test_altered_or_out_of_range_coreference_span_fails_validation() -> None:
             CoreferenceInput("seg_fixture", text, target, target + 3),
             _Proposer((((0, 5), (target, len(text) + 1)),)),
             _Tokenizer(),
+            _Challenger(),
         )
 
 
@@ -170,4 +218,55 @@ def test_bounded_input_fails_before_calling_the_model() -> None:
             ),
             _Proposer(()),
             _Tokenizer(),
+            _Challenger(),
         )
+
+
+def test_specialist_candidates_do_not_override_a_different_semantic_choice() -> None:
+    text = "Trump met Amodei before officials criticized him."
+    target = text.index("him")
+    trump = text.index("Trump")
+    amodei = text.index("Amodei")
+    challenger = _Challenger("second")
+
+    result = resolve_semantic_reference(
+        CoreferenceInput(
+            "seg_fixture",
+            text,
+            target,
+            target + 3,
+            (
+                CoreferenceAntecedentInput("candidate_trump", trump, trump + 5),
+                CoreferenceAntecedentInput("candidate_amodei", amodei, amodei + 6),
+            ),
+        ),
+        _Proposer((((trump, trump + 5), (amodei, amodei + 6), (target, target + 3)),)),
+        _Tokenizer(),
+        challenger,
+    )
+
+    expected = result.observation.antecedent_candidates[1].span.id
+    assert result.decision.antecedent_span_ids == (expected,)
+    assert result.trace.input["model_visible_challenge_task"] == "exact bounded reference task"
+
+
+def test_out_of_catalog_challenge_result_cannot_resolve_reference() -> None:
+    text = "Trump criticized him."
+    target = text.index("him")
+    trump = text.index("Trump")
+
+    result = resolve_semantic_reference(
+        CoreferenceInput(
+            "seg_fixture",
+            text,
+            target,
+            target + 3,
+            (CoreferenceAntecedentInput("candidate_trump", trump, trump + 5),),
+        ),
+        _Proposer((((trump, trump + 5), (target, target + 3)),)),
+        _Tokenizer(),
+        _Challenger("unknown"),
+    )
+
+    assert result.decision.status is SemanticReferenceStatus.UNRESOLVED
+    assert result.decision.antecedent_span_ids == ()

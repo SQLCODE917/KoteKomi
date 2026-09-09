@@ -125,9 +125,7 @@ def _render_page(
     lines.extend(_details(page.details, page.relative_path))
     lines.extend(_links(page.links, page.relative_path))
     lines.extend(_at_a_glance(page.presentations, page.relative_path, evidence_by_number))
-    lines.extend(
-        _relationships(page.presentations, page.relative_path, evidence_by_number)
-    )
+    lines.extend(_relationships(page.presentations, page.relative_path, evidence_by_number))
     return ("\n".join(lines).rstrip() + "\n").encode("utf-8")
 
 
@@ -209,9 +207,7 @@ def _presentation_evidence(
     for number in citation_numbers:
         reference = evidence_by_number.get(number)
         if reference is None:
-            raise ValueError(
-                f"Candidate Wiki presentation cites missing evidence number: {number}"
-            )
+            raise ValueError(f"Candidate Wiki presentation cites missing evidence number: {number}")
         identity = (
             reference.source_id,
             reference.document_id,

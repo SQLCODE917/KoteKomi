@@ -1,9 +1,10 @@
 # TDD: Monotonic Role Completion
 
-- Status: Implemented; focused verification complete
+- Status: Superseded by HSQ-7
 - Deliverable ID: HSQ-2
 - Program: [Hybrid Semantic Quality Program](2026-09-06-hybrid-semantic-quality-program.md)
 - Depends on: [HSQ-1 Governed Event Coverage](2026-09-06-governed-event-coverage.md)
+- Superseded by: [HSQ-7 Bounded Semantic Task Allocation](2026-09-08-bounded-semantic-task-allocation.md)
 
 ## Context & Problem
 

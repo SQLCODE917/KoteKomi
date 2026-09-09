@@ -371,6 +371,7 @@ def test_candidate_wiki_audit_resolves_event_graph_and_exact_evidence() -> None:
         "ast_00_event_type",
         "ast_01_characterization",
         "ast_02_evaluated_subject",
+        "ast_03_entity_reference",
         "ast_03_evaluator",
         "ast_04_polarity",
         "ast_05_modality",
@@ -723,6 +724,16 @@ def _characterization_proposals() -> dict[str, ProposedChange]:
                 qualifiers={
                     "frame_role_id": "characterization.evaluator",
                     "upper_role": "agent",
+                },
+            ),
+            "pcg_characterization_entity_reference": _characterization_assertion(
+                "pcg_characterization_entity_reference",
+                "ast_03_entity_reference",
+                "has_argument_entity_reference",
+                object_entity_id="act_donald_trump",
+                qualifiers={
+                    "frame_role_id": "characterization.characterization",
+                    "upper_role": "content",
                 },
             ),
             "pcg_characterization_polarity": _characterization_assertion(

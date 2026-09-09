@@ -9,6 +9,7 @@ from enum import StrEnum
 from fractions import Fraction
 from typing import Annotated, Protocol, Self
 
+from kotekomi_domain import ModelRunStatus
 from kotekomi_domain.models import JsonValue
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -16,6 +17,9 @@ from kotekomi_application.extraction_stage_trace import (
     ExtractionStageStatus,
     ExtractionStageTrace,
     build_extraction_stage_trace,
+)
+from kotekomi_application.semantic_reference_challenge_model_output import (
+    SemanticReferenceChallengeSelection,
 )
 
 SEMANTIC_REFERENCE_POLICY_ID = "bounded_semantic_reference_v2"
@@ -29,10 +33,13 @@ class SemanticReferenceStatus(StrEnum):
 
 
 class SemanticReferenceReason(StrEnum):
-    UNIQUE_PRECEDING_ANTECEDENT = "unique_preceding_antecedent"
-    MULTIPLE_PRECEDING_ANTECEDENTS = "multiple_preceding_antecedents"
-    NO_PRECEDING_ANTECEDENT = "no_preceding_antecedent"
-    TARGET_CLUSTER_MISSING = "target_cluster_missing"
+    CHALLENGE_SELECTED_ANTECEDENT = "challenge_selected_antecedent"
+    CHALLENGE_AMBIGUOUS = "challenge_ambiguous"
+    CHALLENGE_UNRESOLVED = "challenge_unresolved"
+    CHALLENGE_FAILED = "challenge_failed"
+    CHALLENGE_INVALID = "challenge_invalid"
+    SPECIALIST_NO_ANTECEDENT = "specialist_no_antecedent"
+    SPECIALIST_TARGET_CLUSTER_MISSING = "specialist_target_cluster_missing"
 
 
 @dataclass(frozen=True)
@@ -123,6 +130,43 @@ class CoreferenceTokenizer(Protocol):
     def count_tokens(self, rendered_input: bytes) -> int: ...
 
 
+@dataclass(frozen=True)
+class SemanticReferenceChallengeInput:
+    source_segment_id: str
+    source_text: str
+    target_span: CoreferenceSpan
+    antecedent_candidates: tuple[CoreferenceAntecedentCandidate, ...]
+
+    def __post_init__(self) -> None:
+        if not self.antecedent_candidates:
+            raise ValueError("A semantic-reference challenge requires specialist candidates.")
+
+
+@dataclass(frozen=True)
+class SemanticReferenceChallengeExecution:
+    selection: SemanticReferenceChallengeSelection | None
+    extraction_task_id: str
+    model_run_id: str
+    model_status: ModelRunStatus
+    producer_id: str
+    model_visible_task: bytes
+    raw_output_sha256: str | None
+
+    def __post_init__(self) -> None:
+        if not self.extraction_task_id or not self.model_run_id or not self.producer_id:
+            raise ValueError("A semantic-reference challenge requires execution identity.")
+        if not self.model_visible_task:
+            raise ValueError(
+                "A semantic-reference challenge requires exact model-visible task data."
+            )
+
+
+class SemanticReferenceChallengerPort(Protocol):
+    def challenge(
+        self, request: SemanticReferenceChallengeInput
+    ) -> SemanticReferenceChallengeExecution: ...
+
+
 class CoreferenceSpan(BaseModel):
     """One exact half-open source range returned by a coreference model."""
 
@@ -175,6 +219,9 @@ class CoreferenceObservation(BaseModel):
     target_span: CoreferenceSpan
     clusters: tuple[tuple[CoreferenceSpan, ...], ...]
     antecedent_candidates: tuple[CoreferenceAntecedentCandidate, ...]
+    proposed_antecedent_candidate_ids: tuple[
+        Annotated[str, Field(pattern=r"^cfa_[a-f0-9]{24}$")], ...
+    ]
     model_id: Annotated[str, Field(min_length=1)]
     model_revision: Annotated[str, Field(min_length=1)]
     resource_identity: Annotated[str, Field(min_length=1)]
@@ -203,6 +250,13 @@ class CoreferenceObservation(BaseModel):
             self.antecedent_candidates
         ):
             raise ValueError("CoreferenceObservation repeats a source candidate.")
+        candidate_ids = {item.id for item in self.antecedent_candidates}
+        if len(set(self.proposed_antecedent_candidate_ids)) != len(
+            self.proposed_antecedent_candidate_ids
+        ):
+            raise ValueError("CoreferenceObservation repeats a proposed antecedent.")
+        if not set(self.proposed_antecedent_candidate_ids).issubset(candidate_ids):
+            raise ValueError("CoreferenceObservation proposes an unknown antecedent.")
         if any(
             item.span.source_segment_id != self.source_segment_id
             or item.span.end > self.target_span.start
@@ -232,6 +286,8 @@ class SemanticReferenceDecision(BaseModel):
     antecedent_span_ids: tuple[Annotated[str, Field(pattern=r"^cfs_[a-f0-9]{24}$")], ...]
     status: SemanticReferenceStatus
     reason: SemanticReferenceReason
+    challenge_extraction_task_id: str | None = None
+    challenge_model_run_id: str | None = None
 
     @model_validator(mode="after")
     def validate_contract(self) -> Self:
@@ -240,23 +296,39 @@ class SemanticReferenceDecision(BaseModel):
         if self.status is SemanticReferenceStatus.RESOLVED:
             if (
                 len(self.antecedent_span_ids) != 1
-                or self.reason is not SemanticReferenceReason.UNIQUE_PRECEDING_ANTECEDENT
+                or self.reason is not SemanticReferenceReason.CHALLENGE_SELECTED_ANTECEDENT
             ):
                 raise ValueError("Resolved semantic reference requires one antecedent.")
         elif self.status is SemanticReferenceStatus.AMBIGUOUS:
             if (
                 len(self.antecedent_span_ids) < 2
-                or self.reason is not SemanticReferenceReason.MULTIPLE_PRECEDING_ANTECEDENTS
+                or self.reason is not SemanticReferenceReason.CHALLENGE_AMBIGUOUS
             ):
                 raise ValueError("Ambiguous semantic reference requires multiple antecedents.")
         elif self.antecedent_span_ids:
             raise ValueError("Unresolved semantic reference cannot name an antecedent.")
+        if (self.challenge_extraction_task_id is None) != (self.challenge_model_run_id is None):
+            raise ValueError("Semantic reference challenge identity must be complete.")
+        if (
+            self.reason
+            in {
+                SemanticReferenceReason.CHALLENGE_SELECTED_ANTECEDENT,
+                SemanticReferenceReason.CHALLENGE_AMBIGUOUS,
+                SemanticReferenceReason.CHALLENGE_UNRESOLVED,
+                SemanticReferenceReason.CHALLENGE_FAILED,
+                SemanticReferenceReason.CHALLENGE_INVALID,
+            }
+            and self.challenge_extraction_task_id is None
+        ):
+            raise ValueError("A challenge decision requires its model execution identity.")
         expected = _id(
             "srd",
             self.observation_id,
             self.target_span_id,
             self.status.value,
             self.reason.value,
+            self.challenge_extraction_task_id or "",
+            self.challenge_model_run_id or "",
             *self.antecedent_span_ids,
         )
         if self.id != expected:
@@ -275,8 +347,9 @@ def resolve_semantic_reference(
     request: CoreferenceInput,
     proposer: CoreferenceProposerPort,
     tokenizer: CoreferenceTokenizer,
+    challenger: SemanticReferenceChallengerPort,
 ) -> SemanticReferenceResult:
-    """Validate one specialist observation and decide without inventing identity."""
+    """Use F-Coref to propose and a bounded semantic task to decide."""
     input_tokens = tokenizer.count_tokens(request.source_text.encode())
     if input_tokens > request.max_input_tokens:
         raise ValueError("Coreference input exceeds its bounded token limit.")
@@ -294,6 +367,7 @@ def resolve_semantic_reference(
     )
     if len(target_clusters) > 1:
         raise ValueError("Coreference output repeats the target across clusters.")
+    proposed, specialist_reason = _specialist_candidates(target_clusters, candidates, target)
     raw_digest = hashlib.sha256(execution.raw_output).hexdigest()
     observation_payload: dict[str, JsonValue] = {
         "source_segment_id": request.source_segment_id,
@@ -301,6 +375,7 @@ def resolve_semantic_reference(
         "target_span": target.model_dump(mode="json"),
         "clusters": [[item.model_dump(mode="json") for item in cluster] for cluster in clusters],
         "antecedent_candidates": [item.model_dump(mode="json") for item in candidates],
+        "proposed_antecedent_candidate_ids": [item.id for item in proposed],
         "model_id": execution.model_id,
         "model_revision": execution.model_revision,
         "resource_identity": execution.resource_identity,
@@ -316,6 +391,7 @@ def resolve_semantic_reference(
         target_span=target,
         clusters=clusters,
         antecedent_candidates=candidates,
+        proposed_antecedent_candidate_ids=tuple(item.id for item in proposed),
         model_id=execution.model_id,
         model_revision=execution.model_revision,
         resource_identity=execution.resource_identity,
@@ -324,13 +400,33 @@ def resolve_semantic_reference(
         elapsed_milliseconds=execution.elapsed_milliseconds,
         raw_output_sha256=raw_digest,
     )
-    status, reason, selected = _decide(target_clusters, candidates, target)
+    challenge_execution: SemanticReferenceChallengeExecution | None = None
+    selected: tuple[CoreferenceSpan, ...] = ()
+    if not proposed:
+        status = SemanticReferenceStatus.UNRESOLVED
+        reason = specialist_reason
+    else:
+        challenge_execution = challenger.challenge(
+            SemanticReferenceChallengeInput(
+                source_segment_id=request.source_segment_id,
+                source_text=request.source_text,
+                target_span=target,
+                antecedent_candidates=proposed,
+            )
+        )
+        status, reason, selected = _challenge_decision(proposed, challenge_execution)
+    challenge_task_id = (
+        challenge_execution.extraction_task_id if challenge_execution is not None else None
+    )
+    challenge_run_id = challenge_execution.model_run_id if challenge_execution is not None else None
     decision_id = _id(
         "srd",
         observation.id,
         target.id,
         status.value,
         reason.value,
+        challenge_task_id or "",
+        challenge_run_id or "",
         *(item.id for item in selected),
     )
     decision = SemanticReferenceDecision(
@@ -340,13 +436,19 @@ def resolve_semantic_reference(
         antecedent_span_ids=tuple(item.id for item in selected),
         status=status,
         reason=reason,
+        challenge_extraction_task_id=challenge_task_id,
+        challenge_model_run_id=challenge_run_id,
     )
     trace = build_extraction_stage_trace(
         trace_run_id=f"hsq4:{observation.id}",
         ordinal=0,
         stage_id="bounded_semantic_reference",
         stage_version=SEMANTIC_REFERENCE_POLICY_ID,
-        producer_id=execution.model_id,
+        producer_id=(
+            challenge_execution.producer_id
+            if challenge_execution is not None
+            else execution.model_id
+        ),
         source_segment_id=request.source_segment_id,
         source_text_sha256=observation.source_text_sha256,
         configuration={
@@ -361,14 +463,38 @@ def resolve_semantic_reference(
             "target_end": request.target_end,
             "target_text": request.target_text,
             "antecedent_candidates": [item.model_dump(mode="json") for item in candidates],
+            "specialist_proposed_candidate_ids": [item.id for item in proposed],
+            "model_visible_challenge_task": (
+                challenge_execution.model_visible_task.decode()
+                if challenge_execution is not None
+                else None
+            ),
         },
         output_payload={
             "raw_output": execution.raw_output.decode("utf-8"),
+            "challenge_raw_output_sha256": (
+                challenge_execution.raw_output_sha256 if challenge_execution is not None else None
+            ),
+            "challenge_selection": (
+                challenge_execution.selection.__dict__
+                if challenge_execution is not None and challenge_execution.selection is not None
+                else None
+            ),
             "observation": observation.model_dump(mode="json"),
             "decision": decision.model_dump(mode="json"),
         },
-        status=ExtractionStageStatus.COMPLETED,
+        status=(
+            ExtractionStageStatus.COMPLETED
+            if challenge_execution is None
+            or challenge_execution.model_status is ModelRunStatus.SUCCEEDED
+            else ExtractionStageStatus.FAILED
+        ),
         input_record_ids=(target.id,),
+        execution_record_ids=(
+            (challenge_task_id, challenge_run_id)
+            if challenge_task_id is not None and challenge_run_id is not None
+            else ()
+        ),
     )
     return SemanticReferenceResult(observation, decision, trace)
 
@@ -400,49 +526,75 @@ def _antecedent_candidate(
     )
 
 
-def _decide(
+def _specialist_candidates(
     target_clusters: tuple[tuple[CoreferenceSpan, ...], ...],
     candidates: tuple[CoreferenceAntecedentCandidate, ...],
     target: CoreferenceSpan,
-) -> tuple[
-    SemanticReferenceStatus,
-    SemanticReferenceReason,
-    tuple[CoreferenceSpan, ...],
-]:
+) -> tuple[tuple[CoreferenceAntecedentCandidate, ...], SemanticReferenceReason]:
     if not target_clusters:
-        return (
-            SemanticReferenceStatus.UNRESOLVED,
-            SemanticReferenceReason.TARGET_CLUSTER_MISSING,
-            (),
-        )
+        return (), SemanticReferenceReason.SPECIALIST_TARGET_CLUSTER_MISSING
     model_antecedents = tuple(
         item for item in target_clusters[0] if item.end <= target.start and item.id != target.id
     )
     reconciled = _reconcile_candidates(model_antecedents, candidates)
     if not reconciled:
-        return (
-            SemanticReferenceStatus.UNRESOLVED,
-            SemanticReferenceReason.NO_PRECEDING_ANTECEDENT,
-            (),
-        )
+        return (), SemanticReferenceReason.SPECIALIST_NO_ANTECEDENT
     by_literal: dict[str, list[CoreferenceAntecedentCandidate]] = {}
     for candidate in reconciled:
         by_literal.setdefault(candidate.literal_key, []).append(candidate)
     selected = tuple(
-        max(group, key=lambda item: (item.span.end, item.span.start, item.id)).span
+        max(group, key=lambda item: (item.span.end, item.span.start, item.id))
         for _, group in sorted(by_literal.items())
     )
-    selected = tuple(sorted(selected, key=lambda item: (item.start, item.end, item.id)))
-    if len(selected) > 1:
+    return (
+        tuple(sorted(selected, key=lambda item: (item.span.start, item.span.end, item.id))),
+        SemanticReferenceReason.SPECIALIST_NO_ANTECEDENT,
+    )
+
+
+def _challenge_decision(
+    candidates: tuple[CoreferenceAntecedentCandidate, ...],
+    execution: SemanticReferenceChallengeExecution,
+) -> tuple[SemanticReferenceStatus, SemanticReferenceReason, tuple[CoreferenceSpan, ...]]:
+    selection = execution.selection
+    if execution.model_status is not ModelRunStatus.SUCCEEDED or selection is None:
+        return (
+            SemanticReferenceStatus.UNRESOLVED,
+            SemanticReferenceReason.CHALLENGE_FAILED,
+            (),
+        )
+    if selection.ambiguous:
+        if len(candidates) < 2:
+            return (
+                SemanticReferenceStatus.UNRESOLVED,
+                SemanticReferenceReason.CHALLENGE_INVALID,
+                (),
+            )
         return (
             SemanticReferenceStatus.AMBIGUOUS,
-            SemanticReferenceReason.MULTIPLE_PRECEDING_ANTECEDENTS,
-            selected,
+            SemanticReferenceReason.CHALLENGE_AMBIGUOUS,
+            tuple(item.span for item in candidates),
+        )
+    if selection.antecedent_candidate_id is None:
+        return (
+            SemanticReferenceStatus.UNRESOLVED,
+            SemanticReferenceReason.CHALLENGE_UNRESOLVED,
+            (),
+        )
+    selected = next(
+        (item for item in candidates if item.id == selection.antecedent_candidate_id),
+        None,
+    )
+    if selected is None:
+        return (
+            SemanticReferenceStatus.UNRESOLVED,
+            SemanticReferenceReason.CHALLENGE_INVALID,
+            (),
         )
     return (
         SemanticReferenceStatus.RESOLVED,
-        SemanticReferenceReason.UNIQUE_PRECEDING_ANTECEDENT,
-        selected,
+        SemanticReferenceReason.CHALLENGE_SELECTED_ANTECEDENT,
+        (selected.span,),
     )
 
 

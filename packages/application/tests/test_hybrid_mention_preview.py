@@ -54,6 +54,31 @@ TEXT = "Institutions\nThe European Union issued guidance."
 PARAGRAPH_TEXT = "The European Union issued guidance."
 
 
+def test_reference_markers_are_discovered_from_authoritative_characters() -> None:
+    text = "Amodei compared him with the company."
+    result = _run(
+        FixtureLedger(paragraph_text=text),
+        FixtureArchive(),
+        FixtureProposer(empty=True),
+        FixtureModelRuntime(proposal_abstains=True),
+    )
+    observations = tuple(
+        item
+        for item in result.preview.observations
+        if item.producer_id == "kotekomi_reference_marker_v1"
+    )
+    trace = next(
+        item for item in result.preview.traces if item.stage_id == "semantic_reference_discovery"
+    )
+
+    assert [(item.text, item.start, item.end) for item in observations] == [
+        ("him", 16, 19),
+        ("the company", 25, 36),
+    ]
+    assert {item.execution_record_id for item in observations} == {trace.id}
+    assert trace.input["source_text"] == text
+
+
 class FixtureTokenizer:
     tokenizer_id = "fixture_whitespace_v1"
 

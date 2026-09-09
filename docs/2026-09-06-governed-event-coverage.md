@@ -1,6 +1,6 @@
 # TDD: Governed Event Coverage
 
-- Status: Implemented; focused verification complete
+- Status: Implemented; profile contract superseded by HSQ-6
 - Deliverable ID: HSQ-1
 - Program: [Hybrid Semantic Quality Program](2026-09-06-hybrid-semantic-quality-program.md)
 - Depends on: [HP-6 Qualified Event Semantics](2026-09-02-qualified-event-semantics-source-support.md)
@@ -12,6 +12,8 @@ The current governed profile contains seven event frames.
 Qwen therefore maps unsupported event families to nearby frames or returns a gap.
 
 The canonical Anthropic source exposed missing criticism, publication, and rebuttal meanings.
+
+HSQ-6 retains those event families in `hybrid_event_semantics_v4` and supersedes this TDD's version-3 profile and open-frame input path.
 
 **Criticism** means one party communicates a negative judgment about a target.
 
@@ -31,18 +33,20 @@ The canonical Anthropic source exposed missing criticism, publication, and rebut
 - A reviewer sees criticism, publication, and rebuttal as distinct event meanings.
 - A reviewer sees separate events for separate source triggers.
 - Existing governed event behavior remains available.
+- Reviewed omissions for agreements, communications, legal rulings, policy changes, refusals, and threats become representable without a catch-all frame.
 
 ## Requirements
 
 ### Domain Core
 
-- GEC-DOM-01: The governed profile uses identity `hybrid_event_semantics_v2`.
+- GEC-DOM-01: The governed profile uses identity `hybrid_event_semantics_v3`.
 - GEC-DOM-02: The profile defines `criticism` with required `critic` and `target` roles.
 - GEC-DOM-03: The `criticism` frame defines optional `reason` and `topic` roles.
 - GEC-DOM-04: The profile defines `publication` with required `publisher` and `published_work` roles.
 - GEC-DOM-05: The `publication` frame defines optional `topic` and `audience` roles.
 - GEC-DOM-06: The profile defines `rebuttal` with required `rebutter` and `challenged_claim` roles.
 - GEC-DOM-07: The `rebuttal` frame defines optional `claim_source` and `medium` roles.
+- GEC-DOM-08: The profile defines source-agnostic `agreement`, `communication`, `legal_ruling`, `policy_change`, `refusal`, and `threat` frames with explicit roles.
 
 ### Application Layer
 
@@ -56,7 +60,7 @@ The canonical Anthropic source exposed missing criticism, publication, and rebut
 EventTriggerDraft
       |
       v
-governed profile v2
+governed profile v3
       |
       v
 EventSemanticDraft or SemanticCoverageGap
@@ -75,13 +79,13 @@ Domain Core -> Application: governed EventSemanticDraft
 
 The existing `EventFrameDefinition` and `FrameRoleDefinition` records remain the contract.
 
-The profile adds the three frames and changes its identity to version 2.
+Version 3 retains the version-2 frames and adds only families supported by reviewed canonical omissions.
 
 ## APIs / Interfaces
 
-The Application Layer exports `HYBRID_EVENT_SEMANTICS_V2` as the current profile.
+The Application Layer exports `HYBRID_EVENT_SEMANTICS_V3` as the current profile.
 
-Existing derived version-1 previews must rebuild from their authoritative parents.
+Existing derived version-1 and version-2 previews must rebuild from their authoritative parents.
 
 ## Behavior & Domain Rules
 
@@ -91,7 +95,7 @@ Existing derived version-1 previews must rebuild from their authoritative parent
 
 ## Acceptance Criteria
 
-- AC-GEC-DOM-01: Domain tests prove the complete version-2 frame and role inventory.
+- AC-GEC-DOM-01: Domain tests prove the complete version-3 frame and role inventory.
 - AC-GEC-APP-01: The Amodei `criticized` case produces a criticism event.
 - AC-GEC-APP-02: The `published` and `rebuffing` case produces two events.
 - AC-GEC-APP-03: The seven HP-6 Gold events retain their governed meanings.

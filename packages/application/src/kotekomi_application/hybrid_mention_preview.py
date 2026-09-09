@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import re
 from dataclasses import dataclass
 from typing import Protocol, cast
 
@@ -18,6 +19,7 @@ from kotekomi_application.context_planning import (
     ContextModelProfile,
     ContextTokenizer,
     RetrievalSelectionAnalysisUnitInput,
+    SourceSegment,
     build_context_manifest,
     create_analysis_unit_from_retrieval_selection,
     paragraph_source_segments,
@@ -29,6 +31,7 @@ from kotekomi_application.extraction_stage_trace import (
     build_extraction_stage_trace,
 )
 from kotekomi_application.hybrid_mention_interpretation import (
+    HYBRID_MENTION_BOUNDARY_POLICY_ID,
     HYBRID_MENTION_PREVIEW_POLICY_ID,
     PROPOSER_CONTEXTUAL_KINDS,
     HybridExtractionPreview,
@@ -51,7 +54,11 @@ from kotekomi_application.hybrid_mention_interpretation import (
     resolve_mention_interpretation,
     run_recorded_mention_proposer,
 )
-from kotekomi_application.mention_proposer import MentionProposalInput, MentionProposer
+from kotekomi_application.mention_proposer import (
+    MentionProposal,
+    MentionProposalInput,
+    MentionProposer,
+)
 from kotekomi_application.staged_model_extraction import (
     BoundedExtractionInput,
     ExecutionSetting,
@@ -73,6 +80,15 @@ class HybridMentionLedger(StagedExtractionLedger, Protocol):
 
 class HybridMentionArchive(HybridModelOutputArchive, PreviewStore, Protocol):
     pass
+
+
+_REFERENCE_MARKER = re.compile(
+    r"\b(?:he|him|his|she|her|hers|it|its|they|them|their|theirs|"
+    r"the\s+(?:administration|agency|company|court|department|firm|government|institute|organization))\b",
+    re.IGNORECASE,
+)
+_PERSON_REFERENCE_MARKERS = frozenset({"he", "him", "his", "she", "her", "hers"})
+_PLURAL_REFERENCE_MARKERS = frozenset({"they", "them", "their", "theirs"})
 
 
 @dataclass(frozen=True)
@@ -361,6 +377,22 @@ def run_hybrid_mention_preview(
                         ("qwen2.5", source_segment_id), []
                     ).append(diagnostic)
     diagnostics.extend(invalid_observations)
+    deterministic_observations, deterministic_traces = _reference_marker_observations(
+        segments=segments,
+        segment_ids=segment_ids,
+        trace_runs=trace_runs,
+    )
+    for observation in deterministic_observations:
+        overlaps_named_proposal = any(
+            existing.source_segment_id == observation.source_segment_id
+            and existing.start < observation.end
+            and observation.start < existing.end
+            for existing in observations
+        )
+        if not overlaps_named_proposal and observation.id not in seen_observation_ids:
+            seen_observation_ids.add(observation.id)
+            observations.append(observation)
+    traces.extend(deterministic_traces)
     ordered_observations = tuple(sorted(observations, key=_observation_key))
     for segment in segments:
         source_segment_id = segment_ids[segment.label]
@@ -445,9 +477,9 @@ def run_hybrid_mention_preview(
         segment_id = segment_ids[segment.label]
         trace = build_extraction_stage_trace(
             trace_run_id=trace_runs[segment_id],
-            ordinal=2,
+            ordinal=3,
             stage_id="mention_boundary_reconciliation",
-            stage_version="hybrid_mention_boundary_v1",
+            stage_version=HYBRID_MENTION_BOUNDARY_POLICY_ID,
             producer_id="kotekomi_application",
             source_segment_id=segment_id,
             source_text_sha256=hashlib.sha256(segment.exact_text.encode()).hexdigest(),
@@ -455,7 +487,7 @@ def run_hybrid_mention_preview(
                 sorted(item.id for item in traces if item.source_segment_id == segment_id)
             ),
             execution_record_ids=tuple(sorted(model_run_ids)),
-            configuration={"policy_id": "hybrid_mention_boundary_v1"},
+            configuration={"policy_id": HYBRID_MENTION_BOUNDARY_POLICY_ID},
             input_payload={
                 "candidate_ids": [
                     item.id for item in candidates if item.source_segment_id == segment_id
@@ -472,7 +504,7 @@ def run_hybrid_mention_preview(
         reconciliation_trace_by_segment[segment_id] = trace.id
     interpretations: list[MentionInterpretation] = []
     failed_interpretations = 0
-    next_ordinal = {segment_ids[item.label]: 3 for item in segments}
+    next_ordinal = {segment_ids[item.label]: 4 for item in segments}
     interpretation_executions: dict[tuple[str, str], _InterpretationExecution] = {}
     for candidate in selected_candidates:
         reuse_key = (candidate.source_segment_id, candidate.text)
@@ -691,6 +723,96 @@ def _execution_spec(
         context_manifest_digest=manifest.manifest_digest,
         rendered_input_digest=hashlib.sha256(rendered_input).hexdigest(),
         output_contract_version=schema.output_contract_version,
+    )
+
+
+def _reference_marker_observations(
+    *,
+    segments: tuple[SourceSegment, ...],
+    segment_ids: dict[str, str],
+    trace_runs: dict[str, str],
+) -> tuple[tuple[MentionObservation, ...], tuple[ExtractionStageTrace, ...]]:
+    """Discover bounded reference expressions without asking a named-entity proposer."""
+    observations: list[MentionObservation] = []
+    traces: list[ExtractionStageTrace] = []
+    for segment in segments:
+        segment_id = segment_ids[segment.label]
+        proposals = tuple(
+            MentionProposal(
+                source_segment_label=segment.label,
+                text=match.group(0),
+                start=match.start(),
+                end=match.end(),
+                type_hints=_reference_marker_type_hints(match.group(0)),
+            )
+            for match in _REFERENCE_MARKER.finditer(segment.exact_text)
+        )
+        trace = build_extraction_stage_trace(
+            trace_run_id=trace_runs[segment_id],
+            ordinal=2,
+            stage_id="semantic_reference_discovery",
+            stage_version="exact_reference_markers_v1",
+            producer_id="kotekomi_application",
+            source_segment_id=segment_id,
+            source_text_sha256=hashlib.sha256(segment.exact_text.encode()).hexdigest(),
+            configuration={"policy_id": "exact_reference_markers_v1"},
+            input_payload={"source_text": segment.exact_text},
+            output_payload={
+                "markers": [
+                    {
+                        "end": item.end,
+                        "start": item.start,
+                        "text": item.text,
+                        "type_hints": list(item.type_hints),
+                    }
+                    for item in proposals
+                ]
+            },
+            status=ExtractionStageStatus.COMPLETED,
+        )
+        traces.append(trace)
+        observations.extend(
+            observation_from_proposal(
+                proposal=proposal,
+                source_segment_id=segment_id,
+                producer_id="kotekomi_reference_marker_v1",
+                execution_record_id=trace.id,
+            )
+            for proposal in proposals
+        )
+    return tuple(sorted(observations, key=_observation_key)), tuple(traces)
+
+
+def _reference_marker_type_hints(text: str) -> tuple[str, ...]:
+    marker = text.casefold()
+    if marker in _PERSON_REFERENCE_MARKERS:
+        return ("person",)
+    if marker in _PLURAL_REFERENCE_MARKERS:
+        return ("government", "organization", "person")
+    nominal = marker.removeprefix("the ")
+    nominal_hints = {
+        "administration": ("government",),
+        "agency": ("government", "organization"),
+        "company": ("organization",),
+        "court": ("government", "organization"),
+        "department": ("government", "organization"),
+        "firm": ("organization",),
+        "government": ("government",),
+        "institute": ("organization",),
+        "organization": ("organization",),
+    }
+    return nominal_hints.get(
+        nominal,
+        (
+            "event",
+            "government",
+            "initiative",
+            "organization",
+            "policy",
+            "product",
+            "project",
+            "publication",
+        ),
     )
 
 

@@ -120,7 +120,7 @@ class DebertaNliAdapter:
                 max_length=512,
                 return_tensors="pt",
             )
-            _require_untruncated_input(features, maximum_tokens=512)
+            require_untruncated_input(features, maximum_tokens=512)
             with torch.no_grad():
                 raw = model(**features).logits[0].tolist()
             if len(raw) != 3:
@@ -131,7 +131,8 @@ class DebertaNliAdapter:
         return predict
 
 
-def _require_untruncated_input(features: dict[str, object], *, maximum_tokens: int) -> None:
+def require_untruncated_input(features: dict[str, object], *, maximum_tokens: int) -> None:
+    """Reject NLI input that the pinned model could only process by truncating it."""
     input_ids = features.get("input_ids")
     if input_ids is None or not hasattr(input_ids, "shape"):
         raise RuntimeError("The NLI tokenizer did not return input IDs.")

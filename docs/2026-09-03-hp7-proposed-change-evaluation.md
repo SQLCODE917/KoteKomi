@@ -1,5 +1,7 @@
 # HP-7 ProposedChange Integration Evaluation
 
+- Status: Historical evaluation; execution path superseded by [HSQ-6](2026-09-07-source-bound-governed-event-extraction.md)
+
 - Feature: [HP-7 Hybrid ProposedChange Integration](2026-09-03-hybrid-proposed-change-integration.md)
 - Parent evaluation: [HP-6 Qualified Event Semantics Evaluation](2026-09-02-hp6-qualified-event-semantics-evaluation.md)
 - Gold catalog: [HP-7 Proposal Admission Gold Catalog](hp7-proposal-admission-gold-v1.json)
@@ -7,23 +9,36 @@
 
 ## Evaluation operation
 
-`scripts/verify_hp7_proposed_changes.py` copies the retained HP-6 Ledger and Archive into an isolated workspace.
+The retired HP-7 evaluator copied the retained legacy HP-6 Ledger and Archive into an isolated workspace.
 
-It replays the first retained HP-6 run for each reviewed case, constructs HP-7 Plans without a model call, submits every Plan twice, captures an existing review packet, and applies the Gold review outcome through the existing review use cases.
+HSQ-6 replaces that retained-report path with canonical source-to-Candidate-Wiki evaluation over current previews.
 
-The output retains the exact HP-6 event, gaps, statements, and support judgments given to admission; the admission decision; every proposed JSON body; the review packet; and the final review outcome.
+It replays the first retained HP-6 run for each reviewed case.
 
-## Observed results
+It constructs HP-7 Plans without a model call and submits every Plan twice.
 
-The evaluation processed eight reviewed events with zero findings.
+It captures a review packet and applies the Gold review outcome only for proposed events.
 
-Seven previously reviewed HP-6 Gold events were admitted to review and approved.
+It verifies that excluded Gold semantics are absent or held, create no `ProposedChange`, and require
+no review action.
 
-The Amodei `said` event was also admitted because its governed shape was complete and each separate support task returned `directly_supported`.
+The output retains the exact HP-6 evidence given to admission.
 
-The reviewer rejected it because the source reports uncertainty and a conditional policy assessment, not a recommendation.
+The output also retains each decision, proposed body, review packet, and applicable review outcome.
 
-No accepted Event was created for that rejected proposal, and every event-owned Assertion proposal was rejected with it.
+## Corrective acceptance contract
+
+The Hybrid Semantic Quality Program supersedes the original false-event expectation.
+
+Seven approved Gold events must reach review as proposed events.
+
+Those seven proposed events must pass their Gold review actions.
+
+The Gold-rejected Amodei `said` recommendation must be excluded.
+
+The forbidden recommendation may be absent upstream or terminate as held when observed.
+
+It must create no `ProposedChange`, review packet, or accepted Event.
 
 Every second submission reproduced the same Plan and proposal identities and returned `reused`.
 
@@ -45,28 +60,28 @@ Only the existing review use case creates accepted Ledger intelligence and revie
 
 ## Finding ownership
 
-The retained false recommendation is a model interpretation error.
+The retained false recommendation exposed an incomplete semantic-admission policy and an
+under-specified Gold locator.
 
-Strict HP-7 admission is not designed to relitigate that semantic judgment, so admitting it is not a policy failure.
+The corrected policy must contain that error before the review boundary.
 
-The review boundary worked as designed and prevented the error from becoming accepted wiki state.
+The evaluator reports a proposed false event as a policy or implementation failure.
 
 The shared-entity collision found during the first replay was an implementation error.
 
 It was not hidden or assigned to model quality; deterministic reference validation blocked the whole batch until the mapping was corrected.
 
-The reviewed source text and current event ontology were sufficient for all eight review decisions, so this bounded run found no data or ontology blocker.
+The reviewed source text and current event ontology were sufficient for the seven review decisions
+and one excluded semantic, so this bounded run found no data or ontology blocker.
 
 ## Conclusion
 
-HP-7 establishes the intended authority transition:
+HP-7 now verifies both branches of the intended authority transition:
 
 ```text
-HP-6 derived semantics
-    -> deterministic HybridProposalPlan
-    -> pending ProposedChanges
-    -> explicit human review
-    -> accepted Ledger records or retained rejection
+HP-6 derived semantics -> deterministic HybridProposalPlan
+    -> proposed -> pending ProposedChanges -> explicit human review
+    -> excluded -> absent or held          -> no ProposedChange -> no review action
 ```
 
 Model evidence can now reach review without becoming truth by accident.

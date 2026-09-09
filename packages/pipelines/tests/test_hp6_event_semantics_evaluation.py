@@ -1,28 +1,22 @@
 from __future__ import annotations
 
 import json
-import runpy
-from collections.abc import Callable
 from pathlib import Path
 from typing import cast
 
-from kotekomi_domain import HYBRID_EVENT_SEMANTICS_V2
+from kotekomi_domain import HYBRID_EVENT_SEMANTICS_V4
+from kotekomi_pipelines.semantic_quality_oracle import gold_source_text_matches
 
 GOLD_PATH = Path(__file__).resolve().parents[3] / "docs" / "hp6-event-semantics-gold-v1.json"
-SCRIPT_PATH = Path(__file__).resolve().parents[3] / "scripts" / "verify_hp6_event_semantics.py"
-_target_text_matches = cast(
-    Callable[[str, str], bool],
-    runpy.run_path(str(SCRIPT_PATH), run_name="hp6_verifier")["_target_text_matches"],
-)
 
 
 def test_hp6_gold_catalog_is_bounded_source_valid_and_ontology_valid() -> None:
     catalog = json.loads(GOLD_PATH.read_text())
     events = cast(list[dict[str, object]], catalog["events"])
-    frame_by_id = {item.id: item for item in HYBRID_EVENT_SEMANTICS_V2.frames}
+    frame_by_id = {item.id: item for item in HYBRID_EVENT_SEMANTICS_V4.frames}
 
     assert catalog["schema_version"] == "hp6_event_semantics_gold_v1"
-    assert catalog["ontology_profile_id"] == HYBRID_EVENT_SEMANTICS_V2.id
+    assert catalog["ontology_profile_id"] == HYBRID_EVENT_SEMANTICS_V4.id
     assert catalog["scope"] == {
         "parent_evidence_target_count": 14,
         "detailed_scenario_count": 5,
@@ -52,10 +46,10 @@ def test_hp6_gold_catalog_is_bounded_source_valid_and_ontology_valid() -> None:
 
 
 def test_hp6_gold_target_boundary_policy_is_narrow() -> None:
-    assert _target_text_matches("one complete action", "one complete action")
-    assert _target_text_matches("one complete action,", "one complete action")
-    assert _target_text_matches("one complete action;", "one complete action")
-    assert _target_text_matches("one complete action.", "one complete action")
-    assert not _target_text_matches("a different action", "one complete action")
-    assert not _target_text_matches("one complete action: detail", "one complete action")
-    assert not _target_text_matches("one complete action", "one complete action.")
+    assert gold_source_text_matches("one complete action", "one complete action")
+    assert gold_source_text_matches("one complete action,", "one complete action")
+    assert gold_source_text_matches("one complete action;", "one complete action")
+    assert gold_source_text_matches("one complete action.", "one complete action")
+    assert not gold_source_text_matches("a different action", "one complete action")
+    assert not gold_source_text_matches("one complete action: detail", "one complete action")
+    assert not gold_source_text_matches("one complete action", "one complete action.")

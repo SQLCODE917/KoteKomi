@@ -40,11 +40,6 @@ from kotekomi_application.document_entity_reconciliation import (
     document_entity_reconciliation_preview_from_bytes,
     reconciled_document_proposal_plan_from_bytes,
 )
-from kotekomi_application.hybrid_atomic_claims import (
-    HybridAtomicClaimPreview,
-    canonical_hybrid_atomic_claim_preview_bytes,
-    hybrid_atomic_claim_preview_from_bytes,
-)
 from kotekomi_application.hybrid_document_orchestration import (
     HybridDocumentCoverageReport,
     HybridParagraphReceipt,
@@ -67,15 +62,15 @@ from kotekomi_application.hybrid_entity_grounding import (
     canonical_hybrid_entity_grounding_preview_bytes,
     hybrid_entity_grounding_preview_from_bytes,
 )
-from kotekomi_application.hybrid_event_frames import (
-    HybridEventFramePreview,
-    canonical_hybrid_event_frame_preview_bytes,
-    hybrid_event_frame_preview_from_bytes,
-)
 from kotekomi_application.hybrid_event_semantics import (
     HybridEventSemanticsPreview,
     canonical_hybrid_event_semantics_preview_bytes,
     hybrid_event_semantics_preview_from_bytes,
+)
+from kotekomi_application.hybrid_event_triggers import (
+    HybridEventTriggerPreview,
+    canonical_hybrid_event_trigger_preview_bytes,
+    hybrid_event_trigger_preview_from_bytes,
 )
 from kotekomi_application.hybrid_mention_interpretation import (
     HybridExtractionPreview,
@@ -101,8 +96,7 @@ MODEL_RUNS_DIR = Path("model-runs")
 HYBRID_EXTRACTION_PREVIEWS_DIR = Path("extraction/previews")
 HYBRID_REFERENCE_PREVIEWS_DIR = Path("extraction/reference-previews")
 HYBRID_ENTITY_GROUNDING_PREVIEWS_DIR = Path("extraction/entity-grounding-previews")
-HYBRID_EVENT_FRAME_PREVIEWS_DIR = Path("extraction/event-frame-previews")
-HYBRID_ATOMIC_CLAIM_PREVIEWS_DIR = Path("extraction/atomic-claim-previews")
+HYBRID_EVENT_TRIGGER_PREVIEWS_DIR = Path("extraction/event-trigger-previews")
 HYBRID_EVENT_SEMANTICS_PREVIEWS_DIR = Path("extraction/event-semantic-previews")
 HYBRID_PROPOSAL_PLANS_DIR = Path("extraction/proposal-plans")
 STANDING_FACT_PLANS_DIR = Path("extraction/standing-fact-plans")
@@ -131,8 +125,7 @@ class LocalArchiveStore:
             HYBRID_EXTRACTION_PREVIEWS_DIR,
             HYBRID_REFERENCE_PREVIEWS_DIR,
             HYBRID_ENTITY_GROUNDING_PREVIEWS_DIR,
-            HYBRID_EVENT_FRAME_PREVIEWS_DIR,
-            HYBRID_ATOMIC_CLAIM_PREVIEWS_DIR,
+            HYBRID_EVENT_TRIGGER_PREVIEWS_DIR,
             HYBRID_EVENT_SEMANTICS_PREVIEWS_DIR,
             HYBRID_PROPOSAL_PLANS_DIR,
             STANDING_FACT_PLANS_DIR,
@@ -473,25 +466,25 @@ class LocalArchiveStore:
             raise ValueError("Stored HybridEntityGroundingPreview failed canonical validation.")
         return payload
 
-    def put_hybrid_event_frame_preview(
+    def put_hybrid_event_trigger_preview(
         self,
-        preview: HybridEventFramePreview,
+        preview: HybridEventTriggerPreview,
         payload: bytes,
         expected_sha256: str,
     ) -> ArchivePutOutcome:
-        parsed = hybrid_event_frame_preview_from_bytes(payload)
-        if parsed != preview or canonical_hybrid_event_frame_preview_bytes(parsed) != payload:
-            raise ValueError("HybridEventFramePreview payload is not its canonical DTO encoding.")
+        parsed = hybrid_event_trigger_preview_from_bytes(payload)
+        if parsed != preview or canonical_hybrid_event_trigger_preview_bytes(parsed) != payload:
+            raise ValueError("HybridEventTriggerPreview payload is not its canonical DTO encoding.")
         if hashlib.sha256(payload).hexdigest() != expected_sha256:
-            raise ValueError("HybridEventFramePreview payload does not match expected digest.")
-        relative_path = HYBRID_EVENT_FRAME_PREVIEWS_DIR / (
+            raise ValueError("HybridEventTriggerPreview payload does not match expected digest.")
+        relative_path = HYBRID_EVENT_TRIGGER_PREVIEWS_DIR / (
             f"{_validate_archive_id(preview.id)}.json"
         )
         absolute_path = self._absolute_path(relative_path)
         if absolute_path.exists():
             existing = absolute_path.read_bytes()
             if existing != payload:
-                raise ValueError("HybridEventFramePreview conflicts with its immutable identity.")
+                raise ValueError("HybridEventTriggerPreview conflicts with its immutable identity.")
             return ArchivePutOutcome(
                 ArchivePutDisposition.REUSED,
                 ArchiveObject(relative_path.as_posix(), len(existing)),
@@ -507,7 +500,7 @@ class LocalArchiveStore:
             existing = absolute_path.read_bytes()
             if existing != payload:
                 raise ValueError(
-                    "HybridEventFramePreview conflicts with its immutable identity."
+                    "HybridEventTriggerPreview conflicts with its immutable identity."
                 ) from None
             disposition = ArchivePutDisposition.REUSED
         finally:
@@ -517,74 +510,17 @@ class LocalArchiveStore:
             ArchiveObject(relative_path.as_posix(), len(payload)),
         )
 
-    def read_hybrid_event_frame_preview(self, preview_id: str) -> bytes:
-        relative_path = HYBRID_EVENT_FRAME_PREVIEWS_DIR / (
+    def read_hybrid_event_trigger_preview(self, preview_id: str) -> bytes:
+        relative_path = HYBRID_EVENT_TRIGGER_PREVIEWS_DIR / (
             f"{_validate_archive_id(preview_id)}.json"
         )
         payload = self._absolute_path(relative_path).read_bytes()
-        preview = hybrid_event_frame_preview_from_bytes(payload)
+        preview = hybrid_event_trigger_preview_from_bytes(payload)
         if (
             preview.id != preview_id
-            or canonical_hybrid_event_frame_preview_bytes(preview) != payload
+            or canonical_hybrid_event_trigger_preview_bytes(preview) != payload
         ):
-            raise ValueError("Stored HybridEventFramePreview failed canonical validation.")
-        return payload
-
-    def put_hybrid_atomic_claim_preview(
-        self,
-        preview: HybridAtomicClaimPreview,
-        payload: bytes,
-        expected_sha256: str,
-    ) -> ArchivePutOutcome:
-        parsed = hybrid_atomic_claim_preview_from_bytes(payload)
-        if parsed != preview or canonical_hybrid_atomic_claim_preview_bytes(parsed) != payload:
-            raise ValueError("HybridAtomicClaimPreview payload is not its canonical DTO encoding.")
-        if hashlib.sha256(payload).hexdigest() != expected_sha256:
-            raise ValueError("HybridAtomicClaimPreview payload does not match expected digest.")
-        relative_path = HYBRID_ATOMIC_CLAIM_PREVIEWS_DIR / (
-            f"{_validate_archive_id(preview.id)}.json"
-        )
-        absolute_path = self._absolute_path(relative_path)
-        if absolute_path.exists():
-            existing = absolute_path.read_bytes()
-            if existing != payload:
-                raise ValueError("HybridAtomicClaimPreview conflicts with its immutable identity.")
-            return ArchivePutOutcome(
-                ArchivePutDisposition.REUSED,
-                ArchiveObject(relative_path.as_posix(), len(existing)),
-            )
-        staged_relative = _staged_relative_path(relative_path)
-        staged_path = self._absolute_path(staged_relative)
-        self._write_bytes(staged_relative, staged_path, payload)
-        absolute_path.parent.mkdir(parents=True, exist_ok=True)
-        disposition = ArchivePutDisposition.CREATED
-        try:
-            os.link(staged_path, absolute_path)
-        except FileExistsError:
-            existing = absolute_path.read_bytes()
-            if existing != payload:
-                raise ValueError(
-                    "HybridAtomicClaimPreview conflicts with its immutable identity."
-                ) from None
-            disposition = ArchivePutDisposition.REUSED
-        finally:
-            staged_path.unlink(missing_ok=True)
-        return ArchivePutOutcome(
-            disposition,
-            ArchiveObject(relative_path.as_posix(), len(payload)),
-        )
-
-    def read_hybrid_atomic_claim_preview(self, preview_id: str) -> bytes:
-        relative_path = HYBRID_ATOMIC_CLAIM_PREVIEWS_DIR / (
-            f"{_validate_archive_id(preview_id)}.json"
-        )
-        payload = self._absolute_path(relative_path).read_bytes()
-        preview = hybrid_atomic_claim_preview_from_bytes(payload)
-        if (
-            preview.id != preview_id
-            or canonical_hybrid_atomic_claim_preview_bytes(preview) != payload
-        ):
-            raise ValueError("Stored HybridAtomicClaimPreview failed canonical validation.")
+            raise ValueError("Stored HybridEventTriggerPreview failed canonical validation.")
         return payload
 
     def put_hybrid_event_semantics_preview(
@@ -896,8 +832,7 @@ class LocalArchiveStore:
             HybridStageId.HP1_MENTIONS.value: HYBRID_EXTRACTION_PREVIEWS_DIR,
             HybridStageId.HP2_REFERENCES.value: HYBRID_REFERENCE_PREVIEWS_DIR,
             HybridStageId.HP3_GROUNDING.value: HYBRID_ENTITY_GROUNDING_PREVIEWS_DIR,
-            HybridStageId.HP4_EVENT_FRAMES.value: HYBRID_EVENT_FRAME_PREVIEWS_DIR,
-            HybridStageId.HP5_ATOMIC_CLAIMS.value: HYBRID_ATOMIC_CLAIM_PREVIEWS_DIR,
+            HybridStageId.HP4_EVENT_TRIGGERS.value: HYBRID_EVENT_TRIGGER_PREVIEWS_DIR,
             HybridStageId.HP6_EVENT_SEMANTICS.value: HYBRID_EVENT_SEMANTICS_PREVIEWS_DIR,
             HybridStageId.HP7_PROPOSAL_PLAN.value: HYBRID_PROPOSAL_PLANS_DIR,
             HybridStageId.HP10_STANDING_FACTS.value: STANDING_FACT_PLANS_DIR,

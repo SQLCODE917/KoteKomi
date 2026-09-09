@@ -4,16 +4,53 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from kotekomi_domain import ModelRunStatus
+
+from kotekomi_application.semantic_reference_challenge_model_output import (
+    SemanticReferenceChallengeSelection,
+)
 from kotekomi_application.semantic_references import (
     CoreferenceAntecedentInput,
     CoreferenceInput,
     CoreferenceProposerPort,
     CoreferenceSpan,
     CoreferenceTokenizer,
+    SemanticReferenceChallengeExecution,
+    SemanticReferenceChallengeInput,
     SemanticReferenceResult,
     SemanticReferenceStatus,
     resolve_semantic_reference,
 )
+
+
+class _SpecialistCandidateProjection:
+    """Expose the specialist candidate set without pretending it is semantic authority."""
+
+    def challenge(
+        self, request: SemanticReferenceChallengeInput
+    ) -> SemanticReferenceChallengeExecution:
+        selection = (
+            SemanticReferenceChallengeSelection(
+                request.antecedent_candidates[0].id,
+                False,
+                "The bake-off projects the sole specialist candidate for measurement.",
+            )
+            if len(request.antecedent_candidates) == 1
+            else SemanticReferenceChallengeSelection(
+                None,
+                True,
+                "The bake-off projects every specialist candidate for measurement.",
+            )
+        )
+        return SemanticReferenceChallengeExecution(
+            selection=selection,
+            extraction_task_id="ext_evaluation_specialist_projection",
+            model_run_id="mrn_evaluation_specialist_projection",
+            model_status=ModelRunStatus.SUCCEEDED,
+            producer_id="deterministic_specialist_candidate_projection",
+            model_visible_task=b"specialist candidate-set measurement",
+            raw_output_sha256=None,
+        )
 
 
 @dataclass(frozen=True)
@@ -147,6 +184,7 @@ def evaluate_coreference_proposer(
                 ),
                 proposer,
                 tokenizer,
+                _SpecialistCandidateProjection(),
             )
         except (OSError, RuntimeError, ValueError) as error:
             invalid += 1

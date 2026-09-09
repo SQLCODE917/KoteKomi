@@ -1,5 +1,7 @@
 # HP-6 Qualified Event Semantics Evaluation
 
+- Status: Historical evaluation; execution path superseded by [HSQ-6](2026-09-07-source-bound-governed-event-extraction.md)
+
 - Feature: [HP-6 Qualified Event Semantics and Source Support](2026-09-02-qualified-event-semantics-source-support.md)
 - Parent evaluation: [HP-5 Atomic Claim and Ontology Evaluation](2026-09-02-hp5-atomic-claim-evaluation.md)
 - Gold catalog: [HP-6 Event Semantics Gold Catalog](hp6-event-semantics-gold-v1.json)
@@ -8,9 +10,9 @@
 
 ## Evaluation operation
 
-`scripts/verify_hp6_event_semantics.py` validates the retained HP-5 report and
-invokes the public `extraction build-event-semantics` command twice for each of
-its ten evaluated cases.
+The retired HP-6 evaluator validated the retained HP-5 report and invoked the public `extraction build-event-semantics` command twice for each of its ten evaluated cases.
+
+HSQ-6 removed that evaluator because current HP-6 evidence begins at an HP-4 HybridEventTriggerPreview and the repository provides no compatibility reader for superseded HP-5 artifacts.
 
 Each run retains the public command result, complete HybridEventSemanticsPreview,
 semantic signature, every ModelRun ID, and every exact raw model output.

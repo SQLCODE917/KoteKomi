@@ -1,6 +1,6 @@
 # TDD: Bounded Semantic Reference Resolution
 
-- Status: Implemented; resource-backed verification complete
+- Status: Corrective reference-discovery integration implemented; canonical verification pending
 - Deliverable ID: HSQ-4
 - Program: [Hybrid Semantic Quality Program](2026-09-06-hybrid-semantic-quality-program.md)
 - Depends on: [HSQ-3 Complete Proposition Verification](2026-09-06-complete-proposition-verification.md)
@@ -46,6 +46,8 @@ Those references currently cause argument substitution or lost intelligence.
 - BSR-APP-06: Repeated equal-literal candidates in one equivalence cluster identify one referent and select the nearest source candidate.
 - BSR-APP-06A: Multiple distinct eligible source candidates in one target cluster produce `ambiguous`.
 - BSR-APP-07: No valid antecedent produces `unresolved`.
+- BSR-APP-08: KoteKomi discovers bounded pronoun and nominal reference markers directly from authoritative SourceSegment characters; reference eligibility does not depend on a named-entity proposer emitting the marker.
+- BSR-APP-09: Deterministic marker observations cite their source-discovery trace rather than pretending to be a ModelRun.
 
 ### Adapter
 
@@ -107,6 +109,7 @@ A SemanticReferenceDecision stores target, antecedents, status, and observation 
 - AC-BSR-APP-02A: Two preceding `Trump` mentions in one target cluster resolve to the nearest validated `Trump` candidate rather than becoming ambiguous.
 - AC-BSR-APP-02B: A model span that includes an article, citation marker, or relative clause reconciles to the best-overlapping source-owned candidate boundary.
 - AC-BSR-APP-03: An out-of-range or altered span fails boundary validation.
+- AC-BSR-APP-04: `him` reaches semantic resolution even when neither GLiNER nor Qwen proposes it as a named-entity mention.
 - AC-BSR-ADP-01: The bake-off reports precision, recall, latency, and exact span validity.
 - AC-BSR-ADP-02: Missing or drifted local resources block before inference rather than downloading during ingestion.
 - AC-BSR-RUL-01: A resolved reference adds no accepted Ledger record.

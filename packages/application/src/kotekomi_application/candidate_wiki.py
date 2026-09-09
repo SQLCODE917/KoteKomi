@@ -12,7 +12,7 @@ from pathlib import PurePosixPath
 from typing import Literal, Protocol, Self, cast
 
 from kotekomi_domain import (
-    HYBRID_EVENT_SEMANTICS_V2,
+    HYBRID_EVENT_SEMANTICS_V4,
     Actor,
     Assertion,
     AssertionEvidenceLink,
@@ -38,7 +38,7 @@ from kotekomi_domain.models import JsonValue
 from pydantic import BaseModel, ConfigDict, model_validator
 
 from kotekomi_application.evidence_targets import verify_evidence_target
-from kotekomi_application.hybrid_event_frames import EventModality, EventPolarity
+from kotekomi_application.hybrid_event_semantics import EventModality, EventPolarity
 from kotekomi_application.record_serialization import canonical_record_json
 
 CANDIDATE_WIKI_VIEW_POLICY_ID = "candidate_wiki_view_v4"
@@ -755,7 +755,7 @@ def plan_candidate_wiki(view: CandidateKnowledgeView) -> CandidateWikiPlan:
             ),
         )
     )
-    audit_catalog = _plan_wiki_audit_catalog(view, presentations)
+    audit_catalog = _plan_wiki_audit_catalog(view, presentations, paths)
     return CandidateWikiPlan(
         view_policy_id=view.view_policy_id,
         renderer_policy_id=CANDIDATE_WIKI_RENDERER_POLICY_ID,
@@ -1516,7 +1516,7 @@ def _event_presentation(
         value = event_type_assertions[0].object_value
         frame_id = value if isinstance(value, str) else "unknown"
         frame = next(
-            (item for item in HYBRID_EVENT_SEMANTICS_V2.frames if item.id == frame_id), None
+            (item for item in HYBRID_EVENT_SEMANTICS_V4.frames if item.id == frame_id), None
         )
         if frame is None:
             issues.append(f"Unknown governed frame: {frame_id}.")
@@ -1582,7 +1582,12 @@ def _event_presentation(
     )
     edges = tuple(
         sorted(
-            (_ontology_edge(assertion, by_id, paths) for assertion in assertions),
+            (
+                _ontology_edge(assertion, by_id, paths)
+                for assertion in assertions
+                if _assertion_relation(assertion)
+                != HybridEventStructuralPredicate.HAS_ARGUMENT_ENTITY_REFERENCE.value
+            ),
             key=_event_edge_sort_key,
         )
     )
@@ -1775,21 +1780,25 @@ def _record_details(
 def _plan_wiki_audit_catalog(
     view: CandidateKnowledgeView,
     presentations: tuple[WikiPresentation, ...],
+    paths: dict[str, str],
 ) -> WikiAuditCatalog:
     items_by_id = {item.record.id: item for item in view.records}
     evidence_key_by_number = {
         item.citation_number: item.reference_key for item in view.evidence_references
     }
-    edge_by_assertion_id: dict[str, WikiOntologyEdge] = {}
+    edge_by_assertion_id = {
+        item.record.id: _ontology_edge(
+            item.record,
+            items_by_id,
+            paths,
+        )
+        for item in view.records
+        if isinstance(item.record, (Assertion, ProposedAssertion))
+    }
     event_by_id: dict[str, WikiEventPresentation] = {}
     for presentation in presentations:
         if isinstance(presentation, WikiEventPresentation):
             event_by_id[presentation.event_id] = presentation
-            edges = presentation.edges
-        else:
-            edges = (presentation.edge,)
-        for edge in edges:
-            edge_by_assertion_id[edge.assertion_id] = edge
 
     records: list[WikiAuditRecord] = [
         _authority_audit_record(
@@ -1817,7 +1826,7 @@ def _plan_wiki_audit_catalog(
         event = event_by_id.get(record_id)
         if event is not None:
             state = event.state
-            edges = event.edges
+            edges = tuple(edge_by_assertion_id[item] for item in event.assertion_ids)
             proposed_change_ids.update(event.proposed_change_ids)
             for assertion_id in event.assertion_ids:
                 assertion_item = items_by_id[assertion_id]

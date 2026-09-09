@@ -40,6 +40,7 @@ from kotekomi_application.semantic_references import (
     CoreferenceProposerPort,
     CoreferenceSpan,
     CoreferenceTokenizer,
+    SemanticReferenceChallengerPort,
     SemanticReferenceDecision,
     SemanticReferenceReason,
     SemanticReferenceResult,
@@ -47,7 +48,7 @@ from kotekomi_application.semantic_references import (
     resolve_semantic_reference,
 )
 
-HYBRID_REFERENCE_POLICY_ID = "hybrid_document_reference_v3"
+HYBRID_REFERENCE_POLICY_ID = "hybrid_document_reference_v4"
 ALIAS_DECLARATION_RULE_ID = "exact_parenthetical_initialism_v1"
 
 _SHA256_PATTERN = r"^[a-f0-9]{64}$"
@@ -238,12 +239,12 @@ class HybridReferencePreview(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
-    schema_version: Literal["hybrid_reference_preview_v3"] = "hybrid_reference_preview_v3"
+    schema_version: Literal["hybrid_reference_preview_v4"] = "hybrid_reference_preview_v4"
     id: Annotated[str, Field(pattern=r"^hrp_[a-f0-9]{24}$")]
     parent_preview_id: Annotated[str, Field(pattern=r"^hxp_[a-f0-9]{24}$")]
     parent_preview_sha256: Annotated[str, Field(pattern=_SHA256_PATTERN)]
     representation_id: Annotated[str, Field(min_length=1)]
-    policy_id: Literal["hybrid_document_reference_v3"] = HYBRID_REFERENCE_POLICY_ID
+    policy_id: Literal["hybrid_document_reference_v4"] = HYBRID_REFERENCE_POLICY_ID
     alias_declarations: tuple[AliasDeclaration, ...] = ()
     reference_decisions: tuple[ReferenceDecision, ...] = ()
     semantic_antecedent_spans: tuple[ReferenceSpan, ...] = ()
@@ -328,6 +329,7 @@ def build_hybrid_reference_preview(
     bundle: DocumentRepresentationBundle,
     coreference_proposer: CoreferenceProposerPort | None = None,
     coreference_tokenizer: CoreferenceTokenizer | None = None,
+    semantic_reference_challenger: SemanticReferenceChallengerPort | None = None,
 ) -> HybridReferencePreview:
     """Resolve deterministic document aliases from one verified HP-1 Preview."""
     if parent_preview.terminal_status is HybridPreviewStatus.BLOCKED:
@@ -415,6 +417,10 @@ def build_hybrid_reference_preview(
         if kind is ReferenceKind.ANAPHORIC and coreference_proposer is not None:
             if coreference_tokenizer is None:
                 raise ValueError("A coreference proposer requires its selected tokenizer.")
+            if semantic_reference_challenger is None:
+                raise ValueError(
+                    "A coreference proposer requires a bounded semantic-reference challenger."
+                )
             try:
                 coreference_input, context_start = _bounded_coreference_input(
                     bundle=bundle,
@@ -444,6 +450,7 @@ def build_hybrid_reference_preview(
                     coreference_input,
                     coreference_proposer,
                     coreference_tokenizer,
+                    semantic_reference_challenger,
                 )
             except (OSError, RuntimeError, ValueError) as error:
                 diagnostics.append(
@@ -808,7 +815,7 @@ def _decision_id(
 def build_hybrid_reference_preview_record(**values: object) -> HybridReferencePreview:
     """Construct one strictly validated HybridReferencePreview DTO."""
     payload = dict(values)
-    payload.setdefault("schema_version", "hybrid_reference_preview_v3")
+    payload.setdefault("schema_version", "hybrid_reference_preview_v4")
     payload.setdefault("policy_id", HYBRID_REFERENCE_POLICY_ID)
     payload.setdefault("terminal_status", "complete")
     payload.setdefault("diagnostics", ())
@@ -898,11 +905,11 @@ def _semantic_reference_outcome(
     decision: SemanticReferenceDecision,
 ) -> tuple[ReferenceStatus, ReferenceReason]:
     if decision.status is SemanticReferenceStatus.RESOLVED:
-        if decision.reason is not SemanticReferenceReason.UNIQUE_PRECEDING_ANTECEDENT:
+        if decision.reason is not SemanticReferenceReason.CHALLENGE_SELECTED_ANTECEDENT:
             raise ValueError("Resolved semantic reference reason drifted.")
         return ReferenceStatus.RESOLVED, ReferenceReason.UNIQUE_SEMANTIC_ANTECEDENT
     if decision.status is SemanticReferenceStatus.AMBIGUOUS:
-        if decision.reason is not SemanticReferenceReason.MULTIPLE_PRECEDING_ANTECEDENTS:
+        if decision.reason is not SemanticReferenceReason.CHALLENGE_AMBIGUOUS:
             raise ValueError("Ambiguous semantic reference reason drifted.")
         return ReferenceStatus.AMBIGUOUS, ReferenceReason.MULTIPLE_SEMANTIC_ANTECEDENTS
     return ReferenceStatus.UNRESOLVED, ReferenceReason.SEMANTIC_ANTECEDENT_MISSING

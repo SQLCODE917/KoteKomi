@@ -46,13 +46,6 @@ from kotekomi_adapters.refined_entity_linking import (
 )
 from kotekomi_adapters.sqlite_ledger import sqlite_ledger_transaction
 from kotekomi_application.context_planning import ContextModelProfile
-from kotekomi_application.hybrid_atomic_claim_preview import (
-    HybridAtomicClaimCommand,
-    HybridAtomicClaimResult,
-    publish_hybrid_atomic_claim_preview,
-    run_hybrid_atomic_claim_preview,
-)
-from kotekomi_application.hybrid_atomic_claims import HYBRID_ATOMIC_CLAIM_POLICY_ID
 from kotekomi_application.hybrid_document_orchestration import (
     HYBRID_STAGE_ORDER,
     HybridDocumentClosureInput,
@@ -86,27 +79,17 @@ from kotekomi_application.hybrid_entity_grounding_preview import (
     HybridEntityGroundingResult,
     run_hybrid_entity_grounding_preview,
 )
-from kotekomi_application.hybrid_event_frame_preview import (
-    FRAME_SCHEMA_ID,
-    TRIGGER_SCHEMA_ID,
-    HybridEventFrameCommand,
-    HybridEventFrameResult,
-    run_hybrid_event_frame_preview,
-)
-from kotekomi_application.hybrid_event_frames import HYBRID_EVENT_FRAME_POLICY_ID
-from kotekomi_application.hybrid_event_model_output import (
-    event_frame_schema_bytes,
-    event_trigger_schema_bytes,
-)
 from kotekomi_application.hybrid_event_semantics import (
-    HYBRID_EVENT_NORMALIZATION_SCHEMA_ID,
-    HYBRID_EVENT_ROLE_COMPLETION_SCHEMA_ID,
+    HYBRID_EVENT_FRAME_SELECTION_SCHEMA_ID,
+    HYBRID_EVENT_PRESENTATION_SCHEMA_ID,
+    HYBRID_EVENT_ROLE_SELECTION_SCHEMA_ID,
     HYBRID_EVENT_SEMANTICS_POLICY_ID,
     HYBRID_SEMANTIC_SUPPORT_SCHEMA_ID,
 )
 from kotekomi_application.hybrid_event_semantics_model_output import (
+    event_frame_selection_schema_bytes,
+    event_presentation_schema_bytes,
     event_semantic_role_target_schema_bytes,
-    event_semantic_schema_bytes,
     semantic_support_schema_bytes,
 )
 from kotekomi_application.hybrid_event_semantics_preview import (
@@ -115,6 +98,16 @@ from kotekomi_application.hybrid_event_semantics_preview import (
     publish_hybrid_event_semantics_preview,
     run_hybrid_event_semantics_preview,
 )
+from kotekomi_application.hybrid_event_trigger_model_output import (
+    event_trigger_schema_bytes,
+)
+from kotekomi_application.hybrid_event_trigger_preview import (
+    TRIGGER_SCHEMA_ID,
+    HybridEventTriggerCommand,
+    HybridEventTriggerResult,
+    run_hybrid_event_trigger_preview,
+)
+from kotekomi_application.hybrid_event_triggers import HYBRID_EVENT_TRIGGER_POLICY_ID
 from kotekomi_application.hybrid_mention_interpretation import (
     HYBRID_MENTION_PREVIEW_POLICY_ID,
     PROPOSER_CONTEXTUAL_KINDS,
@@ -131,6 +124,7 @@ from kotekomi_application.hybrid_proposed_changes import (
     publish_hybrid_proposal_plan,
 )
 from kotekomi_application.hybrid_reference_preview import (
+    SEMANTIC_REFERENCE_CHALLENGE_SCHEMA_ID,
     HybridReferencePreviewCommand,
     HybridReferencePreviewResult,
     run_hybrid_reference_preview,
@@ -155,6 +149,9 @@ from kotekomi_application.semantic_proposition import (
     NaturalLanguageInferenceExecution,
     NaturalLanguageInferenceInput,
     NaturalLanguageInferencePort,
+)
+from kotekomi_application.semantic_reference_challenge_model_output import (
+    semantic_reference_challenge_schema_bytes,
 )
 from kotekomi_application.semantic_references import (
     CoreferenceExecution,
@@ -181,10 +178,11 @@ from kotekomi_pipelines.model_runtime import build_model_task_runtime
 _PROMPT_NAMES = (
     "hybrid_mention_task_v1.md",
     "hybrid_mention_ontology_card_v1.md",
-    "hybrid_event_trigger_task_v1.md",
-    "hybrid_event_frame_task_v1.md",
-    "hybrid_event_normalization_v1.md",
-    "hybrid_event_role_completion_v1.md",
+    "semantic_reference_challenge_v1.md",
+    "hybrid_event_trigger_task_v3.md",
+    "hybrid_event_frame_selection_v1.md",
+    "hybrid_event_role_selection_v1.md",
+    "hybrid_event_presentation_v1.md",
     "hybrid_semantic_support_v1.md",
     "hybrid_standing_fact_task_v1.md",
     "hybrid_standing_fact_qualification_v1.md",
@@ -194,8 +192,7 @@ type _StageResult = (
     HybridMentionPreviewResult
     | HybridReferencePreviewResult
     | HybridEntityGroundingResult
-    | HybridEventFrameResult
-    | HybridAtomicClaimResult
+    | HybridEventTriggerResult
     | HybridEventSemanticsResult
 )
 
@@ -554,11 +551,14 @@ def _run_paragraph(
 
     with sqlite_ledger_transaction(config.ledger_path) as ledger:
         hp2 = run_hybrid_reference_preview(
-            command=HybridReferencePreviewCommand(hp1.preview.id),
+            command=HybridReferencePreviewCommand(hp1.preview.id, profile, generation),
             ledger=ledger,
             archive=archive,
             coreference_proposer=resources.coreference,
             coreference_tokenizer=resources.coreference,
+            model_runtime=resources.runtime,
+            model_run_id_factory=model_run_id_factory,
+            challenge_prompt_bytes=prompts["semantic_reference_challenge_v1.md"],
         )
     stages.append(_stage(HybridStageId.HP2_REFERENCES, hp2))
 
@@ -572,37 +572,28 @@ def _run_paragraph(
     stages.append(_stage(HybridStageId.HP3_GROUNDING, hp3))
 
     with sqlite_ledger_transaction(config.ledger_path) as ledger:
-        hp4 = run_hybrid_event_frame_preview(
-            command=HybridEventFrameCommand(hp3.preview.id, profile, generation),
+        hp4 = run_hybrid_event_trigger_preview(
+            command=HybridEventTriggerCommand(hp3.preview.id, profile, generation),
             ledger=ledger,
             archive=archive,
             model_runtime=resources.runtime,
             model_run_id_factory=model_run_id_factory,
             tokenizer=resources.runtime,
-            trigger_prompt_bytes=prompts["hybrid_event_trigger_task_v1.md"],
-            frame_prompt_bytes=prompts["hybrid_event_frame_task_v1.md"],
+            trigger_prompt_bytes=prompts["hybrid_event_trigger_task_v3.md"],
         )
-    stages.append(_stage(HybridStageId.HP4_EVENT_FRAMES, hp4))
-
-    with sqlite_ledger_transaction(config.ledger_path) as ledger:
-        hp5 = run_hybrid_atomic_claim_preview(
-            command=HybridAtomicClaimCommand(hp4.preview.id, datetime.now(UTC)),
-            ledger=ledger,
-            archive=archive,
-        )
-    publish_hybrid_atomic_claim_preview(hp5, archive)
-    stages.append(_stage(HybridStageId.HP5_ATOMIC_CLAIMS, hp5))
+    stages.append(_stage(HybridStageId.HP4_EVENT_TRIGGERS, hp4))
 
     with sqlite_ledger_transaction(config.ledger_path) as ledger:
         hp6 = run_hybrid_event_semantics_preview(
-            command=HybridEventSemanticsCommand(hp5.preview.id, profile, generation),
+            command=HybridEventSemanticsCommand(hp4.preview.id, profile, generation),
             ledger=ledger,
             archive=archive,
             model_runtime=resources.runtime,
             model_run_id_factory=model_run_id_factory,
             tokenizer=resources.runtime,
-            normalization_prompt_bytes=prompts["hybrid_event_normalization_v1.md"],
-            role_completion_prompt_bytes=prompts["hybrid_event_role_completion_v1.md"],
+            frame_selection_prompt_bytes=prompts["hybrid_event_frame_selection_v1.md"],
+            role_selection_prompt_bytes=prompts["hybrid_event_role_selection_v1.md"],
+            presentation_prompt_bytes=prompts["hybrid_event_presentation_v1.md"],
             support_prompt_bytes=prompts["hybrid_semantic_support_v1.md"],
             nli_runtime=resources.nli,
         )
@@ -716,10 +707,11 @@ def _policy_input(
     mention_schema = HybridMentionTaskSchemaRegistry().resolve("hybrid_mention_task_text_v1")
     schema_bytes = {
         mention_schema.schema_id: mention_schema.canonical_schema_bytes,
+        SEMANTIC_REFERENCE_CHALLENGE_SCHEMA_ID: semantic_reference_challenge_schema_bytes(),
         TRIGGER_SCHEMA_ID: event_trigger_schema_bytes(),
-        FRAME_SCHEMA_ID: event_frame_schema_bytes(),
-        HYBRID_EVENT_NORMALIZATION_SCHEMA_ID: event_semantic_schema_bytes(),
-        HYBRID_EVENT_ROLE_COMPLETION_SCHEMA_ID: event_semantic_role_target_schema_bytes(),
+        HYBRID_EVENT_FRAME_SELECTION_SCHEMA_ID: event_frame_selection_schema_bytes(),
+        HYBRID_EVENT_ROLE_SELECTION_SCHEMA_ID: event_semantic_role_target_schema_bytes(),
+        HYBRID_EVENT_PRESENTATION_SCHEMA_ID: event_presentation_schema_bytes(),
         HYBRID_SEMANTIC_SUPPORT_SCHEMA_ID: semantic_support_schema_bytes(),
         HYBRID_STANDING_FACT_SCHEMA_ID: standing_fact_schema_bytes(),
         HYBRID_STANDING_FACT_QUALIFICATION_SCHEMA_ID: (standing_fact_qualification_schema_bytes()),
@@ -737,7 +729,7 @@ def _policy_input(
             ),
             HybridPolicyPin(
                 kind="ontology",
-                identity="hybrid_event_semantics_v2",
+                identity="hybrid_event_semantics_v4",
                 sha256=hybrid_event_semantics_profile_sha256(),
             ),
             HybridPolicyPin(
@@ -756,8 +748,7 @@ def _policy_input(
         HYBRID_MENTION_PREVIEW_POLICY_ID,
         HYBRID_REFERENCE_POLICY_ID,
         HYBRID_ENTITY_GROUNDING_POLICY_ID,
-        HYBRID_EVENT_FRAME_POLICY_ID,
-        HYBRID_ATOMIC_CLAIM_POLICY_ID,
+        HYBRID_EVENT_TRIGGER_POLICY_ID,
         HYBRID_EVENT_SEMANTICS_POLICY_ID,
         HYBRID_PROPOSAL_POLICY_ID,
         HYBRID_STANDING_FACT_POLICY_ID,

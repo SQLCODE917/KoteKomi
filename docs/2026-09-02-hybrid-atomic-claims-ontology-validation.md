@@ -1,6 +1,6 @@
 # TDD: Hybrid Atomic Claims and Ontology Validation
 
-- Status: Accepted
+- Status: Superseded by [HSQ-6](2026-09-07-source-bound-governed-event-extraction.md)
 - Program: [Hybrid Intelligence Extraction Pipeline](2026-09-01-hybrid-intelligence-extraction-pipeline.md)
 - Increment: HP-5
 - Depends on: [Hybrid Event Frame Drafts](2026-09-01-hybrid-event-frame-drafts.md)

@@ -10,7 +10,7 @@ from kotekomi_application import CoreferenceInput
 class _BlockedTransport:
     def request(self, payload: dict[str, object]) -> CorrelatedWorkerExchange:
         del payload
-        response = {
+        response: dict[str, object] = {
             "schema_version": "fcoref_failure_v1",
             "status": "blocked",
             "failure": "resources_unavailable",
@@ -26,9 +26,14 @@ class _BlockedTransport:
 
 
 def test_fcoref_preserves_character_ranges_and_model_identity(tmp_path: Path) -> None:
-    text = "Trump said Amodei criticized him."
-    target = text.index("him")
-    trump = text.index("Trump")
+    source_text = "Trump said Amodei criticized him."
+    target = source_text.index("him")
+    trump = source_text.index("Trump")
+
+    def predict(text: str) -> tuple[tuple[tuple[int, int], ...], ...]:
+        assert text == source_text
+        return (((trump, trump + 5), (target, target + 3)),)
+
     adapter = FCorefAdapter(
         FCorefConfig(
             python_executable=Path(sys.executable).resolve(),
@@ -36,10 +41,10 @@ def test_fcoref_preserves_character_ranges_and_model_identity(tmp_path: Path) ->
             model_directory=tmp_path.resolve(),
             resource_identity="fcoref-resource",
         ),
-        predictor=lambda _text: (((trump, trump + 5), (target, target + 3)),),
+        predictor=predict,
     )
 
-    result = adapter.propose(CoreferenceInput("seg_fixture", text, target, target + 3))
+    result = adapter.propose(CoreferenceInput("seg_fixture", source_text, target, target + 3))
 
     assert result.model_id == "biu-nlp/f-coref"
     assert result.clusters[0][1].start == target

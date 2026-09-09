@@ -44,8 +44,8 @@ from kotekomi_application.hybrid_standing_facts import (
     load_standing_fact_plan,
 )
 
-DOCUMENT_ENTITY_RECONCILIATION_POLICY_ID = "document_entity_reconciliation_v1"
-DOCUMENT_PROPOSAL_PLAN_POLICY_ID = "reconciled_document_proposal_plan_v1"
+DOCUMENT_ENTITY_RECONCILIATION_POLICY_ID = "document_entity_reconciliation_v2"
+DOCUMENT_PROPOSAL_PLAN_POLICY_ID = "reconciled_document_proposal_plan_v2"
 DOCUMENT_PROPOSAL_ACTIVITY_TYPE = "reconciled_document_proposal_batch_submitted"
 _SHA256 = r"^[a-f0-9]{64}$"
 
@@ -60,6 +60,7 @@ class IdentityDecisionStatus(StrEnum):
 
 class IdentityMatchMethod(StrEnum):
     EXACT_NORMALIZED_NAME = "exact_normalized_name"
+    UNIQUE_DOCUMENT_SUFFIX_ALIAS = "unique_document_suffix_alias"
     SINGLETON = "singleton"
 
 
@@ -127,7 +128,7 @@ class IdentityMatchJustification(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
     id: Annotated[str, Field(pattern=r"^imj_[a-f0-9]{24}$")]
-    policy_id: Literal["document_entity_reconciliation_v1"] = (
+    policy_id: Literal["document_entity_reconciliation_v2"] = (
         DOCUMENT_ENTITY_RECONCILIATION_POLICY_ID
     )
     method: IdentityMatchMethod
@@ -142,15 +143,17 @@ class IdentityMatchJustification(BaseModel):
         _ordered_distinct("justification ProposedChange IDs", self.proposed_change_ids)
         if self.proposed_change_ids != tuple(item.proposed_change_id for item in self.evidence):
             raise ValueError("Identity justification inputs do not match its evidence.")
-        if any(item.name_key != self.name_key for item in self.evidence):
+        member_name_keys = {item.name_key for item in self.evidence}
+        if self.method is IdentityMatchMethod.UNIQUE_DOCUMENT_SUFFIX_ALIAS:
+            if self.name_key not in member_name_keys or len(member_name_keys) < 2:
+                raise ValueError("Suffix-alias justification requires a canonical observed name.")
+            if any(not _terminal_name_match(item, self.name_key) for item in member_name_keys):
+                raise ValueError("Suffix-alias evidence does not match the canonical name key.")
+        elif member_name_keys != {self.name_key}:
             raise ValueError("Identity justification evidence has conflicting name keys.")
         if len({item.record_type for item in self.evidence}) != 1:
             raise ValueError("Identity justification evidence mixes record types.")
-        expected_method = (
-            IdentityMatchMethod.EXACT_NORMALIZED_NAME
-            if len(self.evidence) > 1
-            else IdentityMatchMethod.SINGLETON
-        )
+        expected_method = _match_method(self.evidence, self.name_key)
         if self.method is not expected_method:
             raise ValueError("Identity justification method does not match its evidence.")
         expected = _id(
@@ -170,7 +173,7 @@ class EntityIdentityCluster(BaseModel):
 
     id: Annotated[str, Field(pattern=r"^eic_[a-f0-9]{24}$")]
     representation_id: Annotated[str, Field(min_length=1)]
-    policy_id: Literal["document_entity_reconciliation_v1"] = (
+    policy_id: Literal["document_entity_reconciliation_v2"] = (
         DOCUMENT_ENTITY_RECONCILIATION_POLICY_ID
     )
     record_type: ReconciledRecordType
@@ -250,12 +253,12 @@ class EntityIdentityDecision(BaseModel):
 class DocumentEntityReconciliationPreview(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
-    schema_version: Literal["document_entity_reconciliation_preview_v1"] = (
-        "document_entity_reconciliation_preview_v1"
+    schema_version: Literal["document_entity_reconciliation_preview_v2"] = (
+        "document_entity_reconciliation_preview_v2"
     )
     id: Annotated[str, Field(pattern=r"^erp_[a-f0-9]{24}$")]
     representation_id: Annotated[str, Field(min_length=1)]
-    policy_id: Literal["document_entity_reconciliation_v1"] = (
+    policy_id: Literal["document_entity_reconciliation_v2"] = (
         DOCUMENT_ENTITY_RECONCILIATION_POLICY_ID
     )
     parent_plans: tuple[ParentProposalPlanReference, ...]
@@ -374,12 +377,12 @@ class DocumentEntityReconciliationPreview(BaseModel):
 class ReconciledDocumentProposalPlan(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
-    schema_version: Literal["reconciled_document_proposal_plan_v1"] = (
-        "reconciled_document_proposal_plan_v1"
+    schema_version: Literal["reconciled_document_proposal_plan_v2"] = (
+        "reconciled_document_proposal_plan_v2"
     )
     id: Annotated[str, Field(pattern=r"^rdp_[a-f0-9]{24}$")]
     representation_id: Annotated[str, Field(min_length=1)]
-    policy_id: Literal["reconciled_document_proposal_plan_v1"] = DOCUMENT_PROPOSAL_PLAN_POLICY_ID
+    policy_id: Literal["reconciled_document_proposal_plan_v2"] = DOCUMENT_PROPOSAL_PLAN_POLICY_ID
     parent_preview_id: Annotated[str, Field(pattern=r"^erp_[a-f0-9]{24}$")]
     parent_preview_sha256: Annotated[str, Field(pattern=_SHA256)]
     parent_plans: tuple[ParentProposalPlanReference, ...]
@@ -446,16 +449,19 @@ def build_document_entity_reconciliation_preview(
     if len({item.source_id for item in raw_changes}) > 1:
         raise ValueError("HP-9 parent Plans contain proposals from multiple Sources.")
     occurrences = _entity_occurrences(plans, bundle)
+    canonical_keys = _document_local_name_keys(occurrences)
     grouped: dict[tuple[ReconciledRecordType, str], list[EntityMentionEvidence]] = defaultdict(list)
     for occurrence in occurrences:
-        grouped[(occurrence.record_type, occurrence.name_key)].append(occurrence)
+        grouped[(occurrence.record_type, canonical_keys[occurrence.proposed_change_id])].append(
+            occurrence
+        )
     clusters: list[EntityIdentityCluster] = []
     decisions: list[EntityIdentityDecision] = []
     justifications: list[IdentityMatchJustification] = []
     traces: list[ExtractionStageTrace] = []
     for (record_type, name_key), members_list in sorted(grouped.items()):
         members = tuple(sorted(members_list, key=_mention_sort_key))
-        method = _match_method(members)
+        method = _match_method(members, name_key)
         proposed_change_ids = tuple(sorted(item.proposed_change_id for item in members))
         justification = IdentityMatchJustification(
             id=_id(
@@ -492,7 +498,7 @@ def build_document_entity_reconciliation_preview(
             record_type=record_type,
             record_id=record_id,
             name_key=name_key,
-            preferred_name=members[0].observed_name,
+            preferred_name=_preferred_observed_name(members, name_key),
             observed_names=tuple(sorted({item.observed_name for item in members})),
             observed_organization_types=observed_types,
             member_proposed_change_ids=proposed_change_ids,
@@ -523,7 +529,7 @@ def build_document_entity_reconciliation_preview(
             decisions.append(decision)
             traces.append(_decision_trace(decision, member, cluster, justification))
     payload: dict[str, JsonValue] = {
-        "schema_version": "document_entity_reconciliation_preview_v1",
+        "schema_version": "document_entity_reconciliation_preview_v2",
         "representation_id": representation_id,
         "policy_id": DOCUMENT_ENTITY_RECONCILIATION_POLICY_ID,
         "parent_plans": [cast(JsonValue, item.model_dump(mode="json")) for item in parent_plans],
@@ -543,7 +549,7 @@ def build_document_entity_reconciliation_preview(
             cast(JsonValue, item.model_dump(mode="json"))
             for item in sorted(traces, key=lambda x: x.id)
         ],
-        "diagnostics": [],
+        "diagnostics": list(_entity_type_conflict_diagnostics(occurrences)),
     }
     return DocumentEntityReconciliationPreview.model_validate(
         {
@@ -554,7 +560,7 @@ def build_document_entity_reconciliation_preview(
             "decisions": tuple(sorted(decisions, key=lambda item: item.id)),
             "justifications": tuple(sorted(justifications, key=lambda item: item.id)),
             "traces": tuple(sorted(traces, key=lambda item: item.id)),
-            "diagnostics": (),
+            "diagnostics": _entity_type_conflict_diagnostics(occurrences),
         }
     )
 
@@ -600,7 +606,7 @@ def build_reconciled_document_proposal_plan(
     validate_planned_proposed_changes(planned, ledger, error_label="HP-9 Document Plan")
     preview_bytes = canonical_document_entity_reconciliation_preview_bytes(preview)
     payload: dict[str, JsonValue] = {
-        "schema_version": "reconciled_document_proposal_plan_v1",
+        "schema_version": "reconciled_document_proposal_plan_v2",
         "representation_id": preview.representation_id,
         "policy_id": DOCUMENT_PROPOSAL_PLAN_POLICY_ID,
         "parent_preview_id": preview.id,
@@ -833,10 +839,78 @@ def _mention_sort_key(item: EntityMentionEvidence) -> tuple[str, int, int, str]:
     return (location.text_view_id, location.start_char, location.end_char, item.proposed_change_id)
 
 
-def _match_method(members: tuple[EntityMentionEvidence, ...]) -> IdentityMatchMethod:
+def _match_method(
+    members: tuple[EntityMentionEvidence, ...], canonical_name_key: str
+) -> IdentityMatchMethod:
+    member_keys = {item.name_key for item in members}
+    if len(member_keys) > 1:
+        if canonical_name_key not in member_keys or any(
+            not _terminal_name_match(item, canonical_name_key) for item in member_keys
+        ):
+            raise ValueError("Entity suffix-alias cluster is not source-explainable.")
+        return IdentityMatchMethod.UNIQUE_DOCUMENT_SUFFIX_ALIAS
     if len(members) > 1:
         return IdentityMatchMethod.EXACT_NORMALIZED_NAME
     return IdentityMatchMethod.SINGLETON
+
+
+def _document_local_name_keys(
+    occurrences: tuple[EntityMentionEvidence, ...],
+) -> dict[str, str]:
+    """Resolve only unique same-kind terminal-name aliases within one Document."""
+    keys_by_type: dict[ReconciledRecordType, set[str]] = defaultdict(set)
+    for item in occurrences:
+        keys_by_type[item.record_type].add(item.name_key)
+    resolved: dict[str, str] = {}
+    for item in occurrences:
+        if item.record_type != "Actor":
+            resolved[item.proposed_change_id] = item.name_key
+            continue
+        candidates = tuple(
+            sorted(
+                key
+                for key in keys_by_type[item.record_type]
+                if key != item.name_key and _terminal_name_match(item.name_key, key)
+            )
+        )
+        resolved[item.proposed_change_id] = candidates[0] if len(candidates) == 1 else item.name_key
+    return resolved
+
+
+def _terminal_name_match(shorter: str, longer: str) -> bool:
+    shorter_words = shorter.split()
+    longer_words = longer.split()
+    return (
+        bool(shorter_words)
+        and len(shorter_words) < len(longer_words)
+        and longer_words[-len(shorter_words) :] == shorter_words
+    ) or shorter == longer
+
+
+def _preferred_observed_name(
+    members: tuple[EntityMentionEvidence, ...], canonical_name_key: str
+) -> str:
+    canonical_names = tuple(
+        sorted(item.observed_name for item in members if item.name_key == canonical_name_key)
+    )
+    if not canonical_names:
+        raise ValueError("Entity cluster canonical name has no exact source observation.")
+    return canonical_names[0]
+
+
+def _entity_type_conflict_diagnostics(
+    occurrences: tuple[EntityMentionEvidence, ...],
+) -> tuple[str, ...]:
+    types_by_key: dict[str, set[ReconciledRecordType]] = defaultdict(set)
+    for item in occurrences:
+        types_by_key[item.name_key].add(item.record_type)
+    return tuple(
+        sorted(
+            f"entity_type_conflict:{name_key}:Actor,Organization"
+            for name_key, record_types in types_by_key.items()
+            if record_types == {"Actor", "Organization"}
+        )
+    )
 
 
 def _decision_status(member: EntityMentionEvidence, member_count: int) -> IdentityDecisionStatus:

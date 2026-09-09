@@ -43,14 +43,14 @@ The Pipeline gives only KoteKomi authority to construct records and change Ledge
 ### Program statement
 
 ```text
-authoritative paragraph
+authoritative SourceSegments
     -> source-valid MentionCandidates
     -> contextual MentionInterpretations
     -> ReferenceDecisions
     -> EntityLinkCandidates
-    -> EventFrameDrafts
-    -> AtomicClaimDrafts
-    -> validation and SupportJudgments
+    -> EventTriggerDrafts
+    -> governed EventSemanticDrafts
+    -> CompleteProposition support evidence
     -> ProposedChanges
     -> reviewer decision
     -> accepted Ledger records
@@ -72,11 +72,11 @@ authoritative paragraph
 
 **OntologySlice** means the entity kinds, frame types, roles, and predicates for one task.
 
-**EventFrameDraft** means one model proposal for an event and its participant roles.
+**EventTriggerDraft** means one exact source trigger with one diagnostic open event label.
 
-**AtomicClaimDraft** means one application-owned claim derived from validated model semantics.
+**EventSemanticDraft** means one KoteKomi-constructed event interpretation under the governed event profile.
 
-**SupportJudgment** means one semantic judgment about direct source support for an AtomicClaimDraft.
+**SupportJudgment** means one semantic judgment about direct source support for a KoteKomi-constructed CompleteProposition.
 
 **HybridExtractionPreview** means derived evidence from an incomplete Hybrid Pipeline run.
 
@@ -206,35 +206,23 @@ ReFinED returns ranked EntityLinkCandidates or NIL.
 
 Qwen2.5 can rank only EntityLinkCandidates that KoteKomi supplies.
 
-### 7. Propose event frames
+### 7. Discover source-bound event triggers
 
-Qwen2.5 receives qualified mentions, resolved references, and one OntologySlice.
+Qwen2.5 receives one exact SourceSegment.
 
 The Pipeline retains HP-3 lineage but does not send fallible EntityLinkCandidates to Qwen2.5.
 
 HP-3 partial or blocked status does not gate event framing.
 
-Qwen2.5 detects source-literal triggers before it assigns roles to one trigger.
+Qwen2.5 detects source-literal triggers without assigning governed roles.
 
-Qwen2.5 proposes EventFrameDrafts with task-local mention references.
+KoteKomi maps each trigger to authoritative source characters and retains the open event label only as diagnostic evidence.
 
-Event and role labels remain open proposals until HP-5 validates ontology structure.
+### 8. Construct governed event semantics and judge source support
 
-### 8. Construct atomic claims
+Qwen2.5 receives one trigger, SourceSegment-local MentionCandidates, and the complete bounded ontology profile.
 
-The Application Layer maps validated EventFrameDrafts to AtomicClaimDrafts.
-
-The Application Layer creates exact EvidenceTarget references for each AtomicClaimDraft.
-
-### 9. Validate ontology structure
-
-The Application Layer validates entity kinds, frame roles, predicates, and references.
-
-The Application Layer records every violation in an OntologyValidationReport.
-
-### 10. Normalize event semantics and judge source support
-
-Qwen2.5 selects one governed frame and governed frame roles from a bounded ontology profile.
+Qwen2.5 selects one governed frame and governed frame roles.
 
 KoteKomi constructs typed event targets and qualified role assignments from authoritative characters.
 
@@ -242,7 +230,7 @@ Separate Qwen2.5 tasks compare deterministic semantic statements with exact evid
 
 Each task returns directly supported, partially supported, unsupported, contradicted, or ambiguous.
 
-### 11. Create reviewable state
+### 9. Create reviewable state
 
 The Application Layer creates ProposedChanges from complete validated drafts.
 
@@ -250,7 +238,9 @@ The review flow remains the only path to accepted Ledger records.
 
 ## Incremental delivery
 
-Each deliverable leaves the prior working path intact.
+Each deliverable leaves KoteKomi working.
+
+Corrective deliverables can replace obsolete derived stages when the accepted design requires a clean break.
 
 Each deliverable produces evidence that defines the next TDD.
 
@@ -265,9 +255,9 @@ HP-9 is implemented with focused verification and awaits canonical document vali
 | [HP-1 Hybrid Mention Interpretation MVP](2026-09-01-hybrid-mention-interpretation-mvp.md) | A reviewer can inspect source-valid mentions and their separate contextual dimensions. | Authoritative paragraphs, proposer Adapters, ORG-R1 rules, and stage traces exist. | One paragraph produces a durable HybridExtractionPreview with no ProposedChange or accepted state change. |
 | [HP-2 Document Reference Resolution](2026-09-01-hybrid-document-reference-resolution.md) | A reviewer can inspect explicit aliases and unresolved document references. | HP-1 preserves ontology-neutral MentionCandidates and interpretations. | The Pipeline emits ReferenceDecisions without inventing antecedents. |
 | [HP-3 Entity Identity Grounding](2026-09-01-hybrid-entity-identity-grounding.md) | A reviewer can inspect known identity candidates only for specific mentions. | HP-2 identifies specific mentions and document-local aliases. | ReFinED emits ranked EntityLinkCandidates or NIL after contextual interpretation. |
-| [HP-4 Event Frame Drafts](2026-09-01-hybrid-event-frame-drafts.md) | A reviewer can inspect each source-grounded event with all participant roles. | HP-3 preserves the verified HP-1 and HP-2 lineage plus optional identity evidence. | Qwen2.5 emits bounded EventFrameDrafts with task-local references. |
-| [HP-5 Atomic Claims and Ontology Validation](2026-09-02-hybrid-atomic-claims-ontology-validation.md) | A reviewer can inspect atomic claims and every ontology violation. | HP-4 supplies validated EventFrameDrafts. | KoteKomi constructs AtomicClaimDrafts and OntologyValidationReports. |
-| [HP-6 Qualified Event Semantics and Source Support](2026-09-02-qualified-event-semantics-source-support.md) | A reviewer can inspect governed event frames, qualified roles, explicit gaps, and independent source support. | HP-5 supplies exact EvidenceTargets and lossless open-label evidence. | KoteKomi emits typed semantic drafts and support judgments without changing wiki state. |
+| [HP-4 Event Frame Drafts](2026-09-01-hybrid-event-frame-drafts.md) | Historical: a reviewer could inspect source-grounded open event frames. | HP-3 preserved verified source lineage. | Superseded by HSQ-6 trigger discovery. |
+| [HP-5 Atomic Claims and Ontology Validation](2026-09-02-hybrid-atomic-claims-ontology-validation.md) | Historical: a reviewer could inspect open-label atomic claims and ontology violations. | The retired HP-4 supplied EventFrameDrafts. | Superseded and removed by HSQ-6. |
+| [HP-6 Qualified Event Semantics and Source Support](2026-09-02-qualified-event-semantics-source-support.md) | A reviewer can inspect governed events, qualified roles, explicit gaps, and independent source support. | Current HP-4 supplies exact source-bound EventTriggerDrafts. | KoteKomi emits typed semantic drafts and support judgments without changing accepted wiki state. |
 | [HP-7 ProposedChange Integration](2026-09-03-hybrid-proposed-change-integration.md) | A reviewer can inspect governed HP-6 events through the existing review flow. | HP-6 supplies governed semantic drafts with complete source-support evidence. | The Pipeline creates pending ProposedChanges without creating accepted intelligence. |
 | [HP-8 Hybrid Document Orchestration](2026-09-03-hybrid-document-orchestration.md) | A user receives one reviewable candidate change set from an ingested document. | HP-7 converts one HP-6 Preview into a reviewable proposal batch. | One ingestion runs the Hybrid Pipeline over its planned document scope and closes one IngestionChangeSet. |
 | [HP-8.1 Mention Interpretation Batching](2026-09-03-hp8-mention-interpretation-batching.md) | Determine whether bounded interpretation batching can reduce model work without losing meaning. | HP-8 records complete model and paragraph evidence. | The rejected experiment preserves its full evidence and leaves production mention behavior unchanged. |

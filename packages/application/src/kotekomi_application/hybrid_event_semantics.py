@@ -9,9 +9,10 @@ from enum import StrEnum
 from typing import Annotated, Literal, Self, cast
 
 from kotekomi_domain import (
-    HYBRID_EVENT_SEMANTICS_V2,
+    HYBRID_EVENT_SEMANTICS_V4,
     AssignmentOrigin,
     SemanticArgumentTargetKind,
+    TemporalRelation,
     UpperRole,
 )
 from kotekomi_domain.models import JsonValue
@@ -24,11 +25,13 @@ from kotekomi_application.semantic_proposition import (
     PropositionDecision,
 )
 
-HYBRID_EVENT_SEMANTICS_POLICY_ID = "hybrid_event_semantics_v2"
-HYBRID_EVENT_NORMALIZATION_PROMPT_ID = "hybrid_event_normalization_v1"
-HYBRID_EVENT_NORMALIZATION_SCHEMA_ID = "hybrid_event_normalization_text_v1"
-HYBRID_EVENT_ROLE_COMPLETION_PROMPT_ID = "hybrid_event_role_completion_v1"
-HYBRID_EVENT_ROLE_COMPLETION_SCHEMA_ID = "hybrid_event_role_completion_text_v1"
+HYBRID_EVENT_SEMANTICS_POLICY_ID = "hybrid_event_semantics_v5"
+HYBRID_EVENT_FRAME_SELECTION_PROMPT_ID = "hybrid_event_frame_selection_v1"
+HYBRID_EVENT_FRAME_SELECTION_SCHEMA_ID = "hybrid_event_frame_selection_text_v1"
+HYBRID_EVENT_ROLE_SELECTION_PROMPT_ID = "hybrid_event_role_selection_v1"
+HYBRID_EVENT_ROLE_SELECTION_SCHEMA_ID = "hybrid_event_role_selection_text_v1"
+HYBRID_EVENT_PRESENTATION_PROMPT_ID = "hybrid_event_presentation_v1"
+HYBRID_EVENT_PRESENTATION_SCHEMA_ID = "hybrid_event_presentation_text_v1"
 HYBRID_SEMANTIC_SUPPORT_PROMPT_ID = "hybrid_semantic_support_v1"
 HYBRID_SEMANTIC_SUPPORT_SCHEMA_ID = "hybrid_semantic_support_text_v1"
 _SHA256 = r"^[a-f0-9]{64}$"
@@ -40,8 +43,25 @@ class HybridEventSemanticsStatus(StrEnum):
     BLOCKED = "blocked"
 
 
+class EventPolarity(StrEnum):
+    AFFIRMED = "affirmed"
+    NEGATED = "negated"
+
+
+class EventModality(StrEnum):
+    ACTUAL = "actual"
+    HYPOTHETICAL = "hypothetical"
+    PLANNED = "planned"
+    POSSIBLE = "possible"
+    RECOMMENDED = "recommended"
+    UNCERTAIN = "uncertain"
+
+
 class SemanticCoverageGapCode(StrEnum):
+    INVALID_REQUIRED_ENVELOPE = "invalid_required_envelope"
+    INVALID_OPTIONAL_LINE = "invalid_optional_line"
     MISSING_GOVERNED_ATTRIBUTION = "missing_governed_attribution"
+    MISSING_OPTIONAL_ROLE = "missing_optional_role"
     MISSING_REQUIRED_ROLE = "missing_required_role"
     OMITTED_PARENT_ARGUMENT = "omitted_parent_argument"
     OMITTED_PARENT_QUALIFIER = "omitted_parent_qualifier"
@@ -75,6 +95,22 @@ class EventAttributionKind(StrEnum):
     UNRESOLVED = "unresolved"
 
 
+class EventSubjectDraft(BaseModel):
+    """One deterministic event subject corresponding to one exact trigger."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    id: Annotated[str, Field(pattern=r"^esd_[a-f0-9]{24}$")]
+    parent_preview_id: Annotated[str, Field(pattern=r"^htp_[a-f0-9]{24}$")]
+    trigger_id: Annotated[str, Field(pattern=r"^etd_[a-f0-9]{24}$")]
+
+    @model_validator(mode="after")
+    def validate_identity(self) -> Self:
+        if self.id != event_subject_draft_id(self.parent_preview_id, self.trigger_id):
+            raise ValueError("EventSubjectDraft ID does not match its source trigger.")
+        return self
+
+
 class EventArgumentTargetDraft(BaseModel):
     """One exact source-backed target admitted by a governed frame role."""
 
@@ -89,6 +125,7 @@ class EventArgumentTargetDraft(BaseModel):
     end: Annotated[int, Field(gt=0)]
     evidence_target_id: Annotated[str, Field(pattern=r"^etg_[a-f0-9]{24}$")]
     evidence_validation_attempt_id: Annotated[str, Field(pattern=r"^eva_[a-f0-9]{24}$")]
+    embedded_candidate_ids: tuple[Annotated[str, Field(min_length=1)], ...] = ()
 
     @model_validator(mode="after")
     def validate_contract(self) -> Self:
@@ -99,6 +136,9 @@ class EventArgumentTargetDraft(BaseModel):
                 raise ValueError("A source-span target cannot name a parent reference.")
         elif self.reference_id is None:
             raise ValueError("A referenced semantic target requires a parent reference.")
+        _ordered_distinct("embedded candidate IDs", self.embedded_candidate_ids)
+        if self.kind is not SemanticArgumentTargetKind.SOURCE_SPAN and self.embedded_candidate_ids:
+            raise ValueError("Only a source-span target can contain Entity references.")
         if self.id != event_argument_target_draft_id(
             kind=self.kind,
             reference_id=self.reference_id,
@@ -108,6 +148,7 @@ class EventArgumentTargetDraft(BaseModel):
             end=self.end,
             evidence_target_id=self.evidence_target_id,
             evidence_validation_attempt_id=self.evidence_validation_attempt_id,
+            embedded_candidate_ids=self.embedded_candidate_ids,
         ):
             raise ValueError("EventArgumentTargetDraft ID does not match its contents.")
         return self
@@ -160,6 +201,7 @@ class SemanticQualifierDraft(BaseModel):
     id: Annotated[str, Field(pattern=r"^sqd_[a-f0-9]{24}$")]
     event_subject_id: Annotated[str, Field(pattern=r"^esd_[a-f0-9]{24}$")]
     kind: Literal["place", "time"]
+    temporal_relation: TemporalRelation | None = None
     source_segment_id: Annotated[str, Field(min_length=1)]
     text: Annotated[str, Field(min_length=1)]
     start: Annotated[int, Field(ge=0)]
@@ -171,10 +213,15 @@ class SemanticQualifierDraft(BaseModel):
     def validate_contract(self) -> Self:
         if self.end - self.start != len(self.text):
             raise ValueError("Semantic qualifier range does not match its text.")
+        if self.kind == "time" and self.temporal_relation is None:
+            raise ValueError("A time qualifier requires one TemporalRelation.")
+        if self.kind == "place" and self.temporal_relation is not None:
+            raise ValueError("A place qualifier cannot name one TemporalRelation.")
         expected = _id(
             "sqd",
             self.event_subject_id,
             self.kind,
+            self.temporal_relation.value if self.temporal_relation is not None else "",
             self.source_segment_id,
             self.text,
             str(self.start),
@@ -205,9 +252,9 @@ class EventSemanticDraft(BaseModel):
     attribution_kind: EventAttributionKind
     attribution_target_id: Annotated[str, Field(pattern=r"^sat_[a-f0-9]{24}$")] | None = None
     support_evidence_target_id: Annotated[str, Field(pattern=r"^etg_[a-f0-9]{24}$")]
-    normalization_task_id: Annotated[str, Field(min_length=1)]
-    normalization_model_run_id: Annotated[str, Field(min_length=1)]
-    normalization_trace_id: Annotated[str, Field(pattern=r"^xst_[a-f0-9]{24}$")]
+    frame_selection_task_id: Annotated[str, Field(min_length=1)]
+    frame_selection_model_run_id: Annotated[str, Field(min_length=1)]
+    frame_selection_trace_id: Annotated[str, Field(pattern=r"^xst_[a-f0-9]{24}$")]
 
     @model_validator(mode="after")
     def validate_contract(self) -> Self:
@@ -234,9 +281,9 @@ class EventSemanticDraft(BaseModel):
             attribution_kind=self.attribution_kind,
             attribution_target_id=self.attribution_target_id,
             support_evidence_target_id=self.support_evidence_target_id,
-            normalization_task_id=self.normalization_task_id,
-            normalization_model_run_id=self.normalization_model_run_id,
-            normalization_trace_id=self.normalization_trace_id,
+            frame_selection_task_id=self.frame_selection_task_id,
+            frame_selection_model_run_id=self.frame_selection_model_run_id,
+            frame_selection_trace_id=self.frame_selection_trace_id,
         ):
             raise ValueError("EventSemanticDraft ID does not match its contents.")
         return self
@@ -321,24 +368,26 @@ class SemanticSupportJudgment(BaseModel):
 
 
 class HybridEventSemanticsPreview(BaseModel):
-    """Immutable derived HP-6 evidence for one terminal HP-5 Preview."""
+    """Immutable derived HP-6 evidence for one terminal HP-4 trigger Preview."""
 
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
-    schema_version: Literal["hybrid_event_semantics_preview_v1"] = (
-        "hybrid_event_semantics_preview_v1"
+    schema_version: Literal["hybrid_event_semantics_preview_v3"] = (
+        "hybrid_event_semantics_preview_v3"
     )
     id: Annotated[str, Field(pattern=r"^hsp_[a-f0-9]{24}$")]
-    parent_preview_id: Annotated[str, Field(pattern=r"^hcp_[a-f0-9]{24}$")]
+    parent_preview_id: Annotated[str, Field(pattern=r"^htp_[a-f0-9]{24}$")]
     parent_preview_sha256: Annotated[str, Field(pattern=_SHA256)]
     representation_id: Annotated[str, Field(min_length=1)]
     paragraph_node_id: Annotated[str, Field(min_length=1)]
-    ontology_profile_id: Literal["hybrid_event_semantics_v2"]
+    ontology_profile_id: Literal["hybrid_event_semantics_v4"]
     ontology_profile_sha256: Annotated[str, Field(pattern=_SHA256)]
-    normalization_prompt_sha256: Annotated[str, Field(pattern=_SHA256)]
-    normalization_schema_sha256: Annotated[str, Field(pattern=_SHA256)]
-    role_completion_prompt_sha256: Annotated[str, Field(pattern=_SHA256)]
-    role_completion_schema_sha256: Annotated[str, Field(pattern=_SHA256)]
+    frame_selection_prompt_sha256: Annotated[str, Field(pattern=_SHA256)]
+    frame_selection_schema_sha256: Annotated[str, Field(pattern=_SHA256)]
+    role_selection_prompt_sha256: Annotated[str, Field(pattern=_SHA256)]
+    role_selection_schema_sha256: Annotated[str, Field(pattern=_SHA256)]
+    presentation_prompt_sha256: Annotated[str, Field(pattern=_SHA256)]
+    presentation_schema_sha256: Annotated[str, Field(pattern=_SHA256)]
     support_prompt_sha256: Annotated[str, Field(pattern=_SHA256)]
     support_schema_sha256: Annotated[str, Field(pattern=_SHA256)]
     semantic_events: tuple[EventSemanticDraft, ...] = ()
@@ -451,7 +500,7 @@ def _validate_preview_references(preview: HybridEventSemanticsPreview) -> None:
     attempt_ids = set(preview.evidence_validation_attempt_ids)
     task_ids = set(preview.extraction_task_ids)
     run_ids = set(preview.model_run_ids)
-    frame_by_id = {item.id: item for item in HYBRID_EVENT_SEMANTICS_V2.frames}
+    frame_by_id = {item.id: item for item in HYBRID_EVENT_SEMANTICS_V4.frames}
 
     referenced_assignment_ids: set[str] = set()
     referenced_qualifier_ids: set[str] = set()
@@ -471,12 +520,12 @@ def _validate_preview_references(preview: HybridEventSemanticsPreview) -> None:
         if any(item.event_subject_id != event.event_subject_id for item in event_qualifiers):
             raise ValueError("EventSemanticDraft contains a qualifier from another event.")
         if (
-            event.normalization_task_id not in task_ids
-            or event.normalization_model_run_id not in run_ids
+            event.frame_selection_task_id not in task_ids
+            or event.frame_selection_model_run_id not in run_ids
         ):
-            raise ValueError("EventSemanticDraft references unknown normalization execution.")
-        if event.normalization_trace_id not in traces:
-            raise ValueError("EventSemanticDraft references an unknown normalization trace.")
+            raise ValueError("EventSemanticDraft references unknown frame-selection execution.")
+        if event.frame_selection_trace_id not in traces:
+            raise ValueError("EventSemanticDraft references an unknown frame-selection trace.")
         if event.attribution_target_id is not None:
             attribution_target = targets[event.attribution_target_id]
             if event.attribution_kind.value != attribution_target.kind.value:
@@ -499,7 +548,12 @@ def _validate_preview_references(preview: HybridEventSemanticsPreview) -> None:
         raise ValueError("HP-6 Preview contains an unreferenced role assignment.")
     if referenced_qualifier_ids != set(qualifiers):
         raise ValueError("HP-6 Preview contains an unreferenced qualifier.")
-    if {item.target_id for item in assignments.values()} != set(targets):
+    referenced_target_ids = {item.target_id for item in assignments.values()} | {
+        item.attribution_target_id
+        for item in events.values()
+        if item.attribution_target_id is not None
+    }
+    if referenced_target_ids != set(targets):
         raise ValueError("HP-6 Preview contains an unreferenced semantic target.")
 
     for statement in statements.values():
@@ -520,6 +574,8 @@ def _validate_preview_references(preview: HybridEventSemanticsPreview) -> None:
         statement = statements[judgment.statement_id]
         if judgment.statement_id in judged_statement_ids:
             raise ValueError("HP-6 Preview repeats a judgment for one SemanticStatement.")
+        if statement.kind is not SemanticStatementKind.COMPLETE_PROPOSITION:
+            raise ValueError("HP-6 support judgments must evaluate complete propositions only.")
         if judgment.evidence_target_id != statement.evidence_target_id:
             raise ValueError("SemanticSupportJudgment does not match statement evidence.")
         if judgment.extraction_task_id not in task_ids or judgment.model_run_id not in run_ids:
@@ -578,8 +634,27 @@ def _validate_preview_references(preview: HybridEventSemanticsPreview) -> None:
     if not required_attempt_ids.issubset(attempt_ids):
         raise ValueError("HP-6 Preview omits referenced evidence validation attempts.")
     if preview.terminal_status is HybridEventSemanticsStatus.COMPLETE:
-        if preview.gaps or preview.diagnostics or judged_statement_ids != set(statements):
+        complete_statement_ids = {
+            item.id
+            for item in statements.values()
+            if item.kind is SemanticStatementKind.COMPLETE_PROPOSITION
+        }
+        if preview.gaps or preview.diagnostics or judged_statement_ids != complete_statement_ids:
             raise ValueError("A complete HP-6 Preview requires gap-free fully judged semantics.")
+
+
+def event_subject_draft_id(parent_preview_id: str, trigger_id: str) -> str:
+    """Derive one event-subject identity from one trigger Preview."""
+    return _id("esd", parent_preview_id, trigger_id)
+
+
+def build_event_subject_draft(*, parent_preview_id: str, trigger_id: str) -> EventSubjectDraft:
+    """Construct one deterministic event subject for one trigger."""
+    return EventSubjectDraft(
+        id=event_subject_draft_id(parent_preview_id, trigger_id),
+        parent_preview_id=parent_preview_id,
+        trigger_id=trigger_id,
+    )
 
 
 def event_argument_target_draft_id(
@@ -592,6 +667,7 @@ def event_argument_target_draft_id(
     end: int,
     evidence_target_id: str,
     evidence_validation_attempt_id: str,
+    embedded_candidate_ids: tuple[str, ...] = (),
 ) -> str:
     return _id(
         "sat",
@@ -603,6 +679,7 @@ def event_argument_target_draft_id(
         str(end),
         evidence_target_id,
         evidence_validation_attempt_id,
+        *embedded_candidate_ids,
     )
 
 
@@ -616,6 +693,7 @@ def build_event_argument_target_draft(
     end: int,
     evidence_target_id: str,
     evidence_validation_attempt_id: str,
+    embedded_candidate_ids: tuple[str, ...] = (),
 ) -> EventArgumentTargetDraft:
     """Construct one target whose identity is wholly derived by KoteKomi."""
     return EventArgumentTargetDraft(
@@ -628,6 +706,7 @@ def build_event_argument_target_draft(
             end=end,
             evidence_target_id=evidence_target_id,
             evidence_validation_attempt_id=evidence_validation_attempt_id,
+            embedded_candidate_ids=embedded_candidate_ids,
         ),
         kind=kind,
         reference_id=reference_id,
@@ -637,6 +716,7 @@ def build_event_argument_target_draft(
         end=end,
         evidence_target_id=evidence_target_id,
         evidence_validation_attempt_id=evidence_validation_attempt_id,
+        embedded_candidate_ids=embedded_candidate_ids,
     )
 
 
@@ -707,6 +787,7 @@ def build_semantic_qualifier_draft(
     *,
     event_subject_id: str,
     kind: Literal["place", "time"],
+    temporal_relation: TemporalRelation | None,
     source_segment_id: str,
     text: str,
     start: int,
@@ -719,6 +800,7 @@ def build_semantic_qualifier_draft(
         "sqd",
         event_subject_id,
         kind,
+        temporal_relation.value if temporal_relation is not None else "",
         source_segment_id,
         text,
         str(start),
@@ -730,6 +812,7 @@ def build_semantic_qualifier_draft(
         id=identifier,
         event_subject_id=event_subject_id,
         kind=kind,
+        temporal_relation=temporal_relation,
         source_segment_id=source_segment_id,
         text=text,
         start=start,
@@ -753,9 +836,9 @@ def event_semantic_draft_id(
     attribution_kind: EventAttributionKind,
     attribution_target_id: str | None,
     support_evidence_target_id: str,
-    normalization_task_id: str,
-    normalization_model_run_id: str,
-    normalization_trace_id: str,
+    frame_selection_task_id: str,
+    frame_selection_model_run_id: str,
+    frame_selection_trace_id: str,
 ) -> str:
     return _id(
         "esn",
@@ -771,9 +854,9 @@ def event_semantic_draft_id(
         attribution_kind.value,
         attribution_target_id or "",
         support_evidence_target_id,
-        normalization_task_id,
-        normalization_model_run_id,
-        normalization_trace_id,
+        frame_selection_task_id,
+        frame_selection_model_run_id,
+        frame_selection_trace_id,
     )
 
 
@@ -791,9 +874,9 @@ def build_event_semantic_draft(
     attribution_kind: EventAttributionKind,
     attribution_target_id: str | None,
     support_evidence_target_id: str,
-    normalization_task_id: str,
-    normalization_model_run_id: str,
-    normalization_trace_id: str,
+    frame_selection_task_id: str,
+    frame_selection_model_run_id: str,
+    frame_selection_trace_id: str,
 ) -> EventSemanticDraft:
     """Construct one governed event interpretation from derived components."""
     return EventSemanticDraft(
@@ -810,9 +893,9 @@ def build_event_semantic_draft(
             attribution_kind=attribution_kind,
             attribution_target_id=attribution_target_id,
             support_evidence_target_id=support_evidence_target_id,
-            normalization_task_id=normalization_task_id,
-            normalization_model_run_id=normalization_model_run_id,
-            normalization_trace_id=normalization_trace_id,
+            frame_selection_task_id=frame_selection_task_id,
+            frame_selection_model_run_id=frame_selection_model_run_id,
+            frame_selection_trace_id=frame_selection_trace_id,
         ),
         event_subject_id=event_subject_id,
         trigger_id=trigger_id,
@@ -826,9 +909,9 @@ def build_event_semantic_draft(
         attribution_kind=attribution_kind,
         attribution_target_id=attribution_target_id,
         support_evidence_target_id=support_evidence_target_id,
-        normalization_task_id=normalization_task_id,
-        normalization_model_run_id=normalization_model_run_id,
-        normalization_trace_id=normalization_trace_id,
+        frame_selection_task_id=frame_selection_task_id,
+        frame_selection_model_run_id=frame_selection_model_run_id,
+        frame_selection_trace_id=frame_selection_trace_id,
     )
 
 
@@ -946,7 +1029,7 @@ def resolve_unique_source_literal(source_text: str, proposed_literal: str) -> tu
 def build_hybrid_event_semantics_preview(**values: object) -> HybridEventSemanticsPreview:
     payload = dict(values)
     payload.pop("id", None)
-    payload.setdefault("schema_version", "hybrid_event_semantics_preview_v1")
+    payload.setdefault("schema_version", "hybrid_event_semantics_preview_v3")
     for name in (
         "semantic_events",
         "targets",
