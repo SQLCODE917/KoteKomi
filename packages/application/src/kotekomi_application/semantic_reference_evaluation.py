@@ -9,12 +9,19 @@ from kotekomi_domain import ModelRunStatus
 from kotekomi_application.semantic_reference_challenge_model_output import (
     SemanticReferenceChallengeSelection,
 )
+from kotekomi_application.semantic_reference_validation_model_output import (
+    SemanticReferenceCandidateValidation,
+    SemanticReferenceCandidateVerdict,
+)
 from kotekomi_application.semantic_references import (
     CoreferenceAntecedentInput,
     CoreferenceInput,
     CoreferenceProposerPort,
     CoreferenceSpan,
     CoreferenceTokenizer,
+    SemanticReferenceCandidateLabelBinding,
+    SemanticReferenceCandidateValidationExecution,
+    SemanticReferenceCandidateValidationInput,
     SemanticReferenceChallengeExecution,
     SemanticReferenceChallengeInput,
     SemanticReferenceResult,
@@ -26,12 +33,33 @@ from kotekomi_application.semantic_references import (
 class _SpecialistCandidateProjection:
     """Expose the specialist candidate set without pretending it is semantic authority."""
 
+    def validate(
+        self, request: SemanticReferenceCandidateValidationInput
+    ) -> SemanticReferenceCandidateValidationExecution:
+        return SemanticReferenceCandidateValidationExecution(
+            validation=SemanticReferenceCandidateValidation(
+                SemanticReferenceCandidateVerdict.SUPPORTED,
+                "The bake-off projects the sole specialist candidate for measurement.",
+            ),
+            candidate_id=request.antecedent_candidate.id,
+            extraction_task_id="ext_evaluation_specialist_validation",
+            model_run_id="mrn_evaluation_specialist_validation",
+            model_status=ModelRunStatus.SUCCEEDED,
+            producer_id="deterministic_specialist_candidate_projection",
+            model_visible_task=b"specialist candidate-set measurement",
+            raw_output_sha256=None,
+        )
+
     def challenge(
         self, request: SemanticReferenceChallengeInput
     ) -> SemanticReferenceChallengeExecution:
+        bindings = tuple(
+            SemanticReferenceCandidateLabelBinding(f"a{ordinal}", candidate.id)
+            for ordinal, candidate in enumerate(request.antecedent_candidates, start=1)
+        )
         selection = (
             SemanticReferenceChallengeSelection(
-                request.antecedent_candidates[0].id,
+                bindings[0].label,
                 False,
                 "The bake-off projects the sole specialist candidate for measurement.",
             )
@@ -44,12 +72,14 @@ class _SpecialistCandidateProjection:
         )
         return SemanticReferenceChallengeExecution(
             selection=selection,
+            candidate_label_bindings=bindings,
             extraction_task_id="ext_evaluation_specialist_projection",
             model_run_id="mrn_evaluation_specialist_projection",
             model_status=ModelRunStatus.SUCCEEDED,
             producer_id="deterministic_specialist_candidate_projection",
             model_visible_task=b"specialist candidate-set measurement",
             raw_output_sha256=None,
+            mode=request.mode,
         )
 
 

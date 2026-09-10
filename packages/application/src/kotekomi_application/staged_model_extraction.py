@@ -94,6 +94,9 @@ from kotekomi_application.organization_semantic_qualification import (
 from kotekomi_application.semantic_reference_challenge_model_output import (
     SemanticReferenceChallengeSelection,
 )
+from kotekomi_application.semantic_reference_validation_model_output import (
+    SemanticReferenceCandidateValidation,
+)
 
 HASH_ID_LENGTH = 24
 
@@ -577,6 +580,7 @@ class BoundedExtractionOutcome:
     standing_fact_proposals: StandingFactProposalBatch | None = None
     standing_fact_qualification: StandingFactQualificationOutput | None = None
     semantic_reference_challenge: SemanticReferenceChallengeSelection | None = None
+    semantic_reference_candidate_validation: SemanticReferenceCandidateValidation | None = None
 
 
 @dataclass(frozen=True)
@@ -669,6 +673,7 @@ type ParsedModelOutput = (
     | StandingFactAbstention
     | StandingFactQualificationOutput
     | SemanticReferenceChallengeSelection
+    | SemanticReferenceCandidateValidation
 )
 
 
@@ -1251,8 +1256,8 @@ def run_bounded_extraction(
                 output_digest=output_digest,
                 execution_receipt=response.execution_receipt,
                 outcome_metadata={
-                    "contract": "semantic_reference_challenge_text_v1",
-                    "antecedent_candidate_id": parsed.antecedent_candidate_id,
+                    "contract": "semantic_reference_challenge_text_v2",
+                    "antecedent_candidate_label": parsed.antecedent_candidate_label,
                     "ambiguous": parsed.ambiguous,
                     "reason": parsed.reason,
                 },
@@ -1263,6 +1268,32 @@ def run_bounded_extraction(
                 run,
                 None,
                 semantic_reference_challenge=parsed,
+            )
+        if isinstance(parsed, SemanticReferenceCandidateValidation):
+            run = _model_run(
+                extraction_input,
+                manifest,
+                task,
+                model_run_id,
+                ModelRunStatus.SUCCEEDED,
+                started_at=started_at,
+                completed_at=completed_at,
+                execution_diagnostics=diagnostics,
+                input_admission=admission,
+                output_digest=output_digest,
+                execution_receipt=response.execution_receipt,
+                outcome_metadata={
+                    "contract": "semantic_reference_candidate_validation_text_v1",
+                    "verdict": parsed.verdict.value,
+                    "reason": parsed.reason,
+                },
+            )
+            ledger_repository.save_model_run(run)
+            return BoundedExtractionOutcome(
+                task,
+                run,
+                None,
+                semantic_reference_candidate_validation=parsed,
             )
         if isinstance(parsed, EventSemanticRoleTargetProposal):
             run = _model_run(

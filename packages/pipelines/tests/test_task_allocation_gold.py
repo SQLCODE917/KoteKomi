@@ -36,7 +36,9 @@ AMODEI = ROOT / "docs/hsq-task-allocation-amodei-gold-v1.json"
 ANTHROPIC = ROOT / "docs/hsq-task-allocation-anthropic-gold-v1.json"
 BASELINE = ROOT / "docs/hsq-task-allocation-baseline-2026-09-08.json"
 EVALUATOR_CORRECTIONS = ROOT / "docs/hsq-stage-local-evaluator-corrections-v1.json"
-BOUNDARY_PROMPT = ROOT / "prompts/hybrid_mention_boundary_adjudication_v1.md"
+BOUNDARY_PROMPT = ROOT / "prompts/hybrid_mention_boundary_adjudication_v2.md"
+REFERENCE_PROMPT = ROOT / "prompts/semantic_reference_challenge_v4.md"
+REFERENCE_VALIDATION_PROMPT = ROOT / "prompts/semantic_reference_candidate_validation_v1.md"
 
 
 def test_development_gold_freezes_seventeen_missing_and_three_demonstrated_items() -> None:
@@ -86,9 +88,44 @@ def test_boundary_prompt_preserves_complete_proper_name_possessors_without_gold_
     assert "A proper name that identifies a referent remains complete" in prompt
     assert "both `Acme` and `Acme's services` are complete" in prompt
     assert "Do not prefer the longest candidate" in prompt
-    assert "begin it with the supplied `cN` label" in prompt
+    assert "Complete every line listed under `required_output_prefixes` exactly once" in prompt
+    assert "<supplied" not in prompt
+    assert "ontology kind" not in prompt
+    assert "source offsets" not in prompt
+    assert "Ledger records" not in prompt
     assert "Anthropic" not in prompt
     assert "Amodei" not in prompt
+
+
+def test_reference_prompt_asks_only_for_one_task_local_semantic_choice() -> None:
+    prompt = REFERENCE_PROMPT.read_text()
+
+    assert "Perform only semantic antecedent selection" in prompt
+    assert "Resolve only the exact target" in prompt
+    assert "nearby wording that identifies its occurrence" in prompt
+    assert "Select one supplied `aN` label" in prompt
+    assert "Return exactly those two lines" in prompt
+    assert "smallest complete clause" not in prompt
+    assert "Substitute each supplied candidate expression" not in prompt
+    assert "F-Coref" not in prompt
+    assert "source range" not in prompt
+    assert "Entity ID" not in prompt
+    assert "Ledger record" not in prompt
+
+
+def test_reference_validation_prompt_asks_one_binary_semantic_question() -> None:
+    prompt = REFERENCE_VALIDATION_PROMPT.read_text()
+
+    assert "one supplied antecedent candidate" in prompt
+    assert "Decide only whether the target reference means" in prompt
+    assert "`supported`" in prompt
+    assert "`unsupported`" in prompt
+    assert "`unclear`" in prompt
+    assert "Return exactly those two lines" in prompt
+    assert "F-Coref" not in prompt
+    assert "candidate ID" not in prompt
+    assert "source offset" not in prompt
+    assert "Ledger" not in prompt
 
 
 def test_evaluation_preserves_exact_model_input_output_and_scores_one_bounded_event() -> None:

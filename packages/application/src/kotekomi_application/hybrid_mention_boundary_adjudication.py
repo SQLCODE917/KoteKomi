@@ -12,8 +12,8 @@ from typing import Annotated, Literal, Protocol, Self, cast
 from kotekomi_domain.models import JsonValue
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-HYBRID_MENTION_BOUNDARY_ADJUDICATION_SCHEMA_ID = "hybrid_mention_boundary_adjudication_text_v1"
-HYBRID_MENTION_BOUNDARY_ADJUDICATION_POLICY_ID = "hybrid_mention_boundary_adjudication_v2"
+HYBRID_MENTION_BOUNDARY_ADJUDICATION_SCHEMA_ID = "hybrid_mention_boundary_adjudication_text_v2"
+HYBRID_MENTION_BOUNDARY_ADJUDICATION_POLICY_ID = "hybrid_mention_boundary_adjudication_v3"
 MAX_BOUNDARY_ADJUDICATION_CANDIDATES = 8
 
 _ID_PATTERN = r"^[a-z]+_[a-f0-9]{24}$"
@@ -164,7 +164,11 @@ def parse_boundary_candidate_judgments(
 
 def boundary_candidate_judgment_schema_bytes() -> bytes:
     """Return the pinned line-oriented output contract."""
-    return b"<supplied cN> | <complete|incomplete|unclear>\n"
+    return (
+        b"Complete every prefix listed under required_output_prefixes.\n"
+        b"Append exactly one status: complete, incomplete, or unclear.\n"
+        b"Return exactly those completed lines and no other text.\n"
+    )
 
 
 def build_mention_boundary_adjudication(**values: object) -> MentionBoundaryAdjudication:
@@ -238,9 +242,7 @@ def _parse_boundary_candidate_judgment(
     parts = line.split(" | ")
     if len(parts) != 2:
         raise ValueError("invalid_candidate_judgment_shape")
-    if parts[0].startswith("candidate") and not parts[0].startswith("candidate: "):
-        raise ValueError("invalid_candidate_judgment_shape")
-    candidate_label = parts[0].removeprefix("candidate: ")
+    candidate_label = parts[0]
     if _CANDIDATE_LABEL_PATTERN.fullmatch(candidate_label) is None:
         raise ValueError("invalid_candidate_label")
     try:

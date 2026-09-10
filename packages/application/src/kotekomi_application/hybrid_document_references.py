@@ -918,7 +918,11 @@ def _semantic_reference_outcome(
     decision: SemanticReferenceDecision,
 ) -> tuple[ReferenceStatus, ReferenceReason]:
     if decision.status is SemanticReferenceStatus.RESOLVED:
-        if decision.reason is not SemanticReferenceReason.CHALLENGE_SELECTED_ANTECEDENT:
+        if decision.reason not in {
+            SemanticReferenceReason.CHALLENGE_SELECTED_ANTECEDENT,
+            SemanticReferenceReason.SPECIALIST_VALIDATION_SUPPORTED,
+            SemanticReferenceReason.SPECIALIST_CONTRASTIVE_CONFIRMATION,
+        }:
             raise ValueError("Resolved semantic reference reason drifted.")
         return ReferenceStatus.RESOLVED, ReferenceReason.UNIQUE_SEMANTIC_ANTECEDENT
     if decision.status is SemanticReferenceStatus.AMBIGUOUS:

@@ -9,8 +9,7 @@ from kotekomi_application.semantic_reference_challenge_model_output import (
 
 def test_reference_challenge_parses_supplied_candidate_and_typed_non_resolutions() -> None:
     selected = parse_semantic_reference_challenge_output(
-        b"antecedent: cfa_0123456789abcdef01234567\n"
-        b"reason: The target refers to this supplied antecedent.\n"
+        b"antecedent: a1\nreason: The target refers to this supplied antecedent.\n"
     )
     ambiguous = parse_semantic_reference_challenge_output(
         b"antecedent: ambiguous\nreason: Two supplied candidates remain plausible.\n"
@@ -19,9 +18,9 @@ def test_reference_challenge_parses_supplied_candidate_and_typed_non_resolutions
         b"antecedent: unresolved\nreason: No supplied candidate is supported.\n"
     )
 
-    assert selected.antecedent_candidate_id == "cfa_0123456789abcdef01234567"
+    assert selected.antecedent_candidate_label == "a1"
     assert ambiguous.ambiguous is True
-    assert unresolved.antecedent_candidate_id is None
+    assert unresolved.antecedent_candidate_label is None
     assert unresolved.ambiguous is False
 
 
@@ -29,9 +28,10 @@ def test_reference_challenge_parses_supplied_candidate_and_typed_non_resolutions
     "payload",
     (
         b"",
-        b"antecedent: cfa_0123456789abcdef01234567\n",
+        b"antecedent: a1\n",
         b"reason: wrong order\nantecedent: unresolved\n",
         b"antecedent: copied antecedent text\nreason: not a supplied ID\n",
+        b"antecedent: cfa_0123456789abcdef01234567\nreason: opaque ID\n",
     ),
 )
 def test_reference_challenge_rejects_changed_literal_contract(payload: bytes) -> None:
@@ -42,6 +42,7 @@ def test_reference_challenge_rejects_changed_literal_contract(payload: bytes) ->
 def test_reference_challenge_schema_is_literal_and_does_not_request_source_text() -> None:
     schema = semantic_reference_challenge_schema_bytes()
 
-    assert b"<supplied_candidate_id>" in schema
+    assert b"legal_outcomes" in schema
+    assert b"<supplied" not in schema
     assert b"source" not in schema
     assert b'"properties"' not in schema

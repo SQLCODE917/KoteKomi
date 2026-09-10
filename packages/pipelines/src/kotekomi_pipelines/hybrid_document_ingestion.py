@@ -128,6 +128,7 @@ from kotekomi_application.hybrid_proposed_changes import (
 )
 from kotekomi_application.hybrid_reference_preview import (
     SEMANTIC_REFERENCE_CHALLENGE_SCHEMA_ID,
+    SEMANTIC_REFERENCE_VALIDATION_SCHEMA_ID,
     HybridReferencePreviewCommand,
     HybridReferencePreviewResult,
     run_hybrid_reference_preview,
@@ -156,6 +157,9 @@ from kotekomi_application.semantic_proposition import (
 from kotekomi_application.semantic_reference_challenge_model_output import (
     semantic_reference_challenge_schema_bytes,
 )
+from kotekomi_application.semantic_reference_validation_model_output import (
+    semantic_reference_candidate_validation_schema_bytes,
+)
 from kotekomi_application.semantic_references import (
     CoreferenceExecution,
     CoreferenceInput,
@@ -182,10 +186,11 @@ from kotekomi_pipelines.model_runtime import build_model_task_runtime
 
 _PROMPT_NAMES = (
     "hybrid_mention_occurrence_selection_v2.md",
-    "hybrid_mention_boundary_adjudication_v1.md",
+    "hybrid_mention_boundary_adjudication_v2.md",
     "hybrid_mention_interpretation_task_v2.md",
     "hybrid_mention_ontology_card_v1.md",
-    "semantic_reference_challenge_v1.md",
+    "semantic_reference_challenge_v4.md",
+    "semantic_reference_candidate_validation_v1.md",
     "hybrid_event_trigger_task_v4.md",
     "hybrid_event_frame_selection_v1.md",
     "hybrid_event_frame_fit_v1.md",
@@ -544,7 +549,7 @@ def _run_paragraph(
             tokenizer=resources.runtime,
             proposal_prompt_bytes=prompts["hybrid_mention_occurrence_selection_v2.md"],
             boundary_adjudication_prompt_bytes=prompts[
-                "hybrid_mention_boundary_adjudication_v1.md"
+                "hybrid_mention_boundary_adjudication_v2.md"
             ],
             interpretation_prompt_bytes=prompts["hybrid_mention_interpretation_task_v2.md"],
             ontology_card_bytes=prompts["hybrid_mention_ontology_card_v1.md"],
@@ -570,7 +575,8 @@ def _run_paragraph(
             coreference_tokenizer=resources.coreference,
             model_runtime=resources.runtime,
             model_run_id_factory=model_run_id_factory,
-            challenge_prompt_bytes=prompts["semantic_reference_challenge_v1.md"],
+            challenge_prompt_bytes=prompts["semantic_reference_challenge_v4.md"],
+            validation_prompt_bytes=prompts["semantic_reference_candidate_validation_v1.md"],
         )
     stages.append(_stage(HybridStageId.HP2_REFERENCES, hp2))
 
@@ -721,7 +727,7 @@ def _policy_input(
         "hybrid_mention_occurrence_selection_text_v1"
     )
     boundary_adjudication_schema = HybridMentionBoundaryAdjudicationTaskSchemaRegistry().resolve(
-        "hybrid_mention_boundary_adjudication_text_v1"
+        "hybrid_mention_boundary_adjudication_text_v2"
     )
     mention_interpretation_schema = HybridMentionInterpretationTaskSchemaRegistry().resolve(
         "hybrid_mention_interpretation_text_v2"
@@ -735,6 +741,9 @@ def _policy_input(
             mention_interpretation_schema.canonical_schema_bytes
         ),
         SEMANTIC_REFERENCE_CHALLENGE_SCHEMA_ID: semantic_reference_challenge_schema_bytes(),
+        SEMANTIC_REFERENCE_VALIDATION_SCHEMA_ID: (
+            semantic_reference_candidate_validation_schema_bytes()
+        ),
         TRIGGER_SCHEMA_ID: event_trigger_schema_bytes(),
         HYBRID_EVENT_FRAME_SELECTION_SCHEMA_ID: event_frame_selection_schema_bytes(),
         HYBRID_EVENT_ROLE_SELECTION_SCHEMA_ID: event_semantic_role_target_schema_bytes(),

@@ -1,6 +1,6 @@
 # TDD: Bounded Semantic Task Allocation
 
-- Status: Accepted for implementation
+- Status: In implementation; MentionCandidate and ReferenceDecision stages implemented and verified
 - Deliverable ID: HSQ-7
 - Program: [Hybrid Semantic Quality Program](2026-09-06-hybrid-semantic-quality-program.md)
 - Depends on: [Source-Bound Governed Event Extraction](2026-09-07-source-bound-governed-event-extraction.md)
@@ -10,6 +10,24 @@
 - Historical stage-local split: [Mention and Reference Evaluation Split v1](hsq-stage-local-split-v1.json)
 - Corrected stage-local split: [Mention and Reference Evaluation Split v2](hsq-stage-local-split-v2.json)
 - Evaluator corrections: [Stage-Local Evaluator Corrections](hsq-stage-local-evaluator-corrections-v1.json)
+
+## Delivery Status
+
+Implemented and verified:
+
+- authoritative SourceSegment to source-owned MentionObservation and MentionCandidate selection;
+- deterministic and bounded semantic mention-boundary reconciliation;
+- effective MentionCandidate interpretation and reference-marker routing;
+- specialist proposal, one-candidate validation, complete-catalog contrastive fallback, and conservative
+  ReferenceDecision construction;
+- exact stage data-in/data-out, causal model-run lineage, and zero-write stage-local evaluation.
+
+The September 10 v10 replay passed thirty-nine of forty development-plus-validation Gold items. AMO-12
+remains the one intended explicit specialist/Qwen ambiguity.
+
+Still pending stage-local implementation and evaluation:
+
+- SourceOccurrence and event-trigger discovery onward through Candidate Wiki evaluation.
 
 ## Context & Problem
 
@@ -116,7 +134,9 @@ KoteKomi derives the Effective MentionCandidates from deterministic selections a
 - BTA-BND-02: KoteKomi sends only ambiguous overlap components to semantic boundary adjudication.
 - BTA-BND-03: One task receives exact source text and at most eight source-bound candidate labels.
 - BTA-BND-04: Qwen returns only a supplied candidate label and `complete`, `incomplete`, or `unclear`.
-- BTA-BND-04A: The requested form is `cN | status`; the parser also accepts the semantically identical `candidate: cN | status` form because the redundant prefix carries no authority.
+- BTA-BND-04A: The requested and accepted form is exactly `cN | status`.
+- BTA-BND-04B: Model-visible task input lists every legal task-local output prefix and contains no abstract placeholder that can be mistaken for an output line.
+- BTA-BND-04C: Qwen returns exactly one valid terminal judgment for every supplied candidate label.
 - BTA-BND-05: Qwen does not return source text, offsets, ontology kinds, or canonical identities.
 - BTA-BND-06: KoteKomi maps valid local labels to MentionCandidate identities.
 - BTA-BND-07: KoteKomi treats omitted, malformed, unknown, and duplicate lines as unresolved.
@@ -130,6 +150,8 @@ KoteKomi derives the Effective MentionCandidates from deterministic selections a
 - BTA-BND-12: A component with more than eight candidates remains unresolved without a model call.
 - BTA-BND-13: A failed adjudication keeps its candidates and produces a partial Preview.
 - BTA-BND-14: Adjudication creates derived evidence and cannot create accepted Ledger state.
+- BTA-BND-15: Missing, malformed, unknown, and duplicate judgments remain visible, affect only their supplied candidate, and make the Preview partial.
+- BTA-BND-16: Evaluation reports contract completeness over every supplied boundary candidate independently from Gold focus-item accuracy.
 
 ### Source-owned trigger occurrences
 
@@ -183,10 +205,20 @@ KoteKomi derives the Effective MentionCandidates from deterministic selections a
 
 - BTA-REF-01: F-Coref remains a fallible antecedent candidate proposer.
 - BTA-REF-02: KoteKomi validates every F-Coref span against authoritative source characters.
-- BTA-REF-03: A bounded reference challenge receives the target and an ordered catalog of source-valid candidate IDs.
-- BTA-REF-04: Qwen returns one supplied candidate ID, `ambiguous`, or `unresolved`.
-- BTA-REF-05: Qwen cannot copy or invent an antecedent literal, source range, or Entity ID.
-- BTA-REF-06: KoteKomi constructs the terminal ReferenceDecision from the validated candidate and model judgment.
+- BTA-REF-03: A bounded reference challenge receives the target and an ordered catalog of task-local `aN` labels bound to source-valid candidate IDs.
+- BTA-REF-03A: Each catalog entry supplies the candidate's exact expression and bounded source wording immediately before and after that occurrence.
+- BTA-REF-03B: Two occurrences with the same expression remain distinguishable by their task-local labels and occurrence context.
+- BTA-REF-03C: When F-Coref proposes exactly one source-valid candidate, Qwen first receives a binary validation task containing only that candidate.
+- BTA-REF-04: Qwen returns one supplied task-local `aN` label, `ambiguous`, or `unresolved`.
+- BTA-REF-04A: Qwen performs only semantic antecedent selection for the visibly delimited target reference.
+- BTA-REF-04B: Binary specialist validation returns exactly `supported`, `unsupported`, or `unclear` plus one diagnostic reason.
+- BTA-REF-04C: A source-valid F-Coref candidate becomes resolved only after Qwen returns `supported` for that candidate.
+- BTA-REF-04D: An `unsupported` or `unclear` specialist validation may trigger one separate contrastive-selection task over the complete bounded catalog, including the specialist candidate.
+- BTA-REF-04E: Agreement between the specialist proposal and contrastive selection resolves that candidate; selection of a different candidate retains both model outputs and records the specialist/semantic disagreement as ambiguous.
+- BTA-REF-04F: A malformed or failed specialist validation terminates as a typed non-resolution and cannot be bypassed by contrastive selection.
+- BTA-REF-05: The model-visible output contains only one supplied task-local label or a typed non-resolution plus one diagnostic explanation.
+- BTA-REF-06: KoteKomi maps a valid task-local label to its source-valid candidate ID and constructs the terminal ReferenceDecision.
+- BTA-REF-06A: The exact label-to-candidate mapping, parsed model selection, mapped candidate selection, and model-output digest remain in stage evidence.
 - BTA-REF-07: A malformed, out-of-catalog, or contradictory challenge result cannot become a resolved reference.
 - BTA-REF-08: Exact alias declarations remain deterministic and do not require a model challenge.
 - BTA-REF-09: When F-Coref supplies no usable antecedent, KoteKomi supplies up to eight nearest preceding source-valid specific-entity candidates from the same paragraph.
@@ -315,6 +347,196 @@ The unchanged twenty-item development and twenty-item validation partitions run 
 
 The v4 correction accepts only a result that passes thirty-nine of forty items with AMO-12 as the sole hold.
 
+The v5 correction hardens the literal boundary-adjudication output contract without changing semantic
+scope.
+
+The v4 replay showed that the strict parser protected integrity while the model-visible abstract schema
+caused collateral recall loss that focus-item evaluation did not expose.
+
+Qwen copied the abstract `<supplied cN>` placeholder as an actual candidate label in four adjudication
+groups across three unique SourceSegments.
+
+Those groups left eleven otherwise meaningful non-focus candidates unresolved while the forty-item
+focus score still reached thirty-nine of forty.
+
+The affected SourceSegments contain AMO-10 and AMO-11, AMO-16 and AMO-17, and ANT-12 and ANT-13.
+
+The v5 task renders only the actual legal output prefixes, such as `c1 |` and `c2 |`, and contains no
+abstract candidate-label placeholder.
+
+The v5 parser accepts only `cN | status` and does not repair the historical placeholder or the redundant
+`candidate:` spelling.
+
+KoteKomi still isolates malformed lines, preserves valid siblings, maps missing or duplicated labels to
+explicit unresolved candidates, and marks the Preview partial.
+
+The v5 evaluator adds an all-candidate contract-completeness gate alongside the existing focus-item
+quality checks.
+
+Contract completeness requires exactly one valid `complete`, `incomplete`, or `unclear` judgment for
+every candidate actually supplied to Qwen.
+
+The gate does not claim that non-Gold candidate judgments are semantically correct; it proves that no
+candidate disappeared because the transport contract was malformed.
+
+The three affected SourceSegments run first, followed by the unchanged twenty-item development and
+twenty-item validation partitions.
+
+The v5 correction accepts only a result that retains thirty-nine of forty Gold items, keeps AMO-12 as
+the sole explicit reference ambiguity, and reports complete boundary-contract coverage with no rejected
+boundary lines.
+
+Source-alias rescue and selective interpretation remain measured but inactive.
+
+The v5 diagnostic proved the boundary-output correction independently of downstream stages.
+
+All eighteen candidates supplied across seven ambiguous components received valid terminal judgments,
+with no rejected, duplicate, unknown, or unresolved boundary output.
+
+The same diagnostic exposed an adjacent reference-contract defect before the full replay.
+
+Qwen selected `Claude` correctly in its explanation but mistyped one character while reproducing the
+opaque `cfa_...` candidate ID, so KoteKomi correctly rejected the out-of-catalog result.
+
+The v6 correction gives Qwen only short task-local antecedent labels such as `a1` and `a2`.
+
+KoteKomi deterministically binds those labels to source-valid CoreferenceAntecedentCandidate IDs before
+the call, maps a valid returned label after the call, and preserves both forms in ExtractionStageTrace
+evidence.
+
+The model-visible prompt contains only the semantic reference-selection task and its literal output
+contract; deterministic KoteKomi responsibilities are not presented as model prohibitions.
+
+The boundary-adjudication prompt likewise retains only task-relevant semantic rules and the positive
+literal output contract established by v5.
+
+An unknown, malformed, or mistyped task-local label remains a typed invalid challenge and cannot become
+a resolved ReferenceDecision.
+
+The v6 diagnostic proved the short-label transport and trace contract, but it did not pass the semantic
+gate.
+
+Qwen returned valid label `a3`, which KoteKomi mapped exactly to `Anthropic`, while F-Coref proposed the
+nearer `Claude` occurrence for `if it had`.
+
+KoteKomi correctly retained both alternatives as `ambiguous`, so the failed experiment did not create a
+false resolution.
+
+The exact v6 input exposed two missing task inputs.
+
+The candidate catalog contained two different `Claude` occurrences but rendered both as only
+`"Claude"`, making their labels semantically indistinguishable, and the prompt asked for a choice without
+giving the small model a bounded method for interpreting omitted repeated words.
+
+The v7 diagnostic rendered bounded source wording around every candidate occurrence and asked Qwen to
+compare candidate substitutions in the target's local clause after restoring source-supported ellipsis.
+
+That hypothesis failed.
+
+Qwen returned valid label `a2` for `Minab school strike`; its explanation restated the broad source topic
+instead of applying the requested substitution to the grammatical subject of `had`.
+
+The v8 correction removes the unproven multi-step linguistic procedure and restores the concise semantic
+antecedent instruction that selected `Claude` in v5.
+
+It retains the short task-local labels and bounded occurrence context, so the semantic task no longer
+requires opaque-ID transcription and repeated expressions remain distinguishable.
+
+The v8 control also failed.
+
+Qwen again returned valid label `a2` for `Minab school strike`, despite correctly describing the broader
+`use of Claude in connection with the Minab school strike` in its reason.
+
+The repeated valid-but-wrong choices under v6, v7, and v8 falsify prompt-only repair for this
+seven-candidate task.
+
+The v9 correction changes task allocation instead of adding instructions.
+
+When F-Coref supplies exactly one source-valid candidate, Qwen receives one binary claim: whether the
+target refers to that candidate.
+
+Only `supported` resolves it.
+
+An explicit `unsupported` or `unclear` result permits one contrastive choice over the complete bounded
+catalog, including the specialist candidate.
+
+Agreement between the specialist and the contrastive choice resolves the reference.
+
+If the contrastive task selects another candidate, KoteKomi preserves the disagreement as ambiguous
+rather than letting either fallible model win.
+
+When F-Coref abstains or proposes more than one distinct candidate, the existing bounded selection task
+remains available.
+
+KoteKomi continues to own source ranges, candidate identity, label mapping, validation, disagreement
+handling, and the terminal ReferenceDecision.
+
+The v9 three-item diagnostic passed its intended contract.
+
+For AMO-16 and AMO-17, F-Coref supplied the exact `Claude` occurrence, Qwen returned `supported` from
+the one-candidate validation task, and KoteKomi resolved both items without invoking alternative
+selection.
+
+For AMO-12, Qwen rejected F-Coref's `Trump` proposal and selected `Amodei` from the remaining catalog;
+KoteKomi retained the model disagreement as the one expected explicit ambiguity.
+
+All three model executions used valid literal output, all supplied mention-boundary candidates received
+terminal judgments, and the diagnostic created no ProposedChange or accepted Ledger write.
+
+The first v9 twenty/twenty replay rejected the correction because it passed only thirty-eight of forty
+items.
+
+AMO-12 remained the expected explicit ambiguity, but held-out item ANT-01 regressed.
+
+Its source says that the Department of Defense conflicted with `the artificial intelligence company
+Anthropic over the use of its products`.
+
+F-Coref selected `Anthropic`, but the isolated binary task returned `unsupported` and incorrectly said
+that `its products` belonged to the Department of Defense.
+
+The alternative-only task then received only the Department of Defense and returned `unresolved` while
+explaining that either organization remained possible.
+
+In the retained v4 evidence, a single contrastive task over both candidates selected `Anthropic`
+correctly.
+
+The v10 correction therefore keeps one-candidate validation as the successful fast path but replaces
+alternative-only fallback with one complete-catalog contrastive selection.
+
+This tests the observed hypothesis that Qwen needs an explicit contrast for ANT-01 while preserving the
+successful one-candidate result for AMO-16 and AMO-17.
+
+The v10 four-item diagnostic passed this contract.
+
+For ANT-01, the binary task repeated its incorrect `unsupported` judgment, but the complete-catalog
+contrastive task selected `Anthropic`; KoteKomi resolved the reference because that final selection
+agreed with F-Coref.
+
+AMO-16 and AMO-17 still resolved `it` to `Claude` through one supported validation each without
+fallback.
+
+For AMO-12, Qwen rejected F-Coref's `Trump` proposal and selected `Amodei` contrastively; KoteKomi
+preserved that disagreement as the one expected ambiguity.
+
+All five model executions produced valid literal output and causal trace records. The diagnostic
+retained a complete boundary contract and created no ProposedChange or accepted Ledger write.
+
+The fresh v10 twenty/twenty replay then passed its acceptance gates with thirty-nine of forty Gold
+items.
+
+The development partition passed nineteen of twenty and the locked validation partition passed all
+twenty. AMO-12 was the sole hold, at reference resolution, where the specialist/Qwen disagreement
+remained explicitly ambiguous.
+
+Across both partitions, all sixty-five supplied boundary candidates received terminal judgments. The
+ten semantic-reference traces retained twelve causally ordered model executions: seven specialist
+validations, two complete-catalog contrastive selections, and three ordinary catalog selections. Every
+literal output parsed, no model-visible input exposed opaque candidate IDs, and input, output, and
+terminal-decision task order matched.
+
+The replay created zero ProposedChanges and zero accepted Ledger writes. It therefore restores ANT-01
+without weakening AMO-12's conservative hold or regressing the locked validation partition.
+
 ## Proposed Architecture
 
 ```text
@@ -399,7 +621,16 @@ KoteKomi owns the resulting range, identity, decision record, and trace.
 
 `EventPresentationSelection` contains polarity, modality, attribution selection, and independently parsed optional qualifiers.
 
-`SemanticReferenceChallenge` records one selected antecedent candidate ID or a typed non-resolution.
+`SemanticReferenceChallenge` records one selected task-local antecedent label or a typed non-resolution.
+
+`SemanticReferenceCandidateLabelBinding` records the ordered task-local label and its source-valid
+candidate ID; the exact model-visible task records the bounded occurrence context rendered beside it.
+
+`SemanticReferenceCandidateValidation` records one `supported`, `unsupported`, or `unclear` judgment for
+one exact source-valid specialist candidate.
+
+`SemanticReferenceModelExecutionReference` records every validation and selection task/run pair in
+causal order on the terminal SemanticReferenceDecision.
 
 `StandingFactDraft` contains a source-bound relation range reconstructed from supplied SourceOccurrences.
 
@@ -424,7 +655,7 @@ Existing EventTriggerDraft, EventSemanticDraft, CompleteProposition, Proposition
 - AC-BTA-MEN-01: Tests prove Qwen can select both occurrences of the same literal by different supplied occurrence IDs and KoteKomi reconstructs both exact source ranges.
 - AC-BTA-MEN-02: Tests prove the mention-selection prompt and output contract contain no ontology-kind field and require no copied source text.
 - AC-BTA-MEN-03: Tests prove the model-visible catalog uses SourceSegment-local `oN` IDs, contains no redundant `sN:oN` identifiers, and rejects an `sN` value supplied as an occurrence ID.
-- AC-BTA-BND-01: Parser tests prove both unambiguous line spellings map identically while malformed, unknown, duplicate, and omitted lines leave valid sibling judgments intact.
+- AC-BTA-BND-01: Parser tests prove only `cN | status` is accepted while malformed, historical-placeholder, redundant-prefix, unknown, duplicate, and omitted lines leave valid sibling judgments intact.
 - AC-BTA-BND-02: Tests prove `Amodei` remains effective beside incomplete `Amodei wrote` and longer clause fragments.
 - AC-BTA-BND-03: Tests prove `Anthropic` remains effective beside incomplete `Anthropic's technology achieved`.
 - AC-BTA-BND-04: Tests prove `Anthropic` and complete `Anthropic's services` can both remain effective.
@@ -434,6 +665,8 @@ Existing EventTriggerDraft, EventSemanticDraft, CompleteProposition, Proposition
 - AC-BTA-BND-05: Tests prove deterministic resolved and uncontested components bypass the model task.
 - AC-BTA-BND-06: Tests prove failed and over-limit adjudications remain partial and create no accepted state.
 - AC-BTA-BND-07: Tests inspect exact model-visible input, raw output, mapped judgments, rejected lines, and lineage.
+- AC-BTA-BND-08: Tests prove model-visible input lists each actual legal `cN |` prefix exactly once and contains no abstract placeholder.
+- AC-BTA-BND-09: Tests prove each supplied candidate has exactly one terminal model judgment or one explicit unresolved outcome with diagnostics.
 - AC-BTA-TRG-01: Tests prove `has publicly rebuked` can be retained as the expression while `rebuked` is the required event head and `has` is rejected as a head.
 - AC-BTA-TRG-02: Tests prove one invalid trigger line does not erase another valid line.
 - AC-BTA-EVT-01: Tests prove frame selection input excludes the role catalog.
@@ -450,6 +683,17 @@ Existing EventTriggerDraft, EventSemanticDraft, CompleteProposition, Proposition
 - AC-BTA-REF-04: Tests prove a deterministic `the  company's` marker reaches reference resolution without a MentionInterpretation.
 - AC-BTA-REF-05: Tests inspect a challenge task containing distinct before-target, target-reference, and after-target fields.
 - AC-BTA-REF-06: Tests prove disagreement between a non-empty F-Coref proposal and Qwen's selection produces `ambiguous` with both source-valid spans.
+- AC-BTA-REF-07: Tests prove model-visible antecedents use ordered task-local `aN` labels and contain no opaque candidate IDs.
+- AC-BTA-REF-08: Tests prove KoteKomi maps a valid `aN` selection to the exact source-valid candidate ID and records both the label and mapping in stage evidence.
+- AC-BTA-REF-09: Tests prove an unknown or malformed task-local label becomes an invalid challenge rather than a guessed reference.
+- AC-BTA-REF-10: Tests prove repeated identical candidate expressions have distinct labels and bounded source-occurrence context.
+- AC-BTA-REF-11: Tests prove candidate-occurrence context and concise semantic-antecedent selection remain model guidance while source ranges and terminal decisions remain deterministic KoteKomi outputs.
+- AC-BTA-REF-12: Tests prove a sole F-Coref proposal receives a one-candidate binary validation task rather than a seven-way selection task.
+- AC-BTA-REF-13: Tests prove `supported` resolves only the validated specialist candidate.
+- AC-BTA-REF-14: Tests prove `unsupported` followed by a different contrastive selection remains ambiguous with both execution records and source spans.
+- AC-BTA-REF-15: Tests prove a failed or malformed validation cannot invoke fallback or resolve a reference.
+- AC-BTA-REF-16: Tests prove fallback includes the specialist and all remaining bounded candidates in one contrastive task.
+- AC-BTA-REF-17: Tests prove specialist and contrastive agreement resolves the specialist candidate while a different contrastive choice remains ambiguous.
 - AC-BTA-GAP-01: Tests prove relationship termination and unsupported composite meanings terminate as typed ontology gaps.
 - AC-BTA-TRC-01: Tests inspect exact data in and data out for every model-facing stage.
 - AC-BTA-REG-01: Focused deterministic tests retain all previously demonstrated event behavior.
@@ -471,6 +715,21 @@ Existing EventTriggerDraft, EventSemanticDraft, CompleteProposition, Proposition
 - AC-BTA-SLE-12: The v4 diagnostic passes AMO-05, AMO-06, AMO-10, AMO-11, ANT-06, and ANT-11.
 - AC-BTA-SLE-13: The v4 replay passes thirty-nine of forty items with AMO-12 as the sole hold.
 - AC-BTA-SLE-14: The v4 replay creates zero ProposedChanges and zero accepted Ledger records.
+- AC-BTA-SLE-15: The v5 diagnostic covers the four malformed adjudication groups across the three affected SourceSegments and reports complete candidate-contract coverage.
+- AC-BTA-SLE-16: The v5 phase reports count supplied candidates, valid terminal judgments, deterministic completions, unresolved candidates, duplicate labels, unknown labels, and rejected lines once per unique adjudication.
+- AC-BTA-SLE-17: The v5 replay passes thirty-nine of forty items with AMO-12 as the sole hold at reference resolution.
+- AC-BTA-SLE-18: The v5 replay has zero rejected boundary lines, zero contract-caused unresolved candidates, zero ProposedChanges, and zero accepted Ledger records.
+- AC-BTA-SLE-19: The v5 comparison records source-alias rescue and selective interpretation as measured but not activated.
+- AC-BTA-SLE-20: The v6 diagnostic proves valid task-local-label transport and exact mapping while safely retaining the observed `Anthropic`/`Claude` disagreement as ambiguous.
+- AC-BTA-SLE-21: The v7 diagnostic preserves exact occurrence context and mapping but safely rejects the observed `Minab school strike`/`Claude` disagreement as ambiguous.
+- AC-BTA-SLE-22: The v8 diagnostic proves the concise control still selects `Minab school strike` rather than the source-supported `Claude` occurrence.
+- AC-BTA-SLE-23: The v8 diagnostic preserves valid input, output, and mapping evidence while safely retaining the repeated `Minab school strike`/`Claude` disagreement as ambiguous, thereby falsifying prompt-only repair.
+- AC-BTA-SLE-24: The v9 diagnostic resolves the Minab reference through binary validation and preserves AMO-12 as an explicit specialist/alternative disagreement.
+- AC-BTA-SLE-25: The rejected v9 replay preserves complete evidence for thirty-eight of forty passing items and identifies ANT-01 as a held-out regression caused by alternative-only fallback.
+- AC-BTA-SLE-26: The v9 replay creates zero ProposedChanges and zero accepted Ledger records.
+- AC-BTA-SLE-27: The v10 diagnostic passes ANT-01, AMO-16, and AMO-17 while preserving AMO-12 as an explicit specialist/contrastive disagreement.
+- AC-BTA-SLE-28: The v10 replay retains the v5 boundary-contract result and passes thirty-nine of forty items with AMO-12 as the sole explicit ambiguity.
+- AC-BTA-SLE-29: The v10 replay creates zero ProposedChanges and zero accepted Ledger records.
 
 ## Reference Implementations and Research Basis
 

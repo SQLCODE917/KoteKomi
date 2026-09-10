@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Mapping
 from pathlib import Path
-from typing import Annotated, Literal, Self
+from typing import Annotated, Literal, Self, cast
 
 from kotekomi_application.context_planning import (
     PARAGRAPH_SEGMENT_V3,
@@ -12,6 +13,7 @@ from kotekomi_application.context_planning import (
 )
 from kotekomi_application.hybrid_document_references import HybridReferencePreview
 from kotekomi_application.hybrid_mention_boundary_adjudication import (
+    MentionBoundaryCandidateStatus,
     effective_mention_candidate_ids,
 )
 from kotekomi_application.hybrid_mention_interpretation import (
@@ -19,6 +21,7 @@ from kotekomi_application.hybrid_mention_interpretation import (
     MentionBoundaryStatus,
     Referentiality,
 )
+from kotekomi_domain.models import JsonValue
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from kotekomi_pipelines.task_allocation_evaluation import (
@@ -156,12 +159,110 @@ class StageLocalCaseEvaluation(BaseModel):
         return self
 
 
+class StageLocalBoundaryContractCase(BaseModel):
+    """Candidate-completeness evidence for one ambiguous boundary component."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    source_segment_id: Annotated[str, Field(min_length=1)]
+    source_text_sha256: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
+    boundary_decision_id: Annotated[str, Field(min_length=1)]
+    adjudication_id: str | None
+    candidate_ids: tuple[Annotated[str, Field(min_length=1)], ...]
+    supplied_candidate_ids: tuple[Annotated[str, Field(min_length=1)], ...]
+    deterministic_complete_candidate_ids: tuple[Annotated[str, Field(min_length=1)], ...]
+    terminal_judgment_candidate_ids: tuple[Annotated[str, Field(min_length=1)], ...]
+    unresolved_candidate_ids: tuple[Annotated[str, Field(min_length=1)], ...]
+    rejection_codes: tuple[Annotated[str, Field(min_length=1)], ...]
+    contract_complete: bool
+
+    @model_validator(mode="after")
+    def validate_contract(self) -> Self:
+        for label, values in (
+            ("candidate IDs", self.candidate_ids),
+            ("supplied candidate IDs", self.supplied_candidate_ids),
+            ("deterministic candidate IDs", self.deterministic_complete_candidate_ids),
+            ("terminal judgment candidate IDs", self.terminal_judgment_candidate_ids),
+            ("unresolved candidate IDs", self.unresolved_candidate_ids),
+        ):
+            if tuple(sorted(values)) != values or len(set(values)) != len(values):
+                raise ValueError(f"Stage-local boundary {label} must be ordered and distinct.")
+        supplied = set(self.supplied_candidate_ids)
+        deterministic = set(self.deterministic_complete_candidate_ids)
+        terminal = set(self.terminal_judgment_candidate_ids)
+        unresolved = set(self.unresolved_candidate_ids)
+        if deterministic & supplied:
+            raise ValueError("A deterministic boundary candidate cannot also be model-visible.")
+        if terminal & unresolved or terminal | unresolved != supplied:
+            raise ValueError(
+                "Terminal and unresolved judgments must partition supplied candidates."
+            )
+        if deterministic | supplied != set(self.candidate_ids):
+            raise ValueError("Boundary contract evidence must cover its parent candidates.")
+        expected_complete = (
+            self.adjudication_id is not None
+            and not unresolved
+            and not self.rejection_codes
+            and len(terminal) == len(supplied)
+        )
+        if self.contract_complete != expected_complete:
+            raise ValueError("Boundary contract completion does not match its evidence.")
+        return self
+
+
+class StageLocalBoundaryContractSummary(BaseModel):
+    """All-candidate output-contract coverage, independent of Gold focus accuracy."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    ambiguous_component_count: Annotated[int, Field(ge=0)]
+    adjudication_count: Annotated[int, Field(ge=0)]
+    supplied_candidate_count: Annotated[int, Field(ge=0)]
+    valid_terminal_judgment_count: Annotated[int, Field(ge=0)]
+    deterministic_completion_count: Annotated[int, Field(ge=0)]
+    unresolved_candidate_count: Annotated[int, Field(ge=0)]
+    rejected_line_count: Annotated[int, Field(ge=0)]
+    duplicate_label_count: Annotated[int, Field(ge=0)]
+    unknown_label_count: Annotated[int, Field(ge=0)]
+    contract_complete: bool
+    cases: tuple[StageLocalBoundaryContractCase, ...]
+
+    @model_validator(mode="after")
+    def validate_summary(self) -> Self:
+        cases = self.cases
+        expected = {
+            "ambiguous_component_count": len(cases),
+            "adjudication_count": sum(item.adjudication_id is not None for item in cases),
+            "supplied_candidate_count": sum(len(item.supplied_candidate_ids) for item in cases),
+            "valid_terminal_judgment_count": sum(
+                len(item.terminal_judgment_candidate_ids) for item in cases
+            ),
+            "deterministic_completion_count": sum(
+                len(item.deterministic_complete_candidate_ids) for item in cases
+            ),
+            "unresolved_candidate_count": sum(len(item.unresolved_candidate_ids) for item in cases),
+            "rejected_line_count": sum(len(item.rejection_codes) for item in cases),
+            "duplicate_label_count": sum(
+                item.rejection_codes.count("duplicate_candidate_label") for item in cases
+            ),
+            "unknown_label_count": sum(
+                item.rejection_codes.count("unknown_candidate_label") for item in cases
+            ),
+        }
+        for field_name, value in expected.items():
+            if getattr(self, field_name) != value:
+                raise ValueError(f"Stage-local boundary {field_name} drifted.")
+        if self.contract_complete != all(item.contract_complete for item in cases):
+            raise ValueError("Boundary contract summary does not match its cases.")
+        return self
+
+
 class StageLocalPhaseReport(BaseModel):
     """Auditable mention/reference result for one split phase."""
 
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
-    schema_version: Literal["hsq_stage_local_phase_report_v1"] = "hsq_stage_local_phase_report_v1"
+    schema_version: Literal["hsq_stage_local_phase_report_v2"] = "hsq_stage_local_phase_report_v2"
     phase: StageLocalPhase
     item_count: int
     unique_source_segment_count: int
@@ -172,6 +273,7 @@ class StageLocalPhaseReport(BaseModel):
     accepted_ledger_change_count: Literal[0] = 0
     optional_experiments: dict[str, str]
     optional_experiment_measurements: dict[str, int] = Field(default_factory=dict)
+    boundary_contract: StageLocalBoundaryContractSummary
     cases: tuple[StageLocalCaseEvaluation, ...]
 
     @model_validator(mode="after")
@@ -478,6 +580,7 @@ def build_stage_local_report(
     phase: StageLocalPhase,
     evaluations: tuple[StageLocalCaseEvaluation, ...],
     producer_elapsed_milliseconds: dict[str, int],
+    boundary_contract: StageLocalBoundaryContractSummary,
     optional_experiment_measurements: dict[str, int] | None = None,
 ) -> StageLocalPhaseReport:
     failures: dict[str, int] = {}
@@ -496,8 +599,166 @@ def build_stage_local_report(
             "selective_interpretation": "not_activated_pending_correctness_gates",
         },
         optional_experiment_measurements=(optional_experiment_measurements or {}),
+        boundary_contract=boundary_contract,
         cases=tuple(sorted(evaluations, key=lambda item: item.item_id)),
     )
+
+
+def evaluate_stage_local_boundary_contract(
+    previews: tuple[HybridExtractionPreview, ...],
+) -> StageLocalBoundaryContractSummary:
+    """Evaluate every ambiguous component once, independently from focus-item Gold."""
+    segment_digests: set[str] = set()
+    cases: list[StageLocalBoundaryContractCase] = []
+    for preview in previews:
+        preview_digests = {item.source_text_sha256 for item in preview.candidates}
+        overlap = segment_digests & preview_digests
+        if overlap:
+            raise ValueError(
+                "Stage-local boundary contract received duplicate SourceSegment evidence: "
+                + ", ".join(sorted(overlap))
+            )
+        segment_digests.update(preview_digests)
+        candidate_by_id = {item.id: item for item in preview.candidates}
+        adjudication_by_decision = {
+            item.boundary_decision_id: item for item in preview.boundary_adjudications
+        }
+        trace_by_id = {item.id: item for item in preview.traces}
+        boundary_trace_by_decision = {
+            trace.input_record_ids[0]: trace
+            for trace in preview.traces
+            if trace.stage_id == "mention_boundary_adjudication" and trace.input_record_ids
+        }
+        for decision in preview.boundary_decisions:
+            if decision.status is not MentionBoundaryStatus.AMBIGUOUS:
+                continue
+            candidate_ids = tuple(sorted(decision.candidate_ids))
+            source_digests = {
+                candidate_by_id[candidate_id].source_text_sha256
+                for candidate_id in decision.candidate_ids
+            }
+            if len(source_digests) != 1:
+                raise ValueError(
+                    "One boundary component must have one authoritative source digest."
+                )
+            adjudication = adjudication_by_decision.get(decision.id)
+            trace = (
+                trace_by_id[adjudication.trace_id]
+                if adjudication is not None
+                else boundary_trace_by_decision.get(decision.id)
+            )
+            if trace is None:
+                supplied_candidate_ids = candidate_ids
+                deterministic_candidate_ids: tuple[str, ...] = ()
+            else:
+                supplied_candidate_ids = _boundary_trace_supplied_candidate_ids(trace.input)
+                deterministic_candidate_ids = _boundary_trace_deterministic_candidate_ids(
+                    trace.input
+                )
+            if set(supplied_candidate_ids) | set(deterministic_candidate_ids) != set(candidate_ids):
+                raise ValueError("Boundary trace candidates do not match their parent decision.")
+            if adjudication is None:
+                terminal_candidate_ids: tuple[str, ...] = ()
+                unresolved_candidate_ids = supplied_candidate_ids
+                rejection_codes: tuple[str, ...] = ()
+            else:
+                status_by_candidate = {
+                    item.candidate_id: item.status for item in adjudication.judgments
+                }
+                if set(status_by_candidate) != set(candidate_ids):
+                    raise ValueError(
+                        "Boundary adjudication judgments do not match their parent candidates."
+                    )
+                terminal_candidate_ids = tuple(
+                    sorted(
+                        candidate_id
+                        for candidate_id in supplied_candidate_ids
+                        if status_by_candidate[candidate_id]
+                        in {
+                            MentionBoundaryCandidateStatus.COMPLETE,
+                            MentionBoundaryCandidateStatus.INCOMPLETE,
+                            MentionBoundaryCandidateStatus.UNCLEAR,
+                        }
+                    )
+                )
+                unresolved_candidate_ids = tuple(
+                    sorted(
+                        candidate_id
+                        for candidate_id in supplied_candidate_ids
+                        if status_by_candidate[candidate_id]
+                        is MentionBoundaryCandidateStatus.UNRESOLVED
+                    )
+                )
+                rejection_codes = tuple(item.code for item in adjudication.rejected_lines)
+            contract_complete = (
+                adjudication is not None
+                and not unresolved_candidate_ids
+                and not rejection_codes
+                and len(terminal_candidate_ids) == len(supplied_candidate_ids)
+            )
+            cases.append(
+                StageLocalBoundaryContractCase(
+                    source_segment_id=decision.source_segment_id,
+                    source_text_sha256=next(iter(source_digests)),
+                    boundary_decision_id=decision.id,
+                    adjudication_id=(adjudication.id if adjudication is not None else None),
+                    candidate_ids=candidate_ids,
+                    supplied_candidate_ids=tuple(sorted(supplied_candidate_ids)),
+                    deterministic_complete_candidate_ids=tuple(sorted(deterministic_candidate_ids)),
+                    terminal_judgment_candidate_ids=terminal_candidate_ids,
+                    unresolved_candidate_ids=tuple(sorted(unresolved_candidate_ids)),
+                    rejection_codes=rejection_codes,
+                    contract_complete=contract_complete,
+                )
+            )
+    ordered = tuple(
+        sorted(cases, key=lambda item: (item.source_text_sha256, item.boundary_decision_id))
+    )
+    return StageLocalBoundaryContractSummary(
+        ambiguous_component_count=len(ordered),
+        adjudication_count=sum(item.adjudication_id is not None for item in ordered),
+        supplied_candidate_count=sum(len(item.supplied_candidate_ids) for item in ordered),
+        valid_terminal_judgment_count=sum(
+            len(item.terminal_judgment_candidate_ids) for item in ordered
+        ),
+        deterministic_completion_count=sum(
+            len(item.deterministic_complete_candidate_ids) for item in ordered
+        ),
+        unresolved_candidate_count=sum(len(item.unresolved_candidate_ids) for item in ordered),
+        rejected_line_count=sum(len(item.rejection_codes) for item in ordered),
+        duplicate_label_count=sum(
+            item.rejection_codes.count("duplicate_candidate_label") for item in ordered
+        ),
+        unknown_label_count=sum(
+            item.rejection_codes.count("unknown_candidate_label") for item in ordered
+        ),
+        contract_complete=all(item.contract_complete for item in ordered),
+        cases=ordered,
+    )
+
+
+def _boundary_trace_supplied_candidate_ids(
+    value: Mapping[str, JsonValue],
+) -> tuple[str, ...]:
+    raw = value.get("candidate_labels")
+    if not isinstance(raw, dict):
+        raise ValueError("Boundary trace candidate labels are malformed.")
+    labels = cast(dict[str, JsonValue], raw)
+    if not all(isinstance(candidate_id, str) for candidate_id in labels.values()):
+        raise ValueError("Boundary trace candidate labels are malformed.")
+    return tuple(sorted(cast(str, item) for item in labels.values()))
+
+
+def _boundary_trace_deterministic_candidate_ids(
+    value: Mapping[str, JsonValue],
+) -> tuple[str, ...]:
+    raw = value.get("deterministic_complete_candidate_ids")
+    if not isinstance(raw, list):
+        raise ValueError("Boundary trace deterministic candidate IDs are malformed.")
+    values = cast(list[JsonValue], raw)
+    if not all(isinstance(item, str) for item in values):
+        raise ValueError("Boundary trace deterministic candidate IDs are malformed.")
+    return tuple(sorted(cast(str, item) for item in values))
 
 
 def _focus_literals(stage_input: StageLocalInput) -> set[str]:

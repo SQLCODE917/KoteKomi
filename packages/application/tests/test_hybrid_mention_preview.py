@@ -317,7 +317,7 @@ class FixtureModelRuntime:
         proposal_output: bytes | None = None,
         invalid_interpretation: bool = False,
         interpretation_referentiality: str = "specific_entity",
-        boundary_output: bytes = b"candidate: c1 | complete\n",
+        boundary_output: bytes = b"c1 | complete\n",
         boundary_fails: bool = False,
     ) -> None:
         self.requests: list[ModelTaskRequest] = []
@@ -756,7 +756,7 @@ def test_ambiguous_overlap_uses_bounded_adjudication_before_interpretation() -> 
     archive = FixtureArchive()
     runtime = FixtureModelRuntime(
         proposal_abstains=True,
-        boundary_output=b"candidate: c1 | complete\ncandidate: c2 | incomplete\n",
+        boundary_output=b"c1 | complete\nc2 | incomplete\n",
     )
 
     result = _run(
@@ -786,6 +786,11 @@ def test_ambiguous_overlap_uses_bounded_adjudication_before_interpretation() -> 
     ] == ["Amodei"]
     adjudication = result.preview.boundary_adjudications[0]
     trace = next(item for item in result.preview.traces if item.id == adjudication.trace_id)
+    boundary_request = next(
+        item
+        for item in runtime.requests
+        if item.task_type == "hybrid_mention_boundary_adjudication"
+    )
     assert trace.input["source_text"] == paragraph
     assert "Amodei wrote" in str(trace.input["model_visible_input"])
     assert adjudication.boundary_decision_id not in str(trace.input["model_visible_input"])
@@ -793,6 +798,8 @@ def test_ambiguous_overlap_uses_bounded_adjudication_before_interpretation() -> 
         candidate.id not in str(trace.input["model_visible_input"])
         for candidate in result.preview.candidates
     )
+    assert b"required_output_prefixes:\nc1 |\nc2 |" in boundary_request.rendered_input
+    assert b"<supplied" not in boundary_request.rendered_input
     assert archive.model_outputs[adjudication.model_run_id] == runtime.boundary_output
 
 
@@ -901,7 +908,7 @@ def test_valid_boundary_line_survives_invalid_sibling_as_partial() -> None:
         FixtureProposer(proposal_spans=("Amodei", "Amodei wrote")),
         FixtureModelRuntime(
             proposal_abstains=True,
-            boundary_output=b"candidate: c1 | complete\ncandidate c2 | incomplete\n",
+            boundary_output=b"c1 | complete\ncandidate c2 | incomplete\n",
         ),
     )
 
@@ -910,7 +917,7 @@ def test_valid_boundary_line_survives_invalid_sibling_as_partial() -> None:
     assert result.preview.boundary_adjudications[0].judgments[0].status.value == "complete"
     assert result.preview.boundary_adjudications[0].judgments[1].status.value == "unresolved"
     assert result.preview.boundary_adjudications[0].rejected_lines[0].code == (
-        "invalid_candidate_judgment_shape"
+        "invalid_candidate_label"
     )
 
 
@@ -921,7 +928,7 @@ def test_unknown_boundary_label_is_rejected_without_erasing_valid_sibling() -> N
         FixtureProposer(proposal_spans=("Amodei", "Amodei wrote")),
         FixtureModelRuntime(
             proposal_abstains=True,
-            boundary_output=b"candidate: c1 | complete\ncandidate: c9 | incomplete\n",
+            boundary_output=b"c1 | complete\nc9 | incomplete\n",
         ),
     )
 
@@ -941,9 +948,7 @@ def test_duplicate_boundary_line_makes_only_that_candidate_unresolved() -> None:
         FixtureProposer(proposal_spans=("Amodei", "Amodei wrote")),
         FixtureModelRuntime(
             proposal_abstains=True,
-            boundary_output=(
-                b"candidate: c1 | complete\ncandidate: c2 | incomplete\ncandidate: c1 | unclear\n"
-            ),
+            boundary_output=(b"c1 | complete\nc2 | incomplete\nc1 | unclear\n"),
         ),
     )
 

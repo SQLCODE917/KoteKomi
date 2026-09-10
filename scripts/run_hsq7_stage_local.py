@@ -61,6 +61,9 @@ from kotekomi_application.mention_proposer import (
 from kotekomi_application.semantic_reference_challenge_model_output import (
     semantic_reference_challenge_schema_bytes,
 )
+from kotekomi_application.semantic_reference_validation_model_output import (
+    semantic_reference_candidate_validation_schema_bytes,
+)
 from kotekomi_application.semantic_references import (
     SEMANTIC_REFERENCE_POLICY_ID,
     CoreferenceProposerPort,
@@ -90,6 +93,7 @@ from kotekomi_pipelines.task_allocation_stage_local import (
     StageLocalInput,
     StageLocalPhase,
     build_stage_local_report,
+    evaluate_stage_local_boundary_contract,
     evaluate_stage_local_case,
     load_stage_local_inputs,
 )
@@ -426,7 +430,7 @@ def _run_references(args: argparse.Namespace) -> int:
             )
         )
     )
-    prompt = _prompts()["reference"]
+    prompts = _prompts()
     unique_inputs = _unique_segment_inputs(prepared.inputs)
     try:
         for ordinal, stage_input in enumerate(unique_inputs, start=1):
@@ -479,7 +483,8 @@ def _run_references(args: argparse.Namespace) -> int:
                     coreference_tokenizer=coreference,
                     model_runtime=runtime,
                     model_run_id_factory=Uuid4ModelRunIdFactory(),
-                    challenge_prompt_bytes=prompt,
+                    challenge_prompt_bytes=prompts["reference_selection"],
+                    validation_prompt_bytes=prompts["reference_validation"],
                 )
                 reference_preview = result.preview
                 status = "complete"
@@ -524,6 +529,7 @@ def _finalize(args: argparse.Namespace) -> int:
     elapsed: dict[str, int] = {}
     alias_opportunity_items = 0
     alias_opportunity_segments: set[str] = set()
+    mention_by_source_digest: dict[str, HybridExtractionPreview] = {}
     for stage_input in prepared.inputs:
         mention_record = _read_json(
             prepared.root / "mentions" / f"{stage_input.source_text_sha256}.json"
@@ -534,6 +540,7 @@ def _finalize(args: argparse.Namespace) -> int:
         mention = HybridExtractionPreview.model_validate_json(
             _canonical_json(mention_record["preview"])
         )
+        mention_by_source_digest[stage_input.source_text_sha256] = mention
         reference_value = reference_record.get("preview")
         references = (
             HybridReferencePreview.model_validate_json(_canonical_json(reference_value))
@@ -594,6 +601,9 @@ def _finalize(args: argparse.Namespace) -> int:
         phase=prepared.phase,
         evaluations=tuple(evaluations),
         producer_elapsed_milliseconds=elapsed,
+        boundary_contract=evaluate_stage_local_boundary_contract(
+            tuple(mention_by_source_digest[key] for key in sorted(mention_by_source_digest))
+        ),
         optional_experiment_measurements={
             "source_alias_rescue_opportunity_item_count": alias_opportunity_items,
             "source_alias_rescue_opportunity_segment_count": len(alias_opportunity_segments),
@@ -920,11 +930,14 @@ def _prompts() -> dict[str, bytes]:
     return {
         "proposal": (prompt_root / "hybrid_mention_occurrence_selection_v2.md").read_bytes(),
         "boundary_adjudication": (
-            prompt_root / "hybrid_mention_boundary_adjudication_v1.md"
+            prompt_root / "hybrid_mention_boundary_adjudication_v2.md"
         ).read_bytes(),
         "interpretation": (prompt_root / "hybrid_mention_interpretation_task_v2.md").read_bytes(),
         "ontology": (prompt_root / "hybrid_mention_ontology_card_v1.md").read_bytes(),
-        "reference": (prompt_root / "semantic_reference_challenge_v1.md").read_bytes(),
+        "reference_selection": (prompt_root / "semantic_reference_challenge_v4.md").read_bytes(),
+        "reference_validation": (
+            prompt_root / "semantic_reference_candidate_validation_v1.md"
+        ).read_bytes(),
     }
 
 
@@ -937,10 +950,10 @@ def _experiment_contract() -> dict[str, object]:
         "semantic_reference": SEMANTIC_REFERENCE_POLICY_ID,
     }
     return {
-        "experiment_id": "hsq7_stage_local_boundary_adjudication_v4",
-        "parent_experiment_id": "hsq7_stage_local_pretrigger_occurrence_ids_v3",
+        "experiment_id": "hsq7_stage_local_contrastive_reference_v10",
+        "parent_experiment_id": "hsq7_stage_local_adaptive_reference_v9",
         "changed_hypotheses": [
-            "h8_semantic_boundary_adjudication",
+            "h17_complete_catalog_contrastive_fallback",
         ],
         "prompt_sha256": {name: _sha(payload) for name, payload in sorted(prompts.items())},
         "schema_sha256": {
@@ -949,8 +962,11 @@ def _experiment_contract() -> dict[str, object]:
                 boundary_candidate_judgment_schema_bytes()
             ),
             HYBRID_MENTION_INTERPRETATION_SCHEMA_ID: _sha(mention_interpretation_schema_bytes()),
-            "semantic_reference_challenge_text_v1": _sha(
+            "semantic_reference_challenge_text_v2": _sha(
                 semantic_reference_challenge_schema_bytes()
+            ),
+            "semantic_reference_candidate_validation_text_v1": _sha(
+                semantic_reference_candidate_validation_schema_bytes()
             ),
         },
         "policy_sha256": _sha(_canonical_json(policies)),
@@ -1052,6 +1068,12 @@ def _write_review(
         "",
         f"Passed: {report['passed_count']}/{report['item_count']}",
         "",
+        "Boundary output-contract coverage:",
+        "",
+        "```json",
+        json.dumps(report["boundary_contract"], ensure_ascii=False, indent=2, sort_keys=True),
+        "```",
+        "",
     ]
     for result in cast(list[dict[str, object]], report["cases"]):
         stage_input = by_id[str(result["item_id"])]
@@ -1104,6 +1126,7 @@ def _comparison_summary(value: dict[str, object]) -> dict[str, object]:
         "first_failed_stage_counts": value["first_failed_stage_counts"],
         "producer_elapsed_milliseconds": value["producer_elapsed_milliseconds"],
         "optional_experiment_measurements": value.get("optional_experiment_measurements", {}),
+        "boundary_contract": value["boundary_contract"],
     }
 
 

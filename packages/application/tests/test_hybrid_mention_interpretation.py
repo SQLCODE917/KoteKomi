@@ -92,11 +92,7 @@ def test_interpretation_contract_separates_three_dimensions() -> None:
 
 def test_boundary_judgment_parser_preserves_valid_siblings_and_rejects_bad_lines() -> None:
     parsed = parse_boundary_candidate_judgments(
-        b"candidate: c1 | complete\n"
-        b"candidate c2 | incomplete\n"
-        b"candidate: c2 | incomplete\n"
-        b"c3 | unclear\n"
-        b"c1 | unclear\n"
+        b"c1 | complete\ncandidate c2 | incomplete\nc2 | incomplete\nc3 | unclear\nc1 | unclear\n"
     )
 
     assert [(item.candidate_label, item.judgment) for item in parsed.judgments] == [
@@ -105,15 +101,32 @@ def test_boundary_judgment_parser_preserves_valid_siblings_and_rejects_bad_lines
     ]
     assert [(item.line_number, item.code) for item in parsed.rejections] == [
         (1, "duplicate_candidate_label"),
-        (2, "invalid_candidate_judgment_shape"),
+        (2, "invalid_candidate_label"),
         (5, "duplicate_candidate_label"),
     ]
 
 
 def test_boundary_judgment_schema_requests_the_minimal_unambiguous_form() -> None:
     assert boundary_candidate_judgment_schema_bytes() == (
-        b"<supplied cN> | <complete|incomplete|unclear>\n"
+        b"Complete every prefix listed under required_output_prefixes.\n"
+        b"Append exactly one status: complete, incomplete, or unclear.\n"
+        b"Return exactly those completed lines and no other text.\n"
     )
+    assert b"<supplied" not in boundary_candidate_judgment_schema_bytes()
+
+
+def test_boundary_judgment_parser_rejects_superseded_and_placeholder_labels() -> None:
+    parsed = parse_boundary_candidate_judgments(
+        b"candidate: c1 | complete\n<supplied c2> | unclear\nc3 | incomplete\n"
+    )
+
+    assert [(item.candidate_label, item.judgment.value) for item in parsed.judgments] == [
+        ("c3", "incomplete")
+    ]
+    assert [(item.line_number, item.code) for item in parsed.rejections] == [
+        (1, "invalid_candidate_label"),
+        (2, "invalid_candidate_label"),
+    ]
 
 
 def test_boundary_decision_status_and_selection_cannot_disagree() -> None:

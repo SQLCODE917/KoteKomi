@@ -615,11 +615,11 @@ def run_hybrid_mention_preview(
             ContextManifestInput(
                 analysis_unit=unit,
                 model_profile=command.model_profile,
-                prompt_id="hybrid_mention_boundary_adjudication_v1",
+                prompt_id="hybrid_mention_boundary_adjudication_v2",
                 prompt_bytes=boundary_adjudication_prompt_bytes,
                 schema_id=boundary_schema.schema_id,
                 schema_bytes=boundary_schema.canonical_schema_bytes,
-                renderer_version="hybrid_mention_boundary_adjudication_context_v1",
+                renderer_version="hybrid_mention_boundary_adjudication_context_v2",
                 evidence_selection_policy_id=HYBRID_MENTION_EVIDENCE_SELECTION_V1,
                 source_segment_policy_id=PARAGRAPH_SEGMENT_V2,
             ),
@@ -1011,7 +1011,7 @@ def _run_boundary_adjudications(
                     schema,
                     task_input,
                 ),
-                validator_version="hybrid_mention_boundary_adjudication_validator_v1",
+                validator_version="hybrid_mention_boundary_adjudication_validator_v2",
                 task_type="hybrid_mention_boundary_adjudication",
                 input_candidate_ids=tuple(item.id for item in semantic_candidates),
                 task_local_input=task_input,
@@ -1120,6 +1120,8 @@ def _boundary_adjudication_task_input(
         f"{label} | {json.dumps(candidate.text, ensure_ascii=False)}"
         for label, candidate in labels.items()
     )
+    lines.append("required_output_prefixes:")
+    lines.extend(f"{label} |" for label in labels)
     return "\n".join(lines).encode(), labels
 
 

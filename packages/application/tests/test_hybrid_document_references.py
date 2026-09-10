@@ -22,6 +22,9 @@ from kotekomi_application import (
     ReferenceReason,
     ReferenceStatus,
     Referentiality,
+    SemanticReferenceCandidateLabelBinding,
+    SemanticReferenceCandidateValidationExecution,
+    SemanticReferenceCandidateValidationInput,
     SemanticReferenceChallengeExecution,
     SemanticReferenceChallengeInput,
     build_extraction_stage_trace,
@@ -44,6 +47,10 @@ from kotekomi_application.hybrid_mention_interpretation import (
 )
 from kotekomi_application.semantic_reference_challenge_model_output import (
     SemanticReferenceChallengeSelection,
+)
+from kotekomi_application.semantic_reference_validation_model_output import (
+    SemanticReferenceCandidateValidation,
+    SemanticReferenceCandidateVerdict,
 )
 from kotekomi_domain import (
     DocumentNode,
@@ -148,12 +155,49 @@ class _WindowRecordingProposer:
 
 
 class _Challenger:
-    def __init__(self, antecedent_text: str | None = None) -> None:
+    def __init__(
+        self,
+        antecedent_text: str | None = None,
+        validation_verdict: SemanticReferenceCandidateVerdict | None = None,
+    ) -> None:
         self._antecedent_text = antecedent_text
+        self._validation_verdict = validation_verdict
+
+    def validate(
+        self, request: SemanticReferenceCandidateValidationInput
+    ) -> SemanticReferenceCandidateValidationExecution:
+        verdict = self._validation_verdict
+        if verdict is None:
+            verdict = (
+                SemanticReferenceCandidateVerdict.SUPPORTED
+                if self._antecedent_text
+                in {
+                    None,
+                    request.antecedent_candidate.span.text,
+                }
+                else SemanticReferenceCandidateVerdict.UNSUPPORTED
+            )
+        return SemanticReferenceCandidateValidationExecution(
+            validation=SemanticReferenceCandidateValidation(
+                verdict,
+                "The source context supports this bounded verdict.",
+            ),
+            candidate_id=request.antecedent_candidate.id,
+            extraction_task_id="ext_reference_validation",
+            model_run_id="mrn_reference_validation",
+            model_status=ModelRunStatus.SUCCEEDED,
+            producer_id="qwen2.5-fixture",
+            model_visible_task=b"exact bounded validation task",
+            raw_output_sha256="b" * 64,
+        )
 
     def challenge(
         self, request: SemanticReferenceChallengeInput
     ) -> SemanticReferenceChallengeExecution:
+        bindings = tuple(
+            SemanticReferenceCandidateLabelBinding(f"a{ordinal}", candidate.id)
+            for ordinal, candidate in enumerate(request.antecedent_candidates, start=1)
+        )
         selected = (
             request.antecedent_candidates[0]
             if self._antecedent_text is None
@@ -163,19 +207,22 @@ class _Challenger:
                 if item.span.text == self._antecedent_text
             )
         )
+        selected_label = next(item.label for item in bindings if item.candidate_id == selected.id)
         selection = SemanticReferenceChallengeSelection(
-            selected.id,
+            selected_label,
             False,
             "The source context identifies this antecedent.",
         )
         return SemanticReferenceChallengeExecution(
             selection=selection,
+            candidate_label_bindings=bindings,
             extraction_task_id="ext_reference_challenge",
             model_run_id="mrn_reference_challenge",
             model_status=ModelRunStatus.SUCCEEDED,
             producer_id="qwen2.5-fixture",
             model_visible_task=b"exact bounded reference task",
             raw_output_sha256="a" * 64,
+            mode=request.mode,
         )
 
 
@@ -261,6 +308,42 @@ def test_validated_semantic_reference_becomes_a_source_bound_hp2_decision() -> N
     assert decision.semantic_reference_decision_id == preview.semantic_reference_decisions[0].id
     assert [item.text for item in preview.semantic_antecedent_spans] == ["Trump"]
     assert preview.coreference_observations[0].clusters[0][0].text == "Trump"
+
+
+def test_contrastively_confirmed_specialist_becomes_a_resolved_hp2_decision() -> None:
+    text = "Defense conflicted with Anthropic over the use of its products."
+    bundle = _bundle((text,))
+    parent = _parent_preview(
+        bundle,
+        paragraph_index=0,
+        candidate_texts=("Defense", "Anthropic", "its"),
+    )
+    anthropic = text.index("Anthropic")
+    target = text.index("its")
+
+    preview = build_hybrid_reference_preview(
+        parent_preview=parent,
+        parent_preview_sha256=hybrid_extraction_preview_sha256(parent),
+        bundle=bundle,
+        coreference_proposer=_CoreferenceProposer(
+            (((anthropic, anthropic + len("Anthropic")), (target, target + len("its"))),)
+        ),
+        coreference_tokenizer=_Tokenizer(),
+        semantic_reference_challenger=_Challenger(
+            "Anthropic",
+            validation_verdict=SemanticReferenceCandidateVerdict.UNSUPPORTED,
+        ),
+    )
+
+    decision = next(
+        item for item in preview.reference_decisions if item.reference_span.text == "its"
+    )
+    assert decision.status is ReferenceStatus.RESOLVED
+    assert decision.reason is ReferenceReason.UNIQUE_SEMANTIC_ANTECEDENT
+    assert [item.text for item in preview.semantic_antecedent_spans] == ["Anthropic"]
+    assert preview.semantic_reference_decisions[0].reason.value == (
+        "specialist_contrastive_confirmation"
+    )
 
 
 def test_semantic_disagreement_uses_canonical_reference_id_order() -> None:
@@ -683,7 +766,7 @@ def _parent_preview(
                     candidate_label="c1",
                     referentiality=(
                         Referentiality.ANAPHORIC
-                        if candidate.text.casefold() in {"him", "his", "it", "the institute"}
+                        if candidate.text.casefold() in {"him", "his", "it", "its", "the institute"}
                         else Referentiality.SPECIFIC_ENTITY
                     ),
                     contextual_kind=ContextualKind.ORGANIZATION,

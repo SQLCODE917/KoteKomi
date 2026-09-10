@@ -2523,7 +2523,7 @@ def preview_hybrid_mentions(
     boundary_adjudication_prompt_bytes = (
         Path(__file__).resolve().parents[4]
         / "prompts"
-        / "hybrid_mention_boundary_adjudication_v1.md"
+        / "hybrid_mention_boundary_adjudication_v2.md"
     ).read_bytes()
     interpretation_prompt_bytes = (
         Path(__file__).resolve().parents[4] / "prompts" / "hybrid_mention_interpretation_task_v2.md"

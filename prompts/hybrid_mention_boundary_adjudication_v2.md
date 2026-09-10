@@ -9,9 +9,7 @@ Judge each candidate independently.
 Overlapping and nested candidates can both be complete.
 Do not prefer the longest candidate merely because it contains another complete candidate.
 Use unclear when the source context does not determine completeness.
-Return one line for every supplied candidate and begin it with the supplied `cN` label.
-Use only supplied candidate labels.
-Do not copy source text.
-Do not assign an ontology kind.
-Do not invent source offsets, canonical identifiers, external identifiers, or Ledger records.
-Return only the pinned boundary-adjudication output contract.
+Complete every line listed under `required_output_prefixes` exactly once.
+Append only `complete`, `incomplete`, or `unclear` after each supplied prefix.
+Use only the supplied prefixes.
+Return exactly the completed required-output lines and no other text.

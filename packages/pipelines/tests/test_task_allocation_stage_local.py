@@ -19,7 +19,14 @@ from kotekomi_application.extraction_stage_trace import (
     ExtractionStageStatus,
     build_extraction_stage_trace,
 )
+from kotekomi_application.hybrid_mention_boundary_adjudication import (
+    MentionBoundaryAdjudicationJudgment,
+    MentionBoundaryAdjudicationLineRejection,
+    MentionBoundaryCandidateStatus,
+    build_mention_boundary_adjudication,
+)
 from kotekomi_application.hybrid_mention_interpretation import (
+    HybridExtractionPreview,
     MentionInterpretationDraft,
     fuse_mention_observations,
     observation_from_proposal,
@@ -27,6 +34,7 @@ from kotekomi_application.hybrid_mention_interpretation import (
     resolve_mention_interpretation,
 )
 from kotekomi_pipelines.task_allocation_stage_local import (
+    evaluate_stage_local_boundary_contract,
     evaluate_stage_local_case,
     load_stage_local_inputs,
 )
@@ -240,9 +248,17 @@ representation_policy_version = "deposited-source-v1"
     assert report["item_count"] == 4
     assert [item["item_id"] for item in report["cases"]] == sorted(diagnostics)
     assert experiment["changed_hypotheses"] == [
-        "h8_semantic_boundary_adjudication",
+        "h17_complete_catalog_contrastive_fallback",
     ]
-    assert experiment["parent_experiment_id"] == ("hsq7_stage_local_pretrigger_occurrence_ids_v3")
+    assert experiment["parent_experiment_id"] == ("hsq7_stage_local_adaptive_reference_v9")
+    assert report["schema_version"] == "hsq_stage_local_phase_report_v2"
+    assert report["boundary_contract"]["contract_complete"] is True
+    assert report["boundary_contract"]["unresolved_candidate_count"] == 0
+    assert report["boundary_contract"]["rejected_line_count"] == 0
+    assert report["optional_experiments"] == {
+        "selective_interpretation": "not_activated_pending_correctness_gates",
+        "source_alias_rescue": "measured_not_activated",
+    }
     assert experiment["prompt_sha256"]
     assert experiment["schema_sha256"]
     assert experiment["policy_sha256"]
@@ -260,6 +276,134 @@ representation_policy_version = "deposited-source-v1"
 
     assert rerun.returncode != 0
     assert "changed after finalization" in rerun.stderr
+
+
+def test_all_candidate_contract_exposes_collateral_unresolved_candidate() -> None:
+    preview = _boundary_contract_preview(
+        statuses=(
+            MentionBoundaryCandidateStatus.COMPLETE,
+            MentionBoundaryCandidateStatus.UNRESOLVED,
+        ),
+        rejection=MentionBoundaryAdjudicationLineRejection(
+            line_number=2,
+            line="<supplied c2> | complete",
+            code="invalid_candidate_label",
+        ),
+    )
+
+    result = evaluate_stage_local_boundary_contract((preview,))
+
+    assert result.contract_complete is False
+    assert result.ambiguous_component_count == 1
+    assert result.adjudication_count == 1
+    assert result.supplied_candidate_count == 2
+    assert result.valid_terminal_judgment_count == 1
+    assert result.unresolved_candidate_count == 1
+    assert result.rejected_line_count == 1
+    assert result.duplicate_label_count == 0
+    assert result.unknown_label_count == 0
+    assert result.cases[0].contract_complete is False
+
+
+def test_all_candidate_contract_accepts_exactly_one_terminal_judgment_per_candidate() -> None:
+    preview = _boundary_contract_preview(
+        statuses=(
+            MentionBoundaryCandidateStatus.COMPLETE,
+            MentionBoundaryCandidateStatus.INCOMPLETE,
+        ),
+    )
+
+    result = evaluate_stage_local_boundary_contract((preview,))
+
+    assert result.contract_complete is True
+    assert result.supplied_candidate_count == result.valid_terminal_judgment_count == 2
+    assert result.unresolved_candidate_count == 0
+    assert result.rejected_line_count == 0
+
+
+def _boundary_contract_preview(
+    *,
+    statuses: tuple[MentionBoundaryCandidateStatus, MentionBoundaryCandidateStatus],
+    rejection: MentionBoundaryAdjudicationLineRejection | None = None,
+) -> HybridExtractionPreview:
+    source = "Amodei wrote an op-ed."
+    source_digest = hashlib.sha256(source.encode()).hexdigest()
+    source_segment_id = "seg_boundary_contract"
+    observations = tuple(
+        observation_from_proposal(
+            proposal=MentionProposal(
+                "s1",
+                text,
+                source.index(text),
+                source.index(text) + len(text),
+                ("person",),
+            ),
+            source_segment_id=source_segment_id,
+            producer_id=f"fixture_{ordinal}",
+            execution_record_id="mrn_boundary_contract",
+        )
+        for ordinal, text in enumerate(("Amodei", "Amodei wrote"), start=1)
+    )
+    candidates = fuse_mention_observations(
+        source_segments={source_segment_id: source},
+        observations=observations,
+    )
+    decisions, selected = reconcile_mention_boundaries(
+        source_segments={source_segment_id: source},
+        observations=observations,
+        candidates=candidates,
+    )
+    assert selected == ()
+    decision = decisions[0]
+    trace = build_extraction_stage_trace(
+        trace_run_id="run_boundary_contract",
+        ordinal=0,
+        stage_id="mention_boundary_adjudication",
+        stage_version="hybrid_mention_boundary_adjudication_v3",
+        producer_id="kotekomi_application",
+        source_segment_id=source_segment_id,
+        source_text_sha256=source_digest,
+        configuration={"policy_id": "hybrid_mention_boundary_adjudication_v3"},
+        input_record_ids=tuple(sorted((decision.id, *decision.candidate_ids))),
+        execution_record_ids=("ext_boundary_contract", "mrn_boundary_contract"),
+        input_payload={
+            "candidate_labels": {
+                f"c{ordinal}": candidate.id for ordinal, candidate in enumerate(candidates, start=1)
+            },
+            "deterministic_complete_candidate_ids": [],
+        },
+        output_payload={},
+        status=(ExtractionStageStatus.REJECTED if rejection else ExtractionStageStatus.COMPLETED),
+        diagnostics=(("boundary_line_rejected:2:invalid_candidate_label",) if rejection else ()),
+    )
+    adjudication = build_mention_boundary_adjudication(
+        boundary_decision_id=decision.id,
+        source_segment_id=source_segment_id,
+        source_text_sha256=source_digest,
+        judgments=tuple(
+            MentionBoundaryAdjudicationJudgment(candidate_id=candidate.id, status=status)
+            for candidate, status in zip(candidates, statuses, strict=True)
+        ),
+        rejected_lines=((rejection,) if rejection is not None else ()),
+        extraction_task_id="ext_boundary_contract",
+        model_run_id="mrn_boundary_contract",
+        trace_id=trace.id,
+    )
+    return build_hybrid_extraction_preview(
+        representation_id="rep_boundary_contract",
+        paragraph_node_id="nod_boundary_contract",
+        context_manifest_id="ctx_boundary_contract",
+        ontology_card_sha256="a" * 64,
+        observations=observations,
+        candidates=candidates,
+        boundary_decisions=decisions,
+        boundary_adjudications=(adjudication,),
+        extraction_task_ids=("ext_boundary_contract",),
+        model_run_ids=("mrn_boundary_contract",),
+        traces=(trace,),
+        terminal_status=HybridPreviewStatus.PARTIAL,
+        diagnostics=("boundary_contract_fixture",),
+    )
 
 
 def _run_stage_local(runner: Path, command: str, *arguments: str) -> None:

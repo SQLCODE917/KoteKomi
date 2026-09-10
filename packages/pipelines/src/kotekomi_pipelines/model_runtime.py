@@ -117,6 +117,10 @@ class FixtureModelTaskRuntime:
             raw_output = b"abstain: fixture_no_event\n"
         elif task.execution_spec.schema_id == "hybrid_standing_fact_text_v2":
             raw_output = b"abstain: fixture_no_standing_fact\n"
+        elif task.execution_spec.schema_id == "semantic_reference_challenge_text_v2":
+            raw_output = b"antecedent: unresolved\nreason: fixture_reference_unresolved\n"
+        elif task.execution_spec.schema_id == "semantic_reference_candidate_validation_text_v1":
+            raw_output = b"verdict: unclear\nreason: fixture_reference_unclear\n"
         else:
             raw_output = b"outcome: abstain\nreason: fixture_no_claim\n"
         return ModelTaskResponse(

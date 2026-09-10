@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from dataclasses import dataclass
 from enum import StrEnum
 from fractions import Fraction
@@ -21,10 +22,15 @@ from kotekomi_application.extraction_stage_trace import (
 from kotekomi_application.semantic_reference_challenge_model_output import (
     SemanticReferenceChallengeSelection,
 )
+from kotekomi_application.semantic_reference_validation_model_output import (
+    SemanticReferenceCandidateValidation,
+    SemanticReferenceCandidateVerdict,
+)
 
-SEMANTIC_REFERENCE_POLICY_ID = "bounded_semantic_reference_v4"
+SEMANTIC_REFERENCE_POLICY_ID = "bounded_semantic_reference_v10"
 SEMANTIC_REFERENCE_MAX_INPUT_TOKENS = 1024
 SEMANTIC_REFERENCE_MAX_ANTECEDENT_CANDIDATES = 8
+_ANTECEDENT_LABEL_PATTERN = re.compile(r"a[1-9][0-9]*")
 
 
 class SemanticReferenceStatus(StrEnum):
@@ -40,8 +46,20 @@ class SemanticReferenceReason(StrEnum):
     CHALLENGE_FAILED = "challenge_failed"
     CHALLENGE_INVALID = "challenge_invalid"
     SPECIALIST_CHALLENGE_DISAGREEMENT = "specialist_challenge_disagreement"
+    SPECIALIST_VALIDATION_SUPPORTED = "specialist_validation_supported"
+    SPECIALIST_VALIDATION_UNSUPPORTED = "specialist_validation_unsupported"
+    SPECIALIST_VALIDATION_UNCLEAR = "specialist_validation_unclear"
+    SPECIALIST_VALIDATION_FAILED = "specialist_validation_failed"
+    SPECIALIST_VALIDATION_INVALID = "specialist_validation_invalid"
+    SPECIALIST_CONTRASTIVE_CONFIRMATION = "specialist_contrastive_confirmation"
     SPECIALIST_NO_ANTECEDENT = "specialist_no_antecedent"
     SPECIALIST_TARGET_CLUSTER_MISSING = "specialist_target_cluster_missing"
+
+
+class SemanticReferenceModelTask(StrEnum):
+    SPECIALIST_VALIDATION = "specialist_validation"
+    CONTRASTIVE_SELECTION = "contrastive_selection"
+    CATALOG_SELECTION = "catalog_selection"
 
 
 @dataclass(frozen=True)
@@ -138,21 +156,93 @@ class SemanticReferenceChallengeInput:
     source_text: str
     target_span: CoreferenceSpan
     antecedent_candidates: tuple[CoreferenceAntecedentCandidate, ...]
+    mode: SemanticReferenceModelTask = SemanticReferenceModelTask.CATALOG_SELECTION
 
     def __post_init__(self) -> None:
         if not self.antecedent_candidates:
             raise ValueError("A semantic-reference challenge requires source-valid candidates.")
+        if len(self.antecedent_candidates) > SEMANTIC_REFERENCE_MAX_ANTECEDENT_CANDIDATES:
+            raise ValueError("A semantic-reference challenge exceeds its candidate limit.")
+        if self.mode not in {
+            SemanticReferenceModelTask.CONTRASTIVE_SELECTION,
+            SemanticReferenceModelTask.CATALOG_SELECTION,
+        }:
+            raise ValueError("A semantic-reference selection requires a selection task mode.")
+        _validate_model_task_source(
+            self.source_segment_id,
+            self.source_text,
+            self.target_span,
+            self.antecedent_candidates,
+        )
+
+
+@dataclass(frozen=True)
+class SemanticReferenceCandidateValidationInput:
+    source_segment_id: str
+    source_text: str
+    target_span: CoreferenceSpan
+    antecedent_candidate: CoreferenceAntecedentCandidate
+
+    def __post_init__(self) -> None:
+        _validate_model_task_source(
+            self.source_segment_id,
+            self.source_text,
+            self.target_span,
+            (self.antecedent_candidate,),
+        )
+
+
+def _validate_model_task_source(
+    source_segment_id: str,
+    source_text: str,
+    target_span: CoreferenceSpan,
+    candidates: tuple[CoreferenceAntecedentCandidate, ...],
+) -> None:
+    if (
+        not source_segment_id
+        or not source_text
+        or target_span.source_segment_id != source_segment_id
+        or target_span.end > len(source_text)
+        or source_text[target_span.start : target_span.end] != target_span.text
+    ):
+        raise ValueError("A semantic-reference model task requires its exact target source text.")
+    if len({item.id for item in candidates}) != len(candidates) or any(
+        item.span.source_segment_id != source_segment_id
+        or item.span.end > target_span.start
+        or item.span.end > len(source_text)
+        or source_text[item.span.start : item.span.end] != item.span.text
+        for item in candidates
+    ):
+        raise ValueError(
+            "A semantic-reference model task requires distinct preceding source-valid candidates."
+        )
+
+
+@dataclass(frozen=True)
+class SemanticReferenceCandidateLabelBinding:
+    """One task-local model label bound to a source-valid antecedent candidate."""
+
+    label: str
+    candidate_id: str
+
+    def __post_init__(self) -> None:
+        if _ANTECEDENT_LABEL_PATTERN.fullmatch(self.label) is None:
+            raise ValueError("A semantic-reference candidate binding requires an aN label.")
+        if not self.candidate_id:
+            raise ValueError("A semantic-reference candidate binding requires a candidate ID.")
 
 
 @dataclass(frozen=True)
 class SemanticReferenceChallengeExecution:
     selection: SemanticReferenceChallengeSelection | None
+    candidate_label_bindings: tuple[SemanticReferenceCandidateLabelBinding, ...]
     extraction_task_id: str
     model_run_id: str
     model_status: ModelRunStatus
     producer_id: str
     model_visible_task: bytes
     raw_output_sha256: str | None
+    mode: SemanticReferenceModelTask = SemanticReferenceModelTask.CATALOG_SELECTION
 
     def __post_init__(self) -> None:
         if not self.extraction_task_id or not self.model_run_id or not self.producer_id:
@@ -161,9 +251,55 @@ class SemanticReferenceChallengeExecution:
             raise ValueError(
                 "A semantic-reference challenge requires exact model-visible task data."
             )
+        labels = tuple(item.label for item in self.candidate_label_bindings)
+        candidate_ids = tuple(item.candidate_id for item in self.candidate_label_bindings)
+        if (
+            not labels
+            or labels != tuple(f"a{ordinal}" for ordinal in range(1, len(labels) + 1))
+            or len(set(candidate_ids)) != len(candidate_ids)
+        ):
+            raise ValueError(
+                "A semantic-reference challenge requires ordered, distinct "
+                "candidate-label bindings."
+            )
+        if self.mode not in {
+            SemanticReferenceModelTask.CONTRASTIVE_SELECTION,
+            SemanticReferenceModelTask.CATALOG_SELECTION,
+        }:
+            raise ValueError("A semantic-reference selection execution requires a selection mode.")
+
+
+@dataclass(frozen=True)
+class SemanticReferenceCandidateValidationExecution:
+    validation: SemanticReferenceCandidateValidation | None
+    candidate_id: str
+    extraction_task_id: str
+    model_run_id: str
+    model_status: ModelRunStatus
+    producer_id: str
+    model_visible_task: bytes
+    raw_output_sha256: str | None
+
+    def __post_init__(self) -> None:
+        if not all(
+            (
+                self.candidate_id,
+                self.extraction_task_id,
+                self.model_run_id,
+                self.producer_id,
+                self.model_visible_task,
+            )
+        ):
+            raise ValueError(
+                "A reference-candidate validation requires candidate and execution identity."
+            )
 
 
 class SemanticReferenceChallengerPort(Protocol):
+    def validate(
+        self, request: SemanticReferenceCandidateValidationInput
+    ) -> SemanticReferenceCandidateValidationExecution: ...
+
     def challenge(
         self, request: SemanticReferenceChallengeInput
     ) -> SemanticReferenceChallengeExecution: ...
@@ -289,6 +425,16 @@ class CoreferenceObservation(BaseModel):
         return self
 
 
+class SemanticReferenceModelExecutionReference(BaseModel):
+    """One model task/run pair retained in causal decision order."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    task: SemanticReferenceModelTask
+    extraction_task_id: Annotated[str, Field(min_length=1)]
+    model_run_id: Annotated[str, Field(min_length=1)]
+
+
 class SemanticReferenceDecision(BaseModel):
     """KoteKomi's terminal decision for one bounded semantic reference."""
 
@@ -300,18 +446,18 @@ class SemanticReferenceDecision(BaseModel):
     antecedent_span_ids: tuple[Annotated[str, Field(pattern=r"^cfs_[a-f0-9]{24}$")], ...]
     status: SemanticReferenceStatus
     reason: SemanticReferenceReason
-    challenge_extraction_task_id: str | None = None
-    challenge_model_run_id: str | None = None
+    model_executions: tuple[SemanticReferenceModelExecutionReference, ...] = ()
 
     @model_validator(mode="after")
     def validate_contract(self) -> Self:
         if len(set(self.antecedent_span_ids)) != len(self.antecedent_span_ids):
             raise ValueError("Semantic antecedent IDs must be distinct.")
         if self.status is SemanticReferenceStatus.RESOLVED:
-            if (
-                len(self.antecedent_span_ids) != 1
-                or self.reason is not SemanticReferenceReason.CHALLENGE_SELECTED_ANTECEDENT
-            ):
+            if len(self.antecedent_span_ids) != 1 or self.reason not in {
+                SemanticReferenceReason.CHALLENGE_SELECTED_ANTECEDENT,
+                SemanticReferenceReason.SPECIALIST_VALIDATION_SUPPORTED,
+                SemanticReferenceReason.SPECIALIST_CONTRASTIVE_CONFIRMATION,
+            }:
                 raise ValueError("Resolved semantic reference requires one antecedent.")
         elif self.status is SemanticReferenceStatus.AMBIGUOUS:
             if len(self.antecedent_span_ids) < 2 or self.reason not in {
@@ -321,8 +467,34 @@ class SemanticReferenceDecision(BaseModel):
                 raise ValueError("Ambiguous semantic reference requires multiple antecedents.")
         elif self.antecedent_span_ids:
             raise ValueError("Unresolved semantic reference cannot name an antecedent.")
-        if (self.challenge_extraction_task_id is None) != (self.challenge_model_run_id is None):
-            raise ValueError("Semantic reference challenge identity must be complete.")
+        execution_pairs = tuple(
+            (item.extraction_task_id, item.model_run_id) for item in self.model_executions
+        )
+        if len(set(execution_pairs)) != len(execution_pairs):
+            raise ValueError("Semantic reference model executions must be distinct.")
+        execution_modes = tuple(item.task for item in self.model_executions)
+        allowed_execution_modes = {
+            (),
+            (SemanticReferenceModelTask.SPECIALIST_VALIDATION,),
+            (
+                SemanticReferenceModelTask.SPECIALIST_VALIDATION,
+                SemanticReferenceModelTask.CONTRASTIVE_SELECTION,
+            ),
+            (SemanticReferenceModelTask.CATALOG_SELECTION,),
+        }
+        if execution_modes not in allowed_execution_modes:
+            raise ValueError("Semantic reference model executions are not in causal task order.")
+        if (
+            self.reason is SemanticReferenceReason.SPECIALIST_CONTRASTIVE_CONFIRMATION
+            and execution_modes
+            != (
+                SemanticReferenceModelTask.SPECIALIST_VALIDATION,
+                SemanticReferenceModelTask.CONTRASTIVE_SELECTION,
+            )
+        ):
+            raise ValueError(
+                "A specialist contrastive confirmation requires both causal model tasks."
+            )
         if (
             self.reason
             in {
@@ -332,8 +504,14 @@ class SemanticReferenceDecision(BaseModel):
                 SemanticReferenceReason.CHALLENGE_FAILED,
                 SemanticReferenceReason.CHALLENGE_INVALID,
                 SemanticReferenceReason.SPECIALIST_CHALLENGE_DISAGREEMENT,
+                SemanticReferenceReason.SPECIALIST_VALIDATION_SUPPORTED,
+                SemanticReferenceReason.SPECIALIST_CONTRASTIVE_CONFIRMATION,
+                SemanticReferenceReason.SPECIALIST_VALIDATION_UNSUPPORTED,
+                SemanticReferenceReason.SPECIALIST_VALIDATION_UNCLEAR,
+                SemanticReferenceReason.SPECIALIST_VALIDATION_FAILED,
+                SemanticReferenceReason.SPECIALIST_VALIDATION_INVALID,
             }
-            and self.challenge_extraction_task_id is None
+            and not self.model_executions
         ):
             raise ValueError("A challenge decision requires its model execution identity.")
         expected = _id(
@@ -342,8 +520,10 @@ class SemanticReferenceDecision(BaseModel):
             self.target_span_id,
             self.status.value,
             self.reason.value,
-            self.challenge_extraction_task_id or "",
-            self.challenge_model_run_id or "",
+            *(
+                f"{item.task.value}:{item.extraction_task_id}:{item.model_run_id}"
+                for item in self.model_executions
+            ),
             *self.antecedent_span_ids,
         )
         if self.id != expected:
@@ -356,6 +536,11 @@ class SemanticReferenceResult:
     observation: CoreferenceObservation
     decision: SemanticReferenceDecision
     trace: ExtractionStageTrace
+
+
+type SemanticReferenceModelExecution = (
+    SemanticReferenceCandidateValidationExecution | SemanticReferenceChallengeExecution
+)
 
 
 def resolve_semantic_reference(
@@ -422,11 +607,56 @@ def resolve_semantic_reference(
         elapsed_milliseconds=execution.elapsed_milliseconds,
         raw_output_sha256=raw_digest,
     )
-    challenge_execution: SemanticReferenceChallengeExecution | None = None
+    model_executions: list[SemanticReferenceModelExecution] = []
     selected: tuple[CoreferenceSpan, ...] = ()
     if not challenge_candidates:
         status = SemanticReferenceStatus.UNRESOLVED
         reason = specialist_reason
+    elif len(specialist_proposed) == 1:
+        specialist_candidate = specialist_proposed[0]
+        validation_execution = challenger.validate(
+            SemanticReferenceCandidateValidationInput(
+                source_segment_id=request.source_segment_id,
+                source_text=request.source_text,
+                target_span=target,
+                antecedent_candidate=specialist_candidate,
+            )
+        )
+        model_executions.append(validation_execution)
+        status, reason, selected = _candidate_validation_decision(
+            specialist_candidate,
+            validation_execution,
+        )
+        if reason in {
+            SemanticReferenceReason.SPECIALIST_VALIDATION_UNSUPPORTED,
+            SemanticReferenceReason.SPECIALIST_VALIDATION_UNCLEAR,
+        }:
+            if len(challenge_candidates) > 1:
+                contrastive_execution = challenger.challenge(
+                    SemanticReferenceChallengeInput(
+                        source_segment_id=request.source_segment_id,
+                        source_text=request.source_text,
+                        target_span=target,
+                        antecedent_candidates=challenge_candidates,
+                        mode=SemanticReferenceModelTask.CONTRASTIVE_SELECTION,
+                    )
+                )
+                model_executions.append(contrastive_execution)
+                status, reason, selected = _challenge_decision(
+                    challenge_candidates,
+                    contrastive_execution,
+                )
+                if status is SemanticReferenceStatus.RESOLVED and selected == (
+                    specialist_candidate.span,
+                ):
+                    reason = SemanticReferenceReason.SPECIALIST_CONTRASTIVE_CONFIRMATION
+                else:
+                    status, reason, selected = _apply_specialist_disagreement_policy(
+                        status=status,
+                        reason=reason,
+                        selected=selected,
+                        specialist_proposed=specialist_proposed,
+                    )
     else:
         challenge_execution = challenger.challenge(
             SemanticReferenceChallengeInput(
@@ -434,8 +664,10 @@ def resolve_semantic_reference(
                 source_text=request.source_text,
                 target_span=target,
                 antecedent_candidates=challenge_candidates,
+                mode=SemanticReferenceModelTask.CATALOG_SELECTION,
             )
         )
+        model_executions.append(challenge_execution)
         status, reason, selected = _challenge_decision(
             challenge_candidates,
             challenge_execution,
@@ -446,18 +678,17 @@ def resolve_semantic_reference(
             selected=selected,
             specialist_proposed=specialist_proposed,
         )
-    challenge_task_id = (
-        challenge_execution.extraction_task_id if challenge_execution is not None else None
-    )
-    challenge_run_id = challenge_execution.model_run_id if challenge_execution is not None else None
+    execution_references = tuple(_execution_reference(item) for item in model_executions)
     decision_id = _id(
         "srd",
         observation.id,
         target.id,
         status.value,
         reason.value,
-        challenge_task_id or "",
-        challenge_run_id or "",
+        *(
+            f"{item.task.value}:{item.extraction_task_id}:{item.model_run_id}"
+            for item in execution_references
+        ),
         *(item.id for item in selected),
     )
     decision = SemanticReferenceDecision(
@@ -467,19 +698,14 @@ def resolve_semantic_reference(
         antecedent_span_ids=tuple(item.id for item in selected),
         status=status,
         reason=reason,
-        challenge_extraction_task_id=challenge_task_id,
-        challenge_model_run_id=challenge_run_id,
+        model_executions=execution_references,
     )
     trace = build_extraction_stage_trace(
         trace_run_id=f"hsq4:{observation.id}",
         ordinal=0,
         stage_id="bounded_semantic_reference",
         stage_version=SEMANTIC_REFERENCE_POLICY_ID,
-        producer_id=(
-            challenge_execution.producer_id
-            if challenge_execution is not None
-            else execution.model_id
-        ),
+        producer_id=(model_executions[0].producer_id if model_executions else execution.model_id),
         source_segment_id=request.source_segment_id,
         source_text_sha256=observation.source_text_sha256,
         configuration={
@@ -497,37 +723,24 @@ def resolve_semantic_reference(
             "specialist_proposed_candidate_ids": [item.id for item in specialist_proposed],
             "challenge_candidate_ids": [item.id for item in challenge_candidates],
             "challenge_candidate_source": "monotonic_specialist_deterministic_union",
-            "model_visible_challenge_task": (
-                challenge_execution.model_visible_task.decode()
-                if challenge_execution is not None
-                else None
-            ),
+            "model_attempts": [_model_attempt_input_payload(item) for item in model_executions],
         },
         output_payload={
             "raw_output": execution.raw_output.decode("utf-8"),
-            "challenge_raw_output_sha256": (
-                challenge_execution.raw_output_sha256 if challenge_execution is not None else None
-            ),
-            "challenge_selection": (
-                challenge_execution.selection.__dict__
-                if challenge_execution is not None and challenge_execution.selection is not None
-                else None
-            ),
+            "model_attempts": [_model_attempt_output_payload(item) for item in model_executions],
             "observation": observation.model_dump(mode="json"),
             "decision": decision.model_dump(mode="json"),
         },
-        status=(
-            ExtractionStageStatus.COMPLETED
-            if challenge_execution is None
-            or challenge_execution.model_status is ModelRunStatus.SUCCEEDED
-            else ExtractionStageStatus.FAILED
-        ),
+        status=_reference_trace_status(tuple(model_executions), reason),
         input_record_ids=(target.id,),
-        execution_record_ids=(
-            (challenge_task_id, challenge_run_id)
-            if challenge_task_id is not None and challenge_run_id is not None
-            else ()
+        execution_record_ids=tuple(
+            sorted(
+                value
+                for item in model_executions
+                for value in (item.extraction_task_id, item.model_run_id)
+            )
         ),
+        diagnostics=_reference_trace_diagnostics(tuple(model_executions), reason),
     )
     return SemanticReferenceResult(observation, decision, trace)
 
@@ -611,6 +824,42 @@ def _monotonic_candidate_union(
     return (specialist + fallback)[:SEMANTIC_REFERENCE_MAX_ANTECEDENT_CANDIDATES]
 
 
+def _candidate_validation_decision(
+    candidate: CoreferenceAntecedentCandidate,
+    execution: SemanticReferenceCandidateValidationExecution,
+) -> tuple[SemanticReferenceStatus, SemanticReferenceReason, tuple[CoreferenceSpan, ...]]:
+    if execution.model_status is not ModelRunStatus.SUCCEEDED:
+        reason = (
+            SemanticReferenceReason.SPECIALIST_VALIDATION_INVALID
+            if execution.model_status is ModelRunStatus.INVALID_OUTPUT
+            else SemanticReferenceReason.SPECIALIST_VALIDATION_FAILED
+        )
+        return SemanticReferenceStatus.UNRESOLVED, reason, ()
+    if execution.validation is None or execution.candidate_id != candidate.id:
+        return (
+            SemanticReferenceStatus.UNRESOLVED,
+            SemanticReferenceReason.SPECIALIST_VALIDATION_INVALID,
+            (),
+        )
+    if execution.validation.verdict is SemanticReferenceCandidateVerdict.SUPPORTED:
+        return (
+            SemanticReferenceStatus.RESOLVED,
+            SemanticReferenceReason.SPECIALIST_VALIDATION_SUPPORTED,
+            (candidate.span,),
+        )
+    if execution.validation.verdict is SemanticReferenceCandidateVerdict.UNSUPPORTED:
+        return (
+            SemanticReferenceStatus.UNRESOLVED,
+            SemanticReferenceReason.SPECIALIST_VALIDATION_UNSUPPORTED,
+            (),
+        )
+    return (
+        SemanticReferenceStatus.UNRESOLVED,
+        SemanticReferenceReason.SPECIALIST_VALIDATION_UNCLEAR,
+        (),
+    )
+
+
 def _challenge_decision(
     candidates: tuple[CoreferenceAntecedentCandidate, ...],
     execution: SemanticReferenceChallengeExecution,
@@ -620,6 +869,14 @@ def _challenge_decision(
         return (
             SemanticReferenceStatus.UNRESOLVED,
             SemanticReferenceReason.CHALLENGE_FAILED,
+            (),
+        )
+    if tuple(item.candidate_id for item in execution.candidate_label_bindings) != tuple(
+        item.id for item in candidates
+    ):
+        return (
+            SemanticReferenceStatus.UNRESOLVED,
+            SemanticReferenceReason.CHALLENGE_INVALID,
             (),
         )
     if selection.ambiguous:
@@ -634,16 +891,14 @@ def _challenge_decision(
             SemanticReferenceReason.CHALLENGE_AMBIGUOUS,
             tuple(item.span for item in candidates),
         )
-    if selection.antecedent_candidate_id is None:
+    if selection.antecedent_candidate_label is None:
         return (
             SemanticReferenceStatus.UNRESOLVED,
             SemanticReferenceReason.CHALLENGE_UNRESOLVED,
             (),
         )
-    selected = next(
-        (item for item in candidates if item.id == selection.antecedent_candidate_id),
-        None,
-    )
+    selected_candidate_id = _mapped_challenge_candidate_id(execution)
+    selected = next((item for item in candidates if item.id == selected_candidate_id), None)
     if selected is None:
         return (
             SemanticReferenceStatus.UNRESOLVED,
@@ -654,6 +909,159 @@ def _challenge_decision(
         SemanticReferenceStatus.RESOLVED,
         SemanticReferenceReason.CHALLENGE_SELECTED_ANTECEDENT,
         (selected.span,),
+    )
+
+
+def _mapped_challenge_candidate_id(
+    execution: SemanticReferenceChallengeExecution,
+) -> str | None:
+    if execution.selection is None or execution.selection.antecedent_candidate_label is None:
+        return None
+    return next(
+        (
+            item.candidate_id
+            for item in execution.candidate_label_bindings
+            if item.label == execution.selection.antecedent_candidate_label
+        ),
+        None,
+    )
+
+
+def _candidate_label_bindings_payload(
+    bindings: tuple[SemanticReferenceCandidateLabelBinding, ...],
+) -> list[JsonValue]:
+    payload: list[JsonValue] = []
+    for binding in bindings:
+        payload.append({"label": binding.label, "candidate_id": binding.candidate_id})
+    return payload
+
+
+def _execution_reference(
+    execution: SemanticReferenceModelExecution,
+) -> SemanticReferenceModelExecutionReference:
+    return SemanticReferenceModelExecutionReference(
+        task=(
+            SemanticReferenceModelTask.SPECIALIST_VALIDATION
+            if isinstance(execution, SemanticReferenceCandidateValidationExecution)
+            else execution.mode
+        ),
+        extraction_task_id=execution.extraction_task_id,
+        model_run_id=execution.model_run_id,
+    )
+
+
+def _model_attempt_input_payload(
+    execution: SemanticReferenceModelExecution,
+) -> dict[str, JsonValue]:
+    reference = _execution_reference(execution)
+    payload: dict[str, JsonValue] = {
+        "task": reference.task.value,
+        "model_visible_task": execution.model_visible_task.decode("utf-8"),
+    }
+    if isinstance(execution, SemanticReferenceCandidateValidationExecution):
+        payload["candidate_ids"] = [execution.candidate_id]
+        payload["candidate_label_bindings"] = []
+    else:
+        payload["candidate_ids"] = [
+            item.candidate_id for item in execution.candidate_label_bindings
+        ]
+        payload["candidate_label_bindings"] = _candidate_label_bindings_payload(
+            execution.candidate_label_bindings
+        )
+    return payload
+
+
+def _model_attempt_output_payload(
+    execution: SemanticReferenceModelExecution,
+) -> dict[str, JsonValue]:
+    reference = _execution_reference(execution)
+    result: dict[str, JsonValue] | None
+    mapped_candidate_id: str | None
+    if isinstance(execution, SemanticReferenceCandidateValidationExecution):
+        result = (
+            {
+                "verdict": execution.validation.verdict.value,
+                "reason": execution.validation.reason,
+            }
+            if execution.validation is not None
+            else None
+        )
+        mapped_candidate_id = (
+            execution.candidate_id
+            if execution.validation is not None
+            and execution.validation.verdict is SemanticReferenceCandidateVerdict.SUPPORTED
+            else None
+        )
+    else:
+        result = (
+            _challenge_selection_payload(execution.selection)
+            if execution.selection is not None
+            else None
+        )
+        mapped_candidate_id = _mapped_challenge_candidate_id(execution)
+    return {
+        "task": reference.task.value,
+        "extraction_task_id": execution.extraction_task_id,
+        "model_run_id": execution.model_run_id,
+        "model_status": execution.model_status.value,
+        "raw_output_sha256": execution.raw_output_sha256,
+        "model_result": result,
+        "mapped_candidate_id": mapped_candidate_id,
+    }
+
+
+def _challenge_selection_payload(
+    selection: SemanticReferenceChallengeSelection,
+) -> dict[str, JsonValue]:
+    return {
+        "antecedent_candidate_label": selection.antecedent_candidate_label,
+        "ambiguous": selection.ambiguous,
+        "reason": selection.reason,
+    }
+
+
+def _reference_trace_status(
+    executions: tuple[SemanticReferenceModelExecution, ...],
+    reason: SemanticReferenceReason,
+) -> ExtractionStageStatus:
+    if reason in {
+        SemanticReferenceReason.CHALLENGE_INVALID,
+        SemanticReferenceReason.SPECIALIST_VALIDATION_INVALID,
+    }:
+        return ExtractionStageStatus.REJECTED
+    if any(item.model_status is not ModelRunStatus.SUCCEEDED for item in executions):
+        return ExtractionStageStatus.FAILED
+    return ExtractionStageStatus.COMPLETED
+
+
+def _reference_trace_diagnostics(
+    executions: tuple[SemanticReferenceModelExecution, ...],
+    reason: SemanticReferenceReason,
+) -> tuple[str, ...]:
+    diagnostics: set[str] = set()
+    if reason is SemanticReferenceReason.CHALLENGE_INVALID:
+        diagnostics.add("semantic_reference_challenge_invalid")
+    if reason is SemanticReferenceReason.SPECIALIST_VALIDATION_INVALID:
+        diagnostics.add("semantic_reference_specialist_validation_invalid")
+    for execution in executions:
+        if execution.model_status is ModelRunStatus.SUCCEEDED:
+            continue
+        diagnostics.add(
+            "semantic_reference_specialist_validation_failed"
+            if isinstance(execution, SemanticReferenceCandidateValidationExecution)
+            else "semantic_reference_challenge_failed"
+        )
+    return tuple(sorted(diagnostics))
+
+
+def _ordered_distinct_spans(
+    spans: tuple[CoreferenceSpan, ...],
+) -> tuple[CoreferenceSpan, ...]:
+    return tuple(
+        sorted(
+            {item.id: item for item in spans}.values(),
+            key=lambda item: (item.start, item.end, item.id),
+        )
     )
 
 
@@ -671,14 +1079,7 @@ def _apply_specialist_disagreement_policy(
     specialist_span_ids = {item.span.id for item in specialist_proposed}
     if selected_ids.issubset(specialist_span_ids):
         return status, reason, selected
-    ambiguous = tuple(
-        sorted(
-            {
-                item.id: item for item in (*selected, *(item.span for item in specialist_proposed))
-            }.values(),
-            key=lambda item: (item.start, item.end, item.id),
-        )
-    )
+    ambiguous = _ordered_distinct_spans((*selected, *(item.span for item in specialist_proposed)))
     return (
         SemanticReferenceStatus.AMBIGUOUS,
         SemanticReferenceReason.SPECIALIST_CHALLENGE_DISAGREEMENT,
