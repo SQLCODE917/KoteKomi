@@ -1,0 +1,61 @@
+{
+  "schema_version": "hsq_stage_local_split_v2",
+  "catalogs": [
+    {
+      "path": "docs/hsq-task-allocation-amodei-gold-v1.json",
+      "sha256": "8ede791c9eddb79ee0f995d686552b1627ae9c38efd26bad9963141477545624"
+    },
+    {
+      "path": "docs/hsq-task-allocation-anthropic-gold-v1.json",
+      "sha256": "867832ba73c0f444783c219b03e23a610790bec4d5926c4901b432691978b23a"
+    }
+  ],
+  "evaluator_corrections": {
+    "path": "docs/hsq-stage-local-evaluator-corrections-v1.json",
+    "sha256": "2ba4ff5637a396f037c9646e4f6a167466751a8c6fc7ba18b670d7585da71039"
+  },
+  "development_item_ids": [
+    "AMO-03",
+    "AMO-04",
+    "AMO-10",
+    "AMO-11",
+    "AMO-12",
+    "AMO-13",
+    "AMO-14",
+    "AMO-16",
+    "AMO-17",
+    "AMO-18",
+    "ANT-02",
+    "ANT-03",
+    "ANT-04",
+    "ANT-07",
+    "ANT-08",
+    "ANT-11",
+    "ANT-15",
+    "ANT-17",
+    "ANT-18",
+    "ANT-19"
+  ],
+  "validation_item_ids": [
+    "AMO-01",
+    "AMO-02",
+    "AMO-05",
+    "AMO-06",
+    "AMO-07",
+    "AMO-08",
+    "AMO-09",
+    "AMO-15",
+    "AMO-19",
+    "AMO-20",
+    "ANT-01",
+    "ANT-05",
+    "ANT-06",
+    "ANT-09",
+    "ANT-10",
+    "ANT-12",
+    "ANT-13",
+    "ANT-14",
+    "ANT-16",
+    "ANT-20"
+  ]
+}

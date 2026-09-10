@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import time
 import uuid
 from collections import defaultdict
@@ -22,6 +23,11 @@ from kotekomi_application.extraction_stage_trace import (
     ExtractionStageTrace,
     validate_extraction_stage_trace_chain,
 )
+from kotekomi_application.hybrid_mention_boundary_adjudication import (
+    MentionBoundaryAdjudication,
+    effective_mention_candidate_ids,
+    unresolved_mention_candidate_ids,
+)
 from kotekomi_application.mention_proposer import (
     MentionProposal,
     MentionProposalBatch,
@@ -37,10 +43,12 @@ from kotekomi_application.organization_mention_qualification import (
 from kotekomi_application.organization_mention_qualification import (
     MentionProposalObservation as OrganizationMentionProposalObservation,
 )
+from kotekomi_application.source_occurrences import source_occurrences
 
 HYBRID_MENTION_BOUNDARY_POLICY_ID = "hybrid_mention_boundary_v2"
-HYBRID_MENTION_PREVIEW_POLICY_ID = "hybrid_mention_preview_v2"
-HYBRID_MENTION_TASK_SCHEMA_ID = "hybrid_mention_task_text_v1"
+HYBRID_MENTION_PREVIEW_POLICY_ID = "hybrid_mention_preview_v3"
+HYBRID_MENTION_PROPOSAL_SCHEMA_ID = "hybrid_mention_occurrence_selection_text_v1"
+HYBRID_MENTION_INTERPRETATION_SCHEMA_ID = "hybrid_mention_interpretation_text_v2"
 
 _SHA256_PATTERN = r"^[a-f0-9]{64}$"
 _ID_PATTERN = r"^[a-z]+_[a-f0-9]{24}$"
@@ -209,6 +217,10 @@ class MentionBoundaryDecision(BaseModel):
             raise ValueError("MentionBoundaryDecision must preserve every candidate.")
         if not set(self.selected_candidate_ids).issubset(self.candidate_ids):
             raise ValueError("MentionBoundaryDecision selected an unknown candidate.")
+        if self.status is MentionBoundaryStatus.AMBIGUOUS and self.selected_candidate_ids:
+            raise ValueError("An ambiguous MentionBoundaryDecision cannot select a candidate.")
+        if self.status is not MentionBoundaryStatus.AMBIGUOUS and not self.selected_candidate_ids:
+            raise ValueError("A resolved MentionBoundaryDecision must select a candidate.")
         expected = _id(
             "mbd",
             HYBRID_MENTION_BOUNDARY_POLICY_ID,
@@ -257,16 +269,17 @@ class HybridExtractionPreview(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
-    schema_version: Literal["hybrid_extraction_preview_v2"] = "hybrid_extraction_preview_v2"
+    schema_version: Literal["hybrid_extraction_preview_v3"] = "hybrid_extraction_preview_v3"
     id: Annotated[str, Field(pattern=r"^hxp_[a-f0-9]{24}$")]
     representation_id: Annotated[str, Field(min_length=1)]
     paragraph_node_id: Annotated[str, Field(min_length=1)]
     context_manifest_id: Annotated[str, Field(min_length=1)]
-    policy_id: Literal["hybrid_mention_preview_v2"] = HYBRID_MENTION_PREVIEW_POLICY_ID
+    policy_id: Literal["hybrid_mention_preview_v3"] = HYBRID_MENTION_PREVIEW_POLICY_ID
     ontology_card_sha256: Annotated[str, Field(pattern=_SHA256_PATTERN)]
     observations: tuple[MentionObservation, ...] = ()
     candidates: tuple[MentionCandidate, ...] = ()
     boundary_decisions: tuple[MentionBoundaryDecision, ...] = ()
+    boundary_adjudications: tuple[MentionBoundaryAdjudication, ...] = ()
     interpretations: tuple[MentionInterpretation, ...] = ()
     extraction_task_ids: tuple[Annotated[str, Field(min_length=1)], ...] = ()
     model_run_ids: tuple[Annotated[str, Field(min_length=1)], ...] = ()
@@ -293,11 +306,22 @@ class HybridExtractionPreview(BaseModel):
             != self.boundary_decisions
         ):
             raise ValueError("HybridExtractionPreview boundary decisions must be ordered.")
+        if (
+            tuple(
+                sorted(
+                    self.boundary_adjudications,
+                    key=lambda item: (item.source_segment_id, item.boundary_decision_id, item.id),
+                )
+            )
+            != self.boundary_adjudications
+        ):
+            raise ValueError("HybridExtractionPreview boundary adjudications must be ordered.")
         candidate_by_id = {item.id: item for item in self.candidates}
         if len(candidate_by_id) != len(self.candidates):
             raise ValueError("HybridExtractionPreview repeats a MentionCandidate.")
-        observation_ids = {item.id for item in self.observations}
-        if len(observation_ids) != len(self.observations):
+        observation_by_id = {item.id: item for item in self.observations}
+        observation_ids = set(observation_by_id)
+        if len(observation_by_id) != len(self.observations):
             raise ValueError("HybridExtractionPreview repeats a MentionObservation.")
         if any(
             not set(candidate.observation_ids).issubset(observation_ids)
@@ -336,11 +360,39 @@ class HybridExtractionPreview(BaseModel):
             for candidate_id in decision.candidate_ids
         ):
             raise ValueError("HybridExtractionPreview boundary source identity drifted.")
-        selected_candidate_ids = {
-            candidate_id
-            for decision in self.boundary_decisions
-            for candidate_id in decision.selected_candidate_ids
-        }
+        decision_by_id = {item.id: item for item in self.boundary_decisions}
+        if len(decision_by_id) != len(self.boundary_decisions):
+            raise ValueError("HybridExtractionPreview repeats a boundary decision.")
+        adjudicated_decision_ids: set[str] = set()
+        for adjudication in self.boundary_adjudications:
+            decision = decision_by_id.get(adjudication.boundary_decision_id)
+            if decision is None:
+                raise ValueError("HybridExtractionPreview adjudication parent is missing.")
+            if adjudication.boundary_decision_id in adjudicated_decision_ids:
+                raise ValueError("HybridExtractionPreview repeats a boundary adjudication.")
+            adjudicated_decision_ids.add(adjudication.boundary_decision_id)
+            if decision.status is not MentionBoundaryStatus.AMBIGUOUS:
+                raise ValueError("Only an ambiguous boundary decision can be adjudicated.")
+            if adjudication.source_segment_id != decision.source_segment_id:
+                raise ValueError("HybridExtractionPreview adjudication source identity drifted.")
+            if {item.candidate_id for item in adjudication.judgments} != set(
+                decision.candidate_ids
+            ):
+                raise ValueError(
+                    "HybridExtractionPreview adjudication must cover its parent candidates."
+                )
+            if any(
+                candidate_by_id[item.candidate_id].source_text_sha256
+                != adjudication.source_text_sha256
+                for item in adjudication.judgments
+            ):
+                raise ValueError("HybridExtractionPreview adjudication source digest drifted.")
+        selected_candidate_ids = set(
+            effective_mention_candidate_ids(
+                self.boundary_decisions,
+                self.boundary_adjudications,
+            )
+        )
         interpretation_candidate_ids = tuple(item.candidate_id for item in self.interpretations)
         if len(set(interpretation_candidate_ids)) != len(interpretation_candidate_ids) or not set(
             interpretation_candidate_ids
@@ -356,19 +408,34 @@ class HybridExtractionPreview(BaseModel):
         )
         if expected_interpretation_order != self.interpretations:
             raise ValueError("HybridExtractionPreview interpretations must use source order.")
+        interpretation_required_ids = {
+            candidate_id
+            for candidate_id in selected_candidate_ids
+            if "kotekomi_reference_marker_v1"
+            not in {
+                observation_by_id[observation_id].producer_id
+                for observation_id in candidate_by_id[candidate_id].observation_ids
+            }
+        }
         if self.terminal_status is HybridPreviewStatus.COMPLETE and (
-            set(interpretation_candidate_ids) != selected_candidate_ids
+            set(interpretation_candidate_ids) != interpretation_required_ids
         ):
             raise ValueError("A complete HybridExtractionPreview requires every interpretation.")
+        if (
+            self.terminal_status is HybridPreviewStatus.COMPLETE
+            and unresolved_mention_candidate_ids(
+                self.boundary_decisions,
+                self.boundary_adjudications,
+            )
+        ):
+            raise ValueError(
+                "A complete HybridExtractionPreview cannot retain unresolved boundaries."
+            )
         has_incomplete_stage = any(
             trace.status is not ExtractionStageStatus.COMPLETED for trace in self.traces
         )
         if self.terminal_status is HybridPreviewStatus.COMPLETE and has_incomplete_stage:
             raise ValueError("A complete HybridExtractionPreview cannot contain a failed stage.")
-        if self.terminal_status is HybridPreviewStatus.PARTIAL and not has_incomplete_stage:
-            raise ValueError(
-                "A partial HybridExtractionPreview requires a failed proposer or interpretation."
-            )
         if self.terminal_status is HybridPreviewStatus.PARTIAL and not self.diagnostics:
             raise ValueError("A partial HybridExtractionPreview requires a diagnostic.")
         if self.terminal_status is HybridPreviewStatus.BLOCKED and any(
@@ -376,6 +443,7 @@ class HybridExtractionPreview(BaseModel):
                 self.observations,
                 self.candidates,
                 self.boundary_decisions,
+                self.boundary_adjudications,
                 self.interpretations,
             )
         ):
@@ -398,8 +466,16 @@ class HybridExtractionPreview(BaseModel):
             raise ValueError("HybridExtractionPreview repeats an ExtractionStageTrace.")
         if any(item.trace_id not in trace_ids for item in self.interpretations):
             raise ValueError("HybridExtractionPreview interpretation trace is missing.")
+        if any(item.trace_id not in trace_ids for item in self.boundary_adjudications):
+            raise ValueError("HybridExtractionPreview adjudication trace is missing.")
         if any(item.model_run_id not in self.model_run_ids for item in self.interpretations):
             raise ValueError("HybridExtractionPreview interpretation ModelRun is missing.")
+        if any(
+            item.model_run_id not in self.model_run_ids
+            or item.extraction_task_id not in self.extraction_task_ids
+            for item in self.boundary_adjudications
+        ):
+            raise ValueError("HybridExtractionPreview adjudication execution evidence is missing.")
         execution_ids = set(self.extraction_task_ids) | set(self.model_run_ids)
         if any(
             not set(trace.execution_record_ids).issubset(execution_ids) for trace in self.traces
@@ -454,15 +530,27 @@ class HybridModelOutputArchive(Protocol):
 
 
 @dataclass(frozen=True)
-class MentionProposalDraft:
+class MentionOccurrenceSelection:
+    """One model selection over a KoteKomi-owned source-occurrence range."""
+
     source_segment_label: str
-    type_hints: tuple[ContextualKind, ...]
-    text: str
+    first_occurrence_id: str
+    last_occurrence_id: str
 
 
 @dataclass(frozen=True)
-class MentionProposalDraftBatch:
-    proposals: tuple[MentionProposalDraft, ...]
+class MentionProposalLineRejection:
+    """One malformed proposal line retained without erasing valid lines."""
+
+    line_number: int
+    line: str
+    code: str
+
+
+@dataclass(frozen=True)
+class MentionOccurrenceSelectionBatch:
+    selections: tuple[MentionOccurrenceSelection, ...]
+    rejections: tuple[MentionProposalLineRejection, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -498,20 +586,7 @@ def run_recorded_mention_proposer(
     archive: HybridModelOutputArchive,
 ) -> RecordedMentionProposalOutcome:
     """Run one specialized proposer and retain the same task/run lineage as an LLM task."""
-    input_bytes = _canonical_json(
-        {
-            "source_segments": [
-                {
-                    "end_char": item.end_char,
-                    "exact_text": item.exact_text,
-                    "label": item.label,
-                    "start_char": item.start_char,
-                }
-                for item in proposal_input.source_segments
-            ],
-            "type_hints": list(proposal_input.type_hints),
-        }
-    ).encode()
+    input_bytes = canonical_mention_proposal_input_bytes(proposal_input)
     prompt_bytes = _canonical_json({"type_hints": list(proposal_input.type_hints)}).encode()
     schema_bytes = b"hybrid_mention_proposal_batch_v1"
     proposer_name = type(proposer).__name__
@@ -619,6 +694,24 @@ def run_recorded_mention_proposer(
     return RecordedMentionProposalOutcome(task, run, batch)
 
 
+def canonical_mention_proposal_input_bytes(proposal_input: MentionProposalInput) -> bytes:
+    """Serialize the exact specialist-model input for trace and replay evidence."""
+    return _canonical_json(
+        {
+            "source_segments": [
+                {
+                    "end_char": item.end_char,
+                    "exact_text": item.exact_text,
+                    "label": item.label,
+                    "start_char": item.start_char,
+                }
+                for item in proposal_input.source_segments
+            ],
+            "type_hints": list(proposal_input.type_hints),
+        }
+    ).encode()
+
+
 def observation_from_proposal(
     *,
     proposal: MentionProposal,
@@ -649,47 +742,47 @@ def observation_from_proposal(
     )
 
 
-def map_proposal_drafts_to_observations(
+def map_occurrence_selections_to_observations(
     *,
-    drafts: tuple[MentionProposalDraft, ...],
+    selections: tuple[MentionOccurrenceSelection, ...],
     source_segments: tuple[SourceSegment, ...],
     source_segment_ids: dict[str, str],
     producer_id: str,
     execution_record_id: str,
 ) -> tuple[MentionObservation, ...]:
-    """Map model-authored literals to every exact task-local source occurrence."""
+    """Construct exact mention spans from supplied occurrence-range selections."""
     segments = {segment.label: segment for segment in source_segments}
     observations: list[MentionObservation] = []
-    for draft in drafts:
-        segment = segments.get(draft.source_segment_label)
+    for selection in selections:
+        segment = segments.get(selection.source_segment_label)
         if segment is None:
-            raise ValueError("Mention proposal draft references an unknown SourceSegment.")
-        start = 0
-        matched = False
-        while True:
-            occurrence = segment.exact_text.find(draft.text, start)
-            if occurrence < 0:
-                break
-            matched = True
-            normalized_hints = tuple(sorted({item.value for item in draft.type_hints}))
-            proposal = MentionProposal(
-                source_segment_label=segment.label,
-                text=draft.text,
-                start=occurrence,
-                end=occurrence + len(draft.text),
-                type_hints=normalized_hints,
+            raise ValueError("Mention selection references an unknown SourceSegment.")
+        occurrences = source_occurrences(segment.exact_text)
+        occurrence_by_id = {item.occurrence_id: item for item in occurrences}
+        first = occurrence_by_id.get(selection.first_occurrence_id)
+        last = occurrence_by_id.get(selection.last_occurrence_id)
+        if first is None or last is None:
+            raise ValueError("Mention selection references an unknown SourceOccurrence.")
+        first_index = occurrences.index(first)
+        last_index = occurrences.index(last)
+        if first_index > last_index:
+            raise ValueError("Mention selection occurrence range is reversed.")
+        text = segment.exact_text[first.start : last.end]
+        proposal = MentionProposal(
+            source_segment_label=segment.label,
+            text=text,
+            start=first.start,
+            end=last.end,
+            type_hints=(ContextualKind.UNCLEAR.value,),
+        )
+        observations.append(
+            observation_from_proposal(
+                proposal=proposal,
+                source_segment_id=source_segment_ids[segment.label],
+                producer_id=producer_id,
+                execution_record_id=execution_record_id,
             )
-            observations.append(
-                observation_from_proposal(
-                    proposal=proposal,
-                    source_segment_id=source_segment_ids[segment.label],
-                    producer_id=producer_id,
-                    execution_record_id=execution_record_id,
-                )
-            )
-            start = occurrence + 1
-        if not matched:
-            raise ValueError("Mention proposal literal does not occur in its SourceSegment.")
+        )
     return tuple(sorted(observations, key=_observation_key))
 
 
@@ -761,6 +854,41 @@ def reconcile_mention_boundaries(
         )
         if not segment_candidates:
             continue
+        reference_marker_candidates = tuple(
+            candidate
+            for candidate in segment_candidates
+            if any(
+                observations_by_id[observation_id].producer_id == "kotekomi_reference_marker_v1"
+                for observation_id in candidate.observation_ids
+            )
+        )
+        for candidate in reference_marker_candidates:
+            selected_ids.add(candidate.id)
+            decisions.append(
+                MentionBoundaryDecision(
+                    id=_id(
+                        "mbd",
+                        HYBRID_MENTION_BOUNDARY_POLICY_ID,
+                        source_segment_id,
+                        "exact_reference_marker_v2",
+                        candidate.id,
+                    ),
+                    source_segment_id=source_segment_id,
+                    status=MentionBoundaryStatus.UNCONTESTED,
+                    rule_id="exact_reference_marker_v2",
+                    candidate_ids=(candidate.id,),
+                    selected_candidate_ids=(candidate.id,),
+                    preserved_candidate_ids=(candidate.id,),
+                    diagnostics=(),
+                )
+            )
+        named_candidates = tuple(
+            candidate
+            for candidate in segment_candidates
+            if candidate not in reference_marker_candidates
+        )
+        if not named_candidates:
+            continue
         old_candidates = tuple(
             OrganizationMentionCandidate(
                 id=candidate.id,
@@ -781,7 +909,7 @@ def reconcile_mention_boundaries(
                     for observation_id in candidate.observation_ids
                 ),
             )
-            for candidate in segment_candidates
+            for candidate in named_candidates
         )
         result = reconcile_organization_mention_boundaries(
             source_text=source_segments[source_segment_id],
@@ -827,39 +955,33 @@ def reconcile_mention_boundaries(
 
 def parse_mention_proposal_output(
     raw_output: bytes,
-) -> MentionProposalDraftBatch | MentionProposalAbstention:
-    text = _strict_utf8_lines(raw_output, "Mention proposal")
+) -> MentionOccurrenceSelectionBatch | MentionProposalAbstention:
+    try:
+        text = raw_output.decode("utf-8")
+    except UnicodeDecodeError as error:
+        raise ValueError("Mention proposal output must be UTF-8 text.") from error
     lines = text.splitlines()
+    if not lines:
+        raise ValueError("Mention proposal output requires at least one line.")
     if len(lines) == 1 and lines[0].startswith("abstain: "):
         reason = lines[0].removeprefix("abstain: ")
-        if not reason:
+        if not reason or reason != reason.strip():
             raise ValueError("Mention proposal abstention requires a reason.")
         return MentionProposalAbstention(reason)
-    drafts: list[MentionProposalDraft] = []
-    for line in lines:
-        if not line.startswith("mention: "):
-            raise ValueError("Mention proposal lines must begin with 'mention: '.")
-        parts = line.removeprefix("mention: ").split(" | ")
-        if len(parts) != 3 or any(not part for part in parts):
-            raise ValueError("Mention proposal lines require segment, hints, and literal text.")
-        segment, hints_text, literal = parts
-        if not segment.startswith("s") or not segment[1:].isdigit():
-            raise ValueError("Mention proposal SourceSegment labels must use the sN form.")
+    selections: list[MentionOccurrenceSelection] = []
+    rejections: list[MentionProposalLineRejection] = []
+    seen: set[MentionOccurrenceSelection] = set()
+    for line_number, line in enumerate(lines, start=1):
         try:
-            hints = tuple(
-                sorted(
-                    {ContextualKind(item) for item in hints_text.split(",")},
-                    key=lambda item: item.value,
-                )
-            )
+            selection = _parse_mention_proposal_line(line)
+            if selection in seen:
+                raise ValueError("duplicate_proposal")
         except ValueError as error:
-            raise ValueError("Mention proposal contains an unknown contextual kind.") from error
-        if any(item in {ContextualKind.OTHER, ContextualKind.UNCLEAR} for item in hints):
-            raise ValueError("Mention proposer hints must use a concrete contextual kind.")
-        drafts.append(MentionProposalDraft(segment, hints, literal))
-    if len(set(drafts)) != len(drafts):
-        raise ValueError("Mention proposal output repeats one proposal.")
-    return MentionProposalDraftBatch(tuple(drafts))
+            rejections.append(MentionProposalLineRejection(line_number, line, str(error)))
+            continue
+        seen.add(selection)
+        selections.append(selection)
+    return MentionOccurrenceSelectionBatch(tuple(selections), tuple(rejections))
 
 
 def parse_mention_interpretation_output(raw_output: bytes) -> MentionInterpretationDraft:
@@ -888,7 +1010,7 @@ def parse_mention_interpretation_output(raw_output: bytes) -> MentionInterpretat
 
 def mention_proposal_schema_bytes() -> bytes:
     return (
-        b"mention: <sN> | <contextual-kind>[,<contextual-kind>...] | <literal expression>\n"
+        b"mention: <sN> | <first supplied occurrence ID> | <last supplied occurrence ID>\n"
         b"... one line for each proposal\n\n"
         b"or\n\n"
         b"abstain: <non-empty reason>\n"
@@ -905,22 +1027,22 @@ def mention_interpretation_schema_bytes() -> bytes:
     )
 
 
-def hybrid_mention_task_schema_bytes() -> bytes:
-    return mention_proposal_schema_bytes() + b"\nor\n\n" + mention_interpretation_schema_bytes()
-
-
-def parse_hybrid_mention_task_output(
-    raw_output: bytes,
-) -> MentionProposalDraftBatch | MentionProposalAbstention | MentionInterpretationDraft:
-    try:
-        first_line = raw_output.decode("utf-8").splitlines()[0]
-    except (UnicodeDecodeError, IndexError) as error:
-        raise ValueError("Hybrid mention task output must be non-empty UTF-8 text.") from error
-    if first_line.startswith(("mention: ", "abstain: ")):
-        return parse_mention_proposal_output(raw_output)
-    if first_line.startswith("candidate: "):
-        return parse_mention_interpretation_output(raw_output)
-    raise ValueError("Hybrid mention task output does not match a supported contract.")
+def _parse_mention_proposal_line(line: str) -> MentionOccurrenceSelection:
+    if not line or line != line.strip():
+        raise ValueError("untrimmed_or_empty_line")
+    if not line.startswith("mention: "):
+        raise ValueError("unknown_line")
+    parts = line.removeprefix("mention: ").split(" | ")
+    if len(parts) != 3 or any(not part for part in parts):
+        raise ValueError("invalid_mention_shape")
+    segment, first_occurrence_id, last_occurrence_id = parts
+    if not segment.startswith("s") or not segment[1:].isdigit():
+        raise ValueError("invalid_source_segment_label")
+    if not re.fullmatch(r"o[1-9][0-9]*", first_occurrence_id) or not re.fullmatch(
+        r"o[1-9][0-9]*", last_occurrence_id
+    ):
+        raise ValueError("invalid_source_occurrence_id")
+    return MentionOccurrenceSelection(segment, first_occurrence_id, last_occurrence_id)
 
 
 def resolve_mention_interpretation(
@@ -961,12 +1083,13 @@ def resolve_mention_interpretation(
 
 def build_hybrid_extraction_preview(**values: object) -> HybridExtractionPreview:
     payload = dict(values)
-    payload.setdefault("schema_version", "hybrid_extraction_preview_v2")
+    payload.setdefault("schema_version", "hybrid_extraction_preview_v3")
     payload.setdefault("policy_id", HYBRID_MENTION_PREVIEW_POLICY_ID)
     for field_name in (
         "observations",
         "candidates",
         "boundary_decisions",
+        "boundary_adjudications",
         "interpretations",
         "extraction_task_ids",
         "model_run_ids",

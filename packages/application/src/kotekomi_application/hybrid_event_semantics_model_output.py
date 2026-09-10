@@ -55,6 +55,12 @@ class EventFrameSelection:
 
 
 @dataclass(frozen=True)
+class EventFrameFitDecision:
+    fits: bool
+    reason: str
+
+
+@dataclass(frozen=True)
 class EventPresentationSelection:
     polarity: str
     modality: str
@@ -98,6 +104,17 @@ def parse_event_frame_selection_output(raw_output: bytes) -> EventFrameSelection
         return EventFrameSelection(None, reason)
     _require_identifier(frame_value, "event frame")
     return EventFrameSelection(frame_value, reason)
+
+
+def parse_event_frame_fit_output(raw_output: bytes) -> EventFrameFitDecision:
+    lines = _strict_lines(raw_output, "Event-frame fit")
+    if len(lines) != 2:
+        raise ValueError("Event-frame fit requires exactly two lines.")
+    fit_value = _scalar(lines[0], "fit")
+    reason = _scalar(lines[1], "reason")
+    if fit_value not in {"yes", "no"}:
+        raise ValueError("Event-frame fit must be yes or no.")
+    return EventFrameFitDecision(fit_value == "yes", reason)
 
 
 def parse_event_presentation_output(raw_output: bytes) -> EventPresentationParseResult:
@@ -204,6 +221,10 @@ def parse_semantic_support_output(raw_output: bytes) -> SemanticSupportModelJudg
 
 def event_frame_selection_schema_bytes() -> bytes:
     return b"frame: <supplied_frame_id>|unresolved\nreason: <one non-empty sentence>\n"
+
+
+def event_frame_fit_schema_bytes() -> bytes:
+    return b"fit: yes|no\nreason: <one non-empty sentence>\n"
 
 
 def event_presentation_schema_bytes() -> bytes:

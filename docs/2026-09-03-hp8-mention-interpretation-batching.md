@@ -171,7 +171,11 @@ HP-8.1 adds no accepted Domain Core record.
 
 The model task uses task type `hybrid_mention_interpretation`.
 
-Mention proposal retains schema ID `hybrid_mention_task_text_v1`.
+HP-8.1 originally retained schema ID `hybrid_mention_task_text_v1` for mention proposal.
+
+The later [Bounded Semantic Task Allocation](2026-09-08-bounded-semantic-task-allocation.md)
+contract replaces that combined boundary with `hybrid_mention_occurrence_selection_text_v1`
+and `hybrid_mention_interpretation_text_v2`.
 
 Mention interpretation uses these schema IDs:
 

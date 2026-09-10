@@ -317,7 +317,9 @@ def test_hybrid_mention_preview_prints_exact_portable_result(
         yield object()
 
     def fake_run(**kwargs: object) -> HybridMentionPreviewResult:
-        assert kwargs["prompt_bytes"]
+        assert kwargs["proposal_prompt_bytes"]
+        assert kwargs["boundary_adjudication_prompt_bytes"]
+        assert kwargs["interpretation_prompt_bytes"]
         assert kwargs["ontology_card_bytes"]
         return HybridMentionPreviewResult(
             preview,
@@ -807,6 +809,8 @@ def test_hybrid_event_semantics_command_prints_typed_result(
         ontology_profile_sha256=hybrid_event_semantics_profile_sha256(),
         frame_selection_prompt_sha256="b" * 64,
         frame_selection_schema_sha256="c" * 64,
+        frame_fit_prompt_sha256="d" * 64,
+        frame_fit_schema_sha256="e" * 64,
         role_selection_prompt_sha256="d" * 64,
         role_selection_schema_sha256="e" * 64,
         presentation_prompt_sha256="2" * 64,

@@ -15,6 +15,11 @@ from kotekomi_application.context_planning import (
     PARAGRAPH_SEGMENT_V3,
     paragraph_source_segments,
 )
+from kotekomi_application.hybrid_mention_boundary_adjudication import (
+    MentionBoundaryAdjudication,
+    effective_mention_candidate_ids,
+)
+from kotekomi_application.hybrid_mention_interpretation import MentionBoundaryDecision
 from kotekomi_domain import HYBRID_EVENT_SEMANTICS_V4
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -95,6 +100,50 @@ class TaskAllocationReferenceExpectation(BaseModel):
     antecedent_text: Annotated[str, Field(min_length=1)]
 
 
+class TaskAllocationEvaluatorCorrection(BaseModel):
+    """One explicit evaluator amendment that does not alter Gold or system output."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    correction_id: Annotated[str, Field(min_length=1)]
+    classification: Literal["evaluator_false_negative"]
+    item_id: Annotated[str, Field(pattern=r"^(AMO|ANT)-[0-9]{2}$")]
+    source_text_sha256: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
+    reference_text: Annotated[str, Field(min_length=1)]
+    previous_antecedent_text: Annotated[str, Field(min_length=1)]
+    accepted_antecedent_texts: tuple[Annotated[str, Field(min_length=1)], ...]
+    observed_antecedent_texts: tuple[Annotated[str, Field(min_length=1)], ...]
+    rationale: Annotated[str, Field(min_length=1)]
+
+    @model_validator(mode="after")
+    def validate_values(self) -> Self:
+        for label, values in (
+            ("accepted antecedents", self.accepted_antecedent_texts),
+            ("observed antecedents", self.observed_antecedent_texts),
+        ):
+            if not values or len(set(values)) != len(values):
+                raise ValueError(f"Evaluator correction {label} must be non-empty and distinct.")
+        return self
+
+
+class TaskAllocationEvaluatorCorrectionCatalog(BaseModel):
+    """Pinned amendments to a finalized evaluator with parent evidence identity."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    schema_version: Literal["hsq_stage_local_evaluator_corrections_v1"]
+    parent_validation_manifest_sha256: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
+    parent_validation_report_sha256: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
+    corrections: tuple[TaskAllocationEvaluatorCorrection, ...]
+
+    @model_validator(mode="after")
+    def validate_catalog(self) -> Self:
+        keys = [(item.item_id, item.reference_text) for item in self.corrections]
+        if not self.corrections or len(set(keys)) != len(keys):
+            raise ValueError("Evaluator corrections must be non-empty and uniquely targeted.")
+        return self
+
+
 class TaskAllocationStandingExpectation(BaseModel):
     """The minimum source-backed triple shape required from a standing route."""
 
@@ -120,7 +169,8 @@ class TaskAllocationItem(BaseModel):
     source_segment_sha256: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
     expected_summary: Annotated[str, Field(min_length=1)]
     expected_route: ExpectedRoute
-    expected_trigger_text: str | None = None
+    expected_trigger_head_text: str | None = None
+    accepted_trigger_expression_texts: tuple[Annotated[str, Field(min_length=1)], ...] = ()
     expected_frame_id: str | None = None
     expected_gap_code: str | None = None
     expected_roles: tuple[TaskAllocationRoleExpectation, ...] = ()
@@ -147,7 +197,11 @@ class TaskAllocationItem(BaseModel):
         if unknown:
             raise ValueError(f"Task-allocation item uses unknown cases: {sorted(unknown)}")
         if self.expected_route == "event":
-            if self.expected_trigger_text is None or self.expected_frame_id is None:
+            if (
+                self.expected_trigger_head_text is None
+                or not self.accepted_trigger_expression_texts
+                or self.expected_frame_id is None
+            ):
                 raise ValueError("An event expectation requires trigger and frame.")
             if (
                 self.expected_gap_code is not None
@@ -164,7 +218,8 @@ class TaskAllocationItem(BaseModel):
             if any(
                 value is not None
                 for value in (
-                    self.expected_trigger_text,
+                    self.expected_trigger_head_text,
+                    self.accepted_trigger_expression_texts or None,
                     self.expected_frame_id,
                     self.expected_gap_code,
                     self.expected_polarity,
@@ -181,7 +236,8 @@ class TaskAllocationItem(BaseModel):
                     "A standing-fact expectation must contain only standing semantics."
                 )
         elif (
-            self.expected_trigger_text is None
+            self.expected_trigger_head_text is None
+            or not self.accepted_trigger_expression_texts
             or self.expected_gap_code is None
             or self.expected_disposition != "typed_ontology_gap"
             or self.expected_roles
@@ -227,7 +283,7 @@ class TaskAllocationBaselinePartition(BaseModel):
 class TaskAllocationGoldCatalog(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
-    schema_version: Literal["hsq_task_allocation_gold_v1"]
+    schema_version: Literal["hsq_task_allocation_gold_v2"]
     catalog_id: Annotated[str, Field(min_length=1)]
     catalog_role: CatalogRole
     fixture_path: Annotated[str, Field(min_length=1)]
@@ -265,11 +321,19 @@ class TaskAllocationGoldCatalog(BaseModel):
             ):
                 raise ValueError("Task-allocation SourceSegment digest does not match.")
             if (
-                item.expected_trigger_text is not None
-                and item.expected_trigger_text not in segment.exact_text
+                item.expected_trigger_head_text is not None
+                and item.expected_trigger_head_text not in segment.exact_text
             ):
                 raise ValueError(
                     f"{item.item_id} trigger is absent from its authoritative source text."
+                )
+            if any(
+                expression not in segment.exact_text
+                for expression in item.accepted_trigger_expression_texts
+            ):
+                raise ValueError(
+                    f"{item.item_id} trigger expression is absent from its "
+                    "authoritative source text."
                 )
             normalized_segment = _normalized(segment.exact_text)
             for expectation in (
@@ -284,6 +348,8 @@ class TaskAllocationGoldCatalog(BaseModel):
             for expectation in item.expected_references:
                 if _normalized(expectation.reference_text) not in normalized_segment:
                     raise ValueError(f"{item.item_id} reference is absent from its SourceSegment.")
+                if _normalized(expectation.antecedent_text) not in normalized_segment:
+                    raise ValueError(f"{item.item_id} antecedent is absent from its SourceSegment.")
             if item.expected_standing_fact is not None and not all(
                 _normalized(value) in normalized_segment
                 for value in (
@@ -422,8 +488,188 @@ class TaskAllocationCatalogEvaluation(BaseModel):
         return self
 
 
+class TaskAllocationRunCost(BaseModel):
+    """Aggregate execution cost retained for one canonical comparison run."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    extraction_task_count: Annotated[int, Field(ge=0)]
+    model_run_count: Annotated[int, Field(ge=0)]
+    proposed_change_count: Annotated[int, Field(ge=0)]
+    total_model_elapsed_milliseconds: Annotated[int, Field(ge=0)]
+
+
+class TaskAllocationBaselineItem(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    item_id: Annotated[str, Field(pattern=r"^(AMO|ANT)-[0-9]{2}$")]
+    passed: bool
+    reached_review: bool
+    wiki_visible: bool | None
+    first_failed_stage: str | None
+
+    @model_validator(mode="after")
+    def validate_outcome(self) -> Self:
+        if self.passed != (self.first_failed_stage is None):
+            raise ValueError("A baseline item must agree with its first failed stage.")
+        return self
+
+
+class TaskAllocationBaselineCatalog(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    catalog_id: Annotated[str, Field(min_length=1)]
+    catalog_role: CatalogRole
+    items: tuple[TaskAllocationBaselineItem, ...]
+
+    @model_validator(mode="after")
+    def validate_items(self) -> Self:
+        item_ids = tuple(item.item_id for item in self.items)
+        if len(self.items) != 20 or item_ids != tuple(sorted(set(item_ids))):
+            raise ValueError("A baseline catalog requires twenty ordered distinct items.")
+        return self
+
+
+class TaskAllocationBaseline(BaseModel):
+    """Pinned canonical quality and cost evidence from before HSQ-7 correction."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    schema_version: Literal["hsq_task_allocation_baseline_v1"]
+    recorded_on: Annotated[str, Field(pattern=r"^20[0-9]{2}-[0-9]{2}-[0-9]{2}$")]
+    source_fixture_sha256: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
+    evaluator_corrections: tuple[Annotated[str, Field(min_length=1)], ...] = ()
+    cost: TaskAllocationRunCost
+    catalogs: tuple[TaskAllocationBaselineCatalog, ...]
+
+    @model_validator(mode="after")
+    def validate_catalogs(self) -> Self:
+        identities = tuple(item.catalog_id for item in self.catalogs)
+        if len(self.catalogs) != 2 or identities != tuple(sorted(set(identities))):
+            raise ValueError("The task-allocation baseline requires two ordered catalogs.")
+        if {item.catalog_role for item in self.catalogs} != {"development", "held_out"}:
+            raise ValueError("The task-allocation baseline requires both catalog roles.")
+        return self
+
+
+class TaskAllocationBaselineItemComparison(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    item_id: Annotated[str, Field(pattern=r"^(AMO|ANT)-[0-9]{2}$")]
+    baseline_passed: bool
+    current_passed: bool
+    baseline_first_failed_stage: str | None
+    current_first_failed_stage: str | None
+    newly_complete: bool
+    regressed: bool
+
+
+class TaskAllocationBaselineCatalogComparison(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    catalog_id: Annotated[str, Field(min_length=1)]
+    catalog_role: CatalogRole
+    baseline_passed_count: Annotated[int, Field(ge=0)]
+    current_passed_count: Annotated[int, Field(ge=0)]
+    newly_complete_item_ids: tuple[str, ...]
+    regressed_item_ids: tuple[str, ...]
+    items: tuple[TaskAllocationBaselineItemComparison, ...]
+
+
+class TaskAllocationBaselineComparison(BaseModel):
+    """Per-item quality and aggregate cost delta against pinned evidence."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    schema_version: Literal["hsq_task_allocation_baseline_comparison_v1"] = (
+        "hsq_task_allocation_baseline_comparison_v1"
+    )
+    baseline_recorded_on: str
+    baseline_cost: TaskAllocationRunCost
+    current_cost: TaskAllocationRunCost
+    extraction_task_count_delta: int
+    model_run_count_delta: int
+    proposed_change_count_delta: int
+    total_model_elapsed_milliseconds_delta: int
+    catalogs: tuple[TaskAllocationBaselineCatalogComparison, ...]
+
+
 def load_task_allocation_gold(path: Path) -> TaskAllocationGoldCatalog:
     return TaskAllocationGoldCatalog.model_validate_json(path.read_bytes())
+
+
+def load_task_allocation_evaluator_corrections(
+    path: Path,
+) -> TaskAllocationEvaluatorCorrectionCatalog:
+    return TaskAllocationEvaluatorCorrectionCatalog.model_validate_json(path.read_bytes())
+
+
+def load_task_allocation_baseline(path: Path) -> TaskAllocationBaseline:
+    return TaskAllocationBaseline.model_validate_json(path.read_bytes())
+
+
+def compare_task_allocation_baseline(
+    baseline: TaskAllocationBaseline,
+    evaluations: tuple[TaskAllocationCatalogEvaluation, ...],
+    current_cost: TaskAllocationRunCost,
+) -> TaskAllocationBaselineComparison:
+    """Compare one canonical run to the exact pinned per-item baseline."""
+    evaluations_by_id = {item.catalog_id: item for item in evaluations}
+    if set(evaluations_by_id) != {item.catalog_id for item in baseline.catalogs}:
+        raise ValueError("Current task-allocation catalogs do not match the baseline.")
+    comparisons: list[TaskAllocationBaselineCatalogComparison] = []
+    for baseline_catalog in baseline.catalogs:
+        current_catalog = evaluations_by_id[baseline_catalog.catalog_id]
+        if current_catalog.catalog_role != baseline_catalog.catalog_role:
+            raise ValueError("Current task-allocation catalog role drifted from baseline.")
+        current_by_id = {item.item_id: item for item in current_catalog.items}
+        baseline_by_id = {item.item_id: item for item in baseline_catalog.items}
+        if set(current_by_id) != set(baseline_by_id):
+            raise ValueError("Current task-allocation items do not match the baseline.")
+        items = tuple(
+            TaskAllocationBaselineItemComparison(
+                item_id=item_id,
+                baseline_passed=baseline_by_id[item_id].passed,
+                current_passed=current_by_id[item_id].passed,
+                baseline_first_failed_stage=baseline_by_id[item_id].first_failed_stage,
+                current_first_failed_stage=current_by_id[item_id].first_failed_stage,
+                newly_complete=(
+                    not baseline_by_id[item_id].passed and current_by_id[item_id].passed
+                ),
+                regressed=(baseline_by_id[item_id].passed and not current_by_id[item_id].passed),
+            )
+            for item_id in sorted(baseline_by_id)
+        )
+        comparisons.append(
+            TaskAllocationBaselineCatalogComparison(
+                catalog_id=baseline_catalog.catalog_id,
+                catalog_role=baseline_catalog.catalog_role,
+                baseline_passed_count=sum(item.passed for item in baseline_catalog.items),
+                current_passed_count=current_catalog.passed_count,
+                newly_complete_item_ids=tuple(
+                    item.item_id for item in items if item.newly_complete
+                ),
+                regressed_item_ids=tuple(item.item_id for item in items if item.regressed),
+                items=items,
+            )
+        )
+    return TaskAllocationBaselineComparison(
+        baseline_recorded_on=baseline.recorded_on,
+        baseline_cost=baseline.cost,
+        current_cost=current_cost,
+        extraction_task_count_delta=(
+            current_cost.extraction_task_count - baseline.cost.extraction_task_count
+        ),
+        model_run_count_delta=current_cost.model_run_count - baseline.cost.model_run_count,
+        proposed_change_count_delta=(
+            current_cost.proposed_change_count - baseline.cost.proposed_change_count
+        ),
+        total_model_elapsed_milliseconds_delta=(
+            current_cost.total_model_elapsed_milliseconds
+            - baseline.cost.total_model_elapsed_milliseconds
+        ),
+        catalogs=tuple(sorted(comparisons, key=lambda item: item.catalog_id)),
+    )
 
 
 def evaluate_task_allocation_catalog(
@@ -431,6 +677,7 @@ def evaluate_task_allocation_catalog(
     paragraphs: list[dict[str, Any]],
     *,
     wiki_plan: CandidateWikiPlan | None = None,
+    evaluator_corrections: TaskAllocationEvaluatorCorrectionCatalog | None = None,
 ) -> TaskAllocationCatalogEvaluation:
     """Evaluate one frozen Gold catalog against canonical orchestration evidence."""
     paragraphs_by_ordinal = {int(item["ordinal"]): item for item in paragraphs}
@@ -451,6 +698,7 @@ def evaluate_task_allocation_catalog(
                 segment.exact_text,
                 paragraph,
                 wiki_plan,
+                evaluator_corrections,
             )
         )
     failed_counts: dict[str, int] = {}
@@ -467,7 +715,9 @@ def evaluate_task_allocation_catalog(
         passed_count=sum(item.passed for item in results),
         review_count=sum(item.reached_review for item in results),
         wiki_visible_count=sum(item.wiki_visible is True for item in results),
-        wrong_forced_frame_count=sum(_wrong_forced_frame(item) for item in results),
+        wrong_forced_frame_count=sum(
+            task_allocation_item_has_wrong_forced_frame(item) for item in results
+        ),
         first_failed_stage_counts=dict(sorted(failed_counts.items())),
         items=tuple(results),
     )
@@ -479,9 +729,11 @@ def _evaluate_item(
     source_segment_text: str,
     paragraph: dict[str, Any] | None,
     wiki_plan: CandidateWikiPlan | None,
+    evaluator_corrections: TaskAllocationEvaluatorCorrectionCatalog | None,
 ) -> TaskAllocationItemEvaluation:
     stages = cast(dict[str, Any], paragraph.get("stage_outputs", {})) if paragraph else {}
     raw_outputs = cast(dict[str, Any], paragraph.get("raw_model_outputs", {})) if paragraph else {}
+    hp1 = _stage(stages, "hp1_mentions")
     hp2 = _stage(stages, "hp2_references")
     hp4 = _stage(stages, "hp4_event_triggers")
     hp6 = _stage(stages, "hp6_event_semantics")
@@ -491,8 +743,10 @@ def _evaluate_item(
         item
         for item in _records(hp4, "triggers")
         if item.get("source_text_sha256") == expected.source_segment_sha256
+        and _normalized(str(item.get("head_text", "")))
+        == _normalized(expected.expected_trigger_head_text or "")
         and _normalized(str(item.get("text", "")))
-        == _normalized(expected.expected_trigger_text or "")
+        in {_normalized(value) for value in expected.accepted_trigger_expression_texts}
     ]
     trigger = trigger_matches[0] if len(trigger_matches) == 1 else None
     subject_id = _event_subject_id(hp6, trigger)
@@ -529,8 +783,14 @@ def _evaluate_item(
         ),
         None,
     )
-    checks: list[TaskAllocationCheck] = []
+    mention_checks, mention_actual = _mention_checks(
+        catalog,
+        hp1,
+        expected.source_segment_sha256,
+    )
+    checks: list[TaskAllocationCheck] = list(mention_checks)
     actual: dict[str, object] = {
+        "mention": mention_actual,
         "trigger_matches": trigger_matches,
         "semantic_event": semantic,
         "role_assignments": assignments,
@@ -543,24 +803,51 @@ def _evaluate_item(
     }
     reached_review = False
     proposal_ids: tuple[str, ...] = ()
+    proposed_record_ids: tuple[str, ...] = ()
     if expected.expected_route == "event":
+        checks.extend(
+            _reference_checks(
+                expected,
+                hp1,
+                hp2,
+                expected.source_segment_sha256,
+                source_segment_text,
+                evaluator_corrections,
+            )
+        )
         checks.append(
             _check(
                 "trigger",
                 "source_occurrence_selection",
                 len(trigger_matches) == 1,
-                expected.expected_trigger_text,
-                [item.get("text") for item in trigger_matches],
+                {
+                    "head": expected.expected_trigger_head_text,
+                    "expressions": list(expected.accepted_trigger_expression_texts),
+                },
+                [
+                    {"head": item.get("head_text"), "expression": item.get("text")}
+                    for item in trigger_matches
+                ],
             )
         )
-        checks.extend(_reference_checks(expected, hp2, expected.source_segment_sha256))
+        selected_frame = _selected_frame(hp6, trigger)
         checks.append(
             _check(
                 "frame",
                 "bounded_frame_selection",
-                semantic is not None and semantic.get("frame_id") == expected.expected_frame_id,
+                selected_frame == expected.expected_frame_id,
                 expected.expected_frame_id,
-                semantic.get("frame_id") if semantic else _selected_frame(hp6, trigger),
+                selected_frame,
+            )
+        )
+        frame_fit = _frame_fit(hp6, trigger)
+        checks.append(
+            _check(
+                "frame_fit",
+                "bounded_frame_fit",
+                frame_fit is True,
+                True,
+                frame_fit,
             )
         )
         checks.extend(_role_checks(expected, assignments, targets))
@@ -578,6 +865,7 @@ def _evaluate_item(
         proposal_ids = tuple(
             sorted(str(value) for value in (admission or {}).get("proposed_change_ids", []))
         )
+        proposed_record_ids = _proposed_record_ids(hp7, proposal_ids)
         reached_review = (
             admission is not None
             and admission.get("disposition") == "proposed"
@@ -593,28 +881,44 @@ def _evaluate_item(
             )
         )
     elif expected.expected_route == "typed_ontology_gap":
+        checks.extend(
+            _reference_checks(
+                expected,
+                hp1,
+                hp2,
+                expected.source_segment_sha256,
+                source_segment_text,
+                evaluator_corrections,
+            )
+        )
         checks.append(
             _check(
                 "trigger",
                 "source_occurrence_selection",
                 len(trigger_matches) == 1,
-                expected.expected_trigger_text,
-                [item.get("text") for item in trigger_matches],
+                {
+                    "head": expected.expected_trigger_head_text,
+                    "expressions": list(expected.accepted_trigger_expression_texts),
+                },
+                [
+                    {"head": item.get("head_text"), "expression": item.get("text")}
+                    for item in trigger_matches
+                ],
             )
         )
-        checks.extend(_reference_checks(expected, hp2, expected.source_segment_sha256))
         selected_frame = _selected_frame(hp6, trigger)
+        frame_fit = _frame_fit(hp6, trigger)
         if expected.expected_frame_id is None:
-            frame_matches = selected_frame is None and semantic is None
+            frame_matches = semantic is None and (selected_frame is None or frame_fit is False)
         else:
-            frame_matches = selected_frame == expected.expected_frame_id
+            frame_matches = selected_frame == expected.expected_frame_id and frame_fit is True
         checks.append(
             _check(
                 "gap_frame",
                 "bounded_frame_selection",
                 frame_matches,
                 expected.expected_frame_id or "unresolved",
-                selected_frame,
+                {"selected_frame": selected_frame, "frame_fit": frame_fit},
             )
         )
         matching_gaps = [item for item in gaps if item.get("code") == expected.expected_gap_code]
@@ -648,6 +952,7 @@ def _evaluate_item(
         proposal_ids = tuple(
             sorted(str(value) for value in (decision or {}).get("proposed_change_ids", []))
         )
+        proposed_record_ids = _proposed_record_ids(hp10, proposal_ids)
         reached_review = (
             decision is not None
             and decision.get("disposition") == "proposed"
@@ -668,7 +973,7 @@ def _evaluate_item(
     if expected.expected_disposition == "proposed" and wiki_plan is not None:
         wiki_visible, wiki_paths = _wiki_result(
             catalog,
-            proposal_ids,
+            proposed_record_ids,
             expected.source_segment_sha256,
             wiki_plan,
         )
@@ -687,8 +992,14 @@ def _evaluate_item(
     all_traces = _matching_traces(
         expected.item_id,
         expected.source_segment_sha256,
-        (hp2, hp4, hp6, hp7, hp10),
+        (hp1, hp2, hp4, hp6, hp7, hp10),
         raw_outputs,
+        associated_trace_ids=_reference_trace_ids(
+            expected,
+            hp1,
+            hp2,
+            expected.source_segment_sha256,
+        ),
     )
     failed = next((item.stage_id for item in checks if not item.passed), None)
     return TaskAllocationItemEvaluation(
@@ -708,29 +1019,154 @@ def _evaluate_item(
     )
 
 
+def _mention_checks(
+    catalog: TaskAllocationGoldCatalog,
+    hp1: dict[str, Any] | None,
+    source_segment_sha256: str,
+) -> tuple[list[TaskAllocationCheck], dict[str, object]]:
+    candidates = [
+        item
+        for item in _records(hp1, "candidates")
+        if item.get("source_text_sha256") == source_segment_sha256
+    ]
+    focus_literals = _focus_literals(catalog)
+    focus_candidates = [
+        item
+        for item in candidates
+        if _normalized_entity_literal(str(item.get("text", ""))) in focus_literals
+    ]
+    selected_ids = _effective_mention_candidate_id_set(hp1)
+    decisions = _records(hp1, "boundary_decisions")
+    decision_by_candidate = {
+        str(candidate_id): decision
+        for decision in decisions
+        for candidate_id in cast(list[str], decision.get("candidate_ids", []))
+    }
+    deterministic_selected_ids = {
+        str(candidate_id)
+        for decision in decisions
+        for candidate_id in cast(list[str], decision.get("selected_candidate_ids", []))
+    }
+    reconciled_focus = [
+        item
+        for item in focus_candidates
+        if (
+            (
+                (decision := decision_by_candidate.get(str(item.get("id")))) is not None
+                and decision.get("status") == "ambiguous"
+            )
+            or str(item.get("id")) in deterministic_selected_ids
+        )
+    ]
+    selected_focus = [item for item in focus_candidates if item.get("id") in selected_ids]
+    interpretations = {
+        str(item.get("candidate_id")): item for item in _records(hp1, "interpretations")
+    }
+    expected_kind = "person" if catalog.focus_entity.record_type == "Actor" else "organization"
+    interpreted_focus = [
+        item
+        for item in selected_focus
+        if (interpretation := interpretations.get(str(item.get("id")))) is not None
+        and interpretation.get("referentiality") == "specific_entity"
+        and interpretation.get("contextual_kind") == expected_kind
+    ]
+    checks = [
+        _check(
+            "focus_mention",
+            "mention_proposal",
+            bool(focus_candidates),
+            sorted(focus_literals),
+            [item.get("text") for item in candidates],
+        ),
+        _check(
+            "focus_boundary",
+            "mention_boundary_reconciliation",
+            bool(reconciled_focus),
+            "at least one focus candidate retained for deterministic or semantic routing",
+            [item.get("text") for item in reconciled_focus],
+        ),
+        _check(
+            "focus_boundary_adjudication",
+            "mention_boundary_adjudication",
+            bool(selected_focus),
+            "at least one effective focus candidate",
+            [item.get("text") for item in selected_focus],
+        ),
+        _check(
+            "focus_interpretation",
+            "mention_interpretation",
+            bool(interpreted_focus),
+            {"referentiality": "specific_entity", "contextual_kind": expected_kind},
+            [
+                interpretations[str(item.get("id"))]
+                for item in selected_focus
+                if str(item.get("id")) in interpretations
+            ],
+        ),
+    ]
+    return checks, {
+        "target_segment_candidates": candidates,
+        "focus_candidates": focus_candidates,
+        "selected_focus_candidates": selected_focus,
+        "interpreted_focus_candidates": interpreted_focus,
+    }
+
+
 def _reference_checks(
     expected: TaskAllocationItem,
+    hp1: dict[str, Any] | None,
     hp2: dict[str, Any] | None,
     source_segment_sha256: str,
+    source_segment_text: str,
+    evaluator_corrections: TaskAllocationEvaluatorCorrectionCatalog | None,
 ) -> list[TaskAllocationCheck]:
     checks: list[TaskAllocationCheck] = []
-    segment_decision_ids = _reference_decision_ids_for_source(
-        hp2,
-        source_segment_sha256,
-    )
+    target_candidates = [
+        item
+        for item in _records(hp1, "candidates")
+        if item.get("source_text_sha256") == source_segment_sha256
+    ]
+    selected_ids = _effective_mention_candidate_id_set(hp1)
+    interpretations = {
+        str(item.get("candidate_id")): item for item in _records(hp1, "interpretations")
+    }
+    observations = {str(item.get("id")): item for item in _records(hp1, "observations")}
+    marker_candidate_ids = {
+        str(candidate.get("id"))
+        for candidate in target_candidates
+        if any(
+            observations.get(str(observation_id), {}).get("producer_id")
+            == "kotekomi_reference_marker_v1"
+            for observation_id in cast(list[str], candidate.get("observation_ids", []))
+        )
+    }
     spans = {
         str(item.get("id")): str(item.get("text", ""))
         for item in _records(hp2, "semantic_antecedent_spans")
     }
     for index, reference in enumerate(expected.expected_references, start=1):
+        reference_candidates = [
+            item
+            for item in target_candidates
+            if _reference_literal_matches(str(item.get("text", "")), reference.reference_text)
+        ]
+        selected_references = [
+            item for item in reference_candidates if item.get("id") in selected_ids
+        ]
+        routed_references = [
+            item
+            for item in selected_references
+            if str(item.get("id")) in marker_candidate_ids
+            or (
+                (interpretation := interpretations.get(str(item.get("id")))) is not None
+                and interpretation.get("referentiality") == "anaphoric"
+            )
+        ]
+        candidate_ids = {str(item.get("id")) for item in routed_references}
         matching = [
             item
             for item in _records(hp2, "reference_decisions")
-            if item.get("semantic_reference_decision_id") in segment_decision_ids
-            if _normalized(
-                str(cast(dict[str, Any], item.get("reference_span", {})).get("text", ""))
-            )
-            == _normalized(reference.reference_text)
+            if item.get("candidate_id") in candidate_ids
         ]
         selected_texts = [
             spans[span_id]
@@ -740,41 +1176,103 @@ def _reference_checks(
         ]
         checks.append(
             _check(
-                f"reference_{index}",
-                "reference_challenge",
+                f"reference_marker_{index}",
+                "reference_marker",
+                bool(reference_candidates),
+                reference.reference_text,
+                [item.get("text") for item in reference_candidates],
+            )
+        )
+        checks.append(
+            _check(
+                f"reference_routing_{index}",
+                "reference_routing",
+                bool(routed_references),
+                "deterministic_reference_marker_or_anaphoric_interpretation",
+                {
+                    "routed_candidate_ids": [item.get("id") for item in routed_references],
+                    "deterministic_reference_marker_candidate_ids": sorted(marker_candidate_ids),
+                    "interpretations": [
+                        interpretations[str(item.get("id"))]
+                        for item in selected_references
+                        if str(item.get("id")) in interpretations
+                    ],
+                },
+            )
+        )
+        accepted_antecedent_texts = _accepted_reference_antecedent_texts(
+            expected=expected,
+            reference=reference,
+            source_segment_text=source_segment_text,
+            evaluator_corrections=evaluator_corrections,
+        )
+        checks.append(
+            _check(
+                f"reference_resolution_{index}",
+                "reference_resolution",
                 len(matching) == 1
                 and matching[0].get("status") == "resolved"
-                and any(
-                    _normalized(value) == _normalized(reference.antecedent_text)
-                    for value in selected_texts
-                ),
-                reference.model_dump(mode="json"),
+                and any(value in accepted_antecedent_texts for value in selected_texts),
+                {
+                    "reference_text": reference.reference_text,
+                    "accepted_antecedent_texts": list(accepted_antecedent_texts),
+                },
                 {"decisions": matching, "selected_texts": selected_texts},
             )
         )
     return checks
 
 
-def _reference_decision_ids_for_source(
+def _accepted_reference_antecedent_texts(
+    *,
+    expected: TaskAllocationItem,
+    reference: TaskAllocationReferenceExpectation,
+    source_segment_text: str,
+    evaluator_corrections: TaskAllocationEvaluatorCorrectionCatalog | None,
+) -> tuple[str, ...]:
+    if evaluator_corrections is None:
+        return (reference.antecedent_text,)
+    correction = next(
+        (
+            item
+            for item in evaluator_corrections.corrections
+            if item.item_id == expected.item_id and item.reference_text == reference.reference_text
+        ),
+        None,
+    )
+    if correction is None:
+        return (reference.antecedent_text,)
+    if (
+        correction.source_text_sha256 != expected.source_segment_sha256
+        or correction.previous_antecedent_text != reference.antecedent_text
+    ):
+        raise ValueError("Evaluator correction does not match its parent Gold contract.")
+    if any(value not in source_segment_text for value in correction.accepted_antecedent_texts):
+        raise ValueError("Evaluator correction names text absent from its SourceSegment.")
+    return correction.accepted_antecedent_texts
+
+
+def _reference_trace_ids(
+    expected: TaskAllocationItem,
+    hp1: dict[str, Any] | None,
     hp2: dict[str, Any] | None,
     source_segment_sha256: str,
 ) -> set[str]:
-    decision_ids: set[str] = set()
-    for trace in _records(hp2, "traces"):
-        if trace.get("source_text_sha256") != source_segment_sha256:
-            continue
-        output = trace.get("output")
-        if not isinstance(output, dict):
-            continue
-        typed_output = cast(dict[str, object], output)
-        decision = typed_output.get("decision")
-        if not isinstance(decision, dict):
-            continue
-        typed_decision = cast(dict[str, object], decision)
-        decision_id = typed_decision.get("id")
-        if isinstance(decision_id, str):
-            decision_ids.add(decision_id)
-    return decision_ids
+    reference_literals = {item.reference_text for item in expected.expected_references}
+    candidate_ids = {
+        str(item.get("id"))
+        for item in _records(hp1, "candidates")
+        if item.get("source_text_sha256") == source_segment_sha256
+        and any(
+            _reference_literal_matches(str(item.get("text", "")), literal)
+            for literal in reference_literals
+        )
+    }
+    return {
+        str(item.get("trace_id"))
+        for item in _records(hp2, "reference_decisions")
+        if item.get("candidate_id") in candidate_ids and item.get("trace_id") is not None
+    }
 
 
 def _role_checks(
@@ -943,6 +1441,31 @@ def _selected_frame(
     return None
 
 
+def _frame_fit(
+    hp6: dict[str, Any] | None,
+    trigger: dict[str, Any] | None,
+) -> bool | None:
+    if hp6 is None or trigger is None:
+        return None
+    for trace in _records(hp6, "traces"):
+        if trace.get("stage_id") != "hybrid_event_frame_fit":
+            continue
+        trace_trigger = cast(
+            dict[str, Any], cast(dict[str, Any], trace.get("input", {})).get("trigger", {})
+        )
+        if trace_trigger.get("id") != trigger.get("id"):
+            continue
+        decision = cast(
+            dict[str, Any] | None,
+            cast(dict[str, Any], trace.get("output", {})).get("parsed_decision"),
+        )
+        if decision is None:
+            return None
+        fits = decision.get("fits")
+        return fits if type(fits) is bool else None
+    return None
+
+
 def _event_subject_id(
     hp6: dict[str, Any] | None,
     trigger: dict[str, Any] | None,
@@ -982,28 +1505,41 @@ def _matching_traces(
     source_sha256: str,
     stages: tuple[dict[str, Any] | None, ...],
     raw_outputs: dict[str, Any],
+    *,
+    associated_trace_ids: set[str] | None = None,
 ) -> tuple[TaskAllocationStageEvidence, ...]:
     evidence: list[TaskAllocationStageEvidence] = []
+    associated = associated_trace_ids or set()
     for stage in stages:
         for trace in _records(stage, "traces"):
-            if trace.get("source_text_sha256") != source_sha256:
+            if (
+                trace.get("source_text_sha256") != source_sha256
+                and trace.get("id") not in associated
+            ):
                 continue
             trace_input = cast(dict[str, Any], trace.get("input", {}))
-            model_visible = trace_input.get("model_visible_task")
+            model_visible = trace_input.get("model_visible_input") or trace_input.get(
+                "model_visible_task"
+            )
             exact_input = (
                 str(model_visible)
                 if isinstance(model_visible, str) and model_visible
                 else _canonical_json(trace_input)
             )
-            raw = None
+            raw_values: list[str] = []
             for execution_id in cast(list[str], trace.get("execution_record_ids", [])):
                 if not execution_id.startswith("mrn_"):
                     continue
                 raw_record = raw_outputs.get(execution_id)
                 if isinstance(raw_record, dict):
-                    raw = cast(dict[str, Any], raw_record).get("raw_output")
+                    raw_value = cast(dict[str, Any], raw_record).get("raw_output")
                 elif isinstance(raw_record, str):
-                    raw = raw_record
+                    raw_value = raw_record
+                else:
+                    raw_value = None
+                if isinstance(raw_value, str):
+                    raw_values.append(raw_value)
+            raw = raw_values[0] if len(raw_values) == 1 else None
             evidence.append(
                 TaskAllocationStageEvidence(
                     item_id=item_id,
@@ -1017,9 +1553,29 @@ def _matching_traces(
     return tuple(evidence)
 
 
+def _focus_literals(catalog: TaskAllocationGoldCatalog) -> set[str]:
+    names = {catalog.focus_entity.name}
+    if catalog.focus_entity.record_type == "Actor":
+        names.add(catalog.focus_entity.name.rsplit(" ", maxsplit=1)[-1])
+    return {_normalized_entity_literal(item) for item in names}
+
+
+def _reference_literal_matches(actual: str, expected: str) -> bool:
+    normalized_actual = " ".join(actual.casefold().split())
+    normalized_expected = " ".join(expected.casefold().split())
+    return normalized_actual in {normalized_expected, f"the {normalized_expected}"}
+
+
+def _normalized_entity_literal(value: str) -> str:
+    normalized = " ".join(value.casefold().split())
+    if normalized.endswith(("'s", "’s")):
+        normalized = normalized[:-2]
+    return normalized.removeprefix("the ")
+
+
 def _wiki_result(
     catalog: TaskAllocationGoldCatalog,
-    proposal_ids: tuple[str, ...],
+    record_ids: tuple[str, ...],
     source_sha256: str,
     plan: CandidateWikiPlan,
 ) -> tuple[bool, tuple[str, ...]]:
@@ -1037,14 +1593,10 @@ def _wiki_result(
     for page in pages:
         for presentation in page.presentations:
             if isinstance(presentation, WikiEventPresentation):
-                presentation_proposals: set[str] = set(presentation.proposed_change_ids)
+                presentation_record_id = presentation.event_id
             else:
-                presentation_proposals = (
-                    {presentation.proposed_change_id}
-                    if presentation.proposed_change_id is not None
-                    else set()
-                )
-            if not set(proposal_ids) & presentation_proposals:
+                presentation_record_id = presentation.edge.assertion_id
+            if presentation_record_id not in record_ids:
                 continue
             if any(
                 hashlib.sha256(citations[number].exact_text.encode()).hexdigest() == source_sha256
@@ -1055,19 +1607,75 @@ def _wiki_result(
     return bool(matched_paths), tuple(sorted(matched_paths))
 
 
-def _wrong_forced_frame(item: TaskAllocationItemEvaluation) -> bool:
+def _proposed_record_ids(
+    stage: dict[str, Any] | None,
+    proposal_ids: tuple[str, ...],
+) -> tuple[str, ...]:
+    wanted = set(proposal_ids)
+    record_ids: set[str] = set()
+    for proposal in _records(stage, "proposed_changes"):
+        if proposal.get("id") not in wanted:
+            continue
+        proposed_json = proposal.get("proposed_json")
+        if not isinstance(proposed_json, dict):
+            continue
+        record = cast(dict[str, object], proposed_json).get("record")
+        if not isinstance(record, dict):
+            continue
+        typed_record = cast(dict[str, object], record)
+        record_id = typed_record.get("id")
+        if isinstance(record_id, str):
+            record_ids.add(record_id)
+    return tuple(sorted(record_ids))
+
+
+def task_allocation_item_has_wrong_forced_frame(
+    item: TaskAllocationItemEvaluation,
+) -> bool:
+    """Return whether a typed gap survived an inaccurate governed-frame choice."""
     if item.expected_route != "typed_ontology_gap":
         return False
     expected = next(
         (check.expected for check in item.checks if check.check_id == "gap_frame"), None
     )
     actual = next((check.actual for check in item.checks if check.check_id == "gap_frame"), None)
-    return expected == "unresolved" and actual is not None
+    if expected != "unresolved" or not isinstance(actual, dict):
+        return False
+    typed_actual = cast(dict[str, object], actual)
+    return (
+        typed_actual.get("selected_frame") is not None
+        and typed_actual.get("frame_fit") is not False
+    )
 
 
 def _stage(stages: dict[str, Any], stage_id: str) -> dict[str, Any] | None:
     value = stages.get(stage_id)
     return cast(dict[str, Any], value) if isinstance(value, dict) else None
+
+
+def _effective_mention_candidate_id_set(
+    hp1: dict[str, Any] | None,
+) -> set[str]:
+    if hp1 is None:
+        return set()
+    if "boundary_adjudications" not in hp1:
+        # Finalized pre-v4 evaluation evidence is immutable and contains only
+        # deterministic boundary selections. It is never written back or routed
+        # into the production extraction pipeline.
+        return {
+            str(candidate_id)
+            for decision in _records(hp1, "boundary_decisions")
+            for candidate_id in cast(list[str], decision.get("selected_candidate_ids", []))
+        }
+    decisions = tuple(
+        MentionBoundaryDecision.model_validate_json(_canonical_json(item))
+        for item in _records(hp1, "boundary_decisions")
+    )
+    adjudications = tuple(
+        MentionBoundaryAdjudication.model_validate_json(_canonical_json(item))
+        for item in _records(hp1, "boundary_adjudications")
+    )
+    return set(effective_mention_candidate_ids(decisions, adjudications))
 
 
 def _records(container: dict[str, Any] | None, key: str) -> list[dict[str, Any]]:

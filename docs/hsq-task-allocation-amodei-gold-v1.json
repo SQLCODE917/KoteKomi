@@ -1,5 +1,5 @@
 {
-  "schema_version": "hsq_task_allocation_gold_v1",
+  "schema_version": "hsq_task_allocation_gold_v2",
   "catalog_id": "amodei-development-v1",
   "catalog_role": "development",
   "fixture_path": "raw/Anthropic–United_States_Department_of_Defense_dispute.pdf",
@@ -10,11 +10,29 @@
   },
   "baseline_partition": {
     "previously_missing_item_ids": [
-      "AMO-01", "AMO-02", "AMO-03", "AMO-04", "AMO-05", "AMO-06",
-      "AMO-07", "AMO-08", "AMO-09", "AMO-10", "AMO-11", "AMO-12",
-      "AMO-13", "AMO-14", "AMO-15", "AMO-16", "AMO-17"
+      "AMO-01",
+      "AMO-02",
+      "AMO-03",
+      "AMO-04",
+      "AMO-05",
+      "AMO-06",
+      "AMO-07",
+      "AMO-08",
+      "AMO-09",
+      "AMO-10",
+      "AMO-11",
+      "AMO-12",
+      "AMO-13",
+      "AMO-14",
+      "AMO-15",
+      "AMO-16",
+      "AMO-17"
     ],
-    "previously_demonstrated_item_ids": ["AMO-18", "AMO-19", "AMO-20"]
+    "previously_demonstrated_item_ids": [
+      "AMO-18",
+      "AMO-19",
+      "AMO-20"
+    ]
   },
   "sources": [
     {
@@ -62,17 +80,36 @@
       "source_segment_sha256": "377c75c2999935fb1984a2c1a6761a73798539536409742f95cd527cc40f3eb5",
       "expected_summary": "Hegseth publicly rebuked Dario Amodei's approach to artificial intelligence.",
       "expected_route": "event",
-      "expected_trigger_text": "rebuked",
+      "expected_trigger_head_text": "rebuked",
       "expected_frame_id": "criticism",
       "expected_roles": [
-        {"frame_role_id": "criticism.critic", "accepted_source_texts": ["Hegseth"]},
-        {"frame_role_id": "criticism.target", "accepted_source_texts": ["Dario Amodei's approach to artificial intelligence"]}
+        {
+          "frame_role_id": "criticism.critic",
+          "accepted_source_texts": [
+            "Hegseth"
+          ]
+        },
+        {
+          "frame_role_id": "criticism.target",
+          "accepted_source_texts": [
+            "Dario Amodei's approach to artificial intelligence"
+          ]
+        }
       ],
       "expected_polarity": "affirmed",
       "expected_modality": "actual",
       "expected_attribution": "source_narrator",
       "expected_disposition": "proposed",
-      "allocation_cases": ["source_occurrence_selection", "bounded_frame_and_roles", "proposition_gate"]
+      "allocation_cases": [
+        "source_occurrence_selection",
+        "bounded_frame_and_roles",
+        "proposition_gate"
+      ],
+      "accepted_trigger_expression_texts": [
+        "has publicly rebuked",
+        "publicly rebuked",
+        "rebuked"
+      ]
     },
     {
       "item_id": "AMO-02",
@@ -83,11 +120,16 @@
       "expected_route": "standing_fact",
       "expected_standing_fact": {
         "subject_text": "Dario Amodei",
-        "relation_terms": ["chief", "executive"],
+        "relation_terms": [
+          "chief",
+          "executive"
+        ],
         "object_text": "Anthropic"
       },
       "expected_disposition": "proposed",
-      "allocation_cases": ["parallel_routes"]
+      "allocation_cases": [
+        "parallel_routes"
+      ]
     },
     {
       "item_id": "AMO-03",
@@ -96,17 +138,33 @@
       "source_segment_sha256": "7438981c5f67a586e62824f899dde376931333bc69728b43ccd04c167d71b7cf",
       "expected_summary": "Dario Amodei opposed Trump's rescission of President Joe Biden's Executive Order on Artificial Intelligence.",
       "expected_route": "event",
-      "expected_trigger_text": "opposed",
+      "expected_trigger_head_text": "opposed",
       "expected_frame_id": "criticism",
       "expected_roles": [
-        {"frame_role_id": "criticism.critic", "accepted_source_texts": ["Dario Amodei"]},
-        {"frame_role_id": "criticism.target", "accepted_source_texts": ["Trump's rescission of president Joe Biden's Executive Order on Artificial Intelligence"]}
+        {
+          "frame_role_id": "criticism.critic",
+          "accepted_source_texts": [
+            "Dario Amodei"
+          ]
+        },
+        {
+          "frame_role_id": "criticism.target",
+          "accepted_source_texts": [
+            "Trump's rescission of president Joe Biden's Executive Order on Artificial Intelligence"
+          ]
+        }
       ],
       "expected_polarity": "affirmed",
       "expected_modality": "actual",
       "expected_attribution": "source_narrator",
       "expected_disposition": "proposed",
-      "allocation_cases": ["source_occurrence_selection", "bounded_frame_and_roles"]
+      "allocation_cases": [
+        "source_occurrence_selection",
+        "bounded_frame_and_roles"
+      ],
+      "accepted_trigger_expression_texts": [
+        "opposed"
+      ]
     },
     {
       "item_id": "AMO-04",
@@ -115,11 +173,17 @@
       "source_segment_sha256": "7438981c5f67a586e62824f899dde376931333bc69728b43ccd04c167d71b7cf",
       "expected_summary": "Dario Amodei noted that Anthropic had held discussions with Trump officials about artificial intelligence policy.",
       "expected_route": "typed_ontology_gap",
-      "expected_trigger_text": "noted",
+      "expected_trigger_head_text": "noted",
       "expected_frame_id": "communication",
       "expected_gap_code": "missing_required_role",
       "expected_disposition": "typed_ontology_gap",
-      "allocation_cases": ["bounded_frame_and_roles", "typed_ontology_gap"]
+      "allocation_cases": [
+        "bounded_frame_and_roles",
+        "typed_ontology_gap"
+      ],
+      "accepted_trigger_expression_texts": [
+        "noted"
+      ]
     },
     {
       "item_id": "AMO-05",
@@ -128,19 +192,44 @@
       "source_segment_sha256": "a7afdc5c867500f7adc72616351ed81d3926940ece27ec64007b9e90ca43965c",
       "expected_summary": "Amodei published an op-ed in The New York Times about the artificial intelligence regulation bill.",
       "expected_route": "event",
-      "expected_trigger_text": "wrote",
+      "expected_trigger_head_text": "wrote",
       "expected_frame_id": "publication",
       "expected_roles": [
-        {"frame_role_id": "publication.publisher", "accepted_source_texts": ["Amodei"]},
-        {"frame_role_id": "publication.published_work", "accepted_source_texts": ["an op-ed"]},
-        {"frame_role_id": "publication.outlet", "accepted_source_texts": ["The New York Times"]},
-        {"frame_role_id": "publication.topic", "accepted_source_texts": ["the  artificial  intelligence  regulation bill, then tied to the One Big Beautiful Bill Act"]}
+        {
+          "frame_role_id": "publication.publisher",
+          "accepted_source_texts": [
+            "Amodei"
+          ]
+        },
+        {
+          "frame_role_id": "publication.published_work",
+          "accepted_source_texts": [
+            "an op-ed"
+          ]
+        },
+        {
+          "frame_role_id": "publication.outlet",
+          "accepted_source_texts": [
+            "The New York Times"
+          ]
+        },
+        {
+          "frame_role_id": "publication.topic",
+          "accepted_source_texts": [
+            "the  artificial  intelligence  regulation bill, then tied to the One Big Beautiful Bill Act"
+          ]
+        }
       ],
       "expected_polarity": "affirmed",
       "expected_modality": "actual",
       "expected_attribution": "source_narrator",
       "expected_disposition": "proposed",
-      "allocation_cases": ["bounded_frame_and_roles"]
+      "allocation_cases": [
+        "bounded_frame_and_roles"
+      ],
+      "accepted_trigger_expression_texts": [
+        "wrote"
+      ]
     },
     {
       "item_id": "AMO-06",
@@ -149,18 +238,39 @@
       "source_segment_sha256": "a7afdc5c867500f7adc72616351ed81d3926940ece27ec64007b9e90ca43965c",
       "expected_summary": "Amodei characterized the artificial intelligence regulation bill as \"far too blunt an instrument\".",
       "expected_route": "event",
-      "expected_trigger_text": "describing",
+      "expected_trigger_head_text": "describing",
       "expected_frame_id": "characterization",
       "expected_roles": [
-        {"frame_role_id": "characterization.evaluator", "accepted_source_texts": ["Amodei"]},
-        {"frame_role_id": "characterization.evaluated_subject", "accepted_source_texts": ["the  artificial  intelligence  regulation bill, then tied to the One Big Beautiful Bill Act"]},
-        {"frame_role_id": "characterization.characterization", "accepted_source_texts": ["far too blunt an instrument"]}
+        {
+          "frame_role_id": "characterization.evaluator",
+          "accepted_source_texts": [
+            "Amodei"
+          ]
+        },
+        {
+          "frame_role_id": "characterization.evaluated_subject",
+          "accepted_source_texts": [
+            "the  artificial  intelligence  regulation bill, then tied to the One Big Beautiful Bill Act"
+          ]
+        },
+        {
+          "frame_role_id": "characterization.characterization",
+          "accepted_source_texts": [
+            "far too blunt an instrument"
+          ]
+        }
       ],
       "expected_polarity": "affirmed",
       "expected_modality": "actual",
       "expected_attribution": "source_narrator",
       "expected_disposition": "proposed",
-      "allocation_cases": ["source_occurrence_selection", "bounded_frame_and_roles"]
+      "allocation_cases": [
+        "source_occurrence_selection",
+        "bounded_frame_and_roles"
+      ],
+      "accepted_trigger_expression_texts": [
+        "describing"
+      ]
     },
     {
       "item_id": "AMO-07",
@@ -171,11 +281,16 @@
       "expected_route": "standing_fact",
       "expected_standing_fact": {
         "subject_text": "Anthropic",
-        "relation_terms": ["strategy", "mirrored"],
+        "relation_terms": [
+          "strategy",
+          "mirrored"
+        ],
         "object_text": "Amodei's views toward Trump"
       },
       "expected_disposition": "proposed",
-      "allocation_cases": ["parallel_routes"]
+      "allocation_cases": [
+        "parallel_routes"
+      ]
     },
     {
       "item_id": "AMO-08",
@@ -184,24 +299,53 @@
       "source_segment_sha256": "5367faa6a71b436e486f3f7f29f6d219464cef2cfea476e05efeca768c6c4bda",
       "expected_summary": "Dario Amodei urged his associates to vote for Kamala Harris over Trump.",
       "expected_route": "event",
-      "expected_trigger_text": "urged",
+      "expected_trigger_head_text": "urged",
       "expected_frame_id": "recommendation",
       "expected_roles": [
-        {"frame_role_id": "recommendation.recommended_action", "accepted_source_texts": ["vote for vice president Kamala Harris over Trump"]},
-        {"frame_role_id": "recommendation.recommender", "accepted_source_texts": ["Amodei"]},
-        {"frame_role_id": "recommendation.recommendation_subject", "accepted_source_texts": ["his associates"]}
+        {
+          "frame_role_id": "recommendation.recommended_action",
+          "accepted_source_texts": [
+            "vote for vice president Kamala Harris over Trump"
+          ]
+        },
+        {
+          "frame_role_id": "recommendation.recommender",
+          "accepted_source_texts": [
+            "Amodei"
+          ]
+        },
+        {
+          "frame_role_id": "recommendation.recommendation_subject",
+          "accepted_source_texts": [
+            "his associates"
+          ]
+        }
       ],
       "expected_references": [
-        {"reference_text": "his", "antecedent_text": "Amodei"}
+        {
+          "reference_text": "his",
+          "antecedent_text": "Amodei"
+        }
       ],
       "expected_qualifiers": [
-        {"kind": "time", "relation": "before", "accepted_source_texts": ["the 2024 presidential election"]}
+        {
+          "kind": "time",
+          "relation": "before",
+          "accepted_source_texts": [
+            "the 2024 presidential election"
+          ]
+        }
       ],
       "expected_polarity": "affirmed",
       "expected_modality": "actual",
       "expected_attribution": "source_narrator",
       "expected_disposition": "proposed",
-      "allocation_cases": ["bounded_frame_and_roles"]
+      "allocation_cases": [
+        "bounded_frame_and_roles"
+      ],
+      "accepted_trigger_expression_texts": [
+        "urged"
+      ]
     },
     {
       "item_id": "AMO-09",
@@ -210,21 +354,46 @@
       "source_segment_sha256": "5367faa6a71b436e486f3f7f29f6d219464cef2cfea476e05efeca768c6c4bda",
       "expected_summary": "Dario Amodei characterized Trump as a \"feudal warlord\".",
       "expected_route": "event",
-      "expected_trigger_text": "describing",
+      "expected_trigger_head_text": "describing",
       "expected_frame_id": "characterization",
       "expected_roles": [
-        {"frame_role_id": "characterization.evaluator", "accepted_source_texts": ["Amodei"]},
-        {"frame_role_id": "characterization.evaluated_subject", "accepted_source_texts": ["him"]},
-        {"frame_role_id": "characterization.characterization", "accepted_source_texts": ["a \"feudal warlord\""]}
+        {
+          "frame_role_id": "characterization.evaluator",
+          "accepted_source_texts": [
+            "Amodei"
+          ]
+        },
+        {
+          "frame_role_id": "characterization.evaluated_subject",
+          "accepted_source_texts": [
+            "him"
+          ]
+        },
+        {
+          "frame_role_id": "characterization.characterization",
+          "accepted_source_texts": [
+            "a \"feudal warlord\""
+          ]
+        }
       ],
       "expected_references": [
-        {"reference_text": "him", "antecedent_text": "Trump"}
+        {
+          "reference_text": "him",
+          "antecedent_text": "Trump"
+        }
       ],
       "expected_polarity": "affirmed",
       "expected_modality": "actual",
       "expected_attribution": "source_narrator",
       "expected_disposition": "proposed",
-      "allocation_cases": ["reference_challenge", "bounded_frame_and_roles", "proposition_gate"]
+      "allocation_cases": [
+        "reference_challenge",
+        "bounded_frame_and_roles",
+        "proposition_gate"
+      ],
+      "accepted_trigger_expression_texts": [
+        "describing"
+      ]
     },
     {
       "item_id": "AMO-10",
@@ -233,10 +402,16 @@
       "source_segment_sha256": "65e99ef7fd505316782a1e5fa3156ba863c7988567df9082e1e243240c145c21",
       "expected_summary": "Dario Amodei ended Anthropic's relationship with Skadden, Arps, Slate, Meagher & Flom.",
       "expected_route": "typed_ontology_gap",
-      "expected_trigger_text": "cut",
+      "expected_trigger_head_text": "cut",
       "expected_gap_code": "unmapped_frame",
       "expected_disposition": "typed_ontology_gap",
-      "allocation_cases": ["typed_ontology_gap"]
+      "allocation_cases": [
+        "typed_ontology_gap"
+      ],
+      "accepted_trigger_expression_texts": [
+        "cut ties",
+        "cut"
+      ]
     },
     {
       "item_id": "AMO-11",
@@ -245,10 +420,16 @@
       "source_segment_sha256": "65e99ef7fd505316782a1e5fa3156ba863c7988567df9082e1e243240c145c21",
       "expected_summary": "Dario Amodei ended Anthropic's relationship with Latham & Watkins.",
       "expected_route": "typed_ontology_gap",
-      "expected_trigger_text": "cut",
+      "expected_trigger_head_text": "cut",
       "expected_gap_code": "unmapped_frame",
       "expected_disposition": "typed_ontology_gap",
-      "allocation_cases": ["typed_ontology_gap"]
+      "allocation_cases": [
+        "typed_ontology_gap"
+      ],
+      "accepted_trigger_expression_texts": [
+        "cut ties",
+        "cut"
+      ]
     },
     {
       "item_id": "AMO-12",
@@ -257,21 +438,46 @@
       "source_segment_sha256": "3ae4294fe559d09dd035e7dfaf027607fdc9ac1ec53848b3f789926357d8f9e7",
       "expected_summary": "David Sacks treated Amodei's attendance, hiring, and Anthropic association as evidence that Anthropic would not support Trump's agenda.",
       "expected_route": "event",
-      "expected_trigger_text": "viewed",
+      "expected_trigger_head_text": "viewed",
       "expected_frame_id": "characterization",
       "expected_roles": [
-        {"frame_role_id": "characterization.evaluator", "accepted_source_texts": ["Sacks"]},
-        {"frame_role_id": "characterization.evaluated_subject", "accepted_source_texts": ["Amodei's decision to attend the World Economic Forum over Trump's second inauguration; his  hiring  of  Biden  officials;  and  Anthropic's  association  with  the  philanthropic  initiative  Open Philanthropy"]},
-        {"frame_role_id": "characterization.characterization", "accepted_source_texts": ["evidence that Anthropic would not support Trump's agenda"]}
+        {
+          "frame_role_id": "characterization.evaluator",
+          "accepted_source_texts": [
+            "Sacks"
+          ]
+        },
+        {
+          "frame_role_id": "characterization.evaluated_subject",
+          "accepted_source_texts": [
+            "Amodei's decision to attend the World Economic Forum over Trump's second inauguration; his  hiring  of  Biden  officials;  and  Anthropic's  association  with  the  philanthropic  initiative  Open Philanthropy"
+          ]
+        },
+        {
+          "frame_role_id": "characterization.characterization",
+          "accepted_source_texts": [
+            "evidence that Anthropic would not support Trump's agenda"
+          ]
+        }
       ],
       "expected_references": [
-        {"reference_text": "his", "antecedent_text": "Amodei"}
+        {
+          "reference_text": "his",
+          "antecedent_text": "Amodei"
+        }
       ],
       "expected_polarity": "affirmed",
       "expected_modality": "actual",
       "expected_attribution": "source_narrator",
       "expected_disposition": "proposed",
-      "allocation_cases": ["reference_challenge", "bounded_frame_and_roles", "proposition_gate"]
+      "allocation_cases": [
+        "reference_challenge",
+        "bounded_frame_and_roles",
+        "proposition_gate"
+      ],
+      "accepted_trigger_expression_texts": [
+        "viewed"
+      ]
     },
     {
       "item_id": "AMO-13",
@@ -280,21 +486,48 @@
       "source_segment_sha256": "c458619bad7a713e3b1208d9f0ba0b966c0afb9d6434fafaa78a529c53513d53",
       "expected_summary": "Dario Amodei published a blog post.",
       "expected_route": "event",
-      "expected_trigger_text": "published",
+      "expected_trigger_head_text": "published",
       "expected_frame_id": "publication",
       "expected_roles": [
-        {"frame_role_id": "publication.publisher", "accepted_source_texts": ["Amodei"]},
-        {"frame_role_id": "publication.published_work", "accepted_source_texts": ["a blog post"]},
-        {"frame_role_id": "publication.topic", "accepted_source_texts": ["\"inaccurate claims\" from the Trump administration  on  Anthropic's  policies"]}
+        {
+          "frame_role_id": "publication.publisher",
+          "accepted_source_texts": [
+            "Amodei"
+          ]
+        },
+        {
+          "frame_role_id": "publication.published_work",
+          "accepted_source_texts": [
+            "a blog post"
+          ]
+        },
+        {
+          "frame_role_id": "publication.topic",
+          "accepted_source_texts": [
+            "\"inaccurate claims\" from the Trump administration  on  Anthropic's  policies"
+          ]
+        }
       ],
       "expected_qualifiers": [
-        {"kind": "time", "relation": "at", "accepted_source_texts": ["That month"]}
+        {
+          "kind": "time",
+          "relation": "at",
+          "accepted_source_texts": [
+            "That month"
+          ]
+        }
       ],
       "expected_polarity": "affirmed",
       "expected_modality": "actual",
       "expected_attribution": "source_narrator",
       "expected_disposition": "proposed",
-      "allocation_cases": ["source_occurrence_selection", "bounded_frame_and_roles"]
+      "allocation_cases": [
+        "source_occurrence_selection",
+        "bounded_frame_and_roles"
+      ],
+      "accepted_trigger_expression_texts": [
+        "published"
+      ]
     },
     {
       "item_id": "AMO-14",
@@ -303,19 +536,46 @@
       "source_segment_sha256": "c458619bad7a713e3b1208d9f0ba0b966c0afb9d6434fafaa78a529c53513d53",
       "expected_summary": "Dario Amodei rebutted inaccurate Trump-administration claims about Anthropic's policies.",
       "expected_route": "event",
-      "expected_trigger_text": "rebuffing",
+      "expected_trigger_head_text": "rebuffing",
       "expected_frame_id": "rebuttal",
       "expected_roles": [
-        {"frame_role_id": "rebuttal.rebutter", "accepted_source_texts": ["Amodei"]},
-        {"frame_role_id": "rebuttal.challenged_claim", "accepted_source_texts": ["\"inaccurate claims\" from the Trump administration  on  Anthropic's  policies"]},
-        {"frame_role_id": "rebuttal.claim_source", "accepted_source_texts": ["the Trump administration"]},
-        {"frame_role_id": "rebuttal.medium", "accepted_source_texts": ["a blog post"]}
+        {
+          "frame_role_id": "rebuttal.rebutter",
+          "accepted_source_texts": [
+            "Amodei"
+          ]
+        },
+        {
+          "frame_role_id": "rebuttal.challenged_claim",
+          "accepted_source_texts": [
+            "\"inaccurate claims\" from the Trump administration  on  Anthropic's  policies"
+          ]
+        },
+        {
+          "frame_role_id": "rebuttal.claim_source",
+          "accepted_source_texts": [
+            "the Trump administration"
+          ]
+        },
+        {
+          "frame_role_id": "rebuttal.medium",
+          "accepted_source_texts": [
+            "a blog post"
+          ]
+        }
       ],
       "expected_polarity": "affirmed",
       "expected_modality": "actual",
       "expected_attribution": "source_narrator",
       "expected_disposition": "proposed",
-      "allocation_cases": ["source_occurrence_selection", "bounded_frame_and_roles", "proposition_gate"]
+      "allocation_cases": [
+        "source_occurrence_selection",
+        "bounded_frame_and_roles",
+        "proposition_gate"
+      ],
+      "accepted_trigger_expression_texts": [
+        "rebuffing"
+      ]
     },
     {
       "item_id": "AMO-15",
@@ -324,10 +584,16 @@
       "source_segment_sha256": "b78a7b8cc2459f848a8ba9080e214f39a99488eb9b0b95b9c190d3399b1c8502",
       "expected_summary": "Dario Amodei's statement included views explicitly espoused by JD Vance.",
       "expected_route": "typed_ontology_gap",
-      "expected_trigger_text": "included",
+      "expected_trigger_head_text": "included",
       "expected_gap_code": "unmapped_frame",
       "expected_disposition": "typed_ontology_gap",
-      "allocation_cases": ["parallel_routes", "typed_ontology_gap"]
+      "allocation_cases": [
+        "parallel_routes",
+        "typed_ontology_gap"
+      ],
+      "accepted_trigger_expression_texts": [
+        "included"
+      ]
     },
     {
       "item_id": "AMO-16",
@@ -336,24 +602,54 @@
       "source_segment_sha256": "8e6fa21942d6c331be219af6520aa74f433c202523af298a286b78556d08ac39",
       "expected_summary": "Dario Amodei said Anthropic did not know whether Claude had been used in connection with the Minab school strike.",
       "expected_route": "event",
-      "expected_trigger_text": "said",
+      "expected_trigger_head_text": "said",
       "expected_frame_id": "communication",
       "expected_roles": [
-        {"frame_role_id": "communication.communicator", "accepted_source_texts": ["Amodei"]},
-        {"frame_role_id": "communication.counterparty", "accepted_source_texts": ["Bloomberg"]},
-        {"frame_role_id": "communication.topic", "accepted_source_texts": ["Anthropic did not know whether Claude had been used in connection with the Minab school strike,  but  that,  if  it  had,  the  use  case  would  not  violate  Anthropic's  red  lines"]}
+        {
+          "frame_role_id": "communication.communicator",
+          "accepted_source_texts": [
+            "Amodei"
+          ]
+        },
+        {
+          "frame_role_id": "communication.counterparty",
+          "accepted_source_texts": [
+            "Bloomberg"
+          ]
+        },
+        {
+          "frame_role_id": "communication.topic",
+          "accepted_source_texts": [
+            "Anthropic did not know whether Claude had been used in connection with the Minab school strike,  but  that,  if  it  had,  the  use  case  would  not  violate  Anthropic's  red  lines"
+          ]
+        }
       ],
       "expected_references": [
-        {"reference_text": "it", "antecedent_text": "Claude"}
+        {
+          "reference_text": "it",
+          "antecedent_text": "Claude"
+        }
       ],
       "expected_qualifiers": [
-        {"kind": "time", "relation": "at", "accepted_source_texts": ["June 2026"]}
+        {
+          "kind": "time",
+          "relation": "at",
+          "accepted_source_texts": [
+            "June 2026"
+          ]
+        }
       ],
       "expected_polarity": "affirmed",
       "expected_modality": "actual",
       "expected_attribution": "source_narrator",
       "expected_disposition": "proposed",
-      "allocation_cases": ["bounded_frame_and_roles", "proposition_gate"]
+      "allocation_cases": [
+        "bounded_frame_and_roles",
+        "proposition_gate"
+      ],
+      "accepted_trigger_expression_texts": [
+        "said"
+      ]
     },
     {
       "item_id": "AMO-17",
@@ -362,24 +658,55 @@
       "source_segment_sha256": "8e6fa21942d6c331be219af6520aa74f433c202523af298a286b78556d08ac39",
       "expected_summary": "Dario Amodei said that, if Claude had been used, that use would not violate Anthropic's red lines.",
       "expected_route": "event",
-      "expected_trigger_text": "said",
+      "expected_trigger_head_text": "said",
       "expected_frame_id": "communication",
       "expected_roles": [
-        {"frame_role_id": "communication.communicator", "accepted_source_texts": ["Amodei"]},
-        {"frame_role_id": "communication.counterparty", "accepted_source_texts": ["Bloomberg"]},
-        {"frame_role_id": "communication.topic", "accepted_source_texts": ["Anthropic did not know whether Claude had been used in connection with the Minab school strike,  but  that,  if  it  had,  the  use  case  would  not  violate  Anthropic's  red  lines"]}
+        {
+          "frame_role_id": "communication.communicator",
+          "accepted_source_texts": [
+            "Amodei"
+          ]
+        },
+        {
+          "frame_role_id": "communication.counterparty",
+          "accepted_source_texts": [
+            "Bloomberg"
+          ]
+        },
+        {
+          "frame_role_id": "communication.topic",
+          "accepted_source_texts": [
+            "Anthropic did not know whether Claude had been used in connection with the Minab school strike,  but  that,  if  it  had,  the  use  case  would  not  violate  Anthropic's  red  lines"
+          ]
+        }
       ],
       "expected_references": [
-        {"reference_text": "it", "antecedent_text": "Claude"}
+        {
+          "reference_text": "it",
+          "antecedent_text": "Claude"
+        }
       ],
       "expected_qualifiers": [
-        {"kind": "time", "relation": "at", "accepted_source_texts": ["June 2026"]}
+        {
+          "kind": "time",
+          "relation": "at",
+          "accepted_source_texts": [
+            "June 2026"
+          ]
+        }
       ],
       "expected_polarity": "affirmed",
       "expected_modality": "actual",
       "expected_attribution": "source_narrator",
       "expected_disposition": "proposed",
-      "allocation_cases": ["bounded_frame_and_roles", "reference_challenge", "proposition_gate"]
+      "allocation_cases": [
+        "bounded_frame_and_roles",
+        "reference_challenge",
+        "proposition_gate"
+      ],
+      "accepted_trigger_expression_texts": [
+        "said"
+      ]
     },
     {
       "item_id": "AMO-18",
@@ -388,21 +715,48 @@
       "source_segment_sha256": "7438981c5f67a586e62824f899dde376931333bc69728b43ccd04c167d71b7cf",
       "expected_summary": "Dario Amodei criticized Stargate as \"chaotic\" in January 2025.",
       "expected_route": "event",
-      "expected_trigger_text": "criticized",
+      "expected_trigger_head_text": "criticized",
       "expected_frame_id": "criticism",
       "expected_roles": [
-        {"frame_role_id": "criticism.critic", "accepted_source_texts": ["Dario Amodei"]},
-        {"frame_role_id": "criticism.target", "accepted_source_texts": ["Stargate"]},
-        {"frame_role_id": "criticism.assessment", "accepted_source_texts": ["chaotic"]}
+        {
+          "frame_role_id": "criticism.critic",
+          "accepted_source_texts": [
+            "Dario Amodei"
+          ]
+        },
+        {
+          "frame_role_id": "criticism.target",
+          "accepted_source_texts": [
+            "Stargate"
+          ]
+        },
+        {
+          "frame_role_id": "criticism.assessment",
+          "accepted_source_texts": [
+            "chaotic"
+          ]
+        }
       ],
       "expected_qualifiers": [
-        {"kind": "time", "relation": "at", "accepted_source_texts": ["January 2025"]}
+        {
+          "kind": "time",
+          "relation": "at",
+          "accepted_source_texts": [
+            "January 2025"
+          ]
+        }
       ],
       "expected_polarity": "affirmed",
       "expected_modality": "actual",
       "expected_attribution": "source_narrator",
       "expected_disposition": "proposed",
-      "allocation_cases": ["bounded_frame_and_roles", "proposition_gate"]
+      "allocation_cases": [
+        "bounded_frame_and_roles",
+        "proposition_gate"
+      ],
+      "accepted_trigger_expression_texts": [
+        "criticized"
+      ]
     },
     {
       "item_id": "AMO-19",
@@ -411,20 +765,41 @@
       "source_segment_sha256": "de4ff8014b9a1ef33983388b241f72c9b699eb9c2a4b333cc5dbaba0bc375811",
       "expected_summary": "Dario Amodei criticized Trump's approach to semiconductor export restrictions.",
       "expected_route": "event",
-      "expected_trigger_text": "criticized",
+      "expected_trigger_head_text": "criticized",
       "expected_frame_id": "criticism",
       "expected_roles": [
-        {"frame_role_id": "criticism.critic", "accepted_source_texts": ["Amodei"]},
-        {"frame_role_id": "criticism.target", "accepted_source_texts": ["Trump's approach to export restrictions on semiconductors"]}
+        {
+          "frame_role_id": "criticism.critic",
+          "accepted_source_texts": [
+            "Amodei"
+          ]
+        },
+        {
+          "frame_role_id": "criticism.target",
+          "accepted_source_texts": [
+            "Trump's approach to export restrictions on semiconductors"
+          ]
+        }
       ],
       "expected_qualifiers": [
-        {"kind": "time", "relation": "at", "accepted_source_texts": ["That month"]}
+        {
+          "kind": "time",
+          "relation": "at",
+          "accepted_source_texts": [
+            "That month"
+          ]
+        }
       ],
       "expected_polarity": "affirmed",
       "expected_modality": "actual",
       "expected_attribution": "source_narrator",
       "expected_disposition": "proposed",
-      "allocation_cases": ["bounded_frame_and_roles"]
+      "allocation_cases": [
+        "bounded_frame_and_roles"
+      ],
+      "accepted_trigger_expression_texts": [
+        "criticized"
+      ]
     },
     {
       "item_id": "AMO-20",
@@ -433,21 +808,48 @@
       "source_segment_sha256": "b248b61105363bdaeafb06b4656d26a32fe8bdce6a0a9860ce130ae53ec28233",
       "expected_summary": "Dario Amodei met Trump officials and senators to improve Anthropic's relationship with the Trump administration.",
       "expected_route": "event",
-      "expected_trigger_text": "met",
+      "expected_trigger_head_text": "met",
       "expected_frame_id": "communication",
       "expected_roles": [
-        {"frame_role_id": "communication.communicator", "accepted_source_texts": ["Amodei"]},
-        {"frame_role_id": "communication.counterparty", "accepted_source_texts": ["Trump officials and several senators"]},
-        {"frame_role_id": "communication.topic", "accepted_source_texts": ["to improve Anthropic's relationship with the Trump administration"]}
+        {
+          "frame_role_id": "communication.communicator",
+          "accepted_source_texts": [
+            "Amodei"
+          ]
+        },
+        {
+          "frame_role_id": "communication.counterparty",
+          "accepted_source_texts": [
+            "Trump officials and several senators"
+          ]
+        },
+        {
+          "frame_role_id": "communication.topic",
+          "accepted_source_texts": [
+            "to improve Anthropic's relationship with the Trump administration"
+          ]
+        }
       ],
       "expected_qualifiers": [
-        {"kind": "time", "relation": "at", "accepted_source_texts": ["In December"]}
+        {
+          "kind": "time",
+          "relation": "at",
+          "accepted_source_texts": [
+            "In December"
+          ]
+        }
       ],
       "expected_polarity": "affirmed",
       "expected_modality": "actual",
       "expected_attribution": "source_narrator",
       "expected_disposition": "proposed",
-      "allocation_cases": ["bounded_frame_and_roles", "proposition_gate"]
+      "allocation_cases": [
+        "bounded_frame_and_roles",
+        "proposition_gate"
+      ],
+      "accepted_trigger_expression_texts": [
+        "met"
+      ]
     }
   ]
 }

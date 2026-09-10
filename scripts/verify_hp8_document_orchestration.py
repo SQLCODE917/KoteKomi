@@ -39,9 +39,15 @@ from kotekomi_pipelines.semantic_quality_oracle import (
     required_event_findings,
 )
 from kotekomi_pipelines.task_allocation_evaluation import (
+    TaskAllocationBaselineComparison,
     TaskAllocationCatalogEvaluation,
+    TaskAllocationRunCost,
+    compare_task_allocation_baseline,
     evaluate_task_allocation_catalog,
+    load_task_allocation_baseline,
+    load_task_allocation_evaluator_corrections,
     load_task_allocation_gold,
+    task_allocation_item_has_wrong_forced_frame,
 )
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -50,6 +56,8 @@ HP7_GOLD = ROOT / "docs/hp7-proposal-admission-gold-v1.json"
 AMODEI_GOLD = ROOT / "docs/hsq-amodei-intelligence-gold-v1.json"
 TASK_ALLOCATION_AMODEI_GOLD = ROOT / "docs/hsq-task-allocation-amodei-gold-v1.json"
 TASK_ALLOCATION_ANTHROPIC_GOLD = ROOT / "docs/hsq-task-allocation-anthropic-gold-v1.json"
+TASK_ALLOCATION_BASELINE = ROOT / "docs/hsq-task-allocation-baseline-2026-09-08.json"
+TASK_ALLOCATION_EVALUATOR_CORRECTIONS = ROOT / "docs/hsq-stage-local-evaluator-corrections-v1.json"
 type JsonObject = dict[str, Any]
 
 
@@ -131,13 +139,29 @@ def main() -> int:
             archive_path,
         )
         _add_wiki_results(amodei_results, wiki_plan, LocalArchiveStore(archive_path))
+        evaluator_corrections = load_task_allocation_evaluator_corrections(
+            TASK_ALLOCATION_EVALUATOR_CORRECTIONS
+        )
         task_allocation_evaluations = tuple(
             evaluate_task_allocation_catalog(
                 load_task_allocation_gold(path),
                 paragraphs,
                 wiki_plan=wiki_plan,
+                evaluator_corrections=evaluator_corrections,
             )
             for path in (TASK_ALLOCATION_AMODEI_GOLD, TASK_ALLOCATION_ANTHROPIC_GOLD)
+        )
+        task_allocation_cost = _task_allocation_run_cost(first_counts, model_performance)
+        task_allocation_baseline = load_task_allocation_baseline(TASK_ALLOCATION_BASELINE)
+        if (
+            task_allocation_baseline.source_fixture_sha256
+            != hashlib.sha256(source.read_bytes()).hexdigest()
+        ):
+            raise ValueError("Task-allocation baseline source fixture does not match this run.")
+        task_allocation_comparison = compare_task_allocation_baseline(
+            task_allocation_baseline,
+            task_allocation_evaluations,
+            task_allocation_cost,
         )
         findings = _findings(
             configured=configured,
@@ -150,7 +174,12 @@ def main() -> int:
             amodei_results=amodei_results,
             paragraphs=paragraphs,
         )
-        findings.extend(_task_allocation_findings(task_allocation_evaluations))
+        findings.extend(
+            _task_allocation_findings(
+                task_allocation_evaluations,
+                task_allocation_comparison,
+            )
+        )
         approved_gold = [item for item in gold_results if item["review_outcome"] == "approved"]
         rejected_gold = [item for item in gold_results if item["review_outcome"] == "rejected"]
         payload = {
@@ -165,6 +194,21 @@ def main() -> int:
             "task_allocation_evaluations": [
                 item.model_dump(mode="json") for item in task_allocation_evaluations
             ],
+            "task_allocation_baseline_comparison": task_allocation_comparison.model_dump(
+                mode="json"
+            ),
+            "task_allocation_evaluator_corrections": {
+                "path": TASK_ALLOCATION_EVALUATOR_CORRECTIONS.relative_to(ROOT).as_posix(),
+                "sha256": hashlib.sha256(
+                    TASK_ALLOCATION_EVALUATOR_CORRECTIONS.read_bytes()
+                ).hexdigest(),
+                "parent_validation_manifest_sha256": (
+                    evaluator_corrections.parent_validation_manifest_sha256
+                ),
+                "parent_validation_report_sha256": (
+                    evaluator_corrections.parent_validation_report_sha256
+                ),
+            },
             "candidate_wiki": wiki_evidence,
             "first_public_output": first,
             "replay_public_output": second,
@@ -219,6 +263,19 @@ def main() -> int:
                 ),
                 "task_allocation_wrong_forced_frames": sum(
                     item.wrong_forced_frame_count for item in task_allocation_evaluations
+                ),
+                "task_allocation_newly_complete": sum(
+                    len(item.newly_complete_item_ids)
+                    for item in task_allocation_comparison.catalogs
+                ),
+                "task_allocation_regressed": sum(
+                    len(item.regressed_item_ids) for item in task_allocation_comparison.catalogs
+                ),
+                "task_allocation_model_run_delta": (
+                    task_allocation_comparison.model_run_count_delta
+                ),
+                "task_allocation_model_elapsed_milliseconds_delta": (
+                    task_allocation_comparison.total_model_elapsed_milliseconds_delta
                 ),
                 "replay_model_calls": second_counts["model_runs"] - first_counts["model_runs"],
             },
@@ -965,6 +1022,7 @@ def _findings(
 
 def _task_allocation_findings(
     evaluations: tuple[TaskAllocationCatalogEvaluation, ...],
+    comparison: TaskAllocationBaselineComparison,
 ) -> list[JsonObject]:
     findings: list[JsonObject] = []
     if sum(item.item_count for item in evaluations) != 40:
@@ -978,13 +1036,7 @@ def _task_allocation_findings(
         result.item_id
         for evaluation in evaluations
         for result in evaluation.items
-        if result.expected_route == "typed_ontology_gap"
-        and any(
-            check.check_id == "gap_frame"
-            and check.expected == "unresolved"
-            and check.actual is not None
-            for check in result.checks
-        )
+        if task_allocation_item_has_wrong_forced_frame(result)
     ]
     if wrong_frames:
         findings.append(
@@ -993,6 +1045,22 @@ def _task_allocation_findings(
                 "item_ids": wrong_frames,
             }
         )
+    for catalog in comparison.catalogs:
+        if catalog.regressed_item_ids:
+            findings.append(
+                {
+                    "code": "task_allocation_baseline_regressed",
+                    "catalog_id": catalog.catalog_id,
+                    "item_ids": list(catalog.regressed_item_ids),
+                }
+            )
+        if not catalog.newly_complete_item_ids:
+            findings.append(
+                {
+                    "code": "task_allocation_no_newly_complete_item",
+                    "catalog_id": catalog.catalog_id,
+                }
+            )
     development = next(
         (item for item in evaluations if item.catalog_role == "development"),
         None,
@@ -1016,6 +1084,38 @@ def _task_allocation_findings(
                 }
             )
     return findings
+
+
+def _task_allocation_run_cost(
+    counts: JsonObject,
+    model_performance: JsonObject,
+) -> TaskAllocationRunCost:
+    task_types_value = model_performance.get("by_task_type")
+    task_types = cast(list[object], task_types_value) if isinstance(task_types_value, list) else []
+    elapsed_total = 0
+    for value in task_types:
+        if not isinstance(value, dict):
+            raise ValueError("Model performance task type must be an object.")
+        elapsed = cast(dict[str, object], value).get("elapsed_milliseconds")
+        if not isinstance(elapsed, dict):
+            raise ValueError("Model performance elapsed time must be an object.")
+        total = cast(dict[str, object], elapsed).get("total")
+        if type(total) is not int:
+            raise ValueError("Model performance elapsed total must be an integer.")
+        elapsed_total += total
+    return TaskAllocationRunCost(
+        extraction_task_count=_required_count(counts, "extraction_tasks"),
+        model_run_count=_required_count(counts, "model_runs"),
+        proposed_change_count=_required_count(counts, "proposed_changes"),
+        total_model_elapsed_milliseconds=elapsed_total,
+    )
+
+
+def _required_count(counts: JsonObject, name: str) -> int:
+    value = counts.get(name)
+    if type(value) is not int:
+        raise ValueError(f"Ledger count {name!r} must be an integer.")
+    return value
 
 
 def _ledger_counts(ledger_path: Path) -> JsonObject:

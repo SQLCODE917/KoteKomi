@@ -161,10 +161,12 @@ class _Runtime:
         mentions: tuple[tuple[str, str], ...],
         trigger_output: bytes,
         semantic_output: bytes | dict[str, bytes],
+        frame_fit_output: bytes = b"fit: yes\nreason: The selected frame fits this event.\n",
     ) -> None:
         self.mentions = mentions
         self.trigger_output = trigger_output
         self.semantic_output = semantic_output
+        self.frame_fit_output = frame_fit_output
         self.requests: list[ModelTaskRequest] = []
         self._identity = ModelIdentitySnapshot(
             "qwen2.5-fixture",
@@ -227,6 +229,8 @@ class _Runtime:
             output = self.trigger_output
         elif b"task: select_one_event_frame" in rendered:
             output = self._frame_selection_output(rendered)
+        elif b"task: challenge_one_event_frame_fit" in rendered:
+            output = self.frame_fit_output
         elif b"task: select_one_frame_role" in rendered:
             output = self._role_selection_output(rendered)
         elif b"task: classify_one_event_presentation" in rendered:
@@ -258,9 +262,9 @@ class _Runtime:
             output = self.semantic_output
         else:
             trigger = next(
-                line.removeprefix("target_trigger: ")
+                line.removeprefix("target_trigger_expression: ")
                 for line in rendered.decode().splitlines()
-                if line.startswith("target_trigger: ")
+                if line.startswith("target_trigger_expression: ")
             )
             output = self.semantic_output[trigger]
         return tuple(output.decode().splitlines())
@@ -519,7 +523,7 @@ def test_source_bound_event_reaches_review_without_accepted_state() -> None:
     mentions = (("Dario Amodei", "person"), ("Stargate", "organization"))
     runtime = _Runtime(
         mentions=mentions,
-        trigger_output=b"event: o3 | criticism\n",
+        trigger_output=b"event: o3 | o3 | criticism\n",
         semantic_output=(
             b"frame: criticism\n"
             b"polarity: affirmed\n"
@@ -566,8 +570,34 @@ def test_source_bound_event_reaches_review_without_accepted_state() -> None:
     assert b"governed_frame_catalog:" in frame_requests[0].rendered_input
     assert b"target_role:" not in frame_requests[0].rendered_input
     assert b"role |" not in frame_requests[0].rendered_input
+    fit_requests = tuple(
+        request for request in runtime.requests if request.task_type == "hybrid_event_frame_fit"
+    )
+    assert len(fit_requests) == 1
+    assert b"selected_frame: criticism" in fit_requests[0].rendered_input
+    assert b"target_role:" not in fit_requests[0].rendered_input
     assert len(role_requests) == 5
     assert all(request.rendered_input.count(b"target_role: ") == 1 for request in role_requests)
+    assert all(b"sibling_role_catalog:" in request.rendered_input for request in role_requests)
+    assert all(
+        b"criticism.critic | required |" in request.rendered_input for request in role_requests
+    )
+    assert [
+        next(
+            line.removeprefix("target_role: ").split(" | ", maxsplit=1)[0]
+            for line in request.rendered_input.decode().splitlines()
+            if line.startswith("target_role: ")
+        )
+        for request in role_requests
+    ] == [
+        "criticism.critic",
+        "criticism.target",
+        "criticism.assessment",
+        "criticism.reason",
+        "criticism.topic",
+    ]
+    target_request = role_requests[1]
+    assert b"criticism.critic | c1" in target_request.rendered_input
     presentation_requests = tuple(
         request for request in runtime.requests if request.task_type == "hybrid_event_presentation"
     )
@@ -598,12 +628,84 @@ def test_source_bound_event_reaches_review_without_accepted_state() -> None:
     assert not ledger.events
 
 
+def test_trigger_expression_is_source_mapped_while_auxiliary_head_is_rejected() -> None:
+    text = "Events\nHegseth has publicly rebuked Amodei."
+    mentions = (("Hegseth", "person"), ("Amodei", "person"))
+    runtime = _Runtime(
+        mentions=mentions,
+        trigger_output=(b"event: o2-o4 | o4 | public_rebuke\nevent: o2-o4 | o2 | public_rebuke\n"),
+        semantic_output=b"",
+    )
+
+    _, _, hp4 = _run_to_triggers(text, mentions, runtime)
+
+    assert [(item.text, item.head_text) for item in hp4.preview.triggers] == [
+        ("has publicly rebuked", "rebuked")
+    ]
+    assert any(item.endswith(":2:non_event_head") for item in hp4.preview.diagnostics)
+
+
+def test_invalid_expression_cannot_reserve_a_head_and_erase_a_later_valid_line() -> None:
+    text = "Events\nHegseth has publicly rebuked Amodei."
+    mentions = (("Hegseth", "person"), ("Amodei", "person"))
+    runtime = _Runtime(
+        mentions=mentions,
+        trigger_output=(b"event: o2-o3 | o4 | public_rebuke\nevent: o2-o4 | o4 | public_rebuke\n"),
+        semantic_output=b"",
+    )
+
+    _, _, hp4 = _run_to_triggers(text, mentions, runtime)
+
+    assert [(item.text, item.head_text) for item in hp4.preview.triggers] == [
+        ("has publicly rebuked", "rebuked")
+    ]
+    assert any(item.endswith(":1:invalid_expression_range") for item in hp4.preview.diagnostics)
+
+
+def test_selected_nearby_frame_must_pass_an_independent_fit_challenge() -> None:
+    text = "Events\nDario Amodei cut ties with Skadden."
+    mentions = (("Dario Amodei", "person"), ("Skadden", "organization"))
+    runtime = _Runtime(
+        mentions=mentions,
+        trigger_output=b"event: o3-o4 | o3 | relationship_termination\n",
+        semantic_output=(
+            b"frame: criticism\n"
+            b"polarity: affirmed\n"
+            b"modality: actual\n"
+            b"attribution: source_narrator\n"
+            b"argument: criticism.critic | c1\n"
+            b"argument: criticism.target | c2\n"
+            b"reason: Criticism is only the nearest available frame.\n"
+        ),
+        frame_fit_output=(
+            b"fit: no\nreason: Ending a relationship is not a communicated negative judgment.\n"
+        ),
+    )
+
+    ledger, archive, hp4 = _run_to_triggers(text, mentions, runtime)
+    hp6 = _run_semantics(ledger, archive, hp4, runtime)
+
+    assert hp6.preview.semantic_events == ()
+    assert [item.code for item in hp6.preview.gaps] == [SemanticCoverageGapCode.UNMAPPED_FRAME]
+    assert [
+        request.task_type
+        for request in runtime.requests
+        if request.task_type
+        in {
+            "hybrid_event_frame_selection",
+            "hybrid_event_frame_fit",
+            "hybrid_event_role_selection",
+            "hybrid_event_presentation",
+        }
+    ] == ["hybrid_event_frame_selection", "hybrid_event_frame_fit"]
+
+
 def test_bounded_publication_roles_retain_an_optional_outlet() -> None:
     text = "Events\nDario Amodei wrote an op-ed in The New York Times about AI regulation."
     mentions = (("Dario Amodei", "person"), ("The New York Times", "organization"))
     runtime = _Runtime(
         mentions=mentions,
-        trigger_output=b"event: o3 | publication\n",
+        trigger_output=b"event: o3 | o3 | publication\n",
         semantic_output=(
             b"frame: publication\n"
             b"polarity: affirmed\n"
@@ -634,12 +736,76 @@ def test_bounded_publication_roles_retain_an_optional_outlet() -> None:
     }
 
 
+def test_characterization_role_keeps_the_complete_assessment_expression() -> None:
+    text = "Events\nDario Amodei described Trump as a feudal warlord."
+    mentions = (("Dario Amodei", "person"), ("Trump", "person"))
+    runtime = _Runtime(
+        mentions=mentions,
+        trigger_output=b"event: o3 | o3 | characterization\n",
+        semantic_output=(
+            b"frame: characterization\n"
+            b"polarity: affirmed\n"
+            b"modality: actual\n"
+            b"attribution: source_narrator\n"
+            b"argument: characterization.characterization | o6-o8\n"
+            b"argument: characterization.evaluated_subject | c2\n"
+            b"argument: characterization.evaluator | c1\n"
+            b"reason: The source assigns the complete description to Trump.\n"
+        ),
+    )
+
+    ledger, archive, hp4 = _run_to_triggers(text, mentions, runtime)
+    hp6 = _run_semantics(ledger, archive, hp4, runtime)
+
+    role_targets = {
+        item.frame_role_id: next(
+            target.text for target in hp6.preview.targets if target.id == item.target_id
+        )
+        for item in hp6.preview.assignments
+    }
+    assert role_targets["characterization.characterization"] == "a feudal warlord"
+
+
+def test_meeting_roles_keep_coordinated_counterparties_and_purpose() -> None:
+    text = (
+        "Events\nDario Amodei met Trump officials and several senators "
+        "to improve Anthropic relationship."
+    )
+    mentions = (("Dario Amodei", "person"), ("Anthropic", "organization"))
+    runtime = _Runtime(
+        mentions=mentions,
+        trigger_output=b"event: o3 | o3 | meeting\n",
+        semantic_output=(
+            b"frame: communication\n"
+            b"polarity: affirmed\n"
+            b"modality: actual\n"
+            b"attribution: source_narrator\n"
+            b"argument: communication.communicator | c1\n"
+            b"argument: communication.counterparty | o4-o8\n"
+            b"argument: communication.topic | o9-o12\n"
+            b"reason: The meeting is communication with stated counterparties and purpose.\n"
+        ),
+    )
+
+    ledger, archive, hp4 = _run_to_triggers(text, mentions, runtime)
+    hp6 = _run_semantics(ledger, archive, hp4, runtime)
+
+    role_targets = {
+        item.frame_role_id: next(
+            target.text for target in hp6.preview.targets if target.id == item.target_id
+        )
+        for item in hp6.preview.assignments
+    }
+    assert role_targets["communication.counterparty"] == ("Trump officials and several senators")
+    assert role_targets["communication.topic"] == "to improve Anthropic relationship"
+
+
 def test_trigger_discovery_retains_distinct_publication_and_characterization_events() -> None:
     text = "Events\nAmodei wrote an op-ed describing Trump as a feudal warlord."
     mentions = (("Amodei", "person"), ("Trump", "person"))
     runtime = _Runtime(
         mentions=mentions,
-        trigger_output=(b"event: o2 | publication\nevent: o5 | characterization\n"),
+        trigger_output=(b"event: o2 | o2 | publication\nevent: o5 | o5 | characterization\n"),
         semantic_output=b"",
     )
 
@@ -656,7 +822,7 @@ def test_unknown_trigger_occurrence_does_not_erase_a_valid_selection() -> None:
     mentions = (("Dario Amodei", "person"), ("Stargate", "organization"))
     runtime = _Runtime(
         mentions=mentions,
-        trigger_output=(b"event: o3 | criticism\nevent: o999 | criticism\n"),
+        trigger_output=(b"event: o3 | o3 | criticism\nevent: o999 | o999 | criticism\n"),
         semantic_output=b"",
     )
 
@@ -671,7 +837,7 @@ def test_composite_source_target_retains_contained_entity_reference() -> None:
     mentions = (("1789 Capital", "organization"), ("Anthropic", "organization"))
     runtime = _Runtime(
         mentions=mentions,
-        trigger_output=b"event: o3 | investment_abandonment\n",
+        trigger_output=b"event: o3 | o3 | investment_abandonment\n",
         semantic_output=(
             b"frame: investment_abandonment\n"
             b"polarity: affirmed\n"
@@ -773,7 +939,7 @@ def test_two_governed_events_in_one_source_segment_retain_distinct_semantics() -
     )
     runtime = _Runtime(
         mentions=mentions,
-        trigger_output=(b"event: o3 | caused_change\nevent: o16 | abandon_investment\n"),
+        trigger_output=(b"event: o3 | o3 | caused_change\nevent: o16 | o16 | abandon_investment\n"),
         semantic_output={
             "caused": (
                 b"frame: causation\n"
@@ -819,7 +985,7 @@ def test_composite_source_target_excludes_a_partially_contained_entity() -> None
     mentions = (("1789 Capital", "organization"), ("Anthropic investment", "organization"))
     runtime = _Runtime(
         mentions=mentions,
-        trigger_output=b"event: o3 | investment_abandonment\n",
+        trigger_output=b"event: o3 | o3 | investment_abandonment\n",
         semantic_output=(
             b"frame: investment_abandonment\n"
             b"polarity: affirmed\n"
@@ -843,7 +1009,7 @@ def test_invalid_optional_line_does_not_erase_a_valid_event() -> None:
     mentions = (("Dario Amodei", "person"), ("Stargate", "organization"))
     runtime = _Runtime(
         mentions=mentions,
-        trigger_output=b"event: o3 | criticism\n",
+        trigger_output=b"event: o3 | o3 | criticism\n",
         semantic_output=(
             b"frame: criticism\n"
             b"polarity: affirmed\n"
@@ -870,7 +1036,7 @@ def test_invalid_required_envelope_produces_a_typed_event_gap() -> None:
     mentions = (("Dario Amodei", "person"), ("Stargate", "organization"))
     runtime = _Runtime(
         mentions=mentions,
-        trigger_output=b"event: o3 | criticism\n",
+        trigger_output=b"event: o3 | o3 | criticism\n",
         semantic_output=(
             b"frame: criticism\n"
             b"polarity: affirmed\n"
@@ -895,7 +1061,7 @@ def test_relationship_termination_outside_the_profile_remains_a_typed_ontology_g
     mentions = (("Dario Amodei", "person"), ("Skadden", "organization"))
     runtime = _Runtime(
         mentions=mentions,
-        trigger_output=b"event: o3 | relationship_termination\n",
+        trigger_output=b"event: o3-o4 | o3 | relationship_termination\n",
         semantic_output=(
             b"frame: unresolved\nreason: No governed frame represents relationship termination.\n"
         ),
@@ -924,7 +1090,7 @@ def test_governed_task_exposes_resolved_reference_metadata_without_transferring_
     mentions = (("The New York Times", "organization"), ("NYT", "organization"))
     runtime = _Runtime(
         mentions=mentions,
-        trigger_output=b"event: o6 | publication\n",
+        trigger_output=b"event: o6 | o6 | publication\n",
         semantic_output=(
             b"frame: publication\n"
             b"polarity: affirmed\n"
@@ -975,7 +1141,9 @@ def _run_to_triggers(
         model_runtime=runtime,
         model_run_id_factory=_RunIds("mention"),
         tokenizer=_Tokenizer(),
-        prompt_bytes=b"Perform only the named mention task.",
+        proposal_prompt_bytes=b"Propose source-bound mentions only.",
+        boundary_adjudication_prompt_bytes=b"Judge supplied boundaries only.",
+        interpretation_prompt_bytes=b"Interpret one supplied mention only.",
         ontology_card_bytes=b"Classify people and organizations from exact source text.",
     )
     references = run_hybrid_reference_preview(
@@ -1034,6 +1202,7 @@ def _run_semantics(
         model_run_id_factory=_RunIds("semantic"),
         tokenizer=_Tokenizer(),
         frame_selection_prompt_bytes=b"Select one governed event frame.",
+        frame_fit_prompt_bytes=b"Challenge one selected governed event frame.",
         role_selection_prompt_bytes=b"Select one target for one governed role.",
         presentation_prompt_bytes=b"Classify one event presentation.",
         support_prompt_bytes=b"Judge source support for one governed statement.",

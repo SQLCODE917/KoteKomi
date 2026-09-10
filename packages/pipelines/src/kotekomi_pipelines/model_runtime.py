@@ -93,12 +93,12 @@ class FixtureModelTaskRuntime:
         if task.execution_spec.schema_id == "paragraph_hypothesis_text_v1":
             raw_output = b"abstain: fixture_no_claim\n"
         elif (
-            task.execution_spec.schema_id == "hybrid_mention_task_text_v1"
+            task.execution_spec.schema_id == "hybrid_mention_occurrence_selection_text_v1"
             and task.task_type == "hybrid_mention_proposal"
         ):
             raw_output = b"abstain: fixture_no_mentions\n"
         elif (
-            task.execution_spec.schema_id == "hybrid_mention_task_text_v1"
+            task.execution_spec.schema_id == "hybrid_mention_interpretation_text_v2"
             and task.task_type == "hybrid_mention_interpretation"
         ):
             support_label = next(
@@ -113,9 +113,9 @@ class FixtureModelTaskRuntime:
                 "discourse_role: other\n"
                 f"support: {support_label}\n"
             ).encode()
-        elif task.execution_spec.schema_id == "hybrid_event_trigger_text_v3":
+        elif task.execution_spec.schema_id == "hybrid_event_trigger_text_v4":
             raw_output = b"abstain: fixture_no_event\n"
-        elif task.execution_spec.schema_id == "hybrid_standing_fact_text_v1":
+        elif task.execution_spec.schema_id == "hybrid_standing_fact_text_v2":
             raw_output = b"abstain: fixture_no_standing_fact\n"
         else:
             raw_output = b"outcome: abstain\nreason: fixture_no_claim\n"

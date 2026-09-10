@@ -227,7 +227,7 @@ def test_specialist_candidates_do_not_override_a_different_semantic_choice() -> 
     target = text.index("him")
     trump = text.index("Trump")
     amodei = text.index("Amodei")
-    challenger = _Challenger("second")
+    challenger = _Challenger("first")
 
     result = resolve_semantic_reference(
         CoreferenceInput(
@@ -248,6 +248,168 @@ def test_specialist_candidates_do_not_override_a_different_semantic_choice() -> 
     expected = result.observation.antecedent_candidates[1].span.id
     assert result.decision.antecedent_span_ids == (expected,)
     assert result.trace.input["model_visible_challenge_task"] == "exact bounded reference task"
+
+
+def test_specialist_narrowing_cannot_remove_another_source_valid_candidate() -> None:
+    text = "Anthropic met Amodei before the company changed course."
+    anthropic = text.index("Anthropic")
+    amodei = text.index("Amodei")
+    target = text.index("the company")
+    challenger = _Challenger("second")
+
+    result = resolve_semantic_reference(
+        CoreferenceInput(
+            "seg_fixture",
+            text,
+            target,
+            target + len("the company"),
+            (
+                CoreferenceAntecedentInput(
+                    "candidate_anthropic", anthropic, anthropic + len("Anthropic")
+                ),
+                CoreferenceAntecedentInput("candidate_amodei", amodei, amodei + len("Amodei")),
+            ),
+        ),
+        _Proposer((((amodei, amodei + len("Amodei")), (target, target + 11)),)),
+        _Tokenizer(),
+        challenger,
+    )
+
+    assert [item.span.text for item in challenger.requests[0].antecedent_candidates] == [
+        "Amodei",
+        "Anthropic",
+    ]
+    anthropic_span = next(
+        item.span.id
+        for item in result.observation.antecedent_candidates
+        if item.span.text == "Anthropic"
+    )
+    amodei_span = next(
+        item.span.id
+        for item in result.observation.antecedent_candidates
+        if item.span.text == "Amodei"
+    )
+    assert result.decision.status.value == "ambiguous"
+    assert result.decision.reason.value == "specialist_challenge_disagreement"
+    assert result.decision.antecedent_span_ids == (anthropic_span, amodei_span)
+
+
+def test_one_candidate_cannot_be_recorded_as_ambiguous() -> None:
+    text = "Anthropic changed its policy."
+    anthropic = text.index("Anthropic")
+    target = text.index("its")
+
+    result = resolve_semantic_reference(
+        CoreferenceInput(
+            "seg_fixture",
+            text,
+            target,
+            target + len("its"),
+            (
+                CoreferenceAntecedentInput(
+                    "candidate_anthropic", anthropic, anthropic + len("Anthropic")
+                ),
+            ),
+        ),
+        _Proposer((((anthropic, anthropic + len("Anthropic")), (target, target + 3)),)),
+        _Tokenizer(),
+        _Challenger("ambiguous"),
+    )
+
+    assert result.decision.status is SemanticReferenceStatus.UNRESOLVED
+    assert result.decision.reason.value == "challenge_invalid"
+    assert result.decision.antecedent_span_ids == ()
+
+
+def test_specialist_abstention_still_challenges_nearest_source_valid_candidates() -> None:
+    text = "Anthropic met Dario Amodei before the company changed course."
+    anthropic = text.index("Anthropic")
+    amodei = text.index("Dario Amodei")
+    target = text.index("the company")
+    challenger = _Challenger("second")
+
+    result = resolve_semantic_reference(
+        CoreferenceInput(
+            "seg_fixture",
+            text,
+            target,
+            target + len("the company"),
+            (
+                CoreferenceAntecedentInput(
+                    "candidate_anthropic",
+                    anthropic,
+                    anthropic + len("Anthropic"),
+                ),
+                CoreferenceAntecedentInput(
+                    "candidate_amodei",
+                    amodei,
+                    amodei + len("Dario Amodei"),
+                ),
+            ),
+        ),
+        _Proposer(()),
+        _Tokenizer(),
+        challenger,
+    )
+
+    assert len(challenger.requests) == 1
+    assert [item.span.text for item in challenger.requests[0].antecedent_candidates] == [
+        "Dario Amodei",
+        "Anthropic",
+    ]
+    assert result.observation.specialist_proposed_antecedent_candidate_ids == ()
+    assert result.decision.status is SemanticReferenceStatus.RESOLVED
+    selected = next(
+        item.span.id
+        for item in result.observation.antecedent_candidates
+        if item.span.text == "Anthropic"
+    )
+    assert result.decision.antecedent_span_ids == (selected,)
+    assert (
+        result.trace.input["challenge_candidate_source"]
+        == "monotonic_specialist_deterministic_union"
+    )
+
+
+def test_specialist_candidate_set_is_bounded_to_eight_nearest_source_mentions() -> None:
+    names = tuple(f"Entity{ordinal}" for ordinal in range(10))
+    text = " ".join((*names, "changed its policy"))
+    target = text.index("its")
+    candidates = tuple(
+        CoreferenceAntecedentInput(
+            f"candidate_{ordinal}",
+            text.index(name),
+            text.index(name) + len(name),
+        )
+        for ordinal, name in enumerate(names)
+    )
+    cluster = tuple((item.start, item.end) for item in candidates) + ((target, target + 3),)
+    challenger = _Challenger()
+
+    result = resolve_semantic_reference(
+        CoreferenceInput(
+            "seg_fixture",
+            text,
+            target,
+            target + 3,
+            candidates,
+        ),
+        _Proposer((cluster,)),
+        _Tokenizer(),
+        challenger,
+    )
+
+    assert len(result.observation.specialist_proposed_antecedent_candidate_ids) == 10
+    assert [item.span.text for item in challenger.requests[0].antecedent_candidates] == [
+        "Entity9",
+        "Entity8",
+        "Entity7",
+        "Entity6",
+        "Entity5",
+        "Entity4",
+        "Entity3",
+        "Entity2",
+    ]
 
 
 def test_out_of_catalog_challenge_result_cannot_resolve_reference() -> None:

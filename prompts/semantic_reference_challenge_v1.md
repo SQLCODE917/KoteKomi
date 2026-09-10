@@ -1,6 +1,8 @@
-Read the authoritative source context, the one target reference, and the supplied antecedent candidate catalog.
+Read the authoritative source context around one target reference and the supplied antecedent candidate catalog.
 Perform only semantic antecedent selection for the target reference.
-F-Coref has proposed the supplied candidates, but its proposal is fallible and is not a decision.
+Resolve only the exact target between `source_context_before_target` and `source_context_after_target`.
+F-Coref proposes a narrowed candidate set when it can, and KoteKomi supplies a bounded deterministic fallback when it cannot.
+Candidate provenance is diagnostic and is not a decision.
 Select one supplied candidate ID only when that exact source expression is what the target reference means in context.
 Return `ambiguous` when two or more supplied candidates remain plausible.
 Return `unresolved` when no supplied candidate is supported by the source context.

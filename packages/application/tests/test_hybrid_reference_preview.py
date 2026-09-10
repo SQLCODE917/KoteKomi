@@ -6,12 +6,16 @@ from datetime import UTC, datetime
 
 import pytest
 from kotekomi_application import (
+    CoreferenceAntecedentCandidate,
+    CoreferenceSpan,
     HybridPreviewStatus,
     HybridReferencePreview,
     HybridReferencePreviewCommand,
+    SemanticReferenceChallengeInput,
     build_hybrid_extraction_preview,
     canonical_hybrid_extraction_preview_bytes,
     run_hybrid_reference_preview,
+    semantic_reference_challenge_task_input,
 )
 from kotekomi_domain import (
     DocumentNode,
@@ -126,6 +130,52 @@ def test_run_rejects_missing_representation_before_publication() -> None:
             archive=archive,
         )
     assert archive.reference_previews == {}
+
+
+def test_reference_challenge_visibly_delimits_only_the_exact_target() -> None:
+    source = "Trump met Amodei before he spoke."
+    segment_id = "seg_prompt"
+    trump = _coreference_span(segment_id, source, "Trump")
+    amodei = _coreference_span(segment_id, source, "Amodei")
+    target = _coreference_span(segment_id, source, "he")
+    candidates = tuple(
+        CoreferenceAntecedentCandidate(
+            id=_id("cfa", source_id, span.id, span.text.casefold()),
+            source_candidate_id=source_id,
+            span=span,
+            literal_key=span.text.casefold(),
+        )
+        for source_id, span in (
+            ("candidate_trump", trump),
+            ("candidate_amodei", amodei),
+        )
+    )
+
+    rendered = semantic_reference_challenge_task_input(
+        SemanticReferenceChallengeInput(segment_id, source, target, candidates)
+    ).decode()
+
+    assert "source_context_before_target: Trump met Amodei before " in rendered
+    assert "target_reference: he" in rendered
+    assert "source_context_after_target:  spoke." in rendered
+    assert rendered.count("target_reference:") == 1
+    assert "resolve_only_target: he" in rendered
+
+
+def _coreference_span(segment_id: str, source: str, text: str) -> CoreferenceSpan:
+    start = source.index(text)
+    end = start + len(text)
+    return CoreferenceSpan(
+        id=_id("cfs", segment_id, str(start), str(end), text),
+        source_segment_id=segment_id,
+        start=start,
+        end=end,
+        text=text,
+    )
+
+
+def _id(prefix: str, *parts: str) -> str:
+    return prefix + "_" + hashlib.sha256("\0".join(parts).encode()).hexdigest()[:24]
 
 
 def _bundle() -> DocumentRepresentationBundle:

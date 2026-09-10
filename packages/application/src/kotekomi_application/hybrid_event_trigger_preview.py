@@ -68,6 +68,12 @@ from kotekomi_application.hybrid_mention_interpretation import (
     hybrid_extraction_preview_from_bytes,
     hybrid_source_segment_id,
 )
+from kotekomi_application.source_occurrences import (
+    SourceOccurrence,
+)
+from kotekomi_application.source_occurrences import (
+    source_occurrences as _source_occurrences,
+)
 from kotekomi_application.staged_model_extraction import (
     BoundedExtractionInput,
     ExecutionSetting,
@@ -80,10 +86,64 @@ from kotekomi_application.staged_model_extraction import (
     run_bounded_extraction,
 )
 
-TRIGGER_SCHEMA_ID = "hybrid_event_trigger_text_v3"
-TRIGGER_RECONCILIATION_POLICY_ID = "shortest_non_overlapping_event_trigger_v1"
+TRIGGER_SCHEMA_ID = "hybrid_event_trigger_text_v4"
+TRIGGER_RECONCILIATION_POLICY_ID = "source_bound_event_expression_v2"
 _STATIVE_NON_EVENT = re.compile(r"\bremain(?:s|ed)?\s+in\s+effect\b", re.IGNORECASE)
-_SOURCE_OCCURRENCE = re.compile(r"[^\W_]+(?:[’'-][^\W_]+)*", re.UNICODE)
+_NON_EVENT_HEADS = frozenset(
+    {
+        "a",
+        "an",
+        "and",
+        "are",
+        "as",
+        "be",
+        "been",
+        "being",
+        "but",
+        "can",
+        "could",
+        "did",
+        "do",
+        "does",
+        "for",
+        "had",
+        "has",
+        "have",
+        "he",
+        "her",
+        "hers",
+        "him",
+        "his",
+        "i",
+        "in",
+        "is",
+        "it",
+        "its",
+        "may",
+        "might",
+        "must",
+        "of",
+        "on",
+        "or",
+        "shall",
+        "she",
+        "should",
+        "that",
+        "the",
+        "their",
+        "them",
+        "they",
+        "this",
+        "to",
+        "was",
+        "we",
+        "were",
+        "will",
+        "with",
+        "would",
+        "you",
+    }
+)
 
 
 class HybridEventTriggerLedger(StagedExtractionLedger, ContextPlanningLedger, Protocol):
@@ -125,22 +185,6 @@ class HybridEventTriggerResult:
     preview: HybridEventTriggerPreview
     sha256: str
     archive_path: str
-
-
-@dataclass(frozen=True)
-class SourceOccurrence:
-    """One KoteKomi-owned local choice over exact source characters."""
-
-    occurrence_id: str
-    text: str
-    start: int
-    end: int
-
-    def __post_init__(self) -> None:
-        if re.fullmatch(r"o[1-9][0-9]*", self.occurrence_id) is None:
-            raise ValueError("SourceOccurrence requires one ordered local ID.")
-        if self.end <= self.start or self.end - self.start != len(self.text):
-            raise ValueError("SourceOccurrence range does not match its text.")
 
 
 @dataclass(frozen=True)
@@ -301,7 +345,7 @@ def run_hybrid_event_trigger_preview(
                     schema,
                     task_input,
                 ),
-                validator_version="hybrid_event_trigger_validator_v3",
+                validator_version="hybrid_event_trigger_validator_v4",
                 task_type="hybrid_event_trigger_detection",
                 task_local_input=task_input,
             ),
@@ -365,13 +409,45 @@ def run_hybrid_event_trigger_preview(
         mapping_rejections: list[EventTriggerLineRejection] = []
         valid_proposals: list[EventTriggerProposal] = []
         if batch is not None:
+            occurrence_ordinals = {
+                item.occurrence_id: ordinal for ordinal, item in enumerate(occurrences)
+            }
             for proposal in batch.proposals:
-                if proposal.occurrence_id not in occurrence_by_id:
+                proposal_ids = (
+                    proposal.expression_start_occurrence_id,
+                    proposal.expression_end_occurrence_id,
+                    proposal.head_occurrence_id,
+                )
+                if any(item not in occurrence_by_id for item in proposal_ids):
                     mapping_rejections.append(
                         EventTriggerLineRejection(
                             proposal.line_number,
                             _proposal_line(proposal),
                             "unknown_occurrence_id",
+                        )
+                    )
+                    continue
+                start_ordinal = occurrence_ordinals[proposal.expression_start_occurrence_id]
+                end_ordinal = occurrence_ordinals[proposal.expression_end_occurrence_id]
+                head_ordinal = occurrence_ordinals[proposal.head_occurrence_id]
+                if start_ordinal > end_ordinal or not start_ordinal <= head_ordinal <= end_ordinal:
+                    mapping_rejections.append(
+                        EventTriggerLineRejection(
+                            proposal.line_number,
+                            _proposal_line(proposal),
+                            "invalid_expression_range",
+                        )
+                    )
+                    continue
+                if (
+                    occurrence_by_id[proposal.head_occurrence_id].text.casefold()
+                    in _NON_EVENT_HEADS
+                ):
+                    mapping_rejections.append(
+                        EventTriggerLineRejection(
+                            proposal.line_number,
+                            _proposal_line(proposal),
+                            "non_event_head",
                         )
                     )
                     continue
@@ -384,7 +460,9 @@ def run_hybrid_event_trigger_preview(
             mapped = [
                 _resolve_trigger(
                     item,
-                    occurrence=occurrence_by_id[item.occurrence_id],
+                    expression_start=occurrence_by_id[item.expression_start_occurrence_id],
+                    expression_end=occurrence_by_id[item.expression_end_occurrence_id],
+                    head=occurrence_by_id[item.head_occurrence_id],
                     segment_id=segment_id,
                     source_text=segment.exact_text,
                     source_copy=source_copy,
@@ -556,11 +634,11 @@ def _build_manifest(
         ContextManifestInput(
             analysis_unit=unit,
             model_profile=profile,
-            prompt_id="hybrid_event_trigger_task_v3",
+            prompt_id="hybrid_event_trigger_task_v4",
             prompt_bytes=prompt_bytes,
             schema_id=schema.schema_id,
             schema_bytes=schema.canonical_schema_bytes,
-            renderer_version="hybrid_event_trigger_context_v3",
+            renderer_version="hybrid_event_trigger_context_v4",
             evidence_selection_policy_id=HYBRID_MENTION_EVIDENCE_SELECTION_V1,
             source_segment_policy_id=PARAGRAPH_SEGMENT_V3,
         ),
@@ -606,16 +684,8 @@ def _execution_spec(
 
 
 def source_occurrences(source_copy: SourceCopyView) -> tuple[SourceOccurrence, ...]:
-    """Build an ordered model-choice catalog over exact Source copy ranges."""
-    return tuple(
-        SourceOccurrence(
-            occurrence_id=f"o{ordinal}",
-            text=match.group(),
-            start=match.start(),
-            end=match.end(),
-        )
-        for ordinal, match in enumerate(_SOURCE_OCCURRENCE.finditer(source_copy.text), start=1)
-    )
+    """Build an ordered model-choice catalog over one exact Source copy."""
+    return _source_occurrences(source_copy.text)
 
 
 def _trigger_task_input(
@@ -628,14 +698,18 @@ def _trigger_task_input(
         "source_occurrence_catalog:",
     ]
     lines.extend(f"{item.occurrence_id} | {item.text}" for item in occurrences)
-    lines.append("Select every explicit event-evoking occurrence from this catalog.")
+    lines.append(
+        "Select every explicit event as one contiguous expression range and one event head."
+    )
     return "\n".join(lines).encode()
 
 
 def _resolve_trigger(
     proposal: EventTriggerProposal,
     *,
-    occurrence: SourceOccurrence,
+    expression_start: SourceOccurrence,
+    expression_end: SourceOccurrence,
+    head: SourceOccurrence,
     segment_id: str,
     source_text: str,
     source_copy: SourceCopyView,
@@ -643,9 +717,11 @@ def _resolve_trigger(
     model_run_id: str,
     trace_id: str,
 ) -> EventTriggerDraft:
-    start, end = source_copy.authoritative_range(occurrence.start, occurrence.end)
+    start, end = source_copy.authoritative_range(expression_start.start, expression_end.end)
+    head_start, head_end = source_copy.authoritative_range(head.start, head.end)
     text = source_text[start:end]
-    if text != occurrence.text:
+    head_text = source_text[head_start:head_end]
+    if head_text != head.text or not start <= head_start < head_end <= end:
         raise ValueError("source_occurrence_mapping_drift")
     digest = hashlib.sha256(source_text.encode()).hexdigest()
     return EventTriggerDraft(
@@ -655,6 +731,9 @@ def _resolve_trigger(
             start=start,
             end=end,
             text=text,
+            head_start=head_start,
+            head_end=head_end,
+            head_text=head_text,
             event_type_label=proposal.event_type_label,
             extraction_task_id=extraction_task_id,
             model_run_id=model_run_id,
@@ -665,6 +744,9 @@ def _resolve_trigger(
         start=start,
         end=end,
         text=text,
+        head_start=head_start,
+        head_end=head_end,
+        head_text=head_text,
         event_type_label=proposal.event_type_label,
         extraction_task_id=extraction_task_id,
         model_run_id=model_run_id,
@@ -681,8 +763,8 @@ def select_non_overlapping_trigger_proposals(
     """Keep the most local source trigger when model proposals overlap."""
     ranged = tuple(
         (
-            occurrences[item.occurrence_id].start,
-            occurrences[item.occurrence_id].end,
+            occurrences[item.expression_start_occurrence_id].start,
+            occurrences[item.expression_end_occurrence_id].end,
             item,
         )
         for item in proposals
@@ -693,7 +775,12 @@ def select_non_overlapping_trigger_proposals(
     selected: list[tuple[int, int, EventTriggerProposal]] = []
     for candidate in sorted(
         ranged,
-        key=lambda item: (item[1] - item[0], item[0], item[1], item[2].occurrence_id),
+        key=lambda item: (
+            item[1] - item[0],
+            item[0],
+            item[1],
+            item[2].head_occurrence_id,
+        ),
     ):
         if any(start <= candidate[0] and candidate[1] <= end for start, end in stative_ranges):
             continue
@@ -743,7 +830,9 @@ def _trigger_reconciliation_trace(
 def _proposal_payload(item: EventTriggerProposal) -> dict[str, JsonValue]:
     return {
         "line_number": item.line_number,
-        "occurrence_id": item.occurrence_id,
+        "expression_start_occurrence_id": item.expression_start_occurrence_id,
+        "expression_end_occurrence_id": item.expression_end_occurrence_id,
+        "head_occurrence_id": item.head_occurrence_id,
         "event_type_label": item.event_type_label,
     }
 
@@ -766,4 +855,7 @@ def _line_rejection_payload(item: EventTriggerLineRejection) -> dict[str, JsonVa
 
 
 def _proposal_line(item: EventTriggerProposal) -> str:
-    return f"event: {item.occurrence_id} | {item.event_type_label}"
+    expression = item.expression_start_occurrence_id
+    if item.expression_end_occurrence_id != item.expression_start_occurrence_id:
+        expression += f"-{item.expression_end_occurrence_id}"
+    return f"event: {expression} | {item.head_occurrence_id} | {item.event_type_label}"

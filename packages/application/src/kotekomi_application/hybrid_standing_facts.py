@@ -45,6 +45,7 @@ from kotekomi_application.context_planning import (
     SourceSegment,
     build_context_manifest,
     create_analysis_unit_from_retrieval_selection,
+    derive_source_copy_view,
     paragraph_source_segments,
     verify_context_manifest,
 )
@@ -71,12 +72,15 @@ from kotekomi_application.hybrid_event_semantics_preview import (
 )
 from kotekomi_application.hybrid_event_trigger_preview import (
     load_hybrid_event_trigger_preview,
+    source_occurrences,
+)
+from kotekomi_application.hybrid_mention_boundary_adjudication import (
+    effective_mention_candidate_ids,
 )
 from kotekomi_application.hybrid_mention_interpretation import (
     ContextualKind,
     DiscourseRole,
     HybridExtractionPreview,
-    MentionBoundaryStatus,
     MentionCandidate,
     MentionInterpretation,
     Referentiality,
@@ -117,6 +121,7 @@ from kotekomi_application.semantic_proposition import (
     build_nli_observation,
     build_proposition_decision,
 )
+from kotekomi_application.source_occurrences import SourceOccurrence
 from kotekomi_application.staged_model_extraction import (
     BoundedExtractionInput,
     ExecutionSetting,
@@ -129,9 +134,9 @@ from kotekomi_application.staged_model_extraction import (
     run_bounded_extraction,
 )
 
-HYBRID_STANDING_FACT_POLICY_ID = "hybrid_standing_fact_v3"
-HYBRID_STANDING_FACT_SCHEMA_ID = "hybrid_standing_fact_text_v1"
-HYBRID_STANDING_FACT_PROMPT_ID = "hybrid_standing_fact_task_v1"
+HYBRID_STANDING_FACT_POLICY_ID = "hybrid_standing_fact_v4"
+HYBRID_STANDING_FACT_SCHEMA_ID = "hybrid_standing_fact_text_v2"
+HYBRID_STANDING_FACT_PROMPT_ID = "hybrid_standing_fact_task_v2"
 HYBRID_STANDING_FACT_QUALIFICATION_SCHEMA_ID = "standing_fact_qualification_text_v1"
 HYBRID_STANDING_FACT_QUALIFICATION_PROMPT_ID = "hybrid_standing_fact_qualification_v1"
 HYBRID_STANDING_FACT_EVIDENCE_VALIDATOR = "hybrid_standing_fact_evidence_v1"
@@ -173,6 +178,8 @@ class StandingFactDraft(BaseModel):
     subject_label: Annotated[str, Field(min_length=1)]
     subject_candidate_id: str | None = None
     relation_label: Annotated[str, Field(min_length=1, max_length=160)]
+    relation_start: Annotated[int, Field(ge=0)]
+    relation_end: Annotated[int, Field(gt=0)]
     object_kind: StandingFactObjectKind
     object_label_or_literal: Annotated[str, Field(min_length=1)]
     object_candidate_id: str | None = None
@@ -181,6 +188,8 @@ class StandingFactDraft(BaseModel):
 
     @model_validator(mode="after")
     def validate_identity(self) -> Self:
+        if self.relation_end - self.relation_start != len(self.relation_label):
+            raise ValueError("StandingFactDraft relation range does not match its text.")
         if self.object_kind is StandingFactObjectKind.LITERAL and self.object_candidate_id:
             raise ValueError("A literal Standing Fact cannot name an object candidate.")
         expected = _id(
@@ -189,6 +198,8 @@ class StandingFactDraft(BaseModel):
             self.subject_label,
             self.subject_candidate_id or "",
             self.relation_label,
+            str(self.relation_start),
+            str(self.relation_end),
             self.object_kind.value,
             self.object_label_or_literal,
             self.object_candidate_id or "",
@@ -197,6 +208,22 @@ class StandingFactDraft(BaseModel):
         )
         if self.id != expected:
             raise ValueError("StandingFactDraft ID does not match its contents.")
+        return self
+
+
+class StandingFactRelationSpan(BaseModel):
+    """One deterministic standing relation reconstructed from source occurrences."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    start: Annotated[int, Field(ge=0)]
+    end: Annotated[int, Field(gt=0)]
+    text: Annotated[str, Field(min_length=1)]
+
+    @model_validator(mode="after")
+    def validate_range(self) -> Self:
+        if self.end <= self.start or self.end - self.start != len(self.text):
+            raise ValueError("StandingFactRelationSpan range does not match its text.")
         return self
 
 
@@ -277,7 +304,7 @@ class StandingFactPlan(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
-    schema_version: Literal["standing_fact_plan_v3"] = "standing_fact_plan_v3"
+    schema_version: Literal["standing_fact_plan_v4"] = "standing_fact_plan_v4"
     id: Annotated[str, Field(pattern=r"^sfp_[a-f0-9]{24}$")]
     parent_plan_id: Annotated[str, Field(pattern=r"^hpp_[a-f0-9]{24}$")]
     parent_plan_sha256: Annotated[str, Field(pattern=_SHA256)]
@@ -289,7 +316,7 @@ class StandingFactPlan(BaseModel):
     paragraph_node_id: Annotated[str, Field(min_length=1)]
     context_manifest_id: str | None = None
     qualification_context_manifest_id: str | None = None
-    policy_id: Literal["hybrid_standing_fact_v3"] = HYBRID_STANDING_FACT_POLICY_ID
+    policy_id: Literal["hybrid_standing_fact_v4"] = HYBRID_STANDING_FACT_POLICY_ID
     provenance_activity_id: Annotated[str, Field(pattern=r"^prv_[a-f0-9]{24}$")]
     drafts: tuple[StandingFactDraft, ...] = ()
     propositions: tuple[CompleteProposition, ...] = ()
@@ -429,6 +456,7 @@ class _SourceContext:
     paragraph_text: str
     segments: tuple[SourceSegment, ...]
     segment_ids: dict[str, str]
+    event_trigger_ranges: dict[str, tuple[tuple[int, int, str], ...]]
 
 
 @dataclass(frozen=True)
@@ -436,12 +464,19 @@ class _TaskObservation:
     segment: SourceSegment
     segment_id: str
     candidates: tuple[_EligibleMention, ...]
+    source_occurrences: tuple[SourceOccurrence, ...]
     extraction_task_id: str
     model_run_id: str
     model_status: ModelRunStatus
     raw_output_sha256: str | None
     abstention_reason: str | None
     batch: StandingFactProposalBatch | None
+
+
+@dataclass(frozen=True)
+class _MappingRejection:
+    proposal: StandingFactProposal
+    reason: str
 
 
 @dataclass(frozen=True)
@@ -517,7 +552,8 @@ def run_hybrid_standing_fact_plan(
         if not candidates:
             continue
         assert manifest is not None
-        task_input = _task_input(segment, candidates)
+        occurrences = source_occurrences(derive_source_copy_view(segment.exact_text))
+        task_input = _task_input(segment, candidates, occurrences)
         outcome = run_bounded_extraction(
             BoundedExtractionInput(
                 source_id=context.source.id,
@@ -532,7 +568,7 @@ def run_hybrid_standing_fact_plan(
                     schema,
                     task_input,
                 ),
-                validator_version="hybrid_standing_fact_output_v1",
+                validator_version="hybrid_standing_fact_output_v2",
                 task_type="hybrid_standing_fact_proposal",
                 input_candidate_ids=tuple(x.candidate.id for x in candidates),
                 task_local_input=task_input,
@@ -549,6 +585,7 @@ def run_hybrid_standing_fact_plan(
                 segment,
                 segment_id,
                 candidates,
+                occurrences,
                 outcome.extraction_task.id,
                 outcome.model_run.id,
                 outcome.model_run.status,
@@ -558,17 +595,24 @@ def run_hybrid_standing_fact_plan(
             )
         )
 
-    drafts = tuple(
-        sorted(
-            (
-                _draft(observation, proposal)
-                for observation in observations
-                if observation.batch is not None
-                for proposal in observation.batch.proposals
-            ),
-            key=lambda item: item.id,
-        )
-    )
+    mapped_drafts: list[StandingFactDraft] = []
+    mapping_diagnostics: list[str] = []
+    mapping_rejections_by_run: dict[str, list[_MappingRejection]] = defaultdict(list)
+    for observation in observations:
+        if observation.batch is None:
+            continue
+        for proposal in observation.batch.proposals:
+            try:
+                mapped_drafts.append(_draft(observation, proposal))
+            except ValueError as error:
+                mapping_rejections_by_run[observation.model_run_id].append(
+                    _MappingRejection(proposal, str(error))
+                )
+                mapping_diagnostics.append(
+                    f"standing_fact_relation_rejected:{observation.segment_id}:"
+                    f"{proposal.relation_selector}:{error}"
+                )
+    drafts = tuple(sorted(mapped_drafts, key=lambda item: item.id))
     decisions: list[StandingFactDecision] = []
     evidence_by_segment: dict[str, tuple[EvidenceTarget, EvidenceValidationAttempt]] = {}
     candidates_by_id = {
@@ -779,10 +823,20 @@ def run_hybrid_standing_fact_plan(
             )
         )
 
-    diagnostics = _diagnostics(observations, decisions)
+    diagnostics = tuple(sorted({*_diagnostics(observations, decisions), *mapping_diagnostics}))
     proposal_traces = tuple(
         sorted(
-            (_trace(item, drafts, tuple(decisions), prompt_bytes, schema) for item in observations),
+            (
+                _trace(
+                    item,
+                    drafts,
+                    tuple(decisions),
+                    tuple(mapping_rejections_by_run[item.model_run_id]),
+                    prompt_bytes,
+                    schema,
+                )
+                for item in observations
+            ),
             key=lambda item: item.id,
         )
     )
@@ -947,6 +1001,11 @@ def _load_context(
     candidate_segment_ids = {x.source_segment_id for x in mentions.candidates}
     if not candidate_segment_ids.issubset(segment_ids.values()):
         raise ValueError("HP-10 MentionCandidate references an unknown SourceSegment.")
+    event_trigger_ranges: dict[str, list[tuple[int, int, str]]] = defaultdict(list)
+    for trigger in hp4.triggers:
+        event_trigger_ranges[trigger.source_segment_id].append(
+            (trigger.start, trigger.end, trigger.id)
+        )
     return _SourceContext(
         parent,
         mentions,
@@ -957,18 +1016,19 @@ def _load_context(
         paragraph_text,
         segments,
         segment_ids,
+        {segment_id: tuple(sorted(values)) for segment_id, values in event_trigger_ranges.items()},
     )
 
 
 def _eligible_candidates(
     context: _SourceContext,
 ) -> dict[str, tuple[_EligibleMention, ...]]:
-    selected = {
-        candidate_id
-        for decision in context.mentions.boundary_decisions
-        if decision.status is not MentionBoundaryStatus.AMBIGUOUS
-        for candidate_id in decision.selected_candidate_ids
-    }
+    selected = set(
+        effective_mention_candidate_ids(
+            context.mentions.boundary_decisions,
+            context.mentions.boundary_adjudications,
+        )
+    )
     interpretation_by_id = {x.candidate_id: x for x in context.mentions.interpretations}
     reference_by_id = {x.candidate_id: x for x in context.references.reference_decisions}
     antecedent_by_id = {
@@ -1072,7 +1132,7 @@ def _build_manifest(
             prompt_bytes=prompt_bytes,
             schema_id=schema.schema_id,
             schema_bytes=schema.canonical_schema_bytes,
-            renderer_version="hybrid_standing_fact_context_v1",
+            renderer_version="hybrid_standing_fact_context_v2",
             evidence_selection_policy_id=HYBRID_MENTION_EVIDENCE_SELECTION_V1,
             source_segment_policy_id=PARAGRAPH_SEGMENT_V3,
         ),
@@ -1120,6 +1180,7 @@ def _execution_spec(
 def _task_input(
     segment: SourceSegment,
     candidates: tuple[_EligibleMention, ...],
+    occurrences: tuple[SourceOccurrence, ...],
 ) -> bytes:
     lines = [
         "task: propose_standing_facts",
@@ -1138,6 +1199,8 @@ def _task_input(
         )
         for item in candidates
     )
+    lines.append("source_occurrence_catalog:")
+    lines.extend(f"{item.occurrence_id} | {item.text}" for item in occurrences)
     return ("\n".join(lines) + "\n").encode()
 
 
@@ -1149,11 +1212,18 @@ def _draft(observation: _TaskObservation, proposal: StandingFactProposal) -> Sta
         if proposal.object_kind is StandingFactObjectKind.ENTITY
         else None
     )
+    relation = resolve_standing_fact_relation(
+        observation.segment.exact_text,
+        observation.source_occurrences,
+        proposal.relation_selector,
+    )
     identity_parts = (
         observation.segment_id,
         proposal.subject_label,
         subject.candidate.id if subject else "",
-        proposal.relation_label,
+        relation.text,
+        str(relation.start),
+        str(relation.end),
         proposal.object_kind.value,
         proposal.object_value,
         object_candidate.candidate.id if object_candidate else "",
@@ -1165,13 +1235,43 @@ def _draft(observation: _TaskObservation, proposal: StandingFactProposal) -> Sta
         source_segment_id=observation.segment_id,
         subject_label=proposal.subject_label,
         subject_candidate_id=subject.candidate.id if subject else None,
-        relation_label=proposal.relation_label,
+        relation_label=relation.text,
+        relation_start=relation.start,
+        relation_end=relation.end,
         object_kind=proposal.object_kind,
         object_label_or_literal=proposal.object_value,
         object_candidate_id=object_candidate.candidate.id if object_candidate else None,
         extraction_task_id=observation.extraction_task_id,
         model_run_id=observation.model_run_id,
     )
+
+
+def resolve_standing_fact_relation(
+    source_text: str,
+    occurrences: tuple[SourceOccurrence, ...],
+    relation_selector: str,
+) -> StandingFactRelationSpan:
+    """Map one supplied occurrence selector back to exact authoritative characters."""
+    source_copy = derive_source_copy_view(source_text)
+    if occurrences != source_occurrences(source_copy):
+        raise ValueError("source_occurrence_catalog_drift")
+    occurrence_by_id = {item.occurrence_id: item for item in occurrences}
+    if len(occurrence_by_id) != len(occurrences):
+        raise ValueError("duplicate_source_occurrence")
+    start_id, separator, end_id = relation_selector.partition("-")
+    end_id = end_id if separator else start_id
+    start_occurrence = occurrence_by_id.get(start_id)
+    end_occurrence = occurrence_by_id.get(end_id)
+    if start_occurrence is None or end_occurrence is None:
+        raise ValueError("unknown_source_occurrence")
+    occurrence_order = {item.occurrence_id: ordinal for ordinal, item in enumerate(occurrences)}
+    if occurrence_order[start_id] > occurrence_order[end_id]:
+        raise ValueError("reversed_source_occurrence_range")
+    start, end = source_copy.authoritative_range(
+        start_occurrence.start,
+        end_occurrence.end,
+    )
+    return StandingFactRelationSpan(start=start, end=end, text=source_text[start:end])
 
 
 def _standing_fact_proposition(
@@ -1262,12 +1362,18 @@ def _hold_reasons(
     context: _SourceContext,
 ) -> tuple[StandingFactHoldReason, ...]:
     segment = _segment_by_id(context, draft.source_segment_id)
-    return standing_fact_source_hold_reasons(draft, segment.exact_text)
+    return standing_fact_source_hold_reasons(
+        draft,
+        segment.exact_text,
+        event_trigger_ranges=context.event_trigger_ranges.get(draft.source_segment_id, ()),
+    )
 
 
 def standing_fact_source_hold_reasons(
     draft: StandingFactDraft,
     source_text: str,
+    *,
+    event_trigger_ranges: tuple[tuple[int, int, str], ...] = (),
 ) -> tuple[StandingFactHoldReason, ...]:
     """Apply only source and identity checks before independent semantic qualification."""
     reasons: set[StandingFactHoldReason] = set()
@@ -1281,6 +1387,11 @@ def standing_fact_source_hold_reasons(
     else:
         if draft.object_label_or_literal not in source_text:
             reasons.add(StandingFactHoldReason.LITERAL_NOT_IN_SOURCE)
+    if any(
+        draft.relation_start < trigger_end and trigger_start < draft.relation_end
+        for trigger_start, trigger_end, _ in event_trigger_ranges
+    ):
+        reasons.add(StandingFactHoldReason.EVENT_ROUTE_REQUIRED)
     return tuple(sorted(reasons, key=lambda item: item.value))
 
 
@@ -1493,6 +1604,7 @@ def _trace(
     observation: _TaskObservation,
     drafts: tuple[StandingFactDraft, ...],
     decisions: tuple[StandingFactDecision, ...],
+    mapping_rejections: tuple[_MappingRejection, ...],
     prompt_bytes: bytes,
     schema: PinnedTaskSchema,
 ) -> ExtractionStageTrace:
@@ -1520,7 +1632,11 @@ def _trace(
             "schema_sha256": schema.digest,
         },
         input_payload={
-            "rendered_task": _task_input(observation.segment, observation.candidates).decode(),
+            "rendered_task": _task_input(
+                observation.segment,
+                observation.candidates,
+                observation.source_occurrences,
+            ).decode(),
             "source_segment_text": observation.segment.exact_text,
             "candidate_catalog": [
                 {
@@ -1542,7 +1658,7 @@ def _trace(
             "parsed_proposals": [
                 {
                     "subject_label": x.subject_label,
-                    "relation_label": x.relation_label,
+                    "relation_selector": x.relation_selector,
                     "object_kind": x.object_kind.value,
                     "object_value": x.object_value,
                 }
@@ -1555,6 +1671,18 @@ def _trace(
                     "reason": x.reason,
                 }
                 for x in (batch.rejections if batch else ())
+            ],
+            "mapping_rejections": [
+                {
+                    "proposal": {
+                        "subject_label": item.proposal.subject_label,
+                        "relation_selector": item.proposal.relation_selector,
+                        "object_kind": item.proposal.object_kind.value,
+                        "object_value": item.proposal.object_value,
+                    },
+                    "reason": item.reason,
+                }
+                for item in mapping_rejections
             ],
             "mapped_drafts": [x.model_dump(mode="json") for x in selected_drafts],
             "decisions": [x.model_dump(mode="json") for x in selected_decisions],
@@ -1686,7 +1814,7 @@ def _build_plan(
     payload = cast(
         dict[str, JsonValue],
         {
-            "schema_version": "standing_fact_plan_v3",
+            "schema_version": "standing_fact_plan_v4",
             "parent_plan_id": context.parent_plan.id,
             "parent_plan_sha256": hashlib.sha256(
                 canonical_hybrid_proposal_plan_bytes(context.parent_plan)

@@ -6,15 +6,18 @@ import re
 from dataclasses import dataclass
 
 _LOCAL_OCCURRENCE = re.compile(r"^o[1-9][0-9]*$")
+_LOCAL_OCCURRENCE_RANGE = re.compile(r"^(o[1-9][0-9]*)(?:-(o[1-9][0-9]*))?$")
 _OPEN_LABEL = re.compile(r"^[a-z][a-z0-9]*(?:_[a-z0-9]+){0,3}$")
 
 
 @dataclass(frozen=True)
 class EventTriggerProposal:
-    """One model selection from a KoteKomi-owned source-occurrence catalog."""
+    """One source-bound event expression selected from KoteKomi-owned occurrences."""
 
     line_number: int
-    occurrence_id: str
+    expression_start_occurrence_id: str
+    expression_end_occurrence_id: str
+    head_occurrence_id: str
     event_type_label: str
 
 
@@ -57,24 +60,20 @@ def parse_event_trigger_output(
 
     proposals: list[EventTriggerProposal] = []
     rejections: list[EventTriggerLineRejection] = []
-    selected_occurrences: set[str] = set()
     for line_number, line in enumerate(lines, start=1):
         try:
             proposal = _parse_event_line(line_number, line)
-            if proposal.occurrence_id in selected_occurrences:
-                raise ValueError("duplicate_occurrence")
         except ValueError as error:
             rejections.append(EventTriggerLineRejection(line_number, line, str(error)))
             continue
-        selected_occurrences.add(proposal.occurrence_id)
         proposals.append(proposal)
     return EventTriggerProposalBatch(tuple(proposals), tuple(rejections))
 
 
 def event_trigger_schema_bytes() -> bytes:
     return (
-        b"event: <supplied_oN> | <open_event_label>\n"
-        b"... one line per selected source occurrence\n\n"
+        b"event: <supplied_oN[-oN]> | <supplied_head_oN> | <open_event_label>\n"
+        b"... one line per selected source-bound event expression\n\n"
         b"or\n\n"
         b"abstain: <non-empty reason>\n"
     )
@@ -86,11 +85,22 @@ def _parse_event_line(line_number: int, line: str) -> EventTriggerProposal:
     if not line.startswith("event: "):
         raise ValueError("unknown_line")
     parts = line.removeprefix("event: ").split(" | ")
-    if len(parts) != 2 or any(not part for part in parts):
+    if len(parts) != 3 or any(not part for part in parts):
         raise ValueError("invalid_event_shape")
-    occurrence_id, event_type_label = parts
-    if _LOCAL_OCCURRENCE.fullmatch(occurrence_id) is None:
-        raise ValueError("invalid_occurrence_id")
+    expression_selector, head_occurrence_id, event_type_label = parts
+    selector_match = _LOCAL_OCCURRENCE_RANGE.fullmatch(expression_selector)
+    if selector_match is None:
+        raise ValueError("invalid_expression_selector")
+    expression_start_occurrence_id = selector_match.group(1)
+    expression_end_occurrence_id = selector_match.group(2) or expression_start_occurrence_id
+    if _LOCAL_OCCURRENCE.fullmatch(head_occurrence_id) is None:
+        raise ValueError("invalid_head_occurrence_id")
     if _OPEN_LABEL.fullmatch(event_type_label) is None:
         raise ValueError("invalid_event_label")
-    return EventTriggerProposal(line_number, occurrence_id, event_type_label)
+    return EventTriggerProposal(
+        line_number,
+        expression_start_occurrence_id,
+        expression_end_occurrence_id,
+        head_occurrence_id,
+        event_type_label,
+    )

@@ -26,10 +26,13 @@ from kotekomi_application.hybrid_document_references import (
     ReferenceKind,
     ReferenceStatus,
 )
+from kotekomi_application.hybrid_mention_boundary_adjudication import (
+    effective_mention_candidate_ids,
+    unresolved_mention_candidate_ids,
+)
 from kotekomi_application.hybrid_mention_interpretation import (
     HybridExtractionPreview,
     HybridPreviewStatus,
-    MentionBoundaryStatus,
     MentionCandidate,
     Referentiality,
 )
@@ -376,12 +379,18 @@ def evaluate_entity_grounding_eligibility(
     """Produce one deterministic eligibility result for every HP-1 candidate."""
     if references.parent_preview_id != parent.id:
         raise ValueError("HP-3 reference Preview does not name the HP-1 parent.")
-    selected: set[str] = set()
-    ambiguous: set[str] = set()
-    for decision in parent.boundary_decisions:
-        selected.update(decision.selected_candidate_ids)
-        if decision.status is MentionBoundaryStatus.AMBIGUOUS:
-            ambiguous.update(decision.candidate_ids)
+    selected = set(
+        effective_mention_candidate_ids(
+            parent.boundary_decisions,
+            parent.boundary_adjudications,
+        )
+    )
+    ambiguous = set(
+        unresolved_mention_candidate_ids(
+            parent.boundary_decisions,
+            parent.boundary_adjudications,
+        )
+    )
     interpretations = {item.candidate_id: item for item in parent.interpretations}
     reference_by_candidate = {item.candidate_id: item for item in references.reference_decisions}
     results: list[EntityGroundingEligibility] = []

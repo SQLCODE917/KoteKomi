@@ -159,12 +159,17 @@ def test_user_ingest_accepts_project_pdf_and_text_files(
     assert "paragraph_hypothesis_segment_v3" not in {task.prompt_id for task in extraction_tasks}
     assert {task.prompt_id for task in extraction_tasks} >= {
         "hybrid_gliner_labels_v1",
-        "hybrid_mention_task_v1",
+        "hybrid_mention_occurrence_selection_v2",
     }
     assert context_manifests
-    assert "paragraph_hypothesis_segment_v3" not in {
+    context_prompt_ids = {
         str(cast(dict[str, object], manifest.payload["integrity"])["prompt_id"])
         for manifest in context_manifests
+    }
+    assert "paragraph_hypothesis_segment_v3" not in context_prompt_ids
+    assert context_prompt_ids >= {
+        "hybrid_mention_occurrence_selection_v2",
+        "hybrid_mention_interpretation_task_v2",
     }
     assert (
         main(
@@ -437,7 +442,7 @@ def test_user_ingest_continues_after_one_proposer_fails_and_closes_with_gaps(
     assert len(receipts) == 15
     assert all(receipt.stages[0].terminal_status == "partial" for receipt in receipts)
     assert all(
-        "qwen_proposer_failed:invalid_output" in receipt.stages[0].diagnostics
+        "qwen_proposer_failed:output_contract" in receipt.stages[0].diagnostics
         for receipt in receipts
     )
     with sqlite_ledger_transaction(tmp_path / "state" / "kotekomi.db") as repository:

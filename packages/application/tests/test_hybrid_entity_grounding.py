@@ -483,12 +483,13 @@ def _boundary(
     candidate: MentionCandidate,
     status: MentionBoundaryStatus = MentionBoundaryStatus.UNCONTESTED,
 ) -> MentionBoundaryDecision:
+    selected_candidate_ids = () if status is MentionBoundaryStatus.AMBIGUOUS else (candidate.id,)
     return MentionBoundaryDecision.model_construct(
         id=f"mbd_{candidate.id[-24:]}",
         source_segment_id=candidate.source_segment_id,
         status=status,
         candidate_ids=(candidate.id,),
-        selected_candidate_ids=(candidate.id,),
+        selected_candidate_ids=selected_candidate_ids,
     )
 
 

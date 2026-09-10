@@ -16,7 +16,7 @@ from kotekomi_application.extraction_stage_trace import (
     validate_extraction_stage_trace_chain,
 )
 
-HYBRID_EVENT_TRIGGER_POLICY_ID = "hybrid_event_trigger_v3"
+HYBRID_EVENT_TRIGGER_POLICY_ID = "hybrid_event_trigger_v4"
 _SHA256 = r"^[a-f0-9]{64}$"
 _OPEN_LABEL = r"^[a-z][a-z0-9]*(?:_[a-z0-9]+){0,3}$"
 
@@ -40,6 +40,9 @@ class EventTriggerDraft(BaseModel):
     start: Annotated[int, Field(ge=0)]
     end: Annotated[int, Field(gt=0)]
     text: Annotated[str, Field(min_length=1)]
+    head_start: Annotated[int, Field(ge=0)]
+    head_end: Annotated[int, Field(gt=0)]
+    head_text: Annotated[str, Field(min_length=1)]
     event_type_label: Annotated[str, Field(pattern=_OPEN_LABEL)]
     extraction_task_id: Annotated[str, Field(min_length=1)]
     model_run_id: Annotated[str, Field(min_length=1)]
@@ -49,12 +52,24 @@ class EventTriggerDraft(BaseModel):
     def validate_contract(self) -> Self:
         if self.end <= self.start or self.end - self.start != len(self.text):
             raise ValueError("EventTriggerDraft range does not match its text.")
+        if not (
+            self.start <= self.head_start < self.head_end <= self.end
+            and self.head_end - self.head_start == len(self.head_text)
+        ):
+            raise ValueError("EventTriggerDraft head range does not match its expression.")
+        relative_head_start = self.head_start - self.start
+        relative_head_end = self.head_end - self.start
+        if self.text[relative_head_start:relative_head_end] != self.head_text:
+            raise ValueError("EventTriggerDraft head text does not match its expression text.")
         expected = event_trigger_id(
             source_segment_id=self.source_segment_id,
             source_text_sha256=self.source_text_sha256,
             start=self.start,
             end=self.end,
             text=self.text,
+            head_start=self.head_start,
+            head_end=self.head_end,
+            head_text=self.head_text,
             event_type_label=self.event_type_label,
             extraction_task_id=self.extraction_task_id,
             model_run_id=self.model_run_id,
@@ -70,7 +85,7 @@ class HybridEventTriggerPreview(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
-    schema_version: Literal["hybrid_event_trigger_preview_v2"] = "hybrid_event_trigger_preview_v2"
+    schema_version: Literal["hybrid_event_trigger_preview_v3"] = "hybrid_event_trigger_preview_v3"
     id: Annotated[str, Field(pattern=r"^htp_[a-f0-9]{24}$")]
     parent_preview_id: Annotated[str, Field(pattern=r"^hgp_[a-f0-9]{24}$")]
     parent_preview_sha256: Annotated[str, Field(pattern=_SHA256)]
@@ -81,7 +96,7 @@ class HybridEventTriggerPreview(BaseModel):
     representation_id: Annotated[str, Field(min_length=1)]
     paragraph_node_id: Annotated[str, Field(min_length=1)]
     context_manifest_ids: tuple[Annotated[str, Field(min_length=1)], ...]
-    policy_id: Literal["hybrid_event_trigger_v3"] = HYBRID_EVENT_TRIGGER_POLICY_ID
+    policy_id: Literal["hybrid_event_trigger_v4"] = HYBRID_EVENT_TRIGGER_POLICY_ID
     triggers: tuple[EventTriggerDraft, ...] = ()
     extraction_task_ids: tuple[Annotated[str, Field(min_length=1)], ...] = ()
     model_run_ids: tuple[Annotated[str, Field(min_length=1)], ...] = ()
@@ -135,6 +150,9 @@ def event_trigger_id(
     start: int,
     end: int,
     text: str,
+    head_start: int,
+    head_end: int,
+    head_text: str,
     event_type_label: str,
     extraction_task_id: str,
     model_run_id: str,
@@ -147,6 +165,9 @@ def event_trigger_id(
         str(start),
         str(end),
         text,
+        str(head_start),
+        str(head_end),
+        head_text,
         event_type_label,
         extraction_task_id,
         model_run_id,
@@ -157,7 +178,7 @@ def event_trigger_id(
 def build_hybrid_event_trigger_preview(**values: object) -> HybridEventTriggerPreview:
     payload = dict(values)
     payload.pop("id", None)
-    payload.setdefault("schema_version", "hybrid_event_trigger_preview_v2")
+    payload.setdefault("schema_version", "hybrid_event_trigger_preview_v3")
     payload.setdefault("policy_id", HYBRID_EVENT_TRIGGER_POLICY_ID)
     for name in (
         "context_manifest_ids",

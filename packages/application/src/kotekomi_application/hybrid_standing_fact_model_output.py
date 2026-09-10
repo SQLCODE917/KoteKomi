@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 
 _LOCAL_CANDIDATE = re.compile(r"^c[1-9][0-9]*$")
+_LOCAL_OCCURRENCE_RANGE = re.compile(r"^o[1-9][0-9]*(?:-o[1-9][0-9]*)?$")
 
 
 class StandingFactObjectKind(StrEnum):
@@ -17,7 +18,7 @@ class StandingFactObjectKind(StrEnum):
 @dataclass(frozen=True)
 class StandingFactProposal:
     subject_label: str
-    relation_label: str
+    relation_selector: str
     object_kind: StandingFactObjectKind
     object_value: str
 
@@ -77,8 +78,8 @@ def parse_standing_fact_output(
 
 def standing_fact_schema_bytes() -> bytes:
     return (
-        b"fact: cN | <ordinary-language relation label> | entity | cN\n"
-        b"fact: cN | <ordinary-language relation label> | literal | <exact source literal>\n"
+        b"fact: cN | <supplied oN[-oN] relation selector> | entity | cN\n"
+        b"fact: cN | <supplied oN[-oN] relation selector> | literal | <exact source literal>\n"
         b"... one line per distinct standing fact\n\n"
         b"or\n\n"
         b"abstain: <non-empty reason>\n"
@@ -91,15 +92,15 @@ def _parse_fact_line(line: str) -> StandingFactProposal:
     parts = line.removeprefix("fact: ").split(" | ")
     if len(parts) != 4 or any(not part for part in parts):
         raise ValueError("fact lines require subject, relation, object kind, and object")
-    subject, relation, kind_text, object_value = parts
+    subject, relation_selector, kind_text, object_value = parts
     if not _LOCAL_CANDIDATE.fullmatch(subject):
         raise ValueError("subject must use one local candidate label")
-    if "|" in relation or len(relation) > 160:
-        raise ValueError("relation label is invalid")
+    if _LOCAL_OCCURRENCE_RANGE.fullmatch(relation_selector) is None:
+        raise ValueError("relation must use one supplied source-occurrence range")
     try:
         kind = StandingFactObjectKind(kind_text)
     except ValueError as error:
         raise ValueError("object kind must be entity or literal") from error
     if kind is StandingFactObjectKind.ENTITY and not _LOCAL_CANDIDATE.fullmatch(object_value):
         raise ValueError("entity object must use one local candidate label")
-    return StandingFactProposal(subject, relation, kind, object_value)
+    return StandingFactProposal(subject, relation_selector, kind, object_value)

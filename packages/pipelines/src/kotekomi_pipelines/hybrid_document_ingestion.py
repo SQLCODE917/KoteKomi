@@ -108,6 +108,9 @@ from kotekomi_application.hybrid_event_trigger_preview import (
     run_hybrid_event_trigger_preview,
 )
 from kotekomi_application.hybrid_event_triggers import HYBRID_EVENT_TRIGGER_POLICY_ID
+from kotekomi_application.hybrid_mention_boundary_adjudication import (
+    HYBRID_MENTION_BOUNDARY_ADJUDICATION_POLICY_ID,
+)
 from kotekomi_application.hybrid_mention_interpretation import (
     HYBRID_MENTION_PREVIEW_POLICY_ID,
     PROPOSER_CONTEXTUAL_KINDS,
@@ -161,7 +164,9 @@ from kotekomi_application.semantic_references import (
 )
 from kotekomi_application.staged_model_extraction import (
     ExecutionSetting,
-    HybridMentionTaskSchemaRegistry,
+    HybridMentionBoundaryAdjudicationTaskSchemaRegistry,
+    HybridMentionInterpretationTaskSchemaRegistry,
+    HybridMentionProposalTaskSchemaRegistry,
     ModelRunIdFactory,
     ModelTaskRuntime,
 )
@@ -176,15 +181,18 @@ from kotekomi_pipelines.config import PipelineConfig
 from kotekomi_pipelines.model_runtime import build_model_task_runtime
 
 _PROMPT_NAMES = (
-    "hybrid_mention_task_v1.md",
+    "hybrid_mention_occurrence_selection_v2.md",
+    "hybrid_mention_boundary_adjudication_v1.md",
+    "hybrid_mention_interpretation_task_v2.md",
     "hybrid_mention_ontology_card_v1.md",
     "semantic_reference_challenge_v1.md",
-    "hybrid_event_trigger_task_v3.md",
+    "hybrid_event_trigger_task_v4.md",
     "hybrid_event_frame_selection_v1.md",
+    "hybrid_event_frame_fit_v1.md",
     "hybrid_event_role_selection_v1.md",
     "hybrid_event_presentation_v1.md",
     "hybrid_semantic_support_v1.md",
-    "hybrid_standing_fact_task_v1.md",
+    "hybrid_standing_fact_task_v2.md",
     "hybrid_standing_fact_qualification_v1.md",
 )
 
@@ -534,7 +542,11 @@ def _run_paragraph(
             model_runtime=resources.runtime,
             model_run_id_factory=model_run_id_factory,
             tokenizer=resources.runtime,
-            prompt_bytes=prompts["hybrid_mention_task_v1.md"],
+            proposal_prompt_bytes=prompts["hybrid_mention_occurrence_selection_v2.md"],
+            boundary_adjudication_prompt_bytes=prompts[
+                "hybrid_mention_boundary_adjudication_v1.md"
+            ],
+            interpretation_prompt_bytes=prompts["hybrid_mention_interpretation_task_v2.md"],
             ontology_card_bytes=prompts["hybrid_mention_ontology_card_v1.md"],
         )
     stages.append(_stage(HybridStageId.HP1_MENTIONS, hp1))
@@ -579,7 +591,7 @@ def _run_paragraph(
             model_runtime=resources.runtime,
             model_run_id_factory=model_run_id_factory,
             tokenizer=resources.runtime,
-            trigger_prompt_bytes=prompts["hybrid_event_trigger_task_v3.md"],
+            trigger_prompt_bytes=prompts["hybrid_event_trigger_task_v4.md"],
         )
     stages.append(_stage(HybridStageId.HP4_EVENT_TRIGGERS, hp4))
 
@@ -592,6 +604,7 @@ def _run_paragraph(
             model_run_id_factory=model_run_id_factory,
             tokenizer=resources.runtime,
             frame_selection_prompt_bytes=prompts["hybrid_event_frame_selection_v1.md"],
+            frame_fit_prompt_bytes=prompts["hybrid_event_frame_fit_v1.md"],
             role_selection_prompt_bytes=prompts["hybrid_event_role_selection_v1.md"],
             presentation_prompt_bytes=prompts["hybrid_event_presentation_v1.md"],
             support_prompt_bytes=prompts["hybrid_semantic_support_v1.md"],
@@ -630,7 +643,7 @@ def _run_paragraph(
             model_runtime=resources.runtime,
             model_run_id_factory=model_run_id_factory,
             tokenizer=resources.runtime,
-            prompt_bytes=prompts["hybrid_standing_fact_task_v1.md"],
+            prompt_bytes=prompts["hybrid_standing_fact_task_v2.md"],
             qualification_prompt_bytes=prompts["hybrid_standing_fact_qualification_v1.md"],
             nli_runtime=resources.nli,
         )
@@ -704,9 +717,23 @@ def _policy_input(
         HybridPolicyPin(kind="prompt", identity=name.removesuffix(".md"), sha256=_sha(payload))
         for name, payload in prompts.items()
     ]
-    mention_schema = HybridMentionTaskSchemaRegistry().resolve("hybrid_mention_task_text_v1")
+    mention_proposal_schema = HybridMentionProposalTaskSchemaRegistry().resolve(
+        "hybrid_mention_occurrence_selection_text_v1"
+    )
+    boundary_adjudication_schema = HybridMentionBoundaryAdjudicationTaskSchemaRegistry().resolve(
+        "hybrid_mention_boundary_adjudication_text_v1"
+    )
+    mention_interpretation_schema = HybridMentionInterpretationTaskSchemaRegistry().resolve(
+        "hybrid_mention_interpretation_text_v2"
+    )
     schema_bytes = {
-        mention_schema.schema_id: mention_schema.canonical_schema_bytes,
+        mention_proposal_schema.schema_id: mention_proposal_schema.canonical_schema_bytes,
+        boundary_adjudication_schema.schema_id: (
+            boundary_adjudication_schema.canonical_schema_bytes
+        ),
+        mention_interpretation_schema.schema_id: (
+            mention_interpretation_schema.canonical_schema_bytes
+        ),
         SEMANTIC_REFERENCE_CHALLENGE_SCHEMA_ID: semantic_reference_challenge_schema_bytes(),
         TRIGGER_SCHEMA_ID: event_trigger_schema_bytes(),
         HYBRID_EVENT_FRAME_SELECTION_SCHEMA_ID: event_frame_selection_schema_bytes(),
@@ -745,6 +772,7 @@ def _policy_input(
         )
     )
     for policy_id in (
+        HYBRID_MENTION_BOUNDARY_ADJUDICATION_POLICY_ID,
         HYBRID_MENTION_PREVIEW_POLICY_ID,
         HYBRID_REFERENCE_POLICY_ID,
         HYBRID_ENTITY_GROUNDING_POLICY_ID,

@@ -25,9 +25,11 @@ from kotekomi_application.semantic_proposition import (
     PropositionDecision,
 )
 
-HYBRID_EVENT_SEMANTICS_POLICY_ID = "hybrid_event_semantics_v5"
+HYBRID_EVENT_SEMANTICS_POLICY_ID = "hybrid_event_semantics_v6"
 HYBRID_EVENT_FRAME_SELECTION_PROMPT_ID = "hybrid_event_frame_selection_v1"
 HYBRID_EVENT_FRAME_SELECTION_SCHEMA_ID = "hybrid_event_frame_selection_text_v1"
+HYBRID_EVENT_FRAME_FIT_PROMPT_ID = "hybrid_event_frame_fit_v1"
+HYBRID_EVENT_FRAME_FIT_SCHEMA_ID = "hybrid_event_frame_fit_text_v1"
 HYBRID_EVENT_ROLE_SELECTION_PROMPT_ID = "hybrid_event_role_selection_v1"
 HYBRID_EVENT_ROLE_SELECTION_SCHEMA_ID = "hybrid_event_role_selection_text_v1"
 HYBRID_EVENT_PRESENTATION_PROMPT_ID = "hybrid_event_presentation_v1"
@@ -372,8 +374,8 @@ class HybridEventSemanticsPreview(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
-    schema_version: Literal["hybrid_event_semantics_preview_v3"] = (
-        "hybrid_event_semantics_preview_v3"
+    schema_version: Literal["hybrid_event_semantics_preview_v4"] = (
+        "hybrid_event_semantics_preview_v4"
     )
     id: Annotated[str, Field(pattern=r"^hsp_[a-f0-9]{24}$")]
     parent_preview_id: Annotated[str, Field(pattern=r"^htp_[a-f0-9]{24}$")]
@@ -384,6 +386,8 @@ class HybridEventSemanticsPreview(BaseModel):
     ontology_profile_sha256: Annotated[str, Field(pattern=_SHA256)]
     frame_selection_prompt_sha256: Annotated[str, Field(pattern=_SHA256)]
     frame_selection_schema_sha256: Annotated[str, Field(pattern=_SHA256)]
+    frame_fit_prompt_sha256: Annotated[str, Field(pattern=_SHA256)]
+    frame_fit_schema_sha256: Annotated[str, Field(pattern=_SHA256)]
     role_selection_prompt_sha256: Annotated[str, Field(pattern=_SHA256)]
     role_selection_schema_sha256: Annotated[str, Field(pattern=_SHA256)]
     presentation_prompt_sha256: Annotated[str, Field(pattern=_SHA256)]
@@ -1029,7 +1033,7 @@ def resolve_unique_source_literal(source_text: str, proposed_literal: str) -> tu
 def build_hybrid_event_semantics_preview(**values: object) -> HybridEventSemanticsPreview:
     payload = dict(values)
     payload.pop("id", None)
-    payload.setdefault("schema_version", "hybrid_event_semantics_preview_v3")
+    payload.setdefault("schema_version", "hybrid_event_semantics_preview_v4")
     for name in (
         "semantic_events",
         "targets",

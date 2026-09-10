@@ -2515,8 +2515,18 @@ def preview_hybrid_mentions(
     archive = LocalArchiveStore(config.archive_path)
     archive.initialize()
     runtime = build_model_task_runtime(config.model_execution)
-    prompt_bytes = (
-        Path(__file__).resolve().parents[4] / "prompts" / "hybrid_mention_task_v1.md"
+    proposal_prompt_bytes = (
+        Path(__file__).resolve().parents[4]
+        / "prompts"
+        / "hybrid_mention_occurrence_selection_v2.md"
+    ).read_bytes()
+    boundary_adjudication_prompt_bytes = (
+        Path(__file__).resolve().parents[4]
+        / "prompts"
+        / "hybrid_mention_boundary_adjudication_v1.md"
+    ).read_bytes()
+    interpretation_prompt_bytes = (
+        Path(__file__).resolve().parents[4] / "prompts" / "hybrid_mention_interpretation_task_v2.md"
     ).read_bytes()
     ontology_card_bytes = (
         Path(__file__).resolve().parents[4] / "prompts" / "hybrid_mention_ontology_card_v1.md"
@@ -2549,7 +2559,9 @@ def preview_hybrid_mentions(
             model_runtime=runtime,
             model_run_id_factory=Uuid4ModelRunIdFactory(),
             tokenizer=runtime,
-            prompt_bytes=prompt_bytes,
+            proposal_prompt_bytes=proposal_prompt_bytes,
+            boundary_adjudication_prompt_bytes=boundary_adjudication_prompt_bytes,
+            interpretation_prompt_bytes=interpretation_prompt_bytes,
             ontology_card_bytes=ontology_card_bytes,
         )
     print(
@@ -2670,7 +2682,7 @@ def discover_hybrid_event_triggers(*, config: PipelineConfig, parent_preview_id:
     archive.initialize()
     runtime = build_model_task_runtime(config.model_execution)
     prompt_root = Path(__file__).resolve().parents[4] / "prompts"
-    trigger_prompt = (prompt_root / "hybrid_event_trigger_task_v3.md").read_bytes()
+    trigger_prompt = (prompt_root / "hybrid_event_trigger_task_v4.md").read_bytes()
     with sqlite_ledger_transaction(config.ledger_path) as repository:
         result = run_hybrid_event_trigger_preview(
             command=HybridEventTriggerCommand(
@@ -2724,6 +2736,7 @@ def build_hybrid_event_semantics(
     runtime = build_model_task_runtime(config.model_execution)
     prompt_root = Path(__file__).resolve().parents[4] / "prompts"
     frame_selection_prompt = (prompt_root / "hybrid_event_frame_selection_v1.md").read_bytes()
+    frame_fit_prompt = (prompt_root / "hybrid_event_frame_fit_v1.md").read_bytes()
     role_selection_prompt = (prompt_root / "hybrid_event_role_selection_v1.md").read_bytes()
     presentation_prompt = (prompt_root / "hybrid_event_presentation_v1.md").read_bytes()
     support_prompt = (prompt_root / "hybrid_semantic_support_v1.md").read_bytes()
@@ -2749,6 +2762,7 @@ def build_hybrid_event_semantics(
             model_run_id_factory=Uuid4ModelRunIdFactory(),
             tokenizer=runtime,
             frame_selection_prompt_bytes=frame_selection_prompt,
+            frame_fit_prompt_bytes=frame_fit_prompt,
             role_selection_prompt_bytes=role_selection_prompt,
             presentation_prompt_bytes=presentation_prompt,
             support_prompt_bytes=support_prompt,

@@ -56,10 +56,13 @@ from kotekomi_application.hybrid_document_references import (
     HybridReferencePreview,
     ReferenceDecision,
     ReferenceSpan,
+    ReferenceStatus,
     canonical_hybrid_reference_preview_bytes,
     hybrid_reference_preview_from_bytes,
 )
 from kotekomi_application.hybrid_event_semantics import (
+    HYBRID_EVENT_FRAME_FIT_PROMPT_ID,
+    HYBRID_EVENT_FRAME_FIT_SCHEMA_ID,
     HYBRID_EVENT_FRAME_SELECTION_PROMPT_ID,
     HYBRID_EVENT_FRAME_SELECTION_SCHEMA_ID,
     HYBRID_EVENT_PRESENTATION_PROMPT_ID,
@@ -98,6 +101,7 @@ from kotekomi_application.hybrid_event_semantics import (
     resolve_unique_source_literal,
 )
 from kotekomi_application.hybrid_event_semantics_model_output import (
+    EventFrameFitDecision,
     EventFrameSelection,
     EventPresentationSelection,
     EventSemanticArgumentProposal,
@@ -106,9 +110,11 @@ from kotekomi_application.hybrid_event_semantics_model_output import (
     EventSemanticQualifierProposal,
     EventSemanticRoleTargetProposal,
     SemanticSupportModelJudgment,
+    event_frame_fit_schema_bytes,
     event_frame_selection_schema_bytes,
     event_presentation_schema_bytes,
     event_semantic_role_target_schema_bytes,
+    parse_event_frame_fit_output,
     parse_event_frame_selection_output,
     parse_event_presentation_output,
     parse_event_semantic_role_target_output,
@@ -118,7 +124,6 @@ from kotekomi_application.hybrid_event_semantics_model_output import (
 from kotekomi_application.hybrid_event_trigger_preview import (
     HybridEventTriggerArchive,
     HybridEventTriggerLedger,
-    SourceOccurrence,
     load_hybrid_event_trigger_preview,
     source_occurrences,
 )
@@ -128,11 +133,15 @@ from kotekomi_application.hybrid_event_triggers import (
     HybridEventTriggerStatus,
     canonical_hybrid_event_trigger_preview_bytes,
 )
+from kotekomi_application.hybrid_mention_boundary_adjudication import (
+    effective_mention_candidate_ids,
+)
 from kotekomi_application.hybrid_mention_interpretation import (
     ContextualKind,
     HybridExtractionPreview,
-    MentionBoundaryStatus,
     MentionCandidate,
+    MentionInterpretation,
+    Referentiality,
     hybrid_extraction_preview_from_bytes,
     hybrid_source_segment_id,
 )
@@ -148,6 +157,7 @@ from kotekomi_application.semantic_proposition import (
     build_nli_observation,
     build_proposition_decision,
 )
+from kotekomi_application.source_occurrences import SourceOccurrence
 from kotekomi_application.staged_model_extraction import (
     BoundedExtractionInput,
     ExecutionSetting,
@@ -250,6 +260,13 @@ class _SemanticSchemaRegistry:
                 schema_id,
                 parse_event_frame_selection_output,
             )
+        if schema_id == HYBRID_EVENT_FRAME_FIT_SCHEMA_ID:
+            return PinnedTaskSchema(
+                schema_id,
+                event_frame_fit_schema_bytes(),
+                schema_id,
+                parse_event_frame_fit_output,
+            )
         if schema_id == HYBRID_EVENT_ROLE_SELECTION_SCHEMA_ID:
             return PinnedTaskSchema(
                 schema_id,
@@ -283,6 +300,7 @@ def run_hybrid_event_semantics_preview(
     model_run_id_factory: ModelRunIdFactory,
     tokenizer: ContextTokenizer,
     frame_selection_prompt_bytes: bytes,
+    frame_fit_prompt_bytes: bytes,
     role_selection_prompt_bytes: bytes,
     presentation_prompt_bytes: bytes,
     support_prompt_bytes: bytes,
@@ -292,6 +310,7 @@ def run_hybrid_event_semantics_preview(
     context = _load_context(command.parent_preview_id, ledger, archive)
     registry: TaskSchemaRegistry = _SemanticSchemaRegistry()
     frame_selection_schema = registry.resolve(HYBRID_EVENT_FRAME_SELECTION_SCHEMA_ID)
+    frame_fit_schema = registry.resolve(HYBRID_EVENT_FRAME_FIT_SCHEMA_ID)
     role_selection_schema = registry.resolve(HYBRID_EVENT_ROLE_SELECTION_SCHEMA_ID)
     presentation_schema = registry.resolve(HYBRID_EVENT_PRESENTATION_SCHEMA_ID)
     support_schema = registry.resolve(HYBRID_SEMANTIC_SUPPORT_SCHEMA_ID)
@@ -303,6 +322,8 @@ def run_hybrid_event_semantics_preview(
         parent_sha256,
         frame_selection_prompt_bytes,
         frame_selection_schema,
+        frame_fit_prompt_bytes,
+        frame_fit_schema,
         role_selection_prompt_bytes,
         role_selection_schema,
         presentation_prompt_bytes,
@@ -336,7 +357,13 @@ def run_hybrid_event_semantics_preview(
     diagnostics: list[str] = []
     manifest_cache: dict[
         str,
-        tuple[ContextManifest, ContextManifest, ContextManifest, ContextManifest],
+        tuple[
+            ContextManifest,
+            ContextManifest,
+            ContextManifest,
+            ContextManifest,
+            ContextManifest,
+        ],
     ] = {}
 
     subjects = tuple(
@@ -371,6 +398,15 @@ def run_hybrid_event_semantics_preview(
                 _build_manifest(
                     unit=unit,
                     profile=command.model_profile,
+                    prompt_id=HYBRID_EVENT_FRAME_FIT_PROMPT_ID,
+                    prompt_bytes=frame_fit_prompt_bytes,
+                    schema=frame_fit_schema,
+                    ledger=ledger,
+                    tokenizer=tokenizer,
+                ),
+                _build_manifest(
+                    unit=unit,
+                    profile=command.model_profile,
                     prompt_id=HYBRID_EVENT_ROLE_SELECTION_PROMPT_ID,
                     prompt_bytes=role_selection_prompt_bytes,
                     schema=role_selection_schema,
@@ -397,7 +433,13 @@ def run_hybrid_event_semantics_preview(
                 ),
             )
             manifest_cache[segment.segment_id] = manifests
-        frame_manifest, role_manifest, presentation_manifest, support_manifest = manifests
+        (
+            frame_manifest,
+            frame_fit_manifest,
+            role_manifest,
+            presentation_manifest,
+            support_manifest,
+        ) = manifests
         local_inputs = _local_inputs(context, segment)
         frame_input = _frame_selection_task_input(
             trigger=trigger,
@@ -486,14 +528,91 @@ def run_hybrid_event_semantics_preview(
             )
             diagnostics.append(f"frame_selection_mapping_failed:{subject.id}:{error}")
             continue
-        semantic_traces = [frame_trace]
+        frame_fit_input = _frame_fit_task_input(
+            trigger=trigger,
+            segment=segment,
+            frame=frame_definition,
+        )
+        frame_fit_outcome = run_bounded_extraction(
+            BoundedExtractionInput(
+                source_id=context.source_id,
+                document_id=context.document_id,
+                representation_id=context.parent.representation_id,
+                context_manifest_id=frame_fit_manifest.id,
+                prompt_bytes=frame_fit_prompt_bytes,
+                execution_spec=_execution_spec(
+                    frame_fit_manifest,
+                    model_runtime,
+                    command.generation_parameters,
+                    frame_fit_schema,
+                    frame_fit_input,
+                ),
+                validator_version="hybrid_event_frame_fit_validator_v1",
+                task_type="hybrid_event_frame_fit",
+                input_candidate_ids=(subject.id,),
+                task_local_input=frame_fit_input,
+            ),
+            ledger,
+            archive,
+            model_runtime,
+            model_run_id_factory,
+            tokenizer,
+            registry,
+        )
+        task_ids.append(frame_fit_outcome.extraction_task.id)
+        run_ids.append(frame_fit_outcome.model_run.id)
+        frame_fit = frame_fit_outcome.event_frame_fit_decision
+        frame_fit_trace = _frame_fit_trace(
+            subject=subject,
+            trigger=trigger,
+            segment=segment,
+            frame=frame_definition,
+            task_input=frame_fit_input,
+            prompt_bytes=frame_fit_prompt_bytes,
+            schema=frame_fit_schema,
+            task_id=frame_fit_outcome.extraction_task.id,
+            model_run_id=frame_fit_outcome.model_run.id,
+            model_status=frame_fit_outcome.model_run.status,
+            raw_output_sha256=frame_fit_outcome.model_run.output_digest,
+            decision=frame_fit,
+            parent_trace_id=frame_trace.id,
+        )
+        traces.append(frame_fit_trace)
+        if frame_fit is None or frame_fit_outcome.model_run.status is not ModelRunStatus.SUCCEEDED:
+            gaps.append(
+                build_semantic_coverage_gap(
+                    event_subject_id=subject.id,
+                    code=SemanticCoverageGapCode.INVALID_REQUIRED_ENVELOPE,
+                    field_value=frame_fit_outcome.model_run.status.value,
+                    detail="The frame-fit task did not return a valid decision.",
+                )
+            )
+            diagnostics.append(
+                f"frame_fit_failed:{subject.id}:{frame_fit_outcome.model_run.status.value}"
+            )
+            continue
+        if not frame_fit.fits:
+            gaps.append(
+                build_semantic_coverage_gap(
+                    event_subject_id=subject.id,
+                    code=SemanticCoverageGapCode.UNMAPPED_FRAME,
+                    field_value=frame_definition.id,
+                    detail="The selected governed frame failed its independent fit challenge.",
+                )
+            )
+            diagnostics.append(f"frame_fit_rejected:{subject.id}:{frame_definition.id}")
+            continue
+        semantic_traces = [frame_trace, frame_fit_trace]
         selected_arguments: dict[str, EventSemanticArgumentProposal] = {}
         assignment_origins: dict[str, AssignmentOrigin] = {}
-        for role in frame_definition.roles:
+        ordered_roles = tuple(item for item in frame_definition.roles if item.required) + tuple(
+            item for item in frame_definition.roles if not item.required
+        )
+        for role in ordered_roles:
             completed_argument: EventSemanticArgumentProposal | None = None
             rejected_target: str | None = None
             role_outcome = None
-            parent_trace_id = frame_trace.id
+            parent_trace_id = frame_fit_trace.id
             for attempt_ordinal in range(2):
                 role_input = _role_selection_task_input(
                     trigger=trigger,
@@ -501,6 +620,7 @@ def run_hybrid_event_semantics_preview(
                     local_inputs=local_inputs,
                     frame=frame_definition,
                     role=role,
+                    selected_arguments=selected_arguments,
                     rejected_target=rejected_target,
                 )
                 role_outcome = run_bounded_extraction(
@@ -704,7 +824,7 @@ def run_hybrid_event_semantics_preview(
                 if item.id in selected_arguments
             ),
             resolved_qualifiers,
-            f"{frame_selection.reason} {presentation.reason}",
+            f"{frame_selection.reason} {frame_fit.reason} {presentation.reason}",
         )
         try:
             constructed = _construct_event(
@@ -1018,12 +1138,14 @@ def _local_inputs(
     context: _SourceContext,
     segment: _SegmentContext,
 ) -> _LocalInputs:
-    selected_candidate_ids = {
-        candidate_id
-        for decision in context.mentions.boundary_decisions
-        if decision.status is not MentionBoundaryStatus.AMBIGUOUS
-        for candidate_id in decision.selected_candidate_ids
-    }
+    selected_candidate_ids = set(
+        effective_mention_candidate_ids(
+            context.mentions.boundary_decisions,
+            context.mentions.boundary_adjudications,
+        )
+    )
+    interpretations = {item.candidate_id: item for item in context.mentions.interpretations}
+    decisions = {item.candidate_id: item for item in context.references.reference_decisions}
     candidates = {
         f"c{ordinal}": item
         for ordinal, item in enumerate(
@@ -1033,13 +1155,17 @@ def _local_inputs(
                     for candidate in context.candidates.values()
                     if candidate.source_segment_id == segment.segment_id
                     and candidate.id in selected_candidate_ids
+                    and _candidate_is_role_eligible(
+                        candidate,
+                        interpretations,
+                        decisions,
+                    )
                 ),
                 key=lambda item: (item.start, item.end, item.id),
             ),
             start=1,
         )
     }
-    decisions = {item.candidate_id: item for item in context.references.reference_decisions}
     spans = {
         item.id: item
         for item in (
@@ -1063,6 +1189,25 @@ def _local_inputs(
         segment.segment.exact_text,
         source_copy,
         occurrences,
+    )
+
+
+def _candidate_is_role_eligible(
+    candidate: MentionCandidate,
+    interpretations: dict[str, MentionInterpretation],
+    decisions: dict[str, ReferenceDecision],
+) -> bool:
+    interpretation = interpretations.get(candidate.id)
+    if interpretation is None:
+        return False
+    referentiality = interpretation.referentiality
+    if referentiality is Referentiality.SPECIFIC_ENTITY:
+        return True
+    decision = decisions.get(candidate.id)
+    return (
+        referentiality is Referentiality.ANAPHORIC
+        and decision is not None
+        and decision.status is ReferenceStatus.RESOLVED
     )
 
 
@@ -1512,12 +1657,12 @@ def _embedded_entity_candidate_ids(
     start: int,
     end: int,
 ) -> tuple[str, ...]:
-    selected = {
-        candidate_id
-        for decision in context.mentions.boundary_decisions
-        if decision.status is not MentionBoundaryStatus.AMBIGUOUS
-        for candidate_id in decision.selected_candidate_ids
-    }
+    selected = set(
+        effective_mention_candidate_ids(
+            context.mentions.boundary_decisions,
+            context.mentions.boundary_adjudications,
+        )
+    )
     typed = {
         item.candidate_id
         for item in context.mentions.interpretations
@@ -1819,7 +1964,8 @@ def _frame_selection_task_input(
 ) -> bytes:
     lines = [
         "task: select_one_event_frame",
-        f"target_trigger: {trigger.text}",
+        f"target_trigger_expression: {trigger.text}",
+        f"target_trigger_head: {trigger.head_text}",
         f"open_event_label_proposal: {trigger.event_type_label}",
         f"source_segment: {segment.segment.exact_text}",
         f"source_before_target_trigger: {segment.segment.exact_text[: trigger.start]}",
@@ -1828,8 +1974,26 @@ def _frame_selection_task_input(
     ]
     for profile_frame in HYBRID_EVENT_SEMANTICS_V4.frames:
         lines.append(f"frame | {profile_frame.id} | {profile_frame.definition}")
-    lines.append(f"classify_only_target_trigger: {trigger.text}")
+    lines.append(f"classify_only_target_trigger_expression: {trigger.text}")
     return "\n".join(lines).encode()
+
+
+def _frame_fit_task_input(
+    *,
+    trigger: EventTriggerDraft,
+    segment: _SegmentContext,
+    frame: EventFrameDefinition,
+) -> bytes:
+    return "\n".join(
+        (
+            "task: challenge_one_event_frame_fit",
+            f"target_trigger_expression: {trigger.text}",
+            f"target_trigger_head: {trigger.head_text}",
+            f"selected_frame: {frame.id} | {frame.definition}",
+            f"source_segment: {segment.segment.exact_text}",
+            "judge_only_whether_selected_frame_fits: yes",
+        )
+    ).encode()
 
 
 def _role_selection_task_input(
@@ -1839,27 +2003,52 @@ def _role_selection_task_input(
     local_inputs: _LocalInputs,
     frame: EventFrameDefinition,
     role: FrameRoleDefinition,
+    selected_arguments: dict[str, EventSemanticArgumentProposal],
     rejected_target: str | None,
 ) -> bytes:
     lines = [
         "task: select_one_frame_role",
-        f"target_trigger: {trigger.text}",
+        f"target_trigger_expression: {trigger.text}",
+        f"target_trigger_head: {trigger.head_text}",
         f"selected_frame: {frame.id} | {frame.definition}",
-        "target_role: "
-        + " | ".join(
-            (
-                role.id,
-                "required" if role.required else "optional",
-                ",".join(item.value for item in role.allowed_target_kinds),
-                role.upper_role.value,
-                role.definition,
-            )
-        ),
-        f"source_segment: {segment.segment.exact_text}",
-        f"source_before_target_trigger: {segment.segment.exact_text[: trigger.start]}",
-        f"source_after_target_trigger: {segment.segment.exact_text[trigger.end :]}",
-        "mention_candidate_catalog:",
+        "sibling_role_catalog:",
     ]
+    lines.extend(
+        " | ".join(
+            (
+                sibling.id,
+                "required" if sibling.required else "optional",
+                ",".join(item.value for item in sibling.allowed_target_kinds),
+                sibling.upper_role.value,
+                sibling.definition,
+            )
+        )
+        for sibling in frame.roles
+    )
+    lines.append("selected_sibling_targets:")
+    lines.extend(
+        f"{sibling.id} | {selected_arguments[sibling.id].target_value}"
+        for sibling in frame.roles
+        if sibling.id in selected_arguments
+    )
+    lines.extend(
+        [
+            "target_role: "
+            + " | ".join(
+                (
+                    role.id,
+                    "required" if role.required else "optional",
+                    ",".join(item.value for item in role.allowed_target_kinds),
+                    role.upper_role.value,
+                    role.definition,
+                )
+            ),
+            f"source_segment: {segment.segment.exact_text}",
+            f"source_before_target_trigger: {segment.segment.exact_text[: trigger.start]}",
+            f"source_after_target_trigger: {segment.segment.exact_text[trigger.end :]}",
+            "mention_candidate_catalog:",
+        ]
+    )
     lines.extend(
         f"{label} | {candidate.text}"
         for label, candidate in local_inputs.candidates.items()
@@ -1897,7 +2086,8 @@ def _event_presentation_task_input(
 ) -> bytes:
     lines = [
         "task: classify_one_event_presentation",
-        f"target_trigger: {trigger.text}",
+        f"target_trigger_expression: {trigger.text}",
+        f"target_trigger_head: {trigger.head_text}",
         f"selected_frame: {frame.id} | {frame.definition}",
         f"source_segment: {segment.segment.exact_text}",
         "selected_role_targets:",
@@ -2090,6 +2280,59 @@ def _role_selection_trace(
             "model_run_status": model_status.value,
             "raw_output_sha256": raw_output_sha256,
             "parsed_target_proposal": _model_payload(proposal),
+        },
+        status=ExtractionStageStatus.COMPLETED if completed else ExtractionStageStatus.FAILED,
+        diagnostics=() if completed else (f"model_run_status:{model_status.value}",),
+        input_record_ids=tuple(sorted({subject.id, trigger.id})),
+        execution_record_ids=(task_id, model_run_id),
+    )
+
+
+def _frame_fit_trace(
+    *,
+    subject: EventSubjectDraft,
+    trigger: EventTriggerDraft,
+    segment: _SegmentContext,
+    frame: EventFrameDefinition,
+    task_input: bytes,
+    prompt_bytes: bytes,
+    schema: PinnedTaskSchema,
+    task_id: str,
+    model_run_id: str,
+    model_status: ModelRunStatus,
+    raw_output_sha256: str | None,
+    decision: EventFrameFitDecision | None,
+    parent_trace_id: str,
+) -> ExtractionStageTrace:
+    completed = decision is not None and model_status is ModelRunStatus.SUCCEEDED
+    return build_extraction_stage_trace(
+        trace_run_id=f"hp6:frame-fit:{subject.id}:{model_run_id}",
+        ordinal=0,
+        stage_id="hybrid_event_frame_fit",
+        stage_version="1",
+        producer_id="qwen2.5",
+        source_segment_id=segment.segment_id,
+        source_text_sha256=hashlib.sha256(segment.segment.exact_text.encode()).hexdigest(),
+        parent_trace_ids=(parent_trace_id,),
+        configuration={
+            "policy_id": HYBRID_EVENT_SEMANTICS_POLICY_ID,
+            "ontology_sha256": hybrid_event_semantics_profile_sha256(),
+            "prompt_sha256": hashlib.sha256(prompt_bytes).hexdigest(),
+            "schema_sha256": schema.digest,
+        },
+        input_payload=cast(
+            dict[str, JsonValue],
+            {
+                "event_subject": subject.model_dump(mode="json"),
+                "trigger": trigger.model_dump(mode="json"),
+                "selected_frame": frame.model_dump(mode="json"),
+                "model_visible_task": task_input.decode(),
+            },
+        ),
+        output_payload={
+            "model_run_status": model_status.value,
+            "raw_output_sha256": raw_output_sha256,
+            "parsed_decision": _model_payload(decision),
         },
         status=ExtractionStageStatus.COMPLETED if completed else ExtractionStageStatus.FAILED,
         diagnostics=() if completed else (f"model_run_status:{model_status.value}",),
@@ -2375,6 +2618,8 @@ def _preview_common(
     parent_sha256: str,
     frame_selection_prompt: bytes,
     frame_selection_schema: PinnedTaskSchema,
+    frame_fit_prompt: bytes,
+    frame_fit_schema: PinnedTaskSchema,
     role_selection_prompt: bytes,
     role_selection_schema: PinnedTaskSchema,
     presentation_prompt: bytes,
@@ -2391,6 +2636,8 @@ def _preview_common(
         "ontology_profile_sha256": hybrid_event_semantics_profile_sha256(),
         "frame_selection_prompt_sha256": hashlib.sha256(frame_selection_prompt).hexdigest(),
         "frame_selection_schema_sha256": frame_selection_schema.digest,
+        "frame_fit_prompt_sha256": hashlib.sha256(frame_fit_prompt).hexdigest(),
+        "frame_fit_schema_sha256": frame_fit_schema.digest,
         "role_selection_prompt_sha256": hashlib.sha256(role_selection_prompt).hexdigest(),
         "role_selection_schema_sha256": role_selection_schema.digest,
         "presentation_prompt_sha256": hashlib.sha256(presentation_prompt).hexdigest(),

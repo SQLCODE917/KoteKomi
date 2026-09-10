@@ -20,13 +20,16 @@ from kotekomi_application.hybrid_event_trigger_preview import (
     select_non_overlapping_trigger_proposals,
     source_occurrences,
 )
+from kotekomi_application.hybrid_event_triggers import EventTriggerDraft, event_trigger_id
 
 
 def test_trigger_contract_preserves_multiple_source_literal_events() -> None:
-    result = parse_event_trigger_output(b"event: o2 | publication\nevent: o5 | characterization\n")
+    result = parse_event_trigger_output(
+        b"event: o2 | o2 | publication\nevent: o5 | o5 | characterization\n"
+    )
 
     assert isinstance(result, EventTriggerProposalBatch)
-    assert [(item.occurrence_id, item.event_type_label) for item in result.proposals] == [
+    assert [(item.head_occurrence_id, item.event_type_label) for item in result.proposals] == [
         ("o2", "publication"),
         ("o5", "characterization"),
     ]
@@ -53,11 +56,13 @@ def test_trigger_contract_rejects_invalid_structure(payload: bytes) -> None:
 
 def test_trigger_contract_isolates_bad_lines_and_keeps_valid_occurrence_selections() -> None:
     result = parse_event_trigger_output(
-        b"event: o2 | publication\nevent: o999 | Too Broad\nevent: o5 | characterization\n"
+        b"event: o2 | o2 | publication\n"
+        b"event: o999 | o999 | Too Broad\n"
+        b"event: o5 | o5 | characterization\n"
     )
 
     assert isinstance(result, EventTriggerProposalBatch)
-    assert [item.occurrence_id for item in result.proposals] == ["o2", "o5"]
+    assert [item.head_occurrence_id for item in result.proposals] == ["o2", "o5"]
     assert [(item.line_number, item.code) for item in result.rejections] == [
         (2, "invalid_event_label")
     ]
@@ -69,14 +74,21 @@ def test_trigger_reconciliation_keeps_distinct_source_owned_occurrences() -> Non
     occurrences = {item.occurrence_id: item for item in source_occurrences(source_copy)}
     selected = select_non_overlapping_trigger_proposals(
         (
-            EventTriggerProposal(1, "o2", "publication"),
-            EventTriggerProposal(2, "o5", "characterization"),
+            EventTriggerProposal(1, "o2", "o2", "o2", "publication"),
+            EventTriggerProposal(2, "o5", "o5", "o5", "characterization"),
         ),
         occurrences=occurrences,
         source_copy=source_copy,
     )
 
-    assert [item.occurrence_id for item in selected] == ["o2", "o5"]
+    assert [item.head_occurrence_id for item in selected] == ["o2", "o5"]
+
+
+def test_trigger_contract_keeps_meaning_complete_expression_and_event_head() -> None:
+    result = parse_event_trigger_output(b"event: o2-o4 | o4 | public_rebuke\n")
+
+    assert isinstance(result, EventTriggerProposalBatch)
+    assert result.proposals == (EventTriggerProposal(1, "o2", "o4", "o4", "public_rebuke"),)
 
 
 def test_source_occurrences_are_exact_ordered_source_choices() -> None:
@@ -91,6 +103,40 @@ def test_source_occurrences_are_exact_ordered_source_choices() -> None:
         ("o4", "rebuked"),
         ("o5", "Amodei"),
     ]
+
+
+def test_trigger_draft_rejects_a_head_that_does_not_match_its_expression_characters() -> None:
+    trigger_id = event_trigger_id(
+        source_segment_id="seg_fixture",
+        source_text_sha256="a" * 64,
+        start=10,
+        end=30,
+        text="has publicly rebuked",
+        head_start=23,
+        head_end=30,
+        head_text="claimed",
+        event_type_label="public_rebuke",
+        extraction_task_id="ext_fixture",
+        model_run_id="mrn_fixture",
+        trace_id="xst_" + "1" * 24,
+    )
+
+    with pytest.raises(ValueError, match="head text"):
+        EventTriggerDraft(
+            id=trigger_id,
+            source_segment_id="seg_fixture",
+            source_text_sha256="a" * 64,
+            start=10,
+            end=30,
+            text="has publicly rebuked",
+            head_start=23,
+            head_end=30,
+            head_text="claimed",
+            event_type_label="public_rebuke",
+            extraction_task_id="ext_fixture",
+            model_run_id="mrn_fixture",
+            trace_id="xst_" + "1" * 24,
+        )
 
 
 def test_empty_complete_preview_uses_canonical_content_identity() -> None:

@@ -6,9 +6,11 @@ from kotekomi_application.hybrid_event_semantics import (
     resolve_unique_source_literal,
 )
 from kotekomi_application.hybrid_event_semantics_model_output import (
+    event_frame_fit_schema_bytes,
     event_frame_selection_schema_bytes,
     event_presentation_schema_bytes,
     event_semantic_role_target_schema_bytes,
+    parse_event_frame_fit_output,
     parse_event_frame_selection_output,
     parse_event_presentation_output,
     parse_event_semantic_role_target_output,
@@ -44,6 +46,31 @@ def test_frame_selection_parser_preserves_explicit_unresolved_result() -> None:
 def test_frame_selection_parser_rejects_changed_contracts(payload: bytes) -> None:
     with pytest.raises(ValueError):
         parse_event_frame_selection_output(payload)
+
+
+def test_frame_fit_parser_preserves_binary_fit_and_rejection() -> None:
+    accepted = parse_event_frame_fit_output(
+        b"fit: yes\nreason: The governed definition represents the target event.\n"
+    )
+    rejected = parse_event_frame_fit_output(
+        b"fit: no\nreason: The selected frame describes a different event family.\n"
+    )
+
+    assert accepted.fits is True
+    assert rejected.fits is False
+
+
+@pytest.mark.parametrize(
+    "payload",
+    (
+        b"fit: maybe\nreason: This is not a binary decision.\n",
+        b"fit: yes\n",
+        b"reason: wrong order\nfit: yes\n",
+    ),
+)
+def test_frame_fit_parser_rejects_changed_contracts(payload: bytes) -> None:
+    with pytest.raises(ValueError):
+        parse_event_frame_fit_output(payload)
 
 
 def test_event_presentation_parser_preserves_classification_and_qualifiers() -> None:
@@ -135,6 +162,7 @@ def test_semantic_support_parser_accepts_every_governed_outcome(
 
 def test_semantic_task_schemas_are_literal_text_contracts() -> None:
     assert b"<supplied_frame_id>" in event_frame_selection_schema_bytes()
+    assert event_frame_fit_schema_bytes().startswith(b"fit: yes|no")
     assert b"polarity: affirmed|negated" in event_presentation_schema_bytes()
     assert b"target: <supplied cN or oN[-oN] selector" in event_semantic_role_target_schema_bytes()
     assert b"directly_supported" in semantic_support_schema_bytes()

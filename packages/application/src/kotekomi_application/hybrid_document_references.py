@@ -25,6 +25,9 @@ from kotekomi_application.extraction_stage_trace import (
     build_extraction_stage_trace,
     validate_extraction_stage_trace_chain,
 )
+from kotekomi_application.hybrid_mention_boundary_adjudication import (
+    effective_mention_candidate_ids,
+)
 from kotekomi_application.hybrid_mention_interpretation import (
     HybridExtractionPreview,
     HybridPreviewStatus,
@@ -48,7 +51,7 @@ from kotekomi_application.semantic_references import (
     resolve_semantic_reference,
 )
 
-HYBRID_REFERENCE_POLICY_ID = "hybrid_document_reference_v4"
+HYBRID_REFERENCE_POLICY_ID = "hybrid_document_reference_v5"
 ALIAS_DECLARATION_RULE_ID = "exact_parenthetical_initialism_v1"
 
 _SHA256_PATTERN = r"^[a-f0-9]{64}$"
@@ -244,7 +247,7 @@ class HybridReferencePreview(BaseModel):
     parent_preview_id: Annotated[str, Field(pattern=r"^hxp_[a-f0-9]{24}$")]
     parent_preview_sha256: Annotated[str, Field(pattern=_SHA256_PATTERN)]
     representation_id: Annotated[str, Field(min_length=1)]
-    policy_id: Literal["hybrid_document_reference_v4"] = HYBRID_REFERENCE_POLICY_ID
+    policy_id: Literal["hybrid_document_reference_v5"] = HYBRID_REFERENCE_POLICY_ID
     alias_declarations: tuple[AliasDeclaration, ...] = ()
     reference_decisions: tuple[ReferenceDecision, ...] = ()
     semantic_antecedent_spans: tuple[ReferenceSpan, ...] = ()
@@ -345,14 +348,24 @@ def build_hybrid_reference_preview(
     ]
     paragraph_segments = paragraph_source_segments(paragraph_text, PARAGRAPH_SEGMENT_V2)
     segment_sources = _parent_segment_sources(bundle, paragraph_node, paragraph_segments)
-    selected_ids = {
-        candidate_id
-        for decision in parent_preview.boundary_decisions
-        for candidate_id in decision.selected_candidate_ids
-    }
+    selected_ids = set(
+        effective_mention_candidate_ids(
+            parent_preview.boundary_decisions,
+            parent_preview.boundary_adjudications,
+        )
+    )
     interpretation_by_candidate = {
         interpretation.candidate_id: interpretation
         for interpretation in parent_preview.interpretations
+    }
+    observation_by_id = {item.id: item for item in parent_preview.observations}
+    reference_marker_candidate_ids = {
+        candidate.id
+        for candidate in parent_preview.candidates
+        if any(
+            observation_by_id[observation_id].producer_id == "kotekomi_reference_marker_v1"
+            for observation_id in candidate.observation_ids
+        )
     }
     declarations_by_alias: dict[str, list[AliasDeclaration]] = defaultdict(list)
     for declaration in declarations:
@@ -401,7 +414,7 @@ def build_hybrid_reference_preview(
             kind = ReferenceKind.EXPLICIT_ALIAS
             status = ReferenceStatus.UNRESOLVED
             reason = ReferenceReason.EXPLICIT_ALIAS_MISSING
-        elif (
+        elif candidate.id in reference_marker_candidate_ids or (
             candidate.id in interpretation_by_candidate
             and interpretation_by_candidate[candidate.id].referentiality is Referentiality.ANAPHORIC
         ):
@@ -471,7 +484,7 @@ def build_hybrid_reference_preview(
                 semantic_decisions.append(semantic_result.decision)
                 semantic_decision_id = semantic_result.decision.id
                 semantic_trace = semantic_result.trace
-                antecedent_span_ids = tuple(item.id for item in mapped_spans)
+                antecedent_span_ids = tuple(sorted(item.id for item in mapped_spans))
                 status, reason = _semantic_reference_outcome(semantic_result.decision)
         decision_id = _decision_id(
             candidate.id,
@@ -909,7 +922,10 @@ def _semantic_reference_outcome(
             raise ValueError("Resolved semantic reference reason drifted.")
         return ReferenceStatus.RESOLVED, ReferenceReason.UNIQUE_SEMANTIC_ANTECEDENT
     if decision.status is SemanticReferenceStatus.AMBIGUOUS:
-        if decision.reason is not SemanticReferenceReason.CHALLENGE_AMBIGUOUS:
+        if decision.reason not in {
+            SemanticReferenceReason.CHALLENGE_AMBIGUOUS,
+            SemanticReferenceReason.SPECIALIST_CHALLENGE_DISAGREEMENT,
+        }:
             raise ValueError("Ambiguous semantic reference reason drifted.")
         return ReferenceStatus.AMBIGUOUS, ReferenceReason.MULTIPLE_SEMANTIC_ANTECEDENTS
     return ReferenceStatus.UNRESOLVED, ReferenceReason.SEMANTIC_ANTECEDENT_MISSING

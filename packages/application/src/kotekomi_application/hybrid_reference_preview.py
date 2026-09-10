@@ -232,7 +232,7 @@ class _BoundedReferenceChallenger:
     ) -> SemanticReferenceChallengeExecution:
         registry: TaskSchemaRegistry = _ReferenceChallengeSchemaRegistry()
         schema = registry.resolve(SEMANTIC_REFERENCE_CHALLENGE_SCHEMA_ID)
-        task_input = _challenge_task_input(request)
+        task_input = semantic_reference_challenge_task_input(request)
         rendered = self.manifest.rendered_input + b"\n\n[task]\n" + task_input
         outcome = run_bounded_extraction(
             BoundedExtractionInput(
@@ -313,14 +313,27 @@ def _challenge_manifest(
     return planning.manifest
 
 
-def _challenge_task_input(request: SemanticReferenceChallengeInput) -> bytes:
+def semantic_reference_challenge_task_input(
+    request: SemanticReferenceChallengeInput,
+) -> bytes:
+    """Render one visibly delimited target and its source-owned candidate choices."""
+    left_context = request.source_text[: request.target_span.start]
+    right_context = request.source_text[request.target_span.end :]
     lines = [
         "task: resolve_one_semantic_reference",
-        f"source_context: {request.source_text}",
+        f"source_context_before_target: {left_context}",
         f"target_reference: {request.target_span.text}",
+        f"source_context_after_target: {right_context}",
         "antecedent_candidate_catalog:",
     ]
     lines.extend(f"{item.id} | {item.span.text}" for item in request.antecedent_candidates)
+    legal_outcomes = [
+        *(item.id for item in request.antecedent_candidates),
+        "unresolved",
+    ]
+    if len(request.antecedent_candidates) >= 2:
+        legal_outcomes.append("ambiguous")
+    lines.append(f"legal_outcomes: {', '.join(legal_outcomes)}")
     lines.append(f"resolve_only_target: {request.target_span.text}")
     return "\n".join(lines).encode()
 

@@ -370,6 +370,8 @@ def test_put_reuse_and_restart_hybrid_event_semantics_preview(tmp_path: Path) ->
         ontology_profile_sha256=hybrid_event_semantics_profile_sha256(),
         frame_selection_prompt_sha256="b" * 64,
         frame_selection_schema_sha256="c" * 64,
+        frame_fit_prompt_sha256="d" * 64,
+        frame_fit_schema_sha256="e" * 64,
         role_selection_prompt_sha256="d" * 64,
         role_selection_schema_sha256="e" * 64,
         presentation_prompt_sha256="2" * 64,
@@ -434,7 +436,7 @@ def test_put_reuse_restart_and_corruption_rejection_for_standing_fact_plan(
     store = LocalArchiveStore(tmp_path)
     store.initialize()
     body: dict[str, object] = {
-        "schema_version": "standing_fact_plan_v3",
+        "schema_version": "standing_fact_plan_v4",
         "parent_plan_id": "hpp_" + "1" * 24,
         "parent_plan_sha256": "a" * 64,
         "mention_preview_id": "hxp_" + "2" * 24,
@@ -445,7 +447,7 @@ def test_put_reuse_restart_and_corruption_rejection_for_standing_fact_plan(
         "paragraph_node_id": "nod_fixture",
         "context_manifest_id": None,
         "qualification_context_manifest_id": None,
-        "policy_id": "hybrid_standing_fact_v3",
+        "policy_id": "hybrid_standing_fact_v4",
         "provenance_activity_id": "prv_" + "4" * 24,
         "drafts": [],
         "propositions": [],

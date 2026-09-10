@@ -20,6 +20,7 @@ from kotekomi_application import (
     ModelInputMeasurement,
     ModelTaskRequest,
     ModelTaskResponse,
+    effective_mention_candidate_ids,
     run_hybrid_mention_preview,
 )
 from kotekomi_application.hybrid_mention_preview import (
@@ -77,6 +78,60 @@ def test_reference_markers_are_discovered_from_authoritative_characters() -> Non
     ]
     assert {item.execution_record_id for item in observations} == {trace.id}
     assert trace.input["source_text"] == text
+
+
+def test_reference_marker_preserves_flexible_whitespace_and_possessive_source_text() -> None:
+    text = "Anthropic defended the  company's decision."
+    result = _run(
+        FixtureLedger(paragraph_text=text),
+        FixtureArchive(),
+        FixtureProposer(empty=True),
+        FixtureModelRuntime(
+            proposal_abstains=True,
+            interpretation_referentiality="anaphoric",
+        ),
+    )
+
+    marker = next(
+        item
+        for item in result.preview.observations
+        if item.producer_id == "kotekomi_reference_marker_v1"
+    )
+    marker_candidate = next(
+        item for item in result.preview.candidates if item.text == "the  company's"
+    )
+    marker_decision = next(
+        item
+        for item in result.preview.boundary_decisions
+        if marker_candidate.id in item.candidate_ids
+    )
+
+    assert marker.text == "the  company's"
+    assert text[marker.start : marker.end] == marker.text
+    assert marker_decision.rule_id == "exact_reference_marker_v2"
+    assert marker_decision.selected_candidate_ids == (marker_candidate.id,)
+    assert all(item.candidate_id != marker_candidate.id for item in result.preview.interpretations)
+
+
+def test_reference_marker_bypasses_interpretation_even_when_qwen_selects_same_range() -> None:
+    text = "Anthropic defended the company's decision."
+    result = _run(
+        FixtureLedger(paragraph_text=text),
+        FixtureArchive(),
+        FixtureProposer(empty=True),
+        FixtureModelRuntime(proposal_output=b"mention: s1 | o3 | o4\n"),
+    )
+
+    marker = next(item for item in result.preview.candidates if item.text == "the company's")
+    producers = {
+        observation.producer_id
+        for observation in result.preview.observations
+        if observation.id in marker.observation_ids
+    }
+
+    assert producers == {"kotekomi_reference_marker_v1", "qwen2.5"}
+    assert result.preview.interpretations == ()
+    assert result.preview.terminal_status is HybridPreviewStatus.COMPLETE
 
 
 class FixtureTokenizer:
@@ -192,10 +247,12 @@ class FixtureProposer:
         fail: bool = False,
         include_invalid: bool = False,
         empty: bool = False,
+        proposal_spans: tuple[str, ...] | None = None,
     ) -> None:
         self.fail = fail
         self.include_invalid = include_invalid
         self.empty = empty
+        self.proposal_spans = proposal_spans
         self.inputs: list[MentionProposalInput] = []
 
     def propose(self, proposal_input: MentionProposalInput) -> MentionProposalBatch:
@@ -203,11 +260,22 @@ class FixtureProposer:
         if self.fail:
             raise RuntimeError("GLiNER unavailable")
         segment = proposal_input.source_segments[0]
-        start = segment.exact_text.index("European Union")
-        proposals = (
-            []
-            if self.empty
-            else [
+        proposals: list[MentionProposal] = []
+        if self.proposal_spans is not None:
+            proposals = [
+                MentionProposal(
+                    segment.label,
+                    text,
+                    segment.exact_text.index(text),
+                    segment.exact_text.index(text) + len(text),
+                    ("organization",),
+                    0.91,
+                )
+                for text in self.proposal_spans
+            ]
+        elif not self.empty:
+            start = segment.exact_text.index("European Union")
+            proposals = [
                 MentionProposal(
                     segment.label,
                     "European Union",
@@ -217,7 +285,6 @@ class FixtureProposer:
                     0.91,
                 )
             ]
-        )
         if self.include_invalid:
             proposals.append(
                 MentionProposal(
@@ -249,6 +316,9 @@ class FixtureModelRuntime:
         proposal_uses_wrong_contract: bool = False,
         proposal_output: bytes | None = None,
         invalid_interpretation: bool = False,
+        interpretation_referentiality: str = "specific_entity",
+        boundary_output: bytes = b"candidate: c1 | complete\n",
+        boundary_fails: bool = False,
     ) -> None:
         self.requests: list[ModelTaskRequest] = []
         self.proposal_abstains = proposal_abstains
@@ -256,6 +326,9 @@ class FixtureModelRuntime:
         self.proposal_uses_wrong_contract = proposal_uses_wrong_contract
         self.proposal_output = proposal_output
         self.invalid_interpretation = invalid_interpretation
+        self.interpretation_referentiality = interpretation_referentiality
+        self.boundary_output = boundary_output
+        self.boundary_fails = boundary_fails
         self._identity = ModelIdentitySnapshot(
             "qwen2.5-fixture",
             "d" * 64,
@@ -293,7 +366,7 @@ class FixtureModelRuntime:
 
     def run_model_task(self, task: ModelTaskRequest) -> ModelTaskResponse:
         self.requests.append(task)
-        if b"task: propose_mentions" in task.rendered_input:
+        if b"task: select_mention_occurrence_ranges" in task.rendered_input:
             if self.proposal_fails:
                 raise RuntimeError("Qwen runtime unavailable")
             if self.proposal_output is not None:
@@ -309,15 +382,19 @@ class FixtureModelRuntime:
             elif self.proposal_abstains:
                 output = b"abstain: no source expressions qualify\n"
             else:
-                output = b"mention: s1 | geopolitical_entity,organization | European Union\n"
+                output = b"mention: s1 | o2 | o3\n"
+        elif b"task: judge_mention_boundary_completeness" in task.rendered_input:
+            if self.boundary_fails:
+                raise RuntimeError("Boundary adjudication unavailable")
+            output = self.boundary_output
         elif b"task: interpret_mention" in task.rendered_input:
             output = (
                 b"candidate: c1\nreferentiality: specific_entity\n"
                 if self.invalid_interpretation
                 else (
                     b"candidate: c1\n"
-                    b"referentiality: specific_entity\n"
-                    b"contextual_kind: organization\n"
+                    + f"referentiality: {self.interpretation_referentiality}\n".encode()
+                    + b"contextual_kind: organization\n"
                     b"discourse_role: origin\n"
                     b"support: s1\n"
                 )
@@ -374,8 +451,22 @@ def test_hybrid_preview_runs_complete_source_grounded_path_without_state_change(
     assert proposer.inputs[0].source_segments[0].exact_text == PARAGRAPH_TEXT
     assert runtime.requests[0].rendered_input.count(PARAGRAPH_TEXT.encode()) == 1
     assert b"[heading]\nInstitutions" in runtime.requests[0].rendered_input
-    assert b"task: propose_mentions" in runtime.requests[0].rendered_input
+    assert b"task: select_mention_occurrence_ranges" in runtime.requests[0].rendered_input
+    assert b"o2 | European" in runtime.requests[0].rendered_input
+    assert b"o3 | Union" in runtime.requests[0].rendered_input
+    assert b"s1:o" not in runtime.requests[0].rendered_input
     assert b"ontology_guideline_card" in runtime.requests[1].rendered_input
+    assert {item.execution_spec.schema_id for item in runtime.requests} == {
+        "hybrid_mention_occurrence_selection_text_v1",
+        "hybrid_mention_interpretation_text_v2",
+    }
+    assert {
+        str(cast(dict[str, object], item.payload["integrity"])["prompt_id"])
+        for item in ledger.manifests.values()
+    } >= {
+        "hybrid_mention_occurrence_selection_v2",
+        "hybrid_mention_interpretation_task_v2",
+    }
     proposal_traces = [
         trace for trace in result.preview.traces if trace.stage_id == "mention_proposal"
     ]
@@ -386,6 +477,19 @@ def test_hybrid_preview_runs_complete_source_grounded_path_without_state_change(
     assert all(
         trace.output["model_run_id"] in result.preview.model_run_ids for trace in proposal_traces
     )
+    assert all("model_visible_input" in trace.input for trace in proposal_traces)
+    qwen_trace = next(trace for trace in proposal_traces if trace.producer_id == "qwen2.5")
+    assert qwen_trace.stage_version == "hybrid_mention_occurrence_selection_v2"
+    assert qwen_trace.configuration == {
+        "model_assigns_ontology_kind": False,
+        "model_copies_source_text": False,
+        "occurrence_id_scope": "source_segment_local",
+        "selection_unit": "source_occurrence_range",
+    }
+    qwen_output = archive.model_outputs[str(qwen_trace.output["model_run_id"])]
+    assert qwen_output == b"mention: s1 | o2 | o3\n"
+    assert b"European Union" not in qwen_output
+    assert b"organization" not in qwen_output
 
 
 def test_failed_specialized_proposer_continues_from_qwen_as_partial() -> None:
@@ -469,7 +573,10 @@ def test_wrong_qwen_proposer_output_contract_does_not_erase_gliner_result() -> N
     )
 
     assert result.preview.terminal_status is HybridPreviewStatus.PARTIAL
-    assert result.preview.diagnostics == ("qwen_proposer_failed:output_contract",)
+    assert "qwen_proposer_failed:output_contract" in result.preview.diagnostics
+    assert any(
+        item.startswith("qwen_proposal_line_rejected:") for item in result.preview.diagnostics
+    )
     assert len(result.preview.candidates) == 1
     assert len(result.preview.interpretations) == 1
     qwen_proposal_run_id = next(
@@ -522,7 +629,7 @@ def test_valid_qwen_abstention_continues_with_specialized_proposer_evidence() ->
     qwen_proposal_run = next(
         run
         for run in ledger.model_runs.values()
-        if run.outcome_metadata.get("contract") == "hybrid_mention_proposal_text_v1"
+        if run.outcome_metadata.get("contract") == "hybrid_mention_occurrence_selection_text_v1"
     )
     assert qwen_proposal_run.status.value == "abstained"
     assert qwen_proposal_run.outcome_metadata["proposal_count"] == 0
@@ -545,7 +652,7 @@ def test_two_valid_empty_proposer_results_produce_complete_empty_preview() -> No
 def test_same_segment_equal_literals_share_one_interpretation_execution() -> None:
     paragraph = "The European Union and European Union issued guidance."
     ledger = FixtureLedger(paragraph_text=paragraph)
-    runtime = FixtureModelRuntime()
+    runtime = FixtureModelRuntime(proposal_output=b"mention: s1 | o2 | o3\nmention: s1 | o5 | o6\n")
 
     result = _run(ledger, FixtureArchive(), FixtureProposer(), runtime)
 
@@ -578,11 +685,7 @@ def test_interpretation_reuse_does_not_cross_segment_or_literal_boundaries() -> 
     paragraph = "The European Union and Council issued guidance. European Union responded."
     ledger = FixtureLedger(paragraph_text=paragraph)
     runtime = FixtureModelRuntime(
-        proposal_output=(
-            b"mention: s1 | organization | European Union\n"
-            b"mention: s1 | organization | Council\n"
-            b"mention: s2 | organization | European Union\n"
-        )
+        proposal_output=(b"mention: s1 | o2 | o3\nmention: s1 | o5 | o5\nmention: s2 | o1 | o2\n")
     )
 
     result = _run(ledger, FixtureArchive(), FixtureProposer(), runtime)
@@ -599,7 +702,10 @@ def test_interpretation_reuse_does_not_cross_segment_or_literal_boundaries() -> 
 
 def test_same_segment_interpretation_failure_is_recorded_once_and_reused() -> None:
     ledger = FixtureLedger(paragraph_text="The European Union and European Union issued guidance.")
-    runtime = FixtureModelRuntime(invalid_interpretation=True)
+    runtime = FixtureModelRuntime(
+        invalid_interpretation=True,
+        proposal_output=b"mention: s1 | o2 | o3\nmention: s1 | o5 | o6\n",
+    )
 
     result = _run(ledger, FixtureArchive(), FixtureProposer(), runtime)
 
@@ -642,6 +748,267 @@ def test_invalid_interpretation_preserves_candidate_and_publishes_partial_previe
         == "hybrid_mention_interpretation"
     )
     assert interpretation_run.status.value == "invalid_output"
+
+
+def test_ambiguous_overlap_uses_bounded_adjudication_before_interpretation() -> None:
+    paragraph = "Amodei wrote an op-ed."
+    ledger = FixtureLedger(paragraph_text=paragraph)
+    archive = FixtureArchive()
+    runtime = FixtureModelRuntime(
+        proposal_abstains=True,
+        boundary_output=b"candidate: c1 | complete\ncandidate: c2 | incomplete\n",
+    )
+
+    result = _run(
+        ledger,
+        archive,
+        FixtureProposer(proposal_spans=("Amodei", "Amodei wrote")),
+        runtime,
+    )
+
+    effective_ids = set(
+        effective_mention_candidate_ids(
+            result.preview.boundary_decisions,
+            result.preview.boundary_adjudications,
+        )
+    )
+    assert result.preview.terminal_status is HybridPreviewStatus.COMPLETE
+    assert [item.text for item in result.preview.candidates if item.id in effective_ids] == [
+        "Amodei"
+    ]
+    assert [
+        next(
+            candidate.text
+            for candidate in result.preview.candidates
+            if candidate.id == interpretation.candidate_id
+        )
+        for interpretation in result.preview.interpretations
+    ] == ["Amodei"]
+    adjudication = result.preview.boundary_adjudications[0]
+    trace = next(item for item in result.preview.traces if item.id == adjudication.trace_id)
+    assert trace.input["source_text"] == paragraph
+    assert "Amodei wrote" in str(trace.input["model_visible_input"])
+    assert adjudication.boundary_decision_id not in str(trace.input["model_visible_input"])
+    assert all(
+        candidate.id not in str(trace.input["model_visible_input"])
+        for candidate in result.preview.candidates
+    )
+    assert archive.model_outputs[adjudication.model_run_id] == runtime.boundary_output
+
+
+@pytest.mark.parametrize(
+    ("paragraph", "long_candidate", "boundary_output", "expected_effective"),
+    [
+        (
+            "Anthropic's services remained available.",
+            "Anthropic's services",
+            b"c1 | complete\n",
+            ("Anthropic", "Anthropic's services"),
+        ),
+        (
+            "Anthropic's technology achieved a result.",
+            "Anthropic's technology achieved",
+            b"c1 | incomplete\n",
+            ("Anthropic",),
+        ),
+    ],
+)
+def test_exact_possessor_boundary_is_deterministic_before_residual_semantic_judgment(
+    paragraph: str,
+    long_candidate: str,
+    boundary_output: bytes,
+    expected_effective: tuple[str, ...],
+) -> None:
+    runtime = FixtureModelRuntime(
+        proposal_abstains=True,
+        boundary_output=boundary_output,
+    )
+    ledger = FixtureLedger(paragraph_text=paragraph)
+    result = _run(
+        ledger,
+        FixtureArchive(),
+        FixtureProposer(proposal_spans=("Anthropic", long_candidate)),
+        runtime,
+    )
+
+    effective_ids = set(
+        effective_mention_candidate_ids(
+            result.preview.boundary_decisions,
+            result.preview.boundary_adjudications,
+        )
+    )
+    candidate_by_text = {item.text: item for item in result.preview.candidates}
+    adjudication = result.preview.boundary_adjudications[0]
+    trace = next(item for item in result.preview.traces if item.id == adjudication.trace_id)
+    boundary_request = next(
+        item
+        for item in runtime.requests
+        if item.task_type == "hybrid_mention_boundary_adjudication"
+    )
+    boundary_task = ledger.extraction_tasks[boundary_request.extraction_task_id]
+
+    assert (
+        tuple(item.text for item in result.preview.candidates if item.id in effective_ids)
+        == expected_effective
+    )
+    assert boundary_task.input_candidate_ids == (candidate_by_text[long_candidate].id,)
+    assert f'c1 | "{long_candidate}"'.encode() in boundary_request.rendered_input
+    assert b'c2 | "' not in boundary_request.rendered_input
+    assert trace.producer_id == "kotekomi_application"
+    assert trace.configuration["semantic_producer_id"] == "qwen2.5"
+    assert trace.input["deterministic_complete_candidate_ids"] == [
+        candidate_by_text["Anthropic"].id
+    ]
+    assert trace.output["deterministic_complete_candidate_ids"] == [
+        candidate_by_text["Anthropic"].id
+    ]
+
+
+def test_failed_residual_judgment_cannot_veto_exact_possessor_boundary() -> None:
+    paragraph = "Anthropic's services remained available."
+    result = _run(
+        FixtureLedger(paragraph_text=paragraph),
+        FixtureArchive(),
+        FixtureProposer(proposal_spans=("Anthropic", "Anthropic's services")),
+        FixtureModelRuntime(proposal_abstains=True, boundary_fails=True),
+    )
+
+    effective_ids = set(
+        effective_mention_candidate_ids(
+            result.preview.boundary_decisions,
+            result.preview.boundary_adjudications,
+        )
+    )
+
+    assert result.preview.terminal_status is HybridPreviewStatus.PARTIAL
+    assert [item.text for item in result.preview.candidates if item.id in effective_ids] == [
+        "Anthropic"
+    ]
+    assert [
+        next(
+            candidate.text
+            for candidate in result.preview.candidates
+            if candidate.id == interpretation.candidate_id
+        )
+        for interpretation in result.preview.interpretations
+    ] == ["Anthropic"]
+
+
+def test_valid_boundary_line_survives_invalid_sibling_as_partial() -> None:
+    result = _run(
+        FixtureLedger(paragraph_text="Amodei wrote an op-ed."),
+        FixtureArchive(),
+        FixtureProposer(proposal_spans=("Amodei", "Amodei wrote")),
+        FixtureModelRuntime(
+            proposal_abstains=True,
+            boundary_output=b"candidate: c1 | complete\ncandidate c2 | incomplete\n",
+        ),
+    )
+
+    assert result.preview.terminal_status is HybridPreviewStatus.PARTIAL
+    assert len(result.preview.interpretations) == 1
+    assert result.preview.boundary_adjudications[0].judgments[0].status.value == "complete"
+    assert result.preview.boundary_adjudications[0].judgments[1].status.value == "unresolved"
+    assert result.preview.boundary_adjudications[0].rejected_lines[0].code == (
+        "invalid_candidate_judgment_shape"
+    )
+
+
+def test_unknown_boundary_label_is_rejected_without_erasing_valid_sibling() -> None:
+    result = _run(
+        FixtureLedger(paragraph_text="Amodei wrote an op-ed."),
+        FixtureArchive(),
+        FixtureProposer(proposal_spans=("Amodei", "Amodei wrote")),
+        FixtureModelRuntime(
+            proposal_abstains=True,
+            boundary_output=b"candidate: c1 | complete\ncandidate: c9 | incomplete\n",
+        ),
+    )
+
+    adjudication = result.preview.boundary_adjudications[0]
+    assert result.preview.terminal_status is HybridPreviewStatus.PARTIAL
+    assert [item.status.value for item in adjudication.judgments] == [
+        "complete",
+        "unresolved",
+    ]
+    assert adjudication.rejected_lines[0].code == "unknown_candidate_label"
+
+
+def test_duplicate_boundary_line_makes_only_that_candidate_unresolved() -> None:
+    result = _run(
+        FixtureLedger(paragraph_text="Amodei wrote an op-ed."),
+        FixtureArchive(),
+        FixtureProposer(proposal_spans=("Amodei", "Amodei wrote")),
+        FixtureModelRuntime(
+            proposal_abstains=True,
+            boundary_output=(
+                b"candidate: c1 | complete\ncandidate: c2 | incomplete\ncandidate: c1 | unclear\n"
+            ),
+        ),
+    )
+
+    adjudication = result.preview.boundary_adjudications[0]
+    assert result.preview.terminal_status is HybridPreviewStatus.PARTIAL
+    assert [item.status.value for item in adjudication.judgments] == [
+        "unresolved",
+        "incomplete",
+    ]
+    assert [item.code for item in adjudication.rejected_lines] == [
+        "duplicate_candidate_label",
+        "duplicate_candidate_label",
+    ]
+    assert result.preview.interpretations == ()
+
+
+def test_over_limit_boundary_component_stays_partial_without_model_call() -> None:
+    words = ("Alpha", "Beta", "Gamma", "Delta", "Epsilon", "Zeta", "Eta", "Theta", "Iota")
+    paragraph = " ".join(words)
+    proposal_spans = tuple(" ".join(words[:index]) for index in range(1, len(words) + 1))
+    runtime = FixtureModelRuntime(proposal_abstains=True)
+
+    result = _run(
+        FixtureLedger(paragraph_text=paragraph),
+        FixtureArchive(),
+        FixtureProposer(proposal_spans=proposal_spans),
+        runtime,
+    )
+
+    assert result.preview.terminal_status is HybridPreviewStatus.PARTIAL
+    assert result.preview.boundary_adjudications == ()
+    assert result.preview.interpretations == ()
+    assert any(
+        item.startswith("boundary_candidate_limit_exceeded:") for item in result.preview.diagnostics
+    )
+    assert all(
+        request.task_type != "hybrid_mention_boundary_adjudication" for request in runtime.requests
+    )
+
+
+def test_failed_boundary_adjudication_preserves_candidates_as_partial() -> None:
+    result = _run(
+        FixtureLedger(paragraph_text="Amodei wrote an op-ed."),
+        FixtureArchive(),
+        FixtureProposer(proposal_spans=("Amodei", "Amodei wrote")),
+        FixtureModelRuntime(proposal_abstains=True, boundary_fails=True),
+    )
+
+    assert result.preview.terminal_status is HybridPreviewStatus.PARTIAL
+    assert len(result.preview.candidates) == 2
+    assert result.preview.interpretations == ()
+    assert {item.status.value for item in result.preview.boundary_adjudications[0].judgments} == {
+        "unresolved"
+    }
+
+
+def test_resolved_boundary_bypasses_adjudication_task() -> None:
+    runtime = FixtureModelRuntime()
+
+    result = _run(FixtureLedger(), FixtureArchive(), FixtureProposer(), runtime)
+
+    assert result.preview.boundary_adjudications == ()
+    assert all(
+        request.task_type != "hybrid_mention_boundary_adjudication" for request in runtime.requests
+    )
 
 
 def test_changed_ontology_card_changes_interpretation_task_fingerprint() -> None:
@@ -744,7 +1111,9 @@ def _run(
         model_runtime=runtime,
         model_run_id_factory=run_id_factory or FixtureRunIdFactory(),
         tokenizer=FixtureTokenizer(),
-        prompt_bytes=b"Perform the task block only.",
+        proposal_prompt_bytes=b"Propose source-bound mentions only.",
+        boundary_adjudication_prompt_bytes=b"Judge supplied boundaries only.",
+        interpretation_prompt_bytes=b"Interpret one supplied mention only.",
         ontology_card_bytes=ontology_card_bytes,
     )
 

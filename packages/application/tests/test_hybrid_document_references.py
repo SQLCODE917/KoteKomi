@@ -148,11 +148,23 @@ class _WindowRecordingProposer:
 
 
 class _Challenger:
+    def __init__(self, antecedent_text: str | None = None) -> None:
+        self._antecedent_text = antecedent_text
+
     def challenge(
         self, request: SemanticReferenceChallengeInput
     ) -> SemanticReferenceChallengeExecution:
+        selected = (
+            request.antecedent_candidates[0]
+            if self._antecedent_text is None
+            else next(
+                item
+                for item in request.antecedent_candidates
+                if item.span.text == self._antecedent_text
+            )
+        )
         selection = SemanticReferenceChallengeSelection(
-            request.antecedent_candidates[0].id,
+            selected.id,
             False,
             "The source context identifies this antecedent.",
         )
@@ -251,6 +263,38 @@ def test_validated_semantic_reference_becomes_a_source_bound_hp2_decision() -> N
     assert preview.coreference_observations[0].clusters[0][0].text == "Trump"
 
 
+def test_semantic_disagreement_uses_canonical_reference_id_order() -> None:
+    text = "Sacks viewed Amodei's decision and his hiring as evidence."
+    bundle = _bundle((text,))
+    parent = _parent_preview(
+        bundle,
+        paragraph_index=0,
+        candidate_texts=("Sacks", "Amodei", "his"),
+    )
+    sacks = text.index("Sacks")
+    his = text.index("his")
+
+    preview = build_hybrid_reference_preview(
+        parent_preview=parent,
+        parent_preview_sha256=hybrid_extraction_preview_sha256(parent),
+        bundle=bundle,
+        coreference_proposer=_CoreferenceProposer(
+            (((sacks, sacks + len("Sacks")), (his, his + len("his"))),)
+        ),
+        coreference_tokenizer=_Tokenizer(),
+        semantic_reference_challenger=_Challenger("Amodei"),
+    )
+
+    decision = next(
+        item for item in preview.reference_decisions if item.reference_span.text == "his"
+    )
+    assert decision.status is ReferenceStatus.AMBIGUOUS
+    assert decision.reason is ReferenceReason.MULTIPLE_SEMANTIC_ANTECEDENTS
+    assert decision.antecedent_span_ids == tuple(sorted(decision.antecedent_span_ids))
+    spans = {item.id: item.text for item in preview.semantic_antecedent_spans}
+    assert {spans[item] for item in decision.antecedent_span_ids} == {"Sacks", "Amodei"}
+
+
 def test_semantic_reference_uses_bounded_preceding_same_paragraph_sentences() -> None:
     text = "Anthropic announced a policy. It revised the policy."
     bundle = _bundle((text,))
@@ -271,6 +315,73 @@ def test_semantic_reference_uses_bounded_preceding_same_paragraph_sentences() ->
     assert proposer.request.target_text == "It"
     assert preview.reference_decisions[0].status is ReferenceStatus.RESOLVED
     assert preview.semantic_antecedent_spans[0].text == "Anthropic"
+
+
+def test_deterministic_reference_marker_routes_without_model_interpretation() -> None:
+    text = "Anthropic changed the  company's policy."
+    bundle = _bundle((text,))
+    paragraph = _paragraphs(bundle)[0]
+    segment = paragraph_source_segments(text, PARAGRAPH_SEGMENT_V2)[0]
+    segment_id = hybrid_source_segment_id(bundle.representation.id, paragraph.id, segment)
+    marker_text = "the  company's"
+    marker_start = segment.exact_text.index(marker_text)
+    marker_trace = build_extraction_stage_trace(
+        trace_run_id="hpr_direct_marker",
+        ordinal=0,
+        stage_id="semantic_reference_discovery",
+        stage_version="exact_reference_markers_v1",
+        producer_id="kotekomi_application",
+        source_segment_id=segment_id,
+        source_text_sha256=hashlib.sha256(segment.exact_text.encode()).hexdigest(),
+        configuration={"policy_id": "exact_reference_markers_v1"},
+        input_payload={"source_text": segment.exact_text},
+        output_payload={"marker_text": marker_text},
+        status=ExtractionStageStatus.COMPLETED,
+    )
+    observation = observation_from_proposal(
+        proposal=MentionProposal(
+            segment.label,
+            marker_text,
+            marker_start,
+            marker_start + len(marker_text),
+            ("organization",),
+        ),
+        source_segment_id=segment_id,
+        producer_id="kotekomi_reference_marker_v1",
+        execution_record_id=marker_trace.id,
+    )
+    candidates = fuse_mention_observations(
+        source_segments={segment_id: segment.exact_text},
+        observations=(observation,),
+    )
+    decisions, selected = reconcile_mention_boundaries(
+        source_segments={segment_id: segment.exact_text},
+        observations=(observation,),
+        candidates=candidates,
+    )
+    parent = build_hybrid_extraction_preview(
+        representation_id=bundle.representation.id,
+        paragraph_node_id=paragraph.id,
+        context_manifest_id="ctx_direct_marker",
+        ontology_card_sha256="a" * 64,
+        observations=(observation,),
+        candidates=candidates,
+        boundary_decisions=decisions,
+        traces=(marker_trace,),
+        terminal_status=HybridPreviewStatus.COMPLETE,
+    )
+
+    preview = build_hybrid_reference_preview(
+        parent_preview=parent,
+        parent_preview_sha256=hybrid_extraction_preview_sha256(parent),
+        bundle=bundle,
+    )
+
+    assert selected == candidates
+    assert parent.interpretations == ()
+    assert len(preview.reference_decisions) == 1
+    assert preview.reference_decisions[0].reference_kind is ReferenceKind.ANAPHORIC
+    assert preview.reference_decisions[0].reason is ReferenceReason.SEMANTIC_RESOLUTION_DEFERRED
 
 
 def test_semantic_reference_excludes_a_preceding_sentence_beyond_the_token_limit() -> None:
@@ -572,7 +683,7 @@ def _parent_preview(
                     candidate_label="c1",
                     referentiality=(
                         Referentiality.ANAPHORIC
-                        if candidate.text.casefold() in {"him", "it", "the institute"}
+                        if candidate.text.casefold() in {"him", "his", "it", "the institute"}
                         else Referentiality.SPECIFIC_ENTITY
                     ),
                     contextual_kind=ContextualKind.ORGANIZATION,
