@@ -1097,16 +1097,9 @@ def _link_tree(source: Path, target: Path) -> None:
 
 
 def _smoke_gliner(model_dir: Path) -> None:
-    from gliner import GLiNER  # pyright: ignore[reportMissingTypeStubs]
+    from .gliner_organization_mention_proposer import load_gliner_model
 
-    loader = cast(
-        Callable[..., object],
-        GLiNER.from_pretrained,  # pyright: ignore[reportUnknownMemberType]
-    )
-    model = cast(
-        _GlinerSmokeModel,
-        loader(str(model_dir), map_location="cpu", local_files_only=True),
-    )
+    model = cast(_GlinerSmokeModel, load_gliner_model(model_dir, "cpu"))
     model.predict_entities("Anthropic announced an update.", ["organization"], threshold=0.5)
 
 
