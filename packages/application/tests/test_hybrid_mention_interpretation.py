@@ -9,20 +9,31 @@ from kotekomi_application.extraction_stage_trace import (
     ExtractionStageStatus,
     build_extraction_stage_trace,
 )
+from kotekomi_application.hybrid_mention_boundary_adjudication import (
+    BoundaryCandidateJudgmentValue,
+    MentionBoundaryAdjudicationJudgment,
+    MentionBoundaryCandidateStatus,
+    boundary_candidate_judgment_schema_bytes,
+    build_mention_boundary_adjudication,
+    effective_mention_candidate_ids,
+    parse_boundary_candidate_judgments,
+    unresolved_mention_candidate_ids,
+)
 from kotekomi_application.hybrid_mention_interpretation import (
     ContextualKind,
     DiscourseRole,
     HybridPreviewStatus,
+    MentionBoundaryDecision,
     MentionBoundaryStatus,
-    MentionProposalDraft,
-    MentionProposalDraftBatch,
+    MentionOccurrenceSelection,
+    MentionOccurrenceSelectionBatch,
     Referentiality,
     build_hybrid_extraction_preview,
     canonical_hybrid_extraction_preview_bytes,
     fuse_mention_observations,
     hybrid_extraction_preview_from_bytes,
     hybrid_extraction_preview_sha256,
-    map_proposal_drafts_to_observations,
+    map_occurrence_selections_to_observations,
     observation_from_proposal,
     parse_mention_interpretation_output,
     parse_mention_proposal_output,
@@ -32,13 +43,13 @@ from kotekomi_application.hybrid_mention_interpretation import (
 from kotekomi_application.mention_proposer import MentionProposal
 
 
-def test_qwen_literal_maps_to_every_exact_source_occurrence() -> None:
+def test_qwen_occurrence_selections_map_to_exact_source_ranges() -> None:
     segment = SourceSegment("s1", 0, 31, "Anthropic met Anthropic again.")
-    parsed = parse_mention_proposal_output(b"mention: s1 | organization | Anthropic\n")
-    assert isinstance(parsed, MentionProposalDraftBatch)
+    parsed = parse_mention_proposal_output(b"mention: s1 | o1 | o1\nmention: s1 | o3 | o3\n")
+    assert isinstance(parsed, MentionOccurrenceSelectionBatch)
 
-    observations = map_proposal_drafts_to_observations(
-        drafts=parsed.proposals,
+    observations = map_occurrence_selections_to_observations(
+        selections=parsed.selections,
         source_segments=(segment,),
         source_segment_ids={"s1": "seg_source"},
         producer_id="qwen2.5",
@@ -48,6 +59,20 @@ def test_qwen_literal_maps_to_every_exact_source_occurrence() -> None:
     assert [(item.start, item.end, item.text) for item in observations] == [
         (0, 9, "Anthropic"),
         (14, 23, "Anthropic"),
+    ]
+    assert all(item.type_hints == (ContextualKind.UNCLEAR,) for item in observations)
+
+
+def test_malformed_proposal_line_does_not_erase_a_valid_line() -> None:
+    parsed = parse_mention_proposal_output(
+        b"mention: s1 | o1 | o2\nmention: s1 | s5 | s9\ncandidate: invented_internal_identifier\n"
+    )
+
+    assert isinstance(parsed, MentionOccurrenceSelectionBatch)
+    assert parsed.selections == (MentionOccurrenceSelection("s1", "o1", "o2"),)
+    assert [(item.line_number, item.code) for item in parsed.rejections] == [
+        (2, "invalid_source_occurrence_id"),
+        (3, "unknown_line"),
     ]
 
 
@@ -63,6 +88,153 @@ def test_interpretation_contract_separates_three_dimensions() -> None:
     assert draft.referentiality is Referentiality.SPECIFIC_ENTITY
     assert draft.contextual_kind is ContextualKind.ORGANIZATION
     assert draft.discourse_role is DiscourseRole.ORIGIN
+
+
+def test_boundary_judgment_parser_preserves_valid_siblings_and_rejects_bad_lines() -> None:
+    parsed = parse_boundary_candidate_judgments(
+        b"c1 | complete\ncandidate c2 | incomplete\nc2 | incomplete\nc3 | unclear\nc1 | unclear\n"
+    )
+
+    assert [(item.candidate_label, item.judgment) for item in parsed.judgments] == [
+        ("c2", BoundaryCandidateJudgmentValue.INCOMPLETE),
+        ("c3", BoundaryCandidateJudgmentValue.UNCLEAR),
+    ]
+    assert [(item.line_number, item.code) for item in parsed.rejections] == [
+        (1, "duplicate_candidate_label"),
+        (2, "invalid_candidate_label"),
+        (5, "duplicate_candidate_label"),
+    ]
+
+
+def test_boundary_judgment_schema_requests_the_minimal_unambiguous_form() -> None:
+    assert boundary_candidate_judgment_schema_bytes() == (
+        b"Complete every prefix listed under required_output_prefixes.\n"
+        b"Append exactly one status: complete, incomplete, or unclear.\n"
+        b"Return exactly those completed lines and no other text.\n"
+    )
+    assert b"<supplied" not in boundary_candidate_judgment_schema_bytes()
+
+
+def test_boundary_judgment_parser_rejects_superseded_and_placeholder_labels() -> None:
+    parsed = parse_boundary_candidate_judgments(
+        b"candidate: c1 | complete\n<supplied c2> | unclear\nc3 | incomplete\n"
+    )
+
+    assert [(item.candidate_label, item.judgment.value) for item in parsed.judgments] == [
+        ("c3", "incomplete")
+    ]
+    assert [(item.line_number, item.code) for item in parsed.rejections] == [
+        (1, "invalid_candidate_label"),
+        (2, "invalid_candidate_label"),
+    ]
+
+
+def test_boundary_decision_status_and_selection_cannot_disagree() -> None:
+    source = "Alpha Beta"
+    segment_id = "seg_boundary_status"
+    observation = observation_from_proposal(
+        proposal=MentionProposal("s1", source, 0, len(source), ("organization",)),
+        source_segment_id=segment_id,
+        producer_id="fixture",
+        execution_record_id="mrn_fixture",
+    )
+    candidate = fuse_mention_observations(
+        source_segments={segment_id: source},
+        observations=(observation,),
+    )[0]
+    decisions, _ = reconcile_mention_boundaries(
+        source_segments={segment_id: source},
+        observations=(observation,),
+        candidates=(candidate,),
+    )
+    payload = decisions[0].model_dump(mode="python")
+    payload["status"] = MentionBoundaryStatus.AMBIGUOUS
+
+    with pytest.raises(ValueError, match="ambiguous.*cannot select"):
+        MentionBoundaryDecision.model_validate(payload)
+
+
+@pytest.mark.parametrize(
+    ("source", "candidate_texts", "statuses", "expected_texts"),
+    [
+        (
+            "Amodei wrote an op-ed.",
+            ("Amodei", "Amodei wrote"),
+            (MentionBoundaryCandidateStatus.COMPLETE, MentionBoundaryCandidateStatus.INCOMPLETE),
+            ("Amodei",),
+        ),
+        (
+            "The administration targeted law firms, Amodei responded.",
+            ("administration targeted law firms, Amodei", "Amodei"),
+            (MentionBoundaryCandidateStatus.INCOMPLETE, MentionBoundaryCandidateStatus.COMPLETE),
+            ("Amodei",),
+        ),
+        (
+            "Anthropic's technology achieved a result.",
+            ("Anthropic", "Anthropic's technology achieved"),
+            (MentionBoundaryCandidateStatus.COMPLETE, MentionBoundaryCandidateStatus.INCOMPLETE),
+            ("Anthropic",),
+        ),
+        (
+            "Anthropic's services remained available.",
+            ("Anthropic", "Anthropic's services"),
+            (MentionBoundaryCandidateStatus.COMPLETE, MentionBoundaryCandidateStatus.COMPLETE),
+            ("Anthropic", "Anthropic's services"),
+        ),
+    ],
+)
+def test_semantic_boundary_adjudication_recovers_complete_nested_expressions(
+    source: str,
+    candidate_texts: tuple[str, ...],
+    statuses: tuple[MentionBoundaryCandidateStatus, ...],
+    expected_texts: tuple[str, ...],
+) -> None:
+    segment_id = "seg_boundary_fixture"
+    observations = tuple(
+        observation_from_proposal(
+            proposal=MentionProposal(
+                "s1",
+                text,
+                source.index(text),
+                source.index(text) + len(text),
+                ("organization",),
+            ),
+            source_segment_id=segment_id,
+            producer_id=f"fixture_{index}",
+            execution_record_id=f"mrn_{index}",
+        )
+        for index, text in enumerate(candidate_texts, start=1)
+    )
+    candidates = fuse_mention_observations(
+        source_segments={segment_id: source},
+        observations=observations,
+    )
+    decisions, selected = reconcile_mention_boundaries(
+        source_segments={segment_id: source},
+        observations=observations,
+        candidates=candidates,
+    )
+    assert selected == ()
+    status_by_text = dict(zip(candidate_texts, statuses, strict=True))
+    adjudication = build_mention_boundary_adjudication(
+        boundary_decision_id=decisions[0].id,
+        source_segment_id=segment_id,
+        source_text_sha256=hashlib.sha256(source.encode()).hexdigest(),
+        judgments=tuple(
+            MentionBoundaryAdjudicationJudgment(
+                candidate_id=candidate.id,
+                status=status_by_text[candidate.text],
+            )
+            for candidate in candidates
+        ),
+        extraction_task_id="ext_boundary",
+        model_run_id="mrn_boundary",
+        trace_id=f"xst_{'a' * 24}",
+    )
+    effective = set(effective_mention_candidate_ids(decisions, (adjudication,)))
+
+    assert tuple(item.text for item in candidates if item.id in effective) == expected_texts
+    assert unresolved_mention_candidate_ids(decisions, (adjudication,)) == ()
 
 
 def test_every_valid_interpretation_label_combination_maps_to_source_identity() -> None:
@@ -264,12 +436,12 @@ def test_terminal_possessive_selects_only_the_base_source_boundary() -> None:
 def test_preview_is_canonical_and_interpretation_maps_only_local_labels() -> None:
     source = "The European Union issued guidance."
     segment_id = "seg_eu"
-    observations = map_proposal_drafts_to_observations(
-        drafts=(
-            MentionProposalDraft(
+    observations = map_occurrence_selections_to_observations(
+        selections=(
+            MentionOccurrenceSelection(
                 "s1",
-                (ContextualKind.ORGANIZATION, ContextualKind.GEOPOLITICAL_ENTITY),
-                "European Union",
+                "o2",
+                "o3",
             ),
         ),
         source_segments=(SourceSegment("s1", 0, len(source), source),),

@@ -52,31 +52,50 @@ from kotekomi_application.grounded_candidates import (
     ProposedChangeBatchOutcome,
     prepare_grounded_candidate_batch,
 )
-from kotekomi_application.hybrid_event_model_output import (
-    EventFrameAbstention,
-    EventFrameProposal,
-    EventTriggerAbstention,
-    EventTriggerProposalBatch,
-)
 from kotekomi_application.hybrid_event_semantics_model_output import (
-    EventSemanticProposal,
+    EventFrameFitDecision,
+    EventFrameSelection,
+    EventPresentationParseResult,
+    EventPresentationSelection,
+    EventSemanticLineRejection,
     EventSemanticRoleTargetProposal,
     SemanticSupportModelJudgment,
 )
+from kotekomi_application.hybrid_event_trigger_model_output import (
+    EventTriggerAbstention,
+    EventTriggerProposalBatch,
+)
+from kotekomi_application.hybrid_mention_boundary_adjudication import (
+    HYBRID_MENTION_BOUNDARY_ADJUDICATION_SCHEMA_ID,
+    BoundaryCandidateJudgmentBatch,
+    boundary_candidate_judgment_schema_bytes,
+    parse_boundary_candidate_judgments,
+)
 from kotekomi_application.hybrid_mention_interpretation import (
     MentionInterpretationDraft,
+    MentionOccurrenceSelectionBatch,
     MentionProposalAbstention,
-    MentionProposalDraftBatch,
-    hybrid_mention_task_schema_bytes,
-    parse_hybrid_mention_task_output,
+    mention_interpretation_schema_bytes,
+    mention_proposal_schema_bytes,
+    parse_mention_interpretation_output,
+    parse_mention_proposal_output,
 )
 from kotekomi_application.hybrid_standing_fact_model_output import (
     StandingFactAbstention,
     StandingFactProposalBatch,
 )
+from kotekomi_application.hybrid_standing_fact_qualification_model_output import (
+    StandingFactQualificationOutput,
+)
 from kotekomi_application.organization_semantic_qualification import (
     OrganizationQualificationJudgment,
     parse_organization_qualification_output,
+)
+from kotekomi_application.semantic_reference_challenge_model_output import (
+    SemanticReferenceChallengeSelection,
+)
+from kotekomi_application.semantic_reference_validation_model_output import (
+    SemanticReferenceCandidateValidation,
 )
 
 HASH_ID_LENGTH = 24
@@ -476,19 +495,51 @@ class OrganizationQualificationLabelTaskSchemaRegistry:
         )
 
 
-class HybridMentionTaskSchemaRegistry:
-    """The pinned proposal and contextual interpretation output contracts."""
+class HybridMentionProposalTaskSchemaRegistry:
+    """The pinned output contract for source-bound mention proposals."""
 
-    schema_id = "hybrid_mention_task_text_v1"
+    schema_id = "hybrid_mention_occurrence_selection_text_v1"
 
     def resolve(self, schema_id: str) -> PinnedTaskSchema:
         if schema_id != self.schema_id:
-            raise ValueError(f"Unsupported hybrid mention task schema: {schema_id}")
+            raise ValueError(f"Unsupported hybrid mention proposal schema: {schema_id}")
         return PinnedTaskSchema(
             schema_id=self.schema_id,
-            canonical_schema_bytes=hybrid_mention_task_schema_bytes(),
+            canonical_schema_bytes=mention_proposal_schema_bytes(),
             output_contract_version=self.schema_id,
-            parse=parse_hybrid_mention_task_output,
+            parse=parse_mention_proposal_output,
+        )
+
+
+class HybridMentionInterpretationTaskSchemaRegistry:
+    """The pinned output contract for one contextual mention judgment."""
+
+    schema_id = "hybrid_mention_interpretation_text_v2"
+
+    def resolve(self, schema_id: str) -> PinnedTaskSchema:
+        if schema_id != self.schema_id:
+            raise ValueError(f"Unsupported hybrid mention interpretation schema: {schema_id}")
+        return PinnedTaskSchema(
+            schema_id=self.schema_id,
+            canonical_schema_bytes=mention_interpretation_schema_bytes(),
+            output_contract_version=self.schema_id,
+            parse=parse_mention_interpretation_output,
+        )
+
+
+class HybridMentionBoundaryAdjudicationTaskSchemaRegistry:
+    """The pinned line contract for one ambiguous mention component."""
+
+    schema_id = HYBRID_MENTION_BOUNDARY_ADJUDICATION_SCHEMA_ID
+
+    def resolve(self, schema_id: str) -> PinnedTaskSchema:
+        if schema_id != self.schema_id:
+            raise ValueError(f"Unsupported mention boundary adjudication schema: {schema_id}")
+        return PinnedTaskSchema(
+            schema_id=self.schema_id,
+            canonical_schema_bytes=boundary_candidate_judgment_schema_bytes(),
+            output_contract_version=self.schema_id,
+            parse=parse_boundary_candidate_judgments,
         )
 
 
@@ -516,14 +567,20 @@ class BoundedExtractionOutcome:
     organization_mentions: tuple[OrganizationMention, ...] = ()
     organization_qualification: OrganizationQualification | None = None
     organization_qualification_judgment: OrganizationQualificationJudgment | None = None
-    mention_proposal_drafts: MentionProposalDraftBatch | None = None
+    mention_occurrence_selections: MentionOccurrenceSelectionBatch | None = None
+    boundary_candidate_judgments: BoundaryCandidateJudgmentBatch | None = None
     mention_interpretation_draft: MentionInterpretationDraft | None = None
     event_trigger_proposals: EventTriggerProposalBatch | None = None
-    event_frame_proposal: EventFrameProposal | None = None
-    event_semantic_proposal: EventSemanticProposal | None = None
+    event_frame_selection: EventFrameSelection | None = None
+    event_frame_fit_decision: EventFrameFitDecision | None = None
+    event_presentation_selection: EventPresentationSelection | None = None
+    event_presentation_line_rejections: tuple[EventSemanticLineRejection, ...] = ()
     event_semantic_role_target_proposal: EventSemanticRoleTargetProposal | None = None
     semantic_support_judgment: SemanticSupportModelJudgment | None = None
     standing_fact_proposals: StandingFactProposalBatch | None = None
+    standing_fact_qualification: StandingFactQualificationOutput | None = None
+    semantic_reference_challenge: SemanticReferenceChallengeSelection | None = None
+    semantic_reference_candidate_validation: SemanticReferenceCandidateValidation | None = None
 
 
 @dataclass(frozen=True)
@@ -601,18 +658,22 @@ type ParsedModelOutput = (
     | OrganizationQualification
     | OrganizationQualificationRejection
     | OrganizationQualificationJudgment
-    | MentionProposalDraftBatch
+    | MentionOccurrenceSelectionBatch
     | MentionProposalAbstention
+    | BoundaryCandidateJudgmentBatch
     | MentionInterpretationDraft
     | EventTriggerProposalBatch
     | EventTriggerAbstention
-    | EventFrameProposal
-    | EventFrameAbstention
-    | EventSemanticProposal
+    | EventFrameSelection
+    | EventFrameFitDecision
+    | EventPresentationParseResult
     | EventSemanticRoleTargetProposal
     | SemanticSupportModelJudgment
     | StandingFactProposalBatch
     | StandingFactAbstention
+    | StandingFactQualificationOutput
+    | SemanticReferenceChallengeSelection
+    | SemanticReferenceCandidateValidation
 )
 
 
@@ -814,7 +875,6 @@ def run_bounded_extraction(
                 OrganizationQualificationRejection,
                 MentionProposalAbstention,
                 EventTriggerAbstention,
-                EventFrameAbstention,
                 StandingFactAbstention,
             ),
         ):
@@ -947,7 +1007,7 @@ def run_bounded_extraction(
                 None,
                 organization_qualification_judgment=parsed,
             )
-        if isinstance(parsed, MentionProposalDraftBatch):
+        if isinstance(parsed, MentionOccurrenceSelectionBatch):
             run = _model_run(
                 extraction_input,
                 manifest,
@@ -961,8 +1021,9 @@ def run_bounded_extraction(
                 output_digest=output_digest,
                 execution_receipt=response.execution_receipt,
                 outcome_metadata={
-                    "contract": "hybrid_mention_proposal_text_v1",
-                    "proposal_count": len(parsed.proposals),
+                    "contract": "hybrid_mention_occurrence_selection_text_v1",
+                    "proposal_count": len(parsed.selections),
+                    "rejected_line_count": len(parsed.rejections),
                 },
             )
             ledger_repository.save_model_run(run)
@@ -970,7 +1031,33 @@ def run_bounded_extraction(
                 task,
                 run,
                 None,
-                mention_proposal_drafts=parsed,
+                mention_occurrence_selections=parsed,
+            )
+        if isinstance(parsed, BoundaryCandidateJudgmentBatch):
+            run = _model_run(
+                extraction_input,
+                manifest,
+                task,
+                model_run_id,
+                ModelRunStatus.SUCCEEDED,
+                started_at=started_at,
+                completed_at=completed_at,
+                execution_diagnostics=diagnostics,
+                input_admission=admission,
+                output_digest=output_digest,
+                execution_receipt=response.execution_receipt,
+                outcome_metadata={
+                    "contract": HYBRID_MENTION_BOUNDARY_ADJUDICATION_SCHEMA_ID,
+                    "judgment_count": len(parsed.judgments),
+                    "rejected_line_count": len(parsed.rejections),
+                },
+            )
+            ledger_repository.save_model_run(run)
+            return BoundedExtractionOutcome(
+                task,
+                run,
+                None,
+                boundary_candidate_judgments=parsed,
             )
         if isinstance(parsed, MentionInterpretationDraft):
             run = _model_run(
@@ -986,7 +1073,7 @@ def run_bounded_extraction(
                 output_digest=output_digest,
                 execution_receipt=response.execution_receipt,
                 outcome_metadata={
-                    "contract": "hybrid_mention_interpretation_text_v1",
+                    "contract": "hybrid_mention_interpretation_text_v2",
                     "referentiality": parsed.referentiality.value,
                     "contextual_kind": parsed.contextual_kind.value,
                     "discourse_role": parsed.discourse_role.value,
@@ -1013,8 +1100,9 @@ def run_bounded_extraction(
                 output_digest=output_digest,
                 execution_receipt=response.execution_receipt,
                 outcome_metadata={
-                    "contract": "hybrid_event_trigger_text_v1",
+                    "contract": "hybrid_event_trigger_text_v4",
                     "proposal_count": len(parsed.proposals),
+                    "rejected_line_count": len(parsed.rejections),
                 },
             )
             ledger_repository.save_model_run(run)
@@ -1023,6 +1111,84 @@ def run_bounded_extraction(
                 run,
                 None,
                 event_trigger_proposals=parsed,
+            )
+        if isinstance(parsed, EventFrameSelection):
+            run = _model_run(
+                extraction_input,
+                manifest,
+                task,
+                model_run_id,
+                ModelRunStatus.SUCCEEDED,
+                started_at=started_at,
+                completed_at=completed_at,
+                execution_diagnostics=diagnostics,
+                input_admission=admission,
+                output_digest=output_digest,
+                execution_receipt=response.execution_receipt,
+                outcome_metadata={
+                    "contract": "hybrid_event_frame_selection_text_v1",
+                    "frame_id": parsed.frame_id,
+                },
+            )
+            ledger_repository.save_model_run(run)
+            return BoundedExtractionOutcome(
+                task,
+                run,
+                None,
+                event_frame_selection=parsed,
+            )
+        if isinstance(parsed, EventFrameFitDecision):
+            run = _model_run(
+                extraction_input,
+                manifest,
+                task,
+                model_run_id,
+                ModelRunStatus.SUCCEEDED,
+                started_at=started_at,
+                completed_at=completed_at,
+                execution_diagnostics=diagnostics,
+                input_admission=admission,
+                output_digest=output_digest,
+                execution_receipt=response.execution_receipt,
+                outcome_metadata={
+                    "contract": "hybrid_event_frame_fit_text_v1",
+                    "fits": parsed.fits,
+                },
+            )
+            ledger_repository.save_model_run(run)
+            return BoundedExtractionOutcome(
+                task,
+                run,
+                None,
+                event_frame_fit_decision=parsed,
+            )
+        if isinstance(parsed, EventPresentationParseResult):
+            run = _model_run(
+                extraction_input,
+                manifest,
+                task,
+                model_run_id,
+                ModelRunStatus.SUCCEEDED,
+                started_at=started_at,
+                completed_at=completed_at,
+                execution_diagnostics=diagnostics,
+                input_admission=admission,
+                output_digest=output_digest,
+                execution_receipt=response.execution_receipt,
+                outcome_metadata={
+                    "contract": "hybrid_event_presentation_text_v1",
+                    "polarity": parsed.selection.polarity,
+                    "modality": parsed.selection.modality,
+                    "rejected_line_count": len(parsed.rejections),
+                },
+            )
+            ledger_repository.save_model_run(run)
+            return BoundedExtractionOutcome(
+                task,
+                run,
+                None,
+                event_presentation_selection=parsed.selection,
+                event_presentation_line_rejections=parsed.rejections,
             )
         if isinstance(parsed, StandingFactProposalBatch):
             run = _model_run(
@@ -1038,7 +1204,7 @@ def run_bounded_extraction(
                 output_digest=output_digest,
                 execution_receipt=response.execution_receipt,
                 outcome_metadata={
-                    "contract": "hybrid_standing_fact_text_v1",
+                    "contract": "hybrid_standing_fact_text_v2",
                     "proposal_count": len(parsed.proposals),
                     "rejected_line_count": len(parsed.rejections),
                 },
@@ -1050,7 +1216,7 @@ def run_bounded_extraction(
                 None,
                 standing_fact_proposals=parsed,
             )
-        if isinstance(parsed, EventFrameProposal):
+        if isinstance(parsed, StandingFactQualificationOutput):
             run = _model_run(
                 extraction_input,
                 manifest,
@@ -1064,36 +1230,8 @@ def run_bounded_extraction(
                 output_digest=output_digest,
                 execution_receipt=response.execution_receipt,
                 outcome_metadata={
-                    "contract": "hybrid_event_frame_text_v1",
-                    "argument_count": len(parsed.arguments),
-                    "qualifier_count": len(parsed.qualifiers),
-                },
-            )
-            ledger_repository.save_model_run(run)
-            return BoundedExtractionOutcome(
-                task,
-                run,
-                None,
-                event_frame_proposal=parsed,
-            )
-        if isinstance(parsed, EventSemanticProposal):
-            run = _model_run(
-                extraction_input,
-                manifest,
-                task,
-                model_run_id,
-                ModelRunStatus.SUCCEEDED,
-                started_at=started_at,
-                completed_at=completed_at,
-                execution_diagnostics=diagnostics,
-                input_admission=admission,
-                output_digest=output_digest,
-                execution_receipt=response.execution_receipt,
-                outcome_metadata={
-                    "contract": "hybrid_event_normalization_text_v1",
-                    "frame_id": parsed.frame_id,
-                    "argument_count": len(parsed.arguments),
-                    "qualifier_count": len(parsed.qualifiers),
+                    "contract": "standing_fact_qualification_text_v1",
+                    "outcome": parsed.outcome.value,
                     "reason": parsed.reason,
                 },
             )
@@ -1102,7 +1240,60 @@ def run_bounded_extraction(
                 task,
                 run,
                 None,
-                event_semantic_proposal=parsed,
+                standing_fact_qualification=parsed,
+            )
+        if isinstance(parsed, SemanticReferenceChallengeSelection):
+            run = _model_run(
+                extraction_input,
+                manifest,
+                task,
+                model_run_id,
+                ModelRunStatus.SUCCEEDED,
+                started_at=started_at,
+                completed_at=completed_at,
+                execution_diagnostics=diagnostics,
+                input_admission=admission,
+                output_digest=output_digest,
+                execution_receipt=response.execution_receipt,
+                outcome_metadata={
+                    "contract": "semantic_reference_challenge_text_v2",
+                    "antecedent_candidate_label": parsed.antecedent_candidate_label,
+                    "ambiguous": parsed.ambiguous,
+                    "reason": parsed.reason,
+                },
+            )
+            ledger_repository.save_model_run(run)
+            return BoundedExtractionOutcome(
+                task,
+                run,
+                None,
+                semantic_reference_challenge=parsed,
+            )
+        if isinstance(parsed, SemanticReferenceCandidateValidation):
+            run = _model_run(
+                extraction_input,
+                manifest,
+                task,
+                model_run_id,
+                ModelRunStatus.SUCCEEDED,
+                started_at=started_at,
+                completed_at=completed_at,
+                execution_diagnostics=diagnostics,
+                input_admission=admission,
+                output_digest=output_digest,
+                execution_receipt=response.execution_receipt,
+                outcome_metadata={
+                    "contract": "semantic_reference_candidate_validation_text_v1",
+                    "verdict": parsed.verdict.value,
+                    "reason": parsed.reason,
+                },
+            )
+            ledger_repository.save_model_run(run)
+            return BoundedExtractionOutcome(
+                task,
+                run,
+                None,
+                semantic_reference_candidate_validation=parsed,
             )
         if isinstance(parsed, EventSemanticRoleTargetProposal):
             run = _model_run(
@@ -1118,8 +1309,8 @@ def run_bounded_extraction(
                 output_digest=output_digest,
                 execution_receipt=response.execution_receipt,
                 outcome_metadata={
-                    "contract": "hybrid_event_role_completion_text_v1",
-                    "target_value": parsed.target_value,
+                    "contract": "hybrid_event_role_selection_text_v1",
+                    "target_selector": parsed.target_selector,
                     "reason": parsed.reason,
                 },
             )
@@ -2203,17 +2394,17 @@ def _abstention_outcome_metadata(
     | OrganizationQualificationRejection
     | MentionProposalAbstention
     | EventTriggerAbstention
-    | EventFrameAbstention
     | StandingFactAbstention,
 ) -> dict[str, JsonValue]:
     if isinstance(output, StandingFactAbstention):
-        return {"contract": "hybrid_standing_fact_text_v1", "proposal_count": 0}
+        return {"contract": "hybrid_standing_fact_text_v2", "proposal_count": 0}
     if isinstance(output, EventTriggerAbstention):
-        return {"contract": "hybrid_event_trigger_text_v1", "proposal_count": 0}
-    if isinstance(output, EventFrameAbstention):
-        return {"contract": "hybrid_event_frame_text_v1", "frame_count": 0}
+        return {"contract": "hybrid_event_trigger_text_v4", "proposal_count": 0}
     if isinstance(output, MentionProposalAbstention):
-        return {"contract": "hybrid_mention_proposal_text_v1", "proposal_count": 0}
+        return {
+            "contract": "hybrid_mention_occurrence_selection_text_v1",
+            "proposal_count": 0,
+        }
     if isinstance(output, HypothesisBatchAbstention):
         contract = "paragraph_hypothesis_text_v1"
     elif isinstance(output, OrganizationMentionBatchAbstention):

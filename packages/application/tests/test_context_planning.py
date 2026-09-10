@@ -17,8 +17,10 @@ from kotekomi_application import (
     ContextManifestStatus,
     ContextModelProfile,
     RetrievalSelectionAnalysisUnitInput,
+    SourceSegmentAnalysisUnitInput,
     build_context_manifest,
     create_analysis_unit_from_retrieval_selection,
+    create_analysis_unit_from_source_segment,
     derive_source_copy_view,
     paragraph_source_segments,
     plan_analysis_units,
@@ -358,6 +360,34 @@ def test_segment_local_policy_creates_one_unit_and_context_per_source_segment() 
 
     assert b"SOURCE SEGMENT: s1\nThe CHIP identifies health priorities." in manifest.rendered_input
     assert b"Community Health Improvement Plan" not in manifest.rendered_input
+
+
+def test_explicit_source_segment_unit_renders_only_the_selected_authoritative_segment() -> None:
+    ledger = FakeContextPlanningLedger()
+    unit = create_analysis_unit_from_source_segment(
+        SourceSegmentAnalysisUnitInput(
+            representation_id=ledger.bundle.representation.id,
+            paragraph_node_id="nod_context_focus",
+            source_segment_label="s1",
+            policy_id="bounded_semantic_task_v1",
+            task_type="bounded_semantic_task",
+        ),
+        ledger,
+    )
+
+    manifest = build_context_manifest(
+        replace(
+            _manifest_input(unit, limit=256),
+            evidence_selection_policy_id=PARAGRAPH_HYPOTHESIS_EVIDENCE_SELECTION_V1,
+            source_segment_policy_id=PARAGRAPH_SEGMENT_V3,
+        ),
+        ledger,
+        ExactWhitespaceTokenizer(),
+    ).manifest
+
+    assert b"The CHIP identifies health priorities." in manifest.rendered_input
+    assert b"Community Health Improvement Plan" not in manifest.rendered_input
+    assert manifest.source_segment_label == "s1"
 
 
 def test_paragraph_segment_v2_preserves_initialisms_and_exact_reconstruction() -> None:

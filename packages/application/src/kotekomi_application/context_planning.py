@@ -109,6 +109,18 @@ class RetrievalSelectionAnalysisUnitInput:
 
 
 @dataclass(frozen=True)
+class SourceSegmentAnalysisUnitInput:
+    """One exact authoritative segment selected for a bounded semantic task."""
+
+    representation_id: str
+    paragraph_node_id: str
+    source_segment_label: str
+    policy_id: str
+    task_type: str
+    source_segment_policy_id: str = PARAGRAPH_SEGMENT_V3
+
+
+@dataclass(frozen=True)
 class AnalysisUnit:
     id: str
     representation_id: str
@@ -493,6 +505,38 @@ def create_analysis_unit_from_retrieval_selection(
     return unit
 
 
+def create_analysis_unit_from_source_segment(
+    selection: SourceSegmentAnalysisUnitInput,
+    ledger_repository: ContextPlanningLedger,
+) -> AnalysisUnit:
+    """Persist one ContextPlanner unit constrained to an exact paragraph segment."""
+    if selection.source_segment_policy_id != PARAGRAPH_SEGMENT_V3:
+        raise ValueError("Source-segment analysis requires paragraph_segment_v3.")
+    if not selection.source_segment_label:
+        raise ValueError("Source-segment analysis requires a segment label.")
+    bundle = _load_acceptable_bundle(selection.representation_id, ledger_repository)
+    node = _node_by_id(bundle, selection.paragraph_node_id)
+    if node.node_type != "paragraph":
+        raise ValueError("Source-segment analysis requires a Paragraph node.")
+    text_view = _text_view_by_id(bundle, node.text_view_id)
+    segments = paragraph_source_segments(
+        text_view.text[node.start_char : node.end_char],
+        selection.source_segment_policy_id,
+    )
+    if selection.source_segment_label not in {item.label for item in segments}:
+        raise ValueError("Source-segment analysis references an unknown SourceSegment.")
+    unit = _analysis_unit(
+        representation_id=bundle.representation.id,
+        task_type=selection.task_type,
+        focus_nodes=(node,),
+        dependency_nodes=(),
+        policy_id=selection.policy_id,
+        source_segment_label=selection.source_segment_label,
+    )
+    _persist_analysis_unit(unit, ledger_repository)
+    return unit
+
+
 def build_context_manifest(
     manifest_input: ContextManifestInput,
     ledger_repository: ContextPlanningLedger,
@@ -644,7 +688,9 @@ def _context_candidates(
         candidates[focus.id] = _candidate(
             focus, ContextCandidateRole.FOCUS, "focus_node", True, 1, (), tokenizer, bundle
         )
-        ancestor_headings = _ancestor_heading_chain(focus, bundle)
+        ancestor_headings = (
+            () if unit.source_segment_label is not None else _ancestor_heading_chain(focus, bundle)
+        )
         for index, heading in enumerate(ancestor_headings):
             dependency_path = (
                 focus.id,

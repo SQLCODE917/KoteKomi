@@ -15,6 +15,7 @@ class HybridEventStructuralPredicate(StrEnum):
 
     HAS_EVENT_TYPE = "has_event_type"
     HAS_ARGUMENT = "has_argument"
+    HAS_ARGUMENT_ENTITY_REFERENCE = "has_argument_entity_reference"
     HAS_TIME = "has_time"
     HAS_PLACE = "has_place"
     HAS_POLARITY = "has_polarity"
@@ -57,9 +58,25 @@ class UpperRole(StrEnum):
     AGENT = "agent"
     CAUSE = "cause"
     CONTENT = "content"
+    MEDIUM = "medium"
     PARTICIPANT = "participant"
     RESULT = "result"
     THEME = "theme"
+
+
+class TemporalRelation(StrEnum):
+    """The relation between an Event and one exact time expression."""
+
+    AFTER = "after"
+    AT = "at"
+    BEFORE = "before"
+    DURING = "during"
+
+
+class AssignmentOrigin(StrEnum):
+    """The semantic stage that supplied one selected event-role assignment."""
+
+    ROLE_SELECTION = "role_selection"
 
 
 class SemanticArgumentTargetKind(StrEnum):
@@ -137,10 +154,10 @@ class HybridEventSemanticsProfile(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
-    schema_version: Literal["hybrid_event_semantics_profile_v1"] = (
-        "hybrid_event_semantics_profile_v1"
+    schema_version: Literal["hybrid_event_semantics_profile_v4"] = (
+        "hybrid_event_semantics_profile_v4"
     )
-    id: Literal["hybrid_event_semantics_v1"] = "hybrid_event_semantics_v1"
+    id: Literal["hybrid_event_semantics_v4"] = "hybrid_event_semantics_v4"
     upper_roles: tuple[UpperRole, ...]
     frames: tuple[EventFrameDefinition, ...]
 
@@ -190,11 +207,47 @@ def _role(
     )
 
 
-HYBRID_EVENT_SEMANTICS_V1 = HybridEventSemanticsProfile(
+HYBRID_EVENT_SEMANTICS_V4 = HybridEventSemanticsProfile(
     upper_roles=tuple(sorted(UpperRole, key=lambda item: item.value)),
     frames=tuple(
         sorted(
             (
+                EventFrameDefinition(
+                    id="agreement",
+                    label="agreement",
+                    definition="Two parties establish a mutual commitment or arrangement.",
+                    roles=tuple(
+                        sorted(
+                            (
+                                _role(
+                                    "agreement",
+                                    "agreeing_party",
+                                    "The party whose agreement is described by the target event.",
+                                    UpperRole.AGENT,
+                                    required=True,
+                                    allowed=_MENTION_OR_SPAN,
+                                ),
+                                _role(
+                                    "agreement",
+                                    "agreement_content",
+                                    "The commitment or arrangement established by the parties.",
+                                    UpperRole.CONTENT,
+                                    required=False,
+                                    allowed=_EVENT_OR_SPAN,
+                                ),
+                                _role(
+                                    "agreement",
+                                    "counterparty",
+                                    "The other party to the agreement.",
+                                    UpperRole.PARTICIPANT,
+                                    required=True,
+                                    allowed=_MENTION_OR_SPAN,
+                                ),
+                            ),
+                            key=lambda item: item.id,
+                        )
+                    ),
+                ),
                 EventFrameDefinition(
                     id="authorization",
                     label="authorization",
@@ -242,6 +295,176 @@ HYBRID_EVENT_SEMANTICS_V1 = HybridEventSemanticsProfile(
                     ),
                 ),
                 EventFrameDefinition(
+                    id="communication",
+                    label="communication",
+                    definition="One party communicates with another party about a subject.",
+                    attribution_role_id="communication.communicator",
+                    roles=tuple(
+                        sorted(
+                            (
+                                _role(
+                                    "communication",
+                                    "communicator",
+                                    "The party that communicates.",
+                                    UpperRole.AGENT,
+                                    required=True,
+                                    allowed=_MENTION_OR_SPAN,
+                                ),
+                                _role(
+                                    "communication",
+                                    "counterparty",
+                                    "The other party to the communication.",
+                                    UpperRole.PARTICIPANT,
+                                    required=True,
+                                    allowed=_MENTION_OR_SPAN,
+                                ),
+                                _role(
+                                    "communication",
+                                    "topic",
+                                    "The subject of the communication.",
+                                    UpperRole.CONTENT,
+                                    required=False,
+                                    allowed=_EVENT_OR_SPAN,
+                                ),
+                            ),
+                            key=lambda item: item.id,
+                        )
+                    ),
+                ),
+                EventFrameDefinition(
+                    id="criticism",
+                    label="criticism",
+                    definition="One party communicates a negative judgment about a target.",
+                    attribution_role_id="criticism.critic",
+                    roles=tuple(
+                        sorted(
+                            (
+                                _role(
+                                    "criticism",
+                                    "assessment",
+                                    "The source wording that expresses the negative judgment.",
+                                    UpperRole.CONTENT,
+                                    required=False,
+                                    allowed=(SemanticArgumentTargetKind.SOURCE_SPAN,),
+                                ),
+                                _role(
+                                    "criticism",
+                                    "critic",
+                                    "The party that communicates the negative judgment.",
+                                    UpperRole.AGENT,
+                                    required=True,
+                                    allowed=_MENTION_OR_SPAN,
+                                ),
+                                _role(
+                                    "criticism",
+                                    "reason",
+                                    "The source-stated reason for the negative judgment.",
+                                    UpperRole.CAUSE,
+                                    required=False,
+                                    allowed=(SemanticArgumentTargetKind.SOURCE_SPAN,),
+                                ),
+                                _role(
+                                    "criticism",
+                                    "target",
+                                    "The subject that receives the negative judgment.",
+                                    UpperRole.THEME,
+                                    required=True,
+                                    allowed=_ANY_TARGET,
+                                ),
+                                _role(
+                                    "criticism",
+                                    "topic",
+                                    "The matter addressed by the negative judgment.",
+                                    UpperRole.CONTENT,
+                                    required=False,
+                                    allowed=_EVENT_OR_SPAN,
+                                ),
+                            ),
+                            key=lambda item: item.id,
+                        )
+                    ),
+                ),
+                EventFrameDefinition(
+                    id="legal_ruling",
+                    label="legal_ruling",
+                    definition="A legal authority issues a decision about a matter or party.",
+                    roles=tuple(
+                        sorted(
+                            (
+                                _role(
+                                    "legal_ruling",
+                                    "affected_party",
+                                    "The party directly affected by the legal decision.",
+                                    UpperRole.PARTICIPANT,
+                                    required=False,
+                                    allowed=_MENTION_OR_SPAN,
+                                ),
+                                _role(
+                                    "legal_ruling",
+                                    "deciding_authority",
+                                    "The court or authority that issues the legal decision.",
+                                    UpperRole.AGENT,
+                                    required=True,
+                                    allowed=_MENTION_OR_SPAN,
+                                ),
+                                _role(
+                                    "legal_ruling",
+                                    "matter",
+                                    "The motion, claim, designation, or matter decided.",
+                                    UpperRole.THEME,
+                                    required=True,
+                                    allowed=_MENTION_OR_SPAN,
+                                ),
+                                _role(
+                                    "legal_ruling",
+                                    "ruling",
+                                    "The disposition issued by the deciding authority.",
+                                    UpperRole.RESULT,
+                                    required=True,
+                                    allowed=(SemanticArgumentTargetKind.SOURCE_SPAN,),
+                                ),
+                            ),
+                            key=lambda item: item.id,
+                        )
+                    ),
+                ),
+                EventFrameDefinition(
+                    id="policy_change",
+                    label="policy_change",
+                    definition="One party creates, rescinds, or otherwise changes a policy.",
+                    roles=tuple(
+                        sorted(
+                            (
+                                _role(
+                                    "policy_change",
+                                    "change",
+                                    "The creation, rescission, or other change made to the policy.",
+                                    UpperRole.RESULT,
+                                    required=True,
+                                    allowed=(SemanticArgumentTargetKind.SOURCE_SPAN,),
+                                ),
+                                _role(
+                                    "policy_change",
+                                    "policy",
+                                    "The policy affected by the change.",
+                                    UpperRole.THEME,
+                                    required=True,
+                                    allowed=_MENTION_OR_SPAN,
+                                ),
+                                _role(
+                                    "policy_change",
+                                    "policy_actor",
+                                    "The party that makes the policy change.",
+                                    UpperRole.AGENT,
+                                    required=True,
+                                    allowed=_MENTION_OR_SPAN,
+                                ),
+                            ),
+                            key=lambda item: item.id,
+                        )
+                    ),
+                ),
+                EventFrameDefinition(
                     id="causation",
                     label="causation",
                     definition=(
@@ -265,6 +488,171 @@ HYBRID_EVENT_SEMANTICS_V1 = HybridEventSemanticsProfile(
                                     UpperRole.RESULT,
                                     required=True,
                                     allowed=_EVENT_OR_SPAN,
+                                ),
+                            ),
+                            key=lambda item: item.id,
+                        )
+                    ),
+                ),
+                EventFrameDefinition(
+                    id="refusal",
+                    label="refusal",
+                    definition="One party declines to perform or accept an action.",
+                    roles=tuple(
+                        sorted(
+                            (
+                                _role(
+                                    "refusal",
+                                    "refused_action",
+                                    "The action or commitment that the party declines.",
+                                    UpperRole.CONTENT,
+                                    required=True,
+                                    allowed=_EVENT_OR_SPAN,
+                                ),
+                                _role(
+                                    "refusal",
+                                    "refuser",
+                                    "The party that declines the action or commitment.",
+                                    UpperRole.AGENT,
+                                    required=True,
+                                    allowed=_MENTION_OR_SPAN,
+                                ),
+                            ),
+                            key=lambda item: item.id,
+                        )
+                    ),
+                ),
+                EventFrameDefinition(
+                    id="publication",
+                    label="publication",
+                    definition="One party makes a work available.",
+                    roles=tuple(
+                        sorted(
+                            (
+                                _role(
+                                    "publication",
+                                    "audience",
+                                    "The intended audience for the published work.",
+                                    UpperRole.PARTICIPANT,
+                                    required=False,
+                                    allowed=_MENTION_OR_SPAN,
+                                ),
+                                _role(
+                                    "publication",
+                                    "outlet",
+                                    "The medium or venue through which the work appears.",
+                                    UpperRole.MEDIUM,
+                                    required=False,
+                                    allowed=_MENTION_OR_SPAN,
+                                ),
+                                _role(
+                                    "publication",
+                                    "published_work",
+                                    "The work that the publisher makes available.",
+                                    UpperRole.THEME,
+                                    required=True,
+                                    allowed=_MENTION_OR_SPAN,
+                                ),
+                                _role(
+                                    "publication",
+                                    "publisher",
+                                    "The party that makes the work available.",
+                                    UpperRole.AGENT,
+                                    required=True,
+                                    allowed=_MENTION_OR_SPAN,
+                                ),
+                                _role(
+                                    "publication",
+                                    "topic",
+                                    "The matter addressed by the published work.",
+                                    UpperRole.CONTENT,
+                                    required=False,
+                                    allowed=_EVENT_OR_SPAN,
+                                ),
+                            ),
+                            key=lambda item: item.id,
+                        )
+                    ),
+                ),
+                EventFrameDefinition(
+                    id="threat",
+                    label="threat",
+                    definition="One party communicates an intention to take a harmful action.",
+                    attribution_role_id="threat.threatener",
+                    roles=tuple(
+                        sorted(
+                            (
+                                _role(
+                                    "threat",
+                                    "target",
+                                    (
+                                        "The party or interest against which the threatened "
+                                        "action is directed."
+                                    ),
+                                    UpperRole.THEME,
+                                    required=False,
+                                    allowed=_ANY_TARGET,
+                                ),
+                                _role(
+                                    "threat",
+                                    "threatened_action",
+                                    "The harmful action the source says may be taken.",
+                                    UpperRole.CONTENT,
+                                    required=True,
+                                    allowed=_EVENT_OR_SPAN,
+                                ),
+                                _role(
+                                    "threat",
+                                    "threatener",
+                                    "The party that communicates the harmful intention.",
+                                    UpperRole.AGENT,
+                                    required=True,
+                                    allowed=_MENTION_OR_SPAN,
+                                ),
+                            ),
+                            key=lambda item: item.id,
+                        )
+                    ),
+                ),
+                EventFrameDefinition(
+                    id="rebuttal",
+                    label="rebuttal",
+                    definition="One party challenges a claim.",
+                    attribution_role_id="rebuttal.rebutter",
+                    roles=tuple(
+                        sorted(
+                            (
+                                _role(
+                                    "rebuttal",
+                                    "challenged_claim",
+                                    "The claim that the rebutter challenges.",
+                                    UpperRole.CONTENT,
+                                    required=True,
+                                    allowed=_EVENT_OR_SPAN,
+                                ),
+                                _role(
+                                    "rebuttal",
+                                    "claim_source",
+                                    "The party attributed as the source of the challenged claim.",
+                                    UpperRole.AGENT,
+                                    required=False,
+                                    allowed=_MENTION_OR_SPAN,
+                                ),
+                                _role(
+                                    "rebuttal",
+                                    "medium",
+                                    "The source expression for the work that carries the rebuttal.",
+                                    UpperRole.THEME,
+                                    required=False,
+                                    allowed=(SemanticArgumentTargetKind.SOURCE_SPAN,),
+                                ),
+                                _role(
+                                    "rebuttal",
+                                    "rebutter",
+                                    "The party that challenges the claim.",
+                                    UpperRole.AGENT,
+                                    required=True,
+                                    allowed=_MENTION_OR_SPAN,
                                 ),
                             ),
                             key=lambda item: item.id,
@@ -470,7 +858,7 @@ def hybrid_event_ontology_slice_sha256(
 
 
 def canonical_hybrid_event_semantics_profile_bytes(
-    profile: HybridEventSemanticsProfile = HYBRID_EVENT_SEMANTICS_V1,
+    profile: HybridEventSemanticsProfile = HYBRID_EVENT_SEMANTICS_V4,
 ) -> bytes:
     """Return canonical JSON bytes for the governed semantic profile."""
     return (
@@ -485,7 +873,7 @@ def canonical_hybrid_event_semantics_profile_bytes(
 
 
 def hybrid_event_semantics_profile_sha256(
-    profile: HybridEventSemanticsProfile = HYBRID_EVENT_SEMANTICS_V1,
+    profile: HybridEventSemanticsProfile = HYBRID_EVENT_SEMANTICS_V4,
 ) -> str:
     """Return the canonical governed semantic-profile digest."""
     return hashlib.sha256(canonical_hybrid_event_semantics_profile_bytes(profile)).hexdigest()

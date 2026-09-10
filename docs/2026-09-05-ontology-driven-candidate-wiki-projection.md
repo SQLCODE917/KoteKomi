@@ -145,6 +145,10 @@ Wiki build's manifest, audit catalog, and citation registry.
 - OWP-PAGE-12: Pages contain no presentation-only citation numbers or audit command instructions.
 - OWP-PAGE-13: The renderer deduplicates source references with the same authoritative text range.
 - OWP-PAGE-14: Detailed provenance remains available only through `wiki audit`.
+- OWP-PAGE-15: Every ordinary Assertion presentation places its exact supporting source text directly
+  below the relationship.
+- OWP-PAGE-16: An ordinary Assertion source excerpt contains no provenance trace beyond the stable
+  Assertion ID and page-level Wiki build ID needed by `wiki audit`.
 
 ### Audit catalog and command
 
@@ -177,7 +181,7 @@ Wiki build's manifest, audit catalog, and citation registry.
 - OWP-REN-10: The build ID derives from pinned snapshot and policy identity without hashing its own
   rendered appearance in page frontmatter.
 - OWP-REN-11: The manifest independently hashes every output file and rejects changed bytes.
-- OWP-REN-12: The reading-projection renderer uses policy ID `ontology_graph_markdown_wiki_v6`.
+- OWP-REN-12: The reading-projection renderer uses policy ID `ontology_graph_markdown_wiki_v7`.
 
 ## 4. Proposed Architecture
 
@@ -286,7 +290,7 @@ The audit catalog retains the complete ontology graph.
 
 The source text remains evidence and does not supply missing presentation fields.
 
-The routine Markdown projection shows exact Event evidence for review.
+The routine Markdown projection shows exact Event and ordinary Assertion evidence for review.
 
 Deterministic audit resolution supplies the complete provenance record.
 
@@ -318,6 +322,8 @@ Stable Domain IDs are audit handles. The audit catalog does not make the Wiki ca
 - AC-OWP-17: Pipeline tests prove public `wiki audit` routing and JSON output selection.
 - AC-OWP-18: Exporter tests prove duplicate evidence origins produce one source excerpt.
 - AC-OWP-19: Exporter tests prove Markdown omits ontology graph details retained by `wiki audit`.
+- AC-OWP-20: Exporter tests prove each ordinary relationship shows deduplicated exact source text while
+  leaving the full provenance trace in `wiki audit`.
 
 ## 10. Reference Implementations
 

@@ -41,10 +41,6 @@ from kotekomi_application.document_entity_reconciliation import (
     publish_reconciled_document_proposal_plan,
     submit_reconciled_document_proposal_plan,
 )
-from kotekomi_application.hybrid_atomic_claims import (
-    canonical_hybrid_atomic_claim_preview_bytes,
-    hybrid_atomic_claim_preview_from_bytes,
-)
 from kotekomi_application.hybrid_document_references import (
     canonical_hybrid_reference_preview_bytes,
     hybrid_reference_preview_from_bytes,
@@ -53,13 +49,13 @@ from kotekomi_application.hybrid_entity_grounding import (
     canonical_hybrid_entity_grounding_preview_bytes,
     hybrid_entity_grounding_preview_from_bytes,
 )
-from kotekomi_application.hybrid_event_frames import (
-    canonical_hybrid_event_frame_preview_bytes,
-    hybrid_event_frame_preview_from_bytes,
-)
 from kotekomi_application.hybrid_event_semantics import (
     canonical_hybrid_event_semantics_preview_bytes,
     hybrid_event_semantics_preview_from_bytes,
+)
+from kotekomi_application.hybrid_event_triggers import (
+    canonical_hybrid_event_trigger_preview_bytes,
+    hybrid_event_trigger_preview_from_bytes,
 )
 from kotekomi_application.hybrid_mention_interpretation import (
     canonical_hybrid_extraction_preview_bytes,
@@ -94,8 +90,7 @@ class HybridStageId(StrEnum):
     HP1_MENTIONS = "hp1_mentions"
     HP2_REFERENCES = "hp2_references"
     HP3_GROUNDING = "hp3_grounding"
-    HP4_EVENT_FRAMES = "hp4_event_frames"
-    HP5_ATOMIC_CLAIMS = "hp5_atomic_claims"
+    HP4_EVENT_TRIGGERS = "hp4_event_triggers"
     HP6_EVENT_SEMANTICS = "hp6_event_semantics"
     HP7_PROPOSAL_PLAN = "hp7_proposal_plan"
     HP10_STANDING_FACTS = "hp10_standing_facts"
@@ -125,7 +120,7 @@ class HybridPolicyPin(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
-    kind: Literal["prompt", "schema", "ontology", "policy"]
+    kind: Literal["prompt", "schema", "ontology", "policy", "model_resource"]
     identity: Annotated[str, Field(min_length=1)]
     sha256: Annotated[str, Field(pattern=_SHA256)]
 
@@ -970,14 +965,10 @@ def read_hybrid_stage_output(
         raw = archive.read_hybrid_entity_grounding_preview(output_id)
         parsed = hybrid_entity_grounding_preview_from_bytes(raw)
         canonical = canonical_hybrid_entity_grounding_preview_bytes(parsed)
-    elif stage_id is HybridStageId.HP4_EVENT_FRAMES:
-        raw = archive.read_hybrid_event_frame_preview(output_id)
-        parsed = hybrid_event_frame_preview_from_bytes(raw)
-        canonical = canonical_hybrid_event_frame_preview_bytes(parsed)
-    elif stage_id is HybridStageId.HP5_ATOMIC_CLAIMS:
-        raw = archive.read_hybrid_atomic_claim_preview(output_id)
-        parsed = hybrid_atomic_claim_preview_from_bytes(raw)
-        canonical = canonical_hybrid_atomic_claim_preview_bytes(parsed)
+    elif stage_id is HybridStageId.HP4_EVENT_TRIGGERS:
+        raw = archive.read_hybrid_event_trigger_preview(output_id)
+        parsed = hybrid_event_trigger_preview_from_bytes(raw)
+        canonical = canonical_hybrid_event_trigger_preview_bytes(parsed)
     elif stage_id is HybridStageId.HP6_EVENT_SEMANTICS:
         raw = archive.read_hybrid_event_semantics_preview(output_id)
         parsed = hybrid_event_semantics_preview_from_bytes(raw)

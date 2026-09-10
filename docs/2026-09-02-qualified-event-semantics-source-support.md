@@ -1,10 +1,14 @@
 # TDD: Qualified Event Semantics and Source Support
 
-- Status: Implemented and verified
+- Status: Superseded by [HSQ-6](2026-09-07-source-bound-governed-event-extraction.md)
 - Program: [Hybrid Intelligence Extraction Pipeline](2026-09-01-hybrid-intelligence-extraction-pipeline.md)
 - Deliverable ID: HP-6
 - Depends on: [HP-5 Atomic Claims and Ontology Validation](2026-09-02-hybrid-atomic-claims-ontology-validation.md)
 - Gold catalog: [HP-6 Event Semantics Gold Catalog](hp6-event-semantics-gold-v1.json)
+
+This document is retained as historical design evidence.
+
+HSQ-6 replaces its HP-5 parent, open-frame input, and role-completion-for-every-role contracts with direct source-bound governed event construction.
 
 ## Context & Problem
 

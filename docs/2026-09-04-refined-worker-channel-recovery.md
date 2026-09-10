@@ -40,7 +40,7 @@ The next WorkerExchange starts a new worker with empty pipes.
 
 ## 2. Goals
 
-- A ReFinED call returns or fails within its configured deadline and cleanup allowance.
+- A ReFinED call returns or fails within its configured request and shutdown bounds.
 - A ReFinED call never receives another call's response.
 - A healthy worker remains reusable across sequential calls.
 - A failed worker cannot contribute evidence to a later call.
@@ -64,6 +64,8 @@ The next WorkerExchange starts a new worker with empty pipes.
 - RWC-TRN-12: The next request starts a fresh worker after a channel failure.
 - RWC-TRN-13: A valid task-level blocked response keeps the healthy worker reusable.
 - RWC-TRN-14: The transport closes every stdin and stdout pipe when it discards a worker.
+- RWC-TRN-15: EOF, termination, and forced reaping each receive a fresh bounded allowance.
+- RWC-TRN-16: An exhausted graceful-exit deadline cannot become the forced-reap deadline.
 
 ### Worker protocol
 
@@ -162,7 +164,7 @@ Historical evaluation artifacts retain the worker identity and script digest obs
 The WorkerExchange request and response use these required fields:
 
 ```text
-schema_version = refined_worker_exchange_v1
+schema_version = model_worker_exchange_v1
 request_id     = rwr_<32 lowercase hexadecimal characters>
 payload        = worker-specific JSON object
 ```
@@ -194,6 +196,10 @@ The transport treats every channel failure as evidence that the worker is poison
 The transport discards all buffered bytes with the PoisonedWorker.
 The transport does not retry a semantic task automatically.
 
+A healthy close first signals EOF and waits for one cleanup allowance.
+A slow close then receives one bounded termination allowance.
+A worker that ignores termination receives one final forced-reap allowance.
+
 The next explicit request can start one fresh worker.
 The fresh worker reloads the pinned ReFinED resources through the existing worker behavior.
 
@@ -202,7 +208,7 @@ The Adapter maps that payload through its existing typed failure path.
 
 ## 9. Acceptance Criteria
 
-- AC-RWC-01: Tests prove a silent worker fails within the deadline plus cleanup allowance.
+- AC-RWC-01: Tests prove a silent worker fails within its request and shutdown bounds.
 - AC-RWC-02: Tests prove one byte followed by a delayed newline cannot extend the deadline.
 - AC-RWC-03: Tests prove request B cannot receive request A's late response.
 - AC-RWC-04: Tests prove a wrong WorkerRequestId poisons and resets the worker.
@@ -214,6 +220,7 @@ The Adapter maps that payload through its existing typed failure path.
 - AC-RWC-10: Adapter tests prove both ReFinED Adapters use correlated responses.
 - AC-RWC-11: Application tests prove channel failure creates no candidate evidence.
 - AC-RWC-12: Formatting, lint, type checking, and focused tests pass.
+- AC-RWC-13: Tests prove close reaps a worker that ignores EOF and termination.
 
 ## 10. Reference Implementations
 
@@ -230,5 +237,5 @@ The transport must not accept Source alignment as request correlation.
 The transport must not add an automatic semantic retry.
 The transport must not expose subprocess objects across the Adapter boundary.
 
-Halt if worker reset cannot complete within the declared cleanup allowance.
+Halt if forced process reaping cannot complete within its final declared allowance.
 Halt if correlation requires WorkerRequestId to become accepted Ledger state.

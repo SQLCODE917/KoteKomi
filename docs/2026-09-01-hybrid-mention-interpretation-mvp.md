@@ -82,7 +82,7 @@ The operation creates execution records but does not change accepted intelligenc
 - HM-SRC-02: The Pipeline loads the accepted DocumentRepresentationBundle from the Ledger.
 - HM-SRC-03: The Pipeline rejects a node that does not belong to the representation.
 - HM-SRC-04: The Pipeline rejects a node whose type is not `paragraph`.
-- HM-SRC-05: The ContextPlanner uses the named `hybrid_mention_preview_v1` policy.
+- HM-SRC-05: The ContextPlanner uses the named `hybrid_mention_preview_v2` policy, which includes deterministic reference-marker discovery.
 - HM-SRC-06: The ContextManifest includes the paragraph and its required structural ancestry.
 - HM-SRC-07: The Pipeline validates the ContextManifest before it calls either proposer.
 

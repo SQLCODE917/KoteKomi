@@ -8,6 +8,7 @@
         {
             "case_id": "HP4-AD-01",
             "trigger": "intensified",
+            "frame_id": "change_in_intensity",
             "source_text": "[2] Efforts  to  utilize  artificial  intelligence  intensified  under  the term  of  Secretary Ash  Carter. ",
             "expected_disposition": "proposed",
             "review_outcome": "approved",
@@ -16,6 +17,7 @@
         {
             "case_id": "HP4-AD-03",
             "trigger": "authorized",
+            "frame_id": "authorization",
             "source_text": "[8]  The Department of Homeland Security  authorized  its  workers  to  use  commercial  artificial  intelligence  systems,  including Anthropic's  Claude,  until  May  2025. ",
             "expected_disposition": "proposed",
             "review_outcome": "approved",
@@ -24,6 +26,7 @@
         {
             "case_id": "HP4-AD-07",
             "trigger": "described",
+            "frame_id": "characterization",
             "source_text": "[35][36] The  exchange concerned  the  2026  Minab  school  strike,  which Amnesty  International  described  as  an  unlawful  U.S. strike  that  killed  156  people,  including  120  children,  and  which  Human  Rights  Watch  said  should  be investigated as a war crime. ",
             "expected_disposition": "proposed",
             "review_outcome": "approved",
@@ -32,6 +35,7 @@
         {
             "case_id": "HP4-AD-07",
             "trigger": "said",
+            "frame_id": "recommendation",
             "source_text": "[35][36] The  exchange concerned  the  2026  Minab  school  strike,  which Amnesty  International  described  as  an  unlawful  U.S. strike  that  killed  156  people,  including  120  children,  and  which  Human  Rights  Watch  said  should  be investigated as a war crime. ",
             "expected_disposition": "proposed",
             "review_outcome": "approved",
@@ -40,6 +44,7 @@
         {
             "case_id": "HP4-AD-08",
             "trigger": "caused",
+            "frame_id": "causation",
             "source_text": "The dispute caused 1789 Capital, a venture capital firm associated with Donald Trump Jr., to abandon an investment in Anthropic worth hundreds of millions of dollars. ",
             "expected_disposition": "proposed",
             "review_outcome": "approved",
@@ -48,6 +53,7 @@
         {
             "case_id": "HP4-AD-08",
             "trigger": "abandon",
+            "frame_id": "investment_abandonment",
             "source_text": "The dispute caused 1789 Capital, a venture capital firm associated with Donald Trump Jr., to abandon an investment in Anthropic worth hundreds of millions of dollars. ",
             "expected_disposition": "proposed",
             "review_outcome": "approved",
@@ -56,6 +62,7 @@
         {
             "case_id": "HP4-AD-11",
             "trigger": "designated",
+            "frame_id": "classification",
             "source_text": "The Department of War's records show that it designated Anthropic as a supply chain risk because  of  its  'hostile  manner  through  the press.' ",
             "expected_disposition": "proposed",
             "review_outcome": "approved",
@@ -64,8 +71,9 @@
         {
             "case_id": "HP4-AD-07",
             "trigger": "said",
+            "frame_id": "recommendation",
             "source_text": "In  a  June  2026  Bloomberg  interview  about  Claude's  reported  role  in  U.S.  military  targeting  systems, Amodei said Anthropic did not know whether Claude had been used in connection with the Minab school strike,  but  that,  if  it  had,  the  use  case  would  not  violate  Anthropic's  red  lines. ",
-            "expected_disposition": "proposed",
+            "expected_disposition": "excluded",
             "review_outcome": "rejected",
             "review_rationale": "The source reports uncertainty and a conditional policy assessment, not a recommendation."
         }

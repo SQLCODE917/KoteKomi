@@ -6,12 +6,18 @@ from datetime import UTC, datetime
 
 import pytest
 from kotekomi_application import (
+    CoreferenceAntecedentCandidate,
+    CoreferenceSpan,
     HybridPreviewStatus,
     HybridReferencePreview,
     HybridReferencePreviewCommand,
+    SemanticReferenceCandidateValidationInput,
+    SemanticReferenceChallengeInput,
     build_hybrid_extraction_preview,
     canonical_hybrid_extraction_preview_bytes,
     run_hybrid_reference_preview,
+    semantic_reference_candidate_validation_task_input,
+    semantic_reference_challenge_task_input,
 )
 from kotekomi_domain import (
     DocumentNode,
@@ -126,6 +132,136 @@ def test_run_rejects_missing_representation_before_publication() -> None:
             archive=archive,
         )
     assert archive.reference_previews == {}
+
+
+def test_reference_challenge_visibly_delimits_only_the_exact_target() -> None:
+    source = "Trump met Amodei before he spoke."
+    segment_id = "seg_prompt"
+    trump = _coreference_span(segment_id, source, "Trump")
+    amodei = _coreference_span(segment_id, source, "Amodei")
+    target = _coreference_span(segment_id, source, "he")
+    candidates = tuple(
+        CoreferenceAntecedentCandidate(
+            id=_id("cfa", source_id, span.id, span.text.casefold()),
+            source_candidate_id=source_id,
+            span=span,
+            literal_key=span.text.casefold(),
+        )
+        for source_id, span in (
+            ("candidate_trump", trump),
+            ("candidate_amodei", amodei),
+        )
+    )
+
+    rendered = semantic_reference_challenge_task_input(
+        SemanticReferenceChallengeInput(segment_id, source, target, candidates)
+    ).decode()
+
+    assert "source_context_before_target: Trump met Amodei before " in rendered
+    assert "target_reference: he" in rendered
+    assert "source_context_after_target:  spoke." in rendered
+    assert rendered.count("target_reference:") == 1
+    assert "resolve_only_target: he" in rendered
+    assert 'a1 | expression="Trump" | before="" | after=" met Amodei before he spoke."' in (
+        rendered
+    )
+    assert 'a2 | expression="Amodei" | before="Trump met "' in rendered
+    assert '| after=" before he spoke."' in rendered
+    assert "legal_outcomes: a1, a2, unresolved, ambiguous" in rendered
+    assert candidates[0].id not in rendered
+    assert candidates[1].id not in rendered
+
+
+def test_reference_candidate_validation_exposes_only_one_candidate_without_opaque_ids() -> None:
+    source = "Claude was used in targeting, but if it had, safeguards applied."
+    segment_id = "seg_validation_prompt"
+    claude = _coreference_span(segment_id, source, "Claude")
+    target = _coreference_span(segment_id, source, "it")
+    candidate = CoreferenceAntecedentCandidate(
+        id=_id("cfa", "candidate_claude", claude.id, claude.text.casefold()),
+        source_candidate_id="candidate_claude",
+        span=claude,
+        literal_key=claude.text.casefold(),
+    )
+
+    rendered = semantic_reference_candidate_validation_task_input(
+        SemanticReferenceCandidateValidationInput(
+            segment_id,
+            source,
+            target,
+            candidate,
+        )
+    ).decode()
+
+    assert "task: validate_one_specialist_antecedent" in rendered
+    assert "target_reference: it" in rendered
+    assert 'candidate_expression: "Claude"' in rendered
+    assert "legal_verdicts: supported, unsupported, unclear" in rendered
+    assert candidate.id not in rendered
+    assert "antecedent_candidate_catalog" not in rendered
+
+
+def test_reference_candidates_with_the_same_expression_expose_distinct_occurrence_context() -> None:
+    source = (
+        "System X was introduced. The team asked whether System X had failed, "
+        "but if it had, repairs were required."
+    )
+    segment_id = "seg_repeated_reference"
+    first_start = source.index("System X")
+    second_start = source.index("System X", first_start + 1)
+    target_start = source.index("it had")
+    spans = tuple(
+        CoreferenceSpan(
+            id=_id("cfs", segment_id, str(start), str(start + len("System X")), "System X"),
+            source_segment_id=segment_id,
+            start=start,
+            end=start + len("System X"),
+            text="System X",
+        )
+        for start in (second_start, first_start)
+    )
+    target = CoreferenceSpan(
+        id=_id("cfs", segment_id, str(target_start), str(target_start + 2), "it"),
+        source_segment_id=segment_id,
+        start=target_start,
+        end=target_start + 2,
+        text="it",
+    )
+    candidates = tuple(
+        CoreferenceAntecedentCandidate(
+            id=_id("cfa", source_id, span.id, span.text.casefold()),
+            source_candidate_id=source_id,
+            span=span,
+            literal_key=span.text.casefold(),
+        )
+        for source_id, span in zip(("candidate_near", "candidate_far"), spans, strict=True)
+    )
+
+    rendered = semantic_reference_challenge_task_input(
+        SemanticReferenceChallengeInput(segment_id, source, target, candidates)
+    ).decode()
+
+    assert 'a1 | expression="System X"' in rendered
+    assert 'before="System X was introduced. The team asked whether "' in rendered
+    assert 'after=" had failed, but if it had, repairs were required."' in rendered
+    assert 'a2 | expression="System X" | before=""' in rendered
+    assert 'after=" was introduced. The team asked whether System X had failed,' in rendered
+
+
+def _coreference_span(segment_id: str, source: str, text: str) -> CoreferenceSpan:
+    start = source.index(text)
+    end = start + len(text)
+    return CoreferenceSpan(
+        id=_id("cfs", segment_id, str(start), str(end), text),
+        source_segment_id=segment_id,
+        start=start,
+        end=end,
+        text=text,
+    )
+
+
+def _id(prefix: str, *parts: str) -> str:
+    return prefix + "_" + hashlib.sha256("\0".join(parts).encode()).hexdigest()[:24]
 
 
 def _bundle() -> DocumentRepresentationBundle:

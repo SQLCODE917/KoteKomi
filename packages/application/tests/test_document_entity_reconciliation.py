@@ -57,8 +57,8 @@ REPRESENTATION_ID = "rep_reconciliation"
 
 
 class _Ledger:
-    def __init__(self) -> None:
-        self.bundle = _bundle()
+    def __init__(self, text: str = TEXT) -> None:
+        self.bundle = _bundle(text)
         self.proposed_changes: dict[str, ProposedChange] = {}
         self.provenance_activities: dict[str, ProvenanceActivity] = {}
 
@@ -228,6 +228,92 @@ def test_actor_and_organization_with_same_label_remain_separate() -> None:
         ("Actor", "Anthropic"),
         ("Organization", "Anthropic"),
     }
+    assert preview.diagnostics == ("entity_type_conflict:anthropic:Actor,Organization",)
+
+
+def test_unique_document_local_actor_suffix_reconciles_with_a_full_name() -> None:
+    source_text = "David Sacks spoke. Sacks replied."
+    first = _plan(
+        ordinal=1,
+        changes=(
+            _actor_change(
+                "act_" + "1" * 24,
+                0,
+                "David Sacks",
+                evidence_text="David Sacks",
+                source_text=source_text,
+            ),
+        ),
+    )
+    second_start = source_text.rindex("Sacks")
+    second = _plan(
+        ordinal=2,
+        changes=(
+            _actor_change(
+                "act_" + "2" * 24,
+                second_start,
+                "Sacks",
+                evidence_text="Sacks",
+                source_text=source_text,
+                ordinal=2,
+            ),
+        ),
+    )
+
+    preview = build_document_entity_reconciliation_preview(
+        (first, second), cast(HybridProposalLedger, _Ledger(source_text))
+    )
+
+    assert len(preview.clusters) == 1
+    assert preview.clusters[0].preferred_name == "David Sacks"
+    assert preview.justifications[0].method is IdentityMatchMethod.UNIQUE_DOCUMENT_SUFFIX_ALIAS
+    assert {item.name_key for item in preview.justifications[0].evidence} == {
+        "david sacks",
+        "sacks",
+    }
+
+
+def test_document_local_organization_suffix_does_not_guess_an_alias() -> None:
+    source_text = "Filler text here. National Security Council acted. Council replied."
+    first_start = source_text.index("National Security Council")
+    first = _plan(
+        ordinal=1,
+        changes=(
+            _organization_change(
+                "org_" + "1" * 24,
+                first_start,
+                "National Security Council",
+                "government",
+                evidence_text="National Security Council",
+                source_text=source_text,
+            ),
+        ),
+    )
+    second_start = source_text.rindex("Council")
+    second = _plan(
+        ordinal=2,
+        changes=(
+            _organization_change(
+                "org_" + "2" * 24,
+                second_start,
+                "Council",
+                "government",
+                evidence_text="Council",
+                source_text=source_text,
+                ordinal=2,
+            ),
+        ),
+    )
+
+    preview = build_document_entity_reconciliation_preview(
+        (first, second), cast(HybridProposalLedger, _Ledger(source_text))
+    )
+
+    assert {item.preferred_name for item in preview.clusters} == {
+        "Council",
+        "National Security Council",
+    }
+    assert all(item.method is IdentityMatchMethod.SINGLETON for item in preview.justifications)
 
 
 def test_repeated_actor_mentions_create_one_candidate_identity() -> None:
@@ -336,6 +422,9 @@ def _organization_change(
     organization_type: str,
     *,
     reference_status: str = "unresolved",
+    evidence_text: str = "Anthropic",
+    source_text: str = TEXT,
+    ordinal: int | None = None,
 ) -> PlannedProposedChange:
     record = Organization(
         id=record_id,
@@ -343,12 +432,12 @@ def _organization_change(
         organization_type=organization_type,
     ).model_dump(mode="json", exclude={"created_at", "updated_at"})
     return _change(
-        1 if record_id.endswith("1" * 24) else 2,
+        ordinal if ordinal is not None else (1 if record_id.endswith("1" * 24) else 2),
         {
             "record_type": "Organization",
             "stable_label": record_id,
             "record": cast(JsonValue, record),
-            "evidence": _evidence(start, "Anthropic"),
+            "evidence": _evidence(start, evidence_text, source_text=source_text),
             "hybrid_lineage": {
                 "mention_candidate_id": "mnc_" + record_id[-24:],
                 "reference_decision_ids": (
@@ -359,17 +448,25 @@ def _organization_change(
     )
 
 
-def _actor_change(record_id: str, start: int, name: str) -> PlannedProposedChange:
+def _actor_change(
+    record_id: str,
+    start: int,
+    name: str,
+    *,
+    evidence_text: str = "Anthropic",
+    source_text: str = TEXT,
+    ordinal: int = 1,
+) -> PlannedProposedChange:
     record = Actor(id=record_id, name=name).model_dump(
         mode="json", exclude={"created_at", "updated_at"}
     )
     return _change(
-        1,
+        ordinal,
         {
             "record_type": "Actor",
             "stable_label": record_id,
             "record": cast(JsonValue, record),
-            "evidence": _evidence(start, "Anthropic"),
+            "evidence": _evidence(start, evidence_text, source_text=source_text),
             "hybrid_lineage": {
                 "mention_candidate_id": "mnc_" + record_id[-24:],
                 "reference_decision_ids": [],
@@ -466,14 +563,14 @@ def _plan(ordinal: int, changes: tuple[PlannedProposedChange, ...]) -> HybridPro
     )
 
 
-def _evidence(start: int, exact: str) -> dict[str, JsonValue]:
+def _evidence(start: int, exact: str, *, source_text: str = TEXT) -> dict[str, JsonValue]:
     return {
         "selector_type": "pinned_text",
         "source_id": "src_fixture",
         "document_id": "doc_fixture",
         "exact_text": exact,
-        "prefix_text": TEXT[max(0, start - 8) : start],
-        "suffix_text": TEXT[start + len(exact) : start + len(exact) + 8],
+        "prefix_text": source_text[max(0, start - 8) : start],
+        "suffix_text": source_text[start + len(exact) : start + len(exact) + 8],
         "location": {
             "representation_id": REPRESENTATION_ID,
             "text_view_id": "tvw_fixture",
@@ -484,14 +581,14 @@ def _evidence(start: int, exact: str) -> dict[str, JsonValue]:
     }
 
 
-def _bundle() -> DocumentRepresentationBundle:
-    digest = hashlib.sha256(TEXT.encode()).hexdigest()
+def _bundle(text: str = TEXT) -> DocumentRepresentationBundle:
+    digest = hashlib.sha256(text.encode()).hexdigest()
     view = TextView(
         id="tvw_fixture",
         representation_id=REPRESENTATION_ID,
         kind=TextViewKind.LOGICAL,
         content_digest=digest,
-        text=TEXT,
+        text=text,
         normalization_policy="utf8_identity_v1",
     )
     root = DocumentNode(
@@ -501,7 +598,7 @@ def _bundle() -> DocumentRepresentationBundle:
         order_index=0,
         text_view_id=view.id,
         start_char=0,
-        end_char=len(TEXT),
+        end_char=len(text),
     )
     first = DocumentNode(
         id="nod_1",
@@ -521,7 +618,7 @@ def _bundle() -> DocumentRepresentationBundle:
         order_index=2,
         text_view_id=view.id,
         start_char=18,
-        end_char=len(TEXT),
+        end_char=len(text),
     )
     quality = ParseQualityReport(
         id="pqr_fixture",

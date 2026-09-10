@@ -2,7 +2,7 @@
     "schema_version": "hp6_event_semantics_gold_v1",
     "fixture_path": "raw/Anthropic–United_States_Department_of_Defense_dispute.pdf",
     "fixture_sha256": "c63c85796559453acf708dab46a35da36ffed00a408a25275576ba07138e9624",
-    "ontology_profile_id": "hybrid_event_semantics_v1",
+    "ontology_profile_id": "hybrid_event_semantics_v4",
     "scope": {
         "parent_evidence_target_count": 14,
         "detailed_scenario_count": 5,

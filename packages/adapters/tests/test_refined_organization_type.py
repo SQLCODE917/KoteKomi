@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from kotekomi_adapters.correlated_worker_transport import CorrelatedWorkerExchange
 from kotekomi_adapters.refined_organization_type import (
     REFINED_ENTITY_SET,
     REFINED_MODEL_ID,
@@ -17,7 +18,6 @@ from kotekomi_adapters.refined_organization_type import (
     RefinedWorkerConfig,
     RefinedWorkerError,
 )
-from kotekomi_adapters.refined_worker_transport import RefinedWorkerExchange
 from kotekomi_application.organization_mention_boundary_reconciliation import (
     MentionBoundaryDecisionStatus,
 )
@@ -33,12 +33,12 @@ class FakeTransport:
         self.requests: list[dict[str, object]] = []
         self.discarded = False
 
-    def request(self, payload: dict[str, object]) -> RefinedWorkerExchange:
+    def request(self, payload: dict[str, object]) -> CorrelatedWorkerExchange:
         self.requests.append(payload)
         request_id = "rwr_11111111111111111111111111111111"
         raw_output = json.dumps(
             {
-                "schema_version": "refined_worker_exchange_v1",
+                "schema_version": "model_worker_exchange_v1",
                 "request_id": request_id,
                 "payload": self.response,
             },
@@ -47,7 +47,7 @@ class FakeTransport:
             sort_keys=True,
             separators=(",", ":"),
         ).encode()
-        return RefinedWorkerExchange(request_id, self.response, raw_output)
+        return CorrelatedWorkerExchange(request_id, self.response, raw_output)
 
     def discard(self) -> None:
         self.discarded = True
@@ -241,7 +241,7 @@ def test_contextual_type_worker_exchange_echoes_request_id() -> None:
 
     observed_id, payload = worker._exchange_request(
         {
-            "schema_version": "refined_worker_exchange_v1",
+            "schema_version": "model_worker_exchange_v1",
             "request_id": request_id,
             "payload": {"fixture": True},
         }
@@ -250,7 +250,7 @@ def test_contextual_type_worker_exchange_echoes_request_id() -> None:
     assert observed_id == request_id
     assert payload == {"fixture": True}
     assert worker._exchange_response(request_id, {"status": "blocked"}) == {
-        "schema_version": "refined_worker_exchange_v1",
+        "schema_version": "model_worker_exchange_v1",
         "request_id": request_id,
         "payload": {"status": "blocked"},
     }

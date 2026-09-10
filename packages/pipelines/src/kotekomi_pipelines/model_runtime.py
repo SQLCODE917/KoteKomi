@@ -93,14 +93,34 @@ class FixtureModelTaskRuntime:
         if task.execution_spec.schema_id == "paragraph_hypothesis_text_v1":
             raw_output = b"abstain: fixture_no_claim\n"
         elif (
-            task.execution_spec.schema_id == "hybrid_mention_task_text_v1"
+            task.execution_spec.schema_id == "hybrid_mention_occurrence_selection_text_v1"
             and task.task_type == "hybrid_mention_proposal"
         ):
             raw_output = b"abstain: fixture_no_mentions\n"
-        elif task.execution_spec.schema_id == "hybrid_event_trigger_text_v1":
+        elif (
+            task.execution_spec.schema_id == "hybrid_mention_interpretation_text_v2"
+            and task.task_type == "hybrid_mention_interpretation"
+        ):
+            support_label = next(
+                line.removeprefix("candidate_source: ")
+                for line in task.rendered_input.decode().splitlines()
+                if line.startswith("candidate_source: ")
+            )
+            raw_output = (
+                "candidate: c1\n"
+                "referentiality: anaphoric\n"
+                "contextual_kind: unclear\n"
+                "discourse_role: other\n"
+                f"support: {support_label}\n"
+            ).encode()
+        elif task.execution_spec.schema_id == "hybrid_event_trigger_text_v4":
             raw_output = b"abstain: fixture_no_event\n"
-        elif task.execution_spec.schema_id == "hybrid_standing_fact_text_v1":
+        elif task.execution_spec.schema_id == "hybrid_standing_fact_text_v2":
             raw_output = b"abstain: fixture_no_standing_fact\n"
+        elif task.execution_spec.schema_id == "semantic_reference_challenge_text_v2":
+            raw_output = b"antecedent: unresolved\nreason: fixture_reference_unresolved\n"
+        elif task.execution_spec.schema_id == "semantic_reference_candidate_validation_text_v1":
+            raw_output = b"verdict: unclear\nreason: fixture_reference_unclear\n"
         else:
             raw_output = b"outcome: abstain\nreason: fixture_no_claim\n"
         return ModelTaskResponse(

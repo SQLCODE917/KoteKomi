@@ -28,7 +28,7 @@ REFINED_RESOURCE_MANIFEST_SHA256 = (
     "75ca7833e4fbcc94bf05b129c591d7656900f1f61edb55cdb0b20f2d6518094b"
 )
 REFINED_RUNTIME_IDENTITY = "isolated:refined-worker-exchange-v1"
-EXCHANGE_SCHEMA_VERSION = "refined_worker_exchange_v1"
+EXCHANGE_SCHEMA_VERSION = "model_worker_exchange_v1"
 _EXCHANGE_FIELDS = {"schema_version", "request_id", "payload"}
 _REQUEST_ID_PATTERN = re.compile(r"^rwr_[a-f0-9]{32}$")
 _UNCORRELATED_REQUEST_ID = "rwr_00000000000000000000000000000000"

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+import logging
 import sys
 from collections.abc import Iterator
 from pathlib import Path
@@ -182,3 +184,113 @@ def test_default_gliner_loader_uses_only_the_managed_local_directory(
             {"map_location": "cpu", "local_files_only": True},
         )
     ]
+
+
+def test_default_loader_suppresses_only_the_pinned_deberta_false_positive(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    monkeypatch.setattr(
+        "kotekomi_adapters.gliner_organization_mention_proposer.version",
+        _version_028,
+    )
+    model = FakeGlinerModel([])
+    model_directory = (tmp_path / "managed-model").resolve()
+    _write_pinned_deberta_resource_shape(model_directory)
+    transformers_logger = logging.getLogger("transformers.tokenization_utils_tokenizers")
+    regex_warning = (
+        f"The tokenizer you are loading from '{model_directory}' with an incorrect "
+        "regex pattern: https://huggingface.co/mistralai/"
+        "Mistral-Small-3.1-24B-Instruct-2503/discussions/84#69121093e8b480e709447d5e. "
+        "This will lead to incorrect tokenization. You should set the "
+        "`fix_mistral_regex=True` flag when loading this tokenizer to fix this issue."
+    )
+
+    class FakeGliner:
+        @staticmethod
+        def from_pretrained(model_id: str, **kwargs: object) -> FakeGlinerModel:
+            del model_id, kwargs
+            transformers_logger.warning(regex_warning)
+            transformers_logger.warning("A different tokenizer warning remains visible.")
+            return model
+
+    module = ModuleType("gliner")
+    module.GLiNER = FakeGliner  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "gliner", module)
+
+    with caplog.at_level(logging.WARNING, logger=transformers_logger.name):
+        proposer = GlinerMentionProposer(model_directory=model_directory)
+        proposer.propose(
+            MentionProposalInput(
+                (SourceSegment("s1", 0, 10, "Anthropic."),),
+                ("organization",),
+            )
+        )
+
+    messages = [record.getMessage() for record in caplog.records]
+    assert regex_warning not in messages
+    assert "A different tokenizer warning remains visible." in messages
+
+
+def test_default_loader_does_not_hide_warning_for_a_different_tokenizer(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    monkeypatch.setattr(
+        "kotekomi_adapters.gliner_organization_mention_proposer.version",
+        _version_028,
+    )
+    model = FakeGlinerModel([])
+    model_directory = (tmp_path / "managed-model").resolve()
+    _write_pinned_deberta_resource_shape(model_directory)
+    (model_directory / "config.json").write_text(
+        json.dumps({"model_type": "mistral"}),
+        encoding="utf-8",
+    )
+    transformers_logger = logging.getLogger("transformers.tokenization_utils_tokenizers")
+    regex_warning = (
+        f"The tokenizer you are loading from '{model_directory}' with an incorrect "
+        "regex pattern: https://huggingface.co/mistralai/"
+        "Mistral-Small-3.1-24B-Instruct-2503/discussions/84."
+    )
+
+    class FakeGliner:
+        @staticmethod
+        def from_pretrained(model_id: str, **kwargs: object) -> FakeGlinerModel:
+            del model_id, kwargs
+            transformers_logger.warning(regex_warning)
+            return model
+
+    module = ModuleType("gliner")
+    module.GLiNER = FakeGliner  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "gliner", module)
+
+    with caplog.at_level(logging.WARNING, logger=transformers_logger.name):
+        proposer = GlinerMentionProposer(model_directory=model_directory)
+        proposer.propose(
+            MentionProposalInput(
+                (SourceSegment("s1", 0, 10, "Anthropic."),),
+                ("organization",),
+            )
+        )
+
+    assert regex_warning in [record.getMessage() for record in caplog.records]
+
+
+def _write_pinned_deberta_resource_shape(model_directory: Path) -> None:
+    model_directory.mkdir()
+    (model_directory / "gliner_config.json").write_text(
+        json.dumps({"model_name": "microsoft/deberta-v3-base"}),
+        encoding="utf-8",
+    )
+    (model_directory / "config.json").write_text(
+        json.dumps({"model_type": "deberta-v2"}),
+        encoding="utf-8",
+    )
+    (model_directory / "tokenizer_config.json").write_text(
+        json.dumps({"vocab_type": "spm"}),
+        encoding="utf-8",
+    )
+    (model_directory / "spm.model").write_bytes(b"pinned-sentencepiece-placeholder")

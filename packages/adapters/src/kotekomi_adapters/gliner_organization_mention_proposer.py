@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import json
+import logging
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Generator
+from contextlib import contextmanager
 from importlib.metadata import version
 from pathlib import Path
 from typing import Protocol, cast
@@ -25,6 +28,12 @@ GLINER_TOKENIZER_REVISION = "8ccc9b6f36199bec6961081d44eb72fb3f7353f3"
 GLINER_LABEL = "organization"
 GLINER_THRESHOLD = 0.5
 GLINER_DEVICE = "cpu"
+_TRANSFORMERS_TOKENIZER_LOGGER = "transformers.tokenization_utils_tokenizers"
+_MISTRAL_REGEX_WARNING_FRAGMENT = (
+    "with an incorrect regex pattern: "
+    "https://huggingface.co/mistralai/"
+    "Mistral-Small-3.1-24B-Instruct-2503/discussions/84"
+)
 
 
 class _GlinerModel(Protocol):
@@ -41,17 +50,79 @@ type _ModelLoader = Callable[[Path, str], _GlinerModel]
 type _MonotonicClock = Callable[[], float]
 
 
-def _load_model(model_directory: Path, device: str) -> _GlinerModel:
+class _PinnedDebertaMistralRegexWarningFilter(logging.Filter):
+    def __init__(self, model_directory: Path) -> None:
+        super().__init__()
+        self._message_prefix = f"The tokenizer you are loading from '{model_directory}'"
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        message = record.getMessage()
+        return not (
+            message.startswith(self._message_prefix) and _MISTRAL_REGEX_WARNING_FRAGMENT in message
+        )
+
+
+def load_gliner_model(model_directory: Path, device: str) -> _GlinerModel:
+    """Load the pinned local GLiNER model without changing DeBERTa tokenization."""
     from gliner import GLiNER  # pyright: ignore[reportMissingTypeStubs]
 
     loader = cast(
         Callable[..., object],
         GLiNER.from_pretrained,  # pyright: ignore[reportUnknownMemberType]
     )
-    return cast(
-        _GlinerModel,
-        loader(str(model_directory), map_location=device, local_files_only=True),
+    with _suppress_false_mistral_regex_warning(model_directory):
+        return cast(
+            _GlinerModel,
+            loader(str(model_directory), map_location=device, local_files_only=True),
+        )
+
+
+@contextmanager
+def _suppress_false_mistral_regex_warning(
+    model_directory: Path,
+) -> Generator[None]:
+    """Hide a Transformers 5.8.1 misclassification, not a real tokenizer defect.
+
+    Transformers flags large local tokenizers whose model config omits its
+    historical ``transformers_version``.  This pinned resource is DeBERTa-v3
+    SentencePiece.  Applying ``fix_mistral_regex=True`` would replace its
+    intended pre-tokenizer with Mistral's regex and change GLiNER input tokens.
+    """
+    if not _is_pinned_deberta_sentencepiece_resource(model_directory):
+        yield
+        return
+    logger = logging.getLogger(_TRANSFORMERS_TOKENIZER_LOGGER)
+    warning_filter = _PinnedDebertaMistralRegexWarningFilter(model_directory)
+    logger.addFilter(warning_filter)
+    try:
+        yield
+    finally:
+        logger.removeFilter(warning_filter)
+
+
+def _is_pinned_deberta_sentencepiece_resource(model_directory: Path) -> bool:
+    gliner_config = _load_json_object(model_directory / "gliner_config.json")
+    model_config = _load_json_object(model_directory / "config.json")
+    tokenizer_config = _load_json_object(model_directory / "tokenizer_config.json")
+    return (
+        gliner_config is not None
+        and gliner_config.get("model_name") == GLINER_TOKENIZER_ID
+        and model_config is not None
+        and model_config.get("model_type") == "deberta-v2"
+        and tokenizer_config is not None
+        and tokenizer_config.get("vocab_type") == "spm"
+        and (model_directory / "spm.model").is_file()
     )
+
+
+def _load_json_object(path: Path) -> dict[str, object] | None:
+    try:
+        value = cast(object, json.loads(path.read_text(encoding="utf-8")))
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(value, dict):
+        return None
+    return cast(dict[str, object], value)
 
 
 class GlinerOrganizationMentionProposer:
@@ -61,7 +132,7 @@ class GlinerOrganizationMentionProposer:
         self,
         *,
         model_directory: Path,
-        model_loader: _ModelLoader = _load_model,
+        model_loader: _ModelLoader = load_gliner_model,
         monotonic_clock: _MonotonicClock = time.monotonic,
     ) -> None:
         installed_version = version("gliner")
@@ -108,7 +179,7 @@ class GlinerMentionProposer:
         self,
         *,
         model_directory: Path,
-        model_loader: _ModelLoader = _load_model,
+        model_loader: _ModelLoader = load_gliner_model,
         monotonic_clock: _MonotonicClock = time.monotonic,
     ) -> None:
         installed_version = version("gliner")

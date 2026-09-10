@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import cast
 
 from kotekomi_adapters import (
+    DebertaNliAdapter,
     DoclingPdfParser,
     DoclingPdfParserConfig,
     GenericArticleAdapter,
@@ -32,6 +33,8 @@ from kotekomi_adapters import (
     SQLiteLedgerInitializer,
     SQLiteLedgerRetrievalAdapter,
     gliner_model_path,
+    nli_expected_resource_identity,
+    nli_model_path,
     refined_data_path,
     refined_python_path,
     sqlite_ledger_transaction,
@@ -69,14 +72,12 @@ from kotekomi_application import (
     EntityLinkingPort,
     ExecutionSetting,
     ExplainEvidenceGraphRelationshipCommand,
-    HybridAtomicClaimCommand,
-    HybridAtomicClaimStatus,
     HybridEntityGroundingCommand,
     HybridEntityGroundingStatus,
-    HybridEventFrameCommand,
-    HybridEventFrameStatus,
     HybridEventSemanticsCommand,
     HybridEventSemanticsStatus,
+    HybridEventTriggerCommand,
+    HybridEventTriggerStatus,
     HybridMentionPreviewCommand,
     HybridPreviewStatus,
     HybridReferencePreviewCommand,
@@ -160,7 +161,6 @@ from kotekomi_application import (
     normalize_source_url,
     pipeline_next_to_json,
     pipeline_status_to_json,
-    publish_hybrid_atomic_claim_preview,
     publish_hybrid_event_semantics_preview,
     query_cross_plane,
     query_document_hybrid_retrieval,
@@ -175,10 +175,9 @@ from kotekomi_application import (
     review_packet_to_json,
     review_queue_result_to_json,
     review_readiness_to_json,
-    run_hybrid_atomic_claim_preview,
     run_hybrid_entity_grounding_preview,
-    run_hybrid_event_frame_preview,
     run_hybrid_event_semantics_preview,
+    run_hybrid_event_trigger_preview,
     run_hybrid_mention_preview,
     run_hybrid_proposal_submission,
     run_hybrid_reference_preview,
@@ -314,7 +313,9 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "model" and args.model_command == "resources":
         resource_names = {
+            "fcoref": ModelResourceId.FCOREF_V1,
             "gliner": ModelResourceId.GLINER_MENTION_PROPOSER_V1,
+            "nli": ModelResourceId.NLI_DEBERTA_V3_BASE_V1,
             "refined": ModelResourceId.REFINED_WIKIPEDIA_V1,
         }
         return manage_model_resources(
@@ -573,7 +574,7 @@ def main(argv: list[str] | None = None) -> int:
         )
         return ground_hybrid_entities(config=config, parent_preview_id=args.preview_id)
 
-    if args.command == "extraction" and args.extraction_command == "draft-event-frames":
+    if args.command == "extraction" and args.extraction_command == "discover-event-triggers":
         config = _load_model_config(
             config_path=args.config,
             ledger_path_override=args.ledger_path,
@@ -586,15 +587,7 @@ def main(argv: list[str] | None = None) -> int:
             model_context_tokens=args.model_context_tokens,
             model_max_output_tokens=args.model_max_output_tokens,
         )
-        return draft_hybrid_event_frames(config=config, parent_preview_id=args.preview_id)
-
-    if args.command == "extraction" and args.extraction_command == "build-atomic-claims":
-        config = load_config(
-            config_path=args.config,
-            ledger_path_override=args.ledger_path,
-            archive_path_override=args.archive_path,
-        )
-        return build_hybrid_atomic_claims(config=config, parent_preview_id=args.preview_id)
+        return discover_hybrid_event_triggers(config=config, parent_preview_id=args.preview_id)
 
     if args.command == "extraction" and args.extraction_command == "build-event-semantics":
         config = _load_model_config(
@@ -1211,7 +1204,7 @@ def build_parser() -> argparse.ArgumentParser:
     model_resources_install_parser.add_argument(
         "--resource",
         action="append",
-        choices=("gliner", "refined"),
+        choices=("fcoref", "gliner", "nli", "refined"),
         default=None,
     )
     model_resources_install_parser.add_argument("--repair", action="store_true")
@@ -1255,24 +1248,17 @@ def build_parser() -> argparse.ArgumentParser:
     ground_entities_parser.add_argument("--preview-id", required=True)
     ground_entities_parser.add_argument("--ledger-path", type=Path, default=None)
     ground_entities_parser.add_argument("--archive-path", type=Path, default=None)
-    draft_event_frames_parser = extraction_subparsers.add_parser(
-        "draft-event-frames",
-        help="Draft source-grounded event frames from one immutable grounding Preview.",
+    discover_event_triggers_parser = extraction_subparsers.add_parser(
+        "discover-event-triggers",
+        help="Discover exact source-grounded event triggers from one grounding Preview.",
     )
-    draft_event_frames_parser.add_argument("--preview-id", required=True)
-    draft_event_frames_parser.add_argument("--ledger-path", type=Path, default=None)
-    draft_event_frames_parser.add_argument("--archive-path", type=Path, default=None)
-    _add_model_runtime_arguments(draft_event_frames_parser, include_fixture=True)
-    build_atomic_claims_parser = extraction_subparsers.add_parser(
-        "build-atomic-claims",
-        help="Atomize one immutable event-frame Preview and validate its ontology labels.",
-    )
-    build_atomic_claims_parser.add_argument("--preview-id", required=True)
-    build_atomic_claims_parser.add_argument("--ledger-path", type=Path, default=None)
-    build_atomic_claims_parser.add_argument("--archive-path", type=Path, default=None)
+    discover_event_triggers_parser.add_argument("--preview-id", required=True)
+    discover_event_triggers_parser.add_argument("--ledger-path", type=Path, default=None)
+    discover_event_triggers_parser.add_argument("--archive-path", type=Path, default=None)
+    _add_model_runtime_arguments(discover_event_triggers_parser, include_fixture=True)
     build_event_semantics_parser = extraction_subparsers.add_parser(
         "build-event-semantics",
-        help="Normalize HP-5 events and independently judge governed semantic statements.",
+        help="Build governed semantics directly from one HP-4 trigger Preview.",
     )
     build_event_semantics_parser.add_argument("--preview-id", required=True)
     build_event_semantics_parser.add_argument("--ledger-path", type=Path, default=None)
@@ -2529,8 +2515,18 @@ def preview_hybrid_mentions(
     archive = LocalArchiveStore(config.archive_path)
     archive.initialize()
     runtime = build_model_task_runtime(config.model_execution)
-    prompt_bytes = (
-        Path(__file__).resolve().parents[4] / "prompts" / "hybrid_mention_task_v1.md"
+    proposal_prompt_bytes = (
+        Path(__file__).resolve().parents[4]
+        / "prompts"
+        / "hybrid_mention_occurrence_selection_v2.md"
+    ).read_bytes()
+    boundary_adjudication_prompt_bytes = (
+        Path(__file__).resolve().parents[4]
+        / "prompts"
+        / "hybrid_mention_boundary_adjudication_v2.md"
+    ).read_bytes()
+    interpretation_prompt_bytes = (
+        Path(__file__).resolve().parents[4] / "prompts" / "hybrid_mention_interpretation_task_v2.md"
     ).read_bytes()
     ontology_card_bytes = (
         Path(__file__).resolve().parents[4] / "prompts" / "hybrid_mention_ontology_card_v1.md"
@@ -2563,7 +2559,9 @@ def preview_hybrid_mentions(
             model_runtime=runtime,
             model_run_id_factory=Uuid4ModelRunIdFactory(),
             tokenizer=runtime,
-            prompt_bytes=prompt_bytes,
+            proposal_prompt_bytes=proposal_prompt_bytes,
+            boundary_adjudication_prompt_bytes=boundary_adjudication_prompt_bytes,
+            interpretation_prompt_bytes=interpretation_prompt_bytes,
             ontology_card_bytes=ontology_card_bytes,
         )
     print(
@@ -2678,17 +2676,16 @@ def ground_hybrid_entities(*, config: PipelineConfig, parent_preview_id: str) ->
     return 0 if result.preview.terminal_status is HybridEntityGroundingStatus.COMPLETE else 1
 
 
-def draft_hybrid_event_frames(*, config: PipelineConfig, parent_preview_id: str) -> int:
-    """Run HP-4 and print one portable event-frame Preview result."""
+def discover_hybrid_event_triggers(*, config: PipelineConfig, parent_preview_id: str) -> int:
+    """Run HP-4 and print one portable source-bound trigger Preview result."""
     archive = LocalArchiveStore(config.archive_path)
     archive.initialize()
     runtime = build_model_task_runtime(config.model_execution)
     prompt_root = Path(__file__).resolve().parents[4] / "prompts"
-    trigger_prompt = (prompt_root / "hybrid_event_trigger_task_v1.md").read_bytes()
-    frame_prompt = (prompt_root / "hybrid_event_frame_task_v1.md").read_bytes()
+    trigger_prompt = (prompt_root / "hybrid_event_trigger_task_v4.md").read_bytes()
     with sqlite_ledger_transaction(config.ledger_path) as repository:
-        result = run_hybrid_event_frame_preview(
-            command=HybridEventFrameCommand(
+        result = run_hybrid_event_trigger_preview(
+            command=HybridEventTriggerCommand(
                 parent_preview_id=parent_preview_id,
                 model_profile=ContextModelProfile(
                     config.model_execution.profile_name or "lm-studio",
@@ -2708,7 +2705,6 @@ def draft_hybrid_event_frames(*, config: PipelineConfig, parent_preview_id: str)
             model_run_id_factory=Uuid4ModelRunIdFactory(),
             tokenizer=runtime,
             trigger_prompt_bytes=trigger_prompt,
-            frame_prompt_bytes=frame_prompt,
         )
     print(
         json.dumps(
@@ -2718,48 +2714,14 @@ def draft_hybrid_event_frames(*, config: PipelineConfig, parent_preview_id: str)
                 "preview_id": result.preview.id,
                 "sha256": result.sha256,
                 "status": result.preview.terminal_status.value,
+                "trigger_count": len(result.preview.triggers),
             },
             sort_keys=True,
         )
     )
     for diagnostic in result.preview.diagnostics:
         print(diagnostic, file=sys.stderr)
-    return 0 if result.preview.terminal_status is HybridEventFrameStatus.COMPLETE else 1
-
-
-def build_hybrid_atomic_claims(*, config: PipelineConfig, parent_preview_id: str) -> int:
-    """Run deterministic HP-5 atomization and print one portable Preview result."""
-    archive = LocalArchiveStore(config.archive_path)
-    archive.initialize()
-    with sqlite_ledger_transaction(config.ledger_path) as repository:
-        result = run_hybrid_atomic_claim_preview(
-            command=HybridAtomicClaimCommand(parent_preview_id, datetime.now(UTC)),
-            ledger=repository,
-            archive=archive,
-        )
-    publish_hybrid_atomic_claim_preview(result, archive)
-    print(
-        json.dumps(
-            {
-                "archive_path": result.archive_path,
-                "claim_count": len(result.preview.atomic_claims),
-                "evidence_target_count": len(result.preview.evidence_target_ids),
-                "ontology_finding_count": sum(
-                    len(item.findings) for item in result.preview.ontology_reports
-                ),
-                "parent_preview_id": result.preview.parent_preview_id,
-                "preview_id": result.preview.id,
-                "report_count": len(result.preview.ontology_reports),
-                "sha256": result.sha256,
-                "status": result.preview.terminal_status.value,
-                "subject_count": len(result.preview.event_subjects),
-            },
-            sort_keys=True,
-        )
-    )
-    for diagnostic in result.preview.diagnostics:
-        print(diagnostic, file=sys.stderr)
-    return 0 if result.preview.terminal_status is HybridAtomicClaimStatus.COMPLETE else 1
+    return 0 if result.preview.terminal_status is HybridEventTriggerStatus.COMPLETE else 1
 
 
 def build_hybrid_event_semantics(
@@ -2773,8 +2735,10 @@ def build_hybrid_event_semantics(
     archive.initialize()
     runtime = build_model_task_runtime(config.model_execution)
     prompt_root = Path(__file__).resolve().parents[4] / "prompts"
-    normalization_prompt = (prompt_root / "hybrid_event_normalization_v1.md").read_bytes()
-    role_completion_prompt = (prompt_root / "hybrid_event_role_completion_v1.md").read_bytes()
+    frame_selection_prompt = (prompt_root / "hybrid_event_frame_selection_v1.md").read_bytes()
+    frame_fit_prompt = (prompt_root / "hybrid_event_frame_fit_v1.md").read_bytes()
+    role_selection_prompt = (prompt_root / "hybrid_event_role_selection_v1.md").read_bytes()
+    presentation_prompt = (prompt_root / "hybrid_event_presentation_v1.md").read_bytes()
     support_prompt = (prompt_root / "hybrid_semantic_support_v1.md").read_bytes()
     with sqlite_ledger_transaction(config.ledger_path) as repository:
         result = run_hybrid_event_semantics_preview(
@@ -2797,9 +2761,15 @@ def build_hybrid_event_semantics(
             model_runtime=runtime,
             model_run_id_factory=Uuid4ModelRunIdFactory(),
             tokenizer=runtime,
-            normalization_prompt_bytes=normalization_prompt,
-            role_completion_prompt_bytes=role_completion_prompt,
+            frame_selection_prompt_bytes=frame_selection_prompt,
+            frame_fit_prompt_bytes=frame_fit_prompt,
+            role_selection_prompt_bytes=role_selection_prompt,
+            presentation_prompt_bytes=presentation_prompt,
             support_prompt_bytes=support_prompt,
+            nli_runtime=DebertaNliAdapter(
+                model_directory=nli_model_path(config.model_resource_root).resolve(),
+                resource_identity=nli_expected_resource_identity(),
+            ),
         )
     publish_hybrid_event_semantics_preview(result, archive)
     counts = {

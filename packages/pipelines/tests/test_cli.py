@@ -11,18 +11,15 @@ from kotekomi_adapters import SQLiteLedgerInitializer
 from kotekomi_application import (
     EntityLinkingInput,
     EntityLinkingPort,
-    HybridAtomicClaimCommand,
-    HybridAtomicClaimResult,
-    HybridAtomicClaimStatus,
     HybridEntityGroundingCommand,
     HybridEntityGroundingResult,
     HybridEntityGroundingStatus,
-    HybridEventFrameCommand,
-    HybridEventFrameResult,
-    HybridEventFrameStatus,
     HybridEventSemanticsCommand,
     HybridEventSemanticsResult,
     HybridEventSemanticsStatus,
+    HybridEventTriggerCommand,
+    HybridEventTriggerResult,
+    HybridEventTriggerStatus,
     HybridMentionPreviewResult,
     HybridPreviewStatus,
     HybridProposalResult,
@@ -38,17 +35,15 @@ from kotekomi_application import (
     ReviewNextResult,
     ReviewPacket,
     ReviewPacketMetadata,
-    build_hybrid_atomic_claim_preview,
     build_hybrid_entity_grounding_preview_record,
-    build_hybrid_event_frame_preview,
     build_hybrid_event_semantics_preview,
+    build_hybrid_event_trigger_preview,
     build_hybrid_extraction_preview,
     build_hybrid_proposal_plan_record,
     build_hybrid_reference_preview_record,
-    hybrid_atomic_claim_preview_sha256,
     hybrid_entity_grounding_preview_sha256,
-    hybrid_event_frame_preview_sha256,
     hybrid_event_semantics_preview_sha256,
+    hybrid_event_trigger_preview_sha256,
     hybrid_extraction_preview_sha256,
     hybrid_reference_preview_sha256,
 )
@@ -322,7 +317,9 @@ def test_hybrid_mention_preview_prints_exact_portable_result(
         yield object()
 
     def fake_run(**kwargs: object) -> HybridMentionPreviewResult:
-        assert kwargs["prompt_bytes"]
+        assert kwargs["proposal_prompt_bytes"]
+        assert kwargs["boundary_adjudication_prompt_bytes"]
+        assert kwargs["interpretation_prompt_bytes"]
         assert kwargs["ontology_card_bytes"]
         return HybridMentionPreviewResult(
             preview,
@@ -629,7 +626,7 @@ def test_hybrid_entity_grounding_missing_runtime_publishes_blocked_result(
     assert captured.err == "entity_linking_runtime_unavailable\n"
 
 
-def test_hybrid_event_frame_command_routes_parent_preview(
+def test_hybrid_event_trigger_command_routes_parent_preview(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -648,18 +645,18 @@ def test_hybrid_event_frame_command_routes_parent_preview(
         del kwargs
         return config
 
-    def fake_draft(*, config: PipelineConfig, parent_preview_id: str) -> int:
+    def fake_discover(*, config: PipelineConfig, parent_preview_id: str) -> int:
         received.append((config, parent_preview_id))
         return 0
 
     monkeypatch.setattr(cli, "_load_model_config", fake_load_model_config)
-    monkeypatch.setattr(cli, "draft_hybrid_event_frames", fake_draft)
+    monkeypatch.setattr(cli, "discover_hybrid_event_triggers", fake_discover)
 
-    assert main(["extraction", "draft-event-frames", "--preview-id", "hgp_fixture"]) == 0
+    assert main(["extraction", "discover-event-triggers", "--preview-id", "hgp_fixture"]) == 0
     assert received == [(config, "hgp_fixture")]
 
 
-def test_hybrid_event_frame_command_prints_portable_result(
+def test_hybrid_event_trigger_command_prints_portable_result(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
@@ -673,7 +670,7 @@ def test_hybrid_event_frame_command_prints_portable_result(
         embedding_profiles={},
         document_retrieval_embedding_profile_id=None,
     )
-    preview = build_hybrid_event_frame_preview(
+    preview = build_hybrid_event_trigger_preview(
         parent_preview_id="hgp_" + "1" * 24,
         parent_preview_sha256="a" * 64,
         reference_preview_id="hrp_" + "2" * 24,
@@ -682,11 +679,10 @@ def test_hybrid_event_frame_command_prints_portable_result(
         mention_preview_sha256="c" * 64,
         representation_id="rep_fixture",
         paragraph_node_id="nod_fixture",
-        trigger_context_manifest_id="ctx_trigger",
-        frame_context_manifest_id="ctx_frame",
-        terminal_status=HybridEventFrameStatus.COMPLETE,
+        context_manifest_ids=("ctx_trigger",),
+        terminal_status=HybridEventTriggerStatus.COMPLETE,
     )
-    digest = hybrid_event_frame_preview_sha256(preview)
+    digest = hybrid_event_trigger_preview_sha256(preview)
 
     class FakeArchive:
         def __init__(self, archive_path: Path) -> None:
@@ -700,15 +696,14 @@ def test_hybrid_event_frame_command_prints_portable_result(
         assert ledger_path == config.ledger_path
         yield object()
 
-    def fake_run(**kwargs: object) -> HybridEventFrameResult:
-        command = cast(HybridEventFrameCommand, kwargs["command"])
+    def fake_run(**kwargs: object) -> HybridEventTriggerResult:
+        command = cast(HybridEventTriggerCommand, kwargs["command"])
         assert command.parent_preview_id == preview.parent_preview_id
         assert kwargs["trigger_prompt_bytes"]
-        assert kwargs["frame_prompt_bytes"]
-        return HybridEventFrameResult(
+        return HybridEventTriggerResult(
             preview,
             digest,
-            f"extraction/event-frame-previews/{preview.id}.json",
+            f"extraction/event-trigger-previews/{preview.id}.json",
         )
 
     def fake_runtime(runtime_config: ModelExecutionConfig) -> object:
@@ -718,139 +713,22 @@ def test_hybrid_event_frame_command_prints_portable_result(
     monkeypatch.setattr(cli, "LocalArchiveStore", FakeArchive)
     monkeypatch.setattr(cli, "build_model_task_runtime", fake_runtime)
     monkeypatch.setattr(cli, "sqlite_ledger_transaction", fake_transaction)
-    monkeypatch.setattr(cli, "run_hybrid_event_frame_preview", fake_run)
+    monkeypatch.setattr(cli, "run_hybrid_event_trigger_preview", fake_run)
 
     assert (
-        cli.draft_hybrid_event_frames(
+        cli.discover_hybrid_event_triggers(
             config=config,
             parent_preview_id=preview.parent_preview_id,
         )
         == 0
     )
     assert json.loads(capsys.readouterr().out) == {
-        "archive_path": f"extraction/event-frame-previews/{preview.id}.json",
+        "archive_path": f"extraction/event-trigger-previews/{preview.id}.json",
         "parent_preview_id": preview.parent_preview_id,
         "preview_id": preview.id,
         "sha256": digest,
         "status": "complete",
-    }
-
-
-def test_hybrid_atomic_claim_command_routes_without_a_model_runtime(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    config = PipelineConfig(
-        ledger_path=tmp_path / "kotekomi.db",
-        archive_path=tmp_path / "archive",
-        model_execution=ModelExecutionConfig(
-            "fixture", "fixture://local", "fixture", 300.0, 1024, 64
-        ),
-        embedding_profiles={},
-        document_retrieval_embedding_profile_id=None,
-    )
-    received: list[tuple[PipelineConfig, str]] = []
-
-    def fake_load_config(**kwargs: object) -> PipelineConfig:
-        del kwargs
-        return config
-
-    def fake_build(*, config: PipelineConfig, parent_preview_id: str) -> int:
-        received.append((config, parent_preview_id))
-        return 0
-
-    monkeypatch.setattr(cli, "load_config", fake_load_config)
-    monkeypatch.setattr(cli, "build_hybrid_atomic_claims", fake_build)
-
-    assert main(["extraction", "build-atomic-claims", "--preview-id", "hep_fixture"]) == 0
-    assert received == [(config, "hep_fixture")]
-
-
-def test_hybrid_atomic_claim_command_prints_counts(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    config = PipelineConfig(
-        ledger_path=tmp_path / "kotekomi.db",
-        archive_path=tmp_path / "archive",
-        model_execution=ModelExecutionConfig(
-            "fixture", "fixture://local", "fixture", 300.0, 1024, 64
-        ),
-        embedding_profiles={},
-        document_retrieval_embedding_profile_id=None,
-    )
-    preview = build_hybrid_atomic_claim_preview(
-        parent_preview_id="hep_" + "1" * 24,
-        parent_preview_sha256="a" * 64,
-        grounding_preview_id="hgp_" + "2" * 24,
-        grounding_preview_sha256="b" * 64,
-        reference_preview_id="hrp_" + "3" * 24,
-        reference_preview_sha256="c" * 64,
-        mention_preview_id="hxp_" + "4" * 24,
-        mention_preview_sha256="d" * 64,
-        representation_id="rep_fixture",
-        paragraph_node_id="nod_fixture",
-        ontology_slice_id="hybrid_event_core_v1",
-        ontology_slice_sha256="e" * 64,
-        terminal_status=HybridAtomicClaimStatus.COMPLETE,
-    )
-    digest = hybrid_atomic_claim_preview_sha256(preview)
-    transaction_open = False
-    published: list[str] = []
-
-    class FakeArchive:
-        def __init__(self, archive_path: Path) -> None:
-            assert archive_path == config.archive_path
-
-        def initialize(self) -> None:
-            pass
-
-    @contextmanager
-    def fake_transaction(ledger_path: Path) -> Generator[object]:
-        nonlocal transaction_open
-        assert ledger_path == config.ledger_path
-        transaction_open = True
-        try:
-            yield object()
-        finally:
-            transaction_open = False
-
-    def fake_run(**kwargs: object) -> HybridAtomicClaimResult:
-        command = cast(HybridAtomicClaimCommand, kwargs["command"])
-        assert command.parent_preview_id == preview.parent_preview_id
-        return HybridAtomicClaimResult(
-            preview,
-            digest,
-            f"extraction/atomic-claim-previews/{preview.id}.json",
-        )
-
-    def fake_publish(result: HybridAtomicClaimResult, archive: object) -> None:
-        del archive
-        assert transaction_open is False
-        published.append(result.preview.id)
-
-    monkeypatch.setattr(cli, "LocalArchiveStore", FakeArchive)
-    monkeypatch.setattr(cli, "sqlite_ledger_transaction", fake_transaction)
-    monkeypatch.setattr(cli, "run_hybrid_atomic_claim_preview", fake_run)
-    monkeypatch.setattr(cli, "publish_hybrid_atomic_claim_preview", fake_publish)
-
-    assert (
-        cli.build_hybrid_atomic_claims(config=config, parent_preview_id=preview.parent_preview_id)
-        == 0
-    )
-    assert published == [preview.id]
-    assert json.loads(capsys.readouterr().out) == {
-        "archive_path": f"extraction/atomic-claim-previews/{preview.id}.json",
-        "claim_count": 0,
-        "evidence_target_count": 0,
-        "ontology_finding_count": 0,
-        "parent_preview_id": preview.parent_preview_id,
-        "preview_id": preview.id,
-        "report_count": 0,
-        "sha256": digest,
-        "status": "complete",
-        "subject_count": 0,
+        "trigger_count": 0,
     }
 
 
@@ -886,14 +764,14 @@ def test_hybrid_event_semantics_command_routes_model_and_format_arguments(
                 "extraction",
                 "build-event-semantics",
                 "--preview-id",
-                "hcp_fixture",
+                "htp_fixture",
                 "--format",
                 "json",
             ]
         )
         == 0
     )
-    assert received == [(config, "hcp_fixture", "json")]
+    assert received == [(config, "htp_fixture", "json")]
 
 
 @pytest.mark.parametrize("output_format", ("json", "text"))
@@ -923,16 +801,20 @@ def test_hybrid_event_semantics_command_prints_typed_result(
         document_retrieval_embedding_profile_id=None,
     )
     preview = build_hybrid_event_semantics_preview(
-        parent_preview_id="hcp_" + "1" * 24,
+        parent_preview_id="htp_" + "1" * 24,
         parent_preview_sha256="a" * 64,
         representation_id="rep_fixture",
         paragraph_node_id="nod_fixture",
-        ontology_profile_id="hybrid_event_semantics_v1",
+        ontology_profile_id="hybrid_event_semantics_v4",
         ontology_profile_sha256=hybrid_event_semantics_profile_sha256(),
-        normalization_prompt_sha256="b" * 64,
-        normalization_schema_sha256="c" * 64,
-        role_completion_prompt_sha256="d" * 64,
-        role_completion_schema_sha256="e" * 64,
+        frame_selection_prompt_sha256="b" * 64,
+        frame_selection_schema_sha256="c" * 64,
+        frame_fit_prompt_sha256="d" * 64,
+        frame_fit_schema_sha256="e" * 64,
+        role_selection_prompt_sha256="d" * 64,
+        role_selection_schema_sha256="e" * 64,
+        presentation_prompt_sha256="2" * 64,
+        presentation_schema_sha256="3" * 64,
         support_prompt_sha256="f" * 64,
         support_schema_sha256="1" * 64,
         terminal_status=terminal_status,
@@ -996,7 +878,7 @@ def test_hybrid_event_semantics_command_prints_typed_result(
             "gap_count": 0,
             "judgment_count": 0,
             "model_run_count": 0,
-            "ontology_profile_id": "hybrid_event_semantics_v1",
+            "ontology_profile_id": "hybrid_event_semantics_v4",
             "ontology_profile_sha256": hybrid_event_semantics_profile_sha256(),
             "outcome_counts": {
                 "ambiguous": 0,
@@ -1192,7 +1074,7 @@ def test_hybrid_proposal_command_returns_one_for_invalid_parent_evidence(
     assert "HP-7 proposal submission failed: parent digest mismatch" in capsys.readouterr().err
 
 
-def test_hybrid_event_frame_command_returns_one_for_a_partial_preview(
+def test_hybrid_event_trigger_command_returns_one_for_a_partial_preview(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
@@ -1206,7 +1088,7 @@ def test_hybrid_event_frame_command_returns_one_for_a_partial_preview(
         embedding_profiles={},
         document_retrieval_embedding_profile_id=None,
     )
-    preview = build_hybrid_event_frame_preview(
+    preview = build_hybrid_event_trigger_preview(
         parent_preview_id="hgp_" + "1" * 24,
         parent_preview_sha256="a" * 64,
         reference_preview_id="hrp_" + "2" * 24,
@@ -1215,10 +1097,9 @@ def test_hybrid_event_frame_command_returns_one_for_a_partial_preview(
         mention_preview_sha256="c" * 64,
         representation_id="rep_fixture",
         paragraph_node_id="nod_fixture",
-        trigger_context_manifest_id="ctx_trigger",
-        frame_context_manifest_id="ctx_frame",
-        terminal_status=HybridEventFrameStatus.PARTIAL,
-        diagnostics=("frame_task_failed:fixture",),
+        context_manifest_ids=("ctx_trigger",),
+        terminal_status=HybridEventTriggerStatus.PARTIAL,
+        diagnostics=("trigger_task_failed:fixture",),
     )
 
     class FakeArchive:
@@ -1237,21 +1118,21 @@ def test_hybrid_event_frame_command_returns_one_for_a_partial_preview(
         assert runtime_config == config.model_execution
         return object()
 
-    def fake_run(**kwargs: object) -> HybridEventFrameResult:
+    def fake_run(**kwargs: object) -> HybridEventTriggerResult:
         del kwargs
-        return HybridEventFrameResult(
+        return HybridEventTriggerResult(
             preview,
-            hybrid_event_frame_preview_sha256(preview),
-            f"extraction/event-frame-previews/{preview.id}.json",
+            hybrid_event_trigger_preview_sha256(preview),
+            f"extraction/event-trigger-previews/{preview.id}.json",
         )
 
     monkeypatch.setattr(cli, "LocalArchiveStore", FakeArchive)
     monkeypatch.setattr(cli, "build_model_task_runtime", fake_runtime)
     monkeypatch.setattr(cli, "sqlite_ledger_transaction", fake_transaction)
-    monkeypatch.setattr(cli, "run_hybrid_event_frame_preview", fake_run)
+    monkeypatch.setattr(cli, "run_hybrid_event_trigger_preview", fake_run)
 
     assert (
-        cli.draft_hybrid_event_frames(
+        cli.discover_hybrid_event_triggers(
             config=config,
             parent_preview_id=preview.parent_preview_id,
         )
@@ -1259,7 +1140,7 @@ def test_hybrid_event_frame_command_returns_one_for_a_partial_preview(
     )
     captured = capsys.readouterr()
     assert json.loads(captured.out)["status"] == "partial"
-    assert captured.err == "frame_task_failed:fixture\n"
+    assert captured.err == "trigger_task_failed:fixture\n"
 
 
 def test_entrypoint_reports_application_validation_errors_without_traceback(

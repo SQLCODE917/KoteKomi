@@ -7,40 +7,36 @@ from kotekomi_adapters import LocalArchiveStore
 from kotekomi_application import (
     ArchivePutDisposition,
     DocumentEntityReconciliationPreview,
-    HybridAtomicClaimStatus,
     HybridDocumentCoverageReport,
     HybridDocumentCoverageStatus,
     HybridEntityGroundingStatus,
-    HybridEventFrameStatus,
     HybridEventSemanticsStatus,
+    HybridEventTriggerStatus,
     HybridPipelinePolicyManifest,
     HybridPreviewStatus,
     ReconciledDocumentProposalPlan,
     StagedArchiveObject,
     StandingFactPlan,
-    build_hybrid_atomic_claim_preview,
     build_hybrid_entity_grounding_preview_record,
-    build_hybrid_event_frame_preview,
     build_hybrid_event_semantics_preview,
+    build_hybrid_event_trigger_preview,
     build_hybrid_extraction_preview,
     build_hybrid_proposal_plan_record,
     build_hybrid_reference_preview_record,
     canonical_document_entity_reconciliation_preview_bytes,
-    canonical_hybrid_atomic_claim_preview_bytes,
     canonical_hybrid_document_coverage_report_bytes,
     canonical_hybrid_entity_grounding_preview_bytes,
-    canonical_hybrid_event_frame_preview_bytes,
     canonical_hybrid_event_semantics_preview_bytes,
+    canonical_hybrid_event_trigger_preview_bytes,
     canonical_hybrid_extraction_preview_bytes,
     canonical_hybrid_pipeline_policy_manifest_bytes,
     canonical_hybrid_proposal_plan_bytes,
     canonical_hybrid_reference_preview_bytes,
     canonical_reconciled_document_proposal_plan_bytes,
     canonical_standing_fact_plan_bytes,
-    hybrid_atomic_claim_preview_sha256,
     hybrid_entity_grounding_preview_sha256,
-    hybrid_event_frame_preview_sha256,
     hybrid_event_semantics_preview_sha256,
+    hybrid_event_trigger_preview_sha256,
     hybrid_extraction_preview_sha256,
     hybrid_reference_preview_sha256,
 )
@@ -61,8 +57,7 @@ def test_initialize_creates_archive_directories(tmp_path: Path) -> None:
     assert (tmp_path / "extraction" / "entity-grounding-previews").is_dir()
     assert (tmp_path / "extraction" / "entity-reconciliation-previews").is_dir()
     assert (tmp_path / "extraction" / "document-proposal-plans").is_dir()
-    assert (tmp_path / "extraction" / "event-frame-previews").is_dir()
-    assert (tmp_path / "extraction" / "atomic-claim-previews").is_dir()
+    assert (tmp_path / "extraction" / "event-trigger-previews").is_dir()
     assert (tmp_path / "extraction" / "event-semantic-previews").is_dir()
     assert (tmp_path / "extraction" / "proposal-plans").is_dir()
     assert (tmp_path / "extraction" / "standing-fact-plans").is_dir()
@@ -131,8 +126,8 @@ def test_ingestion_evidence_paths_are_adapter_owned() -> None:
     store = LocalArchiveStore(Path("unused"))
 
     assert (
-        store.ingestion_evidence_path("hp4_event_frames", "hef_fixture")
-        == "extraction/event-frame-previews/hef_fixture.json"
+        store.ingestion_evidence_path("hp4_event_triggers", "htp_fixture")
+        == "extraction/event-trigger-previews/htp_fixture.json"
     )
     with pytest.raises(ValueError, match="Unsupported ingestion evidence type"):
         store.ingestion_evidence_path("unknown", "record")
@@ -302,10 +297,10 @@ def test_put_reuse_and_restart_hybrid_entity_grounding_preview(tmp_path: Path) -
     assert reopened.read_hybrid_entity_grounding_preview(preview.id) == payload
 
 
-def test_put_reuse_and_restart_hybrid_event_frame_preview(tmp_path: Path) -> None:
+def test_put_reuse_and_restart_hybrid_event_trigger_preview(tmp_path: Path) -> None:
     store = LocalArchiveStore(tmp_path)
     store.initialize()
-    preview = build_hybrid_event_frame_preview(
+    preview = build_hybrid_event_trigger_preview(
         parent_preview_id="hgp_" + "1" * 24,
         parent_preview_sha256="a" * 64,
         reference_preview_id="hrp_" + "2" * 24,
@@ -314,26 +309,25 @@ def test_put_reuse_and_restart_hybrid_event_frame_preview(tmp_path: Path) -> Non
         mention_preview_sha256="c" * 64,
         representation_id="rep_fixture",
         paragraph_node_id="nod_fixture",
-        trigger_context_manifest_id="ctx_trigger",
-        frame_context_manifest_id="ctx_frame",
-        terminal_status=HybridEventFrameStatus.COMPLETE,
+        context_manifest_ids=("ctx_trigger",),
+        terminal_status=HybridEventTriggerStatus.COMPLETE,
     )
-    payload = canonical_hybrid_event_frame_preview_bytes(preview)
-    digest = hybrid_event_frame_preview_sha256(preview)
+    payload = canonical_hybrid_event_trigger_preview_bytes(preview)
+    digest = hybrid_event_trigger_preview_sha256(preview)
 
-    created = store.put_hybrid_event_frame_preview(preview, payload, digest)
-    reused = store.put_hybrid_event_frame_preview(preview, payload, digest)
+    created = store.put_hybrid_event_trigger_preview(preview, payload, digest)
+    reused = store.put_hybrid_event_trigger_preview(preview, payload, digest)
     reopened = LocalArchiveStore(tmp_path)
 
     assert created.disposition is ArchivePutDisposition.CREATED
     assert reused.disposition is ArchivePutDisposition.REUSED
-    assert reopened.read_hybrid_event_frame_preview(preview.id) == payload
+    assert reopened.read_hybrid_event_trigger_preview(preview.id) == payload
 
 
-def test_hybrid_event_frame_preview_rejects_tampered_stored_bytes(tmp_path: Path) -> None:
+def test_hybrid_event_trigger_preview_rejects_tampered_stored_bytes(tmp_path: Path) -> None:
     store = LocalArchiveStore(tmp_path)
     store.initialize()
-    preview = build_hybrid_event_frame_preview(
+    preview = build_hybrid_event_trigger_preview(
         parent_preview_id="hgp_" + "1" * 24,
         parent_preview_sha256="a" * 64,
         reference_preview_id="hrp_" + "2" * 24,
@@ -342,80 +336,46 @@ def test_hybrid_event_frame_preview_rejects_tampered_stored_bytes(tmp_path: Path
         mention_preview_sha256="c" * 64,
         representation_id="rep_fixture",
         paragraph_node_id="nod_fixture",
-        trigger_context_manifest_id="ctx_trigger",
-        frame_context_manifest_id="ctx_frame",
-        terminal_status=HybridEventFrameStatus.COMPLETE,
+        context_manifest_ids=("ctx_trigger",),
+        terminal_status=HybridEventTriggerStatus.COMPLETE,
     )
-    payload = canonical_hybrid_event_frame_preview_bytes(preview)
-    store.put_hybrid_event_frame_preview(
+    payload = canonical_hybrid_event_trigger_preview_bytes(preview)
+    store.put_hybrid_event_trigger_preview(
         preview,
         payload,
-        hybrid_event_frame_preview_sha256(preview),
+        hybrid_event_trigger_preview_sha256(preview),
     )
-    stored = tmp_path / "extraction" / "event-frame-previews" / f"{preview.id}.json"
+    stored = tmp_path / "extraction" / "event-trigger-previews" / f"{preview.id}.json"
     stored.write_bytes(b"different bytes")
 
     with pytest.raises(ValueError, match="conflicts with its immutable identity"):
-        store.put_hybrid_event_frame_preview(
+        store.put_hybrid_event_trigger_preview(
             preview,
             payload,
-            hybrid_event_frame_preview_sha256(preview),
+            hybrid_event_trigger_preview_sha256(preview),
         )
     with pytest.raises(ValueError):
-        store.read_hybrid_event_frame_preview(preview.id)
-
-
-def test_put_reuse_and_restart_hybrid_atomic_claim_preview(tmp_path: Path) -> None:
-    store = LocalArchiveStore(tmp_path)
-    store.initialize()
-    preview = build_hybrid_atomic_claim_preview(
-        parent_preview_id="hep_" + "1" * 24,
-        parent_preview_sha256="a" * 64,
-        grounding_preview_id="hgp_" + "2" * 24,
-        grounding_preview_sha256="b" * 64,
-        reference_preview_id="hrp_" + "3" * 24,
-        reference_preview_sha256="c" * 64,
-        mention_preview_id="hxp_" + "4" * 24,
-        mention_preview_sha256="d" * 64,
-        representation_id="rep_fixture",
-        paragraph_node_id="nod_fixture",
-        ontology_slice_id="hybrid_event_core_v1",
-        ontology_slice_sha256="e" * 64,
-        terminal_status=HybridAtomicClaimStatus.COMPLETE,
-    )
-    payload = canonical_hybrid_atomic_claim_preview_bytes(preview)
-    digest = hybrid_atomic_claim_preview_sha256(preview)
-
-    created = store.put_hybrid_atomic_claim_preview(preview, payload, digest)
-    reused = store.put_hybrid_atomic_claim_preview(preview, payload, digest)
-    reopened = LocalArchiveStore(tmp_path)
-
-    assert created.disposition is ArchivePutDisposition.CREATED
-    assert reused.disposition is ArchivePutDisposition.REUSED
-    assert reopened.read_hybrid_atomic_claim_preview(preview.id) == payload
-
-    stored = tmp_path / "extraction" / "atomic-claim-previews" / f"{preview.id}.json"
-    stored.write_bytes(b"different bytes")
-    with pytest.raises(ValueError, match="conflicts with its immutable identity"):
-        store.put_hybrid_atomic_claim_preview(preview, payload, digest)
-    with pytest.raises(ValueError):
-        reopened.read_hybrid_atomic_claim_preview(preview.id)
+        store.read_hybrid_event_trigger_preview(preview.id)
 
 
 def test_put_reuse_and_restart_hybrid_event_semantics_preview(tmp_path: Path) -> None:
     store = LocalArchiveStore(tmp_path)
     store.initialize()
     preview = build_hybrid_event_semantics_preview(
-        parent_preview_id="hcp_" + "1" * 24,
+        parent_preview_id="htp_" + "1" * 24,
         parent_preview_sha256="a" * 64,
         representation_id="rep_fixture",
         paragraph_node_id="nod_fixture",
-        ontology_profile_id="hybrid_event_semantics_v1",
+        ontology_profile_id="hybrid_event_semantics_v4",
         ontology_profile_sha256=hybrid_event_semantics_profile_sha256(),
-        normalization_prompt_sha256="b" * 64,
-        normalization_schema_sha256="c" * 64,
-        role_completion_prompt_sha256="d" * 64,
-        role_completion_schema_sha256="e" * 64,
+        frame_selection_prompt_sha256="b" * 64,
+        frame_selection_schema_sha256="c" * 64,
+        frame_fit_prompt_sha256="d" * 64,
+        frame_fit_schema_sha256="e" * 64,
+        role_selection_prompt_sha256="d" * 64,
+        role_selection_schema_sha256="e" * 64,
+        presentation_prompt_sha256="2" * 64,
+        presentation_schema_sha256="3" * 64,
         support_prompt_sha256="f" * 64,
         support_schema_sha256="1" * 64,
         terminal_status=HybridEventSemanticsStatus.COMPLETE,
@@ -476,7 +436,7 @@ def test_put_reuse_restart_and_corruption_rejection_for_standing_fact_plan(
     store = LocalArchiveStore(tmp_path)
     store.initialize()
     body: dict[str, object] = {
-        "schema_version": "standing_fact_plan_v1",
+        "schema_version": "standing_fact_plan_v4",
         "parent_plan_id": "hpp_" + "1" * 24,
         "parent_plan_sha256": "a" * 64,
         "mention_preview_id": "hxp_" + "2" * 24,
@@ -486,9 +446,14 @@ def test_put_reuse_restart_and_corruption_rejection_for_standing_fact_plan(
         "representation_id": "rep_fixture",
         "paragraph_node_id": "nod_fixture",
         "context_manifest_id": None,
-        "policy_id": "hybrid_standing_fact_v1",
+        "qualification_context_manifest_id": None,
+        "policy_id": "hybrid_standing_fact_v4",
         "provenance_activity_id": "prv_" + "4" * 24,
         "drafts": [],
+        "propositions": [],
+        "qualifications": [],
+        "nli_observations": [],
+        "proposition_decisions": [],
         "decisions": [],
         "extraction_task_ids": [],
         "model_run_ids": [],
@@ -525,9 +490,9 @@ def test_put_reuse_and_restart_for_document_reconciliation_evidence(
     store = LocalArchiveStore(tmp_path)
     store.initialize()
     preview_payload: dict[str, object] = {
-        "schema_version": "document_entity_reconciliation_preview_v1",
+        "schema_version": "document_entity_reconciliation_preview_v2",
         "representation_id": "rep_fixture",
-        "policy_id": "document_entity_reconciliation_v1",
+        "policy_id": "document_entity_reconciliation_v2",
         "parent_plans": [],
         "clusters": [],
         "decisions": [],
@@ -549,9 +514,9 @@ def test_put_reuse_and_restart_for_document_reconciliation_evidence(
     )
     preview_bytes = canonical_document_entity_reconciliation_preview_bytes(preview)
     plan_payload: dict[str, object] = {
-        "schema_version": "reconciled_document_proposal_plan_v1",
+        "schema_version": "reconciled_document_proposal_plan_v2",
         "representation_id": "rep_fixture",
-        "policy_id": "reconciled_document_proposal_plan_v1",
+        "policy_id": "reconciled_document_proposal_plan_v2",
         "parent_preview_id": preview.id,
         "parent_preview_sha256": hashlib.sha256(preview_bytes).hexdigest(),
         "parent_plans": [],

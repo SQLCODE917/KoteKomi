@@ -2,13 +2,15 @@
 
 from kotekomi_domain.hybrid_event_ontology import (
     HYBRID_EVENT_CORE_V1,
-    HYBRID_EVENT_SEMANTICS_V1,
+    HYBRID_EVENT_SEMANTICS_V4,
+    AssignmentOrigin,
     EventFrameDefinition,
     FrameRoleDefinition,
     HybridEventOntologySlice,
     HybridEventSemanticsProfile,
     HybridEventStructuralPredicate,
     SemanticArgumentTargetKind,
+    TemporalRelation,
     UpperRole,
     canonical_hybrid_event_ontology_slice_bytes,
     canonical_hybrid_event_semantics_profile_bytes,
@@ -176,6 +178,7 @@ from kotekomi_domain.models import (
     document_retrieval_unit_fingerprint,
     document_semantic_representation_fingerprint,
 )
+from kotekomi_domain.standing_fact_ontology import StandingFactQualificationOutcome
 
 __all__ = [
     "Actor",
@@ -347,7 +350,10 @@ __all__ = [
     "EventFrameDefinition",
     "FrameRoleDefinition",
     "HybridEventSemanticsProfile",
-    "HYBRID_EVENT_SEMANTICS_V1",
+    "HYBRID_EVENT_SEMANTICS_V4",
+    "AssignmentOrigin",
     "SemanticArgumentTargetKind",
+    "TemporalRelation",
     "UpperRole",
+    "StandingFactQualificationOutcome",
 ]

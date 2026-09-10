@@ -1,6 +1,6 @@
 # TDD: Evidence-Backed Document Entity Reconciliation
 
-- Status: Implemented; canonical verification pending
+- Status: Implemented; conservative suffix-alias refinement pending canonical verification
 - Program: [Hybrid Intelligence Extraction Pipeline](2026-09-01-hybrid-intelligence-extraction-pipeline.md)
 - Increment: HP-9
 - Depends on: [Hybrid Document Orchestration](2026-09-03-hybrid-document-orchestration.md)
@@ -78,6 +78,9 @@ HP-9 will run before HP-8 submits pending ProposedChanges.
 - HPR-ID-10: Paragraph order cannot change an Entity Identity Cluster.
 - HPR-ID-11: An Entity Identity Cluster ID includes the representation, kind, policy, and name key.
 - HPR-ID-12: HP-9 retains conflicting Organization type observations for review.
+- HPR-ID-13: A short Actor name joins a longer Actor name only when the longer name is observed in the same Document, ends in the complete short name, and is the only such candidate.
+- HPR-ID-14: An ambiguous terminal-name match remains separate.
+- HPR-ID-15: A same-name Actor/Organization disagreement remains separate and is reported as an explicit type-conflict diagnostic.
 
 ### Decisions and justifications
 
@@ -209,7 +212,13 @@ An ambiguous candidate remains visible and does not join an expanded-name cluste
 
 ReFinED output remains fallible model evidence.
 
-The first HP-9 policy performs no fuzzy matching or model adjudication.
+The current HP-9 policy performs no fuzzy matching or model adjudication.
+
+It additionally recognizes a unique document-local Actor terminal-name form such as `Sacks` after
+`David Sacks`. This is a deterministic candidate reconciliation, not accepted identity truth: the
+long and short source selectors, method, and decision remain review evidence, and ambiguity blocks
+the merge. Organization suffixes remain separate because a trailing term such as `Council` or
+`Institute` is not sufficient identity evidence.
 
 Historical closed IngestionRuns and immutable Wiki builds remain unchanged.
 

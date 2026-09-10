@@ -1,6 +1,6 @@
 # TDD: Hybrid Event Frame Drafts
 
-- Status: Accepted
+- Status: Superseded by [HSQ-6](2026-09-07-source-bound-governed-event-extraction.md)
 - Program: [Hybrid Intelligence Extraction Pipeline](2026-09-01-hybrid-intelligence-extraction-pipeline.md)
 - Increment: HP-4
 - Depends on: [Hybrid Entity Identity Grounding](2026-09-01-hybrid-entity-identity-grounding.md)
@@ -201,7 +201,8 @@ The HP-4 use case accepts one HP-3 Preview ID and returns one Preview, digest, a
 
 The trigger output contract uses one `event` line per proposal or one `abstain` line.
 
-The frame output contract uses fixed scalar fields followed by repeated argument and qualifier lines.
+The frame output contract uses fixed scalar fields followed by repeated argument lines and either
+`qualifier: none` or repeated source-literal qualifier lines.
 
 ## Behavior & Domain Rules
 

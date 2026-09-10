@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -8,6 +9,9 @@ import pytest
 from kotekomi_application import (
     PARAGRAPH_SEGMENT_V2,
     ContextualKind,
+    CoreferenceExecution,
+    CoreferenceInput,
+    CoreferenceSpanProposal,
     DiscourseRole,
     ExtractionStageTrace,
     HybridExtractionPreview,
@@ -18,6 +22,11 @@ from kotekomi_application import (
     ReferenceReason,
     ReferenceStatus,
     Referentiality,
+    SemanticReferenceCandidateLabelBinding,
+    SemanticReferenceCandidateValidationExecution,
+    SemanticReferenceCandidateValidationInput,
+    SemanticReferenceChallengeExecution,
+    SemanticReferenceChallengeInput,
     build_extraction_stage_trace,
     build_hybrid_extraction_preview,
     build_hybrid_reference_preview,
@@ -36,10 +45,18 @@ from kotekomi_application.hybrid_mention_interpretation import (
     observation_from_proposal,
     resolve_mention_interpretation,
 )
+from kotekomi_application.semantic_reference_challenge_model_output import (
+    SemanticReferenceChallengeSelection,
+)
+from kotekomi_application.semantic_reference_validation_model_output import (
+    SemanticReferenceCandidateValidation,
+    SemanticReferenceCandidateVerdict,
+)
 from kotekomi_domain import (
     DocumentNode,
     DocumentRepresentation,
     DocumentRepresentationBundle,
+    ModelRunStatus,
     ParseQualityReport,
     RepresentationAnalyzability,
     TextView,
@@ -71,6 +88,142 @@ class ReferenceGoldCatalog(BaseModel):
     policy_id: str
     review_basis: str
     cases: tuple[ReferenceGoldCase, ...]
+
+
+class _Tokenizer:
+    tokenizer_id = "fixture-coref-tokenizer"
+
+    def count_tokens(self, rendered_input: bytes) -> int:
+        return len(rendered_input.decode().split())
+
+
+class _CoreferenceProposer:
+    def __init__(self, clusters: tuple[tuple[tuple[int, int], ...], ...]) -> None:
+        self._clusters = clusters
+
+    def propose(self, request: CoreferenceInput) -> CoreferenceExecution:
+        del request
+        return CoreferenceExecution(
+            model_id="fixture-coref",
+            model_revision="1",
+            resource_identity="fixture-coref-resource",
+            clusters=tuple(
+                tuple(CoreferenceSpanProposal(*span) for span in cluster)
+                for cluster in self._clusters
+            ),
+            elapsed_milliseconds=1,
+            raw_output=json.dumps({"clusters": self._clusters}).encode(),
+        )
+
+
+class _RecordingCoreferenceProposer:
+    def __init__(self) -> None:
+        self.request: CoreferenceInput | None = None
+
+    def propose(self, request: CoreferenceInput) -> CoreferenceExecution:
+        self.request = request
+        antecedent = request.source_text.index("Anthropic")
+        return CoreferenceExecution(
+            model_id="fixture-coref",
+            model_revision="1",
+            resource_identity="fixture-coref-resource",
+            clusters=(
+                (
+                    CoreferenceSpanProposal(antecedent, antecedent + len("Anthropic")),
+                    CoreferenceSpanProposal(request.target_start, request.target_end),
+                ),
+            ),
+            elapsed_milliseconds=1,
+            raw_output=b'{"clusters":[[[0,9],[30,32]]]}',
+        )
+
+
+class _WindowRecordingProposer:
+    def __init__(self) -> None:
+        self.request: CoreferenceInput | None = None
+
+    def propose(self, request: CoreferenceInput) -> CoreferenceExecution:
+        self.request = request
+        return CoreferenceExecution(
+            model_id="fixture-coref",
+            model_revision="1",
+            resource_identity="fixture-coref-resource",
+            clusters=(),
+            elapsed_milliseconds=1,
+            raw_output=b'{"clusters":[]}',
+        )
+
+
+class _Challenger:
+    def __init__(
+        self,
+        antecedent_text: str | None = None,
+        validation_verdict: SemanticReferenceCandidateVerdict | None = None,
+    ) -> None:
+        self._antecedent_text = antecedent_text
+        self._validation_verdict = validation_verdict
+
+    def validate(
+        self, request: SemanticReferenceCandidateValidationInput
+    ) -> SemanticReferenceCandidateValidationExecution:
+        verdict = self._validation_verdict
+        if verdict is None:
+            verdict = (
+                SemanticReferenceCandidateVerdict.SUPPORTED
+                if self._antecedent_text
+                in {
+                    None,
+                    request.antecedent_candidate.span.text,
+                }
+                else SemanticReferenceCandidateVerdict.UNSUPPORTED
+            )
+        return SemanticReferenceCandidateValidationExecution(
+            validation=SemanticReferenceCandidateValidation(
+                verdict,
+                "The source context supports this bounded verdict.",
+            ),
+            candidate_id=request.antecedent_candidate.id,
+            extraction_task_id="ext_reference_validation",
+            model_run_id="mrn_reference_validation",
+            model_status=ModelRunStatus.SUCCEEDED,
+            producer_id="qwen2.5-fixture",
+            model_visible_task=b"exact bounded validation task",
+            raw_output_sha256="b" * 64,
+        )
+
+    def challenge(
+        self, request: SemanticReferenceChallengeInput
+    ) -> SemanticReferenceChallengeExecution:
+        bindings = tuple(
+            SemanticReferenceCandidateLabelBinding(f"a{ordinal}", candidate.id)
+            for ordinal, candidate in enumerate(request.antecedent_candidates, start=1)
+        )
+        selected = (
+            request.antecedent_candidates[0]
+            if self._antecedent_text is None
+            else next(
+                item
+                for item in request.antecedent_candidates
+                if item.span.text == self._antecedent_text
+            )
+        )
+        selected_label = next(item.label for item in bindings if item.candidate_id == selected.id)
+        selection = SemanticReferenceChallengeSelection(
+            selected_label,
+            False,
+            "The source context identifies this antecedent.",
+        )
+        return SemanticReferenceChallengeExecution(
+            selection=selection,
+            candidate_label_bindings=bindings,
+            extraction_task_id="ext_reference_challenge",
+            model_run_id="mrn_reference_challenge",
+            model_status=ModelRunStatus.SUCCEEDED,
+            producer_id="qwen2.5-fixture",
+            model_visible_task=b"exact bounded reference task",
+            raw_output_sha256="a" * 64,
+            mode=request.mode,
+        )
 
 
 def test_find_alias_declarations_preserves_exact_document_ranges() -> None:
@@ -127,6 +280,211 @@ def test_unique_document_alias_resolves_and_anaphor_remains_unresolved() -> None
     assert unresolved.reference_kind is ReferenceKind.ANAPHORIC
     assert unresolved.declaration_ids == unresolved.antecedent_span_ids == ()
     assert preview.parent_preview_id == parent.id
+
+
+def test_validated_semantic_reference_becomes_a_source_bound_hp2_decision() -> None:
+    text = "Trump spoke before Amodei criticized him."
+    bundle = _bundle((text,))
+    parent = _parent_preview(bundle, paragraph_index=0, candidate_texts=("Trump", "him"))
+    trump = text.index("Trump")
+    him = text.index("him")
+
+    preview = build_hybrid_reference_preview(
+        parent_preview=parent,
+        parent_preview_sha256=hybrid_extraction_preview_sha256(parent),
+        bundle=bundle,
+        coreference_proposer=_CoreferenceProposer(
+            (((trump, trump + len("Trump")), (him, him + len("him"))),)
+        ),
+        coreference_tokenizer=_Tokenizer(),
+        semantic_reference_challenger=_Challenger(),
+    )
+
+    decision = next(
+        item for item in preview.reference_decisions if item.reference_span.text == "him"
+    )
+    assert decision.status is ReferenceStatus.RESOLVED
+    assert decision.reason is ReferenceReason.UNIQUE_SEMANTIC_ANTECEDENT
+    assert decision.semantic_reference_decision_id == preview.semantic_reference_decisions[0].id
+    assert [item.text for item in preview.semantic_antecedent_spans] == ["Trump"]
+    assert preview.coreference_observations[0].clusters[0][0].text == "Trump"
+
+
+def test_contrastively_confirmed_specialist_becomes_a_resolved_hp2_decision() -> None:
+    text = "Defense conflicted with Anthropic over the use of its products."
+    bundle = _bundle((text,))
+    parent = _parent_preview(
+        bundle,
+        paragraph_index=0,
+        candidate_texts=("Defense", "Anthropic", "its"),
+    )
+    anthropic = text.index("Anthropic")
+    target = text.index("its")
+
+    preview = build_hybrid_reference_preview(
+        parent_preview=parent,
+        parent_preview_sha256=hybrid_extraction_preview_sha256(parent),
+        bundle=bundle,
+        coreference_proposer=_CoreferenceProposer(
+            (((anthropic, anthropic + len("Anthropic")), (target, target + len("its"))),)
+        ),
+        coreference_tokenizer=_Tokenizer(),
+        semantic_reference_challenger=_Challenger(
+            "Anthropic",
+            validation_verdict=SemanticReferenceCandidateVerdict.UNSUPPORTED,
+        ),
+    )
+
+    decision = next(
+        item for item in preview.reference_decisions if item.reference_span.text == "its"
+    )
+    assert decision.status is ReferenceStatus.RESOLVED
+    assert decision.reason is ReferenceReason.UNIQUE_SEMANTIC_ANTECEDENT
+    assert [item.text for item in preview.semantic_antecedent_spans] == ["Anthropic"]
+    assert preview.semantic_reference_decisions[0].reason.value == (
+        "specialist_contrastive_confirmation"
+    )
+
+
+def test_semantic_disagreement_uses_canonical_reference_id_order() -> None:
+    text = "Sacks viewed Amodei's decision and his hiring as evidence."
+    bundle = _bundle((text,))
+    parent = _parent_preview(
+        bundle,
+        paragraph_index=0,
+        candidate_texts=("Sacks", "Amodei", "his"),
+    )
+    sacks = text.index("Sacks")
+    his = text.index("his")
+
+    preview = build_hybrid_reference_preview(
+        parent_preview=parent,
+        parent_preview_sha256=hybrid_extraction_preview_sha256(parent),
+        bundle=bundle,
+        coreference_proposer=_CoreferenceProposer(
+            (((sacks, sacks + len("Sacks")), (his, his + len("his"))),)
+        ),
+        coreference_tokenizer=_Tokenizer(),
+        semantic_reference_challenger=_Challenger("Amodei"),
+    )
+
+    decision = next(
+        item for item in preview.reference_decisions if item.reference_span.text == "his"
+    )
+    assert decision.status is ReferenceStatus.AMBIGUOUS
+    assert decision.reason is ReferenceReason.MULTIPLE_SEMANTIC_ANTECEDENTS
+    assert decision.antecedent_span_ids == tuple(sorted(decision.antecedent_span_ids))
+    spans = {item.id: item.text for item in preview.semantic_antecedent_spans}
+    assert {spans[item] for item in decision.antecedent_span_ids} == {"Sacks", "Amodei"}
+
+
+def test_semantic_reference_uses_bounded_preceding_same_paragraph_sentences() -> None:
+    text = "Anthropic announced a policy. It revised the policy."
+    bundle = _bundle((text,))
+    parent = _parent_preview(bundle, paragraph_index=0, candidate_texts=("Anthropic", "It"))
+    proposer = _RecordingCoreferenceProposer()
+
+    preview = build_hybrid_reference_preview(
+        parent_preview=parent,
+        parent_preview_sha256=hybrid_extraction_preview_sha256(parent),
+        bundle=bundle,
+        coreference_proposer=proposer,
+        coreference_tokenizer=_Tokenizer(),
+        semantic_reference_challenger=_Challenger(),
+    )
+
+    assert proposer.request is not None
+    assert proposer.request.source_text == text
+    assert proposer.request.target_text == "It"
+    assert preview.reference_decisions[0].status is ReferenceStatus.RESOLVED
+    assert preview.semantic_antecedent_spans[0].text == "Anthropic"
+
+
+def test_deterministic_reference_marker_routes_without_model_interpretation() -> None:
+    text = "Anthropic changed the  company's policy."
+    bundle = _bundle((text,))
+    paragraph = _paragraphs(bundle)[0]
+    segment = paragraph_source_segments(text, PARAGRAPH_SEGMENT_V2)[0]
+    segment_id = hybrid_source_segment_id(bundle.representation.id, paragraph.id, segment)
+    marker_text = "the  company's"
+    marker_start = segment.exact_text.index(marker_text)
+    marker_trace = build_extraction_stage_trace(
+        trace_run_id="hpr_direct_marker",
+        ordinal=0,
+        stage_id="semantic_reference_discovery",
+        stage_version="exact_reference_markers_v1",
+        producer_id="kotekomi_application",
+        source_segment_id=segment_id,
+        source_text_sha256=hashlib.sha256(segment.exact_text.encode()).hexdigest(),
+        configuration={"policy_id": "exact_reference_markers_v1"},
+        input_payload={"source_text": segment.exact_text},
+        output_payload={"marker_text": marker_text},
+        status=ExtractionStageStatus.COMPLETED,
+    )
+    observation = observation_from_proposal(
+        proposal=MentionProposal(
+            segment.label,
+            marker_text,
+            marker_start,
+            marker_start + len(marker_text),
+            ("organization",),
+        ),
+        source_segment_id=segment_id,
+        producer_id="kotekomi_reference_marker_v1",
+        execution_record_id=marker_trace.id,
+    )
+    candidates = fuse_mention_observations(
+        source_segments={segment_id: segment.exact_text},
+        observations=(observation,),
+    )
+    decisions, selected = reconcile_mention_boundaries(
+        source_segments={segment_id: segment.exact_text},
+        observations=(observation,),
+        candidates=candidates,
+    )
+    parent = build_hybrid_extraction_preview(
+        representation_id=bundle.representation.id,
+        paragraph_node_id=paragraph.id,
+        context_manifest_id="ctx_direct_marker",
+        ontology_card_sha256="a" * 64,
+        observations=(observation,),
+        candidates=candidates,
+        boundary_decisions=decisions,
+        traces=(marker_trace,),
+        terminal_status=HybridPreviewStatus.COMPLETE,
+    )
+
+    preview = build_hybrid_reference_preview(
+        parent_preview=parent,
+        parent_preview_sha256=hybrid_extraction_preview_sha256(parent),
+        bundle=bundle,
+    )
+
+    assert selected == candidates
+    assert parent.interpretations == ()
+    assert len(preview.reference_decisions) == 1
+    assert preview.reference_decisions[0].reference_kind is ReferenceKind.ANAPHORIC
+    assert preview.reference_decisions[0].reason is ReferenceReason.SEMANTIC_RESOLUTION_DEFERRED
+
+
+def test_semantic_reference_excludes_a_preceding_sentence_beyond_the_token_limit() -> None:
+    text = ("word " * 1025).strip() + ". It acted."
+    bundle = _bundle((text,))
+    parent = _parent_preview(bundle, paragraph_index=0, candidate_texts=("It",))
+    proposer = _WindowRecordingProposer()
+
+    build_hybrid_reference_preview(
+        parent_preview=parent,
+        parent_preview_sha256=hybrid_extraction_preview_sha256(parent),
+        bundle=bundle,
+        coreference_proposer=proposer,
+        coreference_tokenizer=_Tokenizer(),
+        semantic_reference_challenger=_Challenger(),
+    )
+
+    assert proposer.request is not None
+    assert proposer.request.source_text == "It acted."
+    assert proposer.request.target_text == "It"
 
 
 def test_repeated_equal_declarations_remain_one_unique_alias() -> None:
@@ -294,10 +652,17 @@ def _parent_preview(
     view = bundle.text_views[0]
     paragraph = view.text[node.start_char : node.end_char]
     segments = paragraph_source_segments(paragraph, PARAGRAPH_SEGMENT_V2)
-    segment = next(
-        item for item in segments if all(text in item.exact_text for text in candidate_texts)
+    located = tuple(
+        (
+            text,
+            next(item for item in segments if text in item.exact_text),
+        )
+        for text in candidate_texts
     )
-    segment_id = hybrid_source_segment_id(bundle.representation.id, node.id, segment)
+    source_segments = {
+        hybrid_source_segment_id(bundle.representation.id, node.id, segment): segment.exact_text
+        for _, segment in located
+    }
     observations = tuple(
         observation_from_proposal(
             proposal=MentionProposal(
@@ -307,23 +672,27 @@ def _parent_preview(
                 segment.exact_text.index(text) + len(text),
                 ("organization",),
             ),
-            source_segment_id=segment_id,
+            source_segment_id=hybrid_source_segment_id(bundle.representation.id, node.id, segment),
             producer_id=f"fixture_{index}",
             execution_record_id=f"mrn_proposal_{index}",
         )
-        for index, text in enumerate(candidate_texts, start=1)
+        for index, (text, segment) in enumerate(located, start=1)
     )
     candidates = fuse_mention_observations(
-        source_segments={segment_id: segment.exact_text}, observations=observations
+        source_segments=source_segments, observations=observations
     )
     boundary_decisions, selected = reconcile_mention_boundaries(
-        source_segments={segment_id: segment.exact_text},
+        source_segments=source_segments,
         observations=observations,
         candidates=candidates,
     )
     traces: list[ExtractionStageTrace] = []
     model_run_ids: list[str] = []
-    for ordinal, observation in enumerate(observations):
+    ordinals: dict[str, int] = {}
+    for observation in observations:
+        source_text = source_segments[observation.source_segment_id]
+        ordinal = ordinals.get(observation.source_segment_id, 0)
+        ordinals[observation.source_segment_id] = ordinal + 1
         model_run_ids.append(observation.execution_record_id)
         traces.append(
             build_extraction_stage_trace(
@@ -332,42 +701,58 @@ def _parent_preview(
                 stage_id="mention_proposal",
                 stage_version="fixture_v1",
                 producer_id=observation.producer_id,
-                source_segment_id=segment_id,
-                source_text_sha256=hashlib.sha256(segment.exact_text.encode()).hexdigest(),
+                source_segment_id=observation.source_segment_id,
+                source_text_sha256=hashlib.sha256(source_text.encode()).hexdigest(),
                 execution_record_ids=(observation.execution_record_id,),
                 configuration={},
-                input_payload={"text": segment.exact_text},
+                input_payload={"text": source_text},
                 output_payload={"observation_id": observation.id},
                 status=ExtractionStageStatus.COMPLETED,
             )
         )
-    traces.append(
-        build_extraction_stage_trace(
-            trace_run_id="hpr_fixture_reference",
-            ordinal=len(traces),
-            stage_id="mention_boundary_reconciliation",
-            stage_version="fixture_v1",
-            producer_id="fixture",
-            source_segment_id=segment_id,
-            source_text_sha256=hashlib.sha256(segment.exact_text.encode()).hexdigest(),
-            configuration={},
-            input_payload={"candidate_ids": [item.id for item in candidates]},
-            output_payload={"decision_ids": [item.id for item in boundary_decisions]},
-            status=ExtractionStageStatus.COMPLETED,
+    for segment_id, source_text in sorted(source_segments.items()):
+        ordinal = ordinals.get(segment_id, 0)
+        ordinals[segment_id] = ordinal + 1
+        traces.append(
+            build_extraction_stage_trace(
+                trace_run_id="hpr_fixture_reference",
+                ordinal=ordinal,
+                stage_id="mention_boundary_reconciliation",
+                stage_version="fixture_v1",
+                producer_id="fixture",
+                source_segment_id=segment_id,
+                source_text_sha256=hashlib.sha256(source_text.encode()).hexdigest(),
+                configuration={},
+                input_payload={
+                    "candidate_ids": [
+                        item.id for item in candidates if item.source_segment_id == segment_id
+                    ]
+                },
+                output_payload={
+                    "decision_ids": [
+                        item.id
+                        for item in boundary_decisions
+                        if item.source_segment_id == segment_id
+                    ]
+                },
+                status=ExtractionStageStatus.COMPLETED,
+            )
         )
-    )
     interpretations: list[MentionInterpretation] = []
     for candidate in selected:
+        source_text = source_segments[candidate.source_segment_id]
+        ordinal = ordinals.get(candidate.source_segment_id, 0)
+        ordinals[candidate.source_segment_id] = ordinal + 1
         model_run_id = f"mrn_interpret_{candidate.id}"
         model_run_ids.append(model_run_id)
         trace = build_extraction_stage_trace(
             trace_run_id="hpr_fixture_reference",
-            ordinal=len(traces),
+            ordinal=ordinal,
             stage_id="mention_interpretation",
             stage_version="fixture_v1",
             producer_id="fixture",
-            source_segment_id=segment_id,
-            source_text_sha256=hashlib.sha256(segment.exact_text.encode()).hexdigest(),
+            source_segment_id=candidate.source_segment_id,
+            source_text_sha256=hashlib.sha256(source_text.encode()).hexdigest(),
             execution_record_ids=(model_run_id,),
             configuration={},
             input_payload={"candidate_id": candidate.id},
@@ -381,7 +766,7 @@ def _parent_preview(
                     candidate_label="c1",
                     referentiality=(
                         Referentiality.ANAPHORIC
-                        if candidate.text.casefold() in {"it", "the institute"}
+                        if candidate.text.casefold() in {"him", "his", "it", "its", "the institute"}
                         else Referentiality.SPECIFIC_ENTITY
                     ),
                     contextual_kind=ContextualKind.ORGANIZATION,
@@ -389,7 +774,7 @@ def _parent_preview(
                     support_segment_label="s1",
                 ),
                 candidate_labels={"c1": candidate},
-                source_segment_ids={"s1": segment_id},
+                source_segment_ids={"s1": candidate.source_segment_id},
                 model_run_id=model_run_id,
                 trace_id=trace.id,
             )
@@ -404,7 +789,9 @@ def _parent_preview(
         boundary_decisions=boundary_decisions,
         interpretations=tuple(interpretations),
         model_run_ids=tuple(sorted(model_run_ids)),
-        traces=tuple(traces),
+        traces=tuple(
+            sorted(traces, key=lambda item: (item.source_segment_id, item.ordinal, item.id))
+        ),
         terminal_status=HybridPreviewStatus.COMPLETE,
     )
 

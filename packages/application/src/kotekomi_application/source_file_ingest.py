@@ -172,16 +172,13 @@ def commit_authoritative_capture(
         if ingest_input.source_url is not None
         else None
     )
+    canonical_local_file_path = _canonical_local_file_path(ingest_input.local_file_path)
     extracted_text = ingest_input.raw_bytes.decode("utf-8")
     source_type = infer_source_type(extracted_text)
     source_title = extract_source_title(ingest_input.filename, extracted_text)
     published_at = parse_dateline_date(extracted_text)
     content_sha256 = hashlib.sha256(ingest_input.raw_bytes).hexdigest()
-    source_key = (
-        source_url
-        or ingest_input.source_identity_key
-        or str(Path(ingest_input.local_file_path).resolve())
-    )
+    source_key = source_url or ingest_input.source_identity_key or canonical_local_file_path
     idempotency_key = ingest_input.idempotency_key or (
         _deposited_request_fingerprint(source_key, content_sha256)
         if source_url is not None
@@ -192,15 +189,15 @@ def commit_authoritative_capture(
             source_type=SourceType.ARTICLE if source_url is not None else source_type,
             title=source_title,
             stable_key=source_key,
-            uri=source_url or ingest_input.local_file_path,
+            uri=source_url or canonical_local_file_path,
         ),
         payload=ingest_input.raw_bytes,
         media_type="text/markdown" if suffix == ".md" else "text/plain",
         storage_locator="pending",
         idempotency_key=idempotency_key,
         retrieval_method="user_deposited_file" if source_url is not None else "local_file",
-        requested_uri=source_url or ingest_input.local_file_path,
-        canonical_uri=source_url or ingest_input.local_file_path,
+        requested_uri=source_url or canonical_local_file_path,
+        canonical_uri=source_url or canonical_local_file_path,
         provider_item_id=None,
         provider_version=None,
         version_kind=DocumentVersionKind.ORIGINAL,
@@ -210,7 +207,11 @@ def commit_authoritative_capture(
         transaction_time=ingest_input.ingested_at,
         rights_profile_id=None,
         embargo_until=None,
-        request_metadata=_deposited_request_metadata(ingest_input, source_url),
+        request_metadata=_deposited_request_metadata(
+            local_file_path=canonical_local_file_path,
+            filename=ingest_input.filename,
+            source_url=source_url,
+        ),
         response_metadata={},
     )
     identity_policy = StableSourceIdentityPolicy()
@@ -268,7 +269,7 @@ def commit_authoritative_capture(
         ledger_repository.save_provenance_activity(
             _capture_provenance_activity(
                 capture=outcome,
-                local_file_path=ingest_input.local_file_path,
+                local_file_path=canonical_local_file_path,
                 source_url=source_url,
             )
         )
@@ -328,7 +329,7 @@ def commit_authoritative_capture(
         ledger_repository.save_provenance_activity(
             _capture_provenance_activity(
                 capture=outcome,
-                local_file_path=ingest_input.local_file_path,
+                local_file_path=canonical_local_file_path,
                 source_url=source_url,
             )
         )
@@ -505,6 +506,7 @@ def commit_authoritative_pdf_capture(
         raise ValueError("Authoritative PDF capture requires a .pdf filename.")
     ingest_input.build_identity.snapshot()
     source_url = normalize_source_url(ingest_input.source_url)
+    canonical_local_file_path = _canonical_local_file_path(ingest_input.local_file_path)
     processing_clock = clock or UtcProcessingClock()
     source_key = source_url
     content_sha256 = hashlib.sha256(ingest_input.raw_bytes).hexdigest()
@@ -533,7 +535,7 @@ def commit_authoritative_pdf_capture(
         rights_profile_id=None,
         embargo_until=None,
         request_metadata={
-            "local_file_path": ingest_input.local_file_path,
+            "local_file_path": canonical_local_file_path,
             "filename": ingest_input.filename,
         },
         response_metadata={},
@@ -559,7 +561,7 @@ def commit_authoritative_pdf_capture(
     ledger_repository.save_provenance_activity(
         _capture_provenance_activity(
             capture=capture,
-            local_file_path=ingest_input.local_file_path,
+            local_file_path=canonical_local_file_path,
             source_url=source_url,
         )
     )
@@ -730,15 +732,23 @@ def _capture_provenance_activity(
 
 
 def _deposited_request_metadata(
-    ingest_input: AuthoritativeCaptureRequest,
+    *,
+    local_file_path: str,
+    filename: str,
     source_url: str | None,
 ) -> dict[str, JsonValue]:
     if source_url is None:
         return {}
     return {
-        "local_file_path": ingest_input.local_file_path,
-        "filename": ingest_input.filename,
+        "local_file_path": local_file_path,
+        "filename": filename,
     }
+
+
+def _canonical_local_file_path(local_file_path: str) -> str:
+    """Return one filesystem identity for equivalent caller path spellings."""
+
+    return str(Path(local_file_path).resolve())
 
 
 def _latest_document(documents: tuple[Document, ...]) -> Document:

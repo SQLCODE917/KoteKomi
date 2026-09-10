@@ -125,7 +125,7 @@ def _render_page(
     lines.extend(_details(page.details, page.relative_path))
     lines.extend(_links(page.links, page.relative_path))
     lines.extend(_at_a_glance(page.presentations, page.relative_path, evidence_by_number))
-    lines.extend(_relationships(page.presentations, page.relative_path))
+    lines.extend(_relationships(page.presentations, page.relative_path, evidence_by_number))
     return ("\n".join(lines).rstrip() + "\n").encode("utf-8")
 
 
@@ -195,12 +195,19 @@ def _event_evidence(
     event: WikiEventPresentation,
     evidence_by_number: dict[int, WikiEvidenceReference],
 ) -> tuple[WikiEvidenceReference, ...]:
+    return _presentation_evidence(event.citation_numbers, evidence_by_number)
+
+
+def _presentation_evidence(
+    citation_numbers: tuple[int, ...],
+    evidence_by_number: dict[int, WikiEvidenceReference],
+) -> tuple[WikiEvidenceReference, ...]:
     evidence: list[WikiEvidenceReference] = []
     seen: set[tuple[object, ...]] = set()
-    for number in event.citation_numbers:
+    for number in citation_numbers:
         reference = evidence_by_number.get(number)
         if reference is None:
-            raise ValueError(f"Candidate Wiki Event cites missing evidence number: {number}")
+            raise ValueError(f"Candidate Wiki presentation cites missing evidence number: {number}")
         identity = (
             reference.source_id,
             reference.document_id,
@@ -227,6 +234,7 @@ def _source_label(page_numbers: tuple[int, ...]) -> str:
 def _relationships(
     presentations: tuple[WikiPresentation, ...],
     current_path: str,
+    evidence_by_number: dict[int, WikiEvidenceReference],
 ) -> list[str]:
     assertions = tuple(
         item for item in presentations if isinstance(item, WikiAssertionPresentation)
@@ -250,8 +258,21 @@ def _relationships(
                     f"  - {_relationship_edge(presentation.edge, current_path)}",
                 )
             )
+            for evidence in _presentation_evidence(
+                presentation.citation_numbers, evidence_by_number
+            ):
+                lines.append(f"  - **{_exact_source_label(evidence.page_numbers)}:**")
+                lines.append(f"    > {_markdown_text(evidence.exact_text)}")
         lines.append("")
     return lines
+
+
+def _exact_source_label(page_numbers: tuple[int, ...]) -> str:
+    if len(page_numbers) == 1:
+        return f"Exact source, page {page_numbers[0]}"
+    if page_numbers:
+        return f"Exact source, pages {', '.join(str(number) for number in page_numbers)}"
+    return "Exact source"
 
 
 def _wiki_link(label: str, relative_path: str, current_path: str) -> str:

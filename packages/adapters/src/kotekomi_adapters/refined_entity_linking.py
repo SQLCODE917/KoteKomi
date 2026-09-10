@@ -19,9 +19,9 @@ from kotekomi_application.hybrid_entity_grounding import (
     EntityLinkingRuntimeResponseError,
 )
 
-from kotekomi_adapters.refined_worker_transport import (
-    RefinedWorkerTransport,
-    SubprocessRefinedWorkerTransport,
+from kotekomi_adapters.correlated_worker_transport import (
+    CorrelatedWorkerTransport,
+    SubprocessCorrelatedWorkerTransport,
 )
 
 REFINED_PACKAGE_REVISION = "7c98036f72c39a8d6d2c097bbde89ea3731901f0"
@@ -103,11 +103,11 @@ class RefinedEntityLinkingAdapter:
         self,
         config: RefinedEntityLinkingConfig,
         *,
-        transport: RefinedWorkerTransport | None = None,
+        transport: CorrelatedWorkerTransport | None = None,
     ) -> None:
         self._config = config
         self._identity = _identity(config.timeout_seconds)
-        self._transport = transport or SubprocessRefinedWorkerTransport(
+        self._transport = transport or SubprocessCorrelatedWorkerTransport(
             python_executable=config.python_executable,
             worker_script=config.worker_script,
             timeout_seconds=config.timeout_seconds,
