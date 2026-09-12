@@ -5,6 +5,7 @@
 - Increment: HP-2
 - Depends on: [Hybrid Mention Interpretation MVP](2026-09-01-hybrid-mention-interpretation-mvp.md)
 - Scope: derived preview evidence only
+- Current semantic extension: [HSQ-7 Bounded Semantic Task Allocation](2026-09-08-bounded-semantic-task-allocation.md)
 
 ## Context & Problem
 
@@ -27,6 +28,10 @@ HP-2 will consume one immutable HybridExtractionPreview.
 HP-2 will publish one immutable HybridReferencePreview.
 
 HP-2 will not call a model or create accepted intelligence.
+
+This TDD defines the original deterministic alias-resolution slice.
+
+HSQ-7 retains that deterministic contract and adds bounded F-Coref and Qwen reference decisions.
 
 ### Terms
 

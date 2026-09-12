@@ -48,6 +48,16 @@ This TDD assigns those jobs to bounded specialist, semantic, and deterministic c
 5. KoteKomi reconciles the Routing Judgments and creates exact EventTriggerDraft records.
 6. The stage evaluator compares those records with Trigger Gold and preserves full traces.
 
+Steps one through five form the production-derived Event-trigger path.
+
+Step six belongs to the stage-local verification control path.
+
+Production ingestion does not consume Gold or evaluator output.
+
+The Event-trigger stage preserves its mention, reference, and grounding parent lineage.
+
+It derives trigger evidence from authoritative SourceSegment characters rather than evaluator records.
+
 ## Goals
 
 - An operator can inspect the exact input and output for every semantic judgment.

@@ -5,10 +5,12 @@
 - Parent: [Candidate Ingestion Review Program](2026-08-24-candidate-ingestion-review-program.md)
 - Architecture envelope: [Staged Model Extraction](2026-07-11-staged-model-extraction.md)
 - First deliverable: [HP-1 Hybrid Mention Interpretation MVP](2026-09-01-hybrid-mention-interpretation-mvp.md)
-- Completed through: [HP-8 Hybrid Document Orchestration](2026-09-03-hybrid-document-orchestration.md)
-- Latest evaluation: [HP-8 Document Orchestration Evaluation](2026-09-03-hp8-document-orchestration-evaluation.md)
-- Next deliverable: [HP-10 Paragraph Standing Facts MVP](2026-09-05-paragraph-standing-facts-mvp.md)
+- Document orchestration baseline: [HP-8 Hybrid Document Orchestration](2026-09-03-hybrid-document-orchestration.md)
+- Document orchestration evaluation: [HP-8 Document Orchestration Evaluation](2026-09-03-hp8-document-orchestration-evaluation.md)
+- Standing-fact extension: [HP-10 Paragraph Standing Facts MVP](2026-09-05-paragraph-standing-facts-mvp.md)
 - Semantic quality follow-up: [Hybrid Semantic Quality Program](2026-09-06-hybrid-semantic-quality-program.md)
+- Current front-half boundary: [Bounded Semantic Task Allocation](2026-09-08-bounded-semantic-task-allocation.md)
+- Current Event boundary: [SourceOccurrence to Event Trigger Boundary](2026-09-10-source-occurrence-event-trigger-boundary.md)
 - Supersedes: [Model and Ontology Boundary Program](2026-08-25-model-ontology-boundary-program.md)
 - Supersedes: [Paragraph Hypothesis Development Program](2026-08-26-paragraph-hypothesis-development-program.md)
 - Supersedes: [PHP-1 Reliability Improvement Program](2026-08-27-php1-reliability-improvement-program.md)
@@ -20,7 +22,7 @@ KoteKomi builds a local-first intelligence Ledger from authoritative Sources.
 
 KoteKomi uses specialized models and a local language model to interpret source text.
 
-The current experiments assign overlapping semantic work to Qwen2.5, GLiNER, and ReFinED.
+Earlier experiments assigned overlapping semantic work to Qwen2.5, GLiNER, and ReFinED.
 
 GLiNER and Qwen2.5 propose useful but incomplete Organization spans.
 
@@ -34,7 +36,7 @@ Qwen2.5 interprets source context better than ReFinED.
 
 Qwen2.5 also produces ambiguous and invalid outputs in bounded qualification tasks.
 
-The new Pipeline assigns one bounded responsibility to each model and deterministic component.
+The current Pipeline assigns one bounded responsibility to each model and deterministic component.
 
 The Pipeline preserves each intermediate decision as derived evidence.
 
@@ -43,13 +45,15 @@ The Pipeline gives only KoteKomi authority to construct records and change Ledge
 ### Program statement
 
 ```text
-authoritative SourceSegments
+authoritative SourceSegment
+    -> SourceOccurrences
     -> source-valid MentionCandidates
     -> contextual MentionInterpretations
     -> ReferenceDecisions
     -> EntityLinkCandidates
+    -> EventHeadCandidates
     -> EventTriggerDrafts
-    -> governed EventSemanticDrafts
+    -> governed EventSemanticDrafts or typed gaps
     -> CompleteProposition support evidence
     -> ProposedChanges
     -> reviewer decision
@@ -58,13 +62,19 @@ authoritative SourceSegments
 
 ## Terms
 
-**MentionObservation** means one model's proposed source span and type hints.
+**MentionObservation** records one proposed source span, producer identity, and type hints.
+
+**SourceOccurrence** means one exact ordered token-like range in a SourceSegment.
 
 **MentionCandidate** means one source-valid span that retains every MentionObservation.
 
+**Effective MentionCandidate** means one deterministically accepted or semantically complete MentionCandidate.
+
 **MentionInterpretation** means one contextual judgment about a MentionCandidate.
 
-**ReferenceDecision** means one decision that links a source expression to a visible antecedent.
+**ReferenceDecision** means one resolved, ambiguous, or unresolved treatment of a source expression.
+
+**CoreferenceObservation** means one fallible specialist proposal over exact source spans.
 
 **EntityLinkCandidate** means one external identity proposed for a specific MentionCandidate.
 
@@ -73,6 +83,10 @@ authoritative SourceSegments
 **OntologySlice** means the entity kinds, frame types, roles, and predicates for one task.
 
 **EventTriggerDraft** means one exact source trigger with one diagnostic open event label.
+
+**EventHeadCandidate** means one source-bound verb or eventive noun selected for bounded semantic review.
+
+**Routing Judgment** means one finite semantic answer bound to one EventHeadCandidate and one ModelRun.
 
 **EventSemanticDraft** means one KoteKomi-constructed event interpretation under the governed event profile.
 
@@ -121,8 +135,12 @@ A reviewer remains the only actor that accepts model-derived intelligence.
 | Component | Responsibility | Output authority |
 | --- | --- | --- |
 | GLiNER | Propose broad source spans and type hints. | Fallible derived evidence. |
-| Qwen2.5 | Interpret context, references, frames, and source support. | Fallible derived evidence. |
+| F-Coref | Propose antecedent candidates over exact source spans. | Fallible derived evidence. |
 | ReFinED | Propose external identities for specific mentions. | Fallible derived evidence. |
+| Stanza | Annotate exact tokens, lemmas, parts of speech, and dependencies. | Fallible derived evidence. |
+| QANom | Score source-bound common nouns as nominal Event candidates. | Fallible derived evidence. |
+| Qwen2.5 | Answer one bounded semantic question about supplied source-valid choices. | Fallible derived evidence. |
+| NLI challenger | Challenge one KoteKomi-constructed CompleteProposition against exact source text. | Fallible derived evidence. |
 | KoteKomi | Validate source characters, references, ontology rules, and state changes. | Deterministic project authority. |
 | Reviewer | Accept, reject, or edit one ProposedChange. | Human review authority. |
 
@@ -164,41 +182,169 @@ Every derived preview remains rebuildable from the Ledger, Archive, and retained
 
 No later stage silently deletes an earlier candidate or disagreement.
 
-## End-to-end feature flow
+## Current implemented boundary architecture
 
-### 1. Construct authoritative context
+The production data path and stage-local verification path have different responsibilities.
 
-The ContextPlanner creates one ContextManifest from an authoritative paragraph.
+The production path creates derived extraction evidence.
 
-The ContextManifest includes bounded structural and preceding context.
+The verification path measures that evidence and authorizes development of the next boundary.
 
-### 2. Propose source spans
+### Production data path
 
-GLiNER and Qwen2.5 produce independent MentionObservations.
+```text
+authoritative SourceSegment
+          |
+          v
+1. SourceOccurrence selection
+          |
+          v
+Qwen + GLiNER + deterministic reference-marker observations
+          |
+          v
+deterministic boundary reconciliation
+          |
+          +--> ambiguous component --> exact-target boundary challenge
+          |                                  |
+          +----------------------------------+
+                                             v
+                                  Effective MentionCandidates
+                                             |
+          +----------------------------------+--------------------+
+          |                                                       |
+          v                                                       v
+2. deterministic reference routing                    contextual interpretation
+          |                                                       |
+          +---------------------------+---------------------------+
+                                      v
+                       aliases + bounded antecedent candidates
+                                      |
+                                      v
+3. exact-target reference challenge
+                                      |
+                                      v
+4. conservative specialist/LLM reconciliation
+                                      |
+                                      v
+                              ReferenceDecisions
+                                      |
+                                      v
+                           entity identity grounding
+                                      |
+                                      v
+                              Event-trigger boundary
+```
 
-The proposers use broad competing entity kinds instead of an Organization-only prompt.
+### Verification control path
 
-### 3. Reconcile literal boundaries
+```text
+immutable mention and reference stage evidence
+                    |
+                    v
+          5. corrected evaluator
+                    |
+                    v
+     6. diagnostics-first verification
+                    |
+                    v
+          Event-trigger Gold testing
+```
 
-The Application Layer validates every MentionObservation against source characters.
+The evaluator does not sit inside production ingestion.
 
-The Application Layer merges equal spans and applies named safe boundary rules.
+The evaluator cannot create a MentionCandidate, ReferenceDecision, ProposedChange, or accepted Ledger record.
 
-The Application Layer preserves each unresolved overlap as ambiguous.
+### 1. Select source occurrences and mention boundaries
 
-### 4. Resolve deterministic document references
+The ContextPlanner supplies one authoritative paragraph through a verified ContextManifest.
 
-The Application Layer identifies explicit long-form and abbreviation declarations.
+KoteKomi divides that paragraph into authoritative SourceSegments.
 
-The Application Layer records unique document-local aliases before semantic resolution.
+KoteKomi derives ordered SourceOccurrence records from each SourceSegment without changing its characters.
 
-### 5. Interpret each mention in context
+Qwen2.5 selects contiguous occurrence ranges instead of copying source text or creating offsets.
 
-Qwen2.5 judges referentiality, contextual kind, and discourse role separately.
+GLiNER independently proposes source spans and type hints.
 
-The Application Layer retains an unclear value for each unresolved dimension.
+KoteKomi adds deterministic observations for exact reference markers.
 
-### 6. Propose external identities
+KoteKomi validates every observation against authoritative characters and fuses equal spans.
+
+KoteKomi resolves safe boundary cases deterministically.
+
+Qwen2.5 judges only ambiguous overlap components using task-local candidate labels.
+
+The result is one accountable set of Effective MentionCandidates.
+
+### 2. Route deterministic references
+
+KoteKomi marks exact reference expressions before contextual mention interpretation.
+
+Those candidates bypass ontology-kind interpretation and enter reference resolution directly.
+
+Ordinary Effective MentionCandidates receive contextual interpretation once per equal SourceSegment expression.
+
+KoteKomi resolves unique explicit document aliases without a model call.
+
+KoteKomi retains conflicting aliases as ambiguous and missing declarations as unresolved.
+
+### 3. Challenge one exact reference target
+
+F-Coref proposes source-valid antecedent candidates for one visibly delimited target.
+
+KoteKomi supplements an empty specialist result with up to eight nearest same-paragraph candidates.
+
+The bounded context stops at 1,024 input tokens.
+
+Qwen2.5 sees task-local `aN` labels, exact expressions, and bounded occurrence context.
+
+Qwen2.5 never receives canonical candidate IDs or creates source ranges.
+
+A unique specialist candidate receives a binary validation task first.
+
+An unsupported or unclear validation can trigger one complete-catalog contrastive task.
+
+### 4. Reconcile specialist and semantic evidence conservatively
+
+KoteKomi resolves a specialist candidate when Qwen2.5 validates it as supported.
+
+KoteKomi also resolves it when a contrastive task independently selects the same candidate.
+
+KoteKomi records specialist and Qwen2.5 disagreement as ambiguous.
+
+KoteKomi records malformed, failed, and out-of-catalog output as typed non-resolution.
+
+KoteKomi maps valid task-local labels back to exact source spans.
+
+KoteKomi constructs every terminal ReferenceDecision and its causal execution lineage.
+
+### 5. Evaluate the correct target
+
+The stage-local evaluator binds each decision to the target MentionCandidate's SourceSegment identity.
+
+Expanded reference context cannot replace that identity.
+
+The evaluator compares actual and Gold outcomes one-to-one.
+
+An evaluator mistake produces a pinned correction record instead of rewriting Gold or model output.
+
+The evaluator reports contract completeness separately from focus-item accuracy.
+
+### 6. Verify diagnostics before expanding scope
+
+Each experiment runs a small diagnostic set before replaying the development and validation partitions.
+
+Each report retains exact model-visible input, raw output, parsed output, deterministic mapping, and elapsed time.
+
+Each rejected line and unresolved candidate remains visible.
+
+The mention and reference replay currently passes thirty-nine of forty reviewed items.
+
+The remaining item preserves one F-Coref and Qwen2.5 disagreement as an intended ambiguity.
+
+The historical validation partition participated in iteration and no longer proves unseen generalization.
+
+### 7. Propose external identities
 
 ReFinED receives only specific MentionCandidates and their source context.
 
@@ -206,31 +352,35 @@ ReFinED returns ranked EntityLinkCandidates or NIL.
 
 Qwen2.5 can rank only EntityLinkCandidates that KoteKomi supplies.
 
-### 7. Discover source-bound event triggers
+The Event-trigger stage preserves this grounding lineage without treating it as source authority.
 
-Qwen2.5 receives one exact SourceSegment.
+### 8. Discover source-bound Event triggers
 
-The Pipeline retains HP-3 lineage but does not send fallible EntityLinkCandidates to Qwen2.5.
+KoteKomi derives a fresh SourceOccurrence catalog from the same authoritative SourceSegment.
 
-HP-3 partial or blocked status does not gate event framing.
+Stanza supplies source-bound grammatical annotations.
 
-Qwen2.5 detects source-literal triggers without assigning governed roles.
+QANom proposes source-bound nominal Event candidates.
 
-KoteKomi maps each trigger to authoritative source characters and retains the open event label only as diagnostic evidence.
+KoteKomi selects EventHeadCandidates and records a disposition for every SourceOccurrence.
 
-### 8. Construct governed event semantics and judge source support
+Qwen2.5 answers one finite Semantic Route for one supplied candidate at a time.
 
-Qwen2.5 receives one trigger, SourceSegment-local MentionCandidates, and the complete bounded ontology profile.
+KoteKomi reconciles those answers and creates exact EventTriggerDraft records.
 
-Qwen2.5 selects one governed frame and governed frame roles.
+The current Gold replay reproduces all eighty-seven reviewed Events exactly.
 
-KoteKomi constructs typed event targets and qualified role assignments from authoritative characters.
+### 9. Construct governed semantics and judge source support
 
-Separate Qwen2.5 tasks compare deterministic semantic statements with exact evidence.
+Qwen2.5 receives one Event trigger and one bounded ontology decision at a time.
 
-Each task returns directly supported, partially supported, unsupported, contradicted, or ambiguous.
+KoteKomi constructs typed Event targets and qualified role assignments from authoritative characters.
 
-### 9. Create reviewable state
+KoteKomi renders one CompleteProposition from a complete governed Event.
+
+Qwen2.5 and the NLI challenger evaluate that CompleteProposition against exact source text.
+
+### 10. Create reviewable state
 
 The Application Layer creates ProposedChanges from complete validated drafts.
 
@@ -244,11 +394,11 @@ Corrective deliverables can replace obsolete derived stages when the accepted de
 
 Each deliverable produces evidence that defines the next TDD.
 
-HP-1 through HP-8 have accepted, implemented, and verified TDDs.
+HP-1 through HP-8 provide the document-level Hybrid Pipeline path.
 
-HP-9 reconciles paragraph-local named candidates before document proposal submission.
+HP-9, HP-10, and the Hybrid Semantic Quality Program refine that path through bounded successors.
 
-HP-9 is implemented with focused verification and awaits canonical document validation.
+Each linked TDD owns the implementation and verification status of its boundary.
 
 | Deliverable | User story | Precondition | Postcondition |
 | --- | --- | --- | --- |
@@ -273,7 +423,11 @@ HP-1 adds reviewed contextual labels for one fixed diagnostic subset.
 
 Each later deliverable adds Gold labels only for its new semantic boundary.
 
-Development evidence and held-out evidence remain disjoint.
+Development and validation SourceSegment identities remain disjoint within one replay.
+
+The current validation partition participated in iterative diagnosis.
+
+A new independently reviewed corpus must test generalization beyond the current Gold catalog.
 
 Each evaluation reports stage-local precision, recall, abstention, invalid output, latency, and stability.
 

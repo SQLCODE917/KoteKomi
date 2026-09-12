@@ -5,7 +5,7 @@
 - Program: [Hybrid Semantic Quality Program](2026-09-06-hybrid-semantic-quality-program.md)
 - Depends on: [Source-Bound Governed Event Extraction](2026-09-07-source-bound-governed-event-extraction.md)
 - Development Gold: [Amodei Task-Allocation Gold](hsq-task-allocation-amodei-gold-v1.json)
-- Held-out Gold: [Anthropic Task-Allocation Gold](hsq-task-allocation-anthropic-gold-v1.json)
+- Historical validation Gold: [Anthropic Task-Allocation Gold](hsq-task-allocation-anthropic-gold-v1.json)
 - Pinned baseline: [September 8 Task-Allocation Baseline](hsq-task-allocation-baseline-2026-09-08.json)
 - Historical stage-local split: [Mention and Reference Evaluation Split v1](hsq-stage-local-split-v1.json)
 - Corrected stage-local split: [Mention and Reference Evaluation Split v2](hsq-stage-local-split-v2.json)
@@ -30,6 +30,38 @@ remains the one intended explicit specialist/Qwen ambiguity.
 Still pending stage-local implementation and evaluation:
 
 - governed Event frames onward through Candidate Wiki evaluation.
+
+## Implemented Front-Half Boundary
+
+```text
+authoritative SourceSegment
+        |
+        v
+SourceOccurrence selection
+        |
+        v
+deterministic reference-marker routing
+        |
+        v
+Effective MentionCandidates
+        |
+        v
+exact-target reference challenge
+        |
+        v
+conservative specialist and Qwen reconciliation
+        |
+        v
+ReferenceDecisions
+```
+
+The stage-local control path then applies the corrected evaluator and diagnostics-first verification.
+
+That control path determines whether the next extraction boundary is ready for development.
+
+It does not create or transform production extraction records.
+
+The [Hybrid Pipeline architecture](2026-09-01-hybrid-intelligence-extraction-pipeline.md#current-implemented-boundary-architecture) defines each step and its authority boundary.
 
 ## Context & Problem
 
@@ -115,11 +147,11 @@ KoteKomi derives the Effective MentionCandidates from deterministic selections a
 
 - BTA-GOL-01: The development catalog contains exactly twenty Dario Amodei intelligence items.
 - BTA-GOL-02: The development catalog contains the seventeen previously missing core items and the three previously demonstrated items.
-- BTA-GOL-03: The held-out catalog contains exactly twenty Anthropic intelligence items.
+- BTA-GOL-03: The validation catalog contains exactly twenty Anthropic intelligence items.
 - BTA-GOL-04: Each item preserves complete authoritative source text, source digest, expected meaning, expected route, and task-allocation tags.
 - BTA-GOL-05: Each catalog distinguishes representable items from typed ontology gaps.
 - BTA-GOL-06: Evaluation reports exact expected and actual stage outcomes per item instead of only aggregate counts.
-- BTA-GOL-07: Development results cannot change held-out expectations.
+- BTA-GOL-07: Gold expectations remain fixed throughout each replay.
 - BTA-GOL-08: A finding that changes only evaluator judgment is a separately pinned correction record linked to the finalized parent evidence; it does not rewrite Gold or system output.
 
 ### Source-owned mention occurrences
@@ -490,7 +522,7 @@ terminal judgments, and the diagnostic created no ProposedChange or accepted Led
 The first v9 twenty/twenty replay rejected the correction because it passed only thirty-eight of forty
 items.
 
-AMO-12 remained the expected explicit ambiguity, but held-out item ANT-01 regressed.
+AMO-12 remained the expected explicit ambiguity, but validation item ANT-01 regressed.
 
 Its source says that the Department of Defense conflicted with `the artificial intelligence company
 Anthropic over the use of its products`.
@@ -662,7 +694,8 @@ Existing EventTriggerDraft, EventSemanticDraft, CompleteProposition, Proposition
 - BTA-RUL-03: A source-backed meaning outside the governed profile is not evidence of model failure.
 - BTA-RUL-04: An ontology gap cannot be silently mapped to the nearest frame.
 - BTA-RUL-05: A regression on an already demonstrated Gold item blocks acceptance.
-- BTA-RUL-06: The held-out catalog is evaluated only after development behavior is frozen.
+- BTA-RUL-06: Each frozen replay evaluates validation only after development behavior is fixed.
+- BTA-RUL-06A: A new independently reviewed corpus is required to measure unseen generalization.
 - BTA-RUL-07: Retrieval confidence, specialist score, model confidence, and evidence confidence remain distinct.
 - BTA-RUL-08: All intelligence remains pending until human review.
 - BTA-RUL-09: Deterministic boundary reconciliation remains unchanged by semantic adjudication.
@@ -745,7 +778,7 @@ Existing EventTriggerDraft, EventSemanticDraft, CompleteProposition, Proposition
 - AC-BTA-SLE-22: The v8 diagnostic proves the concise control still selects `Minab school strike` rather than the source-supported `Claude` occurrence.
 - AC-BTA-SLE-23: The v8 diagnostic preserves valid input, output, and mapping evidence while safely retaining the repeated `Minab school strike`/`Claude` disagreement as ambiguous, thereby falsifying prompt-only repair.
 - AC-BTA-SLE-24: The v9 diagnostic resolves the Minab reference through binary validation and preserves AMO-12 as an explicit specialist/alternative disagreement.
-- AC-BTA-SLE-25: The rejected v9 replay preserves complete evidence for thirty-eight of forty passing items and identifies ANT-01 as a held-out regression caused by alternative-only fallback.
+- AC-BTA-SLE-25: The rejected v9 replay preserves complete evidence for thirty-eight of forty passing items and identifies ANT-01 as a validation regression caused by alternative-only fallback.
 - AC-BTA-SLE-26: The v9 replay creates zero ProposedChanges and zero accepted Ledger records.
 - AC-BTA-SLE-27: The v10 diagnostic passes ANT-01, AMO-16, and AMO-17 while preserving AMO-12 as an explicit specialist/contrastive disagreement.
 - AC-BTA-SLE-28: The v10 replay retains the v5 boundary-contract result and passes thirty-nine of forty items with AMO-12 as the sole explicit ambiguity.
@@ -783,6 +816,6 @@ Stop if one malformed output line erases another independently valid line.
 
 Stop if the development improvement loses one previously demonstrated behavior.
 
-Stop if held-out Anthropic quality regresses while Amodei quality improves.
+Stop if validation Anthropic quality regresses while Amodei quality improves.
 
 Stop if a model or specialist result bypasses ProposedChange review into accepted Ledger state.

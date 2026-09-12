@@ -5,6 +5,8 @@
 - Parent: [Hybrid Intelligence Extraction Pipeline](2026-09-01-hybrid-intelligence-extraction-pipeline.md)
 - Review basis: [Ingestion Architecture Review](2026-09-04-Ingestion-Architecture-Review.md)
 - First deliverable: [HSQ-1 Governed Event Coverage](2026-09-06-governed-event-coverage.md)
+- Current front-half deliverable: [HSQ-7 Bounded Semantic Task Allocation](2026-09-08-bounded-semantic-task-allocation.md)
+- Verified Event boundary: [SourceOccurrence to Event Trigger Boundary](2026-09-10-source-occurrence-event-trigger-boundary.md)
 
 ## Context & Problem
 
@@ -44,11 +46,24 @@ This program improves those five boundaries without creating another extraction 
 
 ### Primary end-to-end flow
 
-1. Qwen maps one source event to an expanded governed event profile.
-2. KoteKomi preserves valid role assignments and completes only missing roles.
-3. Qwen and an NLI challenger judge one CompleteProposition against exact source text.
-4. A coreference proposer supplies source-span clusters for bounded semantic reference decisions.
-5. KoteKomi admits only complete supported events and standing Assertions to human review.
+1. KoteKomi derives exact SourceOccurrences from one authoritative SourceSegment.
+2. Qwen, GLiNER, and deterministic reference-marker rules produce source-bound mention observations.
+3. KoteKomi reconciles safe boundaries and sends only ambiguous components to a bounded challenge.
+4. KoteKomi routes exact reference markers and unique aliases without semantic invention.
+5. F-Coref proposes antecedents for one exact target.
+6. Qwen validates or contrasts only KoteKomi-supplied source-valid antecedents.
+7. KoteKomi constructs a conservative ReferenceDecision with complete execution lineage.
+8. ReFinED proposes external identities for eligible specific mentions.
+9. Stanza and QANom propose EventHeadCandidates from exact SourceOccurrences.
+10. Qwen answers finite candidate-local Event questions.
+11. KoteKomi reconciles those answers into exact EventTriggerDraft records.
+12. Later bounded tasks select governed frames, roles, and presentation.
+13. Qwen and an NLI challenger judge one CompleteProposition against exact source text.
+14. KoteKomi admits only complete supported Events and standing Assertions to human review.
+
+The stage-local control path evaluates and diagnoses each completed boundary independently.
+
+That control path cannot create production extraction records or accepted Ledger state.
 
 ## Goals
 
@@ -78,33 +93,38 @@ This program improves those five boundaries without creating another extraction 
 ## Proposed Architecture
 
 ```text
-DocumentRepresentationBundle
+authoritative SourceSegment
         |
         v
-governed event normalization ----> selective role completion
-        |                                  |
-        +---------------+------------------+
-                        v
-              CompleteProposition
-                        |
-                 +------+------+
-                 |             |
-               Qwen       NLI challenger
-                 |             |
-                 +------+------+
-                        v
-             KoteKomi admission
-                        |
-              pending ProposedChange
+mention boundary --> reference boundary --> Event-trigger boundary
+        |                   |                        |
+        +-------------------+------------------------+
+                            v
+                 governed Event semantics
+                            |
+                            v
+                  CompleteProposition
+                            |
+                     +------+------+
+                     |             |
+                   Qwen       NLI challenger
+                     |             |
+                     +------+------+
+                            v
+                 KoteKomi admission
+                            |
+                  pending ProposedChange
 ```
 
 The Application Layer owns every semantic admission rule.
 
-Adapters expose NLI and coreference observations through Ports.
+Adapters expose mention, linguistic, nominalization, coreference, identity-link, and NLI observations through Ports.
 
 The Domain Core owns governed event meanings and typed decision records.
 
 The Pipeline composes the existing Hybrid stages.
+
+The [Hybrid Pipeline architecture](2026-09-01-hybrid-intelligence-extraction-pipeline.md#current-implemented-boundary-architecture) defines the production and verification paths.
 
 ## Incremental Delivery
 
@@ -116,7 +136,7 @@ The Pipeline composes the existing Hybrid stages.
 | [HSQ-4](2026-09-06-bounded-semantic-reference-resolution.md) | A reviewer can trace bounded pronoun and nominal reference decisions. | Exact source spans and document references exist. | F-Coref supplies production-eligible observations that KoteKomi validates. |
 | [HSQ-5](2026-09-06-standing-fact-semantic-admission.md) | A reviewer sees standing Assertions without flattened events or substituted arguments. | HSQ-3 and HSQ-4 expose proposition and reference decisions. | The standing-fact route admits only supported standing Assertions. |
 | [HSQ-6](2026-09-07-source-bound-governed-event-extraction.md) | A reviewer sees complete source-bound Events without open-frame translation loss. | HSQ-1 through HSQ-5 expose governed meanings and support evidence. | Trigger discovery feeds governed event construction directly and all five Amodei Gold events reach the Candidate Wiki. |
-| [HSQ-7](2026-09-08-bounded-semantic-task-allocation.md) | A reviewer retains source-backed intelligence because each model call makes one bounded semantic decision. | HSQ-6 exposes the remaining trigger, normalization, admission, route, and reference losses. | Source-owned choices, stage-local failures, parallel routes, and complete-proposition admission are evaluated against development and held-out Gold. |
+| [HSQ-7](2026-09-08-bounded-semantic-task-allocation.md) | A reviewer retains source-backed intelligence because each model call makes one bounded semantic decision. | HSQ-6 exposes the remaining trigger, normalization, admission, route, and reference losses. | Mention, reference, and Event-trigger boundaries preserve source-owned choices and exact stage-local evidence. |
 
 ## Behavior & Domain Rules
 

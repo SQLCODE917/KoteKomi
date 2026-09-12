@@ -3,6 +3,18 @@
 
 Reviewed commit: **65d00c7a7cb7be22e1b033d6ae1aeb935428cf04**. Scope: deposited PDF through pending, human-reviewable Intelligence Ledger candidates, assessed for eventual wiki and briefing usefulness on a 24 GB M5 MacBook.
 
+## Subsequent implementation note
+
+This review remains the historical assessment of the named commit.
+
+The Hybrid Pipeline has since replaced its batch Event trigger task with bounded source-occurrence routing.
+
+It has also added deterministic reference-marker routing and conservative F-Coref and Qwen reconciliation.
+
+The [current Hybrid Pipeline architecture](2026-09-01-hybrid-intelligence-extraction-pipeline.md#current-implemented-boundary-architecture) describes those implemented boundaries.
+
+The original findings below remain the evidence that motivated the corrective work.
+
 ## 1. Assessment
 
 **Keep the hybrid architecture. Its allocation of authority is sound, and the code implements much of it carefully. The highest-value work is to improve semantic coverage and execution reliability before undertaking model fine-tuning.**
