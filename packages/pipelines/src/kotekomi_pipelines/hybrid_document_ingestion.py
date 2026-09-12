@@ -15,6 +15,8 @@ from kotekomi_adapters import (
     FCorefConfig,
     GlinerMentionProposer,
     LocalArchiveStore,
+    QANomNominalizationAnalyzer,
+    StanzaLinguisticAnalyzer,
 )
 from kotekomi_adapters.gliner_organization_mention_proposer import (
     GLINER_DEVICE,
@@ -31,8 +33,13 @@ from kotekomi_adapters.model_resources import (
     gliner_model_path,
     nli_expected_resource_identity,
     nli_model_path,
+    qanom_expected_resource_identity,
+    qanom_lexical_resource_path,
+    qanom_model_path,
     refined_data_path,
     refined_python_path,
+    stanza_expected_resource_identity,
+    stanza_model_path,
 )
 from kotekomi_adapters.refined_entity_linking import (
     REFINED_ENTITY_SET,
@@ -99,11 +106,16 @@ from kotekomi_application.hybrid_event_semantics_preview import (
     run_hybrid_event_semantics_preview,
 )
 from kotekomi_application.hybrid_event_trigger_model_output import (
-    event_trigger_schema_bytes,
+    binary_semantic_answer_schema_bytes,
+    event_head_answer_schema_bytes,
+    event_verb_role_answer_schema_bytes,
 )
 from kotekomi_application.hybrid_event_trigger_preview import (
-    TRIGGER_SCHEMA_ID,
+    EVENT_BINARY_SEMANTIC_SCHEMA_ID,
+    EVENT_HEAD_JUDGMENT_SCHEMA_ID,
+    EVENT_VERB_ROLE_SCHEMA_ID,
     HybridEventTriggerCommand,
+    HybridEventTriggerPrompts,
     HybridEventTriggerResult,
     run_hybrid_event_trigger_preview,
 )
@@ -144,10 +156,23 @@ from kotekomi_application.hybrid_standing_facts import (
     HybridStandingFactCommand,
     run_hybrid_standing_fact_plan,
 )
+from kotekomi_application.linguistic_analysis import (
+    LinguisticAnalysis,
+    LinguisticAnalysisInput,
+    LinguisticAnalyzer,
+    LinguisticToken,
+    UniversalPartOfSpeech,
+)
 from kotekomi_application.mention_proposer import (
     MentionProposalBatch,
     MentionProposalInput,
     MentionProposer,
+)
+from kotekomi_application.nominalization_analysis import (
+    NominalizationAnalysis,
+    NominalizationAnalysisInput,
+    NominalizationAnalyzer,
+    NominalizationCandidate,
 )
 from kotekomi_application.semantic_proposition import (
     NaturalLanguageInferenceExecution,
@@ -166,6 +191,7 @@ from kotekomi_application.semantic_references import (
     CoreferenceProposerPort,
     CoreferenceTokenizer,
 )
+from kotekomi_application.source_occurrences import source_occurrences
 from kotekomi_application.staged_model_extraction import (
     ExecutionSetting,
     HybridMentionBoundaryAdjudicationTaskSchemaRegistry,
@@ -191,7 +217,14 @@ _PROMPT_NAMES = (
     "hybrid_mention_ontology_card_v1.md",
     "semantic_reference_challenge_v4.md",
     "semantic_reference_candidate_validation_v1.md",
-    "hybrid_event_trigger_task_v4.md",
+    "event_verb_role_v1.md",
+    "event_verb_similarity_v1.md",
+    "event_noun_inventory_v1.md",
+    "event_noun_dependent_kind_v1.md",
+    "event_noun_media_artifact_v1.md",
+    "event_noun_governor_distinct_v1.md",
+    "event_noun_reaction_v1.md",
+    "event_noun_standing_v1.md",
     "hybrid_event_frame_selection_v1.md",
     "hybrid_event_frame_fit_v1.md",
     "hybrid_event_role_selection_v1.md",
@@ -314,6 +347,60 @@ class _FixtureCoreference:
         )
 
 
+class _FixtureLinguisticAnalyzer:
+    """Deterministic broad candidate annotations for fixture-only composition tests."""
+
+    def analyze(self, request: LinguisticAnalysisInput) -> LinguisticAnalysis:
+        occurrences = source_occurrences(request.source_text)
+        return LinguisticAnalysis(
+            source_text_sha256=hashlib.sha256(request.source_text.encode()).hexdigest(),
+            producer_id="fixture-linguistic-analyzer",
+            model_id="fixture-linguistic-model",
+            model_version="1",
+            resource_identity="f" * 64,
+            tokens=tuple(
+                LinguisticToken(
+                    token_id=f"t{ordinal}",
+                    sentence_id="s1",
+                    text=occurrence.text,
+                    start=occurrence.start,
+                    end=occurrence.end,
+                    lemma=occurrence.text.casefold(),
+                    part_of_speech=UniversalPartOfSpeech.NOUN,
+                    dependency_relation="root" if ordinal == 1 else "dep",
+                    head_token_id=None if ordinal == 1 else "t1",
+                )
+                for ordinal, occurrence in enumerate(occurrences, start=1)
+            ),
+        )
+
+
+class _FixtureNominalizationAnalyzer:
+    def analyze(self, request: NominalizationAnalysisInput) -> NominalizationAnalysis:
+        return NominalizationAnalysis(
+            source_text_sha256=hashlib.sha256(request.source_text.encode()).hexdigest(),
+            producer_id="fixture-nominalization-analyzer",
+            model_id="fixture-nominalization-model",
+            model_revision="1",
+            resource_identity="f" * 64,
+            threshold=0.45,
+            candidates=tuple(
+                NominalizationCandidate(
+                    linguistic_token_id=token.token_id,
+                    text=token.text,
+                    start=token.start,
+                    end=token.end,
+                    lexical_candidate=True,
+                    positive_logit=1.0,
+                    negative_logit=-1.0,
+                    nominalization_probability=0.7310585786300049,
+                )
+                for token in request.linguistic_analysis.tokens
+                if token.part_of_speech is UniversalPartOfSpeech.NOUN
+            ),
+        )
+
+
 @dataclass(frozen=True)
 class _UnavailableCoreference:
     error: Exception
@@ -344,6 +431,8 @@ class _RuntimeResources:
         self._coreference: _CoreferenceRuntime | None = None
         self._fcoref: FCorefAdapter | None = None
         self._refined: RefinedEntityLinkingAdapter | None = None
+        self._linguistic_analyzer: LinguisticAnalyzer | None = None
+        self._nominalization_analyzer: NominalizationAnalyzer | None = None
 
     @property
     def proposer(self) -> MentionProposer:
@@ -403,6 +492,33 @@ class _RuntimeResources:
                     self._coreference = _UnavailableCoreference(error)
         assert self._coreference is not None
         return self._coreference
+
+    @property
+    def linguistic_analyzer(self) -> LinguisticAnalyzer:
+        if self._linguistic_analyzer is None:
+            if self._config.model_execution.adapter == "fixture":
+                self._linguistic_analyzer = _FixtureLinguisticAnalyzer()
+            else:
+                self._linguistic_analyzer = StanzaLinguisticAnalyzer(
+                    model_directory=stanza_model_path(self._config.model_resource_root),
+                    resource_identity=stanza_expected_resource_identity(),
+                )
+        return self._linguistic_analyzer
+
+    @property
+    def nominalization_analyzer(self) -> NominalizationAnalyzer:
+        if self._nominalization_analyzer is None:
+            if self._config.model_execution.adapter == "fixture":
+                self._nominalization_analyzer = _FixtureNominalizationAnalyzer()
+            else:
+                self._nominalization_analyzer = QANomNominalizationAnalyzer(
+                    model_directory=qanom_model_path(self._config.model_resource_root).resolve(),
+                    lexical_resource_directory=qanom_lexical_resource_path(
+                        self._config.model_resource_root
+                    ).resolve(),
+                    resource_identity=qanom_expected_resource_identity(),
+                )
+        return self._nominalization_analyzer
 
     def close(self) -> None:
         if self._refined is not None:
@@ -597,7 +713,18 @@ def _run_paragraph(
             model_runtime=resources.runtime,
             model_run_id_factory=model_run_id_factory,
             tokenizer=resources.runtime,
-            trigger_prompt_bytes=prompts["hybrid_event_trigger_task_v4.md"],
+            prompts=HybridEventTriggerPrompts(
+                verb_role=prompts["event_verb_role_v1.md"],
+                verb_similarity=prompts["event_verb_similarity_v1.md"],
+                noun_inventory=prompts["event_noun_inventory_v1.md"],
+                noun_dependent_kind=prompts["event_noun_dependent_kind_v1.md"],
+                noun_media_artifact=prompts["event_noun_media_artifact_v1.md"],
+                noun_governor_distinct=prompts["event_noun_governor_distinct_v1.md"],
+                noun_reaction=prompts["event_noun_reaction_v1.md"],
+                noun_standing=prompts["event_noun_standing_v1.md"],
+            ),
+            linguistic_analyzer=resources.linguistic_analyzer,
+            nominalization_analyzer=resources.nominalization_analyzer,
         )
     stages.append(_stage(HybridStageId.HP4_EVENT_TRIGGERS, hp4))
 
@@ -744,7 +871,9 @@ def _policy_input(
         SEMANTIC_REFERENCE_VALIDATION_SCHEMA_ID: (
             semantic_reference_candidate_validation_schema_bytes()
         ),
-        TRIGGER_SCHEMA_ID: event_trigger_schema_bytes(),
+        EVENT_HEAD_JUDGMENT_SCHEMA_ID: event_head_answer_schema_bytes(),
+        EVENT_VERB_ROLE_SCHEMA_ID: event_verb_role_answer_schema_bytes(),
+        EVENT_BINARY_SEMANTIC_SCHEMA_ID: binary_semantic_answer_schema_bytes(),
         HYBRID_EVENT_FRAME_SELECTION_SCHEMA_ID: event_frame_selection_schema_bytes(),
         HYBRID_EVENT_ROLE_SELECTION_SCHEMA_ID: event_semantic_role_target_schema_bytes(),
         HYBRID_EVENT_PRESENTATION_SCHEMA_ID: event_presentation_schema_bytes(),
@@ -777,6 +906,16 @@ def _policy_input(
                 kind="model_resource",
                 identity="fcoref_v1",
                 sha256=fcoref_expected_resource_identity(),
+            ),
+            HybridPolicyPin(
+                kind="model_resource",
+                identity="stanza_english_v1",
+                sha256=stanza_expected_resource_identity(),
+            ),
+            HybridPolicyPin(
+                kind="model_resource",
+                identity="qanom_nominalization_v1",
+                sha256=qanom_expected_resource_identity(),
             ),
         )
     )

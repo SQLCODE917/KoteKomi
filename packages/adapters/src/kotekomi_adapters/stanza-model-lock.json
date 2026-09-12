@@ -1,0 +1,65 @@
+{
+  "files": [
+    {
+      "repository": "stanfordnlp/stanza-en",
+      "revision": "88e0cd3ddaa0c5a4b682895527ac013ce0241c21",
+      "source_path": "models/backward_charlm/1billion.pt",
+      "target_path": "en/backward_charlm/1billion.pt",
+      "sha256": "5d8cb2306650e4fc2b4f7517cc0fb33b38269e05bbf8d05e712e481471052225"
+    },
+    {
+      "repository": "stanfordnlp/stanza-en",
+      "revision": "88e0cd3ddaa0c5a4b682895527ac013ce0241c21",
+      "source_path": "models/depparse/ewt_charlm.pt",
+      "target_path": "en/depparse/ewt_charlm.pt",
+      "sha256": "7386666c2054363f6c4eae702f84ef7d4a11aa4708c2907b82b105e56925d897"
+    },
+    {
+      "repository": "stanfordnlp/stanza-en",
+      "revision": "88e0cd3ddaa0c5a4b682895527ac013ce0241c21",
+      "source_path": "models/forward_charlm/1billion.pt",
+      "target_path": "en/forward_charlm/1billion.pt",
+      "sha256": "8a32ac2226dda8ea5d30f2a15fe3f835639977f299cfda315ce1b8a656596fd2"
+    },
+    {
+      "repository": "stanfordnlp/stanza-en",
+      "revision": "88e0cd3ddaa0c5a4b682895527ac013ce0241c21",
+      "source_path": "models/lemma/ewt_nocharlm.pt",
+      "target_path": "en/lemma/ewt_nocharlm.pt",
+      "sha256": "d0c24e8baeafeba7734205db91dcb0dbf7996ed8b5c79f2bc580410c97346d74"
+    },
+    {
+      "repository": "stanfordnlp/stanza-en",
+      "revision": "88e0cd3ddaa0c5a4b682895527ac013ce0241c21",
+      "source_path": "models/mwt/ewt.pt",
+      "target_path": "en/mwt/ewt.pt",
+      "sha256": "73411a30da7638bbda2ebd9490e017d78feb4e029e90c9f5c9f37e5433292eb0"
+    },
+    {
+      "repository": "stanfordnlp/stanza-en",
+      "revision": "88e0cd3ddaa0c5a4b682895527ac013ce0241c21",
+      "source_path": "models/pos/ewt_charlm.pt",
+      "target_path": "en/pos/ewt_charlm.pt",
+      "sha256": "f89696d286c29aff173061fbd4b581c73525257ce38015804be047a5e40f9614"
+    },
+    {
+      "repository": "stanfordnlp/stanza-en",
+      "revision": "88e0cd3ddaa0c5a4b682895527ac013ce0241c21",
+      "source_path": "models/pretrain/conll17.pt",
+      "target_path": "en/pretrain/conll17.pt",
+      "sha256": "edde4c195f91ba45aab3f3a6254202011f284559da8a5ead5e62ce522f819c5e"
+    },
+    {
+      "repository": "stanfordnlp/stanza-en",
+      "revision": "88e0cd3ddaa0c5a4b682895527ac013ce0241c21",
+      "source_path": "models/tokenize/ewt.pt",
+      "target_path": "en/tokenize/ewt.pt",
+      "sha256": "fc2fed0cd74dbaef1620bd3e776141ae76c4e28eb5aeff369b2715c31cc73cba"
+    }
+  ],
+  "package_version": "1.14.0",
+  "resource_id": "stanza_english_v1",
+  "resources_json_sha256": "4e41c1df152146fa26ed0c006a08feea7a60bb3414bb6d57dbda24ad2e3cb99c",
+  "resources_json_url": "https://raw.githubusercontent.com/stanfordnlp/stanza-resources/main/resources_1.14.0.json",
+  "schema_version": "stanza_model_lock_v1"
+}

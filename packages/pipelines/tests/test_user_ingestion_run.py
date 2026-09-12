@@ -9,7 +9,9 @@ from kotekomi_adapters import (
     SQLiteLedgerRepository,
     fcoref_expected_resource_identity,
     nli_expected_resource_identity,
+    qanom_expected_resource_identity,
     sqlite_ledger_transaction,
+    stanza_expected_resource_identity,
 )
 from kotekomi_application import (
     HYBRID_STAGE_ORDER,
@@ -230,6 +232,8 @@ def test_user_ingest_checkpoints_and_reuses_the_complete_hybrid_document(
     assert resource_pins == {
         "fcoref_v1": fcoref_expected_resource_identity(),
         "nli_deberta_v3_base_v1": nli_expected_resource_identity(),
+        "qanom_nominalization_v1": qanom_expected_resource_identity(),
+        "stanza_english_v1": stanza_expected_resource_identity(),
     }
 
     ledger_path = tmp_path / "state" / "kotekomi.db"
@@ -299,6 +303,8 @@ def test_user_ingest_checkpoints_and_reuses_the_complete_hybrid_document(
                 "runs",
                 "--ingestion-run",
                 first_ingestion.id,
+                "--limit",
+                str(len(first_model_run_ids)),
                 "--format",
                 "json",
             ]

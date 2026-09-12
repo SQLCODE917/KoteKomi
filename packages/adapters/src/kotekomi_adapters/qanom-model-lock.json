@@ -1,0 +1,61 @@
+{
+  "files": [
+    {
+      "repository": "kleinay/nominalization-candidate-classifier",
+      "revision": "45e4bddfa88473e390d89cab5de5868e7a8c2050",
+      "source_path": "config.json",
+      "target_path": "model/config.json",
+      "sha256": "d7bd41f1acade176b22e164c8371aa6985bcdff7d7579f790ef30e102c6423f5"
+    },
+    {
+      "repository": "kleinay/nominalization-candidate-classifier",
+      "revision": "45e4bddfa88473e390d89cab5de5868e7a8c2050",
+      "source_path": "pytorch_model.bin",
+      "target_path": "model/pytorch_model.bin",
+      "sha256": "dcd03609b51b90201ee97cdca06efcdb28c341e5470fd12b64849d0e55474f18"
+    },
+    {
+      "repository": "kleinay/nominalization-candidate-classifier",
+      "revision": "45e4bddfa88473e390d89cab5de5868e7a8c2050",
+      "source_path": "special_tokens_map.json",
+      "target_path": "model/special_tokens_map.json",
+      "sha256": "303df45a03609e4ead04bc3dc1536d0ab19b5358db685b6f3da123d05ec200e3"
+    },
+    {
+      "repository": "kleinay/nominalization-candidate-classifier",
+      "revision": "45e4bddfa88473e390d89cab5de5868e7a8c2050",
+      "source_path": "tokenizer.json",
+      "target_path": "model/tokenizer.json",
+      "sha256": "b9f6f33c0c5643e829983f30884cf36f052e8e9c45e3d13a37c7d78417709c9c"
+    },
+    {
+      "repository": "kleinay/nominalization-candidate-classifier",
+      "revision": "45e4bddfa88473e390d89cab5de5868e7a8c2050",
+      "source_path": "tokenizer_config.json",
+      "target_path": "model/tokenizer_config.json",
+      "sha256": "67d4985f8eea30c30dedafe8118ec55eaf835aceb007dc54f8cd535a0483b021"
+    },
+    {
+      "repository": "kleinay/nominalization-candidate-classifier",
+      "revision": "45e4bddfa88473e390d89cab5de5868e7a8c2050",
+      "source_path": "vocab.txt",
+      "target_path": "model/vocab.txt",
+      "sha256": "eeaa9875b23b04b4c54ef759d03db9d1ba1554838f8fb26c5d96fa551df93d02"
+    }
+  ],
+  "lexical_files": [
+    {
+      "download_url": "https://raw.githubusercontent.com/kleinay/QANom/2bce70e8a39b40157ba97f38e1a8ae7619b30162/qanom/resources/catvar/catvar21.signed",
+      "target_path": "lexical/catvar21.signed",
+      "sha256": "1408eb72ab1b57a6a11dde1bcfdef167e9735886ebe1fecfef65dae4d857caa9"
+    },
+    {
+      "download_url": "https://raw.githubusercontent.com/kleinay/QANom/2bce70e8a39b40157ba97f38e1a8ae7619b30162/qanom/resources/verb-to-nom-heuristic/nom_verb_pairs.txt",
+      "target_path": "lexical/nom_verb_pairs.txt",
+      "sha256": "8a742a5e00ad688e8695d629d2dabf3006075e38e061f91ab56028692965fd81"
+    }
+  ],
+  "resource_id": "qanom_nominalization_v1",
+  "schema_version": "qanom_model_lock_v1",
+  "transformers_version": "5.8.1"
+}

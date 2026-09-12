@@ -25,7 +25,9 @@ if TYPE_CHECKING:
         GlinerModelResourceAdapter,
         ModelResourceInstallationError,
         NliDebertaModelResourceAdapter,
+        QANomModelResourceAdapter,
         RefinedModelResourceAdapter,
+        StanzaEnglishModelResourceAdapter,
         fcoref_expected_resource_identity,
         fcoref_model_path,
         fcoref_python_path,
@@ -33,12 +35,18 @@ if TYPE_CHECKING:
         gliner_model_path,
         nli_expected_resource_identity,
         nli_model_path,
+        qanom_expected_resource_identity,
+        qanom_lexical_resource_path,
+        qanom_model_path,
         refined_data_path,
         refined_python_path,
+        stanza_expected_resource_identity,
+        stanza_model_path,
     )
     from kotekomi_adapters.ollama_embeddings import OllamaEmbeddingAdapter
     from kotekomi_adapters.ollama_model_runtime import OllamaModelRuntime
     from kotekomi_adapters.pdf_evidence_overlay_renderer import PdfiumEvidenceOverlayRenderer
+    from kotekomi_adapters.qanom_nominalization import QANomNominalizationAnalyzer
     from kotekomi_adapters.refined_entity_linking import (
         RefinedEntityLinkingAdapter,
         RefinedEntityLinkingConfig,
@@ -57,6 +65,7 @@ if TYPE_CHECKING:
         sqlite_ledger_transaction,
     )
     from kotekomi_adapters.sqlite_ledger_retrieval import SQLiteLedgerRetrievalAdapter
+    from kotekomi_adapters.stanza_linguistic_analysis import StanzaLinguisticAnalyzer
     from kotekomi_adapters.structured_news import GenericArticleAdapter, NewsMLG2Adapter
 
 __all__ = [
@@ -83,6 +92,10 @@ __all__ = [
     "ModelResourceInstallationError",
     "NliDebertaModelResourceAdapter",
     "RefinedModelResourceAdapter",
+    "QANomModelResourceAdapter",
+    "QANomNominalizationAnalyzer",
+    "StanzaEnglishModelResourceAdapter",
+    "StanzaLinguisticAnalyzer",
     "gliner_expected_resource_identity",
     "fcoref_expected_resource_identity",
     "nli_expected_resource_identity",
@@ -106,6 +119,11 @@ __all__ = [
     "nli_model_path",
     "refined_data_path",
     "refined_python_path",
+    "qanom_expected_resource_identity",
+    "qanom_lexical_resource_path",
+    "qanom_model_path",
+    "stanza_expected_resource_identity",
+    "stanza_model_path",
 ]
 
 
@@ -170,6 +188,8 @@ def __getattr__(name: str) -> object:
         "ModelResourceInstallationError",
         "NliDebertaModelResourceAdapter",
         "RefinedModelResourceAdapter",
+        "QANomModelResourceAdapter",
+        "StanzaEnglishModelResourceAdapter",
         "fcoref_expected_resource_identity",
         "fcoref_model_path",
         "fcoref_python_path",
@@ -179,13 +199,20 @@ def __getattr__(name: str) -> object:
         "nli_model_path",
         "refined_data_path",
         "refined_python_path",
+        "qanom_expected_resource_identity",
+        "qanom_lexical_resource_path",
+        "qanom_model_path",
+        "stanza_expected_resource_identity",
+        "stanza_model_path",
     }:
         from kotekomi_adapters.model_resources import (
             FCorefModelResourceAdapter,
             GlinerModelResourceAdapter,
             ModelResourceInstallationError,
             NliDebertaModelResourceAdapter,
+            QANomModelResourceAdapter,
             RefinedModelResourceAdapter,
+            StanzaEnglishModelResourceAdapter,
             fcoref_expected_resource_identity,
             fcoref_model_path,
             fcoref_python_path,
@@ -193,8 +220,13 @@ def __getattr__(name: str) -> object:
             gliner_model_path,
             nli_expected_resource_identity,
             nli_model_path,
+            qanom_expected_resource_identity,
+            qanom_lexical_resource_path,
+            qanom_model_path,
             refined_data_path,
             refined_python_path,
+            stanza_expected_resource_identity,
+            stanza_model_path,
         )
 
         return {
@@ -203,6 +235,8 @@ def __getattr__(name: str) -> object:
             "ModelResourceInstallationError": ModelResourceInstallationError,
             "NliDebertaModelResourceAdapter": NliDebertaModelResourceAdapter,
             "RefinedModelResourceAdapter": RefinedModelResourceAdapter,
+            "QANomModelResourceAdapter": QANomModelResourceAdapter,
+            "StanzaEnglishModelResourceAdapter": StanzaEnglishModelResourceAdapter,
             "fcoref_expected_resource_identity": fcoref_expected_resource_identity,
             "fcoref_model_path": fcoref_model_path,
             "fcoref_python_path": fcoref_python_path,
@@ -212,7 +246,20 @@ def __getattr__(name: str) -> object:
             "nli_model_path": nli_model_path,
             "refined_data_path": refined_data_path,
             "refined_python_path": refined_python_path,
+            "qanom_expected_resource_identity": qanom_expected_resource_identity,
+            "qanom_lexical_resource_path": qanom_lexical_resource_path,
+            "qanom_model_path": qanom_model_path,
+            "stanza_expected_resource_identity": stanza_expected_resource_identity,
+            "stanza_model_path": stanza_model_path,
         }[name]
+    if name == "QANomNominalizationAnalyzer":
+        from kotekomi_adapters.qanom_nominalization import QANomNominalizationAnalyzer
+
+        return QANomNominalizationAnalyzer
+    if name == "StanzaLinguisticAnalyzer":
+        from kotekomi_adapters.stanza_linguistic_analysis import StanzaLinguisticAnalyzer
+
+        return StanzaLinguisticAnalyzer
     if name == "OllamaModelRuntime":
         from kotekomi_adapters.ollama_model_runtime import OllamaModelRuntime
 

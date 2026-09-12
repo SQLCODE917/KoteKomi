@@ -39,6 +39,7 @@ EVALUATOR_CORRECTIONS = ROOT / "docs/hsq-stage-local-evaluator-corrections-v1.js
 BOUNDARY_PROMPT = ROOT / "prompts/hybrid_mention_boundary_adjudication_v2.md"
 REFERENCE_PROMPT = ROOT / "prompts/semantic_reference_challenge_v4.md"
 REFERENCE_VALIDATION_PROMPT = ROOT / "prompts/semantic_reference_candidate_validation_v1.md"
+EVENT_PROMPTS = tuple(sorted((ROOT / "prompts").glob("event_*_v1.md")))
 
 
 def test_development_gold_freezes_seventeen_missing_and_three_demonstrated_items() -> None:
@@ -128,6 +129,27 @@ def test_reference_validation_prompt_asks_one_binary_semantic_question() -> None
     assert "Ledger" not in prompt
 
 
+def test_trigger_prompts_each_assign_one_bounded_semantic_task() -> None:
+    assert len(EVENT_PROMPTS) == 8
+    for path in EVENT_PROMPTS:
+        prompt = path.read_text()
+        assert "Return exactly one" in prompt
+        assert "marked" in prompt.casefold()
+        if path.name == "event_verb_role_v1.md":
+            assert all(f"{answer} means" in prompt for answer in ("E", "S", "H"))
+        else:
+            assert " N" in prompt
+            assert any(
+                f"Answer {answer}" in prompt or f"{answer} means" in prompt for answer in ("E", "Y")
+            )
+        assert "SourceOccurrence" not in prompt
+        assert "occurrence_id" not in prompt
+        assert "source offset" not in prompt
+        assert "Ledger" not in prompt
+        assert "Anthropic" not in prompt
+        assert "Amodei" not in prompt
+
+
 def test_evaluation_preserves_exact_model_input_output_and_scores_one_bounded_event() -> None:
     catalog = load_task_allocation_gold(AMODEI)
     item = next(item for item in catalog.items if item.item_id == "AMO-18")
@@ -141,7 +163,7 @@ def test_evaluation_preserves_exact_model_input_output_and_scores_one_bounded_ev
     assert result.reached_review is True
     assert result.wiki_visible is None
     assert result.stage_evidence[0].exact_input == "select one supplied occurrence"
-    assert result.stage_evidence[0].raw_output == "event: o3 | o3 | criticism\n"
+    assert result.stage_evidence[0].raw_output == "event: o3 | criticism\n"
     assert result.stage_evidence[0].parsed_output == {"selected": "o3"}
 
 
@@ -618,7 +640,7 @@ def _event_paragraph(segment_sha256: str) -> dict[str, Any]:
         "raw_model_outputs": {
             "mrn_trigger": {
                 "archive_status": "available",
-                "raw_output": "event: o3 | o3 | criticism\n",
+                "raw_output": "event: o3 | criticism\n",
             }
         },
     }

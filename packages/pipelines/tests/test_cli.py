@@ -11,6 +11,7 @@ from kotekomi_adapters import SQLiteLedgerInitializer
 from kotekomi_application import (
     EntityLinkingInput,
     EntityLinkingPort,
+    EventSemanticRoute,
     HybridEntityGroundingCommand,
     HybridEntityGroundingResult,
     HybridEntityGroundingStatus,
@@ -18,6 +19,7 @@ from kotekomi_application import (
     HybridEventSemanticsResult,
     HybridEventSemanticsStatus,
     HybridEventTriggerCommand,
+    HybridEventTriggerPrompts,
     HybridEventTriggerResult,
     HybridEventTriggerStatus,
     HybridMentionPreviewResult,
@@ -699,7 +701,10 @@ def test_hybrid_event_trigger_command_prints_portable_result(
     def fake_run(**kwargs: object) -> HybridEventTriggerResult:
         command = cast(HybridEventTriggerCommand, kwargs["command"])
         assert command.parent_preview_id == preview.parent_preview_id
-        assert kwargs["trigger_prompt_bytes"]
+        prompts = cast(HybridEventTriggerPrompts, kwargs["prompts"])
+        assert all(prompts.for_route(route) for route in EventSemanticRoute)
+        assert kwargs["linguistic_analyzer"]
+        assert kwargs["nominalization_analyzer"]
         return HybridEventTriggerResult(
             preview,
             digest,

@@ -26,9 +26,9 @@ The primary flow is:
 
 1. The user initializes KoteKomi without downloading Model Resources.
 2. The user runs one explicit install command while network access is available.
-3. KoteKomi installs and validates the pinned GLiNER and ReFinED resources.
-4. A later ingestion validates both Resource Installations without network access.
-5. The Hybrid Pipeline runs GLiNER and ReFinED only from those local resources.
+3. KoteKomi installs and validates every required pinned specialized-model resource.
+4. A later ingestion validates every required Resource Installation without network access.
+5. The Hybrid Pipeline runs each specialized model only from those local resources.
 
 ## Goals
 
@@ -43,11 +43,11 @@ The primary flow is:
 ### Application Layer
 
 - SMR-APP-01: The Application Layer defines the supported Model Resource identifiers.
-- SMR-APP-02: The supported identifiers are `gliner_mention_proposer_v1` and `refined_wikipedia_v1`.
+- SMR-APP-02: The identifiers are `gliner_mention_proposer_v1`, `nli_deberta_v3_base_v1`, `refined_wikipedia_v1`, `fcoref_v1`, `stanza_english_v1`, and `qanom_nominalization_v1`.
 - SMR-APP-03: The Application Layer defines `ready`, `missing`, `incomplete`, and `identity_mismatch` readiness statuses.
 - SMR-APP-04: One Resource Readiness names its Model Resource, status, root, expected identity, observed identity, and diagnostics.
-- SMR-APP-05: The aggregate readiness result orders GLiNER before ReFinED.
-- SMR-APP-06: The aggregate readiness result is ready only when both Resource Readiness values are ready.
+- SMR-APP-05: The result orders GLiNER, DeBERTa NLI, ReFinED, F-Coref, Stanza, and QANom deterministically.
+- SMR-APP-06: The aggregate readiness result is ready only when every required Resource Readiness value is ready.
 - SMR-APP-07: The Application Layer defines the inspection and installation Ports.
 
 ### Configuration Pipeline
@@ -64,8 +64,8 @@ The primary flow is:
 - SMR-CLI-01: `kotekomi model resources status` inspects every supported Model Resource.
 - SMR-CLI-02: The status command performs no network request.
 - SMR-CLI-03: The status command supports text and JSON output.
-- SMR-CLI-04: `kotekomi model resources install` installs both supported Model Resources by default.
-- SMR-CLI-05: Repeatable `--resource gliner` and `--resource refined` options select resources.
+- SMR-CLI-04: `kotekomi model resources install` installs every required Model Resource by default.
+- SMR-CLI-05: Repeatable `--resource` options select `fcoref`, `gliner`, `nli`, `qanom`, `refined`, or `stanza`.
 - SMR-CLI-06: An install command reuses a ready Resource Installation without network access.
 - SMR-CLI-07: An install command requires `--repair` before it replaces an invalid Resource Installation.
 - SMR-CLI-08: The install command publishes a Resource Installation only after local validation succeeds.
@@ -100,9 +100,23 @@ The primary flow is:
 - SMR-REF-11: A runtime-only repair reuses an existing resource tree only after its digest matches the lock.
 - SMR-REF-12: The installer performs the reuse smoke test with every model download disabled.
 
+### Stanza Adapter
+
+- SMR-STA-01: The Stanza Resource Installation pins package version `1.14.0`.
+- SMR-STA-02: The installation pins the English EWT resources by revision and file digest.
+- SMR-STA-03: The installer runs one local linguistic smoke analysis before publication.
+- SMR-STA-04: Normal Stanza analysis disables resource downloads.
+
+### QANom Adapter
+
+- SMR-QAN-01: The QANom installation pins its classifier by revision and file digest.
+- SMR-QAN-02: The installation pins its CatVar and nominal-pair lexical files.
+- SMR-QAN-03: The installer runs one local nominalization smoke analysis before publication.
+- SMR-QAN-04: Normal QANom loading uses local model and lexical files only.
+
 ### Ingestion Pipeline
 
-- SMR-ING-01: The ingestion Pipeline inspects both Model Resources before it starts an IngestionRun.
+- SMR-ING-01: The ingestion Pipeline inspects every required Model Resource before it starts an IngestionRun.
 - SMR-ING-02: A non-ready resource returns `model_resources_not_ready` and a nonzero exit status.
 - SMR-ING-03: A readiness failure creates no IngestionRun, Archive object, or Ledger record.
 - SMR-ING-04: The failure output includes each non-ready Resource Readiness diagnostic.
@@ -122,25 +136,19 @@ Model Resource CLI
   v
 Application readiness use case
   |
-  +----------------------+----------------------+
-  |                                             |
-  v                                             v
-GLiNER Resource Adapter                  ReFinED Resource Adapter
-  |                                             |
-  +----------------------+----------------------+
-                         |
-                         v
-              Shared Resource Root
-                         |
-                         v
-                Hybrid Pipeline preflight
+  v
+required Resource Adapters
+  |
+  v
+Shared Resource Root
+  |
+  v
+Hybrid Pipeline preflight
 ```
 
 The Application Layer owns Model Resource identifiers, statuses, aggregation, and Port contracts.
 
-The GLiNER Adapter owns GLiNER downloads, file validation, and local model loading.
-
-The ReFinED Adapter owns its isolated environment, resource setup, and file validation.
+Each specialized-model Adapter owns its downloads, file validation, and local loading or worker setup.
 
 The Pipeline owns CLI composition, configuration, and ingestion preflight.
 
@@ -175,9 +183,11 @@ KoteKomi stores no Model Resource in the Ledger or Archive.
 
 Each Resource Installation stores one canonical JSON manifest under its managed directory.
 
-The GLiNER manifest records its resource identifier, package version, repository revisions, file digests, and smoke result.
+Each Resource Installation manifest records its identity, pinned inputs, file digests, and smoke result.
 
 The ReFinED manifest records its resource identifier, Python version, requirements digest, resource-tree digest, and smoke result.
+
+The Stanza and QANom manifests bind their pinned model files and smoke results.
 
 The Resource Root is untracked machine-local state.
 
@@ -233,6 +243,8 @@ A failure that occurs after a successful preflight remains observable through ex
 - AC-SMR-REF-01: Adapter tests prove environment, complete dependencies, resource digest, and smoke validation.
 - AC-SMR-REF-02: Worker tests prove every normal ReFinED request disables downloads.
 - AC-SMR-REF-03: Adapter tests prove a runtime-only repair reuses only a digest-valid resource tree.
+- AC-SMR-STA-01: Adapter tests prove pinned, offline Stanza installation and source-bound analysis.
+- AC-SMR-QAN-01: Adapter tests prove pinned, offline QANom installation and noun scoring.
 - AC-SMR-ING-01: Pipeline tests prove preflight failure precedes every canonical write.
 - AC-SMR-ING-02: Pipeline tests prove ready resources preserve existing partial and blocked runtime outcomes.
 - AC-SMR-ING-03: A canonical offline ingestion produces no Hugging Face download output.
@@ -242,6 +254,8 @@ A failure that occurs after a successful preflight remains observable through ex
 
 - GLiNER Adapter: follow `packages/adapters/src/kotekomi_adapters/gliner_organization_mention_proposer.py`.
 - ReFinED worker: follow `scripts/refined_entity_linking_worker.py`.
+- Stanza Adapter: follow `packages/adapters/src/kotekomi_adapters/stanza_linguistic_analysis.py`.
+- QANom Adapter: follow `packages/adapters/src/kotekomi_adapters/qanom_nominalization.py`.
 - Configuration: follow `packages/pipelines/src/kotekomi_pipelines/config.py`.
 - CLI results: follow `packages/pipelines/src/kotekomi_pipelines/model_runtime.py`.
 

@@ -53,7 +53,7 @@ Use separate model roles.
 
 ## Specialized Model Resources
 
-GLiNER and ReFinED use pinned Resource Installations under the shared user data directory.
+Specialized models use pinned Resource Installations under the shared user data directory.
 
 Install those resources only through:
 
@@ -73,11 +73,15 @@ The ReFinED installer validates the complete pinned dependency graph before mode
 
 A runtime-only ReFinED repair reuses an existing resource tree only after digest validation.
 
-Normal ingestion validates both installations before it writes canonical state.
+Normal ingestion validates every required installation before it writes canonical state.
 
 Normal GLiNER loading uses its managed model and tokenizer files with local-only loading.
 
 Normal ReFinED loading uses its managed Python environment with downloads disabled.
+
+Normal Stanza analysis uses its managed English EWT files with downloads disabled.
+
+Normal QANom analysis uses its managed classifier and lexical files with local-only loading.
 
 Do not add runtime model downloads to an Adapter or Pipeline.
 
@@ -160,6 +164,13 @@ Do not estimate production admission with whitespace-separated words. Do not
 silently load a different model, truncate the request, reduce the output reserve,
 or continue when inspection fails. The generation Adapter rechecks the loaded
 model immediately before transport.
+
+The configured maximum output token count is a runtime ceiling and the default
+ContextManifest reserve. A pinned bounded task may request a smaller positive
+output limit when its complete finite answer vocabulary has been verified under
+the configured tokenizer. Admission may conservatively retain the larger
+ContextManifest reserve. The LM Studio Adapter must reject a task limit above the
+configured ceiling.
 
 The SDK-formatted count and Responses `usage.input_tokens` are different token
 domains. The former is the admission authority for context occupancy. The latter

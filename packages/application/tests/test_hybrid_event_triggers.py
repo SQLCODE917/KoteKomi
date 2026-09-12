@@ -4,173 +4,246 @@ import hashlib
 
 import pytest
 from kotekomi_application import (
-    HybridEventTriggerStatus,
-    build_hybrid_event_trigger_preview,
-    canonical_hybrid_event_trigger_preview_bytes,
-    derive_source_copy_view,
-    hybrid_event_trigger_preview_from_bytes,
-)
-from kotekomi_application.hybrid_event_trigger_model_output import (
-    EventTriggerAbstention,
-    EventTriggerProposal,
-    EventTriggerProposalBatch,
-    parse_event_trigger_output,
+    BinarySemanticAnswerValue,
+    EventHeadAnswerValue,
+    EventHeadCandidate,
+    EventHeadCandidateDispositionValue,
+    EventRoutingAnswerValue,
+    EventRoutingJudgment,
+    EventSemanticRoute,
+    EventTriggerDecision,
+    EventVerbRoleAnswerValue,
+    HybridEventTriggerPrompts,
+    LinguisticAnalysis,
+    LinguisticToken,
+    NominalizationAnalysis,
+    NominalizationCandidate,
+    UniversalPartOfSpeech,
+    parse_binary_semantic_answer,
+    parse_event_head_answer,
+    parse_event_verb_role_answer,
 )
 from kotekomi_application.hybrid_event_trigger_preview import (
-    select_non_overlapping_trigger_proposals,
-    source_occurrences,
+    reconcile_event_trigger_decisions,
 )
-from kotekomi_application.hybrid_event_triggers import EventTriggerDraft, event_trigger_id
-
-
-def test_trigger_contract_preserves_multiple_source_literal_events() -> None:
-    result = parse_event_trigger_output(
-        b"event: o2 | o2 | publication\nevent: o5 | o5 | characterization\n"
-    )
-
-    assert isinstance(result, EventTriggerProposalBatch)
-    assert [(item.head_occurrence_id, item.event_type_label) for item in result.proposals] == [
-        ("o2", "publication"),
-        ("o5", "characterization"),
-    ]
-    assert result.rejections == ()
-
-
-def test_trigger_contract_preserves_explicit_empty_result() -> None:
-    result = parse_event_trigger_output(b"abstain: no explicit event in the target segment\n")
-
-    assert result == EventTriggerAbstention("no explicit event in the target segment")
+from kotekomi_application.hybrid_event_triggers import select_event_head_candidates
+from kotekomi_application.source_occurrences import source_occurrences
+from pydantic import ValidationError
 
 
 @pytest.mark.parametrize(
-    "payload",
+    ("payload", "expected"),
+    [(b"E", EventHeadAnswerValue.EVENT), (b"N", EventHeadAnswerValue.NOT_EVENT)],
+)
+def test_event_head_answer_accepts_only_one_literal(
+    payload: bytes,
+    expected: EventHeadAnswerValue,
+) -> None:
+    assert parse_event_head_answer(payload).value is expected
+
+
+@pytest.mark.parametrize(
+    ("payload", "expected"),
     [
-        b"",
-        b"abstain: \n",
+        (b"E", EventVerbRoleAnswerValue.EVENT),
+        (b"S", EventVerbRoleAnswerValue.STANDING),
+        (b"H", EventVerbRoleAnswerValue.HELPER),
     ],
 )
-def test_trigger_contract_rejects_invalid_structure(payload: bytes) -> None:
+def test_event_verb_role_accepts_only_one_literal(
+    payload: bytes,
+    expected: EventVerbRoleAnswerValue,
+) -> None:
+    assert parse_event_verb_role_answer(payload).value is expected
+
+
+@pytest.mark.parametrize(
+    ("payload", "expected"),
+    [(b"Y", BinarySemanticAnswerValue.YES), (b"N", BinarySemanticAnswerValue.NO)],
+)
+def test_binary_semantic_answer_accepts_only_one_literal(
+    payload: bytes,
+    expected: BinarySemanticAnswerValue,
+) -> None:
+    assert parse_binary_semantic_answer(payload).value is expected
+
+
+@pytest.mark.parametrize("payload", [b"", b"yes", b" E", b"N because"])
+def test_bounded_event_answers_reject_non_literal_output(payload: bytes) -> None:
     with pytest.raises(ValueError):
-        parse_event_trigger_output(payload)
+        parse_event_head_answer(payload)
 
 
-def test_trigger_contract_isolates_bad_lines_and_keeps_valid_occurrence_selections() -> None:
-    result = parse_event_trigger_output(
-        b"event: o2 | o2 | publication\n"
-        b"event: o999 | o999 | Too Broad\n"
-        b"event: o5 | o5 | characterization\n"
-    )
-
-    assert isinstance(result, EventTriggerProposalBatch)
-    assert [item.head_occurrence_id for item in result.proposals] == ["o2", "o5"]
-    assert [(item.line_number, item.code) for item in result.rejections] == [
-        (2, "invalid_event_label")
-    ]
-
-
-def test_trigger_reconciliation_keeps_distinct_source_owned_occurrences() -> None:
-    source = "Amodei published an op-ed describing Trump as a feudal warlord."
-    source_copy = derive_source_copy_view(source)
-    occurrences = {item.occurrence_id: item for item in source_occurrences(source_copy)}
-    selected = select_non_overlapping_trigger_proposals(
-        (
-            EventTriggerProposal(1, "o2", "o2", "o2", "publication"),
-            EventTriggerProposal(2, "o5", "o5", "o5", "characterization"),
+def test_stanza_verbs_and_qanom_nouns_become_exact_candidates() -> None:
+    source = "Anthropic rebuked the proposal."
+    digest = hashlib.sha256(source.encode()).hexdigest()
+    analysis = LinguisticAnalysis(
+        source_text_sha256=digest,
+        producer_id="stanza:fixture",
+        model_id="en_ewt",
+        model_version="1",
+        resource_identity="a" * 64,
+        tokens=(
+            LinguisticToken(
+                "t1",
+                "s1",
+                "Anthropic",
+                0,
+                9,
+                "Anthropic",
+                UniversalPartOfSpeech.PROPER_NOUN,
+                "nsubj",
+                "t2",
+            ),
+            LinguisticToken(
+                "t2", "s1", "rebuked", 10, 17, "rebuke", UniversalPartOfSpeech.VERB, "root", None
+            ),
+            LinguisticToken(
+                "t3", "s1", "the", 18, 21, "the", UniversalPartOfSpeech.DETERMINER, "det", "t4"
+            ),
+            LinguisticToken(
+                "t4", "s1", "proposal", 22, 30, "proposal", UniversalPartOfSpeech.NOUN, "obj", "t2"
+            ),
         ),
-        occurrences=occurrences,
-        source_copy=source_copy,
+    )
+    nominalization = NominalizationAnalysis(
+        source_text_sha256=digest,
+        producer_id="qanom:fixture",
+        model_id="qanom",
+        model_revision="1",
+        resource_identity="b" * 64,
+        threshold=0.45,
+        candidates=(NominalizationCandidate("t4", "proposal", 22, 30, True, 2.0, -2.0, 0.88),),
     )
 
-    assert [item.head_occurrence_id for item in selected] == ["o2", "o5"]
+    selection = select_event_head_candidates(
+        source,
+        source_occurrences(source),
+        analysis,
+        nominalization,
+    )
 
-
-def test_trigger_contract_keeps_meaning_complete_expression_and_event_head() -> None:
-    result = parse_event_trigger_output(b"event: o2-o4 | o4 | public_rebuke\n")
-
-    assert isinstance(result, EventTriggerProposalBatch)
-    assert result.proposals == (EventTriggerProposal(1, "o2", "o4", "o4", "public_rebuke"),)
-
-
-def test_source_occurrences_are_exact_ordered_source_choices() -> None:
-    source_copy = derive_source_copy_view("Hegseth has publicly rebuked Amodei.")
-
-    result = source_occurrences(source_copy)
-
-    assert [(item.occurrence_id, item.text) for item in result] == [
-        ("o1", "Hegseth"),
-        ("o2", "has"),
-        ("o3", "publicly"),
-        ("o4", "rebuked"),
-        ("o5", "Amodei"),
+    assert [(item.occurrence_id, item.text) for item in selection.candidates] == [
+        ("o2", "rebuked"),
+        ("o4", "proposal"),
     ]
+    assert [item.disposition for item in selection.dispositions] == [
+        EventHeadCandidateDispositionValue.EXCLUDED,
+        EventHeadCandidateDispositionValue.INCLUDED,
+        EventHeadCandidateDispositionValue.EXCLUDED,
+        EventHeadCandidateDispositionValue.INCLUDED,
+    ]
+    assert selection.candidates[1].nominalization_probability == 0.88
 
 
-def test_trigger_draft_rejects_a_head_that_does_not_match_its_expression_characters() -> None:
-    trigger_id = event_trigger_id(
-        source_segment_id="seg_fixture",
+def test_candidate_selection_rejects_specialist_source_drift() -> None:
+    source = "A changed source"
+    analysis = LinguisticAnalysis(
         source_text_sha256="a" * 64,
-        start=10,
-        end=30,
-        text="has publicly rebuked",
-        head_start=23,
-        head_end=30,
-        head_text="claimed",
-        event_type_label="public_rebuke",
-        extraction_task_id="ext_fixture",
-        model_run_id="mrn_fixture",
-        trace_id="xst_" + "1" * 24,
+        producer_id="fixture",
+        model_id="fixture",
+        model_version="1",
+        resource_identity="b" * 64,
+        tokens=(
+            LinguisticToken("t1", "s1", "A", 0, 1, "a", UniversalPartOfSpeech.NOUN, "root", None),
+        ),
+    )
+    nominalization = NominalizationAnalysis(
+        source_text_sha256="a" * 64,
+        producer_id="fixture",
+        model_id="fixture",
+        model_revision="1",
+        resource_identity="b" * 64,
+        threshold=0.45,
+        candidates=(),
     )
 
-    with pytest.raises(ValueError, match="head text"):
-        EventTriggerDraft(
-            id=trigger_id,
-            source_segment_id="seg_fixture",
-            source_text_sha256="a" * 64,
-            start=10,
-            end=30,
-            text="has publicly rebuked",
-            head_start=23,
-            head_end=30,
-            head_text="claimed",
-            event_type_label="public_rebuke",
+    with pytest.raises(ValueError, match="source digest"):
+        select_event_head_candidates(
+            source,
+            source_occurrences(source),
+            analysis,
+            nominalization,
+        )
+
+
+def test_routing_judgment_rejects_an_answer_from_the_wrong_contract() -> None:
+    with pytest.raises(ValidationError, match="invalid for its semantic route"):
+        EventRoutingJudgment(
+            occurrence_id="o1",
+            route=EventSemanticRoute.VERB_ROLE,
+            answer=EventRoutingAnswerValue.YES,
             extraction_task_id="ext_fixture",
             model_run_id="mrn_fixture",
-            trace_id="xst_" + "1" * 24,
         )
 
 
-def test_empty_complete_preview_uses_canonical_content_identity() -> None:
-    preview = build_hybrid_event_trigger_preview(
-        parent_preview_id="hgp_" + "1" * 24,
-        parent_preview_sha256="a" * 64,
-        reference_preview_id="hrp_" + "2" * 24,
-        reference_preview_sha256="b" * 64,
-        mention_preview_id="hxp_" + "3" * 24,
-        mention_preview_sha256="c" * 64,
-        representation_id="rep_fixture",
-        paragraph_node_id="nod_fixture",
-        context_manifest_ids=("ctx_trigger",),
-        terminal_status=HybridEventTriggerStatus.COMPLETE,
+def test_reconciliation_retains_valid_siblings_and_marks_one_failed_candidate() -> None:
+    candidates = {
+        "o1": _candidate("o1", "rebuked", 0, UniversalPartOfSpeech.VERB),
+        "o2": _candidate("o2", "proposal", 8, UniversalPartOfSpeech.NOUN),
+    }
+    decision = EventTriggerDecision(
+        occurrence_id="o1",
+        answer=EventHeadAnswerValue.EVENT,
+        reason_code="model_event_role",
+        extraction_task_id="ext_fixture",
+        model_run_id="mrn_fixture",
     )
 
-    payload = canonical_hybrid_event_trigger_preview_bytes(preview)
+    result = reconcile_event_trigger_decisions(
+        (decision,),
+        candidates=candidates,
+        unclassified_occurrence_ids=("o2",),
+    )
 
-    assert hybrid_event_trigger_preview_from_bytes(payload) == preview
-    assert preview.id.startswith("htp_")
-    assert hashlib.sha256(payload).hexdigest()
+    assert result.event_decisions == (decision,)
+    assert result.unclassified_occurrence_ids == ("o2",)
+    assert result.dispositions[0].disposition.value == "accepted"
 
 
-def test_blocked_preview_requires_visible_diagnostic() -> None:
-    with pytest.raises(ValueError, match="requires only diagnostics"):
-        build_hybrid_event_trigger_preview(
-            parent_preview_id="hgp_" + "1" * 24,
-            parent_preview_sha256="a" * 64,
-            reference_preview_id="hrp_" + "2" * 24,
-            reference_preview_sha256="b" * 64,
-            mention_preview_id="hxp_" + "3" * 24,
-            mention_preview_sha256="c" * 64,
-            representation_id="rep_fixture",
-            paragraph_node_id="nod_fixture",
-            context_manifest_ids=("ctx_trigger",),
-            terminal_status=HybridEventTriggerStatus.BLOCKED,
-        )
+def test_prompt_bundle_maps_every_semantic_route_explicitly() -> None:
+    prompts = HybridEventTriggerPrompts(
+        verb_role=b"verb-role",
+        verb_similarity=b"verb-similarity",
+        noun_inventory=b"noun-inventory",
+        noun_dependent_kind=b"noun-dependent-kind",
+        noun_media_artifact=b"noun-media-artifact",
+        noun_governor_distinct=b"noun-governor-distinct",
+        noun_reaction=b"noun-reaction",
+        noun_standing=b"noun-standing",
+    )
+
+    assert {prompts.for_route(route) for route in EventSemanticRoute} == {
+        b"verb-role",
+        b"verb-similarity",
+        b"noun-inventory",
+        b"noun-dependent-kind",
+        b"noun-media-artifact",
+        b"noun-governor-distinct",
+        b"noun-reaction",
+        b"noun-standing",
+    }
+
+
+def _candidate(
+    occurrence_id: str,
+    text: str,
+    start: int,
+    part_of_speech: UniversalPartOfSpeech,
+) -> EventHeadCandidate:
+    nominal = part_of_speech is UniversalPartOfSpeech.NOUN
+    return EventHeadCandidate(
+        occurrence_id=occurrence_id,
+        text=text,
+        start=start,
+        end=start + len(text),
+        linguistic_token_id=f"t{occurrence_id.removeprefix('o')}",
+        sentence_id="s1",
+        lemma=text,
+        part_of_speech=part_of_speech,
+        dependency_relation="root" if not nominal else "obj",
+        dependency_head_token_id=None if not nominal else "t1",
+        lexical_nominalization_candidate=True if nominal else None,
+        nominalization_probability=0.9 if nominal else None,
+    )

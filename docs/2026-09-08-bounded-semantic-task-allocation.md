@@ -1,6 +1,6 @@
 # TDD: Bounded Semantic Task Allocation
 
-- Status: In implementation; MentionCandidate and ReferenceDecision stages implemented and verified
+- Status: In implementation; mention, reference, and Event trigger boundaries verified
 - Deliverable ID: HSQ-7
 - Program: [Hybrid Semantic Quality Program](2026-09-06-hybrid-semantic-quality-program.md)
 - Depends on: [Source-Bound Governed Event Extraction](2026-09-07-source-bound-governed-event-extraction.md)
@@ -10,6 +10,7 @@
 - Historical stage-local split: [Mention and Reference Evaluation Split v1](hsq-stage-local-split-v1.json)
 - Corrected stage-local split: [Mention and Reference Evaluation Split v2](hsq-stage-local-split-v2.json)
 - Evaluator corrections: [Stage-Local Evaluator Corrections](hsq-stage-local-evaluator-corrections-v1.json)
+- Event trigger boundary: [SourceOccurrence to Event Trigger Boundary](2026-09-10-source-occurrence-event-trigger-boundary.md)
 
 ## Delivery Status
 
@@ -20,6 +21,7 @@ Implemented and verified:
 - effective MentionCandidate interpretation and reference-marker routing;
 - specialist proposal, one-candidate validation, complete-catalog contrastive fallback, and conservative
   ReferenceDecision construction;
+- Stanza and QANom candidate proposal plus bounded Event routing over all reviewed trigger Gold;
 - exact stage data-in/data-out, causal model-run lineage, and zero-write stage-local evaluation.
 
 The September 10 v10 replay passed thirty-nine of forty development-plus-validation Gold items. AMO-12
@@ -27,13 +29,13 @@ remains the one intended explicit specialist/Qwen ambiguity.
 
 Still pending stage-local implementation and evaluation:
 
-- SourceOccurrence and event-trigger discovery onward through Candidate Wiki evaluation.
+- governed Event frames onward through Candidate Wiki evaluation.
 
 ## Context & Problem
 
 HSQ-6 removed open EventFrameDraft translation but left too much semantic work in two model calls.
 
-Trigger discovery asks Qwen to discover an occurrence, transcribe its exact source text, invent a local event ID, and label its type in one batch.
+The prior trigger task asked Qwen to discover, transcribe, identify, and label Events in one batch.
 
 One inflection or transcription error can invalidate every otherwise useful trigger in that SourceSegment.
 
@@ -55,7 +57,7 @@ These boundaries produced three reviewable Dario Amodei items from twenty source
 
 **Source occurrence** means one deterministic token-like span with a KoteKomi-owned local ID and exact authoritative source range.
 
-**Event trigger expression** means one contiguous range of supplied SourceOccurrences plus one supplied head occurrence that identifies the event-bearing word inside that range.
+**Event trigger decision** means KoteKomi's final typed decision for one EventHeadCandidate.
 
 **Frame selection task** means one model decision among supplied governed frame IDs for one selected source occurrence.
 
@@ -78,16 +80,17 @@ complete expression.
 ### Primary end-to-end flow
 
 1. KoteKomi derives source occurrences from one authoritative SourceSegment.
-2. Qwen selects one contiguous occurrence range, one head occurrence inside that range, and one diagnostic label for each explicit event.
-3. KoteKomi validates each output line independently, rejects non-event heads, and constructs exact EventTriggerDraft records.
-4. Qwen selects one governed frame or `unresolved` for one trigger.
-5. A separate binary task confirms that the selected frame accurately represents the trigger expression.
-6. Qwen selects one target for one governed role at a time with sibling-role context.
-7. Qwen classifies event presentation without selecting the frame or roles again.
-8. KoteKomi constructs one CompleteProposition and sends only that proposition through the support gate.
-9. Event and standing-fact routes may both produce derived candidates from one SourceSegment.
-10. KoteKomi gives event semantics ownership of source-bound event relations and retains non-event standing facts.
-11. F-Coref proposes antecedent candidates, Qwen selects among a bounded source-valid catalog, and KoteKomi constructs the terminal reference decision.
+2. Stanza and QANom propose source-bound EventHeadCandidate records.
+3. Qwen answers one finite Semantic Route for one supplied candidate at a time.
+4. KoteKomi reconciles those answers and constructs exact EventTriggerDraft records.
+5. Qwen selects one governed frame or `unresolved` for one trigger.
+6. A separate binary task confirms that the selected frame accurately represents the trigger expression.
+7. Qwen selects one target for one governed role at a time with sibling-role context.
+8. Qwen classifies event presentation without selecting the frame or roles again.
+9. KoteKomi constructs one CompleteProposition and sends only that proposition through the support gate.
+10. Event and standing-fact routes may both produce derived candidates from one SourceSegment.
+11. KoteKomi gives event semantics ownership of source-bound event relations and retains non-event standing facts.
+12. F-Coref proposes antecedent candidates, Qwen selects among a bounded source-valid catalog, and KoteKomi constructs the terminal reference decision.
 
 Before mention interpretation, KoteKomi sends each ambiguous overlap component to one bounded semantic
 boundary task.
@@ -157,14 +160,15 @@ KoteKomi derives the Effective MentionCandidates from deterministic selections a
 
 - BTA-TRG-01: KoteKomi deterministically derives ordered SourceOccurrence records from exact SourceSegment characters.
 - BTA-TRG-02: Each SourceOccurrence contains a local occurrence ID, exact text, and half-open source range.
-- BTA-TRG-03: The trigger task supplies the ordered occurrence catalog to Qwen.
-- BTA-TRG-04: Qwen returns only a supplied contiguous occurrence range, one supplied head occurrence inside that range, and one diagnostic open label.
+- BTA-TRG-03: Stanza and QANom propose fallible source-bound candidate evidence.
+- BTA-TRG-04: Qwen answers one bounded Semantic Route for one supplied candidate.
 - BTA-TRG-05: Qwen does not transcribe trigger text or create source ranges.
-- BTA-TRG-06: KoteKomi validates each event line independently.
-- BTA-TRG-07: An invalid event line becomes a typed line rejection and cannot erase valid event lines.
-- BTA-TRG-08: KoteKomi constructs EventTriggerDraft expression text, expression range, head text, and head range only from selected SourceOccurrences.
-- BTA-TRG-09: KoteKomi rejects auxiliary and function-word heads before EventTriggerDraft construction.
-- BTA-TRG-10: Deterministic overlap reconciliation retains one selected expression according to the pinned policy.
+- BTA-TRG-06: KoteKomi validates each target-bound answer independently.
+- BTA-TRG-07: An invalid answer leaves only its candidate unclassified and cannot erase valid sibling answers.
+- BTA-TRG-08: KoteKomi constructs each minimal EventTriggerDraft expression and head from the one selected SourceOccurrence.
+- BTA-TRG-09: The Event trigger boundary TDD owns candidate routes and reconciliation rules.
+- BTA-TRG-10: Reconciliation exposes rejected, accepted, failed, and unclassified outcomes.
+- BTA-TRG-11: Each route uses one finite answer under a two-token transport cap.
 
 ### Bounded governed semantics
 
@@ -563,7 +567,16 @@ authoritative SourceSegment
 KoteKomi SourceOccurrence catalog
           |
           v
-Qwen expression-range and head selection
+pinned linguistic annotations
+          |
+          v
+KoteKomi EventHeadCandidate catalog
+          |
+          v
+bounded Qwen Semantic Routes
+          |
+          v
+deterministic reconciliation
           |
           v
 exact EventTriggerDraft
@@ -603,6 +616,14 @@ KoteKomi owns the resulting range, identity, decision record, and trace.
 
 `SourceOccurrence` is a derived Application DTO with local ID, exact text, start, and end.
 
+`EventHeadCandidate` records one exact supplied SourceOccurrence and its pinned linguistic annotation.
+
+`EventTriggerDecision` binds one invocation target to one `EVENT` or `NOT_EVENT` answer and its task and ModelRun identities.
+
+`EventRoutingJudgment` binds one finite Semantic Route answer to one EventHeadCandidate.
+
+KoteKomi derives the diagnostic event label from the pinned linguistic lemma.
+
 `MentionOccurrenceSelection` contains one supplied SourceSegment label and the first and last supplied SourceOccurrence IDs of one mention expression.
 
 `BoundaryCandidateJudgment` contains one task-local candidate label and one of `complete`, `incomplete`, or `unclear`.
@@ -611,9 +632,7 @@ KoteKomi owns the resulting range, identity, decision record, and trace.
 
 `StageLocalEvaluatorCorrection` records the parent evaluator evidence, original expectation, accepted exact source boundary, observed output, classification, and rationale.
 
-`EventTriggerSelection` contains one supplied expression range, one supplied head occurrence ID, and one diagnostic open label.
-
-`EventTriggerLineRejection` records one rejected raw line and reason.
+`EventHeadAnswer` contains KoteKomi's strict `EVENT` or `NOT_EVENT` mapping of one model-visible `E` or `N` answer.
 
 `EventFrameSelection` contains one governed frame ID or `unresolved` and one reason.
 
@@ -667,8 +686,9 @@ Existing EventTriggerDraft, EventSemanticDraft, CompleteProposition, Proposition
 - AC-BTA-BND-07: Tests inspect exact model-visible input, raw output, mapped judgments, rejected lines, and lineage.
 - AC-BTA-BND-08: Tests prove model-visible input lists each actual legal `cN |` prefix exactly once and contains no abstract placeholder.
 - AC-BTA-BND-09: Tests prove each supplied candidate has exactly one terminal model judgment or one explicit unresolved outcome with diagnostics.
-- AC-BTA-TRG-01: Tests prove `has publicly rebuked` can be retained as the expression while `rebuked` is the required event head and `has` is rejected as a head.
-- AC-BTA-TRG-02: Tests prove one invalid trigger line does not erase another valid line.
+- AC-BTA-TRG-01: Tests prove exact source-bound candidate and EventTriggerDraft ranges.
+- AC-BTA-TRG-02: Tests prove one invalid candidate answer does not erase a valid sibling decision.
+- AC-BTA-TRG-03: Fresh phase reports reproduce all eighty-seven reviewed Gold Events exactly.
 - AC-BTA-EVT-01: Tests prove frame selection input excludes the role catalog.
 - AC-BTA-EVT-02: Tests prove a mismatched selected frame is rejected by the binary frame-fit challenge.
 - AC-BTA-EVT-03: Tests prove every role task contains exactly one target role plus sibling definitions and prior sibling selections.

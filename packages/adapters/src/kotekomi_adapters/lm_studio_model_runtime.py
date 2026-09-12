@@ -321,9 +321,11 @@ def _generation_parameters_payload(
     max_output_tokens = values.get("max_output_tokens")
     if max_output_tokens is None:
         raise ModelRuntimeResponseError("LM Studio task must declare max_output_tokens.")
-    if max_output_tokens != configured_max_output_tokens:
+    if type(max_output_tokens) is not int or max_output_tokens <= 0:
+        raise ModelRuntimeResponseError("LM Studio task max_output_tokens must be positive.")
+    if max_output_tokens > configured_max_output_tokens:
         raise ModelRuntimeResponseError(
-            "LM Studio task max_output_tokens does not match configured runtime."
+            "LM Studio task max_output_tokens exceeds the configured runtime ceiling."
         )
     return cast(dict[str, JsonValue], values)
 

@@ -281,6 +281,60 @@ def test_lm_studio_runtime_returns_one_strict_output_text() -> None:
     ]
 
 
+def test_lm_studio_runtime_accepts_task_output_limit_below_configured_ceiling() -> None:
+    streaming_client = FakeStreamingHttpClient(
+        [
+            HttpResponse(
+                200,
+                json.dumps(
+                    {
+                        "model": "fixture-model",
+                        "output": [{"content": [{"type": "output_text", "text": "E"}]}],
+                        "usage": {"input_tokens": 11, "output_tokens": 1},
+                    }
+                ),
+            )
+        ]
+    )
+    runtime = _runtime(FakeHttpClient([]), streaming_client)
+    task = _task(runtime)
+    task = replace(
+        task,
+        execution_spec=replace(
+            task.execution_spec,
+            generation_parameters=(
+                ExecutionSetting("max_output_tokens", 1),
+                ExecutionSetting("seed", 17),
+                ExecutionSetting("temperature", 0),
+            ),
+        ),
+    )
+
+    response = runtime.run_model_task(task)
+
+    assert response.raw_output == b"E"
+    assert streaming_client.calls[0][2]["max_output_tokens"] == 1
+
+
+def test_lm_studio_runtime_rejects_task_output_limit_above_configured_ceiling() -> None:
+    runtime = _runtime(FakeHttpClient([]), FakeStreamingHttpClient([]))
+    task = _task(runtime)
+    task = replace(
+        task,
+        execution_spec=replace(
+            task.execution_spec,
+            generation_parameters=(
+                ExecutionSetting("max_output_tokens", 11),
+                ExecutionSetting("seed", 17),
+                ExecutionSetting("temperature", 0),
+            ),
+        ),
+    )
+
+    with pytest.raises(ModelRuntimeResponseError, match="configured runtime ceiling"):
+        runtime.run_model_task(task)
+
+
 def test_lm_studio_readiness_reports_configured_loaded_and_effective_limits() -> None:
     runtime = _runtime(
         FakeHttpClient(

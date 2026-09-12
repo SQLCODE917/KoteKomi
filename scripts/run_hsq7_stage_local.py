@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run HSQ-7 mention/reference experiments without downstream ingestion stages."""
+"""Run HSQ-7 mention, reference, and event-trigger stage experiments."""
 
 from __future__ import annotations
 
@@ -12,27 +12,77 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Protocol, cast
 
-from kotekomi_adapters import FCorefAdapter, FCorefConfig, GlinerMentionProposer, LocalArchiveStore
+from kotekomi_adapters import (
+    FCorefAdapter,
+    FCorefConfig,
+    GlinerMentionProposer,
+    LocalArchiveStore,
+    QANomNominalizationAnalyzer,
+    StanzaLinguisticAnalyzer,
+)
 from kotekomi_adapters.model_resources import (
     fcoref_expected_resource_identity,
     fcoref_model_path,
     fcoref_python_path,
     gliner_model_path,
+    qanom_expected_resource_identity,
+    qanom_lexical_resource_path,
+    qanom_model_path,
+    stanza_expected_resource_identity,
+    stanza_model_path,
 )
 from kotekomi_application import (
     ContextModelProfile,
     CoreferenceExecution,
     CoreferenceInput,
     ExecutionSetting,
+    HybridEntityGroundingStatus,
+    HybridEventTriggerCommand,
+    HybridEventTriggerPrompts,
     HybridMentionPreviewCommand,
     HybridPreviewStatus,
     HybridReferencePreviewCommand,
+    LinguisticAnalysis,
+    LinguisticAnalysisInput,
+    LinguisticAnalyzer,
+    LinguisticToken,
+    NominalizationAnalysis,
+    NominalizationAnalysisInput,
+    NominalizationAnalyzer,
+    NominalizationCandidate,
+    UniversalPartOfSpeech,
     Uuid4ModelRunIdFactory,
+    build_hybrid_entity_grounding_preview_record,
+    canonical_hybrid_entity_grounding_preview_bytes,
+    canonical_hybrid_extraction_preview_bytes,
+    canonical_hybrid_reference_preview_bytes,
+    evaluate_entity_grounding_eligibility,
+    hybrid_extraction_preview_sha256,
+    hybrid_reference_preview_sha256,
+    load_context_manifest,
+    run_hybrid_event_trigger_preview,
     run_hybrid_mention_preview,
     run_hybrid_reference_preview,
 )
 from kotekomi_application.hybrid_document_references import (
     HybridReferencePreview,
+)
+from kotekomi_application.hybrid_event_trigger_model_output import (
+    binary_semantic_answer_schema_bytes,
+    event_head_answer_schema_bytes,
+    event_verb_role_answer_schema_bytes,
+)
+from kotekomi_application.hybrid_event_trigger_preview import (
+    EVENT_BINARY_SEMANTIC_SCHEMA_ID,
+    EVENT_HEAD_JUDGMENT_SCHEMA_ID,
+    EVENT_VERB_ROLE_SCHEMA_ID,
+    TRIGGER_RECONCILIATION_POLICY_ID,
+    HybridEventTriggerArchive,
+    HybridEventTriggerLedger,
+)
+from kotekomi_application.hybrid_event_triggers import (
+    HYBRID_EVENT_TRIGGER_POLICY_ID,
+    HybridEventTriggerPreview,
 )
 from kotekomi_application.hybrid_mention_boundary_adjudication import (
     HYBRID_MENTION_BOUNDARY_ADJUDICATION_POLICY_ID,
@@ -69,6 +119,7 @@ from kotekomi_application.semantic_references import (
     CoreferenceProposerPort,
     CoreferenceTokenizer,
 )
+from kotekomi_application.source_occurrences import source_occurrences
 from kotekomi_domain import (
     AnalysisUnitArtifact,
     ContextManifestArtifact,
@@ -87,6 +138,13 @@ from kotekomi_domain import (
     canonical_representation_digest,
 )
 from kotekomi_pipelines.config import PipelineConfig, load_config
+from kotekomi_pipelines.event_trigger_stage_local import (
+    TriggerGoldCatalog,
+    TriggerStageSegmentEvaluation,
+    build_trigger_stage_report,
+    evaluate_trigger_segment,
+    load_trigger_gold_catalog,
+)
 from kotekomi_pipelines.model_runtime import build_model_task_runtime
 from kotekomi_pipelines.task_allocation_stage_local import (
     StageLocalCaseEvaluation,
@@ -100,6 +158,7 @@ from kotekomi_pipelines.task_allocation_stage_local import (
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_SPLIT = REPOSITORY_ROOT / "docs" / "hsq-stage-local-split-v2.json"
+DEFAULT_TRIGGER_GOLD = REPOSITORY_ROOT / "docs" / "hsq-event-trigger-gold-v1.json"
 EVALUATOR_CORRECTIONS = REPOSITORY_ROOT / "docs" / "hsq-stage-local-evaluator-corrections-v1.json"
 _FIXED_TIME = datetime(2026, 9, 9, tzinfo=UTC)
 
@@ -235,6 +294,7 @@ class _PreparedRun:
     root: Path
     phase: StageLocalPhase
     inputs: tuple[StageLocalInput, ...]
+    trigger_gold: TriggerGoldCatalog
 
 
 class _FixtureMentionProposer:
@@ -274,6 +334,58 @@ class _FixtureCoreference:
         return None
 
 
+class _FixtureLinguisticAnalyzer:
+    def analyze(self, request: LinguisticAnalysisInput) -> LinguisticAnalysis:
+        occurrences = source_occurrences(request.source_text)
+        return LinguisticAnalysis(
+            source_text_sha256=hashlib.sha256(request.source_text.encode()).hexdigest(),
+            producer_id="fixture",
+            model_id="fixture",
+            model_version="1",
+            resource_identity="f" * 64,
+            tokens=tuple(
+                LinguisticToken(
+                    token_id=f"t{ordinal}",
+                    sentence_id="s1",
+                    text=item.text,
+                    start=item.start,
+                    end=item.end,
+                    lemma=item.text.casefold(),
+                    part_of_speech=UniversalPartOfSpeech.NOUN,
+                    dependency_relation="root" if ordinal == 1 else "dep",
+                    head_token_id=None if ordinal == 1 else "t1",
+                )
+                for ordinal, item in enumerate(occurrences, start=1)
+            ),
+        )
+
+
+class _FixtureNominalizationAnalyzer:
+    def analyze(self, request: NominalizationAnalysisInput) -> NominalizationAnalysis:
+        return NominalizationAnalysis(
+            source_text_sha256=hashlib.sha256(request.source_text.encode()).hexdigest(),
+            producer_id="fixture",
+            model_id="fixture",
+            model_revision="1",
+            resource_identity="f" * 64,
+            threshold=0.45,
+            candidates=tuple(
+                NominalizationCandidate(
+                    linguistic_token_id=token.token_id,
+                    text=token.text,
+                    start=token.start,
+                    end=token.end,
+                    lexical_candidate=True,
+                    positive_logit=1.0,
+                    negative_logit=-1.0,
+                    nominalization_probability=0.7310585786300049,
+                )
+                for token in request.linguistic_analysis.tokens
+                if token.part_of_speech is UniversalPartOfSpeech.NOUN
+            ),
+        )
+
+
 class _CoreferenceRuntime(CoreferenceProposerPort, CoreferenceTokenizer, Protocol):
     pass
 
@@ -283,10 +395,13 @@ def main() -> int:
     subparsers = parser.add_subparsers(dest="command", required=True)
     prepare = subparsers.add_parser("prepare")
     _common_run_arguments(prepare, needs_config=False)
+    prepare.add_argument("--upstream-run-root", type=Path)
     mentions = subparsers.add_parser("run-mentions")
     _common_run_arguments(mentions, needs_config=True)
     references = subparsers.add_parser("run-references")
     _common_run_arguments(references, needs_config=True)
+    triggers = subparsers.add_parser("run-triggers")
+    _common_run_arguments(triggers, needs_config=True)
     finalize = subparsers.add_parser("finalize")
     _common_run_arguments(finalize, needs_config=False)
     compare = subparsers.add_parser("compare")
@@ -300,6 +415,8 @@ def main() -> int:
         return _run_mentions(args)
     if args.command == "run-references":
         return _run_references(args)
+    if args.command == "run-triggers":
+        return _run_triggers(args)
     if args.command == "finalize":
         return _finalize(args)
     return _compare(args)
@@ -309,6 +426,7 @@ def _common_run_arguments(parser: argparse.ArgumentParser, *, needs_config: bool
     parser.add_argument("--phase", choices=("development", "validation"), required=True)
     parser.add_argument("--run-root", type=Path, required=True)
     parser.add_argument("--split", type=Path, default=DEFAULT_SPLIT)
+    parser.add_argument("--trigger-gold", type=Path, default=DEFAULT_TRIGGER_GOLD)
     parser.add_argument(
         "--item-id",
         action="append",
@@ -325,27 +443,249 @@ def _prepare(args: argparse.Namespace) -> int:
         raise ValueError("Stage-local prepare requires an absent or empty run root.")
     run_root.mkdir(parents=True, exist_ok=True)
     _, inputs = load_stage_local_inputs(args.split.resolve(), repository_root=REPOSITORY_ROOT)
+    trigger_gold_path = args.trigger_gold.resolve()
+    trigger_gold = load_trigger_gold_catalog(
+        trigger_gold_path,
+        repository_root=REPOSITORY_ROOT,
+        inputs=inputs,
+        require_approved=args.phase == "validation",
+    )
     selected = _select_run_inputs(inputs, phase=args.phase, item_ids=tuple(args.item_id))
     _write_jsonl(run_root / "inputs.jsonl", [item.model_dump(mode="json") for item in selected])
+    upstream_evidence = (
+        _seed_upstream_evidence(
+            run_root=run_root,
+            upstream_root=args.upstream_run_root.resolve(),
+            phase=cast(StageLocalPhase, args.phase),
+            inputs=selected,
+        )
+        if args.upstream_run_root is not None
+        else None
+    )
     metadata = {
         "schema_version": "hsq_stage_local_run_v2",
         "phase": args.phase,
         "split_path": _relative_or_absolute(args.split.resolve()),
         "split_sha256": _sha(args.split.read_bytes()),
+        "trigger_gold_path": _relative_or_absolute(trigger_gold_path),
+        "trigger_gold_sha256": _sha(trigger_gold_path.read_bytes()),
+        "trigger_gold_review_status": trigger_gold.review_status,
         "item_count": len(selected),
         "item_ids": [item.item.item_id for item in selected],
         "unique_source_segment_count": len({item.source_text_sha256 for item in selected}),
         "experiment": _experiment_contract(),
-        "status": "prepared",
+        "upstream_evidence": upstream_evidence,
+        "status": "references_complete" if upstream_evidence is not None else "prepared",
     }
     _write_json(run_root / "run.json", metadata)
     print(json.dumps(metadata, sort_keys=True))
     return 0
 
 
+def _seed_upstream_evidence(
+    *,
+    run_root: Path,
+    upstream_root: Path,
+    phase: StageLocalPhase,
+    inputs: tuple[StageLocalInput, ...],
+) -> dict[str, object]:
+    """Validate and rehydrate immutable v10 mention/reference evidence."""
+    authorized = _validate_evidence_manifest(
+        upstream_root,
+        require_marker=phase == "validation",
+    )
+    if "inputs.jsonl" not in authorized:
+        raise ValueError("Upstream stage evidence does not authorize its inputs.")
+    upstream_inputs = tuple(
+        StageLocalInput.model_validate_json(line)
+        for line in (upstream_root / "inputs.jsonl").read_text(encoding="utf-8").splitlines()
+        if line
+    )
+    upstream_by_id = {item.item.item_id: item for item in upstream_inputs}
+    if len(upstream_by_id) != len(upstream_inputs):
+        raise ValueError("Upstream stage evidence repeats a Gold item.")
+    try:
+        selected_upstream = tuple(upstream_by_id[item.item.item_id] for item in inputs)
+    except KeyError as error:
+        raise ValueError("Upstream stage evidence is missing a selected Gold item.") from error
+    if selected_upstream != inputs:
+        raise ValueError("Upstream stage evidence does not match the selected Gold inputs.")
+
+    archive = LocalArchiveStore(run_root / "archive")
+    archive.initialize()
+    copied: list[dict[str, object]] = []
+    context_rehydrations: list[dict[str, object]] = []
+    synthesized_reference_digests: list[str] = []
+    for stage_input in _unique_segment_inputs(inputs):
+        digest = stage_input.source_text_sha256
+        mention_relative = f"mentions/{digest}.json"
+        reference_relative = f"references/{digest}.json"
+        if mention_relative not in authorized or reference_relative not in authorized:
+            raise ValueError("Upstream stage evidence lacks one selected SourceSegment.")
+        mention_source = upstream_root / mention_relative
+        reference_source = upstream_root / reference_relative
+        mention_record = _read_json(mention_source)
+        reference_record = _read_json(reference_source)
+        _validate_upstream_stage_record(mention_record, stage_input, "mentions")
+        _validate_upstream_stage_record(reference_record, stage_input, "references")
+
+        ledger = _synthetic_ledger(stage_input)
+        mention_value = mention_record.get("preview")
+        if not isinstance(mention_value, dict):
+            raise ValueError("Upstream mention evidence lacks its typed Preview.")
+        mention = HybridExtractionPreview.model_validate_json(
+            _canonical_json(cast(dict[str, object], mention_value))
+        )
+        mention_payload = canonical_hybrid_extraction_preview_bytes(mention)
+        archive.put_hybrid_extraction_preview(
+            mention,
+            mention_payload,
+            _sha(mention_payload),
+        )
+        context_rehydrations.append(
+            _rehydrate_pinned_context_manifest(
+                upstream_root=upstream_root,
+                source_text_sha256=digest,
+                mention=mention,
+                ledger=ledger,
+            )
+        )
+
+        reference_value = reference_record.get("preview")
+        downstream_reference_record: dict[str, object]
+        if isinstance(reference_value, dict):
+            references = HybridReferencePreview.model_validate_json(
+                _canonical_json(cast(dict[str, object], reference_value))
+            )
+            reference_payload = canonical_hybrid_reference_preview_bytes(references)
+            archive.put_hybrid_reference_preview(
+                references,
+                reference_payload,
+                _sha(reference_payload),
+            )
+            downstream_reference_record = reference_record
+            reference_action = "copied"
+        elif reference_value is None:
+            result = run_hybrid_reference_preview(
+                command=HybridReferencePreviewCommand(mention.id),
+                ledger=cast(HybridReferenceLedger, ledger),
+                archive=cast(HybridReferenceArchive, archive),
+            )
+            downstream_reference_record = {
+                "schema_version": "hsq_stage_local_execution_v1",
+                "stage": "references",
+                "source_text_sha256": digest,
+                "status": "deterministic_parent_completion",
+                "preview": result.preview.model_dump(mode="json"),
+                "model_executions": cast(list[object], []),
+                "upstream_record_sha256": _sha(reference_source.read_bytes()),
+            }
+            synthesized_reference_digests.append(digest)
+            reference_action = "deterministic_parent_completion"
+        else:
+            raise ValueError("Upstream reference Preview has an invalid shape.")
+
+        _write_json(run_root / "state" / f"{digest}.json", ledger.to_json())
+        _write_json(run_root / mention_relative, mention_record)
+        _write_json(run_root / reference_relative, downstream_reference_record)
+        copied.extend(
+            (
+                {
+                    "path": mention_relative,
+                    "upstream_sha256": _sha(mention_source.read_bytes()),
+                    "local_sha256": _sha((run_root / mention_relative).read_bytes()),
+                    "action": "copied",
+                },
+                {
+                    "path": reference_relative,
+                    "upstream_sha256": _sha(reference_source.read_bytes()),
+                    "local_sha256": _sha((run_root / reference_relative).read_bytes()),
+                    "action": reference_action,
+                },
+            )
+        )
+    envelope: dict[str, object] = {
+        "schema_version": "hsq_stage_local_upstream_evidence_v1",
+        "upstream_run_root": str(upstream_root),
+        "upstream_manifest_sha256": _sha((upstream_root / "manifest.json").read_bytes()),
+        "phase": phase,
+        "source_segment_count": len(_unique_segment_inputs(inputs)),
+        "synthesized_reference_source_text_sha256s": sorted(synthesized_reference_digests),
+        "context_manifest_rehydrations": context_rehydrations,
+        "records": copied,
+    }
+    _write_json(run_root / "upstream-evidence.json", envelope)
+    return envelope
+
+
+def _rehydrate_pinned_context_manifest(
+    *,
+    upstream_root: Path,
+    source_text_sha256: str,
+    mention: HybridExtractionPreview,
+    ledger: _ExperimentLedger,
+) -> dict[str, object]:
+    """Load only the context artifact whose content address is pinned by the Preview."""
+    state_path = upstream_root / "state" / f"{source_text_sha256}.json"
+    state = _read_json(state_path)
+    if state.get("accepted_ledger_change_count") != 0:
+        raise ValueError("Upstream context state contains an accepted Ledger write.")
+    raw_artifacts = state.get("context_manifests")
+    if not isinstance(raw_artifacts, list):
+        raise ValueError("Upstream context state lacks ContextManifest artifacts.")
+    matching_values: list[dict[str, object]] = []
+    for value in cast(list[object], raw_artifacts):
+        if not isinstance(value, dict):
+            continue
+        artifact_value = cast(dict[str, object], value)
+        if artifact_value.get("id") == mention.context_manifest_id:
+            matching_values.append(artifact_value)
+    matching = tuple(matching_values)
+    if len(matching) != 1:
+        raise ValueError("Upstream context state lacks one uniquely pinned ContextManifest.")
+    artifact_payload = _canonical_json(matching[0])
+    artifact = ContextManifestArtifact.model_validate_json(artifact_payload)
+    ledger.save_context_manifest_artifact(artifact)
+    manifest = load_context_manifest(
+        artifact.id,
+        ledger,
+        verified_bundle=ledger.bundle,
+    )
+    if (
+        manifest.id != mention.context_manifest_id
+        or manifest.representation_id != mention.representation_id
+    ):
+        raise ValueError("Upstream ContextManifest does not close MentionPreview lineage.")
+    return {
+        "source_text_sha256": source_text_sha256,
+        "state_path": state_path.relative_to(upstream_root).as_posix(),
+        "state_sha256": _sha(state_path.read_bytes()),
+        "context_manifest_id": artifact.id,
+        "context_manifest_artifact_sha256": _sha(artifact_payload),
+        "validation": "content_addressed_lineage_closed",
+    }
+
+
+def _validate_upstream_stage_record(
+    record: dict[str, object],
+    stage_input: StageLocalInput,
+    stage: str,
+) -> None:
+    if (
+        record.get("schema_version") != "hsq_stage_local_execution_v1"
+        or record.get("stage") != stage
+        or record.get("source_text_sha256") != stage_input.source_text_sha256
+    ):
+        raise ValueError(f"Upstream {stage} evidence does not match its SourceSegment.")
+    accepted_count = record.get("accepted_ledger_change_count", 0)
+    if accepted_count != 0:
+        raise ValueError(f"Upstream {stage} evidence contains an accepted Ledger write.")
+
+
 def _run_mentions(args: argparse.Namespace) -> int:
     prepared = _load_prepared(args)
     _require_not_finalized(prepared)
+    _require_run_status(prepared.root, "prepared")
     config = _config(args.config)
     archive = LocalArchiveStore(prepared.root / "archive")
     archive.initialize()
@@ -443,20 +783,6 @@ def _run_references(args: argparse.Namespace) -> int:
                 for item in prepared.inputs
                 if item.source_text_sha256 == stage_input.source_text_sha256
             )
-            if not any(item.item.expected_references for item in related):
-                _write_json(
-                    target,
-                    {
-                        "schema_version": "hsq_stage_local_execution_v1",
-                        "stage": "references",
-                        "source_text_sha256": stage_input.source_text_sha256,
-                        "status": "not_applicable",
-                        "preview": None,
-                        "model_executions": [],
-                    },
-                )
-                print(f"Reference segment {ordinal}/{len(unique_inputs)}: not applicable")
-                continue
             ledger = _ExperimentLedger.from_json(
                 _read_json(prepared.root / "state" / f"{stage_input.source_text_sha256}.json")
             )
@@ -467,9 +793,19 @@ def _run_references(args: argparse.Namespace) -> int:
                 _canonical_json(mention_record["preview"])
             )
             before_ids = set(ledger.model_runs)
-            if mention.terminal_status is HybridPreviewStatus.BLOCKED:
-                reference_preview = None
-                status = "parent_blocked"
+            has_expected_reference = any(item.item.expected_references for item in related)
+            if mention.terminal_status is HybridPreviewStatus.BLOCKED or not has_expected_reference:
+                result = run_hybrid_reference_preview(
+                    command=HybridReferencePreviewCommand(mention.id),
+                    ledger=cast(HybridReferenceLedger, ledger),
+                    archive=cast(HybridReferenceArchive, archive),
+                )
+                reference_preview = result.preview
+                status = (
+                    "parent_blocked_passthrough"
+                    if mention.terminal_status is HybridPreviewStatus.BLOCKED
+                    else "not_applicable"
+                )
             else:
                 result = run_hybrid_reference_preview(
                     command=HybridReferencePreviewCommand(
@@ -501,11 +837,7 @@ def _run_references(args: argparse.Namespace) -> int:
                     "stage": "references",
                     "source_text_sha256": stage_input.source_text_sha256,
                     "status": status,
-                    "preview": (
-                        reference_preview.model_dump(mode="json")
-                        if reference_preview is not None
-                        else None
-                    ),
+                    "preview": reference_preview.model_dump(mode="json"),
                     "model_executions": _model_execution_records(
                         ledger, archive, set(ledger.model_runs) - before_ids
                     ),
@@ -521,10 +853,159 @@ def _run_references(args: argparse.Namespace) -> int:
     return 0
 
 
-def _finalize(args: argparse.Namespace) -> int:
+def _run_triggers(args: argparse.Namespace) -> int:
     prepared = _load_prepared(args)
     _require_not_finalized(prepared)
     _require_run_status(prepared.root, "references_complete")
+    config = _config(args.config)
+    archive = LocalArchiveStore(prepared.root / "archive")
+    archive.initialize()
+    runtime = build_model_task_runtime(config.model_execution)
+    linguistic_analyzer: LinguisticAnalyzer = (
+        _FixtureLinguisticAnalyzer()
+        if config.model_execution.adapter == "fixture"
+        else StanzaLinguisticAnalyzer(
+            model_directory=stanza_model_path(config.model_resource_root),
+            resource_identity=stanza_expected_resource_identity(),
+        )
+    )
+    nominalization_analyzer: NominalizationAnalyzer = (
+        _FixtureNominalizationAnalyzer()
+        if config.model_execution.adapter == "fixture"
+        else QANomNominalizationAnalyzer(
+            model_directory=qanom_model_path(config.model_resource_root),
+            lexical_resource_directory=qanom_lexical_resource_path(config.model_resource_root),
+            resource_identity=qanom_expected_resource_identity(),
+        )
+    )
+    prompts = _prompts()
+    unique_inputs = _unique_segment_inputs(prepared.inputs)
+    try:
+        for ordinal, stage_input in enumerate(unique_inputs, start=1):
+            target = prepared.root / "triggers" / f"{stage_input.source_text_sha256}.json"
+            if target.exists():
+                print(f"Trigger segment {ordinal}/{len(unique_inputs)}: reused")
+                continue
+            ledger = _ExperimentLedger.from_json(
+                _read_json(prepared.root / "state" / f"{stage_input.source_text_sha256}.json")
+            )
+            mention_record = _read_json(
+                prepared.root / "mentions" / f"{stage_input.source_text_sha256}.json"
+            )
+            reference_record = _read_json(
+                prepared.root / "references" / f"{stage_input.source_text_sha256}.json"
+            )
+            mention = HybridExtractionPreview.model_validate_json(
+                _canonical_json(mention_record["preview"])
+            )
+            reference_value = reference_record.get("preview")
+            if not isinstance(reference_value, dict):
+                _write_json(
+                    target,
+                    {
+                        "schema_version": "hsq_stage_local_execution_v1",
+                        "stage": "triggers",
+                        "source_text_sha256": stage_input.source_text_sha256,
+                        "status": "parent_blocked",
+                        "preview": None,
+                        "model_executions": [],
+                        "accepted_ledger_change_count": ledger.accepted_ledger_change_count,
+                    },
+                )
+                print(f"Trigger segment {ordinal}/{len(unique_inputs)}: parent blocked")
+                continue
+            references = HybridReferencePreview.model_validate_json(
+                _canonical_json(cast(dict[str, object], reference_value))
+            )
+            eligibility = evaluate_entity_grounding_eligibility(mention, references)
+            grounding_diagnostics = (
+                ("stage_local_entity_linking_not_run",)
+                if any(item.status.value == "eligible" for item in eligibility)
+                else ()
+            )
+            grounding = build_hybrid_entity_grounding_preview_record(
+                parent_preview_id=references.id,
+                parent_preview_sha256=hybrid_reference_preview_sha256(references),
+                mention_preview_id=mention.id,
+                mention_preview_sha256=hybrid_extraction_preview_sha256(mention),
+                representation_id=mention.representation_id,
+                eligibility=eligibility,
+                link_evidence=(),
+                extraction_task_ids=(),
+                model_run_ids=(),
+                traces=(),
+                terminal_status=(
+                    HybridEntityGroundingStatus.PARTIAL
+                    if grounding_diagnostics
+                    else HybridEntityGroundingStatus.COMPLETE
+                ),
+                diagnostics=grounding_diagnostics,
+            )
+            grounding_payload = canonical_hybrid_entity_grounding_preview_bytes(grounding)
+            archive.put_hybrid_entity_grounding_preview(
+                grounding,
+                grounding_payload,
+                _sha(grounding_payload),
+            )
+            before_ids = set(ledger.model_runs)
+            result = run_hybrid_event_trigger_preview(
+                command=HybridEventTriggerCommand(
+                    grounding.id,
+                    _profile(config),
+                    _generation(config),
+                ),
+                ledger=cast(HybridEventTriggerLedger, ledger),
+                archive=cast(HybridEventTriggerArchive, archive),
+                model_runtime=runtime,
+                model_run_id_factory=Uuid4ModelRunIdFactory(),
+                tokenizer=runtime,
+                prompts=HybridEventTriggerPrompts(
+                    verb_role=prompts["event_verb_role"],
+                    verb_similarity=prompts["event_verb_similarity"],
+                    noun_inventory=prompts["event_noun_inventory"],
+                    noun_dependent_kind=prompts["event_noun_dependent_kind"],
+                    noun_media_artifact=prompts["event_noun_media_artifact"],
+                    noun_governor_distinct=prompts["event_noun_governor_distinct"],
+                    noun_reaction=prompts["event_noun_reaction"],
+                    noun_standing=prompts["event_noun_standing"],
+                ),
+                linguistic_analyzer=linguistic_analyzer,
+                nominalization_analyzer=nominalization_analyzer,
+            )
+            if ledger.accepted_ledger_change_count:
+                raise AssertionError("Trigger evaluation changed accepted Ledger state.")
+            _write_json(
+                prepared.root / "state" / f"{stage_input.source_text_sha256}.json",
+                ledger.to_json(),
+            )
+            _write_json(
+                target,
+                {
+                    **_stage_record(
+                        stage_input=stage_input,
+                        preview=result.preview.model_dump(mode="json"),
+                        ledger=ledger,
+                        archive=archive,
+                        stage="triggers",
+                        model_run_ids=set(ledger.model_runs) - before_ids,
+                    ),
+                    "status": result.preview.terminal_status.value,
+                },
+            )
+            print(
+                f"Trigger segment {ordinal}/{len(unique_inputs)}: "
+                f"{result.preview.terminal_status.value}"
+            )
+    finally:
+        _close_runtime(runtime)
+    _update_run_status(prepared.root, "triggers_complete")
+    return 0
+
+
+def _finalize(args: argparse.Namespace) -> int:
+    prepared = _load_prepared(args)
+    _require_not_finalized(prepared)
+    _require_run_status(prepared.root, "triggers_complete")
     evaluations: list[StageLocalCaseEvaluation] = []
     elapsed: dict[str, int] = {}
     alias_opportunity_items = 0
@@ -611,16 +1092,66 @@ def _finalize(args: argparse.Namespace) -> int:
         },
     )
     payload = report.model_dump(mode="json")
+    gold_by_digest = {
+        item.source_text_sha256: item
+        for item in prepared.trigger_gold.segments
+        if item.phase == prepared.phase
+    }
+    trigger_evaluations: list[TriggerStageSegmentEvaluation] = []
+    trigger_model_execution_count = 0
+    trigger_model_elapsed = 0
+    for stage_input in _unique_segment_inputs(prepared.inputs):
+        trigger_record = _read_json(
+            prepared.root / "triggers" / f"{stage_input.source_text_sha256}.json"
+        )
+        preview_value = trigger_record.get("preview")
+        if not isinstance(preview_value, dict):
+            raise ValueError("Trigger stage cannot finalize a missing parent result.")
+        trigger_preview = HybridEventTriggerPreview.model_validate_json(
+            _canonical_json(cast(dict[str, object], preview_value))
+        )
+        trigger_evaluations.append(
+            evaluate_trigger_segment(
+                gold_by_digest[stage_input.source_text_sha256],
+                trigger_preview,
+            )
+        )
+        executions = cast(list[dict[str, object]], trigger_record.get("model_executions", []))
+        trigger_model_execution_count += len(executions)
+        trigger_model_elapsed += sum(
+            _required_int(item["elapsed_milliseconds"], "trigger elapsed milliseconds")
+            for item in executions
+        )
+    trigger_report = build_trigger_stage_report(
+        phase=prepared.phase,
+        evaluations=tuple(trigger_evaluations),
+        model_execution_count=trigger_model_execution_count,
+        model_elapsed_milliseconds=trigger_model_elapsed,
+    )
+    trigger_payload = trigger_report.model_dump(mode="json")
     report_path = prepared.root / "report.json"
     _write_json(report_path, payload)
+    trigger_report_path = prepared.root / "trigger-report.json"
+    _write_json(trigger_report_path, trigger_payload)
     _write_review(prepared.root / "review.md", prepared.inputs, payload)
+    _write_trigger_review(
+        prepared.root / "trigger-review.md",
+        prepared.trigger_gold,
+        trigger_payload,
+    )
     evidence_paths = [
         prepared.root / "inputs.jsonl",
         report_path,
+        trigger_report_path,
         prepared.root / "review.md",
+        prepared.root / "trigger-review.md",
         *sorted((prepared.root / "mentions").glob("*.json")),
         *sorted((prepared.root / "references").glob("*.json")),
+        *sorted((prepared.root / "triggers").glob("*.json")),
     ]
+    upstream_evidence_path = prepared.root / "upstream-evidence.json"
+    if upstream_evidence_path.is_file():
+        evidence_paths.append(upstream_evidence_path)
     manifest = {
         "schema_version": "hsq_stage_local_manifest_v1",
         "phase": prepared.phase,
@@ -644,6 +1175,8 @@ def _finalize(args: argparse.Namespace) -> int:
                 "item_count": payload["item_count"],
                 "first_failed_stage_counts": payload["first_failed_stage_counts"],
                 "report": str(report_path),
+                "trigger_report": str(trigger_report_path),
+                "trigger_passed": trigger_payload["passed"],
             },
             sort_keys=True,
         )
@@ -656,10 +1189,20 @@ def _compare(args: argparse.Namespace) -> int:
     _validate_evidence_manifest(args.validation_report.resolve().parent, require_marker=True)
     development = _read_json(args.development_report)
     validation = _read_json(args.validation_report)
+    development_triggers = _read_json(
+        args.development_report.resolve().parent / "trigger-report.json"
+    )
+    validation_triggers = _read_json(
+        args.validation_report.resolve().parent / "trigger-report.json"
+    )
     result = {
         "schema_version": "hsq_stage_local_comparison_v1",
         "development": _comparison_summary(development),
         "validation": _comparison_summary(validation),
+        "event_triggers": {
+            "development": _trigger_comparison_summary(development_triggers),
+            "validation": _trigger_comparison_summary(validation_triggers),
+        },
         "quality_regression_gate": "manual_baseline_comparison_required",
         "production_adoption": {
             "source_alias_rescue": "not_activated",
@@ -683,6 +1226,11 @@ def _load_prepared(args: argparse.Namespace) -> _PreparedRun:
         raise ValueError("Stage-local run split path changed after preparation.")
     if metadata.get("split_sha256") != _sha(selected_split.read_bytes()):
         raise ValueError("Stage-local run split bytes changed after preparation.")
+    trigger_gold_path = args.trigger_gold.resolve()
+    if metadata.get("trigger_gold_path") != _relative_or_absolute(trigger_gold_path):
+        raise ValueError("Stage-local Trigger Gold path changed after preparation.")
+    if metadata.get("trigger_gold_sha256") != _sha(trigger_gold_path.read_bytes()):
+        raise ValueError("Stage-local Trigger Gold bytes changed after preparation.")
     if metadata.get("experiment") != _experiment_contract():
         raise ValueError("Stage-local prompt, schema, or policy changed after preparation.")
     inputs = tuple(
@@ -693,6 +1241,12 @@ def _load_prepared(args: argparse.Namespace) -> _PreparedRun:
     _, current_inputs = load_stage_local_inputs(
         selected_split,
         repository_root=REPOSITORY_ROOT,
+    )
+    trigger_gold = load_trigger_gold_catalog(
+        trigger_gold_path,
+        repository_root=REPOSITORY_ROOT,
+        inputs=current_inputs,
+        require_approved=args.phase == "validation",
     )
     raw_item_ids = metadata.get("item_ids")
     if not isinstance(raw_item_ids, list):
@@ -713,7 +1267,7 @@ def _load_prepared(args: argparse.Namespace) -> _PreparedRun:
     if not inputs or any(item.phase != args.phase for item in inputs):
         raise ValueError("Stage-local prepared inputs are incomplete.")
     phase = cast(StageLocalPhase, args.phase)
-    return _PreparedRun(root, phase, inputs)
+    return _PreparedRun(root, phase, inputs, trigger_gold)
 
 
 def _require_not_finalized(prepared: _PreparedRun) -> None:
@@ -721,7 +1275,11 @@ def _require_not_finalized(prepared: _PreparedRun) -> None:
         raise ValueError("A finalized validation run is immutable.")
 
 
-def _validate_evidence_manifest(root: Path, *, require_marker: bool = False) -> None:
+def _validate_evidence_manifest(
+    root: Path,
+    *,
+    require_marker: bool = False,
+) -> set[str]:
     manifest_path = root / "manifest.json"
     manifest = _read_json(manifest_path)
     if manifest.get("schema_version") != "hsq_stage_local_manifest_v1":
@@ -755,6 +1313,7 @@ def _validate_evidence_manifest(root: Path, *, require_marker: bool = False) -> 
         expected_marker = _sha(manifest_path.read_bytes())
         if not marker.is_file() or marker.read_text(encoding="utf-8") != expected_marker:
             raise ValueError("Stage-local validation finalization marker is missing or invalid.")
+    return seen
 
 
 def _require_run_status(root: Path, expected: str) -> None:
@@ -938,6 +1497,16 @@ def _prompts() -> dict[str, bytes]:
         "reference_validation": (
             prompt_root / "semantic_reference_candidate_validation_v1.md"
         ).read_bytes(),
+        "event_verb_role": (prompt_root / "event_verb_role_v1.md").read_bytes(),
+        "event_verb_similarity": (prompt_root / "event_verb_similarity_v1.md").read_bytes(),
+        "event_noun_inventory": (prompt_root / "event_noun_inventory_v1.md").read_bytes(),
+        "event_noun_dependent_kind": (prompt_root / "event_noun_dependent_kind_v1.md").read_bytes(),
+        "event_noun_media_artifact": (prompt_root / "event_noun_media_artifact_v1.md").read_bytes(),
+        "event_noun_governor_distinct": (
+            prompt_root / "event_noun_governor_distinct_v1.md"
+        ).read_bytes(),
+        "event_noun_reaction": (prompt_root / "event_noun_reaction_v1.md").read_bytes(),
+        "event_noun_standing": (prompt_root / "event_noun_standing_v1.md").read_bytes(),
     }
 
 
@@ -948,12 +1517,16 @@ def _experiment_contract() -> dict[str, object]:
         "mention_boundary_adjudication": HYBRID_MENTION_BOUNDARY_ADJUDICATION_POLICY_ID,
         "mention_preview": HYBRID_MENTION_PREVIEW_POLICY_ID,
         "semantic_reference": SEMANTIC_REFERENCE_POLICY_ID,
+        "event_trigger": HYBRID_EVENT_TRIGGER_POLICY_ID,
+        "event_trigger_reconciliation": TRIGGER_RECONCILIATION_POLICY_ID,
     }
     return {
-        "experiment_id": "hsq7_stage_local_contrastive_reference_v10",
-        "parent_experiment_id": "hsq7_stage_local_adaptive_reference_v9",
+        "experiment_id": "hsq_event_routed_stanza_qanom_v1",
+        "parent_experiment_id": "hsq7_stage_local_event_self_contribution_v25",
         "changed_hypotheses": [
-            "h17_complete_catalog_contrastive_fallback",
+            "stanza_and_qanom_propose_source_bound_linguistic_candidates",
+            "narrow_semantic_routes_outperform_one_general_event_prompt",
+            "deterministic_reconciliation_owns_event_selection",
         ],
         "prompt_sha256": {name: _sha(payload) for name, payload in sorted(prompts.items())},
         "schema_sha256": {
@@ -968,6 +1541,9 @@ def _experiment_contract() -> dict[str, object]:
             "semantic_reference_candidate_validation_text_v1": _sha(
                 semantic_reference_candidate_validation_schema_bytes()
             ),
+            EVENT_HEAD_JUDGMENT_SCHEMA_ID: _sha(event_head_answer_schema_bytes()),
+            EVENT_VERB_ROLE_SCHEMA_ID: _sha(event_verb_role_answer_schema_bytes()),
+            EVENT_BINARY_SEMANTIC_SCHEMA_ID: _sha(binary_semantic_answer_schema_bytes()),
         },
         "policy_sha256": _sha(_canonical_json(policies)),
         "evaluator_correction_sha256": _sha(EVALUATOR_CORRECTIONS.read_bytes()),
@@ -985,14 +1561,19 @@ def _stage_record(
     ledger: _ExperimentLedger,
     archive: LocalArchiveStore,
     stage: str,
+    model_run_ids: set[str] | None = None,
 ) -> dict[str, object]:
-    model_executions = _model_execution_records(ledger, archive, set(ledger.model_runs))
+    model_executions = _model_execution_records(
+        ledger,
+        archive,
+        set(ledger.model_runs) if model_run_ids is None else model_run_ids,
+    )
     trace_input_by_run = {
-        str(execution_id): trace["input"].get("model_visible_input")
+        str(execution_id): trace["input"].get("exact_model_input")
         for trace in cast(list[dict[str, Any]], preview.get("traces", []))
         for execution_id in cast(list[str], trace.get("execution_record_ids", []))
         if isinstance(trace.get("input"), dict)
-        and isinstance(cast(dict[str, object], trace["input"]).get("model_visible_input"), str)
+        and isinstance(cast(dict[str, object], trace["input"]).get("exact_model_input"), str)
     }
     for execution in model_executions:
         if execution["exact_model_input"] is None:
@@ -1119,6 +1700,57 @@ def _write_review(
     path.write_text("\n".join(lines), encoding="utf-8")
 
 
+def _write_trigger_review(
+    path: Path,
+    gold: TriggerGoldCatalog,
+    report: dict[str, object],
+) -> None:
+    gold_by_digest = {item.source_text_sha256: item for item in gold.segments}
+    lines = [
+        f"# HSQ-7 {report['phase']} event-trigger review",
+        "",
+        f"Passed: {report['passed_segment_count']}/{report['segment_count']} SourceSegments",
+        "",
+    ]
+    for result in cast(list[dict[str, object]], report["segments"]):
+        digest = str(result["source_text_sha256"])
+        segment = gold_by_digest[digest]
+        lines.extend(
+            (
+                f"## {digest}",
+                "",
+                "Exact SourceSegment:",
+                "",
+                f"> {segment.source_text}",
+                "",
+                "Expected Events:",
+                "",
+            )
+        )
+        if segment.event_free:
+            lines.extend(("- None.", ""))
+        else:
+            lines.extend(
+                f"- `{event.event_id}`: {event.meaning} (head `{event.head_occurrence_id}`)"
+                for event in segment.events
+            )
+            lines.append("")
+        lines.extend(
+            (
+                "Evaluation:",
+                "",
+                "```json",
+                json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True),
+                "```",
+                "",
+                f"Exact execution evidence: `triggers/{digest}.json`",
+                "",
+            )
+        )
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("\n".join(lines), encoding="utf-8")
+
+
 def _comparison_summary(value: dict[str, object]) -> dict[str, object]:
     return {
         "passed_count": value["passed_count"],
@@ -1127,6 +1759,30 @@ def _comparison_summary(value: dict[str, object]) -> dict[str, object]:
         "producer_elapsed_milliseconds": value["producer_elapsed_milliseconds"],
         "optional_experiment_measurements": value.get("optional_experiment_measurements", {}),
         "boundary_contract": value["boundary_contract"],
+    }
+
+
+def _trigger_comparison_summary(value: dict[str, object]) -> dict[str, object]:
+    return {
+        "passed": value["passed"],
+        "passed_segment_count": value["passed_segment_count"],
+        "segment_count": value["segment_count"],
+        "expected_event_count": value["expected_event_count"],
+        "actual_event_count": value["actual_event_count"],
+        "exact_head_match_count": value["exact_head_match_count"],
+        "exact_expression_match_count": value["exact_expression_match_count"],
+        "missing_event_count": value["missing_event_count"],
+        "extra_trigger_count": value["extra_trigger_count"],
+        "duplicate_trigger_count": value["duplicate_trigger_count"],
+        "bounded_semantic_judgment_count": value["bounded_semantic_judgment_count"],
+        "failed_model_judgment_count": value["failed_model_judgment_count"],
+        "source_occurrence_count": value["source_occurrence_count"],
+        "event_head_candidate_count": value["event_head_candidate_count"],
+        "classified_candidate_count": value["classified_candidate_count"],
+        "unclassified_candidate_count": value["unclassified_candidate_count"],
+        "gold_candidate_miss_count": value["gold_candidate_miss_count"],
+        "model_execution_count": value["model_execution_count"],
+        "model_elapsed_milliseconds": value["model_elapsed_milliseconds"],
     }
 
 

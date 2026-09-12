@@ -28,16 +28,23 @@ from kotekomi_adapters import (
     ModelResourceInstallationError,
     NewsMLG2Adapter,
     OllamaEmbeddingAdapter,
+    QANomNominalizationAnalyzer,
     SQLiteDocumentRetrievalAdapter,
     SQLiteKnowledgeGraphRetrievalAdapter,
     SQLiteLedgerInitializer,
     SQLiteLedgerRetrievalAdapter,
+    StanzaLinguisticAnalyzer,
     gliner_model_path,
     nli_expected_resource_identity,
     nli_model_path,
+    qanom_expected_resource_identity,
+    qanom_lexical_resource_path,
+    qanom_model_path,
     refined_data_path,
     refined_python_path,
     sqlite_ledger_transaction,
+    stanza_expected_resource_identity,
+    stanza_model_path,
 )
 from kotekomi_adapters.refined_entity_linking import (
     REFINED_ENTITY_SET,
@@ -77,6 +84,7 @@ from kotekomi_application import (
     HybridEventSemanticsCommand,
     HybridEventSemanticsStatus,
     HybridEventTriggerCommand,
+    HybridEventTriggerPrompts,
     HybridEventTriggerStatus,
     HybridMentionPreviewCommand,
     HybridPreviewStatus,
@@ -316,7 +324,9 @@ def main(argv: list[str] | None = None) -> int:
             "fcoref": ModelResourceId.FCOREF_V1,
             "gliner": ModelResourceId.GLINER_MENTION_PROPOSER_V1,
             "nli": ModelResourceId.NLI_DEBERTA_V3_BASE_V1,
+            "qanom": ModelResourceId.QANOM_NOMINALIZATION_V1,
             "refined": ModelResourceId.REFINED_WIKIPEDIA_V1,
+            "stanza": ModelResourceId.STANZA_ENGLISH_V1,
         }
         return manage_model_resources(
             config_path=args.config,
@@ -1204,7 +1214,7 @@ def build_parser() -> argparse.ArgumentParser:
     model_resources_install_parser.add_argument(
         "--resource",
         action="append",
-        choices=("fcoref", "gliner", "nli", "refined"),
+        choices=("fcoref", "gliner", "nli", "qanom", "refined", "stanza"),
         default=None,
     )
     model_resources_install_parser.add_argument("--repair", action="store_true")
@@ -2682,7 +2692,16 @@ def discover_hybrid_event_triggers(*, config: PipelineConfig, parent_preview_id:
     archive.initialize()
     runtime = build_model_task_runtime(config.model_execution)
     prompt_root = Path(__file__).resolve().parents[4] / "prompts"
-    trigger_prompt = (prompt_root / "hybrid_event_trigger_task_v4.md").read_bytes()
+    prompts = HybridEventTriggerPrompts(
+        verb_role=(prompt_root / "event_verb_role_v1.md").read_bytes(),
+        verb_similarity=(prompt_root / "event_verb_similarity_v1.md").read_bytes(),
+        noun_inventory=(prompt_root / "event_noun_inventory_v1.md").read_bytes(),
+        noun_dependent_kind=(prompt_root / "event_noun_dependent_kind_v1.md").read_bytes(),
+        noun_media_artifact=(prompt_root / "event_noun_media_artifact_v1.md").read_bytes(),
+        noun_governor_distinct=(prompt_root / "event_noun_governor_distinct_v1.md").read_bytes(),
+        noun_reaction=(prompt_root / "event_noun_reaction_v1.md").read_bytes(),
+        noun_standing=(prompt_root / "event_noun_standing_v1.md").read_bytes(),
+    )
     with sqlite_ledger_transaction(config.ledger_path) as repository:
         result = run_hybrid_event_trigger_preview(
             command=HybridEventTriggerCommand(
@@ -2704,7 +2723,16 @@ def discover_hybrid_event_triggers(*, config: PipelineConfig, parent_preview_id:
             model_runtime=runtime,
             model_run_id_factory=Uuid4ModelRunIdFactory(),
             tokenizer=runtime,
-            trigger_prompt_bytes=trigger_prompt,
+            prompts=prompts,
+            linguistic_analyzer=StanzaLinguisticAnalyzer(
+                model_directory=stanza_model_path(config.model_resource_root),
+                resource_identity=stanza_expected_resource_identity(),
+            ),
+            nominalization_analyzer=QANomNominalizationAnalyzer(
+                model_directory=qanom_model_path(config.model_resource_root),
+                lexical_resource_directory=qanom_lexical_resource_path(config.model_resource_root),
+                resource_identity=qanom_expected_resource_identity(),
+            ),
         )
     print(
         json.dumps(

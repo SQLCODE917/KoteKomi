@@ -10,7 +10,9 @@ from kotekomi_adapters import (
     FCorefModelResourceAdapter,
     GlinerModelResourceAdapter,
     NliDebertaModelResourceAdapter,
+    QANomModelResourceAdapter,
     RefinedModelResourceAdapter,
+    StanzaEnglishModelResourceAdapter,
 )
 from kotekomi_application import (
     ModelResourceAdapter,
@@ -33,6 +35,8 @@ def model_resource_adapters() -> tuple[ModelResourceAdapter, ...]:
         NliDebertaModelResourceAdapter(),
         RefinedModelResourceAdapter(),
         FCorefModelResourceAdapter(),
+        StanzaEnglishModelResourceAdapter(),
+        QANomModelResourceAdapter(),
     )
 
 

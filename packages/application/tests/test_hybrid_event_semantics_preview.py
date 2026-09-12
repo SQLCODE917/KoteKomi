@@ -12,11 +12,16 @@ from kotekomi_application import (
     HybridEntityGroundingStatus,
     HybridEventSemanticsCommand,
     HybridEventTriggerCommand,
+    HybridEventTriggerPrompts,
     HybridEventTriggerResult,
     HybridEventTriggerStatus,
     HybridMentionPreviewCommand,
     HybridProposalPlan,
     HybridReferencePreviewCommand,
+    LinguisticAnalysis,
+    LinguisticAnalysisInput,
+    LinguisticAnalyzer,
+    LinguisticToken,
     MentionProposal,
     MentionProposalBatch,
     MentionProposalInput,
@@ -28,9 +33,13 @@ from kotekomi_application import (
     ModelTaskResponse,
     NaturalLanguageInferenceExecution,
     NaturalLanguageInferenceInput,
+    NominalizationAnalysis,
+    NominalizationAnalysisInput,
+    NominalizationCandidate,
     PlannedProposedChange,
     ProposalDisposition,
     SemanticCoverageGapCode,
+    UniversalPartOfSpeech,
     build_hybrid_entity_grounding_preview_record,
     build_hybrid_proposal_plan,
     build_hybrid_proposal_plan_record,
@@ -60,6 +69,7 @@ from kotekomi_application.hybrid_reference_preview import (
     HybridReferenceArchive,
     HybridReferenceLedger,
 )
+from kotekomi_application.source_occurrences import source_occurrences
 from kotekomi_domain import (
     Actor,
     AnalysisUnitArtifact,
@@ -97,6 +107,230 @@ class _Tokenizer:
 
     def count_tokens(self, rendered_input: bytes) -> int:
         return len(rendered_input.decode().split())
+
+
+class _LinguisticAnalyzer:
+    def __init__(
+        self,
+        parts_by_text: dict[str, UniversalPartOfSpeech] | None = None,
+    ) -> None:
+        self._parts_by_text = parts_by_text or {}
+
+    def analyze(self, request: LinguisticAnalysisInput) -> LinguisticAnalysis:
+        occurrences = source_occurrences(request.source_text)
+        root_id = "t1"
+        return LinguisticAnalysis(
+            source_text_sha256=hashlib.sha256(request.source_text.encode()).hexdigest(),
+            producer_id="fixture",
+            model_id="fixture",
+            model_version="1",
+            resource_identity="f" * 64,
+            tokens=tuple(
+                LinguisticToken(
+                    token_id=f"t{ordinal}",
+                    sentence_id="s1",
+                    text=item.text,
+                    start=item.start,
+                    end=item.end,
+                    lemma=(
+                        "hold"
+                        if item.text == "held"
+                        else "have"
+                        if item.text == "had"
+                        else item.text.casefold()
+                    ),
+                    part_of_speech=self._parts_by_text.get(
+                        item.text,
+                        UniversalPartOfSpeech.NOUN,
+                    ),
+                    dependency_relation="root" if ordinal == 1 else "dep",
+                    head_token_id=None if ordinal == 1 else root_id,
+                )
+                for ordinal, item in enumerate(occurrences, start=1)
+            ),
+        )
+
+
+class _NoCandidateLinguisticAnalyzer:
+    def analyze(self, request: LinguisticAnalysisInput) -> LinguisticAnalysis:
+        occurrences = source_occurrences(request.source_text)
+        root_id = "t1"
+        return LinguisticAnalysis(
+            source_text_sha256=hashlib.sha256(request.source_text.encode()).hexdigest(),
+            producer_id="fixture",
+            model_id="fixture",
+            model_version="1",
+            resource_identity="f" * 64,
+            tokens=tuple(
+                LinguisticToken(
+                    token_id=f"t{ordinal}",
+                    sentence_id="s1",
+                    text=item.text,
+                    start=item.start,
+                    end=item.end,
+                    lemma=item.text.casefold(),
+                    part_of_speech=UniversalPartOfSpeech.PROPER_NOUN,
+                    dependency_relation="root" if ordinal == 1 else "dep",
+                    head_token_id=None if ordinal == 1 else root_id,
+                )
+                for ordinal, item in enumerate(occurrences, start=1)
+            ),
+        )
+
+
+class _UnavailableLinguisticAnalyzer:
+    def analyze(self, request: LinguisticAnalysisInput) -> LinguisticAnalysis:
+        del request
+        raise FileNotFoundError("Pinned Stanza Resource Installation is unavailable.")
+
+
+class _DirectDependencyLinguisticAnalyzer:
+    def analyze(self, request: LinguisticAnalysisInput) -> LinguisticAnalysis:
+        occurrences = source_occurrences(request.source_text)
+        parts = {
+            "Officials": UniversalPartOfSpeech.PROPER_NOUN,
+            "held": UniversalPartOfSpeech.VERB,
+            "discussions": UniversalPartOfSpeech.NOUN,
+        }
+        token_ids = {item.text: f"t{ordinal}" for ordinal, item in enumerate(occurrences, 1)}
+        return LinguisticAnalysis(
+            source_text_sha256=hashlib.sha256(request.source_text.encode()).hexdigest(),
+            producer_id="fixture",
+            model_id="fixture",
+            model_version="1",
+            resource_identity="f" * 64,
+            tokens=tuple(
+                LinguisticToken(
+                    token_id=token_ids[item.text],
+                    sentence_id="s1",
+                    text=item.text,
+                    start=item.start,
+                    end=item.end,
+                    lemma="hold" if item.text == "held" else item.text.casefold(),
+                    part_of_speech=parts[item.text],
+                    dependency_relation=(
+                        "root"
+                        if item.text == "held"
+                        else "obj"
+                        if item.text == "discussions"
+                        else "nsubj"
+                    ),
+                    head_token_id=None if item.text == "held" else token_ids["held"],
+                )
+                for item in occurrences
+            ),
+        )
+
+
+class _EvaluationDependencyLinguisticAnalyzer:
+    def analyze(self, request: LinguisticAnalysisInput) -> LinguisticAnalysis:
+        occurrences = source_occurrences(request.source_text)
+        token_ids = {item.text: f"t{ordinal}" for ordinal, item in enumerate(occurrences, 1)}
+        return LinguisticAnalysis(
+            source_text_sha256=hashlib.sha256(request.source_text.encode()).hexdigest(),
+            producer_id="fixture",
+            model_id="fixture",
+            model_version="1",
+            resource_identity="f" * 64,
+            tokens=tuple(
+                LinguisticToken(
+                    token_id=token_ids[item.text],
+                    sentence_id="s1",
+                    text=item.text,
+                    start=item.start,
+                    end=item.end,
+                    lemma="see" if item.text == "saw" else item.text.casefold(),
+                    part_of_speech=(
+                        UniversalPartOfSpeech.VERB
+                        if item.text == "saw"
+                        else UniversalPartOfSpeech.NOUN
+                        if item.text == "regulation"
+                        else UniversalPartOfSpeech.PROPER_NOUN
+                    ),
+                    dependency_relation=(
+                        "root"
+                        if item.text == "saw"
+                        else "obj"
+                        if item.text == "regulation"
+                        else "nsubj"
+                    ),
+                    head_token_id=None if item.text == "saw" else token_ids["saw"],
+                )
+                for item in occurrences
+            ),
+        )
+
+
+class _ParticularizedNominalLinguisticAnalyzer:
+    def analyze(self, request: LinguisticAnalysisInput) -> LinguisticAnalysis:
+        occurrences = source_occurrences(request.source_text)
+        token_ids = {item.text: f"t{ordinal}" for ordinal, item in enumerate(occurrences, 1)}
+        parts = {
+            "Officials": UniversalPartOfSpeech.PROPER_NOUN,
+            "opposed": UniversalPartOfSpeech.VERB,
+            "the": UniversalPartOfSpeech.DETERMINER,
+            "use": UniversalPartOfSpeech.NOUN,
+        }
+        heads = {
+            "Officials": token_ids["opposed"],
+            "opposed": None,
+            "the": token_ids["use"],
+            "use": token_ids["opposed"],
+        }
+        relations = {
+            "Officials": "nsubj",
+            "opposed": "root",
+            "the": "det",
+            "use": "obj",
+        }
+        return LinguisticAnalysis(
+            source_text_sha256=hashlib.sha256(request.source_text.encode()).hexdigest(),
+            producer_id="fixture",
+            model_id="fixture",
+            model_version="1",
+            resource_identity="f" * 64,
+            tokens=tuple(
+                LinguisticToken(
+                    token_id=token_ids[item.text],
+                    sentence_id="s1",
+                    text=item.text,
+                    start=item.start,
+                    end=item.end,
+                    lemma="oppose" if item.text == "opposed" else item.text.casefold(),
+                    part_of_speech=parts[item.text],
+                    dependency_relation=relations[item.text],
+                    head_token_id=heads[item.text],
+                )
+                for item in occurrences
+            ),
+        )
+
+
+class _NominalizationAnalyzer:
+    def analyze(self, request: NominalizationAnalysisInput) -> NominalizationAnalysis:
+        candidates = tuple(
+            NominalizationCandidate(
+                linguistic_token_id=token.token_id,
+                text=token.text,
+                start=token.start,
+                end=token.end,
+                lexical_candidate=True,
+                positive_logit=2.0,
+                negative_logit=-2.0,
+                nominalization_probability=0.9,
+            )
+            for token in request.linguistic_analysis.tokens
+            if token.part_of_speech is UniversalPartOfSpeech.NOUN
+        )
+        return NominalizationAnalysis(
+            source_text_sha256=hashlib.sha256(request.source_text.encode()).hexdigest(),
+            producer_id="fixture-qanom",
+            model_id="fixture-qanom",
+            model_revision="v1",
+            resource_identity="e" * 64,
+            threshold=0.45,
+            candidates=candidates,
+        )
 
 
 class _NliRuntime:
@@ -161,11 +395,15 @@ class _Runtime:
         mentions: tuple[tuple[str, str], ...],
         trigger_output: bytes,
         semantic_output: bytes | dict[str, bytes],
+        event_head_outputs: dict[str, bytes] | None = None,
+        route_outputs: dict[tuple[str, str], bytes] | None = None,
         frame_fit_output: bytes = b"fit: yes\nreason: The selected frame fits this event.\n",
     ) -> None:
         self.mentions = mentions
         self.trigger_output = trigger_output
         self.semantic_output = semantic_output
+        self.event_head_outputs = event_head_outputs
+        self.route_outputs = route_outputs or {}
         self.frame_fit_output = frame_fit_output
         self.requests: list[ModelTaskRequest] = []
         self._identity = ModelIdentitySnapshot(
@@ -225,8 +463,8 @@ class _Runtime:
                 "discourse_role: actor\n"
                 "support: s1\n"
             ).encode()
-        elif b"task: detect_event_trigger_occurrences" in rendered:
-            output = self.trigger_output
+        elif task.task_type.startswith("event_"):
+            output = self._event_route_output(task.task_type, rendered)
         elif b"task: select_one_event_frame" in rendered:
             output = self._frame_selection_output(rendered)
         elif b"task: challenge_one_event_frame_fit" in rendered:
@@ -256,6 +494,54 @@ class _Runtime:
                 output_token_count=len(output.decode().split()),
             ),
         )
+
+    def _event_route_output(self, task_type: str, rendered: bytes) -> bytes:
+        if not self.trigger_output:
+            return b""
+        lines = rendered.decode().splitlines()
+
+        def value_after(label: str) -> str:
+            index = lines.index(label)
+            return cast(str, json.loads(lines[index + 1]))
+
+        target_label = (
+            "Marked noun as a JSON string:"
+            if task_type.startswith("event_noun_")
+            else "Marked verb as a JSON string:"
+        )
+        target = value_after(target_label)
+        configured_route_output = self.route_outputs.get((task_type, target))
+        if configured_route_output is not None:
+            return configured_route_output
+        if self.event_head_outputs is not None:
+            configured = self.event_head_outputs.get(target)
+            if configured is not None and task_type in {
+                "event_verb_role",
+                "event_noun_inventory",
+            }:
+                return configured
+        if task_type not in {"event_verb_role", "event_noun_inventory"}:
+            return b"N"
+        source = value_after("Sentence as a JSON string:")
+        before_label = (
+            "Text before the marked verb as a JSON string:"
+            if target_label.startswith("Marked verb")
+            else "Text before the marked noun as a JSON string:"
+        )
+        before = value_after(before_label)
+        occurrence_id = next(
+            item.occurrence_id
+            for item in source_occurrences(source)
+            if (item.start, item.end) == (len(before), len(before) + len(target))
+        )
+        event_ids = {
+            line.removeprefix("event: ").split(" | ", maxsplit=1)[0]
+            for line in self.trigger_output.decode().splitlines()
+            if line.startswith("event: ")
+        }
+        if task_type == "event_verb_role":
+            return b"E" if occurrence_id in event_ids else b"S"
+        return b"E" if occurrence_id in event_ids else b"N"
 
     def _semantic_lines(self, rendered: bytes) -> tuple[str, ...]:
         if isinstance(self.semantic_output, bytes):
@@ -523,7 +809,7 @@ def test_source_bound_event_reaches_review_without_accepted_state() -> None:
     mentions = (("Dario Amodei", "person"), ("Stargate", "organization"))
     runtime = _Runtime(
         mentions=mentions,
-        trigger_output=b"event: o3 | o3 | criticism\n",
+        trigger_output=b"event: o3 | criticism\n",
         semantic_output=(
             b"frame: criticism\n"
             b"polarity: affirmed\n"
@@ -537,11 +823,50 @@ def test_source_bound_event_reaches_review_without_accepted_state() -> None:
         ),
     )
 
-    ledger, archive, hp4 = _run_to_triggers(text, mentions, runtime)
+    ledger, archive, hp4 = _run_to_triggers(
+        text,
+        mentions,
+        runtime,
+        linguistic_analyzer=_LinguisticAnalyzer({"criticized": UniversalPartOfSpeech.VERB}),
+    )
     hp6 = _run_semantics(ledger, archive, hp4, runtime)
     plan = build_hybrid_proposal_plan(hp6.preview.id, ledger, archive)
 
-    assert hp4.preview.terminal_status is HybridEventTriggerStatus.PARTIAL
+    trigger_request = next(
+        request
+        for request in runtime.requests
+        if request.task_type == "event_verb_role" and b'"criticized"' in request.rendered_input
+    )
+    trigger_settings = {
+        item.key: item.value for item in trigger_request.execution_spec.generation_parameters
+    }
+    assert trigger_settings["max_output_tokens"] == 2
+    assert b'Marked verb as a JSON string:\n"criticized"' in trigger_request.rendered_input
+    assert any(
+        request.task_type == "event_noun_inventory"
+        and b'Marked noun as a JSON string:\n"Stargate"' in request.rendered_input
+        for request in runtime.requests
+    )
+    candidate_trace = next(
+        item for item in hp4.preview.traces if item.stage_id == "event_head_candidate_selection"
+    )
+    stargate_disposition = next(
+        item
+        for item in cast(list[dict[str, JsonValue]], candidate_trace.output["dispositions"])
+        if item.get("occurrence_id") == "o4"
+    )
+    assert stargate_disposition["reason_code"] == "qanom_nominalization_candidate"
+    for internal_marker in (
+        b"o3",
+        b"occurrence_id",
+        b"linguistic_token",
+        b"dependency_relation",
+        b"event_type_label",
+        b"lemma=",
+        b"pos=",
+    ):
+        assert internal_marker not in trigger_request.rendered_input
+    assert hp4.preview.terminal_status is HybridEventTriggerStatus.COMPLETE
     assert [item.text for item in hp4.preview.triggers] == ["criticized"]
     assert len(hp6.preview.semantic_events) == 1
     assert hp6.preview.semantic_events[0].frame_id == "criticism"
@@ -628,38 +953,327 @@ def test_source_bound_event_reaches_review_without_accepted_state() -> None:
     assert not ledger.events
 
 
-def test_trigger_expression_is_source_mapped_while_auxiliary_head_is_rejected() -> None:
+def test_trigger_head_is_source_mapped_from_one_target_bound_answer() -> None:
     text = "Events\nHegseth has publicly rebuked Amodei."
     mentions = (("Hegseth", "person"), ("Amodei", "person"))
     runtime = _Runtime(
         mentions=mentions,
-        trigger_output=(b"event: o2-o4 | o4 | public_rebuke\nevent: o2-o4 | o2 | public_rebuke\n"),
+        trigger_output=b"event: o4 | public_rebuke\n",
+        semantic_output=b"",
+    )
+
+    _, _, hp4 = _run_to_triggers(
+        text,
+        mentions,
+        runtime,
+        linguistic_analyzer=_LinguisticAnalyzer({"rebuked": UniversalPartOfSpeech.VERB}),
+    )
+
+    assert [(item.text, item.head_text) for item in hp4.preview.triggers] == [
+        ("rebuked", "rebuked")
+    ]
+    judgment = next(
+        item
+        for item in hp4.preview.traces
+        if item.stage_id == "event_verb_role" and item.output["parsed_answer"] == "E"
+    )
+    source_binding = cast(dict[str, JsonValue], judgment.input["source_binding"])
+    candidate_binding = cast(dict[str, JsonValue], source_binding["candidate"])
+    assert candidate_binding["occurrence_id"] == "o4"
+    assert "o4" not in cast(str, judgment.input["model_visible_task"])
+
+
+def test_unrepresentable_diagnostic_lemma_cannot_erase_an_accepted_event() -> None:
+    text = "Events\n发生."
+    runtime = _Runtime(
+        mentions=(),
+        trigger_output=b"event: o1 | fixture\n",
+        semantic_output=b"",
+    )
+
+    _, _, hp4 = _run_to_triggers(text, (), runtime)
+
+    assert [(item.text, item.event_type_label) for item in hp4.preview.triggers] == [
+        ("发生", "event")
+    ]
+
+
+def test_each_candidate_gets_exactly_one_primary_routing_judgment() -> None:
+    text = "Events\nHegseth has publicly rebuked Amodei."
+    mentions = (("Hegseth", "person"), ("Amodei", "person"))
+    runtime = _Runtime(
+        mentions=mentions,
+        trigger_output=(b"event: o4 | public_rebuke\nevent: o4 | public_rebuke\n"),
         semantic_output=b"",
     )
 
     _, _, hp4 = _run_to_triggers(text, mentions, runtime)
 
     assert [(item.text, item.head_text) for item in hp4.preview.triggers] == [
-        ("has publicly rebuked", "rebuked")
+        ("rebuked", "rebuked")
     ]
-    assert any(item.endswith(":2:non_event_head") for item in hp4.preview.diagnostics)
+    candidates = next(
+        item for item in hp4.preview.traces if item.stage_id == "event_head_candidate_selection"
+    ).output["candidates"]
+    assert isinstance(candidates, list)
+    candidate_count = len(candidates)
+    primary = tuple(
+        item
+        for item in hp4.preview.traces
+        if item.stage_id in {"event_verb_role", "event_noun_inventory"}
+    )
+    assert len(primary) == candidate_count
+    assert {
+        cast(
+            str,
+            cast(
+                dict[str, JsonValue],
+                cast(dict[str, JsonValue], item.input["source_binding"])["candidate"],
+            )["occurrence_id"],
+        )
+        for item in primary
+    } == {
+        cast(str, cast(dict[str, JsonValue], item)["occurrence_id"])
+        for item in cast(list[object], candidates)
+        if isinstance(item, dict)
+    }
 
 
-def test_invalid_expression_cannot_reserve_a_head_and_erase_a_later_valid_line() -> None:
-    text = "Events\nHegseth has publicly rebuked Amodei."
-    mentions = (("Hegseth", "person"), ("Amodei", "person"))
+def test_support_verb_is_suppressed_for_accepted_direct_object_nominal_event() -> None:
+    text = "Events\nOfficials held discussions."
     runtime = _Runtime(
-        mentions=mentions,
-        trigger_output=(b"event: o2-o3 | o4 | public_rebuke\nevent: o2-o4 | o4 | public_rebuke\n"),
+        mentions=(),
+        trigger_output=b"event: o2 | held\nevent: o3 | discussions\n",
         semantic_output=b"",
     )
 
-    _, _, hp4 = _run_to_triggers(text, mentions, runtime)
+    _, _, hp4 = _run_to_triggers(
+        text,
+        (),
+        runtime,
+        linguistic_analyzer=_DirectDependencyLinguisticAnalyzer(),
+    )
 
-    assert [(item.text, item.head_text) for item in hp4.preview.triggers] == [
-        ("has publicly rebuked", "rebuked")
+    assert [(item.text, item.event_type_label) for item in hp4.preview.triggers] == [
+        ("discussions", "discussions")
     ]
-    assert any(item.endswith(":1:invalid_expression_range") for item in hp4.preview.diagnostics)
+    assert any(
+        request.task_type == "event_noun_inventory"
+        and b'Marked noun as a JSON string:\n"discussions"' in request.rendered_input
+        for request in runtime.requests
+    )
+    assert any(
+        request.task_type == "event_verb_role"
+        and b'Marked verb as a JSON string:\n"held"' in request.rendered_input
+        for request in runtime.requests
+    )
+    reconciliation = next(
+        item for item in hp4.preview.traces if item.stage_id == "event_trigger_reconciliation"
+    )
+    dispositions = cast(list[dict[str, JsonValue]], reconciliation.output["dispositions"])
+    assert {item["occurrence_id"]: item["reason_code"] for item in dispositions} == {
+        "o2": "support_verb_for_selected_nominal",
+        "o3": "support_verb_nominal_head",
+    }
+
+
+def test_uncorroborated_helper_answer_cannot_erase_a_source_bound_event() -> None:
+    text = "Events\nStates are prevented from regulating artificial intelligence."
+    runtime = _Runtime(
+        mentions=(),
+        trigger_output=b"event: o5 | regulate\n",
+        semantic_output=b"",
+        event_head_outputs={"regulating": b"H"},
+    )
+
+    _, _, hp4 = _run_to_triggers(
+        text,
+        (),
+        runtime,
+        linguistic_analyzer=_LinguisticAnalyzer({"regulating": UniversalPartOfSpeech.VERB}),
+    )
+
+    assert [item.text for item in hp4.preview.triggers] == ["regulating"]
+    reconciliation = next(
+        item for item in hp4.preview.traces if item.stage_id == "event_trigger_reconciliation"
+    )
+    disposition = next(
+        item
+        for item in cast(list[dict[str, JsonValue]], reconciliation.output["dispositions"])
+        if item["occurrence_id"] == "o5"
+    )
+    assert disposition["reason_code"] == "uncorroborated_model_helper"
+
+
+def test_bare_have_proform_is_not_promoted_to_an_event() -> None:
+    text = "Events\nIf it had, the policy would fail."
+    runtime = _Runtime(
+        mentions=(),
+        trigger_output=b"event: o3 | have\n",
+        semantic_output=b"",
+        event_head_outputs={"had": b"E"},
+    )
+
+    _, _, hp4 = _run_to_triggers(
+        text,
+        (),
+        runtime,
+        linguistic_analyzer=_LinguisticAnalyzer({"had": UniversalPartOfSpeech.VERB}),
+    )
+
+    assert all(item.text != "had" for item in hp4.preview.triggers)
+    reconciliation = next(
+        item for item in hp4.preview.traces if item.stage_id == "event_trigger_reconciliation"
+    )
+    disposition = next(
+        item
+        for item in cast(list[dict[str, JsonValue]], reconciliation.output["dispositions"])
+        if item["occurrence_id"] == "o3"
+    )
+    assert disposition["reason_code"] == "bare_have_proform_or_state"
+
+
+def test_unbounded_content_noun_does_not_displace_its_evaluation_event() -> None:
+    text = "Events\nReviewers saw regulation."
+    runtime = _Runtime(
+        mentions=(),
+        trigger_output=b"event: o2 | see\n",
+        semantic_output=b"",
+        route_outputs={
+            ("event_noun_inventory", "regulation"): b"N",
+            ("event_noun_dependent_kind", "regulation"): b"Y",
+            ("event_verb_role", "saw"): b"H",
+        },
+    )
+
+    _, _, hp4 = _run_to_triggers(
+        text,
+        (),
+        runtime,
+        linguistic_analyzer=_EvaluationDependencyLinguisticAnalyzer(),
+    )
+
+    assert [item.text for item in hp4.preview.triggers] == ["saw"]
+    reconciliation = next(
+        item for item in hp4.preview.traces if item.stage_id == "event_trigger_reconciliation"
+    )
+    dispositions = {
+        cast(str, item["occurrence_id"]): cast(str, item["reason_code"])
+        for item in cast(list[dict[str, JsonValue]], reconciliation.output["dispositions"])
+    }
+    assert dispositions["o2"] == "uncorroborated_model_helper"
+    assert dispositions["o3"] == "inventory_non_event_without_bounded_reference"
+    assert all(
+        request.task_type
+        not in {
+            "event_noun_dependent_kind",
+            "event_noun_governor_distinct",
+            "event_noun_reaction",
+        }
+        for request in runtime.requests
+    )
+
+
+def test_bounded_event_nominal_can_be_rescued_after_inventory_rejection() -> None:
+    text = "Events\nOfficials opposed the use."
+    runtime = _Runtime(
+        mentions=(),
+        trigger_output=b"event: o2 | oppose\nevent: o4 | use\n",
+        semantic_output=b"",
+        route_outputs={
+            ("event_noun_inventory", "use"): b"N",
+            ("event_noun_dependent_kind", "use"): b"N",
+            ("event_noun_governor_distinct", "use"): b"Y",
+            ("event_noun_reaction", "use"): b"Y",
+            ("event_verb_role", "opposed"): b"E",
+            ("event_verb_similarity", "opposed"): b"N",
+        },
+    )
+
+    _, _, hp4 = _run_to_triggers(
+        text,
+        (),
+        runtime,
+        linguistic_analyzer=_ParticularizedNominalLinguisticAnalyzer(),
+    )
+
+    assert [item.text for item in hp4.preview.triggers] == ["opposed", "use"]
+    reconciliation = next(
+        item for item in hp4.preview.traces if item.stage_id == "event_trigger_reconciliation"
+    )
+    dispositions = {
+        cast(str, item["occurrence_id"]): cast(str, item["reason_code"])
+        for item in cast(list[dict[str, JsonValue]], reconciliation.output["dispositions"])
+    }
+    assert dispositions["o4"] == "distinct_reaction_object_occurrence"
+
+
+def test_malformed_candidate_answer_does_not_erase_valid_sibling_event() -> None:
+    text = "Events\nOfficials criticized policy."
+    runtime = _Runtime(
+        mentions=(),
+        trigger_output=b"fixture-enabled",
+        semantic_output=b"",
+        event_head_outputs={
+            "Officials": b"N",
+            "criticized": b"E",
+            "policy": b"It might be an event.\n",
+        },
+    )
+
+    _, _, hp4 = _run_to_triggers(text, (), runtime)
+
+    assert [item.text for item in hp4.preview.triggers] == ["criticized"]
+    assert hp4.preview.terminal_status is HybridEventTriggerStatus.PARTIAL
+    reconciliation = next(
+        item for item in hp4.preview.traces if item.stage_id == "event_trigger_reconciliation"
+    )
+    assert reconciliation.output["unclassified_occurrence_ids"] == ["o3"]
+    failed = next(
+        item
+        for item in hp4.preview.traces
+        if item.stage_id == "event_noun_inventory"
+        and cast(
+            dict[str, JsonValue],
+            cast(dict[str, JsonValue], item.input["source_binding"])["candidate"],
+        )["occurrence_id"]
+        == "o3"
+    )
+    assert failed.status.value == "failed"
+    assert failed.output["raw_output_text"] == "It might be an event.\n"
+
+
+def test_malformed_nominal_answer_does_not_erase_valid_verb_sibling() -> None:
+    text = "Events\nOfficials held discussions."
+    runtime = _Runtime(
+        mentions=(),
+        trigger_output=b"event: o2 | held\nevent: o3 | discussions\n",
+        semantic_output=b"",
+        event_head_outputs={
+            "held": b"E",
+            "discussions": b"E because it names the occurrence.\n",
+        },
+    )
+
+    _, _, hp4 = _run_to_triggers(
+        text,
+        (),
+        runtime,
+        linguistic_analyzer=_DirectDependencyLinguisticAnalyzer(),
+    )
+
+    assert [item.text for item in hp4.preview.triggers] == ["held"]
+    assert hp4.preview.terminal_status is HybridEventTriggerStatus.PARTIAL
+    reconciliation = next(
+        item for item in hp4.preview.traces if item.stage_id == "event_trigger_reconciliation"
+    )
+    assert reconciliation.output["unclassified_occurrence_ids"] == ["o3"]
+    failed_inventory = next(
+        item
+        for item in hp4.preview.traces
+        if item.stage_id == "event_noun_inventory" and item.status.value == "failed"
+    )
+    assert failed_inventory.output["raw_output_text"] == ("E because it names the occurrence.\n")
 
 
 def test_selected_nearby_frame_must_pass_an_independent_fit_challenge() -> None:
@@ -667,7 +1281,7 @@ def test_selected_nearby_frame_must_pass_an_independent_fit_challenge() -> None:
     mentions = (("Dario Amodei", "person"), ("Skadden", "organization"))
     runtime = _Runtime(
         mentions=mentions,
-        trigger_output=b"event: o3-o4 | o3 | relationship_termination\n",
+        trigger_output=b"event: o3 | relationship_termination\n",
         semantic_output=(
             b"frame: criticism\n"
             b"polarity: affirmed\n"
@@ -705,7 +1319,7 @@ def test_bounded_publication_roles_retain_an_optional_outlet() -> None:
     mentions = (("Dario Amodei", "person"), ("The New York Times", "organization"))
     runtime = _Runtime(
         mentions=mentions,
-        trigger_output=b"event: o3 | o3 | publication\n",
+        trigger_output=b"event: o3 | publication\n",
         semantic_output=(
             b"frame: publication\n"
             b"polarity: affirmed\n"
@@ -741,7 +1355,7 @@ def test_characterization_role_keeps_the_complete_assessment_expression() -> Non
     mentions = (("Dario Amodei", "person"), ("Trump", "person"))
     runtime = _Runtime(
         mentions=mentions,
-        trigger_output=b"event: o3 | o3 | characterization\n",
+        trigger_output=b"event: o3 | characterization\n",
         semantic_output=(
             b"frame: characterization\n"
             b"polarity: affirmed\n"
@@ -774,7 +1388,7 @@ def test_meeting_roles_keep_coordinated_counterparties_and_purpose() -> None:
     mentions = (("Dario Amodei", "person"), ("Anthropic", "organization"))
     runtime = _Runtime(
         mentions=mentions,
-        trigger_output=b"event: o3 | o3 | meeting\n",
+        trigger_output=b"event: o3 | meeting\n",
         semantic_output=(
             b"frame: communication\n"
             b"polarity: affirmed\n"
@@ -805,7 +1419,7 @@ def test_trigger_discovery_retains_distinct_publication_and_characterization_eve
     mentions = (("Amodei", "person"), ("Trump", "person"))
     runtime = _Runtime(
         mentions=mentions,
-        trigger_output=(b"event: o2 | o2 | publication\nevent: o5 | o5 | characterization\n"),
+        trigger_output=(b"event: o2 | publication\nevent: o5 | characterization\n"),
         semantic_output=b"",
     )
 
@@ -817,19 +1431,96 @@ def test_trigger_discovery_retains_distinct_publication_and_characterization_eve
     ]
 
 
-def test_unknown_trigger_occurrence_does_not_erase_a_valid_selection() -> None:
+def test_internal_occurrence_ids_are_not_exposed_to_model_tasks() -> None:
     text = "Events\nDario Amodei criticized Stargate."
     mentions = (("Dario Amodei", "person"), ("Stargate", "organization"))
     runtime = _Runtime(
         mentions=mentions,
-        trigger_output=(b"event: o3 | o3 | criticism\nevent: o999 | o999 | criticism\n"),
+        trigger_output=(b"event: o3 | criticism\nevent: o999 | criticism\n"),
         semantic_output=b"",
     )
 
     _, _, hp4 = _run_to_triggers(text, mentions, runtime)
 
     assert [item.text for item in hp4.preview.triggers] == ["criticized"]
-    assert any(item.endswith(":2:unknown_occurrence_id") for item in hp4.preview.diagnostics)
+    assert all(
+        b"o999" not in request.rendered_input
+        for request in runtime.requests
+        if request.task_type.startswith("event_")
+    )
+
+
+def test_failed_trigger_task_returns_partial_evidence_instead_of_erasing_the_attempt() -> None:
+    text = "Events\nDario Amodei criticized Stargate."
+    mentions = (("Dario Amodei", "person"), ("Stargate", "organization"))
+    runtime = _Runtime(
+        mentions=mentions,
+        trigger_output=b"",
+        semantic_output=b"",
+    )
+
+    _, archive, hp4 = _run_to_triggers(text, mentions, runtime)
+
+    assert hp4.preview.terminal_status is HybridEventTriggerStatus.PARTIAL
+    assert hp4.preview.triggers == ()
+    candidates = next(
+        item for item in hp4.preview.traces if item.stage_id == "event_head_candidate_selection"
+    ).output["candidates"]
+    assert isinstance(candidates, list)
+    candidate_count = len(candidates)
+    assert len(hp4.preview.extraction_task_ids) == candidate_count
+    assert len(hp4.preview.model_run_ids) == candidate_count
+    assert all(archive.model_outputs[item] == b"" for item in hp4.preview.model_run_ids)
+    assert any(item.startswith("event_route_failed:") for item in hp4.preview.diagnostics)
+
+
+def test_zero_candidate_segment_completes_without_a_trigger_model_execution() -> None:
+    text = "Names\nDario Amodei and Anthropic."
+    mentions = (("Dario Amodei", "person"), ("Anthropic", "organization"))
+    runtime = _Runtime(mentions=mentions, trigger_output=b"", semantic_output=b"")
+
+    _, _, hp4 = _run_to_triggers(
+        text,
+        mentions,
+        runtime,
+        linguistic_analyzer=_NoCandidateLinguisticAnalyzer(),
+    )
+
+    assert hp4.preview.triggers == ()
+    assert hp4.preview.extraction_task_ids == ()
+    assert hp4.preview.model_run_ids == ()
+    assert not any(request.task_type.startswith("event_") for request in runtime.requests)
+    selection = next(
+        item for item in hp4.preview.traces if item.stage_id == "event_head_candidate_selection"
+    )
+    assert selection.output["candidates"] == []
+    reconciliation = next(
+        item for item in hp4.preview.traces if item.stage_id == "event_trigger_reconciliation"
+    )
+    assert reconciliation.output["dispositions"] == []
+
+
+def test_unavailable_linguistic_resource_stops_trigger_work_before_qwen() -> None:
+    text = "Events\nDario Amodei criticized Stargate."
+    runtime = _Runtime(
+        mentions=(("Dario Amodei", "person"), ("Stargate", "organization")),
+        trigger_output=b"event: o3 | criticism\n",
+        semantic_output=b"",
+    )
+
+    _, _, hp4 = _run_to_triggers(
+        text,
+        (("Dario Amodei", "person"), ("Stargate", "organization")),
+        runtime,
+        linguistic_analyzer=_UnavailableLinguisticAnalyzer(),
+    )
+
+    assert hp4.preview.terminal_status is HybridEventTriggerStatus.PARTIAL
+    assert hp4.preview.triggers == ()
+    assert any(
+        item.startswith("event_candidate_analysis_failed:") for item in hp4.preview.diagnostics
+    )
+    assert not any(request.task_type.startswith("event_") for request in runtime.requests)
 
 
 def test_composite_source_target_retains_contained_entity_reference() -> None:
@@ -837,7 +1528,7 @@ def test_composite_source_target_retains_contained_entity_reference() -> None:
     mentions = (("1789 Capital", "organization"), ("Anthropic", "organization"))
     runtime = _Runtime(
         mentions=mentions,
-        trigger_output=b"event: o3 | o3 | investment_abandonment\n",
+        trigger_output=b"event: o3 | investment_abandonment\n",
         semantic_output=(
             b"frame: investment_abandonment\n"
             b"polarity: affirmed\n"
@@ -939,7 +1630,7 @@ def test_two_governed_events_in_one_source_segment_retain_distinct_semantics() -
     )
     runtime = _Runtime(
         mentions=mentions,
-        trigger_output=(b"event: o3 | o3 | caused_change\nevent: o16 | o16 | abandon_investment\n"),
+        trigger_output=(b"event: o3 | caused_change\nevent: o16 | abandon_investment\n"),
         semantic_output={
             "caused": (
                 b"frame: causation\n"
@@ -985,7 +1676,7 @@ def test_composite_source_target_excludes_a_partially_contained_entity() -> None
     mentions = (("1789 Capital", "organization"), ("Anthropic investment", "organization"))
     runtime = _Runtime(
         mentions=mentions,
-        trigger_output=b"event: o3 | o3 | investment_abandonment\n",
+        trigger_output=b"event: o3 | investment_abandonment\n",
         semantic_output=(
             b"frame: investment_abandonment\n"
             b"polarity: affirmed\n"
@@ -1009,7 +1700,7 @@ def test_invalid_optional_line_does_not_erase_a_valid_event() -> None:
     mentions = (("Dario Amodei", "person"), ("Stargate", "organization"))
     runtime = _Runtime(
         mentions=mentions,
-        trigger_output=b"event: o3 | o3 | criticism\n",
+        trigger_output=b"event: o3 | criticism\n",
         semantic_output=(
             b"frame: criticism\n"
             b"polarity: affirmed\n"
@@ -1036,7 +1727,7 @@ def test_invalid_required_envelope_produces_a_typed_event_gap() -> None:
     mentions = (("Dario Amodei", "person"), ("Stargate", "organization"))
     runtime = _Runtime(
         mentions=mentions,
-        trigger_output=b"event: o3 | o3 | criticism\n",
+        trigger_output=b"event: o3 | criticism\n",
         semantic_output=(
             b"frame: criticism\n"
             b"polarity: affirmed\n"
@@ -1061,7 +1752,7 @@ def test_relationship_termination_outside_the_profile_remains_a_typed_ontology_g
     mentions = (("Dario Amodei", "person"), ("Skadden", "organization"))
     runtime = _Runtime(
         mentions=mentions,
-        trigger_output=b"event: o3-o4 | o3 | relationship_termination\n",
+        trigger_output=b"event: o3 | relationship_termination\n",
         semantic_output=(
             b"frame: unresolved\nreason: No governed frame represents relationship termination.\n"
         ),
@@ -1090,7 +1781,7 @@ def test_governed_task_exposes_resolved_reference_metadata_without_transferring_
     mentions = (("The New York Times", "organization"), ("NYT", "organization"))
     runtime = _Runtime(
         mentions=mentions,
-        trigger_output=b"event: o6 | o6 | publication\n",
+        trigger_output=b"event: o6 | publication\n",
         semantic_output=(
             b"frame: publication\n"
             b"polarity: affirmed\n"
@@ -1125,6 +1816,8 @@ def _run_to_triggers(
     text: str,
     mentions: tuple[tuple[str, str], ...],
     runtime: _Runtime,
+    *,
+    linguistic_analyzer: LinguisticAnalyzer | None = None,
 ) -> tuple[_Ledger, _Archive, HybridEventTriggerResult]:
     ledger = _Ledger(text)
     archive = _Archive()
@@ -1179,7 +1872,18 @@ def _run_to_triggers(
         model_runtime=runtime,
         model_run_id_factory=_RunIds("trigger"),
         tokenizer=_Tokenizer(),
-        trigger_prompt_bytes=b"Detect every explicit event trigger.",
+        prompts=HybridEventTriggerPrompts(
+            verb_role=b"Classify one marked verb's semantic role.",
+            verb_similarity=b"Judge whether one marked verb expresses a standing similarity.",
+            noun_inventory=b"Classify one marked noun against an event inventory.",
+            noun_dependent_kind=b"Judge whether one noun is an artifact, content, or plan.",
+            noun_media_artifact=b"Judge whether one noun is a communication artifact.",
+            noun_governor_distinct=b"Judge whether one noun is distinct from its governor.",
+            noun_reaction=b"Judge whether one noun is a reaction to its governor.",
+            noun_standing=b"Judge whether one noun expresses a standing state.",
+        ),
+        linguistic_analyzer=linguistic_analyzer or _LinguisticAnalyzer(),
+        nominalization_analyzer=_NominalizationAnalyzer(),
     )
     return ledger, archive, hp4
 

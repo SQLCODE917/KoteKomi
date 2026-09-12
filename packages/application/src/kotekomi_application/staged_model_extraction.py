@@ -62,8 +62,9 @@ from kotekomi_application.hybrid_event_semantics_model_output import (
     SemanticSupportModelJudgment,
 )
 from kotekomi_application.hybrid_event_trigger_model_output import (
-    EventTriggerAbstention,
-    EventTriggerProposalBatch,
+    BinarySemanticAnswer,
+    EventHeadAnswer,
+    EventVerbRoleAnswer,
 )
 from kotekomi_application.hybrid_mention_boundary_adjudication import (
     HYBRID_MENTION_BOUNDARY_ADJUDICATION_SCHEMA_ID,
@@ -570,7 +571,9 @@ class BoundedExtractionOutcome:
     mention_occurrence_selections: MentionOccurrenceSelectionBatch | None = None
     boundary_candidate_judgments: BoundaryCandidateJudgmentBatch | None = None
     mention_interpretation_draft: MentionInterpretationDraft | None = None
-    event_trigger_proposals: EventTriggerProposalBatch | None = None
+    event_head_answer: EventHeadAnswer | None = None
+    event_verb_role_answer: EventVerbRoleAnswer | None = None
+    binary_semantic_answer: BinarySemanticAnswer | None = None
     event_frame_selection: EventFrameSelection | None = None
     event_frame_fit_decision: EventFrameFitDecision | None = None
     event_presentation_selection: EventPresentationSelection | None = None
@@ -581,6 +584,7 @@ class BoundedExtractionOutcome:
     standing_fact_qualification: StandingFactQualificationOutput | None = None
     semantic_reference_challenge: SemanticReferenceChallengeSelection | None = None
     semantic_reference_candidate_validation: SemanticReferenceCandidateValidation | None = None
+    raw_model_output: bytes | None = None
 
 
 @dataclass(frozen=True)
@@ -662,8 +666,9 @@ type ParsedModelOutput = (
     | MentionProposalAbstention
     | BoundaryCandidateJudgmentBatch
     | MentionInterpretationDraft
-    | EventTriggerProposalBatch
-    | EventTriggerAbstention
+    | EventHeadAnswer
+    | EventVerbRoleAnswer
+    | BinarySemanticAnswer
     | EventFrameSelection
     | EventFrameFitDecision
     | EventPresentationParseResult
@@ -859,7 +864,7 @@ def run_bounded_extraction(
             error=exc,
         )
         ledger_repository.save_model_run(run)
-        return BoundedExtractionOutcome(task, run, None)
+        return BoundedExtractionOutcome(task, run, None, raw_model_output=response.raw_output)
     try:
         _validate_execution_receipt(
             response.execution_receipt,
@@ -874,7 +879,6 @@ def run_bounded_extraction(
                 OrganizationMentionBatchAbstention,
                 OrganizationQualificationRejection,
                 MentionProposalAbstention,
-                EventTriggerAbstention,
                 StandingFactAbstention,
             ),
         ):
@@ -1086,7 +1090,7 @@ def run_bounded_extraction(
                 None,
                 mention_interpretation_draft=parsed,
             )
-        if isinstance(parsed, EventTriggerProposalBatch):
+        if isinstance(parsed, EventHeadAnswer):
             run = _model_run(
                 extraction_input,
                 manifest,
@@ -1100,9 +1104,8 @@ def run_bounded_extraction(
                 output_digest=output_digest,
                 execution_receipt=response.execution_receipt,
                 outcome_metadata={
-                    "contract": "hybrid_event_trigger_text_v4",
-                    "proposal_count": len(parsed.proposals),
-                    "rejected_line_count": len(parsed.rejections),
+                    "contract": "event_head_judgment_text_v2",
+                    "answer": parsed.value.value,
                 },
             )
             ledger_repository.save_model_run(run)
@@ -1110,7 +1113,60 @@ def run_bounded_extraction(
                 task,
                 run,
                 None,
-                event_trigger_proposals=parsed,
+                event_head_answer=parsed,
+                raw_model_output=response.raw_output,
+            )
+        if isinstance(parsed, EventVerbRoleAnswer):
+            run = _model_run(
+                extraction_input,
+                manifest,
+                task,
+                model_run_id,
+                ModelRunStatus.SUCCEEDED,
+                started_at=started_at,
+                completed_at=completed_at,
+                execution_diagnostics=diagnostics,
+                input_admission=admission,
+                output_digest=output_digest,
+                execution_receipt=response.execution_receipt,
+                outcome_metadata={
+                    "contract": "event_verb_role_text_v1",
+                    "answer": parsed.value.value,
+                },
+            )
+            ledger_repository.save_model_run(run)
+            return BoundedExtractionOutcome(
+                task,
+                run,
+                None,
+                event_verb_role_answer=parsed,
+                raw_model_output=response.raw_output,
+            )
+        if isinstance(parsed, BinarySemanticAnswer):
+            run = _model_run(
+                extraction_input,
+                manifest,
+                task,
+                model_run_id,
+                ModelRunStatus.SUCCEEDED,
+                started_at=started_at,
+                completed_at=completed_at,
+                execution_diagnostics=diagnostics,
+                input_admission=admission,
+                output_digest=output_digest,
+                execution_receipt=response.execution_receipt,
+                outcome_metadata={
+                    "contract": extraction_input.execution_spec.schema_id,
+                    "answer": parsed.value.value,
+                },
+            )
+            ledger_repository.save_model_run(run)
+            return BoundedExtractionOutcome(
+                task,
+                run,
+                None,
+                binary_semantic_answer=parsed,
+                raw_model_output=response.raw_output,
             )
         if isinstance(parsed, EventFrameSelection):
             run = _model_run(
@@ -1374,7 +1430,7 @@ def run_bounded_extraction(
             error=exc,
         )
         ledger_repository.save_model_run(run)
-        return BoundedExtractionOutcome(task, run, None)
+        return BoundedExtractionOutcome(task, run, None, raw_model_output=response.raw_output)
 
     run = _model_run(
         extraction_input,
@@ -2393,13 +2449,10 @@ def _abstention_outcome_metadata(
     | OrganizationMentionBatchAbstention
     | OrganizationQualificationRejection
     | MentionProposalAbstention
-    | EventTriggerAbstention
     | StandingFactAbstention,
 ) -> dict[str, JsonValue]:
     if isinstance(output, StandingFactAbstention):
         return {"contract": "hybrid_standing_fact_text_v2", "proposal_count": 0}
-    if isinstance(output, EventTriggerAbstention):
-        return {"contract": "hybrid_event_trigger_text_v4", "proposal_count": 0}
     if isinstance(output, MentionProposalAbstention):
         return {
             "contract": "hybrid_mention_occurrence_selection_text_v1",

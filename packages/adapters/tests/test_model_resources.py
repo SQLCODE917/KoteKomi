@@ -10,13 +10,17 @@ from kotekomi_adapters.model_resources import (
     GlinerModelResourceAdapter,
     ModelResourceInstallationError,
     NliDebertaModelResourceAdapter,
+    QANomModelResourceAdapter,
     RefinedModelResourceAdapter,
+    StanzaEnglishModelResourceAdapter,
     fcoref_model_path,
     fcoref_python_path,
     gliner_model_path,
     nli_model_path,
+    qanom_model_path,
     refined_data_path,
     refined_python_path,
+    stanza_model_path,
 )
 from kotekomi_application import ModelResourceInstallDisposition, ModelResourceStatus
 
@@ -289,6 +293,147 @@ def _tree_digest(filename: str, payload: bytes) -> str:
     digest.update(hashlib.sha256(payload).hexdigest().encode("ascii"))
     digest.update(b"\n")
     return digest.hexdigest()
+
+
+def test_stanza_install_is_pinned_reused_and_repaired(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    model_payload = b"stanza-model"
+    resources_payload = b'{"en":{}}'
+    snapshot = tmp_path / "snapshot"
+    (snapshot / "models" / "tokenize").mkdir(parents=True)
+    (snapshot / "models" / "tokenize" / "ewt.pt").write_bytes(model_payload)
+    lock = tmp_path / "stanza-lock.json"
+    lock.write_text(
+        json.dumps(
+            {
+                "files": [
+                    {
+                        "repository": "owner/stanza",
+                        "revision": "revision",
+                        "source_path": "models/tokenize/ewt.pt",
+                        "target_path": "en/tokenize/ewt.pt",
+                        "sha256": _digest(model_payload),
+                    }
+                ],
+                "package_version": "1.14.0",
+                "resource_id": "stanza_english_v1",
+                "resources_json_sha256": _digest(resources_payload),
+                "resources_json_url": "https://example.invalid/resources.json",
+                "schema_version": "stanza_model_lock_v1",
+            }
+        ),
+        encoding="utf-8",
+    )
+    snapshot_calls: list[str] = []
+    smoke_calls: list[tuple[Path, str]] = []
+
+    def download_snapshot(**kwargs: object) -> str:
+        snapshot_calls.append(str(kwargs["repo_id"]))
+        (snapshot / "models" / "tokenize" / "ewt.pt").write_bytes(model_payload)
+        return str(snapshot)
+
+    def download_file(url: str, target: Path) -> None:
+        assert url == "https://example.invalid/resources.json"
+        target.write_bytes(resources_payload)
+
+    def package_version(package: str) -> str:
+        return "1.14.0" if package == "stanza" else "unexpected"
+
+    monkeypatch.setattr("kotekomi_adapters.model_resources.version", package_version)
+    adapter = StanzaEnglishModelResourceAdapter(
+        downloader=download_snapshot,
+        file_downloader=download_file,
+        smoke=lambda path, identity: smoke_calls.append((path, identity)),
+        lock_path=lock,
+    )
+    root = (tmp_path / "resources").resolve()
+
+    installed = adapter.install(root, repair=False)
+    reused = adapter.install(root, repair=False)
+
+    assert installed.disposition is ModelResourceInstallDisposition.INSTALLED
+    assert reused.disposition is ModelResourceInstallDisposition.REUSED
+    assert snapshot_calls == ["owner/stanza"]
+    assert len(smoke_calls) == 1
+    assert smoke_calls[0][0].parent == root
+    assert smoke_calls[0][0].name.startswith(".stanza_english_v1-")
+    assert adapter.inspect(root).status is ModelResourceStatus.READY
+    assert (stanza_model_path(root) / "en" / "tokenize" / "ewt.pt").read_bytes() == model_payload
+
+    (stanza_model_path(root) / "en" / "tokenize" / "ewt.pt").write_bytes(b"changed")
+    assert adapter.inspect(root).status is ModelResourceStatus.IDENTITY_MISMATCH
+    repaired = adapter.install(root, repair=True)
+
+    assert repaired.disposition is ModelResourceInstallDisposition.REPAIRED
+    assert snapshot_calls == ["owner/stanza", "owner/stanza"]
+    assert adapter.inspect(root).status is ModelResourceStatus.READY
+
+
+def test_qanom_install_pins_model_and_lexical_resources(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    model_payload = b"qanom-model"
+    lexical_payload = b"decision_N%fixture\n"
+    snapshot = tmp_path / "snapshot"
+    snapshot.mkdir()
+    (snapshot / "model.bin").write_bytes(model_payload)
+    lock = tmp_path / "qanom-lock.json"
+    lock.write_text(
+        json.dumps(
+            {
+                "files": [
+                    {
+                        "repository": "owner/qanom",
+                        "revision": "revision",
+                        "source_path": "model.bin",
+                        "target_path": "model/model.bin",
+                        "sha256": _digest(model_payload),
+                    }
+                ],
+                "lexical_files": [
+                    {
+                        "download_url": "https://example.invalid/catvar",
+                        "target_path": "lexical/catvar21.signed",
+                        "sha256": _digest(lexical_payload),
+                    }
+                ],
+                "resource_id": "qanom_nominalization_v1",
+                "schema_version": "qanom_model_lock_v1",
+                "transformers_version": "5.8.1",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    def package_version(package: str) -> str:
+        return "5.8.1" if package == "transformers" else "unexpected"
+
+    def download_snapshot(**_kwargs: object) -> str:
+        return str(snapshot)
+
+    def download_file(_url: str, target: Path) -> None:
+        target.write_bytes(lexical_payload)
+
+    monkeypatch.setattr(
+        "kotekomi_adapters.model_resources.version",
+        package_version,
+    )
+    adapter = QANomModelResourceAdapter(
+        downloader=download_snapshot,
+        file_downloader=download_file,
+        smoke=lambda _model, _lexical, _identity: None,
+        lock_path=lock,
+    )
+    root = (tmp_path / "resources").resolve()
+
+    result = adapter.install(root, repair=False)
+
+    assert result.disposition is ModelResourceInstallDisposition.INSTALLED
+    assert adapter.inspect(root).status is ModelResourceStatus.READY
+    assert (qanom_model_path(root) / "model.bin").read_bytes() == model_payload
 
 
 def test_refined_install_manages_runtime_resources_and_reuses_them(tmp_path: Path) -> None:

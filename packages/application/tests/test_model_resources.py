@@ -50,8 +50,12 @@ def test_readiness_is_complete_ordered_and_requires_every_resource(tmp_path: Pat
     refined = _ResourceAdapter(REQUIRED_MODEL_RESOURCE_IDS[2], ModelResourceStatus.MISSING)
     gliner = _ResourceAdapter(REQUIRED_MODEL_RESOURCE_IDS[0], ModelResourceStatus.READY)
     fcoref = _ResourceAdapter(ModelResourceId.FCOREF_V1, ModelResourceStatus.MISSING)
+    stanza = _ResourceAdapter(ModelResourceId.STANZA_ENGLISH_V1, ModelResourceStatus.READY)
+    qanom = _ResourceAdapter(ModelResourceId.QANOM_NOMINALIZATION_V1, ModelResourceStatus.READY)
 
-    report = inspect_required_model_resources(tmp_path.resolve(), (refined, fcoref, gliner, nli))
+    report = inspect_required_model_resources(
+        tmp_path.resolve(), (refined, fcoref, qanom, stanza, gliner, nli)
+    )
 
     assert tuple(item.resource_id for item in report.resources) == MANAGED_MODEL_RESOURCE_IDS
     assert report.ready is False
@@ -64,10 +68,12 @@ def test_installation_selects_resources_in_canonical_order(tmp_path: Path) -> No
     nli = _ResourceAdapter(REQUIRED_MODEL_RESOURCE_IDS[1], ModelResourceStatus.MISSING)
     refined = _ResourceAdapter(REQUIRED_MODEL_RESOURCE_IDS[2], ModelResourceStatus.MISSING)
     fcoref = _ResourceAdapter(ModelResourceId.FCOREF_V1, ModelResourceStatus.MISSING)
+    stanza = _ResourceAdapter(ModelResourceId.STANZA_ENGLISH_V1, ModelResourceStatus.MISSING)
+    qanom = _ResourceAdapter(ModelResourceId.QANOM_NOMINALIZATION_V1, ModelResourceStatus.MISSING)
 
     results = install_model_resources(
         tmp_path.resolve(),
-        (refined, fcoref, gliner, nli),
+        (refined, fcoref, qanom, stanza, gliner, nli),
         selected=(ModelResourceId.REFINED_WIKIPEDIA_V1,),
         repair=True,
     )

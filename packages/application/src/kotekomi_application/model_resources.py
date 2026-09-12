@@ -13,6 +13,8 @@ class ModelResourceId(StrEnum):
     GLINER_MENTION_PROPOSER_V1 = "gliner_mention_proposer_v1"
     NLI_DEBERTA_V3_BASE_V1 = "nli_deberta_v3_base_v1"
     REFINED_WIKIPEDIA_V1 = "refined_wikipedia_v1"
+    STANZA_ENGLISH_V1 = "stanza_english_v1"
+    QANOM_NOMINALIZATION_V1 = "qanom_nominalization_v1"
 
 
 REQUIRED_MODEL_RESOURCE_IDS = (
@@ -20,6 +22,8 @@ REQUIRED_MODEL_RESOURCE_IDS = (
     ModelResourceId.NLI_DEBERTA_V3_BASE_V1,
     ModelResourceId.REFINED_WIKIPEDIA_V1,
     ModelResourceId.FCOREF_V1,
+    ModelResourceId.STANZA_ENGLISH_V1,
+    ModelResourceId.QANOM_NOMINALIZATION_V1,
 )
 
 MANAGED_MODEL_RESOURCE_IDS = REQUIRED_MODEL_RESOURCE_IDS

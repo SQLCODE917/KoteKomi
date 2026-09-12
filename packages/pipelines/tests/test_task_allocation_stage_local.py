@@ -14,6 +14,7 @@ from kotekomi_application import (
     MentionProposal,
     Referentiality,
     build_hybrid_extraction_preview,
+    derive_source_copy_view,
 )
 from kotekomi_application.extraction_stage_trace import (
     ExtractionStageStatus,
@@ -33,6 +34,7 @@ from kotekomi_application.hybrid_mention_interpretation import (
     reconcile_mention_boundaries,
     resolve_mention_interpretation,
 )
+from kotekomi_application.source_occurrences import source_occurrences
 from kotekomi_pipelines.task_allocation_stage_local import (
     evaluate_stage_local_boundary_contract,
     evaluate_stage_local_case,
@@ -42,6 +44,7 @@ from kotekomi_pipelines.task_allocation_stage_local import (
 ROOT = Path(__file__).resolve().parents[3]
 SPLIT = ROOT / "docs" / "hsq-stage-local-split-v2.json"
 HISTORICAL_SPLIT = ROOT / "docs" / "hsq-stage-local-split-v1.json"
+TRIGGER_GOLD = ROOT / "docs" / "hsq-event-trigger-gold-v1.json"
 
 
 def test_stage_local_split_loads_twenty_development_and_twenty_validation_items() -> None:
@@ -226,19 +229,78 @@ representation_policy_version = "deposited-source-v1"
 ''',
         encoding="utf-8",
     )
-    run_root = tmp_path / "validation"
+    trigger_gold_value = json.loads(TRIGGER_GOLD.read_bytes())
+    trigger_gold_value["review_status"] = "approved"
+    trigger_gold_path = tmp_path / "approved-trigger-gold.json"
+    trigger_gold_path.write_text(
+        json.dumps(trigger_gold_value, ensure_ascii=False, sort_keys=True),
+        encoding="utf-8",
+    )
+    upstream_root = tmp_path / "upstream-validation"
     runner = ROOT / "scripts" / "run_hsq7_stage_local.py"
-    common = ["--phase", "validation", "--run-root", str(run_root)]
+    upstream_common = [
+        "--phase",
+        "validation",
+        "--run-root",
+        str(upstream_root),
+        "--trigger-gold",
+        str(trigger_gold_path),
+    ]
     diagnostics = ["AMO-08", "ANT-01", "ANT-14", "ANT-16"]
 
     _run_stage_local(
         runner,
         "prepare",
-        *common,
+        *upstream_common,
         *(argument for item_id in diagnostics for argument in ("--item-id", item_id)),
     )
-    _run_stage_local(runner, "run-mentions", *common, "--config", str(config_path))
-    _run_stage_local(runner, "run-references", *common, "--config", str(config_path))
+    _run_stage_local(runner, "run-mentions", *upstream_common, "--config", str(config_path))
+    _run_stage_local(
+        runner,
+        "run-references",
+        *upstream_common,
+        "--config",
+        str(config_path),
+    )
+    _run_stage_local(runner, "run-triggers", *upstream_common, "--config", str(config_path))
+    _run_stage_local(runner, "finalize", *upstream_common)
+
+    legacy_reference = next(iter(sorted((upstream_root / "references").glob("*.json"))))
+    legacy_value = json.loads(legacy_reference.read_bytes())
+    legacy_value["status"] = "not_applicable"
+    legacy_value["preview"] = None
+    legacy_value["model_executions"] = []
+    legacy_reference.write_bytes(_canonical_json(legacy_value))
+    upstream_manifest_path = upstream_root / "manifest.json"
+    upstream_manifest = json.loads(upstream_manifest_path.read_bytes())
+    legacy_relative = legacy_reference.relative_to(upstream_root).as_posix()
+    next(item for item in upstream_manifest["files"] if item["path"] == legacy_relative)[
+        "sha256"
+    ] = hashlib.sha256(legacy_reference.read_bytes()).hexdigest()
+    upstream_manifest_path.write_bytes(_canonical_json(upstream_manifest))
+    (upstream_root / "FINALIZED").write_text(
+        hashlib.sha256(upstream_manifest_path.read_bytes()).hexdigest(),
+        encoding="utf-8",
+    )
+
+    run_root = tmp_path / "validation"
+    common = [
+        "--phase",
+        "validation",
+        "--run-root",
+        str(run_root),
+        "--trigger-gold",
+        str(trigger_gold_path),
+    ]
+    _run_stage_local(
+        runner,
+        "prepare",
+        *common,
+        "--upstream-run-root",
+        str(upstream_root),
+        *(argument for item_id in diagnostics for argument in ("--item-id", item_id)),
+    )
+    _run_stage_local(runner, "run-triggers", *common, "--config", str(config_path))
     _run_stage_local(runner, "finalize", *common)
 
     metadata = json.loads((run_root / "run.json").read_bytes())
@@ -248,9 +310,22 @@ representation_policy_version = "deposited-source-v1"
     assert report["item_count"] == 4
     assert [item["item_id"] for item in report["cases"]] == sorted(diagnostics)
     assert experiment["changed_hypotheses"] == [
-        "h17_complete_catalog_contrastive_fallback",
+        "stanza_and_qanom_propose_source_bound_linguistic_candidates",
+        "narrow_semantic_routes_outperform_one_general_event_prompt",
+        "deterministic_reconciliation_owns_event_selection",
     ]
-    assert experiment["parent_experiment_id"] == ("hsq7_stage_local_adaptive_reference_v9")
+    assert experiment["parent_experiment_id"] == ("hsq7_stage_local_event_self_contribution_v25")
+    upstream_evidence = json.loads((run_root / "upstream-evidence.json").read_bytes())
+    assert upstream_evidence["source_segment_count"] == 4
+    assert upstream_evidence["synthesized_reference_source_text_sha256s"] == [legacy_reference.stem]
+    assert len(upstream_evidence["records"]) == 8
+    assert all(
+        (run_root / "mentions" / f"{digest}.json").is_file()
+        for digest in {
+            item["source_text_sha256"]
+            for item in map(json.loads, (run_root / "inputs.jsonl").read_text().splitlines())
+        }
+    )
     assert report["schema_version"] == "hsq_stage_local_phase_report_v2"
     assert report["boundary_contract"]["contract_complete"] is True
     assert report["boundary_contract"]["unresolved_candidate_count"] == 0
@@ -263,6 +338,45 @@ representation_policy_version = "deposited-source-v1"
     assert experiment["schema_sha256"]
     assert experiment["policy_sha256"]
     assert experiment["evaluator_correction_sha256"]
+    trigger_report = json.loads((run_root / "trigger-report.json").read_bytes())
+    assert trigger_report["schema_version"] == "hsq_event_trigger_stage_report_v7"
+    assert trigger_report["segment_count"] == 4
+    assert trigger_report["model_execution_count"] == trigger_report["event_head_candidate_count"]
+    assert (
+        trigger_report["bounded_semantic_judgment_count"]
+        == trigger_report["event_head_candidate_count"]
+    )
+    assert trigger_report["failed_model_judgment_count"] == 0
+    assert trigger_report["event_head_candidate_count"] == trigger_report["source_occurrence_count"]
+    assert (
+        trigger_report["classified_candidate_count"] == trigger_report["event_head_candidate_count"]
+    )
+    assert trigger_report["unclassified_candidate_count"] == 0
+    assert trigger_report["gold_candidate_miss_count"] == 0
+    assert trigger_report["proposed_change_count"] == 0
+    assert trigger_report["accepted_ledger_change_count"] == 0
+    trigger_path = next((run_root / "triggers").glob("*.json"))
+    trigger_record = json.loads(trigger_path.read_bytes())
+    assert trigger_record["exact_input"]
+    model_executions = trigger_record["model_executions"]
+    exact_model_input = model_executions[0]["exact_model_input"]
+    source_copy = derive_source_copy_view(trigger_record["exact_input"])
+    assert source_copy.text in exact_model_input
+    assert any(
+        label in exact_model_input
+        for label in (
+            "Marked verb as a JSON string:",
+            "Marked noun as a JSON string:",
+        )
+    )
+    for occurrence in source_occurrences(source_copy.text):
+        assert f"{occurrence.occurrence_id} | {occurrence.text}" not in exact_model_input
+    assert "lemma=" not in exact_model_input
+    assert "pos=" not in exact_model_input
+    assert all(item["raw_output"] == "N" for item in model_executions)
+    assert trigger_record["preview"]["traces"]
+    manifest = json.loads((run_root / "manifest.json").read_bytes())
+    assert "upstream-evidence.json" in {item["path"] for item in manifest["files"]}
     mention_path = next((run_root / "mentions").glob("*.json"))
     mention_path.write_bytes(mention_path.read_bytes() + b" ")
 
@@ -276,6 +390,43 @@ representation_policy_version = "deposited-source-v1"
 
     assert rerun.returncode != 0
     assert "changed after finalization" in rerun.stderr
+
+    upstream_state_path = upstream_root / "state" / f"{legacy_reference.stem}.json"
+    upstream_state = json.loads(upstream_state_path.read_bytes())
+    upstream_mention = json.loads((upstream_root / "mentions" / legacy_reference.name).read_bytes())
+    pinned_manifest_id = upstream_mention["preview"]["context_manifest_id"]
+    pinned_manifest = next(
+        item for item in upstream_state["context_manifests"] if item["id"] == pinned_manifest_id
+    )
+    pinned_manifest["payload"]["integrity"]["representation_id"] = "rep_tampered"
+    upstream_state_path.write_bytes(_canonical_json(upstream_state))
+    tampered_root = tmp_path / "tampered-upstream-result"
+    tampered_common = [
+        "--phase",
+        "validation",
+        "--run-root",
+        str(tampered_root),
+        "--trigger-gold",
+        str(trigger_gold_path),
+    ]
+    tampered = subprocess.run(
+        [
+            sys.executable,
+            str(runner),
+            "prepare",
+            *tampered_common,
+            "--upstream-run-root",
+            str(upstream_root),
+            *(argument for item_id in diagnostics for argument in ("--item-id", item_id)),
+        ],
+        cwd=ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert tampered.returncode != 0
+    assert "ContextManifest" in tampered.stderr
 
 
 def test_all_candidate_contract_exposes_collateral_unresolved_candidate() -> None:
@@ -414,3 +565,7 @@ def _run_stage_local(runner: Path, command: str, *arguments: str) -> None:
         capture_output=True,
         text=True,
     )
+
+
+def _canonical_json(value: object) -> bytes:
+    return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()
