@@ -2873,9 +2873,7 @@ def submit_hybrid_event_changes(
     except (OSError, sqlite3.Error, ValueError) as error:
         print(f"HP-7 proposal submission failed: {error}", file=sys.stderr)
         return 1
-    disposition_counts = {"proposed": 0, "held": 0}
-    for decision in result.plan.decisions:
-        disposition_counts[decision.disposition.value] += 1
+    disposition_counts = {"proposed": len(result.plan.decisions)}
     record_type_counts: dict[str, int] = {}
     for change in result.plan.proposed_changes:
         record_type = change.proposed_json.get("record_type")
@@ -2898,7 +2896,6 @@ def submit_hybrid_event_changes(
         print(f"Plan: {result.plan.id}")
         print("Status: completed")
         print(f"Events proposed: {disposition_counts['proposed']}")
-        print(f"Events held: {disposition_counts['held']}")
         print(f"Pending proposals: {len(result.plan.proposed_changes)}")
         for record_type, count in sorted(record_type_counts.items()):
             print(f"{record_type} proposals: {count}")

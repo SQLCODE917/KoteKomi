@@ -976,7 +976,7 @@ def test_hybrid_proposal_command_accepts_a_valid_empty_plan(
         representation_id="rep_fixture",
         paragraph_node_id="nod_fixture",
         provenance_activity_id="prv_" + "2" * 24,
-        diagnostics=("unmaterialized_event_subject:esd_fixture:unmapped_frame:scg_fixture",),
+        diagnostics=("no_source_grounded_events",),
     )
 
     class FakeArchive:
@@ -1017,7 +1017,7 @@ def test_hybrid_proposal_command_accepts_a_valid_empty_plan(
         assert json.loads(output) == {
             "archive_path": f"extraction/proposal-plans/{plan.id}.json",
             "diagnostics": list(plan.diagnostics),
-            "disposition_counts": {"held": 0, "proposed": 0},
+            "disposition_counts": {"proposed": 0},
             "parent_preview_id": plan.parent_preview_id,
             "plan_id": plan.id,
             "proposal_counts": {},
@@ -1028,7 +1028,6 @@ def test_hybrid_proposal_command_accepts_a_valid_empty_plan(
     else:
         assert f"Plan: {plan.id}" in output
         assert "Events proposed: 0" in output
-        assert "Events held: 0" in output
         assert "Pending proposals: 0" in output
         assert plan.diagnostics[0] in output
         assert "Next: kotekomi review next" in output

@@ -1,0 +1,618 @@
+{
+  "schema_version": "hsq_source_grounded_event_gold_v1",
+  "catalog_id": "hsq-source-grounded-event-gold-v1",
+  "review_status": "approved",
+  "trigger_gold_path": "docs/hsq-event-trigger-gold-v1.json",
+  "trigger_gold_sha256": "acfe198a646067743270cb7c81dcb0ec0765b01f540077f76cd40c5a39a009fd",
+  "items": [
+    {
+      "event_id": "TGE-001",
+      "phase": "validation",
+      "source_text_sha256": "377c75c2999935fb1984a2c1a6761a73798539536409742f95cd527cc40f3eb5",
+      "expected_review_outcome": "approved",
+      "rationale": "The approved Trigger Gold item identifies a bounded source-grounded Event."
+    },
+    {
+      "event_id": "TGE-002",
+      "phase": "development",
+      "source_text_sha256": "7438981c5f67a586e62824f899dde376931333bc69728b43ccd04c167d71b7cf",
+      "expected_review_outcome": "approved",
+      "rationale": "The approved Trigger Gold item identifies a bounded source-grounded Event."
+    },
+    {
+      "event_id": "TGE-003",
+      "phase": "development",
+      "source_text_sha256": "7438981c5f67a586e62824f899dde376931333bc69728b43ccd04c167d71b7cf",
+      "expected_review_outcome": "approved",
+      "rationale": "The approved Trigger Gold item identifies a bounded source-grounded Event."
+    },
+    {
+      "event_id": "TGE-004",
+      "phase": "development",
+      "source_text_sha256": "7438981c5f67a586e62824f899dde376931333bc69728b43ccd04c167d71b7cf",
+      "expected_review_outcome": "approved",
+      "rationale": "The approved Trigger Gold item identifies a bounded source-grounded Event."
+    },
+    {
+      "event_id": "TGE-005",
+      "phase": "development",
+      "source_text_sha256": "7438981c5f67a586e62824f899dde376931333bc69728b43ccd04c167d71b7cf",
+      "expected_review_outcome": "approved",
+      "rationale": "The approved Trigger Gold item identifies a bounded source-grounded Event."
+    },
+    {
+      "event_id": "TGE-006",
+      "phase": "development",
+      "source_text_sha256": "7438981c5f67a586e62824f899dde376931333bc69728b43ccd04c167d71b7cf",
+      "expected_review_outcome": "approved",
+      "rationale": "The approved Trigger Gold item identifies a bounded source-grounded Event."
+    },
+    {
+      "event_id": "TGE-007",
+      "phase": "validation",
+      "source_text_sha256": "a7afdc5c867500f7adc72616351ed81d3926940ece27ec64007b9e90ca43965c",
+      "expected_review_outcome": "approved",
+      "rationale": "The approved Trigger Gold item identifies a bounded source-grounded Event."
+    },
+    {
+      "event_id": "TGE-008",
+      "phase": "validation",
+      "source_text_sha256": "a7afdc5c867500f7adc72616351ed81d3926940ece27ec64007b9e90ca43965c",
+      "expected_review_outcome": "approved",
+      "rationale": "The approved Trigger Gold item identifies a bounded source-grounded Event."
+    },
+    {
+      "event_id": "TGE-009",
+      "phase": "validation",
+      "source_text_sha256": "a7afdc5c867500f7adc72616351ed81d3926940ece27ec64007b9e90ca43965c",
+      "expected_review_outcome": "approved",
+      "rationale": "The approved Trigger Gold item identifies a bounded source-grounded Event."
+    },
+    {
+      "event_id": "TGE-010",
+      "phase": "validation",
+      "source_text_sha256": "5367faa6a71b436e486f3f7f29f6d219464cef2cfea476e05efeca768c6c4bda",
+      "expected_review_outcome": "approved",
+      "rationale": "The approved Trigger Gold item identifies a bounded source-grounded Event."
+    },
+    {
+      "event_id": "TGE-011",
+      "phase": "validation",
+      "source_text_sha256": "5367faa6a71b436e486f3f7f29f6d219464cef2cfea476e05efeca768c6c4bda",
+      "expected_review_outcome": "approved",
+      "rationale": "The approved Trigger Gold item identifies a bounded source-grounded Event."
+    },
+    {
+      "event_id": "TGE-012",
+      "phase": "validation",
+      "source_text_sha256": "5367faa6a71b436e486f3f7f29f6d219464cef2cfea476e05efeca768c6c4bda",
+      "expected_review_outcome": "approved",
+      "rationale": "The approved Trigger Gold item identifies a bounded source-grounded Event."
+    },
+    {
+      "event_id": "TGE-013",
+      "phase": "validation",
+      "source_text_sha256": "5367faa6a71b436e486f3f7f29f6d219464cef2cfea476e05efeca768c6c4bda",
+      "expected_review_outcome": "approved",
+      "rationale": "The approved Trigger Gold item identifies a bounded source-grounded Event."
+    },
+    {
+      "event_id": "TGE-014",
+      "phase": "development",
+      "source_text_sha256": "65e99ef7fd505316782a1e5fa3156ba863c7988567df9082e1e243240c145c21",
+      "expected_review_outcome": "approved",
+      "rationale": "The approved Trigger Gold item identifies a bounded source-grounded Event."
+    },
+    {
+      "event_id": "TGE-015",
+      "phase": "development",
+      "source_text_sha256": "65e99ef7fd505316782a1e5fa3156ba863c7988567df9082e1e243240c145c21",
+      "expected_review_outcome": "approved",
+      "rationale": "The approved Trigger Gold item identifies a bounded source-grounded Event."
+    },
+    {
+      "event_id": "TGE-016",
+      "phase": "development",
+      "source_text_sha256": "65e99ef7fd505316782a1e5fa3156ba863c7988567df9082e1e243240c145c21",
+      "expected_review_outcome": "approved",
+      "rationale": "The approved Trigger Gold item identifies a bounded source-grounded Event."
+    },
+    {
+      "event_id": "TGE-017",
+      "phase": "development",
+      "source_text_sha256": "65e99ef7fd505316782a1e5fa3156ba863c7988567df9082e1e243240c145c21",
+      "expected_review_outcome": "approved",
+      "rationale": "The approved Trigger Gold item identifies a bounded source-grounded Event."
+    },
+    {
+      "event_id": "TGE-018",
+      "phase": "development",
+      "source_text_sha256": "3ae4294fe559d09dd035e7dfaf027607fdc9ac1ec53848b3f789926357d8f9e7",
+      "expected_review_outcome": "approved",
+      "rationale": "The approved Trigger Gold item identifies a bounded source-grounded Event."
+    },
+    {
+      "event_id": "TGE-019",
+      "phase": "development",
+      "source_text_sha256": "3ae4294fe559d09dd035e7dfaf027607fdc9ac1ec53848b3f789926357d8f9e7",
+      "expected_review_outcome": "approved",
+      "rationale": "The approved Trigger Gold item identifies a bounded source-grounded Event."
+    },
+    {
+      "event_id": "TGE-020",
+      "phase": "development",
+      "source_text_sha256": "3ae4294fe559d09dd035e7dfaf027607fdc9ac1ec53848b3f789926357d8f9e7",
+      "expected_review_outcome": "approved",
+      "rationale": "The approved Trigger Gold item identifies a bounded source-grounded Event."
+    },
+    {
+      "event_id": "TGE-021",
+      "phase": "development",
+      "source_text_sha256": "3ae4294fe559d09dd035e7dfaf027607fdc9ac1ec53848b3f789926357d8f9e7",
+      "expected_review_outcome": "approved",
+      "rationale": "The approved Trigger Gold item identifies a bounded source-grounded Event."
+    },
+    {
+      "event_id": "TGE-022",
+      "phase": "development",
+      "source_text_sha256": "3ae4294fe559d09dd035e7dfaf027607fdc9ac1ec53848b3f789926357d8f9e7",
+      "expected_review_outcome": "approved",
+      "rationale": "The approved Trigger Gold item identifies a bounded source-grounded Event."
+    },
+    {
+      "event_id": "TGE-023",
+      "phase": "development",
+      "source_text_sha256": "3ae4294fe559d09dd035e7dfaf027607fdc9ac1ec53848b3f789926357d8f9e7",
+      "expected_review_outcome": "approved",
+      "rationale": "The approved Trigger Gold item identifies a bounded source-grounded Event."
+    },
+    {
+      "event_id": "TGE-024",
+      "phase": "development",
+      "source_text_sha256": "c458619bad7a713e3b1208d9f0ba0b966c0afb9d6434fafaa78a529c53513d53",
+      "expected_review_outcome": "approved",
+      "rationale": "The approved Trigger Gold item identifies a bounded source-grounded Event."
+    },
+    {
+      "event_id": "TGE-025",
+      "phase": "development",
+      "source_text_sha256": "c458619bad7a713e3b1208d9f0ba0b966c0afb9d6434fafaa78a529c53513d53",
+      "expected_review_outcome": "approved",
+      "rationale": "The approved Trigger Gold item identifies a bounded source-grounded Event."
+    },
+    {
+      "event_id": "TGE-026",
+      "phase": "development",
+      "source_text_sha256": "c458619bad7a713e3b1208d9f0ba0b966c0afb9d6434fafaa78a529c53513d53",
+      "expected_review_outcome": "approved",
+      "rationale": "The approved Trigger Gold item identifies a bounded source-grounded Event."
+    },
+    {
+      "event_id": "TGE-027",
+      "phase": "development",
+      "source_text_sha256": "c458619bad7a713e3b1208d9f0ba0b966c0afb9d6434fafaa78a529c53513d53",
+      "expected_review_outcome": "approved",
+      "rationale": "The approved Trigger Gold item identifies a bounded source-grounded Event."
+    },
+    {
+      "event_id": "TGE-028",
+      "phase": "development",
+      "source_text_sha256": "c458619bad7a713e3b1208d9f0ba0b966c0afb9d6434fafaa78a529c53513d53",
+      "expected_review_outcome": "approved",
+      "rationale": "The approved Trigger Gold item identifies a bounded source-grounded Event."
+    },
+    {
+      "event_id": "TGE-029",
+      "phase": "validation",
+      "source_text_sha256": "b78a7b8cc2459f848a8ba9080e214f39a99488eb9b0b95b9c190d3399b1c8502",
+      "expected_review_outcome": "approved",
+      "rationale": "The approved Trigger Gold item identifies a bounded source-grounded Event."
+    },
+    {
+      "event_id": "TGE-030",
+      "phase": "validation",
+      "source_text_sha256": "b78a7b8cc2459f848a8ba9080e214f39a99488eb9b0b95b9c190d3399b1c8502",
+      "expected_review_outcome": "approved",
+      "rationale": "The approved Trigger Gold item identifies a bounded source-grounded Event."
+    },
+    {
+      "event_id": "TGE-031",
+      "phase": "validation",
+      "source_text_sha256": "b78a7b8cc2459f848a8ba9080e214f39a99488eb9b0b95b9c190d3399b1c8502",
+      "expected_review_outcome": "approved",
+      "rationale": "The approved Trigger Gold item identifies a bounded source-grounded Event."
+    },
+    {
+      "event_id": "TGE-032",
+      "phase": "development",
+      "source_text_sha256": "8e6fa21942d6c331be219af6520aa74f433c202523af298a286b78556d08ac39",
+      "expected_review_outcome": "approved",
+      "rationale": "The approved Trigger Gold item identifies a bounded source-grounded Event."
+    },
+    {
+      "event_id": "TGE-033",
+      "phase": "development",
+      "source_text_sha256": "8e6fa21942d6c331be219af6520aa74f433c202523af298a286b78556d08ac39",
+      "expected_review_outcome": "rejected",
+      "rationale": "The source uses targeting as a compound modifier for systems and does not assert a bounded targeting Event."
+    },
+    {
+      "event_id": "TGE-034",
+      "phase": "development",
+      "source_text_sha256": "8e6fa21942d6c331be219af6520aa74f433c202523af298a286b78556d08ac39",
+      "expected_review_outcome": "approved",
+      "rationale": "The approved Trigger Gold item identifies a bounded source-grounded Event."
+    },
+    {
+      "event_id": "TGE-035",
+      "phase": "development",
+      "source_text_sha256": "8e6fa21942d6c331be219af6520aa74f433c202523af298a286b78556d08ac39",
+      "expected_review_outcome": "approved",
+      "rationale": "The approved Trigger Gold item identifies a bounded source-grounded Event."
+    },
+    {
+      "event_id": "TGE-036",
+      "phase": "development",
+      "source_text_sha256": "8e6fa21942d6c331be219af6520aa74f433c202523af298a286b78556d08ac39",
+      "expected_review_outcome": "approved",
+      "rationale": "The approved Trigger Gold item identifies a bounded source-grounded Event."
+    },
+    {
+      "event_id": "TGE-037",
+      "phase": "development",
+      "source_text_sha256": "8e6fa21942d6c331be219af6520aa74f433c202523af298a286b78556d08ac39",
+      "expected_review_outcome": "approved",
+      "rationale": "The approved Trigger Gold item identifies a bounded source-grounded Event."
+    },
+    {
+      "event_id": "TGE-038",
+      "phase": "validation",
+      "source_text_sha256": "de4ff8014b9a1ef33983388b241f72c9b699eb9c2a4b333cc5dbaba0bc375811",
+      "expected_review_outcome": "approved",
+      "rationale": "The approved Trigger Gold item identifies a bounded source-grounded Event."
+    },
+    {
+      "event_id": "TGE-039",
+      "phase": "validation",
+      "source_text_sha256": "b248b61105363bdaeafb06b4656d26a32fe8bdce6a0a9860ce130ae53ec28233",
+      "expected_review_outcome": "approved",
+      "rationale": "The approved Trigger Gold item identifies a bounded source-grounded Event."
+    },
+    {
+      "event_id": "TGE-040",
+      "phase": "validation",
+      "source_text_sha256": "b248b61105363bdaeafb06b4656d26a32fe8bdce6a0a9860ce130ae53ec28233",
+      "expected_review_outcome": "approved",
+      "rationale": "The approved Trigger Gold item identifies a bounded source-grounded Event."
+    },
+    {
+      "event_id": "TGE-041",
+      "phase": "validation",
+      "source_text_sha256": "86ba43dd74f414301968e6caca8a1aba6ddd61895d412266d69c158eea552116",
+      "expected_review_outcome": "approved",
+      "rationale": "The approved Trigger Gold item identifies a bounded source-grounded Event."
+    },
+    {
+      "event_id": "TGE-042",
+      "phase": "development",
+      "source_text_sha256": "02900fb841706fa9467502a58cd97d95a1f5efbce2bda1968df3882ce6f84a98",
+      "expected_review_outcome": "approved",
+      "rationale": "The approved Trigger Gold item identifies a bounded source-grounded Event."
+    },
+    {
+      "event_id": "TGE-043",
+      "phase": "development",
+      "source_text_sha256": "366526aee085c2fd687932f907504c4b35fc07f3e5cfb85e463549ccb35ee097",
+      "expected_review_outcome": "approved",
+      "rationale": "The approved Trigger Gold item identifies a bounded source-grounded Event."
+    },
+    {
+      "event_id": "TGE-044",
+      "phase": "development",
+      "source_text_sha256": "366526aee085c2fd687932f907504c4b35fc07f3e5cfb85e463549ccb35ee097",
+      "expected_review_outcome": "approved",
+      "rationale": "The approved Trigger Gold item identifies a bounded source-grounded Event."
+    },
+    {
+      "event_id": "TGE-045",
+      "phase": "development",
+      "source_text_sha256": "366526aee085c2fd687932f907504c4b35fc07f3e5cfb85e463549ccb35ee097",
+      "expected_review_outcome": "approved",
+      "rationale": "The approved Trigger Gold item identifies a bounded source-grounded Event."
+    },
+    {
+      "event_id": "TGE-046",
+      "phase": "development",
+      "source_text_sha256": "366526aee085c2fd687932f907504c4b35fc07f3e5cfb85e463549ccb35ee097",
+      "expected_review_outcome": "approved",
+      "rationale": "The approved Trigger Gold item identifies a bounded source-grounded Event."
+    },
+    {
+      "event_id": "TGE-047",
+      "phase": "development",
+      "source_text_sha256": "366526aee085c2fd687932f907504c4b35fc07f3e5cfb85e463549ccb35ee097",
+      "expected_review_outcome": "approved",
+      "rationale": "The approved Trigger Gold item identifies a bounded source-grounded Event."
+    },
+    {
+      "event_id": "TGE-048",
+      "phase": "development",
+      "source_text_sha256": "366526aee085c2fd687932f907504c4b35fc07f3e5cfb85e463549ccb35ee097",
+      "expected_review_outcome": "approved",
+      "rationale": "The approved Trigger Gold item identifies a bounded source-grounded Event."
+    },
+    {
+      "event_id": "TGE-049",
+      "phase": "development",
+      "source_text_sha256": "366526aee085c2fd687932f907504c4b35fc07f3e5cfb85e463549ccb35ee097",
+      "expected_review_outcome": "approved",
+      "rationale": "The approved Trigger Gold item identifies a bounded source-grounded Event."
+    },
+    {
+      "event_id": "TGE-050",
+      "phase": "development",
+      "source_text_sha256": "366526aee085c2fd687932f907504c4b35fc07f3e5cfb85e463549ccb35ee097",
+      "expected_review_outcome": "approved",
+      "rationale": "The approved Trigger Gold item identifies a bounded source-grounded Event."
+    },
+    {
+      "event_id": "TGE-051",
+      "phase": "validation",
+      "source_text_sha256": "0b00e02937fd49d1209d1bf86322e0f8835f2465b396f3170a63deb3199576fd",
+      "expected_review_outcome": "approved",
+      "rationale": "The approved Trigger Gold item identifies a bounded source-grounded Event."
+    },
+    {
+      "event_id": "TGE-052",
+      "phase": "validation",
+      "source_text_sha256": "0b00e02937fd49d1209d1bf86322e0f8835f2465b396f3170a63deb3199576fd",
+      "expected_review_outcome": "approved",
+      "rationale": "The approved Trigger Gold item identifies a bounded source-grounded Event."
+    },
+    {
+      "event_id": "TGE-053",
+      "phase": "validation",
+      "source_text_sha256": "afddb03eb96d930f71aa0fd3bbedc15708b79c7cf29f8f5704db61050b897347",
+      "expected_review_outcome": "approved",
+      "rationale": "The approved Trigger Gold item identifies a bounded source-grounded Event."
+    },
+    {
+      "event_id": "TGE-054",
+      "phase": "development",
+      "source_text_sha256": "0795adfe1efe5e6d52d303ab445dcd467fb1990979a64e565027f47e006de630",
+      "expected_review_outcome": "approved",
+      "rationale": "The approved Trigger Gold item identifies a bounded source-grounded Event."
+    },
+    {
+      "event_id": "TGE-055",
+      "phase": "development",
+      "source_text_sha256": "0795adfe1efe5e6d52d303ab445dcd467fb1990979a64e565027f47e006de630",
+      "expected_review_outcome": "approved",
+      "rationale": "The approved Trigger Gold item identifies a bounded source-grounded Event."
+    },
+    {
+      "event_id": "TGE-056",
+      "phase": "validation",
+      "source_text_sha256": "a33aa0419db9172a14b903112cf0565b69cb1951ccc1be26453f8e3fca95803b",
+      "expected_review_outcome": "approved",
+      "rationale": "The approved Trigger Gold item identifies a bounded source-grounded Event."
+    },
+    {
+      "event_id": "TGE-057",
+      "phase": "validation",
+      "source_text_sha256": "a33aa0419db9172a14b903112cf0565b69cb1951ccc1be26453f8e3fca95803b",
+      "expected_review_outcome": "approved",
+      "rationale": "The approved Trigger Gold item identifies a bounded source-grounded Event."
+    },
+    {
+      "event_id": "TGE-058",
+      "phase": "validation",
+      "source_text_sha256": "a33aa0419db9172a14b903112cf0565b69cb1951ccc1be26453f8e3fca95803b",
+      "expected_review_outcome": "approved",
+      "rationale": "The approved Trigger Gold item identifies a bounded source-grounded Event."
+    },
+    {
+      "event_id": "TGE-059",
+      "phase": "development",
+      "source_text_sha256": "78a7c69be071a4600ec23a3a1270861d9c91f4eda858bf69b9e135326923de06",
+      "expected_review_outcome": "approved",
+      "rationale": "The approved Trigger Gold item identifies a bounded source-grounded Event."
+    },
+    {
+      "event_id": "TGE-060",
+      "phase": "validation",
+      "source_text_sha256": "30dc8490626091a79e85a0cec763e420f09a5405580df4126821f361a61d226b",
+      "expected_review_outcome": "approved",
+      "rationale": "The approved Trigger Gold item identifies a bounded source-grounded Event."
+    },
+    {
+      "event_id": "TGE-061",
+      "phase": "validation",
+      "source_text_sha256": "30dc8490626091a79e85a0cec763e420f09a5405580df4126821f361a61d226b",
+      "expected_review_outcome": "approved",
+      "rationale": "The approved Trigger Gold item identifies a bounded source-grounded Event."
+    },
+    {
+      "event_id": "TGE-062",
+      "phase": "validation",
+      "source_text_sha256": "30dc8490626091a79e85a0cec763e420f09a5405580df4126821f361a61d226b",
+      "expected_review_outcome": "approved",
+      "rationale": "The approved Trigger Gold item identifies a bounded source-grounded Event."
+    },
+    {
+      "event_id": "TGE-063",
+      "phase": "validation",
+      "source_text_sha256": "30dc8490626091a79e85a0cec763e420f09a5405580df4126821f361a61d226b",
+      "expected_review_outcome": "approved",
+      "rationale": "The approved Trigger Gold item identifies a bounded source-grounded Event."
+    },
+    {
+      "event_id": "TGE-064",
+      "phase": "validation",
+      "source_text_sha256": "30dc8490626091a79e85a0cec763e420f09a5405580df4126821f361a61d226b",
+      "expected_review_outcome": "approved",
+      "rationale": "The approved Trigger Gold item identifies a bounded source-grounded Event."
+    },
+    {
+      "event_id": "TGE-065",
+      "phase": "validation",
+      "source_text_sha256": "30dc8490626091a79e85a0cec763e420f09a5405580df4126821f361a61d226b",
+      "expected_review_outcome": "approved",
+      "rationale": "The approved Trigger Gold item identifies a bounded source-grounded Event."
+    },
+    {
+      "event_id": "TGE-066",
+      "phase": "validation",
+      "source_text_sha256": "dc22fc7f0613d4a3528f233e81fe016bf787816324c591b5db499f3a1ca4983f",
+      "expected_review_outcome": "approved",
+      "rationale": "The approved Trigger Gold item identifies a bounded source-grounded Event."
+    },
+    {
+      "event_id": "TGE-067",
+      "phase": "validation",
+      "source_text_sha256": "dc22fc7f0613d4a3528f233e81fe016bf787816324c591b5db499f3a1ca4983f",
+      "expected_review_outcome": "approved",
+      "rationale": "The approved Trigger Gold item identifies a bounded source-grounded Event."
+    },
+    {
+      "event_id": "TGE-068",
+      "phase": "validation",
+      "source_text_sha256": "dc22fc7f0613d4a3528f233e81fe016bf787816324c591b5db499f3a1ca4983f",
+      "expected_review_outcome": "approved",
+      "rationale": "The approved Trigger Gold item identifies a bounded source-grounded Event."
+    },
+    {
+      "event_id": "TGE-069",
+      "phase": "validation",
+      "source_text_sha256": "e60354f5fbd6baab378096fe495f8248d381de0a2f80026e74d663158a37a9b5",
+      "expected_review_outcome": "approved",
+      "rationale": "The approved Trigger Gold item identifies a bounded source-grounded Event."
+    },
+    {
+      "event_id": "TGE-070",
+      "phase": "validation",
+      "source_text_sha256": "e60354f5fbd6baab378096fe495f8248d381de0a2f80026e74d663158a37a9b5",
+      "expected_review_outcome": "approved",
+      "rationale": "The approved Trigger Gold item identifies a bounded source-grounded Event."
+    },
+    {
+      "event_id": "TGE-071",
+      "phase": "validation",
+      "source_text_sha256": "e60354f5fbd6baab378096fe495f8248d381de0a2f80026e74d663158a37a9b5",
+      "expected_review_outcome": "approved",
+      "rationale": "The approved Trigger Gold item identifies a bounded source-grounded Event."
+    },
+    {
+      "event_id": "TGE-072",
+      "phase": "development",
+      "source_text_sha256": "0beeec6c1c754c1fb161806b020436eebc3c62d3f70c5ec4275e0aa384852276",
+      "expected_review_outcome": "approved",
+      "rationale": "The approved Trigger Gold item identifies a bounded source-grounded Event."
+    },
+    {
+      "event_id": "TGE-073",
+      "phase": "development",
+      "source_text_sha256": "0beeec6c1c754c1fb161806b020436eebc3c62d3f70c5ec4275e0aa384852276",
+      "expected_review_outcome": "approved",
+      "rationale": "The approved Trigger Gold item identifies a bounded source-grounded Event."
+    },
+    {
+      "event_id": "TGE-074",
+      "phase": "development",
+      "source_text_sha256": "0fb6e397a4b659ea94ce6c9c0a8644405720b53c12f92e7ccdffd02e7439b37c",
+      "expected_review_outcome": "approved",
+      "rationale": "The approved Trigger Gold item identifies a bounded source-grounded Event."
+    },
+    {
+      "event_id": "TGE-075",
+      "phase": "development",
+      "source_text_sha256": "0fb6e397a4b659ea94ce6c9c0a8644405720b53c12f92e7ccdffd02e7439b37c",
+      "expected_review_outcome": "approved",
+      "rationale": "The approved Trigger Gold item identifies a bounded source-grounded Event."
+    },
+    {
+      "event_id": "TGE-076",
+      "phase": "development",
+      "source_text_sha256": "0fb6e397a4b659ea94ce6c9c0a8644405720b53c12f92e7ccdffd02e7439b37c",
+      "expected_review_outcome": "approved",
+      "rationale": "The approved Trigger Gold item identifies a bounded source-grounded Event."
+    },
+    {
+      "event_id": "TGE-077",
+      "phase": "development",
+      "source_text_sha256": "0fb6e397a4b659ea94ce6c9c0a8644405720b53c12f92e7ccdffd02e7439b37c",
+      "expected_review_outcome": "approved",
+      "rationale": "The approved Trigger Gold item identifies a bounded source-grounded Event."
+    },
+    {
+      "event_id": "TGE-078",
+      "phase": "development",
+      "source_text_sha256": "0fb6e397a4b659ea94ce6c9c0a8644405720b53c12f92e7ccdffd02e7439b37c",
+      "expected_review_outcome": "approved",
+      "rationale": "The approved Trigger Gold item identifies a bounded source-grounded Event."
+    },
+    {
+      "event_id": "TGE-079",
+      "phase": "development",
+      "source_text_sha256": "0fb6e397a4b659ea94ce6c9c0a8644405720b53c12f92e7ccdffd02e7439b37c",
+      "expected_review_outcome": "approved",
+      "rationale": "The approved Trigger Gold item identifies a bounded source-grounded Event."
+    },
+    {
+      "event_id": "TGE-080",
+      "phase": "development",
+      "source_text_sha256": "692f5648a137080916fa77a1dbf310444ee2bc7d1f60e152bbb474f9bb985606",
+      "expected_review_outcome": "approved",
+      "rationale": "The approved Trigger Gold item identifies a bounded source-grounded Event."
+    },
+    {
+      "event_id": "TGE-081",
+      "phase": "development",
+      "source_text_sha256": "692f5648a137080916fa77a1dbf310444ee2bc7d1f60e152bbb474f9bb985606",
+      "expected_review_outcome": "approved",
+      "rationale": "The approved Trigger Gold item identifies a bounded source-grounded Event."
+    },
+    {
+      "event_id": "TGE-082",
+      "phase": "development",
+      "source_text_sha256": "692f5648a137080916fa77a1dbf310444ee2bc7d1f60e152bbb474f9bb985606",
+      "expected_review_outcome": "approved",
+      "rationale": "The approved Trigger Gold item identifies a bounded source-grounded Event."
+    },
+    {
+      "event_id": "TGE-083",
+      "phase": "development",
+      "source_text_sha256": "692f5648a137080916fa77a1dbf310444ee2bc7d1f60e152bbb474f9bb985606",
+      "expected_review_outcome": "approved",
+      "rationale": "The approved Trigger Gold item identifies a bounded source-grounded Event."
+    },
+    {
+      "event_id": "TGE-084",
+      "phase": "validation",
+      "source_text_sha256": "1b3c5c61b91f86034d7dbf1d9fda8fb75128fa5c8ca85ba35e4d32a0e7e04863",
+      "expected_review_outcome": "approved",
+      "rationale": "The approved Trigger Gold item identifies a bounded source-grounded Event."
+    },
+    {
+      "event_id": "TGE-085",
+      "phase": "validation",
+      "source_text_sha256": "1b3c5c61b91f86034d7dbf1d9fda8fb75128fa5c8ca85ba35e4d32a0e7e04863",
+      "expected_review_outcome": "approved",
+      "rationale": "The approved Trigger Gold item identifies a bounded source-grounded Event."
+    },
+    {
+      "event_id": "TGE-086",
+      "phase": "validation",
+      "source_text_sha256": "1b3c5c61b91f86034d7dbf1d9fda8fb75128fa5c8ca85ba35e4d32a0e7e04863",
+      "expected_review_outcome": "approved",
+      "rationale": "The approved Trigger Gold item identifies a bounded source-grounded Event."
+    },
+    {
+      "event_id": "TGE-087",
+      "phase": "validation",
+      "source_text_sha256": "1b3c5c61b91f86034d7dbf1d9fda8fb75128fa5c8ca85ba35e4d32a0e7e04863",
+      "expected_review_outcome": "approved",
+      "rationale": "The approved Trigger Gold item identifies a bounded source-grounded Event."
+    }
+  ]
+}

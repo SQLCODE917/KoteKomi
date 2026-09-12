@@ -1,6 +1,6 @@
 # TDD: Bounded Semantic Task Allocation
 
-- Status: In implementation; mention, reference, and Event trigger boundaries verified
+- Status: In implementation; source-grounded Event boundary implemented and canonically verified
 - Deliverable ID: HSQ-7
 - Program: [Hybrid Semantic Quality Program](2026-09-06-hybrid-semantic-quality-program.md)
 - Depends on: [Source-Bound Governed Event Extraction](2026-09-07-source-bound-governed-event-extraction.md)
@@ -11,6 +11,7 @@
 - Corrected stage-local split: [Mention and Reference Evaluation Split v2](hsq-stage-local-split-v2.json)
 - Evaluator corrections: [Stage-Local Evaluator Corrections](hsq-stage-local-evaluator-corrections-v1.json)
 - Event trigger boundary: [SourceOccurrence to Event Trigger Boundary](2026-09-10-source-occurrence-event-trigger-boundary.md)
+- Source-grounded Event boundary: [Source-Grounded Event Boundary](2026-09-12-source-grounded-event-boundary.md)
 
 ## Delivery Status
 
@@ -27,9 +28,14 @@ Implemented and verified:
 The September 10 v10 replay passed thirty-nine of forty development-plus-validation Gold items. AMO-12
 remains the one intended explicit specialist/Qwen ambiguity.
 
+Implemented with focused verification:
+
+- exact EventTriggerDraft to EventMention and pending Event proposal;
+- optional governed classification that cannot control Event admission.
+
 Still pending stage-local implementation and evaluation:
 
-- governed Event frames onward through Candidate Wiki evaluation.
+- Semantic Argument Assignments onward through Candidate Wiki evaluation.
 
 ## Implemented Front-Half Boundary
 
@@ -91,10 +97,6 @@ These boundaries produced three reviewable Dario Amodei items from twenty source
 
 **Event trigger decision** means KoteKomi's final typed decision for one EventHeadCandidate.
 
-**Frame selection task** means one model decision among supplied governed frame IDs for one selected source occurrence.
-
-**Frame-fit challenge task** means one binary model decision about whether a selected governed frame accurately represents one Event trigger expression.
-
 **Role selection task** means one model decision for one supplied role of one already selected frame.
 
 **Event presentation task** means one model decision over polarity, modality, and attribution for one already constructed event meaning.
@@ -115,11 +117,11 @@ complete expression.
 2. Stanza and QANom propose source-bound EventHeadCandidate records.
 3. Qwen answers one finite Semantic Route for one supplied candidate at a time.
 4. KoteKomi reconciles those answers and constructs exact EventTriggerDraft records.
-5. Qwen selects one governed frame or `unresolved` for one trigger.
-6. A separate binary task confirms that the selected frame accurately represents the trigger expression.
-7. Qwen selects one target for one governed role at a time with sibling-role context.
-8. Qwen classifies event presentation without selecting the frame or roles again.
-9. KoteKomi constructs one CompleteProposition and sends only that proposition through the support gate.
+5. KoteKomi maps each trigger to exact head, expression, and support EvidenceTargets.
+6. KoteKomi embeds those targets in one EventMention.
+7. KoteKomi proposes the source-grounded Event before optional classification.
+8. Later bounded tasks assign source-backed Event participants and presentation semantics.
+9. KoteKomi sends only complete derived propositions through the support gate.
 10. Event and standing-fact routes may both produce derived candidates from one SourceSegment.
 11. KoteKomi gives event semantics ownership of source-bound event relations and retains non-event standing facts.
 12. F-Coref proposes antecedent candidates, Qwen selects among a bounded source-valid catalog, and KoteKomi constructs the terminal reference decision.
@@ -202,13 +204,13 @@ KoteKomi derives the Effective MentionCandidates from deterministic selections a
 - BTA-TRG-10: Reconciliation exposes rejected, accepted, failed, and unclassified outcomes.
 - BTA-TRG-11: Each route uses one finite answer under a two-token transport cap.
 
-### Bounded governed semantics
+### Optional governed semantic enrichment
 
-- BTA-EVT-01: One frame-selection task receives one trigger and only the governed frame ID and definition catalog.
-- BTA-EVT-02: Frame selection returns one supplied frame ID or `unresolved`.
-- BTA-EVT-03: A selected frame receives one separate binary frame-fit challenge using only the source, trigger expression, frame ID, and governed definition.
-- BTA-EVT-04: A failed frame-fit challenge produces an `unmapped_frame` SemanticCoverageGap.
-- BTA-EVT-05: One role-selection task receives one selected frame, one supplied target role, the complete sibling-role catalog, prior sibling selections, exact source, local candidates, and validated reference metadata.
+- BTA-EVT-01: When classification is requested, one frame-selection task receives one trigger and only the governed frame ID and definition catalog.
+- BTA-EVT-02: Optional frame selection returns one supplied frame ID or `unresolved`.
+- BTA-EVT-03: A selected optional frame receives one separate binary frame-fit challenge using only the source, trigger expression, frame ID, and governed definition.
+- BTA-EVT-04: A failed frame-fit challenge produces an `unmapped_frame` SemanticCoverageGap without removing the source-grounded Event.
+- BTA-EVT-05: When governed role enrichment is requested, one role-selection task receives one selected frame, one supplied target role, the complete sibling-role catalog, prior sibling selections, exact source, local candidates, and validated reference metadata.
 - BTA-EVT-06: Required roles run first in governed declaration order and optional roles run afterward in governed declaration order.
 - BTA-EVT-07: Every selected role span is the smallest meaning-complete source expression for that role.
 - BTA-EVT-08: One role result cannot overwrite another valid role result.
@@ -217,15 +219,19 @@ KoteKomi derives the Effective MentionCandidates from deterministic selections a
 - BTA-EVT-11: KoteKomi constructs every event, role assignment, qualifier, EvidenceTarget, identifier, and digest.
 - BTA-EVT-12: A model failure affects only the bounded decision that used that model call.
 - BTA-EVT-13: `unresolved` frame selection, rejected frame fit, and invalid required frame-fit output cannot silently select a governed frame.
+- BTA-EVT-14: KoteKomi constructs and proposes the source-grounded Event before optional governed enrichment.
+- BTA-EVT-15: Classification status cannot control Event identity, admission, review, or default Wiki presentation.
+- BTA-EVT-16: Missing classification means classification was not requested, not that the Event is absent.
 
-### Proposition admission
+### Optional proposition admission
 
 - BTA-SUP-01: KoteKomi deterministically renders one CompleteProposition from the complete governed event.
 - BTA-SUP-02: Qwen judges the CompleteProposition against exact source text once.
 - BTA-SUP-03: NLI independently challenges the same CompleteProposition.
 - BTA-SUP-04: Component SemanticStatements remain inspectable deterministic explanations.
 - BTA-SUP-05: Component statements do not receive separate model calls and cannot independently veto the CompleteProposition.
-- BTA-SUP-06: HP-7 requires exactly one supported PropositionDecision plus complete required roles and no hard source-alignment gap.
+- BTA-SUP-06: A separately admitted enriched Assertion requires one supported PropositionDecision,
+  complete required roles, and no hard source-alignment gap.
 
 ### Parallel semantic routes
 
@@ -613,27 +619,26 @@ deterministic reconciliation
           v
 exact EventTriggerDraft
           |
-          +--> Qwen frame selection
-          |          |
-          |          v
-          +--> Qwen binary frame-fit challenge
-          |          |
-          |          v
-          +--> one Qwen role selection per role
-          |          |
-          |          v
-          +--> Qwen event presentation
-                     |
-                     v
-          KoteKomi CompleteProposition
-                     |
-                 +---+---+
-                 |       |
-               Qwen     NLI
-                 |       |
-                 +---+---+
-                     v
-          deterministic admission
+          +--> source-grounded Event proposal
+          |
+          +--> optional Qwen frame selection
+                       |
+                       v
+             Qwen frame-fit challenge
+                       |
+                       v
+             Qwen role selection
+                       |
+                       v
+             KoteKomi CompleteProposition
+                       |
+                   +---+---+
+                   |       |
+                 Qwen     NLI
+                   |       |
+                   +---+---+
+                       v
+             optional enrichment admission
 ```
 
 F-Coref and Qwen have separate responsibilities.
@@ -685,7 +690,12 @@ causal order on the terminal SemanticReferenceDecision.
 
 `StandingFactDraft` contains a source-bound relation range reconstructed from supplied SourceOccurrences.
 
-Existing EventTriggerDraft, EventSemanticDraft, CompleteProposition, PropositionDecision, EvidenceTarget, ProposedChange, and accepted Ledger records remain the downstream contracts.
+EventTriggerDraft feeds a source-grounded Event with one embedded EventMention.
+
+EventTypeAssignment, EventSemanticDraft, CompleteProposition, and PropositionDecision remain optional
+derived enrichment.
+
+EvidenceTarget, ProposedChange, and accepted Ledger records remain downstream contracts.
 
 ## Behavior & Domain Rules
 
@@ -700,6 +710,7 @@ Existing EventTriggerDraft, EventSemanticDraft, CompleteProposition, Proposition
 - BTA-RUL-08: All intelligence remains pending until human review.
 - BTA-RUL-09: Deterministic boundary reconciliation remains unchanged by semantic adjudication.
 - BTA-RUL-10: `incomplete`, `unclear`, and unresolved candidates remain inspectable but do not route downstream.
+- BTA-RUL-11: Optional ontology classification cannot veto a source-grounded Event.
 
 ## Acceptance Criteria
 
@@ -722,11 +733,12 @@ Existing EventTriggerDraft, EventSemanticDraft, CompleteProposition, Proposition
 - AC-BTA-TRG-01: Tests prove exact source-bound candidate and EventTriggerDraft ranges.
 - AC-BTA-TRG-02: Tests prove one invalid candidate answer does not erase a valid sibling decision.
 - AC-BTA-TRG-03: Fresh phase reports reproduce all eighty-seven reviewed Gold Events exactly.
-- AC-BTA-EVT-01: Tests prove frame selection input excludes the role catalog.
+- AC-BTA-EVT-01: Tests prove optional frame selection input excludes the role catalog.
 - AC-BTA-EVT-02: Tests prove a mismatched selected frame is rejected by the binary frame-fit challenge.
 - AC-BTA-EVT-03: Tests prove every role task contains exactly one target role plus sibling definitions and prior sibling selections.
 - AC-BTA-EVT-04: Tests prove an optional assessment and publication outlet can be retained without changing required roles.
 - AC-BTA-EVT-05: Tests prove complete publication, meeting, and characterization targets are not truncated to syntactically adjacent fragments.
+- AC-BTA-EVT-06: Tests prove classified and unclassified enrichment produce the same source-grounded Event proposal bytes.
 - AC-BTA-SUP-01: Tests prove one supported CompleteProposition is not vetoed by an auxiliary attribution explanation.
 - AC-BTA-ROU-01: Tests prove one mixed SourceSegment can retain both an event and a non-duplicate standing fact.
 - AC-BTA-ROU-02: Tests prove an event-overlapping standing relation is held before it can flatten the event.

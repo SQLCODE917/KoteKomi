@@ -18,6 +18,7 @@ from kotekomi_application import (
     ModelTaskRequest,
     ModelTaskResponse,
     hybrid_document_coverage_report_from_bytes,
+    hybrid_event_semantics_preview_from_bytes,
     hybrid_paragraph_receipt_from_bytes,
     hybrid_pipeline_policy_manifest_from_bytes,
 )
@@ -224,6 +225,13 @@ def test_user_ingest_checkpoints_and_reuses_the_complete_hybrid_document(
         tuple(stage.stage_id for stage in receipt.stages) == HYBRID_STAGE_ORDER
         for receipt in receipts
     )
+    semantic_previews = tuple(
+        hybrid_event_semantics_preview_from_bytes(path.read_bytes())
+        for path in (archive_root / "extraction" / "event-semantic-previews").glob("*.json")
+    )
+    assert semantic_previews
+    assert all(not item.governed_enrichment_requested for item in semantic_previews)
+    assert all(not item.event_type_assignments for item in semantic_previews)
     manifest_path = next((archive_root / "extraction" / "document-policies").glob("*.json"))
     manifest = hybrid_pipeline_policy_manifest_from_bytes(manifest_path.read_bytes())
     resource_pins = {

@@ -774,8 +774,7 @@ def _wiki_plan(
         event_id=stable_event_id,
         assertion_ids=(),
         proposed_change_ids=("pcg_replay_run",),
-        frame_id="criticism",
-        complete=True,
+        event_label="criticized",
         state="pending",
         edges=(),
         issues=(),
@@ -795,8 +794,8 @@ def _wiki_plan(
         input_fingerprint="b" * 64,
     )
     return CandidateWikiPlan(
-        view_policy_id="candidate_wiki_view_v4",
-        renderer_policy_id="ontology_graph_markdown_wiki_v7",
+        view_policy_id="candidate_wiki_view_v5",
+        renderer_policy_id="source_grounded_markdown_wiki_v8",
         ingestion_run_id="igr_fixture",
         ingestion_change_set_id="ics_fixture",
         candidate_snapshot_digest=snapshot_digest,

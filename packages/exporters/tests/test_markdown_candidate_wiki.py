@@ -15,7 +15,6 @@ from kotekomi_application.candidate_wiki import (
     WikiOntologyQualifier,
     WikiPageInput,
 )
-from kotekomi_domain import HYBRID_EVENT_SEMANTICS_V4
 from kotekomi_domain.models import JsonValue
 from kotekomi_exporters import MarkdownCandidateWikiRenderer
 
@@ -35,7 +34,7 @@ def test_renderer_is_deterministic_lean_and_exposes_stable_audit_handles() -> No
     assert f'kotekomi_wiki_build_id: "{first.manifest.build_id}"' in page
     assert 'kotekomi_record_id: "act_amodei"' in page
     assert "## At a glance" in page
-    assert "**Characterization Event**" in page
+    assert '**described Donald Trump as a "feudal warlord"**' in page
     assert "`evt_characterization`" in page
     assert (
         '**Extracted roles:** characterization **"feudal warlord"**; '
@@ -106,15 +105,15 @@ def test_renderer_escapes_record_and_source_control_text() -> None:
     assert "> \\[source\\] \\| &lt;script&gt; next" in markdown
 
 
-def test_renderer_uses_the_same_mechanical_projection_for_every_governed_frame() -> None:
+def test_renderer_preserves_each_exact_source_grounded_event_label() -> None:
     plan = _plan()
     page = plan.pages[0]
     event = page.presentations[0]
     assert isinstance(event, WikiEventPresentation)
 
-    for frame in HYBRID_EVENT_SEMANTICS_V4.frames:
-        frame_event = replace(event, frame_id=frame.id)
-        frame_page = replace(page, presentations=(frame_event,))
+    for event_label in ("privately lobbied", 'criticized Stargate as "chaotic"'):
+        source_event = replace(event, event_label=event_label)
+        frame_page = replace(page, presentations=(source_event,))
         markdown = next(
             item.payload.decode()
             for item in MarkdownCandidateWikiRenderer()
@@ -123,8 +122,7 @@ def test_renderer_uses_the_same_mechanical_projection_for_every_governed_frame()
             if item.relative_path == "actors/Amodei.md"
         )
 
-        expected_label = frame.label.replace("_", " ").capitalize()
-        assert f"**{expected_label} Event**" in markdown
+        assert f"**{event_label}**" in markdown
         assert "**Extracted roles:**" in markdown
         assert "Ontology object graph" not in markdown
 
@@ -170,8 +168,7 @@ def _plan() -> CandidateWikiPlan:
             "ast_polarity",
         ),
         proposed_change_ids=("pcg_event", "pcg_characterization"),
-        frame_id="characterization",
-        complete=True,
+        event_label='described Donald Trump as a "feudal warlord"',
         state="pending",
         edges=(
             _edge("ast_event_type", "has_event_type", "characterization"),
@@ -240,8 +237,8 @@ def _plan() -> CandidateWikiPlan:
         input_fingerprint="a" * 64,
     )
     return CandidateWikiPlan(
-        view_policy_id="candidate_wiki_view_v4",
-        renderer_policy_id="ontology_graph_markdown_wiki_v7",
+        view_policy_id="candidate_wiki_view_v5",
+        renderer_policy_id="source_grounded_markdown_wiki_v8",
         ingestion_run_id="igr_example",
         ingestion_change_set_id="ics_example",
         candidate_snapshot_digest="b" * 64,

@@ -47,6 +47,7 @@ from kotekomi_domain import (
     TextViewKind,
     canonical_evidence_target_digest,
     canonical_representation_digest,
+    deterministic_event_mention_id,
 )
 from kotekomi_domain.models import JsonValue
 
@@ -283,7 +284,7 @@ def test_exact_filename_selector_returns_all_closed_matches_newest_first() -> No
     assert tuple(item.id for item in result.matches) == ("igr_example", "igr_older")
 
 
-def test_candidate_wiki_groups_a_complete_characterization_event() -> None:
+def test_candidate_wiki_groups_an_event_without_requiring_its_classification() -> None:
     ledger = FakeCandidateWikiLedger()
     _use_source_text(ledger, CHARACTERIZATION_TEXT)
     ledger.proposals = _characterization_proposals()
@@ -298,11 +299,9 @@ def test_candidate_wiki_groups_a_complete_characterization_event() -> None:
     event = amodei_page.presentations[0]
     assert isinstance(event, WikiEventPresentation)
     assert trump_page.presentations == (event,)
-    assert event.frame_id == "characterization"
-    assert event.complete is True
+    assert event.event_label == 'described Donald Trump as a "feudal warlord"'
     assert event.issues == ()
     assert tuple(edge.predicate for edge in event.edges) == (
-        "has_event_type",
         "has_argument",
         "has_argument",
         "has_argument",
@@ -377,6 +376,19 @@ def test_candidate_wiki_audit_resolves_event_graph_and_exact_evidence() -> None:
         "ast_05_modality",
     )
     assert result.record.provenance_activity_ids == ("prv_example",)
+    mentions = cast(list[JsonObject], result.record.record_payload["mentions"])
+    assert mentions == [
+        {
+            "id": deterministic_event_mention_id(
+                head_evidence_target_id="etg_characterization_head",
+                expression_evidence_target_id="etg_characterization_expression",
+                support_evidence_target_id="etg_example",
+            ),
+            "head_evidence_target_id": "etg_characterization_head",
+            "expression_evidence_target_id": "etg_characterization_expression",
+            "support_evidence_target_id": "etg_example",
+        }
+    ]
     assert result.evidence
     assert {item.exact_text for item in result.evidence} == {CHARACTERIZATION_TEXT}
     with pytest.raises(ValueError, match="has no record: evt_missing"):
@@ -385,7 +397,7 @@ def test_candidate_wiki_audit_resolves_event_graph_and_exact_evidence() -> None:
         )
 
 
-def test_candidate_wiki_exposes_an_incomplete_governed_event() -> None:
+def test_candidate_wiki_keeps_an_event_when_optional_classification_is_incomplete() -> None:
     ledger = FakeCandidateWikiLedger()
     _use_source_text(ledger, CHARACTERIZATION_TEXT)
     proposals = _characterization_proposals()
@@ -396,11 +408,15 @@ def test_candidate_wiki_exposes_an_incomplete_governed_event() -> None:
 
     plan = plan_candidate_wiki(build_candidate_knowledge_view(ledger.run, ledger))
 
-    event_page = next(page for page in plan.pages if page.display_label == "Characterization")
+    event_page = next(
+        page
+        for page in plan.pages
+        if page.display_label == 'described Donald Trump as a "feudal warlord"'
+    )
     event = event_page.presentations[0]
     assert isinstance(event, WikiEventPresentation)
-    assert event.complete is False
-    assert event.issues == ("Missing required role: characterization.characterization.",)
+    assert event.event_label == 'described Donald Trump as a "feudal warlord"'
+    assert event.issues == ()
 
 
 def _bundle(text: str = TEXT) -> DocumentRepresentationBundle:
@@ -670,12 +686,24 @@ def _characterization_proposals() -> dict[str, ProposedChange]:
             "Event",
             {
                 "id": "evt_characterization",
-                "name": "Characterization",
+                "name": 'described Donald Trump as a "feudal warlord"',
                 "start_at": None,
                 "end_at": None,
                 "place_id": None,
                 "participant_actor_ids": ["act_amodei", "act_donald_trump"],
                 "participant_organization_ids": [],
+                "mentions": [
+                    {
+                        "id": deterministic_event_mention_id(
+                            head_evidence_target_id="etg_characterization_head",
+                            expression_evidence_target_id="etg_characterization_expression",
+                            support_evidence_target_id="etg_example",
+                        ),
+                        "head_evidence_target_id": "etg_characterization_head",
+                        "expression_evidence_target_id": "etg_characterization_expression",
+                        "support_evidence_target_id": "etg_example",
+                    }
+                ],
             },
         ),
     )

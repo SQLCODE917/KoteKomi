@@ -12,7 +12,6 @@ from pathlib import PurePosixPath
 from typing import Literal, Protocol, Self, cast
 
 from kotekomi_domain import (
-    HYBRID_EVENT_SEMANTICS_V4,
     Actor,
     Assertion,
     AssertionEvidenceLink,
@@ -31,18 +30,16 @@ from kotekomi_domain import (
     ProposedAssertion,
     ProposedChange,
     ReviewStatus,
-    SemanticArgumentTargetKind,
     Source,
 )
 from kotekomi_domain.models import JsonValue
 from pydantic import BaseModel, ConfigDict, model_validator
 
 from kotekomi_application.evidence_targets import verify_evidence_target
-from kotekomi_application.hybrid_event_semantics import EventModality, EventPolarity
 from kotekomi_application.record_serialization import canonical_record_json
 
-CANDIDATE_WIKI_VIEW_POLICY_ID = "candidate_wiki_view_v4"
-CANDIDATE_WIKI_RENDERER_POLICY_ID = "ontology_graph_markdown_wiki_v7"
+CANDIDATE_WIKI_VIEW_POLICY_ID = "candidate_wiki_view_v5"
+CANDIDATE_WIKI_RENDERER_POLICY_ID = "source_grounded_markdown_wiki_v8"
 HASH_ID_LENGTH = 24
 
 type WikiIntelligenceRecord = (
@@ -347,8 +344,7 @@ class WikiEventPresentation:
     event_id: str
     assertion_ids: tuple[str, ...]
     proposed_change_ids: tuple[str, ...]
-    frame_id: str
-    complete: bool
+    event_label: str
     state: Literal["accepted", "pending"]
     edges: tuple[WikiOntologyEdge, ...]
     issues: tuple[str, ...]
@@ -1440,18 +1436,20 @@ def _plan_presentations(
 
     grouped_assertion_ids: set[str] = set()
     presentations: list[WikiPresentation] = []
-    for event_id, items in sorted(event_assertions.items()):
-        if not any(
-            _assertion_relation(cast(Assertion | ProposedAssertion, item.record))
-            == HybridEventStructuralPredicate.HAS_EVENT_TYPE.value
-            for item in items
-        ):
-            continue
+    event_items = tuple(
+        sorted(
+            (item for item in records if item.record_type == "Event"),
+            key=lambda item: item.record.id,
+        )
+    )
+    for event_item in event_items:
+        event_id = event_item.record.id
+        items = event_assertions.get(event_id, [])
         ordered = tuple(sorted(items, key=lambda item: item.record.id))
         grouped_assertion_ids.update(item.record.id for item in ordered)
         presentations.append(
             _event_presentation(
-                by_id[event_id],
+                event_item,
                 ordered,
                 by_id,
                 paths,
@@ -1502,75 +1500,12 @@ def _event_presentation(
 ) -> WikiEventPresentation:
     event = cast(Event, event_item.record)
     assertions = tuple(cast(Assertion | ProposedAssertion, item.record) for item in assertion_items)
-    issues: list[str] = []
-    event_type_assertions = tuple(
-        assertion
-        for assertion in assertions
-        if _assertion_relation(assertion) == HybridEventStructuralPredicate.HAS_EVENT_TYPE.value
-    )
-    if len(event_type_assertions) != 1:
-        issues.append("The Event must have exactly one governed frame.")
-        frame_id = "unknown"
-        frame = None
-    else:
-        value = event_type_assertions[0].object_value
-        frame_id = value if isinstance(value, str) else "unknown"
-        frame = next(
-            (item for item in HYBRID_EVENT_SEMANTICS_V4.frames if item.id == frame_id), None
-        )
-        if frame is None:
-            issues.append(f"Unknown governed frame: {frame_id}.")
-
-    role_assertion_ids: dict[str, str] = {}
-    role_definitions = {item.id: item for item in frame.roles} if frame is not None else {}
     related_paths = {paths[event.id]}
     for assertion in assertions:
         if assertion.object_entity_id is not None:
             related_paths.add(paths[assertion.object_entity_id])
         if assertion.attributed_to_id is not None:
             related_paths.add(paths[assertion.attributed_to_id])
-        if _assertion_relation(assertion) != HybridEventStructuralPredicate.HAS_ARGUMENT.value:
-            continue
-        role_id = assertion.qualifiers.get("frame_role_id")
-        upper_role = assertion.qualifiers.get("upper_role")
-        if not isinstance(role_id, str) or not isinstance(upper_role, str):
-            issues.append(f"Argument {assertion.id} lacks governed role qualifiers.")
-            continue
-        role = role_definitions.get(role_id)
-        if role is None or role.upper_role.value != upper_role:
-            issues.append(f"Argument {assertion.id} has an invalid governed role.")
-            continue
-        target_kind = _semantic_argument_target_kind(assertion, by_id)
-        if target_kind not in role.allowed_target_kinds:
-            issues.append(
-                f"Argument {assertion.id} uses {target_kind.value} "
-                f"where {role.id} does not allow it."
-            )
-            continue
-        if role_id in role_assertion_ids:
-            issues.append(f"Governed role {role_id} occurs more than once.")
-            continue
-        role_assertion_ids[role_id] = assertion.id
-
-    if frame is not None:
-        for role in frame.roles:
-            if role.required and role.id not in role_assertion_ids:
-                issues.append(f"Missing required role: {role.id}.")
-
-    _single_structural_value(
-        assertions,
-        HybridEventStructuralPredicate.HAS_POLARITY,
-        issues,
-        required=True,
-        allowed_values={item.value for item in EventPolarity},
-    )
-    _single_structural_value(
-        assertions,
-        HybridEventStructuralPredicate.HAS_MODALITY,
-        issues,
-        required=True,
-        allowed_values={item.value for item in EventModality},
-    )
     related_paths.update(
         paths[record_id]
         for record_id in (
@@ -1586,7 +1521,10 @@ def _event_presentation(
                 _ontology_edge(assertion, by_id, paths)
                 for assertion in assertions
                 if _assertion_relation(assertion)
-                != HybridEventStructuralPredicate.HAS_ARGUMENT_ENTITY_REFERENCE.value
+                not in {
+                    HybridEventStructuralPredicate.HAS_ARGUMENT_ENTITY_REFERENCE.value,
+                    HybridEventStructuralPredicate.HAS_EVENT_TYPE.value,
+                }
             ),
             key=_event_edge_sort_key,
         )
@@ -1612,38 +1550,13 @@ def _event_presentation(
         event_id=event.id,
         assertion_ids=tuple(sorted(assertion.id for assertion in assertions)),
         proposed_change_ids=tuple(sorted(proposed_change_ids)),
-        frame_id=frame_id,
-        complete=frame is not None and not issues,
+        event_label=event.name,
         state=state,
         edges=edges,
-        issues=tuple(sorted(issues)),
+        issues=(),
         citation_numbers=tuple(sorted(citations)),
         related_paths=tuple(sorted(related_paths)),
     )
-
-
-def _single_structural_value(
-    assertions: tuple[Assertion | ProposedAssertion, ...],
-    predicate: HybridEventStructuralPredicate,
-    issues: list[str],
-    *,
-    required: bool,
-    allowed_values: set[str] | None = None,
-) -> str | None:
-    values = tuple(
-        assertion.object_value
-        for assertion in assertions
-        if _assertion_relation(assertion) == predicate.value
-    )
-    if len(values) != 1 or not isinstance(values[0], str):
-        if required:
-            issues.append(f"The Event must have exactly one {predicate.value} value.")
-        return None
-    value = values[0]
-    if allowed_values is not None and value not in allowed_values:
-        issues.append(f"The Event has an unknown {predicate.value} value: {value}.")
-        return None
-    return value
 
 
 def _assertion_relation(assertion: Assertion | ProposedAssertion) -> str:
@@ -1711,17 +1624,6 @@ def _event_edge_sort_key(edge: WikiOntologyEdge) -> tuple[int, str, str]:
         qualifiers.get("frame_role_id", ""),
         edge.assertion_id,
     )
-
-
-def _semantic_argument_target_kind(
-    assertion: Assertion | ProposedAssertion,
-    by_id: dict[str, CandidateViewRecord],
-) -> SemanticArgumentTargetKind:
-    if assertion.object_entity_id is None:
-        return SemanticArgumentTargetKind.SOURCE_SPAN
-    if by_id[assertion.object_entity_id].record_type == "Event":
-        return SemanticArgumentTargetKind.EVENT_SUBJECT
-    return SemanticArgumentTargetKind.MENTION_CANDIDATE
 
 
 def _display_value(value: object) -> str:
@@ -1946,8 +1848,7 @@ def _presentation_json(presentation: WikiPresentation) -> dict[str, object]:
             "event_id": presentation.event_id,
             "assertion_ids": list(presentation.assertion_ids),
             "proposed_change_ids": list(presentation.proposed_change_ids),
-            "frame_id": presentation.frame_id,
-            "complete": presentation.complete,
+            "event_label": presentation.event_label,
             "edges": [_ontology_edge_json(item) for item in presentation.edges],
             "issues": list(presentation.issues),
         }

@@ -11,6 +11,7 @@
 - Semantic quality follow-up: [Hybrid Semantic Quality Program](2026-09-06-hybrid-semantic-quality-program.md)
 - Current front-half boundary: [Bounded Semantic Task Allocation](2026-09-08-bounded-semantic-task-allocation.md)
 - Current Event boundary: [SourceOccurrence to Event Trigger Boundary](2026-09-10-source-occurrence-event-trigger-boundary.md)
+- Current Event admission: [Source-Grounded Event Boundary](2026-09-12-source-grounded-event-boundary.md)
 - Supersedes: [Model and Ontology Boundary Program](2026-08-25-model-ontology-boundary-program.md)
 - Supersedes: [Paragraph Hypothesis Development Program](2026-08-26-paragraph-hypothesis-development-program.md)
 - Supersedes: [PHP-1 Reliability Improvement Program](2026-08-27-php1-reliability-improvement-program.md)
@@ -53,8 +54,9 @@ authoritative SourceSegment
     -> EntityLinkCandidates
     -> EventHeadCandidates
     -> EventTriggerDrafts
-    -> governed EventSemanticDrafts or typed gaps
-    -> CompleteProposition support evidence
+    -> source-grounded Events with EventMentions
+    -> optional Event type assignments
+    -> later source-backed semantic assignments
     -> ProposedChanges
     -> reviewer decision
     -> accepted Ledger records
@@ -88,7 +90,11 @@ authoritative SourceSegment
 
 **Routing Judgment** means one finite semantic answer bound to one EventHeadCandidate and one ModelRun.
 
-**EventSemanticDraft** means one KoteKomi-constructed event interpretation under the governed event profile.
+**EventMention** means one Event link to exact head, expression, and support EvidenceTargets.
+
+**Event Type Assignment** means optional derived classification under one pinned vocabulary.
+
+**EventSemanticDraft** means optional derived enrichment under the governed event profile.
 
 **SupportJudgment** means one semantic judgment about direct source support for a KoteKomi-constructed CompleteProposition.
 
@@ -140,7 +146,7 @@ A reviewer remains the only actor that accepts model-derived intelligence.
 | Stanza | Annotate exact tokens, lemmas, parts of speech, and dependencies. | Fallible derived evidence. |
 | QANom | Score source-bound common nouns as nominal Event candidates. | Fallible derived evidence. |
 | Qwen2.5 | Answer one bounded semantic question about supplied source-valid choices. | Fallible derived evidence. |
-| NLI challenger | Challenge one KoteKomi-constructed CompleteProposition against exact source text. | Fallible derived evidence. |
+| NLI challenger | Challenge one optional enriched CompleteProposition against exact source text. | Fallible derived evidence. |
 | KoteKomi | Validate source characters, references, ontology rules, and state changes. | Deterministic project authority. |
 | Reviewer | Accept, reject, or edit one ProposedChange. | Human review authority. |
 
@@ -370,15 +376,19 @@ KoteKomi reconciles those answers and creates exact EventTriggerDraft records.
 
 The current Gold replay reproduces all eighty-seven reviewed Events exactly.
 
-### 9. Construct governed semantics and judge source support
+### 9. Construct source-grounded Events
 
-Qwen2.5 receives one Event trigger and one bounded ontology decision at a time.
+KoteKomi maps each EventTriggerDraft head and expression to exact EvidenceTargets.
 
-KoteKomi constructs typed Event targets and qualified role assignments from authoritative characters.
+KoteKomi embeds those targets in one EventMention.
 
-KoteKomi renders one CompleteProposition from a complete governed Event.
+KoteKomi proposes an Event whose label preserves the exact source expression.
 
-Qwen2.5 and the NLI challenger evaluate that CompleteProposition against exact source text.
+The Event does not require one governed frame.
+
+Governed classification remains optional derived enrichment.
+
+Later bounded tasks assign source-backed participants and other Event semantics.
 
 ### 10. Create reviewable state
 
@@ -408,7 +418,7 @@ Each linked TDD owns the implementation and verification status of its boundary.
 | [HP-4 Event Frame Drafts](2026-09-01-hybrid-event-frame-drafts.md) | Historical: a reviewer could inspect source-grounded open event frames. | HP-3 preserved verified source lineage. | Superseded by HSQ-6 trigger discovery. |
 | [HP-5 Atomic Claims and Ontology Validation](2026-09-02-hybrid-atomic-claims-ontology-validation.md) | Historical: a reviewer could inspect open-label atomic claims and ontology violations. | The retired HP-4 supplied EventFrameDrafts. | Superseded and removed by HSQ-6. |
 | [HP-6 Qualified Event Semantics and Source Support](2026-09-02-qualified-event-semantics-source-support.md) | A reviewer can inspect governed events, qualified roles, explicit gaps, and independent source support. | Current HP-4 supplies exact source-bound EventTriggerDrafts. | KoteKomi emits typed semantic drafts and support judgments without changing accepted wiki state. |
-| [HP-7 ProposedChange Integration](2026-09-03-hybrid-proposed-change-integration.md) | A reviewer can inspect governed HP-6 events through the existing review flow. | HP-6 supplies governed semantic drafts with complete source-support evidence. | The Pipeline creates pending ProposedChanges without creating accepted intelligence. |
+| [HP-7 ProposedChange Integration](2026-09-03-hybrid-proposed-change-integration.md) | Historical: a reviewer could inspect governed HP-6 events through the existing review flow. | HP-6 supplied governed semantic drafts with complete source-support evidence. | Its Event admission gate is superseded by the Source-Grounded Event Boundary. |
 | [HP-8 Hybrid Document Orchestration](2026-09-03-hybrid-document-orchestration.md) | A user receives one reviewable candidate change set from an ingested document. | HP-7 converts one HP-6 Preview into a reviewable proposal batch. | One ingestion runs the Hybrid Pipeline over its planned document scope and closes one IngestionChangeSet. |
 | [HP-8.1 Mention Interpretation Batching](2026-09-03-hp8-mention-interpretation-batching.md) | Determine whether bounded interpretation batching can reduce model work without losing meaning. | HP-8 records complete model and paragraph evidence. | The rejected experiment preserves its full evidence and leaves production mention behavior unchanged. |
 | [HP-8.2 Semantic Support Batching](2026-09-03-hp8-semantic-support-batching.md) | Determine whether support judgments can share one model request without losing statement-level meaning. | HP-8 supplies complete source-support and model evidence. | The rejected experiment preserves its full evidence and leaves production support behavior unchanged. |

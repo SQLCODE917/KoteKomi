@@ -24,6 +24,7 @@ EntityId = Annotated[str, Field(pattern=r"^ent_[A-Za-z0-9][A-Za-z0-9_-]*$")]
 ActorId = Annotated[str, Field(pattern=r"^act_[A-Za-z0-9][A-Za-z0-9_-]*$")]
 OrganizationId = Annotated[str, Field(pattern=r"^org_[A-Za-z0-9][A-Za-z0-9_-]*$")]
 EventId = Annotated[str, Field(pattern=r"^evt_[A-Za-z0-9][A-Za-z0-9_-]*$")]
+EventMentionId = Annotated[str, Field(pattern=r"^evm_[A-Za-z0-9][A-Za-z0-9_-]*$")]
 PlaceId = Annotated[str, Field(pattern=r"^plc_[A-Za-z0-9][A-Za-z0-9_-]*$")]
 SourceId = Annotated[str, Field(pattern=r"^src_[A-Za-z0-9][A-Za-z0-9_-]*$")]
 DocumentId = Annotated[str, Field(pattern=r"^doc_[A-Za-z0-9][A-Za-z0-9_-]*$")]
@@ -478,6 +479,41 @@ class Place(DomainModel):
     updated_at: datetime = Field(default_factory=utc_now)
 
 
+def deterministic_event_mention_id(
+    *,
+    head_evidence_target_id: str,
+    expression_evidence_target_id: str,
+    support_evidence_target_id: str,
+) -> str:
+    """Derive one EventMention identity from its authoritative evidence identities."""
+    values = (
+        head_evidence_target_id,
+        expression_evidence_target_id,
+        support_evidence_target_id,
+    )
+    return f"evm_{hashlib.sha256(chr(31).join(values).encode()).hexdigest()[:24]}"
+
+
+class EventMention(DomainModel):
+    """One embedded link from an Event to its exact source evidence."""
+
+    id: EventMentionId
+    head_evidence_target_id: EvidenceTargetId
+    expression_evidence_target_id: EvidenceTargetId
+    support_evidence_target_id: EvidenceTargetId
+
+    @model_validator(mode="after")
+    def validate_identity(self) -> Self:
+        expected = deterministic_event_mention_id(
+            head_evidence_target_id=self.head_evidence_target_id,
+            expression_evidence_target_id=self.expression_evidence_target_id,
+            support_evidence_target_id=self.support_evidence_target_id,
+        )
+        if self.id != expected:
+            raise ValueError("EventMention ID does not match its evidence identities.")
+        return self
+
+
 class Event(DomainModel):
     id: EventId
     name: NonEmptyStr
@@ -486,8 +522,16 @@ class Event(DomainModel):
     place_id: PlaceId | None = None
     participant_actor_ids: tuple[ActorId, ...] = Field(default_factory=tuple)
     participant_organization_ids: tuple[OrganizationId, ...] = Field(default_factory=tuple)
+    mentions: tuple[EventMention, ...] = Field(default_factory=tuple)
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
+
+    @model_validator(mode="after")
+    def validate_mentions(self) -> Self:
+        mention_ids = tuple(item.id for item in self.mentions)
+        if len(set(mention_ids)) != len(mention_ids):
+            raise ValueError("Event mentions must use distinct identities.")
+        return self
 
 
 class Source(DomainModel):

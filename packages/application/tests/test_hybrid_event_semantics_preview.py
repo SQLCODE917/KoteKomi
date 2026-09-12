@@ -8,9 +8,11 @@ from typing import cast
 import pytest
 from kotekomi_application import (
     ContextModelProfile,
+    EventTypeAssignmentStatus,
     ExecutionSetting,
     HybridEntityGroundingStatus,
     HybridEventSemanticsCommand,
+    HybridEventSemanticsStatus,
     HybridEventTriggerCommand,
     HybridEventTriggerPrompts,
     HybridEventTriggerResult,
@@ -37,14 +39,15 @@ from kotekomi_application import (
     NominalizationAnalysisInput,
     NominalizationCandidate,
     PlannedProposedChange,
-    ProposalDisposition,
     SemanticCoverageGapCode,
     UniversalPartOfSpeech,
     build_hybrid_entity_grounding_preview_record,
+    build_hybrid_event_trigger_preview,
     build_hybrid_proposal_plan,
     build_hybrid_proposal_plan_record,
     canonical_hybrid_entity_grounding_preview_bytes,
     canonical_hybrid_event_semantics_preview_bytes,
+    canonical_hybrid_event_trigger_preview_bytes,
     generation_parameters_digest,
     model_identity_snapshot_digest,
     run_hybrid_event_semantics_preview,
@@ -62,7 +65,11 @@ from kotekomi_application.hybrid_event_trigger_preview import (
     HybridEventTriggerArchive,
     HybridEventTriggerLedger,
 )
-from kotekomi_application.hybrid_event_triggers import HybridEventTriggerPreview
+from kotekomi_application.hybrid_event_triggers import (
+    EventTriggerDraft,
+    HybridEventTriggerPreview,
+    event_trigger_id,
+)
 from kotekomi_application.hybrid_mention_interpretation import HybridExtractionPreview
 from kotekomi_application.hybrid_mention_preview import HybridMentionArchive, HybridMentionLedger
 from kotekomi_application.hybrid_reference_preview import (
@@ -82,7 +89,6 @@ from kotekomi_domain import (
     EvidenceTarget,
     EvidenceValidationAttempt,
     ExtractionTask,
-    HybridEventStructuralPredicate,
     ModelRun,
     Organization,
     ParseQualityReport,
@@ -870,6 +876,9 @@ def test_source_bound_event_reaches_review_without_accepted_state() -> None:
     assert [item.text for item in hp4.preview.triggers] == ["criticized"]
     assert len(hp6.preview.semantic_events) == 1
     assert hp6.preview.semantic_events[0].frame_id == "criticism"
+    assert len(hp6.preview.event_type_assignments) == 1
+    assert hp6.preview.event_type_assignments[0].status is (EventTypeAssignmentStatus.CLASSIFIED)
+    assert hp6.preview.event_type_assignments[0].type_id == "criticism"
     assert {item.text for item in hp6.preview.targets} >= {
         "Dario Amodei",
         "Stargate",
@@ -945,7 +954,7 @@ def test_source_bound_event_reaches_review_without_accepted_state() -> None:
         b'Dario Amodei criticized Stargate as "chaotic" in January 2025.' in request.rendered_input
         for request in event_requests
     )
-    assert plan.decisions[0].disposition is ProposalDisposition.PROPOSED
+    assert plan.decisions[0].disposition == "proposed"
     assert any(item.proposed_json.get("record_type") == "Event" for item in plan.proposed_changes)
     assert ledger.accepted_state_called is False
     assert not ledger.actors
@@ -1600,20 +1609,17 @@ def test_composite_source_target_retains_contained_entity_reference() -> None:
             traces=plan.traces,
             diagnostics=plan.diagnostics,
         )
-    structural: list[PlannedProposedChange] = []
-    for item in plan.proposed_changes:
-        record = cast(JsonObject, item.proposed_json["record"])
-        if (
-            record.get("relation_label")
-            == HybridEventStructuralPredicate.HAS_ARGUMENT_ENTITY_REFERENCE.value
-        ):
-            structural.append(item)
-    assert len(structural) == 1
-    structural_record = cast(JsonObject, structural[0].proposed_json["record"])
-    assert structural_record["qualifiers"] == {
-        "frame_role_id": "investment_abandonment.abandoned_asset",
-        "upper_role": "theme",
-    }
+    assert all(
+        item.proposed_json.get("record_type") != "Assertion" for item in plan.proposed_changes
+    )
+    event_record = next(
+        cast(JsonObject, item.proposed_json["record"])
+        for item in plan.proposed_changes
+        if item.proposed_json.get("record_type") == "Event"
+    )
+    assert event_record["participant_actor_ids"] == []
+    assert event_record["participant_organization_ids"] == []
+    assert len(cast(list[object], event_record["mentions"])) == 1
 
 
 def test_two_governed_events_in_one_source_segment_retain_distinct_semantics() -> None:
@@ -1760,9 +1766,29 @@ def test_relationship_termination_outside_the_profile_remains_a_typed_ontology_g
 
     ledger, archive, hp4 = _run_to_triggers(text, mentions, runtime)
     hp6 = _run_semantics(ledger, archive, hp4, runtime)
+    classified_plan = build_hybrid_proposal_plan(hp6.preview.id, ledger, archive)
+    request_count = len(runtime.requests)
+    source_only = _run_source_grounding(ledger, archive, hp4, runtime)
+    source_plan = build_hybrid_proposal_plan(source_only.preview.id, ledger, archive)
 
     assert hp6.preview.semantic_events == ()
     assert [item.code for item in hp6.preview.gaps] == [SemanticCoverageGapCode.UNMAPPED_FRAME]
+    assert hp6.preview.event_type_assignments[0].status is (EventTypeAssignmentStatus.UNCLASSIFIED)
+    assert hp6.preview.event_type_assignments[0].type_id is None
+    assert len(source_only.preview.source_grounded_events) == 1
+    assert source_only.preview.event_type_assignments == ()
+    assert source_only.preview.semantic_events == ()
+    assert source_only.preview.governed_enrichment_requested is False
+    assert len(runtime.requests) == request_count
+    assert [
+        item.proposed_json
+        for item in classified_plan.proposed_changes
+        if item.proposed_json.get("record_type") == "Event"
+    ] == [
+        item.proposed_json
+        for item in source_plan.proposed_changes
+        if item.proposed_json.get("record_type") == "Event"
+    ]
     assert [
         request.task_type
         for request in runtime.requests
@@ -1774,6 +1800,144 @@ def test_relationship_termination_outside_the_profile_remains_a_typed_ontology_g
             "hybrid_semantic_source_support",
         }
     ] == ["hybrid_event_frame_selection"]
+
+
+def test_blocked_trigger_parent_preserves_unrequested_enrichment_contract() -> None:
+    text = "Events\nDario Amodei criticized Stargate."
+    mentions = (("Dario Amodei", "person"), ("Stargate", "organization"))
+    runtime = _Runtime(mentions=mentions, trigger_output=b"", semantic_output=b"")
+    ledger, archive, hp4 = _run_to_triggers(text, mentions, runtime)
+    blocked = build_hybrid_event_trigger_preview(
+        parent_preview_id=hp4.preview.parent_preview_id,
+        parent_preview_sha256=hp4.preview.parent_preview_sha256,
+        reference_preview_id=hp4.preview.reference_preview_id,
+        reference_preview_sha256=hp4.preview.reference_preview_sha256,
+        mention_preview_id=hp4.preview.mention_preview_id,
+        mention_preview_sha256=hp4.preview.mention_preview_sha256,
+        representation_id=hp4.preview.representation_id,
+        paragraph_node_id=hp4.preview.paragraph_node_id,
+        terminal_status=HybridEventTriggerStatus.BLOCKED,
+        diagnostics=("fixture_trigger_blocked",),
+    )
+    archive.trigger_previews[blocked.id] = canonical_hybrid_event_trigger_preview_bytes(blocked)
+
+    result = run_hybrid_event_semantics_preview(
+        command=HybridEventSemanticsCommand(
+            blocked.id,
+            ContextModelProfile("fixture-model", 4096, 256, 16),
+            _generation(),
+            governed_enrichment_requested=False,
+        ),
+        ledger=cast(HybridEventSemanticsLedger, ledger),
+        archive=cast(HybridEventSemanticsArchive, archive),
+        model_runtime=runtime,
+        model_run_id_factory=_RunIds("source-grounded-blocked"),
+        tokenizer=_Tokenizer(),
+        frame_selection_prompt_bytes=b"Optional frame selection.",
+        frame_fit_prompt_bytes=b"Optional frame fit.",
+        role_selection_prompt_bytes=b"Optional role selection.",
+        presentation_prompt_bytes=b"Optional presentation.",
+        support_prompt_bytes=b"Optional support.",
+        nli_runtime=_NliRuntime(),
+    )
+
+    assert result.preview.terminal_status is HybridEventSemanticsStatus.BLOCKED
+    assert result.preview.governed_enrichment_requested is False
+    assert result.preview.event_type_assignments == ()
+
+
+def test_invalid_source_grounding_isolated_from_a_valid_sibling_event() -> None:
+    text = "Events\nOfficials opposed the use."
+    runtime = _Runtime(
+        mentions=(),
+        trigger_output=b"event: o2 | oppose\nevent: o4 | use\n",
+        semantic_output=b"",
+        route_outputs={
+            ("event_noun_inventory", "use"): b"N",
+            ("event_noun_dependent_kind", "use"): b"N",
+            ("event_noun_governor_distinct", "use"): b"Y",
+            ("event_noun_reaction", "use"): b"Y",
+            ("event_verb_role", "opposed"): b"E",
+            ("event_verb_similarity", "opposed"): b"N",
+        },
+    )
+    ledger, archive, hp4 = _run_to_triggers(
+        text,
+        (),
+        runtime,
+        linguistic_analyzer=_ParticularizedNominalLinguisticAnalyzer(),
+    )
+    valid, invalid = hp4.preview.triggers
+    invalid_digest = "f" * 64
+    invalid = EventTriggerDraft(
+        id=event_trigger_id(
+            source_segment_id=invalid.source_segment_id,
+            source_text_sha256=invalid_digest,
+            start=invalid.start,
+            end=invalid.end,
+            text=invalid.text,
+            head_start=invalid.head_start,
+            head_end=invalid.head_end,
+            head_text=invalid.head_text,
+            event_type_label=invalid.event_type_label,
+            extraction_task_id=invalid.extraction_task_id,
+            model_run_id=invalid.model_run_id,
+            trace_id=invalid.trace_id,
+        ),
+        source_segment_id=invalid.source_segment_id,
+        source_text_sha256=invalid_digest,
+        start=invalid.start,
+        end=invalid.end,
+        text=invalid.text,
+        head_start=invalid.head_start,
+        head_end=invalid.head_end,
+        head_text=invalid.head_text,
+        event_type_label=invalid.event_type_label,
+        extraction_task_id=invalid.extraction_task_id,
+        model_run_id=invalid.model_run_id,
+        trace_id=invalid.trace_id,
+    )
+    parent = hp4.preview
+    mixed = build_hybrid_event_trigger_preview(
+        parent_preview_id=parent.parent_preview_id,
+        parent_preview_sha256=parent.parent_preview_sha256,
+        reference_preview_id=parent.reference_preview_id,
+        reference_preview_sha256=parent.reference_preview_sha256,
+        mention_preview_id=parent.mention_preview_id,
+        mention_preview_sha256=parent.mention_preview_sha256,
+        representation_id=parent.representation_id,
+        paragraph_node_id=parent.paragraph_node_id,
+        context_manifest_ids=parent.context_manifest_ids,
+        triggers=(valid, invalid),
+        extraction_task_ids=parent.extraction_task_ids,
+        model_run_ids=parent.model_run_ids,
+        traces=parent.traces,
+        terminal_status=parent.terminal_status,
+        diagnostics=parent.diagnostics,
+    )
+    mixed_payload = canonical_hybrid_event_trigger_preview_bytes(mixed)
+    archive.put_hybrid_event_trigger_preview(
+        mixed,
+        mixed_payload,
+        hashlib.sha256(mixed_payload).hexdigest(),
+    )
+
+    result = _run_source_grounding(
+        ledger,
+        archive,
+        HybridEventTriggerResult(
+            mixed,
+            hashlib.sha256(mixed_payload).hexdigest(),
+            f"extraction/event-triggers/{mixed.id}.json",
+        ),
+        runtime,
+    )
+
+    assert [item.expression_text for item in result.preview.source_grounded_events] == [valid.text]
+    assert result.preview.terminal_status is HybridEventSemanticsStatus.PARTIAL
+    assert result.preview.diagnostics == (
+        f"source_grounding_failed:{invalid.id}:source_text_digest_mismatch",
+    )
 
 
 def test_governed_task_exposes_resolved_reference_metadata_without_transferring_identity() -> None:
@@ -1910,6 +2074,36 @@ def _run_semantics(
         role_selection_prompt_bytes=b"Select one target for one governed role.",
         presentation_prompt_bytes=b"Classify one event presentation.",
         support_prompt_bytes=b"Judge source support for one governed statement.",
+        nli_runtime=_NliRuntime(),
+    )
+    payload = canonical_hybrid_event_semantics_preview_bytes(result.preview)
+    archive.put_hybrid_event_semantics_preview(result.preview, payload, result.sha256)
+    return result
+
+
+def _run_source_grounding(
+    ledger: _Ledger,
+    archive: _Archive,
+    hp4: HybridEventTriggerResult,
+    runtime: _Runtime,
+):
+    result = run_hybrid_event_semantics_preview(
+        command=HybridEventSemanticsCommand(
+            hp4.preview.id,
+            ContextModelProfile("fixture-model", 4096, 256, 16),
+            _generation(),
+            governed_enrichment_requested=False,
+        ),
+        ledger=cast(HybridEventSemanticsLedger, ledger),
+        archive=cast(HybridEventSemanticsArchive, archive),
+        model_runtime=runtime,
+        model_run_id_factory=_RunIds("source-grounded"),
+        tokenizer=_Tokenizer(),
+        frame_selection_prompt_bytes=b"Optional frame selection.",
+        frame_fit_prompt_bytes=b"Optional frame fit.",
+        role_selection_prompt_bytes=b"Optional role selection.",
+        presentation_prompt_bytes=b"Optional presentation.",
+        support_prompt_bytes=b"Optional support.",
         nli_runtime=_NliRuntime(),
     )
     payload = canonical_hybrid_event_semantics_preview_bytes(result.preview)

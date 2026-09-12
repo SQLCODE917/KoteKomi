@@ -73,7 +73,7 @@
         {"event_id": "TGE-020", "meaning": "Amodei would attend the World Economic Forum.", "head_occurrence_id": "o6", "accepted_expression_ranges": [{"start_occurrence_id": "o5", "end_occurrence_id": "o6"}, {"start_occurrence_id": "o6", "end_occurrence_id": "o6"}]},
         {"event_id": "TGE-021", "meaning": "Trump's second inauguration occurred.", "head_occurrence_id": "o14", "accepted_expression_ranges": [{"start_occurrence_id": "o12", "end_occurrence_id": "o14"}, {"start_occurrence_id": "o14", "end_occurrence_id": "o14"}]},
         {"event_id": "TGE-022", "meaning": "Amodei hired Biden officials.", "head_occurrence_id": "o16", "accepted_expression_ranges": [{"start_occurrence_id": "o16", "end_occurrence_id": "o16"}]},
-        {"event_id": "TGE-023", "meaning": "Sacks predicted Anthropic would not support Trump's agenda.", "head_occurrence_id": "o35", "accepted_expression_ranges": [{"start_occurrence_id": "o33", "end_occurrence_id": "o35"}, {"start_occurrence_id": "o35", "end_occurrence_id": "o35"}]}
+        {"event_id": "TGE-023", "meaning": "Sacks assessed that Anthropic would not support Trump's agenda.", "head_occurrence_id": "o35", "accepted_expression_ranges": [{"start_occurrence_id": "o33", "end_occurrence_id": "o35"}, {"start_occurrence_id": "o35", "end_occurrence_id": "o35"}]}
       ]
     },
     {

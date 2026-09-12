@@ -17,6 +17,7 @@ Use these exact terms.
 | Actor | A person or role-bearing entity. |
 | Organization | A collective Agent with a common purpose beyond its current members that can act collectively. |
 | Event | A bounded real-world happening with time, participants, and optional place. |
+| EventMention | An embedded Event value that identifies exact head, expression, and support EvidenceTargets. |
 | Place | A physical or virtual location. |
 | Source | An external artifact that contains information. |
 | Document | A local archived copy of a Source or extracted content from a Source. |
@@ -72,6 +73,7 @@ The Ontology Profile maps to these external patterns:
 | Nanopublication pattern | Assertion plus provenance plus publication metadata |
 | W3C Web Annotation | EvidenceTarget targeting |
 | Simple Event Model | Event, Actor, Place, Time pattern |
+| Grounded Annotation Framework | Event separation from source-bound EventMention evidence |
 | CIDOC CRM | future reference for deeper Event modeling |
 | AIF | ArgumentEdge semantics |
 | Schema.org / ClaimReview | export format |

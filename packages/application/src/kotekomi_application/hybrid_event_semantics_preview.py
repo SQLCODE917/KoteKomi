@@ -77,6 +77,8 @@ from kotekomi_application.hybrid_event_semantics import (
     EventAttributionKind,
     EventSemanticDraft,
     EventSubjectDraft,
+    EventTypeAssignment,
+    EventTypeAssignmentStatus,
     HybridEventSemanticsPreview,
     HybridEventSemanticsStatus,
     SemanticCoverageGap,
@@ -85,17 +87,21 @@ from kotekomi_application.hybrid_event_semantics import (
     SemanticStatement,
     SemanticStatementKind,
     SemanticSupportJudgment,
+    SourceGroundedEventDraft,
     SupportOutcome,
     build_event_argument_assignment_draft,
     build_event_argument_target_draft,
     build_event_semantic_draft,
     build_event_subject_draft,
+    build_event_type_assignment,
     build_hybrid_event_semantics_preview,
     build_semantic_coverage_gap,
     build_semantic_qualifier_draft,
     build_semantic_statement,
     build_semantic_support_judgment,
+    build_source_grounded_event_draft,
     canonical_hybrid_event_semantics_preview_bytes,
+    event_subject_draft_id,
     hybrid_event_semantics_preview_from_bytes,
     hybrid_event_semantics_preview_sha256,
     resolve_unique_source_literal,
@@ -157,6 +163,10 @@ from kotekomi_application.semantic_proposition import (
     build_nli_observation,
     build_proposition_decision,
 )
+from kotekomi_application.source_grounded_events import (
+    build_source_grounded_event,
+    validate_source_grounded_event,
+)
 from kotekomi_application.source_occurrences import SourceOccurrence
 from kotekomi_application.staged_model_extraction import (
     BoundedExtractionInput,
@@ -199,6 +209,7 @@ class HybridEventSemanticsCommand:
     parent_preview_id: str
     model_profile: ContextModelProfile
     generation_parameters: tuple[ExecutionSetting, ...]
+    governed_enrichment_requested: bool = True
 
 
 @dataclass(frozen=True)
@@ -334,6 +345,7 @@ def run_hybrid_event_semantics_preview(
     if context.parent.terminal_status is HybridEventTriggerStatus.BLOCKED:
         preview = build_hybrid_event_semantics_preview(
             **common,
+            governed_enrichment_requested=command.governed_enrichment_requested,
             terminal_status=HybridEventSemanticsStatus.BLOCKED,
             diagnostics=("hp4_status:blocked",),
         )
@@ -355,6 +367,7 @@ def run_hybrid_event_semantics_preview(
     run_ids: list[str] = []
     traces: list[ExtractionStageTrace] = []
     diagnostics: list[str] = []
+    event_type_assignments: list[EventTypeAssignment] = []
     manifest_cache: dict[
         str,
         tuple[
@@ -370,6 +383,38 @@ def run_hybrid_event_semantics_preview(
         build_event_subject_draft(parent_preview_id=context.parent.id, trigger_id=item.id)
         for item in context.parent.triggers
     )
+    (
+        source_grounded_events,
+        source_evidence_targets,
+        source_evidence_attempts,
+        source_grounding_diagnostics,
+    ) = _build_source_grounded_events(context, subjects, ledger)
+    diagnostics.extend(source_grounding_diagnostics)
+    evidence_targets.update({item.id: item for item in source_evidence_targets})
+    evidence_attempts.update({item.id: item for item in source_evidence_attempts})
+    _persist_evidence_records(source_evidence_targets, source_evidence_attempts, ledger)
+    grounded_subject_ids = {item.event_subject_id for item in source_grounded_events}
+    subjects = tuple(item for item in subjects if item.id in grounded_subject_ids)
+    source_event_by_subject = {item.event_subject_id: item for item in source_grounded_events}
+
+    if not command.governed_enrichment_requested:
+        if context.parent.terminal_status is HybridEventTriggerStatus.PARTIAL:
+            diagnostics.append("hp4_status:partial")
+        preview = build_hybrid_event_semantics_preview(
+            **common,
+            source_grounded_events=source_grounded_events,
+            governed_enrichment_requested=False,
+            evidence_target_ids=tuple(sorted(evidence_targets)),
+            evidence_validation_attempt_ids=tuple(sorted(evidence_attempts)),
+            terminal_status=(
+                HybridEventSemanticsStatus.PARTIAL
+                if diagnostics
+                else HybridEventSemanticsStatus.COMPLETE
+            ),
+            diagnostics=tuple(sorted(set(diagnostics))),
+        )
+        return _result(preview)
+
     for subject in subjects:
         trigger = context.triggers[subject.trigger_id]
         segment = context.segments[trigger.source_segment_id]
@@ -492,6 +537,15 @@ def run_hybrid_event_semantics_preview(
             frame_selection is None
             or frame_outcome.model_run.status is not ModelRunStatus.SUCCEEDED
         ):
+            event_type_assignments.append(
+                _type_assignment(
+                    source_event_by_subject[subject.id],
+                    EventTypeAssignmentStatus.PARTIAL,
+                    task_ids=(frame_outcome.extraction_task.id,),
+                    model_run_ids=(frame_outcome.model_run.id,),
+                    diagnostic_code="frame_selection_failed",
+                )
+            )
             gaps.append(
                 build_semantic_coverage_gap(
                     event_subject_id=subject.id,
@@ -505,6 +559,15 @@ def run_hybrid_event_semantics_preview(
             )
             continue
         if frame_selection.frame_id is None:
+            event_type_assignments.append(
+                _type_assignment(
+                    source_event_by_subject[subject.id],
+                    EventTypeAssignmentStatus.UNCLASSIFIED,
+                    task_ids=(frame_outcome.extraction_task.id,),
+                    model_run_ids=(frame_outcome.model_run.id,),
+                    diagnostic_code="no_matching_governed_type",
+                )
+            )
             gaps.append(
                 build_semantic_coverage_gap(
                     event_subject_id=subject.id,
@@ -518,6 +581,15 @@ def run_hybrid_event_semantics_preview(
         try:
             frame_definition = _frame_definition(frame_selection.frame_id)
         except ValueError as error:
+            event_type_assignments.append(
+                _type_assignment(
+                    source_event_by_subject[subject.id],
+                    EventTypeAssignmentStatus.PARTIAL,
+                    task_ids=(frame_outcome.extraction_task.id,),
+                    model_run_ids=(frame_outcome.model_run.id,),
+                    diagnostic_code="unknown_governed_type",
+                )
+            )
             gaps.append(
                 build_semantic_coverage_gap(
                     event_subject_id=subject.id,
@@ -579,6 +651,21 @@ def run_hybrid_event_semantics_preview(
         )
         traces.append(frame_fit_trace)
         if frame_fit is None or frame_fit_outcome.model_run.status is not ModelRunStatus.SUCCEEDED:
+            event_type_assignments.append(
+                _type_assignment(
+                    source_event_by_subject[subject.id],
+                    EventTypeAssignmentStatus.PARTIAL,
+                    task_ids=(
+                        frame_outcome.extraction_task.id,
+                        frame_fit_outcome.extraction_task.id,
+                    ),
+                    model_run_ids=(
+                        frame_outcome.model_run.id,
+                        frame_fit_outcome.model_run.id,
+                    ),
+                    diagnostic_code="frame_fit_failed",
+                )
+            )
             gaps.append(
                 build_semantic_coverage_gap(
                     event_subject_id=subject.id,
@@ -592,6 +679,21 @@ def run_hybrid_event_semantics_preview(
             )
             continue
         if not frame_fit.fits:
+            event_type_assignments.append(
+                _type_assignment(
+                    source_event_by_subject[subject.id],
+                    EventTypeAssignmentStatus.UNCLASSIFIED,
+                    task_ids=(
+                        frame_outcome.extraction_task.id,
+                        frame_fit_outcome.extraction_task.id,
+                    ),
+                    model_run_ids=(
+                        frame_outcome.model_run.id,
+                        frame_fit_outcome.model_run.id,
+                    ),
+                    diagnostic_code="governed_type_rejected",
+                )
+            )
             gaps.append(
                 build_semantic_coverage_gap(
                     event_subject_id=subject.id,
@@ -602,6 +704,21 @@ def run_hybrid_event_semantics_preview(
             )
             diagnostics.append(f"frame_fit_rejected:{subject.id}:{frame_definition.id}")
             continue
+        event_type_assignments.append(
+            _type_assignment(
+                source_event_by_subject[subject.id],
+                EventTypeAssignmentStatus.CLASSIFIED,
+                task_ids=(
+                    frame_outcome.extraction_task.id,
+                    frame_fit_outcome.extraction_task.id,
+                ),
+                model_run_ids=(
+                    frame_outcome.model_run.id,
+                    frame_fit_outcome.model_run.id,
+                ),
+                type_id=frame_definition.id,
+            )
+        )
         semantic_traces = [frame_trace, frame_fit_trace]
         selected_arguments: dict[str, EventSemanticArgumentProposal] = {}
         assignment_origins: dict[str, AssignmentOrigin] = {}
@@ -997,6 +1114,11 @@ def run_hybrid_event_semantics_preview(
         status = HybridEventSemanticsStatus.PARTIAL
     preview = build_hybrid_event_semantics_preview(
         **common,
+        source_grounded_events=source_grounded_events,
+        governed_enrichment_requested=True,
+        event_type_assignments=tuple(
+            sorted(event_type_assignments, key=lambda item: item.source_grounded_event_id)
+        ),
         semantic_events=tuple(sorted(events, key=lambda item: item.event_subject_id)),
         targets=tuple(
             sorted({item.id: item for item in targets}.values(), key=lambda item: item.id)
@@ -1059,6 +1181,7 @@ def load_hybrid_event_semantics_preview(
         for attempt_id in preview.evidence_validation_attempt_ids
         if (item := ledger.get_evidence_validation_attempt(attempt_id)) is not None
     }
+    evidence_by_id: dict[str, EvidenceTarget] = {}
     for target_id in preview.evidence_target_ids:
         target = ledger.get_evidence_target(target_id)
         attempt = attempts.get(target_id)
@@ -1067,6 +1190,24 @@ def load_hybrid_event_semantics_preview(
         replay = verify_evidence_target(target, attempt, ledger)
         if not replay.valid:
             raise ValueError(f"HP-6 EvidenceTarget replay failed: {replay.error_message}")
+        evidence_by_id[target.id] = target
+    trigger_by_id = {item.id: item for item in parent.triggers}
+    for source_event in preview.source_grounded_events:
+        trigger = trigger_by_id.get(source_event.trigger_id)
+        if (
+            trigger is None
+            or source_event.event_subject_id
+            != event_subject_draft_id(parent.id, source_event.trigger_id)
+            or source_event.source_segment_id != trigger.source_segment_id
+            or source_event.source_text_sha256 != trigger.source_text_sha256
+            or source_event.expression_text != trigger.text
+            or source_event.head_text != trigger.head_text
+        ):
+            raise ValueError("Source-grounded Event no longer matches its trigger evidence.")
+        validate_source_grounded_event(
+            build_source_grounded_event(source_event),
+            evidence_by_id,
+        )
     return preview
 
 
@@ -1190,6 +1331,110 @@ def _local_inputs(
         source_copy,
         occurrences,
     )
+
+
+def _build_source_grounded_events(
+    context: _SourceContext,
+    subjects: tuple[EventSubjectDraft, ...],
+    ledger: HybridEventSemanticsLedger,
+) -> tuple[
+    tuple[SourceGroundedEventDraft, ...],
+    tuple[EvidenceTarget, ...],
+    tuple[EvidenceValidationAttempt, ...],
+    tuple[str, ...],
+]:
+    events: list[SourceGroundedEventDraft] = []
+    targets: dict[str, EvidenceTarget] = {}
+    attempts: dict[str, EvidenceValidationAttempt] = {}
+    diagnostics: list[str] = []
+    for subject in subjects:
+        trigger = context.triggers[subject.trigger_id]
+        segment = context.segments[trigger.source_segment_id]
+        grounding_error = _trigger_grounding_error(trigger, segment)
+        if grounding_error is not None:
+            diagnostics.append(f"source_grounding_failed:{trigger.id}:{grounding_error}")
+            continue
+        expression_target, expression_attempt = _build_exact_span_evidence(
+            context,
+            segment,
+            trigger.start,
+            trigger.end,
+            trigger.text,
+            ledger,
+        )
+        head_target, head_attempt = _build_exact_span_evidence(
+            context,
+            segment,
+            trigger.head_start,
+            trigger.head_end,
+            trigger.head_text,
+            ledger,
+        )
+        for target, attempt in (
+            (segment.support_target, segment.support_attempt),
+            (expression_target, expression_attempt),
+            (head_target, head_attempt),
+        ):
+            targets[target.id] = target
+            attempts[attempt.id] = attempt
+        events.append(
+            build_source_grounded_event_draft(
+                event_subject_id=subject.id,
+                trigger_id=trigger.id,
+                source_segment_id=trigger.source_segment_id,
+                source_text_sha256=trigger.source_text_sha256,
+                expression_text=trigger.text,
+                head_text=trigger.head_text,
+                head_evidence_target_id=head_target.id,
+                expression_evidence_target_id=expression_target.id,
+                support_evidence_target_id=segment.support_target.id,
+            )
+        )
+    return (
+        tuple(sorted(events, key=lambda item: item.event_subject_id)),
+        tuple(sorted(targets.values(), key=lambda item: item.id)),
+        tuple(sorted(attempts.values(), key=lambda item: item.id)),
+        tuple(sorted(diagnostics)),
+    )
+
+
+def _type_assignment(
+    source_event: SourceGroundedEventDraft,
+    status: EventTypeAssignmentStatus,
+    *,
+    task_ids: tuple[str, ...],
+    model_run_ids: tuple[str, ...],
+    type_id: str | None = None,
+    diagnostic_code: str | None = None,
+) -> EventTypeAssignment:
+    return build_event_type_assignment(
+        source_grounded_event_id=source_event.id,
+        vocabulary_id=HYBRID_EVENT_SEMANTICS_V4.id,
+        vocabulary_sha256=hybrid_event_semantics_profile_sha256(),
+        status=status,
+        type_id=type_id,
+        extraction_task_ids=tuple(sorted(task_ids)),
+        model_run_ids=tuple(sorted(model_run_ids)),
+        diagnostic_code=diagnostic_code,
+    )
+
+
+def _trigger_grounding_error(
+    trigger: EventTriggerDraft,
+    segment: _SegmentContext,
+) -> str | None:
+    source_text = segment.segment.exact_text
+    if hashlib.sha256(source_text.encode()).hexdigest() != trigger.source_text_sha256:
+        return "source_text_digest_mismatch"
+    if not (0 <= trigger.start < trigger.end <= len(source_text)):
+        return "expression_range_outside_source"
+    if source_text[trigger.start : trigger.end] != trigger.text:
+        return "expression_text_mismatch"
+    if not (trigger.start <= trigger.head_start < trigger.head_end <= trigger.end):
+        return "head_range_outside_expression"
+    if source_text[trigger.head_start : trigger.head_end] != trigger.head_text:
+        return "head_text_mismatch"
+    return None
 
 
 def _candidate_is_role_eligible(
@@ -1579,6 +1824,40 @@ def _referenced_target(
     local_end: int,
     ledger: HybridEventSemanticsLedger,
 ) -> tuple[EventArgumentTargetDraft, EvidenceTarget, EvidenceValidationAttempt]:
+    target, attempt = _build_exact_span_evidence(
+        context,
+        segment,
+        local_start,
+        local_end,
+        text,
+        ledger,
+    )
+    draft = build_event_argument_target_draft(
+        kind=kind,
+        reference_id=reference_id,
+        source_segment_id=segment.segment_id,
+        text=text,
+        start=local_start,
+        end=local_end,
+        evidence_target_id=target.id,
+        evidence_validation_attempt_id=attempt.id,
+        embedded_candidate_ids=(
+            _embedded_entity_candidate_ids(context, segment, local_start, local_end)
+            if kind is SemanticArgumentTargetKind.SOURCE_SPAN
+            else ()
+        ),
+    )
+    return draft, target, attempt
+
+
+def _build_exact_span_evidence(
+    context: _SourceContext,
+    segment: _SegmentContext,
+    local_start: int,
+    local_end: int,
+    text: str,
+    ledger: HybridEventSemanticsLedger,
+) -> tuple[EvidenceTarget, EvidenceValidationAttempt]:
     if segment.segment.exact_text[local_start:local_end] != text:
         raise ValueError("target_range_text_mismatch")
     support = segment.support_target
@@ -1633,22 +1912,7 @@ def _referenced_target(
         if _without_time(existing_attempt) != _without_time(attempt):
             raise ValueError("evidence_attempt_identity_conflict")
         attempt = existing_attempt
-    draft = build_event_argument_target_draft(
-        kind=kind,
-        reference_id=reference_id,
-        source_segment_id=segment.segment_id,
-        text=text,
-        start=local_start,
-        end=local_end,
-        evidence_target_id=target.id,
-        evidence_validation_attempt_id=attempt.id,
-        embedded_candidate_ids=(
-            _embedded_entity_candidate_ids(context, segment, local_start, local_end)
-            if kind is SemanticArgumentTargetKind.SOURCE_SPAN
-            else ()
-        ),
-    )
-    return draft, target, attempt
+    return target, attempt
 
 
 def _embedded_entity_candidate_ids(
@@ -1690,8 +1954,22 @@ def _persist_evidence(
     constructed: _ConstructedEvent,
     ledger: HybridEventSemanticsLedger,
 ) -> None:
-    attempts = {item.evidence_target_id: item for item in constructed.evidence_attempts}
-    for target in constructed.evidence_targets:
+    _persist_evidence_records(
+        constructed.evidence_targets,
+        constructed.evidence_attempts,
+        ledger,
+    )
+
+
+def _persist_evidence_records(
+    targets: tuple[EvidenceTarget, ...],
+    evidence_attempts: tuple[EvidenceValidationAttempt, ...],
+    ledger: HybridEventSemanticsLedger,
+) -> None:
+    attempts = {item.evidence_target_id: item for item in evidence_attempts}
+    if set(attempts) != {item.id for item in targets}:
+        raise ValueError("Source-grounded evidence requires one attempt per EvidenceTarget.")
+    for target in targets:
         if ledger.get_evidence_target(target.id) is None:
             ledger.save_evidence_target(target)
         attempt = attempts[target.id]

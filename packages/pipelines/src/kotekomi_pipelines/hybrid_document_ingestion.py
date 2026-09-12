@@ -730,7 +730,12 @@ def _run_paragraph(
 
     with sqlite_ledger_transaction(config.ledger_path) as ledger:
         hp6 = run_hybrid_event_semantics_preview(
-            command=HybridEventSemanticsCommand(hp4.preview.id, profile, generation),
+            command=HybridEventSemanticsCommand(
+                hp4.preview.id,
+                profile,
+                generation,
+                governed_enrichment_requested=False,
+            ),
             ledger=ledger,
             archive=archive,
             model_runtime=resources.runtime,
@@ -749,10 +754,6 @@ def _run_paragraph(
     with sqlite_ledger_transaction(config.ledger_path) as ledger:
         hp7 = build_hybrid_proposal_plan(hp6.preview.id, ledger, archive)
     hp7_sha256, _ = publish_hybrid_proposal_plan(hp7, archive)
-    held_count = sum(item.disposition.value == "held" for item in hp7.decisions)
-    hp7_diagnostics = tuple(
-        sorted((*hp7.diagnostics, *((f"held_events:{held_count}",) if held_count else ())))
-    )
     stages.append(
         HybridParagraphStageRecord(
             stage_id=HybridStageId.HP7_PROPOSAL_PLAN,
@@ -760,7 +761,7 @@ def _run_paragraph(
             output_id=hp7.id,
             output_sha256=hp7_sha256,
             terminal_status="complete",
-            diagnostics=hp7_diagnostics,
+            diagnostics=hp7.diagnostics,
         )
     )
     with sqlite_ledger_transaction(config.ledger_path) as ledger:

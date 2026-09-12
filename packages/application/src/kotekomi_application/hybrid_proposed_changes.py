@@ -7,31 +7,21 @@ import json
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
-from enum import StrEnum
 from typing import Annotated, Literal, Protocol, Self, cast
 
 from kotekomi_domain import (
-    HYBRID_EVENT_SEMANTICS_V4,
     Actor,
-    AssertionType,
-    AttributionBasis,
     Document,
     DocumentRepresentationBundle,
-    EpistemicScope,
     Event,
-    EvidenceNecessity,
-    EvidencePolarity,
     EvidenceTarget,
     EvidenceValidationAttempt,
-    HybridEventStructuralPredicate,
     Organization,
     ProposedAssertion,
     ProposedChange,
     ProvenanceActivity,
     ReviewStatus,
     Source,
-    SourceAuthority,
-    UpperRole,
 )
 from kotekomi_domain.models import JsonValue
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -53,16 +43,8 @@ from kotekomi_application.hybrid_document_references import (
     hybrid_reference_preview_from_bytes,
 )
 from kotekomi_application.hybrid_event_semantics import (
-    EventArgumentAssignmentDraft,
-    EventArgumentTargetDraft,
-    EventSemanticDraft,
     HybridEventSemanticsPreview,
-    SemanticCoverageGap,
-    SemanticCoverageGapCode,
-    SemanticStatement,
-    SemanticStatementKind,
-    SemanticSupportJudgment,
-    SupportOutcome,
+    SourceGroundedEventDraft,
     canonical_hybrid_event_semantics_preview_bytes,
 )
 from kotekomi_application.hybrid_event_semantics_preview import (
@@ -71,6 +53,10 @@ from kotekomi_application.hybrid_event_semantics_preview import (
     load_hybrid_event_semantics_preview,
 )
 from kotekomi_application.hybrid_event_trigger_preview import load_hybrid_event_trigger_preview
+from kotekomi_application.hybrid_event_triggers import HybridEventTriggerPreview
+from kotekomi_application.hybrid_mention_boundary_adjudication import (
+    effective_mention_candidate_ids,
+)
 from kotekomi_application.hybrid_mention_interpretation import (
     ContextualKind,
     DiscourseRole,
@@ -81,38 +67,16 @@ from kotekomi_application.hybrid_mention_interpretation import (
     hybrid_extraction_preview_from_bytes,
     hybrid_source_segment_id,
 )
-from kotekomi_application.semantic_proposition import PropositionDisposition
+from kotekomi_application.source_grounded_events import (
+    build_source_grounded_event,
+    load_event_mention_evidence,
+    validate_source_grounded_event,
+)
 
-HYBRID_PROPOSAL_POLICY_ID = "hybrid_proposed_change_v1"
+HYBRID_PROPOSAL_POLICY_ID = "hybrid_proposed_change_v2"
 HYBRID_PROPOSAL_ACTIVITY_TYPE = "hybrid_proposal_batch_submitted"
 HYBRID_PROPOSAL_AGENT = "kotekomi_application"
 _SHA256 = r"^[a-f0-9]{64}$"
-
-
-class ProposalDisposition(StrEnum):
-    PROPOSED = "proposed"
-    HELD = "held"
-
-
-class ProposalAdmissionReason(StrEnum):
-    COMPLETE_PROPOSITION_HELD = "complete_proposition_held"
-    COMPLETE_PROPOSITION_MISSING = "complete_proposition_missing"
-    MISSING_GOVERNED_ATTRIBUTION = "missing_governed_attribution"
-    MISSING_REQUIRED_ROLE = "missing_required_role"
-    MISSING_SUPPORT_JUDGMENT = "missing_support_judgment"
-    NON_DIRECT_SUPPORT = "non_direct_support"
-    REPEATED_SUPPORT_JUDGMENT = "repeated_support_judgment"
-    TARGET_EVENT_HELD = "target_event_held"
-    UNMAPPED_FRAME = "unmapped_frame"
-
-
-_HARD_GAP_REASONS = {
-    SemanticCoverageGapCode.MISSING_GOVERNED_ATTRIBUTION: (
-        ProposalAdmissionReason.MISSING_GOVERNED_ATTRIBUTION
-    ),
-    SemanticCoverageGapCode.MISSING_REQUIRED_ROLE: ProposalAdmissionReason.MISSING_REQUIRED_ROLE,
-    SemanticCoverageGapCode.UNMAPPED_FRAME: ProposalAdmissionReason.UNMAPPED_FRAME,
-}
 
 
 class PlannedProposedChange(BaseModel):
@@ -139,17 +103,14 @@ class PlannedProposedChange(BaseModel):
 
 
 class ProposalAdmissionDecision(BaseModel):
-    """One deterministic disposition for one HP-6 event."""
+    """One deterministic proposal decision for one source-grounded Event."""
 
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
     id: Annotated[str, Field(pattern=r"^pad_[a-f0-9]{24}$")]
-    event_semantic_id: Annotated[str, Field(pattern=r"^esn_[a-f0-9]{24}$")]
-    disposition: ProposalDisposition
-    reason_codes: tuple[ProposalAdmissionReason, ...] = ()
+    source_grounded_event_id: Annotated[str, Field(pattern=r"^sge_[a-f0-9]{24}$")]
+    disposition: Literal["proposed"] = "proposed"
     advisory_gap_ids: tuple[Annotated[str, Field(pattern=r"^scg_[a-f0-9]{24}$")], ...] = ()
-    statement_ids: tuple[Annotated[str, Field(pattern=r"^sst_[a-f0-9]{24}$")], ...] = ()
-    judgment_ids: tuple[Annotated[str, Field(pattern=r"^spj_[a-f0-9]{24}$")], ...] = ()
     model_run_ids: tuple[Annotated[str, Field(min_length=1)], ...] = ()
     source_trace_ids: tuple[Annotated[str, Field(pattern=r"^xst_[a-f0-9]{24}$")], ...] = ()
     proposed_change_ids: tuple[Annotated[str, Field(pattern=r"^pcg_[a-f0-9]{24}$")], ...] = ()
@@ -157,28 +118,19 @@ class ProposalAdmissionDecision(BaseModel):
     @model_validator(mode="after")
     def validate_contract(self) -> Self:
         for label, values in (
-            ("reason codes", tuple(item.value for item in self.reason_codes)),
             ("advisory gap IDs", self.advisory_gap_ids),
-            ("statement IDs", self.statement_ids),
-            ("judgment IDs", self.judgment_ids),
             ("model run IDs", self.model_run_ids),
             ("source trace IDs", self.source_trace_ids),
             ("ProposedChange IDs", self.proposed_change_ids),
         ):
             _ordered_distinct(label, values)
-        if self.disposition is ProposalDisposition.PROPOSED:
-            if self.reason_codes or not self.proposed_change_ids:
-                raise ValueError("A proposed admission requires changes and no hold reason.")
-        elif not self.reason_codes or self.proposed_change_ids:
-            raise ValueError("A held admission requires reasons and no changes.")
+        if not self.proposed_change_ids:
+            raise ValueError("A source-grounded Event proposal requires a change.")
         expected = _id(
             "pad",
-            self.event_semantic_id,
-            self.disposition.value,
-            *(item.value for item in self.reason_codes),
+            self.source_grounded_event_id,
+            self.disposition,
             *self.advisory_gap_ids,
-            *self.statement_ids,
-            *self.judgment_ids,
             *self.model_run_ids,
             *self.source_trace_ids,
             *self.proposed_change_ids,
@@ -193,13 +145,13 @@ class HybridProposalPlan(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
-    schema_version: Literal["hybrid_proposal_plan_v1"] = "hybrid_proposal_plan_v1"
+    schema_version: Literal["hybrid_proposal_plan_v2"] = "hybrid_proposal_plan_v2"
     id: Annotated[str, Field(pattern=r"^hpp_[a-f0-9]{24}$")]
     parent_preview_id: Annotated[str, Field(pattern=r"^hsp_[a-f0-9]{24}$")]
     parent_preview_sha256: Annotated[str, Field(pattern=_SHA256)]
     representation_id: Annotated[str, Field(min_length=1)]
     paragraph_node_id: Annotated[str, Field(min_length=1)]
-    policy_id: Literal["hybrid_proposed_change_v1"] = HYBRID_PROPOSAL_POLICY_ID
+    policy_id: Literal["hybrid_proposed_change_v2"] = HYBRID_PROPOSAL_POLICY_ID
     provenance_activity_id: Annotated[str, Field(pattern=r"^prv_[a-f0-9]{24}$")]
     decisions: tuple[ProposalAdmissionDecision, ...]
     proposed_changes: tuple[PlannedProposedChange, ...] = ()
@@ -297,6 +249,7 @@ class HybridProposalResult:
 class _Lineage:
     preview: HybridEventSemanticsPreview
     hp4_preview_id: str
+    triggers: HybridEventTriggerPreview
     hp3_preview_id: str
     mentions: HybridExtractionPreview
     references: HybridReferencePreview
@@ -328,7 +281,7 @@ def build_hybrid_proposal_plan_record(
 ) -> HybridProposalPlan:
     """Construct one content-addressed Plan from already validated components."""
     identity_payload: dict[str, JsonValue] = {
-        "schema_version": "hybrid_proposal_plan_v1",
+        "schema_version": "hybrid_proposal_plan_v2",
         "parent_preview_id": parent_preview_id,
         "parent_preview_sha256": parent_preview_sha256,
         "representation_id": representation_id,
@@ -362,148 +315,90 @@ def build_hybrid_proposal_plan(
     """Build one deterministic plan without changing proposal or accepted state."""
     lineage = _load_lineage(preview_id, ledger, archive)
     preview = lineage.preview
-    provenance_id = _id("prv", HYBRID_PROPOSAL_ACTIVITY_TYPE, preview.id)
-    event_ids = {
-        item.event_subject_id: _id("evt", preview.id, item.id) for item in preview.semantic_events
-    }
-    reasons_by_event = _admission_reasons(preview)
-    changed = True
-    while changed:
-        changed = False
-        for event in preview.semantic_events:
-            for assignment in _event_assignments(preview, event):
-                target = _target(preview, assignment.target_id)
-                if target.kind.value != "event_subject" or target.reference_id is None:
-                    continue
-                if (
-                    target.reference_id not in event_ids
-                    or reasons_by_event.get(target.reference_id)
-                ) and (
-                    ProposalAdmissionReason.TARGET_EVENT_HELD
-                    not in reasons_by_event[event.event_subject_id]
-                ):
-                    reasons_by_event[event.event_subject_id].add(
-                        ProposalAdmissionReason.TARGET_EVENT_HELD
-                    )
-                    changed = True
-
+    provenance_id = _id("prv", HYBRID_PROPOSAL_ACTIVITY_TYPE, preview.parent_preview_id)
     planned_by_id: dict[str, PlannedProposedChange] = {}
     decisions: list[ProposalAdmissionDecision] = []
     traces: list[ExtractionStageTrace] = []
-    for event in preview.semantic_events:
-        gaps = _event_gaps(preview, event)
-        statements = _event_statements(preview, event)
-        judgments = _event_judgments(preview, statements)
-        reasons = tuple(
-            sorted(reasons_by_event[event.event_subject_id], key=lambda item: item.value)
+    trigger_by_id = {item.id: item for item in lineage.triggers.triggers}
+    for source_event in preview.source_grounded_events:
+        trigger = trigger_by_id[source_event.trigger_id]
+        entity_changes = _build_source_named_entity_changes(
+            lineage=lineage,
+            source_segment_ids={source_event.source_segment_id},
+            provenance_activity_id=provenance_id,
         )
-        event_changes: tuple[PlannedProposedChange, ...] = ()
-        if not reasons:
-            event_changes = _build_event_changes(
-                lineage=lineage,
-                event=event,
-                event_ids=event_ids,
-                provenance_activity_id=provenance_id,
+        for entity_change in entity_changes:
+            planned_by_id[entity_change.id] = entity_change
+        event_change = _build_source_grounded_event_change(
+            lineage=lineage,
+            source_event=source_event,
+            provenance_activity_id=provenance_id,
+        )
+        existing = planned_by_id.get(event_change.id)
+        if existing is not None and existing != event_change:
+            raise ValueError("HP-7 produced conflicting bodies for one proposal identity.")
+        planned_by_id[event_change.id] = event_change
+        advisory_ids = tuple(
+            sorted(
+                item.id
+                for item in preview.gaps
+                if item.event_subject_id == source_event.event_subject_id
             )
-            for item in event_changes:
-                existing = planned_by_id.get(item.id)
-                if existing is not None and existing != item:
-                    raise ValueError("HP-7 produced conflicting bodies for one proposal identity.")
-                planned_by_id[item.id] = item
-        advisory_ids = tuple(sorted(item.id for item in gaps if item.code not in _HARD_GAP_REASONS))
-        proposal_ids = tuple(sorted(item.id for item in event_changes))
-        source_trace_ids, model_run_ids = _event_execution_lineage(
-            preview,
-            event,
-            _event_assignments(preview, event),
-            statements,
-            judgments,
         )
-        disposition = ProposalDisposition.HELD if reasons else ProposalDisposition.PROPOSED
+        proposal_ids = tuple(sorted((event_change.id, *(item.id for item in entity_changes))))
+        source_trace_ids = (trigger.trace_id,)
+        model_run_ids = (trigger.model_run_id,)
         decision = ProposalAdmissionDecision(
             id=_decision_id(
-                event=event,
-                disposition=disposition,
-                reasons=reasons,
+                source_event=source_event,
                 advisory_gap_ids=advisory_ids,
-                statements=statements,
-                judgments=judgments,
                 model_run_ids=model_run_ids,
                 source_trace_ids=source_trace_ids,
                 proposal_ids=proposal_ids,
             ),
-            event_semantic_id=event.id,
-            disposition=disposition,
-            reason_codes=reasons,
+            source_grounded_event_id=source_event.id,
             advisory_gap_ids=advisory_ids,
-            statement_ids=tuple(sorted(item.id for item in statements)),
-            judgment_ids=tuple(sorted(item.id for item in judgments)),
             model_run_ids=model_run_ids,
             source_trace_ids=source_trace_ids,
             proposed_change_ids=proposal_ids,
         )
         decisions.append(decision)
-        support_target = lineage.evidence_by_id[event.support_evidence_target_id]
+        support_target = lineage.evidence_by_id[source_event.mention.support_evidence_target_id]
         traces.append(
             build_extraction_stage_trace(
-                trace_run_id=f"hp7:{preview.id}:{event.id}",
+                trace_run_id=f"hp7:{source_event.id}",
                 ordinal=0,
-                stage_id="hybrid_proposal_admission",
+                stage_id="source_grounded_event_proposal",
                 stage_version=HYBRID_PROPOSAL_POLICY_ID,
                 producer_id="kotekomi_application",
-                source_segment_id=_event_source_segment_id(preview, event),
+                source_segment_id=source_event.source_segment_id,
                 source_text_sha256=hashlib.sha256(support_target.exact_text.encode()).hexdigest(),
                 configuration=cast(
                     dict[str, JsonValue],
                     {
-                        "hard_gap_codes": sorted(item.value for item in _HARD_GAP_REASONS),
-                        "required_support": SupportOutcome.DIRECTLY_SUPPORTED.value,
+                        "classification_required": False,
+                        "event_name_source": "expression_evidence_target",
                     },
                 ),
                 input_payload={
-                    "event": cast(JsonValue, event.model_dump(mode="json")),
-                    "gaps": [cast(JsonValue, item.model_dump(mode="json")) for item in gaps],
-                    "statements": [
-                        cast(JsonValue, item.model_dump(mode="json")) for item in statements
-                    ],
-                    "judgments": [
-                        cast(JsonValue, item.model_dump(mode="json")) for item in judgments
-                    ],
+                    "source_grounded_event": cast(JsonValue, source_event.model_dump(mode="json")),
                 },
                 output_payload={
                     "decision": cast(JsonValue, decision.model_dump(mode="json")),
                     "proposed_changes": [
-                        cast(JsonValue, item.model_dump(mode="json")) for item in event_changes
+                        cast(JsonValue, item.model_dump(mode="json"))
+                        for item in (event_change, *entity_changes)
                     ],
                 },
-                status=(
-                    ExtractionStageStatus.REJECTED if reasons else ExtractionStageStatus.COMPLETED
-                ),
-                input_record_ids=tuple(
-                    sorted(
-                        {
-                            event.id,
-                            *(item.id for item in gaps),
-                            *(item.id for item in statements),
-                            *(item.id for item in judgments),
-                        }
-                    )
-                ),
+                status=ExtractionStageStatus.COMPLETED,
+                input_record_ids=(source_event.id,),
                 execution_record_ids=model_run_ids,
-                diagnostics=tuple(item.value for item in reasons),
+                diagnostics=(),
             )
         )
     proposed_changes = tuple(sorted(planned_by_id.values(), key=lambda item: item.id))
     decisions_tuple = tuple(decisions)
     traces_tuple = tuple(traces)
-    materialized_subject_ids = {item.event_subject_id for item in preview.semantic_events}
-    diagnostics = tuple(
-        sorted(
-            f"unmaterialized_event_subject:{item.event_subject_id}:{item.code.value}:{item.id}"
-            for item in preview.gaps
-            if item.event_subject_id not in materialized_subject_ids
-        )
-    )
     return build_hybrid_proposal_plan_record(
         parent_preview_id=preview.id,
         parent_preview_sha256=hashlib.sha256(
@@ -515,7 +410,7 @@ def build_hybrid_proposal_plan(
         decisions=decisions_tuple,
         proposed_changes=proposed_changes,
         traces=traces_tuple,
-        diagnostics=diagnostics,
+        diagnostics=(),
     )
 
 
@@ -634,6 +529,12 @@ def validate_planned_proposed_changes(
             Organization.model_validate_json(_canonical_json(record))
         elif record_type == "Event":
             event = Event.model_validate_json(_canonical_json(record))
+            if event.mentions:
+                mention_evidence = load_event_mention_evidence(
+                    event,
+                    ledger.get_evidence_target,
+                )
+                validate_source_grounded_event(event, mention_evidence)
             for actor_id in event.participant_actor_ids:
                 _require_planned_or_accepted(
                     actor_id,
@@ -822,6 +723,7 @@ def _load_lineage(
     return _Lineage(
         preview=preview,
         hp4_preview_id=hp4.id,
+        triggers=hp4,
         hp3_preview_id=hp4.parent_preview_id,
         mentions=mentions,
         references=references,
@@ -833,102 +735,79 @@ def _load_lineage(
     )
 
 
-def _admission_reasons(
-    preview: HybridEventSemanticsPreview,
-) -> dict[str, set[ProposalAdmissionReason]]:
-    reasons: dict[str, set[ProposalAdmissionReason]] = {
-        item.event_subject_id: set() for item in preview.semantic_events
-    }
-    frame_by_id = {item.id: item for item in HYBRID_EVENT_SEMANTICS_V4.frames}
-    for event in preview.semantic_events:
-        frame = frame_by_id[event.frame_id]
-        actual_roles = {item.frame_role_id for item in _event_assignments(preview, event)}
-        if any(item.required and item.id not in actual_roles for item in frame.roles):
-            reasons[event.event_subject_id].add(ProposalAdmissionReason.MISSING_REQUIRED_ROLE)
-        for gap in _event_gaps(preview, event):
-            if reason := _HARD_GAP_REASONS.get(gap.code):
-                reasons[event.event_subject_id].add(reason)
-        complete_statements = tuple(
-            item
-            for item in _event_statements(preview, event)
-            if item.kind is SemanticStatementKind.COMPLETE_PROPOSITION
-        )
-        if len(complete_statements) != 1:
-            reasons[event.event_subject_id].add(ProposalAdmissionReason.MISSING_SUPPORT_JUDGMENT)
-        judgments_by_statement: dict[str, list[SemanticSupportJudgment]] = {}
-        for judgment in preview.judgments:
-            judgments_by_statement.setdefault(judgment.statement_id, []).append(judgment)
-        for statement in complete_statements:
-            judgments = judgments_by_statement.get(statement.id, [])
-            if not judgments:
-                reasons[event.event_subject_id].add(
-                    ProposalAdmissionReason.MISSING_SUPPORT_JUDGMENT
-                )
-            elif len(judgments) > 1:
-                reasons[event.event_subject_id].add(
-                    ProposalAdmissionReason.REPEATED_SUPPORT_JUDGMENT
-                )
-            elif judgments[0].outcome is not SupportOutcome.DIRECTLY_SUPPORTED:
-                reasons[event.event_subject_id].add(ProposalAdmissionReason.NON_DIRECT_SUPPORT)
-        propositions = tuple(
-            item for item in preview.propositions if item.subject_record_id == event.id
-        )
-        if len(propositions) != 1:
-            reasons[event.event_subject_id].add(
-                ProposalAdmissionReason.COMPLETE_PROPOSITION_MISSING
-            )
-            continue
-        decisions = tuple(
-            item
-            for item in preview.proposition_decisions
-            if item.proposition_id == propositions[0].id
-        )
-        if len(decisions) != 1:
-            reasons[event.event_subject_id].add(
-                ProposalAdmissionReason.COMPLETE_PROPOSITION_MISSING
-            )
-        elif decisions[0].disposition is not PropositionDisposition.SUPPORTED:
-            reasons[event.event_subject_id].add(ProposalAdmissionReason.COMPLETE_PROPOSITION_HELD)
-    return reasons
-
-
-def _build_event_changes(
+def _build_source_grounded_event_change(
     *,
     lineage: _Lineage,
-    event: EventSemanticDraft,
-    event_ids: dict[str, str],
+    source_event: SourceGroundedEventDraft,
+    provenance_activity_id: str,
+) -> PlannedProposedChange:
+    event = build_source_grounded_event(source_event)
+    evidence = {
+        target_id: lineage.evidence_by_id[target_id]
+        for target_id in (
+            source_event.mention.head_evidence_target_id,
+            source_event.mention.expression_evidence_target_id,
+            source_event.mention.support_evidence_target_id,
+        )
+    }
+    validate_source_grounded_event(event, evidence)
+    support = evidence[source_event.mention.support_evidence_target_id]
+    trigger = next(item for item in lineage.triggers.triggers if item.id == source_event.trigger_id)
+    event_record = event.model_dump(mode="json", exclude={"created_at", "updated_at"})
+    return _planned_change(
+        provenance_activity_id=provenance_activity_id,
+        source_id=lineage.source_id,
+        document_id=lineage.document_id,
+        proposed_json={
+            "record_type": "Event",
+            "stable_label": event.id,
+            "record": cast(dict[str, JsonValue], event_record),
+            "evidence": _evidence_json(support),
+            "event_mention_evidence": {
+                "head": _evidence_json(evidence[source_event.mention.head_evidence_target_id]),
+                "expression": _evidence_json(
+                    evidence[source_event.mention.expression_evidence_target_id]
+                ),
+                "support": _evidence_json(support),
+            },
+            "hybrid_lineage": {
+                "hp1_preview_id": lineage.mentions.id,
+                "hp2_preview_id": lineage.references.id,
+                "hp3_preview_id": lineage.hp3_preview_id,
+                "hp4_preview_id": lineage.hp4_preview_id,
+                "source_grounded_event_id": source_event.id,
+                "event_trigger_id": trigger.id,
+                "model_run_ids": [trigger.model_run_id],
+                "source_trace_ids": [trigger.trace_id],
+            },
+        },
+    )
+
+
+def _build_source_named_entity_changes(
+    *,
+    lineage: _Lineage,
+    source_segment_ids: set[str],
     provenance_activity_id: str,
 ) -> tuple[PlannedProposedChange, ...]:
-    preview = lineage.preview
-    event_id = event_ids[event.event_subject_id]
-    support = lineage.evidence_by_id[event.support_evidence_target_id]
-    assignments = _event_assignments(preview, event)
-    typed_targets: dict[str, _TypedTarget] = {}
-    embedded_typed_targets: dict[str, _TypedTarget] = {}
-    participant_actor_ids: set[str] = set()
-    participant_organization_ids: set[str] = set()
-    for assignment in assignments:
-        target = _target(preview, assignment.target_id)
-        typed = _typed_target(lineage, target)
-        if typed is None:
-            pass
-        else:
-            typed_targets[target.id] = typed
-            if assignment.upper_role in {UpperRole.AGENT, UpperRole.PARTICIPANT}:
-                if typed.record_type == "Actor":
-                    participant_actor_ids.add(typed.record_id)
-                else:
-                    participant_organization_ids.add(typed.record_id)
-        for candidate_id in target.embedded_candidate_ids:
-            embedded = _typed_candidate(lineage, candidate_id)
-            if embedded is not None:
-                embedded_typed_targets[candidate_id] = embedded
-    lineage_json = _lineage_json(lineage, event)
+    selected_candidate_ids = set(
+        effective_mention_candidate_ids(
+            lineage.mentions.boundary_decisions,
+            lineage.mentions.boundary_adjudications,
+        )
+    )
+    typed_by_id: dict[str, _TypedTarget] = {}
+    for candidate in lineage.mentions.candidates:
+        if (
+            candidate.source_segment_id not in source_segment_ids
+            or candidate.id not in selected_candidate_ids
+        ):
+            continue
+        typed = _typed_candidate(lineage, candidate.id)
+        if typed is not None:
+            typed_by_id[typed.record_id] = typed
     changes: list[PlannedProposedChange] = []
-    typed_changes = {
-        item.record_id: item for item in (*typed_targets.values(), *embedded_typed_targets.values())
-    }
-    for typed in sorted(typed_changes.values(), key=lambda item: item.record_id):
+    for typed in sorted(typed_by_id.values(), key=lambda item: item.record_id):
         candidate_id = _canonical_candidate_id(lineage, typed.record_id)
         changes.append(
             _planned_change(
@@ -947,172 +826,7 @@ def _build_event_changes(
                 },
             )
         )
-    event_record = Event(
-        id=event_id,
-        name=f"{event.trigger_text} [{event.frame_id}]",
-        participant_actor_ids=tuple(sorted(participant_actor_ids)),
-        participant_organization_ids=tuple(sorted(participant_organization_ids)),
-    ).model_dump(mode="json", exclude={"created_at", "updated_at"})
-    changes.append(
-        _planned_change(
-            provenance_activity_id=provenance_activity_id,
-            source_id=lineage.source_id,
-            document_id=lineage.document_id,
-            proposed_json={
-                "record_type": "Event",
-                "stable_label": event_id,
-                "record": cast(dict[str, JsonValue], event_record),
-                "evidence": _evidence_json(support),
-                "hybrid_lineage": lineage_json,
-            },
-        )
-    )
-    assertions = _proposed_assertions(
-        lineage=lineage,
-        event=event,
-        event_id=event_id,
-        event_ids=event_ids,
-        typed_targets=typed_targets,
-        embedded_typed_targets=embedded_typed_targets,
-    )
-    support_attempt = lineage.attempt_by_evidence_id[support.id]
-    for assertion in assertions:
-        changes.append(
-            _planned_change(
-                provenance_activity_id=provenance_activity_id,
-                source_id=lineage.source_id,
-                document_id=lineage.document_id,
-                proposed_json={
-                    "record_type": "Assertion",
-                    "stable_label": assertion.id,
-                    "record": cast(
-                        dict[str, JsonValue], assertion.model_dump(mode="json", exclude_none=True)
-                    ),
-                    "evidence_links": [
-                        {
-                            "evidence_target_id": support.id,
-                            "validation_attempt_id": support_attempt.id,
-                            "role": "direct_support",
-                            "polarity": EvidencePolarity.SUPPORTS.value,
-                            "necessity": EvidenceNecessity.REQUIRED.value,
-                        }
-                    ],
-                    "hybrid_lineage": lineage_json,
-                },
-            )
-        )
-    return tuple(sorted(changes, key=lambda item: item.id))
-
-
-def _proposed_assertions(
-    *,
-    lineage: _Lineage,
-    event: EventSemanticDraft,
-    event_id: str,
-    event_ids: dict[str, str],
-    typed_targets: dict[str, _TypedTarget],
-    embedded_typed_targets: dict[str, _TypedTarget],
-) -> tuple[ProposedAssertion, ...]:
-    support_id = event.support_evidence_target_id
-    assertions: list[ProposedAssertion] = []
-
-    def add(
-        relation: HybridEventStructuralPredicate,
-        *,
-        object_entity_id: str | None = None,
-        object_value: JsonValue = None,
-        qualifiers: dict[str, JsonValue] | None = None,
-    ) -> None:
-        object_identity = object_entity_id or _canonical_json(object_value)
-        qualifier_values = qualifiers or {}
-        assertion_id = _id(
-            "ast",
-            event_id,
-            relation.value,
-            object_identity,
-            _canonical_json(qualifier_values),
-            support_id,
-        )
-        assertions.append(
-            ProposedAssertion(
-                id=assertion_id,
-                assertion_type=AssertionType.SOURCE_CLAIM,
-                epistemic_scope=EpistemicScope.SOURCE_REPORT,
-                subject_entity_id=event_id,
-                relation_label=relation.value,
-                object_entity_id=object_entity_id,
-                object_value=object_value,
-                source_authority=SourceAuthority.UNKNOWN,
-                attribution_basis=AttributionBasis.REPORTED_BY_SOURCE,
-                qualifiers=qualifier_values,
-                source_ids=(lineage.source_id,),
-                evidence_target_ids=(support_id,),
-            )
-        )
-
-    add(HybridEventStructuralPredicate.HAS_EVENT_TYPE, object_value=event.frame_id)
-    for assignment in _event_assignments(lineage.preview, event):
-        target = _target(lineage.preview, assignment.target_id)
-        typed = typed_targets.get(target.id)
-        object_entity_id: str | None = None
-        object_value: JsonValue = None
-        if target.kind.value == "event_subject" and target.reference_id is not None:
-            object_entity_id = event_ids[target.reference_id]
-        elif typed is not None:
-            object_entity_id = typed.record_id
-        else:
-            object_value = target.text
-        add(
-            HybridEventStructuralPredicate.HAS_ARGUMENT,
-            object_entity_id=object_entity_id,
-            object_value=object_value,
-            qualifiers={
-                "frame_role_id": assignment.frame_role_id,
-                "upper_role": assignment.upper_role.value,
-            },
-        )
-        for candidate_id in target.embedded_candidate_ids:
-            embedded = embedded_typed_targets.get(candidate_id)
-            if embedded is not None:
-                add(
-                    HybridEventStructuralPredicate.HAS_ARGUMENT_ENTITY_REFERENCE,
-                    object_entity_id=embedded.record_id,
-                    qualifiers={
-                        "frame_role_id": assignment.frame_role_id,
-                        "upper_role": assignment.upper_role.value,
-                    },
-                )
-    qualifier_by_id = {item.id: item for item in lineage.preview.qualifiers}
-    for qualifier_id in event.qualifier_ids:
-        qualifier = qualifier_by_id[qualifier_id]
-        add(
-            HybridEventStructuralPredicate.HAS_TIME
-            if qualifier.kind == "time"
-            else HybridEventStructuralPredicate.HAS_PLACE,
-            object_value=qualifier.text,
-            qualifiers=(
-                {"temporal_relation": qualifier.temporal_relation.value}
-                if qualifier.temporal_relation is not None
-                else None
-            ),
-        )
-    add(HybridEventStructuralPredicate.HAS_POLARITY, object_value=event.polarity)
-    add(HybridEventStructuralPredicate.HAS_MODALITY, object_value=event.modality)
-    if event.attribution_target_id is not None:
-        target = _target(lineage.preview, event.attribution_target_id)
-        typed = typed_targets.get(target.id)
-        add(
-            HybridEventStructuralPredicate.ACCORDING_TO,
-            object_entity_id=typed.record_id if typed is not None else None,
-            object_value=None if typed is not None else target.text,
-        )
-    return tuple(sorted(assertions, key=lambda item: item.id))
-
-
-def _typed_target(lineage: _Lineage, target: EventArgumentTargetDraft) -> _TypedTarget | None:
-    if target.kind.value != "mention_candidate" or target.reference_id is None:
-        return None
-    return _typed_candidate(lineage, target.reference_id)
+    return tuple(changes)
 
 
 def _typed_candidate(
@@ -1248,33 +962,6 @@ def _resolved_name(
     return candidate.text, candidate.id
 
 
-def _lineage_json(lineage: _Lineage, event: EventSemanticDraft) -> dict[str, JsonValue]:
-    statements = _event_statements(lineage.preview, event)
-    judgments = _event_judgments(lineage.preview, statements)
-    source_trace_ids, model_run_ids = _event_execution_lineage(
-        lineage.preview,
-        event,
-        _event_assignments(lineage.preview, event),
-        statements,
-        judgments,
-    )
-    return cast(
-        dict[str, JsonValue],
-        {
-            "hp1_preview_id": lineage.mentions.id,
-            "hp2_preview_id": lineage.references.id,
-            "hp3_preview_id": lineage.hp3_preview_id,
-            "hp4_preview_id": lineage.hp4_preview_id,
-            "hp6_preview_id": lineage.preview.id,
-            "hp6_event_semantic_id": event.id,
-            "semantic_statement_ids": sorted(item.id for item in statements),
-            "support_judgment_ids": sorted(item.id for item in judgments),
-            "model_run_ids": list(model_run_ids),
-            "source_trace_ids": list(source_trace_ids),
-        },
-    )
-
-
 def _typed_candidate_lineage_json(
     lineage: _Lineage,
     candidate_id: str,
@@ -1292,7 +979,6 @@ def _typed_candidate_lineage_json(
             "hp2_preview_id": lineage.references.id,
             "hp3_preview_id": lineage.hp3_preview_id,
             "hp4_preview_id": lineage.hp4_preview_id,
-            "hp6_preview_id": lineage.preview.id,
             "mention_candidate_id": candidate_id,
             "mention_interpretation_ids": sorted(item.id for item in interpretations),
             "reference_decision_ids": sorted(item.id for item in reference_decisions),
@@ -1341,95 +1027,19 @@ def _evidence_json(target: EvidenceTarget) -> dict[str, JsonValue]:
     }
 
 
-def _event_assignments(
-    preview: HybridEventSemanticsPreview, event: EventSemanticDraft
-) -> tuple[EventArgumentAssignmentDraft, ...]:
-    by_id = {item.id: item for item in preview.assignments}
-    return tuple(by_id[item] for item in event.argument_assignment_ids)
-
-
-def _event_gaps(
-    preview: HybridEventSemanticsPreview, event: EventSemanticDraft
-) -> tuple[SemanticCoverageGap, ...]:
-    return tuple(item for item in preview.gaps if item.event_subject_id == event.event_subject_id)
-
-
-def _event_statements(
-    preview: HybridEventSemanticsPreview, event: EventSemanticDraft
-) -> tuple[SemanticStatement, ...]:
-    return tuple(item for item in preview.statements if item.event_semantic_id == event.id)
-
-
-def _event_judgments(
-    preview: HybridEventSemanticsPreview,
-    statements: tuple[SemanticStatement, ...],
-) -> tuple[SemanticSupportJudgment, ...]:
-    statement_ids = {item.id for item in statements}
-    return tuple(item for item in preview.judgments if item.statement_id in statement_ids)
-
-
-def _target(preview: HybridEventSemanticsPreview, target_id: str) -> EventArgumentTargetDraft:
-    target = next((item for item in preview.targets if item.id == target_id), None)
-    if target is None:
-        raise ValueError("HP-7 references an unknown semantic target.")
-    return target
-
-
-def _event_execution_lineage(
-    preview: HybridEventSemanticsPreview,
-    event: EventSemanticDraft,
-    assignments: tuple[EventArgumentAssignmentDraft, ...],
-    statements: tuple[SemanticStatement, ...],
-    judgments: tuple[SemanticSupportJudgment, ...],
-) -> tuple[tuple[str, ...], tuple[str, ...]]:
-    """Collect only the HP-6 traces and model runs that contributed to one event."""
-    trace_ids = {event.frame_selection_trace_id}
-    trace_ids.update(item for assignment in assignments for item in assignment.source_trace_ids)
-    run_ids = {event.frame_selection_model_run_id}
-    run_ids.update(item.model_run_id for item in judgments)
-    statement_ids = {item.id for item in statements}
-    for trace in preview.traces:
-        if (
-            trace.id in trace_ids
-            or statement_ids.intersection(trace.input_record_ids)
-            or run_ids.intersection(trace.execution_record_ids)
-        ):
-            trace_ids.add(trace.id)
-            run_ids.update(
-                item for item in trace.execution_record_ids if item in preview.model_run_ids
-            )
-    return tuple(sorted(trace_ids)), tuple(sorted(run_ids))
-
-
-def _event_source_segment_id(
-    preview: HybridEventSemanticsPreview, event: EventSemanticDraft
-) -> str:
-    assignments = _event_assignments(preview, event)
-    if not assignments:
-        return f"held:{event.event_subject_id}"
-    return _target(preview, assignments[0].target_id).source_segment_id
-
-
 def _decision_id(
     *,
-    event: EventSemanticDraft,
-    disposition: ProposalDisposition,
-    reasons: tuple[ProposalAdmissionReason, ...],
+    source_event: SourceGroundedEventDraft,
     advisory_gap_ids: tuple[str, ...],
-    statements: tuple[SemanticStatement, ...],
-    judgments: tuple[SemanticSupportJudgment, ...],
     model_run_ids: tuple[str, ...],
     source_trace_ids: tuple[str, ...],
     proposal_ids: tuple[str, ...],
 ) -> str:
     return _id(
         "pad",
-        event.id,
-        disposition.value,
-        *(item.value for item in reasons),
+        source_event.id,
+        "proposed",
         *advisory_gap_ids,
-        *(sorted(item.id for item in statements)),
-        *(sorted(item.id for item in judgments)),
         *model_run_ids,
         *source_trace_ids,
         *proposal_ids,

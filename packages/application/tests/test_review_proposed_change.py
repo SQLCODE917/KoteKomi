@@ -32,6 +32,7 @@ from kotekomi_domain import (
     Entity,
     EpistemicScope,
     Event,
+    EventMention,
     EvidenceTarget,
     EvidenceValidationAttempt,
     EvidenceValidationAttemptStatus,
@@ -52,6 +53,7 @@ from kotekomi_domain import (
     TextViewKind,
     canonical_evidence_target_digest,
     canonical_representation_digest,
+    deterministic_event_mention_id,
 )
 from kotekomi_domain.models import JsonValue
 
@@ -399,6 +401,85 @@ def review_input(proposed_change_id: str) -> ReviewProposedChangeInput:
         reviewed_at=NOW,
         canonical_predicate="postponed_rollout",
     )
+
+
+def _source_grounded_event_proposal() -> ProposedChange:
+    mention = EventMention(
+        id=deterministic_event_mention_id(
+            head_evidence_target_id="etg_delay",
+            expression_evidence_target_id="etg_delay",
+            support_evidence_target_id="etg_delay",
+        ),
+        head_evidence_target_id="etg_delay",
+        expression_evidence_target_id="etg_delay",
+        support_evidence_target_id="etg_delay",
+    )
+    event = Event(
+        id="evt_source_grounded",
+        name="Anthropic postponed the rollout.",
+        mentions=(mention,),
+    )
+    return proposed_change(
+        "pcg_source_grounded_event",
+        "Event",
+        cast(
+            dict[str, JsonValue],
+            event.model_dump(mode="json", exclude={"created_at", "updated_at"}),
+        ),
+    )
+
+
+def test_source_grounded_event_approval_revalidates_embedded_evidence() -> None:
+    proposal = _source_grounded_event_proposal()
+    ledger = FakeReviewLedger((proposal,))
+    seed_reference_records(ledger)
+
+    result = approve_proposed_change(review_input(proposal.id), ledger)
+
+    assert result.accepted_record_id == "evt_source_grounded"
+    assert ledger.events["evt_source_grounded"].mentions[0].support_evidence_target_id == (
+        "etg_delay"
+    )
+
+
+def test_source_grounded_event_approval_rejects_missing_or_changed_evidence() -> None:
+    proposal = _source_grounded_event_proposal()
+    ledger = FakeReviewLedger((proposal,))
+    seed_reference_records(ledger)
+    ledger.evidence_targets.clear()
+
+    with pytest.raises(ValueError, match="references missing EvidenceTarget"):
+        approve_proposed_change(review_input(proposal.id), ledger)
+
+    ledger = FakeReviewLedger((proposal,))
+    seed_reference_records(ledger)
+    record = cast(dict[str, JsonValue], proposal.proposed_json["record"])
+    changed = proposal.model_copy(
+        update={
+            "proposed_json": proposal.proposed_json | {"record": record | {"name": "postponed"}}
+        }
+    )
+    ledger.proposed_changes[proposal.id] = changed
+    with pytest.raises(ValueError, match="must equal its exact expression"):
+        approve_proposed_change(review_input(proposal.id), ledger)
+
+
+def test_source_grounded_event_edit_cannot_remove_its_event_mention() -> None:
+    proposal = _source_grounded_event_proposal()
+    ledger = FakeReviewLedger((proposal,))
+    seed_reference_records(ledger)
+    proposed_record = cast(dict[str, JsonValue], proposal.proposed_json["record"])
+
+    with pytest.raises(ValueError, match="must preserve its EventMention evidence"):
+        edit_proposed_change(
+            ReviewProposedChangeInput(
+                proposed_change_id=proposal.id,
+                reviewer="reviewer@example.com",
+                reviewed_at=NOW,
+                accepted_record_json=proposed_record | {"mentions": []},
+            ),
+            ledger,
+        )
 
 
 def test_review_next_decision_approves_first_pending_queue_item() -> None:

@@ -7,6 +7,7 @@ from kotekomi_adapters import (
     SQLiteLedgerInitializer,
     sqlite_ledger_transaction,
 )
+from kotekomi_domain import Event, EventMention, deterministic_event_mention_id
 
 from .domain_fixtures import sample_domain_records
 
@@ -65,6 +66,30 @@ def test_repository_round_trips_all_domain_records(tmp_path: Path) -> None:
         assert repository.get_provenance_activity(provenance_activity.id) == provenance_activity
         assert repository.get_proposed_change(proposed_change.id) == proposed_change
         assert repository.get_briefing(briefing.id) == briefing
+
+
+def test_repository_round_trips_an_event_with_embedded_source_mention(
+    tmp_path: Path,
+) -> None:
+    ledger_path = tmp_path / "kotekomi.db"
+    SQLiteLedgerInitializer(ledger_path).initialize()
+    mention = EventMention(
+        id=deterministic_event_mention_id(
+            head_evidence_target_id="etg_head",
+            expression_evidence_target_id="etg_expression",
+            support_evidence_target_id="etg_support",
+        ),
+        head_evidence_target_id="etg_head",
+        expression_evidence_target_id="etg_expression",
+        support_evidence_target_id="etg_support",
+    )
+    event = Event(id="evt_source_grounded", name="publicly rebuked", mentions=(mention,))
+
+    with sqlite_ledger_transaction(ledger_path) as repository:
+        repository.save_event(event)
+
+    with sqlite_ledger_transaction(ledger_path) as repository:
+        assert repository.get_event(event.id) == event
 
 
 def test_repository_lists_records(tmp_path: Path) -> None:

@@ -165,14 +165,16 @@ def test_each_policy_configuration_input_changes_every_paragraph_fingerprint() -
         )
 
 
-def test_partial_stage_is_an_accounted_gap_but_held_hp7_diagnostic_is_not() -> None:
+def test_partial_stage_is_an_accounted_gap_but_advisory_hp7_diagnostic_is_not() -> None:
     plan = _plan(_policy_input(), _PlanningLedger(), _PlanningArchive())
     work = plan.manifest.work_items[0]
     stages = tuple(
         _stage(
             stage,
             terminal_status="partial" if stage is HybridStageId.HP3_GROUNDING else "complete",
-            diagnostics=("held_events:1",) if stage is HybridStageId.HP7_PROPOSAL_PLAN else (),
+            diagnostics=("advisory_event_gaps:1",)
+            if stage is HybridStageId.HP7_PROPOSAL_PLAN
+            else (),
         )
         for stage in HYBRID_STAGE_ORDER
     )
@@ -190,7 +192,9 @@ def test_partial_stage_is_an_accounted_gap_but_held_hp7_diagnostic_is_not() -> N
         stages=tuple(
             _stage(
                 stage,
-                diagnostics=("held_events:1",) if stage is HybridStageId.HP7_PROPOSAL_PLAN else (),
+                diagnostics=("advisory_event_gaps:1",)
+                if stage is HybridStageId.HP7_PROPOSAL_PLAN
+                else (),
             )
             for stage in HYBRID_STAGE_ORDER
         ),

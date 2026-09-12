@@ -7,6 +7,7 @@
 - First deliverable: [HSQ-1 Governed Event Coverage](2026-09-06-governed-event-coverage.md)
 - Current front-half deliverable: [HSQ-7 Bounded Semantic Task Allocation](2026-09-08-bounded-semantic-task-allocation.md)
 - Verified Event boundary: [SourceOccurrence to Event Trigger Boundary](2026-09-10-source-occurrence-event-trigger-boundary.md)
+- Current semantic boundary: [Source-Grounded Event Boundary](2026-09-12-source-grounded-event-boundary.md)
 
 ## Context & Problem
 
@@ -36,7 +37,8 @@ This program improves those five boundaries without creating another extraction 
 
 ### Terms
 
-**CompleteProposition** means one deterministic sentence that represents one complete event or standing Assertion draft.
+**CompleteProposition** means one deterministic sentence that represents optional enriched Event
+semantics or one standing Assertion draft.
 
 **PropositionDecision** means the combined Qwen and NLI evidence for one CompleteProposition.
 
@@ -57,9 +59,13 @@ This program improves those five boundaries without creating another extraction 
 9. Stanza and QANom propose EventHeadCandidates from exact SourceOccurrences.
 10. Qwen answers finite candidate-local Event questions.
 11. KoteKomi reconciles those answers into exact EventTriggerDraft records.
-12. Later bounded tasks select governed frames, roles, and presentation.
-13. Qwen and an NLI challenger judge one CompleteProposition against exact source text.
-14. KoteKomi admits only complete supported Events and standing Assertions to human review.
+12. KoteKomi maps each trigger head, expression, and SourceSegment to exact EvidenceTargets.
+13. KoteKomi embeds those EvidenceTargets in one EventMention.
+14. KoteKomi proposes one Event with the exact source expression as its name.
+15. Later bounded tasks assign source-backed participants and optional classification.
+16. KoteKomi can send complete enriched propositions through explicit support review.
+17. Proposition support can govern enriched Assertions and standing Assertions but cannot veto the
+    already source-grounded Event.
 
 The stage-local control path evaluates and diagnoses each completed boundary independently.
 
@@ -100,20 +106,18 @@ mention boundary --> reference boundary --> Event-trigger boundary
         |                   |                        |
         +-------------------+------------------------+
                             v
-                 governed Event semantics
-                            |
+                  source-grounded Event
+                    |               |
+                    |               v
+                    |      optional semantic enrichment
+                    |               |
+                    |        CompleteProposition
+                    |               |
+                    |        Qwen + NLI challenge
+                    |               |
+                    +-------+-------+
                             v
-                  CompleteProposition
-                            |
-                     +------+------+
-                     |             |
-                   Qwen       NLI challenger
-                     |             |
-                     +------+------+
-                            v
-                 KoteKomi admission
-                            |
-                  pending ProposedChange
+                  pending ProposedChanges
 ```
 
 The Application Layer owns every semantic admission rule.
@@ -137,27 +141,35 @@ The [Hybrid Pipeline architecture](2026-09-01-hybrid-intelligence-extraction-pip
 | [HSQ-5](2026-09-06-standing-fact-semantic-admission.md) | A reviewer sees standing Assertions without flattened events or substituted arguments. | HSQ-3 and HSQ-4 expose proposition and reference decisions. | The standing-fact route admits only supported standing Assertions. |
 | [HSQ-6](2026-09-07-source-bound-governed-event-extraction.md) | A reviewer sees complete source-bound Events without open-frame translation loss. | HSQ-1 through HSQ-5 expose governed meanings and support evidence. | Trigger discovery feeds governed event construction directly and all five Amodei Gold events reach the Candidate Wiki. |
 | [HSQ-7](2026-09-08-bounded-semantic-task-allocation.md) | A reviewer retains source-backed intelligence because each model call makes one bounded semantic decision. | HSQ-6 exposes the remaining trigger, normalization, admission, route, and reference losses. | Mention, reference, and Event-trigger boundaries preserve source-owned choices and exact stage-local evidence. |
+| [Source-grounded Event boundary](2026-09-12-source-grounded-event-boundary.md) | A reviewer sees each exact Event trigger without requiring an exhaustive classification. | The Event-trigger boundary supplies reviewed EventTriggerDraft records. | KoteKomi proposes source-grounded Events with embedded EventMention evidence. |
+
+HSQ-1 through HSQ-6 record the historical governed-semantics route and its findings.
+
+The Source-Grounded Event Boundary supersedes that route as the Event admission contract while
+retaining governed semantics as optional derived enrichment.
 
 ## Behavior & Domain Rules
 
-- HSQ-RUL-01: An unresolved governed meaning remains a gap.
+- HSQ-RUL-01: An unresolved governed classification remains an enrichment gap, not an Event veto.
 - HSQ-RUL-02: A later model result cannot overwrite a valid earlier source-bound assignment.
 - HSQ-RUL-03: A specialist score cannot become evidence confidence.
 - HSQ-RUL-04: A coreference observation cannot create an Entity.
 - HSQ-RUL-05: A bounded event uses an Event instead of a binary standing Assertion.
 - HSQ-RUL-06: Existing derived previews become stale when their policy identity changes.
 - HSQ-RUL-07: Canonical verification evaluates the final review disposition and proposal presence, not merely trigger discovery.
-- HSQ-RUL-08: A rejected Gold semantic must be absent or terminate as held with no ProposedChange.
+- HSQ-RUL-08: A rejected source-grounded Event requires a human review rejection; a rejected optional
+  enrichment cannot remove the Event proposal.
 - HSQ-RUL-09: Reference discovery supplies source-literal pronouns and bounded nominal references to the existing HSQ-4 resolver.
 - HSQ-RUL-10: An event-bearing SourceSegment cannot also yield a non-stative standing Assertion for the same meaning.
 - HSQ-RUL-11: Overlapping trigger proposals retain the shortest source-literal trigger; non-overlapping triggers remain distinct events.
-- HSQ-RUL-12: Every materialized Event argument retains its governed frame-role ID and UpperRole qualifier.
+- HSQ-RUL-12: Every materialized Event argument retains its source-backed assignment and role evidence.
 - HSQ-RUL-13: Document-local identity reconciliation may join a short name to one uniquely observed same-kind terminal full name, but never guesses through ambiguity or across entity kinds.
 - HSQ-RUL-14: Entity-type conflicts remain separate review candidates and produce an explicit diagnostic.
-- HSQ-RUL-15: Governed event families are added only from adjudicated omissions and never through a catch-all frame.
-- HSQ-RUL-16: Surface trigger wording never becomes the governed relationship vocabulary.
+- HSQ-RUL-15: Optional governed event families are added only from adjudicated needs and never as an
+  admission workaround.
+- HSQ-RUL-16: Exact Event expression wording supplies source-grounded phenomenological precision.
 - HSQ-RUL-17: One invalid optional field cannot erase an otherwise parseable event proposal.
-- HSQ-RUL-18: A Candidate Wiki event requires governed roles, exact source evidence, and audit lineage.
+- HSQ-RUL-18: A Candidate Wiki Event requires exact source evidence and audit lineage.
 
 ## Acceptance Criteria
 
@@ -166,9 +178,11 @@ The [Hybrid Pipeline architecture](2026-09-01-hybrid-intelligence-extraction-pip
 - AC-HSQ-DEL-02: Stage traces expose exact source input, raw output, parsed output, and admission result.
 - AC-HSQ-RUL-01: The canonical Anthropic PDF produces source-aligned review candidates after all five deliverables.
 - AC-HSQ-RUL-02: The Candidate Wiki excludes the adjudicated malformed Amodei proposals.
-- AC-HSQ-RUL-03: Canonical verification fails when an excluded Gold semantic produces a ProposedChange or an expected proposed event does not.
+- AC-HSQ-RUL-03: Canonical verification fails when expected source-grounded Events are missing,
+  duplicated, or incorrectly grounded.
 - AC-HSQ-RUL-04: Deterministic trigger reconciliation suppresses overlapping duplicate trigger graphs while retaining distinct causal events.
-- AC-HSQ-RUL-05: Proposal tests prove that governed role qualifiers survive into each reviewable Assertion.
+- AC-HSQ-RUL-05: Proposal tests prove source-grounded Event bytes are independent of optional governed
+  classification, and separately admitted role Assertions retain their qualifiers.
 - AC-HSQ-RUL-06: Identity tests prove unique terminal-name reconciliation, ambiguous-name separation, and cross-kind conflict diagnostics.
 - AC-HSQ-RUL-07: The Amodei Gold catalog contains four source cases and five expected events.
 - AC-HSQ-RUL-08: Canonical evaluation reports each Amodei Gold event's terminal stage and disposition.

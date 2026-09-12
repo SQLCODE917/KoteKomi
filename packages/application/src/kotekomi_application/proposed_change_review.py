@@ -53,6 +53,10 @@ from kotekomi_application.review_queue_packet import (
     list_review_queue,
     review_packet_to_json,
 )
+from kotekomi_application.source_grounded_events import (
+    load_event_mention_evidence,
+    validate_source_grounded_event,
+)
 
 HASH_ID_LENGTH = 24
 APPROVED_ACTIVITY_TYPE = "proposed_change_approved"
@@ -681,6 +685,7 @@ def edit_proposed_change(
         accepted_record=accepted_record,
         original_proposed_json=proposed_change.proposed_json,
     )
+    _validate_source_grounded_event_edit(proposed_change, accepted_record)
     _validate_accepted_record_references(
         accepted_record=accepted_record,
         pending_provenance_activity=provenance_activity,
@@ -721,6 +726,19 @@ def edit_proposed_change(
             superseded_assertion.id if superseded_assertion is not None else None
         ),
     )
+
+
+def _validate_source_grounded_event_edit(
+    proposed_change: ProposedChange,
+    accepted_record: AcceptedReviewRecord,
+) -> None:
+    if not isinstance(accepted_record, Event):
+        return
+    proposed_event = Event.model_validate_json(json.dumps(_proposal_record_json(proposed_change)))
+    if not proposed_event.mentions:
+        return
+    if accepted_record.mentions != proposed_event.mentions:
+        raise ValueError("An edited source-grounded Event must preserve its EventMention evidence.")
 
 
 def deterministic_review_provenance_activity_id(
@@ -975,6 +993,12 @@ def _validate_accepted_record_references(
     elif isinstance(accepted_record, Organization):
         return
     elif isinstance(accepted_record, Event):
+        if accepted_record.mentions:
+            mention_evidence = load_event_mention_evidence(
+                accepted_record,
+                ledger_repository.get_evidence_target,
+            )
+            validate_source_grounded_event(accepted_record, mention_evidence)
         if accepted_record.place_id is not None:
             _require_place(ledger_repository, accepted_record.place_id, accepted_record.id)
         for actor_id in accepted_record.participant_actor_ids:

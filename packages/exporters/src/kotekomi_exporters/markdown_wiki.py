@@ -300,8 +300,7 @@ def _edge_object(edge: WikiOntologyEdge, current_path: str) -> str:
 
 
 def _event_label(event: WikiEventPresentation) -> str:
-    label = f"{_human_label(event.frame_id)} Event"
-    return label if event.complete else f"Incomplete {label}"
+    return event.event_label
 
 
 def _frontmatter_value(value: str) -> str:

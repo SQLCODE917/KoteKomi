@@ -11,9 +11,11 @@ from typing import Annotated, Literal, Self, cast
 from kotekomi_domain import (
     HYBRID_EVENT_SEMANTICS_V4,
     AssignmentOrigin,
+    EventMention,
     SemanticArgumentTargetKind,
     TemporalRelation,
     UpperRole,
+    deterministic_event_mention_id,
 )
 from kotekomi_domain.models import JsonValue
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -26,6 +28,7 @@ from kotekomi_application.semantic_proposition import (
 )
 
 HYBRID_EVENT_SEMANTICS_POLICY_ID = "hybrid_event_semantics_v6"
+SOURCE_GROUNDED_EVENT_POLICY_ID = "source_grounded_event_v1"
 HYBRID_EVENT_FRAME_SELECTION_PROMPT_ID = "hybrid_event_frame_selection_v1"
 HYBRID_EVENT_FRAME_SELECTION_SCHEMA_ID = "hybrid_event_frame_selection_text_v1"
 HYBRID_EVENT_FRAME_FIT_PROMPT_ID = "hybrid_event_frame_fit_v1"
@@ -97,6 +100,14 @@ class EventAttributionKind(StrEnum):
     UNRESOLVED = "unresolved"
 
 
+class EventTypeAssignmentStatus(StrEnum):
+    """Outcome of optional classification under one pinned vocabulary."""
+
+    CLASSIFIED = "classified"
+    UNCLASSIFIED = "unclassified"
+    PARTIAL = "partial"
+
+
 class EventSubjectDraft(BaseModel):
     """One deterministic event subject corresponding to one exact trigger."""
 
@@ -110,6 +121,81 @@ class EventSubjectDraft(BaseModel):
     def validate_identity(self) -> Self:
         if self.id != event_subject_draft_id(self.parent_preview_id, self.trigger_id):
             raise ValueError("EventSubjectDraft ID does not match its source trigger.")
+        return self
+
+
+class SourceGroundedEventDraft(BaseModel):
+    """One source-grounded Event proposal input independent of classification."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    id: Annotated[str, Field(pattern=r"^sge_[a-f0-9]{24}$")]
+    event_subject_id: Annotated[str, Field(pattern=r"^esd_[a-f0-9]{24}$")]
+    trigger_id: Annotated[str, Field(pattern=r"^etd_[a-f0-9]{24}$")]
+    source_segment_id: Annotated[str, Field(min_length=1)]
+    source_text_sha256: Annotated[str, Field(pattern=_SHA256)]
+    expression_text: Annotated[str, Field(min_length=1)]
+    head_text: Annotated[str, Field(min_length=1)]
+    mention: EventMention
+
+    @model_validator(mode="after")
+    def validate_contract(self) -> Self:
+        expected = source_grounded_event_draft_id(
+            event_subject_id=self.event_subject_id,
+            trigger_id=self.trigger_id,
+            source_segment_id=self.source_segment_id,
+            source_text_sha256=self.source_text_sha256,
+            expression_text=self.expression_text,
+            head_text=self.head_text,
+            mention=self.mention,
+        )
+        if self.id != expected:
+            raise ValueError("SourceGroundedEventDraft ID does not match its source evidence.")
+        return self
+
+
+class EventTypeAssignment(BaseModel):
+    """Optional derived classification of one source-grounded Event."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    id: Annotated[str, Field(pattern=r"^eta_[a-f0-9]{24}$")]
+    source_grounded_event_id: Annotated[str, Field(pattern=r"^sge_[a-f0-9]{24}$")]
+    event_id: Annotated[str, Field(pattern=r"^evt_[a-f0-9]{24}$")]
+    vocabulary_id: Annotated[str, Field(min_length=1)]
+    vocabulary_sha256: Annotated[str, Field(pattern=_SHA256)]
+    status: EventTypeAssignmentStatus
+    type_id: Annotated[str, Field(min_length=1)] | None = None
+    extraction_task_ids: tuple[Annotated[str, Field(min_length=1)], ...]
+    model_run_ids: tuple[Annotated[str, Field(min_length=1)], ...]
+    diagnostic_code: Annotated[str, Field(pattern=r"^[a-z][a-z0-9_]*$")] | None = None
+
+    @model_validator(mode="after")
+    def validate_contract(self) -> Self:
+        _ordered_distinct("Event type assignment task IDs", self.extraction_task_ids)
+        _ordered_distinct("Event type assignment ModelRun IDs", self.model_run_ids)
+        if len(self.extraction_task_ids) != len(self.model_run_ids):
+            raise ValueError("Event type assignment execution coverage must match.")
+        if self.status is EventTypeAssignmentStatus.CLASSIFIED:
+            if self.type_id is None or self.diagnostic_code is not None:
+                raise ValueError("A classified Event type assignment requires only a type ID.")
+        elif self.type_id is not None or self.diagnostic_code is None:
+            raise ValueError(
+                "An unclassified or partial Event type assignment requires one diagnostic."
+            )
+        expected = event_type_assignment_id(
+            source_grounded_event_id=self.source_grounded_event_id,
+            event_id=self.event_id,
+            vocabulary_id=self.vocabulary_id,
+            vocabulary_sha256=self.vocabulary_sha256,
+            status=self.status,
+            type_id=self.type_id,
+            extraction_task_ids=self.extraction_task_ids,
+            model_run_ids=self.model_run_ids,
+            diagnostic_code=self.diagnostic_code,
+        )
+        if self.id != expected:
+            raise ValueError("EventTypeAssignment ID does not match its evidence.")
         return self
 
 
@@ -374,8 +460,8 @@ class HybridEventSemanticsPreview(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
-    schema_version: Literal["hybrid_event_semantics_preview_v4"] = (
-        "hybrid_event_semantics_preview_v4"
+    schema_version: Literal["hybrid_event_semantics_preview_v5"] = (
+        "hybrid_event_semantics_preview_v5"
     )
     id: Annotated[str, Field(pattern=r"^hsp_[a-f0-9]{24}$")]
     parent_preview_id: Annotated[str, Field(pattern=r"^htp_[a-f0-9]{24}$")]
@@ -394,6 +480,9 @@ class HybridEventSemanticsPreview(BaseModel):
     presentation_schema_sha256: Annotated[str, Field(pattern=_SHA256)]
     support_prompt_sha256: Annotated[str, Field(pattern=_SHA256)]
     support_schema_sha256: Annotated[str, Field(pattern=_SHA256)]
+    source_grounded_events: tuple[SourceGroundedEventDraft, ...] = ()
+    governed_enrichment_requested: bool = True
+    event_type_assignments: tuple[EventTypeAssignment, ...] = ()
     semantic_events: tuple[EventSemanticDraft, ...] = ()
     targets: tuple[EventArgumentTargetDraft, ...] = ()
     assignments: tuple[EventArgumentAssignmentDraft, ...] = ()
@@ -417,6 +506,14 @@ class HybridEventSemanticsPreview(BaseModel):
     @model_validator(mode="after")
     def validate_contract(self) -> Self:
         for label, values in (
+            (
+                "source-grounded event IDs",
+                tuple(item.id for item in self.source_grounded_events),
+            ),
+            (
+                "Event type assignment IDs",
+                tuple(item.id for item in self.event_type_assignments),
+            ),
             ("semantic event IDs", tuple(item.id for item in self.semantic_events)),
             ("target IDs", tuple(item.id for item in self.targets)),
             ("assignment IDs", tuple(item.id for item in self.assignments)),
@@ -440,6 +537,26 @@ class HybridEventSemanticsPreview(BaseModel):
             _ordered_distinct(label, values)
         if len(self.extraction_task_ids) != len(self.model_run_ids):
             raise ValueError("HP-6 task and ModelRun coverage must match.")
+        source_subject_ids = {item.event_subject_id for item in self.source_grounded_events}
+        if len(source_subject_ids) != len(self.source_grounded_events):
+            raise ValueError("HP-6 Preview repeats one source-grounded Event subject.")
+        if any(item.event_subject_id not in source_subject_ids for item in self.semantic_events):
+            raise ValueError("Governed Event enrichment lacks one source-grounded Event.")
+        source_event_ids = {item.id for item in self.source_grounded_events}
+        assigned_source_event_ids = {
+            item.source_grounded_event_id for item in self.event_type_assignments
+        }
+        if len(assigned_source_event_ids) != len(self.event_type_assignments):
+            raise ValueError("One Event has repeated type assignments.")
+        if not assigned_source_event_ids.issubset(source_event_ids):
+            raise ValueError("Event type assignment references an unknown source-grounded Event.")
+        if not self.governed_enrichment_requested and self.event_type_assignments:
+            raise ValueError("Unrequested Event classification cannot produce assignments.")
+        if self.governed_enrichment_requested and self.source_grounded_events:
+            if assigned_source_event_ids != source_event_ids:
+                raise ValueError(
+                    "Requested Event classification requires one assignment per Event."
+                )
         assignment_ids = {item.id for item in self.assignments}
         qualifier_ids = {item.id for item in self.qualifiers}
         target_ids = {item.id for item in self.targets}
@@ -469,6 +586,8 @@ class HybridEventSemanticsPreview(BaseModel):
         if self.terminal_status is HybridEventSemanticsStatus.BLOCKED:
             if (
                 self.semantic_events
+                or self.source_grounded_events
+                or self.event_type_assignments
                 or self.targets
                 or self.assignments
                 or self.qualifiers
@@ -505,6 +624,37 @@ def _validate_preview_references(preview: HybridEventSemanticsPreview) -> None:
     task_ids = set(preview.extraction_task_ids)
     run_ids = set(preview.model_run_ids)
     frame_by_id = {item.id: item for item in HYBRID_EVENT_SEMANTICS_V4.frames}
+
+    required_source_evidence_ids = {
+        evidence_id
+        for event in preview.source_grounded_events
+        for evidence_id in (
+            event.mention.head_evidence_target_id,
+            event.mention.expression_evidence_target_id,
+            event.mention.support_evidence_target_id,
+        )
+    }
+    if not required_source_evidence_ids.issubset(evidence_target_ids):
+        raise ValueError("SourceGroundedEventDraft omits referenced EvidenceTarget records.")
+    source_event_by_id = {item.id: item for item in preview.source_grounded_events}
+    for assignment in preview.event_type_assignments:
+        source_event = source_event_by_id[assignment.source_grounded_event_id]
+        if assignment.event_id != source_grounded_event_record_id(source_event.id):
+            raise ValueError("Event type assignment references the wrong Event identity.")
+        if (
+            assignment.vocabulary_id != preview.ontology_profile_id
+            or assignment.vocabulary_sha256 != preview.ontology_profile_sha256
+        ):
+            raise ValueError("Event type assignment vocabulary lineage is invalid.")
+        if (
+            assignment.status is EventTypeAssignmentStatus.CLASSIFIED
+            and assignment.type_id not in frame_by_id
+        ):
+            raise ValueError("Event type assignment references an unknown governed type.")
+        if not set(assignment.extraction_task_ids).issubset(task_ids) or not set(
+            assignment.model_run_ids
+        ).issubset(run_ids):
+            raise ValueError("Event type assignment execution evidence is missing.")
 
     referenced_assignment_ids: set[str] = set()
     referenced_qualifier_ids: set[str] = set()
@@ -650,6 +800,77 @@ def _validate_preview_references(preview: HybridEventSemanticsPreview) -> None:
 def event_subject_draft_id(parent_preview_id: str, trigger_id: str) -> str:
     """Derive one event-subject identity from one trigger Preview."""
     return _id("esd", parent_preview_id, trigger_id)
+
+
+def source_grounded_event_record_id(source_grounded_event_id: str) -> str:
+    """Derive the Event record identity without importing an outer use case."""
+    digest = hashlib.sha256(
+        f"{SOURCE_GROUNDED_EVENT_POLICY_ID}\x1f{source_grounded_event_id}".encode()
+    ).hexdigest()
+    return f"evt_{digest[:24]}"
+
+
+def event_type_assignment_id(
+    *,
+    source_grounded_event_id: str,
+    event_id: str,
+    vocabulary_id: str,
+    vocabulary_sha256: str,
+    status: EventTypeAssignmentStatus,
+    type_id: str | None,
+    extraction_task_ids: tuple[str, ...],
+    model_run_ids: tuple[str, ...],
+    diagnostic_code: str | None,
+) -> str:
+    return _id(
+        "eta",
+        source_grounded_event_id,
+        event_id,
+        vocabulary_id,
+        vocabulary_sha256,
+        status.value,
+        type_id or "",
+        *extraction_task_ids,
+        *model_run_ids,
+        diagnostic_code or "",
+    )
+
+
+def build_event_type_assignment(
+    *,
+    source_grounded_event_id: str,
+    vocabulary_id: str,
+    vocabulary_sha256: str,
+    status: EventTypeAssignmentStatus,
+    type_id: str | None,
+    extraction_task_ids: tuple[str, ...],
+    model_run_ids: tuple[str, ...],
+    diagnostic_code: str | None,
+) -> EventTypeAssignment:
+    """Construct optional Event classification from its complete evidence."""
+    event_id = source_grounded_event_record_id(source_grounded_event_id)
+    return EventTypeAssignment(
+        id=event_type_assignment_id(
+            source_grounded_event_id=source_grounded_event_id,
+            event_id=event_id,
+            vocabulary_id=vocabulary_id,
+            vocabulary_sha256=vocabulary_sha256,
+            status=status,
+            type_id=type_id,
+            extraction_task_ids=extraction_task_ids,
+            model_run_ids=model_run_ids,
+            diagnostic_code=diagnostic_code,
+        ),
+        source_grounded_event_id=source_grounded_event_id,
+        event_id=event_id,
+        vocabulary_id=vocabulary_id,
+        vocabulary_sha256=vocabulary_sha256,
+        status=status,
+        type_id=type_id,
+        extraction_task_ids=extraction_task_ids,
+        model_run_ids=model_run_ids,
+        diagnostic_code=diagnostic_code,
+    )
 
 
 def build_event_subject_draft(*, parent_preview_id: str, trigger_id: str) -> EventSubjectDraft:
@@ -823,6 +1044,71 @@ def build_semantic_qualifier_draft(
         end=end,
         evidence_target_id=evidence_target_id,
         evidence_validation_attempt_id=evidence_validation_attempt_id,
+    )
+
+
+def source_grounded_event_draft_id(
+    *,
+    event_subject_id: str,
+    trigger_id: str,
+    source_segment_id: str,
+    source_text_sha256: str,
+    expression_text: str,
+    head_text: str,
+    mention: EventMention,
+) -> str:
+    return _id(
+        "sge",
+        event_subject_id,
+        trigger_id,
+        source_segment_id,
+        source_text_sha256,
+        expression_text,
+        head_text,
+        mention.id,
+    )
+
+
+def build_source_grounded_event_draft(
+    *,
+    event_subject_id: str,
+    trigger_id: str,
+    source_segment_id: str,
+    source_text_sha256: str,
+    expression_text: str,
+    head_text: str,
+    head_evidence_target_id: str,
+    expression_evidence_target_id: str,
+    support_evidence_target_id: str,
+) -> SourceGroundedEventDraft:
+    """Bind one exact trigger to its authoritative EventMention evidence."""
+    mention = EventMention(
+        id=deterministic_event_mention_id(
+            head_evidence_target_id=head_evidence_target_id,
+            expression_evidence_target_id=expression_evidence_target_id,
+            support_evidence_target_id=support_evidence_target_id,
+        ),
+        head_evidence_target_id=head_evidence_target_id,
+        expression_evidence_target_id=expression_evidence_target_id,
+        support_evidence_target_id=support_evidence_target_id,
+    )
+    return SourceGroundedEventDraft(
+        id=source_grounded_event_draft_id(
+            event_subject_id=event_subject_id,
+            trigger_id=trigger_id,
+            source_segment_id=source_segment_id,
+            source_text_sha256=source_text_sha256,
+            expression_text=expression_text,
+            head_text=head_text,
+            mention=mention,
+        ),
+        event_subject_id=event_subject_id,
+        trigger_id=trigger_id,
+        source_segment_id=source_segment_id,
+        source_text_sha256=source_text_sha256,
+        expression_text=expression_text,
+        head_text=head_text,
+        mention=mention,
     )
 
 
@@ -1033,8 +1319,10 @@ def resolve_unique_source_literal(source_text: str, proposed_literal: str) -> tu
 def build_hybrid_event_semantics_preview(**values: object) -> HybridEventSemanticsPreview:
     payload = dict(values)
     payload.pop("id", None)
-    payload.setdefault("schema_version", "hybrid_event_semantics_preview_v4")
+    payload.setdefault("schema_version", "hybrid_event_semantics_preview_v5")
     for name in (
+        "source_grounded_events",
+        "event_type_assignments",
         "semantic_events",
         "targets",
         "assignments",
@@ -1053,7 +1341,10 @@ def build_hybrid_event_semantics_preview(**values: object) -> HybridEventSemanti
         "diagnostics",
     ):
         payload.setdefault(name, ())
+    payload.setdefault("governed_enrichment_requested", True)
     for name in (
+        "source_grounded_events",
+        "event_type_assignments",
         "semantic_events",
         "targets",
         "assignments",

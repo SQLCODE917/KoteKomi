@@ -25,7 +25,6 @@ from kotekomi_application.hybrid_proposed_changes import (
     HybridProposalPlan,
     PlannedProposedChange,
     ProposalAdmissionDecision,
-    ProposalDisposition,
     build_hybrid_proposal_plan_record,
 )
 from kotekomi_domain import (
@@ -531,18 +530,22 @@ def _change(ordinal: int, proposed_json: dict[str, JsonValue]) -> PlannedPropose
 
 def _plan(ordinal: int, changes: tuple[PlannedProposedChange, ...]) -> HybridProposalPlan:
     proposed_ids = tuple(sorted(item.id for item in changes))
-    event_semantic_id = "esn_" + str(ordinal) * 24
+    source_grounded_event_id = "sge_" + str(ordinal) * 24
     decision = ProposalAdmissionDecision(
-        id=_id("pad", event_semantic_id, ProposalDisposition.PROPOSED.value, *proposed_ids),
-        event_semantic_id=event_semantic_id,
-        disposition=ProposalDisposition.PROPOSED,
+        id=_id(
+            "pad",
+            source_grounded_event_id,
+            "proposed",
+            *proposed_ids,
+        ),
+        source_grounded_event_id=source_grounded_event_id,
         proposed_change_ids=proposed_ids,
     )
     trace = build_extraction_stage_trace(
         trace_run_id=f"fixture:{ordinal}",
         ordinal=0,
         stage_id="hybrid_proposal_admission",
-        stage_version="hybrid_proposed_change_v1",
+        stage_version="hybrid_proposed_change_v2",
         producer_id="test",
         source_segment_id=f"nod_{ordinal}",
         source_text_sha256=hashlib.sha256(TEXT.encode()).hexdigest(),

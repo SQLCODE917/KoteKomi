@@ -1,10 +1,11 @@
 # TDD: Hybrid ProposedChange Integration
 
-- Status: Accepted
+- Status: Implemented; governed Event admission superseded
 - Program: [Hybrid Intelligence Extraction Pipeline](2026-09-01-hybrid-intelligence-extraction-pipeline.md)
 - Deliverable ID: HP-7
 - Depends on: [HP-6 Qualified Event Semantics and Source Support](2026-09-02-qualified-event-semantics-source-support.md)
 - Gold catalog: [HP-7 Proposal Admission Gold Catalog](hp7-proposal-admission-gold-v1.json)
+- Superseded by: [Source-Grounded Event Boundary](2026-09-12-source-grounded-event-boundary.md)
 
 ## Context & Problem
 
@@ -20,15 +21,19 @@ One Qwen2.5 task misclassified a statement of uncertainty as a recommendation.
 
 Every statement for that event received a separate `directly_supported` judgment.
 
-HP-7 will admit only complete and fully supported event semantics to human review.
+HP-7 originally admitted only complete and fully supported governed event semantics to human review.
+
+The Source-Grounded Event Boundary replaces that admission rule.
+
+The current v2 Plan proposes each exactly grounded Event independently of optional classification,
+role assignment, and proposition support.
 
 Human review will remain the only authority that creates accepted Ledger intelligence.
 
 ### Terms
 
-**ProposalDisposition** means `proposed` or `held` for one HP-6 event.
-
-**ProposalAdmissionDecision** means one deterministic disposition with complete reasons and lineage.
+**ProposalAdmissionDecision** means one deterministic source-grounded Event proposal with complete
+source-trigger lineage.
 
 **HybridProposalPlan** means one immutable derived plan for all events in one HP-6 Preview.
 
@@ -38,23 +43,23 @@ HP-9 reconciles their named candidates before HP-8 submits ProposedChanges.
 
 **Typed candidate record** means one pending `Actor`, `Organization`, or `Event` record.
 
-**Advisory gap** means an HP-6 gap that records disagreement with an open parent proposal after HP-6 constructed complete governed semantics.
+**Advisory gap** means optional semantic-enrichment evidence that cannot veto the Event proposal.
 
 ### Primary end-to-end flow
 
 1. An operator selects one immutable HP-6 Preview.
 2. The Application Layer validates its complete HP-6 through HP-1 lineage and source evidence.
-3. The Application Layer gives every semantic event one deterministic admission decision.
-4. KoteKomi constructs typed candidate records and `ProposedAssertion` records for each proposed event.
+3. The Application Layer gives every source-grounded Event one deterministic proposal decision.
+4. KoteKomi constructs one Event record with its embedded EventMention and eligible named records.
 5. The Archive stores one immutable `HybridProposalPlan` with complete data in and data out.
 6. The Ledger atomically stores one provenance activity and every new `ProposedChange`.
 7. The existing review flow accepts, edits, or rejects each pending proposal.
 
 ## Goals
 
-- A reviewer can inspect governed event semantics through the existing review flow.
+- A reviewer can inspect every source-grounded Event through the existing review flow.
 - A reviewer can trace every candidate record to exact source evidence and HP-1 through HP-6 decisions.
-- A reviewer can distinguish proposed events from held events.
+- A reviewer can approve, edit, or reject each Event independently.
 - A reviewer can reject a supported but incorrect event without changing accepted intelligence.
 - A repeated submission reuses identical proposals and preserves prior review decisions.
 
@@ -67,23 +72,24 @@ HP-9 reconciles their named candidates before HP-8 submits ProposedChanges.
 - HPC-PAR-03: The Application Layer validates the HP-5 through HP-1 lineage.
 - HPC-PAR-04: The Application Layer replays every referenced `EvidenceTarget`.
 - HPC-PAR-05: A parent validation failure stops before the Archive or Ledger changes.
-- HPC-PAR-06: The Application Layer evaluates every HP-6 semantic event.
+- HPC-PAR-06: The Application Layer evaluates every source-grounded Event draft.
 
 ### Admission policy
 
-- HPC-ADM-01: The Application Layer creates one `ProposalAdmissionDecision` per semantic event.
-- HPC-ADM-02: One proposed event has a governed frame and every required frame role.
-- HPC-ADM-03: One proposed event has exactly one `SemanticSupportJudgment` for every `SemanticStatement`.
-- HPC-ADM-04: Every judgment for one proposed event has outcome `directly_supported`.
-- HPC-ADM-05: `missing_required_role` and `missing_governed_attribution` hold a materialized semantic event.
-- HPC-ADM-06: A missing or repeated support judgment holds an event.
-- HPC-ADM-07: A non-direct support judgment holds an event.
-- HPC-ADM-08: Omitted parent proposals and excluded optional qualifiers remain advisory gaps.
-- HPC-ADM-09: A parent-attribution disagreement remains an advisory gap when the governed attribution statement has direct support.
-- HPC-ADM-10: Every held decision names all applicable reason codes.
+- HPC-ADM-01: The Application Layer creates one `ProposalAdmissionDecision` per source-grounded Event.
+- HPC-ADM-02: One proposed Event has a valid embedded EventMention.
+- HPC-ADM-03: The Application Layer replays the EventMention's head, expression, and support evidence.
+- HPC-ADM-04: The Event name equals the exact expression evidence.
+- HPC-ADM-05: Missing governed roles cannot hold an Event.
+- HPC-ADM-06: Missing proposition support cannot hold an Event.
+- HPC-ADM-07: Optional classification failure cannot hold an Event.
+- HPC-ADM-08: Optional semantic gaps remain advisory evidence.
+- HPC-ADM-09: Each valid EventTriggerDraft is independently reviewable.
+- HPC-ADM-10: Human rejection, rather than optional enrichment, excludes a false Event from accepted state.
 - HPC-ADM-11: Admission does not use a model score as confidence or authority.
 - HPC-ADM-12: Admission does not run a model task.
-- HPC-ADM-13: An `unmapped_frame` belongs to an HP-5 event subject for which HP-6 deliberately created no semantic event; the Plan retains that unresolved subject and gap as a diagnostic and creates no proposal or synthetic admission decision for it.
+- HPC-ADM-13: An `unmapped_frame` remains optional derived evidence and does not suppress the
+  source-grounded Event proposal.
 
 ### Candidate graph construction
 
@@ -94,25 +100,28 @@ HP-9 reconciles their named candidates before HP-8 submits ProposedChanges.
 - HPC-GPH-05: An agentive or participant `geopolitical_entity` mention maps to an `Organization`.
 - HPC-GPH-06: HP-2 reference decisions select the source expression used for one candidate identity.
 - HPC-GPH-07: KoteKomi does not use a ReFinED candidate as an accepted local identity.
-- HPC-GPH-08: Unsupported mention kinds remain exact literal assertion objects.
-- HPC-GPH-09: Event-subject targets reference another pending Event from the same plan.
-- HPC-GPH-10: KoteKomi creates `ProposedAssertion` records for frame type, roles, time, place, polarity, modality, and targeted attribution.
-- HPC-GPH-11: A role Assertion records the governed frame role and UpperRole in qualifiers.
-- HPC-GPH-12: Every Assertion uses one existing hybrid structural predicate as its relation label.
-- HPC-GPH-13: Every Assertion has epistemic scope `source_report` and source authority `unknown`.
-- HPC-GPH-14: Every Assertion references its Source and replayable support `EvidenceTarget`.
-- HPC-GPH-15: One typed target uses `object_entity_id` and one literal target uses `object_value`.
-- HPC-GPH-16: The Event participant lists contain typed agents and participants only.
+- HPC-GPH-08: Unsupported mention kinds create no base Event-bundle record.
+- HPC-GPH-09: Cross-Event semantic links remain outside the base source-grounded proposal.
+- HPC-GPH-10: Optional semantic enrichments require their own explicit admission contract before
+  becoming Assertion proposals.
+- HPC-GPH-11: Optional role enrichment cannot alter Event or EventMention identity.
+- HPC-GPH-12: The base Event proposal creates no synthetic structural Assertion.
+- HPC-GPH-13: The Event retains exact source-report provenance through EventMention.
+- HPC-GPH-14: Every Event references its Source and replayable support `EvidenceTarget`.
+- HPC-GPH-15: The base Event proposal contains no model-authored entity reference or literal value.
+- HPC-GPH-16: The base Event participant lists remain empty until a separate semantic-assignment
+  contract supplies source-backed participants.
 - HPC-GPH-17: HP-7 creates no `Relationship`.
 - HPC-GPH-18: KoteKomi derives every record ID from immutable parent identities.
 
 ### Plan and lineage
 
 - HPC-PLN-01: The `HybridProposalPlan` identifies its HP-6 parent and digest.
-- HPC-PLN-02: The Plan contains every admission decision in source order.
+- HPC-PLN-02: The Plan preserves its parent's deterministic source-grounded Event order.
 - HPC-PLN-03: A proposed decision names every ProposedChange ID for its event bundle.
-- HPC-PLN-04: A held decision names no ProposedChange ID.
-- HPC-PLN-05: Every decision retains its event, gap, statement, judgment, model-run, and trace identities.
+- HPC-PLN-04: Every decision names at least its Event ProposedChange ID.
+- HPC-PLN-05: Every decision retains its source-grounded Event, advisory-gap, model-run, and trace
+  identities.
 - HPC-PLN-06: Every proposed record retains the same HP-1 through HP-6 lineage.
 - HPC-PLN-07: The Plan contains complete deterministic data in and data out in `ExtractionStageTrace` records.
 - HPC-PLN-08: The Plan uses canonical JSON and a content-derived identity.
@@ -134,9 +143,10 @@ HP-9 reconciles their named candidates before HP-8 submits ProposedChanges.
 
 - HPC-CLI-01: `kotekomi extraction submit-event-changes` runs HP-7.
 - HPC-CLI-02: The command requires `--preview-id`.
-- HPC-CLI-03: JSON output reports the Plan ID, disposition counts, proposal counts by record type, and diagnostics.
+- HPC-CLI-03: JSON output reports the Plan ID, proposed Event count, proposal counts by record type,
+  and diagnostics.
 - HPC-CLI-04: Text output reports the same review summary without requiring a canonical ID as user input to the review flow.
-- HPC-CLI-05: A valid Plan exits zero even when every event is held.
+- HPC-CLI-05: A valid empty Plan exits zero when the parent contains no source-grounded Event.
 - HPC-CLI-06: Invalid parent evidence or failed publication exits one.
 
 ## Proposed Architecture
@@ -157,7 +167,7 @@ HP-6 Preview -> lineage and evidence replay
                            existing review flow
 ```
 
-Domain Core owns accepted record validation and the governed event ontology.
+Domain Core owns Event, EventMention, and accepted-record validation.
 
 The Application Layer owns admission, mapping, reference validation, and transaction intent.
 
@@ -187,7 +197,7 @@ Operator   Pipeline   Application   Archive   Ledger   Reviewer
 
 `ProposalAdmissionDecision` is a frozen Application Layer DTO.
 
-It records the event ID, disposition, reason codes, advisory gap IDs, lineage IDs, and ProposedChange IDs.
+It records the source-grounded Event ID, advisory gap IDs, lineage IDs, and ProposedChange IDs.
 
 `HybridProposalPlan` is a frozen Application Layer DTO stored in the Archive.
 
@@ -223,7 +233,7 @@ Existing review order presents Organizations, Actors, Events, and Assertions in 
 
 The reviewer supplies the canonical predicate when the reviewer approves one `ProposedAssertion`.
 
-A supported but incorrect event remains a possible pending proposal.
+A source-grounded but incorrectly detected Event remains a possible pending proposal.
 
 The reviewer rejects that proposal before it can affect accepted intelligence.
 
@@ -231,13 +241,17 @@ Document-wide HP-1 through HP-7 orchestration remains a later deliverable.
 
 ## Acceptance Criteria
 
-- AC-HPC-01: Domain and Application tests prove the complete admission matrix.
-- AC-HPC-02: Application tests prove typed and literal target mapping for every supported target kind.
+- AC-HPC-01: Domain and Application tests prove source-grounding, isolated proposal construction,
+  and human review validation.
+- AC-HPC-02: Application tests prove eligible source-named Actor and Organization mapping.
 - AC-HPC-03: Application tests prove exact source evidence and HP-1 through HP-6 lineage for every proposal.
 - AC-HPC-04: Application tests prove no model task runs during HP-7.
 - AC-HPC-05: Application and Adapter tests prove atomic publication, rollback, reuse, and review-status preservation.
 - AC-HPC-06: Archive tests prove canonical Plan persistence, restart reload, and corruption rejection.
 - AC-HPC-07: Pipeline tests prove text output, JSON output, valid empty admission, and typed failures.
+
+The original governed-frame admission requirements and `hybrid_proposed_change_v1` Gold remain
+historical experiment evidence and are not the current Event admission contract.
 - AC-HPC-08: Review tests approve one reviewed Gold event and retain exact evidence and review provenance.
 - AC-HPC-09: Review tests reject one supported but incorrect event and create no accepted intelligence from it.
 - AC-HPC-10: The canonical evaluation processes the seven HP-6 Gold events and the known Amodei false event.

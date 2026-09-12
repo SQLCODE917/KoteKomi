@@ -1,4 +1,40 @@
 {
+  "$defs": {
+    "EventMention": {
+      "additionalProperties": false,
+      "description": "One embedded link from an Event to its exact source evidence.",
+      "properties": {
+        "expression_evidence_target_id": {
+          "pattern": "^etg_[A-Za-z0-9][A-Za-z0-9_-]*$",
+          "title": "Expression Evidence Target Id",
+          "type": "string"
+        },
+        "head_evidence_target_id": {
+          "pattern": "^etg_[A-Za-z0-9][A-Za-z0-9_-]*$",
+          "title": "Head Evidence Target Id",
+          "type": "string"
+        },
+        "id": {
+          "pattern": "^evm_[A-Za-z0-9][A-Za-z0-9_-]*$",
+          "title": "Id",
+          "type": "string"
+        },
+        "support_evidence_target_id": {
+          "pattern": "^etg_[A-Za-z0-9][A-Za-z0-9_-]*$",
+          "title": "Support Evidence Target Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "head_evidence_target_id",
+        "expression_evidence_target_id",
+        "support_evidence_target_id"
+      ],
+      "title": "EventMention",
+      "type": "object"
+    }
+  },
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
   "properties": {
@@ -24,6 +60,13 @@
       "pattern": "^evt_[A-Za-z0-9][A-Za-z0-9_-]*$",
       "title": "Id",
       "type": "string"
+    },
+    "mentions": {
+      "items": {
+        "$ref": "#/$defs/EventMention"
+      },
+      "title": "Mentions",
+      "type": "array"
     },
     "name": {
       "minLength": 1,
