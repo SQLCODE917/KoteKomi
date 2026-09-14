@@ -18,12 +18,12 @@ from kotekomi_application.source_occurrences import source_occurrences
 from kotekomi_domain import EvidenceTarget
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from kotekomi_pipelines.evaluation_contracts import EvaluationPhase
 from kotekomi_pipelines.event_trigger_stage_local import (
     TriggerGoldCatalog,
     TriggerGoldEvent,
     TriggerGoldSegment,
 )
-from kotekomi_pipelines.task_allocation_stage_local import StageLocalPhase
 
 _SHA256 = r"^[a-f0-9]{64}$"
 
@@ -34,7 +34,7 @@ class SourceGroundedEventGoldItem(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
     event_id: Annotated[str, Field(pattern=r"^TGE-[0-9]{3}$")]
-    phase: StageLocalPhase
+    phase: EvaluationPhase
     source_text_sha256: Annotated[str, Field(pattern=_SHA256)]
     expected_review_outcome: Literal["approved", "rejected"]
     rationale: Annotated[str, Field(min_length=1)]
@@ -62,12 +62,76 @@ class SourceGroundedEventGoldCatalog(BaseModel):
         return self
 
 
+class NormalizedSourceExpression(BaseModel):
+    """One exact expression in authoritative SourceSegment coordinates."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    start: Annotated[int, Field(ge=0)]
+    end: Annotated[int, Field(gt=0)]
+    text: Annotated[str, Field(min_length=1)]
+
+    @model_validator(mode="after")
+    def validate_range(self) -> Self:
+        if self.end - self.start != len(self.text):
+            raise ValueError("Normalized source expression range does not match its text.")
+        return self
+
+
+class NormalizedExpectedEvent(BaseModel):
+    """Human-reviewed Event expectation resolved from occurrence IDs."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    event_id: Annotated[str, Field(pattern=r"^TGE-[0-9]{3}$")]
+    diagnostic_meaning: Annotated[str, Field(min_length=1)]
+    head: NormalizedSourceExpression
+    accepted_expressions: tuple[NormalizedSourceExpression, ...]
+
+
+class NormalizedActualEvent(BaseModel):
+    """Runtime source-grounded Event expressed in the same coordinates as Gold."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    source_grounded_event_id: Annotated[str, Field(min_length=1)]
+    event_subject_id: Annotated[str, Field(min_length=1)]
+    trigger_id: Annotated[str, Field(min_length=1)]
+    head: NormalizedSourceExpression
+    expression: NormalizedSourceExpression
+    head_evidence_target_id: Annotated[str, Field(min_length=1)]
+    expression_evidence_target_id: Annotated[str, Field(min_length=1)]
+    support_evidence_target_id: Annotated[str, Field(min_length=1)]
+
+
+class NormalizedEventComparison(BaseModel):
+    """Readable, one-to-one expected-versus-actual Event evidence."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    status: Literal["exact", "missing", "extra", "incorrectly_grounded"]
+    expected: NormalizedExpectedEvent | None
+    actual: NormalizedActualEvent | None
+
+    @model_validator(mode="after")
+    def validate_sides(self) -> Self:
+        if self.status == "missing" and (self.expected is None or self.actual is not None):
+            raise ValueError("A missing Event requires only an expected side.")
+        if self.status == "extra" and (self.expected is not None or self.actual is None):
+            raise ValueError("An extra Event requires only an actual side.")
+        if self.status in {"exact", "incorrectly_grounded"} and (
+            self.expected is None or self.actual is None
+        ):
+            raise ValueError("A compared Event requires expected and actual sides.")
+        return self
+
+
 class SourceGroundedEventSegmentEvaluation(BaseModel):
     """Exact grounding comparison for one authoritative SourceSegment."""
 
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
-    phase: StageLocalPhase
+    phase: EvaluationPhase
     source_text_sha256: Annotated[str, Field(pattern=_SHA256)]
     source_segment_observation_count: Annotated[int, Field(ge=0)]
     expected_event_count: Annotated[int, Field(ge=0)]
@@ -78,6 +142,7 @@ class SourceGroundedEventSegmentEvaluation(BaseModel):
     incorrectly_grounded_event_ids: tuple[str, ...]
     approved_review_event_ids: tuple[str, ...]
     rejected_review_event_ids: tuple[str, ...]
+    comparisons: tuple[NormalizedEventComparison, ...]
     passed: bool
 
     @model_validator(mode="after")
@@ -105,6 +170,17 @@ class SourceGroundedEventSegmentEvaluation(BaseModel):
             + len(self.extra_source_grounded_event_ids)
         ):
             raise ValueError("Source-grounded observed count does not match its Event IDs.")
+        comparison_statuses = tuple(item.status for item in self.comparisons)
+        if comparison_statuses.count("exact") != len(self.grounded_event_ids):
+            raise ValueError("Exact Event comparisons do not match grounded Event IDs.")
+        if comparison_statuses.count("missing") != len(self.missing_event_ids):
+            raise ValueError("Missing Event comparisons do not match missing Event IDs.")
+        if comparison_statuses.count("extra") != len(self.extra_source_grounded_event_ids):
+            raise ValueError("Extra Event comparisons do not match extra Event IDs.")
+        if comparison_statuses.count("incorrectly_grounded") != len(
+            self.incorrectly_grounded_event_ids
+        ):
+            raise ValueError("Incorrect Event comparisons do not match incorrect Event IDs.")
         if self.passed != (
             self.source_segment_observation_count == 1
             and not self.missing_event_ids
@@ -120,7 +196,7 @@ class SourceGroundedEventPhaseEvaluation(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
-    phase: StageLocalPhase
+    phase: EvaluationPhase
     segment_count: Annotated[int, Field(ge=0)]
     expected_event_count: Annotated[int, Field(ge=0)]
     observed_event_count: Annotated[int, Field(ge=0)]
@@ -169,7 +245,7 @@ class SourceGroundedEventEvaluationReport(BaseModel):
         )
         if self.segments != ordered_segments:
             raise ValueError("Source-grounded segment evaluations must be ordered.")
-        expected_phases: tuple[StageLocalPhase, ...] = ("development", "validation")
+        expected_phases: tuple[EvaluationPhase, ...] = ("development", "validation")
         if tuple(item.phase for item in self.phase_evaluations) != expected_phases:
             raise ValueError("Source-grounded report requires both ordered Gold phases.")
         phase_by_name = {item.phase: item for item in self.phase_evaluations}
@@ -362,8 +438,10 @@ def evaluate_source_grounded_event_segment(
             continue
         source_events_by_gold.setdefault(expected.event_id, []).append((trigger, source_event))
 
+    gold_by_id = {item.event_id: item for item in gold_segment.events}
     grounded: set[str] = set()
     incorrect: set[str] = set()
+    retained_by_gold: dict[str, tuple[EventTriggerDraft, SourceGroundedEventDraft]] = {}
     for event_id, candidates in source_events_by_gold.items():
         ordered = sorted(candidates, key=lambda item: item[1].id)
         exact = tuple(
@@ -373,10 +451,12 @@ def evaluate_source_grounded_event_segment(
         )
         if exact:
             grounded.add(event_id)
-            retained_id = exact[0][1].id
+            retained = exact[0]
         else:
             incorrect.add(event_id)
-            retained_id = ordered[0][1].id
+            retained = ordered[0]
+        retained_by_gold[event_id] = retained
+        retained_id = retained[1].id
         extra.update(item.id for _, item in ordered if item.id != retained_id)
 
     expected_ids = {item.event_id for item in gold_segment.events}
@@ -387,6 +467,38 @@ def evaluate_source_grounded_event_segment(
         if review_items[item_id].expected_review_outcome == "approved"
     }
     rejected = expected_ids - approved
+    source_event_by_id = {item.id: item for item in source_events}
+    comparisons: list[NormalizedEventComparison] = []
+    for event_id in sorted(expected_ids):
+        expected = _normalized_expected_event(gold_segment, gold_by_id[event_id])
+        retained = retained_by_gold.get(event_id)
+        if retained is None:
+            comparisons.append(
+                NormalizedEventComparison(status="missing", expected=expected, actual=None)
+            )
+            continue
+        status: Literal["exact", "incorrectly_grounded"] = (
+            "exact" if event_id in grounded else "incorrectly_grounded"
+        )
+        comparisons.append(
+            NormalizedEventComparison(
+                status=status,
+                expected=expected,
+                actual=_normalized_actual_event(gold_segment, retained[0], retained[1]),
+            )
+        )
+    for source_event_id in sorted(extra):
+        source_event = source_event_by_id[source_event_id]
+        trigger = trigger_by_id.get(source_event.trigger_id)
+        if trigger is None:
+            raise ValueError("An extra source-grounded Event references an unknown trigger.")
+        comparisons.append(
+            NormalizedEventComparison(
+                status="extra",
+                expected=None,
+                actual=_normalized_actual_event(gold_segment, trigger, source_event),
+            )
+        )
     return SourceGroundedEventSegmentEvaluation(
         phase=gold_segment.phase,
         source_text_sha256=gold_segment.source_text_sha256,
@@ -399,10 +511,62 @@ def evaluate_source_grounded_event_segment(
         incorrectly_grounded_event_ids=tuple(sorted(incorrect)),
         approved_review_event_ids=tuple(sorted(approved)),
         rejected_review_event_ids=tuple(sorted(rejected)),
+        comparisons=tuple(comparisons),
         passed=(
             source_segment_observation_count == 1 and not missing and not extra and not incorrect
         ),
     )
+
+
+def _normalized_expected_event(
+    segment: TriggerGoldSegment,
+    event: TriggerGoldEvent,
+) -> NormalizedExpectedEvent:
+    source_copy = derive_source_copy_view(segment.source_text)
+    occurrences = {item.occurrence_id: item for item in source_occurrences(source_copy.text)}
+    head_occurrence = occurrences[event.head_occurrence_id]
+    head_start, head_end = source_copy.authoritative_range(
+        head_occurrence.start,
+        head_occurrence.end,
+    )
+    expressions = tuple(
+        _normalized_expression(
+            segment.source_text,
+            *source_copy.authoritative_range(
+                occurrences[item.start_occurrence_id].start,
+                occurrences[item.end_occurrence_id].end,
+            ),
+        )
+        for item in event.accepted_expression_ranges
+    )
+    return NormalizedExpectedEvent(
+        event_id=event.event_id,
+        diagnostic_meaning=event.meaning,
+        head=_normalized_expression(segment.source_text, head_start, head_end),
+        accepted_expressions=expressions,
+    )
+
+
+def _normalized_actual_event(
+    segment: TriggerGoldSegment,
+    trigger: EventTriggerDraft,
+    source_event: SourceGroundedEventDraft,
+) -> NormalizedActualEvent:
+    mention = source_event.mention
+    return NormalizedActualEvent(
+        source_grounded_event_id=source_event.id,
+        event_subject_id=source_event.event_subject_id,
+        trigger_id=trigger.id,
+        head=_normalized_expression(segment.source_text, trigger.head_start, trigger.head_end),
+        expression=_normalized_expression(segment.source_text, trigger.start, trigger.end),
+        head_evidence_target_id=mention.head_evidence_target_id,
+        expression_evidence_target_id=mention.expression_evidence_target_id,
+        support_evidence_target_id=mention.support_evidence_target_id,
+    )
+
+
+def _normalized_expression(source_text: str, start: int, end: int) -> NormalizedSourceExpression:
+    return NormalizedSourceExpression(start=start, end=end, text=source_text[start:end])
 
 
 def _trigger_matches_gold(
@@ -501,7 +665,7 @@ def _evaluation_totals(
 
 
 def _phase_evaluation(
-    phase: StageLocalPhase,
+    phase: EvaluationPhase,
     segments: tuple[SourceGroundedEventSegmentEvaluation, ...],
 ) -> SourceGroundedEventPhaseEvaluation:
     return SourceGroundedEventPhaseEvaluation(

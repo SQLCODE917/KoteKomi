@@ -84,6 +84,13 @@ def test_source_grounded_evaluation_checks_exact_name_and_all_evidence() -> None
     assert result.missing_event_ids == ()
     assert result.extra_source_grounded_event_ids == ()
     assert result.incorrectly_grounded_event_ids == ()
+    comparison = result.comparisons[0]
+    assert comparison.status == "exact"
+    assert comparison.expected is not None
+    assert comparison.actual is not None
+    assert comparison.expected.head.text == trigger.head_text
+    assert comparison.actual.expression.text == trigger.text
+    assert comparison.actual.source_grounded_event_id == source_event.id
 
     invalid_evidence = dict(evidence)
     head_id = source_event.mention.head_evidence_target_id
@@ -100,6 +107,7 @@ def test_source_grounded_evaluation_checks_exact_name_and_all_evidence() -> None
 
     assert invalid.passed is False
     assert invalid.incorrectly_grounded_event_ids == (segment.events[0].event_id,)
+    assert invalid.comparisons[0].status == "incorrectly_grounded"
 
 
 def test_source_grounded_evaluation_accounts_for_duplicate_observed_events() -> None:
@@ -133,6 +141,7 @@ def test_source_grounded_evaluation_accounts_for_duplicate_observed_events() -> 
     assert result.observed_event_count == 2
     assert result.grounded_event_ids == (segment.events[0].event_id,)
     assert result.extra_source_grounded_event_ids == (max(source_event.id, duplicate.id),)
+    assert [item.status for item in result.comparisons] == ["exact", "extra"]
 
 
 def test_source_grounded_report_preserves_both_gold_partitions() -> None:

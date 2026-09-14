@@ -1,10 +1,9 @@
 # TDD: Hybrid ProposedChange Integration
 
-- Status: Implemented; governed Event admission superseded
+- Status: Superseded; retained as design history only
 - Program: [Hybrid Intelligence Extraction Pipeline](2026-09-01-hybrid-intelligence-extraction-pipeline.md)
 - Deliverable ID: HP-7
 - Depends on: [HP-6 Qualified Event Semantics and Source Support](2026-09-02-qualified-event-semantics-source-support.md)
-- Gold catalog: [HP-7 Proposal Admission Gold Catalog](hp7-proposal-admission-gold-v1.json)
 - Superseded by: [Source-Grounded Event Boundary](2026-09-12-source-grounded-event-boundary.md)
 
 ## Context & Problem

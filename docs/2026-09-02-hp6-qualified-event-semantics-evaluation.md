@@ -1,10 +1,10 @@
 # HP-6 Qualified Event Semantics Evaluation
 
-- Status: Historical evaluation; execution path superseded by [HSQ-6](2026-09-07-source-bound-governed-event-extraction.md)
+- Status: Superseded; no executable evaluation contract
+- Current evaluation: [Source-Grounded Evaluation Cutover](2026-09-13-source-grounded-evaluation-cutover.md)
 
 - Feature: [HP-6 Qualified Event Semantics and Source Support](2026-09-02-qualified-event-semantics-source-support.md)
 - Parent evaluation: [HP-5 Atomic Claim and Ontology Evaluation](2026-09-02-hp5-atomic-claim-evaluation.md)
-- Gold catalog: [HP-6 Event Semantics Gold Catalog](hp6-event-semantics-gold-v1.json)
 - Fixture: `raw/Anthropic–United_States_Department_of_Defense_dispute.pdf`
 - Fixture SHA-256: `c63c85796559453acf708dab46a35da36ffed00a408a25275576ba07138e9624`
 

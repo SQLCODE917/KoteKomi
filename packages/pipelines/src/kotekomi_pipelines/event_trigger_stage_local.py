@@ -12,7 +12,8 @@ from kotekomi_application.context_planning import SourceCopyView, derive_source_
 from kotekomi_application.source_occurrences import SourceOccurrence, source_occurrences
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from kotekomi_pipelines.task_allocation_stage_local import StageLocalInput, StageLocalPhase
+from kotekomi_pipelines.evaluation_contracts import EvaluationPhase
+from kotekomi_pipelines.front_half_stage_local import FrontHalfInput
 
 _SHA256 = r"^[a-f0-9]{64}$"
 _OCCURRENCE_ID = r"^o[1-9][0-9]*$"
@@ -55,7 +56,7 @@ class TriggerGoldSegment(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
-    phase: StageLocalPhase
+    phase: EvaluationPhase
     source_text_sha256: Annotated[str, Field(pattern=_SHA256)]
     source_text: Annotated[str, Field(min_length=1)]
     event_free: bool
@@ -103,7 +104,7 @@ class TriggerStageSegmentEvaluation(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
-    phase: StageLocalPhase
+    phase: EvaluationPhase
     source_text_sha256: Annotated[str, Field(pattern=_SHA256)]
     expected_event_count: Annotated[int, Field(ge=0)]
     actual_event_count: Annotated[int, Field(ge=0)]
@@ -186,7 +187,7 @@ class TriggerStageReport(BaseModel):
     schema_version: Literal["hsq_event_trigger_stage_report_v7"] = (
         "hsq_event_trigger_stage_report_v7"
     )
-    phase: StageLocalPhase
+    phase: EvaluationPhase
     segment_count: Annotated[int, Field(ge=0)]
     passed_segment_count: Annotated[int, Field(ge=0)]
     expected_event_count: Annotated[int, Field(ge=0)]
@@ -264,7 +265,7 @@ def load_trigger_gold_catalog(
     path: Path,
     *,
     repository_root: Path,
-    inputs: tuple[StageLocalInput, ...],
+    inputs: tuple[FrontHalfInput, ...],
     require_approved: bool,
 ) -> TriggerGoldCatalog:
     """Validate Trigger Gold against its pinned split and authoritative SourceSegments."""
@@ -422,7 +423,7 @@ def evaluate_trigger_segment(
 
 def build_trigger_stage_report(
     *,
-    phase: StageLocalPhase,
+    phase: EvaluationPhase,
     evaluations: tuple[TriggerStageSegmentEvaluation, ...],
     model_execution_count: int,
     model_elapsed_milliseconds: int,

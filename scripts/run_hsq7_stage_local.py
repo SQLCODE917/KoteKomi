@@ -138,6 +138,7 @@ from kotekomi_domain import (
     canonical_representation_digest,
 )
 from kotekomi_pipelines.config import PipelineConfig, load_config
+from kotekomi_pipelines.evaluation_contracts import EvaluationPhase
 from kotekomi_pipelines.event_trigger_stage_local import (
     TriggerGoldCatalog,
     TriggerStageSegmentEvaluation,
@@ -145,21 +146,19 @@ from kotekomi_pipelines.event_trigger_stage_local import (
     evaluate_trigger_segment,
     load_trigger_gold_catalog,
 )
-from kotekomi_pipelines.model_runtime import build_model_task_runtime
-from kotekomi_pipelines.task_allocation_stage_local import (
-    StageLocalCaseEvaluation,
-    StageLocalInput,
-    StageLocalPhase,
-    build_stage_local_report,
-    evaluate_stage_local_boundary_contract,
-    evaluate_stage_local_case,
-    load_stage_local_inputs,
+from kotekomi_pipelines.front_half_stage_local import (
+    FrontHalfCaseEvaluation,
+    FrontHalfInput,
+    build_front_half_report,
+    evaluate_front_half_boundary_contract,
+    evaluate_front_half_case,
+    load_front_half_inputs,
 )
+from kotekomi_pipelines.model_runtime import build_model_task_runtime
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_SPLIT = REPOSITORY_ROOT / "docs" / "hsq-stage-local-split-v2.json"
+DEFAULT_SPLIT = REPOSITORY_ROOT / "docs" / "hsq-front-half-split-v1.json"
 DEFAULT_TRIGGER_GOLD = REPOSITORY_ROOT / "docs" / "hsq-event-trigger-gold-v1.json"
-EVALUATOR_CORRECTIONS = REPOSITORY_ROOT / "docs" / "hsq-stage-local-evaluator-corrections-v1.json"
 _FIXED_TIME = datetime(2026, 9, 9, tzinfo=UTC)
 
 
@@ -292,8 +291,8 @@ class _ExperimentLedger:
 @dataclass(frozen=True)
 class _PreparedRun:
     root: Path
-    phase: StageLocalPhase
-    inputs: tuple[StageLocalInput, ...]
+    phase: EvaluationPhase
+    inputs: tuple[FrontHalfInput, ...]
     trigger_gold: TriggerGoldCatalog
 
 
@@ -442,7 +441,7 @@ def _prepare(args: argparse.Namespace) -> int:
     if run_root.exists() and any(run_root.iterdir()):
         raise ValueError("Stage-local prepare requires an absent or empty run root.")
     run_root.mkdir(parents=True, exist_ok=True)
-    _, inputs = load_stage_local_inputs(args.split.resolve(), repository_root=REPOSITORY_ROOT)
+    _, inputs = load_front_half_inputs(args.split.resolve(), repository_root=REPOSITORY_ROOT)
     trigger_gold_path = args.trigger_gold.resolve()
     trigger_gold = load_trigger_gold_catalog(
         trigger_gold_path,
@@ -456,7 +455,7 @@ def _prepare(args: argparse.Namespace) -> int:
         _seed_upstream_evidence(
             run_root=run_root,
             upstream_root=args.upstream_run_root.resolve(),
-            phase=cast(StageLocalPhase, args.phase),
+            phase=cast(EvaluationPhase, args.phase),
             inputs=selected,
         )
         if args.upstream_run_root is not None
@@ -486,8 +485,8 @@ def _seed_upstream_evidence(
     *,
     run_root: Path,
     upstream_root: Path,
-    phase: StageLocalPhase,
-    inputs: tuple[StageLocalInput, ...],
+    phase: EvaluationPhase,
+    inputs: tuple[FrontHalfInput, ...],
 ) -> dict[str, object]:
     """Validate and rehydrate immutable v10 mention/reference evidence."""
     authorized = _validate_evidence_manifest(
@@ -497,7 +496,7 @@ def _seed_upstream_evidence(
     if "inputs.jsonl" not in authorized:
         raise ValueError("Upstream stage evidence does not authorize its inputs.")
     upstream_inputs = tuple(
-        StageLocalInput.model_validate_json(line)
+        FrontHalfInput.model_validate_json(line)
         for line in (upstream_root / "inputs.jsonl").read_text(encoding="utf-8").splitlines()
         if line
     )
@@ -668,7 +667,7 @@ def _rehydrate_pinned_context_manifest(
 
 def _validate_upstream_stage_record(
     record: dict[str, object],
-    stage_input: StageLocalInput,
+    stage_input: FrontHalfInput,
     stage: str,
 ) -> None:
     if (
@@ -1006,7 +1005,7 @@ def _finalize(args: argparse.Namespace) -> int:
     prepared = _load_prepared(args)
     _require_not_finalized(prepared)
     _require_run_status(prepared.root, "triggers_complete")
-    evaluations: list[StageLocalCaseEvaluation] = []
+    evaluations: list[FrontHalfCaseEvaluation] = []
     elapsed: dict[str, int] = {}
     alias_opportunity_items = 0
     alias_opportunity_segments: set[str] = set()
@@ -1028,7 +1027,7 @@ def _finalize(args: argparse.Namespace) -> int:
             if reference_value is not None
             else None
         )
-        evaluation = evaluate_stage_local_case(stage_input, mention, references)
+        evaluation = evaluate_front_half_case(stage_input, mention, references)
         evaluations.append(evaluation)
         if evaluation.first_failed_stage == "mention_proposal":
             alias_opportunity_items += 1
@@ -1078,11 +1077,11 @@ def _finalize(args: argparse.Namespace) -> int:
                     observation["elapsed_milliseconds"],
                     "specialist elapsed milliseconds",
                 )
-    report = build_stage_local_report(
+    report = build_front_half_report(
         phase=prepared.phase,
         evaluations=tuple(evaluations),
         producer_elapsed_milliseconds=elapsed,
-        boundary_contract=evaluate_stage_local_boundary_contract(
+        boundary_contract=evaluate_front_half_boundary_contract(
             tuple(mention_by_source_digest[key] for key in sorted(mention_by_source_digest))
         ),
         optional_experiment_measurements={
@@ -1234,11 +1233,11 @@ def _load_prepared(args: argparse.Namespace) -> _PreparedRun:
     if metadata.get("experiment") != _experiment_contract():
         raise ValueError("Stage-local prompt, schema, or policy changed after preparation.")
     inputs = tuple(
-        StageLocalInput.model_validate_json(line)
+        FrontHalfInput.model_validate_json(line)
         for line in (root / "inputs.jsonl").read_text(encoding="utf-8").splitlines()
         if line
     )
-    _, current_inputs = load_stage_local_inputs(
+    _, current_inputs = load_front_half_inputs(
         selected_split,
         repository_root=REPOSITORY_ROOT,
     )
@@ -1266,7 +1265,7 @@ def _load_prepared(args: argparse.Namespace) -> _PreparedRun:
         raise ValueError("Stage-local prepared inputs changed or no longer match the split.")
     if not inputs or any(item.phase != args.phase for item in inputs):
         raise ValueError("Stage-local prepared inputs are incomplete.")
-    phase = cast(StageLocalPhase, args.phase)
+    phase = cast(EvaluationPhase, args.phase)
     return _PreparedRun(root, phase, inputs, trigger_gold)
 
 
@@ -1328,8 +1327,8 @@ def _update_run_status(root: Path, status: str) -> None:
     _write_json(root / "run.json", metadata)
 
 
-def _unique_segment_inputs(inputs: tuple[StageLocalInput, ...]) -> tuple[StageLocalInput, ...]:
-    by_sha: dict[str, StageLocalInput] = {}
+def _unique_segment_inputs(inputs: tuple[FrontHalfInput, ...]) -> tuple[FrontHalfInput, ...]:
+    by_sha: dict[str, FrontHalfInput] = {}
     for item in inputs:
         existing = by_sha.setdefault(item.source_text_sha256, item)
         if existing.source_text != item.source_text:
@@ -1338,11 +1337,11 @@ def _unique_segment_inputs(inputs: tuple[StageLocalInput, ...]) -> tuple[StageLo
 
 
 def _select_run_inputs(
-    inputs: tuple[StageLocalInput, ...],
+    inputs: tuple[FrontHalfInput, ...],
     *,
-    phase: StageLocalPhase,
+    phase: EvaluationPhase,
     item_ids: tuple[str, ...],
-) -> tuple[StageLocalInput, ...]:
+) -> tuple[FrontHalfInput, ...]:
     phase_inputs = tuple(item for item in inputs if item.phase == phase)
     if not item_ids:
         return phase_inputs
@@ -1358,7 +1357,7 @@ def _select_run_inputs(
     return tuple(by_id[item_id] for item_id in item_ids)
 
 
-def _candidate_is_required(candidate_text: str, stage_input: StageLocalInput) -> bool:
+def _candidate_is_required(candidate_text: str, stage_input: FrontHalfInput) -> bool:
     candidate = _normalized_literal(candidate_text)
     focus_literals = {_normalized_literal(stage_input.focus_entity_name)}
     if stage_input.focus_record_type == "Actor":
@@ -1378,7 +1377,7 @@ def _normalized_literal(value: str) -> str:
     return normalized.removeprefix("the ")
 
 
-def _synthetic_ledger(stage_input: StageLocalInput) -> _ExperimentLedger:
+def _synthetic_ledger(stage_input: FrontHalfInput) -> _ExperimentLedger:
     digest = stage_input.source_text_sha256
     suffix = digest[:24]
     source = Source(
@@ -1546,7 +1545,6 @@ def _experiment_contract() -> dict[str, object]:
             EVENT_BINARY_SEMANTIC_SCHEMA_ID: _sha(binary_semantic_answer_schema_bytes()),
         },
         "policy_sha256": _sha(_canonical_json(policies)),
-        "evaluator_correction_sha256": _sha(EVALUATOR_CORRECTIONS.read_bytes()),
         "optional_hypotheses": {
             "h6_source_alias_rescue": "measured_not_activated",
             "h7_selective_interpretation": "measured_not_activated",
@@ -1556,7 +1554,7 @@ def _experiment_contract() -> dict[str, object]:
 
 def _stage_record(
     *,
-    stage_input: StageLocalInput,
+    stage_input: FrontHalfInput,
     preview: dict[str, object],
     ledger: _ExperimentLedger,
     archive: LocalArchiveStore,
@@ -1640,7 +1638,7 @@ def _model_visible_input(task: ExtractionTask) -> str | None:
 
 def _write_review(
     path: Path,
-    inputs: tuple[StageLocalInput, ...],
+    inputs: tuple[FrontHalfInput, ...],
     report: dict[str, object],
 ) -> None:
     by_id = {item.item.item_id: item for item in inputs}

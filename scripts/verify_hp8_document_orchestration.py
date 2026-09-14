@@ -19,14 +19,19 @@ from kotekomi_adapters import LocalArchiveStore, sqlite_ledger_transaction
 from kotekomi_application import (
     PARAGRAPH_SEGMENT_V3,
     EventTriggerDraft,
+    HybridExtractionPreview,
+    HybridReferencePreview,
     HybridStageId,
     SourceGroundedEventDraft,
     hybrid_document_coverage_report_from_bytes,
     hybrid_event_semantics_preview_from_bytes,
     hybrid_event_trigger_preview_from_bytes,
+    hybrid_extraction_preview_from_bytes,
     hybrid_paragraph_receipt_from_bytes,
     hybrid_pipeline_policy_manifest_from_bytes,
+    hybrid_reference_preview_from_bytes,
     paragraph_source_segments,
+    standing_fact_plan_from_bytes,
 )
 from kotekomi_application.candidate_wiki import (
     CandidateWikiPlan,
@@ -38,31 +43,33 @@ from kotekomi_domain import EvidenceTarget, IngestionChangeSetOrigin, ReviewStat
 from kotekomi_exporters import MarkdownCandidateWikiRenderer
 from kotekomi_pipelines.cli import ingest_user_file
 from kotekomi_pipelines.config import PipelineConfig, load_config
+from kotekomi_pipelines.current_hybrid_evaluation import CurrentHybridEvaluationReport
+from kotekomi_pipelines.front_half_stage_local import (
+    FrontHalfCaseEvaluation,
+    FrontHalfEvaluationReport,
+    build_front_half_evaluation_report,
+    evaluate_front_half_case,
+    load_front_half_inputs,
+)
 from kotekomi_pipelines.source_grounded_event_evaluation import (
     SourceGroundedEventEvaluationReport,
     evaluate_source_grounded_event_corpus,
     load_source_grounded_event_gold,
 )
-from kotekomi_pipelines.task_allocation_evaluation import (
-    TaskAllocationBaselineComparison,
-    TaskAllocationCatalogEvaluation,
-    TaskAllocationItemEvaluation,
-    TaskAllocationRunCost,
-    compare_task_allocation_baseline,
-    evaluate_task_allocation_catalog,
-    load_task_allocation_baseline,
-    load_task_allocation_evaluator_corrections,
-    load_task_allocation_gold,
-    task_allocation_item_has_wrong_forced_frame,
+from kotekomi_pipelines.standing_fact_evaluation import (
+    StandingFactEvaluationReport,
+    StandingFactRuntimeEvidence,
+    evaluate_standing_fact_gold,
+    load_standing_fact_gold,
+    standing_fact_evidence_from_plan,
+    standing_fact_reconciliation_from_proposed_changes,
 )
 
 ROOT = Path(__file__).resolve().parents[1]
 SCENARIO = ROOT / ".agent/scenarios/anthropic-dod-dispute-v1/scenario.json"
 SOURCE_GROUNDED_EVENT_GOLD = ROOT / "docs/hsq-source-grounded-event-gold-v1.json"
-TASK_ALLOCATION_AMODEI_GOLD = ROOT / "docs/hsq-task-allocation-amodei-gold-v1.json"
-TASK_ALLOCATION_ANTHROPIC_GOLD = ROOT / "docs/hsq-task-allocation-anthropic-gold-v1.json"
-TASK_ALLOCATION_BASELINE = ROOT / "docs/hsq-task-allocation-baseline-2026-09-08.json"
-TASK_ALLOCATION_EVALUATOR_CORRECTIONS = ROOT / "docs/hsq-stage-local-evaluator-corrections-v1.json"
+FRONT_HALF_SPLIT = ROOT / "docs/hsq-front-half-split-v1.json"
+STANDING_FACT_GOLD = ROOT / "docs/hsq-standing-fact-gold-v1.json"
 type JsonObject = dict[str, Any]
 
 
@@ -146,29 +153,11 @@ def main() -> int:
             ledger_path,
             archive_path,
         )
-        evaluator_corrections = load_task_allocation_evaluator_corrections(
-            TASK_ALLOCATION_EVALUATOR_CORRECTIONS
-        )
-        task_allocation_evaluations = tuple(
-            evaluate_task_allocation_catalog(
-                load_task_allocation_gold(path),
-                paragraphs,
-                wiki_plan=wiki_plan,
-                evaluator_corrections=evaluator_corrections,
-            )
-            for path in (TASK_ALLOCATION_AMODEI_GOLD, TASK_ALLOCATION_ANTHROPIC_GOLD)
-        )
-        task_allocation_cost = _task_allocation_run_cost(first_counts, model_performance)
-        task_allocation_baseline = load_task_allocation_baseline(TASK_ALLOCATION_BASELINE)
-        if (
-            task_allocation_baseline.source_fixture_sha256
-            != hashlib.sha256(source.read_bytes()).hexdigest()
-        ):
-            raise ValueError("Task-allocation baseline source fixture does not match this run.")
-        task_allocation_comparison = compare_task_allocation_baseline(
-            task_allocation_baseline,
-            task_allocation_evaluations,
-            task_allocation_cost,
+        front_half_evaluation = _front_half_evaluation(paragraphs)
+        standing_fact_evaluation = _standing_fact_evaluation(
+            paragraphs,
+            wiki_plan,
+            ledger_path,
         )
         findings = _findings(
             configured=configured,
@@ -177,118 +166,83 @@ def main() -> int:
             first_counts=first_counts,
             second_counts=second_counts,
             origins=origins,
+            front_half_evaluation=front_half_evaluation,
             source_grounded_event_evaluation=source_grounded_event_evaluation,
+            standing_fact_evaluation=standing_fact_evaluation,
             paragraphs=paragraphs,
         )
-        task_allocation_diagnostics = _task_allocation_diagnostics(
-            task_allocation_evaluations,
-            task_allocation_comparison,
+        report_record = CurrentHybridEvaluationReport.model_validate(
+            {
+                "schema_version": "hp8_document_orchestration_evaluation_v3",
+                "source_path": str(source),
+                "source_sha256": hashlib.sha256(source.read_bytes()).hexdigest(),
+                "policy_manifest": manifest,
+                "coverage_report": report,
+                "paragraphs": paragraphs,
+                "source_grounded_event_evaluation": source_grounded_event_evaluation.model_dump(
+                    mode="json"
+                ),
+                "front_half_evaluation": front_half_evaluation.model_dump(mode="json"),
+                "standing_fact_evaluation": standing_fact_evaluation.model_dump(mode="json"),
+                "candidate_wiki": wiki_evidence,
+                "first_public_output": first,
+                "replay_public_output": second,
+                "first_ledger_counts": first_counts,
+                "model_performance": model_performance,
+                "model_executions": model_executions,
+                "replay_ledger_counts": second_counts,
+                "ingestion_change_set_origins": origins,
+                "findings": findings,
+                "summary": {
+                    "passed": not findings,
+                    "required_paragraphs": report["required_paragraph_count"],
+                    "complete_paragraphs": report["complete_paragraph_count"],
+                    "gap_paragraphs": report["gap_paragraph_count"],
+                    "paragraph_proposed_changes": len(report["proposed_change_ids"]),
+                    "reconciled_proposed_changes": first_counts["proposed_changes"],
+                    "source_grounded_events_expected": (
+                        source_grounded_event_evaluation.expected_event_count
+                    ),
+                    "source_grounded_events_observed": (
+                        source_grounded_event_evaluation.observed_event_count
+                    ),
+                    "source_grounded_events_exact": (
+                        source_grounded_event_evaluation.grounded_event_count
+                    ),
+                    "source_grounded_events_missing": (
+                        source_grounded_event_evaluation.missing_event_count
+                    ),
+                    "source_grounded_events_extra": (
+                        source_grounded_event_evaluation.extra_event_count
+                    ),
+                    "source_grounded_events_incorrect": (
+                        source_grounded_event_evaluation.incorrectly_grounded_event_count
+                    ),
+                    "front_half_items_expected": front_half_evaluation.item_count,
+                    "front_half_items_exact": front_half_evaluation.passed_count,
+                    "standing_facts_expected": standing_fact_evaluation.item_count,
+                    "standing_facts_exact": standing_fact_evaluation.exact_count,
+                    "standing_facts_missing": standing_fact_evaluation.missing_count,
+                    "standing_facts_incorrect": standing_fact_evaluation.incorrect_count,
+                    "standing_facts_not_proposed": standing_fact_evaluation.not_proposed_count,
+                    "standing_facts_lineage_incomplete": (
+                        standing_fact_evaluation.lineage_incomplete_count
+                    ),
+                    "standing_facts_not_visible": standing_fact_evaluation.not_visible_count,
+                    "replay_model_calls": second_counts["model_runs"] - first_counts["model_runs"],
+                },
+            }
         )
-        findings.extend(_task_allocation_findings(task_allocation_evaluations))
-        standing_fact_acceptance = _standing_fact_acceptance(task_allocation_evaluations)
-        payload = {
-            "schema_version": "hp8_document_orchestration_evaluation_v2",
-            "source_path": str(source),
-            "source_sha256": hashlib.sha256(source.read_bytes()).hexdigest(),
-            "policy_manifest": manifest,
-            "coverage_report": report,
-            "paragraphs": paragraphs,
-            "source_grounded_event_evaluation": source_grounded_event_evaluation.model_dump(
-                mode="json"
-            ),
-            "task_allocation_evaluations": [
-                item.model_dump(mode="json") for item in task_allocation_evaluations
-            ],
-            "task_allocation_baseline_comparison": task_allocation_comparison.model_dump(
-                mode="json"
-            ),
-            "task_allocation_diagnostics": task_allocation_diagnostics,
-            "standing_fact_acceptance": standing_fact_acceptance,
-            "task_allocation_evaluator_corrections": {
-                "path": TASK_ALLOCATION_EVALUATOR_CORRECTIONS.relative_to(ROOT).as_posix(),
-                "sha256": hashlib.sha256(
-                    TASK_ALLOCATION_EVALUATOR_CORRECTIONS.read_bytes()
-                ).hexdigest(),
-                "parent_validation_manifest_sha256": (
-                    evaluator_corrections.parent_validation_manifest_sha256
-                ),
-                "parent_validation_report_sha256": (
-                    evaluator_corrections.parent_validation_report_sha256
-                ),
-            },
-            "candidate_wiki": wiki_evidence,
-            "first_public_output": first,
-            "replay_public_output": second,
-            "first_ledger_counts": first_counts,
-            "model_performance": model_performance,
-            "model_executions": model_executions,
-            "replay_ledger_counts": second_counts,
-            "ingestion_change_set_origins": origins,
-            "findings": findings,
-            "summary": {
-                "passed": not findings,
-                "required_paragraphs": report["required_paragraph_count"],
-                "complete_paragraphs": report["complete_paragraph_count"],
-                "gap_paragraphs": report["gap_paragraph_count"],
-                "paragraph_proposed_changes": len(report["proposed_change_ids"]),
-                "reconciled_proposed_changes": first_counts["proposed_changes"],
-                "source_grounded_events_expected": (
-                    source_grounded_event_evaluation.expected_event_count
-                ),
-                "source_grounded_events_observed": (
-                    source_grounded_event_evaluation.observed_event_count
-                ),
-                "source_grounded_events_exact": (
-                    source_grounded_event_evaluation.grounded_event_count
-                ),
-                "source_grounded_events_missing": (
-                    source_grounded_event_evaluation.missing_event_count
-                ),
-                "source_grounded_events_extra": (
-                    source_grounded_event_evaluation.extra_event_count
-                ),
-                "source_grounded_events_incorrect": (
-                    source_grounded_event_evaluation.incorrectly_grounded_event_count
-                ),
-                "task_allocation_items_expected": sum(
-                    item.item_count for item in task_allocation_evaluations
-                ),
-                "task_allocation_items_complete": sum(
-                    item.passed_count for item in task_allocation_evaluations
-                ),
-                "task_allocation_items_at_review": sum(
-                    item.review_count for item in task_allocation_evaluations
-                ),
-                "task_allocation_items_on_wiki": sum(
-                    item.wiki_visible_count for item in task_allocation_evaluations
-                ),
-                "task_allocation_wrong_forced_frames": sum(
-                    item.wrong_forced_frame_count for item in task_allocation_evaluations
-                ),
-                "standing_fact_amodei_07_at_review": standing_fact_acceptance["passed"],
-                "task_allocation_newly_complete": sum(
-                    len(item.newly_complete_item_ids)
-                    for item in task_allocation_comparison.catalogs
-                ),
-                "task_allocation_regressed": sum(
-                    len(item.regressed_item_ids) for item in task_allocation_comparison.catalogs
-                ),
-                "task_allocation_model_run_delta": (
-                    task_allocation_comparison.model_run_count_delta
-                ),
-                "task_allocation_model_elapsed_milliseconds_delta": (
-                    task_allocation_comparison.total_model_elapsed_milliseconds_delta
-                ),
-                "replay_model_calls": second_counts["model_runs"] - first_counts["model_runs"],
-            },
-        }
     finally:
         if temporary is not None:
             temporary.cleanup()
     args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.output.write_text(_canonical_json(payload) + "\n", encoding="utf-8")
-    print(json.dumps(payload["summary"], sort_keys=True))
-    return 0 if not findings else 1
+    args.output.write_text(
+        _canonical_json(report_record.model_dump(mode="json")) + "\n",
+        encoding="utf-8",
+    )
+    print(report_record.summary.model_dump_json())
+    return 0 if report_record.summary.passed else 1
 
 
 def _ingest(config_path: Path, source: Path, url: str) -> JsonObject:
@@ -497,6 +451,85 @@ def _stage_output(
     return cast(JsonObject, json.loads(readers[stage_id](output_id)))
 
 
+def _front_half_evaluation(paragraphs: list[JsonObject]) -> FrontHalfEvaluationReport:
+    """Evaluate the reviewed mention/reference corpus against production stage records."""
+    _, inputs = load_front_half_inputs(FRONT_HALF_SPLIT, repository_root=ROOT)
+    wanted_digests = {item.source_text_sha256 for item in inputs}
+    stages_by_digest: dict[str, tuple[HybridExtractionPreview, HybridReferencePreview | None]] = {}
+    for paragraph in paragraphs:
+        source_text = paragraph.get("authoritative_text")
+        if not isinstance(source_text, str):
+            raise ValueError("Paragraph evidence has no authoritative text.")
+        stage_outputs = cast(JsonObject, paragraph["stage_outputs"])
+        mention_payload = stage_outputs.get(HybridStageId.HP1_MENTIONS.value)
+        if not isinstance(mention_payload, dict):
+            raise ValueError("Current Front-Half evaluation requires mention evidence.")
+        mention = hybrid_extraction_preview_from_bytes(
+            _canonical_json(cast(JsonObject, mention_payload)).encode()
+        )
+        reference_payload = stage_outputs.get(HybridStageId.HP2_REFERENCES.value)
+        references = (
+            hybrid_reference_preview_from_bytes(
+                _canonical_json(cast(JsonObject, reference_payload)).encode()
+            )
+            if isinstance(reference_payload, dict)
+            else None
+        )
+        for segment in paragraph_source_segments(source_text, PARAGRAPH_SEGMENT_V3):
+            digest = hashlib.sha256(segment.exact_text.encode()).hexdigest()
+            if digest not in wanted_digests:
+                continue
+            if digest in stages_by_digest:
+                raise ValueError("Front-Half evaluation found a repeated SourceSegment.")
+            stages_by_digest[digest] = (mention, references)
+    evaluations: list[FrontHalfCaseEvaluation] = []
+    for stage_input in inputs:
+        evidence = stages_by_digest.get(stage_input.source_text_sha256)
+        if evidence is None:
+            raise ValueError(
+                f"Front-Half evaluation is missing SourceSegment {stage_input.source_text_sha256}."
+            )
+        evaluations.append(evaluate_front_half_case(stage_input, evidence[0], evidence[1]))
+    return build_front_half_evaluation_report(tuple(evaluations))
+
+
+def _standing_fact_evaluation(
+    paragraphs: list[JsonObject],
+    wiki_plan: CandidateWikiPlan,
+    ledger_path: Path,
+) -> StandingFactEvaluationReport:
+    """Evaluate current Standing Fact plans and their Candidate Wiki projection."""
+    evidence: dict[int, StandingFactRuntimeEvidence] = {}
+    for paragraph in paragraphs:
+        ordinal = paragraph.get("ordinal")
+        if type(ordinal) is not int:
+            raise ValueError("Paragraph evidence has no integer ordinal.")
+        stage_outputs = cast(JsonObject, paragraph["stage_outputs"])
+        payload = stage_outputs.get(HybridStageId.HP10_STANDING_FACTS.value)
+        if isinstance(payload, dict):
+            plan = standing_fact_plan_from_bytes(
+                (_canonical_json(cast(JsonObject, payload)) + "\n").encode()
+            )
+            evidence[ordinal] = standing_fact_evidence_from_plan(ordinal, plan)
+    with sqlite_ledger_transaction(ledger_path) as ledger:
+        change_set = ledger.get_ingestion_change_set(wiki_plan.ingestion_change_set_id)
+        if change_set is None:
+            raise ValueError("Candidate Wiki references a missing IngestionChangeSet.")
+        changes = tuple(
+            change
+            for change_id in change_set.proposed_change_ids
+            if (change := ledger.get_proposed_change(change_id)) is not None
+        )
+        if len(changes) != len(change_set.proposed_change_ids):
+            raise ValueError("IngestionChangeSet references a missing ProposedChange.")
+    return evaluate_standing_fact_gold(
+        load_standing_fact_gold(STANDING_FACT_GOLD),
+        evidence,
+        reconciled_records=standing_fact_reconciliation_from_proposed_changes(changes),
+        wiki_plan=wiki_plan,
+    )
+
+
 def _source_grounded_event_evaluation(
     *,
     paragraphs: list[JsonObject],
@@ -628,7 +661,9 @@ def _findings(
     first_counts: JsonObject,
     second_counts: JsonObject,
     origins: list[str],
+    front_half_evaluation: FrontHalfEvaluationReport,
     source_grounded_event_evaluation: SourceGroundedEventEvaluationReport,
+    standing_fact_evaluation: StandingFactEvaluationReport,
     paragraphs: list[JsonObject],
 ) -> list[JsonObject]:
     findings: list[JsonObject] = []
@@ -703,6 +738,19 @@ def _findings(
                     "observed": producer_ids,
                 }
             )
+    if not front_half_evaluation.passed:
+        findings.append(
+            {
+                "code": "front_half_gold_mismatch",
+                "expected": front_half_evaluation.item_count,
+                "exact": front_half_evaluation.passed_count,
+                "failing_items": [
+                    item.model_dump(mode="json")
+                    for item in front_half_evaluation.cases
+                    if not item.passed
+                ],
+            }
+        )
     if not source_grounded_event_evaluation.passed:
         findings.append(
             {
@@ -719,161 +767,20 @@ def _findings(
                 ],
             }
         )
-    return findings
-
-
-def _task_allocation_findings(
-    evaluations: tuple[TaskAllocationCatalogEvaluation, ...],
-) -> list[JsonObject]:
-    findings: list[JsonObject] = []
-    if sum(item.item_count for item in evaluations) != 40:
+    if not standing_fact_evaluation.passed:
         findings.append(
             {
-                "code": "task_allocation_gold_incomplete",
-                "actual": sum(item.item_count for item in evaluations),
-            }
-        )
-    acceptance = _standing_fact_acceptance(evaluations)
-    if not acceptance["passed"]:
-        findings.append(
-            {
-                "code": "standing_fact_gold_not_reproduced",
-                "item_id": "AMO-07",
-                "actual": acceptance,
+                "code": "standing_fact_gold_mismatch",
+                "expected": standing_fact_evaluation.item_count,
+                "exact": standing_fact_evaluation.exact_count,
+                "failing_items": [
+                    item.model_dump(mode="json")
+                    for item in standing_fact_evaluation.items
+                    if not item.passed
+                ],
             }
         )
     return findings
-
-
-def _standing_fact_acceptance(
-    evaluations: tuple[TaskAllocationCatalogEvaluation, ...],
-) -> JsonObject:
-    item = _task_allocation_item(evaluations, "AMO-07")
-    required_check_ids = ("standing_fact", "standing_proposal")
-    checks = {check.check_id: check for check in item.checks} if item is not None else {}
-    failed_check_ids = [
-        check_id
-        for check_id in required_check_ids
-        if check_id not in checks or not checks[check_id].passed
-    ]
-    return {
-        "item_id": "AMO-07",
-        "passed": item is not None and item.reached_review and not failed_check_ids,
-        "reached_review": item.reached_review if item is not None else False,
-        "failed_check_ids": failed_check_ids,
-        "checks": {
-            check_id: checks[check_id].model_dump(mode="json")
-            for check_id in required_check_ids
-            if check_id in checks
-        },
-    }
-
-
-def _task_allocation_item(
-    evaluations: tuple[TaskAllocationCatalogEvaluation, ...],
-    item_id: str,
-) -> TaskAllocationItemEvaluation | None:
-    return next(
-        (
-            item
-            for evaluation in evaluations
-            for item in evaluation.items
-            if item.item_id == item_id
-        ),
-        None,
-    )
-
-
-def _task_allocation_diagnostics(
-    evaluations: tuple[TaskAllocationCatalogEvaluation, ...],
-    comparison: TaskAllocationBaselineComparison,
-) -> list[JsonObject]:
-    """Retain the historical governed-frame scorecard without using it as a current gate."""
-    findings: list[JsonObject] = []
-    wrong_frames = [
-        result.item_id
-        for evaluation in evaluations
-        for result in evaluation.items
-        if task_allocation_item_has_wrong_forced_frame(result)
-    ]
-    if wrong_frames:
-        findings.append(
-            {
-                "code": "task_allocation_wrong_forced_frame",
-                "item_ids": wrong_frames,
-            }
-        )
-    for catalog in comparison.catalogs:
-        if catalog.regressed_item_ids:
-            findings.append(
-                {
-                    "code": "task_allocation_baseline_regressed",
-                    "catalog_id": catalog.catalog_id,
-                    "item_ids": list(catalog.regressed_item_ids),
-                }
-            )
-        if not catalog.newly_complete_item_ids:
-            findings.append(
-                {
-                    "code": "task_allocation_no_newly_complete_item",
-                    "catalog_id": catalog.catalog_id,
-                }
-            )
-    development = next(
-        (item for item in evaluations if item.catalog_role == "development"),
-        None,
-    )
-    if development is None:
-        findings.append({"code": "task_allocation_development_evaluation_missing"})
-    else:
-        gold = load_task_allocation_gold(TASK_ALLOCATION_AMODEI_GOLD)
-        assert gold.baseline_partition is not None
-        by_id = {item.item_id: item for item in development.items}
-        regressions = [
-            item_id
-            for item_id in gold.baseline_partition.previously_demonstrated_item_ids
-            if item_id not in by_id or not by_id[item_id].passed
-        ]
-        if regressions:
-            findings.append(
-                {
-                    "code": "task_allocation_demonstrated_behavior_regressed",
-                    "item_ids": regressions,
-                }
-            )
-    return findings
-
-
-def _task_allocation_run_cost(
-    counts: JsonObject,
-    model_performance: JsonObject,
-) -> TaskAllocationRunCost:
-    task_types_value = model_performance.get("by_task_type")
-    task_types = cast(list[object], task_types_value) if isinstance(task_types_value, list) else []
-    elapsed_total = 0
-    for value in task_types:
-        if not isinstance(value, dict):
-            raise ValueError("Model performance task type must be an object.")
-        elapsed = cast(dict[str, object], value).get("elapsed_milliseconds")
-        if not isinstance(elapsed, dict):
-            raise ValueError("Model performance elapsed time must be an object.")
-        total = cast(dict[str, object], elapsed).get("total")
-        if type(total) is not int:
-            raise ValueError("Model performance elapsed total must be an integer.")
-        elapsed_total += total
-    return TaskAllocationRunCost(
-        extraction_task_count=_required_count(counts, "extraction_tasks"),
-        model_run_count=_required_count(counts, "model_runs"),
-        proposed_change_count=_required_count(counts, "proposed_changes"),
-        total_model_elapsed_milliseconds=elapsed_total,
-    )
-
-
-def _required_count(counts: JsonObject, name: str) -> int:
-    value = counts.get(name)
-    if type(value) is not int:
-        raise ValueError(f"Ledger count {name!r} must be an integer.")
-    return value
 
 
 def _ledger_counts(ledger_path: Path) -> JsonObject:

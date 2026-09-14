@@ -35,20 +35,19 @@ from kotekomi_application.hybrid_mention_interpretation import (
     resolve_mention_interpretation,
 )
 from kotekomi_application.source_occurrences import source_occurrences
-from kotekomi_pipelines.task_allocation_stage_local import (
-    evaluate_stage_local_boundary_contract,
-    evaluate_stage_local_case,
-    load_stage_local_inputs,
+from kotekomi_pipelines.front_half_stage_local import (
+    evaluate_front_half_boundary_contract,
+    evaluate_front_half_case,
+    load_front_half_inputs,
 )
 
 ROOT = Path(__file__).resolve().parents[3]
-SPLIT = ROOT / "docs" / "hsq-stage-local-split-v2.json"
-HISTORICAL_SPLIT = ROOT / "docs" / "hsq-stage-local-split-v1.json"
+SPLIT = ROOT / "docs" / "hsq-front-half-split-v1.json"
 TRIGGER_GOLD = ROOT / "docs" / "hsq-event-trigger-gold-v1.json"
 
 
 def test_stage_local_split_loads_twenty_development_and_twenty_validation_items() -> None:
-    split, inputs = load_stage_local_inputs(SPLIT, repository_root=ROOT)
+    split, inputs = load_front_half_inputs(SPLIT, repository_root=ROOT)
 
     assert len(split.development_item_ids) == 20
     assert len(split.validation_item_ids) == 20
@@ -59,17 +58,12 @@ def test_stage_local_split_loads_twenty_development_and_twenty_validation_items(
     assert development_sha.isdisjoint(validation_sha)
 
 
-def test_stage_local_evaluator_correction_preserves_gold_and_accepts_source_boundary() -> None:
-    _, corrected_inputs = load_stage_local_inputs(SPLIT, repository_root=ROOT)
-    _, historical_inputs = load_stage_local_inputs(HISTORICAL_SPLIT, repository_root=ROOT)
+def test_front_half_gold_stores_the_reviewed_ant14_boundary_directly() -> None:
+    _, inputs = load_front_half_inputs(SPLIT, repository_root=ROOT)
 
-    corrected = next(item for item in corrected_inputs if item.item.item_id == "ANT-14")
-    historical = next(item for item in historical_inputs if item.item.item_id == "ANT-14")
+    ant14 = next(item for item in inputs if item.item.item_id == "ANT-14")
 
-    assert historical.item.expected_references[0].antecedent_text == "Sacks"
-    assert historical.expected_references[0].accepted_antecedent_texts == ("Sacks",)
-    assert corrected.item.expected_references[0].antecedent_text == "Sacks"
-    assert corrected.expected_references[0].accepted_antecedent_texts == ("David  Sacks",)
+    assert ant14.expected_references[0].accepted_antecedent_texts == ("David  Sacks",)
 
 
 def test_stage_local_split_rejects_source_segment_leakage(tmp_path: Path) -> None:
@@ -82,21 +76,21 @@ def test_stage_local_split_rejects_source_segment_leakage(tmp_path: Path) -> Non
     path.write_text(json.dumps(value), encoding="utf-8")
 
     with pytest.raises(ValueError, match="leakage"):
-        load_stage_local_inputs(path, repository_root=ROOT)
+        load_front_half_inputs(path, repository_root=ROOT)
 
 
-def test_stage_local_split_rejects_evaluator_correction_pin_drift(tmp_path: Path) -> None:
+def test_front_half_split_rejects_retired_extra_fields(tmp_path: Path) -> None:
     value = json.loads(SPLIT.read_bytes())
-    value["evaluator_corrections"]["sha256"] = "0" * 64
-    path = tmp_path / "drifted-correction-split.json"
+    value["evaluator_corrections"] = {"path": "retired", "sha256": "0" * 64}
+    path = tmp_path / "invalid-front-half-split.json"
     path.write_text(json.dumps(value), encoding="utf-8")
 
-    with pytest.raises(ValueError, match="evaluator-correction pin drifted"):
-        load_stage_local_inputs(path, repository_root=ROOT)
+    with pytest.raises(ValueError, match="Extra inputs are not permitted"):
+        load_front_half_inputs(path, repository_root=ROOT)
 
 
 def test_stage_local_evaluation_names_mention_proposal_as_the_first_failure() -> None:
-    _, inputs = load_stage_local_inputs(SPLIT, repository_root=ROOT)
+    _, inputs = load_front_half_inputs(SPLIT, repository_root=ROOT)
     stage_input = next(item for item in inputs if item.item.item_id == "ANT-02")
     preview = build_hybrid_extraction_preview(
         representation_id="rep_empty",
@@ -106,14 +100,14 @@ def test_stage_local_evaluation_names_mention_proposal_as_the_first_failure() ->
         terminal_status=HybridPreviewStatus.COMPLETE,
     )
 
-    result = evaluate_stage_local_case(stage_input, preview, None)
+    result = evaluate_front_half_case(stage_input, preview, None)
 
     assert result.first_failed_stage == "mention_proposal"
     assert result.checks[0].actual == []
 
 
 def test_stage_local_evaluation_accepts_source_bound_focus_mention() -> None:
-    _, inputs = load_stage_local_inputs(SPLIT, repository_root=ROOT)
+    _, inputs = load_front_half_inputs(SPLIT, repository_root=ROOT)
     stage_input = next(item for item in inputs if item.item.item_id == "ANT-02")
     source_segment_id = "seg_stage_local"
     start = stage_input.source_text.index("Anthropic")
@@ -209,7 +203,7 @@ def test_stage_local_evaluation_accepts_source_bound_focus_mention() -> None:
         terminal_status=HybridPreviewStatus.COMPLETE,
     )
 
-    result = evaluate_stage_local_case(stage_input, preview, None)
+    result = evaluate_front_half_case(stage_input, preview, None)
 
     assert result.passed is True
     assert result.first_failed_stage is None
@@ -326,7 +320,7 @@ representation_policy_version = "deposited-source-v1"
             for item in map(json.loads, (run_root / "inputs.jsonl").read_text().splitlines())
         }
     )
-    assert report["schema_version"] == "hsq_stage_local_phase_report_v2"
+    assert report["schema_version"] == "hsq_front_half_phase_report_v1"
     assert report["boundary_contract"]["contract_complete"] is True
     assert report["boundary_contract"]["unresolved_candidate_count"] == 0
     assert report["boundary_contract"]["rejected_line_count"] == 0
@@ -337,7 +331,6 @@ representation_policy_version = "deposited-source-v1"
     assert experiment["prompt_sha256"]
     assert experiment["schema_sha256"]
     assert experiment["policy_sha256"]
-    assert experiment["evaluator_correction_sha256"]
     trigger_report = json.loads((run_root / "trigger-report.json").read_bytes())
     assert trigger_report["schema_version"] == "hsq_event_trigger_stage_report_v7"
     assert trigger_report["segment_count"] == 4
@@ -442,7 +435,7 @@ def test_all_candidate_contract_exposes_collateral_unresolved_candidate() -> Non
         ),
     )
 
-    result = evaluate_stage_local_boundary_contract((preview,))
+    result = evaluate_front_half_boundary_contract((preview,))
 
     assert result.contract_complete is False
     assert result.ambiguous_component_count == 1
@@ -464,7 +457,7 @@ def test_all_candidate_contract_accepts_exactly_one_terminal_judgment_per_candid
         ),
     )
 
-    result = evaluate_stage_local_boundary_contract((preview,))
+    result = evaluate_front_half_boundary_contract((preview,))
 
     assert result.contract_complete is True
     assert result.supplied_candidate_count == result.valid_terminal_judgment_count == 2

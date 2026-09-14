@@ -1,10 +1,10 @@
 # TDD: Qualified Event Semantics and Source Support
 
-- Status: Superseded by [HSQ-6](2026-09-07-source-bound-governed-event-extraction.md)
+- Status: Superseded; retained as design history only
+- Current evaluation: [Source-Grounded Evaluation Cutover](2026-09-13-source-grounded-evaluation-cutover.md)
 - Program: [Hybrid Intelligence Extraction Pipeline](2026-09-01-hybrid-intelligence-extraction-pipeline.md)
 - Deliverable ID: HP-6
 - Depends on: [HP-5 Atomic Claims and Ontology Validation](2026-09-02-hybrid-atomic-claims-ontology-validation.md)
-- Gold catalog: [HP-6 Event Semantics Gold Catalog](hp6-event-semantics-gold-v1.json)
 
 This document is retained as historical design evidence.
 

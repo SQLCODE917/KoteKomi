@@ -2,8 +2,8 @@
   "schema_version": "hsq_event_trigger_gold_v1",
   "catalog_id": "hsq-event-trigger-gold-v1",
   "review_status": "approved",
-  "source_split_path": "docs/hsq-stage-local-split-v2.json",
-  "source_split_sha256": "bc19a5820c9396f81534d07d66838a76177607c34c90d55bd4c2fc8d49ad70da",
+  "source_split_path": "docs/hsq-front-half-split-v1.json",
+  "source_split_sha256": "651287f2e4199e11946c5e0e49b04bf6057b7b3dcd4621cbc36a409cb0435ece",
   "segments": [
     {
       "phase": "validation",
