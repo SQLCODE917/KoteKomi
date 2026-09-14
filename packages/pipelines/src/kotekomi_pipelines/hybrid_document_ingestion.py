@@ -230,7 +230,7 @@ _PROMPT_NAMES = (
     "hybrid_event_role_selection_v1.md",
     "hybrid_event_presentation_v1.md",
     "hybrid_semantic_support_v1.md",
-    "hybrid_standing_fact_task_v2.md",
+    "hybrid_standing_fact_task_v3.md",
     "hybrid_standing_fact_qualification_v1.md",
 )
 
@@ -777,7 +777,7 @@ def _run_paragraph(
             model_runtime=resources.runtime,
             model_run_id_factory=model_run_id_factory,
             tokenizer=resources.runtime,
-            prompt_bytes=prompts["hybrid_standing_fact_task_v2.md"],
+            prompt_bytes=prompts["hybrid_standing_fact_task_v3.md"],
             qualification_prompt_bytes=prompts["hybrid_standing_fact_qualification_v1.md"],
             nli_runtime=resources.nli,
         )

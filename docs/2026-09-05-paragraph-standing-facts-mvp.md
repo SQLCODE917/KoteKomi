@@ -1,6 +1,6 @@
 # TDD: Paragraph Standing Facts MVP
 
-- Status: Accepted for implementation
+- Status: Implemented and canonically verified
 - Program: [Hybrid Intelligence Extraction Pipeline](2026-09-01-hybrid-intelligence-extraction-pipeline.md)
 - Deliverable ID: HP-10
 - Depends on: [HP-8 Hybrid Document Orchestration](2026-09-03-hybrid-document-orchestration.md)
@@ -80,12 +80,12 @@ HP-10 will add one paragraph-local standing-fact route to the production ingesti
 ### Model task
 
 - HSF-MOD-01: HP-10 runs at most one Standing Fact task per eligible SourceSegment.
-- HSF-MOD-02: The task input contains the exact SourceSegment and a local candidate catalog.
+- HSF-MOD-02: The task input contains the exact SourceSegment, a local candidate catalog, and an ordered SourceOccurrence catalog.
 - HSF-MOD-03: The task input contains no Ledger ID, source offset, or storage path.
 - HSF-MOD-04: The model returns zero or more Standing Fact Drafts in one literal line contract.
-- HSF-MOD-05: Each draft names one candidate subject and one free-text relation label.
+- HSF-MOD-05: Each draft names one candidate subject and selects its relation from supplied SourceOccurrences.
 - HSF-MOD-06: An entity-object draft names one different Eligible Mention.
-- HSF-MOD-07: A literal-object draft copies one exact SourceSegment substring.
+- HSF-MOD-07: A literal-object draft selects one contiguous supplied SourceOccurrence range.
 - HSF-MOD-08: The model returns an explicit abstention when it finds no Standing Fact.
 - HSF-MOD-09: The prompt excludes bounded actions and occurrences from Standing Facts.
 - HSF-MOD-10: The model does not select a canonical predicate.
@@ -103,6 +103,9 @@ HP-10 will add one paragraph-local standing-fact route to the production ingesti
 - HSF-MAP-08: A held decision records every applicable reason code.
 - HSF-MAP-09: An invalid draft cannot remove another valid draft from the same model output.
 - HSF-MAP-10: KoteKomi derives every record ID from immutable source and policy identities.
+- HSF-MAP-11: KoteKomi reconstructs relation and literal-object text from authoritative characters.
+- HSF-MAP-12: KoteKomi holds a relation that overlaps any Eligible Mention boundary.
+- HSF-MAP-13: KoteKomi renders a CompleteProposition only when subject, relation, and object form one ordered source span.
 
 ### Evidence and proposal construction
 
@@ -192,7 +195,8 @@ HP-8       Application       Model       Archive       HP-9
 
 `StandingFactDraft` is a frozen Application Layer DTO.
 
-It records the subject mention, relation label, object, SourceSegment, and model lineage.
+It records exact subject, relation, and object source spans, their resolved candidate identities, the
+SourceSegment, and model lineage.
 
 `StandingFactDecision` is a frozen Application Layer DTO.
 
@@ -255,6 +259,23 @@ A runtime or output failure is an accounted gap.
 - AC-HSF-13: The fixture run exposes exact data in and data out through stage traces.
 - AC-HSF-14: Formatting, Ruff, Pyright, focused tests, and the full test suite pass.
 - AC-HSF-15: Canonical PDF validation grades accuracy, recall, traceability, and review safety.
+- AC-HSF-16: Mixed-proposition tests prove a non-overlapping standing fact survives beside Events in the same SourceSegment.
+- AC-HSF-17: A malformed relation that consumes its object mention is held before semantic qualification.
+
+## Verification Result
+
+The September 13, 2026 canonical run verified the corrected mixed-proposition path.
+
+- The repository check run passed 1,541 tests with one skip.
+- IngestionRun `igr_242c7d642e4148b3ac2a927a70d543f6` executed the fresh ingestion.
+- IngestionRun `igr_eb7b8d00ed8e4999a5ffbaf463a0b3a3` reused its immutable result.
+- Coverage report `hdc_b11adbd6fa1963b54d4fff4e` accounted for all 36 required paragraphs.
+- The run created 232 pending ProposedChanges and zero accepted intelligence records.
+- The replay created zero ModelRun records.
+- `AMO-07` produced `Anthropic's strategy has mirrored Amodei's views toward Trump.`
+- Qwen classified that CompleteProposition as `supported_standing_fact`.
+- The NLI challenger returned a supported PropositionDecision.
+- ProposedChange `pcg_1e907fc2d989e32d56e37fe1` retained the complete literal object.
 
 ## Reference Implementations
 

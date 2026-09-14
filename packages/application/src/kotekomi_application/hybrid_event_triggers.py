@@ -18,15 +18,17 @@ from kotekomi_application.extraction_stage_trace import (
 from kotekomi_application.hybrid_event_trigger_model_output import EventHeadAnswerValue
 from kotekomi_application.linguistic_analysis import (
     LinguisticAnalysis,
+    LinguisticToken,
     UniversalPartOfSpeech,
 )
 from kotekomi_application.nominalization_analysis import NominalizationAnalysis
 from kotekomi_application.source_occurrences import SourceOccurrence
 
-HYBRID_EVENT_TRIGGER_POLICY_ID = "hybrid_event_trigger_v17"
+HYBRID_EVENT_TRIGGER_POLICY_ID = "hybrid_event_trigger_v18"
 EVENT_HEAD_CANDIDATE_POLICY_ID = "stanza_verb_qanom_noun_v1"
 QANOM_CANDIDATE_THRESHOLD = 0.45
 _NON_PREDICATE_VERB_DEPENDENCIES = frozenset({"amod", "case"})
+_EXPRESSION_BOUNDARY_PUNCTUATION = frozenset({",", ";", ":", ".", "!", "?"})
 _SHA256 = r"^[a-f0-9]{64}$"
 _OPEN_LABEL = r"^[a-z][a-z0-9]*(?:_[a-z0-9]+){0,3}$"
 
@@ -280,7 +282,7 @@ class HybridEventTriggerPreview(BaseModel):
     representation_id: Annotated[str, Field(min_length=1)]
     paragraph_node_id: Annotated[str, Field(min_length=1)]
     context_manifest_ids: tuple[Annotated[str, Field(min_length=1)], ...]
-    policy_id: Literal["hybrid_event_trigger_v17"] = HYBRID_EVENT_TRIGGER_POLICY_ID
+    policy_id: Literal["hybrid_event_trigger_v18"] = HYBRID_EVENT_TRIGGER_POLICY_ID
     triggers: tuple[EventTriggerDraft, ...] = ()
     extraction_task_ids: tuple[Annotated[str, Field(min_length=1)], ...] = ()
     model_run_ids: tuple[Annotated[str, Field(min_length=1)], ...] = ()
@@ -357,6 +359,92 @@ def event_trigger_id(
         model_run_id,
         trace_id,
     )
+
+
+def event_trigger_expression_range(
+    candidate: EventHeadCandidate,
+    source_text: str,
+    tokens: tuple[LinguisticToken, ...],
+) -> tuple[int, int]:
+    """Derive one conservative exact Event expression around a selected head.
+
+    Most selected heads are already complete expressions. A nominal Event head with one
+    directly attached marked infinitival clause retains that clause up to the first strong
+    punctuation boundary. This preserves source meaning such as ``decision to attend ...``
+    while keeping the source-bound Stanza observation fallible and non-authoritative.
+    """
+    if (
+        candidate.end > len(source_text)
+        or source_text[candidate.start : candidate.end] != candidate.text
+    ):
+        raise ValueError("EventHeadCandidate does not match exact SourceCopy characters.")
+    token_by_id = {item.token_id: item for item in tokens}
+    if len(token_by_id) != len(tokens):
+        raise ValueError("LinguisticToken IDs must be distinct for expression mapping.")
+    head = token_by_id.get(candidate.linguistic_token_id)
+    if (
+        head is None
+        or head.start != candidate.start
+        or head.end != candidate.end
+        or head.text != candidate.text
+    ):
+        raise ValueError("EventHeadCandidate linguistic token does not match its source head.")
+    if candidate.part_of_speech is not UniversalPartOfSpeech.NOUN:
+        return candidate.start, candidate.end
+
+    direct_clauses = tuple(
+        item
+        for item in tokens
+        if item.sentence_id == head.sentence_id
+        and item.head_token_id == head.token_id
+        and item.dependency_relation.casefold() == "acl"
+        and any(
+            marker.sentence_id == head.sentence_id
+            and marker.head_token_id == item.token_id
+            and marker.dependency_relation.casefold() == "mark"
+            and marker.lemma.casefold() == "to"
+            for marker in tokens
+        )
+    )
+    if len(direct_clauses) != 1:
+        return candidate.start, candidate.end
+
+    clause = direct_clauses[0]
+    punctuation_start = next(
+        (
+            item.start
+            for item in tokens
+            if item.sentence_id == head.sentence_id
+            and item.start > clause.start
+            and item.part_of_speech is UniversalPartOfSpeech.PUNCTUATION
+            and item.text in _EXPRESSION_BOUNDARY_PUNCTUATION
+        ),
+        len(source_text),
+    )
+    descendant_ids = {clause.token_id}
+    changed = True
+    while changed:
+        changed = False
+        for item in tokens:
+            if (
+                item.sentence_id == head.sentence_id
+                and item.start < punctuation_start
+                and item.head_token_id in descendant_ids
+                and item.token_id not in descendant_ids
+            ):
+                descendant_ids.add(item.token_id)
+                changed = True
+    expression_end = max(
+        (
+            item.end
+            for item in tokens
+            if item.token_id in descendant_ids and item.start < punctuation_start
+        ),
+        default=candidate.end,
+    )
+    if expression_end <= candidate.end:
+        return candidate.start, candidate.end
+    return candidate.start, expression_end
 
 
 def select_event_head_candidates(

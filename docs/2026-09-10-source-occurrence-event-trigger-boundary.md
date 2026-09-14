@@ -1,6 +1,6 @@
 # SourceOccurrence to Event Trigger Boundary
 
-- Status: Accepted; implemented and experimentally verified
+- Status: Accepted, implemented, and canonically verified
 - Parent: [Bounded Semantic Task Allocation](2026-09-08-bounded-semantic-task-allocation.md)
 
 ## Context & Problem
@@ -133,6 +133,8 @@ It derives trigger evidence from authoritative SourceSegment characters rather t
 - DRC-16: A failed Semantic Route leaves only its candidate unclassified.
 - DRC-17: KoteKomi maps each accepted decision to the exact head characters.
 - DRC-18: KoteKomi derives the diagnostic event label from the Stanza lemma.
+- DRC-19: KoteKomi derives the exact Event expression under a pinned deterministic policy after the semantic head decision.
+- DRC-20: A nominal Event head with exactly one directly attached `to`-marked infinitival clause includes that clause through the first strong punctuation boundary.
 
 ### Trigger Gold
 
@@ -142,6 +144,7 @@ It derives trigger evidence from authoritative SourceSegment characters rather t
 - TGL-04: Trigger Gold marks an Event-free SourceSegment explicitly.
 - TGL-05: A human approves Trigger Gold before KoteKomi freezes its digest.
 - TGL-06: One SourceSegment digest occurs in only one evaluation phase.
+- TGL-07: TGE-019 preserves the complete exact decision expression rather than the generic head alone.
 
 ### Stage Evaluator
 
@@ -256,6 +259,22 @@ The validation split participated in iterative diagnosis before final acceptance
 
 A later program increment must use a new independently reviewed corpus to test generalization.
 
+Human review on September 13 corrected TGE-019's accepted expression from `decision` to the complete
+exact decision phrase.
+It also removed unsupported future modality from TGE-020's diagnostic meaning.
+The same review corrected TGE-010 from an asserted election occurrence to an anticipated temporal
+reference for Amodei's Facebook post.
+The September 12 reports remain historical evidence for the prior Gold digest.
+
+The September 13 canonical ingestion verified the corrected Gold.
+
+- The development partition matched all 50 reviewed Events exactly.
+- The validation partition matched all 37 reviewed Events exactly.
+- TGE-019 retained `decision` as its head and the complete decision phrase as its expression.
+- TGE-086 accepted both `motion` and the DRC-20 expression `motion to lift the FASCSA designation`.
+- The combined result contained zero missing, extra, or incorrectly grounded Events.
+- The immutable report replay created zero ModelRun records.
+
 ## Acceptance Criteria
 
 - AC-SOB-01: Tests prove exact ordered Unicode ranges and repeated-text identities.
@@ -270,6 +289,7 @@ A later program increment must use a new independently reviewed corpus to test g
 - AC-DRC-02: Tests prove a general topic noun cannot displace its evaluation verb.
 - AC-DRC-03: Tests prove a Bounded Nominal Reference can preserve a distinct Event.
 - AC-DRC-04: Tests prove one failed route preserves valid sibling evidence.
+- AC-DRC-05: Tests prove `decision` retains `decision to attend the World Economic Forum over Trump's second inauguration` while keeping `decision` as its exact head.
 - AC-TGL-01: Catalog tests prove approved, digest-locked, disjoint phase coverage.
 - AC-STE-01: Tests prove immutable upstream evidence rehydration and source-level reuse.
 - AC-STE-02: Both fresh phase reports match all 87 Gold Events exactly.

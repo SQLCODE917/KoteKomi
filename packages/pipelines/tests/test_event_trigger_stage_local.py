@@ -95,6 +95,29 @@ def test_trigger_gold_rejects_unknown_source_occurrence() -> None:
         TriggerGoldCatalog.model_validate_json(json.dumps(value))
 
 
+def test_tge_019_preserves_the_complete_exact_decision_expression() -> None:
+    catalog = TriggerGoldCatalog.model_validate_json(TRIGGER_GOLD.read_bytes())
+    segment = next(
+        item
+        for item in catalog.segments
+        if any(event.event_id == "TGE-019" for event in item.events)
+    )
+    event = next(item for item in segment.events if item.event_id == "TGE-019")
+    expression = event.accepted_expression_ranges[0]
+    source_copy = derive_source_copy_view(segment.source_text)
+    occurrences = {item.occurrence_id: item for item in source_occurrences(source_copy.text)}
+    start, end = source_copy.authoritative_range(
+        occurrences[expression.start_occurrence_id].start,
+        occurrences[expression.end_occurrence_id].end,
+    )
+
+    assert event.head_occurrence_id == "o4"
+    assert (expression.start_occurrence_id, expression.end_occurrence_id) == ("o4", "o14")
+    assert segment.source_text[start:end] == (
+        "decision to attend the World Economic Forum over Trump's second inauguration"
+    )
+
+
 def test_trigger_evaluator_matches_exact_source_spans_without_scoring_label() -> None:
     catalog = TriggerGoldCatalog.model_validate_json(TRIGGER_GOLD.read_bytes())
     gold = next(item for item in catalog.segments if len(item.events) == 1)

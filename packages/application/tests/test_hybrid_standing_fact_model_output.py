@@ -12,7 +12,7 @@ from kotekomi_application.hybrid_standing_fact_model_output import (
 
 def test_parses_entity_and_literal_standing_facts() -> None:
     parsed = parse_standing_fact_output(
-        b"fact: c1 | o2-o3 | entity | c2\nfact: c1 | o4-o6 | literal | an AI safety company\n"
+        b"fact: c1 | o2-o3 | entity | c2\nfact: c1 | o4-o6 | literal | o7-o10\n"
     )
 
     assert parsed == StandingFactProposalBatch(
@@ -22,7 +22,7 @@ def test_parses_entity_and_literal_standing_facts() -> None:
                 "c1",
                 "o4-o6",
                 StandingFactObjectKind.LITERAL,
-                "an AI safety company",
+                "o7-o10",
             ),
         )
     )
@@ -63,3 +63,11 @@ def test_parses_explicit_abstention() -> None:
 def test_rejects_invalid_container_output(payload: bytes) -> None:
     with pytest.raises(ValueError):
         parse_standing_fact_output(payload)
+
+
+def test_literal_object_must_select_a_supplied_occurrence_range() -> None:
+    parsed = parse_standing_fact_output(b"fact: c1 | o2-o3 | literal | exact words\n")
+
+    assert isinstance(parsed, StandingFactProposalBatch)
+    assert parsed.proposals == ()
+    assert parsed.rejections[0].reason == "literal object must use one source-occurrence range"

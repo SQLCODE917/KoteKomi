@@ -1389,7 +1389,7 @@ def _standing_observation(
                 candidate_by_id.get(str(draft.get("object_candidate_id")), {})
             )
         else:
-            object_text = str(draft.get("object_label_or_literal", "")).strip('"')
+            object_text = str(draft.get("object_text", "")).strip('"')
         subject_text = _candidate_text(subject)
         relation = _normalized(str(draft.get("relation_label", ""))).casefold()
         if (
@@ -1399,6 +1399,14 @@ def _standing_observation(
         ):
             matching.append(draft)
     draft = matching[0] if len(matching) == 1 else None
+    proposition = next(
+        (
+            item
+            for item in _records(hp10, "propositions")
+            if draft is not None and item.get("subject_record_id") == draft.get("id")
+        ),
+        None,
+    )
     decision = next(
         (
             item
@@ -1410,6 +1418,7 @@ def _standing_observation(
     return {
         "semantic_match": len(matching) == 1,
         "draft": draft,
+        "proposition": proposition,
         "decision": decision,
         "matching_drafts": matching,
     }

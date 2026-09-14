@@ -8,6 +8,8 @@
 - Current front-half deliverable: [HSQ-7 Bounded Semantic Task Allocation](2026-09-08-bounded-semantic-task-allocation.md)
 - Verified Event boundary: [SourceOccurrence to Event Trigger Boundary](2026-09-10-source-occurrence-event-trigger-boundary.md)
 - Current semantic boundary: [Source-Grounded Event Boundary](2026-09-12-source-grounded-event-boundary.md)
+- Current semantic-assignment experiment:
+  [Event-Entity Connection Experiment](2026-09-12-event-entity-connection-experiment.md)
 
 ## Context & Problem
 
@@ -63,6 +65,7 @@ semantics or one standing Assertion draft.
 13. KoteKomi embeds those EvidenceTargets in one EventMention.
 14. KoteKomi proposes one Event with the exact source expression as its name.
 15. Later bounded tasks assign source-backed participants and optional classification.
+    The current experiment first asks only whether one supplied Actor or Organization is involved.
 16. KoteKomi can send complete enriched propositions through explicit support review.
 17. Proposition support can govern enriched Assertions and standing Assertions but cannot veto the
     already source-grounded Event.
@@ -142,6 +145,7 @@ The [Hybrid Pipeline architecture](2026-09-01-hybrid-intelligence-extraction-pip
 | [HSQ-6](2026-09-07-source-bound-governed-event-extraction.md) | A reviewer sees complete source-bound Events without open-frame translation loss. | HSQ-1 through HSQ-5 expose governed meanings and support evidence. | Trigger discovery feeds governed event construction directly and all five Amodei Gold events reach the Candidate Wiki. |
 | [HSQ-7](2026-09-08-bounded-semantic-task-allocation.md) | A reviewer retains source-backed intelligence because each model call makes one bounded semantic decision. | HSQ-6 exposes the remaining trigger, normalization, admission, route, and reference losses. | Mention, reference, and Event-trigger boundaries preserve source-owned choices and exact stage-local evidence. |
 | [Source-grounded Event boundary](2026-09-12-source-grounded-event-boundary.md) | A reviewer sees each exact Event trigger without requiring an exhaustive classification. | The Event-trigger boundary supplies reviewed EventTriggerDraft records. | KoteKomi proposes source-grounded Events with embedded EventMention evidence. |
+| [Event-Entity Connection experiment](2026-09-12-event-entity-connection-experiment.md) | An operator can inspect which source-backed Actors and Organizations are involved in each Event. | Source-grounded Events and reviewed mention/reference evidence exist. | A 20/20 Gold experiment tests one finite pairwise judgment without assigning roles or changing Ledger state. |
 
 HSQ-1 through HSQ-6 record the historical governed-semantics route and its findings.
 

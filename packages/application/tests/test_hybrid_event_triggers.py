@@ -26,7 +26,10 @@ from kotekomi_application import (
 from kotekomi_application.hybrid_event_trigger_preview import (
     reconcile_event_trigger_decisions,
 )
-from kotekomi_application.hybrid_event_triggers import select_event_head_candidates
+from kotekomi_application.hybrid_event_triggers import (
+    event_trigger_expression_range,
+    select_event_head_candidates,
+)
 from kotekomi_application.source_occurrences import source_occurrences
 from pydantic import ValidationError
 
@@ -134,6 +137,80 @@ def test_stanza_verbs_and_qanom_nouns_become_exact_candidates() -> None:
         EventHeadCandidateDispositionValue.INCLUDED,
     ]
     assert selection.candidates[1].nominalization_probability == 0.88
+
+
+def test_nominal_event_expression_retains_one_marked_infinitival_clause() -> None:
+    source = "decision to attend Forum over inauguration; hiring"
+    tokens = (
+        LinguisticToken(
+            "t1", "s1", "decision", 0, 8, "decision", UniversalPartOfSpeech.NOUN, "root", None
+        ),
+        LinguisticToken(
+            "t2", "s1", "to", 9, 11, "to", UniversalPartOfSpeech.PARTICLE, "mark", "t3"
+        ),
+        LinguisticToken(
+            "t3", "s1", "attend", 12, 18, "attend", UniversalPartOfSpeech.VERB, "acl", "t1"
+        ),
+        LinguisticToken(
+            "t4", "s1", "Forum", 19, 24, "Forum", UniversalPartOfSpeech.PROPER_NOUN, "obj", "t3"
+        ),
+        LinguisticToken(
+            "t5", "s1", "over", 25, 29, "over", UniversalPartOfSpeech.ADPOSITION, "case", "t6"
+        ),
+        LinguisticToken(
+            "t6",
+            "s1",
+            "inauguration",
+            30,
+            42,
+            "inauguration",
+            UniversalPartOfSpeech.NOUN,
+            "obl",
+            "t3",
+        ),
+        LinguisticToken(
+            "t7", "s1", ";", 42, 43, ";", UniversalPartOfSpeech.PUNCTUATION, "punct", "t8"
+        ),
+        LinguisticToken(
+            "t8", "s1", "hiring", 44, 50, "hire", UniversalPartOfSpeech.NOUN, "appos", "t6"
+        ),
+    )
+    candidate = EventHeadCandidate(
+        occurrence_id="o1",
+        text="decision",
+        start=0,
+        end=8,
+        linguistic_token_id="t1",
+        sentence_id="s1",
+        lemma="decision",
+        part_of_speech=UniversalPartOfSpeech.NOUN,
+        dependency_relation="root",
+        dependency_head_token_id=None,
+        lexical_nominalization_candidate=True,
+        nominalization_probability=0.9,
+    )
+
+    start, end = event_trigger_expression_range(candidate, source, tokens)
+
+    assert source[start:end] == "decision to attend Forum over inauguration"
+
+
+def test_event_expression_does_not_expand_a_verb_head() -> None:
+    source = "decided to attend"
+    tokens = (
+        LinguisticToken(
+            "t1", "s1", "decided", 0, 7, "decide", UniversalPartOfSpeech.VERB, "root", None
+        ),
+        LinguisticToken(
+            "t2", "s1", "to", 8, 10, "to", UniversalPartOfSpeech.PARTICLE, "mark", "t3"
+        ),
+        LinguisticToken(
+            "t3", "s1", "attend", 11, 17, "attend", UniversalPartOfSpeech.VERB, "xcomp", "t1"
+        ),
+    )
+    candidate = _candidate("o1", "decided", 0, UniversalPartOfSpeech.VERB)
+
+    assert event_trigger_expression_range(candidate, source, tokens) == (0, 7)
 
 
 def test_candidate_selection_rejects_specialist_source_drift() -> None:

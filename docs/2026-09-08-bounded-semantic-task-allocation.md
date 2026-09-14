@@ -199,7 +199,8 @@ KoteKomi derives the Effective MentionCandidates from deterministic selections a
 - BTA-TRG-05: Qwen does not transcribe trigger text or create source ranges.
 - BTA-TRG-06: KoteKomi validates each target-bound answer independently.
 - BTA-TRG-07: An invalid answer leaves only its candidate unclassified and cannot erase valid sibling answers.
-- BTA-TRG-08: KoteKomi constructs each minimal EventTriggerDraft expression and head from the one selected SourceOccurrence.
+- BTA-TRG-08: KoteKomi constructs each EventTriggerDraft head from the selected SourceOccurrence and derives its exact expression under the pinned deterministic expression policy.
+- BTA-TRG-08A: A nominal Event head with one directly attached `to`-marked infinitival clause retains that clause up to the first strong punctuation boundary.
 - BTA-TRG-09: The Event trigger boundary TDD owns candidate routes and reconciliation rules.
 - BTA-TRG-10: Reconciliation exposes rejected, accepted, failed, and unclassified outcomes.
 - BTA-TRG-11: Each route uses one finite answer under a two-token transport cap.
@@ -242,6 +243,11 @@ KoteKomi derives the Effective MentionCandidates from deterministic selections a
 - BTA-ROU-05: A standing relation that overlaps a validated event trigger in the same SourceSegment is held as `event_route_required`.
 - BTA-ROU-06: Non-overlapping standing facts in a mixed SourceSegment remain eligible.
 - BTA-ROU-07: A standing fact cannot replace a bounded or unmapped event merely because the standing route also found it.
+- BTA-ROU-08: Each standing-fact candidate label includes a source-occurrence locator so repeated names remain distinguishable.
+- BTA-ROU-09: Literal standing-fact objects are selected from supplied SourceOccurrences and reconstructed by KoteKomi.
+- BTA-ROU-10: KoteKomi holds a standing relation that consumes a MentionCandidate boundary rather than repairing model output.
+- BTA-ROU-11: KoteKomi renders an eligible standing CompleteProposition from its ordered source-bound component ranges.
+- BTA-ROU-12: KoteKomi may complete a post-relation literal's left boundary from authoritative characters when Qwen supplies only its terminal source anchor and no clause boundary intervenes.
 
 ### Specialist reference boundary
 
@@ -742,6 +748,7 @@ EvidenceTarget, ProposedChange, and accepted Ledger records remain downstream co
 - AC-BTA-SUP-01: Tests prove one supported CompleteProposition is not vetoed by an auxiliary attribution explanation.
 - AC-BTA-ROU-01: Tests prove one mixed SourceSegment can retain both an event and a non-duplicate standing fact.
 - AC-BTA-ROU-02: Tests prove an event-overlapping standing relation is held before it can flatten the event.
+- AC-BTA-ROU-03: `AMO-07` reaches standing-fact qualification as `Anthropic's strategy has mirrored Amodei's views toward Trump.` without suppressing its sibling Events.
 - AC-BTA-REF-01: Tests prove F-Coref cannot resolve `his` when Qwen selects a different candidate or returns ambiguity.
 - AC-BTA-REF-02: Tests prove an F-Coref abstention still permits a bounded challenge over preceding candidates.
 - AC-BTA-REF-03: Tests prove an unresolved generic reference cannot create a typed Entity or Wiki page.

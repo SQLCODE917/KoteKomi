@@ -40,6 +40,9 @@ from kotekomi_application.context_planning import (
     source_copy_view,
     verify_context_manifest,
 )
+from kotekomi_application.event_entity_connection_model_output import (
+    EntityInvolvementAnswer,
+)
 from kotekomi_application.grounded_candidates import (
     GroundedAssertionCandidate,
     GroundedCandidateBatchCommit,
@@ -574,6 +577,7 @@ class BoundedExtractionOutcome:
     event_head_answer: EventHeadAnswer | None = None
     event_verb_role_answer: EventVerbRoleAnswer | None = None
     binary_semantic_answer: BinarySemanticAnswer | None = None
+    entity_involvement_answer: EntityInvolvementAnswer | None = None
     event_frame_selection: EventFrameSelection | None = None
     event_frame_fit_decision: EventFrameFitDecision | None = None
     event_presentation_selection: EventPresentationSelection | None = None
@@ -653,7 +657,8 @@ class OrganizationQualificationRejection:
 
 
 type ParsedModelOutput = (
-    SemanticDraft
+    EntityInvolvementAnswer
+    | SemanticDraft
     | SemanticDraftAbstention
     | HypothesisBatch
     | HypothesisBatchAbstention
@@ -1168,6 +1173,32 @@ def run_bounded_extraction(
                 binary_semantic_answer=parsed,
                 raw_model_output=response.raw_output,
             )
+        if isinstance(parsed, EntityInvolvementAnswer):
+            run = _model_run(
+                extraction_input,
+                manifest,
+                task,
+                model_run_id,
+                ModelRunStatus.SUCCEEDED,
+                started_at=started_at,
+                completed_at=completed_at,
+                execution_diagnostics=diagnostics,
+                input_admission=admission,
+                output_digest=output_digest,
+                execution_receipt=response.execution_receipt,
+                outcome_metadata={
+                    "contract": extraction_input.execution_spec.schema_id,
+                    "answer": parsed.value.value,
+                },
+            )
+            ledger_repository.save_model_run(run)
+            return BoundedExtractionOutcome(
+                task,
+                run,
+                None,
+                entity_involvement_answer=parsed,
+                raw_model_output=response.raw_output,
+            )
         if isinstance(parsed, EventFrameSelection):
             run = _model_run(
                 extraction_input,
@@ -1260,7 +1291,7 @@ def run_bounded_extraction(
                 output_digest=output_digest,
                 execution_receipt=response.execution_receipt,
                 outcome_metadata={
-                    "contract": "hybrid_standing_fact_text_v2",
+                    "contract": "hybrid_standing_fact_text_v3",
                     "proposal_count": len(parsed.proposals),
                     "rejected_line_count": len(parsed.rejections),
                 },
@@ -2452,7 +2483,7 @@ def _abstention_outcome_metadata(
     | StandingFactAbstention,
 ) -> dict[str, JsonValue]:
     if isinstance(output, StandingFactAbstention):
-        return {"contract": "hybrid_standing_fact_text_v2", "proposal_count": 0}
+        return {"contract": "hybrid_standing_fact_text_v3", "proposal_count": 0}
     if isinstance(output, MentionProposalAbstention):
         return {
             "contract": "hybrid_mention_occurrence_selection_text_v1",

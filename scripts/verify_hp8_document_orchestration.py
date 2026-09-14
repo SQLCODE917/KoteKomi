@@ -11,36 +11,42 @@ import io
 import json
 import tempfile
 import time
+from collections import Counter
 from pathlib import Path
 from typing import Any, cast
 
 from kotekomi_adapters import LocalArchiveStore, sqlite_ledger_transaction
 from kotekomi_application import (
+    PARAGRAPH_SEGMENT_V3,
+    EventTriggerDraft,
     HybridStageId,
+    SourceGroundedEventDraft,
     hybrid_document_coverage_report_from_bytes,
+    hybrid_event_semantics_preview_from_bytes,
+    hybrid_event_trigger_preview_from_bytes,
     hybrid_paragraph_receipt_from_bytes,
     hybrid_pipeline_policy_manifest_from_bytes,
+    paragraph_source_segments,
 )
 from kotekomi_application.candidate_wiki import (
     CandidateWikiPlan,
-    WikiEventPresentation,
     build_candidate_knowledge_view,
     plan_candidate_wiki,
     select_candidate_ingestions,
 )
-from kotekomi_domain import IngestionChangeSetOrigin, ReviewStatus
+from kotekomi_domain import EvidenceTarget, IngestionChangeSetOrigin, ReviewStatus
 from kotekomi_exporters import MarkdownCandidateWikiRenderer
 from kotekomi_pipelines.cli import ingest_user_file
 from kotekomi_pipelines.config import PipelineConfig, load_config
-from kotekomi_pipelines.semantic_quality_oracle import (
-    final_gold_findings,
-    first_failed_event_stage,
-    gold_source_text_matches,
-    required_event_findings,
+from kotekomi_pipelines.source_grounded_event_evaluation import (
+    SourceGroundedEventEvaluationReport,
+    evaluate_source_grounded_event_corpus,
+    load_source_grounded_event_gold,
 )
 from kotekomi_pipelines.task_allocation_evaluation import (
     TaskAllocationBaselineComparison,
     TaskAllocationCatalogEvaluation,
+    TaskAllocationItemEvaluation,
     TaskAllocationRunCost,
     compare_task_allocation_baseline,
     evaluate_task_allocation_catalog,
@@ -52,8 +58,7 @@ from kotekomi_pipelines.task_allocation_evaluation import (
 
 ROOT = Path(__file__).resolve().parents[1]
 SCENARIO = ROOT / ".agent/scenarios/anthropic-dod-dispute-v1/scenario.json"
-HP7_GOLD = ROOT / "docs/hp7-proposal-admission-gold-v1.json"
-AMODEI_GOLD = ROOT / "docs/hsq-amodei-intelligence-gold-v1.json"
+SOURCE_GROUNDED_EVENT_GOLD = ROOT / "docs/hsq-source-grounded-event-gold-v1.json"
 TASK_ALLOCATION_AMODEI_GOLD = ROOT / "docs/hsq-task-allocation-amodei-gold-v1.json"
 TASK_ALLOCATION_ANTHROPIC_GOLD = ROOT / "docs/hsq-task-allocation-anthropic-gold-v1.json"
 TASK_ALLOCATION_BASELINE = ROOT / "docs/hsq-task-allocation-baseline-2026-09-08.json"
@@ -130,15 +135,17 @@ def main() -> int:
             second = _ingest(config_path, source, args.url)
             second_counts = _ledger_counts(ledger_path)
         origins = _change_set_origins(ledger_path)
-        gold_results = _gold_event_results(paragraphs)
-        proposed_records = _proposed_records(ledger_path)
-        amodei_results = _amodei_event_results(paragraphs, proposed_records)
+        source_grounded_event_evaluation = _source_grounded_event_evaluation(
+            paragraphs=paragraphs,
+            coverage_report=report,
+            ledger_path=ledger_path,
+            archive_path=archive_path,
+        )
         wiki_evidence, wiki_plan = _publish_candidate_wiki(
             source.name,
             ledger_path,
             archive_path,
         )
-        _add_wiki_results(amodei_results, wiki_plan, LocalArchiveStore(archive_path))
         evaluator_corrections = load_task_allocation_evaluator_corrections(
             TASK_ALLOCATION_EVALUATOR_CORRECTIONS
         )
@@ -170,33 +177,33 @@ def main() -> int:
             first_counts=first_counts,
             second_counts=second_counts,
             origins=origins,
-            gold_results=gold_results,
-            amodei_results=amodei_results,
+            source_grounded_event_evaluation=source_grounded_event_evaluation,
             paragraphs=paragraphs,
         )
-        findings.extend(
-            _task_allocation_findings(
-                task_allocation_evaluations,
-                task_allocation_comparison,
-            )
+        task_allocation_diagnostics = _task_allocation_diagnostics(
+            task_allocation_evaluations,
+            task_allocation_comparison,
         )
-        approved_gold = [item for item in gold_results if item["review_outcome"] == "approved"]
-        rejected_gold = [item for item in gold_results if item["review_outcome"] == "rejected"]
+        findings.extend(_task_allocation_findings(task_allocation_evaluations))
+        standing_fact_acceptance = _standing_fact_acceptance(task_allocation_evaluations)
         payload = {
-            "schema_version": "hp8_document_orchestration_evaluation_v1",
+            "schema_version": "hp8_document_orchestration_evaluation_v2",
             "source_path": str(source),
             "source_sha256": hashlib.sha256(source.read_bytes()).hexdigest(),
             "policy_manifest": manifest,
             "coverage_report": report,
             "paragraphs": paragraphs,
-            "gold_event_retention": gold_results,
-            "amodei_gold_event_retention": amodei_results,
+            "source_grounded_event_evaluation": source_grounded_event_evaluation.model_dump(
+                mode="json"
+            ),
             "task_allocation_evaluations": [
                 item.model_dump(mode="json") for item in task_allocation_evaluations
             ],
             "task_allocation_baseline_comparison": task_allocation_comparison.model_dump(
                 mode="json"
             ),
+            "task_allocation_diagnostics": task_allocation_diagnostics,
+            "standing_fact_acceptance": standing_fact_acceptance,
             "task_allocation_evaluator_corrections": {
                 "path": TASK_ALLOCATION_EVALUATOR_CORRECTIONS.relative_to(ROOT).as_posix(),
                 "sha256": hashlib.sha256(
@@ -225,29 +232,23 @@ def main() -> int:
                 "gap_paragraphs": report["gap_paragraph_count"],
                 "paragraph_proposed_changes": len(report["proposed_change_ids"]),
                 "reconciled_proposed_changes": first_counts["proposed_changes"],
-                "gold_events_observed": sum(item["observed"] for item in gold_results),
-                "gold_events_with_complete_lineage": sum(
-                    item["lineage_complete"] for item in gold_results
+                "source_grounded_events_expected": (
+                    source_grounded_event_evaluation.expected_event_count
                 ),
-                "gold_events_expected": len(gold_results),
-                "approved_gold_events_observed": sum(item["observed"] for item in approved_gold),
-                "approved_gold_events_with_complete_lineage": sum(
-                    item["lineage_complete"] for item in approved_gold
+                "source_grounded_events_observed": (
+                    source_grounded_event_evaluation.observed_event_count
                 ),
-                "approved_gold_events_expected": len(approved_gold),
-                "approved_gold_events_proposed": sum(
-                    item["disposition_matches"] and item["proposal_presence_matches"]
-                    for item in approved_gold
+                "source_grounded_events_exact": (
+                    source_grounded_event_evaluation.grounded_event_count
                 ),
-                "known_false_events_observed": sum(item["observed"] for item in rejected_gold),
-                "known_false_events_expected": len(rejected_gold),
-                "known_false_events_excluded": sum(
-                    item["disposition_matches"] and item["proposal_presence_matches"]
-                    for item in rejected_gold
+                "source_grounded_events_missing": (
+                    source_grounded_event_evaluation.missing_event_count
                 ),
-                "amodei_events_expected": len(amodei_results),
-                "amodei_events_complete": sum(
-                    first_failed_event_stage(item) is None for item in amodei_results
+                "source_grounded_events_extra": (
+                    source_grounded_event_evaluation.extra_event_count
+                ),
+                "source_grounded_events_incorrect": (
+                    source_grounded_event_evaluation.incorrectly_grounded_event_count
                 ),
                 "task_allocation_items_expected": sum(
                     item.item_count for item in task_allocation_evaluations
@@ -264,6 +265,7 @@ def main() -> int:
                 "task_allocation_wrong_forced_frames": sum(
                     item.wrong_forced_frame_count for item in task_allocation_evaluations
                 ),
+                "standing_fact_amodei_07_at_review": standing_fact_acceptance["passed"],
                 "task_allocation_newly_complete": sum(
                     len(item.newly_complete_item_ids)
                     for item in task_allocation_comparison.catalogs
@@ -495,371 +497,105 @@ def _stage_output(
     return cast(JsonObject, json.loads(readers[stage_id](output_id)))
 
 
-def _gold_event_results(paragraphs: list[JsonObject]) -> list[JsonObject]:
-    observed: dict[str, list[JsonObject]] = {}
-    for paragraph in paragraphs:
-        stage_outputs = cast(JsonObject, paragraph["stage_outputs"])
-        hp4 = cast(
-            JsonObject | None,
-            stage_outputs.get(HybridStageId.HP4_EVENT_TRIGGERS.value),
-        )
-        if hp4 is None:
-            continue
-        hp6 = cast(
-            JsonObject | None,
-            stage_outputs.get(HybridStageId.HP6_EVENT_SEMANTICS.value),
-        )
-        hp7 = cast(
-            JsonObject | None,
-            stage_outputs.get(HybridStageId.HP7_PROPOSAL_PLAN.value),
-        )
-        source_text_by_segment = {
-            str(trace["source_segment_id"]): str(cast(JsonObject, trace["input"])["source_text"])
-            for trace in cast(list[JsonObject], hp4["traces"])
-            if cast(JsonObject, trace["input"]).get("source_text") is not None
-        }
-        semantic_by_trigger: dict[str, JsonObject] = {}
-        if hp6 is not None:
-            semantic_by_trigger = {
-                str(event["trigger_id"]): event
-                for event in cast(list[JsonObject], hp6["semantic_events"])
-            }
-        decision_by_event: dict[str, JsonObject] = {}
-        if hp7 is not None:
-            decision_by_event = {
-                str(decision["event_semantic_id"]): decision
-                for decision in cast(list[JsonObject], hp7["decisions"])
-            }
-        for trigger in cast(list[JsonObject], hp4["triggers"]):
-            semantic = semantic_by_trigger.get(str(trigger["id"]))
-            decision = decision_by_event.get(str(semantic["id"])) if semantic is not None else None
-            key = _normalize(source_text_by_segment[str(trigger["source_segment_id"])])
-            observed.setdefault(key, []).append(
-                {
-                    "paragraph_ordinal": paragraph["ordinal"],
-                    "trigger_id": trigger["id"],
-                    "trigger_text": trigger["text"],
-                    "event_semantic_id": semantic["id"] if semantic is not None else None,
-                    "frame_id": semantic["frame_id"] if semantic is not None else None,
-                    "admission_decision_id": decision["id"] if decision is not None else None,
-                    "admission_disposition": (
-                        decision["disposition"] if decision is not None else None
-                    ),
-                    "proposed_change_ids": (
-                        decision["proposed_change_ids"] if decision is not None else []
-                    ),
-                }
-            )
-    gold = _read_json(HP7_GOLD)
-    results: list[JsonObject] = []
-    for item in cast(list[JsonObject], gold["cases"]):
-        expected_trigger = _normalize(str(item["trigger"]))
-        expected_frame_id = str(item["frame_id"])
-        matches = [
-            match
-            for match in observed.get(_normalize(str(item["source_text"])), [])
-            if _trigger_retains_gold(expected_trigger, _normalize(str(match["trigger_text"])))
-            and match["frame_id"] == expected_frame_id
-        ]
-        match = matches[0] if len(matches) == 1 else None
-        excluded = item["expected_disposition"] == "excluded"
-        results.append(
-            {
-                "case_id": item["case_id"],
-                "source_text": item["source_text"],
-                "trigger": item["trigger"],
-                "frame_id": expected_frame_id,
-                "expected_disposition": item["expected_disposition"],
-                "review_outcome": item["review_outcome"],
-                "observed": bool(matches),
-                "trigger_match": (
-                    "exact"
-                    if match is not None
-                    and _normalize(str(match["trigger_text"])) == expected_trigger
-                    else "expanded_literal"
-                    if match is not None
-                    else None
-                ),
-                "lineage_complete": (
-                    all(
-                        candidate["event_semantic_id"] is not None
-                        and candidate["admission_decision_id"] is not None
-                        for candidate in matches
-                    )
-                    if excluded
-                    else match is not None
-                    and match["event_semantic_id"] is not None
-                    and match["admission_decision_id"] is not None
-                ),
-                "disposition_matches": (
-                    all(candidate["admission_disposition"] == "held" for candidate in matches)
-                    if excluded
-                    else match is not None
-                    and match["admission_disposition"] == item["expected_disposition"]
-                ),
-                "proposal_presence_matches": (
-                    all(not candidate["proposed_change_ids"] for candidate in matches)
-                    if excluded
-                    else match is not None and bool(match["proposed_change_ids"])
-                ),
-                "matches": matches,
-            }
-        )
-    return results
-
-
-def _amodei_event_results(
+def _source_grounded_event_evaluation(
+    *,
     paragraphs: list[JsonObject],
-    proposed_records: dict[str, JsonObject],
-) -> list[JsonObject]:
-    observed_by_source: dict[str, list[JsonObject]] = {}
+    coverage_report: JsonObject,
+    ledger_path: Path,
+    archive_path: Path,
+) -> SourceGroundedEventEvaluationReport:
+    """Evaluate persisted source-grounded Events against the approved Gold catalog."""
+    coverage_report_id = coverage_report.get("id")
+    if not isinstance(coverage_report_id, str):
+        raise ValueError("Document coverage report has no string identity.")
+    archive = LocalArchiveStore(archive_path)
+    coverage_payload = archive.read_hybrid_document_coverage_report(coverage_report_id)
+    reloaded_coverage = hybrid_document_coverage_report_from_bytes(coverage_payload)
+    if reloaded_coverage.model_dump(mode="json") != coverage_report:
+        raise ValueError("Reloaded document coverage report does not match report evidence.")
+
+    catalog, trigger_gold = load_source_grounded_event_gold(
+        SOURCE_GROUNDED_EVENT_GOLD,
+        repository_root=ROOT,
+    )
+    segment_counts: Counter[str] = Counter()
+    triggers_by_digest: dict[str, dict[str, EventTriggerDraft]] = {}
+    events_by_digest: dict[str, dict[str, SourceGroundedEventDraft]] = {}
+    evidence_target_ids: set[str] = set()
     for paragraph in paragraphs:
-        stages = cast(JsonObject, paragraph["stage_outputs"])
-        hp1 = cast(JsonObject | None, stages.get(HybridStageId.HP1_MENTIONS.value))
-        hp4 = cast(JsonObject | None, stages.get(HybridStageId.HP4_EVENT_TRIGGERS.value))
-        hp6 = cast(JsonObject | None, stages.get(HybridStageId.HP6_EVENT_SEMANTICS.value))
-        hp7 = cast(JsonObject | None, stages.get(HybridStageId.HP7_PROPOSAL_PLAN.value))
-        if hp4 is None:
+        authoritative_text = paragraph.get("authoritative_text")
+        if not isinstance(authoritative_text, str):
+            raise ValueError("Paragraph evidence has no authoritative text.")
+        for segment in paragraph_source_segments(authoritative_text, PARAGRAPH_SEGMENT_V3):
+            segment_counts[hashlib.sha256(segment.exact_text.encode()).hexdigest()] += 1
+
+        stage_outputs = cast(JsonObject, paragraph["stage_outputs"])
+        trigger_payload = stage_outputs.get(HybridStageId.HP4_EVENT_TRIGGERS.value)
+        event_payload = stage_outputs.get(HybridStageId.HP6_EVENT_SEMANTICS.value)
+        if trigger_payload is None or event_payload is None:
             continue
-        candidates = (
-            {str(item["id"]): item for item in cast(list[JsonObject], hp1["candidates"])}
-            if hp1 is not None
-            else {}
+        trigger_preview = hybrid_event_trigger_preview_from_bytes(
+            _canonical_json(trigger_payload).encode()
         )
-        source_by_segment = {
-            str(trace["source_segment_id"]): str(cast(JsonObject, trace["input"])["source_text"])
-            for trace in cast(list[JsonObject], hp4["traces"])
-            if cast(JsonObject, trace["input"]).get("source_text") is not None
-        }
-        semantic_by_trigger = {
-            str(item["trigger_id"]): item
-            for item in cast(list[JsonObject], hp6["semantic_events"] if hp6 else [])
-        }
-        assignments = cast(list[JsonObject], hp6["assignments"] if hp6 else [])
-        targets = {
-            str(item["id"]): item for item in cast(list[JsonObject], hp6["targets"] if hp6 else [])
-        }
-        qualifiers = cast(list[JsonObject], hp6["qualifiers"] if hp6 else [])
-        propositions = {
-            str(item["subject_record_id"]): item
-            for item in cast(list[JsonObject], hp6["propositions"] if hp6 else [])
-        }
-        proposition_decisions = {
-            str(item["proposition_id"]): item
-            for item in cast(list[JsonObject], hp6["proposition_decisions"] if hp6 else [])
-        }
-        admission_by_event = {
-            str(item["event_semantic_id"]): item
-            for item in cast(list[JsonObject], hp7["decisions"] if hp7 else [])
-        }
-        for source_segment_id, source_text in source_by_segment.items():
-            observations = observed_by_source.setdefault(_normalize(source_text), [])
-            segment_candidates = {
-                candidate_id: item
-                for candidate_id, item in candidates.items()
-                if item.get("source_segment_id") == source_segment_id
-            }
-            for trigger in cast(list[JsonObject], hp4["triggers"]):
-                if trigger.get("source_segment_id") != source_segment_id:
-                    continue
-                semantic = semantic_by_trigger.get(str(trigger["id"]))
-                event_assignments = (
-                    [
-                        item
-                        for item in assignments
-                        if item.get("event_subject_id") == semantic.get("event_subject_id")
-                    ]
-                    if semantic is not None
-                    else []
-                )
-                event_qualifiers = (
-                    [
-                        item
-                        for item in qualifiers
-                        if item.get("event_subject_id") == semantic.get("event_subject_id")
-                    ]
-                    if semantic is not None
-                    else []
-                )
-                proposition = propositions.get(str(semantic["id"])) if semantic else None
-                support = (
-                    proposition_decisions.get(str(proposition["id"]))
-                    if proposition is not None
-                    else None
-                )
-                admission = admission_by_event.get(str(semantic["id"])) if semantic else None
-                proposal_ids = (
-                    cast(list[str], admission["proposed_change_ids"])
-                    if admission is not None
-                    else []
-                )
-                observations.append(
-                    {
-                        "paragraph_ordinal": paragraph["ordinal"],
-                        "source_segment_id": source_segment_id,
-                        "source_text": source_text,
-                        "trigger": trigger,
-                        "semantic": semantic,
-                        "assignments": event_assignments,
-                        "targets": targets,
-                        "qualifiers": event_qualifiers,
-                        "candidates": segment_candidates,
-                        "support": support,
-                        "admission": admission,
-                        "event_record_id": _event_record_id(proposal_ids, proposed_records),
-                    }
-                )
-
-    gold = _read_json(AMODEI_GOLD)
-    results: list[JsonObject] = []
-    for case in cast(list[JsonObject], gold["cases"]):
-        source_text = str(case["source_text"])
-        source_observations = observed_by_source.get(_normalize(source_text), [])
-        for expected in cast(list[JsonObject], case["expected_events"]):
-            expected_trigger = _normalize(str(expected["trigger_text"]))
-            trigger_matches = [
-                item
-                for item in source_observations
-                if _trigger_retains_gold(
-                    expected_trigger,
-                    _normalize(str(cast(JsonObject, item["trigger"])["text"])),
-                )
-            ]
-            evaluated = [
-                (item, *_semantic_contract_match(expected, item)) for item in trigger_matches
-            ]
-            selected_tuple = next((item for item in evaluated if item[1]), None)
-            if selected_tuple is None and evaluated:
-                selected_tuple = evaluated[0]
-            selected = selected_tuple[0] if selected_tuple is not None else None
-            semantics_match = selected_tuple[1] if selected_tuple is not None else False
-            semantic_mismatches = selected_tuple[2] if selected_tuple is not None else []
-            support = cast(JsonObject | None, selected["support"] if selected else None)
-            admission = cast(JsonObject | None, selected["admission"] if selected else None)
-            result: JsonObject = {
-                "case_id": case["case_id"],
-                "event_key": expected["event_key"],
-                "source_text": source_text,
-                "expected_summary": expected["expected_summary"],
-                "source_observed": bool(source_observations),
-                "trigger_observed": bool(trigger_matches),
-                "semantics_match": semantics_match,
-                "semantic_mismatches": semantic_mismatches,
-                "support_match": support is not None and support.get("disposition") == "supported",
-                "proposal_match": admission is not None
-                and admission.get("disposition") == expected["expected_disposition"]
-                and bool(admission.get("proposed_change_ids")),
-                "event_record_id": selected["event_record_id"] if selected else None,
-                "wiki_match": False,
-                "audit_match": False,
-                "observed": selected,
-            }
-            results.append(result)
-    return results
-
-
-def _semantic_contract_match(
-    expected: JsonObject, observation: JsonObject
-) -> tuple[bool, list[JsonObject]]:
-    semantic = cast(JsonObject | None, observation["semantic"])
-    if semantic is None:
-        return False, [{"field": "semantic_event", "expected": "present", "actual": None}]
-    mismatches: list[JsonObject] = []
-    for field, actual_field in (
-        ("frame_id", "frame_id"),
-        ("polarity", "polarity"),
-        ("modality", "modality"),
-        ("attribution", "attribution_kind"),
-    ):
-        if semantic.get(actual_field) != expected.get(field):
-            mismatches.append(
-                {
-                    "field": field,
-                    "expected": expected.get(field),
-                    "actual": semantic.get(actual_field),
-                }
+        event_preview = hybrid_event_semantics_preview_from_bytes(
+            _canonical_json(event_payload).encode()
+        )
+        if event_preview.parent_preview_id != trigger_preview.id:
+            raise ValueError("Source-grounded Event evidence has the wrong trigger parent.")
+        for trigger in trigger_preview.triggers:
+            _add_immutable(
+                triggers_by_digest.setdefault(trigger.source_text_sha256, {}),
+                trigger.id,
+                trigger,
             )
-    assignments = cast(list[JsonObject], observation["assignments"])
-    targets = cast(dict[str, JsonObject], observation["targets"])
-    candidates = cast(dict[str, JsonObject], observation["candidates"])
-    for role in cast(list[JsonObject], expected.get("roles", [])):
-        matching_assignments = [
-            item for item in assignments if item.get("frame_role_id") == role["frame_role_id"]
-        ]
-        target_matches: list[JsonObject] = []
-        for assignment in matching_assignments:
-            target = targets.get(str(assignment["target_id"]))
-            if target is None:
-                continue
-            embedded_texts = {
-                _normalize(str(candidates[candidate_id]["text"]))
-                for candidate_id in cast(list[str], target.get("embedded_candidate_ids", []))
-                if candidate_id in candidates
-            }
-            expected_embedded = {
-                _normalize(str(item["exact_text"]))
-                for item in cast(list[JsonObject], role.get("referenced_entities", []))
-            }
-            if (
-                target.get("kind") == role["target_kind"]
-                and gold_source_text_matches(
-                    _normalize(str(target.get("text", ""))),
-                    _normalize(str(role["exact_text"])),
+        for event in event_preview.source_grounded_events:
+            _add_immutable(
+                events_by_digest.setdefault(event.source_text_sha256, {}),
+                event.id,
+                event,
+            )
+            evidence_target_ids.update(
+                (
+                    event.mention.head_evidence_target_id,
+                    event.mention.expression_evidence_target_id,
+                    event.mention.support_evidence_target_id,
                 )
-                and (
-                    role.get("start") is None
-                    or (target.get("start") == role["start"] and target.get("end") == role["end"])
-                )
-                and expected_embedded.issubset(embedded_texts)
-            ):
-                target_matches.append(target)
-        if len(target_matches) != 1:
-            mismatches.append(
-                {
-                    "field": str(role["frame_role_id"]),
-                    "expected": role,
-                    "actual": [
-                        targets.get(str(item["target_id"])) for item in matching_assignments
-                    ],
-                }
             )
-    actual_qualifiers = cast(list[JsonObject], observation["qualifiers"])
-    for qualifier in cast(list[JsonObject], expected.get("qualifiers", [])):
-        if not any(
-            item.get("kind") == qualifier["kind"]
-            and _normalize(str(item.get("text", ""))) == _normalize(str(qualifier["exact_text"]))
-            and (
-                qualifier.get("relation") is None
-                or item.get("temporal_relation") == qualifier["relation"]
-            )
-            for item in actual_qualifiers
-        ):
-            mismatches.append(
-                {
-                    "field": f"qualifier:{qualifier['kind']}",
-                    "expected": qualifier,
-                    "actual": actual_qualifiers,
-                }
-            )
-    return not mismatches, mismatches
 
-
-def _event_record_id(
-    proposal_ids: list[str], proposed_records: dict[str, JsonObject]
-) -> str | None:
-    matches = [
-        cast(JsonObject, proposed_records[item]["record"])["id"]
-        for item in proposal_ids
-        if item in proposed_records and proposed_records[item].get("record_type") == "Event"
-    ]
-    return str(matches[0]) if len(matches) == 1 else None
-
-
-def _proposed_records(ledger_path: Path) -> dict[str, JsonObject]:
+    evidence_by_id: dict[str, EvidenceTarget] = {}
     with sqlite_ledger_transaction(ledger_path) as ledger:
-        return {
-            item.id: cast(JsonObject, item.proposed_json) for item in ledger.list_proposed_changes()
-        }
+        for evidence_target_id in sorted(evidence_target_ids):
+            target = ledger.get_evidence_target(evidence_target_id)
+            if target is None:
+                raise ValueError("Source-grounded Event evidence is missing from the Ledger.")
+            evidence_by_id[evidence_target_id] = target
+
+    evaluation = evaluate_source_grounded_event_corpus(
+        catalog=catalog,
+        trigger_gold=trigger_gold,
+        catalog_sha256=hashlib.sha256(SOURCE_GROUNDED_EVENT_GOLD.read_bytes()).hexdigest(),
+        coverage_report_id=coverage_report_id,
+        coverage_report_sha256=hashlib.sha256(coverage_payload).hexdigest(),
+        representation_id=str(coverage_report["representation_id"]),
+        source_segment_observation_counts=segment_counts,
+        triggers_by_source_text_sha256={
+            digest: tuple(sorted(items.values(), key=lambda item: item.id))
+            for digest, items in triggers_by_digest.items()
+        },
+        source_events_by_source_text_sha256={
+            digest: tuple(sorted(items.values(), key=lambda item: item.id))
+            for digest, items in events_by_digest.items()
+        },
+        evidence_by_id=evidence_by_id,
+    )
+    return evaluation
+
+
+def _add_immutable[T](records: dict[str, T], record_id: str, record: T) -> None:
+    existing = records.get(record_id)
+    if existing is not None and existing != record:
+        raise ValueError(f"Conflicting immutable record: {record_id}")
+    records[record_id] = record
 
 
 def _publish_candidate_wiki(
@@ -884,45 +620,6 @@ def _publish_candidate_wiki(
     )
 
 
-def _add_wiki_results(
-    results: list[JsonObject], plan: CandidateWikiPlan, archive: LocalArchiveStore
-) -> None:
-    rendered = MarkdownCandidateWikiRenderer().render(plan)
-    build_id = rendered.manifest.build_id
-    audit = archive.read_candidate_wiki_audit_bundle(build_id)
-    audit_by_id = {item.record_id: item for item in audit.audit_catalog.records}
-    evidence_by_number = {item.citation_number: item for item in plan.citation_registry.citations}
-    actor_pages = [
-        page
-        for page in plan.pages
-        if page.page_kind == "actor" and page.display_label in {"Amodei", "Dario Amodei"}
-    ]
-    for result in results:
-        event_id = result.get("event_record_id")
-        presentations = [
-            presentation
-            for page in actor_pages
-            for presentation in page.presentations
-            if isinstance(presentation, WikiEventPresentation) and presentation.event_id == event_id
-        ]
-        source_text = _normalize(str(result["source_text"]))
-        source_visible = any(
-            _normalize(evidence_by_number[number].exact_text) == source_text
-            for presentation in presentations
-            for number in presentation.citation_numbers
-        )
-        result["wiki_match"] = len(presentations) == 1 and source_visible
-        presentation = presentations[0] if len(presentations) == 1 else None
-        audit_ids: set[str] = (
-            {presentation.event_id, *presentation.assertion_ids}
-            if presentation is not None
-            else set()
-        )
-        result["audit_match"] = bool(audit_ids) and audit_ids.issubset(audit_by_id)
-        result["wiki_pages"] = [page.relative_path for page in actor_pages]
-        result["first_failed_stage"] = first_failed_event_stage(result)
-
-
 def _findings(
     *,
     configured: PipelineConfig,
@@ -931,8 +628,7 @@ def _findings(
     first_counts: JsonObject,
     second_counts: JsonObject,
     origins: list[str],
-    gold_results: list[JsonObject],
-    amodei_results: list[JsonObject],
+    source_grounded_event_evaluation: SourceGroundedEventEvaluationReport,
     paragraphs: list[JsonObject],
 ) -> list[JsonObject]:
     findings: list[JsonObject] = []
@@ -1007,22 +703,27 @@ def _findings(
                     "observed": producer_ids,
                 }
             )
-    required_gold = [item for item in gold_results if item["expected_disposition"] == "proposed"]
-    if not all(bool(item["observed"]) for item in required_gold):
+    if not source_grounded_event_evaluation.passed:
         findings.append(
             {
-                "code": "reviewed_event_not_reproduced",
-                "missing": [item for item in required_gold if not item["observed"]],
+                "code": "source_grounded_event_gold_mismatch",
+                "missing_event_count": source_grounded_event_evaluation.missing_event_count,
+                "extra_event_count": source_grounded_event_evaluation.extra_event_count,
+                "incorrectly_grounded_event_count": (
+                    source_grounded_event_evaluation.incorrectly_grounded_event_count
+                ),
+                "failing_segments": [
+                    item.model_dump(mode="json")
+                    for item in source_grounded_event_evaluation.segments
+                    if not item.passed
+                ],
             }
         )
-    findings.extend(final_gold_findings(gold_results))
-    findings.extend(required_event_findings(amodei_results))
     return findings
 
 
 def _task_allocation_findings(
     evaluations: tuple[TaskAllocationCatalogEvaluation, ...],
-    comparison: TaskAllocationBaselineComparison,
 ) -> list[JsonObject]:
     findings: list[JsonObject] = []
     if sum(item.item_count for item in evaluations) != 40:
@@ -1032,6 +733,63 @@ def _task_allocation_findings(
                 "actual": sum(item.item_count for item in evaluations),
             }
         )
+    acceptance = _standing_fact_acceptance(evaluations)
+    if not acceptance["passed"]:
+        findings.append(
+            {
+                "code": "standing_fact_gold_not_reproduced",
+                "item_id": "AMO-07",
+                "actual": acceptance,
+            }
+        )
+    return findings
+
+
+def _standing_fact_acceptance(
+    evaluations: tuple[TaskAllocationCatalogEvaluation, ...],
+) -> JsonObject:
+    item = _task_allocation_item(evaluations, "AMO-07")
+    required_check_ids = ("standing_fact", "standing_proposal")
+    checks = {check.check_id: check for check in item.checks} if item is not None else {}
+    failed_check_ids = [
+        check_id
+        for check_id in required_check_ids
+        if check_id not in checks or not checks[check_id].passed
+    ]
+    return {
+        "item_id": "AMO-07",
+        "passed": item is not None and item.reached_review and not failed_check_ids,
+        "reached_review": item.reached_review if item is not None else False,
+        "failed_check_ids": failed_check_ids,
+        "checks": {
+            check_id: checks[check_id].model_dump(mode="json")
+            for check_id in required_check_ids
+            if check_id in checks
+        },
+    }
+
+
+def _task_allocation_item(
+    evaluations: tuple[TaskAllocationCatalogEvaluation, ...],
+    item_id: str,
+) -> TaskAllocationItemEvaluation | None:
+    return next(
+        (
+            item
+            for evaluation in evaluations
+            for item in evaluation.items
+            if item.item_id == item_id
+        ),
+        None,
+    )
+
+
+def _task_allocation_diagnostics(
+    evaluations: tuple[TaskAllocationCatalogEvaluation, ...],
+    comparison: TaskAllocationBaselineComparison,
+) -> list[JsonObject]:
+    """Retain the historical governed-frame scorecard without using it as a current gate."""
+    findings: list[JsonObject] = []
     wrong_frames = [
         result.item_id
         for evaluation in evaluations
@@ -1210,15 +968,6 @@ def _read_json(path: Path) -> JsonObject:
 
 def _toml(value: object) -> str:
     return json.dumps(str(value), ensure_ascii=False)
-
-
-def _normalize(value: str) -> str:
-    return " ".join(value.split())
-
-
-def _trigger_retains_gold(expected: str, actual: str) -> bool:
-    """Recognize a reviewed trigger retained inside one exact source-literal expansion."""
-    return actual == expected or actual.startswith(f"{expected} ")
 
 
 def _record_ids(value: object, prefix: str) -> set[str]:

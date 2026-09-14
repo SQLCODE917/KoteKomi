@@ -1,6 +1,6 @@
 # TDD: Source-Grounded Event Boundary
 
-- Status: Implemented and canonically verified
+- Status: Complete and canonically verified
 - Parent: [Event Trigger Boundary](2026-09-10-source-occurrence-event-trigger-boundary.md)
 - Program: [Hybrid Semantic Quality Program](2026-09-06-hybrid-semantic-quality-program.md)
 - Gold: [Source-Grounded Event Gold](hsq-source-grounded-event-gold-v1.json)
@@ -121,6 +121,10 @@ That classification does not change steps four through six.
 - SGE-E03: Every Gold item records `approved` or `rejected` review outcome.
 - SGE-E04: Every Gold item records one review rationale.
 - SGE-E05: TGE-033 records `rejected` because its phrase is a compound modifier.
+- SGE-E05A: TGE-020 records `rejected` because its attendance is embedded under a decision and the
+  source does not establish that attendance occurred or will occur.
+- SGE-E05B: TGE-010 records `rejected` because `ahead of` supplies anticipated temporal context and
+  does not establish that the election occurred.
 - SGE-E06: Gold evaluation compares exact Event names and EventMention evidence.
 - SGE-E07: Gold evaluation reports missing, extra, and incorrectly grounded Events.
 - SGE-E08: Gold evaluation preserves development and validation partitions.
@@ -266,13 +270,13 @@ Semantic Argument Assignment remains the next hybrid pipeline boundary.
 - AC-SGE-W02: Wiki tests render exact expression and exact source text together.
 - AC-SGE-W03: Wiki audit tests expose EventMention and EvidenceTarget identities.
 - AC-SGE-E01: Gold tests cover every approved Trigger Gold Event exactly once.
-- AC-SGE-E02: Gold tests preserve TGE-033 as a reviewed rejection.
+- AC-SGE-E02: Gold tests preserve TGE-010, TGE-020, and TGE-033 as reviewed rejections.
 - AC-SGE-E03: Gold replay preserves the parent development and validation split.
 - AC-SGE-ALL: Formatting, lint, typecheck, focused tests, and repository tests pass.
 
 ### Verification Result
 
-The fresh canonical replay completed successfully on September 12, 2026.
+The canonical ingestion completed successfully on September 12, 2026.
 
 - The repository check run passed 1,509 tests with one skip.
 - IngestionRun `igr_971c7a38d0894449a45ceea65a606250` produced coverage report
@@ -281,10 +285,36 @@ The fresh canonical replay completed successfully on September 12, 2026.
 - The validation partition grounded all 37 expected Events across 14 SourceSegments.
 - The combined result contained 87 expected, observed, and exactly grounded Events.
 - The result contained no missing, extra, or incorrectly grounded Events.
-- The reviewed outcomes remained 86 approved Events and one rejected compound modifier.
+
 - Evaluation created zero ProposedChanges and zero accepted Ledger changes.
 
-The enclosing ingestion reported gaps in other extraction stages for 25 of 36 paragraphs.
+Human review on September 13 corrected the Gold contract after that replay.
+
+- The corrected Gold contains 84 approved Events and three rejected Events.
+- TGE-010 remains a valid linguistic trigger observation but cannot become a source-grounded Event.
+- Its election mention supplies anticipated temporal context for the Facebook post without
+  establishing occurrence.
+- TGE-020 remains a valid linguistic trigger observation but cannot become a source-grounded Event.
+- Its infinitival attendance is embedded under TGE-019's decision and has no established occurrence
+  or future modality.
+- TGE-019 now requires the complete exact decision expression.
+- A deterministic replay against the September 12 coverage correctly reported one missing corrected
+  TGE-019 Event and one stale extra Event derived from the former `decision`-only expression.
+
+The fresh September 13 canonical ingestion verified the corrected contract.
+
+- The repository check run passed 1,541 tests with one skip.
+- IngestionRun `igr_242c7d642e4148b3ac2a927a70d543f6` executed the fresh ingestion.
+- Coverage report `hdc_b11adbd6fa1963b54d4fff4e` retained its document-wide evidence.
+- The development partition grounded all 50 reviewed Events exactly.
+- The validation partition grounded all 37 reviewed Events exactly.
+- The combined result contained 87 expected, observed, and exactly grounded Events.
+- The result contained no missing, extra, or incorrectly grounded Events.
+- The catalog retained 84 approved and three rejected human review outcomes.
+- Evaluation created zero accepted Ledger changes.
+- Re-evaluation reused immutable ingestion evidence and created zero ModelRun records.
+
+The enclosing ingestion reported accounted gaps in other extraction stages for 20 of 36 paragraphs.
 
 Those gaps do not alter this boundary result and remain outside this TDD.
 

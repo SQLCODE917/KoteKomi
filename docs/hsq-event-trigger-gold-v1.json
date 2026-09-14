@@ -44,7 +44,7 @@
       "source_text": "Anthropic's strategy has mirrored Amodei's views toward Trump; in a Facebook post ahead of the 2024 presidential election, Amodei urged his associates to vote for vice president Kamala Harris over Trump, describing him as a \"feudal warlord\". ",
       "event_free": false,
       "events": [
-        {"event_id": "TGE-010", "meaning": "The 2024 presidential election occurred.", "head_occurrence_id": "o18", "accepted_expression_ranges": [{"start_occurrence_id": "o16", "end_occurrence_id": "o18"}, {"start_occurrence_id": "o18", "end_occurrence_id": "o18"}]},
+        {"event_id": "TGE-010", "meaning": "The source refers to the 2024 presidential election as anticipated temporal context for Amodei's Facebook post.", "head_occurrence_id": "o18", "accepted_expression_ranges": [{"start_occurrence_id": "o16", "end_occurrence_id": "o18"}, {"start_occurrence_id": "o18", "end_occurrence_id": "o18"}]},
         {"event_id": "TGE-011", "meaning": "Amodei urged his associates to vote for Kamala Harris.", "head_occurrence_id": "o20", "accepted_expression_ranges": [{"start_occurrence_id": "o20", "end_occurrence_id": "o20"}]},
         {"event_id": "TGE-012", "meaning": "Amodei's associates were urged to vote.", "head_occurrence_id": "o24", "accepted_expression_ranges": [{"start_occurrence_id": "o23", "end_occurrence_id": "o24"}, {"start_occurrence_id": "o24", "end_occurrence_id": "o24"}]},
         {"event_id": "TGE-013", "meaning": "Amodei described Trump as a feudal warlord.", "head_occurrence_id": "o32", "accepted_expression_ranges": [{"start_occurrence_id": "o32", "end_occurrence_id": "o32"}]}
@@ -69,8 +69,8 @@
       "event_free": false,
       "events": [
         {"event_id": "TGE-018", "meaning": "Sacks viewed several matters as evidence.", "head_occurrence_id": "o2", "accepted_expression_ranges": [{"start_occurrence_id": "o2", "end_occurrence_id": "o2"}]},
-        {"event_id": "TGE-019", "meaning": "Amodei made a decision to attend the World Economic Forum.", "head_occurrence_id": "o4", "accepted_expression_ranges": [{"start_occurrence_id": "o4", "end_occurrence_id": "o4"}]},
-        {"event_id": "TGE-020", "meaning": "Amodei would attend the World Economic Forum.", "head_occurrence_id": "o6", "accepted_expression_ranges": [{"start_occurrence_id": "o5", "end_occurrence_id": "o6"}, {"start_occurrence_id": "o6", "end_occurrence_id": "o6"}]},
+        {"event_id": "TGE-019", "meaning": "Amodei decided to attend the World Economic Forum instead of Trump's second inauguration.", "head_occurrence_id": "o4", "accepted_expression_ranges": [{"start_occurrence_id": "o4", "end_occurrence_id": "o14"}]},
+        {"event_id": "TGE-020", "meaning": "The source embeds attendance at the World Economic Forum under Amodei's decision.", "head_occurrence_id": "o6", "accepted_expression_ranges": [{"start_occurrence_id": "o5", "end_occurrence_id": "o6"}, {"start_occurrence_id": "o6", "end_occurrence_id": "o6"}]},
         {"event_id": "TGE-021", "meaning": "Trump's second inauguration occurred.", "head_occurrence_id": "o14", "accepted_expression_ranges": [{"start_occurrence_id": "o12", "end_occurrence_id": "o14"}, {"start_occurrence_id": "o14", "end_occurrence_id": "o14"}]},
         {"event_id": "TGE-022", "meaning": "Amodei hired Biden officials.", "head_occurrence_id": "o16", "accepted_expression_ranges": [{"start_occurrence_id": "o16", "end_occurrence_id": "o16"}]},
         {"event_id": "TGE-023", "meaning": "Sacks assessed that Anthropic would not support Trump's agenda.", "head_occurrence_id": "o35", "accepted_expression_ranges": [{"start_occurrence_id": "o33", "end_occurrence_id": "o35"}, {"start_occurrence_id": "o35", "end_occurrence_id": "o35"}]}
@@ -96,7 +96,7 @@
       "event_free": false,
       "events": [
         {"event_id": "TGE-029", "meaning": "Amodei made a statement.", "head_occurrence_id": "o2", "accepted_expression_ranges": [{"start_occurrence_id": "o2", "end_occurrence_id": "o2"}]},
-        {"event_id": "TGE-030", "meaning": "Amodei's statement included views.", "head_occurrence_id": "o3", "accepted_expression_ranges": [{"start_occurrence_id": "o3", "end_occurrence_id": "o3"}]},
+        {"event_id": "TGE-030", "meaning": "Amodei's statement included views that JD Vance had explicitly espoused.", "head_occurrence_id": "o3", "accepted_expression_ranges": [{"start_occurrence_id": "o3", "end_occurrence_id": "o3"}]},
         {"event_id": "TGE-031", "meaning": "JD Vance espoused the views.", "head_occurrence_id": "o6", "accepted_expression_ranges": [{"start_occurrence_id": "o6", "end_occurrence_id": "o6"}]}
       ]
     },
@@ -296,7 +296,7 @@
       "events": [
         {"event_id": "TGE-084", "meaning": "The Court of Appeals issued a per curiam order.", "head_occurrence_id": "o17", "accepted_expression_ranges": [{"start_occurrence_id": "o15", "end_occurrence_id": "o17"}, {"start_occurrence_id": "o17", "end_occurrence_id": "o17"}]},
         {"event_id": "TGE-085", "meaning": "The Court of Appeals denied Anthropic's motion.", "head_occurrence_id": "o18", "accepted_expression_ranges": [{"start_occurrence_id": "o18", "end_occurrence_id": "o18"}]},
-        {"event_id": "TGE-086", "meaning": "Anthropic moved to lift the FASCSA designation.", "head_occurrence_id": "o20", "accepted_expression_ranges": [{"start_occurrence_id": "o20", "end_occurrence_id": "o20"}]},
+        {"event_id": "TGE-086", "meaning": "Anthropic moved to lift the FASCSA designation.", "head_occurrence_id": "o20", "accepted_expression_ranges": [{"start_occurrence_id": "o20", "end_occurrence_id": "o25"}, {"start_occurrence_id": "o20", "end_occurrence_id": "o20"}]},
         {"event_id": "TGE-087", "meaning": "Anthropic sought to lift the FASCSA designation.", "head_occurrence_id": "o22", "accepted_expression_ranges": [{"start_occurrence_id": "o21", "end_occurrence_id": "o22"}, {"start_occurrence_id": "o22", "end_occurrence_id": "o22"}]}
       ]
     }

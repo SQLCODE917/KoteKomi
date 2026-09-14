@@ -36,8 +36,20 @@ def test_source_grounded_gold_covers_trigger_gold_and_preserves_review_partition
     assert len(catalog.items) == sum(len(item.events) for item in trigger_gold.segments) == 87
     assert {item.phase for item in catalog.items} == {"development", "validation"}
     rejected = [item for item in catalog.items if item.expected_review_outcome == "rejected"]
-    assert [item.event_id for item in rejected] == ["TGE-033"]
-    assert "compound modifier" in rejected[0].rationale
+    assert [item.event_id for item in rejected] == ["TGE-010", "TGE-020", "TGE-033"]
+    assert "anticipated temporal reference" in rejected[0].rationale
+    assert "embedded under Amodei's decision" in rejected[1].rationale
+    assert "compound modifier" in rejected[2].rationale
+    motion = next(
+        event
+        for segment in trigger_gold.segments
+        for event in segment.events
+        if event.event_id == "TGE-086"
+    )
+    assert {
+        (item.start_occurrence_id, item.end_occurrence_id)
+        for item in motion.accepted_expression_ranges
+    } == {("o20", "o20"), ("o20", "o25")}
 
 
 def test_source_grounded_gold_rejects_parent_digest_drift(tmp_path: Path) -> None:
@@ -162,8 +174,8 @@ def test_source_grounded_report_preserves_both_gold_partitions() -> None:
     assert report.grounded_event_count == 87
     assert report.coverage_report_id == "hdc_" + "1" * 24
     assert report.coverage_report_sha256 == "2" * 64
-    assert report.approved_review_event_count == 86
-    assert report.rejected_review_event_count == 1
+    assert report.approved_review_event_count == 84
+    assert report.rejected_review_event_count == 3
     assert [item.phase for item in report.phase_evaluations] == [
         "development",
         "validation",

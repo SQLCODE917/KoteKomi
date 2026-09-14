@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 from collections import defaultdict
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
@@ -134,9 +135,9 @@ from kotekomi_application.staged_model_extraction import (
     run_bounded_extraction,
 )
 
-HYBRID_STANDING_FACT_POLICY_ID = "hybrid_standing_fact_v4"
-HYBRID_STANDING_FACT_SCHEMA_ID = "hybrid_standing_fact_text_v2"
-HYBRID_STANDING_FACT_PROMPT_ID = "hybrid_standing_fact_task_v2"
+HYBRID_STANDING_FACT_POLICY_ID = "hybrid_standing_fact_v6"
+HYBRID_STANDING_FACT_SCHEMA_ID = "hybrid_standing_fact_text_v3"
+HYBRID_STANDING_FACT_PROMPT_ID = "hybrid_standing_fact_task_v3"
 HYBRID_STANDING_FACT_QUALIFICATION_SCHEMA_ID = "standing_fact_qualification_text_v1"
 HYBRID_STANDING_FACT_QUALIFICATION_PROMPT_ID = "hybrid_standing_fact_qualification_v1"
 HYBRID_STANDING_FACT_EVIDENCE_VALIDATOR = "hybrid_standing_fact_evidence_v1"
@@ -158,14 +159,24 @@ class StandingFactHoldReason(StrEnum):
     UNKNOWN_ENTITY_OBJECT = "unknown_entity_object"
     SELF_RELATION = "self_relation"
     LITERAL_NOT_IN_SOURCE = "literal_not_in_source"
+    PROPOSITION_NOT_SOURCE_ORDERED = "proposition_not_source_ordered"
     QUALIFICATION_AMBIGUOUS = "qualification_ambiguous"
     QUALIFICATION_MISSING = "qualification_missing"
+    RELATION_OVERLAPS_MENTION = "relation_overlaps_mention"
     SEMANTICALLY_UNSUPPORTED = "semantically_unsupported"
+    SOURCE_SPAN_MISMATCH = "source_span_mismatch"
 
 
 class StandingFactPlanStatus(StrEnum):
     COMPLETE = "complete"
     PARTIAL = "partial"
+
+
+class StandingFactObjectMapping(StrEnum):
+    """How KoteKomi mapped a fallible literal selector to authoritative characters."""
+
+    EXACT_SELECTOR = "exact_selector"
+    COMPLETED_POST_RELATION = "completed_post_relation"
 
 
 class StandingFactDraft(BaseModel):
@@ -177,11 +188,21 @@ class StandingFactDraft(BaseModel):
     source_segment_id: Annotated[str, Field(min_length=1)]
     subject_label: Annotated[str, Field(min_length=1)]
     subject_candidate_id: str | None = None
+    subject_text: Annotated[str, Field(min_length=1)] | None = None
+    subject_start: Annotated[int, Field(ge=0)] | None = None
+    subject_end: Annotated[int, Field(gt=0)] | None = None
     relation_label: Annotated[str, Field(min_length=1, max_length=160)]
     relation_start: Annotated[int, Field(ge=0)]
     relation_end: Annotated[int, Field(gt=0)]
     object_kind: StandingFactObjectKind
-    object_label_or_literal: Annotated[str, Field(min_length=1)]
+    object_selector: Annotated[
+        str,
+        Field(pattern=r"^(?:c[1-9][0-9]*|o[1-9][0-9]*(?:-o[1-9][0-9]*)?)$"),
+    ]
+    object_mapping: StandingFactObjectMapping
+    object_text: Annotated[str, Field(min_length=1)]
+    object_start: Annotated[int, Field(ge=0)] | None = None
+    object_end: Annotated[int, Field(gt=0)] | None = None
     object_candidate_id: str | None = None
     extraction_task_id: Annotated[str, Field(min_length=1)]
     model_run_id: Annotated[str, Field(min_length=1)]
@@ -190,18 +211,58 @@ class StandingFactDraft(BaseModel):
     def validate_identity(self) -> Self:
         if self.relation_end - self.relation_start != len(self.relation_label):
             raise ValueError("StandingFactDraft relation range does not match its text.")
+        subject_values = (self.subject_text, self.subject_start, self.subject_end)
+        if self.subject_candidate_id is None:
+            if any(value is not None for value in subject_values):
+                raise ValueError("An unresolved Standing Fact subject cannot have a source span.")
+        elif self.subject_text is None or self.subject_start is None or self.subject_end is None:
+            raise ValueError("A resolved Standing Fact subject requires its exact source span.")
+        elif self.subject_end - self.subject_start != len(self.subject_text):
+            raise ValueError("StandingFactDraft subject range does not match its text.")
         if self.object_kind is StandingFactObjectKind.LITERAL and self.object_candidate_id:
             raise ValueError("A literal Standing Fact cannot name an object candidate.")
+        if (
+            self.object_kind is StandingFactObjectKind.LITERAL
+            and not self.object_selector.startswith("o")
+        ):
+            raise ValueError("A literal Standing Fact requires a source-occurrence selector.")
+        if (
+            self.object_kind is StandingFactObjectKind.ENTITY
+            and not self.object_selector.startswith("c")
+        ):
+            raise ValueError("An entity Standing Fact requires a candidate selector.")
+        object_values = (self.object_start, self.object_end)
+        if self.object_kind is StandingFactObjectKind.LITERAL:
+            if any(value is None for value in object_values):
+                raise ValueError("A literal Standing Fact requires an exact source span.")
+        elif self.object_candidate_id is None:
+            if any(value is not None for value in object_values):
+                raise ValueError("An unresolved entity object cannot have a source span.")
+        elif any(value is None for value in object_values):
+            raise ValueError("A resolved entity object requires its exact source span.")
+        if (
+            self.object_start is not None
+            and self.object_end is not None
+            and self.object_end - self.object_start != len(self.object_text)
+        ):
+            raise ValueError("StandingFactDraft object range does not match its text.")
         expected = _id(
             "sfd",
             self.source_segment_id,
             self.subject_label,
             self.subject_candidate_id or "",
+            self.subject_text or "",
+            str(self.subject_start) if self.subject_start is not None else "",
+            str(self.subject_end) if self.subject_end is not None else "",
             self.relation_label,
             str(self.relation_start),
             str(self.relation_end),
             self.object_kind.value,
-            self.object_label_or_literal,
+            self.object_selector,
+            self.object_mapping.value,
+            self.object_text,
+            str(self.object_start) if self.object_start is not None else "",
+            str(self.object_end) if self.object_end is not None else "",
             self.object_candidate_id or "",
             self.extraction_task_id,
             self.model_run_id,
@@ -304,7 +365,7 @@ class StandingFactPlan(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
-    schema_version: Literal["standing_fact_plan_v4"] = "standing_fact_plan_v4"
+    schema_version: Literal["standing_fact_plan_v6"] = "standing_fact_plan_v6"
     id: Annotated[str, Field(pattern=r"^sfp_[a-f0-9]{24}$")]
     parent_plan_id: Annotated[str, Field(pattern=r"^hpp_[a-f0-9]{24}$")]
     parent_plan_sha256: Annotated[str, Field(pattern=_SHA256)]
@@ -316,7 +377,7 @@ class StandingFactPlan(BaseModel):
     paragraph_node_id: Annotated[str, Field(min_length=1)]
     context_manifest_id: str | None = None
     qualification_context_manifest_id: str | None = None
-    policy_id: Literal["hybrid_standing_fact_v4"] = HYBRID_STANDING_FACT_POLICY_ID
+    policy_id: Literal["hybrid_standing_fact_v6"] = HYBRID_STANDING_FACT_POLICY_ID
     provenance_activity_id: Annotated[str, Field(pattern=r"^prv_[a-f0-9]{24}$")]
     drafts: tuple[StandingFactDraft, ...] = ()
     propositions: tuple[CompleteProposition, ...] = ()
@@ -568,7 +629,7 @@ def run_hybrid_standing_fact_plan(
                     schema,
                     task_input,
                 ),
-                validator_version="hybrid_standing_fact_output_v2",
+                validator_version="hybrid_standing_fact_output_v3",
                 task_type="hybrid_standing_fact_proposal",
                 input_candidate_ids=tuple(x.candidate.id for x in candidates),
                 task_local_input=task_input,
@@ -618,7 +679,9 @@ def run_hybrid_standing_fact_plan(
     candidates_by_id = {
         item.candidate.id: item for values in candidates_by_segment.values() for item in values
     }
-    deterministic_reasons = {draft.id: _hold_reasons(draft, context) for draft in drafts}
+    deterministic_reasons = {
+        draft.id: _hold_reasons(draft, context, candidates_by_segment) for draft in drafts
+    }
     eligible_drafts = tuple(draft for draft in drafts if not deterministic_reasons[draft.id])
     qualification_manifest = (
         _build_manifest(
@@ -645,8 +708,12 @@ def run_hybrid_standing_fact_plan(
                 ledger,
             )
             evidence_by_segment[draft.source_segment_id] = evidence
-        proposition = _standing_fact_proposition(draft, candidates_by_id, evidence[0].id)
         segment = _segment_by_id(context, draft.source_segment_id)
+        proposition = build_standing_fact_proposition(
+            draft,
+            segment.exact_text,
+            evidence[0].id,
+        )
         assert qualification_manifest is not None
         task_input = _qualification_task_input(segment.exact_text, proposition)
         outcome = run_bounded_extraction(
@@ -1132,7 +1199,7 @@ def _build_manifest(
             prompt_bytes=prompt_bytes,
             schema_id=schema.schema_id,
             schema_bytes=schema.canonical_schema_bytes,
-            renderer_version="hybrid_standing_fact_context_v2",
+            renderer_version="hybrid_standing_fact_context_v3",
             evidence_selection_policy_id=HYBRID_MENTION_EVIDENCE_SELECTION_V1,
             source_segment_policy_id=PARAGRAPH_SEGMENT_V3,
         ),
@@ -1187,11 +1254,18 @@ def _task_input(
         f"target_source_segment: {segment.label}",
         f"source_segment_text_json: {json.dumps(segment.exact_text, ensure_ascii=False)}",
         "candidate_catalog:",
+        "label | occurrence | exact_source_text | resolved_name | kind | role",
     ]
     lines.extend(
         " | ".join(
             (
                 item.label,
+                standing_fact_candidate_occurrence_selector(
+                    item.candidate,
+                    segment.exact_text,
+                    occurrences,
+                ),
+                json.dumps(item.candidate.text, ensure_ascii=False),
                 json.dumps(item.display_name, ensure_ascii=False),
                 item.interpretation.contextual_kind.value,
                 item.interpretation.discourse_role.value,
@@ -1199,50 +1273,158 @@ def _task_input(
         )
         for item in candidates
     )
-    lines.append("source_occurrence_catalog:")
+    lines.append("word_catalog:")
     lines.extend(f"{item.occurrence_id} | {item.text}" for item in occurrences)
     return ("\n".join(lines) + "\n").encode()
 
 
+def standing_fact_candidate_occurrence_selector(
+    candidate: MentionCandidate,
+    source_text: str,
+    occurrences: tuple[SourceOccurrence, ...],
+) -> str:
+    """Locate one exact MentionCandidate in the model-visible occurrence catalog."""
+    source_copy = derive_source_copy_view(source_text)
+    if occurrences != source_occurrences(source_copy):
+        raise ValueError("source_occurrence_catalog_drift")
+    overlapping = tuple(
+        item
+        for item in occurrences
+        if _ranges_overlap(
+            (candidate.start, candidate.end),
+            source_copy.authoritative_range(item.start, item.end),
+        )
+    )
+    if not overlapping:
+        raise ValueError("standing_fact_candidate_has_no_source_occurrence")
+    first = overlapping[0].occurrence_id
+    last = overlapping[-1].occurrence_id
+    return first if first == last else f"{first}-{last}"
+
+
+def _ranges_overlap(left: tuple[int, int], right: tuple[int, int]) -> bool:
+    return left[0] < right[1] and right[0] < left[1]
+
+
 def _draft(observation: _TaskObservation, proposal: StandingFactProposal) -> StandingFactDraft:
-    by_label = {x.label: x for x in observation.candidates}
-    subject = by_label.get(proposal.subject_label)
+    return build_standing_fact_draft(
+        source_segment_id=observation.segment_id,
+        source_text=observation.segment.exact_text,
+        occurrences=observation.source_occurrences,
+        candidates_by_label={item.label: item.candidate for item in observation.candidates},
+        proposal=proposal,
+        extraction_task_id=observation.extraction_task_id,
+        model_run_id=observation.model_run_id,
+    )
+
+
+def build_standing_fact_draft(
+    *,
+    source_segment_id: str,
+    source_text: str,
+    occurrences: tuple[SourceOccurrence, ...],
+    candidates_by_label: Mapping[str, MentionCandidate],
+    proposal: StandingFactProposal,
+    extraction_task_id: str,
+    model_run_id: str,
+) -> StandingFactDraft:
+    """Map one fallible local-label proposal to exact authoritative source spans."""
+    subject = candidates_by_label.get(proposal.subject_label)
     object_candidate = (
-        by_label.get(proposal.object_value)
+        candidates_by_label.get(proposal.object_selector)
         if proposal.object_kind is StandingFactObjectKind.ENTITY
         else None
     )
     relation = resolve_standing_fact_relation(
-        observation.segment.exact_text,
-        observation.source_occurrences,
+        source_text,
+        occurrences,
         proposal.relation_selector,
     )
+    object_span = None
+    if proposal.object_kind is StandingFactObjectKind.LITERAL:
+        selected_object_span = _resolve_standing_fact_source_span(
+            source_text,
+            occurrences,
+            proposal.object_selector,
+        )
+        object_span, object_mapping = _complete_post_relation_literal_object_span(
+            source_text,
+            relation,
+            selected_object_span,
+        )
+    else:
+        object_mapping = StandingFactObjectMapping.EXACT_SELECTOR
+    object_text = (
+        object_span.text
+        if object_span is not None
+        else object_candidate.text
+        if object_candidate is not None
+        else proposal.object_selector
+    )
     identity_parts = (
-        observation.segment_id,
+        source_segment_id,
         proposal.subject_label,
-        subject.candidate.id if subject else "",
+        subject.id if subject else "",
+        subject.text if subject else "",
+        str(subject.start) if subject else "",
+        str(subject.end) if subject else "",
         relation.text,
         str(relation.start),
         str(relation.end),
         proposal.object_kind.value,
-        proposal.object_value,
-        object_candidate.candidate.id if object_candidate else "",
-        observation.extraction_task_id,
-        observation.model_run_id,
+        proposal.object_selector,
+        object_mapping.value,
+        object_text,
+        (
+            str(object_span.start)
+            if object_span is not None
+            else str(object_candidate.start)
+            if object_candidate is not None
+            else ""
+        ),
+        (
+            str(object_span.end)
+            if object_span is not None
+            else str(object_candidate.end)
+            if object_candidate is not None
+            else ""
+        ),
+        object_candidate.id if object_candidate else "",
+        extraction_task_id,
+        model_run_id,
     )
     return StandingFactDraft(
         id=_id("sfd", *identity_parts),
-        source_segment_id=observation.segment_id,
+        source_segment_id=source_segment_id,
         subject_label=proposal.subject_label,
-        subject_candidate_id=subject.candidate.id if subject else None,
+        subject_candidate_id=subject.id if subject else None,
+        subject_text=subject.text if subject else None,
+        subject_start=subject.start if subject else None,
+        subject_end=subject.end if subject else None,
         relation_label=relation.text,
         relation_start=relation.start,
         relation_end=relation.end,
         object_kind=proposal.object_kind,
-        object_label_or_literal=proposal.object_value,
-        object_candidate_id=object_candidate.candidate.id if object_candidate else None,
-        extraction_task_id=observation.extraction_task_id,
-        model_run_id=observation.model_run_id,
+        object_selector=proposal.object_selector,
+        object_mapping=object_mapping,
+        object_text=object_text,
+        object_start=(
+            object_span.start
+            if object_span is not None
+            else object_candidate.start
+            if object_candidate is not None
+            else None
+        ),
+        object_end=(
+            object_span.end
+            if object_span is not None
+            else object_candidate.end
+            if object_candidate is not None
+            else None
+        ),
+        object_candidate_id=object_candidate.id if object_candidate else None,
+        extraction_task_id=extraction_task_id,
+        model_run_id=model_run_id,
     )
 
 
@@ -1252,13 +1434,21 @@ def resolve_standing_fact_relation(
     relation_selector: str,
 ) -> StandingFactRelationSpan:
     """Map one supplied occurrence selector back to exact authoritative characters."""
+    return _resolve_standing_fact_source_span(source_text, occurrences, relation_selector)
+
+
+def _resolve_standing_fact_source_span(
+    source_text: str,
+    occurrences: tuple[SourceOccurrence, ...],
+    selector: str,
+) -> StandingFactRelationSpan:
     source_copy = derive_source_copy_view(source_text)
     if occurrences != source_occurrences(source_copy):
         raise ValueError("source_occurrence_catalog_drift")
     occurrence_by_id = {item.occurrence_id: item for item in occurrences}
     if len(occurrence_by_id) != len(occurrences):
         raise ValueError("duplicate_source_occurrence")
-    start_id, separator, end_id = relation_selector.partition("-")
+    start_id, separator, end_id = selector.partition("-")
     end_id = end_id if separator else start_id
     start_occurrence = occurrence_by_id.get(start_id)
     end_occurrence = occurrence_by_id.get(end_id)
@@ -1274,19 +1464,47 @@ def resolve_standing_fact_relation(
     return StandingFactRelationSpan(start=start, end=end, text=source_text[start:end])
 
 
-def _standing_fact_proposition(
+def _complete_post_relation_literal_object_span(
+    source_text: str,
+    relation: StandingFactRelationSpan,
+    selected_object: StandingFactRelationSpan,
+) -> tuple[StandingFactRelationSpan, StandingFactObjectMapping]:
+    """Complete a post-relation literal through its model-selected right boundary."""
+    if selected_object.start <= relation.end:
+        return selected_object, StandingFactObjectMapping.EXACT_SELECTOR
+    start = relation.end
+    while start < selected_object.start and source_text[start].isspace():
+        start += 1
+    omitted_prefix = source_text[start : selected_object.start]
+    if not omitted_prefix or any(mark in omitted_prefix for mark in (";", ".", "!", "?")):
+        return selected_object, StandingFactObjectMapping.EXACT_SELECTOR
+    return (
+        StandingFactRelationSpan(
+            start=start,
+            end=selected_object.end,
+            text=source_text[start : selected_object.end],
+        ),
+        StandingFactObjectMapping.COMPLETED_POST_RELATION,
+    )
+
+
+def build_standing_fact_proposition(
     draft: StandingFactDraft,
-    candidates_by_id: dict[str, _EligibleMention],
+    source_text: str,
     evidence_target_id: str,
 ) -> CompleteProposition:
-    if draft.subject_candidate_id is None:
-        raise ValueError("A Standing Fact proposition requires a resolved subject.")
-    subject = candidates_by_id[draft.subject_candidate_id].display_name
-    if draft.object_candidate_id is not None:
-        object_value = candidates_by_id[draft.object_candidate_id].display_name
-    else:
-        object_value = draft.object_label_or_literal
-    text = f"{subject} {draft.relation_label} {object_value}."
+    """Render one complete proposition from ordered authoritative source components."""
+    reasons = standing_fact_source_hold_reasons(draft, source_text)
+    if reasons:
+        raise ValueError(
+            "Standing Fact proposition is not source-renderable: "
+            + ",".join(reason.value for reason in reasons)
+        )
+    assert draft.subject_start is not None
+    assert draft.object_end is not None
+    text = source_text[draft.subject_start : draft.object_end].strip()
+    if text[-1] not in ".?!":
+        text += "."
     return build_complete_proposition(
         kind=PropositionKind.STANDING_ASSERTION,
         subject_record_id=draft.id,
@@ -1360,12 +1578,17 @@ def _semantic_hold_reasons(
 def _hold_reasons(
     draft: StandingFactDraft,
     context: _SourceContext,
+    candidates_by_segment: dict[str, tuple[_EligibleMention, ...]],
 ) -> tuple[StandingFactHoldReason, ...]:
     segment = _segment_by_id(context, draft.source_segment_id)
     return standing_fact_source_hold_reasons(
         draft,
         segment.exact_text,
         event_trigger_ranges=context.event_trigger_ranges.get(draft.source_segment_id, ()),
+        mention_ranges=tuple(
+            (item.candidate.start, item.candidate.end, item.candidate.id)
+            for item in candidates_by_segment.get(draft.source_segment_id, ())
+        ),
     )
 
 
@@ -1374,25 +1597,82 @@ def standing_fact_source_hold_reasons(
     source_text: str,
     *,
     event_trigger_ranges: tuple[tuple[int, int, str], ...] = (),
+    mention_ranges: tuple[tuple[int, int, str], ...] = (),
 ) -> tuple[StandingFactHoldReason, ...]:
     """Apply only source and identity checks before independent semantic qualification."""
     reasons: set[StandingFactHoldReason] = set()
     if draft.subject_candidate_id is None:
         reasons.add(StandingFactHoldReason.UNKNOWN_SUBJECT)
+    elif not _source_span_matches(
+        source_text,
+        draft.subject_start,
+        draft.subject_end,
+        draft.subject_text,
+    ):
+        reasons.add(StandingFactHoldReason.SOURCE_SPAN_MISMATCH)
+    if not _source_span_matches(
+        source_text,
+        draft.relation_start,
+        draft.relation_end,
+        draft.relation_label,
+    ):
+        reasons.add(StandingFactHoldReason.SOURCE_SPAN_MISMATCH)
     if draft.object_kind is StandingFactObjectKind.ENTITY:
         if draft.object_candidate_id is None:
             reasons.add(StandingFactHoldReason.UNKNOWN_ENTITY_OBJECT)
         elif draft.object_candidate_id == draft.subject_candidate_id:
             reasons.add(StandingFactHoldReason.SELF_RELATION)
+        elif not _source_span_matches(
+            source_text,
+            draft.object_start,
+            draft.object_end,
+            draft.object_text,
+        ):
+            reasons.add(StandingFactHoldReason.SOURCE_SPAN_MISMATCH)
     else:
-        if draft.object_label_or_literal not in source_text:
+        if draft.object_text not in source_text:
             reasons.add(StandingFactHoldReason.LITERAL_NOT_IN_SOURCE)
+        elif not _source_span_matches(
+            source_text,
+            draft.object_start,
+            draft.object_end,
+            draft.object_text,
+        ):
+            reasons.add(StandingFactHoldReason.SOURCE_SPAN_MISMATCH)
+    if (
+        draft.subject_end is not None
+        and draft.object_start is not None
+        and not (
+            draft.subject_end <= draft.relation_start and draft.relation_end <= draft.object_start
+        )
+    ):
+        reasons.add(StandingFactHoldReason.PROPOSITION_NOT_SOURCE_ORDERED)
+    if any(
+        draft.relation_start < mention_end and mention_start < draft.relation_end
+        for mention_start, mention_end, _ in mention_ranges
+    ):
+        reasons.add(StandingFactHoldReason.RELATION_OVERLAPS_MENTION)
     if any(
         draft.relation_start < trigger_end and trigger_start < draft.relation_end
         for trigger_start, trigger_end, _ in event_trigger_ranges
     ):
         reasons.add(StandingFactHoldReason.EVENT_ROUTE_REQUIRED)
     return tuple(sorted(reasons, key=lambda item: item.value))
+
+
+def _source_span_matches(
+    source_text: str,
+    start: int | None,
+    end: int | None,
+    expected_text: str | None,
+) -> bool:
+    return (
+        start is not None
+        and end is not None
+        and expected_text is not None
+        and 0 <= start < end <= len(source_text)
+        and source_text[start:end] == expected_text
+    )
 
 
 def _rewrapped_parent_changes(
@@ -1443,7 +1723,7 @@ def _standing_fact_changes(
             context.bundle.representation.id,
             subject_id,
             draft.relation_label,
-            object_id or draft.object_label_or_literal,
+            object_id or draft.object_text,
             target.id,
         ),
         assertion_type=AssertionType.SOURCE_CLAIM,
@@ -1452,9 +1732,7 @@ def _standing_fact_changes(
         relation_label=draft.relation_label,
         object_entity_id=object_id,
         object_value=(
-            None
-            if draft.object_kind is StandingFactObjectKind.ENTITY
-            else draft.object_label_or_literal
+            None if draft.object_kind is StandingFactObjectKind.ENTITY else draft.object_text
         ),
         source_authority=SourceAuthority.UNKNOWN,
         attribution_basis=AttributionBasis.REPORTED_BY_SOURCE,
@@ -1642,6 +1920,11 @@ def _trace(
                 {
                     "label": x.label,
                     "candidate_id": x.candidate.id,
+                    "occurrence_selector": standing_fact_candidate_occurrence_selector(
+                        x.candidate,
+                        observation.segment.exact_text,
+                        observation.source_occurrences,
+                    ),
                     "exact_text": x.candidate.text,
                     "display_name": x.display_name,
                     "contextual_kind": x.interpretation.contextual_kind.value,
@@ -1660,7 +1943,7 @@ def _trace(
                     "subject_label": x.subject_label,
                     "relation_selector": x.relation_selector,
                     "object_kind": x.object_kind.value,
-                    "object_value": x.object_value,
+                    "object_selector": x.object_selector,
                 }
                 for x in (batch.proposals if batch else ())
             ],
@@ -1678,7 +1961,7 @@ def _trace(
                         "subject_label": item.proposal.subject_label,
                         "relation_selector": item.proposal.relation_selector,
                         "object_kind": item.proposal.object_kind.value,
-                        "object_value": item.proposal.object_value,
+                        "object_selector": item.proposal.object_selector,
                     },
                     "reason": item.reason,
                 }
@@ -1814,7 +2097,7 @@ def _build_plan(
     payload = cast(
         dict[str, JsonValue],
         {
-            "schema_version": "standing_fact_plan_v4",
+            "schema_version": "standing_fact_plan_v6",
             "parent_plan_id": context.parent_plan.id,
             "parent_plan_sha256": hashlib.sha256(
                 canonical_hybrid_proposal_plan_bytes(context.parent_plan)

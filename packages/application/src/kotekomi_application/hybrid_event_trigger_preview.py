@@ -74,6 +74,7 @@ from kotekomi_application.hybrid_event_triggers import (
     TriggerDecisionDispositionValue,
     build_hybrid_event_trigger_preview,
     canonical_hybrid_event_trigger_preview_bytes,
+    event_trigger_expression_range,
     event_trigger_id,
     hybrid_event_trigger_preview_from_bytes,
     hybrid_event_trigger_preview_sha256,
@@ -507,6 +508,7 @@ def run_hybrid_event_trigger_preview(
                 segment_id=segment_id,
                 source_text=segment.exact_text,
                 source_copy=source_copy,
+                linguistic_tokens=linguistic.tokens,
                 trace_id=reconciliation_trace.id,
             )
             for decision in reconciliation.event_decisions
@@ -1261,13 +1263,19 @@ def _resolve_trigger(
     segment_id: str,
     source_text: str,
     source_copy: SourceCopyView,
+    linguistic_tokens: tuple[LinguisticToken, ...],
     trace_id: str,
 ) -> EventTriggerDraft:
     if decision.answer is not EventHeadAnswerValue.EVENT:
         raise ValueError("Only an Event decision can resolve to an EventTriggerDraft.")
     event_type_label = _event_type_label(candidate.lemma)
-    start, end = source_copy.authoritative_range(candidate.start, candidate.end)
-    head_start, head_end = start, end
+    copy_start, copy_end = event_trigger_expression_range(
+        candidate,
+        source_copy.text,
+        linguistic_tokens,
+    )
+    start, end = source_copy.authoritative_range(copy_start, copy_end)
+    head_start, head_end = source_copy.authoritative_range(candidate.start, candidate.end)
     text = source_text[start:end]
     head_text = source_text[head_start:head_end]
     if head_text != candidate.text or not start <= head_start < head_end <= end:

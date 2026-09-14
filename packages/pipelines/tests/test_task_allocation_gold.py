@@ -39,7 +39,12 @@ EVALUATOR_CORRECTIONS = ROOT / "docs/hsq-stage-local-evaluator-corrections-v1.js
 BOUNDARY_PROMPT = ROOT / "prompts/hybrid_mention_boundary_adjudication_v2.md"
 REFERENCE_PROMPT = ROOT / "prompts/semantic_reference_challenge_v4.md"
 REFERENCE_VALIDATION_PROMPT = ROOT / "prompts/semantic_reference_candidate_validation_v1.md"
-EVENT_PROMPTS = tuple(sorted((ROOT / "prompts").glob("event_*_v1.md")))
+STANDING_FACT_PROMPT = ROOT / "prompts/hybrid_standing_fact_task_v3.md"
+EVENT_PROMPTS = tuple(
+    path
+    for path in sorted((ROOT / "prompts").glob("event_*_v1.md"))
+    if path.name.startswith(("event_noun_", "event_verb_"))
+)
 
 
 def test_development_gold_freezes_seventeen_missing_and_three_demonstrated_items() -> None:
@@ -148,6 +153,34 @@ def test_trigger_prompts_each_assign_one_bounded_semantic_task() -> None:
         assert "Ledger" not in prompt
         assert "Anthropic" not in prompt
         assert "Amodei" not in prompt
+
+
+def test_standing_fact_prompt_uses_source_choices_without_gold_leakage() -> None:
+    prompt = STANDING_FACT_PROMPT.read_text()
+
+    assert "The occurrence location distinguishes candidates whose names repeat." in prompt
+    assert "select the complete phrase as a literal object" in prompt
+    assert "select the smallest contiguous relation range" in prompt.casefold()
+    assert "literal | <supplied oN[-oN] object selector>" in prompt
+    assert "Northstar's policy mirrors Rivera's views on exports" in prompt
+    assert "Anthropic" not in prompt
+    assert "Amodei" not in prompt
+    assert "Ledger" not in prompt
+    assert "source offset" not in prompt
+
+
+def test_amodei_07_is_the_mixed_event_and_standing_fact_gold_contract() -> None:
+    catalog = load_task_allocation_gold(AMODEI)
+    item = next(item for item in catalog.items if item.item_id == "AMO-07")
+    source = _source_segment_text(catalog, item.item_id)
+
+    assert item.expected_route == "standing_fact"
+    assert item.expected_standing_fact is not None
+    assert item.expected_standing_fact.subject_text == "Anthropic"
+    assert item.expected_standing_fact.relation_terms == ("strategy", "mirrored")
+    assert item.expected_standing_fact.object_text == "Amodei's views toward Trump"
+    assert source.startswith("Anthropic's strategy has mirrored Amodei's views toward Trump;")
+    assert all(value in source for value in ("urged", "vote", "describing"))
 
 
 def test_evaluation_preserves_exact_model_input_output_and_scores_one_bounded_event() -> None:

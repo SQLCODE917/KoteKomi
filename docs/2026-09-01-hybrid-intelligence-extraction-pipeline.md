@@ -12,6 +12,8 @@
 - Current front-half boundary: [Bounded Semantic Task Allocation](2026-09-08-bounded-semantic-task-allocation.md)
 - Current Event boundary: [SourceOccurrence to Event Trigger Boundary](2026-09-10-source-occurrence-event-trigger-boundary.md)
 - Current Event admission: [Source-Grounded Event Boundary](2026-09-12-source-grounded-event-boundary.md)
+- Current semantic-assignment experiment:
+  [Event-Entity Connection Experiment](2026-09-12-event-entity-connection-experiment.md)
 - Supersedes: [Model and Ontology Boundary Program](2026-08-25-model-ontology-boundary-program.md)
 - Supersedes: [Paragraph Hypothesis Development Program](2026-08-26-paragraph-hypothesis-development-program.md)
 - Supersedes: [PHP-1 Reliability Improvement Program](2026-08-27-php1-reliability-improvement-program.md)
@@ -55,6 +57,7 @@ authoritative SourceSegment
     -> EventHeadCandidates
     -> EventTriggerDrafts
     -> source-grounded Events with EventMentions
+    -> experimental source-backed Event-entity connections
     -> optional Event type assignments
     -> later source-backed semantic assignments
     -> ProposedChanges
@@ -389,6 +392,16 @@ The Event does not require one governed frame.
 Governed classification remains optional derived enrichment.
 
 Later bounded tasks assign source-backed participants and other Event semantics.
+
+The current Event-Entity Connection experiment tests the first smaller assignment boundary.
+
+KoteKomi supplies one source-grounded Event and one exact Actor or Organization candidate.
+
+Qwen2.5 answers only whether that entity is involved in that Event.
+
+KoteKomi maps the finite answer into a traced derived connection draft.
+
+This experiment does not assign semantic roles and does not yet change production ingestion.
 
 ### 10. Create reviewable state
 

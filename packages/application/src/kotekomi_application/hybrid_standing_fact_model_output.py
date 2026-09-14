@@ -20,7 +20,7 @@ class StandingFactProposal:
     subject_label: str
     relation_selector: str
     object_kind: StandingFactObjectKind
-    object_value: str
+    object_selector: str
 
 
 @dataclass(frozen=True)
@@ -79,7 +79,8 @@ def parse_standing_fact_output(
 def standing_fact_schema_bytes() -> bytes:
     return (
         b"fact: cN | <supplied oN[-oN] relation selector> | entity | cN\n"
-        b"fact: cN | <supplied oN[-oN] relation selector> | literal | <exact source literal>\n"
+        b"fact: cN | <supplied oN[-oN] relation selector> | literal | "
+        b"<supplied oN[-oN] object selector>\n"
         b"... one line per distinct standing fact\n\n"
         b"or\n\n"
         b"abstain: <non-empty reason>\n"
@@ -92,7 +93,7 @@ def _parse_fact_line(line: str) -> StandingFactProposal:
     parts = line.removeprefix("fact: ").split(" | ")
     if len(parts) != 4 or any(not part for part in parts):
         raise ValueError("fact lines require subject, relation, object kind, and object")
-    subject, relation_selector, kind_text, object_value = parts
+    subject, relation_selector, kind_text, object_selector = parts
     if not _LOCAL_CANDIDATE.fullmatch(subject):
         raise ValueError("subject must use one local candidate label")
     if _LOCAL_OCCURRENCE_RANGE.fullmatch(relation_selector) is None:
@@ -101,6 +102,10 @@ def _parse_fact_line(line: str) -> StandingFactProposal:
         kind = StandingFactObjectKind(kind_text)
     except ValueError as error:
         raise ValueError("object kind must be entity or literal") from error
-    if kind is StandingFactObjectKind.ENTITY and not _LOCAL_CANDIDATE.fullmatch(object_value):
+    if kind is StandingFactObjectKind.ENTITY and not _LOCAL_CANDIDATE.fullmatch(object_selector):
         raise ValueError("entity object must use one local candidate label")
-    return StandingFactProposal(subject, relation_selector, kind, object_value)
+    if kind is StandingFactObjectKind.LITERAL and not _LOCAL_OCCURRENCE_RANGE.fullmatch(
+        object_selector
+    ):
+        raise ValueError("literal object must use one source-occurrence range")
+    return StandingFactProposal(subject, relation_selector, kind, object_selector)
