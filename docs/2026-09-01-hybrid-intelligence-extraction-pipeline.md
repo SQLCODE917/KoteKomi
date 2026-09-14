@@ -9,7 +9,7 @@
 - Document orchestration evaluation: [HP-8 Document Orchestration Evaluation](2026-09-03-hp8-document-orchestration-evaluation.md)
 - Standing-fact extension: [HP-10 Paragraph Standing Facts MVP](2026-09-05-paragraph-standing-facts-mvp.md)
 - Semantic quality follow-up: [Hybrid Semantic Quality Program](2026-09-06-hybrid-semantic-quality-program.md)
-- Current front-half boundary: [Bounded Semantic Task Allocation](2026-09-08-bounded-semantic-task-allocation.md)
+- Current evaluation contract: [Source-Grounded Evaluation Cutover](2026-09-13-source-grounded-evaluation-cutover.md)
 - Current Event boundary: [SourceOccurrence to Event Trigger Boundary](2026-09-10-source-occurrence-event-trigger-boundary.md)
 - Current Event admission: [Source-Grounded Event Boundary](2026-09-12-source-grounded-event-boundary.md)
 - Current semantic-assignment experiment:

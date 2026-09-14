@@ -1,10 +1,9 @@
 # TDD: Source-Bound Governed Event Extraction
 
-- Status: Accepted for implementation
+- Status: Superseded by [Source-Grounded Event Boundary](2026-09-12-source-grounded-event-boundary.md)
 - Deliverable ID: HSQ-6
 - Program: [Hybrid Semantic Quality Program](2026-09-06-hybrid-semantic-quality-program.md)
 - Depends on: [Standing Fact Semantic Admission](2026-09-06-standing-fact-semantic-admission.md)
-- Gold: [Amodei Intelligence Gold](hsq-amodei-intelligence-gold-v1.json)
 
 ## Context & Problem
 

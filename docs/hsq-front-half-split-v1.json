@@ -1,13 +1,13 @@
 {
-  "schema_version": "hsq_stage_local_split_v1",
+  "schema_version": "hsq_front_half_split_v1",
   "catalogs": [
     {
-      "path": "docs/hsq-task-allocation-amodei-gold-v1.json",
-      "sha256": "8ede791c9eddb79ee0f995d686552b1627ae9c38efd26bad9963141477545624"
+      "path": "docs/hsq-front-half-amodei-gold-v1.json",
+      "sha256": "848dd68af0bcdd3474f2bec2bebabf37ac031a97d3ee005c7e1b5fae6b70b34c"
     },
     {
-      "path": "docs/hsq-task-allocation-anthropic-gold-v1.json",
-      "sha256": "867832ba73c0f444783c219b03e23a610790bec4d5926c4901b432691978b23a"
+      "path": "docs/hsq-front-half-anthropic-gold-v1.json",
+      "sha256": "34990f37e73a24fc28fbc88c665d5bd894e32ce13200e2d59ca2179d6d18c894"
     }
   ],
   "development_item_ids": [

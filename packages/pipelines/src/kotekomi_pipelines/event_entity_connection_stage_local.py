@@ -18,11 +18,11 @@ from kotekomi_application import (
 )
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from kotekomi_pipelines.evaluation_contracts import EvaluationPhase
 from kotekomi_pipelines.event_trigger_stage_local import TriggerGoldCatalog
 from kotekomi_pipelines.source_grounded_event_evaluation import (
     SourceGroundedEventGoldCatalog,
 )
-from kotekomi_pipelines.task_allocation_stage_local import StageLocalPhase
 
 _SHA256 = r"^[a-f0-9]{64}$"
 
@@ -75,7 +75,7 @@ class ConnectionGoldEvent(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
     event_id: Annotated[str, Field(pattern=r"^TGE-[0-9]{3}$")]
-    phase: StageLocalPhase
+    phase: EvaluationPhase
     source_text_sha256: Annotated[str, Field(pattern=_SHA256)]
     event_meaning: Annotated[str, Field(min_length=1)]
     expected_entities: tuple[ConnectionGoldEntity, ...]
@@ -133,7 +133,7 @@ class ConnectionGoldCatalog(BaseModel):
         event_ids = tuple(item.event_id for item in self.events)
         if len(set(event_ids)) != len(event_ids):
             raise ValueError("Connection Gold repeats an Event.")
-        phases: tuple[StageLocalPhase, ...] = ("development", "validation")
+        phases: tuple[EvaluationPhase, ...] = ("development", "validation")
         if any(sum(item.phase == phase for item in self.events) != 20 for phase in phases):
             raise ValueError("Connection Gold requires twenty Events per phase.")
         entity_ids = tuple(
@@ -156,7 +156,7 @@ class EventEntityExperimentInput(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
-    phase: StageLocalPhase
+    phase: EvaluationPhase
     gold_event_id: Annotated[str, Field(pattern=r"^TGE-[0-9]{3}$")]
     source_id: Annotated[str, Field(min_length=1)]
     document_id: Annotated[str, Field(min_length=1)]
@@ -313,7 +313,7 @@ class EventEntityCandidatePreflightReport(BaseModel):
     catalog_id: Annotated[str, Field(min_length=1)]
     catalog_sha256: Annotated[str, Field(pattern=_SHA256)]
     gold_review_status: Literal["proposed", "approved"]
-    phase: StageLocalPhase
+    phase: EvaluationPhase
     event_count: Literal[20]
     expected_entity_count: Annotated[int, Field(ge=0)]
     excluded_expression_count: Annotated[int, Field(ge=0)]
@@ -375,7 +375,7 @@ class EventEntityPhaseReport(BaseModel):
     )
     catalog_id: Annotated[str, Field(min_length=1)]
     catalog_sha256: Annotated[str, Field(pattern=_SHA256)]
-    phase: StageLocalPhase
+    phase: EvaluationPhase
     repetition: Annotated[int, Field(ge=1)]
     event_count: Literal[20]
     passed_event_count: Annotated[int, Field(ge=0, le=20)]
@@ -608,7 +608,7 @@ def build_event_entity_phase_report(
     *,
     catalog: ConnectionGoldCatalog,
     catalog_sha256: str,
-    phase: StageLocalPhase,
+    phase: EvaluationPhase,
     repetition: int,
     evaluations: tuple[EventEntityCaseEvaluation, ...],
     model_elapsed_milliseconds: int,
@@ -649,7 +649,7 @@ def build_event_entity_candidate_preflight_report(
     *,
     catalog: ConnectionGoldCatalog,
     catalog_sha256: str,
-    phase: StageLocalPhase,
+    phase: EvaluationPhase,
     inputs: tuple[EventEntityExperimentInput, ...],
 ) -> EventEntityCandidatePreflightReport:
     """Prove that upstream evidence can expose every Gold entity before model work."""

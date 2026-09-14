@@ -3,9 +3,9 @@
   "catalog_id": "hsq-event-entity-connection-gold-v1",
   "review_status": "approved",
   "trigger_gold_path": "docs/hsq-event-trigger-gold-v1.json",
-  "trigger_gold_sha256": "7a3885ded9fea7e3d2ba0f8aeb4155ea421a9b7477182ba5960d72949cdb37f4",
+  "trigger_gold_sha256": "e3a8ba6377dc61589960e147c108fd1dfe21a855bbd07283902589028678eb66",
   "source_grounded_gold_path": "docs/hsq-source-grounded-event-gold-v1.json",
-  "source_grounded_gold_sha256": "a5e4c12477153925797b4ee96408cf6d8c948706de698698f95896f09aba5add",
+  "source_grounded_gold_sha256": "eb6a3485fd42359da32fe41cf889f74986ed88840edcb09855a4d8cbd4bf02a8",
   "events": [
     {"event_id":"TGE-002","phase":"development","source_text_sha256":"7438981c5f67a586e62824f899dde376931333bc69728b43ccd04c167d71b7cf","event_meaning":"Dario Amodei criticized Stargate.","expected_entities":[{"entity_id":"EGE-001","entity_kind":"actor","canonical_name":"Dario Amodei","accepted_entity_names":["Dario Amodei","Amodei"],"accepted_source_texts":["Dario Amodei","Amodei"],"rationale":"Amodei is the person performing the criticism."}],"review_rationale":"Stargate is a Project, outside this Actor-and-Organization slice."},
     {"event_id":"TGE-003","phase":"development","source_text_sha256":"7438981c5f67a586e62824f899dde376931333bc69728b43ccd04c167d71b7cf","event_meaning":"Dario Amodei opposed Trump's rescission.","expected_entities":[{"entity_id":"EGE-002","entity_kind":"actor","canonical_name":"Dario Amodei","accepted_entity_names":["Dario Amodei","Amodei"],"accepted_source_texts":["Dario Amodei","Amodei"],"rationale":"Amodei performs the opposition."},{"entity_id":"EGE-003","entity_kind":"actor","canonical_name":"Trump","accepted_entity_names":["Trump","Donald Trump"],"accepted_source_texts":["Trump","Trump's"],"rationale":"The opposed rescission is Trump's action."},{"entity_id":"EGE-082","entity_kind":"actor","canonical_name":"Joe Biden","accepted_entity_names":["Joe Biden"],"accepted_source_texts":["Joe Biden","Joe Biden's"],"rationale":"The opposed rescission concerns the Executive Order explicitly identified with Biden."}],"review_rationale":"The Event connects Amodei, Trump as the rescinding Actor, and Biden through the explicitly identified Executive Order."},

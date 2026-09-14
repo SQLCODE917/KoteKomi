@@ -127,4 +127,4 @@ The September 13, 2026 canonical run verified the corrective mixed-proposition c
 
 - Standing plans: follow `packages/application/src/kotekomi_application/hybrid_standing_facts.py`.
 - Complete proposition evidence: follow HSQ-3 records and Ports.
-- Mixed-proposition Gold: follow `AMO-07` in `docs/hsq-task-allocation-amodei-gold-v1.json`.
+- Mixed-proposition Gold: follow `AMO-07` in `docs/hsq-standing-fact-gold-v1.json`.

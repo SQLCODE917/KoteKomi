@@ -1,15 +1,11 @@
 # TDD: Bounded Semantic Task Allocation
 
-- Status: In implementation; source-grounded Event boundary implemented and canonically verified
+- Status: Front-Half implementation retained; evaluation contract superseded by [Source-Grounded Evaluation Cutover](2026-09-13-source-grounded-evaluation-cutover.md)
 - Deliverable ID: HSQ-7
 - Program: [Hybrid Semantic Quality Program](2026-09-06-hybrid-semantic-quality-program.md)
 - Depends on: [Source-Bound Governed Event Extraction](2026-09-07-source-bound-governed-event-extraction.md)
-- Development Gold: [Amodei Task-Allocation Gold](hsq-task-allocation-amodei-gold-v1.json)
-- Historical validation Gold: [Anthropic Task-Allocation Gold](hsq-task-allocation-anthropic-gold-v1.json)
-- Pinned baseline: [September 8 Task-Allocation Baseline](hsq-task-allocation-baseline-2026-09-08.json)
-- Historical stage-local split: [Mention and Reference Evaluation Split v1](hsq-stage-local-split-v1.json)
-- Corrected stage-local split: [Mention and Reference Evaluation Split v2](hsq-stage-local-split-v2.json)
-- Evaluator corrections: [Stage-Local Evaluator Corrections](hsq-stage-local-evaluator-corrections-v1.json)
+- Current Front-Half Gold: [Amodei](hsq-front-half-amodei-gold-v1.json) and [Anthropic](hsq-front-half-anthropic-gold-v1.json)
+- Current evaluation split: [Front-Half Evaluation Split](hsq-front-half-split-v1.json)
 - Event trigger boundary: [SourceOccurrence to Event Trigger Boundary](2026-09-10-source-occurrence-event-trigger-boundary.md)
 - Source-grounded Event boundary: [Source-Grounded Event Boundary](2026-09-12-source-grounded-event-boundary.md)
 

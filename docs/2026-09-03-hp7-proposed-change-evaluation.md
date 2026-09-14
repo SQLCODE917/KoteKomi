@@ -1,10 +1,10 @@
 # HP-7 ProposedChange Integration Evaluation
 
-- Status: Historical evaluation; execution path superseded by [HSQ-6](2026-09-07-source-bound-governed-event-extraction.md)
+- Status: Superseded; no executable evaluation contract
+- Current evaluation: [Source-Grounded Evaluation Cutover](2026-09-13-source-grounded-evaluation-cutover.md)
 
 - Feature: [HP-7 Hybrid ProposedChange Integration](2026-09-03-hybrid-proposed-change-integration.md)
 - Parent evaluation: [HP-6 Qualified Event Semantics Evaluation](2026-09-02-hp6-qualified-event-semantics-evaluation.md)
-- Gold catalog: [HP-7 Proposal Admission Gold Catalog](hp7-proposal-admission-gold-v1.json)
 - Fixture: `raw/Anthropic–United_States_Department_of_Defense_dispute.pdf`
 
 ## Evaluation operation

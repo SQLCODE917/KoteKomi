@@ -24,17 +24,17 @@ from kotekomi_pipelines.event_trigger_stage_local import (
     load_trigger_gold_catalog,
     render_trigger_gold_review,
 )
-from kotekomi_pipelines.task_allocation_stage_local import load_stage_local_inputs
+from kotekomi_pipelines.front_half_stage_local import load_front_half_inputs
 
 ROOT = Path(__file__).resolve().parents[3]
-SPLIT = ROOT / "docs" / "hsq-stage-local-split-v2.json"
+SPLIT = ROOT / "docs" / "hsq-front-half-split-v1.json"
 TRIGGER_GOLD = ROOT / "docs" / "hsq-event-trigger-gold-v1.json"
 
 
 def test_trigger_gold_covers_every_unique_stage_local_segment_and_rejects_unapproved_copy(
     tmp_path: Path,
 ) -> None:
-    _, inputs = load_stage_local_inputs(SPLIT, repository_root=ROOT)
+    _, inputs = load_front_half_inputs(SPLIT, repository_root=ROOT)
 
     catalog = load_trigger_gold_catalog(
         TRIGGER_GOLD,
@@ -72,7 +72,7 @@ def test_trigger_gold_covers_every_unique_stage_local_segment_and_rejects_unappr
 
 
 def test_trigger_gold_rejects_split_digest_drift(tmp_path: Path) -> None:
-    _, inputs = load_stage_local_inputs(SPLIT, repository_root=ROOT)
+    _, inputs = load_front_half_inputs(SPLIT, repository_root=ROOT)
     value = json.loads(TRIGGER_GOLD.read_bytes())
     value["source_split_sha256"] = "0" * 64
     changed = tmp_path / "changed-trigger-gold.json"

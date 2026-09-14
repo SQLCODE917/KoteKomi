@@ -1,11 +1,11 @@
 # Hybrid Semantic Quality Program
 
-- Status: Corrective semantic closure in progress
+- Status: Source-grounded Event admission and current evaluation implemented
 - Program ID: `hybrid-semantic-quality`
 - Parent: [Hybrid Intelligence Extraction Pipeline](2026-09-01-hybrid-intelligence-extraction-pipeline.md)
 - Review basis: [Ingestion Architecture Review](2026-09-04-Ingestion-Architecture-Review.md)
 - First deliverable: [HSQ-1 Governed Event Coverage](2026-09-06-governed-event-coverage.md)
-- Current front-half deliverable: [HSQ-7 Bounded Semantic Task Allocation](2026-09-08-bounded-semantic-task-allocation.md)
+- Current evaluation: [Source-Grounded Evaluation Cutover](2026-09-13-source-grounded-evaluation-cutover.md)
 - Verified Event boundary: [SourceOccurrence to Event Trigger Boundary](2026-09-10-source-occurrence-event-trigger-boundary.md)
 - Current semantic boundary: [Source-Grounded Event Boundary](2026-09-12-source-grounded-event-boundary.md)
 - Current semantic-assignment experiment:
@@ -31,11 +31,7 @@ Canonical review also exposed overlapping trigger proposals, repeated Event view
 document-local short-name aliases, inconsistent entity types, and common event
 families that the governed profile could not represent.
 
-The [Amodei intelligence Gold catalog](hsq-amodei-intelligence-gold-v1.json) captures four source-backed omissions.
-
-Those four cases require five reviewable events on the Amodei Candidate Wiki page.
-
-This program improves those five boundaries without creating another extraction Pipeline.
+The current Front-Half, source-grounded Event, and Standing Fact catalogs preserve reviewed expectations without retaining retired admission checks.
 
 ### Terms
 

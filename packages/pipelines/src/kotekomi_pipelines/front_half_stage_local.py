@@ -1,4 +1,4 @@
-"""Stage-local mention and reference evaluation for the HSQ-7 Gold catalogs."""
+"""Front-half mention and reference evaluation for the reviewed HSQ corpus."""
 
 from __future__ import annotations
 
@@ -24,63 +24,46 @@ from kotekomi_application.hybrid_mention_interpretation import (
 from kotekomi_domain.models import JsonValue
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from kotekomi_pipelines.task_allocation_evaluation import (
-    TaskAllocationEvaluatorCorrection,
-    TaskAllocationEvaluatorCorrectionCatalog,
-    TaskAllocationGoldCatalog,
-    TaskAllocationItem,
-    load_task_allocation_gold,
-)
-
-type StageLocalPhase = Literal["development", "validation"]
+from kotekomi_pipelines.evaluation_contracts import EvaluationPhase
 
 
-class StageLocalCatalogPin(BaseModel):
+class FrontHalfSource(BaseModel):
+    """One exact paragraph used by Front-Half Gold."""
+
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
-    path: Annotated[str, Field(min_length=1)]
-    sha256: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
+    source_id: Annotated[str, Field(min_length=1)]
+    paragraph_ordinal: Annotated[int, Field(ge=0)]
+    source_text_sha256: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
+    source_text: Annotated[str, Field(min_length=1)]
 
     @model_validator(mode="after")
-    def validate_path(self) -> Self:
-        path = Path(self.path)
-        if path.is_absolute() or ".." in path.parts:
-            raise ValueError("Stage-local pinned paths must be repository-relative and contained.")
+    def validate_digest(self) -> Self:
+        if hashlib.sha256(self.source_text.encode()).hexdigest() != self.source_text_sha256:
+            raise ValueError("Front-Half source digest does not match its exact text.")
         return self
 
 
-class StageLocalSplit(BaseModel):
-    """Pinned 20/20 split with SourceSegment-level leakage prevention."""
+class FrontHalfFocusEntity(BaseModel):
+    """The entity whose mention boundary each catalog evaluates."""
 
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
-    schema_version: Literal["hsq_stage_local_split_v1", "hsq_stage_local_split_v2"]
-    catalogs: tuple[StageLocalCatalogPin, ...]
-    evaluator_corrections: StageLocalCatalogPin | None = None
-    development_item_ids: tuple[Annotated[str, Field(pattern=r"^(AMO|ANT)-[0-9]{2}$")], ...]
-    validation_item_ids: tuple[Annotated[str, Field(pattern=r"^(AMO|ANT)-[0-9]{2}$")], ...]
+    name: Annotated[str, Field(min_length=1)]
+    record_type: Literal["Actor", "Organization"]
+    accepted_source_literals: tuple[Annotated[str, Field(min_length=1)], ...]
 
     @model_validator(mode="after")
-    def validate_shape(self) -> Self:
-        if len(self.catalogs) != 2:
-            raise ValueError("Stage-local evaluation requires exactly two Gold catalogs.")
-        if (self.schema_version == "hsq_stage_local_split_v2") != (
-            self.evaluator_corrections is not None
+    def validate_literals(self) -> Self:
+        if not self.accepted_source_literals or len(set(self.accepted_source_literals)) != len(
+            self.accepted_source_literals
         ):
-            raise ValueError(
-                "Stage-local split v2 requires one evaluator-correction pin, and v1 forbids it."
-            )
-        if len(self.development_item_ids) != 20 or len(self.validation_item_ids) != 20:
-            raise ValueError("Stage-local evaluation requires a 20/20 item split.")
-        development = set(self.development_item_ids)
-        validation = set(self.validation_item_ids)
-        if len(development) != 20 or len(validation) != 20 or development & validation:
-            raise ValueError("Stage-local item partitions must be distinct and non-overlapping.")
+            raise ValueError("Front-Half focus literals must be non-empty and distinct.")
         return self
 
 
-class StageLocalReferenceExpectation(BaseModel):
-    """Effective source-bound reference oracle after explicit evaluator corrections."""
+class FrontHalfReferenceExpectation(BaseModel):
+    """One exact reference and its accepted exact antecedent texts."""
 
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
@@ -92,44 +75,159 @@ class StageLocalReferenceExpectation(BaseModel):
         if not self.accepted_antecedent_texts or len(set(self.accepted_antecedent_texts)) != len(
             self.accepted_antecedent_texts
         ):
-            raise ValueError("Effective antecedent alternatives must be non-empty and distinct.")
+            raise ValueError("Front-Half antecedent alternatives must be non-empty and distinct.")
         return self
 
 
-class StageLocalInput(BaseModel):
+class FrontHalfGoldItem(BaseModel):
+    """One reviewed mention and reference expectation."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    item_id: Annotated[str, Field(pattern=r"^(AMO|ANT)-[0-9]{2}$")]
+    source_id: Annotated[str, Field(min_length=1)]
+    source_segment_label: Annotated[str, Field(pattern=r"^s[1-9][0-9]*$")]
+    source_segment_sha256: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
+    expected_summary: Annotated[str, Field(min_length=1)]
+    expected_references: tuple[FrontHalfReferenceExpectation, ...] = ()
+
+    @model_validator(mode="after")
+    def validate_references(self) -> Self:
+        references = tuple(item.reference_text for item in self.expected_references)
+        if len(set(references)) != len(references):
+            raise ValueError("Front-Half reference expectations must be distinct.")
+        return self
+
+
+class FrontHalfGoldCatalog(BaseModel):
+    """Twenty reviewed source cases for one focus entity."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    schema_version: Literal["hsq_front_half_gold_v1"] = "hsq_front_half_gold_v1"
+    catalog_id: Annotated[str, Field(min_length=1)]
+    fixture_path: Annotated[str, Field(min_length=1)]
+    fixture_sha256: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
+    focus_entity: FrontHalfFocusEntity
+    sources: tuple[FrontHalfSource, ...]
+    items: tuple[FrontHalfGoldItem, ...]
+
+    @model_validator(mode="after")
+    def validate_catalog(self) -> Self:
+        if len(self.items) != 20:
+            raise ValueError("Front-Half Gold requires exactly twenty items.")
+        if len({item.item_id for item in self.items}) != len(self.items):
+            raise ValueError("Front-Half Gold item IDs must be distinct.")
+        sources = {item.source_id: item for item in self.sources}
+        if len(sources) != len(self.sources):
+            raise ValueError("Front-Half source IDs must be distinct.")
+        for item in self.items:
+            source = sources.get(item.source_id)
+            if source is None:
+                raise ValueError("Front-Half Gold item references an unknown source.")
+            segments = {
+                segment.label: segment
+                for segment in paragraph_source_segments(source.source_text, PARAGRAPH_SEGMENT_V3)
+            }
+            segment = segments.get(item.source_segment_label)
+            if segment is None:
+                raise ValueError("Front-Half Gold item references an unknown SourceSegment.")
+            if hashlib.sha256(segment.exact_text.encode()).hexdigest() != (
+                item.source_segment_sha256
+            ):
+                raise ValueError("Front-Half SourceSegment digest does not match.")
+            if not any(
+                literal in segment.exact_text
+                for literal in self.focus_entity.accepted_source_literals
+            ):
+                raise ValueError("Front-Half SourceSegment omits its focus entity.")
+            for expectation in item.expected_references:
+                if expectation.reference_text not in segment.exact_text:
+                    raise ValueError("Front-Half reference is absent from its SourceSegment.")
+                if any(
+                    value not in segment.exact_text
+                    for value in expectation.accepted_antecedent_texts
+                ):
+                    raise ValueError("Front-Half antecedent is absent from its SourceSegment.")
+        return self
+
+
+def load_front_half_gold(path: Path) -> FrontHalfGoldCatalog:
+    """Load one strict Front-Half Gold catalog."""
+    return FrontHalfGoldCatalog.model_validate_json(path.read_bytes())
+
+
+class FrontHalfCatalogPin(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    path: Annotated[str, Field(min_length=1)]
+    sha256: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
+
+    @model_validator(mode="after")
+    def validate_path(self) -> Self:
+        path = Path(self.path)
+        if path.is_absolute() or ".." in path.parts:
+            raise ValueError("Front-Half pinned paths must be repository-relative and contained.")
+        return self
+
+
+class FrontHalfSplit(BaseModel):
+    """Pinned 20/20 split with SourceSegment-level leakage prevention."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    schema_version: Literal["hsq_front_half_split_v1"] = "hsq_front_half_split_v1"
+    catalogs: tuple[FrontHalfCatalogPin, ...]
+    development_item_ids: tuple[Annotated[str, Field(pattern=r"^(AMO|ANT)-[0-9]{2}$")], ...]
+    validation_item_ids: tuple[Annotated[str, Field(pattern=r"^(AMO|ANT)-[0-9]{2}$")], ...]
+
+    @model_validator(mode="after")
+    def validate_shape(self) -> Self:
+        if len(self.catalogs) != 2:
+            raise ValueError("Front-Half evaluation requires exactly two Gold catalogs.")
+        if len(self.development_item_ids) != 20 or len(self.validation_item_ids) != 20:
+            raise ValueError("Front-Half evaluation requires a 20/20 item split.")
+        development = set(self.development_item_ids)
+        validation = set(self.validation_item_ids)
+        if len(development) != 20 or len(validation) != 20 or development & validation:
+            raise ValueError("Front-Half item partitions must be distinct and non-overlapping.")
+        return self
+
+
+class FrontHalfInput(BaseModel):
     """Exact authoritative input and Gold expectations for one item."""
 
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
-    phase: StageLocalPhase
+    phase: EvaluationPhase
     catalog_id: str
-    item: TaskAllocationItem
+    item: FrontHalfGoldItem
     focus_entity_name: str
     focus_record_type: Literal["Actor", "Organization"]
+    accepted_focus_literals: tuple[Annotated[str, Field(min_length=1)], ...]
     source_text: str
     source_text_sha256: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
-    expected_references: tuple[StageLocalReferenceExpectation, ...]
+
+    @property
+    def expected_references(self) -> tuple[FrontHalfReferenceExpectation, ...]:
+        return self.item.expected_references
 
     @model_validator(mode="after")
     def validate_source(self) -> Self:
         if hashlib.sha256(self.source_text.encode()).hexdigest() != self.source_text_sha256:
-            raise ValueError("Stage-local source text does not match its SHA-256.")
+            raise ValueError("Front-Half source text does not match its SHA-256.")
         if self.item.source_segment_sha256 != self.source_text_sha256:
-            raise ValueError("Stage-local item and source text identify different segments.")
-        if tuple(item.reference_text for item in self.expected_references) != tuple(
-            item.reference_text for item in self.item.expected_references
-        ):
-            raise ValueError("Effective reference expectations do not match the Gold item.")
+            raise ValueError("Front-Half item and source text identify different segments.")
         if any(
             value not in self.source_text
             for expectation in self.expected_references
             for value in expectation.accepted_antecedent_texts
         ):
-            raise ValueError("Effective antecedent text is absent from its SourceSegment.")
+            raise ValueError("Front-Half antecedent text is absent from its SourceSegment.")
         return self
 
 
-class StageLocalCheck(BaseModel):
+class FrontHalfCheck(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
     check_id: str
@@ -139,15 +237,15 @@ class StageLocalCheck(BaseModel):
     actual: object
 
 
-class StageLocalCaseEvaluation(BaseModel):
+class FrontHalfCaseEvaluation(BaseModel):
     """Ordered first-failure evaluation for one Gold item."""
 
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
     item_id: str
-    phase: StageLocalPhase
+    phase: EvaluationPhase
     source_text_sha256: str
-    checks: tuple[StageLocalCheck, ...]
+    checks: tuple[FrontHalfCheck, ...]
     first_failed_stage: str | None
     passed: bool
 
@@ -155,11 +253,11 @@ class StageLocalCaseEvaluation(BaseModel):
     def validate_outcome(self) -> Self:
         first_failure = next((item.stage_id for item in self.checks if not item.passed), None)
         if self.first_failed_stage != first_failure or self.passed != (first_failure is None):
-            raise ValueError("Stage-local case outcome does not match its ordered checks.")
+            raise ValueError("Front-Half case outcome does not match its ordered checks.")
         return self
 
 
-class StageLocalBoundaryContractCase(BaseModel):
+class FrontHalfBoundaryContractCase(BaseModel):
     """Candidate-completeness evidence for one ambiguous boundary component."""
 
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
@@ -186,7 +284,7 @@ class StageLocalBoundaryContractCase(BaseModel):
             ("unresolved candidate IDs", self.unresolved_candidate_ids),
         ):
             if tuple(sorted(values)) != values or len(set(values)) != len(values):
-                raise ValueError(f"Stage-local boundary {label} must be ordered and distinct.")
+                raise ValueError(f"Front-Half boundary {label} must be ordered and distinct.")
         supplied = set(self.supplied_candidate_ids)
         deterministic = set(self.deterministic_complete_candidate_ids)
         terminal = set(self.terminal_judgment_candidate_ids)
@@ -210,7 +308,7 @@ class StageLocalBoundaryContractCase(BaseModel):
         return self
 
 
-class StageLocalBoundaryContractSummary(BaseModel):
+class FrontHalfBoundaryContractSummary(BaseModel):
     """All-candidate output-contract coverage, independent of Gold focus accuracy."""
 
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
@@ -225,7 +323,7 @@ class StageLocalBoundaryContractSummary(BaseModel):
     duplicate_label_count: Annotated[int, Field(ge=0)]
     unknown_label_count: Annotated[int, Field(ge=0)]
     contract_complete: bool
-    cases: tuple[StageLocalBoundaryContractCase, ...]
+    cases: tuple[FrontHalfBoundaryContractCase, ...]
 
     @model_validator(mode="after")
     def validate_summary(self) -> Self:
@@ -251,19 +349,19 @@ class StageLocalBoundaryContractSummary(BaseModel):
         }
         for field_name, value in expected.items():
             if getattr(self, field_name) != value:
-                raise ValueError(f"Stage-local boundary {field_name} drifted.")
+                raise ValueError(f"Front-Half boundary {field_name} drifted.")
         if self.contract_complete != all(item.contract_complete for item in cases):
             raise ValueError("Boundary contract summary does not match its cases.")
         return self
 
 
-class StageLocalPhaseReport(BaseModel):
+class FrontHalfPhaseReport(BaseModel):
     """Auditable mention/reference result for one split phase."""
 
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
-    schema_version: Literal["hsq_stage_local_phase_report_v2"] = "hsq_stage_local_phase_report_v2"
-    phase: StageLocalPhase
+    schema_version: Literal["hsq_front_half_phase_report_v1"] = "hsq_front_half_phase_report_v1"
+    phase: EvaluationPhase
     item_count: int
     unique_source_segment_count: int
     passed_count: int
@@ -273,39 +371,118 @@ class StageLocalPhaseReport(BaseModel):
     accepted_ledger_change_count: Literal[0] = 0
     optional_experiments: dict[str, str]
     optional_experiment_measurements: dict[str, int] = Field(default_factory=dict)
-    boundary_contract: StageLocalBoundaryContractSummary
-    cases: tuple[StageLocalCaseEvaluation, ...]
+    boundary_contract: FrontHalfBoundaryContractSummary
+    cases: tuple[FrontHalfCaseEvaluation, ...]
 
     @model_validator(mode="after")
     def validate_summary(self) -> Self:
         if self.item_count != len(self.cases):
-            raise ValueError("Stage-local report item count drifted.")
+            raise ValueError("Front-Half report item count drifted.")
         if self.passed_count != sum(item.passed for item in self.cases):
-            raise ValueError("Stage-local report pass count drifted.")
+            raise ValueError("Front-Half report pass count drifted.")
         counts: dict[str, int] = {}
         for item in self.cases:
             if item.first_failed_stage is not None:
                 counts[item.first_failed_stage] = counts.get(item.first_failed_stage, 0) + 1
         if self.first_failed_stage_counts != dict(sorted(counts.items())):
-            raise ValueError("Stage-local first-failure counts drifted.")
+            raise ValueError("Front-Half first-failure counts drifted.")
         return self
 
 
-def load_stage_local_inputs(
+class FrontHalfPartitionSummary(BaseModel):
+    """One current Front-Half Gold partition summary."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    phase: EvaluationPhase
+    item_count: Annotated[int, Field(ge=0)]
+    passed_count: Annotated[int, Field(ge=0)]
+    first_failed_stage_counts: dict[str, int]
+    passed: bool
+
+
+class FrontHalfEvaluationReport(BaseModel):
+    """Current mention/reference evaluation over both reviewed partitions."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    schema_version: Literal["hsq_front_half_evaluation_v1"] = "hsq_front_half_evaluation_v1"
+    item_count: Annotated[int, Field(ge=0)]
+    passed_count: Annotated[int, Field(ge=0)]
+    partitions: tuple[FrontHalfPartitionSummary, ...]
+    cases: tuple[FrontHalfCaseEvaluation, ...]
+    passed: bool
+
+    @model_validator(mode="after")
+    def validate_report(self) -> Self:
+        if tuple(item.phase for item in self.partitions) != ("development", "validation"):
+            raise ValueError("Front-Half evaluation requires both ordered partitions.")
+        if self.item_count != len(self.cases) or self.passed_count != sum(
+            item.passed for item in self.cases
+        ):
+            raise ValueError("Front-Half evaluation counts drifted.")
+        for partition in self.partitions:
+            cases = tuple(item for item in self.cases if item.phase == partition.phase)
+            if partition != _front_half_partition(partition.phase, cases):
+                raise ValueError("Front-Half partition summary drifted.")
+        if self.passed != all(item.passed for item in self.cases):
+            raise ValueError("Front-Half evaluation pass state drifted.")
+        return self
+
+
+def build_front_half_evaluation_report(
+    evaluations: tuple[FrontHalfCaseEvaluation, ...],
+) -> FrontHalfEvaluationReport:
+    """Build the current read-only Front-Half report."""
+    ordered = tuple(sorted(evaluations, key=lambda item: item.item_id))
+    partitions = tuple(
+        _front_half_partition(
+            phase,
+            tuple(item for item in ordered if item.phase == phase),
+        )
+        for phase in ("development", "validation")
+    )
+    return FrontHalfEvaluationReport(
+        item_count=len(ordered),
+        passed_count=sum(item.passed for item in ordered),
+        partitions=partitions,
+        cases=ordered,
+        passed=all(item.passed for item in ordered),
+    )
+
+
+def _front_half_partition(
+    phase: EvaluationPhase,
+    cases: tuple[FrontHalfCaseEvaluation, ...],
+) -> FrontHalfPartitionSummary:
+    failures: dict[str, int] = {}
+    for item in cases:
+        if item.first_failed_stage is not None:
+            failures[item.first_failed_stage] = failures.get(item.first_failed_stage, 0) + 1
+    return FrontHalfPartitionSummary(
+        phase=phase,
+        item_count=len(cases),
+        passed_count=sum(item.passed for item in cases),
+        first_failed_stage_counts=dict(sorted(failures.items())),
+        passed=all(item.passed for item in cases),
+    )
+
+
+def load_front_half_inputs(
     split_path: Path,
     *,
     repository_root: Path,
-) -> tuple[StageLocalSplit, tuple[StageLocalInput, ...]]:
+) -> tuple[FrontHalfSplit, tuple[FrontHalfInput, ...]]:
     """Validate catalog pins, split coverage, and SourceSegment leakage."""
-    split = StageLocalSplit.model_validate_json(split_path.read_bytes())
-    catalogs: list[TaskAllocationGoldCatalog] = []
+    split = FrontHalfSplit.model_validate_json(split_path.read_bytes())
+    catalogs: list[FrontHalfGoldCatalog] = []
     for pin in split.catalogs:
         catalog_path = repository_root / pin.path
         payload = catalog_path.read_bytes()
         if hashlib.sha256(payload).hexdigest() != pin.sha256:
-            raise ValueError(f"Stage-local Gold catalog pin drifted: {pin.path}")
-        catalogs.append(load_task_allocation_gold(catalog_path))
-    by_item: dict[str, tuple[TaskAllocationGoldCatalog, TaskAllocationItem, str]] = {}
+            raise ValueError(f"Front-Half Gold catalog pin drifted: {pin.path}")
+        catalogs.append(load_front_half_gold(catalog_path))
+    by_item: dict[str, tuple[FrontHalfGoldCatalog, FrontHalfGoldItem, str]] = {}
     for catalog in catalogs:
         sources = {item.source_id: item for item in catalog.sources}
         for item in catalog.items:
@@ -316,44 +493,10 @@ def load_stage_local_inputs(
                 if value.label == item.source_segment_label
             )
             by_item[item.item_id] = (catalog, item, segment.exact_text)
-    corrections: dict[tuple[str, str], TaskAllocationEvaluatorCorrection] = {}
-    if split.evaluator_corrections is not None:
-        correction_path = repository_root / split.evaluator_corrections.path
-        correction_payload = correction_path.read_bytes()
-        if hashlib.sha256(correction_payload).hexdigest() != split.evaluator_corrections.sha256:
-            raise ValueError(
-                f"Stage-local evaluator-correction pin drifted: {split.evaluator_corrections.path}"
-            )
-        correction_catalog = TaskAllocationEvaluatorCorrectionCatalog.model_validate_json(
-            correction_payload
-        )
-        for correction in correction_catalog.corrections:
-            target = by_item.get(correction.item_id)
-            if target is None:
-                raise ValueError("Evaluator correction references an unknown Gold item.")
-            _, item, source_text = target
-            expected_reference = next(
-                (
-                    expectation
-                    for expectation in item.expected_references
-                    if expectation.reference_text == correction.reference_text
-                ),
-                None,
-            )
-            if expected_reference is None:
-                raise ValueError("Evaluator correction references an unknown Gold reference.")
-            if (
-                correction.source_text_sha256 != item.source_segment_sha256
-                or correction.previous_antecedent_text != expected_reference.antecedent_text
-            ):
-                raise ValueError("Evaluator correction does not match its parent Gold contract.")
-            if any(value not in source_text for value in correction.accepted_antecedent_texts):
-                raise ValueError("Evaluator correction names text absent from its SourceSegment.")
-            corrections[(correction.item_id, correction.reference_text)] = correction
     expected_ids = set(by_item)
     actual_ids = set(split.development_item_ids) | set(split.validation_item_ids)
     if actual_ids != expected_ids:
-        raise ValueError("Stage-local split does not cover the forty Gold items exactly.")
+        raise ValueError("Front-Half split does not cover the forty Gold items exactly.")
     development_sha = {
         by_item[item_id][1].source_segment_sha256 for item_id in split.development_item_ids
     }
@@ -363,45 +506,33 @@ def load_stage_local_inputs(
     overlap = development_sha & validation_sha
     if overlap:
         raise ValueError(
-            "Stage-local SourceSegment leakage crosses split phases: " + ", ".join(sorted(overlap))
+            "Front-Half SourceSegment leakage crosses split phases: " + ", ".join(sorted(overlap))
         )
-    phase_by_id: dict[str, StageLocalPhase] = {
+    phase_by_id: dict[str, EvaluationPhase] = {
         **{item_id: "development" for item_id in split.development_item_ids},
         **{item_id: "validation" for item_id in split.validation_item_ids},
     }
     inputs = tuple(
-        StageLocalInput(
+        FrontHalfInput(
             phase=phase_by_id[item_id],
             catalog_id=catalog.catalog_id,
             item=item,
             focus_entity_name=catalog.focus_entity.name,
             focus_record_type=catalog.focus_entity.record_type,
+            accepted_focus_literals=catalog.focus_entity.accepted_source_literals,
             source_text=source_text,
             source_text_sha256=item.source_segment_sha256,
-            expected_references=tuple(
-                StageLocalReferenceExpectation(
-                    reference_text=expectation.reference_text,
-                    accepted_antecedent_texts=(
-                        corrections[
-                            (item.item_id, expectation.reference_text)
-                        ].accepted_antecedent_texts
-                        if (item.item_id, expectation.reference_text) in corrections
-                        else (expectation.antecedent_text,)
-                    ),
-                )
-                for expectation in item.expected_references
-            ),
         )
         for item_id, (catalog, item, source_text) in sorted(by_item.items())
     )
     return split, inputs
 
 
-def evaluate_stage_local_case(
-    stage_input: StageLocalInput,
+def evaluate_front_half_case(
+    stage_input: FrontHalfInput,
     mention: HybridExtractionPreview,
     references: HybridReferencePreview | None,
-) -> StageLocalCaseEvaluation:
+) -> FrontHalfCaseEvaluation:
     """Find the first faulty mention/reference boundary for one Gold item."""
     target_candidates = tuple(
         item
@@ -453,28 +584,28 @@ def evaluate_stage_local_case(
         and interpretation_by_candidate[item.id].contextual_kind.value == expected_kind
     )
     checks = [
-        StageLocalCheck(
+        FrontHalfCheck(
             check_id="focus_mention",
             stage_id="mention_proposal",
             passed=bool(focus_candidates),
             expected=sorted(accepted_focus_literals),
             actual=[item.text for item in target_candidates],
         ),
-        StageLocalCheck(
+        FrontHalfCheck(
             check_id="focus_boundary",
             stage_id="mention_boundary_reconciliation",
             passed=bool(reconciled_focus),
             expected="at least one focus candidate retained for deterministic or semantic routing",
             actual=[item.text for item in reconciled_focus],
         ),
-        StageLocalCheck(
+        FrontHalfCheck(
             check_id="focus_boundary_adjudication",
             stage_id="mention_boundary_adjudication",
             passed=bool(selected_focus),
             expected="at least one effective focus candidate",
             actual=[item.text for item in selected_focus],
         ),
-        StageLocalCheck(
+        FrontHalfCheck(
             check_id="focus_interpretation",
             stage_id="mention_interpretation",
             passed=bool(interpreted_focus),
@@ -505,7 +636,7 @@ def evaluate_stage_local_case(
             )
         )
         checks.append(
-            StageLocalCheck(
+            FrontHalfCheck(
                 check_id=f"reference_marker_{ordinal}",
                 stage_id="reference_marker",
                 passed=bool(reference_candidates),
@@ -514,7 +645,7 @@ def evaluate_stage_local_case(
             )
         )
         checks.append(
-            StageLocalCheck(
+            FrontHalfCheck(
                 check_id=f"reference_routing_{ordinal}",
                 stage_id="reference_routing",
                 passed=bool(routed_references),
@@ -550,7 +681,7 @@ def evaluate_stage_local_case(
                 if span_id in spans
             ]
         checks.append(
-            StageLocalCheck(
+            FrontHalfCheck(
                 check_id=f"reference_resolution_{ordinal}",
                 stage_id="reference_resolution",
                 passed=any(
@@ -565,7 +696,7 @@ def evaluate_stage_local_case(
         )
     ordered = tuple(checks)
     first_failure = next((item.stage_id for item in ordered if not item.passed), None)
-    return StageLocalCaseEvaluation(
+    return FrontHalfCaseEvaluation(
         item_id=stage_input.item.item_id,
         phase=stage_input.phase,
         source_text_sha256=stage_input.source_text_sha256,
@@ -575,19 +706,19 @@ def evaluate_stage_local_case(
     )
 
 
-def build_stage_local_report(
+def build_front_half_report(
     *,
-    phase: StageLocalPhase,
-    evaluations: tuple[StageLocalCaseEvaluation, ...],
+    phase: EvaluationPhase,
+    evaluations: tuple[FrontHalfCaseEvaluation, ...],
     producer_elapsed_milliseconds: dict[str, int],
-    boundary_contract: StageLocalBoundaryContractSummary,
+    boundary_contract: FrontHalfBoundaryContractSummary,
     optional_experiment_measurements: dict[str, int] | None = None,
-) -> StageLocalPhaseReport:
+) -> FrontHalfPhaseReport:
     failures: dict[str, int] = {}
     for item in evaluations:
         if item.first_failed_stage is not None:
             failures[item.first_failed_stage] = failures.get(item.first_failed_stage, 0) + 1
-    return StageLocalPhaseReport(
+    return FrontHalfPhaseReport(
         phase=phase,
         item_count=len(evaluations),
         unique_source_segment_count=len({item.source_text_sha256 for item in evaluations}),
@@ -604,18 +735,18 @@ def build_stage_local_report(
     )
 
 
-def evaluate_stage_local_boundary_contract(
+def evaluate_front_half_boundary_contract(
     previews: tuple[HybridExtractionPreview, ...],
-) -> StageLocalBoundaryContractSummary:
+) -> FrontHalfBoundaryContractSummary:
     """Evaluate every ambiguous component once, independently from focus-item Gold."""
     segment_digests: set[str] = set()
-    cases: list[StageLocalBoundaryContractCase] = []
+    cases: list[FrontHalfBoundaryContractCase] = []
     for preview in previews:
         preview_digests = {item.source_text_sha256 for item in preview.candidates}
         overlap = segment_digests & preview_digests
         if overlap:
             raise ValueError(
-                "Stage-local boundary contract received duplicate SourceSegment evidence: "
+                "Front-Half boundary contract received duplicate SourceSegment evidence: "
                 + ", ".join(sorted(overlap))
             )
         segment_digests.update(preview_digests)
@@ -697,7 +828,7 @@ def evaluate_stage_local_boundary_contract(
                 and len(terminal_candidate_ids) == len(supplied_candidate_ids)
             )
             cases.append(
-                StageLocalBoundaryContractCase(
+                FrontHalfBoundaryContractCase(
                     source_segment_id=decision.source_segment_id,
                     source_text_sha256=next(iter(source_digests)),
                     boundary_decision_id=decision.id,
@@ -714,7 +845,7 @@ def evaluate_stage_local_boundary_contract(
     ordered = tuple(
         sorted(cases, key=lambda item: (item.source_text_sha256, item.boundary_decision_id))
     )
-    return StageLocalBoundaryContractSummary(
+    return FrontHalfBoundaryContractSummary(
         ambiguous_component_count=len(ordered),
         adjudication_count=sum(item.adjudication_id is not None for item in ordered),
         supplied_candidate_count=sum(len(item.supplied_candidate_ids) for item in ordered),
@@ -761,11 +892,8 @@ def _boundary_trace_deterministic_candidate_ids(
     return tuple(sorted(cast(str, item) for item in values))
 
 
-def _focus_literals(stage_input: StageLocalInput) -> set[str]:
-    names = {stage_input.focus_entity_name}
-    if stage_input.focus_record_type == "Actor":
-        names.add(stage_input.focus_entity_name.rsplit(" ", maxsplit=1)[-1])
-    return {_normalized_entity_literal(item) for item in names}
+def _focus_literals(stage_input: FrontHalfInput) -> set[str]:
+    return {_normalized_entity_literal(item) for item in stage_input.accepted_focus_literals}
 
 
 def _reference_literal_matches(actual: str, expected: str) -> bool:
