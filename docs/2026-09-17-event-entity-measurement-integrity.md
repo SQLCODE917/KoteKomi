@@ -1,6 +1,6 @@
 # Event-Entity Measurement Integrity
 
-- Status: Implemented; cumulative repository verification pending
+- Status: Verified
 - Parent: [Event-Entity Connection Experiment](2026-09-12-event-entity-connection-experiment.md)
 - Review input:
   [Event-Entity Connection Second Opinion](2026-09-16-event-entity-connection-second-opinion.md)
@@ -218,3 +218,7 @@ The validation connected-sensitivity bound was precision `0.625`, recall `0.7291
 `0.673077`.
 
 The tracked verifier is `scripts/verify_event_entity_measurement.py`.
+
+The cumulative repository check completed on 2026-09-17 with formatting, lint, and typecheck
+passing and `1596` tests passing with `1` skipped. The durable JUnit report contained zero errors
+and zero failures.

@@ -10,6 +10,7 @@ from typing import Annotated, Literal, Self
 
 from kotekomi_application import (
     PropositionFragmentCandidate,
+    PropositionFragmentReason,
     SourceGroundedPropositionScope,
 )
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -138,6 +139,9 @@ class PropositionScopePreflight(BaseModel):
 
     event_id: str
     candidate_ids: tuple[str, ...]
+    gold_compatible_candidate_ids: tuple[str, ...]
+    gold_overreaching_candidate_ids: tuple[str, ...]
+    blocking_candidate_ids: tuple[str, ...]
     covered_fragment_ids: tuple[str, ...]
     missing_fragment_ids: tuple[str, ...]
     passed: bool
@@ -145,12 +149,30 @@ class PropositionScopePreflight(BaseModel):
     @model_validator(mode="after")
     def validate_contract(self) -> Self:
         _ordered_distinct("Proposition preflight candidates", self.candidate_ids)
+        _ordered_distinct(
+            "Proposition preflight Gold-compatible candidates",
+            self.gold_compatible_candidate_ids,
+        )
+        _ordered_distinct(
+            "Proposition preflight Gold-overreaching candidates",
+            self.gold_overreaching_candidate_ids,
+        )
+        _ordered_distinct(
+            "Proposition preflight blocking candidates",
+            self.blocking_candidate_ids,
+        )
         _ordered_distinct("Proposition preflight covered fragments", self.covered_fragment_ids)
         _ordered_distinct("Proposition preflight missing fragments", self.missing_fragment_ids)
+        compatible = set(self.gold_compatible_candidate_ids)
+        overreaching = set(self.gold_overreaching_candidate_ids)
+        if compatible & overreaching or compatible | overreaching != set(self.candidate_ids):
+            raise ValueError("Proposition preflight Gold compatibility must partition candidates.")
+        if not set(self.blocking_candidate_ids) <= overreaching:
+            raise ValueError("Proposition preflight blockers must be Gold-overreaching candidates.")
         if set(self.covered_fragment_ids) & set(self.missing_fragment_ids):
             raise ValueError("Proposition preflight fragment results overlap.")
-        if self.passed != (not self.missing_fragment_ids):
-            raise ValueError("Proposition preflight status drifted from missing fragments.")
+        if self.passed != (not self.missing_fragment_ids and not self.blocking_candidate_ids):
+            raise ValueError("Proposition preflight status drifted from exact representability.")
         return self
 
 
@@ -291,15 +313,34 @@ def evaluate_proposition_candidate_preflight(
     gold: PropositionGoldEvent,
     candidates: tuple[PropositionFragmentCandidate, ...],
 ) -> PropositionScopePreflight:
-    """Prove candidate generation can cover reviewed source characters."""
-    candidate_positions = _meaningful_positions(
+    """Prove whole-candidate decisions can reproduce every meaningful Gold character."""
+    gold_positions = _meaningful_positions(
         gold.source_text,
-        tuple((item.start, item.end) for item in candidates),
+        tuple((item.start, item.end) for item in gold.fragments),
+    )
+    compatible = tuple(
+        item
+        for item in candidates
+        if _meaningful_positions(
+            gold.source_text,
+            ((item.start, item.end),),
+        )
+        <= gold_positions
+    )
+    compatible_ids = {item.id for item in compatible}
+    overreaching = tuple(item for item in candidates if item.id not in compatible_ids)
+    blocking = tuple(
+        item for item in overreaching if PropositionFragmentReason.EVENT_EXPRESSION in item.reasons
+    )
+    compatible_positions = _meaningful_positions(
+        gold.source_text,
+        tuple((item.start, item.end) for item in compatible),
     )
     covered = tuple(
         item.fragment_id
         for item in gold.fragments
-        if _meaningful_positions(gold.source_text, ((item.start, item.end),)) <= candidate_positions
+        if _meaningful_positions(gold.source_text, ((item.start, item.end),))
+        <= compatible_positions
     )
     missing = tuple(
         item.fragment_id for item in gold.fragments if item.fragment_id not in set(covered)
@@ -307,9 +348,12 @@ def evaluate_proposition_candidate_preflight(
     return PropositionScopePreflight(
         event_id=gold.event_id,
         candidate_ids=tuple(sorted(item.id for item in candidates)),
+        gold_compatible_candidate_ids=tuple(sorted(item.id for item in compatible)),
+        gold_overreaching_candidate_ids=tuple(sorted(item.id for item in overreaching)),
+        blocking_candidate_ids=tuple(sorted(item.id for item in blocking)),
         covered_fragment_ids=tuple(sorted(covered)),
         missing_fragment_ids=tuple(sorted(missing)),
-        passed=not missing,
+        passed=not missing and not blocking,
     )
 
 
@@ -431,6 +475,79 @@ def render_proposition_gold_review(catalog: PropositionGoldCatalog) -> str:
         "# Source-Grounded Proposition Scope Gold Review",
         "",
         f"Review status: `{catalog.review_status.value}`",
+        "",
+        "## Review contract",
+        "",
+        (
+            "Gold records the source meaning required at this boundary, not the current "
+            "model's convenience, a final knowledge graph, or unqualified world truth."
+        ),
+        "",
+        (
+            "KoteKomi supplies the authoritative SourceSegment, one exact Event "
+            "expression, and one exact Fragment Candidate."
+        ),
+        "",
+        (
+            "Stanza supplies tokenization, part-of-speech, lemma, and dependency evidence; "
+            "it does not decide semantic truth, proposition scope, or chronology."
+        ),
+        "",
+        (
+            "QANom proposes whether a noun is eventive; it does not decide participants, "
+            "time, truth, or proposition scope."
+        ),
+        "",
+        (
+            "GLiNER proposes entity spans and type hints, ReFinED proposes external "
+            "identity, and F-Coref proposes antecedent links; none of them decides "
+            "proposition scope."
+        ),
+        "",
+        (
+            "Qwen2.5 receives the complete SourceSegment, one marked Event expression, "
+            "and one marked Fragment Candidate, then answers only `Y`, `N`, or `U` about "
+            "semantic membership."
+        ),
+        "",
+        (
+            "Qwen2.5 does not construct KoteKomi identifiers, source offsets, Domain Core "
+            "records, semantic roles, Event-to-Event edges, or a timeline."
+        ),
+        "",
+        (
+            "KoteKomi validates source characters, maps each answer to its supplied "
+            "candidate, constructs records, and preserves data-in/data-out traces."
+        ),
+        "",
+        "Human review defines Gold and authorizes any later accepted Ledger state.",
+        "",
+        (
+            "A candidate-generation gap and a semantic-judgment error are different "
+            "failures and must remain separately measurable."
+        ),
+        "",
+        (
+            "Gold can require an exact fragment-membership decision only when "
+            "deterministic candidates can represent that fragment."
+        ),
+        "",
+        (
+            "Gold does not require normalized semantic roles, Event-to-Event edges, "
+            "external world knowledge, or temporal ordering beyond this experiment's "
+            "boundary."
+        ),
+        "",
+        (
+            "A temporal phrase belongs to an Event proposition only when the "
+            "SourceSegment's grammar binds that phrase to the Event."
+        ),
+        "",
+        (
+            "Nested Event mentions remain distinct: an outer Event can include a nested "
+            "Event expression without proving a date, role, or independent occurrence "
+            "that the Source does not establish."
+        ),
         "",
     ]
     for event in catalog.events:

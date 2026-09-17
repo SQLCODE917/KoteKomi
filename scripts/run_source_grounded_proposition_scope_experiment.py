@@ -19,6 +19,7 @@ from kotekomi_application import (
     ExtractionStageTrace,
     PropositionFragmentCandidate,
     PropositionFragmentDecision,
+    PropositionFragmentReason,
     SourceGroundedPropositionScope,
     SourceSegmentAnalysisUnitInput,
     Uuid4ModelRunIdFactory,
@@ -67,7 +68,7 @@ from kotekomi_pipelines.source_grounded_proposition_stage_local import (
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_GOLD = REPOSITORY_ROOT / "docs/hsq-source-grounded-proposition-gold-v1.json"
-DEFAULT_PROMPT = REPOSITORY_ROOT / "prompts/source_grounded_proposition_fragment_membership_v1.md"
+DEFAULT_PROMPT = REPOSITORY_ROOT / "prompts/source_grounded_proposition_fragment_membership_v3.md"
 
 
 class _ExperimentLedger:
@@ -164,6 +165,10 @@ def main() -> int:
     run.add_argument("--config", type=Path, required=True)
     run.add_argument("--run-root", type=Path, required=True)
 
+    refresh = commands.add_parser("refresh")
+    refresh.add_argument("--config", type=Path, required=True)
+    refresh.add_argument("--run-root", type=Path, required=True)
+
     finalize = commands.add_parser("finalize")
     finalize.add_argument("--gold", type=Path, default=DEFAULT_GOLD)
     finalize.add_argument("--run-root", type=Path, required=True)
@@ -178,6 +183,8 @@ def main() -> int:
         return _prepare(args)
     if args.command == "run":
         return _run(args)
+    if args.command == "refresh":
+        return _refresh(args)
     if args.command == "finalize":
         return _finalize(args)
     return _compare(args)
@@ -264,8 +271,9 @@ def _prepare(args: argparse.Namespace) -> int:
         "policy_id": PROPOSITION_SCOPE_POLICY_ID,
         "runtime": _runtime_contract(config),
         "input_count": len(canonical.inputs),
-        "candidate_count": sum(len(items) for items in proposition_candidates.values()),
-        "model_candidate_count": sum(len(items) - 1 for items in proposition_candidates.values()),
+        "candidate_count": _candidate_count(proposition_candidates),
+        "model_candidate_count": _model_candidate_count(proposition_candidates),
+        "candidate_inventory_sha256": _candidate_inventory_sha256(proposition_candidates),
         "canonical_state_sha256": _sha((root / "canonical-state.json").read_bytes()),
         "inputs_sha256": _sha((root / "inputs.jsonl").read_bytes()),
         "preflight_sha256": _sha((root / "preflight.json").read_bytes()),
@@ -303,6 +311,27 @@ def _run(args: argparse.Namespace) -> int:
         raise ValueError("Proposition runtime configuration changed after preparation.")
     _validate_static_contract(root, metadata)
     inputs = _load_inputs(root / "inputs.jsonl")
+    candidates_by_event = {
+        prepared.gold_event_id: _proposition_candidates(prepared) for prepared in inputs
+    }
+    if metadata.get("candidate_count") != _candidate_count(candidates_by_event):
+        raise ValueError("Proposition candidate count changed after preparation.")
+    if metadata.get("model_candidate_count") != _model_candidate_count(candidates_by_event):
+        raise ValueError("Proposition model-candidate count changed after preparation.")
+    if metadata.get("candidate_inventory_sha256") != _candidate_inventory_sha256(
+        candidates_by_event
+    ):
+        raise ValueError("Proposition candidate inventory changed after preparation.")
+    prepared_by_event = {prepared.gold_event_id: prepared for prepared in inputs}
+    for output in sorted((root / "events").glob("*.json")):
+        event_id = output.stem
+        if event_id not in prepared_by_event:
+            raise ValueError(f"Proposition execution has an unknown Event: {event_id}")
+        _validate_reusable_execution(
+            output,
+            prepared=prepared_by_event[event_id],
+            expected_candidates=candidates_by_event[event_id],
+        )
     state = _load_canonical_state(root / "canonical-state.json")
     output_dir = root / "events"
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -381,6 +410,97 @@ def _run(args: argparse.Namespace) -> int:
             close()
     metadata["status"] = "run_complete"
     _write_json(root / "run.json", metadata)
+    return 0
+
+
+def _refresh(args: argparse.Namespace) -> int:
+    """Refresh derived candidate manifests while retaining only compatible executions."""
+    root = args.run_root.resolve()
+    metadata = _load_metadata(root)
+    if metadata["status"] != "prepared":
+        raise ValueError("Proposition refresh requires an interrupted prepared run.")
+    config = _config(args.config)
+    if metadata["runtime"] != _runtime_contract(config):
+        raise ValueError("Proposition runtime configuration changed after preparation.")
+    _validate_static_contract(root, metadata)
+    gold_path = _stored_path(metadata["gold_path"], "Proposition Gold")
+    catalog = load_proposition_gold_catalog(gold_path, repository_root=REPOSITORY_ROOT)
+    if catalog.review_status.value != "approved":
+        raise ValueError("Proposition refresh requires approved Gold.")
+    phase = cast(Literal["development", "validation"], metadata["phase"])
+    inputs = _load_inputs(root / "inputs.jsonl")
+    candidates_by_event = {
+        prepared.gold_event_id: _proposition_candidates(prepared) for prepared in inputs
+    }
+    gold_by_id = {item.event_id: item for item in catalog.events if item.phase == phase}
+    if set(candidates_by_event) != set(gold_by_id):
+        raise ValueError("Proposition refresh Event inventory drifted from Gold.")
+    preflights = tuple(
+        evaluate_proposition_candidate_preflight(
+            gold_by_id[event_id],
+            candidates_by_event[event_id],
+        )
+        for event_id in sorted(gold_by_id)
+    )
+    if not all(item.passed for item in preflights):
+        raise ValueError("Proposition refresh produced a failing candidate preflight.")
+    prepared_by_event = {prepared.gold_event_id: prepared for prepared in inputs}
+    retained_event_ids: list[str] = []
+    for output in sorted((root / "events").glob("*.json")):
+        event_id = output.stem
+        if event_id not in prepared_by_event:
+            raise ValueError(f"Proposition execution has an unknown Event: {event_id}")
+        _validate_reusable_execution(
+            output,
+            prepared=prepared_by_event[event_id],
+            expected_candidates=candidates_by_event[event_id],
+        )
+        retained_event_ids.append(event_id)
+    prior_candidate_count = _required_int(metadata["candidate_count"], "candidate count")
+    prior_model_candidate_count = _required_int(
+        metadata["model_candidate_count"],
+        "model candidate count",
+    )
+    candidate_count = _candidate_count(candidates_by_event)
+    model_candidate_count = _model_candidate_count(candidates_by_event)
+    preflight_payload = {
+        "schema_version": "source_grounded_proposition_preflight_v1",
+        "phase": phase,
+        "events": [item.model_dump(mode="json") for item in preflights],
+        "passed": True,
+    }
+    _write_json(root / "preflight.json", preflight_payload)
+    (root / "preflight-review.md").write_text(
+        _render_preflight_review(catalog, inputs, candidates_by_event, preflights),
+        encoding="utf-8",
+    )
+    metadata["candidate_count"] = candidate_count
+    metadata["model_candidate_count"] = model_candidate_count
+    metadata["candidate_inventory_sha256"] = _candidate_inventory_sha256(candidates_by_event)
+    metadata["preflight_sha256"] = _sha((root / "preflight.json").read_bytes())
+    metadata["preflight_review_sha256"] = _sha((root / "preflight-review.md").read_bytes())
+    metadata["candidate_inventory_refresh"] = {
+        "reason": "exclude_non_event_candidates_overlapping_event_expression",
+        "candidate_count": candidate_count,
+        "model_candidate_count": model_candidate_count,
+        "candidate_inventory_sha256": metadata["candidate_inventory_sha256"],
+        "retained_event_ids": sorted(retained_event_ids),
+    }
+    _write_json(root / "run.json", metadata)
+    print(
+        json.dumps(
+            {
+                "candidate_count": candidate_count,
+                "model_candidate_count": model_candidate_count,
+                "prior_candidate_count": prior_candidate_count,
+                "prior_model_candidate_count": prior_model_candidate_count,
+                "retained_event_ids": sorted(retained_event_ids),
+                "run_root": str(root),
+                "status": "refreshed",
+            },
+            sort_keys=True,
+        )
+    )
     return 0
 
 
@@ -567,6 +687,36 @@ def _proposition_candidates(
     )
 
 
+def _candidate_count(
+    candidates_by_event: dict[str, tuple[PropositionFragmentCandidate, ...]],
+) -> int:
+    return sum(len(items) for items in candidates_by_event.values())
+
+
+def _model_candidate_count(
+    candidates_by_event: dict[str, tuple[PropositionFragmentCandidate, ...]],
+) -> int:
+    return sum(
+        1
+        for items in candidates_by_event.values()
+        for item in items
+        if PropositionFragmentReason.EVENT_EXPRESSION not in item.reasons
+    )
+
+
+def _candidate_inventory_sha256(
+    candidates_by_event: dict[str, tuple[PropositionFragmentCandidate, ...]],
+) -> str:
+    return _sha(
+        _canonical_json(
+            {
+                event_id: [item.model_dump(mode="json") for item in items]
+                for event_id, items in sorted(candidates_by_event.items())
+            }
+        )
+    )
+
+
 def _render_preflight_review(
     catalog: PropositionGoldCatalog,
     inputs: tuple[EventEntityExperimentInput, ...],
@@ -599,13 +749,29 @@ def _render_preflight_review(
                     + "`"
                 ),
                 "",
+                (
+                    "Blocking deterministic candidates: `"
+                    + (", ".join(preflight.blocking_candidate_ids) or "none")
+                    + "`"
+                ),
+                "",
                 "Candidate data out:",
                 "",
             )
         )
+        compatible_ids = set(preflight.gold_compatible_candidate_ids)
+        blocking_ids = set(preflight.blocking_candidate_ids)
         for candidate in candidates[event_id]:
             reasons = ", ".join(item.value for item in candidate.reasons)
-            lines.append(f"- `{candidate.text}` — [{candidate.start}, {candidate.end}) — {reasons}")
+            compatibility = (
+                "blocking-overreach"
+                if candidate.id in blocking_ids
+                else ("gold-compatible" if candidate.id in compatible_ids else "gold-overreach")
+            )
+            lines.append(
+                f"- `{candidate.text}` — [{candidate.start}, {candidate.end}) — "
+                f"{reasons} — {compatibility}"
+            )
         lines.append("")
     return "\n".join(lines).rstrip() + "\n"
 
@@ -728,6 +894,55 @@ def _validate_static_contract(root: Path, metadata: dict[str, Any]) -> None:
         metadata["gold_review_status"] != "approved" or not preflight["passed"]
     ):
         raise ValueError("Proposition execution requires approved Gold and passing preflight.")
+
+
+def _validate_reusable_execution(
+    path: Path,
+    *,
+    prepared: EventEntityExperimentInput,
+    expected_candidates: tuple[PropositionFragmentCandidate, ...],
+) -> None:
+    record = _read_json(path)
+    if record.get("schema_version") != "source_grounded_proposition_execution_v1":
+        raise ValueError(f"Reusable proposition execution schema is unknown: {path}")
+    if record.get("gold_event_id") != prepared.gold_event_id:
+        raise ValueError(f"Reusable proposition execution Event drifted: {path}")
+    observed_input = EventEntityExperimentInput.model_validate_json(
+        _canonical_json(record.get("prepared_input"))
+    )
+    if observed_input != prepared:
+        raise ValueError(f"Reusable proposition execution input drifted: {path}")
+    candidates = tuple(
+        PropositionFragmentCandidate.model_validate_json(_canonical_json(item))
+        for item in cast(list[object], record.get("candidates"))
+    )
+    if candidates != expected_candidates:
+        raise ValueError(f"Reusable proposition execution candidate inventory drifted: {path}")
+    decisions = tuple(
+        PropositionFragmentDecision.model_validate_json(_canonical_json(item))
+        for item in cast(list[object], record.get("decisions"))
+    )
+    scope = SourceGroundedPropositionScope.model_validate_json(_canonical_json(record.get("scope")))
+    traces = tuple(
+        ExtractionStageTrace.model_validate_json(_canonical_json(item))
+        for item in cast(list[object], record.get("traces"))
+    )
+    diagnostics = tuple(cast(list[str], record.get("diagnostics")))
+    expected_digest = source_grounded_proposition_result_sha256(
+        candidates=candidates,
+        decisions=decisions,
+        scope=scope,
+        traces=traces,
+        diagnostics=diagnostics,
+    )
+    if record.get("result_sha256") != expected_digest:
+        raise ValueError(f"Reusable proposition execution digest is invalid: {path}")
+    if record.get("accepted_ledger_change_count") != 0:
+        raise ValueError(f"Reusable proposition execution changed accepted state: {path}")
+    tuple(
+        ModelRun.model_validate_json(_canonical_json(item))
+        for item in cast(list[object], record.get("model_runs"))
+    )
 
 
 def _validate_repetition(phase: str, repetition: int) -> None:

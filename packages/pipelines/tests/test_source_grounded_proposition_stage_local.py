@@ -89,8 +89,54 @@ def test_preflight_reports_the_exact_uncovered_gold_fragment() -> None:
     preflight = evaluate_proposition_candidate_preflight(gold, (candidate,))
 
     assert preflight.passed is False
+    assert preflight.gold_compatible_candidate_ids == (candidate.id,)
+    assert preflight.gold_overreaching_candidate_ids == ()
+    assert preflight.blocking_candidate_ids == ()
     assert preflight.covered_fragment_ids == ("PGF-TGE-001-02",)
     assert preflight.missing_fragment_ids == ("PGF-TGE-001-01",)
+
+
+def test_preflight_rejects_candidate_that_covers_gold_with_unrelated_text() -> None:
+    source = "Actor stated claim and unrelated material."
+    gold = _gold_event(
+        "TGE-001",
+        "development",
+        source,
+        fragments=((6, 18, (PropositionGoldFragmentRequirement.CORE_EVENT,)),),
+    )
+    candidate = _candidate(gold, 6, len(source), PropositionFragmentReason.EVENT_EXPRESSION)
+
+    preflight = evaluate_proposition_candidate_preflight(gold, (candidate,))
+
+    assert preflight.passed is False
+    assert preflight.gold_compatible_candidate_ids == ()
+    assert preflight.gold_overreaching_candidate_ids == (candidate.id,)
+    assert preflight.blocking_candidate_ids == (candidate.id,)
+    assert preflight.covered_fragment_ids == ()
+    assert preflight.missing_fragment_ids == ("PGF-TGE-001-01",)
+
+
+def test_preflight_allows_one_candidate_to_cover_adjacent_gold_fragments() -> None:
+    source = "Actor stated claim."
+    gold = _gold_event(
+        "TGE-001",
+        "development",
+        source,
+        fragments=(
+            (0, 5, (PropositionGoldFragmentRequirement.CORE_EVENT,)),
+            (6, 12, (PropositionGoldFragmentRequirement.CORE_EVENT,)),
+        ),
+    )
+    candidate = _candidate(gold, 0, 12, PropositionFragmentReason.EVENT_EXPRESSION)
+
+    preflight = evaluate_proposition_candidate_preflight(gold, (candidate,))
+
+    assert preflight.passed is True
+    assert preflight.gold_compatible_candidate_ids == (candidate.id,)
+    assert preflight.gold_overreaching_candidate_ids == ()
+    assert preflight.blocking_candidate_ids == ()
+    assert preflight.covered_fragment_ids == ("PGF-TGE-001-01", "PGF-TGE-001-02")
+    assert preflight.missing_fragment_ids == ()
 
 
 def test_case_evaluation_preserves_attribution_and_expected_entity_occurrence() -> None:
@@ -143,6 +189,10 @@ def test_review_renders_exact_source_and_fragment_text() -> None:
     rendered = render_proposition_gold_review(catalog)
 
     assert "Review status: `proposed`" in rendered
+    assert "## Review contract" in rendered
+    assert "Qwen2.5 receives the complete SourceSegment" in rendered
+    assert "A candidate-generation gap and a semantic-judgment error" in rendered
+    assert "Nested Event mentions remain distinct" in rendered
     assert "## TGE-001 — development" in rendered
     assert "`stated` — core_event — `PGF-TGE-001-01`" in rendered
 

@@ -21,8 +21,8 @@
       "event_free": false,
       "events": [
         {"event_id": "TGE-002", "meaning": "In January 2025, Dario Amodei criticized Stargate.", "head_occurrence_id": "o8", "accepted_expression_ranges": [{"start_occurrence_id": "o8", "end_occurrence_id": "o8"}]},
-        {"event_id": "TGE-003", "meaning": "In January 2025, Dario Amodei opposed Trump's rescission.", "head_occurrence_id": "o18", "accepted_expression_ranges": [{"start_occurrence_id": "o18", "end_occurrence_id": "o18"}]},
-        {"event_id": "TGE-004", "meaning": "Trump rescinded an Executive Order.", "head_occurrence_id": "o20", "accepted_expression_ranges": [{"start_occurrence_id": "o20", "end_occurrence_id": "o20"}]},
+        {"event_id": "TGE-003", "meaning": "In January 2025, Anthropic CEO Dario Amodei opposed Trump's rescission of president Joe Biden's Executive Order on Artificial Intelligence.", "head_occurrence_id": "o18", "accepted_expression_ranges": [{"start_occurrence_id": "o18", "end_occurrence_id": "o18"}]},
+        {"event_id": "TGE-004", "meaning": "The Source refers to Trump's rescission of president Joe Biden's Executive Order on Artificial Intelligence.", "head_occurrence_id": "o20", "accepted_expression_ranges": [{"start_occurrence_id": "o20", "end_occurrence_id": "o20"}]},
         {"event_id": "TGE-005", "meaning": "In January 2025, Dario Amodei noted that Anthropic had held discussions with Trump officials about artificial intelligence policy.", "head_occurrence_id": "o31", "accepted_expression_ranges": [{"start_occurrence_id": "o31", "end_occurrence_id": "o31"}]},
         {"event_id": "TGE-006", "meaning": "Anthropic had held discussions with Trump officials about artificial intelligence policy.", "head_occurrence_id": "o36", "accepted_expression_ranges": [{"start_occurrence_id": "o34", "end_occurrence_id": "o36"}, {"start_occurrence_id": "o35", "end_occurrence_id": "o36"}, {"start_occurrence_id": "o36", "end_occurrence_id": "o36"}]}
       ]

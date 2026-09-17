@@ -21,6 +21,7 @@ from kotekomi_application import (
     PropositionScopeStatus,
     SourceGroundedEventDraft,
     SourceSegmentAnalysisUnitInput,
+    build_proposition_fragment_candidates,
     build_source_grounded_event_draft,
     create_analysis_unit_from_source_segment,
     generation_parameters_digest,
@@ -29,9 +30,11 @@ from kotekomi_application import (
 )
 from kotekomi_application.hybrid_event_triggers import event_trigger_id
 from kotekomi_application.source_grounded_proposition_preview import (
+    MarkerFreePropositionMembershipCommand,
     PropositionScopeCommand,
     PropositionScopeLedger,
     PropositionScopeResult,
+    run_marker_free_proposition_fragment_membership,
     run_source_grounded_proposition_scope,
 )
 from kotekomi_domain import (
@@ -247,6 +250,71 @@ def test_one_malformed_answer_leaves_only_its_fragment_unresolved() -> None:
     assert result.traces[0].output["raw_output_text"] == "YES"
     assert result.traces[0].output["parsed_answer"] is None
     assert set(archive.outputs) == set(result.model_run_ids)
+    assert ledger.accepted_write_attempted is False
+
+
+def test_marker_free_diagnostic_preserves_unmodified_passage_and_exact_output() -> None:
+    ledger = FixtureLedger()
+    runtime = FixtureRuntime((b"Y",))
+    archive = FixtureArchive()
+    paragraph = next(item for item in ledger.bundle.nodes if item.node_type == "paragraph")
+    segment = paragraph_source_segments(SOURCE_TEXT, PARAGRAPH_SEGMENT_V3)[0]
+    unit = create_analysis_unit_from_source_segment(
+        SourceSegmentAnalysisUnitInput(
+            representation_id=ledger.bundle.representation.id,
+            paragraph_node_id=paragraph.id,
+            source_segment_label=segment.label,
+            policy_id="marker_free_unique_occurrence_diagnostic_v1",
+            task_type="proposition_fragment_membership_marker_free_diagnostic",
+        ),
+        ledger,
+    )
+    trigger, event, linguistic = _event_inputs()
+    candidates = build_proposition_fragment_candidates(
+        source_text=SOURCE_TEXT,
+        trigger=trigger,
+        event=event,
+        linguistic_evidence=linguistic,
+        entity_candidates=(),
+    )
+    candidate = next(item for item in candidates if item.text == "Sacks")
+
+    result = run_marker_free_proposition_fragment_membership(
+        MarkerFreePropositionMembershipCommand(
+            source_id=ledger.source.id,
+            document_id=ledger.document.id,
+            representation_id=ledger.bundle.representation.id,
+            source_text=SOURCE_TEXT,
+            event=event,
+            trigger=trigger,
+            candidate=candidate,
+            analysis_unit=unit,
+            model_profile=ContextModelProfile("fixture", 4_096, 32, 32),
+            generation_parameters=(
+                ExecutionSetting("max_output_tokens", 32),
+                ExecutionSetting("temperature", 0),
+            ),
+            prompt_bytes=b"Return Y, N, or U.\n",
+            ordinal=0,
+        ),
+        ledger=cast(PropositionScopeLedger, ledger),
+        archive=archive,
+        model_runtime=runtime,
+        model_run_id_factory=FixtureRunIds(),
+        tokenizer=runtime,
+    )
+
+    assert result.answer is not None
+    assert result.answer.value.value == "Y"
+    assert result.task_input.rendered_input is not None
+    assert f"Passage:\n{SOURCE_TEXT}\n" in result.task_input.rendered_input
+    assert "<source>" not in result.task_input.rendered_input
+    assert "<event>" not in result.task_input.rendered_input
+    assert "<candidate>" not in result.task_input.rendered_input
+    assert result.trace.input["model_visible_task"] == result.task_input.rendered_input
+    assert result.trace.output["raw_output_text"] == "Y"
+    assert result.trace.output["parsed_answer"] == "Y"
+    assert len(runtime.requests) == 1
     assert ledger.accepted_write_attempted is False
 
 

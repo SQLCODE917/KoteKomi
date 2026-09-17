@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import re
 from collections import defaultdict
 from enum import StrEnum
 from typing import Annotated, Literal, Self
@@ -28,6 +29,7 @@ class PropositionFragmentReason(StrEnum):
     ENTITY_OCCURRENCE = "entity_occurrence"
     PREDICATE_DEPENDENT = "predicate_dependent"
     GOVERNING_CONTEXT = "governing_context"
+    CLAUSE_LOCAL_CONSTITUENT = "clause_local_constituent"
 
 
 class PropositionFragmentRoute(StrEnum):
@@ -50,6 +52,55 @@ class PropositionScopeStatus(StrEnum):
 
     COMPLETE = "complete"
     PARTIAL = "partial"
+
+
+class PropositionFragmentTaskInputStatus(StrEnum):
+    """Whether one exact occurrence can be named without inline source markers."""
+
+    READY = "ready"
+    OCCURRENCE_AMBIGUOUS = "occurrence_ambiguous"
+
+
+class PropositionFragmentTaskInput(BaseModel):
+    """Typed model-visible input for one proposition-fragment judgment."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    schema_version: Literal["proposition_fragment_task_input_v1"] = (
+        "proposition_fragment_task_input_v1"
+    )
+    candidate_id: Annotated[str, Field(pattern=r"^pfc_[a-f0-9]{24}$")]
+    source_text_sha256: Annotated[str, Field(pattern=_SHA256)]
+    status: PropositionFragmentTaskInputStatus
+    event_occurrence_count: Annotated[int, Field(ge=1)]
+    candidate_occurrence_count: Annotated[int, Field(ge=1)]
+    rendered_input: str | None
+    rendered_input_sha256: Annotated[str, Field(pattern=_SHA256)] | None
+    reason_code: Annotated[str, Field(pattern=r"^[a-z][a-z0-9_]*$")] | None
+
+    @model_validator(mode="after")
+    def validate_contract(self) -> Self:
+        unique = self.event_occurrence_count == 1 and self.candidate_occurrence_count == 1
+        if self.status is PropositionFragmentTaskInputStatus.READY:
+            if not unique or self.rendered_input is None or self.rendered_input_sha256 is None:
+                raise ValueError(
+                    "A ready proposition task input requires unique exact occurrences."
+                )
+            if self.reason_code is not None:
+                raise ValueError("A ready proposition task input cannot have a failure reason.")
+            if (
+                hashlib.sha256(self.rendered_input.encode()).hexdigest()
+                != self.rendered_input_sha256
+            ):
+                raise ValueError("Proposition task input digest does not match its rendered text.")
+        else:
+            if unique:
+                raise ValueError("An ambiguous proposition task input requires repeated text.")
+            if self.rendered_input is not None or self.rendered_input_sha256 is not None:
+                raise ValueError("An ambiguous proposition task input cannot render model input.")
+            if self.reason_code is None:
+                raise ValueError("An ambiguous proposition task input requires a reason code.")
+        return self
 
 
 class PropositionFragmentCandidate(BaseModel):
@@ -261,6 +312,7 @@ def build_proposition_fragment_candidates(
     proposal_reasons: dict[tuple[int, int, str], set[PropositionFragmentReason]] = {}
     proposal_tokens: dict[tuple[int, int, str], set[str]] = {}
     proposal_records: dict[tuple[int, int, str], set[str]] = {}
+    citation_token_ids = _citation_token_ids(source_text, tokens)
 
     def propose(
         start: int,
@@ -278,6 +330,43 @@ def build_proposition_fragment_candidates(
         proposal_reasons.setdefault(key, set()).add(reason)
         proposal_tokens.setdefault(key, set()).update(token_ids)
         proposal_records.setdefault(key, set()).update(record_ids)
+
+    def propose_subtree(
+        root: EventEntityLinguisticToken,
+        reason: PropositionFragmentReason,
+        record_ids: tuple[str, ...],
+    ) -> None:
+        subtree = _subtree_tokens(root, children, sentence_id=head.sentence_id)
+        propose(
+            min(item.start for item in subtree),
+            max(item.end for item in subtree),
+            reason,
+            tuple(item.token_id for item in subtree),
+            record_ids,
+        )
+        full_range = (
+            min(item.start for item in subtree),
+            max(item.end for item in subtree),
+        )
+        for group in _clause_local_constituents(
+            root,
+            children,
+            source_text=source_text,
+            sentence_id=head.sentence_id,
+            citation_token_ids=citation_token_ids,
+        ):
+            group_range = (
+                min(item.start for item in group),
+                max(item.end for item in group),
+            )
+            if group_range == full_range:
+                continue
+            propose(
+                *group_range,
+                PropositionFragmentReason.CLAUSE_LOCAL_CONSTITUENT,
+                tuple(item.token_id for item in group),
+                record_ids,
+            )
 
     expression_tokens = _tokens_overlapping(tokens, trigger.start, trigger.end)
     propose(
@@ -304,12 +393,9 @@ def build_proposition_fragment_candidates(
     for child in children.get(head.token_id, ()):
         if child.sentence_id != head.sentence_id or child.dependency_relation == "punct":
             continue
-        subtree = _subtree_tokens(child, children, sentence_id=head.sentence_id)
-        propose(
-            min(item.start for item in subtree),
-            max(item.end for item in subtree),
+        propose_subtree(
+            child,
             PropositionFragmentReason.PREDICATE_DEPENDENT,
-            tuple(item.token_id for item in subtree),
             (linguistic_evidence.trace_id,),
         )
     child_on_path = head
@@ -331,12 +417,9 @@ def build_proposition_fragment_candidates(
                 or sibling.dependency_relation == "punct"
             ):
                 continue
-            subtree = _subtree_tokens(sibling, children, sentence_id=head.sentence_id)
-            propose(
-                min(item.start for item in subtree),
-                max(item.end for item in subtree),
+            propose_subtree(
+                sibling,
                 PropositionFragmentReason.GOVERNING_CONTEXT,
-                tuple(item.token_id for item in subtree),
                 (linguistic_evidence.trace_id,),
             )
         child_on_path = parent
@@ -349,8 +432,8 @@ def build_proposition_fragment_candidates(
         record_ids = tuple(sorted(proposal_records[key]))
         if (
             PropositionFragmentReason.EVENT_EXPRESSION not in reasons
-            and trigger.start <= start
-            and end <= trigger.end
+            and start < trigger.end
+            and trigger.start < end
         ):
             continue
         candidate_id = proposition_fragment_candidate_id(
@@ -421,20 +504,7 @@ def proposition_fragment_model_task_input(
     candidate: PropositionFragmentCandidate,
 ) -> bytes:
     """Render one exact candidate without exposing IDs or character offsets."""
-    source_digest = hashlib.sha256(source_text.encode()).hexdigest()
-    if (
-        candidate.event_trigger_id != trigger.id
-        or candidate.source_segment_id != trigger.source_segment_id
-        or candidate.source_text_sha256 != source_digest
-        or trigger.source_text_sha256 != source_digest
-        or source_text[candidate.start : candidate.end] != candidate.text
-        or source_text[trigger.start : trigger.end] != trigger.text
-    ):
-        raise ValueError("Proposition model task evidence does not replay its source.")
-    if candidate.start < trigger.end and trigger.start < candidate.end:
-        raise ValueError(
-            "A model-routed proposition candidate cannot overlap its Event expression."
-        )
+    _validate_proposition_model_task_evidence(source_text, trigger, candidate)
     markers = (
         (trigger.start, "<event>"),
         (trigger.end, "</event>"),
@@ -448,6 +518,48 @@ def proposition_fragment_model_task_input(
         "SourceSegment with one Event expression and one candidate fragment marked:\n"
         f"<source>{rendered}</source>\n"
     ).encode()
+
+
+def marker_free_proposition_fragment_model_task_input(
+    *,
+    source_text: str,
+    trigger: EventTriggerDraft,
+    candidate: PropositionFragmentCandidate,
+) -> PropositionFragmentTaskInput:
+    """Render an unmodified passage only when literal labels identify unique occurrences."""
+    source_digest = _validate_proposition_model_task_evidence(source_text, trigger, candidate)
+    event_occurrences = _literal_occurrence_count(source_text, trigger.text)
+    candidate_occurrences = _literal_occurrence_count(source_text, candidate.text)
+    if event_occurrences != 1 or candidate_occurrences != 1:
+        if event_occurrences != 1 and candidate_occurrences != 1:
+            reason_code = "event_and_candidate_occurrence_ambiguous"
+        elif event_occurrences != 1:
+            reason_code = "event_occurrence_ambiguous"
+        else:
+            reason_code = "candidate_occurrence_ambiguous"
+        return PropositionFragmentTaskInput(
+            candidate_id=candidate.id,
+            source_text_sha256=source_digest,
+            status=PropositionFragmentTaskInputStatus.OCCURRENCE_AMBIGUOUS,
+            event_occurrence_count=event_occurrences,
+            candidate_occurrence_count=candidate_occurrences,
+            rendered_input=None,
+            rendered_input_sha256=None,
+            reason_code=reason_code,
+        )
+    rendered = (
+        f"Passage:\n{source_text}\n\nEvent:\n{trigger.text}\n\nCandidate:\n{candidate.text}\n"
+    )
+    return PropositionFragmentTaskInput(
+        candidate_id=candidate.id,
+        source_text_sha256=source_digest,
+        status=PropositionFragmentTaskInputStatus.READY,
+        event_occurrence_count=event_occurrences,
+        candidate_occurrence_count=candidate_occurrences,
+        rendered_input=rendered,
+        rendered_input_sha256=hashlib.sha256(rendered.encode()).hexdigest(),
+        reason_code=None,
+    )
 
 
 def build_source_grounded_proposition_scope(
@@ -664,6 +776,39 @@ def _validate_inputs(
         raise ValueError("Proposition entity candidate belongs to another Event or source.")
 
 
+def _validate_proposition_model_task_evidence(
+    source_text: str,
+    trigger: EventTriggerDraft,
+    candidate: PropositionFragmentCandidate,
+) -> str:
+    source_digest = hashlib.sha256(source_text.encode()).hexdigest()
+    if (
+        candidate.event_trigger_id != trigger.id
+        or candidate.source_segment_id != trigger.source_segment_id
+        or candidate.source_text_sha256 != source_digest
+        or trigger.source_text_sha256 != source_digest
+        or source_text[candidate.start : candidate.end] != candidate.text
+        or source_text[trigger.start : trigger.end] != trigger.text
+    ):
+        raise ValueError("Proposition model task evidence does not replay its source.")
+    if candidate.start < trigger.end and trigger.start < candidate.end:
+        raise ValueError(
+            "A model-routed proposition candidate cannot overlap its Event expression."
+        )
+    return source_digest
+
+
+def _literal_occurrence_count(source_text: str, literal: str) -> int:
+    count = 0
+    offset = 0
+    while True:
+        found = source_text.find(literal, offset)
+        if found < 0:
+            return count
+        count += 1
+        offset = found + 1
+
+
 def _tokens_overlapping(
     tokens: tuple[EventEntityLinguisticToken, ...],
     start: int,
@@ -687,6 +832,153 @@ def _subtree_tokens(
         found[token.token_id] = token
         pending.extend(children.get(token.token_id, ()))
     return tuple(sorted(found.values(), key=lambda item: (item.start, item.end)))
+
+
+_DETACHED_CLAUSE_RELATIONS = frozenset({"acl", "acl:relcl", "advcl", "parataxis"})
+
+
+def _citation_token_ids(
+    source_text: str,
+    tokens: tuple[EventEntityLinguisticToken, ...],
+) -> frozenset[str]:
+    ranges = tuple(
+        (match.start(), match.end()) for match in re.finditer(r"\[[0-9]+\]", source_text)
+    )
+    return frozenset(
+        token.token_id
+        for token in tokens
+        if any(start <= token.start and token.end <= end for start, end in ranges)
+    )
+
+
+def _clause_local_constituents(
+    root: EventEntityLinguisticToken,
+    children: dict[str, list[EventEntityLinguisticToken]],
+    *,
+    source_text: str,
+    sentence_id: str,
+    citation_token_ids: frozenset[str],
+) -> tuple[tuple[EventEntityLinguisticToken, ...], ...]:
+    subtree = _subtree_tokens(root, children, sentence_id=sentence_id)
+    detached = _detached_modifier_roots(
+        root,
+        subtree,
+        children,
+        source_text=source_text,
+    )
+    groups = list(
+        _contiguous_token_groups(
+            source_text,
+            _pruned_subtree_tokens(
+                root,
+                children,
+                sentence_id=sentence_id,
+                blocked_token_ids=frozenset(item.token_id for item in detached)
+                | citation_token_ids,
+            ),
+        )
+    )
+    for boundary in detached:
+        for child in children.get(boundary.token_id, ()):
+            if child.sentence_id != sentence_id or child.dependency_relation == "punct":
+                continue
+            nested_detached = _detached_modifier_roots(
+                child,
+                _subtree_tokens(child, children, sentence_id=sentence_id),
+                children,
+                source_text=source_text,
+            )
+            groups.extend(
+                _contiguous_token_groups(
+                    source_text,
+                    _pruned_subtree_tokens(
+                        child,
+                        children,
+                        sentence_id=sentence_id,
+                        blocked_token_ids=frozenset(item.token_id for item in nested_detached)
+                        | citation_token_ids,
+                    ),
+                )
+            )
+    distinct: dict[tuple[int, int], tuple[EventEntityLinguisticToken, ...]] = {}
+    for group in groups:
+        bounded = _trim_leading_constituent_separator(group)
+        if bounded:
+            distinct[(bounded[0].start, bounded[-1].end)] = bounded
+    return tuple(distinct[key] for key in sorted(distinct))
+
+
+def _trim_leading_constituent_separator(
+    tokens: tuple[EventEntityLinguisticToken, ...],
+) -> tuple[EventEntityLinguisticToken, ...]:
+    first = 0
+    while (
+        first < len(tokens)
+        and tokens[first].part_of_speech == "PUNCT"
+        and tokens[first].text in {",", ";", ":"}
+    ):
+        first += 1
+    return tokens[first:]
+
+
+def _detached_modifier_roots(
+    root: EventEntityLinguisticToken,
+    subtree: tuple[EventEntityLinguisticToken, ...],
+    children: dict[str, list[EventEntityLinguisticToken]],
+    *,
+    source_text: str,
+) -> tuple[EventEntityLinguisticToken, ...]:
+    subtree_ids = {item.token_id for item in subtree}
+    detached: list[EventEntityLinguisticToken] = []
+    for token in subtree:
+        if token.token_id == root.token_id:
+            continue
+        clause_child = any(
+            child.token_id in subtree_ids and child.dependency_relation == "acl:relcl"
+            for child in children.get(token.token_id, ())
+        )
+        preceded_by_comma = source_text[: token.start].rstrip().endswith(",")
+        if token.dependency_relation in _DETACHED_CLAUSE_RELATIONS or (
+            clause_child and preceded_by_comma
+        ):
+            detached.append(token)
+    detached_ids = {item.token_id for item in detached}
+    return tuple(item for item in detached if item.head_token_id not in detached_ids)
+
+
+def _pruned_subtree_tokens(
+    root: EventEntityLinguisticToken,
+    children: dict[str, list[EventEntityLinguisticToken]],
+    *,
+    sentence_id: str,
+    blocked_token_ids: frozenset[str],
+) -> tuple[EventEntityLinguisticToken, ...]:
+    found: dict[str, EventEntityLinguisticToken] = {}
+    pending = [root]
+    while pending:
+        token = pending.pop()
+        if (
+            token.token_id in found
+            or token.sentence_id != sentence_id
+            or token.token_id in blocked_token_ids
+        ):
+            continue
+        found[token.token_id] = token
+        pending.extend(children.get(token.token_id, ()))
+    return tuple(sorted(found.values(), key=lambda item: (item.start, item.end)))
+
+
+def _contiguous_token_groups(
+    source_text: str,
+    tokens: tuple[EventEntityLinguisticToken, ...],
+) -> tuple[tuple[EventEntityLinguisticToken, ...], ...]:
+    groups: list[list[EventEntityLinguisticToken]] = []
+    for token in tokens:
+        if not groups or source_text[groups[-1][-1].end : token.start].strip():
+            groups.append([token])
+        else:
+            groups[-1].append(token)
+    return tuple(tuple(group) for group in groups)
 
 
 def _merge_included_candidates(

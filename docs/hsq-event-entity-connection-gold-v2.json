@@ -3,9 +3,9 @@
   "catalog_id": "hsq-event-entity-connection-gold-v2",
   "review_status": "approved",
   "trigger_gold_path": "docs/hsq-event-trigger-gold-v1.json",
-  "trigger_gold_sha256": "28b020ad351394d0176d1b63bea1c1c3b4ab6cba4f4cd1e88c2aeea70cdb8094",
+  "trigger_gold_sha256": "844eb564fb953e8d202f211469465f29f6de95dd811c033506f616cf425fe83f",
   "source_grounded_gold_path": "docs/hsq-source-grounded-event-gold-v1.json",
-  "source_grounded_gold_sha256": "6ae09fb7390239a15f754cab1cd15b15f4a826313e4f7a6cbf5fbe40d88aed2a",
+  "source_grounded_gold_sha256": "0a5eb2f0a7e2b72e5217ad538b339956254a3888760c0a816396ff15f9e1429c",
   "events": [
     {
       "event_id": "TGE-002",
@@ -42,7 +42,7 @@
       "event_id": "TGE-003",
       "phase": "development",
       "source_text_sha256": "7438981c5f67a586e62824f899dde376931333bc69728b43ccd04c167d71b7cf",
-      "event_meaning": "In January 2025, Dario Amodei opposed Trump's rescission.",
+      "event_meaning": "In January 2025, Anthropic CEO Dario Amodei opposed Trump's rescission of president Joe Biden's Executive Order on Artificial Intelligence.",
       "expected_entities": [
         {
           "entity_id": "EGE-002",
@@ -100,13 +100,13 @@
           ]
         }
       ],
-      "review_rationale": "The Event connects Amodei, Trump as the rescinding Actor, and Biden through the explicitly identified Executive Order."
+      "review_rationale": "The Event preserves the dated opposition and its complete target. January 2025 dates Amodei's opposition; this SourceSegment alone does not date the nested rescission or the Executive Order's issuance."
     },
     {
       "event_id": "TGE-004",
       "phase": "development",
       "source_text_sha256": "7438981c5f67a586e62824f899dde376931333bc69728b43ccd04c167d71b7cf",
-      "event_meaning": "Trump rescinded an Executive Order.",
+      "event_meaning": "The Source refers to Trump's rescission of president Joe Biden's Executive Order on Artificial Intelligence.",
       "expected_entities": [
         {
           "entity_id": "EGE-004",
@@ -116,7 +116,7 @@
             "Trump",
             "Donald Trump"
           ],
-          "rationale": "Trump performs the rescission.",
+          "rationale": "Trump is named possessively in the source-grounded rescission Event mention.",
           "accepted_source_occurrences": [
             {
               "start": 136,
@@ -142,7 +142,7 @@
           ]
         }
       ],
-      "review_rationale": "The Executive Order is not an Actor or Organization, but its explicit connection to Biden makes Biden involved in the Event."
+      "review_rationale": "The Event preserves the nested source-grounded rescission mention without converting it into independently established world truth. The SourceSegment does not assign January 2025 to this nested Event."
     },
     {
       "event_id": "TGE-005",

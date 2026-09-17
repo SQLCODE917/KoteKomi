@@ -3,7 +3,7 @@
   "catalog_id": "hsq-source-grounded-event-gold-v1",
   "review_status": "approved",
   "trigger_gold_path": "docs/hsq-event-trigger-gold-v1.json",
-  "trigger_gold_sha256": "28b020ad351394d0176d1b63bea1c1c3b4ab6cba4f4cd1e88c2aeea70cdb8094",
+  "trigger_gold_sha256": "844eb564fb953e8d202f211469465f29f6de95dd811c033506f616cf425fe83f",
   "items": [
     {
       "event_id": "TGE-001",
