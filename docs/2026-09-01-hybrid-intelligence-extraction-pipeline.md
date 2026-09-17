@@ -242,6 +242,13 @@ deterministic boundary reconciliation
                                       |
                                       v
                               Event-trigger boundary
+                                      |
+                                      v
+                          source-grounded Event
+                                      |
+                                      v
+                   source-grounded Proposition Scope
+                    (current bounded experiment only)
 ```
 
 ### Verification control path
@@ -393,7 +400,7 @@ Governed classification remains optional derived enrichment.
 
 Later bounded tasks assign source-backed participants and other Event semantics.
 
-The current Event-Entity Connection experiment tests the first smaller assignment boundary.
+The Event-Entity Connection experiment first tested a smaller assignment boundary.
 
 KoteKomi supplies one source-grounded Event and one exact Actor or Organization candidate.
 
@@ -401,7 +408,34 @@ Qwen2.5 answers only whether that entity is involved in that Event.
 
 KoteKomi maps the finite answer into a traced derived connection draft.
 
-This experiment does not assign semantic roles and does not yet change production ingestion.
+Its corrected evaluator scores every exact candidate occurrence directly against raw Gold.
+
+The corrected evidence shows that identity-only summaries had hidden occurrence drift and false
+positives.
+
+The next bounded experiment therefore identifies the complete source-grounded proposition before
+asking what role any entity plays.
+
+KoteKomi proposes exact Event, entity, dependency, and governing-context fragments.
+
+KoteKomi includes the exact Event expression deterministically.
+
+Qwen2.5 receives one marked exact Fragment Candidate and answers only `Y`, `N`, or `U`.
+
+KoteKomi maps that answer back to source offsets and constructs an ordered
+SourceGroundedPropositionScope.
+
+The scope preserves attribution, negation, modality, purpose, comparison, and temporal language as
+source text.
+
+For example, it preserves `Sacks stated` with the attributed Anthropic content instead of flattening
+the proposition into an unqualified statement about Anthropic.
+
+This experiment does not normalize a proposition, assign semantic roles, create ProposedChanges, or
+change accepted Ledger state.
+
+Semantic Argument Assignment remains blocked until the proposition-scope experiment passes its
+reviewed development and validation catalog.
 
 ### 10. Create reviewable state
 

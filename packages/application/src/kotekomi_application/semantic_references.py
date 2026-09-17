@@ -27,7 +27,7 @@ from kotekomi_application.semantic_reference_validation_model_output import (
     SemanticReferenceCandidateVerdict,
 )
 
-SEMANTIC_REFERENCE_POLICY_ID = "bounded_semantic_reference_v10"
+SEMANTIC_REFERENCE_POLICY_ID = "bounded_semantic_reference_v11"
 SEMANTIC_REFERENCE_MAX_INPUT_TOKENS = 1024
 SEMANTIC_REFERENCE_MAX_ANTECEDENT_CANDIDATES = 8
 _ANTECEDENT_LABEL_PATTERN = re.compile(r"a[1-9][0-9]*")
@@ -52,6 +52,7 @@ class SemanticReferenceReason(StrEnum):
     SPECIALIST_VALIDATION_FAILED = "specialist_validation_failed"
     SPECIALIST_VALIDATION_INVALID = "specialist_validation_invalid"
     SPECIALIST_CONTRASTIVE_CONFIRMATION = "specialist_contrastive_confirmation"
+    SPECIALIST_REJECTED_CONTRASTIVE_SELECTION = "specialist_rejected_contrastive_selection"
     SPECIALIST_NO_ANTECEDENT = "specialist_no_antecedent"
     SPECIALIST_TARGET_CLUSTER_MISSING = "specialist_target_cluster_missing"
 
@@ -457,6 +458,7 @@ class SemanticReferenceDecision(BaseModel):
                 SemanticReferenceReason.CHALLENGE_SELECTED_ANTECEDENT,
                 SemanticReferenceReason.SPECIALIST_VALIDATION_SUPPORTED,
                 SemanticReferenceReason.SPECIALIST_CONTRASTIVE_CONFIRMATION,
+                SemanticReferenceReason.SPECIALIST_REJECTED_CONTRASTIVE_SELECTION,
             }:
                 raise ValueError("Resolved semantic reference requires one antecedent.")
         elif self.status is SemanticReferenceStatus.AMBIGUOUS:
@@ -484,17 +486,14 @@ class SemanticReferenceDecision(BaseModel):
         }
         if execution_modes not in allowed_execution_modes:
             raise ValueError("Semantic reference model executions are not in causal task order.")
-        if (
-            self.reason is SemanticReferenceReason.SPECIALIST_CONTRASTIVE_CONFIRMATION
-            and execution_modes
-            != (
-                SemanticReferenceModelTask.SPECIALIST_VALIDATION,
-                SemanticReferenceModelTask.CONTRASTIVE_SELECTION,
-            )
+        if self.reason in {
+            SemanticReferenceReason.SPECIALIST_CONTRASTIVE_CONFIRMATION,
+            SemanticReferenceReason.SPECIALIST_REJECTED_CONTRASTIVE_SELECTION,
+        } and execution_modes != (
+            SemanticReferenceModelTask.SPECIALIST_VALIDATION,
+            SemanticReferenceModelTask.CONTRASTIVE_SELECTION,
         ):
-            raise ValueError(
-                "A specialist contrastive confirmation requires both causal model tasks."
-            )
+            raise ValueError("A specialist contrastive decision requires both causal model tasks.")
         if (
             self.reason
             in {
@@ -506,6 +505,7 @@ class SemanticReferenceDecision(BaseModel):
                 SemanticReferenceReason.SPECIALIST_CHALLENGE_DISAGREEMENT,
                 SemanticReferenceReason.SPECIALIST_VALIDATION_SUPPORTED,
                 SemanticReferenceReason.SPECIALIST_CONTRASTIVE_CONFIRMATION,
+                SemanticReferenceReason.SPECIALIST_REJECTED_CONTRASTIVE_SELECTION,
                 SemanticReferenceReason.SPECIALIST_VALIDATION_UNSUPPORTED,
                 SemanticReferenceReason.SPECIALIST_VALIDATION_UNCLEAR,
                 SemanticReferenceReason.SPECIALIST_VALIDATION_FAILED,
@@ -627,6 +627,7 @@ def resolve_semantic_reference(
             specialist_candidate,
             validation_execution,
         )
+        validation_reason = reason
         if reason in {
             SemanticReferenceReason.SPECIALIST_VALIDATION_UNSUPPORTED,
             SemanticReferenceReason.SPECIALIST_VALIDATION_UNCLEAR,
@@ -646,17 +647,13 @@ def resolve_semantic_reference(
                     challenge_candidates,
                     contrastive_execution,
                 )
-                if status is SemanticReferenceStatus.RESOLVED and selected == (
-                    specialist_candidate.span,
-                ):
-                    reason = SemanticReferenceReason.SPECIALIST_CONTRASTIVE_CONFIRMATION
-                else:
-                    status, reason, selected = _apply_specialist_disagreement_policy(
-                        status=status,
-                        reason=reason,
-                        selected=selected,
-                        specialist_proposed=specialist_proposed,
-                    )
+                status, reason, selected = _reconcile_single_specialist_contrastive_decision(
+                    validation_reason=validation_reason,
+                    status=status,
+                    reason=reason,
+                    selected=selected,
+                    specialist_candidate=specialist_candidate,
+                )
     else:
         challenge_execution = challenger.challenge(
             SemanticReferenceChallengeInput(
@@ -1084,6 +1081,37 @@ def _apply_specialist_disagreement_policy(
         SemanticReferenceStatus.AMBIGUOUS,
         SemanticReferenceReason.SPECIALIST_CHALLENGE_DISAGREEMENT,
         ambiguous,
+    )
+
+
+def _reconcile_single_specialist_contrastive_decision(
+    *,
+    validation_reason: SemanticReferenceReason,
+    status: SemanticReferenceStatus,
+    reason: SemanticReferenceReason,
+    selected: tuple[CoreferenceSpan, ...],
+    specialist_candidate: CoreferenceAntecedentCandidate,
+) -> tuple[SemanticReferenceStatus, SemanticReferenceReason, tuple[CoreferenceSpan, ...]]:
+    """Reconcile one specialist proposal after its bounded semantic validation."""
+    if status is not SemanticReferenceStatus.RESOLVED:
+        return status, reason, selected
+    if selected == (specialist_candidate.span,):
+        return (
+            status,
+            SemanticReferenceReason.SPECIALIST_CONTRASTIVE_CONFIRMATION,
+            selected,
+        )
+    if validation_reason is SemanticReferenceReason.SPECIALIST_VALIDATION_UNSUPPORTED:
+        return (
+            status,
+            SemanticReferenceReason.SPECIALIST_REJECTED_CONTRASTIVE_SELECTION,
+            selected,
+        )
+    return _apply_specialist_disagreement_policy(
+        status=status,
+        reason=reason,
+        selected=selected,
+        specialist_proposed=(specialist_candidate,),
     )
 
 

@@ -41,7 +41,7 @@ from kotekomi_application.context_planning import (
     verify_context_manifest,
 )
 from kotekomi_application.event_entity_connection_model_output import (
-    EntityInvolvementAnswer,
+    EntityInvolvementAnswerBatch,
 )
 from kotekomi_application.grounded_candidates import (
     GroundedAssertionCandidate,
@@ -100,6 +100,9 @@ from kotekomi_application.semantic_reference_challenge_model_output import (
 )
 from kotekomi_application.semantic_reference_validation_model_output import (
     SemanticReferenceCandidateValidation,
+)
+from kotekomi_application.source_grounded_proposition_model_output import (
+    PropositionFragmentAnswer,
 )
 
 HASH_ID_LENGTH = 24
@@ -577,7 +580,8 @@ class BoundedExtractionOutcome:
     event_head_answer: EventHeadAnswer | None = None
     event_verb_role_answer: EventVerbRoleAnswer | None = None
     binary_semantic_answer: BinarySemanticAnswer | None = None
-    entity_involvement_answer: EntityInvolvementAnswer | None = None
+    entity_involvement_answer_batch: EntityInvolvementAnswerBatch | None = None
+    proposition_fragment_answer: PropositionFragmentAnswer | None = None
     event_frame_selection: EventFrameSelection | None = None
     event_frame_fit_decision: EventFrameFitDecision | None = None
     event_presentation_selection: EventPresentationSelection | None = None
@@ -657,7 +661,8 @@ class OrganizationQualificationRejection:
 
 
 type ParsedModelOutput = (
-    EntityInvolvementAnswer
+    EntityInvolvementAnswerBatch
+    | PropositionFragmentAnswer
     | SemanticDraft
     | SemanticDraftAbstention
     | HypothesisBatch
@@ -1173,7 +1178,33 @@ def run_bounded_extraction(
                 binary_semantic_answer=parsed,
                 raw_model_output=response.raw_output,
             )
-        if isinstance(parsed, EntityInvolvementAnswer):
+        if isinstance(parsed, EntityInvolvementAnswerBatch):
+            run = _model_run(
+                extraction_input,
+                manifest,
+                task,
+                model_run_id,
+                ModelRunStatus.SUCCEEDED,
+                started_at=started_at,
+                completed_at=completed_at,
+                execution_diagnostics=diagnostics,
+                input_admission=admission,
+                output_digest=output_digest,
+                execution_receipt=response.execution_receipt,
+                outcome_metadata={
+                    "contract": extraction_input.execution_spec.schema_id,
+                    "answers": "".join(item.value for item in parsed.values),
+                },
+            )
+            ledger_repository.save_model_run(run)
+            return BoundedExtractionOutcome(
+                task,
+                run,
+                None,
+                entity_involvement_answer_batch=parsed,
+                raw_model_output=response.raw_output,
+            )
+        if isinstance(parsed, PropositionFragmentAnswer):
             run = _model_run(
                 extraction_input,
                 manifest,
@@ -1196,7 +1227,7 @@ def run_bounded_extraction(
                 task,
                 run,
                 None,
-                entity_involvement_answer=parsed,
+                proposition_fragment_answer=parsed,
                 raw_model_output=response.raw_output,
             )
         if isinstance(parsed, EventFrameSelection):

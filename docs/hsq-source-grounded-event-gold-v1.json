@@ -3,7 +3,7 @@
   "catalog_id": "hsq-source-grounded-event-gold-v1",
   "review_status": "approved",
   "trigger_gold_path": "docs/hsq-event-trigger-gold-v1.json",
-  "trigger_gold_sha256": "e3a8ba6377dc61589960e147c108fd1dfe21a855bbd07283902589028678eb66",
+  "trigger_gold_sha256": "28b020ad351394d0176d1b63bea1c1c3b4ab6cba4f4cd1e88c2aeea70cdb8094",
   "items": [
     {
       "event_id": "TGE-001",
@@ -86,8 +86,8 @@
       "event_id": "TGE-012",
       "phase": "validation",
       "source_text_sha256": "5367faa6a71b436e486f3f7f29f6d219464cef2cfea476e05efeca768c6c4bda",
-      "expected_review_outcome": "approved",
-      "rationale": "The approved Trigger Gold item identifies a bounded source-grounded Event."
+      "expected_review_outcome": "rejected",
+      "rationale": "The infinitival vote is embedded under Amodei's urging; the source does not establish that the associates voted."
     },
     {
       "event_id": "TGE-013",
@@ -149,8 +149,8 @@
       "event_id": "TGE-021",
       "phase": "development",
       "source_text_sha256": "3ae4294fe559d09dd035e7dfaf027607fdc9ac1ec53848b3f789926357d8f9e7",
-      "expected_review_outcome": "approved",
-      "rationale": "The approved Trigger Gold item identifies a bounded source-grounded Event."
+      "expected_review_outcome": "rejected",
+      "rationale": "The inauguration is embedded as an alternative under Amodei's decision; the source does not establish that it occurred."
     },
     {
       "event_id": "TGE-022",

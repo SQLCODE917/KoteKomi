@@ -30,7 +30,11 @@ HP-3 never resolves an Entity, invokes a language model, creates a ProposedChang
 
 **EntityLinkCandidate** means one ranked Wikidata or NIL candidate proposed by the entity-linking model.
 
-**EntityLinkEvidence** means one MentionCandidate's exact source span, complete ranked candidates, and model lineage.
+**ExternalEntityClass** means one raw Wikidata class identifier and label from the pinned ReFinED
+linked-entity class closure.
+
+**EntityLinkEvidence** means one MentionCandidate's exact source span, ReFinED coarse mention type,
+complete ranked candidates, raw top-linked-entity classes, and model lineage.
 
 **HybridEntityGroundingPreview** means the immutable derived result of one HP-3 run.
 
@@ -41,7 +45,8 @@ HP-3 never resolves an Entity, invokes a language model, creates a ProposedChang
 3. The Application Layer records one eligibility result for every HP-1 MentionCandidate.
 4. The Application Layer groups eligible exact spans by their authoritative SourceSegment.
 5. A pinned offline ReFinED worker proposes ranked Wikidata or NIL candidates.
-6. KoteKomi validates source alignment, candidate ordering, identities, scores, and titles.
+6. KoteKomi validates source alignment, coarse mention type, candidate ordering, identities, scores,
+   titles, and the class closure of the top linked entity.
 7. The Pipeline archives model output, task/run lineage, traces, and one immutable Preview.
 
 ## Goals
@@ -96,6 +101,17 @@ HP-3 never resolves an Entity, invokes a language model, creates a ProposedChang
 - HGL-14: The Adapter rejects changed, reordered, missing, or extra source spans.
 - HGL-15: The Adapter rejects malformed output rather than dropping or repairing it.
 - HGL-16: ReFinED scores remain model scores and never become evidence confidence.
+- HGL-17: The worker preserves ReFinED's coarse mention type for each caller-owned span.
+- HGL-18: A coarse mention type remains fallible specialist evidence and cannot itself select or
+  accept an Entity identity.
+- HGL-19: The worker emits the complete Wikidata-Q-class subset of the pinned class closure for the
+  predicted top knowledge-base entity and binds it to that entity's Wikidata ID. ReFinED's
+  relation-derived synthetic class features are not represented as Wikidata classes.
+- HGL-20: Each external class has a valid Wikidata identifier and non-empty pinned label.
+- HGL-21: The Adapter preserves raw external classes without mapping them to KoteKomi ontology
+  kinds.
+- HGL-22: External classes remain fallible identity evidence. They cannot select an identity,
+  rewrite a source span, or create accepted intelligence.
 
 ### Execution evidence
 
@@ -113,7 +129,10 @@ HP-3 never resolves an Entity, invokes a language model, creates a ProposedChang
 
 - HGV-01: The Preview contains its HP-2 parent ID and digest, HP-1 parent ID and digest, representation ID, and policy ID.
 - HGV-02: The Preview contains every eligibility decision in source order.
-- HGV-03: The Preview contains all successful EntityLinkEvidence in source and rank order.
+- HGV-03: The Preview contains all successful EntityLinkEvidence, including coarse mention type, in
+  source and rank order.
+- HGV-03A: EntityLinkEvidence preserves raw top-linked-entity classes in stable class-ID order and
+  identifies the linked entity to which those classes belong.
 - HGV-04: The Preview contains all ExtractionTask IDs, ModelRun IDs, traces, and diagnostics.
 - HGV-05: `complete` requires a complete HP-1 parent and successful execution of every eligible batch.
 - HGV-06: `partial` results when HP-1 is partial or only some eligible batches fail.
@@ -172,8 +191,12 @@ The Pipeline composes configuration, Ledger, Archive, Application use case, and 
 - AC-HG-02: Unit tests cover selected specific, boundary conflict, missing interpretation, generic, unclear, anaphoric, HP-2 ambiguous, HP-2 unresolved-anaphoric, resolved alias, and unmatched alias cases.
 - AC-HG-03: Application tests prove eligible candidates are batched by exact SourceSegment and ineligible candidates are never sent to the Port.
 - AC-HG-04: Application tests prove complete, partial, blocked, and empty-complete terminal states.
-- AC-HG-05: Adapter tests prove strict protocol validation, offline flags, caller-span options, finite scores, contiguous ranks, distinct Wikidata IDs, NIL, and exact source alignment.
-- AC-HG-06: A worker test proves each top-k Wikipedia title corresponds to that candidate's own Wikidata ID.
+- AC-HG-05: Adapter tests prove strict protocol validation, offline flags, caller-span options,
+  retained coarse mention type, finite scores, contiguous ranks, distinct Wikidata IDs, NIL, raw
+  linked-entity classes, and exact source alignment.
+- AC-HG-06: Worker tests prove each top-k Wikipedia title corresponds to that candidate's own
+  Wikidata ID, coarse mention type survives the worker boundary, and linked-entity classes belong
+  to the declared top entity.
 - AC-HG-07: Archive tests prove immutable create, identical reuse, conflict rejection, and strict reload.
 - AC-HG-08: Configuration tests prove default, positive, and invalid ReFinED timeout behavior.
 - AC-HG-09: CLI tests prove complete and blocked rendering and exit codes.

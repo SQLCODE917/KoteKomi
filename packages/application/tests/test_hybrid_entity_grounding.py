@@ -24,7 +24,9 @@ from kotekomi_application.hybrid_entity_grounding import (
     EntityLinkingOutputError,
     EntityLinkingRuntimeResponseError,
     EntityLinkMention,
+    ExternalEntityClass,
     HybridEntityGroundingStatus,
+    LinkedEntityClassEvidence,
     build_entity_linking_inputs,
     entity_grounding_terminal_status,
     evaluate_entity_grounding_eligibility,
@@ -281,6 +283,7 @@ def test_entity_linking_input_and_rank_contracts_fail_fast() -> None:
             returned_text="NIST",
             start=0,
             end=4,
+            coarse_mention_type="ORG",
             candidates=(
                 EntityLinkCandidate(
                     rank=2,
@@ -289,6 +292,10 @@ def test_entity_linking_input_and_rank_contracts_fail_fast() -> None:
                     wikipedia_title="National Institute of Standards and Technology",
                     score=0.99,
                 ),
+            ),
+            linked_entity_classes=LinkedEntityClassEvidence(
+                wikidata_id="Q176691",
+                classes=(ExternalEntityClass(class_id="Q43229", label="organization"),),
             ),
         )
 
@@ -548,6 +555,7 @@ class _FixtureLinker:
                         returned_text=mention.text,
                         start=mention.start,
                         end=mention.end,
+                        coarse_mention_type="ORG",
                         candidates=(
                             EntityLinkCandidate(
                                 rank=1,
@@ -555,6 +563,15 @@ class _FixtureLinker:
                                 wikidata_id="Q176691",
                                 wikipedia_title=("National Institute of Standards and Technology"),
                                 score=0.99,
+                            ),
+                        ),
+                        linked_entity_classes=LinkedEntityClassEvidence(
+                            wikidata_id="Q176691",
+                            classes=(
+                                ExternalEntityClass(
+                                    class_id="Q43229",
+                                    label="organization",
+                                ),
                             ),
                         ),
                     ),

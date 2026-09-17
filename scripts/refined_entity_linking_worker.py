@@ -146,7 +146,7 @@ def process_request(value: object) -> dict[str, object]:
         evidences.append(_evidence(processor, candidate_id, span))
     assert _load_elapsed_ms is not None
     return {
-        "schema_version": "refined_entity_linking_response_v1",
+        "schema_version": "refined_entity_linking_response_v3",
         "status": "completed",
         "identity": identity,
         "load_elapsed_ms": _load_elapsed_ms,
@@ -233,7 +233,39 @@ def _evidence(processor: Any, candidate_id: str, span: Any) -> dict[str, object]
         "returned_text": span.text,
         "start": span.start,
         "end": span.start + span.ln,
+        "coarse_mention_type": span.coarse_mention_type,
         "candidates": candidates,
+        "linked_entity_classes": _linked_entity_classes(processor, predicted_id),
+    }
+
+
+def _linked_entity_classes(processor: Any, wikidata_id: str | None) -> dict[str, object] | None:
+    """Expose raw Wikidata-class closure for the predicted top identity."""
+    if wikidata_id in {None, "Q0"}:
+        return None
+    class_indices = processor.preprocessor.class_handler.get_classes_idx_for_qcode_batch(
+        [wikidata_id]
+    )[0]
+    class_ids = sorted(
+        {
+            processor.preprocessor.index_to_class[int(index)]
+            for index in class_indices.tolist()
+            if int(index) != 0
+            and re.fullmatch(
+                r"Q[1-9][0-9]*",
+                processor.preprocessor.index_to_class[int(index)],
+            )
+        }
+    )
+    return {
+        "wikidata_id": wikidata_id,
+        "classes": [
+            {
+                "class_id": class_id,
+                "label": processor.preprocessor.class_to_label.get(class_id, "no_label"),
+            }
+            for class_id in class_ids
+        ],
     }
 
 
@@ -317,7 +349,7 @@ def _failure_response(error: Exception) -> dict[str, object]:
     else:
         code, message = "worker_failure", f"{type(error).__name__}: {error}"
     return {
-        "schema_version": "refined_entity_linking_response_v1",
+        "schema_version": "refined_entity_linking_response_v3",
         "status": "blocked",
         "failure": code,
         "diagnostics": [message],

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import re
 from datetime import UTC, datetime
 from typing import cast
 
@@ -8,7 +9,11 @@ from kotekomi_application import (
     PARAGRAPH_SEGMENT_V3,
     ContextModelProfile,
     EventEntityConnectionPreviewStatus,
+    EventEntityDenotationDecision,
+    EventEntityDenotationRule,
     EventEntityKind,
+    EventEntityLinguisticEvidence,
+    EventEntityLinguisticToken,
     EventEntityMentionInput,
     EventEntitySourceSpan,
     ExecutionSetting,
@@ -54,7 +59,7 @@ SOURCE_TEXT = "Anthropic criticized Stargate."
 
 
 class FixtureLedger:
-    def __init__(self) -> None:
+    def __init__(self, source_text: str = SOURCE_TEXT) -> None:
         self.source = Source(
             id="src_connection_preview",
             source_type=SourceType.MANUAL_FILE,
@@ -64,9 +69,9 @@ class FixtureLedger:
         self.document = Document(
             id="doc_connection_preview",
             source_id=self.source.id,
-            content_sha256=hashlib.sha256(SOURCE_TEXT.encode()).hexdigest(),
+            content_sha256=hashlib.sha256(source_text.encode()).hexdigest(),
         )
-        self.bundle = _bundle(self.document.id)
+        self.bundle = _bundle(self.document.id, source_text)
         self.analysis_units: dict[str, AnalysisUnitArtifact] = {}
         self.context_manifests: dict[str, ContextManifestArtifact] = {}
         self.extraction_tasks: dict[str, ExtractionTask] = {}
@@ -209,49 +214,74 @@ class FixtureRunIds:
         return f"mrn_{self.ordinal:032x}"
 
 
-def test_preview_runs_one_bounded_question_per_candidate_and_preserves_exact_io() -> None:
-    result, ledger, runtime, archive = _run_preview((b"Y", b"N"))
+def test_preview_runs_one_contrastive_question_per_event_and_preserves_exact_io() -> None:
+    result, ledger, runtime, archive = _run_preview((b"YN",))
 
-    assert len(runtime.requests) == 2
-    assert all(
-        request.execution_spec.generation_parameters[0].value == 2 for request in runtime.requests
-    )
+    assert len(runtime.requests) == 1
+    assert runtime.requests[0].execution_spec.generation_parameters[0].value == 4
     assert [item.entity_name for item in result.preview.drafts] == ["Anthropic"]
     assert result.preview.terminal_status is EventEntityConnectionPreviewStatus.COMPLETE
-    assert len(result.preview.traces) == 2
-    assert all(trace.input["exact_model_input"] for trace in result.preview.traces)
-    assert [trace.output["raw_output_text"] for trace in result.preview.traces] == ["Y", "N"]
+    assert len(result.preview.judgments) == 2
+    assert len(result.preview.traces) == 1
+    assert result.preview.traces[0].input["exact_model_input"]
+    assert result.preview.traces[0].output["raw_output_text"] == "YN"
+    assert result.preview.traces[0].output["parsed_answers"] == "YN"
     assert set(archive.outputs) == set(result.preview.model_run_ids)
     assert ledger.accepted_write_attempted is False
 
 
-def test_one_malformed_judgment_is_isolated_without_erasing_its_sibling() -> None:
-    result, ledger, runtime, archive = _run_preview((b"Y", b"not-a-finite-answer"))
+def test_malformed_contrastive_vector_leaves_the_inventory_unresolved() -> None:
+    result, ledger, runtime, archive = _run_preview((b"Y",))
 
-    assert len(runtime.requests) == 2
-    assert [item.entity_name for item in result.preview.drafts] == ["Anthropic"]
+    assert len(runtime.requests) == 1
+    assert result.preview.drafts == ()
     assert result.preview.terminal_status is EventEntityConnectionPreviewStatus.PARTIAL
-    assert len(result.preview.judgments) == 1
-    assert any(item.reason_code == "model_judgment_failed" for item in result.preview.decisions)
-    assert any(item.startswith("entity_involvement_failed:") for item in result.preview.diagnostics)
+    assert result.preview.judgments == ()
+    assert all(item.reason_code == "model_judgment_failed" for item in result.preview.decisions)
+    assert "entity_involvement_batch_failed" in result.preview.diagnostics
     assert set(archive.outputs) == set(result.preview.model_run_ids)
+    assert ledger.accepted_write_attempted is False
+
+
+def test_structural_negative_is_decided_without_a_model_execution() -> None:
+    source = "Anthropic criticized Stargate. Morgan joined Orion."
+    result, ledger, runtime, archive = _run_preview(
+        (),
+        source_text=source,
+        event_expression="criticized",
+        entity_names=("Morgan",),
+    )
+
+    assert runtime.requests == []
+    assert result.preview.model_run_ids == ()
+    assert result.preview.extraction_task_ids == ()
+    assert result.preview.traces == ()
+    assert result.preview.drafts == ()
+    assert result.preview.routes[0].reason.value == "different_linguistic_sentence"
+    assert result.preview.decisions[0].reason_code == "different_linguistic_sentence"
+    assert result.preview.terminal_status is EventEntityConnectionPreviewStatus.COMPLETE
+    assert archive.outputs == {}
     assert ledger.accepted_write_attempted is False
 
 
 def _run_preview(
-    outputs: tuple[bytes, bytes],
+    outputs: tuple[bytes, ...],
+    *,
+    source_text: str = SOURCE_TEXT,
+    event_expression: str = "criticized",
+    entity_names: tuple[str, ...] = ("Anthropic", "Stargate"),
 ) -> tuple[EventEntityConnectionResult, FixtureLedger, FixtureRuntime, FixtureArchive]:
-    ledger = FixtureLedger()
+    ledger = FixtureLedger(source_text)
     runtime = FixtureRuntime(outputs)
     archive = FixtureArchive()
     paragraph = next(item for item in ledger.bundle.nodes if item.node_type == "paragraph")
-    segment = paragraph_source_segments(SOURCE_TEXT, PARAGRAPH_SEGMENT_V3)[0]
+    segment = paragraph_source_segments(source_text, PARAGRAPH_SEGMENT_V3)[0]
     unit = create_analysis_unit_from_source_segment(
         SourceSegmentAnalysisUnitInput(
             representation_id=ledger.bundle.representation.id,
             paragraph_node_id=paragraph.id,
             source_segment_label=segment.label,
-            policy_id="event_entity_connection_pairwise_v1",
+            policy_id="event_entity_connection_contrastive_v6",
             task_type="event_entity_connection_experiment",
         ),
         ledger,
@@ -260,17 +290,19 @@ def _run_preview(
         event_subject_id="esd_" + "1" * 24,
         trigger_id="etd_" + "2" * 24,
         source_segment_id="seg_connection_preview",
-        source_text_sha256=hashlib.sha256(SOURCE_TEXT.encode()).hexdigest(),
-        expression_text="criticized",
-        head_text="criticized",
+        source_text_sha256=hashlib.sha256(source_text.encode()).hexdigest(),
+        expression_text=event_expression,
+        head_text=event_expression,
         head_evidence_target_id="etg_" + "1" * 24,
         expression_evidence_target_id="etg_" + "2" * 24,
         support_evidence_target_id="etg_" + "3" * 24,
     )
-    mentions = tuple(
-        _mention(name, SOURCE_TEXT.index(name), str(index))
-        for index, name in enumerate(("Anthropic", "Stargate"), start=1)
+    mention_evidence = tuple(
+        _mention_and_denotation(source_text, name, source_text.index(name), str(index))
+        for index, name in enumerate(entity_names, start=1)
     )
+    mentions = tuple(item[0] for item in mention_evidence)
+    denotation_decisions = tuple(item[1] for item in mention_evidence)
 
     result = run_event_entity_connection_preview(
         EventEntityConnectionCommand(
@@ -279,10 +311,13 @@ def _run_preview(
             representation_id=ledger.bundle.representation.id,
             parent_preview_id="hsp_" + "4" * 24,
             parent_preview_sha256="5" * 64,
-            source_text=SOURCE_TEXT,
+            source_text=source_text,
             event=event,
             entity_mentions=mentions,
+            denotation_decisions=denotation_decisions,
             candidate_gaps=(),
+            gap_dependencies=(),
+            linguistic_evidence=_linguistic_evidence(source_text),
             analysis_unit=unit,
             model_profile=ContextModelProfile("fixture", 4_096, 32, 32),
             generation_parameters=(
@@ -300,8 +335,13 @@ def _run_preview(
     return result, ledger, runtime, archive
 
 
-def _mention(name: str, start: int, suffix: str) -> EventEntityMentionInput:
-    digest = hashlib.sha256(SOURCE_TEXT.encode()).hexdigest()
+def _mention_and_denotation(
+    source_text: str,
+    name: str,
+    start: int,
+    suffix: str,
+) -> tuple[EventEntityMentionInput, EventEntityDenotationDecision]:
+    digest = hashlib.sha256(source_text.encode()).hexdigest()
     mention_id = "mnc_" + suffix * 24
     values = (
         "seg_connection_preview",
@@ -321,21 +361,84 @@ def _mention(name: str, start: int, suffix: str) -> EventEntityMentionInput:
         text=name,
         mention_candidate_id=mention_id,
     )
-    return EventEntityMentionInput(
-        entity_identity=f"organization:{name.casefold()}",
+    source_evidence_id = "mob_" + suffix * 24
+    interpretation_id = "mit_" + suffix * 24
+    denotation_values = (
+        mention_id,
+        EventEntityKind.ORGANIZATION.value,
+        name,
+        EventEntityDenotationRule.MODEL_CONTEXTUAL_KIND.value,
+        interpretation_id,
+        source_evidence_id,
+    )
+    denotation = EventEntityDenotationDecision(
+        id="edd_" + hashlib.sha256(chr(31).join(denotation_values).encode()).hexdigest()[:24],
+        mention_candidate_id=mention_id,
         entity_kind=EventEntityKind.ORGANIZATION,
         entity_name=name,
-        source_span=span,
+        rule_id=EventEntityDenotationRule.MODEL_CONTEXTUAL_KIND,
+        source_evidence_ids=(source_evidence_id,),
+        mention_interpretation_id=interpretation_id,
+    )
+    return (
+        EventEntityMentionInput(
+            entity_identity=f"organization:{name.casefold()}",
+            entity_kind=EventEntityKind.ORGANIZATION,
+            entity_name=name,
+            denotation_decision_id=denotation.id,
+            source_span=span,
+        ),
+        denotation,
     )
 
 
-def _bundle(document_id: str) -> DocumentRepresentationBundle:
+def _linguistic_evidence(source_text: str) -> EventEntityLinguisticEvidence:
+    ranges = tuple(
+        (match.start(), match.end(), match.group())
+        for match in re.finditer(r"\w+|[^\w\s]", source_text)
+    )
+    sentence_ordinal = 1
+    sentence_root_id: str | None = None
+    tokens: list[EventEntityLinguisticToken] = []
+    for ordinal, (start, end, text) in enumerate(ranges, start=1):
+        token_id = f"t{ordinal}"
+        if sentence_root_id is None:
+            sentence_root_id = token_id
+        tokens.append(
+            EventEntityLinguisticToken(
+                token_id=token_id,
+                sentence_id=f"s{sentence_ordinal}",
+                text=text,
+                start=start,
+                end=end,
+                lemma=text.casefold(),
+                part_of_speech="X",
+                dependency_relation="root" if token_id == sentence_root_id else "dep",
+                head_token_id=None if token_id == sentence_root_id else sentence_root_id,
+            )
+        )
+        if text in {".", "!", "?"}:
+            sentence_ordinal += 1
+            sentence_root_id = None
+    return EventEntityLinguisticEvidence(
+        trace_id="xst_" + "c" * 24,
+        source_segment_id="seg_connection_preview",
+        source_text_sha256=hashlib.sha256(source_text.encode()).hexdigest(),
+        producer_id="stanza:fixture",
+        model_id="stanza-en",
+        model_version="fixture",
+        resource_identity="d" * 64,
+        tokens=tuple(tokens),
+    )
+
+
+def _bundle(document_id: str, source_text: str) -> DocumentRepresentationBundle:
     text_view = TextView(
         id="tvw_connection_preview",
         representation_id="rep_connection_preview",
         kind=TextViewKind.LOGICAL,
-        content_digest=hashlib.sha256(SOURCE_TEXT.encode()).hexdigest(),
-        text=SOURCE_TEXT,
+        content_digest=hashlib.sha256(source_text.encode()).hexdigest(),
+        text=source_text,
         normalization_policy="utf8_identity_v1",
     )
     root = DocumentNode(
@@ -345,7 +448,7 @@ def _bundle(document_id: str) -> DocumentRepresentationBundle:
         order_index=0,
         text_view_id=text_view.id,
         start_char=0,
-        end_char=len(SOURCE_TEXT),
+        end_char=len(source_text),
     )
     paragraph = DocumentNode(
         id="nod_connection_preview_paragraph",
@@ -355,12 +458,12 @@ def _bundle(document_id: str) -> DocumentRepresentationBundle:
         order_index=1,
         text_view_id=text_view.id,
         start_char=0,
-        end_char=len(SOURCE_TEXT),
+        end_char=len(source_text),
     )
     quality = ParseQualityReport(
         id="pqr_connection_preview",
         representation_id="rep_connection_preview",
-        metric_values={"text_char_count": len(SOURCE_TEXT)},
+        metric_values={"text_char_count": len(source_text)},
         analyzability=RepresentationAnalyzability.ACCEPTABLE,
     )
     template = DocumentRepresentation(
@@ -370,7 +473,7 @@ def _bundle(document_id: str) -> DocumentRepresentationBundle:
         parser_version="1",
         parser_config_digest="b" * 64,
         processing_task_fingerprint_id="ptf_connection_preview",
-        input_blob_digest=hashlib.sha256(SOURCE_TEXT.encode()).hexdigest(),
+        input_blob_digest=hashlib.sha256(source_text.encode()).hexdigest(),
         canonical_output_digest="0" * 64,
         created_at=NOW,
     )

@@ -113,6 +113,99 @@ def test_reference_marker_preserves_flexible_whitespace_and_possessive_source_te
     assert all(item.candidate_id != marker_candidate.id for item in result.preview.interpretations)
 
 
+def test_named_symbol_discovery_preserves_exact_name_inside_broader_proposal() -> None:
+    text = "Services had FedRAMP authorization."
+    ledger = FixtureLedger(paragraph_text=text)
+    runtime = FixtureModelRuntime(
+        proposal_abstains=True,
+        boundary_output=b"c1 | complete\n",
+    )
+    result = _run(
+        ledger,
+        FixtureArchive(),
+        FixtureProposer(proposal_spans=("FedRAMP authorization",)),
+        runtime,
+    )
+
+    observation = next(
+        item
+        for item in result.preview.observations
+        if item.producer_id == "kotekomi_named_symbol_v1"
+    )
+    trace = next(
+        item for item in result.preview.traces if item.stage_id == "named_symbol_discovery"
+    )
+
+    assert (observation.text, observation.start, observation.end) == ("FedRAMP", 13, 20)
+    assert observation.execution_record_id == trace.id
+    assert trace.output["symbols"] == [{"end": 20, "start": 13, "text": "FedRAMP"}]
+    assert {item.text for item in result.preview.candidates} == {
+        "FedRAMP",
+        "FedRAMP authorization",
+    }
+    candidate_by_id = {item.id: item for item in result.preview.candidates}
+    assert {candidate_by_id[item.candidate_id].text for item in result.preview.interpretations} == {
+        "FedRAMP",
+        "FedRAMP authorization",
+    }
+    candidate_by_text = {item.text: item for item in result.preview.candidates}
+    adjudication = result.preview.boundary_adjudications[0]
+    boundary_request = next(
+        item
+        for item in runtime.requests
+        if item.task_type == "hybrid_mention_boundary_adjudication"
+    )
+    boundary_task = ledger.extraction_tasks[boundary_request.extraction_task_id]
+    trace = next(item for item in result.preview.traces if item.id == adjudication.trace_id)
+    assert boundary_task.input_candidate_ids == (candidate_by_text["FedRAMP authorization"].id,)
+    assert b'candidate_catalog:\nc1 | "FedRAMP authorization"' in boundary_request.rendered_input
+    assert b"required_output_prefixes:\nc1 |" in boundary_request.rendered_input
+    assert b"c2 |" not in boundary_request.rendered_input
+    assert trace.configuration["deterministic_completion_rule_ids"] == [
+        "exact_named_symbol_boundary_v1",
+        "exact_possessor_boundary_v1",
+    ]
+    assert trace.input["deterministic_complete_candidate_ids"] == [candidate_by_text["FedRAMP"].id]
+    assert {
+        candidate_by_id[item.candidate_id].text: item.status.value
+        for item in adjudication.judgments
+    } == {
+        "FedRAMP": "complete",
+        "FedRAMP authorization": "complete",
+    }
+
+
+def test_named_symbol_boundary_survives_rejection_of_broader_model_proposal() -> None:
+    result = _run(
+        FixtureLedger(paragraph_text="Services had FedRAMP authorization."),
+        FixtureArchive(),
+        FixtureProposer(proposal_spans=("FedRAMP authorization",)),
+        FixtureModelRuntime(
+            proposal_abstains=True,
+            boundary_output=b"c1 | incomplete\n",
+        ),
+    )
+
+    effective_ids = set(
+        effective_mention_candidate_ids(
+            result.preview.boundary_decisions,
+            result.preview.boundary_adjudications,
+        )
+    )
+
+    assert [item.text for item in result.preview.candidates if item.id in effective_ids] == [
+        "FedRAMP"
+    ]
+    assert [
+        next(
+            candidate.text
+            for candidate in result.preview.candidates
+            if candidate.id == interpretation.candidate_id
+        )
+        for interpretation in result.preview.interpretations
+    ] == ["FedRAMP"]
+
+
 def test_reference_marker_bypasses_interpretation_even_when_qwen_selects_same_range() -> None:
     text = "Anthropic defended the company's decision."
     result = _run(

@@ -125,6 +125,8 @@ That classification does not change steps four through six.
   source does not establish that attendance occurred or will occur.
 - SGE-E05B: TGE-010 records `rejected` because `ahead of` supplies anticipated temporal context and
   does not establish that the election occurred.
+- SGE-E05C: TGE-021 records `rejected` because the inauguration is embedded as an alternative under
+  Amodei's decision and the source does not establish that it occurred.
 - SGE-E06: Gold evaluation compares exact Event names and EventMention evidence.
 - SGE-E07: Gold evaluation reports missing, extra, and incorrectly grounded Events.
 - SGE-E08: Gold evaluation preserves development and validation partitions.
@@ -270,7 +272,7 @@ Semantic Argument Assignment remains the next hybrid pipeline boundary.
 - AC-SGE-W02: Wiki tests render exact expression and exact source text together.
 - AC-SGE-W03: Wiki audit tests expose EventMention and EvidenceTarget identities.
 - AC-SGE-E01: Gold tests cover every approved Trigger Gold Event exactly once.
-- AC-SGE-E02: Gold tests preserve TGE-010, TGE-020, and TGE-033 as reviewed rejections.
+- AC-SGE-E02: Gold tests preserve TGE-010, TGE-020, TGE-021, and TGE-033 as reviewed rejections.
 - AC-SGE-E03: Gold replay preserves the parent development and validation split.
 - AC-SGE-ALL: Formatting, lint, typecheck, focused tests, and repository tests pass.
 
@@ -291,10 +293,12 @@ The canonical ingestion completed successfully on September 12, 2026.
 Human review on September 13 corrected the Gold contract after that replay.
 
 - The corrected Gold contains 84 approved Events and three rejected Events.
-- TGE-010 remains a valid linguistic trigger observation but cannot become a source-grounded Event.
+- TGE-010 remains a valid linguistic trigger observation and derived grounding record but cannot
+  become an admitted Event proposal.
 - Its election mention supplies anticipated temporal context for the Facebook post without
   establishing occurrence.
-- TGE-020 remains a valid linguistic trigger observation but cannot become a source-grounded Event.
+- TGE-020 remains a valid linguistic trigger observation and derived grounding record but cannot
+  become an admitted Event proposal.
 - Its infinitival attendance is embedded under TGE-019's decision and has no established occurrence
   or future modality.
 - TGE-019 now requires the complete exact decision expression.
@@ -313,6 +317,43 @@ The fresh September 13 canonical ingestion verified the corrected contract.
 - The catalog retained 84 approved and three rejected human review outcomes.
 - Evaluation created zero accepted Ledger changes.
 - Re-evaluation reused immutable ingestion evidence and created zero ModelRun records.
+
+Human review on September 15 found one additional factuality error in the Gold contract.
+
+- TGE-021's inauguration is named only as an alternative under TGE-019's decision.
+- The SourceSegment does not establish that the inauguration occurred.
+- TGE-021 remains a valid linguistic Event mention and derived grounding record but is rejected from
+  Event admission.
+- At that point, the catalog contained 83 approved Events and four rejected Events.
+- A read-only replay against immutable coverage report `hdc_2bc1f339a55f4bd259bfc1f1` verified all
+  87 exact grounding records against the revised Gold, including 83 approved and four rejected review
+outcomes, without rerunning a model or changing accepted Ledger state.
+
+The completed Event-entity Gold review on September 16 found one further occurrence error.
+
+- TGE-012's infinitival `vote` is embedded under TGE-011's urging.
+- The SourceSegment establishes that Amodei urged his associates to vote, but it does not establish
+  that they voted.
+- TGE-012 remains an exact linguistic Event observation and derived grounding record, but it is
+  rejected from Event admission.
+- The current source-grounded Event catalog therefore contains 82 approved Events and five rejected
+  Events.
+- The correction changes no source characters, trigger range, or accepted Ledger state.
+
+The same review established that source-grounded Event meanings preserve explicit calendar
+expressions, relative temporal anchors, source aspect, active voice, attribution, and material
+qualifications without normalizing them into inferred calendar facts.
+
+The same review corrected TGE-025 to retain Sacks's source-exact act of stating the quoted claim.
+TGE-025 remains an approved source-grounded Event, but its meaning now preserves attribution and does
+not treat the quoted regulatory-capture characterization as independently established world state.
+
+TGE-055 now likewise preserves that Palantir and Amazon Web Services offered services `with FedRAMP
+authorization`; the qualification is part of the source-grounded Event meaning rather than optional
+presentation detail.
+
+TGE-007 now preserves that Amodei wrote the op-ed in The New York Times. This records the source's
+publication venue without implying that the publication commissioned or endorsed the op-ed.
 
 The enclosing ingestion reported accounted gaps in other extraction stages for 20 of 36 paragraphs.
 

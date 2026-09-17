@@ -10,32 +10,21 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
 
-from kotekomi_adapters import LocalArchiveStore, sqlite_ledger_transaction
+from kotekomi_adapters import LocalArchiveStore
 from kotekomi_application import (
-    PARAGRAPH_SEGMENT_V3,
     ContextModelProfile,
     EventEntityConnectionPreview,
     ExecutionSetting,
     ExtractionStageTrace,
-    HybridStageId,
     SourceSegmentAnalysisUnitInput,
     Uuid4ModelRunIdFactory,
+    build_event_entity_candidate_routes,
     build_event_entity_connection_candidates,
     canonical_event_entity_connection_preview_bytes,
     create_analysis_unit_from_source_segment,
-    derive_source_copy_view,
-    hybrid_document_coverage_report_from_bytes,
-    hybrid_extraction_preview_from_bytes,
-    hybrid_paragraph_receipt_from_bytes,
-    hybrid_reference_preview_from_bytes,
-    hybrid_source_segment_id,
-    load_hybrid_event_semantics_preview,
-    load_hybrid_event_trigger_preview,
-    paragraph_source_segments,
-    select_event_entity_mentions,
 )
 from kotekomi_application.event_entity_connection_model_output import (
-    entity_involvement_answer_schema_bytes,
+    entity_involvement_answer_batch_schema_bytes,
 )
 from kotekomi_application.event_entity_connection_preview import (
     EventEntityConnectionArchive,
@@ -47,8 +36,6 @@ from kotekomi_application.event_entity_connections import (
     EVENT_ENTITY_CONNECTION_POLICY_ID,
     EVENT_ENTITY_INVOLVEMENT_SCHEMA_ID,
 )
-from kotekomi_application.hybrid_event_triggers import EventTriggerDraft
-from kotekomi_application.source_occurrences import source_occurrences
 from kotekomi_domain import (
     AnalysisUnitArtifact,
     ContextManifestArtifact,
@@ -72,16 +59,21 @@ from kotekomi_pipelines.event_entity_connection_stage_local import (
     load_connection_gold_catalog,
     render_connection_gold_review,
     render_event_entity_candidate_preflight_review,
+    validate_equal_event_entity_candidate_inventories,
 )
-from kotekomi_pipelines.event_trigger_stage_local import (
-    TriggerGoldCatalog,
-    TriggerGoldEvent,
+from kotekomi_pipelines.event_entity_experiment_inputs import (
+    load_event_entity_experiment_inputs,
+)
+from kotekomi_pipelines.event_entity_predicate_argument_stage_local import (
+    build_predicate_argument_diagnostic_report,
+    predicate_argument_summary,
+    render_predicate_argument_review,
 )
 from kotekomi_pipelines.model_runtime import build_model_task_runtime
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_GOLD = REPOSITORY_ROOT / "docs" / "hsq-event-entity-connection-gold-v1.json"
-DEFAULT_PROMPT = REPOSITORY_ROOT / "prompts" / "event_entity_involvement_v1.md"
+DEFAULT_GOLD = REPOSITORY_ROOT / "docs" / "hsq-event-entity-connection-gold-v2.json"
+DEFAULT_PROMPT = REPOSITORY_ROOT / "prompts" / "event_entity_involvement_v5.md"
 
 
 class _ExperimentLedger:
@@ -191,6 +183,12 @@ def main() -> int:
     compare.add_argument("--validation-report", type=Path, required=True)
     compare.add_argument("--output", type=Path, required=True)
 
+    diagnose = commands.add_parser("diagnose-stanza")
+    diagnose.add_argument("--config", type=Path, required=True)
+    diagnose.add_argument("--coverage-report-id", required=True)
+    diagnose.add_argument("--gold", type=Path, default=DEFAULT_GOLD)
+    diagnose.add_argument("--run-root", type=Path, required=True)
+
     args = parser.parse_args()
     if args.command == "render-gold":
         return _render_gold(args)
@@ -200,6 +198,8 @@ def main() -> int:
         return _run(args)
     if args.command == "finalize":
         return _finalize(args)
+    if args.command == "diagnose-stanza":
+        return _diagnose_stanza(args)
     return _compare(args)
 
 
@@ -231,33 +231,20 @@ def _prepare(args: argparse.Namespace) -> int:
         repository_root=REPOSITORY_ROOT,
         require_approved=False,
     )
-    config = _config(args.config)
-    canonical_archive = LocalArchiveStore(config.archive_path)
-    coverage_payload = canonical_archive.read_hybrid_document_coverage_report(
-        args.coverage_report_id
-    )
-    coverage = hybrid_document_coverage_report_from_bytes(coverage_payload)
     selected_gold = tuple(item for item in catalog.events if item.phase == args.phase)
-    with sqlite_ledger_transaction(config.ledger_path) as ledger:
-        bundle = ledger.get_document_representation_bundle(coverage.representation_id)
-        if bundle is None:
-            raise ValueError("Coverage report references a missing representation.")
-        document = ledger.get_document(bundle.representation.document_id)
-        if document is None:
-            raise ValueError("Representation references a missing Document.")
-        source = ledger.get_source(document.source_id)
-        if source is None:
-            raise ValueError("Document references a missing Source.")
-        inputs = _collect_inputs(
-            coverage=coverage,
-            selected_gold=selected_gold,
-            trigger_gold=trigger_gold,
-            bundle=bundle,
-            source=source,
-            document=document,
-            ledger=ledger,
-            archive=canonical_archive,
-        )
+    config = _config(args.config)
+    canonical = load_event_entity_experiment_inputs(
+        config=config,
+        coverage_report_id=args.coverage_report_id,
+        selected_gold=selected_gold,
+        trigger_gold=trigger_gold,
+    )
+    source = canonical.source
+    document = canonical.document
+    bundle = canonical.bundle
+    inputs = canonical.inputs
+    coverage = canonical.coverage
+    coverage_payload = canonical.coverage_payload
     _write_json(
         root / "canonical-state.json",
         {
@@ -283,16 +270,27 @@ def _prepare(args: argparse.Namespace) -> int:
         encoding="utf-8",
     )
     prompt = DEFAULT_PROMPT.read_bytes()
-    candidate_count = sum(
-        len(
-            build_event_entity_connection_candidates(
-                item.event,
-                item.candidate_selection.mentions,
-                source_text=item.source_text,
-            )
+    candidate_sets = tuple(
+        build_event_entity_connection_candidates(
+            item.event,
+            item.candidate_selection.mentions,
+            source_text=item.source_text,
         )
         for item in inputs
     )
+    route_sets = tuple(
+        build_event_entity_candidate_routes(
+            source_text=item.source_text,
+            candidates=candidates,
+            linguistic_evidence=item.linguistic_evidence,
+        )
+        for item, candidates in zip(inputs, candidate_sets, strict=True)
+    )
+    candidate_count = sum(len(items) for items in candidate_sets)
+    model_candidate_count = sum(
+        item.route.value == "model_judgment" for routes in route_sets for item in routes
+    )
+    deterministic_candidate_count = candidate_count - model_candidate_count
     candidate_gap_count = sum(len(item.candidate_selection.gaps) for item in inputs)
     status = event_entity_preparation_status(
         gold_review_status=catalog.review_status,
@@ -311,11 +309,13 @@ def _prepare(args: argparse.Namespace) -> int:
         "prompt_path": _relative_or_absolute(DEFAULT_PROMPT),
         "prompt_sha256": _sha(prompt),
         "schema_id": EVENT_ENTITY_INVOLVEMENT_SCHEMA_ID,
-        "schema_sha256": _sha(entity_involvement_answer_schema_bytes()),
+        "schema_sha256": _sha(entity_involvement_answer_batch_schema_bytes()),
         "policy_id": EVENT_ENTITY_CONNECTION_POLICY_ID,
         "runtime": _runtime_contract(config),
         "input_count": len(inputs),
         "candidate_count": candidate_count,
+        "model_candidate_count": model_candidate_count,
+        "deterministic_candidate_count": deterministic_candidate_count,
         "candidate_gap_count": candidate_gap_count,
         "canonical_state_sha256": _sha((root / "canonical-state.json").read_bytes()),
         "inputs_sha256": _sha((root / "inputs.jsonl").read_bytes()),
@@ -330,8 +330,21 @@ def _prepare(args: argparse.Namespace) -> int:
                 "repetition": args.repetition,
                 "input_count": len(inputs),
                 "candidate_count": candidate_count,
+                "model_candidate_count": model_candidate_count,
+                "deterministic_candidate_count": deterministic_candidate_count,
                 "candidate_gap_count": candidate_gap_count,
+                "expected_candidate_gap_count": preflight.expected_candidate_gap_count,
+                "matched_expected_candidate_gap_count": (
+                    preflight.matched_expected_candidate_gap_count
+                ),
+                "missing_expected_candidate_gap_count": (
+                    preflight.missing_expected_candidate_gap_count
+                ),
+                "unexpected_candidate_gap_count": preflight.unexpected_candidate_gap_count,
                 "preflight_missing_entity_count": preflight.missing_entity_count,
+                "preflight_deterministically_rejected_entity_count": (
+                    preflight.deterministically_rejected_entity_count
+                ),
                 "preflight_violated_exclusion_count": preflight.violated_exclusion_count,
                 "preflight_passed": preflight.passed,
                 "status": status,
@@ -345,103 +358,84 @@ def _prepare(args: argparse.Namespace) -> int:
     return 0
 
 
-def _collect_inputs(
-    *,
-    coverage: Any,
-    selected_gold: tuple[ConnectionGoldEvent, ...],
-    trigger_gold: TriggerGoldCatalog,
-    bundle: DocumentRepresentationBundle,
-    source: Source,
-    document: Document,
-    ledger: Any,
-    archive: LocalArchiveStore,
-) -> tuple[EventEntityExperimentInput, ...]:
-    selected_by_id = {item.event_id: item for item in selected_gold}
-    trigger_by_id = {
-        item.event_id: (segment.source_text, item)
-        for segment in trigger_gold.segments
-        for item in segment.events
-        if item.event_id in selected_by_id
-    }
-    node_by_id = {item.id: item for item in bundle.nodes}
-    view_by_id = {item.id: item for item in bundle.text_views}
-    found: dict[str, EventEntityExperimentInput] = {}
-    for coverage_record in coverage.records:
-        receipt = hybrid_paragraph_receipt_from_bytes(
-            archive.read_hybrid_paragraph_receipt(coverage_record.receipt_id)
-        )
-        semantics_stage = next(
-            (item for item in receipt.stages if item.stage_id is HybridStageId.HP6_EVENT_SEMANTICS),
-            None,
-        )
-        if semantics_stage is None or semantics_stage.output_id is None:
-            continue
-        semantics_payload = archive.read_hybrid_event_semantics_preview(semantics_stage.output_id)
-        if _sha(semantics_payload) != semantics_stage.output_sha256:
-            raise ValueError("Paragraph receipt references changed Event evidence.")
-        semantics = load_hybrid_event_semantics_preview(
-            semantics_stage.output_id,
-            ledger,
-            archive,
-        )
-        triggers = load_hybrid_event_trigger_preview(semantics.parent_preview_id, archive)
-        mention = hybrid_extraction_preview_from_bytes(
-            archive.read_hybrid_extraction_preview(triggers.mention_preview_id)
-        )
-        references = hybrid_reference_preview_from_bytes(
-            archive.read_hybrid_reference_preview(triggers.reference_preview_id)
-        )
-        paragraph = node_by_id[semantics.paragraph_node_id]
-        text_view = view_by_id[paragraph.text_view_id]
-        paragraph_text = text_view.text[paragraph.start_char : paragraph.end_char]
-        segments = paragraph_source_segments(paragraph_text, PARAGRAPH_SEGMENT_V3)
-        trigger_records = {item.id: item for item in triggers.triggers}
-        for event in semantics.source_grounded_events:
-            trigger = trigger_records[event.trigger_id]
-            gold_id = _match_gold_event_id(trigger, trigger_by_id)
-            if gold_id is None:
-                continue
-            gold = selected_by_id[gold_id]
-            matching_segments = tuple(
-                item
-                for item in segments
-                if hybrid_source_segment_id(
-                    bundle.representation.id,
-                    paragraph.id,
-                    item,
+def _diagnose_stanza(args: argparse.Namespace) -> int:
+    root = args.run_root.resolve()
+    if root.exists() and any(root.iterdir()):
+        raise ValueError("Predicate-argument diagnostic requires an absent or empty run root.")
+    root.mkdir(parents=True, exist_ok=True)
+    gold_path = args.gold.resolve()
+    catalog, _, trigger_gold = load_connection_gold_catalog(
+        gold_path,
+        repository_root=REPOSITORY_ROOT,
+        require_approved=True,
+    )
+    config = _config(args.config)
+    canonical = load_event_entity_experiment_inputs(
+        config=config,
+        coverage_report_id=args.coverage_report_id,
+        selected_gold=catalog.events,
+        trigger_gold=trigger_gold,
+    )
+    source = canonical.source
+    document = canonical.document
+    bundle = canonical.bundle
+    inputs = canonical.inputs
+    catalog_sha256 = _sha(gold_path.read_bytes())
+    report = build_predicate_argument_diagnostic_report(
+        catalog=catalog,
+        catalog_sha256=catalog_sha256,
+        inputs=inputs,
+    )
+    diagnostic_path = root / "diagnostic.json"
+    review_path = root / "review.md"
+    summary_path = root / "summary.json"
+    manifest_path = root / "manifest.json"
+    _write_json(diagnostic_path, report.model_dump(mode="json"))
+    review_path.write_text(render_predicate_argument_review(report), encoding="utf-8")
+    summary = predicate_argument_summary(report)
+    _write_json(summary_path, summary)
+    input_bytes = _canonical_json([item.model_dump(mode="json") for item in inputs]).encode()
+    manifest = {
+        "schema_version": "predicate_argument_diagnostic_manifest_v1",
+        "catalog_id": catalog.catalog_id,
+        "catalog_sha256": catalog_sha256,
+        "coverage_report_id": args.coverage_report_id,
+        "source_id": source.id,
+        "document_id": document.id,
+        "representation_id": bundle.representation.id,
+        "input_count": len(inputs),
+        "inputs_sha256": _sha(input_bytes),
+        "linguistic_resources": sorted(
+            {
+                (
+                    item.linguistic_evidence.model_id,
+                    item.linguistic_evidence.model_version,
+                    item.linguistic_evidence.resource_identity,
                 )
-                == event.source_segment_id
-            )
-            if len(matching_segments) != 1:
-                raise ValueError("Event does not identify one paragraph SourceSegment.")
-            segment = matching_segments[0]
-            selection = select_event_entity_mentions(
-                source_text=segment.exact_text,
-                event=event,
-                mention_preview=mention,
-                reference_preview=references,
-            )
-            prepared = EventEntityExperimentInput(
-                phase=gold.phase,
-                gold_event_id=gold.event_id,
-                source_id=source.id,
-                document_id=document.id,
-                representation_id=bundle.representation.id,
-                paragraph_node_id=paragraph.id,
-                source_segment_label=segment.label,
-                source_text=segment.exact_text,
-                event_semantics_preview_id=semantics.id,
-                event_semantics_preview_sha256=_sha(semantics_payload),
-                event=event,
-                candidate_selection=selection,
-            )
-            if gold_id in found and found[gold_id] != prepared:
-                raise ValueError("Canonical evidence repeats one Gold Event with changed input.")
-            found[gold_id] = prepared
-    missing = sorted(set(selected_by_id) - set(found))
-    if missing:
-        raise ValueError(f"Canonical evidence is missing selected Events: {', '.join(missing)}")
-    return tuple(found[key] for key in sorted(found))
+                for item in inputs
+            }
+        ),
+        "diagnostic_sha256": _sha(diagnostic_path.read_bytes()),
+        "review_sha256": _sha(review_path.read_bytes()),
+        "summary_sha256": _sha(summary_path.read_bytes()),
+        "model_execution_count": 0,
+        "accepted_ledger_change_count": 0,
+        "passed": report.passed,
+    }
+    _write_json(manifest_path, manifest)
+    print(
+        json.dumps(
+            {
+                **summary,
+                "diagnostic": str(diagnostic_path),
+                "review": str(review_path),
+                "summary": str(summary_path),
+                "manifest": str(manifest_path),
+            },
+            sort_keys=True,
+        )
+    )
+    return 0 if report.passed else 1
 
 
 def _run(args: argparse.Namespace) -> int:
@@ -488,7 +482,10 @@ def _run(args: argparse.Namespace) -> int:
                     source_text=prepared.source_text,
                     event=prepared.event,
                     entity_mentions=prepared.candidate_selection.mentions,
+                    denotation_decisions=prepared.candidate_selection.denotation_decisions,
                     candidate_gaps=prepared.candidate_selection.gaps,
+                    gap_dependencies=prepared.candidate_selection.gap_dependencies,
+                    linguistic_evidence=prepared.linguistic_evidence,
                     analysis_unit=unit,
                     model_profile=_profile(config),
                     generation_parameters=_generation(config),
@@ -520,10 +517,19 @@ def _run(args: argparse.Namespace) -> int:
                     "accepted_ledger_change_count": ledger.accepted_ledger_change_count,
                 },
             )
+            model_candidate_count = sum(
+                item.route.value == "model_judgment" for item in result.preview.routes
+            )
+            deterministic_decision_count = sum(
+                item.route.value == "deterministic_not_connected" for item in result.preview.routes
+            )
             print(
                 f"Connection Event {ordinal}/{len(inputs)}: "
                 f"{result.preview.terminal_status.value} "
-                f"({len(result.preview.candidates)} judgments)"
+                f"({len(result.preview.model_run_ids)} model executions; "
+                f"{model_candidate_count} model candidates; "
+                f"{deterministic_decision_count} "
+                "deterministic decisions)"
             )
     finally:
         close = getattr(runtime, "close", None)
@@ -559,8 +565,12 @@ def _finalize(args: argparse.Namespace) -> int:
     for path in sorted((root / "events").glob("*.json")):
         record = _read_json(path)
         event_id = str(record["gold_event_id"])
-        prepared = EventEntityExperimentInput.model_validate(record["prepared_input"])
-        preview = EventEntityConnectionPreview.model_validate(record["preview"])
+        prepared = EventEntityExperimentInput.model_validate_json(
+            _canonical_json(record["prepared_input"])
+        )
+        preview = EventEntityConnectionPreview.model_validate_json(
+            _canonical_json(record["preview"])
+        )
         if record.get("preview_sha256") != _sha(
             canonical_event_entity_connection_preview_bytes(preview)
         ):
@@ -568,7 +578,8 @@ def _finalize(args: argparse.Namespace) -> int:
         if record.get("accepted_ledger_change_count") != 0:
             raise ValueError("Connection experiment execution changed accepted Ledger state.")
         model_runs = tuple(
-            ModelRun.model_validate(raw) for raw in cast(list[object], record["model_runs"])
+            ModelRun.model_validate_json(_canonical_json(raw))
+            for raw in cast(list[object], record["model_runs"])
         )
         if {item.id for item in model_runs} != set(preview.model_run_ids):
             raise ValueError("Connection execution ModelRun evidence is incomplete.")
@@ -626,12 +637,26 @@ def _finalize(args: argparse.Namespace) -> int:
                 "passed": report.passed,
                 "passed_event_count": report.passed_event_count,
                 "event_count": report.event_count,
+                "occurrence_count": report.occurrence_count,
+                "candidate_inventory_sha256": report.candidate_inventory_sha256,
+                "strict_metrics": report.strict_metrics.model_dump(mode="json"),
+                "connected_sensitivity_metrics": (
+                    report.connected_sensitivity_metrics.model_dump(mode="json")
+                ),
                 "missing_entity_count": report.missing_entity_count,
                 "candidate_missing_entity_count": report.candidate_missing_entity_count,
                 "false_negative_entity_count": report.false_negative_entity_count,
                 "extra_connection_count": report.extra_connection_count,
                 "unresolved_connection_count": report.unresolved_connection_count,
+                "expected_candidate_gap_count": report.expected_candidate_gap_count,
+                "matched_expected_candidate_gap_count": (
+                    report.matched_expected_candidate_gap_count
+                ),
+                "missing_expected_candidate_gap_count": (
+                    report.missing_expected_candidate_gap_count
+                ),
                 "candidate_gap_count": report.candidate_gap_count,
+                "unexpected_candidate_gap_count": report.unexpected_candidate_gap_count,
                 "violated_exclusion_count": report.violated_exclusion_count,
                 "report": str(root / "report.json"),
                 "review": str(root / "review.md"),
@@ -646,30 +671,37 @@ def _compare(args: argparse.Namespace) -> int:
     if len(args.development_report) != 3:
         raise ValueError("Connection comparison requires three development reports.")
     development = tuple(
-        EventEntityPhaseReport.model_validate(_read_json(path.resolve()))
+        EventEntityPhaseReport.model_validate_json(path.resolve().read_bytes())
         for path in args.development_report
     )
-    validation = EventEntityPhaseReport.model_validate(_read_json(args.validation_report.resolve()))
+    validation = EventEntityPhaseReport.model_validate_json(
+        args.validation_report.resolve().read_bytes()
+    )
     for path in (*args.development_report, args.validation_report):
         _validate_manifest(path.resolve().parent)
     if tuple(sorted(item.repetition for item in development)) != (1, 2, 3):
         raise ValueError("Development reports must cover repetitions one through three.")
+    validate_equal_event_entity_candidate_inventories(development)
     stable = len({item.result_fingerprint for item in development}) == 1
     passed = stable and all(item.passed for item in development) and validation.passed
     result = {
-        "schema_version": "hsq_event_entity_connection_comparison_v1",
+        "schema_version": "hsq_event_entity_connection_comparison_v2",
         "development_repetitions": [
             {
                 "repetition": item.repetition,
                 "passed": item.passed,
+                "candidate_inventory_sha256": item.candidate_inventory_sha256,
                 "result_fingerprint": item.result_fingerprint,
+                "strict_metrics": item.strict_metrics.model_dump(mode="json"),
             }
             for item in sorted(development, key=lambda value: value.repetition)
         ],
         "development_stable": stable,
         "validation": {
             "passed": validation.passed,
+            "candidate_inventory_sha256": validation.candidate_inventory_sha256,
             "result_fingerprint": validation.result_fingerprint,
+            "strict_metrics": validation.strict_metrics.model_dump(mode="json"),
         },
         "production_integration": "not_activated",
         "passed": passed,
@@ -677,35 +709,6 @@ def _compare(args: argparse.Namespace) -> int:
     _write_json(args.output.resolve(), result)
     print(json.dumps(result, sort_keys=True))
     return 0 if passed else 1
-
-
-def _match_gold_event_id(
-    trigger: EventTriggerDraft,
-    trigger_by_id: dict[str, tuple[str, TriggerGoldEvent]],
-) -> str | None:
-    matches: list[str] = []
-    for event_id, (source_text, gold) in trigger_by_id.items():
-        if _sha(source_text.encode()) != trigger.source_text_sha256:
-            continue
-        source_copy = derive_source_copy_view(source_text)
-        occurrences = {item.occurrence_id: item for item in source_occurrences(source_copy.text)}
-        head = occurrences[gold.head_occurrence_id]
-        head_span = source_copy.authoritative_range(head.start, head.end)
-        expressions = {
-            source_copy.authoritative_range(
-                occurrences[item.start_occurrence_id].start,
-                occurrences[item.end_occurrence_id].end,
-            )
-            for item in gold.accepted_expression_ranges
-        }
-        if (trigger.head_start, trigger.head_end) == head_span and (
-            trigger.start,
-            trigger.end,
-        ) in expressions:
-            matches.append(event_id)
-    if len(matches) > 1:
-        raise ValueError("One Event trigger matches multiple Gold Events.")
-    return matches[0] if matches else None
 
 
 def _render_result_review(
@@ -725,8 +728,12 @@ def _render_result_review(
     for event_id in sorted(gold_by_id):
         gold = gold_by_id[event_id]
         record = event_records[event_id]
-        prepared = EventEntityExperimentInput.model_validate(record["prepared_input"])
-        preview = EventEntityConnectionPreview.model_validate(record["preview"])
+        prepared = EventEntityExperimentInput.model_validate_json(
+            _canonical_json(record["prepared_input"])
+        )
+        preview = EventEntityConnectionPreview.model_validate_json(
+            _canonical_json(record["preview"])
+        )
         evaluation = evaluation_by_id[event_id]
         lines.extend(
             (
@@ -745,18 +752,19 @@ def _render_result_review(
         )
         trace_by_candidate: dict[str, ExtractionStageTrace] = {}
         for trace in preview.traces:
-            raw_candidate = trace.input.get("candidate")
-            if not isinstance(raw_candidate, dict):
+            raw_candidates = trace.input.get("candidates")
+            if not isinstance(raw_candidates, list):
                 continue
-            candidate_id = raw_candidate.get("id")
-            if isinstance(candidate_id, str):
-                trace_by_candidate[candidate_id] = trace
-        decision_by_candidate = {item.candidate_id: item for item in preview.decisions}
-        for candidate in preview.candidates:
-            trace = trace_by_candidate[candidate.id]
+            for raw_candidate in raw_candidates:
+                if not isinstance(raw_candidate, dict):
+                    continue
+                candidate_id = raw_candidate.get("id")
+                if isinstance(candidate_id, str):
+                    trace_by_candidate[candidate_id] = trace
+        for trace in preview.traces:
             lines.extend(
                 (
-                    f"### {candidate.entity_kind.value} — {candidate.entity_name}",
+                    "Contrastive model execution:",
                     "",
                     "Exact model input:",
                     "",
@@ -770,9 +778,68 @@ def _render_result_review(
                     str(trace.output.get("raw_output_text")),
                     "```",
                     "",
+                    "Parsed answer vector: "
+                    f"`{trace.output.get('parsed_answers') or 'unavailable'}`",
+                    "",
+                )
+            )
+        decision_by_candidate = {item.candidate_id: item for item in preview.decisions}
+        occurrence_by_candidate = {item.candidate_id: item for item in evaluation.occurrences}
+        judgment_by_candidate = {item.candidate_id: item for item in preview.judgments}
+        route_by_candidate = {item.candidate_id: item for item in preview.routes}
+        for candidate in preview.candidates:
+            route = route_by_candidate[candidate.id]
+            primary = next(
+                item
+                for item in candidate.source_spans
+                if item.id == candidate.primary_source_span_id
+            )
+            lines.extend(
+                (
+                    f"### {candidate.entity_kind.value} — {candidate.entity_name}",
+                    "",
+                    (
+                        "Exact occurrence: "
+                        f"`[{primary.start}, {primary.end})` "
+                        + json.dumps(primary.text, ensure_ascii=False)
+                    ),
+                    "",
+                    f"Route: `{route.route.value}`",
+                    "",
+                    f"Route reason: `{route.reason.value}`",
+                    "",
+                    f"Event sentence: `{route.event_sentence_id}`",
+                    "",
+                    f"Entity sentence: `{route.entity_sentence_id}`",
+                    "",
+                )
+            )
+            trace = trace_by_candidate.get(candidate.id)
+            judgment = judgment_by_candidate.get(candidate.id)
+            lines.extend(
+                (
+                    (
+                        "Model answer: "
+                        f"`{judgment.answer.value if judgment is not None else 'not_invoked'}`"
+                    ),
+                    "",
+                    f"Model trace: `{trace.id if trace is not None else 'none'}`",
+                    "",
                     (
                         "KoteKomi disposition: "
                         f"`{decision_by_candidate[candidate.id].disposition.value}`"
+                    ),
+                    "",
+                    (
+                        "Gold occurrence: `"
+                        + occurrence_by_candidate[candidate.id].gold_disposition.value
+                        + "`"
+                    ),
+                    "",
+                    (
+                        "Strict score: `"
+                        + occurrence_by_candidate[candidate.id].strict_score.value
+                        + "`"
                     ),
                     "",
                 )
@@ -784,6 +851,25 @@ def _render_result_review(
                 for item in preview.candidate_gaps
             )
             lines.append("")
+        lines.extend(
+            (
+                (
+                    "Matched reviewed gaps: "
+                    f"`{', '.join(evaluation.matched_expected_gap_ids) or 'none'}`"
+                ),
+                "",
+                (
+                    "Missing reviewed gaps: "
+                    f"`{', '.join(evaluation.missing_expected_gap_ids) or 'none'}`"
+                ),
+                "",
+                (
+                    "Unexpected candidate gaps: "
+                    f"`{', '.join(evaluation.unexpected_candidate_gap_ids) or 'none'}`"
+                ),
+                "",
+            )
+        )
         lines.extend(
             (
                 f"Missing Gold entities: `{', '.join(evaluation.missing_entity_ids) or 'none'}`",
@@ -823,7 +909,7 @@ def _validate_static_contract(root: Path, metadata: dict[str, Any]) -> None:
         raise ValueError("Connection Gold changed after preparation.")
     if metadata["prompt_sha256"] != _sha(DEFAULT_PROMPT.read_bytes()):
         raise ValueError("Connection prompt changed after preparation.")
-    if metadata["schema_sha256"] != _sha(entity_involvement_answer_schema_bytes()):
+    if metadata["schema_sha256"] != _sha(entity_involvement_answer_batch_schema_bytes()):
         raise ValueError("Connection output schema changed after preparation.")
     if metadata["schema_id"] != EVENT_ENTITY_INVOLVEMENT_SCHEMA_ID:
         raise ValueError("Connection output schema identity changed.")
@@ -837,8 +923,8 @@ def _validate_static_contract(root: Path, metadata: dict[str, Any]) -> None:
     ):
         if metadata.get(field_name) != _sha((root / filename).read_bytes()):
             raise ValueError(f"Connection {filename} changed after preparation.")
-    preflight = EventEntityCandidatePreflightReport.model_validate(
-        _read_json(root / "preflight.json")
+    preflight = EventEntityCandidatePreflightReport.model_validate_json(
+        (root / "preflight.json").read_bytes()
     )
     if (
         preflight.catalog_sha256 != metadata["gold_sha256"]
@@ -863,9 +949,9 @@ def _load_inputs(path: Path) -> tuple[EventEntityExperimentInput, ...]:
 def _load_canonical_state(path: Path) -> _CanonicalState:
     value = _read_json(path)
     return _CanonicalState(
-        Source.model_validate(value["source"]),
-        Document.model_validate(value["document"]),
-        DocumentRepresentationBundle.model_validate(value["bundle"]),
+        Source.model_validate_json(_canonical_json(value["source"])),
+        Document.model_validate_json(_canonical_json(value["document"])),
+        DocumentRepresentationBundle.model_validate_json(_canonical_json(value["bundle"])),
     )
 
 

@@ -338,10 +338,7 @@ class HybridExtractionPreview(BaseModel):
         trace_ids = {item.id for item in self.traces}
         if any(
             observation.execution_record_id not in self.model_run_ids
-            and not (
-                observation.producer_id == "kotekomi_reference_marker_v1"
-                and observation.execution_record_id in trace_ids
-            )
+            and observation.execution_record_id not in trace_ids
             for observation in self.observations
         ):
             raise ValueError("HybridExtractionPreview observation provenance is missing.")

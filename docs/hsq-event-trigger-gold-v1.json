@@ -11,7 +11,7 @@
       "source_text": "Hegseth, the United States secretary of defense, has publicly rebuked Anthropic chief executive Dario Amodei's approach to artificial intelligence.",
       "event_free": false,
       "events": [
-        {"event_id": "TGE-001", "meaning": "Hegseth publicly rebuked Dario Amodei's approach.", "head_occurrence_id": "o10", "accepted_expression_ranges": [{"start_occurrence_id": "o8", "end_occurrence_id": "o10"}, {"start_occurrence_id": "o9", "end_occurrence_id": "o10"}, {"start_occurrence_id": "o10", "end_occurrence_id": "o10"}]}
+        {"event_id": "TGE-001", "meaning": "Hegseth has publicly rebuked Dario Amodei's approach.", "head_occurrence_id": "o10", "accepted_expression_ranges": [{"start_occurrence_id": "o8", "end_occurrence_id": "o10"}, {"start_occurrence_id": "o9", "end_occurrence_id": "o10"}, {"start_occurrence_id": "o10", "end_occurrence_id": "o10"}]}
       ]
     },
     {
@@ -20,11 +20,11 @@
       "source_text": "In January 2025, Anthropic CEO Dario Amodei criticized the artificial intelligence investment project Stargate as \"chaotic\" and opposed Trump's rescission of president Joe Biden's Executive Order on Artificial Intelligence, but noted that Anthropic had held discussions with Trump officials about artificial intelligence policy. ",
       "event_free": false,
       "events": [
-        {"event_id": "TGE-002", "meaning": "Dario Amodei criticized Stargate.", "head_occurrence_id": "o8", "accepted_expression_ranges": [{"start_occurrence_id": "o8", "end_occurrence_id": "o8"}]},
-        {"event_id": "TGE-003", "meaning": "Dario Amodei opposed Trump's rescission.", "head_occurrence_id": "o18", "accepted_expression_ranges": [{"start_occurrence_id": "o18", "end_occurrence_id": "o18"}]},
+        {"event_id": "TGE-002", "meaning": "In January 2025, Dario Amodei criticized Stargate.", "head_occurrence_id": "o8", "accepted_expression_ranges": [{"start_occurrence_id": "o8", "end_occurrence_id": "o8"}]},
+        {"event_id": "TGE-003", "meaning": "In January 2025, Dario Amodei opposed Trump's rescission.", "head_occurrence_id": "o18", "accepted_expression_ranges": [{"start_occurrence_id": "o18", "end_occurrence_id": "o18"}]},
         {"event_id": "TGE-004", "meaning": "Trump rescinded an Executive Order.", "head_occurrence_id": "o20", "accepted_expression_ranges": [{"start_occurrence_id": "o20", "end_occurrence_id": "o20"}]},
-        {"event_id": "TGE-005", "meaning": "Dario Amodei noted Anthropic's discussions.", "head_occurrence_id": "o31", "accepted_expression_ranges": [{"start_occurrence_id": "o31", "end_occurrence_id": "o31"}]},
-        {"event_id": "TGE-006", "meaning": "Anthropic held discussions with Trump officials.", "head_occurrence_id": "o36", "accepted_expression_ranges": [{"start_occurrence_id": "o34", "end_occurrence_id": "o36"}, {"start_occurrence_id": "o35", "end_occurrence_id": "o36"}, {"start_occurrence_id": "o36", "end_occurrence_id": "o36"}]}
+        {"event_id": "TGE-005", "meaning": "In January 2025, Dario Amodei noted that Anthropic had held discussions with Trump officials about artificial intelligence policy.", "head_occurrence_id": "o31", "accepted_expression_ranges": [{"start_occurrence_id": "o31", "end_occurrence_id": "o31"}]},
+        {"event_id": "TGE-006", "meaning": "Anthropic had held discussions with Trump officials about artificial intelligence policy.", "head_occurrence_id": "o36", "accepted_expression_ranges": [{"start_occurrence_id": "o34", "end_occurrence_id": "o36"}, {"start_occurrence_id": "o35", "end_occurrence_id": "o36"}, {"start_occurrence_id": "o36", "end_occurrence_id": "o36"}]}
       ]
     },
     {
@@ -33,9 +33,9 @@
       "source_text": "[6] The following month, Amodei wrote an op-ed in The New York Times describing  the  artificial  intelligence  regulation bill, then tied to the One Big Beautiful Bill Act, as \"far too blunt an instrument\". ",
       "event_free": false,
       "events": [
-        {"event_id": "TGE-007", "meaning": "Amodei wrote an op-ed.", "head_occurrence_id": "o6", "accepted_expression_ranges": [{"start_occurrence_id": "o6", "end_occurrence_id": "o6"}]},
-        {"event_id": "TGE-008", "meaning": "The op-ed described the artificial intelligence regulation bill.", "head_occurrence_id": "o14", "accepted_expression_ranges": [{"start_occurrence_id": "o14", "end_occurrence_id": "o14"}]},
-        {"event_id": "TGE-009", "meaning": "The regulation bill was tied to the One Big Beautiful Bill Act.", "head_occurrence_id": "o21", "accepted_expression_ranges": [{"start_occurrence_id": "o21", "end_occurrence_id": "o21"}]}
+        {"event_id": "TGE-007", "meaning": "The following month, Amodei wrote an op-ed in The New York Times.", "head_occurrence_id": "o6", "accepted_expression_ranges": [{"start_occurrence_id": "o6", "end_occurrence_id": "o6"}]},
+        {"event_id": "TGE-008", "meaning": "In the op-ed written the following month, Amodei described the artificial intelligence regulation bill.", "head_occurrence_id": "o14", "accepted_expression_ranges": [{"start_occurrence_id": "o14", "end_occurrence_id": "o14"}]},
+        {"event_id": "TGE-009", "meaning": "The regulation bill was then tied to the One Big Beautiful Bill Act.", "head_occurrence_id": "o21", "accepted_expression_ranges": [{"start_occurrence_id": "o21", "end_occurrence_id": "o21"}]}
       ]
     },
     {
@@ -45,9 +45,9 @@
       "event_free": false,
       "events": [
         {"event_id": "TGE-010", "meaning": "The source refers to the 2024 presidential election as anticipated temporal context for Amodei's Facebook post.", "head_occurrence_id": "o18", "accepted_expression_ranges": [{"start_occurrence_id": "o16", "end_occurrence_id": "o18"}, {"start_occurrence_id": "o18", "end_occurrence_id": "o18"}]},
-        {"event_id": "TGE-011", "meaning": "Amodei urged his associates to vote for Kamala Harris.", "head_occurrence_id": "o20", "accepted_expression_ranges": [{"start_occurrence_id": "o20", "end_occurrence_id": "o20"}]},
-        {"event_id": "TGE-012", "meaning": "Amodei's associates were urged to vote.", "head_occurrence_id": "o24", "accepted_expression_ranges": [{"start_occurrence_id": "o23", "end_occurrence_id": "o24"}, {"start_occurrence_id": "o24", "end_occurrence_id": "o24"}]},
-        {"event_id": "TGE-013", "meaning": "Amodei described Trump as a feudal warlord.", "head_occurrence_id": "o32", "accepted_expression_ranges": [{"start_occurrence_id": "o32", "end_occurrence_id": "o32"}]}
+        {"event_id": "TGE-011", "meaning": "In a Facebook post ahead of the 2024 presidential election, Amodei urged his associates to vote for Kamala Harris over Trump.", "head_occurrence_id": "o20", "accepted_expression_ranges": [{"start_occurrence_id": "o20", "end_occurrence_id": "o20"}]},
+        {"event_id": "TGE-012", "meaning": "The source embeds voting for Kamala Harris over Trump under Amodei's urging.", "head_occurrence_id": "o24", "accepted_expression_ranges": [{"start_occurrence_id": "o23", "end_occurrence_id": "o24"}, {"start_occurrence_id": "o24", "end_occurrence_id": "o24"}]},
+        {"event_id": "TGE-013", "meaning": "In a Facebook post ahead of the 2024 presidential election, Amodei described Trump as a feudal warlord.", "head_occurrence_id": "o32", "accepted_expression_ranges": [{"start_occurrence_id": "o32", "end_occurrence_id": "o32"}]}
       ]
     },
     {
@@ -56,8 +56,8 @@
       "source_text": "As the Trump administration targeted law firms, Amodei cut ties with the firms Skadden, Arps, Slate, Meagher & Flom and Latham & Watkins, which reached agreements with  the  Trump  administration  to  avoid  punishment.  ",
       "event_free": false,
       "events": [
-        {"event_id": "TGE-014", "meaning": "The Trump administration targeted law firms.", "head_occurrence_id": "o5", "accepted_expression_ranges": [{"start_occurrence_id": "o5", "end_occurrence_id": "o5"}]},
-        {"event_id": "TGE-015", "meaning": "Amodei cut ties with two law firms.", "head_occurrence_id": "o9", "accepted_expression_ranges": [{"start_occurrence_id": "o9", "end_occurrence_id": "o10"}, {"start_occurrence_id": "o9", "end_occurrence_id": "o9"}]},
+        {"event_id": "TGE-014", "meaning": "The Trump administration targeted law firms as Amodei cut ties with two of them.", "head_occurrence_id": "o5", "accepted_expression_ranges": [{"start_occurrence_id": "o5", "end_occurrence_id": "o5"}]},
+        {"event_id": "TGE-015", "meaning": "Amodei cut ties with two law firms as the Trump administration targeted law firms.", "head_occurrence_id": "o9", "accepted_expression_ranges": [{"start_occurrence_id": "o9", "end_occurrence_id": "o10"}, {"start_occurrence_id": "o9", "end_occurrence_id": "o9"}]},
         {"event_id": "TGE-016", "meaning": "The law firms reached agreements with the Trump administration.", "head_occurrence_id": "o24", "accepted_expression_ranges": [{"start_occurrence_id": "o23", "end_occurrence_id": "o24"}, {"start_occurrence_id": "o24", "end_occurrence_id": "o24"}]},
         {"event_id": "TGE-017", "meaning": "The law firms intended to avoid punishment.", "head_occurrence_id": "o30", "accepted_expression_ranges": [{"start_occurrence_id": "o29", "end_occurrence_id": "o30"}, {"start_occurrence_id": "o30", "end_occurrence_id": "o30"}]}
       ]
@@ -71,7 +71,7 @@
         {"event_id": "TGE-018", "meaning": "Sacks viewed several matters as evidence.", "head_occurrence_id": "o2", "accepted_expression_ranges": [{"start_occurrence_id": "o2", "end_occurrence_id": "o2"}]},
         {"event_id": "TGE-019", "meaning": "Amodei decided to attend the World Economic Forum instead of Trump's second inauguration.", "head_occurrence_id": "o4", "accepted_expression_ranges": [{"start_occurrence_id": "o4", "end_occurrence_id": "o14"}]},
         {"event_id": "TGE-020", "meaning": "The source embeds attendance at the World Economic Forum under Amodei's decision.", "head_occurrence_id": "o6", "accepted_expression_ranges": [{"start_occurrence_id": "o5", "end_occurrence_id": "o6"}, {"start_occurrence_id": "o6", "end_occurrence_id": "o6"}]},
-        {"event_id": "TGE-021", "meaning": "Trump's second inauguration occurred.", "head_occurrence_id": "o14", "accepted_expression_ranges": [{"start_occurrence_id": "o12", "end_occurrence_id": "o14"}, {"start_occurrence_id": "o14", "end_occurrence_id": "o14"}]},
+        {"event_id": "TGE-021", "meaning": "The source embeds Trump's second inauguration as an alternative under Amodei's decision.", "head_occurrence_id": "o14", "accepted_expression_ranges": [{"start_occurrence_id": "o12", "end_occurrence_id": "o14"}, {"start_occurrence_id": "o14", "end_occurrence_id": "o14"}]},
         {"event_id": "TGE-022", "meaning": "Amodei hired Biden officials.", "head_occurrence_id": "o16", "accepted_expression_ranges": [{"start_occurrence_id": "o16", "end_occurrence_id": "o16"}]},
         {"event_id": "TGE-023", "meaning": "Sacks assessed that Anthropic would not support Trump's agenda.", "head_occurrence_id": "o35", "accepted_expression_ranges": [{"start_occurrence_id": "o33", "end_occurrence_id": "o35"}, {"start_occurrence_id": "o35", "end_occurrence_id": "o35"}]}
       ]
@@ -83,10 +83,10 @@
       "event_free": false,
       "events": [
         {"event_id": "TGE-024", "meaning": "Sacks made a statement about Anthropic.", "head_occurrence_id": "o6", "accepted_expression_ranges": [{"start_occurrence_id": "o6", "end_occurrence_id": "o6"}]},
-        {"event_id": "TGE-025", "meaning": "Sacks alleged that Anthropic was running a regulatory capture strategy.", "head_occurrence_id": "o10", "accepted_expression_ranges": [{"start_occurrence_id": "o9", "end_occurrence_id": "o10"}, {"start_occurrence_id": "o10", "end_occurrence_id": "o10"}]},
-        {"event_id": "TGE-026", "meaning": "Amodei published a blog post.", "head_occurrence_id": "o23", "accepted_expression_ranges": [{"start_occurrence_id": "o23", "end_occurrence_id": "o23"}]},
-        {"event_id": "TGE-027", "meaning": "The blog post rebuffed claims from the Trump administration.", "head_occurrence_id": "o27", "accepted_expression_ranges": [{"start_occurrence_id": "o27", "end_occurrence_id": "o27"}]},
-        {"event_id": "TGE-028", "meaning": "The publication intensified the dispute.", "head_occurrence_id": "o37", "accepted_expression_ranges": [{"start_occurrence_id": "o37", "end_occurrence_id": "o37"}]}
+        {"event_id": "TGE-025", "meaning": "In October 2025, Sacks stated that Anthropic was \"running a sophisticated regulatory capture strategy based on fearmongering.\"", "head_occurrence_id": "o10", "accepted_expression_ranges": [{"start_occurrence_id": "o9", "end_occurrence_id": "o10"}, {"start_occurrence_id": "o10", "end_occurrence_id": "o10"}]},
+        {"event_id": "TGE-026", "meaning": "That month, Amodei published a blog post.", "head_occurrence_id": "o23", "accepted_expression_ranges": [{"start_occurrence_id": "o23", "end_occurrence_id": "o23"}]},
+        {"event_id": "TGE-027", "meaning": "That month, the blog post rebuffed claims from the Trump administration.", "head_occurrence_id": "o27", "accepted_expression_ranges": [{"start_occurrence_id": "o27", "end_occurrence_id": "o27"}]},
+        {"event_id": "TGE-028", "meaning": "That month, the publication intensified the dispute.", "head_occurrence_id": "o37", "accepted_expression_ranges": [{"start_occurrence_id": "o37", "end_occurrence_id": "o37"}]}
       ]
     },
     {
@@ -120,7 +120,7 @@
       "source_text": "[13] That month,  Amodei criticized Trump's approach to export restrictions on semiconductors. ",
       "event_free": false,
       "events": [
-        {"event_id": "TGE-038", "meaning": "Amodei criticized Trump's approach.", "head_occurrence_id": "o5", "accepted_expression_ranges": [{"start_occurrence_id": "o5", "end_occurrence_id": "o5"}]}
+        {"event_id": "TGE-038", "meaning": "That month, Amodei criticized Trump's approach to export restrictions on semiconductors.", "head_occurrence_id": "o5", "accepted_expression_ranges": [{"start_occurrence_id": "o5", "end_occurrence_id": "o5"}]}
       ]
     },
     {
@@ -129,8 +129,8 @@
       "source_text": "[17]  In December, Amodei met with Trump officials and several senators in an effort to improve Anthropic's relationship with the Trump administration. ",
       "event_free": false,
       "events": [
-        {"event_id": "TGE-039", "meaning": "Amodei met Trump officials and senators.", "head_occurrence_id": "o5", "accepted_expression_ranges": [{"start_occurrence_id": "o5", "end_occurrence_id": "o5"}]},
-        {"event_id": "TGE-040", "meaning": "Amodei sought to improve Anthropic's relationship with the administration.", "head_occurrence_id": "o16", "accepted_expression_ranges": [{"start_occurrence_id": "o15", "end_occurrence_id": "o16"}, {"start_occurrence_id": "o16", "end_occurrence_id": "o16"}]}
+        {"event_id": "TGE-039", "meaning": "In December, Amodei met Trump officials and senators.", "head_occurrence_id": "o5", "accepted_expression_ranges": [{"start_occurrence_id": "o5", "end_occurrence_id": "o5"}]},
+        {"event_id": "TGE-040", "meaning": "In December, Amodei sought to improve Anthropic's relationship with the administration.", "head_occurrence_id": "o16", "accepted_expression_ranges": [{"start_occurrence_id": "o15", "end_occurrence_id": "o16"}, {"start_occurrence_id": "o16", "end_occurrence_id": "o16"}]}
       ]
     },
     {
@@ -139,7 +139,7 @@
       "source_text": "Since  January  2026,  the  United  States  Department  of  Defense  has  conflicted  with  the  artificial intelligence  company Anthropic  over  the  use  of  its  products  for  military  purposes  and  mass  domestic surveillance.",
       "event_free": false,
       "events": [
-        {"event_id": "TGE-041", "meaning": "The Department of Defense and Anthropic have conflicted.", "head_occurrence_id": "o11", "accepted_expression_ranges": [{"start_occurrence_id": "o10", "end_occurrence_id": "o11"}, {"start_occurrence_id": "o11", "end_occurrence_id": "o11"}]}
+        {"event_id": "TGE-041", "meaning": "Since January 2026, the United States Department of Defense and Anthropic have conflicted over the use of Anthropic's products for military purposes and mass domestic surveillance.", "head_occurrence_id": "o11", "accepted_expression_ranges": [{"start_occurrence_id": "o10", "end_occurrence_id": "o11"}, {"start_occurrence_id": "o11", "end_occurrence_id": "o11"}]}
       ]
     },
     {
@@ -183,7 +183,7 @@
       "source_text": "Prior to the dispute, the Trump administration had integrated Anthropic's services. ",
       "event_free": false,
       "events": [
-        {"event_id": "TGE-053", "meaning": "The Trump administration integrated Anthropic's services.", "head_occurrence_id": "o9", "accepted_expression_ranges": [{"start_occurrence_id": "o8", "end_occurrence_id": "o9"}, {"start_occurrence_id": "o9", "end_occurrence_id": "o9"}]}
+        {"event_id": "TGE-053", "meaning": "Prior to the dispute, the Trump administration had integrated Anthropic's services.", "head_occurrence_id": "o9", "accepted_expression_ranges": [{"start_occurrence_id": "o8", "end_occurrence_id": "o9"}, {"start_occurrence_id": "o9", "end_occurrence_id": "o9"}]}
       ]
     },
     {
@@ -192,8 +192,8 @@
       "source_text": "By November 2024, Anthropic had already partnered with Palantir and Amazon Web Services, companies that offered services with FedRAMP authorization. ",
       "event_free": false,
       "events": [
-        {"event_id": "TGE-054", "meaning": "Anthropic partnered with Palantir and Amazon Web Services.", "head_occurrence_id": "o7", "accepted_expression_ranges": [{"start_occurrence_id": "o5", "end_occurrence_id": "o7"}, {"start_occurrence_id": "o7", "end_occurrence_id": "o7"}]},
-        {"event_id": "TGE-055", "meaning": "Palantir and Amazon Web Services offered services.", "head_occurrence_id": "o16", "accepted_expression_ranges": [{"start_occurrence_id": "o16", "end_occurrence_id": "o16"}]}
+        {"event_id": "TGE-054", "meaning": "By November 2024, Anthropic had already partnered with Palantir and Amazon Web Services.", "head_occurrence_id": "o7", "accepted_expression_ranges": [{"start_occurrence_id": "o5", "end_occurrence_id": "o7"}, {"start_occurrence_id": "o7", "end_occurrence_id": "o7"}]},
+        {"event_id": "TGE-055", "meaning": "Palantir and Amazon Web Services offered services with FedRAMP authorization.", "head_occurrence_id": "o16", "accepted_expression_ranges": [{"start_occurrence_id": "o16", "end_occurrence_id": "o16"}]}
       ]
     },
     {
@@ -202,8 +202,8 @@
       "source_text": "In the Biden administration, Anthropic had reached an agreement with the AI Safety Institute and had participated in a nuclear information safety evaluation. ",
       "event_free": false,
       "events": [
-        {"event_id": "TGE-056", "meaning": "Anthropic reached an agreement with the AI Safety Institute.", "head_occurrence_id": "o9", "accepted_expression_ranges": [{"start_occurrence_id": "o6", "end_occurrence_id": "o9"}, {"start_occurrence_id": "o7", "end_occurrence_id": "o9"}, {"start_occurrence_id": "o9", "end_occurrence_id": "o9"}]},
-        {"event_id": "TGE-057", "meaning": "Anthropic participated in a nuclear information safety evaluation.", "head_occurrence_id": "o17", "accepted_expression_ranges": [{"start_occurrence_id": "o16", "end_occurrence_id": "o17"}, {"start_occurrence_id": "o17", "end_occurrence_id": "o17"}]},
+        {"event_id": "TGE-056", "meaning": "In the Biden administration, Anthropic had reached an agreement with the AI Safety Institute.", "head_occurrence_id": "o9", "accepted_expression_ranges": [{"start_occurrence_id": "o6", "end_occurrence_id": "o9"}, {"start_occurrence_id": "o7", "end_occurrence_id": "o9"}, {"start_occurrence_id": "o9", "end_occurrence_id": "o9"}]},
+        {"event_id": "TGE-057", "meaning": "In the Biden administration, Anthropic had participated in a nuclear information safety evaluation.", "head_occurrence_id": "o17", "accepted_expression_ranges": [{"start_occurrence_id": "o16", "end_occurrence_id": "o17"}, {"start_occurrence_id": "o17", "end_occurrence_id": "o17"}]},
         {"event_id": "TGE-058", "meaning": "A nuclear information safety evaluation occurred.", "head_occurrence_id": "o23", "accepted_expression_ranges": [{"start_occurrence_id": "o20", "end_occurrence_id": "o23"}, {"start_occurrence_id": "o23", "end_occurrence_id": "o23"}]}
       ]
     },
@@ -222,11 +222,11 @@
       "source_text": "[10] The following month, Anthropic announced that it would allow national security customers to use Claude Gov. [11][12] Anthropic's orthogonal usage policy to the  surveillance  systems  implemented  at  the  Federal  Bureau  of  Investigation,  the  Secret  Service,  and Immigration and Customs Enforcement led to a conflict between Anthropic and the Trump administration by September. ",
       "event_free": false,
       "events": [
-        {"event_id": "TGE-060", "meaning": "Anthropic made an announcement.", "head_occurrence_id": "o6", "accepted_expression_ranges": [{"start_occurrence_id": "o6", "end_occurrence_id": "o6"}]},
+        {"event_id": "TGE-060", "meaning": "The following month, Anthropic announced that it would allow national security customers to use Claude Gov.", "head_occurrence_id": "o6", "accepted_expression_ranges": [{"start_occurrence_id": "o6", "end_occurrence_id": "o6"}]},
         {"event_id": "TGE-061", "meaning": "Anthropic would allow national security customers to use Claude Gov.", "head_occurrence_id": "o10", "accepted_expression_ranges": [{"start_occurrence_id": "o9", "end_occurrence_id": "o10"}, {"start_occurrence_id": "o10", "end_occurrence_id": "o10"}]},
         {"event_id": "TGE-062", "meaning": "National security customers could use Claude Gov.", "head_occurrence_id": "o15", "accepted_expression_ranges": [{"start_occurrence_id": "o14", "end_occurrence_id": "o15"}, {"start_occurrence_id": "o15", "end_occurrence_id": "o15"}]},
         {"event_id": "TGE-063", "meaning": "Surveillance systems were implemented at federal agencies.", "head_occurrence_id": "o28", "accepted_expression_ranges": [{"start_occurrence_id": "o28", "end_occurrence_id": "o28"}]},
-        {"event_id": "TGE-064", "meaning": "Anthropic's usage policy led to a conflict.", "head_occurrence_id": "o43", "accepted_expression_ranges": [{"start_occurrence_id": "o43", "end_occurrence_id": "o43"}]},
+        {"event_id": "TGE-064", "meaning": "By September, Anthropic's usage policy led to a conflict between Anthropic and the Trump administration.", "head_occurrence_id": "o43", "accepted_expression_ranges": [{"start_occurrence_id": "o43", "end_occurrence_id": "o43"}]},
         {"event_id": "TGE-065", "meaning": "A conflict arose between Anthropic and the Trump administration.", "head_occurrence_id": "o46", "accepted_expression_ranges": [{"start_occurrence_id": "o45", "end_occurrence_id": "o46"}, {"start_occurrence_id": "o46", "end_occurrence_id": "o46"}]}
       ]
     },
@@ -247,7 +247,7 @@
       "source_text": "[22] According  to  Reuters,  Anthropic  representatives  opposed  the  use  of  the  company's  products  for surveillance  or  to  develop  lethal  autonomous  weapons. ",
       "event_free": false,
       "events": [
-        {"event_id": "TGE-069", "meaning": "Anthropic representatives opposed two product uses.", "head_occurrence_id": "o7", "accepted_expression_ranges": [{"start_occurrence_id": "o7", "end_occurrence_id": "o7"}]},
+        {"event_id": "TGE-069", "meaning": "According to Reuters, Anthropic representatives opposed using Anthropic's products for surveillance or to develop lethal autonomous weapons.", "head_occurrence_id": "o7", "accepted_expression_ranges": [{"start_occurrence_id": "o7", "end_occurrence_id": "o7"}]},
         {"event_id": "TGE-070", "meaning": "The company's products could be used for surveillance.", "head_occurrence_id": "o9", "accepted_expression_ranges": [{"start_occurrence_id": "o9", "end_occurrence_id": "o9"}]},
         {"event_id": "TGE-071", "meaning": "The company's products could develop lethal autonomous weapons.", "head_occurrence_id": "o18", "accepted_expression_ranges": [{"start_occurrence_id": "o17", "end_occurrence_id": "o18"}, {"start_occurrence_id": "o18", "end_occurrence_id": "o18"}]}
       ]
@@ -272,7 +272,7 @@
         {"event_id": "TGE-075", "meaning": "Anthropic declined to agree to the requested use.", "head_occurrence_id": "o6", "accepted_expression_ranges": [{"start_occurrence_id": "o5", "end_occurrence_id": "o6"}, {"start_occurrence_id": "o6", "end_occurrence_id": "o6"}]},
         {"event_id": "TGE-076", "meaning": "The request would allow the Department of Defense to use Claude.", "head_occurrence_id": "o8", "accepted_expression_ranges": [{"start_occurrence_id": "o7", "end_occurrence_id": "o8"}, {"start_occurrence_id": "o8", "end_occurrence_id": "o8"}]},
         {"event_id": "TGE-077", "meaning": "The Department of Defense would use Claude.", "head_occurrence_id": "o14", "accepted_expression_ranges": [{"start_occurrence_id": "o13", "end_occurrence_id": "o14"}, {"start_occurrence_id": "o14", "end_occurrence_id": "o14"}]},
-        {"event_id": "TGE-078", "meaning": "The Department of Defense threatened Anthropic.", "head_occurrence_id": "o22", "accepted_expression_ranges": [{"start_occurrence_id": "o22", "end_occurrence_id": "o22"}]},
+        {"event_id": "TGE-078", "meaning": "After Anthropic refused to allow the Department of Defense to use Claude for \"all lawful purposes\", the Department of Defense threatened to cancel its contracts with Anthropic.", "head_occurrence_id": "o22", "accepted_expression_ranges": [{"start_occurrence_id": "o22", "end_occurrence_id": "o22"}]},
         {"event_id": "TGE-079", "meaning": "The Department of Defense threatened to cancel contracts.", "head_occurrence_id": "o24", "accepted_expression_ranges": [{"start_occurrence_id": "o23", "end_occurrence_id": "o24"}, {"start_occurrence_id": "o24", "end_occurrence_id": "o24"}]}
       ]
     },
@@ -295,7 +295,7 @@
       "event_free": false,
       "events": [
         {"event_id": "TGE-084", "meaning": "The Court of Appeals issued a per curiam order.", "head_occurrence_id": "o17", "accepted_expression_ranges": [{"start_occurrence_id": "o15", "end_occurrence_id": "o17"}, {"start_occurrence_id": "o17", "end_occurrence_id": "o17"}]},
-        {"event_id": "TGE-085", "meaning": "The Court of Appeals denied Anthropic's motion.", "head_occurrence_id": "o18", "accepted_expression_ranges": [{"start_occurrence_id": "o18", "end_occurrence_id": "o18"}]},
+        {"event_id": "TGE-085", "meaning": "In April 2026, the Court of Appeals for the D.C. Circuit denied Anthropic's motion to lift the FASCSA designation.", "head_occurrence_id": "o18", "accepted_expression_ranges": [{"start_occurrence_id": "o18", "end_occurrence_id": "o18"}]},
         {"event_id": "TGE-086", "meaning": "Anthropic moved to lift the FASCSA designation.", "head_occurrence_id": "o20", "accepted_expression_ranges": [{"start_occurrence_id": "o20", "end_occurrence_id": "o25"}, {"start_occurrence_id": "o20", "end_occurrence_id": "o20"}]},
         {"event_id": "TGE-087", "meaning": "Anthropic sought to lift the FASCSA designation.", "head_occurrence_id": "o22", "accepted_expression_ranges": [{"start_occurrence_id": "o21", "end_occurrence_id": "o22"}, {"start_occurrence_id": "o22", "end_occurrence_id": "o22"}]}
       ]

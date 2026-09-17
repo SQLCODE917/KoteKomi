@@ -72,6 +72,12 @@ def test_refined_linker_sends_offline_caller_spans_and_preserves_all_ranks() -> 
         "return_special_spans": False,
     }
     candidates = execution.batch.evidences[0].candidates
+    assert execution.batch.evidences[0].coarse_mention_type == "ORG"
+    assert execution.batch.evidences[0].linked_entity_classes is not None
+    assert execution.batch.evidences[0].linked_entity_classes.wikidata_id == "Q176691"
+    assert [
+        item.class_id for item in execution.batch.evidences[0].linked_entity_classes.classes
+    ] == ["Q43229"]
     assert [(item.rank, item.kind, item.wikidata_id) for item in candidates] == [
         (1, EntityLinkCandidateKind.KNOWLEDGE_BASE_ENTITY, "Q176691"),
         (2, EntityLinkCandidateKind.NIL, None),
@@ -80,7 +86,10 @@ def test_refined_linker_sends_offline_caller_spans_and_preserves_all_ranks() -> 
     assert execution.raw_output
 
 
-@pytest.mark.parametrize("failure", ["rank", "duplicate", "title", "source", "nonfinite"])
+@pytest.mark.parametrize(
+    "failure",
+    ["rank", "duplicate", "title", "source", "nonfinite", "class_identity", "class_order"],
+)
 def test_refined_linker_rejects_malformed_external_output(failure: str) -> None:
     source = "NIST worked."
     request = _request(source)
@@ -95,8 +104,15 @@ def test_refined_linker_rejects_malformed_external_output(failure: str) -> None:
         candidates[0]["wikipedia_title_wikidata_id"] = "Q1"  # type: ignore[index]
     elif failure == "source":
         evidence["returned_text"] = "NISX"  # type: ignore[index]
-    else:
+    elif failure == "nonfinite":
         candidates[0]["score"] = "NaN"  # type: ignore[index]
+    elif failure == "class_identity":
+        evidence["linked_entity_classes"]["wikidata_id"] = "Q1"  # type: ignore[index]
+    else:
+        evidence["linked_entity_classes"]["classes"] = [  # type: ignore[index]
+            {"class_id": "Q5", "label": "human"},
+            {"class_id": "Q43229", "label": "organization"},
+        ]
 
     transport = FakeTransport(response)
     adapter = RefinedEntityLinkingAdapter(_config(), transport=transport)
@@ -110,7 +126,7 @@ def test_refined_linker_rejects_malformed_external_output(failure: str) -> None:
 def test_refined_linker_exposes_typed_worker_failure() -> None:
     transport = FakeTransport(
         {
-            "schema_version": "refined_entity_linking_response_v1",
+            "schema_version": "refined_entity_linking_response_v3",
             "status": "blocked",
             "failure": "resources_unavailable",
             "diagnostics": ["Pinned resources are unavailable."],
@@ -154,6 +170,7 @@ def test_worker_does_not_duplicate_nil_when_refined_already_ranked_it() -> None:
         predicted_entity=nil_entity,
         entity_linking_model_confidence_score=0.4,
         top_k_predicted_entities=[(nil_entity, 0.4)],
+        coarse_mention_type="ORG",
         text="Michael",
         start=0,
         ln=7,
@@ -163,6 +180,37 @@ def test_worker_does_not_duplicate_nil_when_refined_already_ranked_it() -> None:
     evidence = worker._evidence(processor, "mnc_fixture", span)
 
     assert [item["kind"] for item in evidence["candidates"]] == ["nil"]
+    assert evidence["coarse_mention_type"] == "ORG"
+    assert evidence["linked_entity_classes"] is None
+
+
+def test_worker_exposes_sorted_wikidata_classes_for_predicted_identity() -> None:
+    worker = _load_worker_module()
+    class_row = SimpleNamespace(tolist=lambda: [2, 1, 3, 0])
+
+    def get_classes_idx_for_qcode_batch(qcodes: list[str]) -> tuple[object, ...]:
+        assert qcodes == ["Q176691"]
+        return (class_row,)
+
+    processor = SimpleNamespace(
+        preprocessor=SimpleNamespace(
+            class_handler=SimpleNamespace(
+                get_classes_idx_for_qcode_batch=get_classes_idx_for_qcode_batch
+            ),
+            index_to_class={1: "Q43229", 2: "<country,Q30>", 3: "Q5"},
+            class_to_label={"Q43229": "organization", "Q5": "human"},
+        )
+    )
+
+    result = worker._linked_entity_classes(processor, "Q176691")
+
+    assert result == {
+        "wikidata_id": "Q176691",
+        "classes": [
+            {"class_id": "Q43229", "label": "organization"},
+            {"class_id": "Q5", "label": "human"},
+        ],
+    }
 
 
 def test_worker_exchange_echoes_request_id_for_success_and_failure() -> None:
@@ -206,7 +254,7 @@ def _config() -> RefinedEntityLinkingConfig:
 
 def _response(request: EntityLinkingInput) -> dict[str, object]:
     return {
-        "schema_version": "refined_entity_linking_response_v1",
+        "schema_version": "refined_entity_linking_response_v3",
         "status": "completed",
         "identity": EntityLinkerIdentity(
             producer_id="refined:1.0",
@@ -226,6 +274,11 @@ def _response(request: EntityLinkingInput) -> dict[str, object]:
                 "returned_text": "NIST",
                 "start": 0,
                 "end": 4,
+                "coarse_mention_type": "ORG",
+                "linked_entity_classes": {
+                    "wikidata_id": "Q176691",
+                    "classes": [{"class_id": "Q43229", "label": "organization"}],
+                },
                 "candidates": [
                     {
                         "rank": 1,

@@ -24,22 +24,28 @@ from kotekomi_application.context_planning import (
     verify_context_manifest,
 )
 from kotekomi_application.event_entity_connection_model_output import (
-    EntityInvolvementAnswer,
-    entity_involvement_answer_schema_bytes,
-    parse_entity_involvement_answer,
+    EntityInvolvementAnswerBatch,
+    entity_involvement_answer_batch_schema_bytes,
+    parse_entity_involvement_answer_batch,
 )
 from kotekomi_application.event_entity_connections import (
     EVENT_ENTITY_CONNECTION_POLICY_ID,
     EVENT_ENTITY_INVOLVEMENT_SCHEMA_ID,
     EntityInvolvementJudgment,
     EventEntityCandidateGap,
+    EventEntityCandidateRouteKind,
+    EventEntityCandidateSelection,
     EventEntityConnectionCandidate,
     EventEntityConnectionDecision,
     EventEntityConnectionDraft,
     EventEntityConnectionPreview,
     EventEntityConnectionPreviewStatus,
+    EventEntityDenotationDecision,
+    EventEntityGapDependency,
+    EventEntityLinguisticEvidence,
     EventEntityMentionInput,
     build_entity_involvement_judgment,
+    build_event_entity_candidate_routes,
     build_event_entity_connection_candidates,
     build_event_entity_connection_preview,
     canonical_event_entity_connection_preview_bytes,
@@ -64,7 +70,7 @@ from kotekomi_application.staged_model_extraction import (
     run_bounded_extraction,
 )
 
-BOUNDED_INVOLVEMENT_OUTPUT_TOKENS = 2
+BOUNDED_INVOLVEMENT_OUTPUT_TOKEN_PADDING = 2
 
 
 class EventEntityConnectionLedger(StagedExtractionLedger, ContextPlanningLedger, Protocol):
@@ -94,7 +100,10 @@ class EventEntityConnectionCommand:
     source_text: str
     event: SourceGroundedEventDraft
     entity_mentions: tuple[EventEntityMentionInput, ...]
+    denotation_decisions: tuple[EventEntityDenotationDecision, ...]
     candidate_gaps: tuple[EventEntityCandidateGap, ...]
+    gap_dependencies: tuple[EventEntityGapDependency, ...]
+    linguistic_evidence: EventEntityLinguisticEvidence
     analysis_unit: AnalysisUnit
     model_profile: ContextModelProfile
     generation_parameters: tuple[ExecutionSetting, ...]
@@ -110,19 +119,32 @@ class EventEntityConnectionResult:
 
 
 class EntityInvolvementTaskSchemaRegistry:
-    """Pinned finite contract for one involvement judgment."""
+    """Pinned finite contract for one ordered candidate inventory."""
 
     schema_id = EVENT_ENTITY_INVOLVEMENT_SCHEMA_ID
+
+    def __init__(self, answer_count: int) -> None:
+        if answer_count <= 0:
+            raise ValueError("Entity involvement schema requires a positive answer count.")
+        self._answer_count = answer_count
 
     def resolve(self, schema_id: str) -> PinnedTaskSchema:
         if schema_id != self.schema_id:
             raise ValueError(f"Unsupported entity involvement schema: {schema_id}")
         return PinnedTaskSchema(
             schema_id=self.schema_id,
-            canonical_schema_bytes=entity_involvement_answer_schema_bytes(),
+            canonical_schema_bytes=entity_involvement_answer_batch_schema_bytes(),
             output_contract_version=self.schema_id,
-            parse=parse_entity_involvement_answer,
+            parse=self._parse,
         )
+
+    def _parse(self, raw_output: bytes) -> EntityInvolvementAnswerBatch:
+        parsed = parse_entity_involvement_answer_batch(raw_output)
+        if len(parsed.values) != self._answer_count:
+            raise ValueError(
+                "Entity involvement answer count does not match the ordered candidate inventory."
+            )
+        return parsed
 
 
 def run_event_entity_connection_preview(
@@ -138,7 +160,18 @@ def run_event_entity_connection_preview(
     source_digest = hashlib.sha256(command.source_text.encode()).hexdigest()
     if source_digest != command.event.source_text_sha256:
         raise ValueError("Connection command SourceSegment does not match its Event.")
-    for gap in command.candidate_gaps:
+    if (
+        command.linguistic_evidence.source_segment_id != command.event.source_segment_id
+        or command.linguistic_evidence.source_text_sha256 != source_digest
+    ):
+        raise ValueError("Connection command linguistic evidence does not match its Event.")
+    selection = EventEntityCandidateSelection(
+        mentions=command.entity_mentions,
+        denotation_decisions=command.denotation_decisions,
+        gaps=command.candidate_gaps,
+        gap_dependencies=command.gap_dependencies,
+    )
+    for gap in selection.gaps:
         if (
             gap.source_segment_id != command.event.source_segment_id
             or gap.source_text_sha256 != source_digest
@@ -148,26 +181,41 @@ def run_event_entity_connection_preview(
             raise ValueError("Connection candidate gap does not match the Event source.")
     candidates = build_event_entity_connection_candidates(
         command.event,
-        command.entity_mentions,
+        selection.mentions,
         source_text=command.source_text,
     )
-    registry: TaskSchemaRegistry = EntityInvolvementTaskSchemaRegistry()
-    schema = registry.resolve(EVENT_ENTITY_INVOLVEMENT_SCHEMA_ID)
-    manifest = _build_manifest(
-        command=command,
-        schema=schema,
-        ledger=ledger,
-        tokenizer=tokenizer,
+    routes = build_event_entity_candidate_routes(
+        source_text=command.source_text,
+        candidates=candidates,
+        linguistic_evidence=command.linguistic_evidence,
+    )
+    model_pairs = tuple(
+        (candidate, route)
+        for candidate, route in zip(candidates, routes, strict=True)
+        if route.route is EventEntityCandidateRouteKind.MODEL_JUDGMENT
     )
     judgments: list[EntityInvolvementJudgment] = []
-    decisions: list[EventEntityConnectionDecision] = []
+    decisions_by_candidate: dict[str, EventEntityConnectionDecision] = {}
     drafts: list[EventEntityConnectionDraft] = []
     traces: list[ExtractionStageTrace] = []
     task_ids: list[str] = []
     run_ids: list[str] = []
     diagnostics: list[str] = []
-    for candidate in candidates:
-        task_input = event_entity_model_task_input(command.source_text, candidate)
+    for candidate, route in zip(candidates, routes, strict=True):
+        if route.route is EventEntityCandidateRouteKind.DETERMINISTIC_NOT_CONNECTED:
+            decision, _ = decide_event_entity_connection(candidate, route, None)
+            decisions_by_candidate[candidate.id] = decision
+    if model_pairs:
+        model_candidates = tuple(item[0] for item in model_pairs)
+        registry: TaskSchemaRegistry = EntityInvolvementTaskSchemaRegistry(len(model_candidates))
+        schema = registry.resolve(EVENT_ENTITY_INVOLVEMENT_SCHEMA_ID)
+        manifest = _build_manifest(
+            command=command,
+            schema=schema,
+            ledger=ledger,
+            tokenizer=tokenizer,
+        )
+        task_input = event_entity_model_task_input(command.source_text, model_candidates)
         outcome = run_bounded_extraction(
             BoundedExtractionInput(
                 source_id=command.source_id,
@@ -178,13 +226,16 @@ def run_event_entity_connection_preview(
                 execution_spec=_execution_spec(
                     manifest,
                     model_runtime,
-                    _bounded_generation_parameters(command.generation_parameters),
+                    _bounded_generation_parameters(
+                        command.generation_parameters,
+                        answer_count=len(model_candidates),
+                    ),
                     schema,
                     task_input,
                 ),
-                validator_version="event_entity_involvement_validator_v1",
-                task_type="event_entity_involvement",
-                input_candidate_ids=(candidate.id,),
+                validator_version="event_entity_involvement_validator_v3",
+                task_type="event_entity_contrastive_involvement",
+                input_candidate_ids=tuple(item.id for item in model_candidates),
                 task_local_input=task_input,
             ),
             ledger,
@@ -198,7 +249,7 @@ def run_event_entity_connection_preview(
         run_ids.append(outcome.model_run.id)
         trace = _judgment_trace(
             command=command,
-            candidate=candidate,
+            candidates=model_candidates,
             manifest=manifest,
             schema=schema,
             task_input=task_input,
@@ -206,35 +257,42 @@ def run_event_entity_connection_preview(
             extraction_task_id=outcome.extraction_task.id,
             model_run_id=outcome.model_run.id,
             raw_output=outcome.raw_model_output,
-            parsed_answer=outcome.entity_involvement_answer,
+            parsed_answers=outcome.entity_involvement_answer_batch,
             producer_id=model_runtime.configured_identity.name,
         )
         traces.append(trace)
-        judgment = (
-            build_entity_involvement_judgment(
-                candidate_id=candidate.id,
-                answer=outcome.entity_involvement_answer.value,
-                extraction_task_id=outcome.extraction_task.id,
-                model_run_id=outcome.model_run.id,
-                trace_id=trace.id,
-            )
+        parsed_values = (
+            outcome.entity_involvement_answer_batch.values
             if outcome.model_run.status is ModelRunStatus.SUCCEEDED
-            and outcome.entity_involvement_answer is not None
+            and outcome.entity_involvement_answer_batch is not None
             else None
         )
-        if judgment is not None:
-            judgments.append(judgment)
-        else:
-            diagnostics.append(f"entity_involvement_failed:{candidate.id}")
-        decision, draft = decide_event_entity_connection(candidate, judgment)
-        decisions.append(decision)
-        if draft is not None:
-            drafts.append(draft)
-        if decision.disposition.value == "unresolved":
-            diagnostics.append(f"entity_involvement_unresolved:{candidate.id}")
-    diagnostics.extend(
-        f"candidate_gap:{item.id}:{item.reason.value}" for item in command.candidate_gaps
-    )
+        if parsed_values is None:
+            diagnostics.append("entity_involvement_batch_failed")
+        for ordinal, (candidate, route) in enumerate(model_pairs):
+            judgment = (
+                build_entity_involvement_judgment(
+                    candidate_id=candidate.id,
+                    answer=parsed_values[ordinal],
+                    extraction_task_id=outcome.extraction_task.id,
+                    model_run_id=outcome.model_run.id,
+                    trace_id=trace.id,
+                )
+                if parsed_values is not None
+                else None
+            )
+            if judgment is not None:
+                judgments.append(judgment)
+            else:
+                diagnostics.append(f"entity_involvement_failed:{candidate.id}")
+            decision, draft = decide_event_entity_connection(candidate, route, judgment)
+            decisions_by_candidate[candidate.id] = decision
+            if draft is not None:
+                drafts.append(draft)
+            if decision.disposition.value == "unresolved":
+                diagnostics.append(f"entity_involvement_unresolved:{candidate.id}")
+    decisions = tuple(decisions_by_candidate[item.id] for item in candidates)
+    diagnostics.extend(f"candidate_gap:{item.id}:{item.reason.value}" for item in selection.gaps)
     status = (
         EventEntityConnectionPreviewStatus.PARTIAL
         if diagnostics
@@ -243,10 +301,13 @@ def run_event_entity_connection_preview(
     preview = build_event_entity_connection_preview(
         parent_preview_id=command.parent_preview_id,
         parent_preview_sha256=command.parent_preview_sha256,
-        candidate_gaps=command.candidate_gaps,
+        denotation_decisions=selection.denotation_decisions,
+        candidate_gaps=selection.gaps,
+        gap_dependencies=selection.gap_dependencies,
         candidates=tuple(candidates),
+        routes=routes,
         judgments=tuple(judgments),
-        decisions=tuple(decisions),
+        decisions=decisions,
         drafts=tuple(drafts),
         traces=tuple(traces),
         extraction_task_ids=tuple(task_ids),
@@ -269,11 +330,11 @@ def _build_manifest(
         ContextManifestInput(
             analysis_unit=command.analysis_unit,
             model_profile=command.model_profile,
-            prompt_id="event_entity_involvement_v1",
+            prompt_id="event_entity_involvement_v5",
             prompt_bytes=command.prompt_bytes,
             schema_id=schema.schema_id,
             schema_bytes=schema.canonical_schema_bytes,
-            renderer_version="event_entity_involvement_context_v1",
+            renderer_version="event_entity_involvement_context_v5",
             evidence_selection_policy_id=HYBRID_MENTION_EVIDENCE_SELECTION_V1,
             source_segment_policy_id=PARAGRAPH_SEGMENT_V3,
         ),
@@ -320,13 +381,21 @@ def _execution_spec(
 
 def _bounded_generation_parameters(
     settings: tuple[ExecutionSetting, ...],
+    *,
+    answer_count: int,
 ) -> tuple[ExecutionSetting, ...]:
     if sum(item.key == "max_output_tokens" for item in settings) != 1:
         raise ValueError("Entity involvement requires one max_output_tokens setting.")
+    configured_limit = next(item.value for item in settings if item.key == "max_output_tokens")
+    if type(configured_limit) is not int or configured_limit <= 0:
+        raise ValueError("Entity involvement requires a positive configured output limit.")
+    task_limit = answer_count + BOUNDED_INVOLVEMENT_OUTPUT_TOKEN_PADDING
+    if task_limit > configured_limit:
+        raise ValueError("Entity involvement answer vector exceeds the configured output limit.")
     return tuple(
         ExecutionSetting(
             item.key,
-            BOUNDED_INVOLVEMENT_OUTPUT_TOKENS if item.key == "max_output_tokens" else item.value,
+            task_limit if item.key == "max_output_tokens" else item.value,
         )
         for item in settings
     )
@@ -335,7 +404,7 @@ def _bounded_generation_parameters(
 def _judgment_trace(
     *,
     command: EventEntityConnectionCommand,
-    candidate: EventEntityConnectionCandidate,
+    candidates: tuple[EventEntityConnectionCandidate, ...],
     manifest: ContextManifest,
     schema: PinnedTaskSchema,
     task_input: bytes,
@@ -343,10 +412,10 @@ def _judgment_trace(
     extraction_task_id: str,
     model_run_id: str,
     raw_output: bytes | None,
-    parsed_answer: EntityInvolvementAnswer | None,
+    parsed_answers: EntityInvolvementAnswerBatch | None,
     producer_id: str,
 ) -> ExtractionStageTrace:
-    succeeded = model_run_status is ModelRunStatus.SUCCEEDED and parsed_answer is not None
+    succeeded = model_run_status is ModelRunStatus.SUCCEEDED and parsed_answers is not None
     rendered_input = manifest.rendered_input + b"\n\n[task]\n" + task_input
     raw_text: str | None = None
     if raw_output is not None:
@@ -355,7 +424,7 @@ def _judgment_trace(
         except UnicodeDecodeError:
             pass
     return build_extraction_stage_trace(
-        trace_run_id=f"event_entity:{command.event.id}:{candidate.id}",
+        trace_run_id=f"event_entity:{command.event.id}",
         ordinal=0,
         stage_id="event_entity_involvement",
         stage_version=EVENT_ENTITY_CONNECTION_POLICY_ID,
@@ -364,12 +433,20 @@ def _judgment_trace(
         source_text_sha256=command.event.source_text_sha256,
         input_record_ids=tuple(
             sorted(
-                (
+                {
                     command.event.id,
-                    candidate.id,
-                    *(item.mention_candidate_id for item in candidate.source_spans),
-                    *candidate.reference_decision_ids,
-                )
+                    *(candidate.id for candidate in candidates),
+                    *(
+                        item.mention_candidate_id
+                        for candidate in candidates
+                        for item in candidate.source_spans
+                    ),
+                    *(
+                        reference_id
+                        for candidate in candidates
+                        for reference_id in candidate.reference_decision_ids
+                    ),
+                }
             )
         ),
         execution_record_ids=tuple(sorted((extraction_task_id, model_run_id))),
@@ -379,9 +456,9 @@ def _judgment_trace(
             "schema_sha256": schema.digest,
         },
         input_payload={
-            "candidate": cast(
+            "candidates": cast(
                 JsonValue,
-                candidate.model_dump(mode="json"),
+                [candidate.model_dump(mode="json") for candidate in candidates],
             ),
             "model_visible_task": task_input.decode("utf-8"),
             "exact_model_input": rendered_input.decode("utf-8"),
@@ -397,7 +474,11 @@ def _judgment_trace(
             "raw_output_sha256": (
                 hashlib.sha256(raw_output).hexdigest() if raw_output is not None else None
             ),
-            "parsed_answer": parsed_answer.value.value if parsed_answer is not None else None,
+            "parsed_answers": (
+                "".join(item.value for item in parsed_answers.values)
+                if parsed_answers is not None
+                else None
+            ),
         },
         status=ExtractionStageStatus.COMPLETED if succeeded else ExtractionStageStatus.FAILED,
         diagnostics=() if succeeded else ("event_entity_involvement_failed",),

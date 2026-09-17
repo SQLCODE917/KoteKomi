@@ -1,0 +1,7 @@
+{
+  "schemaVersion": 1,
+  "tools": {
+    "browser": true
+  },
+  "approval": "prompt"
+}

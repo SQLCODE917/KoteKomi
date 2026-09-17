@@ -266,6 +266,16 @@ The same review corrected TGE-010 from an asserted election occurrence to an ant
 reference for Amodei's Facebook post.
 The September 12 reports remain historical evidence for the prior Gold digest.
 
+Human review on September 15 corrected TGE-025's diagnostic meaning to preserve the source verb
+`stated`, the named speaker, and the complete attributed content. The corrected meaning does not
+promote Sacks's quoted statement into independently established world state.
+
+The same review corrected TGE-055 to retain the exact `with FedRAMP authorization` qualification on
+the services offered by Palantir and Amazon Web Services.
+
+It also corrected TGE-007 to retain The New York Times as the named publication venue for Amodei's
+op-ed.
+
 The September 13 canonical ingestion verified the corrected Gold.
 
 - The development partition matched all 50 reviewed Events exactly.

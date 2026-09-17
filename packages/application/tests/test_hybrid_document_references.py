@@ -346,15 +346,18 @@ def test_contrastively_confirmed_specialist_becomes_a_resolved_hp2_decision() ->
     )
 
 
-def test_semantic_disagreement_uses_canonical_reference_id_order() -> None:
-    text = "Sacks viewed Amodei's decision and his hiring as evidence."
+def test_rejected_specialist_and_unique_contrastive_choice_resolve_his_to_amodei() -> None:
+    text = (
+        "Sacks viewed Amodei's decision to attend the World Economic Forum over Trump's second "
+        "inauguration; his  hiring  of  Biden  officials as evidence."
+    )
     bundle = _bundle((text,))
     parent = _parent_preview(
         bundle,
         paragraph_index=0,
-        candidate_texts=("Sacks", "Amodei", "his"),
+        candidate_texts=("Sacks", "Amodei", "Trump", "his"),
     )
-    sacks = text.index("Sacks")
+    trump = text.index("Trump")
     his = text.index("his")
 
     preview = build_hybrid_reference_preview(
@@ -362,7 +365,7 @@ def test_semantic_disagreement_uses_canonical_reference_id_order() -> None:
         parent_preview_sha256=hybrid_extraction_preview_sha256(parent),
         bundle=bundle,
         coreference_proposer=_CoreferenceProposer(
-            (((sacks, sacks + len("Sacks")), (his, his + len("his"))),)
+            (((trump, trump + len("Trump")), (his, his + len("his"))),)
         ),
         coreference_tokenizer=_Tokenizer(),
         semantic_reference_challenger=_Challenger("Amodei"),
@@ -371,11 +374,13 @@ def test_semantic_disagreement_uses_canonical_reference_id_order() -> None:
     decision = next(
         item for item in preview.reference_decisions if item.reference_span.text == "his"
     )
-    assert decision.status is ReferenceStatus.AMBIGUOUS
-    assert decision.reason is ReferenceReason.MULTIPLE_SEMANTIC_ANTECEDENTS
-    assert decision.antecedent_span_ids == tuple(sorted(decision.antecedent_span_ids))
+    assert decision.status is ReferenceStatus.RESOLVED
+    assert decision.reason is ReferenceReason.UNIQUE_SEMANTIC_ANTECEDENT
     spans = {item.id: item.text for item in preview.semantic_antecedent_spans}
-    assert {spans[item] for item in decision.antecedent_span_ids} == {"Sacks", "Amodei"}
+    assert {spans[item] for item in decision.antecedent_span_ids} == {"Amodei"}
+    assert preview.semantic_reference_decisions[0].reason.value == (
+        "specialist_rejected_contrastive_selection"
+    )
 
 
 def test_semantic_reference_uses_bounded_preceding_same_paragraph_sentences() -> None:

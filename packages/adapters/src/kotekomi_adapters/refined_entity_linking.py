@@ -17,6 +17,8 @@ from kotekomi_application.hybrid_entity_grounding import (
     EntityLinkingInput,
     EntityLinkingOutputError,
     EntityLinkingRuntimeResponseError,
+    ExternalEntityClass,
+    LinkedEntityClassEvidence,
 )
 
 from kotekomi_adapters.correlated_worker_transport import (
@@ -53,7 +55,15 @@ _RESPONSE_FIELDS = {
     "evidences",
 }
 _FAILURE_FIELDS = {"schema_version", "status", "failure", "diagnostics"}
-_EVIDENCE_FIELDS = {"candidate_id", "returned_text", "start", "end", "candidates"}
+_EVIDENCE_FIELDS = {
+    "candidate_id",
+    "returned_text",
+    "start",
+    "end",
+    "coarse_mention_type",
+    "candidates",
+    "linked_entity_classes",
+}
 _CANDIDATE_FIELDS = {
     "rank",
     "kind",
@@ -63,6 +73,8 @@ _CANDIDATE_FIELDS = {
     "label",
     "score",
 }
+_LINKED_ENTITY_CLASS_EVIDENCE_FIELDS = {"wikidata_id", "classes"}
+_EXTERNAL_ENTITY_CLASS_FIELDS = {"class_id", "label"}
 
 
 @dataclass(frozen=True)
@@ -144,7 +156,7 @@ def _parse_execution(
     request: EntityLinkingInput,
 ) -> EntityLinkingExecution:
     response = _decode_canonical_response(payload_bytes)
-    if response.get("schema_version") != "refined_entity_linking_response_v1":
+    if response.get("schema_version") != "refined_entity_linking_response_v3":
         raise ValueError("ReFinED entity-linking response schema is unsupported.")
     if response.get("status") != "completed":
         _require_fields("failure response", response, _FAILURE_FIELDS)
@@ -222,12 +234,45 @@ def _parse_evidence(value: object) -> EntityLinkerEvidence:
     if not isinstance(candidate_values, list):
         raise ValueError("ReFinED ranked candidates must be a list.")
     candidate_items = cast(list[object], candidate_values)
+    linked_entity_classes = evidence["linked_entity_classes"]
     return EntityLinkerEvidence(
         candidate_id=_string(evidence, "candidate_id"),
         returned_text=_string(evidence, "returned_text"),
         start=_integer(evidence, "start"),
         end=_integer(evidence, "end"),
+        coarse_mention_type=_optional_string(evidence, "coarse_mention_type"),
         candidates=tuple(_parse_candidate(item) for item in candidate_items),
+        linked_entity_classes=(
+            None
+            if linked_entity_classes is None
+            else _parse_linked_entity_classes(linked_entity_classes)
+        ),
+    )
+
+
+def _parse_linked_entity_classes(value: object) -> LinkedEntityClassEvidence:
+    evidence = _mapping("linked entity classes", value)
+    _require_fields(
+        "linked entity classes",
+        evidence,
+        _LINKED_ENTITY_CLASS_EVIDENCE_FIELDS,
+    )
+    classes = evidence["classes"]
+    if not isinstance(classes, list):
+        raise ValueError("ReFinED linked entity classes must be a list.")
+    class_items = cast(list[object], classes)
+    return LinkedEntityClassEvidence(
+        wikidata_id=_string(evidence, "wikidata_id"),
+        classes=tuple(_parse_external_entity_class(item) for item in class_items),
+    )
+
+
+def _parse_external_entity_class(value: object) -> ExternalEntityClass:
+    entity_class = _mapping("external entity class", value)
+    _require_fields("external entity class", entity_class, _EXTERNAL_ENTITY_CLASS_FIELDS)
+    return ExternalEntityClass(
+        class_id=_string(entity_class, "class_id"),
+        label=_string(entity_class, "label"),
     )
 
 

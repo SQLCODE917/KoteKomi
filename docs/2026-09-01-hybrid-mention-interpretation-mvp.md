@@ -37,7 +37,8 @@ HP-1 will not call ReFinED or create ProposedChanges.
 
 **SourceSegment** means one exact contiguous source range that KoteKomi derives from a paragraph.
 
-**MentionObservation** means one GLiNER or Qwen2.5 source-span proposal.
+**MentionObservation** means one source-valid GLiNER, Qwen2.5, or deterministic lexical
+source-span proposal with explicit producer lineage.
 
 **MentionCandidate** means one source-valid span that retains every matching MentionObservation.
 
@@ -56,7 +57,8 @@ HP-1 will not call ReFinED or create ProposedChanges.
 ### Primary flow
 
 1. An operator selects one paragraph from an accepted DocumentRepresentationBundle.
-2. The Pipeline builds one ContextManifest and runs GLiNER and Qwen2.5 as independent proposers.
+2. The Pipeline builds one ContextManifest, runs GLiNER and Qwen2.5 as independent proposers, and
+   derives bounded exact named-symbol observations from authoritative source characters.
 3. The Application Layer validates and reconciles all MentionObservations against source characters.
 4. The Pipeline asks Qwen2.5 to interpret each MentionCandidate with one OntologyGuidelineCard.
 5. The Pipeline stores one HybridExtractionPreview and prints its identity and Archive location.
@@ -103,6 +105,12 @@ The operation creates execution records but does not change accepted intelligenc
 - HM-PRO-13: One failed proposer makes the terminal Preview `partial` when the other proposer returns a valid result or valid abstention.
 - HM-PRO-14: Two failed proposers make the terminal Preview `blocked` and skip reconciliation.
 - HM-PRO-15: Each proposer failure remains visible in its ModelRun, ExtractionStageTrace, and Preview diagnostics.
+- HM-PRO-16: A deterministic named-symbol proposer emits an exact source span for a lexical token
+  containing at least two uppercase letters, including mixed-case identifiers such as `FedRAMP`.
+- HM-PRO-17: Named-symbol discovery proposes only a boundary. It supplies the complete set of
+  plausible contextual-kind hints and makes no referentiality, ontology-kind, or identity decision.
+- HM-PRO-18: Every named-symbol observation has a deterministic trace and source-derived identity;
+  it does not impersonate a model execution.
 
 ### Boundary reconciliation
 
@@ -115,6 +123,12 @@ The operation creates execution records but does not change accepted intelligenc
 - HM-BND-07: An ambiguous conflict retains every source-valid MentionObservation.
 - HM-BND-08: Scores, proposer identity, input order, and observation count cannot select a boundary.
 - HM-BND-09: The new generic records do not modify the sealed ORG-R1 evidence bundles.
+- HM-BND-10: A named-symbol candidate nested inside a broader model proposal remains independently
+  available; neither span silently erases the other.
+- HM-BND-11: Exact named-symbol discovery establishes only that its source-exact lexical token is a
+  complete candidate boundary. A fallible boundary-completeness judgment cannot veto that boundary.
+  Referentiality, contextual kind, external identity, Event involvement, and acceptance remain
+  separate downstream decisions.
 
 ### Ontology guideline
 

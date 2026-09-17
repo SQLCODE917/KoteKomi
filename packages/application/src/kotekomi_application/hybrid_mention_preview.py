@@ -109,6 +109,13 @@ _REFERENCE_MARKER = re.compile(
 )
 _PERSON_REFERENCE_MARKERS = frozenset({"he", "him", "his", "she", "her", "hers"})
 _PLURAL_REFERENCE_MARKERS = frozenset({"they", "them", "their", "theirs"})
+_NAMED_SYMBOL_TOKEN = re.compile(r"(?<!\w)[A-Za-z][A-Za-z0-9]*(?!\w)")
+_EXACT_NAMED_SYMBOL_BOUNDARY_RULE_ID = "exact_named_symbol_boundary_v1"
+_EXACT_POSSESSOR_BOUNDARY_RULE_ID = "exact_possessor_boundary_v1"
+_DETERMINISTIC_BOUNDARY_RULE_IDS = (
+    _EXACT_NAMED_SYMBOL_BOUNDARY_RULE_ID,
+    _EXACT_POSSESSOR_BOUNDARY_RULE_ID,
+)
 
 
 @dataclass(frozen=True)
@@ -486,6 +493,16 @@ def run_hybrid_mention_preview(
             seen_observation_ids.add(observation.id)
             observations.append(observation)
     traces.extend(deterministic_traces)
+    named_symbol_observations, named_symbol_traces = _named_symbol_observations(
+        segments=segments,
+        segment_ids=segment_ids,
+        trace_runs=trace_runs,
+    )
+    for observation in named_symbol_observations:
+        if observation.id not in seen_observation_ids:
+            seen_observation_ids.add(observation.id)
+            observations.append(observation)
+    traces.extend(named_symbol_traces)
     ordered_observations = tuple(sorted(observations, key=_observation_key))
     for segment in segments:
         source_segment_id = segment_ids[segment.label]
@@ -582,7 +599,7 @@ def run_hybrid_mention_preview(
         segment_id = segment_ids[segment.label]
         trace = build_extraction_stage_trace(
             trace_run_id=trace_runs[segment_id],
-            ordinal=3,
+            ordinal=4,
             stage_id="mention_boundary_reconciliation",
             stage_version=HYBRID_MENTION_BOUNDARY_POLICY_ID,
             producer_id="kotekomi_application",
@@ -608,6 +625,7 @@ def run_hybrid_mention_preview(
         traces.append(trace)
         reconciliation_trace_by_segment[segment_id] = trace.id
     ambiguous_decisions = tuple(item for item in decisions if item.status.value == "ambiguous")
+    observations_by_id = {item.id: item for item in ordered_observations}
     boundary_manifest: ContextManifest | None = None
     boundary_manifest_diagnostic: str | None = None
     if ambiguous_decisions:
@@ -643,6 +661,7 @@ def run_hybrid_mention_preview(
     boundary_result = _run_boundary_adjudications(
         decisions=ambiguous_decisions,
         candidates=candidates,
+        observations_by_id=observations_by_id,
         source_text_by_id=source_text_by_id,
         source_label_by_id=source_label_by_id,
         reconciliation_trace_by_segment=reconciliation_trace_by_segment,
@@ -675,7 +694,6 @@ def run_hybrid_mention_preview(
     failed_interpretations = 0
     next_ordinal = boundary_result.next_ordinal_by_segment
     interpretation_executions: dict[tuple[str, str], _InterpretationExecution] = {}
-    observations_by_id = {item.id: item for item in ordered_observations}
     for candidate in selected_candidates:
         if _candidate_has_reference_marker(candidate, observations_by_id):
             continue
@@ -897,6 +915,7 @@ def _run_boundary_adjudications(
     *,
     decisions: tuple[MentionBoundaryDecision, ...],
     candidates: tuple[MentionCandidate, ...],
+    observations_by_id: dict[str, MentionObservation],
     source_text_by_id: dict[str, str],
     source_label_by_id: dict[str, str],
     reconciliation_trace_by_segment: dict[str, str],
@@ -924,7 +943,7 @@ def _run_boundary_adjudications(
     model_run_ids: list[str] = []
     parent_trace_by_candidate: dict[str, str] = {}
     diagnostics: list[str] = []
-    next_ordinal = {source_segment_id: 4 for source_segment_id in source_text_by_id}
+    next_ordinal = {source_segment_id: 5 for source_segment_id in source_text_by_id}
     for decision in decisions:
         component_candidates = tuple(
             sorted(
@@ -933,8 +952,9 @@ def _run_boundary_adjudications(
             )
         )
         source_text = source_text_by_id[decision.source_segment_id]
-        deterministic_complete_candidates = _exact_possessor_boundary_candidates(
+        deterministic_complete_candidates = _deterministic_complete_boundary_candidates(
             candidates=component_candidates,
+            observations_by_id=observations_by_id,
             source_text=source_text,
         )
         deterministic_complete_ids: set[str] = {
@@ -976,7 +996,9 @@ def _run_boundary_adjudications(
                 parent_trace_ids=(reconciliation_trace_by_segment[decision.source_segment_id],),
                 input_record_ids=tuple(sorted((decision.id, *decision.candidate_ids))),
                 configuration={
-                    "deterministic_completion_rule_id": "exact_possessor_boundary_v1",
+                    "deterministic_completion_rule_ids": cast(
+                        JsonValue, list(_DETERMINISTIC_BOUNDARY_RULE_IDS)
+                    ),
                     "max_candidates": MAX_BOUNDARY_ADJUDICATION_CANDIDATES,
                     "policy_id": HYBRID_MENTION_BOUNDARY_ADJUDICATION_POLICY_ID,
                 },
@@ -1051,7 +1073,9 @@ def _run_boundary_adjudications(
             input_record_ids=tuple(sorted((decision.id, *decision.candidate_ids))),
             execution_record_ids=tuple(sorted((outcome.extraction_task.id, outcome.model_run.id))),
             configuration={
-                "deterministic_completion_rule_id": "exact_possessor_boundary_v1",
+                "deterministic_completion_rule_ids": cast(
+                    JsonValue, list(_DETERMINISTIC_BOUNDARY_RULE_IDS)
+                ),
                 "max_candidates": MAX_BOUNDARY_ADJUDICATION_CANDIDATES,
                 "policy_id": HYBRID_MENTION_BOUNDARY_ADJUDICATION_POLICY_ID,
                 "semantic_producer_id": "qwen2.5",
@@ -1211,6 +1235,29 @@ def _exact_possessor_boundary_candidates(
     return tuple(sorted(selected, key=lambda item: (item.start, item.end, item.id)))
 
 
+def _deterministic_complete_boundary_candidates(
+    *,
+    candidates: tuple[MentionCandidate, ...],
+    observations_by_id: dict[str, MentionObservation],
+    source_text: str,
+) -> tuple[MentionCandidate, ...]:
+    """Preserve boundaries established directly from authoritative characters."""
+    selected = {
+        candidate.id: candidate
+        for candidate in _exact_possessor_boundary_candidates(
+            candidates=candidates,
+            source_text=source_text,
+        )
+    }
+    for candidate in candidates:
+        if any(
+            observations_by_id[observation_id].producer_id == "kotekomi_named_symbol_v1"
+            for observation_id in candidate.observation_ids
+        ):
+            selected[candidate.id] = candidate
+    return tuple(sorted(selected.values(), key=lambda item: (item.start, item.end, item.id)))
+
+
 def _execution_spec(
     manifest: ContextManifest,
     runtime: ModelTaskRuntime,
@@ -1348,6 +1395,66 @@ def _reference_marker_type_hints(text: str) -> tuple[str, ...]:
             "publication",
         ),
     )
+
+
+def _named_symbol_observations(
+    *,
+    segments: tuple[SourceSegment, ...],
+    segment_ids: dict[str, str],
+    trace_runs: dict[str, str],
+) -> tuple[tuple[MentionObservation, ...], tuple[ExtractionStageTrace, ...]]:
+    """Propose exact acronym-like names without assigning semantic meaning."""
+    observations: list[MentionObservation] = []
+    traces: list[ExtractionStageTrace] = []
+    for segment in segments:
+        segment_id = segment_ids[segment.label]
+        proposals = tuple(
+            MentionProposal(
+                source_segment_label=segment.label,
+                text=match.group(0),
+                start=match.start(),
+                end=match.end(),
+                type_hints=PROPOSER_CONTEXTUAL_KINDS,
+            )
+            for match in _NAMED_SYMBOL_TOKEN.finditer(segment.exact_text)
+            if sum(character.isupper() for character in match.group(0)) >= 2
+        )
+        trace = build_extraction_stage_trace(
+            trace_run_id=trace_runs[segment_id],
+            ordinal=3,
+            stage_id="named_symbol_discovery",
+            stage_version="exact_named_symbol_v1",
+            producer_id="kotekomi_application",
+            source_segment_id=segment_id,
+            source_text_sha256=hashlib.sha256(segment.exact_text.encode()).hexdigest(),
+            configuration={
+                "policy_id": "exact_named_symbol_v1",
+                "minimum_uppercase_character_count": 2,
+            },
+            input_payload={"source_text": segment.exact_text},
+            output_payload={
+                "symbols": [
+                    {
+                        "end": item.end,
+                        "start": item.start,
+                        "text": item.text,
+                    }
+                    for item in proposals
+                ]
+            },
+            status=ExtractionStageStatus.COMPLETED,
+        )
+        traces.append(trace)
+        observations.extend(
+            observation_from_proposal(
+                proposal=proposal,
+                source_segment_id=segment_id,
+                producer_id="kotekomi_named_symbol_v1",
+                execution_record_id=trace.id,
+            )
+            for proposal in proposals
+        )
+    return tuple(sorted(observations, key=_observation_key)), tuple(traces)
 
 
 def _interpretation_task_input(

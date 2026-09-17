@@ -1,0 +1,2006 @@
+{
+  "schema_version": "hsq_event_entity_connection_gold_v2",
+  "catalog_id": "hsq-event-entity-connection-gold-v2",
+  "review_status": "approved",
+  "trigger_gold_path": "docs/hsq-event-trigger-gold-v1.json",
+  "trigger_gold_sha256": "28b020ad351394d0176d1b63bea1c1c3b4ab6cba4f4cd1e88c2aeea70cdb8094",
+  "source_grounded_gold_path": "docs/hsq-source-grounded-event-gold-v1.json",
+  "source_grounded_gold_sha256": "6ae09fb7390239a15f754cab1cd15b15f4a826313e4f7a6cbf5fbe40d88aed2a",
+  "events": [
+    {
+      "event_id": "TGE-002",
+      "phase": "development",
+      "source_text_sha256": "7438981c5f67a586e62824f899dde376931333bc69728b43ccd04c167d71b7cf",
+      "event_meaning": "In January 2025, Dario Amodei criticized Stargate.",
+      "expected_entities": [
+        {
+          "entity_id": "EGE-001",
+          "entity_kind": "actor",
+          "canonical_name": "Dario Amodei",
+          "accepted_entity_names": [
+            "Dario Amodei",
+            "Amodei"
+          ],
+          "rationale": "Amodei is the person performing the criticism.",
+          "accepted_source_occurrences": [
+            {
+              "start": 31,
+              "end": 43,
+              "source_text": "Dario Amodei"
+            },
+            {
+              "start": 37,
+              "end": 43,
+              "source_text": "Amodei"
+            }
+          ]
+        }
+      ],
+      "review_rationale": "Stargate is a Project, outside this Actor-and-Organization slice."
+    },
+    {
+      "event_id": "TGE-003",
+      "phase": "development",
+      "source_text_sha256": "7438981c5f67a586e62824f899dde376931333bc69728b43ccd04c167d71b7cf",
+      "event_meaning": "In January 2025, Dario Amodei opposed Trump's rescission.",
+      "expected_entities": [
+        {
+          "entity_id": "EGE-002",
+          "entity_kind": "actor",
+          "canonical_name": "Dario Amodei",
+          "accepted_entity_names": [
+            "Dario Amodei",
+            "Amodei"
+          ],
+          "rationale": "Amodei performs the opposition.",
+          "accepted_source_occurrences": [
+            {
+              "start": 31,
+              "end": 43,
+              "source_text": "Dario Amodei"
+            },
+            {
+              "start": 37,
+              "end": 43,
+              "source_text": "Amodei"
+            }
+          ]
+        },
+        {
+          "entity_id": "EGE-003",
+          "entity_kind": "actor",
+          "canonical_name": "Trump",
+          "accepted_entity_names": [
+            "Trump",
+            "Donald Trump"
+          ],
+          "rationale": "The opposed rescission is Trump's action.",
+          "accepted_source_occurrences": [
+            {
+              "start": 136,
+              "end": 141,
+              "source_text": "Trump"
+            }
+          ]
+        },
+        {
+          "entity_id": "EGE-082",
+          "entity_kind": "actor",
+          "canonical_name": "Joe Biden",
+          "accepted_entity_names": [
+            "Joe Biden"
+          ],
+          "rationale": "The opposed rescission concerns the Executive Order explicitly identified with Biden.",
+          "accepted_source_occurrences": [
+            {
+              "start": 168,
+              "end": 177,
+              "source_text": "Joe Biden"
+            }
+          ]
+        }
+      ],
+      "review_rationale": "The Event connects Amodei, Trump as the rescinding Actor, and Biden through the explicitly identified Executive Order."
+    },
+    {
+      "event_id": "TGE-004",
+      "phase": "development",
+      "source_text_sha256": "7438981c5f67a586e62824f899dde376931333bc69728b43ccd04c167d71b7cf",
+      "event_meaning": "Trump rescinded an Executive Order.",
+      "expected_entities": [
+        {
+          "entity_id": "EGE-004",
+          "entity_kind": "actor",
+          "canonical_name": "Trump",
+          "accepted_entity_names": [
+            "Trump",
+            "Donald Trump"
+          ],
+          "rationale": "Trump performs the rescission.",
+          "accepted_source_occurrences": [
+            {
+              "start": 136,
+              "end": 141,
+              "source_text": "Trump"
+            }
+          ]
+        },
+        {
+          "entity_id": "EGE-083",
+          "entity_kind": "actor",
+          "canonical_name": "Joe Biden",
+          "accepted_entity_names": [
+            "Joe Biden"
+          ],
+          "rationale": "The rescinded Executive Order is explicitly identified with Biden.",
+          "accepted_source_occurrences": [
+            {
+              "start": 168,
+              "end": 177,
+              "source_text": "Joe Biden"
+            }
+          ]
+        }
+      ],
+      "review_rationale": "The Executive Order is not an Actor or Organization, but its explicit connection to Biden makes Biden involved in the Event."
+    },
+    {
+      "event_id": "TGE-005",
+      "phase": "development",
+      "source_text_sha256": "7438981c5f67a586e62824f899dde376931333bc69728b43ccd04c167d71b7cf",
+      "event_meaning": "In January 2025, Dario Amodei noted that Anthropic had held discussions with Trump officials about artificial intelligence policy.",
+      "expected_entities": [
+        {
+          "entity_id": "EGE-005",
+          "entity_kind": "actor",
+          "canonical_name": "Dario Amodei",
+          "accepted_entity_names": [
+            "Dario Amodei",
+            "Amodei"
+          ],
+          "rationale": "Amodei performs the noting.",
+          "accepted_source_occurrences": [
+            {
+              "start": 31,
+              "end": 43,
+              "source_text": "Dario Amodei"
+            },
+            {
+              "start": 37,
+              "end": 43,
+              "source_text": "Amodei"
+            }
+          ]
+        },
+        {
+          "entity_id": "EGE-006",
+          "entity_kind": "organization",
+          "canonical_name": "Anthropic",
+          "accepted_entity_names": [
+            "Anthropic"
+          ],
+          "rationale": "Anthropic's discussions form the content that Amodei noted.",
+          "accepted_source_occurrences": [
+            {
+              "start": 239,
+              "end": 248,
+              "source_text": "Anthropic"
+            }
+          ]
+        },
+        {
+          "entity_id": "EGE-007",
+          "entity_kind": "actor",
+          "canonical_name": "Trump officials",
+          "accepted_entity_names": [
+            "Trump officials"
+          ],
+          "rationale": "The role-qualified source expression denotes the group of people who are the other party to the noted discussions.",
+          "accepted_source_occurrences": [
+            {
+              "start": 275,
+              "end": 290,
+              "source_text": "Trump officials"
+            }
+          ]
+        }
+      ],
+      "review_rationale": "The source explicitly names the speaker and both parties in the reported content; Trump officials is a source-bound group of Actors rather than an Organization."
+    },
+    {
+      "event_id": "TGE-006",
+      "phase": "development",
+      "source_text_sha256": "7438981c5f67a586e62824f899dde376931333bc69728b43ccd04c167d71b7cf",
+      "event_meaning": "Anthropic had held discussions with Trump officials about artificial intelligence policy.",
+      "expected_entities": [
+        {
+          "entity_id": "EGE-008",
+          "entity_kind": "organization",
+          "canonical_name": "Anthropic",
+          "accepted_entity_names": [
+            "Anthropic"
+          ],
+          "rationale": "Anthropic is one party to the discussions.",
+          "accepted_source_occurrences": [
+            {
+              "start": 239,
+              "end": 248,
+              "source_text": "Anthropic"
+            }
+          ]
+        },
+        {
+          "entity_id": "EGE-009",
+          "entity_kind": "actor",
+          "canonical_name": "Trump officials",
+          "accepted_entity_names": [
+            "Trump officials"
+          ],
+          "rationale": "The role-qualified source expression denotes the group of people who are the other party to the discussions.",
+          "accepted_source_occurrences": [
+            {
+              "start": 275,
+              "end": 290,
+              "source_text": "Trump officials"
+            }
+          ]
+        }
+      ],
+      "review_rationale": "Both explicitly named parties are involved; Trump officials is a source-bound group of Actors, while Joe Biden is an eligible same-segment Actor but an implicit negative because he belongs only to the separate rescission clause."
+    },
+    {
+      "event_id": "TGE-014",
+      "phase": "development",
+      "source_text_sha256": "65e99ef7fd505316782a1e5fa3156ba863c7988567df9082e1e243240c145c21",
+      "event_meaning": "The Trump administration targeted law firms as Amodei cut ties with two of them.",
+      "expected_entities": [
+        {
+          "entity_id": "EGE-010",
+          "entity_kind": "organization",
+          "canonical_name": "Trump administration",
+          "accepted_entity_names": [
+            "Trump administration",
+            "the Trump administration"
+          ],
+          "rationale": "The administration performs the targeting.",
+          "accepted_source_occurrences": [
+            {
+              "start": 7,
+              "end": 27,
+              "source_text": "Trump administration"
+            }
+          ]
+        }
+      ],
+      "review_rationale": "The law firms are generic in this Event clause."
+    },
+    {
+      "event_id": "TGE-015",
+      "phase": "development",
+      "source_text_sha256": "65e99ef7fd505316782a1e5fa3156ba863c7988567df9082e1e243240c145c21",
+      "event_meaning": "Amodei cut ties with two law firms as the Trump administration targeted law firms.",
+      "expected_entities": [
+        {
+          "entity_id": "EGE-011",
+          "entity_kind": "actor",
+          "canonical_name": "Amodei",
+          "accepted_entity_names": [
+            "Amodei",
+            "Dario Amodei"
+          ],
+          "rationale": "Amodei performs the action.",
+          "accepted_source_occurrences": [
+            {
+              "start": 48,
+              "end": 54,
+              "source_text": "Amodei"
+            }
+          ]
+        },
+        {
+          "entity_id": "EGE-012",
+          "entity_kind": "organization",
+          "canonical_name": "Skadden, Arps, Slate, Meagher & Flom",
+          "accepted_entity_names": [
+            "Skadden, Arps, Slate, Meagher & Flom"
+          ],
+          "rationale": "The named firm is one object of the severed ties.",
+          "accepted_source_occurrences": [
+            {
+              "start": 79,
+              "end": 115,
+              "source_text": "Skadden, Arps, Slate, Meagher & Flom"
+            }
+          ]
+        },
+        {
+          "entity_id": "EGE-013",
+          "entity_kind": "organization",
+          "canonical_name": "Latham & Watkins",
+          "accepted_entity_names": [
+            "Latham & Watkins"
+          ],
+          "rationale": "The named firm is the other object of the severed ties.",
+          "accepted_source_occurrences": [
+            {
+              "start": 120,
+              "end": 136,
+              "source_text": "Latham & Watkins"
+            }
+          ]
+        }
+      ],
+      "review_rationale": "The Event directly connects Amodei and both named firms."
+    },
+    {
+      "event_id": "TGE-016",
+      "phase": "development",
+      "source_text_sha256": "65e99ef7fd505316782a1e5fa3156ba863c7988567df9082e1e243240c145c21",
+      "event_meaning": "The law firms reached agreements with the Trump administration.",
+      "expected_entities": [
+        {
+          "entity_id": "EGE-014",
+          "entity_kind": "organization",
+          "canonical_name": "Skadden, Arps, Slate, Meagher & Flom",
+          "accepted_entity_names": [
+            "Skadden, Arps, Slate, Meagher & Flom"
+          ],
+          "rationale": "The relative reference includes the first named firm.",
+          "accepted_source_occurrences": [
+            {
+              "start": 79,
+              "end": 115,
+              "source_text": "Skadden, Arps, Slate, Meagher & Flom"
+            }
+          ]
+        },
+        {
+          "entity_id": "EGE-015",
+          "entity_kind": "organization",
+          "canonical_name": "Latham & Watkins",
+          "accepted_entity_names": [
+            "Latham & Watkins"
+          ],
+          "rationale": "The relative reference includes the second named firm.",
+          "accepted_source_occurrences": [
+            {
+              "start": 120,
+              "end": 136,
+              "source_text": "Latham & Watkins"
+            }
+          ]
+        },
+        {
+          "entity_id": "EGE-016",
+          "entity_kind": "organization",
+          "canonical_name": "Trump administration",
+          "accepted_entity_names": [
+            "Trump administration",
+            "the Trump administration"
+          ],
+          "rationale": "The administration is the counterparty.",
+          "accepted_source_occurrences": [
+            {
+              "start": 7,
+              "end": 27,
+              "source_text": "Trump administration"
+            }
+          ]
+        }
+      ],
+      "review_rationale": "The Event involves both firms and the named governmental counterparty."
+    },
+    {
+      "event_id": "TGE-017",
+      "phase": "development",
+      "source_text_sha256": "65e99ef7fd505316782a1e5fa3156ba863c7988567df9082e1e243240c145c21",
+      "event_meaning": "The law firms intended to avoid punishment.",
+      "expected_entities": [
+        {
+          "entity_id": "EGE-017",
+          "entity_kind": "organization",
+          "canonical_name": "Skadden, Arps, Slate, Meagher & Flom",
+          "accepted_entity_names": [
+            "Skadden, Arps, Slate, Meagher & Flom"
+          ],
+          "rationale": "The first firm is included by the relative reference.",
+          "accepted_source_occurrences": [
+            {
+              "start": 79,
+              "end": 115,
+              "source_text": "Skadden, Arps, Slate, Meagher & Flom"
+            }
+          ]
+        },
+        {
+          "entity_id": "EGE-018",
+          "entity_kind": "organization",
+          "canonical_name": "Latham & Watkins",
+          "accepted_entity_names": [
+            "Latham & Watkins"
+          ],
+          "rationale": "The second firm is included by the relative reference.",
+          "accepted_source_occurrences": [
+            {
+              "start": 120,
+              "end": 136,
+              "source_text": "Latham & Watkins"
+            }
+          ]
+        }
+      ],
+      "review_rationale": "The firms, not the administration, hold the stated purpose."
+    },
+    {
+      "event_id": "TGE-018",
+      "phase": "development",
+      "source_text_sha256": "3ae4294fe559d09dd035e7dfaf027607fdc9ac1ec53848b3f789926357d8f9e7",
+      "event_meaning": "Sacks viewed several matters as evidence.",
+      "expected_entities": [
+        {
+          "entity_id": "EGE-019",
+          "entity_kind": "actor",
+          "canonical_name": "Sacks",
+          "accepted_entity_names": [
+            "Sacks",
+            "David Sacks"
+          ],
+          "rationale": "Sacks performs the viewing.",
+          "accepted_source_occurrences": [
+            {
+              "start": 0,
+              "end": 5,
+              "source_text": "Sacks"
+            }
+          ]
+        },
+        {
+          "entity_id": "EGE-020",
+          "entity_kind": "actor",
+          "canonical_name": "Amodei",
+          "accepted_entity_names": [
+            "Amodei",
+            "Dario Amodei"
+          ],
+          "rationale": "Amodei's decisions and actions are part of the viewed evidence.",
+          "accepted_source_occurrences": [
+            {
+              "start": 13,
+              "end": 19,
+              "source_text": "Amodei"
+            }
+          ]
+        },
+        {
+          "entity_id": "EGE-022",
+          "entity_kind": "actor",
+          "canonical_name": "Trump",
+          "accepted_entity_names": [
+            "Trump",
+            "Donald Trump"
+          ],
+          "rationale": "Trump's inauguration and agenda are part of the assessment.",
+          "accepted_source_occurrences": [
+            {
+              "start": 71,
+              "end": 76,
+              "source_text": "Trump"
+            },
+            {
+              "start": 71,
+              "end": 78,
+              "source_text": "Trump's"
+            },
+            {
+              "start": 268,
+              "end": 273,
+              "source_text": "Trump"
+            },
+            {
+              "start": 268,
+              "end": 275,
+              "source_text": "Trump's"
+            }
+          ]
+        },
+        {
+          "entity_id": "EGE-023",
+          "entity_kind": "organization",
+          "canonical_name": "Anthropic",
+          "accepted_entity_names": [
+            "Anthropic"
+          ],
+          "rationale": "Anthropic's association and expected support are assessed.",
+          "accepted_source_occurrences": [
+            {
+              "start": 141,
+              "end": 150,
+              "source_text": "Anthropic"
+            },
+            {
+              "start": 141,
+              "end": 152,
+              "source_text": "Anthropic's"
+            },
+            {
+              "start": 240,
+              "end": 249,
+              "source_text": "Anthropic"
+            }
+          ]
+        },
+        {
+          "entity_id": "EGE-024",
+          "entity_kind": "organization",
+          "canonical_name": "Open Philanthropy",
+          "accepted_entity_names": [
+            "Open Philanthropy"
+          ],
+          "rationale": "The association with this Organization is part of the evidence.",
+          "accepted_source_occurrences": [
+            {
+              "start": 205,
+              "end": 222,
+              "source_text": "Open Philanthropy"
+            }
+          ]
+        }
+      ],
+      "excluded_actor_organization_expressions": [
+        {
+          "exclusion_id": "EGX-001",
+          "source_text": "World Economic Forum",
+          "contextual_kind": "event",
+          "rationale": "In the attendance construction, this exact occurrence denotes the Forum's gathering rather than its Organization.",
+          "start": 45,
+          "end": 65
+        }
+      ],
+      "review_rationale": "The broad reporting Event scopes the listed people and Organizations as evidence while the World Economic Forum occurrence denotes an Event."
+    },
+    {
+      "event_id": "TGE-019",
+      "phase": "development",
+      "source_text_sha256": "3ae4294fe559d09dd035e7dfaf027607fdc9ac1ec53848b3f789926357d8f9e7",
+      "event_meaning": "Amodei decided to attend the World Economic Forum instead of Trump's second inauguration.",
+      "expected_entities": [
+        {
+          "entity_id": "EGE-025",
+          "entity_kind": "actor",
+          "canonical_name": "Amodei",
+          "accepted_entity_names": [
+            "Amodei",
+            "Dario Amodei"
+          ],
+          "rationale": "The decision belongs to Amodei.",
+          "accepted_source_occurrences": [
+            {
+              "start": 13,
+              "end": 19,
+              "source_text": "Amodei"
+            }
+          ]
+        },
+        {
+          "entity_id": "EGE-087",
+          "entity_kind": "actor",
+          "canonical_name": "Trump",
+          "accepted_entity_names": [
+            "Trump",
+            "Donald Trump"
+          ],
+          "rationale": "Trump's second inauguration is the stated alternative in Amodei's decision.",
+          "accepted_source_occurrences": [
+            {
+              "start": 71,
+              "end": 76,
+              "source_text": "Trump"
+            },
+            {
+              "start": 71,
+              "end": 78,
+              "source_text": "Trump's"
+            }
+          ]
+        }
+      ],
+      "excluded_actor_organization_expressions": [
+        {
+          "exclusion_id": "EGX-002",
+          "source_text": "World Economic Forum",
+          "contextual_kind": "event",
+          "rationale": "The decision concerns the Forum's gathering, not the Organization as an institutional participant.",
+          "start": 45,
+          "end": 65
+        }
+      ],
+      "review_rationale": "The source establishes Amodei's decision and its Trump-associated alternative, but does not establish whether attendance occurred or will occur."
+    },
+    {
+      "event_id": "TGE-022",
+      "phase": "development",
+      "source_text_sha256": "3ae4294fe559d09dd035e7dfaf027607fdc9ac1ec53848b3f789926357d8f9e7",
+      "event_meaning": "Amodei hired Biden officials.",
+      "expected_entities": [
+        {
+          "entity_id": "EGE-030",
+          "entity_kind": "actor",
+          "canonical_name": "Amodei",
+          "accepted_entity_names": [
+            "Amodei",
+            "Dario Amodei"
+          ],
+          "rationale": "The parallel possessive `his` resolves to Amodei, who performs the hiring.",
+          "accepted_source_occurrences": [
+            {
+              "start": 13,
+              "end": 19,
+              "source_text": "Amodei"
+            },
+            {
+              "start": 100,
+              "end": 103,
+              "source_text": "his"
+            }
+          ]
+        },
+        {
+          "entity_id": "EGE-089",
+          "entity_kind": "actor",
+          "canonical_name": "Biden officials",
+          "accepted_entity_names": [
+            "Biden officials"
+          ],
+          "rationale": "The role-qualified source expression denotes the source-bound group of people whom Amodei hired.",
+          "accepted_source_occurrences": [
+            {
+              "start": 117,
+              "end": 133,
+              "source_text": "Biden  officials"
+            }
+          ]
+        }
+      ],
+      "review_rationale": "The parallel possessive construction attributes the hiring to Amodei and identifies Biden officials as the hired source-bound group of Actors."
+    },
+    {
+      "event_id": "TGE-023",
+      "phase": "development",
+      "source_text_sha256": "3ae4294fe559d09dd035e7dfaf027607fdc9ac1ec53848b3f789926357d8f9e7",
+      "event_meaning": "Sacks assessed that Anthropic would not support Trump's agenda.",
+      "expected_entities": [
+        {
+          "entity_id": "EGE-031",
+          "entity_kind": "organization",
+          "canonical_name": "Anthropic",
+          "accepted_entity_names": [
+            "Anthropic"
+          ],
+          "rationale": "Anthropic is the projected non-supporter.",
+          "accepted_source_occurrences": [
+            {
+              "start": 240,
+              "end": 249,
+              "source_text": "Anthropic"
+            }
+          ]
+        },
+        {
+          "entity_id": "EGE-032",
+          "entity_kind": "actor",
+          "canonical_name": "Trump",
+          "accepted_entity_names": [
+            "Trump",
+            "Donald Trump"
+          ],
+          "rationale": "The agenda belongs to Trump.",
+          "accepted_source_occurrences": [
+            {
+              "start": 268,
+              "end": 273,
+              "source_text": "Trump"
+            },
+            {
+              "start": 268,
+              "end": 275,
+              "source_text": "Trump's"
+            }
+          ]
+        }
+      ],
+      "review_rationale": "Sacks belongs to the separate viewing Event; this exact Event is the projected support relation."
+    },
+    {
+      "event_id": "TGE-025",
+      "phase": "development",
+      "source_text_sha256": "c458619bad7a713e3b1208d9f0ba0b966c0afb9d6434fafaa78a529c53513d53",
+      "event_meaning": "In October 2025, Sacks stated that Anthropic was \"running a sophisticated regulatory capture strategy based on fearmongering.\"",
+      "expected_entities": [
+        {
+          "entity_id": "EGE-035",
+          "entity_kind": "organization",
+          "canonical_name": "Anthropic",
+          "accepted_entity_names": [
+            "Anthropic"
+          ],
+          "rationale": "Anthropic is the subject of the statement attributed to Sacks.",
+          "accepted_source_occurrences": [
+            {
+              "start": 41,
+              "end": 50,
+              "source_text": "Anthropic"
+            }
+          ]
+        },
+        {
+          "entity_id": "EGE-092",
+          "entity_kind": "actor",
+          "canonical_name": "Sacks",
+          "accepted_entity_names": [
+            "Sacks",
+            "David Sacks"
+          ],
+          "rationale": "Sacks is the source to whom the quoted statement is attributed.",
+          "accepted_source_occurrences": [
+            {
+              "start": 22,
+              "end": 27,
+              "source_text": "Sacks"
+            }
+          ]
+        }
+      ],
+      "review_rationale": "The source establishes that Sacks made the attributed statement; it does not independently establish the quoted activity as world state."
+    },
+    {
+      "event_id": "TGE-026",
+      "phase": "development",
+      "source_text_sha256": "c458619bad7a713e3b1208d9f0ba0b966c0afb9d6434fafaa78a529c53513d53",
+      "event_meaning": "That month, Amodei published a blog post.",
+      "expected_entities": [
+        {
+          "entity_id": "EGE-036",
+          "entity_kind": "actor",
+          "canonical_name": "Amodei",
+          "accepted_entity_names": [
+            "Amodei",
+            "Dario Amodei"
+          ],
+          "rationale": "Amodei performs the publication.",
+          "accepted_source_occurrences": [
+            {
+              "start": 150,
+              "end": 156,
+              "source_text": "Amodei"
+            }
+          ]
+        }
+      ],
+      "review_rationale": "The blog post is an artifact, outside this entity slice."
+    },
+    {
+      "event_id": "TGE-027",
+      "phase": "development",
+      "source_text_sha256": "c458619bad7a713e3b1208d9f0ba0b966c0afb9d6434fafaa78a529c53513d53",
+      "event_meaning": "That month, the blog post rebuffed claims from the Trump administration.",
+      "expected_entities": [
+        {
+          "entity_id": "EGE-037",
+          "entity_kind": "actor",
+          "canonical_name": "Amodei",
+          "accepted_entity_names": [
+            "Amodei",
+            "Dario Amodei"
+          ],
+          "rationale": "Amodei authored the post performing the rebuttal.",
+          "accepted_source_occurrences": [
+            {
+              "start": 150,
+              "end": 156,
+              "source_text": "Amodei"
+            }
+          ]
+        },
+        {
+          "entity_id": "EGE-038",
+          "entity_kind": "organization",
+          "canonical_name": "Trump administration",
+          "accepted_entity_names": [
+            "Trump administration",
+            "the Trump administration"
+          ],
+          "rationale": "The rebutted claims came from this Organization.",
+          "accepted_source_occurrences": [
+            {
+              "start": 214,
+              "end": 238,
+              "source_text": "the Trump administration"
+            },
+            {
+              "start": 218,
+              "end": 238,
+              "source_text": "Trump administration"
+            }
+          ]
+        }
+      ],
+      "review_rationale": "The source names the author and institutional source of the claims."
+    },
+    {
+      "event_id": "TGE-028",
+      "phase": "development",
+      "source_text_sha256": "c458619bad7a713e3b1208d9f0ba0b966c0afb9d6434fafaa78a529c53513d53",
+      "event_meaning": "That month, the publication intensified the dispute.",
+      "expected_entities": [
+        {
+          "entity_id": "EGE-039",
+          "entity_kind": "actor",
+          "canonical_name": "Amodei",
+          "accepted_entity_names": [
+            "Amodei",
+            "Dario Amodei"
+          ],
+          "rationale": "Amodei's publication is the stated cause.",
+          "accepted_source_occurrences": [
+            {
+              "start": 150,
+              "end": 156,
+              "source_text": "Amodei"
+            }
+          ]
+        },
+        {
+          "entity_id": "EGE-040",
+          "entity_kind": "organization",
+          "canonical_name": "Anthropic",
+          "accepted_entity_names": [
+            "Anthropic"
+          ],
+          "rationale": "Anthropic is one named side of the dispute context.",
+          "accepted_source_occurrences": [
+            {
+              "start": 244,
+              "end": 253,
+              "source_text": "Anthropic"
+            }
+          ]
+        },
+        {
+          "entity_id": "EGE-041",
+          "entity_kind": "organization",
+          "canonical_name": "Trump administration",
+          "accepted_entity_names": [
+            "Trump administration",
+            "the Trump administration"
+          ],
+          "rationale": "The administration is the other named side of the dispute context.",
+          "accepted_source_occurrences": [
+            {
+              "start": 214,
+              "end": 238,
+              "source_text": "the Trump administration"
+            },
+            {
+              "start": 218,
+              "end": 238,
+              "source_text": "Trump administration"
+            }
+          ]
+        }
+      ],
+      "review_rationale": "The Event inherits its explicitly named cause and dispute parties from the same sentence."
+    },
+    {
+      "event_id": "TGE-054",
+      "phase": "development",
+      "source_text_sha256": "0795adfe1efe5e6d52d303ab445dcd467fb1990979a64e565027f47e006de630",
+      "event_meaning": "By November 2024, Anthropic had already partnered with Palantir and Amazon Web Services.",
+      "expected_entities": [
+        {
+          "entity_id": "EGE-084",
+          "entity_kind": "organization",
+          "canonical_name": "Anthropic",
+          "accepted_entity_names": [
+            "Anthropic"
+          ],
+          "rationale": "Anthropic is one named party to the partnership.",
+          "accepted_source_occurrences": [
+            {
+              "start": 18,
+              "end": 27,
+              "source_text": "Anthropic"
+            }
+          ]
+        },
+        {
+          "entity_id": "EGE-085",
+          "entity_kind": "organization",
+          "canonical_name": "Palantir",
+          "accepted_entity_names": [
+            "Palantir"
+          ],
+          "rationale": "Palantir is one named counterparty to the partnership.",
+          "accepted_source_occurrences": [
+            {
+              "start": 55,
+              "end": 63,
+              "source_text": "Palantir"
+            }
+          ]
+        },
+        {
+          "entity_id": "EGE-086",
+          "entity_kind": "organization",
+          "canonical_name": "Amazon Web Services",
+          "accepted_entity_names": [
+            "Amazon Web Services"
+          ],
+          "rationale": "Amazon Web Services is the other named counterparty to the partnership.",
+          "accepted_source_occurrences": [
+            {
+              "start": 68,
+              "end": 87,
+              "source_text": "Amazon Web Services"
+            }
+          ]
+        }
+      ],
+      "review_rationale": "The Event directly identifies all three named Organizations as partnership participants."
+    },
+    {
+      "event_id": "TGE-055",
+      "phase": "development",
+      "source_text_sha256": "0795adfe1efe5e6d52d303ab445dcd467fb1990979a64e565027f47e006de630",
+      "event_meaning": "Palantir and Amazon Web Services offered services with FedRAMP authorization.",
+      "expected_entities": [
+        {
+          "entity_id": "EGE-090",
+          "entity_kind": "organization",
+          "canonical_name": "Palantir",
+          "accepted_entity_names": [
+            "Palantir"
+          ],
+          "rationale": "Palantir is one of the companies identified as offering services with FedRAMP authorization.",
+          "accepted_source_occurrences": [
+            {
+              "start": 55,
+              "end": 63,
+              "source_text": "Palantir"
+            }
+          ]
+        },
+        {
+          "entity_id": "EGE-091",
+          "entity_kind": "organization",
+          "canonical_name": "Amazon Web Services",
+          "accepted_entity_names": [
+            "Amazon Web Services"
+          ],
+          "rationale": "Amazon Web Services is the other company identified as offering services with FedRAMP authorization.",
+          "accepted_source_occurrences": [
+            {
+              "start": 68,
+              "end": 87,
+              "source_text": "Amazon Web Services"
+            }
+          ]
+        },
+        {
+          "entity_id": "EGE-093",
+          "entity_kind": "organization",
+          "canonical_name": "FedRAMP",
+          "accepted_entity_names": [
+            "FedRAMP"
+          ],
+          "rationale": "FedRAMP is the named institutional authorization program qualifying the offered services, not an offerer.",
+          "accepted_source_occurrences": [
+            {
+              "start": 126,
+              "end": 133,
+              "source_text": "FedRAMP"
+            }
+          ]
+        }
+      ],
+      "review_rationale": "The relative clause identifies Palantir and Amazon Web Services as the companies offering services and FedRAMP as the institutional authorization program qualifying those services. It does not identify FedRAMP as an offerer or Anthropic as participating in this offering Event."
+    },
+    {
+      "event_id": "TGE-078",
+      "phase": "development",
+      "source_text_sha256": "0fb6e397a4b659ea94ce6c9c0a8644405720b53c12f92e7ccdffd02e7439b37c",
+      "event_meaning": "After Anthropic refused to allow the Department of Defense to use Claude for \"all lawful purposes\", the Department of Defense threatened to cancel its contracts with Anthropic.",
+      "expected_entities": [
+        {
+          "entity_id": "EGE-094",
+          "entity_kind": "organization",
+          "canonical_name": "Anthropic",
+          "accepted_entity_names": [
+            "Anthropic"
+          ],
+          "rationale": "Anthropic is the preceding refusal actor and the Organization whose contracts the Department threatened to cancel.",
+          "accepted_source_occurrences": [
+            {
+              "start": 11,
+              "end": 20,
+              "source_text": "Anthropic"
+            },
+            {
+              "start": 170,
+              "end": 181,
+              "source_text": "the company"
+            }
+          ]
+        },
+        {
+          "entity_id": "EGE-095",
+          "entity_kind": "organization",
+          "canonical_name": "Department of Defense",
+          "accepted_entity_names": [
+            "Department of Defense",
+            "the Department of Defense"
+          ],
+          "rationale": "The Department is the requested user in the temporal clause and the Organization that performs the threat.",
+          "accepted_source_occurrences": [
+            {
+              "start": 47,
+              "end": 72,
+              "source_text": "the Department of Defense"
+            },
+            {
+              "start": 51,
+              "end": 72,
+              "source_text": "Department of Defense"
+            },
+            {
+              "start": 114,
+              "end": 129,
+              "source_text": "the  department"
+            }
+          ]
+        }
+      ],
+      "review_rationale": "The source-grounded threat retains both named Organizations and their exact later references; Claude is a product, not an Actor or Organization."
+    },
+    {
+      "event_id": "TGE-001",
+      "phase": "validation",
+      "source_text_sha256": "377c75c2999935fb1984a2c1a6761a73798539536409742f95cd527cc40f3eb5",
+      "event_meaning": "Hegseth has publicly rebuked Dario Amodei's approach.",
+      "expected_entities": [
+        {
+          "entity_id": "EGE-042",
+          "entity_kind": "actor",
+          "canonical_name": "Hegseth",
+          "accepted_entity_names": [
+            "Hegseth",
+            "Pete Hegseth"
+          ],
+          "rationale": "Hegseth performs the rebuke.",
+          "accepted_source_occurrences": [
+            {
+              "start": 0,
+              "end": 7,
+              "source_text": "Hegseth"
+            }
+          ]
+        },
+        {
+          "entity_id": "EGE-043",
+          "entity_kind": "actor",
+          "canonical_name": "Dario Amodei",
+          "accepted_entity_names": [
+            "Dario Amodei",
+            "Amodei"
+          ],
+          "rationale": "Amodei's approach is the target of the rebuke.",
+          "accepted_source_occurrences": [
+            {
+              "start": 96,
+              "end": 108,
+              "source_text": "Dario Amodei"
+            }
+          ]
+        }
+      ],
+      "review_rationale": "Anthropic is an affiliation in this sentence, not the rebuked entity."
+    },
+    {
+      "event_id": "TGE-007",
+      "phase": "validation",
+      "source_text_sha256": "a7afdc5c867500f7adc72616351ed81d3926940ece27ec64007b9e90ca43965c",
+      "event_meaning": "The following month, Amodei wrote an op-ed in The New York Times.",
+      "expected_entities": [
+        {
+          "entity_id": "EGE-044",
+          "entity_kind": "actor",
+          "canonical_name": "Amodei",
+          "accepted_entity_names": [
+            "Amodei",
+            "Dario Amodei"
+          ],
+          "rationale": "Amodei writes the op-ed.",
+          "accepted_source_occurrences": [
+            {
+              "start": 25,
+              "end": 31,
+              "source_text": "Amodei"
+            }
+          ]
+        },
+        {
+          "entity_id": "EGE-045",
+          "entity_kind": "organization",
+          "canonical_name": "The New York Times",
+          "accepted_entity_names": [
+            "The New York Times",
+            "New York Times"
+          ],
+          "rationale": "The named publication is the venue for the op-ed.",
+          "accepted_source_occurrences": [
+            {
+              "start": 50,
+              "end": 68,
+              "source_text": "The New York Times"
+            }
+          ]
+        }
+      ],
+      "review_rationale": "The Event directly connects the author and publication venue."
+    },
+    {
+      "event_id": "TGE-008",
+      "phase": "validation",
+      "source_text_sha256": "a7afdc5c867500f7adc72616351ed81d3926940ece27ec64007b9e90ca43965c",
+      "event_meaning": "In the op-ed written the following month, Amodei described the artificial intelligence regulation bill.",
+      "expected_entities": [
+        {
+          "entity_id": "EGE-046",
+          "entity_kind": "actor",
+          "canonical_name": "Amodei",
+          "accepted_entity_names": [
+            "Amodei",
+            "Dario Amodei"
+          ],
+          "rationale": "Amodei is the author performing the description.",
+          "accepted_source_occurrences": [
+            {
+              "start": 25,
+              "end": 31,
+              "source_text": "Amodei"
+            }
+          ]
+        }
+      ],
+      "review_rationale": "The bill and op-ed are not Actor or Organization entities."
+    },
+    {
+      "event_id": "TGE-009",
+      "phase": "validation",
+      "source_text_sha256": "a7afdc5c867500f7adc72616351ed81d3926940ece27ec64007b9e90ca43965c",
+      "event_meaning": "The regulation bill was then tied to the One Big Beautiful Bill Act.",
+      "expected_entities": [],
+      "review_rationale": "The Event relates two legislative artifacts and names no Actor or Organization."
+    },
+    {
+      "event_id": "TGE-011",
+      "phase": "validation",
+      "source_text_sha256": "5367faa6a71b436e486f3f7f29f6d219464cef2cfea476e05efeca768c6c4bda",
+      "event_meaning": "In a Facebook post ahead of the 2024 presidential election, Amodei urged his associates to vote for Kamala Harris over Trump.",
+      "expected_entities": [
+        {
+          "entity_id": "EGE-047",
+          "entity_kind": "actor",
+          "canonical_name": "Amodei",
+          "accepted_entity_names": [
+            "Amodei",
+            "Dario Amodei"
+          ],
+          "rationale": "Amodei performs the urging.",
+          "accepted_source_occurrences": [
+            {
+              "start": 123,
+              "end": 129,
+              "source_text": "Amodei"
+            },
+            {
+              "start": 136,
+              "end": 139,
+              "source_text": "his"
+            }
+          ]
+        },
+        {
+          "entity_id": "EGE-048",
+          "entity_kind": "actor",
+          "canonical_name": "Kamala Harris",
+          "accepted_entity_names": [
+            "Kamala Harris",
+            "Harris"
+          ],
+          "rationale": "Harris is the explicitly named preferred candidate.",
+          "accepted_source_occurrences": [
+            {
+              "start": 178,
+              "end": 191,
+              "source_text": "Kamala Harris"
+            }
+          ]
+        },
+        {
+          "entity_id": "EGE-049",
+          "entity_kind": "actor",
+          "canonical_name": "Trump",
+          "accepted_entity_names": [
+            "Trump",
+            "Donald Trump"
+          ],
+          "rationale": "Trump is the explicitly named alternative.",
+          "accepted_source_occurrences": [
+            {
+              "start": 197,
+              "end": 202,
+              "source_text": "Trump"
+            }
+          ]
+        }
+      ],
+      "review_rationale": "The associates are an unresolved generic group, not one Entity."
+    },
+    {
+      "event_id": "TGE-013",
+      "phase": "validation",
+      "source_text_sha256": "5367faa6a71b436e486f3f7f29f6d219464cef2cfea476e05efeca768c6c4bda",
+      "event_meaning": "In a Facebook post ahead of the 2024 presidential election, Amodei described Trump as a feudal warlord.",
+      "expected_entities": [
+        {
+          "entity_id": "EGE-053",
+          "entity_kind": "actor",
+          "canonical_name": "Amodei",
+          "accepted_entity_names": [
+            "Amodei",
+            "Dario Amodei"
+          ],
+          "rationale": "Amodei performs the description.",
+          "accepted_source_occurrences": [
+            {
+              "start": 123,
+              "end": 129,
+              "source_text": "Amodei"
+            }
+          ]
+        },
+        {
+          "entity_id": "EGE-054",
+          "entity_kind": "actor",
+          "canonical_name": "Trump",
+          "accepted_entity_names": [
+            "Trump",
+            "Donald Trump"
+          ],
+          "rationale": "The pronoun target resolves to Trump.",
+          "accepted_source_occurrences": [
+            {
+              "start": 215,
+              "end": 218,
+              "source_text": "him"
+            }
+          ]
+        }
+      ],
+      "review_rationale": "Both source and resolved-reference evidence are required."
+    },
+    {
+      "event_id": "TGE-030",
+      "phase": "validation",
+      "source_text_sha256": "b78a7b8cc2459f848a8ba9080e214f39a99488eb9b0b95b9c190d3399b1c8502",
+      "event_meaning": "Amodei's statement included views that JD Vance had explicitly espoused.",
+      "expected_entities": [
+        {
+          "entity_id": "EGE-056",
+          "entity_kind": "actor",
+          "canonical_name": "Amodei",
+          "accepted_entity_names": [
+            "Amodei",
+            "Dario Amodei"
+          ],
+          "rationale": "The statement containing the views belongs to Amodei.",
+          "accepted_source_occurrences": [
+            {
+              "start": 0,
+              "end": 6,
+              "source_text": "Amodei"
+            }
+          ]
+        },
+        {
+          "entity_id": "EGE-057",
+          "entity_kind": "actor",
+          "canonical_name": "JD Vance",
+          "accepted_entity_names": [
+            "JD Vance",
+            "Vance"
+          ],
+          "rationale": "The included views are explicitly identified as views espoused by Vance.",
+          "accepted_source_occurrences": [
+            {
+              "start": 75,
+              "end": 83,
+              "source_text": "JD Vance"
+            }
+          ]
+        }
+      ],
+      "review_rationale": "The Event connects the contents of Amodei's statement to views explicitly attributed to JD Vance; it does not assert general agreement or coordination."
+    },
+    {
+      "event_id": "TGE-038",
+      "phase": "validation",
+      "source_text_sha256": "de4ff8014b9a1ef33983388b241f72c9b699eb9c2a4b333cc5dbaba0bc375811",
+      "event_meaning": "That month, Amodei criticized Trump's approach to export restrictions on semiconductors.",
+      "expected_entities": [
+        {
+          "entity_id": "EGE-059",
+          "entity_kind": "actor",
+          "canonical_name": "Amodei",
+          "accepted_entity_names": [
+            "Amodei",
+            "Dario Amodei"
+          ],
+          "rationale": "Amodei performs the criticism.",
+          "accepted_source_occurrences": [
+            {
+              "start": 18,
+              "end": 24,
+              "source_text": "Amodei"
+            }
+          ]
+        },
+        {
+          "entity_id": "EGE-060",
+          "entity_kind": "actor",
+          "canonical_name": "Trump",
+          "accepted_entity_names": [
+            "Trump",
+            "Donald Trump"
+          ],
+          "rationale": "Trump's approach is criticized.",
+          "accepted_source_occurrences": [
+            {
+              "start": 36,
+              "end": 41,
+              "source_text": "Trump"
+            }
+          ]
+        }
+      ],
+      "review_rationale": "The Event directly connects critic and target person."
+    },
+    {
+      "event_id": "TGE-039",
+      "phase": "validation",
+      "source_text_sha256": "b248b61105363bdaeafb06b4656d26a32fe8bdce6a0a9860ce130ae53ec28233",
+      "event_meaning": "In December, Amodei met Trump officials and senators.",
+      "expected_entities": [
+        {
+          "entity_id": "EGE-061",
+          "entity_kind": "actor",
+          "canonical_name": "Amodei",
+          "accepted_entity_names": [
+            "Amodei",
+            "Dario Amodei"
+          ],
+          "rationale": "Amodei participates in the meeting.",
+          "accepted_source_occurrences": [
+            {
+              "start": 19,
+              "end": 25,
+              "source_text": "Amodei"
+            }
+          ]
+        },
+        {
+          "entity_id": "EGE-062",
+          "entity_kind": "actor",
+          "canonical_name": "Trump officials",
+          "accepted_entity_names": [
+            "Trump officials"
+          ],
+          "rationale": "The role-qualified source expression denotes the source-bound group of people who participate in the meeting.",
+          "accepted_source_occurrences": [
+            {
+              "start": 35,
+              "end": 50,
+              "source_text": "Trump officials"
+            }
+          ]
+        }
+      ],
+      "review_rationale": "Trump officials is a source-bound group of Actors; several senators are generic and do not resolve to another named entity."
+    },
+    {
+      "event_id": "TGE-040",
+      "phase": "validation",
+      "source_text_sha256": "b248b61105363bdaeafb06b4656d26a32fe8bdce6a0a9860ce130ae53ec28233",
+      "event_meaning": "In December, Amodei sought to improve Anthropic's relationship with the administration.",
+      "expected_entities": [
+        {
+          "entity_id": "EGE-063",
+          "entity_kind": "actor",
+          "canonical_name": "Amodei",
+          "accepted_entity_names": [
+            "Amodei",
+            "Dario Amodei"
+          ],
+          "rationale": "Amodei performs the effort.",
+          "accepted_source_occurrences": [
+            {
+              "start": 19,
+              "end": 25,
+              "source_text": "Amodei"
+            }
+          ]
+        },
+        {
+          "entity_id": "EGE-064",
+          "entity_kind": "organization",
+          "canonical_name": "Anthropic",
+          "accepted_entity_names": [
+            "Anthropic"
+          ],
+          "rationale": "Anthropic owns the relationship being improved.",
+          "accepted_source_occurrences": [
+            {
+              "start": 96,
+              "end": 105,
+              "source_text": "Anthropic"
+            }
+          ]
+        },
+        {
+          "entity_id": "EGE-065",
+          "entity_kind": "organization",
+          "canonical_name": "Trump administration",
+          "accepted_entity_names": [
+            "Trump administration",
+            "the Trump administration"
+          ],
+          "rationale": "The administration is the relationship counterparty.",
+          "accepted_source_occurrences": [
+            {
+              "start": 126,
+              "end": 150,
+              "source_text": "the Trump administration"
+            },
+            {
+              "start": 130,
+              "end": 150,
+              "source_text": "Trump administration"
+            }
+          ]
+        }
+      ],
+      "review_rationale": "The Event links the person acting and both institutional parties to the relationship."
+    },
+    {
+      "event_id": "TGE-041",
+      "phase": "validation",
+      "source_text_sha256": "86ba43dd74f414301968e6caca8a1aba6ddd61895d412266d69c158eea552116",
+      "event_meaning": "Since January 2026, the United States Department of Defense and Anthropic have conflicted over the use of Anthropic's products for military purposes and mass domestic surveillance.",
+      "expected_entities": [
+        {
+          "entity_id": "EGE-066",
+          "entity_kind": "organization",
+          "canonical_name": "United States Department of Defense",
+          "accepted_entity_names": [
+            "United States Department of Defense",
+            "Department of Defense"
+          ],
+          "rationale": "The Department is one party to the conflict.",
+          "accepted_source_occurrences": [
+            {
+              "start": 28,
+              "end": 67,
+              "source_text": "United  States  Department  of  Defense"
+            }
+          ]
+        },
+        {
+          "entity_id": "EGE-067",
+          "entity_kind": "organization",
+          "canonical_name": "Anthropic",
+          "accepted_entity_names": [
+            "Anthropic"
+          ],
+          "rationale": "Anthropic is the other party and the owner of the products.",
+          "accepted_source_occurrences": [
+            {
+              "start": 130,
+              "end": 139,
+              "source_text": "Anthropic"
+            },
+            {
+              "start": 161,
+              "end": 164,
+              "source_text": "its"
+            }
+          ]
+        }
+      ],
+      "review_rationale": "Both named Organizations are explicit conflict parties."
+    },
+    {
+      "event_id": "TGE-051",
+      "phase": "validation",
+      "source_text_sha256": "0b00e02937fd49d1209d1bf86322e0f8835f2465b396f3170a63deb3199576fd",
+      "event_meaning": "Trump officials chastised Anthropic's hiring.",
+      "expected_entities": [
+        {
+          "entity_id": "EGE-068",
+          "entity_kind": "actor",
+          "canonical_name": "Trump officials",
+          "accepted_entity_names": [
+            "Trump officials"
+          ],
+          "rationale": "The role-qualified source expression denotes the source-bound group of people who perform the chastisement.",
+          "accepted_source_occurrences": [
+            {
+              "start": 25,
+              "end": 41,
+              "source_text": "Trump  officials"
+            }
+          ]
+        },
+        {
+          "entity_id": "EGE-069",
+          "entity_kind": "organization",
+          "canonical_name": "Anthropic",
+          "accepted_entity_names": [
+            "Anthropic"
+          ],
+          "rationale": "Anthropic's hiring is the object of chastisement.",
+          "accepted_source_occurrences": [
+            {
+              "start": 54,
+              "end": 63,
+              "source_text": "Anthropic"
+            }
+          ]
+        }
+      ],
+      "review_rationale": "Trump officials is a source-bound group of Actors; the named hires belong to the separate hiring Event."
+    },
+    {
+      "event_id": "TGE-052",
+      "phase": "validation",
+      "source_text_sha256": "0b00e02937fd49d1209d1bf86322e0f8835f2465b396f3170a63deb3199576fd",
+      "event_meaning": "Anthropic hired several Biden administration officials.",
+      "expected_entities": [
+        {
+          "entity_id": "EGE-070",
+          "entity_kind": "organization",
+          "canonical_name": "Anthropic",
+          "accepted_entity_names": [
+            "Anthropic"
+          ],
+          "rationale": "Anthropic performs the hiring.",
+          "accepted_source_occurrences": [
+            {
+              "start": 54,
+              "end": 63,
+              "source_text": "Anthropic"
+            }
+          ]
+        },
+        {
+          "entity_id": "EGE-071",
+          "entity_kind": "organization",
+          "canonical_name": "Biden administration",
+          "accepted_entity_names": [
+            "Biden administration",
+            "the Biden administration"
+          ],
+          "rationale": "The hires are identified through this Organization.",
+          "accepted_source_occurrences": [
+            {
+              "start": 117,
+              "end": 138,
+              "source_text": "Biden  administration"
+            }
+          ]
+        },
+        {
+          "entity_id": "EGE-072",
+          "entity_kind": "actor",
+          "canonical_name": "Elizabeth Kelly",
+          "accepted_entity_names": [
+            "Elizabeth Kelly"
+          ],
+          "rationale": "Kelly is explicitly included among the hired officials.",
+          "accepted_source_occurrences": [
+            {
+              "start": 152,
+              "end": 168,
+              "source_text": "Elizabeth  Kelly"
+            }
+          ]
+        },
+        {
+          "entity_id": "EGE-073",
+          "entity_kind": "organization",
+          "canonical_name": "Artificial Intelligence Safety Institute",
+          "accepted_entity_names": [
+            "Artificial Intelligence Safety Institute",
+            "AI Safety Institute"
+          ],
+          "rationale": "Kelly's former institutional affiliation is part of the hiring description.",
+          "accepted_source_occurrences": [
+            {
+              "start": 203,
+              "end": 243,
+              "source_text": "Artificial Intelligence Safety Institute"
+            }
+          ]
+        },
+        {
+          "entity_id": "EGE-074",
+          "entity_kind": "actor",
+          "canonical_name": "Tarun Chhabra",
+          "accepted_entity_names": [
+            "Tarun Chhabra"
+          ],
+          "rationale": "Chhabra is explicitly included among the hired officials.",
+          "accepted_source_occurrences": [
+            {
+              "start": 245,
+              "end": 258,
+              "source_text": "Tarun Chhabra"
+            }
+          ]
+        },
+        {
+          "entity_id": "EGE-075",
+          "entity_kind": "organization",
+          "canonical_name": "National Security Council",
+          "accepted_entity_names": [
+            "National Security Council"
+          ],
+          "rationale": "Chhabra's institutional affiliation is part of the hiring description.",
+          "accepted_source_occurrences": [
+            {
+              "start": 320,
+              "end": 345,
+              "source_text": "National Security Council"
+            }
+          ]
+        },
+        {
+          "entity_id": "EGE-076",
+          "entity_kind": "actor",
+          "canonical_name": "Ben Buchanan",
+          "accepted_entity_names": [
+            "Ben Buchanan"
+          ],
+          "rationale": "Buchanan is explicitly included among the hired officials.",
+          "accepted_source_occurrences": [
+            {
+              "start": 351,
+              "end": 363,
+              "source_text": "Ben Buchanan"
+            }
+          ]
+        }
+      ],
+      "review_rationale": "The hiring Event includes the named employer, hires, and source affiliations used to identify them."
+    },
+    {
+      "event_id": "TGE-053",
+      "phase": "validation",
+      "source_text_sha256": "afddb03eb96d930f71aa0fd3bbedc15708b79c7cf29f8f5704db61050b897347",
+      "event_meaning": "Prior to the dispute, the Trump administration had integrated Anthropic's services.",
+      "expected_entities": [
+        {
+          "entity_id": "EGE-077",
+          "entity_kind": "organization",
+          "canonical_name": "Trump administration",
+          "accepted_entity_names": [
+            "Trump administration",
+            "the Trump administration"
+          ],
+          "rationale": "The administration performs the integration.",
+          "accepted_source_occurrences": [
+            {
+              "start": 26,
+              "end": 46,
+              "source_text": "Trump administration"
+            }
+          ]
+        },
+        {
+          "entity_id": "EGE-078",
+          "entity_kind": "organization",
+          "canonical_name": "Anthropic",
+          "accepted_entity_names": [
+            "Anthropic"
+          ],
+          "rationale": "The integrated services belong to Anthropic.",
+          "accepted_source_occurrences": [
+            {
+              "start": 62,
+              "end": 71,
+              "source_text": "Anthropic"
+            }
+          ]
+        }
+      ],
+      "review_rationale": "Both institutional entities are directly named."
+    },
+    {
+      "event_id": "TGE-056",
+      "phase": "validation",
+      "source_text_sha256": "a33aa0419db9172a14b903112cf0565b69cb1951ccc1be26453f8e3fca95803b",
+      "event_meaning": "In the Biden administration, Anthropic had reached an agreement with the AI Safety Institute.",
+      "expected_entities": [
+        {
+          "entity_id": "EGE-079",
+          "entity_kind": "organization",
+          "canonical_name": "Anthropic",
+          "accepted_entity_names": [
+            "Anthropic"
+          ],
+          "rationale": "Anthropic is one agreement party.",
+          "accepted_source_occurrences": [
+            {
+              "start": 29,
+              "end": 38,
+              "source_text": "Anthropic"
+            }
+          ]
+        },
+        {
+          "entity_id": "EGE-080",
+          "entity_kind": "organization",
+          "canonical_name": "AI Safety Institute",
+          "accepted_entity_names": [
+            "AI Safety Institute",
+            "Artificial Intelligence Safety Institute"
+          ],
+          "rationale": "The Institute is the other agreement party.",
+          "accepted_source_occurrences": [
+            {
+              "start": 73,
+              "end": 92,
+              "source_text": "AI Safety Institute"
+            }
+          ]
+        }
+      ],
+      "review_rationale": "The Biden administration is temporal context, not an agreement party."
+    },
+    {
+      "event_id": "TGE-057",
+      "phase": "validation",
+      "source_text_sha256": "a33aa0419db9172a14b903112cf0565b69cb1951ccc1be26453f8e3fca95803b",
+      "event_meaning": "In the Biden administration, Anthropic had participated in a nuclear information safety evaluation.",
+      "expected_entities": [
+        {
+          "entity_id": "EGE-081",
+          "entity_kind": "organization",
+          "canonical_name": "Anthropic",
+          "accepted_entity_names": [
+            "Anthropic"
+          ],
+          "rationale": "Anthropic is the explicitly stated participant.",
+          "accepted_source_occurrences": [
+            {
+              "start": 29,
+              "end": 38,
+              "source_text": "Anthropic"
+            }
+          ]
+        }
+      ],
+      "review_rationale": "The sentence does not state that the Institute participated in the evaluation."
+    },
+    {
+      "event_id": "TGE-060",
+      "phase": "validation",
+      "source_text_sha256": "30dc8490626091a79e85a0cec763e420f09a5405580df4126821f361a61d226b",
+      "event_meaning": "The following month, Anthropic announced that it would allow national security customers to use Claude Gov.",
+      "expected_entities": [
+        {
+          "entity_id": "EGE-088",
+          "entity_kind": "organization",
+          "canonical_name": "Anthropic",
+          "accepted_entity_names": [
+            "Anthropic"
+          ],
+          "rationale": "Anthropic performs the announcement.",
+          "accepted_source_occurrences": [
+            {
+              "start": 26,
+              "end": 35,
+              "source_text": "Anthropic"
+            },
+            {
+              "start": 51,
+              "end": 53,
+              "source_text": "it"
+            }
+          ]
+        }
+      ],
+      "review_rationale": "The Event directly names Anthropic as the announcing Organization."
+    },
+    {
+      "event_id": "TGE-064",
+      "phase": "validation",
+      "source_text_sha256": "30dc8490626091a79e85a0cec763e420f09a5405580df4126821f361a61d226b",
+      "event_meaning": "By September, Anthropic's usage policy led to a conflict between Anthropic and the Trump administration.",
+      "expected_entities": [
+        {
+          "entity_id": "EGE-096",
+          "entity_kind": "organization",
+          "canonical_name": "Anthropic",
+          "accepted_entity_names": [
+            "Anthropic"
+          ],
+          "rationale": "Anthropic owns the usage policy and is one explicitly named party to the resulting conflict.",
+          "accepted_source_occurrences": [
+            {
+              "start": 122,
+              "end": 131,
+              "source_text": "Anthropic"
+            },
+            {
+              "start": 122,
+              "end": 133,
+              "source_text": "Anthropic's"
+            },
+            {
+              "start": 337,
+              "end": 346,
+              "source_text": "Anthropic"
+            }
+          ]
+        },
+        {
+          "entity_id": "EGE-097",
+          "entity_kind": "organization",
+          "canonical_name": "Trump administration",
+          "accepted_entity_names": [
+            "Trump administration",
+            "the Trump administration"
+          ],
+          "rationale": "The Trump administration is the other explicitly named party to the conflict.",
+          "accepted_source_occurrences": [
+            {
+              "start": 351,
+              "end": 375,
+              "source_text": "the Trump administration"
+            },
+            {
+              "start": 355,
+              "end": 375,
+              "source_text": "Trump administration"
+            }
+          ]
+        }
+      ],
+      "review_rationale": "The policy owner and both conflict parties belong to this Event; the federal agencies belong only to the separate surveillance-system clause."
+    },
+    {
+      "event_id": "TGE-069",
+      "phase": "validation",
+      "source_text_sha256": "e60354f5fbd6baab378096fe495f8248d381de0a2f80026e74d663158a37a9b5",
+      "event_meaning": "According to Reuters, Anthropic representatives opposed using Anthropic's products for surveillance or to develop lethal autonomous weapons.",
+      "expected_entities": [
+        {
+          "entity_id": "EGE-098",
+          "entity_kind": "actor",
+          "canonical_name": "Anthropic representatives",
+          "accepted_entity_names": [
+            "Anthropic representatives"
+          ],
+          "rationale": "The source-bound group of people performs the opposition.",
+          "accepted_source_occurrences": [
+            {
+              "start": 30,
+              "end": 56,
+              "source_text": "Anthropic  representatives"
+            }
+          ]
+        },
+        {
+          "entity_id": "EGE-099",
+          "entity_kind": "organization",
+          "canonical_name": "Anthropic",
+          "accepted_entity_names": [
+            "Anthropic"
+          ],
+          "rationale": "Anthropic qualifies the representatives and owns the products whose uses they opposed.",
+          "accepted_source_occurrences": [
+            {
+              "start": 30,
+              "end": 39,
+              "source_text": "Anthropic"
+            },
+            {
+              "start": 81,
+              "end": 93,
+              "source_text": "the  company"
+            }
+          ]
+        },
+        {
+          "entity_id": "EGE-100",
+          "entity_kind": "organization",
+          "canonical_name": "Reuters",
+          "accepted_entity_names": [
+            "Reuters"
+          ],
+          "rationale": "Reuters is the explicitly named attribution source for the reported opposition.",
+          "accepted_source_occurrences": [
+            {
+              "start": 20,
+              "end": 27,
+              "source_text": "Reuters"
+            }
+          ]
+        }
+      ],
+      "review_rationale": "The Event preserves the source-bound Actor group, the Organization tied to that group and its products, and the named attribution source."
+    },
+    {
+      "event_id": "TGE-085",
+      "phase": "validation",
+      "source_text_sha256": "1b3c5c61b91f86034d7dbf1d9fda8fb75128fa5c8ca85ba35e4d32a0e7e04863",
+      "event_meaning": "In April 2026, the Court of Appeals for the D.C. Circuit denied Anthropic's motion to lift the FASCSA designation.",
+      "expected_entities": [
+        {
+          "entity_id": "EGE-101",
+          "entity_kind": "organization",
+          "canonical_name": "Court of Appeals for the D.C. Circuit",
+          "accepted_entity_names": [
+            "Court of Appeals for the D.C. Circuit",
+            "the Court of Appeals for the D.C. Circuit"
+          ],
+          "rationale": "The Court is the Organization that performs the denial.",
+          "accepted_source_occurrences": [
+            {
+              "start": 18,
+              "end": 65,
+              "source_text": "the  Court  of  Appeals  for  the  D.C. Circuit"
+            },
+            {
+              "start": 23,
+              "end": 65,
+              "source_text": "Court  of  Appeals  for  the  D.C. Circuit"
+            }
+          ]
+        },
+        {
+          "entity_id": "EGE-102",
+          "entity_kind": "organization",
+          "canonical_name": "Anthropic",
+          "accepted_entity_names": [
+            "Anthropic"
+          ],
+          "rationale": "Anthropic owns the motion that the Court denied.",
+          "accepted_source_occurrences": [
+            {
+              "start": 96,
+              "end": 105,
+              "source_text": "Anthropic"
+            },
+            {
+              "start": 96,
+              "end": 107,
+              "source_text": "Anthropic's"
+            }
+          ]
+        }
+      ],
+      "review_rationale": "The exact Event connects the deciding Court and the Organization whose motion was denied; FASCSA is a designation, not an Actor or Organization in this occurrence."
+    }
+  ]
+}

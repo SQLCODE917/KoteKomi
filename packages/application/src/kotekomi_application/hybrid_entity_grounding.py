@@ -37,7 +37,7 @@ from kotekomi_application.hybrid_mention_interpretation import (
     Referentiality,
 )
 
-HYBRID_ENTITY_GROUNDING_POLICY_ID = "hybrid_entity_grounding_v1"
+HYBRID_ENTITY_GROUNDING_POLICY_ID = "hybrid_entity_grounding_v3"
 ENTITY_LINK_SCHEMA_ID = "entity_linking_batch_v1"
 
 _SHA256_PATTERN = r"^[a-f0-9]{64}$"
@@ -177,6 +177,32 @@ class EntityLinkCandidate(BaseModel):
         return self
 
 
+class ExternalEntityClass(BaseModel):
+    """One raw Wikidata class from the pinned linked-entity class closure."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    class_id: Annotated[str, Field(pattern=_WIKIDATA_ID_PATTERN)]
+    label: Annotated[str, Field(min_length=1)]
+
+
+class LinkedEntityClassEvidence(BaseModel):
+    """Raw class evidence bound to one predicted external identity."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    wikidata_id: Annotated[str, Field(pattern=_WIKIDATA_ID_PATTERN)]
+    classes: tuple[ExternalEntityClass, ...]
+
+    @model_validator(mode="after")
+    def validate_contract(self) -> Self:
+        if tuple(sorted(self.classes, key=lambda item: item.class_id)) != self.classes:
+            raise ValueError("External entity classes must use class-ID order.")
+        if len({item.class_id for item in self.classes}) != len(self.classes):
+            raise ValueError("External entity classes must be distinct.")
+        return self
+
+
 class EntityLinkerIdentity(BaseModel):
     """Pinned execution identity exposed by one EntityLinkingPort."""
 
@@ -201,7 +227,9 @@ class EntityLinkerEvidence(BaseModel):
     returned_text: Annotated[str, Field(min_length=1)]
     start: Annotated[int, Field(ge=0)]
     end: Annotated[int, Field(gt=0)]
+    coarse_mention_type: Annotated[str, Field(min_length=1)] | None
     candidates: tuple[EntityLinkCandidate, ...]
+    linked_entity_classes: LinkedEntityClassEvidence | None
 
     @model_validator(mode="after")
     def validate_contract(self) -> Self:
@@ -216,6 +244,19 @@ class EntityLinkerEvidence(BaseModel):
         )
         if len(set(external_ids)) != len(external_ids):
             raise ValueError("EntityLinkerEvidence repeats an external identity.")
+        top_external_id = (
+            self.candidates[0].wikidata_id
+            if self.candidates
+            and self.candidates[0].kind is EntityLinkCandidateKind.KNOWLEDGE_BASE_ENTITY
+            else None
+        )
+        if top_external_id is None and self.linked_entity_classes is not None:
+            raise ValueError("NIL top candidate cannot carry linked-entity classes.")
+        if top_external_id is not None and (
+            self.linked_entity_classes is None
+            or self.linked_entity_classes.wikidata_id != top_external_id
+        ):
+            raise ValueError("Linked-entity classes must match the top external identity.")
         return self
 
 
@@ -274,7 +315,9 @@ class EntityLinkEvidence(BaseModel):
     text: Annotated[str, Field(min_length=1)]
     start: Annotated[int, Field(ge=0)]
     end: Annotated[int, Field(gt=0)]
+    coarse_mention_type: Annotated[str, Field(min_length=1)] | None
     candidates: tuple[EntityLinkCandidate, ...]
+    linked_entity_classes: LinkedEntityClassEvidence | None
     extraction_task_id: Annotated[str, Field(min_length=1)]
     model_run_id: Annotated[str, Field(min_length=1)]
     trace_id: Annotated[str, Field(pattern=r"^xst_[a-f0-9]{24}$")]
@@ -283,6 +326,19 @@ class EntityLinkEvidence(BaseModel):
     def validate_contract(self) -> Self:
         if self.end <= self.start:
             raise ValueError("EntityLinkEvidence requires a valid source range.")
+        top_external_id = (
+            self.candidates[0].wikidata_id
+            if self.candidates
+            and self.candidates[0].kind is EntityLinkCandidateKind.KNOWLEDGE_BASE_ENTITY
+            else None
+        )
+        if top_external_id is None and self.linked_entity_classes is not None:
+            raise ValueError("NIL top candidate cannot carry linked-entity classes.")
+        if top_external_id is not None and (
+            self.linked_entity_classes is None
+            or self.linked_entity_classes.wikidata_id != top_external_id
+        ):
+            raise ValueError("Linked-entity classes must match the top external identity.")
         expected = _id(
             "ele",
             self.candidate_id,
@@ -291,11 +347,23 @@ class EntityLinkEvidence(BaseModel):
             self.text,
             str(self.start),
             str(self.end),
+            self.coarse_mention_type or "",
             self.extraction_task_id,
             self.model_run_id,
             *(
                 f"{item.rank}:{item.kind.value}:{item.wikidata_id or ''}:{item.score}"
                 for item in self.candidates
+            ),
+            *(
+                ()
+                if self.linked_entity_classes is None
+                else (
+                    self.linked_entity_classes.wikidata_id,
+                    *(
+                        f"{item.class_id}:{item.label}"
+                        for item in self.linked_entity_classes.classes
+                    ),
+                )
             ),
         )
         if self.id != expected:
@@ -308,8 +376,8 @@ class HybridEntityGroundingPreview(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
-    schema_version: Literal["hybrid_entity_grounding_preview_v1"] = (
-        "hybrid_entity_grounding_preview_v1"
+    schema_version: Literal["hybrid_entity_grounding_preview_v3"] = (
+        "hybrid_entity_grounding_preview_v3"
     )
     id: Annotated[str, Field(pattern=r"^hgp_[a-f0-9]{24}$")]
     parent_preview_id: Annotated[str, Field(pattern=r"^hrp_[a-f0-9]{24}$")]
@@ -317,7 +385,7 @@ class HybridEntityGroundingPreview(BaseModel):
     mention_preview_id: Annotated[str, Field(pattern=r"^hxp_[a-f0-9]{24}$")]
     mention_preview_sha256: Annotated[str, Field(pattern=_SHA256_PATTERN)]
     representation_id: Annotated[str, Field(min_length=1)]
-    policy_id: Literal["hybrid_entity_grounding_v1"] = HYBRID_ENTITY_GROUNDING_POLICY_ID
+    policy_id: Literal["hybrid_entity_grounding_v3"] = HYBRID_ENTITY_GROUNDING_POLICY_ID
     eligibility: tuple[EntityGroundingEligibility, ...]
     link_evidence: tuple[EntityLinkEvidence, ...] = ()
     extraction_task_ids: tuple[Annotated[str, Field(min_length=1)], ...] = ()
@@ -506,7 +574,7 @@ def build_hybrid_entity_grounding_preview_record(
 ) -> HybridEntityGroundingPreview:
     payload = dict(values)
     payload.pop("id", None)
-    payload.setdefault("schema_version", "hybrid_entity_grounding_preview_v1")
+    payload.setdefault("schema_version", "hybrid_entity_grounding_preview_v3")
     payload.setdefault("policy_id", HYBRID_ENTITY_GROUNDING_POLICY_ID)
     normalized = cast(dict[str, JsonValue], json.loads(_canonical_json(payload)))
     normalized["id"] = _preview_id(normalized)
@@ -542,9 +610,11 @@ def entity_link_evidence_id(
     text: str,
     start: int,
     end: int,
+    coarse_mention_type: str | None,
     extraction_task_id: str,
     model_run_id: str,
     candidates: tuple[EntityLinkCandidate, ...],
+    linked_entity_classes: LinkedEntityClassEvidence | None,
 ) -> str:
     return _id(
         "ele",
@@ -554,11 +624,20 @@ def entity_link_evidence_id(
         text,
         str(start),
         str(end),
+        coarse_mention_type or "",
         extraction_task_id,
         model_run_id,
         *(
             f"{item.rank}:{item.kind.value}:{item.wikidata_id or ''}:{item.score}"
             for item in candidates
+        ),
+        *(
+            ()
+            if linked_entity_classes is None
+            else (
+                linked_entity_classes.wikidata_id,
+                *(f"{item.class_id}:{item.label}" for item in linked_entity_classes.classes),
+            )
         ),
     )
 

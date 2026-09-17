@@ -325,15 +325,12 @@ def test_specialist_candidates_do_not_override_a_different_semantic_choice() -> 
     )
 
 
-@pytest.mark.parametrize("validation", ("unsupported", "unclear"))
-def test_contrastive_fallback_cannot_remove_another_source_valid_candidate(
-    validation: str,
-) -> None:
+def test_rejected_specialist_allows_one_different_contrastive_antecedent() -> None:
     text = "Anthropic met Amodei before the company changed course."
     anthropic = text.index("Anthropic")
     amodei = text.index("Amodei")
     target = text.index("the company")
-    challenger = _Challenger("second", validation=validation)
+    challenger = _Challenger("second", validation="unsupported")
 
     result = resolve_semantic_reference(
         CoreferenceInput(
@@ -360,27 +357,66 @@ def test_contrastive_fallback_cannot_remove_another_source_valid_candidate(
         "Amodei",
         "Anthropic",
     ]
-    anthropic_span = next(
-        item.span.id
-        for item in result.observation.antecedent_candidates
-        if item.span.text == "Anthropic"
+    anthropic_candidate = next(
+        item for item in result.observation.antecedent_candidates if item.span.text == "Anthropic"
     )
-    amodei_span = next(
-        item.span.id
-        for item in result.observation.antecedent_candidates
-        if item.span.text == "Amodei"
-    )
-    assert result.decision.status.value == "ambiguous"
-    assert result.decision.reason.value == "specialist_challenge_disagreement"
-    assert result.decision.antecedent_span_ids == (anthropic_span, amodei_span)
+    assert result.decision.status.value == "resolved"
+    assert result.decision.reason.value == "specialist_rejected_contrastive_selection"
+    assert result.decision.antecedent_span_ids == (anthropic_candidate.span.id,)
     assert [item.task.value for item in result.decision.model_executions] == [
         "specialist_validation",
         "contrastive_selection",
     ]
+    contrastive_input = _model_attempts(result.trace.input)[1]
+    assert contrastive_input["candidate_label_bindings"] == [
+        {
+            "label": "a1",
+            "candidate_id": result.observation.antecedent_candidates[1].id,
+        },
+        {"label": "a2", "candidate_id": anthropic_candidate.id},
+    ]
+    output_attempts = _model_attempts(result.trace.output)
+    assert output_attempts[0]["model_result"] == {
+        "verdict": "unsupported",
+        "reason": "The source context supports this bounded verdict.",
+    }
+    assert output_attempts[0]["mapped_candidate_id"] is None
+    assert output_attempts[1]["mapped_candidate_id"] == anthropic_candidate.id
+    assert result.trace.output["decision"] == result.decision.model_dump(mode="json")
     assert [item["task"] for item in _model_attempts(result.trace.input)] == [
         "specialist_validation",
         "contrastive_selection",
     ]
+
+
+def test_unclear_specialist_keeps_a_different_contrastive_choice_ambiguous() -> None:
+    text = "Anthropic met Amodei before the company changed course."
+    anthropic = text.index("Anthropic")
+    amodei = text.index("Amodei")
+    target = text.index("the company")
+
+    result = resolve_semantic_reference(
+        CoreferenceInput(
+            "seg_fixture",
+            text,
+            target,
+            target + len("the company"),
+            (
+                CoreferenceAntecedentInput(
+                    "candidate_anthropic", anthropic, anthropic + len("Anthropic")
+                ),
+                CoreferenceAntecedentInput("candidate_amodei", amodei, amodei + len("Amodei")),
+            ),
+        ),
+        _Proposer((((amodei, amodei + len("Amodei")), (target, target + 11)),)),
+        _Tokenizer(),
+        _Challenger("second", validation="unclear"),
+    )
+
+    spans = {item.span.text: item.span.id for item in result.observation.antecedent_candidates}
+    assert result.decision.status.value == "ambiguous"
+    assert result.decision.reason.value == "specialist_challenge_disagreement"
+    assert result.decision.antecedent_span_ids == (spans["Anthropic"], spans["Amodei"])
 
 
 @pytest.mark.parametrize("validation", ("unsupported", "unclear"))

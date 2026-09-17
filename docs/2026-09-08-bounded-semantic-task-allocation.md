@@ -16,13 +16,20 @@ Implemented and verified:
 - authoritative SourceSegment to source-owned MentionObservation and MentionCandidate selection;
 - deterministic and bounded semantic mention-boundary reconciliation;
 - effective MentionCandidate interpretation and reference-marker routing;
-- specialist proposal, one-candidate validation, complete-catalog contrastive fallback, and conservative
-  ReferenceDecision construction;
+- specialist proposal, one-candidate validation, complete-catalog contrastive fallback, and
+  evidence-preserving ReferenceDecision construction;
 - Stanza and QANom candidate proposal plus bounded Event routing over all reviewed trigger Gold;
 - exact stage data-in/data-out, causal model-run lineage, and zero-write stage-local evaluation.
 
-The September 10 v10 replay passed thirty-nine of forty development-plus-validation Gold items. AMO-12
-remains the one intended explicit specialist/Qwen ambiguity.
+The September 10 v10 replay passed thirty-nine of forty development-plus-validation Gold items
+against the then-current catalog.
+
+Human review on September 15 established that AMO-12 has one clear antecedent: `his` resolves to
+Amodei.
+
+The v11 policy removes the rejected specialist candidate's veto after a unique contrastive choice.
+
+A focused live replay remains required to verify that correction against the current Gold.
 
 Implemented with focused verification:
 
@@ -258,8 +265,10 @@ KoteKomi derives the Effective MentionCandidates from deterministic selections a
 - BTA-REF-04B: Binary specialist validation returns exactly `supported`, `unsupported`, or `unclear` plus one diagnostic reason.
 - BTA-REF-04C: A source-valid F-Coref candidate becomes resolved only after Qwen returns `supported` for that candidate.
 - BTA-REF-04D: An `unsupported` or `unclear` specialist validation may trigger one separate contrastive-selection task over the complete bounded catalog, including the specialist candidate.
-- BTA-REF-04E: Agreement between the specialist proposal and contrastive selection resolves that candidate; selection of a different candidate retains both model outputs and records the specialist/semantic disagreement as ambiguous.
-- BTA-REF-04F: A malformed or failed specialist validation terminates as a typed non-resolution and cannot be bypassed by contrastive selection.
+- BTA-REF-04E: Agreement between the specialist proposal and contrastive selection resolves that candidate.
+- BTA-REF-04F: An `unsupported` specialist validation followed by one different contrastive selection resolves the selected source-valid candidate.
+- BTA-REF-04G: An `unclear` specialist validation followed by a different contrastive selection remains ambiguous.
+- BTA-REF-04H: A malformed or failed specialist validation terminates as a typed non-resolution and cannot be bypassed by contrastive selection.
 - BTA-REF-05: The model-visible output contains only one supplied task-local label or a typed non-resolution plus one diagnostic explanation.
 - BTA-REF-06: KoteKomi maps a valid task-local label to its source-valid candidate ID and constructs the terminal ReferenceDecision.
 - BTA-REF-06A: The exact label-to-candidate mapping, parsed model selection, mapped candidate selection, and model-output digest remain in stage evidence.
@@ -506,8 +515,7 @@ catalog, including the specialist candidate.
 
 Agreement between the specialist and the contrastive choice resolves the reference.
 
-If the contrastive task selects another candidate, KoteKomi preserves the disagreement as ambiguous
-rather than letting either fallible model win.
+The v10 policy preserved a different contrastive choice as ambiguous.
 
 When F-Coref abstains or proposes more than one distinct candidate, the existing bounded selection task
 remains available.
@@ -559,8 +567,9 @@ agreed with F-Coref.
 AMO-16 and AMO-17 still resolved `it` to `Claude` through one supported validation each without
 fallback.
 
-For AMO-12, Qwen rejected F-Coref's `Trump` proposal and selected `Amodei` contrastively; KoteKomi
-preserved that disagreement as the one expected ambiguity.
+For AMO-12, Qwen rejected F-Coref's `Trump` proposal and selected `Amodei` contrastively.
+
+The v10 policy preserved that processor disagreement as ambiguity.
 
 All five model executions produced valid literal output and causal trace records. The diagnostic
 retained a complete boundary contract and created no ProposedChange or accepted Ledger write.
@@ -578,8 +587,17 @@ validations, two complete-catalog contrastive selections, and three ordinary cat
 literal output parsed, no model-visible input exposed opaque candidate IDs, and input, output, and
 terminal-decision task order matched.
 
-The replay created zero ProposedChanges and zero accepted Ledger writes. It therefore restores ANT-01
-without weakening AMO-12's conservative hold or regressing the locked validation partition.
+The replay created zero ProposedChanges and zero accepted Ledger writes.
+
+Human review later rejected the AMO-12 hold because the authoritative SourceSegment clearly assigns
+`his hiring of Biden officials` to Amodei.
+
+The v11 policy treats F-Coref as a proposer rather than a semantic veto.
+
+When one bounded task explicitly rejects its candidate and one complete-catalog task selects a
+different exact candidate, KoteKomi resolves the selected candidate and retains both executions.
+
+An `unclear` validation still preserves a different contrastive choice as ambiguous.
 
 ## Proposed Architecture
 
@@ -758,10 +776,11 @@ EvidenceTarget, ProposedChange, and accepted Ledger records remain downstream co
 - AC-BTA-REF-11: Tests prove candidate-occurrence context and concise semantic-antecedent selection remain model guidance while source ranges and terminal decisions remain deterministic KoteKomi outputs.
 - AC-BTA-REF-12: Tests prove a sole F-Coref proposal receives a one-candidate binary validation task rather than a seven-way selection task.
 - AC-BTA-REF-13: Tests prove `supported` resolves only the validated specialist candidate.
-- AC-BTA-REF-14: Tests prove `unsupported` followed by a different contrastive selection remains ambiguous with both execution records and source spans.
-- AC-BTA-REF-15: Tests prove a failed or malformed validation cannot invoke fallback or resolve a reference.
-- AC-BTA-REF-16: Tests prove fallback includes the specialist and all remaining bounded candidates in one contrastive task.
-- AC-BTA-REF-17: Tests prove specialist and contrastive agreement resolves the specialist candidate while a different contrastive choice remains ambiguous.
+- AC-BTA-REF-14: Tests prove `unsupported` followed by one different contrastive selection resolves only that selected exact source candidate.
+- AC-BTA-REF-15: Tests prove `unclear` followed by a different contrastive selection remains ambiguous with both source spans.
+- AC-BTA-REF-16: Tests prove a failed or malformed validation cannot invoke fallback or resolve a reference.
+- AC-BTA-REF-17: Tests prove fallback includes the specialist and all remaining bounded candidates in one contrastive task.
+- AC-BTA-REF-18: Tests prove specialist and contrastive agreement resolves the specialist candidate.
 - AC-BTA-GAP-01: Tests prove relationship termination and unsupported composite meanings terminate as typed ontology gaps.
 - AC-BTA-TRC-01: Tests inspect exact data in and data out for every model-facing stage.
 - AC-BTA-REG-01: Focused deterministic tests retain all previously demonstrated event behavior.
@@ -795,9 +814,13 @@ EvidenceTarget, ProposedChange, and accepted Ledger records remain downstream co
 - AC-BTA-SLE-24: The v9 diagnostic resolves the Minab reference through binary validation and preserves AMO-12 as an explicit specialist/alternative disagreement.
 - AC-BTA-SLE-25: The rejected v9 replay preserves complete evidence for thirty-eight of forty passing items and identifies ANT-01 as a validation regression caused by alternative-only fallback.
 - AC-BTA-SLE-26: The v9 replay creates zero ProposedChanges and zero accepted Ledger records.
-- AC-BTA-SLE-27: The v10 diagnostic passes ANT-01, AMO-16, and AMO-17 while preserving AMO-12 as an explicit specialist/contrastive disagreement.
-- AC-BTA-SLE-28: The v10 replay retains the v5 boundary-contract result and passes thirty-nine of forty items with AMO-12 as the sole explicit ambiguity.
+- AC-BTA-SLE-27: The retained v10 diagnostic passes ANT-01, AMO-16, and AMO-17 while recording the former AMO-12 specialist/contrastive disagreement.
+- AC-BTA-SLE-28: The retained v10 replay preserves the historical thirty-nine-of-forty result against its then-current Gold.
 - AC-BTA-SLE-29: The v10 replay creates zero ProposedChanges and zero accepted Ledger records.
+- AC-BTA-SLE-30: Current Gold requires AMO-12 `his` to resolve to the exact Amodei occurrence.
+- AC-BTA-SLE-31: A v11 focused replay resolves AMO-12 while retaining the rejected F-Coref proposal and both Qwen executions.
+- AC-BTA-SLE-32: A v11 development-plus-validation replay passes forty of forty current Gold items without a wrong forced reference.
+- AC-BTA-SLE-33: The v11 replay creates zero ProposedChanges and zero accepted Ledger records.
 
 ## Reference Implementations and Research Basis
 

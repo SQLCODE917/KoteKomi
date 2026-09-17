@@ -253,9 +253,11 @@ def run_hybrid_entity_grounding_preview(
                 text=candidate.text,
                 start=candidate.start,
                 end=candidate.end,
+                coarse_mention_type=model_evidence.coarse_mention_type,
                 extraction_task_id=outcome.extraction_task.id,
                 model_run_id=outcome.model_run.id,
                 candidates=model_evidence.candidates,
+                linked_entity_classes=model_evidence.linked_entity_classes,
             )
             trace = build_extraction_stage_trace(
                 trace_run_id=parent_trace.trace_run_id,
@@ -281,9 +283,15 @@ def run_hybrid_entity_grounding_preview(
                 },
                 output_payload={
                     "evidence_id": evidence_id,
+                    "coarse_mention_type": model_evidence.coarse_mention_type,
                     "candidates": [
                         item.model_dump(mode="json") for item in model_evidence.candidates
                     ],
+                    "linked_entity_classes": (
+                        None
+                        if model_evidence.linked_entity_classes is None
+                        else model_evidence.linked_entity_classes.model_dump(mode="json")
+                    ),
                 },
                 status=ExtractionStageStatus.COMPLETED,
             )
@@ -297,7 +305,9 @@ def run_hybrid_entity_grounding_preview(
                     text=candidate.text,
                     start=candidate.start,
                     end=candidate.end,
+                    coarse_mention_type=model_evidence.coarse_mention_type,
                     candidates=model_evidence.candidates,
+                    linked_entity_classes=model_evidence.linked_entity_classes,
                     extraction_task_id=outcome.extraction_task.id,
                     model_run_id=outcome.model_run.id,
                     trace_id=trace.id,

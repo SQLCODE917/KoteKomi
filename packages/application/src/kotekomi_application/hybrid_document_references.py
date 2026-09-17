@@ -922,6 +922,7 @@ def _semantic_reference_outcome(
             SemanticReferenceReason.CHALLENGE_SELECTED_ANTECEDENT,
             SemanticReferenceReason.SPECIALIST_VALIDATION_SUPPORTED,
             SemanticReferenceReason.SPECIALIST_CONTRASTIVE_CONFIRMATION,
+            SemanticReferenceReason.SPECIALIST_REJECTED_CONTRASTIVE_SELECTION,
         }:
             raise ValueError("Resolved semantic reference reason drifted.")
         return ReferenceStatus.RESOLVED, ReferenceReason.UNIQUE_SEMANTIC_ANTECEDENT
