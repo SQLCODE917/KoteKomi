@@ -26,6 +26,9 @@ from kotekomi_domain import (
 from kotekomi_domain.models import JsonValue
 from pydantic import ValidationError
 
+from kotekomi_application.competitive_event_attachment_model_output import (
+    CompetitiveAttachmentAnswer,
+)
 from kotekomi_application.context_planning import (
     PARAGRAPH_SEGMENT_V1,
     PARAGRAPH_SEGMENT_V2,
@@ -582,6 +585,7 @@ class BoundedExtractionOutcome:
     binary_semantic_answer: BinarySemanticAnswer | None = None
     entity_involvement_answer_batch: EntityInvolvementAnswerBatch | None = None
     proposition_fragment_answer: PropositionFragmentAnswer | None = None
+    competitive_attachment_answer: CompetitiveAttachmentAnswer | None = None
     event_frame_selection: EventFrameSelection | None = None
     event_frame_fit_decision: EventFrameFitDecision | None = None
     event_presentation_selection: EventPresentationSelection | None = None
@@ -663,6 +667,7 @@ class OrganizationQualificationRejection:
 type ParsedModelOutput = (
     EntityInvolvementAnswerBatch
     | PropositionFragmentAnswer
+    | CompetitiveAttachmentAnswer
     | SemanticDraft
     | SemanticDraftAbstention
     | HypothesisBatch
@@ -1228,6 +1233,33 @@ def run_bounded_extraction(
                 run,
                 None,
                 proposition_fragment_answer=parsed,
+                raw_model_output=response.raw_output,
+            )
+        if isinstance(parsed, CompetitiveAttachmentAnswer):
+            run = _model_run(
+                extraction_input,
+                manifest,
+                task,
+                model_run_id,
+                ModelRunStatus.SUCCEEDED,
+                started_at=started_at,
+                completed_at=completed_at,
+                execution_diagnostics=diagnostics,
+                input_admission=admission,
+                output_digest=output_digest,
+                execution_receipt=response.execution_receipt,
+                outcome_metadata={
+                    "contract": extraction_input.execution_spec.schema_id,
+                    "answer_kind": parsed.kind.value,
+                    "event_labels": list(parsed.event_labels),
+                },
+            )
+            ledger_repository.save_model_run(run)
+            return BoundedExtractionOutcome(
+                task,
+                run,
+                None,
+                competitive_attachment_answer=parsed,
                 raw_model_output=response.raw_output,
             )
         if isinstance(parsed, EventFrameSelection):

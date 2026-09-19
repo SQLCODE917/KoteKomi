@@ -278,7 +278,7 @@ def build_predicate_argument_observation(
         )
     path_tokens = tuple(_token(token_by_id[item]) for item in path_ids)
     path_steps = _path_steps(path_ids, token_by_id)
-    hypothesis = _classify_path(path_steps)
+    hypothesis = classify_predicate_argument_path(path_steps)
     return _observation(
         trigger=trigger,
         event=event,
@@ -447,9 +447,10 @@ def _path_steps(
     return tuple(steps)
 
 
-def _classify_path(
+def classify_predicate_argument_path(
     steps: tuple[PredicateArgumentPathStep, ...],
 ) -> PredicateArgumentHypothesis:
+    """Classify one complete directed dependency path through the frozen relation policy."""
     if not steps:
         return PredicateArgumentHypothesis.SEMANTIC_REMAINDER
     relations = tuple(item.dependency_relation.casefold() for item in steps)
