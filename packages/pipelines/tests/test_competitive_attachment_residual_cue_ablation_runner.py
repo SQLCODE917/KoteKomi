@@ -10,6 +10,8 @@ from kotekomi_application import (
     AttachmentResidualCueAblationOutcome,
     AttachmentResidualCueAblationPackageStatus,
     AttachmentResidualCueAblationReport,
+    AttachmentResidualOwnershipReport,
+    AttachmentSourceRange,
 )
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -71,3 +73,41 @@ def test_cue_ablation_binds_the_sealed_predecessor_package_without_flattening_in
         "tdd",
     )
     assert all(not item.label.startswith("predecessor_") for item in references)
+
+
+def test_residual_gold_adjudication_corrects_only_the_reviewed_exact_edge() -> None:
+    runner = _runner()
+    candidate = AttachmentSourceRange(
+        start=0,
+        end=47,
+        text="As the Trump administration targeted law firms,",
+    )
+    event = AttachmentSourceRange(start=28, end=36, text="targeted")
+    report = cast(
+        AttachmentResidualOwnershipReport,
+        SimpleNamespace(
+            cases=(
+                SimpleNamespace(
+                    task=SimpleNamespace(
+                        id=runner.ADJUDICATED_TASK_ID,
+                        edge_filter_task=SimpleNamespace(
+                            edge=SimpleNamespace(
+                                id=runner.ADJUDICATED_EDGE_ID,
+                                candidate_range=candidate,
+                                event_range=event,
+                            )
+                        ),
+                    ),
+                    expected_answer="N",
+                ),
+            )
+        ),
+    )
+
+    adjudications = runner._residual_gold_adjudications(report)
+
+    assert len(adjudications) == 1
+    assert adjudications[0].candidate_range == candidate
+    assert adjudications[0].target_event_range == event
+    assert adjudications[0].inherited_answer == "N"
+    assert adjudications[0].corrected_answer == "Y"

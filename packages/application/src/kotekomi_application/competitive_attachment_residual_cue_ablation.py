@@ -20,6 +20,7 @@ from kotekomi_application.competitive_attachment_residual_ownership import (
 )
 from kotekomi_application.competitive_attachment_review_verification import (
     AttachmentEvidenceReference,
+    AttachmentSourceRange,
 )
 
 _SHA256 = r"^[a-f0-9]{64}$"
@@ -41,18 +42,45 @@ class AttachmentResidualCueAblationPackageStatus(StrEnum):
     COMPLETE = "complete"
 
 
+class AttachmentResidualGoldAdjudication(BaseModel):
+    """One operator-approved correction to inherited Attachment Gold."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    schema_version: Literal["attachment_residual_gold_adjudication_v1"] = (
+        "attachment_residual_gold_adjudication_v1"
+    )
+    task_id: Annotated[str, Field(pattern=r"^aro_[a-f0-9]{24}$")]
+    edge_id: Annotated[str, Field(pattern=r"^ape_[a-f0-9]{24}$")]
+    candidate_range: AttachmentSourceRange
+    target_event_range: AttachmentSourceRange
+    inherited_answer: Literal["N"]
+    corrected_answer: Literal["Y"]
+    rationale: Literal["exact_attachment_range_does_not_answer_residual_ownership"]
+    review_authority: Literal["operator_approved"] = "operator_approved"
+
+    @model_validator(mode="after")
+    def validate_contract(self) -> Self:
+        candidate = self.candidate_range
+        event = self.target_event_range
+        if not (candidate.start <= event.start and event.end <= candidate.end):
+            raise ValueError("Residual Gold adjudication requires Event containment.")
+        return self
+
+
 class AttachmentResidualCueAblationPreflight(BaseModel):
     """Sealed inputs and truthful runtime settings for CEA-1.8."""
 
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
-    schema_version: Literal["attachment_residual_cue_ablation_preflight_v1"] = (
-        "attachment_residual_cue_ablation_preflight_v1"
+    schema_version: Literal["attachment_residual_cue_ablation_preflight_v2"] = (
+        "attachment_residual_cue_ablation_preflight_v2"
     )
     inputs: tuple[AttachmentEvidenceReference, ...]
     baseline_prompt: AttachmentEvidenceReference
     cue_prompt: AttachmentEvidenceReference
     tasks: tuple[AttachmentResidualOwnershipTask, ...]
+    gold_adjudications: tuple[AttachmentResidualGoldAdjudication, ...]
     baseline_report_fingerprint: Annotated[str, Field(pattern=_SHA256)]
     prompt_diff_valid: Literal[True] = True
     baseline_constant_no: Literal[True] = True
@@ -74,6 +102,20 @@ class AttachmentResidualCueAblationPreflight(BaseModel):
         task_ids = tuple(item.id for item in self.tasks)
         if len(task_ids) != 10 or task_ids != tuple(sorted(set(task_ids))):
             raise ValueError("Cue ablation requires ten ordered distinct tasks.")
+        if len(self.gold_adjudications) != 1:
+            raise ValueError("Cue ablation requires one Residual Gold adjudication.")
+        task_by_id = {item.id: item for item in self.tasks}
+        for adjudication in self.gold_adjudications:
+            task = task_by_id.get(adjudication.task_id)
+            if task is None:
+                raise ValueError("Residual Gold adjudication references a foreign task.")
+            edge = task.edge_filter_task.edge
+            if (
+                edge.id != adjudication.edge_id
+                or edge.candidate_range != adjudication.candidate_range
+                or edge.event_range != adjudication.target_event_range
+            ):
+                raise ValueError("Residual Gold adjudication differs from exact task evidence.")
         if self.baseline_prompt.sha256 == self.cue_prompt.sha256:
             raise ValueError("Cue ablation prompts must differ.")
         if self.result_fingerprint != attachment_residual_cue_ablation_fingerprint(self):
@@ -86,11 +128,12 @@ class AttachmentResidualCueAblationCase(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
-    schema_version: Literal["attachment_residual_cue_ablation_case_v1"] = (
-        "attachment_residual_cue_ablation_case_v1"
+    schema_version: Literal["attachment_residual_cue_ablation_case_v2"] = (
+        "attachment_residual_cue_ablation_case_v2"
     )
     task_id: Annotated[str, Field(pattern=r"^aro_[a-f0-9]{24}$")]
     edge_id: Annotated[str, Field(pattern=r"^ape_[a-f0-9]{24}$")]
+    inherited_expected_answer: Literal["Y", "N"]
     expected_answer: Literal["Y", "N"]
     baseline_answers: tuple[
         AttachmentEdgeFilterAnswerValue,
@@ -154,12 +197,13 @@ class AttachmentResidualCueAblationReport(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
-    schema_version: Literal["attachment_residual_cue_ablation_report_v1"] = (
-        "attachment_residual_cue_ablation_report_v1"
+    schema_version: Literal["attachment_residual_cue_ablation_report_v2"] = (
+        "attachment_residual_cue_ablation_report_v2"
     )
     inputs: tuple[AttachmentEvidenceReference, ...]
     baseline_prompt: AttachmentEvidenceReference
     cue_prompt: AttachmentEvidenceReference
+    gold_adjudications: tuple[AttachmentResidualGoldAdjudication, ...]
     cases: tuple[AttachmentResidualCueAblationCase, ...]
     baseline_no_count: Literal[20] = 20
     cue_yes_count: Annotated[int, Field(ge=0, le=20)]
@@ -168,9 +212,9 @@ class AttachmentResidualCueAblationReport(BaseModel):
     unresolved_count: Annotated[int, Field(ge=0, le=20)]
     probability_evidence_count: Annotated[int, Field(ge=0, le=20)]
     stable_case_count: Annotated[int, Field(ge=0, le=10)]
-    positive_yes_observation_count: Annotated[int, Field(ge=0, le=14)]
-    positive_recovery_case_count: Annotated[int, Field(ge=0, le=7)]
-    negative_regression_case_count: Annotated[int, Field(ge=0, le=3)]
+    positive_yes_observation_count: Annotated[int, Field(ge=0, le=16)]
+    positive_recovery_case_count: Annotated[int, Field(ge=0, le=8)]
+    negative_regression_case_count: Annotated[int, Field(ge=0, le=2)]
     outcome: AttachmentResidualCueAblationOutcome
     model_execution_count: Literal[20] = 20
     proposed_change_count: Literal[0] = 0
@@ -184,6 +228,29 @@ class AttachmentResidualCueAblationReport(BaseModel):
         task_ids = tuple(item.task_id for item in self.cases)
         if len(task_ids) != 10 or task_ids != tuple(sorted(set(task_ids))):
             raise ValueError("Cue ablation cases must be ordered and distinct.")
+        if len(self.gold_adjudications) != 1:
+            raise ValueError("Cue ablation report requires one Residual Gold adjudication.")
+        adjudication_by_task = {item.task_id: item for item in self.gold_adjudications}
+        if len(adjudication_by_task) != len(self.gold_adjudications):
+            raise ValueError("Residual Gold adjudications must reference distinct tasks.")
+        case_by_task = {item.task_id: item for item in self.cases}
+        for task_id, case in case_by_task.items():
+            adjudication = adjudication_by_task.get(task_id)
+            if adjudication is None:
+                if case.inherited_expected_answer != case.expected_answer:
+                    raise ValueError("Unadjudicated Residual Gold answer changed.")
+            elif (
+                case.edge_id != adjudication.edge_id
+                or case.inherited_expected_answer != adjudication.inherited_answer
+                or case.expected_answer != adjudication.corrected_answer
+            ):
+                raise ValueError("Residual Gold adjudication was not applied exactly.")
+        if set(adjudication_by_task) - set(case_by_task):
+            raise ValueError("Residual Gold adjudication references a missing case.")
+        if sum(item.expected_answer == "Y" for item in self.cases) != 8:
+            raise ValueError("Corrected cue ablation positive inventory drifted.")
+        if sum(item.expected_answer == "N" for item in self.cases) != 2:
+            raise ValueError("Corrected cue ablation negative inventory drifted.")
         answers = tuple(answer for case in self.cases for answer in case.cue_answers)
         counts = (
             sum(item is AttachmentEdgeFilterAnswerValue.YES for item in answers),

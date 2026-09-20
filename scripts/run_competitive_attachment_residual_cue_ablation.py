@@ -21,6 +21,7 @@ from kotekomi_application import (
     AttachmentResidualCueAblationPreflight,
     AttachmentResidualCueAblationReport,
     AttachmentResidualCueAblationStatus,
+    AttachmentResidualGoldAdjudication,
     AttachmentResidualOwnershipObservation,
     AttachmentResidualOwnershipPreflight,
     AttachmentResidualOwnershipReport,
@@ -52,6 +53,8 @@ BASELINE_PROMPT_PATH = REPOSITORY_ROOT / "prompts/competitive_attachment_residua
 CUE_PROMPT_PATH = REPOSITORY_ROOT / "prompts/competitive_attachment_residual_ownership_v2.md"
 CUE_PROMPT_ID = "competitive_attachment_residual_ownership_v2"
 TOP_LOGPROBS = 10
+ADJUDICATED_TASK_ID = "aro_663cb1f408cade57e5d2ebb9"
+ADJUDICATED_EDGE_ID = "ape_65d5c746a0ea929cd8095d37"
 
 
 def main() -> int:
@@ -96,6 +99,7 @@ def _prepare(args: argparse.Namespace) -> int:
         raise ValueError("CEA-1.8 repository Baseline Prompt differs from CEA-1.7.")
     cue_prompt = _file_reference("cue_prompt", CUE_PROMPT_PATH)
     inputs = _sealed_package_inputs(baseline_root)
+    gold_adjudications = _residual_gold_adjudications(baseline_report)
     preflight = build_residual_cue_ablation_preflight(
         inputs=inputs,
         baseline_prompt=baseline_prompt,
@@ -103,6 +107,7 @@ def _prepare(args: argparse.Namespace) -> int:
         baseline_prompt_text=BASELINE_PROMPT_PATH.read_text(encoding="utf-8"),
         cue_prompt_text=CUE_PROMPT_PATH.read_text(encoding="utf-8"),
         baseline_report=baseline_report,
+        gold_adjudications=gold_adjudications,
         configured_max_output_tokens=config.model_execution.max_output_tokens,
     )
     configured_generation = _configured_generation(config)
@@ -228,6 +233,7 @@ def _run(args: argparse.Namespace) -> int:
         cue_prompt=preflight.cue_prompt,
         baseline_report=baseline_report,
         cue_report=cue_report,
+        gold_adjudications=preflight.gold_adjudications,
         probabilities=probabilities,
     )
     _write_json(root / "comparison-report.json", report.model_dump(mode="json"))
@@ -439,6 +445,32 @@ def _sealed_package_inputs(baseline_root: Path) -> tuple[AttachmentEvidenceRefer
             ),
             key=lambda item: item.label,
         )
+    )
+
+
+def _residual_gold_adjudications(
+    baseline_report: AttachmentResidualOwnershipReport,
+) -> tuple[AttachmentResidualGoldAdjudication, ...]:
+    """Apply the operator-approved semantic correction to inherited Attachment Gold."""
+
+    matches = tuple(item for item in baseline_report.cases if item.task.id == ADJUDICATED_TASK_ID)
+    if len(matches) != 1:
+        raise ValueError("CEA-1.8 cannot locate the adjudicated Residual Ownership task.")
+    case = matches[0]
+    edge = case.task.edge_filter_task.edge
+    if edge.id != ADJUDICATED_EDGE_ID or case.expected_answer != "N":
+        raise ValueError("CEA-1.8 inherited Residual Ownership evidence drifted.")
+    return (
+        AttachmentResidualGoldAdjudication(
+            task_id=case.task.id,
+            edge_id=edge.id,
+            candidate_range=edge.candidate_range,
+            target_event_range=edge.event_range,
+            inherited_answer="N",
+            corrected_answer="Y",
+            rationale="exact_attachment_range_does_not_answer_residual_ownership",
+            review_authority="operator_approved",
+        ),
     )
 
 

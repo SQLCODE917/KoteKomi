@@ -37,6 +37,8 @@ The changed example lists that Other Event and retains answer `Y`.
 
 **Probability Evidence** means the runtime token alternatives for the first `Y`, `N`, or `U` token.
 
+**Residual Gold Adjudication** means the operator-approved correction of one inherited Attachment answer from `N` to `Y` for the distinct Residual Ownership question.
+
 ### Hypothesis
 
 > The Other Event demonstration cue contributed to the CEA-1.7 constant-`N` collapse.
@@ -44,10 +46,11 @@ The changed example lists that Other Event and retains answer `Y`.
 ### Primary flow
 
 1. KoteKomi validates the sealed CEA-1.7 report and ten development tasks.
-2. KoteKomi verifies that only the positive example differs between the two prompts.
-3. Qwen judges the same ten tasks twice with the Cue-Balanced Prompt.
-4. KoteKomi records each answer, Probability Evidence, transition, and exact input.
-5. KoteKomi classifies the Cue Effect and writes a second-opinion handoff.
+2. KoteKomi binds the approved Residual Gold Adjudication to its exact task, Edge, Candidate, and Target Event.
+3. KoteKomi verifies that only the positive example differs between the two prompts.
+4. Qwen judges the same ten tasks twice with the Cue-Balanced Prompt.
+5. KoteKomi records each answer, Probability Evidence, transition, and exact input.
+6. KoteKomi classifies the Cue Effect and writes a second-opinion handoff.
 
 CEA-1.8 creates experimental evidence only.
 
@@ -68,6 +71,9 @@ CEA-1.8 creates experimental evidence only.
 - CEA18-EVD-04: The Pipeline must digest-bind the CEA-1.7 preflight, report, run metadata, and status files; the validated CEA-1.7 preflight remains the transitive digest authority for its CEA-1.5 and CEA-1.6 inputs.
 - CEA18-EVD-05: Gold must remain outside task selection and every model input.
 - CEA18-EVD-06: The Pipeline must not flatten CEA-1.7's transitive references into CEA-1.8's direct input inventory.
+- CEA18-EVD-07: The Pipeline must preserve the inherited `N` and the operator-approved Residual Ownership answer `Y` for `aro_663cb1f408cade57e5d2ebb9`.
+- CEA18-EVD-08: The adjudication must match the exact task, Edge, Candidate range, and Target Event range before model execution.
+- CEA18-EVD-09: The corrected evaluation inventory must contain eight positive cases and two negative cases.
 
 ### Prompt ablation
 
@@ -181,8 +187,9 @@ claude -p --model opus --effort high --add-dir RUN_ROOT < HANDOFF > REVIEW
 ## 8. Behavior & Domain Rules
 
 - Exact source characters remain authoritative.
-- Attachment Gold remains authoritative for this experiment's expected answers.
-- The known `As ... targeted ...` convention mismatch remains visible in the report.
+- The sealed CEA-1.7 report remains authoritative for what the historical experiment measured.
+- Operator-approved Residual Ownership Gold governs CEA-1.8 evaluation where exact-range Attachment Gold asked a different question.
+- The `As ... targeted ...` correction remains visible with both inherited and corrected answers.
 - CEA-1.8 tests cue causality rather than Attachment task quality.
 - The CEA-1.7 task renderer and criterion remain unchanged.
 - KoteKomi creates every identifier, trace, mapping, metric, and file.
@@ -199,6 +206,7 @@ claude -p --model opus --effort high --add-dir RUN_ROOT < HANDOFF > REVIEW
 - CEA18-ACC-07: Focused formatting, lint, typecheck, and tests pass.
 - CEA18-ACC-08: The human-run diagnostic produces twenty complete executions.
 - CEA18-ACC-09: The package reports zero canonical writes.
+- CEA18-ACC-10: Tests prove only the reviewed task changes from inherited `N` to Residual Ownership `Y`.
 
 ## 10. Reference Implementations
 

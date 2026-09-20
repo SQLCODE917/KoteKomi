@@ -13,6 +13,7 @@ from kotekomi_application import (
     AttachmentResidualCueAblationOutcome,
     AttachmentResidualCueAblationPreflight,
     AttachmentResidualCueAblationReport,
+    AttachmentResidualGoldAdjudication,
     AttachmentResidualOwnershipReport,
     attachment_residual_cue_ablation_fingerprint,
 )
@@ -51,6 +52,7 @@ def build_residual_cue_ablation_preflight(
     baseline_prompt_text: str,
     cue_prompt_text: str,
     baseline_report: AttachmentResidualOwnershipReport,
+    gold_adjudications: tuple[AttachmentResidualGoldAdjudication, ...],
     configured_max_output_tokens: int,
 ) -> AttachmentResidualCueAblationPreflight:
     """Bind one prompt-only ablation to the sealed constant-N baseline."""
@@ -72,11 +74,17 @@ def build_residual_cue_ablation_preflight(
     if baseline_report.stable_case_count != 10:
         raise ValueError("Cue ablation requires ten stable baseline cases.")
     tasks = tuple(case.task for case in baseline_report.cases)
+    baseline_by_task = {item.task.id: item for item in baseline_report.cases}
+    for adjudication in gold_adjudications:
+        baseline = baseline_by_task.get(adjudication.task_id)
+        if baseline is None or baseline.expected_answer != adjudication.inherited_answer:
+            raise ValueError("Residual Gold adjudication differs from inherited Gold.")
     draft = AttachmentResidualCueAblationPreflight.model_construct(
         inputs=tuple(sorted(inputs, key=lambda item: item.label)),
         baseline_prompt=baseline_prompt,
         cue_prompt=cue_prompt,
         tasks=tasks,
+        gold_adjudications=gold_adjudications,
         baseline_report_fingerprint=baseline_report.result_fingerprint,
         configured_max_output_tokens=configured_max_output_tokens,
         result_fingerprint="0" * 64,
@@ -94,6 +102,7 @@ def build_residual_cue_ablation_report(
     cue_prompt: AttachmentEvidenceReference,
     baseline_report: AttachmentResidualOwnershipReport,
     cue_report: AttachmentResidualOwnershipReport,
+    gold_adjudications: tuple[AttachmentResidualGoldAdjudication, ...],
     probabilities: Mapping[tuple[str, int], AttachmentAnswerProbability | None],
 ) -> AttachmentResidualCueAblationReport:
     """Compare each cue answer with the exact CEA-1.7 baseline answer."""
@@ -101,6 +110,7 @@ def build_residual_cue_ablation_report(
     cue_by_task = {item.task.id: item for item in cue_report.cases}
     if set(baseline_by_task) != set(cue_by_task):
         raise ValueError("Cue ablation task inventory differs from the baseline.")
+    adjudication_by_task = {item.task_id: item for item in gold_adjudications}
     cases: list[AttachmentResidualCueAblationCase] = []
     for task_id in sorted(baseline_by_task):
         baseline = baseline_by_task[task_id]
@@ -126,11 +136,14 @@ def build_residual_cue_ablation_report(
             probabilities.get((task_id, 1)),
             probabilities.get((task_id, 2)),
         )
-        expected = baseline.expected_answer
+        inherited_expected = baseline.expected_answer
+        adjudication = adjudication_by_task.get(task_id)
+        expected = adjudication.corrected_answer if adjudication is not None else inherited_expected
         cases.append(
             AttachmentResidualCueAblationCase(
                 task_id=task_id,
                 edge_id=baseline.task.edge_filter_task.edge.id,
+                inherited_expected_answer=inherited_expected,
                 expected_answer=expected,
                 baseline_answers=(baseline_first, baseline_second),
                 cue_answers=typed_cue,
@@ -178,6 +191,7 @@ def build_residual_cue_ablation_report(
         inputs=tuple(sorted(inputs, key=lambda item: item.label)),
         baseline_prompt=baseline_prompt,
         cue_prompt=cue_prompt,
+        gold_adjudications=gold_adjudications,
         cases=values,
         cue_yes_count=yes_count,
         cue_no_count=no_count,
@@ -203,6 +217,8 @@ def render_residual_cue_ablation_review(
 ) -> str:
     """Render compact answer transitions and probability evidence."""
     cue_by_task = {item.task.id: item for item in cue_report.cases}
+    positive_count = sum(item.expected_answer == "Y" for item in report.cases)
+    negative_count = sum(item.expected_answer == "N" for item in report.cases)
     lines = [
         "# CEA-1.8 Demonstration Cue Ablation Review",
         "",
@@ -213,9 +229,9 @@ def render_residual_cue_ablation_review(
         "",
         f"Stable cases: `{report.stable_case_count}/10`",
         "",
-        f"Positive recoveries: `{report.positive_recovery_case_count}/7`",
+        f"Positive recoveries: `{report.positive_recovery_case_count}/{positive_count}`",
         "",
-        f"Negative regressions: `{report.negative_regression_case_count}/3`",
+        f"Negative regressions: `{report.negative_regression_case_count}/{negative_count}`",
         "",
         "## Cases",
         "",
@@ -242,6 +258,16 @@ def render_residual_cue_ablation_review(
                 "",
                 f"Expected: `{case.expected_answer}`",
                 "",
+                *(
+                    (
+                        f"Inherited Attachment Gold: `{case.inherited_expected_answer}`",
+                        "",
+                        "Residual Ownership Gold: operator-adjudicated",
+                        "",
+                    )
+                    if case.inherited_expected_answer != case.expected_answer
+                    else ()
+                ),
                 "Baseline: `N/N`",
                 "",
                 f"Cue-Balanced Prompt: `{answer_text}`",
@@ -317,15 +343,18 @@ def render_residual_cue_ablation_handoff(
         f"Cue answers: `N={report.cue_no_count}`, `Y={report.cue_yes_count}`, "
         f"`U={report.cue_unclear_count}`, `unresolved={report.unresolved_count}`",
         "",
-        f"Positive recoveries: `{report.positive_recovery_case_count}/7`",
+        f"Positive recoveries: `{report.positive_recovery_case_count}/8`",
         "",
-        f"Negative regressions: `{report.negative_regression_case_count}/3`",
+        f"Negative regressions: `{report.negative_regression_case_count}/2`",
         "",
         f"Stable cases: `{report.stable_case_count}/10`",
         "",
         f"Probability Evidence: `{report.probability_evidence_count}/20`",
         "",
         f"Ablation report fingerprint: `{cue_report.result_fingerprint}`",
+        "",
+        "One inherited Attachment Gold answer was operator-adjudicated from `N` to `Y` because "
+        "exact-range Attachment membership does not answer semantic Residual Ownership.",
         "",
         "## Exact evidence",
         "",

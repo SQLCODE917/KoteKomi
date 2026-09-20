@@ -143,6 +143,7 @@ from kotekomi_application.competitive_attachment_residual_cue_ablation import (
     AttachmentResidualCueAblationPreflight,
     AttachmentResidualCueAblationReport,
     AttachmentResidualCueAblationStatus,
+    AttachmentResidualGoldAdjudication,
     attachment_residual_cue_ablation_fingerprint,
 )
 from kotekomi_application.competitive_attachment_residual_ownership import (
@@ -2269,6 +2270,7 @@ __all__ = [
     "AttachmentResidualCueAblationPreflight",
     "AttachmentResidualCueAblationReport",
     "AttachmentResidualCueAblationStatus",
+    "AttachmentResidualGoldAdjudication",
     "AttachmentResidualOwnershipCaseEvaluation",
     "AttachmentResidualOwnershipObservation",
     "AttachmentResidualOwnershipOutcome",

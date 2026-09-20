@@ -11,7 +11,9 @@ from kotekomi_application import (
     AttachmentEdgeFilterAnswerValue,
     AttachmentEdgeFilterDecisionStatus,
     AttachmentEvidenceReference,
+    AttachmentResidualGoldAdjudication,
     AttachmentResidualOwnershipReport,
+    AttachmentSourceRange,
 )
 from kotekomi_pipelines.competitive_attachment_residual_cue_ablation import (
     build_residual_cue_ablation_report,
@@ -88,6 +90,7 @@ def test_report_aligns_exact_cases_and_classifies_the_cue_effect(
         cue_prompt=AttachmentEvidenceReference(label="cue_prompt", path="/cue", sha256="c" * 64),
         baseline_report=baseline,
         cue_report=cue,
+        gold_adjudications=(_adjudication(task_id=f"aro_{10:024x}", edge_id=f"ape_{10:024x}"),),
         probabilities=probabilities,
     )
 
@@ -95,6 +98,9 @@ def test_report_aligns_exact_cases_and_classifies_the_cue_effect(
     assert report.positive_recovery_case_count == (1 if mode == "supported" else 0)
     assert report.negative_regression_case_count == 0
     assert report.probability_evidence_count == (19 if mode == "inconclusive" else 20)
+    corrected = report.cases[-1]
+    assert corrected.inherited_expected_answer == "N"
+    assert corrected.expected_answer == "Y"
 
 
 def _case(task: object, expected: str, answers: tuple[str | None, str | None]) -> object:
@@ -136,4 +142,17 @@ def _probability(answer: AttachmentEdgeFilterAnswerValue) -> AttachmentAnswerPro
         no_log_probability=no,
         unclear_log_probability=unclear,
         attachment_score=yes - math.log(math.exp(no) + math.exp(unclear)),
+    )
+
+
+def _adjudication(*, task_id: str, edge_id: str) -> AttachmentResidualGoldAdjudication:
+    return AttachmentResidualGoldAdjudication(
+        task_id=task_id,
+        edge_id=edge_id,
+        candidate_range=AttachmentSourceRange(start=0, end=10, text="0123456789"),
+        target_event_range=AttachmentSourceRange(start=2, end=5, text="234"),
+        inherited_answer="N",
+        corrected_answer="Y",
+        rationale="exact_attachment_range_does_not_answer_residual_ownership",
+        review_authority="operator_approved",
     )

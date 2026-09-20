@@ -217,6 +217,18 @@ The run retained zero of fourteen Gold-positive observations.
 
 The run rejected all six Gold-negative observations.
 
+Those historical counts used exact-range Attachment Gold for a different semantic question.
+
+Post-run operator review corrected `aro_663cb1f408cade57e5d2ebb9` from `N` to `Y` for Residual Ownership.
+
+The Candidate `As the Trump administration targeted law firms,` contains the Target Event `targeted` and its exact subject and object.
+
+Its inherited `N` answered whether the complete range was an approved Attachment range, not whether every meaningful part belonged to the Target Event fact.
+
+The corrected Residual Ownership inventory is eight positive cases and two negative cases.
+
+The sealed CEA-1.7 report remains unchanged as historical evidence; CEA-1.8 records and applies the adjudication explicitly.
+
 All ten cases repeated the same semantic answer.
 
 The constant answer makes negative rejection and repetition stability degenerate metrics.

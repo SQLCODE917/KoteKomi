@@ -9,6 +9,8 @@ from kotekomi_application import (
     AttachmentResidualCueAblationCase,
     AttachmentResidualCueAblationOutcome,
     AttachmentResidualCueAblationReport,
+    AttachmentResidualGoldAdjudication,
+    AttachmentSourceRange,
     attachment_residual_cue_ablation_fingerprint,
 )
 
@@ -29,6 +31,9 @@ def test_cue_ablation_report_classifies_all_four_outcomes() -> None:
     assert falsified.cue_no_count == 20
     assert inconclusive.outcome is AttachmentResidualCueAblationOutcome.INCONCLUSIVE
     assert inconclusive.probability_evidence_count == 19
+    corrected = supported.cases[-1]
+    assert corrected.inherited_expected_answer == "N"
+    assert corrected.expected_answer == "Y"
 
 
 def _report(
@@ -37,7 +42,8 @@ def _report(
 ) -> AttachmentResidualCueAblationReport:
     cases: list[AttachmentResidualCueAblationCase] = []
     for index in range(10):
-        expected = "Y" if index < 7 else "N"
+        inherited = "Y" if index < 7 else "N"
+        expected = "Y" if index < 7 or index == 9 else "N"
         answers: tuple[
             AttachmentEdgeFilterAnswerValue | None,
             AttachmentEdgeFilterAnswerValue | None,
@@ -63,6 +69,7 @@ def _report(
             AttachmentResidualCueAblationCase(
                 task_id=f"aro_{index + 1:024x}",
                 edge_id=f"ape_{index + 1:024x}",
+                inherited_expected_answer=inherited,
                 expected_answer=expected,
                 baseline_answers=(
                     AttachmentEdgeFilterAnswerValue.NO,
@@ -113,6 +120,7 @@ def _report(
             label="baseline_prompt", path="/baseline", sha256="b" * 64
         ),
         cue_prompt=AttachmentEvidenceReference(label="cue_prompt", path="/cue", sha256="c" * 64),
+        gold_adjudications=(_adjudication(),),
         cases=values,
         cue_yes_count=sum(item is AttachmentEdgeFilterAnswerValue.YES for item in all_answers),
         cue_no_count=sum(item is AttachmentEdgeFilterAnswerValue.NO for item in all_answers),
@@ -151,4 +159,17 @@ def _probability(answer: AttachmentEdgeFilterAnswerValue) -> AttachmentAnswerPro
         no_log_probability=no,
         unclear_log_probability=unclear,
         attachment_score=yes - math.log(math.exp(no) + math.exp(unclear)),
+    )
+
+
+def _adjudication() -> AttachmentResidualGoldAdjudication:
+    return AttachmentResidualGoldAdjudication(
+        task_id=f"aro_{10:024x}",
+        edge_id=f"ape_{10:024x}",
+        candidate_range=AttachmentSourceRange(start=0, end=10, text="0123456789"),
+        target_event_range=AttachmentSourceRange(start=2, end=5, text="234"),
+        inherited_answer="N",
+        corrected_answer="Y",
+        rationale="exact_attachment_range_does_not_answer_residual_ownership",
+        review_authority="operator_approved",
     )
