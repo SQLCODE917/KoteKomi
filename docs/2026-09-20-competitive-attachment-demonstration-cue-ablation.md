@@ -65,8 +65,9 @@ CEA-1.8 creates experimental evidence only.
 - CEA18-EVD-01: The Pipeline must validate the complete CEA-1.7 report.
 - CEA18-EVD-02: The Pipeline must require ten tasks and twenty stable `N` answers.
 - CEA18-EVD-03: The Pipeline must reuse the exact ten CEA-1.7 development tasks.
-- CEA18-EVD-04: The Pipeline must preserve the CEA-1.5 and CEA-1.6 input digests.
+- CEA18-EVD-04: The Pipeline must digest-bind the CEA-1.7 preflight, report, run metadata, and status files; the validated CEA-1.7 preflight remains the transitive digest authority for its CEA-1.5 and CEA-1.6 inputs.
 - CEA18-EVD-05: Gold must remain outside task selection and every model input.
+- CEA18-EVD-06: The Pipeline must not flatten CEA-1.7's transitive references into CEA-1.8's direct input inventory.
 
 ### Prompt ablation
 

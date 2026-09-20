@@ -89,30 +89,13 @@ def _prepare(args: argparse.Namespace) -> int:
     baseline_report = AttachmentResidualOwnershipReport.model_validate_json(
         (baseline_root / "report.json").read_bytes()
     )
+    if baseline_preflight.development_tasks != tuple(item.task for item in baseline_report.cases):
+        raise ValueError("CEA-1.8 baseline preflight and report task inventories differ.")
     baseline_prompt = _file_reference("baseline_prompt", BASELINE_PROMPT_PATH)
     if baseline_report.prompt.sha256 != baseline_prompt.sha256:
         raise ValueError("CEA-1.8 repository Baseline Prompt differs from CEA-1.7.")
     cue_prompt = _file_reference("cue_prompt", CUE_PROMPT_PATH)
-    inputs = tuple(
-        sorted(
-            (
-                _file_reference("baseline_preflight", baseline_root / "preflight.json"),
-                _file_reference("baseline_report", baseline_root / "report.json"),
-                _file_reference("baseline_run", baseline_root / "run.json"),
-                _file_reference("baseline_status", baseline_root / "status.json"),
-                _file_reference("tdd", TDD_PATH),
-                *(
-                    AttachmentEvidenceReference(
-                        label=f"predecessor_{item.label}",
-                        path=item.path,
-                        sha256=item.sha256,
-                    )
-                    for item in baseline_preflight.inputs
-                ),
-            ),
-            key=lambda item: item.label,
-        )
-    )
+    inputs = _sealed_package_inputs(baseline_root)
     preflight = build_residual_cue_ablation_preflight(
         inputs=inputs,
         baseline_prompt=baseline_prompt,
@@ -440,6 +423,23 @@ def _config(path: Path) -> PipelineConfig:
 def _file_reference(label: str, path: Path) -> AttachmentEvidenceReference:
     resolved = path.resolve()
     return AttachmentEvidenceReference(label=label, path=str(resolved), sha256=_file_sha(resolved))
+
+
+def _sealed_package_inputs(baseline_root: Path) -> tuple[AttachmentEvidenceReference, ...]:
+    """Bind the direct CEA-1.7 package boundary without flattening its inputs."""
+
+    return tuple(
+        sorted(
+            (
+                _file_reference("baseline_preflight", baseline_root / "preflight.json"),
+                _file_reference("baseline_report", baseline_root / "report.json"),
+                _file_reference("baseline_run", baseline_root / "run.json"),
+                _file_reference("baseline_status", baseline_root / "status.json"),
+                _file_reference("tdd", TDD_PATH),
+            ),
+            key=lambda item: item.label,
+        )
+    )
 
 
 def _validate_reference(reference: AttachmentEvidenceReference) -> None:

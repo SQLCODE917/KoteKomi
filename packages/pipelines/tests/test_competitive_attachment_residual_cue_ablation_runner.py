@@ -50,3 +50,24 @@ def test_complete_status_exposes_human_run_review_paths(tmp_path: Path) -> None:
     assert status.handoff_path == str(tmp_path / "second-opinion-handoff.md")
     assert status.claude_review_path == str(tmp_path / "claude-opus-review.md")
     assert status.model_execution_count == 20
+
+
+def test_cue_ablation_binds_the_sealed_predecessor_package_without_flattening_inputs(
+    tmp_path: Path,
+) -> None:
+    runner = _runner()
+    baseline_root = tmp_path / "baseline"
+    baseline_root.mkdir()
+    for name in ("preflight.json", "report.json", "run.json", "status.json"):
+        (baseline_root / name).write_text(f"{name}\n", encoding="utf-8")
+
+    references = runner._sealed_package_inputs(baseline_root)
+
+    assert tuple(item.label for item in references) == (
+        "baseline_preflight",
+        "baseline_report",
+        "baseline_run",
+        "baseline_status",
+        "tdd",
+    )
+    assert all(not item.label.startswith("predecessor_") for item in references)
