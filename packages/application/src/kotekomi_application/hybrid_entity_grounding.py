@@ -962,6 +962,7 @@ def _execution_receipt(
         "rendered_input_digest": hashlib.sha256(input_bytes).hexdigest(),
         "input_token_count": len(input_bytes.decode()),
         "output_token_count": len(output_bytes.decode()),
+        "output_token_probabilities": [],
     }
 
 

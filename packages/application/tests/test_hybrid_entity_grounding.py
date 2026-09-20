@@ -349,6 +349,8 @@ def test_recorded_entity_linking_archives_raw_output_and_task_run_lineage() -> N
     assert ledger.tasks == [outcome.extraction_task]
     assert ledger.runs == [outcome.model_run]
     assert archive.outputs[outcome.model_run.id] == raw_output
+    assert outcome.model_run.execution_receipt is not None
+    assert outcome.model_run.execution_receipt["output_token_probabilities"] == []
 
 
 def test_recorded_entity_linking_preserves_runtime_failure_as_failed_model_run() -> None:

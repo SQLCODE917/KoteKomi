@@ -538,6 +538,11 @@ def test_hybrid_preview_runs_complete_source_grounded_path_without_state_change(
     assert result.preview.interpretations[0].discourse_role.value == "origin"
     assert len(ledger.extraction_tasks) == 3
     assert len(ledger.model_runs) == 3
+    assert all(
+        run.execution_receipt is not None
+        and run.execution_receipt["output_token_probabilities"] == []
+        for run in ledger.model_runs.values()
+    )
     assert ledger.candidate_commit_called is False
     assert len(archive.model_outputs) == 3
     assert archive.previews[result.preview.id]
