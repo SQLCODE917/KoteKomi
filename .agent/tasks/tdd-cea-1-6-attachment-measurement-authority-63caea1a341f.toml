@@ -1,0 +1,89 @@
+schema_version = 2
+task_id = "tdd-cea-1-6-attachment-measurement-authority-63caea1a341f"
+title = "CEA-1.6 Attachment Measurement Authority"
+status = "ready_for_terra_high"
+series_id = "competitive-event-attachment"
+task_class = "orchestration"
+model_profile = "terra-high-v1"
+baseline_revision = "5bf26ccba6862adb0dfed41411d44e41a9a2956f"
+tdd_path = "docs/2026-09-20-competitive-attachment-measurement-authority.md"
+tdd_sha256 = "63caea1a341fed967ce45eb3ad1361045972c6a9a7c08e7f4a71c0ad4625e990"
+goal = "Make normalized occurrence-level Attachment Gold authoritative for deterministic rule audits and independently reviewed experiment evidence."
+depends_on = []
+allowed_paths = [
+  ".agent/tasks/tdd-cea-1-6-attachment-measurement-authority-63caea1a341f.toml",
+  "docs/2026-09-18-competitive-event-attachment-program.md",
+  "docs/2026-09-19-competitive-attachment-edge-filter-calibration.md",
+  "docs/2026-09-20-competitive-attachment-measurement-authority.md",
+  "docs/CHECK_PLAN.md",
+  "packages/application/src/kotekomi_application/",
+  "packages/application/tests/test_competitive_attachment_measurement_authority.py",
+  "packages/pipelines/src/kotekomi_pipelines/",
+  "packages/pipelines/tests/test_competitive_attachment_measurement_authority.py",
+  "packages/pipelines/tests/test_competitive_attachment_measurement_authority_runner.py",
+  "scripts/run_competitive_attachment_measurement_authority.py"
+]
+reference_paths = [
+  "packages/application/src/kotekomi_application/competitive_event_attachment.py",
+  "packages/pipelines/src/kotekomi_pipelines/competitive_attachment_edge_filter.py",
+  "scripts/run_competitive_attachment_edge_filter_experiment.py",
+  "scripts/run_competitive_attachment_edge_filter_calibration.py"
+]
+stop_conditions = [
+  "the audit derives Gold from source-fragment containment",
+  "the audit changes a sealed predecessor artifact",
+  "the experiment executes a model or ingestion",
+  "the experiment writes a ProposedChange or accepted Ledger record"
+]
+
+[readiness]
+authority = "The CEA-1.6 TDD defines measurement authority and the review handoff."
+contract_family = "competitive-event-attachment"
+dominant_outcome = "Every deterministic admission claim is evaluated against normalized occurrence-level Attachment Gold."
+failure_policy = "Invalid evidence or one Gold-positive loss blocks rule admission and remains visible in the report."
+legacy_disposition = "The ranking_failure outcome is deleted and sealed predecessor evidence remains immutable."
+negative_proof = "A fragment-containment proxy cannot make an unsafe rejection rule appear safe."
+public_entry_point = "scripts/run_competitive_attachment_measurement_authority.py"
+scope_policy = "Model-free measurement repair, evidence packaging, and focused tests only."
+side_effect_boundary = "The runner writes only experiment artifacts under its explicit output root."
+unresolved_decisions = []
+
+[budget]
+maximum_production_files = 5
+maximum_test_files = 3
+maximum_production_diff_lines = 1800
+
+[[protected_artifacts]]
+kind = "leaf-tdd"
+path = "docs/2026-09-20-competitive-attachment-measurement-authority.md"
+sha256 = "63caea1a341fed967ce45eb3ad1361045972c6a9a7c08e7f4a71c0ad4625e990"
+
+[[acceptance]]
+id = "cea16-application-contract"
+argv = ["uv", "run", "pytest", "packages/application/tests/test_competitive_attachment_measurement_authority.py"]
+timeout_seconds = 120
+profile = "portable-local"
+
+[[acceptance]]
+id = "cea16-pipeline-contract"
+argv = ["uv", "run", "pytest", "packages/pipelines/tests/test_competitive_attachment_measurement_authority.py", "packages/pipelines/tests/test_competitive_attachment_measurement_authority_runner.py"]
+timeout_seconds = 180
+profile = "portable-local"
+
+[[acceptance]]
+id = "cea15-calibration-regression"
+argv = ["uv", "run", "pytest", "packages/application/tests/test_competitive_attachment_edge_filter_calibration.py", "packages/pipelines/tests/test_competitive_attachment_edge_filter_calibration.py", "packages/pipelines/tests/test_competitive_attachment_edge_filter_calibration_runner.py"]
+timeout_seconds = 180
+profile = "portable-local"
+
+[[acceptance]]
+id = "repository-static-checks"
+argv = ["uv", "run", "ruff", "check"]
+timeout_seconds = 180
+profile = "portable-local"
+
+[[acceptance]]
+id = "repository-type-checks"
+argv = ["uv", "run", "pyright"]
+timeout_seconds = 300
+profile = "portable-local"

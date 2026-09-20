@@ -1,6 +1,6 @@
 # Competitive Event Attachment Program
 
-- Status: CEA-1 supported; CEA-1.1 mixed; CEA-1.2 verified; CEA-1.3 closed; CEA-1.4 aggregate untested; CEA-1.5 not separable; CEA-1.6 planned; production inactive
+- Status: CEA-1 supported; CEA-1.1 mixed; CEA-1.2 verified; CEA-1.3 closed; CEA-1.4 aggregate untested; CEA-1.5 not separable; CEA-1.6 in progress; production inactive
 - Program ID: `competitive-event-attachment`
 - Parent: [Hybrid Intelligence Extraction Pipeline](2026-09-01-hybrid-intelligence-extraction-pipeline.md)
 - Predecessor evidence:
@@ -278,6 +278,24 @@ Later deliverables define a user story, precondition, and postcondition only.
 **Postcondition:** A safety and break-even diagnostic either stops or authorizes one frozen aggregate replay.
 
 **TDD:** [CEA-1.5 Calibrated Competitive Edge Filter](2026-09-19-competitive-attachment-edge-filter-calibration.md)
+
+### CEA-1.6 — Attachment measurement authority
+
+**User story:** An operator can test one proposed rejection rule against authoritative occurrence-level Attachment Gold.
+
+**Precondition:** CEA-1.5 preserves both Prompt Arms, complete probability evidence, Maximum Pools, and normalized Gold inputs.
+
+**Postcondition:** KoteKomi records whether the rule is safe, preserves every counterexample, and binds one independently reviewed evidence package.
+
+**TDD:** [CEA-1.6 Attachment Measurement Authority](2026-09-20-competitive-attachment-measurement-authority.md)
+
+### CEA-1.7 — Attachment task definition diagnostic
+
+**User story:** An operator can determine which bounded semantic task resolves one observed attachment mechanism without erasing valid intelligence.
+
+**Precondition:** CEA-1.6 establishes authoritative measurement and a diagnostic catalog with positive and negative controls.
+
+**Postcondition:** One task contract is selected for a later aggregate replay, or the experiment records that none is safe.
 
 ### CEA-2 — Qualification attachment
 
