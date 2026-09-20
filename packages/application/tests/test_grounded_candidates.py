@@ -1828,6 +1828,7 @@ def test_staged_extraction_preserves_distinct_runtime_reported_input_usage() -> 
         "rendered_input_digest": receipt.rendered_input_digest,
         "input_token_count": manifest.input_token_count - 1,
         "output_token_count": 9,
+        "output_token_probabilities": [],
     }
     assert archive.outputs[outcome.model_run.id] == _valid_staged_output()
     assert len(ledger.proposed_changes) == 2

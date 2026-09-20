@@ -1,6 +1,6 @@
 # TDD: CEA-1.4 High-Recall Competitive Edge Filter
 
-- Status: Falsified at mandatory diagnostic; production inactive
+- Status: Mandatory diagnostic rejected; aggregate hypothesis untested; production inactive
 - Deliverable ID: `CEA-1.4`
 - Program: [Competitive Event Attachment Program](2026-09-18-competitive-event-attachment-program.md)
 - Predecessor: [CEA-1.3 Bounded Hybrid Selection Diagnostic](2026-09-18-competitive-event-attachment-bounded-hybrid-selection.md)
@@ -309,11 +309,11 @@ The prompt corrected the mixed Candidate and equal-name occurrence errors.
 It retained the embedded Event time error.
 It also rejected one reference-supported entity and one attribution predicate incorrectly.
 
-The diagnostic therefore falsifies one generic Edge Filter task as a safe selector.
+The diagnostic therefore rejects both Prompt Arms under its sixteen-of-sixteen gate.
 Prompt tuning exchanged two false-positive edges for two false-negative edges.
-The mandatory sixteen-of-sixteen gate blocks human approval.
-The Pipeline did not execute full development or validation after this failure.
-The next experiment must route reference, attribution, temporal, and mixed-Candidate decisions separately.
+The Pipeline did not execute full development or validation after this result.
+The aggregate Edge Filter hypothesis remains untested.
+CEA-1.5 tests whether one probability threshold explains the Prompt Arm error exchange.
 
 Production integration remains `not_activated`.
 

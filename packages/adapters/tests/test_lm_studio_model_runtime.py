@@ -316,6 +316,130 @@ def test_lm_studio_runtime_accepts_task_output_limit_below_configured_ceiling() 
     assert streaming_client.calls[0][2]["max_output_tokens"] == 1
 
 
+def test_lm_studio_runtime_preserves_requested_output_token_probabilities() -> None:
+    streaming_client = FakeStreamingHttpClient(
+        [
+            HttpResponse(
+                200,
+                json.dumps(
+                    {
+                        "model": "fixture-model",
+                        "output": [
+                            {
+                                "content": [
+                                    {
+                                        "type": "output_text",
+                                        "text": "Y",
+                                        "logprobs": [
+                                            {
+                                                "token": "Y",
+                                                "logprob": -0.1,
+                                                "bytes": [89],
+                                                "top_logprobs": [
+                                                    {
+                                                        "token": "N",
+                                                        "logprob": -2.5,
+                                                        "bytes": [78],
+                                                    },
+                                                    {
+                                                        "token": "U",
+                                                        "logprob": -3.0,
+                                                        "bytes": [85],
+                                                    },
+                                                    {
+                                                        "token": "Y",
+                                                        "logprob": -0.1,
+                                                        "bytes": [89],
+                                                    },
+                                                ],
+                                            }
+                                        ],
+                                    }
+                                ]
+                            }
+                        ],
+                        "usage": {"input_tokens": 11, "output_tokens": 1},
+                    }
+                ),
+            )
+        ]
+    )
+    runtime = _runtime(FakeHttpClient([]), streaming_client)
+    task = _task(runtime)
+    task = replace(
+        task,
+        execution_spec=replace(
+            task.execution_spec,
+            generation_parameters=(
+                *task.execution_spec.generation_parameters,
+                ExecutionSetting("top_logprobs", 3),
+            ),
+        ),
+    )
+
+    response = runtime.run_model_task(task)
+
+    evidence = response.execution_receipt.output_token_probabilities
+    assert len(evidence) == 1
+    assert evidence[0].token == "Y"
+    assert tuple(item.token for item in evidence[0].alternatives) == ("Y", "N", "U")
+    assert streaming_client.calls[0][2]["include"] == ["message.output_text.logprobs"]
+    assert streaming_client.calls[0][2]["top_logprobs"] == 3
+
+
+def test_lm_studio_runtime_rejects_missing_requested_output_token_probabilities() -> None:
+    streaming_client = FakeStreamingHttpClient(
+        [
+            HttpResponse(
+                200,
+                json.dumps(
+                    {
+                        "model": "fixture-model",
+                        "output": [{"content": [{"type": "output_text", "text": "Y"}]}],
+                        "usage": {"input_tokens": 11, "output_tokens": 1},
+                    }
+                ),
+            )
+        ]
+    )
+    runtime = _runtime(FakeHttpClient([]), streaming_client)
+    task = _task(runtime)
+    task = replace(
+        task,
+        execution_spec=replace(
+            task.execution_spec,
+            generation_parameters=(
+                *task.execution_spec.generation_parameters,
+                ExecutionSetting("top_logprobs", 3),
+            ),
+        ),
+    )
+
+    with pytest.raises(ModelRuntimeResponseError, match="omitted requested"):
+        runtime.run_model_task(task)
+
+
+def test_lm_studio_runtime_rejects_backend_unsafe_top_logprobs_before_transport() -> None:
+    streaming_client = FakeStreamingHttpClient([])
+    runtime = _runtime(FakeHttpClient([]), streaming_client)
+    task = _task(runtime)
+    task = replace(
+        task,
+        execution_spec=replace(
+            task.execution_spec,
+            generation_parameters=(
+                *task.execution_spec.generation_parameters,
+                ExecutionSetting("top_logprobs", 11),
+            ),
+        ),
+    )
+
+    with pytest.raises(ModelRuntimeResponseError, match="from 1 through 10"):
+        runtime.run_model_task(task)
+
+    assert streaming_client.calls == []
+
+
 def test_lm_studio_runtime_rejects_task_output_limit_above_configured_ceiling() -> None:
     runtime = _runtime(FakeHttpClient([]), FakeStreamingHttpClient([]))
     task = _task(runtime)
@@ -677,6 +801,36 @@ def test_sse_terminal_failure_discards_partial_output() -> None:
     )
 
     with pytest.raises(ModelRuntimeResponseError, match="terminal streaming response failure"):
+        HttpxSseJsonHttpClient(transport=transport).stream_request(
+            method="POST",
+            url="http://model.test/v1/responses",
+            payload={"stream": True},
+            deadline_seconds=10.0,
+        )
+
+
+def test_sse_terminal_failure_preserves_runtime_error_message() -> None:
+    transport = httpx.MockTransport(
+        lambda request: httpx.Response(
+            200,
+            headers={"content-type": "text/event-stream"},
+            stream=FixedAsyncStream(
+                (
+                    b"event: response.failed\n",
+                    b'data: {"type":"response.failed","response":{"error":'
+                    b'{"code":"server_error","message":"top_logprobs must be less than '
+                    b'or equal to 10"}}}\n',
+                    b"\n",
+                )
+            ),
+            request=request,
+        )
+    )
+
+    with pytest.raises(
+        ModelRuntimeResponseError,
+        match="top_logprobs must be less than or equal to 10",
+    ):
         HttpxSseJsonHttpClient(transport=transport).stream_request(
             method="POST",
             url="http://model.test/v1/responses",

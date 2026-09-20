@@ -1,4 +1,5 @@
 from datetime import UTC, datetime
+from typing import cast
 
 import pytest
 from kotekomi_domain import (
@@ -140,6 +141,7 @@ def test_input_blocked_model_run_is_an_attempt_without_model_response() -> None:
                     "rendered_input_digest": DIGEST,
                     "input_token_count": 501,
                     "output_token_count": None,
+                    "output_token_probabilities": [],
                 },
             }
         )
@@ -177,6 +179,7 @@ def test_model_run_keeps_runtime_usage_distinct_from_admitted_formatted_count() 
             "rendered_input_digest": admission.logical_input_digest,
             "input_token_count": 11,
             "output_token_count": 1,
+            "output_token_probabilities": [],
         },
     )
 
@@ -184,3 +187,71 @@ def test_model_run_keeps_runtime_usage_distinct_from_admitted_formatted_count() 
     assert run.input_admission.formatted_input_token_count == 36
     assert run.execution_receipt is not None
     assert run.execution_receipt["input_token_count"] == 11
+
+
+def test_model_run_validates_output_token_probability_evidence() -> None:
+    admission = _admission(formatted_input_token_count=36)
+    run = ModelRun(
+        id="mrn_fixture",
+        extraction_task_id="ext_fixture",
+        task_fingerprint=DIGEST,
+        model_identity={"name": "fixture-model"},
+        runtime_identity="fixture-runtime",
+        tokenizer_id="fixture-tokenizer",
+        prompt_digest=DIGEST,
+        schema_digest=DIGEST,
+        execution_spec_digest=DIGEST,
+        generation_parameters={"top_logprobs": 3},
+        input_admission=admission,
+        runtime_invoked=True,
+        raw_output_artifact_id="artifact_fixture",
+        output_digest=DIGEST,
+        status=ModelRunStatus.SUCCEEDED,
+        started_at=NOW,
+        completed_at=NOW,
+        execution_diagnostics={
+            "elapsed_milliseconds": 1,
+            "deadline_milliseconds": 300_000,
+            "first_response_event_milliseconds": None,
+        },
+        execution_receipt={
+            "model_identity_digest": DIGEST,
+            "generation_parameters_digest": DIGEST,
+            "rendered_input_digest": admission.logical_input_digest,
+            "input_token_count": 11,
+            "output_token_count": 1,
+            "output_token_probabilities": [
+                {
+                    "position": 0,
+                    "token": "Y",
+                    "log_probability": -0.1,
+                    "token_bytes": [89],
+                    "alternatives": [
+                        {
+                            "token": "Y",
+                            "log_probability": -0.1,
+                            "token_bytes": [89],
+                        },
+                        {
+                            "token": "N",
+                            "log_probability": -2.0,
+                            "token_bytes": [78],
+                        },
+                    ],
+                }
+            ],
+        },
+    )
+
+    assert run.execution_receipt is not None
+    invalid = run.model_dump()
+    receipt = invalid["execution_receipt"]
+    assert isinstance(receipt, dict)
+    probabilities = cast(list[object], receipt["output_token_probabilities"])
+    assert isinstance(probabilities, list)
+    probability = cast(dict[str, object], probabilities[0])
+    assert isinstance(probability, dict)
+    probability["log_probability"] = -0.2
+
+    with pytest.raises(ValidationError, match="differs from its alternative"):
+        ModelRun.model_validate(invalid)

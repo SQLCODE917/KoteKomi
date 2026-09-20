@@ -8,7 +8,7 @@ import math
 import re
 from datetime import UTC, datetime
 from enum import StrEnum
-from typing import Annotated, Self
+from typing import Annotated, Self, cast
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
@@ -2492,6 +2492,74 @@ class AnalysisItemAttempt(DomainModel):
         return self
 
 
+def _validate_model_token_probability(probability: dict[str, JsonValue]) -> None:
+    token = probability["token"]
+    log_probability = probability["log_probability"]
+    token_bytes = probability["token_bytes"]
+    alternatives = probability["alternatives"]
+    if not isinstance(token, str) or not token:
+        raise ValueError("ModelRun output token probability token is invalid.")
+    if (
+        not isinstance(log_probability, (int, float))
+        or isinstance(log_probability, bool)
+        or not math.isfinite(log_probability)
+        or log_probability > 0
+    ):
+        raise ValueError("ModelRun output token probability value is invalid.")
+    if not isinstance(token_bytes, list) or any(
+        not isinstance(value, int) or isinstance(value, bool) or value < 0 or value > 255
+        for value in token_bytes
+    ):
+        raise ValueError("ModelRun output token probability bytes are invalid.")
+    typed_token_bytes = tuple(cast(list[int], token_bytes))
+    if not isinstance(alternatives, list) or not alternatives:
+        raise ValueError("ModelRun output token probability alternatives are invalid.")
+    seen: set[tuple[str, tuple[int, ...]]] = set()
+    ordering: list[tuple[float, str, tuple[int, ...]]] = []
+    chosen_seen = False
+    chosen_log_probability: float | None = None
+    for raw_alternative in alternatives:
+        if not isinstance(raw_alternative, dict) or set(raw_alternative) != {
+            "token",
+            "log_probability",
+            "token_bytes",
+        }:
+            raise ValueError("ModelRun output token alternative has an invalid shape.")
+        alternative_token = raw_alternative["token"]
+        alternative_log_probability = raw_alternative["log_probability"]
+        alternative_bytes = raw_alternative["token_bytes"]
+        if not isinstance(alternative_token, str) or not alternative_token:
+            raise ValueError("ModelRun output token alternative token is invalid.")
+        if (
+            not isinstance(alternative_log_probability, (int, float))
+            or isinstance(alternative_log_probability, bool)
+            or not math.isfinite(alternative_log_probability)
+            or alternative_log_probability > 0
+        ):
+            raise ValueError("ModelRun output token alternative probability is invalid.")
+        if not isinstance(alternative_bytes, list) or any(
+            not isinstance(value, int) or isinstance(value, bool) or value < 0 or value > 255
+            for value in alternative_bytes
+        ):
+            raise ValueError("ModelRun output token alternative bytes are invalid.")
+        typed_alternative_bytes = tuple(cast(list[int], alternative_bytes))
+        identity = (alternative_token, typed_alternative_bytes)
+        if identity in seen:
+            raise ValueError("ModelRun output token alternatives must be distinct.")
+        seen.add(identity)
+        probability_value = float(alternative_log_probability)
+        ordering.append((-probability_value, alternative_token, typed_alternative_bytes))
+        if identity == (token, typed_token_bytes):
+            chosen_seen = True
+            chosen_log_probability = probability_value
+    if ordering != sorted(ordering):
+        raise ValueError("ModelRun output token alternatives are not canonically ordered.")
+    if not chosen_seen:
+        raise ValueError("ModelRun emitted token is absent from its alternatives.")
+    if chosen_log_probability != float(log_probability):
+        raise ValueError("ModelRun emitted token probability differs from its alternative.")
+
+
 class ModelRun(DomainModel):
     """An immutable execution attempt, including preflight and response failures."""
 
@@ -2597,6 +2665,7 @@ class ModelRun(DomainModel):
                 "rendered_input_digest",
                 "input_token_count",
                 "output_token_count",
+                "output_token_probabilities",
             }
             if set(self.execution_receipt) != expected_keys:
                 raise ValueError("ModelRun execution receipt has an invalid shape.")
@@ -2622,6 +2691,32 @@ class ModelRun(DomainModel):
                 or output_token_count < 0
             ):
                 raise ValueError("ModelRun execution receipt output token count is invalid.")
+            probabilities = self.execution_receipt["output_token_probabilities"]
+            if not isinstance(probabilities, list):
+                raise ValueError(
+                    "ModelRun execution receipt output token probabilities must be a list."
+                )
+            for position, raw_probability in enumerate(probabilities):
+                if not isinstance(raw_probability, dict):
+                    raise ValueError(
+                        "ModelRun execution receipt output token probability is invalid."
+                    )
+                probability = raw_probability
+                if set(probability) != {
+                    "position",
+                    "token",
+                    "log_probability",
+                    "token_bytes",
+                    "alternatives",
+                }:
+                    raise ValueError(
+                        "ModelRun execution receipt output token probability has an invalid shape."
+                    )
+                if probability["position"] != position:
+                    raise ValueError(
+                        "ModelRun execution receipt output token positions must be contiguous."
+                    )
+                _validate_model_token_probability(probability)
             validated_receipt_statuses = {
                 ModelRunStatus.SUCCEEDED,
                 ModelRunStatus.ABSTAINED,

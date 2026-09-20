@@ -44,12 +44,14 @@ from kotekomi_application.source_grounded_proposition_model_output import (
 from kotekomi_application.staged_model_extraction import (
     BoundedExtractionInput,
     ExecutionSetting,
+    ModelExecutionReceipt,
     ModelExecutionSpec,
     ModelRunIdFactory,
     ModelTaskRuntime,
     PinnedTaskSchema,
     StagedExtractionLedger,
     TaskSchemaRegistry,
+    model_execution_receipt_from_payload,
     run_bounded_extraction,
 )
 
@@ -57,6 +59,7 @@ ATTACHMENT_EDGE_FILTER_POLICY_ID = "competitive_attachment_edge_filter_v1"
 ATTACHMENT_EDGE_FILTER_PROMPT_ID = "competitive_attachment_edge_filter_v1"
 ATTACHMENT_EDGE_FILTER_SCHEMA_ID = "competitive_attachment_edge_filter_answer_v1"
 ATTACHMENT_EDGE_FILTER_RENDERER_ID = "competitive_attachment_edge_filter_task_v1"
+ATTACHMENT_EDGE_FILTER_MAX_OUTPUT_TOKENS = 3
 
 
 class AttachmentEdgeFilterLedger(StagedExtractionLedger, ContextPlanningLedger, Protocol):
@@ -98,6 +101,7 @@ class AttachmentEdgeFilterResult:
     extraction_task_id: str
     model_run_id: str
     raw_output: bytes | None
+    execution_receipt: ModelExecutionReceipt | None
     sha256: str
 
 
@@ -141,7 +145,9 @@ def run_attachment_edge_filter(
             execution_spec=_execution_spec(
                 manifest=manifest,
                 runtime=model_runtime,
-                generation_parameters=_bounded_generation_parameters(command.generation_parameters),
+                generation_parameters=attachment_edge_filter_generation_parameters(
+                    command.generation_parameters
+                ),
                 schema=schema,
                 task_input=task_input,
             ),
@@ -202,6 +208,11 @@ def run_attachment_edge_filter(
         extraction_task_id=outcome.extraction_task.id,
         model_run_id=outcome.model_run.id,
         raw_output=outcome.raw_model_output,
+        execution_receipt=(
+            model_execution_receipt_from_payload(outcome.model_run.execution_receipt)
+            if outcome.model_run.execution_receipt is not None
+            else None
+        ),
         sha256=digest,
     )
 
@@ -288,16 +299,24 @@ def _execution_spec(
     )
 
 
-def _bounded_generation_parameters(
+def attachment_edge_filter_generation_parameters(
     settings: tuple[ExecutionSetting, ...],
 ) -> tuple[ExecutionSetting, ...]:
+    """Return the effective settings for the finite Y/N/U task contract."""
     if sum(item.key == "max_output_tokens" for item in settings) != 1:
         raise ValueError("Attachment Edge Filter requires one max_output_tokens setting.")
     configured = next(item.value for item in settings if item.key == "max_output_tokens")
-    if type(configured) is not int or configured < 3:
+    if type(configured) is not int or configured < ATTACHMENT_EDGE_FILTER_MAX_OUTPUT_TOKENS:
         raise ValueError("Attachment Edge Filter requires at least three output tokens.")
     return tuple(
-        ExecutionSetting(item.key, 3 if item.key == "max_output_tokens" else item.value)
+        ExecutionSetting(
+            item.key,
+            (
+                ATTACHMENT_EDGE_FILTER_MAX_OUTPUT_TOKENS
+                if item.key == "max_output_tokens"
+                else item.value
+            ),
+        )
         for item in settings
     )
 

@@ -233,6 +233,68 @@ class ModelExecutionSpec:
 
 
 @dataclass(frozen=True)
+class ModelTokenAlternative:
+    """One runtime-reported token alternative and its natural-log probability."""
+
+    token: str
+    log_probability: float
+    token_bytes: tuple[int, ...]
+
+    def __post_init__(self) -> None:
+        if not self.token:
+            raise ValueError("Model token alternative text must be non-empty.")
+        if not math.isfinite(self.log_probability) or self.log_probability > 0:
+            raise ValueError(
+                "Model token alternative log probability must be finite and non-positive."
+            )
+        if any(type(value) is not int or value < 0 or value > 255 for value in self.token_bytes):
+            raise ValueError("Model token alternative bytes must be byte values.")
+
+
+@dataclass(frozen=True)
+class ModelOutputTokenProbability:
+    """Typed probability evidence for one emitted output token."""
+
+    position: int
+    token: str
+    log_probability: float
+    token_bytes: tuple[int, ...]
+    alternatives: tuple[ModelTokenAlternative, ...]
+
+    def __post_init__(self) -> None:
+        if type(self.position) is not int or self.position < 0:
+            raise ValueError("Model output token probability position must be non-negative.")
+        chosen = ModelTokenAlternative(self.token, self.log_probability, self.token_bytes)
+        if not self.alternatives:
+            raise ValueError("Model output token probability requires alternatives.")
+        if (
+            tuple(
+                sorted(
+                    self.alternatives,
+                    key=lambda item: (-item.log_probability, item.token, item.token_bytes),
+                )
+            )
+            != self.alternatives
+        ):
+            raise ValueError("Model token alternatives must use canonical probability order.")
+        identities = tuple((item.token, item.token_bytes) for item in self.alternatives)
+        if len(set(identities)) != len(identities):
+            raise ValueError("Model token alternatives must be distinct.")
+        chosen_alternative = next(
+            (
+                item
+                for item in self.alternatives
+                if (item.token, item.token_bytes) == (chosen.token, chosen.token_bytes)
+            ),
+            None,
+        )
+        if chosen_alternative is None:
+            raise ValueError("The emitted model token must be present among its alternatives.")
+        if chosen_alternative.log_probability != chosen.log_probability:
+            raise ValueError("The emitted model token probability must match its alternative.")
+
+
+@dataclass(frozen=True)
 class ModelExecutionReceipt:
     """Runtime response evidence; token counts use the runtime API's accounting domain."""
 
@@ -241,6 +303,7 @@ class ModelExecutionReceipt:
     rendered_input_digest: str
     input_token_count: int
     output_token_count: int | None
+    output_token_probabilities: tuple[ModelOutputTokenProbability, ...] = ()
 
     def __post_init__(self) -> None:
         for digest in (
@@ -261,6 +324,12 @@ class ModelExecutionReceipt:
             )
         ):
             raise ValueError("Model execution receipt token counts cannot be negative.")
+        if tuple(item.position for item in self.output_token_probabilities) != tuple(
+            range(len(self.output_token_probabilities))
+        ):
+            raise ValueError(
+                "Model execution receipt output token probabilities must be contiguous."
+            )
 
 
 @dataclass(frozen=True)
@@ -2774,7 +2843,122 @@ def _execution_receipt_payload(receipt: ModelExecutionReceipt) -> dict[str, Json
         "rendered_input_digest": receipt.rendered_input_digest,
         "input_token_count": receipt.input_token_count,
         "output_token_count": receipt.output_token_count,
+        "output_token_probabilities": [
+            {
+                "position": item.position,
+                "token": item.token,
+                "log_probability": item.log_probability,
+                "token_bytes": list(item.token_bytes),
+                "alternatives": [
+                    {
+                        "token": alternative.token,
+                        "log_probability": alternative.log_probability,
+                        "token_bytes": list(alternative.token_bytes),
+                    }
+                    for alternative in item.alternatives
+                ],
+            }
+            for item in receipt.output_token_probabilities
+        ],
     }
+
+
+def model_execution_receipt_from_payload(
+    payload: Mapping[str, JsonValue],
+) -> ModelExecutionReceipt:
+    """Parse persisted runtime response evidence back into its typed contract."""
+    expected_keys = {
+        "model_identity_digest",
+        "generation_parameters_digest",
+        "rendered_input_digest",
+        "input_token_count",
+        "output_token_count",
+        "output_token_probabilities",
+    }
+    if set(payload) != expected_keys:
+        raise ValueError("Model execution receipt payload has an invalid shape.")
+    probabilities = payload["output_token_probabilities"]
+    if not isinstance(probabilities, list):
+        raise ValueError("Model execution receipt probabilities must be a list.")
+    parsed_probabilities: list[ModelOutputTokenProbability] = []
+    for raw_probability in probabilities:
+        if not isinstance(raw_probability, dict):
+            raise ValueError("Model execution receipt probability must be an object.")
+        if set(raw_probability) != {
+            "position",
+            "token",
+            "log_probability",
+            "token_bytes",
+            "alternatives",
+        }:
+            raise ValueError("Model execution receipt probability has an invalid shape.")
+        alternatives = raw_probability.get("alternatives")
+        if not isinstance(alternatives, list):
+            raise ValueError("Model execution receipt alternatives must be a list.")
+        if any(
+            not isinstance(alternative, dict)
+            or set(alternative) != {"token", "log_probability", "token_bytes"}
+            for alternative in alternatives
+        ):
+            raise ValueError("Model execution receipt alternative has an invalid shape.")
+        typed_alternatives = tuple(
+            cast(Mapping[str, JsonValue], alternative) for alternative in alternatives
+        )
+        parsed_probabilities.append(
+            ModelOutputTokenProbability(
+                position=_required_int(raw_probability, "position"),
+                token=_required_str(raw_probability, "token"),
+                log_probability=_required_float(raw_probability, "log_probability"),
+                token_bytes=_required_byte_tuple(raw_probability, "token_bytes"),
+                alternatives=tuple(
+                    ModelTokenAlternative(
+                        token=_required_str(alternative, "token"),
+                        log_probability=_required_float(alternative, "log_probability"),
+                        token_bytes=_required_byte_tuple(alternative, "token_bytes"),
+                    )
+                    for alternative in typed_alternatives
+                ),
+            )
+        )
+    output_count = payload["output_token_count"]
+    if output_count is not None and (type(output_count) is not int or output_count < 0):
+        raise ValueError("Model execution receipt output token count is invalid.")
+    return ModelExecutionReceipt(
+        model_identity_digest=_required_str(payload, "model_identity_digest"),
+        generation_parameters_digest=_required_str(payload, "generation_parameters_digest"),
+        rendered_input_digest=_required_str(payload, "rendered_input_digest"),
+        input_token_count=_required_int(payload, "input_token_count"),
+        output_token_count=output_count,
+        output_token_probabilities=tuple(parsed_probabilities),
+    )
+
+
+def _required_str(payload: Mapping[str, JsonValue], key: str) -> str:
+    value = payload.get(key)
+    if not isinstance(value, str):
+        raise ValueError(f"Model execution receipt {key} must be a string.")
+    return value
+
+
+def _required_int(payload: Mapping[str, JsonValue], key: str) -> int:
+    value = payload.get(key)
+    if type(value) is not int:
+        raise ValueError(f"Model execution receipt {key} must be an integer.")
+    return value
+
+
+def _required_float(payload: Mapping[str, JsonValue], key: str) -> float:
+    value = payload.get(key)
+    if not isinstance(value, (int, float)) or isinstance(value, bool):
+        raise ValueError(f"Model execution receipt {key} must be numeric.")
+    return float(value)
+
+
+def _required_byte_tuple(payload: Mapping[str, JsonValue], key: str) -> tuple[int, ...]:
+    value = payload.get(key)
+    if not isinstance(value, list) or any(type(item) is not int for item in value):
+        raise ValueError(f"Model execution receipt {key} must contain integers.")
+    return tuple(cast(list[int], value))
 
 
 def _digest(value: object) -> str:

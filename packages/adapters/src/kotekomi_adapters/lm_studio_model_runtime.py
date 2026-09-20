@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import math
 from typing import Protocol, cast
 from urllib.parse import urlsplit
 
@@ -12,11 +13,13 @@ from kotekomi_application import (
     ModelIdentitySnapshot,
     ModelInputInspectionRequest,
     ModelInputMeasurement,
+    ModelOutputTokenProbability,
     ModelRuntimeResponseError,
     ModelRuntimeStatus,
     ModelRuntimeUnavailableError,
     ModelTaskRequest,
     ModelTaskResponse,
+    ModelTokenAlternative,
     generation_parameters_digest,
     model_identity_snapshot_digest,
 )
@@ -34,6 +37,7 @@ from kotekomi_adapters.model_http import (
 
 ADAPTER_NAME = "lm_studio"
 TOKENIZER_CONTRACT = "lm_studio_loaded_model_tokenizer_v1"
+LM_STUDIO_MAX_TOP_LOGPROBS = 10
 _PROMPT_TEMPLATE_PROBE = "kotekomi_prompt_template_identity_v1"
 
 
@@ -262,13 +266,13 @@ class LMStudioModelRuntime:
     def run_model_task(self, task: ModelTaskRequest) -> ModelTaskResponse:
         if task.execution_spec.model_identity != self.configured_identity:
             raise ModelRuntimeResponseError("LM Studio task identity does not match configuration.")
+        generation_parameters = _generation_parameters_payload(task, self.max_output_tokens)
         _require_ready_admission(
             task,
             self.inspect_model_input(_inspection_request(task)),
             configured_context_limit=self.context_tokens,
             configured_output_reserve=self.max_output_tokens,
         )
-        generation_parameters = _generation_parameters_payload(task, self.max_output_tokens)
         response = self.streaming_http_client.stream_request(
             method="POST",
             url=f"{self.endpoint}/responses",
@@ -291,6 +295,10 @@ class LMStudioModelRuntime:
                 "LM Studio response model does not match configuration."
             )
         raw_output = _output_text(response_payload)
+        output_token_probabilities = _output_token_probabilities(
+            response_payload,
+            requested_top_logprobs=_requested_top_logprobs(task),
+        )
         input_tokens = _input_tokens(response_payload)
         output_tokens = _output_tokens(response_payload)
         settings = task.execution_spec.generation_parameters
@@ -300,6 +308,7 @@ class LMStudioModelRuntime:
             rendered_input_digest=hashlib.sha256(task.rendered_input).hexdigest(),
             input_token_count=input_tokens,
             output_token_count=output_tokens,
+            output_token_probabilities=output_token_probabilities,
         )
         return ModelTaskResponse(
             raw_output=raw_output,
@@ -311,8 +320,10 @@ class LMStudioModelRuntime:
 def _generation_parameters_payload(
     task: ModelTaskRequest, configured_max_output_tokens: int
 ) -> dict[str, JsonValue]:
-    supported = frozenset({"max_output_tokens", "seed", "temperature"})
-    values = {setting.key: setting.value for setting in task.execution_spec.generation_parameters}
+    supported = frozenset({"max_output_tokens", "seed", "temperature", "top_logprobs"})
+    values: dict[str, JsonValue] = {
+        setting.key: setting.value for setting in task.execution_spec.generation_parameters
+    }
     unknown = sorted(set(values) - supported)
     if unknown:
         raise ModelRuntimeResponseError(
@@ -327,7 +338,33 @@ def _generation_parameters_payload(
         raise ModelRuntimeResponseError(
             "LM Studio task max_output_tokens exceeds the configured runtime ceiling."
         )
-    return cast(dict[str, JsonValue], values)
+    top_logprobs = values.pop("top_logprobs", None)
+    if top_logprobs is not None:
+        if (
+            type(top_logprobs) is not int
+            or top_logprobs < 1
+            or top_logprobs > LM_STUDIO_MAX_TOP_LOGPROBS
+        ):
+            raise ModelRuntimeResponseError(
+                "LM Studio task top_logprobs must be an integer from 1 through "
+                f"{LM_STUDIO_MAX_TOP_LOGPROBS}."
+            )
+        values["include"] = ["message.output_text.logprobs"]
+        values["top_logprobs"] = top_logprobs
+    return values
+
+
+def _requested_top_logprobs(task: ModelTaskRequest) -> int | None:
+    values = {setting.key: setting.value for setting in task.execution_spec.generation_parameters}
+    value = values.get("top_logprobs")
+    if value is None:
+        return None
+    if type(value) is not int or value < 1 or value > LM_STUDIO_MAX_TOP_LOGPROBS:
+        raise ModelRuntimeResponseError(
+            "LM Studio task top_logprobs must be an integer from 1 through "
+            f"{LM_STUDIO_MAX_TOP_LOGPROBS}."
+        )
+    return value
 
 
 def _model_ids(body: str) -> set[str]:
@@ -344,8 +381,16 @@ def _model_ids(body: str) -> set[str]:
 
 
 def _output_text(payload: dict[str, object]) -> bytes:
+    part = _output_text_part(payload)
+    text = part.get("text")
+    if not isinstance(text, str):
+        raise ModelRuntimeResponseError("LM Studio output_text text must be a string.")
+    return text.encode("utf-8")
+
+
+def _output_text_part(payload: dict[str, object]) -> dict[str, object]:
     output = required_list(payload, "output", "LM Studio Responses")
-    text_parts: list[str] = []
+    text_parts: list[dict[str, object]] = []
     for item in output:
         if not isinstance(item, dict):
             raise ModelRuntimeResponseError("LM Studio output entries must be objects.")
@@ -357,14 +402,113 @@ def _output_text(payload: dict[str, object]) -> bytes:
                 values = cast(dict[str, object], part)
                 if values.get("type") != "output_text":
                     continue
-                text = values.get("text")
-                if isinstance(text, str):
-                    text_parts.append(text)
+                if isinstance(values.get("text"), str):
+                    text_parts.append(values)
     if len(text_parts) != 1:
         raise ModelRuntimeResponseError(
             "LM Studio response must contain exactly one output_text value."
         )
-    return text_parts[0].encode("utf-8")
+    return text_parts[0]
+
+
+def _output_token_probabilities(
+    payload: dict[str, object],
+    *,
+    requested_top_logprobs: int | None,
+) -> tuple[ModelOutputTokenProbability, ...]:
+    if requested_top_logprobs is None:
+        return ()
+    raw_entries_value = _output_text_part(payload).get("logprobs")
+    if not isinstance(raw_entries_value, list) or not raw_entries_value:
+        raise ModelRuntimeResponseError(
+            "LM Studio response omitted requested output token log probabilities."
+        )
+    raw_entries = cast(list[object], raw_entries_value)
+    result: list[ModelOutputTokenProbability] = []
+    for position, raw_entry in enumerate(raw_entries):
+        if not isinstance(raw_entry, dict):
+            raise ModelRuntimeResponseError("LM Studio output token logprob must be an object.")
+        entry = cast(dict[str, object], raw_entry)
+        alternatives_value = entry.get("top_logprobs")
+        if not isinstance(alternatives_value, list) or not alternatives_value:
+            raise ModelRuntimeResponseError("LM Studio output token logprob requires top_logprobs.")
+        alternatives = cast(list[object], alternatives_value)
+        if len(alternatives) > requested_top_logprobs:
+            raise ModelRuntimeResponseError(
+                "LM Studio returned more token alternatives than requested."
+            )
+        try:
+            parsed_alternatives = tuple(
+                ModelTokenAlternative(
+                    token=_probability_token(alternative, "token alternative"),
+                    log_probability=_probability_value(alternative, "token alternative"),
+                    token_bytes=_probability_bytes(alternative, "token alternative"),
+                )
+                for alternative in _probability_objects(alternatives)
+            )
+            result.append(
+                ModelOutputTokenProbability(
+                    position=position,
+                    token=_probability_token(entry, "output token"),
+                    log_probability=_probability_value(entry, "output token"),
+                    token_bytes=_probability_bytes(entry, "output token"),
+                    alternatives=tuple(
+                        sorted(
+                            parsed_alternatives,
+                            key=lambda item: (
+                                -item.log_probability,
+                                item.token,
+                                item.token_bytes,
+                            ),
+                        )
+                    ),
+                )
+            )
+        except ValueError as error:
+            raise ModelRuntimeResponseError(
+                "LM Studio returned invalid output token probability evidence."
+            ) from error
+    return tuple(result)
+
+
+def _probability_objects(values: list[object]) -> tuple[dict[str, object], ...]:
+    if any(not isinstance(value, dict) for value in values):
+        raise ModelRuntimeResponseError("LM Studio token alternatives must be objects.")
+    return tuple(cast(dict[str, object], value) for value in values)
+
+
+def _probability_token(value: dict[str, object], label: str) -> str:
+    token = value.get("token")
+    if not isinstance(token, str) or not token:
+        raise ModelRuntimeResponseError(f"LM Studio {label} token must be non-empty.")
+    return token
+
+
+def _probability_value(value: dict[str, object], label: str) -> float:
+    probability = value.get("logprob")
+    if (
+        not isinstance(probability, (int, float))
+        or isinstance(probability, bool)
+        or not math.isfinite(probability)
+        or probability > 0
+    ):
+        raise ModelRuntimeResponseError(
+            f"LM Studio {label} log probability must be finite and non-positive."
+        )
+    return float(probability)
+
+
+def _probability_bytes(value: dict[str, object], label: str) -> tuple[int, ...]:
+    raw_bytes_value = value.get("bytes")
+    if not isinstance(raw_bytes_value, list):
+        raise ModelRuntimeResponseError(f"LM Studio {label} bytes must be byte values.")
+    raw_bytes = cast(list[object], raw_bytes_value)
+    if any(
+        not isinstance(item, int) or isinstance(item, bool) or item < 0 or item > 255
+        for item in raw_bytes
+    ):
+        raise ModelRuntimeResponseError(f"LM Studio {label} bytes must be byte values.")
+    return tuple(cast(list[int], raw_bytes))
 
 
 def _input_tokens(payload: dict[str, object]) -> int:

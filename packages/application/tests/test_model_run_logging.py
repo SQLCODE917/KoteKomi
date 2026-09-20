@@ -159,5 +159,6 @@ def _model_run(record_id: str, started_at: datetime) -> ModelRun:
             "rendered_input_digest": digest,
             "input_token_count": 44,
             "output_token_count": 12,
+            "output_token_probabilities": [],
         },
     )

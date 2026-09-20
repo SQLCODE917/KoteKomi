@@ -1,6 +1,6 @@
 # Competitive Event Attachment Program
 
-- Status: CEA-1 supported; CEA-1.1 mixed; CEA-1.2 verified; CEA-1.3 closed; CEA-1.4 falsified at diagnostic; production inactive
+- Status: CEA-1 supported; CEA-1.1 mixed; CEA-1.2 verified; CEA-1.3 closed; CEA-1.4 aggregate untested; CEA-1.5 not separable; CEA-1.6 planned; production inactive
 - Program ID: `competitive-event-attachment`
 - Parent: [Hybrid Intelligence Extraction Pipeline](2026-09-01-hybrid-intelligence-extraction-pipeline.md)
 - Predecessor evidence:
@@ -209,11 +209,13 @@ CEA-1.3 has completed its model-free bounded hybrid selection diagnostic with a 
 
 CEA-1.3 passed the full repository suite with `1677` tests passed and one test skipped.
 
-CEA-1.4 tested one bounded semantic filter over one high-recall edge pool.
+CEA-1.4 tested two bounded Prompt Arms on one concentrated diagnostic catalog.
 
-No CEA-1.1 Prompt Arm passed the production safety gates.
+The perfection gate rejected both Prompt Arms before aggregate evaluation.
 
-The next deliverable must route each edge to one bounded decision type.
+CEA-1.5 tests whether runtime probability evidence makes the same filter calibratable.
+
+Its first live attempt produced no semantic calibration result: an unsafe request for twenty token alternatives exceeded the installed LM Studio MLX backend maximum of ten, and the backend crashed on the following request. The corrected contract requests ten, rejects larger values before generation transport, preserves failed attempts, and still requires a fresh live diagnostic before any aggregate replay.
 
 Later deliverables define a user story, precondition, and postcondition only.
 
@@ -266,6 +268,16 @@ Later deliverables define a user story, precondition, and postcondition only.
 **Postcondition:** Development selects one filtered Pool Arm and frozen validation classifies the edge-filter hypothesis.
 
 **TDD:** [CEA-1.4 High-Recall Competitive Edge Filter](2026-09-19-competitive-attachment-edge-filter.md)
+
+### CEA-1.5 — Calibrated competitive edge filter
+
+**User story:** An operator can determine whether one frozen threshold separates useful and harmful Pool Edges.
+
+**Precondition:** CEA-1.4 preserves exact V8 and V9 prompts, tasks, executions, and Maximum Pool evidence.
+
+**Postcondition:** A safety and break-even diagnostic either stops or authorizes one frozen aggregate replay.
+
+**TDD:** [CEA-1.5 Calibrated Competitive Edge Filter](2026-09-19-competitive-attachment-edge-filter-calibration.md)
 
 ### CEA-2 — Qualification attachment
 
@@ -435,7 +447,7 @@ Production integration remains `not_activated`.
 
 ## CEA-1.4 outcome
 
-CEA-1.4 classified its generic Edge Filter hypothesis as `falsified` on 2026-09-19.
+CEA-1.4 rejected both Prompt Arms at its mandatory diagnostic on 2026-09-19.
 
 The first diagnostic used sixteen tasks from one concentrated catalog.
 Both repetitions produced thirteen of sixteen Gold-exact decisions.
@@ -457,16 +469,14 @@ Every execution returned valid finite output.
 Both repetitions produced stable semantic decisions.
 The prompt revision exchanged error classes without improving exact accuracy.
 
-The mandatory diagnostic gate blocked human approval.
-The Pipeline did not execute full development or validation.
+The sixteen-of-sixteen diagnostic gate blocked human approval.
+The Pipeline did not execute the 490-edge development or 257-edge validation replays.
+The registered aggregate Edge Filter hypothesis therefore remains untested.
 The experiment created no ProposedChange and changed no accepted Ledger state.
 Production integration remains `not_activated`.
 
-The next deliverable must separate four decision types.
-KoteKomi must use ReferenceDecisions for reference-supported participation.
-KoteKomi must route attribution scope to a bounded attribution task.
-KoteKomi must route temporal scope to a bounded temporal task.
-KoteKomi must route mixed Candidate scope to an atomicity task.
+The preserved V8 and V9 error swaps can reflect one decision-boundary change.
+CEA-1.5 tests this calibration hypothesis before KoteKomi adds routed semantic tasks.
 
 ## Program completion
 

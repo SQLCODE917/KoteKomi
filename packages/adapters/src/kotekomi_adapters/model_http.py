@@ -215,13 +215,33 @@ def _completed_sse_payload(event_name: str | None, data_lines: list[str]) -> str
     payload = parse_json_object("\n".join(data_lines), "LM Studio SSE")
     event_type = event_name or payload.get("type")
     if event_type in {"response.failed", "error"}:
-        raise ModelRuntimeResponseError("LM Studio reported a terminal streaming response failure.")
+        detail = _terminal_sse_error_message(payload)
+        suffix = f": {detail}" if detail is not None else "."
+        raise ModelRuntimeResponseError(
+            "LM Studio reported a terminal streaming response failure" + suffix
+        )
     if event_type != "response.completed":
         return None
     completed = payload.get("response")
     if not isinstance(completed, dict):
         raise ModelRuntimeResponseError("LM Studio response.completed requires a response object.")
     return json.dumps(completed, separators=(",", ":"), ensure_ascii=False)
+
+
+def _terminal_sse_error_message(payload: dict[str, object]) -> str | None:
+    candidates: list[object] = [payload.get("error")]
+    response = payload.get("response")
+    if isinstance(response, dict):
+        candidates.append(cast(dict[str, object], response).get("error"))
+    candidates.append(payload.get("message"))
+    for candidate in candidates:
+        if isinstance(candidate, str) and candidate.strip():
+            return candidate.strip()
+        if isinstance(candidate, dict):
+            message = cast(dict[str, object], candidate).get("message")
+            if isinstance(message, str) and message.strip():
+                return message.strip()
+    return None
 
 
 def parse_json_object(body: str, context: str) -> dict[str, object]:

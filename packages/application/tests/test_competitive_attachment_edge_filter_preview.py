@@ -46,6 +46,9 @@ def test_edge_filter_preview_preserves_exact_input_output_and_never_writes_state
     assert result.trace.input["exact_model_input"]
     assert result.trace.output["raw_output_text"] == "Y"
     assert len(runtime.requests) == 1
+    assert {
+        item.key: item.value for item in runtime.requests[0].execution_spec.generation_parameters
+    } == {"max_output_tokens": 3, "temperature": 0}
     assert set(archive.outputs) == {result.model_run_id}
     assert ledger.accepted_write_attempted is False
 

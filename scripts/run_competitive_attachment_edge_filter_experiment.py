@@ -178,7 +178,7 @@ class _PhaseEvidence:
 
 
 @dataclass(frozen=True)
-class _PreparedPhase:
+class PreparedAttachmentEdgeFilterPhase:
     evidence: _PhaseEvidence
     edges: tuple[AttachmentPoolEdge, ...]
     tasks: tuple[AttachmentEdgeFilterTask, ...]
@@ -288,7 +288,7 @@ def _prepare(args: argparse.Namespace) -> int:
         "proposed_change_count": 0,
         "accepted_ledger_change_count": 0,
     }
-    prepared: dict[str, _PreparedPhase] = {}
+    prepared: dict[str, PreparedAttachmentEdgeFilterPhase] = {}
     for phase, evidence in (("development", development), ("validation", validation)):
         prepared[phase] = _build_prepared_phase(
             cast(Literal["development", "validation"], phase),
@@ -390,7 +390,7 @@ def _diagnose(args: argparse.Namespace) -> int:
     catalog = AttachmentEdgeFilterDiagnosticCatalog.model_validate_json(
         (root / "diagnostic-catalog.json").read_bytes()
     )
-    prepared = _reload_prepared_phase(root, metadata, "development")
+    prepared = reload_prepared_attachment_edge_filter_phase(root, metadata, "development")
     expected_answer_by_task_id = {
         task.task_id: (
             "Y"
@@ -402,7 +402,7 @@ def _diagnose(args: argparse.Namespace) -> int:
     repetition_results: list[dict[str, object]] = []
     for repetition in (1, 2):
         directory = root / "diagnostic" / f"repetition-{repetition}"
-        _execute_tasks(
+        execute_attachment_edge_filter_tasks(
             root=root,
             config=config,
             tasks=catalog.tasks,
@@ -561,7 +561,7 @@ def _run_development(args: argparse.Namespace) -> int:
         target = output / f"{task.task_id}.json"
         if not target.exists():
             shutil.copyfile(source, target)
-    _execute_tasks(
+    execute_attachment_edge_filter_tasks(
         root=root,
         config=config,
         tasks=tasks,
@@ -598,7 +598,7 @@ def _freeze_development(args: argparse.Namespace) -> int:
         root, allowed_status={"development_run", "development_frozen"}
     )
     _validate_diagnostic_approval(root, metadata)
-    prepared = _reload_prepared_phase(root, metadata, "development")
+    prepared = reload_prepared_attachment_edge_filter_phase(root, metadata, "development")
     decisions = _load_decisions(
         root / "development/executions",
         prepared.tasks,
@@ -673,9 +673,9 @@ def _run_validation(args: argparse.Namespace) -> int:
     config = _config(args.config)
     _validate_runtime(config, metadata)
     freeze = _validated_development_freeze(root, metadata)
-    prepared = _reload_prepared_phase(root, metadata, "validation")
+    prepared = reload_prepared_attachment_edge_filter_phase(root, metadata, "validation")
     output = root / "validation" / "executions"
-    _execute_tasks(
+    execute_attachment_edge_filter_tasks(
         root=root,
         config=config,
         tasks=prepared.tasks,
@@ -875,7 +875,7 @@ def _build_prepared_phase(
     review: AttachmentReviewVerificationReport,
     selection: AttachmentSelectionPolicyReport,
     gold: PropositionGoldCatalog,
-) -> _PreparedPhase:
+) -> PreparedAttachmentEdgeFilterPhase:
     observations = (
         review.development.observations
         if phase == "development"
@@ -937,7 +937,7 @@ def _build_prepared_phase(
         source_text_by_digest=source_text_by_digest,
         entity_occurrences_by_event=entity_occurrences_by_event,
     )
-    return _PreparedPhase(
+    return PreparedAttachmentEdgeFilterPhase(
         evidence=evidence,
         edges=edges,
         tasks=tasks,
@@ -952,11 +952,11 @@ def _build_prepared_phase(
     )
 
 
-def _reload_prepared_phase(
+def reload_prepared_attachment_edge_filter_phase(
     root: Path,
     metadata: dict[str, Any],
     phase: Literal["development", "validation"],
-) -> _PreparedPhase:
+) -> PreparedAttachmentEdgeFilterPhase:
     review_root = Path(_required_str(metadata, "review_run_root"))
     selection_root = Path(_required_str(metadata, "selection_run_root"))
     evidence_root = Path(_required_str(metadata, f"{phase}_run_root"))
@@ -980,7 +980,7 @@ def _reload_prepared_phase(
     return prepared
 
 
-def _execute_tasks(
+def execute_attachment_edge_filter_tasks(
     *,
     root: Path,
     config: PipelineConfig,
@@ -988,6 +988,7 @@ def _execute_tasks(
     output_directory: Path,
     phase: Literal["development", "validation"],
     metadata: dict[str, Any],
+    generation_parameters: tuple[ExecutionSetting, ...] | None = None,
 ) -> None:
     evidence_root = Path(_required_str(metadata, f"{phase}_run_root"))
     state = _load_canonical_state(evidence_root / "canonical-state.json")
@@ -1001,7 +1002,7 @@ def _execute_tasks(
     for ordinal, task in enumerate(tasks, start=1):
         output = output_directory / f"{task.task_id}.json"
         if output.exists():
-            _validate_execution_record(
+            validate_attachment_edge_filter_execution_record(
                 output,
                 task,
                 archive=archive,
@@ -1031,7 +1032,7 @@ def _execute_tasks(
                 task=task,
                 analysis_unit=unit,
                 model_profile=_profile(config),
-                generation_parameters=_generation(config),
+                generation_parameters=(generation_parameters or _generation(config)),
                 prompt_bytes=prompt,
                 prompt_id=ATTACHMENT_EDGE_FILTER_PROMPT_ID,
             ),
@@ -1072,7 +1073,7 @@ def _load_decisions(
     expected_runtime_contract: dict[str, object],
 ) -> tuple[AttachmentEdgeFilterDecision, ...]:
     decisions = tuple(
-        _validate_execution_record(
+        validate_attachment_edge_filter_execution_record(
             directory / f"{task.task_id}.json",
             task,
             archive=archive,
@@ -1088,7 +1089,7 @@ def _load_decisions(
     return decisions
 
 
-def _validate_execution_record(
+def validate_attachment_edge_filter_execution_record(
     path: Path,
     task: AttachmentEdgeFilterTask,
     *,

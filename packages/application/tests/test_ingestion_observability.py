@@ -284,5 +284,6 @@ def _model_run(output_digest: str) -> ModelRun:
             "rendered_input_digest": "5" * 64,
             "input_token_count": 10,
             "output_token_count": 5,
+            "output_token_probabilities": [],
         },
     )
