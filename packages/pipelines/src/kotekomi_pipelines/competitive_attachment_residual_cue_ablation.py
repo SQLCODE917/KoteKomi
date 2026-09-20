@@ -347,6 +347,12 @@ def render_residual_cue_ablation_handoff(
         "",
         f"Negative regressions: `{report.negative_regression_case_count}/2`",
         "",
+        "`supported` means the isolated demonstration cue caused repeat-stable positive "
+        "recoveries without a negative regression in this development diagnostic.",
+        "",
+        "It does not mean the attachment task is production-ready: four of eight positive "
+        "cases remained false negatives, and frozen validation was not run.",
+        "",
         f"Stable cases: `{report.stable_case_count}/10`",
         "",
         f"Probability Evidence: `{report.probability_evidence_count}/20`",
@@ -370,9 +376,11 @@ def render_residual_cue_ablation_handoff(
         "",
         "It does not repair the Residual Ownership criterion or Candidate Remainder rendering.",
         "",
-        "The `As ... targeted ...` case retains its reviewed Attachment Gold label.",
+        "The `As ... targeted ...` case preserves inherited Attachment Gold `N` as historical "
+        "evidence.",
         "",
-        "Its mismatch with the prompt criterion remains visible rather than silently relabeled.",
+        "CEA-1.8 applies the operator-approved Residual Ownership answer `Y` and keeps both "
+        "answers visible.",
         "",
         "## Review questions",
         "",

@@ -17,6 +17,7 @@ from kotekomi_application import (
 )
 from kotekomi_pipelines.competitive_attachment_residual_cue_ablation import (
     build_residual_cue_ablation_report,
+    render_residual_cue_ablation_handoff,
     validate_residual_cue_prompt_pair,
 )
 
@@ -78,7 +79,7 @@ def test_report_aligns_exact_cases_and_classifies_the_cue_effect(
     )
     cue = cast(
         AttachmentResidualOwnershipReport,
-        SimpleNamespace(cases=tuple(cue_cases)),
+        SimpleNamespace(cases=tuple(cue_cases), result_fingerprint="f" * 64),
     )
     reference = AttachmentEvidenceReference(label="input", path="/input", sha256=DIGEST)
 
@@ -101,6 +102,19 @@ def test_report_aligns_exact_cases_and_classifies_the_cue_effect(
     corrected = report.cases[-1]
     assert corrected.inherited_expected_answer == "N"
     assert corrected.expected_answer == "Y"
+    handoff = render_residual_cue_ablation_handoff(
+        report,
+        cue,
+        baseline_prompt_text="baseline",
+        cue_prompt_text="cue",
+        source_repository_url="https://example.test/repository",
+        source_revision="d" * 40,
+    )
+    assert "preserves inherited Attachment Gold `N`" in handoff
+    assert "operator-approved Residual Ownership answer `Y`" in handoff
+    assert "silently relabeled" not in handoff
+    assert "four of eight positive cases remained false negatives" in handoff
+    assert "frozen validation was not run" in handoff
 
 
 def _case(task: object, expected: str, answers: tuple[str | None, str | None]) -> object:
