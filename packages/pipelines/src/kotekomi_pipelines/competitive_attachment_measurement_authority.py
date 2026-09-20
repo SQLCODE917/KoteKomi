@@ -220,8 +220,27 @@ def render_attachment_measurement_review(report: AttachmentMeasurementAuditRepor
 def render_attachment_measurement_handoff(
     report: AttachmentMeasurementAuditReport,
     controls: AttachmentMeasurementControlCatalog,
+    *,
+    gold_authority: tuple[AttachmentEvidenceReference, ...],
+    normalization_change_count: int,
+    source_repository_url: str,
+    source_revision: str,
 ) -> str:
     """Render a self-contained handoff for an independent second opinion."""
+    authority_by_label = {item.label: item for item in gold_authority}
+    expected_authority_labels = {
+        "attachment_gold_development_oracle",
+        "attachment_gold_selection_report",
+        "attachment_gold_validation_oracle",
+    }
+    if set(authority_by_label) != expected_authority_labels:
+        raise ValueError("Attachment Gold handoff authority inventory drifted.")
+    if normalization_change_count != 3:
+        raise ValueError("Attachment Gold handoff normalization count drifted.")
+    if len(source_revision) != 40 or any(
+        character not in "0123456789abcdef" for character in source_revision
+    ):
+        raise ValueError("Attachment Gold handoff source revision is invalid.")
     proposition_gold = next(item for item in report.inputs if item.label == "proposition_gold")
     lines = [
         "# CEA-1.6 Attachment Measurement Authority Handoff",
@@ -239,9 +258,28 @@ def render_attachment_measurement_handoff(
         "KoteKomi scored every development and validation Maximum Pool Edge against "
         "reviewed occurrence-level Attachment Gold.",
         "",
-        f"Authoritative Gold: `{proposition_gold.path}`",
+        "Attachment Gold authority is reconstructed from these package-local files:",
         "",
-        f"Authoritative Gold SHA-256: `{proposition_gold.sha256}`",
+        _authority_line(authority_by_label["attachment_gold_development_oracle"]),
+        _authority_line(authority_by_label["attachment_gold_validation_oracle"]),
+        _authority_line(authority_by_label["attachment_gold_selection_report"]),
+        "",
+        f"The selection report contains `{normalization_change_count}` approved "
+        "normalization changes.",
+        "",
+        "The parent Source-Grounded Proposition Gold is contextual catalog evidence, not the "
+        "direct Attachment label authority:",
+        "",
+        f"- `{proposition_gold.path}` — SHA-256 `{proposition_gold.sha256}`",
+        "",
+        "## Source implementation",
+        "",
+        f"Public repository: `{source_repository_url}`",
+        "",
+        f"Source revision: `{source_revision}`",
+        "",
+        "You may inspect that public source revision to verify implementation claims. Treat "
+        "the digest-bound package files as the authority for experimental observations.",
         "",
         "The experiment executed no model and wrote no canonical intelligence.",
         "",
@@ -274,6 +312,10 @@ def render_attachment_measurement_handoff(
         )
     )
     return "\n".join(lines).rstrip() + "\n"
+
+
+def _authority_line(reference: AttachmentEvidenceReference) -> str:
+    return f"- `{reference.path}` — SHA-256 `{reference.sha256}`"
 
 
 def _properly_contains(edge: AttachmentPoolEdge) -> bool:

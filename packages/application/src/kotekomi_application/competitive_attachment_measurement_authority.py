@@ -297,7 +297,6 @@ class AttachmentSecondOpinionReceipt(BaseModel):
     )
     handoff: AttachmentEvidenceReference
     review: AttachmentEvidenceReference
-    stderr_log: AttachmentEvidenceReference
     claude_status: AttachmentEvidenceReference
     exit_code: Literal[0] = 0
     review_byte_count: Annotated[int, Field(gt=0)]
@@ -401,7 +400,7 @@ class AttachmentMeasurementStatus(BaseModel):
     report_path: Annotated[str, Field(min_length=1)]
     controls_path: Annotated[str, Field(min_length=1)]
     handoff_path: Annotated[str, Field(min_length=1)]
-    launcher_path: Annotated[str, Field(min_length=1)]
+    review_path: Annotated[str, Field(min_length=1)]
     manifest_path: Annotated[str, Field(min_length=1)]
     second_opinion_receipt_path: str | None = None
     review_verification_path: str | None = None

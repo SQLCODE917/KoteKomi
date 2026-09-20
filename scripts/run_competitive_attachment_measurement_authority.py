@@ -6,7 +6,8 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-import shlex
+import re
+import subprocess
 from pathlib import Path
 from typing import Any, Literal, cast
 
@@ -52,6 +53,7 @@ def main() -> int:
 
     record = commands.add_parser("record-second-opinion")
     record.add_argument("--output-root", type=Path, required=True)
+    record.add_argument("--reported-exit-code", type=int, required=True)
 
     finalize = commands.add_parser("finalize")
     finalize.add_argument("--output-root", type=Path, required=True)
@@ -127,6 +129,7 @@ def _run(args: argparse.Namespace) -> int:
         predecessor_catalog=predecessor_catalog,
         development=development_report,
     )
+    gold_authority = _embed_gold_authority(output_root, inputs)
     _write_json(output_root / "audit-report.json", report.model_dump(mode="json"))
     (output_root / "audit-review.md").write_text(
         render_attachment_measurement_review(report), encoding="utf-8"
@@ -136,11 +139,16 @@ def _run(args: argparse.Namespace) -> int:
         controls.model_dump(mode="json"),
     )
     (output_root / "second-opinion-handoff.md").write_text(
-        render_attachment_measurement_handoff(report, controls), encoding="utf-8"
+        render_attachment_measurement_handoff(
+            report,
+            controls,
+            gold_authority=gold_authority,
+            normalization_change_count=len(selection.normalization_changes),
+            source_repository_url="https://github.com/SQLCODE917/KoteKomi",
+            source_revision=_source_revision(),
+        ),
+        encoding="utf-8",
     )
-    launcher = output_root / "run-claude-second-opinion.sh"
-    launcher.write_text(_claude_launcher(output_root), encoding="utf-8")
-    launcher.chmod(0o755)
     status = _status(
         output_root,
         package_status=AttachmentMeasurementPackageStatus.AWAITING_SECOND_OPINION,
@@ -160,11 +168,11 @@ def _run(args: argparse.Namespace) -> int:
         json.dumps(
             {
                 "audit_report": str(output_root / "audit-report.json"),
-                "claude_launcher": str(launcher),
                 "controls": str(output_root / "diagnostic-controls.json"),
                 "handoff": str(output_root / "second-opinion-handoff.md"),
                 "outcome": report.outcome.value,
                 "output_root": str(output_root),
+                "review": str(output_root / "claude-opus-review.md"),
                 "status": status.status.value,
             },
             sort_keys=True,
@@ -179,20 +187,21 @@ def _record_second_opinion(args: argparse.Namespace) -> int:
     current = AttachmentMeasurementStatus.model_validate_json((root / "status.json").read_bytes())
     if current.status is not AttachmentMeasurementPackageStatus.AWAITING_SECOND_OPINION:
         raise ValueError("CEA-1.6 second opinion is not awaiting review.")
-    claude_status_path = root / "claude-opus-review.status.json"
-    value = _read_object(claude_status_path)
-    if value.get("exit_code") != 0:
+    if args.reported_exit_code != 0:
         raise ValueError("CEA-1.6 Claude review did not exit successfully.")
+    claude_status_path = root / "claude-opus-review.status.json"
+    _write_json(
+        claude_status_path,
+        {"exit_code": args.reported_exit_code, "source": "human_reported"},
+    )
     review_path = root / "claude-opus-review.md"
     review_bytes = review_path.read_bytes()
     if not review_bytes.strip():
         raise ValueError("CEA-1.6 Claude review is empty.")
     handoff_path = root / "second-opinion-handoff.md"
-    stderr_path = root / "claude-opus-review.stderr.log"
     draft = AttachmentSecondOpinionReceipt.model_construct(
         handoff=_file_reference("second_opinion_handoff", handoff_path, relative_to=root),
         review=_file_reference("claude_opus_review", review_path, relative_to=root),
-        stderr_log=_file_reference("claude_stderr", stderr_path, relative_to=root),
         claude_status=_file_reference("claude_status", claude_status_path, relative_to=root),
         exit_code=0,
         review_byte_count=len(review_bytes),
@@ -243,7 +252,6 @@ def _finalize(args: argparse.Namespace) -> int:
     )
     _validate_reference(receipt.handoff, root)
     _validate_reference(receipt.review, root)
-    _validate_reference(receipt.stderr_log, root)
     _validate_reference(receipt.claude_status, root)
     verification_path = args.claim_verification.resolve()
     verification = AttachmentReviewVerification.model_validate_json(verification_path.read_bytes())
@@ -372,9 +380,11 @@ def _manifest(
     verification: AttachmentReviewVerification | None,
 ) -> AttachmentMeasurementManifest:
     output_paths = {
+        "attachment_gold_development_oracle": (root / "attachment-gold-development-oracle.json"),
+        "attachment_gold_selection_report": root / "attachment-gold-selection-report.json",
+        "attachment_gold_validation_oracle": root / "attachment-gold-validation-oracle.json",
         "audit_report": root / "audit-report.json",
         "audit_review": root / "audit-review.md",
-        "claude_launcher": root / "run-claude-second-opinion.sh",
         "diagnostic_controls": root / "diagnostic-controls.json",
         "package_status": root / "status.json",
         "second_opinion_handoff": root / "second-opinion-handoff.md",
@@ -384,12 +394,23 @@ def _manifest(
             {
                 "claude_opus_review": root / "claude-opus-review.md",
                 "claude_status": root / "claude-opus-review.status.json",
-                "claude_stderr": root / "claude-opus-review.stderr.log",
                 "second_opinion_receipt": root / "second-opinion-receipt.json",
             }
         )
     if verification is not None:
         output_paths["claim_verification"] = root / "claim-verification.json"
+        for claim in verification.claims:
+            for reference in claim.evidence:
+                path = Path(reference.path)
+                if path.is_absolute():
+                    continue
+                label = f"claim_evidence_{reference.label}"
+                resolved = root / path
+                if resolved in output_paths.values():
+                    continue
+                previous = output_paths.setdefault(label, resolved)
+                if previous != resolved:
+                    raise ValueError("CEA-1.6 claim evidence label identifies multiple files.")
     outputs = tuple(
         _file_reference(label, path, relative_to=root)
         for label, path in sorted(output_paths.items())
@@ -432,7 +453,7 @@ def _status(
         report_path=str(root / "audit-report.json"),
         controls_path=str(root / "diagnostic-controls.json"),
         handoff_path=str(root / "second-opinion-handoff.md"),
-        launcher_path=str(root / "run-claude-second-opinion.sh"),
+        review_path=str(root / "claude-opus-review.md"),
         manifest_path=str(root / "manifest.json"),
         second_opinion_receipt_path=(
             str(root / "second-opinion-receipt.json") if receipt is not None else None
@@ -443,31 +464,52 @@ def _status(
     )
 
 
-def _claude_launcher(root: Path) -> str:
-    quoted_root = shlex.quote(str(root))
-    return f"""#!/usr/bin/env bash
-set -uo pipefail
+def _embed_gold_authority(
+    root: Path,
+    inputs: tuple[AttachmentEvidenceReference, ...],
+) -> tuple[AttachmentEvidenceReference, ...]:
+    by_label = {item.label: item for item in inputs}
+    mapping = (
+        (
+            "attachment_gold_development_oracle",
+            "development_oracle",
+            root / "attachment-gold-development-oracle.json",
+        ),
+        (
+            "attachment_gold_selection_report",
+            "selection_report",
+            root / "attachment-gold-selection-report.json",
+        ),
+        (
+            "attachment_gold_validation_oracle",
+            "validation_oracle",
+            root / "attachment-gold-validation-oracle.json",
+        ),
+    )
+    embedded: list[AttachmentEvidenceReference] = []
+    for output_label, input_label, destination in mapping:
+        source_reference = by_label[input_label]
+        source = Path(source_reference.path)
+        payload = source.read_bytes()
+        if _sha(payload) != source_reference.sha256:
+            raise ValueError(f"CEA-1.6 Attachment Gold source drifted: {input_label}.")
+        destination.write_bytes(payload)
+        embedded.append(_file_reference(output_label, destination, relative_to=root))
+    return tuple(embedded)
 
-RUN_ROOT={quoted_root}
-CLAUDE_STATUS=1
 
-finish() {{
-  jq -n --argjson exit_code "$CLAUDE_STATUS" \\
-    '{{exit_code: $exit_code}}' > "$RUN_ROOT/claude-opus-review.status.json"
-  printf 'CLAUDE_STATUS=%s\\n' "$CLAUDE_STATUS"
-  printf 'REVIEW=%s\\n' "$RUN_ROOT/claude-opus-review.md"
-  printf 'STDERR_LOG=%s\\n' "$RUN_ROOT/claude-opus-review.stderr.log"
-  printf 'STATUS_FILE=%s\\n' "$RUN_ROOT/claude-opus-review.status.json"
-}}
-trap finish EXIT
-
-claude -p --model opus --effort high --add-dir "$RUN_ROOT" \\
-  < "$RUN_ROOT/second-opinion-handoff.md" \\
-  > "$RUN_ROOT/claude-opus-review.md" \\
-  2> "$RUN_ROOT/claude-opus-review.stderr.log"
-CLAUDE_STATUS=$?
-exit "$CLAUDE_STATUS"
-"""
+def _source_revision() -> str:
+    result = subprocess.run(
+        ("git", "rev-parse", "HEAD"),
+        cwd=REPOSITORY_ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    revision = result.stdout.strip()
+    if result.returncode != 0 or re.fullmatch(r"[a-f0-9]{40}", revision) is None:
+        raise ValueError("CEA-1.6 could not resolve its source revision.")
+    return revision
 
 
 def _load_report(root: Path) -> AttachmentMeasurementAuditReport:

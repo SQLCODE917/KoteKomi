@@ -176,7 +176,14 @@ def test_frozen_r1_counts_and_handoff_preserve_all_twelve_positive_losses() -> N
         ),
         development=development,
     )
-    handoff = render_attachment_measurement_handoff(report, controls)
+    handoff = render_attachment_measurement_handoff(
+        report,
+        controls,
+        gold_authority=_gold_authority(),
+        normalization_change_count=3,
+        source_repository_url="https://github.test/KoteKomi",
+        source_revision="b" * 40,
+    )
 
     assert report.outcome is AttachmentMeasurementOutcome.UNSAFE
     assert (
@@ -185,7 +192,12 @@ def test_frozen_r1_counts_and_handoff_preserve_all_twelve_positive_losses() -> N
         report.combined_gold_positive_loss_count,
     ) == (31, 19, 12)
     assert handoff.count("Attachment Gold: `Y`") == 12
-    assert "Authoritative Gold: `proposition_gold.json`" in handoff
+    assert "`attachment-gold-development-oracle.json`" in handoff
+    assert "`attachment-gold-validation-oracle.json`" in handoff
+    assert "`attachment-gold-selection-report.json`" in handoff
+    assert "Proposition Gold is contextual catalog evidence" in handoff
+    assert "Public repository: `https://github.test/KoteKomi`" in handoff
+    assert "Source revision: `bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb`" in handoff
     assert any(
         "Palantir and Amazon Web Services" in item.decision.edge.candidate_range.text
         for item in controls.controls
@@ -417,4 +429,24 @@ def _audit_inputs() -> tuple[AttachmentEvidenceReference, ...]:
             sha256="a" * 64,
         )
         for label in labels
+    )
+
+
+def _gold_authority() -> tuple[AttachmentEvidenceReference, ...]:
+    return (
+        AttachmentEvidenceReference(
+            label="attachment_gold_development_oracle",
+            path="attachment-gold-development-oracle.json",
+            sha256="b" * 64,
+        ),
+        AttachmentEvidenceReference(
+            label="attachment_gold_selection_report",
+            path="attachment-gold-selection-report.json",
+            sha256="c" * 64,
+        ),
+        AttachmentEvidenceReference(
+            label="attachment_gold_validation_oracle",
+            path="attachment-gold-validation-oracle.json",
+            sha256="d" * 64,
+        ),
     )

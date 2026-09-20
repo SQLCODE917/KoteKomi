@@ -95,12 +95,12 @@ CEA-1.6 produces no canonical intelligence.
 ### Evidence package
 
 - CEA16-PKG-01: The runner must expose `run`, `record-second-opinion`, and `finalize` actions.
-- CEA16-PKG-02: `run` must write the audit report, human review, controls, handoff, manifest, status, and Claude launcher.
+- CEA16-PKG-02: `run` must write the audit report, human review, controls, handoff, manifest, and status.
 - CEA16-PKG-03: The handoff must state the hypothesis, method, authoritative Gold path, scorecard, exact counterexamples, and review questions.
 - CEA16-PKG-04: The handoff must include all twelve Gold-positive losses.
-- CEA16-PKG-05: The Claude launcher must pass the handoff through standard input.
-- CEA16-PKG-06: The Claude launcher must write the review from standard output.
-- CEA16-PKG-07: The Claude launcher must preserve standard error and a machine-readable exit status separately.
+- CEA16-PKG-05: KoteKomi must report the exact handoff path and expected review path without creating or invoking an executable Claude launcher.
+- CEA16-PKG-06: The human must invoke Claude with the handoff on standard input and the review on standard output.
+- CEA16-PKG-07: `record-second-opinion` must require the human-reported Claude exit code and reject any value other than zero.
 - CEA16-PKG-08: `record-second-opinion` must bind a successful non-empty review to its input digest.
 - CEA16-PKG-09: `finalize` must require an evidence-backed verification for each material review claim.
 - CEA16-PKG-10: The terminal manifest must bind every input and output digest.
@@ -141,7 +141,7 @@ Agent             Runner             Pipeline             Human
   |                  |----------------->|                   |
   |                  | report + handoff |                   |
   |                  |<-----------------|                   |
-  |                  | launcher path    |                   |
+  |                  | handoff + review paths              |
   |                  |------------------------------------->|
   |                  |                  | Claude via stdin  |
   |                  |                  | review via stdout |
@@ -162,11 +162,11 @@ CEA-1.6 adds no Ledger schema and no accepted record.
 
 The runner `run` action accepts one CEA-1.5 run root and one output root.
 
-The runner `record-second-opinion` action accepts one output root.
+The runner `record-second-opinion` action accepts one output root and one human-reported exit code.
 
 The runner `finalize` action accepts one output root and one structured claim-verification file.
 
-The generated Claude launcher uses this logical command:
+The agent gives the human an exact one-line command with this shape:
 
 ```text
 claude -p --model opus --effort high --add-dir RUN_ROOT
@@ -174,7 +174,7 @@ claude -p --model opus --effort high --add-dir RUN_ROOT
   > claude-opus-review.md
 ```
 
-The launcher writes Claude standard error to a separate log.
+KoteKomi does not create or execute that command. After the human reports the terminal exit code, `record-second-opinion --reported-exit-code 0` binds the handoff and review digests. A nonzero reported exit code is rejected.
 
 ## 8. Behavior & Domain Rules
 
@@ -194,7 +194,7 @@ The launcher writes Claude standard error to a separate log.
 - CEA16-ACC-03: Pipeline tests reproduce every exact R1-strict count.
 - CEA16-ACC-04: Pipeline tests preserve all twelve Gold-positive losses.
 - CEA16-ACC-05: Pipeline tests reject foreign and digest-drifted evidence.
-- CEA16-ACC-06: Runner tests verify the complete handoff and Claude launcher contract.
+- CEA16-ACC-06: Runner tests verify the complete handoff, reported review path, absence of an executable Claude launcher, and human-reported exit-code contract.
 - CEA16-ACC-07: Runner tests verify review receipt and claim-verification closure.
 - CEA16-ACC-08: The model-free experiment completes with `unsafe` as the R1-strict outcome.
 - CEA16-ACC-09: The full repository suite passes.
