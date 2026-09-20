@@ -136,6 +136,15 @@ from kotekomi_application.competitive_attachment_measurement_authority import (
     attachment_measurement_control_id,
     attachment_measurement_fingerprint,
 )
+from kotekomi_application.competitive_attachment_residual_cue_ablation import (
+    AttachmentResidualCueAblationCase,
+    AttachmentResidualCueAblationOutcome,
+    AttachmentResidualCueAblationPackageStatus,
+    AttachmentResidualCueAblationPreflight,
+    AttachmentResidualCueAblationReport,
+    AttachmentResidualCueAblationStatus,
+    attachment_residual_cue_ablation_fingerprint,
+)
 from kotekomi_application.competitive_attachment_residual_ownership import (
     AttachmentResidualOwnershipCaseEvaluation,
     AttachmentResidualOwnershipObservation,
@@ -2254,6 +2263,12 @@ __all__ = [
     "AttachmentMeasurementPhaseReport",
     "AttachmentMeasurementRuleAnswer",
     "AttachmentMeasurementStatus",
+    "AttachmentResidualCueAblationCase",
+    "AttachmentResidualCueAblationOutcome",
+    "AttachmentResidualCueAblationPackageStatus",
+    "AttachmentResidualCueAblationPreflight",
+    "AttachmentResidualCueAblationReport",
+    "AttachmentResidualCueAblationStatus",
     "AttachmentResidualOwnershipCaseEvaluation",
     "AttachmentResidualOwnershipObservation",
     "AttachmentResidualOwnershipOutcome",
@@ -2337,6 +2352,7 @@ __all__ = [
     "AttachmentReviewVerificationStatus",
     "attachment_measurement_control_id",
     "attachment_measurement_fingerprint",
+    "attachment_residual_cue_ablation_fingerprint",
     "attachment_candidate_remainder_ranges",
     "attachment_contained_foreign_event_ids",
     "attachment_residual_ownership_fingerprint",

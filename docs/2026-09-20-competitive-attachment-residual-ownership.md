@@ -1,6 +1,6 @@
 # TDD: CEA-1.7 Residual Attachment Ownership Diagnostic
 
-- Status: Accepted; implementation in progress; production inactive
+- Status: Verified falsified; production inactive
 - Deliverable ID: `CEA-1.7`
 - Program: [Competitive Event Attachment Program](2026-09-18-competitive-event-attachment-program.md)
 - Predecessor: [CEA-1.6 Attachment Measurement Authority](2026-09-20-competitive-attachment-measurement-authority.md)
@@ -206,3 +206,37 @@ claude -p --model opus --effort high --add-dir RUN_ROOT < HANDOFF > REVIEW
 - Stop when one execution omits its ModelRun or ExtractionStageTrace.
 - Stop when an action would write ProposedChanges or accepted Ledger state.
 - Stop before validation when development does not satisfy its declared gate.
+
+## 12. Experimental Outcome
+
+The development diagnostic completed on 2026-09-20.
+
+Qwen returned `N` for all twenty observations.
+
+The run retained zero of fourteen Gold-positive observations.
+
+The run rejected all six Gold-negative observations.
+
+All ten cases repeated the same semantic answer.
+
+The constant answer makes negative rejection and repetition stability degenerate metrics.
+
+The run created zero ProposedChanges and zero accepted Ledger writes.
+
+The exact model input exposed one confounded demonstration cue.
+
+The positive example listed `Other Events in the passage: NONE`.
+
+The negative example listed one Other Event.
+
+Every scored task listed at least one Other Event.
+
+The implementation computed Candidate Remainder ranges but did not render them explicitly.
+
+The implementation therefore did not satisfy CEA17-MOD-02 as written.
+
+The run-level generation metadata also differed from the settings in each ModelRun.
+
+The ModelRun records remain authoritative for the settings that reached LM Studio.
+
+CEA-1.8 tests the confounded demonstration cue before KoteKomi changes the task criterion.

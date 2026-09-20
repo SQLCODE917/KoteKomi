@@ -1,6 +1,6 @@
 # Competitive Event Attachment Program
 
-- Status: CEA-1 supported; CEA-1.1 mixed; CEA-1.2 verified; CEA-1.3 closed; CEA-1.4 aggregate untested; CEA-1.5 not separable; CEA-1.6 unsafe; CEA-1.7 in progress; production inactive
+- Status: CEA-1 supported; CEA-1.1 mixed; CEA-1.2 verified; CEA-1.3 closed; CEA-1.4 aggregate untested; CEA-1.5 not separable; CEA-1.6 unsafe; CEA-1.7 falsified; CEA-1.8 in progress; production inactive
 - Program ID: `competitive-event-attachment`
 - Parent: [Hybrid Intelligence Extraction Pipeline](2026-09-01-hybrid-intelligence-extraction-pipeline.md)
 - Predecessor evidence:
@@ -298,6 +298,17 @@ Later deliverables define a user story, precondition, and postcondition only.
 **Postcondition:** One task contract is selected for a later aggregate replay, or the experiment records that none is safe.
 
 **TDD:** [CEA-1.7 Residual Attachment Ownership Diagnostic](2026-09-20-competitive-attachment-residual-ownership.md)
+
+### CEA-1.8 — Demonstration cue ablation
+
+**User story:** An operator can identify whether one prompt cue caused the constant answer.
+
+**Precondition:** CEA-1.7 preserves ten exact tasks and twenty stable `N` answers.
+
+**Postcondition:** One prompt-only ablation classifies the Cue Effect without changing production.
+
+**TDD:**
+[CEA-1.8 Demonstration Cue Ablation](2026-09-20-competitive-attachment-demonstration-cue-ablation.md)
 
 ### CEA-2 — Qualification attachment
 
