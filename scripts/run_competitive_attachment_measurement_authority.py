@@ -67,6 +67,16 @@ def main() -> int:
     }[args.command](args)
 
 
+def validated_attachment_calibration_metadata(root: Path) -> dict[str, Any]:
+    """Load and validate one sealed CEA-1.5 run."""
+    return _validated_calibration_metadata(root)
+
+
+def load_attachment_measurement_report(root: Path) -> AttachmentMeasurementAuditReport:
+    """Load one digest-validated CEA-1.6 report."""
+    return _load_report(root)
+
+
 def _run(args: argparse.Namespace) -> int:
     calibration_root = args.calibration_root.resolve()
     output_root = args.output_root.resolve()

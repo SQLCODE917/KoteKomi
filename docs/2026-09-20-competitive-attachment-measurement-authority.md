@@ -1,6 +1,6 @@
 # TDD: CEA-1.6 Attachment Measurement Authority
 
-- Status: Accepted; implementation in progress; production inactive
+- Status: Complete; R1-strict unsafe; production inactive
 - Deliverable ID: `CEA-1.6`
 - Program: [Competitive Event Attachment Program](2026-09-18-competitive-event-attachment-program.md)
 - Predecessor: [CEA-1.5 Calibrated Competitive Edge Filter](2026-09-19-competitive-attachment-edge-filter-calibration.md)

@@ -989,6 +989,7 @@ def execute_attachment_edge_filter_tasks(
     phase: Literal["development", "validation"],
     metadata: dict[str, Any],
     generation_parameters: tuple[ExecutionSetting, ...] | None = None,
+    prompt_id: str = ATTACHMENT_EDGE_FILTER_PROMPT_ID,
 ) -> None:
     evidence_root = Path(_required_str(metadata, f"{phase}_run_root"))
     state = _load_canonical_state(evidence_root / "canonical-state.json")
@@ -1008,6 +1009,7 @@ def execute_attachment_edge_filter_tasks(
                 archive=archive,
                 expected_prompt_sha256=_required_str(metadata, "prompt_sha256"),
                 expected_runtime_contract=_runtime_contract(config),
+                expected_prompt_id=prompt_id,
             )
             print(f"Edge Filter task {ordinal}/{len(tasks)}: reused")
             continue
@@ -1034,7 +1036,7 @@ def execute_attachment_edge_filter_tasks(
                 model_profile=_profile(config),
                 generation_parameters=(generation_parameters or _generation(config)),
                 prompt_bytes=prompt,
-                prompt_id=ATTACHMENT_EDGE_FILTER_PROMPT_ID,
+                prompt_id=prompt_id,
             ),
             ledger=cast(AttachmentEdgeFilterLedger, ledger),
             archive=cast(AttachmentEdgeFilterArchive, archive),
@@ -1096,6 +1098,7 @@ def validate_attachment_edge_filter_execution_record(
     archive: LocalArchiveStore | None = None,
     expected_prompt_sha256: str | None = None,
     expected_runtime_contract: dict[str, object] | None = None,
+    expected_prompt_id: str = ATTACHMENT_EDGE_FILTER_PROMPT_ID,
 ) -> tuple[AttachmentEdgeFilterDecision, dict[str, Any]]:
     value = _read_json(path)
     if value.get("schema_version") != "attachment_edge_filter_execution_v1":
@@ -1162,7 +1165,7 @@ def validate_attachment_edge_filter_execution_record(
     ):
         raise ValueError(f"CEA-1.4 model evidence prompt digest drifted: {path}.")
     if (
-        extraction_task.prompt_id != ATTACHMENT_EDGE_FILTER_PROMPT_ID
+        extraction_task.prompt_id != expected_prompt_id
         or extraction_task.schema_id != ATTACHMENT_EDGE_FILTER_SCHEMA_ID
         or model_run.schema_digest != trace.configuration.get("schema_sha256")
     ):
@@ -1715,6 +1718,11 @@ def _runtime_contract(config: PipelineConfig) -> dict[str, object]:
         "profile_name": value.profile_name,
         "timeout_seconds": value.timeout_seconds,
     }
+
+
+def attachment_edge_filter_runtime_contract(config: PipelineConfig) -> dict[str, object]:
+    """Return the exact CEA Edge Filter runtime contract."""
+    return _runtime_contract(config)
 
 
 def _validate_reference(reference: AttachmentEvidenceReference, *, base: Path) -> None:
