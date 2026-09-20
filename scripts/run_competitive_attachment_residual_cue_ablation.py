@@ -132,7 +132,7 @@ def _prepare(args: argparse.Namespace) -> int:
             "prompt_sha256": cue_prompt.sha256,
             "prompt_id": CUE_PROMPT_ID,
             "tdd_path": str(TDD_PATH),
-            "preflight_sha256": preflight.result_fingerprint,
+            "preflight_fingerprint": preflight.result_fingerprint,
             "configured_generation_parameters": _generation_payload(configured_generation),
             "configured_generation_parameters_sha256": generation_parameters_digest(
                 configured_generation
@@ -145,8 +145,9 @@ def _prepare(args: argparse.Namespace) -> int:
             "production_integration": "not_activated",
         }
     )
-    _write_json(root / "run.json", metadata)
     _write_json(root / "preflight.json", preflight.model_dump(mode="json"))
+    metadata["preflight_file_sha256"] = _file_sha(root / "preflight.json")
+    _write_json(root / "run.json", metadata)
     _write_json(
         root / "tasks-development.json",
         [item.model_dump(mode="json") for item in preflight.tasks],
@@ -176,8 +177,10 @@ def _run(args: argparse.Namespace) -> int:
     preflight = AttachmentResidualCueAblationPreflight.model_validate_json(
         (root / "preflight.json").read_bytes()
     )
-    if preflight.result_fingerprint != metadata.get("preflight_sha256"):
-        raise ValueError("CEA-1.8 preflight digest drifted.")
+    if preflight.result_fingerprint != metadata.get("preflight_fingerprint"):
+        raise ValueError("CEA-1.8 preflight fingerprint drifted.")
+    if _file_sha(root / "preflight.json") != metadata.get("preflight_file_sha256"):
+        raise ValueError("CEA-1.8 preflight file digest drifted.")
     for reference in (*preflight.inputs, preflight.baseline_prompt, preflight.cue_prompt):
         _validate_reference(reference)
     configured_generation = _configured_generation(config)

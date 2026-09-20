@@ -212,9 +212,9 @@ class AttachmentResidualCueAblationReport(BaseModel):
     unresolved_count: Annotated[int, Field(ge=0, le=20)]
     probability_evidence_count: Annotated[int, Field(ge=0, le=20)]
     stable_case_count: Annotated[int, Field(ge=0, le=10)]
-    positive_yes_observation_count: Annotated[int, Field(ge=0, le=16)]
-    positive_recovery_case_count: Annotated[int, Field(ge=0, le=8)]
-    negative_regression_case_count: Annotated[int, Field(ge=0, le=2)]
+    positive_yes_observation_count: Annotated[int, Field(ge=0, le=20)]
+    positive_recovery_case_count: Annotated[int, Field(ge=0, le=10)]
+    negative_regression_case_count: Annotated[int, Field(ge=0, le=10)]
     outcome: AttachmentResidualCueAblationOutcome
     model_execution_count: Literal[20] = 20
     proposed_change_count: Literal[0] = 0

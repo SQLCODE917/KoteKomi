@@ -14,6 +14,7 @@ from kotekomi_application.competitive_attachment_edge_filter import (
     AttachmentEdgeFilterDecision,
     AttachmentEdgeFilterDecisionStatus,
     AttachmentEdgeFilterTask,
+    attachment_edge_filter_model_task_input,
 )
 from kotekomi_application.competitive_attachment_review_verification import (
     AttachmentEvidenceReference,
@@ -21,6 +22,7 @@ from kotekomi_application.competitive_attachment_review_verification import (
 )
 
 _SHA256 = r"^[a-f0-9]{64}$"
+ATTACHMENT_RESIDUAL_REMAINDER_RENDERER_ID = "attachment_residual_remainder_task_v1"
 
 
 class AttachmentResidualOwnershipOutcome(StrEnum):
@@ -359,6 +361,23 @@ def attachment_candidate_remainder_ranges(
             )
         )
     return tuple(ranges)
+
+
+def attachment_residual_remainder_model_task_input(
+    task: AttachmentEdgeFilterTask,
+) -> bytes:
+    """Render exact Candidate Remainder parts without identifiers or offsets."""
+    ranges = attachment_candidate_remainder_ranges(task)
+    lines = [
+        attachment_edge_filter_model_task_input(task).decode("utf-8").rstrip(),
+        "",
+        "Candidate Remainder parts:",
+    ]
+    lines.extend(
+        f"R{index}: <remainder>{item.text}</remainder>"
+        for index, item in enumerate(ranges, start=1)
+    )
+    return ("\n".join(lines) + "\n").encode()
 
 
 def attachment_contained_foreign_event_ids(

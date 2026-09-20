@@ -19,6 +19,10 @@ from kotekomi_application.competitive_attachment_edge_filter import (
     attachment_edge_filter_schema_bytes,
     parse_attachment_edge_filter_answer,
 )
+from kotekomi_application.competitive_attachment_residual_ownership import (
+    ATTACHMENT_RESIDUAL_REMAINDER_RENDERER_ID,
+    attachment_residual_remainder_model_task_input,
+)
 from kotekomi_application.context_planning import (
     HYBRID_MENTION_EVIDENCE_SELECTION_V1,
     PARAGRAPH_SEGMENT_V3,
@@ -90,6 +94,7 @@ class AttachmentEdgeFilterCommand:
     generation_parameters: tuple[ExecutionSetting, ...]
     prompt_bytes: bytes
     prompt_id: str = ATTACHMENT_EDGE_FILTER_PROMPT_ID
+    task_renderer_id: str = ATTACHMENT_EDGE_FILTER_RENDERER_ID
 
 
 @dataclass(frozen=True)
@@ -134,7 +139,7 @@ def run_attachment_edge_filter(
     registry: TaskSchemaRegistry = AttachmentEdgeFilterTaskSchemaRegistry()
     schema = registry.resolve(ATTACHMENT_EDGE_FILTER_SCHEMA_ID)
     manifest = _build_manifest(command, schema, ledger, tokenizer)
-    task_input = attachment_edge_filter_model_task_input(command.task)
+    task_input = _task_input(command)
     outcome = run_bounded_extraction(
         BoundedExtractionInput(
             source_id=command.source_id,
@@ -232,6 +237,14 @@ def attachment_edge_filter_result_sha256(
             separators=(",", ":"),
         ).encode()
     ).hexdigest()
+
+
+def _task_input(command: AttachmentEdgeFilterCommand) -> bytes:
+    if command.task_renderer_id == ATTACHMENT_EDGE_FILTER_RENDERER_ID:
+        return attachment_edge_filter_model_task_input(command.task)
+    if command.task_renderer_id == ATTACHMENT_RESIDUAL_REMAINDER_RENDERER_ID:
+        return attachment_residual_remainder_model_task_input(command.task)
+    raise ValueError(f"Unsupported Attachment Edge Filter renderer: {command.task_renderer_id}")
 
 
 def _parse_runtime_answer(payload: bytes) -> PropositionFragmentAnswer:
@@ -380,7 +393,7 @@ def _edge_filter_trace(
             "policy_id": ATTACHMENT_EDGE_FILTER_POLICY_ID,
             "prompt_sha256": hashlib.sha256(command.prompt_bytes).hexdigest(),
             "schema_sha256": schema.digest,
-            "task_renderer_id": ATTACHMENT_EDGE_FILTER_RENDERER_ID,
+            "task_renderer_id": command.task_renderer_id,
         },
         input_payload={
             "edge_id": command.task.edge.id,

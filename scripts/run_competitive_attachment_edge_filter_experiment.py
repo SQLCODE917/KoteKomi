@@ -16,6 +16,7 @@ from kotekomi_adapters import LocalArchiveStore
 from kotekomi_application import (
     ATTACHMENT_EDGE_FILTER_POLICY_ID,
     ATTACHMENT_EDGE_FILTER_PROMPT_ID,
+    ATTACHMENT_EDGE_FILTER_RENDERER_ID,
     ATTACHMENT_EDGE_FILTER_SCHEMA_ID,
     PARAGRAPH_SEGMENT_V3,
     AttachmentComparisonRange,
@@ -990,6 +991,7 @@ def execute_attachment_edge_filter_tasks(
     metadata: dict[str, Any],
     generation_parameters: tuple[ExecutionSetting, ...] | None = None,
     prompt_id: str = ATTACHMENT_EDGE_FILTER_PROMPT_ID,
+    task_renderer_id: str = ATTACHMENT_EDGE_FILTER_RENDERER_ID,
 ) -> None:
     evidence_root = Path(_required_str(metadata, f"{phase}_run_root"))
     state = _load_canonical_state(evidence_root / "canonical-state.json")
@@ -1010,6 +1012,7 @@ def execute_attachment_edge_filter_tasks(
                 expected_prompt_sha256=_required_str(metadata, "prompt_sha256"),
                 expected_runtime_contract=_runtime_contract(config),
                 expected_prompt_id=prompt_id,
+                expected_task_renderer_id=task_renderer_id,
             )
             print(f"Edge Filter task {ordinal}/{len(tasks)}: reused")
             continue
@@ -1037,6 +1040,7 @@ def execute_attachment_edge_filter_tasks(
                 generation_parameters=(generation_parameters or _generation(config)),
                 prompt_bytes=prompt,
                 prompt_id=prompt_id,
+                task_renderer_id=task_renderer_id,
             ),
             ledger=cast(AttachmentEdgeFilterLedger, ledger),
             archive=cast(AttachmentEdgeFilterArchive, archive),
@@ -1099,6 +1103,7 @@ def validate_attachment_edge_filter_execution_record(
     expected_prompt_sha256: str | None = None,
     expected_runtime_contract: dict[str, object] | None = None,
     expected_prompt_id: str = ATTACHMENT_EDGE_FILTER_PROMPT_ID,
+    expected_task_renderer_id: str = ATTACHMENT_EDGE_FILTER_RENDERER_ID,
 ) -> tuple[AttachmentEdgeFilterDecision, dict[str, Any]]:
     value = _read_json(path)
     if value.get("schema_version") != "attachment_edge_filter_execution_v1":
@@ -1168,6 +1173,7 @@ def validate_attachment_edge_filter_execution_record(
         extraction_task.prompt_id != expected_prompt_id
         or extraction_task.schema_id != ATTACHMENT_EDGE_FILTER_SCHEMA_ID
         or model_run.schema_digest != trace.configuration.get("schema_sha256")
+        or trace.configuration.get("task_renderer_id") != expected_task_renderer_id
     ):
         raise ValueError(f"CEA-1.4 model evidence contract drifted: {path}.")
     if expected_runtime_contract is not None and value.get("runtime_contract") != (

@@ -35,6 +35,17 @@ from kotekomi_application.briefing_generation import (
     read_briefing_citation_registry,
     resolve_briefing_citation,
 )
+from kotekomi_application.competitive_attachment_candidate_remainder import (
+    AttachmentCandidateRemainderArm,
+    AttachmentCandidateRemainderCase,
+    AttachmentCandidateRemainderObservation,
+    AttachmentCandidateRemainderOutcome,
+    AttachmentCandidateRemainderPackageStatus,
+    AttachmentCandidateRemainderPreflight,
+    AttachmentCandidateRemainderReport,
+    AttachmentCandidateRemainderStatus,
+    attachment_candidate_remainder_fingerprint,
+)
 from kotekomi_application.competitive_attachment_discrimination import (
     CompetitiveAttachmentFailureAudit,
     CompetitiveAttachmentFailureAuditCase,
@@ -147,6 +158,7 @@ from kotekomi_application.competitive_attachment_residual_cue_ablation import (
     attachment_residual_cue_ablation_fingerprint,
 )
 from kotekomi_application.competitive_attachment_residual_ownership import (
+    ATTACHMENT_RESIDUAL_REMAINDER_RENDERER_ID,
     AttachmentResidualOwnershipCaseEvaluation,
     AttachmentResidualOwnershipObservation,
     AttachmentResidualOwnershipOutcome,
@@ -159,6 +171,7 @@ from kotekomi_application.competitive_attachment_residual_ownership import (
     attachment_contained_foreign_event_ids,
     attachment_residual_ownership_fingerprint,
     attachment_residual_ownership_task_fingerprint,
+    attachment_residual_remainder_model_task_input,
     build_attachment_residual_ownership_task,
 )
 from kotekomi_application.competitive_attachment_review_verification import (
@@ -2339,6 +2352,14 @@ __all__ = [
     "FilteredAttachmentSet",
     "FilteredAttachmentSetStatus",
     "AttachmentCandidateEvaluation",
+    "AttachmentCandidateRemainderArm",
+    "AttachmentCandidateRemainderCase",
+    "AttachmentCandidateRemainderObservation",
+    "AttachmentCandidateRemainderOutcome",
+    "AttachmentCandidateRemainderPackageStatus",
+    "AttachmentCandidateRemainderPreflight",
+    "AttachmentCandidateRemainderReport",
+    "AttachmentCandidateRemainderStatus",
     "AttachmentCatalogConcentration",
     "AttachmentEvidenceReference",
     "AttachmentMetricSnapshot",
@@ -2354,12 +2375,15 @@ __all__ = [
     "AttachmentReviewVerificationStatus",
     "attachment_measurement_control_id",
     "attachment_measurement_fingerprint",
+    "attachment_candidate_remainder_fingerprint",
     "attachment_residual_cue_ablation_fingerprint",
     "attachment_candidate_remainder_ranges",
     "attachment_contained_foreign_event_ids",
     "attachment_residual_ownership_fingerprint",
+    "attachment_residual_remainder_model_task_input",
     "attachment_residual_ownership_task_fingerprint",
     "build_attachment_residual_ownership_task",
+    "ATTACHMENT_RESIDUAL_REMAINDER_RENDERER_ID",
     "AttachmentComparisonGapCode",
     "AttachmentComparisonRange",
     "AttachmentHeadAwareTriggerObservation",

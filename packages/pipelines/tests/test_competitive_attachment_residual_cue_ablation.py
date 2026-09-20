@@ -12,6 +12,7 @@ from kotekomi_application import (
     AttachmentEdgeFilterDecisionStatus,
     AttachmentEvidenceReference,
     AttachmentResidualGoldAdjudication,
+    AttachmentResidualOwnershipOutcome,
     AttachmentResidualOwnershipReport,
     AttachmentSourceRange,
 )
@@ -79,7 +80,11 @@ def test_report_aligns_exact_cases_and_classifies_the_cue_effect(
     )
     cue = cast(
         AttachmentResidualOwnershipReport,
-        SimpleNamespace(cases=tuple(cue_cases), result_fingerprint="f" * 64),
+        SimpleNamespace(
+            cases=tuple(cue_cases),
+            outcome=AttachmentResidualOwnershipOutcome.FALSIFIED,
+            result_fingerprint="f" * 64,
+        ),
     )
     reference = AttachmentEvidenceReference(label="input", path="/input", sha256=DIGEST)
 
@@ -115,6 +120,9 @@ def test_report_aligns_exact_cases_and_classifies_the_cue_effect(
     assert "silently relabeled" not in handoff
     assert "four of eight positive cases remained false negatives" in handoff
     assert "frozen validation was not run" in handoff
+    assert f"Comparison report fingerprint: `{report.result_fingerprint}`" in handoff
+    assert "Baseline answers are inherited from CEA-1.7" in handoff
+    assert "does not isolate the listed Other Event as the sole cause" in handoff
 
 
 def _case(task: object, expected: str, answers: tuple[str | None, str | None]) -> object:

@@ -13,7 +13,9 @@ from kotekomi_application import (
     PropositionFragmentReason,
     attachment_candidate_remainder_ranges,
     attachment_contained_foreign_event_ids,
+    attachment_edge_filter_model_task_input,
     attachment_pool_edge_id,
+    attachment_residual_remainder_model_task_input,
     build_attachment_edge_filter_task,
     build_attachment_residual_ownership_task,
     competitive_attachment_candidate_id,
@@ -45,6 +47,31 @@ def test_candidate_remainder_requires_proper_containment() -> None:
 
     with pytest.raises(ValueError, match="proper Target Event containment"):
         attachment_candidate_remainder_ranges(task)
+
+
+def test_remainder_renderer_exposes_exact_parts_without_ids_or_offsets() -> None:
+    source = "Acme announced acquisition today."
+    candidate_start = source.index("Acme")
+    candidate_end = source.index(" today")
+    target_start = source.index("announced")
+    target_end = target_start + len("announced")
+    task = _task(
+        source,
+        candidate_start,
+        candidate_end,
+        ((target_start, target_end),),
+        0,
+    )
+
+    rendered = attachment_residual_remainder_model_task_input(task).decode()
+    baseline = attachment_edge_filter_model_task_input(task).decode().rstrip()
+
+    assert rendered.startswith(baseline + "\n\nCandidate Remainder parts:\n")
+    assert "R1: <remainder>Acme </remainder>" in rendered
+    assert "R2: <remainder> acquisition</remainder>" in rendered
+    assert task.edge.id not in rendered
+    assert task.candidate.id not in rendered
+    assert str(candidate_start) not in rendered
 
 
 def _contained_task(*, with_foreign_event: bool) -> AttachmentEdgeFilterTask:

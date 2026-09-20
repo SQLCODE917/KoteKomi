@@ -1,6 +1,6 @@
 # TDD: CEA-1.8 Demonstration Cue Ablation
 
-- Status: Accepted; implementation in progress; production inactive
+- Status: Complete; narrow hypothesis supported; production inactive
 - Deliverable ID: `CEA-1.8`
 - Program:
   [Competitive Event Attachment Program](2026-09-18-competitive-event-attachment-program.md)
@@ -226,3 +226,35 @@ claude -p --model opus --effort high --add-dir RUN_ROOT < HANDOFF > REVIEW
 - Stop when one execution lacks Probability Evidence.
 - Stop when an action would execute validation tasks.
 - Stop when an action would write canonical intelligence.
+
+## 12. Experimental Outcome
+
+CEA-1.8 classified the declared Cue Effect as `supported` on 2026-09-20.
+
+The Cue-Balanced Prompt recovered four of eight corrected Gold-positive cases.
+
+The Cue-Balanced Prompt regressed zero of two corrected Gold-negative cases.
+
+All ten cases produced repeat-stable answers.
+
+Both repetitions produced identical Probability Evidence for each case.
+
+The repetitions therefore verify deterministic serving behavior rather than independent robustness.
+
+The prompt change altered the complete positive demonstration shape.
+
+The change added a second Event, listed that Event, and changed the Target Event label.
+
+The result does not isolate the listed Other Event as the sole cause.
+
+CEA-1.8 did not execute the Baseline Prompt with Probability Evidence.
+
+The result cannot distinguish a selective semantic repair from a general shift toward `Y`.
+
+Four corrected Gold-positive cases remained false negatives.
+
+CEA-1.8 did not execute frozen validation.
+
+The result supports a demonstration-shape effect rather than production-ready Attachment judgment.
+
+CEA-1.9 tests explicit Candidate Remainder rendering with paired Probability Evidence.

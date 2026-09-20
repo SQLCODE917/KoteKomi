@@ -272,7 +272,7 @@ def render_residual_cue_ablation_review(
                 "",
                 f"Cue-Balanced Prompt: `{answer_text}`",
                 "",
-                f"Attachment scores: `{score_text}`",
+                f"Cue attachment scores (rep1/rep2): `{score_text}`",
                 "",
                 "Execution records:",
                 "",
@@ -307,12 +307,16 @@ def render_residual_cue_ablation_handoff(
         "",
         "Only the positive example block changed.",
         "",
-        "The changed positive example includes and lists an unrelated Other Event.",
+        "The changed positive demonstration adds a second Event, lists that Other Event, "
+        "and changes the Target Event label.",
         "",
         "The criterion, negative example, task renderer, model, seed, and temperature "
         "stayed fixed.",
         "",
-        "KoteKomi requested ten token alternatives for diagnostic Probability Evidence.",
+        "The Baseline answers are inherited from CEA-1.7; CEA-1.8 did not re-execute the "
+        "Baseline Prompt or collect Baseline Probability Evidence.",
+        "",
+        "KoteKomi requested ten token alternatives for Cue-Arm Probability Evidence.",
         "",
         "Production integration remained inactive.",
         "",
@@ -347,17 +351,25 @@ def render_residual_cue_ablation_handoff(
         "",
         f"Negative regressions: `{report.negative_regression_case_count}/2`",
         "",
-        "`supported` means the isolated demonstration cue caused repeat-stable positive "
-        "recoveries without a negative regression in this development diagnostic.",
+        "`supported` means the complete positive-demonstration shape caused repeat-stable "
+        "positive recoveries without a negative regression in this development diagnostic.",
         "",
         "It does not mean the attachment task is production-ready: four of eight positive "
         "cases remained false negatives, and frozen validation was not run.",
         "",
         f"Stable cases: `{report.stable_case_count}/10`",
         "",
-        f"Probability Evidence: `{report.probability_evidence_count}/20`",
+        f"Cue-Arm Probability Evidence: `{report.probability_evidence_count}/20`",
         "",
-        f"Ablation report fingerprint: `{cue_report.result_fingerprint}`",
+        f"Comparison report fingerprint: `{report.result_fingerprint}`",
+        "",
+        f"Cue-arm report fingerprint: `{cue_report.result_fingerprint}`",
+        "",
+        f"The cue-arm report outcome is `{cue_report.outcome.value}` under inherited 7-positive/"
+        "3-negative Attachment Gold.",
+        "",
+        "The comparison outcome uses operator-adjudicated 8-positive/2-negative Residual "
+        "Ownership Gold.",
         "",
         "One inherited Attachment Gold answer was operator-adjudicated from `N` to `Y` because "
         "exact-range Attachment membership does not answer semantic Residual Ownership.",
@@ -372,7 +384,15 @@ def render_residual_cue_ablation_handoff(
         "",
         "## Known limitations",
         "",
-        "This experiment tests one demonstration cue.",
+        "This experiment tests one complete positive-demonstration shape change.",
+        "",
+        "It does not isolate the listed Other Event as the sole cause.",
+        "",
+        "Repeat-stable means deterministic under the pinned runtime; it is not independent "
+        "robustness evidence.",
+        "",
+        "Without paired Baseline Probability Evidence, the experiment cannot distinguish a "
+        "selective repair from a general shift toward `Y`.",
         "",
         "It does not repair the Residual Ownership criterion or Candidate Remainder rendering.",
         "",
