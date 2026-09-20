@@ -73,7 +73,7 @@ Use the repository's typed observability commands before inspecting raw files or
 | changing Briefing output | `docs/agent/domain.md`, `docs/agent/pipelines.md`, `docs/agent/output-format.md`, `docs/agent/testing.md` |
 | changing exporters | `docs/agent/adapters.md`, `docs/agent/domain.md`, `docs/agent/testing.md` |
 | changing tests | `docs/agent/testing.md` |
-| implementing a TDD | `docs/agent/implement-tdd-workflow.md`, `docs/agent/testing.md` |
+| implementing a TDD | `docs/agent/testing.md` |
 | diagnosing PDF authoritative text | `docs/agent/pdf-authoritative-text-fidelity.md`, `docs/agent/adapters.md`, `docs/agent/testing.md` |
 | long work, CI handoff, or post-run inspection | `docs/agent/long-running-operations.md` |
 
