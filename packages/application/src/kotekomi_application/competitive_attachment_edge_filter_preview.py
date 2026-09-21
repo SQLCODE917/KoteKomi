@@ -24,9 +24,14 @@ from kotekomi_application.competitive_attachment_partwise_residual_ownership imp
     ATTACHMENT_REMAINDER_PART_RENDERER_ID,
     attachment_remainder_part_model_task_input,
 )
+from kotekomi_application.competitive_attachment_remainder_enumeration_isolation import (
+    ATTACHMENT_FILTERED_REMAINDER_RENDERER_ID,
+    attachment_filtered_remainder_model_task_input,
+)
 from kotekomi_application.competitive_attachment_residual_ownership import (
     ATTACHMENT_RESIDUAL_REMAINDER_RENDERER_ID,
     attachment_residual_remainder_model_task_input,
+    build_attachment_residual_ownership_task,
 )
 from kotekomi_application.context_planning import (
     HYBRID_MENTION_EVIDENCE_SELECTION_V1,
@@ -256,6 +261,11 @@ def _task_input(command: AttachmentEdgeFilterCommand) -> bytes:
         if command.remainder_part_number is not None:
             raise ValueError("The Candidate Remainder renderer cannot select one part.")
         return attachment_residual_remainder_model_task_input(command.task)
+    if command.task_renderer_id == ATTACHMENT_FILTERED_REMAINDER_RENDERER_ID:
+        if command.remainder_part_number is not None:
+            raise ValueError("The Filtered Remainder renderer cannot select one part.")
+        task = build_attachment_residual_ownership_task(command.task)
+        return attachment_filtered_remainder_model_task_input(task)
     if command.task_renderer_id == ATTACHMENT_REMAINDER_PART_RENDERER_ID:
         if command.remainder_part_number is None:
             raise ValueError("The Remainder Part renderer requires one part number.")

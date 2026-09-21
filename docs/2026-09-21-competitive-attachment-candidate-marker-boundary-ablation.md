@@ -1,6 +1,6 @@
 # TDD: CEA-1.14 Candidate Marker Boundary Ablation
 
-- Status: Accepted for implementation; production inactive
+- Status: Implemented; procedural result supported; mechanism inconclusive; production inactive
 - Deliverable ID: `CEA-1.14`
 - Program:
   [Competitive Event Attachment Program](2026-09-18-competitive-event-attachment-program.md)
@@ -229,3 +229,41 @@ Finalization writes one report, review, handoff, and status record.
 - Stop when an action would execute validation tasks.
 - Stop when an action would write canonical intelligence.
 - Stop before production integration regardless of the experimental outcome.
+
+## 12. Experimental Outcome
+
+CEA-1.14 completed on September 21, 2026.
+
+The archived Baseline answered seven of ten cases correctly.
+
+The fresh Structural Trim Arm answered seven of ten cases correctly.
+
+The fresh Introducer Trim Arm answered eight of ten cases correctly.
+
+All forty model executions returned one strict finite answer.
+
+Both fresh arms were stable on all ten cases.
+
+The Introducer Trim Arm recovered one false negative and regressed no correct case.
+
+The typed evaluator therefore returned `supported` under the accepted TDD.
+
+Independent review reconciled every headline metric, file digest, source range, model identity, and generation setting.
+
+The review also established that only three cases received a distinct Introducer input.
+
+Only one perturbed case was a previously correct case, and no perturbed case had Gold answer `N`.
+
+The sole recovery changed both Candidate marker placement and Candidate Remainder enumeration.
+
+Its Remainder inventory contracted from two parts to one part at the same time that its answer changed from stable `N` to stable `Y`.
+
+The other leading-`that` false negative retained two Remainder parts and remained stable `N`.
+
+CEA-1.14 therefore supports its literal existential acceptance gate but does not identify marker placement as the cause.
+
+The reviewed mechanism outcome is `inconclusive`.
+
+The stored report remains unchanged as historical execution evidence.
+
+CEA-1.15 isolates explicit Remainder enumeration while preserving the Authoritative Candidate marker.

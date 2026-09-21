@@ -1,6 +1,6 @@
 # Competitive Event Attachment Program
 
-- Status: CEA-1 supported; CEA-1.1 mixed; CEA-1.2 verified; CEA-1.3 closed; CEA-1.4 aggregate untested; CEA-1.5 not separable; CEA-1.6 unsafe; CEA-1.7 falsified; CEA-1.8 supported narrowly; CEA-1.9 inconclusive; CEA-1.10 falsified; CEA-1.11 inconclusive; CEA-1.12 supported narrowly; CEA-1.13 falsified; CEA-1.14 planned; production inactive
+- Status: CEA-1 supported; CEA-1.1 mixed; CEA-1.2 verified; CEA-1.3 closed; CEA-1.4 aggregate untested; CEA-1.5 not separable; CEA-1.6 unsafe; CEA-1.7 falsified; CEA-1.8 supported narrowly; CEA-1.9 inconclusive; CEA-1.10 falsified; CEA-1.11 inconclusive; CEA-1.12 supported narrowly; CEA-1.13 falsified; CEA-1.14 mechanism inconclusive; CEA-1.15 planned; production inactive
 - Program ID: `competitive-event-attachment`
 - Parent: [Hybrid Intelligence Extraction Pipeline](2026-09-01-hybrid-intelligence-extraction-pipeline.md)
 - Predecessor evidence:
@@ -392,6 +392,17 @@ Under the pinned runtime, the two-token request constrained observed output to t
 **TDD:**
 [CEA-1.14 Candidate Marker Boundary Ablation](2026-09-21-competitive-attachment-candidate-marker-boundary-ablation.md)
 
+### CEA-1.15 — Remainder enumeration isolation
+
+**User story:** An operator can determine whether CEA-1.14 recovered one case because the Candidate marker moved or because one explicitly enumerated Remainder part disappeared.
+
+**Precondition:** CEA-1.14 preserves the exact recovered case, the harder leading-`that` control, and two stable observations per relevant arm.
+
+**Postcondition:** One four-call probe holds both Authoritative Candidate markers fixed while deterministically changing only the explicit Remainder enumeration.
+
+**TDD:**
+[CEA-1.15 Remainder Enumeration Isolation](2026-09-21-competitive-attachment-remainder-enumeration-isolation.md)
+
 ### CEA-2 — Qualification attachment
 
 **User story:** A reviewer sees each qualification attached to the correct Event.
@@ -614,6 +625,28 @@ The result falsifies the exact Part prompt and Aggregate design.
 The result does not authorize production integration.
 
 CEA-1.14 isolates Candidate marker placement while retaining the stable Whole task.
+
+## CEA-1.14 outcome
+
+CEA-1.14 completed its paired Structural Trim and Introducer Trim experiment on September 21, 2026.
+
+Its typed report returned `supported` after Candidate accuracy increased from seven to eight of ten cases.
+
+All forty outputs were strict, all repetitions were stable, and no correct case regressed.
+
+Independent review reproduced the report and found no Gold leakage, source-range error, prompt drift, runtime drift, or canonical write.
+
+The review also showed that the experiment had only three distinct Introducer perturbations.
+
+The one recovery coincided with both a moved Candidate marker and a reduction from two enumerated Remainder parts to one.
+
+The fresh Structural control was reported but was not an accuracy gate in the outcome function.
+
+No Gold-`N` case received the Introducer perturbation.
+
+The procedural report remains `supported`, while the causal mechanism remains `inconclusive`.
+
+CEA-1.15 keeps the Candidate marker fixed and changes only the exact Remainder enumeration in the two relevant cases.
 
 ## Program completion
 
