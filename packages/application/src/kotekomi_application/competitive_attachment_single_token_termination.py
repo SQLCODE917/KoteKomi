@@ -7,6 +7,7 @@ import json
 from enum import StrEnum
 from typing import Annotated, Literal, Self
 
+from kotekomi_domain import ModelRunStatus
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from kotekomi_application.competitive_attachment_edge_filter import (
@@ -98,7 +99,10 @@ class AttachmentSingleTokenObservation(BaseModel):
     archived_bare_argmax: AttachmentEdgeFilterAnswerValue
     decision: AttachmentEdgeFilterDecision
     finite_label_evidence: AttachmentFiniteLabelEvidence | None
-    model_identity_digest: Annotated[str, Field(pattern=_SHA256)] | None
+    model_identity_digest: Annotated[str, Field(pattern=_SHA256)]
+    model_run_status: ModelRunStatus
+    model_error_code: str | None
+    model_error_message: str | None
     execution_record: AttachmentEvidenceReference
     exact_model_input: Annotated[str, Field(min_length=1)]
     raw_output_text: str | None
@@ -119,10 +123,16 @@ class AttachmentSingleTokenObservation(BaseModel):
         )
         if self.strict_valid_output != valid:
             raise ValueError("Single-Token strict validity drifted.")
-        if (self.model_identity_digest is None) != (self.output_token_count is None):
-            raise ValueError("Single-Token receipt identity state drifted.")
-        if self.finite_label_evidence is not None and self.model_identity_digest is None:
-            raise ValueError("Single-Token probability evidence lacks model identity.")
+        if self.finite_label_evidence is not None and self.output_token_count is None:
+            raise ValueError("Single-Token probability evidence lacks an output token count.")
+        if (self.model_error_code is None) != (self.model_error_message is None):
+            raise ValueError("Single-Token model error evidence is incomplete.")
+        successful = self.model_run_status in {
+            ModelRunStatus.SUCCEEDED,
+            ModelRunStatus.ABSTAINED,
+        }
+        if successful == (self.model_error_code is not None):
+            raise ValueError("Single-Token model failure evidence drifted.")
         one_token = self.output_token_count == 1
         if self.output_is_one_token != one_token:
             raise ValueError("Single-Token output count drifted.")

@@ -1,6 +1,6 @@
 # Competitive Event Attachment Program
 
-- Status: CEA-1 supported; CEA-1.1 mixed; CEA-1.2 verified; CEA-1.3 closed; CEA-1.4 aggregate untested; CEA-1.5 not separable; CEA-1.6 unsafe; CEA-1.7 falsified; CEA-1.8 supported narrowly; CEA-1.9 inconclusive; CEA-1.10 falsified; CEA-1.11 accepted; production inactive
+- Status: CEA-1 supported; CEA-1.1 mixed; CEA-1.2 verified; CEA-1.3 closed; CEA-1.4 aggregate untested; CEA-1.5 not separable; CEA-1.6 unsafe; CEA-1.7 falsified; CEA-1.8 supported narrowly; CEA-1.9 inconclusive; CEA-1.10 falsified; CEA-1.11 inconclusive; production inactive
 - Program ID: `competitive-event-attachment`
 - Parent: [Hybrid Intelligence Extraction Pipeline](2026-09-01-hybrid-intelligence-extraction-pipeline.md)
 - Predecessor evidence:
@@ -340,8 +340,29 @@ Later deliverables define a user story, precondition, and postcondition only.
 
 **Postcondition:** Two identical one-token repetitions establish whether deterministic generation bounds preserve the archived first-token decisions and produce strict valid outputs.
 
+**Outcome:** Inconclusive.
+
+LM Studio returned twenty completed responses without an output item at a one-token request limit.
+
+KoteKomi preserved all failed ModelRuns and correctly rejected the missing output text.
+
+Every ready ModelInputAdmission retained the expected model identity.
+
+A direct runtime probe found one emitted token at a two-token request limit.
+
 **TDD:**
 [CEA-1.11 Single-Token Answer Termination](2026-09-20-competitive-attachment-single-token-termination.md)
+
+### CEA-1.12 — Runtime-calibrated finite termination
+
+**User story:** An operator can verify exact finite answers under the smallest functioning runtime limit.
+
+**Precondition:** CEA-1.11 preserves twenty empty-output failures and a bounded output-limit probe.
+
+**Postcondition:** Two identical repetitions classify whether a two-token request yields one exact answer token without changing its first-token distribution.
+
+**TDD:**
+[CEA-1.12 Runtime-Calibrated Finite Termination](2026-09-20-competitive-attachment-runtime-calibrated-termination.md)
 
 ### CEA-2 — Qualification attachment
 

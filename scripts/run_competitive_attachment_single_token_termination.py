@@ -66,8 +66,12 @@ def main() -> int:
     run.add_argument("--config", type=Path, required=True)
     run.add_argument("--run-root", type=Path, required=True)
 
+    finalize = commands.add_parser("finalize")
+    finalize.add_argument("--config", type=Path, required=True)
+    finalize.add_argument("--run-root", type=Path, required=True)
+
     args = parser.parse_args()
-    return {"prepare": _prepare, "run": _run}[args.command](args)
+    return {"prepare": _prepare, "run": _run, "finalize": _finalize}[args.command](args)
 
 
 def _prepare(args: argparse.Namespace) -> int:
@@ -179,6 +183,14 @@ def _prepare(args: argparse.Namespace) -> int:
 
 
 def _run(args: argparse.Namespace) -> int:
+    return _run_or_finalize(args, execute=True)
+
+
+def _finalize(args: argparse.Namespace) -> int:
+    return _run_or_finalize(args, execute=False)
+
+
+def _run_or_finalize(args: argparse.Namespace, *, execute: bool) -> int:
     root = args.run_root.resolve()
     metadata = _read_json(root / "run.json")
     if metadata.get("status") not in {"prepared", "complete"}:
@@ -205,20 +217,21 @@ def _run(args: argparse.Namespace) -> int:
         raise ValueError("CEA-1.11 configured generation settings drifted.")
     if _generation_payload(effective_generation) != metadata.get("effective_generation_parameters"):
         raise ValueError("CEA-1.11 effective generation settings drifted.")
-    tasks = tuple(item.edge_filter_task for item in preflight.tasks)
-    for repetition in (1, 2):
-        cea14.execute_attachment_edge_filter_tasks(
-            root=root,
-            config=config,
-            tasks=tasks,
-            output_directory=root / f"repetition-{repetition}",
-            phase="development",
-            metadata=metadata,
-            generation_parameters=configured_generation,
-            prompt_id=BARE_PROMPT_ID,
-            task_renderer_id=ATTACHMENT_RESIDUAL_REMAINDER_RENDERER_ID,
-            effective_max_output_tokens=EFFECTIVE_MAX_OUTPUT_TOKENS,
-        )
+    if execute:
+        tasks = tuple(item.edge_filter_task for item in preflight.tasks)
+        for repetition in (1, 2):
+            cea14.execute_attachment_edge_filter_tasks(
+                root=root,
+                config=config,
+                tasks=tasks,
+                output_directory=root / f"repetition-{repetition}",
+                phase="development",
+                metadata=metadata,
+                generation_parameters=configured_generation,
+                prompt_id=BARE_PROMPT_ID,
+                task_renderer_id=ATTACHMENT_RESIDUAL_REMAINDER_RENDERER_ID,
+                effective_max_output_tokens=EFFECTIVE_MAX_OUTPUT_TOKENS,
+            )
     archived_input = _archived_model_inputs(metadata, preflight)
     observations = tuple(
         item
@@ -362,13 +375,14 @@ def _load_observations(
         if any(item in exact_input for item in forbidden):
             raise ValueError("CEA-1.11 model input exposes hidden evaluation data.")
         evidence = None
-        identity = None
+        identity = _admitted_model_identity_digest(model_run)
         output_token_count = None
         if model_run.execution_receipt is not None:
             receipt = model_execution_receipt_from_payload(model_run.execution_receipt)
             if receipt.generation_parameters_digest != effective_digest:
                 raise ValueError("CEA-1.11 receipt generation settings drifted.")
-            identity = receipt.model_identity_digest
+            if receipt.model_identity_digest != identity:
+                raise ValueError("CEA-1.11 receipt model identity differs from admission.")
             output_token_count = receipt.output_token_count
             try:
                 evidence = finite_label_evidence(receipt)
@@ -394,6 +408,9 @@ def _load_observations(
                 decision=decision,
                 finite_label_evidence=evidence,
                 model_identity_digest=identity,
+                model_run_status=model_run.status,
+                model_error_code=model_run.error_code,
+                model_error_message=model_run.error_message,
                 execution_record=_file_reference(
                     f"repetition_{repetition}_{residual_task.id}", path
                 ),
@@ -466,11 +483,7 @@ def _validate_model_identity(
     metadata: dict[str, Any],
     observations: tuple[AttachmentSingleTokenObservation, ...],
 ) -> None:
-    live = {
-        item.model_identity_digest
-        for item in observations
-        if item.model_identity_digest is not None
-    }
+    live = {item.model_identity_digest for item in observations}
     if len(live) > 1:
         raise ValueError("CEA-1.11 repetitions used different model identities.")
     predecessor_root = Path(_required_str(metadata, "answer_format_root"))
@@ -484,6 +497,13 @@ def _validate_model_identity(
     }
     if live != archived:
         raise ValueError("CEA-1.11 model identity differs from CEA-1.10 Bare execution.")
+
+
+def _admitted_model_identity_digest(model_run: ModelRun) -> str:
+    admission = model_run.input_admission
+    if admission is None or admission.status.value != "ready":
+        raise ValueError("CEA-1.11 ModelRun lacks ready input admission evidence.")
+    return admission.model_identity_digest
 
 
 def _required_argmax(

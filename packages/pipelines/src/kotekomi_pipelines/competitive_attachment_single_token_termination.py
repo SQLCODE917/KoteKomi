@@ -171,6 +171,12 @@ def render_single_token_review(report: AttachmentSingleTokenReport) -> str:
                     f"Repetition {observation.repetition} execution: "
                     f"`{observation.execution_record.path}`",
                     "",
+                    f"Repetition {observation.repetition} ModelRun status: "
+                    f"`{observation.model_run_status.value}`",
+                    "",
+                    f"Repetition {observation.repetition} runtime error: "
+                    f"`{_runtime_error(observation)}`",
+                    "",
                 )
             )
     return "\n".join(lines).rstrip() + "\n"
@@ -268,3 +274,9 @@ def _observed_answer(observation: AttachmentSingleTokenObservation) -> str:
 def _live_argmax(observation: AttachmentSingleTokenObservation) -> str:
     evidence = observation.finite_label_evidence
     return evidence.finite_label_argmax.value if evidence is not None else "missing"
+
+
+def _runtime_error(observation: AttachmentSingleTokenObservation) -> str:
+    if observation.model_error_code is None:
+        return "none"
+    return f"{observation.model_error_code}: {observation.model_error_message}"
