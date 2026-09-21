@@ -95,6 +95,7 @@ class AttachmentEdgeFilterCommand:
     prompt_bytes: bytes
     prompt_id: str = ATTACHMENT_EDGE_FILTER_PROMPT_ID
     task_renderer_id: str = ATTACHMENT_EDGE_FILTER_RENDERER_ID
+    effective_max_output_tokens: int = ATTACHMENT_EDGE_FILTER_MAX_OUTPUT_TOKENS
 
 
 @dataclass(frozen=True)
@@ -151,7 +152,8 @@ def run_attachment_edge_filter(
                 manifest=manifest,
                 runtime=model_runtime,
                 generation_parameters=attachment_edge_filter_generation_parameters(
-                    command.generation_parameters
+                    command.generation_parameters,
+                    effective_max_output_tokens=command.effective_max_output_tokens,
                 ),
                 schema=schema,
                 task_input=task_input,
@@ -314,21 +316,23 @@ def _execution_spec(
 
 def attachment_edge_filter_generation_parameters(
     settings: tuple[ExecutionSetting, ...],
+    *,
+    effective_max_output_tokens: int = ATTACHMENT_EDGE_FILTER_MAX_OUTPUT_TOKENS,
 ) -> tuple[ExecutionSetting, ...]:
     """Return the effective settings for the finite Y/N/U task contract."""
+    if type(effective_max_output_tokens) is not int or effective_max_output_tokens < 1:
+        raise ValueError("Attachment Edge Filter output-token limit must be positive.")
     if sum(item.key == "max_output_tokens" for item in settings) != 1:
         raise ValueError("Attachment Edge Filter requires one max_output_tokens setting.")
     configured = next(item.value for item in settings if item.key == "max_output_tokens")
-    if type(configured) is not int or configured < ATTACHMENT_EDGE_FILTER_MAX_OUTPUT_TOKENS:
-        raise ValueError("Attachment Edge Filter requires at least three output tokens.")
+    if type(configured) is not int or configured < effective_max_output_tokens:
+        raise ValueError(
+            "Attachment Edge Filter configured output ceiling is below its task limit."
+        )
     return tuple(
         ExecutionSetting(
             item.key,
-            (
-                ATTACHMENT_EDGE_FILTER_MAX_OUTPUT_TOKENS
-                if item.key == "max_output_tokens"
-                else item.value
-            ),
+            (effective_max_output_tokens if item.key == "max_output_tokens" else item.value),
         )
         for item in settings
     )

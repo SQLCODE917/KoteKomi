@@ -1,6 +1,6 @@
 # TDD: CEA-1.9 Explicit Candidate Remainder Experiment
 
-- Status: Accepted for implementation; production inactive
+- Status: Complete; hypothesis inconclusive; production inactive
 - Deliverable ID: `CEA-1.9`
 - Program:
   [Competitive Event Attachment Program](2026-09-18-competitive-event-attachment-program.md)
@@ -237,3 +237,45 @@ The human invokes Claude through standard input and standard output.
 - Stop when one execution lacks Probability Evidence.
 - Stop when an action would execute validation tasks.
 - Stop when an action would write canonical intelligence.
+
+## 12. Experimental Outcome
+
+CEA-1.9 completed on September 20, 2026.
+
+The Baseline Arm returned six correct answers across ten tasks.
+
+The Remainder Arm returned five correct answers across ten tasks.
+
+The Remainder Arm recovered two Gold-positive cases.
+
+The Remainder Arm preserved both Gold-negative answers.
+
+Two Remainder Arm executions returned the invalid raw output `Answer:`.
+
+The report therefore classified the hypothesis as `inconclusive`.
+
+The two invalid executions retained first-position alternatives for `Y`, `N`, and `U`.
+
+A deterministic diagnostic can derive finite-label probabilities from those alternatives.
+
+That diagnostic does not convert either invalid output into a valid model answer.
+
+The counterfactual finite-label argmax is `Y` for both invalid executions.
+
+The resulting counterfactual correct count is seven of ten.
+
+The complete finite-label scores cannot satisfy the declared selectivity gate.
+
+The positive median Score Delta is about `1.629459`.
+
+The maximum negative Score Delta is about `15.840497`.
+
+The prompt pair also changed task wording and demonstrations together.
+
+CEA-1.9 therefore does not isolate the cause of the output failures or semantic changes.
+
+The independent review questioned two Gold answers.
+
+The operator has not approved either proposed Gold change.
+
+CEA-1.10 isolates demonstration answer format without using Gold correctness as its causal endpoint.

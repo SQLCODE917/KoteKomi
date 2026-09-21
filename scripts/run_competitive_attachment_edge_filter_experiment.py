@@ -992,6 +992,7 @@ def execute_attachment_edge_filter_tasks(
     generation_parameters: tuple[ExecutionSetting, ...] | None = None,
     prompt_id: str = ATTACHMENT_EDGE_FILTER_PROMPT_ID,
     task_renderer_id: str = ATTACHMENT_EDGE_FILTER_RENDERER_ID,
+    effective_max_output_tokens: int = 3,
 ) -> None:
     evidence_root = Path(_required_str(metadata, f"{phase}_run_root"))
     state = _load_canonical_state(evidence_root / "canonical-state.json")
@@ -1041,6 +1042,7 @@ def execute_attachment_edge_filter_tasks(
                 prompt_bytes=prompt,
                 prompt_id=prompt_id,
                 task_renderer_id=task_renderer_id,
+                effective_max_output_tokens=effective_max_output_tokens,
             ),
             ledger=cast(AttachmentEdgeFilterLedger, ledger),
             archive=cast(AttachmentEdgeFilterArchive, archive),
