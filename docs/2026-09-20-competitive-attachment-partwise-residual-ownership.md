@@ -1,6 +1,6 @@
 # TDD: CEA-1.13 Part-Wise Residual Ownership
 
-- Status: Accepted for implementation; production inactive
+- Status: Implemented; falsified; production inactive
 - Deliverable ID: `CEA-1.13`
 - Program:
   [Competitive Event Attachment Program](2026-09-18-competitive-event-attachment-program.md)
@@ -233,3 +233,37 @@ Finalization writes one report, review, handoff, and status record.
 - Stop when one arm uses a foreign model identity.
 - Stop when an action would execute validation tasks.
 - Stop when an action would write canonical intelligence.
+
+## 12. Experimental Outcome
+
+CEA-1.13 completed on September 20, 2026.
+
+The Whole Arm answered seven of ten cases correctly.
+
+The Part Arm answered three of ten cases correctly.
+
+The Part Arm recovered one Whole Arm error and regressed five correct Whole Arm answers.
+
+Both arms produced stable answers for all ten cases.
+
+All fifty-four model executions produced one strict finite answer.
+
+The experiment changed no ProposedChange or accepted Ledger record.
+
+The stored report classified the result as `mixed` because CEA113-EVL-12 and CEA113-EVL-13 overlapped.
+
+An independent review reconciled every case and identified that overlap.
+
+CEA113-EVL-13 governs the scientific conclusion because the Part Arm did not improve Candidate accuracy.
+
+The reviewed CEA-1.13 outcome is `falsified`.
+
+The stored report remains unchanged as historical execution evidence.
+
+The review also found that the Part Arm changed the prompt criterion and the available sibling-part context.
+
+CEA-1.13 therefore falsifies its exact Part prompt and Aggregate design.
+
+It does not falsify every possible decomposition method.
+
+CEA-1.14 isolates Candidate marker placement on the stable Whole Arm.

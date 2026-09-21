@@ -1,6 +1,6 @@
 # Competitive Event Attachment Program
 
-- Status: CEA-1 supported; CEA-1.1 mixed; CEA-1.2 verified; CEA-1.3 closed; CEA-1.4 aggregate untested; CEA-1.5 not separable; CEA-1.6 unsafe; CEA-1.7 falsified; CEA-1.8 supported narrowly; CEA-1.9 inconclusive; CEA-1.10 falsified; CEA-1.11 inconclusive; production inactive
+- Status: CEA-1 supported; CEA-1.1 mixed; CEA-1.2 verified; CEA-1.3 closed; CEA-1.4 aggregate untested; CEA-1.5 not separable; CEA-1.6 unsafe; CEA-1.7 falsified; CEA-1.8 supported narrowly; CEA-1.9 inconclusive; CEA-1.10 falsified; CEA-1.11 inconclusive; CEA-1.12 supported narrowly; CEA-1.13 falsified; CEA-1.14 planned; production inactive
 - Program ID: `competitive-event-attachment`
 - Parent: [Hybrid Intelligence Extraction Pipeline](2026-09-01-hybrid-intelligence-extraction-pipeline.md)
 - Predecessor evidence:
@@ -381,6 +381,17 @@ Under the pinned runtime, the two-token request constrained observed output to t
 **TDD:**
 [CEA-1.13 Part-Wise Residual Ownership](2026-09-20-competitive-attachment-partwise-residual-ownership.md)
 
+### CEA-1.14 — Candidate marker boundary ablation
+
+**User story:** An operator can determine whether model-visible Candidate marker boundaries cause stable Whole Arm errors.
+
+**Precondition:** CEA-1.13 preserves ten exact Whole Arm tasks, two stable answers per task, and a completed independent review.
+
+**Postcondition:** Two source-preserving marker variants classify the boundary hypothesis without changing the authoritative Candidate occurrence.
+
+**TDD:**
+[CEA-1.14 Candidate Marker Boundary Ablation](2026-09-21-competitive-attachment-candidate-marker-boundary-ablation.md)
+
 ### CEA-2 — Qualification attachment
 
 **User story:** A reviewer sees each qualification attached to the correct Event.
@@ -579,6 +590,30 @@ Production integration remains `not_activated`.
 
 The preserved V8 and V9 error swaps can reflect one decision-boundary change.
 CEA-1.5 tests this calibration hypothesis before KoteKomi adds routed semantic tasks.
+
+## CEA-1.13 outcome
+
+CEA-1.13 completed its paired Whole Arm and Part Arm experiment on September 20, 2026.
+
+The Whole Arm answered seven of ten cases correctly.
+
+The Part Arm answered three of ten cases correctly.
+
+The Part Arm recovered one Whole Arm error and regressed five correct Whole Arm answers.
+
+All fifty-four executions returned stable strict finite answers.
+
+The stored report classified the result as `mixed` under overlapping outcome rules.
+
+The independent review reconciled all ten cases and identified that taxonomy defect.
+
+The reviewed outcome is `falsified` because Candidate accuracy fell from seven to three.
+
+The result falsifies the exact Part prompt and Aggregate design.
+
+The result does not authorize production integration.
+
+CEA-1.14 isolates Candidate marker placement while retaining the stable Whole task.
 
 ## Program completion
 
