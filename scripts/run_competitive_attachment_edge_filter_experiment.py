@@ -992,6 +992,7 @@ def execute_attachment_edge_filter_tasks(
     generation_parameters: tuple[ExecutionSetting, ...] | None = None,
     prompt_id: str = ATTACHMENT_EDGE_FILTER_PROMPT_ID,
     task_renderer_id: str = ATTACHMENT_EDGE_FILTER_RENDERER_ID,
+    remainder_part_number: int | None = None,
     effective_max_output_tokens: int = 3,
 ) -> None:
     evidence_root = Path(_required_str(metadata, f"{phase}_run_root"))
@@ -1014,6 +1015,7 @@ def execute_attachment_edge_filter_tasks(
                 expected_runtime_contract=_runtime_contract(config),
                 expected_prompt_id=prompt_id,
                 expected_task_renderer_id=task_renderer_id,
+                expected_remainder_part_number=remainder_part_number,
             )
             print(f"Edge Filter task {ordinal}/{len(tasks)}: reused")
             continue
@@ -1042,6 +1044,7 @@ def execute_attachment_edge_filter_tasks(
                 prompt_bytes=prompt,
                 prompt_id=prompt_id,
                 task_renderer_id=task_renderer_id,
+                remainder_part_number=remainder_part_number,
                 effective_max_output_tokens=effective_max_output_tokens,
             ),
             ledger=cast(AttachmentEdgeFilterLedger, ledger),
@@ -1106,6 +1109,7 @@ def validate_attachment_edge_filter_execution_record(
     expected_runtime_contract: dict[str, object] | None = None,
     expected_prompt_id: str = ATTACHMENT_EDGE_FILTER_PROMPT_ID,
     expected_task_renderer_id: str = ATTACHMENT_EDGE_FILTER_RENDERER_ID,
+    expected_remainder_part_number: int | None = None,
 ) -> tuple[AttachmentEdgeFilterDecision, dict[str, Any]]:
     value = _read_json(path)
     if value.get("schema_version") != "attachment_edge_filter_execution_v1":
@@ -1178,6 +1182,13 @@ def validate_attachment_edge_filter_execution_record(
         or trace.configuration.get("task_renderer_id") != expected_task_renderer_id
     ):
         raise ValueError(f"CEA-1.4 model evidence contract drifted: {path}.")
+    observed_part_number = trace.configuration.get("remainder_part_number")
+    if (
+        observed_part_number != expected_remainder_part_number
+        or trace.input.get("remainder_part_number") != expected_remainder_part_number
+    ):
+        if expected_remainder_part_number is not None or observed_part_number is not None:
+            raise ValueError(f"CEA-1.4 Remainder Part selection drifted: {path}.")
     if expected_runtime_contract is not None and value.get("runtime_contract") != (
         expected_runtime_contract
     ):

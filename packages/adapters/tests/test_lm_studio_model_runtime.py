@@ -316,6 +316,60 @@ def test_lm_studio_runtime_accepts_task_output_limit_below_configured_ceiling() 
     assert streaming_client.calls[0][2]["max_output_tokens"] == 1
 
 
+def test_lm_studio_runtime_sends_explicit_frequency_penalty() -> None:
+    streaming_client = FakeStreamingHttpClient(
+        [
+            HttpResponse(
+                200,
+                json.dumps(
+                    {
+                        "model": "fixture-model",
+                        "output": [{"content": [{"type": "output_text", "text": "Y"}]}],
+                        "usage": {"input_tokens": 11, "output_tokens": 1},
+                    }
+                ),
+            )
+        ]
+    )
+    runtime = _runtime(FakeHttpClient([]), streaming_client)
+    task = _task(runtime)
+    task = replace(
+        task,
+        execution_spec=replace(
+            task.execution_spec,
+            generation_parameters=(
+                ExecutionSetting("frequency_penalty", 0.0),
+                *task.execution_spec.generation_parameters,
+            ),
+        ),
+    )
+
+    runtime.run_model_task(task)
+
+    assert streaming_client.calls[0][2]["frequency_penalty"] == 0.0
+
+
+def test_lm_studio_runtime_rejects_invalid_frequency_penalty_before_transport() -> None:
+    streaming_client = FakeStreamingHttpClient([])
+    runtime = _runtime(FakeHttpClient([]), streaming_client)
+    task = _task(runtime)
+    task = replace(
+        task,
+        execution_spec=replace(
+            task.execution_spec,
+            generation_parameters=(
+                ExecutionSetting("frequency_penalty", 2.1),
+                *task.execution_spec.generation_parameters,
+            ),
+        ),
+    )
+
+    with pytest.raises(ModelRuntimeResponseError, match="frequency_penalty"):
+        runtime.run_model_task(task)
+
+    assert streaming_client.calls == []
+
+
 def test_lm_studio_runtime_preserves_requested_output_token_probabilities() -> None:
     streaming_client = FakeStreamingHttpClient(
         [

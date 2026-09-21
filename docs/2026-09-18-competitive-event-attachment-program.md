@@ -353,7 +353,7 @@ A direct runtime probe found one emitted token at a two-token request limit.
 **TDD:**
 [CEA-1.11 Single-Token Answer Termination](2026-09-20-competitive-attachment-single-token-termination.md)
 
-### CEA-1.12 — Runtime-calibrated finite termination
+### CEA-1.12 — Runtime-calibrated budget-bounded output
 
 **User story:** An operator can verify exact finite answers under the smallest functioning runtime limit.
 
@@ -361,8 +361,25 @@ A direct runtime probe found one emitted token at a two-token request limit.
 
 **Postcondition:** Two identical repetitions classify whether a two-token request yields one exact answer token without changing its first-token distribution.
 
+**Outcome:** Supported as a budget-bound output mechanism.
+
+The result does not establish model-chosen termination.
+
+Under the pinned runtime, the two-token request constrained observed output to the finite answer token.
+
 **TDD:**
-[CEA-1.12 Runtime-Calibrated Finite Termination](2026-09-20-competitive-attachment-runtime-calibrated-termination.md)
+[CEA-1.12 Runtime-Calibrated Budget-Bounded Output](2026-09-20-competitive-attachment-runtime-calibrated-termination.md)
+
+### CEA-1.13 — Part-wise residual ownership
+
+**User story:** An operator can determine whether each exact Candidate Remainder part belongs to one Target Event fact.
+
+**Precondition:** CEA-1.12 preserves a stable budget-bound finite-answer mechanism for the ten sealed Residual Ownership cases.
+
+**Postcondition:** KoteKomi compares whole-Candidate and part-wise judgments under one declared runtime contract and preserves exact data-in and data-out evidence.
+
+**TDD:**
+[CEA-1.13 Part-Wise Residual Ownership](2026-09-20-competitive-attachment-partwise-residual-ownership.md)
 
 ### CEA-2 — Qualification attachment
 

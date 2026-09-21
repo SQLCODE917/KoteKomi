@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from kotekomi_domain import ModelRunStatus
+from kotekomi_domain.models import JsonValue
 
 from kotekomi_application.competitive_attachment_edge_filter import (
     AttachmentEdgeFilterAnswerValue,
@@ -18,6 +19,10 @@ from kotekomi_application.competitive_attachment_edge_filter import (
     attachment_edge_filter_model_task_input,
     attachment_edge_filter_schema_bytes,
     parse_attachment_edge_filter_answer,
+)
+from kotekomi_application.competitive_attachment_partwise_residual_ownership import (
+    ATTACHMENT_REMAINDER_PART_RENDERER_ID,
+    attachment_remainder_part_model_task_input,
 )
 from kotekomi_application.competitive_attachment_residual_ownership import (
     ATTACHMENT_RESIDUAL_REMAINDER_RENDERER_ID,
@@ -95,6 +100,7 @@ class AttachmentEdgeFilterCommand:
     prompt_bytes: bytes
     prompt_id: str = ATTACHMENT_EDGE_FILTER_PROMPT_ID
     task_renderer_id: str = ATTACHMENT_EDGE_FILTER_RENDERER_ID
+    remainder_part_number: int | None = None
     effective_max_output_tokens: int = ATTACHMENT_EDGE_FILTER_MAX_OUTPUT_TOKENS
 
 
@@ -243,9 +249,20 @@ def attachment_edge_filter_result_sha256(
 
 def _task_input(command: AttachmentEdgeFilterCommand) -> bytes:
     if command.task_renderer_id == ATTACHMENT_EDGE_FILTER_RENDERER_ID:
+        if command.remainder_part_number is not None:
+            raise ValueError("The default Edge Filter renderer cannot select a Remainder Part.")
         return attachment_edge_filter_model_task_input(command.task)
     if command.task_renderer_id == ATTACHMENT_RESIDUAL_REMAINDER_RENDERER_ID:
+        if command.remainder_part_number is not None:
+            raise ValueError("The Candidate Remainder renderer cannot select one part.")
         return attachment_residual_remainder_model_task_input(command.task)
+    if command.task_renderer_id == ATTACHMENT_REMAINDER_PART_RENDERER_ID:
+        if command.remainder_part_number is None:
+            raise ValueError("The Remainder Part renderer requires one part number.")
+        return attachment_remainder_part_model_task_input(
+            command.task,
+            command.remainder_part_number,
+        )
     raise ValueError(f"Unsupported Attachment Edge Filter renderer: {command.task_renderer_id}")
 
 
@@ -375,6 +392,22 @@ def _edge_filter_trace(
         except UnicodeDecodeError:
             pass
     succeeded = model_run_status is ModelRunStatus.SUCCEEDED and answer is not None
+    configuration: dict[str, JsonValue] = {
+        "policy_id": ATTACHMENT_EDGE_FILTER_POLICY_ID,
+        "prompt_sha256": hashlib.sha256(command.prompt_bytes).hexdigest(),
+        "schema_sha256": schema.digest,
+        "task_renderer_id": command.task_renderer_id,
+    }
+    input_payload: dict[str, JsonValue] = {
+        "edge_id": command.task.edge.id,
+        "task_fingerprint": command.task.task_fingerprint,
+        "model_visible_task": task_input.decode("utf-8"),
+        "exact_model_input": rendered.decode("utf-8"),
+        "exact_model_input_sha256": hashlib.sha256(rendered).hexdigest(),
+    }
+    if command.remainder_part_number is not None:
+        configuration["remainder_part_number"] = command.remainder_part_number
+        input_payload["remainder_part_number"] = command.remainder_part_number
     return build_extraction_stage_trace(
         trace_run_id=f"attachment_edge_filter:{command.task.task_id}",
         ordinal=0,
@@ -393,19 +426,8 @@ def _edge_filter_trace(
             )
         ),
         execution_record_ids=tuple(sorted((extraction_task_id, model_run_id))),
-        configuration={
-            "policy_id": ATTACHMENT_EDGE_FILTER_POLICY_ID,
-            "prompt_sha256": hashlib.sha256(command.prompt_bytes).hexdigest(),
-            "schema_sha256": schema.digest,
-            "task_renderer_id": command.task_renderer_id,
-        },
-        input_payload={
-            "edge_id": command.task.edge.id,
-            "task_fingerprint": command.task.task_fingerprint,
-            "model_visible_task": task_input.decode("utf-8"),
-            "exact_model_input": rendered.decode("utf-8"),
-            "exact_model_input_sha256": hashlib.sha256(rendered).hexdigest(),
-        },
+        configuration=configuration,
+        input_payload=input_payload,
         output_payload={
             "model_run_id": model_run_id,
             "model_run_status": model_run_status.value,

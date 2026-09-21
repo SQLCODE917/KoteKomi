@@ -4,19 +4,30 @@ import hashlib
 
 import pytest
 from kotekomi_application import (
+    AttachmentEdgeFilterAnswerValue,
+    AttachmentEdgeFilterDecision,
     AttachmentEdgeFilterTask,
+    AttachmentPartwiseArm,
+    AttachmentPartwiseObservation,
     AttachmentPoolEdge,
     AttachmentProposalOrigin,
+    AttachmentRemainderPartKind,
+    AttachmentRemainderPartTask,
     AttachmentSourceRange,
     CompetitiveAttachmentCandidate,
     CompetitiveAttachmentEventOption,
     PropositionFragmentReason,
+    aggregate_attachment_remainder_part_answers,
     attachment_candidate_remainder_ranges,
     attachment_contained_foreign_event_ids,
     attachment_edge_filter_model_task_input,
+    attachment_partwise_outcome,
     attachment_pool_edge_id,
+    attachment_remainder_part_kind,
+    attachment_remainder_part_model_task_input,
     attachment_residual_remainder_model_task_input,
     build_attachment_edge_filter_task,
+    build_attachment_remainder_part_tasks,
     build_attachment_residual_ownership_task,
     competitive_attachment_candidate_id,
     competitive_attachment_event_option_id,
@@ -72,6 +83,122 @@ def test_remainder_renderer_exposes_exact_parts_without_ids_or_offsets() -> None
     assert task.edge.id not in rendered
     assert task.candidate.id not in rendered
     assert str(candidate_start) not in rendered
+
+
+def test_part_tasks_preserve_each_exact_remainder_range() -> None:
+    source = "Acme announced acquisition today."
+    task = _task(
+        source,
+        source.index("Acme"),
+        source.index(" today"),
+        ((source.index("announced"), source.index("announced") + len("announced")),),
+        0,
+    )
+    residual = build_attachment_residual_ownership_task(task)
+
+    parts = build_attachment_remainder_part_tasks(residual)
+
+    assert tuple(item.source_range.text for item in parts) == ("Acme ", " acquisition")
+    assert all(item.kind is AttachmentRemainderPartKind.SUBSTANTIVE for item in parts)
+    rendered = attachment_remainder_part_model_task_input(task, 2).decode()
+    assert rendered.endswith("Remainder Part:\n<remainder> acquisition</remainder>\n")
+    assert "R1:" not in rendered
+    assert parts[1].id not in rendered
+
+
+def test_part_task_rejects_a_foreign_residual_task_reference() -> None:
+    residual = build_attachment_residual_ownership_task(_contained_task(with_foreign_event=False))
+    part = build_attachment_remainder_part_tasks(residual)[0]
+
+    with pytest.raises(ValueError, match="foreign Residual Ownership"):
+        AttachmentRemainderPartTask(
+            id=part.id,
+            residual_task_id="aro_" + "f" * 24,
+            edge_filter_task=part.edge_filter_task,
+            part_number=part.part_number,
+            source_range=part.source_range,
+            kind=part.kind,
+            task_fingerprint=part.task_fingerprint,
+        )
+
+
+def test_part_character_class_is_unicode_deterministic() -> None:
+    assert attachment_remainder_part_kind(" , [11] ") is AttachmentRemainderPartKind.SUBSTANTIVE
+    assert attachment_remainder_part_kind(" , — ") is AttachmentRemainderPartKind.STRUCTURAL
+    assert attachment_remainder_part_kind(" 日本 ") is AttachmentRemainderPartKind.SUBSTANTIVE
+
+
+def test_part_answers_use_declared_candidate_level_aggregation() -> None:
+    source = "Acme announced acquisition today."
+    task = _task(
+        source,
+        source.index("Acme"),
+        source.index(" today"),
+        ((source.index("announced"), source.index("announced") + len("announced")),),
+        0,
+    )
+    parts = build_attachment_remainder_part_tasks(build_attachment_residual_ownership_task(task))
+
+    assert (
+        aggregate_attachment_remainder_part_answers(
+            parts,
+            tuple(
+                _part_observation(item, answer)
+                for item, answer in zip(parts, ("Y", "Y"), strict=True)
+            ),
+        )
+        == "Y"
+    )
+    assert (
+        aggregate_attachment_remainder_part_answers(
+            parts,
+            tuple(
+                _part_observation(item, answer)
+                for item, answer in zip(parts, ("Y", "N"), strict=True)
+            ),
+        )
+        == "N"
+    )
+    assert (
+        aggregate_attachment_remainder_part_answers(
+            parts,
+            tuple(
+                _part_observation(item, answer)
+                for item, answer in zip(parts, ("Y", "U"), strict=True)
+            ),
+        )
+        == "U"
+    )
+    with pytest.raises(ValueError, match="inventory"):
+        aggregate_attachment_remainder_part_answers(parts, (_part_observation(parts[0], "Y"),))
+
+
+@pytest.mark.parametrize(
+    ("overrides", "expected"),
+    (
+        ({}, "supported"),
+        ({"regressed_case_count": 1}, "mixed"),
+        ({"recovered_case_count": 0, "part_correct_count": 7}, "falsified"),
+        ({"strict_finite_output_count": 51, "unresolved_output_count": 1}, "inconclusive"),
+    ),
+)
+def test_partwise_outcome_uses_declared_safety_gates(
+    overrides: dict[str, int],
+    expected: str,
+) -> None:
+    values = {
+        "strict_finite_output_count": 54,
+        "unresolved_output_count": 0,
+        "stable_whole_case_count": 10,
+        "stable_part_case_count": 10,
+        "whole_correct_count": 7,
+        "part_correct_count": 10,
+        "recovered_case_count": 3,
+        "regressed_case_count": 0,
+        "part_negative_correct_count": 2,
+    }
+
+    assert attachment_partwise_outcome(**(values | overrides)).value == expected
 
 
 def _contained_task(*, with_foreign_event: bool) -> AttachmentEdgeFilterTask:
@@ -190,4 +317,21 @@ def _task(
         edge=edge,
         candidate=candidate,
         event_options=options,
+    )
+
+
+def _part_observation(
+    part: AttachmentRemainderPartTask,
+    answer: str,
+) -> AttachmentPartwiseObservation:
+    typed_answer = AttachmentEdgeFilterAnswerValue(answer)
+    decision = AttachmentEdgeFilterDecision.model_construct(
+        edge_id=part.edge_filter_task.edge.id,
+        answer=typed_answer,
+    )
+    return AttachmentPartwiseObservation.model_construct(
+        arm=AttachmentPartwiseArm.PART,
+        part_task_id=part.id,
+        decision=decision,
+        strict_finite_answer=True,
     )

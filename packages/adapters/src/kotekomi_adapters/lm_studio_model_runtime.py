@@ -320,7 +320,9 @@ class LMStudioModelRuntime:
 def _generation_parameters_payload(
     task: ModelTaskRequest, configured_max_output_tokens: int
 ) -> dict[str, JsonValue]:
-    supported = frozenset({"max_output_tokens", "seed", "temperature", "top_logprobs"})
+    supported = frozenset(
+        {"frequency_penalty", "max_output_tokens", "seed", "temperature", "top_logprobs"}
+    )
     values: dict[str, JsonValue] = {
         setting.key: setting.value for setting in task.execution_spec.generation_parameters
     }
@@ -337,6 +339,15 @@ def _generation_parameters_payload(
     if max_output_tokens > configured_max_output_tokens:
         raise ModelRuntimeResponseError(
             "LM Studio task max_output_tokens exceeds the configured runtime ceiling."
+        )
+    frequency_penalty = values.get("frequency_penalty")
+    if frequency_penalty is not None and (
+        isinstance(frequency_penalty, bool)
+        or not isinstance(frequency_penalty, (int, float))
+        or not -2.0 <= frequency_penalty <= 2.0
+    ):
+        raise ModelRuntimeResponseError(
+            "LM Studio task frequency_penalty must be a number from -2 through 2."
         )
     top_logprobs = values.pop("top_logprobs", None)
     if top_logprobs is not None:
