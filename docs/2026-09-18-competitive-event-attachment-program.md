@@ -1,6 +1,6 @@
 # Competitive Event Attachment Program
 
-- Status: CEA-1 supported; CEA-1.1 mixed; CEA-1.2 verified; CEA-1.3 closed; CEA-1.4 aggregate untested; CEA-1.5 not separable; CEA-1.6 unsafe; CEA-1.7 falsified; CEA-1.8 supported narrowly; CEA-1.9 inconclusive; CEA-1.10 falsified; CEA-1.11 inconclusive; CEA-1.12 supported narrowly; CEA-1.13 falsified; CEA-1.14 mechanism inconclusive; CEA-1.15 planned; production inactive
+- Status: CEA-1 supported; CEA-1.1 mixed; CEA-1.2 verified; CEA-1.3 closed; CEA-1.4 aggregate untested; CEA-1.5 not separable; CEA-1.6 unsafe; CEA-1.7 falsified; CEA-1.8 supported narrowly; CEA-1.9 inconclusive; CEA-1.10 falsified; CEA-1.11 inconclusive; CEA-1.12 supported narrowly; CEA-1.13 falsified; CEA-1.14 mechanism inconclusive; CEA-1.15 marker movement unnecessary and cardinality unresolved; CEA-1.16 planned; production inactive
 - Program ID: `competitive-event-attachment`
 - Parent: [Hybrid Intelligence Extraction Pipeline](2026-09-01-hybrid-intelligence-extraction-pipeline.md)
 - Predecessor evidence:
@@ -403,6 +403,17 @@ Under the pinned runtime, the two-token request constrained observed output to t
 **TDD:**
 [CEA-1.15 Remainder Enumeration Isolation](2026-09-21-competitive-attachment-remainder-enumeration-isolation.md)
 
+### CEA-1.16 — Remainder cardinality ablation
+
+**User story:** An operator can determine whether the CEA-1.15 recovery depends on presenting one Remainder part rather than two.
+
+**Precondition:** CEA-1.15 preserves a stable recovered answer with an unchanged Candidate marker and one explicitly enumerated Remainder part.
+
+**Postcondition:** One fresh judgment changes only the boundary between two adjacent Remainder parts while preserving every model-visible source character.
+
+**TDD:**
+[CEA-1.16 Remainder Cardinality Ablation](2026-09-21-competitive-attachment-remainder-cardinality-ablation.md)
+
 ### CEA-2 — Qualification attachment
 
 **User story:** A reviewer sees each qualification attached to the correct Event.
@@ -647,6 +658,28 @@ No Gold-`N` case received the Introducer perturbation.
 The procedural report remains `supported`, while the causal mechanism remains `inconclusive`.
 
 CEA-1.15 keeps the Candidate marker fixed and changes only the exact Remainder enumeration in the two relevant cases.
+
+## CEA-1.15 outcome
+
+CEA-1.15 completed on September 21, 2026.
+
+All four outputs were strict finite answers, both cases were repetition-stable, and no canonical state changed.
+
+The recovered FedRAMP case remained `Y/Y` while its Authoritative Candidate marker still included `that`.
+
+The hard control remained `N/N` after the same leading token was removed from its explicitly displayed prefix Remainder.
+
+The stored evaluator returned `supported` and `part_inventory_sufficient` under the accepted TDD.
+
+Independent review and local digest reconciliation confirmed the execution evidence but rejected the broad mechanism wording.
+
+The experiment proves that moving the Candidate marker was not necessary for the recovered case.
+
+It does not distinguish removal of an explicitly listed function word from reduction of the Remainder inventory from two parts to one.
+
+Only one of the two Gold-`Y` cases passed, so stability must not be presented as correctness.
+
+CEA-1.16 preserves all model-visible characters and changes only one Remainder boundary to test the cardinality explanation directly.
 
 ## Program completion
 

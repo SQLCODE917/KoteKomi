@@ -1,6 +1,6 @@
 # TDD: CEA-1.15 Remainder Enumeration Isolation
 
-- Status: Accepted for implementation; production inactive
+- Status: Implemented; marker movement unnecessary; cardinality unresolved; production inactive
 - Deliverable ID: `CEA-1.15`
 - Program:
   [Competitive Event Attachment Program](2026-09-18-competitive-event-attachment-program.md)
@@ -214,3 +214,31 @@ Finalization writes one report, review, handoff, and status record.
 - Stop when an action would execute validation tasks.
 - Stop when an action would write canonical intelligence.
 - Stop before production integration regardless of the experimental outcome.
+
+## 12. Experimental Outcome
+
+CEA-1.15 completed on September 21, 2026.
+
+The report preserved four strict finite outputs under one model identity and runtime contract.
+
+Both repetitions were byte-identical within each case.
+
+The recovered case changed from sealed Structural `N/N` to fresh `Y/Y` while retaining the full Authoritative Candidate marker.
+
+The hard control remained `N/N`.
+
+One of two Gold-`Y` cases therefore passed.
+
+No ProposedChange or accepted Ledger write occurred.
+
+The typed report returned `supported` and `part_inventory_sufficient` under the accepted evaluator.
+
+Independent review and local verification reconciled all direct and predecessor digests, exact inputs, raw outputs, runtime settings, and finite-label probabilities.
+
+The evidence establishes that Candidate-marker movement was not necessary for the recovered case.
+
+The `part_inventory_sufficient` label is broader than the evidence because the successful manipulation both omitted the explicit `that` Remainder and reduced the displayed inventory from two parts to one.
+
+The reviewed mechanism conclusion is therefore `cardinality_unresolved`.
+
+CEA-1.16 splits the same remaining characters into two adjacent parts without changing any source character or marker.

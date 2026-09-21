@@ -165,6 +165,7 @@ def render_remainder_enumeration_review(
     report: AttachmentRemainderEnumerationReport,
 ) -> str:
     """Render exact data-in and data-out for human inspection."""
+    passed_count = sum(item.passed for item in report.cases)
     lines = [
         "# CEA-1.15 Remainder Enumeration Isolation Review",
         "",
@@ -173,6 +174,8 @@ def render_remainder_enumeration_review(
         f"Mechanism: `{report.mechanism.value}`",
         "",
         f"Stable cases: `{report.stable_case_count}/2`",
+        "",
+        f"Passed cases: `{passed_count}/2`",
         "",
         f"Strict finite outputs: `{report.strict_finite_output_count}/4`",
         "",
@@ -239,6 +242,7 @@ def render_remainder_enumeration_handoff(
     source_revision: str,
 ) -> str:
     """Render a self-contained independent-review package."""
+    passed_count = sum(item.passed for item in report.cases)
     lines = [
         "# CEA-1.15 Remainder Enumeration Isolation Handoff",
         "",
@@ -254,6 +258,8 @@ def render_remainder_enumeration_handoff(
         f"Mechanism: `{report.mechanism.value}`",
         "",
         f"Stable cases: `{report.stable_case_count}/2`",
+        "",
+        f"Passed cases: `{passed_count}/2`",
         "",
         f"Strict finite outputs: `{report.strict_finite_output_count}/4`",
         "",
