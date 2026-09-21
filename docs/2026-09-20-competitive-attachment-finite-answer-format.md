@@ -1,6 +1,6 @@
 # TDD: CEA-1.10 Finite Answer Format Isolation
 
-- Status: Accepted for implementation; production inactive
+- Status: Complete; hypothesis falsified; production inactive
 - Deliverable ID: `CEA-1.10`
 - Program:
   [Competitive Event Attachment Program](2026-09-18-competitive-event-attachment-program.md)
@@ -129,7 +129,7 @@ CEA-1.10 creates experimental evidence only.
 - CEA110-EVL-11: `supported` requires a median pressure reduction of at least five natural-log units.
 - CEA110-EVL-11A: `supported` requires ten valid Answer Pressure Delta Upper Bounds.
 - CEA110-EVL-12: `supported` requires Finite Label Argmax agreement on at least nine tasks.
-- CEA110-EVL-13: `mixed` requires improved strict validity with one failed causal gate.
+- CEA110-EVL-13: `mixed` requires arm-level improved strict validity with one or more other failed causal gates.
 - CEA110-EVL-14: `falsified` requires complete evidence without improved strict validity.
 - CEA110-EVL-15: `inconclusive` requires missing execution or Finite Label Evidence.
 
@@ -224,6 +224,56 @@ The human invokes Claude through standard input and standard output.
 - CEA110-ACC-10: The package reports zero canonical writes.
 
 ## 10. Reference Implementations
+
+## 11. Experimental Outcome
+
+CEA-1.10 completed on September 20, 2026.
+
+The exact paired model inputs differed only in the two demonstration answer lines.
+
+All twenty executions used one model identity and complete first-position probability evidence.
+
+The Labeled Arm produced six strict valid outputs.
+
+The Bare Arm produced three strict valid outputs.
+
+Three Labeled Arm outputs began with `Answer`.
+
+No Bare Arm output began with `Answer`.
+
+All ten Bare Arm outputs began with `Y` or `N`.
+
+Seven Bare Arm outputs then continued into explanatory prose and remained invalid under the exact output contract.
+
+Finite Label Argmax agreed on eight of ten tasks.
+
+Both disagreements changed from Labeled `N` to Bare `Y`.
+
+The median Answer Pressure Delta Upper Bound was `-15.4375` natural-log units.
+
+One Bare Arm `Answer` probability was censored below the returned top-ten alternatives.
+
+That censored value did not determine the median.
+
+The whole hypothesis was therefore falsified.
+
+Bare demonstrations removed answer-label imitation but did not preserve semantic preference on the declared threshold or improve strict output validity.
+
+`strict_validity_improvement_count` is a per-case transition count.
+
+It counts cases where the Labeled result was invalid and the Bare result was valid.
+
+It does not mean the Bare Arm improved aggregate strict validity.
+
+The independent review incorrectly reported four distinct source paragraphs.
+
+The ten tasks cover five distinct SourceSegments.
+
+KoteKomi independently verified every handoff file digest.
+
+Prior same-contract CEA-1.4 and CEA-1.5 repetitions produced stable semantic decisions at temperature zero.
+
+CEA-1.11 nevertheless tests the exact Bare contract twice while changing only the effective output limit from eight tokens to one token.
 
 - Bounded execution:
   `packages/application/src/kotekomi_application/competitive_attachment_edge_filter_preview.py`

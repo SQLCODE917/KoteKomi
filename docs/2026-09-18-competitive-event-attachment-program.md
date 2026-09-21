@@ -1,6 +1,6 @@
 # Competitive Event Attachment Program
 
-- Status: CEA-1 supported; CEA-1.1 mixed; CEA-1.2 verified; CEA-1.3 closed; CEA-1.4 aggregate untested; CEA-1.5 not separable; CEA-1.6 unsafe; CEA-1.7 falsified; CEA-1.8 supported narrowly; CEA-1.9 inconclusive; CEA-1.10 accepted; production inactive
+- Status: CEA-1 supported; CEA-1.1 mixed; CEA-1.2 verified; CEA-1.3 closed; CEA-1.4 aggregate untested; CEA-1.5 not separable; CEA-1.6 unsafe; CEA-1.7 falsified; CEA-1.8 supported narrowly; CEA-1.9 inconclusive; CEA-1.10 falsified; CEA-1.11 accepted; production inactive
 - Program ID: `competitive-event-attachment`
 - Parent: [Hybrid Intelligence Extraction Pipeline](2026-09-01-hybrid-intelligence-extraction-pipeline.md)
 - Predecessor evidence:
@@ -331,6 +331,17 @@ Later deliverables define a user story, precondition, and postcondition only.
 
 **TDD:**
 [CEA-1.10 Finite Answer Format Isolation](2026-09-20-competitive-attachment-finite-answer-format.md)
+
+### CEA-1.11 — Single-token answer termination
+
+**User story:** An operator receives exact finite answers without accepting or repairing explanatory model text.
+
+**Precondition:** CEA-1.10 preserves ten Bare Arm first-token decisions and shows that every Bare execution starts with `Y` or `N`.
+
+**Postcondition:** Two identical one-token repetitions establish whether deterministic generation bounds preserve the archived first-token decisions and produce strict valid outputs.
+
+**TDD:**
+[CEA-1.11 Single-Token Answer Termination](2026-09-20-competitive-attachment-single-token-termination.md)
 
 ### CEA-2 — Qualification attachment
 
