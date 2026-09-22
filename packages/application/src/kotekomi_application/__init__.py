@@ -1550,6 +1550,13 @@ from kotekomi_application.structured_news import (
     plan_news_analysis_units,
     select_current_news_revision,
 )
+from kotekomi_application.trigger_scope_split import (
+    TriggerScopeHoldReason,
+    TriggerScopeSourceRange,
+    TriggerScopeSplit,
+    TriggerScopeStatus,
+    split_trigger_scope,
+)
 
 __all__ = [
     "MANAGED_MODEL_RESOURCE_IDS",
@@ -1646,6 +1653,11 @@ __all__ = [
     "UniversalPartOfSpeech",
     "TriggerDecisionDisposition",
     "TriggerDecisionDispositionValue",
+    "TriggerScopeHoldReason",
+    "TriggerScopeSourceRange",
+    "TriggerScopeSplit",
+    "TriggerScopeStatus",
+    "split_trigger_scope",
     "BinarySemanticAnswer",
     "BinarySemanticAnswerValue",
     "EventVerbRoleAnswer",
