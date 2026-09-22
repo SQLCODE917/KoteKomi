@@ -30,6 +30,7 @@ class AttachmentProposalOrigin(StrEnum):
 
     QWEN = "qwen"
     SYNTAX = "syntax"
+    CURATED_TRANSFER = "curated_transfer"
 
 
 class AttachmentPoolArm(StrEnum):

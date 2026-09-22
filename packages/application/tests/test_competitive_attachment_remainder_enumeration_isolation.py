@@ -23,9 +23,12 @@ from kotekomi_application import (
     PropositionFragmentReason,
     attachment_filtered_remainder_model_task_input,
     attachment_filtered_remainder_ranges,
+    attachment_ownership_remainder_model_task_input,
+    attachment_ownership_remainder_ranges,
     attachment_pool_edge_id,
     attachment_remainder_enumeration_mechanism,
     attachment_remainder_enumeration_outcome,
+    attachment_residual_remainder_model_task_input,
     build_attachment_edge_filter_task,
     build_attachment_remainder_enumeration_view,
     build_attachment_residual_ownership_task,
@@ -78,6 +81,34 @@ def test_filter_rejects_task_without_leading_that_remainder() -> None:
 
     with pytest.raises(ValueError, match="requires a leading `that`"):
         attachment_filtered_remainder_ranges(task)
+
+
+def test_transfer_renderer_matches_whole_task_without_leading_that() -> None:
+    source = "Companies offered services."
+    event_start = source.index("offered")
+    task = _task(source, 0, source.index("."), event_start, len("offered"))
+
+    displayed, omitted = attachment_ownership_remainder_ranges(task)
+
+    assert omitted == ()
+    assert displayed == task.remainder_ranges
+    assert attachment_ownership_remainder_model_task_input(
+        task
+    ) == attachment_residual_remainder_model_task_input(task.edge_filter_task)
+
+
+def test_transfer_renderer_matches_filtered_task_with_leading_that() -> None:
+    source = "Companies that offered services."
+    event_start = source.index("offered")
+    task = _task(source, source.index("that"), source.index("."), event_start, len("offered"))
+
+    displayed, omitted = attachment_ownership_remainder_ranges(task)
+
+    assert tuple(item.text for item in displayed) == (" services",)
+    assert tuple(item.text for item in omitted) == ("that ",)
+    assert attachment_ownership_remainder_model_task_input(
+        task
+    ) == attachment_filtered_remainder_model_task_input(task)
 
 
 @pytest.mark.parametrize("failure", ("missing", "duplicate", "foreign"))

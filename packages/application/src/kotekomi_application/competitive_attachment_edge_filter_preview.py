@@ -20,6 +20,12 @@ from kotekomi_application.competitive_attachment_edge_filter import (
     attachment_edge_filter_schema_bytes,
     parse_attachment_edge_filter_answer,
 )
+from kotekomi_application.competitive_attachment_nested_event_ownership import (
+    ATTACHMENT_NESTED_EVENT_OWNERSHIP_NONTHINKING_RENDERER_ID,
+    ATTACHMENT_NESTED_EVENT_OWNERSHIP_RENDERER_ID,
+    attachment_nested_event_ownership_model_task_input,
+    attachment_nested_event_ownership_nonthinking_model_task_input,
+)
 from kotekomi_application.competitive_attachment_partwise_residual_ownership import (
     ATTACHMENT_REMAINDER_PART_RENDERER_ID,
     attachment_remainder_part_model_task_input,
@@ -36,6 +42,10 @@ from kotekomi_application.competitive_attachment_residual_ownership import (
     ATTACHMENT_RESIDUAL_REMAINDER_RENDERER_ID,
     attachment_residual_remainder_model_task_input,
     build_attachment_residual_ownership_task,
+)
+from kotekomi_application.competitive_attachment_residual_transfer import (
+    ATTACHMENT_OWNERSHIP_REMAINDER_RENDERER_ID,
+    attachment_ownership_remainder_model_task_input,
 )
 from kotekomi_application.context_planning import (
     HYBRID_MENTION_EVIDENCE_SELECTION_V1,
@@ -109,6 +119,7 @@ class AttachmentEdgeFilterCommand:
     prompt_bytes: bytes
     prompt_id: str = ATTACHMENT_EDGE_FILTER_PROMPT_ID
     task_renderer_id: str = ATTACHMENT_EDGE_FILTER_RENDERER_ID
+    source_segment_policy_id: str | None = PARAGRAPH_SEGMENT_V3
     remainder_part_number: int | None = None
     effective_max_output_tokens: int = ATTACHMENT_EDGE_FILTER_MAX_OUTPUT_TOKENS
 
@@ -156,6 +167,7 @@ def run_attachment_edge_filter(
     schema = registry.resolve(ATTACHMENT_EDGE_FILTER_SCHEMA_ID)
     manifest = _build_manifest(command, schema, ledger, tokenizer)
     task_input = _task_input(command)
+    _validate_exact_source_context(command, manifest, task_input)
     outcome = run_bounded_extraction(
         BoundedExtractionInput(
             source_id=command.source_id,
@@ -270,6 +282,11 @@ def _task_input(command: AttachmentEdgeFilterCommand) -> bytes:
             raise ValueError("The Filtered Remainder renderer cannot select one part.")
         task = build_attachment_residual_ownership_task(command.task)
         return attachment_filtered_remainder_model_task_input(task)
+    if command.task_renderer_id == ATTACHMENT_OWNERSHIP_REMAINDER_RENDERER_ID:
+        if command.remainder_part_number is not None:
+            raise ValueError("The Ownership Remainder renderer cannot select one part.")
+        task = build_attachment_residual_ownership_task(command.task)
+        return attachment_ownership_remainder_model_task_input(task)
     if command.task_renderer_id == ATTACHMENT_SPLIT_REMAINDER_RENDERER_ID:
         if command.remainder_part_number is not None:
             raise ValueError("The Split Remainder renderer cannot select one part.")
@@ -282,6 +299,14 @@ def _task_input(command: AttachmentEdgeFilterCommand) -> bytes:
             command.task,
             command.remainder_part_number,
         )
+    if command.task_renderer_id == ATTACHMENT_NESTED_EVENT_OWNERSHIP_RENDERER_ID:
+        if command.remainder_part_number is not None:
+            raise ValueError("The Nested Event renderer cannot select a Remainder Part.")
+        return attachment_nested_event_ownership_model_task_input(command.task)
+    if command.task_renderer_id == ATTACHMENT_NESTED_EVENT_OWNERSHIP_NONTHINKING_RENDERER_ID:
+        if command.remainder_part_number is not None:
+            raise ValueError("The Nested Event renderer cannot select a Remainder Part.")
+        return attachment_nested_event_ownership_nonthinking_model_task_input(command.task)
     raise ValueError(f"Unsupported Attachment Edge Filter renderer: {command.task_renderer_id}")
 
 
@@ -306,7 +331,7 @@ def _build_manifest(
             schema_bytes=schema.canonical_schema_bytes,
             renderer_version="competitive_attachment_edge_filter_context_v1",
             evidence_selection_policy_id=HYBRID_MENTION_EVIDENCE_SELECTION_V1,
-            source_segment_policy_id=PARAGRAPH_SEGMENT_V3,
+            source_segment_policy_id=command.source_segment_policy_id,
         ),
         ledger,
         tokenizer,
@@ -324,6 +349,29 @@ def _build_manifest(
         schema.canonical_schema_bytes,
     )
     return planning.manifest
+
+
+def _validate_exact_source_context(
+    command: AttachmentEdgeFilterCommand,
+    manifest: ContextManifest,
+    task_input: bytes,
+) -> None:
+    if command.source_segment_policy_id is not None:
+        return
+    if command.task_renderer_id not in {
+        ATTACHMENT_NESTED_EVENT_OWNERSHIP_RENDERER_ID,
+        ATTACHMENT_NESTED_EVENT_OWNERSHIP_NONTHINKING_RENDERER_ID,
+    }:
+        raise ValueError("Exact Source Context requires a source-exact Passage renderer.")
+    if command.analysis_unit.source_segment_label is not None:
+        raise ValueError("Exact Source Context cannot carry a derived segment label.")
+    source = command.task.source_text.encode("utf-8")
+    context_copy = b"[direct_prose]\n[paragraph]\n" + source
+    task_copy = b"Passage:\n" + source + b"\n"
+    if manifest.rendered_input.count(context_copy) != 1:
+        raise ValueError("Exact Source Context must contain the complete SourceSegment once.")
+    if task_input.count(task_copy) != 1:
+        raise ValueError("Exact task input must contain the complete SourceSegment once.")
 
 
 def _execution_spec(
