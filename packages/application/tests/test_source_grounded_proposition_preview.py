@@ -60,7 +60,7 @@ SOURCE_TEXT = "Sacks stated that Anthropic was running a strategy."
 
 
 class FixtureLedger:
-    def __init__(self) -> None:
+    def __init__(self, source_text: str = SOURCE_TEXT) -> None:
         self.source = Source(
             id="src_proposition_preview",
             source_type=SourceType.MANUAL_FILE,
@@ -70,9 +70,9 @@ class FixtureLedger:
         self.document = Document(
             id="doc_proposition_preview",
             source_id=self.source.id,
-            content_sha256=hashlib.sha256(SOURCE_TEXT.encode()).hexdigest(),
+            content_sha256=hashlib.sha256(source_text.encode()).hexdigest(),
         )
-        self.bundle = _bundle(self.document.id)
+        self.bundle = _bundle(self.document.id, source_text)
         self.analysis_units: dict[str, AnalysisUnitArtifact] = {}
         self.context_manifests: dict[str, ContextManifestArtifact] = {}
         self.extraction_tasks: dict[str, ExtractionTask] = {}
@@ -454,13 +454,13 @@ def _event_inputs() -> tuple[
     return trigger, event, linguistic
 
 
-def _bundle(document_id: str) -> DocumentRepresentationBundle:
+def _bundle(document_id: str, source_text: str = SOURCE_TEXT) -> DocumentRepresentationBundle:
     text_view = TextView(
         id="tvw_proposition_preview",
         representation_id="rep_proposition_preview",
         kind=TextViewKind.LOGICAL,
-        content_digest=hashlib.sha256(SOURCE_TEXT.encode()).hexdigest(),
-        text=SOURCE_TEXT,
+        content_digest=hashlib.sha256(source_text.encode()).hexdigest(),
+        text=source_text,
         normalization_policy="utf8_identity_v1",
     )
     root = DocumentNode(
@@ -470,7 +470,7 @@ def _bundle(document_id: str) -> DocumentRepresentationBundle:
         order_index=0,
         text_view_id=text_view.id,
         start_char=0,
-        end_char=len(SOURCE_TEXT),
+        end_char=len(source_text),
     )
     paragraph = DocumentNode(
         id="nod_proposition_preview_paragraph",
@@ -480,12 +480,12 @@ def _bundle(document_id: str) -> DocumentRepresentationBundle:
         order_index=1,
         text_view_id=text_view.id,
         start_char=0,
-        end_char=len(SOURCE_TEXT),
+        end_char=len(source_text),
     )
     quality = ParseQualityReport(
         id="pqr_proposition_preview",
         representation_id="rep_proposition_preview",
-        metric_values={"text_char_count": len(SOURCE_TEXT)},
+        metric_values={"text_char_count": len(source_text)},
         analyzability=RepresentationAnalyzability.ACCEPTABLE,
     )
     template = DocumentRepresentation(
@@ -495,7 +495,7 @@ def _bundle(document_id: str) -> DocumentRepresentationBundle:
         parser_version="1",
         parser_config_digest="b" * 64,
         processing_task_fingerprint_id="ptf_proposition_preview",
-        input_blob_digest=hashlib.sha256(SOURCE_TEXT.encode()).hexdigest(),
+        input_blob_digest=hashlib.sha256(source_text.encode()).hexdigest(),
         canonical_output_digest="0" * 64,
         created_at=NOW,
     )
