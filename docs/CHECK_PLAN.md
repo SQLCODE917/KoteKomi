@@ -178,3 +178,8 @@
 - agent citation resolution by parsing Markdown instead of structured registry data
 - unsupported claim introduced by Briefing narrative text
 - raw canonical Domain IDs in default human-facing Briefing Markdown
+
+## 9. Event attribution wiring checks
+- verify the deterministic model-free trigger-scope split preserves both the reporting carrier and governed complement, holds a governed-complement-only source as a typed held result, never merges a partial split, and rebuilds from the same inputs with `uv run pytest packages/application/tests/test_trigger_scope_split.py`
+- verify the Event-path attributed-statement constructor emits one `attributed_statement` ProposedAssertion with `attributed_to_id` and `attribution_basis = reported_by_source` for targeted attribution, emits no Assertion for `source_narrator`, fails fast as a typed failure for `unresolved`, and leaves standing-fact `source_report` construction unchanged with `uv run pytest packages/application/tests/test_attributed_statement_construction.py packages/application/tests/test_hybrid_standing_fact_routing.py`
+- verify the first production `supports` ArgumentEdge and its evidence-graph support dimension with `uv run pytest packages/application/tests/test_supports_argument_edge.py packages/application/tests/test_evidence_graph_projection.py`
