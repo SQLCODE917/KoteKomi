@@ -1557,6 +1557,13 @@ from kotekomi_application.trigger_scope_split import (
     TriggerScopeStatus,
     split_trigger_scope,
 )
+from kotekomi_application.attributed_statement_construction import (
+    AttributedStatementFailureReason,
+    AttributedStatementOutcome,
+    AttributedStatementStatus,
+    AttributionTargetResolver,
+    construct_attributed_statement,
+)
 
 __all__ = [
     "MANAGED_MODEL_RESOURCE_IDS",
@@ -1658,6 +1665,11 @@ __all__ = [
     "TriggerScopeSplit",
     "TriggerScopeStatus",
     "split_trigger_scope",
+    "AttributedStatementFailureReason",
+    "AttributedStatementOutcome",
+    "AttributedStatementStatus",
+    "AttributionTargetResolver",
+    "construct_attributed_statement",
     "BinarySemanticAnswer",
     "BinarySemanticAnswerValue",
     "EventVerbRoleAnswer",
