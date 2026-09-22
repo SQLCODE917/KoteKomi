@@ -1,6 +1,6 @@
 # Competitive Event Attachment Program
 
-- Status: CEA-1 supported; CEA-1.1 mixed; CEA-1.2 verified; CEA-1.3 closed; CEA-1.4 aggregate untested; CEA-1.5 not separable; CEA-1.6 unsafe; CEA-1.7 falsified; CEA-1.8 supported narrowly; CEA-1.9 inconclusive; CEA-1.10 falsified; CEA-1.11 inconclusive; CEA-1.12 supported narrowly; CEA-1.13 falsified; CEA-1.14 mechanism inconclusive; CEA-1.15 marker movement unnecessary and cardinality unresolved; CEA-1.16 planned; production inactive
+- Status: CEA-1.23 mixed; CEA-1.24 transport recalibrated with execution pending; production inactive
 - Program ID: `competitive-event-attachment`
 - Parent: [Hybrid Intelligence Extraction Pipeline](2026-09-01-hybrid-intelligence-extraction-pipeline.md)
 - Predecessor evidence:
@@ -414,6 +414,28 @@ Under the pinned runtime, the two-token request constrained observed output to t
 **TDD:**
 [CEA-1.16 Remainder Cardinality Ablation](2026-09-21-competitive-attachment-remainder-cardinality-ablation.md)
 
+### CEA-1.17 — Residual Ownership transfer calibration
+
+**User story:** An operator can determine whether the strongest source-exact Residual Ownership rendering and a development-frozen score threshold transfer beyond the ten development cases.
+
+**Precondition:** CEA-1.13 preserves complete Whole executions, CEA-1.15 preserves the two leading-`that` filtered executions, and CEA-1.16 demonstrates that presentation changes materially affect score even without changing the answer.
+
+**Postcondition:** KoteKomi calibrates on sealed development evidence and evaluates the frozen policy twice on all seven eligible validation cases without changing production.
+
+**TDD:**
+[CEA-1.17 Residual Ownership Transfer Calibration](2026-09-21-competitive-attachment-residual-transfer-calibration.md)
+
+### CEA-1.18 — Dependency-head Residual routing
+
+**User story:** An operator can route exact-head Residual Edges without asking Qwen a semantic question that syntax already answers.
+
+**Precondition:** CEA-1.17 preserves ten development cases and seven validation cases with pinned Stanza traces and two frozen semantic answers per case.
+
+**Postcondition:** KoteKomi separates Head-Aligned Residuals from Semantic Residuals and evaluates the bounded routing policy without a model call.
+
+**TDD:**
+[CEA-1.18 Dependency-Head Residual Routing](2026-09-21-competitive-attachment-dependency-head-routing.md)
+
 ### CEA-2 — Qualification attachment
 
 **User story:** A reviewer sees each qualification attached to the correct Event.
@@ -680,6 +702,348 @@ It does not distinguish removal of an explicitly listed function word from reduc
 Only one of the two Gold-`Y` cases passed, so stability must not be presented as correctness.
 
 CEA-1.16 preserves all model-visible characters and changes only one Remainder boundary to test the cardinality explanation directly.
+
+## CEA-1.16 outcome
+
+CEA-1.16 completed on September 21, 2026.
+
+The two-part Split view returned strict `Y` with a finite-label Attachment Score of `0.461143908412929`.
+
+The registered hypothesis was `falsified` because the answer did not change to `N`.
+
+The one-part CEA-1.15 control scored `5.186837124947065`.
+
+The `4.725693216534136`-nat loss establishes that cardinality remains a material model-input factor even though it was not individually necessary for this answer.
+
+No CEA-1.16 result authorizes a production rendering policy.
+
+CEA-1.17 evaluates the strongest bounded rendering over its full eligible development and validation inventory rather than continuing one-case binary ablations.
+
+## CEA-1.17 outcome
+
+CEA-1.17 completed on September 21, 2026.
+
+The frozen threshold improved development accuracy from eight of ten to nine of ten.
+
+It changed zero validation decisions.
+
+Validation accuracy remained five of seven in both repetitions.
+
+All fourteen validation executions were strict and repetition-stable.
+
+The result is `mixed` under the accepted TDD.
+
+The validation score ranked leading Candidate text instead of Residual Ownership reliably.
+
+Production integration remains `not_activated`.
+
+CEA-1.18 tests dependency-head routing on the same sealed cases without another model call.
+
+## CEA-1.18 outcome
+
+CEA-1.18 completed on September 21, 2026.
+
+The model-free router identified eleven Head-Aligned Residuals and six Semantic Residuals.
+
+The Structural Route retained every Head-Aligned Residual as `Y`.
+
+The Semantic Route preserved the frozen CEA-1.17 threshold answer.
+
+Development accuracy remained nine of ten.
+
+Validation accuracy improved from five of seven to seven of seven.
+
+The router recovered both CEA-1.17 validation false negatives without a regression.
+
+The sealed inventory contains no Head-Aligned Gold-negative case.
+
+Production integration remains `not_activated` until independent review and counterexample coverage.
+
+Independent review reproduced the narrow result and then swept all `935` frozen CEA-1 edges.
+
+The sweep found `58` Head-Aligned edges and eight negatives under the original CEA-1 oracle.
+
+Five of those negatives contain a complete Foreign Event.
+
+The CEA-1.17 task contract already excludes those five edges.
+
+Later human-reviewed Gold changed the remaining three exact edges to `Y`.
+
+CEA-1.19 tests that composed policy over the complete frozen inventory.
+
+## CEA-1.19 scope
+
+CEA-1.19 applies explicit Gold precedence before it evaluates the composed Structural Route.
+
+It retains boundary punctuation as source evidence.
+
+It excludes a Candidate when the Candidate contains a complete Foreign Event.
+
+It assigns deterministic `Y` only after Foreign Event exclusion and exact head alignment.
+
+It invokes no model and cannot activate production routing.
+
+## CEA-1.19 outcome
+
+CEA-1.19 completed on September 21, 2026.
+
+It evaluated all `935` frozen Candidate and Event pairs.
+
+It reproduced `58` Head-Aligned edges.
+
+Reviewed Gold corrected three exact boundary cases from `N` to `Y`.
+
+Five remaining Effective Gold-negative edges contained a complete Foreign Event.
+
+The existing Foreign Event exclusion removed all five negative edges.
+
+All `53` eligible Head-Aligned edges had Effective Gold answer `Y`.
+
+The composed policy excluded no Effective Gold-positive edge.
+
+The report classified the bounded hypothesis as `supported`.
+
+Independent review reproduced the implementation and every reported count.
+
+Independent review found that only `58` of `935` edges reached the Head-Aligned class.
+
+Independent review found that three selected edges depend on disputed Gold overrides.
+
+Independent review found no eligible partial Foreign Event overlap.
+
+The CEA-1.19 report contract also prevented typed failure reports.
+
+CEA-1.20 repairs the report contract and isolates exact self-attachment.
+
+Production integration remains `not_activated`.
+
+## CEA-1.20 outcome
+
+CEA-1.20 completed on September 21, 2026.
+
+It scanned all `935` frozen Candidate and Event pairs.
+
+It found forty Exact Self-Attachment pairs and `895` unequal-range pairs.
+
+All forty exact pairs had Original Gold answer `Y`.
+
+All forty exact pairs also occurred in the Head-Aligned subset.
+
+The other eighteen Head-Aligned pairs had unequal ranges.
+
+That unequal-range subset contained all three disputed Gold overrides.
+
+The Pipeline assigned no answer to unequal-range edges.
+
+The exact route abstained on all three CEA-1.17 reviewed negative controls.
+
+The report classified the bounded hypothesis as `supported`.
+
+The result establishes exact Event self-attachment as an oracle consistency check.
+
+The result covers only forty of `935` edges.
+
+The result does not establish unequal-range attachment.
+
+Production integration remains `not_activated` pending independent transfer evidence.
+
+## CEA-1.21 outcome
+
+CEA-1.21 collected blind semantic judgments for eighteen Head-Aligned unequal-range edges.
+
+The review request omitted Original Gold, Reviewed Gold, Effective Gold, and Structural Selection.
+
+The reviewer answered `Y` for all thirteen selected edges.
+
+The reviewer answered `Y` for four of five excluded edges.
+
+The reviewer answered `N` for one excluded edge that crossed into sibling Event content.
+
+The evaluator classified the registered semantic hypothesis as `mixed`.
+
+The result confirms the Head-Aligned positive route on this inventory.
+
+The result rejects complete Foreign Event exclusion as a semantic rule.
+
+The reviewer wrapped the complete JSON object in a Markdown fence.
+
+The operator preserved the raw response and removed only that fence.
+
+The semantic result remains useful, but the response-format gate failed.
+
+One same-model second pass reproduced the package and agreed with all judgments.
+
+CEA-1.22 tests a bounded nested Event ownership question on the five exclusions.
+
+## CEA-1.22 plan
+
+CEA-1.22 will show Qwen one Head-Aligned Candidate, one target Event, and each contained Event.
+
+Qwen will decide whether all Candidate content remains inside the target Event proposition.
+
+KoteKomi will preserve the CEA-1.21 blind answers as experiment-only evaluation labels.
+
+The diagnostic will run twice under one pinned runtime contract.
+
+The diagnostic cannot establish transfer or activate production.
+
+## CEA-1.22 outcome
+
+CEA-1.22 completed on September 21, 2026.
+
+Qwen matched all five CEA-1.21 blind semantic decisions in two deterministic repetitions.
+
+The result supports the bounded Nested Event ownership task on known cases.
+
+The result does not establish transfer because the prompt author knew every evaluation label.
+
+Three Original Gold disagreements came only from coordinating words or punctuation.
+
+One Original Gold disagreement concerned a substantive nested Event clause.
+
+The Original Gold labels remain valid measurements of exact fragment containment.
+
+They do not serve as direct human judgments of Nested Event ownership.
+
+CEA-1.23 freezes the CEA-1.22 prompt before blind cross-document labeling.
+
+Production integration remains `not_activated`.
+
+## CEA-1.23 plan
+
+CEA-1.23 freezes the exact CEA-1.22 prompt bytes.
+
+It selects twenty unique SourceSegments from two other Documents.
+
+Each case contains one Candidate, one target Event, and at least one Contained Event.
+
+A blind reviewer labels every case before Qwen executes.
+
+Qwen answers the same bounded ownership question once per case.
+
+The evaluator reports occurrence accuracy, class recall, runtime failures, and Document slices.
+
+The experiment cannot activate production.
+
+## CEA-1.23 outcome
+
+CEA-1.23 completed on September 22, 2026.
+
+The blind reviewer labeled twelve cases `Y` and eight cases `N` before Qwen executed.
+
+Qwen2.5-14B answered sixteen of twenty cases correctly.
+
+Accuracy was `0.8`.
+
+`Y` recall was `0.75`.
+
+`N` recall was `0.875`.
+
+Every execution returned one valid finite answer.
+
+The model produced no blocked, failed, invalid, or unclear result.
+
+Three false-negative answers rejected valid modifier or reported-content ownership.
+
+One false-positive answer retained a coordinated sibling Event.
+
+The result is `mixed` under the accepted TDD.
+
+The experiment establishes cross-document task transfer.
+
+The experiment does not establish production reliability.
+
+Production integration remains `not_activated`.
+
+CEA-1.24 first corrects a discovered context-construction confound.
+
+It then compares two local language models under model-specific output transport allowances.
+
+## CEA-1.24 plan
+
+CEA-1.24 will replay all twenty cases with Qwen2.5-14B under Exact Source Context before it runs Qwen3-14B.
+
+Exact Source Context renders the already-selected SourceSegment as one complete focus node instead of applying sentence segmentation to the synthetic experiment paragraph.
+
+The Historical Baseline remains the original CEA-1.23 evidence.
+
+The Comparator Baseline is the corrected twenty-case Qwen2.5 replay.
+
+Historical-to-Comparator transitions measure the context correction.
+
+Comparator-to-Challenger transitions measure the model swap.
+
+The Comparator retains the proven two-token output allowance.
+
+The Challenger uses a sixteen-token output allowance.
+
+The Challenger allowance follows a bounded Qwen3 response-shape probe.
+
+That probe produced no visible text at two tokens and one exact answer at sixteen tokens.
+
+A byte-exact confirmation reproduced one exact answer with the unchanged failed input.
+
+The evaluator requires one exact answer token from either model.
+
+The primary model artifact uses `Q6_K` quantization.
+
+The operator may use `Q5_K_M` only after the Q6 memory estimate or load attempt fails its declared host-safety gate.
+
+The runner will verify the loaded model architecture, parameter count, quantization, model size, instance identifier, and context length through LM Studio model metadata.
+
+The runner will preserve the exact CEA-1.23 semantic prompt and blind labels.
+
+The Qwen3 renderer will append `/no_think` after the complete model-visible task.
+
+The evaluator will report both transition series, class recall, latency, exact input parity, and exact model identity.
+
+The experiment cannot activate production.
+
+## CEA-1.24 outcome
+
+CEA-1.24 completed on September 22, 2026.
+
+The corrected Qwen2.5 Comparator answered sixteen of twenty cases correctly.
+
+The Qwen3 Challenger answered fifteen of twenty cases correctly.
+
+Qwen3 achieved perfect `Y` recall and `0.375` `N` recall by emitted answer.
+
+All twenty Challenger executions returned one valid finite answer token.
+
+The two models disagreed on nine cases.
+
+Qwen3 corrected four Comparator errors and introduced five regressions.
+
+The registered model-swap hypothesis was `falsified`.
+
+Independent review found a stronger class signal in Qwen3's first-token probabilities.
+
+The review found a broad interval that preserves at least `0.85` calibration recall per class.
+
+The evidence does not establish transfer because the same twenty cases exposed that interval.
+
+CEA-1.25 freezes one threshold before it executes on approved Gold Fragment Cases.
+
+Production integration remains `not_activated`.
+
+## CEA-1.25 plan
+
+CEA-1.25 will derive one Frozen Threshold from the sealed CEA-1.24 Qwen3 executions.
+
+It will derive eighty balanced cases from approved Source-Grounded Proposition Gold.
+
+The Transfer Set will cover all forty Gold Events and all nineteen SourceSegments.
+
+Qwen3 will answer the unchanged ownership question under the same prompt and model artifact.
+
+The runtime will request twenty first-position alternatives to reduce score censoring.
+
+The evaluator will compare emitted answers with threshold decisions on the same executions.
+
+The evaluator will report class recall, balanced accuracy, MCC, corrections, and regressions.
+
+The experiment cannot activate production.
 
 ## Program completion
 

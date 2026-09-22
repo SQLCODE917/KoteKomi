@@ -1,6 +1,6 @@
 # TDD: CEA-1.16 Remainder Cardinality Ablation
 
-- Status: Accepted for implementation; production inactive
+- Status: Completed; hypothesis falsified; production inactive
 - Deliverable ID: `CEA-1.16`
 - Program:
   [Competitive Event Attachment Program](2026-09-18-competitive-event-attachment-program.md)
@@ -142,3 +142,31 @@ The human starts and monitors the live model call.
 - Stop if Gold enters the model input.
 - Stop if the execution lacks a typed ModelRun, stage trace, or position-zero Y/N/U evidence.
 - Stop before validation or production integration regardless of outcome.
+
+## 7. Experimental Outcome
+
+CEA-1.16 completed on September 21, 2026.
+
+The fresh Split view returned strict `Y`, and its finite-label argmax was `Y`.
+
+The registered binary hypothesis is therefore `falsified`: one-part cardinality was not necessary for this exact recovery.
+
+The graded evidence prevents a stronger safety conclusion.
+
+The CEA-1.15 one-part Attachment Score was `5.186837124947065`.
+
+The CEA-1.16 two-part Attachment Score was `0.461143908412929`.
+
+Splitting identical Remainder characters therefore reduced the score by `4.725693216534136` nats and reduced normalized `P(Y)` from approximately `0.9944` to `0.6133`.
+
+Cardinality did not cross the binary answer boundary, but it materially influenced the model judgment.
+
+The experiment does not establish that Remainder cardinality is safe to vary in production.
+
+The independent review reproduced the package digests, source ranges, finite-label probabilities, and registered outcome.
+
+Its claim that runtime `input_token_count` contradicts admitted `formatted_input_token_count` is rejected.
+
+Those fields intentionally preserve different accounting domains: LM Studio Responses usage and the SDK-formatted preflight count.
+
+CEA-1.17 replaces further one-case ablations with a calibrated transfer test over the complete eligible Residual Ownership inventory.
