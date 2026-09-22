@@ -1,0 +1,22 @@
+{
+  "schema_version": "attachment_residual_transfer_gold_v1",
+  "cases": [
+    {"task_id":"aro_3aa498554209e756e93831c8","phase":"development","expected_answer":"Y","rationale":"The dispute is the object of intensifying; all meaningful remainder text belongs to that Event."},
+    {"task_id":"aro_465ae54d11500418f1ef30c2","phase":"development","expected_answer":"Y","rationale":"The leading comma is structural punctuation, and the dispute remains the object of intensifying."},
+    {"task_id":"aro_663cb1f408cade57e5d2ebb9","phase":"development","expected_answer":"Y","rationale":"The temporal introducer, subject, and object all describe the targeting Event."},
+    {"task_id":"aro_668b7e61d65bc651ec8d8aa2","phase":"development","expected_answer":"Y","rationale":"The possessive Actor and complete object both belong to the rescission Event."},
+    {"task_id":"aro_7d658622da90db3299ebee76","phase":"development","expected_answer":"Y","rationale":"The complementizer, subject, auxiliary, counterpart, and topic all belong to the discussions Event."},
+    {"task_id":"aro_8dbce6a7ebfb6d2c5c70abc1","phase":"development","expected_answer":"Y","rationale":"The Trump administration is the counterpart of the agreements Event."},
+    {"task_id":"aro_8f06d2a7b2b1d984cda875c6","phase":"development","expected_answer":"N","rationale":"The leading organizations and relative-clause introducer belong to the partnered context, not solely to offered."},
+    {"task_id":"aro_c77944437acba370eaf89cec","phase":"development","expected_answer":"Y","rationale":"The purpose marker and punishment object both belong to the avoid Event."},
+    {"task_id":"aro_d1a1ae617f2f2ed5a4eab9cf","phase":"development","expected_answer":"N","rationale":"The association-as-evidence material expresses a sibling fact outside the nested support Event."},
+    {"task_id":"aro_e05ad7d4c4c93ca6ceac7a6d","phase":"development","expected_answer":"Y","rationale":"The complementizer, offered object, and FedRAMP qualification all belong to the offered Event."},
+    {"task_id":"aro_42ee5d7ae2e42b2e667b78c5","phase":"validation","expected_answer":"Y","rationale":"The regulation bill is the object of the describing Event."},
+    {"task_id":"aro_4bdcc75fd223337e96fd198f","phase":"validation","expected_answer":"Y","rationale":"The effort marker and relationship object express the purpose centered on improve."},
+    {"task_id":"aro_52533f361e70f8c8d41ae592","phase":"validation","expected_answer":"Y","rationale":"The determiner is an incomplete but same-fact continuation of the wrote Event, not a sibling proposition."},
+    {"task_id":"aro_7d1ffe012fd33f62048da97f","phase":"validation","expected_answer":"N","rationale":"The vote material belongs to the urged proposition and is not solely part of the describing Event."},
+    {"task_id":"aro_8146295d93c7b46bd117d0f0","phase":"validation","expected_answer":"Y","rationale":"The hiring subject, officials, appositions, and institutional descriptions all belong to the hiring Event."},
+    {"task_id":"aro_9c79a0d26444bf1173835685","phase":"validation","expected_answer":"Y","rationale":"The determiner, counterpart, and institute name all belong to the agreement Event."},
+    {"task_id":"aro_a78d053d2b82125d272b8977","phase":"validation","expected_answer":"Y","rationale":"The conjunction is structural and the auxiliary and evaluation object all belong to participated; no sibling Event occurs inside the Candidate."}
+  ]
+}

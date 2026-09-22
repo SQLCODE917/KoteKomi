@@ -1,0 +1,147 @@
+{
+  "schema_version": "attachment_nested_transfer_selector_catalog_v1",
+  "source_catalog_path": "docs/organization-mention-held-out-gold-v1.json",
+  "source_catalog_sha256": "fb62ac41c03874d18733cc8040fb9c40869c46ce6fdfad26dcf6511c1af481f4",
+  "selectors": [
+    {
+      "case_id": "NET-001",
+      "source_segment_id": "src_3597db1d9d37a0110e843d36",
+      "candidate_text": "agreed to create their own AI safety institutes, forming an international network",
+      "target_event_text": "agreed",
+      "contained_event_texts": ["create", "forming"]
+    },
+    {
+      "case_id": "NET-002",
+      "source_segment_id": "src_d190533c8199c44b4f8813f8",
+      "candidate_text": "agreed to join the international network of AI safety institutes, but the country has not announced any details yet",
+      "target_event_text": "agreed",
+      "contained_event_texts": ["join", "announced"]
+    },
+    {
+      "case_id": "NET-003",
+      "source_segment_id": "src_d904c4c8403520fb400b5c7e",
+      "candidate_text": "announced in May 2024 that it would create an AI safety institute under the umbrella of the Electronics and Telecommunications Research Institute",
+      "target_event_text": "announced",
+      "contained_event_texts": ["create"]
+    },
+    {
+      "case_id": "NET-004",
+      "source_segment_id": "src_ad489393e8b2773ca67f27ed",
+      "candidate_text": "supported by a tentative investment of somewhere between 10 and 20 million South Korean won per year, and employ at least 30 people",
+      "target_event_text": "supported",
+      "contained_event_texts": ["employ"]
+    },
+    {
+      "case_id": "NET-005",
+      "source_segment_id": "src_022c262c43fc9ea7ab50f188",
+      "candidate_text": "noted that this investment is relatively small, especially considering the presence of many big AI companies in the US",
+      "target_event_text": "noted",
+      "contained_event_texts": ["considering"]
+    },
+    {
+      "case_id": "NET-006",
+      "source_segment_id": "src_519f3b5a4fe48997944898fb",
+      "candidate_text": "articulate how their grouping is different from these preexisting initiatives, how it will effectively engage with them (or not), and for what purpose",
+      "target_event_text": "articulate",
+      "contained_event_texts": ["engage"]
+    },
+    {
+      "case_id": "NET-007",
+      "source_segment_id": "src_f33e661d03d6eb30da6e964e",
+      "candidate_text": "begins with background on the AISI network and explains its importance",
+      "target_event_text": "begins",
+      "contained_event_texts": ["explains"]
+    },
+    {
+      "case_id": "NET-008",
+      "source_segment_id": "src_c11e6867594874247359f844",
+      "candidate_text": "concludes with recommendations regarding nine further questions for developing the goals, collaboration mechanisms, and international strategy of the network",
+      "target_event_text": "concludes",
+      "contained_event_texts": ["developing"]
+    },
+    {
+      "case_id": "NET-009",
+      "source_segment_id": "src_aa711c42246be8aa0e5a1dbd",
+      "candidate_text": "defined by the Bletchley Declaration, issued by attendees of the UK AI Safety Summit in November 2023",
+      "target_event_text": "defined",
+      "contained_event_texts": ["issued"]
+    },
+    {
+      "case_id": "NET-010",
+      "source_segment_id": "src_929796533b4cca14b41eb5cd",
+      "candidate_text": "range from deepfakes to the use of AI for bioterrorism; new risks will emerge as AI's capabilities continue to evolve",
+      "target_event_text": "range",
+      "contained_event_texts": ["emerge", "evolve"]
+    },
+    {
+      "case_id": "NET-011",
+      "source_segment_id": "src_ec20dcbb472db80e92be19d1",
+      "candidate_text": "focuses on how frontier AI developers, deployers, and users build, manage, and monitor AI models, including by evaluating models for capabilities, limitations, and risks, and documenting and reporting model information",
+      "target_event_text": "focuses",
+      "contained_event_texts": ["build", "manage", "monitor", "evaluating", "documenting", "reporting"]
+    },
+    {
+      "case_id": "NET-012",
+      "source_segment_id": "src_6a506a253a942708c1f29c49",
+      "candidate_text": "include processes that are implemented by the users of AI",
+      "target_event_text": "include",
+      "contained_event_texts": ["implemented"]
+    },
+    {
+      "case_id": "NET-013",
+      "source_segment_id": "src_2b39b66cc84c4391721d3939",
+      "candidate_text": "said in a CSIS interview , 'safety promotes trust, which promotes adoption, which drives innovation.'",
+      "target_event_text": "said",
+      "contained_event_texts": ["promotes trust", "promotes adoption", "drives"]
+    },
+    {
+      "case_id": "NET-014",
+      "source_segment_id": "src_9d7da900aaa419b3aa6ff4a8",
+      "candidate_text": "perform functions such as forming consortia of AI researchers, stakeholders, and experts and promoting the international adoption of AI safety guidelines that are outside the scope of the AISIC",
+      "target_event_text": "perform",
+      "contained_event_texts": ["forming", "promoting"]
+    },
+    {
+      "case_id": "NET-015",
+      "source_segment_id": "src_27367d1776d8d734c72edb7c",
+      "candidate_text": "argues that authorizing the AISI \"provides a venue to convene the leading experts across industry and government to contribute to the development of voluntary standards that ultimately assist in de-risking adoption of AI technologies",
+      "target_event_text": "argues",
+      "contained_event_texts": ["authorizing", "provides", "convene", "contribute", "assist", "de-risking"]
+    },
+    {
+      "case_id": "NET-016",
+      "source_segment_id": "src_d990070f8f98ab88984ca8e3",
+      "candidate_text": "Established in the 1970s to reduce accidents and deaths by encouraging manufacturers to produce safer vehicles, NHTSA led what has become today an industry standard of crash testing and rating vehicles out of five stars according to their safety",
+      "target_event_text": "Established",
+      "contained_event_texts": ["reduce", "encouraging", "produce", "led", "become", "testing", "rating"]
+    },
+    {
+      "case_id": "NET-017",
+      "source_segment_id": "src_2bb356a9a8c852dc97d584a8",
+      "candidate_text": "stated , '[o]ur 5-Star Safety Ratings system continues to give Americans the information they need to choose the vehicle that's right for them. The program also encourages vehicle manufacturers to incorporate advanced vehicle safety technologies into more makes and models, ultimately reducing injuries and deaths on America's roads.'",
+      "target_event_text": "stated",
+      "contained_event_texts": ["continues", "give", "choose", "encourages", "incorporate", "reducing"]
+    },
+    {
+      "case_id": "NET-018",
+      "source_segment_id": "src_82649f44d776cdf22df5b19c",
+      "candidate_text": "sign up for the NHTSA's 5-star system and use the results in advertising new vehicle models",
+      "target_event_text": "sign up",
+      "contained_event_texts": ["use the results", "advertising"]
+    },
+    {
+      "case_id": "NET-019",
+      "source_segment_id": "src_15356fd252742ecc774fea5f",
+      "candidate_text": "signed a memorandum of understanding with the United Kingdom for close collaboration between institutes and established a dialogue with the EU AI Office to jointly develop evaluation tools for AI models",
+      "target_event_text": "signed",
+      "contained_event_texts": ["established", "develop"]
+    },
+    {
+      "case_id": "NET-020",
+      "source_segment_id": "src_e45ea255edf0e5a931149188",
+      "candidate_text": "decides to develop its codes of practice alone, the network will still provide the United States with a direct line of communication to the EU AI Office for articulating AI safety best practices in the future",
+      "target_event_text": "decides",
+      "contained_event_texts": ["develop", "provide", "articulating"]
+    }
+  ]
+}

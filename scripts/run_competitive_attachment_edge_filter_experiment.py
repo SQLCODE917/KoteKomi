@@ -1248,6 +1248,16 @@ def _validated_cea1_evidence(
     return _PhaseEvidence(root, report, inputs, matrices, oracle, bindings)
 
 
+def validate_competitive_attachment_phase_evidence(
+    root: Path,
+    *,
+    expected_phase: Literal["development", "validation"],
+) -> None:
+    """Validate one finalized CEA-1 phase package without exposing runner internals."""
+
+    _validated_cea1_evidence(root, expected_phase=expected_phase)
+
+
 def _validated_review_evidence(root: Path) -> AttachmentReviewVerificationReport:
     report_path = root / "report.json"
     report = AttachmentReviewVerificationReport.model_validate_json(report_path.read_bytes())
