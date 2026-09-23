@@ -228,6 +228,10 @@ from kotekomi_pipelines.config import (
     load_processing_config,
     load_processing_storage_config,
 )
+from kotekomi_pipelines.event_attribution_stage_local import (
+    load_event_attribution_manifest,
+    submit_event_attribution,
+)
 from kotekomi_pipelines.hybrid_document_ingestion import (
     HybridDocumentIngestionInput,
     HybridParagraphProgress,
@@ -509,6 +513,18 @@ def main(argv: list[str] | None = None) -> int:
             document_ids=tuple(args.document_id),
             proposer=args.proposer,
             rationale=args.rationale,
+            output_format=args.output_format,
+        )
+
+    if args.command == "submit-attribution":
+        config = load_config(
+            config_path=args.config,
+            ledger_path_override=args.ledger_path,
+            archive_path_override=None,
+        )
+        return submit_event_attribution_manifest(
+            config=config,
+            manifest_path=args.manifest,
             output_format=args.output_format,
         )
 
@@ -1133,6 +1149,16 @@ def build_parser() -> argparse.ArgumentParser:
         "--format", dest="output_format", choices=("text", "json"), default="text"
     )
     lineage_propose_parser.add_argument("--ledger-path", type=Path, default=None)
+
+    submit_attribution_parser = subparsers.add_parser(
+        "submit-attribution",
+        help="Submit one reviewed Event attribution manifest for review.",
+    )
+    submit_attribution_parser.add_argument("--manifest", type=Path, required=True)
+    submit_attribution_parser.add_argument(
+        "--format", dest="output_format", choices=("text", "json"), default="text"
+    )
+    submit_attribution_parser.add_argument("--ledger-path", type=Path, default=None)
 
     model_parser = subparsers.add_parser("model", help="Local model runtime commands.")
     model_subparsers = model_parser.add_subparsers(dest="model_command")
@@ -2851,6 +2877,36 @@ def build_hybrid_event_semantics(
     for diagnostic in result.preview.diagnostics:
         print(diagnostic, file=sys.stderr)
     return 0 if result.preview.terminal_status is HybridEventSemanticsStatus.COMPLETE else 1
+
+
+def submit_event_attribution_manifest(
+    *,
+    config: PipelineConfig,
+    manifest_path: Path,
+    output_format: str,
+) -> int:
+    """Load and submit one reviewed Event attribution manifest as a ProposedChange."""
+    try:
+        manifest = load_event_attribution_manifest(manifest_path)
+        with sqlite_ledger_transaction(config.ledger_path) as ledger_repository:
+            result = submit_event_attribution(manifest=manifest, ledger=ledger_repository)
+    except (OSError, sqlite3.Error, ValueError) as error:
+        print(f"Event attribution submission failed: {error}", file=sys.stderr)
+        return 1
+    payload = {
+        "status": result.status,
+        "wiring_status": result.wiring_status.value,
+        "proposed_change_id": result.proposed_change_id,
+        "assertion_id": result.assertion_id,
+        "provenance_activity_id": result.provenance_activity_id,
+        "failure": result.proposal_failure.value if result.proposal_failure is not None else None,
+    }
+    if output_format == "json":
+        print(json.dumps(payload, sort_keys=True))
+    else:
+        for key, value in payload.items():
+            print(f"{key}: {value}")
+    return 0 if result.status in {"pending", "recorded"} else 1
 
 
 def submit_hybrid_event_changes(
