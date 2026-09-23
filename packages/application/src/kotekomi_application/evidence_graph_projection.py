@@ -1089,6 +1089,14 @@ def _assessment_records(
                 and item.to_assertion_id in support_ids
             )
         )
+        supports_ids = tuple(
+            sorted(
+                item.id
+                for item in argument_edges
+                if item.relation is ArgumentEdgeRelation.SUPPORTS
+                and item.to_assertion_id in support_ids
+            )
+        )
         document_ids = tuple(
             sorted({item_id for item in edge_contributions for item_id in item.source_document_ids})
         )
@@ -1111,6 +1119,15 @@ def _assessment_records(
                     else EvidenceGraphDimensionValue.ABSENT
                 ),
                 contradiction_ids or support_ids,
+            ),
+            (
+                EvidenceGraphDimensionName.SUPPORT,
+                (
+                    EvidenceGraphDimensionValue.PRESENT
+                    if supports_ids
+                    else EvidenceGraphDimensionValue.ABSENT
+                ),
+                supports_ids or support_ids,
             ),
             (
                 EvidenceGraphDimensionName.SOURCE_LINEAGE,
@@ -1145,7 +1162,12 @@ def _assessment_records(
             for name, value, inputs in specifications
         )
         dimensions.extend(edge_dimensions)
-        score_identity = (projection_manifest_id, edge.relationship_id, contradiction_ids)
+        score_identity = (
+            projection_manifest_id,
+            edge.relationship_id,
+            contradiction_ids,
+            supports_ids,
+        )
         score = EvidenceGraphScore(
             score_id=f"egs_{_digest(score_identity)[:24]}",
             projection_manifest_id=projection_manifest_id,

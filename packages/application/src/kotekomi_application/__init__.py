@@ -23,6 +23,13 @@ from kotekomi_application.analysis_coverage import (
     record_analysis_item_attempt,
     start_analysis_run,
 )
+from kotekomi_application.attributed_statement_construction import (
+    AttributedStatementFailureReason,
+    AttributedStatementOutcome,
+    AttributedStatementStatus,
+    AttributionTargetResolver,
+    construct_attributed_statement,
+)
 from kotekomi_application.briefing_generation import (
     BRIEFING_GENERATION_ACTIVITY,
     BriefingGenerationInput,
@@ -1550,19 +1557,24 @@ from kotekomi_application.structured_news import (
     plan_news_analysis_units,
     select_current_news_revision,
 )
+from kotekomi_application.support_edge_production import (
+    SUPPORT_EDGE_ACTIVITY_TYPE,
+    SUPPORT_EDGE_AGENT,
+    ProduceSupportEdgeInput,
+    SupportEdgeError,
+    SupportEdgeFailureCode,
+    SupportEdgeLedger,
+    SupportEdgeProductionResult,
+    produce_support_edge,
+    support_argument_edge_id,
+    support_edge_provenance_activity_id,
+)
 from kotekomi_application.trigger_scope_split import (
     TriggerScopeHoldReason,
     TriggerScopeSourceRange,
     TriggerScopeSplit,
     TriggerScopeStatus,
     split_trigger_scope,
-)
-from kotekomi_application.attributed_statement_construction import (
-    AttributedStatementFailureReason,
-    AttributedStatementOutcome,
-    AttributedStatementStatus,
-    AttributionTargetResolver,
-    construct_attributed_statement,
 )
 
 __all__ = [
@@ -1670,6 +1682,16 @@ __all__ = [
     "AttributedStatementStatus",
     "AttributionTargetResolver",
     "construct_attributed_statement",
+    "SUPPORT_EDGE_ACTIVITY_TYPE",
+    "SUPPORT_EDGE_AGENT",
+    "ProduceSupportEdgeInput",
+    "SupportEdgeError",
+    "SupportEdgeFailureCode",
+    "SupportEdgeLedger",
+    "SupportEdgeProductionResult",
+    "produce_support_edge",
+    "support_argument_edge_id",
+    "support_edge_provenance_activity_id",
     "BinarySemanticAnswer",
     "BinarySemanticAnswerValue",
     "EventVerbRoleAnswer",

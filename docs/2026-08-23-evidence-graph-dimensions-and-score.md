@@ -38,7 +38,7 @@ Assertion supports the selected Relationship.
 
 ### Domain Core
 
-- EGS-01: Domain Core defines `EvidenceGraphDimensionName` with `validated_evidence`, `contradiction`, and `source_lineage`.
+- EGS-01: Domain Core defines `EvidenceGraphDimensionName` with `validated_evidence`, `contradiction`, `support`, and `source_lineage`.
 - EGS-02: Domain Core defines `EvidenceGraphDimensionValue` with `present`, `absent`, `unknown`, and `recorded_relation`.
 - EGS-03: Domain Core defines `EvidenceGraphScoreValue` with `supported` and `contested`.
 - EGS-04: EvidenceGraphDimension identifies one projection manifest, Relationship, name, value, policy, and ordered unique input IDs.
@@ -58,6 +58,8 @@ Assertion supports the selected Relationship.
 - EGS-15: The Application does not use source-lineage values to derive the Score.
 - EGS-16: The Application selects ArgumentEdges from the same current or as-of accepted state as the projection.
 - EGS-17: The Application includes Dimension and Score content in the manifest fingerprint.
+- EGS-17a (D2): The Application derives `support = present` when an accepted ArgumentEdge with relation `supports` targets a selected support Assertion.
+- EGS-17b (D2): The Application derives `support = absent` when no selected support input exists.
 
 ### SQLite Adapter
 

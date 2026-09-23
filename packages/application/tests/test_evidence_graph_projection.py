@@ -358,6 +358,32 @@ def test_evidence_graph_marks_a_relationship_contested_from_an_accepted_argument
     assert scores[0].value.value == "contested"
 
 
+def test_evidence_graph_marks_a_relationship_supported_from_an_accepted_argument_edge() -> None:
+    ledger = FakeLedger(validation_status=EvidenceValidationAttemptStatus.SUCCEEDED)
+    ledger.argument_edges = (
+        ArgumentEdge(
+            id="arg_supports_policy",
+            from_assertion_id=ledger.direct.id,
+            to_assertion_id=ledger.inference.id,
+            relation=ArgumentEdgeRelation.SUPPORTS,
+            rationale="The source-backed Assertion supports the inference.",
+            confidence=0.8,
+            created_at=NOW,
+        ),
+    )
+
+    _, _, _, dimensions, scores, _ = build_evidence_graph_state(
+        cast(EvidenceGraphStateLedger, ledger)
+    )
+
+    support = next(item for item in dimensions if item.name.value == "support")
+    assert support.value.value == "present"
+    assert support.input_ids == ("arg_supports_policy",)
+    contradiction = next(item for item in dimensions if item.name.value == "contradiction")
+    assert contradiction.value.value == "absent"
+    assert scores[0].value.value == "supported"
+
+
 def test_evidence_graph_reconstructs_current_and_as_of_correction_views() -> None:
     ledger = TemporalLedger()
 

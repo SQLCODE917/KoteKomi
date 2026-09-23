@@ -1,5 +1,13 @@
 import pytest
-from kotekomi_domain import ArgumentEdge, ArgumentEdgeRelation, ProposedChange, ReviewStatus
+from kotekomi_domain import (
+    ArgumentEdge,
+    ArgumentEdgeRelation,
+    EvidenceGraphDimension,
+    EvidenceGraphDimensionName,
+    EvidenceGraphDimensionValue,
+    ProposedChange,
+    ReviewStatus,
+)
 from pydantic import ValidationError
 
 
@@ -14,6 +22,36 @@ def test_argument_edge_accepts_controlled_relation() -> None:
     )
 
     assert edge.relation is ArgumentEdgeRelation.SUPPORTS
+
+
+def _support_dimension(value: EvidenceGraphDimensionValue) -> EvidenceGraphDimension:
+    return EvidenceGraphDimension(
+        dimension_id="egd_test_support",
+        projection_manifest_id="egm_test_support",
+        relationship_id="rel_test_support",
+        name=EvidenceGraphDimensionName.SUPPORT,
+        value=value,
+        policy_id="policy_test_support",
+        input_ids=("ast_test_support",),
+    )
+
+
+def test_evidence_graph_dimension_accepts_support_present() -> None:
+    dimension = _support_dimension(EvidenceGraphDimensionValue.PRESENT)
+
+    assert dimension.name is EvidenceGraphDimensionName.SUPPORT
+    assert dimension.value is EvidenceGraphDimensionValue.PRESENT
+
+
+def test_evidence_graph_dimension_accepts_support_absent() -> None:
+    dimension = _support_dimension(EvidenceGraphDimensionValue.ABSENT)
+
+    assert dimension.value is EvidenceGraphDimensionValue.ABSENT
+
+
+def test_evidence_graph_dimension_rejects_support_unknown() -> None:
+    with pytest.raises(ValidationError, match="does not match its name"):
+        _support_dimension(EvidenceGraphDimensionValue.UNKNOWN)
 
 
 def test_argument_edge_rejects_unknown_relation() -> None:

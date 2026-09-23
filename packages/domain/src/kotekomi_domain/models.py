@@ -149,6 +149,7 @@ class EvidenceGraphViewKind(StrEnum):
 class EvidenceGraphDimensionName(StrEnum):
     VALIDATED_EVIDENCE = "validated_evidence"
     CONTRADICTION = "contradiction"
+    SUPPORT = "support"
     SOURCE_LINEAGE = "source_lineage"
 
 
@@ -3138,6 +3139,10 @@ class EvidenceGraphDimension(DomainModel):
                 EvidenceGraphDimensionValue.PRESENT,
             },
             EvidenceGraphDimensionName.CONTRADICTION: {
+                EvidenceGraphDimensionValue.PRESENT,
+                EvidenceGraphDimensionValue.ABSENT,
+            },
+            EvidenceGraphDimensionName.SUPPORT: {
                 EvidenceGraphDimensionValue.PRESENT,
                 EvidenceGraphDimensionValue.ABSENT,
             },

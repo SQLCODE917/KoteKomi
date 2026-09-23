@@ -1,6 +1,6 @@
 # TDD: Supports ArgumentEdge
 
-- Status: Planned
+- Status: Accepted (Decision 2 amended)
 - Deliverable ID: D2
 - Package: [Event Attribution Production Wiring](2026-09-22-event-attribution-wiring-package.md)
 - Depends on: D1
@@ -137,6 +137,23 @@ confidence          = present
 - Source-support decisions: `packages/application/src/kotekomi_application/semantic_proposition.py`.
 - Semantic support judgments: `packages/application/src/kotekomi_application/hybrid_event_semantics.py`.
 - Attributed-statement endpoint: D1.
+
+## Amendments
+
+- **Decision 2 (2026-09-22):** The supported endpoint (`to_assertion_id`) may be any accepted
+  Assertion. The producer enforces only that both endpoints are accepted Assertions
+  (SPT-REF-01 through SPT-REF-03). The role-binding invariant that the evidence-side
+  (`from_assertion_id`) is a source-backed evidence Assertion — not `ANALYTIC_INFERENCE`, not
+  an `ATTRIBUTED_STATEMENT` in the evidence role — and that the supported-side
+  (`to_assertion_id`) is an `attributed_statement` with non-null `attributed_to_id` is the
+  caller's invariant, not the producer's.
+- **Rationale and confidence:** `rationale` and `confidence` are explicit producer inputs
+  bound to `SemanticSupportJudgment.reason` and the NLI `entailment_score`. Their provenance
+  identifiers (the support judgment and NLI observation) are recorded in
+  `ProvenanceActivity.input_ids` together with the pinned support decision.
+- **Fan-out:** One `supports` edge is produced per evidence endpoint. A caller that holds
+  several evidence facts calls the producer once per evidence endpoint, sharing one supported
+  `to_assertion_id`.
 
 ## Constraints and Halt Conditions
 
