@@ -630,6 +630,12 @@ from kotekomi_application.document_retrieval import (
     query_document_semantic_retrieval,
     render_document_semantic_input,
 )
+from kotekomi_application.event_attribution_wiring import (
+    EventAttributionWiringInput,
+    EventAttributionWiringResult,
+    EventAttributionWiringStatus,
+    wire_event_attribution,
+)
 from kotekomi_application.event_entity_connection_model_output import (
     EntityInvolvementAnswerBatch,
     EntityInvolvementAnswerValue,
@@ -1692,6 +1698,10 @@ __all__ = [
     "produce_support_edge",
     "support_argument_edge_id",
     "support_edge_provenance_activity_id",
+    "EventAttributionWiringInput",
+    "EventAttributionWiringResult",
+    "EventAttributionWiringStatus",
+    "wire_event_attribution",
     "BinarySemanticAnswer",
     "BinarySemanticAnswerValue",
     "EventVerbRoleAnswer",

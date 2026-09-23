@@ -31,6 +31,7 @@ It wires existing fields and enums into new construction paths.
 | D1 | Attributed-statement construction | `attributed_statement` ProposedAssertion with `attributed_to_id` | none (uses existing `EventSemanticDraft` attribution) |
 | D2 | `supports` ArgumentEdge | first production `supports` ArgumentEdge | D1 |
 | D3 | Deterministic trigger-scope split | reporting carrier plus governed complement signal | none |
+| D4 | Wiring composition | one governed Event into carrier + complement + `attributed_statement` proposal + pinned D2 recipe | D1, D2, D3 |
 
 ## Order
 
@@ -44,10 +45,11 @@ The exact specification for each deliverable lives in its TDD:
 - [D1 Attributed-Statement Construction](2026-09-22-attributed-statement-construction.md)
 - [D3 Deterministic Trigger-Scope Split](2026-09-22-deterministic-trigger-scope-split.md)
 - [D2 Supports ArgumentEdge](2026-09-22-supports-argument-edge.md)
+- [D4 Wiring Composition](2026-09-22-event-attribution-wiring-composition.md)
 
 ## Completion
 
-The package completes when all three deliverable TDDs pass their acceptance criteria.
+The package completes when all four deliverable TDDs pass their acceptance criteria.
 The package completes when `docs/CHECK_PLAN.md` gains one verification step per deliverable.
 The package completes when production constructs, reviews, and projects an attributed Event proposition
 without losing the reporting carrier or the governed complement.
