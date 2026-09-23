@@ -1,6 +1,6 @@
 # TDD: Attributed-Statement Construction
 
-- Status: Planned
+- Status: Accepted
 - Deliverable ID: D1
 - Package: [Event Attribution Production Wiring](2026-09-22-event-attribution-wiring-package.md)
 - Depends on: none

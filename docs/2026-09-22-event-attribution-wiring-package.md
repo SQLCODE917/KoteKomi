@@ -1,6 +1,6 @@
 # Event Attribution Production Wiring Package
 
-- Status: Planned
+- Status: In Progress
 - Program ID: `event-attribution-production-wiring`
 - Parent: [Hybrid Intelligence Extraction Pipeline](2026-09-01-hybrid-intelligence-extraction-pipeline.md)
 - Predecessor evidence:

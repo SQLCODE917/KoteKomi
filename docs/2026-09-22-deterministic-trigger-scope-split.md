@@ -1,6 +1,6 @@
 # TDD: Deterministic Trigger-Scope Split
 
-- Status: Planned
+- Status: Accepted
 - Deliverable ID: D3
 - Package: [Event Attribution Production Wiring](2026-09-22-event-attribution-wiring-package.md)
 - Depends on: none
