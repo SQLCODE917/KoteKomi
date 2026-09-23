@@ -30,6 +30,14 @@ from kotekomi_application.attributed_statement_construction import (
     AttributionTargetResolver,
     construct_attributed_statement,
 )
+from kotekomi_application.attributed_statement_proposal import (
+    ATTRIBUTED_STATEMENT_ACTIVITY_TYPE,
+    AttributedStatementProposalFailure,
+    AttributedStatementProposalLedger,
+    SubmitAttributedStatementProposalInput,
+    SubmitAttributedStatementProposalResult,
+    submit_attributed_statement_proposal,
+)
 from kotekomi_application.briefing_generation import (
     BRIEFING_GENERATION_ACTIVITY,
     BriefingGenerationInput,
@@ -1688,6 +1696,12 @@ __all__ = [
     "AttributedStatementStatus",
     "AttributionTargetResolver",
     "construct_attributed_statement",
+    "ATTRIBUTED_STATEMENT_ACTIVITY_TYPE",
+    "AttributedStatementProposalFailure",
+    "AttributedStatementProposalLedger",
+    "SubmitAttributedStatementProposalInput",
+    "SubmitAttributedStatementProposalResult",
+    "submit_attributed_statement_proposal",
     "SUPPORT_EDGE_ACTIVITY_TYPE",
     "SUPPORT_EDGE_AGENT",
     "ProduceSupportEdgeInput",
