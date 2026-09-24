@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import cast
+
 import pytest
 from kotekomi_pipelines.current_hybrid_evaluation import CurrentHybridEvaluationReport
 from pydantic import ValidationError
@@ -24,11 +26,52 @@ def test_current_report_passes_exactly_when_findings_are_empty() -> None:
         CurrentHybridEvaluationReport.model_validate(payload)
 
 
+def test_current_report_rejects_a_mispartitioned_gap_breakdown() -> None:
+    payload = _payload()
+    summary = cast(dict[str, object], payload["summary"])
+    summary["required_paragraphs"] = 4
+    summary["complete_paragraphs"] = 2
+    summary["gap_breakdown"] = {
+        "proposal_rejected": 1,
+        "boundary_held": 0,
+        "routed": 0,
+        "held": 0,
+        "inherited_partial": 0,
+    }
+
+    with pytest.raises(ValidationError, match="do not partition the scope"):
+        CurrentHybridEvaluationReport.model_validate(payload)
+
+
+def test_current_report_accepts_a_partitioned_gap_breakdown() -> None:
+    payload = _payload()
+    summary = cast(dict[str, object], payload["summary"])
+    summary["required_paragraphs"] = 5
+    summary["complete_paragraphs"] = 3
+    summary["gap_breakdown"] = {
+        "proposal_rejected": 1,
+        "boundary_held": 1,
+        "routed": 0,
+        "held": 0,
+        "inherited_partial": 0,
+    }
+
+    report = CurrentHybridEvaluationReport.model_validate(payload)
+
+    assert report.summary.gap_breakdown.total == 2
+
+
 def _payload() -> dict[str, object]:
     summary_fields = {
         "required_paragraphs": 0,
         "complete_paragraphs": 0,
-        "gap_paragraphs": 0,
+        "gap_breakdown": {
+            "proposal_rejected": 0,
+            "boundary_held": 0,
+            "routed": 0,
+            "held": 0,
+            "inherited_partial": 0,
+        },
         "paragraph_proposed_changes": 0,
         "reconciled_proposed_changes": 0,
         "source_grounded_events_expected": 0,

@@ -43,7 +43,11 @@ from kotekomi_domain import EvidenceTarget, IngestionChangeSetOrigin, ReviewStat
 from kotekomi_exporters import MarkdownCandidateWikiRenderer
 from kotekomi_pipelines.cli import ingest_user_file
 from kotekomi_pipelines.config import PipelineConfig, load_config
-from kotekomi_pipelines.current_hybrid_evaluation import CurrentHybridEvaluationReport
+from kotekomi_pipelines.current_hybrid_evaluation import (
+    CurrentHybridEvaluationReport,
+    HybridParagraphGapBreakdown,
+    classify_hybrid_paragraph_gap,
+)
 from kotekomi_pipelines.front_half_stage_local import (
     FrontHalfCaseEvaluation,
     FrontHalfEvaluationReport,
@@ -128,6 +132,7 @@ def main() -> int:
             }
         first_counts = _ledger_counts(ledger_path)
         report, manifest, paragraphs = _document_evidence(ledger_path, archive_path)
+        gap_breakdown = _paragraph_gap_breakdown(paragraphs)
         model_performance, model_executions = model_evidence(ledger_path, archive_path)
         if args.reuse_state:
             second = {
@@ -197,7 +202,7 @@ def main() -> int:
                     "passed": not findings,
                     "required_paragraphs": report["required_paragraph_count"],
                     "complete_paragraphs": report["complete_paragraph_count"],
-                    "gap_paragraphs": report["gap_paragraph_count"],
+                    "gap_breakdown": gap_breakdown.model_dump(mode="json"),
                     "paragraph_proposed_changes": len(report["proposed_change_ids"]),
                     "reconciled_proposed_changes": first_counts["proposed_changes"],
                     "source_grounded_events_expected": (
@@ -432,6 +437,19 @@ def _document_evidence(
             }
         )
     return report, manifest, paragraphs
+
+
+def _paragraph_gap_breakdown(paragraphs: list[JsonObject]) -> HybridParagraphGapBreakdown:
+    """Classify every paragraph receipt into exactly one gap class."""
+    classes = [
+        classify_hybrid_paragraph_gap(
+            hybrid_paragraph_receipt_from_bytes(
+                (_canonical_json(cast(JsonObject, paragraph["paragraph_receipt"])) + "\n").encode()
+            ).stages
+        )
+        for paragraph in paragraphs
+    ]
+    return HybridParagraphGapBreakdown.from_classes(classes)
 
 
 def _stage_output(

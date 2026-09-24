@@ -10,7 +10,7 @@
 
 The public `kotekomi ingest` path ran HP-1 through HP-8 over all 36 authoritative paragraph nodes.
 
-The run produced 19 clean Paragraph Receipts, 17 Paragraph Receipts with accounted gaps, 115 pending ProposedChanges, one Document Coverage Report, one AnalysisRun, and one IngestionChangeSet.
+The run produced 16 clean Paragraph Receipts, 20 Paragraph Receipts with accounted gaps, 236 pending ProposedChanges, one Document Coverage Report, one AnalysisRun, and one IngestionChangeSet.
 
 The Ledger contained zero accepted Actors, Organizations, Events, Assertions, or Relationships after ingestion.
 
@@ -99,6 +99,68 @@ The next output-contract experiment should make absence explicit in the frame gr
 Those are measured follow-up hypotheses.
 
 They are not HP-8 orchestration defects and must not weaken deterministic rejection or the pending-review boundary.
+
+## Canonical ingestion diagram
+
+```text
++----------------------------- RAW SOURCE (PDF / authoritative text) ------------------------------+
+|  SOURCE record -> DOCUMENT record -> representation + text view                                  |
++-------------------------------------------------+--------------------------------------------------+
+                                                  |  Hybrid Pipeline Policy manifest splits into ParagraphWork units
+                                                  v
+                          36 x PARAGRAPH WORK  (paragraph_node + authoritative_text)
+                          <- unit = exactly one paragraph gap class
+                                                  |
+  per paragraph, seven stages run in HYBRID_STAGE_ORDER (dependency fan-in drawn as a chain):
+                                                  |
+  HP1 MENTIONS -> HP2 REFERENCES -> HP3 GROUNDING -> HP4 EVENT TRIGGERS -> HP6 EVENT SEMANTICS -> HP7 PROPOSAL PLAN -> HP10 STANDING FACTS
+     |               |                |                  |                     |                         |                        |
+     |               +-----(semantic antecedent / alias decls feed grounding & events)----------------------------------------+
+     v               v                v                  v                     v                         v                        v
+  stage record   stage record    stage record       stage record          stage record              stage record             stage record
+  (complete/     (complete/      (complete/         (...)                 (...)                     (...)                    (...)
+   partial)       partial)        partial)
+                                                  |
+                                                  |  HP8 verifier derives one gap class by precedence (one count per non-complete paragraph)
+                                                  v
+                          HybridParagraphReceipt (hpr)  <- per-stage status + gap_reasons retained (receipt unchanged)
+                                                            HP1 partial -> proposal_rejected
+                                                            HP3 partial (HP1 complete) -> inherited_partial
+                                                            HP10 partial (HP1 + HP3 complete) -> boundary_held | routed | held
+                                                  |
+                        +-------------------------+-----------------------------+
+                        v                                                          v
+  ARCHIVE (derived previews, receipts, model-run outputs)      LEDGER (ProposedChange + ProvenanceActivity)
+                        |
+                        v
+  HP8 DOCUMENT ORCHESTRATION verifier
+     -> HybridDocumentCoverageReport (complete + gap counts, unchanged)
+     -> CurrentHybridEvaluationSummary.gap_breakdown = {proposal_rejected, boundary_held, routed, held, inherited_partial}
+     -> complete_paragraphs + gap_breakdown.total == required_paragraphs
+     -> three gold evaluations
+```
+
+The HP-8 verifier derives one paragraph gap class per Paragraph Receipt.
+
+The six classes are complete, proposal_rejected, inherited_partial, boundary_held, routed, and held.
+
+A complete paragraph stays outside the five-class gap_breakdown.
+
+HP-1 partial selects proposal_rejected first.
+
+HP-3 partial selects inherited_partial when HP-1 is complete.
+
+HP-10 partial selects boundary_held, routed, or held when HP-1 and HP-3 are complete.
+
+A line or relation boundary rejection selects boundary_held.
+
+An event-route requirement without a rejection selects routed.
+
+Any other HP-10 partial selects held.
+
+The canonical run reports 16 complete paragraphs and 20 non-complete paragraphs.
+
+The 20 non-complete paragraphs split as proposal_rejected 10, boundary_held 9, routed 1, held 0, and inherited_partial 0.
 
 ## Verification
 
