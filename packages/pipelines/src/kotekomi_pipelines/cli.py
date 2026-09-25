@@ -10,7 +10,7 @@ import json
 import shlex
 import sqlite3
 import sys
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -235,6 +235,7 @@ from kotekomi_pipelines.event_attribution_stage_local import (
 from kotekomi_pipelines.hybrid_document_ingestion import (
     HybridDocumentIngestionInput,
     HybridParagraphProgress,
+    HybridParagraphStageProgress,
     run_hybrid_document_ingestion,
 )
 from kotekomi_pipelines.managed_llama_server import (
@@ -2285,7 +2286,13 @@ def add_source_file(
     return 0
 
 
-def ingest_user_file(*, config_path: Path | None, source_file_path: Path, source_url: str) -> int:
+def ingest_user_file(
+    *,
+    config_path: Path | None,
+    source_file_path: Path,
+    source_url: str,
+    stage_progress: Callable[[HybridParagraphStageProgress], None] | None = None,
+) -> int:
     """Run user ingestion while exposing only its durable operation identity."""
     try:
         processing_config = load_processing_config(
@@ -2502,6 +2509,7 @@ def ingest_user_file(*, config_path: Path | None, source_file_path: Path, source
             config=config,
             archive=archive_store,
             progress=_print_hybrid_paragraph_progress,
+            stage_progress=stage_progress,
             model_run_id_factory=Uuid4ModelRunIdFactory(),
         )
         captured = extraction.closure.ingestion_run

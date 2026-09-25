@@ -12,6 +12,8 @@ dependencies = [
 
 [project.scripts]
 kotekomi = "kotekomi_pipelines.cli:entrypoint"
+kotekomi-replay = "kotekomi_pipelines.replay_reader.transport:main"
+kotekomi-live-replay = "kotekomi_pipelines.replay_reader.live:main"
 
 [tool.uv.sources]
 kotekomi-adapters = { workspace = true }

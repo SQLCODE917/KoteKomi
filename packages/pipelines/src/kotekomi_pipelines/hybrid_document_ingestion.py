@@ -262,6 +262,24 @@ class HybridParagraphProgress:
 
 
 @dataclass(frozen=True)
+class HybridParagraphStageProgress:
+    """One live event inside a single paragraph route.
+
+    ``stage_id`` is ``None`` for the paragraph-started and paragraph-finished
+    boundary events; otherwise it names the stage that just completed and
+    ``stage_output`` carries that stage's parsed preview or plan object.
+    """
+
+    ordinal: int
+    total: int
+    representation_id: str
+    paragraph_node_id: str
+    stage_id: HybridStageId | None
+    stage_output: object | None
+    finished: bool
+
+
+@dataclass(frozen=True)
 class HybridDocumentIngestionResult:
     closure: HybridDocumentClosureResult
     plan: HybridDocumentPlan
@@ -554,6 +572,7 @@ def run_hybrid_document_ingestion(
     config: PipelineConfig,
     archive: LocalArchiveStore,
     progress: Callable[[HybridParagraphProgress], None] | None = None,
+    stage_progress: Callable[[HybridParagraphStageProgress], None] | None = None,
     model_run_id_factory: ModelRunIdFactory,
 ) -> HybridDocumentIngestionResult:
     """Run or replay every paragraph route before document reconciliation."""
@@ -568,6 +587,7 @@ def run_hybrid_document_ingestion(
     resources = _RuntimeResources(config, runtime)
     receipts: list[HybridParagraphReceipt] = []
     reused_count = 0
+    total = len(plan.manifest.work_items)
     try:
         for work in plan.manifest.work_items:
             with sqlite_ledger_transaction(config.ledger_path) as ledger:
@@ -587,9 +607,26 @@ def run_hybrid_document_ingestion(
                     resources=resources,
                     model_run_id_factory=model_run_id_factory,
                     prompts=prompts,
+                    stage_progress=stage_progress,
+                    total=total,
                 )
             else:
                 reused_count += 1
+                _emit_stage_progress(
+                    stage_progress,
+                    ordinal=work.ordinal,
+                    total=total,
+                    representation_id=plan.manifest.representation_id,
+                    paragraph_node_id=work.paragraph_node_id,
+                )
+                _emit_stage_progress(
+                    stage_progress,
+                    ordinal=work.ordinal,
+                    total=total,
+                    representation_id=plan.manifest.representation_id,
+                    paragraph_node_id=work.paragraph_node_id,
+                    finished=True,
+                )
             receipts.append(receipt)
             if progress is not None:
                 progress(
@@ -630,6 +667,32 @@ def run_hybrid_document_ingestion(
     return HybridDocumentIngestionResult(closure, plan, report, reused_count)
 
 
+def _emit_stage_progress(
+    stage_progress: Callable[[HybridParagraphStageProgress], None] | None,
+    *,
+    ordinal: int,
+    total: int,
+    representation_id: str,
+    paragraph_node_id: str,
+    stage_id: HybridStageId | None = None,
+    stage_output: object | None = None,
+    finished: bool = False,
+) -> None:
+    if stage_progress is None:
+        return
+    stage_progress(
+        HybridParagraphStageProgress(
+            ordinal=ordinal,
+            total=total,
+            representation_id=representation_id,
+            paragraph_node_id=paragraph_node_id,
+            stage_id=stage_id,
+            stage_output=stage_output,
+            finished=finished,
+        )
+    )
+
+
 def _run_paragraph(
     *,
     config: PipelineConfig,
@@ -639,8 +702,17 @@ def _run_paragraph(
     resources: _RuntimeResources,
     model_run_id_factory: ModelRunIdFactory,
     prompts: dict[str, bytes],
+    stage_progress: Callable[[HybridParagraphStageProgress], None] | None = None,
+    total: int = 1,
 ) -> HybridParagraphReceipt:
     work = manifest.work_items[work_ordinal]
+    _emit_stage_progress(
+        stage_progress,
+        ordinal=work_ordinal,
+        total=total,
+        representation_id=manifest.representation_id,
+        paragraph_node_id=work.paragraph_node_id,
+    )
     profile = ContextModelProfile(
         config.model_execution.profile_name or "lm-studio",
         config.model_execution.context_tokens,
@@ -671,6 +743,15 @@ def _run_paragraph(
             ontology_card_bytes=prompts["hybrid_mention_ontology_card_v1.md"],
         )
     stages.append(_stage(HybridStageId.HP1_MENTIONS, hp1))
+    _emit_stage_progress(
+        stage_progress,
+        ordinal=work_ordinal,
+        total=total,
+        representation_id=manifest.representation_id,
+        paragraph_node_id=work.paragraph_node_id,
+        stage_id=HybridStageId.HP1_MENTIONS,
+        stage_output=hp1.preview,
+    )
     if hp1.preview.terminal_status is HybridPreviewStatus.BLOCKED:
         stages.extend(_not_run_stages(HybridStageId.HP1_MENTIONS, "blocked"))
         receipt = build_hybrid_paragraph_receipt(
@@ -680,6 +761,14 @@ def _run_paragraph(
             stages=tuple(stages),
         )
         publish_hybrid_paragraph_receipt(receipt, archive)
+        _emit_stage_progress(
+            stage_progress,
+            ordinal=work_ordinal,
+            total=total,
+            representation_id=manifest.representation_id,
+            paragraph_node_id=work.paragraph_node_id,
+            finished=True,
+        )
         return receipt
 
     with sqlite_ledger_transaction(config.ledger_path) as ledger:
@@ -695,6 +784,15 @@ def _run_paragraph(
             validation_prompt_bytes=prompts["semantic_reference_candidate_validation_v1.md"],
         )
     stages.append(_stage(HybridStageId.HP2_REFERENCES, hp2))
+    _emit_stage_progress(
+        stage_progress,
+        ordinal=work_ordinal,
+        total=total,
+        representation_id=manifest.representation_id,
+        paragraph_node_id=work.paragraph_node_id,
+        stage_id=HybridStageId.HP2_REFERENCES,
+        stage_output=hp2.preview,
+    )
 
     with sqlite_ledger_transaction(config.ledger_path) as ledger:
         hp3 = run_hybrid_entity_grounding_preview(
@@ -704,6 +802,15 @@ def _run_paragraph(
             linker=resources.linker,
         )
     stages.append(_stage(HybridStageId.HP3_GROUNDING, hp3))
+    _emit_stage_progress(
+        stage_progress,
+        ordinal=work_ordinal,
+        total=total,
+        representation_id=manifest.representation_id,
+        paragraph_node_id=work.paragraph_node_id,
+        stage_id=HybridStageId.HP3_GROUNDING,
+        stage_output=hp3.preview,
+    )
 
     with sqlite_ledger_transaction(config.ledger_path) as ledger:
         hp4 = run_hybrid_event_trigger_preview(
@@ -727,6 +834,15 @@ def _run_paragraph(
             nominalization_analyzer=resources.nominalization_analyzer,
         )
     stages.append(_stage(HybridStageId.HP4_EVENT_TRIGGERS, hp4))
+    _emit_stage_progress(
+        stage_progress,
+        ordinal=work_ordinal,
+        total=total,
+        representation_id=manifest.representation_id,
+        paragraph_node_id=work.paragraph_node_id,
+        stage_id=HybridStageId.HP4_EVENT_TRIGGERS,
+        stage_output=hp4.preview,
+    )
 
     with sqlite_ledger_transaction(config.ledger_path) as ledger:
         hp6 = run_hybrid_event_semantics_preview(
@@ -750,6 +866,15 @@ def _run_paragraph(
         )
     publish_hybrid_event_semantics_preview(hp6, archive)
     stages.append(_stage(HybridStageId.HP6_EVENT_SEMANTICS, hp6))
+    _emit_stage_progress(
+        stage_progress,
+        ordinal=work_ordinal,
+        total=total,
+        representation_id=manifest.representation_id,
+        paragraph_node_id=work.paragraph_node_id,
+        stage_id=HybridStageId.HP6_EVENT_SEMANTICS,
+        stage_output=hp6.preview,
+    )
 
     with sqlite_ledger_transaction(config.ledger_path) as ledger:
         hp7 = build_hybrid_proposal_plan(hp6.preview.id, ledger, archive)
@@ -763,6 +888,15 @@ def _run_paragraph(
             terminal_status="complete",
             diagnostics=hp7.diagnostics,
         )
+    )
+    _emit_stage_progress(
+        stage_progress,
+        ordinal=work_ordinal,
+        total=total,
+        representation_id=manifest.representation_id,
+        paragraph_node_id=work.paragraph_node_id,
+        stage_id=HybridStageId.HP7_PROPOSAL_PLAN,
+        stage_output=hp7,
     )
     with sqlite_ledger_transaction(config.ledger_path) as ledger:
         hp10 = run_hybrid_standing_fact_plan(
@@ -800,6 +934,15 @@ def _run_paragraph(
             diagnostics=hp10_diagnostics,
         )
     )
+    _emit_stage_progress(
+        stage_progress,
+        ordinal=work_ordinal,
+        total=total,
+        representation_id=manifest.representation_id,
+        paragraph_node_id=work.paragraph_node_id,
+        stage_id=HybridStageId.HP10_STANDING_FACTS,
+        stage_output=hp10.plan,
+    )
     receipt = build_hybrid_paragraph_receipt(
         manifest=manifest,
         work=work,
@@ -808,6 +951,14 @@ def _run_paragraph(
         proposed_change_ids=tuple(item.id for item in hp10.plan.proposed_changes),
     )
     publish_hybrid_paragraph_receipt(receipt, archive)
+    _emit_stage_progress(
+        stage_progress,
+        ordinal=work_ordinal,
+        total=total,
+        representation_id=manifest.representation_id,
+        paragraph_node_id=work.paragraph_node_id,
+        finished=True,
+    )
     return receipt
 
 
