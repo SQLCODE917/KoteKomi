@@ -219,7 +219,7 @@ def compile_catalog(packet_path: Path = DEFAULT_PACKET) -> dict[str, Any]:
     return {
         "schema_version": SCHEMA_VERSION,
         "catalog_id": CATALOG_ID,
-        "review_status": "proposed",
+        "review_status": "approved",
         "annotation_status": ANNOTATION_STATUS,
         "source_segment_policy_id": SOURCE_SEGMENT_POLICY_ID,
         "development_overlap_count": 0,

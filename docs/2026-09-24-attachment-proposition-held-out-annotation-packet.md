@@ -1,13 +1,13 @@
 # Attachment Proposition Held-Out Annotation Packet
 
-- Status: Proposed for human review
+- Status: Human-reviewed
 - Program: [Source-Grounded Attachment Deterministic-First Package](2026-09-24-source-grounded-attachment-deterministic-first-package.md)
 - Catalog purpose: fresh held-out partition for the deterministic dependency-path attachment router (R1/R5)
 - Fixture: `raw/Anthropic–United_States_Department_of_Defense_dispute.pdf`
 - Fixture SHA-256: `c63c85796559453acf708dab46a35da36ffed00a408a25275576ba07138e9624`
 - Representation: `rep_e84869f6fcd4ed02c70a550a`
 - Source segment policy: `paragraph_segment_v3`
-- Annotation status (target): `human_reviewed_held_out_gold`
+- Annotation status: `human_reviewed_held_out_gold`
 - Development overlap count: `0`
 - Excluded from held-out (development overlap): the lede sentence "Hegseth, the United States secretary of defense, has publicly rebuked Anthropic chief executive Dario Amodei's approach to artificial intelligence." already appears as `TGE-001` (validation) in `docs/hsq-source-grounded-proposition-gold-v1.json`, so it is omitted to keep `development_overlap_count` at zero.
 
