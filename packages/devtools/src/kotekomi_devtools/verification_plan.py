@@ -517,7 +517,8 @@ def build_verification_plan(
             "changed_paths_require_manifest_or_shared_rule",
         )
         for index, path in enumerate(changed_paths)
-        if path not in allowed_paths and not _has_shared_rule(path)
+        if not any(_allows(allowed, path) for allowed in allowed_paths)
+        and not _has_shared_rule(path)
     )
     checks = _checks(manifest, changed_paths)
     return VerificationPlan(
@@ -616,6 +617,12 @@ def _checks(
                 "touched-path",
             )
     return tuple(sorted(checks.values(), key=lambda check: check.id))
+
+
+def _allows(allowed_path: str, changed_path: str) -> bool:
+    return allowed_path == changed_path or (
+        allowed_path.endswith("/") and changed_path.startswith(allowed_path)
+    )
 
 
 def _has_shared_rule(path: str) -> bool:

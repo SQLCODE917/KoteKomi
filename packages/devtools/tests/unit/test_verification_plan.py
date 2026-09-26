@@ -95,6 +95,18 @@ def test_written_reports_are_byte_stable_and_end_with_newlines(
     )
 
 
+def test_plan_honors_directory_prefix_allowed_paths(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    manifest = _manifest_with_directory_prefix(tmp_path)
+    monkeypatch.setattr(verification_plan, "_changed_paths", _directory_covered_path)
+
+    plan = build_verification_plan(manifest, base_revision="base", head_revision="head")
+
+    assert plan.ready
+    assert not plan.diagnostics
+
+
 def _manifest(tmp_path: Path) -> Path:
     manifest = tmp_path / "task.toml"
     manifest.write_text(
@@ -113,6 +125,27 @@ argv = ["uv", "run", "pytest", "retained.py"]
         encoding="utf-8",
     )
     return manifest
+
+
+def _manifest_with_directory_prefix(tmp_path: Path) -> Path:
+    manifest = tmp_path / "task.toml"
+    manifest.write_text(
+        """\
+task_id = "task"
+allowed_paths = ["packages/application/src/kotekomi_application/"]
+
+[[acceptance]]
+id = "feature-contract"
+argv = ["uv", "run", "pytest", "feature.py"]
+""",
+        encoding="utf-8",
+    )
+    return manifest
+
+
+def _directory_covered_path(base_revision: str, head_revision: str) -> tuple[str, ...]:
+    del base_revision, head_revision
+    return ("packages/application/src/kotekomi_application/__init__.py",)
 
 
 def _planner_path(base_revision: str, head_revision: str) -> tuple[str, ...]:

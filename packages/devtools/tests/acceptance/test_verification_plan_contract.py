@@ -694,3 +694,46 @@ def test_h14_coverage_unknown_path_fails_closed_with_diagnostics(
     diagnostics = payload.get("diagnostics", [])
     assert isinstance(diagnostics, list)
     assert diagnostics
+def test_directory_prefix_allowed_path_covers_nested_changed_file(
+    tmp_path: Path,
+) -> None:
+    repo = tmp_path / "h14-dir-prefix"
+    repo.mkdir()
+    manifest = repo / ".agent" / "tasks" / "h14-dir-prefix.toml"
+    nested = repo / "packages" / "test_pkg" / "module.py"
+    manifest_text = (
+        "schema_version = 1\n"
+        'task_id = "h14-dir-prefix"\n'
+        "allowed_paths = [\n"
+        '  "packages/test_pkg/",\n'
+        "]\n"
+        "reference_paths = []\n"
+        "\n"
+        "[[acceptance]]\n"
+        'id = "fixture-contract"\n'
+        'argv = ["uv", "run", "pytest", "-p", "no:cacheprovider", "fixture.py"]\n'
+        "timeout_seconds = 60\n"
+        'profile = "portable-local"\n'
+    )
+    _write(manifest, manifest_text)
+    _write(nested, "print('base')\n")
+    _git(repo, "init")
+    _git(repo, "config", "user.email", "h14-dir@example.invalid")
+    _git(repo, "config", "user.name", "H14 Dir Test")
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-m", "base")
+    base = _git(repo, "rev-parse", "HEAD")
+
+    _write(nested, "print('changed')\n")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-m", "touch nested path")
+    head = _git(repo, "rev-parse", "HEAD")
+    output = tmp_path / "dir-prefix-plan.json"
+    markdown = tmp_path / "dir-prefix-plan.md"
+
+    result = _run_plan(repo, manifest, base, head, output, markdown)
+
+    assert result.returncode == 0, result.stderr
+    payload = _json(output)
+    assert payload.get("status") == "ready"
+    assert payload.get("diagnostics") == []
