@@ -1,0 +1,110 @@
+schema_version = 2
+task_id = "tdd-deterministic-dependency-path-attachment-router-9880b154ffa3"
+title = "R1 Deterministic Dependency-Path Attachment Router"
+status = "ready_for_terra_high"
+series_id = "source-grounded-attachment-deterministic-first"
+task_class = "orchestration"
+model_profile = "terra-high-v1"
+baseline_revision = "8130d7f5c07112df4084319407fbef34c532ff76"
+tdd_path = "docs/2026-09-24-deterministic-dependency-path-attachment-router.md"
+tdd_sha256 = "9880b154ffa31895d501558a48aeb5fa02e0e188df921d4d85b8752cead2c5c2"
+goal = "Ship a model-free deterministic dependency-path attachment router that emits exactly one Route Decision per candidate against frozen Proposition Gold, records the NONE confusion matrix, ceilings, and error-class census on both partitions, and never mutates canonical state."
+depends_on = []
+allowed_paths = [
+  ".agent/tasks/tdd-deterministic-dependency-path-attachment-router-9880b154ffa3.toml",
+  "docs/2026-09-24-source-grounded-attachment-deterministic-first-package.md",
+  "docs/CHECK_PLAN.md",
+  "packages/application/src/kotekomi_application/",
+  "packages/application/tests/test_deterministic_dependency_path_attachment_router.py",
+  "packages/pipelines/src/kotekomi_pipelines/",
+  "packages/pipelines/tests/test_deterministic_dependency_path_attachment_router.py",
+  "scripts/run_deterministic_dependency_path_attachment_router.py",
+]
+reference_paths = [
+  "docs/2026-09-21-competitive-attachment-dependency-head-routing.md",
+  "packages/application/src/kotekomi_application/competitive_attachment_review_verification.py",
+  "packages/application/src/kotekomi_application/competitive_attachment_selection.py",
+  "packages/application/src/kotekomi_application/competitive_attachment_dependency_head_routing.py",
+  "packages/application/src/kotekomi_application/trigger_scope_split.py",
+  "packages/application/src/kotekomi_application/event_entity_predicate_arguments.py",
+  "packages/application/src/kotekomi_application/event_entity_connections.py",
+  "packages/application/src/kotekomi_application/competitive_event_attachment.py",
+  "packages/pipelines/src/kotekomi_pipelines/competitive_attachment_dependency_head_routing.py",
+  "packages/pipelines/src/kotekomi_pipelines/event_entity_connection_stage_local.py",
+  "packages/pipelines/src/kotekomi_pipelines/source_grounded_proposition_stage_local.py",
+  "scripts/run_competitive_attachment_dependency_head_routing.py",
+]
+stop_conditions = [
+  "one candidate lacks exact Stanza evidence without a typed stop",
+  "one Event or candidate source range changes",
+  "Gold enters dependency analysis",
+  "a Route Decision invokes a model runtime",
+  "a Route Decision writes canonical intelligence",
+  "the held-out partition is read to tune a decision",
+]
+
+[readiness]
+authority = "The R1 TDD defines the deterministic route, the NONE rule, the ceilings, and the error-class census."
+contract_family = "source-grounded-attachment-deterministic-first"
+dominant_outcome = "Every attachment candidate receives exactly one model-free Route Decision with the NONE confusion matrix, ceilings, and error-class census recorded per partition."
+failure_policy = "A candidate lacking exact Stanza evidence, or a changed Gold, source, or Stanza digest, stops the runner; a false-NONE decision is never hidden."
+legacy_disposition = "The CEA-1 model-first route is left unused and the deterministic dependency-path route is added without migrating CEA-1 artifacts."
+negative_proof = "The complement family rejects an nmod-mediated acl so a reporting complement cannot reach an unrelated Event."
+public_entry_point = "scripts/run_deterministic_dependency_path_attachment_router.py"
+scope_policy = "Model-free routing, report generation, and focused tests only; the held-out partition stays reserved."
+side_effect_boundary = "The runner writes only experiment report artifacts under its explicit run root."
+unresolved_decisions = []
+
+[budget]
+maximum_production_files = 5
+maximum_test_files = 3
+maximum_production_diff_lines = 2400
+
+[[protected_artifacts]]
+kind = "leaf-tdd"
+path = "docs/2026-09-24-deterministic-dependency-path-attachment-router.md"
+sha256 = "9880b154ffa31895d501558a48aeb5fa02e0e188df921d4d85b8752cead2c5c2"
+
+[[protected_artifacts]]
+kind = "golden"
+path = "docs/hsq-source-grounded-proposition-gold-v1.json"
+sha256 = "f496ab64e6590de05b1bc07ef069335fae6a7094b009b2fae3ca02cc627e54b0"
+
+[[protected_artifacts]]
+kind = "golden"
+path = "docs/hsq-event-entity-connection-gold-v2.json"
+sha256 = "afb3b25a421913b8d6b1c29eda90ee681d3bbf71719f7e0377a626bfc6067294"
+
+[[protected_artifacts]]
+kind = "golden"
+path = "docs/hsq-event-trigger-gold-v1.json"
+sha256 = "844eb564fb953e8d202f211469465f29f6de95dd811c033506f616cf425fe83f"
+
+[[protected_artifacts]]
+kind = "golden"
+path = "packages/adapters/src/kotekomi_adapters/stanza-model-lock.json"
+sha256 = "4e66da09e0da1b3daef940ac8bec68d814b99d9fb10538e371548c9914d87bb3"
+
+[[acceptance]]
+id = "r1-application-contract"
+argv = ["uv", "run", "pytest", "packages/application/tests/test_deterministic_dependency_path_attachment_router.py"]
+timeout_seconds = 120
+profile = "portable-local"
+
+[[acceptance]]
+id = "r1-pipeline-contract"
+argv = ["uv", "run", "pytest", "packages/pipelines/tests/test_deterministic_dependency_path_attachment_router.py"]
+timeout_seconds = 180
+profile = "portable-local"
+
+[[acceptance]]
+id = "repository-static-checks"
+argv = ["uv", "run", "ruff", "check"]
+timeout_seconds = 180
+profile = "portable-local"
+
+[[acceptance]]
+id = "repository-type-checks"
+argv = ["uv", "run", "pyright"]
+timeout_seconds = 300
+profile = "portable-local"
