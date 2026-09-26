@@ -1,0 +1,116 @@
+schema_version = 2
+task_id = "tdd-trigger-containment-candidate-split-and-gold-correction-2b04c5b87437"
+title = "R2 Trigger-Containment Candidate Split and Gold Correction"
+status = "ready_for_terra_high"
+series_id = "source-grounded-attachment-deterministic-first"
+task_class = "orchestration"
+model_profile = "terra-high-v1"
+baseline_revision = "dc683f84f6891587291a1fec7a54a780c4c1b044"
+tdd_path = "docs/2026-09-24-trigger-containment-candidate-split-and-gold-correction.md"
+tdd_sha256 = "2b04c5b8743728e59f6f3593e0f9f7e9402e73f6c58101c6b7a94f7da486855a"
+goal = "Ship a model-free trigger-containment candidate splitter and Gold correction that detects every candidate strictly containing a foreign Event trigger, emits one source-exact resized candidate, re-labels it by exact fragment membership, and re-scores the R1 error classes against the corrected Attachment Gold without touching canonical state."
+depends_on = ["tdd-deterministic-dependency-path-attachment-router-9880b154ffa3"]
+allowed_paths = [
+  ".agent/tasks/tdd-trigger-containment-candidate-split-and-gold-correction-2b04c5b87437.toml",
+  "docs/2026-09-24-source-grounded-attachment-deterministic-first-package.md",
+  "docs/CHECK_PLAN.md",
+  "docs/hsq-source-grounded-proposition-gold-v1-corrected.json",
+  "packages/application/src/kotekomi_application/",
+  "packages/application/tests/test_trigger_containment_candidate_split.py",
+  "packages/pipelines/src/kotekomi_pipelines/",
+  "packages/pipelines/tests/test_trigger_containment_candidate_split.py",
+  "scripts/run_trigger_containment_candidate_split.py",
+]
+reference_paths = [
+  "docs/2026-09-24-deterministic-dependency-path-attachment-router.md",
+  "packages/application/src/kotekomi_application/deterministic_dependency_path_attachment_router.py",
+  "packages/application/src/kotekomi_application/competitive_attachment_review_verification.py",
+  "packages/application/src/kotekomi_application/competitive_attachment_selection.py",
+  "packages/application/src/kotekomi_application/trigger_scope_split.py",
+  "packages/application/src/kotekomi_application/competitive_event_attachment.py",
+  "packages/application/src/kotekomi_application/source_occurrences.py",
+  "packages/pipelines/src/kotekomi_pipelines/competitive_attachment_review_verification.py",
+  "packages/pipelines/src/kotekomi_pipelines/source_grounded_proposition_stage_local.py",
+  "packages/pipelines/src/kotekomi_pipelines/event_trigger_stage_local.py",
+  "packages/pipelines/src/kotekomi_pipelines/event_entity_experiment_inputs.py",
+  "scripts/run_deterministic_dependency_path_attachment_router.py",
+]
+stop_conditions = [
+  "one Event trigger cannot be materialized to exact source characters",
+  "the splitter must change authoritative source characters",
+  "the corrected Gold must alter the original Proposition Gold",
+  "a Route Decision invokes a model runtime",
+  "the held-out partition is read to tune a decision",
+  "a trigger-containment candidate lacks one source-exact resized fragment",
+]
+
+[readiness]
+authority = "The R2 TDD defines the foreign-trigger detection rule, the source-exact resize, the exact-fragment relabel, and the before-and-after error-class re-score."
+contract_family = "source-grounded-attachment-deterministic-first"
+dominant_outcome = "Every trigger-containment candidate yields exactly one resized candidate, the corrected Attachment Gold re-labels it by exact fragment membership, and the R1 error classes are recounted against the corrected Gold on both partitions."
+failure_policy = "A changed Proposition Gold, trigger Gold, source, or Stanza digest, or a trigger that cannot be materialized to exact source characters, stops the runner; a segmentation artifact is never silently relabeled."
+legacy_disposition = "The original Proposition Gold is left untouched and one new corrected Attachment Gold file is added; no CEA-1.2 split-proposal artifact is migrated."
+negative_proof = "An Event that owns a contained trigger is never classified foreign, so a trigger's own Event cannot be relabeled away by containment."
+public_entry_point = "scripts/run_trigger_containment_candidate_split.py"
+scope_policy = "Model-free split, Gold correction, re-score, and focused tests only; the held-out partition stays reserved and unread."
+side_effect_boundary = "The runner writes one corrected Attachment Gold reference file and only experiment report artifacts under its explicit run root."
+unresolved_decisions = []
+
+[budget]
+maximum_production_files = 5
+maximum_test_files = 3
+maximum_production_diff_lines = 2400
+
+[[protected_artifacts]]
+kind = "leaf-tdd"
+path = "docs/2026-09-24-trigger-containment-candidate-split-and-gold-correction.md"
+sha256 = "2b04c5b8743728e59f6f3593e0f9f7e9402e73f6c58101c6b7a94f7da486855a"
+
+[[protected_artifacts]]
+kind = "golden"
+path = "docs/hsq-source-grounded-proposition-gold-v1.json"
+sha256 = "f496ab64e6590de05b1bc07ef069335fae6a7094b009b2fae3ca02cc627e54b0"
+
+[[protected_artifacts]]
+kind = "golden"
+path = "docs/hsq-event-entity-connection-gold-v2.json"
+sha256 = "afb3b25a421913b8d6b1c29eda90ee681d3bbf71719f7e0377a626bfc6067294"
+
+[[protected_artifacts]]
+kind = "golden"
+path = "docs/hsq-event-trigger-gold-v1.json"
+sha256 = "844eb564fb953e8d202f211469465f29f6de95dd811c033506f616cf425fe83f"
+
+[[protected_artifacts]]
+kind = "golden"
+path = "docs/anthropic-dod-attachment-proposition-held-out-gold-v1.json"
+sha256 = "3bbfd1bc76d3f78e8853e84303c47e46aa1d430ed3a5cc3b22391adceca4a270"
+
+[[protected_artifacts]]
+kind = "golden"
+path = "packages/adapters/src/kotekomi_adapters/stanza-model-lock.json"
+sha256 = "4e66da09e0da1b3daef940ac8bec68d814b99d9fb10538e371548c9914d87bb3"
+
+[[acceptance]]
+id = "r2-application-contract"
+argv = ["uv", "run", "pytest", "packages/application/tests/test_trigger_containment_candidate_split.py"]
+timeout_seconds = 120
+profile = "portable-local"
+
+[[acceptance]]
+id = "r2-pipeline-contract"
+argv = ["uv", "run", "pytest", "packages/pipelines/tests/test_trigger_containment_candidate_split.py"]
+timeout_seconds = 180
+profile = "portable-local"
+
+[[acceptance]]
+id = "repository-static-checks"
+argv = ["uv", "run", "ruff", "check"]
+timeout_seconds = 180
+profile = "portable-local"
+
+[[acceptance]]
+id = "repository-type-checks"
+argv = ["uv", "run", "pyright"]
+timeout_seconds = 300
+profile = "portable-local"
