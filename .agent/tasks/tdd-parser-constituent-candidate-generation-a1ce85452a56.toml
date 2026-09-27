@@ -1,0 +1,115 @@
+schema_version = 2
+task_id = "tdd-parser-constituent-candidate-generation-a1ce85452a56"
+title = "R3 Parser-Constituent Candidate Generation"
+status = "ready_for_terra_high"
+series_id = "source-grounded-attachment-deterministic-first"
+task_class = "orchestration"
+model_profile = "terra-high-v1"
+baseline_revision = "f7f8d89f1b362dabf526f04fd6daf155536f5dfb"
+tdd_path = "docs/2026-09-25-parser-constituent-candidate-generation.md"
+tdd_sha256 = "a1ce85452a564fe6dd79ad5c23d0785d4ea194f1a541cd6644afaa36981a68e3"
+goal = "Ship a parser-derived constituent candidate generator that builds one model-free Constituent Candidate Inventory per Event, records Boundary Fidelity and the Constituent Pool Ceiling per partition, and lets the local model return one finite selection per Event without ever drawing a candidate boundary."
+depends_on = ["tdd-trigger-containment-candidate-split-and-gold-correction-2b04c5b87437"]
+allowed_paths = [
+  ".agent/tasks/tdd-parser-constituent-candidate-generation-a1ce85452a56.toml",
+  "docs/2026-09-24-source-grounded-attachment-deterministic-first-package.md",
+  "docs/CHECK_PLAN.md",
+  "packages/application/src/kotekomi_application/",
+  "packages/application/tests/test_parser_constituent_candidate_generation.py",
+  "packages/pipelines/src/kotekomi_pipelines/",
+  "packages/pipelines/tests/test_parser_constituent_candidate_generation.py",
+  "scripts/run_parser_constituent_candidate_generation.py",
+]
+reference_paths = [
+  "docs/2026-09-24-trigger-containment-candidate-split-and-gold-correction.md",
+  "docs/2026-09-17-source-grounded-proposition-scope-experiment.md",
+  "packages/application/src/kotekomi_application/source_grounded_proposition_scope.py",
+  "packages/application/src/kotekomi_application/trigger_containment_candidate_split.py",
+  "packages/application/src/kotekomi_application/deterministic_dependency_path_attachment_router.py",
+  "packages/application/src/kotekomi_application/competitive_attachment_finite_answer_format.py",
+  "packages/application/src/kotekomi_application/competitive_attachment_local_model_swap.py",
+  "packages/adapters/src/kotekomi_adapters/stanza_linguistic_analysis.py",
+  "packages/adapters/src/kotekomi_adapters/lm_studio_model_runtime.py",
+  "packages/pipelines/src/kotekomi_pipelines/source_grounded_proposition_stage_local.py",
+  "packages/pipelines/src/kotekomi_pipelines/event_trigger_stage_local.py",
+  "scripts/run_trigger_containment_candidate_split.py",
+]
+stop_conditions = [
+  "one constituent cannot be materialized to exact source characters",
+  "the builder must invent source characters",
+  "the corrected Gold re-derivation diverges from the R2 splitter",
+  "the selection renderer must send a candidate boundary to the model",
+  "model output would become accepted state",
+  "the held-out partition is read to tune a decision",
+]
+
+[readiness]
+authority = "The R3 TDD defines the parser-derived constituent inventory, the exact-span Boundary Fidelity census, the finite selection contract, and the Constituent Pool Ceiling measurement."
+contract_family = "source-grounded-attachment-deterministic-first"
+dominant_outcome = "Every Event yields one model-free Constituent Candidate Inventory with a Boundary Fidelity census and pool ceiling recorded per partition, and the local model returns one finite selection per Event without drawing a boundary."
+failure_policy = "A changed Gold, source, or Stanza digest, an invent-characters requirement, or a corrected-Gold re-derivation divergence stops the runner."
+legacy_disposition = "The CEA-1 boundary-drawing route stays unused and the R2 corrected Gold is re-derived without migrating CEA-1 artifacts."
+negative_proof = "The inventory builder reads no Gold, so a missed Gold fragment is reported, never silently repaired."
+public_entry_point = "scripts/run_parser_constituent_candidate_generation.py"
+scope_policy = "Parser-constituent generation, boundary fidelity, finite selection, and focused tests only; the held-out partition stays reserved."
+side_effect_boundary = "The runner writes one constituent inventory file and experiment report artifacts only under its explicit run root; model output never becomes accepted state."
+unresolved_decisions = []
+
+[budget]
+maximum_production_files = 5
+maximum_test_files = 3
+maximum_production_diff_lines = 3200
+
+[[protected_artifacts]]
+kind = "leaf-tdd"
+path = "docs/2026-09-25-parser-constituent-candidate-generation.md"
+sha256 = "a1ce85452a564fe6dd79ad5c23d0785d4ea194f1a541cd6644afaa36981a68e3"
+
+[[protected_artifacts]]
+kind = "golden"
+path = "docs/hsq-source-grounded-proposition-gold-v1.json"
+sha256 = "f496ab64e6590de05b1bc07ef069335fae6a7094b009b2fae3ca02cc627e54b0"
+
+[[protected_artifacts]]
+kind = "golden"
+path = "docs/hsq-event-entity-connection-gold-v2.json"
+sha256 = "afb3b25a421913b8d6b1c29eda90ee681d3bbf71719f7e0377a626bfc6067294"
+
+[[protected_artifacts]]
+kind = "golden"
+path = "docs/hsq-event-trigger-gold-v1.json"
+sha256 = "844eb564fb953e8d202f211469465f29f6de95dd811c033506f616cf425fe83f"
+
+[[protected_artifacts]]
+kind = "golden"
+path = "docs/anthropic-dod-attachment-proposition-held-out-gold-v1.json"
+sha256 = "3bbfd1bc76d3f78e8853e84303c47e46aa1d430ed3a5cc3b22391adceca4a270"
+
+[[protected_artifacts]]
+kind = "golden"
+path = "packages/adapters/src/kotekomi_adapters/stanza-model-lock.json"
+sha256 = "4e66da09e0da1b3daef940ac8bec68d814b99d9fb10538e371548c9914d87bb3"
+
+[[acceptance]]
+id = "r3-application-contract"
+argv = ["uv", "run", "pytest", "packages/application/tests/test_parser_constituent_candidate_generation.py"]
+timeout_seconds = 120
+profile = "portable-local"
+
+[[acceptance]]
+id = "r3-pipeline-contract"
+argv = ["uv", "run", "pytest", "packages/pipelines/tests/test_parser_constituent_candidate_generation.py"]
+timeout_seconds = 180
+profile = "portable-local"
+
+[[acceptance]]
+id = "repository-static-checks"
+argv = ["uv", "run", "ruff", "check"]
+timeout_seconds = 180
+profile = "portable-local"
+
+[[acceptance]]
+id = "repository-type-checks"
+argv = ["uv", "run", "pyright"]
+timeout_seconds = 300
+profile = "portable-local"
