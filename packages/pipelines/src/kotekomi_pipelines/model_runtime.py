@@ -121,6 +121,8 @@ class FixtureModelTaskRuntime:
             raw_output = b"N"
         elif task.execution_spec.schema_id == "hybrid_standing_fact_text_v3":
             raw_output = b"abstain: fixture_no_standing_fact\n"
+        elif task.execution_spec.schema_id == "constituent_selection_label_v1":
+            raw_output = b"NONE"
         elif task.execution_spec.schema_id == "semantic_reference_challenge_text_v2":
             raw_output = b"antecedent: unresolved\nreason: fixture_reference_unresolved\n"
         elif task.execution_spec.schema_id == "semantic_reference_candidate_validation_text_v1":

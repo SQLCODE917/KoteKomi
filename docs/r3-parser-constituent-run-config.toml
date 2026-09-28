@@ -1,0 +1,18 @@
+# R3 parser-constituent candidate generation run configuration.
+#
+# The R3 runner reads only explicit paths from this file.  No environment
+# variables are assumed.  Adjust model_resources.root if your local model
+# cache lives elsewhere, and runtime_profile / model_runtime if you serve a
+# different local endpoint.
+
+ledger_path = "/Users/DSerbarinov/.local/share/kotekomi/kotekomi.db"
+archive_path = "/Users/DSerbarinov/.local/share/kotekomi/archive"
+
+runtime_profile = "lm-studio"
+
+[model_resources]
+root = "/Users/DSerbarinov/.local/share/kotekomi/model-resources"
+
+[model_runtime]
+endpoint = "http://127.0.0.1:1234/v1"
+model = "qwen2.5-14b-instruct"
