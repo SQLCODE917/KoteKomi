@@ -116,6 +116,24 @@ ModelRuntime Adapters must not silently repair, drop, coerce, skip, or clean up 
 
 ModelRuntime Adapters must not write accepted state.
 
+## Token Alternative Normalization
+
+An LM Studio `top_logprobs` position can return duplicate identical `(token, bytes)` entries.
+
+The Application Layer DTO requires distinct token alternatives.
+
+The LM Studio Adapter normalizes each position's alternatives before it parses them through the DTO.
+
+Normalization sorts the alternatives in canonical order and keeps the highest-probability occurrence of each exact token-and-bytes identity.
+
+Normalization never changes an emitted token, a probability, or the returned alternative count.
+
+On the frozen R5 Transfer Gold, the normalized runtime recorded one answer and one Selection Probability Receipt per Held-out Event.
+
+The recorded run scored a 0.0 exact-set score, zero ok Events, 53 selection-error Events, and 37 boundary-miss Events.
+
+A boundary-miss Event holds a Gold fragment that has no exact-span constituent in the Event inventory.
+
 ## Task Deadlines
 
 `ModelExecutionConfig.timeout_seconds` is a total wall-clock deadline for an

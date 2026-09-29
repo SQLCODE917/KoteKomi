@@ -32,7 +32,7 @@ from kotekomi_application.event_entity_connections import EventEntityLinguisticT
 from kotekomi_application.trigger_containment_candidate_split import CorrectedAttachmentGold
 
 _SHA256 = r"^[a-f0-9]{64}$"
-type _EventId = Annotated[str, Field(pattern=r"^TGE-[0-9]{3}$")]
+type _EventId = Annotated[str, Field(pattern=r"^(TGE|AHE)-[0-9]{3}$")]
 type _ConstituentId = Annotated[str, Field(pattern=r"^pct_[a-f0-9]{24}$")]
 type _FragmentId = Annotated[str, Field(pattern=r"^PGF-TGE-[0-9]{3}-[0-9]{2}$")]
 

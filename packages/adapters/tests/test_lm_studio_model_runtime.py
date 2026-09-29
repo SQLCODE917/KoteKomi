@@ -441,6 +441,74 @@ def test_lm_studio_runtime_preserves_requested_output_token_probabilities() -> N
     assert streaming_client.calls[0][2]["top_logprobs"] == 3
 
 
+def test_lm_studio_runtime_deduplicates_identical_token_alternatives() -> None:
+    streaming_client = FakeStreamingHttpClient(
+        [
+            HttpResponse(
+                200,
+                json.dumps(
+                    {
+                        "model": "fixture-model",
+                        "output": [
+                            {
+                                "content": [
+                                    {
+                                        "type": "output_text",
+                                        "text": "Y",
+                                        "logprobs": [
+                                            {
+                                                "token": "Y",
+                                                "logprob": -0.1,
+                                                "bytes": [89],
+                                                "top_logprobs": [
+                                                    {
+                                                        "token": "N",
+                                                        "logprob": -2.5,
+                                                        "bytes": [78],
+                                                    },
+                                                    {
+                                                        "token": "Y",
+                                                        "logprob": -0.1,
+                                                        "bytes": [89],
+                                                    },
+                                                    {
+                                                        "token": "Y",
+                                                        "logprob": -0.1,
+                                                        "bytes": [89],
+                                                    },
+                                                ],
+                                            }
+                                        ],
+                                    }
+                                ]
+                            }
+                        ],
+                        "usage": {"input_tokens": 11, "output_tokens": 1},
+                    }
+                ),
+            )
+        ]
+    )
+    runtime = _runtime(FakeHttpClient([]), streaming_client)
+    task = _task(runtime)
+    task = replace(
+        task,
+        execution_spec=replace(
+            task.execution_spec,
+            generation_parameters=(
+                *task.execution_spec.generation_parameters,
+                ExecutionSetting("top_logprobs", 3),
+            ),
+        ),
+    )
+
+    response = runtime.run_model_task(task)
+
+    evidence = response.execution_receipt.output_token_probabilities
+    assert len(evidence) == 1
+    assert tuple(item.token for item in evidence[0].alternatives) == ("Y", "N")
+
+
 def test_lm_studio_runtime_rejects_missing_requested_output_token_probabilities() -> None:
     streaming_client = FakeStreamingHttpClient(
         [

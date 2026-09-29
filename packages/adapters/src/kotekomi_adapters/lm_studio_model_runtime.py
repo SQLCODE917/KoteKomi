@@ -422,6 +422,36 @@ def _output_text_part(payload: dict[str, object]) -> dict[str, object]:
     return text_parts[0]
 
 
+_AlternativeSortKey = tuple[float, str, tuple[int, ...]]
+
+
+def _probability_sort_key(item: ModelTokenAlternative) -> _AlternativeSortKey:
+    return (-item.log_probability, item.token, item.token_bytes)
+
+
+def _ordered_token_alternatives(
+    alternatives: tuple[ModelTokenAlternative, ...],
+) -> tuple[ModelTokenAlternative, ...]:
+    """Sort alternatives into canonical order and collapse exact token/byte duplicates.
+
+    LM Studio's Responses logprobs can repeat an identical (token, bytes) pair within one
+    position's top_logprobs. The typed probability evidence requires distinct alternatives,
+    so the Adapter keeps only the highest-probability occurrence of each identity. This
+    normalization does not alter the emitted token or the underlying probability
+    distribution; it removes redundant server bookkeeping.
+    """
+    ordered = sorted(alternatives, key=_probability_sort_key)
+    deduplicated: list[ModelTokenAlternative] = []
+    seen: set[tuple[str, tuple[int, ...]]] = set()
+    for item in ordered:
+        identity = (item.token, item.token_bytes)
+        if identity in seen:
+            continue
+        seen.add(identity)
+        deduplicated.append(item)
+    return tuple(deduplicated)
+
+
 def _output_token_probabilities(
     payload: dict[str, object],
     *,
@@ -463,16 +493,7 @@ def _output_token_probabilities(
                     token=_probability_token(entry, "output token"),
                     log_probability=_probability_value(entry, "output token"),
                     token_bytes=_probability_bytes(entry, "output token"),
-                    alternatives=tuple(
-                        sorted(
-                            parsed_alternatives,
-                            key=lambda item: (
-                                -item.log_probability,
-                                item.token,
-                                item.token_bytes,
-                            ),
-                        )
-                    ),
+                    alternatives=_ordered_token_alternatives(parsed_alternatives),
                 )
             )
         except ValueError as error:

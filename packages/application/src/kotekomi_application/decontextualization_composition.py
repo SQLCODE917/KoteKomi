@@ -51,7 +51,7 @@ from kotekomi_application.trigger_scope_split import (
 )
 
 _SHA256 = r"^[a-f0-9]{64}$"
-_EventId = Annotated[str, Field(pattern=r"^TGE-[0-9]{3}$")]
+_EventId = Annotated[str, Field(pattern=r"^(TGE|AHE)-[0-9]{3}$")]
 _EntityId = Annotated[str, Field(pattern=r"^EGE-[0-9]{3}$")]
 
 _SUBJECT_DEPENDENCY_RELATIONS = frozenset({"nsubj", "nsubj:pass"})
