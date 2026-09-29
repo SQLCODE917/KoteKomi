@@ -21,6 +21,7 @@ from kotekomi_application import (
     constituent_selection_report_fingerprint,
     corrected_gold_attachment_spans,
     parse_constituent_selection_answer,
+    parse_constituent_selection_answers,
     render_constituent_selection_task,
     selected_constituent_spans,
 )
@@ -376,6 +377,27 @@ def test_parse_rejects_out_of_inventory_label() -> None:
 
 def test_parse_rejects_garbage_answer() -> None:
     assert _parse("yes").status is ConstituentSelectionStatus.REJECTED
+
+
+def test_parse_answers_requires_full_inventory_coverage() -> None:
+    inventory = _inventory(SINGLE_SOURCE, SINGLE_TOKENS, SINGLE_EVENT_START, SINGLE_EVENT_END)
+    with pytest.raises(ValueError, match="cover every inventory Event"):
+        parse_constituent_selection_answers(
+            answers={"TGE-002": "C1"},
+            inventories_by_event={"TGE-001": inventory},
+        )
+
+
+def test_parse_answers_parses_each_inventory() -> None:
+    inventory = _inventory(SINGLE_SOURCE, SINGLE_TOKENS, SINGLE_EVENT_START, SINGLE_EVENT_END)
+    parsed = parse_constituent_selection_answers(
+        answers={"TGE-001": "C2, C1"},
+        inventories_by_event={"TGE-001": inventory},
+    )
+    assert len(parsed) == 1
+    assert parsed[0].event_id == "TGE-001"
+    assert parsed[0].status is ConstituentSelectionStatus.SELECTED
+    assert parsed[0].selected_label_indexes == (1, 2)
 
 
 def test_selected_constituent_spans_map_to_inventory() -> None:

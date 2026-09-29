@@ -34,7 +34,7 @@ from kotekomi_application.hybrid_event_triggers import EventTriggerDraft
 
 _SHA256 = r"^[a-f0-9]{64}$"
 
-_REPORTING_PREDICATE_LEMMAS = frozenset(
+REPORTING_PREDICATE_LEMMAS = frozenset(
     {
         "accord",
         "according",
@@ -61,10 +61,10 @@ _REPORTING_PREDICATE_LEMMAS = frozenset(
         "deny",
     }
 )
-_COMPLEMENT_RELATIONS = frozenset({"ccomp", "xcomp"})
-_ADJUNCT_RELATIONS = frozenset({"advcl", "obl", "nmod", "parataxis", "discourse", "advmod"})
-_CARRIER_FUNCTION_RELATIONS = frozenset({"punct"})
-_COMPLEMENT_FUNCTION_RELATIONS = frozenset({"mark", "punct"})
+COMPLEMENT_RELATIONS = frozenset({"ccomp", "xcomp"})
+ADJUNCT_RELATIONS = frozenset({"advcl", "obl", "nmod", "parataxis", "discourse", "advmod"})
+CARRIER_FUNCTION_RELATIONS = frozenset({"punct"})
+COMPLEMENT_FUNCTION_RELATIONS = frozenset({"mark", "punct"})
 
 
 class TriggerScopeStatus(StrEnum):
@@ -187,13 +187,13 @@ def split_trigger_scope(
         token
         for token in by_id.values()
         if token.token_id in carrier_ids
-        and token.dependency_relation not in _CARRIER_FUNCTION_RELATIONS
+        and token.dependency_relation not in CARRIER_FUNCTION_RELATIONS
     ]
     complement_tokens = [
         token
         for token in by_id.values()
         if token.token_id in complement_ids
-        and token.dependency_relation not in _COMPLEMENT_FUNCTION_RELATIONS
+        and token.dependency_relation not in COMPLEMENT_FUNCTION_RELATIONS
     ]
 
     carrier_range = _source_range(source_text, carrier_tokens, sentence_tokens)
@@ -236,9 +236,16 @@ def _validate_inputs(
         raise ValueError("Trigger-scope source digest drifted from the linguistic evidence.")
     if event.trigger_id != trigger.id:
         raise ValueError("Trigger-scope Event references a different trigger.")
-    if len(
-        {event.source_segment_id, trigger.source_segment_id, linguistic_evidence.source_segment_id}
-    ) != 1:
+    if (
+        len(
+            {
+                event.source_segment_id,
+                trigger.source_segment_id,
+                linguistic_evidence.source_segment_id,
+            }
+        )
+        != 1
+    ):
         raise ValueError("Trigger-scope inputs reference different source segments.")
 
 
@@ -329,8 +336,8 @@ def _reporting_predicate_candidates(
             break
         parent = by_id[parent_id]
         if (
-            parent.lemma.casefold() in _REPORTING_PREDICATE_LEMMAS
-            and cursor.dependency_relation in _COMPLEMENT_RELATIONS
+            parent.lemma.casefold() in REPORTING_PREDICATE_LEMMAS
+            and cursor.dependency_relation in COMPLEMENT_RELATIONS
         ):
             candidates.append(_ReportingPredicate("complement", parent, cursor))
         cursor = parent
@@ -339,11 +346,11 @@ def _reporting_predicate_candidates(
     for token in sentence_tokens:
         if token.token_id in known:
             continue
-        if token.lemma.casefold() not in _REPORTING_PREDICATE_LEMMAS:
+        if token.lemma.casefold() not in REPORTING_PREDICATE_LEMMAS:
             continue
         if token.head_token_id not in ancestor_ids:
             continue
-        if token.dependency_relation not in _ADJUNCT_RELATIONS:
+        if token.dependency_relation not in ADJUNCT_RELATIONS:
             continue
         candidates.append(_ReportingPredicate("adjunct", token, None))
     return candidates

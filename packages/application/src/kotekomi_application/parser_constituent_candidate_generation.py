@@ -416,6 +416,13 @@ def build_boundary_fidelity_census(
     )
 
 
+def constituent_selection_labels(
+    inventory: ConstituentCandidateInventory,
+) -> tuple[str, ...]:
+    """Return the ordered ``C1..C<n>`` labels for one inventory."""
+    return tuple(f"C{ordinal}" for ordinal in range(1, len(inventory.constituents) + 1))
+
+
 def render_constituent_selection_task(
     *,
     inventory: ConstituentCandidateInventory,
@@ -427,7 +434,7 @@ def render_constituent_selection_task(
         raise ValueError("Selection renderer source digest does not match the inventory.")
     if source_text.count(event_literal) != 1:
         raise ValueError("Selection renderer requires one unique Event literal.")
-    labels = tuple(f"C{ordinal}" for ordinal in range(1, len(inventory.constituents) + 1))
+    labels = constituent_selection_labels(inventory)
     lines = [
         "Return a comma-separated subset of the Candidate labels, or NONE.",
         f"Event: {event_literal}",
@@ -454,26 +461,66 @@ def parse_constituent_selection_answer(
     task: ConstituentSelectionTask,
 ) -> ConstituentSelectionAnswer:
     """Parse one finite model answer into a subset, NONE, or a rejection."""
+    return parse_constituent_selection_answer_labels(
+        event_id=task.event_id,
+        raw_answer=raw_answer,
+        constituent_labels=task.constituent_labels,
+    )
+
+
+def parse_constituent_selection_answer_labels(
+    *,
+    event_id: str,
+    raw_answer: str,
+    constituent_labels: tuple[str, ...],
+) -> ConstituentSelectionAnswer:
+    """Parse one finite answer against an ordered constituent label set."""
     tokens = tuple(item.strip() for item in raw_answer.split(",") if item.strip())
     if tokens == ("NONE",):
         return ConstituentSelectionAnswer(
-            event_id=task.event_id,
+            event_id=event_id,
             status=ConstituentSelectionStatus.NONE,
             selected_label_indexes=(),
         )
-    valid = set(task.constituent_labels)
+    valid = set(constituent_labels)
     if not tokens or any(item not in valid for item in tokens):
         return ConstituentSelectionAnswer(
-            event_id=task.event_id,
+            event_id=event_id,
             status=ConstituentSelectionStatus.REJECTED,
             selected_label_indexes=(),
         )
-    indexes = tuple(sorted({task.constituent_labels.index(item) + 1 for item in tokens}))
+    indexes = tuple(sorted({constituent_labels.index(item) + 1 for item in tokens}))
     return ConstituentSelectionAnswer(
-        event_id=task.event_id,
+        event_id=event_id,
         status=ConstituentSelectionStatus.SELECTED,
         selected_label_indexes=indexes,
     )
+
+
+def parse_constituent_selection_answers(
+    *,
+    answers: Mapping[str, str],
+    inventories_by_event: Mapping[str, ConstituentCandidateInventory],
+) -> tuple[ConstituentSelectionAnswer, ...]:
+    """Parse raw ``answers.jsonl`` records into typed selection answers.
+
+    ``answers`` maps one ``event_id`` to its raw finite answer string.  Each
+    inventory supplies the ordered constituent labels the parser validates
+    against.  Every inventory Event must be answered exactly once.
+    """
+    if set(answers) != set(inventories_by_event):
+        raise ValueError("R3 answers.jsonl must cover every inventory Event exactly once.")
+    parsed: list[ConstituentSelectionAnswer] = []
+    for event_id in sorted(inventories_by_event):
+        inventory = inventories_by_event[event_id]
+        parsed.append(
+            parse_constituent_selection_answer_labels(
+                event_id=event_id,
+                raw_answer=answers[event_id],
+                constituent_labels=constituent_selection_labels(inventory),
+            )
+        )
+    return tuple(parsed)
 
 
 def selected_constituent_spans(
