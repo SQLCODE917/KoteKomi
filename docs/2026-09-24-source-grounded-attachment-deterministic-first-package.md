@@ -95,10 +95,43 @@ Gate each route on its error class instead of exact-set equality.
 | R3-A | Parser-constituent sub-span candidate generation | sub-span candidates so word-level and phrase-level Gold fragments enter the pool | R3 |
 | R4 | Decontextualization composition | one `EventSemanticDraft` content triple and attribution from selected fragments | R3 |
 | R5 | Evaluation remediation | one fresh held-out partition, logprob capture, one error-type census, error-class gates | R4 |
+| R6 | Calibrated residual ownership | one syntax-attached selection per Event under one Event frame, gated on a Selection Score threshold, reserving the model for residual composition | R5 |
 
 R3-A supersedes the candidate granularity of R3 requirements `R3-CST-02` and `R3-CST-03`.
 
 No `R3-B` deliverable exists.
+
+R6 is proposed pending the R5 held-out transfer result and human review.
+
+## Transfer result
+
+R4 accepted with commit `ddbc7fe`.
+
+R5 measured the held-out Anthropic/DoD partition once.
+
+The sealed report fingerprint is `254f1b89cd21c29b6d0a7e3b51a3408038d71cca1f695460d2eddc83324a783e`.
+
+The run root is `data/r5-evaluation-remediation-runs/run-001`.
+
+The error-type census records the 53 held-out Events:
+
+- ok: `0`
+- boundary_miss: `37`
+- selection_error: `53`
+- composition_hold: `23`
+- content_error: `1`
+- attribution_error: `8`
+- polarity_modality_error: `6`
+
+The exact-set score is `0.0` and does not gate acceptance.
+
+Two mechanisms dominate.
+
+`boundary_miss` means the parser-constituent pool omits 37 Gold fragments at their exact boundaries before the model answers.
+
+`selection_error` means the local model over-selects across every Event; the first-position Selection Scores sit near log `0`, so the over-selection is certain rather than uncertain.
+
+R6 closes the boundary gap, restricts the model to syntax-attached candidates under one Event frame, and gates selection on a Selection Score threshold.
 
 ## Fresh partition prerequisite
 
