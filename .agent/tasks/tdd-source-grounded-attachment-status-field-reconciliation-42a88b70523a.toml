@@ -1,0 +1,69 @@
+schema_version = 2
+task_id = "tdd-source-grounded-attachment-status-field-reconciliation-42a88b70523a"
+title = "Source-Grounded Attachment Status-Field Reconciliation"
+status = "ready_for_terra_high"
+series_id = "source-grounded-attachment-deterministic-first"
+task_class = "documentation-contract"
+model_profile = "terra-high-v1"
+baseline_revision = "5368d2057bbc307eabaa3fa1cfd227da9db3ff1c"
+tdd_path = "docs/2026-09-29-source-grounded-attachment-status-field-reconciliation.md"
+tdd_sha256 = "42a88b70523a392f260069f36901112b422471986680931963b31ab976a0f3e9"
+goal = "Reconcile the R3 and R3-A status fields, record the R3-A catalog entry, and document that no R3-B deliverable exists."
+depends_on = ["tdd-parser-constituent-candidate-generation-a1ce85452a56"]
+allowed_paths = [
+  ".agent/tasks/tdd-source-grounded-attachment-status-field-reconciliation-42a88b70523a.toml",
+  "docs/2026-09-29-source-grounded-attachment-status-field-reconciliation.md",
+  "docs/2026-09-25-parser-constituent-candidate-generation.md",
+  "docs/2026-09-25-parser-constituent-sub-span-candidate-generation.md",
+  "docs/2026-09-24-source-grounded-attachment-deterministic-first-package.md",
+]
+reference_paths = [
+  "docs/2026-09-24-deterministic-dependency-path-attachment-router.md",
+  "docs/2026-09-24-trigger-containment-candidate-split-and-gold-correction.md",
+  "docs/2026-09-28-decontextualization-composition.md",
+  "docs/2026-09-28-evaluation-remediation.md",
+  "docs/agent/documentation-style.md",
+  ".agent/tasks/tdd-parser-constituent-candidate-generation-a1ce85452a56.toml",
+]
+stop_conditions = [
+  "the reconciliation renames a deliverable ID",
+  "the reconciliation creates an R3-B deliverable",
+  "the reconciliation changes an R1, R2, R4, or R5 Status value",
+  "the reconciliation changes the package Status value",
+  "the reconciliation renames an acceptance-criteria prefix",
+  "the reconciliation reads the held-out DoD partition",
+]
+
+[readiness]
+authority = "The Source-Grounded Attachment Status-Field Reconciliation TDD defines this task."
+contract_family = "source-grounded-attachment-deterministic-first"
+dominant_outcome = "The R3 and R3-A headers state Accepted, and the package records the R3-A catalog entry and the no-R3-B note."
+failure_policy = "A Status flip without commit-history proof, a renamed deliverable ID, or a changed unchanged-document Status blocks the reconciliation."
+legacy_disposition = "R1, R2, R4, and R5 keep their current Status values."
+negative_proof = "The reconciliation never creates an R3-B deliverable."
+public_entry_point = "kotekomi-agent implement-tdd"
+scope_policy = "Status-field reconciliation and the package catalog note only; no code, schema, or Gold changes."
+side_effect_boundary = "Documentation header and catalog edits only; no software interface or record schema changes."
+unresolved_decisions = []
+
+[budget]
+maximum_production_files = 5
+maximum_test_files = 1
+maximum_production_diff_lines = 60
+
+[[protected_artifacts]]
+kind = "leaf-tdd"
+path = "docs/2026-09-29-source-grounded-attachment-status-field-reconciliation.md"
+sha256 = "42a88b70523a392f260069f36901112b422471986680931963b31ab976a0f3e9"
+
+[[acceptance]]
+id = "repository-static-checks"
+argv = ["uv", "run", "ruff", "check"]
+timeout_seconds = 120
+profile = "portable-local"
+
+[[acceptance]]
+id = "repository-type-checks"
+argv = ["uv", "run", "pyright"]
+timeout_seconds = 240
+profile = "portable-local"
