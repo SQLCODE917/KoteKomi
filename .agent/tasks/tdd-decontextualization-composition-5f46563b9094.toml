@@ -1,0 +1,108 @@
+schema_version = 2
+task_id = "tdd-decontextualization-composition-5f46563b9094"
+title = "R4 Decontextualization Composition"
+status = "ready_for_terra_high"
+series_id = "source-grounded-attachment-deterministic-first"
+task_class = "orchestration"
+model_profile = "terra-high-v1"
+baseline_revision = "19a53e4ce081662580dfdac552d4ba8d427dcc8c"
+tdd_path = "docs/2026-09-28-decontextualization-composition.md"
+tdd_sha256 = "5f46563b90945f792415fda988518e8ad05061aabc6e3bb6e0b9734fe2bddeca"
+goal = "Ship a deterministic model-free decontextualization composer that assembles one content triple plus one attribution per Event from the frozen R3-A Selected Constituent Set and the pinned Stanza dependency tree, emits one typed hold whenever assembly is impossible, and never invokes a model, reads the held-out partition, or writes canonical state."
+depends_on = ["tdd-parser-constituent-candidate-generation-a1ce85452a56"]
+allowed_paths = [
+  ".agent/tasks/tdd-decontextualization-composition-5f46563b9094.toml",
+  "docs/2026-09-24-source-grounded-attachment-deterministic-first-package.md",
+  "docs/CHECK_PLAN.md",
+  "packages/application/src/kotekomi_application/",
+  "packages/application/tests/test_decontextualization_composition.py",
+  "packages/pipelines/src/kotekomi_pipelines/",
+  "scripts/run_decontextualization_composition.py",
+]
+reference_paths = [
+  "docs/2026-09-25-parser-constituent-sub-span-candidate-generation.md",
+  "docs/2026-09-22-deterministic-trigger-scope-split.md",
+  "docs/2026-09-22-attributed-statement-construction.md",
+  "docs/2026-09-22-event-attribution-wiring-composition.md",
+  "packages/application/src/kotekomi_application/parser_constituent_candidate_generation.py",
+  "packages/application/src/kotekomi_application/trigger_scope_split.py",
+  "packages/application/src/kotekomi_application/attributed_statement_construction.py",
+  "packages/application/src/kotekomi_application/event_attribution_wiring.py",
+  "packages/application/src/kotekomi_application/event_entity_predicate_arguments.py",
+  "packages/application/src/kotekomi_application/event_entity_connections.py",
+  "packages/application/src/kotekomi_application/hybrid_event_triggers.py",
+  "packages/application/src/kotekomi_application/hybrid_event_semantics.py",
+  "scripts/run_parser_constituent_candidate_generation.py",
+]
+stop_conditions = [
+  "one input digest drifts from the frozen binding",
+  "one selected constituent cannot materialize to exact source characters",
+  "the relation label must come from model output",
+  "the composer must invent a subject, object, or attribution target",
+  "the held-out partition is read to tune a decision",
+]
+
+[readiness]
+authority = "The R4 TDD defines the deterministic content-triple and attribution assembly from the Selected Constituent Set, the relation label derived from the trigger token only, and the typed holds."
+contract_family = "source-grounded-attachment-deterministic-first"
+dominant_outcome = "Every Event yields one DecontextualizedProposition carrying one content triple and one attribution, or one typed hold, with zero model executions, zero canonical writes, and zero ProposedChanges."
+failure_policy = "A drifted input digest, a constituent that cannot materialize to exact source characters, or any model-derived relation label stops the runner; a fabricated role is never emitted."
+legacy_disposition = "The CEA-1 boundary-drawing and inline Y/N route stays unused; the deterministic composer reuses the D3 attribution split and the D1/D4 content-triple field naming without migrating CEA-1 artifacts."
+negative_proof = "A rejected, empty, or incomplete selection holds with a typed reason and never fabricates a subject, object, or attribution target."
+public_entry_point = "scripts/run_decontextualization_composition.py"
+scope_policy = "Deterministic composition, typed holds, report generation, and focused tests only; the held-out partition stays reserved and unread."
+side_effect_boundary = "The runner writes only experiment report artifacts under its explicit run root; model output never becomes accepted state."
+unresolved_decisions = []
+
+[budget]
+maximum_production_files = 5
+maximum_test_files = 2
+maximum_production_diff_lines = 3200
+
+[[protected_artifacts]]
+kind = "leaf-tdd"
+path = "docs/2026-09-28-decontextualization-composition.md"
+sha256 = "5f46563b90945f792415fda988518e8ad05061aabc6e3bb6e0b9734fe2bddeca"
+
+[[protected_artifacts]]
+kind = "golden"
+path = "docs/hsq-source-grounded-proposition-gold-v1.json"
+sha256 = "f496ab64e6590de05b1bc07ef069335fae6a7094b009b2fae3ca02cc627e54b0"
+
+[[protected_artifacts]]
+kind = "golden"
+path = "docs/hsq-event-entity-connection-gold-v2.json"
+sha256 = "afb3b25a421913b8d6b1c29eda90ee681d3bbf71719f7e0377a626bfc6067294"
+
+[[protected_artifacts]]
+kind = "golden"
+path = "docs/hsq-event-trigger-gold-v1.json"
+sha256 = "844eb564fb953e8d202f211469465f29f6de95dd811c033506f616cf425fe83f"
+
+[[protected_artifacts]]
+kind = "golden"
+path = "docs/anthropic-dod-attachment-proposition-held-out-gold-v1.json"
+sha256 = "3bbfd1bc76d3f78e8853e84303c47e46aa1d430ed3a5cc3b22391adceca4a270"
+
+[[protected_artifacts]]
+kind = "golden"
+path = "packages/adapters/src/kotekomi_adapters/stanza-model-lock.json"
+sha256 = "4e66da09e0da1b3daef940ac8bec68d814b99d9fb10538e371548c9914d87bb3"
+
+[[acceptance]]
+id = "r4-application-contract"
+argv = ["uv", "run", "pytest", "packages/application/tests/test_decontextualization_composition.py"]
+timeout_seconds = 120
+profile = "portable-local"
+
+[[acceptance]]
+id = "repository-static-checks"
+argv = ["uv", "run", "ruff", "check"]
+timeout_seconds = 180
+profile = "portable-local"
+
+[[acceptance]]
+id = "repository-type-checks"
+argv = ["uv", "run", "pyright"]
+timeout_seconds = 300
+profile = "portable-local"

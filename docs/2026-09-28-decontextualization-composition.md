@@ -1,6 +1,6 @@
 # TDD: Decontextualization Composition
 
-- Status: Proposed
+- Status: Accepted
 - Deliverable ID: `R4`
 - Program: [Source-Grounded Attachment Deterministic-First Package](2026-09-24-source-grounded-attachment-deterministic-first-package.md)
 - Parent: [Competitive Event Attachment Program](2026-09-18-competitive-event-attachment-program.md)
