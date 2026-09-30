@@ -1,6 +1,6 @@
 # TDD: Parser-Constituent Sub-Span Candidate Generation
 
-- Status: Proposed
+- Status: Accepted
 - Deliverable ID: `R3-A`
 - Program: [Source-Grounded Attachment Deterministic-First Package](2026-09-24-source-grounded-attachment-deterministic-first-package.md)
 - Parent: [Competitive Event Attachment Program](2026-09-18-competitive-event-attachment-program.md)

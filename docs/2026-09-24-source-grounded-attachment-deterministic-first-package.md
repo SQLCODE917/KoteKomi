@@ -92,8 +92,13 @@ Gate each route on its error class instead of exact-set equality.
 | R1 | Deterministic dependency-path attachment router | one route decision per candidate: attached, not-attached, or model-review, model-free | none |
 | R2 | Trigger-containment candidate split and Gold correction | one resized candidate per judgment, one corrected Attachment Gold | R1 |
 | R3 | Parser-constituent candidate generation | constituents as candidates; the local model selects, and never draws boundaries | R2 |
+| R3-A | Parser-constituent sub-span candidate generation | sub-span candidates so word-level and phrase-level Gold fragments enter the pool | R3 |
 | R4 | Decontextualization composition | one `EventSemanticDraft` content triple and attribution from selected fragments | R3 |
 | R5 | Evaluation remediation | one fresh held-out partition, logprob capture, one error-type census, error-class gates | R4 |
+
+R3-A supersedes the candidate granularity of R3 requirements `R3-CST-02` and `R3-CST-03`.
+
+No `R3-B` deliverable exists.
 
 ## Fresh partition prerequisite
 
