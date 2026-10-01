@@ -3,10 +3,11 @@
 R6 closes the R5 transfer failures with four deterministic constraints, all model-free
 at the Application Layer:
 
-1. Boundary coverage -- a sentence-core sub-span is added to every Constituent Candidate
-   Inventory so the Event trigger head's sentence is carried end-to-end (first content
-   token through the sentence terminal punctuation). Any Gold fragment whose exact span
-   still stays uncovered raises one typed :class:`BoundaryGap`, never a silent miss.
+1. Boundary coverage -- a segment-core sub-span is added to every Constituent Candidate
+   Inventory so the full source segment content is carried end-to-end (first content
+   character through the segment terminal punctuation, with leading and trailing citation
+   markers stripped). Any Gold fragment whose exact span still stays uncovered raises one
+   typed :class:`BoundaryGap`, never a silent miss.
 2. Event frame and attachment -- the R1 dependency-path ladder (``path_1`` then governed
    complement, then ``model_review``, with no path as ``not_attached``) marks every
    candidate; only ``attached`` candidates enter the selection task under one Event frame
@@ -53,8 +54,8 @@ _SHA256 = r"^[a-f0-9]{64}$"
 _EventId = Annotated[str, Field(pattern=r"^(TGE|AHE)-[0-9]{3}$")]
 _FragmentId = Annotated[str, Field(pattern=r"^PGF-[A-Z]{3}-[0-9]{3}-[0-9]{2}$")]
 
-_TRAILING_TERMINALS = frozenset({".", "!", "?"})
-_CITATION_MARKER = re.compile(r"\[\d+\]\s*")
+_LEADING_CITATIONS = re.compile(r"(?:\[\d+\]\s*)+")
+_TRAILING_CITATIONS = re.compile(r"\s*(?:\[\d+\]\s*)+$")
 _SUBJECT_RELATIONS = frozenset({"nsubj", "nsubj:pass"})
 _OBJECT_RELATIONS = frozenset({"obj", "iobj", "obl"})
 _COMPLEMENT_RELATIONS = frozenset({"obj", "ccomp", "xcomp"})
@@ -194,7 +195,7 @@ class CalibratedResidualOwnershipReport(BaseModel):
         return self
 
 
-def augment_candidate_inventory_with_sentence_core(
+def augment_candidate_inventory_with_segment_core(
     *,
     inventory: ConstituentCandidateInventory,
     source_text: str,
@@ -202,10 +203,10 @@ def augment_candidate_inventory_with_sentence_core(
     trigger_head_start: int,
     trigger_head_end: int,
 ) -> ConstituentCandidateInventory:
-    """Add the trigger head sentence's core span without inventing source characters."""
+    """Add the full source segment content span without inventing source characters."""
     if hashlib.sha256(source_text.encode()).hexdigest() != inventory.source_text_sha256:
-        raise ValueError("Sentence-core augmentation source digest does not match the inventory.")
-    span = _sentence_core_span(
+        raise ValueError("Segment-core augmentation source digest does not match the inventory.")
+    span = _segment_core_span(
         source_text=source_text,
         tokens=tokens,
         trigger_head_start=trigger_head_start,
@@ -221,11 +222,9 @@ def augment_candidate_inventory_with_sentence_core(
         item.token_id for item in tokens if item.start >= span.start and item.end <= span.end
     )
     if not token_ids:
-        raise ValueError("Sentence-core span must cover at least one dependency token.")
+        raise ValueError("Segment-core span must cover at least one dependency token.")
     added = ParserConstituent(
-        constituent_id=parser_constituent_id(
-            inventory.source_text_sha256, span.start, span.end
-        ),
+        constituent_id=parser_constituent_id(inventory.source_text_sha256, span.start, span.end),
         event_id=inventory.event_id,
         source_text_sha256=inventory.source_text_sha256,
         constituent_range=span,
@@ -531,37 +530,29 @@ def calibrated_residual_ownership_report_fingerprint(value: BaseModel | dict[str
     ).hexdigest()
 
 
-def _sentence_core_span(
+def _segment_core_span(
     *,
     source_text: str,
     tokens: tuple[EventEntityLinguisticToken, ...],
     trigger_head_start: int,
     trigger_head_end: int,
 ) -> AttachmentSourceRange:
-    """Derive the trigger head sentence's core span, first content token through terminal."""
+    """Derive the full source segment content span, first content char through the end."""
     matches = [
         item for item in tokens if (item.start, item.end) == (trigger_head_start, trigger_head_end)
     ]
     if len(matches) != 1:
-        raise ValueError("Sentence core span requires one unique Event trigger head token.")
-    trigger = matches[0]
-    sentence_tokens = tuple(
-        sorted(
-            (item for item in tokens if item.sentence_id == trigger.sentence_id),
-            key=lambda item: item.start,
-        )
-    )
-    if not sentence_tokens:
-        raise ValueError("Sentence core span requires one sentence of dependency tokens.")
-    start = sentence_tokens[0].start
-    citation = _CITATION_MARKER.match(source_text[start:])
-    if citation is not None:
-        start += citation.end()
-    end = sentence_tokens[-1].end
-    while end < len(source_text) and source_text[end] in _TRAILING_TERMINALS:
-        end += 1
+        raise ValueError("Segment core span requires one unique Event trigger head token.")
+    start = 0
+    leading = _LEADING_CITATIONS.match(source_text)
+    if leading is not None:
+        start = leading.end()
+    end = len(source_text)
+    trailing = _TRAILING_CITATIONS.search(source_text)
+    if trailing is not None:
+        end = trailing.start()
     if end <= start:
-        raise ValueError("Sentence core span collapsed to an empty source range.")
+        raise ValueError("Segment core span collapsed to an empty source range.")
     return AttachmentSourceRange(start=start, end=end, text=source_text[start:end])
 
 

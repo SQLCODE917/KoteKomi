@@ -19,7 +19,7 @@ from kotekomi_application import (
     SelectionRoutingDecision,
     SelectionScore,
     attached_constituents,
-    augment_candidate_inventory_with_sentence_core,
+    augment_candidate_inventory_with_segment_core,
     build_calibrated_residual_ownership_report,
     build_event_frame,
     build_residual_review_set,
@@ -63,6 +63,29 @@ def _tokens(
             )
         )
     return tuple(tokens)
+
+
+def _token(
+    token_id: str,
+    text: str,
+    start: int,
+    end: int,
+    head: str | None,
+    deprel: str,
+    pos: str,
+    sentence_id: str = "s1",
+) -> EventEntityLinguisticToken:
+    return EventEntityLinguisticToken(
+        token_id=token_id,
+        sentence_id=sentence_id,
+        text=text,
+        start=start,
+        end=end,
+        lemma=text.lower(),
+        part_of_speech=pos,
+        dependency_relation=deprel,
+        head_token_id=head,
+    )
 
 
 def _digest(source: str) -> str:
@@ -148,10 +171,10 @@ def _score(
 # --- Boundary coverage ---------------------------------------------------------
 
 
-def test_sentence_core_augmentation_covers_the_full_sentence_fragment() -> None:
+def test_segment_core_augmentation_covers_the_full_segment_fragment() -> None:
     tokens = _ok_tokens()
     base = _token_inventory()
-    augmented = augment_candidate_inventory_with_sentence_core(
+    augmented = augment_candidate_inventory_with_segment_core(
         inventory=base,
         source_text=OK_SOURCE,
         tokens=tokens,
@@ -164,17 +187,16 @@ def test_sentence_core_augmentation_covers_the_full_sentence_fragment() -> None:
     }
     assert (0, 15) in spans
     gold = (_gold(OK_SOURCE, "PGF-AHE-001-01", 0, 15, (HeldOutFragmentRequirement.CORE_EVENT,)),)
-    assert detect_boundary_gaps(
-        gold_fragments={"AHE-001": gold}, inventories={"AHE-001": augmented}
-    ) == ()
+    assert (
+        detect_boundary_gaps(gold_fragments={"AHE-001": gold}, inventories={"AHE-001": augmented})
+        == ()
+    )
 
 
 def test_uncovered_fragment_raises_a_typed_boundary_gap() -> None:
     base = _token_inventory()
     gold = (_gold(OK_SOURCE, "PGF-AHE-001-01", 0, 15, (HeldOutFragmentRequirement.CORE_EVENT,)),)
-    gaps = detect_boundary_gaps(
-        gold_fragments={"AHE-001": gold}, inventories={"AHE-001": base}
-    )
+    gaps = detect_boundary_gaps(gold_fragments={"AHE-001": gold}, inventories={"AHE-001": base})
     assert len(gaps) == 1
     gap = gaps[0]
     assert isinstance(gap, BoundaryGap)
@@ -182,7 +204,7 @@ def test_uncovered_fragment_raises_a_typed_boundary_gap() -> None:
     assert (gap.start, gap.end) == (0, 15)
 
 
-def test_citation_marker_is_stripped_from_the_sentence_core() -> None:
+def test_leading_citation_marker_is_stripped_from_the_segment_core() -> None:
     source = BRACKET_SOURCE
     tokens = _tokens(
         source,
@@ -204,7 +226,7 @@ def test_citation_marker_is_stripped_from_the_sentence_core() -> None:
             _constituent(source, "AHE-001", ("t6",), 15, 18),
         ),
     )
-    augmented = augment_candidate_inventory_with_sentence_core(
+    augmented = augment_candidate_inventory_with_segment_core(
         inventory=base,
         source_text=source,
         tokens=tokens,
@@ -217,9 +239,106 @@ def test_citation_marker_is_stripped_from_the_sentence_core() -> None:
     }
     assert (4, 19) in spans
     gold = (_gold(source, "PGF-AHE-001-01", 4, 19, (HeldOutFragmentRequirement.CORE_EVENT,)),)
-    assert detect_boundary_gaps(
-        gold_fragments={"AHE-001": gold}, inventories={"AHE-001": augmented}
-    ) == ()
+    assert (
+        detect_boundary_gaps(gold_fragments={"AHE-001": gold}, inventories={"AHE-001": augmented})
+        == ()
+    )
+
+
+def test_segment_core_spans_whole_segment_across_multiple_sentences() -> None:
+    source = "Acme fired Bob. Contractors left their posts."
+    tokens = (
+        _token("t1", "Acme", 0, 4, "t2", "nsubj", "NOUN", "s1"),
+        _token("t2", "fired", 5, 10, None, "root", "VERB", "s1"),
+        _token("t3", "Bob", 11, 14, "t2", "obj", "NOUN", "s1"),
+        _token("t4", ".", 14, 15, None, "punct", "PUNCT", "s1"),
+        _token("t5", "Contractors", 16, 27, "t6", "nsubj", "NOUN", "s2"),
+        _token("t6", "left", 28, 32, None, "root", "VERB", "s2"),
+        _token("t7", "their", 33, 38, "t8", "det", "DET", "s2"),
+        _token("t8", "posts", 39, 44, "t6", "obj", "NOUN", "s2"),
+        _token("t9", ".", 44, 45, None, "punct", "PUNCT", "s2"),
+    )
+    base = _inventory(
+        "AHE-001",
+        source,
+        (_constituent(source, "AHE-001", ("t2",), 5, 10),),
+    )
+    augmented = augment_candidate_inventory_with_segment_core(
+        inventory=base,
+        source_text=source,
+        tokens=tokens,
+        trigger_head_start=5,
+        trigger_head_end=10,
+    )
+    spans = {
+        (item.constituent_range.start, item.constituent_range.end)
+        for item in augmented.constituents
+    }
+    assert (0, len(source)) in spans
+
+
+def test_leading_citation_run_is_stripped_from_the_segment_core() -> None:
+    source = "[1][2] Acme fired Bob."
+    tokens = (
+        _token("t1", "[", 0, 1, None, "punct", "PUNCT"),
+        _token("t2", "1", 1, 2, None, "nummod", "NUM"),
+        _token("t3", "]", 2, 3, None, "punct", "PUNCT"),
+        _token("t4", "[", 3, 4, None, "punct", "PUNCT"),
+        _token("t5", "2", 4, 5, None, "nummod", "NUM"),
+        _token("t6", "]", 5, 6, None, "punct", "PUNCT"),
+        _token("t7", "Acme", 7, 11, "t8", "nsubj", "NOUN"),
+        _token("t8", "fired", 12, 17, None, "root", "VERB"),
+        _token("t9", "Bob", 18, 21, "t8", "obj", "NOUN"),
+    )
+    base = _inventory(
+        "AHE-001",
+        source,
+        (_constituent(source, "AHE-001", ("t8",), 12, 17),),
+    )
+    augmented = augment_candidate_inventory_with_segment_core(
+        inventory=base,
+        source_text=source,
+        tokens=tokens,
+        trigger_head_start=12,
+        trigger_head_end=17,
+    )
+    spans = {
+        (item.constituent_range.start, item.constituent_range.end)
+        for item in augmented.constituents
+    }
+    assert (7, len(source)) in spans
+
+
+def test_trailing_citation_run_is_stripped_from_the_segment_core() -> None:
+    source = "Acme fired Bob. [3]"
+    tokens = _tokens(
+        source,
+        [
+            ("Acme", "fired", "nsubj", "acme", "NOUN"),
+            ("fired", None, "root", "fire", "VERB"),
+            ("Bob", "fired", "obj", "bob", "NOUN"),
+            ("[", None, "punct", "[", "PUNCT"),
+            ("3", None, "nummod", "3", "NUM"),
+            ("]", None, "punct", "]", "PUNCT"),
+        ],
+    )
+    base = _inventory(
+        "AHE-001",
+        source,
+        (_constituent(source, "AHE-001", ("t2",), 5, 10),),
+    )
+    augmented = augment_candidate_inventory_with_segment_core(
+        inventory=base,
+        source_text=source,
+        tokens=tokens,
+        trigger_head_start=5,
+        trigger_head_end=10,
+    )
+    spans = {
+        (item.constituent_range.start, item.constituent_range.end)
+        for item in augmented.constituents
+    }
+    assert (0, 15) in spans
 
 
 # --- Attachment ladder ---------------------------------------------------------
@@ -283,28 +402,58 @@ def test_attachment_marks_a_cross_sentence_candidate_as_not_attached() -> None:
     source = "Acme fired Bob. Sam left."
     tokens = (
         EventEntityLinguisticToken(
-            token_id="t1", sentence_id="s1", text="Acme", start=0, end=4,
-            lemma="acme", part_of_speech="NOUN", dependency_relation="nsubj",
+            token_id="t1",
+            sentence_id="s1",
+            text="Acme",
+            start=0,
+            end=4,
+            lemma="acme",
+            part_of_speech="NOUN",
+            dependency_relation="nsubj",
             head_token_id="t2",
         ),
         EventEntityLinguisticToken(
-            token_id="t2", sentence_id="s1", text="fired", start=5, end=10,
-            lemma="fire", part_of_speech="VERB", dependency_relation="root",
+            token_id="t2",
+            sentence_id="s1",
+            text="fired",
+            start=5,
+            end=10,
+            lemma="fire",
+            part_of_speech="VERB",
+            dependency_relation="root",
             head_token_id=None,
         ),
         EventEntityLinguisticToken(
-            token_id="t3", sentence_id="s1", text="Bob", start=11, end=14,
-            lemma="bob", part_of_speech="NOUN", dependency_relation="obj",
+            token_id="t3",
+            sentence_id="s1",
+            text="Bob",
+            start=11,
+            end=14,
+            lemma="bob",
+            part_of_speech="NOUN",
+            dependency_relation="obj",
             head_token_id="t2",
         ),
         EventEntityLinguisticToken(
-            token_id="t4", sentence_id="s2", text="Sam", start=15, end=18,
-            lemma="sam", part_of_speech="NOUN", dependency_relation="nsubj",
+            token_id="t4",
+            sentence_id="s2",
+            text="Sam",
+            start=15,
+            end=18,
+            lemma="sam",
+            part_of_speech="NOUN",
+            dependency_relation="nsubj",
             head_token_id="t5",
         ),
         EventEntityLinguisticToken(
-            token_id="t5", sentence_id="s2", text="left", start=19, end=23,
-            lemma="leave", part_of_speech="VERB", dependency_relation="root",
+            token_id="t5",
+            sentence_id="s2",
+            text="left",
+            start=19,
+            end=23,
+            lemma="leave",
+            part_of_speech="VERB",
+            dependency_relation="root",
             head_token_id=None,
         ),
     )
