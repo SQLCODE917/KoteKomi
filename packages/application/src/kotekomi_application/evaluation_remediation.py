@@ -32,6 +32,7 @@ from kotekomi_application.hybrid_event_semantics import EventModality, EventPola
 from kotekomi_application.parser_constituent_candidate_generation import (
     ConstituentCandidateInventory,
     ConstituentSelectionAnswer,
+    ConstituentSelectionStatus,
     selected_constituent_spans,
 )
 from kotekomi_application.staged_model_extraction import (
@@ -130,27 +131,64 @@ class SelectionTokenAlternative(BaseModel):
         return self
 
 
+class SelectionTokenProbability(BaseModel):
+    """One emitted output position with its chosen token and ordered alternatives."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    position: Annotated[int, Field(ge=0)]
+    token: Annotated[str, Field(min_length=1)]
+    log_probability: float
+    token_bytes: tuple[Annotated[int, Field(ge=0, le=255)], ...]
+    alternatives: tuple[SelectionTokenAlternative, ...]
+
+    @model_validator(mode="after")
+    def validate_contract(self) -> Self:
+        if not math.isfinite(self.log_probability) or self.log_probability > 0:
+            raise ValueError("Selection token probability must be finite and non-positive.")
+        if not self.alternatives:
+            raise ValueError("Selection token probability requires alternatives.")
+        identities = tuple((item.token, item.token_bytes) for item in self.alternatives)
+        if len(set(identities)) != len(identities):
+            raise ValueError("Selection token alternatives must be distinct.")
+        chosen = next(
+            (
+                item
+                for item in self.alternatives
+                if (item.token, item.token_bytes) == (self.token, self.token_bytes)
+            ),
+            None,
+        )
+        if chosen is None:
+            raise ValueError("The emitted selection token must be present among its alternatives.")
+        if chosen.log_probability != self.log_probability:
+            raise ValueError("The emitted selection token probability must match its alternative.")
+        return self
+
+
 class SelectionProbabilityReceipt(BaseModel):
-    """One held-out selection execution with its unmodified alternative inventory."""
+    """One held-out selection execution with its unmodified per-position evidence."""
 
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
     event_id: _HeldOutEventId
     model_execution_id: Annotated[str, Field(min_length=1)]
-    alternatives: tuple[SelectionTokenAlternative, ...]
+    output_token_probabilities: tuple[SelectionTokenProbability, ...]
 
     @model_validator(mode="after")
     def validate_contract(self) -> Self:
-        if not self.alternatives:
-            raise ValueError("Selection Probability Receipt requires one alternative.")
-        identities = tuple((item.token, item.token_bytes) for item in self.alternatives)
-        if len(set(identities)) != len(identities):
-            raise ValueError("Selection Probability Receipt alternatives must be distinct.")
+        if not self.output_token_probabilities:
+            raise ValueError("Selection Probability Receipt requires output token probabilities.")
+        positions = tuple(item.position for item in self.output_token_probabilities)
+        if positions != tuple(range(len(positions))):
+            raise ValueError(
+                "Selection Probability Receipt token positions must be contiguous from zero."
+            )
         return self
 
 
 class SelectionScore(BaseModel):
-    """One allowed selection label, its first-position log probability, and censored flag."""
+    """One allowed selection label, its full token-sequence log probability, and censored flag."""
 
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
@@ -277,24 +315,30 @@ def build_selection_probability_receipt(
     model_execution_id: str,
     receipt: ModelExecutionReceipt,
 ) -> SelectionProbabilityReceipt:
-    """Preserve the unmodified runtime alternative inventory at the first answer position."""
+    """Preserve the unmodified runtime Token Probability Evidence at every emitted position."""
     if not receipt.output_token_probabilities:
         raise ValueError("Selection Probability Receipt requires output token probabilities.")
-    first = receipt.output_token_probabilities[0]
-    if first.position != 0:
-        raise ValueError("Selection Probability Receipt requires token position zero.")
-    alternatives = tuple(
-        SelectionTokenAlternative(
+    output = tuple(
+        SelectionTokenProbability(
+            position=item.position,
             token=item.token,
             log_probability=item.log_probability,
             token_bytes=item.token_bytes,
+            alternatives=tuple(
+                SelectionTokenAlternative(
+                    token=alternative.token,
+                    log_probability=alternative.log_probability,
+                    token_bytes=alternative.token_bytes,
+                )
+                for alternative in item.alternatives
+            ),
         )
-        for item in first.alternatives
+        for item in receipt.output_token_probabilities
     )
     return SelectionProbabilityReceipt(
         event_id=event_id,
         model_execution_id=model_execution_id,
-        alternatives=alternatives,
+        output_token_probabilities=output,
     )
 
 
@@ -304,25 +348,127 @@ def build_selection_scores(
     allowed_labels: tuple[str, ...],
     receipt: SelectionProbabilityReceipt,
 ) -> tuple[SelectionScore, ...]:
-    """Record one first-position log probability per allowed label, censoring misses."""
+    """Record one full token-sequence Label log probability per allowed label, censoring misses."""
     if receipt.event_id != event_id:
         raise ValueError("Selection scores reference a mismatched Event.")
-    if allowed_labels != tuple(sorted(set(allowed_labels), key=_label_ordinal)):
-        raise ValueError("Allowed selection labels must be ordered and distinct.")
-    closest: dict[str, float] = {}
-    for item in receipt.alternatives:
-        label = item.token.strip()
-        if label not in closest:
-            closest[label] = item.log_probability
+    reconstructed = reconstruct_selection_label_sequence_log_probabilities(
+        receipt=receipt, allowed_labels=allowed_labels
+    )
     return tuple(
         SelectionScore(
             event_id=event_id,
             label=label,
-            log_probability=(closest[label] if label in closest else None),
-            censored=label not in closest,
+            log_probability=(reconstructed[label] if label in reconstructed else None),
+            censored=label not in reconstructed,
         )
         for label in allowed_labels
     )
+
+
+def build_representative_selection_score(
+    *,
+    event_id: str,
+    answer: ConstituentSelectionAnswer,
+    allowed_labels: tuple[str, ...],
+    receipt: SelectionProbabilityReceipt,
+) -> SelectionScore:
+    """Return one representative Selection Score per Event, never reconstructing a Rejected answer.
+
+    A Rejected selection carries a censored ``NONE`` score and no reconstructed label. A
+    ``NONE`` selection carries its full token-sequence ``NONE`` score. A selected subset
+    carries the most confident non-censored constituent label.
+    """
+    if receipt.event_id != event_id:
+        raise ValueError("Representative selection score references a mismatched Event.")
+    if answer.event_id != event_id:
+        raise ValueError("Representative selection score references a mismatched answer.")
+    if answer.status is ConstituentSelectionStatus.REJECTED:
+        return SelectionScore(event_id=event_id, label="NONE", log_probability=None, censored=True)
+    if answer.status is ConstituentSelectionStatus.NONE:
+        none_scores = reconstruct_selection_label_sequence_log_probabilities(
+            receipt=receipt, allowed_labels=("NONE",)
+        )
+        probability = none_scores.get("NONE")
+        return SelectionScore(
+            event_id=event_id,
+            label="NONE",
+            log_probability=probability,
+            censored=probability is None,
+        )
+    per_label = build_selection_scores(
+        event_id=event_id,
+        allowed_labels=allowed_labels,
+        receipt=receipt,
+    )
+    emitted = tuple(item for item in per_label if not item.censored)
+    if not emitted:
+        return SelectionScore(event_id=event_id, label="NONE", log_probability=None, censored=True)
+    return max(
+        emitted,
+        key=lambda item: (
+            item.log_probability if item.log_probability is not None else float("-inf")
+        ),
+    )
+
+
+def reconstruct_selection_label_sequence_log_probabilities(
+    *,
+    receipt: SelectionProbabilityReceipt,
+    allowed_labels: tuple[str, ...],
+) -> dict[str, float]:
+    """Reconstruct one Label log probability per emitted Candidate label.
+
+    Labels arrive as contiguous emitted-token runs in answer order. A label matches a run when
+    the run's token texts spell the label exactly, with the first token's leading whitespace and
+    one leading comma stripped. At each start position the longest label matches first, so a
+    shorter label never matches the numeric prefix of a longer label. Only labels the model
+    emitted appear in the result; absent labels carry no sequence evidence and are censored by
+    the caller.
+    """
+    if allowed_labels != tuple(sorted(set(allowed_labels), key=_label_ordinal)):
+        raise ValueError("Allowed selection labels must be ordered and distinct.")
+    tokens = tuple(item.token for item in receipt.output_token_probabilities)
+    ordered_by_length = tuple(sorted(set(allowed_labels), key=lambda item: (-len(item), item)))
+    reconstructed: dict[str, float] = {}
+    index = 0
+    while index < len(tokens):
+        matched_label: str | None = None
+        matched_run = 0
+        for label in ordered_by_length:
+            run = _selection_token_run_length(tokens, index, label)
+            if run is not None and run > matched_run:
+                matched_label = label
+                matched_run = run
+        if matched_label is None:
+            index += 1
+            continue
+        reconstructed[matched_label] = sum(
+            receipt.output_token_probabilities[index + offset].log_probability
+            for offset in range(matched_run)
+        )
+        index += matched_run
+    return reconstructed
+
+
+def _selection_token_run_length(tokens: tuple[str, ...], start: int, label: str) -> int | None:
+    """Return the token count at ``start`` spelling ``label`` exactly, or ``None``.
+
+    The first token may carry leading whitespace and one leading comma, both stripped before
+    the label comparison. The run must reconstruct the label exactly.
+    """
+    first = tokens[start].lstrip().removeprefix(",").lstrip()
+    if not first or not label.startswith(first):
+        return None
+    buffer = first
+    length = 1
+    while len(buffer) < len(label):
+        if start + length >= len(tokens):
+            return None
+        buffer += tokens[start + length]
+        length += 1
+    if buffer != label:
+        return None
+    return length
 
 
 def build_held_out_exact_set_score(

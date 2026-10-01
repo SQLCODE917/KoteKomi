@@ -1,6 +1,6 @@
 # TDD: Selection Label and Capture
 
-- Status: Proposed
+- Status: Accepted
 - Deliverable ID: `R6`
 - Program: [Source-Grounded Attachment Deterministic-First Package](2026-09-24-source-grounded-attachment-deterministic-first-package.md)
 - Parent: [Calibrated Residual Ownership](2026-09-29-calibrated-residual-ownership.md)

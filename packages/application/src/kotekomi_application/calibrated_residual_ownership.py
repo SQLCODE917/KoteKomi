@@ -45,6 +45,8 @@ from kotekomi_application.evaluation_remediation import (
 from kotekomi_application.event_entity_connections import EventEntityLinguisticToken
 from kotekomi_application.parser_constituent_candidate_generation import (
     ConstituentCandidateInventory,
+    ConstituentSelectionAnswer,
+    ConstituentSelectionStatus,
     ConstituentSelectionTask,
     ParserConstituent,
     parser_constituent_id,
@@ -60,6 +62,10 @@ _SUBJECT_RELATIONS = frozenset({"nsubj", "nsubj:pass"})
 _OBJECT_RELATIONS = frozenset({"obj", "iobj", "obl"})
 _COMPLEMENT_RELATIONS = frozenset({"obj", "ccomp", "xcomp"})
 _PUNCT_POS = frozenset({"punct", "PUNCT"})
+_FUNCTION_WORD_POS = frozenset({"ADP", "AUX", "CCONJ", "DET", "PART", "SCONJ"})
+_ARTIFACT_POS = frozenset({"NUM", "PUNCT", "SYM"})
+_NON_CONTENT_POS = _FUNCTION_WORD_POS | _ARTIFACT_POS
+_TRAILING_PUNCTUATION = frozenset(".,;:!?")
 
 
 class CandidateAttachmentMark(StrEnum):
@@ -112,9 +118,11 @@ class ResidualReviewReason(StrEnum):
 
     BELOW_THRESHOLD = "below_threshold"
     CENSORED = "censored"
+    REJECTED = "rejected"
     COMPOSITION_HOLD = "composition_hold"
     ATTRIBUTION_AMBIGUOUS = "attribution_ambiguous"
     BOUNDARY_GAP = "boundary_gap"
+    NO_SELECTABLE = "no_selectable"
 
 
 class SelectionRoutingDecision(StrEnum):
@@ -345,6 +353,131 @@ def attached_constituents(
     )
 
 
+def selectable_display_surface(text: str) -> str:
+    """Return the display surface the dedup filter compares.
+
+    The surface strips leading and trailing whitespace and one or more Trailing
+    punctuation characters (``. , ; : ! ?``) from a candidate's displayed text.  It is
+    a display-only derivation; the Parser Constituent exact span is never rewritten.
+    """
+    surface = text.strip()
+    while surface and (surface[-1].isspace() or surface[-1] in _TRAILING_PUNCTUATION):
+        surface = surface[:-1]
+    return surface
+
+
+def derive_selectable_constituents(
+    *,
+    attached: tuple[ParserConstituent, ...],
+    source_text: str,
+    tokens: tuple[EventEntityLinguisticToken, ...],
+    trigger: AttachmentSourceRange,
+) -> tuple[ParserConstituent, ...]:
+    """Return the Selectable candidate list for one Event.
+
+    The filters run in fixed order --- trigger, core, function-word, artifact, dedup,
+    nested --- over the syntax-attached candidates only.  The derivation reads no Gold,
+    invokes no model, and never changes the inventory the Boundary-gap detector reads.
+    """
+    if not attached:
+        return ()
+    token_by_id = {item.token_id: item for item in tokens}
+    for candidate in attached:
+        if any(token_id not in token_by_id for token_id in candidate.token_ids):
+            raise ValueError("Selectable derivation references unknown candidate tokens.")
+    segment_core = _segment_core_span(
+        source_text=source_text,
+        tokens=tokens,
+        trigger_head_start=trigger.start,
+        trigger_head_end=trigger.end,
+    )
+    survivors = list(attached)
+    survivors = [item for item in survivors if not _is_trigger_candidate(item, trigger)]
+    survivors = [item for item in survivors if not _is_segment_core_candidate(item, segment_core)]
+    survivors = [
+        item for item in survivors if not _has_function_word_only_tokens(item, token_by_id)
+    ]
+    survivors = [item for item in survivors if not _has_artifact_only_tokens(item, token_by_id)]
+    survivors = _dedup_constituents(tuple(survivors))
+    survivors = _nested_filter(survivors, token_by_id)
+    return tuple(survivors)
+
+
+def _is_trigger_candidate(candidate: ParserConstituent, trigger: AttachmentSourceRange) -> bool:
+    return (candidate.constituent_range.start, candidate.constituent_range.end) == (
+        trigger.start,
+        trigger.end,
+    )
+
+
+def _is_segment_core_candidate(
+    candidate: ParserConstituent, segment_core: AttachmentSourceRange
+) -> bool:
+    return (candidate.constituent_range.start, candidate.constituent_range.end) == (
+        segment_core.start,
+        segment_core.end,
+    )
+
+
+def _has_function_word_only_tokens(
+    candidate: ParserConstituent,
+    token_by_id: dict[str, EventEntityLinguisticToken],
+) -> bool:
+    return all(
+        token_by_id[token_id].part_of_speech in _FUNCTION_WORD_POS
+        for token_id in candidate.token_ids
+    )
+
+
+def _has_artifact_only_tokens(
+    candidate: ParserConstituent,
+    token_by_id: dict[str, EventEntityLinguisticToken],
+) -> bool:
+    return all(
+        token_by_id[token_id].part_of_speech in _ARTIFACT_POS for token_id in candidate.token_ids
+    )
+
+
+def _dedup_constituents(candidates: tuple[ParserConstituent, ...]) -> tuple[ParserConstituent, ...]:
+    """Keep one candidate per distinct display surface, earliest by source offset, and
+    drop any candidate whose display surface is empty."""
+    survivors: list[ParserConstituent] = []
+    seen: set[str] = set()
+    for candidate in candidates:
+        surface = selectable_display_surface(candidate.constituent_range.text)
+        if not surface or surface in seen:
+            continue
+        seen.add(surface)
+        survivors.append(candidate)
+    return tuple(survivors)
+
+
+def _nested_filter(
+    candidates: tuple[ParserConstituent, ...],
+    token_by_id: dict[str, EventEntityLinguisticToken],
+) -> tuple[ParserConstituent, ...]:
+    """Remove a contained candidate only when a surviving superset adds non-content tokens."""
+    token_sets = tuple(set(item.token_ids) for item in candidates)
+
+    def _superset_adds_only_non_content(candidate_set: set[str]) -> bool:
+        for other_set in token_sets:
+            if not candidate_set < other_set:
+                continue
+            extra_tokens = other_set - candidate_set
+            if all(
+                token_by_id[token_id].part_of_speech in _NON_CONTENT_POS
+                for token_id in extra_tokens
+            ):
+                return True
+        return False
+
+    survivors: list[ParserConstituent] = []
+    for index, candidate in enumerate(candidates):
+        if not _superset_adds_only_non_content(token_sets[index]):
+            survivors.append(candidate)
+    return tuple(survivors)
+
+
 def build_event_frame(
     *,
     event_id: str,
@@ -388,24 +521,24 @@ def render_event_frame_selection_task(
     event_id: str,
     source_text: str,
     inventory: ConstituentCandidateInventory,
-    tokens: tuple[EventEntityLinguisticToken, ...],
+    selectable: tuple[ParserConstituent, ...],
     frame: EventFrame,
 ) -> ConstituentSelectionTask:
-    """Render one selection task over the syntax-attached candidates under one Event frame."""
+    """Render one selection task over the Selectable candidate list under one Event frame."""
     if inventory.event_id != event_id:
         raise ValueError("Event-frame renderer references a mismatched Event inventory.")
     if frame.event_id != event_id:
         raise ValueError("Event-frame renderer references a mismatched Event frame.")
     if hashlib.sha256(source_text.encode()).hexdigest() != inventory.source_text_sha256:
         raise ValueError("Event-frame renderer source digest does not match the inventory.")
-    attached = attached_constituents(
-        inventory=inventory,
-        source_text=source_text,
-        tokens=tokens,
-        trigger_head_start=frame.trigger.start,
-        trigger_head_end=frame.trigger.end,
-    )
-    labels = tuple(f"C{ordinal}" for ordinal in range(1, len(attached) + 1))
+    if any(
+        item.event_id != event_id or item.source_text_sha256 != inventory.source_text_sha256
+        for item in selectable
+    ):
+        raise ValueError(
+            "Event-frame renderer received a Selectable candidate from another Event or source."
+        )
+    labels = tuple(f"C{ordinal}" for ordinal in range(1, len(selectable) + 1))
     lines = [
         "Return a comma-separated subset of the Candidate labels, or NONE.",
         f"Event: {frame.trigger.text}",
@@ -413,7 +546,7 @@ def render_event_frame_selection_task(
         source_text,
         "Candidates:",
     ]
-    for label, constituent in zip(labels, attached, strict=True):
+    for label, constituent in zip(labels, selectable, strict=True):
         lines.append(f"{label}: {constituent.constituent_range.text}")
     rendered = "\n".join(lines)
     return ConstituentSelectionTask(
@@ -430,8 +563,12 @@ def route_selection_scores(
     *,
     scores: Mapping[str, SelectionScore],
     threshold: float,
+    answers: Mapping[str, ConstituentSelectionAnswer] | None = None,
 ) -> tuple[SelectionRouting, ...]:
-    """Route one Selection Score per Event through the calibrated threshold."""
+    """Route one Selection Score per Event through the calibrated threshold.
+
+    A Rejected selection routes to residual review before any label score is compared.
+    """
     if not math.isfinite(threshold) or threshold > 0:
         raise ValueError("Selection Score threshold must be a finite non-positive log probability.")
     routing: list[SelectionRouting] = []
@@ -439,7 +576,16 @@ def route_selection_scores(
         score = scores[event_id]
         if score.event_id != event_id:
             raise ValueError("Selection routing references a mismatched Event score.")
-        if score.censored:
+        answer = answers[event_id] if answers is not None else None
+        if answer is not None and answer.status is ConstituentSelectionStatus.REJECTED:
+            routing.append(
+                SelectionRouting(
+                    event_id=event_id,
+                    decision=SelectionRoutingDecision.RESIDUAL_REVIEW,
+                    reason=ResidualReviewReason.REJECTED,
+                )
+            )
+        elif score.censored:
             routing.append(
                 SelectionRouting(
                     event_id=event_id,
@@ -478,9 +624,10 @@ def build_residual_review_set(
     *,
     scores: Mapping[str, SelectionScore],
     threshold: float,
+    answers: Mapping[str, ConstituentSelectionAnswer] | None = None,
 ) -> ResidualReviewSet:
     """Return the Event IDs the threshold routing leaves to residual review."""
-    routing = route_selection_scores(scores=scores, threshold=threshold)
+    routing = route_selection_scores(scores=scores, threshold=threshold, answers=answers)
     return ResidualReviewSet(
         event_ids=tuple(
             item.event_id

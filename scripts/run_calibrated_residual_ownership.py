@@ -11,7 +11,7 @@ residual residue.  Runner phases over one run root:
   any remaining gap, then renders one Event-frame selection task per Event over the
   R1-attached candidates only.
 * ``execute`` -- local model selection with Token Probability Evidence.
-* ``score`` -- one first-position Selection Score per Event, threshold routing, and the
+* ``score`` -- one full token-sequence Selection Score per Event, threshold routing, and the
   residual-review set.
 * ``report`` -- seals the R6 report with zero canonical writes and zero ProposedChanges
   and renders a human review.
@@ -49,21 +49,27 @@ from kotekomi_application import (
     EventEntityLinguisticToken,
     EventFrame,
     ExecutionSetting,
+    HeldOutGoldFragment,
     LinguisticAnalysis,
     LinguisticAnalysisInput,
     ModelExecutionSpec,
     ModelInputAdmissionRequest,
     ModelTaskRequest,
+    ParserConstituent,
+    ResidualReviewReason,
     SelectionProbabilityReceipt,
     SelectionRouting,
+    SelectionRoutingDecision,
     SelectionScore,
     admit_model_input,
+    attached_constituents,
     augment_candidate_inventory_with_segment_core,
     build_calibrated_residual_ownership_report,
     build_event_frame,
-    build_residual_review_set,
+    build_representative_selection_score,
     build_selection_probability_receipt,
     build_selection_scores,
+    derive_selectable_constituents,
     detect_boundary_gaps,
     parse_constituent_selection_answer,
     render_event_frame_selection_task,
@@ -72,7 +78,6 @@ from kotekomi_application import (
 from kotekomi_domain import ModelInputAdmissionStatus
 from kotekomi_pipelines.config import PipelineConfig, load_config
 from kotekomi_pipelines.evaluation_remediation import (
-    HeldOutGoldFragment,
     HeldOutPropositionGoldCatalog,
     build_held_out_inventories,
     derive_held_out_trigger_head,
@@ -165,6 +170,8 @@ def _prepare(args: argparse.Namespace) -> int:
     augmented: dict[str, ConstituentCandidateInventory] = {}
     frames: dict[str, EventFrame] = {}
     tasks: dict[str, ConstituentSelectionTask] = {}
+    selectable_by_event: dict[str, tuple[ParserConstituent, ...]] = {}
+    zero_candidate_event_ids: list[str] = []
     for event in sorted(catalog.events, key=lambda item: item.event_id):
         tokens = tokens_by_digest[event.source_text_sha256]
         head_start, head_end = derive_held_out_trigger_head(
@@ -178,7 +185,7 @@ def _prepare(args: argparse.Namespace) -> int:
             trigger_head_end=head_end,
         )
         augmented[event.event_id] = inventory
-        frames[event.event_id] = build_event_frame(
+        frame = build_event_frame(
             event_id=event.event_id,
             source_text=event.source_text,
             tokens=tokens,
@@ -186,12 +193,30 @@ def _prepare(args: argparse.Namespace) -> int:
             trigger_head_end=head_end,
             inventory=inventory,
         )
+        frames[event.event_id] = frame
+        attached = attached_constituents(
+            inventory=inventory,
+            source_text=event.source_text,
+            tokens=tokens,
+            trigger_head_start=head_start,
+            trigger_head_end=head_end,
+        )
+        selectable = derive_selectable_constituents(
+            attached=attached,
+            source_text=event.source_text,
+            tokens=tokens,
+            trigger=frame.trigger,
+        )
+        selectable_by_event[event.event_id] = selectable
+        if not selectable:
+            zero_candidate_event_ids.append(event.event_id)
+            continue
         tasks[event.event_id] = render_event_frame_selection_task(
             event_id=event.event_id,
             source_text=event.source_text,
             inventory=inventory,
-            tokens=tokens,
-            frame=frames[event.event_id],
+            selectable=selectable,
+            frame=frame,
         )
 
     gold_fragments: dict[str, tuple[HeldOutGoldFragment, ...]] = {
@@ -215,11 +240,23 @@ def _prepare(args: argparse.Namespace) -> int:
     )
     _write_json(
         root / "tasks.json",
-        [tasks[event.event_id].model_dump(mode="json") for event in ordered_events],
+        [tasks[event_id].model_dump(mode="json") for event_id in sorted(tasks)],
     )
     _write_jsonl(
         root / "inputs.jsonl",
-        [tasks[event.event_id].model_dump(mode="json") for event in ordered_events],
+        [tasks[event_id].model_dump(mode="json") for event_id in sorted(tasks)],
+    )
+    _write_json(
+        root / "selectable.json",
+        [
+            {
+                "event_id": event.event_id,
+                "constituents": [
+                    item.model_dump(mode="json") for item in selectable_by_event[event.event_id]
+                ],
+            }
+            for event in ordered_events
+        ],
     )
     _write_json(
         root / "tokens.json",
@@ -253,6 +290,9 @@ def _prepare(args: argparse.Namespace) -> int:
             "event_count": catalog.event_count,
             "task_count": len(tasks),
             "boundary_gap_count": len(boundary_gaps),
+            "zero_candidate_event_count": len(zero_candidate_event_ids),
+            "zero_candidate_event_ids": sorted(zero_candidate_event_ids),
+            "selectable_candidate_count": sum(len(items) for items in selectable_by_event.values()),
             "gold_path": str(args.gold.resolve()),
             "fixture_path": str(args.fixture.resolve()),
             "inputs": {
@@ -267,6 +307,7 @@ def _prepare(args: argparse.Namespace) -> int:
                 "boundary_gaps": _sha_file(root / "boundary_gaps.json"),
                 "frames": _sha_file(root / "frames.json"),
                 "tasks": _sha_file(root / "tasks.json"),
+                "selectable": _sha_file(root / "selectable.json"),
                 "tokens": _sha_file(root / "tokens.json"),
                 "inputs": _sha_file(root / "inputs.jsonl"),
             },
@@ -280,6 +321,11 @@ def _prepare(args: argparse.Namespace) -> int:
                 "event_count": catalog.event_count,
                 "task_count": len(tasks),
                 "boundary_gap_count": len(boundary_gaps),
+                "zero_candidate_event_count": len(zero_candidate_event_ids),
+                "zero_candidate_event_ids": sorted(zero_candidate_event_ids),
+                "selectable_candidate_count": sum(
+                    len(items) for items in selectable_by_event.values()
+                ),
                 "model_execution_count": 0,
                 "canonical_write_count": 0,
                 "proposed_change_count": 0,
@@ -461,10 +507,32 @@ def _score(args: argparse.Namespace) -> int:
     answers = _parse_answers(root, prepared.tasks)
     receipts = _load_receipts(root, prepared.tasks)
 
-    first_position_scores = _first_position_scores(prepared, answers, receipts)
-    per_label_scores = _per_label_scores(prepared, receipts)
-    routing = route_selection_scores(scores=first_position_scores, threshold=threshold)
-    residual = build_residual_review_set(scores=first_position_scores, threshold=threshold)
+    representative_scores = _representative_scores(prepared, answers, receipts)
+    per_label_scores = _per_label_scores(prepared, answers, receipts)
+    routing = route_selection_scores(
+        scores=representative_scores, answers=answers, threshold=threshold
+    )
+    zero_event_ids = _zero_candidate_event_ids(metadata)
+    if zero_event_ids:
+        routing = tuple(
+            sorted(
+                routing
+                + tuple(
+                    SelectionRouting(
+                        event_id=event_id,
+                        decision=SelectionRoutingDecision.RESIDUAL_REVIEW,
+                        reason=ResidualReviewReason.NO_SELECTABLE,
+                    )
+                    for event_id in zero_event_ids
+                ),
+                key=lambda item: item.event_id,
+            )
+        )
+    residual_event_ids = tuple(
+        item.event_id
+        for item in routing
+        if item.decision is SelectionRoutingDecision.RESIDUAL_REVIEW
+    )
 
     _write_json(
         root / "score.json",
@@ -472,12 +540,12 @@ def _score(args: argparse.Namespace) -> int:
             "status": "scored",
             "threshold": threshold,
             "model_execution_count": cast(int, metadata.get("model_execution_count", 0)),
-            "first_position_scores": [
-                item.model_dump(mode="json") for item in first_position_scores.values()
+            "representative_scores": [
+                item.model_dump(mode="json") for item in representative_scores.values()
             ],
             "per_label_scores": [item.model_dump(mode="json") for item in per_label_scores],
             "selection_routing": [item.model_dump(mode="json") for item in routing],
-            "residual_review_event_ids": list(residual.event_ids),
+            "residual_review_event_ids": list(residual_event_ids),
         },
     )
     print(
@@ -488,7 +556,7 @@ def _score(args: argparse.Namespace) -> int:
                 "threshold": threshold,
                 "accepted_selection_count": _count_decisions(routing, "accepted_selection"),
                 "residual_review_count": _count_decisions(routing, "residual_review"),
-                "residual_review_event_ids": list(residual.event_ids),
+                "residual_review_event_ids": list(residual_event_ids),
                 "model_execution_count": cast(int, metadata.get("model_execution_count", 0)),
             },
             sort_keys=True,
@@ -499,6 +567,11 @@ def _score(args: argparse.Namespace) -> int:
 
 def _count_decisions(routing: tuple[SelectionRouting, ...], decision: str) -> int:
     return sum(1 for item in routing if item.decision.value == decision)
+
+
+def _zero_candidate_event_ids(metadata: dict[str, Any]) -> tuple[str, ...]:
+    values = _require_list(metadata, "zero_candidate_event_ids", "R6 run")
+    return tuple(_require_event_id(item) for item in values)
 
 
 def _report(args: argparse.Namespace) -> int:
@@ -660,56 +733,37 @@ def _load_receipts(
     return receipts
 
 
-def _first_position_scores(
+def _representative_scores(
     prepared: _PreparedState,
     answers: dict[str, ConstituentSelectionAnswer],
     receipts: dict[str, SelectionProbabilityReceipt],
 ) -> dict[str, SelectionScore]:
-    """Return one first-position Selection Score per Event.
+    """Return one representative Selection Score per Event.
 
-    The model's first-position choice is the most probable output token at position zero.
-    A parsed ``NONE`` answer carries a ``NONE`` score; otherwise the representative score
-    is the most confident constituent-label score, the model's first emitted label.
+    A Rejected answer carries a censored ``NONE`` score with no reconstructed label. A
+    ``NONE`` answer carries its full ``NONE`` token-sequence score. A selected subset carries
+    the most confident non-censored constituent label.
     """
-    scores: dict[str, SelectionScore] = {}
-    for event_id in sorted(prepared.tasks):
-        task = prepared.tasks[event_id]
-        answer = answers[event_id]
-        receipt = receipts[event_id]
-        if answer.status is ConstituentSelectionStatus.NONE:
-            none_probability = _closest_alternative_log_probability(receipt, "NONE")
-            scores[event_id] = SelectionScore(
-                event_id=event_id,
-                label="NONE",
-                log_probability=none_probability,
-                censored=none_probability is None,
-            )
-            continue
-        per_label = build_selection_scores(
+    return {
+        event_id: build_representative_selection_score(
             event_id=event_id,
-            allowed_labels=task.constituent_labels,
-            receipt=receipt,
+            answer=answers[event_id],
+            allowed_labels=prepared.tasks[event_id].constituent_labels,
+            receipt=receipts[event_id],
         )
-        if not per_label:
-            scores[event_id] = SelectionScore(
-                event_id=event_id, label="NONE", log_probability=None, censored=True
-            )
-            continue
-        scores[event_id] = max(
-            per_label,
-            key=lambda item: (
-                item.log_probability if item.log_probability is not None else float("-inf")
-            ),
-        )
-    return scores
+        for event_id in sorted(prepared.tasks)
+    }
 
 
 def _per_label_scores(
     prepared: _PreparedState,
+    answers: dict[str, ConstituentSelectionAnswer],
     receipts: dict[str, SelectionProbabilityReceipt],
 ) -> tuple[SelectionScore, ...]:
     scores: list[SelectionScore] = []
     for event_id in sorted(prepared.tasks):
+        if answers[event_id].status is ConstituentSelectionStatus.REJECTED:
+            continue
         task = prepared.tasks[event_id]
         scores.extend(
             build_selection_scores(
@@ -719,15 +773,6 @@ def _per_label_scores(
             )
         )
     return tuple(scores)
-
-
-def _closest_alternative_log_probability(
-    receipt: SelectionProbabilityReceipt, label: str
-) -> float | None:
-    for item in receipt.alternatives:
-        if item.token.strip() == label:
-            return item.log_probability
-    return None
 
 
 def _render_review(

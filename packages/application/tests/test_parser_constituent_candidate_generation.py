@@ -379,6 +379,14 @@ def test_parse_rejects_garbage_answer() -> None:
     assert _parse("yes").status is ConstituentSelectionStatus.REJECTED
 
 
+def test_parse_rejects_an_empty_answer() -> None:
+    assert _parse("").status is ConstituentSelectionStatus.REJECTED
+
+
+def test_parse_rejects_trailing_chatter() -> None:
+    assert _parse("C1 done").status is ConstituentSelectionStatus.REJECTED
+
+
 def test_parse_answers_requires_full_inventory_coverage() -> None:
     inventory = _inventory(SINGLE_SOURCE, SINGLE_TOKENS, SINGLE_EVENT_START, SINGLE_EVENT_END)
     with pytest.raises(ValueError, match="cover every inventory Event"):

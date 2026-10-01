@@ -21,14 +21,20 @@ from kotekomi_application import (
     ModelOutputTokenProbability,
     ModelTokenAlternative,
     ParserConstituent,
+    SelectionProbabilityReceipt,
+    SelectionTokenAlternative,
+    SelectionTokenProbability,
     build_decontextualized_proposition,
     build_held_out_error_census,
     build_held_out_exact_set_score,
     build_held_out_transfer_report,
+    build_representative_selection_score,
     build_selection_probability_receipt,
     build_selection_scores,
     held_out_transfer_report_fingerprint,
+    parse_constituent_selection_answer_labels,
     parser_constituent_id,
+    reconstruct_selection_label_sequence_log_probabilities,
 )
 
 OK_SOURCE = "Acme fired Bob."
@@ -190,15 +196,26 @@ def _ok_proposition(
 
 
 def _model_receipt() -> ModelExecutionReceipt:
-    first = ModelOutputTokenProbability(
+    c_token = ModelOutputTokenProbability(
         position=0,
-        token="C2",
-        log_probability=-0.5,
-        token_bytes=tuple(b"C2"),
+        token="C",
+        log_probability=-0.1,
+        token_bytes=tuple(b"C"),
         alternatives=(
-            ModelTokenAlternative("C2", -0.5, tuple(b"C2")),
-            ModelTokenAlternative("NONE", -1.0, tuple(b"NONE")),
-            ModelTokenAlternative("C1", -2.0, tuple(b"C1")),
+            ModelTokenAlternative("C", -0.1, tuple(b"C")),
+            ModelTokenAlternative("1", -2.0, tuple(b"1")),
+            ModelTokenAlternative("2", -3.0, tuple(b"2")),
+        ),
+    )
+    two_token = ModelOutputTokenProbability(
+        position=1,
+        token="2",
+        log_probability=-0.4,
+        token_bytes=tuple(b"2"),
+        alternatives=(
+            ModelTokenAlternative("2", -0.4, tuple(b"2")),
+            ModelTokenAlternative("1", -1.0, tuple(b"1")),
+            ModelTokenAlternative("3", -2.0, tuple(b"3")),
         ),
     )
     return ModelExecutionReceipt(
@@ -206,8 +223,34 @@ def _model_receipt() -> ModelExecutionReceipt:
         generation_parameters_digest="b" * 64,
         rendered_input_digest="c" * 64,
         input_token_count=12,
-        output_token_count=1,
-        output_token_probabilities=(first,),
+        output_token_count=2,
+        output_token_probabilities=(c_token, two_token),
+    )
+
+
+def _token_probability(
+    position: int, token: str, log_probability: float
+) -> SelectionTokenProbability:
+    return SelectionTokenProbability(
+        position=position,
+        token=token,
+        log_probability=log_probability,
+        token_bytes=tuple(token.encode("utf-8")),
+        alternatives=(
+            SelectionTokenAlternative(
+                token=token,
+                log_probability=log_probability,
+                token_bytes=tuple(token.encode("utf-8")),
+            ),
+        ),
+    )
+
+
+def _receipt(*tokens: SelectionTokenProbability) -> SelectionProbabilityReceipt:
+    return SelectionProbabilityReceipt(
+        event_id="AHE-001",
+        model_execution_id="mrn-1",
+        output_token_probabilities=tokens,
     )
 
 
@@ -236,7 +279,7 @@ def _held_proposition(
     )
 
 
-def test_selection_probability_receipt_preserves_unmodified_alternatives() -> None:
+def test_selection_probability_receipt_preserves_per_token_evidence() -> None:
     receipt = build_selection_probability_receipt(
         event_id="AHE-001",
         model_execution_id="mrn-1",
@@ -244,8 +287,11 @@ def test_selection_probability_receipt_preserves_unmodified_alternatives() -> No
     )
     assert receipt.event_id == "AHE-001"
     assert receipt.model_execution_id == "mrn-1"
-    assert [item.token for item in receipt.alternatives] == ["C2", "NONE", "C1"]
-    assert [item.log_probability for item in receipt.alternatives] == [-0.5, -1.0, -2.0]
+    assert [item.position for item in receipt.output_token_probabilities] == [0, 1]
+    assert [item.token for item in receipt.output_token_probabilities] == ["C", "2"]
+    first_alternatives = receipt.output_token_probabilities[0].alternatives
+    assert [item.token for item in first_alternatives] == ["C", "1", "2"]
+    assert [item.log_probability for item in first_alternatives] == [-0.1, -2.0, -3.0]
 
 
 def test_selection_probability_receipt_rejects_missing_token_probabilities() -> None:
@@ -264,7 +310,7 @@ def test_selection_probability_receipt_rejects_missing_token_probabilities() -> 
         )
 
 
-def test_selection_scores_censor_a_missing_label() -> None:
+def test_selection_scores_reconstruct_full_sequence_and_censor_missing() -> None:
     receipt = build_selection_probability_receipt(
         event_id="AHE-001",
         model_execution_id="mrn-1",
@@ -278,11 +324,118 @@ def test_selection_scores_censor_a_missing_label() -> None:
     assert [item.label for item in scores] == ["C1", "C2", "C3"]
     assert scores[1].label == "C2"
     assert scores[1].censored is False
-    assert scores[1].log_probability == -0.5
-    censored = scores[2]
-    assert censored.label == "C3"
-    assert censored.censored is True
-    assert censored.log_probability is None
+    assert scores[1].log_probability == -0.5  # logp("C") + logp("2")
+    for index in (0, 2):
+        assert scores[index].censored is True
+        assert scores[index].log_probability is None
+
+
+def test_reconstruction_prefers_the_longer_numeric_label() -> None:
+    receipt = _receipt(
+        _token_probability(0, "C", -0.5),
+        _token_probability(1, "1", -0.25),
+        _token_probability(2, "0", -0.25),
+    )
+    scores = build_selection_scores(
+        event_id="AHE-001",
+        allowed_labels=("C1", "C10"),
+        receipt=receipt,
+    )
+    by_label = {item.label: item for item in scores}
+    assert by_label["C10"].censored is False
+    assert by_label["C10"].log_probability == -1.0
+    assert by_label["C1"].censored is True
+    assert by_label["C1"].log_probability is None
+
+
+def test_reconstruction_strips_the_first_tokens_leading_whitespace() -> None:
+    receipt = _receipt(
+        _token_probability(0, " C", -0.5),
+        _token_probability(1, "3", -0.5),
+    )
+    scores = reconstruct_selection_label_sequence_log_probabilities(
+        receipt=receipt, allowed_labels=("C3",)
+    )
+    assert scores["C3"] == -1.0
+
+
+def test_reconstruction_strips_one_leading_comma() -> None:
+    receipt = _receipt(
+        _token_probability(0, ",C", -0.4),
+        _token_probability(1, "6", -0.6),
+    )
+    scores = reconstruct_selection_label_sequence_log_probabilities(
+        receipt=receipt, allowed_labels=("C6",)
+    )
+    assert scores["C6"] == -1.0
+
+
+def test_reconstruction_recovers_the_none_sequence() -> None:
+    receipt = _receipt(_token_probability(0, "NONE", -1.0))
+    scores = reconstruct_selection_label_sequence_log_probabilities(
+        receipt=receipt, allowed_labels=("NONE",)
+    )
+    assert scores["NONE"] == -1.0
+
+
+def test_reconstruction_censors_a_label_with_no_run() -> None:
+    receipt = _receipt(
+        _token_probability(0, "C", -0.2),
+        _token_probability(1, "9", -0.2),
+    )
+    scores = build_selection_scores(
+        event_id="AHE-001",
+        allowed_labels=("C4",),
+        receipt=receipt,
+    )
+    assert scores[0].label == "C4"
+    assert scores[0].censored is True
+    assert scores[0].log_probability is None
+
+
+def test_representative_score_censors_a_rejected_prose_answer() -> None:
+    answer = ConstituentSelectionAnswer(
+        event_id="AHE-001",
+        status=ConstituentSelectionStatus.REJECTED,
+        selected_label_indexes=(),
+    )
+    receipt = _receipt(
+        _token_probability(0, "C", -0.1),
+        _token_probability(1, "6", -0.1),
+    )
+    score = build_representative_selection_score(
+        event_id="AHE-001",
+        answer=answer,
+        allowed_labels=("C6",),
+        receipt=receipt,
+    )
+    assert score.label == "NONE"
+    assert score.censored is True
+    assert score.log_probability is None
+
+
+def test_scorer_labels_match_the_parser_accepted_subset() -> None:
+    answer = parse_constituent_selection_answer_labels(
+        event_id="AHE-001",
+        raw_answer="C1, C3",
+        constituent_labels=("C1", "C2", "C3"),
+    )
+    assert answer.status is ConstituentSelectionStatus.SELECTED
+    accepted = {f"C{index}" for index in answer.selected_label_indexes}
+    receipt = _receipt(
+        _token_probability(0, "C", -0.1),
+        _token_probability(1, "1", -0.1),
+        _token_probability(2, ",", -0.1),
+        _token_probability(3, "C", -0.2),
+        _token_probability(4, "3", -0.2),
+    )
+    scores = build_selection_scores(
+        event_id="AHE-001",
+        allowed_labels=("C1", "C2", "C3"),
+        receipt=receipt,
+    )
+    reconstructed = {item.label for item in scores if not item.censored}
+    assert reconstructed == accepted
 
 
 def test_error_census_lists_every_boundary_miss_fragment_id() -> None:

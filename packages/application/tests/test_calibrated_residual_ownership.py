@@ -11,6 +11,8 @@ from kotekomi_application import (
     CalibratedResidualOwnershipReport,
     CandidateAttachmentMark,
     ConstituentCandidateInventory,
+    ConstituentSelectionAnswer,
+    ConstituentSelectionStatus,
     EventEntityLinguisticToken,
     HeldOutFragmentRequirement,
     HeldOutGoldFragment,
@@ -24,6 +26,7 @@ from kotekomi_application import (
     build_event_frame,
     build_residual_review_set,
     calibrated_residual_ownership_report_fingerprint,
+    derive_selectable_constituents,
     detect_boundary_gaps,
     mark_candidate_attachment,
     parser_constituent_id,
@@ -165,6 +168,14 @@ def _score(
         label=label,
         log_probability=log_probability,
         censored=censored,
+    )
+
+
+def _rejected_answer(event_id: str) -> ConstituentSelectionAnswer:
+    return ConstituentSelectionAnswer(
+        event_id=event_id,
+        status=ConstituentSelectionStatus.REJECTED,
+        selected_label_indexes=(),
     )
 
 
@@ -521,7 +532,7 @@ def test_event_frame_excludes_a_non_core_modifier() -> None:
     assert [(item.start, item.end) for item in frame.core_constituents] == [(0, 4), (11, 14)]
 
 
-def test_event_frame_selection_task_renders_only_attached_candidates() -> None:
+def test_event_frame_selection_task_renders_only_selectable_candidates() -> None:
     source = "Acme's CEO fired Bob."
     tokens = _tokens(
         source,
@@ -550,19 +561,33 @@ def test_event_frame_selection_task_renders_only_attached_candidates() -> None:
         trigger_head_end=16,
         inventory=inventory,
     )
+    attached = attached_constituents(
+        inventory=inventory,
+        source_text=source,
+        tokens=tokens,
+        trigger_head_start=11,
+        trigger_head_end=16,
+    )
+    selectable = derive_selectable_constituents(
+        attached=attached,
+        source_text=source,
+        tokens=tokens,
+        trigger=frame.trigger,
+    )
     task = render_event_frame_selection_task(
         event_id="AHE-001",
         source_text=source,
         inventory=inventory,
-        tokens=tokens,
+        selectable=selectable,
         frame=frame,
     )
     assert task.event_id == "AHE-001"
     assert "Event: fired" in task.rendered_input
-    assert task.constituent_labels == ("C1", "C2", "C3")
+    assert task.constituent_labels == ("C1", "C2")
     candidates = task.rendered_input.split("Candidates:")[1]
     assert "CEO" in candidates
     assert "Bob" in candidates
+    assert "fired" not in candidates
     assert "Acme's" not in candidates
 
 
@@ -634,6 +659,29 @@ def test_none_selection_routes_to_residual_review() -> None:
     routing = route_selection_scores(scores=scores, threshold=-10.0)
     assert routing[0].decision is SelectionRoutingDecision.RESIDUAL_REVIEW
     assert routing[0].reason is ResidualReviewReason.COMPOSITION_HOLD
+
+
+def test_rejected_selection_routes_to_residual_review() -> None:
+    scores = {"AHE-001": _score("AHE-001", "NONE", None, True)}
+    answers = {"AHE-001": _rejected_answer("AHE-001")}
+    routing = route_selection_scores(scores=scores, answers=answers, threshold=-100.0)
+    assert routing[0].decision is SelectionRoutingDecision.RESIDUAL_REVIEW
+    assert routing[0].reason is ResidualReviewReason.REJECTED
+
+
+def test_rejected_selection_bypasses_an_above_threshold_score() -> None:
+    scores = {"AHE-001": _score("AHE-001", "C2", -0.1, False)}
+    answers = {"AHE-001": _rejected_answer("AHE-001")}
+    routing = route_selection_scores(scores=scores, answers=answers, threshold=-100.0)
+    assert routing[0].decision is SelectionRoutingDecision.RESIDUAL_REVIEW
+    assert routing[0].reason is ResidualReviewReason.REJECTED
+
+
+def test_rejected_selection_lists_its_event_in_the_residual_review_set() -> None:
+    scores = {"AHE-001": _score("AHE-001", "NONE", None, True)}
+    answers = {"AHE-001": _rejected_answer("AHE-001")}
+    residual = build_residual_review_set(scores=scores, answers=answers, threshold=-100.0)
+    assert residual.event_ids == ("AHE-001",)
 
 
 # --- Report safety -------------------------------------------------------------
