@@ -40,6 +40,7 @@ from kotekomi_adapters.model_resources import (
     stanza_model_path,
 )
 from kotekomi_application import (
+    SELECTABLE_POOL_FLOOR_DEFAULT,
     BoundaryGap,
     CalibratedResidualOwnershipReport,
     ConstituentCandidateInventory,
@@ -56,6 +57,7 @@ from kotekomi_application import (
     ModelInputAdmissionRequest,
     ModelTaskRequest,
     ParserConstituent,
+    PoolFloorRelaxationRecord,
     ResidualReviewReason,
     SelectionProbabilityReceipt,
     SelectionRouting,
@@ -171,7 +173,8 @@ def _prepare(args: argparse.Namespace) -> int:
     frames: dict[str, EventFrame] = {}
     tasks: dict[str, ConstituentSelectionTask] = {}
     selectable_by_event: dict[str, tuple[ParserConstituent, ...]] = {}
-    zero_candidate_event_ids: list[str] = []
+    pool_floor_relaxation: list[PoolFloorRelaxationRecord] = []
+    no_selectable_event_ids: list[str] = []
     for event in sorted(catalog.events, key=lambda item: item.event_id):
         tokens = tokens_by_digest[event.source_text_sha256]
         head_start, head_end = derive_held_out_trigger_head(
@@ -201,21 +204,30 @@ def _prepare(args: argparse.Namespace) -> int:
             trigger_head_start=head_start,
             trigger_head_end=head_end,
         )
-        selectable = derive_selectable_constituents(
+        derivation = derive_selectable_constituents(
             attached=attached,
             source_text=event.source_text,
             tokens=tokens,
             trigger=frame.trigger,
         )
-        selectable_by_event[event.event_id] = selectable
-        if not selectable:
-            zero_candidate_event_ids.append(event.event_id)
+        selectable_by_event[event.event_id] = derivation.selectable
+        if derivation.relaxation_level > 0:
+            pool_floor_relaxation.append(
+                PoolFloorRelaxationRecord(
+                    event_id=event.event_id,
+                    relaxation_level=derivation.relaxation_level,
+                    selectable_count_before=derivation.selectable_count_before,
+                    selectable_count_after=derivation.selectable_count_after,
+                )
+            )
+        if derivation.selectable_count_after < SELECTABLE_POOL_FLOOR_DEFAULT:
+            no_selectable_event_ids.append(event.event_id)
             continue
         tasks[event.event_id] = render_event_frame_selection_task(
             event_id=event.event_id,
             source_text=event.source_text,
             inventory=inventory,
-            selectable=selectable,
+            selectable=derivation.selectable,
             frame=frame,
         )
 
@@ -259,6 +271,10 @@ def _prepare(args: argparse.Namespace) -> int:
         ],
     )
     _write_json(
+        root / "pool_floor_relaxation.json",
+        [item.model_dump(mode="json") for item in pool_floor_relaxation],
+    )
+    _write_json(
         root / "tokens.json",
         {
             digest: [token.model_dump(mode="json") for token in tokens]
@@ -290,8 +306,9 @@ def _prepare(args: argparse.Namespace) -> int:
             "event_count": catalog.event_count,
             "task_count": len(tasks),
             "boundary_gap_count": len(boundary_gaps),
-            "zero_candidate_event_count": len(zero_candidate_event_ids),
-            "zero_candidate_event_ids": sorted(zero_candidate_event_ids),
+            "no_selectable_event_count": len(no_selectable_event_ids),
+            "no_selectable_event_ids": sorted(no_selectable_event_ids),
+            "pool_floor_relaxation_count": len(pool_floor_relaxation),
             "selectable_candidate_count": sum(len(items) for items in selectable_by_event.values()),
             "gold_path": str(args.gold.resolve()),
             "fixture_path": str(args.fixture.resolve()),
@@ -308,6 +325,7 @@ def _prepare(args: argparse.Namespace) -> int:
                 "frames": _sha_file(root / "frames.json"),
                 "tasks": _sha_file(root / "tasks.json"),
                 "selectable": _sha_file(root / "selectable.json"),
+                "pool_floor_relaxation": _sha_file(root / "pool_floor_relaxation.json"),
                 "tokens": _sha_file(root / "tokens.json"),
                 "inputs": _sha_file(root / "inputs.jsonl"),
             },
@@ -321,8 +339,9 @@ def _prepare(args: argparse.Namespace) -> int:
                 "event_count": catalog.event_count,
                 "task_count": len(tasks),
                 "boundary_gap_count": len(boundary_gaps),
-                "zero_candidate_event_count": len(zero_candidate_event_ids),
-                "zero_candidate_event_ids": sorted(zero_candidate_event_ids),
+                "no_selectable_event_count": len(no_selectable_event_ids),
+                "no_selectable_event_ids": sorted(no_selectable_event_ids),
+                "pool_floor_relaxation_count": len(pool_floor_relaxation),
                 "selectable_candidate_count": sum(
                     len(items) for items in selectable_by_event.values()
                 ),
@@ -512,8 +531,8 @@ def _score(args: argparse.Namespace) -> int:
     routing = route_selection_scores(
         scores=representative_scores, answers=answers, threshold=threshold
     )
-    zero_event_ids = _zero_candidate_event_ids(metadata)
-    if zero_event_ids:
+    no_selectable_event_ids = _no_selectable_event_ids(metadata)
+    if no_selectable_event_ids:
         routing = tuple(
             sorted(
                 routing
@@ -523,7 +542,7 @@ def _score(args: argparse.Namespace) -> int:
                         decision=SelectionRoutingDecision.RESIDUAL_REVIEW,
                         reason=ResidualReviewReason.NO_SELECTABLE,
                     )
-                    for event_id in zero_event_ids
+                    for event_id in no_selectable_event_ids
                 ),
                 key=lambda item: item.event_id,
             )
@@ -569,8 +588,8 @@ def _count_decisions(routing: tuple[SelectionRouting, ...], decision: str) -> in
     return sum(1 for item in routing if item.decision.value == decision)
 
 
-def _zero_candidate_event_ids(metadata: dict[str, Any]) -> tuple[str, ...]:
-    values = _require_list(metadata, "zero_candidate_event_ids", "R6 run")
+def _no_selectable_event_ids(metadata: dict[str, Any]) -> tuple[str, ...]:
+    values = _require_list(metadata, "no_selectable_event_ids", "R6 run")
     return tuple(_require_event_id(item) for item in values)
 
 
@@ -591,10 +610,14 @@ def _report(args: argparse.Namespace) -> int:
         _require_event_id(item)
         for item in _require_list(score, "residual_review_event_ids", "R6 score.json")
     )
+    pool_floor_relaxation = _load_models(
+        PoolFloorRelaxationRecord, root / "pool_floor_relaxation.json"
+    )
     report = build_calibrated_residual_ownership_report(
         boundary_gaps=boundary_gaps,
         selection_routing=routing,
         residual_review_event_ids=residual_event_ids,
+        pool_floor_relaxation=pool_floor_relaxation,
         model_execution_count=model_execution_count,
     )
 
@@ -802,6 +825,19 @@ def _render_review(
             "## Residual review",
             "",
             f"Residual-review Events: {', '.join(residual_event_ids) or 'none'}.",
+            "",
+            "## Pool-floor relaxation",
+            "",
+        ]
+    )
+    relaxation_lines = [
+        f"- `{record.event_id}` level `{record.relaxation_level}` "
+        f"{record.selectable_count_before} -> {record.selectable_count_after}"
+        for record in report.pool_floor_relaxation
+    ]
+    lines.extend(relaxation_lines or ["- none"])
+    lines.extend(
+        [
             "",
             "## Events",
             "",

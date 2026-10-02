@@ -1,14 +1,14 @@
 # TDD: Selectable-Pool Floor
 
-- Status: Proposed
-- Deliverable ID: `R8`
+- Status: Accepted
+- Deliverable ID: `R9`
 - Program: [Source-Grounded Attachment Deterministic-First Package](2026-09-24-source-grounded-attachment-deterministic-first-package.md)
 - Parent: [Parser-Constituent Candidate Filter](2026-09-30-parser-constituent-candidate-filter.md)
 - Depends on: [Selection Label and Capture](2026-09-30-selection-label-and-capture.md)
 
 ## 1. Context & Problem
 
-run-004 applied every R7 Candidate filter before rendering.
+run-004 applied every R8 Candidate filter before rendering.
 
 Event AHE-051 began with 7 syntax-attached candidates.
 
@@ -18,13 +18,13 @@ The model answered `NONE` against the pool of 2.
 
 The answer routed AHE-051 to residual review with reason `composition_hold`.
 
-R7 never bounds the minimum pool size before rendering.
+R8 never bounds the minimum pool size before rendering.
 
 A pool of 2 makes one finite subset selection task near-degenerate.
 
 The model abstains from a near-empty pool instead of selecting.
 
-R8 adds one minimum Selectable pool size that the derivation preserves.
+R9 adds one minimum Selectable pool size that the derivation preserves.
 
 ### Terms
 
@@ -34,7 +34,7 @@ The Selectable-pool floor default is `3`.
 
 **Hard filter** means the trigger filter or the core filter.
 
-The hard filters preserve the R7 correctness invariants.
+The hard filters preserve the R8 correctness invariants.
 
 **Precision filter** means the function-word filter, the artifact filter, the dedup filter, or the nested filter.
 
@@ -80,16 +80,16 @@ The term residual review keeps the meaning the Calibrated Residual Ownership TDD
 
 ## 3. Requirements
 
-- R8-FLR-01: The Application Layer applies the R7 filters in the fixed order before measuring.
-- R8-FLR-02: The hard filters stay applied at every Relaxation level.
-- R8-FLR-03: The Selectable-pool floor default equals `3`.
-- R8-FLR-04: The Application Layer selects the lowest Relaxation level whose survivor count meets the floor.
-- R8-FLR-05: The Application Layer skips precision filters in reverse order: nested, then dedup, then artifact, then function-word.
-- R8-FLR-06: The derivation reads no Gold and invokes no model.
-- R8-FLR-07: The relaxed derivation never changes the inventory the Boundary-gap detector reads.
-- R8-FLR-08: Parser and scorer label-set parity holds on a relaxed render.
-- R8-FLR-09: The report records one Pool-floor relaxation record per relaxed Event.
-- R8-FLR-10: An Event whose attached count sits below the floor reaches residual review with reason `no_selectable` and renders no task.
+- R9-FLR-01: The Application Layer applies the R8 filters in the fixed order before measuring.
+- R9-FLR-02: The hard filters stay applied at every Relaxation level.
+- R9-FLR-03: The Selectable-pool floor default equals `3`.
+- R9-FLR-04: The Application Layer selects the lowest Relaxation level whose survivor count meets the floor.
+- R9-FLR-05: The Application Layer skips precision filters in reverse order: nested, then dedup, then artifact, then function-word.
+- R9-FLR-06: The derivation reads no Gold and invokes no model.
+- R9-FLR-07: The relaxed derivation never changes the inventory the Boundary-gap detector reads.
+- R9-FLR-08: Parser and scorer label-set parity holds on a relaxed render.
+- R9-FLR-09: The report records one Pool-floor relaxation record per relaxed Event.
+- R9-FLR-10: An Event whose attached count sits below the floor reaches residual review with reason `no_selectable` and renders no task.
 
 ## 4. Proposed Architecture
 
@@ -110,7 +110,7 @@ syntax-attached candidates
 
 ## 5. Key Interactions
 
-The Selectable derivation runs the R7 filters, then checks the survivor count against the floor.
+The Selectable derivation runs the R8 filters, then checks the survivor count against the floor.
 
 The Selectable derivation walks the Relaxation levels from `0` upward.
 
@@ -172,17 +172,17 @@ An Event whose attached count sits below the floor uses level `4` and routes to 
 
 ## 9. Acceptance Criteria
 
-- AC-R8-FLR-01: Tests prove the hard filters stay applied at Relaxation level `4`.
-- AC-R8-FLR-02: Tests prove the Selectable-pool floor default equals `3`.
-- AC-R8-FLR-03: Tests prove the derivation selects the lowest Relaxation level whose survivor count meets the floor.
-- AC-R8-FLR-04: Tests prove the precision filters skip in reverse order.
-- AC-R8-FLR-05: Tests prove a seven-to-two narrowing relaxes to at least the floor.
-- AC-R8-FLR-06: Tests prove the derivation reads no Gold and invokes no model.
-- AC-R8-FLR-07: Tests prove the relaxed derivation does not change the inventory the Boundary-gap detector reads.
-- AC-R8-FLR-08: Tests prove parser and scorer label-set parity holds on a relaxed render.
-- AC-R8-FLR-09: Tests prove the report records one Pool-floor relaxation record per relaxed Event.
-- AC-R8-FLR-10: Tests prove an attached count below the floor routes to residual review with `no_selectable` and renders no task.
-- AC-R8-ALL: Focused formatting, lint, typecheck, and tests pass.
+- AC-R9-FLR-01: Tests prove the hard filters stay applied at Relaxation level `4`.
+- AC-R9-FLR-02: Tests prove the Selectable-pool floor default equals `3`.
+- AC-R9-FLR-03: Tests prove the derivation selects the lowest Relaxation level whose survivor count meets the floor.
+- AC-R9-FLR-04: Tests prove the precision filters skip in reverse order.
+- AC-R9-FLR-05: Tests prove a seven-to-two narrowing relaxes to at least the floor.
+- AC-R9-FLR-06: Tests prove the derivation reads no Gold and invokes no model.
+- AC-R9-FLR-07: Tests prove the relaxed derivation does not change the inventory the Boundary-gap detector reads.
+- AC-R9-FLR-08: Tests prove parser and scorer label-set parity holds on a relaxed render.
+- AC-R9-FLR-09: Tests prove the report records one Pool-floor relaxation record per relaxed Event.
+- AC-R9-FLR-10: Tests prove an attached count below the floor routes to residual review with `no_selectable` and renders no task.
+- AC-R9-ALL: Focused formatting, lint, typecheck, and tests pass.
 
 ## 10. Reference Implementations
 
@@ -200,3 +200,11 @@ An Event whose attached count sits below the floor uses level `4` and routes to 
 - Stop when relaxation introduces any nonzero Boundary gap.
 - Stop when parser-scorer parity fails on any relaxed Event.
 - Stop when a relaxed Event renders below the floor while its attached count meets the floor.
+
+## 12. Execution & Experimentation Directive
+
+- Implement and test this TDD.
+- Run `scripts/run_calibrated_residual_ownership.py` over the held-out partition and derive insights from the run.
+- Iteratively improve the Selectable derivation while the improvement is reasonable.
+- Commit between each deliverable and each experiment.
+- Commit before each experiment so an unsuccessful change can be reverted while preserving the learnings.

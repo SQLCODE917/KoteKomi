@@ -1,23 +1,23 @@
 # TDD: Selection Label and Capture
 
 - Status: Accepted
-- Deliverable ID: `R6`
+- Deliverable ID: `R7`
 - Program: [Source-Grounded Attachment Deterministic-First Package](2026-09-24-source-grounded-attachment-deterministic-first-package.md)
 - Parent: [Calibrated Residual Ownership](2026-09-29-calibrated-residual-ownership.md)
 - Depends on: [Evaluation Remediation](2026-09-28-evaluation-remediation.md)
 
 ## 1. Context & Problem
 
-R6 routes an Event whose selection is uncertain to residual review.
-R6 measures that uncertainty with one Selection Score.
-The current R6 scorer reads only the first emitted token.
+R7 routes an Event whose selection is uncertain to residual review.
+R7 measures that uncertainty with one Selection Score.
+The current R7 scorer reads only the first emitted token.
 So the scorer reports one first-position log probability per Candidate label.
 
 The local model spells every Candidate label as one shared `C` token followed by one token per digit.
 Every Candidate label therefore shares the same first token `C`.
 The first-position score collides.
 Every emitted label reports the same `C` probability.
-The collision censors the per-label scores that R6 needs.
+The collision censors the per-label scores that R7 needs.
 
 The model also emits two shapes that break first-position scoring.
 First, the model may merge a comma with a label when it lists labels compactly.

@@ -1,4 +1,4 @@
-"""Focused data-in/data-out tests for R7 parser-constituent Candidate filters."""
+"""Focused data-in/data-out tests for R8 parser-constituent Candidate filters."""
 
 from __future__ import annotations
 
@@ -70,6 +70,22 @@ def _trigger(source: str, start: int, end: int) -> AttachmentSourceRange:
     return AttachmentSourceRange(start=start, end=end, text=source[start:end])
 
 
+def _selectable(
+    attached: tuple[ParserConstituent, ...],
+    source_text: str,
+    tokens: tuple[EventEntityLinguisticToken, ...],
+    trigger: AttachmentSourceRange,
+) -> tuple[ParserConstituent, ...]:
+    """Return the R8 (level-0) Selectable list without any pool-floor relaxation."""
+    return derive_selectable_constituents(
+        attached=attached,
+        source_text=source_text,
+        tokens=tokens,
+        trigger=trigger,
+        floor=0,
+    ).selectable
+
+
 # --- Trigger filter ---------------------------------------------------------
 
 
@@ -86,7 +102,7 @@ def test_trigger_filter_removes_the_event_trigger_candidate() -> None:
         _constituent(source, ("t2",), 5, 10),
         _constituent(source, ("t3",), 11, 14),
     )
-    result = derive_selectable_constituents(
+    result = _selectable(
         attached=attached, source_text=source, tokens=tokens, trigger=trigger
     )
     spans = {(item.constituent_range.start, item.constituent_range.end) for item in result}
@@ -110,7 +126,7 @@ def test_core_filter_removes_the_segment_core_span_candidate() -> None:
         _constituent(source, ("t1",), 0, 4),
         _constituent(source, ("t3",), 11, 14),
     )
-    result = derive_selectable_constituents(
+    result = _selectable(
         attached=attached, source_text=source, tokens=tokens, trigger=trigger
     )
     spans = {(item.constituent_range.start, item.constituent_range.end) for item in result}
@@ -143,7 +159,7 @@ def test_function_word_filter_removes_function_word_only_candidate(surface: str,
     )
     trigger = _trigger(source, 0, 2)
     attached = (_constituent(source, ("t2",), start, end),)
-    result = derive_selectable_constituents(
+    result = _selectable(
         attached=attached, source_text=source, tokens=tokens, trigger=trigger
     )
     assert result == ()
@@ -158,7 +174,7 @@ def test_function_word_filter_keeps_candidate_with_content_token() -> None:
     )
     trigger = _trigger(source, 0, 2)
     attached = (_constituent(source, ("t2", "t3"), 3, 12),)
-    result = derive_selectable_constituents(
+    result = _selectable(
         attached=attached, source_text=source, tokens=tokens, trigger=trigger
     )
     assert result == attached
@@ -181,7 +197,7 @@ def test_artifact_filter_removes_artifact_only_candidate(surface: str, pos: str)
     )
     trigger = _trigger(source, 0, 2)
     attached = (_constituent(source, ("t2",), start, end),)
-    result = derive_selectable_constituents(
+    result = _selectable(
         attached=attached, source_text=source, tokens=tokens, trigger=trigger
     )
     assert result == ()
@@ -196,7 +212,7 @@ def test_artifact_filter_keeps_mixed_candidate_with_content_token() -> None:
     )
     trigger = _trigger(source, 0, 2)
     attached = (_constituent(source, ("t2", "t3"), 3, 12),)
-    result = derive_selectable_constituents(
+    result = _selectable(
         attached=attached, source_text=source, tokens=tokens, trigger=trigger
     )
     assert result == attached
@@ -223,7 +239,7 @@ def test_dedup_filter_drops_candidate_with_empty_surface() -> None:
     )
     trigger = _trigger(source, 0, 2)
     attached = (_constituent(source, ("t2",), 3, 5),)
-    result = derive_selectable_constituents(
+    result = _selectable(
         attached=attached, source_text=source, tokens=tokens, trigger=trigger
     )
     assert result == ()
@@ -242,7 +258,7 @@ def test_dedup_filter_keeps_the_earliest_candidate_by_source_offset() -> None:
         _constituent(source, ("t1",), 0, 3),
         _constituent(source, ("t3", "t4"), 10, 14),
     )
-    result = derive_selectable_constituents(
+    result = _selectable(
         attached=attached, source_text=source, tokens=tokens, trigger=trigger
     )
     spans = [(item.constituent_range.start, item.constituent_range.end) for item in result]
@@ -264,7 +280,7 @@ def test_nested_filter_removes_contained_candidate_when_superset_adds_only_funct
         _constituent(source, ("t2", "t3"), 5, 13),
         _constituent(source, ("t3",), 9, 13),
     )
-    result = derive_selectable_constituents(
+    result = _selectable(
         attached=attached, source_text=source, tokens=tokens, trigger=trigger
     )
     spans = [(item.constituent_range.start, item.constituent_range.end) for item in result]
@@ -284,7 +300,7 @@ def test_nested_filter_keeps_contained_candidate_when_superset_adds_content_toke
         _constituent(source, ("t2", "t3", "t4"), 5, 18),
         _constituent(source, ("t4",), 14, 18),
     )
-    result = derive_selectable_constituents(
+    result = _selectable(
         attached=attached, source_text=source, tokens=tokens, trigger=trigger
     )
     spans = {(item.constituent_range.start, item.constituent_range.end) for item in result}
@@ -307,7 +323,7 @@ def test_selectable_list_is_a_source_ordered_subsequence_of_attached() -> None:
         _constituent(source, ("t2",), 5, 10),
         _constituent(source, ("t3",), 11, 14),
     )
-    result = derive_selectable_constituents(
+    result = _selectable(
         attached=attached, source_text=source, tokens=tokens, trigger=trigger
     )
     assert result == (attached[0], attached[2])
@@ -353,7 +369,7 @@ def test_renderer_names_one_label_per_selectable_and_none_for_removed() -> None:
         trigger_head_start=5,
         trigger_head_end=10,
     )
-    selectable = derive_selectable_constituents(
+    selectable = _selectable(
         attached=attached, source_text=source, tokens=tokens, trigger=frame.trigger
     )
     task = render_event_frame_selection_task(
@@ -401,7 +417,7 @@ def test_parser_and_scorer_share_the_filtered_label_set() -> None:
         trigger_head_start=5,
         trigger_head_end=10,
     )
-    selectable = derive_selectable_constituents(
+    selectable = _selectable(
         attached=attached, source_text=source, tokens=tokens, trigger=frame.trigger
     )
     task = render_event_frame_selection_task(
@@ -456,7 +472,7 @@ def test_filters_never_change_the_inventory_the_boundary_gap_detector_reads() ->
     before = detect_boundary_gaps(gold_fragments=gold, inventories={EVENT: inventory})
     assert before == ()
     trigger = _trigger(source, 5, 10)
-    selectable = derive_selectable_constituents(
+    selectable = _selectable(
         attached=tuple(inventory.constituents),
         source_text=source,
         tokens=tokens,
@@ -477,7 +493,7 @@ def test_an_event_with_only_function_word_candidates_has_an_empty_selectable_lis
     )
     trigger = _trigger(source, 0, 2)
     attached = (_constituent(source, ("t2",), 3, 5),)
-    selectable = derive_selectable_constituents(
+    selectable = _selectable(
         attached=attached, source_text=source, tokens=tokens, trigger=trigger
     )
     assert selectable == ()

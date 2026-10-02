@@ -573,7 +573,7 @@ def test_event_frame_selection_task_renders_only_selectable_candidates() -> None
         source_text=source,
         tokens=tokens,
         trigger=frame.trigger,
-    )
+    ).selectable
     task = render_event_frame_selection_task(
         event_id="AHE-001",
         source_text=source,
@@ -695,6 +695,7 @@ def test_report_seals_zero_canonical_writes_and_proposed_changes() -> None:
         boundary_gaps=(),
         selection_routing=routing,
         residual_review_event_ids=(),
+        pool_floor_relaxation=(),
         model_execution_count=1,
     )
     assert report.canonical_write_count == 0
@@ -708,6 +709,7 @@ def test_report_rejects_a_non_zero_canonical_write_count() -> None:
             boundary_gaps=(),
             selection_routing=(),
             residual_review_event_ids=(),
+            pool_floor_relaxation=(),
             model_execution_count=0,
             canonical_write_count=1,
             proposed_change_count=0,

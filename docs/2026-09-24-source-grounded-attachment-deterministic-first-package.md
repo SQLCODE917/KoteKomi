@@ -96,12 +96,15 @@ Gate each route on its error class instead of exact-set equality.
 | R4 | Decontextualization composition | one `EventSemanticDraft` content triple and attribution from selected fragments | R3 |
 | R5 | Evaluation remediation | one fresh held-out partition, logprob capture, one error-type census, error-class gates | R4 |
 | R6 | Calibrated residual ownership | one syntax-attached selection per Event under one Event frame, gated on a Selection Score threshold, reserving the model for residual composition | R5 |
+| R7 | Selection label and capture | one full token-sequence Selection Score per Event, free of the shared-`C` collision | R6 |
+| R8 | Parser-constituent candidate filter | one Selectable candidate list per Event, filtered for content, dedup, and trigger exclusion before rendering | R7 |
+| R9 | Selectable-pool floor | one Selectable pool preserved at or above the floor before rendering, with one relaxation record per relaxed Event | R8 |
 
 R3-A supersedes the candidate granularity of R3 requirements `R3-CST-02` and `R3-CST-03`.
 
 No `R3-B` deliverable exists.
 
-R6 is proposed pending the R5 held-out transfer result and human review.
+R6 is accepted. R7, R8, and R9 extend R6 with full-token-sequence scoring, deterministic Candidate filters, and the Selectable-pool floor.
 
 ## Transfer result
 

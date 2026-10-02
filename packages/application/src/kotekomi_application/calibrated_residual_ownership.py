@@ -67,6 +67,8 @@ _ARTIFACT_POS = frozenset({"NUM", "PUNCT", "SYM"})
 _NON_CONTENT_POS = _FUNCTION_WORD_POS | _ARTIFACT_POS
 _TRAILING_PUNCTUATION = frozenset(".,;:!?")
 
+SELECTABLE_POOL_FLOOR_DEFAULT = 3
+
 
 class CandidateAttachmentMark(StrEnum):
     """One R1-ladder attachment mark for a candidate against an Event trigger head."""
@@ -164,6 +166,28 @@ class ResidualReviewSet(BaseModel):
         return self
 
 
+class PoolFloorRelaxationRecord(BaseModel):
+    """One report record for an Event whose Selectable derivation relaxed."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    event_id: _EventId
+    relaxation_level: Annotated[int, Field(ge=0, le=4)]
+    selectable_count_before: Annotated[int, Field(ge=0)]
+    selectable_count_after: Annotated[int, Field(ge=0)]
+
+
+class SelectablePoolDerivation(BaseModel):
+    """One Event's floored Selectable list plus its relaxation telemetry."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    selectable: tuple[ParserConstituent, ...]
+    relaxation_level: Annotated[int, Field(ge=0, le=4)]
+    selectable_count_before: Annotated[int, Field(ge=0)]
+    selectable_count_after: Annotated[int, Field(ge=0)]
+
+
 class CalibratedResidualOwnershipReport(BaseModel):
     """Sealed R6 report: boundary gaps, routing, residual set, and zero-write safety."""
 
@@ -172,6 +196,7 @@ class CalibratedResidualOwnershipReport(BaseModel):
     boundary_gaps: tuple[BoundaryGap, ...]
     selection_routing: tuple[SelectionRouting, ...]
     residual_review_event_ids: tuple[_EventId, ...]
+    pool_floor_relaxation: tuple[PoolFloorRelaxationRecord, ...]
     model_execution_count: Annotated[int, Field(ge=0)]
     canonical_write_count: Annotated[int, Field(ge=0)]
     proposed_change_count: Annotated[int, Field(ge=0)]
@@ -197,6 +222,10 @@ class CalibratedResidualOwnershipReport(BaseModel):
         )
         if self.residual_review_event_ids != residual_from_routing:
             raise ValueError("R6 residual-review set drifted from its routing decisions.")
+        if self.pool_floor_relaxation != tuple(
+            sorted(self.pool_floor_relaxation, key=lambda item: item.event_id)
+        ):
+            raise ValueError("R9 pool-floor relaxation records must use Event ID order.")
         expected = calibrated_residual_ownership_report_fingerprint(self)
         if self.result_fingerprint != expected:
             raise ValueError("R6 report fingerprint does not match its contents.")
@@ -372,15 +401,23 @@ def derive_selectable_constituents(
     source_text: str,
     tokens: tuple[EventEntityLinguisticToken, ...],
     trigger: AttachmentSourceRange,
-) -> tuple[ParserConstituent, ...]:
-    """Return the Selectable candidate list for one Event.
+    floor: int = SELECTABLE_POOL_FLOOR_DEFAULT,
+) -> SelectablePoolDerivation:
+    """Return one Event's Selectable pool relaxed to meet the pool floor.
 
-    The filters run in fixed order --- trigger, core, function-word, artifact, dedup,
-    nested --- over the syntax-attached candidates only.  The derivation reads no Gold,
-    invokes no model, and never changes the inventory the Boundary-gap detector reads.
+    The hard filters (trigger and core) stay applied at every Relaxation level.  The
+    precision filters --- function-word, artifact, dedup, nested --- are applied in
+    fixed order and skipped in reverse order as the Relaxation level rises.  The
+    derivation returns the lowest Relaxation level whose survivor count meets the
+    floor.  When even Relaxation level 4 cannot meet the floor, the Event's pool sits
+    below the floor: the derivation returns the hard-filtered survivors at level 4 and
+    the runner routes the Event to residual review with ``no_selectable``.  A floor of
+    zero disables relaxation and always returns the full-filter (level 0) result.  The
+    derivation reads no Gold, invokes no model, and never changes the inventory the
+    Boundary-gap detector reads.
     """
-    if not attached:
-        return ()
+    if floor < 0:
+        raise ValueError("Selectable-pool floor must not be negative.")
     token_by_id = {item.token_id: item for item in tokens}
     for candidate in attached:
         if any(token_id not in token_by_id for token_id in candidate.token_ids):
@@ -391,16 +428,58 @@ def derive_selectable_constituents(
         trigger_head_start=trigger.start,
         trigger_head_end=trigger.end,
     )
-    survivors = list(attached)
-    survivors = [item for item in survivors if not _is_trigger_candidate(item, trigger)]
-    survivors = [item for item in survivors if not _is_segment_core_candidate(item, segment_core)]
-    survivors = [
-        item for item in survivors if not _has_function_word_only_tokens(item, token_by_id)
+    hard = [
+        item
+        for item in attached
+        if not _is_trigger_candidate(item, trigger)
+        and not _is_segment_core_candidate(item, segment_core)
     ]
-    survivors = [item for item in survivors if not _has_artifact_only_tokens(item, token_by_id)]
-    survivors = _dedup_constituents(tuple(survivors))
-    survivors = _nested_filter(survivors, token_by_id)
-    return tuple(survivors)
+    count_before = 0
+    for level in range(5):
+        survivors = _apply_precision_filters(hard, token_by_id, level)
+        count = len(survivors)
+        if level == 0:
+            count_before = count
+        if count >= floor:
+            return SelectablePoolDerivation(
+                selectable=tuple(survivors),
+                relaxation_level=level,
+                selectable_count_before=count_before,
+                selectable_count_after=count,
+            )
+    return SelectablePoolDerivation(
+        selectable=tuple(hard),
+        relaxation_level=4,
+        selectable_count_before=count_before,
+        selectable_count_after=len(hard),
+    )
+
+
+def _apply_precision_filters(
+    candidates: list[ParserConstituent],
+    token_by_id: dict[str, EventEntityLinguisticToken],
+    relaxation_level: int,
+) -> list[ParserConstituent]:
+    """Apply the precision filters for one Relaxation level to hard-filtered candidates.
+
+    Relaxation level ``0`` applies every precision filter.  Higher levels skip the
+    newest filters first, in reverse fixed order: nested, then dedup, then artifact,
+    then function-word.
+    """
+    survivors = list(candidates)
+    if relaxation_level <= 3:
+        survivors = [
+            item for item in survivors if not _has_function_word_only_tokens(item, token_by_id)
+        ]
+    if relaxation_level <= 2:
+        survivors = [
+            item for item in survivors if not _has_artifact_only_tokens(item, token_by_id)
+        ]
+    if relaxation_level <= 1:
+        survivors = list(_dedup_constituents(tuple(survivors)))
+    if relaxation_level <= 0:
+        survivors = list(_nested_filter(tuple(survivors), token_by_id))
+    return survivors
 
 
 def _is_trigger_candidate(candidate: ParserConstituent, trigger: AttachmentSourceRange) -> bool:
@@ -642,6 +721,7 @@ def build_calibrated_residual_ownership_report(
     boundary_gaps: tuple[BoundaryGap, ...],
     selection_routing: tuple[SelectionRouting, ...],
     residual_review_event_ids: tuple[str, ...],
+    pool_floor_relaxation: tuple[PoolFloorRelaxationRecord, ...],
     model_execution_count: int,
 ) -> CalibratedResidualOwnershipReport:
     """Assemble and seal the R6 report with zero canonical writes and zero ProposedChanges."""
@@ -649,6 +729,7 @@ def build_calibrated_residual_ownership_report(
         boundary_gaps=boundary_gaps,
         selection_routing=selection_routing,
         residual_review_event_ids=residual_review_event_ids,
+        pool_floor_relaxation=pool_floor_relaxation,
         model_execution_count=model_execution_count,
         canonical_write_count=0,
         proposed_change_count=0,
