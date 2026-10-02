@@ -1,6 +1,6 @@
 # TDD: Selection-Failure Slot Routing
 
-- Status: Proposed
+- Status: Accepted
 - Deliverable ID: `R11`
 - Program: [Source-Grounded Attachment Agile Package](2026-10-01-source-grounded-attachment-agile-package.md)
 - Parent: [Residual Composition-Hold Routing](2026-10-01-residual-composition-hold-routing.md)
