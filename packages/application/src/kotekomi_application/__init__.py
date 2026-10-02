@@ -1450,6 +1450,16 @@ from kotekomi_application.representation_identity import (
     DocumentRepresentationBundleLedger,
     deterministic_representation_id,
 )
+from kotekomi_application.residual_composition_hold_routing import (
+    ResidualCompositionHoldReport,
+    ResidualDisposition,
+    ResidualDispositionReason,
+    build_residual_composition_hold_report,
+    dispose_residual_event,
+    dispose_residual_set,
+    residual_composition_hold_report_fingerprint,
+    validate_held_safety,
+)
 from kotekomi_application.review_queue_packet import (
     ReviewActionPlan,
     ReviewActionPlanBlocker,
@@ -3221,4 +3231,12 @@ __all__ = [
     "render_event_frame_selection_task",
     "route_selection_scores",
     "selectable_display_surface",
+    "ResidualCompositionHoldReport",
+    "ResidualDisposition",
+    "ResidualDispositionReason",
+    "build_residual_composition_hold_report",
+    "dispose_residual_event",
+    "dispose_residual_set",
+    "residual_composition_hold_report_fingerprint",
+    "validate_held_safety",
 ]

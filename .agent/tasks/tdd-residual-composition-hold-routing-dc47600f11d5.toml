@@ -1,0 +1,77 @@
+schema_version = 2
+task_id = "tdd-residual-composition-hold-routing-dc47600f11d5"
+title = "R10 Residual Composition-Hold Routing"
+status = "ready_for_terra_high"
+series_id = "source-grounded-attachment-agile"
+task_class = "orchestration"
+model_profile = "terra-high-v1"
+baseline_revision = "74d4ea8419d761e8ab587fb76eb63523df3b7e45"
+tdd_path = "docs/2026-10-01-residual-composition-hold-routing.md"
+tdd_sha256 = "dc47600f11d5d4fbdbdcca2ea915042fceb657bdeb806ac021a3c0fc45e5f8c2"
+goal = "Ship a deterministic model-free residual disposition layer that maps each residual Event to one typed disposition, separates selection failure from composition hold, enforces held safety, and seals one zero-write report."
+depends_on = ["tdd-parser-constituent-candidate-generation-a1ce85452a56"]
+allowed_paths = [
+  ".agent/tasks/tdd-residual-composition-hold-routing-dc47600f11d5.toml",
+  "docs/2026-10-01-residual-composition-hold-routing.md",
+  "docs/2026-10-01-source-grounded-attachment-agile-package.md",
+  "docs/CHECK_PLAN.md",
+  "packages/application/src/kotekomi_application/residual_composition_hold_routing.py",
+  "packages/application/src/kotekomi_application/__init__.py",
+  "packages/application/tests/test_residual_composition_hold_routing.py",
+  "scripts/run_residual_composition_hold_routing.py",
+  "data/r10-residual-composition-hold-routing-runs/",
+]
+reference_paths = [
+  "docs/2026-09-30-selectable-pool-floor.md",
+  "docs/2026-09-29-calibrated-residual-ownership.md",
+  "docs/2026-09-28-decontextualization-composition.md",
+  "packages/application/src/kotekomi_application/calibrated_residual_ownership.py",
+  "packages/application/src/kotekomi_application/decontextualization_composition.py",
+  "data/r6-calibrated-residual-ownership-runs/run-005/report.json",
+]
+stop_conditions = [
+  "the disposition set drifts from the residual-review set",
+  "a held composition yields a composable disposition",
+  "the disposition mapping silently drops an unsupported routing reason",
+  "the report records any canonical write, ProposedChange, or model execution",
+]
+
+[readiness]
+authority = "The R10 TDD defines the residual disposition taxonomy, the selection-versus-composition split, the held-safety invariants, and the zero-write report."
+contract_family = "source-grounded-attachment-agile"
+dominant_outcome = "Every residual Event maps to one typed disposition with zero canonical writes, zero ProposedChanges, and zero model executions."
+failure_policy = "A disposition set that drifts from the residual-review set, a held composition that yields composable, or any nonzero write count stops the runner."
+legacy_disposition = "The R4 composer, the R6 router, and the R7 scorer stay unchanged; R10 renames the routing reason composition_hold to selection_abstained without relabeling any Event id."
+negative_proof = "A routing reason composition_hold means the model answered NONE and maps to selection_abstained, never to a composer hold."
+public_entry_point = "scripts/run_residual_composition_hold_routing.py"
+scope_policy = "Deterministic disposition mapping, held-safety validation, report sealing, and focused tests only."
+side_effect_boundary = "The runner writes only R10 report artifacts under its explicit run root; no canonical state changes."
+unresolved_decisions = []
+
+[budget]
+maximum_production_files = 3
+maximum_test_files = 1
+maximum_production_diff_lines = 800
+
+[[protected_artifacts]]
+kind = "leaf-tdd"
+path = "docs/2026-10-01-residual-composition-hold-routing.md"
+sha256 = "dc47600f11d5d4fbdbdcca2ea915042fceb657bdeb806ac021a3c0fc45e5f8c2"
+
+[[acceptance]]
+id = "r10-application-contract"
+argv = ["uv", "run", "pytest", "packages/application/tests/test_residual_composition_hold_routing.py"]
+timeout_seconds = 120
+profile = "portable-local"
+
+[[acceptance]]
+id = "repository-static-checks"
+argv = ["uv", "run", "ruff", "check"]
+timeout_seconds = 180
+profile = "portable-local"
+
+[[acceptance]]
+id = "repository-type-checks"
+argv = ["uv", "run", "pyright"]
+timeout_seconds = 300
+profile = "portable-local"
