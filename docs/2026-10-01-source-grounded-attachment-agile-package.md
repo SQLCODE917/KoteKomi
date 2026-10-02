@@ -5,6 +5,7 @@
 - Parent: [Competitive Event Attachment Program](2026-09-18-competitive-event-attachment-program.md)
 - Predecessor: [Source-Grounded Attachment Deterministic-First Package](2026-09-24-source-grounded-attachment-deterministic-first-package.md)
 - First deliverable: [R10 Residual Composition-Hold Routing](2026-10-01-residual-composition-hold-routing.md)
+- Next deliverable: [R11 Selection-Failure Slot Routing](2026-10-01-selection-failure-slot-routing.md)
 
 ## Context & Problem
 
@@ -12,13 +13,15 @@ This package is the experiment-driven execution spine for the remaining source-g
 
 The Deterministic-First Package delivered R1 through R9.
 
-R9 leaves three held-out Events in residual review.
+R10 names one typed disposition per residual Event.
+
+R10 separates selection failure from composition hold.
 
 The three Events do not share one failure class.
 
-No deliverable traces a residual Event through the deterministic composer to name the exact missing slot.
+Every residual Event fails at the selection layer; none reaches the deterministic composer.
 
-This package turns that diagnosis into an iterative, experiment-driven plan.
+This package turns each observed selection diagnosis into one iterative TDD.
 
 ### The spine (report)
 
@@ -80,6 +83,18 @@ The model answers `NONE` against the relaxed 4-candidate pool.
 
 The near-empty-pool hypothesis is falsified for `AHE-051`.
 
+R10 maps each frozen run-005 residual Event to one selection-layer disposition.
+
+`AHE-004` carries the disposition `selection_rejected`.
+
+`AHE-022` carries the disposition `selection_rejected`.
+
+`AHE-051` carries the disposition `selection_abstained`.
+
+No residual Event carries the disposition `composition_hold`.
+
+R11 targets the selection layer and names the exact failure slot per residual Event.
+
 ### Blocker taxonomy
 
 The report classifies the remaining blockers into four classes.
@@ -92,7 +107,9 @@ R6 closed every development Boundary gap.
 
 R6, R7, R8, and R9 reduced over-selection.
 
-The two `rejected` Events remain.
+R10 names the two remaining Events `selection_rejected`.
+
+R11 names the exact rejection reason behind `selection_rejected`.
 
 **Selection abstention** means the model returns `NONE` against a well-formed pool.
 
@@ -100,11 +117,13 @@ The two `rejected` Events remain.
 
 **Composition hold** means a completed selection that the deterministic composer cannot assemble.
 
-The routing reason `composition_hold` currently names only the `NONE` answer.
+R10 reserves the name `composition_hold` for the composer.
 
-A composer hold names the exact missing slot instead.
+R10 renames the `NONE` answer to `selection_abstained`.
 
-No deliverable distinguishes selection abstention from composition hold.
+R10 confirms no residual Event is a composition hold.
+
+R11 targets the selection layer that R10 exposed.
 
 ### Conclusion
 
@@ -112,9 +131,9 @@ Keep the deterministic-first route.
 
 Reserve the model for the residual cases.
 
-Trace each residual Event through the deterministic composer before spending model budget.
+The residual Events fail at selection before the composer runs.
 
-Name the exact missing slot for each residual Event.
+Name the exact selection-failure slot for each residual Event before spending model budget.
 
 Never let a hold become accepted state without a completed selection and a completed composition.
 
@@ -157,12 +176,12 @@ An agent that finds any artifact can recover the roadmap and continue the cycle.
 | Deliverable | Title | Purpose | Status |
 |---|---|---|---|
 | R10 | Residual Composition-Hold Routing | one typed disposition per residual Event plus one held-safety invariant | Accepted |
-| R11 | Residual slot completion experiment | one modeled experiment that targets the slot R10 names | Planned |
-| R12 | Divergent residual recycle | fold the observed result into selection or composition and re-measure | Planned |
+| R11 | Selection-Failure Slot Routing | one selection-failure slot per residual Event plus one recoverability marker | Proposed |
+| R12 | Divergent residual recycle | fold the observed slot into selection or composition and re-measure | Planned |
 
-R11 and R12 are slots, not specifications.
+R12 is a slot, not a specification.
 
-The observed R10 result decides what R11 specifies.
+The observed R11 result decides what R12 specifies.
 
 ## Order
 
