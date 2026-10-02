@@ -208,3 +208,31 @@ An Event whose attached count sits below the floor uses level `4` and routes to 
 - Iteratively improve the Selectable derivation while the improvement is reasonable.
 - Commit between each deliverable and each experiment.
 - Commit before each experiment so an unsuccessful change can be reverted while preserving the learnings.
+
+## 13. Run Record
+
+R9 measured the held-out Anthropic/DoD partition once under `scripts/run_calibrated_residual_ownership.py`.
+
+The run root is `data/r6-calibrated-residual-ownership-runs/run-005`.
+
+The sealed result fingerprint is `61efb0e36d18549852a36752872e909b40bfd5ad73a505231ba0f5e6845ef671`.
+
+The Selection Score threshold is `-1.0`.
+
+The derivation relaxed exactly one of the 53 Events: `AHE-051` at Relaxation level `3`, from 2 Selectable candidates to 4.
+
+The relaxation recovered the artifact-text candidate `[45]` and the nested `45` candidate before rendering.
+
+The Boundary-gap detector still read the full inventory; the run records zero Boundary gaps.
+
+No Event rendered below the floor.
+
+No Event carried a Selectable count below the floor; the `no_selectable` path produced zero Events.
+
+The residual-review set is unchanged from run-004: `AHE-004` (`rejected`), `AHE-022` (`rejected`), `AHE-051` (`composition_hold`).
+
+The model answered `NONE` against `AHE-051` under both the 2-candidate pool (run-004) and the relaxed 4-candidate pool (run-005).
+
+The near-empty-pool hypothesis is falsified for the motivating case; relaxing the pool did not change the model abstention.
+
+The Selectable-pool floor is necessary but not sufficient for `AHE-051`; the residual composition hold needs a follow-up deliverable beyond R9.
