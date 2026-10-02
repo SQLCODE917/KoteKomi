@@ -5,7 +5,7 @@
 - Parent: [Competitive Event Attachment Program](2026-09-18-competitive-event-attachment-program.md)
 - Predecessor: [Source-Grounded Attachment Deterministic-First Package](2026-09-24-source-grounded-attachment-deterministic-first-package.md)
 - First deliverable: [R10 Residual Composition-Hold Routing](2026-10-01-residual-composition-hold-routing.md)
-- Next deliverable: R12 Label-mismatch recovery (`rejection_label_mismatch` for `AHE-004`)
+- Next deliverable: R13 AHE-004 composition-hold grounding (`subject_unavailable` behind the recovered `{C1}` selection)
 
 ## Context & Problem
 
@@ -147,6 +147,22 @@ The R11 selection-failure diagnosis is adopted as the durable zero-write diagnos
 
 The next logical step iterates on the one recoverable slot.
 
+### R12 result
+
+R12 recovers the one recoverable `rejection_label_mismatch` slot (`AHE-004`) once.
+
+The raw answer rewrites to a completed selection `{C1}` (index 1), dropping the `E2` token.
+
+The recovered selection re-measures through the deterministic composer to `held` with reason `subject_unavailable`.
+
+The recovered `C1` names the candidate `Efforts`, which has no published connection Gold entity in the held-out partition.
+
+`AHE-022` and `AHE-051` stay out of automatic recovery.
+
+The label mismatch closes and its re-measurement exposes one composition hold.
+
+The next logical step iterates on the exposed composition hold.
+
 ### Conclusion
 
 Keep the deterministic-first route.
@@ -199,9 +215,9 @@ An agent that finds any artifact can recover the roadmap and continue the cycle.
 |---|---|---|---|
 | R10 | Residual Composition-Hold Routing | one typed disposition per residual Event plus one held-safety invariant | Accepted |
 | R11 | Selection-Failure Slot Routing | one selection-failure slot per residual Event plus one recoverability marker | Accepted |
-| R12 | Label-mismatch recovery | fold the one recoverable rejection_label_mismatch slot back into a completed selection and re-measure | Planned |
+| R12 | Label-mismatch recovery | fold the one recoverable rejection_label_mismatch slot back into a completed selection and re-measure | Accepted |
 
-The observed R11 result specifies R12: recover the one recoverable `rejection_label_mismatch` slot (`AHE-004`).
+The observed R12 result specifies R13: resolve the `subject_unavailable` composition hold behind the recovered `{C1}` selection.
 
 The not-recoverable slots (`rejection_no_valid_label`, `abstained`) stay out of automatic recovery.
 

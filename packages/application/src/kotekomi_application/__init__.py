@@ -1188,6 +1188,16 @@ from kotekomi_application.knowledge_graph_retrieval import (
     build_knowledge_graph_retrieval_state,
     query_knowledge_graph,
 )
+from kotekomi_application.label_mismatch_recovery import (
+    LabelMismatchRecovery,
+    LabelMismatchRecoveryHalt,
+    LabelMismatchRecoveryReport,
+    build_label_mismatch_recovery,
+    build_label_mismatch_recovery_report,
+    label_mismatch_recovery_report_fingerprint,
+    recover_label_mismatch,
+    remeasure_recovered_selection,
+)
 from kotekomi_application.ledger import initialize_ledger
 from kotekomi_application.ledger_retrieval import (
     LEDGER_AUDIT_HISTORY_POLICY_ID,
@@ -3221,6 +3231,14 @@ __all__ = [
     "build_decontextualization_report",
     "build_decontextualized_proposition",
     "decontextualization_report_fingerprint",
+    "LabelMismatchRecovery",
+    "LabelMismatchRecoveryHalt",
+    "LabelMismatchRecoveryReport",
+    "build_label_mismatch_recovery",
+    "build_label_mismatch_recovery_report",
+    "label_mismatch_recovery_report_fingerprint",
+    "recover_label_mismatch",
+    "remeasure_recovered_selection",
     "BoundaryGap",
     "CalibratedResidualOwnershipReport",
     "CandidateAttachmentMark",
