@@ -5,7 +5,7 @@
 - Parent: [Competitive Event Attachment Program](2026-09-18-competitive-event-attachment-program.md)
 - Predecessor: [Source-Grounded Attachment Deterministic-First Package](2026-09-24-source-grounded-attachment-deterministic-first-package.md)
 - First deliverable: [R10 Residual Composition-Hold Routing](2026-10-01-residual-composition-hold-routing.md)
-- Next deliverable: [R11 Selection-Failure Slot Routing](2026-10-01-selection-failure-slot-routing.md)
+- Next deliverable: R12 Label-mismatch recovery (`rejection_label_mismatch` for `AHE-004`)
 
 ## Context & Problem
 
@@ -125,6 +125,28 @@ R10 confirms no residual Event is a composition hold.
 
 R11 targets the selection layer that R10 exposed.
 
+### R11 result
+
+R11 classifies the three frozen residual selection answers into one closed slot each.
+
+`AHE-004` lands in `rejection_label_mismatch` and is recoverable.
+
+Its raw answer names `C1` plus an `E2` the model explains as a mislabeled `C2`.
+
+`AHE-022` lands in `rejection_no_valid_label` and is not recoverable.
+
+Its raw answer is free prose with zero candidate labels.
+
+`AHE-051` lands in `abstained` and is not recoverable.
+
+Its raw answer is exactly `NONE`.
+
+Only `rejection_label_mismatch` enables automatic label recovery.
+
+The R11 selection-failure diagnosis is adopted as the durable zero-write diagnosis layer.
+
+The next logical step iterates on the one recoverable slot.
+
 ### Conclusion
 
 Keep the deterministic-first route.
@@ -176,12 +198,12 @@ An agent that finds any artifact can recover the roadmap and continue the cycle.
 | Deliverable | Title | Purpose | Status |
 |---|---|---|---|
 | R10 | Residual Composition-Hold Routing | one typed disposition per residual Event plus one held-safety invariant | Accepted |
-| R11 | Selection-Failure Slot Routing | one selection-failure slot per residual Event plus one recoverability marker | Proposed |
-| R12 | Divergent residual recycle | fold the observed slot into selection or composition and re-measure | Planned |
+| R11 | Selection-Failure Slot Routing | one selection-failure slot per residual Event plus one recoverability marker | Accepted |
+| R12 | Label-mismatch recovery | fold the one recoverable rejection_label_mismatch slot back into a completed selection and re-measure | Planned |
 
-R12 is a slot, not a specification.
+The observed R11 result specifies R12: recover the one recoverable `rejection_label_mismatch` slot (`AHE-004`).
 
-The observed R11 result decides what R12 specifies.
+The not-recoverable slots (`rejection_no_valid_label`, `abstained`) stay out of automatic recovery.
 
 ## Order
 

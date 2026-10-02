@@ -257,6 +257,18 @@ The Application Layer writes zero canonical state and zero ProposedChanges.
 
 R11 records the frozen run-005 residual selection answers once.
 
-The run root and the sealed fingerprints are recorded after the run.
+Run root: `data/r11-selection-failure-slot-routing-runs/run-001`.
 
-The observed selection-failure slots are recorded after the run.
+Source report fingerprint: `61efb0e36d18549852a36752872e909b40bfd5ad73a505231ba0f5e6845ef671`.
+
+R11 report fingerprint: `15d8ba02c4f713275c7fa0e75751261d59027fd090d7d95b3c4c7e2fabc16a9a`.
+
+| Event | Slot | Recoverable |
+|---|---|---|
+| `AHE-004` | `rejection_label_mismatch` | true |
+| `AHE-022` | `rejection_no_valid_label` | false |
+| `AHE-051` | `abstained` | false |
+
+The run records zero canonical writes, zero ProposedChanges, and zero model executions.
+
+Only `rejection_label_mismatch` is recoverable, and only `AHE-004` lands in that slot.
