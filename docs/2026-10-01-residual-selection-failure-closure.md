@@ -1,6 +1,6 @@
 # TDD: Residual Selection-Failure Closure
 
-- Status: Proposed
+- Status: Accepted
 - Deliverable ID: `R15`
 - Program: [Source-Grounded Attachment Agile Package](2026-10-01-source-grounded-attachment-agile-package.md)
 - Parent: [Centralized Identity Resolution](2026-10-01-centralized-identity-resolution.md)
@@ -169,3 +169,20 @@ The corrective re-selection itself runs in the next deliverable.
 - Commit between the TDD, the implementation, and the run.
 
 ## 13. Run Record
+
+R15 routes the frozen run-005 residual selection answers once.
+
+Run root: `data/r15-residual-selection-failure-closure-runs/run-001`.
+
+Source report fingerprint: `61efb0e36d18549852a36752872e909b40bfd5ad73a505231ba0f5e6845ef671`.
+
+R15 report fingerprint: `7297d2d7b42c7d451c0f18705530f3973645700652d93e7bc571a4a96bded4d9`.
+
+`AHE-004` stays out of the closure routing because R12 already recovered it.
+
+| Event | Closure route | Corrective instruction |
+|---|---|---|
+| `AHE-022` | `label_only_reselection` | `label_only` |
+| `AHE-051` | `best_choice_reselection` | `best_choice` |
+
+The run records zero canonical writes, zero ProposedChanges, and zero model executions.

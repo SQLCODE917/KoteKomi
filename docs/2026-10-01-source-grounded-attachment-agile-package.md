@@ -5,7 +5,7 @@
 - Parent: [Competitive Event Attachment Program](2026-09-18-competitive-event-attachment-program.md)
 - Predecessor: [Source-Grounded Attachment Deterministic-First Package](2026-09-24-source-grounded-attachment-deterministic-first-package.md)
 - First deliverable: [R10 Residual Composition-Hold Routing](2026-10-01-residual-composition-hold-routing.md)
-- Next deliverable: R15 Residual Selection-Failure Closure
+- Next deliverable: R16 Corrective Re-Selection Execution
 
 ## Context & Problem
 
@@ -270,13 +270,16 @@ An agent that finds any artifact can recover the roadmap and continue the cycle.
 | R12 | Label-mismatch recovery | fold the one recoverable rejection_label_mismatch slot back into a completed selection and re-measure | Accepted |
 | R13 | Eventive Statement Recognition and Single-Record Reification | one closed shape per statement, one Assertion reification, and keep-and-link | Accepted |
 | R14 | Centralized Identity Resolution | link a vague eventive activity to one later concrete mention in one identity-resolution step across every shape | Accepted |
-| R15 | Residual Selection-Failure Closure | decide one closure route for the two unrecovered selection failures `AHE-022` and `AHE-051` | Proposed |
+| R15 | Residual Selection-Failure Closure | decide one closure route for the two unrecovered selection failures `AHE-022` and `AHE-051` and prepare one corrective re-selection task each | Accepted |
+| R16 | Corrective Re-Selection Execution | execute the two corrective re-selection tasks, parse the finite answers deterministically, and re-measure the selections | Proposed |
 
 The observed R12 result specifies R13: recognize the eventive `{C1}` statement, reify it into one Assertion, and keep it for later linking.
 
 The observed R13 result specifies R14: reclassify the `{C1}` statement as an `eventive_state_change` with a widened subject, then link the vague eventive activity to one later concrete mention through one centralized identity-resolution step.
 
 The observed R14 result specifies R15: the `AHE-004` keep-and-link arc is closed, and the two remaining residuals `AHE-022` and `AHE-051` still need one closure route.
+
+The observed R15 result specifies R16: `AHE-022` routes to `label_only_reselection` and `AHE-051` routes to `best_choice_reselection`, so one corrective re-selection task must run per residual.
 
 The not-recoverable slots (`rejection_no_valid_label`, `abstained`) stay out of automatic recovery.
 
@@ -302,4 +305,8 @@ The package completes when each held Event carries one typed reason and no compo
 
 The package completes when the eventive `AHE-004` Assertion links to one later concrete mention through one centralized identity-resolution step.
 
-R14 meets the `AHE-004` link criterion; `AHE-022` and `AHE-051` remain, so the package is not complete.
+R14 meets the `AHE-004` link criterion.
+
+R15 decides one closure route per residual and prepares one corrective re-selection task each, but it does not execute the model.
+
+`AHE-022` and `AHE-051` still need a completed selection, so the package is not complete.
