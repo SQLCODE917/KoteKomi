@@ -5,7 +5,7 @@
 - Parent: [Competitive Event Attachment Program](2026-09-18-competitive-event-attachment-program.md)
 - Predecessor: [Source-Grounded Attachment Deterministic-First Package](2026-09-24-source-grounded-attachment-deterministic-first-package.md)
 - First deliverable: [R10 Residual Composition-Hold Routing](2026-10-01-residual-composition-hold-routing.md)
-- Next deliverable: R14 Centralized Identity Resolution
+- Next deliverable: R15 Residual Selection-Failure Closure
 
 ## Context & Problem
 
@@ -183,6 +183,32 @@ The report fingerprint is `01ccab983dee3c68d2114efee9dd3eb1e70f1db50f3985e6ec58d
 
 The next logical step is centralized identity resolution.
 
+### R14 result
+
+R14 links the vague `AHE-004` eventive activity to one later concrete mention through one centralized identity-resolution step.
+
+The resolver selects one closed identity key: `explicit_supersede`, `shared_subject_reference`, or `no_shared_identity_key`.
+
+One resolver serves every statement shape; it reads only the Assertion id, the subject reference, and the supersedes field, never the shape.
+
+A resolved pair returns one keep-and-link record whose concrete Assertion supersedes the vague Assertion; the vague Assertion keeps its original record.
+
+A pair with no identity key books one typed hold; the resolver never invents a subject reference.
+
+The runner binds the frozen `AHE-004` vague mention and one deterministic concrete-mention fixture that declares `supersedes_assertion_id`.
+
+The resolver selects `explicit_supersede` and resolves the pair to `resolved_same_activity`.
+
+R14 writes no canonical state, records no ProposedChanges, and executes no model.
+
+The report fingerprint is `ebed3e5dba45532536649f4768e6039be4388486121f0e12ed82557fc04e86c9`.
+
+The keep-and-link arc closes: R13 keeps the vague Assertion, R14 links it once a concrete mention declares the supersede.
+
+`AHE-022` and `AHE-051` remain unrecovered selection failures.
+
+The next logical step is residual selection-failure closure.
+
 ### Conclusion
 
 Keep the deterministic-first route.
@@ -196,6 +222,8 @@ Name the exact selection-failure slot for each residual Event before spending mo
 A `subject_unavailable` hold can name a statement class the entity-centered composer cannot represent; recognize the shape before declaring the subject missing.
 
 An eventive activity is a subject, not a missing entity.
+
+A vague eventive activity links to a concrete mention only on a deterministic identity key, never on a fabricated reference.
 
 Never let a hold become accepted state without a completed selection and a completed composition.
 
@@ -241,11 +269,14 @@ An agent that finds any artifact can recover the roadmap and continue the cycle.
 | R11 | Selection-Failure Slot Routing | one selection-failure slot per residual Event plus one recoverability marker | Accepted |
 | R12 | Label-mismatch recovery | fold the one recoverable rejection_label_mismatch slot back into a completed selection and re-measure | Accepted |
 | R13 | Eventive Statement Recognition and Single-Record Reification | one closed shape per statement, one Assertion reification, and keep-and-link | Accepted |
-| R14 | Centralized Identity Resolution | link a vague eventive activity to one later concrete mention in one identity-resolution step across every shape | Proposed |
+| R14 | Centralized Identity Resolution | link a vague eventive activity to one later concrete mention in one identity-resolution step across every shape | Accepted |
+| R15 | Residual Selection-Failure Closure | decide one closure route for the two unrecovered selection failures `AHE-022` and `AHE-051` | Proposed |
 
 The observed R12 result specifies R13: recognize the eventive `{C1}` statement, reify it into one Assertion, and keep it for later linking.
 
 The observed R13 result specifies R14: reclassify the `{C1}` statement as an `eventive_state_change` with a widened subject, then link the vague eventive activity to one later concrete mention through one centralized identity-resolution step.
+
+The observed R14 result specifies R15: the `AHE-004` keep-and-link arc is closed, and the two remaining residuals `AHE-022` and `AHE-051` still need one closure route.
 
 The not-recoverable slots (`rejection_no_valid_label`, `abstained`) stay out of automatic recovery.
 
@@ -270,3 +301,5 @@ The package completes when one held-out run measures zero Boundary gaps and zero
 The package completes when each held Event carries one typed reason and no composed content.
 
 The package completes when the eventive `AHE-004` Assertion links to one later concrete mention through one centralized identity-resolution step.
+
+R14 meets the `AHE-004` link criterion; `AHE-022` and `AHE-051` remain, so the package is not complete.
