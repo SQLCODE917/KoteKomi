@@ -5,7 +5,7 @@
 - Parent: [Competitive Event Attachment Program](2026-09-18-competitive-event-attachment-program.md)
 - Predecessor: [Source-Grounded Attachment Deterministic-First Package](2026-09-24-source-grounded-attachment-deterministic-first-package.md)
 - First deliverable: [R10 Residual Composition-Hold Routing](2026-10-01-residual-composition-hold-routing.md)
-- Next deliverable: R13 AHE-004 composition-hold grounding (`subject_unavailable` behind the recovered `{C1}` selection)
+- Next deliverable: R14 Centralized Identity Resolution
 
 ## Context & Problem
 
@@ -163,6 +163,26 @@ The label mismatch closes and its re-measurement exposes one composition hold.
 
 The next logical step iterates on the exposed composition hold.
 
+### R13 result
+
+R13 recognizes the recovered `AHE-004` statement and reifies it once.
+
+The statement `Efforts to utilize artificial intelligence intensified under the term of Secretary Ash Carter` assigns one closed shape: `eventive_state_change`.
+
+The reifier turns the statement into one Assertion draft whose subject widens to the eventive activity (`event`, exact text `Efforts`, no reference), never a fabricated Actor or Organization.
+
+The re-measured `subject_unavailable` hold is reclassified: the composer's `subject` slot accepts only an entity reference, but the statement's subject is an eventive activity, so the schema, not the Source, forced the hold.
+
+The eventive draft carries a predicate (`intensified`, lemma `intensify`) and an object value (`under the term of Secretary Ash Carter`).
+
+R13 writes no canonical state, records no ProposedChanges, and executes no model.
+
+The report fingerprint is `01ccab983dee3c68d2114efee9dd3eb1e70f1db50f3985e6ec58db7ffe0eba68`.
+
+`AHE-004` graduates out of the residual hold set into an eventive reification; `AHE-022` and `AHE-051` remain unrecovered selection failures.
+
+The next logical step is centralized identity resolution.
+
 ### Conclusion
 
 Keep the deterministic-first route.
@@ -172,6 +192,10 @@ Reserve the model for the residual cases.
 The residual Events fail at selection before the composer runs.
 
 Name the exact selection-failure slot for each residual Event before spending model budget.
+
+A `subject_unavailable` hold can name a statement class the entity-centered composer cannot represent; recognize the shape before declaring the subject missing.
+
+An eventive activity is a subject, not a missing entity.
 
 Never let a hold become accepted state without a completed selection and a completed composition.
 
@@ -216,8 +240,12 @@ An agent that finds any artifact can recover the roadmap and continue the cycle.
 | R10 | Residual Composition-Hold Routing | one typed disposition per residual Event plus one held-safety invariant | Accepted |
 | R11 | Selection-Failure Slot Routing | one selection-failure slot per residual Event plus one recoverability marker | Accepted |
 | R12 | Label-mismatch recovery | fold the one recoverable rejection_label_mismatch slot back into a completed selection and re-measure | Accepted |
+| R13 | Eventive Statement Recognition and Single-Record Reification | one closed shape per statement, one Assertion reification, and keep-and-link | Accepted |
+| R14 | Centralized Identity Resolution | link a vague eventive activity to one later concrete mention in one identity-resolution step across every shape | Proposed |
 
-The observed R12 result specifies R13: resolve the `subject_unavailable` composition hold behind the recovered `{C1}` selection.
+The observed R12 result specifies R13: recognize the eventive `{C1}` statement, reify it into one Assertion, and keep it for later linking.
+
+The observed R13 result specifies R14: reclassify the `{C1}` statement as an `eventive_state_change` with a widened subject, then link the vague eventive activity to one later concrete mention through one centralized identity-resolution step.
 
 The not-recoverable slots (`rejection_no_valid_label`, `abstained`) stay out of automatic recovery.
 
@@ -240,3 +268,5 @@ The package completes when no residual Event fails to reach a completed selectio
 The package completes when one held-out run measures zero Boundary gaps and zero fabricated roles.
 
 The package completes when each held Event carries one typed reason and no composed content.
+
+The package completes when the eventive `AHE-004` Assertion links to one later concrete mention through one centralized identity-resolution step.
