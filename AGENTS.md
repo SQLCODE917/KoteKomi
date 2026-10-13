@@ -63,6 +63,7 @@ Use the repository's typed observability commands before inspecting raw files or
 
 | Task | Read |
 |---|---|
+| any human-facing communication | [Self-Contained Communication](docs/agent/self-contained-communication.md) |
 | writing a TDD | `docs/agent/writing-tdds.md`, `docs/agent/documentation-style.md` |
 | changing documentation | `docs/agent/documentation-style.md` |
 | changing Domain Core | `docs/agent/domain.md`, `docs/agent/architecture.md`, `docs/agent/testing.md` |
