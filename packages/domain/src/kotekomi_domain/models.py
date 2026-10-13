@@ -422,6 +422,7 @@ class IngestionChangeSetOrigin(StrEnum):
 
 
 class IngestionFailureStage(StrEnum):
+    INTERRUPTION = "interruption"
     ADMISSION = "admission"
     SOURCE_VALIDATION = "source_validation"
     ARCHIVE = "archive"
@@ -432,6 +433,7 @@ class IngestionFailureStage(StrEnum):
 
 
 class IngestionFailureCode(StrEnum):
+    USER_INTERRUPTED = "user_interrupted"
     FILE_NOT_FOUND = "file_not_found"
     UNSUPPORTED_FILE_TYPE = "unsupported_file_type"
     SOURCE_URL_INVALID = "source_url_invalid"
@@ -1929,6 +1931,10 @@ class IngestionRun(DomainModel):
             or self.safe_failure_message is None
         ):
             raise ValueError("An error IngestionRun requires safe typed failure details.")
+        if (self.failure_stage is IngestionFailureStage.INTERRUPTION) != (
+            self.failure_code is IngestionFailureCode.USER_INTERRUPTED
+        ):
+            raise ValueError("User interruption requires its matching failure stage and code.")
         return self
 
 

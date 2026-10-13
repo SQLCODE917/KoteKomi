@@ -72,6 +72,7 @@ from kotekomi_application.hybrid_document_orchestration import (
     load_reusable_hybrid_paragraph_receipt,
     plan_hybrid_document,
     publish_hybrid_paragraph_receipt,
+    read_hybrid_stage_output,
 )
 from kotekomi_application.hybrid_document_references import HYBRID_REFERENCE_POLICY_ID
 from kotekomi_application.hybrid_entity_grounding import (
@@ -155,6 +156,10 @@ from kotekomi_application.hybrid_standing_facts import (
     HYBRID_STANDING_FACT_SCHEMA_ID,
     HybridStandingFactCommand,
     run_hybrid_standing_fact_plan,
+)
+from kotekomi_application.ingestion_inspection import (
+    HybridParagraphProgress,
+    HybridParagraphStageProgress,
 )
 from kotekomi_application.linguistic_analysis import (
     LinguisticAnalysis,
@@ -251,32 +256,6 @@ class HybridDocumentIngestionInput:
     representation_id: str
     capture_provenance_activity_id: str
     normalized_source_url: str
-
-
-@dataclass(frozen=True)
-class HybridParagraphProgress:
-    ordinal: int
-    total: int
-    status: str
-    receipt_reused: bool
-
-
-@dataclass(frozen=True)
-class HybridParagraphStageProgress:
-    """One live event inside a single paragraph route.
-
-    ``stage_id`` is ``None`` for the paragraph-started and paragraph-finished
-    boundary events; otherwise it names the stage that just completed and
-    ``stage_output`` carries that stage's parsed preview or plan object.
-    """
-
-    ordinal: int
-    total: int
-    representation_id: str
-    paragraph_node_id: str
-    stage_id: HybridStageId | None
-    stage_output: object | None
-    finished: bool
 
 
 @dataclass(frozen=True)
@@ -619,6 +598,21 @@ def run_hybrid_document_ingestion(
                     representation_id=plan.manifest.representation_id,
                     paragraph_node_id=work.paragraph_node_id,
                 )
+                if stage_progress is not None:
+                    for stage in receipt.stages:
+                        if stage.output_id is not None:
+                            _, output = read_hybrid_stage_output(
+                                stage.stage_id, stage.output_id, archive
+                            )
+                            _emit_stage_progress(
+                                stage_progress,
+                                ordinal=work.ordinal,
+                                total=total,
+                                representation_id=plan.manifest.representation_id,
+                                paragraph_node_id=work.paragraph_node_id,
+                                stage_id=stage.stage_id,
+                                stage_output=output,
+                            )
                 _emit_stage_progress(
                     stage_progress,
                     ordinal=work.ordinal,

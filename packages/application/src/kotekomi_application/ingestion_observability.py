@@ -52,12 +52,15 @@ from kotekomi_application.model_run_logging import (
 )
 
 
-class IngestionObservabilityLedger(Protocol):
+class IngestionLinkageLedger(Protocol):
+    def get_analysis_run(self, record_id: str) -> AnalysisRun | None: ...
+    def get_ingestion_change_set(self, record_id: str) -> IngestionChangeSet | None: ...
+
+
+class IngestionObservabilityLedger(IngestionLinkageLedger, Protocol):
     def get_ingestion_run(self, record_id: str) -> IngestionRun | None: ...
     def list_ingestion_runs(self) -> tuple[IngestionRun, ...]: ...
-    def get_analysis_run(self, record_id: str) -> AnalysisRun | None: ...
     def get_analysis_plan_artifact(self, record_id: str) -> AnalysisPlanArtifact | None: ...
-    def get_ingestion_change_set(self, record_id: str) -> IngestionChangeSet | None: ...
     def list_planned_items_for_analysis_run(
         self, analysis_run_id: str
     ) -> tuple[PlannedAnalysisItem, ...]: ...
@@ -197,7 +200,7 @@ def inspect_ingestion(
     model_runs: tuple[ModelRun, ...] = ()
     model_run_ids: tuple[str, ...] = ()
     if run.analysis_run_id is not None:
-        analysis = _require_analysis(run, ledger)
+        analysis = require_ingestion_analysis(run, ledger)
         frozen_plan = load_frozen_analysis_plan(
             analysis.frozen_analysis_plan_id,
             cast(AnalysisCoverageLedger, ledger),
@@ -228,7 +231,7 @@ def inspect_ingestion(
                 *(_ledger_evidence("ModelRun", item.id) for item in model_runs),
             )
         )
-        change_set = _require_change_set(run, analysis, ledger)
+        change_set = require_ingestion_change_set(run, analysis, ledger)
         evidence.append(_ledger_evidence("IngestionChangeSet", change_set.id))
         if analysis.coverage_policy_id == HYBRID_DOCUMENT_POLICY_ID:
             report, archive_evidence, traces, archived_model_run_ids = _load_hybrid_evidence(
@@ -394,8 +397,9 @@ def ingestion_trace_to_json(trace: ExtractionStageTrace) -> dict[str, JsonValue]
     return extraction_stage_trace_to_json(trace)
 
 
-def _require_analysis(run: IngestionRun, ledger: IngestionObservabilityLedger) -> AnalysisRun:
-    assert run.analysis_run_id is not None
+def require_ingestion_analysis(run: IngestionRun, ledger: IngestionLinkageLedger) -> AnalysisRun:
+    if run.analysis_run_id is None:
+        raise ValueError("IngestionRun requires an AnalysisRun.")
     analysis = ledger.get_analysis_run(run.analysis_run_id)
     if (
         analysis is None
@@ -406,10 +410,10 @@ def _require_analysis(run: IngestionRun, ledger: IngestionObservabilityLedger) -
     return analysis
 
 
-def _require_change_set(
+def require_ingestion_change_set(
     run: IngestionRun,
     analysis: AnalysisRun,
-    ledger: IngestionObservabilityLedger,
+    ledger: IngestionLinkageLedger,
 ) -> IngestionChangeSet:
     if run.ingestion_change_set_id is None:
         raise ValueError("Analyzed IngestionRun requires an IngestionChangeSet.")

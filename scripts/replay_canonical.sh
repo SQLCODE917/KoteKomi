@@ -3,7 +3,7 @@
 # replay_canonical.sh
 #
 # No-config end-to-end demo: run the canonical HP-8 ingestion once, then replay
-# every paragraph's accepted HP-8 stage annotations line by line.
+# every paragraph's proposed HP-8 intelligence in the Textual viewer.
 #
 # This is a thin, deterministic wrapper around two already-idempotent pieces:
 #
@@ -27,14 +27,14 @@
 #   KOTEKOMI_CONFIG          Path to kotekomi.toml (see resolution above).
 #   KOTEKOMI_REPLAY_STATE    Isolated Ledger/Archive state root.
 #                            Default: data/canonical/replay-state
-#   KOTEKOMI_REPLAY_DELAY    Seconds between reveal lines during replay.
-#                            Default: 0.12 (use 0 to render whole blocks at once)
+#   KOTEKOMI_REPLAY_DELAY    Seconds between stored phase results during replay.
+#                            Default: 0.12 (use 0 to reveal phases immediately)
 #   KOTEKOMI_REPLAY_REUSE_STATE  When set (="1"), skip re-ingesting and reuse an
 #                            already completed state root.
 #
 # Success criteria:
 #   - scripts/canonical_test_ingest.sh reports PASS (exit status 0), and
-#   - kotekomi-replay prints one annotated block per paragraph (exit status 0).
+#   - kotekomi-replay retains source-attached layers for inspection, then exits with status 0.
 
 set -euo pipefail
 

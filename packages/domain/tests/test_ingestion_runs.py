@@ -50,6 +50,37 @@ def test_ingestion_run_accepts_each_valid_cir1_state() -> None:
     assert error.status is IngestionRunStatus.ERROR
 
 
+def test_user_interruption_is_a_typed_terminal_error() -> None:
+    interrupted = _run(
+        status=IngestionRunStatus.ERROR,
+        completed_at=NOW + timedelta(seconds=1),
+        failure_stage=IngestionFailureStage.INTERRUPTION,
+        failure_code=IngestionFailureCode.USER_INTERRUPTED,
+        safe_failure_message="Ingestion interrupted by the user.",
+    )
+    assert IngestionRun.model_validate_json(interrupted.model_dump_json()) == interrupted
+
+
+@pytest.mark.parametrize(
+    "stage,code",
+    [
+        (IngestionFailureStage.INTERRUPTION, IngestionFailureCode.AUTOMATIC_EXTRACTION_FAILED),
+        (IngestionFailureStage.AUTOMATIC_EXTRACTION, IngestionFailureCode.USER_INTERRUPTED),
+    ],
+)
+def test_negative_mismatched_interruption_rejects_invalid_shape(
+    stage: IngestionFailureStage, code: IngestionFailureCode
+) -> None:
+    with pytest.raises(ValueError, match="matching failure stage and code"):
+        _run(
+            status=IngestionRunStatus.ERROR,
+            completed_at=NOW + timedelta(seconds=1),
+            failure_stage=stage,
+            failure_code=code,
+            safe_failure_message="Interrupted.",
+        )
+
+
 @pytest.mark.parametrize(
     ("updates", "message"),
     [

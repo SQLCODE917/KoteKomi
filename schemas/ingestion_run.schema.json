@@ -2,6 +2,7 @@
   "$defs": {
     "IngestionFailureCode": {
       "enum": [
+        "user_interrupted",
         "file_not_found",
         "unsupported_file_type",
         "source_url_invalid",
@@ -18,6 +19,7 @@
     },
     "IngestionFailureStage": {
       "enum": [
+        "interruption",
         "admission",
         "source_validation",
         "archive",

@@ -156,6 +156,11 @@
 - run the generated Harness verification plan for changed `packages/devtools` paths and execute every returned check through `kotekomi-agent run-check`
 
 ## 7. Documentation checks
+- verify replay source identity, explicit/semantic aliases, overlapping layers, Event-trigger proposal anchors, Textual worker lifecycle, resize/scroll behavior, immediate quit, shared CLI routing, injected output streams, latest/explicit IngestionRun selection across multiple coverage reports, and clean errors without older-run fallback with `uv run pytest packages/pipelines/tests/test_replay_reader.py packages/pipelines/tests/test_replay_tui.py packages/pipelines/tests/test_replay_live_cli.py`
+- verify reused ingestion emits stored phase results without model calls, and archived replay reconstructs all proposal annotations, with `uv run pytest packages/pipelines/tests/test_user_ingestion_run.py::test_user_ingest_checkpoints_and_reuses_the_complete_hybrid_document`
+- verify compact clipboard summaries preserve effective decisions, source identity, selected record handles, enabled layers, frozen operation state, and clipboard errors without UI geometry with `uv run pytest packages/pipelines/tests/test_replay_snapshot.py packages/pipelines/tests/test_replay_tui.py packages/pipelines/tests/test_replay_live_cli.py`
+- verify fake-Port inspection, adjudicated mention selection, scoped receipt reads, explicit live artifact lookup, missing/tampered evidence rejection, the Trump Jr. handoff under 6 KiB, and dependency direction with `uv run pytest packages/application/tests/test_ingestion_inspection.py packages/application/tests/test_inspection_import_boundaries.py packages/adapters/tests/test_inspection_source.py`
+- verify prompt replay cancellation, spawned ingestion completion, process-group interruption, worker reaping, SQLite rollback, preserved Archive evidence, typed user-interruption state, and JSON Schema agreement with `uv run pytest packages/pipelines/tests/test_replay_cancellation.py packages/pipelines/tests/test_replay_tui.py packages/domain/tests/test_ingestion_runs.py packages/domain/tests/test_schema_generation.py`
 - verify glossary terms match Domain Core names
 - verify command examples run
 - verify cross-references resolve

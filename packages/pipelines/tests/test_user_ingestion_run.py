@@ -22,14 +22,20 @@ from kotekomi_application import (
     hybrid_paragraph_receipt_from_bytes,
     hybrid_pipeline_policy_manifest_from_bytes,
 )
+from kotekomi_application.ingestion_inspection import (
+    HybridParagraphStageProgress,
+    ParagraphSnapshot,
+)
 from kotekomi_domain import (
     AnalysisRunState,
     IngestionChangeSet,
     IngestionChangeSetOrigin,
     IngestionRunStatus,
 )
-from kotekomi_pipelines.cli import main
+from kotekomi_pipelines.cli import ingest_user_file, main
 from kotekomi_pipelines.model_runtime import FixtureModelTaskRuntime
+from kotekomi_pipelines.replay_reader.live import create_inspection_session
+from kotekomi_pipelines.replay_reader.transport import load_paragraph_inputs
 
 FIXTURE_PATH = (
     Path(__file__).resolve().parent
@@ -353,7 +359,34 @@ def test_user_ingest_checkpoints_and_reuses_the_complete_hybrid_document(
         "kotekomi_pipelines.hybrid_document_ingestion.RefinedEntityLinkingAdapter",
         adapter_must_not_start,
     )
-    assert main(command) == 0
+    stage_events: list[HybridParagraphStageProgress] = []
+    assert (
+        ingest_user_file(
+            config_path=config_path,
+            source_file_path=PDF_FIXTURE_PATH,
+            source_url="https://example.test/articles/hybrid-replay",
+            stage_progress=stage_events.append,
+        )
+        == 0
+    )
+    assert any(event.stage_output is not None for event in stage_events)
+    for ordinal in range(report.required_paragraph_count):
+        phases = tuple(
+            event.stage_id
+            for event in stage_events
+            if event.ordinal == ordinal and event.stage_id is not None
+        )
+        assert phases == HYBRID_STAGE_ORDER
+    snapshots: list[ParagraphSnapshot] = []
+    presenter = create_inspection_session(ledger_path, on_snapshot=snapshots.append)
+    presenter.replay_stored(load_paragraph_inputs(ledger_path, archive_root), None)
+    assert not presenter.presentation_failed
+    final_profiles = {snapshot.ordinal: snapshot.profile for snapshot in snapshots}
+    assert len(final_profiles) == report.required_paragraph_count
+    assert all(
+        profile.present_stages == frozenset(stage.value for stage in HYBRID_STAGE_ORDER)
+        for profile in final_profiles.values()
+    )
     replay_output = capsys.readouterr()
     assert replay_output.err == ""
     assert replay_output.out.count("(reused)") == report.required_paragraph_count

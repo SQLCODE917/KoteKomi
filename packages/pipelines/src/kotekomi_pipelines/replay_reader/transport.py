@@ -8,110 +8,65 @@ module never opens the Ledger or Archive for writing.
 from __future__ import annotations
 
 import argparse
-from collections.abc import Mapping
-from dataclasses import dataclass
+import math
+import sqlite3
 from pathlib import Path
 
 from kotekomi_adapters import LocalArchiveStore, sqlite_ledger_transaction
 from kotekomi_application import (
-    HybridDocumentCoverageRecord,
-    HybridDocumentCoverageReport,
-    HybridParagraphReceipt,
+    ListIngestionHistoryInput,
     hybrid_document_coverage_report_from_bytes,
-    hybrid_paragraph_receipt_from_bytes,
-    read_hybrid_stage_output,
+    list_ingestion_history,
+)
+from kotekomi_application.ingestion_inspection import ParagraphInput
+from kotekomi_application.ingestion_inspection_reader import (
+    InspectParagraphInput,
+    load_inspection_paragraph,
 )
 
-from kotekomi_pipelines.replay_reader.model import build_profile
-from kotekomi_pipelines.replay_reader.render import run_replay
 
-
-def _read_coverage_report(archive_path: Path) -> HybridDocumentCoverageReport:
-    paths = tuple((archive_path / "extraction" / "document-coverage").glob("*.json"))
-    if len(paths) != 1:
-        raise ValueError("expected exactly one document-coverage report in the Archive.")
-    return hybrid_document_coverage_report_from_bytes(paths[0].read_bytes())
-
-
-def _read_receipt(
-    archive: LocalArchiveStore, coverage: HybridDocumentCoverageRecord
-) -> HybridParagraphReceipt:
-    return hybrid_paragraph_receipt_from_bytes(
-        archive.read_hybrid_paragraph_receipt(coverage.receipt_id)
-    )
-
-
-def _read_stage_outputs(
-    archive: LocalArchiveStore, receipt: HybridParagraphReceipt
-) -> dict[str, object]:
-    outputs: dict[str, object] = {}
-    for stage in receipt.stages:
-        if stage.output_id is None:
-            continue
-        _, parsed = read_hybrid_stage_output(stage.stage_id, stage.output_id, archive)
-        outputs[stage.stage_id.value] = parsed
-    return outputs
-
-
-@dataclass(frozen=True)
-class ParagraphInput:
-    """One authoritative paragraph plus the persisted stage outputs behind it."""
-
-    ordinal: int
-    text: str
-    representation_id: str
-    paragraph_node_id: str
-    node_start_char: int
-    status: str
-    gap_reasons: tuple[str, ...]
-    stage_outputs: Mapping[str, object]
-
-
-def load_paragraph_inputs(ledger_path: Path, archive_path: Path) -> tuple[ParagraphInput, ...]:
-    """Load every paragraph's authoritative text and persisted stage outputs."""
-    report = _read_coverage_report(archive_path)
-    with sqlite_ledger_transaction(ledger_path) as ledger:
-        bundle = ledger.get_document_representation_bundle(report.representation_id)
-    if bundle is None:
-        raise ValueError("coverage references a missing representation.")
-    nodes = {item.id: item for item in bundle.nodes}
-    text_views = {item.id: item for item in bundle.text_views}
+def load_paragraph_inputs(
+    ledger_path: Path, archive_path: Path, *, ingestion_run_id: str | None = None
+) -> tuple[ParagraphInput, ...]:
     archive = LocalArchiveStore(archive_path)
-
-    inputs: list[ParagraphInput] = []
-    for coverage in report.records:
-        node = nodes[coverage.paragraph_node_id]
-        text_view = text_views[node.text_view_id]
-        receipt = _read_receipt(archive, coverage)
-        inputs.append(
-            ParagraphInput(
-                ordinal=coverage.ordinal,
-                text=text_view.text[node.start_char : node.end_char],
-                representation_id=report.representation_id,
-                paragraph_node_id=coverage.paragraph_node_id,
-                node_start_char=node.start_char,
-                status=receipt.status.value,
-                gap_reasons=receipt.gap_reasons,
-                stage_outputs=_read_stage_outputs(archive, receipt),
+    with sqlite_ledger_transaction(ledger_path) as ledger:
+        if ingestion_run_id is None:
+            history = list_ingestion_history(ListIngestionHistoryInput(limit=1), ledger)
+            if not history.entries:
+                raise ValueError("The Ledger contains no IngestionRuns to replay.")
+            ingestion_run_id = history.entries[0].ingestion_run_id
+        run = ledger.get_ingestion_run(ingestion_run_id)
+        if run is None:
+            raise ValueError(f"IngestionRun not found: {ingestion_run_id}")
+        if run.ingestion_change_set_id is None:
+            raise ValueError(
+                f"IngestionRun {ingestion_run_id} has no completed Hybrid coverage report."
             )
+        change_set = ledger.get_ingestion_change_set(run.ingestion_change_set_id)
+        if change_set is None:
+            raise ValueError("Missing IngestionChangeSet.")
+        report_id = archive.find_hybrid_document_coverage_report_by_sha256(
+            change_set.coverage_report_digest
         )
-    return tuple(inputs)
-
-
-def _render_one(paragraph: ParagraphInput, delay: float) -> None:
-    print(
-        f"paragraph {paragraph.ordinal}  node {paragraph.paragraph_node_id}  "
-        f"status {paragraph.status}"
-    )
-    profile = build_profile(
-        text=paragraph.text,
-        representation_id=paragraph.representation_id,
-        paragraph_node_id=paragraph.paragraph_node_id,
-        node_start_char=paragraph.node_start_char,
-        stage_outputs=paragraph.stage_outputs,
-    )
-    run_replay(profile, delay=delay)
-    print()
+        if report_id is None:
+            raise ValueError(
+                f"IngestionRun {ingestion_run_id}: coverage report is missing from the Archive."
+            )
+        report = hybrid_document_coverage_report_from_bytes(
+            archive.read_hybrid_document_coverage_report(report_id)
+        )
+        return tuple(
+            load_inspection_paragraph(
+                InspectParagraphInput(
+                    ingestion_run_id=ingestion_run_id,
+                    paragraph_node_id=r.paragraph_node_id,
+                    state_root=str(ledger_path.parent),
+                ),
+                ledger,
+                archive,
+            )
+            for r in report.records
+        )
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -120,6 +75,11 @@ def main(argv: list[str] | None = None) -> int:
         description="Replay persisted HP-8 state as per-paragraph stage annotations.",
     )
     parser.add_argument("--state-root", type=Path, required=True)
+    parser.add_argument(
+        "--ingestion-run",
+        default=None,
+        help="IngestionRun ID to replay; defaults to the latest run in Ledger history",
+    )
     parser.add_argument(
         "--paragraph",
         type=int,
@@ -130,22 +90,34 @@ def main(argv: list[str] | None = None) -> int:
         "--delay",
         type=float,
         default=0.0,
-        help="seconds between reveal lines; 0 renders the block at once",
+        help="seconds between stored phase results",
     )
+    parser.add_argument("--plain", action="store_true", help="use ANSI-free source-attached output")
     args = parser.parse_args(argv)
+    if not math.isfinite(args.delay) or args.delay < 0:
+        parser.error("--delay must be finite and >= 0")
     ledger_path = (args.state_root / "kotekomi.db").resolve()
     archive_path = (args.state_root / "archive").resolve()
     if not ledger_path.exists() or not archive_path.exists():
         parser.error(f"state root is missing kotekomi.db or archive/: {args.state_root}")
-    inputs = load_paragraph_inputs(ledger_path, archive_path)
-    if args.paragraph is None:
-        selected = list(inputs)
-    else:
+    try:
+        inputs = load_paragraph_inputs(
+            ledger_path, archive_path, ingestion_run_id=args.ingestion_run
+        )
+    except (OSError, ValueError, sqlite3.Error) as error:
+        parser.error(f"cannot replay state root {args.state_root}: {error}")
+    if args.paragraph is not None:
         if args.paragraph < 1:
             parser.error("--paragraph must be >= 1")
         selected = [item for item in inputs if item.ordinal + 1 == args.paragraph]
         if not selected:
             raise SystemExit(f"no paragraph with ordinal {args.paragraph - 1}")
-    for paragraph in selected:
-        _render_one(paragraph, args.delay)
-    return 0
+    from kotekomi_pipelines.replay_reader.live import replay_paragraphs
+
+    return replay_paragraphs(
+        inputs,
+        None if args.paragraph is None else args.paragraph - 1,
+        plain=args.plain,
+        delay=args.delay,
+        ledger_path=ledger_path,
+    )

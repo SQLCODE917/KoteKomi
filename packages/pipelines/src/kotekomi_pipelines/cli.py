@@ -14,7 +14,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import cast
+from typing import TextIO, cast
 
 from kotekomi_adapters import (
     DebertaNliAdapter,
@@ -58,6 +58,7 @@ from kotekomi_adapters.refined_entity_linking import (
 )
 from kotekomi_application import (
     CROSS_PLANE_QUERY_POLICY_ID,
+    HYBRID_STAGE_ORDER,
     AuthoritativeCaptureOutcome,
     AuthoritativeCaptureRequest,
     AuthoritativePdfCaptureOutcome,
@@ -89,6 +90,8 @@ from kotekomi_application import (
     HybridMentionPreviewCommand,
     HybridPreviewStatus,
     HybridReferencePreviewCommand,
+    HybridStageId,
+    IngestionRunIdFactory,
     IngestionSummary,
     InspectIngestionInput,
     InspectIngestionResult,
@@ -204,6 +207,10 @@ from kotekomi_application.candidate_wiki import (
     plan_candidate_wiki,
     select_candidate_ingestions,
 )
+from kotekomi_application.ingestion_inspection import (
+    HybridParagraphProgress,
+    HybridParagraphStageProgress,
+)
 from kotekomi_briefing import MarkdownBriefingRenderer
 from kotekomi_domain import (
     AssertionStatus,
@@ -234,8 +241,6 @@ from kotekomi_pipelines.event_attribution_stage_local import (
 )
 from kotekomi_pipelines.hybrid_document_ingestion import (
     HybridDocumentIngestionInput,
-    HybridParagraphProgress,
-    HybridParagraphStageProgress,
     run_hybrid_document_ingestion,
 )
 from kotekomi_pipelines.managed_llama_server import (
@@ -286,6 +291,9 @@ def main(argv: list[str] | None = None) -> int:
             limit=args.limit,
             output_format=args.output_format,
         )
+
+    if args.command == "ingestions" and args.ingestions_command == "paragraph":
+        return show_ingestion_paragraph(args)
 
     if args.command == "ingestions" and args.ingestions_command == "show":
         return show_user_ingestion(
@@ -957,6 +965,23 @@ def build_parser() -> argparse.ArgumentParser:
     ingestion_artifacts_parser.add_argument("ingestion_run_id")
     ingestion_artifacts_parser.add_argument(
         "--format", dest="output_format", choices=("text", "jsonl"), default="text"
+    )
+
+    paragraph_parser = ingestions_subparsers.add_parser(
+        "paragraph", help="Inspect one paragraph or exact phase evidence."
+    )
+    paragraph_parser.add_argument("ingestion_run_id")
+    paragraph_parser.add_argument("--node", dest="paragraph_node_id", required=True)
+    paragraph_parser.add_argument(
+        "--phase", choices=tuple(stage.value for stage in HYBRID_STAGE_ORDER), default=None
+    )
+    selectors = paragraph_parser.add_mutually_exclusive_group()
+    selectors.add_argument("--record-id", default=None)
+    selectors.add_argument("--trace-id", default=None)
+    paragraph_parser.add_argument("--artifact-id", default=None)
+    paragraph_parser.add_argument("--sha256", dest="artifact_sha256", default=None)
+    paragraph_parser.add_argument(
+        "--format", dest="output_format", choices=("json",), default="json"
     )
 
     wiki_parser = subparsers.add_parser("wiki", help="Derived Wiki commands.")
@@ -2292,8 +2317,14 @@ def ingest_user_file(
     source_file_path: Path,
     source_url: str,
     stage_progress: Callable[[HybridParagraphStageProgress], None] | None = None,
+    paragraph_progress: Callable[[HybridParagraphProgress], None] | None = None,
+    stdout: TextIO | None = None,
+    stderr: TextIO | None = None,
+    ingestion_run_id_factory: IngestionRunIdFactory | None = None,
 ) -> int:
     """Run user ingestion while exposing only its durable operation identity."""
+    out = sys.stdout if stdout is None else stdout
+    err = sys.stderr if stderr is None else stderr
     try:
         processing_config = load_processing_config(
             config_path=config_path,
@@ -2308,23 +2339,23 @@ def ingest_user_file(
         if config.model_execution.adapter != "fixture":
             resource_report = inspect_configured_model_resources(config)
             if not resource_report.ready:
-                print("model_resources_not_ready", file=sys.stderr)
+                print("model_resources_not_ready", file=err)
                 print(
                     model_resource_report_text(resource_report, config_path=config_path),
-                    file=sys.stderr,
+                    file=err,
                 )
                 return 1
         SQLiteLedgerInitializer(config.ledger_path).initialize()
     except ProcessingConfigurationError as error:
-        print(str(error), file=sys.stderr)
+        print(str(error), file=err)
         return 1
     except (OSError, sqlite3.Error) as error:
-        print(f"Unable to open KoteKomi storage: {error}", file=sys.stderr)
+        print(f"Unable to open KoteKomi storage: {error}", file=err)
         return 1
 
     display_filename = source_file_path.name
     if not display_filename:
-        print("The requested path must identify a file.", file=sys.stderr)
+        print("The requested path must identify a file.", file=err)
         return 2
 
     try:
@@ -2336,13 +2367,17 @@ def ingest_user_file(
                     requested_source_url=source_url,
                 ),
                 repository=repository,
-                id_factory=Uuid4IngestionRunIdFactory(),
+                id_factory=(
+                    Uuid4IngestionRunIdFactory()
+                    if ingestion_run_id_factory is None
+                    else ingestion_run_id_factory
+                ),
                 clock=UtcIngestionRunClock(),
             )
     except (OSError, ValueError):
-        print("Unable to start the ingestion run.", file=sys.stderr)
+        print("Unable to start the ingestion run.", file=err)
         return 1
-    print(f"Ingestion run: {run.id}")
+    print(f"Ingestion run: {run.id}", file=out)
 
     archive_store = LocalArchiveStore(config.archive_path)
     try:
@@ -2350,6 +2385,7 @@ def ingest_user_file(
     except OSError:
         return _record_user_ingestion_error(
             config=processing_config,
+            stderr=err,
             run=run,
             failure_stage=IngestionFailureStage.ARCHIVE,
             failure_code=IngestionFailureCode.ARCHIVE_INITIALIZATION_FAILED,
@@ -2359,6 +2395,7 @@ def ingest_user_file(
     if source_file_path.suffix.lower() not in {".pdf", ".md", ".txt"}:
         return _record_user_ingestion_error(
             config=processing_config,
+            stderr=err,
             run=run,
             failure_stage=IngestionFailureStage.SOURCE_VALIDATION,
             failure_code=IngestionFailureCode.UNSUPPORTED_FILE_TYPE,
@@ -2369,6 +2406,7 @@ def ingest_user_file(
     except ValueError:
         return _record_user_ingestion_error(
             config=processing_config,
+            stderr=err,
             run=run,
             failure_stage=IngestionFailureStage.SOURCE_VALIDATION,
             failure_code=IngestionFailureCode.SOURCE_URL_INVALID,
@@ -2379,6 +2417,7 @@ def ingest_user_file(
     except FileNotFoundError:
         return _record_user_ingestion_error(
             config=processing_config,
+            stderr=err,
             run=run,
             failure_stage=IngestionFailureStage.SOURCE_VALIDATION,
             failure_code=IngestionFailureCode.FILE_NOT_FOUND,
@@ -2388,6 +2427,7 @@ def ingest_user_file(
     except OSError:
         return _record_user_ingestion_error(
             config=processing_config,
+            stderr=err,
             run=run,
             failure_stage=IngestionFailureStage.SOURCE_CAPTURE,
             failure_code=IngestionFailureCode.SOURCE_CAPTURE_FAILED,
@@ -2431,6 +2471,7 @@ def ingest_user_file(
     except Exception:
         return _record_user_ingestion_error(
             config=processing_config,
+            stderr=err,
             run=run,
             failure_stage=IngestionFailureStage.SOURCE_CAPTURE,
             failure_code=IngestionFailureCode.SOURCE_CAPTURE_FAILED,
@@ -2443,6 +2484,7 @@ def ingest_user_file(
     ):
         return _record_user_ingestion_error(
             config=processing_config,
+            stderr=err,
             run=run,
             failure_stage=IngestionFailureStage.DOCUMENT_REPRESENTATION,
             failure_code=(
@@ -2469,6 +2511,7 @@ def ingest_user_file(
         ):
             return _record_user_ingestion_error(
                 config=processing_config,
+                stderr=err,
                 run=run,
                 failure_stage=IngestionFailureStage.DOCUMENT_REPRESENTATION,
                 failure_code=IngestionFailureCode.DOCUMENT_REPRESENTATION_FAILED,
@@ -2489,6 +2532,7 @@ def ingest_user_file(
     else:
         return _record_user_ingestion_error(
             config=processing_config,
+            stderr=err,
             run=run,
             failure_stage=IngestionFailureStage.SOURCE_CAPTURE,
             failure_code=IngestionFailureCode.SOURCE_CAPTURE_FAILED,
@@ -2508,7 +2552,11 @@ def ingest_user_file(
             ),
             config=config,
             archive=archive_store,
-            progress=_print_hybrid_paragraph_progress,
+            progress=(
+                paragraph_progress
+                if paragraph_progress is not None
+                else lambda item: _print_hybrid_paragraph_progress(item, stream=out)
+            ),
             stage_progress=stage_progress,
             model_run_id_factory=Uuid4ModelRunIdFactory(),
         )
@@ -2516,6 +2564,7 @@ def ingest_user_file(
     except (OSError, sqlite3.Error, ValueError):
         return _record_user_ingestion_error(
             config=processing_config,
+            stderr=err,
             run=run,
             failure_stage=IngestionFailureStage.AUTOMATIC_EXTRACTION,
             failure_code=IngestionFailureCode.AUTOMATIC_EXTRACTION_FAILED,
@@ -2526,7 +2575,7 @@ def ingest_user_file(
             representation_id=representation_id,
             provenance_activity_id=provenance_activity_id,
         )
-    print(_user_ingestion_row(captured))
+    print(_user_ingestion_row(captured), file=out)
     report = extraction.coverage_report
     print(
         "Extraction: "
@@ -2536,16 +2585,20 @@ def ingest_user_file(
         f"{extraction.reused_paragraph_count} reused; "
         f"{len(extraction.closure.reconciliation_preview.clusters)} candidate identities; "
         f"reconciliation {extraction.closure.reconciliation_preview.id}; "
-        f"proposal plan {extraction.closure.document_proposal_plan.id}"
+        f"proposal plan {extraction.closure.document_proposal_plan.id}",
+        file=out,
     )
     return 0
 
 
-def _print_hybrid_paragraph_progress(progress: HybridParagraphProgress) -> None:
+def _print_hybrid_paragraph_progress(
+    progress: HybridParagraphProgress, *, stream: TextIO | None = None
+) -> None:
     disposition = "reused" if progress.receipt_reused else "executed"
     print(
         f"Extraction paragraph {progress.ordinal + 1}/{progress.total}: "
-        f"{progress.status} ({disposition})"
+        f"{progress.status} ({disposition})",
+        file=sys.stdout if stream is None else stream,
     )
 
 
@@ -2972,6 +3025,41 @@ def submit_hybrid_event_changes(
     return 0
 
 
+def show_ingestion_paragraph(args: argparse.Namespace) -> int:
+    from kotekomi_application.ingestion_inspection_reader import (
+        InspectParagraphInput,
+        inspect_ingestion_paragraph,
+    )
+
+    try:
+        config = load_processing_storage_config(
+            config_path=args.config, ledger_path_override=None, archive_path_override=None
+        )
+        input = InspectParagraphInput(
+            ingestion_run_id=args.ingestion_run_id,
+            paragraph_node_id=args.paragraph_node_id,
+            state_root=str(config.storage.ledger_path.parent),
+            phase=None if args.phase is None else HybridStageId(args.phase),
+            record_id=args.record_id,
+            trace_id=args.trace_id,
+            artifact_id=args.artifact_id,
+            artifact_sha256=args.artifact_sha256,
+        )
+        with sqlite_ledger_transaction(config.storage.ledger_path) as ledger:
+            result = inspect_ingestion_paragraph(
+                input, ledger, LocalArchiveStore(config.storage.archive_path)
+            )
+        print(
+            result.summary.clipboard_json()
+            if result.summary is not None
+            else result.model_dump_json(exclude_none=True)
+        )
+        return 0
+    except (ProcessingConfigurationError, OSError, sqlite3.Error, ValueError) as error:
+        print(f"Unable to inspect paragraph: {error}", file=sys.stderr)
+        return 1
+
+
 def list_user_ingestion_history(*, config_path: Path | None, limit: int, output_format: str) -> int:
     try:
         config = load_processing_storage_config(
@@ -3250,6 +3338,7 @@ def list_model_run_history(
 def _record_user_ingestion_error(
     *,
     config: ProcessingConfig,
+    stderr: TextIO | None = None,
     run: IngestionRun,
     failure_stage: IngestionFailureStage,
     failure_code: IngestionFailureCode,
@@ -3278,9 +3367,12 @@ def _record_user_ingestion_error(
                 clock=UtcIngestionRunClock(),
             )
     except (OSError, ValueError):
-        print("Unable to persist the ingestion failure.", file=sys.stderr)
+        print(
+            "Unable to persist the ingestion failure.",
+            file=sys.stderr if stderr is None else stderr,
+        )
         return 1
-    print(safe_failure_message, file=sys.stderr)
+    print(safe_failure_message, file=sys.stderr if stderr is None else stderr)
     return 1
 
 
