@@ -9,7 +9,7 @@ This guide governs communication, not business meaning or authorization to chang
 
 ## Domain Vocabulary in Every Communication
 
-[Domain Vocabulary](domain-vocabulary.md), at `docs/domain-vocabulary.md`, is the authority for Ralph business names and meanings.
+[Domain Vocabulary](domain.md), at `docs/agent/domain.md`, is the authority for KoteKomi business names and meanings.
 Read the current vocabulary at the start of each task and reread it when it changes.
 Check every written communication against it before sending or saving, even when the task is read-only.
 
@@ -19,13 +19,13 @@ Check every written communication against it before sending or saving, even when
 - Explain locally what the canonical concept means in the current passage, how it participates in the behavior being discussed, and why it matters.
 - Distinguish canonical business names from framework objects, infrastructure resources, and existing code labels, and explain their mapping explicitly.
 - Treat an existing code label that conflicts with the vocabulary as implementation evidence, not authority to rename the domain concept.
-- Use the [Architecture Vocabulary](../architecture/hexagonal-monorepo/architecture-vocabulary.md) for architectural roles rather than forcing those roles into the business vocabulary.
+- Use the [Architecture Vocabulary](./hexagonal-architecture-vocabulary.md) for architectural roles rather than forcing those roles into the business vocabulary.
 - For genuinely new business concepts, mark their meaning as proposed and define them locally.
-  Follow the vocabulary's existing candidate classification and definition/promotion rules before dependent documentation or implementation; do not present proposed terminology as established Ralph vocabulary.
+  Follow the vocabulary's existing candidate classification and definition/promotion rules before dependent documentation or implementation; do not present proposed terminology as established KoteKomi vocabulary.
 
 Do not create a competing glossary in this guide or redefine business terms in a response.
-Use the existing Domain Language Audit when the vocabulary or task guidance requires its full report.
-For other communications, perform the check internally without adding audit boilerplate to every response.
+Run the [Domain Language Audit](./domain-language-audit.md) before drafting and after drafting to keep terms canonical.
+For other communications, run the same check internally without adding audit boilerplate to every response.
 
 ## Explain Objects Where They Matter
 
@@ -35,16 +35,16 @@ For other communications, perform the check internally without adding audit boil
   Do not write "all four answer families," "both settings," or "the existing paths" without identifying the members.
 - When describing a setting, give its code identifier, relevant values, and the behavior each value selects.
 - When describing a component, distinguish its business responsibility, implementing code/framework, and deployment location where relevant.
-- Use concrete examples when an abstract statement would require the reader to infer how it applies to Ralph.
+- Use concrete examples when an abstract statement would require the reader to infer how it applies to KoteKomi.
 - Keep canonical names and meanings consistent across prose, tables, diagrams, and code references.
   Explain diagram abbreviations beside the diagram.
 - Avoid unrelated background and unnecessary repetition within a short, continuous passage.
 
 For example:
 
-> A Canned Answer is authored response text selected by an explicit question match and feature setting.
-> Its matching behavior can move into `ralph-domain` because it requires neither model inference nor retrieval.
-> The existing function `check_hardcoded_response` implements question normalization and delegates answer selection to `canned_answer`.
+> A Briefing is a generated report that explains changed Ledger state since a previous Briefing.
+> Its narrative is derived from accepted Ledger records and must not introduce unsupported claims.
+> The Application Layer use case builds the Briefing through a Port, which a file-storage Adapter implements.
 
 ## Conclusions, Evidence, and Actions
 

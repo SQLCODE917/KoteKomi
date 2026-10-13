@@ -182,7 +182,11 @@ Malformed fixtures must be named as negative fixtures and assert the exact failu
 
 Use the canonical terms in `docs/agent/domain.md`.
 
+Use architectural roles from `docs/agent/hexagonal-architecture-vocabulary.md`.
+
 Do not introduce synonyms for canonical terms.
+
+Before drafting any human-facing communication, TDD, documentation, or Agile package, follow the Domain Language Audit in `docs/agent/domain-language-audit.md`.
 
 ## Check Plan
 
