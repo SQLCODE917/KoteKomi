@@ -1,6 +1,6 @@
 # TDD: Semantic Selection Contract
 
-- Status: Proposed
+- Status: Accepted
 - Deliverable ID: `R17`
 - Program: [Source-Grounded Attachment Agile Package](2026-10-01-source-grounded-attachment-agile-package.md)
 - Parent: [Corrective Re-Selection Execution](2026-10-06-corrective-reselection-execution.md)
@@ -293,8 +293,14 @@ Model discrimination and ranking experiments stay outside this deliverable.
 
 ## 13. Run Record
 
-R17 has not run.
+R17 is implemented and accepted.
+
 On 2026-10-14, the operator adopted and reviewed the 11 policy records and 26 answer fixtures as written.
 The approval attestation binds each policy-body digest, input binding, task route, and answer-fixture digest.
 The operator performed both human roles; the attestation records operator self-review.
-The review commit and full contract freeze remain pending.
+The operator then froze contract version 1, binding the reviewed records, the renderer, the scoring rules, and the thresholds by digest.
+The review commit that records the reviewed reference set in the repository is `6870e53`.
+The frozen contract record with its four content-digest bindings lives in `data/r17-semantic-selection-contract/semantic_selection_contract.json`.
+The model-free evaluation reuses the R16 strict parsers and seals one report with 11 policy records, 26 observed answers, zero model executions, and zero canonical writes.
+Report fingerprint: `cd4c0da89ef80e41d90bd3cfbd8878cd4a2d94a0e3ca9d4137b5a8471cfca5f0`.
+The five signals reproduce every adopted expected-signal fixture exactly, including `AHE-051` observed `NONE` (`valid`/`unmet`/`gap`/`unjustified`/`not_ready`) and the constructed `C3` answer (`valid`/`met`/`gap`/`not_applicable`/`not_ready`).

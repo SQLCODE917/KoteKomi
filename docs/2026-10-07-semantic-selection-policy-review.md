@@ -1,6 +1,6 @@
 # R17: Human-Adopted Semantic Selection Policies and Answer Fixtures
 
-- Status: operator-adopted and reviewed; review commit and full contract freeze pending.
+- Status: operator-adopted, reviewed, and frozen as contract version 1.
 - Draft author: Codex, at the operator's explicit request; preserved in the records.
 - Human policy author and reviewer: repository operator, recorded as operator self-review.
 - Contract: [Semantic Selection Contract](2026-10-07-semantic-selection-contract.md).
@@ -10,8 +10,8 @@ The operator explicitly accepted the policy records and answer fixtures as writt
 The [approval attestation](../data/r17-semantic-selection-contract/human_approval.json) preserves the exact approval statement and binds each approved policy, input, task route, and answer fixture by digest.
 Every policy-body digest, raw answer, parsed answer, and expected signal remains unchanged from the reviewed set.
 The operator performs both human roles; these records do not claim independent review by a second person.
-Review commits remain unassigned, and acceptance_evidence remains false until the review commit and full contract freeze.
-The R17 acceptance DTO and evaluator remain planned.
+The review commit `6870e53` records this reviewed reference set; acceptance_evidence is true and contract version 1 is frozen.
+The R17 acceptance DTO and evaluator are implemented.
 
 Original draft explanations and review questions below remain verbatim for provenance.
 The operator's acceptance adopts those decisions as written and resolves their review status.
@@ -672,6 +672,6 @@ The approval attestation records this instruction, the operator identity, operat
 Human adoption and review fields now reference that attestation and the unchanged policy-body and input digests.
 Every answer fixture records its reviewed content digest and the same human approval evidence.
 Historical R16 responses retain their historical origin; constructed answers retain their constructed origin.
-The review commit remains pending; no commit identifier is fabricated.
-The complete R17 contract must still freeze its renderer, scoring rules, thresholds, and reviewed records before these files become acceptance evidence.
+The review commit that records this reviewed reference set is `6870e53`.
+The complete R17 contract froze its renderer, scoring rules, thresholds, and reviewed records as version 1 on 2026-10-14.
 A future policy or fixture edit changes its digest and requires fresh human review.
