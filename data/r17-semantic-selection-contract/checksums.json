@@ -1,23 +1,27 @@
 {
   "schema_version": "r17_policy_review_checksums_v1",
-  "status": "human_adopted_and_reviewed_pending_contract_freeze",
-  "acceptance_evidence": false,
+  "status": "contract_frozen",
+  "acceptance_evidence": true,
   "files": [
     {
       "path": "data/r17-semantic-selection-contract/human_approval.json",
-      "sha256": "e6ea700ac619ed83de70e1ed6f80729864e18669bc006d0398edbfd7dec51113"
+      "sha256": "dd9108f742c264807d06246146d2a10c4d46136afff181c9534d3f6734d3df76"
     },
     {
       "path": "data/r17-semantic-selection-contract/observed_answers.json",
-      "sha256": "3be2b6abd74c6d679bb6ae7c00fd77729b671359e84c306bfd427c54d6c5a6a9"
+      "sha256": "cc0b4e989b5b28f6cfa299ea32658c1b4b20b73aff4b3635be223e84b2055e0d"
     },
     {
       "path": "data/r17-semantic-selection-contract/reference_policy_records.json",
-      "sha256": "bbffcd808d00294babd30e1b7b31bf3829196b4f54f1862c47e873ae83f10ed7"
+      "sha256": "9b0b38c66b8808f756cef530cd1c459c4a5f77a71f844dacf2d282b25fab6ca5"
     },
     {
       "path": "data/r17-semantic-selection-contract/task_manifest.json",
-      "sha256": "46a732aeaf3d9474edc1758c0daa265ee6392ff8afba3a4312759e0433524bd4"
+      "sha256": "cc122007a96f338a7f805b59ec97a226c4a058a6c56dcc368a5e4cc77d7146db"
+    },
+    {
+      "path": "data/r17-semantic-selection-contract/semantic_selection_contract.json",
+      "sha256": "6d348c4776707c45601d9dbad9e90be0d328f228f4d8c020b4ca0043f6bc1d18"
     },
     {
       "path": "data/r17-semantic-selection-contract/inputs/AHE-022.json",
@@ -65,7 +69,7 @@
     },
     {
       "path": "data/r17-semantic-selection-contract/verify_policy_records.py",
-      "sha256": "770d82aae34f29264bb5f66d117ca1541e196e6c3848e286ae0937fbbb25a370"
+      "sha256": "ca460c7e26e97ee5bad81626c84a879a70a9b16911d4c7a7ece5318fe24fa25a"
     },
     {
       "path": "data/r17-semantic-selection-contract/reviewed_contract_spec.md",
@@ -73,7 +77,7 @@
     },
     {
       "path": "docs/2026-10-07-semantic-selection-policy-review.md",
-      "sha256": "61dc43024fc38ae7a8b33c63ad751d580c0eea1796ac42e65f7af5a74420e57d"
+      "sha256": "df015d4a6c4d6f341ebc9873bdd7080c1abd5590c148bbe20373f5f3939b7ab6"
     }
   ]
 }

@@ -1,0 +1,19 @@
+{
+  "schema_version": "semantic_selection_contract_run_v1",
+  "contract_version": 1,
+  "policy_record_count": 11,
+  "observed_answer_count": 26,
+  "evaluation_count": 26,
+  "model_execution_count": 0,
+  "canonical_write_count": 0,
+  "proposed_change_count": 0,
+  "role_coverage": [
+    "modality",
+    "object",
+    "place",
+    "polarity",
+    "subject",
+    "time"
+  ],
+  "result_fingerprint": "cd4c0da89ef80e41d90bd3cfbd8878cd4a2d94a0e3ca9d4137b5a8471cfca5f0"
+}

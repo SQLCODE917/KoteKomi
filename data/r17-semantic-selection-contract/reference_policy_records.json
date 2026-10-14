@@ -1,23 +1,23 @@
 {
   "schema_version": "r17_reference_policy_records_v1",
-  "status": "human_adopted_and_reviewed_pending_contract_freeze",
-  "acceptance_evidence": false,
+  "status": "contract_frozen",
+  "acceptance_evidence": true,
   "draft_author": "Codex (agent; user-authorized draft)",
   "draft_authorization": "Try producing the policy records, I will review",
   "contract_spec": {
     "path": "docs/2026-10-07-semantic-selection-contract.md",
-    "sha256": "d3b1da317bdaa3aedb3f443a3c45177f07b63ff0a95a393f7cc70901fad068be"
+    "sha256": "c662b9fda14545ce93c7495e0cc3399704d3423a790054e0612edb6f5def54d5"
   },
-  "contract_version": null,
+  "contract_version": 1,
   "digest_encoding": "UTF-8 JSON, sorted keys, no insignificant whitespace, ensure_ascii=false, allow_nan=false; policy_body excludes its own digest and approval fields",
   "record_count": 11,
   "records": [
     {
       "record_id": "R17-AHE-022",
       "event_id": "AHE-022",
-      "status": "human_adopted_and_reviewed_pending_contract_freeze",
-      "acceptance_evidence": false,
-      "contract_version": null,
+      "status": "contract_frozen",
+      "acceptance_evidence": true,
+      "contract_version": 1,
       "draft_author": "Codex (agent; user-authorized draft)",
       "draft_authorization": "Try producing the policy records, I will review",
       "input_binding": {
@@ -282,19 +282,19 @@
         "adopted_input_sha256": "c5b4a6b0af51d8403d9431c445b8b4b563cd46c58417b50993d265e1198da1b3",
         "evidence": {
           "path": "data/r17-semantic-selection-contract/human_approval.json",
-          "sha256": "e6ea700ac619ed83de70e1ed6f80729864e18669bc006d0398edbfd7dec51113"
+          "sha256": "dd9108f742c264807d06246146d2a10c4d46136afff181c9534d3f6734d3df76"
         }
       },
       "human_review": {
         "reviewer_identity": "repository_operator",
         "review_mode": "operator_self_review",
         "review_date": "2026-10-14",
-        "review_commit": null,
+        "review_commit": "6870e53",
         "reviewed_policy_body_sha256": "69973d779bf87ed39234e2ee9df6645ed4c1f12aee444549cd7158db7f6bafa3",
         "reviewed_input_sha256": "c5b4a6b0af51d8403d9431c445b8b4b563cd46c58417b50993d265e1198da1b3",
         "evidence": {
           "path": "data/r17-semantic-selection-contract/human_approval.json",
-          "sha256": "e6ea700ac619ed83de70e1ed6f80729864e18669bc006d0398edbfd7dec51113"
+          "sha256": "dd9108f742c264807d06246146d2a10c4d46136afff181c9534d3f6734d3df76"
         }
       },
       "review_resolution": {
@@ -302,16 +302,16 @@
         "review_questions": "resolved_by_explicit_operator_acceptance",
         "evidence": {
           "path": "data/r17-semantic-selection-contract/human_approval.json",
-          "sha256": "e6ea700ac619ed83de70e1ed6f80729864e18669bc006d0398edbfd7dec51113"
+          "sha256": "dd9108f742c264807d06246146d2a10c4d46136afff181c9534d3f6734d3df76"
         }
       }
     },
     {
       "record_id": "R17-AHE-051",
       "event_id": "AHE-051",
-      "status": "human_adopted_and_reviewed_pending_contract_freeze",
-      "acceptance_evidence": false,
-      "contract_version": null,
+      "status": "contract_frozen",
+      "acceptance_evidence": true,
+      "contract_version": 1,
       "draft_author": "Codex (agent; user-authorized draft)",
       "draft_authorization": "Try producing the policy records, I will review",
       "input_binding": {
@@ -419,19 +419,19 @@
         "adopted_input_sha256": "8f423411c3105c555121beaed5e1e68c4730e3741e4c4d3f952b8cab4fbcb703",
         "evidence": {
           "path": "data/r17-semantic-selection-contract/human_approval.json",
-          "sha256": "e6ea700ac619ed83de70e1ed6f80729864e18669bc006d0398edbfd7dec51113"
+          "sha256": "dd9108f742c264807d06246146d2a10c4d46136afff181c9534d3f6734d3df76"
         }
       },
       "human_review": {
         "reviewer_identity": "repository_operator",
         "review_mode": "operator_self_review",
         "review_date": "2026-10-14",
-        "review_commit": null,
+        "review_commit": "6870e53",
         "reviewed_policy_body_sha256": "2a6dee656b7c9bc9ee437aa88e5d8cb7465c96d1f5d945ceba7636a0a27d9b9a",
         "reviewed_input_sha256": "8f423411c3105c555121beaed5e1e68c4730e3741e4c4d3f952b8cab4fbcb703",
         "evidence": {
           "path": "data/r17-semantic-selection-contract/human_approval.json",
-          "sha256": "e6ea700ac619ed83de70e1ed6f80729864e18669bc006d0398edbfd7dec51113"
+          "sha256": "dd9108f742c264807d06246146d2a10c4d46136afff181c9534d3f6734d3df76"
         }
       },
       "review_resolution": {
@@ -439,16 +439,16 @@
         "review_questions": "resolved_by_explicit_operator_acceptance",
         "evidence": {
           "path": "data/r17-semantic-selection-contract/human_approval.json",
-          "sha256": "e6ea700ac619ed83de70e1ed6f80729864e18669bc006d0398edbfd7dec51113"
+          "sha256": "dd9108f742c264807d06246146d2a10c4d46136afff181c9534d3f6734d3df76"
         }
       }
     },
     {
       "record_id": "R17-AHE-901",
       "event_id": "AHE-901",
-      "status": "human_adopted_and_reviewed_pending_contract_freeze",
-      "acceptance_evidence": false,
-      "contract_version": null,
+      "status": "contract_frozen",
+      "acceptance_evidence": true,
+      "contract_version": 1,
       "draft_author": "Codex (agent; user-authorized draft)",
       "draft_authorization": "Try producing the policy records, I will review",
       "input_binding": {
@@ -544,19 +544,19 @@
         "adopted_input_sha256": "b316e5bca3055a2a764cbaf949c69c2d0332da5137539489c62efb28683077b7",
         "evidence": {
           "path": "data/r17-semantic-selection-contract/human_approval.json",
-          "sha256": "e6ea700ac619ed83de70e1ed6f80729864e18669bc006d0398edbfd7dec51113"
+          "sha256": "dd9108f742c264807d06246146d2a10c4d46136afff181c9534d3f6734d3df76"
         }
       },
       "human_review": {
         "reviewer_identity": "repository_operator",
         "review_mode": "operator_self_review",
         "review_date": "2026-10-14",
-        "review_commit": null,
+        "review_commit": "6870e53",
         "reviewed_policy_body_sha256": "bffdf18cbbf2859047e3102b588b5778786eec51c497efa32de7bbe2c774103b",
         "reviewed_input_sha256": "b316e5bca3055a2a764cbaf949c69c2d0332da5137539489c62efb28683077b7",
         "evidence": {
           "path": "data/r17-semantic-selection-contract/human_approval.json",
-          "sha256": "e6ea700ac619ed83de70e1ed6f80729864e18669bc006d0398edbfd7dec51113"
+          "sha256": "dd9108f742c264807d06246146d2a10c4d46136afff181c9534d3f6734d3df76"
         }
       },
       "review_resolution": {
@@ -564,16 +564,16 @@
         "review_questions": "resolved_by_explicit_operator_acceptance",
         "evidence": {
           "path": "data/r17-semantic-selection-contract/human_approval.json",
-          "sha256": "e6ea700ac619ed83de70e1ed6f80729864e18669bc006d0398edbfd7dec51113"
+          "sha256": "dd9108f742c264807d06246146d2a10c4d46136afff181c9534d3f6734d3df76"
         }
       }
     },
     {
       "record_id": "R17-AHE-902",
       "event_id": "AHE-902",
-      "status": "human_adopted_and_reviewed_pending_contract_freeze",
-      "acceptance_evidence": false,
-      "contract_version": null,
+      "status": "contract_frozen",
+      "acceptance_evidence": true,
+      "contract_version": 1,
       "draft_author": "Codex (agent; user-authorized draft)",
       "draft_authorization": "Try producing the policy records, I will review",
       "input_binding": {
@@ -690,19 +690,19 @@
         "adopted_input_sha256": "c534e2b7001a67b9e2a1c1223df0ab4d383e92fb4d996e37f7f1a583e8d25969",
         "evidence": {
           "path": "data/r17-semantic-selection-contract/human_approval.json",
-          "sha256": "e6ea700ac619ed83de70e1ed6f80729864e18669bc006d0398edbfd7dec51113"
+          "sha256": "dd9108f742c264807d06246146d2a10c4d46136afff181c9534d3f6734d3df76"
         }
       },
       "human_review": {
         "reviewer_identity": "repository_operator",
         "review_mode": "operator_self_review",
         "review_date": "2026-10-14",
-        "review_commit": null,
+        "review_commit": "6870e53",
         "reviewed_policy_body_sha256": "d443f695189a806dfc0181bc8b51c5050bac2f3c69013f97bc6e1c40486ef675",
         "reviewed_input_sha256": "c534e2b7001a67b9e2a1c1223df0ab4d383e92fb4d996e37f7f1a583e8d25969",
         "evidence": {
           "path": "data/r17-semantic-selection-contract/human_approval.json",
-          "sha256": "e6ea700ac619ed83de70e1ed6f80729864e18669bc006d0398edbfd7dec51113"
+          "sha256": "dd9108f742c264807d06246146d2a10c4d46136afff181c9534d3f6734d3df76"
         }
       },
       "review_resolution": {
@@ -710,16 +710,16 @@
         "review_questions": "resolved_by_explicit_operator_acceptance",
         "evidence": {
           "path": "data/r17-semantic-selection-contract/human_approval.json",
-          "sha256": "e6ea700ac619ed83de70e1ed6f80729864e18669bc006d0398edbfd7dec51113"
+          "sha256": "dd9108f742c264807d06246146d2a10c4d46136afff181c9534d3f6734d3df76"
         }
       }
     },
     {
       "record_id": "R17-AHE-903",
       "event_id": "AHE-903",
-      "status": "human_adopted_and_reviewed_pending_contract_freeze",
-      "acceptance_evidence": false,
-      "contract_version": null,
+      "status": "contract_frozen",
+      "acceptance_evidence": true,
+      "contract_version": 1,
       "draft_author": "Codex (agent; user-authorized draft)",
       "draft_authorization": "Try producing the policy records, I will review",
       "input_binding": {
@@ -862,19 +862,19 @@
         "adopted_input_sha256": "2439b121ef6a02c85eb31fcf0e7047c11810713c30935fdf5f8e1c9235fe943b",
         "evidence": {
           "path": "data/r17-semantic-selection-contract/human_approval.json",
-          "sha256": "e6ea700ac619ed83de70e1ed6f80729864e18669bc006d0398edbfd7dec51113"
+          "sha256": "dd9108f742c264807d06246146d2a10c4d46136afff181c9534d3f6734d3df76"
         }
       },
       "human_review": {
         "reviewer_identity": "repository_operator",
         "review_mode": "operator_self_review",
         "review_date": "2026-10-14",
-        "review_commit": null,
+        "review_commit": "6870e53",
         "reviewed_policy_body_sha256": "c6bf352269aece70bea525cb2c4323e6a7d90323732dda8347fc122c94cef4e0",
         "reviewed_input_sha256": "2439b121ef6a02c85eb31fcf0e7047c11810713c30935fdf5f8e1c9235fe943b",
         "evidence": {
           "path": "data/r17-semantic-selection-contract/human_approval.json",
-          "sha256": "e6ea700ac619ed83de70e1ed6f80729864e18669bc006d0398edbfd7dec51113"
+          "sha256": "dd9108f742c264807d06246146d2a10c4d46136afff181c9534d3f6734d3df76"
         }
       },
       "review_resolution": {
@@ -882,16 +882,16 @@
         "review_questions": "resolved_by_explicit_operator_acceptance",
         "evidence": {
           "path": "data/r17-semantic-selection-contract/human_approval.json",
-          "sha256": "e6ea700ac619ed83de70e1ed6f80729864e18669bc006d0398edbfd7dec51113"
+          "sha256": "dd9108f742c264807d06246146d2a10c4d46136afff181c9534d3f6734d3df76"
         }
       }
     },
     {
       "record_id": "R17-AHE-904",
       "event_id": "AHE-904",
-      "status": "human_adopted_and_reviewed_pending_contract_freeze",
-      "acceptance_evidence": false,
-      "contract_version": null,
+      "status": "contract_frozen",
+      "acceptance_evidence": true,
+      "contract_version": 1,
       "draft_author": "Codex (agent; user-authorized draft)",
       "draft_authorization": "Try producing the policy records, I will review",
       "input_binding": {
@@ -1007,19 +1007,19 @@
         "adopted_input_sha256": "cfba2a4c6c0b71ac28be8ce33167d03e02738b18d2517ed72712b61f6b490a18",
         "evidence": {
           "path": "data/r17-semantic-selection-contract/human_approval.json",
-          "sha256": "e6ea700ac619ed83de70e1ed6f80729864e18669bc006d0398edbfd7dec51113"
+          "sha256": "dd9108f742c264807d06246146d2a10c4d46136afff181c9534d3f6734d3df76"
         }
       },
       "human_review": {
         "reviewer_identity": "repository_operator",
         "review_mode": "operator_self_review",
         "review_date": "2026-10-14",
-        "review_commit": null,
+        "review_commit": "6870e53",
         "reviewed_policy_body_sha256": "5cea5cf386382e089422ff3490262b471764a4307738933bb10000e51041be05",
         "reviewed_input_sha256": "cfba2a4c6c0b71ac28be8ce33167d03e02738b18d2517ed72712b61f6b490a18",
         "evidence": {
           "path": "data/r17-semantic-selection-contract/human_approval.json",
-          "sha256": "e6ea700ac619ed83de70e1ed6f80729864e18669bc006d0398edbfd7dec51113"
+          "sha256": "dd9108f742c264807d06246146d2a10c4d46136afff181c9534d3f6734d3df76"
         }
       },
       "review_resolution": {
@@ -1027,16 +1027,16 @@
         "review_questions": "resolved_by_explicit_operator_acceptance",
         "evidence": {
           "path": "data/r17-semantic-selection-contract/human_approval.json",
-          "sha256": "e6ea700ac619ed83de70e1ed6f80729864e18669bc006d0398edbfd7dec51113"
+          "sha256": "dd9108f742c264807d06246146d2a10c4d46136afff181c9534d3f6734d3df76"
         }
       }
     },
     {
       "record_id": "R17-AHE-905",
       "event_id": "AHE-905",
-      "status": "human_adopted_and_reviewed_pending_contract_freeze",
-      "acceptance_evidence": false,
-      "contract_version": null,
+      "status": "contract_frozen",
+      "acceptance_evidence": true,
+      "contract_version": 1,
       "draft_author": "Codex (agent; user-authorized draft)",
       "draft_authorization": "Try producing the policy records, I will review",
       "input_binding": {
@@ -1147,19 +1147,19 @@
         "adopted_input_sha256": "32ef0613ca159062813d1cdd8934e463b0eb5758e58474c36e37f4eba4ca501e",
         "evidence": {
           "path": "data/r17-semantic-selection-contract/human_approval.json",
-          "sha256": "e6ea700ac619ed83de70e1ed6f80729864e18669bc006d0398edbfd7dec51113"
+          "sha256": "dd9108f742c264807d06246146d2a10c4d46136afff181c9534d3f6734d3df76"
         }
       },
       "human_review": {
         "reviewer_identity": "repository_operator",
         "review_mode": "operator_self_review",
         "review_date": "2026-10-14",
-        "review_commit": null,
+        "review_commit": "6870e53",
         "reviewed_policy_body_sha256": "8c281094d0aff3a946be01a7c5924dba1a34766ed850d2e1cef5760f595650a4",
         "reviewed_input_sha256": "32ef0613ca159062813d1cdd8934e463b0eb5758e58474c36e37f4eba4ca501e",
         "evidence": {
           "path": "data/r17-semantic-selection-contract/human_approval.json",
-          "sha256": "e6ea700ac619ed83de70e1ed6f80729864e18669bc006d0398edbfd7dec51113"
+          "sha256": "dd9108f742c264807d06246146d2a10c4d46136afff181c9534d3f6734d3df76"
         }
       },
       "review_resolution": {
@@ -1167,16 +1167,16 @@
         "review_questions": "resolved_by_explicit_operator_acceptance",
         "evidence": {
           "path": "data/r17-semantic-selection-contract/human_approval.json",
-          "sha256": "e6ea700ac619ed83de70e1ed6f80729864e18669bc006d0398edbfd7dec51113"
+          "sha256": "dd9108f742c264807d06246146d2a10c4d46136afff181c9534d3f6734d3df76"
         }
       }
     },
     {
       "record_id": "R17-AHE-906",
       "event_id": "AHE-906",
-      "status": "human_adopted_and_reviewed_pending_contract_freeze",
-      "acceptance_evidence": false,
-      "contract_version": null,
+      "status": "contract_frozen",
+      "acceptance_evidence": true,
+      "contract_version": 1,
       "draft_author": "Codex (agent; user-authorized draft)",
       "draft_authorization": "Try producing the policy records, I will review",
       "input_binding": {
@@ -1294,19 +1294,19 @@
         "adopted_input_sha256": "9ac3e91ec427fa3d62e1615bc36d57925ba2f10f1cda976273473d835142bb3e",
         "evidence": {
           "path": "data/r17-semantic-selection-contract/human_approval.json",
-          "sha256": "e6ea700ac619ed83de70e1ed6f80729864e18669bc006d0398edbfd7dec51113"
+          "sha256": "dd9108f742c264807d06246146d2a10c4d46136afff181c9534d3f6734d3df76"
         }
       },
       "human_review": {
         "reviewer_identity": "repository_operator",
         "review_mode": "operator_self_review",
         "review_date": "2026-10-14",
-        "review_commit": null,
+        "review_commit": "6870e53",
         "reviewed_policy_body_sha256": "9875c280dd539f29b8ce6c7532ec61becca005ed17b5d0046f28866fc98e5dd6",
         "reviewed_input_sha256": "9ac3e91ec427fa3d62e1615bc36d57925ba2f10f1cda976273473d835142bb3e",
         "evidence": {
           "path": "data/r17-semantic-selection-contract/human_approval.json",
-          "sha256": "e6ea700ac619ed83de70e1ed6f80729864e18669bc006d0398edbfd7dec51113"
+          "sha256": "dd9108f742c264807d06246146d2a10c4d46136afff181c9534d3f6734d3df76"
         }
       },
       "review_resolution": {
@@ -1314,16 +1314,16 @@
         "review_questions": "resolved_by_explicit_operator_acceptance",
         "evidence": {
           "path": "data/r17-semantic-selection-contract/human_approval.json",
-          "sha256": "e6ea700ac619ed83de70e1ed6f80729864e18669bc006d0398edbfd7dec51113"
+          "sha256": "dd9108f742c264807d06246146d2a10c4d46136afff181c9534d3f6734d3df76"
         }
       }
     },
     {
       "record_id": "R17-AHE-907",
       "event_id": "AHE-907",
-      "status": "human_adopted_and_reviewed_pending_contract_freeze",
-      "acceptance_evidence": false,
-      "contract_version": null,
+      "status": "contract_frozen",
+      "acceptance_evidence": true,
+      "contract_version": 1,
       "draft_author": "Codex (agent; user-authorized draft)",
       "draft_authorization": "Try producing the policy records, I will review",
       "input_binding": {
@@ -1418,19 +1418,19 @@
         "adopted_input_sha256": "219c0dd5616e93e3f00d2dd00b89812f724cc62d4265c911fc04b7a6f944c799",
         "evidence": {
           "path": "data/r17-semantic-selection-contract/human_approval.json",
-          "sha256": "e6ea700ac619ed83de70e1ed6f80729864e18669bc006d0398edbfd7dec51113"
+          "sha256": "dd9108f742c264807d06246146d2a10c4d46136afff181c9534d3f6734d3df76"
         }
       },
       "human_review": {
         "reviewer_identity": "repository_operator",
         "review_mode": "operator_self_review",
         "review_date": "2026-10-14",
-        "review_commit": null,
+        "review_commit": "6870e53",
         "reviewed_policy_body_sha256": "a0ba8dcb75b8c4535f094dc2f38eb0f5d0e790e56d3bb7af058d00bb8db2c0b9",
         "reviewed_input_sha256": "219c0dd5616e93e3f00d2dd00b89812f724cc62d4265c911fc04b7a6f944c799",
         "evidence": {
           "path": "data/r17-semantic-selection-contract/human_approval.json",
-          "sha256": "e6ea700ac619ed83de70e1ed6f80729864e18669bc006d0398edbfd7dec51113"
+          "sha256": "dd9108f742c264807d06246146d2a10c4d46136afff181c9534d3f6734d3df76"
         }
       },
       "review_resolution": {
@@ -1438,16 +1438,16 @@
         "review_questions": "resolved_by_explicit_operator_acceptance",
         "evidence": {
           "path": "data/r17-semantic-selection-contract/human_approval.json",
-          "sha256": "e6ea700ac619ed83de70e1ed6f80729864e18669bc006d0398edbfd7dec51113"
+          "sha256": "dd9108f742c264807d06246146d2a10c4d46136afff181c9534d3f6734d3df76"
         }
       }
     },
     {
       "record_id": "R17-AHE-908",
       "event_id": "AHE-908",
-      "status": "human_adopted_and_reviewed_pending_contract_freeze",
-      "acceptance_evidence": false,
-      "contract_version": null,
+      "status": "contract_frozen",
+      "acceptance_evidence": true,
+      "contract_version": 1,
       "draft_author": "Codex (agent; user-authorized draft)",
       "draft_authorization": "Try producing the policy records, I will review",
       "input_binding": {
@@ -1506,19 +1506,19 @@
         "adopted_input_sha256": "3cfd41c69cb2958c29ce0d0a6c5dd3ea1eff90188e022163e661c40a625dcdb6",
         "evidence": {
           "path": "data/r17-semantic-selection-contract/human_approval.json",
-          "sha256": "e6ea700ac619ed83de70e1ed6f80729864e18669bc006d0398edbfd7dec51113"
+          "sha256": "dd9108f742c264807d06246146d2a10c4d46136afff181c9534d3f6734d3df76"
         }
       },
       "human_review": {
         "reviewer_identity": "repository_operator",
         "review_mode": "operator_self_review",
         "review_date": "2026-10-14",
-        "review_commit": null,
+        "review_commit": "6870e53",
         "reviewed_policy_body_sha256": "6a608818431932b002b2e1a0ed96670cb19636a58633dfa4d3cfa951d07319ca",
         "reviewed_input_sha256": "3cfd41c69cb2958c29ce0d0a6c5dd3ea1eff90188e022163e661c40a625dcdb6",
         "evidence": {
           "path": "data/r17-semantic-selection-contract/human_approval.json",
-          "sha256": "e6ea700ac619ed83de70e1ed6f80729864e18669bc006d0398edbfd7dec51113"
+          "sha256": "dd9108f742c264807d06246146d2a10c4d46136afff181c9534d3f6734d3df76"
         }
       },
       "review_resolution": {
@@ -1526,16 +1526,16 @@
         "review_questions": "resolved_by_explicit_operator_acceptance",
         "evidence": {
           "path": "data/r17-semantic-selection-contract/human_approval.json",
-          "sha256": "e6ea700ac619ed83de70e1ed6f80729864e18669bc006d0398edbfd7dec51113"
+          "sha256": "dd9108f742c264807d06246146d2a10c4d46136afff181c9534d3f6734d3df76"
         }
       }
     },
     {
       "record_id": "R17-AHE-909",
       "event_id": "AHE-909",
-      "status": "human_adopted_and_reviewed_pending_contract_freeze",
-      "acceptance_evidence": false,
-      "contract_version": null,
+      "status": "contract_frozen",
+      "acceptance_evidence": true,
+      "contract_version": 1,
       "draft_author": "Codex (agent; user-authorized draft)",
       "draft_authorization": "Try producing the policy records, I will review",
       "input_binding": {
@@ -1632,19 +1632,19 @@
         "adopted_input_sha256": "a40dcdfb5b660564ae63cc418c076807870dcfabb63f48022104c2d068f5c51e",
         "evidence": {
           "path": "data/r17-semantic-selection-contract/human_approval.json",
-          "sha256": "e6ea700ac619ed83de70e1ed6f80729864e18669bc006d0398edbfd7dec51113"
+          "sha256": "dd9108f742c264807d06246146d2a10c4d46136afff181c9534d3f6734d3df76"
         }
       },
       "human_review": {
         "reviewer_identity": "repository_operator",
         "review_mode": "operator_self_review",
         "review_date": "2026-10-14",
-        "review_commit": null,
+        "review_commit": "6870e53",
         "reviewed_policy_body_sha256": "852a91f7dc42ad311bdeeab08bc53725285dbc758586fe03b5ae2fb1fb06c47d",
         "reviewed_input_sha256": "a40dcdfb5b660564ae63cc418c076807870dcfabb63f48022104c2d068f5c51e",
         "evidence": {
           "path": "data/r17-semantic-selection-contract/human_approval.json",
-          "sha256": "e6ea700ac619ed83de70e1ed6f80729864e18669bc006d0398edbfd7dec51113"
+          "sha256": "dd9108f742c264807d06246146d2a10c4d46136afff181c9534d3f6734d3df76"
         }
       },
       "review_resolution": {
@@ -1652,13 +1652,13 @@
         "review_questions": "resolved_by_explicit_operator_acceptance",
         "evidence": {
           "path": "data/r17-semantic-selection-contract/human_approval.json",
-          "sha256": "e6ea700ac619ed83de70e1ed6f80729864e18669bc006d0398edbfd7dec51113"
+          "sha256": "dd9108f742c264807d06246146d2a10c4d46136afff181c9534d3f6734d3df76"
         }
       }
     }
   ],
   "human_approval": {
     "path": "data/r17-semantic-selection-contract/human_approval.json",
-    "sha256": "e6ea700ac619ed83de70e1ed6f80729864e18669bc006d0398edbfd7dec51113"
+    "sha256": "dd9108f742c264807d06246146d2a10c4d46136afff181c9534d3f6734d3df76"
   }
 }

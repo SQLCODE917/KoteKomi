@@ -7,9 +7,9 @@
   "approval_statement": "I accept this. can you adopt the draft policy records and answer fixtures?",
   "approval_source": "explicit_user_message_in_current_conversation",
   "recorded_at": "2026-10-14T17:15:30Z",
-  "review_commit": null,
-  "commit_status": "pending_commit",
-  "contract_freeze_status": "pending",
+  "review_commit": "6870e53",
+  "commit_status": "committed",
+  "contract_freeze_status": "frozen",
   "reviewed_contract_spec": {
     "path": "data/r17-semantic-selection-contract/reviewed_contract_spec.md",
     "sha256": "747de688ccd0244fa6bf0e66446c2d5af95c116cd6f3fdc32dff8fc129f94ced"

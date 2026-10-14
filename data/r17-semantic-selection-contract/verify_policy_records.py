@@ -1,4 +1,4 @@
-"""Verify operator-adopted R17 policies and fixtures without freezing the contract."""
+"""Verify the frozen R17 semantic selection contract against its bound records and fixtures."""
 
 import hashlib
 import json
@@ -28,7 +28,9 @@ from pydantic import BaseModel
 
 ROOT = Path(__file__).resolve().parents[2]
 DIRECTORY = Path(__file__).resolve().parent
-ADOPTED_STATUS = "human_adopted_and_reviewed_pending_contract_freeze"
+FROZEN_STATUS = "contract_frozen"
+RECORDED_COMMIT = "6870e53"
+CONTRACT_VERSION = 1
 
 
 def canonical(value: object) -> bytes:
@@ -87,11 +89,13 @@ def main() -> None:
     require(
         document["schema_version"] == "r17_reference_policy_records_v1", "Unknown policy format"
     )
-    require(document["status"] == ADOPTED_STATUS, "Missing operator adoption")
+    require(document["status"] == FROZEN_STATUS, "Missing contract freeze")
     require(
-        document["acceptance_evidence"] is False, "Unfrozen records cannot be acceptance evidence"
+        document["acceptance_evidence"] is True, "Frozen records must be acceptance evidence"
     )
-    require(document["contract_version"] is None, "Policy adoption cannot claim a frozen contract")
+    require(
+        document["contract_version"] == CONTRACT_VERSION, "Policy records claim a wrong contract version"
+    )
     verify_handle(document["contract_spec"])
     approval_handle = document["human_approval"]
     approval = json.loads(verify_handle(approval_handle).read_text())
@@ -109,11 +113,11 @@ def main() -> None:
     require(approval["review_mode"] == "operator_self_review", "Review mode differs")
     require(approval["human_identity"] == "repository_operator", "Operator identity differs")
     require(
-        approval["review_commit"] is None and approval["commit_status"] == "pending_commit",
+        approval["review_commit"] == RECORDED_COMMIT and approval["commit_status"] == "committed",
         "Unrecorded review commit",
     )
     require(
-        approval["contract_freeze_status"] == "pending", "Adoption cannot claim contract freeze"
+        approval["contract_freeze_status"] == "frozen", "Adoption cannot claim contract freeze"
     )
     approved_policies = {item["record_id"]: item for item in approval["approved_policies"]}
     approved_answers = {
@@ -132,11 +136,11 @@ def main() -> None:
     manifest = load("task_manifest.json")
     require(manifest["schema_version"] == "r17_task_manifest_v1", "Unknown task manifest format")
     require(
-        manifest["status"] == ADOPTED_STATUS and manifest["human_approval"] == approval_handle,
+        manifest["status"] == FROZEN_STATUS and manifest["human_approval"] == approval_handle,
         "Task adoption differs",
     )
     require(
-        manifest["acceptance_evidence"] is False, "Unfrozen tasks cannot be acceptance evidence"
+        manifest["acceptance_evidence"] is True, "Frozen tasks must be acceptance evidence"
     )
     require(
         digest(manifest["tasks"]) == approval["approved_task_bindings_sha256"],
@@ -153,12 +157,12 @@ def main() -> None:
         observed_document["schema_version"] == "r17_observed_answers_v1", "Unknown answer format"
     )
     require(
-        observed_document["status"] == ADOPTED_STATUS
+        observed_document["status"] == FROZEN_STATUS
         and observed_document["human_approval"] == approval_handle,
         "Answer adoption differs",
     )
     require(
-        observed_document["acceptance_evidence"] is False, "Answer fixtures cannot claim acceptance"
+        observed_document["acceptance_evidence"] is True, "Frozen answers must be acceptance evidence"
     )
     observed = observed_document["observations"]
     require(
@@ -173,8 +177,9 @@ def main() -> None:
     require(observed_ids == by_event.keys(), "Observation coverage drift")
 
     for event_id, record in by_event.items():
-        require(record["acceptance_evidence"] is False, f"Unfrozen acceptance claim: {event_id}")
-        require(record["status"] == ADOPTED_STATUS, "Unexpected policy status")
+        require(record["acceptance_evidence"] is True, f"Unfrozen acceptance claim: {event_id}")
+        require(record["status"] == FROZEN_STATUS, "Unexpected policy status")
+        require(record["contract_version"] == CONTRACT_VERSION, "Wrong policy contract version")
         approved_policy = approved_policies[record["record_id"]]
         require(
             approved_policy["event_id"] == event_id
@@ -192,7 +197,7 @@ def main() -> None:
         )
         require(review["review_mode"] == "operator_self_review", "Policy review mode differs")
         require(review["review_date"] == approval["recorded_at"][:10], "Policy review date differs")
-        require(review["review_commit"] is None, "Policy invents a review commit")
+        require(review["review_commit"] == RECORDED_COMMIT, "Policy lacks the recorded review commit")
         require(
             adoption["adopted_policy_body_sha256"]
             == review["reviewed_policy_body_sha256"]
@@ -354,7 +359,7 @@ def main() -> None:
 
     for observation in observed:
         task, route, body = inputs[observation["event_id"]]
-        require(observation["status"] == ADOPTED_STATUS, "Answer fixture lacks adoption")
+        require(observation["status"] == FROZEN_STATUS, "Answer fixture lacks adoption")
         require(
             digest(answer_fixture_body(observation))
             == observation["fixture_body_sha256"]
@@ -374,10 +379,10 @@ def main() -> None:
         )
         require(
             review["review_date"] == approval["recorded_at"][:10]
-            and review["review_commit"] is None,
+            and review["review_commit"] == RECORDED_COMMIT,
             "Answer review date or commit differs",
         )
-        require(observation["acceptance_evidence"] is False, "Observation claims acceptance")
+        require(observation["acceptance_evidence"] is True, "Observation lacks acceptance")
         require(
             observation["route"] == route.value, "Observed answer route differs from frozen task"
         )
@@ -445,13 +450,15 @@ def main() -> None:
     print(
         json.dumps(
             {
-                "status": "mechanically_valid_human_adopted_policy_records",
+                "status": "mechanically_valid_frozen_semantic_selection_contract",
                 "policy_records": len(records),
                 "answer_fixtures": len(observed),
                 "selectable_roles": sorted(roles),
-                "acceptance_evidence": False,
+                "contract_version": CONTRACT_VERSION,
+                "review_commit": RECORDED_COMMIT,
+                "acceptance_evidence": True,
                 "human_review_status": "approved",
-                "contract_freeze_status": "pending",
+                "contract_freeze_status": "frozen",
                 "model_execution_count": 0,
                 "canonical_write_count": 0,
             },

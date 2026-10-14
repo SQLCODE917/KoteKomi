@@ -1,6 +1,6 @@
 {
   "schema_version": "r17_task_manifest_v1",
-  "acceptance_evidence": false,
+  "acceptance_evidence": true,
   "tasks": [
     {
       "event_id": "AHE-022",
@@ -113,9 +113,9 @@
       "corrective_task_sha256": "309a7c248a8dfec2348d7844522cb88f9c085ab25c517f8d6cae9f6a1825917b"
     }
   ],
-  "status": "human_adopted_and_reviewed_pending_contract_freeze",
+  "status": "contract_frozen",
   "human_approval": {
     "path": "data/r17-semantic-selection-contract/human_approval.json",
-    "sha256": "e6ea700ac619ed83de70e1ed6f80729864e18669bc006d0398edbfd7dec51113"
+    "sha256": "dd9108f742c264807d06246146d2a10c4d46136afff181c9534d3f6734d3df76"
   }
 }

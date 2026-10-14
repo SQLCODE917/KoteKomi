@@ -1,6 +1,6 @@
 {
   "schema_version": "r17_observed_answers_v1",
-  "acceptance_evidence": false,
+  "acceptance_evidence": true,
   "observations": [
     {
       "observation_id": "AHE-022-answer-01",
@@ -55,7 +55,7 @@
         ]
       },
       "note": null,
-      "acceptance_evidence": false,
+      "acceptance_evidence": true,
       "expected_signals": {
         "answer_grammar": "valid",
         "semantic_selection": "unmet",
@@ -63,17 +63,17 @@
         "abstention_correctness": "not_applicable",
         "composition_readiness": "not_ready"
       },
-      "status": "human_adopted_and_reviewed_pending_contract_freeze",
+      "status": "contract_frozen",
       "fixture_body_sha256": "7cc7950029d5a5072bdaaa7fca6b075d073f8ba79dd42a9a21326ea8fdb4124b",
       "human_review": {
         "reviewer_identity": "repository_operator",
         "review_mode": "operator_self_review",
         "review_date": "2026-10-14",
-        "review_commit": null,
+        "review_commit": "6870e53",
         "reviewed_fixture_body_sha256": "7cc7950029d5a5072bdaaa7fca6b075d073f8ba79dd42a9a21326ea8fdb4124b",
         "evidence": {
           "path": "data/r17-semantic-selection-contract/human_approval.json",
-          "sha256": "e6ea700ac619ed83de70e1ed6f80729864e18669bc006d0398edbfd7dec51113"
+          "sha256": "dd9108f742c264807d06246146d2a10c4d46136afff181c9534d3f6734d3df76"
         }
       }
     },
@@ -94,7 +94,7 @@
         ]
       },
       "note": "Constructed positive for the proposed minimal argument policy; not model discrimination evidence.",
-      "acceptance_evidence": false,
+      "acceptance_evidence": true,
       "expected_signals": {
         "answer_grammar": "valid",
         "semantic_selection": "met",
@@ -102,17 +102,17 @@
         "abstention_correctness": "not_applicable",
         "composition_readiness": "not_ready"
       },
-      "status": "human_adopted_and_reviewed_pending_contract_freeze",
+      "status": "contract_frozen",
       "fixture_body_sha256": "09e1e54524fbadb24088499b779bd01fabb530172b06c7c0b87736a2c511b7e8",
       "human_review": {
         "reviewer_identity": "repository_operator",
         "review_mode": "operator_self_review",
         "review_date": "2026-10-14",
-        "review_commit": null,
+        "review_commit": "6870e53",
         "reviewed_fixture_body_sha256": "09e1e54524fbadb24088499b779bd01fabb530172b06c7c0b87736a2c511b7e8",
         "evidence": {
           "path": "data/r17-semantic-selection-contract/human_approval.json",
-          "sha256": "e6ea700ac619ed83de70e1ed6f80729864e18669bc006d0398edbfd7dec51113"
+          "sha256": "dd9108f742c264807d06246146d2a10c4d46136afff181c9534d3f6734d3df76"
         }
       }
     },
@@ -133,7 +133,7 @@
         "selected_label_indexes": []
       },
       "note": null,
-      "acceptance_evidence": false,
+      "acceptance_evidence": true,
       "expected_signals": {
         "answer_grammar": "valid",
         "semantic_selection": "unmet",
@@ -141,17 +141,17 @@
         "abstention_correctness": "unjustified",
         "composition_readiness": "not_ready"
       },
-      "status": "human_adopted_and_reviewed_pending_contract_freeze",
+      "status": "contract_frozen",
       "fixture_body_sha256": "566464905e2fbc1d83978de0f2ba7e215af4e7cdcf3e28f36cfa145a55b20ef7",
       "human_review": {
         "reviewer_identity": "repository_operator",
         "review_mode": "operator_self_review",
         "review_date": "2026-10-14",
-        "review_commit": null,
+        "review_commit": "6870e53",
         "reviewed_fixture_body_sha256": "566464905e2fbc1d83978de0f2ba7e215af4e7cdcf3e28f36cfa145a55b20ef7",
         "evidence": {
           "path": "data/r17-semantic-selection-contract/human_approval.json",
-          "sha256": "e6ea700ac619ed83de70e1ed6f80729864e18669bc006d0398edbfd7dec51113"
+          "sha256": "dd9108f742c264807d06246146d2a10c4d46136afff181c9534d3f6734d3df76"
         }
       }
     },
@@ -171,7 +171,7 @@
         ]
       },
       "note": "Constructed answer pinned by R17-DEC-051-08.",
-      "acceptance_evidence": false,
+      "acceptance_evidence": true,
       "expected_signals": {
         "answer_grammar": "valid",
         "semantic_selection": "met",
@@ -179,17 +179,17 @@
         "abstention_correctness": "not_applicable",
         "composition_readiness": "not_ready"
       },
-      "status": "human_adopted_and_reviewed_pending_contract_freeze",
+      "status": "contract_frozen",
       "fixture_body_sha256": "f5ddb77244f2d5a597d4550eb46626c1be532ad2d3d61d2cb10a94199b504560",
       "human_review": {
         "reviewer_identity": "repository_operator",
         "review_mode": "operator_self_review",
         "review_date": "2026-10-14",
-        "review_commit": null,
+        "review_commit": "6870e53",
         "reviewed_fixture_body_sha256": "f5ddb77244f2d5a597d4550eb46626c1be532ad2d3d61d2cb10a94199b504560",
         "evidence": {
           "path": "data/r17-semantic-selection-contract/human_approval.json",
-          "sha256": "e6ea700ac619ed83de70e1ed6f80729864e18669bc006d0398edbfd7dec51113"
+          "sha256": "dd9108f742c264807d06246146d2a10c4d46136afff181c9534d3f6734d3df76"
         }
       }
     },
@@ -210,7 +210,7 @@
         ]
       },
       "note": null,
-      "acceptance_evidence": false,
+      "acceptance_evidence": true,
       "expected_signals": {
         "answer_grammar": "valid",
         "semantic_selection": "met",
@@ -218,17 +218,17 @@
         "abstention_correctness": "not_applicable",
         "composition_readiness": "ready"
       },
-      "status": "human_adopted_and_reviewed_pending_contract_freeze",
+      "status": "contract_frozen",
       "fixture_body_sha256": "6a414f794c4a398eb02e612f96690ae2c20455cd1d341878f040d074f69d7148",
       "human_review": {
         "reviewer_identity": "repository_operator",
         "review_mode": "operator_self_review",
         "review_date": "2026-10-14",
-        "review_commit": null,
+        "review_commit": "6870e53",
         "reviewed_fixture_body_sha256": "6a414f794c4a398eb02e612f96690ae2c20455cd1d341878f040d074f69d7148",
         "evidence": {
           "path": "data/r17-semantic-selection-contract/human_approval.json",
-          "sha256": "e6ea700ac619ed83de70e1ed6f80729864e18669bc006d0398edbfd7dec51113"
+          "sha256": "dd9108f742c264807d06246146d2a10c4d46136afff181c9534d3f6734d3df76"
         }
       }
     },
@@ -248,7 +248,7 @@
         ]
       },
       "note": "Missing object changes selection quality, not reference-set readiness.",
-      "acceptance_evidence": false,
+      "acceptance_evidence": true,
       "expected_signals": {
         "answer_grammar": "valid",
         "semantic_selection": "unmet",
@@ -256,17 +256,17 @@
         "abstention_correctness": "not_applicable",
         "composition_readiness": "ready"
       },
-      "status": "human_adopted_and_reviewed_pending_contract_freeze",
+      "status": "contract_frozen",
       "fixture_body_sha256": "705a3cc898d774b4a8d3de68311b3b4106916cb0a3e6df6d8918e3c98f6dad9d",
       "human_review": {
         "reviewer_identity": "repository_operator",
         "review_mode": "operator_self_review",
         "review_date": "2026-10-14",
-        "review_commit": null,
+        "review_commit": "6870e53",
         "reviewed_fixture_body_sha256": "705a3cc898d774b4a8d3de68311b3b4106916cb0a3e6df6d8918e3c98f6dad9d",
         "evidence": {
           "path": "data/r17-semantic-selection-contract/human_approval.json",
-          "sha256": "e6ea700ac619ed83de70e1ed6f80729864e18669bc006d0398edbfd7dec51113"
+          "sha256": "dd9108f742c264807d06246146d2a10c4d46136afff181c9534d3f6734d3df76"
         }
       }
     },
@@ -288,7 +288,7 @@
         ]
       },
       "note": null,
-      "acceptance_evidence": false,
+      "acceptance_evidence": true,
       "expected_signals": {
         "answer_grammar": "valid",
         "semantic_selection": "met",
@@ -296,17 +296,17 @@
         "abstention_correctness": "not_applicable",
         "composition_readiness": "not_ready"
       },
-      "status": "human_adopted_and_reviewed_pending_contract_freeze",
+      "status": "contract_frozen",
       "fixture_body_sha256": "106b0349f14436584522fff5be4fc4ea4264bdcbe1840d34b661fd8751239161",
       "human_review": {
         "reviewer_identity": "repository_operator",
         "review_mode": "operator_self_review",
         "review_date": "2026-10-14",
-        "review_commit": null,
+        "review_commit": "6870e53",
         "reviewed_fixture_body_sha256": "106b0349f14436584522fff5be4fc4ea4264bdcbe1840d34b661fd8751239161",
         "evidence": {
           "path": "data/r17-semantic-selection-contract/human_approval.json",
-          "sha256": "e6ea700ac619ed83de70e1ed6f80729864e18669bc006d0398edbfd7dec51113"
+          "sha256": "dd9108f742c264807d06246146d2a10c4d46136afff181c9534d3f6734d3df76"
         }
       }
     },
@@ -329,7 +329,7 @@
         ]
       },
       "note": null,
-      "acceptance_evidence": false,
+      "acceptance_evidence": true,
       "expected_signals": {
         "answer_grammar": "valid",
         "semantic_selection": "met",
@@ -337,17 +337,17 @@
         "abstention_correctness": "not_applicable",
         "composition_readiness": "ready"
       },
-      "status": "human_adopted_and_reviewed_pending_contract_freeze",
+      "status": "contract_frozen",
       "fixture_body_sha256": "fb58b6c571617339d5f5350d47d702218b4a6a7041c9d35bb41b117f682d22d5",
       "human_review": {
         "reviewer_identity": "repository_operator",
         "review_mode": "operator_self_review",
         "review_date": "2026-10-14",
-        "review_commit": null,
+        "review_commit": "6870e53",
         "reviewed_fixture_body_sha256": "fb58b6c571617339d5f5350d47d702218b4a6a7041c9d35bb41b117f682d22d5",
         "evidence": {
           "path": "data/r17-semantic-selection-contract/human_approval.json",
-          "sha256": "e6ea700ac619ed83de70e1ed6f80729864e18669bc006d0398edbfd7dec51113"
+          "sha256": "dd9108f742c264807d06246146d2a10c4d46136afff181c9534d3f6734d3df76"
         }
       }
     },
@@ -371,7 +371,7 @@
         ]
       },
       "note": null,
-      "acceptance_evidence": false,
+      "acceptance_evidence": true,
       "expected_signals": {
         "answer_grammar": "valid",
         "semantic_selection": "unmet",
@@ -379,17 +379,17 @@
         "abstention_correctness": "not_applicable",
         "composition_readiness": "ready"
       },
-      "status": "human_adopted_and_reviewed_pending_contract_freeze",
+      "status": "contract_frozen",
       "fixture_body_sha256": "caf86194a7a715c79d49d69f6064421ac47109ca09f1bd98bf932e74c7f56147",
       "human_review": {
         "reviewer_identity": "repository_operator",
         "review_mode": "operator_self_review",
         "review_date": "2026-10-14",
-        "review_commit": null,
+        "review_commit": "6870e53",
         "reviewed_fixture_body_sha256": "caf86194a7a715c79d49d69f6064421ac47109ca09f1bd98bf932e74c7f56147",
         "evidence": {
           "path": "data/r17-semantic-selection-contract/human_approval.json",
-          "sha256": "e6ea700ac619ed83de70e1ed6f80729864e18669bc006d0398edbfd7dec51113"
+          "sha256": "dd9108f742c264807d06246146d2a10c4d46136afff181c9534d3f6734d3df76"
         }
       }
     },
@@ -411,7 +411,7 @@
         ]
       },
       "note": null,
-      "acceptance_evidence": false,
+      "acceptance_evidence": true,
       "expected_signals": {
         "answer_grammar": "valid",
         "semantic_selection": "met",
@@ -419,17 +419,17 @@
         "abstention_correctness": "not_applicable",
         "composition_readiness": "not_ready"
       },
-      "status": "human_adopted_and_reviewed_pending_contract_freeze",
+      "status": "contract_frozen",
       "fixture_body_sha256": "119fd37f506918bcb3819b1545f4f5acaa5ba2f25ef08ec1cc9112fe1c52f952",
       "human_review": {
         "reviewer_identity": "repository_operator",
         "review_mode": "operator_self_review",
         "review_date": "2026-10-14",
-        "review_commit": null,
+        "review_commit": "6870e53",
         "reviewed_fixture_body_sha256": "119fd37f506918bcb3819b1545f4f5acaa5ba2f25ef08ec1cc9112fe1c52f952",
         "evidence": {
           "path": "data/r17-semantic-selection-contract/human_approval.json",
-          "sha256": "e6ea700ac619ed83de70e1ed6f80729864e18669bc006d0398edbfd7dec51113"
+          "sha256": "dd9108f742c264807d06246146d2a10c4d46136afff181c9534d3f6734d3df76"
         }
       }
     },
@@ -450,7 +450,7 @@
         ]
       },
       "note": null,
-      "acceptance_evidence": false,
+      "acceptance_evidence": true,
       "expected_signals": {
         "answer_grammar": "valid",
         "semantic_selection": "unmet",
@@ -458,17 +458,17 @@
         "abstention_correctness": "not_applicable",
         "composition_readiness": "not_ready"
       },
-      "status": "human_adopted_and_reviewed_pending_contract_freeze",
+      "status": "contract_frozen",
       "fixture_body_sha256": "07b21130f79c0b3364f0752f228cb98d40c764225e0be89bdb3e3c074ffc2d7f",
       "human_review": {
         "reviewer_identity": "repository_operator",
         "review_mode": "operator_self_review",
         "review_date": "2026-10-14",
-        "review_commit": null,
+        "review_commit": "6870e53",
         "reviewed_fixture_body_sha256": "07b21130f79c0b3364f0752f228cb98d40c764225e0be89bdb3e3c074ffc2d7f",
         "evidence": {
           "path": "data/r17-semantic-selection-contract/human_approval.json",
-          "sha256": "e6ea700ac619ed83de70e1ed6f80729864e18669bc006d0398edbfd7dec51113"
+          "sha256": "dd9108f742c264807d06246146d2a10c4d46136afff181c9534d3f6734d3df76"
         }
       }
     },
@@ -489,7 +489,7 @@
         ]
       },
       "note": null,
-      "acceptance_evidence": false,
+      "acceptance_evidence": true,
       "expected_signals": {
         "answer_grammar": "valid",
         "semantic_selection": "met",
@@ -497,17 +497,17 @@
         "abstention_correctness": "not_applicable",
         "composition_readiness": "ready"
       },
-      "status": "human_adopted_and_reviewed_pending_contract_freeze",
+      "status": "contract_frozen",
       "fixture_body_sha256": "7fbb7ed410466687d7293aac9f2f7f6083a31f803f27b37748c3677afed63389",
       "human_review": {
         "reviewer_identity": "repository_operator",
         "review_mode": "operator_self_review",
         "review_date": "2026-10-14",
-        "review_commit": null,
+        "review_commit": "6870e53",
         "reviewed_fixture_body_sha256": "7fbb7ed410466687d7293aac9f2f7f6083a31f803f27b37748c3677afed63389",
         "evidence": {
           "path": "data/r17-semantic-selection-contract/human_approval.json",
-          "sha256": "e6ea700ac619ed83de70e1ed6f80729864e18669bc006d0398edbfd7dec51113"
+          "sha256": "dd9108f742c264807d06246146d2a10c4d46136afff181c9534d3f6734d3df76"
         }
       }
     },
@@ -529,7 +529,7 @@
         ]
       },
       "note": null,
-      "acceptance_evidence": false,
+      "acceptance_evidence": true,
       "expected_signals": {
         "answer_grammar": "valid",
         "semantic_selection": "unmet",
@@ -537,17 +537,17 @@
         "abstention_correctness": "not_applicable",
         "composition_readiness": "ready"
       },
-      "status": "human_adopted_and_reviewed_pending_contract_freeze",
+      "status": "contract_frozen",
       "fixture_body_sha256": "5588f893a80a43482b3fb9a1f55922d895cc77e972195d6916c4389efcf91fe0",
       "human_review": {
         "reviewer_identity": "repository_operator",
         "review_mode": "operator_self_review",
         "review_date": "2026-10-14",
-        "review_commit": null,
+        "review_commit": "6870e53",
         "reviewed_fixture_body_sha256": "5588f893a80a43482b3fb9a1f55922d895cc77e972195d6916c4389efcf91fe0",
         "evidence": {
           "path": "data/r17-semantic-selection-contract/human_approval.json",
-          "sha256": "e6ea700ac619ed83de70e1ed6f80729864e18669bc006d0398edbfd7dec51113"
+          "sha256": "dd9108f742c264807d06246146d2a10c4d46136afff181c9534d3f6734d3df76"
         }
       }
     },
@@ -568,7 +568,7 @@
         ]
       },
       "note": null,
-      "acceptance_evidence": false,
+      "acceptance_evidence": true,
       "expected_signals": {
         "answer_grammar": "valid",
         "semantic_selection": "met",
@@ -576,17 +576,17 @@
         "abstention_correctness": "not_applicable",
         "composition_readiness": "ready"
       },
-      "status": "human_adopted_and_reviewed_pending_contract_freeze",
+      "status": "contract_frozen",
       "fixture_body_sha256": "09d521f24ea3c425527adda42d0be0ab57e692f40a2d52bca50dd35e2bf1660e",
       "human_review": {
         "reviewer_identity": "repository_operator",
         "review_mode": "operator_self_review",
         "review_date": "2026-10-14",
-        "review_commit": null,
+        "review_commit": "6870e53",
         "reviewed_fixture_body_sha256": "09d521f24ea3c425527adda42d0be0ab57e692f40a2d52bca50dd35e2bf1660e",
         "evidence": {
           "path": "data/r17-semantic-selection-contract/human_approval.json",
-          "sha256": "e6ea700ac619ed83de70e1ed6f80729864e18669bc006d0398edbfd7dec51113"
+          "sha256": "dd9108f742c264807d06246146d2a10c4d46136afff181c9534d3f6734d3df76"
         }
       }
     },
@@ -608,7 +608,7 @@
         ]
       },
       "note": null,
-      "acceptance_evidence": false,
+      "acceptance_evidence": true,
       "expected_signals": {
         "answer_grammar": "valid",
         "semantic_selection": "unmet",
@@ -616,17 +616,17 @@
         "abstention_correctness": "not_applicable",
         "composition_readiness": "ready"
       },
-      "status": "human_adopted_and_reviewed_pending_contract_freeze",
+      "status": "contract_frozen",
       "fixture_body_sha256": "f7853eb3be4c91077efa6f12b4cd044a401f33a6bc33ac27aff309cf46da232c",
       "human_review": {
         "reviewer_identity": "repository_operator",
         "review_mode": "operator_self_review",
         "review_date": "2026-10-14",
-        "review_commit": null,
+        "review_commit": "6870e53",
         "reviewed_fixture_body_sha256": "f7853eb3be4c91077efa6f12b4cd044a401f33a6bc33ac27aff309cf46da232c",
         "evidence": {
           "path": "data/r17-semantic-selection-contract/human_approval.json",
-          "sha256": "e6ea700ac619ed83de70e1ed6f80729864e18669bc006d0398edbfd7dec51113"
+          "sha256": "dd9108f742c264807d06246146d2a10c4d46136afff181c9534d3f6734d3df76"
         }
       }
     },
@@ -647,7 +647,7 @@
         ]
       },
       "note": null,
-      "acceptance_evidence": false,
+      "acceptance_evidence": true,
       "expected_signals": {
         "answer_grammar": "valid",
         "semantic_selection": "met",
@@ -655,17 +655,17 @@
         "abstention_correctness": "not_applicable",
         "composition_readiness": "ready"
       },
-      "status": "human_adopted_and_reviewed_pending_contract_freeze",
+      "status": "contract_frozen",
       "fixture_body_sha256": "a59901efa18e94dfda13f3a91a9860641d33f2b36661f0812c618fd8e2a7d30d",
       "human_review": {
         "reviewer_identity": "repository_operator",
         "review_mode": "operator_self_review",
         "review_date": "2026-10-14",
-        "review_commit": null,
+        "review_commit": "6870e53",
         "reviewed_fixture_body_sha256": "a59901efa18e94dfda13f3a91a9860641d33f2b36661f0812c618fd8e2a7d30d",
         "evidence": {
           "path": "data/r17-semantic-selection-contract/human_approval.json",
-          "sha256": "e6ea700ac619ed83de70e1ed6f80729864e18669bc006d0398edbfd7dec51113"
+          "sha256": "dd9108f742c264807d06246146d2a10c4d46136afff181c9534d3f6734d3df76"
         }
       }
     },
@@ -685,7 +685,7 @@
         ]
       },
       "note": null,
-      "acceptance_evidence": false,
+      "acceptance_evidence": true,
       "expected_signals": {
         "answer_grammar": "valid",
         "semantic_selection": "unmet",
@@ -693,17 +693,17 @@
         "abstention_correctness": "not_applicable",
         "composition_readiness": "ready"
       },
-      "status": "human_adopted_and_reviewed_pending_contract_freeze",
+      "status": "contract_frozen",
       "fixture_body_sha256": "27a61a982230c773ec0a7831501c7c10c61ab3a9f63b96e86971bbbfed3217db",
       "human_review": {
         "reviewer_identity": "repository_operator",
         "review_mode": "operator_self_review",
         "review_date": "2026-10-14",
-        "review_commit": null,
+        "review_commit": "6870e53",
         "reviewed_fixture_body_sha256": "27a61a982230c773ec0a7831501c7c10c61ab3a9f63b96e86971bbbfed3217db",
         "evidence": {
           "path": "data/r17-semantic-selection-contract/human_approval.json",
-          "sha256": "e6ea700ac619ed83de70e1ed6f80729864e18669bc006d0398edbfd7dec51113"
+          "sha256": "dd9108f742c264807d06246146d2a10c4d46136afff181c9534d3f6734d3df76"
         }
       }
     },
@@ -721,7 +721,7 @@
         "selected_label_indexes": []
       },
       "note": null,
-      "acceptance_evidence": false,
+      "acceptance_evidence": true,
       "expected_signals": {
         "answer_grammar": "valid",
         "semantic_selection": "met",
@@ -729,17 +729,17 @@
         "abstention_correctness": "justified",
         "composition_readiness": "not_ready"
       },
-      "status": "human_adopted_and_reviewed_pending_contract_freeze",
+      "status": "contract_frozen",
       "fixture_body_sha256": "d8ae2635f4c335fd68e5118853078fd2a670a12510255ded27e8b9add328e639",
       "human_review": {
         "reviewer_identity": "repository_operator",
         "review_mode": "operator_self_review",
         "review_date": "2026-10-14",
-        "review_commit": null,
+        "review_commit": "6870e53",
         "reviewed_fixture_body_sha256": "d8ae2635f4c335fd68e5118853078fd2a670a12510255ded27e8b9add328e639",
         "evidence": {
           "path": "data/r17-semantic-selection-contract/human_approval.json",
-          "sha256": "e6ea700ac619ed83de70e1ed6f80729864e18669bc006d0398edbfd7dec51113"
+          "sha256": "dd9108f742c264807d06246146d2a10c4d46136afff181c9534d3f6734d3df76"
         }
       }
     },
@@ -760,7 +760,7 @@
         ]
       },
       "note": null,
-      "acceptance_evidence": false,
+      "acceptance_evidence": true,
       "expected_signals": {
         "answer_grammar": "valid",
         "semantic_selection": "met",
@@ -768,17 +768,17 @@
         "abstention_correctness": "not_applicable",
         "composition_readiness": "not_ready"
       },
-      "status": "human_adopted_and_reviewed_pending_contract_freeze",
+      "status": "contract_frozen",
       "fixture_body_sha256": "013c83856bb517683001fd77af026667c0f22c8d66d8d50667f666aefb95b682",
       "human_review": {
         "reviewer_identity": "repository_operator",
         "review_mode": "operator_self_review",
         "review_date": "2026-10-14",
-        "review_commit": null,
+        "review_commit": "6870e53",
         "reviewed_fixture_body_sha256": "013c83856bb517683001fd77af026667c0f22c8d66d8d50667f666aefb95b682",
         "evidence": {
           "path": "data/r17-semantic-selection-contract/human_approval.json",
-          "sha256": "e6ea700ac619ed83de70e1ed6f80729864e18669bc006d0398edbfd7dec51113"
+          "sha256": "dd9108f742c264807d06246146d2a10c4d46136afff181c9534d3f6734d3df76"
         }
       }
     },
@@ -796,7 +796,7 @@
         "selected_label_indexes": []
       },
       "note": "Malformed grammar stays separate from input boundary and reference readiness.",
-      "acceptance_evidence": false,
+      "acceptance_evidence": true,
       "expected_signals": {
         "answer_grammar": "invalid",
         "semantic_selection": "not_applicable",
@@ -804,17 +804,17 @@
         "abstention_correctness": "not_applicable",
         "composition_readiness": "not_ready"
       },
-      "status": "human_adopted_and_reviewed_pending_contract_freeze",
+      "status": "contract_frozen",
       "fixture_body_sha256": "021f0d1453797750ea068b7cf642a578f3b7ac07dfdfd3be52a0a468b85f93d8",
       "human_review": {
         "reviewer_identity": "repository_operator",
         "review_mode": "operator_self_review",
         "review_date": "2026-10-14",
-        "review_commit": null,
+        "review_commit": "6870e53",
         "reviewed_fixture_body_sha256": "021f0d1453797750ea068b7cf642a578f3b7ac07dfdfd3be52a0a468b85f93d8",
         "evidence": {
           "path": "data/r17-semantic-selection-contract/human_approval.json",
-          "sha256": "e6ea700ac619ed83de70e1ed6f80729864e18669bc006d0398edbfd7dec51113"
+          "sha256": "dd9108f742c264807d06246146d2a10c4d46136afff181c9534d3f6734d3df76"
         }
       }
     },
@@ -832,7 +832,7 @@
         "selected_label_indexes": []
       },
       "note": "Malformed grammar stays separate from input boundary and reference readiness.",
-      "acceptance_evidence": false,
+      "acceptance_evidence": true,
       "expected_signals": {
         "answer_grammar": "invalid",
         "semantic_selection": "not_applicable",
@@ -840,17 +840,17 @@
         "abstention_correctness": "not_applicable",
         "composition_readiness": "not_ready"
       },
-      "status": "human_adopted_and_reviewed_pending_contract_freeze",
+      "status": "contract_frozen",
       "fixture_body_sha256": "1006638091e2914c3723e2e7bf8e4d05d13d33bd945708061abf6161a28203d9",
       "human_review": {
         "reviewer_identity": "repository_operator",
         "review_mode": "operator_self_review",
         "review_date": "2026-10-14",
-        "review_commit": null,
+        "review_commit": "6870e53",
         "reviewed_fixture_body_sha256": "1006638091e2914c3723e2e7bf8e4d05d13d33bd945708061abf6161a28203d9",
         "evidence": {
           "path": "data/r17-semantic-selection-contract/human_approval.json",
-          "sha256": "e6ea700ac619ed83de70e1ed6f80729864e18669bc006d0398edbfd7dec51113"
+          "sha256": "dd9108f742c264807d06246146d2a10c4d46136afff181c9534d3f6734d3df76"
         }
       }
     },
@@ -868,7 +868,7 @@
         "selected_label_indexes": []
       },
       "note": "Malformed grammar stays separate from input boundary and reference readiness.",
-      "acceptance_evidence": false,
+      "acceptance_evidence": true,
       "expected_signals": {
         "answer_grammar": "invalid",
         "semantic_selection": "not_applicable",
@@ -876,17 +876,17 @@
         "abstention_correctness": "not_applicable",
         "composition_readiness": "not_ready"
       },
-      "status": "human_adopted_and_reviewed_pending_contract_freeze",
+      "status": "contract_frozen",
       "fixture_body_sha256": "5d86de20ce11973414df6f11c585932c19470f7cbe811105b993b933527f3d18",
       "human_review": {
         "reviewer_identity": "repository_operator",
         "review_mode": "operator_self_review",
         "review_date": "2026-10-14",
-        "review_commit": null,
+        "review_commit": "6870e53",
         "reviewed_fixture_body_sha256": "5d86de20ce11973414df6f11c585932c19470f7cbe811105b993b933527f3d18",
         "evidence": {
           "path": "data/r17-semantic-selection-contract/human_approval.json",
-          "sha256": "e6ea700ac619ed83de70e1ed6f80729864e18669bc006d0398edbfd7dec51113"
+          "sha256": "dd9108f742c264807d06246146d2a10c4d46136afff181c9534d3f6734d3df76"
         }
       }
     },
@@ -904,7 +904,7 @@
         "selected_label_indexes": []
       },
       "note": "The route remains label-only; malformed syntax and NONE reject without suppressing source or reference signals.",
-      "acceptance_evidence": false,
+      "acceptance_evidence": true,
       "expected_signals": {
         "answer_grammar": "invalid",
         "semantic_selection": "not_applicable",
@@ -912,17 +912,17 @@
         "abstention_correctness": "not_applicable",
         "composition_readiness": "ready"
       },
-      "status": "human_adopted_and_reviewed_pending_contract_freeze",
+      "status": "contract_frozen",
       "fixture_body_sha256": "8b8d20cd47b76b1a94a9e541a1d16cded4f679e4b444625dce7c6c27983c028e",
       "human_review": {
         "reviewer_identity": "repository_operator",
         "review_mode": "operator_self_review",
         "review_date": "2026-10-14",
-        "review_commit": null,
+        "review_commit": "6870e53",
         "reviewed_fixture_body_sha256": "8b8d20cd47b76b1a94a9e541a1d16cded4f679e4b444625dce7c6c27983c028e",
         "evidence": {
           "path": "data/r17-semantic-selection-contract/human_approval.json",
-          "sha256": "e6ea700ac619ed83de70e1ed6f80729864e18669bc006d0398edbfd7dec51113"
+          "sha256": "dd9108f742c264807d06246146d2a10c4d46136afff181c9534d3f6734d3df76"
         }
       }
     },
@@ -940,7 +940,7 @@
         "selected_label_indexes": []
       },
       "note": "The route remains label-only; malformed syntax and NONE reject without suppressing source or reference signals.",
-      "acceptance_evidence": false,
+      "acceptance_evidence": true,
       "expected_signals": {
         "answer_grammar": "invalid",
         "semantic_selection": "not_applicable",
@@ -948,17 +948,17 @@
         "abstention_correctness": "not_applicable",
         "composition_readiness": "ready"
       },
-      "status": "human_adopted_and_reviewed_pending_contract_freeze",
+      "status": "contract_frozen",
       "fixture_body_sha256": "3afbbcaa1ccb891f35da1d29150d3b3bf8fd0fa586d84ee0024868f4fc1a3544",
       "human_review": {
         "reviewer_identity": "repository_operator",
         "review_mode": "operator_self_review",
         "review_date": "2026-10-14",
-        "review_commit": null,
+        "review_commit": "6870e53",
         "reviewed_fixture_body_sha256": "3afbbcaa1ccb891f35da1d29150d3b3bf8fd0fa586d84ee0024868f4fc1a3544",
         "evidence": {
           "path": "data/r17-semantic-selection-contract/human_approval.json",
-          "sha256": "e6ea700ac619ed83de70e1ed6f80729864e18669bc006d0398edbfd7dec51113"
+          "sha256": "dd9108f742c264807d06246146d2a10c4d46136afff181c9534d3f6734d3df76"
         }
       }
     },
@@ -976,7 +976,7 @@
         "selected_label_indexes": []
       },
       "note": "The route remains label-only; malformed syntax and NONE reject without suppressing source or reference signals.",
-      "acceptance_evidence": false,
+      "acceptance_evidence": true,
       "expected_signals": {
         "answer_grammar": "invalid",
         "semantic_selection": "not_applicable",
@@ -984,17 +984,17 @@
         "abstention_correctness": "not_applicable",
         "composition_readiness": "ready"
       },
-      "status": "human_adopted_and_reviewed_pending_contract_freeze",
+      "status": "contract_frozen",
       "fixture_body_sha256": "333cb64982ca8ae89b473a4a6b6081c591e8c8e789edceab8f57c53031ef1548",
       "human_review": {
         "reviewer_identity": "repository_operator",
         "review_mode": "operator_self_review",
         "review_date": "2026-10-14",
-        "review_commit": null,
+        "review_commit": "6870e53",
         "reviewed_fixture_body_sha256": "333cb64982ca8ae89b473a4a6b6081c591e8c8e789edceab8f57c53031ef1548",
         "evidence": {
           "path": "data/r17-semantic-selection-contract/human_approval.json",
-          "sha256": "e6ea700ac619ed83de70e1ed6f80729864e18669bc006d0398edbfd7dec51113"
+          "sha256": "dd9108f742c264807d06246146d2a10c4d46136afff181c9534d3f6734d3df76"
         }
       }
     },
@@ -1012,7 +1012,7 @@
         "selected_label_indexes": []
       },
       "note": "The route remains label-only; malformed syntax and NONE reject without suppressing source or reference signals.",
-      "acceptance_evidence": false,
+      "acceptance_evidence": true,
       "expected_signals": {
         "answer_grammar": "invalid",
         "semantic_selection": "not_applicable",
@@ -1020,25 +1020,25 @@
         "abstention_correctness": "not_applicable",
         "composition_readiness": "ready"
       },
-      "status": "human_adopted_and_reviewed_pending_contract_freeze",
+      "status": "contract_frozen",
       "fixture_body_sha256": "6686f7d7dd474c071f6149c20dd772d2df22c4015a046ea6fc5c164c27e1fb55",
       "human_review": {
         "reviewer_identity": "repository_operator",
         "review_mode": "operator_self_review",
         "review_date": "2026-10-14",
-        "review_commit": null,
+        "review_commit": "6870e53",
         "reviewed_fixture_body_sha256": "6686f7d7dd474c071f6149c20dd772d2df22c4015a046ea6fc5c164c27e1fb55",
         "evidence": {
           "path": "data/r17-semantic-selection-contract/human_approval.json",
-          "sha256": "e6ea700ac619ed83de70e1ed6f80729864e18669bc006d0398edbfd7dec51113"
+          "sha256": "dd9108f742c264807d06246146d2a10c4d46136afff181c9534d3f6734d3df76"
         }
       }
     }
   ],
-  "status": "human_adopted_and_reviewed_pending_contract_freeze",
+  "status": "contract_frozen",
   "human_approval": {
     "path": "data/r17-semantic-selection-contract/human_approval.json",
-    "sha256": "e6ea700ac619ed83de70e1ed6f80729864e18669bc006d0398edbfd7dec51113"
+    "sha256": "dd9108f742c264807d06246146d2a10c4d46136afff181c9534d3f6734d3df76"
   },
-  "contract_version": null
+  "contract_version": 1
 }
