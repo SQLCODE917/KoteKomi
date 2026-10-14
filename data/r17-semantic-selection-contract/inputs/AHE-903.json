@@ -1,0 +1,267 @@
+{
+  "event_id": "AHE-903",
+  "origin": "constructed",
+  "source_text": "Mira would not sign the agreement.",
+  "source_text_sha256": "9a18a59fc12fcfef4513a7139f272b4bd4435f341605592fd846022c6565dd12",
+  "coordinate_system": "zero_based_source_characters_half_open",
+  "candidate_inventory": {
+    "event_id": "AHE-903",
+    "source_text_sha256": "9a18a59fc12fcfef4513a7139f272b4bd4435f341605592fd846022c6565dd12",
+    "constituents": [
+      {
+        "constituent_id": "pct_da3be96b3bee75db26f7884a",
+        "event_id": "AHE-903",
+        "source_text_sha256": "9a18a59fc12fcfef4513a7139f272b4bd4435f341605592fd846022c6565dd12",
+        "constituent_range": {
+          "start": 0,
+          "end": 4,
+          "text": "Mira"
+        },
+        "token_ids": [
+          "t1"
+        ]
+      },
+      {
+        "constituent_id": "pct_de7aa3567509d6ebda0c0ebf",
+        "event_id": "AHE-903",
+        "source_text_sha256": "9a18a59fc12fcfef4513a7139f272b4bd4435f341605592fd846022c6565dd12",
+        "constituent_range": {
+          "start": 5,
+          "end": 10,
+          "text": "would"
+        },
+        "token_ids": [
+          "t2"
+        ]
+      },
+      {
+        "constituent_id": "pct_5c97ee49a24963943da9d065",
+        "event_id": "AHE-903",
+        "source_text_sha256": "9a18a59fc12fcfef4513a7139f272b4bd4435f341605592fd846022c6565dd12",
+        "constituent_range": {
+          "start": 11,
+          "end": 14,
+          "text": "not"
+        },
+        "token_ids": [
+          "t3"
+        ]
+      },
+      {
+        "constituent_id": "pct_bb8b414d4fcc8de2298ceb34",
+        "event_id": "AHE-903",
+        "source_text_sha256": "9a18a59fc12fcfef4513a7139f272b4bd4435f341605592fd846022c6565dd12",
+        "constituent_range": {
+          "start": 20,
+          "end": 33,
+          "text": "the agreement"
+        },
+        "token_ids": [
+          "t5",
+          "t6"
+        ]
+      },
+      {
+        "constituent_id": "pct_ed7b7201539548e4bdf3ec2b",
+        "event_id": "AHE-903",
+        "source_text_sha256": "9a18a59fc12fcfef4513a7139f272b4bd4435f341605592fd846022c6565dd12",
+        "constituent_range": {
+          "start": 24,
+          "end": 33,
+          "text": "agreement"
+        },
+        "token_ids": [
+          "t6"
+        ]
+      }
+    ]
+  },
+  "selection_task": {
+    "event_id": "AHE-903",
+    "source_text_sha256": "9a18a59fc12fcfef4513a7139f272b4bd4435f341605592fd846022c6565dd12",
+    "source_text": "Mira would not sign the agreement.",
+    "constituent_labels": [
+      "C1",
+      "C2",
+      "C3",
+      "C4",
+      "C5"
+    ],
+    "rendered_input": "Return a comma-separated subset of the Candidate labels, or NONE.\nEvent: sign\nPassage:\nMira would not sign the agreement.\nCandidates:\nC1: Mira\nC2: would\nC3: not\nC4: the agreement\nC5: agreement",
+    "rendered_input_sha256": "f5763f227d2ffe547f7844142c9ce14c683e2d671c8ce61d2b3534ac430614da"
+  },
+  "frozen_task_route": "label_only_reselection",
+  "corrective_task": {
+    "event_id": "AHE-903",
+    "closure_route": "label_only_reselection",
+    "corrected_instruction": "Return ONLY a comma-separated list of Candidate labels, for example C1 or C3. Do not write candidate text. Do not explain.",
+    "corrected_prompt": "Return ONLY a comma-separated list of Candidate labels, for example C1 or C3. Do not write candidate text. Do not explain.\nEvent: sign\nPassage:\nMira would not sign the agreement.\nCandidates:\nC1: Mira\nC2: would\nC3: not\nC4: the agreement\nC5: agreement",
+    "corrected_prompt_sha256": "72d061c0ce4853e9f27979c4f61f934aae8d4080d655651f82fdcb64a310f3b0",
+    "original_rendered_input_sha256": "f5763f227d2ffe547f7844142c9ce14c683e2d671c8ce61d2b3534ac430614da"
+  },
+  "event_frame": {
+    "event_id": "AHE-903",
+    "trigger": {
+      "start": 15,
+      "end": 19,
+      "text": "sign"
+    },
+    "core_constituents": [
+      {
+        "start": 0,
+        "end": 4,
+        "text": "Mira"
+      },
+      {
+        "start": 20,
+        "end": 33,
+        "text": "the agreement"
+      }
+    ]
+  },
+  "composition_inputs": {
+    "tokens": [
+      {
+        "token_id": "t1",
+        "sentence_id": "s1",
+        "text": "Mira",
+        "start": 0,
+        "end": 4,
+        "lemma": "Mira",
+        "part_of_speech": "PROPN",
+        "dependency_relation": "nsubj",
+        "head_token_id": "t4"
+      },
+      {
+        "token_id": "t2",
+        "sentence_id": "s1",
+        "text": "would",
+        "start": 5,
+        "end": 10,
+        "lemma": "would",
+        "part_of_speech": "AUX",
+        "dependency_relation": "aux",
+        "head_token_id": "t4"
+      },
+      {
+        "token_id": "t3",
+        "sentence_id": "s1",
+        "text": "not",
+        "start": 11,
+        "end": 14,
+        "lemma": "not",
+        "part_of_speech": "PART",
+        "dependency_relation": "neg",
+        "head_token_id": "t4"
+      },
+      {
+        "token_id": "t4",
+        "sentence_id": "s1",
+        "text": "sign",
+        "start": 15,
+        "end": 19,
+        "lemma": "sign",
+        "part_of_speech": "VERB",
+        "dependency_relation": "root",
+        "head_token_id": null
+      },
+      {
+        "token_id": "t5",
+        "sentence_id": "s1",
+        "text": "the",
+        "start": 20,
+        "end": 23,
+        "lemma": "the",
+        "part_of_speech": "DET",
+        "dependency_relation": "det",
+        "head_token_id": "t6"
+      },
+      {
+        "token_id": "t6",
+        "sentence_id": "s1",
+        "text": "agreement",
+        "start": 24,
+        "end": 33,
+        "lemma": "agreement",
+        "part_of_speech": "NOUN",
+        "dependency_relation": "obj",
+        "head_token_id": "t4"
+      },
+      {
+        "token_id": "t7",
+        "sentence_id": "s1",
+        "text": ".",
+        "start": 33,
+        "end": 34,
+        "lemma": ".",
+        "part_of_speech": "PUNCT",
+        "dependency_relation": "punct",
+        "head_token_id": "t4"
+      }
+    ],
+    "entities": [
+      {
+        "entity_id": "EGE-901",
+        "entity_kind": "actor",
+        "canonical_name": "Mira",
+        "accepted_source_occurrences": [
+          {
+            "start": 0,
+            "end": 4,
+            "text": "Mira"
+          }
+        ]
+      }
+    ],
+    "tokens_provenance": "agent_authored_controlled_fixture; not a Stanza execution"
+  },
+  "provenance": [],
+  "current_r4_composition_probe": {
+    "probe_kind": "deterministic shared composer; no model invocation",
+    "answer": {
+      "event_id": "AHE-903",
+      "status": "selected",
+      "selected_label_indexes": [
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    "result": {
+      "event_id": "AHE-903",
+      "source_text_sha256": "9a18a59fc12fcfef4513a7139f272b4bd4435f341605592fd846022c6565dd12",
+      "relation_label": "sign",
+      "subject": {
+        "role": "subject",
+        "exact_fragment": {
+          "start": 0,
+          "end": 4,
+          "text": "Mira"
+        },
+        "entity_ref": "EGE-901",
+        "object_value": null
+      },
+      "object": {
+        "role": "object",
+        "exact_fragment": {
+          "start": 20,
+          "end": 33,
+          "text": "the agreement"
+        },
+        "entity_ref": null,
+        "object_value": "the agreement"
+      },
+      "polarity": "negated",
+      "modality": "hypothetical",
+      "attribution": {
+        "kind": "source_narrator",
+        "exact_carrier": null,
+        "reporter_ref": null
+      },
+      "status": "proposition",
+      "hold_reason": null
+    },
+    "is_r17_readiness_signal": false
+  }
+}

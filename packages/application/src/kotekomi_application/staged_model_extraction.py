@@ -2785,6 +2785,88 @@ def model_execution_spec_digest(spec: ModelExecutionSpec) -> str:
     return _digest(model_execution_spec_payload(spec))
 
 
+def _settings_from_payload(payload: Mapping[str, JsonValue]) -> tuple[ExecutionSetting, ...]:
+    """Parse serialized generation/determinism settings back into typed records.
+
+    Invalid keys, non-scalar values, and out-of-order settings are rejected by
+    the ``ExecutionSetting`` / ``ModelExecutionSpec`` / ``ModelIdentitySnapshot``
+    constructors and their ``_validate_settings`` guards.
+    """
+
+    settings: list[ExecutionSetting] = []
+    for key, value in payload.items():
+        settings.append(ExecutionSetting(key=key, value=cast(ExecutionScalar, value)))
+    return tuple(settings)
+
+
+def _model_identity_from_payload(payload: Mapping[str, JsonValue]) -> ModelIdentitySnapshot:
+    """Parse a persisted model identity snapshot back into its typed contract."""
+
+    expected_keys = {"name", "weights_digest", "runtime", "tokenizer_id", "determinism_settings"}
+    if set(payload) != expected_keys:
+        raise ValueError("Model identity payload has an invalid shape.")
+    determinism_payload = payload["determinism_settings"]
+    if not isinstance(determinism_payload, dict):
+        raise ValueError("Model identity determinism settings must be an object.")
+    weights_digest = payload.get("weights_digest")
+    if weights_digest is not None and not isinstance(weights_digest, str):
+        raise ValueError("Model identity weights digest must be a string or null.")
+    return ModelIdentitySnapshot(
+        name=_required_str(payload, "name"),
+        weights_digest=weights_digest,
+        runtime=_required_str(payload, "runtime"),
+        tokenizer_id=_required_str(payload, "tokenizer_id"),
+        determinism_settings=_settings_from_payload(
+            cast(Mapping[str, JsonValue], determinism_payload)
+        ),
+    )
+
+
+def model_execution_spec_from_payload(
+    payload: Mapping[str, JsonValue],
+) -> ModelExecutionSpec:
+    """Parse a persisted execution specification back into its typed contract."""
+
+    expected_keys = {
+        "model_profile_id",
+        "model_identity",
+        "generation_parameters",
+        "prompt_id",
+        "prompt_digest",
+        "schema_id",
+        "schema_digest",
+        "context_manifest_id",
+        "context_manifest_digest",
+        "rendered_input_digest",
+        "output_contract_version",
+    }
+    if set(payload) != expected_keys:
+        raise ValueError("Model execution specification payload has an invalid shape.")
+    identity_payload = payload["model_identity"]
+    if not isinstance(identity_payload, dict):
+        raise ValueError("Model execution specification identity must be an object.")
+    generation_payload = payload["generation_parameters"]
+    if not isinstance(generation_payload, dict):
+        raise ValueError("Model execution specification generation parameters must be an object.")
+    return ModelExecutionSpec(
+        model_profile_id=_required_str(payload, "model_profile_id"),
+        model_identity=_model_identity_from_payload(
+            cast(Mapping[str, JsonValue], identity_payload)
+        ),
+        generation_parameters=_settings_from_payload(
+            cast(Mapping[str, JsonValue], generation_payload)
+        ),
+        prompt_id=_required_str(payload, "prompt_id"),
+        prompt_digest=_required_str(payload, "prompt_digest"),
+        schema_id=_required_str(payload, "schema_id"),
+        schema_digest=_required_str(payload, "schema_digest"),
+        context_manifest_id=_required_str(payload, "context_manifest_id"),
+        context_manifest_digest=_required_str(payload, "context_manifest_digest"),
+        rendered_input_digest=_required_str(payload, "rendered_input_digest"),
+        output_contract_version=_required_str(payload, "output_contract_version"),
+    )
+
+
 def _validate_execution_spec(
     execution_spec: ModelExecutionSpec,
     manifest: ContextManifest,

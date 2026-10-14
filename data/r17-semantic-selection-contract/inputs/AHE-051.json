@@ -1,0 +1,267 @@
+{
+  "event_id": "AHE-051",
+  "origin": "historical_diagnostic",
+  "source_text": "[45] The April order is not final.",
+  "source_text_sha256": "5f07f7fa1cef6f5d818cfa3fc4f2afe8c22f93be9825a0ff28cecdc80558356c",
+  "coordinate_system": "zero_based_source_characters_half_open",
+  "candidate_inventory": {
+    "event_id": "AHE-051",
+    "source_text_sha256": "5f07f7fa1cef6f5d818cfa3fc4f2afe8c22f93be9825a0ff28cecdc80558356c",
+    "constituents": [
+      {
+        "constituent_id": "pct_1e2f96e22d7553b222f316ef",
+        "event_id": "AHE-051",
+        "source_text_sha256": "5f07f7fa1cef6f5d818cfa3fc4f2afe8c22f93be9825a0ff28cecdc80558356c",
+        "constituent_range": {
+          "start": 0,
+          "end": 4,
+          "text": "[45]"
+        },
+        "token_ids": [
+          "t1",
+          "t2",
+          "t3"
+        ]
+      },
+      {
+        "constituent_id": "pct_ece9de42d1a748a3470bbce2",
+        "event_id": "AHE-051",
+        "source_text_sha256": "5f07f7fa1cef6f5d818cfa3fc4f2afe8c22f93be9825a0ff28cecdc80558356c",
+        "constituent_range": {
+          "start": 1,
+          "end": 3,
+          "text": "45"
+        },
+        "token_ids": [
+          "t2"
+        ]
+      },
+      {
+        "constituent_id": "pct_4014c077299aba17da2b1885",
+        "event_id": "AHE-051",
+        "source_text_sha256": "5f07f7fa1cef6f5d818cfa3fc4f2afe8c22f93be9825a0ff28cecdc80558356c",
+        "constituent_range": {
+          "start": 5,
+          "end": 20,
+          "text": "The April order"
+        },
+        "token_ids": [
+          "t4",
+          "t5",
+          "t6"
+        ]
+      },
+      {
+        "constituent_id": "pct_472d896c56f950ed9d412950",
+        "event_id": "AHE-051",
+        "source_text_sha256": "5f07f7fa1cef6f5d818cfa3fc4f2afe8c22f93be9825a0ff28cecdc80558356c",
+        "constituent_range": {
+          "start": 15,
+          "end": 20,
+          "text": "order"
+        },
+        "token_ids": [
+          "t6"
+        ]
+      }
+    ]
+  },
+  "selection_task": {
+    "event_id": "AHE-051",
+    "source_text_sha256": "5f07f7fa1cef6f5d818cfa3fc4f2afe8c22f93be9825a0ff28cecdc80558356c",
+    "source_text": "[45] The April order is not final.",
+    "constituent_labels": [
+      "C1",
+      "C2",
+      "C3",
+      "C4"
+    ],
+    "rendered_input": "Return a comma-separated subset of the Candidate labels, or NONE.\nEvent: final\nPassage:\n[45] The April order is not final.\nCandidates:\nC1: [45]\nC2: 45\nC3: The April order\nC4: order",
+    "rendered_input_sha256": "b53f402dc838a757e54cd8f395c6c8d848ab49afcb406e9c78a4fd9a6250c1e3"
+  },
+  "frozen_task_route": "best_choice_reselection",
+  "corrective_task": {
+    "event_id": "AHE-051",
+    "closure_route": "best_choice_reselection",
+    "corrected_instruction": "Return exactly one Candidate label for the single best candidate. Answer NONE only when no candidate fits. Do not add other text.",
+    "corrected_prompt": "Return exactly one Candidate label for the single best candidate. Answer NONE only when no candidate fits. Do not add other text.\nEvent: final\nPassage:\n[45] The April order is not final.\nCandidates:\nC1: [45]\nC2: 45\nC3: The April order\nC4: order",
+    "corrected_prompt_sha256": "d8c34fc3a959b2de09107755fd48b7b16407724ef8f236d03a3bdabe0fcdb07c",
+    "original_rendered_input_sha256": "b53f402dc838a757e54cd8f395c6c8d848ab49afcb406e9c78a4fd9a6250c1e3"
+  },
+  "event_frame": {
+    "event_id": "AHE-051",
+    "trigger": {
+      "start": 28,
+      "end": 33,
+      "text": "final"
+    },
+    "core_constituents": [
+      {
+        "start": 5,
+        "end": 20,
+        "text": "The April order"
+      }
+    ]
+  },
+  "composition_inputs": {
+    "tokens": [
+      {
+        "dependency_relation": "punct",
+        "end": 1,
+        "head_token_id": "t2",
+        "lemma": "[",
+        "part_of_speech": "PUNCT",
+        "sentence_id": "s1",
+        "start": 0,
+        "text": "[",
+        "token_id": "t1"
+      },
+      {
+        "dependency_relation": "discourse",
+        "end": 3,
+        "head_token_id": "t9",
+        "lemma": "45",
+        "part_of_speech": "NUM",
+        "sentence_id": "s1",
+        "start": 1,
+        "text": "45",
+        "token_id": "t2"
+      },
+      {
+        "dependency_relation": "punct",
+        "end": 4,
+        "head_token_id": "t2",
+        "lemma": "]",
+        "part_of_speech": "PUNCT",
+        "sentence_id": "s1",
+        "start": 3,
+        "text": "]",
+        "token_id": "t3"
+      },
+      {
+        "dependency_relation": "det",
+        "end": 8,
+        "head_token_id": "t6",
+        "lemma": "the",
+        "part_of_speech": "DET",
+        "sentence_id": "s1",
+        "start": 5,
+        "text": "The",
+        "token_id": "t4"
+      },
+      {
+        "dependency_relation": "compound",
+        "end": 14,
+        "head_token_id": "t6",
+        "lemma": "April",
+        "part_of_speech": "PROPN",
+        "sentence_id": "s1",
+        "start": 9,
+        "text": "April",
+        "token_id": "t5"
+      },
+      {
+        "dependency_relation": "nsubj",
+        "end": 20,
+        "head_token_id": "t9",
+        "lemma": "order",
+        "part_of_speech": "NOUN",
+        "sentence_id": "s1",
+        "start": 15,
+        "text": "order",
+        "token_id": "t6"
+      },
+      {
+        "dependency_relation": "cop",
+        "end": 23,
+        "head_token_id": "t9",
+        "lemma": "be",
+        "part_of_speech": "AUX",
+        "sentence_id": "s1",
+        "start": 21,
+        "text": "is",
+        "token_id": "t7"
+      },
+      {
+        "dependency_relation": "advmod",
+        "end": 27,
+        "head_token_id": "t9",
+        "lemma": "not",
+        "part_of_speech": "PART",
+        "sentence_id": "s1",
+        "start": 24,
+        "text": "not",
+        "token_id": "t8"
+      },
+      {
+        "dependency_relation": "root",
+        "end": 33,
+        "head_token_id": null,
+        "lemma": "final",
+        "part_of_speech": "ADJ",
+        "sentence_id": "s1",
+        "start": 28,
+        "text": "final",
+        "token_id": "t9"
+      },
+      {
+        "dependency_relation": "punct",
+        "end": 34,
+        "head_token_id": "t9",
+        "lemma": ".",
+        "part_of_speech": "PUNCT",
+        "sentence_id": "s1",
+        "start": 33,
+        "text": ".",
+        "token_id": "t10"
+      }
+    ],
+    "entities": [],
+    "tokens_provenance": "archived_R6_pinned_Stanza"
+  },
+  "provenance": [
+    {
+      "path": "data/r6-calibrated-residual-ownership-runs/run-005/tasks.json",
+      "sha256": "ceda539ecaff17eb4085bfda25a6c7688ade3578500344e1755e6623376de8d1"
+    },
+    {
+      "path": "data/r6-calibrated-residual-ownership-runs/run-005/selectable.json",
+      "sha256": "5dcb7e85ab2cfa4c1832a29ad7601ec007c290288da1f4d9569842b715aacd65"
+    },
+    {
+      "path": "data/r6-calibrated-residual-ownership-runs/run-005/frames.json",
+      "sha256": "3bae4077e8ef9e73291b3ae9d58edd064c5851d7ef67035f7ad122b730dc864f"
+    },
+    {
+      "path": "data/r6-calibrated-residual-ownership-runs/run-005/tokens.json",
+      "sha256": "0da884e2005d5a35aa93a43c451e308a8e0638afd0d0dda373a52dc0f166ab20"
+    },
+    {
+      "path": "data/r16-corrective-reselection-execution-runs/run-001/tasks.json",
+      "sha256": "71d94376dcc50e72affb457da6f39a7c97503e113016626168b659298dd6e634"
+    }
+  ],
+  "current_r4_composition_probe": {
+    "probe_kind": "deterministic shared composer; no model invocation",
+    "answer": {
+      "event_id": "AHE-051",
+      "status": "selected",
+      "selected_label_indexes": [
+        3
+      ]
+    },
+    "result": {
+      "event_id": "AHE-051",
+      "source_text_sha256": "5f07f7fa1cef6f5d818cfa3fc4f2afe8c22f93be9825a0ff28cecdc80558356c",
+      "relation_label": null,
+      "subject": null,
+      "object": null,
+      "polarity": null,
+      "modality": null,
+      "attribution": null,
+      "status": "held",
+      "hold_reason": "subject_unavailable"
+    },
+    "is_r17_readiness_signal": false
+  }
+}

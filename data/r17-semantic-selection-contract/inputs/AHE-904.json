@@ -1,0 +1,255 @@
+{
+  "event_id": "AHE-904",
+  "origin": "constructed",
+  "source_text": "Mira and Tomas signed the agreement.",
+  "source_text_sha256": "232c6f4301e900352ef2c386b5adce36b2d5b7dba08fa3c8b2944c362c7231ad",
+  "coordinate_system": "zero_based_source_characters_half_open",
+  "candidate_inventory": {
+    "event_id": "AHE-904",
+    "source_text_sha256": "232c6f4301e900352ef2c386b5adce36b2d5b7dba08fa3c8b2944c362c7231ad",
+    "constituents": [
+      {
+        "constituent_id": "pct_c3aca06d039bee0425293877",
+        "event_id": "AHE-904",
+        "source_text_sha256": "232c6f4301e900352ef2c386b5adce36b2d5b7dba08fa3c8b2944c362c7231ad",
+        "constituent_range": {
+          "start": 0,
+          "end": 4,
+          "text": "Mira"
+        },
+        "token_ids": [
+          "t1"
+        ]
+      },
+      {
+        "constituent_id": "pct_01c734e75236807a74b0115d",
+        "event_id": "AHE-904",
+        "source_text_sha256": "232c6f4301e900352ef2c386b5adce36b2d5b7dba08fa3c8b2944c362c7231ad",
+        "constituent_range": {
+          "start": 9,
+          "end": 14,
+          "text": "Tomas"
+        },
+        "token_ids": [
+          "t3"
+        ]
+      },
+      {
+        "constituent_id": "pct_abeef6b0f38ad10fb3cfc33f",
+        "event_id": "AHE-904",
+        "source_text_sha256": "232c6f4301e900352ef2c386b5adce36b2d5b7dba08fa3c8b2944c362c7231ad",
+        "constituent_range": {
+          "start": 22,
+          "end": 35,
+          "text": "the agreement"
+        },
+        "token_ids": [
+          "t5",
+          "t6"
+        ]
+      }
+    ]
+  },
+  "selection_task": {
+    "event_id": "AHE-904",
+    "source_text_sha256": "232c6f4301e900352ef2c386b5adce36b2d5b7dba08fa3c8b2944c362c7231ad",
+    "source_text": "Mira and Tomas signed the agreement.",
+    "constituent_labels": [
+      "C1",
+      "C2",
+      "C3"
+    ],
+    "rendered_input": "Return a comma-separated subset of the Candidate labels, or NONE.\nEvent: signed\nPassage:\nMira and Tomas signed the agreement.\nCandidates:\nC1: Mira\nC2: Tomas\nC3: the agreement",
+    "rendered_input_sha256": "b1b5d13cb9f7b145bb1edffc4c99fbda968bcd0cf0385f704f4630954d56c673"
+  },
+  "frozen_task_route": "label_only_reselection",
+  "corrective_task": {
+    "event_id": "AHE-904",
+    "closure_route": "label_only_reselection",
+    "corrected_instruction": "Return ONLY a comma-separated list of Candidate labels, for example C1 or C3. Do not write candidate text. Do not explain.",
+    "corrected_prompt": "Return ONLY a comma-separated list of Candidate labels, for example C1 or C3. Do not write candidate text. Do not explain.\nEvent: signed\nPassage:\nMira and Tomas signed the agreement.\nCandidates:\nC1: Mira\nC2: Tomas\nC3: the agreement",
+    "corrected_prompt_sha256": "1b1483ad0d951b0104cd089852ca92f09e1c6370ef6e2776ee5e2098ddf034f2",
+    "original_rendered_input_sha256": "b1b5d13cb9f7b145bb1edffc4c99fbda968bcd0cf0385f704f4630954d56c673"
+  },
+  "event_frame": {
+    "event_id": "AHE-904",
+    "trigger": {
+      "start": 15,
+      "end": 21,
+      "text": "signed"
+    },
+    "core_constituents": [
+      {
+        "start": 0,
+        "end": 4,
+        "text": "Mira"
+      },
+      {
+        "start": 9,
+        "end": 14,
+        "text": "Tomas"
+      },
+      {
+        "start": 22,
+        "end": 35,
+        "text": "the agreement"
+      }
+    ]
+  },
+  "composition_inputs": {
+    "tokens": [
+      {
+        "token_id": "t1",
+        "sentence_id": "s1",
+        "text": "Mira",
+        "start": 0,
+        "end": 4,
+        "lemma": "Mira",
+        "part_of_speech": "PROPN",
+        "dependency_relation": "nsubj",
+        "head_token_id": "t4"
+      },
+      {
+        "token_id": "t2",
+        "sentence_id": "s1",
+        "text": "and",
+        "start": 5,
+        "end": 8,
+        "lemma": "and",
+        "part_of_speech": "CCONJ",
+        "dependency_relation": "cc",
+        "head_token_id": "t3"
+      },
+      {
+        "token_id": "t3",
+        "sentence_id": "s1",
+        "text": "Tomas",
+        "start": 9,
+        "end": 14,
+        "lemma": "Tomas",
+        "part_of_speech": "PROPN",
+        "dependency_relation": "conj",
+        "head_token_id": "t1"
+      },
+      {
+        "token_id": "t4",
+        "sentence_id": "s1",
+        "text": "signed",
+        "start": 15,
+        "end": 21,
+        "lemma": "sign",
+        "part_of_speech": "VERB",
+        "dependency_relation": "root",
+        "head_token_id": null
+      },
+      {
+        "token_id": "t5",
+        "sentence_id": "s1",
+        "text": "the",
+        "start": 22,
+        "end": 25,
+        "lemma": "the",
+        "part_of_speech": "DET",
+        "dependency_relation": "det",
+        "head_token_id": "t6"
+      },
+      {
+        "token_id": "t6",
+        "sentence_id": "s1",
+        "text": "agreement",
+        "start": 26,
+        "end": 35,
+        "lemma": "agreement",
+        "part_of_speech": "NOUN",
+        "dependency_relation": "obj",
+        "head_token_id": "t4"
+      },
+      {
+        "token_id": "t7",
+        "sentence_id": "s1",
+        "text": ".",
+        "start": 35,
+        "end": 36,
+        "lemma": ".",
+        "part_of_speech": "PUNCT",
+        "dependency_relation": "punct",
+        "head_token_id": "t4"
+      }
+    ],
+    "entities": [
+      {
+        "entity_id": "EGE-901",
+        "entity_kind": "actor",
+        "canonical_name": "Mira",
+        "accepted_source_occurrences": [
+          {
+            "start": 0,
+            "end": 4,
+            "text": "Mira"
+          }
+        ]
+      },
+      {
+        "entity_id": "EGE-902",
+        "entity_kind": "actor",
+        "canonical_name": "Tomas",
+        "accepted_source_occurrences": [
+          {
+            "start": 9,
+            "end": 14,
+            "text": "Tomas"
+          }
+        ]
+      }
+    ],
+    "tokens_provenance": "agent_authored_controlled_fixture; not a Stanza execution"
+  },
+  "provenance": [],
+  "current_r4_composition_probe": {
+    "probe_kind": "deterministic shared composer; no model invocation",
+    "answer": {
+      "event_id": "AHE-904",
+      "status": "selected",
+      "selected_label_indexes": [
+        1,
+        2,
+        3
+      ]
+    },
+    "result": {
+      "event_id": "AHE-904",
+      "source_text_sha256": "232c6f4301e900352ef2c386b5adce36b2d5b7dba08fa3c8b2944c362c7231ad",
+      "relation_label": "sign",
+      "subject": {
+        "role": "subject",
+        "exact_fragment": {
+          "start": 0,
+          "end": 4,
+          "text": "Mira"
+        },
+        "entity_ref": "EGE-901",
+        "object_value": null
+      },
+      "object": {
+        "role": "object",
+        "exact_fragment": {
+          "start": 22,
+          "end": 35,
+          "text": "the agreement"
+        },
+        "entity_ref": null,
+        "object_value": "the agreement"
+      },
+      "polarity": "affirmed",
+      "modality": "actual",
+      "attribution": {
+        "kind": "source_narrator",
+        "exact_carrier": null,
+        "reporter_ref": null
+      },
+      "status": "proposition",
+      "hold_reason": null
+    },
+    "is_r17_readiness_signal": false
+  }
+}

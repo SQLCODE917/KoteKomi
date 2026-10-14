@@ -1,0 +1,232 @@
+{
+  "event_id": "AHE-902",
+  "origin": "constructed",
+  "source_text": "Mira arrived on Monday in Paris.",
+  "source_text_sha256": "8b00daec9258f4da6bcc926248ccbb2e80c79f4aef14c060c7ea7ffb6f6127dd",
+  "coordinate_system": "zero_based_source_characters_half_open",
+  "candidate_inventory": {
+    "event_id": "AHE-902",
+    "source_text_sha256": "8b00daec9258f4da6bcc926248ccbb2e80c79f4aef14c060c7ea7ffb6f6127dd",
+    "constituents": [
+      {
+        "constituent_id": "pct_e57dae006030201239106bf6",
+        "event_id": "AHE-902",
+        "source_text_sha256": "8b00daec9258f4da6bcc926248ccbb2e80c79f4aef14c060c7ea7ffb6f6127dd",
+        "constituent_range": {
+          "start": 0,
+          "end": 4,
+          "text": "Mira"
+        },
+        "token_ids": [
+          "t1"
+        ]
+      },
+      {
+        "constituent_id": "pct_ce8c43013c6bfc85d9e2577a",
+        "event_id": "AHE-902",
+        "source_text_sha256": "8b00daec9258f4da6bcc926248ccbb2e80c79f4aef14c060c7ea7ffb6f6127dd",
+        "constituent_range": {
+          "start": 16,
+          "end": 22,
+          "text": "Monday"
+        },
+        "token_ids": [
+          "t4"
+        ]
+      },
+      {
+        "constituent_id": "pct_b627121cf92f7fb856750539",
+        "event_id": "AHE-902",
+        "source_text_sha256": "8b00daec9258f4da6bcc926248ccbb2e80c79f4aef14c060c7ea7ffb6f6127dd",
+        "constituent_range": {
+          "start": 26,
+          "end": 31,
+          "text": "Paris"
+        },
+        "token_ids": [
+          "t6"
+        ]
+      }
+    ]
+  },
+  "selection_task": {
+    "event_id": "AHE-902",
+    "source_text_sha256": "8b00daec9258f4da6bcc926248ccbb2e80c79f4aef14c060c7ea7ffb6f6127dd",
+    "source_text": "Mira arrived on Monday in Paris.",
+    "constituent_labels": [
+      "C1",
+      "C2",
+      "C3"
+    ],
+    "rendered_input": "Return a comma-separated subset of the Candidate labels, or NONE.\nEvent: arrived\nPassage:\nMira arrived on Monday in Paris.\nCandidates:\nC1: Mira\nC2: Monday\nC3: Paris",
+    "rendered_input_sha256": "8ae738e6f6b2d7ab34c1bdc2c9ead9be2fdeaff209a19726326337a8d8af1127"
+  },
+  "frozen_task_route": "label_only_reselection",
+  "corrective_task": {
+    "event_id": "AHE-902",
+    "closure_route": "label_only_reselection",
+    "corrected_instruction": "Return ONLY a comma-separated list of Candidate labels, for example C1 or C3. Do not write candidate text. Do not explain.",
+    "corrected_prompt": "Return ONLY a comma-separated list of Candidate labels, for example C1 or C3. Do not write candidate text. Do not explain.\nEvent: arrived\nPassage:\nMira arrived on Monday in Paris.\nCandidates:\nC1: Mira\nC2: Monday\nC3: Paris",
+    "corrected_prompt_sha256": "292b83803ad1d940d58085cfbe1e2508c30eac1fe2c4e5db62e66cef58202914",
+    "original_rendered_input_sha256": "8ae738e6f6b2d7ab34c1bdc2c9ead9be2fdeaff209a19726326337a8d8af1127"
+  },
+  "event_frame": {
+    "event_id": "AHE-902",
+    "trigger": {
+      "start": 5,
+      "end": 12,
+      "text": "arrived"
+    },
+    "core_constituents": [
+      {
+        "start": 0,
+        "end": 4,
+        "text": "Mira"
+      }
+    ]
+  },
+  "composition_inputs": {
+    "tokens": [
+      {
+        "token_id": "t1",
+        "sentence_id": "s1",
+        "text": "Mira",
+        "start": 0,
+        "end": 4,
+        "lemma": "Mira",
+        "part_of_speech": "PROPN",
+        "dependency_relation": "nsubj",
+        "head_token_id": "t2"
+      },
+      {
+        "token_id": "t2",
+        "sentence_id": "s1",
+        "text": "arrived",
+        "start": 5,
+        "end": 12,
+        "lemma": "arrive",
+        "part_of_speech": "VERB",
+        "dependency_relation": "root",
+        "head_token_id": null
+      },
+      {
+        "token_id": "t3",
+        "sentence_id": "s1",
+        "text": "on",
+        "start": 13,
+        "end": 15,
+        "lemma": "on",
+        "part_of_speech": "ADP",
+        "dependency_relation": "case",
+        "head_token_id": "t4"
+      },
+      {
+        "token_id": "t4",
+        "sentence_id": "s1",
+        "text": "Monday",
+        "start": 16,
+        "end": 22,
+        "lemma": "Monday",
+        "part_of_speech": "PROPN",
+        "dependency_relation": "obl",
+        "head_token_id": "t2"
+      },
+      {
+        "token_id": "t5",
+        "sentence_id": "s1",
+        "text": "in",
+        "start": 23,
+        "end": 25,
+        "lemma": "in",
+        "part_of_speech": "ADP",
+        "dependency_relation": "case",
+        "head_token_id": "t6"
+      },
+      {
+        "token_id": "t6",
+        "sentence_id": "s1",
+        "text": "Paris",
+        "start": 26,
+        "end": 31,
+        "lemma": "Paris",
+        "part_of_speech": "PROPN",
+        "dependency_relation": "obl",
+        "head_token_id": "t2"
+      },
+      {
+        "token_id": "t7",
+        "sentence_id": "s1",
+        "text": ".",
+        "start": 31,
+        "end": 32,
+        "lemma": ".",
+        "part_of_speech": "PUNCT",
+        "dependency_relation": "punct",
+        "head_token_id": "t2"
+      }
+    ],
+    "entities": [
+      {
+        "entity_id": "EGE-901",
+        "entity_kind": "actor",
+        "canonical_name": "Mira",
+        "accepted_source_occurrences": [
+          {
+            "start": 0,
+            "end": 4,
+            "text": "Mira"
+          }
+        ]
+      }
+    ],
+    "tokens_provenance": "agent_authored_controlled_fixture; not a Stanza execution"
+  },
+  "provenance": [],
+  "current_r4_composition_probe": {
+    "probe_kind": "deterministic shared composer; no model invocation",
+    "answer": {
+      "event_id": "AHE-902",
+      "status": "selected",
+      "selected_label_indexes": [
+        1,
+        2,
+        3
+      ]
+    },
+    "result": {
+      "event_id": "AHE-902",
+      "source_text_sha256": "8b00daec9258f4da6bcc926248ccbb2e80c79f4aef14c060c7ea7ffb6f6127dd",
+      "relation_label": "arrive",
+      "subject": {
+        "role": "subject",
+        "exact_fragment": {
+          "start": 0,
+          "end": 4,
+          "text": "Mira"
+        },
+        "entity_ref": "EGE-901",
+        "object_value": null
+      },
+      "object": {
+        "role": "object",
+        "exact_fragment": {
+          "start": 16,
+          "end": 22,
+          "text": "Monday"
+        },
+        "entity_ref": null,
+        "object_value": "Monday"
+      },
+      "polarity": "affirmed",
+      "modality": "actual",
+      "attribution": {
+        "kind": "source_narrator",
+        "exact_carrier": null,
+        "reporter_ref": null
+      },
+      "status": "proposition",
+      "hold_reason": null
+    },
+    "is_r17_readiness_signal": false
+  }
+}

@@ -1,0 +1,1220 @@
+{
+  "event_id": "AHE-022",
+  "origin": "historical_diagnostic",
+  "source_text": "Sacks viewed Amodei's decision to attend the World Economic Forum over Trump's second inauguration; his hiring of Biden officials; and Anthropic's association with the philanthropic initiative Open Philanthropy as evidence that Anthropic would not support Trump's agenda.",
+  "source_text_sha256": "f5203eec5a0a146a39dc7e74438ec542884f230f9ca096c006c941979b29651f",
+  "coordinate_system": "zero_based_source_characters_half_open",
+  "candidate_inventory": {
+    "event_id": "AHE-022",
+    "source_text_sha256": "f5203eec5a0a146a39dc7e74438ec542884f230f9ca096c006c941979b29651f",
+    "constituents": [
+      {
+        "constituent_id": "pct_4ddf7e68538ac6cc77f3164c",
+        "event_id": "AHE-022",
+        "source_text_sha256": "f5203eec5a0a146a39dc7e74438ec542884f230f9ca096c006c941979b29651f",
+        "constituent_range": {
+          "start": 0,
+          "end": 5,
+          "text": "Sacks"
+        },
+        "token_ids": [
+          "t1"
+        ]
+      },
+      {
+        "constituent_id": "pct_3f96a80f5ebc0c52a540a6c9",
+        "event_id": "AHE-022",
+        "source_text_sha256": "f5203eec5a0a146a39dc7e74438ec542884f230f9ca096c006c941979b29651f",
+        "constituent_range": {
+          "start": 13,
+          "end": 21,
+          "text": "Amodei's"
+        },
+        "token_ids": [
+          "t3",
+          "t4"
+        ]
+      },
+      {
+        "constituent_id": "pct_71d061dbfed19a4e0e33f088",
+        "event_id": "AHE-022",
+        "source_text_sha256": "f5203eec5a0a146a39dc7e74438ec542884f230f9ca096c006c941979b29651f",
+        "constituent_range": {
+          "start": 13,
+          "end": 30,
+          "text": "Amodei's decision"
+        },
+        "token_ids": [
+          "t3",
+          "t4",
+          "t5"
+        ]
+      },
+      {
+        "constituent_id": "pct_bcaafda46ee0a99272b1cc5e",
+        "event_id": "AHE-022",
+        "source_text_sha256": "f5203eec5a0a146a39dc7e74438ec542884f230f9ca096c006c941979b29651f",
+        "constituent_range": {
+          "start": 22,
+          "end": 30,
+          "text": "decision"
+        },
+        "token_ids": [
+          "t5"
+        ]
+      },
+      {
+        "constituent_id": "pct_65abe411cd94cd6ac6959fc3",
+        "event_id": "AHE-022",
+        "source_text_sha256": "f5203eec5a0a146a39dc7e74438ec542884f230f9ca096c006c941979b29651f",
+        "constituent_range": {
+          "start": 31,
+          "end": 222,
+          "text": "to attend the World Economic Forum over Trump's second inauguration; his hiring of Biden officials; and Anthropic's association with the philanthropic initiative Open Philanthropy as evidence"
+        },
+        "token_ids": [
+          "t6",
+          "t7",
+          "t8",
+          "t9",
+          "t10",
+          "t11",
+          "t12",
+          "t13",
+          "t14",
+          "t15",
+          "t16",
+          "t17",
+          "t18",
+          "t19",
+          "t20",
+          "t21",
+          "t22",
+          "t23",
+          "t24",
+          "t25",
+          "t26",
+          "t27",
+          "t28",
+          "t29",
+          "t30",
+          "t31",
+          "t32",
+          "t33",
+          "t34",
+          "t35"
+        ]
+      },
+      {
+        "constituent_id": "pct_cf0df8f964c5bfc855c69c5a",
+        "event_id": "AHE-022",
+        "source_text_sha256": "f5203eec5a0a146a39dc7e74438ec542884f230f9ca096c006c941979b29651f",
+        "constituent_range": {
+          "start": 31,
+          "end": 270,
+          "text": "to attend the World Economic Forum over Trump's second inauguration; his hiring of Biden officials; and Anthropic's association with the philanthropic initiative Open Philanthropy as evidence that Anthropic would not support Trump's agenda"
+        },
+        "token_ids": [
+          "t6",
+          "t7",
+          "t8",
+          "t9",
+          "t10",
+          "t11",
+          "t12",
+          "t13",
+          "t14",
+          "t15",
+          "t16",
+          "t17",
+          "t18",
+          "t19",
+          "t20",
+          "t21",
+          "t22",
+          "t23",
+          "t24",
+          "t25",
+          "t26",
+          "t27",
+          "t28",
+          "t29",
+          "t30",
+          "t31",
+          "t32",
+          "t33",
+          "t34",
+          "t35",
+          "t36",
+          "t37",
+          "t38",
+          "t39",
+          "t40",
+          "t41",
+          "t42",
+          "t43"
+        ]
+      },
+      {
+        "constituent_id": "pct_ef17552380e9b4f1d7f0053b",
+        "event_id": "AHE-022",
+        "source_text_sha256": "f5203eec5a0a146a39dc7e74438ec542884f230f9ca096c006c941979b29651f",
+        "constituent_range": {
+          "start": 34,
+          "end": 40,
+          "text": "attend"
+        },
+        "token_ids": [
+          "t7"
+        ]
+      },
+      {
+        "constituent_id": "pct_b62ba1a992609dd8e15c61af",
+        "event_id": "AHE-022",
+        "source_text_sha256": "f5203eec5a0a146a39dc7e74438ec542884f230f9ca096c006c941979b29651f",
+        "constituent_range": {
+          "start": 41,
+          "end": 65,
+          "text": "the World Economic Forum"
+        },
+        "token_ids": [
+          "t8",
+          "t9",
+          "t10",
+          "t11"
+        ]
+      },
+      {
+        "constituent_id": "pct_33ce56658c7fa038f5f3fc82",
+        "event_id": "AHE-022",
+        "source_text_sha256": "f5203eec5a0a146a39dc7e74438ec542884f230f9ca096c006c941979b29651f",
+        "constituent_range": {
+          "start": 45,
+          "end": 50,
+          "text": "World"
+        },
+        "token_ids": [
+          "t9"
+        ]
+      },
+      {
+        "constituent_id": "pct_237273145b50cbaaee9db0c1",
+        "event_id": "AHE-022",
+        "source_text_sha256": "f5203eec5a0a146a39dc7e74438ec542884f230f9ca096c006c941979b29651f",
+        "constituent_range": {
+          "start": 51,
+          "end": 59,
+          "text": "Economic"
+        },
+        "token_ids": [
+          "t10"
+        ]
+      },
+      {
+        "constituent_id": "pct_e296b8a4cb7277e3c0caa162",
+        "event_id": "AHE-022",
+        "source_text_sha256": "f5203eec5a0a146a39dc7e74438ec542884f230f9ca096c006c941979b29651f",
+        "constituent_range": {
+          "start": 60,
+          "end": 65,
+          "text": "Forum"
+        },
+        "token_ids": [
+          "t11"
+        ]
+      },
+      {
+        "constituent_id": "pct_ccdc7366eff75fa2789f8397",
+        "event_id": "AHE-022",
+        "source_text_sha256": "f5203eec5a0a146a39dc7e74438ec542884f230f9ca096c006c941979b29651f",
+        "constituent_range": {
+          "start": 66,
+          "end": 222,
+          "text": "over Trump's second inauguration; his hiring of Biden officials; and Anthropic's association with the philanthropic initiative Open Philanthropy as evidence"
+        },
+        "token_ids": [
+          "t12",
+          "t13",
+          "t14",
+          "t15",
+          "t16",
+          "t17",
+          "t18",
+          "t19",
+          "t20",
+          "t21",
+          "t22",
+          "t23",
+          "t24",
+          "t25",
+          "t26",
+          "t27",
+          "t28",
+          "t29",
+          "t30",
+          "t31",
+          "t32",
+          "t33",
+          "t34",
+          "t35"
+        ]
+      },
+      {
+        "constituent_id": "pct_6a4015c0b422727ca63bde30",
+        "event_id": "AHE-022",
+        "source_text_sha256": "f5203eec5a0a146a39dc7e74438ec542884f230f9ca096c006c941979b29651f",
+        "constituent_range": {
+          "start": 71,
+          "end": 78,
+          "text": "Trump's"
+        },
+        "token_ids": [
+          "t13",
+          "t14"
+        ]
+      },
+      {
+        "constituent_id": "pct_b10e6ea82fe519a6a52c040b",
+        "event_id": "AHE-022",
+        "source_text_sha256": "f5203eec5a0a146a39dc7e74438ec542884f230f9ca096c006c941979b29651f",
+        "constituent_range": {
+          "start": 79,
+          "end": 85,
+          "text": "second"
+        },
+        "token_ids": [
+          "t15"
+        ]
+      },
+      {
+        "constituent_id": "pct_d9a6c496424d7da9d423f757",
+        "event_id": "AHE-022",
+        "source_text_sha256": "f5203eec5a0a146a39dc7e74438ec542884f230f9ca096c006c941979b29651f",
+        "constituent_range": {
+          "start": 86,
+          "end": 98,
+          "text": "inauguration"
+        },
+        "token_ids": [
+          "t16"
+        ]
+      },
+      {
+        "constituent_id": "pct_4764b1fc961b2cb0b524690b",
+        "event_id": "AHE-022",
+        "source_text_sha256": "f5203eec5a0a146a39dc7e74438ec542884f230f9ca096c006c941979b29651f",
+        "constituent_range": {
+          "start": 98,
+          "end": 222,
+          "text": "; his hiring of Biden officials; and Anthropic's association with the philanthropic initiative Open Philanthropy as evidence"
+        },
+        "token_ids": [
+          "t17",
+          "t18",
+          "t19",
+          "t20",
+          "t21",
+          "t22",
+          "t23",
+          "t24",
+          "t25",
+          "t26",
+          "t27",
+          "t28",
+          "t29",
+          "t30",
+          "t31",
+          "t32",
+          "t33",
+          "t34",
+          "t35"
+        ]
+      },
+      {
+        "constituent_id": "pct_a7abeb844e18f9f95599b779",
+        "event_id": "AHE-022",
+        "source_text_sha256": "f5203eec5a0a146a39dc7e74438ec542884f230f9ca096c006c941979b29651f",
+        "constituent_range": {
+          "start": 100,
+          "end": 103,
+          "text": "his"
+        },
+        "token_ids": [
+          "t18"
+        ]
+      },
+      {
+        "constituent_id": "pct_4df5f387ee7163db5a83ad6d",
+        "event_id": "AHE-022",
+        "source_text_sha256": "f5203eec5a0a146a39dc7e74438ec542884f230f9ca096c006c941979b29651f",
+        "constituent_range": {
+          "start": 104,
+          "end": 110,
+          "text": "hiring"
+        },
+        "token_ids": [
+          "t19"
+        ]
+      },
+      {
+        "constituent_id": "pct_06917b991422eaeb1a31e99b",
+        "event_id": "AHE-022",
+        "source_text_sha256": "f5203eec5a0a146a39dc7e74438ec542884f230f9ca096c006c941979b29651f",
+        "constituent_range": {
+          "start": 111,
+          "end": 129,
+          "text": "of Biden officials"
+        },
+        "token_ids": [
+          "t20",
+          "t21",
+          "t22"
+        ]
+      },
+      {
+        "constituent_id": "pct_3e8e892734d959e40502fa31",
+        "event_id": "AHE-022",
+        "source_text_sha256": "f5203eec5a0a146a39dc7e74438ec542884f230f9ca096c006c941979b29651f",
+        "constituent_range": {
+          "start": 114,
+          "end": 119,
+          "text": "Biden"
+        },
+        "token_ids": [
+          "t21"
+        ]
+      },
+      {
+        "constituent_id": "pct_93cbe4afc36065f035c7c06d",
+        "event_id": "AHE-022",
+        "source_text_sha256": "f5203eec5a0a146a39dc7e74438ec542884f230f9ca096c006c941979b29651f",
+        "constituent_range": {
+          "start": 120,
+          "end": 129,
+          "text": "officials"
+        },
+        "token_ids": [
+          "t22"
+        ]
+      },
+      {
+        "constituent_id": "pct_69e8f4fa6a405543298b7f25",
+        "event_id": "AHE-022",
+        "source_text_sha256": "f5203eec5a0a146a39dc7e74438ec542884f230f9ca096c006c941979b29651f",
+        "constituent_range": {
+          "start": 129,
+          "end": 222,
+          "text": "; and Anthropic's association with the philanthropic initiative Open Philanthropy as evidence"
+        },
+        "token_ids": [
+          "t23",
+          "t24",
+          "t25",
+          "t26",
+          "t27",
+          "t28",
+          "t29",
+          "t30",
+          "t31",
+          "t32",
+          "t33",
+          "t34",
+          "t35"
+        ]
+      },
+      {
+        "constituent_id": "pct_c009a0c4a6940ee5d45a4fa3",
+        "event_id": "AHE-022",
+        "source_text_sha256": "f5203eec5a0a146a39dc7e74438ec542884f230f9ca096c006c941979b29651f",
+        "constituent_range": {
+          "start": 135,
+          "end": 146,
+          "text": "Anthropic's"
+        },
+        "token_ids": [
+          "t25",
+          "t26"
+        ]
+      },
+      {
+        "constituent_id": "pct_21bf8901b18b7129945eb3fb",
+        "event_id": "AHE-022",
+        "source_text_sha256": "f5203eec5a0a146a39dc7e74438ec542884f230f9ca096c006c941979b29651f",
+        "constituent_range": {
+          "start": 147,
+          "end": 158,
+          "text": "association"
+        },
+        "token_ids": [
+          "t27"
+        ]
+      },
+      {
+        "constituent_id": "pct_fcac168180665d83d5cd4326",
+        "event_id": "AHE-022",
+        "source_text_sha256": "f5203eec5a0a146a39dc7e74438ec542884f230f9ca096c006c941979b29651f",
+        "constituent_range": {
+          "start": 159,
+          "end": 192,
+          "text": "with the philanthropic initiative"
+        },
+        "token_ids": [
+          "t28",
+          "t29",
+          "t30",
+          "t31"
+        ]
+      },
+      {
+        "constituent_id": "pct_4a04e5fde71860b7104f1e97",
+        "event_id": "AHE-022",
+        "source_text_sha256": "f5203eec5a0a146a39dc7e74438ec542884f230f9ca096c006c941979b29651f",
+        "constituent_range": {
+          "start": 168,
+          "end": 181,
+          "text": "philanthropic"
+        },
+        "token_ids": [
+          "t30"
+        ]
+      },
+      {
+        "constituent_id": "pct_4edd286adaad2d1acf3273d6",
+        "event_id": "AHE-022",
+        "source_text_sha256": "f5203eec5a0a146a39dc7e74438ec542884f230f9ca096c006c941979b29651f",
+        "constituent_range": {
+          "start": 182,
+          "end": 192,
+          "text": "initiative"
+        },
+        "token_ids": [
+          "t31"
+        ]
+      },
+      {
+        "constituent_id": "pct_f3ba48e0149b1e08cc6b04e6",
+        "event_id": "AHE-022",
+        "source_text_sha256": "f5203eec5a0a146a39dc7e74438ec542884f230f9ca096c006c941979b29651f",
+        "constituent_range": {
+          "start": 193,
+          "end": 197,
+          "text": "Open"
+        },
+        "token_ids": [
+          "t32"
+        ]
+      },
+      {
+        "constituent_id": "pct_bc7e62d4a7325c1ddb86ef81",
+        "event_id": "AHE-022",
+        "source_text_sha256": "f5203eec5a0a146a39dc7e74438ec542884f230f9ca096c006c941979b29651f",
+        "constituent_range": {
+          "start": 193,
+          "end": 210,
+          "text": "Open Philanthropy"
+        },
+        "token_ids": [
+          "t32",
+          "t33"
+        ]
+      },
+      {
+        "constituent_id": "pct_fb8ebdbfbac4fbb54469e0c7",
+        "event_id": "AHE-022",
+        "source_text_sha256": "f5203eec5a0a146a39dc7e74438ec542884f230f9ca096c006c941979b29651f",
+        "constituent_range": {
+          "start": 198,
+          "end": 210,
+          "text": "Philanthropy"
+        },
+        "token_ids": [
+          "t33"
+        ]
+      },
+      {
+        "constituent_id": "pct_85bf98c83c40ee8e2ab685b3",
+        "event_id": "AHE-022",
+        "source_text_sha256": "f5203eec5a0a146a39dc7e74438ec542884f230f9ca096c006c941979b29651f",
+        "constituent_range": {
+          "start": 211,
+          "end": 222,
+          "text": "as evidence"
+        },
+        "token_ids": [
+          "t34",
+          "t35"
+        ]
+      },
+      {
+        "constituent_id": "pct_5035d90f7ec3151cc00433e8",
+        "event_id": "AHE-022",
+        "source_text_sha256": "f5203eec5a0a146a39dc7e74438ec542884f230f9ca096c006c941979b29651f",
+        "constituent_range": {
+          "start": 223,
+          "end": 270,
+          "text": "that Anthropic would not support Trump's agenda"
+        },
+        "token_ids": [
+          "t36",
+          "t37",
+          "t38",
+          "t39",
+          "t40",
+          "t41",
+          "t42",
+          "t43"
+        ]
+      },
+      {
+        "constituent_id": "pct_38ba2942b477b2253da547b6",
+        "event_id": "AHE-022",
+        "source_text_sha256": "f5203eec5a0a146a39dc7e74438ec542884f230f9ca096c006c941979b29651f",
+        "constituent_range": {
+          "start": 248,
+          "end": 255,
+          "text": "support"
+        },
+        "token_ids": [
+          "t40"
+        ]
+      },
+      {
+        "constituent_id": "pct_c23517edc9025093bcf932ea",
+        "event_id": "AHE-022",
+        "source_text_sha256": "f5203eec5a0a146a39dc7e74438ec542884f230f9ca096c006c941979b29651f",
+        "constituent_range": {
+          "start": 256,
+          "end": 270,
+          "text": "Trump's agenda"
+        },
+        "token_ids": [
+          "t41",
+          "t42",
+          "t43"
+        ]
+      },
+      {
+        "constituent_id": "pct_3a143089625fc513cd27ef92",
+        "event_id": "AHE-022",
+        "source_text_sha256": "f5203eec5a0a146a39dc7e74438ec542884f230f9ca096c006c941979b29651f",
+        "constituent_range": {
+          "start": 264,
+          "end": 270,
+          "text": "agenda"
+        },
+        "token_ids": [
+          "t43"
+        ]
+      }
+    ]
+  },
+  "selection_task": {
+    "event_id": "AHE-022",
+    "source_text_sha256": "f5203eec5a0a146a39dc7e74438ec542884f230f9ca096c006c941979b29651f",
+    "source_text": "Sacks viewed Amodei's decision to attend the World Economic Forum over Trump's second inauguration; his hiring of Biden officials; and Anthropic's association with the philanthropic initiative Open Philanthropy as evidence that Anthropic would not support Trump's agenda.",
+    "constituent_labels": [
+      "C1",
+      "C2",
+      "C3",
+      "C4",
+      "C5",
+      "C6",
+      "C7",
+      "C8",
+      "C9",
+      "C10",
+      "C11",
+      "C12",
+      "C13",
+      "C14",
+      "C15",
+      "C16",
+      "C17",
+      "C18",
+      "C19",
+      "C20",
+      "C21",
+      "C22",
+      "C23",
+      "C24",
+      "C25",
+      "C26",
+      "C27",
+      "C28",
+      "C29",
+      "C30",
+      "C31",
+      "C32",
+      "C33",
+      "C34",
+      "C35"
+    ],
+    "rendered_input": "Return a comma-separated subset of the Candidate labels, or NONE.\nEvent: viewed\nPassage:\nSacks viewed Amodei's decision to attend the World Economic Forum over Trump's second inauguration; his hiring of Biden officials; and Anthropic's association with the philanthropic initiative Open Philanthropy as evidence that Anthropic would not support Trump's agenda.\nCandidates:\nC1: Sacks\nC2: Amodei's\nC3: Amodei's decision\nC4: decision\nC5: to attend the World Economic Forum over Trump's second inauguration; his hiring of Biden officials; and Anthropic's association with the philanthropic initiative Open Philanthropy as evidence\nC6: to attend the World Economic Forum over Trump's second inauguration; his hiring of Biden officials; and Anthropic's association with the philanthropic initiative Open Philanthropy as evidence that Anthropic would not support Trump's agenda\nC7: attend\nC8: the World Economic Forum\nC9: World\nC10: Economic\nC11: Forum\nC12: over Trump's second inauguration; his hiring of Biden officials; and Anthropic's association with the philanthropic initiative Open Philanthropy as evidence\nC13: Trump's\nC14: second\nC15: inauguration\nC16: ; his hiring of Biden officials; and Anthropic's association with the philanthropic initiative Open Philanthropy as evidence\nC17: his\nC18: hiring\nC19: of Biden officials\nC20: Biden\nC21: officials\nC22: ; and Anthropic's association with the philanthropic initiative Open Philanthropy as evidence\nC23: Anthropic's\nC24: association\nC25: with the philanthropic initiative\nC26: philanthropic\nC27: initiative\nC28: Open\nC29: Open Philanthropy\nC30: Philanthropy\nC31: as evidence\nC32: that Anthropic would not support Trump's agenda\nC33: support\nC34: Trump's agenda\nC35: agenda",
+    "rendered_input_sha256": "df4e0c03cf9fc34c78ea6e4e5184fdf23be811dbae5b0bca90516cbe2a5721b9"
+  },
+  "frozen_task_route": "label_only_reselection",
+  "corrective_task": {
+    "event_id": "AHE-022",
+    "closure_route": "label_only_reselection",
+    "corrected_instruction": "Return ONLY a comma-separated list of Candidate labels, for example C1 or C3. Do not write candidate text. Do not explain.",
+    "corrected_prompt": "Return ONLY a comma-separated list of Candidate labels, for example C1 or C3. Do not write candidate text. Do not explain.\nEvent: viewed\nPassage:\nSacks viewed Amodei's decision to attend the World Economic Forum over Trump's second inauguration; his hiring of Biden officials; and Anthropic's association with the philanthropic initiative Open Philanthropy as evidence that Anthropic would not support Trump's agenda.\nCandidates:\nC1: Sacks\nC2: Amodei's\nC3: Amodei's decision\nC4: decision\nC5: to attend the World Economic Forum over Trump's second inauguration; his hiring of Biden officials; and Anthropic's association with the philanthropic initiative Open Philanthropy as evidence\nC6: to attend the World Economic Forum over Trump's second inauguration; his hiring of Biden officials; and Anthropic's association with the philanthropic initiative Open Philanthropy as evidence that Anthropic would not support Trump's agenda\nC7: attend\nC8: the World Economic Forum\nC9: World\nC10: Economic\nC11: Forum\nC12: over Trump's second inauguration; his hiring of Biden officials; and Anthropic's association with the philanthropic initiative Open Philanthropy as evidence\nC13: Trump's\nC14: second\nC15: inauguration\nC16: ; his hiring of Biden officials; and Anthropic's association with the philanthropic initiative Open Philanthropy as evidence\nC17: his\nC18: hiring\nC19: of Biden officials\nC20: Biden\nC21: officials\nC22: ; and Anthropic's association with the philanthropic initiative Open Philanthropy as evidence\nC23: Anthropic's\nC24: association\nC25: with the philanthropic initiative\nC26: philanthropic\nC27: initiative\nC28: Open\nC29: Open Philanthropy\nC30: Philanthropy\nC31: as evidence\nC32: that Anthropic would not support Trump's agenda\nC33: support\nC34: Trump's agenda\nC35: agenda",
+    "corrected_prompt_sha256": "2371ae2cb471a4d1e27bbb42c66e0841c312195ff0033684574dbcf5ffe55897",
+    "original_rendered_input_sha256": "df4e0c03cf9fc34c78ea6e4e5184fdf23be811dbae5b0bca90516cbe2a5721b9"
+  },
+  "event_frame": {
+    "event_id": "AHE-022",
+    "trigger": {
+      "start": 6,
+      "end": 12,
+      "text": "viewed"
+    },
+    "core_constituents": [
+      {
+        "start": 0,
+        "end": 5,
+        "text": "Sacks"
+      },
+      {
+        "start": 13,
+        "end": 30,
+        "text": "Amodei's decision"
+      }
+    ]
+  },
+  "composition_inputs": {
+    "tokens": [
+      {
+        "dependency_relation": "nsubj",
+        "end": 5,
+        "head_token_id": "t2",
+        "lemma": "Sacks",
+        "part_of_speech": "PROPN",
+        "sentence_id": "s1",
+        "start": 0,
+        "text": "Sacks",
+        "token_id": "t1"
+      },
+      {
+        "dependency_relation": "root",
+        "end": 12,
+        "head_token_id": null,
+        "lemma": "view",
+        "part_of_speech": "VERB",
+        "sentence_id": "s1",
+        "start": 6,
+        "text": "viewed",
+        "token_id": "t2"
+      },
+      {
+        "dependency_relation": "nmod:poss",
+        "end": 19,
+        "head_token_id": "t5",
+        "lemma": "Amodei",
+        "part_of_speech": "PROPN",
+        "sentence_id": "s1",
+        "start": 13,
+        "text": "Amodei",
+        "token_id": "t3"
+      },
+      {
+        "dependency_relation": "case",
+        "end": 21,
+        "head_token_id": "t3",
+        "lemma": "'s",
+        "part_of_speech": "PART",
+        "sentence_id": "s1",
+        "start": 19,
+        "text": "'s",
+        "token_id": "t4"
+      },
+      {
+        "dependency_relation": "obj",
+        "end": 30,
+        "head_token_id": "t2",
+        "lemma": "decision",
+        "part_of_speech": "NOUN",
+        "sentence_id": "s1",
+        "start": 22,
+        "text": "decision",
+        "token_id": "t5"
+      },
+      {
+        "dependency_relation": "mark",
+        "end": 33,
+        "head_token_id": "t7",
+        "lemma": "to",
+        "part_of_speech": "PART",
+        "sentence_id": "s1",
+        "start": 31,
+        "text": "to",
+        "token_id": "t6"
+      },
+      {
+        "dependency_relation": "acl",
+        "end": 40,
+        "head_token_id": "t5",
+        "lemma": "attend",
+        "part_of_speech": "VERB",
+        "sentence_id": "s1",
+        "start": 34,
+        "text": "attend",
+        "token_id": "t7"
+      },
+      {
+        "dependency_relation": "det",
+        "end": 44,
+        "head_token_id": "t11",
+        "lemma": "the",
+        "part_of_speech": "DET",
+        "sentence_id": "s1",
+        "start": 41,
+        "text": "the",
+        "token_id": "t8"
+      },
+      {
+        "dependency_relation": "compound",
+        "end": 50,
+        "head_token_id": "t11",
+        "lemma": "World",
+        "part_of_speech": "PROPN",
+        "sentence_id": "s1",
+        "start": 45,
+        "text": "World",
+        "token_id": "t9"
+      },
+      {
+        "dependency_relation": "amod",
+        "end": 59,
+        "head_token_id": "t11",
+        "lemma": "Economic",
+        "part_of_speech": "ADJ",
+        "sentence_id": "s1",
+        "start": 51,
+        "text": "Economic",
+        "token_id": "t10"
+      },
+      {
+        "dependency_relation": "obj",
+        "end": 65,
+        "head_token_id": "t7",
+        "lemma": "Forum",
+        "part_of_speech": "PROPN",
+        "sentence_id": "s1",
+        "start": 60,
+        "text": "Forum",
+        "token_id": "t11"
+      },
+      {
+        "dependency_relation": "case",
+        "end": 70,
+        "head_token_id": "t16",
+        "lemma": "over",
+        "part_of_speech": "ADP",
+        "sentence_id": "s1",
+        "start": 66,
+        "text": "over",
+        "token_id": "t12"
+      },
+      {
+        "dependency_relation": "nmod:poss",
+        "end": 76,
+        "head_token_id": "t16",
+        "lemma": "Trump",
+        "part_of_speech": "PROPN",
+        "sentence_id": "s1",
+        "start": 71,
+        "text": "Trump",
+        "token_id": "t13"
+      },
+      {
+        "dependency_relation": "case",
+        "end": 78,
+        "head_token_id": "t13",
+        "lemma": "'s",
+        "part_of_speech": "PART",
+        "sentence_id": "s1",
+        "start": 76,
+        "text": "'s",
+        "token_id": "t14"
+      },
+      {
+        "dependency_relation": "amod",
+        "end": 85,
+        "head_token_id": "t16",
+        "lemma": "second",
+        "part_of_speech": "ADJ",
+        "sentence_id": "s1",
+        "start": 79,
+        "text": "second",
+        "token_id": "t15"
+      },
+      {
+        "dependency_relation": "obl",
+        "end": 98,
+        "head_token_id": "t7",
+        "lemma": "inauguration",
+        "part_of_speech": "NOUN",
+        "sentence_id": "s1",
+        "start": 86,
+        "text": "inauguration",
+        "token_id": "t16"
+      },
+      {
+        "dependency_relation": "punct",
+        "end": 99,
+        "head_token_id": "t19",
+        "lemma": ";",
+        "part_of_speech": "PUNCT",
+        "sentence_id": "s1",
+        "start": 98,
+        "text": ";",
+        "token_id": "t17"
+      },
+      {
+        "dependency_relation": "nmod:poss",
+        "end": 103,
+        "head_token_id": "t19",
+        "lemma": "his",
+        "part_of_speech": "PRON",
+        "sentence_id": "s1",
+        "start": 100,
+        "text": "his",
+        "token_id": "t18"
+      },
+      {
+        "dependency_relation": "appos",
+        "end": 110,
+        "head_token_id": "t16",
+        "lemma": "hire",
+        "part_of_speech": "NOUN",
+        "sentence_id": "s1",
+        "start": 104,
+        "text": "hiring",
+        "token_id": "t19"
+      },
+      {
+        "dependency_relation": "case",
+        "end": 113,
+        "head_token_id": "t22",
+        "lemma": "of",
+        "part_of_speech": "ADP",
+        "sentence_id": "s1",
+        "start": 111,
+        "text": "of",
+        "token_id": "t20"
+      },
+      {
+        "dependency_relation": "compound",
+        "end": 119,
+        "head_token_id": "t22",
+        "lemma": "Biden",
+        "part_of_speech": "PROPN",
+        "sentence_id": "s1",
+        "start": 114,
+        "text": "Biden",
+        "token_id": "t21"
+      },
+      {
+        "dependency_relation": "nmod",
+        "end": 129,
+        "head_token_id": "t19",
+        "lemma": "official",
+        "part_of_speech": "NOUN",
+        "sentence_id": "s1",
+        "start": 120,
+        "text": "officials",
+        "token_id": "t22"
+      },
+      {
+        "dependency_relation": "punct",
+        "end": 130,
+        "head_token_id": "t27",
+        "lemma": ";",
+        "part_of_speech": "PUNCT",
+        "sentence_id": "s1",
+        "start": 129,
+        "text": ";",
+        "token_id": "t23"
+      },
+      {
+        "dependency_relation": "cc",
+        "end": 134,
+        "head_token_id": "t27",
+        "lemma": "and",
+        "part_of_speech": "CCONJ",
+        "sentence_id": "s1",
+        "start": 131,
+        "text": "and",
+        "token_id": "t24"
+      },
+      {
+        "dependency_relation": "nmod:poss",
+        "end": 144,
+        "head_token_id": "t27",
+        "lemma": "Anthropic",
+        "part_of_speech": "PROPN",
+        "sentence_id": "s1",
+        "start": 135,
+        "text": "Anthropic",
+        "token_id": "t25"
+      },
+      {
+        "dependency_relation": "case",
+        "end": 146,
+        "head_token_id": "t25",
+        "lemma": "'s",
+        "part_of_speech": "PART",
+        "sentence_id": "s1",
+        "start": 144,
+        "text": "'s",
+        "token_id": "t26"
+      },
+      {
+        "dependency_relation": "conj",
+        "end": 158,
+        "head_token_id": "t19",
+        "lemma": "association",
+        "part_of_speech": "NOUN",
+        "sentence_id": "s1",
+        "start": 147,
+        "text": "association",
+        "token_id": "t27"
+      },
+      {
+        "dependency_relation": "case",
+        "end": 163,
+        "head_token_id": "t31",
+        "lemma": "with",
+        "part_of_speech": "ADP",
+        "sentence_id": "s1",
+        "start": 159,
+        "text": "with",
+        "token_id": "t28"
+      },
+      {
+        "dependency_relation": "det",
+        "end": 167,
+        "head_token_id": "t31",
+        "lemma": "the",
+        "part_of_speech": "DET",
+        "sentence_id": "s1",
+        "start": 164,
+        "text": "the",
+        "token_id": "t29"
+      },
+      {
+        "dependency_relation": "amod",
+        "end": 181,
+        "head_token_id": "t31",
+        "lemma": "philanthropic",
+        "part_of_speech": "ADJ",
+        "sentence_id": "s1",
+        "start": 168,
+        "text": "philanthropic",
+        "token_id": "t30"
+      },
+      {
+        "dependency_relation": "nmod",
+        "end": 192,
+        "head_token_id": "t27",
+        "lemma": "initiative",
+        "part_of_speech": "NOUN",
+        "sentence_id": "s1",
+        "start": 182,
+        "text": "initiative",
+        "token_id": "t31"
+      },
+      {
+        "dependency_relation": "amod",
+        "end": 197,
+        "head_token_id": "t33",
+        "lemma": "open",
+        "part_of_speech": "ADJ",
+        "sentence_id": "s1",
+        "start": 193,
+        "text": "Open",
+        "token_id": "t32"
+      },
+      {
+        "dependency_relation": "nmod",
+        "end": 210,
+        "head_token_id": "t27",
+        "lemma": "Philanthropy",
+        "part_of_speech": "PROPN",
+        "sentence_id": "s1",
+        "start": 198,
+        "text": "Philanthropy",
+        "token_id": "t33"
+      },
+      {
+        "dependency_relation": "case",
+        "end": 213,
+        "head_token_id": "t35",
+        "lemma": "as",
+        "part_of_speech": "ADP",
+        "sentence_id": "s1",
+        "start": 211,
+        "text": "as",
+        "token_id": "t34"
+      },
+      {
+        "dependency_relation": "nmod",
+        "end": 222,
+        "head_token_id": "t27",
+        "lemma": "evidence",
+        "part_of_speech": "NOUN",
+        "sentence_id": "s1",
+        "start": 214,
+        "text": "evidence",
+        "token_id": "t35"
+      },
+      {
+        "dependency_relation": "mark",
+        "end": 227,
+        "head_token_id": "t40",
+        "lemma": "that",
+        "part_of_speech": "SCONJ",
+        "sentence_id": "s1",
+        "start": 223,
+        "text": "that",
+        "token_id": "t36"
+      },
+      {
+        "dependency_relation": "nsubj",
+        "end": 237,
+        "head_token_id": "t40",
+        "lemma": "Anthropic",
+        "part_of_speech": "PROPN",
+        "sentence_id": "s1",
+        "start": 228,
+        "text": "Anthropic",
+        "token_id": "t37"
+      },
+      {
+        "dependency_relation": "aux",
+        "end": 243,
+        "head_token_id": "t40",
+        "lemma": "would",
+        "part_of_speech": "AUX",
+        "sentence_id": "s1",
+        "start": 238,
+        "text": "would",
+        "token_id": "t38"
+      },
+      {
+        "dependency_relation": "advmod",
+        "end": 247,
+        "head_token_id": "t40",
+        "lemma": "not",
+        "part_of_speech": "PART",
+        "sentence_id": "s1",
+        "start": 244,
+        "text": "not",
+        "token_id": "t39"
+      },
+      {
+        "dependency_relation": "acl",
+        "end": 255,
+        "head_token_id": "t35",
+        "lemma": "support",
+        "part_of_speech": "VERB",
+        "sentence_id": "s1",
+        "start": 248,
+        "text": "support",
+        "token_id": "t40"
+      },
+      {
+        "dependency_relation": "nmod:poss",
+        "end": 261,
+        "head_token_id": "t43",
+        "lemma": "Trump",
+        "part_of_speech": "PROPN",
+        "sentence_id": "s1",
+        "start": 256,
+        "text": "Trump",
+        "token_id": "t41"
+      },
+      {
+        "dependency_relation": "case",
+        "end": 263,
+        "head_token_id": "t41",
+        "lemma": "'s",
+        "part_of_speech": "PART",
+        "sentence_id": "s1",
+        "start": 261,
+        "text": "'s",
+        "token_id": "t42"
+      },
+      {
+        "dependency_relation": "obj",
+        "end": 270,
+        "head_token_id": "t40",
+        "lemma": "agenda",
+        "part_of_speech": "NOUN",
+        "sentence_id": "s1",
+        "start": 264,
+        "text": "agenda",
+        "token_id": "t43"
+      },
+      {
+        "dependency_relation": "punct",
+        "end": 271,
+        "head_token_id": "t2",
+        "lemma": ".",
+        "part_of_speech": "PUNCT",
+        "sentence_id": "s1",
+        "start": 270,
+        "text": ".",
+        "token_id": "t44"
+      }
+    ],
+    "entities": [],
+    "tokens_provenance": "archived_R6_pinned_Stanza"
+  },
+  "provenance": [
+    {
+      "path": "data/r6-calibrated-residual-ownership-runs/run-005/tasks.json",
+      "sha256": "ceda539ecaff17eb4085bfda25a6c7688ade3578500344e1755e6623376de8d1"
+    },
+    {
+      "path": "data/r6-calibrated-residual-ownership-runs/run-005/selectable.json",
+      "sha256": "5dcb7e85ab2cfa4c1832a29ad7601ec007c290288da1f4d9569842b715aacd65"
+    },
+    {
+      "path": "data/r6-calibrated-residual-ownership-runs/run-005/frames.json",
+      "sha256": "3bae4077e8ef9e73291b3ae9d58edd064c5851d7ef67035f7ad122b730dc864f"
+    },
+    {
+      "path": "data/r6-calibrated-residual-ownership-runs/run-005/tokens.json",
+      "sha256": "0da884e2005d5a35aa93a43c451e308a8e0638afd0d0dda373a52dc0f166ab20"
+    },
+    {
+      "path": "data/r16-corrective-reselection-execution-runs/run-001/tasks.json",
+      "sha256": "71d94376dcc50e72affb457da6f39a7c97503e113016626168b659298dd6e634"
+    }
+  ],
+  "current_r4_composition_probe": {
+    "probe_kind": "deterministic shared composer; no model invocation",
+    "answer": {
+      "event_id": "AHE-022",
+      "status": "selected",
+      "selected_label_indexes": [
+        1,
+        3
+      ]
+    },
+    "result": {
+      "event_id": "AHE-022",
+      "source_text_sha256": "f5203eec5a0a146a39dc7e74438ec542884f230f9ca096c006c941979b29651f",
+      "relation_label": null,
+      "subject": null,
+      "object": null,
+      "polarity": null,
+      "modality": null,
+      "attribution": null,
+      "status": "held",
+      "hold_reason": "subject_unavailable"
+    },
+    "is_r17_readiness_signal": false
+  }
+}

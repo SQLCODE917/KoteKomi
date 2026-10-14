@@ -1,0 +1,79 @@
+{
+  "schema_version": "r17_policy_review_checksums_v1",
+  "status": "human_adopted_and_reviewed_pending_contract_freeze",
+  "acceptance_evidence": false,
+  "files": [
+    {
+      "path": "data/r17-semantic-selection-contract/human_approval.json",
+      "sha256": "e6ea700ac619ed83de70e1ed6f80729864e18669bc006d0398edbfd7dec51113"
+    },
+    {
+      "path": "data/r17-semantic-selection-contract/observed_answers.json",
+      "sha256": "3be2b6abd74c6d679bb6ae7c00fd77729b671359e84c306bfd427c54d6c5a6a9"
+    },
+    {
+      "path": "data/r17-semantic-selection-contract/reference_policy_records.json",
+      "sha256": "bbffcd808d00294babd30e1b7b31bf3829196b4f54f1862c47e873ae83f10ed7"
+    },
+    {
+      "path": "data/r17-semantic-selection-contract/task_manifest.json",
+      "sha256": "46a732aeaf3d9474edc1758c0daa265ee6392ff8afba3a4312759e0433524bd4"
+    },
+    {
+      "path": "data/r17-semantic-selection-contract/inputs/AHE-022.json",
+      "sha256": "c5b4a6b0af51d8403d9431c445b8b4b563cd46c58417b50993d265e1198da1b3"
+    },
+    {
+      "path": "data/r17-semantic-selection-contract/inputs/AHE-051.json",
+      "sha256": "8f423411c3105c555121beaed5e1e68c4730e3741e4c4d3f952b8cab4fbcb703"
+    },
+    {
+      "path": "data/r17-semantic-selection-contract/inputs/AHE-901.json",
+      "sha256": "b316e5bca3055a2a764cbaf949c69c2d0332da5137539489c62efb28683077b7"
+    },
+    {
+      "path": "data/r17-semantic-selection-contract/inputs/AHE-902.json",
+      "sha256": "c534e2b7001a67b9e2a1c1223df0ab4d383e92fb4d996e37f7f1a583e8d25969"
+    },
+    {
+      "path": "data/r17-semantic-selection-contract/inputs/AHE-903.json",
+      "sha256": "2439b121ef6a02c85eb31fcf0e7047c11810713c30935fdf5f8e1c9235fe943b"
+    },
+    {
+      "path": "data/r17-semantic-selection-contract/inputs/AHE-904.json",
+      "sha256": "cfba2a4c6c0b71ac28be8ce33167d03e02738b18d2517ed72712b61f6b490a18"
+    },
+    {
+      "path": "data/r17-semantic-selection-contract/inputs/AHE-905.json",
+      "sha256": "32ef0613ca159062813d1cdd8934e463b0eb5758e58474c36e37f4eba4ca501e"
+    },
+    {
+      "path": "data/r17-semantic-selection-contract/inputs/AHE-906.json",
+      "sha256": "9ac3e91ec427fa3d62e1615bc36d57925ba2f10f1cda976273473d835142bb3e"
+    },
+    {
+      "path": "data/r17-semantic-selection-contract/inputs/AHE-907.json",
+      "sha256": "219c0dd5616e93e3f00d2dd00b89812f724cc62d4265c911fc04b7a6f944c799"
+    },
+    {
+      "path": "data/r17-semantic-selection-contract/inputs/AHE-908.json",
+      "sha256": "3cfd41c69cb2958c29ce0d0a6c5dd3ea1eff90188e022163e661c40a625dcdb6"
+    },
+    {
+      "path": "data/r17-semantic-selection-contract/inputs/AHE-909.json",
+      "sha256": "a40dcdfb5b660564ae63cc418c076807870dcfabb63f48022104c2d068f5c51e"
+    },
+    {
+      "path": "data/r17-semantic-selection-contract/verify_policy_records.py",
+      "sha256": "770d82aae34f29264bb5f66d117ca1541e196e6c3848e286ae0937fbbb25a370"
+    },
+    {
+      "path": "data/r17-semantic-selection-contract/reviewed_contract_spec.md",
+      "sha256": "747de688ccd0244fa6bf0e66446c2d5af95c116cd6f3fdc32dff8fc129f94ced"
+    },
+    {
+      "path": "docs/2026-10-07-semantic-selection-policy-review.md",
+      "sha256": "61dc43024fc38ae7a8b33c63ad751d580c0eea1796ac42e65f7af5a74420e57d"
+    }
+  ]
+}

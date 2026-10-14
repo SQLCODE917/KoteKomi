@@ -1,0 +1,115 @@
+{
+  "event_id": "AHE-908",
+  "origin": "constructed",
+  "source_text": "It rained.",
+  "source_text_sha256": "8b38b558e4df5eb3a70f60edea988d448559dfdded9b7ca08d9ba7f6c5ac71a8",
+  "coordinate_system": "zero_based_source_characters_half_open",
+  "candidate_inventory": {
+    "event_id": "AHE-908",
+    "source_text_sha256": "8b38b558e4df5eb3a70f60edea988d448559dfdded9b7ca08d9ba7f6c5ac71a8",
+    "constituents": [
+      {
+        "constituent_id": "pct_c965302e176102e07fa32a67",
+        "event_id": "AHE-908",
+        "source_text_sha256": "8b38b558e4df5eb3a70f60edea988d448559dfdded9b7ca08d9ba7f6c5ac71a8",
+        "constituent_range": {
+          "start": 0,
+          "end": 2,
+          "text": "It"
+        },
+        "token_ids": [
+          "t1"
+        ]
+      }
+    ]
+  },
+  "selection_task": {
+    "event_id": "AHE-908",
+    "source_text_sha256": "8b38b558e4df5eb3a70f60edea988d448559dfdded9b7ca08d9ba7f6c5ac71a8",
+    "source_text": "It rained.",
+    "constituent_labels": [
+      "C1"
+    ],
+    "rendered_input": "Return a comma-separated subset of the Candidate labels, or NONE.\nEvent: rained\nPassage:\nIt rained.\nCandidates:\nC1: It",
+    "rendered_input_sha256": "ae2800ee62c48e151bf672feb20bd1a7fbc706bc6c1c4821bcc620169bf65e59"
+  },
+  "frozen_task_route": "best_choice_reselection",
+  "corrective_task": {
+    "event_id": "AHE-908",
+    "closure_route": "best_choice_reselection",
+    "corrected_instruction": "Return exactly one Candidate label for the single best candidate. Answer NONE only when no candidate fits. Do not add other text.",
+    "corrected_prompt": "Return exactly one Candidate label for the single best candidate. Answer NONE only when no candidate fits. Do not add other text.\nEvent: rained\nPassage:\nIt rained.\nCandidates:\nC1: It",
+    "corrected_prompt_sha256": "8d828bc2ab9ddbb5cbfc683025a55ff6ad80234be131121b2c8986823f03cd57",
+    "original_rendered_input_sha256": "ae2800ee62c48e151bf672feb20bd1a7fbc706bc6c1c4821bcc620169bf65e59"
+  },
+  "event_frame": {
+    "event_id": "AHE-908",
+    "trigger": {
+      "start": 3,
+      "end": 9,
+      "text": "rained"
+    },
+    "core_constituents": []
+  },
+  "composition_inputs": {
+    "tokens": [
+      {
+        "token_id": "t1",
+        "sentence_id": "s1",
+        "text": "It",
+        "start": 0,
+        "end": 2,
+        "lemma": "it",
+        "part_of_speech": "PRON",
+        "dependency_relation": "expl",
+        "head_token_id": "t2"
+      },
+      {
+        "token_id": "t2",
+        "sentence_id": "s1",
+        "text": "rained",
+        "start": 3,
+        "end": 9,
+        "lemma": "rain",
+        "part_of_speech": "VERB",
+        "dependency_relation": "root",
+        "head_token_id": null
+      },
+      {
+        "token_id": "t3",
+        "sentence_id": "s1",
+        "text": ".",
+        "start": 9,
+        "end": 10,
+        "lemma": ".",
+        "part_of_speech": "PUNCT",
+        "dependency_relation": "punct",
+        "head_token_id": "t2"
+      }
+    ],
+    "entities": [],
+    "tokens_provenance": "agent_authored_controlled_fixture; not a Stanza execution"
+  },
+  "provenance": [],
+  "current_r4_composition_probe": {
+    "probe_kind": "deterministic shared composer; no model invocation",
+    "answer": {
+      "event_id": "AHE-908",
+      "status": "none",
+      "selected_label_indexes": []
+    },
+    "result": {
+      "event_id": "AHE-908",
+      "source_text_sha256": "8b38b558e4df5eb3a70f60edea988d448559dfdded9b7ca08d9ba7f6c5ac71a8",
+      "relation_label": null,
+      "subject": null,
+      "object": null,
+      "polarity": null,
+      "modality": null,
+      "attribution": null,
+      "status": "held",
+      "hold_reason": "selection_empty"
+    },
+    "is_r17_readiness_signal": false
+  }
+}

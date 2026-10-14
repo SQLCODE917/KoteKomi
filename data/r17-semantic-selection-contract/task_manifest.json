@@ -1,0 +1,121 @@
+{
+  "schema_version": "r17_task_manifest_v1",
+  "acceptance_evidence": false,
+  "tasks": [
+    {
+      "event_id": "AHE-022",
+      "task_origin": "historical_diagnostic",
+      "frozen_route": "label_only_reselection",
+      "input_file": {
+        "path": "data/r17-semantic-selection-contract/inputs/AHE-022.json",
+        "sha256": "c5b4a6b0af51d8403d9431c445b8b4b563cd46c58417b50993d265e1198da1b3"
+      },
+      "corrective_task_sha256": "1fa756ff3aae5cd142db573b3406300d7f8ee7a441d6eba926561b252b5242cc"
+    },
+    {
+      "event_id": "AHE-051",
+      "task_origin": "historical_diagnostic",
+      "frozen_route": "best_choice_reselection",
+      "input_file": {
+        "path": "data/r17-semantic-selection-contract/inputs/AHE-051.json",
+        "sha256": "8f423411c3105c555121beaed5e1e68c4730e3741e4c4d3f952b8cab4fbcb703"
+      },
+      "corrective_task_sha256": "e24404e866c56a01b666a94a6510b48a9eaffe11892f07186b9848bb82a4e9e5"
+    },
+    {
+      "event_id": "AHE-901",
+      "task_origin": "constructed",
+      "frozen_route": "label_only_reselection",
+      "input_file": {
+        "path": "data/r17-semantic-selection-contract/inputs/AHE-901.json",
+        "sha256": "b316e5bca3055a2a764cbaf949c69c2d0332da5137539489c62efb28683077b7"
+      },
+      "corrective_task_sha256": "0f203263047015822eca69689ef0d1ff46e05af2fd1673e27e1dbe09d6fdc4f3"
+    },
+    {
+      "event_id": "AHE-902",
+      "task_origin": "constructed",
+      "frozen_route": "label_only_reselection",
+      "input_file": {
+        "path": "data/r17-semantic-selection-contract/inputs/AHE-902.json",
+        "sha256": "c534e2b7001a67b9e2a1c1223df0ab4d383e92fb4d996e37f7f1a583e8d25969"
+      },
+      "corrective_task_sha256": "dc7477c0b1137cc4674f6f1a217b56ed7d48f59fdd9022d88f45c15be684be44"
+    },
+    {
+      "event_id": "AHE-903",
+      "task_origin": "constructed",
+      "frozen_route": "label_only_reselection",
+      "input_file": {
+        "path": "data/r17-semantic-selection-contract/inputs/AHE-903.json",
+        "sha256": "2439b121ef6a02c85eb31fcf0e7047c11810713c30935fdf5f8e1c9235fe943b"
+      },
+      "corrective_task_sha256": "d50b724a5ca27d4322087f0ca4712092157fb6207679aec86959e069418e4f0c"
+    },
+    {
+      "event_id": "AHE-904",
+      "task_origin": "constructed",
+      "frozen_route": "label_only_reselection",
+      "input_file": {
+        "path": "data/r17-semantic-selection-contract/inputs/AHE-904.json",
+        "sha256": "cfba2a4c6c0b71ac28be8ce33167d03e02738b18d2517ed72712b61f6b490a18"
+      },
+      "corrective_task_sha256": "c1824d3922e13828a152619ea58d8e8b2d06baf43b8fed190f800eb22cdbbc8b"
+    },
+    {
+      "event_id": "AHE-905",
+      "task_origin": "constructed",
+      "frozen_route": "label_only_reselection",
+      "input_file": {
+        "path": "data/r17-semantic-selection-contract/inputs/AHE-905.json",
+        "sha256": "32ef0613ca159062813d1cdd8934e463b0eb5758e58474c36e37f4eba4ca501e"
+      },
+      "corrective_task_sha256": "3976ecc1a8b45d8fa1edc9c2f0efc879acba4caa54c3a02ccd575cb91d0c2e0d"
+    },
+    {
+      "event_id": "AHE-906",
+      "task_origin": "constructed",
+      "frozen_route": "label_only_reselection",
+      "input_file": {
+        "path": "data/r17-semantic-selection-contract/inputs/AHE-906.json",
+        "sha256": "9ac3e91ec427fa3d62e1615bc36d57925ba2f10f1cda976273473d835142bb3e"
+      },
+      "corrective_task_sha256": "c630f6207586f37cf60e89ead354f44477f1f003ec2edee0df5eb52a706e75cc"
+    },
+    {
+      "event_id": "AHE-907",
+      "task_origin": "constructed",
+      "frozen_route": "label_only_reselection",
+      "input_file": {
+        "path": "data/r17-semantic-selection-contract/inputs/AHE-907.json",
+        "sha256": "219c0dd5616e93e3f00d2dd00b89812f724cc62d4265c911fc04b7a6f944c799"
+      },
+      "corrective_task_sha256": "0f6b637a01b576f5cbd7b4f5d4e0eb872d6398f5678a626a066ad23d9c1ed9c6"
+    },
+    {
+      "event_id": "AHE-908",
+      "task_origin": "constructed",
+      "frozen_route": "best_choice_reselection",
+      "input_file": {
+        "path": "data/r17-semantic-selection-contract/inputs/AHE-908.json",
+        "sha256": "3cfd41c69cb2958c29ce0d0a6c5dd3ea1eff90188e022163e661c40a625dcdb6"
+      },
+      "corrective_task_sha256": "1413a62b44b7bab7fbf75b21d6f194a0c69a6a6277a023d5242d7b193073539e"
+    },
+    {
+      "event_id": "AHE-909",
+      "task_origin": "constructed",
+      "frozen_route": "label_only_reselection",
+      "input_file": {
+        "path": "data/r17-semantic-selection-contract/inputs/AHE-909.json",
+        "sha256": "a40dcdfb5b660564ae63cc418c076807870dcfabb63f48022104c2d068f5c51e"
+      },
+      "corrective_task_sha256": "309a7c248a8dfec2348d7844522cb88f9c085ab25c517f8d6cae9f6a1825917b"
+    }
+  ],
+  "status": "human_adopted_and_reviewed_pending_contract_freeze",
+  "human_approval": {
+    "path": "data/r17-semantic-selection-contract/human_approval.json",
+    "sha256": "e6ea700ac619ed83de70e1ed6f80729864e18669bc006d0398edbfd7dec51113"
+  }
+}
