@@ -5,7 +5,7 @@
 - Parent: [Competitive Event Attachment Program](2026-09-18-competitive-event-attachment-program.md)
 - Predecessor: [Source-Grounded Attachment Deterministic-First Package](2026-09-24-source-grounded-attachment-deterministic-first-package.md)
 - First deliverable: [R10 Residual Composition-Hold Routing](2026-10-01-residual-composition-hold-routing.md)
-- Next deliverable: R16 Corrective Re-Selection Execution
+- Next deliverable: [R17 Semantic Selection Contract](2026-10-07-semantic-selection-contract.md)
 
 ## Context & Problem
 
@@ -271,7 +271,8 @@ An agent that finds any artifact can recover the roadmap and continue the cycle.
 | R13 | Eventive Statement Recognition and Single-Record Reification | one closed shape per statement, one Assertion reification, and keep-and-link | Accepted |
 | R14 | Centralized Identity Resolution | link a vague eventive activity to one later concrete mention in one identity-resolution step across every shape | Accepted |
 | R15 | Residual Selection-Failure Closure | decide one closure route for the two unrecovered selection failures `AHE-022` and `AHE-051` and prepare one corrective re-selection task each | Accepted |
-| R16 | Corrective Re-Selection Execution | execute the two corrective re-selection tasks, parse the finite answers deterministically, and re-measure the selections | Proposed |
+| R16 | [Corrective Re-Selection Execution](2026-10-06-corrective-reselection-execution.md) | execute the two corrective re-selection tasks, parse the finite answers deterministically, and re-measure the selections | Accepted |
+| R17 | [Semantic Selection Contract](2026-10-07-semantic-selection-contract.md) | freeze one versioned semantic selection contract, its explicit task rendering, and its deterministic reference cases with independent acceptance signals | Proposed |
 
 The observed R12 result specifies R13: recognize the eventive `{C1}` statement, reify it into one Assertion, and keep it for later linking.
 
@@ -280,6 +281,8 @@ The observed R13 result specifies R14: reclassify the `{C1}` statement as an `ev
 The observed R14 result specifies R15: the `AHE-004` keep-and-link arc is closed, and the two remaining residuals `AHE-022` and `AHE-051` still need one closure route.
 
 The observed R15 result specifies R16: `AHE-022` routes to `label_only_reselection` and `AHE-051` routes to `best_choice_reselection`, so one corrective re-selection task must run per residual.
+
+The observed R16 result specifies the next deliverable: R16 produced grammatically valid answers but did not establish useful semantic selection or close either residual; `AHE-022`'s composition hold reflects missing entity-resolution inputs and does not measure selection quality. The next deliverable freezes one versioned semantic selection contract and its independent acceptance criteria; model discrimination and ranking experiments follow after the contract freezes.
 
 The not-recoverable slots (`rejection_no_valid_label`, `abstained`) stay out of automatic recovery.
 

@@ -2,6 +2,7 @@
 
 - Status: Accepted
 - Deliverable ID: `R15`
+- Next: [R16 Corrective Re-Selection Execution](2026-10-06-corrective-reselection-execution.md)
 - Program: [Source-Grounded Attachment Agile Package](2026-10-01-source-grounded-attachment-agile-package.md)
 - Parent: [Centralized Identity Resolution](2026-10-01-centralized-identity-resolution.md)
 - Depends on: [Selection-Failure Slot Routing](2026-10-01-selection-failure-slot-routing.md), [Label-Mismatch Recovery](2026-10-01-label-mismatch-recovery.md), [Residual Composition-Hold Routing](2026-10-01-residual-composition-hold-routing.md)
