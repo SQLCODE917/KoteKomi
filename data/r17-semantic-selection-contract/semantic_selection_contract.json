@@ -62,9 +62,9 @@
     ],
     "binding": {
       "policy_records_sha256": "85d3f3687c7bf2cffdb8ead30595b5c1c5d1d473af545e410f3a5b09d07abc87",
-      "renderer_sha256": "afdb2e6ea96ecec7c28836901e4b155f5a3956372ad590db566954ba3be20f3d",
-      "scoring_rules_sha256": "618801cff35a0fd1dfee9f0662414c20a3ddb83e3d76a1ae0c16ebecd8dfb925",
-      "thresholds_sha256": "274b4a2ab443b5d0b581c00783444af5094f041c9be141674820ee4b64c00b66"
+      "renderer_sha256": "762a54b5914952da16fab032d10bec919161a51444cbbd1635136c40f40c37c9",
+      "scoring_rules_sha256": "36c42f090e9664f11a23090865a22996e44717345905687788e122b849695a7d",
+      "thresholds_sha256": "ba89bf3d7e2659d7791fbc01d04ba54cc7a100813ac90ee64c28a59dbf33385a"
     }
   }
 }

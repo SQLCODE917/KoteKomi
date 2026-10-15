@@ -16,13 +16,18 @@ The runner seals one report with zero model executions and zero canonical writes
 from __future__ import annotations
 
 import hashlib
+import inspect
 import json
+import sys
+import types
 from enum import StrEnum
 from pathlib import Path
 from typing import Annotated, Any, Literal, Self, cast
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+import kotekomi_application.corrective_reselection_execution as _reselection_module
+import kotekomi_application.decontextualization_composition as _composition_module
 from kotekomi_application.calibrated_residual_ownership import EventFrame
 from kotekomi_application.competitive_attachment_review_verification import (
     AttachmentSourceRange,
@@ -30,6 +35,14 @@ from kotekomi_application.competitive_attachment_review_verification import (
 from kotekomi_application.corrective_reselection_execution import (
     parse_corrective_reselection_answer,
 )
+from kotekomi_application.decontextualization_composition import (
+    DecontextualizationEntityRef,
+    DecontextualizationStatus,
+    DecontextualizedProposition,
+    build_decontextualized_proposition,
+)
+from kotekomi_application.event_entity_connections import EventEntityLinguisticToken
+from kotekomi_application.hybrid_event_semantics import EventModality, EventPolarity
 from kotekomi_application.parser_constituent_candidate_generation import (
     ConstituentCandidateInventory,
     ConstituentSelectionAnswer,
@@ -92,6 +105,38 @@ def content_digest(value: object) -> str:
 def file_digest(path: Path) -> str:
     """Return the SHA-256 digest of one file's raw bytes."""
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _function_source_digest(functions: tuple[types.FunctionType, ...]) -> str:
+    """Bind one digest to the current source of the functions that implement a behavior.
+
+    Binding implemented behavior, not its instruction strings, means a digest can only
+    stay green while the code that renders or evaluates stays byte-identical.
+    """
+    source = "\n\n".join(inspect.getsource(function) for function in functions)
+    return hashlib.sha256(source.encode()).hexdigest()
+
+
+def _module_source_digest(modules: tuple[types.ModuleType, ...]) -> str:
+    """Bind one digest to the current source of the modules that implement a behavior."""
+    source = "\n\n".join(inspect.getsource(module) for module in modules)
+    return hashlib.sha256(source.encode()).hexdigest()
+
+
+def _implementation_binding_payload() -> dict[str, object]:
+    """Return the runtime state the scoring digest binds.
+
+    Readiness and evaluation depend on module constants (``_ARGUMENT_ROLES``), module
+    helpers, and the shared R4 composer and R16 parser.  Binding those dependencies,
+    not three function bodies alone, means any drift in the constants or the modules
+    the evaluator runs fails its frozen digest.
+    """
+    return {
+        "argument_roles": sorted(_ARGUMENT_ROLES),
+        "contract_module_sha256": _module_source_digest((sys.modules[__name__],)),
+        "composition_module_sha256": _module_source_digest((_composition_module,)),
+        "reselection_module_sha256": _module_source_digest((_reselection_module,)),
+    }
 
 
 class SemanticSelectionSignalName(StrEnum):
@@ -218,24 +263,34 @@ def compute_contract_binding(
     *,
     records: object,
     eligibility_rule: str = _ELIGIBILITY_RULE,
+    complete_selected_set_rules: tuple[str, ...] = _COMPLETE_SELECTED_SET_RULES,
+    none_rule: str = _NONE_RULE,
+    canonical_boundary_rules: tuple[str, ...] = _CANONICAL_BOUNDARY_RULES,
     signal_definitions: tuple[SignalDefinition, ...] = SIGNAL_DEFINITIONS,
 ) -> ContractBinding:
-    """Recompute the four binding digests from their current content."""
+    """Recompute the four binding digests from current decisions and implemented behavior.
+
+    ``renderer_sha256`` binds the source of ``render_selection_task`` and
+    ``scoring_rules_sha256`` binds the implemented evaluation and readiness behavior,
+    including its module constants, helpers, and the shared R4 composer and R16 parser
+    modules, so drifting the implemented rendering or evaluation behavior — not just its
+    instruction strings — fails the check.  ``thresholds_sha256`` binds every decision
+    text the evaluation honors, including the NONE and canonical-boundary rules.
+    """
     return ContractBinding(
         policy_records_sha256=content_digest(records),
-        renderer_sha256=content_digest(
-            {
-                "selection_format_instruction": _SELECTION_FORMAT_INSTRUCTION,
-                "eligibility_rule": eligibility_rule,
-            }
-        ),
-        scoring_rules_sha256=content_digest(
-            [(definition.name.value, definition.values) for definition in signal_definitions]
-        ),
+        renderer_sha256=_function_source_digest((render_selection_task,)),
+        scoring_rules_sha256=content_digest(_implementation_binding_payload()),
         thresholds_sha256=content_digest(
             {
-                definition.name.value: definition.not_applicable_when
-                for definition in signal_definitions
+                "eligibility_rule": eligibility_rule,
+                "complete_selected_set_rules": complete_selected_set_rules,
+                "none_rule": none_rule,
+                "canonical_boundary_rules": canonical_boundary_rules,
+                "signal_definitions": [
+                    (definition.name.value, definition.values, definition.not_applicable_when)
+                    for definition in signal_definitions
+                ],
             }
         ),
     )
@@ -312,6 +367,35 @@ class CompositionReadiness(BaseModel):
     basis: Annotated[str, Field(min_length=1)]
 
 
+class ReferenceAttributionRequirement(BaseModel):
+    """The reviewed attribution content one proposition construction needs."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    kind: Literal["source_narrator", "targeted"]
+    reporter: Annotated[str, Field(min_length=1)] | None = None
+    reporting_carrier: AttachmentSourceRange | None = None
+
+    @model_validator(mode="after")
+    def validate_contract(self) -> Self:
+        if self.kind == "targeted":
+            if self.reporter is None or self.reporting_carrier is None:
+                raise ValueError("A targeted attribution requires a reporter and a carrier.")
+        elif self.reporter is not None or self.reporting_carrier is not None:
+            raise ValueError("A source-narrator attribution cannot name a reporter or carrier.")
+        return self
+
+
+class ReferencePropositionRequirements(BaseModel):
+    """The reviewed polarity, modality, and attribution the composed content must carry."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    polarity: EventPolarity
+    modality: EventModality
+    attribution: ReferenceAttributionRequirement
+
+
 class ReferencePolicyRecord(BaseModel):
     """One human-reviewed policy record resolved with its frozen inputs."""
 
@@ -340,6 +424,9 @@ class ReferencePolicyRecord(BaseModel):
     inventory: ConstituentCandidateInventory
     source_text: Annotated[str, Field(min_length=1)]
     frame: EventFrame
+    composition_tokens: tuple[EventEntityLinguisticToken, ...]
+    composition_entities: tuple[DecontextualizationEntityRef, ...]
+    proposition_requirements: ReferencePropositionRequirements
 
 
 class ObservedAnswer(BaseModel):
@@ -533,6 +620,16 @@ def _build_reference_policy_record(
     expected_ranges = tuple(
         _typed(ExpectedSourceRange, item) for item in policy_body["expected_source_ranges"]
     )
+    composition_body = cast(dict[str, Any], frozen_input["composition_inputs"])
+    composition_tokens = tuple(
+        _typed(EventEntityLinguisticToken, item) for item in composition_body["tokens"]
+    )
+    composition_entities = tuple(
+        _typed(DecontextualizationEntityRef, item) for item in composition_body["entities"]
+    )
+    proposition_requirements = _typed(
+        ReferencePropositionRequirements, policy_body["proposition_inputs"]
+    )
     built = ReferencePolicyRecord(
         record_id=cast(str, record["record_id"]),
         event_id=cast(str, record["event_id"]),
@@ -555,6 +652,9 @@ def _build_reference_policy_record(
         inventory=inventory,
         source_text=source_text,
         frame=frame,
+        composition_tokens=composition_tokens,
+        composition_entities=composition_entities,
+        proposition_requirements=proposition_requirements,
     )
     for role in built.expected_source_ranges:
         covering = _covering_labels(built.inventory, role)
@@ -569,7 +669,30 @@ def _build_reference_policy_record(
             role.canonical_candidate_label is None or role.canonical_candidate_label in covering,
             "Canonical candidate does not cover its expected range.",
         )
+    _require(
+        compute_composition_readiness(policy_record=built) == built.composition_readiness.value,
+        "Computed composition readiness does not reproduce the reviewed value.",
+    )
     return built
+
+
+def _answer_fixture_body(observation: dict[str, Any]) -> dict[str, Any]:
+    """Return the reviewed subset one observed-answer fixture digest binds."""
+    return {
+        key: observation[key]
+        for key in (
+            "observation_id",
+            "event_id",
+            "route",
+            "origin",
+            "raw_response",
+            "raw_response_sha256",
+            "source_run_artifact",
+            "parsed_answer",
+            "note",
+            "expected_signals",
+        )
+    }
 
 
 def build_observed_answer(
@@ -577,25 +700,65 @@ def build_observed_answer(
     observation: dict[str, Any],
     task: ConstituentSelectionTask,
     frozen_route: ResidualClosureRoute,
+    approval_evidence: FileHandle,
+    approved_fixture_body_sha256: str,
+    root: Path,
 ) -> ObservedAnswer:
-    """Verify and build one observed answer against its frozen task route."""
+    """Verify and build one observed answer against its frozen task route and approval.
+
+    The reviewed fixture digest, the archived response bytes, the review evidence
+    handle, and the human-approved answer fixture are verified here, so an altered
+    historical answer cannot be admitted by re-hashing its raw response while leaving
+    the original reviewed digest or approval membership in place.
+    """
     route = ResidualClosureRoute(observation["route"])
     _require(
         route is frozen_route,
         "Observed answer route differs from its frozen task route.",
+    )
+    _require(
+        observation["event_id"] == task.event_id,
+        "Observed answer Event differs from its frozen task.",
+    )
+    _require(
+        content_digest(_answer_fixture_body(observation)) == observation["fixture_body_sha256"],
+        "Observed-answer fixture digest differs from its reviewed body.",
+    )
+    review = cast(dict[str, Any], observation["human_review"])
+    _require(
+        review["reviewed_fixture_body_sha256"] == observation["fixture_body_sha256"],
+        "Observed-answer review digest differs from its fixture body.",
+    )
+    _require(
+        _typed(FileHandle, review["evidence"]) == approval_evidence,
+        "Observed-answer review evidence differs from the approval binding.",
     )
     raw_response = cast(str, observation["raw_response"])
     _require(
         hashlib.sha256(raw_response.encode()).hexdigest() == observation["raw_response_sha256"],
         "Observed raw response digest differs.",
     )
+    artifact = observation["source_run_artifact"]
+    if artifact is not None:
+        source_path = (root / cast(str, artifact["path"])).resolve()
+        _require(source_path.is_relative_to(root), "Answer artifact handle escapes the repository.")
+        _require(
+            file_digest(source_path) == cast(str, artifact["sha256"]),
+            "Archived response digest drifted.",
+        )
+        _require(
+            source_path.read_text() == raw_response,
+            "Archived response differs from the observed raw response.",
+        )
     parsed = parse_corrective_reselection_answer(raw_response, task, route)
     _require(
         parsed == _typed(ConstituentSelectionAnswer, observation["parsed_answer"]),
         "Stored strict parse differs from a fresh parse.",
     )
-    review = cast(dict[str, Any], observation["human_review"])
-    artifact = observation["source_run_artifact"]
+    _require(
+        observation["fixture_body_sha256"] == approved_fixture_body_sha256,
+        "Observed-answer fixture digest is not the approved answer fixture.",
+    )
     return ObservedAnswer(
         observation_id=cast(str, observation["observation_id"]),
         event_id=cast(str, observation["event_id"]),
@@ -626,20 +789,201 @@ def load_observed_answers(
     del contract  # the contract carries the version; the route binding is per policy record.
     document = _read_json(directory / "observed_answers.json")
     _require(document["schema_version"] == "r17_observed_answers_v1", "Unknown answer format")
+    approval_evidence = _typed(FileHandle, document["human_approval"])
     observations = cast(list[dict[str, Any]], document["observations"])
     by_event = {record.event_id: record for record in records}
     _require(
         set(by_event) == {item["event_id"] for item in observations},
         "Observed-answer coverage differs from the policy records.",
     )
+    root = directory.resolve().parents[1]
+    approval_path = (root / approval_evidence.path).resolve()
+    _require(approval_path.is_relative_to(root), "Approval handle escapes the repository.")
+    _require(
+        file_digest(approval_path) == approval_evidence.sha256,
+        "Approval file digest drift.",
+    )
+    approval_document = _read_json(approval_path)
+    _require(
+        approval_document["schema_version"] == "r17_operator_review_attestation_v1",
+        "Unknown approval format.",
+    )
+    approved_fixtures = {
+        cast(str, item["observation_id"]): cast(str, item["fixture_body_sha256"])
+        for item in cast(list[dict[str, Any]], approval_document["approved_answer_fixtures"])
+    }
     return tuple(
         build_observed_answer(
             observation=observation,
             task=by_event[observation["event_id"]].task,
             frozen_route=by_event[observation["event_id"]].input_binding.frozen_route,
+            approval_evidence=approval_evidence,
+            approved_fixture_body_sha256=_require_approved_fixture_digest(
+                approved_fixtures, cast(str, observation["observation_id"])
+            ),
+            root=root,
         )
         for observation in observations
     )
+
+
+def _require_approved_fixture_digest(approved_fixtures: dict[str, str], observation_id: str) -> str:
+    """Return one approved answer fixture digest or fail fast when it is absent."""
+    _require(
+        observation_id in approved_fixtures,
+        "Observed answer is not in the approved answer fixtures.",
+    )
+    return approved_fixtures[observation_id]
+
+
+def _compose_reference_proposition(
+    *, policy_record: ReferencePolicyRecord
+) -> DecontextualizedProposition:
+    """Re-run the deterministic R4 composer over the reviewed reference selected set."""
+    raw = (
+        ",".join(policy_record.expected_selected_set)
+        if policy_record.expected_selected_set
+        else "NONE"
+    )
+    answer = parse_corrective_reselection_answer(
+        raw, policy_record.task, policy_record.input_binding.frozen_route
+    )
+    return build_decontextualized_proposition(
+        event_id=policy_record.event_id,
+        source_text=policy_record.source_text,
+        source_text_sha256=policy_record.input_binding.source_sha256,
+        inventory=policy_record.inventory,
+        answer=answer,
+        trigger_head_start=policy_record.frame.trigger.start,
+        trigger_head_end=policy_record.frame.trigger.end,
+        tokens=policy_record.composition_tokens,
+        entities=policy_record.composition_entities,
+    )
+
+
+def _composed_content_preserved(
+    *, policy_record: ReferencePolicyRecord, composed: DecontextualizedProposition
+) -> bool:
+    """Return whether the composed result carries the reviewed required content.
+
+    The reviewed reference proposition states the polarity, modality, and attribution
+    the selected content is required to supply, and the reviewed source ranges state
+    which subject/object argument roles must be represented at which source span.  A
+    composed result that emits different polarity, modality, or attribution — or that
+    drops or rewrites a required argument span — has lost required content even when it
+    still matches the reviewed attribution kind.  A targeted attribution must name the
+    reviewed reporter and carrier span, not merely the attribution kind.
+    """
+    requirements = policy_record.proposition_requirements
+    if composed.polarity is None or composed.modality is None or composed.attribution is None:
+        return False
+    if composed.polarity != requirements.polarity:
+        return False
+    if composed.modality != requirements.modality:
+        return False
+    if composed.attribution.kind.value != requirements.attribution.kind:
+        return False
+    if not _argument_roles_preserved(policy_record=policy_record, composed=composed):
+        return False
+    if requirements.attribution.kind == "targeted" and not _targeted_attribution_preserved(
+        policy_record=policy_record, composed=composed
+    ):
+        return False
+    return True
+
+
+def _argument_roles_preserved(
+    *, policy_record: ReferencePolicyRecord, composed: DecontextualizedProposition
+) -> bool:
+    """Return whether each required subject/object role is present at its source span."""
+
+    for requirement in policy_record.expected_source_ranges:
+        if (
+            requirement.role not in _CONTENT_ARGUMENT_ROLES
+            or requirement.boundary_coverage != "met"
+        ):
+            continue
+        role = composed.subject if requirement.role == "subject" else composed.object
+        if role is None or role.exact_fragment != requirement.expected_source_range:
+            return False
+    return True
+
+
+def _targeted_attribution_preserved(
+    *, policy_record: ReferencePolicyRecord, composed: DecontextualizedProposition
+) -> bool:
+    """Return whether a targeted attribution names the reviewed reporter and carrier span."""
+
+    requirement = policy_record.proposition_requirements.attribution
+    attribution = composed.attribution
+    if (
+        attribution is None
+        or attribution.kind.value != "targeted"
+        or requirement.reporter is None
+        or requirement.reporting_carrier is None
+    ):
+        return False
+    reporter = next(
+        (
+            entity
+            for entity in policy_record.composition_entities
+            if entity.entity_id == attribution.reporter_ref
+        ),
+        None,
+    )
+    return (
+        reporter is not None
+        and reporter.canonical_name == requirement.reporter
+        and attribution.exact_carrier == requirement.reporting_carrier
+    )
+
+
+#: The span-carrying argument roles the R4 composer can hold. The composer emits at most
+#: one ``subject`` and one ``object`` role, so a reference that demands more than two
+#: span-carrying roles loses required content and is not ready to compose.
+_ARGUMENT_ROLES = frozenset({"subject", "object", "time", "place"})
+
+
+#: The content-triple roles the R4 composer materializes as a ``DecontextualizedRole``.
+#: Each reviewed source-range requirement naming one of these roles must be represented
+#: in the composed result at its reviewed source span.
+_CONTENT_ARGUMENT_ROLES = frozenset({"subject", "object"})
+
+
+def compute_composition_readiness(*, policy_record: ReferencePolicyRecord) -> str:
+    """Deterministically compute the reference selected set's composition readiness.
+
+    Readiness is derived from the resolved composition inputs (tokens and entity
+    references) and the re-run R4 composition result, never copied from the reviewed
+    annotation. The composed result is compared with the reviewed polarity, modality,
+    and attribution requirements, and the argument-span count is capped at the two roles
+    the composer can hold. Removing the entity references from an otherwise composable
+    reference turns ``ready`` into ``not_ready`` while the semantic-selection judgment
+    stays met.
+    """
+    ranges = policy_record.expected_source_ranges
+    if (
+        not policy_record.composition_tokens
+        and not policy_record.composition_entities
+        and not ranges
+        and not policy_record.expected_selected_set
+    ):
+        return "not_applicable"
+    if not policy_record.expected_selected_set:
+        return "not_ready"
+    if any(role.boundary_coverage == "gap" for role in ranges):
+        return "not_ready"
+    composed = _compose_reference_proposition(policy_record=policy_record)
+    if composed.status is not DecontextualizationStatus.PROPOSITION:
+        return "not_ready"
+    content_span_count = sum(
+        1 for role in ranges if role.role in _ARGUMENT_ROLES and role.boundary_coverage == "met"
+    )
+    if content_span_count > 2:
+        return "not_ready"
+    if not _composed_content_preserved(policy_record=policy_record, composed=composed):
+        return "not_ready"
+    return "ready"
 
 
 def check_boundary_coverage(*, policy_record: ReferencePolicyRecord) -> str:
@@ -657,6 +1001,10 @@ def evaluate_selection(
     observed_answer: ObservedAnswer,
 ) -> tuple[SemanticSelectionSignalResult, ...]:
     """Parse one observed answer once and apply the five independent signals."""
+    _require(
+        observed_answer.event_id == policy_record.event_id,
+        "Observed answer Event differs from its policy record.",
+    )
     _require(
         observed_answer.route is policy_record.input_binding.frozen_route,
         "Observed answer route disagrees with its policy record.",
@@ -678,6 +1026,7 @@ def evaluate_selection(
             else ("justified" if policy_record.none_policy.justified else "unjustified")
         )
     coverage = check_boundary_coverage(policy_record=policy_record)
+    readiness = compute_composition_readiness(policy_record=policy_record)
     return (
         SemanticSelectionSignalResult(
             name=SemanticSelectionSignalName.ANSWER_GRAMMAR,
@@ -701,7 +1050,7 @@ def evaluate_selection(
         ),
         SemanticSelectionSignalResult(
             name=SemanticSelectionSignalName.COMPOSITION_READINESS,
-            value=policy_record.composition_readiness.value,
+            value=readiness,
             explanation="Readiness evaluates the reference selected set, not the observed answer.",
         ),
     )
@@ -802,6 +1151,9 @@ def verify_contract_binding(
     recomputed = compute_contract_binding(
         records=records,
         eligibility_rule=contract.eligibility_rule,
+        complete_selected_set_rules=contract.complete_selected_set_rules,
+        none_rule=contract.none_rule,
+        canonical_boundary_rules=contract.canonical_boundary_rules,
         signal_definitions=contract.signal_definitions,
     )
     if recomputed != contract.binding:
