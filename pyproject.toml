@@ -51,6 +51,7 @@ testpaths = [
   "packages/pipelines/tests",
 ]
 pythonpath = [
+  ".",
   "packages/adapters/src",
   "packages/application/src",
   "packages/briefing/src",
