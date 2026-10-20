@@ -2,6 +2,7 @@
 
 - Status: Accepted
 - Deliverable ID: `R17`
+- Next: [R18 Semantic Instruction Discrimination Experiment](2026-10-15-semantic-instruction-discrimination-experiment.md)
 - Program: [Source-Grounded Attachment Agile Package](2026-10-01-source-grounded-attachment-agile-package.md)
 - Parent: [Corrective Re-Selection Execution](2026-10-06-corrective-reselection-execution.md)
 - Depends on: [Decontextualization Composition](2026-09-28-decontextualization-composition.md), [Parser-Constituent Sub-Span Candidate Generation](2026-09-25-parser-constituent-sub-span-candidate-generation.md), [Calibrated Residual Ownership](2026-09-29-calibrated-residual-ownership.md), [Selection-Failure Slot Routing](2026-10-01-selection-failure-slot-routing.md), [Residual Composition-Hold Routing](2026-10-01-residual-composition-hold-routing.md)

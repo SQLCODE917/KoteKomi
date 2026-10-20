@@ -5,7 +5,7 @@
 - Parent: [Competitive Event Attachment Program](2026-09-18-competitive-event-attachment-program.md)
 - Predecessor: [Source-Grounded Attachment Deterministic-First Package](2026-09-24-source-grounded-attachment-deterministic-first-package.md)
 - First deliverable: [R10 Residual Composition-Hold Routing](2026-10-01-residual-composition-hold-routing.md)
-- Next deliverable: [R17 Semantic Selection Contract](2026-10-07-semantic-selection-contract.md)
+- Next deliverable: [R18 Semantic Instruction Discrimination Experiment](2026-10-15-semantic-instruction-discrimination-experiment.md)
 
 ## Context & Problem
 
@@ -272,7 +272,8 @@ An agent that finds any artifact can recover the roadmap and continue the cycle.
 | R14 | Centralized Identity Resolution | link a vague eventive activity to one later concrete mention in one identity-resolution step across every shape | Accepted |
 | R15 | Residual Selection-Failure Closure | decide one closure route for the two unrecovered selection failures `AHE-022` and `AHE-051` and prepare one corrective re-selection task each | Accepted |
 | R16 | [Corrective Re-Selection Execution](2026-10-06-corrective-reselection-execution.md) | execute the two corrective re-selection tasks, parse the finite answers deterministically, and re-measure the selections | Accepted |
-| R17 | [Semantic Selection Contract](2026-10-07-semantic-selection-contract.md) | freeze one versioned semantic selection contract, its explicit task rendering, and its deterministic reference cases with independent acceptance signals | Proposed |
+| R17 | [Semantic Selection Contract](2026-10-07-semantic-selection-contract.md) | freeze one versioned semantic selection contract, its explicit task rendering, and its deterministic reference cases with independent acceptance signals | Accepted |
+| R18 | [Semantic Instruction Discrimination Experiment](2026-10-15-semantic-instruction-discrimination-experiment.md) | measure whether naming the eligibility and complete-selected-set rules improves the three instruction-sensitive signals over the format-only instruction under one fixed execution budget | Proposed |
 
 The observed R12 result specifies R13: recognize the eventive `{C1}` statement, reify it into one Assertion, and keep it for later linking.
 
@@ -282,7 +283,9 @@ The observed R14 result specifies R15: the `AHE-004` keep-and-link arc is closed
 
 The observed R15 result specifies R16: `AHE-022` routes to `label_only_reselection` and `AHE-051` routes to `best_choice_reselection`, so one corrective re-selection task must run per residual.
 
-The observed R16 result specifies the next deliverable: R16 produced grammatically valid answers but did not establish useful semantic selection or close either residual; `AHE-022`'s composition hold reflects missing entity-resolution inputs and does not measure selection quality. The next deliverable freezes one versioned semantic selection contract and its independent acceptance criteria; model discrimination and ranking experiments follow after the contract freezes.
+The observed R16 result specifies R17: R16 produced grammatically valid answers but did not establish useful semantic selection or close either residual; `AHE-022`'s composition hold reflects missing entity-resolution inputs and does not measure selection quality. R17 freezes one versioned semantic selection contract with 11 human-adopted reference policy records, 26 answer fixtures, and five independent acceptance signals, all model-free.
+
+The observed R17 result specifies R18: the contract froze and the five-signal evaluator is trustworthy, but no model has run under a semantic instruction. R18 measures whether naming the eligibility and complete-selected-set rules improves the three instruction-sensitive signals over the format-only instruction, under one fixed execution budget.
 
 The not-recoverable slots (`rejection_no_valid_label`, `abstained`) stay out of automatic recovery.
 
@@ -311,5 +314,9 @@ The package completes when the eventive `AHE-004` Assertion links to one later c
 R14 meets the `AHE-004` link criterion.
 
 R15 decides one closure route per residual and prepares one corrective re-selection task each, but it does not execute the model.
+
+R16 executes both corrective re-selection tasks and closes neither residual.
+
+R17 freezes one model-free semantic selection contract with five independent acceptance signals and executes no model.
 
 `AHE-022` and `AHE-051` still need a completed selection, so the package is not complete.
