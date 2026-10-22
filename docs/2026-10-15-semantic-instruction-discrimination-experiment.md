@@ -106,6 +106,7 @@ The terms Reference policy record, Observed answer, Eligibility rule, Complete-s
 - R18-OBS-03: The experimental evaluator produces the five signals through the exact R17 signal rules (the same computation as `evaluate_selection`); `evaluate_selection` itself stays byte-identical and remains the reviewed-fixture evaluator.
 - R18-OBS-04: The reviewed-fixture loader keeps failing fast on any `ObservedAnswer` missing review metadata; R18 never weakens or bypasses those checks.
 - R18-OBS-05: An experimental observation is marked `unreviewed_experimental` and can never become a reviewed answer fixture or a canonical write.
+- R18-OBS-06: Before input admission, execution validates the request Event, policy record, parsing task, frozen route, instruction variant, and prepared prompt together. A mismatch fails fast without input inspection, model execution, or response storage.
 
 ### Evaluation reuse
 
@@ -117,11 +118,12 @@ The terms Reference policy record, Observed answer, Eligibility rule, Complete-s
 ### Report
 
 - R18-REP-01: The report records, per (instruction variant, reference policy record) pair, a terminal outcome, and for `answered` pairs the raw response digest, the parsed answer, and the five signal results.
-- R18-REP-02: The report rebuilds from archived responses without another model call.
+- R18-REP-02: The report rebuilds from digest-verified archived responses without another model call. Rebuilding verifies each receipt against the prepared prompt and archived run binding, reparses each response, recomputes the five signals, and rejects disagreements with persisted parses or signals.
 - R18-REP-03: The report records zero canonical writes and zero ProposedChanges.
 - R18-REP-04: The report carries one result fingerprint that changes when any terminal outcome, signal result, or raw response digest changes.
 - R18-REP-05: A sealed report is immutable; another experiment requires a new Run root.
 - R18-REP-06: The report separates `AHE-022` and `AHE-051` into one diagnostic group and the remaining nine records into one constructed group, and reports each of the two diagnostic records individually.
+- R18-REP-07: Report validation recomputes all six signal comparisons from the items and declared groups. Persisted counts, denominators, pair tallies, and verdicts must equal the recomputed comparisons, even when the stored fingerprint matches the payload.
 
 ### Verdict (predeclared)
 
@@ -185,6 +187,7 @@ The report rebuilds from archived responses without invoking the model again.
 
 `InstructionVariant` names one of `format_only` or `semantic`.
 `TerminalOutcome` names one of `answered`, `blocked`, or `failed`.
+`DiscriminationExecutionBinding` stores the run-wide model identity and generation settings in `execution.json` before model execution.
 `ExperimentalObservation` stores, for one pair, the Event ID, the route, the instruction variant, the unreviewed experimental marker, the execution receipt reference, the archived raw response reference and digest, and the reused parsed answer.
 `DiscriminationObservationItem` stores, per pair, the terminal outcome and, when `answered`, the five signal results.
 `DiscriminationReport` stores the contract version, the diagnostic group (`AHE-022`, `AHE-051`) and the constructed group (nine records), the ordered observation items, the per-signal per-variant counts and malformed tallies, and the result fingerprint.
@@ -196,7 +199,7 @@ The runner is `scripts/run_semantic_instruction_discrimination.py`.
 The runner exposes `prepare`, `execute`, `report`, and `show`.
 `prepare` renders the two prompts per record, verifies the frozen R17 contract binding, and writes a `prepared` Run root.
 `execute` runs the model at most once per pair under the frozen R6 configuration and archives every execution receipt and raw response, recording terminal outcomes.
-`report` rebuilds the sealed report from archived responses without invoking the model.
+`report` validates the archived preparation, prompts, run binding, receipts, responses, parses, and signals without invoking the model or loading current runtime configuration.
 `show` returns the validated report fingerprint, the per-signal counts, and the predeclared verdict.
 
 ## 8. Behavior & Domain Rules
@@ -218,11 +221,11 @@ The experiment does not tune against the held-out partition.
 ## 9. Acceptance Criteria
 
 - AC-R18-INS: Tests prove the renderer emits exactly two prompts per record whose shared body is byte-identical and whose instruction prefixes equal the frozen R15 and R17 rule text; the semantic prefix names only the eligibility and complete-selected-set rules.
-- AC-R18-OBS: Tests prove an experimental observation binds to its prepared task, execution receipt, and archived response, carries no fabricated human review metadata, and that the reviewed-fixture loader still fails fast on missing review metadata.
+- AC-R18-OBS: Tests prove an experimental observation binds to its prepared task, execution receipt, and archived response, carries no fabricated human review metadata, and that the reviewed-fixture loader still fails fast on missing review metadata. Negative execution tests prove Event, task, policy, route, variant, and prepared-prompt mismatches fail before input inspection or model execution.
 - AC-R18-BUDGET: Tests prove 22 terminal pair records with at most 22 model executions, and that a blocked or failed pair becomes terminal without retry.
 - AC-R18-EVL: Tests prove the experimental evaluator applies the exact R17 five-signal rules and reports the three instruction-sensitive signals and the two instruction-invariant signals separately.
 - AC-R18-VER: Tests prove the verdict is per signal, keeps malformed and terminal pairs in the denominator, and computes improvement, regression, mixed, and inconclusive as specified.
-- AC-R18-REP: Tests prove the report rebuilds from archived responses, records zero canonical writes and zero ProposedChanges, separates the diagnostic from the constructed group, and changes fingerprint when any terminal outcome, signal result, or raw response digest changes.
+- AC-R18-REP: Tests prove the report rebuilds from archived responses, rejects stale parses or signals and inconsistent receipts or prepared prompts, records zero canonical writes and zero ProposedChanges, separates the diagnostic from the constructed group, and changes fingerprint when any terminal outcome, signal result, or raw response digest changes.
 - AC-R18-LIVE: The operator-run experiment records 22 terminal pair records with at most 22 model executions, zero canonical writes, and zero ProposedChanges; the comparison is complete only when all 22 pairs are `answered`.
 - AC-R18-ALL: Focused formatting, lint, typecheck, and tests pass.
 
