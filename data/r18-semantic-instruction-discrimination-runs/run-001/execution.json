@@ -1,0 +1,1 @@
+{"generation_parameters":[{"key":"max_output_tokens","value":2048},{"key":"seed","value":17},{"key":"temperature","value":0}],"model_identity":{"determinism_settings":[],"name":"qwen2.5-14b-instruct","runtime":"lm_studio","tokenizer_id":"lm_studio_loaded_model_tokenizer_v1:qwen2.5-14b-instruct","weights_digest":null}}
