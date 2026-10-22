@@ -43,7 +43,8 @@ No existing Gold selections were used to author these proposals.
 - [Frozen task-route manifest](../data/r17-semantic-selection-contract/task_manifest.json).
 - [Mechanical verifier](../data/r17-semantic-selection-contract/verify_policy_records.py).
 - [File checksums](../data/r17-semantic-selection-contract/checksums.json).
-- [Exact contract text at review time](../data/r17-semantic-selection-contract/reviewed_contract_spec.md), retained as historical evidence; the current contract remains authoritative.
+- [Verifier implementation checksums](../data/r17-semantic-selection-contract/implementation_checksums.json), tracked separately from the reviewed-record digests.
+- [Exact contract text at review time](../data/r17-semantic-selection-contract/reviewed_contract_spec.md), retained as historical approval evidence; the current contract remains authoritative.
 
 Run from the repository root:
 
@@ -51,10 +52,11 @@ Run from the repository root:
 .venv/bin/python data/r17-semantic-selection-contract/verify_policy_records.py
 ```
 
-Expected result: mechanically_valid_human_adopted_policy_records, 11 policy records, 26 answer fixtures, human_review_status=approved, and acceptance_evidence=false.
+Expected result: mechanically_valid_frozen_semantic_selection_contract, 11 policy records, 26 answer fixtures, human_review_status=approved, acceptance_evidence=true, contract_freeze_status=frozen, and zero model executions and zero canonical writes.
 The verifier checks the operator approval bindings, source ranges, shared DTO parsing, route binding, expected-signal consistency, and reproducible current R4 probes.
 It does not decide whether the proposed eligibility policy is correct.
-The policy records use a preparation envelope with human adoption metadata; the R17 acceptance DTO and evaluator are not implemented.
+The digest closure binds the frozen data artifacts and the reviewed contract snapshot (`reviewed_contract_spec.md`) as approval evidence, including the R6/R16 run artifacts the frozen records reference; this review document and the living contract TDD are excluded and can be edited without re-freezing.
+Verifier implementation provenance is recorded separately in `implementation_checksums.json` rather than as a policy reapproval.
 The data directory remains ignored by Git, like the preceding experiment runs; this review document is outside that ignored directory.
 
 ## Case overview

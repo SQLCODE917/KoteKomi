@@ -4,10 +4,6 @@
   "acceptance_evidence": true,
   "draft_author": "Codex (agent; user-authorized draft)",
   "draft_authorization": "Try producing the policy records, I will review",
-  "contract_spec": {
-    "path": "docs/2026-10-07-semantic-selection-contract.md",
-    "sha256": "c662b9fda14545ce93c7495e0cc3399704d3423a790054e0612edb6f5def54d5"
-  },
   "contract_version": 1,
   "digest_encoding": "UTF-8 JSON, sorted keys, no insignificant whitespace, ensure_ascii=false, allow_nan=false; policy_body excludes its own digest and approval fields",
   "record_count": 11,

@@ -13,7 +13,7 @@
     },
     {
       "path": "data/r17-semantic-selection-contract/reference_policy_records.json",
-      "sha256": "9b0b38c66b8808f756cef530cd1c459c4a5f77a71f844dacf2d282b25fab6ca5"
+      "sha256": "cbbc639b604f06b8db283c46a3ccfd507f2f63a450760ae0fe4dba85211a8cf6"
     },
     {
       "path": "data/r17-semantic-selection-contract/task_manifest.json",
@@ -68,16 +68,8 @@
       "sha256": "a40dcdfb5b660564ae63cc418c076807870dcfabb63f48022104c2d068f5c51e"
     },
     {
-      "path": "data/r17-semantic-selection-contract/verify_policy_records.py",
-      "sha256": "ca460c7e26e97ee5bad81626c84a879a70a9b16911d4c7a7ece5318fe24fa25a"
-    },
-    {
       "path": "data/r17-semantic-selection-contract/reviewed_contract_spec.md",
       "sha256": "747de688ccd0244fa6bf0e66446c2d5af95c116cd6f3fdc32dff8fc129f94ced"
-    },
-    {
-      "path": "docs/2026-10-07-semantic-selection-policy-review.md",
-      "sha256": "df015d4a6c4d6f341ebc9873bdd7080c1abd5590c148bbe20373f5f3939b7ab6"
     }
   ]
 }

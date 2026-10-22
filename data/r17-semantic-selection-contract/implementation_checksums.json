@@ -1,0 +1,10 @@
+{
+  "schema_version": "r17_implementation_checksums_v1",
+  "status": "contract_frozen",
+  "files": [
+    {
+      "path": "data/r17-semantic-selection-contract/verify_policy_records.py",
+      "sha256": "70b99b33b90ab771195f8a3e5ac7c79ee1ffffbb40cf57bbdc66c03b808a3dbd"
+    }
+  ]
+}

@@ -96,7 +96,6 @@ def main() -> None:
     require(
         document["contract_version"] == CONTRACT_VERSION, "Policy records claim a wrong contract version"
     )
-    verify_handle(document["contract_spec"])
     approval_handle = document["human_approval"]
     approval = json.loads(verify_handle(approval_handle).read_text())
     verify_handle(approval["reviewed_contract_spec"])
@@ -447,6 +446,23 @@ def main() -> None:
     if checksums_path.exists():
         for handle in load("checksums.json")["files"]:
             verify_handle(handle)
+    implementation = load("implementation_checksums.json")
+    require(
+        implementation["schema_version"] == "r17_implementation_checksums_v1",
+        "Unknown implementation checksums format",
+    )
+    require(
+        implementation["status"] == FROZEN_STATUS,
+        "Implementation manifest must claim contract freeze",
+    )
+    implementation_handles = implementation["files"]
+    verifier_path = str((DIRECTORY / Path(__file__).name).relative_to(ROOT))
+    require(
+        [handle["path"] for handle in implementation_handles] == [verifier_path],
+        "Implementation manifest must bind exactly one entry for the verifier path",
+    )
+    for handle in implementation_handles:
+        verify_handle(handle)
     print(
         json.dumps(
             {
