@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import importlib
+import json
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -24,12 +25,20 @@ from kotekomi_application import (
     TerminalOutcome,
     discrimination_report_fingerprint,
     discrimination_signals_from_parsed,
+    frozen_semantic_selection_contract,
     generation_parameters_digest,
     model_identity_snapshot_digest,
     parse_corrective_reselection_answer,
+    verify_contract_binding,
 )
 
 ROOT = Path(__file__).resolve().parents[3]
+
+# The R19 composer change drifts the frozen R17 contract's scoring digest, so the
+# current runner regression binds to an explicitly re-bound current test contract
+# instead of the frozen historical contract. The frozen historical contract and
+# run are reproduced only in `scripts/run_r18_historical_reproduction.sh`.
+CURRENT_CONTRACT_DIR = ROOT / "data/r18-current-test-contract"
 
 
 def _runner() -> Any:
@@ -37,6 +46,15 @@ def _runner() -> Any:
     if scripts_path not in sys.path:
         sys.path.insert(0, scripts_path)
     return importlib.import_module("run_semantic_instruction_discrimination")
+
+
+def test_current_contract_is_bound_to_current_implementation() -> None:
+    """The R18 runner regression contract is explicitly bound to the live R19 code."""
+    contract = frozen_semantic_selection_contract(directory=CURRENT_CONTRACT_DIR)
+    raw = json.loads((CURRENT_CONTRACT_DIR / "reference_policy_records.json").read_text())[
+        "records"
+    ]
+    verify_contract_binding(contract=contract, records=raw)
 
 
 def test_execute_archives_binding_and_rebuilds_without_more_calls(
@@ -102,6 +120,7 @@ def test_execute_archives_binding_and_rebuilds_without_more_calls(
         return runtime
 
     monkeypatch.setattr(runner, "build_model_task_runtime", fake_runtime)
+    monkeypatch.setattr(runner, "DATA_DIR", CURRENT_CONTRACT_DIR)
     args = argparse.Namespace(config=runner.DEFAULT_CONFIG, run_root=tmp_path)
     assert runner._prepare(args) == 0
     assert runner._execute(args) == 0
@@ -125,6 +144,7 @@ def archived_run(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Any, 
         pytest.fail("Rebuilding evidence must not construct a model runtime.")
 
     monkeypatch.setattr(runner, "build_model_task_runtime", reject_runtime)
+    monkeypatch.setattr(runner, "DATA_DIR", CURRENT_CONTRACT_DIR)
     runner._prepare(argparse.Namespace(config=runner.DEFAULT_CONFIG, run_root=tmp_path))
     state = runner._load_prepared_state(tmp_path)
     binding = DiscriminationExecutionBinding(

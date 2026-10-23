@@ -263,9 +263,17 @@
         {
           "pattern": "^plc_[A-Za-z0-9][A-Za-z0-9_-]*$",
           "type": "string"
+        },
+        {
+          "type": "null"
         }
       ],
+      "default": null,
       "title": "Subject Entity Id"
+    },
+    "subject_value": {
+      "$ref": "#/$defs/JsonValue",
+      "default": null
     },
     "supersedes_assertion_id": {
       "anyOf": [
@@ -307,7 +315,6 @@
     "id",
     "assertion_type",
     "epistemic_scope",
-    "subject_entity_id",
     "relation_label",
     "source_authority",
     "attribution_basis"

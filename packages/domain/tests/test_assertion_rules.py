@@ -65,6 +65,33 @@ def test_rejects_assertion_with_object_entity_and_object_value() -> None:
         Assertion(**kwargs)
 
 
+def test_accepts_assertion_with_subject_value_instead_of_subject_entity() -> None:
+    kwargs = valid_assertion_kwargs()
+    kwargs.pop("subject_entity_id")
+    kwargs["subject_value"] = "The April order"
+
+    assertion = Assertion(**kwargs)
+
+    assert assertion.subject_entity_id is None
+    assert assertion.subject_value == "The April order"
+
+
+def test_rejects_assertion_without_subject_entity_or_subject_value() -> None:
+    kwargs = valid_assertion_kwargs()
+    kwargs.pop("subject_entity_id")
+
+    with pytest.raises(ValidationError, match="exactly one subject"):
+        Assertion(**kwargs)
+
+
+def test_rejects_assertion_with_subject_entity_and_subject_value() -> None:
+    kwargs = valid_assertion_kwargs()
+    kwargs["subject_value"] = "The April order"
+
+    with pytest.raises(ValidationError, match="exactly one subject"):
+        Assertion(**kwargs)
+
+
 def test_rejects_accepted_assertion_without_provenance_activity() -> None:
     kwargs = valid_assertion_kwargs()
     kwargs["provenance_activity_ids"] = ()
@@ -267,6 +294,22 @@ def test_proposed_assertion_retains_relation_label_without_accepted_state_fields
     )
 
     assert proposed.relation_label == "has a policy conflict with"
+
+
+def test_proposed_assertion_accepts_subject_value() -> None:
+    values = valid_assertion_kwargs()
+    values.pop("predicate")
+    values.pop("subject_entity_id")
+    values.pop("status")
+    values.pop("provenance_activity_ids")
+    values.pop("created_at")
+    values.pop("updated_at")
+    values["subject_value"] = "The April order"
+
+    proposed = ProposedAssertion.model_validate(values | {"relation_label": "is"})
+
+    assert proposed.subject_entity_id is None
+    assert proposed.subject_value == "The April order"
 
 
 def test_proposed_assertion_applies_direct_assertion_evidence_rules() -> None:

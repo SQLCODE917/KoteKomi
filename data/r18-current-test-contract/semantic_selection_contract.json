@@ -1,0 +1,70 @@
+{
+  "schema_version": "r17_semantic_selection_contract_v1",
+  "contract": {
+    "version": 1,
+    "eligibility_rule": "Select only Candidates that supply source-exact content one required role demands. Selectable roles: subject, object, time, place, polarity, modality. Syntax attachment establishes availability, never eligibility.",
+    "complete_selected_set_rules": [
+      "Exactly one eligible Candidate per required role the pool can represent; coordination may require multiple.",
+      "Overlapping Candidates reduce to the narrowest source-exact canonical boundary.",
+      "A Candidate is redundant only when it adds no required content beyond the canonical boundary.",
+      "Separate source occurrences stay distinct even when their text matches.",
+      "A select-all answer fails when the pool holds ineligible or redundant Candidates."
+    ],
+    "none_rule": "A justified NONE means the task is complete and no eligible Candidate exists. An observed NONE is an abstention judged against the expected eligible set, never assumed justified.",
+    "canonical_boundary_rules": [
+      "The canonical boundary is the narrowest source-exact span containing the role's argument head and all content the role requires, and no content a different role requires.",
+      "A Candidate equal to the canonical boundary is not redundant because a larger Candidate contains it."
+    ],
+    "signal_definitions": [
+      {
+        "name": "answer_grammar",
+        "values": [
+          "valid",
+          "invalid"
+        ],
+        "not_applicable_when": "never - always computed"
+      },
+      {
+        "name": "semantic_selection",
+        "values": [
+          "met",
+          "unmet",
+          "not_applicable"
+        ],
+        "not_applicable_when": "the strict-parse result is rejected"
+      },
+      {
+        "name": "boundary_coverage",
+        "values": [
+          "met",
+          "gap"
+        ],
+        "not_applicable_when": "never - source- and pool-bound"
+      },
+      {
+        "name": "abstention_correctness",
+        "values": [
+          "justified",
+          "unjustified",
+          "not_applicable"
+        ],
+        "not_applicable_when": "the answer is not NONE"
+      },
+      {
+        "name": "composition_readiness",
+        "values": [
+          "ready",
+          "not_ready",
+          "not_applicable"
+        ],
+        "not_applicable_when": "the reference selected set or composition inputs are absent"
+      }
+    ],
+    "binding": {
+      "policy_records_sha256": "85d3f3687c7bf2cffdb8ead30595b5c1c5d1d473af545e410f3a5b09d07abc87",
+      "renderer_sha256": "762a54b5914952da16fab032d10bec919161a51444cbbd1635136c40f40c37c9",
+      "scoring_rules_sha256": "3d7f6edf3d85bc9f6aa0f93b753324f687f72bdfeb84a8f15a913a17ab409171",
+      "thresholds_sha256": "ba89bf3d7e2659d7791fbc01d04ba54cc7a100813ac90ee64c28a59dbf33385a"
+    }
+  }
+}

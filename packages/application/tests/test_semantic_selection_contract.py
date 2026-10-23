@@ -461,17 +461,32 @@ def test_answer_fixture_must_match_approved_digest() -> None:
         )
 
 
-def test_polarity_drift_changes_readiness_to_not_ready() -> None:
+def test_neg_and_advmod_negation_both_preserve_readiness() -> None:
     contract = frozen_semantic_selection_contract(directory=DATA_DIR)
     records = load_reference_policy_records(contract=contract, directory=DATA_DIR)
     record = next(record for record in records if record.event_id == "AHE-903")
     assert compute_composition_readiness(policy_record=record) == "ready"
-    drifted_tokens = tuple(
+    # R19 REQ-CMP-02: an `advmod` `not`/`n't` records the same negation as `neg`.
+    advmod_tokens = tuple(
         token.model_copy(update={"dependency_relation": "advmod"}) if token.text == "not" else token
         for token in record.composition_tokens
     )
-    drifted = record.model_copy(update={"composition_tokens": drifted_tokens})
-    assert compute_composition_readiness(policy_record=drifted) == "not_ready"
+    advmod_record = record.model_copy(update={"composition_tokens": advmod_tokens})
+    assert compute_composition_readiness(policy_record=advmod_record) == "ready"
+
+
+def test_removed_negation_changes_readiness_to_not_ready() -> None:
+    contract = frozen_semantic_selection_contract(directory=DATA_DIR)
+    records = load_reference_policy_records(contract=contract, directory=DATA_DIR)
+    record = next(record for record in records if record.event_id == "AHE-903")
+    assert compute_composition_readiness(policy_record=record) == "ready"
+    # Removing negator evidence (a non-negation relation) loses required polarity.
+    stripped_tokens = tuple(
+        token.model_copy(update={"dependency_relation": "dep"}) if token.text == "not" else token
+        for token in record.composition_tokens
+    )
+    stripped = record.model_copy(update={"composition_tokens": stripped_tokens})
+    assert compute_composition_readiness(policy_record=stripped) == "not_ready"
 
 
 def test_missing_object_changes_readiness_to_not_ready() -> None:

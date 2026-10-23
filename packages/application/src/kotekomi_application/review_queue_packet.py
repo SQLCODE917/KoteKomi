@@ -899,9 +899,10 @@ def _record_references(record: ReviewPacketRecord) -> tuple[tuple[str, str], ...
         references.append(("Source", record.source_id))
         references.append(("Document", record.document_id))
     elif isinstance(record, ProposedAssertion):
-        references.append(
-            (_entity_reference_type(record.subject_entity_id), record.subject_entity_id)
-        )
+        if record.subject_entity_id is not None:
+            references.append(
+                (_entity_reference_type(record.subject_entity_id), record.subject_entity_id)
+            )
         if record.object_entity_id is not None:
             references.append(
                 (_entity_reference_type(record.object_entity_id), record.object_entity_id)

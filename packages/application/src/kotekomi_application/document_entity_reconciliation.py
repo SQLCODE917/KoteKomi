@@ -1106,7 +1106,7 @@ def _rewrite_non_entity_proposal(
     elif record_type == "Assertion":
         assertion = ProposedAssertion.model_validate_json(_canonical_json(record))
         referenced_ids = (
-            assertion.subject_entity_id,
+            *((assertion.subject_entity_id,) if assertion.subject_entity_id is not None else ()),
             *((assertion.object_entity_id,) if assertion.object_entity_id is not None else ()),
         )
         applied_mapping = {
@@ -1115,8 +1115,10 @@ def _rewrite_non_entity_proposal(
             if item in record_mapping and record_mapping[item] != item
         }
         update: dict[str, object] = {
-            "subject_entity_id": record_mapping.get(
-                assertion.subject_entity_id, assertion.subject_entity_id
+            "subject_entity_id": (
+                record_mapping.get(assertion.subject_entity_id, assertion.subject_entity_id)
+                if assertion.subject_entity_id is not None
+                else None
             ),
             "object_entity_id": (
                 record_mapping.get(assertion.object_entity_id, assertion.object_entity_id)
@@ -1128,7 +1130,7 @@ def _rewrite_non_entity_proposal(
         if applied_mapping:
             assertion_id = _id(
                 "ast",
-                rewritten.subject_entity_id,
+                rewritten.subject_entity_id or _canonical_json(rewritten.subject_value),
                 rewritten.relation_label,
                 rewritten.object_entity_id or _canonical_json(rewritten.object_value),
                 _canonical_json(rewritten.qualifiers),

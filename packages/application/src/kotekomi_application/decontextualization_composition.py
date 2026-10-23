@@ -55,7 +55,9 @@ _EventId = Annotated[str, Field(pattern=r"^(TGE|AHE)-[0-9]{3}$")]
 _EntityId = Annotated[str, Field(pattern=r"^EGE-[0-9]{3}$")]
 
 _SUBJECT_DEPENDENCY_RELATIONS = frozenset({"nsubj", "nsubj:pass"})
-_OBJECT_DEPENDENCY_RELATIONS = frozenset({"obj", "iobj", "obl"})
+_OBJECT_DEPENDENCY_RELATIONS = frozenset({"obj", "iobj"})
+_TIME_PLACE_DEPENDENCY_RELATIONS = frozenset({"obl"})
+_NEGATION_LEMMAS = frozenset({"not", "n't"})
 _MODAL_MODALITY: tuple[tuple[str, EventModality], ...] = (
     ("can", EventModality.POSSIBLE),
     ("could", EventModality.POSSIBLE),
@@ -85,6 +87,8 @@ class DecontextualizationHoldReason(StrEnum):
     SUBJECT_UNAVAILABLE = "subject_unavailable"
     ATTRIBUTION_AMBIGUOUS = "attribution_ambiguous"
     SOURCE_OFFSET_DRIFT = "source_offset_drift"
+    UNSUPPORTED_TIME_PLACE = "unsupported_time_place"
+    UNSUPPORTED_COORDINATION = "unsupported_coordination"
 
 
 class DecontextualizationRoleKind(StrEnum):
@@ -123,6 +127,23 @@ class DecontextualizationEntityRef(BaseModel):
         return self
 
 
+class DecontextualizationExclusion(BaseModel):
+    """One reviewed exclusion from the Event-Entity Connection provider.
+
+    A value subject is authorized only by a reviewed exclusion naming its span as
+    outside the Actor and Organization kinds (``non_entity_value``). The composer
+    never looks an exclusion up itself; the Application Layer use case passes these
+    in through the Event-Entity Reference Provider Port.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    exclusion_id: Annotated[str, Field(min_length=1)]
+    contextual_kind: Literal["non_entity_value"]
+    source_range: AttachmentSourceRange
+    rationale: Annotated[str, Field(min_length=1)]
+
+
 class DecontextualizedRole(BaseModel):
     """One exact selected core-event fragment and its resolved reference."""
 
@@ -132,15 +153,24 @@ class DecontextualizedRole(BaseModel):
     exact_fragment: AttachmentSourceRange
     entity_ref: _EntityId | None = None
     object_value: Annotated[str, Field(min_length=1)] | None = None
+    subject_value: Annotated[str, Field(min_length=1)] | None = None
 
     @model_validator(mode="after")
     def validate_contract(self) -> Self:
-        if self.entity_ref is None and self.object_value is None:
-            raise ValueError("A composed role requires an entity reference or an object value.")
-        if self.entity_ref is not None and self.object_value is not None:
-            raise ValueError("A composed role must name either an entity or an object value.")
-        if self.role is DecontextualizationRoleKind.SUBJECT and self.object_value is not None:
-            raise ValueError("A subject role cannot carry an object value.")
+        if self.role is DecontextualizationRoleKind.SUBJECT:
+            if self.object_value is not None:
+                raise ValueError("A subject role cannot carry an object value.")
+            if (self.entity_ref is None) == (self.subject_value is None):
+                raise ValueError(
+                    "A subject role requires exactly one entity reference or subject value."
+                )
+        else:
+            if self.subject_value is not None:
+                raise ValueError("An object role cannot carry a subject value.")
+            if (self.entity_ref is None) == (self.object_value is None):
+                raise ValueError(
+                    "An object role requires exactly one entity reference or object value."
+                )
         return self
 
 
@@ -171,6 +201,7 @@ class DecontextualizedProposition(BaseModel):
     event_id: _EventId
     source_text_sha256: Annotated[str, Field(pattern=_SHA256)]
     relation_label: Annotated[str, Field(min_length=1)] | None = None
+    relation_range: AttachmentSourceRange | None = None
     subject: DecontextualizedRole | None = None
     object: DecontextualizedRole | None = None
     polarity: EventPolarity | None = None
@@ -195,6 +226,7 @@ class DecontextualizedProposition(BaseModel):
                 value is not None
                 for value in (
                     self.relation_label,
+                    self.relation_range,
                     self.subject,
                     self.object,
                     self.polarity,
@@ -352,6 +384,52 @@ def _resolve_entity(
     if len(distinct) == 1:
         return next(iter(distinct))
     return None
+
+
+def _has_coordination(
+    root: EventEntityLinguisticToken,
+    tokens: tuple[EventEntityLinguisticToken, ...],
+) -> bool:
+    """Return whether one role head carries a `conj` dependent (a second conjunct)."""
+    return any(
+        token.dependency_relation == "conj" and token.head_token_id == root.token_id
+        for token in tokens
+    )
+
+
+def _validate_subject_value_authorizations(
+    authorizations: tuple[DecontextualizationExclusion, ...],
+    source_text: str,
+) -> None:
+    """Reject drift, duplicates, and overlapping non-entity exclusions.
+
+    A reviewed subject-value exclusion must be source-exact. Two exclusions that
+    overlap the same region are ambiguous (a conflict for the same offsets or a
+    redundant duplicate), so they fail fast instead of silently authorizing text.
+    """
+    spans: list[tuple[int, int]] = []
+    for authorization in authorizations:
+        fragment = authorization.source_range
+        if source_text[fragment.start : fragment.end] != fragment.text:
+            raise ValueError("Subject value authorization drifted from its source text.")
+        span = (fragment.start, fragment.end)
+        for previous in spans:
+            if fragment.start < previous[1] and previous[0] < fragment.end:
+                raise ValueError("Duplicate or conflicting subject value authorizations overlap.")
+        spans.append(span)
+
+
+def _subject_value_authorized(
+    fragment: AttachmentSourceRange,
+    authorizations: tuple[DecontextualizationExclusion, ...],
+) -> bool:
+    """Return whether one subject span source-exactly equals a reviewed exclusion."""
+    return any(
+        authorization.source_range.start == fragment.start
+        and authorization.source_range.end == fragment.end
+        and authorization.source_range.text == fragment.text
+        for authorization in authorizations
+    )
 
 
 def _held(
@@ -514,6 +592,7 @@ def build_decontextualized_proposition(
     trigger_head_end: int,
     tokens: tuple[EventEntityLinguisticToken, ...],
     entities: tuple[DecontextualizationEntityRef, ...],
+    subject_value_authorizations: tuple[DecontextualizationExclusion, ...] = (),
 ) -> DecontextualizedProposition:
     """Compose one Event's decontextualized proposition or a typed hold.
 
@@ -527,6 +606,7 @@ def build_decontextualized_proposition(
         raise ValueError("Decontextualization source digest drifted from its text.")
     if inventory.source_text_sha256 != source_text_sha256:
         raise ValueError("Decontextualization inventory digest drifted from its source text.")
+    _validate_subject_value_authorizations(subject_value_authorizations, source_text)
 
     if answer.status is ConstituentSelectionStatus.REJECTED:
         return _held(event_id, source_text_sha256, DecontextualizationHoldReason.SELECTION_REJECTED)
@@ -552,22 +632,42 @@ def build_decontextualized_proposition(
         )
 
     relation_label = head.lemma.casefold()
+    relation_range = AttachmentSourceRange(
+        start=head.start, end=head.end, text=source_text[head.start : head.end]
+    )
     dependents = _dependents(head, tokens)
 
-    subject_token = next(
-        (
-            token
-            for token in dependents
-            if token.dependency_relation in _SUBJECT_DEPENDENCY_RELATIONS
-        ),
-        None,
+    object_dependents = tuple(
+        token for token in dependents if token.dependency_relation in _OBJECT_DEPENDENCY_RELATIONS
     )
-    if subject_token is None:
+    copula_dependents = tuple(token for token in dependents if token.dependency_relation == "cop")
+    time_place_dependents = tuple(
+        token
+        for token in dependents
+        if token.dependency_relation in _TIME_PLACE_DEPENDENCY_RELATIONS
+    )
+    is_copular = bool(copula_dependents) and not object_dependents
+
+    # REQ-CMP-05: trigger-head time/place content is not an object role.
+    if time_place_dependents:
+        return _held(
+            event_id, source_text_sha256, DecontextualizationHoldReason.UNSUPPORTED_TIME_PLACE
+        )
+
+    subject_dependents = tuple(
+        token for token in dependents if token.dependency_relation in _SUBJECT_DEPENDENCY_RELATIONS
+    )
+    if subject_dependents and _has_coordination(subject_dependents[0], tokens):
+        return _held(
+            event_id, source_text_sha256, DecontextualizationHoldReason.UNSUPPORTED_COORDINATION
+        )
+    if not subject_dependents:
         return _held(
             event_id,
             source_text_sha256,
             DecontextualizationHoldReason.SUBJECT_UNAVAILABLE,
         )
+    subject_token = subject_dependents[0]
     subject_constituent = _maximal_constituent(subject_token, head, selected)
     if subject_constituent is None:
         return _held(
@@ -576,28 +676,49 @@ def build_decontextualized_proposition(
             DecontextualizationHoldReason.SUBJECT_UNAVAILABLE,
         )
     subject_entity = _resolve_entity(subject_constituent.constituent_range, entities)
-    if subject_entity is None:
+    if subject_entity is not None:
+        subject_role = DecontextualizedRole(
+            role=DecontextualizationRoleKind.SUBJECT,
+            exact_fragment=subject_constituent.constituent_range,
+            entity_ref=subject_entity,
+        )
+    elif _subject_value_authorized(
+        subject_constituent.constituent_range, subject_value_authorizations
+    ):
+        subject_role = DecontextualizedRole(
+            role=DecontextualizationRoleKind.SUBJECT,
+            exact_fragment=subject_constituent.constituent_range,
+            subject_value=subject_constituent.constituent_range.text,
+        )
+    else:
         return _held(
             event_id,
             source_text_sha256,
             DecontextualizationHoldReason.SUBJECT_UNAVAILABLE,
         )
-    subject_role = DecontextualizedRole(
-        role=DecontextualizationRoleKind.SUBJECT,
-        exact_fragment=subject_constituent.constituent_range,
-        entity_ref=subject_entity,
-    )
 
     object_role: DecontextualizedRole | None = None
-    object_token = next(
-        (
-            token
-            for token in dependents
-            if token.dependency_relation in _OBJECT_DEPENDENCY_RELATIONS
-        ),
-        None,
-    )
-    if object_token is not None:
+    if is_copular:
+        copula = copula_dependents[0]
+        relation_label = copula.text.casefold()
+        relation_range = AttachmentSourceRange(
+            start=copula.start, end=copula.end, text=source_text[copula.start : copula.end]
+        )
+        object_role = DecontextualizedRole(
+            role=DecontextualizationRoleKind.OBJECT,
+            exact_fragment=AttachmentSourceRange(
+                start=head.start, end=head.end, text=source_text[head.start : head.end]
+            ),
+            object_value=source_text[head.start : head.end],
+        )
+    elif object_dependents:
+        object_token = object_dependents[0]
+        if _has_coordination(object_token, tokens):
+            return _held(
+                event_id,
+                source_text_sha256,
+                DecontextualizationHoldReason.UNSUPPORTED_COORDINATION,
+            )
         object_constituent = _maximal_constituent(object_token, head, selected)
         if object_constituent is not None:
             object_entity = _resolve_entity(object_constituent.constituent_range, entities)
@@ -616,7 +737,13 @@ def build_decontextualized_proposition(
 
     polarity = (
         EventPolarity.NEGATED
-        if any(token.dependency_relation == "neg" for token in dependents)
+        if any(
+            token.dependency_relation == "neg"
+            or (
+                token.dependency_relation == "advmod" and token.lemma.casefold() in _NEGATION_LEMMAS
+            )
+            for token in dependents
+        )
         else EventPolarity.AFFIRMED
     )
     modality = _modality(dependents)
@@ -657,6 +784,7 @@ def build_decontextualized_proposition(
         event_id=event_id,
         source_text_sha256=source_text_sha256,
         relation_label=relation_label,
+        relation_range=relation_range,
         subject=subject_role,
         object=object_role,
         polarity=polarity,

@@ -1009,11 +1009,12 @@ def _validate_accepted_record_references(
         _require_source(ledger_repository, accepted_record.source_id, accepted_record.id)
         _require_document(ledger_repository, accepted_record.document_id, accepted_record.id)
     elif isinstance(accepted_record, Assertion):
-        _require_entity_reference(
-            ledger_repository,
-            accepted_record.subject_entity_id,
-            accepted_record.id,
-        )
+        if accepted_record.subject_entity_id is not None:
+            _require_entity_reference(
+                ledger_repository,
+                accepted_record.subject_entity_id,
+                accepted_record.id,
+            )
         if accepted_record.object_entity_id is not None:
             _require_entity_reference(
                 ledger_repository,

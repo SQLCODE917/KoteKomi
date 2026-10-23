@@ -682,7 +682,11 @@ def _record_labels(
     record: Assertion | Relationship | Outcome, ledger_repository: LedgerRetrievalLedger
 ) -> tuple[str, ...]:
     if isinstance(record, Assertion):
-        labels = [_entity_label(record.subject_entity_id, ledger_repository)]
+        labels = (
+            [_entity_label(record.subject_entity_id, ledger_repository)]
+            if record.subject_entity_id is not None
+            else []
+        )
         if record.object_entity_id is not None:
             labels.append(_entity_label(record.object_entity_id, ledger_repository))
         return tuple(labels)

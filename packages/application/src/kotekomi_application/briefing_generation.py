@@ -589,12 +589,13 @@ def _close_context(selected_ids: _SelectedIds, indexes: _RecordIndexes) -> None:
             )
         for assertion_id in tuple(selected_ids.assertion_ids):
             assertion = _require(indexes.assertions, assertion_id, "Assertion", assertion_id)
-            changed |= _add_entity_reference(
-                selected_ids,
-                indexes,
-                assertion.subject_entity_id,
-                assertion.id,
-            )
+            if assertion.subject_entity_id is not None:
+                changed |= _add_entity_reference(
+                    selected_ids,
+                    indexes,
+                    assertion.subject_entity_id,
+                    assertion.id,
+                )
             if assertion.object_entity_id is not None:
                 changed |= _add_entity_reference(
                     selected_ids,
@@ -1251,6 +1252,7 @@ def _sharp_judgment_text(
     if (
         analytic_assertion.predicate == "shared_governance_outcome_with"
         and analytic_assertion.object_entity_id is not None
+        and analytic_assertion.subject_entity_id is not None
     ):
         constrained_organization = _record_name(analytic_assertion.subject_entity_id, name_lookup)
         constraining_organization = _record_name(analytic_assertion.object_entity_id, name_lookup)
@@ -1952,7 +1954,11 @@ def _linked_outcome_names(outcome: Outcome, name_lookup: _NameLookup) -> str:
 def _assertion_text(assertion: Assertion, name_lookup: _NameLookup) -> str:
     if assertion.current_assessment:
         return _humanize_record_ids(assertion.current_assessment, name_lookup)
-    subject = _record_name(assertion.subject_entity_id, name_lookup)
+    subject = (
+        _record_name(assertion.subject_entity_id, name_lookup)
+        if assertion.subject_entity_id is not None
+        else str(assertion.subject_value)
+    )
     predicate = _phrase_predicate(assertion.predicate)
     if assertion.object_entity_id is not None:
         return f"{subject} {predicate} {_record_name(assertion.object_entity_id, name_lookup)}."
@@ -2025,6 +2031,7 @@ def _inference_body(assertion: Assertion, name_lookup: _NameLookup) -> str:
     if (
         assertion.predicate == "shared_governance_outcome_with"
         and assertion.object_entity_id is not None
+        and assertion.subject_entity_id is not None
     ):
         return (
             f"{_record_name(assertion.subject_entity_id, name_lookup)} and "

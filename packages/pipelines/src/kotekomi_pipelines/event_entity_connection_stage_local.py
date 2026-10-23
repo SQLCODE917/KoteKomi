@@ -205,7 +205,7 @@ class ConnectionGoldExcludedExpression(BaseModel):
     start: Annotated[int, Field(ge=0)]
     end: Annotated[int, Field(gt=0)]
     source_text: Annotated[str, Field(min_length=1)]
-    contextual_kind: Literal["event"]
+    contextual_kind: Literal["event", "non_entity_value"]
     rationale: Annotated[str, Field(min_length=1)]
 
     @model_validator(mode="after")

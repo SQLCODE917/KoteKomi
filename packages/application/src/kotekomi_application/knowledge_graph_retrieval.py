@@ -435,7 +435,8 @@ def _edges(
         assertion_ids = (record.id,) if isinstance(record, Assertion) else record.assertion_ids
         destinations: list[tuple[str, str]] = []
         if isinstance(record, Assertion):
-            destinations.append((record.subject_entity_id, "assertion_subject"))
+            if record.subject_entity_id is not None:
+                destinations.append((record.subject_entity_id, "assertion_subject"))
             if record.object_entity_id is not None:
                 destinations.append((record.object_entity_id, "assertion_object"))
         elif isinstance(record, Relationship):

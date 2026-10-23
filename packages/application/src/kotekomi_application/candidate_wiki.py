@@ -182,7 +182,7 @@ class _WikiAuditEdgeRecord(BaseModel):
 
     assertion_id: str
     subject_label: str
-    subject_path: str
+    subject_path: str | None
     predicate: str
     object_label: str
     object_path: str | None
@@ -321,7 +321,7 @@ class WikiOntologyQualifier:
 class WikiOntologyEdge:
     assertion_id: str
     subject_label: str
-    subject_path: str
+    subject_path: str | None
     predicate: str
     object_label: str
     object_path: str | None
@@ -1426,6 +1426,8 @@ def _plan_presentations(
     event_assertions: dict[str, list[CandidateViewRecord]] = {}
     for item in assertion_items:
         assertion = cast(Assertion | ProposedAssertion, item.record)
+        if assertion.subject_entity_id is None:
+            continue
         subject = by_id[assertion.subject_entity_id]
         if (
             subject.record_type != "Event"
@@ -1474,10 +1476,13 @@ def _assertion_presentation(
     assertion = cast(Assertion | ProposedAssertion, item.record)
     edge = _ontology_edge(assertion, by_id, paths)
     related_paths = {
-        paths[assertion.subject_entity_id],
         *(
             paths[item_id]
-            for item_id in (assertion.object_entity_id, assertion.attributed_to_id)
+            for item_id in (
+                assertion.subject_entity_id,
+                assertion.object_entity_id,
+                assertion.attributed_to_id,
+            )
             if item_id
         ),
     }
@@ -1582,7 +1587,13 @@ def _ontology_edge(
     by_id: dict[str, CandidateViewRecord],
     paths: dict[str, str],
 ) -> WikiOntologyEdge:
-    subject = by_id[assertion.subject_entity_id]
+    if assertion.subject_entity_id is None:
+        subject_label = _display_value(assertion.subject_value)
+        subject_path: str | None = None
+    else:
+        subject = by_id[assertion.subject_entity_id]
+        subject_label = _record_label(cast(WikiNamedRecord, subject.record))
+        subject_path = paths[assertion.subject_entity_id]
     object_label, object_path = _assertion_object(assertion, by_id, paths)
     qualifiers = [
         WikiOntologyQualifier(key, _display_value(value))
@@ -1599,8 +1610,8 @@ def _ontology_edge(
         )
     return WikiOntologyEdge(
         assertion_id=assertion.id,
-        subject_label=_record_label(cast(WikiNamedRecord, subject.record)),
-        subject_path=paths[assertion.subject_entity_id],
+        subject_label=subject_label,
+        subject_path=subject_path,
         predicate=_assertion_relation(assertion),
         object_label=object_label,
         object_path=object_path,

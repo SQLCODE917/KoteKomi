@@ -2094,7 +2094,8 @@ class Assertion(DomainModel):
     id: AssertionId
     assertion_type: AssertionType
     epistemic_scope: EpistemicScope
-    subject_entity_id: EntityId | ActorId | OrganizationId | EventId | PlaceId
+    subject_entity_id: EntityId | ActorId | OrganizationId | EventId | PlaceId | None = None
+    subject_value: JsonValue = None
     predicate: CanonicalPredicate
     object_entity_id: EntityId | ActorId | OrganizationId | EventId | PlaceId | None = None
     object_value: JsonValue = None
@@ -2120,6 +2121,11 @@ class Assertion(DomainModel):
 
     @model_validator(mode="after")
     def validate_assertion_rules(self) -> Self:
+        has_subject_entity = self.subject_entity_id is not None
+        has_subject_value = self.subject_value is not None
+        if has_subject_entity == has_subject_value:
+            raise ValueError("Assertion must have exactly one subject entity or subject value.")
+
         has_object_entity = self.object_entity_id is not None
         has_object_value = self.object_value is not None
         if has_object_entity == has_object_value:
@@ -2216,7 +2222,8 @@ class ProposedAssertion(DomainModel):
     id: AssertionId
     assertion_type: AssertionType
     epistemic_scope: EpistemicScope
-    subject_entity_id: EntityId | ActorId | OrganizationId | EventId | PlaceId
+    subject_entity_id: EntityId | ActorId | OrganizationId | EventId | PlaceId | None = None
+    subject_value: JsonValue = None
     relation_label: NonEmptyStr
     object_entity_id: EntityId | ActorId | OrganizationId | EventId | PlaceId | None = None
     object_value: JsonValue = None
@@ -2245,6 +2252,7 @@ class ProposedAssertion(DomainModel):
             assertion_type=self.assertion_type,
             epistemic_scope=self.epistemic_scope,
             subject_entity_id=self.subject_entity_id,
+            subject_value=self.subject_value,
             predicate="proposed_relation",
             object_entity_id=self.object_entity_id,
             object_value=self.object_value,

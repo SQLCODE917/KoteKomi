@@ -1,0 +1,1660 @@
+{
+  "schema_version": "r17_reference_policy_records_v1",
+  "status": "contract_frozen",
+  "acceptance_evidence": true,
+  "draft_author": "Codex (agent; user-authorized draft)",
+  "draft_authorization": "Try producing the policy records, I will review",
+  "contract_version": 1,
+  "digest_encoding": "UTF-8 JSON, sorted keys, no insignificant whitespace, ensure_ascii=false, allow_nan=false; policy_body excludes its own digest and approval fields",
+  "record_count": 11,
+  "records": [
+    {
+      "record_id": "R17-AHE-022",
+      "event_id": "AHE-022",
+      "status": "contract_frozen",
+      "acceptance_evidence": true,
+      "contract_version": 1,
+      "draft_author": "Codex (agent; user-authorized draft)",
+      "draft_authorization": "Try producing the policy records, I will review",
+      "input_binding": {
+        "input_file": {
+          "path": "data/r17-semantic-selection-contract/inputs/AHE-022.json",
+          "sha256": "c5b4a6b0af51d8403d9431c445b8b4b563cd46c58417b50993d265e1198da1b3"
+        },
+        "source_sha256": "f5203eec5a0a146a39dc7e74438ec542884f230f9ca096c006c941979b29651f",
+        "candidate_pool_sha256": "ba1193dbab9377921ec20c903d5ea4926cb2e10d3bd2753983561f8b3884385f",
+        "task_sha256": "ce4a91534fa0469f425bab772839ca220fe120d46b0d17eec39a3f9a0e78c114",
+        "frozen_route": "label_only_reselection"
+      },
+      "policy_body": {
+        "title": "Minimal nominal object for viewed (scope requires explicit human decision)",
+        "task_route": "label_only_reselection",
+        "coverage_tags": [
+          "subject",
+          "object",
+          "nested_boundaries",
+          "diagnostic_AHE_022"
+        ],
+        "expected_selected_set": [
+          "C1",
+          "C3"
+        ],
+        "expected_source_ranges": [
+          {
+            "role": "subject",
+            "expected_source_range": {
+              "start": 0,
+              "end": 5,
+              "text": "Sacks"
+            },
+            "canonical_candidate_label": "C1",
+            "eligibility_explanation": "Sacks is the evaluator of the marked viewed relation.",
+            "covering_candidate_labels": [
+              "C1"
+            ],
+            "boundary_coverage": "met"
+          },
+          {
+            "role": "object",
+            "expected_source_range": {
+              "start": 13,
+              "end": 30,
+              "text": "Amodei's decision"
+            },
+            "canonical_candidate_label": "C3",
+            "eligibility_explanation": "The possessive identifies whose decision Sacks viewed; decision alone loses that identity.",
+            "covering_candidate_labels": [
+              "C3"
+            ],
+            "boundary_coverage": "met"
+          }
+        ],
+        "eligibility_explanation": "Propose the smallest identifying nominal arguments of viewed: Sacks and Amodei's decision. Availability of later syntax-attached spans does not alone make them eligible.",
+        "candidate_decisions": [
+          {
+            "label": "C1",
+            "classification": "selected",
+            "reason": "Canonical subject."
+          },
+          {
+            "label": "C2",
+            "classification": "ineligible_incomplete",
+            "reason": "Possessor without the argument head decision."
+          },
+          {
+            "label": "C3",
+            "classification": "selected",
+            "reason": "Canonical minimal nominal object; retain the possessive identity."
+          },
+          {
+            "label": "C4",
+            "classification": "redundant",
+            "reason": "C3 already contains decision; selecting C4 adds no content, and C4 alone drops the identifying possessor Amodei."
+          },
+          {
+            "label": "C5",
+            "classification": "ineligible_under_proposed_minimal_argument_policy",
+            "reason": "Infinitival description lacks the object head decision and mixes the hiring, association, and evidence context; it cannot replace C3 under this proposal."
+          },
+          {
+            "label": "C6",
+            "classification": "ineligible_under_proposed_minimal_argument_policy",
+            "reason": "Infinitival description also contains the embedded support conclusion; review whether that content is required beyond the minimal object."
+          },
+          {
+            "label": "C7",
+            "classification": "ineligible_under_proposed_minimal_argument_policy",
+            "reason": "Attend is a nested predicate describing the decision, not the marked viewed predicate or its nominal argument."
+          },
+          {
+            "label": "C8",
+            "classification": "ineligible_under_proposed_minimal_argument_policy",
+            "reason": "The World Economic Forum is the object of nested attend; the source does not state it as the place of viewed."
+          },
+          {
+            "label": "C9",
+            "classification": "ineligible_under_proposed_minimal_argument_policy",
+            "reason": "World is an incomplete part of the nested World Economic Forum name."
+          },
+          {
+            "label": "C10",
+            "classification": "ineligible_under_proposed_minimal_argument_policy",
+            "reason": "Economic is an incomplete part of the nested World Economic Forum name."
+          },
+          {
+            "label": "C11",
+            "classification": "ineligible_under_proposed_minimal_argument_policy",
+            "reason": "Forum is an incomplete part of the nested World Economic Forum name."
+          },
+          {
+            "label": "C12",
+            "classification": "ineligible_under_proposed_minimal_argument_policy",
+            "reason": "The comparison over Trump's inauguration belongs to the decision description and extends across later context; review broader object scope."
+          },
+          {
+            "label": "C13",
+            "classification": "ineligible_under_proposed_minimal_argument_policy",
+            "reason": "Trump's is a possessor in the nested inauguration comparison, not the subject or proposed object of viewed."
+          },
+          {
+            "label": "C14",
+            "classification": "ineligible_under_proposed_minimal_argument_policy",
+            "reason": "Second modifies the nested inauguration; it does not establish a time role for viewed."
+          },
+          {
+            "label": "C15",
+            "classification": "ineligible_under_proposed_minimal_argument_policy",
+            "reason": "Inauguration is an Event in the nested attendance comparison; it is not the proposed minimal object of viewed."
+          },
+          {
+            "label": "C16",
+            "classification": "ineligible_under_proposed_minimal_argument_policy",
+            "reason": "This broad span contains hiring, association, and evidence context without the selected decision head; review the coordinated-object alternative."
+          },
+          {
+            "label": "C17",
+            "classification": "ineligible_under_proposed_minimal_argument_policy",
+            "reason": "His identifies the hiring possessor but lacks the hiring head; it is not a complete additional object."
+          },
+          {
+            "label": "C18",
+            "classification": "ineligible_under_proposed_minimal_argument_policy",
+            "reason": "Hiring is a possible additional coordinated object, excluded only under this minimal-object proposal; review explicitly."
+          },
+          {
+            "label": "C19",
+            "classification": "ineligible_under_proposed_minimal_argument_policy",
+            "reason": "Of Biden officials describes hiring without its head; it is not a complete minimal argument of viewed."
+          },
+          {
+            "label": "C20",
+            "classification": "ineligible_under_proposed_minimal_argument_policy",
+            "reason": "Biden is an incomplete modifier of the nested hiring participant Biden officials."
+          },
+          {
+            "label": "C21",
+            "classification": "ineligible_under_proposed_minimal_argument_policy",
+            "reason": "Officials is an incomplete boundary for Biden officials, nested under hiring."
+          },
+          {
+            "label": "C22",
+            "classification": "ineligible_under_proposed_minimal_argument_policy",
+            "reason": "This span mixes association and evidence content; review whether a separate complete association object is required."
+          },
+          {
+            "label": "C23",
+            "classification": "ineligible_under_proposed_minimal_argument_policy",
+            "reason": "Anthropic's identifies the association possessor without its head; it is not a complete additional object."
+          },
+          {
+            "label": "C24",
+            "classification": "ineligible_under_proposed_minimal_argument_policy",
+            "reason": "Association is a possible additional coordinated object but lacks its identifying complements; review broader object content."
+          },
+          {
+            "label": "C25",
+            "classification": "ineligible_under_proposed_minimal_argument_policy",
+            "reason": "With the philanthropic initiative modifies association and lacks the association head."
+          },
+          {
+            "label": "C26",
+            "classification": "ineligible_under_proposed_minimal_argument_policy",
+            "reason": "Philanthropic is an adjective within the nested initiative phrase."
+          },
+          {
+            "label": "C27",
+            "classification": "ineligible_under_proposed_minimal_argument_policy",
+            "reason": "Initiative is a nested association participant; it is not the proposed minimal object of viewed."
+          },
+          {
+            "label": "C28",
+            "classification": "ineligible_under_proposed_minimal_argument_policy",
+            "reason": "Open is an incomplete part of the nested Organization name Open Philanthropy."
+          },
+          {
+            "label": "C29",
+            "classification": "ineligible_under_proposed_minimal_argument_policy",
+            "reason": "Open Philanthropy participates in the association description, not the proposed minimal arguments of viewed."
+          },
+          {
+            "label": "C30",
+            "classification": "ineligible_under_proposed_minimal_argument_policy",
+            "reason": "Philanthropy is an incomplete part of the nested Organization name Open Philanthropy."
+          },
+          {
+            "label": "C31",
+            "classification": "ineligible_under_proposed_minimal_argument_policy",
+            "reason": "As evidence supplies the source's interpretation of viewed; excluding it is a deliberate review question, not a proven irrelevance."
+          },
+          {
+            "label": "C32",
+            "classification": "ineligible_under_proposed_minimal_argument_policy",
+            "reason": "This is the conclusion for which Sacks treated the preceding items as evidence; review whether it must be preserved in the marked proposition."
+          },
+          {
+            "label": "C33",
+            "classification": "ineligible_under_proposed_minimal_argument_policy",
+            "reason": "Support is the embedded conclusion predicate, distinct from marked viewed."
+          },
+          {
+            "label": "C34",
+            "classification": "ineligible_under_proposed_minimal_argument_policy",
+            "reason": "Trump's agenda is the object of embedded support, not the proposed minimal object of viewed."
+          },
+          {
+            "label": "C35",
+            "classification": "ineligible_under_proposed_minimal_argument_policy",
+            "reason": "Agenda is an incomplete boundary for the embedded support object Trump's agenda."
+          }
+        ],
+        "none_policy": {
+          "justified": false,
+          "explanation": "The expected eligible set is non-empty, so NONE is unjustified."
+        },
+        "proposition_inputs": {
+          "polarity": "affirmed",
+          "modality": "actual",
+          "attribution": {
+            "kind": "source_narrator"
+          }
+        },
+        "composition_readiness": {
+          "value": "not_ready",
+          "reasons": [
+            "The frozen R16 request supplies no Actor or Organization entity references; the subject cannot resolve.",
+            "The minimal-object proposal is not a claim that the complete sentence meaning has been composed."
+          ],
+          "basis": "reference selected set and frozen composition inputs; independent of observed answers"
+        },
+        "review_questions": [
+          "Does the proposition require the decision's infinitival description, the hiring and association items, or the as-evidence complement? If yes, reject this minimal-object proposal and specify those required source ranges.",
+          "C3 is a review proposal, not a recovered historical Gold answer. A richer object policy can expose further boundary or composition gaps."
+        ]
+      },
+      "policy_body_sha256": "69973d779bf87ed39234e2ee9df6645ed4c1f12aee444549cd7158db7f6bafa3",
+      "human_adoption": {
+        "author_identity": "repository_operator",
+        "adopted_policy_body_sha256": "69973d779bf87ed39234e2ee9df6645ed4c1f12aee444549cd7158db7f6bafa3",
+        "adopted_input_sha256": "c5b4a6b0af51d8403d9431c445b8b4b563cd46c58417b50993d265e1198da1b3",
+        "evidence": {
+          "path": "data/r17-semantic-selection-contract/human_approval.json",
+          "sha256": "dd9108f742c264807d06246146d2a10c4d46136afff181c9534d3f6734d3df76"
+        }
+      },
+      "human_review": {
+        "reviewer_identity": "repository_operator",
+        "review_mode": "operator_self_review",
+        "review_date": "2026-10-14",
+        "review_commit": "6870e53",
+        "reviewed_policy_body_sha256": "69973d779bf87ed39234e2ee9df6645ed4c1f12aee444549cd7158db7f6bafa3",
+        "reviewed_input_sha256": "c5b4a6b0af51d8403d9431c445b8b4b563cd46c58417b50993d265e1198da1b3",
+        "evidence": {
+          "path": "data/r17-semantic-selection-contract/human_approval.json",
+          "sha256": "dd9108f742c264807d06246146d2a10c4d46136afff181c9534d3f6734d3df76"
+        }
+      },
+      "review_resolution": {
+        "decision": "adopted_as_written",
+        "review_questions": "resolved_by_explicit_operator_acceptance",
+        "evidence": {
+          "path": "data/r17-semantic-selection-contract/human_approval.json",
+          "sha256": "dd9108f742c264807d06246146d2a10c4d46136afff181c9534d3f6734d3df76"
+        }
+      }
+    },
+    {
+      "record_id": "R17-AHE-051",
+      "event_id": "AHE-051",
+      "status": "contract_frozen",
+      "acceptance_evidence": true,
+      "contract_version": 1,
+      "draft_author": "Codex (agent; user-authorized draft)",
+      "draft_authorization": "Try producing the policy records, I will review",
+      "input_binding": {
+        "input_file": {
+          "path": "data/r17-semantic-selection-contract/inputs/AHE-051.json",
+          "sha256": "8f423411c3105c555121beaed5e1e68c4730e3741e4c4d3f952b8cab4fbcb703"
+        },
+        "source_sha256": "5f07f7fa1cef6f5d818cfa3fc4f2afe8c22f93be9825a0ff28cecdc80558356c",
+        "candidate_pool_sha256": "a31e6a16e6a8b7c8468c981b27bf8e95f5eb6baa4c3817609863da75a98e6b14",
+        "task_sha256": "09baa021e50fb7b3935b576c6b869dc49e4affda890137a192c7bda23dcca57c",
+        "frozen_route": "best_choice_reselection"
+      },
+      "policy_body": {
+        "title": "Correct available subject with missing negation",
+        "task_route": "best_choice_reselection",
+        "coverage_tags": [
+          "subject",
+          "polarity",
+          "document_artifacts",
+          "diagnostic_AHE_051"
+        ],
+        "expected_selected_set": [
+          "C3"
+        ],
+        "expected_source_ranges": [
+          {
+            "role": "subject",
+            "expected_source_range": {
+              "start": 5,
+              "end": 20,
+              "text": "The April order"
+            },
+            "canonical_candidate_label": "C3",
+            "eligibility_explanation": "The full definite noun phrase identifies the order described as not final.",
+            "covering_candidate_labels": [
+              "C3"
+            ],
+            "boundary_coverage": "met"
+          },
+          {
+            "role": "polarity",
+            "expected_source_range": {
+              "start": 24,
+              "end": 27,
+              "text": "not"
+            },
+            "canonical_candidate_label": null,
+            "eligibility_explanation": "The explicit negation is needed to preserve the source meaning.",
+            "covering_candidate_labels": [],
+            "boundary_coverage": "gap"
+          }
+        ],
+        "eligibility_explanation": "Adopt the R17-pinned available set {C3}; keep the independently required not source range as a polarity boundary gap.",
+        "candidate_decisions": [
+          {
+            "label": "C1",
+            "classification": "ineligible_document_artifact",
+            "reason": "Citation marker [45] is not propositional content."
+          },
+          {
+            "label": "C2",
+            "classification": "ineligible_document_artifact",
+            "reason": "45 is the citation identifier, not an argument."
+          },
+          {
+            "label": "C3",
+            "classification": "selected",
+            "reason": "Canonical subject The April order."
+          },
+          {
+            "label": "C4",
+            "classification": "ineligible_incomplete",
+            "reason": "Order alone drops April and definite reference; it is redundant beside C3."
+          }
+        ],
+        "none_policy": {
+          "justified": false,
+          "explanation": "The expected eligible set is non-empty, so NONE is unjustified."
+        },
+        "proposition_inputs": {
+          "polarity": "negated",
+          "modality": "actual",
+          "attribution": {
+            "kind": "source_narrator"
+          }
+        },
+        "composition_readiness": {
+          "value": "not_ready",
+          "reasons": [
+            "Required not polarity content is absent from the filtered task pool.",
+            "R16 supplies no Actor or Organization reference; the order is not automatically an Actor or Organization.",
+            "Archived Stanza labels not as advmod; current R4 tests neg and would not infer negation from that label."
+          ],
+          "basis": "reference selected set and frozen composition inputs; independent of observed answers"
+        },
+        "review_questions": [
+          "Approve the pinned {C3} policy and the separate required not range.",
+          "Closing polarity alone does not resolve the current R4 subject-type and entity-reference requirement."
+        ]
+      },
+      "policy_body_sha256": "2a6dee656b7c9bc9ee437aa88e5d8cb7465c96d1f5d945ceba7636a0a27d9b9a",
+      "human_adoption": {
+        "author_identity": "repository_operator",
+        "adopted_policy_body_sha256": "2a6dee656b7c9bc9ee437aa88e5d8cb7465c96d1f5d945ceba7636a0a27d9b9a",
+        "adopted_input_sha256": "8f423411c3105c555121beaed5e1e68c4730e3741e4c4d3f952b8cab4fbcb703",
+        "evidence": {
+          "path": "data/r17-semantic-selection-contract/human_approval.json",
+          "sha256": "dd9108f742c264807d06246146d2a10c4d46136afff181c9534d3f6734d3df76"
+        }
+      },
+      "human_review": {
+        "reviewer_identity": "repository_operator",
+        "review_mode": "operator_self_review",
+        "review_date": "2026-10-14",
+        "review_commit": "6870e53",
+        "reviewed_policy_body_sha256": "2a6dee656b7c9bc9ee437aa88e5d8cb7465c96d1f5d945ceba7636a0a27d9b9a",
+        "reviewed_input_sha256": "8f423411c3105c555121beaed5e1e68c4730e3741e4c4d3f952b8cab4fbcb703",
+        "evidence": {
+          "path": "data/r17-semantic-selection-contract/human_approval.json",
+          "sha256": "dd9108f742c264807d06246146d2a10c4d46136afff181c9534d3f6734d3df76"
+        }
+      },
+      "review_resolution": {
+        "decision": "adopted_as_written",
+        "review_questions": "resolved_by_explicit_operator_acceptance",
+        "evidence": {
+          "path": "data/r17-semantic-selection-contract/human_approval.json",
+          "sha256": "dd9108f742c264807d06246146d2a10c4d46136afff181c9534d3f6734d3df76"
+        }
+      }
+    },
+    {
+      "record_id": "R17-AHE-901",
+      "event_id": "AHE-901",
+      "status": "contract_frozen",
+      "acceptance_evidence": true,
+      "contract_version": 1,
+      "draft_author": "Codex (agent; user-authorized draft)",
+      "draft_authorization": "Try producing the policy records, I will review",
+      "input_binding": {
+        "input_file": {
+          "path": "data/r17-semantic-selection-contract/inputs/AHE-901.json",
+          "sha256": "b316e5bca3055a2a764cbaf949c69c2d0332da5137539489c62efb28683077b7"
+        },
+        "source_sha256": "f0a665bf963ae7a15b3caa8b48560c985d9ff70c3d793b30b28584ecc8944be9",
+        "candidate_pool_sha256": "e78847b488670c15584f71c2bc8ec190a3ecbc8ff22709d6a67ec7f089341f58",
+        "task_sha256": "8b24a0bc3f35fedaa197b9b1197e4dcd51700a0cf7e54af948e1ab09b9677216",
+        "frozen_route": "label_only_reselection"
+      },
+      "policy_body": {
+        "title": "Complete pool: selecting everything is correct",
+        "task_route": "label_only_reselection",
+        "coverage_tags": [
+          "subject",
+          "object",
+          "select_all_pass",
+          "initially_ready"
+        ],
+        "expected_selected_set": [
+          "C1",
+          "C2"
+        ],
+        "expected_source_ranges": [
+          {
+            "role": "subject",
+            "expected_source_range": {
+              "start": 0,
+              "end": 4,
+              "text": "Mira"
+            },
+            "canonical_candidate_label": "C1",
+            "eligibility_explanation": "Mira performs the greeting.",
+            "covering_candidate_labels": [
+              "C1"
+            ],
+            "boundary_coverage": "met"
+          },
+          {
+            "role": "object",
+            "expected_source_range": {
+              "start": 13,
+              "end": 18,
+              "text": "Tomas"
+            },
+            "canonical_candidate_label": "C2",
+            "eligibility_explanation": "Tomas receives the greeting.",
+            "covering_candidate_labels": [
+              "C2"
+            ],
+            "boundary_coverage": "met"
+          }
+        ],
+        "eligibility_explanation": "The pool contains exactly the two required argument constituents. Both labels are required.",
+        "candidate_decisions": [
+          {
+            "label": "C1",
+            "classification": "selected",
+            "reason": "Supplies its declared canonical role content."
+          },
+          {
+            "label": "C2",
+            "classification": "selected",
+            "reason": "Supplies its declared canonical role content."
+          }
+        ],
+        "none_policy": {
+          "justified": false,
+          "explanation": "The expected eligible set is non-empty, so NONE is unjustified."
+        },
+        "proposition_inputs": {
+          "polarity": "affirmed",
+          "modality": "actual",
+          "attribution": {
+            "kind": "source_narrator"
+          }
+        },
+        "composition_readiness": {
+          "value": "ready",
+          "reasons": [
+            "Required source content, subject identity, and attribution inputs are supplied."
+          ],
+          "basis": "reference selected set and frozen composition inputs; independent of observed answers"
+        },
+        "review_questions": []
+      },
+      "policy_body_sha256": "bffdf18cbbf2859047e3102b588b5778786eec51c497efa32de7bbe2c774103b",
+      "human_adoption": {
+        "author_identity": "repository_operator",
+        "adopted_policy_body_sha256": "bffdf18cbbf2859047e3102b588b5778786eec51c497efa32de7bbe2c774103b",
+        "adopted_input_sha256": "b316e5bca3055a2a764cbaf949c69c2d0332da5137539489c62efb28683077b7",
+        "evidence": {
+          "path": "data/r17-semantic-selection-contract/human_approval.json",
+          "sha256": "dd9108f742c264807d06246146d2a10c4d46136afff181c9534d3f6734d3df76"
+        }
+      },
+      "human_review": {
+        "reviewer_identity": "repository_operator",
+        "review_mode": "operator_self_review",
+        "review_date": "2026-10-14",
+        "review_commit": "6870e53",
+        "reviewed_policy_body_sha256": "bffdf18cbbf2859047e3102b588b5778786eec51c497efa32de7bbe2c774103b",
+        "reviewed_input_sha256": "b316e5bca3055a2a764cbaf949c69c2d0332da5137539489c62efb28683077b7",
+        "evidence": {
+          "path": "data/r17-semantic-selection-contract/human_approval.json",
+          "sha256": "dd9108f742c264807d06246146d2a10c4d46136afff181c9534d3f6734d3df76"
+        }
+      },
+      "review_resolution": {
+        "decision": "adopted_as_written",
+        "review_questions": "resolved_by_explicit_operator_acceptance",
+        "evidence": {
+          "path": "data/r17-semantic-selection-contract/human_approval.json",
+          "sha256": "dd9108f742c264807d06246146d2a10c4d46136afff181c9534d3f6734d3df76"
+        }
+      }
+    },
+    {
+      "record_id": "R17-AHE-902",
+      "event_id": "AHE-902",
+      "status": "contract_frozen",
+      "acceptance_evidence": true,
+      "contract_version": 1,
+      "draft_author": "Codex (agent; user-authorized draft)",
+      "draft_authorization": "Try producing the policy records, I will review",
+      "input_binding": {
+        "input_file": {
+          "path": "data/r17-semantic-selection-contract/inputs/AHE-902.json",
+          "sha256": "c534e2b7001a67b9e2a1c1223df0ab4d383e92fb4d996e37f7f1a583e8d25969"
+        },
+        "source_sha256": "8b00daec9258f4da6bcc926248ccbb2e80c79f4aef14c060c7ea7ffb6f6127dd",
+        "candidate_pool_sha256": "fbb7c1b4ff223b4630c5947c34f2e35404b5024951628f8eb77c3b74960d9ec6",
+        "task_sha256": "0e521a00b68b028aa9b39c614d1a4fcadd0daa545b2586656acbd2f49779b96c",
+        "frozen_route": "label_only_reselection"
+      },
+      "policy_body": {
+        "title": "Required time and place",
+        "task_route": "label_only_reselection",
+        "coverage_tags": [
+          "time",
+          "place"
+        ],
+        "expected_selected_set": [
+          "C1",
+          "C2",
+          "C3"
+        ],
+        "expected_source_ranges": [
+          {
+            "role": "subject",
+            "expected_source_range": {
+              "start": 0,
+              "end": 4,
+              "text": "Mira"
+            },
+            "canonical_candidate_label": "C1",
+            "eligibility_explanation": "Mira arrives.",
+            "covering_candidate_labels": [
+              "C1"
+            ],
+            "boundary_coverage": "met"
+          },
+          {
+            "role": "time",
+            "expected_source_range": {
+              "start": 16,
+              "end": 22,
+              "text": "Monday"
+            },
+            "canonical_candidate_label": "C2",
+            "eligibility_explanation": "Monday is the asserted arrival day.",
+            "covering_candidate_labels": [
+              "C2"
+            ],
+            "boundary_coverage": "met"
+          },
+          {
+            "role": "place",
+            "expected_source_range": {
+              "start": 26,
+              "end": 31,
+              "text": "Paris"
+            },
+            "canonical_candidate_label": "C3",
+            "eligibility_explanation": "Paris is the asserted arrival location.",
+            "covering_candidate_labels": [
+              "C3"
+            ],
+            "boundary_coverage": "met"
+          }
+        ],
+        "eligibility_explanation": "The source explicitly constrains the arrival by day and location; both adjuncts are needed.",
+        "candidate_decisions": [
+          {
+            "label": "C1",
+            "classification": "selected",
+            "reason": "Supplies its declared canonical role content."
+          },
+          {
+            "label": "C2",
+            "classification": "selected",
+            "reason": "Supplies its declared canonical role content."
+          },
+          {
+            "label": "C3",
+            "classification": "selected",
+            "reason": "Supplies its declared canonical role content."
+          }
+        ],
+        "none_policy": {
+          "justified": false,
+          "explanation": "The expected eligible set is non-empty, so NONE is unjustified."
+        },
+        "proposition_inputs": {
+          "polarity": "affirmed",
+          "modality": "actual",
+          "attribution": {
+            "kind": "source_narrator"
+          }
+        },
+        "composition_readiness": {
+          "value": "not_ready",
+          "reasons": [
+            "Current R4 emits one object slot; the deterministic probe retains Monday and drops the separate Paris role."
+          ],
+          "basis": "reference selected set and frozen composition inputs; independent of observed answers"
+        },
+        "review_questions": [
+          "Approve bare Monday and Paris as canonical content rather than the larger on Monday and in Paris spans.",
+          "Approve not_ready for complete composition while the current R4 record cannot preserve both adjunct roles."
+        ]
+      },
+      "policy_body_sha256": "d443f695189a806dfc0181bc8b51c5050bac2f3c69013f97bc6e1c40486ef675",
+      "human_adoption": {
+        "author_identity": "repository_operator",
+        "adopted_policy_body_sha256": "d443f695189a806dfc0181bc8b51c5050bac2f3c69013f97bc6e1c40486ef675",
+        "adopted_input_sha256": "c534e2b7001a67b9e2a1c1223df0ab4d383e92fb4d996e37f7f1a583e8d25969",
+        "evidence": {
+          "path": "data/r17-semantic-selection-contract/human_approval.json",
+          "sha256": "dd9108f742c264807d06246146d2a10c4d46136afff181c9534d3f6734d3df76"
+        }
+      },
+      "human_review": {
+        "reviewer_identity": "repository_operator",
+        "review_mode": "operator_self_review",
+        "review_date": "2026-10-14",
+        "review_commit": "6870e53",
+        "reviewed_policy_body_sha256": "d443f695189a806dfc0181bc8b51c5050bac2f3c69013f97bc6e1c40486ef675",
+        "reviewed_input_sha256": "c534e2b7001a67b9e2a1c1223df0ab4d383e92fb4d996e37f7f1a583e8d25969",
+        "evidence": {
+          "path": "data/r17-semantic-selection-contract/human_approval.json",
+          "sha256": "dd9108f742c264807d06246146d2a10c4d46136afff181c9534d3f6734d3df76"
+        }
+      },
+      "review_resolution": {
+        "decision": "adopted_as_written",
+        "review_questions": "resolved_by_explicit_operator_acceptance",
+        "evidence": {
+          "path": "data/r17-semantic-selection-contract/human_approval.json",
+          "sha256": "dd9108f742c264807d06246146d2a10c4d46136afff181c9534d3f6734d3df76"
+        }
+      }
+    },
+    {
+      "record_id": "R17-AHE-903",
+      "event_id": "AHE-903",
+      "status": "contract_frozen",
+      "acceptance_evidence": true,
+      "contract_version": 1,
+      "draft_author": "Codex (agent; user-authorized draft)",
+      "draft_authorization": "Try producing the policy records, I will review",
+      "input_binding": {
+        "input_file": {
+          "path": "data/r17-semantic-selection-contract/inputs/AHE-903.json",
+          "sha256": "2439b121ef6a02c85eb31fcf0e7047c11810713c30935fdf5f8e1c9235fe943b"
+        },
+        "source_sha256": "9a18a59fc12fcfef4513a7139f272b4bd4435f341605592fd846022c6565dd12",
+        "candidate_pool_sha256": "96d20eb0034040c0d2f2cdd5aa86acb906c1edbe015874339295a4a1fbfeef91",
+        "task_sha256": "08fd938894f0a265526e308080f7d547d828e64567ba8557e46455f2fc790a9f",
+        "frozen_route": "label_only_reselection"
+      },
+      "policy_body": {
+        "title": "Negation and hypothetical modality",
+        "task_route": "label_only_reselection",
+        "coverage_tags": [
+          "polarity",
+          "modality",
+          "select_all_fail",
+          "nested_boundaries"
+        ],
+        "expected_selected_set": [
+          "C1",
+          "C2",
+          "C3",
+          "C4"
+        ],
+        "expected_source_ranges": [
+          {
+            "role": "subject",
+            "expected_source_range": {
+              "start": 0,
+              "end": 4,
+              "text": "Mira"
+            },
+            "canonical_candidate_label": "C1",
+            "eligibility_explanation": "Mira is the subject of the hypothetical refusal.",
+            "covering_candidate_labels": [
+              "C1"
+            ],
+            "boundary_coverage": "met"
+          },
+          {
+            "role": "modality",
+            "expected_source_range": {
+              "start": 5,
+              "end": 10,
+              "text": "would"
+            },
+            "canonical_candidate_label": "C2",
+            "eligibility_explanation": "Would makes the marked signing hypothetical.",
+            "covering_candidate_labels": [
+              "C2"
+            ],
+            "boundary_coverage": "met"
+          },
+          {
+            "role": "polarity",
+            "expected_source_range": {
+              "start": 11,
+              "end": 14,
+              "text": "not"
+            },
+            "canonical_candidate_label": "C3",
+            "eligibility_explanation": "Not negates the marked signing.",
+            "covering_candidate_labels": [
+              "C3"
+            ],
+            "boundary_coverage": "met"
+          },
+          {
+            "role": "object",
+            "expected_source_range": {
+              "start": 20,
+              "end": 33,
+              "text": "the agreement"
+            },
+            "canonical_candidate_label": "C4",
+            "eligibility_explanation": "The definite phrase identifies the agreement to be signed.",
+            "covering_candidate_labels": [
+              "C4"
+            ],
+            "boundary_coverage": "met"
+          }
+        ],
+        "eligibility_explanation": "Retain the explicit hypothetical and negative markers separately from the subject and definite object.",
+        "candidate_decisions": [
+          {
+            "label": "C1",
+            "classification": "selected",
+            "reason": "Supplies its declared canonical role content."
+          },
+          {
+            "label": "C2",
+            "classification": "selected",
+            "reason": "Supplies its declared canonical role content."
+          },
+          {
+            "label": "C3",
+            "classification": "selected",
+            "reason": "Supplies its declared canonical role content."
+          },
+          {
+            "label": "C4",
+            "classification": "selected",
+            "reason": "Supplies its declared canonical role content."
+          },
+          {
+            "label": "C5",
+            "classification": "ineligible_incomplete",
+            "reason": "Agreement alone drops the definite reference and adds no required content beside C4."
+          }
+        ],
+        "none_policy": {
+          "justified": false,
+          "explanation": "The expected eligible set is non-empty, so NONE is unjustified."
+        },
+        "proposition_inputs": {
+          "polarity": "negated",
+          "modality": "hypothetical",
+          "attribution": {
+            "kind": "source_narrator"
+          }
+        },
+        "composition_readiness": {
+          "value": "ready",
+          "reasons": [
+            "Required source content, subject identity, and attribution inputs are supplied."
+          ],
+          "basis": "reference selected set and frozen composition inputs; independent of observed answers"
+        },
+        "review_questions": [
+          "The dependency fixture deliberately uses neg to exercise R4-POL-01; this is not a claim about production Stanza output."
+        ]
+      },
+      "policy_body_sha256": "c6bf352269aece70bea525cb2c4323e6a7d90323732dda8347fc122c94cef4e0",
+      "human_adoption": {
+        "author_identity": "repository_operator",
+        "adopted_policy_body_sha256": "c6bf352269aece70bea525cb2c4323e6a7d90323732dda8347fc122c94cef4e0",
+        "adopted_input_sha256": "2439b121ef6a02c85eb31fcf0e7047c11810713c30935fdf5f8e1c9235fe943b",
+        "evidence": {
+          "path": "data/r17-semantic-selection-contract/human_approval.json",
+          "sha256": "dd9108f742c264807d06246146d2a10c4d46136afff181c9534d3f6734d3df76"
+        }
+      },
+      "human_review": {
+        "reviewer_identity": "repository_operator",
+        "review_mode": "operator_self_review",
+        "review_date": "2026-10-14",
+        "review_commit": "6870e53",
+        "reviewed_policy_body_sha256": "c6bf352269aece70bea525cb2c4323e6a7d90323732dda8347fc122c94cef4e0",
+        "reviewed_input_sha256": "2439b121ef6a02c85eb31fcf0e7047c11810713c30935fdf5f8e1c9235fe943b",
+        "evidence": {
+          "path": "data/r17-semantic-selection-contract/human_approval.json",
+          "sha256": "dd9108f742c264807d06246146d2a10c4d46136afff181c9534d3f6734d3df76"
+        }
+      },
+      "review_resolution": {
+        "decision": "adopted_as_written",
+        "review_questions": "resolved_by_explicit_operator_acceptance",
+        "evidence": {
+          "path": "data/r17-semantic-selection-contract/human_approval.json",
+          "sha256": "dd9108f742c264807d06246146d2a10c4d46136afff181c9534d3f6734d3df76"
+        }
+      }
+    },
+    {
+      "record_id": "R17-AHE-904",
+      "event_id": "AHE-904",
+      "status": "contract_frozen",
+      "acceptance_evidence": true,
+      "contract_version": 1,
+      "draft_author": "Codex (agent; user-authorized draft)",
+      "draft_authorization": "Try producing the policy records, I will review",
+      "input_binding": {
+        "input_file": {
+          "path": "data/r17-semantic-selection-contract/inputs/AHE-904.json",
+          "sha256": "cfba2a4c6c0b71ac28be8ce33167d03e02738b18d2517ed72712b61f6b490a18"
+        },
+        "source_sha256": "232c6f4301e900352ef2c386b5adce36b2d5b7dba08fa3c8b2944c362c7231ad",
+        "candidate_pool_sha256": "b8b0140c42969c4fc8ad7d890a9df1454dfd0eb8fe8a60e39be98cbc5512f5d9",
+        "task_sha256": "37d3efe50f85a19249439ee443c0f1ced15f0b0c9d7844d32ec55303b858ac1c",
+        "frozen_route": "label_only_reselection"
+      },
+      "policy_body": {
+        "title": "Coordinated subjects require both occurrences",
+        "task_route": "label_only_reselection",
+        "coverage_tags": [
+          "coordination",
+          "subject"
+        ],
+        "expected_selected_set": [
+          "C1",
+          "C2",
+          "C3"
+        ],
+        "expected_source_ranges": [
+          {
+            "role": "subject",
+            "expected_source_range": {
+              "start": 0,
+              "end": 4,
+              "text": "Mira"
+            },
+            "canonical_candidate_label": "C1",
+            "eligibility_explanation": "Mira is one of two coordinated signers.",
+            "covering_candidate_labels": [
+              "C1"
+            ],
+            "boundary_coverage": "met"
+          },
+          {
+            "role": "subject",
+            "expected_source_range": {
+              "start": 9,
+              "end": 14,
+              "text": "Tomas"
+            },
+            "canonical_candidate_label": "C2",
+            "eligibility_explanation": "Tomas is the second coordinated signer; conj supplies a distinct required argument.",
+            "covering_candidate_labels": [
+              "C2"
+            ],
+            "boundary_coverage": "met"
+          },
+          {
+            "role": "object",
+            "expected_source_range": {
+              "start": 22,
+              "end": 35,
+              "text": "the agreement"
+            },
+            "canonical_candidate_label": "C3",
+            "eligibility_explanation": "The agreement is the shared object of the signing.",
+            "covering_candidate_labels": [
+              "C3"
+            ],
+            "boundary_coverage": "met"
+          }
+        ],
+        "eligibility_explanation": "A single signing proposition has both named signers; selecting only Mira loses Tomas.",
+        "candidate_decisions": [
+          {
+            "label": "C1",
+            "classification": "selected",
+            "reason": "Supplies its declared canonical role content."
+          },
+          {
+            "label": "C2",
+            "classification": "selected",
+            "reason": "Supplies its declared canonical role content."
+          },
+          {
+            "label": "C3",
+            "classification": "selected",
+            "reason": "Supplies its declared canonical role content."
+          }
+        ],
+        "none_policy": {
+          "justified": false,
+          "explanation": "The expected eligible set is non-empty, so NONE is unjustified."
+        },
+        "proposition_inputs": {
+          "polarity": "affirmed",
+          "modality": "actual",
+          "attribution": {
+            "kind": "source_narrator"
+          }
+        },
+        "composition_readiness": {
+          "value": "not_ready",
+          "reasons": [
+            "Current R4 emits one subject role and the deterministic probe drops the coordinated Tomas subject."
+          ],
+          "basis": "reference selected set and frozen composition inputs; independent of observed answers"
+        },
+        "review_questions": [
+          "Approve separate Candidates for coordinated subjects and the resulting R4 composition limitation."
+        ]
+      },
+      "policy_body_sha256": "5cea5cf386382e089422ff3490262b471764a4307738933bb10000e51041be05",
+      "human_adoption": {
+        "author_identity": "repository_operator",
+        "adopted_policy_body_sha256": "5cea5cf386382e089422ff3490262b471764a4307738933bb10000e51041be05",
+        "adopted_input_sha256": "cfba2a4c6c0b71ac28be8ce33167d03e02738b18d2517ed72712b61f6b490a18",
+        "evidence": {
+          "path": "data/r17-semantic-selection-contract/human_approval.json",
+          "sha256": "dd9108f742c264807d06246146d2a10c4d46136afff181c9534d3f6734d3df76"
+        }
+      },
+      "human_review": {
+        "reviewer_identity": "repository_operator",
+        "review_mode": "operator_self_review",
+        "review_date": "2026-10-14",
+        "review_commit": "6870e53",
+        "reviewed_policy_body_sha256": "5cea5cf386382e089422ff3490262b471764a4307738933bb10000e51041be05",
+        "reviewed_input_sha256": "cfba2a4c6c0b71ac28be8ce33167d03e02738b18d2517ed72712b61f6b490a18",
+        "evidence": {
+          "path": "data/r17-semantic-selection-contract/human_approval.json",
+          "sha256": "dd9108f742c264807d06246146d2a10c4d46136afff181c9534d3f6734d3df76"
+        }
+      },
+      "review_resolution": {
+        "decision": "adopted_as_written",
+        "review_questions": "resolved_by_explicit_operator_acceptance",
+        "evidence": {
+          "path": "data/r17-semantic-selection-contract/human_approval.json",
+          "sha256": "dd9108f742c264807d06246146d2a10c4d46136afff181c9534d3f6734d3df76"
+        }
+      }
+    },
+    {
+      "record_id": "R17-AHE-905",
+      "event_id": "AHE-905",
+      "status": "contract_frozen",
+      "acceptance_evidence": true,
+      "contract_version": 1,
+      "draft_author": "Codex (agent; user-authorized draft)",
+      "draft_authorization": "Try producing the policy records, I will review",
+      "input_binding": {
+        "input_file": {
+          "path": "data/r17-semantic-selection-contract/inputs/AHE-905.json",
+          "sha256": "32ef0613ca159062813d1cdd8934e463b0eb5758e58474c36e37f4eba4ca501e"
+        },
+        "source_sha256": "86e0eb73dd3cc35480c9d655296d67058d0c70d4d7ca538fbd9d93401e2cbf11",
+        "candidate_pool_sha256": "a5a0376dca03eb56310008a98d4a1f0ac3109dbd30499b676ba0d2fffb26d7ba",
+        "task_sha256": "19f055965570a1f34c8612b95fad35d87cd97211b2cdb1d0d2e41076de3e2e68",
+        "frozen_route": "label_only_reselection"
+      },
+      "policy_body": {
+        "title": "Reporting carrier is a separate attribution input",
+        "task_route": "label_only_reselection",
+        "coverage_tags": [
+          "attribution",
+          "subject",
+          "object"
+        ],
+        "expected_selected_set": [
+          "C3",
+          "C4"
+        ],
+        "expected_source_ranges": [
+          {
+            "role": "subject",
+            "expected_source_range": {
+              "start": 15,
+              "end": 20,
+              "text": "Tomas"
+            },
+            "canonical_candidate_label": "C3",
+            "eligibility_explanation": "Tomas is the subject of signed, not the reporter.",
+            "covering_candidate_labels": [
+              "C3"
+            ],
+            "boundary_coverage": "met"
+          },
+          {
+            "role": "object",
+            "expected_source_range": {
+              "start": 28,
+              "end": 41,
+              "text": "the agreement"
+            },
+            "canonical_candidate_label": "C4",
+            "eligibility_explanation": "The agreement is the object of signed.",
+            "covering_candidate_labels": [
+              "C4"
+            ],
+            "boundary_coverage": "met"
+          }
+        ],
+        "eligibility_explanation": "For marked signed, Mira said supplies attribution through the deterministic reporting split, not a selected content role.",
+        "candidate_decisions": [
+          {
+            "label": "C1",
+            "classification": "ineligible_reporting_carrier",
+            "reason": "Mira reports the signing; she is not its subject."
+          },
+          {
+            "label": "C2",
+            "classification": "ineligible_reporting_carrier",
+            "reason": "Mira said is the attribution carrier, supplied outside the selected set."
+          },
+          {
+            "label": "C3",
+            "classification": "selected",
+            "reason": "Supplies its declared canonical role content."
+          },
+          {
+            "label": "C4",
+            "classification": "selected",
+            "reason": "Supplies its declared canonical role content."
+          }
+        ],
+        "none_policy": {
+          "justified": false,
+          "explanation": "The expected eligible set is non-empty, so NONE is unjustified."
+        },
+        "proposition_inputs": {
+          "polarity": "affirmed",
+          "modality": "actual",
+          "attribution": {
+            "kind": "targeted",
+            "reporter": "Mira",
+            "reporting_carrier": {
+              "start": 0,
+              "end": 9,
+              "text": "Mira said"
+            }
+          }
+        },
+        "composition_readiness": {
+          "value": "ready",
+          "reasons": [
+            "Required source content, subject identity, and attribution inputs are supplied."
+          ],
+          "basis": "reference selected set and frozen composition inputs; independent of observed answers"
+        },
+        "review_questions": []
+      },
+      "policy_body_sha256": "8c281094d0aff3a946be01a7c5924dba1a34766ed850d2e1cef5760f595650a4",
+      "human_adoption": {
+        "author_identity": "repository_operator",
+        "adopted_policy_body_sha256": "8c281094d0aff3a946be01a7c5924dba1a34766ed850d2e1cef5760f595650a4",
+        "adopted_input_sha256": "32ef0613ca159062813d1cdd8934e463b0eb5758e58474c36e37f4eba4ca501e",
+        "evidence": {
+          "path": "data/r17-semantic-selection-contract/human_approval.json",
+          "sha256": "dd9108f742c264807d06246146d2a10c4d46136afff181c9534d3f6734d3df76"
+        }
+      },
+      "human_review": {
+        "reviewer_identity": "repository_operator",
+        "review_mode": "operator_self_review",
+        "review_date": "2026-10-14",
+        "review_commit": "6870e53",
+        "reviewed_policy_body_sha256": "8c281094d0aff3a946be01a7c5924dba1a34766ed850d2e1cef5760f595650a4",
+        "reviewed_input_sha256": "32ef0613ca159062813d1cdd8934e463b0eb5758e58474c36e37f4eba4ca501e",
+        "evidence": {
+          "path": "data/r17-semantic-selection-contract/human_approval.json",
+          "sha256": "dd9108f742c264807d06246146d2a10c4d46136afff181c9534d3f6734d3df76"
+        }
+      },
+      "review_resolution": {
+        "decision": "adopted_as_written",
+        "review_questions": "resolved_by_explicit_operator_acceptance",
+        "evidence": {
+          "path": "data/r17-semantic-selection-contract/human_approval.json",
+          "sha256": "dd9108f742c264807d06246146d2a10c4d46136afff181c9534d3f6734d3df76"
+        }
+      }
+    },
+    {
+      "record_id": "R17-AHE-906",
+      "event_id": "AHE-906",
+      "status": "contract_frozen",
+      "acceptance_evidence": true,
+      "contract_version": 1,
+      "draft_author": "Codex (agent; user-authorized draft)",
+      "draft_authorization": "Try producing the policy records, I will review",
+      "input_binding": {
+        "input_file": {
+          "path": "data/r17-semantic-selection-contract/inputs/AHE-906.json",
+          "sha256": "9ac3e91ec427fa3d62e1615bc36d57925ba2f10f1cda976273473d835142bb3e"
+        },
+        "source_sha256": "1d95d81a9a04c0ddfa4ec50b9fbffce57090a8faa440c7328ba13905f3f8b6a2",
+        "candidate_pool_sha256": "a7c67b83e5251277b99c9ea8bc345d193896850b4176a78519536b1e36a568e5",
+        "task_sha256": "1bd6727bf9ff0211926c61dbba0aadb910bd1086ab593e1ff722bc34d752266f",
+        "frozen_route": "label_only_reselection"
+      },
+      "policy_body": {
+        "title": "Canonical full name inside a larger title phrase",
+        "task_route": "label_only_reselection",
+        "coverage_tags": [
+          "nested_boundaries",
+          "subject",
+          "object"
+        ],
+        "expected_selected_set": [
+          "C4",
+          "C6"
+        ],
+        "expected_source_ranges": [
+          {
+            "role": "subject",
+            "expected_source_range": {
+              "start": 10,
+              "end": 19,
+              "text": "Mira Chen"
+            },
+            "canonical_candidate_label": "C4",
+            "eligibility_explanation": "The full source name preserves the named signer; the title is unnecessary for this proposed identity boundary.",
+            "covering_candidate_labels": [
+              "C2",
+              "C4"
+            ],
+            "boundary_coverage": "met"
+          },
+          {
+            "role": "object",
+            "expected_source_range": {
+              "start": 27,
+              "end": 40,
+              "text": "the agreement"
+            },
+            "canonical_candidate_label": "C6",
+            "eligibility_explanation": "The definite agreement is the object of signed.",
+            "covering_candidate_labels": [
+              "C6"
+            ],
+            "boundary_coverage": "met"
+          }
+        ],
+        "eligibility_explanation": "Choose the full name Mira Chen; containment by President Mira Chen does not make the canonical inner span redundant.",
+        "candidate_decisions": [
+          {
+            "label": "C1",
+            "classification": "ineligible_incomplete",
+            "reason": "A title without the name does not identify the signer."
+          },
+          {
+            "label": "C2",
+            "classification": "redundant",
+            "reason": "The title adds no required content beyond the proposed canonical name C4."
+          },
+          {
+            "label": "C3",
+            "classification": "ineligible_incomplete",
+            "reason": "Mira drops Chen from the source name."
+          },
+          {
+            "label": "C4",
+            "classification": "selected",
+            "reason": "Supplies its declared canonical role content."
+          },
+          {
+            "label": "C5",
+            "classification": "ineligible_incomplete",
+            "reason": "Chen drops Mira from the source name."
+          },
+          {
+            "label": "C6",
+            "classification": "selected",
+            "reason": "Supplies its declared canonical role content."
+          }
+        ],
+        "none_policy": {
+          "justified": false,
+          "explanation": "The expected eligible set is non-empty, so NONE is unjustified."
+        },
+        "proposition_inputs": {
+          "polarity": "affirmed",
+          "modality": "actual",
+          "attribution": {
+            "kind": "source_narrator"
+          }
+        },
+        "composition_readiness": {
+          "value": "ready",
+          "reasons": [
+            "Required source content, subject identity, and attribution inputs are supplied."
+          ],
+          "basis": "reference selected set and frozen composition inputs; independent of observed answers"
+        },
+        "review_questions": [
+          "Approve the policy that the title President adds no required content to this signing proposition."
+        ]
+      },
+      "policy_body_sha256": "9875c280dd539f29b8ce6c7532ec61becca005ed17b5d0046f28866fc98e5dd6",
+      "human_adoption": {
+        "author_identity": "repository_operator",
+        "adopted_policy_body_sha256": "9875c280dd539f29b8ce6c7532ec61becca005ed17b5d0046f28866fc98e5dd6",
+        "adopted_input_sha256": "9ac3e91ec427fa3d62e1615bc36d57925ba2f10f1cda976273473d835142bb3e",
+        "evidence": {
+          "path": "data/r17-semantic-selection-contract/human_approval.json",
+          "sha256": "dd9108f742c264807d06246146d2a10c4d46136afff181c9534d3f6734d3df76"
+        }
+      },
+      "human_review": {
+        "reviewer_identity": "repository_operator",
+        "review_mode": "operator_self_review",
+        "review_date": "2026-10-14",
+        "review_commit": "6870e53",
+        "reviewed_policy_body_sha256": "9875c280dd539f29b8ce6c7532ec61becca005ed17b5d0046f28866fc98e5dd6",
+        "reviewed_input_sha256": "9ac3e91ec427fa3d62e1615bc36d57925ba2f10f1cda976273473d835142bb3e",
+        "evidence": {
+          "path": "data/r17-semantic-selection-contract/human_approval.json",
+          "sha256": "dd9108f742c264807d06246146d2a10c4d46136afff181c9534d3f6734d3df76"
+        }
+      },
+      "review_resolution": {
+        "decision": "adopted_as_written",
+        "review_questions": "resolved_by_explicit_operator_acceptance",
+        "evidence": {
+          "path": "data/r17-semantic-selection-contract/human_approval.json",
+          "sha256": "dd9108f742c264807d06246146d2a10c4d46136afff181c9534d3f6734d3df76"
+        }
+      }
+    },
+    {
+      "record_id": "R17-AHE-907",
+      "event_id": "AHE-907",
+      "status": "contract_frozen",
+      "acceptance_evidence": true,
+      "contract_version": 1,
+      "draft_author": "Codex (agent; user-authorized draft)",
+      "draft_authorization": "Try producing the policy records, I will review",
+      "input_binding": {
+        "input_file": {
+          "path": "data/r17-semantic-selection-contract/inputs/AHE-907.json",
+          "sha256": "219c0dd5616e93e3f00d2dd00b89812f724cc62d4265c911fc04b7a6f944c799"
+        },
+        "source_sha256": "7e4255ad21cc9b942f0ea7a1655bb7d724a40a70c7f8d61f1ee1ee65059a99ba",
+        "candidate_pool_sha256": "7e857872647636089387ab211f365aaaca715a1860b33eacb45c11a6701dee97",
+        "task_sha256": "4af80dbf7c020debba6b22edc8e66b9fc3ea016e2c29ea496745962bc83b1b88",
+        "frozen_route": "label_only_reselection"
+      },
+      "policy_body": {
+        "title": "Matching text retains separate source occurrences",
+        "task_route": "label_only_reselection",
+        "coverage_tags": [
+          "separate_occurrences"
+        ],
+        "expected_selected_set": [
+          "C1",
+          "C2"
+        ],
+        "expected_source_ranges": [
+          {
+            "role": "subject",
+            "expected_source_range": {
+              "start": 0,
+              "end": 4,
+              "text": "Mira"
+            },
+            "canonical_candidate_label": "C1",
+            "eligibility_explanation": "The first Mira occurrence performs the thanking.",
+            "covering_candidate_labels": [
+              "C1"
+            ],
+            "boundary_coverage": "met"
+          },
+          {
+            "role": "object",
+            "expected_source_range": {
+              "start": 13,
+              "end": 17,
+              "text": "Mira"
+            },
+            "canonical_candidate_label": "C2",
+            "eligibility_explanation": "The second Mira occurrence receives the thanking.",
+            "covering_candidate_labels": [
+              "C2"
+            ],
+            "boundary_coverage": "met"
+          }
+        ],
+        "eligibility_explanation": "Even with the same frozen Actor reference, the two source occurrences supply distinct roles and retain distinct boundaries.",
+        "candidate_decisions": [
+          {
+            "label": "C1",
+            "classification": "selected",
+            "reason": "Supplies its declared canonical role content."
+          },
+          {
+            "label": "C2",
+            "classification": "selected",
+            "reason": "Supplies its declared canonical role content."
+          }
+        ],
+        "none_policy": {
+          "justified": false,
+          "explanation": "The expected eligible set is non-empty, so NONE is unjustified."
+        },
+        "proposition_inputs": {
+          "polarity": "affirmed",
+          "modality": "actual",
+          "attribution": {
+            "kind": "source_narrator"
+          }
+        },
+        "composition_readiness": {
+          "value": "ready",
+          "reasons": [
+            "Required source content, subject identity, and attribution inputs are supplied."
+          ],
+          "basis": "reference selected set and frozen composition inputs; independent of observed answers"
+        },
+        "review_questions": [
+          "This controlled example supplies one Actor reference for both occurrences; it does not test identity resolution."
+        ]
+      },
+      "policy_body_sha256": "a0ba8dcb75b8c4535f094dc2f38eb0f5d0e790e56d3bb7af058d00bb8db2c0b9",
+      "human_adoption": {
+        "author_identity": "repository_operator",
+        "adopted_policy_body_sha256": "a0ba8dcb75b8c4535f094dc2f38eb0f5d0e790e56d3bb7af058d00bb8db2c0b9",
+        "adopted_input_sha256": "219c0dd5616e93e3f00d2dd00b89812f724cc62d4265c911fc04b7a6f944c799",
+        "evidence": {
+          "path": "data/r17-semantic-selection-contract/human_approval.json",
+          "sha256": "dd9108f742c264807d06246146d2a10c4d46136afff181c9534d3f6734d3df76"
+        }
+      },
+      "human_review": {
+        "reviewer_identity": "repository_operator",
+        "review_mode": "operator_self_review",
+        "review_date": "2026-10-14",
+        "review_commit": "6870e53",
+        "reviewed_policy_body_sha256": "a0ba8dcb75b8c4535f094dc2f38eb0f5d0e790e56d3bb7af058d00bb8db2c0b9",
+        "reviewed_input_sha256": "219c0dd5616e93e3f00d2dd00b89812f724cc62d4265c911fc04b7a6f944c799",
+        "evidence": {
+          "path": "data/r17-semantic-selection-contract/human_approval.json",
+          "sha256": "dd9108f742c264807d06246146d2a10c4d46136afff181c9534d3f6734d3df76"
+        }
+      },
+      "review_resolution": {
+        "decision": "adopted_as_written",
+        "review_questions": "resolved_by_explicit_operator_acceptance",
+        "evidence": {
+          "path": "data/r17-semantic-selection-contract/human_approval.json",
+          "sha256": "dd9108f742c264807d06246146d2a10c4d46136afff181c9534d3f6734d3df76"
+        }
+      }
+    },
+    {
+      "record_id": "R17-AHE-908",
+      "event_id": "AHE-908",
+      "status": "contract_frozen",
+      "acceptance_evidence": true,
+      "contract_version": 1,
+      "draft_author": "Codex (agent; user-authorized draft)",
+      "draft_authorization": "Try producing the policy records, I will review",
+      "input_binding": {
+        "input_file": {
+          "path": "data/r17-semantic-selection-contract/inputs/AHE-908.json",
+          "sha256": "3cfd41c69cb2958c29ce0d0a6c5dd3ea1eff90188e022163e661c40a625dcdb6"
+        },
+        "source_sha256": "8b38b558e4df5eb3a70f60edea988d448559dfdded9b7ca08d9ba7f6c5ac71a8",
+        "candidate_pool_sha256": "3397db2dc0389884d8ff969fe291399556f4b49addc4846ecfe4e12ec8f14532",
+        "task_sha256": "f96d061154e983d407df2e9b51fd61b965cf445f7285e7fbe9650a17212b3ad1",
+        "frozen_route": "best_choice_reselection"
+      },
+      "policy_body": {
+        "title": "Justified NONE for a weather Event with no referential argument",
+        "task_route": "best_choice_reselection",
+        "coverage_tags": [
+          "justified_NONE",
+          "empty_reference_set"
+        ],
+        "expected_selected_set": [],
+        "expected_source_ranges": [],
+        "eligibility_explanation": "It is an expletive in the complete weather sentence, not a referential participant. No subject, object, time, place, polarity marker, or modality marker is explicitly needed.",
+        "candidate_decisions": [
+          {
+            "label": "C1",
+            "classification": "ineligible_expletive",
+            "reason": "It is non-referential weather syntax, not an Actor or a required source argument."
+          }
+        ],
+        "none_policy": {
+          "justified": true,
+          "explanation": "No role has selectable source content; the complete source and pool contain no eligible Candidate."
+        },
+        "proposition_inputs": {
+          "polarity": "affirmed",
+          "modality": "actual",
+          "attribution": {
+            "kind": "source_narrator"
+          }
+        },
+        "composition_readiness": {
+          "value": "not_ready",
+          "reasons": [
+            "The reference set is present but empty; current R4 holds selection_empty and requires a resolved subject for composition."
+          ],
+          "basis": "reference selected set and frozen composition inputs; independent of observed answers"
+        },
+        "review_questions": [
+          "Approve this frame as supported for selection while its subjectless composition remains not_ready; otherwise replace this justified-NONE fixture rather than fabricating a subject."
+        ]
+      },
+      "policy_body_sha256": "6a608818431932b002b2e1a0ed96670cb19636a58633dfa4d3cfa951d07319ca",
+      "human_adoption": {
+        "author_identity": "repository_operator",
+        "adopted_policy_body_sha256": "6a608818431932b002b2e1a0ed96670cb19636a58633dfa4d3cfa951d07319ca",
+        "adopted_input_sha256": "3cfd41c69cb2958c29ce0d0a6c5dd3ea1eff90188e022163e661c40a625dcdb6",
+        "evidence": {
+          "path": "data/r17-semantic-selection-contract/human_approval.json",
+          "sha256": "dd9108f742c264807d06246146d2a10c4d46136afff181c9534d3f6734d3df76"
+        }
+      },
+      "human_review": {
+        "reviewer_identity": "repository_operator",
+        "review_mode": "operator_self_review",
+        "review_date": "2026-10-14",
+        "review_commit": "6870e53",
+        "reviewed_policy_body_sha256": "6a608818431932b002b2e1a0ed96670cb19636a58633dfa4d3cfa951d07319ca",
+        "reviewed_input_sha256": "3cfd41c69cb2958c29ce0d0a6c5dd3ea1eff90188e022163e661c40a625dcdb6",
+        "evidence": {
+          "path": "data/r17-semantic-selection-contract/human_approval.json",
+          "sha256": "dd9108f742c264807d06246146d2a10c4d46136afff181c9534d3f6734d3df76"
+        }
+      },
+      "review_resolution": {
+        "decision": "adopted_as_written",
+        "review_questions": "resolved_by_explicit_operator_acceptance",
+        "evidence": {
+          "path": "data/r17-semantic-selection-contract/human_approval.json",
+          "sha256": "dd9108f742c264807d06246146d2a10c4d46136afff181c9534d3f6734d3df76"
+        }
+      }
+    },
+    {
+      "record_id": "R17-AHE-909",
+      "event_id": "AHE-909",
+      "status": "contract_frozen",
+      "acceptance_evidence": true,
+      "contract_version": 1,
+      "draft_author": "Codex (agent; user-authorized draft)",
+      "draft_authorization": "Try producing the policy records, I will review",
+      "input_binding": {
+        "input_file": {
+          "path": "data/r17-semantic-selection-contract/inputs/AHE-909.json",
+          "sha256": "a40dcdfb5b660564ae63cc418c076807870dcfabb63f48022104c2d068f5c51e"
+        },
+        "source_sha256": "f0a665bf963ae7a15b3caa8b48560c985d9ff70c3d793b30b28584ecc8944be9",
+        "candidate_pool_sha256": "74d1940aa592c5eca968576046a21c0cadcd2a42e49668f79c13d5530138114f",
+        "task_sha256": "971e8efdcf3f902e032437a1185a26f6deab996b79868c46e60e5fffcd80464a",
+        "frozen_route": "label_only_reselection"
+      },
+      "policy_body": {
+        "title": "Entity-reference removal leaves selection quality unchanged",
+        "task_route": "label_only_reselection",
+        "coverage_tags": [
+          "subject",
+          "object",
+          "removed_entity_references"
+        ],
+        "expected_selected_set": [
+          "C1",
+          "C2"
+        ],
+        "expected_source_ranges": [
+          {
+            "role": "subject",
+            "expected_source_range": {
+              "start": 0,
+              "end": 4,
+              "text": "Mira"
+            },
+            "canonical_candidate_label": "C1",
+            "eligibility_explanation": "Mira performs the greeting.",
+            "covering_candidate_labels": [
+              "C1"
+            ],
+            "boundary_coverage": "met"
+          },
+          {
+            "role": "object",
+            "expected_source_range": {
+              "start": 13,
+              "end": 18,
+              "text": "Tomas"
+            },
+            "canonical_candidate_label": "C2",
+            "eligibility_explanation": "Tomas receives the greeting.",
+            "covering_candidate_labels": [
+              "C2"
+            ],
+            "boundary_coverage": "met"
+          }
+        ],
+        "eligibility_explanation": "This case copies AHE-901 source content and role policy with a distinct fixture Event ID; only the composition entity references are absent.",
+        "candidate_decisions": [
+          {
+            "label": "C1",
+            "classification": "selected",
+            "reason": "Supplies its declared canonical role content."
+          },
+          {
+            "label": "C2",
+            "classification": "selected",
+            "reason": "Supplies its declared canonical role content."
+          }
+        ],
+        "none_policy": {
+          "justified": false,
+          "explanation": "The expected eligible set is non-empty, so NONE is unjustified."
+        },
+        "proposition_inputs": {
+          "polarity": "affirmed",
+          "modality": "actual",
+          "attribution": {
+            "kind": "source_narrator"
+          }
+        },
+        "composition_readiness": {
+          "value": "not_ready",
+          "reasons": [
+            "No Actor or Organization references are supplied, so the reference subject cannot resolve."
+          ],
+          "basis": "reference selected set and frozen composition inputs; independent of observed answers"
+        },
+        "review_questions": [
+          "Compare with AHE-901: selection remains met while readiness changes ready to not_ready."
+        ]
+      },
+      "policy_body_sha256": "852a91f7dc42ad311bdeeab08bc53725285dbc758586fe03b5ae2fb1fb06c47d",
+      "human_adoption": {
+        "author_identity": "repository_operator",
+        "adopted_policy_body_sha256": "852a91f7dc42ad311bdeeab08bc53725285dbc758586fe03b5ae2fb1fb06c47d",
+        "adopted_input_sha256": "a40dcdfb5b660564ae63cc418c076807870dcfabb63f48022104c2d068f5c51e",
+        "evidence": {
+          "path": "data/r17-semantic-selection-contract/human_approval.json",
+          "sha256": "dd9108f742c264807d06246146d2a10c4d46136afff181c9534d3f6734d3df76"
+        }
+      },
+      "human_review": {
+        "reviewer_identity": "repository_operator",
+        "review_mode": "operator_self_review",
+        "review_date": "2026-10-14",
+        "review_commit": "6870e53",
+        "reviewed_policy_body_sha256": "852a91f7dc42ad311bdeeab08bc53725285dbc758586fe03b5ae2fb1fb06c47d",
+        "reviewed_input_sha256": "a40dcdfb5b660564ae63cc418c076807870dcfabb63f48022104c2d068f5c51e",
+        "evidence": {
+          "path": "data/r17-semantic-selection-contract/human_approval.json",
+          "sha256": "dd9108f742c264807d06246146d2a10c4d46136afff181c9534d3f6734d3df76"
+        }
+      },
+      "review_resolution": {
+        "decision": "adopted_as_written",
+        "review_questions": "resolved_by_explicit_operator_acceptance",
+        "evidence": {
+          "path": "data/r17-semantic-selection-contract/human_approval.json",
+          "sha256": "dd9108f742c264807d06246146d2a10c4d46136afff181c9534d3f6734d3df76"
+        }
+      }
+    }
+  ],
+  "human_approval": {
+    "path": "data/r17-semantic-selection-contract/human_approval.json",
+    "sha256": "dd9108f742c264807d06246146d2a10c4d46136afff181c9534d3f6734d3df76"
+  }
+}

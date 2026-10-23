@@ -553,12 +553,13 @@ def validate_planned_proposed_changes(
                 )
         elif record_type == "Assertion":
             assertion = ProposedAssertion.model_validate_json(_canonical_json(record))
-            _require_entity_reference(
-                assertion.subject_entity_id,
-                planned_records,
-                ledger,
-                error_label,
-            )
+            if assertion.subject_entity_id is not None:
+                _require_entity_reference(
+                    assertion.subject_entity_id,
+                    planned_records,
+                    ledger,
+                    error_label,
+                )
             if assertion.object_entity_id is not None:
                 _require_entity_reference(
                     assertion.object_entity_id,

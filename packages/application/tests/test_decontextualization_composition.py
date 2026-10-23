@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 from typing import Literal
 
+import pytest
 from kotekomi_application import (
     AttachmentSourceRange,
     ConstituentCandidateInventory,
@@ -23,6 +24,7 @@ from kotekomi_application import (
 )
 from kotekomi_application.decontextualization_composition import (
     DecontextualizationEntityRef,
+    DecontextualizationExclusion,
 )
 
 TGE002_SOURCE = (
@@ -98,6 +100,20 @@ def _entity(
         entity_kind=kind,
         canonical_name=name,
         accepted_source_occurrences=(_span(source, start_word, end_word),),
+    )
+
+
+def _exclusion(
+    exclusion_id: str,
+    source: str,
+    start_word: str,
+    end_word: str,
+) -> DecontextualizationExclusion:
+    return DecontextualizationExclusion(
+        exclusion_id=exclusion_id,
+        contextual_kind="non_entity_value",
+        source_range=_span(source, start_word, end_word),
+        rationale="Reviewed exclusion: the span is not an Actor or Organization.",
     )
 
 
@@ -343,3 +359,310 @@ def test_targeted_attribution_names_sacks_reporter() -> None:
     assert result.attribution.exact_carrier is not None
     assert result.attribution.exact_carrier.text == "Sacks stated"
     assert result.attribution.reporter_ref == "EGE-092"
+
+
+def _compose(
+    *,
+    event_id: str,
+    source: str,
+    tokens: tuple[EventEntityLinguisticToken, ...],
+    constituents: tuple[ParserConstituent, ...],
+    selected_indexes: tuple[int, ...],
+    entities: tuple[DecontextualizationEntityRef, ...],
+    head_lemma: str,
+    subject_value_authorizations: tuple[DecontextualizationExclusion, ...] = (),
+) -> DecontextualizedProposition:
+    digest = hashlib.sha256(source.encode()).hexdigest()
+    head = next(token for token in tokens if token.lemma == head_lemma)
+    inventory = ConstituentCandidateInventory(
+        event_id=event_id,
+        source_text_sha256=digest,
+        constituents=constituents,
+    )
+    return build_decontextualized_proposition(
+        event_id=event_id,
+        source_text=source,
+        source_text_sha256=digest,
+        inventory=inventory,
+        answer=_answer(event_id, ConstituentSelectionStatus.SELECTED, selected_indexes),
+        trigger_head_start=head.start,
+        trigger_head_end=head.end,
+        tokens=tokens,
+        entities=entities,
+        subject_value_authorizations=subject_value_authorizations,
+    )
+
+
+def test_advmod_negation_and_modal_derive_negated_hypothetical_content() -> None:
+    source = "Mira would not sign the agreement."
+    tokens = _words(
+        source,
+        [
+            ("Mira", "sign", "nsubj", "mira"),
+            ("would", "sign", "aux", "would"),
+            ("not", "sign", "advmod", "not"),
+            ("sign", None, "root", "sign"),
+            ("the", "agreement", "det", "the"),
+            ("agreement", "sign", "obj", "agreement"),
+        ],
+    )
+    constituents = (
+        _constituent(source, "AHE-903", ("t1",), "Mira", "Mira"),
+        _constituent(source, "AHE-903", ("t4",), "sign", "sign"),
+        _constituent(source, "AHE-903", ("t5", "t6"), "the", "agreement"),
+    )
+    entities = (_entity("EGE-901", "actor", "Mira", source, "Mira", "Mira"),)
+    result = _compose(
+        event_id="AHE-903",
+        source=source,
+        tokens=tokens,
+        constituents=constituents,
+        selected_indexes=(1, 2, 3),
+        entities=entities,
+        head_lemma="sign",
+    )
+    assert result.status is DecontextualizationStatus.PROPOSITION
+    assert result.relation_label == "sign"
+    assert result.subject is not None
+    assert result.subject.entity_ref == "EGE-901"
+    assert result.subject.exact_fragment.text == "Mira"
+    assert result.object is not None
+    assert result.object.object_value == "the agreement"
+    assert result.polarity is EventPolarity.NEGATED
+    assert result.modality is EventModality.HYPOTHETICAL
+    assert result.attribution is not None
+    assert result.attribution.kind is DecontextualizationAttributionKind.SOURCE_NARRATOR
+
+
+def test_copular_predicate_adjective_composes_copula_relation_and_subject_value() -> None:
+    source = "The April order is not final."
+    tokens = _words(
+        source,
+        [
+            ("The", "order", "det", "the"),
+            ("April", "order", "compound", "april"),
+            ("order", "final", "nsubj", "order"),
+            ("is", "final", "cop", "be"),
+            ("not", "final", "advmod", "not"),
+            ("final", None, "root", "final"),
+        ],
+    )
+    constituents = (_constituent(source, "AHE-051", ("t1", "t2", "t3"), "The", "order"),)
+    result = _compose(
+        event_id="AHE-051",
+        source=source,
+        tokens=tokens,
+        constituents=constituents,
+        selected_indexes=(1,),
+        entities=(),
+        head_lemma="final",
+        subject_value_authorizations=(_exclusion("EGX-051", source, "The", "order"),),
+    )
+    assert result.status is DecontextualizationStatus.PROPOSITION
+    assert result.relation_label == "is"
+    assert result.relation_range is not None
+    assert result.relation_range.text == "is"
+    assert result.relation_range.start == 16
+    assert result.relation_range.end == 18
+    assert result.subject is not None
+    assert result.subject.entity_ref is None
+    assert result.subject.subject_value == "The April order"
+    assert result.subject.exact_fragment.text == "The April order"
+    assert result.object is not None
+    assert result.object.object_value == "final"
+    assert result.object.exact_fragment.text == "final"
+    assert result.polarity is EventPolarity.NEGATED
+    assert result.modality is EventModality.ACTUAL
+    assert result.attribution is not None
+    assert result.attribution.kind is DecontextualizationAttributionKind.SOURCE_NARRATOR
+
+
+def test_subject_without_entity_or_exclusion_holds_subject_unavailable() -> None:
+    source = "The April order is not final."
+    tokens = _words(
+        source,
+        [
+            ("The", "order", "det", "the"),
+            ("April", "order", "compound", "april"),
+            ("order", "final", "nsubj", "order"),
+            ("is", "final", "cop", "be"),
+            ("not", "final", "advmod", "not"),
+            ("final", None, "root", "final"),
+        ],
+    )
+    constituents = (_constituent(source, "AHE-051", ("t1", "t2", "t3"), "The", "order"),)
+    result = _compose(
+        event_id="AHE-051",
+        source=source,
+        tokens=tokens,
+        constituents=constituents,
+        selected_indexes=(1,),
+        entities=(),
+        head_lemma="final",
+    )
+    assert result.status is DecontextualizationStatus.HELD
+    assert result.hold_reason is DecontextualizationHoldReason.SUBJECT_UNAVAILABLE
+    assert result.subject is None and result.object is None and result.relation_label is None
+
+
+def test_subject_value_authorization_requires_source_exact_span() -> None:
+    source = "The April order is not final."
+    tokens = _words(
+        source,
+        [
+            ("The", "order", "det", "the"),
+            ("April", "order", "compound", "april"),
+            ("order", "final", "nsubj", "order"),
+            ("is", "final", "cop", "be"),
+            ("not", "final", "advmod", "not"),
+            ("final", None, "root", "final"),
+        ],
+    )
+    constituents = (_constituent(source, "AHE-051", ("t1", "t2", "t3"), "The", "order"),)
+    result = _compose(
+        event_id="AHE-051",
+        source=source,
+        tokens=tokens,
+        constituents=constituents,
+        selected_indexes=(1,),
+        entities=(),
+        head_lemma="final",
+        subject_value_authorizations=(_exclusion("EGX-051", source, "The", "is"),),
+    )
+    assert result.status is DecontextualizationStatus.HELD
+    assert result.hold_reason is DecontextualizationHoldReason.SUBJECT_UNAVAILABLE
+
+
+def test_subject_value_authorization_rejects_overlapping_authorizations() -> None:
+    source = "The April order is not final."
+    tokens = _words(
+        source,
+        [
+            ("The", "order", "det", "the"),
+            ("April", "order", "compound", "april"),
+            ("order", "final", "nsubj", "order"),
+            ("is", "final", "cop", "be"),
+            ("not", "final", "advmod", "not"),
+            ("final", None, "root", "final"),
+        ],
+    )
+    constituents = (_constituent(source, "AHE-051", ("t1", "t2", "t3"), "The", "order"),)
+    with pytest.raises(ValueError, match="overlap"):
+        _compose(
+            event_id="AHE-051",
+            source=source,
+            tokens=tokens,
+            constituents=constituents,
+            selected_indexes=(1,),
+            entities=(),
+            head_lemma="final",
+            subject_value_authorizations=(
+                _exclusion("EGX-051", source, "The", "order"),
+                _exclusion("EGX-052", source, "The", "is"),
+            ),
+        )
+
+
+def test_oblique_time_place_holds_unsupported_time_place() -> None:
+    source = "Sacks viewed the documents in April."
+    tokens = _words(
+        source,
+        [
+            ("Sacks", "viewed", "nsubj", "sacks"),
+            ("viewed", None, "root", "view"),
+            ("the", "documents", "det", "the"),
+            ("documents", "viewed", "obj", "document"),
+            ("in", "April", "case", "in"),
+            ("April", "viewed", "obl", "april"),
+        ],
+    )
+    constituents = (
+        _constituent(source, "AHE-902", ("t1",), "Sacks", "Sacks"),
+        _constituent(source, "AHE-902", ("t2",), "viewed", "viewed"),
+        _constituent(source, "AHE-902", ("t3", "t4"), "the", "documents"),
+        _constituent(source, "AHE-902", ("t5", "t6"), "in", "April"),
+    )
+    entities = (_entity("EGE-902", "actor", "Sacks", source, "Sacks", "Sacks"),)
+    result = _compose(
+        event_id="AHE-902",
+        source=source,
+        tokens=tokens,
+        constituents=constituents,
+        selected_indexes=(1, 2, 3),
+        entities=entities,
+        head_lemma="view",
+    )
+    assert result.status is DecontextualizationStatus.HELD
+    assert result.hold_reason is DecontextualizationHoldReason.UNSUPPORTED_TIME_PLACE
+    assert result.relation_label is None and result.relation_range is None
+    assert result.subject is None and result.object is None
+
+
+def test_coordinated_subject_holds_unsupported_coordination() -> None:
+    source = "Sacks and Amodei viewed the decision."
+    tokens = _words(
+        source,
+        [
+            ("Sacks", "viewed", "nsubj", "sacks"),
+            ("and", "Amodei", "cc", "and"),
+            ("Amodei", "Sacks", "conj", "amodei"),
+            ("viewed", None, "root", "view"),
+            ("the", "decision", "det", "the"),
+            ("decision", "viewed", "obj", "decision"),
+        ],
+    )
+    constituents = (
+        _constituent(source, "AHE-904", ("t1",), "Sacks", "Sacks"),
+        _constituent(source, "AHE-904", ("t3",), "Amodei", "Amodei"),
+        _constituent(source, "AHE-904", ("t4",), "viewed", "viewed"),
+        _constituent(source, "AHE-904", ("t5", "t6"), "the", "decision"),
+    )
+    entities = (
+        _entity("EGE-903", "actor", "Sacks", source, "Sacks", "Sacks"),
+        _entity("EGE-904", "actor", "Amodei", source, "Amodei", "Amodei"),
+    )
+    result = _compose(
+        event_id="AHE-904",
+        source=source,
+        tokens=tokens,
+        constituents=constituents,
+        selected_indexes=(1, 2, 3, 4),
+        entities=entities,
+        head_lemma="view",
+    )
+    assert result.status is DecontextualizationStatus.HELD
+    assert result.hold_reason is DecontextualizationHoldReason.UNSUPPORTED_COORDINATION
+    assert result.subject is None and result.object is None and result.relation_label is None
+
+
+def test_indirect_object_dependent_routes_to_object_role() -> None:
+    source = "Sacks emailed Amodei."
+    tokens = _words(
+        source,
+        [
+            ("Sacks", "emailed", "nsubj", "sacks"),
+            ("emailed", None, "root", "email"),
+            ("Amodei", "emailed", "iobj", "amodei"),
+        ],
+    )
+    constituents = (
+        _constituent(source, "TGE-900", ("t1",), "Sacks", "Sacks"),
+        _constituent(source, "TGE-900", ("t2",), "emailed", "emailed"),
+        _constituent(source, "TGE-900", ("t3",), "Amodei", "Amodei"),
+    )
+    entities = (_entity("EGE-905", "actor", "Sacks", source, "Sacks", "Sacks"),)
+    result = _compose(
+        event_id="TGE-900",
+        source=source,
+        tokens=tokens,
+        constituents=constituents,
+        selected_indexes=(1, 2, 3),
+        entities=entities,
+        head_lemma="email",
+    )
+    assert result.status is DecontextualizationStatus.PROPOSITION
+    assert result.subject is not None
+    assert result.subject.entity_ref == "EGE-905"
+    assert result.object is not None
+    assert result.object.entity_ref is None
+    assert result.object.object_value == "Amodei"
