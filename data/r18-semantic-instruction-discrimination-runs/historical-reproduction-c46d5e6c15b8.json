@@ -1,0 +1,23 @@
+{
+  "baseline_revision": "c46d5e6c15b81412ad86961d8306edce7e47554a",
+  "overall": "passed",
+  "report_fingerprint": "5cdc12f0ed884cd73cfd99ada8a7af8d4b063d33b0a2abd45022800d02ecdce5",
+  "reproduction_revision": "c46d5e6c15b81412ad86961d8306edce7e47554a",
+  "schema_version": "r18_historical_reproduction_v1",
+  "verification_outcomes": {
+    "pytest": {
+      "exit_code": 0,
+      "status": "passed",
+      "summary_line": ".............................                                            [100%]"
+    },
+    "report_reproduction": {
+      "expected_fingerprint": "5cdc12f0ed884cd73cfd99ada8a7af8d4b063d33b0a2abd45022800d02ecdce5",
+      "rebuilt_fingerprint": "5cdc12f0ed884cd73cfd99ada8a7af8d4b063d33b0a2abd45022800d02ecdce5",
+      "report_exit_code": 0,
+      "show_exit_code": 0,
+      "show_fingerprint": "5cdc12f0ed884cd73cfd99ada8a7af8d4b063d33b0a2abd45022800d02ecdce5",
+      "status": "passed"
+    }
+  },
+  "worktree": "/Users/DSerbarinov/gits/KoteKomi/.git-worktrees/r18-baseline-c46d5e6c15b8"
+}

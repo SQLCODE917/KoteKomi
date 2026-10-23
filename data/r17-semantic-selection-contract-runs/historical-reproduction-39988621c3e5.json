@@ -1,0 +1,48 @@
+{
+  "baseline_revision": "39988621c3e565f1b4f1af260f3fe7cd280e0e49",
+  "overall": "passed",
+  "report_fingerprint": "cd4c0da89ef80e41d90bd3cfbd8878cd4a2d94a0e3ca9d4137b5a8471cfca5f0",
+  "reproduction_revision": "c46d5e6c15b81412ad86961d8306edce7e47554a",
+  "schema_version": "r17_historical_reproduction_v1",
+  "verification_outcomes": {
+    "pytest": {
+      "exit_code": 0,
+      "status": "passed",
+      "summary_line": ".......................................                                  [100%]"
+    },
+    "report_reproduction": {
+      "evaluate_exit_code": 0,
+      "expected_fingerprint": "cd4c0da89ef80e41d90bd3cfbd8878cd4a2d94a0e3ca9d4137b5a8471cfca5f0",
+      "rebuilt_fingerprint": "cd4c0da89ef80e41d90bd3cfbd8878cd4a2d94a0e3ca9d4137b5a8471cfca5f0",
+      "show_exit_code": 0,
+      "show_fingerprint": "cd4c0da89ef80e41d90bd3cfbd8878cd4a2d94a0e3ca9d4137b5a8471cfca5f0",
+      "status": "passed"
+    },
+    "verify_policy_records": {
+      "exit_code": 0,
+      "status": "passed",
+      "summary": {
+        "acceptance_evidence": true,
+        "answer_fixtures": 26,
+        "canonical_write_count": 0,
+        "contract_freeze_status": "frozen",
+        "contract_version": 1,
+        "human_review_status": "approved",
+        "model_execution_count": 0,
+        "policy_records": 11,
+        "review_commit": "6870e53",
+        "selectable_roles": [
+          "modality",
+          "object",
+          "place",
+          "polarity",
+          "subject",
+          "time"
+        ],
+        "status": "mechanically_valid_frozen_semantic_selection_contract"
+      }
+    }
+  },
+  "verifier_summary_sha256": "907a4755f103391effd201f06373254de999d530bb9e3eb93c7b199f489dc962",
+  "worktree": "/Users/DSerbarinov/gits/KoteKomi/.git-worktrees/r17-baseline-39988621c3e5"
+}
