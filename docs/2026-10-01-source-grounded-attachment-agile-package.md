@@ -31,9 +31,9 @@ Stage one identifies the exact Event expression from one SourceSegment.
 
 Stage two attaches the exact source occurrences that complete the Event proposition.
 
-Stage three assembles the ordered fragment set into one decontextualized proposition.
+Stage three assembles the ordered fragment set into one decontextualized proposition and, when the proposition closes, emits one inspectable `source_report` Assertion for a source-narrator Event.
 
-Stage four assigns arguments and emits one `attributed_statement` Assertion.
+Stage four assigns arguments and emits one `attributed_statement` Assertion only for a reporting-carrier Event whose attribution target resolves to an Actor or Organization. The attributed-statement constructor emits no Assertion for `source_narrator`.
 
 Stage four ships deterministically through the Event Attribution Production Wiring Package.
 

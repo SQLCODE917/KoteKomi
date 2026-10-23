@@ -80,7 +80,7 @@ The Ontology Profile maps to these external patterns:
 
 ## Assertion Rules
 
-An Assertion has one subject.
+An Assertion has either one subject entity or one subject value.
 
 An Assertion has one predicate.
 
