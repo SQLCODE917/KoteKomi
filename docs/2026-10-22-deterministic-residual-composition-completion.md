@@ -232,3 +232,76 @@ R19 is deterministic: no model execution, no canonical write, no ProposedChange.
 ## 10. Run Record
 
 R19 has not run.
+
+## 11. Amendment: Production Reference Wiring and Assertion Construction
+
+Status: Proposed
+
+This amendment resolves the four integration decisions that §7 left open.
+It cooperates with §8 and does not reopen the frozen R17 evidence.
+
+The coordinating use case already composes the selector, the reference Port, and
+the composer. The two residuals close only when the real Event-Entity Connection
+evidence reaches the composer through the Port in the residual's coordinate
+system, and only when a reviewed subject-value exclusion and a reviewed Entity
+identity binding authorize the required content.
+
+### 11.1 Event binding and whitespace-only coordinate alignment
+
+- REQ-AMD-BND-01: The use case binds each residual Event to one source-grounded
+  Event through a reviewed binding record. The binding record names both Event
+  IDs, both source digests, and both trigger spans.
+- REQ-AMD-BND-02: A missing or unapproved binding halts with a typed outcome.
+  The resolver never guesses a binding.
+- REQ-AMD-BND-03: The mapper aligns the provider source onto the residual source
+  only when their non-whitespace characters are identical in order.
+- REQ-AMD-BND-04: The mapper converts provider occurrence boundaries into
+  residual coordinates with the whitespace-only correspondence.
+- REQ-AMD-BND-05: The mapper rejects any difference beyond whitespace.
+- REQ-AMD-BND-06: The mapper validates every produced residual slice against the
+  residual source text. An invalid slice halts instead of dropping the
+  occurrence.
+- REQ-AMD-BND-07: The mapper preserves occurrence identity by unique reviewed
+  offsets, never by a bare name search. Repeated names keep their own occurrence.
+
+### 11.2 Provider supplement
+
+- REQ-AMD-SUP-01: A new reviewed R19 provider supplement carries the reviewed
+  `non_entity_value` exclusion for `AHE-051`'s `The April order` and the Event
+  and Entity identity bindings.
+- REQ-AMD-SUP-02: The supplement starts with `review_status` `proposed`. A human
+  must approve it before the exclusion can authorize a value subject.
+- REQ-AMD-SUP-03: The supplement binds to the approved Connection Gold and to
+  each residual input by digest. A digest drift fails fast.
+- REQ-AMD-SUP-04: The supplement records `AHE-022` bound to `TGE-018` and
+  `AHE-051` as provider-only with its subject exclusion. No Event-ID special
+  case lives in code.
+- REQ-AMD-SUP-05: The reference Port and the use case accept a value subject only
+  from an approved supplement exclusion.
+
+### 11.3 Assertion construction inputs
+
+- REQ-AMD-ASS-01: The supplement pins a reviewed EGE-to-Actor or Organization
+  identity mapping for every entity reference the residuals require.
+- REQ-AMD-ASS-02: The supplement pins a reviewed relation-label-to-predicate
+  mapping for the residual relations.
+- REQ-AMD-ASS-03: The supplement pins one SourceAuthority, one AttributionBasis,
+  and actual Source and EvidenceTarget references for the inspection payload.
+- REQ-AMD-ASS-04: The Assertion constructor is deterministic and validates the
+  complete reference closure of its inspection payload before it emits an
+  Assertion.
+- REQ-AMD-ASS-05: The constructor emits a `status` `proposed` and
+  `epistemic_scope` `source_report` Assertion. It emits no ProposedAssertion and
+  persists nothing.
+
+### 11.4 Pipeline and scoring
+
+- REQ-AMD-PIP-01: The Pipeline wires the real Event-Entity Connection Adapter and
+  the approved supplement through the coordinating use case. Production never
+  uses a fake provider.
+- REQ-AMD-PIP-02: The Pipeline scores each generated selection with the frozen
+  R17 evaluator.
+- REQ-AMD-PIP-03: The Pipeline seals one report that shows both residuals
+  separately with selection, composition, Assertion spans, and a fingerprint.
+- REQ-AMD-PIP-04: The report records zero model executions, zero canonical
+  writes, and zero ProposedChanges.
