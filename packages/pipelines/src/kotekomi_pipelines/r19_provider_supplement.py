@@ -16,10 +16,16 @@ import json
 from pathlib import Path
 from typing import Annotated, Literal, Self
 
+from kotekomi_application import AttachmentSourceRange
+from kotekomi_application.ports import LedgerRepository
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from kotekomi_pipelines.event_entity_connection_stage_local import (
     load_connection_gold_catalog,
+    reanchor_whitespace_spans,
+)
+from kotekomi_pipelines.source_grounded_proposition_stage_local import (
+    load_proposition_gold_catalog,
 )
 
 _SHA256 = r"^[a-f0-9]{64}$"
@@ -157,11 +163,12 @@ class SupplementPredicateMapping(BaseModel):
     rationale: Annotated[str, Field(min_length=1)]
 
 
-class SupplementAssertionInputs(BaseModel):
-    """The reviewed classification inputs for the inspectable Assertion."""
+class SupplementEventEvidence(BaseModel):
+    """One residual Event's reviewed Assertion evidence and classification."""
 
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
+    event_id: Annotated[str, Field(pattern=_AHE_ID)]
     source_authority: Annotated[str, Field(min_length=1)]
     attribution_basis: Annotated[str, Field(min_length=1)]
     source_id: Annotated[str, Field(pattern=_SOURCE_ID)] | None = None
@@ -172,9 +179,9 @@ class SupplementAssertionInputs(BaseModel):
     def validate_closure(self) -> Self:
         resolved = self.source_id is not None and self.evidence_target_id is not None
         if resolved and self.unresolved_reason is not None:
-            raise ValueError("Resolved Assertion inputs cannot carry an unresolved reason.")
+            raise ValueError("Resolved Event evidence cannot carry an unresolved reason.")
         if not resolved and self.unresolved_reason is None:
-            raise ValueError("Unresolved Assertion inputs require an unresolved reason.")
+            raise ValueError("Unresolved Event evidence requires an unresolved reason.")
         return self
 
 
@@ -187,12 +194,13 @@ class R19ProviderSupplement(BaseModel):
     supplement_id: Annotated[str, Field(min_length=1)]
     review_status: Literal["proposed", "approved"]
     bound_connection_gold: SupplementFileBinding
+    bound_proposition_gold: SupplementFileBinding
     residual_inputs: tuple[SupplementInputBinding, ...]
     event_bindings: tuple[SupplementEventBinding, ...]
+    event_evidence: tuple[SupplementEventEvidence, ...]
     subject_value_exclusions: tuple[SupplementSubjectValueExclusion, ...]
     identity_mappings: tuple[SupplementIdentityMapping, ...]
     predicate_mappings: tuple[SupplementPredicateMapping, ...]
-    assertion_inputs: SupplementAssertionInputs
 
     @model_validator(mode="after")
     def validate_distinctness(self) -> Self:
@@ -204,6 +212,11 @@ class R19ProviderSupplement(BaseModel):
             raise ValueError("Supplement Event bindings must be ordered and distinct.")
         if set(binding_ids) != set(residual_ids):
             raise ValueError("Every residual input requires one Event binding.")
+        evidence_ids = tuple(item.event_id for item in self.event_evidence)
+        if tuple(sorted(set(evidence_ids))) != evidence_ids:
+            raise ValueError("Supplement Event evidence must be ordered and distinct.")
+        if set(evidence_ids) != set(residual_ids):
+            raise ValueError("Every residual input requires one Event evidence record.")
         entity_ids = tuple(item.entity_id for item in self.identity_mappings)
         if tuple(sorted(set(entity_ids))) != entity_ids:
             raise ValueError("Supplement identity mappings must be ordered and distinct.")
@@ -233,26 +246,41 @@ def load_r19_provider_supplement(
     *,
     repository_root: Path,
 ) -> R19ProviderSupplement:
-    """Load and digest-bind one R19 provider supplement.
+    """Load, digest-bind, and substantively validate one R19 provider supplement.
 
-    The loader reads and validates the supplement shape, then verifies that the
-    bound Connection Gold, each bound residual input file, and each residual source
-    digest match the files on disk. It also rejects a binding that names a provider
-    Event absent from the bound Connection Gold.
+    The loader verifies the bound Connection Gold and Proposition Gold digests,
+    each bound residual input file and source digest, and then cross-checks each
+    Event binding against those files: the residual source digest and trigger must
+    match the residual input, the provider source digest must match both Gold
+    catalogs, and the provider trigger must re-anchor into the residual trigger
+    through the whitespace-only correspondence.
     """
     supplement = R19ProviderSupplement.model_validate_json(path.read_bytes())
 
     connection_gold_path = _bound_path(repository_root, supplement.bound_connection_gold.path)
     if _sha256_bytes(connection_gold_path.read_bytes()) != supplement.bound_connection_gold.sha256:
         raise ValueError("Supplement Connection Gold digest drifted from its bound file.")
-
     connection_catalog, _, _ = load_connection_gold_catalog(
         connection_gold_path,
         repository_root=repository_root,
         require_approved=False,
     )
-    provider_event_ids = {event.event_id for event in connection_catalog.events}
+    connection_events = {event.event_id: event for event in connection_catalog.events}
 
+    proposition_gold_path = _bound_path(repository_root, supplement.bound_proposition_gold.path)
+    if (
+        _sha256_bytes(proposition_gold_path.read_bytes())
+        != supplement.bound_proposition_gold.sha256
+    ):
+        raise ValueError("Supplement Proposition Gold digest drifted from its bound file.")
+    proposition_catalog = load_proposition_gold_catalog(
+        proposition_gold_path,
+        repository_root=repository_root,
+    )
+    proposition_events = {event.event_id: event for event in proposition_catalog.events}
+
+    residual_by_event: dict[str, tuple[str, tuple[int, int, str]]] = {}
+    source_digest_by_event: dict[str, str] = {}
     for input_binding in supplement.residual_inputs:
         input_path = _bound_path(repository_root, input_binding.input_path)
         if _sha256_bytes(input_path.read_bytes()) != input_binding.input_sha256:
@@ -265,16 +293,66 @@ def load_r19_provider_supplement(
             raise ValueError(
                 f"Supplement residual source digest drifted for {input_binding.event_id}."
             )
+        trigger = frozen_input["event_frame"]["trigger"]
+        residual_by_event[input_binding.event_id] = (
+            source_text,
+            (int(trigger["start"]), int(trigger["end"]), str(trigger["text"])),
+        )
+        source_digest_by_event[input_binding.event_id] = input_binding.source_sha256
 
     for binding in supplement.event_bindings:
-        if binding.provider_event_id is not None:
-            if binding.provider_event_id not in provider_event_ids:
-                raise ValueError(
-                    "Supplement binding names an unknown provider Event "
-                    f"{binding.provider_event_id}."
-                )
+        residual_text, residual_trigger = residual_by_event[binding.residual_event_id]
+        if binding.residual_source_sha256 != source_digest_by_event[binding.residual_event_id]:
+            raise ValueError(
+                f"Supplement binding source digest disagrees for {binding.residual_event_id}."
+            )
+        if _trigger_tuple(binding.residual_trigger) != residual_trigger:
+            raise ValueError(
+                f"Supplement binding trigger disagrees for {binding.residual_event_id}."
+            )
+        if binding.provider_event_id is None:
+            continue
+        connection_event = connection_events.get(binding.provider_event_id)
+        proposition_event = proposition_events.get(binding.provider_event_id)
+        if connection_event is None or proposition_event is None:
+            raise ValueError(
+                f"Supplement binding names an unknown provider Event {binding.provider_event_id}."
+            )
+        if connection_event.source_text_sha256 != binding.provider_source_sha256:
+            raise ValueError(
+                "Supplement binding provider source digest disagrees for "
+                f"{binding.provider_event_id}."
+            )
+        if proposition_event.source_text_sha256 != binding.provider_source_sha256:
+            raise ValueError(
+                "Supplement binding provider source digest disagrees for "
+                f"{binding.provider_event_id}."
+            )
+        provider_text = proposition_event.source_text
+        assert binding.provider_trigger is not None
+        reanchored = reanchor_whitespace_spans(
+            provider_text=provider_text,
+            residual_text=residual_text,
+            spans=(_attachment_range(binding.provider_trigger),),
+        )
+        if _source_range_tuple(reanchored[0]) != residual_trigger:
+            raise ValueError(
+                f"Supplement binding trigger does not re-anchor for {binding.residual_event_id}."
+            )
 
     return supplement
+
+
+def _trigger_tuple(trigger: SupplementTriggerSpan) -> tuple[int, int, str]:
+    return (trigger.start, trigger.end, trigger.source_text)
+
+
+def _source_range_tuple(value: AttachmentSourceRange) -> tuple[int, int, str]:
+    return (value.start, value.end, value.text)
+
+
+def _attachment_range(trigger: SupplementTriggerSpan) -> AttachmentSourceRange:
+    return AttachmentSourceRange(start=trigger.start, end=trigger.end, text=trigger.source_text)
 
 
 def require_approved_supplement(supplement: R19ProviderSupplement) -> None:
@@ -293,20 +371,60 @@ def unresolved_references(supplement: R19ProviderSupplement) -> tuple[str, ...]:
             unresolved.append(
                 f"{mapping.entity_id} ({mapping.canonical_name}): {mapping.unresolved_reason}"
             )
-    if supplement.assertion_inputs.source_id is None:
-        unresolved.append(f"Assertion source_id: {supplement.assertion_inputs.unresolved_reason}")
-    if supplement.assertion_inputs.evidence_target_id is None:
-        unresolved.append(
-            f"Assertion evidence_target_id: {supplement.assertion_inputs.unresolved_reason}"
-        )
+    for evidence in supplement.event_evidence:
+        if evidence.source_id is None:
+            unresolved.append(f"{evidence.event_id} source_id: {evidence.unresolved_reason}")
+        if evidence.evidence_target_id is None:
+            unresolved.append(
+                f"{evidence.event_id} evidence_target_id: {evidence.unresolved_reason}"
+            )
     return tuple(unresolved)
 
 
-def require_resolved_closure(supplement: R19ProviderSupplement) -> None:
-    """Fail when any required reference remains unresolved."""
+def require_resolved_closure(
+    supplement: R19ProviderSupplement,
+    repository: LedgerRepository,
+) -> None:
+    """Fail on unresolved or nonexistent required references through the repository.
 
+    The check runs in two phases. The first rejects any null required ID. The
+    second verifies through the typed repository boundary that each resolved ID
+    exists, has the expected record type, and that each EvidenceTarget references
+    the Event's declared Source.
+    """
     unresolved = unresolved_references(supplement)
     if unresolved:
         raise ValueError(
             "R19 provider supplement has unresolved required references: " + "; ".join(unresolved)
         )
+
+    for mapping in supplement.identity_mappings:
+        if mapping.actor_id is not None:
+            if repository.get_actor(mapping.actor_id) is None:
+                raise ValueError(
+                    f"Actor record {mapping.actor_id} for {mapping.entity_id} does not exist."
+                )
+        elif mapping.organization_id is not None:
+            if repository.get_organization(mapping.organization_id) is None:
+                raise ValueError(
+                    f"Organization record {mapping.organization_id} for {mapping.entity_id} "
+                    "does not exist."
+                )
+
+    for evidence in supplement.event_evidence:
+        source_id = evidence.source_id
+        evidence_target_id = evidence.evidence_target_id
+        assert source_id is not None
+        assert evidence_target_id is not None
+        if repository.get_source(source_id) is None:
+            raise ValueError(f"Source record {source_id} for {evidence.event_id} does not exist.")
+        target = repository.get_evidence_target(evidence_target_id)
+        if target is None:
+            raise ValueError(
+                f"EvidenceTarget record {evidence_target_id} for {evidence.event_id} "
+                "does not exist."
+            )
+        if target.source_id != source_id:
+            raise ValueError(
+                f"EvidenceTarget {evidence_target_id} does not reference Source {source_id}."
+            )

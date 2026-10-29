@@ -6,6 +6,10 @@
     "path": "docs/hsq-event-entity-connection-gold-v2.json",
     "sha256": "afb3b25a421913b8d6b1c29eda90ee681d3bbf71719f7e0377a626bfc6067294"
   },
+  "bound_proposition_gold": {
+    "path": "docs/hsq-source-grounded-proposition-gold-v1.json",
+    "sha256": "f496ab64e6590de05b1bc07ef069335fae6a7094b009b2fae3ca02cc627e54b0"
+  },
   "residual_inputs": [
     {
       "event_id": "AHE-022",
@@ -40,6 +44,24 @@
       "binding_rationale": "The residual Event AHE-051 has no Connection Gold Event; its subject is a reviewed non-entity value."
     }
   ],
+  "event_evidence": [
+    {
+      "event_id": "AHE-022",
+      "source_authority": "secondary",
+      "attribution_basis": "direct_document",
+      "source_id": "src_d97195ee5c8ced32c0cd41b0",
+      "evidence_target_id": null,
+      "unresolved_reason": "No EvidenceTarget record exists for the AHE-022 source span."
+    },
+    {
+      "event_id": "AHE-051",
+      "source_authority": "secondary",
+      "attribution_basis": "direct_document",
+      "source_id": "src_d97195ee5c8ced32c0cd41b0",
+      "evidence_target_id": null,
+      "unresolved_reason": "No EvidenceTarget record exists for the AHE-051 source span."
+    }
+  ],
   "subject_value_exclusions": [
     {
       "exclusion_id": "EGX-900",
@@ -59,33 +81,18 @@
       "actor_id": null,
       "organization_id": null,
       "unresolved_reason": "No accepted Actor record for David Sacks exists in the Ledger."
-    },
-    {
-      "entity_id": "EGE-020",
-      "entity_kind": "actor",
-      "canonical_name": "Amodei",
-      "actor_id": null,
-      "organization_id": null,
-      "unresolved_reason": "No accepted Actor record for Dario Amodei exists in the Ledger."
     }
   ],
   "predicate_mappings": [
     {
       "relation_label": "is",
-      "predicate": "be",
-      "rationale": "The copula expresses predicative equation; its lemma is be."
+      "predicate": "is",
+      "rationale": "The copula surface text is the reviewed predicate; the TDD pins predicate is."
     },
     {
-      "relation_label": "viewed",
+      "relation_label": "view",
       "predicate": "viewed",
-      "rationale": "The trigger-head lemma names the viewing relation."
+      "rationale": "The composer folds the trigger-head lemma of viewed to view; the canonical predicate names the reviewed viewing relation."
     }
-  ],
-  "assertion_inputs": {
-    "source_authority": "secondary",
-    "attribution_basis": "direct_document",
-    "source_id": "src_d97195ee5c8ced32c0cd41b0",
-    "evidence_target_id": null,
-    "unresolved_reason": "No EvidenceTarget record exists for the residual source span."
-  }
+  ]
 }
