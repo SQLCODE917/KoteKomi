@@ -11,23 +11,38 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Callable
 from enum import StrEnum
 from typing import Annotated, Literal, Self
 
 from kotekomi_application import (
+    AssertionBlockReason,
+    AssertionConstructionInputs,
     AssertionConstructionOutcome,
     AssertionConstructionStatus,
     AttachmentSourceRange,
     DeterministicResidualCompositionOutcome,
     DeterministicResidualCompositionStatus,
     ReferencePolicyRecord,
+    complete_deterministic_residual_composition,
+    construct_inspectable_assertion,
+)
+from kotekomi_application.event_entity_reference_provider import (
+    EventEntityReferenceProvider,
 )
 from kotekomi_application.evidence_targets import (
     EvidenceTargetLedger,
     validate_evidence_target_record,
 )
-from kotekomi_domain import Assertion
+from kotekomi_application.ports import LedgerRepository
+from kotekomi_domain import Assertion, AssertionType, AttributionBasis, SourceAuthority
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+from kotekomi_pipelines.r19_provider_supplement import (
+    R19ProviderSupplement,
+    require_approved_supplement,
+    require_resolved_closure,
+)
 
 _SHA256 = r"^[a-f0-9]{64}$"
 _EVENT_ID = r"^(TGE|AHE)-[0-9]{3}$"
@@ -48,9 +63,9 @@ class ResidualClosureRecord(BaseModel):
     event_id: Annotated[str, Field(pattern=_EVENT_ID)]
     terminal_status: ResidualTerminalStatus
     r17_selection_signal: Literal["met", "unmet", "not_applicable"]
-    composition_status: DeterministicResidualCompositionStatus
+    composition_status: DeterministicResidualCompositionStatus | None = None
     composition_hold_reason: Annotated[str, Field(min_length=1)] | None = None
-    assertion_status: AssertionConstructionStatus
+    assertion_status: AssertionConstructionStatus | None = None
     assertion: Assertion | None = None
     block_reason: Annotated[str, Field(min_length=1)] | None = None
     evidence_supported: bool
@@ -157,13 +172,17 @@ def verify_evidence_support(
         return False
     if target.source_id != source_id:
         return False
-    if target.exact_text != source_text:
+    if _strip_whitespace(target.exact_text) != _strip_whitespace(source_text):
         return False
     try:
         validate_evidence_target_record(target, repository)
     except ValueError:
         return False
     return True
+
+
+def _strip_whitespace(value: str) -> str:
+    return "".join(char for char in value if not char.isspace())
 
 
 def close_residual(
@@ -240,3 +259,145 @@ def _block_reason(
     if not evidence_supported:
         return "evidence_unsupported"
     return "blocked"
+
+
+def run_deterministic_residual_composition(
+    *,
+    report_id: str,
+    supplement: R19ProviderSupplement,
+    policy_records: tuple[ReferencePolicyRecord, ...],
+    closure_ledger: LedgerRepository,
+    evidence_ledger: EvidenceTargetLedger,
+    build_provider: Callable[[str, str, str], EventEntityReferenceProvider],
+) -> DeterministicResidualCompositionReport:
+    """Run the gated R19 production path over every residual Event.
+
+    The approval and resolved-closure gates run first. When either fails, every
+    residual records the same typed block reason and no composition runs. When
+    both pass, each Event composes, scores, constructs, and validates evidence.
+    """
+    gate_reason = _gate_reason(supplement, closure_ledger)
+    predicate_by_label = {
+        item.relation_label: item.predicate for item in supplement.predicate_mappings
+    }
+    identity_by_entity = {
+        item.entity_id: resolved
+        for item in supplement.identity_mappings
+        if (resolved := item.actor_id or item.organization_id) is not None
+    }
+    evidence_by_event = {item.event_id: item for item in supplement.event_evidence}
+
+    records: list[ResidualClosureRecord] = []
+    for policy in sorted(policy_records, key=lambda item: item.event_id):
+        if gate_reason is not None:
+            records.append(_gate_blocked(policy.event_id, gate_reason))
+            continue
+        records.append(
+            _close_one(
+                policy,
+                predicate_by_label=predicate_by_label,
+                identity_by_entity=identity_by_entity,
+                evidence=evidence_by_event[policy.event_id],
+                evidence_ledger=evidence_ledger,
+                build_provider=build_provider,
+            )
+        )
+    return build_deterministic_residual_composition_report(
+        report_id=report_id,
+        residuals=tuple(records),
+    )
+
+
+def _gate_reason(
+    supplement: R19ProviderSupplement,
+    closure_ledger: LedgerRepository,
+) -> str | None:
+    try:
+        require_approved_supplement(supplement)
+    except ValueError:
+        return "supplement_unapproved"
+    try:
+        require_resolved_closure(supplement, closure_ledger)
+    except ValueError:
+        return "unresolved_references"
+    return None
+
+
+def _gate_blocked(event_id: str, block_reason: str) -> ResidualClosureRecord:
+    return ResidualClosureRecord(
+        event_id=event_id,
+        terminal_status=ResidualTerminalStatus.BLOCKED,
+        r17_selection_signal="not_applicable",
+        block_reason=block_reason,
+        evidence_supported=False,
+    )
+
+
+def _close_one(
+    policy: ReferencePolicyRecord,
+    *,
+    predicate_by_label: dict[str, str],
+    identity_by_entity: dict[str, str],
+    evidence: object,
+    evidence_ledger: EvidenceTargetLedger,
+    build_provider: Callable[[str, str, str], EventEntityReferenceProvider],
+) -> ResidualClosureRecord:
+    provider = build_provider(
+        policy.event_id, policy.source_text, policy.input_binding.source_sha256
+    )
+    composition = complete_deterministic_residual_composition(
+        event_id=policy.event_id,
+        source_text=policy.source_text,
+        source_text_sha256=policy.input_binding.source_sha256,
+        inventory=policy.inventory,
+        trigger_head_start=policy.frame.trigger.start,
+        trigger_head_end=policy.frame.trigger.end,
+        tokens=policy.composition_tokens,
+        provider=provider,
+    )
+
+    assertion: AssertionConstructionOutcome
+    if (
+        composition.status is DeterministicResidualCompositionStatus.COMPOSED
+        and composition.proposition is not None
+    ):
+        source_id = _str_field(evidence, "source_id")
+        evidence_target_id = _str_field(evidence, "evidence_target_id")
+        inputs = AssertionConstructionInputs(
+            predicate_by_label=predicate_by_label,
+            identity_by_entity=identity_by_entity,
+            assertion_type=AssertionType.REPORTED_OBSERVATION,
+            source_authority=SourceAuthority(_str_field(evidence, "source_authority")),
+            attribution_basis=AttributionBasis(_str_field(evidence, "attribution_basis")),
+            source_id=source_id,
+            evidence_target_id=evidence_target_id,
+        )
+        assertion = construct_inspectable_assertion(composition.proposition, inputs)
+        evidence_supported = verify_evidence_support(
+            evidence_ledger,
+            source_id=source_id,
+            evidence_target_id=evidence_target_id,
+            source_text=policy.source_text,
+        )
+    else:
+        assertion = AssertionConstructionOutcome(
+            event_id=policy.event_id,
+            status=AssertionConstructionStatus.BLOCKED,
+            block_reason=AssertionBlockReason.PROPOSITION_REQUIRED,
+        )
+        evidence_supported = False
+
+    return close_residual(
+        event_id=policy.event_id,
+        policy_record=policy,
+        composition=composition,
+        assertion=assertion,
+        evidence_supported=evidence_supported,
+    )
+
+
+def _str_field(record: object, field: str) -> str:
+    value = getattr(record, field)
+    if value is None:
+        raise ValueError(f"Resolved supplement field {field} is missing.")
+    return str(value)

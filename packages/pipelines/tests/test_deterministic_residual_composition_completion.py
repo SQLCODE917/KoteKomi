@@ -16,6 +16,7 @@ from kotekomi_application import (
     load_reference_policy_records,
 )
 from kotekomi_application.evidence_targets import EvidenceTargetLedger
+from kotekomi_application.ports import LedgerRepository
 from kotekomi_domain import (
     Document,
     DocumentNode,
@@ -33,8 +34,10 @@ from kotekomi_pipelines.deterministic_residual_composition_completion import (
     ResidualTerminalStatus,
     build_deterministic_residual_composition_report,
     r17_selection_signal,
+    run_deterministic_residual_composition,
     verify_evidence_support,
 )
+from kotekomi_pipelines.r19_provider_supplement import load_r19_provider_supplement
 
 ROOT = Path(__file__).resolve().parents[3]
 DATA_DIR = ROOT / "data/r17-semantic-selection-contract"
@@ -254,3 +257,35 @@ def test_closed_record_rejects_unmet_selection() -> None:
             assertion_status=AssertionConstructionStatus.CONSTRUCTED,
             evidence_supported=True,
         )
+
+
+class _UnusedLedger:
+    pass
+
+
+def test_run_reports_gate_block_when_supplement_unapproved(
+    policy_records: tuple[ReferencePolicyRecord, ...],
+) -> None:
+    supplement = load_r19_provider_supplement(
+        ROOT / "docs" / "hsq-r19-provider-supplement-v1.json", repository_root=ROOT
+    )
+    unused = cast(LedgerRepository, _UnusedLedger())
+    report = run_deterministic_residual_composition(
+        report_id="r19-gate-fixture",
+        supplement=supplement,
+        policy_records=policy_records,
+        closure_ledger=unused,
+        evidence_ledger=cast(EvidenceTargetLedger, _UnusedLedger()),
+        build_provider=lambda event_id, text, digest: (_ for _ in ()).throw(
+            AssertionError("provider must not run")
+        ),
+    )
+
+    assert report.residuals
+    assert all(item.terminal_status is ResidualTerminalStatus.BLOCKED for item in report.residuals)
+    assert all(item.block_reason == "supplement_unapproved" for item in report.residuals)
+    assert all(item.r17_selection_signal == "not_applicable" for item in report.residuals)
+    assert all(item.assertion is None for item in report.residuals)
+    assert report.model_execution_count == 0
+    assert report.canonical_write_count == 0
+    assert report.proposed_change_count == 0
