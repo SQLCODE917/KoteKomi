@@ -6,6 +6,9 @@ from pathlib import Path
 
 import pytest
 from kotekomi_application import (
+    AssertionBlockReason,
+    AssertionConstructionInputs,
+    AssertionConstructionStatus,
     AttachmentSourceRange,
     DecontextualizationAttributionKind,
     DecontextualizationEntityRef,
@@ -19,8 +22,15 @@ from kotekomi_application import (
     EventPolarity,
     ReferencePolicyRecord,
     complete_deterministic_residual_composition,
+    construct_inspectable_assertion,
     frozen_semantic_selection_contract,
     load_reference_policy_records,
+)
+from kotekomi_domain import (
+    AssertionStatus,
+    AssertionType,
+    AttributionBasis,
+    SourceAuthority,
 )
 
 DATA_DIR = Path(__file__).resolve().parents[3] / "data/r17-semantic-selection-contract"
@@ -172,3 +182,132 @@ def test_none_selection_holds_with_selection_empty(
     assert outcome.proposition is not None
     assert outcome.proposition.status is DecontextualizationStatus.HELD
     assert outcome.proposition.hold_reason is DecontextualizationHoldReason.SELECTION_EMPTY
+
+
+def _assertion_inputs(
+    predicate_by_label: dict[str, str], identity_by_entity: dict[str, str]
+) -> AssertionConstructionInputs:
+    return AssertionConstructionInputs(
+        predicate_by_label=predicate_by_label,
+        identity_by_entity=identity_by_entity,
+        assertion_type=AssertionType.REPORTED_OBSERVATION,
+        source_authority=SourceAuthority.SECONDARY,
+        attribution_basis=AttributionBasis.DIRECT_DOCUMENT,
+        source_id="src_d97195ee5c8ced32c0cd41b0",
+        evidence_target_id="etg_ahe_022",
+    )
+
+
+def test_assertion_construction_completes_for_ahe_022(
+    policy_records: tuple[ReferencePolicyRecord, ...],
+) -> None:
+    record = next(item for item in policy_records if item.event_id == "AHE-022")
+    provider = _FakeReferenceProvider(
+        {
+            "AHE-022": EventEntityReferences(
+                entities=_sacks_entities(), subject_value_authorizations=()
+            )
+        }
+    )
+    outcome = _compose(record, provider)
+    assert outcome.proposition is not None
+
+    result = construct_inspectable_assertion(
+        outcome.proposition,
+        _assertion_inputs(
+            predicate_by_label={"view": "viewed"},
+            identity_by_entity={"EGE-019": "act_sacks_fixture"},
+        ),
+    )
+
+    assert result.status is AssertionConstructionStatus.CONSTRUCTED
+    assert result.assertion is not None
+    assertion = result.assertion
+    assert assertion.status is AssertionStatus.PROPOSED
+    assert assertion.predicate == "viewed"
+    assert assertion.subject_entity_id == "act_sacks_fixture"
+    assert assertion.subject_value is None
+    assert assertion.object_entity_id is None
+    assert assertion.object_value == "Amodei's decision"
+    assert assertion.qualifiers["polarity"] == "affirmed"
+    assert assertion.qualifiers["modality"] == "actual"
+
+
+def test_assertion_construction_completes_for_ahe_051(
+    policy_records: tuple[ReferencePolicyRecord, ...],
+) -> None:
+    record = next(item for item in policy_records if item.event_id == "AHE-051")
+    provider = _FakeReferenceProvider(
+        {
+            "AHE-051": EventEntityReferences(
+                entities=(), subject_value_authorizations=(_april_order_authorization(),)
+            )
+        }
+    )
+    outcome = _compose(record, provider)
+    assert outcome.proposition is not None
+
+    result = construct_inspectable_assertion(
+        outcome.proposition,
+        _assertion_inputs(predicate_by_label={"is": "is"}, identity_by_entity={}),
+    )
+
+    assert result.status is AssertionConstructionStatus.CONSTRUCTED
+    assert result.assertion is not None
+    assertion = result.assertion
+    assert assertion.predicate == "is"
+    assert assertion.subject_entity_id is None
+    assert assertion.subject_value == "The April order"
+    assert assertion.object_value == "final"
+    assert assertion.qualifiers["polarity"] == "negated"
+    assert assertion.qualifiers["modality"] == "actual"
+
+
+def test_assertion_construction_blocks_on_unresolved_subject_identity(
+    policy_records: tuple[ReferencePolicyRecord, ...],
+) -> None:
+    record = next(item for item in policy_records if item.event_id == "AHE-022")
+    provider = _FakeReferenceProvider(
+        {
+            "AHE-022": EventEntityReferences(
+                entities=_sacks_entities(), subject_value_authorizations=()
+            )
+        }
+    )
+    outcome = _compose(record, provider)
+    assert outcome.proposition is not None
+
+    result = construct_inspectable_assertion(
+        outcome.proposition,
+        _assertion_inputs(predicate_by_label={"view": "viewed"}, identity_by_entity={}),
+    )
+
+    assert result.status is AssertionConstructionStatus.BLOCKED
+    assert result.assertion is None
+    assert result.block_reason is AssertionBlockReason.UNRESOLVED_SUBJECT_IDENTITY
+
+
+def test_assertion_construction_blocks_on_unmapped_predicate(
+    policy_records: tuple[ReferencePolicyRecord, ...],
+) -> None:
+    record = next(item for item in policy_records if item.event_id == "AHE-022")
+    provider = _FakeReferenceProvider(
+        {
+            "AHE-022": EventEntityReferences(
+                entities=_sacks_entities(), subject_value_authorizations=()
+            )
+        }
+    )
+    outcome = _compose(record, provider)
+    assert outcome.proposition is not None
+
+    result = construct_inspectable_assertion(
+        outcome.proposition,
+        _assertion_inputs(
+            predicate_by_label={}, identity_by_entity={"EGE-019": "act_sacks_fixture"}
+        ),
+    )
+
+    assert result.status is AssertionConstructionStatus.BLOCKED
+    assert result.assertion is None
+    assert result.block_reason is AssertionBlockReason.UNMAPPED_PREDICATE

@@ -670,9 +670,14 @@ from kotekomi_application.deterministic_dependency_path_attachment_router import
     classify_none_decision,
 )
 from kotekomi_application.deterministic_residual_composition_completion import (
+    AssertionBlockReason,
+    AssertionConstructionInputs,
+    AssertionConstructionOutcome,
+    AssertionConstructionStatus,
     DeterministicResidualCompositionOutcome,
     DeterministicResidualCompositionStatus,
     complete_deterministic_residual_composition,
+    construct_inspectable_assertion,
 )
 from kotekomi_application.document_entity_reconciliation import (
     DOCUMENT_ENTITY_RECONCILIATION_POLICY_ID,
@@ -3420,7 +3425,12 @@ __all__ = [
     "decontextualization_report_fingerprint",
     "DeterministicResidualCompositionOutcome",
     "DeterministicResidualCompositionStatus",
+    "AssertionBlockReason",
+    "AssertionConstructionInputs",
+    "AssertionConstructionOutcome",
+    "AssertionConstructionStatus",
     "complete_deterministic_residual_composition",
+    "construct_inspectable_assertion",
     "LabelMismatchRecovery",
     "LabelMismatchRecoveryHalt",
     "LabelMismatchRecoveryReport",
