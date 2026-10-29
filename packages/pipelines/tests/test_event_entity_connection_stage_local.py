@@ -44,6 +44,7 @@ from kotekomi_pipelines.event_entity_connection_stage_local import (
     ConnectionGoldExpectedGap,
     ConnectionGoldSourceOccurrence,
     EventEntityCaseEvaluation,
+    EventEntityConnectionReferenceProvider,
     EventEntityExperimentInput,
     EventEntityGoldDisposition,
     EventEntityOccurrenceEvaluation,
@@ -53,6 +54,7 @@ from kotekomi_pipelines.event_entity_connection_stage_local import (
     evaluate_event_entity_case,
     event_entity_candidate_signature,
     event_entity_preparation_status,
+    event_entity_references,
     load_connection_gold_catalog,
     render_connection_gold_review,
     validate_equal_event_entity_candidate_inventories,
@@ -1084,3 +1086,90 @@ def _linguistic_evidence(
         resource_identity="a" * 64,
         tokens=tuple(tokens),
     )
+
+
+def test_event_entity_references_maps_entities_and_non_entity_exclusions() -> None:
+    source_text = "Sacks viewed The April order."
+    event = ConnectionGoldEvent(
+        event_id="TGE-999",
+        phase="development",
+        source_text_sha256=hashlib.sha256(source_text.encode()).hexdigest(),
+        event_meaning="Sacks viewed The April order.",
+        expected_entities=(
+            ConnectionGoldEntity(
+                entity_id="EGE-900",
+                entity_kind=EventEntityKind.ACTOR,
+                canonical_name="Sacks",
+                accepted_entity_names=("Sacks",),
+                accepted_source_occurrences=(
+                    ConnectionGoldSourceOccurrence(start=0, end=5, source_text="Sacks"),
+                ),
+                rationale="Sacks performs the viewing.",
+            ),
+        ),
+        excluded_actor_organization_expressions=(
+            ConnectionGoldExcludedExpression(
+                exclusion_id="EGX-900",
+                start=13,
+                end=28,
+                source_text="The April order",
+                contextual_kind="non_entity_value",
+                rationale="A date-scoped order, not an Actor or Organization.",
+            ),
+            ConnectionGoldExcludedExpression(
+                exclusion_id="EGX-901",
+                start=6,
+                end=12,
+                source_text="viewed",
+                contextual_kind="event",
+                rationale="An Event-kind exclusion never authorizes a subject value.",
+            ),
+        ),
+        expected_candidate_gaps=(),
+        review_rationale="Fixture for the R19 reference-provider Adapter.",
+    )
+
+    references = event_entity_references(event, source_text)
+
+    assert [item.entity_id for item in references.entities] == ["EGE-900"]
+    assert [item.exclusion_id for item in references.subject_value_authorizations] == ["EGX-900"]
+
+
+def test_connection_gold_adapter_resolves_real_entities() -> None:
+    catalog, _, _ = load_connection_gold_catalog(GOLD, repository_root=ROOT, require_approved=False)
+    provider = EventEntityConnectionReferenceProvider(catalog)
+
+    proposition_gold = ROOT / "docs" / "hsq-source-grounded-proposition-gold-v1.json"
+    proposition_events = {
+        item["event_id"]: item
+        for item in json.loads(proposition_gold.read_text(encoding="utf-8"))["events"]
+    }
+    source_text = str(proposition_events["TGE-018"]["source_text"])
+    source_text_sha256 = hashlib.sha256(source_text.encode()).hexdigest()
+
+    references = provider.resolve_references("TGE-018", source_text, source_text_sha256)
+
+    assert {item.entity_id for item in references.entities} == {
+        "EGE-019",
+        "EGE-020",
+        "EGE-022",
+        "EGE-023",
+        "EGE-024",
+    }
+    # Every reviewed exclusion in the real Gold is Event-kind, not a subject value.
+    assert references.subject_value_authorizations == ()
+
+
+def test_connection_gold_adapter_rejects_source_digest_drift() -> None:
+    catalog, _, _ = load_connection_gold_catalog(GOLD, repository_root=ROOT, require_approved=False)
+    provider = EventEntityConnectionReferenceProvider(catalog)
+
+    proposition_gold = ROOT / "docs" / "hsq-source-grounded-proposition-gold-v1.json"
+    proposition_events = {
+        item["event_id"]: item
+        for item in json.loads(proposition_gold.read_text(encoding="utf-8"))["events"]
+    }
+    source_text = str(proposition_events["TGE-018"]["source_text"])
+
+    with pytest.raises(ValueError, match="digest"):
+        provider.resolve_references("TGE-018", source_text, "0" * 64)

@@ -9,6 +9,9 @@ from pathlib import Path
 from typing import Annotated, Literal, Self
 
 from kotekomi_application import (
+    AttachmentSourceRange,
+    DecontextualizationEntityRef,
+    DecontextualizationExclusion,
     EventEntityCandidateGap,
     EventEntityCandidateGapReason,
     EventEntityCandidateRouteKind,
@@ -18,6 +21,7 @@ from kotekomi_application import (
     EventEntityConnectionPreview,
     EventEntityKind,
     EventEntityLinguisticEvidence,
+    EventEntityReferences,
     EventTriggerDraft,
     SourceGroundedEventDraft,
     build_event_entity_candidate_routes,
@@ -1764,3 +1768,95 @@ def _canonical_json(value: object) -> str:
         sort_keys=True,
         separators=(",", ":"),
     )
+
+
+def event_entity_references(
+    event: ConnectionGoldEvent,
+    source_text: str,
+) -> EventEntityReferences:
+    """Map one reviewed Connection Gold Event to validated R19 references.
+
+    Every accepted occurrence maps to a ``DecontextualizationEntityRef`` and every
+    reviewed ``non_entity_value`` exclusion maps to a ``DecontextualizationExclusion``.
+    ``event``-kind exclusions name an Event occurrence, not a non-entity value, so
+    they never authorize a subject value.
+    """
+    return EventEntityReferences(
+        entities=tuple(
+            _decontextualization_entity_ref(entity, source_text)
+            for entity in event.expected_entities
+        ),
+        subject_value_authorizations=tuple(
+            _subject_value_authorization(exclusion, source_text)
+            for exclusion in event.excluded_actor_organization_expressions
+            if exclusion.contextual_kind == "non_entity_value"
+        ),
+    )
+
+
+def _decontextualization_entity_ref(
+    entity: ConnectionGoldEntity,
+    source_text: str,
+) -> DecontextualizationEntityRef:
+    return DecontextualizationEntityRef(
+        entity_id=entity.entity_id,
+        entity_kind=entity.entity_kind.value,
+        canonical_name=entity.canonical_name,
+        accepted_source_occurrences=tuple(
+            _occurrence_range(item, source_text) for item in entity.accepted_source_occurrences
+        ),
+    )
+
+
+def _occurrence_range(
+    occurrence: ConnectionGoldSourceOccurrence,
+    source_text: str,
+) -> AttachmentSourceRange:
+    _require_source_exact(source_text, occurrence.start, occurrence.end, occurrence.source_text)
+    return AttachmentSourceRange(
+        start=occurrence.start, end=occurrence.end, text=occurrence.source_text
+    )
+
+
+def _subject_value_authorization(
+    exclusion: ConnectionGoldExcludedExpression,
+    source_text: str,
+) -> DecontextualizationExclusion:
+    _require_source_exact(source_text, exclusion.start, exclusion.end, exclusion.source_text)
+    return DecontextualizationExclusion(
+        exclusion_id=exclusion.exclusion_id,
+        contextual_kind="non_entity_value",
+        source_range=AttachmentSourceRange(
+            start=exclusion.start, end=exclusion.end, text=exclusion.source_text
+        ),
+        rationale=exclusion.rationale,
+    )
+
+
+def _require_source_exact(source_text: str, start: int, end: int, text: str) -> None:
+    if source_text[start:end] != text:
+        raise ValueError("Connection Gold occurrence drifted from its source text.")
+
+
+class EventEntityConnectionReferenceProvider:
+    """Event-Entity Connection Adapter implementing the reference-provider Port."""
+
+    def __init__(self, catalog: ConnectionGoldCatalog) -> None:
+        self._events = {event.event_id: event for event in catalog.events}
+
+    def resolve_references(
+        self,
+        event_id: str,
+        source_text: str,
+        source_text_sha256: str,
+    ) -> EventEntityReferences:
+        event = self._events.get(event_id)
+        if event is None:
+            raise ValueError(f"Connection Gold has no references for Event {event_id}.")
+        if event.source_text_sha256 != source_text_sha256:
+            raise ValueError(
+                f"Connection Gold source digest for {event_id} did not match its input."
+            )
+        if hashlib.sha256(source_text.encode()).hexdigest() != source_text_sha256:
+            raise ValueError(f"Reference provider source text drifted for {event_id}.")
+        return event_entity_references(event, source_text)

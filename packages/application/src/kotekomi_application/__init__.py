@@ -629,6 +629,7 @@ from kotekomi_application.decontextualization_composition import (
     DecontextualizationAttributionKind,
     DecontextualizationCensus,
     DecontextualizationEntityRef,
+    DecontextualizationExclusion,
     DecontextualizationHoldReason,
     DecontextualizationReport,
     DecontextualizationRoleKind,
@@ -667,6 +668,11 @@ from kotekomi_application.deterministic_dependency_path_attachment_router import
     build_route_partition_report,
     classify_error_class,
     classify_none_decision,
+)
+from kotekomi_application.deterministic_residual_composition_completion import (
+    DeterministicResidualCompositionOutcome,
+    DeterministicResidualCompositionStatus,
+    complete_deterministic_residual_composition,
 )
 from kotekomi_application.document_entity_reconciliation import (
     DOCUMENT_ENTITY_RECONCILIATION_POLICY_ID,
@@ -821,6 +827,10 @@ from kotekomi_application.event_entity_predicate_arguments import (
     build_predicate_argument_observation,
     classify_predicate_argument_path,
     predicate_argument_is_structurally_supported,
+)
+from kotekomi_application.event_entity_reference_provider import (
+    EventEntityReferenceProvider,
+    EventEntityReferences,
 )
 from kotekomi_application.eventive_statement_recognition import (
     EventiveStatementReport,
@@ -2859,6 +2869,8 @@ __all__ = [
     "EventEntityLinguisticEvidence",
     "EventEntityLinguisticToken",
     "EventEntityMentionInput",
+    "EventEntityReferenceProvider",
+    "EventEntityReferences",
     "EventEntitySourceSpan",
     "build_entity_involvement_judgment",
     "build_event_entity_candidate_routes",
@@ -3394,6 +3406,7 @@ __all__ = [
     "DecontextualizationAttributionKind",
     "DecontextualizationCensus",
     "DecontextualizationEntityRef",
+    "DecontextualizationExclusion",
     "DecontextualizationHoldReason",
     "DecontextualizationReport",
     "DecontextualizationRoleKind",
@@ -3405,6 +3418,9 @@ __all__ = [
     "build_decontextualization_report",
     "build_decontextualized_proposition",
     "decontextualization_report_fingerprint",
+    "DeterministicResidualCompositionOutcome",
+    "DeterministicResidualCompositionStatus",
+    "complete_deterministic_residual_composition",
     "LabelMismatchRecovery",
     "LabelMismatchRecoveryHalt",
     "LabelMismatchRecoveryReport",
