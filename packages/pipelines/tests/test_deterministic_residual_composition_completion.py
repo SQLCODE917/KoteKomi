@@ -10,7 +10,10 @@ from typing import cast
 import pytest
 from kotekomi_application import (
     AssertionConstructionStatus,
+    AttachmentSourceRange,
+    DecontextualizationExclusion,
     DeterministicResidualCompositionStatus,
+    EventEntityReferences,
     ReferencePolicyRecord,
     frozen_semantic_selection_contract,
     load_reference_policy_records,
@@ -33,11 +36,23 @@ from kotekomi_pipelines.deterministic_residual_composition_completion import (
     ResidualClosureRecord,
     ResidualTerminalStatus,
     build_deterministic_residual_composition_report,
+    load_deterministic_residual_composition_report,
     r17_selection_signal,
     run_deterministic_residual_composition,
+    verify_deterministic_residual_composition_report,
     verify_evidence_support,
 )
-from kotekomi_pipelines.r19_provider_supplement import load_r19_provider_supplement
+from kotekomi_pipelines.r19_provider_supplement import (
+    R19ProviderSupplement,
+    SupplementEventBinding,
+    SupplementEventEvidence,
+    SupplementFileBinding,
+    SupplementInputBinding,
+    SupplementPredicateMapping,
+    SupplementSubjectValueExclusion,
+    SupplementTriggerSpan,
+    load_r19_provider_supplement,
+)
 
 ROOT = Path(__file__).resolve().parents[3]
 DATA_DIR = ROOT / "data/r17-semantic-selection-contract"
@@ -286,6 +301,168 @@ def test_run_reports_gate_block_when_supplement_unapproved(
     assert all(item.block_reason == "supplement_unapproved" for item in report.residuals)
     assert all(item.r17_selection_signal == "not_applicable" for item in report.residuals)
     assert all(item.assertion is None for item in report.residuals)
+    assert report.model_execution_count == 0
+    assert report.canonical_write_count == 0
+    assert report.proposed_change_count == 0
+
+
+def test_report_fingerprint_rejects_tampering(tmp_path: Path) -> None:
+    record = ResidualClosureRecord(
+        event_id="AHE-051",
+        terminal_status=ResidualTerminalStatus.BLOCKED,
+        r17_selection_signal="not_applicable",
+        block_reason="supplement_unapproved",
+        evidence_supported=False,
+    )
+    report = build_deterministic_residual_composition_report(
+        report_id="r19-tamper", residuals=(record,)
+    )
+    tampered = report.model_copy(
+        deep=True,
+        update={"residuals": (report.residuals[0].model_copy(update={"block_reason": "mutated"}),)},
+    )
+    with pytest.raises(ValueError, match="fingerprint"):
+        verify_deterministic_residual_composition_report(tampered)
+
+    path = tmp_path / "report.json"
+    path.write_text(tampered.model_dump_json(), encoding="utf-8")
+    with pytest.raises(ValueError, match="fingerprint"):
+        load_deterministic_residual_composition_report(path)
+
+
+class _ClosedLedger:
+    def __init__(
+        self,
+        target: EvidenceTarget,
+        bundle: DocumentRepresentationBundle,
+        document: Document,
+        source_id: str,
+    ) -> None:
+        self._target = target
+        self._bundle = bundle
+        self._document = document
+        self._source_id = source_id
+
+    def get_actor(self, record_id: str):
+        return None
+
+    def get_organization(self, record_id: str):
+        return None
+
+    def get_source(self, record_id: str):
+        return object() if record_id == self._source_id else None
+
+    def get_evidence_target(self, record_id: str):
+        return self._target
+
+    def get_document_representation_bundle(self, record_id: str):
+        return self._bundle
+
+    def get_document(self, record_id: str):
+        return self._document
+
+
+class _AprilOrderProvider:
+    def resolve_references(
+        self, event_id: str, source_text: str, source_text_sha256: str
+    ) -> EventEntityReferences:
+        del event_id, source_text, source_text_sha256
+        return EventEntityReferences(
+            entities=(),
+            subject_value_authorizations=(
+                DecontextualizationExclusion(
+                    exclusion_id="EGX-900",
+                    contextual_kind="non_entity_value",
+                    source_range=AttachmentSourceRange(start=5, end=20, text="The April order"),
+                    rationale="A date-scoped nominal order, not an Actor or Organization.",
+                ),
+            ),
+        )
+
+
+def _resolved_ahe_051_supplement() -> R19ProviderSupplement:
+    ahe_051_text = _AHE_051_TEXT
+    return R19ProviderSupplement(
+        supplement_id="hsq-r19-provider-supplement-fixture",
+        review_status="approved",
+        bound_connection_gold=SupplementFileBinding(
+            path="docs/hsq-event-entity-connection-gold-v2.json", sha256="a" * 64
+        ),
+        bound_proposition_gold=SupplementFileBinding(
+            path="docs/hsq-source-grounded-proposition-gold-v1.json", sha256="a" * 64
+        ),
+        residual_inputs=(
+            SupplementInputBinding(
+                event_id="AHE-051",
+                input_path="data/r17-semantic-selection-contract/inputs/AHE-051.json",
+                input_sha256="a" * 64,
+                source_sha256=hashlib.sha256(ahe_051_text.encode()).hexdigest(),
+            ),
+        ),
+        event_bindings=(
+            SupplementEventBinding(
+                residual_event_id="AHE-051",
+                residual_source_sha256=hashlib.sha256(ahe_051_text.encode()).hexdigest(),
+                residual_trigger=SupplementTriggerSpan(start=28, end=33, source_text="final"),
+                binding_rationale="No Connection Gold Event; subject is a value.",
+            ),
+        ),
+        event_evidence=(
+            SupplementEventEvidence(
+                event_id="AHE-051",
+                source_authority="secondary",
+                attribution_basis="direct_document",
+                source_id=_SOURCE_ID,
+                evidence_target_id="etg_r19",
+                unresolved_reason=None,
+            ),
+        ),
+        subject_value_exclusions=(
+            SupplementSubjectValueExclusion(
+                exclusion_id="EGX-900",
+                event_id="AHE-051",
+                start=5,
+                end=20,
+                source_text="The April order",
+                contextual_kind="non_entity_value",
+                rationale="A date-scoped nominal order, not an Actor or Organization.",
+            ),
+        ),
+        identity_mappings=(),
+        predicate_mappings=(
+            SupplementPredicateMapping(
+                relation_label="is", predicate="is", rationale="The TDD pins predicate is."
+            ),
+        ),
+    )
+
+
+def test_orchestration_closes_ahe_051_with_valid_evidence(
+    policy_records: tuple[ReferencePolicyRecord, ...],
+) -> None:
+    record = next(item for item in policy_records if item.event_id == "AHE-051")
+    text = _AHE_051_TEXT
+    target = _target(text, start=0, end=len(text))
+    ledger = _ClosedLedger(target, _bundle(text), _document(), _SOURCE_ID)
+
+    report = run_deterministic_residual_composition(
+        report_id="r19-closure-fixture",
+        supplement=_resolved_ahe_051_supplement(),
+        policy_records=(record,),
+        closure_ledger=cast(LedgerRepository, ledger),
+        evidence_ledger=cast(EvidenceTargetLedger, ledger),
+        build_provider=lambda event_id, text_arg, digest: _AprilOrderProvider(),
+    )
+
+    residual = report.residuals[0]
+    assert residual.terminal_status is ResidualTerminalStatus.CLOSED
+    assert residual.r17_selection_signal == "met"
+    assert residual.composition_status is DeterministicResidualCompositionStatus.COMPOSED
+    assert residual.assertion is not None
+    assert residual.assertion.predicate == "is"
+    assert residual.assertion.subject_value == "The April order"
+    assert residual.assertion.object_value == "final"
+    assert residual.evidence_supported is True
     assert report.model_execution_count == 0
     assert report.canonical_write_count == 0
     assert report.proposed_change_count == 0

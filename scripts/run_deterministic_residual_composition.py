@@ -139,7 +139,7 @@ def main() -> int:
     connection_catalog, _, _ = load_connection_gold_catalog(
         REPOSITORY_ROOT / supplement.bound_connection_gold.path,
         repository_root=REPOSITORY_ROOT,
-        require_approved=False,
+        require_approved=True,
     )
     proposition_catalog = load_proposition_gold_catalog(
         REPOSITORY_ROOT / supplement.bound_proposition_gold.path,

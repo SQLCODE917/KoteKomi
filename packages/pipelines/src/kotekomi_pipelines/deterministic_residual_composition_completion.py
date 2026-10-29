@@ -13,6 +13,7 @@ import hashlib
 import json
 from collections.abc import Callable
 from enum import StrEnum
+from pathlib import Path
 from typing import Annotated, Literal, Self
 
 from kotekomi_application import (
@@ -141,6 +142,25 @@ def build_deterministic_residual_composition_report(
         **draft.model_dump(exclude={"result_fingerprint"}),
         result_fingerprint=report_fingerprint(draft),
     )
+
+
+def verify_deterministic_residual_composition_report(
+    report: DeterministicResidualCompositionReport,
+) -> None:
+    """Fail when a report's fingerprint does not match its content."""
+
+    if report_fingerprint(report) != report.result_fingerprint:
+        raise ValueError("Deterministic residual composition report fingerprint is invalid.")
+
+
+def load_deterministic_residual_composition_report(
+    path: Path,
+) -> DeterministicResidualCompositionReport:
+    """Load and fingerprint-verify one report from its serialized form."""
+
+    report = DeterministicResidualCompositionReport.model_validate_json(path.read_bytes())
+    verify_deterministic_residual_composition_report(report)
+    return report
 
 
 def r17_selection_signal(
