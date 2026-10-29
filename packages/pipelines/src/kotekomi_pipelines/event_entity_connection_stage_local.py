@@ -1838,6 +1838,60 @@ def _require_source_exact(source_text: str, start: int, end: int, text: str) -> 
         raise ValueError("Connection Gold occurrence drifted from its source text.")
 
 
+class _WhitespaceIndex:
+    """One source's non-whitespace core with its forward position maps."""
+
+    __slots__ = ("core", "ordinal_positions", "prefix_counts")
+
+    def __init__(self, source_text: str) -> None:
+        positions = [index for index, char in enumerate(source_text) if not char.isspace()]
+        self.ordinal_positions = tuple(positions)
+        self.core = "".join(source_text[index] for index in positions)
+        prefix = [0] * (len(source_text) + 1)
+        ordinal = 0
+        for index in range(len(source_text)):
+            if ordinal < len(positions) and positions[ordinal] == index:
+                ordinal += 1
+            prefix[index + 1] = ordinal
+        self.prefix_counts = tuple(prefix)
+
+
+def reanchor_whitespace_spans(
+    *,
+    provider_text: str,
+    residual_text: str,
+    spans: tuple[AttachmentSourceRange, ...],
+) -> tuple[AttachmentSourceRange, ...]:
+    """Reanchor provider occurrence spans into residual coordinates.
+
+    The provider source and the residual source must match after removing every
+    whitespace character. Each provider span must be source-exact in the provider
+    text. The mapping preserves occurrence identity by unique offsets, never by a
+    bare name search.
+    """
+    provider = _WhitespaceIndex(provider_text)
+    residual = _WhitespaceIndex(residual_text)
+    if provider.core != residual.core:
+        raise ValueError("Provider and residual sources differ beyond whitespace.")
+    reanchored: list[AttachmentSourceRange] = []
+    for span in spans:
+        content = "".join(char for char in span.text if not char.isspace())
+        start_core = provider.prefix_counts[span.start]
+        end_core = provider.prefix_counts[span.end]
+        if end_core <= start_core or provider.core[start_core:end_core] != content:
+            raise ValueError("Provider span drifted from its source occurrence.")
+        residual_start = residual.ordinal_positions[start_core]
+        residual_end = residual.ordinal_positions[end_core - 1] + 1
+        reanchored.append(
+            AttachmentSourceRange(
+                start=residual_start,
+                end=residual_end,
+                text=residual_text[residual_start:residual_end],
+            )
+        )
+    return tuple(reanchored)
+
+
 class EventEntityConnectionReferenceProvider:
     """Event-Entity Connection Adapter implementing the reference-provider Port."""
 

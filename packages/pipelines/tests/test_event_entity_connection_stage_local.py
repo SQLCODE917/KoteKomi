@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 from kotekomi_application import (
+    AttachmentSourceRange,
     EntityInvolvementAnswerValue,
     EntityInvolvementJudgment,
     EventEntityCandidateGap,
@@ -56,6 +57,7 @@ from kotekomi_pipelines.event_entity_connection_stage_local import (
     event_entity_preparation_status,
     event_entity_references,
     load_connection_gold_catalog,
+    reanchor_whitespace_spans,
     render_connection_gold_review,
     validate_equal_event_entity_candidate_inventories,
 )
@@ -1181,3 +1183,63 @@ def test_connection_gold_reference_provider_requires_approval() -> None:
 
     with pytest.raises(ValueError, match="approved"):
         EventEntityConnectionReferenceProvider(proposed)
+
+
+def _tge_018_and_ahe_022_sources() -> tuple[str, str]:
+    proposition_gold = ROOT / "docs" / "hsq-source-grounded-proposition-gold-v1.json"
+    proposition_events = {
+        item["event_id"]: item
+        for item in json.loads(proposition_gold.read_text(encoding="utf-8"))["events"]
+    }
+    provider_text = str(proposition_events["TGE-018"]["source_text"])
+    residual_path = ROOT / "data/r17-semantic-selection-contract/inputs/AHE-022.json"
+    residual_text = str(json.loads(residual_path.read_text(encoding="utf-8"))["source_text"])
+    return provider_text, residual_text
+
+
+def _strip_whitespace(value: str) -> str:
+    return "".join(char for char in value if not char.isspace())
+
+
+def test_reanchor_whitespace_spans_maps_real_occurrences() -> None:
+    catalog, _, _ = load_connection_gold_catalog(GOLD, repository_root=ROOT, require_approved=False)
+    event = next(item for item in catalog.events if item.event_id == "TGE-018")
+    provider_text, residual_text = _tge_018_and_ahe_022_sources()
+    spans = tuple(
+        AttachmentSourceRange(start=occ.start, end=occ.end, text=occ.source_text)
+        for entity in event.expected_entities
+        for occ in entity.accepted_source_occurrences
+    )
+
+    reanchored = reanchor_whitespace_spans(
+        provider_text=provider_text, residual_text=residual_text, spans=spans
+    )
+
+    assert len(reanchored) == len(spans)
+    for original, mapped in zip(spans, reanchored, strict=True):
+        assert residual_text[mapped.start : mapped.end] == mapped.text
+        assert _strip_whitespace(mapped.text) == _strip_whitespace(original.text)
+
+
+def test_reanchor_whitespace_spans_keeps_pre_whitespace_offsets() -> None:
+    provider_text, residual_text = _tge_018_and_ahe_022_sources()
+    reanchored = reanchor_whitespace_spans(
+        provider_text=provider_text,
+        residual_text=residual_text,
+        spans=(
+            AttachmentSourceRange(start=0, end=5, text="Sacks"),
+            AttachmentSourceRange(start=13, end=19, text="Amodei"),
+        ),
+    )
+
+    assert [(item.start, item.end) for item in reanchored] == [(0, 5), (13, 19)]
+
+
+def test_reanchor_whitespace_spans_rejects_non_whitespace_difference() -> None:
+    provider_text, residual_text = _tge_018_and_ahe_022_sources()
+    with pytest.raises(ValueError, match="beyond whitespace"):
+        reanchor_whitespace_spans(
+            provider_text=provider_text,
+            residual_text=residual_text.replace("Sacks", "Sacks!", 1),
+            spans=(AttachmentSourceRange(start=0, end=5, text="Sacks"),),
+        )
