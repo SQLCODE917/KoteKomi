@@ -1173,3 +1173,11 @@ def test_connection_gold_adapter_rejects_source_digest_drift() -> None:
 
     with pytest.raises(ValueError, match="digest"):
         provider.resolve_references("TGE-018", source_text, "0" * 64)
+
+
+def test_connection_gold_reference_provider_requires_approval() -> None:
+    catalog, _, _ = load_connection_gold_catalog(GOLD, repository_root=ROOT, require_approved=False)
+    proposed = catalog.model_copy(update={"review_status": "proposed"})
+
+    with pytest.raises(ValueError, match="approved"):
+        EventEntityConnectionReferenceProvider(proposed)

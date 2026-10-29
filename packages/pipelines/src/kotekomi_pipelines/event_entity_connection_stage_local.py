@@ -1842,6 +1842,8 @@ class EventEntityConnectionReferenceProvider:
     """Event-Entity Connection Adapter implementing the reference-provider Port."""
 
     def __init__(self, catalog: ConnectionGoldCatalog) -> None:
+        if catalog.review_status != "approved":
+            raise ValueError("The reference provider requires an approved Connection Gold catalog.")
         self._events = {event.event_id: event for event in catalog.events}
 
     def resolve_references(

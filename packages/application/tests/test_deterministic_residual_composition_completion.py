@@ -153,7 +153,7 @@ def test_unresolved_subject_holds_without_a_fabricated_reference(
     )
     outcome = _compose(record, provider)
 
-    assert outcome.status is DeterministicResidualCompositionStatus.COMPOSED
+    assert outcome.status is DeterministicResidualCompositionStatus.COMPOSITION_HELD
     assert outcome.proposition is not None
     assert outcome.proposition.status is DecontextualizationStatus.HELD
     assert outcome.proposition.hold_reason is DecontextualizationHoldReason.SUBJECT_UNAVAILABLE
@@ -168,7 +168,7 @@ def test_none_selection_holds_with_selection_empty(
     )
     outcome = _compose(record, provider)
 
-    assert outcome.status is DeterministicResidualCompositionStatus.COMPOSED
+    assert outcome.status is DeterministicResidualCompositionStatus.COMPOSITION_HELD
     assert outcome.proposition is not None
     assert outcome.proposition.status is DecontextualizationStatus.HELD
     assert outcome.proposition.hold_reason is DecontextualizationHoldReason.SELECTION_EMPTY

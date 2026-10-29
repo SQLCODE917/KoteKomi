@@ -23,6 +23,7 @@ from typing import Annotated, Self
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from kotekomi_application.decontextualization_composition import (
+    DecontextualizationStatus,
     DecontextualizedProposition,
     build_decontextualized_proposition,
 )
@@ -47,6 +48,7 @@ class DeterministicResidualCompositionStatus(StrEnum):
     """Terminal state of one deterministic residual composition completion."""
 
     COMPOSED = "composed"
+    COMPOSITION_HELD = "composition_held"
     SELECTION_GAP = "selection_gap"
 
 
@@ -64,8 +66,19 @@ class DeterministicResidualCompositionOutcome(BaseModel):
     @model_validator(mode="after")
     def validate_contract(self) -> Self:
         if self.status is DeterministicResidualCompositionStatus.COMPOSED:
-            if self.proposition is None:
-                raise ValueError("A composed outcome requires a proposition.")
+            if (
+                self.proposition is None
+                or self.proposition.status is not DecontextualizationStatus.PROPOSITION
+            ):
+                raise ValueError("A composed outcome requires a proposition, not a held result.")
+        elif self.status is DeterministicResidualCompositionStatus.COMPOSITION_HELD:
+            if (
+                self.proposition is None
+                or self.proposition.status is not DecontextualizationStatus.HELD
+            ):
+                raise ValueError(
+                    "A composition-held outcome requires a held proposition with a hold reason."
+                )
         elif self.proposition is not None:
             raise ValueError("A selection-gap outcome cannot carry a proposition.")
         return self
@@ -124,9 +137,13 @@ def complete_deterministic_residual_composition(
         entities=references.entities,
         subject_value_authorizations=references.subject_value_authorizations,
     )
+    if proposition.status is DecontextualizationStatus.PROPOSITION:
+        status = DeterministicResidualCompositionStatus.COMPOSED
+    else:
+        status = DeterministicResidualCompositionStatus.COMPOSITION_HELD
     return DeterministicResidualCompositionOutcome(
         event_id=event_id,
-        status=DeterministicResidualCompositionStatus.COMPOSED,
+        status=status,
         selection=selection,
         references=references,
         proposition=proposition,
