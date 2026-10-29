@@ -6,12 +6,10 @@ from typing import cast
 import pytest
 from kotekomi_application.candidate_wiki import (
     AuditCandidateWikiRecordCommand,
-    CandidateViewRecord,
     CandidateWikiAuditBundle,
     WikiAssertionPresentation,
     WikiBuildManifest,
     WikiEventPresentation,
-    _assertion_presentation,
     audit_candidate_wiki_record,
     build_candidate_knowledge_view,
     candidate_wiki_build_id,
@@ -863,35 +861,38 @@ def _change_set(proposal_ids: tuple[str, ...]) -> IngestionChangeSet:
 
 
 def test_value_subject_assertion_renders_value_without_entity_link() -> None:
+    ledger = FakeCandidateWikiLedger()
     assertion = ProposedAssertion(
-        id="ast_value_subject",
+        id="ast_hired",
         assertion_type=AssertionType.SOURCE_CLAIM,
         epistemic_scope=EpistemicScope.SOURCE_REPORT,
-        subject_value="The April order",
-        relation_label="is",
-        object_value="final",
+        subject_value="Acme",
+        relation_label="hired",
+        object_value="Alice",
         source_authority=SourceAuthority.SECONDARY,
         attribution_basis=AttributionBasis.REPORTED_BY_SOURCE,
-        source_ids=("src_article_a",),
-        evidence_target_ids=("etg_article_a_release",),
+        source_ids=(ledger.source.id,),
+        evidence_target_ids=(ledger.target.id,),
     )
-    item = CandidateViewRecord(
-        record_type="Assertion",
-        record=assertion,
-        review_status=ReviewStatus.PENDING,
-        proposed_change_id="pcg_value_subject",
-        provenance_activity_ids=(),
-        record_payload_json="{}",
-        source_payload_json="{}",
-        source_payload_sha256=hashlib.sha256(b"{}").hexdigest(),
-        evidence_reference_keys=(),
+    proposal = ledger.proposals["pcg_assertion"]
+    ledger.proposals[proposal.id] = proposal.model_copy(
+        update={
+            "proposed_json": proposal.proposed_json | {"record": assertion.model_dump(mode="json")}
+        }
     )
 
-    presentation = _assertion_presentation(item, {}, {}, {})
+    view = build_candidate_knowledge_view(ledger.run, ledger)
+    plan = plan_candidate_wiki(view)
+    document_page = next(page for page in plan.pages if page.page_kind == "document")
+    presentation = next(
+        item
+        for item in document_page.presentations
+        if isinstance(item, WikiAssertionPresentation) and item.edge.assertion_id == assertion.id
+    )
 
-    assert presentation.edge.subject_label == "The April order"
+    assert presentation.edge.subject_label == "Acme"
     assert presentation.edge.subject_path is None
-    assert presentation.edge.predicate == "is"
-    assert presentation.edge.object_label == "final"
+    assert presentation.edge.predicate == "hired"
+    assert presentation.edge.object_label == "Alice"
     assert presentation.edge.object_path is None
     assert presentation.related_paths == ()
