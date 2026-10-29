@@ -1,0 +1,91 @@
+{
+  "schema_version": "hsq_r19_provider_supplement_v1",
+  "supplement_id": "hsq-r19-provider-supplement-v1",
+  "review_status": "proposed",
+  "bound_connection_gold": {
+    "path": "docs/hsq-event-entity-connection-gold-v2.json",
+    "sha256": "afb3b25a421913b8d6b1c29eda90ee681d3bbf71719f7e0377a626bfc6067294"
+  },
+  "residual_inputs": [
+    {
+      "event_id": "AHE-022",
+      "input_path": "data/r17-semantic-selection-contract/inputs/AHE-022.json",
+      "input_sha256": "c5b4a6b0af51d8403d9431c445b8b4b563cd46c58417b50993d265e1198da1b3",
+      "source_sha256": "f5203eec5a0a146a39dc7e74438ec542884f230f9ca096c006c941979b29651f"
+    },
+    {
+      "event_id": "AHE-051",
+      "input_path": "data/r17-semantic-selection-contract/inputs/AHE-051.json",
+      "input_sha256": "8f423411c3105c555121beaed5e1e68c4730e3741e4c4d3f952b8cab4fbcb703",
+      "source_sha256": "5f07f7fa1cef6f5d818cfa3fc4f2afe8c22f93be9825a0ff28cecdc80558356c"
+    }
+  ],
+  "event_bindings": [
+    {
+      "residual_event_id": "AHE-022",
+      "residual_source_sha256": "f5203eec5a0a146a39dc7e74438ec542884f230f9ca096c006c941979b29651f",
+      "residual_trigger": { "start": 6, "end": 12, "source_text": "viewed" },
+      "provider_event_id": "TGE-018",
+      "provider_source_sha256": "3ae4294fe559d09dd035e7dfaf027607fdc9ac1ec53848b3f789926357d8f9e7",
+      "provider_trigger": { "start": 6, "end": 12, "source_text": "viewed" },
+      "binding_rationale": "The residual Event AHE-022 is the Sacks viewing Event; the Connection Gold records it as TGE-018 with the same source modulo whitespace."
+    },
+    {
+      "residual_event_id": "AHE-051",
+      "residual_source_sha256": "5f07f7fa1cef6f5d818cfa3fc4f2afe8c22f93be9825a0ff28cecdc80558356c",
+      "residual_trigger": { "start": 28, "end": 33, "source_text": "final" },
+      "provider_event_id": null,
+      "provider_source_sha256": null,
+      "provider_trigger": null,
+      "binding_rationale": "The residual Event AHE-051 has no Connection Gold Event; its subject is a reviewed non-entity value."
+    }
+  ],
+  "subject_value_exclusions": [
+    {
+      "exclusion_id": "EGX-900",
+      "event_id": "AHE-051",
+      "start": 5,
+      "end": 20,
+      "source_text": "The April order",
+      "contextual_kind": "non_entity_value",
+      "rationale": "A date-scoped nominal order, not an Actor or Organization."
+    }
+  ],
+  "identity_mappings": [
+    {
+      "entity_id": "EGE-019",
+      "entity_kind": "actor",
+      "canonical_name": "Sacks",
+      "actor_id": null,
+      "organization_id": null,
+      "unresolved_reason": "No accepted Actor record for David Sacks exists in the Ledger."
+    },
+    {
+      "entity_id": "EGE-020",
+      "entity_kind": "actor",
+      "canonical_name": "Amodei",
+      "actor_id": null,
+      "organization_id": null,
+      "unresolved_reason": "No accepted Actor record for Dario Amodei exists in the Ledger."
+    }
+  ],
+  "predicate_mappings": [
+    {
+      "relation_label": "is",
+      "predicate": "be",
+      "rationale": "The copula expresses predicative equation; its lemma is be."
+    },
+    {
+      "relation_label": "viewed",
+      "predicate": "viewed",
+      "rationale": "The trigger-head lemma names the viewing relation."
+    }
+  ],
+  "assertion_inputs": {
+    "source_authority": "secondary",
+    "attribution_basis": "direct_document",
+    "source_id": "src_d97195ee5c8ced32c0cd41b0",
+    "evidence_target_id": null,
+    "unresolved_reason": "No EvidenceTarget record exists for the residual source span."
+  }
+}
