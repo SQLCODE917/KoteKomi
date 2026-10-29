@@ -310,13 +310,16 @@ def construct_inspectable_assertion(
         )
     if attribution.kind is DecontextualizationAttributionKind.TARGETED:
         reporter = attribution.reporter_ref
-        if reporter is None:
+        resolved_reporter = (
+            inputs.identity_by_entity.get(reporter) if reporter is not None else None
+        )
+        if reporter is None or resolved_reporter is None:
             return AssertionConstructionOutcome(
                 event_id=proposition.event_id,
                 status=AssertionConstructionStatus.BLOCKED,
                 block_reason=AssertionBlockReason.UNRESOLVED_REPORTER,
             )
-        attributed_to_id = inputs.identity_by_entity.get(reporter)
+        attributed_to_id = resolved_reporter
 
     qualifiers: dict[str, JsonValue] = {}
     if proposition.polarity is not None:

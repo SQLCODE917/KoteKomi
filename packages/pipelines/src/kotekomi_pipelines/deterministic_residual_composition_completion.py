@@ -22,7 +22,10 @@ from kotekomi_application import (
     DeterministicResidualCompositionStatus,
     ReferencePolicyRecord,
 )
-from kotekomi_application.ports import LedgerRepository
+from kotekomi_application.evidence_targets import (
+    EvidenceTargetLedger,
+    validate_evidence_target_record,
+)
 from kotekomi_domain import Assertion
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -57,6 +60,10 @@ class ResidualClosureRecord(BaseModel):
     @model_validator(mode="after")
     def validate_contract(self) -> Self:
         if self.terminal_status is ResidualTerminalStatus.CLOSED:
+            if self.composition_status is not DeterministicResidualCompositionStatus.COMPOSED:
+                raise ValueError("A closed residual requires composed selection and composition.")
+            if self.r17_selection_signal != "met":
+                raise ValueError("A closed residual requires the R17 selection signal met.")
             if (
                 self.assertion is None
                 or self.assertion_status is not AssertionConstructionStatus.CONSTRUCTED
@@ -64,6 +71,8 @@ class ResidualClosureRecord(BaseModel):
                 raise ValueError("A closed residual requires a constructed Assertion.")
             if not self.evidence_supported:
                 raise ValueError("A closed residual requires supported evidence.")
+            if self.block_reason is not None:
+                raise ValueError("A closed residual cannot carry a block reason.")
         elif self.block_reason is None:
             raise ValueError("A blocked residual requires one block reason.")
         return self
@@ -131,19 +140,18 @@ def r17_selection_signal(
 
 
 def verify_evidence_support(
-    repository: LedgerRepository,
+    repository: EvidenceTargetLedger,
     *,
     source_id: str,
     evidence_target_id: str,
     source_text: str,
 ) -> bool:
-    """Verify one EvidenceTarget resolves to the archived Document and its span.
+    """Verify one EvidenceTarget replays against the archived representation.
 
-    A matching source_id alone is insufficient. The target must also carry the
-    exact source text and reach the Source through an archived Document.
+    A matching source_id or exact_text alone is insufficient. The target must
+    resolve through the pinned DocumentRepresentation, text view, position
+    selector, and structural selectors via the existing evidence-validation path.
     """
-    if repository.get_source(source_id) is None:
-        return False
     target = repository.get_evidence_target(evidence_target_id)
     if target is None:
         return False
@@ -151,8 +159,9 @@ def verify_evidence_support(
         return False
     if target.exact_text != source_text:
         return False
-    document = repository.get_document(target.document_id)
-    if document is None or document.source_id != source_id:
+    try:
+        validate_evidence_target_record(target, repository)
+    except ValueError:
         return False
     return True
 
@@ -179,6 +188,7 @@ def close_residual(
 
     if (
         composition.status is DeterministicResidualCompositionStatus.COMPOSED
+        and r17_signal == "met"
         and assertion_ok
         and evidence_supported
     ):

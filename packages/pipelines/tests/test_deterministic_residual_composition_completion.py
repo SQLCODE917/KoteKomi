@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import cast
 
@@ -13,7 +15,19 @@ from kotekomi_application import (
     frozen_semantic_selection_contract,
     load_reference_policy_records,
 )
-from kotekomi_application.ports import LedgerRepository
+from kotekomi_application.evidence_targets import EvidenceTargetLedger
+from kotekomi_domain import (
+    Document,
+    DocumentNode,
+    DocumentRepresentation,
+    DocumentRepresentationBundle,
+    EvidenceTarget,
+    ParseQualityReport,
+    RepresentationAnalyzability,
+    TextView,
+    TextViewKind,
+    canonical_representation_digest,
+)
 from kotekomi_pipelines.deterministic_residual_composition_completion import (
     ResidualClosureRecord,
     ResidualTerminalStatus,
@@ -26,51 +40,121 @@ ROOT = Path(__file__).resolve().parents[3]
 DATA_DIR = ROOT / "data/r17-semantic-selection-contract"
 
 _SOURCE_ID = "src_d97195ee5c8ced32c0cd41b0"
+_DOC_ID = "doc_eaaad11a475988142cad48d7"
+_REP_ID = "rep_r19"
+_TVW_ID = "tvw_r19"
+_NOD_ID = "nod_r19"
+_NOW = datetime(2026, 1, 1, tzinfo=UTC)
+_AHE_051_TEXT = "[45] The April order is not final."
 
 
-class _Target:
-    def __init__(self, source_id: str, exact_text: str, document_id: str) -> None:
-        self.source_id = source_id
-        self.exact_text = exact_text
-        self.document_id = document_id
-
-
-class _Document:
-    def __init__(self, source_id: str, doc_id: str) -> None:
-        self.id = doc_id
-        self.source_id = source_id
-
-
-class _FakeRepository:
+class _EvidenceRepository:
     def __init__(
         self,
-        *,
-        source_id: str | None = _SOURCE_ID,
-        target: _Target | None,
-        document: _Document | None,
+        target: EvidenceTarget | None,
+        bundle: DocumentRepresentationBundle | None,
+        document: Document | None,
     ) -> None:
-        self._source_id = source_id
         self._target = target
+        self._bundle = bundle
         self._document = document
-
-    def get_source(self, record_id: str):
-        if self._source_id is not None and record_id == self._source_id:
-            return object()
-        return None
 
     def get_evidence_target(self, record_id: str):
         return self._target
+
+    def get_document_representation_bundle(self, record_id: str):
+        return self._bundle
 
     def get_document(self, record_id: str):
         return self._document
 
 
 def _repository(
-    source_id: str | None, target: _Target | None, document: _Document | None
-) -> LedgerRepository:
+    target: EvidenceTarget | None,
+    bundle: DocumentRepresentationBundle | None,
+    document: Document | None,
+) -> EvidenceTargetLedger:
     return cast(
-        LedgerRepository, _FakeRepository(source_id=source_id, target=target, document=document)
+        EvidenceTargetLedger,
+        _EvidenceRepository(target=target, bundle=bundle, document=document),
     )
+
+
+def _bundle(text: str) -> DocumentRepresentationBundle:
+    text_view = TextView(
+        id=_TVW_ID,
+        representation_id=_REP_ID,
+        kind=TextViewKind.LOGICAL,
+        content_digest=hashlib.sha256(text.encode()).hexdigest(),
+        text=text,
+        normalization_policy="utf8_identity_v1",
+    )
+    node = DocumentNode(
+        id=_NOD_ID,
+        representation_id=_REP_ID,
+        node_type="document",
+        order_index=0,
+        text_view_id=_TVW_ID,
+        start_char=0,
+        end_char=len(text),
+    )
+    quality_report = ParseQualityReport(
+        id="pqr_r19",
+        representation_id=_REP_ID,
+        metric_values={"text_char_count": len(text)},
+        analyzability=RepresentationAnalyzability.ACCEPTABLE,
+    )
+    template = DocumentRepresentation(
+        id=_REP_ID,
+        document_id=_DOC_ID,
+        parser_name="test",
+        parser_version="1",
+        parser_config_digest="a" * 64,
+        processing_task_fingerprint_id="ptf_fixture",
+        input_blob_digest="b" * 64,
+        canonical_output_digest="0" * 64,
+        created_at=_NOW,
+    )
+    representation = template.model_copy(
+        update={
+            "canonical_output_digest": canonical_representation_digest(
+                template,
+                text_views=(text_view,),
+                nodes=(node,),
+                edges=(),
+                source_regions=(),
+                quality_report=quality_report,
+            )
+        }
+    )
+    return DocumentRepresentationBundle(
+        representation=representation,
+        text_views=(text_view,),
+        nodes=(node,),
+        quality_report=quality_report,
+    )
+
+
+def _target(text: str, *, start: int, end: int) -> EvidenceTarget:
+    return EvidenceTarget(
+        id="etg_r19",
+        source_id=_SOURCE_ID,
+        document_id=_DOC_ID,
+        representation_id=_REP_ID,
+        text_view_id=_TVW_ID,
+        text_view_digest=hashlib.sha256(text.encode()).hexdigest(),
+        start_char=start,
+        end_char=end,
+        exact_text=text,
+        prefix_text="",
+        suffix_text="",
+        node_ids=(_NOD_ID,),
+        normalization_policy="utf8_identity_v1",
+    )
+
+
+def _document() -> Document:
+    return Document(id=_DOC_ID, source_id=_SOURCE_ID, content_sha256="c" * 64)
 
 
 @pytest.fixture(scope="module")
@@ -79,41 +163,44 @@ def policy_records() -> tuple[ReferencePolicyRecord, ...]:
     return load_reference_policy_records(contract=contract, directory=DATA_DIR)
 
 
-def _ok_repository(text: str) -> LedgerRepository:
-    target = _Target(_SOURCE_ID, text, "doc_eaaad11a475988142cad48d7")
-    document = _Document(_SOURCE_ID, "doc_eaaad11a475988142cad48d7")
-    return _repository(_SOURCE_ID, target, document)
-
-
-def test_evidence_support_requires_document_and_exact_span() -> None:
-    text = "[45] The April order is not final."
+def test_evidence_support_replays_archived_span() -> None:
+    text = _AHE_051_TEXT
     assert verify_evidence_support(
-        _ok_repository(text),
+        _repository(_target(text, start=0, end=len(text)), _bundle(text), _document()),
         source_id=_SOURCE_ID,
-        evidence_target_id="etg_fixture",
+        evidence_target_id="etg_r19",
+        source_text=text,
+    )
+
+
+def test_evidence_support_rejects_correct_text_with_wrong_coordinates() -> None:
+    text = _AHE_051_TEXT
+    assert not verify_evidence_support(
+        _repository(_target(text, start=0, end=len(text) - 1), _bundle(text), _document()),
+        source_id=_SOURCE_ID,
+        evidence_target_id="etg_r19",
         source_text=text,
     )
 
 
 def test_evidence_support_rejects_wrong_exact_span() -> None:
-    target = _Target(_SOURCE_ID, "different text", "doc_fixture")
-    document = _Document(_SOURCE_ID, "doc_fixture")
+    text = _AHE_051_TEXT
     assert not verify_evidence_support(
-        _repository(_SOURCE_ID, target, document),
+        _repository(_target("different text", start=0, end=13), _bundle(text), _document()),
         source_id=_SOURCE_ID,
-        evidence_target_id="etg_fixture",
-        source_text="[45] The April order is not final.",
+        evidence_target_id="etg_r19",
+        source_text=text,
     )
 
 
 def test_evidence_support_rejects_wrong_source_relationship() -> None:
-    target = _Target("src_other", "[45] The April order is not final.", "doc_fixture")
-    document = _Document(_SOURCE_ID, "doc_fixture")
+    text = _AHE_051_TEXT
+    target = _target(text, start=0, end=len(text)).model_copy(update={"source_id": "src_other"})
     assert not verify_evidence_support(
-        _repository(_SOURCE_ID, target, document),
+        _repository(target, _bundle(text), _document()),
         source_id=_SOURCE_ID,
-        evidence_target_id="etg_fixture",
-        source_text="[45] The April order is not final.",
+        evidence_target_id="etg_r19",
+        source_text=text,
     )
 
 
@@ -144,3 +231,26 @@ def test_report_seals_zero_writes_with_blocked_residual() -> None:
     assert report.proposed_change_count == 0
     assert report.result_fingerprint != "0" * 64
     assert len(report.result_fingerprint) == 64
+
+
+def test_closed_record_rejects_unmet_selection() -> None:
+    from pydantic import ValidationError
+
+    text = _AHE_051_TEXT
+    target = _target(text, start=0, end=len(text))
+    evidence = verify_evidence_support(
+        _repository(target, _bundle(text), _document()),
+        source_id=_SOURCE_ID,
+        evidence_target_id="etg_r19",
+        source_text=text,
+    )
+    assert evidence
+    with pytest.raises(ValidationError, match="selection signal met"):
+        ResidualClosureRecord(
+            event_id="AHE-051",
+            terminal_status=ResidualTerminalStatus.CLOSED,
+            r17_selection_signal="unmet",
+            composition_status=DeterministicResidualCompositionStatus.COMPOSED,
+            assertion_status=AssertionConstructionStatus.CONSTRUCTED,
+            evidence_supported=True,
+        )

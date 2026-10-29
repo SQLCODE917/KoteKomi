@@ -14,7 +14,11 @@ from kotekomi_application import (
     DecontextualizationEntityRef,
     DecontextualizationExclusion,
     DecontextualizationHoldReason,
+    DecontextualizationRoleKind,
     DecontextualizationStatus,
+    DecontextualizedAttribution,
+    DecontextualizedProposition,
+    DecontextualizedRole,
     DeterministicResidualCompositionOutcome,
     DeterministicResidualCompositionStatus,
     EventEntityReferences,
@@ -311,3 +315,41 @@ def test_assertion_construction_blocks_on_unmapped_predicate(
     assert result.status is AssertionConstructionStatus.BLOCKED
     assert result.assertion is None
     assert result.block_reason is AssertionBlockReason.UNMAPPED_PREDICATE
+
+
+def test_assertion_construction_blocks_on_unmapped_reporter() -> None:
+    proposition = DecontextualizedProposition(
+        event_id="AHE-905",
+        source_text_sha256="a" * 64,
+        relation_label="urged",
+        subject=DecontextualizedRole(
+            role=DecontextualizationRoleKind.SUBJECT,
+            exact_fragment=AttachmentSourceRange(start=0, end=5, text="Tomas"),
+            entity_ref="EGE-901",
+        ),
+        object=DecontextualizedRole(
+            role=DecontextualizationRoleKind.OBJECT,
+            exact_fragment=AttachmentSourceRange(start=6, end=19, text="the agreement"),
+            object_value="the agreement",
+        ),
+        polarity=EventPolarity.AFFIRMED,
+        modality=EventModality.ACTUAL,
+        attribution=DecontextualizedAttribution(
+            kind=DecontextualizationAttributionKind.TARGETED,
+            exact_carrier=AttachmentSourceRange(start=20, end=24, text="Mira"),
+            reporter_ref="EGE-902",
+        ),
+        status=DecontextualizationStatus.PROPOSITION,
+    )
+
+    result = construct_inspectable_assertion(
+        proposition,
+        _assertion_inputs(
+            predicate_by_label={"urged": "urged"},
+            identity_by_entity={"EGE-901": "act_tomas_fixture"},
+        ),
+    )
+
+    assert result.status is AssertionConstructionStatus.BLOCKED
+    assert result.assertion is None
+    assert result.block_reason is AssertionBlockReason.UNRESOLVED_REPORTER
