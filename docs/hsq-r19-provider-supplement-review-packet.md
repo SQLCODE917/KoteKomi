@@ -86,14 +86,38 @@ The Ledger holds zero Actor, zero Organization, and zero EvidenceTarget records.
 It holds one Source, `src_d97195ee5c8ced32c0cd41b0`, the Wikipedia article on the
 Anthropic-United States Department of Defense dispute.
 
+## Proposed prerequisite records
+
+These proposed records derive from the archived Document. A reviewer creates them
+through the existing review workflow as accepted records with a ProvenanceActivity.
+The IDs are provisional until that workflow assigns or accepts them.
+
+### Proposed Actor record
+
+| Field | Value |
+| --- | --- |
+| id | act_david_sacks (provisional) |
+| kind | Actor |
+| canonical name | David Sacks |
+| accepted names | David Sacks, Sacks |
+| supporting span | Sacks at 0-5 in the AHE-022 source |
+
+### Proposed EvidenceTarget records
+
+| Field | AHE-022 | AHE-051 |
+| --- | --- | --- |
+| id | etg_ahe_022 (provisional) | etg_ahe_051 (provisional) |
+| source | src_d97195ee5c8ced32c0cd41b0 | src_d97195ee5c8ced32c0cd41b0 |
+| document | doc_eaaad11a475988142cad48d7 | doc_eaaad11a475988142cad48d7 |
+| exact text | the full AHE-022 source sentence | [45] The April order is not final. |
+
+The document `start_char`, `end_char`, text view, and structural selector are
+resolved against the archived Document's text view when the record is created.
+
 ## Missing prerequisites
 
-Composition cannot reach a complete, inspectable Assertion until the unresolved
-references above are created as accepted records with their own
-ProvenanceActivity.
-
-Each Event needs one EvidenceTarget record whose source and exact document span
-support that Event alone.
+Composition cannot reach a complete, inspectable Assertion until the proposed
+Actor and per-Event EvidenceTarget records above are accepted.
 
 The pipeline must not fabricate those IDs.
 
@@ -104,6 +128,6 @@ boundary.
 
 ## After approval
 
-1. Create the missing Actor and per-Event EvidenceTarget records through a reviewed path.
+1. Create the proposed Actor and per-Event EvidenceTarget records through a reviewed path.
 2. Mark the supplement `review_status` `approved` and update the bound digests.
-3. Finish the Assertion constructor, the Pipeline, and the scoring report.
+3. Run the Pipeline and the scoring report.
