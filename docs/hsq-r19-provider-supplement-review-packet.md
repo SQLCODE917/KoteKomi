@@ -104,15 +104,26 @@ The IDs are provisional until that workflow assigns or accepts them.
 
 ### Proposed EvidenceTarget records
 
+Both targets resolve mechanically against the archived Document's logical text
+view `tvw_82b32b975fbbd7dd75627fb3_logical` of representation
+`rep_82b32b975fbbd7dd75627fb3`, source
+`src_d97195ee5c8ced32c0cd41b0`, document
+`doc_eaaad11a475988142cad48d7`.
+
 | Field | AHE-022 | AHE-051 |
 | --- | --- | --- |
 | id | etg_ahe_022 (provisional) | etg_ahe_051 (provisional) |
-| source | src_d97195ee5c8ced32c0cd41b0 | src_d97195ee5c8ced32c0cd41b0 |
-| document | doc_eaaad11a475988142cad48d7 | doc_eaaad11a475988142cad48d7 |
-| exact text | the full AHE-022 source sentence | [45] The April order is not final. |
+| representation_id | rep_82b32b975fbbd7dd75627fb3 | rep_82b32b975fbbd7dd75627fb3 |
+| text_view_id | tvw_82b32b975fbbd7dd75627fb3_logical | tvw_82b32b975fbbd7dd75627fb3_logical |
+| text_view_digest | 7fcd6f4d104813254de2a930d009d74ce7920925af03195414aad58be872e9c2 | 7fcd6f4d104813254de2a930d009d74ce7920925af03195414aad58be872e9c2 |
+| start_char | 4682 | 9992 |
+| end_char | 4966 | 10029 |
+| node_ids | nod_82b32b975fbbd7dd75627fb3_0013 | nod_82b32b975fbbd7dd75627fb3_0028 |
+| exact_text digest | 3ae4294fe559d09dd035e7dfaf027607fdc9ac1ec53848b3f789926357d8f9e7 | b0d7969edcd331a70a44d19a2b9a7c3a2f7d8feaabdd88d3f70441d0b33d27c7 |
+| normalization_policy | utf8_identity_v1 | utf8_identity_v1 |
 
-The document `start_char`, `end_char`, text view, and structural selector are
-resolved against the archived Document's text view when the record is created.
+The exact text is the archived double-spaced occurrence. The residual
+single-spaced coordinate is its whitespace-normalized form.
 
 ## Missing prerequisites
 
