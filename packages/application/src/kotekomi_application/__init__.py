@@ -1763,6 +1763,14 @@ from kotekomi_application.source_grounded_proposition_scope import (
     source_grounded_proposition_fragment_id,
     source_grounded_proposition_scope_id,
 )
+from kotekomi_application.source_grounded_selection import (
+    SourceGroundedBoundaryGap,
+    SourceGroundedConjunctSelection,
+    SourceGroundedRoleSelection,
+    SourceGroundedSelectionResult,
+    SourceGroundedSelectionStatus,
+    select_source_grounded_constituents,
+)
 from kotekomi_application.source_lineage import (
     ProposeVerbatimRepublicationInput,
     ProposeVerbatimRepublicationResult,
@@ -3315,6 +3323,12 @@ __all__ = [
     "source_grounded_proposition_result_sha256",
     "source_grounded_proposition_fragment_id",
     "source_grounded_proposition_scope_id",
+    "SourceGroundedBoundaryGap",
+    "SourceGroundedConjunctSelection",
+    "SourceGroundedRoleSelection",
+    "SourceGroundedSelectionResult",
+    "SourceGroundedSelectionStatus",
+    "select_source_grounded_constituents",
     "AttachmentErrorClass",
     "AttachmentNoneClassification",
     "AttachmentNoneDecision",
