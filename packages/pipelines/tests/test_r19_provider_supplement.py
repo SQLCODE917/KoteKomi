@@ -52,26 +52,26 @@ def _empty_repository() -> LedgerRepository:
     return cast(LedgerRepository, _EmptyRepository())
 
 
-def test_loads_proposed_supplement_and_reports_unresolved_references() -> None:
+def test_loads_approved_supplement_with_resolved_references() -> None:
     supplement = load_r19_provider_supplement(SUPPLEMENT, repository_root=ROOT)
 
-    assert supplement.review_status == "proposed"
+    assert supplement.review_status == "approved"
     assert [item.residual_event_id for item in supplement.event_bindings] == [
         "AHE-022",
         "AHE-051",
     ]
     assert supplement.event_bindings[0].provider_event_id == "TGE-018"
     assert [item.entity_id for item in supplement.identity_mappings] == ["EGE-019"]
-    unresolved = unresolved_references(supplement)
-    assert any("EGE-019" in item for item in unresolved)
-    assert sum("evidence_target_id" in item for item in unresolved) == 2
+    assert supplement.identity_mappings[0].actor_id == "act_david_sacks"
+    assert unresolved_references(supplement) == ()
 
 
 def test_unapproved_supplement_cannot_authorize_composition() -> None:
-    supplement = load_r19_provider_supplement(SUPPLEMENT, repository_root=ROOT)
+    approved = load_r19_provider_supplement(SUPPLEMENT, repository_root=ROOT)
+    proposed = approved.model_copy(update={"review_status": "proposed"})
 
     with pytest.raises(ValueError, match="approved"):
-        require_approved_supplement(supplement)
+        require_approved_supplement(proposed)
 
 
 def test_rejects_connection_gold_digest_drift(tmp_path: Path) -> None:
@@ -120,9 +120,19 @@ def test_rejects_binding_trigger_disagreement(tmp_path: Path) -> None:
 
 def test_rejects_unresolved_required_references() -> None:
     supplement = load_r19_provider_supplement(SUPPLEMENT, repository_root=ROOT)
+    unresolved_supplement = supplement.model_copy(
+        deep=True,
+        update={
+            "identity_mappings": (
+                supplement.identity_mappings[0].model_copy(
+                    update={"actor_id": None, "unresolved_reason": "missing actor"}
+                ),
+            )
+        },
+    )
 
     with pytest.raises(ValueError, match="unresolved required references"):
-        require_resolved_closure(supplement, _empty_repository())
+        require_resolved_closure(unresolved_supplement, _empty_repository())
 
 
 def test_rejects_resolved_identity_that_does_not_exist() -> None:

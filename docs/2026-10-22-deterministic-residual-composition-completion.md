@@ -231,7 +231,14 @@ R19 is deterministic: no model execution, no canonical write, no ProposedChange.
 
 ## 10. Run Record
 
-R19 has not run.
+R19 has run.
+
+- Run root: `data/r19-deterministic-residual-composition-runs/run-001`.
+- Accepted prerequisites: Actor `act_david_sacks` (David Sacks); EvidenceTargets `etg_ahe_022` and `etg_ahe_051`.
+- Supplement `review_status`: `approved`.
+- Result: AHE-022 closed (`met`, predicate `viewed`, subject `act_david_sacks`, object value `Amodei's decision`); AHE-051 closed (`met`, predicate `is`, subject value `The April order`, object value `final`).
+- Report fingerprint: `824389ff9dbfb68c0cca66f0c9e3327b467640b5f597bebab1b85be0ad2de234`.
+- Model executions: 0. Canonical writes during the run: 0. ProposedChanges during the run: 0.
 
 ## 11. Amendment: Production Reference Wiring and Assertion Construction
 

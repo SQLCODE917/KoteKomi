@@ -21,6 +21,7 @@ import hashlib
 import json
 from collections.abc import Mapping
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Annotated, Self
 
@@ -56,6 +57,7 @@ from kotekomi_application.source_grounded_selection import (
 )
 
 _EventId = Annotated[str, Field(pattern=r"^(TGE|AHE)-[0-9]{3}$")]
+_R19_TIMESTAMP = datetime(2026, 1, 1, tzinfo=UTC)
 
 
 class DeterministicResidualCompositionStatus(StrEnum):
@@ -343,6 +345,8 @@ def construct_inspectable_assertion(
         qualifiers=qualifiers,
         source_ids=(inputs.source_id,),
         evidence_target_ids=(inputs.evidence_target_id,),
+        created_at=_R19_TIMESTAMP,
+        updated_at=_R19_TIMESTAMP,
     )
     return AssertionConstructionOutcome(
         event_id=proposition.event_id,

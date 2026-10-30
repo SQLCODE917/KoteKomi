@@ -1,7 +1,7 @@
 {
   "schema_version": "hsq_r19_provider_supplement_v1",
   "supplement_id": "hsq-r19-provider-supplement-v1",
-  "review_status": "proposed",
+  "review_status": "approved",
   "bound_connection_gold": {
     "path": "docs/hsq-event-entity-connection-gold-v2.json",
     "sha256": "afb3b25a421913b8d6b1c29eda90ee681d3bbf71719f7e0377a626bfc6067294"
@@ -50,16 +50,16 @@
       "source_authority": "secondary",
       "attribution_basis": "direct_document",
       "source_id": "src_d97195ee5c8ced32c0cd41b0",
-      "evidence_target_id": null,
-      "unresolved_reason": "No EvidenceTarget record exists for the AHE-022 source span."
+      "evidence_target_id": "etg_ahe_022",
+      "unresolved_reason": null
     },
     {
       "event_id": "AHE-051",
       "source_authority": "secondary",
       "attribution_basis": "direct_document",
       "source_id": "src_d97195ee5c8ced32c0cd41b0",
-      "evidence_target_id": null,
-      "unresolved_reason": "No EvidenceTarget record exists for the AHE-051 source span."
+      "evidence_target_id": "etg_ahe_051",
+      "unresolved_reason": null
     }
   ],
   "subject_value_exclusions": [
@@ -78,9 +78,9 @@
       "entity_id": "EGE-019",
       "entity_kind": "actor",
       "canonical_name": "Sacks",
-      "actor_id": null,
+      "actor_id": "act_david_sacks",
       "organization_id": null,
-      "unresolved_reason": "No accepted Actor record for David Sacks exists in the Ledger."
+      "unresolved_reason": null
     }
   ],
   "predicate_mappings": [

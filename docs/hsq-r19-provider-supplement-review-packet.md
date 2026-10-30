@@ -1,6 +1,6 @@
 # R19 Provider Supplement Review Packet
 
-Status: Proposed, awaiting human approval.
+Status: Approved and run.
 
 ## Purpose
 

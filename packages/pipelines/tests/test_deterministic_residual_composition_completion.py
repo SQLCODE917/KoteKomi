@@ -284,10 +284,11 @@ def test_run_reports_gate_block_when_supplement_unapproved(
     supplement = load_r19_provider_supplement(
         ROOT / "docs" / "hsq-r19-provider-supplement-v1.json", repository_root=ROOT
     )
+    proposed = supplement.model_copy(update={"review_status": "proposed"})
     unused = cast(LedgerRepository, _UnusedLedger())
     report = run_deterministic_residual_composition(
         report_id="r19-gate-fixture",
-        supplement=supplement,
+        supplement=proposed,
         policy_records=policy_records,
         closure_ledger=unused,
         evidence_ledger=cast(EvidenceTargetLedger, _UnusedLedger()),
