@@ -57,7 +57,11 @@ from kotekomi_application.source_grounded_selection import (
 )
 
 _EventId = Annotated[str, Field(pattern=r"^(TGE|AHE)-[0-9]{3}$")]
-_R19_TIMESTAMP = datetime(2026, 1, 1, tzinfo=UTC)
+#: One R19 Assertion is an inspectable, never persisted, `proposed` record. It has no
+#: wall-clock creation time, so it carries this documented logical epoch instead of
+#: `utc_now` to keep the sealed report reproducible. The value is the R19 program's
+#: start epoch, declared here rather than derived from content at runtime.
+_R19_ASSERTION_EPOCH = datetime(2026, 1, 1, tzinfo=UTC)
 
 
 class DeterministicResidualCompositionStatus(StrEnum):
@@ -345,8 +349,8 @@ def construct_inspectable_assertion(
         qualifiers=qualifiers,
         source_ids=(inputs.source_id,),
         evidence_target_ids=(inputs.evidence_target_id,),
-        created_at=_R19_TIMESTAMP,
-        updated_at=_R19_TIMESTAMP,
+        created_at=_R19_ASSERTION_EPOCH,
+        updated_at=_R19_ASSERTION_EPOCH,
     )
     return AssertionConstructionOutcome(
         event_id=proposition.event_id,

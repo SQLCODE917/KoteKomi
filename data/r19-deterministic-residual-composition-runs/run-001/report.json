@@ -1,0 +1,122 @@
+{
+  "schema_version": "r19_residual_composition_report_v1",
+  "report_id": "r19-deterministic-residual-composition",
+  "residuals": [
+    {
+      "event_id": "AHE-022",
+      "terminal_status": "closed",
+      "r17_selection_signal": "met",
+      "composition_status": "composed",
+      "composition_hold_reason": null,
+      "assertion_status": "constructed",
+      "assertion": {
+        "id": "ast_2d09b3be204f00a71349f1fc8168197a",
+        "assertion_type": "reported_observation",
+        "epistemic_scope": "source_report",
+        "subject_entity_id": "act_david_sacks",
+        "subject_value": null,
+        "predicate": "viewed",
+        "object_entity_id": null,
+        "object_value": "Amodei's decision",
+        "status": "proposed",
+        "source_authority": "secondary",
+        "attribution_basis": "direct_document",
+        "attributed_to_id": null,
+        "source_report_confidence": null,
+        "extraction_confidence": null,
+        "world_truth_confidence": null,
+        "causal_confidence": null,
+        "qualifiers": {
+          "polarity": "affirmed",
+          "modality": "actual"
+        },
+        "current_assessment": "",
+        "source_ids": [
+          "src_d97195ee5c8ced32c0cd41b0"
+        ],
+        "evidence_target_ids": [
+          "etg_ahe_022"
+        ],
+        "supporting_assertion_ids": [],
+        "supersedes_assertion_id": null,
+        "authority_source_ids": [],
+        "authority_evidence_target_ids": [],
+        "provenance_activity_ids": [],
+        "created_at": "2026-01-01T00:00:00Z",
+        "updated_at": "2026-01-01T00:00:00Z"
+      },
+      "block_reason": null,
+      "evidence_supported": true,
+      "supporting_subject_span": {
+        "start": 0,
+        "end": 5,
+        "text": "Sacks"
+      },
+      "supporting_object_span": {
+        "start": 13,
+        "end": 30,
+        "text": "Amodei's decision"
+      }
+    },
+    {
+      "event_id": "AHE-051",
+      "terminal_status": "closed",
+      "r17_selection_signal": "met",
+      "composition_status": "composed",
+      "composition_hold_reason": null,
+      "assertion_status": "constructed",
+      "assertion": {
+        "id": "ast_b70b7c3f91259f71fb52f88079e2b52c",
+        "assertion_type": "reported_observation",
+        "epistemic_scope": "source_report",
+        "subject_entity_id": null,
+        "subject_value": "The April order",
+        "predicate": "is",
+        "object_entity_id": null,
+        "object_value": "final",
+        "status": "proposed",
+        "source_authority": "secondary",
+        "attribution_basis": "direct_document",
+        "attributed_to_id": null,
+        "source_report_confidence": null,
+        "extraction_confidence": null,
+        "world_truth_confidence": null,
+        "causal_confidence": null,
+        "qualifiers": {
+          "polarity": "negated",
+          "modality": "actual"
+        },
+        "current_assessment": "",
+        "source_ids": [
+          "src_d97195ee5c8ced32c0cd41b0"
+        ],
+        "evidence_target_ids": [
+          "etg_ahe_051"
+        ],
+        "supporting_assertion_ids": [],
+        "supersedes_assertion_id": null,
+        "authority_source_ids": [],
+        "authority_evidence_target_ids": [],
+        "provenance_activity_ids": [],
+        "created_at": "2026-01-01T00:00:00Z",
+        "updated_at": "2026-01-01T00:00:00Z"
+      },
+      "block_reason": null,
+      "evidence_supported": true,
+      "supporting_subject_span": {
+        "start": 5,
+        "end": 20,
+        "text": "The April order"
+      },
+      "supporting_object_span": {
+        "start": 28,
+        "end": 33,
+        "text": "final"
+      }
+    }
+  ],
+  "model_execution_count": 0,
+  "canonical_write_count": 0,
+  "proposed_change_count": 0,
+  "result_fingerprint": "824389ff9dbfb68c0cca66f0c9e3327b467640b5f597bebab1b85be0ad2de234"
+}

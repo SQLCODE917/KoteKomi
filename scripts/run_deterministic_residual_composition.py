@@ -162,27 +162,26 @@ def main() -> int:
     output_root = Path(args.out)
     output_root.mkdir(parents=True, exist_ok=True)
     (output_root / "report.json").write_text(report.model_dump_json(indent=2), encoding="utf-8")
-    print(
-        json.dumps(
+    run_summary = {
+        "schema_version": "r19_residual_composition_run_v1",
+        "report": "report.json",
+        "residuals": [
             {
-                "report": str(output_root / "report.json"),
-                "residuals": [
-                    {
-                        "event_id": item.event_id,
-                        "terminal_status": item.terminal_status.value,
-                        "block_reason": item.block_reason,
-                    }
-                    for item in report.residuals
-                ],
-                "model_execution_count": 0,
-                "canonical_write_count": 0,
-                "proposed_change_count": 0,
-                "result_fingerprint": report.result_fingerprint,
-            },
-            sort_keys=True,
-            indent=2,
-        )
+                "event_id": item.event_id,
+                "terminal_status": item.terminal_status.value,
+                "block_reason": item.block_reason,
+            }
+            for item in report.residuals
+        ],
+        "model_execution_count": 0,
+        "canonical_write_count": 0,
+        "proposed_change_count": 0,
+        "result_fingerprint": report.result_fingerprint,
+    }
+    (output_root / "run.json").write_text(
+        json.dumps(run_summary, sort_keys=True, indent=2) + "\n", encoding="utf-8"
     )
+    print(json.dumps(run_summary, sort_keys=True, indent=2))
     return 0
 
 

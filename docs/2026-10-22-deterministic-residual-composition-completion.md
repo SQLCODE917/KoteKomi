@@ -1,6 +1,6 @@
 # TDD: Production Closure of AHE-022 and AHE-051
 
-- Status: Proposed
+- Status: Completed
 - Deliverable ID: `R19`
 - Program: [Source-Grounded Attachment Agile Package](2026-10-01-source-grounded-attachment-agile-package.md)
 - Parent: [Semantic Instruction Discrimination Experiment](2026-10-15-semantic-instruction-discrimination-experiment.md)
@@ -312,3 +312,41 @@ identity binding authorize the required content.
   separately with selection, composition, Assertion spans, and a fingerprint.
 - REQ-AMD-PIP-04: The report records zero model executions, zero canonical
   writes, and zero ProposedChanges.
+
+## 12. Completion Status and Reconciliation
+
+R19's narrow closure goal is met. Both development residuals complete selection,
+composition, and evidence-supported Assertion construction through the
+production path with zero model executions, zero canonical writes, and zero
+ProposedChanges during the run.
+
+### Durable evidence
+
+The sealed report is committed at
+`data/r19-deterministic-residual-composition-runs/run-001/report.json`.
+
+Its file SHA-256 is
+`b9317798815cc1386ec72f4857601ac19dc92d245b4dca70d137746cd3a513b9` and its
+recorded result fingerprint is
+`824389ff9dbfb68c0cca66f0c9e3327b467640b5f597bebab1b85be0ad2de234`.
+
+The run summary is committed alongside it at
+`data/r19-deterministic-residual-composition-runs/run-001/run.json`.
+
+### Regression and untouched validation
+
+- The R17 frozen files and checksums remain unmodified.
+- The deterministic selector reproduces the §5 expected selected sets for the
+  AHE-901 through AHE-909 regression cases in its focused tests.
+- The full production composition outcomes for those regression cases are not
+  re-run through this Pipeline; they remain covered by the focused selector and
+  composer tests, not by a separate end-to-end regression run.
+- R19 consumed no held-out partition. Independent held-out validation with zero
+  boundary gaps and zero fabricated roles remains a separate package
+  requirement.
+
+### Ingestion integration
+
+R19 composes the accepted residuals through the R4 workflow. It does not activate
+ingestion or expose these Assertions in the replay TUI. That activation is a
+separate product increment.
