@@ -206,6 +206,42 @@ shows in the Textual replay view rather than only in the persisted read model.
    `assertion_inputs_unavailable` until they are supplied in the
    review/recomposition request.
 
+### 9.1 Coordinate contract finding (blocks the producer)
+
+The live analysis unit and the composition unit differ.
+
+- `run_hybrid_event_trigger_preview` analyzes one `SourceSegment` at a time
+  (`paragraph_source_segments(paragraph_text, PARAGRAPH_SEGMENT_V3)`), on
+  `derive_source_copy_view(segment.exact_text)`, which collapses whitespace.
+- A paragraph therefore has several segments, and the analyzed tokens are in
+  segment-source-copy coordinates, not paragraph coordinates.
+- The composition use case and `EventCompositionRecord` spans assume one
+  `source_text` with tokens covering it, and the replay reader needs
+  paragraph-local spans.
+
+Writing the artifact at the analysis point without resolving this would put
+tokens and spans in a different coordinate system than composition and replay
+expect. Two resolvable options:
+
+1. Build a paragraph-level artifact: analyze the paragraph text once (or
+   reconstruct paragraph tokens from the segment tokens through
+   `SourceCopyView.authoritative_range` and the segment offsets).
+2. Compose per segment and remap every resulting span back to paragraph
+   coordinates. The artifact must then also bind the segment identity and its
+   source-copy boundary map.
+
+This mapping is the concrete implementation decision the producer and worker
+need; it is not a file-count concern.
+
+### 9.2 Cancellation-test blocker (resolved)
+
+`test_replay_cancellation.py` imports
+`from packages.pipelines.tests.test_replay_reader import example_profile`, so its
+spawned worker needs the repository root on `sys.path`. Without it the worker
+fails with `ModuleNotFoundError: No module named 'packages'`. Running the suite
+with `PYTHONPATH=.` makes all eight cancellation tests pass. The failure is a
+test-invocation concern, reproducible and explained, not code flakiness.
+
 Explicit recomposition stays the chosen behavior. Automatic recomposition after
 approval is out of scope for this increment.
 
