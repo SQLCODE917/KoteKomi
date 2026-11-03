@@ -28,14 +28,21 @@ def main() -> int:
     )
     parser.add_argument("--request", required=True, help="JSON RecompositionRequest file.")
     parser.add_argument("--ledger", required=True, help="SQLite Ledger path.")
-    parser.add_argument("--out", required=True, help="Output EventCompositionRecord JSON.")
+    parser.add_argument(
+        "--out",
+        help="Output EventCompositionRecord JSON. Defaults to the replay source path.",
+    )
     args = parser.parse_args()
 
     request = RecompositionRequest.model_validate_json(Path(args.request).read_bytes())
     with sqlite_ledger_transaction(Path(args.ledger)) as repository:
         record = run_recomposition(request, repository)
 
-    output = Path(args.out)
+    output = (
+        Path(args.out)
+        if args.out
+        else Path(args.ledger).resolve().parent / "composition-outcomes" / f"{record.event_id}.json"
+    )
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(record.model_dump_json(indent=2), encoding="utf-8")
     print(

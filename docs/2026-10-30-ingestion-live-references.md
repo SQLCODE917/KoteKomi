@@ -179,20 +179,28 @@ shows in the Textual replay view rather than only in the persisted read model.
 
 ## 9. Remaining Acceptance Checks
 
-1. Cross-view lineage: the Adapter currently resolves a mention only when the
-   Event source view matches the accepted `EvidenceTarget` view. A different view
-   returns a `cross_view_unsupported` diagnostic and no reference; it never
-   guesses by unique text. Verified Document and paragraph lineage for a
-   cross-view match remains open.
-2. Interactive replay: `load_event_composition_record` is the persisted read
-   model. Wiring it into `ParagraphSnapshot` and the Textual view so the hold and
-   the recomposed Assertion both display is open.
-3. Normal ingestion entry point: the composition stage is invoked by the test
-   and by an explicit recomposition call. Confirming the normal ingestion entry
-   point invokes it and produces the records replay consumes is open.
+1. Cross-view lineage: done as an explicit hold. The Adapter resolves a mention
+   only when the Event source view matches the accepted `EvidenceTarget` view. A
+   different view returns a `cross_view_unsupported` diagnostic and no reference;
+   it never guesses by unique text. Verified cross-view lineage stays deferred.
+2. Interactive replay display: done at the data and render level.
+   `CompositionAnnotation` is a `ParagraphAnnotationProfile` field.
+   `InspectionSession` loads persisted records from
+   `<ledger parent>/composition-outcomes` through `composition_annotations_for`,
+   and `render_annotated_paragraph` (used by `render_live_block` and the Textual
+   view) renders a `composition` section with the hold or Assertion summary.
+3. Normal ingestion entry point: open. The composition stage runs in the test
+   and in the explicit recomposition command, which writes to the replay source
+   path. Confirming normal ingestion invokes the composition stage and produces
+   the records replay consumes is still open.
 
 Explicit recomposition stays the chosen behavior. Automatic recomposition after
 approval is out of scope for this increment.
+
+The user-boundary acceptance test is open until check 3 lands: invoke normal
+ingestion, inspect the hold through the replay reader, approve the occurrence,
+invoke `scripts/recompose_ingested_event.py`, reload replay, and verify the
+Assertion.
 
 The explicit recomposition command is discoverable and tested:
 `scripts/recompose_ingested_event.py --request <json> --ledger <db> --out <json>`

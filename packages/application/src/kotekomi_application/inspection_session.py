@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import time
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
 from threading import Event
 
@@ -12,12 +12,14 @@ from kotekomi_domain import DocumentRepresentationBundle
 from kotekomi_application.ingestion_inspection import (
     STAGE_ORDER,
     ArtifactHandle,
+    CompositionAnnotation,
     HybridParagraphProgress,
     HybridParagraphStageProgress,
     InspectionArtifactPort,
     InspectionContext,
     InspectionProgressPort,
     InspectionSourcePort,
+    ParagraphAnnotationProfile,
     ParagraphInput,
     ParagraphSnapshot,
     build_profile,
@@ -44,12 +46,16 @@ class InspectionSession:
         artifacts_port: InspectionArtifactPort | None = None,
         on_snapshot: InspectionProgressPort | None = None,
         select_ordinal: int | None = None,
+        composition_source: (
+            Callable[[tuple[str, ...]], tuple[CompositionAnnotation, ...]] | None
+        ) = None,
     ) -> None:
         self._artifact_port = artifacts_port
         self._source = source
         self._context = context
         self._on_snapshot = on_snapshot
         self._select_ordinal = select_ordinal
+        self._composition_source = composition_source
         self._artifacts: tuple[ArtifactHandle, ...] = ()
         self._phase_states: tuple[tuple[str, str], ...] = ()
         self._phase_diagnostics: tuple[tuple[str, tuple[str, ...]], ...] = ()
@@ -105,6 +111,13 @@ class InspectionSession:
             self._bundle,
         )
 
+    def _composition_annotations(
+        self, profile: ParagraphAnnotationProfile
+    ) -> tuple[CompositionAnnotation, ...]:
+        if self._composition_source is None or not profile.events:
+            return ()
+        return self._composition_source(tuple(event.event_id for event in profile.events))
+
     def _publish(
         self,
         meta: _ParagraphMeta,
@@ -134,6 +147,7 @@ class InspectionSession:
                     for s, d in self._phase_diagnostics
                     if s in outputs or dict(self._phase_states).get(s) == "not run"
                 ),
+                composition=self._composition_annotations(profile),
             )
             snapshot = ParagraphSnapshot(
                 ordinal, total, profile, status, context=self._context, gap_reasons=gap_reasons

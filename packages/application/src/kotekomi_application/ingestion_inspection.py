@@ -169,6 +169,17 @@ class ParagraphAnnotationProfile:
     records: tuple[InspectionRecord, ...] = ()
     artifacts: tuple[ArtifactHandle, ...] = ()
     phase_diagnostics: tuple[tuple[str, tuple[str, ...]], ...] = ()
+    composition: tuple[CompositionAnnotation, ...] = ()
+
+
+@dataclass(frozen=True)
+class CompositionAnnotation:
+    """One Event's source-grounded composition outcome for the replay view."""
+
+    event_id: str
+    status: str
+    summary: str
+    span: Span | None = None
 
 
 @dataclass(frozen=True)

@@ -32,6 +32,7 @@ from kotekomi_application.deterministic_residual_composition_completion import (
 )
 from kotekomi_application.event_entity_connections import EventEntityLinguisticToken
 from kotekomi_application.event_entity_reference_provider import EventEntityReferences
+from kotekomi_application.ingestion_inspection import CompositionAnnotation, Span
 from kotekomi_application.parser_constituent_candidate_generation import (
     ConstituentCandidateInventory,
 )
@@ -205,3 +206,40 @@ def write_event_composition_record(path: Path, record: EventCompositionRecord) -
 
 def load_event_composition_record(path: Path) -> EventCompositionRecord:
     return EventCompositionRecord.model_validate_json(path.read_bytes())
+
+
+def load_event_composition_records(root: Path) -> tuple[EventCompositionRecord, ...]:
+    """Load every persisted Event composition record under one directory."""
+    return tuple(load_event_composition_record(path) for path in sorted(Path(root).glob("*.json")))
+
+
+def composition_annotation(record: EventCompositionRecord) -> CompositionAnnotation:
+    """Map one persisted composition record to the replay-view annotation."""
+    if record.status is EventCompositionStatus.COMPOSED:
+        summary = f"composed: {record.relation_label} {record.subject_text} -> {record.object_text}"
+    else:
+        summary = f"held: {record.hold_reason}"
+        if record.unavailable_reference is not None:
+            summary += f" (missing {record.unavailable_reference})"
+    source_span = record.supporting_subject_span
+    span = None
+    if source_span is not None:
+        span = Span(start=source_span.start, end=source_span.end, text=source_span.text)
+    return CompositionAnnotation(
+        event_id=record.event_id,
+        status=record.status.value,
+        summary=summary,
+        span=span,
+    )
+
+
+def composition_annotations_for(
+    root: Path, event_ids: tuple[str, ...]
+) -> tuple[CompositionAnnotation, ...]:
+    """Load the replay annotations for the Events a paragraph actually shows."""
+    if not Path(root).is_dir():
+        return ()
+    records = {record.event_id: record for record in load_event_composition_records(root)}
+    return tuple(
+        composition_annotation(records[event_id]) for event_id in event_ids if event_id in records
+    )

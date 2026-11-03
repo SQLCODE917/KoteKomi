@@ -333,6 +333,10 @@ def render_annotated_paragraph(
                     item.details,
                 )
             )
+    if profile.composition:
+        lines.extend(("", "composition"))
+        for item in profile.composition:
+            lines.append(f"{item.event_id} · {item.status} · {item.summary}")
     return "\n".join(lines)
 
 
