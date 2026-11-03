@@ -266,6 +266,13 @@ def _segment_by_id(text: str, representation_id: str, node_id: str) -> dict[str,
     }
 
 
+def paragraph_segments(
+    text: str, representation_id: str, node_id: str
+) -> tuple[SourceSegment, ...]:
+    """Return one paragraph's authoritative SourceSegments in source order."""
+    return _source_segments(text)
+
+
 def normalize_segment_span(*, segment: SourceSegment, start: int, end: int) -> Span:
     """Map a segment-local start/end pair to a paragraph-global ``Span``."""
     if start < 0 or end <= start or end > len(segment.exact_text):

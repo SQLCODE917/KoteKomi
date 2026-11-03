@@ -86,6 +86,82 @@ class GroundingCandidate(BaseModel):
     identity_name: str | None = None
 
 
+class IngestedGroundingCandidate(BaseModel):
+    """One review-selectable candidate with its exact paragraph occurrence."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    start: int
+    end: int
+    exact_text: str
+    candidate: GroundingCandidate
+
+
+def ingested_grounding_candidates(
+    *,
+    text: str,
+    representation_id: str,
+    paragraph_node_id: str,
+    stage_outputs: Mapping[str, object],
+) -> tuple[IngestedGroundingCandidate, ...]:
+    """Derive review-selectable candidates from persisted HP-3 output.
+
+    Only candidates HP-3 marked eligible are returned, each bound to its exact
+    paragraph occurrence. A candidate is never accepted here; review decides.
+    """
+    from kotekomi_application.hybrid_entity_grounding import (
+        EntityGroundingEligibilityStatus,
+        EntityLinkCandidateKind,
+        HybridEntityGroundingPreview,
+    )
+    from kotekomi_application.hybrid_mention_interpretation import hybrid_source_segment_id
+    from kotekomi_application.ingestion_inspection import paragraph_segments
+
+    preview = stage_outputs.get("hp3_grounding")
+    if preview is None:
+        return ()
+    if not isinstance(preview, HybridEntityGroundingPreview):
+        raise ValueError("Persisted HP-3 output has an unexpected record type.")
+    eligible = {
+        item.candidate_id
+        for item in preview.eligibility
+        if item.status is EntityGroundingEligibilityStatus.ELIGIBLE
+    }
+    segments = {
+        hybrid_source_segment_id(representation_id, paragraph_node_id, segment): segment
+        for segment in paragraph_segments(text, representation_id, paragraph_node_id)
+    }
+    candidates: list[IngestedGroundingCandidate] = []
+    for link in preview.link_evidence:
+        if link.candidate_id not in eligible:
+            continue
+        segment = segments.get(link.source_segment_id)
+        if segment is None:
+            raise ValueError("HP-3 link evidence names an unknown SourceSegment.")
+        if segment.exact_text[link.start : link.end] != link.text:
+            raise ValueError("HP-3 link evidence is not source-exact.")
+        top = link.candidates[0] if link.candidates else None
+        kind = (
+            "knowledge_base_entity"
+            if top is not None and top.kind is EntityLinkCandidateKind.KNOWLEDGE_BASE_ENTITY
+            else "nil"
+        )
+        candidates.append(
+            IngestedGroundingCandidate(
+                start=segment.start_char + link.start,
+                end=segment.start_char + link.end,
+                exact_text=link.text,
+                candidate=GroundingCandidate(
+                    candidate_kind=kind,
+                    eligible=True,
+                    ambiguous=False,
+                    identity_name=top.label if top is not None else None,
+                ),
+            )
+        )
+    return tuple(candidates)
+
+
 @dataclass(frozen=True)
 class IdentityOccurrenceProposalInput:
     """The reviewed decision that names the identity and its exact occurrence."""

@@ -1200,7 +1200,9 @@ from kotekomi_application.identity_occurrence_acceptance import (
     IdentityOccurrenceHold,
     IdentityOccurrenceHoldReason,
     IdentityOccurrenceProposalInput,
+    IngestedGroundingCandidate,
     accept_identity_occurrence,
+    ingested_grounding_candidates,
     propose_identity_occurrence,
 )
 from kotekomi_application.ingestion_change_sets import (
@@ -2902,6 +2904,7 @@ __all__ = [
     "EventEntityReferenceProvider",
     "EventEntityReferences",
     "GroundingCandidate",
+    "IngestedGroundingCandidate",
     "EventCompositionRecord",
     "EventCompositionStatus",
     "ReferenceDiagnostic",
@@ -2919,6 +2922,7 @@ __all__ = [
     "IdentityOccurrenceHoldReason",
     "IdentityOccurrenceProposalInput",
     "accept_identity_occurrence",
+    "ingested_grounding_candidates",
     "propose_identity_occurrence",
     "EventEntitySourceSpan",
     "build_entity_involvement_judgment",

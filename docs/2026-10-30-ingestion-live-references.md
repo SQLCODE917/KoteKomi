@@ -200,11 +200,21 @@ shows in the Textual replay view rather than only in the persisted read model.
    `test_normal_worker_persists_the_hold_then_recomposition_composes` drives the
    real worker entry point: ingestion discovers the paragraph and its Event, the
    worker alone writes the token artifact and the Event-specific hold
-   (`assertion_inputs_unavailable`), then approval of the identity occurrence plus
-   the reviewed Assertion inputs and explicit `run_recomposition` produce a
-   composed Assertion that `composition_annotations_for` reloads with its
-   supporting span. The test contains no separate composition call and no seeded
+   (`assertion_inputs_unavailable`), then the review step consumes the candidate
+   ingestion itself persisted — `ingested_grounding_candidates` derives
+   review-selectable candidates from HP-3 eligibility and link evidence, and the
+   test approves one of those rather than constructing a candidate — and the
+   explicit `run_recomposition` produces a composed Assertion that
+   `composition_annotations_for` reloads with its supporting span. The test
+   contains no separate composition call, no constructed candidate, and no seeded
    outcome.
+
+   The pass is bound to the worker's assigned IngestionRun, so a concurrent
+   ingestion cannot make it compose another run's source. A recoverable analyzer
+   failure keeps an explicit `inventory_unavailable` hold; an invalid deterministic
+   token-artifact binding raises instead of degrading to a hold; and a persistence
+   failure writes `artifact_persistence_failed` holds before it reaches the error
+   stream.
    It is tested. The token source is now specified as a derived artifact:
    `IngestionTokenArtifact` binds ordered dependency tokens to the
    representation, TextView, paragraph node and range, source-text digest, and

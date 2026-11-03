@@ -23,13 +23,13 @@ from typing import Any, cast
 from kotekomi_adapters import sqlite_ledger_transaction
 from kotekomi_application import (
     EventCompositionStatus,
-    GroundingCandidate,
     IdentityOccurrenceProposalInput,
     LinguisticAnalysis,
     LinguisticAnalysisInput,
     LinguisticToken,
     UniversalPartOfSpeech,
     accept_identity_occurrence,
+    ingested_grounding_candidates,
     propose_identity_occurrence,
     write_event_composition_record,
 )
@@ -143,6 +143,68 @@ class _ChosenAnalyzer:
         )
 
 
+class _ChosenEntityLinker:
+    """Deterministic entity linker: one knowledge-base candidate for the subject."""
+
+    def __init__(self) -> None:
+        from kotekomi_application import EntityLinkerIdentity
+
+        self.identity = EntityLinkerIdentity(
+            producer_id="r20-chosen-linker",
+            model_id="r20-chosen-linker-model",
+            model_revision="1",
+            entity_set="r20-fixture-entities",
+            package_revision="1",
+            resource_manifest_sha256="d" * 64,
+            runtime_identity="fixture",
+            timeout_seconds=1.0,
+        )
+
+    def link(self, request):
+        from kotekomi_application import (
+            EntityLinkCandidate,
+            EntityLinkCandidateKind,
+            EntityLinkerEvidence,
+            EntityLinkingBatch,
+            EntityLinkingExecution,
+            LinkedEntityClassEvidence,
+        )
+
+        evidences = []
+        for mention in request.mentions:
+            if mention.text != SUBJECT:
+                continue
+            evidences.append(
+                EntityLinkerEvidence(
+                    candidate_id=mention.candidate_id,
+                    returned_text=mention.text,
+                    start=mention.start,
+                    end=mention.end,
+                    coarse_mention_type="ORGANIZATION",
+                    candidates=(
+                        EntityLinkCandidate(
+                            rank=1,
+                            kind=EntityLinkCandidateKind.KNOWLEDGE_BASE_ENTITY,
+                            wikidata_id="Q1000001",
+                            wikipedia_title=SUBJECT,
+                            label=SUBJECT,
+                            score=0.93,
+                        ),
+                    ),
+                    linked_entity_classes=LinkedEntityClassEvidence(
+                        wikidata_id="Q1000001", classes=()
+                    ),
+                )
+            )
+        batch = EntityLinkingBatch(
+            identity=self.identity,
+            load_elapsed_ms=0,
+            inference_elapsed_ms=0,
+            evidences=tuple(evidences),
+        )
+        return EntityLinkingExecution(batch=batch, raw_output=batch.model_dump_json().encode())
+
+
 def _install_fixtures(monkeypatch) -> None:
     from kotekomi_application import ModelTaskResponse
     from kotekomi_pipelines.hybrid_document_ingestion import _RuntimeResources
@@ -150,6 +212,7 @@ def _install_fixtures(monkeypatch) -> None:
 
     analyzer = _ChosenAnalyzer()
     monkeypatch.setattr(_RuntimeResources, "linguistic_analyzer", property(lambda self: analyzer))
+    monkeypatch.setattr(_RuntimeResources, "linker", property(lambda self: _ChosenEntityLinker()))
     original = FixtureModelTaskRuntime.run_model_task
 
     def patched(self, task):
@@ -165,6 +228,18 @@ def _install_fixtures(monkeypatch) -> None:
         elif schema == "event_binary_semantic_text_v1":
             # HP6 event semantics: the chosen verb is the only realized Event.
             chosen = b"Y"
+        elif (
+            schema == "hybrid_mention_interpretation_text_v2"
+            and b"candidate_text: " + SUBJECT.encode() in rendered
+        ):
+            # Only the chosen mention is a specific entity; the rest stay anaphoric.
+            chosen = (
+                b"candidate: c1\n"
+                b"referentiality: specific_entity\n"
+                b"contextual_kind: organization\n"
+                b"discourse_role: actor\n"
+                b"support: s1\n"
+            )
         if chosen is not None:
             return ModelTaskResponse(
                 raw_output=chosen, execution_receipt=response.execution_receipt
@@ -244,8 +319,25 @@ def test_normal_worker_persists_the_hold_then_recomposition_composes(
     assert replay_before[0].status == "held"
     assert "assertion_inputs_unavailable" in replay_before[0].summary
 
-    # Approve one identity occurrence for the subject, then recompose explicitly.
-    local = target.text.index(SUBJECT)
+    # Approve the candidate ingestion persisted, then recompose explicitly.
+    ingested_candidates = ingested_grounding_candidates(
+        text=target.text,
+        representation_id=target.representation_id,
+        paragraph_node_id=target.paragraph_node_id,
+        stage_outputs=target.stage_outputs,
+    )
+    assert ingested_candidates, "ingestion must persist a review-selectable candidate"
+    assert all(
+        item.candidate.candidate_kind == "knowledge_base_entity" for item in ingested_candidates
+    )
+    subject_token = next(token for token in artifact.tokens if token.dependency_relation == "nsubj")
+    chosen = next(
+        item
+        for item in ingested_candidates
+        if item.start == subject_token.start and item.exact_text == SUBJECT
+    )
+    assert chosen.candidate.identity_name == SUBJECT
+    local = chosen.start
     assert target.bundle is not None
     text_view = next(view for view in target.bundle.text_views if view.id == artifact.text_view_id)
     bundle_document_id = target.bundle.representation.document_id
@@ -254,25 +346,20 @@ def test_normal_worker_persists_the_hold_then_recomposition_composes(
         assert source_document is not None
         source_id = source_document.source_id
     proposal = propose_identity_occurrence(
-        GroundingCandidate(
-            candidate_kind="knowledge_base_entity",
-            eligible=True,
-            ambiguous=False,
-            identity_name=SUBJECT,
-        ),
+        chosen.candidate,
         IdentityOccurrenceProposalInput(
             identity_kind=IdentityOccurrenceKind.ACTOR,
             decision="new_identity",
             existing_identity_id=None,
-            identity_name=SUBJECT,
+            identity_name=chosen.candidate.identity_name,
             source_id=source_id,
             document_id=bundle_document_id,
             representation_id=target.representation_id,
             text_view_id=text_view.id,
             text_view_digest=text_view.content_digest,
             start_char=target.node_start_char + local,
-            end_char=target.node_start_char + local + len(SUBJECT),
-            exact_text=SUBJECT,
+            end_char=target.node_start_char + chosen.end,
+            exact_text=chosen.exact_text,
             node_id=target.paragraph_node_id,
         ),
         proposal_id="pcg_r20_worker",
