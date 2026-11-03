@@ -65,48 +65,6 @@ def _normalized(value: str) -> str:
     return "".join(char for char in value if not char.isspace())
 
 
-def _locate_text(
-    source_text: str,
-    exact_text: str,
-) -> tuple[AttachmentSourceRange | None, LiveReferenceDiagnosticReason | None]:
-    """Locate one mention uniquely, or report why it stays unresolved."""
-    exact_hits = [
-        index for index in range(len(source_text)) if source_text.startswith(exact_text, index)
-    ]
-    if len(exact_hits) == 1:
-        index = exact_hits[0]
-        return (
-            AttachmentSourceRange(start=index, end=index + len(exact_text), text=exact_text),
-            None,
-        )
-    if len(exact_hits) > 1:
-        return (None, LiveReferenceDiagnosticReason.AMBIGUOUS_MENTION)
-
-    positions = [index for index, char in enumerate(source_text) if not char.isspace()]
-    normalized_source = "".join(source_text[index] for index in positions)
-    target = _normalized(exact_text)
-    if not target:
-        return (None, LiveReferenceDiagnosticReason.MENTION_NOT_FOUND)
-    starts: list[int] = []
-    cursor = 0
-    while True:
-        found = normalized_source.find(target, cursor)
-        if found < 0:
-            break
-        starts.append(found)
-        cursor = found + 1
-    if not starts:
-        return (None, LiveReferenceDiagnosticReason.MENTION_NOT_FOUND)
-    if len(starts) > 1:
-        return (None, LiveReferenceDiagnosticReason.AMBIGUOUS_MENTION)
-    start = positions[starts[0]]
-    end = positions[starts[0] + len(target) - 1] + 1
-    return (
-        AttachmentSourceRange(start=start, end=end, text=source_text[start:end]),
-        None,
-    )
-
-
 class LiveIdentityReferenceProvider:
     """Adapter that translates accepted IdentityOccurrences into references."""
 
@@ -202,18 +160,18 @@ class LiveIdentityReferenceProvider:
             return AttachmentSourceRange(
                 start=target.start_char, end=target.end_char, text=slice_text
             )
-        located, reason = _locate_text(source_text, target.exact_text)
-        if located is None:
-            assert reason is not None
-            diagnostics.append(
-                LiveReferenceDiagnostic(
-                    occurrence_id=occurrence_id,
-                    identity_id=target.id,
-                    reason=reason,
-                    detail=f"Mention for EvidenceTarget {target.id} is not resolvable here.",
-                )
+        diagnostics.append(
+            LiveReferenceDiagnostic(
+                occurrence_id=occurrence_id,
+                identity_id=target.id,
+                reason=ReferenceDiagnosticReason.CROSS_VIEW_UNSUPPORTED,
+                detail=(
+                    "Cross-view mention resolution requires verified Document and "
+                    "paragraph lineage."
+                ),
             )
-        return located
+        )
+        return None
 
     def _identity_name(self, identity_id: str, kind: IdentityOccurrenceKind) -> str | None:
         if kind is IdentityOccurrenceKind.ACTOR:

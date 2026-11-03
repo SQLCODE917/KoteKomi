@@ -176,3 +176,20 @@ normal ingestion, with no Connection Gold dependency.
 The remaining presentation step is wiring `load_event_composition_record` into
 the interactive replay reader (`ParagraphSnapshot`), so the changed outcome
 shows in the Textual replay view rather than only in the persisted read model.
+
+## 9. Remaining Acceptance Checks
+
+1. Cross-view lineage: the Adapter currently resolves a mention only when the
+   Event source view matches the accepted `EvidenceTarget` view. A different view
+   returns a `cross_view_unsupported` diagnostic and no reference; it never
+   guesses by unique text. Verified Document and paragraph lineage for a
+   cross-view match remains open.
+2. Interactive replay: `load_event_composition_record` is the persisted read
+   model. Wiring it into `ParagraphSnapshot` and the Textual view so the hold and
+   the recomposed Assertion both display is open.
+3. Normal ingestion entry point: the composition stage is invoked by the test
+   and by an explicit recomposition call. Confirming the normal ingestion entry
+   point invokes it and produces the records replay consumes is open.
+
+Explicit recomposition stays the chosen behavior. Automatic recomposition after
+approval is out of scope for this increment.

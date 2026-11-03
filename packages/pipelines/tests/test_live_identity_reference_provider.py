@@ -75,6 +75,14 @@ def _provider(ledger: _Ledger) -> LiveIdentityReferenceProvider:
     return LiveIdentityReferenceProvider(cast(LiveIdentityReferenceLedger, ledger))
 
 
+def _same_view_provider(ledger: _Ledger) -> LiveIdentityReferenceProvider:
+    return LiveIdentityReferenceProvider(
+        cast(LiveIdentityReferenceLedger, ledger),
+        representation_id="rep_r20",
+        text_view_id="tvw_r20",
+    )
+
+
 def test_translates_accepted_occurrence_into_a_reference() -> None:
     ledger = _Ledger()
     ledger.actors["act_alpha"] = Actor(id="act_alpha", name="Alpha")
@@ -83,7 +91,9 @@ def test_translates_accepted_occurrence_into_a_reference() -> None:
         _occurrence("ioc_alpha", "act_alpha", IdentityOccurrenceKind.ACTOR, "etg_alpha"),
     )
 
-    references = _provider(ledger).resolve_references("AHE-001", "Alpha met Beta.", "b" * 64)
+    references = _same_view_provider(ledger).resolve_references(
+        "AHE-001", "Alpha met Beta.", "b" * 64
+    )
 
     assert len(references.entities) == 1
     entity = references.entities[0]
@@ -93,22 +103,7 @@ def test_translates_accepted_occurrence_into_a_reference() -> None:
     assert [(span.start, span.end) for span in entity.accepted_source_occurrences] == [(0, 5)]
 
 
-def test_locates_a_whitespace_variant_mention() -> None:
-    ledger = _Ledger()
-    ledger.actors["act_alpha"] = Actor(id="act_alpha", name="Alpha")
-    ledger.targets["etg_alpha"] = _target("etg_alpha", "Alpha  Beta")
-    ledger.occurrences = (
-        _occurrence("ioc_alpha", "act_alpha", IdentityOccurrenceKind.ACTOR, "etg_alpha"),
-    )
-
-    references = _provider(ledger).resolve_references("AHE-001", "Alpha Beta met.", "b" * 64)
-
-    assert len(references.entities) == 1
-    span = references.entities[0].accepted_source_occurrences[0]
-    assert span.text == "Alpha Beta"
-
-
-def test_ambiguous_mention_leaves_a_diagnostic_and_no_reference() -> None:
+def test_cross_view_resolution_holds_without_lineage() -> None:
     ledger = _Ledger()
     ledger.actors["act_alpha"] = Actor(id="act_alpha", name="Alpha")
     ledger.targets["etg_alpha"] = _target("etg_alpha", "Alpha")
@@ -117,12 +112,12 @@ def test_ambiguous_mention_leaves_a_diagnostic_and_no_reference() -> None:
     )
 
     resolution = _provider(ledger).resolve_references_with_diagnostics(
-        "AHE-001", "Alpha met Alpha.", "b" * 64
+        "AHE-001", "Alpha met Beta.", "b" * 64
     )
 
     assert resolution.references.entities == ()
     assert len(resolution.diagnostics) == 1
-    assert resolution.diagnostics[0].reason is LiveReferenceDiagnosticReason.AMBIGUOUS_MENTION
+    assert resolution.diagnostics[0].reason is LiveReferenceDiagnosticReason.CROSS_VIEW_UNSUPPORTED
     assert resolution.diagnostics[0].occurrence_id == "ioc_alpha"
 
 
@@ -208,7 +203,9 @@ def test_translates_an_organization_occurrence() -> None:
         ),
     )
 
-    references = _provider(ledger).resolve_references("AHE-001", "Anthropic replied.", "b" * 64)
+    references = _same_view_provider(ledger).resolve_references(
+        "AHE-001", "Anthropic replied.", "b" * 64
+    )
 
     assert references.entities[0].entity_id == "org_anthropic"
     assert references.entities[0].entity_kind == "organization"

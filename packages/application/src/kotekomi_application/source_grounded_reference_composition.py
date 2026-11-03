@@ -50,6 +50,7 @@ class ReferenceDiagnosticReason(StrEnum):
     AMBIGUOUS_MENTION = "ambiguous_mention"
     MENTION_NOT_FOUND = "mention_not_found"
     AWAITING_ACCEPTANCE = "awaiting_acceptance"
+    CROSS_VIEW_UNSUPPORTED = "cross_view_unsupported"
 
 
 class ReferenceDiagnostic(BaseModel):
