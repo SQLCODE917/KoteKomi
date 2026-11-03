@@ -36,6 +36,7 @@ ProcessingAttemptOutcomeId = Annotated[str, Field(pattern=r"^pao_[A-Za-z0-9][A-Z
 AssertionEvidenceLinkId = Annotated[str, Field(pattern=r"^ael_[A-Za-z0-9][A-Za-z0-9_-]*$")]
 EvidenceReanchoringRelationId = Annotated[str, Field(pattern=r"^erl_[A-Za-z0-9][A-Za-z0-9_-]*$")]
 AssertionId = Annotated[str, Field(pattern=r"^ast_[A-Za-z0-9][A-Za-z0-9_-]*$")]
+IdentityOccurrenceId = Annotated[str, Field(pattern=r"^ioc_[A-Za-z0-9][A-Za-z0-9_-]*$")]
 RelationshipId = Annotated[str, Field(pattern=r"^rel_[A-Za-z0-9][A-Za-z0-9_-]*$")]
 OutcomeId = Annotated[str, Field(pattern=r"^out_[A-Za-z0-9][A-Za-z0-9_-]*$")]
 ArgumentEdgeId = Annotated[str, Field(pattern=r"^arg_[A-Za-z0-9][A-Za-z0-9_-]*$")]
@@ -1825,6 +1826,38 @@ class EvidenceTarget(DomainModel):
             or self.table_selector is not None
         ):
             raise ValueError("EvidenceTarget requires a structural or occurrence selector.")
+        return self
+
+
+class IdentityOccurrenceKind(StrEnum):
+    """The identity kind one accepted occurrence attributes."""
+
+    ACTOR = "actor"
+    ORGANIZATION = "organization"
+
+
+class IdentityOccurrence(DomainModel):
+    """One accepted source occurrence bound to one accepted Actor or Organization."""
+
+    id: IdentityOccurrenceId
+    identity_id: ActorId | OrganizationId
+    identity_kind: IdentityOccurrenceKind
+    evidence_target_id: EvidenceTargetId
+    provenance_activity_id: ProvenanceActivityId
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
+
+    @model_validator(mode="after")
+    def validate_occurrence(self) -> Self:
+        if self.identity_kind is IdentityOccurrenceKind.ACTOR and not self.identity_id.startswith(
+            "act_"
+        ):
+            raise ValueError("An actor identity occurrence requires an Actor ID.")
+        if (
+            self.identity_kind is IdentityOccurrenceKind.ORGANIZATION
+            and not self.identity_id.startswith("org_")
+        ):
+            raise ValueError("An organization identity occurrence requires an Organization ID.")
         return self
 
 

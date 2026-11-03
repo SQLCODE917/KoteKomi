@@ -1194,6 +1194,15 @@ from kotekomi_application.hybrid_standing_facts import (
     standing_fact_plan_from_bytes,
     standing_fact_source_hold_reasons,
 )
+from kotekomi_application.identity_occurrence_acceptance import (
+    GroundingCandidate,
+    IdentityOccurrenceAcceptanceLedger,
+    IdentityOccurrenceHold,
+    IdentityOccurrenceHoldReason,
+    IdentityOccurrenceProposalInput,
+    accept_identity_occurrence,
+    propose_identity_occurrence,
+)
 from kotekomi_application.ingestion_change_sets import (
     CloseIngestionChangeSetInput,
     CloseIngestionChangeSetResult,
@@ -2876,6 +2885,13 @@ __all__ = [
     "EventEntityMentionInput",
     "EventEntityReferenceProvider",
     "EventEntityReferences",
+    "GroundingCandidate",
+    "IdentityOccurrenceAcceptanceLedger",
+    "IdentityOccurrenceHold",
+    "IdentityOccurrenceHoldReason",
+    "IdentityOccurrenceProposalInput",
+    "accept_identity_occurrence",
+    "propose_identity_occurrence",
     "EventEntitySourceSpan",
     "build_entity_involvement_judgment",
     "build_event_entity_candidate_routes",

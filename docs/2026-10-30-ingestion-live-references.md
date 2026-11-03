@@ -106,3 +106,21 @@ accepted association with no replay transition does not meet the bar.
 - The Application Layer owns the proposal decision, the acceptance validation,
   and the hold reasons.
 - Acceptance is atomic and source-exact.
+
+## 8. Implementation status
+
+Increment 1 is implemented and tested.
+
+- Domain Core: `IdentityOccurrence` and `IdentityOccurrenceKind`, with the
+  `identity_occurrences` Ledger table and schema.
+- Application Layer: `propose_identity_occurrence` emits a pending
+  `ProposedChange`; `accept_identity_occurrence` validates the replayable
+  `EvidenceTarget`, resolves a new or existing identity, and commits the
+  occurrence, identity, evidence, and `ProvenanceActivity` atomically.
+- Holds: a `nil`, ineligible, or ambiguous candidate raises a typed
+  `IdentityOccurrenceHold`; an unreplayable span raises the evidence hold before
+  any write.
+
+Increments 2 through 4 remain open: the live Adapter, the ingestion composition
+stage, and the persisted replay exposure. R20 is not complete until the
+pre-review hold and the post-approval recomposition both appear in replay.

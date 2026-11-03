@@ -1,0 +1,68 @@
+{
+  "$defs": {
+    "IdentityOccurrenceKind": {
+      "description": "The identity kind one accepted occurrence attributes.",
+      "enum": [
+        "actor",
+        "organization"
+      ],
+      "title": "IdentityOccurrenceKind",
+      "type": "string"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "One accepted source occurrence bound to one accepted Actor or Organization.",
+  "properties": {
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    },
+    "evidence_target_id": {
+      "pattern": "^etg_[A-Za-z0-9][A-Za-z0-9_-]*$",
+      "title": "Evidence Target Id",
+      "type": "string"
+    },
+    "id": {
+      "pattern": "^ioc_[A-Za-z0-9][A-Za-z0-9_-]*$",
+      "title": "Id",
+      "type": "string"
+    },
+    "identity_id": {
+      "anyOf": [
+        {
+          "pattern": "^act_[A-Za-z0-9][A-Za-z0-9_-]*$",
+          "type": "string"
+        },
+        {
+          "pattern": "^org_[A-Za-z0-9][A-Za-z0-9_-]*$",
+          "type": "string"
+        }
+      ],
+      "title": "Identity Id"
+    },
+    "identity_kind": {
+      "$ref": "#/$defs/IdentityOccurrenceKind"
+    },
+    "provenance_activity_id": {
+      "pattern": "^prv_[A-Za-z0-9][A-Za-z0-9_-]*$",
+      "title": "Provenance Activity Id",
+      "type": "string"
+    },
+    "updated_at": {
+      "format": "date-time",
+      "title": "Updated At",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "identity_id",
+    "identity_kind",
+    "evidence_target_id",
+    "provenance_activity_id"
+  ],
+  "title": "IdentityOccurrence",
+  "type": "object"
+}

@@ -53,6 +53,7 @@ from kotekomi_domain import (
     EvidenceTarget,
     EvidenceValidationAttempt,
     ExtractionTask,
+    IdentityOccurrence,
     IngestionChangeSet,
     IngestionRun,
     ModelRun,
@@ -348,6 +349,7 @@ CAPTURE_DOCUMENT_RESOLUTION_SPEC = RecordSpec(
     "capture_document_resolutions", CaptureDocumentResolution
 )
 EVIDENCE_TARGET_SPEC = RecordSpec("evidence_targets", EvidenceTarget)
+IDENTITY_OCCURRENCE_SPEC = RecordSpec("identity_occurrences", IdentityOccurrence)
 EVIDENCE_VALIDATION_ATTEMPT_SPEC = RecordSpec(
     "evidence_validation_attempts", EvidenceValidationAttempt
 )
@@ -434,6 +436,7 @@ REQUIRED_LEDGER_TABLES = (
     "document_revision_relations",
     "source_lineage_relations",
     "evidence_targets",
+    "identity_occurrences",
     "evidence_validation_attempts",
     "processing_task_fingerprints",
     "processing_attempts",
@@ -1677,6 +1680,24 @@ class SQLiteLedgerRepository:
 
     def list_evidence_targets(self) -> tuple[EvidenceTarget, ...]:
         return self._list(EVIDENCE_TARGET_SPEC)
+
+    def save_identity_occurrence(self, record: IdentityOccurrence) -> None:
+        self._save(IDENTITY_OCCURRENCE_SPEC, record)
+
+    def get_identity_occurrence(self, record_id: str) -> IdentityOccurrence | None:
+        return self._get(IDENTITY_OCCURRENCE_SPEC, record_id)
+
+    def list_identity_occurrences(self) -> tuple[IdentityOccurrence, ...]:
+        return self._list(IDENTITY_OCCURRENCE_SPEC)
+
+    def list_identity_occurrences_for_identity(
+        self, identity_id: str
+    ) -> tuple[IdentityOccurrence, ...]:
+        return tuple(
+            record
+            for record in self._list(IDENTITY_OCCURRENCE_SPEC)
+            if record.identity_id == identity_id
+        )
 
     def save_evidence_validation_attempt(self, record: EvidenceValidationAttempt) -> None:
         self._save(EVIDENCE_VALIDATION_ATTEMPT_SPEC, record)
