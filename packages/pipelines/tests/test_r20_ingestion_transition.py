@@ -120,17 +120,20 @@ def _install_fixtures(monkeypatch) -> None:
     monkeypatch.setattr(_RuntimeResources, "linguistic_analyzer", property(lambda self: analyzer))
     original = FixtureModelTaskRuntime.run_model_task
 
+    chosen_outputs = {
+        "event_verb_role_text_v1": b"E",
+        "event_verb_similarity_text_v1": b"N",
+        "event_head_judgment_text_v2": b"Y",
+        "event_binary_semantic_text_v1": b"Y",
+    }
+
     def patched(self, task):
         response = original(self, task)
-        if (
-            task.execution_spec.schema_id
-            in {
-                "event_head_judgment_text_v2",
-                "event_binary_semantic_text_v1",
-            }
-            and VERB.encode() in task.rendered_input
-        ):
-            return ModelTaskResponse(raw_output=b"Y", execution_receipt=response.execution_receipt)
+        chosen = chosen_outputs.get(task.execution_spec.schema_id)
+        if chosen is not None and VERB.encode() in task.rendered_input:
+            return ModelTaskResponse(
+                raw_output=chosen, execution_receipt=response.execution_receipt
+            )
         return response
 
     monkeypatch.setattr(FixtureModelTaskRuntime, "run_model_task", patched)
