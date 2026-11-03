@@ -80,23 +80,39 @@ def compose_ingested_run(
             )
             if not profile.events:
                 continue
-            analysis = analyzer.analyze(LinguisticAnalysisInput(paragraph.text))
-            tokens = event_entity_tokens(analysis)
-            artifact = IngestionTokenArtifact(
-                representation_id=paragraph.representation_id,
-                text_view_id=profile.text_view_id or "",
-                paragraph_node_id=paragraph.paragraph_node_id,
-                node_start_char=paragraph.node_start_char,
-                node_end_char=paragraph.node_start_char + len(paragraph.text),
-                source_text_sha256=hashlib.sha256(paragraph.text.encode()).hexdigest(),
-                analyzer_identity=analyzer_identity(analysis),
-                tokens=tokens,
-            )
-            LocalTokenArtifactWriter(token_root).write(artifact)
             events = tuple(
                 (event.event_id, event.trigger_span.start, event.trigger_span.end)
                 for event in profile.events
             )
+            try:
+                analysis = analyzer.analyze(LinguisticAnalysisInput(paragraph.text))
+                artifact = IngestionTokenArtifact(
+                    representation_id=paragraph.representation_id,
+                    text_view_id=profile.text_view_id or "",
+                    paragraph_node_id=paragraph.paragraph_node_id,
+                    node_start_char=paragraph.node_start_char,
+                    node_end_char=paragraph.node_start_char + len(paragraph.text),
+                    source_text_sha256=hashlib.sha256(paragraph.text.encode()).hexdigest(),
+                    analyzer_identity=analyzer_identity(analysis),
+                    tokens=event_entity_tokens(analysis),
+                )
+            except (ValueError, RuntimeError):
+                # Analyzer or artifact failure stays visible as a typed hold.
+                records.extend(
+                    compose_paragraph_events(
+                        repository=repository,
+                        source_text=paragraph.text,
+                        tokens=(),
+                        events=events,
+                        assertion_inputs_by_event={},
+                        representation_id=paragraph.representation_id,
+                        text_view_id=profile.text_view_id or "",
+                        composition_root=composition_root,
+                        node_start_char=paragraph.node_start_char,
+                    )
+                )
+                continue
+            LocalTokenArtifactWriter(token_root).write(artifact)
             records.extend(
                 compose_paragraph_events(
                     repository=repository,
