@@ -338,9 +338,15 @@ The run summary is committed alongside it at
 - The R17 frozen files and checksums remain unmodified.
 - The deterministic selector reproduces the §5 expected selected sets for the
   AHE-901 through AHE-909 regression cases in its focused tests.
-- The full production composition outcomes for those regression cases are not
-  re-run through this Pipeline; they remain covered by the focused selector and
-  composer tests, not by a separate end-to-end regression run.
+- The per-Event composition regressions for AHE-901 through AHE-909 now run
+  against the §5 table in `test_r19_regression_composition.py`, and every case
+  matches its specified selected set and composition outcome, including the
+  `unsupported_time_place`, `unsupported_coordination`, `selection_empty`, and
+  `subject_unavailable` holds and the targeted attribution.
+- The AHE-903 intentional divergence stays recorded: the frozen R17 evaluator
+  scores its `{C1, C4}` selected set `semantic_selection = unmet`, while the
+  composed proposition still matches the §5 content. R19 does not re-run the
+  frozen evaluator against the changed composer.
 - R19 consumed no held-out partition. Independent held-out validation with zero
   boundary gaps and zero fabricated roles remains a separate package
   requirement.
