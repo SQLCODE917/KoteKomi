@@ -189,11 +189,16 @@ shows in the Textual replay view rather than only in the persisted read model.
    `<ledger parent>/composition-outcomes` through `composition_annotations_for`,
    and `render_annotated_paragraph` (used by `render_live_block` and the Textual
    view) renders a `composition` section with the hold or Assertion summary.
-3. Normal ingestion entry point: partially open. The composition pass
-   `compose_paragraph_events` derives each Event's inventory from live
-   dependency tokens, runs the shared use case with the live Adapter, and
-   persists a composed or explicit held record for every Event
-   (`inventory_unavailable`, `assertion_inputs_unavailable`, or a broader hold).
+3. Normal ingestion entry point: the production transition is proven in
+   `test_r20_ingestion_transition.py`. A real PDF ingestion with deterministic
+   analyzer/model fixtures discovers the paragraph and its Event; the composition
+   pass `compose_paragraph_events` persists an Event-specific hold
+   (`assertion_inputs_unavailable`); approval of the identity occurrence plus the
+   reviewed Assertion inputs and explicit `run_recomposition` produce a composed
+   Assertion; `composition_annotations_for` reloads the composed outcome with its
+   supporting span. The remaining wiring is calling the pass automatically from
+   `run_ingestion_worker`; the test currently invokes the same pass after
+   ingestion.
    It is tested. The token source is now specified as a derived artifact:
    `IngestionTokenArtifact` binds ordered dependency tokens to the
    representation, TextView, paragraph node and range, source-text digest, and
