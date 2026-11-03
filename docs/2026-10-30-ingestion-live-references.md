@@ -135,9 +135,14 @@ Increment 2 is also implemented and tested.
 
 - Pipelines: `LiveIdentityReferenceProvider` translates accepted
   `IdentityOccurrence` records into `EventEntityReferences`. It reads no
-  grounding candidate, locates each accepted mention source-exactly or by unique
-  whitespace-equivalent match, and excludes an ambiguous mention instead of
-  guessing.
+  grounding candidate. When the Event source view matches the accepted
+  `EvidenceTarget`, it uses the accepted coordinates. Otherwise it locates the
+  mention by a unique exact or whitespace-equivalent match.
+- The Adapter fails fast when an accepted occurrence references a missing
+  identity, a missing `EvidenceTarget`, or coordinates that do not replay its
+  exact text. It never turns those cases into an empty reference set.
+- An ambiguous or unfound mention leaves a typed `LiveReferenceDiagnostic`. The
+  composition stage turns that diagnostic into an Event-specific hold.
 - The composer `DecontextualizationEntityRef` now admits the accepted canonical
   `act_` and `org_` identity IDs alongside the reviewed `EGE` IDs, so the live
   Adapter can carry an accepted identity into composition.

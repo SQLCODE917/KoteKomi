@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import cast
 
+import pytest
 from kotekomi_domain import (
     Actor,
     EvidenceTarget,
@@ -12,8 +13,11 @@ from kotekomi_domain import (
     Organization,
 )
 from kotekomi_pipelines.live_identity_reference_provider import (
+    LiveIdentityReferenceError,
+    LiveIdentityReferenceErrorReason,
     LiveIdentityReferenceLedger,
     LiveIdentityReferenceProvider,
+    LiveReferenceDiagnosticReason,
 )
 
 NOW_TEXT = "src_r20"
@@ -104,7 +108,7 @@ def test_locates_a_whitespace_variant_mention() -> None:
     assert span.text == "Alpha Beta"
 
 
-def test_excludes_a_ambiguous_mention_instead_of_guessing() -> None:
+def test_ambiguous_mention_leaves_a_diagnostic_and_no_reference() -> None:
     ledger = _Ledger()
     ledger.actors["act_alpha"] = Actor(id="act_alpha", name="Alpha")
     ledger.targets["etg_alpha"] = _target("etg_alpha", "Alpha")
@@ -112,9 +116,77 @@ def test_excludes_a_ambiguous_mention_instead_of_guessing() -> None:
         _occurrence("ioc_alpha", "act_alpha", IdentityOccurrenceKind.ACTOR, "etg_alpha"),
     )
 
-    references = _provider(ledger).resolve_references("AHE-001", "Alpha met Alpha.", "b" * 64)
+    resolution = _provider(ledger).resolve_references_with_diagnostics(
+        "AHE-001", "Alpha met Alpha.", "b" * 64
+    )
 
-    assert references.entities == ()
+    assert resolution.references.entities == ()
+    assert len(resolution.diagnostics) == 1
+    assert resolution.diagnostics[0].reason is LiveReferenceDiagnosticReason.AMBIGUOUS_MENTION
+    assert resolution.diagnostics[0].occurrence_id == "ioc_alpha"
+
+
+def test_missing_evidence_fails_fast() -> None:
+    ledger = _Ledger()
+    ledger.actors["act_alpha"] = Actor(id="act_alpha", name="Alpha")
+    ledger.occurrences = (
+        _occurrence("ioc_alpha", "act_alpha", IdentityOccurrenceKind.ACTOR, "etg_absent"),
+    )
+
+    with pytest.raises(LiveIdentityReferenceError) as error:
+        _provider(ledger).resolve_references("AHE-001", "Alpha met Beta.", "b" * 64)
+    assert error.value.reason is LiveIdentityReferenceErrorReason.MISSING_EVIDENCE
+
+
+def test_missing_identity_fails_fast() -> None:
+    ledger = _Ledger()
+    ledger.targets["etg_alpha"] = _target("etg_alpha", "Alpha")
+    ledger.occurrences = (
+        _occurrence("ioc_alpha", "act_absent", IdentityOccurrenceKind.ACTOR, "etg_alpha"),
+    )
+
+    with pytest.raises(LiveIdentityReferenceError) as error:
+        _provider(ledger).resolve_references("AHE-001", "Alpha met Beta.", "b" * 64)
+    assert error.value.reason is LiveIdentityReferenceErrorReason.MISSING_IDENTITY
+
+
+def test_prefers_accepted_coordinates_when_the_view_matches() -> None:
+    ledger = _Ledger()
+    ledger.actors["act_alpha"] = Actor(id="act_alpha", name="Alpha")
+    target = _target("etg_alpha", "Alpha").model_copy(update={"start_char": 10, "end_char": 15})
+    ledger.targets["etg_alpha"] = target
+    ledger.occurrences = (
+        _occurrence("ioc_alpha", "act_alpha", IdentityOccurrenceKind.ACTOR, "etg_alpha"),
+    )
+    provider = LiveIdentityReferenceProvider(
+        cast(LiveIdentityReferenceLedger, ledger),
+        representation_id="rep_r20",
+        text_view_id="tvw_r20",
+    )
+
+    references = provider.resolve_references("AHE-001", "Alpha met Alpha.", "b" * 64)
+
+    span = references.entities[0].accepted_source_occurrences[0]
+    assert (span.start, span.end) == (10, 15)
+
+
+def test_coordinate_mismatch_fails_fast() -> None:
+    ledger = _Ledger()
+    ledger.actors["act_alpha"] = Actor(id="act_alpha", name="Alpha")
+    target = _target("etg_alpha", "Alpha").model_copy(update={"start_char": 10, "end_char": 15})
+    ledger.targets["etg_alpha"] = target
+    ledger.occurrences = (
+        _occurrence("ioc_alpha", "act_alpha", IdentityOccurrenceKind.ACTOR, "etg_alpha"),
+    )
+    provider = LiveIdentityReferenceProvider(
+        cast(LiveIdentityReferenceLedger, ledger),
+        representation_id="rep_r20",
+        text_view_id="tvw_r20",
+    )
+
+    with pytest.raises(LiveIdentityReferenceError) as error:
+        provider.resolve_references("AHE-001", "Alpha met Alphx.", "b" * 64)
+    assert error.value.reason is LiveIdentityReferenceErrorReason.COORDINATE_MISMATCH
 
 
 def test_returns_no_reference_without_an_accepted_occurrence() -> None:
