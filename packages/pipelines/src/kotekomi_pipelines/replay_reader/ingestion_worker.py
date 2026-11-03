@@ -51,6 +51,12 @@ def run_ingestion_worker(request: IngestionProcessRequest, connection: Connectio
                 stderr=err,
                 ingestion_run_id_factory=AssignedIngestionRunIdFactory(request.ingestion_run_id),
             )
+            if code == 0:
+                try:
+                    _compose_ingested_run(request)
+                except Exception as compose_error:
+                    # Derived composition failure never changes ingestion success.
+                    err.write(f"Composition pass failed: {compose_error}\n")
     except Exception as error:
         err.write(f"Ingestion worker failed: {error}\n")
         code = 1
@@ -59,3 +65,23 @@ def run_ingestion_worker(request: IngestionProcessRequest, connection: Connectio
         err.flush()
     send_event(connection, FinishedEvent(code=code))
     connection.close()
+
+
+def _compose_ingested_run(request: IngestionProcessRequest) -> None:
+    """Run the composition pass after normal ingestion finalizes."""
+    from kotekomi_pipelines.config import load_config
+    from kotekomi_pipelines.hybrid_document_ingestion import build_linguistic_analyzer
+    from kotekomi_pipelines.ingestion_composition_pass import compose_ingested_run
+    from kotekomi_pipelines.model_runtime import build_model_task_runtime
+
+    config = load_config(
+        config_path=Path(request.config_path),
+        ledger_path_override=None,
+        archive_path_override=None,
+    )
+    runtime = build_model_task_runtime(config.model_execution)
+    compose_ingested_run(
+        ledger_path=config.ledger_path,
+        archive_path=config.archive_path,
+        analyzer=build_linguistic_analyzer(config, runtime),
+    )

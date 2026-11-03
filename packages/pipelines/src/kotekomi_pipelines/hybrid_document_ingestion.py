@@ -545,6 +545,13 @@ class _RuntimeResources:
         return self._refined
 
 
+def build_linguistic_analyzer(
+    config: PipelineConfig, runtime: ModelTaskRuntime
+) -> LinguisticAnalyzer:
+    """Build the configured linguistic analyzer for a derived composition pass."""
+    return _RuntimeResources(config, runtime).linguistic_analyzer
+
+
 def run_hybrid_document_ingestion(
     *,
     input: HybridDocumentIngestionInput,

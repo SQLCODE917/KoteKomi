@@ -13,16 +13,18 @@ logic run unchanged.
 from __future__ import annotations
 
 import hashlib
+import json
+import os
 from datetime import UTC, datetime
+from multiprocessing.connection import Connection
 from pathlib import Path
+from typing import Any, cast
 
 from kotekomi_adapters import sqlite_ledger_transaction
 from kotekomi_application import (
     EventCompositionStatus,
-    EventEntityLinguisticToken,
     GroundingCandidate,
     IdentityOccurrenceProposalInput,
-    IngestionTokenArtifact,
     LinguisticAnalysis,
     LinguisticAnalysisInput,
     LinguisticToken,
@@ -31,6 +33,7 @@ from kotekomi_application import (
     propose_identity_occurrence,
     write_event_composition_record,
 )
+from kotekomi_application.ingestion_execution import IngestionProcessRequest
 from kotekomi_application.ingestion_inspection import build_profile
 from kotekomi_application.parser_constituent_candidate_generation import (
     build_constituent_candidate_inventory,
@@ -45,14 +48,15 @@ from kotekomi_domain import (
     IdentityOccurrenceKind,
     SourceAuthority,
 )
-from kotekomi_pipelines.cli import ingest_user_file
 from kotekomi_pipelines.hybrid_document_ingestion import _FixtureLinguisticAnalyzer
 from kotekomi_pipelines.ingestion_composition_command import (
     RecompositionRequest,
     run_recomposition,
 )
-from kotekomi_pipelines.ingestion_composition_stage import compose_paragraph_events
-from kotekomi_pipelines.ingestion_token_artifact import LocalTokenArtifactWriter
+from kotekomi_pipelines.ingestion_token_artifact import (
+    load_ingestion_token_artifact,
+)
+from kotekomi_pipelines.replay_reader.ingestion_worker import run_ingestion_worker
 from kotekomi_pipelines.replay_reader.transport import load_paragraph_inputs
 
 PDF_FIXTURE = (
@@ -170,18 +174,53 @@ def _install_fixtures(monkeypatch) -> None:
     monkeypatch.setattr(FixtureModelTaskRuntime, "run_model_task", patched)
 
 
-def test_ingestion_discovers_a_source_grounded_event(tmp_path: Path, monkeypatch) -> None:
+class _RecordingConnection:
+    """Minimal transport stand-in that records the worker's event frames."""
+
+    def __init__(self) -> None:
+        self.frames: list[bytes] = []
+
+    def send_bytes(self, payload: bytes) -> None:
+        self.frames.append(payload)
+
+    def close(self) -> None:
+        return None
+
+    def finished_code(self) -> int:
+        for frame in self.frames:
+            payload = json.loads(frame)
+            if payload["kind"] == "finished":
+                return int(payload["code"])
+        raise AssertionError("the worker never reported a terminal frame")
+
+
+def test_normal_worker_persists_the_hold_then_recomposition_composes(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """The worker alone produces the hold; approval plus recomposition composes."""
     _install_fixtures(monkeypatch)
+    # Session setup belongs to the spawned worker; in-process it is a no-op shim.
+    monkeypatch.setattr(os, "setsid", lambda: None)
     config_path = _config(tmp_path)
-    code = ingest_user_file(
-        config_path=config_path,
-        source_file_path=PDF_FIXTURE,
-        source_url="https://example.test/pdf",
-        stdout=open("/dev/null", "w"),
-    )
-    assert code == 0
     state = tmp_path / "state"
+
+    connection = _RecordingConnection()
+    run_ingestion_worker(
+        IngestionProcessRequest(
+            config_path=str(config_path),
+            source_path=str(PDF_FIXTURE),
+            source_url="https://example.test/pdf",
+            ledger_path=str(state / "kotekomi.db"),
+            ingestion_run_id="igr_r20_worker",
+            paragraph_ordinal=None,
+        ),
+        cast("Connection[Any, Any]", connection),
+    )
+    assert connection.finished_code() == 0
+
+    # Paragraph coverage and the Event exist before any composition assertion.
     paragraphs = load_paragraph_inputs(state / "kotekomi.db", state / "archive")
+    assert paragraphs
     target = next(p for p in paragraphs if p.paragraph_node_id.endswith(TARGET_NODE_SUFFIX))
     profile = build_profile(
         text=target.text,
@@ -191,124 +230,89 @@ def test_ingestion_discovers_a_source_grounded_event(tmp_path: Path, monkeypatch
         stage_outputs=target.stage_outputs,
         bundle=target.bundle,
     )
-    assert profile.text  # paragraph discovered
-    assert profile.events, "the chosen paragraph must yield a source-grounded Event"
+    assert profile.events
 
-    analysis = _ChosenAnalyzer().analyze(LinguisticAnalysisInput(target.text))
-    artifact = IngestionTokenArtifact(
-        representation_id=target.representation_id,
-        text_view_id=profile.text_view_id or "",
-        paragraph_node_id=target.paragraph_node_id,
-        node_start_char=target.node_start_char,
-        node_end_char=target.node_start_char + len(target.text),
-        source_text_sha256=hashlib.sha256(target.text.encode()).hexdigest(),
-        analyzer_identity=analysis.producer_id,
-        tokens=tuple(
-            EventEntityLinguisticToken(
-                token_id=token.token_id,
-                sentence_id=token.sentence_id,
-                text=token.text,
-                start=token.start,
-                end=token.end,
-                lemma=token.lemma,
-                part_of_speech=token.part_of_speech.value,
-                dependency_relation=token.dependency_relation,
-                head_token_id=token.head_token_id,
-            )
-            for token in analysis.tokens
-        ),
+    # The worker, not the test, produced the token artifact and the hold.
+    artifact = load_ingestion_token_artifact(
+        state / "token-artifacts" / f"{target.paragraph_node_id}.json",
+        paragraph_text=target.text,
     )
-    LocalTokenArtifactWriter(state / "token-artifacts").write(artifact)
-    events = tuple(
-        (event.event_id, event.trigger_span.start, event.trigger_span.end)
-        for event in profile.events
-    )
-    with sqlite_ledger_transaction(state / "kotekomi.db") as repository:
-        records = compose_paragraph_events(
-            repository=repository,
-            source_text=target.text,
-            tokens=artifact.tokens,
-            events=events,
-            assertion_inputs_by_event={},
-            representation_id=target.representation_id,
-            text_view_id=artifact.text_view_id,
-            composition_root=state / "composition-outcomes",
-            node_start_char=target.node_start_char,
-        )
-    assert records
-    assert records[0].status is EventCompositionStatus.HELD
-    assert records[0].hold_reason == "assertion_inputs_unavailable"
+    event = profile.events[0]
+    event_id = event.event_id
+    replay_before = composition_annotations_for(state / "composition-outcomes", (event_id,))
+    assert len(replay_before) == 1
+    assert replay_before[0].status == "held"
+    assert "assertion_inputs_unavailable" in replay_before[0].summary
 
-    # Approve one identity occurrence for the subject and supply reviewed inputs.
+    # Approve one identity occurrence for the subject, then recompose explicitly.
     local = target.text.index(SUBJECT)
     assert target.bundle is not None
-    text_view = next(view for view in target.bundle.text_views if view.id == profile.text_view_id)
+    text_view = next(view for view in target.bundle.text_views if view.id == artifact.text_view_id)
     bundle_document_id = target.bundle.representation.document_id
     with sqlite_ledger_transaction(state / "kotekomi.db") as source_repository:
         source_document = source_repository.get_document(bundle_document_id)
         assert source_document is not None
         source_id = source_document.source_id
-    proposal_input = IdentityOccurrenceProposalInput(
-        identity_kind=IdentityOccurrenceKind.ACTOR,
-        decision="new_identity",
-        existing_identity_id=None,
-        identity_name=SUBJECT,
-        source_id=source_id,
-        document_id=bundle_document_id,
-        representation_id=target.representation_id,
-        text_view_id=text_view.id,
-        text_view_digest=text_view.content_digest,
-        start_char=target.node_start_char + local,
-        end_char=target.node_start_char + local + len(SUBJECT),
-        exact_text=SUBJECT,
-        node_id=target.paragraph_node_id,
-    )
-    candidate = GroundingCandidate(
-        candidate_kind="knowledge_base_entity",
-        eligible=True,
-        ambiguous=False,
-        identity_name=SUBJECT,
-    )
     proposal = propose_identity_occurrence(
-        candidate, proposal_input, proposal_id="pcg_r20_transition", now=NOW
+        GroundingCandidate(
+            candidate_kind="knowledge_base_entity",
+            eligible=True,
+            ambiguous=False,
+            identity_name=SUBJECT,
+        ),
+        IdentityOccurrenceProposalInput(
+            identity_kind=IdentityOccurrenceKind.ACTOR,
+            decision="new_identity",
+            existing_identity_id=None,
+            identity_name=SUBJECT,
+            source_id=source_id,
+            document_id=bundle_document_id,
+            representation_id=target.representation_id,
+            text_view_id=text_view.id,
+            text_view_digest=text_view.content_digest,
+            start_char=target.node_start_char + local,
+            end_char=target.node_start_char + local + len(SUBJECT),
+            exact_text=SUBJECT,
+            node_id=target.paragraph_node_id,
+        ),
+        proposal_id="pcg_r20_worker",
+        now=NOW,
     )
     with sqlite_ledger_transaction(state / "kotekomi.db") as repository:
         repository.save_proposed_change(proposal)
         occurrence = accept_identity_occurrence(
             proposal, repository, agent="kotekomi_agent", now=NOW
         )
-        event_id = events[0][0]
-        request = RecompositionRequest(
-            event_id=event_id,
-            source_text=target.text,
-            source_text_sha256=artifact.source_text_sha256,
-            inventory=build_constituent_candidate_inventory(
-                source_text=target.text,
+        record = run_recomposition(
+            RecompositionRequest(
                 event_id=event_id,
+                source_text=target.text,
+                source_text_sha256=artifact.source_text_sha256,
+                inventory=build_constituent_candidate_inventory(
+                    source_text=target.text,
+                    event_id=event_id,
+                    tokens=artifact.tokens,
+                    event_expression_start=event.trigger_span.start,
+                    event_expression_end=event.trigger_span.end,
+                ),
+                trigger_head_start=event.trigger_span.start,
+                trigger_head_end=event.trigger_span.end,
                 tokens=artifact.tokens,
-                event_expression_start=events[0][1],
-                event_expression_end=events[0][2],
+                representation_id=target.representation_id,
+                text_view_id=artifact.text_view_id,
+                node_start_char=target.node_start_char,
+                predicate_by_label={"share": "shared"},
+                identity_by_entity={occurrence.identity_id: occurrence.identity_id},
+                assertion_type=AssertionType.REPORTED_OBSERVATION,
+                source_authority=SourceAuthority.SECONDARY,
+                attribution_basis=AttributionBasis.DIRECT_DOCUMENT,
+                source_id=source_id,
+                evidence_target_id=occurrence.evidence_target_id,
             ),
-            trigger_head_start=events[0][1],
-            trigger_head_end=events[0][2],
-            tokens=artifact.tokens,
-            representation_id=target.representation_id,
-            text_view_id=artifact.text_view_id,
-            node_start_char=target.node_start_char,
-            predicate_by_label={"share": "shared"},
-            identity_by_entity={occurrence.identity_id: occurrence.identity_id},
-            assertion_type=AssertionType.REPORTED_OBSERVATION,
-            source_authority=SourceAuthority.SECONDARY,
-            attribution_basis=AttributionBasis.DIRECT_DOCUMENT,
-            source_id=source_id,
-            evidence_target_id=occurrence.evidence_target_id,
+            repository,
         )
-        record = run_recomposition(request, repository)
-        write_event_composition_record(
-            state / "composition-outcomes" / f"{event_id}.json", record
-        )
+        write_event_composition_record(state / "composition-outcomes" / f"{event_id}.json", record)
 
-    assert record.event_id == event_id
     assert record.status is EventCompositionStatus.COMPOSED
     assert record.assertion is not None
     assert record.assertion.subject_entity_id == occurrence.identity_id
@@ -316,13 +320,14 @@ def test_ingestion_discovers_a_source_grounded_event(tmp_path: Path, monkeypatch
     assert record.supporting_subject_span is not None
     assert record.supporting_subject_span.text == SUBJECT
 
-    replay = composition_annotations_for(state / "composition-outcomes", (event_id,))
-    assert len(replay) == 1
-    assert replay[0].status == "composed"
-    assert SUBJECT in replay[0].summary
+    replay_after = composition_annotations_for(state / "composition-outcomes", (event_id,))
+    assert len(replay_after) == 1
+    assert replay_after[0].status == "composed"
+    assert SUBJECT in replay_after[0].summary
 
 
 def test_chosen_analyzer_emits_valid_tokens() -> None:
+    """The deterministic analyzer fixture satisfies the production token DTOs."""
     text = "HealthyJoCo is excited to share the Plan."
     analysis = _ChosenAnalyzer().analyze(LinguisticAnalysisInput(text))
 
@@ -334,3 +339,4 @@ def test_chosen_analyzer_emits_valid_tokens() -> None:
     assert verb.dependency_relation == "root"
     assert any(token.dependency_relation == "nsubj" for token in analysis.tokens)
     assert any(token.dependency_relation == "obj" for token in analysis.tokens)
+    assert analysis.producer_id == "r20-chosen-analyzer"
