@@ -1243,6 +1243,12 @@ from kotekomi_application.ingestion_runs import (
     list_ingestion_runs,
     start_ingestion_run,
 )
+from kotekomi_application.ingestion_token_artifact import (
+    IngestionTokenArtifact,
+    TokenArtifactWriter,
+    ingestion_token_artifact_digest,
+    load_ingestion_token_artifact,
+)
 from kotekomi_application.knowledge_graph_retrieval import (
     KNOWLEDGE_GRAPH_PROJECTION_POLICY_ID,
     KNOWLEDGE_GRAPH_QUERY_POLICY_ID,
@@ -2904,6 +2910,10 @@ __all__ = [
     "compose_event_from_resolution",
     "load_event_composition_record",
     "write_event_composition_record",
+    "IngestionTokenArtifact",
+    "TokenArtifactWriter",
+    "ingestion_token_artifact_digest",
+    "load_ingestion_token_artifact",
     "IdentityOccurrenceAcceptanceLedger",
     "IdentityOccurrenceHold",
     "IdentityOccurrenceHoldReason",
