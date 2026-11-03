@@ -42,35 +42,67 @@ silently become an accepted reference. The contract forbids that.
 
 ## 5. Narrow acceptance/resolution step
 
-The first increment defines and implements one Application Layer use case.
+The first increment defines one Domain Core record and two Application Layer use
+cases.
+
+### 5.1 Proposal
 
 - Input: one grounding candidate (mention span, candidate kind, candidate
-  identity, and source anchoring) plus a reviewed decision.
-- Output: a pending `ProposedChange` that proposes the `Actor` or `Organization`
-  record together with its accepted occurrence. The step writes no accepted
-  state.
-- Guard: a grounding candidate without a reviewed approval never becomes an
+  identity or `nil`, and source anchoring) plus one reviewed proposal decision.
+- The decision is one of two kinds: link the occurrence to an existing `Actor` or
+  `Organization`, or propose a new `Actor` or `Organization`.
+- Output: a pending `ProposedChange`. It proposes the identity decision and its
+  occurrence association. It writes no accepted state.
+- Guard: a grounding candidate without a review approval never becomes an
   accepted reference.
 - Hold: `nil`, ineligible, or ambiguous candidates produce a typed hold. They
   produce no proposal and no value.
-- New typed record: an accepted identity-occurrence association binds one
-  accepted `Actor` or `Organization` to one accepted `EvidenceTarget`. The
-  Adapter reads this association, never a grounding candidate.
+- Repeated mentions of one identity reuse that identity. A further mention adds
+  one occurrence association; it never creates a duplicate identity.
 
-## 6. Increment sequence
+### 5.2 Acceptance
 
-1. Acceptance/resolution step and the identity-occurrence association.
+- The review use case accepts one proposal atomically. It validates the identity,
+  a replayable `EvidenceTarget`, the occurrence association, and a
+  `ProvenanceActivity` together. It commits all of them or none.
+- The occurrence association names one exact mention span through its
+  `EvidenceTarget`. A paragraph-wide `EvidenceTarget` alone is insufficient.
+- An accepted association binds one accepted `Actor` or `Organization` to one
+  accepted `EvidenceTarget`. It supports both a newly accepted identity and a
+  newly accepted occurrence on an existing identity.
+- The Adapter reads accepted associations. It never reads a grounding candidate.
+
+### 5.3 Workflow consequence
+
+- Before review, ingestion records the grounding candidate and a composition
+  hold. The hold is visible and names its reason. The candidate is not an
+  accepted reference.
+- After approval, recomposition runs with the accepted association available
+  through the Adapter. Replay then shows the composed Assertion.
+- Without this second transition, the association stays disconnected
+  infrastructure.
+
+## 6. Completion bar
+
+The increment is done only when all four parts ship and the completion bar holds.
+
+1. Proposal and acceptance use cases plus the identity-occurrence record.
 2. Live Adapter over accepted identities and accepted occurrences, with no
    Connection Gold.
 3. Composition stage over ingested Events using the live Adapter.
 4. Persisted inspection output and replay-TUI exposure.
 
-The increment is done when a normal ingestion shows its source-grounded Assertion,
-or its explicit hold, in replay, with no Connection Gold dependency.
+The completion bar is a normal ingestion whose source-grounded Assertion, or
+explicit hold, appears in replay with no Connection Gold dependency.
+
+The pre-review hold and the post-approval recomposition are both required. An
+accepted association with no replay transition does not meet the bar.
 
 ## 7. Constraints
 
 - Ingestion reads no reviewed Connection Gold and no fixture-specific binding.
 - A candidate identity never silently becomes an accepted reference.
 - The Domain Core owns the identity-occurrence record shape and its invariants.
-- The Application Layer owns the acceptance decision and the hold reasons.
+- The Application Layer owns the proposal decision, the acceptance validation,
+  and the hold reasons.
+- Acceptance is atomic and source-exact.
