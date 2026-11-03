@@ -194,13 +194,17 @@ shows in the Textual replay view rather than only in the persisted read model.
    dependency tokens, runs the shared use case with the live Adapter, and
    persists a composed or explicit held record for every Event
    (`inventory_unavailable`, `assertion_inputs_unavailable`, or a broader hold).
-   It is tested. The concrete contract gap is the token source: normal hybrid
-   ingestion runs Stanza at runtime but does not persist the per-paragraph
-   dependency tokens, so the ingestion worker cannot feed the pass from persisted
-   artifacts yet. The worker must either persist those tokens as a derived
-   artifact or invoke the pass where the tokens are live. Reviewed assertion
-   inputs (predicate mapping, per-Event `EvidenceTarget`) stay review decisions;
-   the pass holds explicitly when they are absent.
+   It is tested. The token source is now specified as a derived artifact:
+   `IngestionTokenArtifact` binds ordered dependency tokens to the
+   representation, TextView, paragraph node and range, source-text digest, and
+   analyzer identity. `load_ingestion_token_artifact` validates the digest and
+   every token coordinate against the authoritative paragraph. The remaining
+   wiring is to write this artifact where the ingestion orchestration runs
+   Stanza, and to call `compose_paragraph_events` from the ingestion worker after
+   the run finalizes. Reviewed assertion inputs (predicate mapping, per-Event
+   `EvidenceTarget`) stay review decisions; the pass holds explicitly with
+   `assertion_inputs_unavailable` until they are supplied in the
+   review/recomposition request.
 
 Explicit recomposition stays the chosen behavior. Automatic recomposition after
 approval is out of scope for this increment.
