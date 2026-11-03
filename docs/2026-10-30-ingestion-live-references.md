@@ -274,7 +274,7 @@ Guarantees this record rests on:
 Verification evidence:
 
 - `packages/application`, `packages/adapters`, and `packages/pipelines`:
-  2,200 tests pass with `PYTHONPATH=.`.
+  2,200 tests pass with `PYTHONPATH=.` (one skipped).
 - Historical R17 and R18 contracts are unchanged. `git diff 5de64dc..HEAD -- data/
   docs/hsq-*` touches exactly one file, the current-test contract
   `data/r18-current-test-contract/semantic_selection_contract.json`; the rebind is
