@@ -74,11 +74,17 @@ cases.
 
 ### 5.3 Workflow consequence
 
-- Before review, ingestion records the grounding candidate and a composition
+- An identity-resolution hold is not a composition hold. Ingestion records one
+  Event-specific composition outcome that names the required reference the Event
+  cannot resolve.
+- A valid candidate that awaits review also produces that visible composition
+  hold. It is neither `nil` nor necessarily ambiguous; it is simply not yet an
+  accepted reference.
+- Before review, ingestion records the grounding candidate and the composition
   hold. The hold is visible and names its reason. The candidate is not an
   accepted reference.
 - After approval, recomposition runs with the accepted association available
-  through the Adapter. Replay then shows the composed Assertion.
+  through the Adapter. Replay then replaces the hold with the composed Assertion.
 - Without this second transition, the association stays disconnected
   infrastructure.
 
@@ -119,7 +125,11 @@ Increment 1 is implemented and tested.
   occurrence, identity, evidence, and `ProvenanceActivity` atomically.
 - Holds: a `nil`, ineligible, or ambiguous candidate raises a typed
   `IdentityOccurrenceHold`; an unreplayable span raises the evidence hold before
-  any write.
+  any write. An Event-specific composition hold for a valid candidate awaiting
+  review is still open.
+- Atomicity: a real-SQLite test fails after an earlier write and proves the
+  identity, `EvidenceTarget`, occurrence, provenance, and proposal status all
+  roll back together. A companion test proves the successful commit.
 
 Increments 2 through 4 remain open: the live Adapter, the ingestion composition
 stage, and the persisted replay exposure. R20 is not complete until the
