@@ -11,7 +11,6 @@ diagnostic into an Event-specific hold.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from enum import StrEnum
 from typing import Protocol
 
@@ -19,6 +18,9 @@ from kotekomi_application import (
     AttachmentSourceRange,
     DecontextualizationEntityRef,
     EventEntityReferences,
+    ReferenceDiagnostic,
+    ReferenceDiagnosticReason,
+    ReferenceResolution,
 )
 from kotekomi_domain import (
     Actor,
@@ -27,7 +29,6 @@ from kotekomi_domain import (
     IdentityOccurrenceKind,
     Organization,
 )
-from pydantic import BaseModel, ConfigDict
 
 
 class LiveIdentityReferenceErrorReason(StrEnum):
@@ -46,30 +47,9 @@ class LiveIdentityReferenceError(ValueError):
         self.reason = reason
 
 
-class LiveReferenceDiagnosticReason(StrEnum):
-    """Typed reason an accepted mention stays unresolved."""
-
-    AMBIGUOUS_MENTION = "ambiguous_mention"
-    MENTION_NOT_FOUND = "mention_not_found"
-
-
-class LiveReferenceDiagnostic(BaseModel):
-    """One explicit diagnostic for an accepted mention that stays unresolved."""
-
-    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
-
-    occurrence_id: str
-    identity_id: str
-    reason: LiveReferenceDiagnosticReason
-    detail: str
-
-
-@dataclass(frozen=True)
-class LiveReferenceResolution:
-    """One Event's live references plus every unresolved-mention diagnostic."""
-
-    references: EventEntityReferences
-    diagnostics: tuple[LiveReferenceDiagnostic, ...]
+LiveReferenceDiagnosticReason = ReferenceDiagnosticReason
+LiveReferenceDiagnostic = ReferenceDiagnostic
+LiveReferenceResolution = ReferenceResolution
 
 
 class LiveIdentityReferenceLedger(Protocol):

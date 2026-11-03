@@ -1787,6 +1787,16 @@ from kotekomi_application.source_grounded_proposition_scope import (
     source_grounded_proposition_fragment_id,
     source_grounded_proposition_scope_id,
 )
+from kotekomi_application.source_grounded_reference_composition import (
+    EventCompositionRecord,
+    EventCompositionStatus,
+    ReferenceDiagnostic,
+    ReferenceDiagnosticReason,
+    ReferenceResolution,
+    compose_event_from_resolution,
+    load_event_composition_record,
+    write_event_composition_record,
+)
 from kotekomi_application.source_grounded_selection import (
     SourceGroundedBoundaryGap,
     SourceGroundedConjunctSelection,
@@ -2886,6 +2896,14 @@ __all__ = [
     "EventEntityReferenceProvider",
     "EventEntityReferences",
     "GroundingCandidate",
+    "EventCompositionRecord",
+    "EventCompositionStatus",
+    "ReferenceDiagnostic",
+    "ReferenceDiagnosticReason",
+    "ReferenceResolution",
+    "compose_event_from_resolution",
+    "load_event_composition_record",
+    "write_event_composition_record",
     "IdentityOccurrenceAcceptanceLedger",
     "IdentityOccurrenceHold",
     "IdentityOccurrenceHoldReason",

@@ -147,6 +147,32 @@ Increment 2 is also implemented and tested.
   `act_` and `org_` identity IDs alongside the reviewed `EGE` IDs, so the live
   Adapter can carry an accepted identity into composition.
 
-Increments 3 and 4 remain open: the ingestion composition stage and the
-persisted replay exposure. R20 is not complete until the pre-review hold and the
-post-approval recomposition both appear in replay for a normal ingestion.
+Increments 3 and 4 are implemented and tested as one vertical slice.
+
+- Application Layer: `compose_event_from_resolution` consumes a
+  `ReferenceResolution` (accepted references plus typed diagnostics) and returns
+  an `EventCompositionRecord`. A diagnostic that explains an unavailable
+  reference becomes the Event-specific hold reason and names the missing
+  reference. `write_event_composition_record` and
+  `load_event_composition_record` persist and reload the outcome as the replay
+  read model.
+- Pipelines: `compose_ingested_event` wires the live Adapter to the use case,
+  routes mention diagnostics, and adds an `awaiting_acceptance` diagnostic for a
+  valid candidate that awaits review.
+- Approval path: acceptance is atomic and explicit. Recompose is an explicit
+  second Pipeline call after approval; approval does not trigger recomposition
+  automatically.
+- End-to-end test `test_ingestion_composition_transition.py` drives the held ->
+  composed -> replay transition on a real SQLite Ledger: a valid candidate
+  awaiting review persists a held record that names the missing identity,
+  approval commits the occurrence atomically, explicit recomposition composes
+  the Assertion with supporting spans, and the reloaded record shows the
+  composed outcome.
+
+The bounded ingestion deliverable is met: the pre-review hold and the
+post-approval recomposition both appear in the persisted replay record for a
+normal ingestion, with no Connection Gold dependency.
+
+The remaining presentation step is wiring `load_event_composition_record` into
+the interactive replay reader (`ParagraphSnapshot`), so the changed outcome
+shows in the Textual replay view rather than only in the persisted read model.
