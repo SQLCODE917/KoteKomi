@@ -74,10 +74,12 @@ class LiveIdentityReferenceProvider:
         *,
         representation_id: str | None = None,
         text_view_id: str | None = None,
+        node_start_char: int = 0,
     ) -> None:
         self._repository = repository
         self._representation_id = representation_id
         self._text_view_id = text_view_id
+        self._node_start_char = node_start_char
 
     def resolve_references(
         self,
@@ -151,15 +153,15 @@ class LiveIdentityReferenceProvider:
             and target.representation_id == self._representation_id
             and target.text_view_id == self._text_view_id
         ):
-            slice_text = source_text[target.start_char : target.end_char]
+            local_start = target.start_char - self._node_start_char
+            local_end = target.end_char - self._node_start_char
+            slice_text = source_text[local_start:local_end]
             if not slice_text or _normalized(slice_text) != _normalized(target.exact_text):
                 raise LiveIdentityReferenceError(
                     LiveIdentityReferenceErrorReason.COORDINATE_MISMATCH,
                     f"Occurrence {occurrence_id} coordinates do not replay its exact text.",
                 )
-            return AttachmentSourceRange(
-                start=target.start_char, end=target.end_char, text=slice_text
-            )
+            return AttachmentSourceRange(start=local_start, end=local_end, text=slice_text)
         diagnostics.append(
             LiveReferenceDiagnostic(
                 occurrence_id=occurrence_id,

@@ -8,27 +8,49 @@ logic run unchanged.
 
 # pyright: reportPrivateUsage=false, reportMissingParameterType=false
 # pyright: reportUnknownParameterType=false, reportUnknownMemberType=false
-# pyright: reportUnknownArgumentType=false
+# pyright: reportUnknownArgumentType=false, reportUnknownVariableType=false
 
 from __future__ import annotations
 
 import hashlib
+from datetime import UTC, datetime
 from pathlib import Path
 
 from kotekomi_adapters import sqlite_ledger_transaction
 from kotekomi_application import (
     EventCompositionStatus,
     EventEntityLinguisticToken,
+    GroundingCandidate,
+    IdentityOccurrenceProposalInput,
     IngestionTokenArtifact,
     LinguisticAnalysis,
     LinguisticAnalysisInput,
     LinguisticToken,
     UniversalPartOfSpeech,
+    accept_identity_occurrence,
+    propose_identity_occurrence,
+    write_event_composition_record,
 )
 from kotekomi_application.ingestion_inspection import build_profile
+from kotekomi_application.parser_constituent_candidate_generation import (
+    build_constituent_candidate_inventory,
+)
+from kotekomi_application.source_grounded_reference_composition import (
+    composition_annotations_for,
+)
 from kotekomi_application.source_occurrences import source_occurrences
+from kotekomi_domain import (
+    AssertionType,
+    AttributionBasis,
+    IdentityOccurrenceKind,
+    SourceAuthority,
+)
 from kotekomi_pipelines.cli import ingest_user_file
 from kotekomi_pipelines.hybrid_document_ingestion import _FixtureLinguisticAnalyzer
+from kotekomi_pipelines.ingestion_composition_command import (
+    RecompositionRequest,
+    run_recomposition,
+)
 from kotekomi_pipelines.ingestion_composition_stage import compose_paragraph_events
 from kotekomi_pipelines.ingestion_token_artifact import LocalTokenArtifactWriter
 from kotekomi_pipelines.replay_reader.transport import load_paragraph_inputs
@@ -42,6 +64,7 @@ PDF_FIXTURE = (
     / "2025-community-health-improvement-plan-press-release.pdf"
 )
 TARGET_NODE_SUFFIX = "_0012"
+NOW = datetime(2026, 10, 30, tzinfo=UTC)
 ROUTE_MARKER = "HealthyJoCo"
 
 VERB = "share"
@@ -210,10 +233,93 @@ def test_ingestion_discovers_a_source_grounded_event(tmp_path: Path, monkeypatch
             representation_id=target.representation_id,
             text_view_id=artifact.text_view_id,
             composition_root=state / "composition-outcomes",
+            node_start_char=target.node_start_char,
         )
     assert records
     assert records[0].status is EventCompositionStatus.HELD
     assert records[0].hold_reason == "assertion_inputs_unavailable"
+
+    # Approve one identity occurrence for the subject and supply reviewed inputs.
+    local = target.text.index(SUBJECT)
+    assert target.bundle is not None
+    text_view = next(view for view in target.bundle.text_views if view.id == profile.text_view_id)
+    bundle_document_id = target.bundle.representation.document_id
+    with sqlite_ledger_transaction(state / "kotekomi.db") as source_repository:
+        source_document = source_repository.get_document(bundle_document_id)
+        assert source_document is not None
+        source_id = source_document.source_id
+    proposal_input = IdentityOccurrenceProposalInput(
+        identity_kind=IdentityOccurrenceKind.ACTOR,
+        decision="new_identity",
+        existing_identity_id=None,
+        identity_name=SUBJECT,
+        source_id=source_id,
+        document_id=bundle_document_id,
+        representation_id=target.representation_id,
+        text_view_id=text_view.id,
+        text_view_digest=text_view.content_digest,
+        start_char=target.node_start_char + local,
+        end_char=target.node_start_char + local + len(SUBJECT),
+        exact_text=SUBJECT,
+        node_id=target.paragraph_node_id,
+    )
+    candidate = GroundingCandidate(
+        candidate_kind="knowledge_base_entity",
+        eligible=True,
+        ambiguous=False,
+        identity_name=SUBJECT,
+    )
+    proposal = propose_identity_occurrence(
+        candidate, proposal_input, proposal_id="pcg_r20_transition", now=NOW
+    )
+    with sqlite_ledger_transaction(state / "kotekomi.db") as repository:
+        repository.save_proposed_change(proposal)
+        occurrence = accept_identity_occurrence(
+            proposal, repository, agent="kotekomi_agent", now=NOW
+        )
+        event_id = events[0][0]
+        request = RecompositionRequest(
+            event_id=event_id,
+            source_text=target.text,
+            source_text_sha256=artifact.source_text_sha256,
+            inventory=build_constituent_candidate_inventory(
+                source_text=target.text,
+                event_id=event_id,
+                tokens=artifact.tokens,
+                event_expression_start=events[0][1],
+                event_expression_end=events[0][2],
+            ),
+            trigger_head_start=events[0][1],
+            trigger_head_end=events[0][2],
+            tokens=artifact.tokens,
+            representation_id=target.representation_id,
+            text_view_id=artifact.text_view_id,
+            node_start_char=target.node_start_char,
+            predicate_by_label={"share": "shared"},
+            identity_by_entity={occurrence.identity_id: occurrence.identity_id},
+            assertion_type=AssertionType.REPORTED_OBSERVATION,
+            source_authority=SourceAuthority.SECONDARY,
+            attribution_basis=AttributionBasis.DIRECT_DOCUMENT,
+            source_id=source_id,
+            evidence_target_id=occurrence.evidence_target_id,
+        )
+        record = run_recomposition(request, repository)
+        write_event_composition_record(
+            state / "composition-outcomes" / f"{event_id}.json", record
+        )
+
+    assert record.event_id == event_id
+    assert record.status is EventCompositionStatus.COMPOSED
+    assert record.assertion is not None
+    assert record.assertion.subject_entity_id == occurrence.identity_id
+    assert record.assertion.predicate == "shared"
+    assert record.supporting_subject_span is not None
+    assert record.supporting_subject_span.text == SUBJECT
+
+    replay = composition_annotations_for(state / "composition-outcomes", (event_id,))
+    assert len(replay) == 1
+    assert replay[0].status == "composed"
+    assert SUBJECT in replay[0].summary
 
 
 def test_chosen_analyzer_emits_valid_tokens() -> None:

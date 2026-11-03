@@ -51,7 +51,9 @@ from kotekomi_application.trigger_scope_split import (
 )
 
 _SHA256 = r"^[a-f0-9]{64}$"
-_EventId = Annotated[str, Field(pattern=r"^(TGE|AHE)-[0-9]{3}$")]
+_EventId = Annotated[
+    str, Field(pattern=r"^(?:(?:TGE|AHE)-[0-9]{3}|sge_[A-Za-z0-9][A-Za-z0-9_-]*)$")
+]
 _EntityId = Annotated[
     str,
     Field(pattern=r"^(EGE-[0-9]{3}|act_[A-Za-z0-9][A-Za-z0-9_-]*|org_[A-Za-z0-9][A-Za-z0-9_-]*)$"),

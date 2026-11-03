@@ -24,7 +24,9 @@ from kotekomi_pipelines.live_identity_reference_provider import (
     LiveIdentityReferenceLedger,
 )
 
-_EventId = Annotated[str, Field(pattern=r"^(TGE|AHE)-[0-9]{3}$")]
+_EventId = Annotated[
+    str, Field(pattern=r"^(?:(?:TGE|AHE)-[0-9]{3}|sge_[A-Za-z0-9][A-Za-z0-9_-]*)$")
+]
 _SHA256 = r"^[a-f0-9]{64}$"
 
 
@@ -42,6 +44,7 @@ class RecompositionRequest(BaseModel):
     tokens: tuple[EventEntityLinguisticToken, ...]
     representation_id: Annotated[str, Field(min_length=1)]
     text_view_id: Annotated[str, Field(min_length=1)]
+    node_start_char: Annotated[int, Field(ge=0)] = 0
     pending_identity_ids: tuple[Annotated[str, Field(min_length=1)], ...] = ()
     predicate_by_label: dict[str, str]
     identity_by_entity: dict[str, str]
@@ -77,5 +80,6 @@ def run_recomposition(
         ),
         representation_id=request.representation_id,
         text_view_id=request.text_view_id,
+        node_start_char=request.node_start_char,
         pending_identity_ids=request.pending_identity_ids,
     )

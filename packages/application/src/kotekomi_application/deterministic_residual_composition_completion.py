@@ -56,7 +56,9 @@ from kotekomi_application.source_grounded_selection import (
     select_source_grounded_constituents,
 )
 
-_EventId = Annotated[str, Field(pattern=r"^(TGE|AHE)-[0-9]{3}$")]
+_EventId = Annotated[
+    str, Field(pattern=r"^(?:(?:TGE|AHE)-[0-9]{3}|sge_[A-Za-z0-9][A-Za-z0-9_-]*)$")
+]
 #: One R19 Assertion is an inspectable, never persisted, `proposed` record. It has no
 #: wall-clock creation time, so it carries this documented logical epoch instead of
 #: `utc_now` to keep the sealed report reproducible. The value is the R19 program's

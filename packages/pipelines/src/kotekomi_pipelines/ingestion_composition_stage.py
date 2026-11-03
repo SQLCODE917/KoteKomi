@@ -47,6 +47,7 @@ def compose_ingested_event(
     assertion_inputs: AssertionConstructionInputs,
     representation_id: str,
     text_view_id: str,
+    node_start_char: int = 0,
     pending_identity_ids: tuple[str, ...] = (),
 ) -> EventCompositionRecord:
     """Compose one ingested Event, turning reference diagnostics into holds.
@@ -60,6 +61,7 @@ def compose_ingested_event(
         repository,
         representation_id=representation_id,
         text_view_id=text_view_id,
+        node_start_char=node_start_char,
     )
     resolution = provider.resolve_references_with_diagnostics(
         event_id, source_text, source_text_sha256
@@ -100,6 +102,7 @@ def compose_paragraph_events(
     representation_id: str,
     text_view_id: str,
     composition_root: Path,
+    node_start_char: int = 0,
     pending_identity_ids_by_event: Mapping[str, tuple[str, ...]] | None = None,
 ) -> tuple[EventCompositionRecord, ...]:
     """Compose every Event in one ingested paragraph and persist each outcome.
@@ -122,6 +125,7 @@ def compose_paragraph_events(
             assertion_inputs=assertion_inputs_by_event.get(event_id),
             representation_id=representation_id,
             text_view_id=text_view_id,
+            node_start_char=node_start_char,
             pending_identity_ids=pending.get(event_id, ()),
         )
         write_event_composition_record(Path(composition_root) / f"{event_id}.json", record)
@@ -141,6 +145,7 @@ def _compose_one_paragraph_event(
     assertion_inputs: AssertionConstructionInputs | None,
     representation_id: str,
     text_view_id: str,
+    node_start_char: int,
     pending_identity_ids: tuple[str, ...],
 ) -> EventCompositionRecord:
     if not tokens:
@@ -169,6 +174,7 @@ def _compose_one_paragraph_event(
         assertion_inputs=assertion_inputs,
         representation_id=representation_id,
         text_view_id=text_view_id,
+        node_start_char=node_start_char,
         pending_identity_ids=pending_identity_ids,
     )
 

@@ -31,7 +31,9 @@ from kotekomi_application.parser_constituent_candidate_generation import (
 )
 
 _SHA256 = r"^[a-f0-9]{64}$"
-_EventId = Annotated[str, Field(pattern=r"^(TGE|AHE)-[0-9]{3}$")]
+_EventId = Annotated[
+    str, Field(pattern=r"^(?:(?:TGE|AHE)-[0-9]{3}|sge_[A-Za-z0-9][A-Za-z0-9_-]*)$")
+]
 
 _SUBJECT_DEPENDENCY_RELATIONS = frozenset({"nsubj", "nsubj:pass"})
 _OBJECT_DEPENDENCY_RELATIONS = frozenset({"obj", "iobj"})
