@@ -15,7 +15,6 @@ from __future__ import annotations
 import hashlib
 from pathlib import Path
 
-import pytest
 from kotekomi_application import (
     LinguisticAnalysis,
     LinguisticAnalysisInput,
@@ -139,10 +138,6 @@ def _install_fixtures(monkeypatch) -> None:
     monkeypatch.setattr(FixtureModelTaskRuntime, "run_model_task", patched)
 
 
-@pytest.mark.xfail(
-    strict=False,
-    reason="R20 WIP: HP4 verb-role/similarity/judgment fixture responses still pending",
-)
 def test_ingestion_discovers_a_source_grounded_event(tmp_path: Path, monkeypatch) -> None:
     _install_fixtures(monkeypatch)
     config_path = _config(tmp_path)
