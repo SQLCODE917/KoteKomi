@@ -1,6 +1,6 @@
 # TDD: Ingestion Live References and Replay Exposure
 
-- Status: Proposed
+- Status: Completed
 - Deliverable: R20
 - Parent: [Production Closure of AHE-022 and AHE-051](2026-10-22-deterministic-residual-composition-completion.md)
 
@@ -125,8 +125,8 @@ Increment 1 is implemented and tested.
   occurrence, identity, evidence, and `ProvenanceActivity` atomically.
 - Holds: a `nil`, ineligible, or ambiguous candidate raises a typed
   `IdentityOccurrenceHold`; an unreplayable span raises the evidence hold before
-  any write. An Event-specific composition hold for a valid candidate awaiting
-  review is still open.
+  any write. A valid candidate awaiting review produces an Event-specific
+  composition hold in §8, never an identity.
 - Atomicity: a real-SQLite test fails after an earlier write and proves the
   identity, `EvidenceTarget`, occurrence, provenance, and proposal status all
   roll back together. A companion test proves the successful commit.
@@ -173,86 +173,68 @@ The bounded ingestion deliverable is met: the pre-review hold and the
 post-approval recomposition both appear in the persisted replay record for a
 normal ingestion, with no Connection Gold dependency.
 
-The remaining presentation step is wiring `load_event_composition_record` into
-the interactive replay reader (`ParagraphSnapshot`), so the changed outcome
-shows in the Textual replay view rather than only in the persisted read model.
+The presentation step is also done: `InspectionSession` loads
+`<ledger parent>/composition-outcomes` into `ParagraphAnnotationProfile`, and the
+shared renderer shows the hold or the composed Assertion with its supporting span
+in the live block and the Textual replay view.
 
-## 9. Remaining Acceptance Checks
+## 9. Acceptance Checks (all resolved)
 
 1. Cross-view lineage: done as an explicit hold. The Adapter resolves a mention
    only when the Event source view matches the accepted `EvidenceTarget` view. A
    different view returns a `cross_view_unsupported` diagnostic and no reference;
-   it never guesses by unique text. Verified cross-view lineage stays deferred.
-2. Interactive replay display: done at the data and render level.
-   `CompositionAnnotation` is a `ParagraphAnnotationProfile` field.
-   `InspectionSession` loads persisted records from
-   `<ledger parent>/composition-outcomes` through `composition_annotations_for`,
-   and `render_annotated_paragraph` (used by `render_live_block` and the Textual
-   view) renders a `composition` section with the hold or Assertion summary.
-3. Normal ingestion entry point: **done.** `run_ingestion_worker` now invokes the
-   composition pass (`ingestion_composition_pass.compose_ingested_run`) after
-   `ingest_user_file` finalizes. For every paragraph that realizes an Event it
-   analyzes the authoritative paragraph once, writes the validated
-   `IngestionTokenArtifact` to `<ledger parent>/token-artifacts`, and persists one
-   composition outcome per Event to `<ledger parent>/composition-outcomes`. A
-   derived-pass failure is reported on the worker's error stream and never changes
-   the ingestion exit code.
-   `test_normal_worker_persists_the_hold_then_recomposition_composes` drives the
-   real worker entry point: ingestion discovers the paragraph and its Event, the
-   worker alone writes the token artifact and the Event-specific hold
-   (`assertion_inputs_unavailable`), then the review step consumes the candidate
-   ingestion itself persisted — `ingested_grounding_candidates` derives
-   review-selectable candidates from HP-3 eligibility and link evidence, and the
-   test approves one of those rather than constructing a candidate — and the
+   it never guesses by unique text. Verified cross-view lineage stays deferred and
+   is not part of R20.
+2. Interactive replay display: done. `CompositionAnnotation` is a
+   `ParagraphAnnotationProfile` field, `composition_annotations_for` loads the
+   persisted records, and `render_annotated_paragraph` renders a `composition`
+   section.
+3. Normal ingestion entry point: done. `run_ingestion_worker` invokes
+   `ingestion_composition_pass.compose_ingested_run` after `ingest_user_file`
+   finalizes. For every paragraph that realizes an Event it analyzes the
+   authoritative paragraph once, writes the validated `IngestionTokenArtifact` to
+   `<ledger parent>/token-artifacts`, and persists one composition outcome per
+   Event to `<ledger parent>/composition-outcomes`.
+   `test_normal_worker_persists_the_hold_then_recomposition_composes` drives that
+   worker entry point: ingestion discovers the paragraph and its Event, the worker
+   alone writes the token artifact and the Event-specific hold
+   (`assertion_inputs_unavailable`), the review step consumes a candidate that
+   ingestion itself persisted (`ingested_grounding_candidates` derives
+   review-selectable candidates from HP-3 eligibility and link evidence), and the
    explicit `run_recomposition` produces a composed Assertion that
    `composition_annotations_for` reloads with its supporting span. The test
    contains no separate composition call, no constructed candidate, and no seeded
    outcome.
-
-   The pass is bound to the worker's assigned IngestionRun, so a concurrent
-   ingestion cannot make it compose another run's source. A recoverable analyzer
-   failure keeps an explicit `inventory_unavailable` hold; an invalid deterministic
-   token-artifact binding raises instead of degrading to a hold; and a persistence
-   failure writes `artifact_persistence_failed` holds before it reaches the error
-   stream.
-   It is tested. The token source is now specified as a derived artifact:
-   `IngestionTokenArtifact` binds ordered dependency tokens to the
+4. Run binding and failure taxonomy: the pass composes the IngestionRun the worker
+   was assigned, so a concurrent ingestion cannot make it compose another run's
+   source. A recoverable analyzer failure keeps an explicit `inventory_unavailable`
+   hold; an invalid deterministic token-artifact binding raises instead of
+   degrading to a hold; a persistence failure writes `artifact_persistence_failed`
+   holds before it reaches the error stream.
+5. Token source: `IngestionTokenArtifact` binds ordered dependency tokens to the
    representation, TextView, paragraph node and range, source-text digest, and
    analyzer identity. `load_ingestion_token_artifact` validates the digest and
-   every token coordinate against the authoritative paragraph. The remaining
-   wiring is to write this artifact where the ingestion orchestration runs
-   Stanza, and to call `compose_paragraph_events` from the ingestion worker after
-   the run finalizes. Reviewed assertion inputs (predicate mapping, per-Event
-   `EvidenceTarget`) stay review decisions; the pass holds explicitly with
-   `assertion_inputs_unavailable` until they are supplied in the
-   review/recomposition request.
+   every token coordinate against the authoritative paragraph. Reviewed assertion
+   inputs (predicate mapping, per-Event `EvidenceTarget`) stay review decisions;
+   the pass holds with `assertion_inputs_unavailable` until they are supplied.
 
-### 9.1 Coordinate contract finding (blocks the producer)
+### 9.1 Coordinate contract (resolved)
 
 The live analysis unit and the composition unit differ.
 
-- `run_hybrid_event_trigger_preview` analyzes one `SourceSegment` at a time
-  (`paragraph_source_segments(paragraph_text, PARAGRAPH_SEGMENT_V3)`), on
-  `derive_source_copy_view(segment.exact_text)`, which collapses whitespace.
-- A paragraph therefore has several segments, and the analyzed tokens are in
-  segment-source-copy coordinates, not paragraph coordinates.
+- `run_hybrid_event_trigger_preview` analyzes one `SourceSegment` at a time on
+  `derive_source_copy_view(segment.exact_text)`, which collapses whitespace, so
+  analyzed tokens are in segment-source-copy coordinates.
 - The composition use case and `EventCompositionRecord` spans assume one
-  `source_text` with tokens covering it, and the replay reader needs
+  paragraph `source_text` with paragraph-local tokens, and the replay reader needs
   paragraph-local spans.
 
-Writing the artifact at the analysis point without resolving this would put
-tokens and spans in a different coordinate system than composition and replay
-expect. Two resolvable options:
-
-1. Build a paragraph-level artifact: analyze the paragraph text once (or
-   reconstruct paragraph tokens from the segment tokens through
-   `SourceCopyView.authoritative_range` and the segment offsets).
-2. Compose per segment and remap every resulting span back to paragraph
-   coordinates. The artifact must then also bind the segment identity and its
-   source-copy boundary map.
-
-This mapping is the concrete implementation decision the producer and worker
-need; it is not a file-count concern.
+Resolution: the pass analyzes the authoritative paragraph text unchanged once per
+Event-bearing paragraph and pins those tokens in `IngestionTokenArtifact` with
+paragraph-local offsets. HP4 keeps its existing segmented analysis; every segment
+source-copy trigger is mapped through `SourceCopyView.authoritative_range` and the
+segment's paragraph offset, and each mapped span is validated against the
+paragraph text, never located by text search.
 
 ### 9.2 Cancellation-test blocker (resolved)
 
@@ -260,19 +242,71 @@ need; it is not a file-count concern.
 `from packages.pipelines.tests.test_replay_reader import example_profile`, so its
 spawned worker needs the repository root on `sys.path`. Without it the worker
 fails with `ModuleNotFoundError: No module named 'packages'`. Running the suite
-with `PYTHONPATH=.` makes all eight cancellation tests pass. The failure is a
-test-invocation concern, reproducible and explained, not code flakiness.
+with `PYTHONPATH=.` makes all eight cancellation tests pass; the check plan
+records that invocation.
 
-Explicit recomposition stays the chosen behavior. Automatic recomposition after
-approval is out of scope for this increment.
-
-The user-boundary acceptance test is open until check 3 lands: invoke normal
-ingestion, inspect the hold through the replay reader, approve the occurrence,
-invoke `scripts/recompose_ingested_event.py`, reload replay, and verify the
-Assertion.
-
-The explicit recomposition command is discoverable and tested:
+Explicit recomposition stays the chosen behavior; automatic recomposition after
+approval is out of scope. The command is discoverable and tested:
 `scripts/recompose_ingested_event.py --request <json> --ledger <db> --out <json>`
-wraps `run_recomposition` in `ingestion_composition_command.py`. The
-`test_recomposition_command_composes_after_approval` test exercises that command
-path against a real Ledger.
+wraps `run_recomposition` in `ingestion_composition_command.py`.
+
+## 10. Completion Record
+
+R20 is complete. Same-view reference resolution is explicitly supported; a
+different source view is explicitly held with `cross_view_unsupported` and no
+reference. Verified cross-view resolution is deliberately out of scope and is not
+implied by this completion.
+
+Guarantees this record rests on:
+
+- An accepted identity occurs only through `accept_identity_occurrence`, which
+  validates the identity, the replayable `EvidenceTarget`, the occurrence, and the
+  `ProvenanceActivity` together. A grounding candidate never becomes an accepted
+  reference.
+- The live Adapter reads accepted occurrences only, prefers the accepted
+  `EvidenceTarget` coordinates, fails fast on missing evidence or identity, and
+  reports ambiguous or unfound mentions as typed diagnostics that become
+  Event-specific holds.
+- Normal ingestion persists one composition outcome per Event, keyed to the
+  worker's IngestionRun, and the replay reader shows the hold or the composed
+  Assertion with supporting spans.
+
+Verification evidence:
+
+- `packages/application`, `packages/adapters`, and `packages/pipelines`:
+  2,200 tests pass with `PYTHONPATH=.`.
+- Historical R17 and R18 contracts are unchanged. `git diff 5de64dc..HEAD -- data/
+  docs/hsq-*` touches exactly one file, the current-test contract
+  `data/r18-current-test-contract/semantic_selection_contract.json`; the rebind is
+  separate, scripted, and recorded in `docs/CHECK_PLAN.md`.
+- The R18 failure attributed to a pre-existing R17 defect was R20-caused: relaxing
+  `_EntityId` in `decontextualization_composition.py` drifted the bound scoring
+  digest. Reproducing that failure at pre-R20 `5de64dc` and at `5727595`, and its
+  appearance at `745cedf`, established the attribution.
+
+R20 completion is scoped to this ingestion and composition path. It does not
+establish whole-package completion, held-out validation, or general extraction
+reliability.
+
+## 11. Operator Handoff and Next Priorities
+
+1. Operator-run ingestion through the normal CLI, then interactive replay. This is
+   a human-run step: start it, watch it, and inspect the durable records
+   afterwards.
+   - Ingest:
+     `uv run kotekomi --config <kotekomi.toml> ingest <source-file> --url <url>`
+   - Replay the persisted run interactively:
+     `uv run kotekomi-live-replay --state-root <state-root>`
+   - Explicit recomposition after a reviewed occurrence is accepted:
+     `uv run python scripts/recompose_ingested_event.py --request <request.json> --ledger <ledger.db> --out <out.json>`
+   - Expected durable outputs: `<state-root>/kotekomi.db`,
+     `<state-root>/archive/`, `<state-root>/token-artifacts/<paragraph-node>.json`,
+     `<state-root>/composition-outcomes/<event-id>.json`.
+   - Success criteria: the replay view shows a `composition` section for each Event
+     that realized a trigger, each outcome names either a hold reason or a composed
+     Assertion with a supporting span, and recomposition after approval changes that
+     Event from held to composed on reload.
+2. Independent held-out validation for the package. R20 used development inputs
+   only; the held-out partition stays a separate, outstanding package requirement.
+3. Cross-view reference resolution stays unimplemented until real usage shows it
+   matters.
