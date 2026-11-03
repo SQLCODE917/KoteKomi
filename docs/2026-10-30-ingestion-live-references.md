@@ -131,6 +131,17 @@ Increment 1 is implemented and tested.
   identity, `EvidenceTarget`, occurrence, provenance, and proposal status all
   roll back together. A companion test proves the successful commit.
 
-Increments 2 through 4 remain open: the live Adapter, the ingestion composition
-stage, and the persisted replay exposure. R20 is not complete until the
-pre-review hold and the post-approval recomposition both appear in replay.
+Increment 2 is also implemented and tested.
+
+- Pipelines: `LiveIdentityReferenceProvider` translates accepted
+  `IdentityOccurrence` records into `EventEntityReferences`. It reads no
+  grounding candidate, locates each accepted mention source-exactly or by unique
+  whitespace-equivalent match, and excludes an ambiguous mention instead of
+  guessing.
+- The composer `DecontextualizationEntityRef` now admits the accepted canonical
+  `act_` and `org_` identity IDs alongside the reviewed `EGE` IDs, so the live
+  Adapter can carry an accepted identity into composition.
+
+Increments 3 and 4 remain open: the ingestion composition stage and the
+persisted replay exposure. R20 is not complete until the pre-review hold and the
+post-approval recomposition both appear in replay for a normal ingestion.
