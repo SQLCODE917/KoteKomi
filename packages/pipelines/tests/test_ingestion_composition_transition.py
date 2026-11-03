@@ -43,6 +43,10 @@ from kotekomi_domain import (
     TextViewKind,
     canonical_representation_digest,
 )
+from kotekomi_pipelines.ingestion_composition_command import (
+    RecompositionRequest,
+    run_recomposition,
+)
 from kotekomi_pipelines.ingestion_composition_stage import compose_ingested_event
 from kotekomi_pipelines.live_identity_reference_provider import LiveIdentityReferenceLedger
 
@@ -309,3 +313,46 @@ def test_held_then_approved_then_composed_and_replayed(tmp_path: Path) -> None:
     assert final.supporting_subject_span.text == "Alpha"
     assert final.supporting_object_span is not None
     assert final.supporting_object_span.text == "the reviewed assertion"
+
+
+def test_recomposition_command_composes_after_approval(tmp_path: Path) -> None:
+    db = tmp_path / "kotekomi.db"
+    _seed(db)
+    alpha_id = _alpha_identity_id()
+    candidate = GroundingCandidate(
+        candidate_kind="knowledge_base_entity",
+        eligible=True,
+        ambiguous=False,
+        identity_name="Alpha",
+    )
+    proposal = propose_identity_occurrence(
+        candidate, _proposal(), proposal_id="pcg_r20_command", now=NOW
+    )
+    with sqlite_ledger_transaction(db) as repository:
+        repository.save_proposed_change(proposal)
+        occurrence = accept_identity_occurrence(
+            proposal, repository, agent="kotekomi_agent", now=NOW
+        )
+        request = RecompositionRequest(
+            event_id=EVENT_ID,
+            source_text=TEXT,
+            source_text_sha256=TEXT_DIGEST,
+            inventory=_inventory(),
+            trigger_head_start=6,
+            trigger_head_end=14,
+            tokens=_tokens(),
+            representation_id=REP_ID,
+            text_view_id=TVW_ID,
+            predicate_by_label={"support": "supports"},
+            identity_by_entity={alpha_id: alpha_id},
+            assertion_type=AssertionType.REPORTED_OBSERVATION,
+            source_authority=SourceAuthority.SECONDARY,
+            attribution_basis=AttributionBasis.DIRECT_DOCUMENT,
+            source_id=SOURCE_ID,
+            evidence_target_id=occurrence.evidence_target_id,
+        )
+        record = run_recomposition(request, repository)
+
+    assert record.status is EventCompositionStatus.COMPOSED
+    assert record.assertion is not None
+    assert record.assertion.subject_entity_id == alpha_id

@@ -193,3 +193,9 @@ shows in the Textual replay view rather than only in the persisted read model.
 
 Explicit recomposition stays the chosen behavior. Automatic recomposition after
 approval is out of scope for this increment.
+
+The explicit recomposition command is discoverable and tested:
+`scripts/recompose_ingested_event.py --request <json> --ledger <db> --out <json>`
+wraps `run_recomposition` in `ingestion_composition_command.py`. The
+`test_recomposition_command_composes_after_approval` test exercises that command
+path against a real Ledger.
