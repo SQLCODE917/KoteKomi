@@ -51,6 +51,7 @@ def test_initialize_existing_ledger_is_idempotent(tmp_path: Path) -> None:
         "009",
         "010",
         "011",
+        "012",
     )
     assert second.applied_migrations == ()
     with sqlite3.connect(ledger_path) as connection:
