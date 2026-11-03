@@ -47,7 +47,10 @@ from kotekomi_pipelines.ingestion_composition_command import (
     RecompositionRequest,
     run_recomposition,
 )
-from kotekomi_pipelines.ingestion_composition_stage import compose_ingested_event
+from kotekomi_pipelines.ingestion_composition_stage import (
+    compose_ingested_event,
+    compose_paragraph_events,
+)
 from kotekomi_pipelines.live_identity_reference_provider import LiveIdentityReferenceLedger
 
 NOW = datetime(2026, 10, 30, tzinfo=UTC)
@@ -356,3 +359,72 @@ def test_recomposition_command_composes_after_approval(tmp_path: Path) -> None:
     assert record.status is EventCompositionStatus.COMPOSED
     assert record.assertion is not None
     assert record.assertion.subject_entity_id == alpha_id
+
+
+def test_compose_paragraph_events_persists_every_outcome(tmp_path: Path) -> None:
+    db = tmp_path / "kotekomi.db"
+    _seed(db)
+    alpha_id = _alpha_identity_id()
+    candidate = GroundingCandidate(
+        candidate_kind="knowledge_base_entity",
+        eligible=True,
+        ambiguous=False,
+        identity_name="Alpha",
+    )
+    proposal = propose_identity_occurrence(
+        candidate, _proposal(), proposal_id="pcg_r20_paragraph", now=NOW
+    )
+    root = tmp_path / "composition-outcomes"
+    events = ((EVENT_ID, 6, 14),)
+
+    with sqlite_ledger_transaction(db) as repository:
+        repository.save_proposed_change(proposal)
+
+        held = compose_paragraph_events(
+            repository=repository,
+            source_text=TEXT,
+            tokens=_tokens(),
+            events=events,
+            assertion_inputs_by_event={},
+            representation_id=REP_ID,
+            text_view_id=TVW_ID,
+            composition_root=root,
+        )
+        assert held[0].status is EventCompositionStatus.HELD
+        assert held[0].hold_reason == "assertion_inputs_unavailable"
+        assert (root / f"{EVENT_ID}.json").exists()
+
+        no_inventory = compose_paragraph_events(
+            repository=repository,
+            source_text=TEXT,
+            tokens=(),
+            events=events,
+            assertion_inputs_by_event={},
+            representation_id=REP_ID,
+            text_view_id=TVW_ID,
+            composition_root=root,
+        )
+        assert no_inventory[0].hold_reason == "inventory_unavailable"
+
+        occurrence = accept_identity_occurrence(
+            proposal, repository, agent="kotekomi_agent", now=NOW
+        )
+        composed = compose_paragraph_events(
+            repository=repository,
+            source_text=TEXT,
+            tokens=_tokens(),
+            events=events,
+            assertion_inputs_by_event={
+                EVENT_ID: _assertion_inputs(occurrence.evidence_target_id, alpha_id)
+            },
+            representation_id=REP_ID,
+            text_view_id=TVW_ID,
+            composition_root=root,
+        )
+        assert composed[0].status is EventCompositionStatus.COMPOSED
+
+    reloaded = load_event_composition_record(root / f"{EVENT_ID}.json")
+    assert reloaded.status is EventCompositionStatus.COMPOSED
+    assert reloaded.assertion is not None
+    assert reloaded.supporting_subject_span is not None
+    assert reloaded.supporting_subject_span.text == "Alpha"

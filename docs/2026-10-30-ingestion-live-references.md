@@ -189,10 +189,18 @@ shows in the Textual replay view rather than only in the persisted read model.
    `<ledger parent>/composition-outcomes` through `composition_annotations_for`,
    and `render_annotated_paragraph` (used by `render_live_block` and the Textual
    view) renders a `composition` section with the hold or Assertion summary.
-3. Normal ingestion entry point: open. The composition stage runs in the test
-   and in the explicit recomposition command, which writes to the replay source
-   path. Confirming normal ingestion invokes the composition stage and produces
-   the records replay consumes is still open.
+3. Normal ingestion entry point: partially open. The composition pass
+   `compose_paragraph_events` derives each Event's inventory from live
+   dependency tokens, runs the shared use case with the live Adapter, and
+   persists a composed or explicit held record for every Event
+   (`inventory_unavailable`, `assertion_inputs_unavailable`, or a broader hold).
+   It is tested. The concrete contract gap is the token source: normal hybrid
+   ingestion runs Stanza at runtime but does not persist the per-paragraph
+   dependency tokens, so the ingestion worker cannot feed the pass from persisted
+   artifacts yet. The worker must either persist those tokens as a derived
+   artifact or invoke the pass where the tokens are live. Reviewed assertion
+   inputs (predicate mapping, per-Event `EvidenceTarget`) stay review decisions;
+   the pass holds explicitly when they are absent.
 
 Explicit recomposition stays the chosen behavior. Automatic recomposition after
 approval is out of scope for this increment.
