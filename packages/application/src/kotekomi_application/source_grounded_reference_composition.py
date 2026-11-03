@@ -41,7 +41,10 @@ from kotekomi_application.source_grounded_selection import (
     select_source_grounded_constituents,
 )
 
-_EventId = Annotated[str, Field(pattern=r"^(TGE|AHE)-[0-9]{3}$")]
+#: Accepts the experiment residual IDs and the live SourceGroundedEvent IDs.
+_EventId = Annotated[
+    str, Field(pattern=r"^(?:(?:TGE|AHE)-[0-9]{3}|sge_[A-Za-z0-9][A-Za-z0-9_-]*)$")
+]
 _SHA256 = r"^[a-f0-9]{64}$"
 
 
