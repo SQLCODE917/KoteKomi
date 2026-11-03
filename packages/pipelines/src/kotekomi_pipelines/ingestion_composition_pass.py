@@ -13,17 +13,19 @@ from pathlib import Path
 from kotekomi_adapters import sqlite_ledger_transaction
 from kotekomi_application import (
     EventCompositionRecord,
+    EventCompositionStatus,
     EventEntityLinguisticToken,
     IngestionTokenArtifact,
     LinguisticAnalysis,
     LinguisticAnalysisInput,
     LinguisticAnalyzer,
+    write_event_composition_record,
 )
 from kotekomi_application.ingestion_inspection import build_profile
 
 from kotekomi_pipelines.ingestion_composition_stage import compose_paragraph_events
 from kotekomi_pipelines.ingestion_token_artifact import LocalTokenArtifactWriter
-from kotekomi_pipelines.replay_reader.transport import load_paragraph_inputs
+from kotekomi_pipelines.replay_reader.transport import ParagraphInput, load_paragraph_inputs
 
 
 def analyzer_identity(analysis: LinguisticAnalysis) -> str:
@@ -58,13 +60,16 @@ def compose_ingested_run(
     ledger_path: Path,
     archive_path: Path,
     analyzer: LinguisticAnalyzer,
+    ingestion_run_id: str,
 ) -> tuple[EventCompositionRecord, ...]:
     """Analyze every paragraph with an Event and persist each composition.
 
-    A paragraph without a realized Event yields no record. A paragraph with an
-    Event yields a composed record or a typed hold; none is skipped.
+    The pass is bound to the IngestionRun that the worker was assigned, so a
+    concurrent ingestion cannot make it compose another run's source. A paragraph
+    without a realized Event yields no record. A paragraph with an Event yields a
+    composed record or a typed hold; none is skipped.
     """
-    paragraphs = load_paragraph_inputs(ledger_path, archive_path)
+    paragraphs = load_paragraph_inputs(ledger_path, archive_path, ingestion_run_id=ingestion_run_id)
     composition_root = ledger_path.parent / "composition-outcomes"
     token_root = ledger_path.parent / "token-artifacts"
     records: list[EventCompositionRecord] = []
@@ -86,33 +91,41 @@ def compose_ingested_run(
             )
             try:
                 analysis = analyzer.analyze(LinguisticAnalysisInput(paragraph.text))
-                artifact = IngestionTokenArtifact(
-                    representation_id=paragraph.representation_id,
-                    text_view_id=profile.text_view_id or "",
-                    paragraph_node_id=paragraph.paragraph_node_id,
-                    node_start_char=paragraph.node_start_char,
-                    node_end_char=paragraph.node_start_char + len(paragraph.text),
-                    source_text_sha256=hashlib.sha256(paragraph.text.encode()).hexdigest(),
-                    analyzer_identity=analyzer_identity(analysis),
-                    tokens=event_entity_tokens(analysis),
-                )
             except (ValueError, RuntimeError):
-                # Analyzer or artifact failure stays visible as a typed hold.
+                # A recoverable analyzer failure stays visible as a typed hold.
                 records.extend(
-                    compose_paragraph_events(
-                        repository=repository,
-                        source_text=paragraph.text,
-                        tokens=(),
+                    _paragraph_holds(
+                        paragraph=paragraph,
                         events=events,
-                        assertion_inputs_by_event={},
-                        representation_id=paragraph.representation_id,
-                        text_view_id=profile.text_view_id or "",
                         composition_root=composition_root,
-                        node_start_char=paragraph.node_start_char,
+                        hold_reason="inventory_unavailable",
                     )
                 )
                 continue
-            LocalTokenArtifactWriter(token_root).write(artifact)
+            # An invalid deterministic binding is a defect, not a recoverable hold.
+            artifact = IngestionTokenArtifact(
+                representation_id=paragraph.representation_id,
+                text_view_id=profile.text_view_id or "",
+                paragraph_node_id=paragraph.paragraph_node_id,
+                node_start_char=paragraph.node_start_char,
+                node_end_char=paragraph.node_start_char + len(paragraph.text),
+                source_text_sha256=hashlib.sha256(paragraph.text.encode()).hexdigest(),
+                analyzer_identity=analyzer_identity(analysis),
+                tokens=event_entity_tokens(analysis),
+            )
+            try:
+                LocalTokenArtifactWriter(token_root).write(artifact)
+            except OSError:
+                # Persistence failure stays durable before it reaches the error stream.
+                records.extend(
+                    _paragraph_holds(
+                        paragraph=paragraph,
+                        events=events,
+                        composition_root=composition_root,
+                        hold_reason="artifact_persistence_failed",
+                    )
+                )
+                raise
             records.extend(
                 compose_paragraph_events(
                     repository=repository,
@@ -126,4 +139,26 @@ def compose_ingested_run(
                     node_start_char=paragraph.node_start_char,
                 )
             )
+    return tuple(records)
+
+
+def _paragraph_holds(
+    *,
+    paragraph: ParagraphInput,
+    events: tuple[tuple[str, int, int], ...],
+    composition_root: Path,
+    hold_reason: str,
+) -> tuple[EventCompositionRecord, ...]:
+    """Persist one typed hold per Event when the paragraph cannot be composed."""
+    source_text_sha256 = hashlib.sha256(paragraph.text.encode()).hexdigest()
+    records: list[EventCompositionRecord] = []
+    for event_id, _, _ in events:
+        record = EventCompositionRecord(
+            event_id=event_id,
+            source_text_sha256=source_text_sha256,
+            status=EventCompositionStatus.HELD,
+            hold_reason=hold_reason,
+        )
+        write_event_composition_record(Path(composition_root) / f"{event_id}.json", record)
+        records.append(record)
     return tuple(records)

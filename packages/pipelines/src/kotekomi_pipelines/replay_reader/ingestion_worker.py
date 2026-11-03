@@ -84,4 +84,5 @@ def _compose_ingested_run(request: IngestionProcessRequest) -> None:
         ledger_path=config.ledger_path,
         archive_path=config.archive_path,
         analyzer=build_linguistic_analyzer(config, runtime),
+        ingestion_run_id=request.ingestion_run_id,
     )

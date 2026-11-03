@@ -63,7 +63,7 @@
     "binding": {
       "policy_records_sha256": "85d3f3687c7bf2cffdb8ead30595b5c1c5d1d473af545e410f3a5b09d07abc87",
       "renderer_sha256": "762a54b5914952da16fab032d10bec919161a51444cbbd1635136c40f40c37c9",
-      "scoring_rules_sha256": "3d7f6edf3d85bc9f6aa0f93b753324f687f72bdfeb84a8f15a913a17ab409171",
+      "scoring_rules_sha256": "01871c66326a6b11b3021e409e759a9ecffdc9f0cbf2cdf80864c97e6324547f",
       "thresholds_sha256": "ba89bf3d7e2659d7791fbc01d04ba54cc7a100813ac90ee64c28a59dbf33385a"
     }
   }
