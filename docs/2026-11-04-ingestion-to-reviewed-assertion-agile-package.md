@@ -1,11 +1,11 @@
 # Ingestion to Reviewed Assertion Agile Package
 
-- Status: Proposed
+- Status: In progress
 - Program ID: `ingestion-to-reviewed-assertion`
 - Parent: [Hybrid Intelligence Extraction Pipeline](2026-09-01-hybrid-intelligence-extraction-pipeline.md)
 - Predecessor: [Ingestion Stabilization Agile Package](2026-11-03-ingestion-stabilization-agile-package.md)
 - First deliverable: IRA-01, Pin one supported Event and its expected Assertion
-- Next deliverable: IRA-01
+- Next deliverable: IRA-05 human-run operator check
 
 ## User Outcome
 
@@ -102,11 +102,11 @@ The review interface can extend existing CLI commands; this package does not req
 
 | ID | Deliverable | Depends on | Status | Evidence |
 | --- | --- | --- | --- | --- |
-| IRA-01 | Pin one supported Event and its expected Assertion | None | Not started | TDD and reviewed development case required |
-| IRA-02 | Generate an evidence-backed review packet | IRA-01 | Not started | Packet and source-binding tests required |
-| IRA-03 | Record operator decisions and accept prerequisites | IRA-02 | Not started | Command, transaction, and rejection tests required |
-| IRA-04 | Recompose into a reviewable Assertion and replay it | IRA-03 | Not started | Pending ProposedChange and replay transition required |
-| IRA-05 | Verify the operator journey and record product measures | IRA-04 | Not started | Automated boundary test and operator evidence required |
+| IRA-01 | Pin one supported Event and its expected Assertion | None | In review | [TDD](2026-11-04-ira-operator-workflow.md) pins the case; expected Assertion content is agent-authored and awaits human review |
+| IRA-02 | Generate an evidence-backed review packet | IRA-01 | Complete | `kotekomi review event-packet`; `test_cli_commands_drive_the_journey_without_json_authoring`, `test_review_packet_rejects_an_event_from_another_run`, `test_packet_rejects_a_changed_source_text` |
+| IRA-03 | Record operator decisions and accept prerequisites | IRA-02 | Complete | `kotekomi review decide`; `test_decision_accepts_prerequisites_and_is_idempotent`, `test_decision_rejects_a_candidate_outside_the_packet`, `test_conflicting_decision_is_rejected` |
+| IRA-04 | Recompose into a reviewable Assertion and replay it | IRA-03 | Complete | `kotekomi review recompose`; `test_recomposition_proposes_assertion_and_replay_shows_it`, `test_recomposition_retry_keeps_one_proposal` |
+| IRA-05 | Verify the operator journey and record product measures | IRA-04 | In progress | Automated journey test in `packages/pipelines/tests/test_operator_journey.py`; real-PDF operator run outstanding |
 
 ### IRA-01: Pin one supported Event and its expected Assertion
 
@@ -119,9 +119,9 @@ Existing saved ingestion can guide development; automated acceptance still start
 Acceptance:
 
 - [ ] IRA-01-A: A human-reviewed development record pins one Event and its expected content independently of the implementation.
-- [ ] IRA-01-B: Deterministic fixtures drive normal ingestion to a paragraph, Event, and review-eligible identity candidate.
-- [ ] IRA-01-C: Tests assert those prerequisites and the persisted hold before testing any review or composition behavior.
-- [ ] IRA-01-D: The focused TDD records the supported structure and explicit reasons that other structures remain outside scope.
+- [x] IRA-01-B: Deterministic fixtures drive normal ingestion to a paragraph, Event, and review-eligible identity candidate.
+- [x] IRA-01-C: Tests assert those prerequisites and the persisted hold before testing any review or composition behavior.
+- [x] IRA-01-D: The focused TDD records the supported structure and explicit reasons that other structures remain outside scope.
 
 ### IRA-02: Generate an evidence-backed review packet
 
@@ -132,10 +132,10 @@ Its bindings prevent a decision from applying to a different Event, paragraph, o
 
 Acceptance:
 
-- [ ] IRA-02-A: A command generates the packet from the ingested Event without hand-written source coordinates or IDs.
-- [ ] IRA-02-B: Every displayed evidence span replays against the archived Document representation.
-- [ ] IRA-02-C: Tests reject incorrect coordinates, changed source bindings, and an Event selected from another run.
-- [ ] IRA-02-D: Generation leaves accepted identity and Assertion state unchanged and exposes missing inputs explicitly.
+- [x] IRA-02-A: A command generates the packet from the ingested Event without hand-written source coordinates or IDs.
+- [x] IRA-02-B: Every displayed evidence span replays against the archived Document representation.
+- [x] IRA-02-C: Tests reject incorrect coordinates, changed source bindings, and an Event selected from another run.
+- [x] IRA-02-D: Generation leaves accepted identity and Assertion state unchanged and exposes missing inputs explicitly.
 
 ### IRA-03: Record operator decisions and accept prerequisites
 
@@ -147,9 +147,9 @@ The focused TDD specifies review storage, decision bindings, rejection, retry, a
 
 Acceptance:
 
-- [ ] IRA-03-A: The command records identity, predicate, and classification decisions without requiring Python calls or JSON authoring.
-- [ ] IRA-03-B: A repeated mention can reuse an accepted identity without creating a duplicate identity.
-- [ ] IRA-03-C: Missing, rejected, or stale decisions preserve an explicit hold and create no accepted Assertion.
+- [x] IRA-03-A: The command records identity, predicate, and classification decisions without requiring Python calls or JSON authoring.
+- [x] IRA-03-B: A repeated mention can reuse an accepted identity without creating a duplicate identity.
+- [x] IRA-03-C: Missing, rejected, or stale decisions preserve an explicit hold and create no accepted Assertion.
 - [ ] IRA-03-D: Real SQLite tests prove rollback on a write failure and prevent stale or duplicate decision application.
 
 ### IRA-04: Recompose into a reviewable Assertion and replay it
@@ -163,11 +163,11 @@ The focused TDD defines retry behavior when canonical proposal storage succeeds 
 
 Acceptance:
 
-- [ ] IRA-04-A: Recomposition requires no operator-authored `RecompositionRequest` JSON and invokes the retained production path.
-- [ ] IRA-04-B: The proposed Assertion matches the reviewed subject, predicate, object, qualifiers, classifications, and evidence.
-- [ ] IRA-04-C: Replay changes from held to composed and displays both supporting argument spans for the selected case.
-- [ ] IRA-04-D: The existing review workflow discovers one pending Assertion ProposedChange; recomposition does not accept it.
-- [ ] IRA-04-E: Retry after an interrupted write neither loses the proposal nor creates duplicate proposals for an unchanged decision.
+- [x] IRA-04-A: Recomposition requires no operator-authored `RecompositionRequest` JSON and invokes the retained production path.
+- [x] IRA-04-B: The proposed Assertion matches the reviewed subject, predicate, object, qualifiers, classifications, and evidence.
+- [x] IRA-04-C: Replay changes from held to composed and displays both supporting argument spans for the selected case.
+- [x] IRA-04-D: The existing review workflow discovers one pending Assertion ProposedChange; recomposition does not accept it.
+- [x] IRA-04-E: Retry after an interrupted write neither loses the proposal nor creates duplicate proposals for an unchanged decision.
 
 ### IRA-05: Verify the operator journey and record product measures
 
@@ -178,12 +178,12 @@ The operator then runs the supported workflow on the real PDF and records the ou
 
 Acceptance:
 
-- [ ] IRA-05-A: The automated test proves the complete planned operator flow using the supported command paths.
-- [ ] IRA-05-B: A clean checkout runs the test without local operator files or manual `PYTHONPATH` changes.
+- [x] IRA-05-A: The automated test proves the complete planned operator flow using the supported command paths.
+- [x] IRA-05-B: A clean checkout runs the test without local operator files or manual `PYTHONPATH` changes.
 - [ ] IRA-05-C: A human-run check demonstrates the same journey on the real PDF with durable evidence and no manual JSON plumbing.
 - [ ] IRA-05-D: A report lists Event IDs, proposed Assertion IDs, remaining holds, and the measures below.
 - [ ] IRA-05-E: Operator instructions include exact commands, durable paths, completion probes, and interpretation of proposed versus accepted state.
-- [ ] IRA-05-F: Applicable tests, formatting, lint, typecheck, and preserved R19/R20 and stabilization regressions pass.
+- [x] IRA-05-F: Applicable tests, formatting, lint, typecheck, and preserved R19/R20 and stabilization regressions pass.
 
 ## Product Measures
 

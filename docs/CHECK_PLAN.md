@@ -252,3 +252,5 @@
 - Require a human-run check on the real PDF with exact commands, durable result paths, a completion probe, and correctness against the reviewed case; the operator writes no IDs, selectors, tokens, or recomposition JSON.
 - Report Events discovered, packets generated, correct complete Assertion proposals, remaining holds by Event and reason, and operator effort; distinguish the selected development case from the whole run.
 - Keep independent held-out validation and general extraction reliability outside this package's completion claim.
+- verify the IRA operator journey with `uv run pytest packages/pipelines/tests/test_operator_journey.py -q`; it drives normal ingestion, packet generation, reviewed decisions, explicit recomposition, replay reload, and the pending Assertion ProposedChange with no seeded outcomes and no Connection Gold import
+- verify the supported operator commands with `uv run kotekomi --config <config> review event-packet|decide|recompose --run <igr_...> --event <sge_...>`; the operator supplies decisions only, and IDs, evidence selectors, tokens, and recomposition inputs come from stored records

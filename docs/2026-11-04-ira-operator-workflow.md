@@ -1,0 +1,124 @@
+# TDD: Operator Workflow from Ingestion to a Proposed Assertion
+
+- Status: Accepted (agent-authored; development case awaits human review)
+- Deliverables: IRA-01 through IRA-05
+- Parent: [Ingestion to Reviewed Assertion](2026-11-04-ingestion-to-reviewed-assertion-agile-package.md)
+- Baseline revision: `a0e2bc1`
+
+## 1. Development case (IRA-01)
+
+The development case comes from the existing Anthropic-United States Department of Defense
+dispute PDF at `packages/adapters/tests/fixtures/pdf/2025-community-health-improvement-plan-press-release.pdf`.
+Deterministic analyzer, linker, and interpretation fixtures drive it; the case is
+development evidence only.
+
+| Element | Pinned value |
+|---|---|
+| Paragraph node | ends with `_0012` |
+| Paragraph text | 450 characters, source digest recorded by the packet |
+| Trigger | `share`, paragraph offsets 75..80 |
+| Subject | `HealthyJoCo`, paragraph offsets 49..60 |
+| Object | `Plan`, paragraph offsets 114..118 |
+| Relation label | `share` |
+| Review-eligible candidate | `HealthyJoCo` from HP-3 eligibility and link evidence |
+| Ingestion state | one Event with hold `assertion_inputs_unavailable` |
+
+Proposed expected Assertion (agent-authored; awaiting human review):
+
+| Field | Proposed value |
+|---|---|
+| Type | `reported_observation` |
+| Epistemic scope | `source_report` |
+| Subject | newly accepted `Organization` for `HealthyJoCo` |
+| Predicate | `shared` |
+| Object | value `Plan` |
+| Qualifiers | `polarity: affirmed`, `modality: actual` |
+| Source authority | `secondary` |
+| Attribution basis | `direct_document` |
+| Evidence | the accepted occurrence's replayable EvidenceTarget |
+| Status | `proposed` |
+
+Declared out of scope: multi-subject composition, cross-view references, unsupported
+time or place composition, automatic acceptance, and prompt or policy changes.
+
+## 2. Contracts
+
+`kotekomi_application.event_construction_review` owns the packet DTO, the decision input,
+the decision digest, the reviewed-decision use case, and the assertion-input conversion.
+`kotekomi_pipelines.event_review_workflow` assembles the packet from stored records and
+composes the use cases. `EventConstructionReview` is a Domain Core record with the
+`event_construction_reviews` table (migration `013`).
+
+The packet binds the IngestionRun, Event, paragraph, TextView digest, source text digest,
+and the exact displayed spans. The reviewed-decision use case rejects a decision whose
+candidate is absent from the packet, and it rejects a second different decision for the
+same Event.
+
+Recomposition requires an approved review bound to the same source digest. It loads the
+pinned token artifact, the constituent inventory, and the accepted occurrence, then calls
+the retained `compose_ingested_event` and the retained Assertion constructor.
+
+## 3. Supported commands
+
+```bash
+uv run kotekomi --config <config> review event-packet --run <igr_...> --event <sge_...>
+uv run kotekomi --config <config> review decide --run <igr_...> --event <sge_...> \
+  --candidate-text HealthyJoCo --identity-kind organization --identity new:HealthyJoCo \
+  --predicate shared --assertion-type reported_observation \
+  --source-authority secondary --attribution-basis direct_document --reviewer <name>
+uv run kotekomi --config <config> review recompose --run <igr_...> --event <sge_...>
+```
+
+The operator supplies decisions only. IDs, evidence selectors, dependency tokens, and
+recomposition JSON come from stored records.
+
+## 4. Acceptance evidence
+
+| Check | Evidence |
+|---|---|
+| IRA-01-B/C | `test_normal_ingestion_persists_event_candidate_and_hold` |
+| IRA-02-A/B | `test_cli_commands_drive_the_journey_without_json_authoring` |
+| IRA-02-C | `test_review_packet_rejects_an_event_from_another_run`, `test_packet_rejects_a_changed_source_text` |
+| IRA-02-D | `test_recomposition_without_a_review_keeps_the_hold` |
+| IRA-03-A/B | `test_decision_accepts_prerequisites_and_is_idempotent` |
+| IRA-03-C | `test_decision_rejects_a_candidate_outside_the_packet`, `test_conflicting_decision_is_rejected` |
+| IRA-04-A/B/C | `test_recomposition_proposes_assertion_and_replay_shows_it` |
+| IRA-04-D | the pending `Assertion` ProposedChange assertions in the same test |
+| IRA-04-E | `test_recomposition_retry_keeps_one_proposal` |
+| IRA-05-A/B | the whole file runs normal ingestion with no seeded outcomes and no Connection Gold |
+| IRA-05-C | operator handoff below; human-run result outstanding |
+
+## 5. Operator handoff for the real-PDF check (IRA-05-C)
+
+Commands, run against a disposable state root and the real model configuration:
+
+```bash
+uv run kotekomi --config <config> ingest <press-release.pdf> --url <source-url>
+uv run kotekomi ingestions list
+uv run kotekomi --config <config> review event-packet --run <igr_...> --event <sge_...>
+uv run kotekomi --config <config> review decide --run <igr_...> --event <sge_...> \
+  --candidate-text <candidate> --identity-kind <actor|organization> \
+  --identity <new:Name|existing:act_...> --predicate <predicate> \
+  --assertion-type <reported_observation|reported_claim> \
+  --source-authority <primary|secondary|tertiary|unknown> \
+  --attribution-basis <direct_document|second_hand_report|anonymous_report|unknown> \
+  --reviewer <name>
+uv run kotekomi --config <config> review recompose --run <igr_...> --event <sge_...>
+uv run kotekomi review list --record-type Assertion
+uv run kotekomi-live-replay --state-root <state-root>
+```
+
+Durable outputs: `<state-root>/kotekomi.db`, `<state-root>/archive/`,
+`<state-root>/token-artifacts/`, `<state-root>/composition-outcomes/<event>.json`.
+Completion probe: `review recompose` prints `"status": "composed"` and an
+`assertion_status` of `proposed`; `review list --record-type Assertion` lists one pending
+record for that Event; replay shows the composition section with both supporting spans.
+Success criteria: one correct, complete, proposed Assertion whose content matches the
+reviewed decision and whose evidence replays.
+
+## 6. Limitations
+
+- The development case and its expected Assertion are agent-authored and await human review.
+- The real-PDF operator run is outstanding; IRA-05-C is open until it is recorded.
+- The journey covers one Event and one paragraph. It says nothing about extraction accuracy.
+- Cross-view references remain out of scope.

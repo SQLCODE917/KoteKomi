@@ -37,6 +37,7 @@ AssertionEvidenceLinkId = Annotated[str, Field(pattern=r"^ael_[A-Za-z0-9][A-Za-z
 EvidenceReanchoringRelationId = Annotated[str, Field(pattern=r"^erl_[A-Za-z0-9][A-Za-z0-9_-]*$")]
 AssertionId = Annotated[str, Field(pattern=r"^ast_[A-Za-z0-9][A-Za-z0-9_-]*$")]
 IdentityOccurrenceId = Annotated[str, Field(pattern=r"^ioc_[A-Za-z0-9][A-Za-z0-9_-]*$")]
+EventConstructionReviewId = Annotated[str, Field(pattern=r"^ecr_[A-Za-z0-9][A-Za-z0-9_-]*$")]
 RelationshipId = Annotated[str, Field(pattern=r"^rel_[A-Za-z0-9][A-Za-z0-9_-]*$")]
 OutcomeId = Annotated[str, Field(pattern=r"^out_[A-Za-z0-9][A-Za-z0-9_-]*$")]
 ArgumentEdgeId = Annotated[str, Field(pattern=r"^arg_[A-Za-z0-9][A-Za-z0-9_-]*$")]
@@ -1858,6 +1859,53 @@ class IdentityOccurrence(DomainModel):
             and not self.identity_id.startswith("org_")
         ):
             raise ValueError("An organization identity occurrence requires an Organization ID.")
+        return self
+
+
+class EventConstructionReview(DomainModel):
+    """One approved construction decision for one ingested Event.
+
+    The record binds the decision to the exact ingestion run, paragraph, source text
+    digest, and accepted identity occurrence, so a decision cannot apply to a
+    different Event, paragraph, or source revision.
+    """
+
+    id: EventConstructionReviewId
+    event_id: NonEmptyStr
+    ingestion_run_id: IngestionRunId
+    paragraph_node_id: NonEmptyStr
+    representation_id: NonEmptyStr
+    text_view_id: NonEmptyStr
+    source_text_sha256: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
+    source_id: SourceId
+    document_id: DocumentId
+    evidence_target_id: EvidenceTargetId
+    identity_occurrence_id: IdentityOccurrenceId
+    subject_identity_id: ActorId | OrganizationId
+    subject_identity_kind: IdentityOccurrenceKind
+    predicate: NonEmptyStr
+    assertion_type: AssertionType
+    source_authority: SourceAuthority
+    attribution_basis: AttributionBasis
+    reviewer: NonEmptyStr
+    review_status: ReviewStatus = ReviewStatus.APPROVED
+    decision_sha256: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
+    provenance_activity_id: ProvenanceActivityId
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
+
+    @model_validator(mode="after")
+    def validate_review(self) -> Self:
+        if self.review_status is not ReviewStatus.APPROVED:
+            raise ValueError("An event construction review must record an approved decision.")
+        if self.subject_identity_kind is IdentityOccurrenceKind.ACTOR and not (
+            self.subject_identity_id.startswith("act_")
+        ):
+            raise ValueError("An actor subject requires an Actor ID.")
+        if self.subject_identity_kind is IdentityOccurrenceKind.ORGANIZATION and not (
+            self.subject_identity_id.startswith("org_")
+        ):
+            raise ValueError("An organization subject requires an Organization ID.")
         return self
 
 

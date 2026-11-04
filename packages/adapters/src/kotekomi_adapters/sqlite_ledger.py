@@ -49,6 +49,7 @@ from kotekomi_domain import (
     DocumentTableRow,
     Entity,
     Event,
+    EventConstructionReview,
     EvidenceReanchoringRelation,
     EvidenceTarget,
     EvidenceValidationAttempt,
@@ -350,6 +351,7 @@ CAPTURE_DOCUMENT_RESOLUTION_SPEC = RecordSpec(
 )
 EVIDENCE_TARGET_SPEC = RecordSpec("evidence_targets", EvidenceTarget)
 IDENTITY_OCCURRENCE_SPEC = RecordSpec("identity_occurrences", IdentityOccurrence)
+EVENT_CONSTRUCTION_REVIEW_SPEC = RecordSpec("event_construction_reviews", EventConstructionReview)
 EVIDENCE_VALIDATION_ATTEMPT_SPEC = RecordSpec(
     "evidence_validation_attempts", EvidenceValidationAttempt
 )
@@ -437,6 +439,7 @@ REQUIRED_LEDGER_TABLES = (
     "source_lineage_relations",
     "evidence_targets",
     "identity_occurrences",
+    "event_construction_reviews",
     "evidence_validation_attempts",
     "processing_task_fingerprints",
     "processing_attempts",
@@ -1689,6 +1692,25 @@ class SQLiteLedgerRepository:
 
     def list_identity_occurrences(self) -> tuple[IdentityOccurrence, ...]:
         return self._list(IDENTITY_OCCURRENCE_SPEC)
+
+    def save_event_construction_review(self, record: EventConstructionReview) -> None:
+        self._save(EVENT_CONSTRUCTION_REVIEW_SPEC, record)
+
+    def get_event_construction_review(self, record_id: str) -> EventConstructionReview | None:
+        return self._get(EVENT_CONSTRUCTION_REVIEW_SPEC, record_id)
+
+    def list_event_construction_reviews(self) -> tuple[EventConstructionReview, ...]:
+        return self._list(EVENT_CONSTRUCTION_REVIEW_SPEC)
+
+    def get_event_construction_review_for_event(
+        self, event_id: str
+    ) -> EventConstructionReview | None:
+        matches = [
+            record
+            for record in self._list(EVENT_CONSTRUCTION_REVIEW_SPEC)
+            if record.event_id == event_id
+        ]
+        return matches[-1] if matches else None
 
     def list_identity_occurrences_for_identity(
         self, identity_id: str

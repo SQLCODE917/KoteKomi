@@ -671,6 +671,15 @@ def main(argv: list[str] | None = None) -> int:
             canonical_predicate=args.canonical_predicate,
         )
 
+    if args.command == "review" and args.review_command == "event-packet":
+        return _review_event_packet(args)
+
+    if args.command == "review" and args.review_command == "decide":
+        return _review_decide(args)
+
+    if args.command == "review" and args.review_command == "recompose":
+        return _review_recompose(args)
+
     if args.command == "review" and args.review_command == "list":
         config = load_config(
             config_path=args.config,
@@ -1351,6 +1360,57 @@ def build_parser() -> argparse.ArgumentParser:
 
     review_parser = subparsers.add_parser("review", help="ProposedChange review commands.")
     review_subparsers = review_parser.add_subparsers(dest="review_command")
+    packet_parser = review_subparsers.add_parser(
+        "event-packet",
+        help="Build one ingested Event's review packet from stored records.",
+    )
+    packet_parser.add_argument("--run", dest="ingestion_run_id", required=True)
+    packet_parser.add_argument("--event", dest="event_id", required=True)
+    packet_parser.add_argument(
+        "--format", dest="output_format", choices=("json", "text"), default="json"
+    )
+
+    decide_parser = review_subparsers.add_parser(
+        "decide",
+        help="Record one reviewed construction decision for an ingested Event.",
+    )
+    decide_parser.add_argument("--run", dest="ingestion_run_id", required=True)
+    decide_parser.add_argument("--event", dest="event_id", required=True)
+    decide_parser.add_argument("--candidate-text", required=True)
+    decide_parser.add_argument("--identity-kind", choices=("actor", "organization"), required=True)
+    decide_parser.add_argument(
+        "--identity",
+        required=True,
+        help="new:<name> to propose a new identity, or existing:<id> to link one.",
+    )
+    decide_parser.add_argument("--predicate", required=True)
+    decide_parser.add_argument(
+        "--assertion-type",
+        choices=("reported_observation", "reported_claim"),
+        required=True,
+    )
+    decide_parser.add_argument(
+        "--source-authority",
+        choices=("primary", "secondary", "tertiary", "unknown"),
+        required=True,
+    )
+    decide_parser.add_argument(
+        "--attribution-basis",
+        choices=("direct_document", "second_hand_report", "anonymous_report", "unknown"),
+        required=True,
+    )
+    decide_parser.add_argument("--reviewer", required=True)
+
+    recompose_parser = review_subparsers.add_parser(
+        "recompose",
+        help="Recompose one reviewed ingested Event into a proposed Assertion.",
+    )
+    recompose_parser.add_argument("--run", dest="ingestion_run_id", required=True)
+    recompose_parser.add_argument("--event", dest="event_id", required=True)
+    recompose_parser.add_argument(
+        "--format", dest="output_format", choices=("json", "text"), default="json"
+    )
+
     list_parser = review_subparsers.add_parser(
         "list",
         help="List ProposedChange records awaiting review.",
@@ -4655,3 +4715,171 @@ def generate_markdown_briefing(
 
 if __name__ == "__main__":
     sys.exit(main())
+
+
+def _review_event_packet(args: argparse.Namespace) -> int:
+    """Print one ingested Event's review packet."""
+    import json as _json
+
+    from kotekomi_pipelines.event_review_workflow import build_event_review_packet
+
+    config = load_config(
+        config_path=args.config,
+        ledger_path_override=None,
+        archive_path_override=None,
+    )
+    packet = build_event_review_packet(
+        ledger_path=config.ledger_path,
+        archive_path=config.archive_path,
+        ingestion_run_id=args.ingestion_run_id,
+        event_id=args.event_id,
+    )
+    payload = {
+        "ingestion_run_id": packet.ingestion_run_id,
+        "event_id": packet.event_id,
+        "paragraph_node_id": packet.paragraph_node_id,
+        "source_text_sha256": packet.source_text_sha256,
+        "source_id": packet.source_id,
+        "document_id": packet.document_id,
+        "trigger": {"start": packet.trigger_start, "end": packet.trigger_end},
+        "relation_label": packet.relation_label,
+        "subject": {
+            "start": packet.subject_start,
+            "end": packet.subject_end,
+            "text": packet.subject_text,
+        },
+        "object": {
+            "start": packet.object_start,
+            "end": packet.object_end,
+            "text": packet.object_text,
+        },
+        "candidates": [
+            {
+                "start": candidate.start,
+                "end": candidate.end,
+                "exact_text": candidate.exact_text,
+                "identity_name": candidate.identity_name,
+            }
+            for candidate in packet.candidates
+        ],
+        "accepted_identity_ids": list(packet.accepted_identity_ids),
+        "required_decisions": list(packet.required_decisions),
+        "hold_reason": packet.hold_reason,
+        "existing_review_id": packet.existing_review_id,
+        "evidence_target_id": packet.evidence_target_id,
+    }
+    print(_json.dumps(payload, indent=2, sort_keys=True))
+    return 0
+
+
+def _review_decide(args: argparse.Namespace) -> int:
+    """Record one reviewed construction decision for an ingested Event."""
+    from datetime import UTC, datetime
+
+    from kotekomi_application import EventConstructionDecisionInput
+    from kotekomi_domain import (
+        AssertionType,
+        AttributionBasis,
+        IdentityOccurrenceKind,
+        SourceAuthority,
+    )
+
+    from kotekomi_pipelines.event_review_workflow import (
+        build_event_review_packet,
+        record_review_decision,
+    )
+
+    config = load_config(
+        config_path=args.config,
+        ledger_path_override=None,
+        archive_path_override=None,
+    )
+    packet = build_event_review_packet(
+        ledger_path=config.ledger_path,
+        archive_path=config.archive_path,
+        ingestion_run_id=args.ingestion_run_id,
+        event_id=args.event_id,
+    )
+    candidate = next(
+        (item for item in packet.candidates if item.exact_text == args.candidate_text),
+        None,
+    )
+    if candidate is None:
+        print(f"no review candidate with text {args.candidate_text!r}", file=sys.stderr)
+        return 2
+    kind, _, identity = args.identity.partition(":")
+    if kind not in {"new", "existing"} or not identity:
+        print("--identity requires new:<name> or existing:<id>", file=sys.stderr)
+        return 2
+    decision = EventConstructionDecisionInput(
+        candidate_start=candidate.start,
+        candidate_end=candidate.end,
+        exact_text=candidate.exact_text,
+        identity_kind=IdentityOccurrenceKind(args.identity_kind),
+        identity_decision="new_identity" if kind == "new" else "existing_identity",
+        identity_name=identity if kind == "new" else None,
+        existing_identity_id=identity if kind == "existing" else None,
+        predicate=args.predicate,
+        assertion_type=AssertionType(args.assertion_type),
+        source_authority=SourceAuthority(args.source_authority),
+        attribution_basis=AttributionBasis(args.attribution_basis),
+        reviewer=args.reviewer,
+    )
+    review = record_review_decision(
+        ledger_path=config.ledger_path,
+        archive_path=config.archive_path,
+        ingestion_run_id=args.ingestion_run_id,
+        event_id=args.event_id,
+        decision=decision,
+        now=datetime.now(UTC),
+    )
+    print(
+        json.dumps(
+            {
+                "review_id": review.id,
+                "event_id": review.event_id,
+                "subject_identity_id": review.subject_identity_id,
+                "predicate": review.predicate,
+                "evidence_target_id": review.evidence_target_id,
+            },
+            indent=2,
+            sort_keys=True,
+        )
+    )
+    return 0
+
+
+def _review_recompose(args: argparse.Namespace) -> int:
+    """Recompose one reviewed Event and report its proposed Assertion."""
+    from datetime import UTC, datetime
+
+    from kotekomi_pipelines.event_review_workflow import recompose_reviewed_event
+
+    config = load_config(
+        config_path=args.config,
+        ledger_path_override=None,
+        archive_path_override=None,
+    )
+    record = recompose_reviewed_event(
+        ledger_path=config.ledger_path,
+        archive_path=config.archive_path,
+        ingestion_run_id=args.ingestion_run_id,
+        event_id=args.event_id,
+        now=datetime.now(UTC),
+    )
+    assertion = record.assertion
+    print(
+        json.dumps(
+            {
+                "event_id": record.event_id,
+                "status": record.status.value,
+                "hold_reason": record.hold_reason,
+                "assertion_id": None if assertion is None else assertion.id,
+                "assertion_status": None if assertion is None else assertion.status.value,
+                "predicate": None if assertion is None else assertion.predicate,
+            },
+            indent=2,
+            sort_keys=True,
+        )
+    )
+    return 0
