@@ -11,6 +11,7 @@ import hashlib
 from pathlib import Path
 
 from kotekomi_adapters import sqlite_ledger_transaction
+from kotekomi_adapters.composition_outcome_store import CompositionOutcomeStore
 from kotekomi_application import (
     EventCompositionRecord,
     EventCompositionStatus,
@@ -19,7 +20,6 @@ from kotekomi_application import (
     LinguisticAnalysis,
     LinguisticAnalysisInput,
     LinguisticAnalyzer,
-    write_event_composition_record,
 )
 from kotekomi_application.ingestion_inspection import build_profile
 
@@ -70,7 +70,7 @@ def compose_ingested_run(
     composed record or a typed hold; none is skipped.
     """
     paragraphs = load_paragraph_inputs(ledger_path, archive_path, ingestion_run_id=ingestion_run_id)
-    composition_root = ledger_path.parent / "composition-outcomes"
+    store = CompositionOutcomeStore(ledger_path.parent / "composition-outcomes")
     token_root = ledger_path.parent / "token-artifacts"
     records: list[EventCompositionRecord] = []
     with sqlite_ledger_transaction(ledger_path) as repository:
@@ -97,7 +97,7 @@ def compose_ingested_run(
                     _paragraph_holds(
                         paragraph=paragraph,
                         events=events,
-                        composition_root=composition_root,
+                        store=store,
                         hold_reason="inventory_unavailable",
                     )
                 )
@@ -121,7 +121,7 @@ def compose_ingested_run(
                     _paragraph_holds(
                         paragraph=paragraph,
                         events=events,
-                        composition_root=composition_root,
+                        store=store,
                         hold_reason="artifact_persistence_failed",
                     )
                 )
@@ -135,7 +135,7 @@ def compose_ingested_run(
                     assertion_inputs_by_event={},
                     representation_id=paragraph.representation_id,
                     text_view_id=artifact.text_view_id,
-                    composition_root=composition_root,
+                    store=store,
                     node_start_char=paragraph.node_start_char,
                 )
             )
@@ -146,7 +146,7 @@ def _paragraph_holds(
     *,
     paragraph: ParagraphInput,
     events: tuple[tuple[str, int, int], ...],
-    composition_root: Path,
+    store: CompositionOutcomeStore,
     hold_reason: str,
 ) -> tuple[EventCompositionRecord, ...]:
     """Persist one typed hold per Event when the paragraph cannot be composed."""
@@ -159,6 +159,6 @@ def _paragraph_holds(
             status=EventCompositionStatus.HELD,
             hold_reason=hold_reason,
         )
-        write_event_composition_record(Path(composition_root) / f"{event_id}.json", record)
+        store.save(record)
         records.append(record)
     return tuple(records)

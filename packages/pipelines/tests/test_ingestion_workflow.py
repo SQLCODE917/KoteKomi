@@ -16,12 +16,12 @@ from pathlib import Path
 from typing import Any, cast
 
 import pytest
+from kotekomi_adapters.composition_outcome_store import CompositionOutcomeStore
 from kotekomi_application import (
     LinguisticAnalysis,
     LinguisticAnalysisInput,
     LinguisticToken,
     UniversalPartOfSpeech,
-    load_event_composition_record,
 )
 from kotekomi_application.ingestion_execution import IngestionProcessRequest
 from kotekomi_application.ingestion_inspection import ParagraphSnapshot
@@ -224,9 +224,7 @@ def _composition_outcomes(
             record.subject_text,
             record.object_text,
         )
-        for record in (
-            load_event_composition_record(path) for path in sorted(outcomes_dir.glob("*.json"))
-        )
+        for record in CompositionOutcomeStore(outcomes_dir).load_all()
     ]
     return sorted(outcomes, key=lambda item: tuple(str(part) for part in item))
 

@@ -15,6 +15,7 @@ import argparse
 import json
 from pathlib import Path
 
+from kotekomi_adapters.composition_outcome_store import CompositionOutcomeStore
 from kotekomi_adapters.sqlite_ledger import sqlite_ledger_transaction
 from kotekomi_pipelines.ingestion_composition_command import (
     RecompositionRequest,
@@ -38,13 +39,13 @@ def main() -> int:
     with sqlite_ledger_transaction(Path(args.ledger)) as repository:
         record = run_recomposition(request, repository)
 
-    output = (
-        Path(args.out)
+    store = CompositionOutcomeStore(
+        Path(args.out).resolve().parent
         if args.out
-        else Path(args.ledger).resolve().parent / "composition-outcomes" / f"{record.event_id}.json"
+        else Path(args.ledger).resolve().parent / "composition-outcomes"
     )
-    output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(record.model_dump_json(indent=2), encoding="utf-8")
+    store.save(record)
+    output = store.root / f"{record.event_id}.json"
     print(
         json.dumps(
             {

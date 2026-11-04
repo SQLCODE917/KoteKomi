@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Any, cast
 
 from kotekomi_adapters import sqlite_ledger_transaction
+from kotekomi_adapters.composition_outcome_store import CompositionOutcomeStore
 from kotekomi_application import (
     EventCompositionStatus,
     IdentityOccurrenceProposalInput,
@@ -31,15 +32,11 @@ from kotekomi_application import (
     accept_identity_occurrence,
     ingested_grounding_candidates,
     propose_identity_occurrence,
-    write_event_composition_record,
 )
 from kotekomi_application.ingestion_execution import IngestionProcessRequest
 from kotekomi_application.ingestion_inspection import build_profile
 from kotekomi_application.parser_constituent_candidate_generation import (
     build_constituent_candidate_inventory,
-)
-from kotekomi_application.source_grounded_reference_composition import (
-    composition_annotations_for,
 )
 from kotekomi_application.source_occurrences import source_occurrences
 from kotekomi_domain import (
@@ -314,7 +311,9 @@ def test_normal_worker_persists_the_hold_then_recomposition_composes(
     )
     event = profile.events[0]
     event_id = event.event_id
-    replay_before = composition_annotations_for(state / "composition-outcomes", (event_id,))
+    replay_before = CompositionOutcomeStore(state / "composition-outcomes").annotations(
+        (event_id,)
+    )
     assert len(replay_before) == 1
     assert replay_before[0].status == "held"
     assert "assertion_inputs_unavailable" in replay_before[0].summary
@@ -398,7 +397,7 @@ def test_normal_worker_persists_the_hold_then_recomposition_composes(
             ),
             repository,
         )
-        write_event_composition_record(state / "composition-outcomes" / f"{event_id}.json", record)
+        CompositionOutcomeStore(state / "composition-outcomes").save(record)
 
     assert record.status is EventCompositionStatus.COMPOSED
     assert record.assertion is not None
@@ -407,7 +406,9 @@ def test_normal_worker_persists_the_hold_then_recomposition_composes(
     assert record.supporting_subject_span is not None
     assert record.supporting_subject_span.text == SUBJECT
 
-    replay_after = composition_annotations_for(state / "composition-outcomes", (event_id,))
+    replay_after = CompositionOutcomeStore(state / "composition-outcomes").annotations(
+        (event_id,)
+    )
     assert len(replay_after) == 1
     assert replay_after[0].status == "composed"
     assert SUBJECT in replay_after[0].summary

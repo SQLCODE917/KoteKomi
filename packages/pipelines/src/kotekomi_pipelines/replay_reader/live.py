@@ -20,6 +20,7 @@ from threading import Event
 from typing import TextIO
 
 from kotekomi_adapters import LocalArchiveStore
+from kotekomi_adapters.composition_outcome_store import CompositionOutcomeStore
 from kotekomi_adapters.extraction_view.execution import IngestionProcess
 from kotekomi_adapters.extraction_view.render import render_live_block
 from kotekomi_adapters.extraction_view.source import (
@@ -39,9 +40,6 @@ from kotekomi_application.ingestion_inspection import (
 )
 from kotekomi_application.ingestion_runs import UtcIngestionRunClock
 from kotekomi_application.inspection_session import InspectionSession
-from kotekomi_application.source_grounded_reference_composition import (
-    composition_annotations_for,
-)
 
 from kotekomi_pipelines.config import PipelineConfig, load_config
 from kotekomi_pipelines.ingestion_workflow import run_ingestion_workflow
@@ -73,16 +71,14 @@ def create_inspection_session(
                 stream.write(snapshot.error + "\n")
 
     archive = LocalArchiveStore(ledger_path.parent / "archive")
-    composition_root = ledger_path.parent / "composition-outcomes"
+    composition_store = CompositionOutcomeStore(ledger_path.parent / "composition-outcomes")
     return InspectionSession(
         InspectionSourceLoader(ledger_path),
         on_snapshot=publish,
         select_ordinal=select_ordinal,
         context=context,
         artifacts_port=InspectionArtifactLoader(archive),
-        composition_source=lambda event_ids: composition_annotations_for(
-            composition_root, event_ids
-        ),
+        composition_source=composition_store.annotations,
     )
 
 

@@ -7,9 +7,9 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from kotekomi_adapters import SQLiteLedgerInitializer, sqlite_ledger_transaction
+from kotekomi_adapters.composition_outcome_store import CompositionOutcomeStore
 from kotekomi_application import (
     AssertionConstructionInputs,
-    AttachmentSourceRange,
     BuildIdentity,
     ConstituentCandidateInventory,
     EventCompositionRecord,
@@ -18,12 +18,11 @@ from kotekomi_application import (
     GroundingCandidate,
     IdentityOccurrenceProposalInput,
     ParserConstituent,
+    SourceRange,
     accept_identity_occurrence,
-    load_event_composition_record,
     parser_constituent_id,
     processing_task_fingerprint,
     propose_identity_occurrence,
-    write_event_composition_record,
 )
 from kotekomi_domain import (
     AssertionType,
@@ -105,7 +104,7 @@ def _inventory() -> ConstituentCandidateInventory:
             constituent_id=parser_constituent_id(TEXT_DIGEST, start, end),
             event_id=EVENT_ID,
             source_text_sha256=TEXT_DIGEST,
-            constituent_range=AttachmentSourceRange(start=start, end=end, text=text),
+            constituent_range=SourceRange(start=start, end=end, text=text),
             token_ids=token_ids,
         )
 
@@ -248,6 +247,7 @@ def _assertion_inputs(evidence_target_id: str, alpha_id: str) -> AssertionConstr
         attribution_basis=AttributionBasis.DIRECT_DOCUMENT,
         source_id=SOURCE_ID,
         evidence_target_id=evidence_target_id,
+        constructed_at=NOW,
     )
 
 
@@ -292,9 +292,9 @@ def test_held_then_approved_then_composed_and_replayed(tmp_path: Path) -> None:
         repository.save_proposed_change(proposal)
 
         held = _compose(repository, "etg_placeholder", alpha_id, (alpha_id,))
-        write_event_composition_record(replay, held)
+        CompositionOutcomeStore(replay.parent).save(held)
 
-        reloaded = load_event_composition_record(replay)
+        reloaded = CompositionOutcomeStore(replay.parent).load(held.event_id)
         assert reloaded.status is EventCompositionStatus.HELD
         assert reloaded.hold_reason == "awaiting_acceptance"
         assert reloaded.unavailable_reference == alpha_id
@@ -304,9 +304,9 @@ def test_held_then_approved_then_composed_and_replayed(tmp_path: Path) -> None:
         )
 
         composed = _compose(repository, occurrence.evidence_target_id, alpha_id, ())
-        write_event_composition_record(replay, composed)
+        CompositionOutcomeStore(replay.parent).save(composed)
 
-    final = load_event_composition_record(replay)
+    final = CompositionOutcomeStore(replay.parent).load(composed.event_id)
     assert final.status is EventCompositionStatus.COMPOSED
     assert final.assertion is not None
     assert final.assertion.predicate == "supports"
@@ -388,7 +388,7 @@ def test_compose_paragraph_events_persists_every_outcome(tmp_path: Path) -> None
             assertion_inputs_by_event={},
             representation_id=REP_ID,
             text_view_id=TVW_ID,
-            composition_root=root,
+            store=CompositionOutcomeStore(root),
         )
         assert held[0].status is EventCompositionStatus.HELD
         assert held[0].hold_reason == "assertion_inputs_unavailable"
@@ -402,7 +402,7 @@ def test_compose_paragraph_events_persists_every_outcome(tmp_path: Path) -> None
             assertion_inputs_by_event={},
             representation_id=REP_ID,
             text_view_id=TVW_ID,
-            composition_root=root,
+            store=CompositionOutcomeStore(root),
         )
         assert no_inventory[0].hold_reason == "inventory_unavailable"
 
@@ -419,11 +419,11 @@ def test_compose_paragraph_events_persists_every_outcome(tmp_path: Path) -> None
             },
             representation_id=REP_ID,
             text_view_id=TVW_ID,
-            composition_root=root,
+            store=CompositionOutcomeStore(root),
         )
         assert composed[0].status is EventCompositionStatus.COMPOSED
 
-    reloaded = load_event_composition_record(root / f"{EVENT_ID}.json")
+    reloaded = CompositionOutcomeStore(root).load(EVENT_ID)
     assert reloaded.status is EventCompositionStatus.COMPOSED
     assert reloaded.assertion is not None
     assert reloaded.supporting_subject_span is not None

@@ -4,11 +4,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from kotekomi_adapters.composition_outcome_store import CompositionOutcomeStore
 from kotekomi_adapters.extraction_view.render import render_annotated_paragraph
 from kotekomi_application import (
-    AttachmentSourceRange,
     EventCompositionRecord,
     EventCompositionStatus,
+    SourceRange,
 )
 from kotekomi_application.ingestion_inspection import (
     CompositionAnnotation,
@@ -16,8 +17,6 @@ from kotekomi_application.ingestion_inspection import (
 )
 from kotekomi_application.source_grounded_reference_composition import (
     composition_annotation,
-    composition_annotations_for,
-    write_event_composition_record,
 )
 from kotekomi_domain import (
     Assertion,
@@ -88,10 +87,8 @@ def test_composed_composition_renders_assertion_with_span() -> None:
         subject_text="Alpha",
         object_text="the reviewed assertion",
         assertion=assertion,
-        supporting_subject_span=AttachmentSourceRange(start=0, end=5, text="Alpha"),
-        supporting_object_span=AttachmentSourceRange(
-            start=15, end=37, text="the reviewed assertion"
-        ),
+        supporting_subject_span=SourceRange(start=0, end=5, text="Alpha"),
+        supporting_object_span=SourceRange(start=15, end=37, text="the reviewed assertion"),
     )
     annotation = composition_annotation(record)
 
@@ -100,7 +97,7 @@ def test_composed_composition_renders_assertion_with_span() -> None:
     assert "AHE-001 · composed · composed: support Alpha -> the reviewed assertion" in rendered
 
 
-def test_composition_annotations_for_loads_persisted_outcome(tmp_path: Path) -> None:
+def test_composition_store_loads_persisted_outcome(tmp_path: Path) -> None:
     record = EventCompositionRecord(
         event_id="AHE-001",
         source_text_sha256=_SHA,
@@ -108,10 +105,10 @@ def test_composition_annotations_for_loads_persisted_outcome(tmp_path: Path) -> 
         hold_reason="awaiting_acceptance",
         unavailable_reference="act_alpha",
     )
-    root = tmp_path / "composition-outcomes"
-    write_event_composition_record(root / "AHE-001.json", record)
+    store = CompositionOutcomeStore(tmp_path / "composition-outcomes")
+    store.save(record)
 
-    annotations = composition_annotations_for(root, ("AHE-001", "AHE-999"))
+    annotations = store.annotations(("AHE-001", "AHE-999"))
 
     assert [item.event_id for item in annotations] == ["AHE-001"]
     assert annotations[0].status == "held"

@@ -10,17 +10,16 @@ from __future__ import annotations
 
 import hashlib
 from collections.abc import Mapping
-from pathlib import Path
 
 from kotekomi_application import (
     AssertionConstructionInputs,
     EventCompositionRecord,
     EventCompositionStatus,
+    EventCompositionStore,
     ReferenceDiagnostic,
     ReferenceDiagnosticReason,
     ReferenceResolution,
     compose_event_from_resolution,
-    write_event_composition_record,
 )
 from kotekomi_application.event_entity_connections import EventEntityLinguisticToken
 from kotekomi_application.parser_constituent_candidate_generation import (
@@ -101,7 +100,7 @@ def compose_paragraph_events(
     assertion_inputs_by_event: Mapping[str, AssertionConstructionInputs],
     representation_id: str,
     text_view_id: str,
-    composition_root: Path,
+    store: EventCompositionStore,
     node_start_char: int = 0,
     pending_identity_ids_by_event: Mapping[str, tuple[str, ...]] | None = None,
 ) -> tuple[EventCompositionRecord, ...]:
@@ -128,7 +127,7 @@ def compose_paragraph_events(
             node_start_char=node_start_char,
             pending_identity_ids=pending.get(event_id, ()),
         )
-        write_event_composition_record(Path(composition_root) / f"{event_id}.json", record)
+        store.save(record)
         records.append(record)
     return tuple(records)
 
