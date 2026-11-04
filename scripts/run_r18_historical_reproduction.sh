@@ -10,7 +10,7 @@
 # pre-R19); the earlier R18 implementation commit `3998862` predates the frozen
 # run data and cannot reproduce it. Current runner regression coverage instead
 # uses an explicitly bound current test contract under
-# `data/r18-current-test-contract`.
+# `data/r18-current-regression`.
 #
 # This script creates an isolated git worktree at the pinned commit with its own
 # `uv` environment, so editable package imports resolve to that checkout rather

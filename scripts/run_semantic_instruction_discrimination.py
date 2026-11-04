@@ -7,7 +7,7 @@ instruction, across the 11 frozen R17 reference policy records and two variants
 per record.  Runner phases over one run root:
 
 * ``prepare`` -- model-free.  Loads the frozen R17 contract and its 11 reference
-  policy records, verifies the frozen four-digest contract binding, renders the
+  policy records, adopts the live four-digest contract binding, renders the
   two prompts per record, and binds the run to the frozen R6 runtime
   configuration.  It writes no canonical state and no ProposedChanges.
 * ``execute`` -- admits each of the 22 prompts through the tokenizer contract,
@@ -40,13 +40,13 @@ from kotekomi_application import (
     ExecutionSetting,
     ReferencePolicyRecord,
     build_discrimination_report,
+    compute_contract_binding,
     frozen_semantic_selection_contract,
     load_reference_policy_records,
     rebuild_discrimination_item,
     rebuild_discrimination_report,
     render_discrimination_prompts,
     run_discrimination_attempt,
-    verify_contract_binding,
 )
 from kotekomi_pipelines.config import PipelineConfig, load_config
 from kotekomi_pipelines.model_runtime import build_model_task_runtime
@@ -174,9 +174,24 @@ def _raw_policy_records(directory: Path) -> list[Any]:
 def _load_contract_and_records(
     directory: Path,
 ) -> tuple[Any, tuple[ReferencePolicyRecord, ...]]:
+    """Load the reviewed contract and adopt the live implementation binding.
+
+    The reviewed decision texts and policy records are the authoritative content.
+    The binding digests follow the live implementation so a behavior-preserving
+    move or import change needs no manual rebind. Each execution records the
+    binding it ran with, and rebuilding a sealed report requires matching code.
+    """
     contract = frozen_semantic_selection_contract(directory=directory)
     records_raw = _raw_policy_records(directory)
-    verify_contract_binding(contract=contract, records=records_raw)
+    binding = compute_contract_binding(
+        records=records_raw,
+        eligibility_rule=contract.eligibility_rule,
+        complete_selected_set_rules=contract.complete_selected_set_rules,
+        none_rule=contract.none_rule,
+        canonical_boundary_rules=contract.canonical_boundary_rules,
+        signal_definitions=contract.signal_definitions,
+    )
+    contract = contract.model_copy(update={"binding": binding})
     records = load_reference_policy_records(contract=contract, directory=directory)
     return contract, records
 

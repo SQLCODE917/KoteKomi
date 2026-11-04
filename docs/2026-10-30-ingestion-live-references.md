@@ -278,7 +278,9 @@ Verification evidence:
 - Historical R17 and R18 contracts are unchanged. `git diff 5de64dc..HEAD -- data/
   docs/hsq-*` touches exactly one file, the current-test contract
   `data/r18-current-test-contract/semantic_selection_contract.json`; the rebind is
-  separate, scripted, and recorded in `docs/CHECK_PLAN.md`.
+  separate, scripted, and recorded in `docs/CHECK_PLAN.md`. ISC-04 later replaced
+  that development mechanism with reviewed expectations in
+  `data/r18-current-regression/`, so current regressions need no rebind.
 - The R18 failure attributed to a pre-existing R17 defect was R20-caused: relaxing
   `_EntityId` in `decontextualization_composition.py` drifted the bound scoring
   digest. Reproducing that failure at pre-R20 `5de64dc` and at `5727595`, and its

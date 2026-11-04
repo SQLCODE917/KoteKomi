@@ -5,7 +5,7 @@
 - Parent: [Hybrid Intelligence Extraction Pipeline](2026-09-01-hybrid-intelligence-extraction-pipeline.md)
 - Predecessor: [R20 Ingestion Live References](2026-10-30-ingestion-live-references.md)
 - First deliverable: ISC-01, Shared ingestion workflow
-- Next deliverable: ISC-04
+- Next deliverable: ISC-02
 - Implementation prompt: [Unattended implementation](agent/implement-ingestion-stabilization.md)
 
 ## User Outcome
@@ -83,9 +83,9 @@ Each deliverable ships and reverts independently.
 | ID | Deliverable | Depends on | Status | TDD / implementation / evidence |
 |---|---|---|---|---|
 | ISC-01 | Shared ingestion workflow and final live refresh | Startup and warning fixes recorded separately | Complete | [TDD](2026-11-03-isc-01-shared-ingestion-workflow.md); `run_ingestion_workflow` in `packages/pipelines/src/kotekomi_pipelines/ingestion_workflow.py`; `PYTHONPATH=. uv run pytest packages/pipelines/tests/test_ingestion_workflow.py -q` passes 5; preserved replay, cancellation, startup, R20, and composition suites pass 53 |
-| ISC-02 | Production ownership of shared contracts and construction | ISC-04 | Planned | Not started |
+| ISC-02 | Production ownership of shared contracts and construction | ISC-04 | In progress | Not started |
 | ISC-03 | One Adapter for composition persistence | ISC-02 | Planned | Not started |
-| ISC-04 | Separate historical reproduction from current regressions | None | In progress | Not started |
+| ISC-04 | Separate historical reproduction from current regressions | None | Complete | `data/r18-current-regression/` reviewed expectations; `scripts/run_semantic_instruction_discrimination.py` adopts the live binding; `uv run pytest packages/pipelines/tests/test_semantic_instruction_discrimination_runner.py -q` passes 16; historical reproduction passed at pinned `c46d5e6` with fingerprint `5cdc12f0ed884cd73cfd99ada8a7af8d4b063d33b0a2abd45022800d02ecdce5` |
 | ISC-05 | Self-contained test fixtures and subprocess imports | None | Planned | Not started |
 | ISC-06 | Formatting and operator documentation | ISC-01 through ISC-05 | Planned | Not started |
 
@@ -151,10 +151,10 @@ A changed behavioral expectation requires an explicit reviewed change, not regen
 
 Acceptance:
 
-- [ ] ISC-04-A: A behavior-preserving shared-module edit leaves current regressions runnable without a manual rebind.
-- [ ] ISC-04-B: Negative tests still reject changed evidence, stale signals, wrong routes, and impossible report comparisons.
-- [ ] ISC-04-C: Historical R17 and R18 reproduction retain their recorded fingerprints and frozen inputs.
-- [ ] ISC-04-D: The check plan distinguishes historical commands from current regressions and removes superseded rebind instructions.
+- [x] ISC-04-A: A behavior-preserving shared-module edit leaves current regressions runnable without a manual rebind.
+- [x] ISC-04-B: Negative tests still reject changed evidence, stale signals, wrong routes, and impossible report comparisons.
+- [x] ISC-04-C: Historical R17 and R18 reproduction retain their recorded fingerprints and frozen inputs.
+- [x] ISC-04-D: The check plan distinguishes historical commands from current regressions and removes superseded rebind instructions.
 
 ### ISC-05: Self-contained test fixtures and subprocess imports
 
@@ -233,5 +233,5 @@ The next capability increment measures correct source-grounded Assertions and op
 
 - Ingestion interfaces: [CLI](../packages/pipelines/src/kotekomi_pipelines/cli.py), [live and stored replay](../packages/pipelines/src/kotekomi_pipelines/replay_reader/live.py), and [worker](../packages/pipelines/src/kotekomi_pipelines/replay_reader/ingestion_worker.py).
 - Shared composition: [source-grounded reference composition](../packages/application/src/kotekomi_application/source_grounded_reference_composition.py) and [R19 construction](../packages/application/src/kotekomi_application/deterministic_residual_composition_completion.py).
-- Current binding: [semantic selection contract](../packages/application/src/kotekomi_application/semantic_selection_contract.py) and [rebind command](../scripts/rebind_r18_current_test_contract.py).
+- Current regression: [semantic selection contract](../packages/application/src/kotekomi_application/semantic_selection_contract.py) and [reviewed expectations](../data/r18-current-regression/reviewed_expectations.json).
 - Production regression: [normal-ingestion transition](../packages/pipelines/tests/test_r20_ingestion_transition.py), [cold start](../packages/pipelines/tests/test_replay_process_startup.py), and [cancellation](../packages/pipelines/tests/test_replay_cancellation.py).

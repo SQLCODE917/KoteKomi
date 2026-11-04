@@ -29,16 +29,15 @@ from kotekomi_application import (
     generation_parameters_digest,
     model_identity_snapshot_digest,
     parse_corrective_reselection_answer,
-    verify_contract_binding,
 )
 
 ROOT = Path(__file__).resolve().parents[3]
 
-# The R19 composer change drifts the frozen R17 contract's scoring digest, so the
-# current runner regression binds to an explicitly re-bound current test contract
-# instead of the frozen historical contract. The frozen historical contract and
+# The current runner regression verifies reviewed inputs, reviewed decision texts,
+# and the negative evidence checks. It adopts the live implementation binding, so a
+# behavior-preserving move needs no manual rebind. The frozen historical contract and
 # run are reproduced only in `scripts/run_r18_historical_reproduction.sh`.
-CURRENT_CONTRACT_DIR = ROOT / "data/r18-current-test-contract"
+CURRENT_CONTRACT_DIR = ROOT / "data/r18-current-regression"
 
 
 def _runner() -> Any:
@@ -48,13 +47,37 @@ def _runner() -> Any:
     return importlib.import_module("run_semantic_instruction_discrimination")
 
 
-def test_current_contract_is_bound_to_current_implementation() -> None:
-    """The R18 runner regression contract is explicitly bound to the live R19 code."""
+def test_current_regression_reviewed_inputs_and_decisions_are_stable() -> None:
+    """ISC-04: current regressions bind reviewed content, not implementation source.
+
+    A behavior-preserving move or import change must not alter these digests, so a
+    routine shared-module edit never requires a manual rebind. Changing a reviewed
+    input or decision text requires a reviewed edit of the expectations file.
+    """
+    from kotekomi_application.semantic_selection_contract import content_digest
+
     contract = frozen_semantic_selection_contract(directory=CURRENT_CONTRACT_DIR)
     raw = json.loads((CURRENT_CONTRACT_DIR / "reference_policy_records.json").read_text())[
         "records"
     ]
-    verify_contract_binding(contract=contract, records=raw)
+    expectations = json.loads((CURRENT_CONTRACT_DIR / "reviewed_expectations.json").read_text())
+
+    assert content_digest(raw) == expectations["policy_records_sha256"]
+    assert (
+        content_digest(
+            {
+                "eligibility_rule": contract.eligibility_rule,
+                "complete_selected_set_rules": contract.complete_selected_set_rules,
+                "none_rule": contract.none_rule,
+                "canonical_boundary_rules": contract.canonical_boundary_rules,
+                "signal_definitions": [
+                    (definition.name.value, definition.values, definition.not_applicable_when)
+                    for definition in contract.signal_definitions
+                ],
+            }
+        )
+        == expectations["thresholds_sha256"]
+    )
 
 
 def test_execute_archives_binding_and_rebuilds_without_more_calls(
@@ -344,3 +367,31 @@ def test_report_preserves_terminal_pairs_without_responses(
     report = runner._read_json(root / "report.json")
     assert report["item_count"] == 22
     assert report["comparison_complete"] is False
+
+
+def test_behavior_preserving_move_needs_no_contract_rebind(tmp_path: Path) -> None:
+    """ISC-04-A: a stale recorded digest must not block current regressions.
+
+    A behavior-preserving move or import change alters implementation source, so a
+    recorded development digest goes stale. The current regression must still load
+    the reviewed content and prepare its run without a manual rebind.
+    """
+    runner = _runner()
+    monkeypatch = pytest.MonkeyPatch()
+    original_loader = runner.frozen_semantic_selection_contract
+
+    def stale_loader(*, directory: Path) -> Any:
+        contract = original_loader(directory=directory)
+        binding = contract.binding.model_copy(
+            update={"scoring_rules_sha256": "0" * 64, "renderer_sha256": "1" * 64}
+        )
+        return contract.model_copy(update={"binding": binding})
+
+    monkeypatch.setattr(runner, "frozen_semantic_selection_contract", stale_loader)
+    monkeypatch.setattr(runner, "DATA_DIR", CURRENT_CONTRACT_DIR)
+    try:
+        args = argparse.Namespace(config=runner.DEFAULT_CONFIG, run_root=tmp_path / "run")
+        assert runner._prepare(args) == 0
+        assert (tmp_path / "run" / "preparation.json").exists()
+    finally:
+        monkeypatch.undo()
