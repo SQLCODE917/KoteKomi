@@ -6,7 +6,6 @@ import hashlib
 
 import pytest
 from kotekomi_application import (
-    SourceRange,
     ConstituentCandidateInventory,
     ConstituentSelectionStatus,
     ConstituentSelectionTask,
@@ -21,6 +20,7 @@ from kotekomi_application import (
     LabelMismatchRecoveryHalt,
     ParserConstituent,
     SelectionFailureSlot,
+    SourceRange,
     build_label_mismatch_recovery,
     build_label_mismatch_recovery_report,
     label_mismatch_recovery_report_fingerprint,

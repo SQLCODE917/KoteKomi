@@ -14,11 +14,11 @@ from pathlib import Path
 
 from kotekomi_adapters.sqlite_ledger import sqlite_ledger_transaction
 from kotekomi_application import (
-    SourceRange,
     DecontextualizationEntityRef,
     DecontextualizationExclusion,
     EventEntityReferences,
     ReferencePolicyRecord,
+    SourceRange,
     frozen_semantic_selection_contract,
     load_reference_policy_records,
 )

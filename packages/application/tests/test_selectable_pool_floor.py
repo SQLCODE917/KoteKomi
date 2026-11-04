@@ -8,7 +8,6 @@ import inspect
 import pytest
 from kotekomi_application import (
     SELECTABLE_POOL_FLOOR_DEFAULT,
-    SourceRange,
     ConstituentCandidateInventory,
     ConstituentSelectionStatus,
     EventEntityLinguisticToken,
@@ -18,6 +17,7 @@ from kotekomi_application import (
     ParserConstituent,
     PoolFloorRelaxationRecord,
     SelectablePoolDerivation,
+    SourceRange,
     build_calibrated_residual_ownership_report,
     derive_selectable_constituents,
     detect_boundary_gaps,

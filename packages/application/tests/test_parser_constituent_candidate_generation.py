@@ -7,13 +7,13 @@ import re
 
 import pytest
 from kotekomi_application import (
-    SourceRange,
     BoundaryFidelityPartitionCensus,
     ConstituentSelectionStatus,
     CorrectedAttachmentGold,
     CorrectedCandidateLabel,
     EventEntityLinguisticToken,
     GoldFragmentRef,
+    SourceRange,
     build_boundary_fidelity_census,
     build_constituent_candidate_inventory,
     build_constituent_selection_census,

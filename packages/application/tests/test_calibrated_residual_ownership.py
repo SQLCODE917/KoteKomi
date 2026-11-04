@@ -6,7 +6,6 @@ import hashlib
 
 import pytest
 from kotekomi_application import (
-    SourceRange,
     BoundaryGap,
     CalibratedResidualOwnershipReport,
     CandidateAttachmentMark,
@@ -20,6 +19,7 @@ from kotekomi_application import (
     ResidualReviewReason,
     SelectionRoutingDecision,
     SelectionScore,
+    SourceRange,
     attached_constituents,
     augment_candidate_inventory_with_segment_core,
     build_calibrated_residual_ownership_report,

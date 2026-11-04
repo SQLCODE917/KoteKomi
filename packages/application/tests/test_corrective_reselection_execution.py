@@ -8,7 +8,6 @@ from dataclasses import replace
 
 import pytest
 from kotekomi_application import (
-    SourceRange,
     ConstituentCandidateInventory,
     ConstituentSelectionAnswer,
     ConstituentSelectionStatus,
@@ -35,6 +34,7 @@ from kotekomi_application import (
     ModelTaskResponse,
     ParserConstituent,
     ResidualClosureRoute,
+    SourceRange,
     build_corrective_reselection_report,
     compose_corrective_reselection_answer,
     corrective_reselection_report_fingerprint,

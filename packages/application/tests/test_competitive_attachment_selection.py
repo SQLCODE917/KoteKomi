@@ -5,12 +5,12 @@ import hashlib
 import pytest
 from kotekomi_application import (
     AttachmentNormalizationOperation,
-    SourceRange,
     AttachmentSyntaxObservation,
     PredicateArgumentHypothesis,
     PredicateArgumentPathDirection,
     PredicateArgumentPathStep,
     PredicateArgumentToken,
+    SourceRange,
     attachment_syntax_policies,
     governed_complement_scope_supports,
     normalize_attachment_comparison_range,

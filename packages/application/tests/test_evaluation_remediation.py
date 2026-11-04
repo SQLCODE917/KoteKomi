@@ -6,7 +6,6 @@ import hashlib
 
 import pytest
 from kotekomi_application import (
-    SourceRange,
     ConstituentCandidateInventory,
     ConstituentSelectionAnswer,
     ConstituentSelectionStatus,
@@ -24,6 +23,7 @@ from kotekomi_application import (
     SelectionProbabilityReceipt,
     SelectionTokenAlternative,
     SelectionTokenProbability,
+    SourceRange,
     build_decontextualized_proposition,
     build_held_out_error_census,
     build_held_out_exact_set_score,

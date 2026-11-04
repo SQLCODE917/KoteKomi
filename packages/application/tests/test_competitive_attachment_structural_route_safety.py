@@ -8,7 +8,6 @@ import pytest
 from kotekomi_application import (
     AttachmentCandidateRootEvidence,
     AttachmentGoldAuthority,
-    SourceRange,
     AttachmentStructuralEligibility,
     AttachmentStructuralSafetyCase,
     AttachmentStructuralSafetyOutcome,
@@ -20,6 +19,7 @@ from kotekomi_application import (
     PredicateArgumentHypothesis,
     PredicateArgumentToken,
     PropositionFragmentReason,
+    SourceRange,
     attachment_complete_foreign_event_ids,
     attachment_structural_safety_fingerprint,
     classify_attachment_structural_safety_outcome,

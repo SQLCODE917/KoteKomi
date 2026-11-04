@@ -40,13 +40,13 @@ from kotekomi_adapters.model_resources import (
     stanza_model_path,
 )
 from kotekomi_application import (
-    SourceRange,
     ConstituentCandidateInventory,
     DecontextualizationEntityRef,
     DecontextualizedProposition,
     EventEntityLinguisticToken,
     LinguisticAnalysis,
     LinguisticAnalysisInput,
+    SourceRange,
     build_decontextualization_census,
     build_decontextualization_report,
     build_decontextualized_proposition,

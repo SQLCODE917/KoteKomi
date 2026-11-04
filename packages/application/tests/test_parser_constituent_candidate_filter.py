@@ -7,13 +7,13 @@ import inspect
 
 import pytest
 from kotekomi_application import (
-    SourceRange,
     ConstituentCandidateInventory,
     ConstituentSelectionStatus,
     EventEntityLinguisticToken,
     HeldOutFragmentRequirement,
     HeldOutGoldFragment,
     ParserConstituent,
+    SourceRange,
     attached_constituents,
     build_event_frame,
     derive_selectable_constituents,

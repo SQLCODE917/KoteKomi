@@ -7,7 +7,6 @@ from typing import Literal
 
 import pytest
 from kotekomi_application import (
-    SourceRange,
     ConstituentCandidateInventory,
     ConstituentSelectionAnswer,
     ConstituentSelectionStatus,
@@ -19,6 +18,7 @@ from kotekomi_application import (
     EventModality,
     EventPolarity,
     ParserConstituent,
+    SourceRange,
     build_decontextualized_proposition,
     parser_constituent_id,
 )

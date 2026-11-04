@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import pytest
 from kotekomi_application import (
-    SourceRange,
     DecontextualizationAttributionKind,
     DecontextualizationHoldReason,
     DecontextualizationRoleKind,
@@ -19,6 +18,7 @@ from kotekomi_application import (
     ResidualReviewReason,
     SelectionRouting,
     SelectionRoutingDecision,
+    SourceRange,
     build_residual_composition_hold_report,
     dispose_residual_event,
     dispose_residual_set,

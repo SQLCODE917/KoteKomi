@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import pytest
 from kotekomi_application import (
-    SourceRange,
     DecontextualizationEntityRef,
     DecontextualizationExclusion,
     EventEntityReferenceProvider,
     EventEntityReferences,
+    SourceRange,
 )
 from pydantic import ValidationError
 

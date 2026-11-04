@@ -5,8 +5,8 @@ from kotekomi_application import (
     AttachmentBlindReviewDecision,
     AttachmentBlindReviewOutcome,
     AttachmentBlindReviewSubmission,
-    SourceRange,
     AttachmentUnequalRangeRelation,
+    SourceRange,
     classify_attachment_blind_review_outcome,
     classify_attachment_unequal_range_relation,
 )
