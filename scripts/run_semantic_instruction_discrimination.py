@@ -171,18 +171,53 @@ def _raw_policy_records(directory: Path) -> list[Any]:
     return cast(list[Any], records)
 
 
+def _reviewed_expectations(directory: Path) -> dict[str, str]:
+    """Load the approved hashes for reviewed content in this development set."""
+    path = directory / "reviewed_expectations.json"
+    if not path.is_file():
+        raise ValueError(f"Reviewed expectations are missing: {path}")
+    document = _read_json(path)
+    return {
+        "policy_records_sha256": str(document["policy_records_sha256"]),
+        "thresholds_sha256": str(document["thresholds_sha256"]),
+    }
+
+
+def _verify_reviewed_content(directory: Path, contract: Any, records_raw: list[Any]) -> None:
+    """Reject reviewed content that drifted from its approved hashes.
+
+    Policy records and reviewed decision texts are approval evidence. Only the
+    implementation bindings (renderer and scoring) may follow the live code.
+    """
+    approved = _reviewed_expectations(directory)
+    live = compute_contract_binding(
+        records=records_raw,
+        eligibility_rule=contract.eligibility_rule,
+        complete_selected_set_rules=contract.complete_selected_set_rules,
+        none_rule=contract.none_rule,
+        canonical_boundary_rules=contract.canonical_boundary_rules,
+        signal_definitions=contract.signal_definitions,
+    )
+    if live.policy_records_sha256 != approved["policy_records_sha256"]:
+        raise ValueError("Reviewed policy records drifted from their approved hash.")
+    if live.thresholds_sha256 != approved["thresholds_sha256"]:
+        raise ValueError("Reviewed decision thresholds drifted from their approved hash.")
+
+
 def _load_contract_and_records(
     directory: Path,
 ) -> tuple[Any, tuple[ReferencePolicyRecord, ...]]:
-    """Load the reviewed contract and adopt the live implementation binding.
+    """Load the reviewed contract and adopt only the live implementation binding.
 
-    The reviewed decision texts and policy records are the authoritative content.
-    The binding digests follow the live implementation so a behavior-preserving
-    move or import change needs no manual rebind. Each execution records the
-    binding it ran with, and rebuilding a sealed report requires matching code.
+    Reviewed policy records and decision texts must match their approved hashes.
+    The renderer and scoring digests follow the live implementation so a
+    behavior-preserving move or import change needs no manual rebind. Each
+    execution records the binding it ran with, and rebuilding a sealed report
+    requires matching code.
     """
     contract = frozen_semantic_selection_contract(directory=directory)
     records_raw = _raw_policy_records(directory)
+    _verify_reviewed_content(directory, contract, records_raw)
     binding = compute_contract_binding(
         records=records_raw,
         eligibility_rule=contract.eligibility_rule,

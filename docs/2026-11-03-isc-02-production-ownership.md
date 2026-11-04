@@ -59,7 +59,15 @@ No module keeps a second definition of the same source range or construction con
 
 ## 6. Default exports
 
-The Application Layer default export no longer imports the R19 experiment module.
+The Application Layer loads historical experiment modules lazily.
+A fresh `import kotekomi_application` imports none of them; the facade resolves an
+experiment name on first access.
+Three modules stay in the default import because production constituent generation reaches
+them through the containment router: `competitive_attachment_review_verification`,
+`competitive_attachment_selection`, and
+`deterministic_dependency_path_attachment_router`.
+`test_fresh_import_does_not_load_historical_experiments` runs a fresh interpreter and fails
+on any new eager experiment dependency.
 `construct_inspectable_assertion`, `AssertionConstructionInputs`,
 `AssertionConstructionStatus`, `AssertionConstructionOutcome`, `AssertionBlockReason`, and
 `SourceRange` stay exported because production composition uses them.

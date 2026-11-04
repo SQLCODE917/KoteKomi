@@ -89,3 +89,46 @@ def test_construction_uses_the_caller_supplied_timestamp() -> None:
     # contract is proven through the declared field rather than a silent default.
     assert outcome.block_reason is not None
     assert inputs.constructed_at == datetime(2030, 5, 6, tzinfo=UTC)
+
+
+_HISTORICAL_MARKERS = (
+    "semantic_instruction_discrimination",
+    "semantic_selection_contract",
+    "calibrated_residual_ownership",
+    "residual_composition_hold_routing",
+)
+_PRODUCTION_CHAIN = {
+    "kotekomi_application.competitive_attachment_review_verification",
+    "kotekomi_application.competitive_attachment_selection",
+    "kotekomi_application.deterministic_dependency_path_attachment_router",
+}
+
+
+def test_fresh_import_does_not_load_historical_experiments() -> None:
+    """P2/ISC-02: a fresh import loads no historical experiment machinery.
+
+    Three modules stay in the default import because production constituent
+    generation reaches them through the containment router. They are named here so
+    a new eager experiment dependency fails this check.
+    """
+    import json
+    import subprocess
+    import sys
+
+    code = (
+        "import json, sys\n"
+        "import kotekomi_application\n"
+        "prefixes = ('competitive_attachment', 'semantic_instruction_discrimination', "
+        "'semantic_selection_contract', 'calibrated_residual', 'deterministic_residual', "
+        "'residual_composition_hold', 'deterministic_dependency_path_attachment_router')\n"
+        "loaded = sorted(m for m in sys.modules if m.startswith('kotekomi_application.')\n"
+        "                and any(p in m for p in prefixes))\n"
+        "print(json.dumps(loaded))\n"
+    )
+    completed = subprocess.run(
+        [sys.executable, "-c", code], capture_output=True, text=True, check=True
+    )
+    loaded = set(json.loads(completed.stdout))
+
+    assert not any(marker in module for module in loaded for marker in _HISTORICAL_MARKERS)
+    assert loaded <= _PRODUCTION_CHAIN, sorted(loaded - _PRODUCTION_CHAIN)

@@ -61,6 +61,8 @@ The workflow performs these steps in order:
 
 `IngestionWorkflowResult` carries the ingestion exit code, the assigned IngestionRun ID,
 the derived composition records, and the derived-pass error text.
+The IngestionRun ID is `None` when ingestion failed before admission, and the workflow
+returns that failure result instead of raising.
 
 ### 4.2 Assigned run binding
 

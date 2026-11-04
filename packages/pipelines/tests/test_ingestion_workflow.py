@@ -339,3 +339,22 @@ def test_failure_reports_on_the_error_stream_only(tmp_path: Path) -> None:
     )
     assert code == 1
     assert "not found" in err.getvalue()
+
+
+def test_failed_admission_reports_the_original_failure(tmp_path: Path) -> None:
+    """P2: a failure before admission keeps the ingestion failure result."""
+    from kotekomi_pipelines.ingestion_workflow import run_ingestion_workflow
+
+    out, err = io.StringIO(), io.StringIO()
+    result = run_ingestion_workflow(
+        config_path=tmp_path / "missing.toml",
+        source_file_path=PDF_FIXTURE,
+        source_url=SOURCE_URL,
+        stdout=out,
+        stderr=err,
+    )
+
+    assert result.ingestion_code != 0
+    assert result.ingestion_run_id is None
+    assert result.composition_records == ()
+    assert err.getvalue().strip()

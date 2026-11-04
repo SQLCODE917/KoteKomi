@@ -1,0 +1,13 @@
+{
+  "event_id": "TGE-018",
+  "source_text_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "status": "held",
+  "relation_label": null,
+  "subject_text": null,
+  "object_text": null,
+  "assertion": null,
+  "supporting_subject_span": null,
+  "supporting_object_span": null,
+  "hold_reason": "awaiting_acceptance",
+  "unavailable_reference": "act_david_sacks"
+}

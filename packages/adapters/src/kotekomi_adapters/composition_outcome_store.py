@@ -49,6 +49,22 @@ class CompositionOutcomeStore:
             Path(temporary).unlink(missing_ok=True)
             raise
 
+    def save_at(self, path: Path, record: EventCompositionRecord) -> None:
+        """Replace one explicit file atomically with one validated record."""
+        target = Path(path)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        payload = record.model_dump_json(indent=2)
+        handle, temporary = tempfile.mkstemp(dir=target.parent, prefix=f".{target.name}.")
+        try:
+            with os.fdopen(handle, "w", encoding="utf-8") as stream:
+                stream.write(payload)
+                stream.flush()
+                os.fsync(stream.fileno())
+            os.replace(temporary, target)
+        except BaseException:
+            Path(temporary).unlink(missing_ok=True)
+            raise
+
     def save_many(self, records: tuple[EventCompositionRecord, ...]) -> None:
         for record in records:
             self.save(record)

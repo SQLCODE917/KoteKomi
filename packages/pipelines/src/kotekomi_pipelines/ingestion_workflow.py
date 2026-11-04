@@ -34,7 +34,7 @@ class IngestionWorkflowResult:
     """Terminal result of one fresh-ingestion workflow."""
 
     ingestion_code: int
-    ingestion_run_id: str
+    ingestion_run_id: str | None
     composition_records: tuple[EventCompositionRecord, ...]
     composition_error: str | None
 
@@ -84,10 +84,11 @@ def run_ingestion_workflow(
         ingestion_run_id_factory=recorder,
     )
     identity = recorder.identity
-    if identity is None:
-        raise RuntimeError("Ingestion reported a result without assigning an identity.")
     if code != 0:
+        # A failure before admission legitimately has no assigned IngestionRun.
         return IngestionWorkflowResult(code, identity, (), None)
+    if identity is None:
+        raise RuntimeError("Ingestion reported success without assigning an identity.")
     try:
         records = _compose_assigned_run(
             config_path=config_path, ingestion_run_id=identity, analyzer=analyzer

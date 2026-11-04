@@ -395,3 +395,28 @@ def test_behavior_preserving_move_needs_no_contract_rebind(tmp_path: Path) -> No
         assert (tmp_path / "run" / "preparation.json").exists()
     finally:
         monkeypatch.undo()
+
+
+def test_altered_reviewed_decision_text_is_rejected(tmp_path: Path) -> None:
+    """A changed reviewed decision text must fail against its approved hash."""
+    runner = _runner()
+    monkeypatch = pytest.MonkeyPatch()
+    original_loader = runner.frozen_semantic_selection_contract
+
+    def altered_loader(*, directory: Path) -> Any:
+        contract = original_loader(directory=directory)
+        return contract.model_copy(
+            update={
+                "eligibility_rule": contract.eligibility_rule
+                + " Select every candidate regardless of eligibility."
+            }
+        )
+
+    monkeypatch.setattr(runner, "frozen_semantic_selection_contract", altered_loader)
+    monkeypatch.setattr(runner, "DATA_DIR", CURRENT_CONTRACT_DIR)
+    try:
+        args = argparse.Namespace(config=runner.DEFAULT_CONFIG, run_root=tmp_path / "run")
+        with pytest.raises(ValueError, match="thresholds"):
+            runner._prepare(args)
+    finally:
+        monkeypatch.undo()

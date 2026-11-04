@@ -120,19 +120,35 @@ def test_corrupt_record_raises_a_validation_error(tmp_path: Path) -> None:
         store.annotations(("AHE-001",))
 
 
-def test_saved_r20_outcomes_remain_readable(tmp_path: Path) -> None:
-    """ISC-03-D: an already-persisted record keeps its binding, Assertion, and spans."""
-    saved = Path(__file__).resolve().parents[3] / "data"
-    candidates = sorted(saved.glob("*/composition-outcomes/*.json"))
-    if not candidates:
-        pytest.skip("no persisted composition outcome is present in this checkout")
-    store = CompositionOutcomeStore(candidates[0].parent)
-    record = store.load(candidates[0].stem)
+def test_saved_outcomes_keep_assertions_and_spans() -> None:
+    """ISC-03-D: committed pre-cleanup outcomes stay readable with their values."""
+    fixture_root = Path(__file__).resolve().parent / "fixtures" / "composition_outcomes"
+    store = CompositionOutcomeStore(fixture_root)
 
-    assert record.event_id == candidates[0].stem
-    assert record.source_text_sha256
-    if record.status is EventCompositionStatus.COMPOSED:
-        assert record.assertion is not None
-        assert record.supporting_subject_span is not None
-    else:
-        assert record.hold_reason
+    held = store.load("TGE-018")
+    assert held.status is EventCompositionStatus.HELD
+    assert held.hold_reason == "awaiting_acceptance"
+    assert held.unavailable_reference == "act_david_sacks"
+    assert held.source_text_sha256 == (
+        "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    )
+
+    composed = store.load("AHE-022")
+    assert composed.status is EventCompositionStatus.COMPOSED
+    assert composed.relation_label == "viewed"
+    assert composed.subject_text == "Sacks"
+    assert composed.object_text == "Amodei's decision"
+    assert composed.assertion is not None
+    assert composed.assertion.id == "ast_5f0d9a2f4c8e4f8f9d1b7c3a2e6d4b8a"
+    assert composed.assertion.predicate == "viewed"
+    assert composed.assertion.subject_entity_id == "act_david_sacks"
+    assert composed.assertion.object_value == "Amodei's decision"
+    assert composed.assertion.qualifiers == {"polarity": "affirmed", "modality": "actual"}
+    assert composed.assertion.source_ids == ("src_d97195ee5c8ced32c0cd41b0",)
+    assert composed.assertion.evidence_target_ids == ("etg_ahe_022",)
+    assert composed.supporting_subject_span == SourceRange(start=0, end=5, text="Sacks")
+
+    annotations = store.annotations(("TGE-018", "AHE-022"))
+    assert [item.status for item in annotations] == ["held", "composed"]
+    assert annotations[1].span is not None
+    assert annotations[1].span.text == "Sacks"

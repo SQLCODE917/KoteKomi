@@ -45,6 +45,8 @@ The Port declares three operations.
 - `annotations(event_ids)` returns replay annotations for the Events a paragraph shows.
 
 The Adapter uses the existing replay source location, `<ledger parent>/composition-outcomes`.
+`save_at(path, record)` replaces one explicit file, so a command that documents an output
+path writes exactly that path.
 The Adapter writes a temporary file in the same directory, flushes it, and replaces the
 target with one atomic rename.
 A failure before the rename removes the temporary file and leaves the previous record intact.

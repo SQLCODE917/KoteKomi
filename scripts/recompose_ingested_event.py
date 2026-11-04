@@ -23,7 +23,7 @@ from kotekomi_pipelines.ingestion_composition_command import (
 )
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="Recompose one ingested Event after identity approval."
     )
@@ -33,7 +33,7 @@ def main() -> int:
         "--out",
         help="Output EventCompositionRecord JSON. Defaults to the replay source path.",
     )
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     request = RecompositionRequest.model_validate_json(Path(args.request).read_bytes())
     with sqlite_ledger_transaction(Path(args.ledger)) as repository:
@@ -44,8 +44,12 @@ def main() -> int:
         if args.out
         else Path(args.ledger).resolve().parent / "composition-outcomes"
     )
-    store.save(record)
-    output = store.root / f"{record.event_id}.json"
+    if args.out:
+        output = Path(args.out).resolve()
+        store.save_at(output, record)
+    else:
+        store.save(record)
+        output = store.root / f"{record.event_id}.json"
     print(
         json.dumps(
             {
