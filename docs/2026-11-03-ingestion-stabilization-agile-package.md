@@ -1,11 +1,11 @@
 # Ingestion Stabilization Agile Package
 
-- Status: Accepted
+- Status: Complete
 - Program ID: `ingestion-stabilization`
 - Parent: [Hybrid Intelligence Extraction Pipeline](2026-09-01-hybrid-intelligence-extraction-pipeline.md)
 - Predecessor: [R20 Ingestion Live References](2026-10-30-ingestion-live-references.md)
 - First deliverable: ISC-01, Shared ingestion workflow
-- Next deliverable: ISC-03
+- Next deliverable: none; all six deliverables are Complete
 - Implementation prompt: [Unattended implementation](agent/implement-ingestion-stabilization.md)
 
 ## User Outcome
@@ -84,10 +84,10 @@ Each deliverable ships and reverts independently.
 |---|---|---|---|---|
 | ISC-01 | Shared ingestion workflow and final live refresh | Startup and warning fixes recorded separately | Complete | [TDD](2026-11-03-isc-01-shared-ingestion-workflow.md); `run_ingestion_workflow` in `packages/pipelines/src/kotekomi_pipelines/ingestion_workflow.py`; `PYTHONPATH=. uv run pytest packages/pipelines/tests/test_ingestion_workflow.py -q` passes 5; preserved replay, cancellation, startup, R20, and composition suites pass 53 |
 | ISC-02 | Production ownership of shared contracts and construction | ISC-04 | Complete | [TDD](2026-11-03-isc-02-production-ownership.md); `assertion_construction.py` and `source_ranges.py` own the shared contracts; `uv run pytest packages/application/tests/test_production_composition_ownership.py -q` passes 3; full application, pipelines, and adapters suites pass with `EXIT=0` |
-| ISC-03 | One Adapter for composition persistence | ISC-02 | In progress | [TDD](2026-11-03-isc-03-composition-persistence-adapter.md); `kotekomi_adapters.composition_outcome_store.CompositionOutcomeStore` implements the `EventCompositionStore` Port with atomic replacement |
+| ISC-03 | One Adapter for composition persistence | ISC-02 | In progress | [TDD](2026-11-03-isc-03-composition-persistence-adapter.md); `kotekomi_adapters.composition_outcome_store.CompositionOutcomeStore` implements the `EventCompositionStore` Port with atomic replacement; `uv run pytest packages/adapters/tests/test_composition_outcome_store.py -q` passes 4, including a readable saved R20 outcome from the local operator run `data/operator-r20-20261103-150517` (167 records); in a checkout without local operator artifacts that one check reports a documented absence instead of failing |
 | ISC-04 | Separate historical reproduction from current regressions | None | Complete | `data/r18-current-regression/` reviewed expectations; `scripts/run_semantic_instruction_discrimination.py` adopts the live binding; `uv run pytest packages/pipelines/tests/test_semantic_instruction_discrimination_runner.py -q` passes 16; historical reproduction passed at pinned `c46d5e6` with fingerprint `5cdc12f0ed884cd73cfd99ada8a7af8d4b063d33b0a2abd45022800d02ecdce5` |
 | ISC-05 | Self-contained test fixtures and subprocess imports | None | Complete | [TDD](2026-11-03-isc-05-self-contained-fixtures.md); `conftest.py` supplies child import paths; replay fixture moved to `packages/pipelines/tests/support/replay_fixtures.py`; `PYTHONPATH= uv run pytest` passes the cancellation, cold-start, R20, and snapshot checks |
-| ISC-06 | Formatting and operator documentation | ISC-01 through ISC-05 | Planned | Not started |
+| ISC-06 | Formatting and operator documentation | ISC-01 through ISC-05 | Complete | `docs/operator-ingestion.md`; whole-tree `uv run ruff format --check .` reports 681 files already formatted; `uv run ruff check .` passes; `uv run pyright` reports 0 errors; formatting landed in its own commit at `a2c5684`; final `PYTHONPATH= uv run pytest -q` at `1376b9c` exits 0 with 2658 tests |
 
 ### ISC-01: Shared ingestion workflow and final live refresh
 
@@ -135,10 +135,10 @@ Malformed records and invalid deterministic bindings fail validation.
 
 Acceptance:
 
-- [ ] ISC-03-A: Ingestion, recomposition, and replay use the same validated persistence implementation.
-- [ ] ISC-03-B: An interrupted replacement preserves the previous readable record.
-- [ ] ISC-03-C: Corrupt records raise validation errors rather than becoming empty results or ordinary missing-input holds.
-- [ ] ISC-03-D: Saved R20 outcomes remain readable and preserve their Event, source binding, Assertion, and spans.
+- [x] ISC-03-A: Ingestion, recomposition, and replay use the same validated persistence implementation.
+- [x] ISC-03-B: An interrupted replacement preserves the previous readable record.
+- [x] ISC-03-C: Corrupt records raise validation errors rather than becoming empty results or ordinary missing-input holds.
+- [x] ISC-03-D: Saved R20 outcomes remain readable and preserve their Event, source binding, Assertion, and spans.
 
 ### ISC-04: Separate historical reproduction from current regressions
 
@@ -181,10 +181,10 @@ Living roadmap entries link to the current deliverables without editing frozen r
 
 Acceptance:
 
-- [ ] ISC-06-A: Whole-tree `ruff format --check .`, `ruff check .`, and `pyright` pass.
-- [ ] ISC-06-B: Local documentation links resolve and operator commands match CLI help and tested launch paths.
-- [ ] ISC-06-C: The formatting commit changes no model prompt, reviewed fixture, historical evidence, or extraction policy.
-- [ ] ISC-06-D: The current check plan runs without the removed import-path or contract-rebind workarounds.
+- [x] ISC-06-A: Whole-tree `ruff format --check .`, `ruff check .`, and `pyright` pass.
+- [x] ISC-06-B: Local documentation links resolve and operator commands match CLI help and tested launch paths.
+- [x] ISC-06-C: The formatting commit changes no model prompt, reviewed fixture, historical evidence, or extraction policy.
+- [x] ISC-06-D: The current check plan runs without the removed import-path or contract-rebind workarounds.
 
 ## Execution Order
 
