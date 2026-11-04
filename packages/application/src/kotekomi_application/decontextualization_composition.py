@@ -842,50 +842,55 @@ def build_decontextualized_proposition(
             )
         object_constituent = _maximal_constituent(object_token, head, selected)
         if object_constituent is not None:
-            object_entity = _resolve_entity(object_constituent.constituent_range, entities)
-            if object_entity is not None:
-                object_role = DecontextualizedRole(
-                    role=DecontextualizationRoleKind.OBJECT,
-                    exact_fragment=object_constituent.constituent_range,
-                    entity_ref=object_entity,
+            fragment = object_constituent.constituent_range
+            # The completion requirement is decided before role dispatch, so an
+            # entity-backed object cannot bypass a required complement.
+            try:
+                required_completion = derive_object_content_completion(
+                    event_id=event_id,
+                    source_text=source_text,
+                    tokens=tokens,
+                    selected_object_range=fragment,
                 )
-            else:
-                fragment = object_constituent.constituent_range
-                try:
-                    required_completion = derive_object_content_completion(
-                        event_id=event_id,
-                        source_text=source_text,
-                        tokens=tokens,
-                        selected_object_range=fragment,
-                    )
-                except ObjectComplementUnsupported:
+            except ObjectComplementUnsupported:
+                return _held(
+                    event_id,
+                    source_text_sha256,
+                    DecontextualizationHoldReason.OBJECT_COMPLEMENT_UNSUPPORTED,
+                )
+            if required_completion is not None and object_completion is None:
+                return _held(
+                    event_id,
+                    source_text_sha256,
+                    DecontextualizationHoldReason.OBJECT_COMPLEMENT_MISSING,
+                )
+            if required_completion is None and object_completion is not None:
+                raise ValueError("Object completion supplied for an object that requires none.")
+            if object_completion is not None:
+                if object_completion.event_id != event_id:
+                    raise ValueError("Object completion belongs to another Event.")
+                if object_completion.selected_object_range != fragment:
+                    raise ValueError("Object completion does not match the selected object phrase.")
+                if (
+                    required_completion is None
+                    or required_completion.completed_range != object_completion.completed_range
+                ):
+                    raise ValueError("Object completion does not match its permitted derivation.")
+            object_entity = _resolve_entity(fragment, entities)
+            if object_entity is not None:
+                if required_completion is not None:
                     return _held(
                         event_id,
                         source_text_sha256,
                         DecontextualizationHoldReason.OBJECT_COMPLEMENT_UNSUPPORTED,
                     )
-                if required_completion is not None and object_completion is None:
-                    return _held(
-                        event_id,
-                        source_text_sha256,
-                        DecontextualizationHoldReason.OBJECT_COMPLEMENT_MISSING,
-                    )
-                if required_completion is None and object_completion is not None:
-                    raise ValueError("Object completion supplied for an object that requires none.")
-                if object_completion is not None:
-                    if object_completion.event_id != event_id:
-                        raise ValueError("Object completion belongs to another Event.")
-                    if object_completion.selected_object_range != fragment:
-                        raise ValueError(
-                            "Object completion does not match the selected object phrase."
-                        )
-                    if (
-                        required_completion is None
-                        or required_completion.completed_range != object_completion.completed_range
-                    ):
-                        raise ValueError(
-                            "Object completion does not match its permitted derivation."
-                        )
+                object_role = DecontextualizedRole(
+                    role=DecontextualizationRoleKind.OBJECT,
+                    exact_fragment=fragment,
+                    entity_ref=object_entity,
+                )
+            else:
+                if required_completion is not None:
                     fragment = required_completion.completed_range
                 object_role = DecontextualizedRole(
                     role=DecontextualizationRoleKind.OBJECT,
