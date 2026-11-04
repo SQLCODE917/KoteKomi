@@ -1,0 +1,6 @@
+{
+  "schema_version": "r18_current_regression_expectations_v1",
+  "note": "Reviewed development expectations. They bind reviewed inputs and reviewed decision texts, not implementation source, so a behavior-preserving move or import change needs no rebind. Changing an expected behavior requires a reviewed edit of this file.",
+  "policy_records_sha256": "85d3f3687c7bf2cffdb8ead30595b5c1c5d1d473af545e410f3a5b09d07abc87",
+  "thresholds_sha256": "ba89bf3d7e2659d7791fbc01d04ba54cc7a100813ac90ee64c28a59dbf33385a"
+}
