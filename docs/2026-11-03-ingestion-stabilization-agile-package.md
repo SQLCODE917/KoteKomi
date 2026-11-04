@@ -231,6 +231,7 @@ The next capability increment measures correct source-grounded Assertions and op
 
 ## Implementation References
 
+- Operator workflow: [Operator Guide](operator-ingestion.md).
 - Ingestion interfaces: [CLI](../packages/pipelines/src/kotekomi_pipelines/cli.py), [live and stored replay](../packages/pipelines/src/kotekomi_pipelines/replay_reader/live.py), and [worker](../packages/pipelines/src/kotekomi_pipelines/replay_reader/ingestion_worker.py).
 - Shared composition: [source-grounded reference composition](../packages/application/src/kotekomi_application/source_grounded_reference_composition.py) and [R19 construction](../packages/application/src/kotekomi_application/deterministic_residual_composition_completion.py).
 - Current regression: [semantic selection contract](../packages/application/src/kotekomi_application/semantic_selection_contract.py) and [reviewed expectations](../data/r18-current-regression/reviewed_expectations.json).

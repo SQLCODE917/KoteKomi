@@ -292,6 +292,8 @@ reliability.
 
 ## 11. Operator Handoff and Next Priorities
 
+The current operator workflow is documented in [Operator Guide: Ingestion, Replay, and Review](operator-ingestion.md).
+
 1. Operator-run ingestion through the normal CLI, then interactive replay. This is
    a human-run step: start it, watch it, and inspect the durable records
    afterwards.
