@@ -45,7 +45,58 @@ correctness.
 | `sge_acb0020374260d9dd45e0e1a` | `Google Gemini` | `for the platform, then OpenAI's ChatGPT` |
 | `sge_b2be68f5274d8e1265ec2838` | `Anthropic's emergency motion` | `for a stay of the FASCSA designation in April` |
 
+## Recommended case (demonstrated on the stored parse; content approval pending)
+
+Screening for a case whose full required content survives the shared path produced eight
+composed candidates. Most drop a meaning-bearing complement, carry a non-referring subject
+(`which`, `that`), or state an embedded hypothetical. One candidate keeps a complete
+atomic claim:
+
+| Element | Verified value |
+|---|---|
+| Event | `sge_fe4ca1d0afb0c91dbfa9df9d` |
+| Paragraph node | `nod_da86f9a7f68fd497cb47a88e_0022`, node start 8720 |
+| Trigger | `started`, 96..103 (label `start`) |
+| Subject boundary | `the US`, 89..95 |
+| Object boundary | `the 2026 Iran war`, 104..121 |
+| Statement span | 89..121, `the US started the 2026 Iran war` |
+| Completion | none required: the object head governs no `acl` |
+| Composition | `composed` with the unmodified derivation |
+
+Source context: `... OpenAI "rushed", hours before the US started the 2026 Iran war, to get a
+deal without the constraints that Anthropic ...`. The temporal phrase frames the clause; the
+clause itself is a complete subject-predicate-object claim.
+
+Proposed expected Assertion (agent-drafted; awaiting human review):
+
+| Field | Proposed value |
+|---|---|
+| Type | `reported_observation` |
+| Epistemic scope | `source_report` |
+| Subject | accepted `Organization` for the United States (identity review required) |
+| Predicate | `started` |
+| Object | value `the 2026 Iran war` |
+| Qualifiers | `polarity: affirmed`, `modality: actual` |
+| Source authority | `secondary` |
+| Attribution basis | `direct_document` |
+| Evidence | statement EvidenceTarget over 8809..8841 |
+| Status | `proposed` |
+
+### Outstanding blocker for the full journey on this case
+
+HP-3 produced a candidate for `US` at 93..95, while the selected subject boundary is
+`the US` at 89..95. An accepted occurrence over `US` therefore does not cover the selected
+subject fragment, so identity resolution would hold `subject_unavailable`. The full
+packet → decision → proposal → replay journey on this case needs one of:
+
+- a reviewed identity occurrence whose span covers `the US`, or
+- an explicit, documented rule for a determiner-prefixed subject boundary.
+
+That is a bounded decision, not a new capability, and it must be settled before the journey
+test is written for this case.
+
 ## Conclusion (narrowed)
+
 
 The current selection/composition path has **not demonstrated a semantically complete
 acceptance case**.

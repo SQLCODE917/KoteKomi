@@ -96,6 +96,16 @@ uv run kotekomi --config <config> review recompose --run <igr_...> --event <sge_
 The operator supplies decisions only. IDs, evidence selectors, dependency tokens, and
 recomposition JSON come from stored records.
 
+## 3a. Evidence qualification
+
+The pipeline hold regression (`packages/pipelines/tests/test_unsupported_complement_hold.py`)
+is a **failure-injection integration test**: it replaces both derivation call sites with an
+unsupported outcome. It proves that the hold survives review, persistence, replay, and retry
+without creating an Assertion proposal. It does not prove recognition from actual tokens.
+Recognition at the derivation boundary is covered separately by
+`test_blog_post_complement_is_unsupported_because_it_governs_a_clause`, which runs on the
+stored parse with the unmodified derivation.
+
 ## 4. Acceptance evidence
 
 | Check | Evidence |
