@@ -128,14 +128,10 @@ Baseline `317723f`, before the change:
 
 After the change:
 
-- All five tests in `packages/pipelines/tests/test_ingestion_workflow.py` pass.
-- `PYTHONPATH=. uv run pytest packages/pipelines/tests/test_replay_live_cli.py
-  packages/pipelines/tests/test_replay_cancellation.py
-  packages/pipelines/tests/test_replay_process_startup.py
-  packages/pipelines/tests/test_user_ingestion_run.py
-  packages/pipelines/tests/test_r20_ingestion_transition.py
-  packages/pipelines/tests/test_ingestion_composition_transition.py
-  packages/pipelines/tests/test_ingestion_workflow.py -q` passes 53 tests.
+- All six tests in `packages/pipelines/tests/test_ingestion_workflow.py` pass.
+- The preserved replay, cancellation, startup, R20 transition, and composition
+  transition suites passed 53 tests at the ISC-01 verification revision. ISC-05 later
+  removed the shared-fixture import, so the command needs no `PYTHONPATH` prefix.
 - `uv run ruff format --check` and `uv run ruff check` pass on changed files.
 - `uv run pyright` reports no error on changed files.
 
