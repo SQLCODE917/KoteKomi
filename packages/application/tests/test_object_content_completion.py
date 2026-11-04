@@ -141,8 +141,11 @@ def _selection(case: dict[str, object]):
     )
 
 
+SIMPLE_TEXT = "Amodei published a post praising fraud"
+
+
 def _simple_tokens():
-    """A minimal noun phrase with one participial complement and no clause."""
+    """One coherent sentence: Amodei published a post praising fraud."""
     from kotekomi_application import EventEntityLinguisticToken
 
     def token(token_id, text, start, end, pos, relation, head):
@@ -159,31 +162,53 @@ def _simple_tokens():
         )
 
     return (
-        token("t1", "a", 0, 1, "DET", "det", "t2"),
-        token("t2", "post", 2, 6, "NOUN", "obj", "t8"),
-        token("t3", "praising", 7, 15, "VERB", "acl", "t2"),
-        token("t4", "fraud", 16, 21, "NOUN", "obj", "t3"),
-        token("t5", "published", 22, 31, "VERB", "root", None),
-        token("t6", "Amodei", 32, 38, "PROPN", "nsubj", "t5"),
-        token("t7", "the", 39, 42, "DET", "det", "t2"),
-        token("t8", "published", 22, 31, "VERB", "root", None),
+        token("t1", "Amodei", 0, 6, "PROPN", "nsubj", "t2"),
+        token("t2", "published", 7, 16, "VERB", "root", None),
+        token("t3", "a", 17, 18, "DET", "det", "t4"),
+        token("t4", "post", 19, 23, "NOUN", "obj", "t2"),
+        token("t5", "praising", 24, 32, "VERB", "acl", "t4"),
+        token("t6", "fraud", 33, 38, "NOUN", "obj", "t5"),
+    )
+
+
+def _simple_selection():
+    from kotekomi_application import build_constituent_candidate_inventory
+    from kotekomi_application.source_grounded_selection import (
+        select_source_grounded_constituents,
+    )
+
+    inventory = build_constituent_candidate_inventory(
+        source_text=SIMPLE_TEXT,
+        event_id="sge_simple_complement",
+        tokens=_simple_tokens(),
+        event_expression_start=7,
+        event_expression_end=16,
+    )
+    return inventory, select_source_grounded_constituents(
+        event_id="sge_simple_complement",
+        source_text=SIMPLE_TEXT,
+        inventory=inventory,
+        trigger_head_start=7,
+        trigger_head_end=16,
+        tokens=_simple_tokens(),
     )
 
 
 def test_participial_complement_completes_the_object() -> None:
-    """A simple participial complement completes the phrase source-exactly."""
+    """A simple complement completes the phrase source-exactly."""
     from kotekomi_application import SourceRange
+    from kotekomi_application.decontextualization_composition import (
+        derive_object_content_completion,
+    )
 
-    text = "a post praising fraud published"
     completion = derive_object_content_completion(
         event_id="sge_simple_complement",
-        source_text=text,
+        source_text=SIMPLE_TEXT,
         tokens=_simple_tokens(),
-        selected_object_range=SourceRange(start=0, end=6, text="a post"),
+        selected_object_range=SourceRange(start=17, end=23, text="a post"),
     )
 
     assert completion is not None
-    assert completion.completed_range.start == 0
     assert completion.completed_range.text == "a post praising fraud"
 
 
@@ -323,3 +348,153 @@ def test_coordinated_complement_is_unsupported() -> None:
             tokens=tokens,
             selected_object_range=SourceRange(start=0, end=6, text="a post"),
         )
+
+
+def _compose_from(*, text, tokens, trigger, subject, completion, event_id, digest):
+    """Compose one Event from an explicit source, token graph, and completion."""
+    from kotekomi_application import (
+        AssertionConstructionInputs,
+        DecontextualizationEntityRef,
+        EventEntityReferences,
+        ReferenceResolution,
+        SourceRange,
+        build_constituent_candidate_inventory,
+        compose_event_from_resolution,
+    )
+    from kotekomi_domain import (
+        AssertionType,
+        AttributionBasis,
+        SourceAuthority,
+    )
+
+    inventory = build_constituent_candidate_inventory(
+        source_text=text,
+        event_id=event_id,
+        tokens=tokens,
+        event_expression_start=trigger[0],
+        event_expression_end=trigger[1],
+    )
+    entity = "org_complement_probe"
+    resolution = ReferenceResolution(
+        references=EventEntityReferences(
+            entities=(
+                DecontextualizationEntityRef(
+                    entity_id=entity,
+                    entity_kind="organization",
+                    canonical_name="probe",
+                    accepted_source_occurrences=(
+                        SourceRange(
+                            start=subject[0],
+                            end=subject[1],
+                            text=text[subject[0] : subject[1]],
+                        ),
+                    ),
+                ),
+            ),
+            subject_value_authorizations=(),
+        ),
+        diagnostics=(),
+    )
+    inputs = AssertionConstructionInputs(
+        predicate_by_label={"published": "published"},
+        identity_by_entity={entity: entity},
+        assertion_type=AssertionType.REPORTED_OBSERVATION,
+        source_authority=SourceAuthority.SECONDARY,
+        attribution_basis=AttributionBasis.DIRECT_DOCUMENT,
+        source_id="src_complement_probe",
+        evidence_target_id="etg_complement_probe",
+        constructed_at=datetime(2026, 1, 1, tzinfo=UTC),
+    )
+    return compose_event_from_resolution(
+        event_id=event_id,
+        source_text=text,
+        source_text_sha256=digest,
+        inventory=inventory,
+        trigger_head_start=trigger[0],
+        trigger_head_end=trigger[1],
+        tokens=tokens,
+        resolution=resolution,
+        assertion_inputs=inputs,
+        object_completion=completion,
+    )
+
+
+def _simple_compose(completion):
+    import hashlib
+
+    return _compose_from(
+        text=SIMPLE_TEXT,
+        tokens=_simple_tokens(),
+        trigger=(7, 16),
+        subject=(0, 6),
+        completion=completion,
+        event_id="sge_simple_complement",
+        digest=hashlib.sha256(SIMPLE_TEXT.encode()).hexdigest(),
+    )
+
+
+def test_missing_completion_holds_instead_of_truncating() -> None:
+    """A required completion that the caller omits produces an explicit hold."""
+    record = _simple_compose(None)
+
+    assert record.status.value == "held"
+    assert record.hold_reason == "object_complement_required"
+    assert record.assertion is None
+
+
+def test_supplied_completion_reaches_the_assertion() -> None:
+    """The validated completion becomes the Assertion object value."""
+    from kotekomi_application import SourceRange
+    from kotekomi_application.decontextualization_composition import (
+        derive_object_content_completion,
+    )
+
+    completion = derive_object_content_completion(
+        event_id="sge_simple_complement",
+        source_text=SIMPLE_TEXT,
+        tokens=_simple_tokens(),
+        selected_object_range=SourceRange(start=17, end=23, text="a post"),
+    )
+    record = _simple_compose(completion)
+
+    assert record.status.value == "composed"
+    assert record.assertion is not None
+    assert record.assertion.object_value == "a post praising fraud"
+
+
+def test_invented_completion_text_is_rejected() -> None:
+    """A shape-valid but source-false completion cannot reach the Assertion."""
+    from kotekomi_application import SourceRange
+    from kotekomi_application.decontextualization_composition import (
+        ObjectContentCompletion,
+    )
+
+    invented = ObjectContentCompletion(
+        event_id="sge_simple_complement",
+        selected_object_range=SourceRange(start=17, end=23, text="a post"),
+        completed_range=SourceRange(start=17, end=38, text="X" * 21),
+    )
+
+    with pytest.raises(ValueError, match="permitted derivation"):
+        _simple_compose(invented)
+
+
+def test_unsupported_complement_holds_even_without_a_supplied_completion() -> None:
+    """Omitting the completion cannot bypass a required-but-unsupported complement."""
+    import hashlib
+
+    case = _case()
+    record = _compose_from(
+        text=str(case["source_text"]),
+        tokens=_tokens(case),
+        trigger=(int(case["trigger_start"]), int(case["trigger_end"])),
+        subject=(int(case["subject_start"]), int(case["subject_end"])),
+        completion=None,
+        event_id=str(case["event_id"]),
+        digest=str(case["source_text_sha256"]),
+    )
+
+    assert record.status.value == "held"
+    assert record.hold_reason == "unsupported_object_complement"
+    assert record.assertion is None
+    assert hashlib.sha256(str(case["source_text"]).encode()).hexdigest()
