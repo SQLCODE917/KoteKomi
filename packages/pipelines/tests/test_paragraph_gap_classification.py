@@ -14,10 +14,7 @@ from kotekomi_pipelines.current_hybrid_evaluation import (
 
 
 def test_classify_an_all_complete_paragraph() -> None:
-    assert (
-        classify_hybrid_paragraph_gap(_stages())
-        is HybridParagraphGapClass.COMPLETE
-    )
+    assert classify_hybrid_paragraph_gap(_stages()) is HybridParagraphGapClass.COMPLETE
 
 
 def test_classify_hp1_partial_wins_over_hp3_and_hp10() -> None:

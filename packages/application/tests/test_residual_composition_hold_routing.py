@@ -75,9 +75,7 @@ def _proposition(event_id: str) -> DecontextualizedProposition:
 
 
 def test_rejected_routing_maps_to_selection_rejected() -> None:
-    disposition = dispose_residual_event(
-        routing=_routing("AHE-004", ResidualReviewReason.REJECTED)
-    )
+    disposition = dispose_residual_event(routing=_routing("AHE-004", ResidualReviewReason.REJECTED))
     assert disposition.event_id == "AHE-004"
     assert disposition.reason is ResidualDispositionReason.SELECTION_REJECTED
     assert disposition.hold_reason is None
@@ -85,9 +83,7 @@ def test_rejected_routing_maps_to_selection_rejected() -> None:
 
 
 def test_censored_routing_maps_to_selection_censored() -> None:
-    disposition = dispose_residual_event(
-        routing=_routing("AHE-010", ResidualReviewReason.CENSORED)
-    )
+    disposition = dispose_residual_event(routing=_routing("AHE-010", ResidualReviewReason.CENSORED))
     assert disposition.reason is ResidualDispositionReason.SELECTION_CENSORED
 
 
@@ -129,9 +125,7 @@ def test_held_composition_never_yields_composable() -> None:
 
 def test_unsupported_residual_reason_raises() -> None:
     with pytest.raises(ValueError):
-        dispose_residual_event(
-            routing=_routing("AHE-012", ResidualReviewReason.NO_SELECTABLE)
-        )
+        dispose_residual_event(routing=_routing("AHE-012", ResidualReviewReason.NO_SELECTABLE))
 
 
 def test_selection_disposition_rejects_a_proposition() -> None:

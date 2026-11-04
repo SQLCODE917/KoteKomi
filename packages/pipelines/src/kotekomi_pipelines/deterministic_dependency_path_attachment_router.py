@@ -123,9 +123,7 @@ def build_attachment_route_phase(
                 candidate_id=candidate_id,
                 partition_role=role,
                 observations=candidate_observations,
-                trigger_containment=_candidate_contains_foreign_trigger(
-                    candidate_observations
-                ),
+                trigger_containment=_candidate_contains_foreign_trigger(candidate_observations),
             )
         )
     return build_route_partition_report(

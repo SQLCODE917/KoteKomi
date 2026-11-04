@@ -311,9 +311,7 @@ def test_normal_worker_persists_the_hold_then_recomposition_composes(
     )
     event = profile.events[0]
     event_id = event.event_id
-    replay_before = CompositionOutcomeStore(state / "composition-outcomes").annotations(
-        (event_id,)
-    )
+    replay_before = CompositionOutcomeStore(state / "composition-outcomes").annotations((event_id,))
     assert len(replay_before) == 1
     assert replay_before[0].status == "held"
     assert "assertion_inputs_unavailable" in replay_before[0].summary
@@ -406,9 +404,7 @@ def test_normal_worker_persists_the_hold_then_recomposition_composes(
     assert record.supporting_subject_span is not None
     assert record.supporting_subject_span.text == SUBJECT
 
-    replay_after = CompositionOutcomeStore(state / "composition-outcomes").annotations(
-        (event_id,)
-    )
+    replay_after = CompositionOutcomeStore(state / "composition-outcomes").annotations((event_id,))
     assert len(replay_after) == 1
     assert replay_after[0].status == "composed"
     assert SUBJECT in replay_after[0].summary

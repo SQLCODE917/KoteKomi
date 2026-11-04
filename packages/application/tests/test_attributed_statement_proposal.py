@@ -98,9 +98,7 @@ class _Ledger:
     def get_evidence_target(self, record_id: str) -> EvidenceTarget | None:
         return self.evidence_targets.get(record_id)
 
-    def get_evidence_validation_attempt(
-        self, record_id: str
-    ) -> EvidenceValidationAttempt | None:
+    def get_evidence_validation_attempt(self, record_id: str) -> EvidenceValidationAttempt | None:
         return self.validation_attempts.get(record_id)
 
     def get_proposed_change(self, record_id: str) -> ProposedChange | None:
@@ -247,9 +245,7 @@ def test_submit_writes_pending_proposed_change_and_provenance_activity() -> None
     assert result.provenance_activity_id is not None
     proposed_change_id = result.proposed_change_id
     provenance_activity_id = result.provenance_activity_id
-    assert proposed_change_id == _deterministic_id(
-        "pcg", "attributed_statement", _ASSERTION_ID
-    )
+    assert proposed_change_id == _deterministic_id("pcg", "attributed_statement", _ASSERTION_ID)
     assert result.assertion_id == _ASSERTION_ID
     assert provenance_activity_id == _deterministic_id(
         "prv", "attributed_statement_proposed", proposed_change_id

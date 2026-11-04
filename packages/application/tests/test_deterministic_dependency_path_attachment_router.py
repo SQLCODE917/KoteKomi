@@ -251,6 +251,8 @@ def test_remaining_candidate_routes_model_review() -> None:
     assert decision.route_kind is AttachmentRouteKind.MODEL_REVIEW
     assert decision.allowed_event_ids == ()
     assert decision.selected_policy is None
+
+
 def test_complement_family_rejects_nmod_mediated_acl() -> None:
     complement = _complement_observation("cac_" + "a" * 24, "sge_" + "b" * 24)
     excluded = _nmod_acl_observation("cac_" + "c" * 24, "sge_" + "d" * 24)
@@ -288,9 +290,7 @@ def test_route_decision_rejects_held_out_partition() -> None:
 
 def test_classify_none_decision() -> None:
     assert classify_none_decision(()) is AttachmentNoneClassification.TRUE_NONE
-    assert (
-        classify_none_decision(("sge_" + "b" * 24,)) is AttachmentNoneClassification.FALSE_NONE
-    )
+    assert classify_none_decision(("sge_" + "b" * 24,)) is AttachmentNoneClassification.FALSE_NONE
 
 
 def test_build_none_confusion_matrix() -> None:
@@ -332,6 +332,8 @@ def test_build_none_decisions() -> None:
             gold_temporal=False,
         ),
     )
+
+
 def test_classify_error_class() -> None:
     assert (
         classify_error_class(gold_is_empty=True, gold_mixed=False, gold_temporal=False)
@@ -468,6 +470,7 @@ def test_attachment_route_report_fingerprint_excludes_result_field() -> None:
         "schema_version": "attachment_route_report_v1",
         "result_fingerprint": "0" * 64,
     }
-    assert attachment_route_report_fingerprint(payload) == hashlib.sha256(
-        b'{"schema_version":"attachment_route_report_v1"}'
-    ).hexdigest()
+    assert (
+        attachment_route_report_fingerprint(payload)
+        == hashlib.sha256(b'{"schema_version":"attachment_route_report_v1"}').hexdigest()
+    )

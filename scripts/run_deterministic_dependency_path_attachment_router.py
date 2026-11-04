@@ -41,9 +41,7 @@ STANZA_LOCK = REPOSITORY_ROOT / "packages/adapters/src/kotekomi_adapters/stanza-
 TDD_PATH = REPOSITORY_ROOT / "docs/2026-09-24-deterministic-dependency-path-attachment-router.md"
 
 _Phase = Literal["development", "validation"]
-_PINNED_PROPOSITION_GOLD_SHA256 = (
-    "f496ab64e6590de05b1bc07ef069335fae6a7094b009b2fae3ca02cc627e54b0"
-)
+_PINNED_PROPOSITION_GOLD_SHA256 = "f496ab64e6590de05b1bc07ef069335fae6a7094b009b2fae3ca02cc627e54b0"
 _PINNED_STANZA_LOCK_SHA256 = "4e66da09e0da1b3daef940ac8bec68d814b99d9fb10538e371548c9914d87bb3"
 
 
@@ -90,9 +88,7 @@ def _run(args: argparse.Namespace) -> int:
         raise ValueError("R1 requires approved Proposition Gold.")
     development = _load_phase("development", development_root)
     validation = _load_phase("validation", validation_root)
-    gold_by_sge = _gold_by_source_grounded_event(
-        catalog, development.bindings, validation.bindings
-    )
+    gold_by_sge = _gold_by_source_grounded_event(catalog, development.bindings, validation.bindings)
     development_build = _build_partition("development", development, catalog, gold_by_sge)
     validation_build = _build_partition("validation", validation, catalog, gold_by_sge)
     report = build_attachment_route_report(
@@ -246,17 +242,13 @@ def _gold_temporal_flags(
         candidate = candidate_by_id[candidate_id]
         result[candidate_id] = any(
             event_id in gold_by_sge
-            and _contains_temporal_fragment(
-                candidate.start, candidate.end, gold_by_sge[event_id]
-            )
+            and _contains_temporal_fragment(candidate.start, candidate.end, gold_by_sge[event_id])
             for event_id in event_ids
         )
     return result
 
 
-def _contains_temporal_fragment(
-    start: int, end: int, event: PropositionGoldEvent
-) -> bool:
+def _contains_temporal_fragment(start: int, end: int, event: PropositionGoldEvent) -> bool:
     return any(
         PropositionGoldFragmentRequirement.TEMPORAL in fragment.requirements
         and start >= fragment.start

@@ -472,9 +472,7 @@ def _apply_precision_filters(
             item for item in survivors if not _has_function_word_only_tokens(item, token_by_id)
         ]
     if relaxation_level <= 2:
-        survivors = [
-            item for item in survivors if not _has_artifact_only_tokens(item, token_by_id)
-        ]
+        survivors = [item for item in survivors if not _has_artifact_only_tokens(item, token_by_id)]
     if relaxation_level <= 1:
         survivors = list(_dedup_constituents(tuple(survivors)))
     if relaxation_level <= 0:
@@ -489,9 +487,7 @@ def _is_trigger_candidate(candidate: ParserConstituent, trigger: SourceRange) ->
     )
 
 
-def _is_segment_core_candidate(
-    candidate: ParserConstituent, segment_core: SourceRange
-) -> bool:
+def _is_segment_core_candidate(candidate: ParserConstituent, segment_core: SourceRange) -> bool:
     return (candidate.constituent_range.start, candidate.constituent_range.end) == (
         segment_core.start,
         segment_core.end,

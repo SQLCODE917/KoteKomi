@@ -134,8 +134,7 @@ def test_seven_to_two_narrows_then_relaxes_to_the_lowest_level_meeting_the_floor
     assert derivation.selectable_count_before == 2
     assert derivation.selectable_count_after == 3
     spans = {
-        (item.constituent_range.start, item.constituent_range.end)
-        for item in derivation.selectable
+        (item.constituent_range.start, item.constituent_range.end) for item in derivation.selectable
     }
     assert spans == {(5, 8), (9, 17), (13, 17)}
 
@@ -166,8 +165,7 @@ def test_hard_filters_stay_applied_at_relaxation_level_four() -> None:
     )
     assert derivation.relaxation_level == 4
     spans = {
-        (item.constituent_range.start, item.constituent_range.end)
-        for item in derivation.selectable
+        (item.constituent_range.start, item.constituent_range.end) for item in derivation.selectable
     }
     assert (0, 4) not in spans
     assert (0, 8) not in spans

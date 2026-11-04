@@ -119,9 +119,7 @@ def _classify_hp10_partial(
 ) -> HybridParagraphGapClass:
     route_required = False
     for diagnostic in stage.diagnostics:
-        if diagnostic.startswith(_BOUNDARY_LINE) or diagnostic.startswith(
-            _BOUNDARY_RELATION
-        ):
+        if diagnostic.startswith(_BOUNDARY_LINE) or diagnostic.startswith(_BOUNDARY_RELATION):
             return HybridParagraphGapClass.BOUNDARY_HELD
         if not diagnostic.startswith(_STANDING_FACT_HELD):
             continue

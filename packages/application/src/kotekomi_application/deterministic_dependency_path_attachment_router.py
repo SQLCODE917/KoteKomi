@@ -99,18 +99,21 @@ class AttachmentRouteDecision(BaseModel):
     informing_partition: Literal["development", "validation"] | None
     route_kind: AttachmentRouteKind
     allowed_event_ids: tuple[_EventId, ...]
-    selected_policy: Annotated[
-        str,
-        Field(pattern=r"^path_(?:1|unbounded_plus_complement)$"),
-    ] | None
+    selected_policy: (
+        Annotated[
+            str,
+            Field(pattern=r"^path_(?:1|unbounded_plus_complement)$"),
+        ]
+        | None
+    )
     path_1_supported: bool
     trigger_containment: bool
 
     @model_validator(mode="after")
     def validate_contract(self) -> Self:
-        if self.allowed_event_ids != tuple(
-            sorted(self.allowed_event_ids)
-        ) or len(set(self.allowed_event_ids)) != len(self.allowed_event_ids):
+        if self.allowed_event_ids != tuple(sorted(self.allowed_event_ids)) or len(
+            set(self.allowed_event_ids)
+        ) != len(self.allowed_event_ids):
             raise ValueError("Route decision Event IDs must be ordered and distinct.")
         if self.route_kind is AttachmentRouteKind.ATTACHED:
             if not self.allowed_event_ids or self.selected_policy is None:
@@ -275,10 +278,7 @@ class AttachmentRouteReport(BaseModel):
             "validation",
         ):
             raise ValueError("Route report requires development then validation partitions.")
-        if any(
-            item.partition_role not in {"development", "validation"}
-            for item in self.ceilings
-        ):
+        if any(item.partition_role not in {"development", "validation"} for item in self.ceilings):
             raise ValueError("Route report contains a held-out or foreign ceiling.")
         if self.result_fingerprint != attachment_route_report_fingerprint(self):
             raise ValueError("Route report fingerprint drifted.")

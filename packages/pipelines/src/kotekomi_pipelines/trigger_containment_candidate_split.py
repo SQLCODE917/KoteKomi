@@ -97,9 +97,7 @@ def build_candidate_universe(
                 candidate_id=trigger_containment_candidate_id(sha, start, end),
                 phase=next(iter(phases)),
                 source_text_sha256=sha,
-                source_range=SourceRange(
-                    start=start, end=end, text=source_text[start:end]
-                ),
+                source_range=SourceRange(start=start, end=end, text=source_text[start:end]),
                 gold_event_ids=gold_event_ids,
             )
         )

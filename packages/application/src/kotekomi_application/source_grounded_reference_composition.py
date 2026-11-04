@@ -227,5 +227,3 @@ def composition_annotation(record: EventCompositionRecord) -> CompositionAnnotat
         summary=summary,
         span=span,
     )
-
-

@@ -219,9 +219,7 @@ class IdentityResolutionReport(BaseModel):
             or self.proposed_change_count != 0
             or self.model_execution_count != 0
         ):
-            raise ValueError(
-                "R14 report must record zero writes, proposals, and model executions."
-            )
+            raise ValueError("R14 report must record zero writes, proposals, and model executions.")
         return self
 
 

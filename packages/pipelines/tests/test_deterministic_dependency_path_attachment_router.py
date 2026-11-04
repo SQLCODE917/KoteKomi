@@ -226,9 +226,7 @@ def test_build_attachment_route_ceilings_counts() -> None:
     )
 
     by_key = {(item.kind, item.policy_id): item for item in ceilings}
-    candidate_path_3 = by_key[
-        (AttachmentOracleCeilingKind.CANDIDATE_SOURCE, "path_3")
-    ]
+    candidate_path_3 = by_key[(AttachmentOracleCeilingKind.CANDIDATE_SOURCE, "path_3")]
     assert candidate_path_3.reachable_count == 2
     assert candidate_path_3.gold_count == 2
     assert candidate_path_3.ceiling == 1.0
@@ -279,17 +277,14 @@ def test_render_review_lists_route_decisions_and_ceilings() -> None:
         gold_mixed={},
         gold_temporal={},
     )
-    ceilings = (
-        build_attachment_route_ceilings(
-            partition_role="development",
-            observations=(_distance_one(CANDIDATE_1, EVENT_A),),
-            gold_attachment={CANDIDATE_1: (EVENT_A,)},
-        )
-        + build_attachment_route_ceilings(
-            partition_role="validation",
-            observations=(_validation_distance_one(CANDIDATE_2, EVENT_B),),
-            gold_attachment={CANDIDATE_2: (EVENT_B,)},
-        )
+    ceilings = build_attachment_route_ceilings(
+        partition_role="development",
+        observations=(_distance_one(CANDIDATE_1, EVENT_A),),
+        gold_attachment={CANDIDATE_1: (EVENT_A,)},
+    ) + build_attachment_route_ceilings(
+        partition_role="validation",
+        observations=(_validation_distance_one(CANDIDATE_2, EVENT_B),),
+        gold_attachment={CANDIDATE_2: (EVENT_B,)},
     )
     report = build_attachment_route_report(
         development=development,

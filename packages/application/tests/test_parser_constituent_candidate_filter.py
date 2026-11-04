@@ -102,9 +102,7 @@ def test_trigger_filter_removes_the_event_trigger_candidate() -> None:
         _constituent(source, ("t2",), 5, 10),
         _constituent(source, ("t3",), 11, 14),
     )
-    result = _selectable(
-        attached=attached, source_text=source, tokens=tokens, trigger=trigger
-    )
+    result = _selectable(attached=attached, source_text=source, tokens=tokens, trigger=trigger)
     spans = {(item.constituent_range.start, item.constituent_range.end) for item in result}
     assert spans == {(0, 4), (11, 14)}
     assert (5, 10) not in spans
@@ -126,9 +124,7 @@ def test_core_filter_removes_the_segment_core_span_candidate() -> None:
         _constituent(source, ("t1",), 0, 4),
         _constituent(source, ("t3",), 11, 14),
     )
-    result = _selectable(
-        attached=attached, source_text=source, tokens=tokens, trigger=trigger
-    )
+    result = _selectable(attached=attached, source_text=source, tokens=tokens, trigger=trigger)
     spans = {(item.constituent_range.start, item.constituent_range.end) for item in result}
     assert (0, 14) not in spans
     assert (0, 4) in spans
@@ -159,9 +155,7 @@ def test_function_word_filter_removes_function_word_only_candidate(surface: str,
     )
     trigger = _trigger(source, 0, 2)
     attached = (_constituent(source, ("t2",), start, end),)
-    result = _selectable(
-        attached=attached, source_text=source, tokens=tokens, trigger=trigger
-    )
+    result = _selectable(attached=attached, source_text=source, tokens=tokens, trigger=trigger)
     assert result == ()
 
 
@@ -174,9 +168,7 @@ def test_function_word_filter_keeps_candidate_with_content_token() -> None:
     )
     trigger = _trigger(source, 0, 2)
     attached = (_constituent(source, ("t2", "t3"), 3, 12),)
-    result = _selectable(
-        attached=attached, source_text=source, tokens=tokens, trigger=trigger
-    )
+    result = _selectable(attached=attached, source_text=source, tokens=tokens, trigger=trigger)
     assert result == attached
 
 
@@ -197,9 +189,7 @@ def test_artifact_filter_removes_artifact_only_candidate(surface: str, pos: str)
     )
     trigger = _trigger(source, 0, 2)
     attached = (_constituent(source, ("t2",), start, end),)
-    result = _selectable(
-        attached=attached, source_text=source, tokens=tokens, trigger=trigger
-    )
+    result = _selectable(attached=attached, source_text=source, tokens=tokens, trigger=trigger)
     assert result == ()
 
 
@@ -212,9 +202,7 @@ def test_artifact_filter_keeps_mixed_candidate_with_content_token() -> None:
     )
     trigger = _trigger(source, 0, 2)
     attached = (_constituent(source, ("t2", "t3"), 3, 12),)
-    result = _selectable(
-        attached=attached, source_text=source, tokens=tokens, trigger=trigger
-    )
+    result = _selectable(attached=attached, source_text=source, tokens=tokens, trigger=trigger)
     assert result == attached
 
 
@@ -239,9 +227,7 @@ def test_dedup_filter_drops_candidate_with_empty_surface() -> None:
     )
     trigger = _trigger(source, 0, 2)
     attached = (_constituent(source, ("t2",), 3, 5),)
-    result = _selectable(
-        attached=attached, source_text=source, tokens=tokens, trigger=trigger
-    )
+    result = _selectable(attached=attached, source_text=source, tokens=tokens, trigger=trigger)
     assert result == ()
 
 
@@ -258,9 +244,7 @@ def test_dedup_filter_keeps_the_earliest_candidate_by_source_offset() -> None:
         _constituent(source, ("t1",), 0, 3),
         _constituent(source, ("t3", "t4"), 10, 14),
     )
-    result = _selectable(
-        attached=attached, source_text=source, tokens=tokens, trigger=trigger
-    )
+    result = _selectable(attached=attached, source_text=source, tokens=tokens, trigger=trigger)
     spans = [(item.constituent_range.start, item.constituent_range.end) for item in result]
     assert spans == [(0, 3)]
 
@@ -280,9 +264,7 @@ def test_nested_filter_removes_contained_candidate_when_superset_adds_only_funct
         _constituent(source, ("t2", "t3"), 5, 13),
         _constituent(source, ("t3",), 9, 13),
     )
-    result = _selectable(
-        attached=attached, source_text=source, tokens=tokens, trigger=trigger
-    )
+    result = _selectable(attached=attached, source_text=source, tokens=tokens, trigger=trigger)
     spans = [(item.constituent_range.start, item.constituent_range.end) for item in result]
     assert spans == [(5, 13)]
 
@@ -300,9 +282,7 @@ def test_nested_filter_keeps_contained_candidate_when_superset_adds_content_toke
         _constituent(source, ("t2", "t3", "t4"), 5, 18),
         _constituent(source, ("t4",), 14, 18),
     )
-    result = _selectable(
-        attached=attached, source_text=source, tokens=tokens, trigger=trigger
-    )
+    result = _selectable(attached=attached, source_text=source, tokens=tokens, trigger=trigger)
     spans = {(item.constituent_range.start, item.constituent_range.end) for item in result}
     assert spans == {(5, 18), (14, 18)}
 
@@ -323,9 +303,7 @@ def test_selectable_list_is_a_source_ordered_subsequence_of_attached() -> None:
         _constituent(source, ("t2",), 5, 10),
         _constituent(source, ("t3",), 11, 14),
     )
-    result = _selectable(
-        attached=attached, source_text=source, tokens=tokens, trigger=trigger
-    )
+    result = _selectable(attached=attached, source_text=source, tokens=tokens, trigger=trigger)
     assert result == (attached[0], attached[2])
 
 
@@ -493,7 +471,5 @@ def test_an_event_with_only_function_word_candidates_has_an_empty_selectable_lis
     )
     trigger = _trigger(source, 0, 2)
     attached = (_constituent(source, ("t2",), 3, 5),)
-    selectable = _selectable(
-        attached=attached, source_text=source, tokens=tokens, trigger=trigger
-    )
+    selectable = _selectable(attached=attached, source_text=source, tokens=tokens, trigger=trigger)
     assert selectable == ()

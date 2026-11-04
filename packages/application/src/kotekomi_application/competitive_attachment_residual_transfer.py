@@ -225,15 +225,11 @@ def attachment_ownership_remainder_ranges(
             if match is not None:
                 split = value.start + match.end()
                 omitted.append(
-                    SourceRange(
-                        start=value.start, end=split, text=source[value.start : split]
-                    )
+                    SourceRange(start=value.start, end=split, text=source[value.start : split])
                 )
                 if split < value.end:
                     displayed.append(
-                        SourceRange(
-                            start=split, end=value.end, text=source[split : value.end]
-                        )
+                        SourceRange(start=split, end=value.end, text=source[split : value.end])
                     )
                 continue
         displayed.append(value)

@@ -694,6 +694,8 @@ def test_h14_coverage_unknown_path_fails_closed_with_diagnostics(
     diagnostics = payload.get("diagnostics", [])
     assert isinstance(diagnostics, list)
     assert diagnostics
+
+
 def test_directory_prefix_allowed_path_covers_nested_changed_file(
     tmp_path: Path,
 ) -> None:

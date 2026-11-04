@@ -1813,9 +1813,7 @@ def _occurrence_range(
     source_text: str,
 ) -> SourceRange:
     _require_source_exact(source_text, occurrence.start, occurrence.end, occurrence.source_text)
-    return SourceRange(
-        start=occurrence.start, end=occurrence.end, text=occurrence.source_text
-    )
+    return SourceRange(start=occurrence.start, end=occurrence.end, text=occurrence.source_text)
 
 
 def _subject_value_authorization(
