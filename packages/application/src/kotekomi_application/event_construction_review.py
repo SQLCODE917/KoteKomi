@@ -26,6 +26,7 @@ from kotekomi_domain import (
 )
 
 from kotekomi_application.assertion_construction import AssertionConstructionInputs
+from kotekomi_application.decontextualization_composition import ObjectContentCompletion
 from kotekomi_application.evidence_targets import validate_evidence_target_record
 from kotekomi_application.identity_occurrence_acceptance import (
     GroundingCandidate,
@@ -89,6 +90,7 @@ class EventReviewPacket:
     hold_reason: str | None
     existing_review_id: str | None
     evidence_target_id: str | None
+    object_completion: ObjectContentCompletion | None = None
 
 
 def packet_source_digest(packet: EventReviewPacket) -> str:

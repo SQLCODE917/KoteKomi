@@ -24,6 +24,7 @@ from kotekomi_application.decontextualization_composition import (
     DecontextualizationHoldReason,
     DecontextualizationStatus,
     DecontextualizedRole,
+    ObjectContentCompletion,
     build_decontextualized_proposition,
 )
 from kotekomi_application.event_entity_connections import EventEntityLinguisticToken
@@ -119,6 +120,7 @@ def compose_event_from_resolution(
     tokens: tuple[EventEntityLinguisticToken, ...],
     resolution: ReferenceResolution,
     assertion_inputs: AssertionConstructionInputs,
+    object_completion: ObjectContentCompletion | None = None,
 ) -> EventCompositionRecord:
     """Compose one ingested Event, turning reference diagnostics into holds."""
     selection = select_source_grounded_constituents(
@@ -143,6 +145,7 @@ def compose_event_from_resolution(
         tokens=tokens,
         entities=resolution.references.entities,
         subject_value_authorizations=resolution.references.subject_value_authorizations,
+        object_completion=object_completion,
     )
 
     if proposition.status is DecontextualizationStatus.PROPOSITION:

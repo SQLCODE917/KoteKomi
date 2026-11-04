@@ -147,6 +147,28 @@ class DecontextualizationExclusion(BaseModel):
     rationale: Annotated[str, Field(min_length=1)]
 
 
+class ObjectContentCompletion(BaseModel):
+    """One validated completion of a selected object phrase.
+
+    The selected object range stays exactly as the selector produced it; the completed
+    range starts at that range and adds one contiguous participial complement.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    event_id: str
+    selected_object_range: SourceRange
+    completed_range: SourceRange
+
+    @model_validator(mode="after")
+    def validate_completion(self) -> Self:
+        if self.completed_range.start != self.selected_object_range.start:
+            raise ValueError("Object completion must start at the selected object phrase.")
+        if self.completed_range.end <= self.selected_object_range.end:
+            raise ValueError("Object completion must extend the selected object phrase.")
+        return self
+
+
 class DecontextualizedRole(BaseModel):
     """One exact selected core-event fragment and its resolved reference."""
 
@@ -584,6 +606,88 @@ def _source_exact_range(
     return SourceRange(start=start, end=end, text=source_text[start:end])
 
 
+_COMPLEMENT_CLAUSE_RELATIONS = frozenset(
+    {"acl", "acl:relcl", "advcl", "ccomp", "xcomp", "parataxis", "conj", "cc"}
+)
+
+
+def derive_object_content_completion(
+    *,
+    event_id: str,
+    source_text: str,
+    tokens: tuple[EventEntityLinguisticToken, ...],
+    selected_object_range: SourceRange,
+) -> ObjectContentCompletion | None:
+    """Return the validated participial completion of one selected object phrase.
+
+    The object head keeps its selection. A single bare ``acl`` dependent of that head
+    contributes one contiguous complement. An ordinary object without such a dependent
+    returns ``None`` and continues through the existing path. Ambiguous, coordinated, or
+    non-contiguous complements raise, so the caller can hold explicitly.
+    """
+    inside = [
+        token
+        for token in tokens
+        if selected_object_range.start <= token.start and token.end <= selected_object_range.end
+    ]
+    if not inside:
+        return None
+    head = next(
+        (
+            token
+            for token in inside
+            if token.head_token_id is None
+            or not (
+                selected_object_range.start <= token.start
+                and token.end <= selected_object_range.end
+                and any(other.token_id == token.head_token_id for other in inside)
+            )
+        ),
+        None,
+    )
+    if head is None:
+        return None
+    complements = [
+        token
+        for token in tokens
+        if token.head_token_id == head.token_id and token.dependency_relation == "acl"
+    ]
+    if not complements:
+        return None
+    if len(complements) > 1:
+        raise ValueError("The object head has more than one participial complement.")
+    complement = complements[0]
+    subtree = [complement]
+    changed = True
+    while changed:
+        changed = False
+        for token in tokens:
+            if token in subtree:
+                continue
+            if token.dependency_relation in _COMPLEMENT_CLAUSE_RELATIONS:
+                # A further clause or coordination is outside this construction.
+                continue
+            if any(parent.token_id == token.head_token_id for parent in subtree):
+                subtree.append(token)
+                changed = True
+    gap = source_text[selected_object_range.end : complement.start]
+    if gap.strip():
+        raise ValueError("The participial complement is not contiguous with the object phrase.")
+    completed_end = max(token.end for token in subtree)
+    while completed_end > selected_object_range.end and source_text[completed_end - 1] in ",;:":
+        completed_end -= 1
+    if completed_end <= selected_object_range.end:
+        raise ValueError("The participial complement does not extend the object phrase.")
+    completed_text = source_text[selected_object_range.start : completed_end]
+    return ObjectContentCompletion(
+        event_id=event_id,
+        selected_object_range=selected_object_range,
+        completed_range=SourceRange(
+            start=selected_object_range.start, end=completed_end, text=completed_text
+        ),
+    )
+
+
 def build_decontextualized_proposition(
     *,
     event_id: str,
@@ -596,6 +700,7 @@ def build_decontextualized_proposition(
     tokens: tuple[EventEntityLinguisticToken, ...],
     entities: tuple[DecontextualizationEntityRef, ...],
     subject_value_authorizations: tuple[DecontextualizationExclusion, ...] = (),
+    object_completion: ObjectContentCompletion | None = None,
 ) -> DecontextualizedProposition:
     """Compose one Event's decontextualized proposition or a typed hold.
 
@@ -732,10 +837,19 @@ def build_decontextualized_proposition(
                     entity_ref=object_entity,
                 )
             else:
+                fragment = object_constituent.constituent_range
+                if object_completion is not None:
+                    if object_completion.event_id != event_id:
+                        raise ValueError("Object completion belongs to another Event.")
+                    if object_completion.selected_object_range != fragment:
+                        raise ValueError(
+                            "Object completion does not match the selected object phrase."
+                        )
+                    fragment = object_completion.completed_range
                 object_role = DecontextualizedRole(
                     role=DecontextualizationRoleKind.OBJECT,
-                    exact_fragment=object_constituent.constituent_range,
-                    object_value=object_constituent.constituent_range.text,
+                    exact_fragment=fragment,
+                    object_value=fragment.text,
                 )
 
     polarity = (

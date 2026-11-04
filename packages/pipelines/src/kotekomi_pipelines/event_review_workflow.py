@@ -23,8 +23,10 @@ from kotekomi_application import (
     EventReviewPacket,
     ReviewCandidateIdentity,
     SourceGroundedSelectionResult,
+    SourceRange,
     assertion_inputs_from_review,
     build_constituent_candidate_inventory,
+    derive_object_content_completion,
     ingested_grounding_candidates,
     record_event_construction_decision,
     select_source_grounded_constituents,
@@ -138,7 +140,30 @@ def build_event_review_packet(
     subject_range = role_ranges.get("subject")
     object_range = role_ranges.get("object")
     subject_text = None if subject_range is None else paragraph.text[slice(*subject_range)]
-    object_text = None if object_range is None else paragraph.text[slice(*object_range)]
+    object_completion = None
+    if object_range is not None:
+        object_completion = derive_object_content_completion(
+            event_id=event_id,
+            source_text=paragraph.text,
+            tokens=artifact.tokens,
+            selected_object_range=SourceRange(
+                start=object_range[0],
+                end=object_range[1],
+                text=paragraph.text[slice(*object_range)],
+            ),
+        )
+    if object_range is None:
+        completed_object_range: tuple[int, int] | None = None
+    elif object_completion is None:
+        completed_object_range = object_range
+    else:
+        completed_object_range = (
+            object_completion.completed_range.start,
+            object_completion.completed_range.end,
+        )
+    object_text = (
+        None if completed_object_range is None else paragraph.text[slice(*completed_object_range)]
+    )
     subject_span = subject_range
     candidates = tuple(
         sorted(
@@ -188,11 +213,12 @@ def build_event_review_packet(
         subject_start=None if subject_range is None else subject_range[0],
         subject_end=None if subject_range is None else subject_range[1],
         subject_text=subject_text,
-        object_start=None if object_range is None else object_range[0],
-        object_end=None if object_range is None else object_range[1],
+        object_start=(None if completed_object_range is None else completed_object_range[0]),
+        object_end=(None if completed_object_range is None else completed_object_range[1]),
         object_text=object_text,
-        statement_start=_statement_start(event, subject_range, object_range),
-        statement_end=_statement_end(event, subject_range, object_range),
+        statement_start=_statement_start(event, subject_range, completed_object_range),
+        statement_end=_statement_end(event, subject_range, completed_object_range),
+        object_completion=object_completion,
         candidates=candidates,
         accepted_identity_ids=accepted,
         required_decisions=() if review is not None else _REQUIRED_DECISIONS,
@@ -313,6 +339,7 @@ def recompose_reviewed_event(
             representation_id=paragraph.representation_id,
             text_view_id=artifact.text_view_id,
             node_start_char=paragraph.node_start_char,
+            object_completion=packet.object_completion,
         )
         if record.assertion is not None:
             _upsert_assertion_proposal(record.assertion, review, repository, now)

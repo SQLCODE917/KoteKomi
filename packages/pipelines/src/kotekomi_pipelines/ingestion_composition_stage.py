@@ -16,6 +16,7 @@ from kotekomi_application import (
     EventCompositionRecord,
     EventCompositionStatus,
     EventCompositionStore,
+    ObjectContentCompletion,
     ReferenceDiagnostic,
     ReferenceDiagnosticReason,
     ReferenceResolution,
@@ -48,6 +49,7 @@ def compose_ingested_event(
     text_view_id: str,
     node_start_char: int = 0,
     pending_identity_ids: tuple[str, ...] = (),
+    object_completion: ObjectContentCompletion | None = None,
 ) -> EventCompositionRecord:
     """Compose one ingested Event, turning reference diagnostics into holds.
 
@@ -88,6 +90,7 @@ def compose_ingested_event(
         tokens=tokens,
         resolution=resolution,
         assertion_inputs=assertion_inputs,
+        object_completion=object_completion,
     )
 
 

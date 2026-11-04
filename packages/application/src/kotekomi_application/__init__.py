@@ -204,10 +204,12 @@ from kotekomi_application.decontextualization_composition import (
     DecontextualizedAttribution,
     DecontextualizedProposition,
     DecontextualizedRole,
+    ObjectContentCompletion,
     build_decontextualization_census,
     build_decontextualization_report,
     build_decontextualized_proposition,
     decontextualization_report_fingerprint,
+    derive_object_content_completion,
 )
 from kotekomi_application.document_entity_reconciliation import (
     DOCUMENT_ENTITY_RECONCILIATION_POLICY_ID,
@@ -2941,6 +2943,8 @@ __all__ = [
     "DecontextualizationStatus",
     "DecontextualizedAttribution",
     "DecontextualizedProposition",
+    "ObjectContentCompletion",
+    "derive_object_content_completion",
     "DecontextualizedRole",
     "build_decontextualization_census",
     "build_decontextualization_report",
