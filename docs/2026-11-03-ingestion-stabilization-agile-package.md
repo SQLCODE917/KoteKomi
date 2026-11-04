@@ -7,6 +7,7 @@
 - First deliverable: ISC-01, Shared ingestion workflow
 - Next deliverable: none; all six deliverables are Complete
 - Implementation prompt: [Unattended implementation](agent/implement-ingestion-stabilization.md)
+- Successor: [Ingestion to Reviewed Assertion Agile Package](2026-11-04-ingestion-to-reviewed-assertion-agile-package.md)
 
 ## User Outcome
 

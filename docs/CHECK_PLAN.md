@@ -241,3 +241,14 @@
 - verify pre-cleanup composition outcomes stay readable with `uv run pytest packages/adapters/tests/test_composition_outcome_store.py -q`; committed fixtures under `packages/adapters/tests/fixtures/composition_outcomes` pin one held and one composed record with explicit Assertion values and spans
 - verify that a fresh Application Layer import loads no historical experiment machinery with `uv run pytest packages/application/tests/test_production_composition_ownership.py -q -k fresh_import`; the check runs a fresh interpreter and fails on any new eager experiment dependency
 - verify that altered reviewed decision text is rejected with `uv run pytest packages/pipelines/tests/test_semantic_instruction_discrimination_runner.py -q -k altered`; reviewed policy records and decision texts must match `data/r18-current-regression/reviewed_expectations.json` before any record loads
+
+## 12. Ingestion to reviewed Assertion (planned)
+
+- Track IRA-01 through IRA-05 in the [Ingestion to Reviewed Assertion Agile Package](2026-11-04-ingestion-to-reviewed-assertion-agile-package.md); implementation has not started.
+- Each deliverable adds its exact repeatable verification commands here before completion; this plan does not claim future commands exist.
+- Require a human-reviewed development case and a deterministic boundary test: normal ingestion produces the Event and candidate, packet generation obtains replayable evidence, operator decisions accept prerequisites, explicit recomposition produces a pending Assertion ProposedChange, and replay shows its proposed content and argument spans.
+- Test supported command paths with real SQLite transactions; reject stale Event/source bindings, replay-invalid evidence, unapproved prerequisites, and duplicate application after retry.
+- Preserve the current R19/R20 and stabilization checks above; the new test seeds no composition outcomes or accepted occurrences and uses no Connection Gold provider.
+- Require a human-run check on the real PDF with exact commands, durable result paths, a completion probe, and correctness against the reviewed case; the operator writes no IDs, selectors, tokens, or recomposition JSON.
+- Report Events discovered, packets generated, correct complete Assertion proposals, remaining holds by Event and reason, and operator effort; distinguish the selected development case from the whole run.
+- Keep independent held-out validation and general extraction reliability outside this package's completion claim.
