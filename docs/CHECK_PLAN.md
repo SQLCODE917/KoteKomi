@@ -225,3 +225,10 @@
 
 - operator-run R20 check (human-started, not polled): `uv run kotekomi --config <kotekomi.toml> ingest <source-file> --url <url>` then `uv run kotekomi-live-replay --state-root <state-root>`; success requires a `composition` section for each Event that realized a trigger, each naming a hold reason or a composed Assertion with a supporting span, plus `<state-root>/token-artifacts/` and `<state-root>/composition-outcomes/`; after a reviewed occurrence is accepted, `uv run python scripts/recompose_ingested_event.py --request <request.json> --ledger <ledger.db> --out <out.json>` must change that Event from held to composed on reload
 - R20 is complete for its stated bar: same-view reference resolution is supported and cross-view resolution is explicitly held; historical R17 and R18 contracts are unchanged and the current-test contract rebind stays separate; independent held-out validation remains an outstanding package requirement, so R20 completion is not evidence of general extraction reliability
+
+## 11. Ingestion stabilization
+
+- Track the six planned deliverables and their acceptance evidence in the [Ingestion Stabilization Agile Package](2026-11-03-ingestion-stabilization-agile-package.md).
+- Keep the current verification commands above until their replacement deliverable passes; planned removal of a workaround does not waive an existing check.
+- Each completed deliverable adds its exact repeatable commands here and links its result from the package tracker.
+- Package completion requires all six deliverables, preserved historical evidence, consistent ingestion outcomes across interfaces, and passing whole-tree formatting, lint, typecheck, and current regression suites.
