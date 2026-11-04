@@ -5,7 +5,7 @@ from kotekomi_application import (
     AttachmentBlindReviewDecision,
     AttachmentBlindReviewOutcome,
     AttachmentBlindReviewSubmission,
-    AttachmentSourceRange,
+    SourceRange,
     AttachmentUnequalRangeRelation,
     classify_attachment_blind_review_outcome,
     classify_attachment_unequal_range_relation,
@@ -30,12 +30,12 @@ def test_unequal_range_relation_is_exact_interval_algebra(
 
     assert (
         classify_attachment_unequal_range_relation(
-            AttachmentSourceRange(
+            SourceRange(
                 start=candidate[0],
                 end=candidate[1],
                 text=source[candidate[0] : candidate[1]],
             ),
-            AttachmentSourceRange(
+            SourceRange(
                 start=event[0],
                 end=event[1],
                 text=source[event[0] : event[1]],
@@ -46,7 +46,7 @@ def test_unequal_range_relation_is_exact_interval_algebra(
 
 
 def test_equal_ranges_are_outside_unequal_range_contract() -> None:
-    value = AttachmentSourceRange(start=0, end=3, text="abc")
+    value = SourceRange(start=0, end=3, text="abc")
 
     with pytest.raises(ValueError, match="cannot accept equal ranges"):
         classify_attachment_unequal_range_relation(value, value)

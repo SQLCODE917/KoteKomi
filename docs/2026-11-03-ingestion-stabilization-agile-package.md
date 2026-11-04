@@ -5,7 +5,7 @@
 - Parent: [Hybrid Intelligence Extraction Pipeline](2026-09-01-hybrid-intelligence-extraction-pipeline.md)
 - Predecessor: [R20 Ingestion Live References](2026-10-30-ingestion-live-references.md)
 - First deliverable: ISC-01, Shared ingestion workflow
-- Next deliverable: ISC-02
+- Next deliverable: ISC-03
 - Implementation prompt: [Unattended implementation](agent/implement-ingestion-stabilization.md)
 
 ## User Outcome
@@ -83,7 +83,7 @@ Each deliverable ships and reverts independently.
 | ID | Deliverable | Depends on | Status | TDD / implementation / evidence |
 |---|---|---|---|---|
 | ISC-01 | Shared ingestion workflow and final live refresh | Startup and warning fixes recorded separately | Complete | [TDD](2026-11-03-isc-01-shared-ingestion-workflow.md); `run_ingestion_workflow` in `packages/pipelines/src/kotekomi_pipelines/ingestion_workflow.py`; `PYTHONPATH=. uv run pytest packages/pipelines/tests/test_ingestion_workflow.py -q` passes 5; preserved replay, cancellation, startup, R20, and composition suites pass 53 |
-| ISC-02 | Production ownership of shared contracts and construction | ISC-04 | In progress | Not started |
+| ISC-02 | Production ownership of shared contracts and construction | ISC-04 | Complete | [TDD](2026-11-03-isc-02-production-ownership.md); `assertion_construction.py` and `source_ranges.py` own the shared contracts; `uv run pytest packages/application/tests/test_production_composition_ownership.py -q` passes 3; full application, pipelines, and adapters suites pass with `EXIT=0` |
 | ISC-03 | One Adapter for composition persistence | ISC-02 | Planned | Not started |
 | ISC-04 | Separate historical reproduction from current regressions | None | Complete | `data/r18-current-regression/` reviewed expectations; `scripts/run_semantic_instruction_discrimination.py` adopts the live binding; `uv run pytest packages/pipelines/tests/test_semantic_instruction_discrimination_runner.py -q` passes 16; historical reproduction passed at pinned `c46d5e6` with fingerprint `5cdc12f0ed884cd73cfd99ada8a7af8d4b063d33b0a2abd45022800d02ecdce5` |
 | ISC-05 | Self-contained test fixtures and subprocess imports | None | Planned | Not started |
@@ -119,10 +119,10 @@ The focused TDD pins that timestamp contract before implementation.
 
 Acceptance:
 
-- [ ] ISC-02-A: Import-boundary checks prove production composition has no dependency on experiment-specific modules.
-- [ ] ISC-02-B: Existing selection, composition, identity acceptance, and R19/R20 behavioral regressions pass.
-- [ ] ISC-02-C: Tests prove historical timestamp reproduction and the declared live timestamp behavior separately.
-- [ ] ISC-02-D: Superseded definitions and exports are removed; callers use one contract for each shared concept.
+- [x] ISC-02-A: Import-boundary checks prove production composition has no dependency on experiment-specific modules.
+- [x] ISC-02-B: Existing selection, composition, identity acceptance, and R19/R20 behavioral regressions pass.
+- [x] ISC-02-C: Tests prove historical timestamp reproduction and the declared live timestamp behavior separately.
+- [x] ISC-02-D: Superseded definitions and exports are removed; callers use one contract for each shared concept.
 
 ### ISC-03: One Adapter for composition persistence
 

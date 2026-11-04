@@ -5,7 +5,7 @@ import hashlib
 import pytest
 from kotekomi_application import (
     AttachmentNormalizationOperation,
-    AttachmentSourceRange,
+    SourceRange,
     AttachmentSyntaxObservation,
     PredicateArgumentHypothesis,
     PredicateArgumentPathDirection,
@@ -155,9 +155,9 @@ def _observation(
         linguistic_resource_identity="2" * 64,
         candidate_id="cac_" + "3" * 24,
         source_grounded_event_id="sge_" + "4" * 24,
-        candidate_range=AttachmentSourceRange(start=14, end=20, text="target"),
-        event_range=AttachmentSourceRange(start=0, end=4, text="said"),
-        event_head_range=AttachmentSourceRange(start=0, end=4, text="said"),
+        candidate_range=SourceRange(start=14, end=20, text="target"),
+        event_range=SourceRange(start=0, end=4, text="said"),
+        event_head_range=SourceRange(start=0, end=4, text="said"),
         event_anchor=event,
         candidate_anchor=candidate,
         path_tokens=(event, complement, candidate),

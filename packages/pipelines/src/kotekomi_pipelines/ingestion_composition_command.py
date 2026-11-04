@@ -8,6 +8,7 @@ the persisted-shape composition record. The thin runner
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from typing import Annotated
 
 from kotekomi_application import (
@@ -77,6 +78,7 @@ def run_recomposition(
             attribution_basis=request.attribution_basis,
             source_id=request.source_id,
             evidence_target_id=request.evidence_target_id,
+            constructed_at=datetime.now(UTC),
         ),
         representation_id=request.representation_id,
         text_view_id=request.text_view_id,

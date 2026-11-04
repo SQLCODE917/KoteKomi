@@ -26,7 +26,7 @@ from kotekomi_application.competitive_attachment_residual_ownership import (
 )
 from kotekomi_application.competitive_attachment_review_verification import (
     AttachmentEvidenceReference,
-    AttachmentSourceRange,
+    SourceRange,
 )
 from kotekomi_application.competitive_event_attachment import (
     CompetitiveAttachmentCandidate,
@@ -72,9 +72,9 @@ class AttachmentCandidateMarkerView(BaseModel):
     arm: AttachmentCandidateMarkerArm
     authoritative_task: AttachmentResidualOwnershipTask
     rendered_task: AttachmentResidualOwnershipTask
-    removed_prefix: AttachmentSourceRange | None
-    removed_suffix: AttachmentSourceRange | None
-    removed_introducer: AttachmentSourceRange | None
+    removed_prefix: SourceRange | None
+    removed_suffix: SourceRange | None
+    removed_introducer: SourceRange | None
     view_fingerprint: Annotated[str, Field(pattern=_SHA256)]
 
     @model_validator(mode="after")
@@ -506,9 +506,9 @@ def attachment_candidate_marker_view_fingerprint(
     authoritative_task: AttachmentResidualOwnershipTask,
     arm: AttachmentCandidateMarkerArm,
     rendered_task: AttachmentResidualOwnershipTask,
-    removed_prefix: AttachmentSourceRange | None,
-    removed_suffix: AttachmentSourceRange | None,
-    removed_introducer: AttachmentSourceRange | None,
+    removed_prefix: SourceRange | None,
+    removed_suffix: SourceRange | None,
+    removed_introducer: SourceRange | None,
 ) -> str:
     """Bind one marker view to both source-exact Candidate ranges."""
     return _sha(
@@ -541,9 +541,9 @@ def _candidate_marker_view_values(
     arm: AttachmentCandidateMarkerArm,
 ) -> tuple[
     AttachmentResidualOwnershipTask,
-    AttachmentSourceRange | None,
-    AttachmentSourceRange | None,
-    AttachmentSourceRange | None,
+    SourceRange | None,
+    SourceRange | None,
+    SourceRange | None,
 ]:
     edge_task = task.edge_filter_task
     source = edge_task.source_text
@@ -556,7 +556,7 @@ def _candidate_marker_view_values(
     while end > event.end and _structural_character(source[end - 1]):
         end -= 1
     structural_start = start
-    removed_introducer: AttachmentSourceRange | None = None
+    removed_introducer: SourceRange | None = None
     if arm is AttachmentCandidateMarkerArm.INTRODUCER_TRIM:
         match = _INTRODUCER.match(source, start, event.start)
         if match is not None and match.end() <= event.start:
@@ -639,8 +639,8 @@ def _rendered_edge_filter_task(
     )
 
 
-def _source_range(source: str, start: int, end: int) -> AttachmentSourceRange:
-    return AttachmentSourceRange(start=start, end=end, text=source[start:end])
+def _source_range(source: str, start: int, end: int) -> SourceRange:
+    return SourceRange(start=start, end=end, text=source[start:end])
 
 
 def _structural_character(value: str) -> bool:

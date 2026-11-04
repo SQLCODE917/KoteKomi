@@ -14,7 +14,7 @@ from kotekomi_application import (
     AttachmentPoolArm,
     AttachmentPoolEdge,
     AttachmentProposalOrigin,
-    AttachmentSourceRange,
+    SourceRange,
     CompetitiveAttachmentMatrix,
     FilteredAttachmentSetStatus,
     attachment_edge_filter_model_task_input,
@@ -213,12 +213,12 @@ def _matrix_and_edge():  # type: ignore[no-untyped-def]
         source_text_sha256=matrix.source_text_sha256,
         candidate_id=candidate.id,
         source_grounded_event_id=option.source_grounded_event_id,
-        candidate_range=AttachmentSourceRange(
+        candidate_range=SourceRange(
             start=candidate.start,
             end=candidate.end,
             text=candidate.text,
         ),
-        event_range=AttachmentSourceRange(
+        event_range=SourceRange(
             start=option.start,
             end=option.end,
             text=option.text,
@@ -339,12 +339,12 @@ def _diagnostic_task(
         source_text_sha256=matrix.source_text_sha256,
         candidate_id=candidate.id,
         source_grounded_event_id=target.source_grounded_event_id,
-        candidate_range=AttachmentSourceRange(
+        candidate_range=SourceRange(
             start=candidate.start,
             end=candidate.end,
             text=candidate.text,
         ),
-        event_range=AttachmentSourceRange(
+        event_range=SourceRange(
             start=target.start,
             end=target.end,
             text=target.text,

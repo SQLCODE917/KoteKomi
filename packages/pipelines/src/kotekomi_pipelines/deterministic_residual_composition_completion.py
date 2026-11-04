@@ -12,6 +12,7 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Callable
+from datetime import UTC, datetime
 from enum import StrEnum
 from pathlib import Path
 from typing import Annotated, Literal, Self
@@ -21,12 +22,13 @@ from kotekomi_application import (
     AssertionConstructionInputs,
     AssertionConstructionOutcome,
     AssertionConstructionStatus,
-    AttachmentSourceRange,
+    SourceRange,
+    construct_inspectable_assertion,
+)
+from kotekomi_application.deterministic_residual_composition_completion import (
     DeterministicResidualCompositionOutcome,
     DeterministicResidualCompositionStatus,
-    ReferencePolicyRecord,
     complete_deterministic_residual_composition,
-    construct_inspectable_assertion,
 )
 from kotekomi_application.event_entity_reference_provider import (
     EventEntityReferenceProvider,
@@ -36,6 +38,7 @@ from kotekomi_application.evidence_targets import (
     validate_evidence_target_record,
 )
 from kotekomi_application.ports import LedgerRepository
+from kotekomi_application.semantic_selection_contract import ReferencePolicyRecord
 from kotekomi_domain import Assertion, AssertionType, AttributionBasis, SourceAuthority
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -70,8 +73,8 @@ class ResidualClosureRecord(BaseModel):
     assertion: Assertion | None = None
     block_reason: Annotated[str, Field(min_length=1)] | None = None
     evidence_supported: bool
-    supporting_subject_span: AttachmentSourceRange | None = None
-    supporting_object_span: AttachmentSourceRange | None = None
+    supporting_subject_span: SourceRange | None = None
+    supporting_object_span: SourceRange | None = None
 
     @model_validator(mode="after")
     def validate_contract(self) -> Self:
@@ -115,6 +118,9 @@ class DeterministicResidualCompositionReport(BaseModel):
         if tuple(sorted(set(event_ids))) != event_ids:
             raise ValueError("Report residuals must be ordered and distinct.")
         return self
+
+
+R19_ASSERTION_EPOCH = datetime(2026, 1, 1, tzinfo=UTC)
 
 
 def report_fingerprint(report: DeterministicResidualCompositionReport) -> str:
@@ -391,6 +397,7 @@ def _close_one(
             attribution_basis=AttributionBasis(_str_field(evidence, "attribution_basis")),
             source_id=source_id,
             evidence_target_id=evidence_target_id,
+            constructed_at=R19_ASSERTION_EPOCH,
         )
         assertion = construct_inspectable_assertion(composition.proposition, inputs)
         evidence_supported = verify_evidence_support(

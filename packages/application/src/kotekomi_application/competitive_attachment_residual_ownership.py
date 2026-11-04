@@ -18,7 +18,7 @@ from kotekomi_application.competitive_attachment_edge_filter import (
 )
 from kotekomi_application.competitive_attachment_review_verification import (
     AttachmentEvidenceReference,
-    AttachmentSourceRange,
+    SourceRange,
 )
 
 _SHA256 = r"^[a-f0-9]{64}$"
@@ -51,7 +51,7 @@ class AttachmentResidualOwnershipTask(BaseModel):
     id: Annotated[str, Field(pattern=r"^aro_[a-f0-9]{24}$")]
     phase: Literal["development", "validation"]
     edge_filter_task: AttachmentEdgeFilterTask
-    remainder_ranges: tuple[AttachmentSourceRange, ...]
+    remainder_ranges: tuple[SourceRange, ...]
     task_fingerprint: Annotated[str, Field(pattern=_SHA256)]
 
     @model_validator(mode="after")
@@ -343,18 +343,18 @@ def build_attachment_residual_ownership_task(
 
 def attachment_candidate_remainder_ranges(
     task: AttachmentEdgeFilterTask,
-) -> tuple[AttachmentSourceRange, ...]:
+) -> tuple[SourceRange, ...]:
     """Return exact Candidate characters outside the Target Event."""
     candidate = task.edge.candidate_range
     event = task.edge.event_range
     if not _properly_contains(candidate, event):
         raise ValueError("Residual Ownership requires proper Target Event containment.")
-    ranges: list[AttachmentSourceRange] = []
+    ranges: list[SourceRange] = []
     for start, end in ((candidate.start, event.start), (event.end, candidate.end)):
         if start == end:
             continue
         ranges.append(
-            AttachmentSourceRange(
+            SourceRange(
                 start=start,
                 end=end,
                 text=task.source_text[start:end],
@@ -396,7 +396,7 @@ def attachment_contained_foreign_event_ids(
 
 def attachment_residual_ownership_task_fingerprint(
     task: AttachmentEdgeFilterTask,
-    remainder_ranges: tuple[AttachmentSourceRange, ...],
+    remainder_ranges: tuple[SourceRange, ...],
 ) -> str:
     """Bind one Residual Ownership task to exact source input."""
     return _sha(
@@ -412,7 +412,7 @@ def attachment_residual_ownership_fingerprint(value: BaseModel) -> str:
     return _sha(value.model_dump(mode="json", exclude={"result_fingerprint"}))
 
 
-def _properly_contains(candidate: AttachmentSourceRange, event: AttachmentSourceRange) -> bool:
+def _properly_contains(candidate: SourceRange, event: SourceRange) -> bool:
     return (
         candidate.start <= event.start
         and candidate.end >= event.end

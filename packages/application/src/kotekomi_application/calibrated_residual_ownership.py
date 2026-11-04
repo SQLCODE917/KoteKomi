@@ -36,7 +36,7 @@ from typing import Annotated, Self
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from kotekomi_application.competitive_attachment_review_verification import (
-    AttachmentSourceRange,
+    SourceRange,
 )
 from kotekomi_application.evaluation_remediation import (
     HeldOutGoldFragment,
@@ -100,8 +100,8 @@ class EventFrame(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
     event_id: _EventId
-    trigger: AttachmentSourceRange
-    core_constituents: tuple[AttachmentSourceRange, ...]
+    trigger: SourceRange
+    core_constituents: tuple[SourceRange, ...]
 
     @model_validator(mode="after")
     def validate_contract(self) -> Self:
@@ -400,7 +400,7 @@ def derive_selectable_constituents(
     attached: tuple[ParserConstituent, ...],
     source_text: str,
     tokens: tuple[EventEntityLinguisticToken, ...],
-    trigger: AttachmentSourceRange,
+    trigger: SourceRange,
     floor: int = SELECTABLE_POOL_FLOOR_DEFAULT,
 ) -> SelectablePoolDerivation:
     """Return one Event's Selectable pool relaxed to meet the pool floor.
@@ -482,7 +482,7 @@ def _apply_precision_filters(
     return survivors
 
 
-def _is_trigger_candidate(candidate: ParserConstituent, trigger: AttachmentSourceRange) -> bool:
+def _is_trigger_candidate(candidate: ParserConstituent, trigger: SourceRange) -> bool:
     return (candidate.constituent_range.start, candidate.constituent_range.end) == (
         trigger.start,
         trigger.end,
@@ -490,7 +490,7 @@ def _is_trigger_candidate(candidate: ParserConstituent, trigger: AttachmentSourc
 
 
 def _is_segment_core_candidate(
-    candidate: ParserConstituent, segment_core: AttachmentSourceRange
+    candidate: ParserConstituent, segment_core: SourceRange
 ) -> bool:
     return (candidate.constituent_range.start, candidate.constituent_range.end) == (
         segment_core.start,
@@ -575,10 +575,10 @@ def build_event_frame(
     if len(event_matches) != 1:
         raise ValueError("Event frame requires one unique Event trigger head token.")
     trigger = event_matches[0]
-    trigger_range = AttachmentSourceRange(
+    trigger_range = SourceRange(
         start=trigger.start, end=trigger.end, text=source_text[trigger.start : trigger.end]
     )
-    core: dict[tuple[int, int], AttachmentSourceRange] = {}
+    core: dict[tuple[int, int], SourceRange] = {}
     for dependent in tokens:
         if dependent.head_token_id != trigger.token_id:
             continue
@@ -764,7 +764,7 @@ def _segment_core_span(
     tokens: tuple[EventEntityLinguisticToken, ...],
     trigger_head_start: int,
     trigger_head_end: int,
-) -> AttachmentSourceRange:
+) -> SourceRange:
     """Derive the full source segment content span, first content char through the end."""
     matches = [
         item for item in tokens if (item.start, item.end) == (trigger_head_start, trigger_head_end)
@@ -781,14 +781,14 @@ def _segment_core_span(
         end = trailing.start()
     if end <= start:
         raise ValueError("Segment core span collapsed to an empty source range.")
-    return AttachmentSourceRange(start=start, end=end, text=source_text[start:end])
+    return SourceRange(start=start, end=end, text=source_text[start:end])
 
 
 def _maximal_constituent_for(
     token: EventEntityLinguisticToken,
     trigger: EventEntityLinguisticToken,
     inventory: ConstituentCandidateInventory,
-) -> AttachmentSourceRange | None:
+) -> SourceRange | None:
     candidates = [
         item
         for item in inventory.constituents

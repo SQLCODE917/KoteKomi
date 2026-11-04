@@ -6,7 +6,7 @@ import hashlib
 
 import pytest
 from kotekomi_application import (
-    AttachmentSourceRange,
+    SourceRange,
     ConstituentCandidateInventory,
     ConstituentSelectionStatus,
     ConstituentSelectionTask,
@@ -94,7 +94,7 @@ def _remeasure_fixture() -> tuple[
         constituent_id=parser_constituent_id(digest, 0, 7),
         event_id="AHE-004",
         source_text_sha256=digest,
-        constituent_range=AttachmentSourceRange(start=0, end=7, text="Efforts"),
+        constituent_range=SourceRange(start=0, end=7, text="Efforts"),
         token_ids=("t1",),
     )
     inventory = ConstituentCandidateInventory(
@@ -199,7 +199,7 @@ def test_recovered_selection_remeasures_to_proposition_with_resolved_entity() ->
             entity_id="EGE-001",
             entity_kind="actor",
             canonical_name="Efforts",
-            accepted_source_occurrences=(AttachmentSourceRange(start=0, end=7, text="Efforts"),),
+            accepted_source_occurrences=(SourceRange(start=0, end=7, text="Efforts"),),
         ),
     )
     result = _remeasure(entities=entities)
@@ -231,7 +231,7 @@ def test_report_fingerprint_changes_when_recovery_changes() -> None:
             entity_id="EGE-001",
             entity_kind="actor",
             canonical_name="Efforts",
-            accepted_source_occurrences=(AttachmentSourceRange(start=0, end=7, text="Efforts"),),
+            accepted_source_occurrences=(SourceRange(start=0, end=7, text="Efforts"),),
         ),
     )
     proposition = _remeasure(entities=entities)

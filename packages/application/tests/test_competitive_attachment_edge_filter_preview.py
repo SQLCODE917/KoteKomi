@@ -13,7 +13,7 @@ from kotekomi_application import (
     AttachmentEdgeFilterDecisionStatus,
     AttachmentPoolEdge,
     AttachmentProposalOrigin,
-    AttachmentSourceRange,
+    SourceRange,
     ContextModelProfile,
     EventTriggerDraft,
     ExecutionSetting,
@@ -174,12 +174,12 @@ def _run(
         source_text_sha256=matrix.source_text_sha256,
         candidate_id=candidate.id,
         source_grounded_event_id=option.source_grounded_event_id,
-        candidate_range=AttachmentSourceRange(
+        candidate_range=SourceRange(
             start=candidate.start,
             end=candidate.end,
             text=candidate.text,
         ),
-        event_range=AttachmentSourceRange(
+        event_range=SourceRange(
             start=option.start,
             end=option.end,
             text=option.text,

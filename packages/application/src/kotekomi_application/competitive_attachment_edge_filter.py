@@ -12,7 +12,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from kotekomi_application.competitive_attachment_review_verification import (
     AttachmentEvidenceReference,
     AttachmentMetricSnapshot,
-    AttachmentSourceRange,
+    SourceRange,
 )
 from kotekomi_application.competitive_event_attachment import (
     CompetitiveAttachmentCandidate,
@@ -88,8 +88,8 @@ class AttachmentPoolEdge(BaseModel):
     source_text_sha256: Annotated[str, Field(pattern=_SHA256)]
     candidate_id: _CandidateId
     source_grounded_event_id: _EventId
-    candidate_range: AttachmentSourceRange
-    event_range: AttachmentSourceRange
+    candidate_range: SourceRange
+    event_range: SourceRange
     origins: tuple[AttachmentProposalOrigin, ...]
     syntax_arms: tuple[AttachmentPoolArm, ...]
 

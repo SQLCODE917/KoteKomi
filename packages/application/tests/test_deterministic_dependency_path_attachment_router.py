@@ -11,7 +11,7 @@ from kotekomi_application import (
     AttachmentOracleCeilingKind,
     AttachmentPartitionRole,
     AttachmentRouteKind,
-    AttachmentSourceRange,
+    SourceRange,
     AttachmentSyntaxObservation,
     PredicateArgumentGapCode,
     PredicateArgumentHypothesis,
@@ -55,8 +55,8 @@ def _token(
     )
 
 
-def _range(start: int, end: int, text: str) -> AttachmentSourceRange:
-    return AttachmentSourceRange(start=start, end=end, text=text)
+def _range(start: int, end: int, text: str) -> SourceRange:
+    return SourceRange(start=start, end=end, text=text)
 
 
 def _observation(

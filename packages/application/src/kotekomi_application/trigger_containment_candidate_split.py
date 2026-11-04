@@ -21,7 +21,7 @@ from typing import Annotated, Literal, Self
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from kotekomi_application.competitive_attachment_review_verification import (
-    AttachmentSourceRange,
+    SourceRange,
 )
 from kotekomi_application.deterministic_dependency_path_attachment_router import (
     AttachmentRouteDecision,
@@ -42,9 +42,9 @@ class TriggerContainmentResize(BaseModel):
 
     candidate_id: _CandidateId
     phase: Literal["development", "validation"]
-    candidate_range: AttachmentSourceRange
-    foreign_trigger_ranges: tuple[AttachmentSourceRange, ...]
-    resized_range: AttachmentSourceRange
+    candidate_range: SourceRange
+    foreign_trigger_ranges: tuple[SourceRange, ...]
+    resized_range: SourceRange
     label_before: tuple[_EventId, ...]
     label_after: tuple[_EventId, ...]
 
@@ -83,7 +83,7 @@ class CorrectedCandidateLabel(BaseModel):
 
     candidate_id: _CandidateId
     phase: Literal["development", "validation"]
-    source_range: AttachmentSourceRange
+    source_range: SourceRange
     gold_event_ids: tuple[_EventId, ...]
 
     @model_validator(mode="after")
@@ -178,12 +178,12 @@ class TriggerContainmentCorrectionReport(BaseModel):
 
 def foreign_trigger_ranges(
     *,
-    candidate_range: AttachmentSourceRange,
-    triggers: tuple[tuple[AttachmentSourceRange, str], ...],
+    candidate_range: SourceRange,
+    triggers: tuple[tuple[SourceRange, str], ...],
     gold_event_ids: tuple[str, ...],
-) -> tuple[AttachmentSourceRange, ...]:
+) -> tuple[SourceRange, ...]:
     """Return the foreign Event trigger ranges strictly contained in a candidate."""
-    result: list[AttachmentSourceRange] = []
+    result: list[SourceRange] = []
     for trigger_range, event_id in triggers:
         if event_id in gold_event_ids:
             continue
@@ -194,10 +194,10 @@ def foreign_trigger_ranges(
 
 def resize_candidate_range(
     *,
-    candidate_range: AttachmentSourceRange,
-    foreign_ranges: tuple[AttachmentSourceRange, ...],
+    candidate_range: SourceRange,
+    foreign_ranges: tuple[SourceRange, ...],
     source_text: str,
-) -> AttachmentSourceRange:
+) -> SourceRange:
     """Return the longest-leftmost non-whitespace fragment that remains."""
     removed = _merge_intervals(tuple((item.start, item.end) for item in foreign_ranges))
     remaining: list[tuple[int, int]] = []
@@ -214,11 +214,11 @@ def resize_candidate_range(
     if not fragments:
         raise ValueError("Trigger-containment resize leaves no non-whitespace fragment.")
     start, end = max(fragments, key=lambda item: (item[1] - item[0], -item[0]))
-    return AttachmentSourceRange(start=start, end=end, text=source_text[start:end])
+    return SourceRange(start=start, end=end, text=source_text[start:end])
 
 
 def exact_fragment_membership(
-    source_range: AttachmentSourceRange,
+    source_range: SourceRange,
     event_fragments: Mapping[str, tuple[tuple[int, int], ...]],
 ) -> tuple[str, ...]:
     """Return the ordered Event IDs whose fragment list contains the exact range."""
@@ -234,9 +234,9 @@ def build_trigger_containment_resize(
     *,
     candidate_id: str,
     phase: Literal["development", "validation"],
-    candidate_range: AttachmentSourceRange,
-    foreign_ranges: tuple[AttachmentSourceRange, ...],
-    resized_range: AttachmentSourceRange,
+    candidate_range: SourceRange,
+    foreign_ranges: tuple[SourceRange, ...],
+    resized_range: SourceRange,
     label_before: tuple[str, ...],
     label_after: tuple[str, ...],
 ) -> TriggerContainmentResize:

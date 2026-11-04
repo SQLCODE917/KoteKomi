@@ -6,7 +6,7 @@ import hashlib
 
 import pytest
 from kotekomi_application import (
-    AttachmentSourceRange,
+    SourceRange,
     ConstituentCandidateInventory,
     ConstituentSelectionAnswer,
     ConstituentSelectionStatus,
@@ -70,10 +70,10 @@ def _words(
     return tuple(tokens)
 
 
-def _span(source: str, start_word: str, end_word: str) -> AttachmentSourceRange:
+def _span(source: str, start_word: str, end_word: str) -> SourceRange:
     start = source.index(start_word)
     end = source.index(end_word) + len(end_word)
-    return AttachmentSourceRange(start=start, end=end, text=source[start:end])
+    return SourceRange(start=start, end=end, text=source[start:end])
 
 
 def _constituent(

@@ -10,7 +10,7 @@ from kotekomi_application import (
     AttachmentNestedEventOutcome,
     AttachmentPoolEdge,
     AttachmentProposalOrigin,
-    AttachmentSourceRange,
+    SourceRange,
     CompetitiveAttachmentCandidate,
     CompetitiveAttachmentEventOption,
     PropositionFragmentReason,
@@ -181,12 +181,12 @@ def _task() -> AttachmentEdgeFilterTask:
         source_text_sha256=digest,
         candidate_id=candidate.id,
         source_grounded_event_id=target.source_grounded_event_id,
-        candidate_range=AttachmentSourceRange(
+        candidate_range=SourceRange(
             start=candidate.start,
             end=candidate.end,
             text=candidate.text,
         ),
-        event_range=AttachmentSourceRange(
+        event_range=SourceRange(
             start=target.start,
             end=target.end,
             text=target.text,

@@ -32,7 +32,7 @@ from typing import Annotated, Literal, Self
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from kotekomi_application.competitive_attachment_review_verification import (
-    AttachmentSourceRange,
+    SourceRange,
 )
 from kotekomi_application.event_entity_connections import EventEntityLinguisticToken
 from kotekomi_application.hybrid_event_semantics import EventModality, EventPolarity
@@ -118,7 +118,7 @@ class DecontextualizationEntityRef(BaseModel):
     entity_id: _EntityId
     entity_kind: Literal["actor", "organization"]
     canonical_name: Annotated[str, Field(min_length=1)]
-    accepted_source_occurrences: tuple[AttachmentSourceRange, ...]
+    accepted_source_occurrences: tuple[SourceRange, ...]
 
     @model_validator(mode="after")
     def validate_contract(self) -> Self:
@@ -145,7 +145,7 @@ class DecontextualizationExclusion(BaseModel):
 
     exclusion_id: Annotated[str, Field(min_length=1)]
     contextual_kind: Literal["non_entity_value"]
-    source_range: AttachmentSourceRange
+    source_range: SourceRange
     rationale: Annotated[str, Field(min_length=1)]
 
 
@@ -155,7 +155,7 @@ class DecontextualizedRole(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
     role: DecontextualizationRoleKind
-    exact_fragment: AttachmentSourceRange
+    exact_fragment: SourceRange
     entity_ref: _EntityId | None = None
     object_value: Annotated[str, Field(min_length=1)] | None = None
     subject_value: Annotated[str, Field(min_length=1)] | None = None
@@ -185,7 +185,7 @@ class DecontextualizedAttribution(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
     kind: DecontextualizationAttributionKind
-    exact_carrier: AttachmentSourceRange | None = None
+    exact_carrier: SourceRange | None = None
     reporter_ref: _EntityId | None = None
 
     @model_validator(mode="after")
@@ -206,7 +206,7 @@ class DecontextualizedProposition(BaseModel):
     event_id: _EventId
     source_text_sha256: Annotated[str, Field(pattern=_SHA256)]
     relation_label: Annotated[str, Field(min_length=1)] | None = None
-    relation_range: AttachmentSourceRange | None = None
+    relation_range: SourceRange | None = None
     subject: DecontextualizedRole | None = None
     object: DecontextualizedRole | None = None
     polarity: EventPolarity | None = None
@@ -376,7 +376,7 @@ def _maximal_constituent(
 
 
 def _resolve_entity(
-    exact_fragment: AttachmentSourceRange,
+    exact_fragment: SourceRange,
     entities: tuple[DecontextualizationEntityRef, ...],
 ) -> str | None:
     matches = [
@@ -425,7 +425,7 @@ def _validate_subject_value_authorizations(
 
 
 def _subject_value_authorized(
-    fragment: AttachmentSourceRange,
+    fragment: SourceRange,
     authorizations: tuple[DecontextualizationExclusion, ...],
 ) -> bool:
     """Return whether one subject span source-exactly equals a reviewed exclusion."""
@@ -485,7 +485,7 @@ def _reporting_carrier(
     source_text: str,
     head: EventEntityLinguisticToken,
     tokens: tuple[EventEntityLinguisticToken, ...],
-) -> tuple[AttachmentSourceRange | None, _ReportingCarrierStatus]:
+) -> tuple[SourceRange | None, _ReportingCarrierStatus]:
     by_id = {token.token_id: token for token in tokens}
     grouped: dict[str, list[EventEntityLinguisticToken]] = {}
     for token in tokens:
@@ -568,7 +568,7 @@ def _source_exact_range(
     source_text: str,
     tokens: tuple[EventEntityLinguisticToken, ...],
     sentence_tokens: tuple[EventEntityLinguisticToken, ...],
-) -> AttachmentSourceRange | None:
+) -> SourceRange | None:
     if not tokens:
         return None
     selected_ids = {token.token_id for token in tokens}
@@ -583,7 +583,7 @@ def _source_exact_range(
             continue
         if start < token.start and token.end < end:
             return None
-    return AttachmentSourceRange(start=start, end=end, text=source_text[start:end])
+    return SourceRange(start=start, end=end, text=source_text[start:end])
 
 
 def build_decontextualized_proposition(
@@ -637,7 +637,7 @@ def build_decontextualized_proposition(
         )
 
     relation_label = head.lemma.casefold()
-    relation_range = AttachmentSourceRange(
+    relation_range = SourceRange(
         start=head.start, end=head.end, text=source_text[head.start : head.end]
     )
     dependents = _dependents(head, tokens)
@@ -706,12 +706,12 @@ def build_decontextualized_proposition(
     if is_copular:
         copula = copula_dependents[0]
         relation_label = copula.text.casefold()
-        relation_range = AttachmentSourceRange(
+        relation_range = SourceRange(
             start=copula.start, end=copula.end, text=source_text[copula.start : copula.end]
         )
         object_role = DecontextualizedRole(
             role=DecontextualizationRoleKind.OBJECT,
-            exact_fragment=AttachmentSourceRange(
+            exact_fragment=SourceRange(
                 start=head.start, end=head.end, text=source_text[head.start : head.end]
             ),
             object_value=source_text[head.start : head.end],

@@ -27,6 +27,7 @@ from kotekomi_application.event_entity_predicate_arguments import (
     classify_predicate_argument_path,
     predicate_argument_is_structurally_supported,
 )
+from kotekomi_application.source_ranges import SourceRange
 
 _SHA256 = r"^[a-f0-9]{64}$"
 type _EventId = Annotated[str, Field(pattern=r"^sge_[a-f0-9]{24}$")]
@@ -67,22 +68,6 @@ class AttachmentReviewClaimId(StrEnum):
     SYNTAX_THRESHOLD_IS_VALIDATED = "syntax_threshold_is_validated"
 
 
-class AttachmentSourceRange(BaseModel):
-    """One source-exact half-open range in a diagnostic record."""
-
-    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
-
-    start: Annotated[int, Field(ge=0)]
-    end: Annotated[int, Field(gt=0)]
-    text: Annotated[str, Field(min_length=1)]
-
-    @model_validator(mode="after")
-    def validate_range(self) -> Self:
-        if self.end - self.start != len(self.text):
-            raise ValueError("Attachment source range does not match its text length.")
-        return self
-
-
 class AttachmentRangeObservation(BaseModel):
     """One Candidate-to-Event Gold range relation."""
 
@@ -93,8 +78,8 @@ class AttachmentRangeObservation(BaseModel):
     source_text_sha256: Annotated[str, Field(pattern=_SHA256)]
     candidate_id: _CandidateId
     source_grounded_event_id: _EventId
-    candidate_range: AttachmentSourceRange
-    gold_ranges: tuple[AttachmentSourceRange, ...]
+    candidate_range: SourceRange
+    gold_ranges: tuple[SourceRange, ...]
     relation: AttachmentRangeRelation
 
     @model_validator(mode="after")
@@ -118,10 +103,10 @@ class AttachmentNestedCandidateFlip(BaseModel):
     source_text_sha256: Annotated[str, Field(pattern=_SHA256)]
     source_text: Annotated[str, Field(min_length=1)]
     inner_candidate_id: _CandidateId
-    inner_range: AttachmentSourceRange
+    inner_range: SourceRange
     inner_gold_event_ids: tuple[_EventId, ...]
     outer_candidate_id: _CandidateId
-    outer_range: AttachmentSourceRange
+    outer_range: SourceRange
     outer_gold_event_ids: tuple[_EventId, ...]
 
     @model_validator(mode="after")
@@ -160,9 +145,9 @@ class AttachmentSyntaxObservation(BaseModel):
     linguistic_resource_identity: Annotated[str, Field(pattern=_SHA256)]
     candidate_id: _CandidateId
     source_grounded_event_id: _EventId
-    candidate_range: AttachmentSourceRange
-    event_range: AttachmentSourceRange
-    event_head_range: AttachmentSourceRange
+    candidate_range: SourceRange
+    event_range: SourceRange
+    event_head_range: SourceRange
     event_anchor: PredicateArgumentToken | None
     candidate_anchor: PredicateArgumentToken | None
     path_tokens: tuple[PredicateArgumentToken, ...]
@@ -214,7 +199,7 @@ class AttachmentCandidateEvaluation(BaseModel):
     phase: Literal["development", "validation"]
     source_segment_id: Annotated[str, Field(min_length=1)]
     candidate_id: _CandidateId
-    candidate_range: AttachmentSourceRange
+    candidate_range: SourceRange
     gold_event_ids: tuple[_EventId, ...]
     syntax_event_ids: tuple[_EventId, ...]
     exact: bool
@@ -293,10 +278,10 @@ class AttachmentTriggerContainmentObservation(BaseModel):
     source_text_sha256: Annotated[str, Field(pattern=_SHA256)]
     source_text: Annotated[str, Field(min_length=1)]
     candidate_id: _CandidateId
-    candidate_range: AttachmentSourceRange
+    candidate_range: SourceRange
     contained_event_ids: tuple[_EventId, ...]
-    contained_event_ranges: tuple[AttachmentSourceRange, ...]
-    split_ranges: tuple[AttachmentSourceRange, ...]
+    contained_event_ranges: tuple[SourceRange, ...]
+    split_ranges: tuple[SourceRange, ...]
     gold_event_ids: tuple[_EventId, ...]
     validation_false_none: bool
     challenge_none: bool
@@ -345,7 +330,7 @@ class AttachmentRepeatedOccurrenceResult(BaseModel):
 
     candidate_id: _CandidateId
     source_segment_id: Annotated[str, Field(min_length=1)]
-    candidate_range: AttachmentSourceRange
+    candidate_range: SourceRange
     linguistic_token_ids: tuple[Annotated[str, Field(pattern=r"^t[1-9][0-9]*$")], ...]
     gold_event_ids: tuple[_EventId, ...]
     syntax_event_ids: tuple[_EventId, ...]
@@ -773,13 +758,13 @@ def _syntax_observation(
         linguistic_resource_identity=linguistic_evidence.resource_identity,
         candidate_id=candidate.id,
         source_grounded_event_id=event.source_grounded_event_id,
-        candidate_range=AttachmentSourceRange(
+        candidate_range=SourceRange(
             start=candidate.start,
             end=candidate.end,
             text=candidate.text,
         ),
-        event_range=AttachmentSourceRange(start=event.start, end=event.end, text=event.text),
-        event_head_range=AttachmentSourceRange(
+        event_range=SourceRange(start=event.start, end=event.end, text=event.text),
+        event_head_range=SourceRange(
             start=event_head_start,
             end=event_head_end,
             text=event_head_text,

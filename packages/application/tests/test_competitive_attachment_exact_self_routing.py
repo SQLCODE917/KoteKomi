@@ -7,7 +7,7 @@ import pytest
 from kotekomi_application import (
     AttachmentExactSelfCase,
     AttachmentSelfRoutingOutcome,
-    AttachmentSourceRange,
+    SourceRange,
     classify_attachment_self_routing_outcome,
 )
 
@@ -67,12 +67,12 @@ def _case(
         source_text_sha256=hashlib.sha256(source.encode()).hexdigest(),
         candidate_id="cac_" + "2" * 24,
         event_id="sge_" + "3" * 24,
-        candidate_range=AttachmentSourceRange(
+        candidate_range=SourceRange(
             start=candidate[0],
             end=candidate[1],
             text=source[candidate[0] : candidate[1]],
         ),
-        event_range=AttachmentSourceRange(
+        event_range=SourceRange(
             start=event[0],
             end=event[1],
             text=source[event[0] : event[1]],

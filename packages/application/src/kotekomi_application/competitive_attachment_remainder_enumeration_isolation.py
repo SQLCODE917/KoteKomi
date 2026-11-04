@@ -21,7 +21,7 @@ from kotekomi_application.competitive_attachment_residual_ownership import (
 )
 from kotekomi_application.competitive_attachment_review_verification import (
     AttachmentEvidenceReference,
-    AttachmentSourceRange,
+    SourceRange,
 )
 
 _SHA256 = r"^[a-f0-9]{64}$"
@@ -66,8 +66,8 @@ class AttachmentRemainderEnumerationView(BaseModel):
     )
     id: Annotated[str, Field(pattern=r"^are_[a-f0-9]{24}$")]
     authoritative_task: AttachmentResidualOwnershipTask
-    filtered_remainder_ranges: tuple[AttachmentSourceRange, ...]
-    omitted_ranges: tuple[AttachmentSourceRange, ...]
+    filtered_remainder_ranges: tuple[SourceRange, ...]
+    omitted_ranges: tuple[SourceRange, ...]
     view_fingerprint: Annotated[str, Field(pattern=_SHA256)]
 
     @model_validator(mode="after")
@@ -350,12 +350,12 @@ def build_attachment_remainder_enumeration_view(
 
 def attachment_filtered_remainder_ranges(
     task: AttachmentResidualOwnershipTask,
-) -> tuple[tuple[AttachmentSourceRange, ...], tuple[AttachmentSourceRange, ...]]:
+) -> tuple[tuple[SourceRange, ...], tuple[SourceRange, ...]]:
     """Move one leading `that` token outside explicit Remainder enumeration."""
     source = task.edge_filter_task.source_text
     event = task.edge_filter_task.edge.event_range
-    filtered: list[AttachmentSourceRange] = []
-    omitted: list[AttachmentSourceRange] = []
+    filtered: list[SourceRange] = []
+    omitted: list[SourceRange] = []
     matched = False
     for value in task.remainder_ranges:
         if not matched and value.end <= event.start:
@@ -432,8 +432,8 @@ def attachment_remainder_enumeration_mechanism(
 
 def attachment_remainder_enumeration_view_fingerprint(
     task: AttachmentResidualOwnershipTask,
-    filtered_ranges: tuple[AttachmentSourceRange, ...],
-    omitted_ranges: tuple[AttachmentSourceRange, ...],
+    filtered_ranges: tuple[SourceRange, ...],
+    omitted_ranges: tuple[SourceRange, ...],
 ) -> str:
     """Bind an enumeration view to authoritative source ranges."""
     return _sha(
@@ -465,8 +465,8 @@ def _observation_answer(
     return observation.decision.answer.value
 
 
-def _source_range(source: str, start: int, end: int) -> AttachmentSourceRange:
-    return AttachmentSourceRange(start=start, end=end, text=source[start:end])
+def _source_range(source: str, start: int, end: int) -> SourceRange:
+    return SourceRange(start=start, end=end, text=source[start:end])
 
 
 def _identifier(prefix: str, value: str) -> str:

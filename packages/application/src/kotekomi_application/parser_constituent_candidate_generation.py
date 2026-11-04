@@ -26,7 +26,7 @@ from typing import Annotated, Literal, Self
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from kotekomi_application.competitive_attachment_review_verification import (
-    AttachmentSourceRange,
+    SourceRange,
 )
 from kotekomi_application.event_entity_connections import EventEntityLinguisticToken
 from kotekomi_application.trigger_containment_candidate_split import CorrectedAttachmentGold
@@ -49,7 +49,7 @@ class ParserConstituent(BaseModel):
     constituent_id: _ConstituentId
     event_id: _EventId
     source_text_sha256: Annotated[str, Field(pattern=_SHA256)]
-    constituent_range: AttachmentSourceRange
+    constituent_range: SourceRange
     token_ids: tuple[Annotated[str, Field(pattern=r"^t[1-9][0-9]*$")], ...]
 
     @model_validator(mode="after")
@@ -333,7 +333,7 @@ def build_constituent_candidate_inventory(
                 constituent_id=parser_constituent_id(source_text_sha256, start, end),
                 event_id=event_id,
                 source_text_sha256=source_text_sha256,
-                constituent_range=AttachmentSourceRange(start=start, end=end, text=text),
+                constituent_range=SourceRange(start=start, end=end, text=text),
                 token_ids=token_ids,
             )
         )
@@ -529,7 +529,7 @@ def selected_constituent_spans(
     *,
     answer: ConstituentSelectionAnswer,
     inventory: ConstituentCandidateInventory,
-) -> tuple[AttachmentSourceRange, ...]:
+) -> tuple[SourceRange, ...]:
     """Return the exact spans one parsed answer selects."""
     if answer.status is not ConstituentSelectionStatus.SELECTED:
         return ()

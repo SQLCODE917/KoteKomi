@@ -7,7 +7,7 @@ import re
 
 import pytest
 from kotekomi_application import (
-    AttachmentSourceRange,
+    SourceRange,
     BoundaryFidelityPartitionCensus,
     ConstituentSelectionStatus,
     CorrectedAttachmentGold,
@@ -421,7 +421,7 @@ def _corrected_label(
     return CorrectedCandidateLabel.model_construct(
         candidate_id=candidate_id,
         phase="development",
-        source_range=AttachmentSourceRange(start=start, end=end, text=text),
+        source_range=SourceRange(start=start, end=end, text=text),
         gold_event_ids=event_ids,
     )
 

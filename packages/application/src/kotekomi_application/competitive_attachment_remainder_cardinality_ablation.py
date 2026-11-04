@@ -28,7 +28,7 @@ from kotekomi_application.competitive_attachment_residual_ownership import (
 )
 from kotekomi_application.competitive_attachment_review_verification import (
     AttachmentEvidenceReference,
-    AttachmentSourceRange,
+    SourceRange,
 )
 
 _SHA256 = r"^[a-f0-9]{64}$"
@@ -64,7 +64,7 @@ class AttachmentRemainderCardinalityView(BaseModel):
     )
     id: Annotated[str, Field(pattern=r"^arc_[a-f0-9]{24}$")]
     predecessor_view: AttachmentRemainderEnumerationView
-    split_remainder_ranges: tuple[AttachmentSourceRange, AttachmentSourceRange]
+    split_remainder_ranges: tuple[SourceRange, SourceRange]
     view_fingerprint: Annotated[str, Field(pattern=_SHA256)]
 
     @model_validator(mode="after")
@@ -249,7 +249,7 @@ def build_attachment_remainder_cardinality_view(
 
 def attachment_split_remainder_ranges(
     task: AttachmentResidualOwnershipTask,
-) -> tuple[AttachmentSourceRange, AttachmentSourceRange]:
+) -> tuple[SourceRange, SourceRange]:
     """Split the recovered one-part Remainder without changing its characters."""
     filtered, omitted = attachment_filtered_remainder_ranges(task)
     if len(filtered) != 1 or len(omitted) != 1 or filtered[0].text != _ONE_PART_TEXT:
@@ -257,8 +257,8 @@ def attachment_split_remainder_ranges(
     source = task.edge_filter_task.source_text
     value = filtered[0]
     split = value.start + len(_FIRST_PART_TEXT)
-    first = AttachmentSourceRange(start=value.start, end=split, text=source[value.start : split])
-    second = AttachmentSourceRange(start=split, end=value.end, text=source[split : value.end])
+    first = SourceRange(start=value.start, end=split, text=source[value.start : split])
+    second = SourceRange(start=split, end=value.end, text=source[split : value.end])
     if first.text != _FIRST_PART_TEXT or second.text != _SECOND_PART_TEXT:
         raise ValueError("Remainder cardinality split boundary drifted.")
     return first, second
@@ -302,7 +302,7 @@ def attachment_remainder_cardinality_outcome(
 
 def attachment_remainder_cardinality_view_fingerprint(
     predecessor_view: AttachmentRemainderEnumerationView,
-    split_ranges: tuple[AttachmentSourceRange, AttachmentSourceRange],
+    split_ranges: tuple[SourceRange, SourceRange],
 ) -> str:
     """Bind the Split view to predecessor evidence and exact ranges."""
     return _sha(

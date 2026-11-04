@@ -6,19 +6,21 @@ from pathlib import Path
 
 import pytest
 from kotekomi_application import (
-    AttachmentSourceRange,
     DecontextualizationAttributionKind,
     DecontextualizationEntityRef,
     DecontextualizationHoldReason,
     DecontextualizationStatus,
-    DeterministicResidualCompositionOutcome,
     EventEntityReferences,
     EventModality,
     EventPolarity,
     ReferencePolicyRecord,
-    complete_deterministic_residual_composition,
+    SourceRange,
     frozen_semantic_selection_contract,
     load_reference_policy_records,
+)
+from kotekomi_application.deterministic_residual_composition_completion import (
+    DeterministicResidualCompositionOutcome,
+    complete_deterministic_residual_composition,
 )
 
 DATA_DIR = Path(__file__).resolve().parents[3] / "data/r17-semantic-selection-contract"
@@ -46,7 +48,7 @@ def _ref(entity_id: str, name: str, *spans: tuple[int, int, str]) -> Decontextua
         entity_kind="actor",
         canonical_name=name,
         accepted_source_occurrences=tuple(
-            AttachmentSourceRange(start=start, end=end, text=value) for start, end, value in spans
+            SourceRange(start=start, end=end, text=value) for start, end, value in spans
         ),
     )
 

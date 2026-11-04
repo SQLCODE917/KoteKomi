@@ -11,7 +11,7 @@ from kotekomi_application import (
     AttachmentProposalOrigin,
     AttachmentReviewClaimVerdict,
     AttachmentReviewClaimVerification,
-    AttachmentSourceRange,
+    SourceRange,
     attachment_pool_edge_id,
 )
 
@@ -90,12 +90,12 @@ def _contained_edge() -> tuple[str, AttachmentPoolEdge]:
         source_text_sha256=digest,
         candidate_id="cac_" + "1" * 24,
         source_grounded_event_id="sge_" + "2" * 24,
-        candidate_range=AttachmentSourceRange(
+        candidate_range=SourceRange(
             start=5,
             end=26,
             text="announced acquisition",
         ),
-        event_range=AttachmentSourceRange(start=15, end=26, text="acquisition"),
+        event_range=SourceRange(start=15, end=26, text="acquisition"),
         origins=(AttachmentProposalOrigin.QWEN,),
         syntax_arms=(),
     )

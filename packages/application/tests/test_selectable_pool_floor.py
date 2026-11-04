@@ -8,7 +8,7 @@ import inspect
 import pytest
 from kotekomi_application import (
     SELECTABLE_POOL_FLOOR_DEFAULT,
-    AttachmentSourceRange,
+    SourceRange,
     ConstituentCandidateInventory,
     ConstituentSelectionStatus,
     EventEntityLinguisticToken,
@@ -64,19 +64,19 @@ def _constituent(
         constituent_id=parser_constituent_id(_digest(source), start, end),
         event_id=EVENT,
         source_text_sha256=_digest(source),
-        constituent_range=AttachmentSourceRange(start=start, end=end, text=source[start:end]),
+        constituent_range=SourceRange(start=start, end=end, text=source[start:end]),
         token_ids=token_ids,
     )
 
 
-def _trigger(source: str, start: int, end: int) -> AttachmentSourceRange:
-    return AttachmentSourceRange(start=start, end=end, text=source[start:end])
+def _trigger(source: str, start: int, end: int) -> SourceRange:
+    return SourceRange(start=start, end=end, text=source[start:end])
 
 
 def _seven_parts() -> tuple[
     str,
     tuple[EventEntityLinguisticToken, ...],
-    AttachmentSourceRange,
+    SourceRange,
     tuple[ParserConstituent, ...],
     ConstituentCandidateInventory,
 ]:

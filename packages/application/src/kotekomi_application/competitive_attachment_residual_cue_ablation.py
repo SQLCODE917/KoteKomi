@@ -20,7 +20,7 @@ from kotekomi_application.competitive_attachment_residual_ownership import (
 )
 from kotekomi_application.competitive_attachment_review_verification import (
     AttachmentEvidenceReference,
-    AttachmentSourceRange,
+    SourceRange,
 )
 
 _SHA256 = r"^[a-f0-9]{64}$"
@@ -52,8 +52,8 @@ class AttachmentResidualGoldAdjudication(BaseModel):
     )
     task_id: Annotated[str, Field(pattern=r"^aro_[a-f0-9]{24}$")]
     edge_id: Annotated[str, Field(pattern=r"^ape_[a-f0-9]{24}$")]
-    candidate_range: AttachmentSourceRange
-    target_event_range: AttachmentSourceRange
+    candidate_range: SourceRange
+    target_event_range: SourceRange
     inherited_answer: Literal["N"]
     corrected_answer: Literal["Y"]
     rationale: Literal["exact_attachment_range_does_not_answer_residual_ownership"]

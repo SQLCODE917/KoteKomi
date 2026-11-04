@@ -7,7 +7,7 @@ import inspect
 
 import pytest
 from kotekomi_application import (
-    AttachmentSourceRange,
+    SourceRange,
     ConstituentCandidateInventory,
     ConstituentSelectionStatus,
     EventEntityLinguisticToken,
@@ -61,20 +61,20 @@ def _constituent(
         constituent_id=parser_constituent_id(_digest(source), start, end),
         event_id=EVENT,
         source_text_sha256=_digest(source),
-        constituent_range=AttachmentSourceRange(start=start, end=end, text=source[start:end]),
+        constituent_range=SourceRange(start=start, end=end, text=source[start:end]),
         token_ids=token_ids,
     )
 
 
-def _trigger(source: str, start: int, end: int) -> AttachmentSourceRange:
-    return AttachmentSourceRange(start=start, end=end, text=source[start:end])
+def _trigger(source: str, start: int, end: int) -> SourceRange:
+    return SourceRange(start=start, end=end, text=source[start:end])
 
 
 def _selectable(
     attached: tuple[ParserConstituent, ...],
     source_text: str,
     tokens: tuple[EventEntityLinguisticToken, ...],
-    trigger: AttachmentSourceRange,
+    trigger: SourceRange,
 ) -> tuple[ParserConstituent, ...]:
     """Return the R8 (level-0) Selectable list without any pool-floor relaxation."""
     return derive_selectable_constituents(

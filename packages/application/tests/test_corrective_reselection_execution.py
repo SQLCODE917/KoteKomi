@@ -8,7 +8,7 @@ from dataclasses import replace
 
 import pytest
 from kotekomi_application import (
-    AttachmentSourceRange,
+    SourceRange,
     ConstituentCandidateInventory,
     ConstituentSelectionAnswer,
     ConstituentSelectionStatus,
@@ -135,7 +135,7 @@ def _subject_inventory(event_id: str) -> ConstituentCandidateInventory:
         constituent_id=parser_constituent_id(_digest(SOURCE), 0, 4),
         event_id=event_id,
         source_text_sha256=_digest(SOURCE),
-        constituent_range=AttachmentSourceRange(start=0, end=4, text="Acme"),
+        constituent_range=SourceRange(start=0, end=4, text="Acme"),
         token_ids=("t1",),
     )
     return ConstituentCandidateInventory(

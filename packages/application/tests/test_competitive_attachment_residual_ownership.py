@@ -13,7 +13,7 @@ from kotekomi_application import (
     AttachmentProposalOrigin,
     AttachmentRemainderPartKind,
     AttachmentRemainderPartTask,
-    AttachmentSourceRange,
+    SourceRange,
     CompetitiveAttachmentCandidate,
     CompetitiveAttachmentEventOption,
     PropositionFragmentReason,
@@ -299,12 +299,12 @@ def _task(
         source_text_sha256=digest,
         candidate_id=candidate_id,
         source_grounded_event_id=target.source_grounded_event_id,
-        candidate_range=AttachmentSourceRange(
+        candidate_range=SourceRange(
             start=candidate_start,
             end=candidate_end,
             text=source[candidate_start:candidate_end],
         ),
-        event_range=AttachmentSourceRange(
+        event_range=SourceRange(
             start=target.start,
             end=target.end,
             text=target.text,

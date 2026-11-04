@@ -19,7 +19,7 @@ from typing import Annotated
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from kotekomi_application.competitive_attachment_review_verification import (
-    AttachmentSourceRange,
+    SourceRange,
 )
 from kotekomi_application.decontextualization_composition import DecontextualizationRoleKind
 from kotekomi_application.event_entity_connections import EventEntityLinguisticToken
@@ -66,7 +66,7 @@ class SourceGroundedConjunctSelection(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
-    canonical_boundary: AttachmentSourceRange
+    canonical_boundary: SourceRange
     selected_label: Annotated[str, Field(pattern=r"^C[1-9][0-9]*$")]
 
 
@@ -200,28 +200,28 @@ def _source_range(
     source_text: str,
     token_ids: frozenset[str],
     tokens_by_id: dict[str, EventEntityLinguisticToken],
-) -> AttachmentSourceRange:
+) -> SourceRange:
     ordered = sorted(
         (tokens_by_id[token_id] for token_id in token_ids), key=lambda item: (item.start, item.end)
     )
     for token in ordered:
         if source_text[token.start : token.end] != token.text:
             raise ValueError("Source-grounded boundary token offsets drifted from source text.")
-    return AttachmentSourceRange(
+    return SourceRange(
         start=ordered[0].start,
         end=ordered[-1].end,
         text=source_text[ordered[0].start : ordered[-1].end],
     )
 
 
-def _span_equals(constituent: ParserConstituent, boundary: AttachmentSourceRange) -> bool:
+def _span_equals(constituent: ParserConstituent, boundary: SourceRange) -> bool:
     return (
         constituent.constituent_range.start == boundary.start
         and constituent.constituent_range.end == boundary.end
     )
 
 
-def _span_covers(constituent: ParserConstituent, boundary: AttachmentSourceRange) -> bool:
+def _span_covers(constituent: ParserConstituent, boundary: SourceRange) -> bool:
     return (
         constituent.constituent_range.start <= boundary.start
         and boundary.end <= constituent.constituent_range.end

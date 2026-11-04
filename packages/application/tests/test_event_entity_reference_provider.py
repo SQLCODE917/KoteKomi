@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 from kotekomi_application import (
-    AttachmentSourceRange,
+    SourceRange,
     DecontextualizationEntityRef,
     DecontextualizationExclusion,
     EventEntityReferenceProvider,
@@ -18,7 +18,7 @@ def _entity(*, entity_id: str = "EGE-001") -> DecontextualizationEntityRef:
         entity_id=entity_id,
         entity_kind="actor",
         canonical_name="Sacks",
-        accepted_source_occurrences=(AttachmentSourceRange(start=0, end=5, text="Sacks"),),
+        accepted_source_occurrences=(SourceRange(start=0, end=5, text="Sacks"),),
     )
 
 
@@ -26,7 +26,7 @@ def _exclusion() -> DecontextualizationExclusion:
     return DecontextualizationExclusion(
         exclusion_id="EGX-900",
         contextual_kind="non_entity_value",
-        source_range=AttachmentSourceRange(start=5, end=20, text="The April order"),
+        source_range=SourceRange(start=5, end=20, text="The April order"),
         rationale="A date-scoped nominal order, not an Actor or Organization.",
     )
 

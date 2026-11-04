@@ -30,7 +30,7 @@ import kotekomi_application.corrective_reselection_execution as _reselection_mod
 import kotekomi_application.decontextualization_composition as _composition_module
 from kotekomi_application.calibrated_residual_ownership import EventFrame
 from kotekomi_application.competitive_attachment_review_verification import (
-    AttachmentSourceRange,
+    SourceRange,
 )
 from kotekomi_application.corrective_reselection_execution import (
     parse_corrective_reselection_answer,
@@ -341,7 +341,7 @@ class ExpectedSourceRange(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
     role: Annotated[str, Field(min_length=1)]
-    expected_source_range: AttachmentSourceRange
+    expected_source_range: SourceRange
     canonical_candidate_label: _Label | None
     eligibility_explanation: Annotated[str, Field(min_length=1)]
     covering_candidate_labels: tuple[_Label, ...]
@@ -374,7 +374,7 @@ class ReferenceAttributionRequirement(BaseModel):
 
     kind: Literal["source_narrator", "targeted"]
     reporter: Annotated[str, Field(min_length=1)] | None = None
-    reporting_carrier: AttachmentSourceRange | None = None
+    reporting_carrier: SourceRange | None = None
 
     @model_validator(mode="after")
     def validate_contract(self) -> Self:

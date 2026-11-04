@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 from kotekomi_application import (
-    AttachmentSourceRange,
+    SourceRange,
     DecontextualizationAttributionKind,
     DecontextualizationHoldReason,
     DecontextualizationRoleKind,
@@ -62,7 +62,7 @@ def _proposition(event_id: str) -> DecontextualizedProposition:
         relation_label="criticized",
         subject=DecontextualizedRole(
             role=DecontextualizationRoleKind.SUBJECT,
-            exact_fragment=AttachmentSourceRange(start=0, end=1, text="A"),
+            exact_fragment=SourceRange(start=0, end=1, text="A"),
             entity_ref="EGE-001",
         ),
         polarity=EventPolarity.AFFIRMED,

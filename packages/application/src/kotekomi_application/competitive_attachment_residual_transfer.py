@@ -26,7 +26,7 @@ from kotekomi_application.competitive_attachment_residual_ownership import (
 )
 from kotekomi_application.competitive_attachment_review_verification import (
     AttachmentEvidenceReference,
-    AttachmentSourceRange,
+    SourceRange,
 )
 
 _SHA256 = r"^[a-f0-9]{64}$"
@@ -93,8 +93,8 @@ class AttachmentResidualTransferCase(BaseModel):
 
     task: AttachmentResidualOwnershipTask
     gold: AttachmentResidualTransferGoldCase
-    displayed_remainder_ranges: tuple[AttachmentSourceRange, ...]
-    omitted_remainder_ranges: tuple[AttachmentSourceRange, ...]
+    displayed_remainder_ranges: tuple[SourceRange, ...]
+    omitted_remainder_ranges: tuple[SourceRange, ...]
     observations: tuple[AttachmentResidualTransferObservation, ...]
     literal_answers: tuple[Literal["Y", "N", "U"], ...]
     threshold_answers: tuple[Literal["Y", "N"], ...]
@@ -211,12 +211,12 @@ class AttachmentResidualTransferReport(BaseModel):
 
 def attachment_ownership_remainder_ranges(
     task: AttachmentResidualOwnershipTask,
-) -> tuple[tuple[AttachmentSourceRange, ...], tuple[AttachmentSourceRange, ...]]:
+) -> tuple[tuple[SourceRange, ...], tuple[SourceRange, ...]]:
     """Return exact Remainders, omitting only a leading `that` from the explicit list."""
     source = task.edge_filter_task.source_text
     event = task.edge_filter_task.edge.event_range
-    displayed: list[AttachmentSourceRange] = []
-    omitted: list[AttachmentSourceRange] = []
+    displayed: list[SourceRange] = []
+    omitted: list[SourceRange] = []
     checked_prefix = False
     for value in task.remainder_ranges:
         if not checked_prefix and value.end <= event.start:
@@ -225,13 +225,13 @@ def attachment_ownership_remainder_ranges(
             if match is not None:
                 split = value.start + match.end()
                 omitted.append(
-                    AttachmentSourceRange(
+                    SourceRange(
                         start=value.start, end=split, text=source[value.start : split]
                     )
                 )
                 if split < value.end:
                     displayed.append(
-                        AttachmentSourceRange(
+                        SourceRange(
                             start=split, end=value.end, text=source[split : value.end]
                         )
                     )

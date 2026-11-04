@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -9,7 +10,6 @@ from kotekomi_application import (
     AssertionBlockReason,
     AssertionConstructionInputs,
     AssertionConstructionStatus,
-    AttachmentSourceRange,
     DecontextualizationAttributionKind,
     DecontextualizationEntityRef,
     DecontextualizationExclusion,
@@ -19,16 +19,19 @@ from kotekomi_application import (
     DecontextualizedAttribution,
     DecontextualizedProposition,
     DecontextualizedRole,
-    DeterministicResidualCompositionOutcome,
-    DeterministicResidualCompositionStatus,
     EventEntityReferences,
     EventModality,
     EventPolarity,
     ReferencePolicyRecord,
-    complete_deterministic_residual_composition,
+    SourceRange,
     construct_inspectable_assertion,
     frozen_semantic_selection_contract,
     load_reference_policy_records,
+)
+from kotekomi_application.deterministic_residual_composition_completion import (
+    DeterministicResidualCompositionOutcome,
+    DeterministicResidualCompositionStatus,
+    complete_deterministic_residual_composition,
 )
 from kotekomi_domain import (
     AssertionStatus,
@@ -59,13 +62,13 @@ def _sacks_entities() -> tuple[DecontextualizationEntityRef, ...]:
             entity_id="EGE-019",
             entity_kind="actor",
             canonical_name="Sacks",
-            accepted_source_occurrences=(AttachmentSourceRange(start=0, end=5, text="Sacks"),),
+            accepted_source_occurrences=(SourceRange(start=0, end=5, text="Sacks"),),
         ),
         DecontextualizationEntityRef(
             entity_id="EGE-020",
             entity_kind="actor",
             canonical_name="Amodei",
-            accepted_source_occurrences=(AttachmentSourceRange(start=13, end=19, text="Amodei"),),
+            accepted_source_occurrences=(SourceRange(start=13, end=19, text="Amodei"),),
         ),
     )
 
@@ -74,7 +77,7 @@ def _april_order_authorization() -> DecontextualizationExclusion:
     return DecontextualizationExclusion(
         exclusion_id="EGX-900",
         contextual_kind="non_entity_value",
-        source_range=AttachmentSourceRange(start=5, end=20, text="The April order"),
+        source_range=SourceRange(start=5, end=20, text="The April order"),
         rationale="A date-scoped nominal order, not an Actor or Organization.",
     )
 
@@ -199,6 +202,7 @@ def _assertion_inputs(
         attribution_basis=AttributionBasis.DIRECT_DOCUMENT,
         source_id="src_d97195ee5c8ced32c0cd41b0",
         evidence_target_id="etg_ahe_022",
+        constructed_at=datetime(2026, 1, 1, tzinfo=UTC),
     )
 
 
@@ -324,19 +328,19 @@ def test_assertion_construction_blocks_on_unmapped_reporter() -> None:
         relation_label="urged",
         subject=DecontextualizedRole(
             role=DecontextualizationRoleKind.SUBJECT,
-            exact_fragment=AttachmentSourceRange(start=0, end=5, text="Tomas"),
+            exact_fragment=SourceRange(start=0, end=5, text="Tomas"),
             entity_ref="EGE-901",
         ),
         object=DecontextualizedRole(
             role=DecontextualizationRoleKind.OBJECT,
-            exact_fragment=AttachmentSourceRange(start=6, end=19, text="the agreement"),
+            exact_fragment=SourceRange(start=6, end=19, text="the agreement"),
             object_value="the agreement",
         ),
         polarity=EventPolarity.AFFIRMED,
         modality=EventModality.ACTUAL,
         attribution=DecontextualizedAttribution(
             kind=DecontextualizationAttributionKind.TARGETED,
-            exact_carrier=AttachmentSourceRange(start=20, end=24, text="Mira"),
+            exact_carrier=SourceRange(start=20, end=24, text="Mira"),
             reporter_ref="EGE-902",
         ),
         status=DecontextualizationStatus.PROPOSITION,

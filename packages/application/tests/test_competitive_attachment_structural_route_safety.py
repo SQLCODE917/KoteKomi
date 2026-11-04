@@ -8,7 +8,7 @@ import pytest
 from kotekomi_application import (
     AttachmentCandidateRootEvidence,
     AttachmentGoldAuthority,
-    AttachmentSourceRange,
+    SourceRange,
     AttachmentStructuralEligibility,
     AttachmentStructuralSafetyCase,
     AttachmentStructuralSafetyOutcome,
@@ -228,7 +228,7 @@ def _case(
         end=14,
         text="targeted",
     )
-    source_range = AttachmentSourceRange(start=6, end=14, text="targeted")
+    source_range = SourceRange(start=6, end=14, text="targeted")
     syntax = AttachmentSyntaxObservation(
         phase="development",
         source_segment_id="seg_fixture",

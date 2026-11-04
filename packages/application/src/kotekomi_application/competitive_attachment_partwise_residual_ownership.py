@@ -24,7 +24,7 @@ from kotekomi_application.competitive_attachment_residual_ownership import (
 )
 from kotekomi_application.competitive_attachment_review_verification import (
     AttachmentEvidenceReference,
-    AttachmentSourceRange,
+    SourceRange,
 )
 
 _SHA256 = r"^[a-f0-9]{64}$"
@@ -73,7 +73,7 @@ class AttachmentRemainderPartTask(BaseModel):
     residual_task_id: Annotated[str, Field(pattern=r"^aro_[a-f0-9]{24}$")]
     edge_filter_task: AttachmentEdgeFilterTask
     part_number: Annotated[int, Field(ge=1, le=2)]
-    source_range: AttachmentSourceRange
+    source_range: SourceRange
     kind: AttachmentRemainderPartKind
     task_fingerprint: Annotated[str, Field(pattern=_SHA256)]
 
@@ -538,7 +538,7 @@ def attachment_remainder_part_task_fingerprint(
     residual_task_id: str,
     edge_filter_task: AttachmentEdgeFilterTask,
     part_number: int,
-    source_range: AttachmentSourceRange,
+    source_range: SourceRange,
 ) -> str:
     """Bind one Part task to authoritative source and its Target Event."""
     return _sha(

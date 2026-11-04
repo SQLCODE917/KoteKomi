@@ -10,25 +10,21 @@ becomes the Event-specific hold reason instead of a generic composer hold.
 from __future__ import annotations
 
 from enum import StrEnum
-from pathlib import Path
-from typing import Annotated, Self
+from typing import Annotated, Protocol, Self
 
 from kotekomi_domain import Assertion
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from kotekomi_application.competitive_attachment_review_verification import (
-    AttachmentSourceRange,
+from kotekomi_application.assertion_construction import (
+    AssertionConstructionInputs,
+    AssertionConstructionStatus,
+    construct_inspectable_assertion,
 )
 from kotekomi_application.decontextualization_composition import (
     DecontextualizationHoldReason,
     DecontextualizationStatus,
     DecontextualizedRole,
     build_decontextualized_proposition,
-)
-from kotekomi_application.deterministic_residual_composition_completion import (
-    AssertionConstructionInputs,
-    AssertionConstructionStatus,
-    construct_inspectable_assertion,
 )
 from kotekomi_application.event_entity_connections import EventEntityLinguisticToken
 from kotekomi_application.event_entity_reference_provider import EventEntityReferences
@@ -40,6 +36,7 @@ from kotekomi_application.source_grounded_selection import (
     SourceGroundedSelectionStatus,
     select_source_grounded_constituents,
 )
+from kotekomi_application.source_ranges import SourceRange
 
 #: Accepts the experiment residual IDs and the live SourceGroundedEvent IDs.
 _EventId = Annotated[
@@ -96,8 +93,8 @@ class EventCompositionRecord(BaseModel):
     subject_text: Annotated[str, Field(min_length=1)] | None = None
     object_text: Annotated[str, Field(min_length=1)] | None = None
     assertion: Assertion | None = None
-    supporting_subject_span: AttachmentSourceRange | None = None
-    supporting_object_span: AttachmentSourceRange | None = None
+    supporting_subject_span: SourceRange | None = None
+    supporting_object_span: SourceRange | None = None
     hold_reason: Annotated[str, Field(min_length=1)] | None = None
     unavailable_reference: Annotated[str, Field(min_length=1)] | None = None
 
@@ -202,18 +199,14 @@ def _held(
     )
 
 
-def write_event_composition_record(path: Path, record: EventCompositionRecord) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(record.model_dump_json(indent=2), encoding="utf-8")
+class EventCompositionStore(Protocol):
+    """Persistence operations ingestion, recomposition, and inspection require."""
 
+    def save(self, record: EventCompositionRecord) -> None: ...
 
-def load_event_composition_record(path: Path) -> EventCompositionRecord:
-    return EventCompositionRecord.model_validate_json(path.read_bytes())
+    def load(self, event_id: str) -> EventCompositionRecord: ...
 
-
-def load_event_composition_records(root: Path) -> tuple[EventCompositionRecord, ...]:
-    """Load every persisted Event composition record under one directory."""
-    return tuple(load_event_composition_record(path) for path in sorted(Path(root).glob("*.json")))
+    def annotations(self, event_ids: tuple[str, ...]) -> tuple[CompositionAnnotation, ...]: ...
 
 
 def composition_annotation(record: EventCompositionRecord) -> CompositionAnnotation:
@@ -236,13 +229,3 @@ def composition_annotation(record: EventCompositionRecord) -> CompositionAnnotat
     )
 
 
-def composition_annotations_for(
-    root: Path, event_ids: tuple[str, ...]
-) -> tuple[CompositionAnnotation, ...]:
-    """Load the replay annotations for the Events a paragraph actually shows."""
-    if not Path(root).is_dir():
-        return ()
-    records = {record.event_id: record for record in load_event_composition_records(root)}
-    return tuple(
-        composition_annotation(records[event_id]) for event_id in event_ids if event_id in records
-    )

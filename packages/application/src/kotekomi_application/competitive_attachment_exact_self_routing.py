@@ -11,7 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from kotekomi_application.competitive_attachment_review_verification import (
     AttachmentEvidenceReference,
-    AttachmentSourceRange,
+    SourceRange,
 )
 
 _SHA256 = r"^[a-f0-9]{64}$"
@@ -37,8 +37,8 @@ class AttachmentExactSelfCase(BaseModel):
     source_text_sha256: Annotated[str, Field(pattern=_SHA256)]
     candidate_id: Annotated[str, Field(pattern=r"^cac_[a-f0-9]{24}$")]
     event_id: Annotated[str, Field(pattern=r"^sge_[a-f0-9]{24}$")]
-    candidate_range: AttachmentSourceRange
-    event_range: AttachmentSourceRange
+    candidate_range: SourceRange
+    event_range: SourceRange
     original_gold: _Answer
     reviewed_gold: _Answer | None
     gold_conflict: bool
@@ -132,8 +132,8 @@ class AttachmentReviewedNegativeControl(BaseModel):
     phase: Literal["development", "validation"]
     source_text: Annotated[str, Field(min_length=1)]
     source_text_sha256: Annotated[str, Field(pattern=_SHA256)]
-    candidate_range: AttachmentSourceRange
-    event_range: AttachmentSourceRange
+    candidate_range: SourceRange
+    event_range: SourceRange
     expected_answer: Literal["N"] = "N"
     exact_self_selected: bool
 

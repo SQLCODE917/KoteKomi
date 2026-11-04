@@ -11,7 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from kotekomi_application.competitive_attachment_review_verification import (
     AttachmentEvidenceReference,
-    AttachmentSourceRange,
+    SourceRange,
 )
 from kotekomi_application.competitive_attachment_structural_route_safety import (
     AttachmentGoldAuthority,
@@ -51,8 +51,8 @@ class AttachmentBlindReviewCase(BaseModel):
     source_text_sha256: Annotated[str, Field(pattern=_SHA256)]
     candidate_id: Annotated[str, Field(pattern=r"^cac_[a-f0-9]{24}$")]
     event_id: Annotated[str, Field(pattern=r"^sge_[a-f0-9]{24}$")]
-    candidate_range: AttachmentSourceRange
-    event_range: AttachmentSourceRange
+    candidate_range: SourceRange
+    event_range: SourceRange
     relation: AttachmentUnequalRangeRelation
     foreign_event_ids: tuple[Annotated[str, Field(pattern=r"^sge_[a-f0-9]{24}$")], ...]
     structural_selected: bool
@@ -306,8 +306,8 @@ class AttachmentBlindReviewReport(BaseModel):
 
 
 def classify_attachment_unequal_range_relation(
-    candidate: AttachmentSourceRange,
-    event: AttachmentSourceRange,
+    candidate: SourceRange,
+    event: SourceRange,
 ) -> AttachmentUnequalRangeRelation:
     """Classify one unequal pair using half-open source intervals."""
     if (candidate.start, candidate.end) == (event.start, event.end):

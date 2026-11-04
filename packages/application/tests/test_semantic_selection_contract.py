@@ -503,7 +503,7 @@ def test_missing_object_changes_readiness_to_not_ready() -> None:
 
 
 def test_wrong_targeted_reporter_changes_readiness_to_not_ready() -> None:
-    from kotekomi_application import AttachmentSourceRange
+    from kotekomi_application import SourceRange
 
     contract = frozen_semantic_selection_contract(directory=DATA_DIR)
     records = load_reference_policy_records(contract=contract, directory=DATA_DIR)
@@ -526,7 +526,7 @@ def test_wrong_targeted_reporter_changes_readiness_to_not_ready() -> None:
     wrong_carrier = requirements.model_copy(
         update={
             "attribution": requirements.attribution.model_copy(
-                update={"reporting_carrier": AttachmentSourceRange(start=15, end=20, text="Tomas")}
+                update={"reporting_carrier": SourceRange(start=15, end=20, text="Tomas")}
             )
         }
     )

@@ -10,13 +10,15 @@ from typing import cast
 import pytest
 from kotekomi_application import (
     AssertionConstructionStatus,
-    AttachmentSourceRange,
     DecontextualizationExclusion,
-    DeterministicResidualCompositionStatus,
     EventEntityReferences,
     ReferencePolicyRecord,
+    SourceRange,
     frozen_semantic_selection_contract,
     load_reference_policy_records,
+)
+from kotekomi_application.deterministic_residual_composition_completion import (
+    DeterministicResidualCompositionStatus,
 )
 from kotekomi_application.evidence_targets import EvidenceTargetLedger
 from kotekomi_application.ports import LedgerRepository
@@ -374,7 +376,7 @@ class _AprilOrderProvider:
                 DecontextualizationExclusion(
                     exclusion_id="EGX-900",
                     contextual_kind="non_entity_value",
-                    source_range=AttachmentSourceRange(start=5, end=20, text="The April order"),
+                    source_range=SourceRange(start=5, end=20, text="The April order"),
                     rationale="A date-scoped nominal order, not an Actor or Organization.",
                 ),
             ),

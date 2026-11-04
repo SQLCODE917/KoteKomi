@@ -23,6 +23,13 @@ from kotekomi_application.analysis_coverage import (
     record_analysis_item_attempt,
     start_analysis_run,
 )
+from kotekomi_application.assertion_construction import (
+    AssertionBlockReason,
+    AssertionConstructionInputs,
+    AssertionConstructionOutcome,
+    AssertionConstructionStatus,
+    construct_inspectable_assertion,
+)
 from kotekomi_application.attributed_statement_construction import (
     AttributedStatementFailureReason,
     AttributedStatementOutcome,
@@ -416,7 +423,6 @@ from kotekomi_application.competitive_attachment_review_verification import (
     AttachmentReviewVerificationReport,
     AttachmentReviewVerificationStatus,
     AttachmentSegmentCount,
-    AttachmentSourceRange,
     AttachmentSyntaxObservation,
     AttachmentSyntaxPhaseResult,
     AttachmentTriggerContainmentObservation,
@@ -668,16 +674,6 @@ from kotekomi_application.deterministic_dependency_path_attachment_router import
     build_route_partition_report,
     classify_error_class,
     classify_none_decision,
-)
-from kotekomi_application.deterministic_residual_composition_completion import (
-    AssertionBlockReason,
-    AssertionConstructionInputs,
-    AssertionConstructionOutcome,
-    AssertionConstructionStatus,
-    DeterministicResidualCompositionOutcome,
-    DeterministicResidualCompositionStatus,
-    complete_deterministic_residual_composition,
-    construct_inspectable_assertion,
 )
 from kotekomi_application.document_entity_reconciliation import (
     DOCUMENT_ENTITY_RECONCILIATION_POLICY_ID,
@@ -1798,12 +1794,11 @@ from kotekomi_application.source_grounded_proposition_scope import (
 from kotekomi_application.source_grounded_reference_composition import (
     EventCompositionRecord,
     EventCompositionStatus,
+    EventCompositionStore,
     ReferenceDiagnostic,
     ReferenceDiagnosticReason,
     ReferenceResolution,
     compose_event_from_resolution,
-    load_event_composition_record,
-    write_event_composition_record,
 )
 from kotekomi_application.source_grounded_selection import (
     SourceGroundedBoundaryGap,
@@ -1819,6 +1814,7 @@ from kotekomi_application.source_lineage import (
     SourceLineageProposalFailure,
     propose_verbatim_republication,
 )
+from kotekomi_application.source_ranges import SourceRange
 from kotekomi_application.staged_model_extraction import (
     AtomicHypothesis,
     BoundedExtractionInput,
@@ -2907,12 +2903,11 @@ __all__ = [
     "IngestedGroundingCandidate",
     "EventCompositionRecord",
     "EventCompositionStatus",
+    "EventCompositionStore",
     "ReferenceDiagnostic",
     "ReferenceDiagnosticReason",
     "ReferenceResolution",
     "compose_event_from_resolution",
-    "load_event_composition_record",
-    "write_event_composition_record",
     "IngestionTokenArtifact",
     "TokenArtifactWriter",
     "ingestion_token_artifact_digest",
@@ -3305,7 +3300,7 @@ __all__ = [
     "AttachmentSelectionPolicyStatus",
     "AttachmentSyntaxPolicy",
     "AttachmentSegmentCount",
-    "AttachmentSourceRange",
+    "SourceRange",
     "AttachmentSyntaxObservation",
     "AttachmentSyntaxPhaseResult",
     "AttachmentTriggerContainmentObservation",
@@ -3471,13 +3466,10 @@ __all__ = [
     "build_decontextualization_report",
     "build_decontextualized_proposition",
     "decontextualization_report_fingerprint",
-    "DeterministicResidualCompositionOutcome",
-    "DeterministicResidualCompositionStatus",
     "AssertionBlockReason",
     "AssertionConstructionInputs",
     "AssertionConstructionOutcome",
     "AssertionConstructionStatus",
-    "complete_deterministic_residual_composition",
     "construct_inspectable_assertion",
     "LabelMismatchRecovery",
     "LabelMismatchRecoveryHalt",

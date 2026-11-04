@@ -10,7 +10,7 @@ from kotekomi_application import (
     AttachmentResidualCueAblationOutcome,
     AttachmentResidualCueAblationReport,
     AttachmentResidualGoldAdjudication,
-    AttachmentSourceRange,
+    SourceRange,
     attachment_residual_cue_ablation_fingerprint,
 )
 
@@ -166,8 +166,8 @@ def _adjudication() -> AttachmentResidualGoldAdjudication:
     return AttachmentResidualGoldAdjudication(
         task_id=f"aro_{10:024x}",
         edge_id=f"ape_{10:024x}",
-        candidate_range=AttachmentSourceRange(start=0, end=10, text="0123456789"),
-        target_event_range=AttachmentSourceRange(start=2, end=5, text="234"),
+        candidate_range=SourceRange(start=0, end=10, text="0123456789"),
+        target_event_range=SourceRange(start=2, end=5, text="234"),
         inherited_answer="N",
         corrected_answer="Y",
         rationale="exact_attachment_range_does_not_answer_residual_ownership",

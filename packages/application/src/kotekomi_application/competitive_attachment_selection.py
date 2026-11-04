@@ -13,8 +13,8 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from kotekomi_application.competitive_attachment_review_verification import (
     AttachmentEvidenceReference,
     AttachmentMetricSnapshot,
-    AttachmentSourceRange,
     AttachmentSyntaxObservation,
+    SourceRange,
 )
 
 _SHA256 = r"^[a-f0-9]{64}$"
@@ -61,7 +61,7 @@ class AttachmentComparisonRange(BaseModel):
     source_segment_id: Annotated[str, Field(min_length=1)]
     source_text_sha256: Annotated[str, Field(pattern=_SHA256)]
     candidate_id: _CandidateId
-    authoritative_range: AttachmentSourceRange
+    authoritative_range: SourceRange
     comparison_start: Annotated[int, Field(ge=0)]
     comparison_end: Annotated[int, Field(ge=0)]
     comparison_text: str
@@ -239,8 +239,8 @@ class AttachmentHeadAwareTriggerObservation(BaseModel):
     phase: Literal["development", "validation"]
     candidate_id: _CandidateId
     source_grounded_event_id: _EventId
-    candidate_range: AttachmentSourceRange
-    event_head_range: AttachmentSourceRange
+    candidate_range: SourceRange
+    event_head_range: SourceRange
     candidate_anchor_token_id: str | None
     event_anchor_token_id: str | None
     foreign_trigger: bool | None
@@ -298,7 +298,7 @@ class AttachmentRepeatedOccurrenceSeparation(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
     candidate_id: _CandidateId
-    candidate_range: AttachmentSourceRange
+    candidate_range: SourceRange
     linguistic_token_ids: tuple[Annotated[str, Field(pattern=r"^t[1-9][0-9]*$")], ...]
     equal_text_occurrence_count: Annotated[int, Field(ge=2)]
     occurrence_identity_preserved: bool
@@ -443,7 +443,7 @@ def normalize_attachment_comparison_range(
         source_segment_id=source_segment_id,
         source_text_sha256=source_digest,
         candidate_id=candidate_id,
-        authoritative_range=AttachmentSourceRange(
+        authoritative_range=SourceRange(
             start=authoritative_start,
             end=authoritative_end,
             text=source_text[authoritative_start:authoritative_end],

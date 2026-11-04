@@ -12,7 +12,7 @@ from kotekomi_application import (
     AttachmentPartitionRole,
     AttachmentRouteDecision,
     AttachmentRouteKind,
-    AttachmentSourceRange,
+    SourceRange,
     CorrectedCandidateLabel,
     build_corrected_attachment_gold,
     build_correction_partition_report,
@@ -40,8 +40,8 @@ def _sge(suffix: str) -> str:
     return "sge_" + (suffix * 24)[:24]
 
 
-def _range(start: int, end: int, text: str) -> AttachmentSourceRange:
-    return AttachmentSourceRange(start=start, end=end, text=text)
+def _range(start: int, end: int, text: str) -> SourceRange:
+    return SourceRange(start=start, end=end, text=text)
 
 
 def _decision(
@@ -69,9 +69,9 @@ def _decision(
 def _resize(
     candidate_id: str,
     *,
-    candidate_range: AttachmentSourceRange,
-    foreign_ranges: tuple[AttachmentSourceRange, ...],
-    resized_range: AttachmentSourceRange,
+    candidate_range: SourceRange,
+    foreign_ranges: tuple[SourceRange, ...],
+    resized_range: SourceRange,
     label_before: tuple[str, ...],
     label_after: tuple[str, ...],
     phase: str = "development",
