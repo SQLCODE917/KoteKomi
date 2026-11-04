@@ -173,6 +173,21 @@ class InspectionSession:
         if self._on_snapshot is not None:
             self._on_snapshot(snapshot)
 
+    def refresh_composition(self) -> None:
+        """Re-emit stored snapshots with freshly persisted composition outcomes.
+
+        A snapshot whose composition outcome did not change is not re-emitted, so
+        the live screen updates only where the derived pass produced a result.
+        """
+        for ordinal in sorted(self._snapshots):
+            snapshot = self._snapshots[ordinal]
+            composition = self._composition_annotations(snapshot.profile)
+            if composition == snapshot.profile.composition:
+                continue
+            self._emit(
+                replace(snapshot, profile=replace(snapshot.profile, composition=composition))
+            )
+
     def replay_stored(
         self,
         paragraphs: Sequence[ParagraphInput],

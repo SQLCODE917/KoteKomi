@@ -232,3 +232,4 @@
 - Keep the current verification commands above until their replacement deliverable passes; planned removal of a workaround does not waive an existing check.
 - Each completed deliverable adds its exact repeatable commands here and links its result from the package tracker.
 - Package completion requires all six deliverables, preserved historical evidence, consistent ingestion outcomes across interfaces, and passing whole-tree formatting, lint, typecheck, and current regression suites.
+- verify the ISC-01 shared ingestion workflow with `PYTHONPATH=. uv run pytest packages/pipelines/tests/test_ingestion_workflow.py -q`; it drives all three fresh-ingestion interfaces (`kotekomi ingest`, plain live replay, and the Textual worker) and compares persisted composition semantics, the live snapshot refresh, and stored-replay read-only behavior

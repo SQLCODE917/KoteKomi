@@ -43,8 +43,8 @@ from kotekomi_application.source_grounded_reference_composition import (
     composition_annotations_for,
 )
 
-from kotekomi_pipelines.cli import ingest_user_file
 from kotekomi_pipelines.config import PipelineConfig, load_config
+from kotekomi_pipelines.ingestion_workflow import run_ingestion_workflow
 from kotekomi_pipelines.replay_reader.ingestion_worker import run_ingestion_worker
 from kotekomi_pipelines.replay_reader.transport import load_paragraph_inputs
 
@@ -287,15 +287,16 @@ def main(argv: list[str] | None = None) -> int:
                 on_snapshot=on_snapshot,
                 select_ordinal=select_ordinal,
             )
-            return ingest_user_file(
+            return run_ingestion_workflow(
                 config_path=config_path,
                 source_file_path=source,
                 source_url=args.url,
-                stage_progress=presenter.on_stage_progress,
-                paragraph_progress=presenter.on_paragraph_progress,
                 stdout=out,
                 stderr=err,
-            )
+                stage_progress=presenter.on_stage_progress,
+                paragraph_progress=presenter.on_paragraph_progress,
+                on_composed=lambda _records: presenter.refresh_composition(),
+            ).ingestion_code
 
         if use_plain:
             return ingest(lambda snapshot: None, sys.stdout, sys.stderr)

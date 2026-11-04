@@ -414,7 +414,6 @@ def test_fresh_tui_keeps_mode_when_textual_captures_stdout(
 
     monkeypatch.setattr(live, "_is_interactive", is_interactive)
     monkeypatch.setattr(live, "sqlite_ledger_transaction", transaction)
-    monkeypatch.setattr(live, "ingest_user_file", fake_ingest)
     monkeypatch.setattr(live, "IngestionProcess", InlineProcess)
     monkeypatch.setattr(ReplayApp, "run", run)
     config = tmp_path / "source.toml"

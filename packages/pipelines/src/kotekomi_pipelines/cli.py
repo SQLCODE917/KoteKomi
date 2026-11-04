@@ -243,6 +243,7 @@ from kotekomi_pipelines.hybrid_document_ingestion import (
     HybridDocumentIngestionInput,
     run_hybrid_document_ingestion,
 )
+from kotekomi_pipelines.ingestion_workflow import run_ingestion_workflow
 from kotekomi_pipelines.managed_llama_server import (
     ManagedLlamaServerConfig,
     get_managed_llama_server_status,
@@ -279,11 +280,13 @@ def main(argv: list[str] | None = None) -> int:
         )
 
     if args.command == "ingest":
-        return ingest_user_file(
+        return run_ingestion_workflow(
             config_path=args.config,
             source_file_path=args.path,
             source_url=args.url,
-        )
+            stdout=sys.stdout,
+            stderr=sys.stderr,
+        ).ingestion_code
 
     if args.command == "ingestions" and args.ingestions_command == "list":
         return list_user_ingestion_history(

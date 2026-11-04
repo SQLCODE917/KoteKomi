@@ -19,7 +19,7 @@ from kotekomi_application.ingestion_inspection import InspectionContext, Paragra
 
 def run_ingestion_worker(request: IngestionProcessRequest, connection: Connection) -> None:
     """Spawn entry point; owns all expensive runtime resources in its process group."""
-    from kotekomi_pipelines.cli import ingest_user_file
+    from kotekomi_pipelines.ingestion_workflow import run_ingestion_workflow
     from kotekomi_pipelines.replay_reader.live import create_inspection_session
 
     if os.name == "posix":
@@ -41,22 +41,18 @@ def run_ingestion_worker(request: IngestionProcessRequest, connection: Connectio
             ),
         )
         with redirect_stdout(out), redirect_stderr(err):
-            code = ingest_user_file(
+            result = run_ingestion_workflow(
                 config_path=Path(request.config_path),
                 source_file_path=Path(request.source_path),
                 source_url=request.source_url,
-                stage_progress=presenter.on_stage_progress,
-                paragraph_progress=presenter.on_paragraph_progress,
                 stdout=out,
                 stderr=err,
+                stage_progress=presenter.on_stage_progress,
+                paragraph_progress=presenter.on_paragraph_progress,
                 ingestion_run_id_factory=AssignedIngestionRunIdFactory(request.ingestion_run_id),
+                on_composed=lambda _records: presenter.refresh_composition(),
             )
-            if code == 0:
-                try:
-                    _compose_ingested_run(request)
-                except Exception as compose_error:
-                    # Derived composition failure never changes ingestion success.
-                    err.write(f"Composition pass failed: {compose_error}\n")
+            code = result.ingestion_code
     except Exception as error:
         err.write(f"Ingestion worker failed: {error}\n")
         code = 1
@@ -65,24 +61,3 @@ def run_ingestion_worker(request: IngestionProcessRequest, connection: Connectio
         err.flush()
     send_event(connection, FinishedEvent(code=code))
     connection.close()
-
-
-def _compose_ingested_run(request: IngestionProcessRequest) -> None:
-    """Run the composition pass after normal ingestion finalizes."""
-    from kotekomi_pipelines.config import load_config
-    from kotekomi_pipelines.hybrid_document_ingestion import build_linguistic_analyzer
-    from kotekomi_pipelines.ingestion_composition_pass import compose_ingested_run
-    from kotekomi_pipelines.model_runtime import build_model_task_runtime
-
-    config = load_config(
-        config_path=Path(request.config_path),
-        ledger_path_override=None,
-        archive_path_override=None,
-    )
-    runtime = build_model_task_runtime(config.model_execution)
-    compose_ingested_run(
-        ledger_path=config.ledger_path,
-        archive_path=config.archive_path,
-        analyzer=build_linguistic_analyzer(config, runtime),
-        ingestion_run_id=request.ingestion_run_id,
-    )

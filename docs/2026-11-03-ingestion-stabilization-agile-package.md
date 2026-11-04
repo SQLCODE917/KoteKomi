@@ -5,7 +5,7 @@
 - Parent: [Hybrid Intelligence Extraction Pipeline](2026-09-01-hybrid-intelligence-extraction-pipeline.md)
 - Predecessor: [R20 Ingestion Live References](2026-10-30-ingestion-live-references.md)
 - First deliverable: ISC-01, Shared ingestion workflow
-- Next deliverable: ISC-01; its TDD has not been authored
+- Next deliverable: ISC-04
 - Implementation prompt: [Unattended implementation](agent/implement-ingestion-stabilization.md)
 
 ## User Outcome
@@ -82,10 +82,10 @@ Each deliverable ships and reverts independently.
 
 | ID | Deliverable | Depends on | Status | TDD / implementation / evidence |
 |---|---|---|---|---|
-| ISC-01 | Shared ingestion workflow and final live refresh | Startup and warning fixes recorded separately | In progress | [TDD](2026-11-03-isc-01-shared-ingestion-workflow.md) |
+| ISC-01 | Shared ingestion workflow and final live refresh | Startup and warning fixes recorded separately | Complete | [TDD](2026-11-03-isc-01-shared-ingestion-workflow.md); `run_ingestion_workflow` in `packages/pipelines/src/kotekomi_pipelines/ingestion_workflow.py`; `PYTHONPATH=. uv run pytest packages/pipelines/tests/test_ingestion_workflow.py -q` passes 5; preserved replay, cancellation, startup, R20, and composition suites pass 53 |
 | ISC-02 | Production ownership of shared contracts and construction | ISC-04 | Planned | Not started |
 | ISC-03 | One Adapter for composition persistence | ISC-02 | Planned | Not started |
-| ISC-04 | Separate historical reproduction from current regressions | None | Planned | Not started |
+| ISC-04 | Separate historical reproduction from current regressions | None | In progress | Not started |
 | ISC-05 | Self-contained test fixtures and subprocess imports | None | Planned | Not started |
 | ISC-06 | Formatting and operator documentation | ISC-01 through ISC-05 | Planned | Not started |
 
@@ -101,10 +101,10 @@ The deliverable preserves bounded cancellation and explicit reporting of derived
 
 Acceptance:
 
-- [ ] ISC-01-A: Deterministic tests invoke all three fresh-ingestion interfaces and compare their persisted semantic outcomes.
-- [ ] ISC-01-B: Comparison accounts explicitly for independently assigned IDs and execution timestamps.
-- [ ] ISC-01-C: The live screen displays the final Event holds or Assertions without reopening replay.
-- [ ] ISC-01-D: Tests preserve assigned-run isolation, stored replay, fresh-process startup, and cancellation.
+- [x] ISC-01-A: Deterministic tests invoke all three fresh-ingestion interfaces and compare their persisted semantic outcomes.
+- [x] ISC-01-B: Comparison accounts explicitly for independently assigned IDs and execution timestamps.
+- [x] ISC-01-C: The live screen displays the final Event holds or Assertions without reopening replay.
+- [x] ISC-01-D: Tests preserve assigned-run isolation, stored replay, fresh-process startup, and cancellation.
 
 ### ISC-02: Production ownership of shared contracts and construction
 

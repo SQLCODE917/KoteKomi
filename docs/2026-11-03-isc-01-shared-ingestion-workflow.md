@@ -113,7 +113,31 @@ persist no composition outcomes and the live session publishes no composition an
 
 ## 6. Verification
 
-- `uv run ruff format --check` and `uv run ruff check` on changed files.
-- `uv run pyright` on changed files.
-- `uv run pytest packages/pipelines/tests/test_ingestion_workflow.py` and the preserved
-  replay, cancellation, and R20 transition suites.
+Baseline `317723f`, before the change:
+
+- `test_ingestion_extraction_is_interface_independent` passes. Extraction is already
+  interface-independent.
+- `test_stored_replay_starts_no_ingestion` passes. Stored replay is already read-only.
+- `test_failure_reports_on_the_error_stream_only` passes.
+- `test_all_fresh_interfaces_persist_the_same_composition_outcomes` fails. `kotekomi ingest`
+  and plain live replay persist no composition outcomes.
+- `test_live_session_receives_final_composition_outcomes` fails. The last published snapshot
+  carries `composition=()`.
+
+After the change:
+
+- All five tests in `packages/pipelines/tests/test_ingestion_workflow.py` pass.
+- `PYTHONPATH=. uv run pytest packages/pipelines/tests/test_replay_live_cli.py
+  packages/pipelines/tests/test_replay_cancellation.py
+  packages/pipelines/tests/test_replay_process_startup.py
+  packages/pipelines/tests/test_user_ingestion_run.py
+  packages/pipelines/tests/test_r20_ingestion_transition.py
+  packages/pipelines/tests/test_ingestion_composition_transition.py
+  packages/pipelines/tests/test_ingestion_workflow.py -q` passes 53 tests.
+- `uv run ruff format --check` and `uv run ruff check` pass on changed files.
+- `uv run pyright` reports no error on changed files.
+
+One preserved test patched `live.ingest_user_file`. That seam no longer exists because the
+plain and interactive interfaces call the workflow. The test keeps its assertions and now
+patches only `live.IngestionProcess`, which is the seam it actually exercises.
+
