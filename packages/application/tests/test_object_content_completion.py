@@ -141,70 +141,185 @@ def _selection(case: dict[str, object]):
     )
 
 
-def test_completion_derives_the_participial_object_phrase() -> None:
-    """The derived completion starts at the selected phrase and covers the acl."""
-    case = _case()
-    inventory, selection = _selection(case)
-    object_role = next(role for role in selection.realized_roles if role.role.value == "object")
-    selected = object_role.conjuncts[0].canonical_boundary
+def _simple_tokens():
+    """A minimal noun phrase with one participial complement and no clause."""
+    from kotekomi_application import EventEntityLinguisticToken
 
+    def token(token_id, text, start, end, pos, relation, head):
+        return EventEntityLinguisticToken(
+            token_id=token_id,
+            sentence_id="s1",
+            text=text,
+            start=start,
+            end=end,
+            lemma=text.casefold(),
+            part_of_speech=pos,
+            dependency_relation=relation,
+            head_token_id=head,
+        )
+
+    return (
+        token("t1", "a", 0, 1, "DET", "det", "t2"),
+        token("t2", "post", 2, 6, "NOUN", "obj", "t8"),
+        token("t3", "praising", 7, 15, "VERB", "acl", "t2"),
+        token("t4", "fraud", 16, 21, "NOUN", "obj", "t3"),
+        token("t5", "published", 22, 31, "VERB", "root", None),
+        token("t6", "Amodei", 32, 38, "PROPN", "nsubj", "t5"),
+        token("t7", "the", 39, 42, "DET", "det", "t2"),
+        token("t8", "published", 22, 31, "VERB", "root", None),
+    )
+
+
+def test_participial_complement_completes_the_object() -> None:
+    """A simple participial complement completes the phrase source-exactly."""
+    from kotekomi_application import SourceRange
+
+    text = "a post praising fraud published"
     completion = derive_object_content_completion(
-        event_id=str(case["event_id"]),
-        source_text=str(case["source_text"]),
-        tokens=_tokens(case),
-        selected_object_range=selected,
+        event_id="sge_simple_complement",
+        source_text=text,
+        tokens=_simple_tokens(),
+        selected_object_range=SourceRange(start=0, end=6, text="a post"),
     )
 
     assert completion is not None
-    assert completion.selected_object_range == selected
-    assert completion.completed_range.start == selected.start
-    assert _normalized(completion.completed_range.text) == EXPECTED_PHRASE
+    assert completion.completed_range.start == 0
+    assert completion.completed_range.text == "a post praising fraud"
 
 
-def test_completed_object_phrase_reaches_the_proposition() -> None:
-    """The completed phrase replaces only the object content."""
+def test_blog_post_complement_is_unsupported_because_it_governs_a_clause() -> None:
+    """The stored blog-post complement governs an advcl, so it is held, not truncated."""
+    from kotekomi_application.decontextualization_composition import (
+        ObjectComplementUnsupported,
+    )
+
     case = _case()
     _, selection = _selection(case)
     object_role = next(role for role in selection.realized_roles if role.role.value == "object")
-    completion = derive_object_content_completion(
-        event_id=str(case["event_id"]),
-        source_text=str(case["source_text"]),
-        tokens=_tokens(case),
-        selected_object_range=object_role.conjuncts[0].canonical_boundary,
+
+    with pytest.raises(ObjectComplementUnsupported):
+        derive_object_content_completion(
+            event_id=str(case["event_id"]),
+            source_text=str(case["source_text"]),
+            tokens=_tokens(case),
+            selected_object_range=object_role.conjuncts[0].canonical_boundary,
+        )
+
+
+def test_coordinated_complement_is_unsupported() -> None:
+    """A complement that governs coordination is an explicit unsupported outcome."""
+    from kotekomi_application import EventEntityLinguisticToken, SourceRange
+    from kotekomi_application.decontextualization_composition import (
+        ObjectComplementUnsupported,
     )
 
-    record = _compose(case, completion)
-
-    assert record.status.value == "composed"
-    assert record.object_text is not None
-    assert _normalized(record.object_text) == EXPECTED_PHRASE
-    assert record.subject_text == "Amodei"
-    assert record.assertion is not None
-    assert isinstance(record.assertion.object_value, str)
-    assert _normalized(record.assertion.object_value) == EXPECTED_PHRASE
-
-
-def test_complement_completion_is_required_once_derived() -> None:
-    """A completion that does not match the selection is rejected."""
-    case = _case()
-    _, selection = _selection(case)
-    object_role = next(role for role in selection.realized_roles if role.role.value == "object")
-    completion = derive_object_content_completion(
-        event_id=str(case["event_id"]),
-        source_text=str(case["source_text"]),
-        tokens=_tokens(case),
-        selected_object_range=object_role.conjuncts[0].canonical_boundary,
+    text = "a post praising fraud and hiding losses"
+    tokens = (
+        EventEntityLinguisticToken(
+            token_id="t1",
+            sentence_id="s1",
+            text="a",
+            start=0,
+            end=1,
+            lemma="a",
+            part_of_speech="DET",
+            dependency_relation="det",
+            head_token_id="t2",
+        ),
+        EventEntityLinguisticToken(
+            token_id="t2",
+            sentence_id="s1",
+            text="post",
+            start=2,
+            end=6,
+            lemma="post",
+            part_of_speech="NOUN",
+            dependency_relation="obj",
+            head_token_id="t9",
+        ),
+        EventEntityLinguisticToken(
+            token_id="t3",
+            sentence_id="s1",
+            text="praising",
+            start=7,
+            end=15,
+            lemma="praise",
+            part_of_speech="VERB",
+            dependency_relation="acl",
+            head_token_id="t2",
+        ),
+        EventEntityLinguisticToken(
+            token_id="t4",
+            sentence_id="s1",
+            text="fraud",
+            start=16,
+            end=21,
+            lemma="fraud",
+            part_of_speech="NOUN",
+            dependency_relation="obj",
+            head_token_id="t3",
+        ),
+        EventEntityLinguisticToken(
+            token_id="t5",
+            sentence_id="s1",
+            text="and",
+            start=22,
+            end=25,
+            lemma="and",
+            part_of_speech="CCONJ",
+            dependency_relation="cc",
+            head_token_id="t6",
+        ),
+        EventEntityLinguisticToken(
+            token_id="t6",
+            sentence_id="s1",
+            text="hiding",
+            start=26,
+            end=32,
+            lemma="hide",
+            part_of_speech="VERB",
+            dependency_relation="conj",
+            head_token_id="t3",
+        ),
+        EventEntityLinguisticToken(
+            token_id="t7",
+            sentence_id="s1",
+            text="losses",
+            start=33,
+            end=39,
+            lemma="loss",
+            part_of_speech="NOUN",
+            dependency_relation="obj",
+            head_token_id="t6",
+        ),
+        EventEntityLinguisticToken(
+            token_id="t8",
+            sentence_id="s1",
+            text="published",
+            start=40,
+            end=49,
+            lemma="publish",
+            part_of_speech="VERB",
+            dependency_relation="root",
+            head_token_id=None,
+        ),
+        EventEntityLinguisticToken(
+            token_id="t9",
+            sentence_id="s1",
+            text="published",
+            start=40,
+            end=49,
+            lemma="publish",
+            part_of_speech="VERB",
+            dependency_relation="root",
+            head_token_id=None,
+        ),
     )
-    assert completion is not None
 
-    with pytest.raises(ValueError):
-        _compose(
-            case,
-            completion.model_copy(
-                update={
-                    "completed_range": completion.completed_range.model_copy(
-                        update={"end": completion.completed_range.end + 5}
-                    )
-                }
-            ),
+    with pytest.raises(ObjectComplementUnsupported):
+        derive_object_content_completion(
+            event_id="sge_complement_case",
+            source_text=text,
+            tokens=tokens,
+            selected_object_range=SourceRange(start=0, end=6, text="a post"),
         )

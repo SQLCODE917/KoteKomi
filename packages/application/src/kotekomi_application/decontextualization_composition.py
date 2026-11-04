@@ -147,6 +147,10 @@ class DecontextualizationExclusion(BaseModel):
     rationale: Annotated[str, Field(min_length=1)]
 
 
+class ObjectComplementUnsupported(ValueError):
+    """The object offers no completion this construction can represent."""
+
+
 class ObjectContentCompletion(BaseModel):
     """One validated completion of a selected object phrase.
 
@@ -655,7 +659,9 @@ def derive_object_content_completion(
     if not complements:
         return None
     if len(complements) > 1:
-        raise ValueError("The object head has more than one participial complement.")
+        raise ObjectComplementUnsupported(
+            "The object head has more than one participial complement."
+        )
     complement = complements[0]
     subtree = [complement]
     changed = True
@@ -664,15 +670,20 @@ def derive_object_content_completion(
         for token in tokens:
             if token in subtree:
                 continue
-            if token.dependency_relation in _COMPLEMENT_CLAUSE_RELATIONS:
-                # A further clause or coordination is outside this construction.
+            governed_here = any(parent.token_id == token.head_token_id for parent in subtree)
+            if not governed_here:
                 continue
-            if any(parent.token_id == token.head_token_id for parent in subtree):
-                subtree.append(token)
-                changed = True
+            if token.dependency_relation in _COMPLEMENT_CLAUSE_RELATIONS:
+                raise ObjectComplementUnsupported(
+                    "The participial complement governs a further clause or coordination."
+                )
+            subtree.append(token)
+            changed = True
     gap = source_text[selected_object_range.end : complement.start]
     if gap.strip():
-        raise ValueError("The participial complement is not contiguous with the object phrase.")
+        raise ObjectComplementUnsupported(
+            "The participial complement is not contiguous with the object phrase."
+        )
     completed_end = max(token.end for token in subtree)
     while completed_end > selected_object_range.end and source_text[completed_end - 1] in ",;:":
         completed_end -= 1
@@ -845,7 +856,20 @@ def build_decontextualized_proposition(
                         raise ValueError(
                             "Object completion does not match the selected object phrase."
                         )
-                    fragment = object_completion.completed_range
+                    derived = derive_object_content_completion(
+                        event_id=event_id,
+                        source_text=source_text,
+                        tokens=tokens,
+                        selected_object_range=fragment,
+                    )
+                    if (
+                        derived is None
+                        or derived.completed_range != object_completion.completed_range
+                    ):
+                        raise ValueError(
+                            "Object completion does not match its permitted derivation."
+                        )
+                    fragment = derived.completed_range
                 object_role = DecontextualizedRole(
                     role=DecontextualizationRoleKind.OBJECT,
                     exact_fragment=fragment,

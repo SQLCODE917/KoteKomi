@@ -21,6 +21,7 @@ from kotekomi_application import (
     EventConstructionDecisionInput,
     EventConstructionReviewError,
     EventReviewPacket,
+    ObjectComplementUnsupported,
     ReviewCandidateIdentity,
     SourceGroundedSelectionResult,
     SourceRange,
@@ -141,17 +142,21 @@ def build_event_review_packet(
     object_range = role_ranges.get("object")
     subject_text = None if subject_range is None else paragraph.text[slice(*subject_range)]
     object_completion = None
+    complement_hold: str | None = None
     if object_range is not None:
-        object_completion = derive_object_content_completion(
-            event_id=event_id,
-            source_text=paragraph.text,
-            tokens=artifact.tokens,
-            selected_object_range=SourceRange(
-                start=object_range[0],
-                end=object_range[1],
-                text=paragraph.text[slice(*object_range)],
-            ),
-        )
+        try:
+            object_completion = derive_object_content_completion(
+                event_id=event_id,
+                source_text=paragraph.text,
+                tokens=artifact.tokens,
+                selected_object_range=SourceRange(
+                    start=object_range[0],
+                    end=object_range[1],
+                    text=paragraph.text[slice(*object_range)],
+                ),
+            )
+        except ObjectComplementUnsupported:
+            complement_hold = "unsupported_object_complement"
     if object_range is None:
         completed_object_range: tuple[int, int] | None = None
     elif object_completion is None:
@@ -222,7 +227,11 @@ def build_event_review_packet(
         candidates=candidates,
         accepted_identity_ids=accepted,
         required_decisions=() if review is not None else _REQUIRED_DECISIONS,
-        hold_reason=None if outcome is None else outcome.hold_reason,
+        hold_reason=(
+            complement_hold
+            if complement_hold is not None
+            else (None if outcome is None else outcome.hold_reason)
+        ),
         existing_review_id=None if review is None else review.id,
         evidence_target_id=None if review is None else review.evidence_target_id,
     )
