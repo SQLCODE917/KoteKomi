@@ -279,7 +279,6 @@ def test_recomposition_proposes_assertion_and_replay_shows_it(journey: Journey) 
     assert assertion.assertion_type is AssertionType.REPORTED_OBSERVATION
     assert assertion.source_authority is SourceAuthority.SECONDARY
     assert assertion.attribution_basis is AttributionBasis.DIRECT_DOCUMENT
-    assert assertion.evidence_target_ids == (review.evidence_target_id,)
     assert record.supporting_subject_span is not None
     assert record.supporting_subject_span.text == "HealthyJoCo"
     assert record.supporting_object_span is not None
@@ -303,7 +302,14 @@ def test_recomposition_proposes_assertion_and_replay_shows_it(journey: Journey) 
     assert proposals[0].proposed_json["stable_label"] == assertion.id
     proposed_record = proposals[0].proposed_json["record"]
     assert isinstance(proposed_record, dict)
-    assert proposed_record["relation_label"] == "reviewed"
+    assert proposed_record["relation_label"] == "shared"
+
+    with sqlite_ledger_transaction(journey.ledger) as repository:
+        statement_target = repository.get_evidence_target(assertion.evidence_target_ids[0])
+    assert statement_target is not None
+    assert statement_target.exact_text == (
+        "HealthyJoCo is excited to share the Community Health Improvement Plan"
+    )
 
 
 def test_recomposition_retry_keeps_one_proposal(journey: Journey) -> None:
@@ -415,3 +421,120 @@ def test_cli_commands_drive_the_journey_without_json_authoring(
     assert recomposed["status"] == "composed"
     assert recomposed["assertion_status"] == "proposed"
     assert recomposed["predicate"] == "shared"
+
+
+def test_decision_rollback_on_a_write_failure(
+    journey: Journey, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """IRA-03-D: a failure after earlier writes rolls every acceptance write back."""
+    from kotekomi_adapters.sqlite_ledger import SQLiteLedgerRepository
+
+    packet = journey.packet()
+    candidate = packet.candidates[0]
+    with sqlite_ledger_transaction(journey.ledger) as repository:
+        target_count_before = len(repository.list_evidence_targets())
+    decision = EventConstructionDecisionInput(
+        candidate_start=candidate.start,
+        candidate_end=candidate.end,
+        exact_text=candidate.exact_text,
+        identity_kind=IdentityOccurrenceKind.ORGANIZATION,
+        identity_decision="new_identity",
+        identity_name=candidate.identity_name,
+        existing_identity_id=None,
+        predicate="shared",
+        assertion_type=AssertionType.REPORTED_OBSERVATION,
+        source_authority=SourceAuthority.SECONDARY,
+        attribution_basis=AttributionBasis.DIRECT_DOCUMENT,
+        reviewer="operator",
+    )
+
+    def fail_review(self: Any, record: Any) -> None:
+        raise OSError("simulated review write failure")
+
+    monkeypatch.setattr(SQLiteLedgerRepository, "save_event_construction_review", fail_review)
+    with pytest.raises(OSError):
+        record_review_decision(
+            ledger_path=journey.ledger,
+            archive_path=journey.archive,
+            ingestion_run_id=journey.run_id,
+            event_id=journey.event_id,
+            decision=decision,
+            now=NOW,
+        )
+
+    with sqlite_ledger_transaction(journey.ledger) as repository:
+        assert repository.list_identity_occurrences() == ()
+        assert repository.list_event_construction_reviews() == ()
+        assert len(repository.list_evidence_targets()) == target_count_before
+        assert [
+            change
+            for change in repository.list_proposed_changes()
+            if change.proposed_json.get("record_type") == "IdentityOccurrence"
+        ] == []
+
+
+def test_proposal_storage_failure_keeps_the_event_held(
+    journey: Journey, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """IRA-04-E: canonical proposal state commits before the derived outcome."""
+    from kotekomi_adapters.sqlite_ledger import SQLiteLedgerRepository
+
+    journey.decide(journey.packet())
+    original = SQLiteLedgerRepository.save_proposed_change
+
+    def fail_assertion_proposal(self: Any, record: Any) -> None:
+        if record.proposed_json.get("record_type") == "Assertion":
+            raise OSError("simulated proposal write failure")
+        return original(self, record)
+
+    monkeypatch.setattr(SQLiteLedgerRepository, "save_proposed_change", fail_assertion_proposal)
+    with pytest.raises(OSError):
+        journey.recompose()
+
+    stored = CompositionOutcomeStore(journey.state / "composition-outcomes").load(journey.event_id)
+    assert stored.status is EventCompositionStatus.HELD
+    with sqlite_ledger_transaction(journey.ledger) as repository:
+        proposals = [
+            change
+            for change in repository.list_proposed_changes()
+            if change.proposed_json.get("record_type") == "Assertion"
+        ]
+    assert proposals == []
+
+
+def test_outcome_write_failure_recovers_with_one_proposal(
+    journey: Journey, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """IRA-04-E: a failed derived write recovers on retry without duplicates."""
+    journey.decide(journey.packet())
+    original = CompositionOutcomeStore.save
+    state = {"calls": 0}
+
+    def fail_first(self: Any, record: Any) -> None:
+        state["calls"] += 1
+        if state["calls"] == 1:
+            raise OSError("simulated outcome write failure")
+        return original(self, record)
+
+    monkeypatch.setattr(CompositionOutcomeStore, "save", fail_first)
+    with pytest.raises(OSError):
+        journey.recompose()
+
+    with sqlite_ledger_transaction(journey.ledger) as repository:
+        first = [
+            change
+            for change in repository.list_proposed_changes()
+            if change.proposed_json.get("record_type") == "Assertion"
+        ]
+    assert len(first) == 1
+
+    record = journey.recompose()
+    assert record.status is EventCompositionStatus.COMPOSED
+    with sqlite_ledger_transaction(journey.ledger) as repository:
+        second = [
+            change
+            for change in repository.list_proposed_changes()
+            if change.proposed_json.get("record_type") == "Assertion"
+        ]
+    assert len(second) == 1
+    assert second[0].id == first[0].id

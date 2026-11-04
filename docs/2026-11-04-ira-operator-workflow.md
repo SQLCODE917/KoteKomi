@@ -1,16 +1,29 @@
 # TDD: Operator Workflow from Ingestion to a Proposed Assertion
 
-- Status: Accepted (agent-authored; development case awaits human review)
+- Status: Accepted for the workflow contract; the development case is withdrawn
+  pending a source-faithful case from the required Anthropic-DoD PDF
 - Deliverables: IRA-01 through IRA-05
 - Parent: [Ingestion to Reviewed Assertion](2026-11-04-ingestion-to-reviewed-assertion-agile-package.md)
 - Baseline revision: `a0e2bc1`
 
-## 1. Development case (IRA-01)
+## 1. Development case (IRA-01) - withdrawn, plumbing evidence only
 
-The development case comes from the existing Anthropic-United States Department of Defense
-dispute PDF at `packages/adapters/tests/fixtures/pdf/2025-community-health-improvement-plan-press-release.pdf`.
-Deterministic analyzer, linker, and interpretation fixtures drive it; the case is
-development evidence only.
+Review finding: the automated fixture uses `packages/adapters/tests/fixtures/pdf/2025-community-health-improvement-plan-press-release.pdf`.
+That is a community-health press release, not the Anthropic-United States Department of
+Defense dispute PDF the package requires.
+The fixture also forces `share` to be the clause root and drops the surrounding
+construction `is excited to`. The resulting Assertion therefore proves plumbing, not
+correct extraction, and the case is withdrawn as a correctness claim.
+
+The required PDF exists only as a local operator input at
+`raw/Anthropic-United_States_Department_of_Defense_dispute.pdf`; it is not tracked, so a
+clean checkout cannot use it.
+A source-faithful development case therefore requires the operator run below, and
+IRA-01-A stays open until a human selects and reviews that case.
+
+The deterministic fixture case remains useful for the workflow tests. Its pinned values
+are plumbing evidence only: paragraph `_0012`, trigger `share` at 75..80, subject
+`HealthyJoCo` at 49..60, object `Plan` at 114..118, hold `assertion_inputs_unavailable`.
 
 | Element | Pinned value |
 |---|---|
@@ -23,7 +36,8 @@ development evidence only.
 | Review-eligible candidate | `HealthyJoCo` from HP-3 eligibility and link evidence |
 | Ingestion state | one Event with hold `assertion_inputs_unavailable` |
 
-Proposed expected Assertion (agent-authored; awaiting human review):
+Expected Assertion for the *fixture* case (plumbing evidence; not a correctness claim,
+and not the package's development case):
 
 | Field | Proposed value |
 |---|---|
@@ -35,7 +49,7 @@ Proposed expected Assertion (agent-authored; awaiting human review):
 | Qualifiers | `polarity: affirmed`, `modality: actual` |
 | Source authority | `secondary` |
 | Attribution basis | `direct_document` |
-| Evidence | the accepted occurrence's replayable EvidenceTarget |
+| Evidence | a statement EvidenceTarget covering subject, predicate, and object |
 | Status | `proposed` |
 
 Declared out of scope: multi-subject composition, cross-view references, unsupported

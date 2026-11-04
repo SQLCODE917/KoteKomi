@@ -102,10 +102,10 @@ The review interface can extend existing CLI commands; this package does not req
 
 | ID | Deliverable | Depends on | Status | Evidence |
 | --- | --- | --- | --- | --- |
-| IRA-01 | Pin one supported Event and its expected Assertion | None | In review | [TDD](2026-11-04-ira-operator-workflow.md) pins the case; expected Assertion content is agent-authored and awaits human review |
-| IRA-02 | Generate an evidence-backed review packet | IRA-01 | Complete | `kotekomi review event-packet`; `test_cli_commands_drive_the_journey_without_json_authoring`, `test_review_packet_rejects_an_event_from_another_run`, `test_packet_rejects_a_changed_source_text` |
-| IRA-03 | Record operator decisions and accept prerequisites | IRA-02 | Complete | `kotekomi review decide`; `test_decision_accepts_prerequisites_and_is_idempotent`, `test_decision_rejects_a_candidate_outside_the_packet`, `test_conflicting_decision_is_rejected` |
-| IRA-04 | Recompose into a reviewable Assertion and replay it | IRA-03 | Complete | `kotekomi review recompose`; `test_recomposition_proposes_assertion_and_replay_shows_it`, `test_recomposition_retry_keeps_one_proposal` |
+| IRA-01 | Pin one supported Event and its expected Assertion | None | Blocked | The fixture case is withdrawn as a correctness claim: it uses the community-health press release and drops the `is excited to` construction. A source-faithful case requires the local Anthropic-DoD PDF and a human review |
+| IRA-02 | Generate an evidence-backed review packet | IRA-01 | In progress | `kotekomi review event-packet`; `test_cli_commands_drive_the_journey_without_json_authoring`, `test_review_packet_rejects_an_event_from_another_run`, `test_packet_rejects_a_changed_source_text` |
+| IRA-03 | Record operator decisions and accept prerequisites | IRA-02 | In progress | `kotekomi review decide`; `test_decision_accepts_prerequisites_and_is_idempotent`, `test_decision_rejects_a_candidate_outside_the_packet`, `test_conflicting_decision_is_rejected` |
+| IRA-04 | Recompose into a reviewable Assertion and replay it | IRA-03 | In progress | `kotekomi review recompose`; `test_recomposition_proposes_assertion_and_replay_shows_it`, `test_recomposition_retry_keeps_one_proposal` |
 | IRA-05 | Verify the operator journey and record product measures | IRA-04 | In progress | Automated journey test in `packages/pipelines/tests/test_operator_journey.py`; real-PDF operator run outstanding |
 
 ### IRA-01: Pin one supported Event and its expected Assertion
@@ -133,7 +133,7 @@ Its bindings prevent a decision from applying to a different Event, paragraph, o
 Acceptance:
 
 - [x] IRA-02-A: A command generates the packet from the ingested Event without hand-written source coordinates or IDs.
-- [x] IRA-02-B: Every displayed evidence span replays against the archived Document representation.
+- [ ] IRA-02-B: Every displayed evidence span replays against the archived Document representation.
 - [x] IRA-02-C: Tests reject incorrect coordinates, changed source bindings, and an Event selected from another run.
 - [x] IRA-02-D: Generation leaves accepted identity and Assertion state unchanged and exposes missing inputs explicitly.
 
@@ -147,7 +147,7 @@ The focused TDD specifies review storage, decision bindings, rejection, retry, a
 
 Acceptance:
 
-- [x] IRA-03-A: The command records identity, predicate, and classification decisions without requiring Python calls or JSON authoring.
+- [ ] IRA-03-A: The command records identity, predicate, and classification decisions without requiring Python calls or JSON authoring.
 - [x] IRA-03-B: A repeated mention can reuse an accepted identity without creating a duplicate identity.
 - [x] IRA-03-C: Missing, rejected, or stale decisions preserve an explicit hold and create no accepted Assertion.
 - [ ] IRA-03-D: Real SQLite tests prove rollback on a write failure and prevent stale or duplicate decision application.
@@ -164,7 +164,7 @@ The focused TDD defines retry behavior when canonical proposal storage succeeds 
 Acceptance:
 
 - [x] IRA-04-A: Recomposition requires no operator-authored `RecompositionRequest` JSON and invokes the retained production path.
-- [x] IRA-04-B: The proposed Assertion matches the reviewed subject, predicate, object, qualifiers, classifications, and evidence.
+- [ ] IRA-04-B: The proposed Assertion matches the reviewed subject, predicate, object, qualifiers, classifications, and evidence.
 - [x] IRA-04-C: Replay changes from held to composed and displays both supporting argument spans for the selected case.
 - [x] IRA-04-D: The existing review workflow discovers one pending Assertion ProposedChange; recomposition does not accept it.
 - [ ] IRA-04-E: Retry after an interrupted write neither loses the proposal nor creates duplicate proposals for an unchanged decision.

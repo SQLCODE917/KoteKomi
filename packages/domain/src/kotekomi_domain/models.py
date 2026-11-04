@@ -1880,6 +1880,7 @@ class EventConstructionReview(DomainModel):
     source_id: SourceId
     document_id: DocumentId
     evidence_target_id: EvidenceTargetId
+    statement_evidence_target_id: EvidenceTargetId
     identity_occurrence_id: IdentityOccurrenceId
     subject_identity_id: ActorId | OrganizationId
     subject_identity_kind: IdentityOccurrenceKind

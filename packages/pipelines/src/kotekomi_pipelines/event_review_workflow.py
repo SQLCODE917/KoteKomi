@@ -20,6 +20,7 @@ from kotekomi_application import (
     EventCompositionRecord,
     EventConstructionDecisionInput,
     EventConstructionReviewError,
+    EventEntityLinguisticToken,
     EventReviewPacket,
     ReviewCandidateIdentity,
     assertion_inputs_from_review,
@@ -106,10 +107,40 @@ def build_event_review_packet(
     )
     node = next(node for node in bundle.nodes if node.id == paragraph.paragraph_node_id)
     view = next(view for view in bundle.text_views if view.id == node.text_view_id)
-    subject = next(
-        (token for token in artifact.tokens if token.dependency_relation == "nsubj"), None
+    trigger = next(
+        (
+            token
+            for token in artifact.tokens
+            if (token.start, token.end) == (event.trigger_span.start, event.trigger_span.end)
+        ),
+        None,
     )
-    obj = next((token for token in artifact.tokens if token.dependency_relation == "obj"), None)
+    subject = (
+        next(
+            (
+                token
+                for token in artifact.tokens
+                if token.dependency_relation in {"nsubj", "nsubj:pass"}
+                and token.head_token_id == trigger.token_id
+            ),
+            None,
+        )
+        if trigger is not None
+        else None
+    )
+    obj = (
+        next(
+            (
+                token
+                for token in artifact.tokens
+                if token.dependency_relation in {"obj", "iobj"}
+                and token.head_token_id == trigger.token_id
+            ),
+            None,
+        )
+        if trigger is not None
+        else None
+    )
     subject_span = None if subject is None else (subject.start, subject.end)
     candidates = tuple(
         sorted(
@@ -162,6 +193,8 @@ def build_event_review_packet(
         object_start=None if obj is None else obj.start,
         object_end=None if obj is None else obj.end,
         object_text=None if obj is None else obj.text,
+        statement_start=_statement_start(event, subject, obj),
+        statement_end=_statement_end(event, subject, obj),
         candidates=candidates,
         accepted_identity_ids=accepted,
         required_decisions=() if review is not None else _REQUIRED_DECISIONS,
@@ -171,6 +204,32 @@ def build_event_review_packet(
     )
     validate_packet_bindings(packet)
     return packet
+
+
+def _statement_start(
+    event: EventAnnotation,
+    subject: EventEntityLinguisticToken | None,
+    obj: EventEntityLinguisticToken | None,
+) -> int:
+    starts = [event.trigger_span.start]
+    if subject is not None:
+        starts.append(subject.start)
+    if obj is not None:
+        starts.append(obj.start)
+    return min(starts)
+
+
+def _statement_end(
+    event: EventAnnotation,
+    subject: EventEntityLinguisticToken | None,
+    obj: EventEntityLinguisticToken | None,
+) -> int:
+    ends = [event.trigger_span.end]
+    if subject is not None:
+        ends.append(subject.end)
+    if obj is not None:
+        ends.append(obj.end)
+    return max(ends)
 
 
 def _outcome_for(ledger_path: Path, event_id: str) -> EventCompositionRecord | None:
@@ -257,9 +316,10 @@ def recompose_reviewed_event(
             text_view_id=artifact.text_view_id,
             node_start_char=paragraph.node_start_char,
         )
-        CompositionOutcomeStore(ledger_path.parent / "composition-outcomes").save(record)
         if record.assertion is not None:
             _upsert_assertion_proposal(record.assertion, review, repository, now)
+    # The transaction commits the canonical proposal before the derived outcome.
+    CompositionOutcomeStore(ledger_path.parent / "composition-outcomes").save(record)
     return record
 
 
@@ -270,7 +330,7 @@ def _proposal_payload(assertion: Assertion, review: EventConstructionReview) -> 
         epistemic_scope=assertion.epistemic_scope,
         subject_entity_id=assertion.subject_entity_id,
         subject_value=assertion.subject_value,
-        relation_label="reviewed",
+        relation_label=review.predicate,
         object_entity_id=assertion.object_entity_id,
         object_value=assertion.object_value,
         source_authority=assertion.source_authority,

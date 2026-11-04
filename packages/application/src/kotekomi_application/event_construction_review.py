@@ -18,6 +18,7 @@ from kotekomi_domain import (
     AssertionType,
     AttributionBasis,
     EventConstructionReview,
+    EvidenceTarget,
     IdentityOccurrenceKind,
     ProvenanceActivity,
     ReviewStatus,
@@ -25,6 +26,7 @@ from kotekomi_domain import (
 )
 
 from kotekomi_application.assertion_construction import AssertionConstructionInputs
+from kotekomi_application.evidence_targets import validate_evidence_target_record
 from kotekomi_application.identity_occurrence_acceptance import (
     GroundingCandidate,
     IdentityOccurrenceAcceptanceLedger,
@@ -79,6 +81,8 @@ class EventReviewPacket:
     object_start: int | None
     object_end: int | None
     object_text: str | None
+    statement_start: int
+    statement_end: int
     candidates: tuple[ReviewCandidateIdentity, ...]
     accepted_identity_ids: tuple[str, ...]
     required_decisions: tuple[str, ...]
@@ -239,6 +243,28 @@ def record_event_construction_decision(
     )
     repository.save_proposed_change(proposal)
     occurrence = accept_identity_occurrence(proposal, repository, agent=decision.reviewer, now=now)
+    statement_start = packet.node_start_char + packet.statement_start
+    statement_end = packet.node_start_char + packet.statement_end
+    statement_text = packet.source_text[packet.statement_start : packet.statement_end]
+    statement_digest = hashlib.sha256(
+        f"{packet.source_id}:{packet.document_id}:{packet.text_view_id}:"
+        f"{statement_start}:{statement_end}:{statement_text}".encode()
+    ).hexdigest()
+    statement_target = EvidenceTarget(
+        id="etg_" + statement_digest[:24],
+        source_id=packet.source_id,
+        document_id=packet.document_id,
+        representation_id=packet.representation_id,
+        text_view_id=packet.text_view_id,
+        text_view_digest=packet.text_view_digest,
+        start_char=statement_start,
+        end_char=statement_end,
+        exact_text=statement_text,
+        normalization_policy="utf8_identity_v1",
+        node_ids=(packet.paragraph_node_id,),
+    )
+    validate_evidence_target_record(statement_target, repository)
+    repository.save_evidence_target(statement_target)
 
     review_id = "ecr_" + digest[:24]
     provenance_id = (
@@ -256,6 +282,7 @@ def record_event_construction_decision(
         source_id=packet.source_id,
         document_id=packet.document_id,
         evidence_target_id=occurrence.evidence_target_id,
+        statement_evidence_target_id=statement_target.id,
         identity_occurrence_id=occurrence.id,
         subject_identity_id=occurrence.identity_id,
         subject_identity_kind=occurrence.identity_kind,
@@ -294,6 +321,6 @@ def assertion_inputs_from_review(
         source_authority=review.source_authority,
         attribution_basis=review.attribution_basis,
         source_id=review.source_id,
-        evidence_target_id=review.evidence_target_id,
+        evidence_target_id=review.statement_evidence_target_id,
         constructed_at=constructed_at,
     )
