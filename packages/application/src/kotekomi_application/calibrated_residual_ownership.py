@@ -35,9 +35,6 @@ from typing import Annotated, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from kotekomi_application.competitive_attachment_review_verification import (
-    SourceRange,
-)
 from kotekomi_application.evaluation_remediation import (
     HeldOutGoldFragment,
     SelectionScore,
@@ -51,6 +48,7 @@ from kotekomi_application.parser_constituent_candidate_generation import (
     ParserConstituent,
     parser_constituent_id,
 )
+from kotekomi_application.source_ranges import SourceRange
 
 _SHA256 = r"^[a-f0-9]{64}$"
 _EventId = Annotated[str, Field(pattern=r"^(TGE|AHE)-[0-9]{3}$")]

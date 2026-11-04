@@ -21,11 +21,11 @@ from kotekomi_application import (
     LinguisticAnalysisInput,
     LinguisticAnalyzer,
 )
-from kotekomi_application.ingestion_inspection import build_profile
+from kotekomi_application.ingestion_inspection import ParagraphInput, build_profile
 
 from kotekomi_pipelines.ingestion_composition_stage import compose_paragraph_events
 from kotekomi_pipelines.ingestion_token_artifact import LocalTokenArtifactWriter
-from kotekomi_pipelines.replay_reader.transport import ParagraphInput, load_paragraph_inputs
+from kotekomi_pipelines.replay_reader.transport import load_paragraph_inputs
 
 
 def analyzer_identity(analysis: LinguisticAnalysis) -> str:

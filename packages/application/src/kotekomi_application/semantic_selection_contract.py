@@ -29,9 +29,6 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 import kotekomi_application.corrective_reselection_execution as _reselection_module
 import kotekomi_application.decontextualization_composition as _composition_module
 from kotekomi_application.calibrated_residual_ownership import EventFrame
-from kotekomi_application.competitive_attachment_review_verification import (
-    SourceRange,
-)
 from kotekomi_application.corrective_reselection_execution import (
     parse_corrective_reselection_answer,
 )
@@ -50,6 +47,7 @@ from kotekomi_application.parser_constituent_candidate_generation import (
     ConstituentSelectionTask,
 )
 from kotekomi_application.residual_selection_failure_closure import ResidualClosureRoute
+from kotekomi_application.source_ranges import SourceRange
 
 _SHA256 = r"^[a-f0-9]{64}$"
 _EventId = Annotated[str, Field(pattern=r"^(TGE|AHE)-[0-9]{3}$")]

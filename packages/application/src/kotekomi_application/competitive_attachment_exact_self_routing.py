@@ -11,8 +11,8 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from kotekomi_application.competitive_attachment_review_verification import (
     AttachmentEvidenceReference,
-    SourceRange,
 )
+from kotekomi_application.source_ranges import SourceRange
 
 _SHA256 = r"^[a-f0-9]{64}$"
 type _Answer = Literal["Y", "N"]

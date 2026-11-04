@@ -18,9 +18,6 @@ from typing import Annotated
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from kotekomi_application.competitive_attachment_review_verification import (
-    SourceRange,
-)
 from kotekomi_application.decontextualization_composition import DecontextualizationRoleKind
 from kotekomi_application.event_entity_connections import EventEntityLinguisticToken
 from kotekomi_application.parser_constituent_candidate_generation import (
@@ -29,6 +26,7 @@ from kotekomi_application.parser_constituent_candidate_generation import (
     ConstituentSelectionStatus,
     ParserConstituent,
 )
+from kotekomi_application.source_ranges import SourceRange
 
 _SHA256 = r"^[a-f0-9]{64}$"
 _EventId = Annotated[

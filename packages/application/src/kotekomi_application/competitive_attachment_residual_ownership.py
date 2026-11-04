@@ -18,8 +18,8 @@ from kotekomi_application.competitive_attachment_edge_filter import (
 )
 from kotekomi_application.competitive_attachment_review_verification import (
     AttachmentEvidenceReference,
-    SourceRange,
 )
+from kotekomi_application.source_ranges import SourceRange
 
 _SHA256 = r"^[a-f0-9]{64}$"
 ATTACHMENT_RESIDUAL_REMAINDER_RENDERER_ID = "attachment_residual_remainder_task_v1"

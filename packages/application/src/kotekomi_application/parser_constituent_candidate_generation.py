@@ -25,10 +25,8 @@ from typing import Annotated, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from kotekomi_application.competitive_attachment_review_verification import (
-    SourceRange,
-)
 from kotekomi_application.event_entity_connections import EventEntityLinguisticToken
+from kotekomi_application.source_ranges import SourceRange
 from kotekomi_application.trigger_containment_candidate_split import CorrectedAttachmentGold
 
 _SHA256 = r"^[a-f0-9]{64}$"

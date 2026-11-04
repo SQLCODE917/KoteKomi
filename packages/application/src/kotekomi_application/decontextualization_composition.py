@@ -31,9 +31,6 @@ from typing import Annotated, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from kotekomi_application.competitive_attachment_review_verification import (
-    SourceRange,
-)
 from kotekomi_application.event_entity_connections import EventEntityLinguisticToken
 from kotekomi_application.hybrid_event_semantics import EventModality, EventPolarity
 from kotekomi_application.parser_constituent_candidate_generation import (
@@ -42,6 +39,7 @@ from kotekomi_application.parser_constituent_candidate_generation import (
     ConstituentSelectionStatus,
     ParserConstituent,
 )
+from kotekomi_application.source_ranges import SourceRange
 from kotekomi_application.trigger_scope_split import (
     ADJUNCT_RELATIONS,
     CARRIER_FUNCTION_RELATIONS,

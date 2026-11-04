@@ -26,12 +26,12 @@ from kotekomi_application.competitive_attachment_residual_ownership import (
 )
 from kotekomi_application.competitive_attachment_review_verification import (
     AttachmentEvidenceReference,
-    SourceRange,
 )
 from kotekomi_application.competitive_event_attachment import (
     CompetitiveAttachmentCandidate,
     competitive_attachment_candidate_id,
 )
+from kotekomi_application.source_ranges import SourceRange
 
 _SHA256 = r"^[a-f0-9]{64}$"
 _INTRODUCER = re.compile(r"(?i:(that|which|who|to))(?P<space>\s+)")

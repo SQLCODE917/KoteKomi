@@ -14,8 +14,8 @@ from kotekomi_application.competitive_attachment_review_verification import (
     AttachmentEvidenceReference,
     AttachmentMetricSnapshot,
     AttachmentSyntaxObservation,
-    SourceRange,
 )
+from kotekomi_application.source_ranges import SourceRange
 
 _SHA256 = r"^[a-f0-9]{64}$"
 type _CandidateId = Annotated[str, Field(pattern=r"^cac_[a-f0-9]{24}$")]

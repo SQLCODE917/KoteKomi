@@ -11,8 +11,8 @@ import os
 import tempfile
 from pathlib import Path
 
+from kotekomi_application.ingestion_inspection import CompositionAnnotation
 from kotekomi_application.source_grounded_reference_composition import (
-    CompositionAnnotation,
     EventCompositionRecord,
     composition_annotation,
 )

@@ -11,11 +11,11 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from kotekomi_application.competitive_attachment_review_verification import (
     AttachmentEvidenceReference,
-    SourceRange,
 )
 from kotekomi_application.competitive_attachment_structural_route_safety import (
     AttachmentGoldAuthority,
 )
+from kotekomi_application.source_ranges import SourceRange
 
 _SHA256 = r"^[a-f0-9]{64}$"
 type AttachmentBlindAnswer = Literal["Y", "N", "U"]
