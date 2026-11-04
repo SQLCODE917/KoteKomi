@@ -45,13 +45,59 @@ correctness.
 | `sge_acb0020374260d9dd45e0e1a` | `Google Gemini` | `for the platform, then OpenAI's ChatGPT` |
 | `sge_b2be68f5274d8e1265ec2838` | `Anthropic's emergency motion` | `for a stay of the FASCSA designation in April` |
 
-## Decision required before IRA-01-A can close
+## Conclusion (narrowed)
 
-1. Extend the Assertion representation so this construction can carry its complement, for example
-   the evidence complement that distinguishes `viewed` from `viewed as evidence that`.
-   That is a semantic capability change and needs an explicit scope revision.
-2. Choose a source whose sentences are complete simple propositions, for example a deposit with
-   short declarative sentences, and screen it the same way before approval.
+The current selection/composition path has **not demonstrated a semantically complete
+acceptance case**.
+This is a limitation of that path, not a proven limitation of the Domain Core:
+`Assertion.object_value` can already carry a complete source phrase.
+
+## Bounded scope revision (accepted direction, implementation open)
+
+### Selected construction: participial object complement
+
+Case `sge_14b44ada5ff18cabf168a42b` from the stored run:
+
+> Amodei published a blog post rebuffing "inaccurate claims" from the Trump administration.
+
+| Element | Value |
+|---|---|
+| Paragraph node | `nod_da86f9a7f68fd497cb47a88e_0013`, node start 4682 |
+| Paragraph digest | `c608ac71f813d95607a005494b5cc90fb949590778631fcec2e34bf09e57327a` |
+| Trigger | `published`, 441..450 (label `publish`) |
+| Selection | `selected`, realized roles `subject`, `object` |
+| Composition | `composed`, no structural hold (verified with a synthetic reference) |
+| Subject | `Amodei` (Actor candidate; review required) |
+| Object today | `a blog post`, 451..462 |
+| Object required | `a blog post rebuffing "inaccurate claims" from the Trump administration` |
+
+### Semantic contract
+
+- Required content: subject, predicate, and the object head **with its participial complement**,
+  because the participle states what the post does and carries the claim.
+- Omittable: the preceding time adjunct (`That month,`) and neighbouring sentences; the claim is
+  unchanged without them.
+- Hold when: the complement is not contiguous with the object phrase, when more than one such
+  complement attaches to the same object head, or when the complement contains coordination or a
+  further clause the current path does not represent.
+- Unchanged: identity review, evidence validation, and every other construction.
+
+### Implementation finding (bounded, evidence-backed)
+
+Flipping the shared detached-clause policy is **not** the fix.
+Removing bare `acl` from `_DETACHED_CLAUSE_RELATIONS` in
+`parser_constituent_candidate_generation` widens every noun-phrase candidate; on the stored parse it
+made this Event stop realizing a subject role, so the claim was lost rather than completed.
+That change is reverted and parser-constituent tests pass on the reverted tree.
+
+### Next bounded step
+
+Extend the object role's selected boundary after selection, inside the shared Application Layer
+path, to absorb a contiguous `acl` subtree of the object head, and rebuild the selected answer's
+canonical boundary before composition.
+Retain the counterexamples as negative tests: `sge_8f37b32d221d8974c7725e42` (semantic loss),
+`sge_6054fa9e10adfd8c6ec99d0a` and `sge_fc5ecf8c1d8dfb15a312e0e4` (`unsupported_time_place`).
+IRA-01-A stays open until that construction works and the case is approved.
 
 ## Reproduction
 
