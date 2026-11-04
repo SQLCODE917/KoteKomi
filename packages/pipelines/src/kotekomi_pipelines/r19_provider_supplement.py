@@ -16,7 +16,7 @@ import json
 from pathlib import Path
 from typing import Annotated, Literal, Self
 
-from kotekomi_application import AttachmentSourceRange
+from kotekomi_application import SourceRange
 from kotekomi_application.ports import LedgerRepository
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -347,12 +347,12 @@ def _trigger_tuple(trigger: SupplementTriggerSpan) -> tuple[int, int, str]:
     return (trigger.start, trigger.end, trigger.source_text)
 
 
-def _source_range_tuple(value: AttachmentSourceRange) -> tuple[int, int, str]:
+def _source_range_tuple(value: SourceRange) -> tuple[int, int, str]:
     return (value.start, value.end, value.text)
 
 
-def _attachment_range(trigger: SupplementTriggerSpan) -> AttachmentSourceRange:
-    return AttachmentSourceRange(start=trigger.start, end=trigger.end, text=trigger.source_text)
+def _attachment_range(trigger: SupplementTriggerSpan) -> SourceRange:
+    return SourceRange(start=trigger.start, end=trigger.end, text=trigger.source_text)
 
 
 def require_approved_supplement(supplement: R19ProviderSupplement) -> None:

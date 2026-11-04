@@ -16,9 +16,9 @@ from dataclasses import dataclass
 from typing import Any, Literal
 
 from kotekomi_application import (
-    AttachmentSourceRange,
     CorrectedAttachmentGold,
     CorrectedCandidateLabel,
+    SourceRange,
     TriggerContainmentCorrectionReport,
     TriggerContainmentResize,
     build_corrected_attachment_gold,
@@ -43,7 +43,7 @@ class CandidateUniverseEntry:
     candidate_id: str
     phase: Literal["development", "validation"]
     source_text_sha256: str
-    source_range: AttachmentSourceRange
+    source_range: SourceRange
     gold_event_ids: tuple[str, ...]
 
 
@@ -52,7 +52,7 @@ class EventTriggerRange:
     """One Event trigger materialized to authoritative source characters."""
 
     source_text_sha256: str
-    source_range: AttachmentSourceRange
+    source_range: SourceRange
     event_id: str
 
 
@@ -97,7 +97,7 @@ def build_candidate_universe(
                 candidate_id=trigger_containment_candidate_id(sha, start, end),
                 phase=next(iter(phases)),
                 source_text_sha256=sha,
-                source_range=AttachmentSourceRange(
+                source_range=SourceRange(
                     start=start, end=end, text=source_text[start:end]
                 ),
                 gold_event_ids=gold_event_ids,
@@ -123,7 +123,7 @@ def materialize_event_triggers(
                 result.append(
                     EventTriggerRange(
                         source_text_sha256=segment.source_text_sha256,
-                        source_range=AttachmentSourceRange(
+                        source_range=SourceRange(
                             start=raw_start,
                             end=raw_end,
                             text=segment.source_text[raw_start:raw_end],
@@ -151,7 +151,7 @@ def correct_attachment_gold(
     if len(universe) != 187:
         raise ValueError("R2 candidate universe drifted from the 187 fragment ranges.")
     triggers = materialize_event_triggers(trigger_gold)
-    by_source: dict[str, list[tuple[AttachmentSourceRange, str]]] = {}
+    by_source: dict[str, list[tuple[SourceRange, str]]] = {}
     for trigger in triggers:
         by_source.setdefault(trigger.source_text_sha256, []).append(
             (trigger.source_range, trigger.event_id)

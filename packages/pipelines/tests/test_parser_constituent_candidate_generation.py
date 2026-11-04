@@ -7,11 +7,11 @@ from pathlib import Path
 
 import pytest
 from kotekomi_application import (
-    AttachmentSourceRange,
     ConstituentSelectionStatus,
     CorrectedAttachmentGold,
     CorrectedCandidateLabel,
     EventEntityLinguisticToken,
+    SourceRange,
     parse_constituent_selection_answer,
 )
 from kotekomi_pipelines.parser_constituent_candidate_generation import (
@@ -146,13 +146,13 @@ def _corrected_gold() -> CorrectedAttachmentGold:
             CorrectedCandidateLabel.model_construct(
                 candidate_id="cac_" + "1" * 24,
                 phase="development",
-                source_range=AttachmentSourceRange(start=5, end=10, text="fired"),
+                source_range=SourceRange(start=5, end=10, text="fired"),
                 gold_event_ids=("TGE-001",),
             ),
             CorrectedCandidateLabel.model_construct(
                 candidate_id="cac_" + "2" * 24,
                 phase="validation",
-                source_range=AttachmentSourceRange(start=5, end=13, text="recalled"),
+                source_range=SourceRange(start=5, end=13, text="recalled"),
                 gold_event_ids=("TGE-002",),
             ),
         ),

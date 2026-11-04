@@ -14,7 +14,7 @@ from kotekomi_application import (
     AttachmentResidualGoldAdjudication,
     AttachmentResidualOwnershipOutcome,
     AttachmentResidualOwnershipReport,
-    AttachmentSourceRange,
+    SourceRange,
 )
 from kotekomi_pipelines.competitive_attachment_residual_cue_ablation import (
     build_residual_cue_ablation_report,
@@ -171,8 +171,8 @@ def _adjudication(*, task_id: str, edge_id: str) -> AttachmentResidualGoldAdjudi
     return AttachmentResidualGoldAdjudication(
         task_id=task_id,
         edge_id=edge_id,
-        candidate_range=AttachmentSourceRange(start=0, end=10, text="0123456789"),
-        target_event_range=AttachmentSourceRange(start=2, end=5, text="234"),
+        candidate_range=SourceRange(start=0, end=10, text="0123456789"),
+        target_event_range=SourceRange(start=2, end=5, text="234"),
         inherited_answer="N",
         corrected_answer="Y",
         rationale="exact_attachment_range_does_not_answer_residual_ownership",

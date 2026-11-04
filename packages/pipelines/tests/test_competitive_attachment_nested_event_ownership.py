@@ -22,11 +22,11 @@ from kotekomi_application import (
     AttachmentNestedEventPreflight,
     AttachmentPoolEdge,
     AttachmentProposalOrigin,
-    AttachmentSourceRange,
     CompetitiveAttachmentCandidate,
     CompetitiveAttachmentEventOption,
     CompetitiveAttachmentMatrix,
     PropositionFragmentReason,
+    SourceRange,
     attachment_blind_review_case_id,
     attachment_nested_event_case_id,
     attachment_nested_event_ownership_model_task_input,
@@ -259,12 +259,12 @@ def _task() -> AttachmentEdgeFilterTask:
         source_text_sha256=digest,
         candidate_id=candidate.id,
         source_grounded_event_id=target.source_grounded_event_id,
-        candidate_range=AttachmentSourceRange(
+        candidate_range=SourceRange(
             start=candidate.start,
             end=candidate.end,
             text=candidate.text,
         ),
-        event_range=AttachmentSourceRange(
+        event_range=SourceRange(
             start=target.start,
             end=target.end,
             text=target.text,
@@ -368,12 +368,12 @@ def _matrix_and_blind_evaluation(
         source_text_sha256=digest,
         candidate_id=candidate.id,
         event_id=options[0].source_grounded_event_id,
-        candidate_range=AttachmentSourceRange(
+        candidate_range=SourceRange(
             start=candidate.start,
             end=candidate.end,
             text=candidate.text,
         ),
-        event_range=AttachmentSourceRange(
+        event_range=SourceRange(
             start=options[0].start,
             end=options[0].end,
             text=options[0].text,

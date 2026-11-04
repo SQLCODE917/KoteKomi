@@ -21,10 +21,10 @@ from kotekomi_application import (
     AttachmentResidualCueAblationReport,
     AttachmentResidualGoldAdjudication,
     AttachmentResidualOwnershipTask,
-    AttachmentSourceRange,
     CompetitiveAttachmentCandidate,
     CompetitiveAttachmentEventOption,
     PropositionFragmentReason,
+    SourceRange,
     attachment_pool_edge_id,
     build_attachment_edge_filter_task,
     build_attachment_residual_ownership_task,
@@ -297,12 +297,12 @@ def _residual_task(index: int) -> AttachmentResidualOwnershipTask:
         source_text_sha256=digest,
         candidate_id=candidate_id,
         source_grounded_event_id=event_id,
-        candidate_range=AttachmentSourceRange(
+        candidate_range=SourceRange(
             start=candidate_start,
             end=candidate_end,
             text=source[candidate_start:candidate_end],
         ),
-        event_range=AttachmentSourceRange(
+        event_range=SourceRange(
             start=event_start,
             end=event_end,
             text="criticized",

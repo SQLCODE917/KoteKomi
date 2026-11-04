@@ -6,7 +6,6 @@ from typing import Literal
 from kotekomi_application import (
     AttachmentOracleCeilingKind,
     AttachmentRouteKind,
-    AttachmentSourceRange,
     AttachmentSyntaxObservation,
     CompetitiveAttachmentGoldDecision,
     PredicateArgumentGapCode,
@@ -14,6 +13,7 @@ from kotekomi_application import (
     PredicateArgumentPathDirection,
     PredicateArgumentPathStep,
     PredicateArgumentToken,
+    SourceRange,
     build_attachment_route_report,
 )
 from kotekomi_pipelines.deterministic_dependency_path_attachment_router import (
@@ -51,8 +51,8 @@ def _token(
     )
 
 
-def _range(start: int, end: int, text: str) -> AttachmentSourceRange:
-    return AttachmentSourceRange(start=start, end=end, text=text)
+def _range(start: int, end: int, text: str) -> SourceRange:
+    return SourceRange(start=start, end=end, text=text)
 
 
 def _observation(

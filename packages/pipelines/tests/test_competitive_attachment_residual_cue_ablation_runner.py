@@ -11,7 +11,7 @@ from kotekomi_application import (
     AttachmentResidualCueAblationPackageStatus,
     AttachmentResidualCueAblationReport,
     AttachmentResidualOwnershipReport,
-    AttachmentSourceRange,
+    SourceRange,
 )
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -77,12 +77,12 @@ def test_cue_ablation_binds_the_sealed_predecessor_package_without_flattening_in
 
 def test_residual_gold_adjudication_corrects_only_the_reviewed_exact_edge() -> None:
     runner = _runner()
-    candidate = AttachmentSourceRange(
+    candidate = SourceRange(
         start=0,
         end=47,
         text="As the Trump administration targeted law firms,",
     )
-    event = AttachmentSourceRange(start=28, end=36, text="targeted")
+    event = SourceRange(start=28, end=36, text="targeted")
     report = cast(
         AttachmentResidualOwnershipReport,
         SimpleNamespace(

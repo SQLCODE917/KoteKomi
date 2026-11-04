@@ -19,12 +19,12 @@ from kotekomi_application import (
     AttachmentPoolArm,
     AttachmentPoolEdge,
     AttachmentProposalOrigin,
-    AttachmentSourceRange,
     AttachmentSyntaxObservation,
     CompetitiveAttachmentMatrix,
     CompetitiveAttachmentPhaseReport,
     FilteredAttachmentSet,
     PropositionFragmentReason,
+    SourceRange,
     attachment_pool_edge_id,
     attachment_syntax_policies,
     build_attachment_edge_filter_task,
@@ -135,12 +135,12 @@ def build_attachment_pool_edges(
                 source_text_sha256=matrix.source_text_sha256,
                 candidate_id=candidate_id,
                 source_grounded_event_id=event_id,
-                candidate_range=AttachmentSourceRange(
+                candidate_range=SourceRange(
                     start=candidate.start,
                     end=candidate.end,
                     text=candidate.text,
                 ),
-                event_range=AttachmentSourceRange(
+                event_range=SourceRange(
                     start=option.start,
                     end=option.end,
                     text=option.text,

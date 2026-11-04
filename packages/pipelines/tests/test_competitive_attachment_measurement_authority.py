@@ -15,11 +15,11 @@ from kotekomi_application import (
     AttachmentNormalizationOperation,
     AttachmentPoolEdge,
     AttachmentProposalOrigin,
-    AttachmentSourceRange,
     CompetitiveAttachmentCandidate,
     CompetitiveAttachmentEventOption,
     CompetitiveAttachmentGoldDecision,
     PropositionFragmentReason,
+    SourceRange,
     attachment_pool_edge_id,
     build_attachment_edge_filter_task,
     competitive_attachment_candidate_id,
@@ -44,7 +44,7 @@ def test_authoritative_gold_applies_only_the_reviewed_occurrence_change() -> Non
         source_segment_id="seg_fixture",
         source_text_sha256=digest,
         candidate_id=candidate_id,
-        authoritative_range=AttachmentSourceRange(start=0, end=7, text=source),
+        authoritative_range=SourceRange(start=0, end=7, text=source),
         comparison_start=2,
         comparison_end=7,
         comparison_text="alpha",
@@ -93,7 +93,7 @@ def test_authoritative_gold_rejects_changed_original_decision() -> None:
             source_segment_id="seg_fixture",
             source_text_sha256=digest,
             candidate_id=candidate_id,
-            authoritative_range=AttachmentSourceRange(start=0, end=7, text=source),
+            authoritative_range=SourceRange(start=0, end=7, text=source),
             comparison_start=2,
             comparison_end=7,
             comparison_text="alpha",
@@ -269,12 +269,12 @@ def _contained_task():  # type: ignore[no-untyped-def]
         source_text_sha256=digest,
         candidate_id=candidate_id,
         source_grounded_event_id=event_id,
-        candidate_range=AttachmentSourceRange(
+        candidate_range=SourceRange(
             start=5,
             end=26,
             text="announced acquisition",
         ),
-        event_range=AttachmentSourceRange(start=15, end=26, text="acquisition"),
+        event_range=SourceRange(start=15, end=26, text="acquisition"),
         origins=(AttachmentProposalOrigin.QWEN,),
         syntax_arms=(),
     )
@@ -380,12 +380,12 @@ def _frozen_phase(
             source_text_sha256=digest,
             candidate_id=candidate_id,
             source_grounded_event_id=event_id,
-            candidate_range=AttachmentSourceRange(
+            candidate_range=SourceRange(
                 start=candidate_start,
                 end=candidate_end,
                 text=candidate_text,
             ),
-            event_range=AttachmentSourceRange(
+            event_range=SourceRange(
                 start=event_start,
                 end=event_start + len(event_text),
                 text=event_text,

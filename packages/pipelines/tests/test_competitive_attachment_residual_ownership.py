@@ -15,10 +15,10 @@ from kotekomi_application import (
     AttachmentResidualOwnershipOutcome,
     AttachmentResidualOwnershipReport,
     AttachmentResidualOwnershipTask,
-    AttachmentSourceRange,
     CompetitiveAttachmentCandidate,
     CompetitiveAttachmentEventOption,
     PropositionFragmentReason,
+    SourceRange,
     attachment_pool_edge_id,
     build_attachment_edge_filter_task,
     competitive_attachment_candidate_id,
@@ -202,12 +202,12 @@ def _task(index: int, *, with_foreign_event: bool) -> AttachmentEdgeFilterTask:
         source_text_sha256=digest,
         candidate_id=candidate_id,
         source_grounded_event_id=target.source_grounded_event_id,
-        candidate_range=AttachmentSourceRange(
+        candidate_range=SourceRange(
             start=candidate_start,
             end=candidate_end,
             text=source[candidate_start:candidate_end],
         ),
-        event_range=AttachmentSourceRange(
+        event_range=SourceRange(
             start=target.start,
             end=target.end,
             text=target.text,

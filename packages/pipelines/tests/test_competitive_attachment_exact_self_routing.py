@@ -8,7 +8,6 @@ from kotekomi_application import (
     AttachmentResidualTransferPhaseReport,
     AttachmentResidualTransferReport,
     AttachmentSelfRoutingOutcome,
-    AttachmentSourceRange,
     AttachmentStructuralSafetyCase,
     AttachmentStructuralSafetyPhase,
     AttachmentStructuralSafetyReport,
@@ -17,6 +16,7 @@ from kotekomi_application import (
     CompetitiveAttachmentGoldDecision,
     CompetitiveAttachmentMatrix,
     PropositionFragmentReason,
+    SourceRange,
     competitive_attachment_candidate_id,
     competitive_attachment_event_option_id,
     competitive_attachment_matrix_id,
@@ -235,7 +235,7 @@ def _transfer_case(
         text=SOURCE[candidate[0] : candidate[1]],
         source_text_sha256=DIGEST,
     )
-    event_value = AttachmentSourceRange(
+    event_value = SourceRange(
         start=event[0],
         end=event[1],
         text=SOURCE[event[0] : event[1]],

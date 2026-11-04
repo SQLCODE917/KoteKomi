@@ -15,10 +15,10 @@ from kotekomi_application import (
     AttachmentReviewedNegativeControl,
     AttachmentSelfRoutingPhase,
     AttachmentSelfRoutingReport,
-    AttachmentSourceRange,
     AttachmentStructuralSafetyReport,
     CompetitiveAttachmentGoldDecision,
     CompetitiveAttachmentMatrix,
+    SourceRange,
     attachment_self_routing_fingerprint,
     classify_attachment_self_routing_outcome,
 )
@@ -75,12 +75,12 @@ def build_attachment_self_routing_phase(
                         source_text_sha256=source_digest,
                         candidate_id=candidate.id,
                         event_id=event.source_grounded_event_id,
-                        candidate_range=AttachmentSourceRange(
+                        candidate_range=SourceRange(
                             start=candidate.start,
                             end=candidate.end,
                             text=candidate.text,
                         ),
-                        event_range=AttachmentSourceRange(
+                        event_range=SourceRange(
                             start=event.start,
                             end=event.end,
                             text=event.text,
@@ -151,7 +151,7 @@ def build_attachment_self_routing_report(
                     phase=case.task.phase,
                     source_text=case.task.edge_filter_task.source_text,
                     source_text_sha256=case.task.edge_filter_task.candidate.source_text_sha256,
-                    candidate_range=AttachmentSourceRange(
+                    candidate_range=SourceRange(
                         start=case.task.edge_filter_task.candidate.start,
                         end=case.task.edge_filter_task.candidate.end,
                         text=case.task.edge_filter_task.candidate.text,

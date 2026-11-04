@@ -40,7 +40,7 @@ from kotekomi_adapters.model_resources import (
     stanza_model_path,
 )
 from kotekomi_application import (
-    AttachmentSourceRange,
+    SourceRange,
     ConstituentCandidateInventory,
     DecontextualizationEntityRef,
     DecontextualizedProposition,
@@ -281,7 +281,7 @@ def _entity_ref(entity: ConnectionGoldEntity) -> DecontextualizationEntityRef:
         entity_kind=entity.entity_kind.value,
         canonical_name=entity.canonical_name,
         accepted_source_occurrences=tuple(
-            AttachmentSourceRange(start=item.start, end=item.end, text=item.source_text)
+            SourceRange(start=item.start, end=item.end, text=item.source_text)
             for item in entity.accepted_source_occurrences
         ),
     )

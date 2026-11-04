@@ -9,7 +9,6 @@ from pathlib import Path
 from typing import Annotated, Literal, Self
 
 from kotekomi_application import (
-    AttachmentSourceRange,
     DecontextualizationEntityRef,
     DecontextualizationExclusion,
     EventEntityCandidateGap,
@@ -24,6 +23,7 @@ from kotekomi_application import (
     EventEntityReferences,
     EventTriggerDraft,
     SourceGroundedEventDraft,
+    SourceRange,
     build_event_entity_candidate_routes,
     build_event_entity_connection_candidates,
 )
@@ -1811,9 +1811,9 @@ def _decontextualization_entity_ref(
 def _occurrence_range(
     occurrence: ConnectionGoldSourceOccurrence,
     source_text: str,
-) -> AttachmentSourceRange:
+) -> SourceRange:
     _require_source_exact(source_text, occurrence.start, occurrence.end, occurrence.source_text)
-    return AttachmentSourceRange(
+    return SourceRange(
         start=occurrence.start, end=occurrence.end, text=occurrence.source_text
     )
 
@@ -1826,7 +1826,7 @@ def _subject_value_authorization(
     return DecontextualizationExclusion(
         exclusion_id=exclusion.exclusion_id,
         contextual_kind="non_entity_value",
-        source_range=AttachmentSourceRange(
+        source_range=SourceRange(
             start=exclusion.start, end=exclusion.end, text=exclusion.source_text
         ),
         rationale=exclusion.rationale,
@@ -1860,8 +1860,8 @@ def reanchor_whitespace_spans(
     *,
     provider_text: str,
     residual_text: str,
-    spans: tuple[AttachmentSourceRange, ...],
-) -> tuple[AttachmentSourceRange, ...]:
+    spans: tuple[SourceRange, ...],
+) -> tuple[SourceRange, ...]:
     """Reanchor provider occurrence spans into residual coordinates.
 
     The provider source and the residual source must match after removing every
@@ -1873,7 +1873,7 @@ def reanchor_whitespace_spans(
     residual = _WhitespaceIndex(residual_text)
     if provider.core != residual.core:
         raise ValueError("Provider and residual sources differ beyond whitespace.")
-    reanchored: list[AttachmentSourceRange] = []
+    reanchored: list[SourceRange] = []
     for span in spans:
         content = "".join(char for char in span.text if not char.isspace())
         start_core = provider.prefix_counts[span.start]
@@ -1883,7 +1883,7 @@ def reanchor_whitespace_spans(
         residual_start = residual.ordinal_positions[start_core]
         residual_end = residual.ordinal_positions[end_core - 1] + 1
         reanchored.append(
-            AttachmentSourceRange(
+            SourceRange(
                 start=residual_start,
                 end=residual_end,
                 text=residual_text[residual_start:residual_end],

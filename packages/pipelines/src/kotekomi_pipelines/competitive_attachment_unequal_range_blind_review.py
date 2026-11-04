@@ -13,8 +13,8 @@ from kotekomi_application import (
     AttachmentBlindReviewReport,
     AttachmentBlindReviewSubmission,
     AttachmentEvidenceReference,
-    AttachmentSourceRange,
     AttachmentStructuralSafetyReport,
+    SourceRange,
     attachment_blind_review_case_id,
     attachment_blind_review_fingerprint,
     classify_attachment_blind_review_outcome,
@@ -31,12 +31,12 @@ def build_attachment_blind_review_catalog(
     cases: list[AttachmentBlindReviewCase] = []
     for phase_report in (structural_safety.development, structural_safety.validation):
         for source_case in phase_report.cases:
-            candidate_range = AttachmentSourceRange(
+            candidate_range = SourceRange(
                 start=source_case.candidate.start,
                 end=source_case.candidate.end,
                 text=source_case.candidate.text,
             )
-            event_range = AttachmentSourceRange(
+            event_range = SourceRange(
                 start=source_case.event.start,
                 end=source_case.event.end,
                 text=source_case.event.text,

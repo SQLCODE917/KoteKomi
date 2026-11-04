@@ -19,7 +19,6 @@ from pathlib import Path
 from typing import Annotated, Literal, Self
 
 from kotekomi_application import (
-    AttachmentSourceRange,
     ConstituentCandidateInventory,
     ConstituentSelectionAnswer,
     ConstituentSelectionTask,
@@ -28,6 +27,7 @@ from kotekomi_application import (
     EventEntityLinguisticToken,
     HeldOutGoldEvent,
     HeldOutGoldFragment,
+    SourceRange,
     build_constituent_candidate_inventory,
     build_decontextualized_proposition,
     constituent_selection_labels,
@@ -196,7 +196,7 @@ def derive_held_out_entities(
     if hashlib.sha256(source_text.encode()).hexdigest() != source_text_sha256:
         raise ValueError("Held-out entity derivation source digest drifted.")
     head = _head_token(tokens)
-    spans: dict[tuple[int, int], AttachmentSourceRange] = {}
+    spans: dict[tuple[int, int], SourceRange] = {}
     for dependent in _dependents(head, tokens):
         if dependent.dependency_relation not in (_SUBJECT_RELATIONS | _OBJECT_RELATIONS):
             continue
@@ -354,7 +354,7 @@ def _maximal_constituent(
     token: EventEntityLinguisticToken,
     head: EventEntityLinguisticToken,
     inventory: ConstituentCandidateInventory,
-) -> AttachmentSourceRange | None:
+) -> SourceRange | None:
     candidates = [
         item
         for item in inventory.constituents

@@ -7,7 +7,6 @@ from pathlib import Path
 
 import pytest
 from kotekomi_application import (
-    AttachmentSourceRange,
     EntityInvolvementAnswerValue,
     EntityInvolvementJudgment,
     EventEntityCandidateGap,
@@ -28,6 +27,7 @@ from kotekomi_application import (
     EventEntityMentionInput,
     EventEntitySourceSpan,
     EventTriggerDraft,
+    SourceRange,
     build_entity_involvement_judgment,
     build_event_entity_candidate_routes,
     build_event_entity_connection_candidates,
@@ -1206,7 +1206,7 @@ def test_reanchor_whitespace_spans_maps_real_occurrences() -> None:
     event = next(item for item in catalog.events if item.event_id == "TGE-018")
     provider_text, residual_text = _tge_018_and_ahe_022_sources()
     spans = tuple(
-        AttachmentSourceRange(start=occ.start, end=occ.end, text=occ.source_text)
+        SourceRange(start=occ.start, end=occ.end, text=occ.source_text)
         for entity in event.expected_entities
         for occ in entity.accepted_source_occurrences
     )
@@ -1227,8 +1227,8 @@ def test_reanchor_whitespace_spans_keeps_pre_whitespace_offsets() -> None:
         provider_text=provider_text,
         residual_text=residual_text,
         spans=(
-            AttachmentSourceRange(start=0, end=5, text="Sacks"),
-            AttachmentSourceRange(start=13, end=19, text="Amodei"),
+            SourceRange(start=0, end=5, text="Sacks"),
+            SourceRange(start=13, end=19, text="Amodei"),
         ),
     )
 
@@ -1241,5 +1241,5 @@ def test_reanchor_whitespace_spans_rejects_non_whitespace_difference() -> None:
         reanchor_whitespace_spans(
             provider_text=provider_text,
             residual_text=residual_text.replace("Sacks", "Sacks!", 1),
-            spans=(AttachmentSourceRange(start=0, end=5, text="Sacks"),),
+            spans=(SourceRange(start=0, end=5, text="Sacks"),),
         )

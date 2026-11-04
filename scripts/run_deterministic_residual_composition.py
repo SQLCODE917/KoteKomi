@@ -14,7 +14,7 @@ from pathlib import Path
 
 from kotekomi_adapters.sqlite_ledger import sqlite_ledger_transaction
 from kotekomi_application import (
-    AttachmentSourceRange,
+    SourceRange,
     DecontextualizationEntityRef,
     DecontextualizationExclusion,
     EventEntityReferences,
@@ -78,7 +78,7 @@ class _ProviderOnly:
         authorization = DecontextualizationExclusion(
             exclusion_id=exclusion.exclusion_id,
             contextual_kind="non_entity_value",
-            source_range=AttachmentSourceRange(
+            source_range=SourceRange(
                 start=exclusion.start, end=exclusion.end, text=exclusion.source_text
             ),
             rationale=exclusion.rationale,

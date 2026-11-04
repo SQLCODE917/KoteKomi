@@ -18,8 +18,8 @@ from kotekomi_application import (
     AttachmentPoolArm,
     AttachmentPoolEdge,
     AttachmentProposalOrigin,
-    AttachmentSourceRange,
     CompetitiveAttachmentMatrix,
+    SourceRange,
     attachment_nested_event_case_id,
     attachment_nested_event_fingerprint,
     attachment_nested_event_ownership_model_task_input,
@@ -105,12 +105,12 @@ def build_attachment_nested_event_preflight(
             source_text_sha256=matrix.source_text_sha256,
             candidate_id=candidate.id,
             source_grounded_event_id=target.source_grounded_event_id,
-            candidate_range=AttachmentSourceRange(
+            candidate_range=SourceRange(
                 start=candidate.start,
                 end=candidate.end,
                 text=candidate.text,
             ),
-            event_range=AttachmentSourceRange(
+            event_range=SourceRange(
                 start=target.start,
                 end=target.end,
                 text=target.text,

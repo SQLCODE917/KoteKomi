@@ -15,12 +15,12 @@ from enum import StrEnum
 from typing import Protocol
 
 from kotekomi_application import (
-    AttachmentSourceRange,
     DecontextualizationEntityRef,
     EventEntityReferences,
     ReferenceDiagnostic,
     ReferenceDiagnosticReason,
     ReferenceResolution,
+    SourceRange,
 )
 from kotekomi_domain import (
     Actor,
@@ -98,7 +98,7 @@ class LiveIdentityReferenceProvider:
         source_text_sha256: str,
     ) -> LiveReferenceResolution:
         del event_id, source_text_sha256
-        grouped: dict[str, tuple[IdentityOccurrenceKind, list[AttachmentSourceRange]]] = {}
+        grouped: dict[str, tuple[IdentityOccurrenceKind, list[SourceRange]]] = {}
         diagnostics: list[LiveReferenceDiagnostic] = []
         for occurrence in self._repository.list_identity_occurrences():
             target = self._repository.get_evidence_target(occurrence.evidence_target_id)
@@ -146,7 +146,7 @@ class LiveIdentityReferenceProvider:
         target: EvidenceTarget,
         source_text: str,
         diagnostics: list[LiveReferenceDiagnostic],
-    ) -> AttachmentSourceRange | None:
+    ) -> SourceRange | None:
         if (
             self._representation_id is not None
             and self._text_view_id is not None
@@ -161,7 +161,7 @@ class LiveIdentityReferenceProvider:
                     LiveIdentityReferenceErrorReason.COORDINATE_MISMATCH,
                     f"Occurrence {occurrence_id} coordinates do not replay its exact text.",
                 )
-            return AttachmentSourceRange(start=local_start, end=local_end, text=slice_text)
+            return SourceRange(start=local_start, end=local_end, text=slice_text)
         diagnostics.append(
             LiveReferenceDiagnostic(
                 occurrence_id=occurrence_id,

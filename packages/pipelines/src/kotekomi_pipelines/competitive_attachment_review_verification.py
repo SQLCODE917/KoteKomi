@@ -23,7 +23,6 @@ from kotekomi_application import (
     AttachmentReviewClaimResult,
     AttachmentReviewVerificationReport,
     AttachmentSegmentCount,
-    AttachmentSourceRange,
     AttachmentSyntaxObservation,
     AttachmentSyntaxPhaseResult,
     AttachmentTriggerContainmentObservation,
@@ -38,6 +37,7 @@ from kotekomi_application import (
     CompetitiveDiscriminationCatalog,
     CompetitiveDiscriminationCategory,
     ReviewClaimVerdict,
+    SourceRange,
     attachment_review_verification_fingerprint,
     build_attachment_syntax_observation,
     classify_attachment_range_relation,
@@ -573,7 +573,7 @@ def _range_observations(
                         source_grounded_event_id=event.source_grounded_event_id,
                         candidate_range=_candidate_range(candidate),
                         gold_ranges=tuple(
-                            AttachmentSourceRange(
+                            SourceRange(
                                 start=item.start,
                                 end=item.end,
                                 text=item.text,
@@ -937,7 +937,7 @@ def _trigger_containment_summary(
                     continue
                 containing_ids.add(candidate.id)
                 event_ranges = tuple(
-                    AttachmentSourceRange(start=item.start, end=item.end, text=item.text)
+                    SourceRange(start=item.start, end=item.end, text=item.text)
                     for item in contained
                 )
                 observations.append(
@@ -1325,7 +1325,7 @@ def _split_candidate(
     source: str,
     candidate: CompetitiveAttachmentCandidate,
     contained: tuple[CompetitiveAttachmentEventOption, ...],
-) -> tuple[AttachmentSourceRange, ...]:
+) -> tuple[SourceRange, ...]:
     start = candidate.start
     end = candidate.end
     boundaries = {start, end}
@@ -1334,14 +1334,14 @@ def _split_candidate(
         boundaries.add(event.end)
     ordered = sorted(boundaries)
     return tuple(
-        AttachmentSourceRange(start=left, end=right, text=source[left:right])
+        SourceRange(start=left, end=right, text=source[left:right])
         for left, right in zip(ordered, ordered[1:], strict=False)
         if left < right and source[left:right].strip()
     )
 
 
-def _candidate_range(candidate: CompetitiveAttachmentCandidate) -> AttachmentSourceRange:
-    return AttachmentSourceRange(
+def _candidate_range(candidate: CompetitiveAttachmentCandidate) -> SourceRange:
+    return SourceRange(
         start=candidate.start,
         end=candidate.end,
         text=candidate.text,
