@@ -32,7 +32,7 @@ from kotekomi_domain import IngestionFailureCode, IngestionFailureStage, Ingesti
 from kotekomi_pipelines.cli import ingest_user_file
 from textual.pilot import Pilot
 
-from packages.pipelines.tests.test_replay_reader import example_profile
+from packages.pipelines.tests.support.replay_fixtures import example_profile
 
 
 def start_worker_run(request: IngestionProcessRequest) -> None:

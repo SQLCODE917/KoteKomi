@@ -13,7 +13,7 @@ from kotekomi_application.ingestion_debug_summary import (
 )
 from kotekomi_application.ingestion_inspection import InspectionContext
 
-from packages.pipelines.tests.test_replay_reader import example_profile
+from packages.pipelines.tests.support.replay_fixtures import example_profile
 
 
 def snapshot() -> DebugSummary:
