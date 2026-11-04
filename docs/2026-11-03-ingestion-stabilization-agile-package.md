@@ -82,7 +82,7 @@ Each deliverable ships and reverts independently.
 
 | ID | Deliverable | Depends on | Status | TDD / implementation / evidence |
 |---|---|---|---|---|
-| ISC-01 | Shared ingestion workflow and final live refresh | Startup and warning fixes recorded separately | Planned | Not started |
+| ISC-01 | Shared ingestion workflow and final live refresh | Startup and warning fixes recorded separately | In progress | [TDD](2026-11-03-isc-01-shared-ingestion-workflow.md) |
 | ISC-02 | Production ownership of shared contracts and construction | ISC-04 | Planned | Not started |
 | ISC-03 | One Adapter for composition persistence | ISC-02 | Planned | Not started |
 | ISC-04 | Separate historical reproduction from current regressions | None | Planned | Not started |
