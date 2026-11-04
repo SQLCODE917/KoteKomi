@@ -55,34 +55,54 @@ and not the package's development case):
 Declared out of scope: multi-subject composition, cross-view references, unsupported
 time or place composition, automatic acceptance, and prompt or policy changes.
 
-### 1a. Proposed replacement development case (agent-drafted; awaiting human review)
+### 1a. Demonstrated development case (agent-verified on the stored parse; awaiting human review)
 
-The local PDF `raw/Anthropic-United_States_Department_of_Defense_dispute.pdf` (8 pages) is not
-tracked, but its text is readable, so this proposal does not require another full ingestion.
-Proposed excerpt, taken verbatim from the article text:
+The withdrawn proposal failed on structure: for `Anthropic publicly disagreed with the administration's policies`, the stored parse attaches both nouns to `disagreed` as `obl`, so selection realizes only `subject` and composition holds on `unsupported_time_place`.
+A reviewed predicate cannot supply a missing object role.
 
-> In Donald Trump's second presidency, Anthropic publicly disagreed with the
-> administration's policies and initiatives.
+The demonstration below uses the saved operator run `igr_3a167add040a4fcc8aec6aba36363502` and its stored tokens.
+No model call is involved.
 
-Proposed Event sentence (the argument-bearing clause):
+**Selected case: `sge_8f37b32d221d8974c7725e42`**
 
-> Anthropic publicly disagreed with the administration's policies and initiatives.
+| Element | Verified value |
+|---|---|
+| Paragraph node | `nod_da86f9a7f68fd497cb47a88e_0013` |
+| Paragraph source digest | `c608ac71f813d95607a005494b5cc90fb949590778631fcec2e34bf09e57327a` |
+| TextView / representation | `tvw_da86f9a7f68fd497cb47a88e_logical` / `rep_da86f9a7f68fd497cb47a88e` |
+| Node start | 4682 |
+| Trigger | `viewed`, 6..12 (label `view`) |
+| Subject boundary | `Sacks`, 0..5 (absolute 4682..4687) |
+| Object boundary | `Amodei's decision`, 13..30 (absolute 4695..4712) |
+| Statement span | 0..30, `Sacks viewed Amodei's decision` (absolute 4682..4712) |
+| Selection | `selected`, realized roles `subject`, `object` |
+| Composition | `composed`, no structural hold (label `view`, subject `Sacks`, object `Amodei's decision`) |
+| Identity candidate | `Sacks` at 0..5 from HP-3 eligibility and link evidence; review required |
+
+Proposed expected Assertion (agent-drafted; awaiting human review):
 
 | Field | Proposed value |
 |---|---|
-| Subject | `Anthropic` (Organization candidate; review confirms the identity) |
-| Predicate (reviewed) | `disagreed_with` |
-| Object | value `the administration's policies and initiatives` |
 | Type | `reported_observation` |
+| Epistemic scope | `source_report` |
+| Subject | newly accepted `Actor` for `Sacks` |
+| Predicate | `viewed` |
+| Object | value `Amodei's decision` |
+| Qualifiers | `polarity: affirmed`, `modality: actual` |
 | Source authority | `secondary` |
 | Attribution basis | `direct_document` |
-| Qualifiers | `polarity: affirmed`, `modality: actual` |
-| Statement evidence | the sentence span, containing subject, predicate, and object |
+| Evidence | statement EvidenceTarget over 4682..4712 |
+| Status | `proposed` |
 
-The sentence carries subject, predicate, and object with no time or place role, which keeps it
-inside the documented supported structure. The paragraph node and exact offsets must come from
-the operator run; this proposal fixes the content to review, not the coordinates.
-Human review of this case is the open IRA-01-A item.
+Context: the sentence continues `to attend the World Economic Forum over Trump's second inauguration`.
+The statement span preserves the asserted relation and excludes that infinitive adjunct, and composition does not hold on it.
+The reviewed predicate `viewed` matches the R19 precedent for this relation.
+
+Negative evidence from the same scan: `sge_6054fa9e10adfd8c6ec99d0a` and `sge_fc5ecf8c1d8dfb15a312e0e4` both realize subject and object yet hold on `unsupported_time_place`, which is why the demonstration step precedes approval.
+
+Reproduction: load the run's paragraph inputs and token artifacts, build the constituent inventory for the Event, run `select_source_grounded_constituents`, then `compose_event_from_resolution` with one synthetic accepted organization reference.
+The probe prints the values above.
+
 
 ## 2. Contracts
 

@@ -102,7 +102,7 @@ The review interface can extend existing CLI commands; this package does not req
 
 | ID | Deliverable | Depends on | Status | Evidence |
 | --- | --- | --- | --- | --- |
-| IRA-01 | Pin one supported Event and its expected Assertion | None | Blocked | The fixture case is withdrawn as a correctness claim: it uses the community-health press release and drops the `is excited to` construction. A source-faithful case requires the local Anthropic-DoD PDF and a human review |
+| IRA-01 | Pin one supported Event and its expected Assertion | None | In review | The fixture case is withdrawn as a correctness claim: it uses the community-health press release and drops the `is excited to` construction. Demonstrated on the stored parse of the Anthropic-DoD run: `sge_8f37b32d221d8974c7725e42` selects `Sacks` / `Amodei's decision` and composes with no structural hold; the proposed Assertion awaits human review |
 | IRA-02 | Generate an evidence-backed review packet | IRA-01 | In progress | `kotekomi review event-packet`; `test_cli_commands_drive_the_journey_without_json_authoring`, `test_review_packet_rejects_an_event_from_another_run`, `test_packet_rejects_a_changed_source_text` |
 | IRA-03 | Record operator decisions and accept prerequisites | IRA-02 | In progress | `kotekomi review decide`; `test_decision_accepts_prerequisites_and_is_idempotent`, `test_decision_rejects_a_candidate_outside_the_packet`, `test_conflicting_decision_is_rejected` |
 | IRA-04 | Recompose into a reviewable Assertion and replay it | IRA-03 | In progress | `kotekomi review recompose`; `test_recomposition_proposes_assertion_and_replay_shows_it`, `test_recomposition_retry_keeps_one_proposal` |
