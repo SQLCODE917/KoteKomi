@@ -155,6 +155,9 @@ class LiveIdentityReferenceProvider:
         ):
             local_start = target.start_char - self._node_start_char
             local_end = target.end_char - self._node_start_char
+            if local_start < 0 or local_end > len(source_text):
+                # The accepted occurrence belongs to another paragraph of this view.
+                return None
             slice_text = source_text[local_start:local_end]
             if not slice_text or _normalized(slice_text) != _normalized(target.exact_text):
                 raise LiveIdentityReferenceError(

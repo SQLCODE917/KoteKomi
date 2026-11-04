@@ -82,18 +82,15 @@ Proposed expected Assertion (agent-drafted; awaiting human review):
 | Evidence | statement EvidenceTarget over 8809..8841 |
 | Status | `proposed` |
 
-### Outstanding blocker for the full journey on this case
+### Subject span relationship (resolved)
 
-HP-3 produced a candidate for `US` at 93..95, while the selected subject boundary is
-`the US` at 89..95. An accepted occurrence over `US` therefore does not cover the selected
-subject fragment, so identity resolution would hold `subject_unavailable`. The full
-packet → decision → proposal → replay journey on this case needs one of:
-
-- a reviewed identity occurrence whose span covers `the US`, or
-- an explicit, documented rule for a determiner-prefixed subject boundary.
-
-That is a bounded decision, not a new capability, and it must be settled before the journey
-test is written for this case.
+The existing composer resolves an identity whose accepted occurrence is **contained within**
+the selected fragment (`_resolve_entity`).
+Selected subject `the US` at 89..95 with an accepted occurrence for `US` at 93..95 therefore
+resolves to that identity; `composition: proposition`, `hold: None`, subject entity set.
+No determiner rule and no enlarged occurrence is needed, and the source-exact `US` occurrence
+stays as reviewed.
+Regression: `test_contained_identity_resolves_a_determiner_prefixed_subject`.
 
 ## Conclusion (narrowed)
 
