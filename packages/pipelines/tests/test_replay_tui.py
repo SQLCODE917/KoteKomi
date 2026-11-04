@@ -21,7 +21,7 @@ from kotekomi_application.ingestion_inspection import ParagraphSnapshot
 from rich.text import Text
 from textual.binding import Binding
 from textual.containers import VerticalScroll
-from textual.widgets import Static
+from textual.widgets import RichLog, Static
 
 from packages.pipelines.tests.test_replay_reader import example_profile
 
@@ -407,6 +407,66 @@ def test_copy_before_source_arrives_reports_no_paragraph(monkeypatch: pytest.Mon
                 assert notices == ["No paragraph is available to copy yet."]
                 assert app.clipboard == ""
                 assert not app.exit_requested
+            finally:
+                advance.set()
+
+    asyncio.run(scenario())
+
+
+def test_warning_block_remains_readable_in_output_after_later_statuses() -> None:
+    warning = (
+        "/models/classifier.py:123: UserWarning: The checkpoint has unused pooler weights.\n"
+        "  warnings.warn(\n"
+    )
+    advance = Event()
+    posted = Event()
+
+    def operation(
+        publish: Callable[[ParagraphSnapshot], None], out: MessageStream, err: MessageStream
+    ) -> int:
+        publish(ParagraphSnapshot(0, 1, example_profile(), "complete"))
+        err.write(warning)
+        for index in range(8):
+            out.write(f"Later status {index}\n")
+        posted.set()
+        assert advance.wait(5)
+        err.write("/models/second.py:456: RuntimeWarning: A second warning.\n  warnings.warn(\n")
+        return 0
+
+    async def scenario() -> None:
+        app = ReplayApp(operation, mode="ingestion", cancel=advance.set)
+        async with app.run_test(size=(60, 20)) as pilot:
+            try:
+                assert await asyncio.to_thread(posted.wait, 2)
+                await pilot.pause()
+                assert content(app, "#error") == warning.rstrip("\n")
+                assert "warnings.warn(" not in content(app, "#status")
+                await pilot.press("w")
+                await pilot.pause()
+                assert app.screen.has_class("show-output")
+                log = app.query_one("#output", RichLog)
+                output = "\n".join(line.text for line in log.lines)
+                assert "/models/classifier.py:123:" in output
+                assert "UserWarning:" in output
+                assert "unused pooler weights." in " ".join(output.split())
+                assert "warnings.warn(" in output
+                assert "Later status 7" in output
+                advance.set()
+                for _ in range(30):
+                    await pilot.pause(0.05)
+                    if app.finished:
+                        break
+                assert app.finished
+                output = "\n".join(line.text for line in log.lines)
+                assert "/models/second.py:456:" in output
+                assert "A second warning." in " ".join(output.split())
+                assert "Ingestion complete" in content(app, "#status")
+                await pilot.press("w")
+                assert not app.screen.has_class("show-output")
+                await pilot.pause()
+                assert "Mention ·" in content(app, "#source")
+                await pilot.press("q")
+                assert app.return_value == 0
             finally:
                 advance.set()
 

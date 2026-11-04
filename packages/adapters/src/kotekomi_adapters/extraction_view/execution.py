@@ -49,6 +49,13 @@ class ProcessOutput(StringIO):
 
     def write(self, text: str) -> int:
         self.pending += text
+        if self.is_error:
+            complete, newline, pending = self.pending.rpartition("\n")
+            if newline:
+                self.pending = pending
+                if complete:
+                    send_event(self.connection, TextEvent(text=complete, is_error=True))
+            return len(text)
         while "\n" in self.pending:
             line, self.pending = self.pending.split("\n", 1)
             if line:

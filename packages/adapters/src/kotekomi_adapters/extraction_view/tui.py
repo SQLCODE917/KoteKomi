@@ -27,7 +27,7 @@ from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, VerticalScroll
 from textual.message import Message
-from textual.widgets import Footer, Static
+from textual.widgets import Footer, RichLog, Static
 
 from kotekomi_adapters.extraction_view.clipboard import ClipboardAdapter
 from kotekomi_adapters.extraction_view.render import (
@@ -69,6 +69,13 @@ class MessageStream(StringIO):
 
     def write(self, text: str) -> int:
         self._pending += text
+        if self._is_error:
+            complete, newline, pending = self._pending.rpartition("\n")
+            if newline:
+                self._pending = pending
+                if complete:
+                    self._post(StatusChanged(complete, True))
+            return len(text)
         while "\n" in self._pending:
             line, self._pending = self._pending.split("\n", 1)
             if line:
@@ -123,6 +130,10 @@ class ReplayApp(App[int]):
     #inspector { height: auto; padding: 0 1; }
     #status { height: auto; max-height: 4; padding: 0 1; color: #80cbc4; }
     #error { height: auto; max-height: 4; padding: 0 1; color: #ff8a80; }
+    #output { display: none; height: 1fr; border: round #414477; }
+    .show-output #body { display: none; }
+    .show-output #output { display: block; }
+    .show-output #error { display: none; }
     .narrow #body { layout: vertical; }
     .narrow #source-scroll { width: 1fr; height: 2fr; }
     .narrow #inspector-scroll { width: 1fr; height: 1fr; }
@@ -130,6 +141,7 @@ class ReplayApp(App[int]):
     BINDINGS = [
         Binding("q,ctrl+c", "quit", "Quit", priority=True),
         Binding("c", "copy_snapshot", "Copy summary"),
+        Binding("w", "output", "Output"),
         Binding("left_square_bracket", "paragraph(-1)", "Previous paragraph"),
         Binding("right_square_bracket", "paragraph(1)", "Next paragraph"),
         Binding("f", "follow", "Follow"),
@@ -174,6 +186,7 @@ class ReplayApp(App[int]):
         self._rendered_ordinal: int | None = None
         self._status_lines: list[str] = []
         self._operation_error = ""
+        self._showing_output = False
         self._view_mounted = False
         self._color = os.environ.get("NO_COLOR") is None
 
@@ -190,6 +203,9 @@ class ReplayApp(App[int]):
                     markup=False,
                 )
         yield Static("", id="error", markup=False)
+        yield RichLog(
+            id="output", min_width=1, wrap=True, markup=False, highlight=False, auto_scroll=False
+        )
         yield Static("Starting…", id="status", markup=False)
         yield Footer()
 
@@ -238,11 +254,28 @@ class ReplayApp(App[int]):
             self._refresh_view()
 
     def on_status_changed(self, event: StatusChanged) -> None:
-        self._status_lines.append(event.text)
-        self._status_lines = self._status_lines[-3:]
+        # Keep complete output in a scrollable view; the footer is only a summary.
+        self.query_one("#output", RichLog).write(Text.from_ansi(event.text))
         if event.is_error:
             self._operation_error = event.text
+        else:
+            self._status_lines.append(event.text)
+            self._status_lines = self._status_lines[-3:]
         self._refresh_status()
+
+    def action_output(self) -> None:
+        self._showing_output = not self._showing_output
+        self.screen.set_class(self._showing_output, "show-output")
+        self.query_one("#title", Static).update(
+            "KOTEKOMI · SESSION OUTPUT · w to return"
+            if self._showing_output
+            else "KOTEKOMI · EXTRACTION INTELLIGENCE"
+        )
+        if self._showing_output:
+            self.query_one("#output", RichLog).focus()
+        else:
+            self.query_one(SourcePane).focus()
+            self.call_after_refresh(self._refresh_view)
 
     def on_operation_finished(self, event: OperationFinished) -> None:
         if self.exit_requested:
@@ -322,6 +355,8 @@ class ReplayApp(App[int]):
         )
 
     def _refresh_view(self, preserve_scroll: bool = True) -> None:
+        if self._showing_output:
+            return
         if self.current is None or not self._view_mounted:
             return
         snapshot = self.snapshots[self.current]
