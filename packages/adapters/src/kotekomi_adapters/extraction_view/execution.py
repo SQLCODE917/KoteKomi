@@ -7,6 +7,7 @@ import os
 import signal
 from collections.abc import Callable
 from io import StringIO
+from multiprocessing import resource_tracker
 from multiprocessing.connection import Connection
 from multiprocessing.process import BaseProcess
 from pathlib import Path
@@ -72,6 +73,10 @@ class IngestionProcess:
         worker: Callable[[IngestionProcessRequest, Connection], None],
         on_stopped: Callable[[str, bool], None],
     ) -> None:
+        # Bootstrap before Textual captures stderr: its capture stream reports
+        # fileno() == -1, which Python's first resource-tracker spawn otherwise
+        # tries to inherit. Subsequent worker launches reuse the tracker.
+        resource_tracker.ensure_running()
         self.worker = worker
         self.on_stopped = on_stopped
         self.request = IngestionProcessRequest(
