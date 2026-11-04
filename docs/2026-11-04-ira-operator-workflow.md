@@ -57,7 +57,9 @@ time or place composition, automatic acceptance, and prompt or policy changes.
 
 ### 1a. Case screening result
 
-No stored Event in the Anthropic-DoD run yields a complete simple proposition.
+The current selection and composition path has not demonstrated a semantically complete case
+for the stored Anthropic-DoD population; the bounded complement increment is specified in
+[IRA-01 Case Screening](2026-11-04-ira-case-screening.md).
 The previously demonstrated case `sge_8f37b32d221d8974c7725e42` is retained as a semantic-loss
 counterexample, and the population screening with its evidence and the two required decisions is
 recorded in [IRA-01 Case Screening](2026-11-04-ira-case-screening.md).

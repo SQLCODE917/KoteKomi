@@ -22,7 +22,7 @@ correctness.
 | Gate | Result |
 |---|---|
 | 1. Read the whole sentence and state its complete meaning | Applied to every Event |
-| 2. Confirm the Assertion representation can express it | **Fails for the entire population** |
+| 2. Confirm the Assertion representation can express it | Not demonstrated by the current path; requires the bounded complement increment below |
 | 3. Verify the stored selector and composer path | Applied to every Event |
 | 4. Present the case for approval | Not reached |
 
@@ -90,14 +90,46 @@ Removing bare `acl` from `_DETACHED_CLAUSE_RELATIONS` in
 made this Event stop realizing a subject role, so the claim was lost rather than completed.
 That change is reverted and parser-constituent tests pass on the reverted tree.
 
-### Next bounded step
+### Explicit composition contract (implementation pending)
 
-Extend the object role's selected boundary after selection, inside the shared Application Layer
-path, to absorb a contiguous `acl` subtree of the object head, and rebuild the selected answer's
-canonical boundary before composition.
-Retain the counterexamples as negative tests: `sge_8f37b32d221d8974c7725e42` (semantic loss),
-`sge_6054fa9e10adfd8c6ec99d0a` and `sge_fc5ecf8c1d8dfb15a312e0e4` (`unsupported_time_place`).
-IRA-01-A stays open until that construction works and the case is approved.
+The completed object content must reach composition through an explicit input.
+Editing `realized_roles[*].canonical_boundary` alone is insufficient: the composer resolves the
+selected label back to its candidate in the inventory, so an expanded annotation next to an
+unchanged candidate would make selection, composition, and replay disagree.
+
+The increment must satisfy all six conditions.
+
+1. Preserve the existing selection of the object head. The object label and its candidate stay
+   exactly as selected; the increment never rewrites a candidate label's meaning.
+2. Derive the permitted participial complement from the pinned dependency graph: one `acl`
+   dependent of the object head token, whose subtree is contiguous with the object span.
+3. Validate the complete span against authoritative source text: exact characters, single
+   contiguous range, inside the paragraph, and starting at the selected object head's start.
+4. Supply the completed content as an explicit composition input, for example
+   `ObjectContentCompletion(event_id, head_range, completed_range, derivation)` carried into
+   `compose_event_from_resolution` and applied to the object role only after the same validation.
+   A validated expanded candidate selected by its own new label is an acceptable alternative; a
+   silent mutation of an existing candidate is not.
+5. Use the completed span for packet presentation, Assertion construction, the supporting object
+   span, and the statement evidence target, so all four agree.
+6. Hold explicitly when the complement is absent, non-contiguous, plural, or contains
+   coordination or a further clause.
+
+Required regressions, all built from the stored tokens of
+`sge_14b44ada5ff18cabf168a42b`:
+
+- The proposed Assertion's `object_value` equals the exact full phrase
+  `a blog post rebuffing "inaccurate claims" from the Trump administration`.
+- The pending `Assertion` `ProposedChange` carries the same object phrase.
+- The packet's object text, the supporting object span, and the statement evidence text all
+  equal that phrase.
+- Subject selection is unchanged: subject `Amodei`, same span as before the increment.
+- Rejections: non-contiguous complement, two `acl` dependents, coordinated complement, and a
+  completed span whose characters do not match the source.
+- The retained counterexamples still hold: `sge_8f37b32d221d8974c7725e42` (semantic loss),
+  `sge_6054fa9e10adfd8c6ec99d0a` and `sge_fc5ecf8c1d8dfb15a312e0e4` (`unsupported_time_place`).
+
+IRA-01-A stays open until these regressions pass and the case is approved.
 
 ## Reproduction
 
