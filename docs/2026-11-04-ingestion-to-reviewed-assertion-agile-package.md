@@ -167,7 +167,7 @@ Acceptance:
 - [x] IRA-04-B: The proposed Assertion matches the reviewed subject, predicate, object, qualifiers, classifications, and evidence.
 - [x] IRA-04-C: Replay changes from held to composed and displays both supporting argument spans for the selected case.
 - [x] IRA-04-D: The existing review workflow discovers one pending Assertion ProposedChange; recomposition does not accept it.
-- [x] IRA-04-E: Retry after an interrupted write neither loses the proposal nor creates duplicate proposals for an unchanged decision.
+- [ ] IRA-04-E: Retry after an interrupted write neither loses the proposal nor creates duplicate proposals for an unchanged decision.
 
 ### IRA-05: Verify the operator journey and record product measures
 
