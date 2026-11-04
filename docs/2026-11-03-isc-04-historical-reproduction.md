@@ -20,6 +20,10 @@ The first correction removed that comparison for all four digests at once.
 ## 3. Correction: approve reviewed content, adopt only implementation bindings
 
 Reviewed content is approval evidence and stays frozen.
+The command's default data directory is `data/r18-current-regression`, so a default
+execution reads the reviewed development inputs.
+Historical reproduction still runs only through the pinned checkout, where the frozen
+contract and the frozen run root apply.
 The contract loader verifies two hashes against `reviewed_expectations.json`:
 
 - `policy_records_sha256` for the reviewed policy records.

@@ -420,3 +420,21 @@ def test_altered_reviewed_decision_text_is_rejected(tmp_path: Path) -> None:
             runner._prepare(args)
     finally:
         monkeypatch.undo()
+
+
+def test_default_data_directory_prepares_the_reviewed_current_regression(
+    tmp_path: Path,
+) -> None:
+    """The default command prepares from reviewed current-regression inputs.
+
+    No test override is applied here: the command's own defaults must load the
+    reviewed content and must not write into the frozen historical run root.
+    """
+    runner = _runner()
+    assert runner.DATA_DIR.name == "r18-current-regression"
+    assert "r18-current-regression" in str(runner.DEFAULT_RUN_ROOT)
+
+    args = argparse.Namespace(config=runner.DEFAULT_CONFIG, run_root=tmp_path / "run")
+
+    assert runner._prepare(args) == 0
+    assert (tmp_path / "run" / "preparation.json").exists()

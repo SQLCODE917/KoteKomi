@@ -53,8 +53,11 @@ from kotekomi_pipelines.model_runtime import build_model_task_runtime
 from pydantic import BaseModel, ConfigDict, Field
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
-DATA_DIR = REPOSITORY_ROOT / "data/r17-semantic-selection-contract"
-DEFAULT_RUN_ROOT = REPOSITORY_ROOT / "data/r18-semantic-instruction-discrimination-runs/run-001"
+# Current development regressions read reviewed current-regression inputs. The frozen
+# historical contract and run stay reproducible only through the pinned checkout
+# (`scripts/run_r18_historical_reproduction.sh`).
+DATA_DIR = REPOSITORY_ROOT / "data/r18-current-regression"
+DEFAULT_RUN_ROOT = REPOSITORY_ROOT / "data/r18-current-regression-runs/run-001"
 DEFAULT_CONFIG = REPOSITORY_ROOT / "docs/r6-calibrated-residual-ownership-run-config.toml"
 
 RUN_SCHEMA_VERSION = "semantic_instruction_discrimination_run_v1"
