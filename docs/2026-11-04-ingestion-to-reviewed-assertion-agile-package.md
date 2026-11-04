@@ -133,7 +133,7 @@ Its bindings prevent a decision from applying to a different Event, paragraph, o
 Acceptance:
 
 - [x] IRA-02-A: A command generates the packet from the ingested Event without hand-written source coordinates or IDs.
-- [ ] IRA-02-B: Every displayed evidence span replays against the archived Document representation.
+- [x] IRA-02-B: Every displayed evidence span replays against the archived Document representation.
 - [x] IRA-02-C: Tests reject incorrect coordinates, changed source bindings, and an Event selected from another run.
 - [x] IRA-02-D: Generation leaves accepted identity and Assertion state unchanged and exposes missing inputs explicitly.
 
@@ -164,7 +164,7 @@ The focused TDD defines retry behavior when canonical proposal storage succeeds 
 Acceptance:
 
 - [x] IRA-04-A: Recomposition requires no operator-authored `RecompositionRequest` JSON and invokes the retained production path.
-- [ ] IRA-04-B: The proposed Assertion matches the reviewed subject, predicate, object, qualifiers, classifications, and evidence.
+- [x] IRA-04-B: The proposed Assertion matches the reviewed subject, predicate, object, qualifiers, classifications, and evidence.
 - [x] IRA-04-C: Replay changes from held to composed and displays both supporting argument spans for the selected case.
 - [x] IRA-04-D: The existing review workflow discovers one pending Assertion ProposedChange; recomposition does not accept it.
 - [ ] IRA-04-E: Retry after an interrupted write neither loses the proposal nor creates duplicate proposals for an unchanged decision.

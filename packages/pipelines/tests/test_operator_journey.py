@@ -538,3 +538,51 @@ def test_outcome_write_failure_recovers_with_one_proposal(
         ]
     assert len(second) == 1
     assert second[0].id == first[0].id
+
+
+def test_role_boundaries_use_the_complete_selected_span() -> None:
+    """P2: statement spans reuse the selector's complete role boundaries."""
+    from kotekomi_application import (
+        DecontextualizationRoleKind,
+        SourceGroundedConjunctSelection,
+        SourceGroundedRoleSelection,
+        SourceGroundedSelectionResult,
+        SourceGroundedSelectionStatus,
+        SourceRange,
+    )
+    from kotekomi_pipelines.event_review_workflow import role_boundary_ranges
+
+    selection = SourceGroundedSelectionResult.model_construct(
+        event_id="sge_multitoken",
+        status=SourceGroundedSelectionStatus.SELECTED,
+        answer=__import__("kotekomi_application").ConstituentSelectionAnswer.model_construct(),
+        realized_roles=(
+            SourceGroundedRoleSelection(
+                role=DecontextualizationRoleKind.SUBJECT,
+                argument_head_token_id="t2",
+                conjuncts=(
+                    SourceGroundedConjunctSelection(
+                        selected_label="C1",
+                        canonical_boundary=SourceRange(start=0, end=9, text="Mira Chen"),
+                    ),
+                ),
+            ),
+            SourceGroundedRoleSelection(
+                role=DecontextualizationRoleKind.OBJECT,
+                argument_head_token_id="t5",
+                conjuncts=(
+                    SourceGroundedConjunctSelection(
+                        selected_label="C2",
+                        canonical_boundary=SourceRange(start=19, end=32, text="the agreement"),
+                    ),
+                ),
+            ),
+        ),
+    )
+
+    ranges = role_boundary_ranges(selection)
+
+    assert ranges["subject"] == (0, 9)
+    assert ranges["object"] == (19, 32)
+    text = "Mira Chen supports the agreement"
+    assert text[slice(*ranges["subject"])] == "Mira Chen"

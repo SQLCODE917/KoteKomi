@@ -20,13 +20,14 @@ from kotekomi_application import (
     EventCompositionRecord,
     EventConstructionDecisionInput,
     EventConstructionReviewError,
-    EventEntityLinguisticToken,
     EventReviewPacket,
     ReviewCandidateIdentity,
+    SourceGroundedSelectionResult,
     assertion_inputs_from_review,
     build_constituent_candidate_inventory,
     ingested_grounding_candidates,
     record_event_construction_decision,
+    select_source_grounded_constituents,
     validate_packet_bindings,
 )
 from kotekomi_application.ingestion_inspection import (
@@ -57,6 +58,17 @@ _REQUIRED_DECISIONS = (
 
 def _sha256(text: str) -> str:
     return hashlib.sha256(text.encode()).hexdigest()
+
+
+def role_boundary_ranges(selection: SourceGroundedSelectionResult) -> dict[str, tuple[int, int]]:
+    """Return each realized role's complete selected boundary."""
+    ranges: dict[str, tuple[int, int]] = {}
+    for role in selection.realized_roles:
+        starts = [conjunct.canonical_boundary.start for conjunct in role.conjuncts]
+        ends = [conjunct.canonical_boundary.end for conjunct in role.conjuncts]
+        if starts and ends:
+            ranges[role.role.value] = (min(starts), max(ends))
+    return ranges
 
 
 def _paragraph_event(
@@ -107,41 +119,27 @@ def build_event_review_packet(
     )
     node = next(node for node in bundle.nodes if node.id == paragraph.paragraph_node_id)
     view = next(view for view in bundle.text_views if view.id == node.text_view_id)
-    trigger = next(
-        (
-            token
-            for token in artifact.tokens
-            if (token.start, token.end) == (event.trigger_span.start, event.trigger_span.end)
-        ),
-        None,
+    inventory = build_constituent_candidate_inventory(
+        source_text=paragraph.text,
+        event_id=event_id,
+        tokens=artifact.tokens,
+        event_expression_start=event.trigger_span.start,
+        event_expression_end=event.trigger_span.end,
     )
-    subject = (
-        next(
-            (
-                token
-                for token in artifact.tokens
-                if token.dependency_relation in {"nsubj", "nsubj:pass"}
-                and token.head_token_id == trigger.token_id
-            ),
-            None,
-        )
-        if trigger is not None
-        else None
+    selection = select_source_grounded_constituents(
+        event_id=event_id,
+        source_text=paragraph.text,
+        inventory=inventory,
+        trigger_head_start=event.trigger_span.start,
+        trigger_head_end=event.trigger_span.end,
+        tokens=artifact.tokens,
     )
-    obj = (
-        next(
-            (
-                token
-                for token in artifact.tokens
-                if token.dependency_relation in {"obj", "iobj"}
-                and token.head_token_id == trigger.token_id
-            ),
-            None,
-        )
-        if trigger is not None
-        else None
-    )
-    subject_span = None if subject is None else (subject.start, subject.end)
+    role_ranges = role_boundary_ranges(selection)
+    subject_range = role_ranges.get("subject")
+    object_range = role_ranges.get("object")
+    subject_text = None if subject_range is None else paragraph.text[slice(*subject_range)]
+    object_text = None if object_range is None else paragraph.text[slice(*object_range)]
+    subject_span = subject_range
     candidates = tuple(
         sorted(
             (
@@ -187,14 +185,14 @@ def build_event_review_packet(
         trigger_start=event.trigger_span.start,
         trigger_end=event.trigger_span.end,
         relation_label=event.trigger_label,
-        subject_start=None if subject is None else subject.start,
-        subject_end=None if subject is None else subject.end,
-        subject_text=None if subject is None else subject.text,
-        object_start=None if obj is None else obj.start,
-        object_end=None if obj is None else obj.end,
-        object_text=None if obj is None else obj.text,
-        statement_start=_statement_start(event, subject, obj),
-        statement_end=_statement_end(event, subject, obj),
+        subject_start=None if subject_range is None else subject_range[0],
+        subject_end=None if subject_range is None else subject_range[1],
+        subject_text=subject_text,
+        object_start=None if object_range is None else object_range[0],
+        object_end=None if object_range is None else object_range[1],
+        object_text=object_text,
+        statement_start=_statement_start(event, subject_range, object_range),
+        statement_end=_statement_end(event, subject_range, object_range),
         candidates=candidates,
         accepted_identity_ids=accepted,
         required_decisions=() if review is not None else _REQUIRED_DECISIONS,
@@ -208,27 +206,27 @@ def build_event_review_packet(
 
 def _statement_start(
     event: EventAnnotation,
-    subject: EventEntityLinguisticToken | None,
-    obj: EventEntityLinguisticToken | None,
+    subject_range: tuple[int, int] | None,
+    object_range: tuple[int, int] | None,
 ) -> int:
     starts = [event.trigger_span.start]
-    if subject is not None:
-        starts.append(subject.start)
-    if obj is not None:
-        starts.append(obj.start)
+    if subject_range is not None:
+        starts.append(subject_range[0])
+    if object_range is not None:
+        starts.append(object_range[0])
     return min(starts)
 
 
 def _statement_end(
     event: EventAnnotation,
-    subject: EventEntityLinguisticToken | None,
-    obj: EventEntityLinguisticToken | None,
+    subject_range: tuple[int, int] | None,
+    object_range: tuple[int, int] | None,
 ) -> int:
     ends = [event.trigger_span.end]
-    if subject is not None:
-        ends.append(subject.end)
-    if obj is not None:
-        ends.append(obj.end)
+    if subject_range is not None:
+        ends.append(subject_range[1])
+    if object_range is not None:
+        ends.append(object_range[1])
     return max(ends)
 
 

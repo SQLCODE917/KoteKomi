@@ -4741,7 +4741,17 @@ def _review_event_packet(args: argparse.Namespace) -> int:
         "source_text_sha256": packet.source_text_sha256,
         "source_id": packet.source_id,
         "document_id": packet.document_id,
-        "trigger": {"start": packet.trigger_start, "end": packet.trigger_end},
+        "source_text": packet.source_text,
+        "trigger": {
+            "start": packet.trigger_start,
+            "end": packet.trigger_end,
+            "text": packet.source_text[packet.trigger_start : packet.trigger_end],
+        },
+        "statement": {
+            "start": packet.statement_start,
+            "end": packet.statement_end,
+            "text": packet.source_text[packet.statement_start : packet.statement_end],
+        },
         "relation_label": packet.relation_label,
         "subject": {
             "start": packet.subject_start,
@@ -4766,7 +4776,11 @@ def _review_event_packet(args: argparse.Namespace) -> int:
         "required_decisions": list(packet.required_decisions),
         "hold_reason": packet.hold_reason,
         "existing_review_id": packet.existing_review_id,
-        "evidence_target_id": packet.evidence_target_id,
+        "evidence": {
+            "mention_evidence_target_id": packet.evidence_target_id,
+            "statement_span": [packet.statement_start, packet.statement_end],
+            "statement_text": packet.source_text[packet.statement_start : packet.statement_end],
+        },
     }
     print(_json.dumps(payload, indent=2, sort_keys=True))
     return 0

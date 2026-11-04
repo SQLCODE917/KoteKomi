@@ -55,6 +55,35 @@ and not the package's development case):
 Declared out of scope: multi-subject composition, cross-view references, unsupported
 time or place composition, automatic acceptance, and prompt or policy changes.
 
+### 1a. Proposed replacement development case (agent-drafted; awaiting human review)
+
+The local PDF `raw/Anthropic-United_States_Department_of_Defense_dispute.pdf` (8 pages) is not
+tracked, but its text is readable, so this proposal does not require another full ingestion.
+Proposed excerpt, taken verbatim from the article text:
+
+> In Donald Trump's second presidency, Anthropic publicly disagreed with the
+> administration's policies and initiatives.
+
+Proposed Event sentence (the argument-bearing clause):
+
+> Anthropic publicly disagreed with the administration's policies and initiatives.
+
+| Field | Proposed value |
+|---|---|
+| Subject | `Anthropic` (Organization candidate; review confirms the identity) |
+| Predicate (reviewed) | `disagreed_with` |
+| Object | value `the administration's policies and initiatives` |
+| Type | `reported_observation` |
+| Source authority | `secondary` |
+| Attribution basis | `direct_document` |
+| Qualifiers | `polarity: affirmed`, `modality: actual` |
+| Statement evidence | the sentence span, containing subject, predicate, and object |
+
+The sentence carries subject, predicate, and object with no time or place role, which keeps it
+inside the documented supported structure. The paragraph node and exact offsets must come from
+the operator run; this proposal fixes the content to review, not the coordinates.
+Human review of this case is the open IRA-01-A item.
+
 ## 2. Contracts
 
 `kotekomi_application.event_construction_review` owns the packet DTO, the decision input,
