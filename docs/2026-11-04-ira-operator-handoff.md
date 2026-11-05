@@ -130,6 +130,14 @@ Success requires:
 Durable paths: `<ROOT>/state/kotekomi.db`, `<ROOT>/state/archive/`,
 `<ROOT>/state/token-artifacts/`, `<ROOT>/state/composition-outcomes/<sge_...>.json`.
 
+## 5a. If the fresh run does not reproduce the case
+
+A fresh model run may not reproduce the selected Event or its candidate.
+If it does not, keep the run and report the exact missing stage or hold:
+which paragraph has no Event, which Event realized no object, or which hold reason replaced
+composition.
+Do not substitute an older Event ID, and do not repair the output by hand.
+
 ## 6. Measures-report inputs to send back
 
 - the fresh root path and the assigned `igr_...`;

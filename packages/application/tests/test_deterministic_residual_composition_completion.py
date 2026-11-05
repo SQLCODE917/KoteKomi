@@ -222,14 +222,20 @@ def test_assertion_construction_completes_for_ahe_051(
 
     assert result.status is AssertionConstructionStatus.CONSTRUCTED
     assert result.assertion is not None
-    assert result.assertion.predicate == "is"
+    assertion = result.assertion
+    assert assertion.predicate == "is"
+    assert assertion.subject_value == "The April order"
+    assert assertion.object_value == "final"
+    assert assertion.qualifiers["polarity"] == "negated"
+    assert assertion.qualifiers["modality"] == "actual"
+    assert assertion.evidence_target_ids == ("etg_ahe_022",)
 
 
 def test_assertion_construction_blocks_on_unresolved_subject_identity(
     policy_records: tuple[ReferencePolicyRecord, ...],
 ) -> None:
     """A valid proposition with an unmapped entity subject is blocked."""
-    from kotekomi_application import DecontextualizedRole, SourceRange
+    from kotekomi_application import DecontextualizedRole
 
     record = next(item for item in policy_records if item.event_id == "AHE-051")
     provider = _FakeReferenceProvider(
@@ -247,7 +253,7 @@ def test_assertion_construction_blocks_on_unresolved_subject_identity(
         update={
             "subject": DecontextualizedRole(
                 role=proposition.subject.role,
-                exact_fragment=SourceRange(start=0, end=5, text="Alpha"),
+                exact_fragment=proposition.subject.exact_fragment,
                 entity_ref="EGE-019",
             )
         }
@@ -260,6 +266,7 @@ def test_assertion_construction_blocks_on_unresolved_subject_identity(
 
     assert result.status is AssertionConstructionStatus.BLOCKED
     assert result.assertion is None
+    assert result.block_reason is AssertionBlockReason.UNRESOLVED_SUBJECT_IDENTITY
 
 
 def test_assertion_construction_blocks_on_unmapped_predicate(
