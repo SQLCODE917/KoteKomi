@@ -106,6 +106,22 @@ Recognition at the derivation boundary is covered separately by
 `test_blog_post_complement_is_unsupported_because_it_governs_a_clause`, which runs on the
 stored parse with the unmodified derivation.
 
+## 3b. Retained-run disclosure and the live acceptance root
+
+The retained run `data/operator-r20-20261103-150517` **contains approvals created by earlier
+test runs** of the stored-case tests, before those tests copied the run. It is evidence, not a
+fresh fixture: the copied-run tests are supplementary checks, and their state starts
+post-approval.
+Clean-checkout acceptance evidence is the deterministic fresh-state journey in
+`packages/pipelines/tests/test_operator_journey.py`, which drives normal ingestion from the
+committed PDF and captured analyzer/model responses into a fresh temporary Ledger and asserts:
+the Event and candidate exist with hold `assertion_inputs_unavailable`, no accepted identity
+occurrence or construction review exists, the review creates the prerequisites, recomposition
+creates exactly one pending Assertion proposal, and replay shows the Assertion with both
+supporting spans.
+The live acceptance run and the product-measure report must use a **fresh state root**, not the
+retained run.
+
 ## 4. Acceptance evidence
 
 | Check | Evidence |

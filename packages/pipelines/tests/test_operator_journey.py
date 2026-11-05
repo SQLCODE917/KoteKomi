@@ -153,6 +153,16 @@ def test_normal_ingestion_persists_event_candidate_and_hold(journey: Journey) ->
     }
     assert packet.accepted_identity_ids == ()
 
+    # A fresh ingestion creates no accepted prerequisite and no Assertion proposal.
+    with sqlite_ledger_transaction(journey.ledger) as repository:
+        assert repository.list_identity_occurrences() == ()
+        assert repository.list_event_construction_reviews() == ()
+        assert [
+            change
+            for change in repository.list_proposed_changes()
+            if change.proposed_json.get("record_type") in {"IdentityOccurrence", "Assertion"}
+        ] == []
+
     stored = CompositionOutcomeStore(journey.state / "composition-outcomes").load(journey.event_id)
     assert stored.status is EventCompositionStatus.HELD
     assert stored.hold_reason == "assertion_inputs_unavailable"

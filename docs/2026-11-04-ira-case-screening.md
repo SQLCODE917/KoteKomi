@@ -186,3 +186,10 @@ inventory for the Event, run `select_source_grounded_constituents`, then call
 `compose_event_from_resolution` with one synthetic accepted organization reference.
 Record the selection status, realized roles, canonical boundaries, and composition hold reason.
 No model call is involved.
+
+## Content decision
+
+The reviewer accepted the proposed content as a `source_report` development expectation:
+subject the United States government classified as an Organization, predicate `started`, object
+`the 2026 Iran war`, affirmed/actual, secondary/direct_document.
+Human approval is still recorded through the operator workflow during the live run.
