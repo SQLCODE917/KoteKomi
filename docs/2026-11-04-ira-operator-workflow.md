@@ -122,6 +122,19 @@ supporting spans.
 The live acceptance run and the product-measure report must use a **fresh state root**, not the
 retained run.
 
+## 3c. Verification provenance
+
+Two results are recorded separately, at different revisions:
+
+| Scope | Revision | Result |
+|---|---|---|
+| Full current suite | `9f945d5` | `EXIT=0` (`/tmp/full2.log`, log inspected; it does **not** cover the later test correction) |
+| Reconciled residual-composition file (8 tests) | `1b5fe11` | 8 passed; `ruff format --check` 691 files; `ruff check` clean; `pyright` 0 errors on the file |
+
+A full-suite run at `1b5fe11` has not been performed; the only change after `9f945d5` is one
+test file, so the full-suite result is reported for `9f945d5` and the focused result for
+`1b5fe11`, not merged into a single claim.
+
 ## 4. Acceptance evidence
 
 | Check | Evidence |
