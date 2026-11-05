@@ -6,6 +6,10 @@ The derivation is made unsupported deterministically; the hold behaviour under
 test is the production path.
 """
 
+# pyright: reportUnknownParameterType=false, reportMissingParameterType=false
+# pyright: reportUnknownArgumentType=false, reportUnknownVariableType=false
+# pyright: reportUnknownMemberType=false, reportArgumentType=false
+
 from __future__ import annotations
 
 import io

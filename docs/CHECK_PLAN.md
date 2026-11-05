@@ -244,7 +244,7 @@
 
 ## 12. Ingestion to reviewed Assertion (planned)
 
-- Track IRA-01 through IRA-05 in the [Ingestion to Reviewed Assertion Agile Package](2026-11-04-ingestion-to-reviewed-assertion-agile-package.md); implementation has not started.
+- Verify the IRA operator workflow in the [Ingestion to Reviewed Assertion Agile Package](2026-11-04-ingestion-to-reviewed-assertion-agile-package.md): `uv run pytest packages/pipelines/tests/test_operator_journey.py -q` proves the fresh-state packet, review, recomposition, pending Assertion proposal, and replay spans; `uv run pytest packages/pipelines/tests/test_operator_journey_stored_case.py -q` supplements it with the retained run copied into a temporary root; the live acceptance run and its measures report require a fresh state root
 - Each deliverable adds its exact repeatable verification commands here before completion; this plan does not claim future commands exist.
 - Require a human-reviewed development case and a deterministic boundary test: normal ingestion produces the Event and candidate, packet generation obtains replayable evidence, operator decisions accept prerequisites, explicit recomposition produces a pending Assertion ProposedChange, and replay shows its proposed content and argument spans.
 - Test supported command paths with real SQLite transactions; reject stale Event/source bindings, replay-invalid evidence, unapproved prerequisites, and duplicate application after retry.

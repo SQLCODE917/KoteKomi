@@ -4,6 +4,10 @@ The selected boundary may carry a determiner while the reviewed occurrence does 
 selected `the US` with an accepted `US` occurrence still yields the entity role.
 """
 
+# pyright: reportUnknownParameterType=false, reportMissingParameterType=false
+# pyright: reportUnknownArgumentType=false, reportUnknownVariableType=false
+# pyright: reportUnknownMemberType=false, reportArgumentType=false
+
 from __future__ import annotations
 
 import hashlib

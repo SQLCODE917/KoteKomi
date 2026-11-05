@@ -140,6 +140,9 @@ retained run.
 
 ## 5. Operator handoff for the real-PDF check (IRA-05-C)
 
+The exact fresh-root commands, Event discovery, probes, and measures inputs are in
+[IRA Operator Handoff](2026-11-04-ira-operator-handoff.md).
+
 Commands, run against a disposable state root and the real model configuration:
 
 ```bash

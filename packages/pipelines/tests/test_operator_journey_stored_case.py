@@ -5,6 +5,10 @@ Precondition: the disposable operator run exists at
 that disposable Ledger and calls no model.
 """
 
+# pyright: reportUnknownParameterType=false, reportMissingParameterType=false
+# pyright: reportUnknownArgumentType=false, reportUnknownVariableType=false
+# pyright: reportUnknownMemberType=false, reportArgumentType=false
+
 from __future__ import annotations
 
 from datetime import UTC, datetime
@@ -123,7 +127,7 @@ UNSUPPORTED_EVENT = "sge_14b44ada5ff18cabf168a42b"
 
 def test_stored_unsupported_case_holds_without_patching(tmp_path: Path) -> None:
     """The stored blog-post complement governs a clause, so it holds unpatched."""
-    root, LEDGER, ARCHIVE = _isolated_copy(tmp_path)
+    _, LEDGER, ARCHIVE = _isolated_copy(tmp_path)
     SQLiteLedgerInitializer(LEDGER).initialize()
 
     packet = build_event_review_packet(
