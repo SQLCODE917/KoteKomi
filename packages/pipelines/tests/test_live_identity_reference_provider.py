@@ -209,3 +209,46 @@ def test_translates_an_organization_occurrence() -> None:
 
     assert references.entities[0].entity_id == "org_anthropic"
     assert references.entities[0].entity_kind == "organization"
+
+
+def test_disjoint_occurrence_is_skipped_and_overlap_fails() -> None:
+    """An occurrence elsewhere in the view is skipped; a partial overlap raises."""
+    ledger = _Ledger()
+    ledger.actors["act_alpha"] = Actor(id="act_alpha", name="Alpha")
+    elsewhere = _target("etg_elsewhere", "Alpha").model_copy(
+        update={"start_char": 900, "end_char": 905}
+    )
+    ledger.targets["etg_elsewhere"] = elsewhere
+    ledger.occurrences = (
+        _occurrence("ioc_elsewhere", "act_alpha", IdentityOccurrenceKind.ACTOR, "etg_elsewhere"),
+    )
+    provider = LiveIdentityReferenceProvider(
+        cast(LiveIdentityReferenceLedger, ledger),
+        representation_id="rep_r20",
+        text_view_id="tvw_r20",
+        node_start_char=0,
+    )
+
+    resolution = provider.resolve_references_with_diagnostics(
+        "AHE-001", "Alpha met Beta.", "b" * 64
+    )
+
+    assert resolution.references.entities == ()
+    assert resolution.diagnostics == ()
+
+    overlapping = _target("etg_overlap", "lpha").model_copy(update={"start_char": 1, "end_char": 5})
+    ledger.targets["etg_overlap"] = overlapping
+    ledger.occurrences = (
+        _occurrence("ioc_overlap", "act_alpha", IdentityOccurrenceKind.ACTOR, "etg_overlap"),
+    )
+    ledger.actors["act_alpha"] = Actor(id="act_alpha", name="Alpha")
+
+    with pytest.raises(LiveIdentityReferenceError) as error:
+        LiveIdentityReferenceProvider(
+            cast(LiveIdentityReferenceLedger, ledger),
+            representation_id="rep_r20",
+            text_view_id="tvw_r20",
+            node_start_char=2,
+        ).resolve_references_with_diagnostics("AHE-001", "Alpha met Beta.", "b" * 64)
+
+    assert error.value.reason is LiveIdentityReferenceErrorReason.COORDINATE_MISMATCH

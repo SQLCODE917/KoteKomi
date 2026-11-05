@@ -24,21 +24,29 @@ from kotekomi_pipelines.event_review_workflow import (
     record_review_decision,
 )
 
-ROOT = Path(__file__).resolve().parents[3] / "data" / "operator-r20-20261103-150517"
-LEDGER = ROOT / "kotekomi.db"
-ARCHIVE = ROOT / "archive"
+RETAINED = Path(__file__).resolve().parents[3] / "data" / "operator-r20-20261103-150517"
 RUN = "igr_3a167add040a4fcc8aec6aba36363502"
 EVENT = "sge_fe4ca1d0afb0c91dbfa9df9d"
 NOW = datetime(2026, 1, 1, tzinfo=UTC)
 
 pytestmark = pytest.mark.skipif(
-    not LEDGER.is_file(),
-    reason="the disposable Anthropic-DoD operator run is not present in this checkout",
+    not (RETAINED / "kotekomi.db").is_file(),
+    reason="the retained Anthropic-DoD operator run is not present in this checkout",
 )
 
 
-def test_operator_journey_on_the_stored_case() -> None:
+def _isolated_copy(tmp_path: Path) -> tuple[Path, Path, Path]:
+    """Copy the retained run so the tests never mutate operator evidence."""
+    import shutil
+
+    root = tmp_path / "state"
+    shutil.copytree(RETAINED, root)
+    return root, root / "kotekomi.db", root / "archive"
+
+
+def test_operator_journey_on_the_stored_case(tmp_path: Path) -> None:
     # The disposable run predates the reviewed-decision table; migrate it in place.
+    root, LEDGER, ARCHIVE = _isolated_copy(tmp_path)
     SQLiteLedgerInitializer(LEDGER).initialize()
 
     packet = build_event_review_packet(
@@ -94,7 +102,7 @@ def test_operator_journey_on_the_stored_case() -> None:
     assert assertion.status.value == "proposed"
     assert assertion.evidence_target_ids == (review.statement_evidence_target_id,)
 
-    annotations = CompositionOutcomeStore(ROOT / "composition-outcomes").annotations((EVENT,))
+    annotations = CompositionOutcomeStore(root / "composition-outcomes").annotations((EVENT,))
     assert [item.status for item in annotations] == ["composed"]
 
     with sqlite_ledger_transaction(LEDGER) as repository:
@@ -113,8 +121,9 @@ def test_operator_journey_on_the_stored_case() -> None:
 UNSUPPORTED_EVENT = "sge_14b44ada5ff18cabf168a42b"
 
 
-def test_stored_unsupported_case_holds_without_patching() -> None:
+def test_stored_unsupported_case_holds_without_patching(tmp_path: Path) -> None:
     """The stored blog-post complement governs a clause, so it holds unpatched."""
+    root, LEDGER, ARCHIVE = _isolated_copy(tmp_path)
     SQLiteLedgerInitializer(LEDGER).initialize()
 
     packet = build_event_review_packet(
@@ -126,6 +135,15 @@ def test_stored_unsupported_case_holds_without_patching() -> None:
     # A repeated run may already carry the persisted hold instead of the initial one.
     assert packet.hold_reason in {"unsupported_object_complement", "assertion_inputs_unavailable"}
     assert packet.object_completion is None
+
+    with sqlite_ledger_transaction(LEDGER) as repository:
+        proposals_before = len(
+            [
+                change
+                for change in repository.list_proposed_changes()
+                if change.proposed_json.get("record_type") == "Assertion"
+            ]
+        )
 
     candidate = packet.candidates[0]
     record_review_decision(
@@ -162,11 +180,10 @@ def test_stored_unsupported_case_holds_without_patching() -> None:
     assert composed.assertion is None
 
     with sqlite_ledger_transaction(LEDGER) as repository:
-        assert [
+        proposals_after = [
             change
             for change in repository.list_proposed_changes()
             if change.proposed_json.get("record_type") == "Assertion"
-            and change.source_id is not None
-            and change.proposed_json.get("stable_label", "").startswith("ast_")
-            and change.proposed_json.get("stable_label") in {}
-        ] == []
+        ]
+    # Recomposition must not add an Assertion proposal for this Event.
+    assert len(proposals_after) == proposals_before
