@@ -38,7 +38,7 @@ root = "<absolute model-resources path>"
 ```bash
 uv run kotekomi --config "$ROOT/kotekomi.toml" ingest \
   "raw/Anthropic–United_States_Department_of_Defense_dispute.pdf" --url "<source-url>"
-uv run kotekomi ingestions list --ledger-path "$ROOT/state/kotekomi.db"
+uv run kotekomi --config "$ROOT/kotekomi.toml" ingestions list
 ```
 
 ## 3. Discover the new run's Event IDs
@@ -54,6 +54,26 @@ for path in sorted(root.glob("*.json")):
     print(record["event_id"], record["status"], record.get("hold_reason"))' \
   "$ROOT/state/composition-outcomes"
 ```
+
+## 3a. Identify the agreed Event by its trigger and source clause
+
+`review event-packet` prints the trigger, the statement span, and the source passage, so it is the
+actionable way to find the agreed `started` Event. Run it for every Event ID and keep one line per
+Event:
+
+```bash
+for event in $(ls "$ROOT/state/composition-outcomes" | sed 's/\.json$//'); do
+  uv run kotekomi --config "$ROOT/kotekomi.toml" review event-packet \
+    --run <igr_...> --event "$event" > "$ROOT/packet-$event.json"
+  uv run python -c 'import json,sys
+packet = json.load(open(sys.argv[1]))
+print(packet["event_id"], "|", packet["trigger"]["text"], "|", packet["statement"]["text"],
+      "|", packet.get("hold_reason"))' "$ROOT/packet-$event.json"
+done
+```
+
+Choose the line whose trigger is `started` and whose statement text is
+`the US started the 2026 Iran war`. That Event ID is the one to review.
 
 ## 4. Review and recompose the agreed case
 
