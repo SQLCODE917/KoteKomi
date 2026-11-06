@@ -1,0 +1,160 @@
+{
+ "record": "ipi-development-manifest-v1",
+ "package": "intelligence-pipeline-improvement",
+ "status": "proposed",
+ "reviewer": null,
+ "approved_on": null,
+ "baseline_revision": "7dc9a44",
+ "attempt_budget_seconds": 300,
+ "passage_count": 6,
+ "reference_count": 8,
+ "partition_shape": {
+  "straightforward_statements": 2,
+  "qualified_statements": 6,
+  "documents": 2
+ },
+ "passages": [
+  {
+   "passage_id": "DEV-01",
+   "source_path": "raw/Anthropic–United_States_Department_of_Defense_dispute.pdf",
+   "source_sha256": "c63c85796559453acf708dab46a35da36ffed00a408a25275576ba07138e9624",
+   "page": 1,
+   "paragraph_node_id": "nod_f1e64380625a2f2c533fc277_0008",
+   "text": "The United States Department of Defense began developing lethal autonomous weapons as early as the Reagan  administration. [1] The  Department  of  Defense  established  a  policy  on  the  use  of  artificial intelligence  in  2012,  Directive  3000.09. [2] Efforts  to  utilize  artificial  intelligence  intensified  under  the term  of  Secretary Ash  Carter. [3] The  Department  of  Defense's  use  of  artificial  intelligence  for  Project Maven prompted concerns within Google in 2018, leading to protests and mass resignations. [4]",
+   "text_sha256": "cd155e49324b2678a0d80829f2476812f6301df6f55a963d991d6c402361c227",
+   "context_before": "Since  January  2026,  the  United  States  Department  of  Defense  has  conflicted  with  the  artificial intelligence  company Anthropic  over  the  use  of  its  products  for  military  purposes  and  mass  domestic surveillance.",
+   "context_after": "In Donald Trump's second presidency, Anthropic publicly disagreed with the administration's policies and initiatives. In January 2025, Anthropic CEO Dario Amodei criticized the artificial intelligence investment project Stargate as \"chaotic\" and opposed Trump's rescission of president Joe Biden's Executive Order on Artificial Intelligence, but noted that Anthropic had held discussions with Trump officials about artificial intelligence policy. [5] Amid discussions over the One Big Beautiful Bill Act, Anthropic privately lobbied for Congress to vote against a bill preventing states from regulating artificial intelligence and expressed opposition to an artificial intelligence agreement signed among Gulf states in Trump's visit to the Middle East  in  May.  According  to Semafor ,  Trump  officials  chastised  Anthropic's  hiring  of  several  officials involved  in  the  Biden  administration,  including  Elizabeth  Kelly,  the  former  director  of  the  Artificial Intelligence Safety Institute; Tarun Chhabra, the coordinator for technology and national security in the National Security Council; and Ben Buchanan, Biden's advisor for artificial intelligence. [6] The following month, Amodei wrote an op-ed in The New York Times describing  the  artificial  intelligence  regulation bill, then tied to the One Big Beautiful Bill Act, as \"far too blunt an instrument\". [7]",
+   "statements": [
+    {
+     "reference_id": "R-DEV-01",
+     "kind": "qualified",
+     "statement": "The Department of Defense established a policy on the use of artificial intelligence in 2012.",
+     "required_content": "The Department of Defense; established; a policy on the use of artificial intelligence; the year 2012",
+     "admissible_omissions": "`, Directive 3000.09` is an order number that names the same policy.",
+     "in_scope_rationale": "An ordinary institutional action with one required year inside a paragraph that also contains three further statements."
+    },
+    {
+     "reference_id": "R-DEV-02",
+     "kind": "qualified",
+     "statement": "The Department of Defense began developing lethal autonomous weapons as early as the Reagan administration.",
+     "required_content": "The Department of Defense; began developing; lethal autonomous weapons; the bound `as early as the Reagan administration`",
+     "admissible_omissions": "The footnote marker `[1]` is not part of the meaning.",
+     "in_scope_rationale": "A duration statement whose temporal bound is required."
+    }
+   ]
+  },
+  {
+   "passage_id": "DEV-02",
+   "source_path": "raw/Anthropic–United_States_Department_of_Defense_dispute.pdf",
+   "source_sha256": "c63c85796559453acf708dab46a35da36ffed00a408a25275576ba07138e9624",
+   "page": 1,
+   "paragraph_node_id": "nod_f1e64380625a2f2c533fc277_0010",
+   "text": "In Donald Trump's second presidency, Anthropic publicly disagreed with the administration's policies and initiatives. In January 2025, Anthropic CEO Dario Amodei criticized the artificial intelligence investment project Stargate as \"chaotic\" and opposed Trump's rescission of president Joe Biden's Executive Order on Artificial Intelligence, but noted that Anthropic had held discussions with Trump officials about artificial intelligence policy. [5] Amid discussions over the One Big Beautiful Bill Act, Anthropic privately lobbied for Congress to vote against a bill preventing states from regulating artificial intelligence and expressed opposition to an artificial intelligence agreement signed among Gulf states in Trump's visit to the Middle East  in  May.  According  to Semafor ,  Trump  officials  chastised  Anthropic's  hiring  of  several  officials involved  in  the  Biden  administration,  including  Elizabeth  Kelly,  the  former  director  of  the  Artificial Intelligence Safety Institute; Tarun Chhabra, the coordinator for technology and national security in the National Security Council; and Ben Buchanan, Biden's advisor for artificial intelligence. [6] The following month, Amodei wrote an op-ed in The New York Times describing  the  artificial  intelligence  regulation bill, then tied to the One Big Beautiful Bill Act, as \"far too blunt an instrument\". [7]",
+   "text_sha256": "f9e7331550f2264199d6fa7570d4444647a81630d80629db9b78d1561b0e295c",
+   "context_before": "The United States Department of Defense began developing lethal autonomous weapons as early as the Reagan  administration. [1] The  Department  of  Defense  established  a  policy  on  the  use  of  artificial intelligence  in  2012,  Directive  3000.09. [2] Efforts  to  utilize  artificial  intelligence  intensified  under  the term  of  Secretary Ash  Carter. [3] The  Department  of  Defense's  use  of  artificial  intelligence  for  Project Maven prompted concerns within Google in 2018, leading to protests and mass resignations. [4]",
+   "context_after": "Prior to the dispute, the Trump administration had integrated Anthropic's services. By November 2024, Anthropic had already partnered with Palantir and Amazon Web Services, companies that offered services with FedRAMP authorization. In the Biden administration, Anthropic had reached an agreement with the AI Safety Institute and had participated in a nuclear information safety evaluation. [8]  The Department of Homeland Security  authorized  its  workers  to  use  commercial  artificial  intelligence  systems,  including Anthropic's  Claude,  until  May  2025. [9] Through  its  interoperability  with  Palantir,  a  company  heavily involved in data analysis and analytics at the Department of Defense, Anthropic's technology achieved relatively widespread usage in the U.S. military. [10] The following month, Anthropic announced that it would allow national security customers to use Claude Gov. [11][12] Anthropic's orthogonal usage policy to the  surveillance  systems  implemented  at  the  Federal  Bureau  of  Investigation,  the  Secret  Service,  and Immigration and Customs Enforcement led to a conflict between Anthropic and the Trump administration by September. [13] That month,  Amodei criticized Trump's approach to export restrictions on semiconductors. [14]",
+   "statements": [
+    {
+     "reference_id": "R-DEV-03",
+     "kind": "qualified",
+     "statement": "Anthropic publicly disagreed with the administration's policies and initiatives.",
+     "required_content": "Anthropic; publicly disagreed; the coordinated object `the administration's policies and initiatives`; the identity of the administration",
+     "admissible_omissions": "None. The opening frame `In Donald Trump's second presidency` fixes which administration the sentence means, so it is required context.",
+     "in_scope_rationale": "A stance statement whose object is a coordination and whose administration identity depends on the opening frame."
+    }
+   ]
+  },
+  {
+   "passage_id": "DEV-03",
+   "source_path": "raw/Anthropic–United_States_Department_of_Defense_dispute.pdf",
+   "source_sha256": "c63c85796559453acf708dab46a35da36ffed00a408a25275576ba07138e9624",
+   "page": 1,
+   "paragraph_node_id": "nod_f1e64380625a2f2c533fc277_0011",
+   "text": "Prior to the dispute, the Trump administration had integrated Anthropic's services. By November 2024, Anthropic had already partnered with Palantir and Amazon Web Services, companies that offered services with FedRAMP authorization. In the Biden administration, Anthropic had reached an agreement with the AI Safety Institute and had participated in a nuclear information safety evaluation. [8]  The Department of Homeland Security  authorized  its  workers  to  use  commercial  artificial  intelligence  systems,  including Anthropic's  Claude,  until  May  2025. [9] Through  its  interoperability  with  Palantir,  a  company  heavily involved in data analysis and analytics at the Department of Defense, Anthropic's technology achieved relatively widespread usage in the U.S. military. [10] The following month, Anthropic announced that it would allow national security customers to use Claude Gov. [11][12] Anthropic's orthogonal usage policy to the  surveillance  systems  implemented  at  the  Federal  Bureau  of  Investigation,  the  Secret  Service,  and Immigration and Customs Enforcement led to a conflict between Anthropic and the Trump administration by September. [13] That month,  Amodei criticized Trump's approach to export restrictions on semiconductors. [14]",
+   "text_sha256": "d950958d35ca62e8710eeb4147ead86f010d1be215d82b0c25eb4f5c3c8793f0",
+   "context_before": "In Donald Trump's second presidency, Anthropic publicly disagreed with the administration's policies and initiatives. In January 2025, Anthropic CEO Dario Amodei criticized the artificial intelligence investment project Stargate as \"chaotic\" and opposed Trump's rescission of president Joe Biden's Executive Order on Artificial Intelligence, but noted that Anthropic had held discussions with Trump officials about artificial intelligence policy. [5] Amid discussions over the One Big Beautiful Bill Act, Anthropic privately lobbied for Congress to vote against a bill preventing states from regulating artificial intelligence and expressed opposition to an artificial intelligence agreement signed among Gulf states in Trump's visit to the Middle East  in  May.  According  to Semafor ,  Trump  officials  chastised  Anthropic's  hiring  of  several  officials involved  in  the  Biden  administration,  including  Elizabeth  Kelly,  the  former  director  of  the  Artificial Intelligence Safety Institute; Tarun Chhabra, the coordinator for technology and national security in the National Security Council; and Ben Buchanan, Biden's advisor for artificial intelligence. [6] The following month, Amodei wrote an op-ed in The New York Times describing  the  artificial  intelligence  regulation bill, then tied to the One Big Beautiful Bill Act, as \"far too blunt an instrument\". [7]",
+   "context_after": "Anthropic's strategy has mirrored Amodei's views toward Trump; in a Facebook post ahead of the 2024 presidential election, Amodei urged his associates to vote for vice president Kamala Harris over Trump, describing him as a \"feudal warlord\". As the Trump administration targeted law firms, Amodei cut ties with the firms Skadden, Arps, Slate, Meagher & Flom and Latham & Watkins, which reached agreements with  the  Trump  administration  to  avoid  punishment.  David  Sacks,  Trump's  advisor  for  artificial intelligence  and  cryptocurrency,  said  on All-In (2020-present)  that Anthropic  was  among  several  \"AI doomers\"  that  support  regulation  he  saw  as  overly  restrictive.  According  to The  Wall  Street  Journal , officials close to Sacks examined whether Anthropic's Claude was a \"woke AI\"; in July, Trump signed an executive order \"Preventing Woke AI in the Federal Government \". [15]",
+   "statements": [
+    {
+     "reference_id": "R-DEV-04",
+     "kind": "qualified",
+     "statement": "The Trump administration had integrated Anthropic's services.",
+     "required_content": "The Trump administration; had integrated; Anthropic's services",
+     "admissible_omissions": "`Prior to the dispute` states relative chronology; the statement's meaning does not depend on the dispute.",
+     "in_scope_rationale": "A past-perfect integration statement with a required object and an optional time frame."
+    },
+    {
+     "reference_id": "R-DEV-05",
+     "kind": "straightforward",
+     "statement": "Dario Amodei criticized Trump's approach to export restrictions on semiconductors.",
+     "required_content": "Dario Amodei; criticized; the complete object phrase including the nested complement",
+     "admissible_omissions": "`That month` is relative time that does not change the statement.",
+     "in_scope_rationale": "A straightforward transitive statement whose object carries a nested prepositional complement."
+    }
+   ]
+  },
+  {
+   "passage_id": "DEV-04",
+   "source_path": "raw/Anthropic–United_States_Department_of_Defense_dispute.pdf",
+   "source_sha256": "c63c85796559453acf708dab46a35da36ffed00a408a25275576ba07138e9624",
+   "page": 2,
+   "paragraph_node_id": "nod_f1e64380625a2f2c533fc277_0015",
+   "text": "In  December  2025,  secretary  of  defense  Pete  Hegseth  announced  GenAI.mil,  an  artificial  intelligence platform  for  the  Department  of  Defense.  The  department  initially  contracted  Google  Gemini  for  the platform, then OpenAI's ChatGPT. [19][20] The following month, Hegseth announced that the Department of Defense would additionally contract xAI's Grok for use in the military, decrying \"woke AI\". [21]",
+   "text_sha256": "c5b74218e413464bcf1cb1f82e9293b44bebc035b5c224c7b1a09d081654afb9",
+   "context_before": "Sacks viewed Amodei's decision to attend the World Economic Forum over Trump's second inauguration; his  hiring  of  Biden  officials;  and  Anthropic's  association  with  the  philanthropic  initiative  Open Philanthropy as evidence that Anthropic would not support Trump's agenda. [15] In October 2025, Sacks stated that  Anthropic was \"running a sophisticated regulatory capture strategy based on fearmongering.\" [16] That month, Amodei published a blog post rebuffing \"inaccurate claims\" from the Trump administration  on  Anthropic's  policies,  intensifying  the  dispute.  Amodei's  statement  included  views explicitly espoused by vice president JD Vance. [17]  In December, Amodei met with Trump officials and several senators in an effort to improve Anthropic's relationship with the Trump administration. [18]",
+   "context_after": "In January 2026, Semafor reported that the Department of Defense had conflicted with Anthropic over its policies on lethal military force and that Hegseth's comment on woke AI was a reference to Anthropic. [22] According  to  Reuters,  Anthropic  representatives  opposed  the  use  of  the  company's  products  for surveillance  or  to  develop  lethal  autonomous  weapons. [23] The  dispute  between  Anthropic  and  the Department of Defense resulted in the termination of a contract worth an estimated US$200 million. [24]",
+   "statements": [
+    {
+     "reference_id": "R-DEV-06",
+     "kind": "qualified",
+     "statement": "Pete Hegseth announced GenAI.mil, an artificial intelligence platform for the Department of Defense, in December 2025.",
+     "required_content": "Pete Hegseth; announced; GenAI.mil; the platform description; the month",
+     "admissible_omissions": "The footnote markers `[19][20]` are not part of the meaning.",
+     "in_scope_rationale": "A straightforward announcement whose object carries an appositive description and whose statement carries a required date."
+    }
+   ]
+  },
+  {
+   "passage_id": "DEV-05",
+   "source_path": "raw/Artificial_intelligence_safety_institute.pdf",
+   "source_sha256": "2220220010291aa4a2ccc8286b2f4c5e96cdbb673392f289682c2c84104f5253",
+   "page": 1,
+   "paragraph_node_id": "nod_561e34f74a03ac8f05edb4a3_0008",
+   "text": "At the AI Seoul Summit in May 2024, the European Union and other countries agreed to create their own AI safety institutes, forming an international network. [1]",
+   "text_sha256": "c29d914849803e39af70dbf0cbfb77be6ccb2938abb0e454162d737193fa2a87",
+   "context_before": "An artificial intelligence safety institute [1] is a type of state-backed organization aiming to evaluate and ensure the safety of advanced artificial intelligence (AI) models, also called frontier AI models. [2]",
+   "context_after": "On 31 January 2025, the government of France created the Institut national pour l'évaluation et la sécurité de l'intelligence artificielle (INESIA), or the National Institute for AI Evaluation and Security. [17][18]",
+   "statements": [
+    {
+     "reference_id": "R-DEV-07",
+     "kind": "qualified",
+     "statement": "The European Union and other countries agreed to create their own AI safety institutes in May 2024.",
+     "required_content": "The European Union; other countries; agreed; their own AI safety institutes; May 2024",
+     "admissible_omissions": "`At the AI Seoul Summit` names the venue and `forming an international network` states the consequence; each is a separate meaning.",
+     "in_scope_rationale": "A collective action with a coordinated subject and a required date."
+    }
+   ]
+  },
+  {
+   "passage_id": "DEV-06",
+   "source_path": "raw/Artificial_intelligence_safety_institute.pdf",
+   "source_sha256": "2220220010291aa4a2ccc8286b2f4c5e96cdbb673392f289682c2c84104f5253",
+   "page": 2,
+   "paragraph_node_id": "nod_561e34f74a03ac8f05edb4a3_0018",
+   "text": "On 31 January 2025, the government of France created the Institut national pour l'évaluation et la sécurité de l'intelligence artificielle (INESIA), or the National Institute for AI Evaluation and Security. [17][18]",
+   "text_sha256": "fc8ccd6b5ed67bcd24abf42693d73b302d92ef0534d23acb85b6d281827a2afa",
+   "context_before": "At the AI Seoul Summit in May 2024, the European Union and other countries agreed to create their own AI safety institutes, forming an international network. [1]",
+   "context_after": "The  Japan  AISI  (or  J-AISI) [26] was  founded  in  February 2024. Part of the Information Technology Promotion Agency, it  employs  about  23  people. [15]",
+   "statements": [
+    {
+     "reference_id": "R-DEV-08",
+     "kind": "straightforward",
+     "statement": "The government of France created INESIA on 31 January 2025.",
+     "required_content": "The government of France; created; the named institute; the date",
+     "admissible_omissions": "The French legal name and the English gloss name the same institute; `INESIA` is the short name the Source gives.",
+     "in_scope_rationale": "A straightforward creation statement with a required date and a named object."
+    }
+   ]
+  }
+ ]
+}

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
 
 import pytest
 from kotekomi_devtools.ipi_custody import (
@@ -19,7 +20,7 @@ SOURCE = "raw/241030_Allen_Safety_Network.pdf"
 SOURCE_SHA = "a" * 64
 
 
-def _inspected(*, excluded: bool = False, inspected: tuple[str, ...] = ()) -> dict[str, object]:
+def _inspected(*, excluded: bool = False, inspected: tuple[str, ...] = ()) -> dict[str, Any]:
     return {
         "record": "ipi-inspected-material-v1",
         "sources": [
@@ -34,7 +35,18 @@ def _inspected(*, excluded: bool = False, inspected: tuple[str, ...] = ()) -> di
     }
 
 
-def _manifest(texts: list[str], kinds: list[str]) -> dict[str, object]:
+def _reader(path: Path) -> str:
+    return (
+        "opening context\nreserved passage 1\nreserved passage 2\nreserved passage 3\n"
+        "reserved passage 4\nreserved passage 5\nreserved passage 6\nclosing context"
+    )
+
+
+def _missing_reader(path: Path) -> str:
+    return "a different document"
+
+
+def _manifest(texts: list[str], kinds: list[str]) -> dict[str, Any]:
     statements = [
         {
             "reference_id": f"R-RES-{index:02d}",
@@ -54,8 +66,8 @@ def _manifest(texts: list[str], kinds: list[str]) -> dict[str, object]:
             "page": index,
             "text": text,
             "text_sha256": text_digest(text),
-            "context_before": "",
-            "context_after": "",
+            "context_before": "opening context",
+            "context_after": "closing context",
             "statements": [statements[index - 1]],
         }
         for index, text in enumerate(texts, 1)
@@ -69,7 +81,7 @@ def _manifest(texts: list[str], kinds: list[str]) -> dict[str, object]:
     }
 
 
-def _well_formed() -> dict[str, object]:
+def _well_formed() -> dict[str, Any]:
     return _manifest(
         [f"reserved passage {index}" for index in range(1, 7)],
         [
@@ -84,33 +96,51 @@ def _well_formed() -> dict[str, object]:
 
 
 def test_valid_manifest_seals_with_a_reviewable_summary(tmp_path: Path) -> None:
-    manifest = validate_manifest(_well_formed(), _inspected())
+    manifest = validate_manifest(_well_formed(), _inspected(), _reader)
     summary = manifest_summary(manifest)
     assert summary["passage_count"] == 6
     assert summary["straightforward_statement_count"] == 3
-    path, digest = seal(tmp_path / "custody", _well_formed(), _inspected())
+    path, digest = seal(tmp_path / "custody", _well_formed(), _inspected(), _reader)
     assert path.exists()
     assert len(digest) == 64
     assert "reserved passage" not in json.dumps(summary)
 
 
+def test_a_passage_outside_its_declared_source_is_rejected() -> None:
+    with pytest.raises(CustodyError, match="does not appear"):
+        validate_manifest(_well_formed(), _inspected(), _missing_reader)
+
+
+def test_a_statement_without_text_is_rejected() -> None:
+    payload = _well_formed()
+    payload["passages"][0]["statements"][0]["statement"] = ""
+    with pytest.raises(CustodyError, match="statement"):
+        validate_manifest(payload, _inspected(), _reader)
+
+
+def test_missing_surrounding_context_is_rejected() -> None:
+    payload = _well_formed()
+    payload["passages"][2]["context_after"] = ""
+    with pytest.raises(CustodyError, match="context_after"):
+        validate_manifest(payload, _inspected(), _reader)
+
+
 def test_excluded_source_cannot_supply_a_reserved_passage() -> None:
     with pytest.raises(CustodyError, match="excluded"):
-        validate_manifest(_well_formed(), _inspected(excluded=True))
+        validate_manifest(_well_formed(), _inspected(excluded=True), _reader)
 
 
 def test_inspected_paragraph_cannot_become_reserved() -> None:
-    payload = _well_formed()
     inspected_digest = text_digest("reserved passage 3")
     with pytest.raises(CustodyError, match="inspected-material"):
-        validate_manifest(payload, _inspected(inspected=(inspected_digest,)))
+        validate_manifest(_well_formed(), _inspected(inspected=(inspected_digest,)), _reader)
 
 
 def test_partition_requires_six_passages() -> None:
     payload = _well_formed()
     payload["passages"] = payload["passages"][:5]
     with pytest.raises(CustodyError, match="six|6"):
-        validate_manifest(payload, _inspected())
+        validate_manifest(payload, _inspected(), _reader)
 
 
 def test_partition_requires_two_qualified_statements() -> None:
@@ -119,18 +149,19 @@ def test_partition_requires_two_qualified_statements() -> None:
         ["straightforward"] * 5 + ["qualified"],
     )
     with pytest.raises(CustodyError, match="qualified"):
-        validate_manifest(payload, _inspected())
+        validate_manifest(payload, _inspected(), _reader)
 
 
 def test_a_sealed_partition_cannot_be_resealed(tmp_path: Path) -> None:
-    seal(tmp_path / "custody", _well_formed(), _inspected())
+    seal(tmp_path / "custody", _well_formed(), _inspected(), _reader)
     with pytest.raises(CustodyError, match="already exists"):
-        seal(tmp_path / "custody", _well_formed(), _inspected())
+        seal(tmp_path / "custody", _well_formed(), _inspected(), _reader)
 
 
 def test_fill_text_digests_computes_each_passage_digest() -> None:
     payload = _well_formed()
     for row in payload["passages"]:
+        assert isinstance(row, dict)
         row["text_sha256"] = ""
     filled = fill_text_digests(payload)
     assert [row["text_sha256"] for row in filled["passages"]] == [

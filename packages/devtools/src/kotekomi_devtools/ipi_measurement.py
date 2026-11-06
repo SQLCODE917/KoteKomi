@@ -55,6 +55,7 @@ class StatementResult:
     active_seconds: int
     waiting_seconds: int
     corrections: int
+    command_retries: int = 0
     hold_reason: str | None = None
     failing_criterion: str | None = None
     event_id: str | None = None
@@ -85,6 +86,7 @@ class Measures:
     active_seconds: int
     waiting_seconds: int
     corrections: int
+    command_retries: int
     review_cost_seconds: float | None
     coverage: float
 
@@ -95,6 +97,7 @@ class Measures:
             "active_seconds": self.active_seconds,
             "waiting_seconds": self.waiting_seconds,
             "corrections": self.corrections,
+            "command_retries": self.command_retries,
             "review_cost_seconds": self.review_cost_seconds,
             "coverage": round(self.coverage, 4),
         }
@@ -110,7 +113,9 @@ class RouteDecision:
     passed: bool
     non_regression_passed: bool
     waiting_time_passed: bool
+    budget_passed: bool
     regressions: tuple[str, ...]
+    incomplete_reference_ids: tuple[str, ...]
     notes: tuple[str, ...]
 
     def as_json(self) -> dict[str, Any]:
@@ -120,8 +125,10 @@ class RouteDecision:
             "effort_route": self.effort_route,
             "non_regression_passed": self.non_regression_passed,
             "waiting_time_passed": self.waiting_time_passed,
+            "budget_passed": self.budget_passed,
             "passed": self.passed,
             "regressions": list(self.regressions),
+            "incomplete_reference_ids": list(self.incomplete_reference_ids),
             "notes": list(self.notes),
         }
 
@@ -171,6 +178,7 @@ def _parse_statement(row: object) -> StatementResult:
         active_seconds=_require(row, "active_seconds", int),
         waiting_seconds=_require(row, "waiting_seconds", int),
         corrections=_require(row, "corrections", int),
+        command_retries=_require(row, "command_retries", int),
         hold_reason=_optional_text(row, "hold_reason"),
         failing_criterion=_optional_text(row, "failing_criterion"),
         event_id=_optional_text(row, "event_id"),
@@ -184,7 +192,12 @@ def _parse_statement(row: object) -> StatementResult:
 
 def _check_statement(statement: StatementResult) -> None:
     if statement.outcome == "not_attempted":
-        if statement.active_seconds or statement.waiting_seconds or statement.corrections:
+        if (
+            statement.active_seconds
+            or statement.waiting_seconds
+            or statement.corrections
+            or statement.command_retries
+        ):
             raise MeasurementError(
                 f"{statement.reference_id}: a not-attempted row records no effort."
             )
@@ -242,6 +255,93 @@ def load_condition_result(path: Path) -> ConditionResult:
     )
 
 
+@dataclass(frozen=True)
+class ApprovedManifest:
+    """The approved development manifest the comparison must follow."""
+
+    status: str
+    reviewer: str
+    approved_on: str
+    attempt_budget_seconds: int
+    reference_ids: tuple[str, ...]
+
+
+def load_approved_manifest(path: Path) -> ApprovedManifest:
+    """Load the development manifest and require prior human approval."""
+    try:
+        payload: object = json.loads(path.read_text(encoding="utf-8"))
+    except OSError as error:
+        raise MeasurementError(f"Cannot read {path}: {error}") from error
+    except json.JSONDecodeError as error:
+        raise MeasurementError(f"{path} is not valid JSON: {error}") from error
+    document = _mapping(payload)
+    if document.get("record") != "ipi-development-manifest-v1":
+        raise MeasurementError("The measurement manifest has the wrong record name.")
+    if document.get("status") != "approved":
+        raise MeasurementError(
+            "The development manifest is not approved; record the human decision first."
+        )
+    budget = document.get("attempt_budget_seconds")
+    if not isinstance(budget, int) or isinstance(budget, bool) or budget <= 0:
+        raise MeasurementError("The manifest requires a positive attempt budget in seconds.")
+    reference_ids: list[str] = []
+    passages = document.get("passages")
+    if not isinstance(passages, list) or not passages:
+        raise MeasurementError("The manifest requires at least one development passage.")
+    for passage in cast("list[object]", passages):
+        record = _mapping(passage)
+        statements = record.get("statements")
+        if not isinstance(statements, list) or not statements:
+            raise MeasurementError("Every manifest passage carries at least one statement.")
+        for statement in cast("list[object]", statements):
+            entry = _mapping(statement)
+            reference_ids.append(_require(entry, "reference_id", str))
+    if len(set(reference_ids)) != len(reference_ids):
+        raise MeasurementError("Manifest reference identifiers are unique.")
+    return ApprovedManifest(
+        status="approved",
+        reviewer=_require(document, "reviewer", str),
+        approved_on=_require(document, "approved_on", str),
+        attempt_budget_seconds=budget,
+        reference_ids=tuple(reference_ids),
+    )
+
+
+def _require_complete_reference_set(
+    result: ConditionResult, manifest: ApprovedManifest, label: str
+) -> None:
+    expected = set(manifest.reference_ids)
+    observed = [statement.reference_id for statement in result.statements]
+    if len(observed) != len(manifest.reference_ids):
+        raise MeasurementError(
+            f"The {label} condition records {len(observed)} statements; "
+            f"the approved manifest fixes {len(manifest.reference_ids)}."
+        )
+    missing = expected - set(observed)
+    added = set(observed) - expected
+    if missing:
+        raise MeasurementError(
+            f"The {label} condition omits approved references: {', '.join(sorted(missing))}."
+        )
+    if added:
+        raise MeasurementError(
+            f"The {label} condition adds unapproved references: {', '.join(sorted(added))}."
+        )
+
+
+def _require_attempt_budget(
+    result: ConditionResult, manifest: ApprovedManifest, label: str
+) -> None:
+    for statement in result.statements:
+        if statement.outcome == "not_attempted":
+            continue
+        if statement.active_seconds > manifest.attempt_budget_seconds:
+            raise MeasurementError(
+                f"{label} {statement.reference_id}: active seconds exceed the approved "
+                f"{manifest.attempt_budget_seconds}-second attempt budget."
+            )
+
+
 def measure(result: ConditionResult) -> Measures:
     """Compute the declared measures for one condition."""
     usable = sum(1 for item in result.statements if item.outcome == "usable")
@@ -255,17 +355,24 @@ def measure(result: ConditionResult) -> Measures:
         active_seconds=active,
         waiting_seconds=waiting,
         corrections=corrections,
+        command_retries=sum(item.command_retries for item in result.statements),
         review_cost_seconds=None if usable == 0 else active / usable,
         coverage=0.0 if count == 0 else usable / count,
     )
 
 
-def compare(baseline: ConditionResult, final: ConditionResult) -> RouteDecision:
-    """Decide the declared acceptance route for one partition."""
+def compare(
+    baseline: ConditionResult, final: ConditionResult, manifest: ApprovedManifest
+) -> RouteDecision:
+    """Decide the declared acceptance route for one partition under the approved manifest."""
     if baseline.partition != final.partition:
         raise MeasurementError("Both conditions must measure the same partition.")
     if baseline.condition != "baseline" or final.condition != "final":
         raise MeasurementError("The comparison requires one baseline and one final condition.")
+    _require_complete_reference_set(baseline, manifest, "baseline")
+    _require_complete_reference_set(final, manifest, "final")
+    _require_attempt_budget(baseline, manifest, "baseline")
+    _require_attempt_budget(final, manifest, "final")
     baseline_measures = measure(baseline)
     final_measures = measure(final)
     final_usable = {item.reference_id for item in final.statements if item.outcome == "usable"}
@@ -274,12 +381,34 @@ def compare(baseline: ConditionResult, final: ConditionResult) -> RouteDecision:
         for item in baseline.statements
         if item.outcome == "usable" and item.reference_id not in final_usable
     )
+    incomplete = tuple(
+        sorted(
+            {
+                item.reference_id
+                for item in (*baseline.statements, *final.statements)
+                if item.outcome == "not_attempted"
+            }
+        )
+    )
     notes: list[str] = []
     non_regression = not regressions
+    budget_passed = True
+    if incomplete:
+        notes.append(
+            "Not-attempted statements make the measurement incomplete: "
+            + ", ".join(incomplete)
+            + "."
+        )
     if baseline_measures.usable_count == 0:
-        capability = final_measures.usable_count >= 2
+        baseline_budget = manifest.attempt_budget_seconds * len(manifest.reference_ids)
+        budget_passed = final_measures.active_seconds <= baseline_budget
+        capability = final_measures.usable_count >= 2 and budget_passed
         effort = False
         notes.append("Baseline usable coverage is zero, so only the capability route applies.")
+        notes.append(
+            f"Final active effort {final_measures.active_seconds}s against the "
+            f"{baseline_budget}s baseline attempt budget."
+        )
     else:
         baseline_cost = baseline_measures.review_cost_seconds
         final_cost = final_measures.review_cost_seconds
@@ -311,9 +440,15 @@ def compare(baseline: ConditionResult, final: ConditionResult) -> RouteDecision:
         partition=baseline.partition,
         capability_route=capability,
         effort_route=effort,
-        passed=(capability or effort) and non_regression and waiting_passed,
+        passed=(capability or effort)
+        and non_regression
+        and waiting_passed
+        and budget_passed
+        and not incomplete,
         non_regression_passed=non_regression,
         waiting_time_passed=waiting_passed,
+        budget_passed=budget_passed,
         regressions=regressions,
+        incomplete_reference_ids=incomplete,
         notes=tuple(notes),
     )

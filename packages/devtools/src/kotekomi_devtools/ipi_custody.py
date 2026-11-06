@@ -28,6 +28,7 @@ class ReservedStatement:
 
     reference_id: str
     kind: str
+    statement: str
     required_content: str
     admissible_omissions: str
     in_scope_rationale: str
@@ -41,7 +42,10 @@ class ReservedPassage:
     source_path: str
     source_sha256: str
     page: int
+    text: str
     text_sha256: str
+    context_before: str
+    context_after: str
     statements: tuple[ReservedStatement, ...]
 
 
@@ -101,6 +105,60 @@ def _text(mapping: object, key: str, where: str) -> str:
     return value
 
 
+def _context(mapping: object, key: str, where: str) -> str:
+    value = _mapping(mapping).get(key)
+    if not isinstance(value, str) or not value.strip():
+        raise CustodyError(f"{where}: {key} must state the surrounding context or `none`.")
+    return value
+
+
+def _normalized(text: str) -> str:
+    return " ".join(text.split())
+
+
+def read_pdf_source_text(path: Path) -> str:
+    """Extract one PDF's text layer so custody can prove passage membership."""
+    import shutil
+    import subprocess
+
+    binary = shutil.which("pdftotext")
+    if binary is None:
+        raise CustodyError(
+            "pdftotext is required to prove that a reserved passage belongs to its Source."
+        )
+    try:
+        completed = subprocess.run(
+            [binary, "-layout", str(path), "-"],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+    except OSError as error:
+        raise CustodyError(f"Cannot read {path}: {error}") from error
+    if completed.returncode != 0:
+        raise CustodyError(f"pdftotext failed for {path}.")
+    return completed.stdout
+
+
+def _require_source_membership(
+    *,
+    source_path: str,
+    text: str,
+    passage_id: str,
+    reader: object,
+) -> None:
+    extract = read_pdf_source_text if reader is None else reader
+    if not callable(extract):
+        raise CustodyError("The source text reader must be callable.")
+    source_text = extract(Path(source_path))
+    if not isinstance(source_text, str):
+        raise CustodyError("The source text reader must return text.")
+    if _normalized(text) not in _normalized(source_text):
+        raise CustodyError(
+            f"{passage_id}: the passage text does not appear in the declared Source."
+        )
+
+
 def _inspected(payload: object) -> dict[str, Any]:
     record = _mapping(payload)
     if not isinstance(record.get("sources"), list):
@@ -116,7 +174,11 @@ def _inspected_for(source_path: str, inspected: dict[str, Any]) -> dict[str, Any
     raise CustodyError(f"Source {source_path} is absent from the inspected-material record.")
 
 
-def validate_manifest(payload: object, inspected: object) -> ReservedManifest:
+def validate_manifest(
+    payload: object,
+    inspected: object,
+    source_text_reader: object = None,
+) -> ReservedManifest:
     """Validate the reserved manifest against the package custody rules."""
     document = _mapping(payload)
     if document.get("record") != "ipi-reserved-manifest-v1":
@@ -150,6 +212,14 @@ def validate_manifest(payload: object, inspected: object) -> ReservedManifest:
         if not isinstance(page, int) or isinstance(page, bool) or page < 1:
             raise CustodyError(f"{passage_id}: page must be a positive integer.")
         text = _text(passage, "text", passage_id)
+        context_before = _context(passage, "context_before", passage_id)
+        context_after = _context(passage, "context_after", passage_id)
+        _require_source_membership(
+            source_path=source_path,
+            text=text,
+            passage_id=passage_id,
+            reader=source_text_reader,
+        )
         digest = _text(passage, "text_sha256", passage_id)
         if text_digest(text) != digest:
             raise CustodyError(f"{passage_id}: passage digest does not match its text.")
@@ -177,6 +247,7 @@ def validate_manifest(payload: object, inspected: object) -> ReservedManifest:
                 ReservedStatement(
                     reference_id=reference_id,
                     kind=kind,
+                    statement=_text(statement, "statement", reference_id),
                     required_content=_text(statement, "required_content", reference_id),
                     admissible_omissions=_text(statement, "admissible_omissions", reference_id),
                     in_scope_rationale=_text(statement, "in_scope_rationale", reference_id),
@@ -188,7 +259,10 @@ def validate_manifest(payload: object, inspected: object) -> ReservedManifest:
                 source_path=source_path,
                 source_sha256=source_sha256,
                 page=page,
+                text=text,
                 text_sha256=digest,
+                context_before=context_before,
+                context_after=context_after,
                 statements=tuple(parsed),
             )
         )
@@ -246,9 +320,14 @@ def fill_text_digests(payload: dict[str, Any]) -> dict[str, Any]:
     return filled
 
 
-def seal(custody_root: Path, payload: dict[str, Any], inspected: Any) -> tuple[Path, str]:
+def seal(
+    custody_root: Path,
+    payload: dict[str, Any],
+    inspected: object,
+    source_text_reader: object = None,
+) -> tuple[Path, str]:
     """Validate the reserved manifest and write it under the custody root."""
-    validate_manifest(payload, inspected)
+    validate_manifest(payload, inspected, source_text_reader)
     custody_root.mkdir(parents=True, exist_ok=True)
     path = custody_root / "reserved-manifest.json"
     if path.exists():

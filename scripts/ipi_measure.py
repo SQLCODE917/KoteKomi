@@ -14,6 +14,7 @@ from pathlib import Path
 from kotekomi_devtools.ipi_measurement import (
     MeasurementError,
     compare,
+    load_approved_manifest,
     load_condition_result,
     measure,
 )
@@ -32,6 +33,12 @@ def _parser() -> argparse.ArgumentParser:
     )
     compare_parser.add_argument("--baseline", type=Path, required=True)
     compare_parser.add_argument("--final", type=Path, required=True)
+    compare_parser.add_argument(
+        "--manifest",
+        type=Path,
+        required=True,
+        help="The approved development manifest that fixes the reference identifiers.",
+    )
     return parser
 
 
@@ -54,10 +61,13 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         baseline = load_condition_result(arguments.baseline)
         final = load_condition_result(arguments.final)
-        decision = compare(baseline, final)
+        manifest = load_approved_manifest(arguments.manifest)
+        decision = compare(baseline, final, manifest)
         print(
             json.dumps(
                 {
+                    "manifest_reference_ids": list(manifest.reference_ids),
+                    "attempt_budget_seconds": manifest.attempt_budget_seconds,
                     "baseline": measure(baseline).as_json(),
                     "final": measure(final).as_json(),
                     "decision": decision.as_json(),
