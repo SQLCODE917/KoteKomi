@@ -200,6 +200,8 @@ def construct_inspectable_assertion(
         qualifiers["polarity"] = proposition.polarity.value
     if proposition.modality is not None:
         qualifiers["modality"] = proposition.modality.value
+    if proposition.adjunct_qualifier is not None:
+        qualifiers["time"] = proposition.adjunct_qualifier.exact_range.text
 
     assertion = Assertion(
         id=_deterministic_assertion_id(proposition, inputs.source_id),
@@ -240,6 +242,9 @@ def _deterministic_assertion_id(
             "object": proposition.object.exact_fragment.text if proposition.object else None,
             "polarity": proposition.polarity.value if proposition.polarity else None,
             "modality": proposition.modality.value if proposition.modality else None,
+            "time": proposition.adjunct_qualifier.exact_range.text
+            if proposition.adjunct_qualifier
+            else None,
             "source_id": source_id,
         },
         allow_nan=False,

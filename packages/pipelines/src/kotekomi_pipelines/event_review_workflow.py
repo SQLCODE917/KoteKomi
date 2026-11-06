@@ -25,9 +25,11 @@ from kotekomi_application import (
     ReviewCandidateIdentity,
     SourceGroundedSelectionResult,
     SourceRange,
+    TriggerTimeUnsupported,
     assertion_inputs_from_review,
     build_constituent_candidate_inventory,
     derive_object_content_completion,
+    derive_trigger_time_qualifier,
     ingested_grounding_candidates,
     record_event_construction_decision,
     select_source_grounded_constituents,
@@ -169,6 +171,21 @@ def build_event_review_packet(
     object_text = (
         None if completed_object_range is None else paragraph.text[slice(*completed_object_range)]
     )
+    try:
+        time_qualifier = derive_trigger_time_qualifier(
+            event_id=event_id,
+            source_text=paragraph.text,
+            tokens=artifact.tokens,
+            trigger_head_start=event.trigger_span.start,
+            trigger_head_end=event.trigger_span.end,
+        )
+    except TriggerTimeUnsupported:
+        time_qualifier = None
+    time_range = (
+        None
+        if time_qualifier is None
+        else (time_qualifier.exact_range.start, time_qualifier.exact_range.end)
+    )
     subject_span = subject_range
     candidates = tuple(
         sorted(
@@ -221,9 +238,12 @@ def build_event_review_packet(
         object_start=(None if completed_object_range is None else completed_object_range[0]),
         object_end=(None if completed_object_range is None else completed_object_range[1]),
         object_text=object_text,
-        statement_start=_statement_start(event, subject_range, completed_object_range),
-        statement_end=_statement_end(event, subject_range, completed_object_range),
+        statement_start=_statement_start(event, subject_range, completed_object_range, time_range),
+        statement_end=_statement_end(event, subject_range, completed_object_range, time_range),
         object_completion=object_completion,
+        time_qualifier_start=None if time_range is None else time_range[0],
+        time_qualifier_end=None if time_range is None else time_range[1],
+        time_qualifier_text=None if time_range is None else paragraph.text[slice(*time_range)],
         candidates=candidates,
         accepted_identity_ids=accepted,
         required_decisions=() if review is not None else _REQUIRED_DECISIONS,
@@ -243,12 +263,15 @@ def _statement_start(
     event: EventAnnotation,
     subject_range: tuple[int, int] | None,
     object_range: tuple[int, int] | None,
+    time_range: tuple[int, int] | None = None,
 ) -> int:
     starts = [event.trigger_span.start]
     if subject_range is not None:
         starts.append(subject_range[0])
     if object_range is not None:
         starts.append(object_range[0])
+    if time_range is not None:
+        starts.append(time_range[0])
     return min(starts)
 
 
@@ -256,12 +279,15 @@ def _statement_end(
     event: EventAnnotation,
     subject_range: tuple[int, int] | None,
     object_range: tuple[int, int] | None,
+    time_range: tuple[int, int] | None = None,
 ) -> int:
     ends = [event.trigger_span.end]
     if subject_range is not None:
         ends.append(subject_range[1])
     if object_range is not None:
         ends.append(object_range[1])
+    if time_range is not None:
+        ends.append(time_range[1])
     return max(ends)
 
 

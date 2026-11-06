@@ -563,7 +563,7 @@ def test_subject_value_authorization_rejects_overlapping_authorizations() -> Non
         )
 
 
-def test_oblique_time_place_holds_unsupported_time_place() -> None:
+def test_oblique_time_qualifier_reaches_the_proposition() -> None:
     source = "Sacks viewed the documents in April."
     tokens = _words(
         source,
@@ -581,6 +581,40 @@ def test_oblique_time_place_holds_unsupported_time_place() -> None:
         _constituent(source, "AHE-902", ("t2",), "viewed", "viewed"),
         _constituent(source, "AHE-902", ("t3", "t4"), "the", "documents"),
         _constituent(source, "AHE-902", ("t5", "t6"), "in", "April"),
+    )
+    entities = (_entity("EGE-902", "actor", "Sacks", source, "Sacks", "Sacks"),)
+    result = _compose(
+        event_id="AHE-902",
+        source=source,
+        tokens=tokens,
+        constituents=constituents,
+        selected_indexes=(1, 2, 3),
+        entities=entities,
+        head_lemma="view",
+    )
+    assert result.status is DecontextualizationStatus.PROPOSITION
+    assert result.adjunct_qualifier is not None
+    assert result.adjunct_qualifier.exact_range.text == "in April"
+
+
+def test_oblique_non_time_content_holds_unsupported_time_place() -> None:
+    source = "Sacks viewed the documents with the lawyers."
+    tokens = _words(
+        source,
+        [
+            ("Sacks", "viewed", "nsubj", "sacks"),
+            ("viewed", None, "root", "view"),
+            ("the", "documents", "det", "the"),
+            ("documents", "viewed", "obj", "document"),
+            ("with", "lawyers", "case", "with"),
+            ("lawyers", "viewed", "obl", "lawyer"),
+        ],
+    )
+    constituents = (
+        _constituent(source, "AHE-902", ("t1",), "Sacks", "Sacks"),
+        _constituent(source, "AHE-902", ("t2",), "viewed", "viewed"),
+        _constituent(source, "AHE-902", ("t3", "t4"), "the", "documents"),
+        _constituent(source, "AHE-902", ("t5", "t6"), "with", "lawyers"),
     )
     entities = (_entity("EGE-902", "actor", "Sacks", source, "Sacks", "Sacks"),)
     result = _compose(
