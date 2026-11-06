@@ -297,3 +297,39 @@ def test_waiting_time_increase_needs_operator_acceptance(tmp_path: Path) -> None
         )
     )
     assert compare(baseline, accepted, manifest).waiting_time_passed is True
+
+
+def test_shared_setup_waiting_is_counted_once_in_the_total(tmp_path: Path) -> None:
+    """A Document ingestion is charged once per condition, never to a statement row."""
+    manifest = _approved(tmp_path, ["R-1", "R-2"])
+    baseline_payload = _document(
+        rows=[_row("R-1", "hold", waiting_seconds=10), _row("R-2", "hold", waiting_seconds=10)]
+    )
+    baseline_payload["setup_waiting_seconds"] = 1800
+    final_payload = _document(
+        condition="final",
+        rows=[_row("R-1", "usable", waiting_seconds=10), _row("R-2", "usable", waiting_seconds=10)],
+    )
+    final_payload["setup_waiting_seconds"] = 1800
+    baseline = load_condition_result(_write(tmp_path, baseline_payload, "b.json"))
+    final = load_condition_result(_write(tmp_path, final_payload, "f.json"))
+    baseline_measures = measure(baseline)
+    final_measures = measure(final)
+    assert baseline_measures.waiting_seconds == 20
+    assert baseline_measures.setup_waiting_seconds == 1800
+    assert baseline_measures.total_waiting_seconds == 1820
+    assert final_measures.total_waiting_seconds == 1820
+    assert compare(baseline, final, manifest).waiting_time_passed is True
+
+
+def test_waiting_increase_check_uses_the_setup_inclusive_total(tmp_path: Path) -> None:
+    manifest = _approved(tmp_path, ["R-1"])
+    baseline_payload = _document(rows=[_row("R-1", "usable", waiting_seconds=10)])
+    baseline_payload["setup_waiting_seconds"] = 100
+    final_payload = _document(
+        condition="final", rows=[_row("R-1", "usable", waiting_seconds=10)]
+    )
+    final_payload["setup_waiting_seconds"] = 200
+    baseline = load_condition_result(_write(tmp_path, baseline_payload, "b.json"))
+    final = load_condition_result(_write(tmp_path, final_payload, "f.json"))
+    assert compare(baseline, final, manifest).waiting_time_passed is False

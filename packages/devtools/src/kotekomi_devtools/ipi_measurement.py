@@ -74,6 +74,7 @@ class ConditionResult:
     operator: str
     root: str
     statements: tuple[StatementResult, ...]
+    setup_waiting_seconds: int = 0
     waiting_time_accepted: bool = False
 
 
@@ -85,6 +86,8 @@ class Measures:
     usable_count: int
     active_seconds: int
     waiting_seconds: int
+    setup_waiting_seconds: int
+    total_waiting_seconds: int
     corrections: int
     command_retries: int
     review_cost_seconds: float | None
@@ -96,6 +99,8 @@ class Measures:
             "usable_count": self.usable_count,
             "active_seconds": self.active_seconds,
             "waiting_seconds": self.waiting_seconds,
+            "setup_waiting_seconds": self.setup_waiting_seconds,
+            "total_waiting_seconds": self.total_waiting_seconds,
             "corrections": self.corrections,
             "command_retries": self.command_retries,
             "review_cost_seconds": self.review_cost_seconds,
@@ -241,6 +246,9 @@ def load_condition_result(path: Path) -> ConditionResult:
     identifiers = [statement.reference_id for statement in statements]
     if len(set(identifiers)) != len(identifiers):
         raise MeasurementError("Reference statements are unique within one condition.")
+    setup_waiting = document.get("setup_waiting_seconds", 0)
+    if not isinstance(setup_waiting, int) or isinstance(setup_waiting, bool) or setup_waiting < 0:
+        raise MeasurementError("setup_waiting_seconds must be a non-negative integer.")
     accepted = document.get("waiting_time_accepted", False)
     if not isinstance(accepted, bool):
         raise MeasurementError("waiting_time_accepted must be true or false.")
@@ -251,6 +259,7 @@ def load_condition_result(path: Path) -> ConditionResult:
         operator=_require(document, "operator", str),
         root=_require(document, "root", str),
         statements=statements,
+        setup_waiting_seconds=setup_waiting,
         waiting_time_accepted=accepted,
     )
 
@@ -364,6 +373,8 @@ def measure(result: ConditionResult) -> Measures:
         usable_count=usable,
         active_seconds=active,
         waiting_seconds=waiting,
+        setup_waiting_seconds=result.setup_waiting_seconds,
+        total_waiting_seconds=waiting + result.setup_waiting_seconds,
         corrections=corrections,
         command_retries=sum(item.command_retries for item in result.statements),
         review_cost_seconds=None if usable == 0 else active / usable,
@@ -435,8 +446,8 @@ def compare(
             and final_cost <= baseline_cost * 0.75
         )
     waiting_passed = True
-    if baseline_measures.waiting_seconds > 0:
-        ratio = final_measures.waiting_seconds / baseline_measures.waiting_seconds
+    if baseline_measures.total_waiting_seconds > 0:
+        ratio = final_measures.total_waiting_seconds / baseline_measures.total_waiting_seconds
         if ratio > 1.2:
             waiting_passed = final.waiting_time_accepted
             acceptance = "recorded" if final.waiting_time_accepted else "missing"

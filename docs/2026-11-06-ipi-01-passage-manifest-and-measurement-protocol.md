@@ -14,12 +14,12 @@
 | ID | Decision | Status |
 | --- | --- | --- |
 | D3 | Retain the package's numerical targets and routes | Approved 2026-11-06 |
-| D1 | Approve the six development passages and their eight reference statements after reading the complete source context in section 3 | Pending |
-| D2 | Approve the completeness rubric in section 5 and the timing protocol in section 6 | Pending |
-| D4 | Authorize the reserved custody run in section 4 and record its sealed digest | Pending |
+| D1 | Approve the eight-statement assessment scope, with the amendments recorded in section 3: R-DEV-02 is an onset with a temporal bound, R-DEV-07 requires `agreed to create`, and every excluded claim is listed with its reason | Conditionally approved 2026-11-06; the amendments are recorded in section 3 |
+| D2 | Approve the completeness rubric and the timing protocol, with active time excluding separately recorded waiting time | Approved 2026-11-06 |
+| D4 | Authorize the human-run custody preparation and sealing | Authorized 2026-11-06; authorization does not assert that reserved passages are reviewed or sealed |
 
-The targets are fixed now so that measurement cannot be shaped after results exist.
-The passage meanings stay pending so that no statement is scored before a reviewer has read its complete paragraph.
+The targets were fixed before any result existed.
+The eight statements are the whole denominator; section 3 lists the claims each passage contains that this assessment does not score.
 
 ## 2. Inspected material record
 
@@ -37,10 +37,12 @@ The agent has not opened the Allen Document itself; only that one quoted paragra
 
 ## 3. Development passages and reference meanings
 
-The reviewer approves these meanings only after reading each complete paragraph below.
+The reviewer approved the eight-statement assessment scope with the amendments recorded below.
+N counts only the eight approved reference statements. Every paragraph below contains further atomic claims; each excluded claim and its exclusion reason is recorded beside its passage. The measure is a bounded sample of ordinary statements, not paragraph-level completeness, and it must not be reported as one.
+
 The same content is recorded machine-readably in `docs/2026-11-06-ipi-01-development-manifest.json`, which the comparator requires before any comparison can run.
 Passage text is the exact ingested paragraph text, including its original spacing and footnote markers; the digest covers exactly that text.
-Context before and after is the neighbouring paragraph text from the same Document, or the nearest annotated paragraph when the adjacent paragraph is not recorded, so the reviewer can judge an omission against the complete surrounding meaning.
+Context before and after is the neighbouring paragraph text from the same Document, or the nearest annotated paragraph when the adjacent paragraph is not recorded.
 
 ### DEV-01
 - Source: `raw/Anthropic–United_States_Department_of_Defense_dispute.pdf`, page 1, paragraph node `nod_f1e64380625a2f2c533fc277_0008`
@@ -57,7 +59,14 @@ The United States Department of Defense began developing lethal autonomous weapo
 | Reference | Kind | Statement | Required content | Admissible omissions | In-scope reason |
 | --- | --- | --- | --- | --- | --- |
 | R-DEV-01 | qualified | The Department of Defense established a policy on the use of artificial intelligence in 2012. | The Department of Defense; established; a policy on the use of artificial intelligence; the year 2012 | `, Directive 3000.09` is an order number that names the same policy. | An ordinary institutional action with one required year inside a paragraph that also contains three further statements. |
-| R-DEV-02 | qualified | The Department of Defense began developing lethal autonomous weapons as early as the Reagan administration. | The Department of Defense; began developing; lethal autonomous weapons; the bound `as early as the Reagan administration` | The footnote marker `[1]` is not part of the meaning. | A duration statement whose temporal bound is required. |
+| R-DEV-02 | qualified | The Department of Defense began developing lethal autonomous weapons as early as the Reagan administration. | The Department of Defense; the onset relation `began developing`; lethal autonomous weapons; the onset bound `as early as the Reagan administration` | The footnote marker `[1]` is not part of the meaning. | An onset statement whose temporal bound is required; it is not a duration statement. |
+
+Claims in this paragraph that are outside the assessment denominator:
+
+| Excluded claim | Why it is outside N |
+| --- | --- |
+| Efforts to utilize artificial intelligence intensified under the term of Secretary Ash Carter. | a separate atomic claim about a different period and actor |
+| The Department of Defense's use of artificial intelligence for Project Maven prompted concerns within Google in 2018, leading to protests and mass resignations. | a separate atomic claim with a participial result clause |
 
 ### DEV-02
 - Source: `raw/Anthropic–United_States_Department_of_Defense_dispute.pdf`, page 1, paragraph node `nod_f1e64380625a2f2c533fc277_0010`
@@ -74,6 +83,15 @@ In Donald Trump's second presidency, Anthropic publicly disagreed with the admin
 | Reference | Kind | Statement | Required content | Admissible omissions | In-scope reason |
 | --- | --- | --- | --- | --- | --- |
 | R-DEV-03 | qualified | Anthropic publicly disagreed with the administration's policies and initiatives. | Anthropic; publicly disagreed; the coordinated object `the administration's policies and initiatives`; the identity of the administration | None. The opening frame `In Donald Trump's second presidency` fixes which administration the sentence means, so it is required context. | A stance statement whose object is a coordination and whose administration identity depends on the opening frame. |
+
+Claims in this paragraph that are outside the assessment denominator:
+
+| Excluded claim | Why it is outside N |
+| --- | --- |
+| In January 2025, Anthropic CEO Dario Amodei criticized the artificial intelligence investment project Stargate as "chaotic" and opposed Trump's rescission of president Joe Biden's Executive Order on Artificial Intelligence. | a separate atomic claim with its own quoted object |
+| Amid discussions over the One Big Beautiful Bill Act, Anthropic privately lobbied for Congress to vote against a bill preventing states from regulating artificial intelligence and expressed opposition to an artificial intelligence agreement signed among Gulf states. | two further atomic claims about lobbying and about a separate agreement |
+| According to Semafor, Trump officials chastised Anthropic's hiring of several officials involved in the Biden administration. | a separate attributed claim with a list of officials |
+| The following month, Amodei wrote an op-ed in The New York Times describing the artificial intelligence regulation bill as "far too blunt an instrument". | a separate claim whose object carries a participial complement |
 
 ### DEV-03
 - Source: `raw/Anthropic–United_States_Department_of_Defense_dispute.pdf`, page 1, paragraph node `nod_f1e64380625a2f2c533fc277_0011`
@@ -92,6 +110,17 @@ Prior to the dispute, the Trump administration had integrated Anthropic's servic
 | R-DEV-04 | qualified | The Trump administration had integrated Anthropic's services. | The Trump administration; had integrated; Anthropic's services | `Prior to the dispute` states relative chronology; the statement's meaning does not depend on the dispute. | A past-perfect integration statement with a required object and an optional time frame. |
 | R-DEV-05 | straightforward | Dario Amodei criticized Trump's approach to export restrictions on semiconductors. | Dario Amodei; criticized; the complete object phrase including the nested complement | `That month` is relative time that does not change the statement. | A straightforward transitive statement whose object carries a nested prepositional complement. |
 
+Claims in this paragraph that are outside the assessment denominator:
+
+| Excluded claim | Why it is outside N |
+| --- | --- |
+| By November 2024, Anthropic had already partnered with Palantir and Amazon Web Services, companies that offered services with FedRAMP authorization. | a separate claim with a coordinated object and an appositive description |
+| In the Biden administration, Anthropic had reached an agreement with the AI Safety Institute and had participated in a nuclear information safety evaluation. | two further atomic claims about a separate period |
+| The Department of Homeland Security authorized its workers to use commercial artificial intelligence systems, including Anthropic's Claude, until May 2025. | a separate claim with a purpose complement and a time bound |
+| Through its interoperability with Palantir, Anthropic's technology achieved relatively widespread usage in the U.S. military. | a separate claim whose subject is a possessive noun phrase |
+| The following month, Anthropic announced that it would allow national security customers to use Claude Gov. | a separate reported-speech claim |
+| Anthropic's orthogonal usage policy to the surveillance systems implemented at the Federal Bureau of Investigation, the Secret Service, and Immigration and Customs Enforcement led to a conflict between Anthropic and the Trump administration by September. | a separate claim with a coordinated list and a result complement |
+
 ### DEV-04
 - Source: `raw/Anthropic–United_States_Department_of_Defense_dispute.pdf`, page 2, paragraph node `nod_f1e64380625a2f2c533fc277_0015`
 - Paragraph digest: `c5b74218e413464bcf1cb1f82e9293b44bebc035b5c224c7b1a09d081654afb9`
@@ -106,7 +135,14 @@ In  December  2025,  secretary  of  defense  Pete  Hegseth  announced  GenAI.mil
 
 | Reference | Kind | Statement | Required content | Admissible omissions | In-scope reason |
 | --- | --- | --- | --- | --- | --- |
-| R-DEV-06 | qualified | Pete Hegseth announced GenAI.mil, an artificial intelligence platform for the Department of Defense, in December 2025. | Pete Hegseth; announced; GenAI.mil; the platform description; the month | The footnote markers `[19][20]` are not part of the meaning. | A straightforward announcement whose object carries an appositive description and whose statement carries a required date. |
+| R-DEV-06 | qualified | Pete Hegseth announced GenAI.mil, an artificial intelligence platform for the Department of Defense, in December 2025. | Pete Hegseth; announced; GenAI.mil; the platform description; the month | The footnote markers `[19][20]` are not part of the meaning. | An announcement whose object carries an appositive description and whose statement carries a required date; it is qualified, not straightforward. |
+
+Claims in this paragraph that are outside the assessment denominator:
+
+| Excluded claim | Why it is outside N |
+| --- | --- |
+| The department initially contracted Google Gemini for the platform, then OpenAI's ChatGPT. | two further atomic claims with an anaphoric subject |
+| The following month, Hegseth announced that the Department of Defense would additionally contract xAI's Grok for use in the military, decrying "woke AI". | a separate reported-speech claim with a participial clause |
 
 ### DEV-05
 - Source: `raw/Artificial_intelligence_safety_institute.pdf`, page 1, paragraph node `nod_561e34f74a03ac8f05edb4a3_0008`
@@ -122,7 +158,13 @@ At the AI Seoul Summit in May 2024, the European Union and other countries agree
 
 | Reference | Kind | Statement | Required content | Admissible omissions | In-scope reason |
 | --- | --- | --- | --- | --- | --- |
-| R-DEV-07 | qualified | The European Union and other countries agreed to create their own AI safety institutes in May 2024. | The European Union; other countries; agreed; their own AI safety institutes; May 2024 | `At the AI Seoul Summit` names the venue and `forming an international network` states the consequence; each is a separate meaning. | A collective action with a coordinated subject and a required date. |
+| R-DEV-07 | qualified | The European Union and other countries agreed to create their own AI safety institutes in May 2024. | The European Union; other countries; the relation `agreed to create`; their own AI safety institutes; May 2024 | `At the AI Seoul Summit` names the venue and `forming an international network` states the consequence; each is a separate meaning. | A collective action whose relation includes the complement `to create`; the bare verb `agreed` would not preserve the statement. |
+
+Claims in this paragraph that are outside the assessment denominator:
+
+| Excluded claim | Why it is outside N |
+| --- | --- |
+| forming an international network | a separate consequence claim inside the same sentence; declared as an omission for R-DEV-07 and excluded from this denominator |
 
 ### DEV-06
 - Source: `raw/Artificial_intelligence_safety_institute.pdf`, page 2, paragraph node `nod_561e34f74a03ac8f05edb4a3_0018`
@@ -140,6 +182,11 @@ On 31 January 2025, the government of France created the Institut national pour 
 | --- | --- | --- | --- | --- | --- |
 | R-DEV-08 | straightforward | The government of France created INESIA on 31 January 2025. | The government of France; created; the named institute; the date | The French legal name and the English gloss name the same institute; `INESIA` is the short name the Source gives. | A straightforward creation statement with a required date and a named object. |
 
+Claims in this paragraph that are outside the assessment denominator:
+
+| Excluded claim | Why it is outside N |
+| --- | --- |
+| the French legal name, the English gloss, and the short name INESIA | an identity decision about three names for one institute; it is recorded inside R-DEV-08 rather than assessed as a separate claim |
 
 ### Partition shape
 
@@ -151,6 +198,9 @@ On 31 January 2025, the government of France created the Institut national pour 
 | Passages | 6 |
 | Reference statements (`N`) | 8 |
 
+The eight statements are the whole denominator of this assessment.
+Each paragraph contains the further claims listed above, and none of them is scored.
+A result of `C / 8` therefore says nothing about how completely the Pipeline represents these six paragraphs; it says how many of eight selected ordinary statements it delivered.
 The agent did not choose a passage because the current selector or composer realizes it.
 Stored-run note: five of the eight statements are blocked before review; the three statements from the second Document are unverified because that Document is not yet ingested.
 
@@ -215,6 +265,8 @@ Active time starts when the operator begins locating the Event and ends when rep
 
 Waiting time covers every command that does not return within five seconds.
 Short waits are recorded too; they are summed into waiting time and never dropped.
+Active time and waiting time are disjoint: a recorded wait is waiting time and never also counts as active time, so the two totals cannot double-count a command delay.
+Ingestion that serves a whole Document is recorded once per condition as setup waiting time and is not charged to any statement row; the report adds it to the row waits when it reports total waiting time.
 
 Limits and recording rules:
 
@@ -250,11 +302,13 @@ The routes are those the package states, and they are approved.
 
 ## 8. Operator protocol
 
-The operator runs each condition in a separate disposable state root and uses only supported commands with that condition's configuration.
+The operator runs one disposable state root per Document per condition and uses only supported commands with that root's configuration.
+`--paragraph` selects the paragraph the replay presents; it never restricts ingestion, so each root is ingested once.
+The exact commands, roots, ordinals, and shared-cost handling are in [the operator comparison procedure](2026-11-06-ipi-operator-comparison-procedure.md).
 
 ```bash
-CONFIG="<condition-root>/kotekomi.toml"
-uv run kotekomi-live-replay --config "$CONFIG" --source "<document.pdf>" --url "<source-url>" --state-root "<condition-root>/<passage>" --plain --paragraph <n>
+CONFIG="<root>/kotekomi.toml"
+uv run kotekomi-live-replay --config "$CONFIG" --source "<document.pdf>" --url "<source-url>" --state-root "<root>"
 uv run kotekomi --config "$CONFIG" ingestions list
 uv run kotekomi --config "$CONFIG" ingestions show <igr_...>
 uv run kotekomi --config "$CONFIG" review event-packet --run <igr_...> --event <sge_...>
@@ -267,16 +321,18 @@ uv run kotekomi --config "$CONFIG" review decide --run <igr_...> --event <sge_..
   --reviewer "<name>"
 uv run kotekomi --config "$CONFIG" review recompose --run <igr_...> --event <sge_...>
 uv run kotekomi --config "$CONFIG" review list --record-type Assertion
-uv run kotekomi-live-replay --state-root "<condition-root>/<passage>"
+uv run kotekomi-live-replay --state-root "<root>" --ingestion-run <igr_...> --paragraph <ordinal> --plain
 ```
 
-Every review command, including `review list`, uses the condition's `--config` so it reads that condition's Ledger and shows only that condition's proposals.
+Every review command, including `review list`, uses the root's `--config` so it reads that root's Ledger and shows only that root's proposals.
 
 Rules the operator follows:
 
-- Start from an empty state root for every passage and condition, including the same declared pre-existing identities.
+- Start every Document root empty in both conditions, including the same declared pre-existing identities.
 - Create required identities through the review command in both conditions; never copy an accepted record between roots.
+- Use the same statement order within a root in both conditions, and record the order.
 - Record the outcome, the first blocking stage, the hold reason, active seconds, waiting seconds, corrections, and command retries for every statement.
+- Record each Document ingestion's waiting once in the condition's `setup_waiting_seconds`; charge no ingestion time to a statement row.
 - Stop at the attempt budget and record `timeout`.
 - Do not edit derived JSON, seed proposals, or accept an Assertion to make a row pass.
 - Alternate baseline-first and final-first order across reserved passages and disclose any unblinded comparison.
@@ -292,6 +348,7 @@ Each condition produces one JSON file with this shape.
   "revision": "7dc9a44",
   "operator": "<name>",
   "root": "<absolute path>",
+  "setup_waiting_seconds": 0,
   "waiting_time_accepted": false,
   "statements": [
     {
@@ -313,6 +370,7 @@ Each condition produces one JSON file with this shape.
 }
 ```
 
+`setup_waiting_seconds` is the sum of the Document ingestion waits for this condition; it is added to the row waits when the report states total waiting time, so shared cost is counted once and never charged per statement.
 `scripts/ipi_measure.py check --result <file>` validates one condition file.
 `scripts/ipi_measure.py compare --baseline <file> --final <file> --manifest docs/2026-11-06-ipi-01-development-manifest.json` prints the measures and the route decision.
 
@@ -323,10 +381,10 @@ The comparator refuses to run unless the manifest is approved, both conditions c
 | Item | Decision | Reviewer | Date | Note |
 | --- | --- | --- | --- | --- |
 | D3 targets and routes | approved | human reviewer | 2026-11-06 | Targets retained; measurement wording corrected |
-| D1 passages and statements | pending | | | Awaiting complete-context reading |
-| D2 rubric and timing protocol | pending | | | Timing corrected to include discovery and recovery |
-| D4 reserved custody | pending | | | Template written on the first `seal` invocation |
-| Sealed reserved manifest digest | pending | | | |
+| D1 eight-statement scope | conditionally approved | human reviewer | 2026-11-06 | Approved with three amendments: R-DEV-02 onset rationale, R-DEV-07 `agreed to create`, excluded claims listed per passage |
+| D2 rubric and timing protocol | approved | human reviewer | 2026-11-06 | Active time excludes separately recorded waiting time; long and short waits count as waiting |
+| D4 reserved custody | authorized | human reviewer | 2026-11-06 | Authorizes preparation and sealing; it does not assert that reserved passages are reviewed or sealed |
+| Sealed reserved manifest digest | pending | | | Recorded after the reviewer seals the partition |
 
 ## 11. Execution handoff
 

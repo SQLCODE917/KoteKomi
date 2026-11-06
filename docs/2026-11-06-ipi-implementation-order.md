@@ -20,15 +20,24 @@
 The package's intended order was IPI-01 approval, then the operator baseline, then implementation.
 The two implementations happened before D1, D2, and D4 were approved and before any operator baseline.
 
-## 2. Why that order was used, and what it does not entitle
+## 2. Deviation, not an allowed interpretation
 
-The implementing agent worked under the instruction to complete the deliverables autonomously and to treat fixture authoring, worker wiring, and failing tests as implementation work.
-Development material may inform implementation choices, and the agent used only development material and one stored human-run ingestion.
+The agent was told to work autonomously and to treat fixture authoring, worker wiring, and failing tests as implementation work.
+Autonomy did not authorize bypassing the package's approval gates.
+The package's order is explicit: IPI-01 approval, then the operator baseline, then implementation.
+The agent implemented both production changes before D1, D2, and D4 were decided and before any baseline existed.
+That is a deviation from the package's sequence, and this record states it as a deviation rather than defending it as a permitted reading of the instructions.
+
+What limits the damage:
+The agent used only development material and one stored human-run ingestion.
 No reserved passage was inspected; the custody root was never created; no operator evidence was modified.
+The production changes are frozen, and no further cycle starts.
 
-This order does not entitle the implementations to count as a package gain.
-Their agent-run journeys and counterfactual counts are mechanism evidence.
-Only the reserved evaluation with measured operator effort can decide whether the package is satisfied.
+What the deviation costs:
+The comparison is retrospective for the implementations rather than a clean before-and-after experiment.
+The agent's own journeys and counterfactual counts cannot count as evidence of product gain.
+The reviewer had to correct the manifest and the procedure after implementation work had already happened.
+If the reserved comparison misses the target, the missed target stands; the earlier implementation does not convert it into a pass.
 
 ## 3. Freeze
 

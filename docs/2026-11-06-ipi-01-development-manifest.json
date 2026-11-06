@@ -1,9 +1,9 @@
 {
  "record": "ipi-development-manifest-v1",
  "package": "intelligence-pipeline-improvement",
- "status": "proposed",
- "reviewer": null,
- "approved_on": null,
+ "status": "approved",
+ "reviewer": "human reviewer",
+ "approved_on": "2026-11-06",
  "baseline_revision": "7dc9a44",
  "attempt_budget_seconds": 300,
  "passage_count": 6,
@@ -37,9 +37,19 @@
      "reference_id": "R-DEV-02",
      "kind": "qualified",
      "statement": "The Department of Defense began developing lethal autonomous weapons as early as the Reagan administration.",
-     "required_content": "The Department of Defense; began developing; lethal autonomous weapons; the bound `as early as the Reagan administration`",
+     "required_content": "The Department of Defense; the onset relation `began developing`; lethal autonomous weapons; the onset bound `as early as the Reagan administration`",
      "admissible_omissions": "The footnote marker `[1]` is not part of the meaning.",
-     "in_scope_rationale": "A duration statement whose temporal bound is required."
+     "in_scope_rationale": "An onset statement whose temporal bound is required; it is not a duration statement."
+    }
+   ],
+   "excluded_claims": [
+    {
+     "text": "Efforts to utilize artificial intelligence intensified under the term of Secretary Ash Carter.",
+     "reason": "a separate atomic claim about a different period and actor"
+    },
+    {
+     "text": "The Department of Defense's use of artificial intelligence for Project Maven prompted concerns within Google in 2018, leading to protests and mass resignations.",
+     "reason": "a separate atomic claim with a participial result clause"
     }
    ]
   },
@@ -61,6 +71,24 @@
      "required_content": "Anthropic; publicly disagreed; the coordinated object `the administration's policies and initiatives`; the identity of the administration",
      "admissible_omissions": "None. The opening frame `In Donald Trump's second presidency` fixes which administration the sentence means, so it is required context.",
      "in_scope_rationale": "A stance statement whose object is a coordination and whose administration identity depends on the opening frame."
+    }
+   ],
+   "excluded_claims": [
+    {
+     "text": "In January 2025, Anthropic CEO Dario Amodei criticized the artificial intelligence investment project Stargate as \"chaotic\" and opposed Trump's rescission of president Joe Biden's Executive Order on Artificial Intelligence.",
+     "reason": "a separate atomic claim with its own quoted object"
+    },
+    {
+     "text": "Amid discussions over the One Big Beautiful Bill Act, Anthropic privately lobbied for Congress to vote against a bill preventing states from regulating artificial intelligence and expressed opposition to an artificial intelligence agreement signed among Gulf states.",
+     "reason": "two further atomic claims about lobbying and about a separate agreement"
+    },
+    {
+     "text": "According to Semafor, Trump officials chastised Anthropic's hiring of several officials involved in the Biden administration.",
+     "reason": "a separate attributed claim with a list of officials"
+    },
+    {
+     "text": "The following month, Amodei wrote an op-ed in The New York Times describing the artificial intelligence regulation bill as \"far too blunt an instrument\".",
+     "reason": "a separate claim whose object carries a participial complement"
     }
    ]
   },
@@ -91,6 +119,32 @@
      "admissible_omissions": "`That month` is relative time that does not change the statement.",
      "in_scope_rationale": "A straightforward transitive statement whose object carries a nested prepositional complement."
     }
+   ],
+   "excluded_claims": [
+    {
+     "text": "By November 2024, Anthropic had already partnered with Palantir and Amazon Web Services, companies that offered services with FedRAMP authorization.",
+     "reason": "a separate claim with a coordinated object and an appositive description"
+    },
+    {
+     "text": "In the Biden administration, Anthropic had reached an agreement with the AI Safety Institute and had participated in a nuclear information safety evaluation.",
+     "reason": "two further atomic claims about a separate period"
+    },
+    {
+     "text": "The Department of Homeland Security authorized its workers to use commercial artificial intelligence systems, including Anthropic's Claude, until May 2025.",
+     "reason": "a separate claim with a purpose complement and a time bound"
+    },
+    {
+     "text": "Through its interoperability with Palantir, Anthropic's technology achieved relatively widespread usage in the U.S. military.",
+     "reason": "a separate claim whose subject is a possessive noun phrase"
+    },
+    {
+     "text": "The following month, Anthropic announced that it would allow national security customers to use Claude Gov.",
+     "reason": "a separate reported-speech claim"
+    },
+    {
+     "text": "Anthropic's orthogonal usage policy to the surveillance systems implemented at the Federal Bureau of Investigation, the Secret Service, and Immigration and Customs Enforcement led to a conflict between Anthropic and the Trump administration by September.",
+     "reason": "a separate claim with a coordinated list and a result complement"
+    }
    ]
   },
   {
@@ -110,7 +164,17 @@
      "statement": "Pete Hegseth announced GenAI.mil, an artificial intelligence platform for the Department of Defense, in December 2025.",
      "required_content": "Pete Hegseth; announced; GenAI.mil; the platform description; the month",
      "admissible_omissions": "The footnote markers `[19][20]` are not part of the meaning.",
-     "in_scope_rationale": "A straightforward announcement whose object carries an appositive description and whose statement carries a required date."
+     "in_scope_rationale": "An announcement whose object carries an appositive description and whose statement carries a required date; it is qualified, not straightforward."
+    }
+   ],
+   "excluded_claims": [
+    {
+     "text": "The department initially contracted Google Gemini for the platform, then OpenAI's ChatGPT.",
+     "reason": "two further atomic claims with an anaphoric subject"
+    },
+    {
+     "text": "The following month, Hegseth announced that the Department of Defense would additionally contract xAI's Grok for use in the military, decrying \"woke AI\".",
+     "reason": "a separate reported-speech claim with a participial clause"
     }
    ]
   },
@@ -129,9 +193,15 @@
      "reference_id": "R-DEV-07",
      "kind": "qualified",
      "statement": "The European Union and other countries agreed to create their own AI safety institutes in May 2024.",
-     "required_content": "The European Union; other countries; agreed; their own AI safety institutes; May 2024",
+     "required_content": "The European Union; other countries; the relation `agreed to create`; their own AI safety institutes; May 2024",
      "admissible_omissions": "`At the AI Seoul Summit` names the venue and `forming an international network` states the consequence; each is a separate meaning.",
-     "in_scope_rationale": "A collective action with a coordinated subject and a required date."
+     "in_scope_rationale": "A collective action whose relation includes the complement `to create`; the bare verb `agreed` would not preserve the statement."
+    }
+   ],
+   "excluded_claims": [
+    {
+     "text": "forming an international network",
+     "reason": "a separate consequence claim inside the same sentence; declared as an omission for R-DEV-07 and excluded from this denominator"
     }
    ]
   },
@@ -154,7 +224,15 @@
      "admissible_omissions": "The French legal name and the English gloss name the same institute; `INESIA` is the short name the Source gives.",
      "in_scope_rationale": "A straightforward creation statement with a required date and a named object."
     }
+   ],
+   "excluded_claims": [
+    {
+     "text": "the French legal name, the English gloss, and the short name INESIA",
+     "reason": "an identity decision about three names for one institute; it is recorded inside R-DEV-08 rather than assessed as a separate claim"
+    }
    ]
   }
- ]
+ ],
+ "assessment_scope": "N counts only the eight approved reference statements. Every paragraph below contains further atomic claims; each excluded claim and its exclusion reason is recorded beside its passage. The measure is a bounded sample of ordinary statements, not paragraph-level completeness, and it must not be reported as one.",
+ "approval_note": "Conditional approval recorded by the reviewer, with three amendments now applied: R-DEV-02 is an onset with a temporal bound, R-DEV-07 requires `agreed to create`, and every excluded claim is listed per passage. The reviewer identifier is the reviewer role; the operator may replace it with a name without changing the population."
 }
