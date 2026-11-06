@@ -15,7 +15,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from typing import Protocol, cast
 
-from kotekomi_domain import Actor, DocumentRepresentationBundle, Event, Organization
+from kotekomi_domain import Actor, Assertion, DocumentRepresentationBundle, Event, Organization
 from kotekomi_domain.models import JsonValue
 
 from kotekomi_application.context_planning import (
@@ -178,8 +178,16 @@ class CompositionAnnotation:
 
     event_id: str
     status: str
-    summary: str
+    source_text_sha256: str
     span: Span | None = None
+    object_span: Span | None = None
+    assertion: Assertion | None = None
+    hold_reason: str | None = None
+    unavailable_reference: str | None = None
+    subject_name: str | None = None
+    proposal_handles: tuple[tuple[str, str], ...] = ()
+    outcome_path: str | None = None
+    outcome_sha256: str | None = None
 
 
 @dataclass(frozen=True)

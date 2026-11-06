@@ -314,7 +314,7 @@ def test_normal_worker_persists_the_hold_then_recomposition_composes(
     replay_before = CompositionOutcomeStore(state / "composition-outcomes").annotations((event_id,))
     assert len(replay_before) == 1
     assert replay_before[0].status == "held"
-    assert "assertion_inputs_unavailable" in replay_before[0].summary
+    assert replay_before[0].hold_reason == "assertion_inputs_unavailable"
 
     # Approve the candidate ingestion persisted, then recompose explicitly.
     ingested_candidates = ingested_grounding_candidates(
@@ -407,7 +407,10 @@ def test_normal_worker_persists_the_hold_then_recomposition_composes(
     replay_after = CompositionOutcomeStore(state / "composition-outcomes").annotations((event_id,))
     assert len(replay_after) == 1
     assert replay_after[0].status == "composed"
-    assert SUBJECT in replay_after[0].summary
+    assert replay_after[0].span is not None
+    assert replay_after[0].span.text == SUBJECT
+    assert replay_after[0].assertion is not None
+    assert replay_after[0].assertion.subject_entity_id == occurrence.identity_id
 
 
 def test_chosen_analyzer_emits_valid_tokens() -> None:

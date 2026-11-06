@@ -29,11 +29,13 @@ from kotekomi_adapters.extraction_view.source import (
 )
 from kotekomi_adapters.extraction_view.tui import ReplayApp
 from kotekomi_adapters.sqlite_ledger import sqlite_ledger_transaction
+from kotekomi_application.composition_inspection import enrich_composition_annotation
 from kotekomi_application.ingestion_execution import (
     StoppedExecutionInput,
     finalize_inspection_execution,
 )
 from kotekomi_application.ingestion_inspection import (
+    CompositionAnnotation,
     InspectionContext,
     ParagraphInput,
     ParagraphSnapshot,
@@ -72,13 +74,36 @@ def create_inspection_session(
 
     archive = LocalArchiveStore(ledger_path.parent / "archive")
     composition_store = CompositionOutcomeStore(ledger_path.parent / "composition-outcomes")
+
+    def composition_source(event_ids: tuple[str, ...]) -> tuple[CompositionAnnotation, ...]:
+        annotations = composition_store.annotations(event_ids)
+        if not any(item.assertion is not None for item in annotations):
+            return annotations
+        with sqlite_ledger_transaction(ledger_path) as repository:
+            proposals = repository.list_proposed_changes()
+            enriched: list[CompositionAnnotation] = []
+            for item in annotations:
+                subject = None
+                identity = None if item.assertion is None else item.assertion.subject_entity_id
+                if identity is not None:
+                    if identity.startswith("act_"):
+                        subject = repository.get_actor(identity)
+                    elif identity.startswith("org_"):
+                        subject = repository.get_organization(identity)
+                    else:
+                        raise ValueError("Unsupported subject kind in composed inspection.")
+                enriched.append(
+                    enrich_composition_annotation(item, subject=subject, proposals=proposals)
+                )
+            return tuple(enriched)
+
     return InspectionSession(
         InspectionSourceLoader(ledger_path),
         on_snapshot=publish,
         select_ordinal=select_ordinal,
         context=context,
         artifacts_port=InspectionArtifactLoader(archive),
-        composition_source=composition_store.annotations,
+        composition_source=composition_source,
     )
 
 

@@ -7,6 +7,11 @@ import re
 from collections.abc import Collection
 from dataclasses import dataclass
 
+from kotekomi_application.composition_inspection import (
+    COMPOSITION_LAYER,
+    INSPECTION_LAYERS,
+    composition_inspection_records,
+)
 from kotekomi_application.ingestion_inspection import (
     STAGE_ORDER,
     ParagraphAnnotationProfile,
@@ -16,7 +21,7 @@ from rich.cells import cell_len, split_graphemes
 from rich.style import Style
 from rich.text import Text
 
-STAGE_LABELS = dict(
+STAGE_LABELS: dict[str, str] = dict(
     zip(
         STAGE_ORDER,
         (
@@ -48,6 +53,10 @@ STAGE_COLORS = dict(
         strict=True,
     )
 )
+
+
+STAGE_LABELS[COMPOSITION_LAYER] = "Assertions"
+STAGE_COLORS[COMPOSITION_LAYER] = "bright_cyan"
 
 
 @dataclass(frozen=True)
@@ -173,7 +182,54 @@ def profile_annotations(profile: ParagraphAnnotationProfile) -> tuple[Annotation
                     record.data, ensure_ascii=False, indent=2
                 )
             result.append(Annotation(key, stage, span, label, details, related))
-    return tuple(result)
+    compositions: list[Annotation] = []
+    for record in composition_inspection_records(profile):
+        data = record.data
+        composition = next(
+            item for item in profile.composition if item.event_id == data["event_id"]
+        )
+        if record.record_type == "Assertion":
+            assert composition.assertion is not None
+            evidence_ids = ", ".join(composition.assertion.evidence_target_ids)
+            proposal_ids = ", ".join(identity for identity, _status in composition.proposal_handles)
+            reviews = (
+                ", ".join(status for _identity, status in composition.proposal_handles)
+                or "no proposal recorded"
+            )
+            label = (
+                f"Assertion · {data['assertion_status']} · "
+                f"{data['subject']} → {data['predicate']} → {data['object']}"
+            )
+            details = (
+                f"Assertion: {record.record_id}\n"
+                f"{data['subject']} → {data['predicate']} → {data['object']}\n"
+                f"Assertion state: {data['assertion_status']}\nReview: {reviews}\n"
+                f"Event: {data['event_id']}\n"
+                f"Evidence: {evidence_ids}\n"
+                f"Proposals: {proposal_ids or 'none'}\n"
+                f"Subject identity: {data['subject_entity_id'] or 'source value'}\n"
+                f"Scope: {data['epistemic_scope']}\n"
+                f"Source authority: {data['source_authority']}\n"
+                f"Attribution basis: {data['attribution_basis']}\n"
+                f"Qualifiers: {json.dumps(data['qualifiers'], ensure_ascii=False)}\n"
+            )
+        else:
+            label = f"Composition held · {data['hold_reason']}"
+            details = f"Event: {record.record_id}\nHold: {data['hold_reason']}\n"
+            if data["unavailable_reference"] is not None:
+                details += f"Missing reference: {data['unavailable_reference']}\n"
+        details += "\nLinked source spans:\n" + "\n".join(
+            f'{span.start}:{span.end} "{span.text}"'
+            for span in sorted(record.spans, key=lambda s: s.start)
+        )
+        if composition.outcome_path is not None:
+            details += (
+                f"\n\nOutcome: {composition.outcome_path}\nSHA-256: {composition.outcome_sha256}"
+            )
+        compositions.append(
+            Annotation(record.key, record.stage, record.spans[0], label, details, record.spans[1:])
+        )
+    return (*compositions, *result)
 
 
 @dataclass(frozen=True)
@@ -293,7 +349,12 @@ def annotated_rows(
         result.append(AnnotatedRow(source, line.start, line.end))
         anchored = sorted(
             (item for item in visible if line.start <= item.span.start < line.end),
-            key=lambda item: (STAGE_ORDER.index(item.stage), item.span.start, item.key),
+            key=lambda item: (
+                item.stage != COMPOSITION_LAYER,
+                INSPECTION_LAYERS.index(item.stage),
+                item.span.start,
+                item.key,
+            ),
         )
         for item in anchored:
             column = line.columns[item.span.start - line.start]
@@ -321,7 +382,7 @@ def render_annotated_paragraph(
     *,
     width: int = 100,
 ) -> str:
-    revealed = profile.present_stages if reveal_stages is None else reveal_stages
+    revealed = set(INSPECTION_LAYERS) if reveal_stages is None else set(reveal_stages)
     lines = ["stages: " + " ".join(stage for stage in STAGE_ORDER if stage in revealed), ""]
     lines.extend(row.text.plain for row in annotated_rows(profile, revealed, width, color=False))
     for item in profile_annotations(profile):
@@ -333,14 +394,10 @@ def render_annotated_paragraph(
                     item.details,
                 )
             )
-    if profile.composition:
-        lines.extend(("", "composition"))
-        for item in profile.composition:
-            lines.append(f"{item.event_id} · {item.status} · {item.summary}")
     return "\n".join(lines)
 
 
 def render_live_block(
     profile: ParagraphAnnotationProfile, completed_stages: Collection[str]
 ) -> str:
-    return render_annotated_paragraph(profile, completed_stages)
+    return render_annotated_paragraph(profile, {*completed_stages, COMPOSITION_LAYER})

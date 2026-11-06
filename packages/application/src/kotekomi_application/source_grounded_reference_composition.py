@@ -214,12 +214,6 @@ class EventCompositionStore(Protocol):
 
 def composition_annotation(record: EventCompositionRecord) -> CompositionAnnotation:
     """Map one persisted composition record to the replay-view annotation."""
-    if record.status is EventCompositionStatus.COMPOSED:
-        summary = f"composed: {record.relation_label} {record.subject_text} -> {record.object_text}"
-    else:
-        summary = f"held: {record.hold_reason}"
-        if record.unavailable_reference is not None:
-            summary += f" (missing {record.unavailable_reference})"
     source_span = record.supporting_subject_span
     span = None
     if source_span is not None:
@@ -227,6 +221,18 @@ def composition_annotation(record: EventCompositionRecord) -> CompositionAnnotat
     return CompositionAnnotation(
         event_id=record.event_id,
         status=record.status.value,
-        summary=summary,
+        source_text_sha256=record.source_text_sha256,
         span=span,
+        object_span=(
+            None
+            if record.supporting_object_span is None
+            else Span(
+                record.supporting_object_span.start,
+                record.supporting_object_span.end,
+                record.supporting_object_span.text,
+            )
+        ),
+        assertion=record.assertion,
+        hold_reason=record.hold_reason,
+        unavailable_reference=record.unavailable_reference,
     )

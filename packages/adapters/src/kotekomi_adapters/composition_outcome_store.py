@@ -7,8 +7,10 @@ and raises on a malformed record instead of returning an empty result.
 
 from __future__ import annotations
 
+import hashlib
 import os
 import tempfile
+from dataclasses import replace
 from pathlib import Path
 
 from kotekomi_application.ingestion_inspection import CompositionAnnotation
@@ -85,9 +87,21 @@ class CompositionOutcomeStore:
         """Return replay annotations for the Events a paragraph actually shows."""
         if not self._root.is_dir():
             return ()
-        records = {record.event_id: record for record in self.load_all()}
-        return tuple(
-            composition_annotation(records[event_id])
-            for event_id in event_ids
-            if event_id in records
-        )
+        annotations: list[CompositionAnnotation] = []
+        for event_id in event_ids:
+            path = self._path(event_id)
+            try:
+                raw = path.read_bytes()
+            except FileNotFoundError:
+                continue
+            record = EventCompositionRecord.model_validate_json(raw)
+            if record.event_id != event_id:
+                raise ValueError("Composition outcome filename and Event ID disagree.")
+            annotations.append(
+                replace(
+                    composition_annotation(record),
+                    outcome_path=f"{self._root.name}/{path.name}",
+                    outcome_sha256=hashlib.sha256(raw).hexdigest(),
+                )
+            )
+        return tuple(annotations)

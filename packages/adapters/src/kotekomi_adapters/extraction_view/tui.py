@@ -8,6 +8,7 @@ import subprocess
 from collections.abc import Callable
 from io import StringIO
 
+from kotekomi_application.composition_inspection import COMPOSITION_LAYER, INSPECTION_LAYERS
 from kotekomi_application.ingestion_debug_summary import (
     OperationMode,
     SnapshotOperation,
@@ -15,7 +16,6 @@ from kotekomi_application.ingestion_debug_summary import (
     phase_statuses,
 )
 from kotekomi_application.ingestion_inspection import (
-    STAGE_ORDER,
     InspectionClipboardPort,
     InspectionControlPort,
     ParagraphSnapshot,
@@ -147,11 +147,12 @@ class ReplayApp(App[int]):
         Binding("f", "follow", "Follow"),
         Binding("n,down", "annotation(1)", "Next annotation"),
         Binding("p,up", "annotation(-1)", "Previous annotation"),
+        Binding("a", "assertion", "Assertions"),
         *[
             Binding(
                 str(index + 1), f"layer({index})", f"{index + 1} {STAGE_LABELS[stage]}", show=False
             )
-            for index, stage in enumerate(STAGE_ORDER)
+            for index, stage in enumerate(INSPECTION_LAYERS)
         ],
     ]
 
@@ -171,7 +172,7 @@ class ReplayApp(App[int]):
         )
         self.mode: OperationMode = mode
         self.snapshots: dict[int, ParagraphSnapshot] = {}
-        self.visible_stages = set(STAGE_ORDER)
+        self.visible_stages = set(INSPECTION_LAYERS)
         self.selected_keys: dict[int, str | None] = {}
         self.current: int | None = None
         self.latest: int | None = None
@@ -369,6 +370,19 @@ class ReplayApp(App[int]):
         if key is not None and not any(item.key == key for item in visible):
             key = None
             self.selected_keys[self.current] = None
+        if key is None:
+            assertion_keys = {
+                f"composition:{item.event_id}"
+                for item in snapshot.profile.composition
+                if item.assertion is not None
+            }
+            preferred = next(
+                (item for item in visible if item.key in assertion_keys),
+                None,
+            )
+            if preferred is not None:
+                key = preferred.key
+                self.selected_keys[self.current] = key
         selected = next((item for item in visible if item.key == key), None)
         source = self.query_one(SourcePane)
         pane = self.query_one("#source-scroll", VerticalScroll)
@@ -392,15 +406,23 @@ class ReplayApp(App[int]):
                 self._scroll_restore_scheduled = True
                 self.call_after_refresh(self._restore_scroll)
         statuses = phase_statuses(snapshot.profile, snapshot.status, self.finished)
+        statuses[COMPOSITION_LAYER] = (
+            "received"
+            if snapshot.profile.composition
+            else ("not run" if self.finished else "pending")
+        )
         inspector = (
             "Select a source-attached label; n / p cycles annotations.\n\nPhase results:\n"
-            + "\n".join(f"{STAGE_LABELS[stage]}: {statuses[stage]}" for stage in STAGE_ORDER)
+            + "\n".join(f"{STAGE_LABELS[stage]}: {statuses[stage]}" for stage in INSPECTION_LAYERS)
         )
         if selected is not None:
+            result_label = (
+                "Inspection result" if selected.stage == COMPOSITION_LAYER else "Phase result"
+            )
             inspector = (
                 f'{selected.label}\n\nSource: "{selected.span.text}"\n'
                 f"Range: {selected.span.start}:{selected.span.end}\n"
-                f"Phase result: {statuses[selected.stage]}\n\n{selected.details}"
+                f"{result_label}: {statuses[selected.stage]}\n\n{selected.details}"
             )
         self.query_one("#inspector", Static).update(Text(inspector))
         progress = Text(
@@ -410,7 +432,11 @@ class ReplayApp(App[int]):
             + " · "
             f"{'following' if self.following else 'browsing'}\n"
         )
-        for index, stage in enumerate(STAGE_ORDER):
+        assertions = sum(item.assertion is not None for item in snapshot.profile.composition)
+        holds = len(snapshot.profile.composition) - assertions
+        if snapshot.profile.composition:
+            progress.append(f"{assertions} Assertion(s), {holds} held Event(s) · a to inspect\n")
+        for index, stage in enumerate(INSPECTION_LAYERS):
             state = statuses[stage]
             mark = {"complete": "✓", "received": "✓", "pending": "·", "not run": "—"}.get(
                 state, "!"
@@ -472,8 +498,32 @@ class ReplayApp(App[int]):
         index = keys.index(key) if key in keys else (-1 if direction > 0 else 0)
         self._select_annotation(keys[(index + direction) % len(keys)])
 
+    def action_assertion(self) -> None:
+        if self.current is None:
+            return
+        profile = self.snapshots[self.current].profile
+        preferred = {
+            f"composition:{item.event_id}"
+            for item in profile.composition
+            if item.assertion is not None
+        }
+        keys = [
+            item.key
+            for item in profile_annotations(profile)
+            if item.stage == COMPOSITION_LAYER and (not preferred or item.key in preferred)
+        ]
+        if not keys:
+            self._status_lines.append("No composition outcomes recorded for this paragraph.")
+            self._status_lines = self._status_lines[-3:]
+            self._refresh_status()
+            return
+        self.visible_stages.add(COMPOSITION_LAYER)
+        key = self.selected_keys.get(self.current)
+        index = keys.index(key) if key in keys else -1
+        self._select_annotation(keys[(index + 1) % len(keys)])
+
     def action_layer(self, index: int) -> None:
-        stage = STAGE_ORDER[index]
+        stage = INSPECTION_LAYERS[index]
         if stage in self.visible_stages:
             self.visible_stages.remove(stage)
         else:

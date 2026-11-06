@@ -86,6 +86,16 @@ The output pane keeps warning and error lines that ingestion wrote to its error 
 Press `c` to copy the current paragraph summary.
 `[` and `]` move between paragraphs.
 
+The eighth inspection layer, **Assertions**, shows persisted composition outcomes separately from extraction phases.
+Press `a` to select a composed Assertion; when none exists, it selects a held Event.
+Press `n` or `p` to cycle through all visible annotations, including composition.
+Press `8` to hide or show the Assertions layer.
+Selecting an Assertion highlights its subject, Event trigger, and object together in the source text.
+The inspector shows the accepted subject name, reviewed predicate, object, Assertion state, proposal review state, and evidence IDs.
+A proposed Assertion with a pending ProposedChange remains distinct from an accepted Assertion.
+Press `c` to copy the visible records, including composition IDs, linked spans, review handles, and the outcome file path and digest.
+Hidden composition records are excluded from the copied summary.
+
 ## 5. Review one Event and accept its prerequisites
 
 Ingestion produces grounding candidates, not accepted identities.

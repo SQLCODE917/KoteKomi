@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 
 from kotekomi_adapters.composition_outcome_store import CompositionOutcomeStore
@@ -11,9 +12,12 @@ from kotekomi_application import (
     EventCompositionStatus,
     SourceRange,
 )
+from kotekomi_application.composition_inspection import COMPOSITION_LAYER
 from kotekomi_application.ingestion_inspection import (
     CompositionAnnotation,
+    EventAnnotation,
     ParagraphAnnotationProfile,
+    Span,
 )
 from kotekomi_application.source_grounded_reference_composition import (
     composition_annotation,
@@ -27,7 +31,7 @@ from kotekomi_domain import (
     SourceAuthority,
 )
 
-_SHA = "a" * 64
+_SHA = hashlib.sha256(b"Alpha supports the reviewed assertion.").hexdigest()
 
 
 def _profile(composition: tuple[CompositionAnnotation, ...]) -> ParagraphAnnotationProfile:
@@ -42,9 +46,11 @@ def _profile(composition: tuple[CompositionAnnotation, ...]) -> ParagraphAnnotat
         references=(),
         groundings=(),
         triggers=(),
-        events=(),
+        events=(
+            EventAnnotation("AHE-001", Span(6, 14, "supports"), "support", "supports", "supports"),
+        ),
         standing_facts=(),
-        present_stages=frozenset(),
+        present_stages=frozenset({"hp6_event_semantics"}),
         composition=composition,
     )
 
@@ -59,10 +65,12 @@ def test_held_composition_renders_in_replay() -> None:
     )
     annotation = composition_annotation(record)
 
-    rendered = render_annotated_paragraph(_profile((annotation,)), frozenset())
+    rendered = render_annotated_paragraph(_profile((annotation,)), {COMPOSITION_LAYER})
 
-    assert "composition" in rendered
-    assert "AHE-001 · held · held: awaiting_acceptance (missing act_alpha)" in rendered
+    assert "Assertions" in rendered
+    assert "Composition held · awaiting_acceptance" in rendered
+    assert "AHE-001" in rendered
+    assert "act_alpha" in rendered
 
 
 def test_composed_composition_renders_assertion_with_span() -> None:
@@ -92,9 +100,11 @@ def test_composed_composition_renders_assertion_with_span() -> None:
     )
     annotation = composition_annotation(record)
 
-    rendered = render_annotated_paragraph(_profile((annotation,)), frozenset())
+    rendered = render_annotated_paragraph(_profile((annotation,)), {COMPOSITION_LAYER})
 
-    assert "AHE-001 · composed · composed: support Alpha -> the reviewed assertion" in rendered
+    assert "Assertion · proposed · Alpha → supports → the reviewed assertion" in rendered
+    assert "ast_r20" in rendered
+    assert "etg_r20" in rendered
 
 
 def test_composition_store_loads_persisted_outcome(tmp_path: Path) -> None:
@@ -112,4 +122,5 @@ def test_composition_store_loads_persisted_outcome(tmp_path: Path) -> None:
 
     assert [item.event_id for item in annotations] == ["AHE-001"]
     assert annotations[0].status == "held"
-    assert "awaiting_acceptance" in annotations[0].summary
+    assert annotations[0].hold_reason == "awaiting_acceptance"
+    assert annotations[0].unavailable_reference == "act_alpha"

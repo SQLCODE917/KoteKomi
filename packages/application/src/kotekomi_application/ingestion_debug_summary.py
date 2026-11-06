@@ -9,6 +9,12 @@ from typing import Literal
 from kotekomi_domain.models import JsonValue
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from kotekomi_application.composition_inspection import (
+    COMPOSITION_LAYER,
+    INSPECTION_LAYERS,
+    composition_inspection_records,
+    validate_composition_outcome_handle,
+)
 from kotekomi_application.ingestion_inspection import (
     STAGE_ORDER,
     ArtifactHandle,
@@ -67,6 +73,7 @@ class DebugSummary(SummaryRecord):
     spans: tuple[tuple[int, int], ...] = ()
     phases: tuple[DebugPhase, ...]
     records: dict[str, tuple[DebugRecord, ...]] = Field(default_factory=dict)
+    composition_enabled: bool = False
     artifacts: tuple[ArtifactHandle, ...] = ()
     selected_record_id: str | None = None
     errors: tuple[str, ...] = ()
@@ -76,6 +83,8 @@ class DebugSummary(SummaryRecord):
         if tuple(p.stage for p in self.phases) != STAGE_ORDER:
             raise ValueError("Summary must cover every canonical phase.")
         visible = {p.stage for p in self.phases if p.enabled}
+        if self.composition_enabled:
+            visible.add(COMPOSITION_LAYER)
         for start, end in self.spans:
             if not 0 <= start < end <= len(self.source.text):
                 raise ValueError("Summary span falls outside the paragraph.")
@@ -85,6 +94,14 @@ class DebugSummary(SummaryRecord):
             for record in records:
                 if any(index < 0 or index >= len(self.spans) for index in record.spans):
                     raise ValueError("Summary record references a missing span.")
+                if stage == COMPOSITION_LAYER and (
+                    "outcome_path" in record.data or "outcome_sha256" in record.data
+                ):
+                    path = record.data.get("outcome_path")
+                    digest = record.data.get("outcome_sha256")
+                    if not isinstance(path, str) or not isinstance(digest, str):
+                        raise ValueError("Composition summary requires a typed file handle.")
+                    validate_composition_outcome_handle(path, digest)
         for artifact in self.artifacts:
             if (
                 artifact.stage not in STAGE_ORDER
@@ -134,12 +151,12 @@ def build_debug_summary(
     context: InspectionContext | None,
     errors: tuple[str, ...] = (),
 ) -> DebugSummary:
-    if set(visible_stages) - set(STAGE_ORDER):
+    if set(visible_stages) - set(INSPECTION_LAYERS):
         raise ValueError("Unknown inspection layer.")
     spans: list[tuple[int, int]] = []
     records: dict[str, list[DebugRecord]] = {}
     selected_id = None
-    for item in profile.records:
+    for item in (*profile.records, *composition_inspection_records(profile)):
         if item.stage not in visible_stages:
             continue
         indices: list[int] = []
@@ -165,7 +182,7 @@ def build_debug_summary(
                     or item.stage != "hp1_mentions"
                     or k not in {"referentiality", "discourse_role"}
                 },
-                related_ids=item.related_ids if selected else (),
+                related_ids=item.related_ids if selected or item.stage == COMPOSITION_LAYER else (),
                 trace_ids=item.trace_ids if selected else (),
             )
         )
@@ -197,6 +214,7 @@ def build_debug_summary(
             for s in STAGE_ORDER
         ),
         records={stage: tuple(rows) for stage, rows in records.items()},
+        composition_enabled=COMPOSITION_LAYER in visible_stages and bool(profile.composition),
         artifacts=profile.artifacts,
         selected_record_id=selected_id,
         errors=errors,
