@@ -40,7 +40,7 @@ The agent has not opened the Allen Document itself; only that one quoted paragra
 The reviewer approves these meanings only after reading each complete paragraph below.
 The same content is recorded machine-readably in `docs/2026-11-06-ipi-01-development-manifest.json`, which the comparator requires before any comparison can run.
 Passage text is the exact ingested paragraph text, including its original spacing and footnote markers; the digest covers exactly that text.
-Context before and after is the neighbouring paragraph text from the same Document, so the reviewer can judge an omission against the complete surrounding meaning.
+Context before and after is the neighbouring paragraph text from the same Document, or the nearest annotated paragraph when the adjacent paragraph is not recorded, so the reviewer can judge an omission against the complete surrounding meaning.
 
 ### DEV-01
 - Source: `raw/Anthropic–United_States_Department_of_Defense_dispute.pdf`, page 1, paragraph node `nod_f1e64380625a2f2c533fc277_0008`
