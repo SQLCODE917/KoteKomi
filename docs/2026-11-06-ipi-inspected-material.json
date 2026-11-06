@@ -1,0 +1,41 @@
+{
+  "record": "ipi-inspected-material-v1",
+  "package": "intelligence-pipeline-improvement",
+  "baseline_revision": "7dc9a44",
+  "purpose": "Names the material the implementing agent has already read so the reserved custody check can reject it.",
+  "sources": [
+    {
+      "path": "raw/Anthropic–United_States_Department_of_Defense_dispute.pdf",
+      "sha256": "c63c85796559453acf708dab46a35da36ffed00a408a25275576ba07138e9624",
+      "used_by_partition": "development",
+      "excluded_from_reserved": true,
+      "read_extent": "pdftotext pages 1-2 in full; 160-character previews of all 36 ingested paragraphs; full text of ingested paragraphs 1, 2, 3, 8, and 13",
+      "inspected_paragraph_sha256": [
+        "377c75c2999935fb1984a2c1a6761a73798539536409742f95cd527cc40f3eb5",
+        "86ba43dd74f414301968e6caca8a1aba6ddd61895d412266d69c158eea552116",
+        "cd155e49324b2678a0d80829f2476812f6301df6f55a963d991d6c402361c227",
+        "c5b74218e413464bcf1cb1f82e9293b44bebc035b5c224c7b1a09d081654afb9"
+      ]
+    },
+    {
+      "path": "raw/Artificial_intelligence_safety_institute.pdf",
+      "sha256": "2220220010291aa4a2ccc8286b2f4c5e96cdbb673392f289682c2c84104f5253",
+      "used_by_partition": "development",
+      "excluded_from_reserved": true,
+      "read_extent": "pdftotext pages 1-2 in full; organization annotation packet paragraphs _0002 and _0008",
+      "inspected_paragraph_sha256": [
+        "84d7632331c5af8be2344b8d589143fec8a0f884f6851416a55e5f45b732bb80"
+      ]
+    },
+    {
+      "path": "raw/241030_Allen_Safety_Network.pdf",
+      "sha256": "16f65bb7730939b5f813a6c538d9c24674183ad492dfaa5be091e00783f9670f",
+      "used_by_partition": "reserved",
+      "excluded_from_reserved": false,
+      "read_extent": "one paragraph quoted in docs/2026-08-28-organization-mention-held-out-annotation-packet.md",
+      "inspected_paragraph_sha256": [
+        "0ca5e1768c21b392d33b4d4e2c86bc9468eccb8e4177cb1630eebdbb235656f2"
+      ]
+    }
+  ]
+}

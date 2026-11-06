@@ -1,11 +1,14 @@
 # Intelligence Pipeline Improvement Agile Package
 
-- Status: Proposed
+- Status: In progress
 - Program ID: `intelligence-pipeline-improvement`
 - Parent: [Hybrid Intelligence Extraction Pipeline](2026-09-01-hybrid-intelligence-extraction-pipeline.md)
 - Predecessor: [Ingestion to Reviewed Assertion](2026-11-04-ingestion-to-reviewed-assertion-agile-package.md)
 - First deliverable: IPI-01, Agree the passages and success measures
-- Next deliverable: IPI-01
+- Next deliverable: IPI-01 human approval of the proposed manifest
+- Baseline revision: `7dc9a44`
+- Implementation branch: `feature/ipi-intelligence-pipeline-improvement`
+- Opening commit: `3ab08be`
 
 ## User Outcome and Strategic Shift
 
