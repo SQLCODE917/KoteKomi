@@ -209,8 +209,10 @@ Per-statement row, written into the condition result file:
 
 1. Baseline: `../kotekomi-baseline`, revision `7dc9a44`, roots `development/baseline/anthropic` and `development/baseline/aisi`, statements in reference-ID order.
 2. Final: `../kotekomi-final`, revision `2ec4737`, the same Document roots, ordinals, and statement order.
-3. Reserved: one root per condition for the Allen Document; alternate baseline-first and final-first order across reserved passages and record the order used.
+3. Reserved: one root per condition for the Allen Document; ingest both reserved roots before the first reserved attempt, then interleave the two roots per passage so the starting condition alternates (RES-01 baseline first, RES-02 final first, and so on); record the order used for each passage.
 4. Use the same operator for both conditions; if that is impossible, record both operators and treat the comparison as unblinded.
+
+Reserved arithmetic comes from the sealed manifest: `N = 8` statements, a 300-second budget each, and therefore a 2400-second baseline attempt budget for the zero-baseline capability route.
 
 Both conditions start from empty roots and create every required identity through `review decide`; no accepted record is copied between roots.
 

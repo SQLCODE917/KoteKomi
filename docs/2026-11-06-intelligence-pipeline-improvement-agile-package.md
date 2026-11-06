@@ -7,6 +7,7 @@
 - First deliverable: IPI-01, Agree the passages and success measures
 - Next deliverable: the human baseline/final execution under the approved procedure
 - Approvals: D3 targets approved; D1 eight-statement scope conditionally approved with amendments; D2 rubric and timing approved; D4 custody authorized (preparation and sealing only)
+- Reserved partition: sealed by Dmitri on 2026-11-06, digest `a9198da4a9543623997ab00dc85109b95a733df7e3c657709af6d0ac886953e1`, 6 passages, 8 statements, `check` valid
 - Frozen production revisions: baseline `7dc9a44`; final `2ec4737`
 - Operator procedure: [IPI operator comparison](2026-11-06-ipi-operator-comparison-procedure.md)
 - Order record: [Implementation order](2026-11-06-ipi-implementation-order.md)

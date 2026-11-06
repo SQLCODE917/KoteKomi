@@ -384,7 +384,7 @@ The comparator refuses to run unless the manifest is approved, both conditions c
 | D1 eight-statement scope | conditionally approved | human reviewer | 2026-11-06 | Approved with three amendments: R-DEV-02 onset rationale, R-DEV-07 `agreed to create`, excluded claims listed per passage |
 | D2 rubric and timing protocol | approved | human reviewer | 2026-11-06 | Active time excludes separately recorded waiting time; long and short waits count as waiting |
 | D4 reserved custody | authorized | human reviewer | 2026-11-06 | Authorizes preparation and sealing; it does not assert that reserved passages are reviewed or sealed |
-| Sealed reserved manifest digest | pending | | | Recorded after the reviewer seals the partition |
+| Sealed reserved manifest digest | sealed | Dmitri | 2026-11-06 | `a9198da4a9543623997ab00dc85109b95a733df7e3c657709af6d0ac886953e1`; 6 passages, 8 statements (2 straightforward, 6 qualified), 1 source; `check` reports `valid` against the inspected-material record |
 
 ## 11. Execution handoff
 
