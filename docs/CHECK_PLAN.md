@@ -265,13 +265,18 @@
 - The model-free headless verification outputs `assertion-inspection-summary.json` and `assertion-inspection.svg` under the fresh IRA handoff root; the former must parse as `DebugSummary`, include composition file/digest and evidence handles, and resolve the selected Assertion ID.
 - Reopen saved replay and press `a`, then `c`, for the operator's visual confirmation; automated headless verification does not stand in for that observation.
 
-## 14. Intelligence Pipeline Improvement (proposed)
+## 14. Intelligence Pipeline Improvement (in progress)
 
-- Track the proposed scope and acceptance policy in the [Intelligence Pipeline Improvement Agile Package](2026-11-06-intelligence-pipeline-improvement-agile-package.md).
+- Track the package scope and acceptance policy in the [Intelligence Pipeline Improvement Agile Package](2026-11-06-intelligence-pipeline-improvement-agile-package.md).
 - Before baseline execution, require human approval of the source-bound passage manifest, reference meanings, development/reserved split, attempt budget, and numerical targets.
 - Keep missed Events and unsupported statements in the fixed reference denominator; assess source-faithful meaning independently of composition status.
 - Compare usable results and active review cost from equivalent fresh states; include unsuccessful attempts, corrections, waiting time, and measurement uncertainty.
 - Require a cross-stage bottleneck comparison before each production cycle, at most two improvement cycles, and a fixed implementation before reserved evaluation.
-- Each implementation TDD adds exact tests, operator commands, durable output paths, and completion probes here; this proposed package introduces no new executable verification command.
+- Validate one operator measurement and decide the declared route with `uv run python scripts/ipi_measure.py check --result <file>` and `uv run python scripts/ipi_measure.py compare --baseline <file> --final <file>`; covered by `uv run pytest packages/devtools/tests/unit/test_ipi_measurement.py`.
+- Seal and revalidate the reserved partition outside the repository with `uv run python scripts/ipi_reserved_custody.py seal --source raw/241030_Allen_Safety_Network.pdf --custody-root "$HOME/kotekomi-ipi-custody" --reviewer "<name>"` and `uv run python scripts/ipi_reserved_custody.py check --custody-root "$HOME/kotekomi-ipi-custody" --inspected docs/2026-11-06-ipi-inspected-material.json`; covered by `uv run pytest packages/devtools/tests/unit/test_ipi_custody.py`.
+- Verify the noun-phrase boundary completion with `uv run pytest packages/application/tests/test_source_grounded_selection_completion.py`.
+- Verify the delivered production journey on a copied stored state root: `review event-packet --run igr_c4b8a09978114e49bb63e8c7df73a005 --event sge_e8d444a0222b3344ab28d1d8` shows subject `Amodei` and object `Trump's approach to export restrictions on semiconductors`; `review decide` with candidate `Amodei`, predicate `criticized`, `reported_observation`, `secondary`, `direct_document` accepts one occurrence; `review recompose` reports `status: composed` with `assertion_status: proposed`; `review list --record-type Assertion` shows one pending record for `ast_4c1b2796171b5f39ac8ba82fa5ab2d24`; saved replay of paragraph 5 prints `Dario Amodei → criticized → Trump's approach to export restrictions on semiconductors`, the evidence handle, and the pending proposal.
+- Each further implementation TDD adds exact tests, operator commands, durable output paths, and completion probes here.
 - Preserve the IRA, R20, replay, persistence, formatting, lint, typecheck, and whole-tree regression checks above.
 - Package completion requires a measured production gain under one declared numerical route, per-statement non-regression, replayable evidence, and preserved approval requirements; infrastructure and diagnostic improvements alone do not satisfy it.
+

@@ -33,84 +33,29 @@ Reserved passages must not come from it.
 Each passage is one authoritative paragraph from a real Document.
 The operator locates the paragraph by its anchor text after ingesting the Document.
 Footnote markers `[n]` belong to the extracted text and are not part of any reference statement.
+The last column records the blocking stage the stored IRA acceptance run shows for that Event; it is diagnostic evidence, not the official baseline.
 
-### DEV-01: the dispute opening
-
-- Source: `raw/Anthropic–United_States_Department_of_Defense_dispute.pdf`, page 1.
-- Anchor: `Since  January  2026`
-- Reference statement R-DEV-01: `The United States Department of Defense has conflicted with Anthropic since January 2026.`
-- Required content: both participants, the relation `conflicted`, and the temporal bound `since January 2026`.
-- Admissible omission: the closing phrase `over the use of its products for military purposes and mass domestic surveillance` states a second, separate meaning; it is out of scope for R-DEV-01.
-- Why in scope: an ordinary lead sentence in the target domain with one required temporal qualifier.
-
-### DEV-02: GenAI.mil announcement
-
-- Source: `raw/Anthropic–United_States_Department_of_Defense_dispute.pdf`, page 2.
-- Anchor: `In  December  2025,  secretary  of  defense  Pete  Hegseth  announced`
-- Reference statements:
-  - R-DEV-02: `Pete Hegseth announced GenAI.mil in December 2025.`
-  - R-DEV-03: `The Department of Defense contracted Google Gemini for GenAI.mil.`
-  - R-DEV-04: `The Department of Defense contracted OpenAI's ChatGPT for GenAI.mil.`
-- Required content: participants, relation, the product, and the temporal qualifier for R-DEV-02.
-- Admissible omissions: the appositive `an artificial intelligence platform for the Department of Defense` describes GenAI.mil; `initially` and `then` order the two contracts without changing either statement; `decrying "woke AI"` states a separate meaning about a later contract.
-- Anaphora: `The department` denotes `the Department of Defense`; the reference statements use the full name.
-- Why in scope: two straightforward statements and one time-qualified statement from one announcement paragraph.
-
-### DEV-03: Australian institute announcement
-
-- Source: `raw/Artificial_intelligence_safety_institute.pdf`, page 2.
-- Anchor: `The Albanese government announced the creation of the Australian AI Safety Institute`
-- Reference statement R-DEV-05: `The Albanese government announced the creation of the Australian AI Safety Institute on 25 November 2025.`
-- Required content: actor, relation, the created object as a whole phrase, and the date.
-- Admissible omission: none identified.
-- Why in scope: a straightforward statement whose object carries a required complement and whose statement carries a required date.
-
-### DEV-04: French institute creation
-
-- Source: `raw/Artificial_intelligence_safety_institute.pdf`, page 2.
-- Anchor: `On 31 January 2025, the government of France created`
-- Reference statement R-DEV-06: `The government of France created INESIA on 31 January 2025.`
-- Required content: actor, relation, the created institute, and the date.
-- Admissible omission: the French legal name and the English gloss name the same institute; `INESIA` is the short name the Source gives.
-- Why in scope: an ordinary creation statement with a required date and a named object.
-
-### DEV-05: United Kingdom institute establishment
-
-- Source: `raw/Artificial_intelligence_safety_institute.pdf`, page 1.
-- Anchor: `During the summit in November 2023, the UK AISI was officially established`
-- Reference statement R-DEV-07: `The UK AI Safety Institute was established in November 2023.`
-- Required content: the institute, the passive relation `was established`, and the month.
-- Admissible omission: `as an evolution of the Frontier AI Taskforce` names a predecessor and states a separate lineage meaning.
-- Why in scope: a passive construction with a required time qualifier, common in institutional reporting.
-
-### DEV-06: Canadian institute announcement
-
-- Source: `raw/Artificial_intelligence_safety_institute.pdf`, page 2.
-- Anchor: `Canada announced in April 2024 that it would create an AI safety institute`
-- Reference statement R-DEV-08: `Canada announced in April 2024 that it would create an AI safety institute.`
-- Required content: actor `Canada`, the reporting relation `announced`, the announced content as the object, the month, and the reported modality `would`.
-- Admissible omission: the following clause about the founding date states a separate later fact.
-- Why in scope: a reported-speech construction with an embedded clause and a required date.
+| Passage | Source and anchor | Reference statement | Required content | Admissible omission | Stored-run blocker |
+|---|---|---|---|---|---|
+| DEV-01 | `Anthropic–United_States_Department_of_Defense_dispute.pdf` page 1, `The United States Department of Defense established a policy` | R-DEV-01: `The United States Department of Defense established a policy on the use of artificial intelligence in 2012.` | participants, relation, the policy object, the year | the appositive `Directive 3000.09` names the same policy | selection boundary gap, then an unsupported trigger adjunct |
+| DEV-01 | same paragraph, `began developing lethal autonomous weapons` | R-DEV-02: `The United States Department of Defense began developing lethal autonomous weapons as early as the Reagan administration.` | participants, relation, the weapons object, the temporal bound | none identified | selection boundary gap |
+| DEV-02 | same Document page 1, `Prior to the dispute, the Trump administration had integrated` | R-DEV-03: `The Trump administration had integrated Anthropic's services.` | participants, relation, the services object | `Prior to the dispute` places the event before the dispute and states a separate chronology | unsupported trigger adjunct |
+| DEV-03 | same Document page 1, `That month,  Amodei criticized Trump's approach` | R-DEV-04: `Dario Amodei criticized Trump's approach to export restrictions on semiconductors.` | actor, relation, the complete object phrase | the opening `That month` states a separate time frame | selection boundary gap |
+| DEV-04 | same Document page 2, `secretary of defense Pete Hegseth announced GenAI.mil` | R-DEV-05: `Pete Hegseth announced GenAI.mil, an artificial intelligence platform for the Department of Defense.` | actor, relation, the platform name and its description | `in December 2025` states the date and is recorded as context | no object role and no review candidate at the subject |
+| DEV-05 | `Artificial_intelligence_safety_institute.pdf` page 2, `The Albanese government announced the creation of the Australian AI Safety Institute` | R-DEV-06: `The Albanese government announced the creation of the Australian AI Safety Institute on 25 November 2025.` | actor, relation, the created object, the date | none identified | not ingested at proposal time |
+| DEV-06 | same Document page 2, `On 31 January 2025, the government of France created` | R-DEV-07: `The government of France created INESIA on 31 January 2025.` | actor, relation, the created institute, the date | the French legal name and the English gloss name the same institute | not ingested at proposal time |
 
 ### Partition shape
 
 | Requirement | Development evidence |
 | --- | --- |
-| At least two straightforward statements | R-DEV-03, R-DEV-04, R-DEV-06 |
-| At least two statements with meaning-bearing qualifiers or complements | R-DEV-01, R-DEV-02, R-DEV-05, R-DEV-07, R-DEV-08 |
+| At least two straightforward statements | R-DEV-03, R-DEV-04, R-DEV-07 |
+| At least two statements with meaning-bearing qualifiers or complements | R-DEV-01, R-DEV-02, R-DEV-05, R-DEV-06 |
 | At least two Documents | `Anthropic–United_States_Department_of_Defense_dispute.pdf`, `Artificial_intelligence_safety_institute.pdf` |
 | Passages | 6 |
-| Reference statements (`N`) | 8 |
+| Reference statements (`N`) | 7 |
 
-No passage was chosen because the current selector or composer realizes it.
-
-| --- | --- | --- |
-| `raw/Anthropic–United_States_Department_of_Defense_dispute.pdf` | `pdftotext` pages 1-2 in full; 160-character previews of all 36 ingested paragraphs; full text of ingested paragraphs 1, 2, 3, 8, and 13 | This Document is excluded from the reserved partition |
-| `raw/Artificial_intelligence_safety_institute.pdf` | `pdftotext` pages 1-2 in full; organization annotation packet paragraphs `_0002`, `_0008` | This Document is excluded from the reserved partition |
-| `raw/241030_Allen_Safety_Network.pdf` | One paragraph quoted in [the organization held-out annotation packet](2026-08-28-organization-mention-held-out-annotation-packet.md): node `nod_e2ef007787e60f415d0334cd_0009`, paragraph text digest `0ca5e176…656f2` | Pages 1, 3-17 remain unread; the reserved partition uses this Document |
-
-The reserved partition therefore uses `raw/241030_Allen_Safety_Network.pdf` only, and the custody check rejects any passage whose paragraph digest equals the one quoted above or whose source is one of the two excluded Documents.
-
+No passage was chosen because the current selector or composer realizes it; three of the seven statements are blocked before composition in the stored run.
 
 ## 4. Reserved partition custody
 

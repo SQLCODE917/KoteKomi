@@ -199,9 +199,9 @@ Each production change ships and reverts independently.
 
 | ID | Deliverable | Depends on | Status | Evidence |
 | --- | --- | --- | --- | --- |
-| IPI-01 | Agree passages, reference meanings, and attempt budget | None | Planned | Human-approved manifest and rubric |
-| IPI-02 | Measure the existing workflow and compare stage bottlenecks | IPI-01 | Planned | Baseline, timings, stage table, ranked correction |
-| IPI-03 | Ship the highest-value production correction | IPI-02 | Planned | Failing-first regression and normal operator journey |
+| IPI-01 | Agree passages, reference meanings, and attempt budget | None | Proposed (human approval pending) | Proposed manifest, rubric, custody commands, and inspected-material record |
+| IPI-02 | Measure the existing workflow and compare stage bottlenecks | IPI-01 | In progress (diagnostic recorded; operator baseline pending) | [Baseline diagnostic and cross-stage ranking](2026-11-06-ipi-02-baseline-diagnostic-and-ranking.md) |
+| IPI-03 | Ship the highest-value production correction | IPI-02 | In progress (cycle 1 implemented and verified on a copied run) | [Noun-phrase boundary completion TDD](2026-11-06-ipi-03-noun-phrase-boundary-completion.md) |
 | IPI-04 | Reassess priorities and deliver a second correction only if required | IPI-03 | Planned | Updated stage table and bounded production result |
 | IPI-05 | Evaluate reserved passages and reconcile the package | IPI-03; IPI-04 decision | Planned | Independent assessment, measures, operator confirmation |
 

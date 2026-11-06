@@ -40,6 +40,21 @@ _OPTIONAL_CONTENT_RELATIONS = frozenset(
     {"case", "mark", "acl", "advmod", "aux", "cop", "neg", "punct", "nmod"}
 )
 _COORDINATION_RELATIONS = frozenset({"conj", "cc"})
+_COMPLETION_CONTENT_RELATIONS = frozenset(
+    {
+        "det",
+        "amod",
+        "compound",
+        "compound:prt",
+        "flat",
+        "nummod",
+        "punct",
+        "case",
+        "fixed",
+        "nmod",
+        "nmod:poss",
+    }
+)
 
 
 class SourceGroundedSelectionStatus(StrEnum):
@@ -233,6 +248,51 @@ def _label_for(inventory: ConstituentCandidateInventory, constituent: ParserCons
     raise ValueError("Selected constituent is absent from the Candidate inventory.")
 
 
+def _completion_is_permitted(
+    *,
+    candidate: ParserConstituent,
+    boundary: SourceRange,
+    tokens_by_id: dict[str, EventEntityLinguisticToken],
+) -> bool:
+    """Return whether one covering candidate only completes the role's own noun phrase.
+
+    The candidate may add noun-phrase content that is inside it: determiners,
+    modifiers, compounds, punctuation, and at most one prepositional complement
+    rooted directly in the canonical boundary tokens. Any clause, appositive,
+    coordination, or adverbial material leaves the candidate unsuitable.
+    """
+    extras = [
+        tokens_by_id[token_id]
+        for token_id in candidate.token_ids
+        if not (
+            boundary.start <= tokens_by_id[token_id].start
+            and tokens_by_id[token_id].end <= boundary.end
+        )
+    ]
+    if not extras:
+        return False
+    if any(token.dependency_relation not in _COMPLETION_CONTENT_RELATIONS for token in extras):
+        return False
+    complement_roots = [
+        token
+        for token in extras
+        if token.dependency_relation == "nmod"
+        and token.head_token_id is not None
+        and token.head_token_id in _boundary_token_ids(boundary, tokens_by_id)
+    ]
+    return len(complement_roots) <= 1
+
+
+def _boundary_token_ids(
+    boundary: SourceRange, tokens_by_id: dict[str, EventEntityLinguisticToken]
+) -> frozenset[str]:
+    return frozenset(
+        token_id
+        for token_id, token in tokens_by_id.items()
+        if boundary.start <= token.start and token.end <= boundary.end
+    )
+
+
 def _select_conjunct(
     *,
     head: EventEntityLinguisticToken,
@@ -261,6 +321,13 @@ def _select_conjunct(
     covering = [item for item in candidates if _span_covers(item, boundary)]
     if not covering:
         raise SourceGroundedSelectionError(SourceGroundedBoundaryGap.NO_COVERING_CANDIDATE)
+    if len(covering) == 1 and _completion_is_permitted(
+        candidate=covering[0], boundary=boundary, tokens_by_id=tokens_by_id
+    ):
+        return SourceGroundedConjunctSelection(
+            canonical_boundary=covering[0].constituent_range,
+            selected_label=_label_for(inventory, covering[0]),
+        )
     raise SourceGroundedSelectionError(SourceGroundedBoundaryGap.UNTERMINATED_TIE)
 
 
