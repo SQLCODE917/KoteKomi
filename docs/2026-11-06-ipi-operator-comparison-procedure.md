@@ -40,7 +40,7 @@ git worktree add ../kotekomi-final 2ec4737
 ```
 
 Run each condition from its own worktree with `uv run`, so the command, the package code, and the model runtime belong to the condition's revision.
-Run the measurement commands from either worktree; they only read result files and the manifest.
+Run the measurement commands from the branch tip checkout, because `scripts/ipi_measure.py` with `--manifest` enforcement exists only there; the comparator reads result files and the manifest and touches no product state.
 
 ## 3. Ordinal lookup (untimed, once)
 
