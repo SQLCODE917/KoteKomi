@@ -264,3 +264,14 @@
 - Verify the completed IRA run without model calls or accepted-state writes: paragraph 14 must expose Assertion `ast_431ca8ef1227f3d9da24431be66dbb2f`, accepted subject name `United States`, predicate `started`, pending proposal `pcg_a53f4a74e63cbf434ad57d4e`, and source spans 89..95, 96..103, and 104..121.
 - The model-free headless verification outputs `assertion-inspection-summary.json` and `assertion-inspection.svg` under the fresh IRA handoff root; the former must parse as `DebugSummary`, include composition file/digest and evidence handles, and resolve the selected Assertion ID.
 - Reopen saved replay and press `a`, then `c`, for the operator's visual confirmation; automated headless verification does not stand in for that observation.
+
+## 14. Intelligence Pipeline Improvement (proposed)
+
+- Track the proposed scope and acceptance policy in the [Intelligence Pipeline Improvement Agile Package](2026-11-06-intelligence-pipeline-improvement-agile-package.md).
+- Before baseline execution, require human approval of the source-bound passage manifest, reference meanings, development/reserved split, attempt budget, and numerical targets.
+- Keep missed Events and unsupported statements in the fixed reference denominator; assess source-faithful meaning independently of composition status.
+- Compare usable results and active review cost from equivalent fresh states; include unsuccessful attempts, corrections, waiting time, and measurement uncertainty.
+- Require a cross-stage bottleneck comparison before each production cycle, at most two improvement cycles, and a fixed implementation before reserved evaluation.
+- Each implementation TDD adds exact tests, operator commands, durable output paths, and completion probes here; this proposed package introduces no new executable verification command.
+- Preserve the IRA, R20, replay, persistence, formatting, lint, typecheck, and whole-tree regression checks above.
+- Package completion requires a measured production gain under one declared numerical route, per-statement non-regression, replayable evidence, and preserved approval requirements; infrastructure and diagnostic improvements alone do not satisfy it.
