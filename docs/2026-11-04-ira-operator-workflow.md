@@ -128,7 +128,8 @@ Two results are recorded separately, at different revisions:
 
 | Scope | Revision | Result |
 |---|---|---|
-| Full current suite | `9f945d5` | `EXIT=0` (`/tmp/full2.log`, log inspected; it does **not** cover the later test correction) |
+| Full current suite | `f8000df` | **`EXIT=0`**, 2,707 passed, 1 skipped, 0 failed (`/tmp/final.log`). Started with HEAD at `f8000df`; the only later commit `1ad1fbf` is documentation, so the code under test is identical at the recorded revision |
+| Full current suite (earlier) | `9f945d5` | `EXIT=0` (`/tmp/full2.log`; does **not** cover the later test correction) |
 | Reconciled residual-composition file (8 tests) | `1b5fe11` | 8 passed; `ruff format --check` 691 files; `ruff check` clean; `pyright` 0 errors on the file |
 
 A full-suite run at `1b5fe11` has not been performed; the only change after `9f945d5` is one

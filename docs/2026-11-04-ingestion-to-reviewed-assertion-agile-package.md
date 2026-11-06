@@ -192,9 +192,10 @@ Acceptance:
   The other 166 hold on `assertion_inputs_unavailable` and await construction inputs; their
   correctness has not been assessed.
 - **Package completion and whole-tree verification are separate.** Completion rests on the
-  demonstrated journey and the checks recorded per deliverable. A full-suite run at the final
-  revision is recorded in the [Operator Workflow](2026-11-04-ira-operator-workflow.md) evidence
-  section with its own revision and result; it is not implied by completion.
+  demonstrated journey and the checks recorded per deliverable. The whole-tree suite passed at
+  `f8000df` (`EXIT=0`, 2,707 passed, 1 skipped, 0 failed); the later commit is documentation only.
+  That result is recorded in the [Operator Workflow](2026-11-04-ira-operator-workflow.md) evidence
+  section and does not follow from completion itself.
 - Proposal counts mix ingestion proposal-plan proposals with reviewed recomposition proposals;
   product measures count the latter by joining on the construction review's Assertion ID.
 
