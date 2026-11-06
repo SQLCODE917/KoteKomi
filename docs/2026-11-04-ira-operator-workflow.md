@@ -135,6 +135,40 @@ A full-suite run at `1b5fe11` has not been performed; the only change after `9f9
 test file, so the full-suite result is reported for `9f945d5` and the focused result for
 `1b5fe11`, not merged into a single claim.
 
+## 3d. Live acceptance run (IRA-05-C) and measures (IRA-05-D)
+
+Run: `data/ira-acceptance-20261105-141506-176099` (fresh root, not the retained run).
+
+| Item | Value |
+|---|---|
+| IngestionRun | `igr_c4b8a09978114e49bb63e8c7df73a005` |
+| Source | `Anthropic–United_States_Department_of_Defense_dispute.pdf`, source `src_d97195ee5c8ced32c0cd41b0` |
+| Paragraph | `nod_..._0022`, node start 8720, statement `the US started the 2026 Iran war` |
+| Selected Event | `sge_6691bbb38ce7e592ea5ab155` |
+| Reviewed decision | construction review `ecr_fa83957a69a0f84969457475`, predicate `started`, reviewer **Dmitri Serbarinov** |
+| Accepted identity | occurrence `ioc_f634b1f1f0e7c7cd4147303c` for `org_efe1d3d3bc9d51d296f845a5` (United States) |
+| Assertion | `ast_431ca8ef1227f3d9da24431be66dbb2f`, `proposed` |
+| Pending ProposedChange | `pcg_a53f4a74e63cbf434ad57d4e` |
+| Evidence | statement EvidenceTarget over the clause; spans 89..95, 96..103, 104..121 |
+| Operator visual confirmation | replay shows `Assertion · proposed · United States → started → the 2026 Iran war` |
+
+### Measured counts (typed observability and durable records)
+
+| Measure | Value |
+|---|---|
+| Events discovered | **167** |
+| Composed | **1** (`sge_6691bbb38ce7e592ea5ab155`) |
+| Held | **166**, all `assertion_inputs_unavailable` |
+| Packets generated | one for the selected Event; other Events were not opened |
+| Pending Assertion proposals in the run | **2** — ours `ast_431ca8ef...`; plus `pcg_911c0d17fd03fdad651e3e93` for `ast_b5a447e105c3234bf3491a72`, which is not part of this journey and is reported rather than claimed |
+| Construction reviews | 1 |
+| Identity occurrences | 1 |
+| Operator effort | measured: 2 review commands (decide, recompose) plus packet inspection; total command count and any manual repair are **not recorded** by the operator and are reported as unknown |
+
+Run status from `ingestions show`: 36 required paragraphs, 17 complete, 19 with gaps, 3593 evidence records, 1087 model runs, status `captured`.
+
+Scope: this is one source-grounded **proposed** Assertion for one Event. The Assertion is not accepted Ledger intelligence; accepting it remains a separate review action. No extraction-accuracy or general-reliability claim follows from this single journey.
+
 ## 4. Acceptance evidence
 
 | Check | Evidence |
