@@ -186,6 +186,18 @@ Acceptance:
 - [x] IRA-05-E: Operator instructions include exact commands, durable paths, completion probes, and interpretation of proposed versus accepted state.
 - [x] IRA-05-F: Applicable tests, formatting, lint, typecheck, and preserved R19/R20 and stabilization regressions pass.
 
+## Standing Qualifications
+
+- **Workflow coverage is not extraction accuracy.** The live run composed 1 of 167 Events.
+  The other 166 hold on `assertion_inputs_unavailable` and await construction inputs; their
+  correctness has not been assessed.
+- **Package completion and whole-tree verification are separate.** Completion rests on the
+  demonstrated journey and the checks recorded per deliverable. A full-suite run at the final
+  revision is recorded in the [Operator Workflow](2026-11-04-ira-operator-workflow.md) evidence
+  section with its own revision and result; it is not implied by completion.
+- Proposal counts mix ingestion proposal-plan proposals with reviewed recomposition proposals;
+  product measures count the latter by joining on the construction review's Assertion ID.
+
 ## Product Measures
 
 The report declares the IngestionRun and Event population before counting results.

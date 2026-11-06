@@ -152,6 +152,22 @@ Run: `data/ira-acceptance-20261105-141506-176099` (fresh root, not the retained 
 | Evidence | statement EvidenceTarget over the clause; spans 89..95, 96..103, 104..121 |
 | Operator visual confirmation | replay shows `Assertion · proposed · United States → started → the 2026 Iran war` |
 
+### Provenance of the second pending Assertion proposal
+
+`pcg_911c0d17fd03fdad651e3e93` is **not** a recomposition proposal.
+Its provenance activity is `reconciled_document_proposal_batch_submitted` by
+`kotekomi_application`, recorded at `2026-11-05T16:00:19` — the ingestion run's completion time —
+as part of the HP-7 proposal-plan batch (the activity lists roughly two hundred `pcg_` records).
+Its record names relation label `strategy`, subject `org_617e48648887fe3e0dcbbf3e`, and object
+`Amodei's views toward Trump`, with stable label `ast_b5a447e105c3234bf3491a72`.
+No composition outcome in the run carries that Assertion ID, and no construction review,
+identity occurrence, or evidence target from this journey backs it.
+
+Consequence for measures: a proposal count over `review list --record-type Assertion` mixes
+**ingestion proposal-plan proposals** with **reviewed recomposition proposals**.
+Product measures must count the latter by joining on the construction review's Assertion ID
+(the method used above), not by the raw proposal count.
+
 ### Measured counts (typed observability and durable records)
 
 | Measure | Value |
