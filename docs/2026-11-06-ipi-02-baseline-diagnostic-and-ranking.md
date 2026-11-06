@@ -52,6 +52,7 @@ Those 20 include 13 Events that already realize both a subject and an object.
 
 Each candidate was measured by a counterfactual run over the same stored population.
 A counterfactual changes one rule in the process and reruns the same deterministic path.
+Counterfactual counts are mechanism evidence; they select and explain a correction and they never count as usable results or measured effort.
 
 | Candidate | Production change | Events unblocked | Composable and reviewable after the change | Risk |
 | --- | --- | --- | --- | --- |

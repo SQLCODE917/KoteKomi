@@ -5,7 +5,10 @@
 - Parent: [Hybrid Intelligence Extraction Pipeline](2026-09-01-hybrid-intelligence-extraction-pipeline.md)
 - Predecessor: [Ingestion to Reviewed Assertion](2026-11-04-ingestion-to-reviewed-assertion-agile-package.md)
 - First deliverable: IPI-01, Agree the passages and success measures
-- Next deliverable: IPI-01 human approval of the proposed manifest
+- Next deliverable: IPI-01 human approval of the passages, rubric, and custody
+- Frozen production revisions: baseline `7dc9a44`; final `2ec4737`
+- Operator procedure: [IPI operator comparison](2026-11-06-ipi-operator-comparison-procedure.md)
+- Order record: [Implementation order](2026-11-06-ipi-implementation-order.md)
 - Baseline revision: `7dc9a44`
 - Implementation branch: `feature/ipi-intelligence-pipeline-improvement`
 - Opening commit: `3ab08be`
@@ -199,11 +202,11 @@ Each production change ships and reverts independently.
 
 | ID | Deliverable | Depends on | Status | Evidence |
 | --- | --- | --- | --- | --- |
-| IPI-01 | Agree passages, reference meanings, and attempt budget | None | Proposed (human approval pending) | Proposed manifest, rubric, custody commands, and inspected-material record |
-| IPI-02 | Measure the existing workflow and compare stage bottlenecks | IPI-01 | In progress (diagnostic recorded; operator baseline pending) | [Baseline diagnostic and cross-stage ranking](2026-11-06-ipi-02-baseline-diagnostic-and-ranking.md) |
-| IPI-03 | Ship the highest-value production correction | IPI-02 | In progress (cycle 1 implemented and verified on a copied run) | [Noun-phrase boundary completion TDD](2026-11-06-ipi-03-noun-phrase-boundary-completion.md) |
-| IPI-04 | Reassess priorities and deliver a second correction only if required | IPI-03 | In progress (cycle 2 implemented and verified on a copied run) | [Trigger time qualifier TDD](2026-11-06-ipi-04-trigger-time-qualifier.md) and [evidence](2026-11-06-ipi-04-evidence.md) |
-| IPI-05 | Evaluate reserved passages and reconcile the package | IPI-03; IPI-04 decision | Planned | Independent assessment, measures, operator confirmation |
+| IPI-01 | Agree passages, reference meanings, and attempt budget | None | Proposed (targets approved; passages, rubric, and custody pending) | [Manifest, rubric, and protocol](2026-11-06-ipi-01-passage-manifest-and-measurement-protocol.md), [source-bound manifest](2026-11-06-ipi-01-development-manifest.json) |
+| IPI-02 | Measure the existing workflow and compare stage bottlenecks | IPI-01 | Diagnostic recorded; operator baseline pending | [Baseline diagnostic and cross-stage ranking](2026-11-06-ipi-02-baseline-diagnostic-and-ranking.md), [operator procedure](2026-11-06-ipi-operator-comparison-procedure.md) |
+| IPI-03 | Ship the highest-value production correction | IPI-02 | Delivered and frozen at `d001544`; operator comparison pending | [TDD](2026-11-06-ipi-03-noun-phrase-boundary-completion.md), [evidence](2026-11-06-ipi-03-evidence.md) |
+| IPI-04 | Reassess priorities and deliver a second correction only if required | IPI-03 | Delivered and frozen at `2ec4737`; no further cycle starts | [TDD](2026-11-06-ipi-04-trigger-time-qualifier.md), [evidence](2026-11-06-ipi-04-evidence.md) |
+| IPI-05 | Evaluate reserved passages and reconcile the package | IPI-03; IPI-04 decision | Pending reserved evaluation; only it decides package completion | [Implementation order](2026-11-06-ipi-implementation-order.md) |
 
 ### IPI-01: Agree passages and reference meanings
 

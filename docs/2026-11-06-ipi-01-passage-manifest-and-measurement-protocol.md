@@ -164,6 +164,7 @@ Rules the sealed manifest must satisfy:
 - At least two straightforward statements and at least two statements with meaning-bearing qualifiers or complements.
 - Every statement carries non-empty statement text, required content, admissible omissions, and an in-scope reason.
 - Every passage carries its exact text, its source digest, its page, non-empty `context_before` and `context_after` (the literal `none` when there is no surrounding text), and its text digest.
+- The sealed manifest carries `attempt_budget_seconds`, so the reserved comparison enforces the same five-minute budget as development.
 - The passage text must appear in the declared Source; the command extracts the Source and proves membership rather than trusting entered text.
 
 The reviewer runs the custody command.
@@ -326,3 +327,10 @@ The comparator refuses to run unless the manifest is approved, both conditions c
 | D2 rubric and timing protocol | pending | | | Timing corrected to include discovery and recovery |
 | D4 reserved custody | pending | | | Template written on the first `seal` invocation |
 | Sealed reserved manifest digest | pending | | | |
+
+## 11. Execution handoff
+
+The exact human-run baseline and final procedure is [the operator comparison procedure](2026-11-06-ipi-operator-comparison-procedure.md).
+It fixes the baseline revision `7dc9a44`, the final revision `2ec4737`, the per-passage roots, the ordinal lookup, the timing worksheet, the comparison commands, and the invalidation rules.
+The out-of-order implementation and the reference reconciliation are recorded in [the implementation order](2026-11-06-ipi-implementation-order.md).
+No timed run has started and the reserved partition is not sealed.

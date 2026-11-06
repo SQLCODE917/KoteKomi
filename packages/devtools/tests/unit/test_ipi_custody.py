@@ -15,6 +15,7 @@ from kotekomi_devtools.ipi_custody import (
     text_digest,
     validate_manifest,
 )
+from kotekomi_devtools.ipi_measurement import load_approved_manifest
 
 SOURCE = "raw/241030_Allen_Safety_Network.pdf"
 SOURCE_SHA = "a" * 64
@@ -77,6 +78,7 @@ def _manifest(texts: list[str], kinds: list[str]) -> dict[str, Any]:
         "revision": "7dc9a44",
         "reviewer": "reviewer",
         "sealed_on": "2026-11-06",
+        "attempt_budget_seconds": 300,
         "passages": passages,
     }
 
@@ -158,7 +160,21 @@ def test_a_sealed_partition_cannot_be_resealed(tmp_path: Path) -> None:
         seal(tmp_path / "custody", _well_formed(), _inspected(), _reader)
 
 
-def test_fill_text_digests_computes_each_passage_digest() -> None:
+def test_a_sealed_reserved_manifest_can_be_used_as_the_comparison_manifest(
+    tmp_path: Path,
+) -> None:
+    payload = _well_formed()
+    seal(tmp_path / "custody", payload, _inspected(), _reader)
+    approved = load_approved_manifest(tmp_path / "custody" / "reserved-manifest.json")
+    assert approved.attempt_budget_seconds == 300
+    assert len(approved.reference_ids) == 6
+
+
+def test_a_reserved_manifest_without_a_budget_is_rejected() -> None:
+    payload = _well_formed()
+    payload["attempt_budget_seconds"] = 0
+    with pytest.raises(CustodyError, match="attempt budget"):
+        validate_manifest(payload, _inspected(), _reader)
     payload = _well_formed()
     for row in payload["passages"]:
         assert isinstance(row, dict)

@@ -56,6 +56,7 @@ class ReservedManifest:
     revision: str
     reviewer: str
     sealed_on: str
+    attempt_budget_seconds: int
     passages: tuple[ReservedPassage, ...]
 
 
@@ -66,6 +67,7 @@ def reserved_template(*, source_path: str, source_sha256: str, reviewer: str) ->
         "revision": "7dc9a44",
         "reviewer": reviewer,
         "sealed_on": "YYYY-MM-DD",
+        "attempt_budget_seconds": 300,
         "passages": [
             {
                 "passage_id": f"RES-{index:02d}",
@@ -186,6 +188,9 @@ def validate_manifest(
     revision = _text(document, "revision", "manifest")
     reviewer = _text(document, "reviewer", "manifest")
     sealed_on = _text(document, "sealed_on", "manifest")
+    budget = document.get("attempt_budget_seconds")
+    if not isinstance(budget, int) or isinstance(budget, bool) or budget <= 0:
+        raise CustodyError("The manifest requires a positive attempt budget in seconds.")
     rows = document.get("passages")
     if not isinstance(rows, list) or len(cast("list[object]", rows)) != PASSAGE_COUNT:
         raise CustodyError(f"The reserved partition requires exactly {PASSAGE_COUNT} passages.")
@@ -274,6 +279,7 @@ def validate_manifest(
         revision=revision,
         reviewer=reviewer,
         sealed_on=sealed_on,
+        attempt_budget_seconds=budget,
         passages=tuple(passages),
     )
 

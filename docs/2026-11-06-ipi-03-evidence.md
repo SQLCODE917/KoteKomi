@@ -30,7 +30,7 @@ No outcome was seeded; the only writes are the ones the supported review command
 | Replay | `uv run kotekomi-live-replay --state-root <copy> --ingestion-run igr_c4b8a09978114e49bb63e8c7df73a005 --paragraph 5 --plain` | `Dario Amodei → criticized → Trump's approach to export restrictions on semiconductors`, `Assertion state: proposed`, `Review: pending`, evidence `etg_ad0365628c4b4a972ac2ecee`, spans 1199:1205, 1206:1216, 1217:1274 |
 
 Before the change the same Event returned `selection_gap` with no subject, and the operator had no decision to record.
-The development reference statement R-DEV-04 therefore changes from not attempted to one pending proposed Assertion.
+The development reference statement R-DEV-05 therefore changes from not attempted to one pending proposed Assertion.
 
 ## 4. Population counterfactual
 
@@ -60,6 +60,7 @@ Not run: the domain, adapter, briefing, exporter, and devtools suites for this i
 ## 6. Limitations
 
 - The production journey is agent-run on a copied root; the package's operator comparison remains open.
+- Statement identifiers follow the current development manifest, in which the criticized statement is R-DEV-05.
 - One Document supplies the captured parses and the counterfactual population.
 - The change does not address appositive, coordinated, or anaphoric subjects.
 - The `criticized` statement keeps its local name in the Assertion subject; the reviewer supplied the canonical name through the supported command.

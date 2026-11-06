@@ -7,7 +7,7 @@
 
 ## 1. Why a second cycle
 
-After cycle 1 the development reference statement R-DEV-04 produced one pending proposed Assertion.
+After cycle 1 the development reference statement R-DEV-05 produced one pending proposed Assertion.
 The declared capability route needs at least two additional usable statements, so the cycle limit allowed one more bounded correction.
 [The ranking](2026-11-06-ipi-02-baseline-diagnostic-and-ranking.md) still placed the trigger-adverb correction ahead of every alternative: it acts on 20 candidate-bearing Events, 13 of which already realize both roles.
 Cycle 1 also raised the value of this correction, because completed noun phrases now reach composition and its time adjunct for the first time.
@@ -35,15 +35,20 @@ The development statement R-DEV-01 therefore changes from an unreachable selecti
 | --- | --- | --- | --- |
 | R-DEV-01 `established ... in 2012` | selection gap | selection gap resolved, composition hold | pending proposed Assertion with `time` qualifier |
 | R-DEV-02 `began developing ... as early as ...` | selection gap | selection gap | selection gap |
-| R-DEV-03 `integrated Anthropic's services` | composition hold | composition hold | composes when the reviewer approves; the `Prior to the dispute` frame qualifies |
-| R-DEV-04 `criticized Trump's approach ...` | selection gap | pending proposed Assertion | unchanged |
-| R-DEV-05 `announced GenAI.mil ...` | no object role | no object role | no object role |
-| R-DEV-06, R-DEV-07 AISI statements | not ingested | not ingested | not ingested |
+| R-DEV-03 `disagreed with the administration's policies` | not assessed | not assessed | not assessed; the required administration frame is a temporal noun outside the qualifier list |
+| R-DEV-04 `integrated Anthropic's services` | composition hold | composition hold | composes when the reviewer approves; the `Prior to the dispute` frame qualifies |
+| R-DEV-05 `criticized Trump's approach ...` | selection gap | pending proposed Assertion | unchanged |
+| R-DEV-06 `announced GenAI.mil ...` | no object role | no object role | no object role |
+| R-DEV-07, R-DEV-08 AISI statements | not ingested | not ingested | not ingested |
 
 The agent-run development count is two statements with a pending proposed Assertion, not a measured operator result.
 The operator's timed baseline and final runs decide the package routes.
+These rows are mechanism evidence only; they are excluded from `N`, `C`, `A`, and the route decision.
 
 ## 5. Counterfactual population after both cycles
+
+These counts re-run stored records with one rule changed.
+They show that the changes reach more Events; they are not usable results and they do not stand in for the operator comparison.
 
 | Measure | Baseline | Both cycles |
 | --- | --- | --- |

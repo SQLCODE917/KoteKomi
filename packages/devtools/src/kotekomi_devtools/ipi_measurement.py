@@ -257,7 +257,7 @@ def load_condition_result(path: Path) -> ConditionResult:
 
 @dataclass(frozen=True)
 class ApprovedManifest:
-    """The approved development manifest the comparison must follow."""
+    """The approved manifest the comparison must follow."""
 
     status: str
     reviewer: str
@@ -267,7 +267,12 @@ class ApprovedManifest:
 
 
 def load_approved_manifest(path: Path) -> ApprovedManifest:
-    """Load the development manifest and require prior human approval."""
+    """Load an approved development or sealed reserved manifest.
+
+    The development manifest must record `status: approved`.
+    The sealed reserved manifest is written only by the custody command after
+    validation, so its existence records the reviewer's decision.
+    """
     try:
         payload: object = json.loads(path.read_text(encoding="utf-8"))
     except OSError as error:
@@ -275,33 +280,38 @@ def load_approved_manifest(path: Path) -> ApprovedManifest:
     except json.JSONDecodeError as error:
         raise MeasurementError(f"{path} is not valid JSON: {error}") from error
     document = _mapping(payload)
-    if document.get("record") != "ipi-development-manifest-v1":
+    record = document.get("record")
+    if record == "ipi-development-manifest-v1":
+        if document.get("status") != "approved":
+            raise MeasurementError(
+                "The development manifest is not approved; record the human decision first."
+            )
+        approved_on = _require(document, "approved_on", str)
+    elif record == "ipi-reserved-manifest-v1":
+        approved_on = _require(document, "sealed_on", str)
+    else:
         raise MeasurementError("The measurement manifest has the wrong record name.")
-    if document.get("status") != "approved":
-        raise MeasurementError(
-            "The development manifest is not approved; record the human decision first."
-        )
     budget = document.get("attempt_budget_seconds")
     if not isinstance(budget, int) or isinstance(budget, bool) or budget <= 0:
         raise MeasurementError("The manifest requires a positive attempt budget in seconds.")
     reference_ids: list[str] = []
     passages = document.get("passages")
     if not isinstance(passages, list) or not passages:
-        raise MeasurementError("The manifest requires at least one development passage.")
+        raise MeasurementError("The manifest requires at least one passage.")
     for passage in cast("list[object]", passages):
-        record = _mapping(passage)
-        statements = record.get("statements")
+        entry = _mapping(passage)
+        statements = entry.get("statements")
         if not isinstance(statements, list) or not statements:
             raise MeasurementError("Every manifest passage carries at least one statement.")
         for statement in cast("list[object]", statements):
-            entry = _mapping(statement)
-            reference_ids.append(_require(entry, "reference_id", str))
+            item = _mapping(statement)
+            reference_ids.append(_require(item, "reference_id", str))
     if len(set(reference_ids)) != len(reference_ids):
         raise MeasurementError("Manifest reference identifiers are unique.")
     return ApprovedManifest(
         status="approved",
         reviewer=_require(document, "reviewer", str),
-        approved_on=_require(document, "approved_on", str),
+        approved_on=approved_on,
         attempt_budget_seconds=budget,
         reference_ids=tuple(reference_ids),
     )
