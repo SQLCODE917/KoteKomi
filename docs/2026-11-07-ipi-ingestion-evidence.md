@@ -30,7 +30,8 @@ Every run carries the pinned product revision in its launcher receipt.
 ## 3. What the ingestion numbers do and do not show
 
 - The final runs were collectively 4.6 percent faster in wall clock.
-  That difference does not establish a speed improvement from the two production changes; extraction volume, model-run counts, evidence counts, and failed stage records are identical across conditions, so the difference lies outside the changed code paths.
+  Record that as an observed timing difference only.
+  It is not attributed to the two production changes, and the two changes are not definitively excluded as a cause: identical extraction volumes, model-run counts, evidence counts, and failed stage records make an extraction-side explanation unlikely, but a single paired run with a shared machine cannot separate code effects from machine and model-runtime variance.
 - Identical evidence and model-run counts also show that neither change altered extraction; the changes act at selection, composition, and Assertion construction.
 - The failed stage records (2, 10, and 30 per run) and the paragraph gaps remain part of the assessment.
   They are recorded, not repaired; a statement whose Event or candidate is missing stays in the denominator as a hold.
@@ -39,11 +40,12 @@ Every run carries the pinned product revision in its launcher receipt.
 
 ## 4. Integrity checks performed on the durable records
 
-- Six roots, each with its own `kotekomi.db` and `archive/`; no root is shared between conditions or Documents.
+- Six condition roots, each with its own `state/` directory holding `kotekomi.db`, `archive/`, `composition-outcomes/`, `token-artifacts/`, and the generated `state/kotekomi.toml`; no state is shared between conditions or Documents.
 - Launcher receipts record `product_revision` `7dc9a44` for baseline roots and `2ec4737` for final roots.
 - Launcher receipts record the same runtime-configuration digest for all six runs.
 - No review command, ProposedChange approval, or Assertion acceptance was performed during ingestion.
 - The roots are retained as the basis for statement review; no rerun is needed because of stage gaps.
+- Every review command reads the generated `<root>/state/kotekomi.toml`, and every replay uses `--state-root <root>/state`.
 
 ## 5. Next milestone
 

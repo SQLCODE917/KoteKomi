@@ -62,11 +62,11 @@ Each ingestion is started once and its wall-clock wait is recorded:
 
 ```bash
 time uv run kotekomi-live-replay --config "<your-runtime-config>" --source "<document.pdf>" \
-  --url "<source-url>" --state-root "<root>" --plain > "<root>/replay.txt" 2> "<root>/ingestion.err"
+  --url "<source-url>" --state-root "<root>/state" --plain > "<root>/replay.txt" 2> "<root>/ingestion.err"
 ```
 
-The command writes `<root>/kotekomi.toml` itself.
-That generated file points at `<root>/kotekomi.db` and `<root>/archive` and copies the runtime profile and entity-linking settings from `<your-runtime-config>`.
+The command writes `<root>/state/kotekomi.toml` itself.
+That generated file points at `<root>/state/kotekomi.db` and `<root>/state/archive` and copies the runtime profile and entity-linking settings from `<your-runtime-config>`.
 Use the generated file as `$CONFIG` for every review command; do not hand-edit it, and record it if you ever do.
 
 Ordinals are discovered once, not per condition:
@@ -96,7 +96,7 @@ Anchors to confirm each ordinal:
 Discovery uses one already-required ingestion, not an extra live run:
 
 ```bash
-uv run kotekomi-live-replay --state-root "<root>" --plain > "<root>/replay.txt"
+uv run kotekomi-live-replay --state-root "<root>/state" --plain > "<root>/replay.txt"
 grep -n "<anchor>" "<root>/replay.txt"
 ```
 
@@ -117,11 +117,11 @@ One root per Document per condition:
 <run-root>/reserved/final/allen/
 ```
 
-Each root holds its own `kotekomi.toml`, written by the ingestion command with this shape:
+Each root holds its own `state/kotekomi.toml`, written by the ingestion command with this shape:
 
 ```toml
-ledger_path = "<root>/kotekomi.db"
-archive_path = "<root>/archive"
+ledger_path = "<root>/state/kotekomi.db"
+archive_path = "<root>/state/archive"
 runtime_profile = "hp8-canonical"
 
 [processing]
@@ -143,7 +143,7 @@ adapter = "refined"
 timeout_seconds = 300.0
 ```
 
-`CONFIG="<root>/kotekomi.toml"` in every command below, including `review list`.
+`CONFIG="<root>/state/kotekomi.toml"` in every command below, including `review list`.
 
 Shared state inside one root is disclosed and matched:
 
@@ -165,7 +165,7 @@ Run from the condition's worktree, after that Document's ingestion has finished.
 Start the clock when you begin locating the Event and its packet; the ingestion is already complete and is not part of the row.
 
 ```bash
-CONFIG="<root>/kotekomi.toml"
+CONFIG="<root>/state/kotekomi.toml"
 uv run kotekomi --config "$CONFIG" ingestions list
 uv run kotekomi --config "$CONFIG" ingestions show <igr_...>
 uv run kotekomi --config "$CONFIG" review event-packet --run <igr_...> --event <sge_...>
@@ -178,7 +178,7 @@ uv run kotekomi --config "$CONFIG" review decide --run <igr_...> --event <sge_..
   --reviewer "<name>"
 uv run kotekomi --config "$CONFIG" review recompose --run <igr_...> --event <sge_...>
 uv run kotekomi --config "$CONFIG" review list --record-type Assertion
-uv run kotekomi-live-replay --state-root "<root>" --ingestion-run <igr_...> --paragraph <ordinal> --plain
+uv run kotekomi-live-replay --state-root "<root>/state" --ingestion-run <igr_...> --paragraph <ordinal> --plain
 ```
 
 Timing rules:

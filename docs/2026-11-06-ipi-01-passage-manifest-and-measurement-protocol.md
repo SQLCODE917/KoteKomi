@@ -307,8 +307,8 @@ The operator runs one disposable state root per Document per condition and uses 
 The exact commands, roots, ordinals, and shared-cost handling are in [the operator comparison procedure](2026-11-06-ipi-operator-comparison-procedure.md).
 
 ```bash
-CONFIG="<root>/kotekomi.toml"
-uv run kotekomi-live-replay --config "$CONFIG" --source "<document.pdf>" --url "<source-url>" --state-root "<root>"
+CONFIG="<root>/state/kotekomi.toml"
+uv run kotekomi-live-replay --config "$CONFIG" --source "<document.pdf>" --url "<source-url>" --state-root "<root>/state"
 uv run kotekomi --config "$CONFIG" ingestions list
 uv run kotekomi --config "$CONFIG" ingestions show <igr_...>
 uv run kotekomi --config "$CONFIG" review event-packet --run <igr_...> --event <sge_...>
@@ -321,7 +321,7 @@ uv run kotekomi --config "$CONFIG" review decide --run <igr_...> --event <sge_..
   --reviewer "<name>"
 uv run kotekomi --config "$CONFIG" review recompose --run <igr_...> --event <sge_...>
 uv run kotekomi --config "$CONFIG" review list --record-type Assertion
-uv run kotekomi-live-replay --state-root "<root>" --ingestion-run <igr_...> --paragraph <ordinal> --plain
+uv run kotekomi-live-replay --state-root "<root>/state" --ingestion-run <igr_...> --paragraph <ordinal> --plain
 ```
 
 Every review command, including `review list`, uses the root's `--config` so it reads that root's Ledger and shows only that root's proposals.
