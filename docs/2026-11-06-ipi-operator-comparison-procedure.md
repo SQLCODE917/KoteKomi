@@ -77,9 +77,9 @@ Ordinals are discovered once, not per condition:
 | DEV-02 | Anthropic-DoD dispute PDF | 4 | deposited stored run, verified by anchor |
 | DEV-03 | Anthropic-DoD dispute PDF | 5 | deposited stored run, verified by anchor |
 | DEV-04 | Anthropic-DoD dispute PDF | 8 | deposited stored run, verified by anchor |
-| DEV-05 | AI Safety Institute PDF | discovered once | from the baseline condition's own replay output |
-| DEV-06 | AI Safety Institute PDF | discovered once | from the baseline condition's own replay output |
-| RES-01 to RES-06 | Allen Safety Network PDF | discovered once | from the baseline condition's own replay output |
+| DEV-05 | AI Safety Institute PDF | 5 | discovered from the completed baseline replay by anchor |
+| DEV-06 | AI Safety Institute PDF | 10 | discovered from the completed baseline replay by anchor |
+| RES-01 to RES-06 | Allen Safety Network PDF | discovered once by the operator | from the completed baseline reserved replay by sealed-manifest anchor |
 
 Anchors to confirm each ordinal:
 
