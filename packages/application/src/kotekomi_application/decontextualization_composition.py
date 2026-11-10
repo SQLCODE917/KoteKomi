@@ -47,6 +47,11 @@ from kotekomi_application.trigger_scope_split import (
     COMPLEMENT_RELATIONS,
     REPORTING_PREDICATE_LEMMAS,
 )
+from kotekomi_application.trigger_time_qualifier import (
+    TriggerTimeQualifier,
+    TriggerTimeUnsupported,
+    derive_trigger_time_qualifier,
+)
 
 _SHA256 = r"^[a-f0-9]{64}$"
 _EventId = Annotated[
@@ -238,6 +243,7 @@ class DecontextualizedProposition(BaseModel):
     polarity: EventPolarity | None = None
     modality: EventModality | None = None
     attribution: DecontextualizedAttribution | None = None
+    adjunct_qualifier: TriggerTimeQualifier | None = None
     status: DecontextualizationStatus
     hold_reason: DecontextualizationHoldReason | None = None
 
@@ -263,6 +269,7 @@ class DecontextualizedProposition(BaseModel):
                     self.polarity,
                     self.modality,
                     self.attribution,
+                    self.adjunct_qualifier,
                 )
             ):
                 raise ValueError("A held result cannot carry composed content.")
@@ -273,6 +280,8 @@ class DecontextualizedProposition(BaseModel):
             raise ValueError("The subject field must carry a subject role.")
         if self.object is not None and self.object.role is not DecontextualizationRoleKind.OBJECT:
             raise ValueError("The object field must carry an object role.")
+        if self.adjunct_qualifier is not None and self.adjunct_qualifier.event_id != self.event_id:
+            raise ValueError("A time qualifier must identify the proposition's Event.")
         return self
 
 
@@ -769,11 +778,24 @@ def build_decontextualized_proposition(
     )
     is_copular = bool(copula_dependents) and not object_dependents
 
-    # REQ-CMP-05: trigger-head time/place content is not an object role.
+    # REQ-CMP-05: trigger-head oblique content is not an object role. One simple
+    # time expression reaches the Assertion as a qualifier; everything else holds.
+    adjunct_qualifier: TriggerTimeQualifier | None = None
     if time_place_dependents:
-        return _held(
-            event_id, source_text_sha256, DecontextualizationHoldReason.UNSUPPORTED_TIME_PLACE
-        )
+        try:
+            adjunct_qualifier = derive_trigger_time_qualifier(
+                event_id=event_id,
+                source_text=source_text,
+                tokens=tokens,
+                trigger_head_start=trigger_head_start,
+                trigger_head_end=trigger_head_end,
+            )
+        except TriggerTimeUnsupported:
+            return _held(
+                event_id, source_text_sha256, DecontextualizationHoldReason.UNSUPPORTED_TIME_PLACE
+            )
+        if adjunct_qualifier is None:
+            raise ValueError("A plain oblique must derive a qualifier or a typed hold.")
 
     subject_dependents = tuple(
         token for token in dependents if token.dependency_relation in _SUBJECT_DEPENDENCY_RELATIONS
@@ -953,6 +975,7 @@ def build_decontextualized_proposition(
         polarity=polarity,
         modality=modality,
         attribution=attribution,
+        adjunct_qualifier=adjunct_qualifier,
         status=DecontextualizationStatus.PROPOSITION,
     )
 

@@ -4763,6 +4763,11 @@ def _review_event_packet(args: argparse.Namespace) -> int:
             "end": packet.object_end,
             "text": packet.object_text,
         },
+        "time_qualifier": {
+            "start": packet.time_qualifier_start,
+            "end": packet.time_qualifier_end,
+            "text": packet.time_qualifier_text,
+        },
         "candidates": [
             {
                 "start": candidate.start,

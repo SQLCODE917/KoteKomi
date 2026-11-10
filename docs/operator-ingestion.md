@@ -172,3 +172,25 @@ The interactive screen shows those lines in the output pane, so a warning is not
 the screen redraws.
 Plain and terminal modes write them directly to standard error.
 A derived composition failure appears as one `Composition pass failed: ...` line.
+
+## 9. Complete phrases and supported time
+
+The review packet shows each selected participant and object phrase with its exact source coordinates.
+Selection retains an exact candidate first.
+One covering candidate can complete the same contiguous noun phrase with one direct outer prepositional complement.
+Nested content within that complement remains supported.
+Ambiguous candidates, unrelated attachments, clauses, appositives, and coordination retain the existing boundary gaps.
+
+The existing `review event-packet` output includes `time_qualifier` coordinates and text.
+A supported date or relative-time expression appears exactly as the Source spells it.
+For example, `in  2012` retains both spaces, and `Prior to the dispute` remains relative text.
+The statement EvidenceTarget covers that time text as well as the selected arguments and trigger.
+After the required decision and `review recompose`, the proposed Assertion carries the same text in `qualifiers.time`.
+The pending Assertion ProposedChange and saved replay preserve that value.
+Place, instrumental, coordinated, clausal, and multiple-oblique content remain explicitly held when unsupported.
+
+The [IPI production promotion](2026-11-10-ipi-production-promotion.md) retains partial development gains only.
+The recorded IPI development result improved from 0/8 to 3/8, while the reserved result remained 0/8.
+The delegated assessment did not establish reduced human effort.
+IPI's package target remains **Target not met**.
+The portable regressions reuse development captures and establish no new accuracy or transfer claim.

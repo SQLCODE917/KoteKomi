@@ -91,6 +91,9 @@ class EventReviewPacket:
     existing_review_id: str | None
     evidence_target_id: str | None
     object_completion: ObjectContentCompletion | None = None
+    time_qualifier_start: int | None = None
+    time_qualifier_end: int | None = None
+    time_qualifier_text: str | None = None
 
 
 def packet_source_digest(packet: EventReviewPacket) -> str:
@@ -123,6 +126,34 @@ def validate_packet_bindings(packet: EventReviewPacket) -> None:
         if packet.object_text is None:
             raise EventConstructionReviewError("An object span requires its object text.")
         _check_span(packet, packet.object_start, packet.object_end, packet.object_text)
+    time_fields = (
+        packet.time_qualifier_start,
+        packet.time_qualifier_end,
+        packet.time_qualifier_text,
+    )
+    if any(value is not None for value in time_fields) and any(
+        value is None for value in time_fields
+    ):
+        raise EventConstructionReviewError(
+            "A time qualifier requires both coordinates and its text."
+        )
+    if packet.time_qualifier_start is not None and packet.time_qualifier_end is not None:
+        assert packet.time_qualifier_text is not None
+        if not packet.time_qualifier_text.strip():
+            raise EventConstructionReviewError("A time qualifier requires non-whitespace text.")
+        if not (
+            packet.statement_start
+            <= packet.time_qualifier_start
+            < packet.time_qualifier_end
+            <= packet.statement_end
+        ):
+            raise EventConstructionReviewError("Statement evidence must cover the time qualifier.")
+        _check_span(
+            packet,
+            packet.time_qualifier_start,
+            packet.time_qualifier_end,
+            packet.time_qualifier_text,
+        )
     for candidate in packet.candidates:
         _check_span(packet, candidate.start, candidate.end, candidate.exact_text)
 

@@ -1,0 +1,253 @@
+{
+ "sentence_text": "[1] The  Department  of  Defense  established  a  policy  on  the  use  of  artificial intelligence  in  2012,  Directive  3000.09.",
+ "paragraph_node_id": "nod_f1e64380625a2f2c533fc277_0008",
+ "paragraph_ordinal": 3,
+ "event_id": "sge_c0ff4b58ad8962717514c9f3",
+ "trigger_start": 34,
+ "trigger_end": 45,
+ "trigger_label": "establish",
+ "tokens": [
+  {
+   "token_id": "t1",
+   "sentence_id": "s2",
+   "text": "[",
+   "start": 0,
+   "end": 1,
+   "lemma": "[",
+   "part_of_speech": "PUNCT",
+   "dependency_relation": "punct",
+   "head_token_id": "t2"
+  },
+  {
+   "token_id": "t2",
+   "sentence_id": "s2",
+   "text": "1",
+   "start": 1,
+   "end": 2,
+   "lemma": "1",
+   "part_of_speech": "NUM",
+   "dependency_relation": "discourse",
+   "head_token_id": "t8"
+  },
+  {
+   "token_id": "t3",
+   "sentence_id": "s2",
+   "text": "]",
+   "start": 2,
+   "end": 3,
+   "lemma": "]",
+   "part_of_speech": "PUNCT",
+   "dependency_relation": "punct",
+   "head_token_id": "t2"
+  },
+  {
+   "token_id": "t4",
+   "sentence_id": "s2",
+   "text": "The",
+   "start": 4,
+   "end": 7,
+   "lemma": "the",
+   "part_of_speech": "DET",
+   "dependency_relation": "det",
+   "head_token_id": "t5"
+  },
+  {
+   "token_id": "t5",
+   "sentence_id": "s2",
+   "text": "Department",
+   "start": 9,
+   "end": 19,
+   "lemma": "Department",
+   "part_of_speech": "PROPN",
+   "dependency_relation": "nsubj",
+   "head_token_id": "t8"
+  },
+  {
+   "token_id": "t6",
+   "sentence_id": "s2",
+   "text": "of",
+   "start": 21,
+   "end": 23,
+   "lemma": "of",
+   "part_of_speech": "ADP",
+   "dependency_relation": "case",
+   "head_token_id": "t7"
+  },
+  {
+   "token_id": "t7",
+   "sentence_id": "s2",
+   "text": "Defense",
+   "start": 25,
+   "end": 32,
+   "lemma": "Defense",
+   "part_of_speech": "PROPN",
+   "dependency_relation": "nmod",
+   "head_token_id": "t5"
+  },
+  {
+   "token_id": "t8",
+   "sentence_id": "s2",
+   "text": "established",
+   "start": 34,
+   "end": 45,
+   "lemma": "establish",
+   "part_of_speech": "VERB",
+   "dependency_relation": "root",
+   "head_token_id": null
+  },
+  {
+   "token_id": "t9",
+   "sentence_id": "s2",
+   "text": "a",
+   "start": 47,
+   "end": 48,
+   "lemma": "a",
+   "part_of_speech": "DET",
+   "dependency_relation": "det",
+   "head_token_id": "t10"
+  },
+  {
+   "token_id": "t10",
+   "sentence_id": "s2",
+   "text": "policy",
+   "start": 50,
+   "end": 56,
+   "lemma": "policy",
+   "part_of_speech": "NOUN",
+   "dependency_relation": "obj",
+   "head_token_id": "t8"
+  },
+  {
+   "token_id": "t11",
+   "sentence_id": "s2",
+   "text": "on",
+   "start": 58,
+   "end": 60,
+   "lemma": "on",
+   "part_of_speech": "ADP",
+   "dependency_relation": "case",
+   "head_token_id": "t13"
+  },
+  {
+   "token_id": "t12",
+   "sentence_id": "s2",
+   "text": "the",
+   "start": 62,
+   "end": 65,
+   "lemma": "the",
+   "part_of_speech": "DET",
+   "dependency_relation": "det",
+   "head_token_id": "t13"
+  },
+  {
+   "token_id": "t13",
+   "sentence_id": "s2",
+   "text": "use",
+   "start": 67,
+   "end": 70,
+   "lemma": "use",
+   "part_of_speech": "NOUN",
+   "dependency_relation": "nmod",
+   "head_token_id": "t10"
+  },
+  {
+   "token_id": "t14",
+   "sentence_id": "s2",
+   "text": "of",
+   "start": 72,
+   "end": 74,
+   "lemma": "of",
+   "part_of_speech": "ADP",
+   "dependency_relation": "case",
+   "head_token_id": "t16"
+  },
+  {
+   "token_id": "t15",
+   "sentence_id": "s2",
+   "text": "artificial",
+   "start": 76,
+   "end": 86,
+   "lemma": "artificial",
+   "part_of_speech": "ADJ",
+   "dependency_relation": "amod",
+   "head_token_id": "t16"
+  },
+  {
+   "token_id": "t16",
+   "sentence_id": "s2",
+   "text": "intelligence",
+   "start": 87,
+   "end": 99,
+   "lemma": "intelligence",
+   "part_of_speech": "NOUN",
+   "dependency_relation": "nmod",
+   "head_token_id": "t13"
+  },
+  {
+   "token_id": "t17",
+   "sentence_id": "s2",
+   "text": "in",
+   "start": 101,
+   "end": 103,
+   "lemma": "in",
+   "part_of_speech": "ADP",
+   "dependency_relation": "case",
+   "head_token_id": "t18"
+  },
+  {
+   "token_id": "t18",
+   "sentence_id": "s2",
+   "text": "2012",
+   "start": 105,
+   "end": 109,
+   "lemma": "2012",
+   "part_of_speech": "NUM",
+   "dependency_relation": "obl",
+   "head_token_id": "t8"
+  },
+  {
+   "token_id": "t19",
+   "sentence_id": "s2",
+   "text": ",",
+   "start": 109,
+   "end": 110,
+   "lemma": ",",
+   "part_of_speech": "PUNCT",
+   "dependency_relation": "punct",
+   "head_token_id": "t20"
+  },
+  {
+   "token_id": "t20",
+   "sentence_id": "s2",
+   "text": "Directive",
+   "start": 112,
+   "end": 121,
+   "lemma": "directive",
+   "part_of_speech": "NOUN",
+   "dependency_relation": "parataxis",
+   "head_token_id": "t8"
+  },
+  {
+   "token_id": "t21",
+   "sentence_id": "s2",
+   "text": "3000.09",
+   "start": 123,
+   "end": 130,
+   "lemma": "3000.09",
+   "part_of_speech": "NUM",
+   "dependency_relation": "flat",
+   "head_token_id": "t20"
+  },
+  {
+   "token_id": "t22",
+   "sentence_id": "s2",
+   "text": ".",
+   "start": 130,
+   "end": 131,
+   "lemma": ".",
+   "part_of_speech": "PUNCT",
+   "dependency_relation": "punct",
+   "head_token_id": "t8"
+  }
+ ]
+}
