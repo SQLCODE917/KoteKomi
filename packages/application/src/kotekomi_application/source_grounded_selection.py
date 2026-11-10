@@ -40,6 +40,21 @@ _OPTIONAL_CONTENT_RELATIONS = frozenset(
     {"case", "mark", "acl", "advmod", "aux", "cop", "neg", "punct", "nmod"}
 )
 _COORDINATION_RELATIONS = frozenset({"conj", "cc"})
+_COMPLETION_CONTENT_RELATIONS = frozenset(
+    {
+        "det",
+        "amod",
+        "compound",
+        "compound:prt",
+        "flat",
+        "nummod",
+        "punct",
+        "case",
+        "fixed",
+        "nmod",
+        "nmod:poss",
+    }
+)
 
 
 class SourceGroundedSelectionStatus(StrEnum):
@@ -233,6 +248,73 @@ def _label_for(inventory: ConstituentCandidateInventory, constituent: ParserCons
     raise ValueError("Selected constituent is absent from the Candidate inventory.")
 
 
+def _completion_is_permitted(
+    *,
+    candidate: ParserConstituent,
+    boundary: SourceRange,
+    tokens_by_id: dict[str, EventEntityLinguisticToken],
+) -> bool:
+    """Return whether one covering candidate only completes the role's own noun phrase.
+
+    The candidate may add noun-phrase content that is inside it: determiners,
+    modifiers, compounds, punctuation, and at most one prepositional complement
+    rooted directly in the canonical boundary tokens. Any clause, appositive,
+    coordination, or adverbial material leaves the candidate unsuitable.
+    """
+    boundary_ids = _boundary_token_ids(boundary, tokens_by_id)
+    candidate_ids = frozenset(candidate.token_ids)
+    extras = candidate_ids - boundary_ids
+    if not extras or not boundary_ids <= candidate_ids:
+        return False
+    selected = [tokens_by_id[token_id] for token_id in candidate_ids]
+    start = min(token.start for token in selected)
+    end = max(token.end for token in selected)
+    # A covering span must not hide a token assigned to a different role.
+    if any(
+        token.start < end and start < token.end and token.token_id not in candidate_ids
+        for token in tokens_by_id.values()
+    ):
+        return False
+    sentence_ids = {tokens_by_id[token_id].sentence_id for token_id in boundary_ids}
+    outer_complements: set[str] = set()
+    for token_id in extras:
+        current_id = token_id
+        visited: set[str] = set()
+        outer_complement: str | None = None
+        while current_id not in boundary_ids:
+            if current_id not in extras or current_id in visited:
+                return False
+            visited.add(current_id)
+            token = tokens_by_id[current_id]
+            if (
+                token.dependency_relation not in _COMPLETION_CONTENT_RELATIONS
+                or token.sentence_id not in sentence_ids
+                or token.head_token_id is None
+            ):
+                return False
+            if token.dependency_relation == "nmod":
+                if not any(
+                    child.head_token_id == current_id and child.dependency_relation == "case"
+                    for child in selected
+                ):
+                    return False
+                outer_complement = current_id
+            current_id = token.head_token_id
+        if outer_complement is not None:
+            outer_complements.add(outer_complement)
+    return len(outer_complements) <= 1
+
+
+def _boundary_token_ids(
+    boundary: SourceRange, tokens_by_id: dict[str, EventEntityLinguisticToken]
+) -> frozenset[str]:
+    return frozenset(
+        token_id
+        for token_id, token in tokens_by_id.items()
+        if boundary.start <= token.start and token.end <= boundary.end
+    )
+
+
 def _select_conjunct(
     *,
     head: EventEntityLinguisticToken,
@@ -261,6 +343,13 @@ def _select_conjunct(
     covering = [item for item in candidates if _span_covers(item, boundary)]
     if not covering:
         raise SourceGroundedSelectionError(SourceGroundedBoundaryGap.NO_COVERING_CANDIDATE)
+    if len(covering) == 1 and _completion_is_permitted(
+        candidate=covering[0], boundary=boundary, tokens_by_id=tokens_by_id
+    ):
+        return SourceGroundedConjunctSelection(
+            canonical_boundary=covering[0].constituent_range,
+            selected_label=_label_for(inventory, covering[0]),
+        )
     raise SourceGroundedSelectionError(SourceGroundedBoundaryGap.UNTERMINATED_TIE)
 
 
