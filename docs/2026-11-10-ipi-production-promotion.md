@@ -111,10 +111,16 @@ Verification record on 2026-11-10:
 
 - The fast selection, composition, identity, time, persistence, and replay-display checks pass (77 tests).
 - Whole-tree formatting, lint, and typecheck pass.
-- The captured Department of Defense and Amodei journeys passed before the final replay assertions were added.
-  The combined captured check exceeded the local-operation limit and was interrupted.
-- The final captured journeys, failure injections, and full suite await a human-started run.
-  No readiness claim applies until its terminal result is inspected.
+- The human-started full suite at `7ba4659e3ece60d71ac0dbb2a9e8c523b24822b2` exited with code 0.
+  JUnit records 2,742 passed tests, three skipped tests, zero failures, and zero errors.
+  One skipped test requires a selected live LM Studio model.
+  Two skipped tests require the original Anthropic-DoD operator state, which this clean worktree excludes.
+- All six captured-input tests passed, including each source case and each injected transaction failure.
+  They verify exact content and time through packet, decision, recomposition, persistence, and saved replay.
+- The agent inspected `revision.txt`, `exit-code.txt`, `pytest.xml`, and `pytest.log` after the human reported completion.
+  These durable records are under `/private/tmp/kotekomi-ipi-promotion-7ba4659/`.
+- Implementation verification is complete for promotion review.
+  Push and merge remain separate authorization steps.
 
 Implementation verification establishes tested contracts only.
 Captured-input regressions establish behavior on those development inputs, not independent extraction accuracy.
