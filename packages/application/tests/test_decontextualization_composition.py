@@ -563,7 +563,7 @@ def test_subject_value_authorization_rejects_overlapping_authorizations() -> Non
         )
 
 
-def test_oblique_time_place_holds_unsupported_time_place() -> None:
+def _time_proposition() -> DecontextualizedProposition:
     source = "Sacks viewed the documents in April."
     tokens = _words(
         source,
@@ -581,6 +581,45 @@ def test_oblique_time_place_holds_unsupported_time_place() -> None:
         _constituent(source, "AHE-902", ("t2",), "viewed", "viewed"),
         _constituent(source, "AHE-902", ("t3", "t4"), "the", "documents"),
         _constituent(source, "AHE-902", ("t5", "t6"), "in", "April"),
+    )
+    entities = (_entity("EGE-902", "actor", "Sacks", source, "Sacks", "Sacks"),)
+    result = _compose(
+        event_id="AHE-902",
+        source=source,
+        tokens=tokens,
+        constituents=constituents,
+        selected_indexes=(1, 2, 3),
+        entities=entities,
+        head_lemma="view",
+    )
+    return result
+
+
+def test_oblique_time_qualifier_reaches_the_proposition() -> None:
+    result = _time_proposition()
+    assert result.status is DecontextualizationStatus.PROPOSITION
+    assert result.adjunct_qualifier is not None
+    assert result.adjunct_qualifier.exact_range.text == "in April"
+
+
+def test_oblique_non_time_content_holds_unsupported_time_place() -> None:
+    source = "Sacks viewed the documents with the lawyers."
+    tokens = _words(
+        source,
+        [
+            ("Sacks", "viewed", "nsubj", "sacks"),
+            ("viewed", None, "root", "view"),
+            ("the", "documents", "det", "the"),
+            ("documents", "viewed", "obj", "document"),
+            ("with", "lawyers", "case", "with"),
+            ("lawyers", "viewed", "obl", "lawyer"),
+        ],
+    )
+    constituents = (
+        _constituent(source, "AHE-902", ("t1",), "Sacks", "Sacks"),
+        _constituent(source, "AHE-902", ("t2",), "viewed", "viewed"),
+        _constituent(source, "AHE-902", ("t3", "t4"), "the", "documents"),
+        _constituent(source, "AHE-902", ("t5", "t6"), "with", "lawyers"),
     )
     entities = (_entity("EGE-902", "actor", "Sacks", source, "Sacks", "Sacks"),)
     result = _compose(
@@ -666,3 +705,41 @@ def test_indirect_object_dependent_routes_to_object_role() -> None:
     assert result.object is not None
     assert result.object.entity_ref is None
     assert result.object.object_value == "Amodei"
+
+
+@pytest.mark.parametrize("load_json", [False, True])
+def test_proposition_rejects_a_foreign_event_time_qualifier(load_json: bool) -> None:
+    import json
+
+    from pydantic import ValidationError
+
+    result = _time_proposition()
+    assert result.adjunct_qualifier is not None
+    payload = result.model_dump(mode="json" if load_json else "python")
+    payload["adjunct_qualifier"]["event_id"] = "sge_foreign"
+    with pytest.raises(ValidationError, match="proposition's Event"):
+        if load_json:
+            DecontextualizedProposition.model_validate_json(json.dumps(payload))
+        else:
+            DecontextualizedProposition.model_validate(payload)
+
+
+def test_time_content_participates_in_assertion_identity() -> None:
+    from kotekomi_application.assertion_construction import (
+        _deterministic_assertion_id,  # pyright: ignore[reportPrivateUsage]
+    )
+
+    result = _time_proposition()
+    payload = result.model_dump()
+    payload["adjunct_qualifier"] = None
+    without_time = DecontextualizedProposition.model_validate(payload)
+    payload = result.model_dump()
+    payload["adjunct_qualifier"]["exact_range"]["text"] = "in March"
+    changed_time = DecontextualizedProposition.model_validate(payload)
+    ids = {_deterministic_assertion_id(p, "src_test") for p in (result, without_time, changed_time)}
+    assert len(ids) == 3
+    # The no-time identity is pinned from 7dc9a44, before qualifier retention.
+    assert (
+        _deterministic_assertion_id(without_time, "src_test")
+        == "ast_48d8e477d315b6cdfda7508d7348878f"
+    )

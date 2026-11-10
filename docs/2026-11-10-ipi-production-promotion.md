@@ -34,11 +34,12 @@ Primary end-to-end flow:
 - TIME-01: `TriggerTimeQualifier` rejects whitespace-only text during construction and JSON loading.
 - TIME-02: Derivation validates source coordinates and token/source agreement before interpreting time.
 - TIME-03: The proposition validates that its qualifier identifies the same Event.
+- PACKET-01: The review packet requires complete time fields and statement evidence that covers the qualifier.
 - TIME-04: Derivation preserves supported recognition, source characters, punctuation treatment, and unsupported-oblique holds.
 - FLOW-01: The Pipeline preserves selected text and time through review, statement evidence, construction, persistence, and replay.
 - FLOW-02: Retry creates one matching pending Assertion ProposedChange and no accepted Assertion.
   Transaction failures preserve the existing atomicity contract.
-- ID-01: Assertion identity includes time content.
+- ID-01: Assertion identity includes time content when present and preserves baseline identity when absent.
 
 ## Proposed Architecture
 
@@ -105,6 +106,15 @@ Assertion construction leaves the Assertion proposed until a separate human revi
 - AC-CHECKS: Focused tests, whole-tree formatting, lint, and typecheck pass.
   The human starts the full suite with durable logs and a deterministic terminal-status probe.
   Readiness requires inspection of its terminal result.
+
+Verification record on 2026-11-10:
+
+- The fast selection, composition, identity, time, persistence, and replay-display checks pass (77 tests).
+- Whole-tree formatting, lint, and typecheck pass.
+- The captured Department of Defense and Amodei journeys passed before the final replay assertions were added.
+  The combined captured check exceeded the local-operation limit and was interrupted.
+- The final captured journeys, failure injections, and full suite await a human-started run.
+  No readiness claim applies until its terminal result is inspected.
 
 Implementation verification establishes tested contracts only.
 Captured-input regressions establish behavior on those development inputs, not independent extraction accuracy.

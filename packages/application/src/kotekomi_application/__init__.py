@@ -1402,6 +1402,11 @@ from kotekomi_application.trigger_scope_split import (
     TriggerScopeStatus,
     split_trigger_scope,
 )
+from kotekomi_application.trigger_time_qualifier import (
+    TriggerTimeQualifier,
+    TriggerTimeUnsupported,
+    derive_trigger_time_qualifier,
+)
 
 __all__ = [
     "MANAGED_MODEL_RESOURCE_IDS",
@@ -2947,6 +2952,9 @@ __all__ = [
     "ObjectComplementUnsupported",
     "ObjectContentCompletion",
     "derive_object_content_completion",
+    "TriggerTimeQualifier",
+    "TriggerTimeUnsupported",
+    "derive_trigger_time_qualifier",
     "DecontextualizedRole",
     "build_decontextualization_census",
     "build_decontextualization_report",
