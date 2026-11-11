@@ -378,3 +378,24 @@ tail -n 40 /private/tmp/kotekomi-main-integration-verification-v2/pytest.log
 ```
 
 Success requires exit code zero, passing whole-tree quality and regression gates, and an inspected reason for each skip.
+
+## Integrated main verification at `cab1b89`
+
+The human started the corrected main check and reported exit code zero.
+The agent inspected `/private/tmp/kotekomi-main-integration-verification-v2/` after termination.
+`revision.txt` identifies `cab1b890e58867e794dc88d736401d43e7809387`; `working-tree.txt` is empty.
+Schema generation and drift, whole-tree formatting, lint, and typecheck passed.
+JUnit records 2,796 passed tests, one skip, zero failures, and zero errors.
+The full suite took 985.88 seconds, or 16m 25s.
+The skipped live LM Studio test requires an explicitly selected loaded model.
+
+The complete announcement passed supported acceptance, per-command context counts, corruption rejection, and saved replay.
+All six promotion regressions passed, preserving the three retained development statements and transaction failure behavior.
+Both optional historical stored-case tests ran and passed in the original checkout.
+They verify explicit rejection of the pre-contract proposal, rollback, preserved replay, and the unsupported-complement hold.
+
+All local branch heads are ancestors of integrated main.
+The working tree is clean, and obsolete temporary scripts remain absent.
+Implementation verification has passed for local main publication.
+The remote CI result and the successor's two additional statement assessments remain outstanding.
+Historical IPI remains **Target not met**; these engineering checks do not establish the successor's broader target or reduced human effort.
