@@ -50,8 +50,10 @@ Paragraph discovery repair remains outside this delivery.
 
 ## Completion decisions
 
-- Implementation verification: pending for the announcement and context reuse corrections.
-- Demonstrated capability: pending complete announcement review, persistence, replay, and supported Assertion acceptance.
+- Implementation verification: announcement focused checks pass; whole-tree verification remains pending.
+  The context reuse correction has not started.
+- Demonstrated capability: R-DEV-06 preserves its required meaning through review, persistence, supported Assertion acceptance, and saved replay.
+  Retention of the three promoted cases awaits the full regression gate for this increment.
 - Broader successor target: at least one complete additional result among two statements selected after implementation freezes.
 
 Missing the broader target retains safe verified improvements and ends assessment as **Target not met**.
@@ -84,3 +86,63 @@ This is delegated agent assessment of R-DEV-06 as a complete `source_report`.
 It establishes neither independent truth nor a broader accuracy rate.
 Whole-tree verification and integration remain pending.
 The latency correction and the two additional assessments have not started.
+
+## Focused verification at `3c63b37`
+
+The committed correction passed 87 focused tests with zero skips, failures, or errors.
+The run covers `test_announcement_completion.py`, `test_object_content_completion.py`, `test_source_grounded_selection_completion.py`, `test_trigger_time_qualifier.py`, `test_source_grounded_selection.py`, `test_decontextualization_composition.py`, and `test_announcement_review.py`.
+The separate `test_ipi_production_promotion.py -k proposal` regression also passed, including evidence-validation rollback.
+Whole-tree `ruff format --check .` and `ruff check .` passed.
+Changed-file pyright checks passed with zero errors or warnings.
+`git diff --check`, local documentation links, and `bash -n scripts/check_ingestion_announcement.sh` passed.
+The full suite, schema-generation drift check, and whole-tree typecheck await human execution.
+
+Durable focused records are under `/private/tmp/kotekomi-announcement-evidence-3c63b37/`.
+They include `revision.txt`, `exit-code.txt`, `pytest.xml`, `pytest.log`, and the disposable test state under `tests/`.
+The supported production journey took 3.93 seconds in this run.
+That duration includes test setup, review, recomposition, acceptance, and saved replay; it is not a recomposition benchmark or human-effort measure.
+
+The accepted disposable Ledger is `tests/test_complete_announcement_rev0/state/kotekomi.db` beneath that evidence directory.
+Typed reload and evidence replay verified these records:
+
+| Record | Identifier |
+| --- | --- |
+| Accepted Assertion, `reported`, `source_report` | `ast_c6e9cf486dc508a0b7b43e7fa885b7b4` |
+| Approved ProposedChange | `pcg_2c53dbbff1b32dd0a19c4fb9` |
+| Review ProvenanceActivity | `prv_1575c54c433f36b39d4e842e` |
+| Complete statement EvidenceTarget | `etg_225ea1294b67786ecffdffb1` |
+| Successful EvidenceValidationAttempt | `eva_7b9b7e3035c87d141657e88f` |
+
+The test verifies the accepted Actor reference and AssertionEvidenceLink as well as the proposal's approved status in saved replay.
+The original operator Ledger remains unchanged.
+
+## Human verification handoff
+
+Run from `/private/tmp/kotekomi-ingestion-announcement`:
+
+```bash
+bash scripts/check_ingestion_announcement.sh /private/tmp/kotekomi-announcement-verification
+```
+
+The output directory retains `revision.txt`, `working-tree.txt`, `exit-code.txt`, `schemas.log`, `schema-drift.log`, `format.log`, `lint.log`, `typecheck.log`, `pytest.log`, and `pytest.xml`.
+Disposable test Ledgers and Archives remain beneath `tests/`.
+The script refuses to overwrite an existing verification record.
+Use a new output directory for an authorized rerun.
+
+Completion probe:
+
+```bash
+cat /private/tmp/kotekomi-announcement-verification/exit-code.txt
+```
+
+The file exists only after termination.
+Durable evidence summary:
+
+```bash
+tail -n 40 /private/tmp/kotekomi-announcement-verification/pytest.log
+```
+
+Success requires exit code zero, the intended revision, schema consistency, passing formatting, lint, typecheck, and the full suite.
+Every skip requires an inspected reason.
+The agent will inspect terminal records after the human reports completion, then prepare the authorized push and PR.
+CI and integration must finish before the latency correction begins.
