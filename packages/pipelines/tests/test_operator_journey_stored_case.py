@@ -1,8 +1,9 @@
-"""Operator journey on the saved Anthropic-DoD run with its real tokens.
+"""Historical proposal rejection and replay on the saved Anthropic-DoD run.
 
 Precondition: the disposable operator run exists at
 `data/operator-r20-20261103-150517`. The test makes no accepted-state writes outside
-that disposable Ledger and calls no model.
+the isolated copy and calls no model. Fresh successful review journeys use the
+portable captured-input fixtures; this older run predates explicit evidence links.
 """
 
 # pyright: reportUnknownParameterType=false, reportMissingParameterType=false
@@ -20,6 +21,7 @@ from kotekomi_adapters.composition_outcome_store import CompositionOutcomeStore
 from kotekomi_application import (
     EventCompositionStatus,
     EventConstructionDecisionInput,
+    EventConstructionReviewError,
 )
 from kotekomi_domain import AssertionType, AttributionBasis, IdentityOccurrenceKind, SourceAuthority
 from kotekomi_pipelines.event_review_workflow import (
@@ -48,8 +50,8 @@ def _isolated_copy(tmp_path: Path) -> tuple[Path, Path, Path]:
     return root, root / "kotekomi.db", root / "archive"
 
 
-def test_operator_journey_on_the_stored_case(tmp_path: Path) -> None:
-    # The disposable run predates the reviewed-decision table; migrate it in place.
+def test_stored_proposal_without_evidence_links_is_rejected_without_repair(tmp_path: Path) -> None:
+    """The pre-release contract change preserves old evidence without rewriting its proposal."""
     root, LEDGER, ARCHIVE = _isolated_copy(tmp_path)
     SQLiteLedgerInitializer(LEDGER).initialize()
 
@@ -88,13 +90,35 @@ def test_operator_journey_on_the_stored_case(tmp_path: Path) -> None:
         now=NOW,
     )
 
-    record = recompose_reviewed_event(
-        ledger_path=LEDGER,
-        archive_path=ARCHIVE,
-        ingestion_run_id=RUN,
-        event_id=EVENT,
-        now=NOW,
-    )
+    store = CompositionOutcomeStore(root / "composition-outcomes")
+    record = store.load(EVENT)
+    assert record.assertion is not None
+    with sqlite_ledger_transaction(LEDGER) as repository:
+        prior = [
+            change
+            for change in repository.list_proposed_changes()
+            if change.proposed_json.get("record_type") == "Assertion"
+            and change.proposed_json.get("stable_label") == record.assertion.id
+        ]
+        assert len(prior) == 1
+        assert prior[0].review_status.value == "pending"
+        assert "evidence_links" not in prior[0].proposed_json
+        validations_before = repository.list_evidence_validation_attempts()
+    with pytest.raises(
+        EventConstructionReviewError,
+        match="A different pending proposal already exists for this Event decision",
+    ):
+        recompose_reviewed_event(
+            ledger_path=LEDGER,
+            archive_path=ARCHIVE,
+            ingestion_run_id=RUN,
+            event_id=EVENT,
+            now=NOW,
+        )
+    assert store.load(EVENT) == record
+    with sqlite_ledger_transaction(LEDGER) as repository:
+        assert repository.get_proposed_change(prior[0].id) == prior[0]
+        assert repository.list_evidence_validation_attempts() == validations_before
 
     assert record.status is EventCompositionStatus.COMPOSED
     assertion = record.assertion

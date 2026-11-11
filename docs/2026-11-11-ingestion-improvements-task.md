@@ -334,3 +334,47 @@ tail -n 40 /private/tmp/kotekomi-main-integration-verification/pytest.log
 
 Success requires exit code zero, the integrated main revision, a clean working tree, every quality gate passing, and inspected skip reasons.
 The additional-statement assessment remains separate from this merge repair.
+
+## Main verification with retained operator state
+
+The human-started main check at `042b2c5a0635fe48c5ecea1228eb33bc6e65ce5f` exited with code one.
+The agent inspected `/private/tmp/kotekomi-main-integration-verification/` after termination.
+Schema generation and drift, formatting, lint, and whole-tree typecheck passed.
+Pytest recorded 2,795 passed, one skipped, and one failed in 973.21 seconds.
+The original checkout contains the optional historical operator run, unlike the clean worktrees used earlier.
+Its stored-case test attempted to recompose an existing pending Assertion proposal that predates explicit evidence-link specifications.
+The current production boundary correctly rejects that incompatible proposal instead of rewriting historical state.
+
+The stored test now names that negative fixture explicitly and requires the exact rejection.
+It also requires validation rollback, an unchanged pending proposal, and preserved saved replay and Source meaning.
+Fresh successful review, recomposition, acceptance, and replay remain covered by the portable captured-input journeys.
+This changes the historical test expectation; it adds no migration, repair, or compatibility path to production.
+The original operator state remains untouched.
+
+The failing boundary was rechecked on the disposable failed-test copy through the real proposal operation and SQLite transaction.
+It rejected the incompatible payload and preserved the proposal, validation attempts, and saved outcome.
+Formatting, lint, and typecheck passed for the revised test.
+The full stored-case test took 51.588 seconds in the failed run; the agent has not restarted that potentially long test.
+
+Run the full corrected check from the original checkout using a new output directory:
+
+```bash
+bash scripts/check_ingestion_announcement.sh /private/tmp/kotekomi-main-integration-verification-v2
+```
+
+The new directory retains revision and working-tree records, per-step logs, `pytest.xml`, disposable state under `tests/`, and the terminal `exit-code.txt`.
+The original failed run remains preserved.
+
+Completion probe:
+
+```bash
+cat /private/tmp/kotekomi-main-integration-verification-v2/exit-code.txt
+```
+
+Durable evidence summary:
+
+```bash
+tail -n 40 /private/tmp/kotekomi-main-integration-verification-v2/pytest.log
+```
+
+Success requires exit code zero, passing whole-tree quality and regression gates, and an inspected reason for each skip.
