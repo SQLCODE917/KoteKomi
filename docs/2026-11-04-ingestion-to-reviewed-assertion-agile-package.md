@@ -7,6 +7,7 @@
 - First deliverable: IRA-01, Pin one supported Event and its expected Assertion
 - Next deliverable: IRA-05 human-run operator check
 - Replay visibility follow-up: [Replay Assertion Inspection](2026-11-06-replay-assertion-inspection.md)
+- Proposed successor: [Intelligence Pipeline Improvement](2026-11-06-intelligence-pipeline-improvement-agile-package.md)
 
 ## User Outcome
 

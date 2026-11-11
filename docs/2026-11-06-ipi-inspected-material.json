@@ -1,0 +1,65 @@
+{
+  "record": "ipi-inspected-material-v1",
+  "package": "intelligence-pipeline-improvement",
+  "baseline_revision": "7dc9a44",
+  "purpose": "Names the material the implementing agent has already read so the reserved custody check can reject it.",
+  "sources": [
+    {
+      "path": "raw/Anthropic–United_States_Department_of_Defense_dispute.pdf",
+      "sha256": "c63c85796559453acf708dab46a35da36ffed00a408a25275576ba07138e9624",
+      "used_by_partition": "development",
+      "excluded_from_reserved": true,
+      "read_extent": "pdftotext pages 1-2 in full; 160-character previews of all 36 ingested paragraphs; full text of ingested paragraphs 1, 2, 3, 4, 5, 8, and 13",
+      "inspected_paragraph_nodes": [
+        "nod_f1e64380625a2f2c533fc277_0002",
+        "nod_f1e64380625a2f2c533fc277_0003",
+        "nod_f1e64380625a2f2c533fc277_0008",
+        "nod_f1e64380625a2f2c533fc277_0010",
+        "nod_f1e64380625a2f2c533fc277_0011",
+        "nod_f1e64380625a2f2c533fc277_0013",
+        "nod_f1e64380625a2f2c533fc277_0015"
+      ],
+      "inspected_paragraph_sha256": [
+        "377c75c2999935fb1984a2c1a6761a73798539536409742f95cd527cc40f3eb5",
+        "86ba43dd74f414301968e6caca8a1aba6ddd61895d412266d69c158eea552116",
+        "cd155e49324b2678a0d80829f2476812f6301df6f55a963d991d6c402361c227",
+        "f9e7331550f2264199d6fa7570d4444647a81630d80629db9b78d1561b0e295c",
+        "d950958d35ca62e8710eeb4147ead86f010d1be215d82b0c25eb4f5c3c8793f0",
+        "c608ac71f813d95607a005494b5cc90fb949590778631fcec2e34bf09e57327a",
+        "c5b74218e413464bcf1cb1f82e9293b44bebc035b5c224c7b1a09d081654afb9"
+      ]
+    },
+    {
+      "path": "raw/Artificial_intelligence_safety_institute.pdf",
+      "sha256": "2220220010291aa4a2ccc8286b2f4c5e96cdbb673392f289682c2c84104f5253",
+      "used_by_partition": "development",
+      "excluded_from_reserved": true,
+      "read_extent": "pdftotext pages 1-2 in full; organization annotation packet paragraphs 0002, 0008, 0018, 0024, and 0040",
+      "inspected_paragraph_nodes": [
+        "nod_561e34f74a03ac8f05edb4a3_0002",
+        "nod_561e34f74a03ac8f05edb4a3_0008",
+        "nod_561e34f74a03ac8f05edb4a3_0018",
+        "nod_561e34f74a03ac8f05edb4a3_0024",
+        "nod_561e34f74a03ac8f05edb4a3_0040"
+      ],
+      "inspected_paragraph_sha256": [
+        "84d7632331c5af8be2344b8d589143fec8a0f884f6851416a55e5f45b732bb80",
+        "c29d914849803e39af70dbf0cbfb77be6ccb2938abb0e454162d737193fa2a87",
+        "fc8ccd6b5ed67bcd24abf42693d73b302d92ef0534d23acb85b6d281827a2afa",
+        "d6eb25ebf1fa2398b2f19fb925f298d5056b76441fdc12be7b4bf362d1202077",
+        "061b9b949704daeed594445470fc8e7595173dbe91abc128489a4591808ef246"
+      ]
+    },
+    {
+      "path": "raw/241030_Allen_Safety_Network.pdf",
+      "sha256": "16f65bb7730939b5f813a6c538d9c24674183ad492dfaa5be091e00783f9670f",
+      "used_by_partition": "reserved",
+      "excluded_from_reserved": false,
+      "read_extent": "one paragraph quoted in docs/2026-08-28-organization-mention-held-out-annotation-packet.md; the Document itself was not opened",
+      "inspected_paragraph_nodes": ["nod_e2ef007787e60f415d0334cd_0009"],
+      "inspected_paragraph_sha256": [
+        "0ca5e1768c21b392d33b4d4e2c86bc9468eccb8e4177cb1630eebdbb235656f2"
+      ]
+    }
+  ]
+}

@@ -10,6 +10,17 @@ Prefer simple code over clever abstractions.
 
 Prefer explicit data contracts over inferred behavior.
 
+## Product Progress
+
+Optimize for a working intelligence Pipeline: source-faithful, complete Assertions that an operator can inspect and review.
+Engineering checks establish implementation correctness; they do not alone establish usable intelligence.
+Choose work by its expected contribution to the complete operator workflow, across Pipeline stages.
+Prefer a bounded production correction over further diagnosis once enough evidence exists to implement it safely.
+
+Follow [Pipeline Improvement](docs/agent/pipeline-improvement.md) for capability work, Pipeline changes, experiments, and Agile packages.
+That policy governs work selection, evidence claims, iteration limits, and completion decisions.
+It does not replace Domain Core rules, declared human approval gates, or an accepted package's targets.
+
 ## Read Order
 
 Before changing code, read:
@@ -75,6 +86,7 @@ Use the repository's typed observability commands before inspecting raw files or
 | changing exporters | `docs/agent/adapters.md`, `docs/agent/domain.md`, `docs/agent/testing.md` |
 | changing tests | `docs/agent/testing.md` |
 | implementing a TDD | `docs/agent/testing.md` |
+| capability work, Pipeline changes, experiments, or Agile packages | `docs/agent/pipeline-improvement.md` |
 | diagnosing PDF authoritative text | `docs/agent/pdf-authoritative-text-fidelity.md`, `docs/agent/adapters.md`, `docs/agent/testing.md` |
 | long work, CI handoff, or post-run inspection | `docs/agent/long-running-operations.md` |
 
@@ -105,6 +117,8 @@ No API, schema, file format, database shape, prompt, or Pipeline output is a pub
 When design and old code conflict, update the old code.
 
 When design and stale fixture data conflict, regenerate the fixture data.
+Regenerate derived fixtures from the approved contract, not from the implementation's new output.
+Reviewed semantic expectations and frozen evidence follow their declared review process.
 
 Prefer clean breaking changes over compatibility code.
 
@@ -199,6 +213,8 @@ Update `docs/CHECK_PLAN.md` when a new contract needs a repeatable verification 
 ## Done Means
 
 A change is done when applicable checks pass.
+For capability work, also distinguish implementation verification, demonstrated capability, and the package target under [Pipeline Improvement](docs/agent/pipeline-improvement.md#completion-and-retention).
+Passing engineering checks alone does not complete a capability package.
 
 Done includes:
 
