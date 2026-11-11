@@ -59,9 +59,27 @@ CASES = (
 )
 
 
-def _seed_capture(journey: Journey) -> None:
+def _seed_capture(journey: Journey, *, overlay: Path | None = None) -> None:
     """Load declared Domain Core records through SQLite's typed fixture methods."""
     data: dict[str, list[dict[str, Any]]] = json.loads((FIXTURE / "ledger.json").read_text())
+    if overlay is not None:
+        extra: dict[str, list[dict[str, Any]]] = json.loads((overlay / "ledger.json").read_text())
+        assert set(extra) == {
+            "EvidenceTarget",
+            "EvidenceValidationAttempt",
+            "ProposedChange",
+            "IngestionChangeSet",
+            "IngestionRun",
+        }
+        for kind, rows in extra.items():
+            if kind in {"IngestionChangeSet", "IngestionRun"}:
+                data[kind] = rows
+            else:
+                existing = {row["id"]: row for row in data[kind]}
+                for row in rows:
+                    assert row["id"] not in existing or existing[row["id"]] == row
+                    existing[row["id"]] = row
+                data[kind] = list(existing.values())
     assert set(data) == {
         "Source",
         "Document",
@@ -80,6 +98,11 @@ def _seed_capture(journey: Journey) -> None:
     journey.state.mkdir()
     shutil.copytree(FIXTURE / "archive", journey.archive)
     shutil.copytree(FIXTURE / "token-artifacts", journey.state / "token-artifacts")
+    if overlay is not None:
+        shutil.copytree(overlay / "archive", journey.archive, dirs_exist_ok=True)
+        shutil.copytree(
+            overlay / "token-artifacts", journey.state / "token-artifacts", dirs_exist_ok=True
+        )
     SQLiteLedgerInitializer(journey.ledger).initialize()
     with sqlite_ledger_transaction(journey.ledger) as ledger:
         for row in data["ProvenanceActivity"]:
@@ -315,6 +338,8 @@ def test_captured_time_journey_preserves_transaction_failures(
         return
 
     _decide(journey, "established")
+    with sqlite_ledger_transaction(journey.ledger) as ledger:
+        validation_count = len(ledger.list_evidence_validation_attempts())
     if failure_stage == "proposal":
         original = SQLiteLedgerRepository.save_proposed_change
 
@@ -328,6 +353,7 @@ def test_captured_time_journey_preserves_transaction_failures(
             with pytest.raises(OSError, match="injected proposal failure"):
                 journey.recompose()
         with sqlite_ledger_transaction(journey.ledger) as ledger:
+            assert len(ledger.list_evidence_validation_attempts()) == validation_count
             assert not [
                 p
                 for p in ledger.list_proposed_changes()
@@ -349,6 +375,7 @@ def test_captured_time_journey_preserves_transaction_failures(
                 if p.proposed_json.get("record_type") == "Assertion"
             ]
             assert len(proposals) == 1
+            assert len(ledger.list_evidence_validation_attempts()) == validation_count + 1
 
     assert not (journey.state / "composition-outcomes" / f"{journey.event_id}.json").exists()
     record = journey.recompose()
@@ -364,3 +391,4 @@ def test_captured_time_journey_preserves_transaction_failures(
         assert len(proposals) == 1
         assert proposals[0].review_status.value == "pending"
         assert ledger.list_assertions() == ()
+        assert len(ledger.list_evidence_validation_attempts()) == validation_count + 1

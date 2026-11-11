@@ -4,6 +4,17 @@ This guide describes the current ingestion workflow.
 It matches the commands that `uv run kotekomi --help`, `uv run kotekomi-live-replay --help`,
 and the scripts in `scripts/` accept.
 
+The review Pipeline retains one attached nominal descriptive title in a contiguous subject phrase.
+Object completion retains either a supported participial complement or one contiguous nominal appositive description.
+A nominal description permits one outer prepositional complement with nested noun content.
+Competing descriptions, clauses, coordination, and disconnected descriptions retain explicit holds.
+Month/year time expressions retain exact Source characters, including doubled spaces, without a boundary comma.
+
+Recomposition validates statement evidence and includes an explicit evidence-link specification in the pending Assertion ProposedChange.
+Retry replays that validation and preserves the existing proposal.
+The Assertion remains proposed until the operator separately approves it through the review operation.
+Source-report acceptance records what the Source reports; it does not independently establish world truth.
+
 ## 1. Configure the runtime
 
 KoteKomi reads one TOML file.

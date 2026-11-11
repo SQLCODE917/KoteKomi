@@ -276,3 +276,15 @@
 - Run whole-tree `uv run ruff format --check .`, `uv run ruff check .`, and `uv run pyright`; the human starts `uv run pytest --junitxml=<durable-output>/pytest.xml` with a captured exit code and log before readiness.
 - Captured-input regression success verifies these development inputs only; IPI's recorded development result was 0/8 to 3/8, reserved remained 0/8, and delegated assessment established no human-effort reduction.
 - Retain **Target not met** for the IPI package; a new improvement cycle, live ingestion, reserved tuning, push, or merge requires a separate scope or authorization.
+
+## 15. Complete announcement statements
+
+- Contract: [Complete Announcement Statements](2026-11-11-complete-announcement-statements.md).
+- Successor scope and completion decisions: [Ingestion improvements task](2026-11-11-ingestion-improvements-task.md).
+- Run `uv run pytest packages/application/tests/test_announcement_completion.py packages/application/tests/test_object_content_completion.py packages/application/tests/test_source_grounded_selection_completion.py packages/application/tests/test_trigger_time_qualifier.py -q`; require the captured title, complete nominal description, and exact month/year, with explicit failures for competing descriptions, coordination, clauses, unrelated attachments, disconnected content, and malformed Source bindings.
+- Run `uv run pytest packages/pipelines/tests/test_announcement_review.py -q`; require ingestion inputs only, supported identity and classification decisions, one matching pending Assertion ProposedChange after retry, complete statement evidence, separate supported acceptance, reloaded accepted Assertion references and evidence links, ProvenanceActivity, and saved replay showing the approved proposal.
+- Preserve the three promoted development cases, ordinary no-time identity, and participial completion through section 14's checks.
+- Promotion failure-injection checks must also prove evidence-validation rollback when proposal persistence fails and reuse after a derived-outcome failure.
+- Human-started whole-tree verification: `bash scripts/check_ingestion_announcement.sh /private/tmp/kotekomi-announcement-verification`; inspect `revision.txt`, `working-tree.txt`, `exit-code.txt`, per-step logs, and `pytest.xml` after terminal completion.
+- Require zero exit status for schema generation and drift, formatting, lint, typecheck, and the full suite; skipped tests require documented reasons.
+- Keep the new accepted-Assertion evidence separate from independent validation, human-effort reduction, and the successor's additional-case target.

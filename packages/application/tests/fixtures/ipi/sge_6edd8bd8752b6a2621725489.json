@@ -1,0 +1,251 @@
+{
+  "sentence_text": "In  December  2025,  secretary  of  defense  Pete  Hegseth  announced  GenAI.mil,  an  artificial  intelligence platform  for  the  Department  of  Defense.",
+  "paragraph_node_id": "nod_f1e64380625a2f2c533fc277_0015",
+  "event_id": "sge_6edd8bd8752b6a2621725489",
+  "trigger_start": 60,
+  "trigger_end": 69,
+  "tokens": [
+    {
+      "token_id": "t1",
+      "sentence_id": "s1",
+      "text": "In",
+      "start": 0,
+      "end": 2,
+      "lemma": "in",
+      "part_of_speech": "ADP",
+      "dependency_relation": "case",
+      "head_token_id": "t2"
+    },
+    {
+      "token_id": "t2",
+      "sentence_id": "s1",
+      "text": "December",
+      "start": 4,
+      "end": 12,
+      "lemma": "December",
+      "part_of_speech": "PROPN",
+      "dependency_relation": "obl",
+      "head_token_id": "t10"
+    },
+    {
+      "token_id": "t3",
+      "sentence_id": "s1",
+      "text": "2025",
+      "start": 14,
+      "end": 18,
+      "lemma": "2025",
+      "part_of_speech": "NUM",
+      "dependency_relation": "nmod:unmarked",
+      "head_token_id": "t2"
+    },
+    {
+      "token_id": "t4",
+      "sentence_id": "s1",
+      "text": ",",
+      "start": 18,
+      "end": 19,
+      "lemma": ",",
+      "part_of_speech": "PUNCT",
+      "dependency_relation": "punct",
+      "head_token_id": "t2"
+    },
+    {
+      "token_id": "t5",
+      "sentence_id": "s1",
+      "text": "secretary",
+      "start": 21,
+      "end": 30,
+      "lemma": "secretary",
+      "part_of_speech": "NOUN",
+      "dependency_relation": "nmod:desc",
+      "head_token_id": "t8"
+    },
+    {
+      "token_id": "t6",
+      "sentence_id": "s1",
+      "text": "of",
+      "start": 32,
+      "end": 34,
+      "lemma": "of",
+      "part_of_speech": "ADP",
+      "dependency_relation": "case",
+      "head_token_id": "t7"
+    },
+    {
+      "token_id": "t7",
+      "sentence_id": "s1",
+      "text": "defense",
+      "start": 36,
+      "end": 43,
+      "lemma": "defense",
+      "part_of_speech": "NOUN",
+      "dependency_relation": "nmod",
+      "head_token_id": "t5"
+    },
+    {
+      "token_id": "t8",
+      "sentence_id": "s1",
+      "text": "Pete",
+      "start": 45,
+      "end": 49,
+      "lemma": "Pete",
+      "part_of_speech": "PROPN",
+      "dependency_relation": "nsubj",
+      "head_token_id": "t10"
+    },
+    {
+      "token_id": "t9",
+      "sentence_id": "s1",
+      "text": "Hegseth",
+      "start": 51,
+      "end": 58,
+      "lemma": "Hegseth",
+      "part_of_speech": "PROPN",
+      "dependency_relation": "flat",
+      "head_token_id": "t8"
+    },
+    {
+      "token_id": "t10",
+      "sentence_id": "s1",
+      "text": "announced",
+      "start": 60,
+      "end": 69,
+      "lemma": "announce",
+      "part_of_speech": "VERB",
+      "dependency_relation": "root",
+      "head_token_id": null
+    },
+    {
+      "token_id": "t11",
+      "sentence_id": "s1",
+      "text": "GenAI.mil",
+      "start": 71,
+      "end": 80,
+      "lemma": "GenAI.mil",
+      "part_of_speech": "PROPN",
+      "dependency_relation": "obj",
+      "head_token_id": "t10"
+    },
+    {
+      "token_id": "t12",
+      "sentence_id": "s1",
+      "text": ",",
+      "start": 80,
+      "end": 81,
+      "lemma": ",",
+      "part_of_speech": "PUNCT",
+      "dependency_relation": "punct",
+      "head_token_id": "t16"
+    },
+    {
+      "token_id": "t13",
+      "sentence_id": "s1",
+      "text": "an",
+      "start": 83,
+      "end": 85,
+      "lemma": "a",
+      "part_of_speech": "DET",
+      "dependency_relation": "det",
+      "head_token_id": "t16"
+    },
+    {
+      "token_id": "t14",
+      "sentence_id": "s1",
+      "text": "artificial",
+      "start": 87,
+      "end": 97,
+      "lemma": "artificial",
+      "part_of_speech": "ADJ",
+      "dependency_relation": "amod",
+      "head_token_id": "t16"
+    },
+    {
+      "token_id": "t15",
+      "sentence_id": "s1",
+      "text": "intelligence",
+      "start": 99,
+      "end": 111,
+      "lemma": "intelligence",
+      "part_of_speech": "NOUN",
+      "dependency_relation": "compound",
+      "head_token_id": "t16"
+    },
+    {
+      "token_id": "t16",
+      "sentence_id": "s1",
+      "text": "platform",
+      "start": 112,
+      "end": 120,
+      "lemma": "platform",
+      "part_of_speech": "NOUN",
+      "dependency_relation": "appos",
+      "head_token_id": "t11"
+    },
+    {
+      "token_id": "t17",
+      "sentence_id": "s1",
+      "text": "for",
+      "start": 122,
+      "end": 125,
+      "lemma": "for",
+      "part_of_speech": "ADP",
+      "dependency_relation": "case",
+      "head_token_id": "t19"
+    },
+    {
+      "token_id": "t18",
+      "sentence_id": "s1",
+      "text": "the",
+      "start": 127,
+      "end": 130,
+      "lemma": "the",
+      "part_of_speech": "DET",
+      "dependency_relation": "det",
+      "head_token_id": "t19"
+    },
+    {
+      "token_id": "t19",
+      "sentence_id": "s1",
+      "text": "Department",
+      "start": 132,
+      "end": 142,
+      "lemma": "Department",
+      "part_of_speech": "PROPN",
+      "dependency_relation": "nmod",
+      "head_token_id": "t16"
+    },
+    {
+      "token_id": "t20",
+      "sentence_id": "s1",
+      "text": "of",
+      "start": 144,
+      "end": 146,
+      "lemma": "of",
+      "part_of_speech": "ADP",
+      "dependency_relation": "case",
+      "head_token_id": "t21"
+    },
+    {
+      "token_id": "t21",
+      "sentence_id": "s1",
+      "text": "Defense",
+      "start": 148,
+      "end": 155,
+      "lemma": "Defense",
+      "part_of_speech": "PROPN",
+      "dependency_relation": "nmod",
+      "head_token_id": "t19"
+    },
+    {
+      "token_id": "t22",
+      "sentence_id": "s1",
+      "text": ".",
+      "start": 155,
+      "end": 156,
+      "lemma": ".",
+      "part_of_speech": "PUNCT",
+      "dependency_relation": "punct",
+      "head_token_id": "t10"
+    }
+  ]
+}

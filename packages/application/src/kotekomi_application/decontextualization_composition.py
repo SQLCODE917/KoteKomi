@@ -162,7 +162,8 @@ class ObjectContentCompletion(BaseModel):
     """One validated completion of a selected object phrase.
 
     The selected object range stays exactly as the selector produced it; the completed
-    range starts at that range and adds one contiguous participial complement.
+    range starts at that range and adds one contiguous participial complement or
+    nominal appositive description.
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
@@ -626,6 +627,78 @@ _COMPLEMENT_CLAUSE_RELATIONS = frozenset(
 )
 
 
+def _nominal_appositive_range(
+    *,
+    source_text: str,
+    tokens: tuple[EventEntityLinguisticToken, ...],
+    selected: SourceRange,
+    complement: EventEntityLinguisticToken,
+) -> SourceRange:
+    """Validate one nominal description without changing the core object selection."""
+    if complement.part_of_speech not in {"NOUN", "PROPN"}:
+        raise ObjectComplementUnsupported("The appositive description must have a nominal head.")
+    permitted = {
+        "det",
+        "amod",
+        "compound",
+        "flat",
+        "nummod",
+        "punct",
+        "case",
+        "fixed",
+        "nmod",
+        "nmod:poss",
+    }
+    subtree_ids = {complement.token_id}
+    pending = [complement.token_id]
+    outer_complements: set[str] = set()
+    while pending:
+        parent_id = pending.pop()
+        for token in tokens:
+            if token.head_token_id != parent_id:
+                continue
+            if (
+                token.token_id in subtree_ids
+                or token.dependency_relation not in permitted
+                or token.sentence_id != complement.sentence_id
+                or token.part_of_speech in {"VERB", "AUX"}
+            ):
+                raise ObjectComplementUnsupported(
+                    "The nominal description contains unsupported content."
+                )
+            if token.dependency_relation == "nmod":
+                if not any(
+                    child.head_token_id == token.token_id and child.dependency_relation == "case"
+                    for child in tokens
+                ):
+                    raise ObjectComplementUnsupported(
+                        "A nominal complement requires a case marker."
+                    )
+                if parent_id == complement.token_id:
+                    outer_complements.add(token.token_id)
+            subtree_ids.add(token.token_id)
+            pending.append(token.token_id)
+    if len(outer_complements) > 1:
+        raise ObjectComplementUnsupported(
+            "The nominal description has competing prepositional complements."
+        )
+    subtree = [token for token in tokens if token.token_id in subtree_ids]
+    start = min(token.start for token in subtree)
+    end = max(token.end for token in subtree)
+    if start < selected.end or source_text[selected.end : start].strip():
+        raise ObjectComplementUnsupported(
+            "The nominal description is not contiguous with the object."
+        )
+    if any(
+        token.start < end and start < token.end and token.token_id not in subtree_ids
+        for token in tokens
+    ):
+        raise ObjectComplementUnsupported("The nominal description is disconnected.")
+    while end > start and source_text[end - 1] in ",;:":
+        end -= 1
+    return SourceRange(start=selected.start, end=end, text=source_text[selected.start : end])
+
+
 def derive_object_content_completion(
     *,
     event_id: str,
@@ -633,13 +706,25 @@ def derive_object_content_completion(
     tokens: tuple[EventEntityLinguisticToken, ...],
     selected_object_range: SourceRange,
 ) -> ObjectContentCompletion | None:
-    """Return the validated participial completion of one selected object phrase.
+    """Return one validated participial or nominal-appositive object completion.
 
-    The object head keeps its selection. A single bare ``acl`` dependent of that head
+    The object head keeps its selection. A single ``acl`` or nominal ``appos`` dependent
     contributes one contiguous complement. An ordinary object without such a dependent
     returns ``None`` and continues through the existing path. Ambiguous, coordinated, or
     non-contiguous complements raise, so the caller can hold explicitly.
     """
+    if (
+        not 0 <= selected_object_range.start < selected_object_range.end <= len(source_text)
+        or source_text[selected_object_range.start : selected_object_range.end]
+        != selected_object_range.text
+    ):
+        raise ValueError("Object completion range disagrees with source text.")
+    for token in tokens:
+        if (
+            not 0 <= token.start < token.end <= len(source_text)
+            or source_text[token.start : token.end] != token.text
+        ):
+            raise ValueError("Object completion token disagrees with source text.")
     inside = [
         token
         for token in tokens
@@ -665,15 +750,24 @@ def derive_object_content_completion(
     complements = [
         token
         for token in tokens
-        if token.head_token_id == head.token_id and token.dependency_relation == "acl"
+        if token.head_token_id == head.token_id and token.dependency_relation in {"acl", "appos"}
     ]
     if not complements:
         return None
     if len(complements) > 1:
-        raise ObjectComplementUnsupported(
-            "The object head has more than one participial complement."
-        )
+        raise ObjectComplementUnsupported("The object head has more than one content complement.")
     complement = complements[0]
+    if complement.dependency_relation == "appos":
+        return ObjectContentCompletion(
+            event_id=event_id,
+            selected_object_range=selected_object_range,
+            completed_range=_nominal_appositive_range(
+                source_text=source_text,
+                tokens=tokens,
+                selected=selected_object_range,
+                complement=complement,
+            ),
+        )
     subtree = [complement]
     changed = True
     while changed:

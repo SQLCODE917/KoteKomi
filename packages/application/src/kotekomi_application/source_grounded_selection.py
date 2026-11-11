@@ -253,12 +253,14 @@ def _completion_is_permitted(
     candidate: ParserConstituent,
     boundary: SourceRange,
     tokens_by_id: dict[str, EventEntityLinguisticToken],
+    allow_descriptive_title: bool = False,
 ) -> bool:
     """Return whether one covering candidate only completes the role's own noun phrase.
 
     The candidate may add noun-phrase content that is inside it: determiners,
     modifiers, compounds, punctuation, and at most one prepositional complement
-    rooted directly in the canonical boundary tokens. Any clause, appositive,
+    rooted directly in the canonical boundary tokens. A subject may add one nominal
+    descriptive title with its noun complements. Any clause, appositive,
     coordination, or adverbial material leaves the candidate unsuitable.
     """
     boundary_ids = _boundary_token_ids(boundary, tokens_by_id)
@@ -277,6 +279,19 @@ def _completion_is_permitted(
         return False
     sentence_ids = {tokens_by_id[token_id].sentence_id for token_id in boundary_ids}
     outer_complements: set[str] = set()
+    title_ids = {
+        token_id for token_id in extras if tokens_by_id[token_id].dependency_relation == "nmod:desc"
+    }
+    if title_ids and (
+        not allow_descriptive_title
+        or len(title_ids) != 1
+        or any(
+            tokens_by_id[token_id].part_of_speech != "NOUN"
+            or tokens_by_id[token_id].head_token_id not in boundary_ids
+            for token_id in title_ids
+        )
+    ):
+        return False
     for token_id in extras:
         current_id = token_id
         visited: set[str] = set()
@@ -287,7 +302,10 @@ def _completion_is_permitted(
             visited.add(current_id)
             token = tokens_by_id[current_id]
             if (
-                token.dependency_relation not in _COMPLETION_CONTENT_RELATIONS
+                (
+                    token.dependency_relation not in _COMPLETION_CONTENT_RELATIONS
+                    and current_id not in title_ids
+                )
                 or token.sentence_id not in sentence_ids
                 or token.head_token_id is None
             ):
@@ -326,6 +344,17 @@ def _select_conjunct(
 ) -> SourceGroundedConjunctSelection:
     # REQ-BND-04: an unlisted relation on the argument head is a boundary gap.
     for dependent in children.get(head.token_id, ()):
+        if (
+            head.dependency_relation in _SUBJECT_DEPENDENCY_RELATIONS
+            and dependent.dependency_relation == "nmod:desc"
+        ):
+            continue
+        if (
+            head.dependency_relation in _OBJECT_DEPENDENCY_RELATIONS
+            and dependent.dependency_relation == "appos"
+        ):
+            # ObjectContentCompletion validates the description after core selection.
+            continue
         if not _is_supported_direct_dependent(dependent):
             raise SourceGroundedSelectionError(SourceGroundedBoundaryGap.UNSUPPORTED_RELATION)
 
@@ -335,6 +364,31 @@ def _select_conjunct(
         for item in inventory.constituents
         if head.token_id in item.token_ids and trigger_head.token_id not in item.token_ids
     ]
+    titles = [
+        token
+        for token in children.get(head.token_id, ())
+        if token.dependency_relation == "nmod:desc"
+    ]
+    if titles:
+        title_ids: set[str] = set()
+        pending = list(titles)
+        while pending:
+            token = pending.pop()
+            if token.token_id in title_ids:
+                raise SourceGroundedSelectionError(SourceGroundedBoundaryGap.UNSUPPORTED_RELATION)
+            title_ids.add(token.token_id)
+            pending.extend(children.get(token.token_id, ()))
+        if len(titles) != 1 or not any(
+            title_ids <= set(candidate.token_ids)
+            and _completion_is_permitted(
+                candidate=candidate,
+                boundary=boundary,
+                tokens_by_id=tokens_by_id,
+                allow_descriptive_title=True,
+            )
+            for candidate in candidates
+        ):
+            raise SourceGroundedSelectionError(SourceGroundedBoundaryGap.UNSUPPORTED_RELATION)
     equal = [item for item in candidates if _span_equals(item, boundary)]
     if len(equal) == 1:
         return SourceGroundedConjunctSelection(
@@ -344,7 +398,10 @@ def _select_conjunct(
     if not covering:
         raise SourceGroundedSelectionError(SourceGroundedBoundaryGap.NO_COVERING_CANDIDATE)
     if len(covering) == 1 and _completion_is_permitted(
-        candidate=covering[0], boundary=boundary, tokens_by_id=tokens_by_id
+        candidate=covering[0],
+        boundary=boundary,
+        tokens_by_id=tokens_by_id,
+        allow_descriptive_title=head.dependency_relation in _SUBJECT_DEPENDENCY_RELATIONS,
     ):
         return SourceGroundedConjunctSelection(
             canonical_boundary=covering[0].constituent_range,

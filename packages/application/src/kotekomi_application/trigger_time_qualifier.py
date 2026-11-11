@@ -187,8 +187,20 @@ def derive_trigger_time_qualifier(
         raise TriggerTimeUnsupported("The trigger carries more than one oblique dependent.")
     adjunct = adjuncts[0]
     subtree = _subtree(adjunct, children)
+    unmarked_years = [token for token in subtree if token.dependency_relation == "nmod:unmarked"]
+    if unmarked_years and (
+        len(unmarked_years) != 1
+        or adjunct.lemma.casefold() not in _MONTH_LEMMAS
+        or unmarked_years[0].head_token_id != adjunct.token_id
+        or unmarked_years[0].sentence_id != adjunct.sentence_id
+        or unmarked_years[0].start < adjunct.end
+        or unmarked_years[0].part_of_speech != "NUM"
+        or not _YEAR.fullmatch(unmarked_years[0].text)
+        or children.get(unmarked_years[0].token_id)
+    ):
+        raise TriggerTimeUnsupported("An unmarked year requires one month head and no dependents.")
     relations = {token.dependency_relation for token in subtree if token is not adjunct}
-    if not relations <= _PERMITTED_ADJUNCT_RELATIONS:
+    if not relations <= _PERMITTED_ADJUNCT_RELATIONS | {"nmod:unmarked"}:
         raise TriggerTimeUnsupported("The oblique carries content this Assertion cannot represent.")
     for token in subtree:
         if token.dependency_relation == "nmod":

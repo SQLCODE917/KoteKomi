@@ -156,7 +156,7 @@ def test_coordinated_complement_is_unsupported() -> None:
         ObjectComplementUnsupported,
     )
 
-    text = "a post praising fraud and hiding losses"
+    text = "a post praising fraud and hiding losses published"
     tokens = (
         EventEntityLinguisticToken(
             token_id="t1",
@@ -234,17 +234,6 @@ def test_coordinated_complement_is_unsupported() -> None:
             part_of_speech="NOUN",
             dependency_relation="obj",
             head_token_id="t6",
-        ),
-        EventEntityLinguisticToken(
-            token_id="t8",
-            sentence_id="s1",
-            text="published",
-            start=40,
-            end=49,
-            lemma="publish",
-            part_of_speech="VERB",
-            dependency_relation="root",
-            head_token_id=None,
         ),
         EventEntityLinguisticToken(
             token_id="t9",

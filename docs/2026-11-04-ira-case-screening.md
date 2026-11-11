@@ -181,6 +181,16 @@ IRA-01-A stays open until these regressions pass and the case is approved.
 
 ## Reproduction
 
+### Current completion contract extension
+
+[Complete Announcement Statements](2026-11-11-complete-announcement-statements.md) extends the existing explicit `ObjectContentCompletion` contract.
+The selected object boundary and candidate label remain unchanged.
+Completion can add either the existing participial complement or one contiguous nominal appositive description.
+The nominal description permits noun modifiers and one outer prepositional complement, including nested noun content.
+Multiple descriptions, clauses, coordination, disconnected content, and invalid Source bindings fail explicitly.
+Packet text, proposed Assertion content, supporting object span, and statement EvidenceTarget must use the same exact completed range.
+This extension preserves the historical participial evidence and approval decisions above.
+
 For each paragraph in the run: load its paragraph inputs and token artifact, build the constituent
 inventory for the Event, run `select_source_grounded_constituents`, then call
 `compose_event_from_resolution` with one synthetic accepted organization reference.

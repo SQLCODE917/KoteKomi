@@ -35,6 +35,12 @@ from kotekomi_application import (
     select_source_grounded_constituents,
     validate_packet_bindings,
 )
+from kotekomi_application.evidence_targets import (
+    EvidenceTargetLedger,
+    EvidenceValidationInput,
+    validate_evidence_target,
+    verify_evidence_target,
+)
 from kotekomi_application.ingestion_inspection import (
     EventAnnotation,
     ParagraphAnnotationProfile,
@@ -383,7 +389,9 @@ def recompose_reviewed_event(
     return record
 
 
-def _proposal_payload(assertion: Assertion, review: EventConstructionReview) -> dict[str, Any]:
+def _proposal_payload(
+    assertion: Assertion, review: EventConstructionReview, validation_attempt_id: str
+) -> dict[str, Any]:
     proposed = ProposedAssertion(
         id=assertion.id,
         assertion_type=assertion.assertion_type,
@@ -404,10 +412,19 @@ def _proposal_payload(assertion: Assertion, review: EventConstructionReview) -> 
         "record_type": "Assertion",
         "stable_label": assertion.id,
         "record": proposed.model_dump(mode="json"),
+        "evidence_links": [
+            {
+                "evidence_target_id": review.statement_evidence_target_id,
+                "validation_attempt_id": validation_attempt_id,
+                "role": "direct_support",
+                "polarity": "supports",
+                "necessity": "required",
+            }
+        ],
     }
 
 
-class AssertionProposalLedger(Protocol):
+class AssertionProposalLedger(EvidenceTargetLedger, Protocol):
     """Proposal persistence the recomposition step requires."""
 
     def get_proposed_change(self, record_id: str) -> ProposedChange | None: ...
@@ -421,7 +438,33 @@ def _upsert_assertion_proposal(
     repository: AssertionProposalLedger,
     now: datetime,
 ) -> ProposedChange:
-    payload = _proposal_payload(assertion, review)
+    if assertion.evidence_target_ids != (review.statement_evidence_target_id,):
+        raise EventConstructionReviewError("Assertion evidence must match the reviewed statement.")
+    attempt_id = (
+        "eva_"
+        + hashlib.sha256(
+            f"event_review_statement:{review.statement_evidence_target_id}".encode()
+        ).hexdigest()[:24]
+    )
+    attempt = repository.get_evidence_validation_attempt(attempt_id)
+    if attempt is None:
+        validation = validate_evidence_target(
+            EvidenceValidationInput(
+                evidence_target_id=review.statement_evidence_target_id,
+                attempt_id=attempt_id,
+                validator_version="event_review_statement_v1",
+                validated_at=now,
+            ),
+            repository,
+        )
+    else:
+        target = repository.get_evidence_target(review.statement_evidence_target_id)
+        if target is None:
+            raise EventConstructionReviewError("The reviewed statement evidence is missing.")
+        validation = verify_evidence_target(target, attempt, repository)
+    if not validation.valid:
+        raise EventConstructionReviewError("The reviewed statement evidence is not replayable.")
+    payload = _proposal_payload(assertion, review, attempt_id)
     proposal_id = (
         "pcg_"
         + hashlib.sha256(

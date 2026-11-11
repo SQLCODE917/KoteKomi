@@ -1,0 +1,1389 @@
+{
+  "EvidenceTarget": [
+    {
+      "id": "etg_0299e686dfe66beb990ac99f",
+      "source_id": "src_d97195ee5c8ced32c0cd41b0",
+      "document_id": "doc_eaaad11a475988142cad48d7",
+      "representation_id": "rep_f1e64380625a2f2c533fc277",
+      "text_view_id": "tvw_f1e64380625a2f2c533fc277_logical",
+      "text_view_digest": "7fcd6f4d104813254de2a930d009d74ce7920925af03195414aad58be872e9c2",
+      "start_char": 5807,
+      "end_char": 5816,
+      "exact_text": "announced",
+      "normalization_policy": "docling_analysis_text_v2",
+      "prefix_text": "0] The following month, Hegseth ",
+      "suffix_text": " that the Department of Defense ",
+      "node_ids": [
+        "nod_f1e64380625a2f2c533fc277_0015"
+      ],
+      "pdf_region_ids": [
+        "srg_f1e64380625a2f2c533fc277_0015_01"
+      ],
+      "dom_selector": null,
+      "table_selector": null,
+      "created_at": "2026-11-05T15:15:48.818144Z"
+    },
+    {
+      "id": "etg_1dfa803bf0b8274d2a46fbb5",
+      "source_id": "src_d97195ee5c8ced32c0cd41b0",
+      "document_id": "doc_eaaad11a475988142cad48d7",
+      "representation_id": "rep_f1e64380625a2f2c533fc277",
+      "text_view_id": "tvw_f1e64380625a2f2c533fc277_logical",
+      "text_view_digest": "7fcd6f4d104813254de2a930d009d74ce7920925af03195414aad58be872e9c2",
+      "start_char": 5912,
+      "end_char": 5920,
+      "exact_text": "decrying",
+      "normalization_policy": "docling_analysis_text_v2",
+      "prefix_text": "s Grok for use in the military, ",
+      "suffix_text": " \"woke AI\". [21]\nIn January 2026",
+      "node_ids": [
+        "nod_f1e64380625a2f2c533fc277_0015"
+      ],
+      "pdf_region_ids": [
+        "srg_f1e64380625a2f2c533fc277_0015_01"
+      ],
+      "dom_selector": null,
+      "table_selector": null,
+      "created_at": "2026-11-05T15:15:48.818144Z"
+    },
+    {
+      "id": "etg_2db10f4607940906943a6f0d",
+      "source_id": "src_d97195ee5c8ced32c0cd41b0",
+      "document_id": "doc_eaaad11a475988142cad48d7",
+      "representation_id": "rep_f1e64380625a2f2c533fc277",
+      "text_view_id": "tvw_f1e64380625a2f2c533fc277_logical",
+      "text_view_digest": "7fcd6f4d104813254de2a930d009d74ce7920925af03195414aad58be872e9c2",
+      "start_char": 5769,
+      "end_char": 5932,
+      "exact_text": "[19][20] The following month, Hegseth announced that the Department of Defense would additionally contract xAI's Grok for use in the military, decrying \"woke AI\". ",
+      "normalization_policy": "docling_analysis_text_v2",
+      "prefix_text": "latform, then OpenAI's ChatGPT. ",
+      "suffix_text": "[21]\nIn January 2026, Semafor re",
+      "node_ids": [
+        "nod_f1e64380625a2f2c533fc277_0015"
+      ],
+      "pdf_region_ids": [
+        "srg_f1e64380625a2f2c533fc277_0015_01"
+      ],
+      "dom_selector": null,
+      "table_selector": null,
+      "created_at": "2026-11-05T15:15:48.818144Z"
+    },
+    {
+      "id": "etg_485787964a0b1511058801e4",
+      "source_id": "src_d97195ee5c8ced32c0cd41b0",
+      "document_id": "doc_eaaad11a475988142cad48d7",
+      "representation_id": "rep_f1e64380625a2f2c533fc277",
+      "text_view_id": "tvw_f1e64380625a2f2c533fc277_logical",
+      "text_view_digest": "7fcd6f4d104813254de2a930d009d74ce7920925af03195414aad58be872e9c2",
+      "start_char": 5671,
+      "end_char": 5769,
+      "exact_text": "The  department  initially  contracted  Google  Gemini  for  the platform, then OpenAI's ChatGPT. ",
+      "normalization_policy": "docling_analysis_text_v2",
+      "prefix_text": " the  Department  of  Defense.  ",
+      "suffix_text": "[19][20] The following month, He",
+      "node_ids": [
+        "nod_f1e64380625a2f2c533fc277_0015"
+      ],
+      "pdf_region_ids": [
+        "srg_f1e64380625a2f2c533fc277_0015_01"
+      ],
+      "dom_selector": null,
+      "table_selector": null,
+      "created_at": "2026-11-05T15:15:48.814980Z"
+    },
+    {
+      "id": "etg_67859784e7461de7a7b885ca",
+      "source_id": "src_d97195ee5c8ced32c0cd41b0",
+      "document_id": "doc_eaaad11a475988142cad48d7",
+      "representation_id": "rep_f1e64380625a2f2c533fc277",
+      "text_view_id": "tvw_f1e64380625a2f2c533fc277_logical",
+      "text_view_digest": "7fcd6f4d104813254de2a930d009d74ce7920925af03195414aad58be872e9c2",
+      "start_char": 5513,
+      "end_char": 5671,
+      "exact_text": "In  December  2025,  secretary  of  defense  Pete  Hegseth  announced  GenAI.mil,  an  artificial  intelligence platform  for  the  Department  of  Defense.  ",
+      "normalization_policy": "docling_analysis_text_v2",
+      "prefix_text": "mp administration. [18]\nDispute\n",
+      "suffix_text": "The  department  initially  cont",
+      "node_ids": [
+        "nod_f1e64380625a2f2c533fc277_0015"
+      ],
+      "pdf_region_ids": [
+        "srg_f1e64380625a2f2c533fc277_0015_01"
+      ],
+      "dom_selector": null,
+      "table_selector": null,
+      "created_at": "2026-11-05T15:15:48.811603Z"
+    },
+    {
+      "id": "etg_b068522e1c9dfa757a99dd6a",
+      "source_id": "src_d97195ee5c8ced32c0cd41b0",
+      "document_id": "doc_eaaad11a475988142cad48d7",
+      "representation_id": "rep_f1e64380625a2f2c533fc277",
+      "text_view_id": "tvw_f1e64380625a2f2c533fc277_logical",
+      "text_view_digest": "7fcd6f4d104813254de2a930d009d74ce7920925af03195414aad58be872e9c2",
+      "start_char": 5922,
+      "end_char": 5926,
+      "exact_text": "woke",
+      "normalization_policy": "docling_analysis_text_v2",
+      "prefix_text": " use in the military, decrying \"",
+      "suffix_text": " AI\". [21]\nIn January 2026, Sema",
+      "node_ids": [
+        "nod_f1e64380625a2f2c533fc277_0015"
+      ],
+      "pdf_region_ids": [
+        "srg_f1e64380625a2f2c533fc277_0015_01"
+      ],
+      "dom_selector": null,
+      "table_selector": null,
+      "created_at": "2026-11-05T15:15:48.818144Z"
+    },
+    {
+      "id": "etg_b6d914ffbb17143a071a7a75",
+      "source_id": "src_d97195ee5c8ced32c0cd41b0",
+      "document_id": "doc_eaaad11a475988142cad48d7",
+      "representation_id": "rep_f1e64380625a2f2c533fc277",
+      "text_view_id": "tvw_f1e64380625a2f2c533fc277_logical",
+      "text_view_digest": "7fcd6f4d104813254de2a930d009d74ce7920925af03195414aad58be872e9c2",
+      "start_char": 5867,
+      "end_char": 5875,
+      "exact_text": "contract",
+      "normalization_policy": "docling_analysis_text_v2",
+      "prefix_text": "t of Defense would additionally ",
+      "suffix_text": " xAI's Grok for use in the milit",
+      "node_ids": [
+        "nod_f1e64380625a2f2c533fc277_0015"
+      ],
+      "pdf_region_ids": [
+        "srg_f1e64380625a2f2c533fc277_0015_01"
+      ],
+      "dom_selector": null,
+      "table_selector": null,
+      "created_at": "2026-11-05T15:15:48.818144Z"
+    },
+    {
+      "id": "etg_bdc84929cde79d52ab6dd704",
+      "source_id": "src_d97195ee5c8ced32c0cd41b0",
+      "document_id": "doc_eaaad11a475988142cad48d7",
+      "representation_id": "rep_f1e64380625a2f2c533fc277",
+      "text_view_id": "tvw_f1e64380625a2f2c533fc277_logical",
+      "text_view_digest": "7fcd6f4d104813254de2a930d009d74ce7920925af03195414aad58be872e9c2",
+      "start_char": 5699,
+      "end_char": 5709,
+      "exact_text": "contracted",
+      "normalization_policy": "docling_analysis_text_v2",
+      "prefix_text": "e.  The  department  initially  ",
+      "suffix_text": "  Google  Gemini  for  the platf",
+      "node_ids": [
+        "nod_f1e64380625a2f2c533fc277_0015"
+      ],
+      "pdf_region_ids": [
+        "srg_f1e64380625a2f2c533fc277_0015_01"
+      ],
+      "dom_selector": null,
+      "table_selector": null,
+      "created_at": "2026-11-05T15:15:48.814980Z"
+    },
+    {
+      "id": "etg_df5f49f8d57bc2e93057b033",
+      "source_id": "src_d97195ee5c8ced32c0cd41b0",
+      "document_id": "doc_eaaad11a475988142cad48d7",
+      "representation_id": "rep_f1e64380625a2f2c533fc277",
+      "text_view_id": "tvw_f1e64380625a2f2c533fc277_logical",
+      "text_view_digest": "7fcd6f4d104813254de2a930d009d74ce7920925af03195414aad58be872e9c2",
+      "start_char": 5573,
+      "end_char": 5582,
+      "exact_text": "announced",
+      "normalization_policy": "docling_analysis_text_v2",
+      "prefix_text": "ry  of  defense  Pete  Hegseth  ",
+      "suffix_text": "  GenAI.mil,  an  artificial  in",
+      "node_ids": [
+        "nod_f1e64380625a2f2c533fc277_0015"
+      ],
+      "pdf_region_ids": [
+        "srg_f1e64380625a2f2c533fc277_0015_01"
+      ],
+      "dom_selector": null,
+      "table_selector": null,
+      "created_at": "2026-11-05T15:15:48.811603Z"
+    }
+  ],
+  "EvidenceValidationAttempt": [
+    {
+      "id": "eva_3da64598a546e12a6e7cbb19",
+      "evidence_target_id": "etg_2db10f4607940906943a6f0d",
+      "target_digest": "ef0fcd012e76b0b7a651e6a54da5e4cf31c3191497c2c4f9e524ce345e631eed",
+      "validator_version": "hybrid_event_semantics_evidence_v1",
+      "status": "succeeded",
+      "error_message": null,
+      "attempted_at": "2026-11-05T15:15:48.818144Z"
+    },
+    {
+      "id": "eva_68cd0ed79f3288382095e780",
+      "evidence_target_id": "etg_b068522e1c9dfa757a99dd6a",
+      "target_digest": "fdbaef10dc98644a9129140e9d05b830eb259ce3145cc6bb71610e5b10be10d5",
+      "validator_version": "hybrid_event_semantics_evidence_v1",
+      "status": "succeeded",
+      "error_message": null,
+      "attempted_at": "2026-11-05T15:15:48.818144Z"
+    },
+    {
+      "id": "eva_8cd28b9b76b6516ea2d99942",
+      "evidence_target_id": "etg_b6d914ffbb17143a071a7a75",
+      "target_digest": "031aef89a74187e50ed9393321d059205aeac754e4f6197d2574250f01a5194e",
+      "validator_version": "hybrid_event_semantics_evidence_v1",
+      "status": "succeeded",
+      "error_message": null,
+      "attempted_at": "2026-11-05T15:15:48.818144Z"
+    },
+    {
+      "id": "eva_97dbbc37a657371ed573c8eb",
+      "evidence_target_id": "etg_1dfa803bf0b8274d2a46fbb5",
+      "target_digest": "cb3d9c6c6c7180c6825057dd354ac4e049029b586cdcd22350673624f7764fae",
+      "validator_version": "hybrid_event_semantics_evidence_v1",
+      "status": "succeeded",
+      "error_message": null,
+      "attempted_at": "2026-11-05T15:15:48.818144Z"
+    },
+    {
+      "id": "eva_c24e1f02849bc340b232eae2",
+      "evidence_target_id": "etg_df5f49f8d57bc2e93057b033",
+      "target_digest": "4131bc4605a11c32846a1ae1cc7a8815e142c4ad7004afc0f104bf9bf8f6d01c",
+      "validator_version": "hybrid_event_semantics_evidence_v1",
+      "status": "succeeded",
+      "error_message": null,
+      "attempted_at": "2026-11-05T15:15:48.811603Z"
+    },
+    {
+      "id": "eva_cc35e5423d6a0c2ec99ac25a",
+      "evidence_target_id": "etg_0299e686dfe66beb990ac99f",
+      "target_digest": "efe51e5237f227960d0af273f44c2b33649b076ea1e4fadb373df6d6f78d7137",
+      "validator_version": "hybrid_event_semantics_evidence_v1",
+      "status": "succeeded",
+      "error_message": null,
+      "attempted_at": "2026-11-05T15:15:48.818144Z"
+    },
+    {
+      "id": "eva_d4a0c91fbd51c6a1fa450b4f",
+      "evidence_target_id": "etg_bdc84929cde79d52ab6dd704",
+      "target_digest": "d049a246ea6e9238d8ae87bf75d37cc96768e88fa5e9ba5a77b0ff5f535c6eb2",
+      "validator_version": "hybrid_event_semantics_evidence_v1",
+      "status": "succeeded",
+      "error_message": null,
+      "attempted_at": "2026-11-05T15:15:48.814980Z"
+    },
+    {
+      "id": "eva_e24769c9f16d8a21cc649b11",
+      "evidence_target_id": "etg_485787964a0b1511058801e4",
+      "target_digest": "5b29973efc5b83940edee891a69e98332d3ebf244e462d07252dbfe614a0e739",
+      "validator_version": "hybrid_event_semantics_evidence_v1",
+      "status": "succeeded",
+      "error_message": null,
+      "attempted_at": "2026-11-05T15:15:48.814980Z"
+    },
+    {
+      "id": "eva_ea42733a01f6aba6cc0941f5",
+      "evidence_target_id": "etg_67859784e7461de7a7b885ca",
+      "target_digest": "4b896bb645c4cb3c096cb13eb4512d038674530b9e4be2ca588b09a0a1e0ed76",
+      "validator_version": "hybrid_event_semantics_evidence_v1",
+      "status": "succeeded",
+      "error_message": null,
+      "attempted_at": "2026-11-05T15:15:48.811603Z"
+    }
+  ],
+  "ProposedChange": [
+    {
+      "id": "pcg_0d037daa80b8f11cdc0838b5",
+      "review_status": "pending",
+      "proposed_json": {
+        "evidence": {
+          "document_id": "doc_eaaad11a475988142cad48d7",
+          "exact_text": "Pete  Hegseth",
+          "location": {
+            "end_char": 5571,
+            "node_ids": [
+              "nod_f1e64380625a2f2c533fc277_0015"
+            ],
+            "representation_id": "rep_f1e64380625a2f2c533fc277",
+            "start_char": 5558,
+            "text_view_id": "tvw_f1e64380625a2f2c533fc277_logical"
+          },
+          "prefix_text": " 2025,  secretary  of  defense  ",
+          "selector_type": "pinned_text",
+          "source_id": "src_d97195ee5c8ced32c0cd41b0",
+          "suffix_text": "  announced  GenAI.mil,  an  art"
+        },
+        "hybrid_lineage": {
+          "hp1_preview_id": "hxp_05c8252319a8ac6a02acce11",
+          "hp2_preview_id": "hrp_37a4dc89f592c5873fb7a08a",
+          "hp3_preview_id": "hgp_b46298c616cd167d19f037f3",
+          "hp4_preview_id": "htp_02c613be535a1da1f753376f",
+          "mention_candidate_id": "mnc_02587d7bf78713e188d67701",
+          "mention_interpretation_ids": [
+            "mit_072c373baa817db1bc9e2d27"
+          ],
+          "model_run_ids": [
+            "mrn_103f0b0c81484ab59f91667b1a306258"
+          ],
+          "reference_decision_ids": [],
+          "source_trace_ids": [
+            "xst_e940780217ef5ea0eed36c29"
+          ]
+        },
+        "record": {
+          "id": "act_3eafc333b7e44f229a48c890",
+          "name": "Pete  Hegseth",
+          "organization_ids": [],
+          "role_names": []
+        },
+        "record_type": "Actor",
+        "stable_label": "act_3eafc333b7e44f229a48c890"
+      },
+      "original_proposed_json": null,
+      "accepted_json": null,
+      "source_id": "src_d97195ee5c8ced32c0cd41b0",
+      "document_id": "doc_eaaad11a475988142cad48d7",
+      "model_name": null,
+      "prompt_id": null,
+      "provenance_activity_id": "prv_5958a4af33d2d48838322ebd",
+      "created_at": "2026-11-05T16:00:19.262385Z",
+      "updated_at": "2026-11-05T16:00:19.262385Z"
+    },
+    {
+      "id": "pcg_1e513d7df51c45ac7204ef92",
+      "review_status": "pending",
+      "proposed_json": {
+        "event_mention_evidence": {
+          "expression": {
+            "document_id": "doc_eaaad11a475988142cad48d7",
+            "exact_text": "decrying",
+            "location": {
+              "end_char": 5920,
+              "node_ids": [
+                "nod_f1e64380625a2f2c533fc277_0015"
+              ],
+              "representation_id": "rep_f1e64380625a2f2c533fc277",
+              "start_char": 5912,
+              "text_view_id": "tvw_f1e64380625a2f2c533fc277_logical"
+            },
+            "prefix_text": "s Grok for use in the military, ",
+            "selector_type": "pinned_text",
+            "source_id": "src_d97195ee5c8ced32c0cd41b0",
+            "suffix_text": " \"woke AI\". [21]\nIn January 2026"
+          },
+          "head": {
+            "document_id": "doc_eaaad11a475988142cad48d7",
+            "exact_text": "decrying",
+            "location": {
+              "end_char": 5920,
+              "node_ids": [
+                "nod_f1e64380625a2f2c533fc277_0015"
+              ],
+              "representation_id": "rep_f1e64380625a2f2c533fc277",
+              "start_char": 5912,
+              "text_view_id": "tvw_f1e64380625a2f2c533fc277_logical"
+            },
+            "prefix_text": "s Grok for use in the military, ",
+            "selector_type": "pinned_text",
+            "source_id": "src_d97195ee5c8ced32c0cd41b0",
+            "suffix_text": " \"woke AI\". [21]\nIn January 2026"
+          },
+          "support": {
+            "document_id": "doc_eaaad11a475988142cad48d7",
+            "exact_text": "[19][20] The following month, Hegseth announced that the Department of Defense would additionally contract xAI's Grok for use in the military, decrying \"woke AI\". ",
+            "location": {
+              "end_char": 5932,
+              "node_ids": [
+                "nod_f1e64380625a2f2c533fc277_0015"
+              ],
+              "representation_id": "rep_f1e64380625a2f2c533fc277",
+              "start_char": 5769,
+              "text_view_id": "tvw_f1e64380625a2f2c533fc277_logical"
+            },
+            "prefix_text": "latform, then OpenAI's ChatGPT. ",
+            "selector_type": "pinned_text",
+            "source_id": "src_d97195ee5c8ced32c0cd41b0",
+            "suffix_text": "[21]\nIn January 2026, Semafor re"
+          }
+        },
+        "evidence": {
+          "document_id": "doc_eaaad11a475988142cad48d7",
+          "exact_text": "[19][20] The following month, Hegseth announced that the Department of Defense would additionally contract xAI's Grok for use in the military, decrying \"woke AI\". ",
+          "location": {
+            "end_char": 5932,
+            "node_ids": [
+              "nod_f1e64380625a2f2c533fc277_0015"
+            ],
+            "representation_id": "rep_f1e64380625a2f2c533fc277",
+            "start_char": 5769,
+            "text_view_id": "tvw_f1e64380625a2f2c533fc277_logical"
+          },
+          "prefix_text": "latform, then OpenAI's ChatGPT. ",
+          "selector_type": "pinned_text",
+          "source_id": "src_d97195ee5c8ced32c0cd41b0",
+          "suffix_text": "[21]\nIn January 2026, Semafor re"
+        },
+        "hybrid_lineage": {
+          "event_trigger_id": "etd_814ca49e7d32e1fce3a3e619",
+          "hp1_preview_id": "hxp_05c8252319a8ac6a02acce11",
+          "hp2_preview_id": "hrp_37a4dc89f592c5873fb7a08a",
+          "hp3_preview_id": "hgp_b46298c616cd167d19f037f3",
+          "hp4_preview_id": "htp_02c613be535a1da1f753376f",
+          "model_run_ids": [
+            "mrn_b2bf90d9fdc643c3baccf6e602a7be7b"
+          ],
+          "source_grounded_event_id": "sge_810a2e9f29793d041bb01b93",
+          "source_trace_ids": [
+            "xst_a75f0cfffcf5288a59a4fc30"
+          ]
+        },
+        "record": {
+          "end_at": null,
+          "id": "evt_e538f56412a864599be8a95d",
+          "mentions": [
+            {
+              "expression_evidence_target_id": "etg_1dfa803bf0b8274d2a46fbb5",
+              "head_evidence_target_id": "etg_1dfa803bf0b8274d2a46fbb5",
+              "id": "evm_fd26be557cf1e47d0d7c145b",
+              "support_evidence_target_id": "etg_2db10f4607940906943a6f0d"
+            }
+          ],
+          "name": "decrying",
+          "participant_actor_ids": [],
+          "participant_organization_ids": [],
+          "place_id": null,
+          "start_at": null
+        },
+        "record_type": "Event",
+        "stable_label": "evt_e538f56412a864599be8a95d"
+      },
+      "original_proposed_json": null,
+      "accepted_json": null,
+      "source_id": "src_d97195ee5c8ced32c0cd41b0",
+      "document_id": "doc_eaaad11a475988142cad48d7",
+      "model_name": null,
+      "prompt_id": null,
+      "provenance_activity_id": "prv_5958a4af33d2d48838322ebd",
+      "created_at": "2026-11-05T16:00:19.262385Z",
+      "updated_at": "2026-11-05T16:00:19.262385Z"
+    },
+    {
+      "id": "pcg_290cdafa69a858963f419c68",
+      "review_status": "pending",
+      "proposed_json": {
+        "event_mention_evidence": {
+          "expression": {
+            "document_id": "doc_eaaad11a475988142cad48d7",
+            "exact_text": "announced",
+            "location": {
+              "end_char": 5582,
+              "node_ids": [
+                "nod_f1e64380625a2f2c533fc277_0015"
+              ],
+              "representation_id": "rep_f1e64380625a2f2c533fc277",
+              "start_char": 5573,
+              "text_view_id": "tvw_f1e64380625a2f2c533fc277_logical"
+            },
+            "prefix_text": "ry  of  defense  Pete  Hegseth  ",
+            "selector_type": "pinned_text",
+            "source_id": "src_d97195ee5c8ced32c0cd41b0",
+            "suffix_text": "  GenAI.mil,  an  artificial  in"
+          },
+          "head": {
+            "document_id": "doc_eaaad11a475988142cad48d7",
+            "exact_text": "announced",
+            "location": {
+              "end_char": 5582,
+              "node_ids": [
+                "nod_f1e64380625a2f2c533fc277_0015"
+              ],
+              "representation_id": "rep_f1e64380625a2f2c533fc277",
+              "start_char": 5573,
+              "text_view_id": "tvw_f1e64380625a2f2c533fc277_logical"
+            },
+            "prefix_text": "ry  of  defense  Pete  Hegseth  ",
+            "selector_type": "pinned_text",
+            "source_id": "src_d97195ee5c8ced32c0cd41b0",
+            "suffix_text": "  GenAI.mil,  an  artificial  in"
+          },
+          "support": {
+            "document_id": "doc_eaaad11a475988142cad48d7",
+            "exact_text": "In  December  2025,  secretary  of  defense  Pete  Hegseth  announced  GenAI.mil,  an  artificial  intelligence platform  for  the  Department  of  Defense.  ",
+            "location": {
+              "end_char": 5671,
+              "node_ids": [
+                "nod_f1e64380625a2f2c533fc277_0015"
+              ],
+              "representation_id": "rep_f1e64380625a2f2c533fc277",
+              "start_char": 5513,
+              "text_view_id": "tvw_f1e64380625a2f2c533fc277_logical"
+            },
+            "prefix_text": "mp administration. [18]\nDispute\n",
+            "selector_type": "pinned_text",
+            "source_id": "src_d97195ee5c8ced32c0cd41b0",
+            "suffix_text": "The  department  initially  cont"
+          }
+        },
+        "evidence": {
+          "document_id": "doc_eaaad11a475988142cad48d7",
+          "exact_text": "In  December  2025,  secretary  of  defense  Pete  Hegseth  announced  GenAI.mil,  an  artificial  intelligence platform  for  the  Department  of  Defense.  ",
+          "location": {
+            "end_char": 5671,
+            "node_ids": [
+              "nod_f1e64380625a2f2c533fc277_0015"
+            ],
+            "representation_id": "rep_f1e64380625a2f2c533fc277",
+            "start_char": 5513,
+            "text_view_id": "tvw_f1e64380625a2f2c533fc277_logical"
+          },
+          "prefix_text": "mp administration. [18]\nDispute\n",
+          "selector_type": "pinned_text",
+          "source_id": "src_d97195ee5c8ced32c0cd41b0",
+          "suffix_text": "The  department  initially  cont"
+        },
+        "hybrid_lineage": {
+          "event_trigger_id": "etd_efc2af839c3f3fa3aa6979ae",
+          "hp1_preview_id": "hxp_05c8252319a8ac6a02acce11",
+          "hp2_preview_id": "hrp_37a4dc89f592c5873fb7a08a",
+          "hp3_preview_id": "hgp_b46298c616cd167d19f037f3",
+          "hp4_preview_id": "htp_02c613be535a1da1f753376f",
+          "model_run_ids": [
+            "mrn_798e3113b7c6411ca752129cba9a8230"
+          ],
+          "source_grounded_event_id": "sge_6edd8bd8752b6a2621725489",
+          "source_trace_ids": [
+            "xst_4f0ea7580ba68b79cea5577c"
+          ]
+        },
+        "record": {
+          "end_at": null,
+          "id": "evt_9f12094b90a2d45c743381a2",
+          "mentions": [
+            {
+              "expression_evidence_target_id": "etg_df5f49f8d57bc2e93057b033",
+              "head_evidence_target_id": "etg_df5f49f8d57bc2e93057b033",
+              "id": "evm_b68c3a7b3017857ec7baf1e6",
+              "support_evidence_target_id": "etg_67859784e7461de7a7b885ca"
+            }
+          ],
+          "name": "announced",
+          "participant_actor_ids": [],
+          "participant_organization_ids": [],
+          "place_id": null,
+          "start_at": null
+        },
+        "record_type": "Event",
+        "stable_label": "evt_9f12094b90a2d45c743381a2"
+      },
+      "original_proposed_json": null,
+      "accepted_json": null,
+      "source_id": "src_d97195ee5c8ced32c0cd41b0",
+      "document_id": "doc_eaaad11a475988142cad48d7",
+      "model_name": null,
+      "prompt_id": null,
+      "provenance_activity_id": "prv_5958a4af33d2d48838322ebd",
+      "created_at": "2026-11-05T16:00:19.262385Z",
+      "updated_at": "2026-11-05T16:00:19.262385Z"
+    },
+    {
+      "id": "pcg_4173672ba062ef0e401bd50f",
+      "review_status": "pending",
+      "proposed_json": {
+        "evidence": {
+          "document_id": "doc_eaaad11a475988142cad48d7",
+          "exact_text": "Department of Defense",
+          "location": {
+            "end_char": 5847,
+            "node_ids": [
+              "nod_f1e64380625a2f2c533fc277_0015"
+            ],
+            "representation_id": "rep_f1e64380625a2f2c533fc277",
+            "start_char": 5826,
+            "text_view_id": "tvw_f1e64380625a2f2c533fc277_logical"
+          },
+          "prefix_text": "nth, Hegseth announced that the ",
+          "selector_type": "pinned_text",
+          "source_id": "src_d97195ee5c8ced32c0cd41b0",
+          "suffix_text": " would additionally contract xAI"
+        },
+        "hybrid_lineage": {
+          "hp1_preview_id": "hxp_05c8252319a8ac6a02acce11",
+          "hp2_preview_id": "hrp_37a4dc89f592c5873fb7a08a",
+          "hp3_preview_id": "hgp_b46298c616cd167d19f037f3",
+          "hp4_preview_id": "htp_02c613be535a1da1f753376f",
+          "mention_candidate_id": "mnc_dd7770d6ca2e97447ec8405b",
+          "mention_interpretation_ids": [
+            "mit_5083dad6a4ddc0f6bc92612d"
+          ],
+          "model_run_ids": [
+            "mrn_058b49d6fa2b46249bc213f956f9021f"
+          ],
+          "reference_decision_ids": [],
+          "source_trace_ids": [
+            "xst_892d6a623d6fb48b5d063522"
+          ]
+        },
+        "record": {
+          "id": "org_40cf4a1f767008007a9f2fe0",
+          "name": "Department of Defense",
+          "organization_type": "organization"
+        },
+        "record_type": "Organization",
+        "stable_label": "org_40cf4a1f767008007a9f2fe0"
+      },
+      "original_proposed_json": null,
+      "accepted_json": null,
+      "source_id": "src_d97195ee5c8ced32c0cd41b0",
+      "document_id": "doc_eaaad11a475988142cad48d7",
+      "model_name": null,
+      "prompt_id": null,
+      "provenance_activity_id": "prv_5958a4af33d2d48838322ebd",
+      "created_at": "2026-11-05T16:00:19.262385Z",
+      "updated_at": "2026-11-05T16:00:19.262385Z"
+    },
+    {
+      "id": "pcg_6f9b60b49f48692a06e2798a",
+      "review_status": "pending",
+      "proposed_json": {
+        "evidence": {
+          "document_id": "doc_eaaad11a475988142cad48d7",
+          "exact_text": "Department  of  Defense",
+          "location": {
+            "end_char": 5668,
+            "node_ids": [
+              "nod_f1e64380625a2f2c533fc277_0015"
+            ],
+            "representation_id": "rep_f1e64380625a2f2c533fc277",
+            "start_char": 5645,
+            "text_view_id": "tvw_f1e64380625a2f2c533fc277_logical"
+          },
+          "prefix_text": "ntelligence platform  for  the  ",
+          "selector_type": "pinned_text",
+          "source_id": "src_d97195ee5c8ced32c0cd41b0",
+          "suffix_text": ".  The  department  initially  c"
+        },
+        "hybrid_lineage": {
+          "hp1_preview_id": "hxp_05c8252319a8ac6a02acce11",
+          "hp2_preview_id": "hrp_37a4dc89f592c5873fb7a08a",
+          "hp3_preview_id": "hgp_b46298c616cd167d19f037f3",
+          "hp4_preview_id": "htp_02c613be535a1da1f753376f",
+          "mention_candidate_id": "mnc_230b7fc27d397061754c04c3",
+          "mention_interpretation_ids": [
+            "mit_5f7fba5b421d8f59a4184d93"
+          ],
+          "model_run_ids": [
+            "mrn_238aa12e9e4a44d3b03031e2d80732a6"
+          ],
+          "reference_decision_ids": [],
+          "source_trace_ids": [
+            "xst_57bbad77ef917d2e840af3eb"
+          ]
+        },
+        "record": {
+          "id": "org_97a8a6c7eaf7a9842e67b60a",
+          "name": "Department  of  Defense",
+          "organization_type": "organization"
+        },
+        "record_type": "Organization",
+        "stable_label": "org_97a8a6c7eaf7a9842e67b60a"
+      },
+      "original_proposed_json": null,
+      "accepted_json": null,
+      "source_id": "src_d97195ee5c8ced32c0cd41b0",
+      "document_id": "doc_eaaad11a475988142cad48d7",
+      "model_name": null,
+      "prompt_id": null,
+      "provenance_activity_id": "prv_5958a4af33d2d48838322ebd",
+      "created_at": "2026-11-05T16:00:19.262385Z",
+      "updated_at": "2026-11-05T16:00:19.262385Z"
+    },
+    {
+      "id": "pcg_7109fdcc58c6f3a3b6090082",
+      "review_status": "pending",
+      "proposed_json": {
+        "event_mention_evidence": {
+          "expression": {
+            "document_id": "doc_eaaad11a475988142cad48d7",
+            "exact_text": "woke",
+            "location": {
+              "end_char": 5926,
+              "node_ids": [
+                "nod_f1e64380625a2f2c533fc277_0015"
+              ],
+              "representation_id": "rep_f1e64380625a2f2c533fc277",
+              "start_char": 5922,
+              "text_view_id": "tvw_f1e64380625a2f2c533fc277_logical"
+            },
+            "prefix_text": " use in the military, decrying \"",
+            "selector_type": "pinned_text",
+            "source_id": "src_d97195ee5c8ced32c0cd41b0",
+            "suffix_text": " AI\". [21]\nIn January 2026, Sema"
+          },
+          "head": {
+            "document_id": "doc_eaaad11a475988142cad48d7",
+            "exact_text": "woke",
+            "location": {
+              "end_char": 5926,
+              "node_ids": [
+                "nod_f1e64380625a2f2c533fc277_0015"
+              ],
+              "representation_id": "rep_f1e64380625a2f2c533fc277",
+              "start_char": 5922,
+              "text_view_id": "tvw_f1e64380625a2f2c533fc277_logical"
+            },
+            "prefix_text": " use in the military, decrying \"",
+            "selector_type": "pinned_text",
+            "source_id": "src_d97195ee5c8ced32c0cd41b0",
+            "suffix_text": " AI\". [21]\nIn January 2026, Sema"
+          },
+          "support": {
+            "document_id": "doc_eaaad11a475988142cad48d7",
+            "exact_text": "[19][20] The following month, Hegseth announced that the Department of Defense would additionally contract xAI's Grok for use in the military, decrying \"woke AI\". ",
+            "location": {
+              "end_char": 5932,
+              "node_ids": [
+                "nod_f1e64380625a2f2c533fc277_0015"
+              ],
+              "representation_id": "rep_f1e64380625a2f2c533fc277",
+              "start_char": 5769,
+              "text_view_id": "tvw_f1e64380625a2f2c533fc277_logical"
+            },
+            "prefix_text": "latform, then OpenAI's ChatGPT. ",
+            "selector_type": "pinned_text",
+            "source_id": "src_d97195ee5c8ced32c0cd41b0",
+            "suffix_text": "[21]\nIn January 2026, Semafor re"
+          }
+        },
+        "evidence": {
+          "document_id": "doc_eaaad11a475988142cad48d7",
+          "exact_text": "[19][20] The following month, Hegseth announced that the Department of Defense would additionally contract xAI's Grok for use in the military, decrying \"woke AI\". ",
+          "location": {
+            "end_char": 5932,
+            "node_ids": [
+              "nod_f1e64380625a2f2c533fc277_0015"
+            ],
+            "representation_id": "rep_f1e64380625a2f2c533fc277",
+            "start_char": 5769,
+            "text_view_id": "tvw_f1e64380625a2f2c533fc277_logical"
+          },
+          "prefix_text": "latform, then OpenAI's ChatGPT. ",
+          "selector_type": "pinned_text",
+          "source_id": "src_d97195ee5c8ced32c0cd41b0",
+          "suffix_text": "[21]\nIn January 2026, Semafor re"
+        },
+        "hybrid_lineage": {
+          "event_trigger_id": "etd_7c03b3d979970f54a6c7e2c1",
+          "hp1_preview_id": "hxp_05c8252319a8ac6a02acce11",
+          "hp2_preview_id": "hrp_37a4dc89f592c5873fb7a08a",
+          "hp3_preview_id": "hgp_b46298c616cd167d19f037f3",
+          "hp4_preview_id": "htp_02c613be535a1da1f753376f",
+          "model_run_ids": [
+            "mrn_4cbcfdb025734d6c9d3e478d1761116b"
+          ],
+          "source_grounded_event_id": "sge_d2f5dd3955da62dcf427cc33",
+          "source_trace_ids": [
+            "xst_a75f0cfffcf5288a59a4fc30"
+          ]
+        },
+        "record": {
+          "end_at": null,
+          "id": "evt_d8f70568bd2dcb03f9ce9455",
+          "mentions": [
+            {
+              "expression_evidence_target_id": "etg_b068522e1c9dfa757a99dd6a",
+              "head_evidence_target_id": "etg_b068522e1c9dfa757a99dd6a",
+              "id": "evm_890b3a97b62f4611d2c7edae",
+              "support_evidence_target_id": "etg_2db10f4607940906943a6f0d"
+            }
+          ],
+          "name": "woke",
+          "participant_actor_ids": [],
+          "participant_organization_ids": [],
+          "place_id": null,
+          "start_at": null
+        },
+        "record_type": "Event",
+        "stable_label": "evt_d8f70568bd2dcb03f9ce9455"
+      },
+      "original_proposed_json": null,
+      "accepted_json": null,
+      "source_id": "src_d97195ee5c8ced32c0cd41b0",
+      "document_id": "doc_eaaad11a475988142cad48d7",
+      "model_name": null,
+      "prompt_id": null,
+      "provenance_activity_id": "prv_5958a4af33d2d48838322ebd",
+      "created_at": "2026-11-05T16:00:19.262385Z",
+      "updated_at": "2026-11-05T16:00:19.262385Z"
+    },
+    {
+      "id": "pcg_7942decb6ab9ac8e6c719a6d",
+      "review_status": "pending",
+      "proposed_json": {
+        "evidence": {
+          "document_id": "doc_eaaad11a475988142cad48d7",
+          "exact_text": "xAI",
+          "location": {
+            "end_char": 5879,
+            "node_ids": [
+              "nod_f1e64380625a2f2c533fc277_0015"
+            ],
+            "representation_id": "rep_f1e64380625a2f2c533fc277",
+            "start_char": 5876,
+            "text_view_id": "tvw_f1e64380625a2f2c533fc277_logical"
+          },
+          "prefix_text": "nse would additionally contract ",
+          "selector_type": "pinned_text",
+          "source_id": "src_d97195ee5c8ced32c0cd41b0",
+          "suffix_text": "'s Grok for use in the military,"
+        },
+        "hybrid_lineage": {
+          "hp1_preview_id": "hxp_05c8252319a8ac6a02acce11",
+          "hp2_preview_id": "hrp_37a4dc89f592c5873fb7a08a",
+          "hp3_preview_id": "hgp_b46298c616cd167d19f037f3",
+          "hp4_preview_id": "htp_02c613be535a1da1f753376f",
+          "mention_candidate_id": "mnc_ac1ea65398d33a3dba2487e7",
+          "mention_interpretation_ids": [
+            "mit_760c0c4e7547b24f854b7a5a"
+          ],
+          "model_run_ids": [
+            "mrn_04bdd236d2514a0091225e156fb23db6"
+          ],
+          "reference_decision_ids": [],
+          "source_trace_ids": [
+            "xst_6b591bc16a09c32daebd71a9"
+          ]
+        },
+        "record": {
+          "id": "org_c9b1c89ce6781f1fb2406431",
+          "name": "xAI",
+          "organization_type": "organization"
+        },
+        "record_type": "Organization",
+        "stable_label": "org_c9b1c89ce6781f1fb2406431"
+      },
+      "original_proposed_json": null,
+      "accepted_json": null,
+      "source_id": "src_d97195ee5c8ced32c0cd41b0",
+      "document_id": "doc_eaaad11a475988142cad48d7",
+      "model_name": null,
+      "prompt_id": null,
+      "provenance_activity_id": "prv_5958a4af33d2d48838322ebd",
+      "created_at": "2026-11-05T16:00:19.262385Z",
+      "updated_at": "2026-11-05T16:00:19.262385Z"
+    },
+    {
+      "id": "pcg_b226166c72cdf276a3f67ee8",
+      "review_status": "pending",
+      "proposed_json": {
+        "event_mention_evidence": {
+          "expression": {
+            "document_id": "doc_eaaad11a475988142cad48d7",
+            "exact_text": "contracted",
+            "location": {
+              "end_char": 5709,
+              "node_ids": [
+                "nod_f1e64380625a2f2c533fc277_0015"
+              ],
+              "representation_id": "rep_f1e64380625a2f2c533fc277",
+              "start_char": 5699,
+              "text_view_id": "tvw_f1e64380625a2f2c533fc277_logical"
+            },
+            "prefix_text": "e.  The  department  initially  ",
+            "selector_type": "pinned_text",
+            "source_id": "src_d97195ee5c8ced32c0cd41b0",
+            "suffix_text": "  Google  Gemini  for  the platf"
+          },
+          "head": {
+            "document_id": "doc_eaaad11a475988142cad48d7",
+            "exact_text": "contracted",
+            "location": {
+              "end_char": 5709,
+              "node_ids": [
+                "nod_f1e64380625a2f2c533fc277_0015"
+              ],
+              "representation_id": "rep_f1e64380625a2f2c533fc277",
+              "start_char": 5699,
+              "text_view_id": "tvw_f1e64380625a2f2c533fc277_logical"
+            },
+            "prefix_text": "e.  The  department  initially  ",
+            "selector_type": "pinned_text",
+            "source_id": "src_d97195ee5c8ced32c0cd41b0",
+            "suffix_text": "  Google  Gemini  for  the platf"
+          },
+          "support": {
+            "document_id": "doc_eaaad11a475988142cad48d7",
+            "exact_text": "The  department  initially  contracted  Google  Gemini  for  the platform, then OpenAI's ChatGPT. ",
+            "location": {
+              "end_char": 5769,
+              "node_ids": [
+                "nod_f1e64380625a2f2c533fc277_0015"
+              ],
+              "representation_id": "rep_f1e64380625a2f2c533fc277",
+              "start_char": 5671,
+              "text_view_id": "tvw_f1e64380625a2f2c533fc277_logical"
+            },
+            "prefix_text": " the  Department  of  Defense.  ",
+            "selector_type": "pinned_text",
+            "source_id": "src_d97195ee5c8ced32c0cd41b0",
+            "suffix_text": "[19][20] The following month, He"
+          }
+        },
+        "evidence": {
+          "document_id": "doc_eaaad11a475988142cad48d7",
+          "exact_text": "The  department  initially  contracted  Google  Gemini  for  the platform, then OpenAI's ChatGPT. ",
+          "location": {
+            "end_char": 5769,
+            "node_ids": [
+              "nod_f1e64380625a2f2c533fc277_0015"
+            ],
+            "representation_id": "rep_f1e64380625a2f2c533fc277",
+            "start_char": 5671,
+            "text_view_id": "tvw_f1e64380625a2f2c533fc277_logical"
+          },
+          "prefix_text": " the  Department  of  Defense.  ",
+          "selector_type": "pinned_text",
+          "source_id": "src_d97195ee5c8ced32c0cd41b0",
+          "suffix_text": "[19][20] The following month, He"
+        },
+        "hybrid_lineage": {
+          "event_trigger_id": "etd_6b5c8ffe18337e566fab2d12",
+          "hp1_preview_id": "hxp_05c8252319a8ac6a02acce11",
+          "hp2_preview_id": "hrp_37a4dc89f592c5873fb7a08a",
+          "hp3_preview_id": "hgp_b46298c616cd167d19f037f3",
+          "hp4_preview_id": "htp_02c613be535a1da1f753376f",
+          "model_run_ids": [
+            "mrn_b156d582741a45038425f08458d9499c"
+          ],
+          "source_grounded_event_id": "sge_2e892f1a34660401e3057079",
+          "source_trace_ids": [
+            "xst_24975be270770ac0de39b5e4"
+          ]
+        },
+        "record": {
+          "end_at": null,
+          "id": "evt_1dddf9883befbd4867b3930a",
+          "mentions": [
+            {
+              "expression_evidence_target_id": "etg_bdc84929cde79d52ab6dd704",
+              "head_evidence_target_id": "etg_bdc84929cde79d52ab6dd704",
+              "id": "evm_f6cb421d7cd9032091ac291d",
+              "support_evidence_target_id": "etg_485787964a0b1511058801e4"
+            }
+          ],
+          "name": "contracted",
+          "participant_actor_ids": [],
+          "participant_organization_ids": [],
+          "place_id": null,
+          "start_at": null
+        },
+        "record_type": "Event",
+        "stable_label": "evt_1dddf9883befbd4867b3930a"
+      },
+      "original_proposed_json": null,
+      "accepted_json": null,
+      "source_id": "src_d97195ee5c8ced32c0cd41b0",
+      "document_id": "doc_eaaad11a475988142cad48d7",
+      "model_name": null,
+      "prompt_id": null,
+      "provenance_activity_id": "prv_5958a4af33d2d48838322ebd",
+      "created_at": "2026-11-05T16:00:19.262385Z",
+      "updated_at": "2026-11-05T16:00:19.262385Z"
+    },
+    {
+      "id": "pcg_b97d326ff64b15254f845dc2",
+      "review_status": "pending",
+      "proposed_json": {
+        "event_mention_evidence": {
+          "expression": {
+            "document_id": "doc_eaaad11a475988142cad48d7",
+            "exact_text": "contract",
+            "location": {
+              "end_char": 5875,
+              "node_ids": [
+                "nod_f1e64380625a2f2c533fc277_0015"
+              ],
+              "representation_id": "rep_f1e64380625a2f2c533fc277",
+              "start_char": 5867,
+              "text_view_id": "tvw_f1e64380625a2f2c533fc277_logical"
+            },
+            "prefix_text": "t of Defense would additionally ",
+            "selector_type": "pinned_text",
+            "source_id": "src_d97195ee5c8ced32c0cd41b0",
+            "suffix_text": " xAI's Grok for use in the milit"
+          },
+          "head": {
+            "document_id": "doc_eaaad11a475988142cad48d7",
+            "exact_text": "contract",
+            "location": {
+              "end_char": 5875,
+              "node_ids": [
+                "nod_f1e64380625a2f2c533fc277_0015"
+              ],
+              "representation_id": "rep_f1e64380625a2f2c533fc277",
+              "start_char": 5867,
+              "text_view_id": "tvw_f1e64380625a2f2c533fc277_logical"
+            },
+            "prefix_text": "t of Defense would additionally ",
+            "selector_type": "pinned_text",
+            "source_id": "src_d97195ee5c8ced32c0cd41b0",
+            "suffix_text": " xAI's Grok for use in the milit"
+          },
+          "support": {
+            "document_id": "doc_eaaad11a475988142cad48d7",
+            "exact_text": "[19][20] The following month, Hegseth announced that the Department of Defense would additionally contract xAI's Grok for use in the military, decrying \"woke AI\". ",
+            "location": {
+              "end_char": 5932,
+              "node_ids": [
+                "nod_f1e64380625a2f2c533fc277_0015"
+              ],
+              "representation_id": "rep_f1e64380625a2f2c533fc277",
+              "start_char": 5769,
+              "text_view_id": "tvw_f1e64380625a2f2c533fc277_logical"
+            },
+            "prefix_text": "latform, then OpenAI's ChatGPT. ",
+            "selector_type": "pinned_text",
+            "source_id": "src_d97195ee5c8ced32c0cd41b0",
+            "suffix_text": "[21]\nIn January 2026, Semafor re"
+          }
+        },
+        "evidence": {
+          "document_id": "doc_eaaad11a475988142cad48d7",
+          "exact_text": "[19][20] The following month, Hegseth announced that the Department of Defense would additionally contract xAI's Grok for use in the military, decrying \"woke AI\". ",
+          "location": {
+            "end_char": 5932,
+            "node_ids": [
+              "nod_f1e64380625a2f2c533fc277_0015"
+            ],
+            "representation_id": "rep_f1e64380625a2f2c533fc277",
+            "start_char": 5769,
+            "text_view_id": "tvw_f1e64380625a2f2c533fc277_logical"
+          },
+          "prefix_text": "latform, then OpenAI's ChatGPT. ",
+          "selector_type": "pinned_text",
+          "source_id": "src_d97195ee5c8ced32c0cd41b0",
+          "suffix_text": "[21]\nIn January 2026, Semafor re"
+        },
+        "hybrid_lineage": {
+          "event_trigger_id": "etd_47af1c9c2d30c0d094b0578d",
+          "hp1_preview_id": "hxp_05c8252319a8ac6a02acce11",
+          "hp2_preview_id": "hrp_37a4dc89f592c5873fb7a08a",
+          "hp3_preview_id": "hgp_b46298c616cd167d19f037f3",
+          "hp4_preview_id": "htp_02c613be535a1da1f753376f",
+          "model_run_ids": [
+            "mrn_89cc4c5740e6460d82f52b9c77b7056d"
+          ],
+          "source_grounded_event_id": "sge_944f9f3918d6e96480862fd8",
+          "source_trace_ids": [
+            "xst_a75f0cfffcf5288a59a4fc30"
+          ]
+        },
+        "record": {
+          "end_at": null,
+          "id": "evt_0866ecc89d472203e2e7115f",
+          "mentions": [
+            {
+              "expression_evidence_target_id": "etg_b6d914ffbb17143a071a7a75",
+              "head_evidence_target_id": "etg_b6d914ffbb17143a071a7a75",
+              "id": "evm_18e233dcb32259c489bc4c7b",
+              "support_evidence_target_id": "etg_2db10f4607940906943a6f0d"
+            }
+          ],
+          "name": "contract",
+          "participant_actor_ids": [],
+          "participant_organization_ids": [],
+          "place_id": null,
+          "start_at": null
+        },
+        "record_type": "Event",
+        "stable_label": "evt_0866ecc89d472203e2e7115f"
+      },
+      "original_proposed_json": null,
+      "accepted_json": null,
+      "source_id": "src_d97195ee5c8ced32c0cd41b0",
+      "document_id": "doc_eaaad11a475988142cad48d7",
+      "model_name": null,
+      "prompt_id": null,
+      "provenance_activity_id": "prv_5958a4af33d2d48838322ebd",
+      "created_at": "2026-11-05T16:00:19.262385Z",
+      "updated_at": "2026-11-05T16:00:19.262385Z"
+    },
+    {
+      "id": "pcg_bf029fbf6aac1c39757a3c52",
+      "review_status": "pending",
+      "proposed_json": {
+        "evidence": {
+          "document_id": "doc_eaaad11a475988142cad48d7",
+          "exact_text": "Hegseth",
+          "location": {
+            "end_char": 5806,
+            "node_ids": [
+              "nod_f1e64380625a2f2c533fc277_0015"
+            ],
+            "representation_id": "rep_f1e64380625a2f2c533fc277",
+            "start_char": 5799,
+            "text_view_id": "tvw_f1e64380625a2f2c533fc277_logical"
+          },
+          "prefix_text": ". [19][20] The following month, ",
+          "selector_type": "pinned_text",
+          "source_id": "src_d97195ee5c8ced32c0cd41b0",
+          "suffix_text": " announced that the Department o"
+        },
+        "hybrid_lineage": {
+          "hp1_preview_id": "hxp_05c8252319a8ac6a02acce11",
+          "hp2_preview_id": "hrp_37a4dc89f592c5873fb7a08a",
+          "hp3_preview_id": "hgp_b46298c616cd167d19f037f3",
+          "hp4_preview_id": "htp_02c613be535a1da1f753376f",
+          "mention_candidate_id": "mnc_8eeb233a3a8a2f936bf6426a",
+          "mention_interpretation_ids": [
+            "mit_9f8fc75a2169448ece230bb9"
+          ],
+          "model_run_ids": [
+            "mrn_0ec275384f2d451f8f519531fd2b34f4"
+          ],
+          "reference_decision_ids": [],
+          "source_trace_ids": [
+            "xst_3c3d9260b0366122dbd7adbd"
+          ]
+        },
+        "record": {
+          "id": "act_b168b1a110fb75b24863d417",
+          "name": "Hegseth",
+          "organization_ids": [],
+          "role_names": []
+        },
+        "record_type": "Actor",
+        "stable_label": "act_b168b1a110fb75b24863d417"
+      },
+      "original_proposed_json": null,
+      "accepted_json": null,
+      "source_id": "src_d97195ee5c8ced32c0cd41b0",
+      "document_id": "doc_eaaad11a475988142cad48d7",
+      "model_name": null,
+      "prompt_id": null,
+      "provenance_activity_id": "prv_5958a4af33d2d48838322ebd",
+      "created_at": "2026-11-05T16:00:19.262385Z",
+      "updated_at": "2026-11-05T16:00:19.262385Z"
+    },
+    {
+      "id": "pcg_e6b82eb1940242cd0286e796",
+      "review_status": "pending",
+      "proposed_json": {
+        "evidence": {
+          "document_id": "doc_eaaad11a475988142cad48d7",
+          "exact_text": "OpenAI",
+          "location": {
+            "end_char": 5757,
+            "node_ids": [
+              "nod_f1e64380625a2f2c533fc277_0015"
+            ],
+            "representation_id": "rep_f1e64380625a2f2c533fc277",
+            "start_char": 5751,
+            "text_view_id": "tvw_f1e64380625a2f2c533fc277_logical"
+          },
+          "prefix_text": "Gemini  for  the platform, then ",
+          "selector_type": "pinned_text",
+          "source_id": "src_d97195ee5c8ced32c0cd41b0",
+          "suffix_text": "'s ChatGPT. [19][20] The followi"
+        },
+        "hybrid_lineage": {
+          "hp1_preview_id": "hxp_05c8252319a8ac6a02acce11",
+          "hp2_preview_id": "hrp_37a4dc89f592c5873fb7a08a",
+          "hp3_preview_id": "hgp_b46298c616cd167d19f037f3",
+          "hp4_preview_id": "htp_02c613be535a1da1f753376f",
+          "mention_candidate_id": "mnc_7034dbe00feb135f404dc993",
+          "mention_interpretation_ids": [
+            "mit_be3826bc059c0c4cde2c8550"
+          ],
+          "model_run_ids": [
+            "mrn_6479997979384d518dc8c4ca1294e0f5"
+          ],
+          "reference_decision_ids": [],
+          "source_trace_ids": [
+            "xst_dfeec1e1a2d0487893f0b9df"
+          ]
+        },
+        "record": {
+          "id": "org_7dd71a35ed57d35456577846",
+          "name": "OpenAI",
+          "organization_type": "organization"
+        },
+        "record_type": "Organization",
+        "stable_label": "org_7dd71a35ed57d35456577846"
+      },
+      "original_proposed_json": null,
+      "accepted_json": null,
+      "source_id": "src_d97195ee5c8ced32c0cd41b0",
+      "document_id": "doc_eaaad11a475988142cad48d7",
+      "model_name": null,
+      "prompt_id": null,
+      "provenance_activity_id": "prv_5958a4af33d2d48838322ebd",
+      "created_at": "2026-11-05T16:00:19.262385Z",
+      "updated_at": "2026-11-05T16:00:19.262385Z"
+    },
+    {
+      "id": "pcg_e6cbf2aa9bbe94f2db8058dd",
+      "review_status": "pending",
+      "proposed_json": {
+        "event_mention_evidence": {
+          "expression": {
+            "document_id": "doc_eaaad11a475988142cad48d7",
+            "exact_text": "announced",
+            "location": {
+              "end_char": 5816,
+              "node_ids": [
+                "nod_f1e64380625a2f2c533fc277_0015"
+              ],
+              "representation_id": "rep_f1e64380625a2f2c533fc277",
+              "start_char": 5807,
+              "text_view_id": "tvw_f1e64380625a2f2c533fc277_logical"
+            },
+            "prefix_text": "0] The following month, Hegseth ",
+            "selector_type": "pinned_text",
+            "source_id": "src_d97195ee5c8ced32c0cd41b0",
+            "suffix_text": " that the Department of Defense "
+          },
+          "head": {
+            "document_id": "doc_eaaad11a475988142cad48d7",
+            "exact_text": "announced",
+            "location": {
+              "end_char": 5816,
+              "node_ids": [
+                "nod_f1e64380625a2f2c533fc277_0015"
+              ],
+              "representation_id": "rep_f1e64380625a2f2c533fc277",
+              "start_char": 5807,
+              "text_view_id": "tvw_f1e64380625a2f2c533fc277_logical"
+            },
+            "prefix_text": "0] The following month, Hegseth ",
+            "selector_type": "pinned_text",
+            "source_id": "src_d97195ee5c8ced32c0cd41b0",
+            "suffix_text": " that the Department of Defense "
+          },
+          "support": {
+            "document_id": "doc_eaaad11a475988142cad48d7",
+            "exact_text": "[19][20] The following month, Hegseth announced that the Department of Defense would additionally contract xAI's Grok for use in the military, decrying \"woke AI\". ",
+            "location": {
+              "end_char": 5932,
+              "node_ids": [
+                "nod_f1e64380625a2f2c533fc277_0015"
+              ],
+              "representation_id": "rep_f1e64380625a2f2c533fc277",
+              "start_char": 5769,
+              "text_view_id": "tvw_f1e64380625a2f2c533fc277_logical"
+            },
+            "prefix_text": "latform, then OpenAI's ChatGPT. ",
+            "selector_type": "pinned_text",
+            "source_id": "src_d97195ee5c8ced32c0cd41b0",
+            "suffix_text": "[21]\nIn January 2026, Semafor re"
+          }
+        },
+        "evidence": {
+          "document_id": "doc_eaaad11a475988142cad48d7",
+          "exact_text": "[19][20] The following month, Hegseth announced that the Department of Defense would additionally contract xAI's Grok for use in the military, decrying \"woke AI\". ",
+          "location": {
+            "end_char": 5932,
+            "node_ids": [
+              "nod_f1e64380625a2f2c533fc277_0015"
+            ],
+            "representation_id": "rep_f1e64380625a2f2c533fc277",
+            "start_char": 5769,
+            "text_view_id": "tvw_f1e64380625a2f2c533fc277_logical"
+          },
+          "prefix_text": "latform, then OpenAI's ChatGPT. ",
+          "selector_type": "pinned_text",
+          "source_id": "src_d97195ee5c8ced32c0cd41b0",
+          "suffix_text": "[21]\nIn January 2026, Semafor re"
+        },
+        "hybrid_lineage": {
+          "event_trigger_id": "etd_7630900bf6ed45dab8892652",
+          "hp1_preview_id": "hxp_05c8252319a8ac6a02acce11",
+          "hp2_preview_id": "hrp_37a4dc89f592c5873fb7a08a",
+          "hp3_preview_id": "hgp_b46298c616cd167d19f037f3",
+          "hp4_preview_id": "htp_02c613be535a1da1f753376f",
+          "model_run_ids": [
+            "mrn_6543e4f504a546129eaaf802dae01599"
+          ],
+          "source_grounded_event_id": "sge_3e898220d7a5eb6ba63717d8",
+          "source_trace_ids": [
+            "xst_a75f0cfffcf5288a59a4fc30"
+          ]
+        },
+        "record": {
+          "end_at": null,
+          "id": "evt_a1ad5bc0ec4a001fac329b3a",
+          "mentions": [
+            {
+              "expression_evidence_target_id": "etg_0299e686dfe66beb990ac99f",
+              "head_evidence_target_id": "etg_0299e686dfe66beb990ac99f",
+              "id": "evm_e22c9b7722642e8c370758ae",
+              "support_evidence_target_id": "etg_2db10f4607940906943a6f0d"
+            }
+          ],
+          "name": "announced",
+          "participant_actor_ids": [],
+          "participant_organization_ids": [],
+          "place_id": null,
+          "start_at": null
+        },
+        "record_type": "Event",
+        "stable_label": "evt_a1ad5bc0ec4a001fac329b3a"
+      },
+      "original_proposed_json": null,
+      "accepted_json": null,
+      "source_id": "src_d97195ee5c8ced32c0cd41b0",
+      "document_id": "doc_eaaad11a475988142cad48d7",
+      "model_name": null,
+      "prompt_id": null,
+      "provenance_activity_id": "prv_5958a4af33d2d48838322ebd",
+      "created_at": "2026-11-05T16:00:19.262385Z",
+      "updated_at": "2026-11-05T16:00:19.262385Z"
+    }
+  ],
+  "IngestionChangeSet": [
+    {
+      "id": "ics_cefafe23442ac55e6f3b6c44",
+      "ingestion_run_id": "igr_c4b8a09978114e49bb63e8c7df73a005",
+      "analysis_run_id": "arn_9e124f1ff4038648feb3cfe3",
+      "representation_id": "rep_f1e64380625a2f2c533fc277",
+      "coverage_report_digest": "f93c79135a884c54a9444c3b6d428bbac205c713802ed4f63a4b75ceda6b755d",
+      "proposed_change_ids": [
+        "pcg_0d037daa80b8f11cdc0838b5",
+        "pcg_1e513d7df51c45ac7204ef92",
+        "pcg_290cdafa69a858963f419c68",
+        "pcg_4173672ba062ef0e401bd50f",
+        "pcg_6f9b60b49f48692a06e2798a",
+        "pcg_7109fdcc58c6f3a3b6090082",
+        "pcg_7942decb6ab9ac8e6c719a6d",
+        "pcg_b226166c72cdf276a3f67ee8",
+        "pcg_b97d326ff64b15254f845dc2",
+        "pcg_bf029fbf6aac1c39757a3c52",
+        "pcg_e6b82eb1940242cd0286e796",
+        "pcg_e6cbf2aa9bbe94f2db8058dd"
+      ],
+      "analysis_origin": "executed",
+      "closed_at": "2026-11-05T16:00:19.262385Z",
+      "change_set_digest": "cefafe23442ac55e6f3b6c442b48b92c0840ec5ff772d519551cba9f4713621d"
+    }
+  ],
+  "IngestionRun": [
+    {
+      "id": "igr_c4b8a09978114e49bb63e8c7df73a005",
+      "requested_path": "/Users/DSerbarinov/gits/KoteKomi/raw/Anthropic\u2013United_States_Department_of_Defense_dispute.pdf",
+      "display_filename": "Anthropic\u2013United_States_Department_of_Defense_dispute.pdf",
+      "requested_source_url": "https://en.wikipedia.org/wiki/Anthropic%E2%80%93United_States_Department_of_Defense_dispute",
+      "normalized_source_url": "https://en.wikipedia.org/wiki/Anthropic%E2%80%93United_States_Department_of_Defense_dispute",
+      "status": "captured",
+      "started_at": "2026-11-05T14:27:23.910443Z",
+      "completed_at": "2026-11-05T16:00:19.262385Z",
+      "source_id": "src_d97195ee5c8ced32c0cd41b0",
+      "document_id": "doc_eaaad11a475988142cad48d7",
+      "representation_id": "rep_f1e64380625a2f2c533fc277",
+      "provenance_activity_id": "prv_7d0d4e2ad3033ed8e95d79be",
+      "analysis_run_id": "arn_9e124f1ff4038648feb3cfe3",
+      "ingestion_change_set_id": "ics_cefafe23442ac55e6f3b6c44",
+      "failure_stage": null,
+      "failure_code": null,
+      "safe_failure_message": null
+    }
+  ]
+}
