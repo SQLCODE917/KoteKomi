@@ -14,6 +14,34 @@ jobs:
       - uses: astral-sh/setup-uv@v5
         with:
           python-version: "3.12"
-      - run: sudo apt-get update
-      - run: sudo apt-get install --yes poppler-utils qpdf
+      - name: Install PDF tools from Ubuntu repositories
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          set -euo pipefail
+          apt_root="$RUNNER_TEMP/kotekomi-apt"
+          mkdir -p "$apt_root/lists/partial" "$apt_root/sources.list.d"
+          cat > "$apt_root/ubuntu.sources" <<'EOF'
+          Types: deb
+          URIs: https://archive.ubuntu.com/ubuntu/
+          Suites: noble noble-updates noble-backports
+          Components: main restricted universe multiverse
+          Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg
+
+          Types: deb
+          URIs: https://security.ubuntu.com/ubuntu/
+          Suites: noble-security
+          Components: main restricted universe multiverse
+          Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg
+          EOF
+          apt_options=(
+            -o "Dir::Etc::sourcelist=$apt_root/ubuntu.sources"
+            -o "Dir::Etc::sourceparts=$apt_root/sources.list.d"
+            -o "Dir::State::lists=$apt_root/lists"
+            -o Acquire::Retries=2
+            -o Acquire::http::Timeout=20
+            -o Acquire::https::Timeout=20
+          )
+          sudo apt-get "${apt_options[@]}" --error-on=any update
+          sudo apt-get "${apt_options[@]}" install --yes poppler-utils qpdf
       - run: ./scripts/verify.sh

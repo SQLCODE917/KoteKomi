@@ -8,6 +8,10 @@ invokes, and it runs the complete gate — JSON Schema generation, the
 Additional arguments to `./scripts/verify.sh` pass through to pytest for JUnit output or focused diagnostics. CI provisions
 platform tooling first (Ubuntu `poppler-utils` + `qpdf`, Python 3.12,
 `KOTEKOMI_QPDF_EXECUTABLE=/usr/bin/qpdf`).
+CI installs PDF tools using explicit Ubuntu Noble archive and security sources with the Ubuntu archive signing key.
+Fresh package indexes and an empty additional-source directory keep the runner's Azure mirror configuration out of this installation.
+APT update and installation use the same source options, bounded retries, and connection timeouts.
+An index download failure stops the job before installation or verification.
 
 ## 1. Domain checks
 - run `uv run pytest packages/domain/tests`
