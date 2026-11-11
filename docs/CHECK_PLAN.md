@@ -1,5 +1,14 @@
 # KoteKomi Check Plan
 
+Canonical full verification entry point: run `./scripts/verify.sh` from the
+repository root. This single script is what CI (`.github/workflows/ci.yml`)
+invokes, and it runs the complete gate — JSON Schema generation, the
+`git diff --exit-code -- schemas` drift check, `ruff format --check .`, `ruff check`, `pyright`, and
+`uv run pytest --durations=30` — so a local pass runs the same checks as CI.
+Additional arguments to `./scripts/verify.sh` pass through to pytest for JUnit output or focused diagnostics. CI provisions
+platform tooling first (Ubuntu `poppler-utils` + `qpdf`, Python 3.12,
+`KOTEKOMI_QPDF_EXECUTABLE=/usr/bin/qpdf`).
+
 ## 1. Domain checks
 - run `uv run pytest packages/domain/tests`
 - run `uv run pyright`
