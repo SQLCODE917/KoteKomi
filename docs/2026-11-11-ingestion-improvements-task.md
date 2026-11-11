@@ -233,3 +233,41 @@ Success requires exit code zero, the intended revision, a clean working tree, sc
 Every skip requires an inspected reason.
 The agent will inspect terminal records after the human reports completion, then prepare the authorized push and PR.
 The two additional statements will be selected and assessed after integration with the implementation frozen.
+
+## Context verification correction
+
+The human-started check at `1a41ddbe66026efd28d179521dfe2c04fa637cfb` exited with code one.
+The agent inspected `/private/tmp/kotekomi-context-verification/` after the human reported termination.
+Schema generation, schema drift, formatting, and lint passed.
+Whole-tree pyright rejected three private imports used by the test's counting wrappers.
+Pytest did not start; this run produced no test result or runtime failure.
+
+The test now imports each wrapped function from its owning module.
+It still patches the review Pipeline's bindings and calls the real validators.
+The production implementation remains unchanged.
+Pyright on the changed test and implementation now passes in this worktree's own environment.
+The focused acceptance, context-count, corruption, and replay regression also passes.
+The whole-tree gate remains pending.
+
+Run the existing check from `/private/tmp/kotekomi-ingestion-context` with a fresh output directory:
+
+```bash
+bash scripts/check_ingestion_announcement.sh /private/tmp/kotekomi-context-verification-v2
+```
+
+Outputs retain the same revision, working-tree, exit-code, per-step log, JUnit, and disposable-state paths beneath the new directory.
+The original failed verification record remains preserved.
+
+Completion probe:
+
+```bash
+cat /private/tmp/kotekomi-context-verification-v2/exit-code.txt
+```
+
+Durable evidence summary:
+
+```bash
+tail -n 40 /private/tmp/kotekomi-context-verification-v2/pytest.log
+```
+
+Success still requires every declared whole-tree check to pass with exit code zero and inspected skip reasons.

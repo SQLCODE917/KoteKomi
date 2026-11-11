@@ -18,6 +18,7 @@ from kotekomi_application import (
     EventConstructionDecisionInput,
     ReviewProposedChangeInput,
     approve_proposed_change,
+    build_constituent_candidate_inventory,
 )
 from kotekomi_application.composition_inspection import composition_inspection_records
 from kotekomi_application.evidence_targets import validate_evidence_target_record
@@ -25,6 +26,7 @@ from kotekomi_application.ingestion_inspection import ParagraphSnapshot
 from kotekomi_domain import AssertionType, AttributionBasis, IdentityOccurrenceKind, SourceAuthority
 from kotekomi_pipelines import event_review_workflow
 from kotekomi_pipelines.event_review_workflow import record_review_decision
+from kotekomi_pipelines.ingestion_token_artifact import load_ingestion_token_artifact
 from kotekomi_pipelines.replay_reader.live import create_inspection_session
 from kotekomi_pipelines.replay_reader.transport import load_paragraph_inputs
 
@@ -79,17 +81,17 @@ def test_complete_announcement_review_acceptance_and_saved_replay(tmp_path: Path
         patch.object(
             event_review_workflow,
             "load_paragraph_inputs",
-            wraps=event_review_workflow.load_paragraph_inputs,
+            wraps=load_paragraph_inputs,
         ) as paragraphs_loaded,
         patch.object(
             event_review_workflow,
             "load_ingestion_token_artifact",
-            wraps=event_review_workflow.load_ingestion_token_artifact,
+            wraps=load_ingestion_token_artifact,
         ) as tokens_loaded,
         patch.object(
             event_review_workflow,
             "build_constituent_candidate_inventory",
-            wraps=event_review_workflow.build_constituent_candidate_inventory,
+            wraps=build_constituent_candidate_inventory,
         ) as inventory_built,
     ):
         started = perf_counter()
