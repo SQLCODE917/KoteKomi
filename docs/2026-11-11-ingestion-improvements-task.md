@@ -50,10 +50,10 @@ Paragraph discovery repair remains outside this delivery.
 
 ## Completion decisions
 
-- Implementation verification: announcement focused checks pass; whole-tree verification remains pending.
+- Implementation verification: announcement focused and whole-tree checks pass at `6596490`.
   The context reuse correction has not started.
 - Demonstrated capability: R-DEV-06 preserves its required meaning through review, persistence, supported Assertion acceptance, and saved replay.
-  Retention of the three promoted cases awaits the full regression gate for this increment.
+  The full regression gate also preserves the three promoted development cases.
 - Broader successor target: at least one complete additional result among two statements selected after implementation freezes.
 
 Missing the broader target retains safe verified improvements and ends assessment as **Target not met**.
@@ -84,7 +84,7 @@ The injected proposal-write failure proves that both writes roll back together.
 The focused journey has passed supported acceptance and saved replay on disposable SQLite and Archive state.
 This is delegated agent assessment of R-DEV-06 as a complete `source_report`.
 It establishes neither independent truth nor a broader accuracy rate.
-Whole-tree verification and integration remain pending.
+Whole-tree verification has passed; integration remains pending.
 The latency correction and the two additional assessments have not started.
 
 ## Focused verification at `3c63b37`
@@ -146,3 +146,20 @@ Success requires exit code zero, the intended revision, schema consistency, pass
 Every skip requires an inspected reason.
 The agent will inspect terminal records after the human reports completion, then prepare the authorized push and PR.
 CI and integration must finish before the latency correction begins.
+
+## Whole-tree verification at `6596490`
+
+The human started the declared check command and reported exit code zero.
+The agent inspected the terminal records in `/private/tmp/kotekomi-announcement-verification/`.
+`revision.txt` identifies `65964909223dc3108c13124cc529b4d647120714`; `working-tree.txt` is empty.
+Schema generation, schema drift, whole-tree formatting, lint, and typecheck passed.
+JUnit records 2,765 passed tests, three skips, zero failures, and zero errors.
+The full suite took 971.88 seconds, or 16m 11s.
+One skipped test requires an explicitly selected live LM Studio model.
+Two skipped tests require the original retained operator run, which this isolated worktree excludes.
+
+The complete announcement acceptance and saved-replay test passed in 4.158 seconds.
+All six promotion regressions passed, including Department of Defense policy, Amodei criticism, Anthropic services integration, and transaction failure injections.
+This confirms implementation verification and retention on the named captured development cases.
+The broader successor target remains unassessed.
+No CI or merge result is claimed for this increment yet.
