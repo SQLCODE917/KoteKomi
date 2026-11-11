@@ -326,9 +326,7 @@ def test_waiting_increase_check_uses_the_setup_inclusive_total(tmp_path: Path) -
     manifest = _approved(tmp_path, ["R-1"])
     baseline_payload = _document(rows=[_row("R-1", "usable", waiting_seconds=10)])
     baseline_payload["setup_waiting_seconds"] = 100
-    final_payload = _document(
-        condition="final", rows=[_row("R-1", "usable", waiting_seconds=10)]
-    )
+    final_payload = _document(condition="final", rows=[_row("R-1", "usable", waiting_seconds=10)])
     final_payload["setup_waiting_seconds"] = 200
     baseline = load_condition_result(_write(tmp_path, baseline_payload, "b.json"))
     final = load_condition_result(_write(tmp_path, final_payload, "f.json"))

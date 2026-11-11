@@ -288,3 +288,49 @@ All six promotion regressions passed, including the three retained development s
 The observed full-suite duration is not a controlled performance comparison or a human-effort measure.
 Implementation verification is complete for context-reuse review.
 CI and integration remain pending; the broader two-statement assessment has not started.
+
+## Main conflict reconciliation
+
+The user requested completion of the conflicted IPI merge and integration of all remaining local branches.
+Local main now includes the IPI guidance and evidence branch, the verified context-reuse branch, and the unified CI entry point.
+Conflict resolution retains the production versions of selection, time derivation, packet validation, Assertion identity, and their regressions.
+The Application Layer, ingestion Pipeline, fixtures, and schemas remain identical to verified revision `c944721`.
+The older experiment's measurement and custody commands remain available with their historical evidence.
+The historical IPI target remains **Target not met**.
+The obsolete temporary scripts and their command references remain deleted.
+
+`scripts/verify.sh` now runs schema generation, schema drift, formatting, lint, typecheck, and pytest with the 30 slowest phases.
+CI calls that unified entry point.
+Additional arguments pass through to pytest.
+A bounded smoke check verified every gate and argument forwarding without starting the full suite.
+
+Focused verification passed 97 tests covering announcement completion, selection, time, composition, IPI measurement, custody, and supported Assertion acceptance with saved replay.
+Pyright passed on the integrated measurement, custody, review implementation, and changed tests.
+Whole-tree formatting found one older measurement test needing reformatting; the formatting correction changes no behavior.
+Schema generation and drift, lint, conflict-marker checks, and obsolete-reference checks passed.
+The combined main revision still requires the human-started whole-tree verification before publication.
+No new full-suite or CI result is claimed from the individual branches' earlier runs.
+
+Run from the original repository checkout:
+
+```bash
+bash scripts/check_ingestion_announcement.sh /private/tmp/kotekomi-main-integration-verification
+```
+
+The output directory retains `revision.txt`, `working-tree.txt`, `exit-code.txt`, `schemas.log`, `schema-drift.log`, `format.log`, `lint.log`, `typecheck.log`, `pytest.log`, and `pytest.xml`.
+Disposable test Ledgers and Archives remain beneath `tests/`.
+
+Completion probe:
+
+```bash
+cat /private/tmp/kotekomi-main-integration-verification/exit-code.txt
+```
+
+Durable evidence summary:
+
+```bash
+tail -n 40 /private/tmp/kotekomi-main-integration-verification/pytest.log
+```
+
+Success requires exit code zero, the integrated main revision, a clean working tree, every quality gate passing, and inspected skip reasons.
+The additional-statement assessment remains separate from this merge repair.
