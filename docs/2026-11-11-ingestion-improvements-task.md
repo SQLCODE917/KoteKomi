@@ -51,7 +51,7 @@ Paragraph discovery repair remains outside this delivery.
 ## Completion decisions
 
 - Implementation verification: announcement focused and whole-tree checks pass at `6596490`.
-  The context reuse correction passes focused checks; its whole-tree gate remains pending.
+  The context reuse correction passes focused and whole-tree checks at `34324df`.
 - Demonstrated capability: R-DEV-06 preserves its required meaning through review, persistence, supported Assertion acceptance, and saved replay.
   The full regression gate also preserves the three promoted development cases.
 - Broader successor target: at least one complete additional result among two statements selected after implementation freezes.
@@ -271,3 +271,20 @@ tail -n 40 /private/tmp/kotekomi-context-verification-v2/pytest.log
 ```
 
 Success still requires every declared whole-tree check to pass with exit code zero and inspected skip reasons.
+
+## Context whole-tree verification at `34324df`
+
+The human started the corrected check and reported exit code zero.
+The agent inspected `/private/tmp/kotekomi-context-verification-v2/` after termination.
+`revision.txt` identifies `34324dfff328d792aeb0f2e6f97b2518e22103e3`; `working-tree.txt` is empty.
+Schema generation and drift, whole-tree formatting, lint, and typecheck passed.
+JUnit records 2,765 passed tests, three skips, zero failures, and zero errors.
+The suite took 909.65 seconds, or 15m 09s.
+One skipped test requires an explicitly selected loaded LM Studio model.
+Two skipped tests require the original retained operator run, which this worktree excludes.
+
+The captured announcement regression passed its per-command load counts, fresh corruption rejection, supported acceptance, and saved replay checks.
+All six promotion regressions passed, including the three retained development statements and transaction failure injections.
+The observed full-suite duration is not a controlled performance comparison or a human-effort measure.
+Implementation verification is complete for context-reuse review.
+CI and integration remain pending; the broader two-statement assessment has not started.
