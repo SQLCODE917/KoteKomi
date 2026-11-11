@@ -18,6 +18,15 @@ You are writing a Technical Design Document (TDD).
 The TDD will be reviewed by a human and then handed to a coding agent for implementation.
 Its job is to pin down every decision that crosses a contract boundary, and to stay silent on everything the implementer can decide for itself.
 
+For capability work, Pipeline changes, and experiments, follow [Pipeline Improvement](pipeline-improvement.md).
+The same policy governs Agile packages that group TDDs.
+In Context & Problem, identify the operator failure and separate its observed blocking stage from its suspected cause.
+In Goals and Acceptance Criteria, distinguish engineering verification, demonstrated capability, and the declared product target.
+Use the existing package tracker to record competing corrections, the selected production hypothesis, and its stop condition.
+Keep iteration limits and cross-stage priority decisions at package scope rather than duplicating them in every deliverable.
+Specify the smallest verification needed for the claim; a routine bug fix does not require a new evaluation system.
+State required human gates and their order before implementation begins.
+
 A TDD should be self-contained, meaning that a reader who has not seen any prior conversations must be able to identify the actors, named features, current behavior, missing behavior, etc from the TDD alone.
 
 You are to use language in the style of Simplified Technical English:

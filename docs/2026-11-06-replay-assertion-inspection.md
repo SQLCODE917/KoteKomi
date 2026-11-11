@@ -57,7 +57,6 @@ The operator's visual confirmation remains separate from automated headless veri
 
 The initial regression failed on the original projection: it returned no composition annotation.
 The implementation passed 117 focused replay, inspection, clipboard, store, startup, cancellation, and R20 ingestion-transition tests.
-Three temporary-launcher checks also passed, including paragraph selection forwarding.
 Whole-tree formatting, lint, and typecheck passed.
 The full repository test suite and pinned historical reproduction were not rerun for this presentation change.
 
@@ -66,4 +65,9 @@ The inspector displayed `United States → started → the 2026 Iran war`, propo
 The copied summary resolved the selected Assertion, the proposal and evidence IDs, the three source spans, and the outcome file digest.
 The handoff root contains `assertion-inspection-summary.json` and `assertion-inspection.svg` as inspection evidence.
 No ingestion, model call, approval, or accepted-state change was performed during this verification.
-The operator can reopen the saved run with `./scripts/tmp_ira.sh replay --paragraph 14` and press `a`, then `c`.
+The operator can reopen the saved run with the supported replay command and press `a`, then `c`.
+Replace `<state-root>` with the directory containing the saved run's `kotekomi.db` and `archive/`.
+
+```bash
+uv run kotekomi-live-replay --state-root <state-root> --paragraph 14
+```

@@ -87,3 +87,21 @@ Every boundary validation bug adds a negative test that proves invalid determini
 ## Done Checks
 
 Use `docs/CHECK_PLAN.md` for task-level verification.
+
+## Capability Evidence
+
+Follow [Pipeline Improvement](pipeline-improvement.md#evidence-and-claims) when interpreting test and assessment results.
+Characterization tests lock in existing behavior before a refactor.
+A reproduced defect requires a failing regression rather than preserving the defect as expected behavior.
+Structural or grammar assertions alone do not prove that an Assertion preserves complete source meaning.
+For semantic corrections, test required content and a counterexample that exposes truncation or over-capture.
+Exercise the production boundary that the operator uses; substitute external outputs through validated fixtures.
+Distinguish synthetic construction tests, captured-input regressions, failure-injection tests, and independently assessed cases.
+Do not seed the intended outcome or accepted prerequisites to claim that the ingestion-to-review path works.
+Existing accepted-state fixtures remain valid for narrower tests that explicitly declare that starting state.
+
+Use captured-input replay before fresh ingestion for deterministic changes when the retained boundary is sufficient.
+Tie live-run and timing claims to the tested revision and declared protocol.
+Record agent-assisted assessment separately from human effort.
+Preserve reviewed expectations and historical evidence according to their declared contracts.
+Passing the suite does not waive an unmet product acceptance gate.

@@ -283,3 +283,12 @@
 - Preserve the IRA, R20, replay, persistence, formatting, lint, typecheck, and whole-tree regression checks above.
 - Package completion requires a measured production gain under one declared numerical route, per-statement non-regression, replayable evidence, and preserved approval requirements; infrastructure and diagnostic improvements alone do not satisfy it.
 
+## 15. Agent policy for Pipeline improvement
+
+- Apply [Pipeline Improvement](agent/pipeline-improvement.md) through `AGENTS.md` task routing and the TDD, testing, and reporting guidance.
+- Before a capability cycle, check the operator failure, distinction between blocking stage and cause, cross-stage alternatives, selected production hypothesis, approval gates, and remaining cycle budget in the existing tracker.
+- Before interpreting results, check the assessed population, source meaning, input and code revisions, reviewer identity, protocol changes, and limits of the evidence claim.
+- At closeout, distinguish implementation verification, capability demonstration, and package target status; a failed target ends the evaluation with `Target not met` and a scope decision rather than another automatic cycle.
+- Verify guidance changes with local-link resolution, `git diff --check`, and a consistency review across `AGENTS.md`, `agent/pipeline-improvement.md`, `agent/writing-tdds.md`, `agent/testing.md`, and `agent/output-format.md`.
+- This policy requires no new runtime, schema, instrumentation, or test framework; retain the applicable engineering and product checks for each implementation task.
+
