@@ -289,6 +289,16 @@
 - Require zero exit status for schema generation and drift, formatting, lint, typecheck, and the full suite; skipped tests require documented reasons.
 - Keep the new accepted-Assertion evidence separate from independent validation, human-effort reduction, and the successor's additional-case target.
 
+## 16. Review command context reuse
+
+- Contract: [Review command context reuse](2026-11-11-review-command-context-reuse.md).
+- Run `uv run pytest packages/pipelines/tests/test_announcement_review.py -q -s`; require one paragraph load, token load, and candidate inventory construction per recomposition, a fresh load on retry, rejection of a corrupted token artifact on a later command, and preserved Assertion acceptance and saved replay.
+- Run the captured promotion, operator journey, and supported command regressions from sections 14 and 15; retain stale Source rejection, current review prerequisites, retry idempotency, transaction rollback, and recovery after a derived-file failure.
+- Human-started whole-tree verification reuses the existing command: `bash scripts/check_ingestion_announcement.sh /private/tmp/kotekomi-context-verification-v2`.
+- Inspect revision, clean working tree, per-step logs, terminal exit code, and JUnit after the human reports completion; require schema consistency and passing whole-tree formatting, lint, typecheck, and full-suite results with documented skips.
+- Record observed command durations separately from whole-suite duration and unmeasured human effort.
+- Keep implementation frozen before selecting the successor's two additional development statements; run their delegated assessment after integration.
+
 ## 17. Historical Intelligence Pipeline Improvement checks
 
 - Retain the historical package as **Target not met** and its acceptance policy in the [Intelligence Pipeline Improvement Agile Package](2026-11-06-intelligence-pipeline-improvement-agile-package.md).

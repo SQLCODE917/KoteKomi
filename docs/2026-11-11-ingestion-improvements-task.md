@@ -51,7 +51,7 @@ Paragraph discovery repair remains outside this delivery.
 ## Completion decisions
 
 - Implementation verification: announcement focused and whole-tree checks pass at `6596490`.
-  The context reuse correction has not started.
+  The context reuse correction passes focused and whole-tree checks at `34324df`.
 - Demonstrated capability: R-DEV-06 preserves its required meaning through review, persistence, supported Assertion acceptance, and saved replay.
   The full regression gate also preserves the three promoted development cases.
 - Broader successor target: at least one complete additional result among two statements selected after implementation freezes.
@@ -84,8 +84,9 @@ The injected proposal-write failure proves that both writes roll back together.
 The focused journey has passed supported acceptance and saved replay on disposable SQLite and Archive state.
 This is delegated agent assessment of R-DEV-06 as a complete `source_report`.
 It establishes neither independent truth nor a broader accuracy rate.
-Whole-tree verification has passed; integration remains pending.
-The latency correction and the two additional assessments have not started.
+The announcement's whole-tree verification and integration have passed.
+The latency correction started after announcement integration.
+The two additional assessments have not started.
 
 ## Focused verification at `3c63b37`
 
@@ -162,4 +163,128 @@ The complete announcement acceptance and saved-replay test passed in 4.158 secon
 All six promotion regressions passed, including Department of Defense policy, Amodei criticism, Anthropic services integration, and transaction failure injections.
 This confirms implementation verification and retention on the named captured development cases.
 The broader successor target remains unassessed.
-No CI or merge result is claimed for this increment yet.
+The following section records the announcement's subsequent integration and terminal CI result.
+
+## Announcement integration and context reuse
+
+The user reported announcement integration and green CI for `6e780b4f91d1928dd375bdc98bd96b9d0bb337aa`.
+The agent fetched main and inspected terminal [CI run 43014981509](https://github.com/SQLCODE917/KoteKomi/actions/runs/43014981509).
+CI passed; pytest took 39m 58s of the 41m 41s job.
+This duration is an observation of the complete suite, not a recomposition benchmark.
+
+The [context reuse correction](2026-11-11-review-command-context-reuse.md) removes duplicate loading within recomposition.
+The failing-first captured regression observed two paragraph loads where the required count was one.
+The private context now carries validated paragraph, Event, token artifact, TextView, and candidate inventory values within one command.
+Recomposition still reads current review, identity, evidence, and proposal state through the existing transactions.
+No persistent or cross-command cache is introduced.
+
+The focused captured test verifies one paragraph load, token load, and inventory construction per recomposition.
+A retry performs a new load and remains idempotent.
+A later command rejects a corrupt token artifact instead of using stale values.
+The same test separately accepts the correct Assertion and verifies evidence, provenance, and saved replay.
+
+| Observed command | Seconds | Condition |
+| --- | ---: | --- |
+| First announcement recomposition | 1.043399 | Integrated announcement code, instrumented failing regression |
+| First announcement recomposition | 0.532524 | Working tree with request-scoped reuse |
+| Retry announcement recomposition | 0.512659 | Same captured test after reuse |
+
+These are single observed calls on one captured development case.
+They establish neither a general latency ratio nor reduced human effort.
+The corrected command demonstrates one validated ingestion-context load; whole-suite verification remains pending.
+No whole-suite or CI duration reduction is claimed.
+Paragraph discovery repair and further argument extensions remain outside this increment.
+CI now prints the 30 slowest test phases through the existing pytest `--durations=30` option.
+This matches the local verification command and provides timing evidence without changing test selection or concurrency.
+
+## Context verification and handoff
+
+The focused announcement acceptance and saved-replay regression passed with the context-count and corruption assertions.
+The captured derived-outcome failure and recovery regression passed in 13.53 seconds.
+Two operator packet regressions passed, preserving rejection of a changed Source and an Event from another run.
+Whole-tree `ruff format --check .` and `ruff check .` passed.
+Pyright passed on the changed implementation and test with zero errors or warnings.
+Documentation links and `git diff --check` passed.
+The whole-tree typecheck, schema-drift check, full suite, CI, and integration remain pending for this increment.
+
+Run the existing verification command from `/private/tmp/kotekomi-ingestion-context`:
+
+```bash
+bash scripts/check_ingestion_announcement.sh /private/tmp/kotekomi-context-verification
+```
+
+The output directory retains `revision.txt`, `working-tree.txt`, `exit-code.txt`, `schemas.log`, `schema-drift.log`, `format.log`, `lint.log`, `typecheck.log`, `pytest.log`, and `pytest.xml`.
+Disposable test Ledgers and Archives remain beneath `tests/`.
+The script refuses to overwrite a previous verification record.
+
+Completion probe:
+
+```bash
+cat /private/tmp/kotekomi-context-verification/exit-code.txt
+```
+
+Durable evidence summary:
+
+```bash
+tail -n 40 /private/tmp/kotekomi-context-verification/pytest.log
+```
+
+Success requires exit code zero, the intended revision, a clean working tree, schema consistency, and passing formatting, lint, typecheck, and full-suite results.
+Every skip requires an inspected reason.
+The agent will inspect terminal records after the human reports completion, then prepare the authorized push and PR.
+The two additional statements will be selected and assessed after integration with the implementation frozen.
+
+## Context verification correction
+
+The human-started check at `1a41ddbe66026efd28d179521dfe2c04fa637cfb` exited with code one.
+The agent inspected `/private/tmp/kotekomi-context-verification/` after the human reported termination.
+Schema generation, schema drift, formatting, and lint passed.
+Whole-tree pyright rejected three private imports used by the test's counting wrappers.
+Pytest did not start; this run produced no test result or runtime failure.
+
+The test now imports each wrapped function from its owning module.
+It still patches the review Pipeline's bindings and calls the real validators.
+The production implementation remains unchanged.
+Pyright on the changed test and implementation now passes in this worktree's own environment.
+The focused acceptance, context-count, corruption, and replay regression also passes.
+The whole-tree gate remains pending.
+
+Run the existing check from `/private/tmp/kotekomi-ingestion-context` with a fresh output directory:
+
+```bash
+bash scripts/check_ingestion_announcement.sh /private/tmp/kotekomi-context-verification-v2
+```
+
+Outputs retain the same revision, working-tree, exit-code, per-step log, JUnit, and disposable-state paths beneath the new directory.
+The original failed verification record remains preserved.
+
+Completion probe:
+
+```bash
+cat /private/tmp/kotekomi-context-verification-v2/exit-code.txt
+```
+
+Durable evidence summary:
+
+```bash
+tail -n 40 /private/tmp/kotekomi-context-verification-v2/pytest.log
+```
+
+Success still requires every declared whole-tree check to pass with exit code zero and inspected skip reasons.
+
+## Context whole-tree verification at `34324df`
+
+The human started the corrected check and reported exit code zero.
+The agent inspected `/private/tmp/kotekomi-context-verification-v2/` after termination.
+`revision.txt` identifies `34324dfff328d792aeb0f2e6f97b2518e22103e3`; `working-tree.txt` is empty.
+Schema generation and drift, whole-tree formatting, lint, and typecheck passed.
+JUnit records 2,765 passed tests, three skips, zero failures, and zero errors.
+The suite took 909.65 seconds, or 15m 09s.
+One skipped test requires an explicitly selected loaded LM Studio model.
+Two skipped tests require the original retained operator run, which this worktree excludes.
+
+The captured announcement regression passed its per-command load counts, fresh corruption rejection, supported acceptance, and saved replay checks.
+All six promotion regressions passed, including the three retained development statements and transaction failure injections.
+The observed full-suite duration is not a controlled performance comparison or a human-effort measure.
+Implementation verification is complete for context-reuse review.
+CI and integration remain pending; the broader two-statement assessment has not started.

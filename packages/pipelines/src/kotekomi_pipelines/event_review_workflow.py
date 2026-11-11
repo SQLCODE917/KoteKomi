@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import sqlite3
 from collections.abc import Sequence
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Protocol
@@ -17,6 +18,7 @@ from typing import Any, Protocol
 from kotekomi_adapters import sqlite_ledger_transaction
 from kotekomi_adapters.composition_outcome_store import CompositionOutcomeStore
 from kotekomi_application import (
+    ConstituentCandidateInventory,
     EventCompositionRecord,
     EventConstructionDecisionInput,
     EventConstructionReviewError,
@@ -52,10 +54,14 @@ from kotekomi_domain import (
     EventConstructionReview,
     ProposedAssertion,
     ProposedChange,
+    TextView,
 )
 
 from kotekomi_pipelines.ingestion_composition_stage import compose_ingested_event
-from kotekomi_pipelines.ingestion_token_artifact import load_ingestion_token_artifact
+from kotekomi_pipelines.ingestion_token_artifact import (
+    IngestionTokenArtifact,
+    load_ingestion_token_artifact,
+)
 from kotekomi_pipelines.replay_reader.transport import load_paragraph_inputs
 
 _REQUIRED_DECISIONS = (
@@ -65,6 +71,17 @@ _REQUIRED_DECISIONS = (
     "source_authority",
     "attribution_basis",
 )
+
+
+@dataclass(frozen=True)
+class _EventReviewContext:
+    """Validated ingestion inputs owned by one review command."""
+
+    paragraph: ParagraphInput
+    event: EventAnnotation
+    artifact: IngestionTokenArtifact
+    inventory: ConstituentCandidateInventory
+    view: TextView
 
 
 def _sha256(text: str) -> str:
@@ -108,6 +125,25 @@ def build_event_review_packet(
     event_id: str,
 ) -> EventReviewPacket:
     """Assemble one Event's review packet from stored ingestion records."""
+    context = _load_event_review_context(
+        ledger_path=ledger_path,
+        archive_path=archive_path,
+        ingestion_run_id=ingestion_run_id,
+        event_id=event_id,
+    )
+    return _build_event_review_packet(
+        ledger_path=ledger_path, ingestion_run_id=ingestion_run_id, context=context
+    )
+
+
+def _load_event_review_context(
+    *,
+    ledger_path: Path,
+    archive_path: Path,
+    ingestion_run_id: str,
+    event_id: str,
+) -> _EventReviewContext:
+    """Load each ingestion input once through its existing boundary validators."""
     try:
         paragraphs = load_paragraph_inputs(
             ledger_path, archive_path, ingestion_run_id=ingestion_run_id
@@ -137,6 +173,21 @@ def build_event_review_packet(
         event_expression_start=event.trigger_span.start,
         event_expression_end=event.trigger_span.end,
     )
+    return _EventReviewContext(paragraph, event, artifact, inventory, view)
+
+
+def _build_event_review_packet(
+    *, ledger_path: Path, ingestion_run_id: str, context: _EventReviewContext
+) -> EventReviewPacket:
+    """Build a packet without reloading the command's validated ingestion inputs."""
+    paragraph = context.paragraph
+    event = context.event
+    artifact = context.artifact
+    inventory = context.inventory
+    view = context.view
+    event_id = event.event_id
+    bundle = paragraph.bundle
+    assert bundle is not None
     selection = select_source_grounded_constituents(
         event_id=event_id,
         source_text=paragraph.text,
@@ -334,20 +385,18 @@ def recompose_reviewed_event(
     now: datetime,
 ) -> EventCompositionRecord:
     """Recompose one reviewed Event and expose its pending Assertion proposal."""
-    packet = build_event_review_packet(
+    context = _load_event_review_context(
         ledger_path=ledger_path,
         archive_path=archive_path,
         ingestion_run_id=ingestion_run_id,
         event_id=event_id,
     )
-    paragraphs = load_paragraph_inputs(ledger_path, archive_path, ingestion_run_id=ingestion_run_id)
-    paragraph, profile, event = _paragraph_event(paragraphs, event_id)
-    if paragraph is None or profile is None or event is None:
-        raise EventConstructionReviewError("The selected Event is no longer in this run.")
-    artifact = load_ingestion_token_artifact(
-        ledger_path.parent / "token-artifacts" / f"{paragraph.paragraph_node_id}.json",
-        paragraph_text=paragraph.text,
+    packet = _build_event_review_packet(
+        ledger_path=ledger_path, ingestion_run_id=ingestion_run_id, context=context
     )
+    paragraph = context.paragraph
+    event = context.event
+    artifact = context.artifact
     with sqlite_ledger_transaction(ledger_path) as repository:
         review = repository.get_event_construction_review_for_event(event_id)
         if review is None:
@@ -358,19 +407,12 @@ def recompose_reviewed_event(
             raise EventConstructionReviewError(
                 "The approved review belongs to a different source revision."
             )
-        inventory = build_constituent_candidate_inventory(
-            source_text=paragraph.text,
-            event_id=event_id,
-            tokens=artifact.tokens,
-            event_expression_start=event.trigger_span.start,
-            event_expression_end=event.trigger_span.end,
-        )
         record = compose_ingested_event(
             repository=repository,
             event_id=event_id,
             source_text=paragraph.text,
             source_text_sha256=artifact.source_text_sha256,
-            inventory=inventory,
+            inventory=context.inventory,
             trigger_head_start=event.trigger_span.start,
             trigger_head_end=event.trigger_span.end,
             tokens=artifact.tokens,
