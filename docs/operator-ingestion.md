@@ -12,7 +12,7 @@ Month/year time expressions retain exact Source characters, including doubled sp
 
 Recomposition validates statement evidence and includes an explicit evidence-link specification in the pending Assertion ProposedChange.
 Retry replays that validation and preserves the existing proposal.
-Each review command validates its ingestion inputs once.
+Recomposition validates its ingestion inputs once per command.
 Recomposition reuses those validated inputs within the command and loads current review state through its transaction.
 Every new command reloads and validates its inputs; changed or corrupt token artifacts cannot use a cross-command cache.
 The Assertion remains proposed until the operator separately approves it through the review operation.
@@ -138,9 +138,9 @@ uv run kotekomi --config <config> review event-packet --run <igr_...> --event <s
 uv run kotekomi --config <config> review decide --run <igr_...> --event <sge_...> \
   --candidate-text <exact candidate text> --identity-kind <actor|organization> \
   --identity <new:Name|existing:id> --predicate <predicate> \
-  --assertion-type <reported_observation|reported_claim> \
-  --source-authority <primary|secondary|tertiary|unknown> \
-  --attribution-basis <direct_document|second_hand_report|anonymous_report|unknown> \
+  --assertion-type reported_observation \
+  --source-authority secondary \
+  --attribution-basis direct_document \
   --reviewer <name>
 ```
 
@@ -149,6 +149,7 @@ occurrence association, and a `ProvenanceActivity` together, and stores one appr
 construction review bound to the run, paragraph, and source digest.
 A repeated identical decision returns the stored review and writes nothing; a different
 decision for the same Event is rejected.
+The example uses the classification choices verified by the captured operator journeys.
 
 4. A review hold stays visible. `unsupported_object_complement` means the object governs a
    clause or coordination this construction cannot represent; the Event stays held and no
@@ -168,6 +169,9 @@ uv run kotekomi review list --record-type Assertion
 The command prints the composed outcome and writes it through the same composition store
 as ingestion and replay. The Assertion is `proposed`: a pending `ProposedChange` appears in
 `review list`, and accepting it remains a separate review action.
+Structural composition does not establish complete Source meaning.
+Compare the proposed object, essential complements, and time bounds with the full Source before acceptance.
+Reject incomplete proposals through the review operation; their rejected status remains visible in saved replay.
 `scripts/recompose_ingested_event.py` remains available when a full recomposition request
 is already prepared.
 

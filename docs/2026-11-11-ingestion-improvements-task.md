@@ -1,6 +1,6 @@
 # Deliver the Next Ingestion Improvements
 
-Status: In progress.
+Status: Closed assessment — **Target not met**; verified production improvements retained.
 The user approved this successor's delivery sequence and delegated semantic review in the implementation request.
 Historical IPI remains **Target not met**.
 
@@ -52,9 +52,10 @@ Paragraph discovery repair remains outside this delivery.
 
 - Implementation verification: announcement focused and whole-tree checks pass at `6596490`.
   The context reuse correction passes focused and whole-tree checks at `34324df`.
+  Integrated main passes local whole-tree checks at `cab1b89` and remote CI at frozen revision `73d7f44`.
 - Demonstrated capability: R-DEV-06 preserves its required meaning through review, persistence, supported Assertion acceptance, and saved replay.
   The full regression gate also preserves the three promoted development cases.
-- Broader successor target: at least one complete additional result among two statements selected after implementation freezes.
+- Broader successor target: **Target not met**, with zero complete results among the two additional statements selected after implementation froze.
 
 Missing the broader target retains safe verified improvements and ends assessment as **Target not met**.
 The next decision must compare remaining argument failures and paragraph discovery across Pipeline stages.
@@ -399,3 +400,114 @@ The working tree is clean, and obsolete temporary scripts remain absent.
 Implementation verification has passed for local main publication.
 The remote CI result and the successor's two additional statement assessments remain outstanding.
 Historical IPI remains **Target not met**; these engineering checks do not establish the successor's broader target or reduced human effort.
+
+## Frozen implementation and additional assessment population
+
+The human reported successful [CI run 43075780873](https://github.com/SQLCODE917/KoteKomi/actions/runs/43075780873).
+The agent inspected its terminal result at `73d7f444533c0cd8edfc1c0a38b966c6ad2a9071`.
+Package installation passed in 17 seconds; the complete CI job passed in 31m 19s.
+The production implementation is frozen at that revision for the remaining assessment.
+No production tuning will follow these two results within this successor.
+
+The two selected statements come from retained paragraph `nod_f1e64380625a2f2c533fc277_0011` in run `igr_c4b8a09978114e49bb63e8c7df73a005`.
+The typed inspector validates the captured Source, receipts, stages, and token bindings before use.
+The [development manifest](2026-11-06-ipi-01-development-manifest.json), passage DEV-03, retains their complete paragraph and neighboring context.
+Both statements were excluded from the original eight reference statements and were not production-correction targets.
+Their Source context was visible earlier; this is a new delegated development assessment, not blind independent validation.
+
+The agent fixes these required meanings before packet generation or recomposition:
+
+| Case | Event | Required complete meaning |
+| --- | --- | --- |
+| Additional partnership | `sge_498b7a042b3d2e904f2dd38d` | By November 2024, Anthropic had already partnered with Palantir and Amazon Web Services, companies that offered services with FedRAMP authorization. |
+| Additional authorization | `sge_988e0f4478a351967c708e3e` | The Department of Homeland Security authorized its workers to use commercial artificial intelligence systems, including Anthropic's Claude, until May 2025. |
+
+The partnership requires both named partners, their service description, and the November 2024 time bound.
+The authorization requires the workers as recipients, the permitted use, the commercial systems including Claude, and the May 2025 time bound.
+Neither case permits truncating an essential complement or replacing the participant's contextual identity silently.
+Footnote markers are omittable.
+Proposed classifications are `reported_observation`, `source_report`, `secondary`, and `direct_document`.
+Identity decisions require explicit Source-bound Organization candidates in the supported review operation.
+
+Each case uses separate disposable SQLite and Archive state seeded only with validated ingestion inputs.
+The supported packet, decision, and recomposition operations create prerequisites and outcomes.
+An incomplete or held result remains in the two-case denominator and is not accepted as an Assertion.
+The broader successor target remains at least one complete result among these two statements.
+
+## Additional assessment results and closeout
+
+The agent assessed both fixed meanings under delegation at frozen production revision `73d7f44`.
+Each separate disposable Ledger started with validated ingestion inputs and no accepted identity occurrences, construction reviews, or composition outcomes.
+The supported `review event-packet`, `review decide`, and `review recompose` commands generated prerequisites and outcomes.
+Decisions explicitly named Organization identities, reviewed predicates, `reported_observation`, `secondary`, and `direct_document` classifications.
+Retry retained the same outcome and proposal identity.
+Typed reload validated the reviews, prerequisite provenance, evidence, and composition outcomes.
+
+| Case | Observed production result | Semantic assessment | Accepted Assertions |
+| --- | --- | --- | ---: |
+| Partnership | Held with `unsupported_time_place`; packet has subject `Anthropic` but no selected object or time qualifier | Incomplete: both partners, their service description, and the time bound are absent | 0 |
+| Authorization | Composed proposal with object `its  workers`, no time qualifier, and no structural hold | Incomplete: the authorized use, commercial systems including Claude, and the May 2025 bound are absent | 0 |
+
+The partnership creates no Assertion ProposedChange.
+Its construction review is `ecr_1b97615d6019813a4bc4c3a3`, with ProvenanceActivity `prv_5907db103838f4db23b390bc`.
+The authorization creates proposal `pcg_2215110af95ec334876e98fb` for Assertion `ast_7190613bca00b6fcf928babfd4572bec`.
+The agent rejected that incomplete proposal through `reject_proposed_change` after reviewing the full Source meaning.
+The rejection creates ProvenanceActivity `prv_d990df2073f1db3bc2386b51`.
+Its construction review remains `ecr_6bdb4628ad60ea4ddb690fa2`, with prerequisite ProvenanceActivity `prv_3645efc6368d8ecfb88107a4`.
+Reload confirms zero accepted Assertions in both additional Ledgers.
+Saved replay preserves the partnership hold and shows the authorization proposal as rejected.
+
+Durable assessment state is under `/private/tmp/kotekomi-successor-assessment-73d7f44/`.
+Each `partnership/` and `authorization/` directory contains `packet.json`, `decision.json`, `recomposition.json`, `retry.json`, `saved-replay-inspection.json`, and `state/`.
+The state directories contain their Ledgers, Archives, token artifacts, and typed composition outcomes.
+The authorization directory also retains `semantic-review.txt` explaining the rejection.
+The complete Source paragraph remains in each validated representation.
+Original operator Ledgers remain untouched.
+
+Post-integration reload reverified the accepted announcement in `/private/tmp/kotekomi-main-integration-verification-v2/tests/test_complete_announcement_rev0/state/`.
+Assertion `ast_c6e9cf486dc508a0b7b43e7fa885b7b4` remains `reported`, with EpistemicScope `source_report`.
+Proposal `pcg_2c53dbbff1b32dd0a19c4fb9` remains approved.
+Its accepted Actor is Pete Hegseth; the object retains the complete platform description, and time retains `In  December  2025`.
+Evidence replay, review provenance, and the saved composition outcome validate.
+The main full-suite regression separately verifies the approved proposal's saved-replay display.
+
+The broader target is **Target not met**, with 0/2 complete additional results against the required minimum of one.
+The assessment closes without tuning against these failures or starting another production correction.
+Retained benefits are the three promoted development cases, complete announcement acceptance, and one validated context load per recomposition.
+These results establish neither independent extraction accuracy nor reduced human effort.
+
+## Remaining failures and next scope decision
+
+The partnership's returned hold remains explicit; this assessment does not establish a general cause for every `unsupported_time_place` outcome.
+The authorization demonstrates semantic truncation despite structural composition, requiring operator inspection and rejection.
+Paragraph discovery has recorded failures but no demonstrated corrective mechanism.
+Previously recorded onset/agreement complements, coordination with contextual identity, and multilingual name boundaries remain unresolved.
+Those cases were not all reassessed here.
+
+The validated reuse guarantee applies to recomposition.
+Code inspection shows `review decide` still builds a packet to select the candidate, then calls `record_review_decision`, which builds another packet.
+The earlier wording about one load for every review command was broader than the demonstrated behavior.
+This remaining duplication is disclosed rather than claimed fixed.
+Some advertised classification alternatives also do not map to Domain Core enum values.
+The operator example now uses the verified choices exercised in this workflow.
+
+The next scope decision should prioritize complete authorization content and its time bound, or an explicit hold before proposing a truncated Assertion.
+That correction has a concrete Source counterexample and direct operator benefit.
+Partnership argument handling needs coordinated prepositional participants and the complete description, requiring a broader contract.
+Paragraph discovery remains a competing Pipeline concern, but its corrective mechanism is unknown.
+Further title/appositive extensions and unmeasured command-latency work do not address the demonstrated authorization loss.
+A new scope decision is required before another production cycle.
+
+## Final verification evidence
+
+[CI run 43075780873](https://github.com/SQLCODE917/KoteKomi/actions/runs/43075780873) records 2,794 passed tests and three documented skips at `73d7f44`.
+The optional stored-case tests skip without the original operator run; the third skip requires a selected live LM Studio model.
+The original-checkout suite at `cab1b89` records 2,796 passed and one live-model skip, because both stored-case tests ran there.
+CI pytest took 29m 32s; the complete job took 31m 19s.
+The slowest CI phases were ingestion checkpoint reuse at 100.06 seconds, interface-independent extraction at 95.82 seconds, and the PDF cross-page table case at 90.66 seconds.
+These timings identify expensive phases on that runner without establishing the cause of every earlier duration difference.
+The completed CI log remains as `ci.log` under the assessment directory.
+
+The final assessment used existing commands, typed reload, and saved replay without model calls or new production behavior.
+Documentation corrections do not alter the frozen implementation.
+The full suite was not rerun solely to record this assessment; runtime verification remains tied to the revisions above.
