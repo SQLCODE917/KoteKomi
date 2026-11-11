@@ -12,6 +12,9 @@ Month/year time expressions retain exact Source characters, including doubled sp
 
 Recomposition validates statement evidence and includes an explicit evidence-link specification in the pending Assertion ProposedChange.
 Retry replays that validation and preserves the existing proposal.
+Each review command validates its ingestion inputs once.
+Recomposition reuses those validated inputs within the command and loads current review state through its transaction.
+Every new command reloads and validates its inputs; changed or corrupt token artifacts cannot use a cross-command cache.
 The Assertion remains proposed until the operator separately approves it through the review operation.
 Source-report acceptance records what the Source reports; it does not independently establish world truth.
 

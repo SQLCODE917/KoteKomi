@@ -4,9 +4,13 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from threading import Event
+from time import perf_counter
+from unittest.mock import patch
 
+import pytest
 from kotekomi_adapters import sqlite_ledger_transaction
 from kotekomi_adapters.composition_outcome_store import CompositionOutcomeStore
 from kotekomi_application import (
@@ -19,6 +23,7 @@ from kotekomi_application.composition_inspection import composition_inspection_r
 from kotekomi_application.evidence_targets import validate_evidence_target_record
 from kotekomi_application.ingestion_inspection import ParagraphSnapshot
 from kotekomi_domain import AssertionType, AttributionBasis, IdentityOccurrenceKind, SourceAuthority
+from kotekomi_pipelines import event_review_workflow
 from kotekomi_pipelines.event_review_workflow import record_review_decision
 from kotekomi_pipelines.replay_reader.live import create_inspection_session
 from kotekomi_pipelines.replay_reader.transport import load_paragraph_inputs
@@ -70,7 +75,45 @@ def test_complete_announcement_review_acceptance_and_saved_replay(tmp_path: Path
         now=NOW,
         decision=decision,
     )
-    result = journey.recompose()
+    with (
+        patch.object(
+            event_review_workflow,
+            "load_paragraph_inputs",
+            wraps=event_review_workflow.load_paragraph_inputs,
+        ) as paragraphs_loaded,
+        patch.object(
+            event_review_workflow,
+            "load_ingestion_token_artifact",
+            wraps=event_review_workflow.load_ingestion_token_artifact,
+        ) as tokens_loaded,
+        patch.object(
+            event_review_workflow,
+            "build_constituent_candidate_inventory",
+            wraps=event_review_workflow.build_constituent_candidate_inventory,
+        ) as inventory_built,
+    ):
+        started = perf_counter()
+        result = journey.recompose()
+        print(f"announcement first recomposition: {perf_counter() - started:.6f}s")
+        assert paragraphs_loaded.call_count == 1
+        assert tokens_loaded.call_count == 1
+        assert inventory_built.call_count == 1
+        started = perf_counter()
+        assert journey.recompose().assertion == result.assertion
+        print(f"announcement retry recomposition: {perf_counter() - started:.6f}s")
+        assert paragraphs_loaded.call_count == 2
+        assert tokens_loaded.call_count == 2
+        assert inventory_built.call_count == 2
+    artifact_path = journey.state / "token-artifacts" / f"{packet.paragraph_node_id}.json"
+    artifact_bytes = artifact_path.read_bytes()
+    corrupted = json.loads(artifact_bytes)
+    corrupted["source_text_sha256"] = "f" * 64
+    try:
+        artifact_path.write_text(json.dumps(corrupted))
+        with pytest.raises(ValueError, match="Token artifact source digest does not match"):
+            journey.recompose()
+    finally:
+        artifact_path.write_bytes(artifact_bytes)
     assert result.status is EventCompositionStatus.COMPOSED
     assertion = result.assertion
     assert assertion is not None
@@ -86,7 +129,6 @@ def test_complete_announcement_review_acceptance_and_saved_replay(tmp_path: Path
     assert result.supporting_subject_span.text == EXPECTED_SUBJECT
     assert result.supporting_object_span is not None
     assert result.supporting_object_span.text == EXPECTED_OBJECT
-    assert journey.recompose().assertion == assertion
     with sqlite_ledger_transaction(journey.ledger) as ledger:
         assert ledger.list_assertions() == ()
         proposals = [
