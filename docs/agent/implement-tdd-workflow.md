@@ -8,7 +8,7 @@ kotekomi-agent implement-tdd <tdd-path>
 
 Treat the status record as the lifecycle authority.
 
-Stop when the status is blocked.
+Stop when the status reports a blocker outside the specification-source limitation below.
 
 Use the reported `next_action` and `producer_arguments`.
 
@@ -44,3 +44,13 @@ Use one local command block per operator action.
 Ask for the command output after each operator action.
 
 Keep failed output as Harness evidence.
+
+## Specification Source
+
+A pushed specification branch that contains the TDD and Task Manifest V2 is a valid specification source.
+
+The specification branch does not need to merge to `main` before implementation starts.
+
+Use the specification branch head as the specification revision and work on `feature/<task-id>`.
+
+When the Harness blocks only because the specification is not on `main`, record that status as a Harness limitation and continue under operator authorization.
