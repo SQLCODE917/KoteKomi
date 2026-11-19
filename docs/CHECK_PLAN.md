@@ -372,3 +372,12 @@ An index download failure stops the job before installation or verification.
 - run `./scripts/verify.sh shard-plan` to inspect the shard plan and smoke selection
 - run `./scripts/verify.sh aggregate fast=success shard=success` to prove the aggregate accepts a green gate, and repeat it with a missing, red, cancelled, or skipped job to prove the gate fails closed
 - compare summed passed, failed, and skipped counts from each shard log against the baseline run; `-rs` prints every skip reason so execution parity is visible
+
+## 20. Hold incomplete authorization
+
+- Contract: [Hold Incomplete Authorization](2026-11-19-hold-incomplete-authorization.md).
+- Run `uv run pytest packages/application/tests/test_governed_action_hold.py -q`; require the captured authorization shape and a second trigger verb to hold with `unsupported_predicate_complement`, the supported object completion, another-trigger complement, bare direct complement, and no-direct-object control to compose, and a missing subject to retain `subject_unavailable`.
+- Run `uv run pytest packages/application/tests/test_object_content_completion.py packages/application/tests/test_entity_object_complement_hold.py packages/application/tests/test_announcement_completion.py packages/pipelines/tests/test_unsupported_complement_hold.py -q`; require the supported object completion, the unsupported-object-complement hold, and the complete announcement path to remain unchanged.
+- Run `uv run pytest packages/pipelines/tests/test_ipi_production_promotion.py::test_captured_incomplete_authorization_holds_to_saved_replay -q`; require the captured DHS Event to preview the hold, record statement evidence through paragraph-relative 564, persist one held outcome with no Assertion or Assertion ProposedChange, and replay the same hold.
+- Human-started captured-input check: `uv run pytest packages/pipelines/tests/test_ipi_production_promotion.py packages/pipelines/tests/test_operator_journey.py -q`; use a durable log and JUnit XML, then inspect the terminal result under [Long-Running Operations](agent/long-running-operations.md).
+- The captured Event is a development regression on disposable state; it is not independent accuracy evidence and does not expand complete-Assertion coverage.

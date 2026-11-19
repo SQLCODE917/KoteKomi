@@ -193,6 +193,7 @@ def _decide(journey: Journey, predicate: str):
         "established": "Department  of  Defense",
         "criticized": "Amodei",
         "integrated": "Trump administration",
+        "authorized": "Department of Homeland Security",
     }[predicate]
     candidate = next(
         candidate for candidate in packet.candidates if candidate.exact_text == candidate_text
@@ -308,6 +309,93 @@ def test_captured_input_packet_to_replay(
     assert records
     assert records[-1].data["qualifiers"] == assertion.qualifiers
     assert records[-1].data["proposals"] == [{"id": proposal.id, "review_status": "pending"}]
+
+
+def test_captured_incomplete_authorization_holds_to_saved_replay(tmp_path: Path) -> None:
+    """The captured authorization loses its permitted action, so review holds it."""
+    journey = _journey(tmp_path, "authorized")
+    packet = journey.packet()
+
+    assert packet.event_id == "sge_988e0f4478a351967c708e3e"
+    assert packet.subject_text == "The Department of Homeland Security"
+    assert packet.object_text == "its  workers"
+    assert packet.time_qualifier_text is None
+    assert set(packet.required_decisions) == {
+        "identity",
+        "predicate",
+        "assertion_type",
+        "source_authority",
+        "attribution_basis",
+    }
+    assert packet.accepted_identity_ids == ()
+    assert packet.hold_reason == "unsupported_predicate_complement"
+    # The statement evidence explains the hold: the permitted action and its limit.
+    assert packet.statement_start == 396
+    assert packet.statement_end == 564
+    statement = packet.source_text[packet.statement_start : packet.statement_end]
+    assert statement.startswith("The Department of Homeland Security")
+    assert "to  use  commercial  artificial  intelligence  systems" in statement
+    assert "Anthropic's  Claude" in statement
+    assert statement.endswith("until  May  2025")
+    assert "[8]" not in statement and "[9]" not in statement
+
+    review = _decide(journey, "authorized")
+    assert _decide(journey, "authorized").id == review.id
+
+    first = journey.recompose()
+    assert first.status is EventCompositionStatus.HELD
+    assert first.hold_reason == "unsupported_predicate_complement"
+    assert first.assertion is None
+    assert first.object_text is None
+    assert first.supporting_object_span is None
+
+    with sqlite_ledger_transaction(journey.ledger) as ledger:
+        assert ledger.list_assertions() == ()
+        assert not [
+            change
+            for change in ledger.list_proposed_changes()
+            if change.proposed_json.get("record_type") == "Assertion"
+        ]
+        target = ledger.get_evidence_target(review.statement_evidence_target_id)
+        assert target is not None
+        validate_evidence_target_record(target, ledger)
+        assert target.end_char == packet.node_start_char + 564
+        assert target.exact_text == statement
+        review_count = len(ledger.list_event_construction_reviews())
+        target_count = len(ledger.list_evidence_targets())
+        proposal_count = len(ledger.list_proposed_changes())
+
+    retry = journey.recompose()
+    assert retry == first
+    with sqlite_ledger_transaction(journey.ledger) as ledger:
+        assert len(ledger.list_event_construction_reviews()) == review_count
+        assert len(ledger.list_evidence_targets()) == target_count
+        assert len(ledger.list_proposed_changes()) == proposal_count
+        stored_review = ledger.get_event_construction_review_for_event(journey.event_id)
+        assert stored_review is not None and stored_review.id == review.id
+        assert ledger.list_assertions() == ()
+
+    store = CompositionOutcomeStore(journey.state / "composition-outcomes")
+    assert store.load(journey.event_id) == first
+    annotation = store.annotations((journey.event_id,))[0]
+    assert annotation.assertion is None
+    assert annotation.hold_reason == "unsupported_predicate_complement"
+
+    paragraphs = load_paragraph_inputs(journey.ledger, journey.archive, ingestion_run_id=RUN)
+    snapshots: list[ParagraphSnapshot] = []
+    session = create_inspection_session(journey.ledger, on_snapshot=snapshots.append)
+    session.replay_stored(paragraphs, None, 0.0, Event())
+    assert not session.presentation_failed
+    records = [
+        record
+        for snapshot in snapshots
+        for record in composition_inspection_records(snapshot.profile)
+        if record.record_id == journey.event_id
+    ]
+    assert records
+    assert records[-1].data["status"] == "held"
+    assert records[-1].data["hold_reason"] == "unsupported_predicate_complement"
+    assert records[-1].data.get("assertion_status") is None
 
 
 @pytest.mark.parametrize("failure_stage", ["decision", "proposal", "outcome"])

@@ -37,6 +37,9 @@ from kotekomi_application import (
     select_source_grounded_constituents,
     validate_packet_bindings,
 )
+from kotekomi_application.decontextualization_composition import (
+    derive_unrepresented_governed_actions,
+)
 from kotekomi_application.evidence_targets import (
     EvidenceTargetLedger,
     EvidenceValidationInput,
@@ -228,6 +231,28 @@ def _build_event_review_packet(
     object_text = (
         None if completed_object_range is None else paragraph.text[slice(*completed_object_range)]
     )
+    governed_actions: tuple[SourceRange, ...] = ()
+    if object_range is not None:
+        represented_role_ranges: list[SourceRange] = []
+        for fragment in (subject_range, completed_object_range):
+            if fragment is None:
+                continue
+            start, end = fragment
+            represented_role_ranges.append(
+                SourceRange(start=start, end=end, text=paragraph.text[start:end])
+            )
+        governed_actions = derive_unrepresented_governed_actions(
+            source_text=paragraph.text,
+            tokens=artifact.tokens,
+            trigger_head_start=event.trigger_span.start,
+            trigger_head_end=event.trigger_span.end,
+            represented_ranges=tuple(represented_role_ranges),
+        )
+    preview_hold = (
+        complement_hold
+        if complement_hold is not None
+        else ("unsupported_predicate_complement" if governed_actions else None)
+    )
     try:
         time_qualifier = derive_trigger_time_qualifier(
             event_id=event_id,
@@ -296,7 +321,12 @@ def _build_event_review_packet(
         object_end=(None if completed_object_range is None else completed_object_range[1]),
         object_text=object_text,
         statement_start=_statement_start(event, subject_range, completed_object_range, time_range),
-        statement_end=_statement_end(event, subject_range, completed_object_range, time_range),
+        statement_end=max(
+            [
+                _statement_end(event, subject_range, completed_object_range, time_range),
+                *(action.end for action in governed_actions),
+            ]
+        ),
         object_completion=object_completion,
         time_qualifier_start=None if time_range is None else time_range[0],
         time_qualifier_end=None if time_range is None else time_range[1],
@@ -305,8 +335,8 @@ def _build_event_review_packet(
         accepted_identity_ids=accepted,
         required_decisions=() if review is not None else _REQUIRED_DECISIONS,
         hold_reason=(
-            complement_hold
-            if complement_hold is not None
+            preview_hold
+            if preview_hold is not None
             else (None if outcome is None else outcome.hold_reason)
         ),
         existing_review_id=None if review is None else review.id,
