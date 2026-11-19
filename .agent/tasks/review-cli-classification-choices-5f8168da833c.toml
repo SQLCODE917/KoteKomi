@@ -1,0 +1,39 @@
+schema_version = 2
+task_id = "review-cli-classification-choices-5f8168da833c"
+title = "Review CLI Classification Choices"
+status = "ready_for_terra_high"
+series_id = "review-cli-classification-reliability"
+task_class = "wiring"
+model_profile = "terra-high-v1"
+baseline_revision = "c91089f17bcf9e0ccb9e61fa68fc5079398637f6"
+tdd_path = "docs/2026-11-18-review-cli-classification-choices.md"
+tdd_sha256 = "5f8168da833c528d20b24dc7a6c510c2066515f780793f62a597557ff61f2b81"
+goal = "Reject unsupported review classifications before storage access and preserve the existing valid review arguments."
+depends_on = []
+allowed_paths = [".agent/tasks/review-cli-classification-choices-5f8168da833c.toml", "docs/2026-11-18-review-cli-classification-choices.md", "docs/2026-11-18-review-cli-classification-agile-package.md", "docs/operator-ingestion.md", "docs/CHECK_PLAN.md", "packages/pipelines/src/kotekomi_pipelines/cli.py", "packages/pipelines/tests/test_cli.py"]
+reference_paths = ["packages/domain/src/kotekomi_domain/models.py", "packages/application/src/kotekomi_application/event_construction_review.py", "docs/agent/implement-tdd-workflow.md"]
+stop_conditions = ["Harness reports blocked", "Implementation requires a new classification or alias", "Verification requires an unavailable runtime", "Publication or remote state changes are required"]
+[readiness]
+authority = "Proposed bounded pilot; draft specification is reviewable but does not authorize implementation before the Harness gate clears."
+contract_family = "review-cli"
+dominant_outcome = "Every advertised classification is valid within the retained review subset."
+failure_policy = "Parser rejects unsupported spellings before storage access."
+legacy_disposition = "Retain existing valid arguments and all Domain Core definitions."
+negative_proof = "Invalid argument tests guard configuration and review access with failure sentinels."
+public_entry_point = "kotekomi review decide"
+scope_policy = "Two choice lists, one test file, and matching instructions."
+side_effect_boundary = "No model calls or changes to accepted Ledger semantics."
+unresolved_decisions = []
+[budget]
+maximum_production_files = 1
+maximum_test_files = 1
+maximum_production_diff_lines = 20
+[[protected_artifacts]]
+kind = "leaf-tdd"
+path = "docs/2026-11-18-review-cli-classification-choices.md"
+sha256 = "5f8168da833c528d20b24dc7a6c510c2066515f780793f62a597557ff61f2b81"
+[[acceptance]]
+id = "review-decide-classification-contract"
+argv = ["uv", "run", "pytest", "-p", "no:cacheprovider", "packages/pipelines/tests/test_cli.py", "-k", "review_decide_classification"]
+timeout_seconds = 60
+profile = "portable-local"
