@@ -1,5 +1,13 @@
 # Implementing a TDD
 
+## Human at the terminal
+
+Run one local command block per operator action.
+
+Ask for the command output after each operator action.
+
+Keep failed output as Harness evidence.
+
 Run the Harness status command first.
 
 ```text
@@ -39,11 +47,58 @@ repeat `--scorecard <scorecard-json>` for explicit scorecard records.
 
 Report the requested and primary TDD paths, aliases, digest, task identifier, run identifier, lifecycle evidence, metrics path, and scorecard path.
 
-Use one local command block per operator action.
+## Agent with a checkout
 
-Ask for the command output after each operator action.
+An implementing agent that has the PR branch checked out runs the same commands directly.
 
-Keep failed output as Harness evidence.
+It does not relay instructions through a human at the terminal.
+
+It reports check results, the candidate receipt, or a concrete blocker on the PR.
+
+## Start from one PR URL
+
+Use this path when the handoff is a PR description and the branch is already fetched.
+
+1. Read the single `## Current Handoff` section in the PR description.
+   The section declares `Status`, `Spec commit`, `TDD`, and `Prerequisite`.
+2. Extract the PR description to a file outside the checkout.
+   Run this command from the checkout root.
+
+   ```text
+   gh pr view <pr-url> --json body --jq .body > "${TMPDIR:-/tmp}/kotekomi-handoff.md"
+   ```
+
+   An untracked file inside the checkout would dirty the worktree and block the Harness start.
+3. Run the read-only preflight with `uv run`.
+
+   ```text
+   uv run kotekomi-agent handoff-preflight "${TMPDIR:-/tmp}/kotekomi-handoff.md"
+   ```
+
+   The preflight does not contact GitHub, write repository files, or start a run.
+   It stops pickup when the handoff is missing, duplicated, blocked, malformed, or has a pending prerequisite.
+   It stops pickup when the pin is not a full lowercase SHA, does not resolve, or is not an ancestor of `HEAD`.
+   It stops pickup when the TDD or Task Manifest V2 is missing, does not bind the pin, or differs from the checkout.
+   It stops pickup when the manifest task identifier is not the identifier the Harness derives from the pinned TDD.
+4. Run the returned `start_command` only when the preflight reports `ready`.
+   The command is `uv run kotekomi-agent implement-tdd <tdd-path> --specification-commit <full-sha>`.
+5. Continue with the Harness status command and the human-at-the-terminal commands above.
+
+## Current Handoff Authority
+
+The PR description holds exactly one active handoff.
+
+Comments can propose or explain a change; they cannot replace the handoff.
+
+A replacement pin is an edit to the `Spec commit` field in the PR description.
+
+A replacement TDD revision uses a new path, so the Harness derives a new task identifier and the old evidence remains valid.
+
+Do not infer a pin from the branch tip and do not follow an older handoff in a comment.
+
+When the author cannot update the PR description, stop pickup and report the blocker on the PR.
+
+A comment is not the canonical fallback.
 
 ## Specification Source
 
