@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import subprocess
 import tomllib
 from datetime import UTC, datetime
@@ -35,6 +36,7 @@ PHASE_REQUIREMENTS = {
     "complete": {"task_result", "cleanup"},
 }
 _TERMINAL_RUN_STATUSES = {"complete", "abandoned", "superseded"}
+_SPECIFICATION_COMMIT = re.compile(r"^[0-9a-f]{40}$")
 
 
 def _write(path: Path, value: Json) -> None:
@@ -395,6 +397,7 @@ def implement_tdd(
     markdown: Path | None = None,
     new_run: bool = False,
     abandon_run: str | None = None,
+    specification_commit: str | None = None,
 ) -> tuple[int, Json]:
     root = state_root(state_root_path)
     if new_run and abandon_run:
@@ -506,18 +509,20 @@ def implement_tdd(
             or manifest_tdd_sha256 != binding["tdd_sha256"]
             or manifest_tdd_path not in cast(list[str], binding["tdd_paths"])
         ):
+            manifest_diagnostics: list[Json] = [
+                {
+                    "code": "workflow.manifest_invalid",
+                    "location": "/manifest",
+                    "rule": "binding_identity_matches_valid_manifest",
+                }
+            ]
+            mark_run_blocked(root, task, run_id, manifest_diagnostics)
             return 1, {
                 "schema_version": 1,
                 "status": "blocked",
                 "task_id": task,
                 "implementation_run_id": run_id,
-                "diagnostics": [
-                    {
-                        "code": "workflow.manifest_invalid",
-                        "location": "/manifest",
-                        "rule": "binding_identity_matches_valid_manifest",
-                    }
-                ],
+                "diagnostics": manifest_diagnostics,
             }
         if manifest_identity.get("schema_version") == 1:
             return 0, {
@@ -540,7 +545,34 @@ def implement_tdd(
             }
         if manifest_identity.get("schema_version") == 2:
             try:
-                specification = _record_specification(root, task, run_id, manifest)
+                specification = _record_specification(
+                    root,
+                    task,
+                    run_id,
+                    manifest,
+                    specification_commit=specification_commit,
+                    binding=binding,
+                )
+            except EvidenceError as error:
+                specification_diagnostics: list[Json] = [
+                    {
+                        "code": "workflow.specification_invalid",
+                        "location": "/specification",
+                        "rule": str(error),
+                    }
+                ]
+                mark_run_blocked(root, task, run_id, specification_diagnostics)
+                return 1, {
+                    "schema_version": 1,
+                    "status": "blocked",
+                    "task_id": task,
+                    "implementation_run_id": run_id,
+                    "diagnostics": specification_diagnostics,
+                }
+            try:
+                expected_branch = (
+                    _current_branch() if specification_commit is not None else f"feature/{task}"
+                )
                 existing = next(
                     (
                         item
@@ -552,7 +584,7 @@ def implement_tdd(
                 if existing is not None:
                     branch = _read(root / existing["path"])
                     if (
-                        branch.get("branch") != f"feature/{task}"
+                        branch.get("branch") != expected_branch
                         or branch.get("specification_revision") != specification
                     ):
                         raise EvidenceError(
@@ -566,22 +598,28 @@ def implement_tdd(
                         specification_revision=specification,
                         manifest_sha256=hashlib.sha256(manifest.read_bytes()).hexdigest(),
                         state_root_path=root,
+                        existing_branch=(
+                            expected_branch if specification_commit is not None else None
+                        ),
                     )
                     feature_branch = cast(str, branch_result.payload["branch"])
             except (EvidenceError, LifecycleEvidenceError) as error:
+                feature_diagnostics: list[Json] = [
+                    {
+                        "code": "workflow.feature_branch_invalid",
+                        "location": "/feature_branch",
+                        "rule": str(error),
+                    }
+                ]
+                mark_run_blocked(root, task, run_id, feature_diagnostics)
                 return 1, {
                     "schema_version": 1,
                     "status": "blocked",
                     "task_id": task,
                     "implementation_run_id": run_id,
-                    "diagnostics": [
-                        {
-                            "code": "workflow.feature_branch_invalid",
-                            "location": "/feature_branch",
-                            "rule": str(error),
-                        }
-                    ],
+                    "diagnostics": feature_diagnostics,
                 }
+            mark_run_active(root, task, run_id)
     try:
         rebuild_index(root, task, run_id)
         entries = validated_entries(root, task, run_id)
@@ -649,6 +687,42 @@ def implement_tdd(
         markdown.parent.mkdir(parents=True, exist_ok=True)
         markdown.write_text(f"# Implement TDD\n\nPhase: `{phase}`\n\nNext action: `{action}`\n")
     return 0, result
+
+
+def _set_run_status(
+    root: Path, task: str, run_id: str, *, status: str, diagnostics: list[Json]
+) -> None:
+    """Persist one non-terminal run status with its current diagnostics."""
+    index_path, index = _runs(root, task)
+    row = next(
+        (item for item in index["runs"] if item["implementation_run_id"] == run_id),
+        None,
+    )
+    if row is None:
+        raise ValueError("run status requires an existing run")
+    if row["status"] in _TERMINAL_RUN_STATUSES:
+        raise ValueError("terminal run status cannot change")
+    now = datetime.now(UTC).isoformat()
+    row["status"] = status
+    row["updated_at"] = now
+    record_path = root / row["run_record_path"]
+    record = _read(record_path)
+    record["status"] = status
+    record["diagnostics"] = diagnostics
+    record["updated_at"] = now
+    _write(record_path, record)
+    index["latest_run_id"] = (_latest(index) or {}).get("implementation_run_id")
+    _write(index_path, index)
+
+
+def mark_run_active(root: Path, task: str, run_id: str) -> None:
+    """Clear a persisted blocker after the run advances again."""
+    _set_run_status(root, task, run_id, status="active", diagnostics=[])
+
+
+def mark_run_blocked(root: Path, task: str, run_id: str, diagnostics: list[Json]) -> None:
+    """Persist the same blocker returned by the workflow status."""
+    _set_run_status(root, task, run_id, status="blocked", diagnostics=diagnostics)
 
 
 def mark_run_complete(root: Path, task: str, run_id: str) -> None:
@@ -723,8 +797,16 @@ def _has_complete_supersession_evidence(root: Path, task: str, run_id: str) -> b
     )
 
 
-def _record_specification(root: Path, task: str, run_id: str, manifest: Path) -> str:
-    """Persist the clean current-main specification once for a V2 run."""
+def _record_specification(
+    root: Path,
+    task: str,
+    run_id: str,
+    manifest: Path,
+    *,
+    specification_commit: str | None,
+    binding: Json,
+) -> str:
+    """Persist one immutable specification revision for a V2 run."""
     path = root / canonical_relative("specification_revision", task, run_id, "specification")[1]
     manifest_sha256 = hashlib.sha256(manifest.read_bytes()).hexdigest()
     if path.is_file():
@@ -732,9 +814,41 @@ def _record_specification(root: Path, task: str, run_id: str, manifest: Path) ->
         if payload.get("manifest_sha256") != manifest_sha256:
             raise EvidenceError("specification manifest conflict")
         revision = payload.get("specification_revision")
-        if isinstance(revision, str):
-            return revision
-        raise EvidenceError("specification revision is invalid")
+        if not isinstance(revision, str):
+            raise EvidenceError("specification revision is invalid")
+        if specification_commit is not None and revision != specification_commit:
+            raise EvidenceError("specification revision conflicts with the selected commit")
+        return revision
+    if specification_commit is not None:
+        revision = _resolve_specification_commit(specification_commit)
+        status = _git("status", "--porcelain")
+        if status.returncode != 0 or status.stdout:
+            raise EvidenceError("specification commit requires a clean worktree")
+        tdd_path = str(binding["primary_tdd_path"])
+        tdd_sha256 = hashlib.sha256(_specification_bytes(revision, tdd_path)).hexdigest()
+        if tdd_sha256 != binding["tdd_sha256"]:
+            raise EvidenceError("specification TDD differs from the bound TDD")
+        manifest_path = manifest.relative_to(Path.cwd()).as_posix()
+        # The working tree manifest must be byte-identical to the selected commit.
+        # The preceding Task Manifest validation then applies to those exact bytes.
+        if _specification_bytes(revision, manifest_path) != manifest.read_bytes():
+            raise EvidenceError("specification manifest differs from the selected commit")
+        write_canonical_record(
+            root,
+            task,
+            run_id,
+            phase="spec",
+            evidence_type="specification_revision",
+            subject_id="specification",
+            payload={
+                "schema_version": 1,
+                "specification_revision": revision,
+                "manifest_sha256": manifest_sha256,
+                "diagnostics": [],
+            },
+            producer_command="implement-tdd",
+        )
+        return revision
     branch = _git("branch", "--show-current")
     head = _git("rev-parse", "HEAD")
     origin_main = _git("rev-parse", "origin/main")
@@ -769,6 +883,40 @@ def _record_specification(root: Path, task: str, run_id: str, manifest: Path) ->
         producer_command="implement-tdd",
     )
     return revision
+
+
+def _resolve_specification_commit(value: str) -> str:
+    """Resolve one full immutable specification SHA on the current branch."""
+    if not _SPECIFICATION_COMMIT.fullmatch(value):
+        raise EvidenceError("specification commit must be a full lowercase SHA-1")
+    resolved = _git("rev-parse", "--verify", f"{value}^{{commit}}")
+    if resolved.returncode != 0 or resolved.stdout.strip() != value:
+        raise EvidenceError("specification commit does not resolve to the selected commit")
+    head = _git("rev-parse", "HEAD")
+    if head.returncode != 0:
+        raise EvidenceError("specification commit requires a current HEAD")
+    if _git("merge-base", "--is-ancestor", value, head.stdout.strip()).returncode != 0:
+        raise EvidenceError("specification commit must be an ancestor of HEAD")
+    return value
+
+
+def _specification_bytes(revision: str, path: str) -> bytes:
+    """Return the exact bytes of one path at a specification commit."""
+    result = subprocess.run(["git", "show", f"{revision}:{path}"], capture_output=True, check=False)
+    if result.returncode != 0:
+        raise EvidenceError(f"specification commit does not contain {path}")
+    return result.stdout
+
+
+def _current_branch() -> str:
+    """Return the current non-main branch for an existing-branch run."""
+    branch = _git("branch", "--show-current")
+    name = branch.stdout.strip()
+    if branch.returncode != 0 or not name:
+        raise EvidenceError("existing feature branch mode requires a current branch")
+    if name == "main":
+        raise EvidenceError("existing feature branch mode requires a non-main branch")
+    return name
 
 
 def _git(*arguments: str) -> subprocess.CompletedProcess[str]:

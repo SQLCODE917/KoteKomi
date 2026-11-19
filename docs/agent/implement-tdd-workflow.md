@@ -51,6 +51,18 @@ A pushed specification branch that contains the TDD and Task Manifest V2 is a va
 
 The specification branch does not need to merge to `main` before implementation starts.
 
-Use the specification branch head as the specification revision and work on `feature/<task-id>`.
+Select the immutable specification commit explicitly.
 
-When the Harness blocks only because the specification is not on `main`, record that status as a Harness limitation and continue under operator authorization.
+```text
+kotekomi-agent implement-tdd <tdd-path> --specification-commit <full-sha>
+```
+
+The Harness requires the selected commit to be an ancestor of `HEAD`, a clean worktree, a matching TDD binding, and byte-identical Task Manifest bytes.
+
+It records the selected commit, manifest digest, and existing non-`main` branch as the feature branch.
+
+It does not create or push a new feature branch in this mode.
+
+Later implementation commits and pushes do not change the persisted specification record.
+
+The default command without `--specification-commit` retains the clean current-main path.

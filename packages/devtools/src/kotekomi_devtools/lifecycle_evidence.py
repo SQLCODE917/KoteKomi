@@ -78,34 +78,47 @@ def create_feature_branch(
     specification_revision: str,
     manifest_sha256: str,
     state_root_path: Path | None,
+    existing_branch: str | None = None,
     output: Path | None = None,
     markdown: Path | None = None,
 ) -> LifecycleEvidenceResult:
-    """Create one task branch at a persisted specification revision without switching HEAD."""
+    """Create a task branch or record an existing branch at a persisted specification revision."""
     specification = _resolve_commit(specification_revision)
-    branch = f"feature/{task_id}"
+    branch = existing_branch or f"feature/{task_id}"
     local = _ref_commit(f"refs/heads/{branch}")
     remote = _remote_ref_commit(branch)
-    if (
-        local is not None
-        and local != specification
-        or remote is not None
-        and remote != specification
-    ):
-        raise LifecycleEvidenceError("feature branch conflicts with specification revision")
-    created_local = local is None
-    if created_local:
-        _require_success(_git("branch", branch, specification), "feature branch creation failed")
-        local = specification
-    if remote is None:
-        pushed = _git("push", "origin", f"refs/heads/{branch}:refs/heads/{branch}")
-        if pushed.returncode != 0:
-            if created_local:
-                _git("update-ref", "-d", f"refs/heads/{branch}", specification)
-            raise LifecycleEvidenceError("feature branch push failed")
-        remote = _remote_ref_commit(branch)
-    if local != specification or remote != specification:
-        raise LifecycleEvidenceError("feature branch conflicts with specification revision")
+    if existing_branch is None:
+        if (
+            local is not None
+            and local != specification
+            or remote is not None
+            and remote != specification
+        ):
+            raise LifecycleEvidenceError("feature branch conflicts with specification revision")
+        created_local = local is None
+        if created_local:
+            _require_success(
+                _git("branch", branch, specification), "feature branch creation failed"
+            )
+            local = specification
+        if remote is None:
+            pushed = _git("push", "origin", f"refs/heads/{branch}:refs/heads/{branch}")
+            if pushed.returncode != 0:
+                if created_local:
+                    _git("update-ref", "-d", f"refs/heads/{branch}", specification)
+                raise LifecycleEvidenceError("feature branch push failed")
+            remote = _remote_ref_commit(branch)
+        if local != specification or remote != specification:
+            raise LifecycleEvidenceError("feature branch conflicts with specification revision")
+    else:
+        if existing_branch == "main":
+            raise LifecycleEvidenceError("existing feature branch must not be main")
+        if local is None or remote is None:
+            raise LifecycleEvidenceError("existing feature branch requires local and remote refs")
+        if not _is_ancestor(specification, local) or not _is_ancestor(specification, remote):
+            raise LifecycleEvidenceError(
+                "existing feature branch must contain the specification revision"
+            )
     payload: Json = {
         "schema_version": 1,
         "branch": branch,
