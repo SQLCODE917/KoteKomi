@@ -389,3 +389,76 @@ def test_governed_to_complement_without_a_direct_object_does_not_hold() -> None:
     assert result.status is DecontextualizationStatus.PROPOSITION
     assert result.hold_reason is None
     assert result.object is None
+
+
+def test_indirect_object_only_selection_does_not_activate_the_governed_action_hold() -> None:
+    """The guard requires a selected direct object, not an indirect object."""
+    source = "Sacks emailed Amodei to review the file."
+    tokens = _typed_words(
+        source,
+        [
+            ("Sacks", "emailed", "nsubj", "sacks", "PROPN"),
+            ("emailed", None, "root", "email", "VERB"),
+            ("Amodei", "emailed", "iobj", "amodei", "PROPN"),
+            ("to", "review", "mark", "to", "PART"),
+            ("review", "emailed", "xcomp", "review", "VERB"),
+            ("the", "file", "det", "the", "DET"),
+            ("file", "review", "obj", "file", "NOUN"),
+        ],
+    )
+    constituents = (
+        _constituent(source, "AHE-916", ("t1",), "Sacks", "Sacks"),
+        _constituent(source, "AHE-916", ("t2",), "emailed", "emailed"),
+        _constituent(source, "AHE-916", ("t3",), "Amodei", "Amodei"),
+    )
+    entities = (_entity("EGE-916", "actor", "Sacks", source, "Sacks", "Sacks"),)
+    result = _compose(
+        event_id="AHE-916",
+        source=source,
+        tokens=tokens,
+        constituents=constituents,
+        selected_indexes=(1, 2, 3),
+        entities=entities,
+        head_lemma="email",
+    )
+    assert result.status is DecontextualizationStatus.PROPOSITION
+    assert result.hold_reason is None
+    assert result.object is not None and result.object.object_value == "Amodei"
+
+
+def test_unsupported_trigger_oblique_precedes_the_governed_action_hold() -> None:
+    """An earlier unsupported time-place hold stays authoritative in composition."""
+    source = "The agency authorized its workers to use the tools with the lawyers."
+    tokens = _typed_words(
+        source,
+        [
+            ("The", "agency", "det", "the", "DET"),
+            ("agency", "authorized", "nsubj", "agency", "NOUN"),
+            ("authorized", None, "root", "authorize", "VERB"),
+            ("its", "workers", "det", "its", "PRON"),
+            ("workers", "authorized", "obj", "worker", "NOUN"),
+            ("to", "use", "mark", "to", "PART"),
+            ("use", "authorized", "xcomp", "use", "VERB"),
+            ("the", "tools", "det", "the", "DET"),
+            ("tools", "use", "obj", "tool", "NOUN"),
+            ("with", "lawyers", "case", "with", "ADP"),
+            ("lawyers", "authorized", "obl", "lawyer", "NOUN"),
+        ],
+    )
+    constituents = (
+        _constituent(source, "AHE-917", ("t1", "t2"), "The", "agency"),
+        _constituent(source, "AHE-917", ("t3",), "authorized", "authorized"),
+        _constituent(source, "AHE-917", ("t4", "t5"), "its", "workers"),
+    )
+    entities = (_entity("EGE-917", "organization", "agency", source, "agency", "agency"),)
+    result = _compose(
+        event_id="AHE-917",
+        source=source,
+        tokens=tokens,
+        constituents=constituents,
+        selected_indexes=(1, 2, 3),
+        entities=entities,
+        head_lemma="authorize",
+    )
+    assert result.status is DecontextualizationStatus.HELD
+    assert result.hold_reason is DecontextualizationHoldReason.UNSUPPORTED_TIME_PLACE

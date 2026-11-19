@@ -223,6 +223,18 @@ def _decide(journey: Journey, predicate: str):
     )
 
 
+def _overlay_capture_token(
+    journey: Journey, *, token_id: str, dependency_relation: str, head_token_id: str
+) -> None:
+    """Rewrite one disposable capture token to exercise a focused boundary shape."""
+    path = journey.state / "token-artifacts" / "nod_f1e64380625a2f2c533fc277_0011.json"
+    payload: dict[str, Any] = json.loads(path.read_text())
+    token = next(item for item in payload["tokens"] if item["token_id"] == token_id)
+    token["dependency_relation"] = dependency_relation
+    token["head_token_id"] = head_token_id
+    path.write_text(json.dumps(payload))
+
+
 @pytest.mark.parametrize(("predicate", "subject", "object_text", "time"), CASES)
 def test_captured_input_packet_to_replay(
     tmp_path: Path, predicate: str, subject: str, object_text: str, time: str | None
@@ -396,6 +408,97 @@ def test_captured_incomplete_authorization_holds_to_saved_replay(tmp_path: Path)
     assert records[-1].data["status"] == "held"
     assert records[-1].data["hold_reason"] == "unsupported_predicate_complement"
     assert records[-1].data.get("assertion_status") is None
+
+
+def test_mixed_blocker_keeps_the_earlier_hold_authoritative(tmp_path: Path) -> None:
+    """An unsupported trigger oblique remains authoritative over the new preview."""
+    journey = _journey(tmp_path, "authorized")
+    _overlay_capture_token(journey, token_id="t64", dependency_relation="obl", head_token_id="t71")
+    packet = journey.packet()
+
+    assert packet.hold_reason == "unsupported_time_place"
+    assert packet.object_text == "its  workers"
+    assert packet.time_qualifier_text is None
+    assert packet.statement_end == 564
+    statement = packet.source_text[packet.statement_start : packet.statement_end]
+    assert "to  use  commercial  artificial  intelligence  systems" in statement
+    assert statement.endswith("until  May  2025")
+
+    review = _decide(journey, "authorized")
+    assert review.identity_occurrence_id
+    assert review.statement_evidence_target_id
+
+    first = journey.recompose()
+    assert first.status is EventCompositionStatus.HELD
+    assert first.hold_reason == "unsupported_time_place"
+    assert first.assertion is None
+
+    readback = journey.packet()
+    assert readback.hold_reason == "unsupported_time_place"
+    assert readback.statement_end == 564
+    assert readback.existing_review_id == review.id
+
+    with sqlite_ledger_transaction(journey.ledger) as ledger:
+        assert ledger.list_assertions() == ()
+        assert not [
+            change
+            for change in ledger.list_proposed_changes()
+            if change.proposed_json.get("record_type") == "Assertion"
+        ]
+        target = ledger.get_evidence_target(review.statement_evidence_target_id)
+        assert target is not None
+        validate_evidence_target_record(target, ledger)
+        assert target.end_char == packet.node_start_char + 564
+
+    store = CompositionOutcomeStore(journey.state / "composition-outcomes")
+    assert store.load(journey.event_id) == first
+    annotation = store.annotations((journey.event_id,))[0]
+    assert annotation.assertion is None
+    assert annotation.hold_reason == "unsupported_time_place"
+
+    paragraphs = load_paragraph_inputs(journey.ledger, journey.archive, ingestion_run_id=RUN)
+    snapshots: list[ParagraphSnapshot] = []
+    session = create_inspection_session(journey.ledger, on_snapshot=snapshots.append)
+    session.replay_stored(paragraphs, None, 0.0, Event())
+    assert not session.presentation_failed
+    records = [
+        record
+        for snapshot in snapshots
+        for record in composition_inspection_records(snapshot.profile)
+        if record.record_id == journey.event_id
+    ]
+    assert records
+    assert records[-1].data["hold_reason"] == "unsupported_time_place"
+    assert records[-1].data.get("assertion_status") is None
+
+
+def test_indirect_object_selection_does_not_activate_the_governed_action_hold(
+    tmp_path: Path,
+) -> None:
+    """An indirect-object-only selection keeps the existing composition behavior."""
+    journey = _journey(tmp_path, "authorized")
+    _overlay_capture_token(journey, token_id="t73", dependency_relation="iobj", head_token_id="t71")
+    packet = journey.packet()
+
+    assert packet.object_text == "its  workers"
+    assert packet.hold_reason is None
+    assert packet.time_qualifier_text is None
+    assert packet.statement_end == 457
+
+    _decide(journey, "authorized")
+    record = journey.recompose()
+    assert record.status is EventCompositionStatus.COMPOSED
+    assert record.assertion is not None
+    assert record.assertion.object_value == "its  workers"
+    assert record.assertion.qualifiers == {"polarity": "affirmed", "modality": "actual"}
+
+    with sqlite_ledger_transaction(journey.ledger) as ledger:
+        proposals = [
+            change
+            for change in ledger.list_proposed_changes()
+            if change.proposed_json.get("record_type") == "Assertion"
+        ]
+        assert len(proposals) == 1
 
 
 @pytest.mark.parametrize("failure_stage", ["decision", "proposal", "outcome"])

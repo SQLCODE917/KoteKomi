@@ -1079,9 +1079,13 @@ def build_decontextualized_proposition(
 
     # A direct object can name only the recipient of an action the trigger
     # governs as an open clausal complement. Representing that object alone would
-    # drop the permitted action and its limit, so hold instead.
+    # drop the permitted action and its limit, so hold instead. An indirect
+    # object alone keeps its existing composition behavior.
+    direct_object_selected = (
+        bool(object_dependents) and object_dependents[0].dependency_relation == "obj"
+    )
     if (
-        object_dependents
+        direct_object_selected
         and object_role is not None
         and derive_unrepresented_governed_actions(
             source_text=source_text,

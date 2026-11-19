@@ -19,9 +19,11 @@ from kotekomi_adapters import sqlite_ledger_transaction
 from kotekomi_adapters.composition_outcome_store import CompositionOutcomeStore
 from kotekomi_application import (
     ConstituentCandidateInventory,
+    DecontextualizationRoleKind,
     EventCompositionRecord,
     EventConstructionDecisionInput,
     EventConstructionReviewError,
+    EventEntityLinguisticToken,
     EventReviewPacket,
     ObjectComplementUnsupported,
     ReviewCandidateIdentity,
@@ -231,8 +233,20 @@ def _build_event_review_packet(
     object_text = (
         None if completed_object_range is None else paragraph.text[slice(*completed_object_range)]
     )
+    object_argument_head_id = next(
+        (
+            role.argument_head_token_id
+            for role in selection.realized_roles
+            if role.role is DecontextualizationRoleKind.OBJECT
+        ),
+        None,
+    )
+    selected_object_is_direct = any(
+        token.token_id == object_argument_head_id and token.dependency_relation == "obj"
+        for token in artifact.tokens
+    )
     governed_actions: tuple[SourceRange, ...] = ()
-    if object_range is not None:
+    if object_range is not None and selected_object_is_direct:
         represented_role_ranges: list[SourceRange] = []
         for fragment in (subject_range, completed_object_range):
             if fragment is None:
@@ -248,11 +262,7 @@ def _build_event_review_packet(
             trigger_head_end=event.trigger_span.end,
             represented_ranges=tuple(represented_role_ranges),
         )
-    preview_hold = (
-        complement_hold
-        if complement_hold is not None
-        else ("unsupported_predicate_complement" if governed_actions else None)
-    )
+    time_hold: str | None = None
     try:
         time_qualifier = derive_trigger_time_qualifier(
             event_id=event_id,
@@ -263,10 +273,23 @@ def _build_event_review_packet(
         )
     except TriggerTimeUnsupported:
         time_qualifier = None
+        if _trigger_carries_oblique(
+            artifact.tokens, event.trigger_span.start, event.trigger_span.end
+        ):
+            time_hold = "unsupported_time_place"
     time_range = (
         None
         if time_qualifier is None
         else (time_qualifier.exact_range.start, time_qualifier.exact_range.end)
+    )
+    preview_hold = (
+        time_hold
+        if time_hold is not None
+        else (
+            complement_hold
+            if complement_hold is not None
+            else ("unsupported_predicate_complement" if governed_actions else None)
+        )
     )
     subject_span = subject_range
     candidates = tuple(
@@ -299,6 +322,14 @@ def _build_event_review_packet(
         if document is None:
             raise EventConstructionReviewError("The selected Event has no archived Document.")
         source_id = document.source_id
+    persisted_hold = None if outcome is None else outcome.hold_reason
+    # Before review, the packet shows its actionable structural preview. After
+    # review, the persisted recomposition result is the authoritative readback.
+    hold_reason = (
+        preview_hold
+        if review is None and preview_hold is not None
+        else (persisted_hold if persisted_hold is not None else preview_hold)
+    )
     packet = EventReviewPacket(
         ingestion_run_id=ingestion_run_id,
         event_id=event_id,
@@ -334,16 +365,36 @@ def _build_event_review_packet(
         candidates=candidates,
         accepted_identity_ids=accepted,
         required_decisions=() if review is not None else _REQUIRED_DECISIONS,
-        hold_reason=(
-            preview_hold
-            if preview_hold is not None
-            else (None if outcome is None else outcome.hold_reason)
-        ),
+        hold_reason=hold_reason,
         existing_review_id=None if review is None else review.id,
         evidence_target_id=None if review is None else review.evidence_target_id,
     )
     validate_packet_bindings(packet)
     return packet
+
+
+def _trigger_carries_oblique(
+    tokens: tuple[EventEntityLinguisticToken, ...],
+    trigger_head_start: int,
+    trigger_head_end: int,
+) -> bool:
+    """Return whether the trigger head directly governs one oblique dependent."""
+    head = next(
+        (
+            token
+            for token in tokens
+            if token.start <= trigger_head_start and trigger_head_end <= token.end
+        ),
+        None,
+    )
+    if head is None:
+        return False
+    return any(
+        token.head_token_id == head.token_id
+        and token.sentence_id == head.sentence_id
+        and token.dependency_relation == "obl"
+        for token in tokens
+    )
 
 
 def _statement_start(
