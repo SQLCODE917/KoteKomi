@@ -8,7 +8,7 @@ kotekomi-agent implement-tdd <tdd-path>
 
 Treat the status record as the lifecycle authority.
 
-Stop when the status reports a blocker outside the specification-source limitation below.
+Stop when the status reports a blocker.
 
 Use the reported `next_action` and `producer_arguments`.
 
@@ -57,7 +57,7 @@ Select the immutable specification commit explicitly.
 kotekomi-agent implement-tdd <tdd-path> --specification-commit <full-sha>
 ```
 
-The Harness requires the selected commit to be an ancestor of `HEAD`, a clean worktree, a matching TDD binding, and byte-identical Task Manifest bytes.
+The Harness requires the selected commit to be an ancestor of `HEAD`, a clean worktree, a matching TDD binding, byte-identical Task Manifest bytes, and a Task Manifest V2.
 
 It records the selected commit, manifest digest, and existing non-`main` branch as the feature branch.
 

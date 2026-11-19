@@ -78,7 +78,7 @@ def _run_check(
     )
 
 
-def _write_manifest(repo: Path, *, baseline: str) -> tuple[str, Path]:
+def _write_manifest(repo: Path, *, baseline: str, version: int = 2) -> tuple[str, Path]:
     tdd = repo / "docs" / "leaf.md"
     tdd.parent.mkdir(parents=True, exist_ok=True)
     tdd.write_text("# Leaf\n")
@@ -89,7 +89,7 @@ def _write_manifest(repo: Path, *, baseline: str) -> tuple[str, Path]:
     manifest.write_text(
         "\n".join(
             [
-                "schema_version = 2",
+                f"schema_version = {version}",
                 f'task_id = "{task_id}"',
                 'title = "Leaf"',
                 'status = "ready_for_terra_high"',
@@ -151,7 +151,7 @@ def _write_manifest(repo: Path, *, baseline: str) -> tuple[str, Path]:
     return task_id, manifest
 
 
-def _repo(tmp_path: Path) -> tuple[Path, str, str, Path]:
+def _repo(tmp_path: Path, *, version: int = 2) -> tuple[Path, str, str, Path]:
     repo = tmp_path / "repo"
     repo.mkdir()
     _git(repo, "init", "--initial-branch", "main")
@@ -169,7 +169,7 @@ def _repo(tmp_path: Path) -> tuple[Path, str, str, Path]:
     base = _git(repo, "rev-parse", "HEAD")
     _git(repo, "push", "-u", "origin", "main")
     _git(repo, "checkout", "-b", BRANCH)
-    task_id, manifest = _write_manifest(repo, baseline=base)
+    task_id, manifest = _write_manifest(repo, baseline=base, version=version)
     _git(repo, "add", ".")
     _git(repo, "commit", "-m", "specification")
     specification = _git(repo, "rev-parse", "HEAD")
@@ -483,3 +483,30 @@ def test_missing_manifest_default_path_still_requests_creation(tmp_path: Path) -
     assert payload["status"] == "ready"
     assert payload["implementation_phase"] == "spec"
     assert payload["next_action"] == "create_task_manifest"
+
+
+def test_explicit_specification_requires_v2_manifest(tmp_path: Path) -> None:
+    repo, task_id, specification, _ = _repo(tmp_path, version=1)
+    state = tmp_path / "state"
+
+    blocked = _cli(
+        repo, state, "implement-tdd", "docs/leaf.md", "--specification-commit", specification
+    )
+
+    assert blocked.returncode == 1
+    payload = json.loads(blocked.stdout)
+    assert payload["status"] == "blocked"
+    assert payload["diagnostics"][0]["code"] == "workflow.specification_invalid"
+    assert "explicit_specification_requires_v2_manifest" in payload["diagnostics"][0]["rule"]
+    run_id = payload["implementation_run_id"]
+    run_record_path = state / "experiments" / task_id / "runs" / run_id / "run.json"
+    run_record = json.loads(run_record_path.read_text())
+    assert run_record["status"] == "blocked"
+    assert run_record["diagnostics"] == payload["diagnostics"]
+
+    historical = _cli(repo, tmp_path / "historical-state", "implement-tdd", "docs/leaf.md")
+
+    assert historical.returncode == 0
+    historical_payload = json.loads(historical.stdout)
+    assert historical_payload["status"] == "historical"
+    assert historical_payload["next_action"] is None

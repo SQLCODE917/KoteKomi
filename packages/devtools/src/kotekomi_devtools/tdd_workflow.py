@@ -541,6 +541,22 @@ def implement_tdd(
                 "diagnostics": manifest_diagnostics,
             }
         if manifest_identity.get("schema_version") == 1:
+            if specification_commit is not None:
+                v1_diagnostics: list[Json] = [
+                    {
+                        "code": "workflow.specification_invalid",
+                        "location": "/manifest",
+                        "rule": "explicit_specification_requires_v2_manifest",
+                    }
+                ]
+                mark_run_blocked(root, task, run_id, v1_diagnostics)
+                return 1, {
+                    "schema_version": 1,
+                    "status": "blocked",
+                    "task_id": task,
+                    "implementation_run_id": run_id,
+                    "diagnostics": v1_diagnostics,
+                }
             return 0, {
                 "schema_version": 1,
                 "status": "historical",
