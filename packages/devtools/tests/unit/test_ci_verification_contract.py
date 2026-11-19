@@ -4,6 +4,10 @@ The shard plan in `scripts/verify.sh` partitions the complete pytest collection
 that `testpaths` in `pyproject.toml` declares. Every node ID runs in exactly one
 shard, and the smoke selection only overlaps shards on purpose.
 
+The entry point keeps `./scripts/verify.sh` as the full local gate. Dispatch
+regressions stub `uv` and `git` to prove that the no-argument invocation,
+explicit `full`, and pytest-argument pass-through all reach the full gate.
+
 The CI matrix in `.github/workflows/ci.yml` must match that plan. The aggregate
 `verify` result must fail closed when a required job is missing, red, cancelled,
 skipped, or unknown.
@@ -12,6 +16,7 @@ skipped, or unknown.
 from __future__ import annotations
 
 import json
+import os
 import re
 import subprocess
 import sys
@@ -21,6 +26,7 @@ from typing import cast
 REPO_ROOT = Path(__file__).resolve().parents[4]
 VERIFY_SCRIPT = REPO_ROOT / "scripts" / "verify.sh"
 WORKFLOW = REPO_ROOT / ".github" / "workflows" / "ci.yml"
+STUB_COMMANDS = ("uv", "git", "qpdf", "pdftotext")
 COLLECTION_ARGUMENTS = (
     "-o",
     "addopts=",
@@ -60,6 +66,48 @@ def _run(argv: list[str]) -> subprocess.CompletedProcess[str]:
 
 def _verify(*arguments: str) -> subprocess.CompletedProcess[str]:
     return _run(["bash", str(VERIFY_SCRIPT), *arguments])
+
+
+def _stub_executable(directory: Path, name: str) -> None:
+    path = directory / name
+    path.write_text(
+        "#!/bin/sh\n"
+        'name="${0##*/}"\n'
+        'printf "%s" "$name" >> "$KOTEKOMI_STUB_LOG"\n'
+        'for argument in "$@"; do printf " %s" "$argument" >> "$KOTEKOMI_STUB_LOG"; done\n'
+        'printf "\\n" >> "$KOTEKOMI_STUB_LOG"\n',
+        encoding="utf-8",
+    )
+    path.chmod(0o755)
+
+
+def _dispatch_calls(tmp_path: Path, *arguments: str) -> list[str]:
+    stub_directory = tmp_path / "stub"
+    stub_directory.mkdir(parents=True)
+    for name in STUB_COMMANDS:
+        _stub_executable(stub_directory, name)
+
+    log = tmp_path / "stub.log"
+    log.write_text("", encoding="utf-8")
+    environment = {
+        **os.environ,
+        "PATH": f"{stub_directory}{os.pathsep}{os.environ.get('PATH', '')}",
+        "KOTEKOMI_STUB_LOG": str(log),
+    }
+    completed = subprocess.run(
+        ["bash", str(VERIFY_SCRIPT), *arguments],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+        env=environment,
+    )
+    assert completed.returncode == 0, completed.stderr
+    return [line for line in log.read_text(encoding="utf-8").splitlines() if line]
+
+
+def _pytest_call(*arguments: str) -> str:
+    return " ".join(("uv", "run", "pytest", *arguments))
 
 
 def _collect_node_ids(*paths: str) -> frozenset[str]:
@@ -287,3 +335,39 @@ def test_aggregate_gate_fails_closed() -> None:
         assert completed.returncode == expected, (
             f"aggregate returned {completed.returncode} for {arguments}: {completed.stderr}"
         )
+
+
+def test_no_argument_invocation_runs_the_full_gate(tmp_path: Path) -> None:
+    calls = _dispatch_calls(tmp_path)
+
+    assert "uv run python scripts/generate_schemas.py" in calls
+    assert "git diff --exit-code -- schemas" in calls
+    assert "uv run ruff format --check ." in calls
+    assert "uv run ruff check" in calls
+    assert "uv run pyright" in calls
+    assert _pytest_call("--durations=30") in calls
+
+
+def test_explicit_full_mode_runs_the_full_gate(tmp_path: Path) -> None:
+    assert _pytest_call("--durations=30") in _dispatch_calls(tmp_path, "full")
+
+
+def test_pytest_arguments_pass_through_to_the_full_gate(tmp_path: Path) -> None:
+    calls = _dispatch_calls(tmp_path, "--junitxml=report.xml")
+    assert _pytest_call("--durations=30", "--junitxml=report.xml") in calls
+
+
+def test_fast_mode_runs_the_smoke_selection(tmp_path: Path) -> None:
+    plan = _shard_plan()
+    smoke_arguments = _string_list(_plan_entry(plan, "smoke"), "pytest_arguments")
+    calls = _dispatch_calls(tmp_path, "fast")
+
+    assert _pytest_call(*smoke_arguments) in calls
+    assert _pytest_call("--durations=30") not in calls
+
+
+def test_shard_mode_runs_the_planned_selection(tmp_path: Path) -> None:
+    for shard in _plan_shards(_shard_plan()):
+        name = _string(shard, "name")
+        calls = _dispatch_calls(tmp_path / name, "shard", name)
+        assert _pytest_call(*_shard_arguments(shard)) in calls

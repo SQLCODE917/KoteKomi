@@ -366,7 +366,9 @@ An index download failure stops the job before installation or verification.
 
 ## 19. CI verification checks
 
-- verify shard coverage parity, smoke tool independence, CI matrix parity, and the fail-closed aggregate with `uv run pytest packages/devtools/tests/unit/test_ci_verification_contract.py`
+- verify shard coverage parity, explicit exclude assignment, smoke tool independence, CI matrix parity, the entry-point dispatch, and the fail-closed aggregate with `uv run pytest packages/devtools/tests/unit/test_ci_verification_contract.py`
 - run `./scripts/verify.sh fast` to prove the static and smoke gate passes with no PDF tooling
+- run `./scripts/verify.sh` with no arguments to prove the local full gate still runs schema drift, Ruff, Pyright, and the complete pytest collection
 - run `./scripts/verify.sh shard-plan` to inspect the shard plan and smoke selection
 - run `./scripts/verify.sh aggregate fast=success shard=success` to prove the aggregate accepts a green gate, and repeat it with a missing, red, cancelled, or skipped job to prove the gate fails closed
+- compare summed passed, failed, and skipped counts from each shard log against the baseline run; `-rs` prints every skip reason so execution parity is visible

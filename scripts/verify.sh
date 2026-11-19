@@ -74,7 +74,7 @@ smoke_paths=(
   "packages/exporters/tests"
 )
 
-pytest_prefix=(-p no:cacheprovider --durations=30)
+pytest_prefix=(-p no:cacheprovider -rs --durations=30)
 
 # Prints one pytest selection argument per line: paths, then explicit ignores.
 shard_selection() {
@@ -252,24 +252,21 @@ run_aggregate() {
 }
 
 mode="${1:-full}"
-
-if [ "$mode" = "full" ]; then
+if [ "$#" -gt 0 ]; then
   shift
-  run_full "$@"
-  exit 0
 fi
 
 case "$mode" in
+  full)
+    run_full "$@"
+    ;;
   fast)
-    shift
     run_fast "$@"
     ;;
   shard)
-    shift
     run_shard "$@"
     ;;
   shard-plan)
-    shift
     if [ "$#" -ne 0 ]; then
       printf 'shard-plan mode takes no extra arguments\n' >&2
       exit 2
@@ -277,14 +274,13 @@ case "$mode" in
     print_shard_plan
     ;;
   shard-needs-pdf-tools)
-    shift
     shard_needs_pdf_tools "$@"
     ;;
   aggregate)
-    shift
     run_aggregate "$@"
     ;;
   *)
-    run_full "$@"
+    # Backward-compatible pass-through: pytest arguments, not a mode name.
+    run_full "$mode" "$@"
     ;;
 esac
