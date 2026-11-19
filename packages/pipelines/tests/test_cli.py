@@ -1,16 +1,21 @@
+import hashlib
 import json
 from collections.abc import Generator
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
+from types import SimpleNamespace
 from typing import cast
 
 import kotekomi_pipelines.cli as cli
+import kotekomi_pipelines.event_review_workflow as event_review_workflow
 import pytest
 from kotekomi_adapters import SQLiteLedgerInitializer
 from kotekomi_application import (
     EntityLinkingInput,
     EntityLinkingPort,
+    EventConstructionDecisionInput,
+    EventReviewPacket,
     EventSemanticRoute,
     HybridEntityGroundingCommand,
     HybridEntityGroundingResult,
@@ -34,6 +39,7 @@ from kotekomi_application import (
     ModelRuntimeStatus,
     ReviewActionPlan,
     ReviewActionPlanInputRequirement,
+    ReviewCandidateIdentity,
     ReviewNextResult,
     ReviewPacket,
     ReviewPacketMetadata,
@@ -49,7 +55,15 @@ from kotekomi_application import (
     hybrid_extraction_preview_sha256,
     hybrid_reference_preview_sha256,
 )
-from kotekomi_domain import ReviewStatus, hybrid_event_semantics_profile_sha256
+from kotekomi_domain import (
+    AssertionType,
+    AttributionBasis,
+    EventConstructionReview,
+    IdentityOccurrenceKind,
+    ReviewStatus,
+    SourceAuthority,
+    hybrid_event_semantics_profile_sha256,
+)
 from kotekomi_pipelines.cli import main
 from kotekomi_pipelines.config import (
     CheckoutBuildIdentityError,
@@ -176,6 +190,275 @@ def test_review_next_assertion_template_requests_canonical_predicate() -> None:
     assert "--config" not in rendered
     assert rendered.index("--document-id") < rendered.index("--reviewer")
     assert rendered.index("--reviewer") < rendered.index("--canonical-predicate")
+
+
+_VALID_REVIEW_DECIDE_ARGUMENTS = [
+    "review",
+    "decide",
+    "--run",
+    "igr_fixture",
+    "--event",
+    "sge_fixture",
+    "--candidate-text",
+    "Amodei",
+    "--identity-kind",
+    "actor",
+    "--identity",
+    "new:Amodei",
+    "--predicate",
+    "criticized",
+    "--assertion-type",
+    "reported_observation",
+    "--source-authority",
+    "secondary",
+    "--attribution-basis",
+    "direct_document",
+    "--reviewer",
+    "analyst",
+]
+
+
+def _review_decide_arguments(**overrides: str) -> list[str]:
+    arguments = list(_VALID_REVIEW_DECIDE_ARGUMENTS)
+    for flag, value in overrides.items():
+        position = arguments.index(flag)
+        arguments[position + 1] = value
+    return arguments
+
+
+def _review_decide_config(tmp_path: Path) -> PipelineConfig:
+    return PipelineConfig(
+        ledger_path=tmp_path / "ledger.sqlite",
+        archive_path=tmp_path / "archive",
+        model_execution=ModelExecutionConfig(
+            adapter="fixture",
+            endpoint="fixture://local",
+            model="fixture",
+            timeout_seconds=1.0,
+            context_tokens=1024,
+            max_output_tokens=128,
+        ),
+        embedding_profiles={},
+        document_retrieval_embedding_profile_id=None,
+    )
+
+
+def _review_decide_packet() -> EventReviewPacket:
+    source_text = "Amodei criticized the policy."
+    digest = hashlib.sha256(source_text.encode()).hexdigest()
+    return EventReviewPacket(
+        ingestion_run_id="igr_fixture",
+        event_id="sge_fixture",
+        paragraph_node_id="nod_fixture",
+        representation_id="rep_fixture",
+        text_view_id="tvw_fixture",
+        text_view_digest=digest,
+        source_text_sha256=digest,
+        source_id="src_fixture",
+        document_id="doc_fixture",
+        node_start_char=0,
+        source_text=source_text,
+        trigger_start=7,
+        trigger_end=17,
+        relation_label="criticize",
+        subject_start=0,
+        subject_end=6,
+        subject_text="Amodei",
+        object_start=18,
+        object_end=28,
+        object_text="the policy",
+        statement_start=0,
+        statement_end=len(source_text),
+        candidates=(
+            ReviewCandidateIdentity(
+                start=0,
+                end=6,
+                exact_text="Amodei",
+                identity_name="Amodei",
+                subject_role=True,
+            ),
+        ),
+        accepted_identity_ids=(),
+        required_decisions=(),
+        hold_reason=None,
+        existing_review_id=None,
+        evidence_target_id=None,
+    )
+
+
+def test_review_decide_classification_parser_offers_only_supported_choices() -> None:
+    parser = cli.build_parser()
+
+    parsed = parser.parse_args(_review_decide_arguments())
+
+    assert parsed.assertion_type == "reported_observation"
+    assert parsed.source_authority == "secondary"
+    assert parsed.attribution_basis == "direct_document"
+    assert AssertionType(parsed.assertion_type) is AssertionType.REPORTED_OBSERVATION
+    assert SourceAuthority(parsed.source_authority) is SourceAuthority.SECONDARY
+    assert AttributionBasis(parsed.attribution_basis) is AttributionBasis.DIRECT_DOCUMENT
+
+    for authority in ("primary", "secondary", "tertiary", "unknown"):
+        parsed = parser.parse_args(_review_decide_arguments(**{"--source-authority": authority}))
+        assert SourceAuthority(parsed.source_authority) is SourceAuthority(authority)
+
+    for flag, value in (
+        ("--assertion-type", "reported_claim"),
+        ("--attribution-basis", "second_hand_report"),
+        ("--attribution-basis", "anonymous_report"),
+        ("--attribution-basis", "unknown"),
+        ("--assertion-type", "made_up"),
+        ("--source-authority", "made_up"),
+        ("--attribution-basis", "made_up"),
+    ):
+        with pytest.raises(SystemExit) as error:
+            parser.parse_args(_review_decide_arguments(**{flag: value}))
+        assert error.value.code == 2
+
+
+def test_review_decide_classification_rejects_unsupported_values_before_access(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    accessed: list[str] = []
+
+    def reject_config(
+        *,
+        config_path: Path | None,
+        ledger_path_override: Path | None,
+        archive_path_override: Path | None,
+        **_: object,
+    ) -> PipelineConfig:
+        accessed.append("config")
+        raise AssertionError("configuration accessed before argument validation")
+
+    def reject_packet(
+        *,
+        ledger_path: Path,
+        archive_path: Path,
+        ingestion_run_id: str,
+        event_id: str,
+    ) -> EventReviewPacket:
+        accessed.append("packet")
+        raise AssertionError("review packet accessed before argument validation")
+
+    def reject_record(**_: object) -> EventConstructionReview:
+        accessed.append("record")
+        raise AssertionError("review storage accessed before argument validation")
+
+    monkeypatch.setattr(cli, "load_config", reject_config)
+    monkeypatch.setattr(event_review_workflow, "build_event_review_packet", reject_packet)
+    monkeypatch.setattr(event_review_workflow, "record_review_decision", reject_record)
+
+    for flag, value in (
+        ("--assertion-type", "reported_claim"),
+        ("--attribution-basis", "second_hand_report"),
+        ("--attribution-basis", "anonymous_report"),
+        ("--attribution-basis", "unknown"),
+        ("--assertion-type", "made_up"),
+        ("--source-authority", "made_up"),
+        ("--attribution-basis", "made_up"),
+    ):
+        with pytest.raises(SystemExit) as error:
+            main(_review_decide_arguments(**{flag: value}))
+        assert error.value.code == 2
+
+    assert accessed == []
+
+
+def test_review_decide_classification_preserves_valid_command_arguments(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    captured: list[tuple[str, str, EventConstructionDecisionInput]] = []
+
+    def capture_decision(
+        *,
+        ledger_path: Path,
+        archive_path: Path,
+        ingestion_run_id: str,
+        event_id: str,
+        decision: EventConstructionDecisionInput,
+        now: datetime,
+    ) -> EventConstructionReview:
+        captured.append((ingestion_run_id, event_id, decision))
+        return cast(
+            EventConstructionReview,
+            SimpleNamespace(
+                id="ecr_fixture",
+                event_id=event_id,
+                subject_identity_id="act_fixture",
+                predicate=decision.predicate,
+                evidence_target_id="evt_fixture",
+            ),
+        )
+
+    def fake_config(**_: object) -> PipelineConfig:
+        return _review_decide_config(tmp_path)
+
+    def fake_packet(**_: object) -> EventReviewPacket:
+        return _review_decide_packet()
+
+    monkeypatch.setattr(cli, "load_config", fake_config)
+    monkeypatch.setattr(event_review_workflow, "build_event_review_packet", fake_packet)
+    monkeypatch.setattr(event_review_workflow, "record_review_decision", capture_decision)
+
+    assert main(_review_decide_arguments()) == 0
+
+    run_id, event_id, decision = captured[0]
+    assert run_id == "igr_fixture"
+    assert event_id == "sge_fixture"
+    assert decision.candidate_start == 0
+    assert decision.candidate_end == 6
+    assert decision.exact_text == "Amodei"
+    assert decision.identity_kind is IdentityOccurrenceKind.ACTOR
+    assert decision.identity_decision == "new_identity"
+    assert decision.identity_name == "Amodei"
+    assert decision.existing_identity_id is None
+    assert decision.predicate == "criticized"
+    assert decision.assertion_type is AssertionType.REPORTED_OBSERVATION
+    assert decision.source_authority is SourceAuthority.SECONDARY
+    assert decision.attribution_basis is AttributionBasis.DIRECT_DOCUMENT
+    assert decision.reviewer == "analyst"
+    assert json.loads(capsys.readouterr().out)["review_id"] == "ecr_fixture"
+
+
+def test_review_decide_classification_help_and_operator_guide_match_parser(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    parser = cli.build_parser()
+
+    with pytest.raises(SystemExit) as error:
+        parser.parse_args(["review", "decide", "--help"])
+
+    assert error.value.code == 0
+    help_text = capsys.readouterr().out
+    for supported in (
+        "reported_observation",
+        "primary",
+        "secondary",
+        "tertiary",
+        "unknown",
+        "direct_document",
+    ):
+        assert supported in help_text
+    for unsupported in ("reported_claim", "second_hand_report", "anonymous_report"):
+        assert unsupported not in help_text
+
+    guide = (Path(__file__).resolve().parents[3] / "docs" / "operator-ingestion.md").read_text(
+        encoding="utf-8"
+    )
+    for supported in (
+        "`reported_observation`",
+        "`primary`",
+        "`secondary`",
+        "`tertiary`",
+        "`unknown`",
+        "`direct_document`",
+    ):
+        assert supported in guide
+    for unsupported in ("reported_claim", "second_hand_report", "anonymous_report"):
+        assert unsupported not in guide
 
 
 def _fixture_review_packet(record_type: str, stable_label: str) -> ReviewPacket:

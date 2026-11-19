@@ -133,6 +133,7 @@ An index download failure stops the job before installation or verification.
 - run ProposedChange review Pipeline fixture with `uv run pytest packages/pipelines/tests/test_review_proposed_change.py`
 - run Review Queue and Review Packet Application tests with `uv run pytest packages/application/tests/test_review_queue_packet.py`
 - run Review Queue, Review Packet, and copyable review-action CLI checks with `uv run pytest packages/pipelines/tests/test_cli.py -k review`
+- verify `review decide` advertises only supported classifications and rejects unsupported values before configuration or review access with `uv run pytest packages/pipelines/tests/test_cli.py -k review_decide_classification`
 - verify Review Readiness and agent JSON state with `uv run pytest packages/application/tests/test_review_queue_packet.py packages/pipelines/tests/test_review_queue_packet.py`
 - verify Review-Next execution with `uv run pytest packages/application/tests/test_review_queue_packet.py packages/pipelines/tests/test_review_queue_packet.py`
 - verify Explicit Review-Next Decision Execution with `uv run pytest packages/application/tests/test_review_proposed_change.py packages/pipelines/tests/test_review_proposed_change.py`
