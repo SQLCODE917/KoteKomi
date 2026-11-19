@@ -5,9 +5,32 @@ repository root. This single script is what CI (`.github/workflows/ci.yml`)
 invokes, and it runs the complete gate — JSON Schema generation, the
 `git diff --exit-code -- schemas` drift check, `ruff format --check .`, `ruff check`, `pyright`, and
 `uv run pytest --durations=30` — so a local pass runs the same checks as CI.
-Additional arguments to `./scripts/verify.sh` pass through to pytest for JUnit output or focused diagnostics. CI provisions
-platform tooling first (Ubuntu `poppler-utils` + `qpdf`, Python 3.12,
-`KOTEKOMI_QPDF_EXECUTABLE=/usr/bin/qpdf`).
+Additional arguments to `./scripts/verify.sh` pass through to pytest for JUnit output or focused diagnostics.
+
+`./scripts/verify.sh fast` runs the same static checks plus the smoke selection
+and installs no platform tooling. The smoke selection covers `packages/briefing/tests`,
+`packages/devtools/tests/unit`, `packages/domain/tests`, and `packages/exporters/tests`; it needs no
+PDF tooling and no live inference, so it returns the first useful CI signal.
+`./scripts/verify.sh shard <name>` runs one full-suite shard.
+`./scripts/verify.sh shard-plan` prints the shard plan and smoke selection as JSON.
+`./scripts/verify.sh shard-needs-pdf-tools <name>` prints the plan's PDF tooling requirement.
+`./scripts/verify.sh aggregate <job>=<result> [...]` fails unless every required CI job reports `success`.
+
+The shard plan partitions the complete pytest collection: every node ID that
+pytest collects from `testpaths` runs in exactly one shard. The `pipelines`
+shard selects `packages/pipelines/tests` and excludes the three journey files
+that the `journeys` shard selects: `test_operator_journey.py`,
+`test_r20_ingestion_transition.py`, and `test_user_ingestion_run.py`.
+The smoke selection overlaps the shards on purpose. Each shard installs Poppler
+and qpdf only when its plan entry declares `needs_pdf_tools=true`.
+
+CI runs three jobs. `fast` runs `./scripts/verify.sh fast`. `shard` runs the
+matrix `[core, pipelines, journeys]` through `./scripts/verify.sh shard`. `verify`
+is the single stable aggregate result: it runs with `if: always()`, needs every
+other job, and fails when a required job is red, cancelled, skipped, missing, or
+unknown to the gate.
+
+CI provisions platform tooling before each shard whose plan entry declares `needs_pdf_tools=true` and before a local full gate (Ubuntu `poppler-utils` + `qpdf`, Python 3.12, `KOTEKOMI_QPDF_EXECUTABLE=/usr/bin/qpdf`). The `fast` job installs no platform tooling.
 CI installs PDF tools using explicit Ubuntu Noble archive and security sources with the Ubuntu archive signing key.
 Fresh package indexes and an empty additional-source directory keep the runner's Azure mirror configuration out of this installation.
 APT update and installation use the same source options, bounded retries, and connection timeouts.
@@ -340,3 +363,12 @@ An index download failure stops the job before installation or verification.
 - At closeout, distinguish implementation verification, capability demonstration, and package target status; a failed target ends the evaluation with `Target not met` and a scope decision rather than another automatic cycle.
 - Verify guidance changes with local-link resolution, `git diff --check`, and a consistency review across `AGENTS.md`, `agent/pipeline-improvement.md`, `agent/writing-tdds.md`, `agent/testing.md`, and `agent/output-format.md`.
 - This policy requires no new runtime, schema, instrumentation, or test framework; retain the applicable engineering and product checks for each implementation task.
+
+## 19. CI verification checks
+
+- verify shard coverage parity, explicit exclude assignment, smoke tool independence, CI matrix parity, the entry-point dispatch, and the fail-closed aggregate with `uv run pytest packages/devtools/tests/unit/test_ci_verification_contract.py`
+- run `./scripts/verify.sh fast` to prove the static and smoke gate passes with no PDF tooling
+- run `./scripts/verify.sh` with no arguments to prove the local full gate still runs schema drift, Ruff, Pyright, and the complete pytest collection
+- run `./scripts/verify.sh shard-plan` to inspect the shard plan and smoke selection
+- run `./scripts/verify.sh aggregate fast=success shard=success` to prove the aggregate accepts a green gate, and repeat it with a missing, red, cancelled, or skipped job to prove the gate fails closed
+- compare summed passed, failed, and skipped counts from each shard log against the baseline run; `-rs` prints every skip reason so execution parity is visible

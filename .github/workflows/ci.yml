@@ -5,20 +5,42 @@ on:
   pull_request:
 
 jobs:
-  verify:
+  fast:
+    name: fast
     runs-on: ubuntu-24.04
-    env:
-      KOTEKOMI_QPDF_EXECUTABLE: /usr/bin/qpdf
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
         with:
           python-version: "3.12"
+      - name: Run static checks and the smoke selection
+        run: ./scripts/verify.sh fast
+
+  shard:
+    name: shard ${{ matrix.shard }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [core, pipelines, journeys]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Read the shard plan
+        id: shard_plan
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf 'needs_pdf_tools=%s\n' \
+            "$(./scripts/verify.sh shard-needs-pdf-tools '${{ matrix.shard }}')" >> "$GITHUB_OUTPUT"
       - name: Install PDF tools from Ubuntu repositories
+        if: steps.shard_plan.outputs.needs_pdf_tools == 'true'
         timeout-minutes: 5
         shell: bash
         run: |
           set -euo pipefail
+          echo 'KOTEKOMI_QPDF_EXECUTABLE=/usr/bin/qpdf' >> "$GITHUB_ENV"
           apt_root="$RUNNER_TEMP/kotekomi-apt"
           mkdir -p "$apt_root/lists/partial" "$apt_root/sources.list.d"
           cat > "$apt_root/ubuntu.sources" <<'EOF'
@@ -44,4 +66,24 @@ jobs:
           )
           sudo apt-get "${apt_options[@]}" --error-on=any update
           sudo apt-get "${apt_options[@]}" install --yes poppler-utils qpdf
-      - run: ./scripts/verify.sh
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+      - name: Run the pytest shard
+        run: ./scripts/verify.sh shard "${{ matrix.shard }}"
+
+  verify:
+    name: verify
+    if: always()
+    needs: [fast, shard]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Require every required job to succeed
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./scripts/verify.sh aggregate \
+            "fast=${{ needs.fast.result }}" \
+            "shard=${{ needs.shard.result }}"
