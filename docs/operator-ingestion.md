@@ -149,7 +149,10 @@ occurrence association, and a `ProvenanceActivity` together, and stores one appr
 construction review bound to the run, paragraph, and source digest.
 A repeated identical decision returns the stored review and writes nothing; a different
 decision for the same Event is rejected.
-The example uses the classification choices verified by the captured operator journeys.
+`--assertion-type` accepts only `reported_observation`.
+`--source-authority` accepts `primary`, `secondary`, `tertiary`, or `unknown`.
+`--attribution-basis` accepts only `direct_document`.
+Unsupported values fail with parser exit code 2 before configuration or review-packet access.
 
 4. A review hold stays visible. `unsupported_object_complement` means the object governs a
    clause or coordination this construction cannot represent; the Event stays held and no

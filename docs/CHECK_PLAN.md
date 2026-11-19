@@ -133,6 +133,7 @@ An index download failure stops the job before installation or verification.
 - run ProposedChange review Pipeline fixture with `uv run pytest packages/pipelines/tests/test_review_proposed_change.py`
 - run Review Queue and Review Packet Application tests with `uv run pytest packages/application/tests/test_review_queue_packet.py`
 - run Review Queue, Review Packet, and copyable review-action CLI checks with `uv run pytest packages/pipelines/tests/test_cli.py -k review`
+- verify `review decide` advertises only supported classifications and rejects unsupported values before configuration or review access with `uv run pytest packages/pipelines/tests/test_cli.py -k review_decide_classification`
 - verify Review Readiness and agent JSON state with `uv run pytest packages/application/tests/test_review_queue_packet.py packages/pipelines/tests/test_review_queue_packet.py`
 - verify Review-Next execution with `uv run pytest packages/application/tests/test_review_queue_packet.py packages/pipelines/tests/test_review_queue_packet.py`
 - verify Explicit Review-Next Decision Execution with `uv run pytest packages/application/tests/test_review_proposed_change.py packages/pipelines/tests/test_review_proposed_change.py`
@@ -163,6 +164,7 @@ An index download failure stops the job before installation or verification.
 
 ## 6. Harness checks
 - verify TDD binding snapshot, task identity, canonical binding, derived index, drift blocking, lookup rebuild, receipt, and CLI contracts with `uv run pytest -p no:cacheprovider packages/devtools/tests/unit/test_tdd_binding.py packages/devtools/tests/acceptance/test_tdd_binding_contract.py`
+- verify explicit specification commit selection on the existing branch, immutable pinning after an implementation push, and persisted mismatch blockers with `uv run pytest packages/devtools/tests/acceptance/test_specification_commit_selection_contract.py`
 - verify run evidence, terminal abandonment, superseded delivery closure, preserved-result branch cleanup, metrics, and scorecard contracts with `uv run pytest -p no:cacheprovider packages/devtools/tests/unit/test_evidence_catalog.py packages/devtools/tests/unit/test_tdd_scorecards.py packages/devtools/tests/acceptance/test_tdd_workflow_contract.py packages/devtools/tests/acceptance/test_superseded_task_closure_contract.py packages/devtools/tests/acceptance/test_feature_branch_promotion_completion_contract.py`
 - verify lifecycle evidence producers, Git/CI validation, canonical indexing, and workflow commit binding with `uv run pytest -p no:cacheprovider packages/devtools/tests/unit/test_lifecycle_evidence.py packages/devtools/tests/acceptance/test_lifecycle_evidence_producers_contract.py packages/devtools/tests/acceptance/test_tdd_workflow_contract.py`
 - verify independent candidate receipt topology, immutable retry commits, protected-oracle failures, and detached-worktree execution with `uv run pytest -p no:cacheprovider packages/devtools/tests/unit/test_candidate_verifier.py packages/devtools/tests/acceptance/test_independent_verifier_receipt_contract.py`

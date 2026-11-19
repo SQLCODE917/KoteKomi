@@ -1386,7 +1386,7 @@ def build_parser() -> argparse.ArgumentParser:
     decide_parser.add_argument("--predicate", required=True)
     decide_parser.add_argument(
         "--assertion-type",
-        choices=("reported_observation", "reported_claim"),
+        choices=("reported_observation",),
         required=True,
     )
     decide_parser.add_argument(
@@ -1396,7 +1396,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     decide_parser.add_argument(
         "--attribution-basis",
-        choices=("direct_document", "second_hand_report", "anonymous_report", "unknown"),
+        choices=("direct_document",),
         required=True,
     )
     decide_parser.add_argument("--reviewer", required=True)

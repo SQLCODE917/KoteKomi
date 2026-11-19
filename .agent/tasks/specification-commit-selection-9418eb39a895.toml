@@ -1,0 +1,49 @@
+schema_version = 2
+task_id = "specification-commit-selection-9418eb39a895"
+title = "Specification Commit Selection"
+status = "ready_for_terra_high"
+series_id = "tdd-harness-feature-branch"
+task_class = "repository-tooling"
+model_profile = "terra-high-v1"
+baseline_revision = "671ea8291f740cbb9f31da20927e95ca3c5585bf"
+tdd_path = "docs/2026-11-19-tdd-specification-commit-selection.md"
+tdd_sha256 = "9418eb39a89541ee2d9c184368a04f9c37e9d9c5097201d3a9d8eabd8f2c56d1"
+goal = "Start a V2 run from an explicitly selected immutable specification commit on the existing feature branch and bind an independent verification receipt to that specification."
+depends_on = []
+allowed_paths = [".agent/tasks/specification-commit-selection-9418eb39a895.toml", "docs/2026-11-19-tdd-specification-commit-selection.md", "docs/agent/implement-tdd-workflow.md", "docs/CHECK_PLAN.md", "packages/devtools/src/kotekomi_devtools/tdd_workflow.py", "packages/devtools/src/kotekomi_devtools/lifecycle_evidence.py", "packages/devtools/src/kotekomi_devtools/cli.py", "packages/devtools/src/kotekomi_devtools/candidate_verifier.py", "packages/devtools/tests/acceptance/test_specification_commit_selection_contract.py"]
+reference_paths = ["docs/2026-08-18-tdd-feature-branch-default.md", "docs/2026-08-19-tdd-remote-main-specification-authority.md", "packages/devtools/AGENTS.md"]
+stop_conditions = ["Harness reports blocked", "Implementation changes the main start path", "Implementation creates a new feature branch in explicit specification mode", "Implementation modifies the CLI classification fix"]
+[readiness]
+authority = "The Specification Commit Selection TDD defines this task."
+contract_family = "tdd-harness"
+dominant_outcome = "A V2 run starts from one explicitly selected immutable specification commit."
+failure_policy = "Missing or mismatched specification input blocks and persists the blocked status."
+legacy_disposition = "The default clean current-main start path remains."
+negative_proof = "A mismatched TDD at the selected commit blocks without specification evidence."
+public_entry_point = "kotekomi-agent implement-tdd"
+scope_policy = "Specification selection, existing-branch evidence, candidate receipt binding, workflow, and acceptance tests only."
+side_effect_boundary = "State evidence, existing branch refs, and the candidate receipt commit only."
+unresolved_decisions = []
+[budget]
+maximum_production_files = 4
+maximum_test_files = 1
+maximum_production_diff_lines = 400
+[[protected_artifacts]]
+kind = "leaf-tdd"
+path = "docs/2026-11-19-tdd-specification-commit-selection.md"
+sha256 = "9418eb39a89541ee2d9c184368a04f9c37e9d9c5097201d3a9d8eabd8f2c56d1"
+[[acceptance]]
+id = "specification-commit-selection-contract"
+argv = ["uv", "run", "pytest", "-p", "no:cacheprovider", "packages/devtools/tests/acceptance/test_specification_commit_selection_contract.py"]
+timeout_seconds = 240
+profile = "portable-local"
+[[acceptance]]
+id = "repository-static-checks"
+argv = ["uv", "run", "ruff", "check"]
+timeout_seconds = 120
+profile = "portable-local"
+[[acceptance]]
+id = "repository-type-checks"
+argv = ["uv", "run", "pyright"]
+timeout_seconds = 180
+profile = "portable-local"
