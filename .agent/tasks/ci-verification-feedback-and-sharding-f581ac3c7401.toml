@@ -5,17 +5,17 @@ status = "ready_for_terra_high"
 series_id = "ci-verification-feedback"
 task_class = "repository-tooling"
 model_profile = "terra-high-v1"
-baseline_revision = "c91089f17bcf9e0ccb9e61fa68fc5079398637f6"
+baseline_revision = "1fa626d4bd165e9a2ab83d2f02c99b182f7503a7"
 tdd_path = "docs/2026-11-19-ci-verification-feedback-and-sharding.md"
 tdd_sha256 = "f581ac3c7401c4e536569312828b8ffa0b48c8a22c5305515e912d9eda8431a5"
 goal = "Deliver fast CI feedback and a shorter full gate without reducing verification coverage."
 depends_on = []
 allowed_paths = [".agent/tasks/ci-verification-feedback-and-sharding-f581ac3c7401.toml", "docs/2026-11-19-ci-verification-feedback-and-sharding.md", "docs/2026-11-19-ci-verification-agile-package.md", ".github/workflows/ci.yml", "scripts/verify.sh", "packages/devtools/tests/unit/test_ci_verification_contract.py", "docs/CHECK_PLAN.md"]
 reference_paths = ["pyproject.toml", "packages/devtools/src/kotekomi_devtools/lifecycle_evidence.py", "docs/agent/implement-tdd-workflow.md"]
-stop_conditions = ["Harness pilot PR 2 remains open or has not been explicitly closed out", "Full test collection or gate equivalence cannot be demonstrated", "A branch rule or product behavior must change"]
+stop_conditions = ["The pinned specification cannot be validated on the existing branch", "Full test collection or gate equivalence cannot be demonstrated", "A branch rule or product behavior must change"]
 
 [readiness]
-authority = "Leaf TDD; do not dispatch while the harness pilot is open."
+authority = "Leaf TDD; pilot PR 2 merged and this task is ready for the same-branch handoff."
 contract_family = "ci-verification"
 dominant_outcome = "Fast first feedback and a shorter comparable full gate."
 failure_policy = "A failed, cancelled, skipped, or missing required shard fails the aggregate."

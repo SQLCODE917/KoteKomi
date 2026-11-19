@@ -8,7 +8,7 @@ kotekomi-agent implement-tdd <tdd-path>
 
 Treat the status record as the lifecycle authority.
 
-Stop when the status is blocked.
+Stop when the status reports a blocker.
 
 Use the reported `next_action` and `producer_arguments`.
 
@@ -44,3 +44,25 @@ Use one local command block per operator action.
 Ask for the command output after each operator action.
 
 Keep failed output as Harness evidence.
+
+## Specification Source
+
+A pushed specification branch that contains the TDD and Task Manifest V2 is a valid specification source.
+
+The specification branch does not need to merge to `main` before implementation starts.
+
+Select the immutable specification commit explicitly.
+
+```text
+kotekomi-agent implement-tdd <tdd-path> --specification-commit <full-sha>
+```
+
+The Harness requires the selected commit to be an ancestor of `HEAD`, a clean worktree, a matching TDD binding, byte-identical Task Manifest bytes, and a Task Manifest V2.
+
+It records the selected commit, manifest digest, and existing non-`main` branch as the feature branch.
+
+It does not create or push a new feature branch in this mode.
+
+Later implementation commits and pushes do not change the persisted specification record.
+
+The default command without `--specification-commit` retains the clean current-main path.

@@ -305,6 +305,7 @@ def _handle_tdd_command(arguments: argparse.Namespace) -> CliResponse:
             markdown=arguments.markdown,
             new_run=arguments.new_run,
             abandon_run=arguments.abandon_run,
+            specification_commit=arguments.specification_commit,
         )
         return CliResponse(code, output)
     if arguments.command == "tdd-metrics":
@@ -721,6 +722,7 @@ def _build_parser() -> argparse.ArgumentParser:
     evidence_index.add_argument("--output", type=Path)
     implement = subparsers.add_parser("implement-tdd", help="Resolve TDD implementation status.")
     implement.add_argument("tdd_path", type=Path)
+    implement.add_argument("--specification-commit", default=None, metavar="SHA")
     mode = implement.add_mutually_exclusive_group()
     mode.add_argument("--new-run", action="store_true")
     mode.add_argument("--abandon-run")
