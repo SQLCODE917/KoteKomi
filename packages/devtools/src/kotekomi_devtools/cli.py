@@ -36,6 +36,7 @@ from kotekomi_devtools.lifecycle_evidence import (
     record_main_ci,
     record_main_promotion,
 )
+from kotekomi_devtools.pr_handoff import preflight_handoff
 from kotekomi_devtools.receipt_chain_status import run_receipt_chain_status_command
 from kotekomi_devtools.receipt_writer import ReceiptWriterError, write_receipt
 from kotekomi_devtools.retrieval_scenarios import RetrievalScenarioError, test_ingest, test_query
@@ -131,6 +132,7 @@ def _dispatch_command(arguments: argparse.Namespace) -> CliResponse | int:
         "step-preflight": _handle_step_command,
         "record-step-failure": _handle_step_command,
         "receipt-chain-status": _handle_receipt_command,
+        "handoff-preflight": _handle_handoff_command,
         "write-receipt": _handle_receipt_command,
         "tdd-bind": _handle_tdd_command,
         "evidence-index": _handle_tdd_command,
@@ -265,6 +267,11 @@ def _handle_step_command(arguments: argparse.Namespace) -> CliResponse:
         force=arguments.force,
     )
     return CliResponse(0, output)
+
+
+def _handle_handoff_command(arguments: argparse.Namespace) -> CliResponse:
+    code, output = preflight_handoff(arguments.description)
+    return CliResponse(code, output)
 
 
 def _handle_receipt_command(arguments: argparse.Namespace) -> CliResponse | int:
@@ -660,6 +667,11 @@ def _build_parser() -> argparse.ArgumentParser:
     lifecycle_check.add_argument("--run")
     lifecycle_check.add_argument("--state-root", type=Path, default=Path("~/.local/state/kotekomi"))
     _add_lifecycle_evidence_parsers(subparsers)
+    handoff = subparsers.add_parser(
+        "handoff-preflight",
+        help="Check one PR Current Handoff against the current checkout.",
+    )
+    handoff.add_argument("description", type=Path)
     receipt_chain_status = subparsers.add_parser(
         "receipt-chain-status",
         help="Report deterministic receipt-chain status.",
