@@ -140,6 +140,7 @@ def verify_candidate(
             profile, "manifest_changed", "/manifest", "manifest_frozen_after_specification"
         )
 
+    active_branch: str | None = None
     with _detached_worktree(root, candidate) as candidate_root:
         if candidate_root is None:
             return _invalid(
@@ -185,7 +186,7 @@ def verify_candidate(
                 )
 
             if active_run and run_id is not None and state_root_path is not None:
-                active_error = _active_evidence_error(
+                active_branch, active_error = _active_feature_branch(
                     state_root(state_root_path),
                     task_id,
                     run_id,
@@ -224,11 +225,19 @@ def verify_candidate(
     )
     artifacts = _protected_artifacts(manifest, manifest_name, tdd_path, specification_manifest)
     if active_run and run_id is not None and state_root_path is not None:
+        if active_branch is None:
+            return _invalid(
+                profile,
+                "feature_branch_evidence_mismatch",
+                "/feature_branch",
+                "non_main_feature_branch",
+            )
         return _record_feature_branch_receipt(
             root=root,
             evidence_root=state_root(state_root_path),
             task_id=task_id,
             run_id=run_id,
+            branch=active_branch,
             profile=cast(Profile, profile),
             base=base,
             specification=specification,
@@ -293,17 +302,17 @@ def verify_candidate(
     )
 
 
-def _active_evidence_error(
+def _active_feature_branch(
     evidence_root: Path,
     task_id: str,
     run_id: str,
     specification: str,
     candidate: str,
-) -> tuple[str, str, str] | None:
+) -> tuple[str, tuple[str, str, str] | None]:
     try:
         entries = validated_entries(evidence_root, task_id, run_id)
     except EvidenceError:
-        return "run_evidence_invalid", "/evidence", "valid_run_evidence"
+        return "", ("run_evidence_invalid", "/evidence", "valid_run_evidence")
     payloads: dict[str, JsonObject] = {}
     for entry in entries:
         kind = entry["evidence_type"]
@@ -312,29 +321,41 @@ def _active_evidence_error(
         try:
             value = json.loads((evidence_root / entry["path"]).read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
-            return "run_evidence_invalid", "/evidence", "readable_canonical_record"
+            return "", ("run_evidence_invalid", "/evidence", "readable_canonical_record")
         if not isinstance(value, dict):
-            return "run_evidence_invalid", "/evidence", "object_canonical_record"
+            return "", ("run_evidence_invalid", "/evidence", "object_canonical_record")
         payloads[kind] = cast(JsonObject, value)
     if set(payloads) != {"specification_revision", "feature_branch", "candidate_commit"}:
         return (
-            "run_evidence_missing",
-            "/evidence",
-            "specification_feature_branch_and_candidate_records",
+            "",
+            (
+                "run_evidence_missing",
+                "/evidence",
+                "specification_feature_branch_and_candidate_records",
+            ),
         )
     if payloads["specification_revision"].get("specification_revision") != specification:
-        return "specification_evidence_mismatch", "/specification", "specification_evidence_matches"
-    if payloads["feature_branch"].get("branch") != f"feature/{task_id}":
-        return "feature_branch_evidence_mismatch", "/feature_branch", "canonical_feature_branch"
+        return "", (
+            "specification_evidence_mismatch",
+            "/specification",
+            "specification_evidence_matches",
+        )
+    branch = payloads["feature_branch"].get("branch")
+    if not isinstance(branch, str) or not branch or branch == "main":
+        return "", (
+            "feature_branch_evidence_mismatch",
+            "/feature_branch",
+            "non_main_feature_branch",
+        )
     if payloads["feature_branch"].get("specification_revision") != specification:
-        return (
+        return "", (
             "feature_branch_evidence_mismatch",
             "/feature_branch",
             "feature_branch_specification_matches",
         )
     if payloads["candidate_commit"].get("commit_sha") != candidate:
-        return "candidate_evidence_mismatch", "/candidate", "candidate_evidence_matches"
-    return None
+        return "", ("candidate_evidence_mismatch", "/candidate", "candidate_evidence_matches")
+    return branch, None
 
 
 def _record_feature_branch_receipt(
@@ -343,6 +364,7 @@ def _record_feature_branch_receipt(
     evidence_root: Path,
     task_id: str,
     run_id: str,
+    branch: str,
     profile: Profile,
     base: str,
     specification: str,
@@ -356,7 +378,7 @@ def _record_feature_branch_receipt(
     check_results: list[JsonObject],
     diagnostics: list[dict[str, str]],
 ) -> CandidateVerificationResult:
-    existing = _matching_feature_receipt(root, task_id, candidate, profile)
+    existing = _matching_feature_receipt(root, branch, task_id, candidate, profile)
     if existing is not None:
         commit, receipt_path, receipt_bytes, receipt = existing
         return _index_feature_receipt(
@@ -373,7 +395,6 @@ def _record_feature_branch_receipt(
             candidate,
             cast(list[dict[str, str]], receipt["diagnostics"]),
         )
-    branch = f"feature/{task_id}"
     if _remote_feature_tip(root, branch) != candidate:
         return _invalid(
             profile,
@@ -482,9 +503,8 @@ def _index_feature_receipt(
 
 
 def _matching_feature_receipt(
-    root: Path, task_id: str, candidate: str, profile: Profile
+    root: Path, branch: str, task_id: str, candidate: str, profile: Profile
 ) -> tuple[str, str, bytes, JsonObject] | None:
-    branch = f"feature/{task_id}"
     tip = _remote_feature_tip(root, branch)
     if tip is None:
         return None

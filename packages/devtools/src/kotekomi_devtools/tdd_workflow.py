@@ -465,6 +465,22 @@ def implement_tdd(
     )
     manifest = Path.cwd() / ".agent" / "tasks" / f"{task}.toml"
     validation_status = "missing"
+    if specification_commit is not None and not manifest.exists():
+        explicit_manifest_diagnostics: list[Json] = [
+            {
+                "code": "workflow.specification_invalid",
+                "location": "/manifest",
+                "rule": "explicit_specification_requires_working_tree_manifest",
+            }
+        ]
+        mark_run_blocked(root, task, run_id, explicit_manifest_diagnostics)
+        return 1, {
+            "schema_version": 1,
+            "status": "blocked",
+            "task_id": task,
+            "implementation_run_id": run_id,
+            "diagnostics": explicit_manifest_diagnostics,
+        }
     if manifest.exists():
         scope, rel = canonical_relative("task_manifest", task, run_id)
         index_record(
