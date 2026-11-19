@@ -1,0 +1,61 @@
+# Same-Branch Delivery Handoff Agile Package
+
+- Status: Ready for Handoff-01 implementation
+- Program ID: `same-branch-delivery-handoff`
+- First deliverable: [Handoff-01, make the current handoff unambiguous](2026-11-19-one-current-pr-handoff.md)
+- Predecessors: [same-branch harness pilot (PR #2)](https://github.com/SQLCODE917/KoteKomi/pull/2), [CI verification follow-up (PR #3)](https://github.com/SQLCODE917/KoteKomi/pull/3)
+
+## User Outcome
+
+As a developer coordinating a KoteKomi change, I want to give the implementing agent only a PR link, so it can find the current spec, contribute on that branch, and respond to review without me copying instructions between tools. I still decide what should ship and retain merge control.
+
+## Context and Problem
+
+PR #2 demonstrated explicit spec pinning and a same-branch receipt fixture, but its description still instructed the implementer to merge the spec and open a second PR. PR #3 used the real same-branch receipt path, but the active pin had to supersede the original pin in a comment. The workflow accommodates discovery; finding the authoritative instruction is the fragile part. Fix that before adding dispatch automation.
+
+## Domain Boundaries
+
+| Existing concept | Responsibility |
+| --- | --- |
+| Agile package | Owns the outcome, slice names, and useful follow-ups. It is not the run log. |
+| Leaf TDD and Task Manifest V2 | Define the slice's acceptance, permitted scope, and checks. Acceptance lives here, not in a duplicate PR checklist. |
+| PR and its feature branch | Hold one current handoff, subsequent code contributions, and review discussion. GitHub owns merge state. |
+| Harness run and receipt | Bind the spec and candidate to the checks actually performed. The harness owns verification and promotion evidence. |
+
+Use those concepts as they exist. Do not add an orchestration database, a second lifecycle, or a manifest schema just to track a handoff.
+
+## How Work Changes
+
+| Discovery | Keep or change the handoff? |
+| --- | --- |
+| The implementation breaks the current promise | Fix it on the same branch under the same pin; add a regression. PR #3's no-argument verification bug is the example. |
+| The same slice needs a changed acceptance contract | Block pickup while deciding. Publish the replacement pin explicitly; do not advance an in-flight run silently. If an already bound TDD changes bytes, use a new revision path and let the harness derive the new task ID. Keep the package slice name and old evidence. A baseline-only refresh repins the manifest without creating a new slice. |
+| The discovery has its own outcome and proof | Record it in the package. Open a linked follow-up PR when it is ready to specify. Make it a dependency only if the current slice cannot deliver without it. |
+
+## Planned Slices
+
+### Handoff-01: One current handoff (MVP)
+
+Update the existing [implement-tdd guide](https://github.com/SQLCODE917/KoteKomi/blob/main/docs/agent/implement-tdd-workflow.md), add a small PR template, and add a read-only preflight that consumes the handoff and uses existing Git and harness validation where possible. Keep any code in devtools. Reuse the existing [self-contained communication guide](https://github.com/SQLCODE917/KoteKomi/blob/main/docs/agent/self-contained-communication.md). Preserve the guide’s one-command-at-a-time instructions for humans who are running commands themselves. An implementing agent with a checkout runs the existing commands directly and reports evidence or blockers on the PR, not through a human relay.
+
+The PR description has one current handoff: `ready` or `blocked`, the full spec SHA, the leaf TDD path, and any real prerequisite or blocker. The PR already identifies its branch; don't introduce a second branch field. Draft status is not the readiness signal. Comments propose and explain changes; they do not replace the canonical handoff. Confirm that the authoring path can update the PR description before claiming the workflow eliminates human relay.
+
+Acceptance:
+- Starting with just a PR URL and normal repository access, an implementer can find the one ready handoff, resolve its pin on the feature branch, validate the bound TDD and V2 manifest, and use the existing same-branch start command.
+- Missing, duplicate, blocked, stale, unreachable, or mismatched input produces a clear stop. The check doesn't infer a pin from the branch tip or search comments for instructions.
+- Cheap fixtures prove that an implementation push does not change the pin, a bug fix stays under that pin, and replacing a spec selects only the new handoff while preserving evidence for the old one.
+- No changes to the ingestion pipeline, branch protection, or CI architecture. No external agent starts in this slice.
+
+### Handoff-02: Prove it on a real ingestion slice
+
+Select one bounded operator-facing outcome from the active ingestion package with an observable before/after result. Give the implementing agent only the PR URL. Capture pickup, implementation, review, candidate receipt, and the actual checks in the same PR. Verify the merge/promotion evidence separately if the user merges it.
+
+Pass if no one has to relay or reinterpret the handoff outside the PR. If the agent needs clarification, resolve it in the PR and record what the handoff was missing. Don't manufacture a spec change or bug for the live trial; the fixtures cover those branches.
+
+### Handoff-03: Make pickup event-driven (conditional)
+
+Start only after Handoff-02 is repeatable without human translation. Use one explicit, authorized ready event; re-read the PR and run preflight before dispatch. One implementation attempt per repository, PR, and spec SHA; duplicate delivery is harmless. Ordinary pushes and bot replies don't trigger another start. A replacement pin must not race an active run. The implementer reports to the same PR and has no merge authority. Defer routing, cross-repo support, and any custom scheduler.
+
+## Evidence and Stop Conditions
+
+Handoff-01 should produce the guide, template, preflight, and focused regressions. Handoff-02 records the live PR and any off-PR intervention. Do not proceed to automation if the canonical handoff cannot be updated, an old run can act on a replacement pin, or the URL-only trial still requires someone to translate instructions. Fix that specific gap before extending the process.

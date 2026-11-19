@@ -1,0 +1,43 @@
+schema_version = 2
+task_id = "one-current-pr-handoff-3d55e9efd86a"
+title = "One Current PR Handoff"
+status = "ready_for_terra_high"
+series_id = "same-branch-delivery-handoff"
+task_class = "repository-tooling"
+model_profile = "terra-high-v1"
+baseline_revision = "cff1836110b3f44742dc8e66d8109c672c63b142"
+tdd_path = "docs/2026-11-19-one-current-pr-handoff.md"
+tdd_sha256 = "3d55e9efd86a397e8d6058852f3c8f04e56762d28346087bc18c0a44f72a37f2"
+goal = "Make the current same-branch PR handoff unambiguous and checkable without human relay."
+depends_on = []
+allowed_paths = [".agent/tasks/one-current-pr-handoff-3d55e9efd86a.toml", "docs/2026-11-19-one-current-pr-handoff.md", "docs/2026-11-19-same-branch-delivery-handoff-agile-package.md", ".github/PULL_REQUEST_TEMPLATE.md", "docs/agent/implement-tdd-workflow.md", "packages/devtools/src/kotekomi_devtools/pr_handoff.py", "packages/devtools/src/kotekomi_devtools/cli.py", "packages/devtools/tests/acceptance/test_pr_handoff_contract.py"]
+reference_paths = ["docs/agent/self-contained-communication.md", "packages/devtools/src/kotekomi_devtools/tdd_binding.py", "packages/devtools/src/kotekomi_devtools/task_manifest.py", "packages/devtools/src/kotekomi_devtools/tdd_workflow.py"]
+stop_conditions = ["The handoff is missing or ambiguous", "The checker needs a second source of truth or a harness lifecycle change", "Acceptance requires a dispatcher, credentials, or a repository permission change"]
+
+[readiness]
+authority = "Handoff-01 leaf TDD and the canonical Current Handoff section of its PR."
+contract_family = "same-branch-delivery-handoff"
+dominant_outcome = "An implementer can identify and preflight one exact spec revision from the PR."
+failure_policy = "Fail closed on blocked, missing, duplicate, unreachable, or mismatched handoffs."
+legacy_disposition = "Preserve the existing implement-tdd entry points, manifest, lifecycle, and receipts."
+negative_proof = "Disposable Git fixtures reject ambiguous pins and spec mismatch or drift."
+public_entry_point = "KoteKomi PR description and devtools handoff preflight."
+scope_policy = "One template, current workflow guide, a read-only devtools checker, and focused regressions."
+side_effect_boundary = "No external writes from preflight, run creation, dispatch, or merge."
+unresolved_decisions = []
+
+[budget]
+maximum_production_files = 3
+maximum_test_files = 1
+maximum_production_diff_lines = 180
+
+[[protected_artifacts]]
+kind = "leaf-tdd"
+path = "docs/2026-11-19-one-current-pr-handoff.md"
+sha256 = "3d55e9efd86a397e8d6058852f3c8f04e56762d28346087bc18c0a44f72a37f2"
+
+[[acceptance]]
+id = "pr-handoff-contract"
+argv = ["uv", "run", "pytest", "-p", "no:cacheprovider", "packages/devtools/tests/acceptance/test_pr_handoff_contract.py"]
+timeout_seconds = 120
+profile = "portable-local"
