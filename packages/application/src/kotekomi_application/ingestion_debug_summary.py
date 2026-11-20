@@ -23,6 +23,7 @@ from kotekomi_application.ingestion_inspection import (
 )
 
 OperationMode = Literal["ingestion", "replay"]
+OperationStatus = Literal["running", "complete", "failed", "source_captured_composition_failed"]
 
 
 class SummaryRecord(BaseModel):
@@ -31,8 +32,21 @@ class SummaryRecord(BaseModel):
 
 class SnapshotOperation(SummaryRecord):
     mode: OperationMode
-    status: Literal["running", "complete", "failed"]
+    status: OperationStatus
     exit_code: int | None = None
+    ingestion_run_id: str | None = None
+
+    @model_validator(mode="after")
+    def validate_captured_source(self) -> SnapshotOperation:
+        if self.status != "source_captured_composition_failed":
+            return self
+        if self.exit_code != 0:
+            raise ValueError("Retained capture with failed Composition preserves exit code zero.")
+        if self.ingestion_run_id is None:
+            raise ValueError(
+                "Retained capture with failed Composition requires its IngestionRun ID."
+            )
+        return self
 
 
 class DebugSource(SummaryRecord):

@@ -10,6 +10,7 @@ from pathlib import Path
 from kotekomi_adapters.extraction_view.execution import ProcessOutput, send_event
 from kotekomi_application.ingestion_execution import (
     AssignedIngestionRunIdFactory,
+    CompositionFailure,
     FinishedEvent,
     IngestionProcessRequest,
     ParagraphEvent,
@@ -53,11 +54,22 @@ def run_ingestion_worker(request: IngestionProcessRequest, connection: Connectio
                 on_composed=lambda _records: presenter.refresh_composition(),
             )
             code = result.ingestion_code
+            composition_failure = None
+            if result.composition_error is not None:
+                if result.ingestion_run_id is None:
+                    raise RuntimeError(
+                        "Composition failed without a captured IngestionRun identity."
+                    )
+                composition_failure = CompositionFailure(
+                    ingestion_run_id=result.ingestion_run_id,
+                    diagnostic=result.composition_error,
+                )
     except Exception as error:
         err.write(f"Ingestion worker failed: {error}\n")
         code = 1
+        composition_failure = None
     finally:
         out.flush()
         err.flush()
-    send_event(connection, FinishedEvent(code=code))
+    send_event(connection, FinishedEvent(code=code, composition_failure=composition_failure))
     connection.close()

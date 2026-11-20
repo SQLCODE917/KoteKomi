@@ -11,7 +11,7 @@ from kotekomi_domain import (
     IngestionRun,
     IngestionRunStatus,
 )
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from kotekomi_application.ingestion_inspection import ParagraphSnapshot
 from kotekomi_application.ingestion_runs import (
@@ -46,9 +46,38 @@ class TextEvent(ProcessRecord):
     is_error: bool
 
 
+class CompositionFailure(ProcessRecord):
+    """Typed fact that Composition raised after the Source was captured."""
+
+    ingestion_run_id: str
+    diagnostic: str
+
+
 class FinishedEvent(ProcessRecord):
     kind: Literal["finished"] = "finished"
     code: int
+    composition_failure: CompositionFailure | None = None
+
+    @model_validator(mode="after")
+    def validate_captured_source(self) -> FinishedEvent:
+        if self.composition_failure is not None and self.code != 0:
+            raise ValueError("A Composition failure preserves the successful ingestion exit code.")
+        return self
+
+
+class IngestionProcessResult(int):
+    """Preserved worker exit status carrying the validated terminal event.
+
+    The live view reports the typed terminal event; the integer value keeps the
+    process exit contract its callers already use.
+    """
+
+    finished: FinishedEvent
+
+    def __new__(cls, finished: FinishedEvent) -> IngestionProcessResult:
+        result = super().__new__(cls, finished.code)
+        result.finished = finished
+        return result
 
 
 ProcessEvent = Annotated[ParagraphEvent | TextEvent | FinishedEvent, Field(discriminator="kind")]

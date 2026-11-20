@@ -156,6 +156,16 @@ class _RecordingConnection:
                 return int(payload["code"])
         raise AssertionError("the worker reported no terminal frame")
 
+    def error_text(self) -> str:
+        from kotekomi_adapters.extraction_view.execution import _EVENT_ADAPTER
+        from kotekomi_application.ingestion_execution import TextEvent
+
+        return "\n".join(
+            event.text
+            for event in map(_EVENT_ADAPTER.validate_json, self.frames)
+            if isinstance(event, TextEvent) and event.is_error
+        )
+
     def snapshots(self) -> list[ParagraphSnapshot]:
         from kotekomi_adapters.extraction_view.execution import _EVENT_ADAPTER
         from kotekomi_application.ingestion_execution import ParagraphEvent
@@ -305,6 +315,43 @@ def test_live_session_receives_final_composition_outcomes(
     assert statuses <= {"held", "composed"}
 
 
+def test_post_capture_composition_failure_is_a_typed_terminal_fact(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A Composition exception after capture preserves the run and the exit code."""
+    from kotekomi_pipelines import ingestion_workflow
+
+    def fail_composition(**_arguments: object) -> Any:
+        raise RuntimeError("fixture composition outage")
+
+    _install_fixtures(monkeypatch)
+    monkeypatch.setattr(ingestion_workflow, "compose_ingested_run", fail_composition)
+    connection = _run_worker(tmp_path / "worker", monkeypatch)
+    state = tmp_path / "worker" / "state"
+    paragraphs = load_paragraph_inputs(state / "kotekomi.db", state / "archive")
+    terminal = json.loads(connection.frames[-1])
+
+    assert terminal == {
+        "kind": "finished",
+        "code": 0,
+        "composition_failure": {
+            "ingestion_run_id": "igr_isc01_worker",
+            "diagnostic": "fixture composition outage",
+        },
+    }, {
+        "terminal_frame": terminal,
+        "composition_diagnostic": connection.error_text(),
+        "ingestion_run_ids": _ingestion_run_ids(state / "kotekomi.db"),
+        "captured_paragraphs": [(item.ordinal, item.status) for item in paragraphs],
+        "composition_outcomes": _composition_outcomes(tmp_path / "worker"),
+    }
+    assert connection.code() == 0
+    assert "Composition pass failed: fixture composition outage" in connection.error_text()
+    assert _ingestion_run_ids(state / "kotekomi.db") == ["igr_isc01_worker"]
+    assert paragraphs and all(item.status == "complete" for item in paragraphs)
+    assert _composition_outcomes(tmp_path / "worker") == []
+
+
 def test_stored_replay_starts_no_ingestion(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """ISC-01-D: stored replay stays read-only and starts no ingestion."""
     _install_fixtures(monkeypatch)
@@ -321,10 +368,14 @@ def test_stored_replay_starts_no_ingestion(tmp_path: Path, monkeypatch: pytest.M
 
 
 def _ingestion_run_count(ledger_path: Path) -> int:
+    return len(_ingestion_run_ids(ledger_path))
+
+
+def _ingestion_run_ids(ledger_path: Path) -> list[str]:
     from kotekomi_adapters import sqlite_ledger_transaction
 
     with sqlite_ledger_transaction(ledger_path) as repository:
-        return len(repository.list_ingestion_runs())
+        return sorted(run.id for run in repository.list_ingestion_runs())
 
 
 def test_failure_reports_on_the_error_stream_only(tmp_path: Path) -> None:
@@ -358,3 +409,16 @@ def test_failed_admission_reports_the_original_failure(tmp_path: Path) -> None:
     assert result.ingestion_run_id is None
     assert result.composition_records == ()
     assert err.getvalue().strip()
+
+
+def test_composition_failure_requires_the_captured_exit_code() -> None:
+    from kotekomi_application.ingestion_execution import CompositionFailure, FinishedEvent
+
+    with pytest.raises(ValueError):
+        FinishedEvent(
+            code=1,
+            composition_failure=CompositionFailure(
+                ingestion_run_id="igr_isc01_worker",
+                diagnostic="fixture composition outage",
+            ),
+        )

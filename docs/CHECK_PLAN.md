@@ -382,3 +382,10 @@ An index download failure stops the job before installation or verification.
 - A pre-change trace at specification commit `01c930dc4a466c369e204f46e24de8bb89d27b58` must reach composition for the captured Event, emit `authorized` with object `its  workers`, and create one Assertion proposal; the candidate must instead hold with no Assertion proposal.
 - Human-started captured-input check: `uv run pytest packages/pipelines/tests/test_ipi_production_promotion.py packages/pipelines/tests/test_operator_journey.py -q`; use a durable log and JUnit XML, then inspect the terminal result under [Long-Running Operations](agent/long-running-operations.md).
 - The captured Event is a development regression on disposable state; it is not independent accuracy evidence and does not expand complete-Assertion coverage.
+
+## 21. Report Composition failure after capture
+
+- Contract: [Report Composition Failure After Capture](2026-11-20-report-composition-failure-after-capture.md).
+- Run `uv run pytest packages/pipelines/tests/test_ingestion_workflow.py -q`; require a deterministic post-capture Composition exception to keep exit code zero, emit one `Composition pass failed` diagnostic, persist the assigned IngestionRun with complete paragraph coverage, and send one terminal frame carrying `composition_failure` with that run ID.
+- Run `uv run pytest packages/pipelines/tests/test_replay_tui.py -q`; require the live terminal status to read `Source captured; composition failed` with the IngestionRun ID, the copied debug snapshot to report `source_captured_composition_failed` with exit code zero and the same run, the diagnostic and captured Source to remain browseable, and normal completion, held Events, pre-admission failure, cancellation, and saved replay to keep their behavior.
+- A pre-change trace at specification commit `91a1a31ea8d56325ee0099b4e47503b11b5aa903` must show the same fixture reporting terminal code zero without a typed Composition failure while the diagnostic, IngestionRun, and complete paragraph coverage already exist.

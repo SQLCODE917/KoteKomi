@@ -16,6 +16,7 @@ from typing import TextIO
 
 from kotekomi_application.ingestion_execution import (
     IngestionProcessRequest,
+    IngestionProcessResult,
     ParagraphEvent,
     ProcessEvent,
     TextEvent,
@@ -153,7 +154,7 @@ class IngestionProcess:
                 else:
                     terminal_received = True
                     reported_code = event.code
-                    return event.code
+                    return IngestionProcessResult(event)
             return INTERRUPTED_EXIT_CODE
         except (EOFError, OSError) as error:
             if not self.cancelled.is_set():

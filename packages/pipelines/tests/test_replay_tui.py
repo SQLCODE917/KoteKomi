@@ -32,6 +32,17 @@ def content(app: ReplayApp, selector: str) -> str:
     return visual.plain
 
 
+class _RecordingClipboard:
+    """Clipboard Port stand-in that keeps each copied debug snapshot."""
+
+    def __init__(self) -> None:
+        self.payloads: list[str] = []
+
+    def copy(self, text: str) -> str:
+        self.payloads.append(text)
+        return "Copied snapshot"
+
+
 def test_layers_selection_resize_and_completion_stay_inspectable() -> None:
     profile = example_profile()
 
@@ -68,6 +79,118 @@ def test_layers_selection_resize_and_completion_stay_inspectable() -> None:
             assert app.return_value == 0
 
     asyncio.run(scenario())
+
+
+def test_captured_source_with_failed_composition_reports_the_retained_run() -> None:
+    from kotekomi_application.ingestion_execution import (
+        CompositionFailure,
+        FinishedEvent,
+        IngestionProcessResult,
+    )
+
+    profile = example_profile()
+
+    def operation(
+        publish: Callable[[ParagraphSnapshot], None], out: MessageStream, err: MessageStream
+    ) -> int:
+        publish(ParagraphSnapshot(0, 1, profile, "complete"))
+        err.write("Composition pass failed: fixture composition outage\n")
+        return IngestionProcessResult(
+            FinishedEvent(
+                code=0,
+                composition_failure=CompositionFailure(
+                    ingestion_run_id="igr_retained",
+                    diagnostic="fixture composition outage",
+                ),
+            )
+        )
+
+    async def scenario() -> None:
+        clipboard = _RecordingClipboard()
+        app = ReplayApp(operation, mode="ingestion", cancel=lambda: None, clipboard=clipboard)
+        async with app.run_test(size=(110, 30)) as pilot:
+            await pilot.pause()
+            assert app.finished and app.operation_code == 0
+            status = content(app, "#status")
+            assert "Source captured; composition failed" in status
+            assert "IngestionRun igr_retained" in status
+            assert "Ingestion complete" not in status
+            assert "Composition pass failed: fixture composition outage" in content(app, "#error")
+            assert "Mention ·" in content(app, "#source")
+            assert "Composition: failed" not in content(app, "#inspector")
+            assert "Assertions: failed" in content(app, "#inspector")
+            await pilot.press("c")
+            await pilot.pause()
+            captured = DebugSummary.model_validate_json(clipboard.payloads[-1])
+            assert captured.operation.status == "source_captured_composition_failed"
+            assert captured.operation.exit_code == 0
+            assert captured.operation.ingestion_run_id == "igr_retained"
+            assert "Composition pass failed: fixture composition outage" in captured.errors
+            await pilot.press("q")
+            assert app.return_value == 0
+
+    asyncio.run(scenario())
+
+
+def test_held_composition_success_still_reports_completion() -> None:
+    import hashlib
+
+    from kotekomi_application.composition_inspection import COMPOSITION_LAYER
+    from kotekomi_application.ingestion_inspection import CompositionAnnotation
+
+    base = example_profile()
+    trigger = next(item for item in base.events if item.event_id == "event_1").trigger_span
+    held = CompositionAnnotation(
+        event_id="event_1",
+        status="held",
+        source_text_sha256=hashlib.sha256(base.text.encode()).hexdigest(),
+        span=trigger,
+        hold_reason="awaiting_acceptance",
+    )
+    profile = replace(
+        base,
+        composition=(held,),
+        present_stages=frozenset({*base.present_stages, COMPOSITION_LAYER}),
+    )
+
+    def operation(
+        publish: Callable[[ParagraphSnapshot], None], out: MessageStream, err: MessageStream
+    ) -> int:
+        publish(ParagraphSnapshot(0, 1, profile, "complete"))
+        return 0
+
+    async def scenario() -> None:
+        clipboard = _RecordingClipboard()
+        app = ReplayApp(operation, mode="ingestion", cancel=lambda: None, clipboard=clipboard)
+        async with app.run_test(size=(110, 30)) as pilot:
+            await pilot.pause()
+            assert "Ingestion complete" in content(app, "#status")
+            assert "0 Assertion(s), 1 held Event(s)" in content(app, "#progress")
+            await pilot.press("c")
+            await pilot.pause()
+            captured = DebugSummary.model_validate_json(clipboard.payloads[-1])
+            assert captured.operation.status == "complete"
+            assert captured.operation.ingestion_run_id is None
+
+    asyncio.run(scenario())
+
+
+def test_captured_composition_failure_requires_the_retained_run() -> None:
+    from kotekomi_application.ingestion_debug_summary import SnapshotOperation
+
+    with pytest.raises(ValueError):
+        SnapshotOperation(
+            mode="ingestion",
+            status="source_captured_composition_failed",
+            exit_code=1,
+            ingestion_run_id="igr_retained",
+        )
+    with pytest.raises(ValueError):
+        SnapshotOperation(
+            mode="ingestion",
+            status="source_captured_composition_failed",
+            exit_code=0,
+        )
 
 
 def test_long_frames_scroll_and_selection_survives_new_phase() -> None:
@@ -185,10 +308,12 @@ def test_worker_failure_remains_visible_and_final_view_is_retained() -> None:
         raise ValueError("fixture failure")
 
     async def scenario() -> None:
-        app = ReplayApp(operation, mode="replay", cancel=lambda: None)
+        app = ReplayApp(operation, mode="ingestion", cancel=lambda: None)
         async with app.run_test() as pilot:
             await pilot.pause()
             assert app.finished and app.operation_code == 1
+            assert "Ingestion failed" in content(app, "#status")
+            assert "captured" not in content(app, "#status")
             assert "fixture failure" in content(app, "#error")
             assert "Mention ·" in content(app, "#source")
             await pilot.press("q")
