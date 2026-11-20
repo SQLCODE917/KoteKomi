@@ -259,6 +259,9 @@ class ReplayApp(App[int]):
             self.call_after_refresh(self._refresh_view)
 
     def on_paragraph_changed(self, event: ParagraphChanged) -> None:
+        if not self.is_running:
+            # A worker message may land after teardown starts; a closing view has no widgets.
+            return
         snapshot = event.snapshot
         self.snapshots[snapshot.ordinal] = snapshot
         self.latest = snapshot.ordinal
@@ -268,6 +271,8 @@ class ReplayApp(App[int]):
             self._refresh_view()
 
     def on_status_changed(self, event: StatusChanged) -> None:
+        if not self.is_running:
+            return
         # Keep complete output in a scrollable view; the footer is only a summary.
         self.query_one("#output", RichLog).write(Text.from_ansi(event.text))
         if event.is_error:
@@ -292,7 +297,7 @@ class ReplayApp(App[int]):
             self.call_after_refresh(self._refresh_view)
 
     def on_operation_finished(self, event: OperationFinished) -> None:
-        if self.exit_requested:
+        if self.exit_requested or not self.is_running:
             return
         self.finished = True
         self.operation_code = event.code
@@ -382,6 +387,8 @@ class ReplayApp(App[int]):
 
     def _refresh_view(self, preserve_scroll: bool = True) -> None:
         if self._showing_output:
+            return
+        if not self.is_running:
             return
         if self.current is None or not self._view_mounted:
             return
