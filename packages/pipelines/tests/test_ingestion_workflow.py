@@ -137,6 +137,10 @@ def _config(root: Path) -> Path:
     return config_path
 
 
+def _raise_composition_outage(**_arguments: object) -> Any:
+    raise RuntimeError("fixture composition outage")
+
+
 class _RecordingConnection:
     """Transport stand-in that records the worker's event frames."""
 
@@ -156,15 +160,18 @@ class _RecordingConnection:
                 return int(payload["code"])
         raise AssertionError("the worker reported no terminal frame")
 
-    def error_text(self) -> str:
+    def text_events(self) -> list[tuple[str, bool]]:
         from kotekomi_adapters.extraction_view.execution import _EVENT_ADAPTER
         from kotekomi_application.ingestion_execution import TextEvent
 
-        return "\n".join(
-            event.text
+        return [
+            (event.text, event.is_error)
             for event in map(_EVENT_ADAPTER.validate_json, self.frames)
-            if isinstance(event, TextEvent) and event.is_error
-        )
+            if isinstance(event, TextEvent)
+        ]
+
+    def error_text(self) -> str:
+        return "\n".join(text for text, is_error in self.text_events() if is_error)
 
     def snapshots(self) -> list[ParagraphSnapshot]:
         from kotekomi_adapters.extraction_view.execution import _EVENT_ADAPTER
@@ -321,11 +328,8 @@ def test_post_capture_composition_failure_is_a_typed_terminal_fact(
     """A Composition exception after capture preserves the run and the exit code."""
     from kotekomi_pipelines import ingestion_workflow
 
-    def fail_composition(**_arguments: object) -> Any:
-        raise RuntimeError("fixture composition outage")
-
     _install_fixtures(monkeypatch)
-    monkeypatch.setattr(ingestion_workflow, "compose_ingested_run", fail_composition)
+    monkeypatch.setattr(ingestion_workflow, "compose_ingested_run", _raise_composition_outage)
     connection = _run_worker(tmp_path / "worker", monkeypatch)
     state = tmp_path / "worker" / "state"
     paragraphs = load_paragraph_inputs(state / "kotekomi.db", state / "archive")
@@ -350,6 +354,68 @@ def test_post_capture_composition_failure_is_a_typed_terminal_fact(
     assert _ingestion_run_ids(state / "kotekomi.db") == ["igr_isc01_worker"]
     assert paragraphs and all(item.status == "complete" for item in paragraphs)
     assert _composition_outcomes(tmp_path / "worker") == []
+
+
+def test_persisted_composition_outcome_survives_the_token_write_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A durable outcome remains visible after Composition raises."""
+    from kotekomi_pipelines.ingestion_token_artifact import LocalTokenArtifactWriter
+
+    def fail_write(_writer: object, _artifact: object) -> None:
+        raise OSError("fixture token write failure")
+
+    _install_fixtures(monkeypatch)
+    monkeypatch.setattr(LocalTokenArtifactWriter, "write", fail_write)
+    connection = _run_worker(tmp_path / "worker", monkeypatch)
+    state = tmp_path / "worker" / "state"
+    paragraphs = load_paragraph_inputs(state / "kotekomi.db", state / "archive")
+    latest = {snapshot.ordinal: snapshot for snapshot in connection.snapshots()}
+    event_paragraph = next(item for item in paragraphs if _profile(item).events)
+    quiet_paragraph = next(item for item in paragraphs if not _profile(item).events)
+    terminal = json.loads(connection.frames[-1])
+
+    assert terminal["code"] == 0
+    assert terminal["composition_failure"] == {
+        "ingestion_run_id": "igr_isc01_worker",
+        "diagnostic": "fixture token write failure",
+    }
+    assert "Composition pass failed: fixture token write failure" in connection.error_text()
+    assert _composition_outcomes(tmp_path / "worker") == [
+        ("held", "artifact_persistence_failed", None, None, None)
+    ]
+    saved = latest[event_paragraph.ordinal].profile.composition
+    assert [(item.status, item.hold_reason) for item in saved] == [
+        ("held", "artifact_persistence_failed")
+    ]
+    assert latest[quiet_paragraph.ordinal].profile.composition == ()
+
+
+def test_composition_readback_failure_keeps_the_original_diagnostic(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A readback problem cannot replace the Composition diagnostic or exit code."""
+    from kotekomi_application.inspection_session import InspectionSession
+    from kotekomi_pipelines import ingestion_workflow
+
+    def fail_refresh(_session: InspectionSession) -> None:
+        raise ValueError("fixture readback failure")
+
+    _install_fixtures(monkeypatch)
+    monkeypatch.setattr(ingestion_workflow, "compose_ingested_run", _raise_composition_outage)
+    monkeypatch.setattr(InspectionSession, "refresh_composition", fail_refresh)
+    connection = _run_worker(tmp_path / "worker", monkeypatch)
+    terminal = json.loads(connection.frames[-1])
+
+    assert terminal["code"] == 0
+    assert terminal["composition_failure"]["diagnostic"] == "fixture composition outage"
+    assert "Composition pass failed: fixture composition outage" in connection.error_text()
+    assert "fixture readback failure" not in connection.error_text()
+    assert any(
+        "Composition readback failed: fixture readback failure" in text
+        for text, is_error in connection.text_events()
+        if not is_error
+    )
 
 
 def test_stored_replay_starts_no_ingestion(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

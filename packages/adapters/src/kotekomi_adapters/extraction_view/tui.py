@@ -431,12 +431,11 @@ class ReplayApp(App[int]):
                 self._scroll_restore_scheduled = True
                 self.call_after_refresh(self._restore_scroll)
         statuses = phase_statuses(snapshot.profile, snapshot.status, self.finished)
-        if snapshot.profile.composition:
-            statuses[COMPOSITION_LAYER] = "received"
-        elif self._composition_failure() is not None:
-            statuses[COMPOSITION_LAYER] = "failed"
-        else:
-            statuses[COMPOSITION_LAYER] = "not run" if self.finished else "pending"
+        statuses[COMPOSITION_LAYER] = (
+            "received"
+            if snapshot.profile.composition
+            else ("not run" if self.finished else "pending")
+        )
         inspector = (
             "Select a source-attached label; n / p cycles annotations.\n\nPhase results:\n"
             + "\n".join(f"{STAGE_LABELS[stage]}: {statuses[stage]}" for stage in INSPECTION_LAYERS)

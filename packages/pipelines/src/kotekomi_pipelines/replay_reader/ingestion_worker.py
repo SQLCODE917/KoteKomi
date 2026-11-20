@@ -64,6 +64,12 @@ def run_ingestion_worker(request: IngestionProcessRequest, connection: Connectio
                     ingestion_run_id=result.ingestion_run_id,
                     diagnostic=result.composition_error,
                 )
+                # Composition may persist outcomes before it raises. Read those
+                # back without letting a readback problem replace the diagnostic.
+                try:
+                    presenter.refresh_composition()
+                except Exception as error:
+                    out.write(f"Composition readback failed: {error}\n")
     except Exception as error:
         err.write(f"Ingestion worker failed: {error}\n")
         code = 1

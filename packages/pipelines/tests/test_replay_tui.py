@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import subprocess
 from collections.abc import Callable
@@ -16,8 +17,13 @@ from kotekomi_adapters.extraction_view.tui import (
     ReplayApp,
     SourcePane,
 )
+from kotekomi_application.composition_inspection import COMPOSITION_LAYER
 from kotekomi_application.ingestion_debug_summary import DebugSummary
-from kotekomi_application.ingestion_inspection import ParagraphSnapshot
+from kotekomi_application.ingestion_inspection import (
+    CompositionAnnotation,
+    ParagraphAnnotationProfile,
+    ParagraphSnapshot,
+)
 from rich.text import Text
 from textual.binding import Binding
 from textual.containers import VerticalScroll
@@ -41,6 +47,43 @@ class _RecordingClipboard:
     def copy(self, text: str) -> str:
         self.payloads.append(text)
         return "Copied snapshot"
+
+
+def _profile_with_held_composition(
+    hold_reason: str = "awaiting_acceptance",
+) -> ParagraphAnnotationProfile:
+    base = example_profile()
+    trigger = next(item for item in base.events if item.event_id == "event_1").trigger_span
+    held = CompositionAnnotation(
+        event_id="event_1",
+        status="held",
+        source_text_sha256=hashlib.sha256(base.text.encode()).hexdigest(),
+        span=trigger,
+        hold_reason=hold_reason,
+    )
+    return replace(
+        base,
+        composition=(held,),
+        present_stages=frozenset({*base.present_stages, COMPOSITION_LAYER}),
+    )
+
+
+def _profile_without_events() -> ParagraphAnnotationProfile:
+    return ParagraphAnnotationProfile(
+        text="No Event recorded here.",
+        representation_id="rep_quiet",
+        paragraph_node_id="node_quiet",
+        node_start_char=0,
+        text_view_id="view_quiet",
+        segments=(),
+        mentions=(),
+        references=(),
+        groundings=(),
+        triggers=(),
+        events=(),
+        standing_facts=(),
+        present_stages=frozenset(),
+    )
 
 
 def test_layers_selection_resize_and_completion_stay_inspectable() -> None:
@@ -117,8 +160,8 @@ def test_captured_source_with_failed_composition_reports_the_retained_run() -> N
             assert "Ingestion complete" not in status
             assert "Composition pass failed: fixture composition outage" in content(app, "#error")
             assert "Mention ·" in content(app, "#source")
-            assert "Composition: failed" not in content(app, "#inspector")
-            assert "Assertions: failed" in content(app, "#inspector")
+            assert "Assertions: not run" in content(app, "#inspector")
+            assert "failed" not in content(app, "#inspector")
             await pilot.press("c")
             await pilot.pause()
             captured = DebugSummary.model_validate_json(clipboard.payloads[-1])
@@ -133,25 +176,7 @@ def test_captured_source_with_failed_composition_reports_the_retained_run() -> N
 
 
 def test_held_composition_success_still_reports_completion() -> None:
-    import hashlib
-
-    from kotekomi_application.composition_inspection import COMPOSITION_LAYER
-    from kotekomi_application.ingestion_inspection import CompositionAnnotation
-
-    base = example_profile()
-    trigger = next(item for item in base.events if item.event_id == "event_1").trigger_span
-    held = CompositionAnnotation(
-        event_id="event_1",
-        status="held",
-        source_text_sha256=hashlib.sha256(base.text.encode()).hexdigest(),
-        span=trigger,
-        hold_reason="awaiting_acceptance",
-    )
-    profile = replace(
-        base,
-        composition=(held,),
-        present_stages=frozenset({*base.present_stages, COMPOSITION_LAYER}),
-    )
+    profile = _profile_with_held_composition()
 
     def operation(
         publish: Callable[[ParagraphSnapshot], None], out: MessageStream, err: MessageStream
@@ -171,6 +196,63 @@ def test_held_composition_success_still_reports_completion() -> None:
             captured = DebugSummary.model_validate_json(clipboard.payloads[-1])
             assert captured.operation.status == "complete"
             assert captured.operation.ingestion_run_id is None
+
+    asyncio.run(scenario())
+
+
+def test_saved_composition_outcome_survives_the_run_failure() -> None:
+    from kotekomi_application.ingestion_execution import (
+        CompositionFailure,
+        FinishedEvent,
+        IngestionProcessResult,
+    )
+
+    def operation(
+        publish: Callable[[ParagraphSnapshot], None], out: MessageStream, err: MessageStream
+    ) -> int:
+        publish(ParagraphSnapshot(0, 2, _profile_without_events(), "complete"))
+        publish(
+            ParagraphSnapshot(
+                1, 2, _profile_with_held_composition("artifact_persistence_failed"), "complete"
+            )
+        )
+        err.write("Composition pass failed: fixture token write failure\n")
+        return IngestionProcessResult(
+            FinishedEvent(
+                code=0,
+                composition_failure=CompositionFailure(
+                    ingestion_run_id="igr_retained",
+                    diagnostic="fixture token write failure",
+                ),
+            )
+        )
+
+    async def scenario() -> None:
+        clipboard = _RecordingClipboard()
+        app = ReplayApp(operation, mode="ingestion", cancel=lambda: None, clipboard=clipboard)
+        async with app.run_test(size=(110, 30)) as pilot:
+            await pilot.pause()
+            assert app.current == 1
+            assert "Source captured; composition failed" in content(app, "#status")
+            assert "Assertions: received" in content(app, "#inspector")
+            assert "0 Assertion(s), 1 held Event(s)" in content(app, "#progress")
+            await pilot.press("c")
+            await pilot.pause()
+            saved = DebugSummary.model_validate_json(clipboard.payloads[-1])
+            assert saved.operation.status == "source_captured_composition_failed"
+            assert saved.records["composition"][0].data["hold_reason"] == (
+                "artifact_persistence_failed"
+            )
+            await pilot.press("left_square_bracket")
+            await pilot.pause()
+            assert app.current == 0
+            assert "Assertions: not run" in content(app, "#inspector")
+            assert "failed" not in content(app, "#inspector")
+            await pilot.press("c")
+            await pilot.pause()
+            quiet = DebugSummary.model_validate_json(clipboard.payloads[-1])
+            assert "composition" not in quiet.records
+            assert quiet.operation.status == "source_captured_composition_failed"
 
     asyncio.run(scenario())
 
