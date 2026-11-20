@@ -1,0 +1,49 @@
+schema_version = 2
+task_id = "report-composition-failure-after-capture-170584439b81"
+title = "Report Composition Failure After Capture"
+status = "ready_for_terra_high"
+series_id = "same-branch-delivery-handoff"
+task_class = "pure-behavior"
+model_profile = "terra-high-v1"
+baseline_revision = "4b0f4553909629abd27250815ade619a522b5656"
+tdd_path = "docs/2026-11-20-report-composition-failure-after-capture.md"
+tdd_sha256 = "170584439b81ad49d7551e751b1b6a9a0f2685543a2303a136eb5ee1cde9efe0"
+goal = "Report a Composition exception after successful Source capture without losing inspection or changing the ingestion exit code."
+depends_on = []
+allowed_paths = [".agent/tasks/report-composition-failure-after-capture-170584439b81.toml","docs/2026-11-20-report-composition-failure-after-capture.md","docs/2026-11-19-same-branch-delivery-handoff-agile-package.md","packages/application/src/kotekomi_application/ingestion_execution.py","packages/application/src/kotekomi_application/ingestion_debug_summary.py","packages/adapters/src/kotekomi_adapters/extraction_view/execution.py","packages/adapters/src/kotekomi_adapters/extraction_view/tui.py","packages/pipelines/src/kotekomi_pipelines/replay_reader/ingestion_worker.py","packages/pipelines/tests/test_ingestion_workflow.py","packages/pipelines/tests/test_replay_tui.py","docs/CHECK_PLAN.md"]
+reference_paths = ["docs/agent/pipeline-improvement.md","docs/agent/implement-tdd-workflow.md","docs/agent/long-running-operations.md","packages/pipelines/src/kotekomi_pipelines/replay_reader/live.py","packages/pipelines/src/kotekomi_pipelines/ingestion_workflow.py","packages/pipelines/src/kotekomi_pipelines/ingestion_composition_pass.py","packages/adapters/AGENTS.md","packages/pipelines/AGENTS.md","packages/application/AGENTS.md"]
+stop_conditions = ["The deterministic post-capture failure does not reproduce the misleading status", "Reporting requires a new Ledger status, a different CLI exit contract, or a general worker redesign"]
+
+[readiness]
+authority = "Pinned leaf TDD and PR Current Handoff."
+contract_family = "fresh-ingestion-inspection"
+dominant_outcome = "The live operator distinguishes retained Source with failed Composition from normal completion and pre-admission failure."
+failure_policy = "Keep the diagnostic and retained capture visible; keep the original ingestion exit status."
+legacy_disposition = "Change live operator reporting only. Preserve existing Ledger and Archive writes, cancellation, replay and plain CLI behavior."
+negative_proof = "A real fixture with a deterministic post-capture Composition exception no longer appears complete in the live view or its copied summary."
+public_entry_point = "Fresh Textual ingestion view and its debug snapshot."
+scope_policy = "One typed terminal result across the existing worker and presentation boundary, with two existing test modules."
+side_effect_boundary = "No new canonical writes, retry, cleanup, or inferred Ledger state."
+unresolved_decisions = []
+
+[budget]
+maximum_production_files = 5
+maximum_test_files = 2
+maximum_production_diff_lines = 150
+
+[[protected_artifacts]]
+kind = "leaf-tdd"
+path = "docs/2026-11-20-report-composition-failure-after-capture.md"
+sha256 = "170584439b81ad49d7551e751b1b6a9a0f2685543a2303a136eb5ee1cde9efe0"
+
+[[acceptance]]
+id = "post-capture-workflow"
+argv = ["uv","run","pytest","-p","no:cacheprovider","packages/pipelines/tests/test_ingestion_workflow.py"]
+timeout_seconds = 480
+profile = "portable-local"
+
+[[acceptance]]
+id = "live-terminal-reporting"
+argv = ["uv","run","pytest","-p","no:cacheprovider","packages/pipelines/tests/test_replay_tui.py"]
+timeout_seconds = 300
+profile = "portable-local"

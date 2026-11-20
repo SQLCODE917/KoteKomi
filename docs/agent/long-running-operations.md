@@ -80,4 +80,4 @@ Use `kotekomi model runs --ingestion-run <run-id> --format json` for model diagn
 
 Use `kotekomi extraction traces --ingestion-run <run-id> --format jsonl` for exact stage traces.
 
-Report a pushed branch and commit instead of polling CI.
+Report a pushed branch and commit instead of polling CI, except for the one bounded [candidate closeout wait](implement-tdd-workflow.md#candidate-closeout-on-the-same-pr) explicitly allowed for an implementing agent with a checkout.
