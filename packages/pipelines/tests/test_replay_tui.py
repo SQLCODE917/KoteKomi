@@ -14,6 +14,7 @@ import pytest
 from kotekomi_adapters.extraction_view.render import annotated_rows, profile_annotations
 from kotekomi_adapters.extraction_view.tui import (
     MessageStream,
+    OperationFinished,
     ReplayApp,
     SourcePane,
 )
@@ -47,6 +48,26 @@ class _RecordingClipboard:
     def copy(self, text: str) -> str:
         self.payloads.append(text)
         return "Copied snapshot"
+
+
+class _CompletionObservingApp(ReplayApp):
+    """ReplayApp that signals after the completion handler has finished."""
+
+    completion_handled: Event
+
+    def on_operation_finished(self, event: OperationFinished) -> None:
+        super().on_operation_finished(event)
+        self.completion_handled.set()
+
+
+class _LateCompletionApp(ReplayApp):
+    """ReplayApp that delivers a completion after its screen has been unmounted."""
+
+    async def _close_all(self) -> None:
+        await super()._close_all()
+        # The shutting-down app has detached widgets but an open queue, so this message is
+        # dispatched after teardown unless the completion handler respects the lifecycle.
+        self.post_message(OperationFinished(0))
 
 
 def _profile_with_held_composition(
@@ -355,6 +376,7 @@ def test_browsing_pauses_follow_and_can_resume_latest_paragraph() -> None:
 def test_quit_during_worker_execution_cancels_and_returns_promptly(key: str) -> None:
     advance = Event()
     posted = Event()
+    worker_finished = Event()
 
     def operation(
         publish: Callable[[ParagraphSnapshot], None], out: MessageStream, err: MessageStream
@@ -363,12 +385,13 @@ def test_quit_during_worker_execution_cancels_and_returns_promptly(key: str) -> 
         posted.set()
         assert advance.wait(5)
         err.write("A typed ingestion failure\n")
+        worker_finished.set()
         return 7
 
     async def scenario() -> None:
         app = ReplayApp(operation, mode="replay", cancel=advance.set)
-        async with app.run_test() as pilot:
-            try:
+        try:
+            async with app.run_test() as pilot:
                 assert await asyncio.to_thread(posted.wait, 2)
                 await pilot.pause()
                 await pilot.press(key)
@@ -376,8 +399,9 @@ def test_quit_during_worker_execution_cancels_and_returns_promptly(key: str) -> 
                 assert not app.finished
                 assert advance.is_set()
                 assert app.operation_code == app.return_value == 130
-            finally:
-                advance.set()
+        finally:
+            advance.set()
+            assert await asyncio.to_thread(worker_finished.wait, 5)
 
     asyncio.run(scenario())
 
@@ -606,7 +630,8 @@ def test_copy_before_source_arrives_reports_no_paragraph(monkeypatch: pytest.Mon
         return 0
 
     async def scenario() -> None:
-        app = ReplayApp(operation, mode="replay", cancel=lambda: None)
+        app = _CompletionObservingApp(operation, mode="replay", cancel=lambda: None)
+        app.completion_handled = Event()
         monkeypatch.setattr(app, "notify", notify)
         async with app.run_test() as pilot:
             try:
@@ -614,8 +639,41 @@ def test_copy_before_source_arrives_reports_no_paragraph(monkeypatch: pytest.Mon
                 assert notices == ["No paragraph is available to copy yet."]
                 assert app.clipboard == ""
                 assert not app.exit_requested
+                assert not app.finished
+                advance.set()
+                assert await asyncio.to_thread(app.completion_handled.wait, 5)
+                await pilot.pause()
+                assert app.finished and app.operation_code == 0
+                assert "Replay of saved results complete" in content(app, "#status")
             finally:
                 advance.set()
+
+    asyncio.run(scenario())
+
+
+def test_completion_delivered_during_teardown_is_not_rendered() -> None:
+    advance = Event()
+    worker_finished = Event()
+
+    def operation(
+        publish: Callable[[ParagraphSnapshot], None], out: MessageStream, err: MessageStream
+    ) -> int:
+        assert advance.wait(5)
+        worker_finished.set()
+        return 0
+
+    async def scenario() -> None:
+        app = _LateCompletionApp(operation, mode="replay", cancel=lambda: None)
+        try:
+            async with app.run_test() as pilot:
+                await pilot.pause()
+                assert not app.finished
+            # The completion was queued for a closing view; it must not reach detached widgets
+            # or record a finished state after teardown.
+            assert not app.finished
+        finally:
+            advance.set()
+            assert await asyncio.to_thread(worker_finished.wait, 5)
 
     asyncio.run(scenario())
 
