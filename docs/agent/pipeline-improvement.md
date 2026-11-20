@@ -18,6 +18,18 @@ Assess completeness against a reviewed source meaning, including essential compl
 An inspectable proposed Assertion remains distinct from accepted Ledger intelligence.
 Evidence that a Source asserts a statement does not establish that the statement is independently true.
 
+## Plan an Agile Package
+
+For work that spans responsibilities or uncertain contracts, refine the plan before pinning the implementation TDD. Keep the plan and its evidence in the existing Agile package and linked TDDs.
+
+1. **Investigate.** Trace the operator action through the current code and retained evidence. Pin the observed failure and a known-good case. Separate observations from suspected causes. Name the question that can change the next decision; time-box a spike only when evidence cannot otherwise answer it.
+2. **Split.** Map the whole operator journey, then choose the smallest useful end-to-end increment. Split its work by Domain behavior or verifiable deliverable, not by technical layer. For each subtask, name the outcome, prerequisite, and independent check. A subtask does not need its own PR. Keep later increments at the outcome and dependency level until they are next.
+3. **Check each subtask against the code.** Trace real callers, the responsible component, contract inputs and outputs, available fixtures, and failure paths. Record only what changes the plan: the finding, evidence, and decision or remaining question. Leave local implementation choices to the implementer.
+4. **Synthesize.** Walk the examples through the whole planned operator journey. Check that each contract has one owner, each requirement has a check, and the subtasks agree on inputs, outputs, and failure behavior. For cross-boundary work, have a separate reviewer challenge the joined plan. Resolve material gaps before pinning the TDD.
+5. **Revisit after delivery.** Record what changed, what evidence supports it, and what remains open. Use the work-selection and iteration rules below to continue, narrow, reorder, or stop. A completed subtask does not establish the complete operator result.
+
+Keep this proportional to the decision. A routine correction can use a short note and a regression; do not add a separate document, approval, or mandatory ceremony for each step.
+
 ## Choose and Deliver Work
 
 1. Name the operator action, current failure, and required visible result.

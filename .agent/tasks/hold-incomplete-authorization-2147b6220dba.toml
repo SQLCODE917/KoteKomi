@@ -1,0 +1,49 @@
+schema_version = 2
+task_id = "hold-incomplete-authorization-2147b6220dba"
+title = "Hold Incomplete Authorization"
+status = "ready_for_terra_high"
+series_id = "same-branch-delivery-handoff"
+task_class = "pure-behavior"
+model_profile = "terra-high-v1"
+baseline_revision = "3b5034346bcfe96d2e52eddfececaa57b13f8c6f"
+tdd_path = "docs/2026-11-19-hold-incomplete-authorization.md"
+tdd_sha256 = "2147b6220dba7944c32455dae767ea09485ddc984d2d216ca42c1338eeb75a17"
+goal = "Hold the captured incomplete authorization through the existing review and replay workflow without proposing a misleading Assertion."
+depends_on = []
+allowed_paths = [".agent/tasks/hold-incomplete-authorization-2147b6220dba.toml","docs/2026-11-19-hold-incomplete-authorization.md","docs/2026-11-19-same-branch-delivery-handoff-agile-package.md","packages/application/src/kotekomi_application/decontextualization_composition.py","packages/pipelines/src/kotekomi_pipelines/event_review_workflow.py","packages/application/tests/test_governed_action_hold.py","packages/pipelines/tests/test_ipi_production_promotion.py","docs/CHECK_PLAN.md"]
+reference_paths = ["docs/agent/pipeline-improvement.md","docs/agent/writing-tdds.md","packages/pipelines/tests/test_unsupported_complement_hold.py","packages/pipelines/tests/test_announcement_review.py","docs/2026-11-11-ingestion-improvements-task.md","packages/pipelines/tests/fixtures/ipi_promotion/README.md","packages/application/src/kotekomi_application/event_construction_review.py","packages/application/src/kotekomi_application/source_grounded_reference_composition.py","packages/pipelines/src/kotekomi_pipelines/replay_reader/live.py"]
+stop_conditions = ["The captured Event does not reproduce the recorded loss", "A comparison case disproves the narrow governed-action rule", "The correction requires a new representation or migration"]
+
+[readiness]
+authority = "Pinned leaf TDD and the PR Current Handoff section."
+contract_family = "reviewed-assertion-composition"
+dominant_outcome = "An incomplete authorization remains a reviewable, durable hold and creates no new Assertion proposal."
+failure_policy = "Retain the governed-action evidence and hold without proposing; preserve existing prerequisite behavior."
+legacy_disposition = "Do not rewrite prior reviews, source evidence, or proposal status; do not change fresh-ingestion admission."
+negative_proof = "A captured reviewed Event that used to propose incomplete meaning now holds; other-trigger and supported completion controls remain unchanged."
+public_entry_point = "Review packet, decision, recomposition, and saved replay."
+scope_policy = "One narrow composition rule and shared packet decision, with captured-input regression and focused controls."
+side_effect_boundary = "Persist the held outcome using the existing store and write no new Assertion proposal for the held Event."
+unresolved_decisions = []
+
+[budget]
+maximum_production_files = 2
+maximum_test_files = 2
+maximum_production_diff_lines = 180
+
+[[protected_artifacts]]
+kind = "leaf-tdd"
+path = "docs/2026-11-19-hold-incomplete-authorization.md"
+sha256 = "2147b6220dba7944c32455dae767ea09485ddc984d2d216ca42c1338eeb75a17"
+
+[[acceptance]]
+id = "governed-action-hold-rule"
+argv = ["uv","run","pytest","-p","no:cacheprovider","packages/application/tests/test_governed_action_hold.py"]
+timeout_seconds = 180
+profile = "portable-local"
+
+[[acceptance]]
+id = "captured-review-and-replay"
+argv = ["uv","run","pytest","-p","no:cacheprovider","packages/pipelines/tests/test_ipi_production_promotion.py","packages/pipelines/tests/test_unsupported_complement_hold.py","packages/pipelines/tests/test_announcement_review.py"]
+timeout_seconds = 600
+profile = "portable-local"

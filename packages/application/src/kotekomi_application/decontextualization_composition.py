@@ -99,6 +99,7 @@ class DecontextualizationHoldReason(StrEnum):
     UNSUPPORTED_COORDINATION = "unsupported_coordination"
     OBJECT_COMPLEMENT_UNSUPPORTED = "unsupported_object_complement"
     OBJECT_COMPLEMENT_MISSING = "object_complement_required"
+    UNSUPPORTED_PREDICATE_COMPLEMENT = "unsupported_predicate_complement"
 
 
 class DecontextualizationRoleKind(StrEnum):
@@ -515,6 +516,68 @@ def _subtree_ids(
         found.add(token_id)
         pending.extend(item.token_id for item in children.get(token_id, ()))
     return frozenset(found)
+
+
+def derive_unrepresented_governed_actions(
+    *,
+    source_text: str,
+    tokens: tuple[EventEntityLinguisticToken, ...],
+    trigger_head_start: int,
+    trigger_head_end: int,
+    represented_ranges: tuple[SourceRange, ...],
+) -> tuple[SourceRange, ...]:
+    """Return each verbal ``to``-complement the trigger governs outside its roles.
+
+    A permitted action can attach to the Event trigger as an open clausal
+    complement while the trigger's direct object names only the recipient. The
+    composed triple then represents the recipient and drops the action. Return
+    the exact source range from the ``to`` marker through the action subtree so
+    callers can hold instead of composing a truncated proposition.
+
+    The rule reads only token ownership and dependency shape: one direct
+    ``xcomp`` dependent of the trigger head, verbal, with one ``to`` ``mark``
+    dependent, whose subtree does not overlap a represented role range. It never
+    matches a verb lemma, a captured Event ID, or source wording, and it does not
+    reach noun-attached clauses or complements governed by another trigger.
+    """
+    if not 0 <= trigger_head_start < trigger_head_end <= len(source_text):
+        raise ValueError("Trigger coordinates are outside the source text.")
+    for token in tokens:
+        if not 0 <= token.start < token.end <= len(source_text):
+            raise ValueError("Governed-action token coordinates are outside the source text.")
+        if source_text[token.start : token.end] != token.text:
+            raise ValueError("Governed-action token text disagrees with the source text.")
+    head = _trigger_head_token(trigger_head_start, trigger_head_end, tokens)
+    if head is None:
+        return ()
+    grouped: dict[str, list[EventEntityLinguisticToken]] = {}
+    for token in tokens:
+        if token.head_token_id is not None and token.sentence_id == head.sentence_id:
+            grouped.setdefault(token.head_token_id, []).append(token)
+    children: dict[str, tuple[EventEntityLinguisticToken, ...]] = {
+        token_id: tuple(value) for token_id, value in grouped.items()
+    }
+    actions: list[SourceRange] = []
+    for complement in _dependents(head, tokens):
+        if complement.dependency_relation != "xcomp" or complement.part_of_speech != "VERB":
+            continue
+        markers = tuple(
+            child
+            for child in children.get(complement.token_id, ())
+            if child.dependency_relation == "mark" and child.lemma.casefold() == "to"
+        )
+        if len(markers) != 1:
+            continue
+        subtree = _subtree_ids(complement.token_id, children)
+        action_tokens = tuple(token for token in tokens if token.token_id in subtree) + (
+            markers[0],
+        )
+        start = min(token.start for token in action_tokens)
+        end = max(token.end for token in action_tokens)
+        if any(start < fragment.end and fragment.start < end for fragment in represented_ranges):
+            continue
+        actions.append(SourceRange(start=start, end=end, text=source_text[start:end]))
+    return tuple(sorted(actions, key=lambda action: (action.start, action.end)))
 
 
 def _reporting_carrier(
@@ -1013,6 +1076,30 @@ def build_decontextualized_proposition(
                     exact_fragment=fragment,
                     object_value=fragment.text,
                 )
+
+    # A direct object can name only the recipient of an action the trigger
+    # governs as an open clausal complement. Representing that object alone would
+    # drop the permitted action and its limit, so hold instead. An indirect
+    # object alone keeps its existing composition behavior.
+    direct_object_selected = (
+        bool(object_dependents) and object_dependents[0].dependency_relation == "obj"
+    )
+    if (
+        direct_object_selected
+        and object_role is not None
+        and derive_unrepresented_governed_actions(
+            source_text=source_text,
+            tokens=tokens,
+            trigger_head_start=trigger_head_start,
+            trigger_head_end=trigger_head_end,
+            represented_ranges=(subject_role.exact_fragment, object_role.exact_fragment),
+        )
+    ):
+        return _held(
+            event_id,
+            source_text_sha256,
+            DecontextualizationHoldReason.UNSUPPORTED_PREDICATE_COMPLEMENT,
+        )
 
     polarity = (
         EventPolarity.NEGATED

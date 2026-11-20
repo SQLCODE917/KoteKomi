@@ -20,6 +20,8 @@ Its job is to pin down every decision that crosses a contract boundary, and to s
 
 For capability work, Pipeline changes, and experiments, follow [Pipeline Improvement](pipeline-improvement.md).
 The same policy governs Agile packages that group TDDs.
+For an Agile package, follow [Plan an Agile Package](pipeline-improvement.md#plan-an-agile-package).
+Name the package increment that this TDD delivers. Use the package findings to decide which boundary contracts to pin and which choices to leave open.
 In Context & Problem, identify the operator failure and separate its observed blocking stage from its suspected cause.
 In Goals and Acceptance Criteria, distinguish engineering verification, demonstrated capability, and the declared product target.
 Use the existing package tracker to record competing corrections, the selected production hypothesis, and its stop condition.

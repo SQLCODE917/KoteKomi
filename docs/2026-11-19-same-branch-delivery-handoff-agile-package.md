@@ -52,6 +52,15 @@ Select one bounded operator-facing outcome from the active ingestion package wit
 
 Pass if no one has to relay or reinterpret the handoff outside the PR. If the agent needs clarification, resolve it in the PR and record what the handoff was missing. Don't manufacture a spec change or bug for the live trial; the fixtures cover those branches.
 
+#### Handoff-02 pilot: Hold Incomplete Authorization
+
+[Leaf TDD](2026-11-19-hold-incomplete-authorization.md). This is one reviewed-ingestion correction, not a new extraction experiment or dispatcher.
+
+- **Investigate.** The [prior assessment](2026-11-11-ingestion-improvements-task.md#remaining-failures-and-next-scope-decision) records a truncated DHS authorization proposal that the reviewer rejected. The checked-in capture includes the Event and the original parse. The permitted action, systems, and time attach below the trigger's infinitival complement, not below the selected recipient noun. Treat the assessment as historical until the implementer runs the red regression.
+- **Split and check.** (1) Reproduce the exact Event on clean disposable state with the retained capture. (2) Make shared composition hold this unrepresented governed action, with positive and near-miss controls. (3) Carry the same result through packet, review evidence, recomposition, and saved replay. The leaf TDD binds each checkpoint to its code, dependency, and verification.
+- **Synthesize.** A packet warning cannot stop proposal creation; the shared composer must own that decision. Showing the full Source paragraph is not the same as binding a complete review evidence range. Preserve identity prerequisites and historical review and proposal records, and verify the hold on fresh reviewed state. Narrow the rule or stop if the controls fail; do not extend the parser or broaden the product claim.
+- **Review the pilot.** Record what the planning pass caught, what still required clarification or rework, and planning effort if known. Count manual wakes and copied instructions separately. Record candidate CI in the existing Harness run and link the evidence in the PR. Judge the product by the exact before/after fixture and known-good controls, not by the number of planning steps. Revisit guidance only after observing this handoff.
+
 ### Handoff-03: Make pickup event-driven (conditional)
 
 Start only after Handoff-02 is repeatable without human translation. Use one explicit, authorized ready event; re-read the PR and run preflight before dispatch. One implementation attempt per repository, PR, and spec SHA; duplicate delivery is harmless. Ordinary pushes and bot replies don't trigger another start. A replacement pin must not race an active run. The implementer reports to the same PR and has no merge authority. Defer routing, cross-repo support, and any custom scheduler.
