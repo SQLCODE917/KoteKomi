@@ -309,6 +309,22 @@ def test_realized_events_count_once_per_paragraph_evidence() -> None:
     assert evidence == {"sge_repeat": ((1, "a" * 64), (2, "b" * 64))}
 
 
+def test_unreadable_outcome_is_invalid() -> None:
+    """An unreadable matching file is invalid, not a saved or missing outcome."""
+
+    def load(_event_id: str) -> EventCompositionRecord:
+        raise OSError("fixture read failure")
+
+    row = _resolve_outcome(
+        event_id="sge_unreadable",
+        evidence=((1, "a" * 64),),
+        load=load,
+    )
+
+    assert row.status == "invalid"
+    assert row.diagnostic == "outcome is unreadable"
+
+
 def test_conflicting_paragraph_evidence_is_invalid_not_deduplicated() -> None:
     """A conflicting Event location is actionable and never silently chosen."""
 
