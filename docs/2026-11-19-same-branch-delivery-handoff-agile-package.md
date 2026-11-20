@@ -1,6 +1,6 @@
 # Same-Branch Delivery Handoff Agile Package
 
-- Status: Ready for Handoff-01 implementation
+- Status: Handoff-01 and Handoff-02 merged; closeout pilot ready
 - Program ID: `same-branch-delivery-handoff`
 - First deliverable: [Handoff-01, make the current handoff unambiguous](2026-11-19-one-current-pr-handoff.md)
 - Predecessors: [same-branch harness pilot (PR #2)](https://github.com/SQLCODE917/KoteKomi/pull/2), [CI verification follow-up (PR #3)](https://github.com/SQLCODE917/KoteKomi/pull/3)
@@ -60,6 +60,15 @@ Pass if no one has to relay or reinterpret the handoff outside the PR. If the ag
 - **Split and check.** (1) Reproduce the exact Event on clean disposable state with the retained capture. (2) Make shared composition hold this unrepresented governed action, with positive and near-miss controls. (3) Carry the same result through packet, review evidence, recomposition, and saved replay. The leaf TDD binds each checkpoint to its code, dependency, and verification.
 - **Synthesize.** A packet warning cannot stop proposal creation; the shared composer must own that decision. Showing the full Source paragraph is not the same as binding a complete review evidence range. Preserve identity prerequisites and historical review and proposal records, and verify the hold on fresh reviewed state. Narrow the rule or stop if the controls fail; do not extend the parser or broaden the product claim.
 - **Review the pilot.** Record what the planning pass caught, what still required clarification or rework, and planning effort if known. Count manual wakes and copied instructions separately. Record candidate CI in the existing Harness run and link the evidence in the PR. Judge the product by the exact before/after fixture and known-good controls, not by the number of planning steps. Revisit guidance only after observing this handoff.
+
+### Closeout pilot: Report Composition Failure After Capture
+
+[Leaf TDD](2026-11-20-report-composition-failure-after-capture.md). [PR #5](https://github.com/SQLCODE917/KoteKomi/pull/5#issuecomment-7027838794) proved URL-only pickup and exact candidate CI in an existing Harness run, but required a separate closeout prompt. The next ordinary product slice pilots [agent-owned candidate closeout](agent/implement-tdd-workflow.md#candidate-closeout-on-the-same-pr) without a new Harness or dispatcher.
+
+- **Investigate:** The workflow distinguishes a Composition exception from successful capture; the worker and view collapse both to exit code zero.
+- **Split and check:** Reproduce with a deterministic post-capture fault, carry the existing fact across the typed worker boundary, then verify truthful terminal status and preserved inspection. The controls are successful Composition (including normal holds), pre-admission failure, and unchanged replay/cancellation.
+- **Synthesize:** The terminal signal describes what this live operation achieved; it does not change what the Ledger records as captured. Use an explicit state root to prove retention. Do not expand this into recovery, retry, or new Ledger state.
+- **Measure:** Target zero prompts asking the implementer to close out. Record an ordinary review wake or a wake to resume CI as separate events, and state explicitly if the session could not wait. Verify source behavior and delivery separately. The operator still decides to merge.
 
 ### Handoff-03: Make pickup event-driven (conditional)
 

@@ -55,6 +55,38 @@ It does not relay instructions through a human at the terminal.
 
 It reports check results, the candidate receipt, or a concrete blocker on the PR.
 
+## Candidate closeout on the same PR
+
+A checked-out implementing agent owns pre-merge closeout in the existing Harness run.
+Capture the product's red baseline before editing. Retain the exact test or probe and its output.
+Pushing the candidate verification receipt starts closeout; it does not complete it.
+
+1. Identify the CI workflow triggered by `pull_request` for the current PR, repository, and exact receipt commit SHA.
+   Confirm that the PR head still equals that SHA before recording anything.
+   A green `push` run is not a substitute.
+2. For this handoff only, the agent may start one bounded
+   [GitHub CLI wait](https://cli.github.com/manual/gh_run_watch) for the matching run:
+   `gh run watch <run-id> --repo <owner/name> --exit-status`.
+   Set a 30-minute deadline in the command runner. Do not loop in the model.
+   If no matching run is visible, it is still pending at the deadline, or the local session cannot wait,
+   post `waiting for CI` with the exact receipt SHA and run link if known. Resume the same run, not implementation, when woken.
+   For failure, post the failed check and next action; do not record it as success.
+3. Re-read GitHub's terminal workflow record. Verify repository, PR, workflow, event, head, and required jobs.
+   Normalize the successful result to `{"schema_version":1,"head_sha":"<receipt-sha>","conclusion":"success"}` in a temporary file outside the checkout.
+   Run `uv run kotekomi-agent record-candidate-ci --task-id <task-id> --run <run-id> --ci-result <file>`.
+   Keep the existing state root; pass `--state-root <path>` if it differs from the default.
+4. Re-run the same `implement-tdd` status command with the existing pin and no `--new-run`.
+   Check that candidate CI is no longer missing and the next action is main promotion.
+   Use `uv run kotekomi-agent evidence-index --task-id <task-id> --run <run-id>` to confirm the candidate CI producer.
+   Leave the full receipt-chain and promotion closeout to the post-merge workflow.
+   Post one PR closeout with baseline and final product results, controls, receipt SHA, successful PR CI run link,
+   Harness run ID and recorded candidate CI, and any remaining action. Count review wakes, a wake to resume waiting for CI,
+   and prompts that had to request closeout separately. Collect evidence without assuming a missing count was zero.
+   Stop before main promotion. Only the operator decides to merge.
+
+This exception applies only to the named candidate PR CI run.
+The human-at-terminal workflow and long-running local and model work retain their existing rules.
+
 ## Start from one PR URL
 
 Use this path when the handoff is a PR description and the branch is already fetched.

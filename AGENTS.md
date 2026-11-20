@@ -54,6 +54,8 @@ The human monitors CI and reports its terminal result.
 
 Do not poll a long-running local process, deployment, model invocation, or CI run.
 
+A checked-out implementing agent may use the one bounded candidate CI wait defined in [Implementing a TDD](docs/agent/implement-tdd-workflow.md#candidate-closeout-on-the-same-pr). This exception does not apply to other operations or to the human-at-terminal workflow.
+
 User-visible long operations must leave typed Ledger records or validated Archive records.
 
 Do not require every internal function to persist a separate diagnostic record.

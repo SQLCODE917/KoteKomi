@@ -11,9 +11,15 @@ from io import StringIO
 from kotekomi_application.composition_inspection import COMPOSITION_LAYER, INSPECTION_LAYERS
 from kotekomi_application.ingestion_debug_summary import (
     OperationMode,
+    OperationStatus,
     SnapshotOperation,
     build_debug_summary,
     phase_statuses,
+)
+from kotekomi_application.ingestion_execution import (
+    CompositionFailure,
+    FinishedEvent,
+    IngestionProcessResult,
 )
 from kotekomi_application.ingestion_inspection import (
     InspectionClipboardPort,
@@ -53,9 +59,10 @@ class StatusChanged(Message):
 
 
 class OperationFinished(Message):
-    def __init__(self, code: int) -> None:
+    def __init__(self, code: int, finished: FinishedEvent | None = None) -> None:
         super().__init__()
         self.code = code
+        self.finished = finished
 
 
 class MessageStream(StringIO):
@@ -178,6 +185,7 @@ class ReplayApp(App[int]):
         self.latest: int | None = None
         self.following = True
         self.finished = False
+        self.finished_event: FinishedEvent | None = None
         self.exit_requested = False
         self.operation_code = 0
         self._scroll_positions: dict[int, AnnotatedRow] = {}
@@ -235,7 +243,12 @@ class ReplayApp(App[int]):
             out.flush()
             err.flush()
         if not self.exit_requested:
-            self.post_message(OperationFinished(code))
+            self.post_message(
+                OperationFinished(
+                    code,
+                    code.finished if isinstance(code, IngestionProcessResult) else None,
+                )
+            )
 
     def _set_layout(self, width: int | None = None) -> None:
         self.screen.set_class((self.size.width if width is None else width) < 100, "narrow")
@@ -283,16 +296,28 @@ class ReplayApp(App[int]):
             return
         self.finished = True
         self.operation_code = event.code
+        self.finished_event = event.finished
         self._refresh_view()
         self._refresh_status()
 
+    def _composition_failure(self) -> CompositionFailure | None:
+        if not self.finished or self.finished_event is None:
+            return None
+        return self.finished_event.composition_failure
+
     def _refresh_status(self) -> None:
-        operation_label = "Ingestion" if self.mode == "ingestion" else "Replay of saved results"
-        terminal = (
-            operation_label + (" complete" if self.operation_code == 0 else " failed")
-            if self.finished
-            else operation_label + " running"
-        )
+        failure = self._composition_failure()
+        if failure is not None:
+            terminal = (
+                f"Source captured; composition failed · IngestionRun {failure.ingestion_run_id}"
+            )
+        else:
+            operation_label = "Ingestion" if self.mode == "ingestion" else "Replay of saved results"
+            terminal = (
+                operation_label + (" complete" if self.operation_code == 0 else " failed")
+                if self.finished
+                else operation_label + " running"
+            )
         if self.finished:
             terminal += " · Browse intelligence or press q to exit"
         self.query_one("#status", Static).update(Text("\n".join([terminal, *self._status_lines])))
@@ -551,6 +576,14 @@ class ReplayApp(App[int]):
             self.notify("No paragraph is available to copy yet.", severity="warning")
             return
         snapshot = self.snapshots[self.current]
+        failure = self._composition_failure()
+        status: OperationStatus
+        if failure is not None:
+            status = "source_captured_composition_failed"
+        elif self.finished:
+            status = "complete" if self.operation_code == 0 else "failed"
+        else:
+            status = "running"
         try:
             captured = build_debug_summary(
                 snapshot.profile,
@@ -558,10 +591,9 @@ class ReplayApp(App[int]):
                 paragraph_status=snapshot.status,
                 operation=SnapshotOperation(
                     mode=self.mode,
-                    status=("complete" if self.operation_code == 0 else "failed")
-                    if self.finished
-                    else "running",
+                    status=status,
                     exit_code=self.operation_code if self.finished else None,
+                    ingestion_run_id=failure.ingestion_run_id if failure is not None else None,
                 ),
                 visible_stages=self.visible_stages,
                 selected_key=self.selected_keys.get(self.current),
