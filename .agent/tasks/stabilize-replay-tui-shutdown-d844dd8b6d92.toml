@@ -1,0 +1,43 @@
+schema_version = 2
+task_id = "stabilize-replay-tui-shutdown-d844dd8b6d92"
+title = "Stabilize Replay TUI Shutdown"
+status = "ready_for_terra_high"
+series_id = "same-branch-delivery-handoff"
+task_class = "pure-behavior"
+model_profile = "terra-high-v1"
+baseline_revision = "8eb9b438bd0865375d715124846314a63000e3a0"
+tdd_path = "docs/2026-11-20-stabilize-replay-tui-shutdown.md"
+tdd_sha256 = "d844dd8b6d92266c305392e710330355c6e0f40348547024efeade458afcb0a6"
+goal = "Keep replay copy and completion behavior deterministic and prevent completion from updating a closing view."
+depends_on = []
+allowed_paths = [".agent/tasks/stabilize-replay-tui-shutdown-d844dd8b6d92.toml","docs/2026-11-20-stabilize-replay-tui-shutdown.md","docs/2026-11-20-replay-tui-shutdown-agile-package.md","packages/adapters/src/kotekomi_adapters/extraction_view/tui.py","packages/pipelines/tests/test_replay_tui.py"]
+reference_paths = [".github/workflows/ci.yml","docs/agent/implement-tdd-workflow.md","docs/CHECK_PLAN.md"]
+stop_conditions = ["A deterministic lifecycle witness cannot be constructed within the scoped ReplayApp and test files."]
+
+[readiness]
+authority = "Pinned leaf TDD and PR Current Handoff."
+contract_family = "replay-tui-lifecycle"
+dominant_outcome = "A closing ReplayApp does not render late completion, while a live view still renders completion."
+failure_policy = "Preserve cancel and exit code 130 on in-flight quit; no widget access after teardown."
+legacy_disposition = "Copy before the first paragraph and ordinary completion behavior are unchanged."
+negative_proof = "An explicitly ordered late completion cannot query detached widgets."
+public_entry_point = "Replay TUI copy and quit actions."
+scope_policy = "One lifecycle boundary, one production file, one test file."
+side_effect_boundary = "No source, Ledger, composition, workflow, or Harness changes."
+unresolved_decisions = []
+
+[budget]
+maximum_production_files = 1
+maximum_test_files = 1
+maximum_production_diff_lines = 80
+
+[[protected_artifacts]]
+kind = "leaf-tdd"
+path = "docs/2026-11-20-stabilize-replay-tui-shutdown.md"
+sha256 = "d844dd8b6d92266c305392e710330355c6e0f40348547024efeade458afcb0a6"
+
+[[acceptance]]
+id = "replay-tui-lifecycle"
+argv = ["uv","run","pytest","-p","no:cacheprovider","packages/pipelines/tests/test_replay_tui.py"]
+timeout_seconds = 480
+profile = "portable-local"
