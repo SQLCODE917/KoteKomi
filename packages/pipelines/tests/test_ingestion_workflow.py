@@ -8,6 +8,7 @@ Ingestion, composition, persistence, and replay run through production code.
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import io
 import json
@@ -18,6 +19,8 @@ from typing import Any, cast
 import pytest
 from kotekomi_adapters.composition_outcome_store import CompositionOutcomeStore
 from kotekomi_application import (
+    EventCompositionRecord,
+    EventCompositionStatus,
     LinguisticAnalysis,
     LinguisticAnalysisInput,
     LinguisticToken,
@@ -207,7 +210,9 @@ def _run_plain_live(root: Path) -> int:
     )
 
 
-def _run_worker(root: Path, monkeypatch: pytest.MonkeyPatch) -> _RecordingConnection:
+def _run_worker(
+    root: Path, monkeypatch: pytest.MonkeyPatch, *, run_id: str = "igr_isc01_worker"
+) -> _RecordingConnection:
     state = root / "state"
     # Session setup belongs to the spawned worker; in-process it is a no-op shim.
     monkeypatch.setattr(os, "setsid", lambda: None)
@@ -218,7 +223,7 @@ def _run_worker(root: Path, monkeypatch: pytest.MonkeyPatch) -> _RecordingConnec
             source_path=str(PDF_FIXTURE),
             source_url=SOURCE_URL,
             ledger_path=str(state / "kotekomi.db"),
-            ingestion_run_id="igr_isc01_worker",
+            ingestion_run_id=run_id,
             paragraph_ordinal=None,
         ),
         cast("Any", connection),
@@ -244,6 +249,14 @@ def _composition_outcomes(
         for record in CompositionOutcomeStore(outcomes_dir).load_all()
     ]
     return sorted(outcomes, key=lambda item: tuple(str(part) for part in item))
+
+
+def _archive_hashes(root: Path) -> list[tuple[str, str]]:
+    return [
+        (path.relative_to(root).as_posix(), hashlib.sha256(path.read_bytes()).hexdigest())
+        for path in sorted(root.rglob("*"))
+        if path.is_file()
+    ]
 
 
 def _extraction_outcomes(root: Path) -> list[tuple[str, tuple[str, ...]]]:
@@ -488,3 +501,135 @@ def test_composition_failure_requires_the_captured_exit_code() -> None:
                 diagnostic="fixture composition outage",
             ),
         )
+
+
+def test_reused_event_reports_the_newer_saved_outcome(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A run's Event is read from the current Event-keyed store, not its attempt."""
+    from kotekomi_pipelines.ingestion_composition_inspection import (
+        InspectCompositionOutcomesInput,
+        inspect_composition_outcomes,
+    )
+
+    _install_fixtures(monkeypatch)
+    root = tmp_path / "reuse"
+    first = _run_worker(root, monkeypatch)
+    second = _run_worker(root, monkeypatch, run_id="igr_isc01_second")
+    state = root / "state"
+    assert first.code() == second.code() == 0
+    assert any(snapshot.receipt_reused for snapshot in second.snapshots())
+
+    first_events = [
+        (event.event_id, paragraph.ordinal + 1)
+        for paragraph in load_paragraph_inputs(
+            state / "kotekomi.db", state / "archive", ingestion_run_id="igr_isc01_worker"
+        )
+        for event in _profile(paragraph).events
+    ]
+    second_events = [
+        (event.event_id, paragraph.ordinal + 1)
+        for paragraph in load_paragraph_inputs(
+            state / "kotekomi.db", state / "archive", ingestion_run_id="igr_isc01_second"
+        )
+        for event in _profile(paragraph).events
+    ]
+    assert first_events == second_events
+    assert len(first_events) == 1
+    event_id, paragraph = first_events[0]
+
+    store = CompositionOutcomeStore(state / "composition-outcomes")
+    current = store.load(event_id)
+    store.save(
+        EventCompositionRecord(
+            event_id=current.event_id,
+            source_text_sha256=current.source_text_sha256,
+            status=EventCompositionStatus.HELD,
+            hold_reason="selection_gap",
+        )
+    )
+    result = inspect_composition_outcomes(
+        InspectCompositionOutcomesInput(
+            ledger_path=state / "kotekomi.db",
+            archive_path=state / "archive",
+            ingestion_run_id="igr_isc01_worker",
+        )
+    )
+
+    assert result.total_events == 1
+    assert result.counts == {"composed": 0, "held": 1, "missing": 0, "invalid": 0}
+    assert [(row.event_id, row.status, row.paragraphs, row.hold_reason) for row in result.rows] == [
+        (event_id, "held", (paragraph,), "selection_gap")
+    ]
+
+
+def test_composition_inspection_reopens_a_failed_run_without_writes(tmp_path: Path) -> None:
+    """A retained post-capture failure is inspectable with no analyzer or writes."""
+    from kotekomi_pipelines import ingestion_workflow
+    from kotekomi_pipelines.ingestion_composition_inspection import (
+        InspectCompositionOutcomesInput,
+        inspect_composition_outcomes,
+    )
+
+    worker_patch = pytest.MonkeyPatch()
+    try:
+        _install_fixtures(worker_patch)
+        worker_patch.setattr(ingestion_workflow, "compose_ingested_run", _raise_composition_outage)
+        connection = _run_worker(tmp_path / "worker", worker_patch)
+    finally:
+        worker_patch.undo()
+
+    state = tmp_path / "worker" / "state"
+    assert json.loads(connection.frames[-1])["composition_failure"]["diagnostic"] == (
+        "fixture composition outage"
+    )
+    paragraphs = load_paragraph_inputs(state / "kotekomi.db", state / "archive")
+    expected = {
+        (event.event_id, paragraph.ordinal + 1)
+        for paragraph in paragraphs
+        for event in _profile(paragraph).events
+    }
+    assert expected
+    run_ids_before = _ingestion_run_ids(state / "kotekomi.db")
+    archive_before = _archive_hashes(state / "archive")
+    ledger_before = hashlib.sha256((state / "kotekomi.db").read_bytes()).hexdigest()
+    outcomes_before = _composition_outcomes(tmp_path / "worker")
+    assert outcomes_before == []
+
+    out, err = io.StringIO(), io.StringIO()
+    with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+        code = cli.main(
+            [
+                "--config",
+                str(_config(tmp_path / "worker")),
+                "ingestions",
+                "composition",
+                "igr_isc01_worker",
+                "--format",
+                "json",
+            ]
+        )
+    assert (code, err.getvalue()) == (0, "")
+    payload = json.loads(out.getvalue())
+    assert payload["total_events"] == len(expected)
+    assert payload["counts"] == {
+        "composed": 0,
+        "held": 0,
+        "missing": len(expected),
+        "invalid": 0,
+    }
+    result = inspect_composition_outcomes(
+        InspectCompositionOutcomesInput(
+            ledger_path=state / "kotekomi.db",
+            archive_path=state / "archive",
+            ingestion_run_id="igr_isc01_worker",
+        )
+    )
+    assert {(row.event_id, row.paragraphs) for row in result.rows} == {
+        (event_id, (paragraph,)) for event_id, paragraph in expected
+    }
+
+    assert _ingestion_run_ids(state / "kotekomi.db") == run_ids_before
+    assert _archive_hashes(state / "archive") == archive_before
+    assert hashlib.sha256((state / "kotekomi.db").read_bytes()).hexdigest() == ledger_before
+    assert _composition_outcomes(tmp_path / "worker") == outcomes_before
