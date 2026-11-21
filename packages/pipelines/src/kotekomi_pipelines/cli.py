@@ -243,12 +243,6 @@ from kotekomi_pipelines.hybrid_document_ingestion import (
     HybridDocumentIngestionInput,
     run_hybrid_document_ingestion,
 )
-from kotekomi_pipelines.ingestion_composition_inspection import (
-    InspectCompositionOutcomesInput,
-    InspectCompositionOutcomesResult,
-    composition_inspection_to_json,
-    inspect_composition_outcomes,
-)
 from kotekomi_pipelines.ingestion_workflow import run_ingestion_workflow
 from kotekomi_pipelines.managed_llama_server import (
     ManagedLlamaServerConfig,
@@ -306,13 +300,6 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "ingestions" and args.ingestions_command == "show":
         return show_user_ingestion(
-            config_path=args.config,
-            ingestion_run_id=args.ingestion_run_id,
-            output_format=args.output_format,
-        )
-
-    if args.command == "ingestions" and args.ingestions_command == "composition":
-        return show_user_ingestion_composition(
             config_path=args.config,
             ingestion_run_id=args.ingestion_run_id,
             output_format=args.output_format,
@@ -982,13 +969,6 @@ def build_parser() -> argparse.ArgumentParser:
     )
     ingestion_show_parser.add_argument("ingestion_run_id")
     ingestion_show_parser.add_argument(
-        "--format", dest="output_format", choices=("text", "json"), default="text"
-    )
-    ingestion_composition_parser = ingestions_subparsers.add_parser(
-        "composition", help="Report current saved Composition outcomes for one ingestion."
-    )
-    ingestion_composition_parser.add_argument("ingestion_run_id")
-    ingestion_composition_parser.add_argument(
         "--format", dest="output_format", choices=("text", "json"), default="text"
     )
     ingestion_artifacts_parser = ingestions_subparsers.add_parser(
@@ -3313,54 +3293,6 @@ def show_user_ingestion(
         return 0
     print(_ingestion_summary_text(result.summary))
     return 0
-
-
-def show_user_ingestion_composition(
-    *, config_path: Path | None, ingestion_run_id: str, output_format: str
-) -> int:
-    try:
-        config = load_processing_storage_config(
-            config_path=config_path,
-            ledger_path_override=None,
-            archive_path_override=None,
-        )
-        storage = config.storage
-        _require_initialized_ledger(storage.ledger_path)
-        result = inspect_composition_outcomes(
-            InspectCompositionOutcomesInput(
-                storage.ledger_path, storage.archive_path, ingestion_run_id
-            )
-        )
-    except (ProcessingConfigurationError, OSError, sqlite3.Error, ValueError) as error:
-        print(str(error), file=sys.stderr)
-        return 1
-    if output_format == "json":
-        print(json.dumps(composition_inspection_to_json(result), sort_keys=True))
-    else:
-        print(_composition_inspection_text(result))
-    return 1 if result.counts["invalid"] else 0
-
-
-def _composition_inspection_text(result: InspectCompositionOutcomesResult) -> str:
-    lines = [
-        f"IngestionRun: {result.ingestion_run_id}",
-        "Current saved Composition outcomes:",
-        f"Realized Events: {result.total_events}",
-        *(f"{status.capitalize()}: {count}" for status, count in result.counts.items()),
-    ]
-    if not result.rows:
-        return "\n".join([*lines, "Events: none"])
-    lines.append("Events:")
-    for row in result.rows:
-        locations = (
-            f"paragraph {row.paragraphs[0]}"
-            if len(row.paragraphs) == 1
-            else "paragraphs " + ",".join(str(item) for item in row.paragraphs)
-        )
-        suffix = f"\thold: {row.hold_reason}" if row.hold_reason else ""
-        suffix += f"\tdiagnostic: {row.diagnostic}" if row.diagnostic else ""
-        lines.append(f"{row.status}\t{locations}\t{row.event_id}{suffix}")
-    return "\n".join(lines)
 
 
 def list_user_ingestion_artifacts(
