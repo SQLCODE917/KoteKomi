@@ -173,3 +173,5 @@ Closeout ends the local loop; it does not require discarding useful, safe work.
 The next-work recommendation compares remaining addressable failures across the Pipeline.
 It states why the proposed correction outranks alternatives and what remains unknown.
 It does not default to another extension of the component last edited.
+
+For a failure after some Pipeline work can already be saved, use a mixed-state acceptance fixture up front: one result already saved, later work failed or absent, and a unit with no work to do. Check the reported outcome and what remains inspectable. Extend a fixture, not the number of process gates.

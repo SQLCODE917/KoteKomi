@@ -1,0 +1,49 @@
+schema_version = 2
+task_id = "inspect-current-composition-outcomes-7f84dc2b7dc7"
+title = "Inspect Current Composition Outcomes"
+status = "ready_for_terra_high"
+series_id = "same-branch-delivery-handoff"
+task_class = "pure-behavior"
+model_profile = "terra-high-v1"
+baseline_revision = "f1ba1155ef20d16e09354f6ebf3edbe95f00bfc0"
+tdd_path = "docs/2026-11-20-inspect-current-composition-outcomes.md"
+tdd_sha256 = "7f84dc2b7dc702b97e16a7748bdf915907a791da080581a74ae854cc9c520da8"
+goal = "Report current saved Composition outcomes for Events in one retained IngestionRun without writes or inference."
+depends_on = []
+allowed_paths = [".agent/tasks/inspect-current-composition-outcomes-7f84dc2b7dc7.toml","docs/2026-11-20-inspect-current-composition-outcomes.md","docs/2026-11-20-composition-inspection-agile-package.md","packages/pipelines/src/kotekomi_pipelines/cli.py","packages/pipelines/src/kotekomi_pipelines/ingestion_composition_inspection.py","packages/pipelines/tests/test_ingestion_workflow.py","packages/pipelines/tests/test_ingestion_composition_inspection.py","docs/CHECK_PLAN.md"]
+reference_paths = ["packages/pipelines/src/kotekomi_pipelines/replay_reader/transport.py","packages/adapters/src/kotekomi_adapters/composition_outcome_store.py","packages/pipelines/src/kotekomi_pipelines/ingestion_composition_pass.py","docs/agent/implement-tdd-workflow.md"]
+stop_conditions = ["The selected run cannot identify realized Events without guessing"]
+
+[readiness]
+authority = "Pinned leaf TDD and PR Current Handoff."
+contract_family = "retained-ingestion-inspection"
+dominant_outcome = "Report current saved Composition outcomes for Events in one retained IngestionRun without writes or inference."
+failure_policy = "Distinguish invalid from missing, keep actionable errors, and do not fall back."
+legacy_disposition = "Existing inspection, ingest and replay behavior is unchanged."
+negative_proof = "A mixed retained run does not count missing or malformed files as saved outcomes."
+public_entry_point = "kotekomi ingestions composition with explicit IngestionRun ID."
+scope_policy = "One narrow change as specified in the leaf TDD."
+side_effect_boundary = "Read retained evidence; no inference, writes or retry."
+unresolved_decisions = []
+
+[budget]
+maximum_production_files = 2
+maximum_test_files = 2
+maximum_production_diff_lines = 230
+
+[[protected_artifacts]]
+kind = "leaf-tdd"
+path = "docs/2026-11-20-inspect-current-composition-outcomes.md"
+sha256 = "7f84dc2b7dc702b97e16a7748bdf915907a791da080581a74ae854cc9c520da8"
+
+[[acceptance]]
+id = "composition-inspection"
+argv = ["uv","run","pytest","-p","no:cacheprovider","packages/pipelines/tests/test_ingestion_composition_inspection.py"]
+timeout_seconds = 480
+profile = "portable-local"
+
+[[acceptance]]
+id = "retained-ingestion-fixture"
+argv = ["uv","run","pytest","-p","no:cacheprovider","packages/pipelines/tests/test_ingestion_workflow.py"]
+timeout_seconds = 480
+profile = "portable-local"
