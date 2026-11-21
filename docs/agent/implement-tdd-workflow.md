@@ -87,6 +87,77 @@ Pushing the candidate verification receipt starts closeout; it does not complete
 This exception applies only to the named candidate PR CI run.
 The human-at-terminal workflow and long-running local and model work retain their existing rules.
 
+## Review wake on the same PR
+
+A review wake watches one enrolled PR for a versioned marker comment.
+The listener is a foreground command.
+The Mac must be awake and the listener must be running.
+The listener reads GitHub with the existing `gh` authentication and writes no GitHub state.
+
+Enroll one checkout, its current branch, the PR, the pinned specification commit, and one existing terminal Cline session ID.
+Keep the state file outside the checkout.
+
+```bash
+uv run kotekomi-agent review-wake enroll \
+  --state "$HOME/.local/state/kotekomi/review-wake/pull-11.json" \
+  --checkout "$PWD" \
+  --repo SQLCODE917/KoteKomi \
+  --pr 11 \
+  --branch spec/targeted-review-wake-refresh \
+  --pin <full-lowercase-spec-sha> \
+  --session-id <existing-terminal-cline-session-id> \
+  --author <trusted-comment-author> \
+  --operator <operator-login> \
+  --harness-run <existing-harness-run-id>
+```
+
+Use `--replace` to rebind the same state file.
+The rebind preserves delivered comment IDs.
+Use `--authorize-shared-account` only when the operator explicitly authorizes a shared-account marker signal.
+Without that flag, a marker whose author equals the operator produces a notification-only alert.
+
+The review comment carries exactly one marker in addition to its human-readable text.
+
+```html
+<!-- kotekomi-review-request:v1 repo=SQLCODE917/KoteKomi pr=11 head=<reviewed-head-sha> pin=<pinned-spec-sha> -->
+```
+
+Run the listener in the foreground and poll every 30 seconds.
+
+```bash
+while true; do
+  uv run kotekomi-agent review-wake check --state "$HOME/.local/state/kotekomi/review-wake/pull-11.json"
+  sleep 30
+done
+```
+
+Each poll prints one JSON object.
+`status: processed` reports actionable `alerts`.
+`status: suppressed` reports a closed PR or a checkout on the wrong branch.
+`status: blocked` reports a GitHub or state read failure.
+The alert `message` is fixed: `New review comment on your current PR: <comment URL>. Please check it.`
+The listener never includes the comment body or command text in the alert.
+
+The installed terminal Cline surface exposes no verified same-session input command for this pilot.
+The listener therefore reports `target.delivery: notification-only` with `detail: same_session_delivery_unproven`.
+The listener does not spawn a task, press approvals, or change sandbox settings.
+Resume the enrolled session manually.
+The enrollment records the existing Harness run ID.
+The listener creates no second implementation lifecycle.
+
+The state file holds the enrollment and one record per marker comment ID.
+Restart the same command to resume.
+A delivered or notified comment is not replayed.
+A `sending` record becomes `unknown` and is not retried.
+Stop the listener with Ctrl-C.
+
+Use this command to inspect the retained alerts.
+
+```bash
+python3 -c 'import json,sys;print(json.dumps(json.load(open(sys.argv[1]))["alerts"],indent=2,sort_keys=True))' \
+  "$HOME/.local/state/kotekomi/review-wake/pull-11.json"
+```
+
 ## Start from one PR URL
 
 Use this path when the handoff is a PR description and the branch is already fetched.
